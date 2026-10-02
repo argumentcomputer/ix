@@ -1492,7 +1492,9 @@ pub fn ensure_prelude_in_kenv_of(
   let punit_id = KId::new(punit_addr, punit_name.clone());
 
   // Fast path: if PUnit is already registered as an Indc (not an Axio stub),
-  // assume PProd is too and skip redundant construction.
+  // assume PProd is too and skip redundant construction. (A PUnit the
+  // ingestion walk registered for deferred conversion counts as there.)
+  super::deferred_ingress::materialize(&mut kctx.kenv, &punit_id, stt);
   if let Some(kconst) = kctx.kenv.get(&punit_id)
     && matches!(kconst, KConst::Indc { .. })
   {
@@ -1697,10 +1699,10 @@ fn ensure_in_kenv_of_inner_env(
   replace_axio_stub: bool,
   stub_proof_values: bool,
 ) {
-  use ix_common::env::{ConstantInfo as LCI, DefinitionSafety};
+  use super::deferred_ingress::{ctor_const, full_const, indc_const, to_z};
+  use ix_common::env::ConstantInfo as LCI;
   use ix_kernel::constant::KConst;
   use ix_kernel::id::KId;
-  use ix_kernel::ingress::{lean_expr_to_zexpr_cached, param_names_hash};
 
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
@@ -1708,6 +1710,9 @@ fn ensure_in_kenv_of_inner_env(
   let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
   let zid: KId<Meta> = KId::new(addr, name.clone());
 
+  // A constant registered for deferred ingestion is present: convert it
+  // first, so the check below sees what the eager walk left here.
+  super::deferred_ingress::materialize(kenv, &zid, stt);
   if let Some(existing) = kenv.get(&zid) {
     // Most aux_gen ingress paths only need type-only stubs. When a later
     // WHNF path needs a real definition/inductive, allow replacing those
@@ -1719,32 +1724,11 @@ fn ensure_in_kenv_of_inner_env(
   }
 
   let Some(ci) = lean_env.get(name).map(|e| e.cloned()) else { return };
-  // Helper: convert a LeanExpr to KExpr with the given level param names,
-  // using the KEnv's persistent ingress cache. Callers are top-level, so
-  // we start with an empty binder-name stack.
-  let to_z = |expr: &ix_common::env::Expr,
-              lp: &[Name],
-              kenv: &mut ix_kernel::env::KEnv<Meta>|
-   -> ix_kernel::expr::KExpr<Meta> {
-    let pn_h = param_names_hash(lp);
-    let mut binder_names: Vec<Name> = Vec::new();
-    lean_expr_to_zexpr_cached(
-      expr,
-      lp,
-      &mut binder_names,
-      &mut kenv.intern,
-      n2a,
-      aux_n2a,
-      Some(&mut kenv.ingress_cache),
-      Some(&pn_h),
-    )
-  };
 
   match &ci {
     LCI::InductInfo(ind) => {
       let lp = &ind.cnst.level_params;
-      let n_lvls = lp.len() as u64;
-      let ty_z = to_z(&ind.cnst.typ, lp, kenv);
+      let ty_z = to_z(&ind.cnst.typ, lp, kenv, stt);
       let mut ctor_zids = Vec::new();
       for ctor_name in &ind.ctors {
         if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name).as_deref() {
@@ -1752,162 +1736,16 @@ fn ensure_in_kenv_of_inner_env(
             resolve_lean_name_addr(ctor_name, n2a, aux_n2a),
             ctor_name.clone(),
           );
-          let ty = to_z(&ctor.cnst.typ, lp, kenv);
+          let ty = to_z(&ctor.cnst.typ, lp, kenv, stt);
+          let cidx = ctor_zids.len() as u64;
           kenv.insert(
             ctor_zid.clone(),
-            KConst::Ctor {
-              name: ctor_name.clone(),
-              level_params: lp.clone(),
-              is_unsafe: ctor.is_unsafe,
-              lvls: n_lvls,
-              induct: zid.clone(),
-              cidx: ctor_zids.len() as u64,
-              params: nat_to_u64(&ctor.num_params),
-              fields: nat_to_u64(&ctor.num_fields),
-              ty,
-            },
+            ctor_const(ctor_name, ctor, lp, zid.clone(), cidx, ty),
           );
           ctor_zids.push(ctor_zid);
         }
       }
-      kenv.insert(
-        zid.clone(),
-        KConst::Indc {
-          name: name.clone(),
-          level_params: lp.clone(),
-          lvls: n_lvls,
-          params: nat_to_u64(&ind.num_params),
-          indices: nat_to_u64(&ind.num_indices),
-          is_unsafe: ind.is_unsafe,
-          ctors: ctor_zids,
-          ty: ty_z,
-          block: zid,
-          member_idx: 0,
-          lean_all: vec![],
-        },
-      );
-    },
-    LCI::DefnInfo(d) => {
-      let lp = &d.cnst.level_params;
-      let ty = to_z(&d.cnst.typ, lp, kenv);
-      let val = to_z(&d.value, lp, kenv);
-      kenv.insert(
-        zid.clone(),
-        KConst::Defn {
-          name: name.clone(),
-          level_params: lp.clone(),
-          kind: ixon::constant::DefKind::Definition,
-          safety: d.safety,
-          hints: d.hints,
-          lvls: lp.len() as u64,
-          ty,
-          val,
-          lean_all: vec![],
-          block: zid,
-        },
-      );
-    },
-    LCI::ThmInfo(d) => {
-      let lp = &d.cnst.level_params;
-      let ty = to_z(&d.cnst.typ, lp, kenv);
-      // Prewarm callers stub the proof: theorem values are never
-      // delta-unfolded by kernel TC (Prop defeq short-circuits on proof
-      // irrelevance), so the aux_gen phases only ever read the TYPE —
-      // the same fidelity `ingress_type_stub` gives thms it discovers
-      // itself. Full ingestion of every walked proof term was the
-      // dominant share of Pass-2 kenv RSS.
-      if stub_proof_values {
-        kenv.insert(
-          zid.clone(),
-          KConst::Axio {
-            name: name.clone(),
-            level_params: lp.clone(),
-            is_unsafe: false,
-            lvls: lp.len() as u64,
-            ty,
-          },
-        );
-        return;
-      }
-      let val = to_z(&d.value, lp, kenv);
-      kenv.insert(
-        zid.clone(),
-        KConst::Defn {
-          name: name.clone(),
-          level_params: lp.clone(),
-          kind: ixon::constant::DefKind::Theorem,
-          safety: DefinitionSafety::Safe,
-          hints: ix_common::env::ReducibilityHints::Opaque,
-          lvls: lp.len() as u64,
-          ty,
-          val,
-          lean_all: vec![],
-          block: zid,
-        },
-      );
-    },
-    LCI::OpaqueInfo(d) => {
-      let lp = &d.cnst.level_params;
-      let ty = to_z(&d.cnst.typ, lp, kenv);
-      // Same as the ThmInfo arm: opaque values are opaque to kernel
-      // defeq by definition, so prewarm callers keep the type only.
-      if stub_proof_values {
-        kenv.insert(
-          zid.clone(),
-          KConst::Axio {
-            name: name.clone(),
-            level_params: lp.clone(),
-            is_unsafe: false,
-            lvls: lp.len() as u64,
-            ty,
-          },
-        );
-        return;
-      }
-      let val = to_z(&d.value, lp, kenv);
-      kenv.insert(
-        zid.clone(),
-        KConst::Defn {
-          name: name.clone(),
-          level_params: lp.clone(),
-          kind: ixon::constant::DefKind::Opaque,
-          safety: DefinitionSafety::Safe,
-          hints: ix_common::env::ReducibilityHints::Opaque,
-          lvls: lp.len() as u64,
-          ty,
-          val,
-          lean_all: vec![],
-          block: zid,
-        },
-      );
-    },
-    LCI::AxiomInfo(a) => {
-      let lp = &a.cnst.level_params;
-      let ty = to_z(&a.cnst.typ, lp, kenv);
-      kenv.insert(
-        zid.clone(),
-        KConst::Axio {
-          name: name.clone(),
-          level_params: lp.clone(),
-          is_unsafe: a.is_unsafe,
-          lvls: lp.len() as u64,
-          ty,
-        },
-      );
-    },
-    LCI::QuotInfo(q) => {
-      let lp = &q.cnst.level_params;
-      let ty = to_z(&q.cnst.typ, lp, kenv);
-      kenv.insert(
-        zid.clone(),
-        KConst::Quot {
-          name: name.clone(),
-          level_params: lp.clone(),
-          kind: q.kind,
-          lvls: lp.len() as u64,
-          ty,
-        },
-      );
+      kenv.insert(zid.clone(), indc_const(name, ind, zid, ctor_zids, ty_z));
     },
     LCI::CtorInfo(ctor) => {
       // Constructors are ingressed as part of their parent inductive.
@@ -1923,6 +1761,19 @@ fn ensure_in_kenv_of_inner_env(
     LCI::RecInfo(_) => {
       // Recursors are generated by the kernel, not ingressed from Lean.
       // They'll be created when check_inductive runs on the parent.
+    },
+    // Definitions, theorems, opaques, axioms and quotients. Pre-warm
+    // callers (`stub_proof_values`) keep only the types of theorems and
+    // opaques: kernel TC never unfolds their values, so the aux_gen phases
+    // only read the type — the fidelity `ingress_type_stub` gives the
+    // theorems the walk discovers itself — and full ingestion of every
+    // walked proof term was the dominant share of Pass-2 kenv RSS.
+    other => {
+      if let Some(c) =
+        full_const(name, other, zid.clone(), kenv, stt, stub_proof_values)
+      {
+        kenv.insert(zid, c);
+      }
     },
   }
 }
@@ -2033,7 +1884,8 @@ impl<'a> TcScope<'a> {
       .map(|(i, decl)| (decl.fvar_name.clone(), i))
       .collect();
 
-    let mut tc = ix_kernel::tc::TypeChecker::new(&mut kctx.kenv);
+    let mut tc =
+      ix_kernel::tc::TypeChecker::new(&mut kctx.kenv).with_deferred_source(stt);
     tc.infer_only = true;
 
     // Push outer FVar types once.
@@ -2111,8 +1963,10 @@ impl<'a> TcScope<'a> {
     self.fault_in_name(&name) && self.addr_present(addr)
   }
 
+  /// Whether any constant at `addr` is present (materialized, or
+  /// registered for deferred ingestion — see `deferred_ingress`).
   fn addr_present(&self, addr: &Address) -> bool {
-    self.tc.env.consts.keys().any(|id| &id.addr == addr)
+    self.tc.env.view_ids().any(|id| &id.addr == addr)
   }
 
   fn name_for_addr(&self, addr: &Address) -> Option<Name> {
@@ -2160,6 +2014,9 @@ impl<'a> TcScope<'a> {
             match self.tc.env.get(id) {
               Some(c) => {
                 eprintln!("  kenv[{}]: lvls={}, ty={}", id, c.lvls(), c.ty())
+              },
+              None if self.tc.env.pending(id).is_some() => {
+                eprintln!("  kenv[{}]: registered, not yet converted", id)
               },
               None => eprintln!("  kenv[{}]: NOT FOUND", id),
             }
@@ -2272,7 +2129,7 @@ impl<'a> TcScope<'a> {
   /// Returns `None` if the fast path doesn't apply (not a constant
   /// application, not enough foralls, result isn't Sort, or the constant
   /// isn't found in the kernel env).
-  fn try_infer_app_sort_level(&self, ty: &LeanExpr) -> Option<Level> {
+  fn try_infer_app_sort_level(&mut self, ty: &LeanExpr) -> Option<Level> {
     use ix_common::env::ExprData;
     use ix_kernel::expr::ExprData as ZED;
 
@@ -2288,7 +2145,9 @@ impl<'a> TcScope<'a> {
     let aux_n2a = Some(&self.stt.aux_name_to_addr);
     let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
     let kid = ix_kernel::id::KId::new(addr, name.clone());
-    let kconst = self.tc.env.get(&kid)?;
+    // Through the checker, so a constant registered for deferred ingestion
+    // is materialized and found, as the eager walk's entry would be.
+    let kconst = self.tc.try_get_const(&kid).ok().flatten()?;
     let kty = kconst.ty();
 
     // Peel foralls from the stored type — one per applied arg.

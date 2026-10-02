@@ -211,6 +211,11 @@ pub struct CompileState {
   /// deserialized environment sets them with [`compiler_sharing_limits`].
   /// The default is [`ExactSharingLimits::default`].
   pub sharing_limits: ExactSharingLimits,
+  /// aux_gen's deferred kernel ingress: per source constant, how the
+  /// ingestion walk dispatches it and what it pushes (built once per
+  /// constant, then shared by every block's walk; see
+  /// `aux_gen::deferred_ingress`). Valid for `lean_env` only.
+  pub aux_dep_cache: aux_gen::deferred_ingress::AuxDepCache,
 }
 
 /// Cached compiled expression with arena root index.
@@ -303,6 +308,7 @@ impl Default for CompileState {
       aux_perms: Default::default(),
       def_hints: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
+      aux_dep_cache: Default::default(),
     }
   }
 }

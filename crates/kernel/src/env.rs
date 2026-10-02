@@ -24,7 +24,10 @@ use super::mode::KernelMode;
 use super::perf::PerfCounters;
 use super::primitive::Primitives;
 
+mod deferred;
 mod scratch;
+use deferred::DeferredIngress;
+pub use deferred::{Deferred, DeferredStats};
 use scratch::ScratchMap;
 
 /// Canonical identity of an expression or universe node: the
@@ -790,6 +793,11 @@ pub struct KEnv<M: KernelMode> {
   /// across `clear`/`clear_releasing_memory` so recording survives scheduled
   /// block boundaries within a run.
   pub profile_sink: Option<crate::profile::ProfileSink>,
+
+  /// Deferred-ingestion state (`env/deferred.rs`). `None` unless the
+  /// owner enabled it on the empty environment with
+  /// [`KEnv::enable_deferred`]; reset by `clear`.
+  deferred: Option<Box<DeferredIngress<M>>>,
 }
 
 impl<M: KernelMode> Default for KEnv<M> {
@@ -850,6 +858,7 @@ impl<M: KernelMode> KEnv<M> {
       next_fvar_id: 0,
       perf: PerfCounters::default(),
       profile_sink: None,
+      deferred: None,
     }
   }
 
@@ -900,9 +909,99 @@ impl<M: KernelMode> KEnv<M> {
         id.addr.hex()
       );
     }
+    if let Some(d) = self.deferred.as_mut() {
+      d.note_insert(&id);
+    }
     if self.consts.insert(id, c).is_some() {
       self.decl_summary_cache.clear();
     }
+  }
+
+  /// Start deferred ingestion (`env/deferred.rs`) on this environment.
+  /// Only an empty environment can defer: the deferred view must observe
+  /// every insert from the first one on. Returns whether deferral is on.
+  pub fn enable_deferred(&mut self) -> bool {
+    if self.deferred.is_none() && self.consts.is_empty() {
+      self.deferred = Some(Box::default());
+    }
+    self.deferred.is_some()
+  }
+
+  /// Whether this environment defers ingestion.
+  pub fn is_deferring(&self) -> bool {
+    self.deferred.is_some()
+  }
+
+  /// Register `id` as standing for `what` without converting it. Readers
+  /// see it as present once materialized (see `env/deferred.rs`); until
+  /// then [`Self::get`] misses it and [`Self::pending`] reports it.
+  ///
+  /// # Panics
+  ///
+  /// If deferral is off, or if `id` is already in `consts`: a registration
+  /// must never shadow a materialized constant.
+  pub fn register_deferred(&mut self, id: KId<M>, what: Deferred) {
+    assert!(
+      !self.consts.contains_key(&id),
+      "register_deferred: {id} is already materialized"
+    );
+    let d = self
+      .deferred
+      .as_mut()
+      .expect("register_deferred: deferral is not enabled");
+    d.register(id, what);
+  }
+
+  /// The registration of `id`, if it is registered and not materialized.
+  pub fn pending(&self, id: &KId<M>) -> Option<&Deferred> {
+    self.deferred.as_ref()?.pending(id)
+  }
+
+  /// Remove the registration of `id` for materialization. The caller must
+  /// insert the constant it stands for before anything reads `id`.
+  pub fn take_pending(&mut self, id: &KId<M>) -> Option<Deferred> {
+    self.deferred.as_mut()?.take_pending(id)
+  }
+
+  /// Insert the conversion of a registration just taken with
+  /// [`Self::take_pending`]. Unlike [`Self::insert`] this leaves the view
+  /// alone: the id is already in it, and the view's hash table must see
+  /// exactly the insert calls its eager twin's `consts` sees — a
+  /// materialization has no eager counterpart, and with hashbrown even an
+  /// insert of a present key can grow a full table and so reorder it.
+  pub fn insert_materialized(&mut self, id: KId<M>, c: KConst<M>) {
+    debug_assert!(
+      self.deferred.as_ref().is_some_and(|d| d.view_contains(&id)),
+      "insert_materialized: {id} was never registered"
+    );
+    if self.consts.insert(id, c).is_some() {
+      self.decl_summary_cache.clear();
+    }
+  }
+
+  /// Whether `id` is materialized or registered.
+  pub fn view_contains(&self, id: &KId<M>) -> bool {
+    self.consts.contains_key(id) || self.pending(id).is_some()
+  }
+
+  /// The ids an eager ingestion would hold, in the order its `consts` map
+  /// would iterate them: materialized and registered ids when deferring,
+  /// otherwise the `consts` keys.
+  pub fn view_ids(&self) -> Box<dyn Iterator<Item = &KId<M>> + '_> {
+    match self.deferred.as_ref() {
+      Some(d) => Box::new(d.view_ids()),
+      None => Box::new(self.consts.keys()),
+    }
+  }
+
+  /// Number of ids [`Self::view_ids`] yields.
+  pub fn view_len(&self) -> usize {
+    self.deferred.as_ref().map_or(self.consts.len(), |d| d.view_len())
+  }
+
+  /// Deferred-ingestion counters, if deferral is on.
+  pub fn deferred_stats(&self) -> Option<DeferredStats> {
+    self.deferred.as_ref().map(|d| d.stats)
   }
 
   pub fn len(&self) -> usize {
@@ -969,6 +1068,7 @@ impl<M: KernelMode> KEnv<M> {
     self.block_check_results.clear();
     self.prim_family_cache.clear();
     self.next_fvar_id = 0;
+    self.deferred = None;
   }
 
   /// Snapshot of all per-worker cache sizes. Cheap (each `len()` is O(1));
@@ -1035,6 +1135,7 @@ impl<M: KernelMode> KEnv<M> {
     self.block_check_results = FxHashMap::default();
     self.prim_family_cache = FxHashMap::default();
     self.next_fvar_id = 0;
+    self.deferred = None;
   }
 
   /// Clear the same logical state as [`Self::clear`], retaining only modest
@@ -1319,5 +1420,103 @@ mod tests {
     env.insert(mk_id("A"), mk_axio("A"));
     env.insert(mk_id("B"), mk_axio("B"));
     assert_eq!(env.iter().count(), 2);
+  }
+
+  /// The deferred view iterates exactly like the `consts` map of an eager
+  /// twin given the same insert calls — overwrites of present ids included
+  /// (with hashbrown even those can grow a full table) — however
+  /// materializations interleave.
+  #[test]
+  fn deferred_view_iterates_like_eager_consts() {
+    let mut eager = KEnv::<Anon>::new();
+    let mut lazy = KEnv::<Anon>::new();
+    assert!(lazy.enable_deferred());
+    let stub = || Deferred::Stub(Name::anon());
+    let ids: Vec<_> = (0..300).map(|i| mk_id(&format!("c{i}"))).collect();
+    let mirror = |lazy: &mut KEnv<Anon>, id: &KId<Anon>| {
+      if lazy.consts.contains_key(id) {
+        lazy.insert(id.clone(), mk_axio("y"));
+      } else {
+        lazy.register_deferred(id.clone(), stub());
+      }
+    };
+    for (i, id) in ids.iter().enumerate() {
+      // The eager twin inserts every id; the lazy one inserts one in three
+      // and registers the rest.
+      eager.insert(id.clone(), mk_axio("x"));
+      if i % 3 == 0 {
+        lazy.insert(id.clone(), mk_axio("x"));
+      } else {
+        lazy.register_deferred(id.clone(), stub());
+      }
+      // Every fifth step overwrites an earlier id in both.
+      if i % 5 == 4 {
+        eager.insert(ids[i / 2].clone(), mk_axio("y"));
+        mirror(&mut lazy, &ids[i / 2]);
+      }
+      // Every other step materializes a pending id (lazy only).
+      if i % 2 == 1
+        && let Some(p) =
+          ids[..=i].iter().rev().find(|id| lazy.pending(id).is_some()).cloned()
+      {
+        assert!(lazy.take_pending(&p).is_some());
+        lazy.insert_materialized(p, mk_axio("x"));
+      }
+      let e: Vec<_> = eager.consts.keys().cloned().collect();
+      let l: Vec<_> = lazy.view_ids().cloned().collect();
+      assert_eq!(e, l, "view order diverged after step {i}");
+      assert_eq!(lazy.view_len(), eager.len());
+    }
+    let stats = lazy.deferred_stats().unwrap();
+    assert!(stats.materialized > 0 && stats.registered > stats.materialized);
+  }
+
+  #[test]
+  fn deferred_lookup_materializes_through_source() {
+    struct Source;
+    impl crate::tc::DeferredSource<Anon> for Source {
+      fn materialize(&self, env: &mut KEnv<Anon>, id: &KId<Anon>) {
+        if env.take_pending(id).is_some() {
+          env.insert_materialized(id.clone(), mk_axio("x"));
+        }
+      }
+    }
+    let source = Source;
+    let mut env = KEnv::<Anon>::new();
+    assert!(env.enable_deferred());
+    let (a, b) = (mk_id("A"), mk_id("B"));
+    env.register_deferred(a.clone(), Deferred::Stub(Name::anon()));
+    assert!(env.get(&a).is_none() && env.view_contains(&a));
+    let mut tc =
+      crate::tc::TypeChecker::new(&mut env).with_deferred_source(&source);
+    assert!(tc.try_get_const(&a).unwrap().is_some());
+    assert!(tc.try_get_const(&b).unwrap().is_none());
+    drop(tc);
+    assert!(env.consts.contains_key(&a) && env.pending(&a).is_none());
+    assert_eq!(env.deferred_stats().unwrap().materialized, 1);
+  }
+
+  #[test]
+  fn deferral_needs_an_empty_env_and_ends_with_clear() {
+    let mut env = KEnv::<Anon>::new();
+    env.insert(mk_id("A"), mk_axio("A"));
+    assert!(!env.enable_deferred());
+    env.clear();
+    assert!(env.enable_deferred());
+    env.clear();
+    assert!(!env.is_deferring());
+  }
+
+  /// Primitive ids are resolved from the view: a registered constant at a
+  /// primitive's address names it, as the eagerly converted one would.
+  #[test]
+  fn primitives_see_registered_constants() {
+    use super::super::mode::Meta;
+    let nat = Name::str(Name::anon(), "Nat".to_string());
+    let id = KId::<Meta>::new(PrimAddrs::new().nat.clone(), nat.clone());
+    let mut env = KEnv::<Meta>::new();
+    assert!(env.enable_deferred());
+    env.register_deferred(id.clone(), Deferred::Full(nat));
+    assert_eq!(env.prims().nat, id);
   }
 }

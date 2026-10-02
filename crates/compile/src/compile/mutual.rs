@@ -590,6 +590,11 @@ pub fn generate_and_compile_aux_recursors(
     return Ok(None);
   }
 
+  // The block's kernel environment ingests on demand: the ingestion walks
+  // register what they reach and the kernel converts what it reads (see
+  // `aux_gen::deferred_ingress`).
+  aux_gen::deferred_ingress::enable(lean_env, stt, kctx);
+
   // Phase 1: Generate patches. Errors here indicate a bug in aux_gen
   // (the input has already been validated by sort_consts and the compile
   // loop), so we propagate rather than swallow.
@@ -604,6 +609,7 @@ pub fn generate_and_compile_aux_recursors(
   let patches = &aux_out.patches;
   let gen_elapsed = t0.elapsed();
   if patches.is_empty() {
+    aux_gen::deferred_ingress::record(kctx);
     return Ok(None);
   }
 
@@ -1022,6 +1028,7 @@ pub fn generate_and_compile_aux_recursors(
       patches.len(),
     );
   }
+  aux_gen::deferred_ingress::record(kctx);
   Ok(aux_layout)
 }
 

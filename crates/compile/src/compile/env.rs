@@ -1005,6 +1005,10 @@ pub fn compile_env_with_profile(
       total_blocks,
       crate::diag::rss_log_suffix(),
     );
+    eprintln!(
+      "[compile_env] aux_gen kernel ingress: {}",
+      crate::compile::aux_gen::deferred_ingress::summary(),
+    );
   }
 
   // Check for errors
