@@ -4510,7 +4510,7 @@ fn build_name_index(
   use ix_common::address::Address;
   use ixon::metadata::NameIndex;
 
-  let mut idx = NameIndex::new();
+  let mut idx = NameIndex::default();
   let mut counter: u64 = 0;
 
   // Add all names from the names map

@@ -209,6 +209,28 @@ def testBlockRefsTwoCycles : TestSeq :=
     test "blockRefs: AB SCC refs C" (blockRefs.map (·.contains (mkName "C")) |>.getD false)
   | none => test "blockRefs: found A's root" false
 
+/-! ## Rust: dense-id SCCs against the original name-keyed implementation -/
+
+/-- Runs Rust `compute_sccs` and the original name-keyed implementation it
+    replaced on the reference graphs of the given constants (the compiler's
+    `setup_scan` graph, its reverse, and `build_ref_graph`'s) and compares
+    every map and set of the results in iteration order. Returns the empty
+    string when they agree, otherwise the first difference. -/
+@[extern "rs_compute_sccs_reference_diff"]
+opaque rsComputeSccsReferenceDiff : @& List (Lean.Name × Lean.ConstantInfo) →
+  IO String
+
+/-- The real Init graph: identical components, roots and orders. -/
+def testSccDenseMatchesReferenceInit : TestSeq :=
+  .individualIO "Rust SCCs on the Init graph match the reference, orders included" none (do
+    let env ← getCompileEnv #[`Init]
+    let diff ← rsComputeSccsReferenceDiff env.constants.toList
+    if diff.isEmpty then
+      return (true, 0, 0, none)
+    else
+      return (false, 0, 0, some diff)
+  ) .done
+
 /-! ## Full Test Suite (unit tests) -/
 
 public def suite : List TestSeq := [
@@ -230,6 +252,7 @@ public def suite : List TestSeq := [
     testLowLinksSimpleCycle ++
     testLowLinksChain
   ),
+  group "rust dense SCCs" testSccDenseMatchesReferenceInit,
   group "blockRefs" (
     testBlockRefsChain ++
     testBlockRefsTwoCycles

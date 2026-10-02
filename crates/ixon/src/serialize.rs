@@ -1769,7 +1769,7 @@ impl Env {
       );
     }
     let put_start = std::time::Instant::now();
-    let mut name_index: NameIndex = NameIndex::new();
+    let mut name_index: NameIndex = NameIndex::default();
     put_u64(sorted_names.len() as u64, buf);
     for (i, (addr, name)) in sorted_names.iter().enumerate() {
       name_index.insert(addr.clone(), i as u64);
@@ -1921,6 +1921,34 @@ impl Env {
     const_addrs: &[Address],
     root: &Address,
   ) -> Result<u64, String> {
+    // §4's order (a topological sort over every name component) and the
+    // name index assigned from it depend on `self.names` alone: build both
+    // on their own thread while §1–§3 are written.
+    std::thread::scope(|scope| {
+      let names = scope.spawn(|| {
+        let start = std::time::Instant::now();
+        let sorted = topological_sort_names(&self.names);
+        let sorted_in = start.elapsed();
+        let mut index: NameIndex =
+          NameIndex::with_capacity_and_hasher(sorted.len(), Default::default());
+        for (i, (addr, _)) in sorted.iter().enumerate() {
+          index.insert(addr.clone(), i as u64);
+        }
+        SortedNames { sorted, index, sorted_in, built_in: start.elapsed() }
+      });
+      self.put_file_sections(path, const_addrs, root, names)
+    })
+  }
+
+  /// [`Env::put_file_with_header`] once §4 is being prepared by `names`.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn put_file_sections(
+    &self,
+    path: &std::path::Path,
+    const_addrs: &[Address],
+    root: &Address,
+    names: std::thread::ScopedJoinHandle<'_, SortedNames>,
+  ) -> Result<u64, String> {
     use rayon::prelude::*;
     use std::io::Write;
     debug_assert_eq!(const_addrs.len(), self.consts.len());
@@ -2056,28 +2084,44 @@ impl Env {
       sec_start = std::time::Instant::now();
     }
 
-    // Section 4: Names (topologically sorted; builds the name index the
-    // Named section encodes through). The topo sort is single-threaded
-    // over every name component — timed separately from the writes so
-    // its share is visible (see `topological_sort_names`).
-    let sorted_names = topological_sort_names(&self.names);
+    // Section 4: Names, topologically sorted, and the name index the
+    // Named section encodes through (each name's position), both from
+    // `names`, which ran alongside §1–§3: the sort and the index build
+    // are timed there, the wait here. The entries encode independently,
+    // so batches encode in parallel and are written in order.
+    let SortedNames {
+      sorted: sorted_names,
+      index: name_index,
+      sorted_in,
+      built_in,
+    } = names.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic));
     if verbose {
       eprintln!(
         "[Env::put_file] section 4/6 names: topo sort of {} entries in \
-         {:.1}s",
+         {:.1}s and index in {:.1}s, alongside sections 1-3 (waited {:.1}s)",
         sorted_names.len(),
+        sorted_in.as_secs_f64(),
+        (built_in - sorted_in).as_secs_f64(),
         sec_start.elapsed().as_secs_f64(),
       );
       sec_start = std::time::Instant::now();
     }
-    let mut name_index: NameIndex = NameIndex::new();
     put_u64(sorted_names.len() as u64, &mut buf);
-    for (i, (addr, name)) in sorted_names.iter().enumerate() {
-      name_index.insert(addr.clone(), i as u64);
-      put_address(addr, &mut buf);
-      put_name_component(name, &mut buf);
-      emit!();
-    }
+    emit!();
+    write_encoded_batches(
+      &mut w,
+      &mut written,
+      &sorted_names,
+      NAMES_BATCH,
+      NAMES_TASK,
+      &|entries: &[(Address, Name)], out: &mut Vec<u8>| {
+        for (addr, name) in entries {
+          put_address(addr, out);
+          put_name_component(name, out);
+        }
+        Ok(())
+      },
+    )?;
     if verbose {
       eprintln!(
         "[Env::put_file] section 4/6 names done in {:.1}s ({written} bytes \
@@ -2089,21 +2133,25 @@ impl Env {
 
     // Section 5: Named — the largest per-entry section, and the only
     // one whose per-entry encode is CPU-heavy (demoted entries decode
-    // and re-encode through the name index). Chunks encode in parallel
-    // into per-entry buffers and drain to the writer in order; the
-    // chunk size bounds staged memory to a few MiB.
+    // and re-encode through the name index). Batches encode in parallel
+    // and drain to the writer in order, each while the next encodes; the
+    // batch size bounds staged memory to a few MiB.
     let mut named_keys: Vec<Name> =
-      self.named.iter().map(|e| e.key().clone()).collect();
+      self.named.par_iter().map(|e| e.key().clone()).collect();
     named_keys.par_sort_unstable_by(|a, b| {
       a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
     });
     put_u64(named_keys.len() as u64, &mut buf);
     emit!();
-    for chunk in named_keys.chunks(4096) {
-      let encoded: Vec<Vec<u8>> = chunk
-        .into_par_iter()
-        .map(|name| {
-          let mut b = Vec::new();
+    write_encoded_batches(
+      &mut w,
+      &mut written,
+      &named_keys,
+      NAMED_BATCH,
+      NAMED_TASK,
+      &|names: &[Name], out: &mut Vec<u8>| {
+        let mut scratch = Vec::new();
+        for name in names {
           if let Some(entry) = self.named.get(name) {
             let name_addr = Address::from_blake3_hash(*name.get_hash());
             let name_idx =
@@ -2113,24 +2161,19 @@ impl Env {
                   name_addr.hex()
                 )
               })?;
-            put_u64(name_idx, &mut b);
-            let mut scratch = Vec::new();
+            put_u64(name_idx, out);
             put_named_indexed(
               entry.value(),
               &name_index,
               const_addrs,
               &mut scratch,
-              &mut b,
+              out,
             )?;
           }
-          Ok::<_, String>(b)
-        })
-        .collect::<Result<_, _>>()?;
-      for b in &encoded {
-        w.write_all(b).map_err(|e| format!("Env::put_file: write: {e}"))?;
-        written += b.len() as u64;
-      }
-    }
+        }
+        Ok(())
+      },
+    )?;
     if verbose {
       eprintln!(
         "[Env::put_file] section 5/6 named done in {:.1}s ({written} bytes \
@@ -3107,7 +3150,7 @@ impl Env {
     // Section 4: Names (also build name index)
     let before_names = buf.len();
     let sorted_names = topological_sort_names(&self.names);
-    let mut name_index: NameIndex = NameIndex::new();
+    let mut name_index: NameIndex = NameIndex::default();
     put_u64(sorted_names.len() as u64, &mut buf);
     for (i, (addr, name)) in sorted_names.iter().enumerate() {
       name_index.insert(addr.clone(), i as u64);
@@ -3212,31 +3255,129 @@ fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
   Ok(())
 }
 
+/// §4 of a file being written: the names in [`topological_sort_names`]
+/// order, the name index (each address to its position), and how long the
+/// two took.
+#[cfg(not(target_arch = "riscv64"))]
+struct SortedNames {
+  sorted: Vec<(Address, Name)>,
+  index: NameIndex,
+  sorted_in: std::time::Duration,
+  built_in: std::time::Duration,
+}
+
+/// §4 entries per parallel encoding task, and per batch written while the
+/// next one is encoded (`Env::put_file_with_header`).
+#[cfg(not(target_arch = "riscv64"))]
+const NAMES_TASK: usize = 4096;
+#[cfg(not(target_arch = "riscv64"))]
+const NAMES_BATCH: usize = 1 << 16;
+/// The same for §5, whose entries are larger and costlier to encode.
+#[cfg(not(target_arch = "riscv64"))]
+const NAMED_TASK: usize = 32;
+#[cfg(not(target_arch = "riscv64"))]
+const NAMED_BATCH: usize = 4096;
+
+/// Write `items` to `w` in order, where `encode` appends the encoding of a
+/// run of consecutive items to a buffer. The items are cut into batches of
+/// `batch`, each encoded in parallel in runs of `task`, and a batch is
+/// written while the next one is encoded. The bytes are those of encoding
+/// all the items in one run.
+#[cfg(not(target_arch = "riscv64"))]
+fn write_encoded_batches<T: Sync, W: std::io::Write + Send>(
+  w: &mut W,
+  written: &mut u64,
+  items: &[T],
+  batch: usize,
+  task: usize,
+  encode: &(dyn Fn(&[T], &mut Vec<u8>) -> Result<(), String> + Sync),
+) -> Result<(), String> {
+  use rayon::prelude::*;
+  fn write_all<W: std::io::Write>(
+    w: &mut W,
+    written: &mut u64,
+    bufs: &[Vec<u8>],
+  ) -> Result<(), String> {
+    for b in bufs {
+      w.write_all(b).map_err(|e| format!("Env::put_file: write: {e}"))?;
+      *written += b.len() as u64;
+    }
+    Ok(())
+  }
+  let encode_batch = |items: &[T]| -> Result<Vec<Vec<u8>>, String> {
+    items
+      .par_chunks(task)
+      .map(|run| {
+        let mut out = Vec::new();
+        encode(run, &mut out)?;
+        Ok(out)
+      })
+      .collect()
+  };
+  let mut batches = items.chunks(batch);
+  let Some(first) = batches.next() else {
+    return Ok(());
+  };
+  let mut pending = encode_batch(first)?;
+  for next in batches {
+    let (wrote, encoded) =
+      rayon::join(|| write_all(w, written, &pending), || encode_batch(next));
+    wrote?;
+    pending = encoded?;
+  }
+  write_all(w, written, &pending)
+}
+
 fn topological_sort_names(
   names: &crate::map::IxonMap<Address, Name>,
 ) -> Vec<(Address, Name)> {
   #[cfg(not(target_arch = "riscv64"))]
   use rayon::slice::ParallelSliceMut;
-  use rustc_hash::FxHashSet;
-
-  let mut result = Vec::with_capacity(names.len() + 1);
-  let mut visited: FxHashSet<Address> =
-    FxHashSet::with_capacity_and_hasher(names.len() + 1, Default::default());
-
-  // Include anonymous name first so it gets index 0 in the name index.
-  // Arena nodes frequently reference it as a binder name.
-  let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
-  result.push((anon_addr.clone(), Name::anon()));
-  visited.insert(anon_addr);
 
   // Clone-collect entries for direct iteration (avoids 4.7M DashMap lookups
-  // during DFS). Parallel sort uses rayon over address bytes.
+  // during DFS), then sort by key over address bytes. The keys are
+  // distinct, so the order does not depend on the collection order; on
+  // host both steps run in parallel.
+  #[cfg(not(target_arch = "riscv64"))]
+  let mut sorted_entries: Vec<(Address, Name)> = {
+    use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+    names.par_iter().map(|e| (e.key().clone(), e.value().clone())).collect()
+  };
+  #[cfg(target_arch = "riscv64")]
   let mut sorted_entries: Vec<(Address, Name)> =
     names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
   #[cfg(not(target_arch = "riscv64"))]
   sorted_entries.par_sort_unstable_by(|a, b| a.0.cmp(&b.0));
   #[cfg(target_arch = "riscv64")]
   sorted_entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+  #[cfg(not(target_arch = "riscv64"))]
+  if let Some(order) = parallel_topological_order(&sorted_entries) {
+    return order;
+  }
+  serial_topological_order(&sorted_entries)
+}
+
+/// §4's order over the key-sorted name entries: the anonymous name, then,
+/// for each entry in turn, its ancestors not emitted yet, root first,
+/// ending with the entry itself unless it was emitted already. This is the
+/// specification of [`parallel_topological_order`], and its fallback.
+fn serial_topological_order(
+  sorted_entries: &[(Address, Name)],
+) -> Vec<(Address, Name)> {
+  use rustc_hash::FxHashSet;
+
+  let mut result = Vec::with_capacity(sorted_entries.len() + 1);
+  let mut visited: FxHashSet<Address> = FxHashSet::with_capacity_and_hasher(
+    sorted_entries.len() + 1,
+    Default::default(),
+  );
+
+  // Include anonymous name first so it gets index 0 in the name index.
+  // Arena nodes frequently reference it as a binder name.
+  let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
+  result.push((anon_addr.clone(), Name::anon()));
+  visited.insert(anon_addr);
 
   // Parent-first emission, iteratively: walk each entry's ancestor
   // chain up to the first already-visited component, then emit the
@@ -3245,7 +3386,7 @@ fn topological_sort_names(
   // before, addresses are recomputed from the name hashes (never
   // trusted from the map key).
   let mut chain: Vec<(Address, Name)> = Vec::new();
-  for (_, name) in &sorted_entries {
+  for (_, name) in sorted_entries {
     let mut cur_addr = Address::from_blake3_hash(*name.get_hash());
     let mut cur = name;
     loop {
@@ -3268,6 +3409,108 @@ fn topological_sort_names(
   }
 
   result
+}
+
+/// [`serial_topological_order`] computed in parallel, for entries that are
+/// closed under parents: every key is its name's address, and every
+/// parent other than the anonymous name is itself an entry (as in the
+/// compiler's name table, which stores each name's prefixes). `None`
+/// otherwise, and the caller falls back to the serial walk.
+///
+/// The serial walk emits a name in the turn of the first entry (in key
+/// order) that has it as an ancestor or is it: its *owner*. Within one
+/// turn it emits a segment of a single ancestor chain, root first. So the
+/// order is: the anonymous name, then the names sorted by (owner, depth).
+/// The owner of a name is the minimum entry position over its descendants
+/// (itself included), computed by walking every entry up its chain with
+/// an atomic minimum, stopping where the stored owner is already at most
+/// the walker's position (the walker that stored it continues above).
+/// Each entry then emits the names it owns: the bottom of its chain up to
+/// the first ancestor owned by an earlier entry.
+#[cfg(not(target_arch = "riscv64"))]
+fn parallel_topological_order(
+  sorted_entries: &[(Address, Name)],
+) -> Option<Vec<(Address, Name)>> {
+  use rayon::prelude::*;
+  use std::sync::atomic::{AtomicU32, Ordering};
+
+  // `parent[i]`: the position of entry i's parent; `ROOT` when the parent
+  // is the anonymous name or there is none; `ANON` for the anonymous
+  // name's own entry, which is emitted first and skipped here.
+  const ROOT: u32 = u32::MAX;
+  const ANON: u32 = u32::MAX - 1;
+  let m = sorted_entries.len();
+  if m >= ANON as usize {
+    return None;
+  }
+  let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
+  let position = |addr: &Address| -> Option<u32> {
+    let i = sorted_entries.binary_search_by(|(key, _)| key.cmp(addr)).ok()?;
+    u32::try_from(i).ok()
+  };
+  let parent: Vec<u32> = sorted_entries
+    .par_iter()
+    .map(|(key, name)| {
+      let addr = Address::from_blake3_hash(*name.get_hash());
+      if addr != *key {
+        return None;
+      }
+      if addr == anon_addr {
+        return Some(ANON);
+      }
+      match name.as_data() {
+        NameData::Anonymous(_) => Some(ROOT),
+        NameData::Str(p, _, _) | NameData::Num(p, _, _) => {
+          let p_addr = Address::from_blake3_hash(*p.get_hash());
+          if p_addr == anon_addr { Some(ROOT) } else { position(&p_addr) }
+        },
+      }
+    })
+    .collect::<Option<_>>()?;
+
+  let owner: Vec<AtomicU32> =
+    (0..m).into_par_iter().map(|_| AtomicU32::new(ROOT)).collect();
+  (0..m).into_par_iter().for_each(|j| {
+    if parent[j] == ANON {
+      return;
+    }
+    let j32 = j as u32;
+    let mut x = j;
+    loop {
+      if owner[x].load(Ordering::Relaxed) <= j32
+        || owner[x].fetch_min(j32, Ordering::Relaxed) <= j32
+      {
+        break;
+      }
+      match parent[x] {
+        ROOT => break,
+        p => x = p as usize,
+      }
+    }
+  });
+  let owner: Vec<u32> = owner.into_iter().map(AtomicU32::into_inner).collect();
+
+  let mut result = Vec::with_capacity(m + 1);
+  result.push((anon_addr, Name::anon()));
+  result.par_extend((0..m).into_par_iter().flat_map_iter(|j| {
+    let mut owned: Vec<usize> = Vec::new();
+    if parent[j] != ANON && owner[j] as usize == j {
+      let mut x = j;
+      loop {
+        owned.push(x);
+        match parent[x] {
+          ROOT => break,
+          p if owner[p as usize] as usize != j => break,
+          p => x = p as usize,
+        }
+      }
+    }
+    owned.into_iter().rev().map(|x| {
+      let (_, name) = &sorted_entries[x];
+      (Address::from_blake3_hash(*name.get_hash()), name.clone())
+    })
+  }));
+  Some(result)
 }
 
 #[cfg(test)]
@@ -3561,6 +3804,179 @@ mod tests {
       assert_eq!(written as usize, from_file.len());
       assert_eq!(buf, from_file, "put and put_file bytes diverge");
     }
+  }
+
+  /// SplitMix64, for the deterministic random name tables below.
+  struct Rng(u64);
+  impl Rng {
+    fn next(&mut self) -> u64 {
+      self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+      let mut z = self.0;
+      z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+      z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+      z ^ (z >> 31)
+    }
+    fn below(&mut self, n: usize) -> usize {
+      (self.next() % n as u64) as usize
+    }
+  }
+
+  /// `n` random hierarchical names, each extending an earlier one or the
+  /// anonymous name by a string or numeric component, so that chains are
+  /// deep and prefixes widely shared.
+  fn random_names(rng: &mut Rng, n: usize) -> Vec<Name> {
+    let mut names: Vec<Name> = Vec::with_capacity(n);
+    for i in 0..n {
+      let parent = if names.is_empty() || rng.below(8) == 0 {
+        Name::anon()
+      } else {
+        names[rng.below(names.len())].clone()
+      };
+      names.push(if rng.below(5) == 0 {
+        Name::num(parent, Nat::from(i as u64))
+      } else {
+        Name::str(parent, format!("c{}", rng.below(n + 1)))
+      });
+    }
+    names
+  }
+
+  /// The key-sorted, deduplicated entries of `names` (each keyed by its
+  /// address), with all their prefixes when `closed`.
+  fn name_entries(names: &[Name], closed: bool) -> Vec<(Address, Name)> {
+    let mut entries: Vec<(Address, Name)> = Vec::new();
+    for name in names {
+      let mut cur = name.clone();
+      loop {
+        entries.push((Address::from_blake3_hash(*cur.get_hash()), cur.clone()));
+        if !closed {
+          break;
+        }
+        match cur.as_data() {
+          NameData::Str(p, _, _) | NameData::Num(p, _, _) => cur = p.clone(),
+          NameData::Anonymous(_) => break,
+        }
+      }
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.dedup_by(|a, b| a.0 == b.0);
+    entries
+  }
+
+  #[test]
+  fn parallel_topological_order_matches_serial() {
+    let mut rng = Rng(0x7095);
+    for round in 0..60 {
+      let n = 1 + rng.below(if round % 6 == 0 { 40_000 } else { 400 });
+      let names = random_names(&mut rng, n);
+      let mut closed = name_entries(&names, true);
+      if round % 2 == 0 {
+        // Without the anonymous name's own entry.
+        closed.retain(|(_, name)| {
+          !matches!(name.as_data(), NameData::Anonymous(_))
+        });
+      }
+      let serial = serial_topological_order(&closed);
+      let parallel = parallel_topological_order(&closed)
+        .expect("a table closed under prefixes takes the parallel path");
+      assert_eq!(parallel, serial, "round {round}: orders differ");
+      assert_eq!(
+        serial.len(),
+        1 + closed
+          .iter()
+          .filter(|(_, name)| !matches!(name.as_data(), NameData::Anonymous(_)))
+          .count()
+      );
+
+      // Leaves only: not closed (unless every name is a root), so the
+      // parallel path declines and the serial walk decides.
+      let open = name_entries(&names, false);
+      if let Some(parallel) = parallel_topological_order(&open) {
+        assert_eq!(parallel, serial_topological_order(&open));
+      }
+      // A key that is not its name's address: declined.
+      if let Some((key, _)) = closed.first_mut() {
+        *key = Address::hash(b"not this name");
+        closed.sort_by(|a, b| a.0.cmp(&b.0));
+        assert!(parallel_topological_order(&closed).is_none());
+      }
+    }
+  }
+
+  #[test]
+  fn write_encoded_batches_matches_sequential() {
+    let mut rng = Rng(0xba7c);
+    let encode = |items: &[u64], out: &mut Vec<u8>| -> Result<(), String> {
+      for &x in items {
+        put_u64(x, out);
+        out.extend(std::iter::repeat_n(x as u8, (x % 7) as usize));
+      }
+      Ok(())
+    };
+    for _ in 0..200 {
+      let n = rng.below(3000);
+      let items: Vec<u64> = (0..n).map(|_| rng.next() % 100_000).collect();
+      let batch = 1 + rng.below(700);
+      let task = 1 + rng.below(90);
+      let mut expected = Vec::new();
+      encode(&items, &mut expected).unwrap();
+      let mut out: Vec<u8> = Vec::new();
+      let mut written = 0u64;
+      write_encoded_batches(
+        &mut out,
+        &mut written,
+        &items,
+        batch,
+        task,
+        &encode,
+      )
+      .unwrap();
+      assert_eq!(out, expected);
+      assert_eq!(written as usize, expected.len());
+    }
+    // An encoding error surfaces.
+    let fail = |items: &[u64], _: &mut Vec<u8>| -> Result<(), String> {
+      if items.contains(&7) { Err("seven".into()) } else { Ok(()) }
+    };
+    let items: Vec<u64> = (0..1000).collect();
+    let mut out: Vec<u8> = Vec::new();
+    let mut written = 0u64;
+    let err =
+      write_encoded_batches(&mut out, &mut written, &items, 100, 10, &fail);
+    assert_eq!(err, Err("seven".to_string()));
+  }
+
+  /// `put_file` against `put` on an environment large enough for several
+  /// §4 and §5 batches, with a name table closed under prefixes (the
+  /// compiler's shape, which takes the parallel §4 order).
+  #[test]
+  fn put_file_matches_put_multi_batch() {
+    let mut g = Gen::new(24);
+    let mut rng = Rng(0x5e5);
+    let env = Env::new();
+    let constant = gen_constant(&mut g);
+    let mut bytes = Vec::new();
+    constant.put(&mut bytes);
+    let addr = Address::hash(&bytes);
+    env.store_const(addr.clone(), constant);
+    let names = random_names(&mut rng, NAMES_BATCH + NAMES_BATCH / 2);
+    for (key, name) in name_entries(&names, true) {
+      env.names.insert(key, name);
+    }
+    for name in names.iter().take(2 * NAMED_BATCH + 17) {
+      let mut named = Named::new(addr.clone(), ConstantMeta::default());
+      named.set_hints(Some(ReducibilityHints::Regular(7)));
+      env.named.insert(name.clone(), named);
+    }
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let path = std::env::temp_dir()
+      .join(format!("ixon_put_file_multi_batch_{}.ixe", std::process::id()));
+    let written = env.put_file(&path).unwrap();
+    let from_file = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).ok();
+    assert_eq!(written as usize, from_file.len());
+    assert!(buf == from_file, "put and put_file bytes diverge");
   }
 
   #[test]

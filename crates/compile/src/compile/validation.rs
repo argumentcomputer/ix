@@ -112,7 +112,10 @@ impl Options {
     let max_workers = rayon::current_num_threads().max(1);
     Ok(Self {
       max_workers,
-      initial_workers: max_workers.min(2),
+      // Every worker when the first sample is Healthy (three reserves of
+      // headroom, no reclaim); `coordinate` starts at one otherwise. Excess
+      // attempts are cancelled and retried if pressure appears later.
+      initial_workers: max_workers,
       process_budget: budget,
       tick: Duration::from_millis(250),
       ramp_interval: Duration::from_secs(1),
@@ -445,7 +448,7 @@ where
   }
   if options.verbose {
     eprintln!(
-      "[validate_memory] adaptive admission: initial={} max={} budget_gib={:?}",
+      "[validate_memory] adaptive admission: initial={} if healthy, else 1; max={} budget_gib={:?}",
       options.initial_workers,
       options.max_workers,
       options.process_budget.map(|b| b as f64 / GIB as f64)
@@ -466,7 +469,7 @@ mod tests {
       capacity: 100 * GIB,
       available: 90 * GIB,
       process: 10 * GIB,
-      swap_used: 0,
+      process_swap: 0,
       stall_us: 0,
     }
   }
@@ -544,21 +547,79 @@ mod tests {
       ),
       Pressure::Critical
     );
+    // This process's own pages being swapped out count below four reserves
+    // (50 GiB) of headroom...
+    let moderate = Memory { available: 40 * GIB, ..mem };
+    let second = Duration::from_secs(1);
     assert_eq!(
       pressure(
-        Memory { stall_us: 110_000, ..mem },
-        mem,
-        Duration::from_secs(1),
+        Memory { process_swap: 9 * MIB, ..moderate },
+        moderate,
+        second,
         None
       ),
       Pressure::Backoff
     );
     assert_eq!(
       pressure(
-        Memory { swap_used: 9 * MIB, ..mem },
-        mem,
-        Duration::from_secs(1),
+        Memory { process_swap: 8 * MIB, ..moderate },
+        moderate,
+        second,
         None
+      ),
+      Pressure::Healthy
+    );
+    // ...and above that they are LRU balancing against other workloads.
+    assert_eq!(
+      pressure(Memory { process_swap: GIB, ..mem }, mem, second, None),
+      Pressure::Healthy
+    );
+    // Memory stalls (of a cgroup that may be shared, or of the system) count
+    // only below two reserves (25 GiB), where memory is genuinely short.
+    for (available, stalls, expected) in [
+      (20 * GIB, 110_000, true),
+      (20 * GIB, 90_000, false),
+      (30 * GIB, 1_000_000, false),
+      (40 * GIB, 1_000_000, false),
+      (90 * GIB, 1_000_000, false),
+    ] {
+      let before = Memory { available, ..mem };
+      let after = Memory { stall_us: stalls, ..before };
+      assert_eq!(
+        reclaiming(after, before, second),
+        expected,
+        "{available} {stalls}"
+      );
+    }
+    assert_eq!(
+      pressure(
+        Memory { stall_us: 1_000_000, ..moderate },
+        moderate,
+        second,
+        None
+      ),
+      Pressure::Healthy
+    );
+    // Reclaim is measured against system (or cgroup) headroom, not a budget:
+    // the kernel reclaims when memory is short, not when this process nears
+    // its own soft budget. 40 GiB of budget headroom with 90 GiB available...
+    let budgeted = Memory { process: 60 * GIB, ..mem };
+    assert_eq!(
+      pressure(
+        Memory { process_swap: 9 * MIB, ..budgeted },
+        budgeted,
+        second,
+        Some(100 * GIB)
+      ),
+      Pressure::Healthy
+    );
+    // ...against 40 GiB available, with the budget far away.
+    assert_eq!(
+      pressure(
+        Memory { process_swap: 9 * MIB, ..moderate },
+        moderate,
+        second,
+        Some(1000 * GIB)
       ),
       Pressure::Backoff
     );
@@ -572,7 +633,7 @@ mod tests {
       Pressure::Critical
     );
     // Old swap occupancy is not new pressure.
-    let swapped = Memory { swap_used: 90 * GIB, ..mem };
+    let swapped = Memory { process_swap: 30 * GIB, ..moderate };
     assert_eq!(
       pressure(swapped, swapped, Duration::from_secs(1), None),
       Pressure::Healthy
@@ -587,8 +648,9 @@ mod tests {
     );
     assert_eq!(
       psi_total("some avg10=0 total=999\nfull avg10=0 total=123\n"),
-      123
+      Some(123)
     );
+    assert_eq!(psi_total("some avg10=0 total=999\n"), None);
     let mount = "30 20 0:25 / /sys/fs/cgroup rw - cgroup2 cgroup rw";
     assert_eq!(
       cgroup_dirs("0::/a/b\n", mount),
@@ -638,6 +700,37 @@ mod tests {
     assert_eq!(peak.load(Ordering::SeqCst), 4);
     assert!(calls.iter().all(|n| n.load(Ordering::SeqCst) == 1));
     assert_eq!(live.load(Ordering::SeqCst), 0);
+  }
+
+  #[test]
+  fn healthy_memory_admits_every_worker_without_a_ramp() {
+    let live = AtomicUsize::new(0);
+    let peak = AtomicUsize::new(0);
+    let jobs: Vec<_> = (0..4).collect();
+    // No ramp step can happen within the test: only the start admits four.
+    let opt = Options {
+      initial_workers: 4,
+      ramp_interval: Duration::from_secs(60),
+      ..options(4)
+    };
+    pool(4)
+      .install(|| {
+        run_with(
+          &jobs,
+          &|_: &usize, c: &Checkpoint| {
+            let n = live.fetch_add(1, Ordering::SeqCst) + 1;
+            let _scratch = Scratch { live: &live, dropping: None };
+            peak.fetch_max(n, Ordering::SeqCst);
+            until(|| peak.load(Ordering::SeqCst) == 4);
+            c.visit()?;
+            Ok(())
+          },
+          opt,
+          || Some(healthy()),
+        )
+      })
+      .unwrap();
+    assert_eq!(peak.load(Ordering::SeqCst), 4);
   }
 
   #[test]
@@ -856,7 +949,7 @@ mod tests {
               } else {
                 8 * GIB
               },
-              swap_used: if reclaiming { reads * 9 * MIB } else { 0 },
+              process_swap: if reclaiming { reads * 9 * MIB } else { 0 },
               ..healthy()
             })
           },
