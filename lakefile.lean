@@ -166,20 +166,26 @@ lean_exe «source-contract-tests» where
   root := `Tests.SourceContractMain
   supportInterpreter := true
 
-/-- Focused v3 codec, locality, and cross-language transport checks. -/
-lean_exe «ixon-v3-tests» where
-  root := `Tests.IxonV3Main
+/-- Focused Ixon v4 codec, locality, and cross-language transport checks;
+`--export-fixtures` and `--export-handoff` regenerate the generated fixtures.
+Scratch files live in `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
+lean_exe «ixon-v4-tests» where
+  root := `Tests.IxonV4Main
   moreLinkObjs := #[ix_rs_test]
 
-/-- Regenerate format-specific primitive identities from the installed Lean environment. -/
-lean_exe «ixon-v3-primitives» where
-  root := `Tests.IxonV3Primitives
+/-- Regenerate format-specific primitive identities from the installed Lean
+environment, into `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
+lean_exe «ixon-v4-primitives» where
+  root := `Tests.IxonV4Primitives
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
 end Tests
 
 section Benchmarks
+
+lean_exe «uniform-hard» where
+  root := `Benchmarks.UniformHard
 
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
@@ -227,6 +233,15 @@ lean_exe «bench-lean4lean» where
 
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
+
+lean_exe «lean-sharing-prof» where
+  root := `Benchmarks.LeanSharingProf
+
+/-- Corpus measurement for canonical sharing (`docs/sharing-minimum.md`):
+expands every stored sharing table in an `.ixe`, checks the production
+rebuild and reports subterm, candidate and MSS statistics. -/
+lean_exe «sharing-study» where
+  root := `Benchmarks.SharingStudy
 
 /- Typed TruthMines corpus records: the package catalog, the frozen admission
 spec, fail-closed validation (elaboration-time `run_cmd` gate), and workspace

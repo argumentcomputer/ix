@@ -1,15 +1,14 @@
 module
-public import Tests.Ix.IxonV3
+public import Tests.Ix.IxonV4
 
 public section
-namespace Tests.IxonV3
+namespace Tests.IxonV4
 open Ixon
 
 @[extern "rs_roundtrip_ixon_expr"] opaque roundtripExpr : @& Expr → Expr
 @[extern "rs_roundtrip_ixon_constant"] opaque roundtripConstant : @& Constant → Constant
 @[extern "rs_eq_expr_serialization"] opaque equalExprBytes : @& Expr → @& ByteArray → Bool
 @[extern "rs_eq_constant_serialization"] opaque equalConstantBytes : @& Constant → @& ByteArray → Bool
-@[extern "rs_expr_hash_matches"] opaque equalSharingHash : @& Expr → @& Address → Bool
 
 def runFFI (cases : List ExprCase) : IO Nat := do
   let mut checks := 0
@@ -18,9 +17,7 @@ def runFFI (cases : List ExprCase) : IO Nat := do
       throw <| IO.userError s!"{name}: FFI roundtrip differs"
     unless equalExprBytes expr (runPut (putExpr expr)) do
       throw <| IO.userError s!"{name}: Lean/Rust bytes differ"
-    unless equalSharingHash expr (Ix.Sharing.computeExprHash expr) do
-      throw <| IO.userError s!"{name}: Lean/Rust sharing hash differs"
-    checks := checks + 3
+    checks := checks + 2
   let typ := Expr.all ⟨.linear, .localUnique⟩ .localShared (.sort 0) (.sort 0)
   let value := lambdaTelescope
   let ctor : Constructor := ⟨true, 5, 1, 2, 3, typ⟩
@@ -40,4 +37,4 @@ def runFFI (cases : List ExprCase) : IO Nat := do
     checks := checks + 2
   return checks
 
-end Tests.IxonV3
+end Tests.IxonV4

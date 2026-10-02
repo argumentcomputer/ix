@@ -1,5 +1,5 @@
 module
-public import Tests.Ix.IxonV3
+public import Tests.Ix.IxonV4
 public import Tests.Aiur.Common
 public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
@@ -7,7 +7,7 @@ public import Ix.Resource.Claim
 public import Tests.Ix.ResourceAddressed
 
 public section
-namespace Tests.IxonV3
+namespace Tests.IxonV4
 
 def codecEntrypoints := ⟦
   pub fn ixon_expr_decode() {
@@ -114,18 +114,17 @@ def checkVMProof (env : AiurTestEnv) (fnName : Lean.Name)
   IO.ofExcept (env.aiurSystem.verify claim (Aiur.Proof.ofBytes proof.toBytes))
 
 /-- Every counted decoding path accepts one complete element and rejects a
-short stream when the count is two or the largest canonical UInt64. Each
-truncated stream supplies one element, then ends. The decode-only entrypoints
-ensure rejection happens before reserialization. -/
+short stream when the count is two, 128 (a two-byte TagN count for both
+f = 0 and f = 4) or the largest UInt64 (nine bytes). Each truncated stream
+supplies one element, then ends. The decode-only entrypoints ensure rejection
+happens before reserialization. -/
 def runCountTruncations (env : AiurTestEnv) : IO Nat := do
   let mut checks := 0
-  for count in [1, 2, (2 ^ 64 - 1 : Nat)] do
-    let large := count > 2
+  for count in [1, 2, 128, (2 ^ 64 - 1 : Nat)] do
+    let large := count == 2 ^ 64 - 1
     let accept := count == 1
-    let suffix : Array UInt8 := if large then Array.replicate 8 0xff else #[]
-    let tag0 : ByteArray := .mk ((if large then #[0x87] else #[count.toUInt8]) ++ suffix)
-    let tag4 (flag : UInt8) : ByteArray :=
-      .mk (#[flag * 16 + (if large then 15 else count.toUInt8)] ++ suffix)
+    let tag0 : ByteArray := Ixon.runPut (Ixon.putTagN 0 0 count.toUInt64)
+    let tag4 (flag : UInt8) : ByteArray := Ixon.runPut (Ixon.putTagN 4 flag count.toUInt64)
     let finish (bytes tail : ByteArray) := if accept then bytes ++ tail else bytes
     let countLabel := if large then "max-u64" else toString count
     for (label, bytes) in [
@@ -183,11 +182,25 @@ def runVMClaims : IO Nat := do
     let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees)
     checks := checks + (← checkVMClaim vm name witness true)
     let bytes := Ix.Claim.ser claim
+    -- Positive control: the unchanged bytes, sent through the same
+    -- `replaceClaimBytes` as the mutations below, are accepted. Without it a
+    -- broken replacement would make every mutation pass vacuously.
+    checks := checks + (← checkVMClaim vm s!"{name}-identity"
+      (replaceClaimBytes witness bytes) true)
+    -- Byte 1 is the object format; the circuit accepts exactly
+    -- `Ixon.Env.OBJECT_FORMAT` (4), not the previous format or a later one.
     for (mutation, bad) in [
-        ("trailing", bytes.push 0), ("legacy-version", bytes.set! 1 2),
+        ("trailing", bytes.push 0),
+        ("legacy-version", bytes.set! 1 (Ixon.Env.OBJECT_FORMAT - 1)),
+        ("future-version", bytes.set! 1 (Ixon.Env.OBJECT_FORMAT + 1)),
         ("wrong-validator", bytes.set! 2 255), ("truncated", bytes.extract 0 (bytes.size - 1))] do
       checks := checks + (← checkVMClaim vm s!"{name}-{mutation}"
         (replaceClaimBytes witness bad) false)
+    -- A Catalog claim (the two-byte tag `E8 00`) has no circuit arm: Catalog
+    -- is verified by host or aggregate composition, never by `run_claim`.
+    if name == "check" then
+      checks := checks + (← checkVMClaim vm "catalog-no-arm"
+        (replaceClaimBytes witness (Ix.Claim.ser (.catalog tree.root tree.root none))) false)
   -- Erased typing deliberately accepts a resource-invalid body. The
   -- validator byte keeps that fact separate from resource admission.
   let (escaping, escapingTarget) := Tests.ResourceAddressed.store base
@@ -233,4 +246,4 @@ def runVM (cases : List ExprCase) : IO Nat := do
   -- Execute and prove the actual production claim boundary as well.
   return checks + 2 + (← runVMClaims)
 
-end Tests.IxonV3
+end Tests.IxonV4

@@ -6,6 +6,7 @@ import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
+import Tests.Ix.IxVM.TagN
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -34,7 +35,10 @@ import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
-import Tests.Ix.Sharing
+import Tests.Ix.SharingExact
+import Tests.Ix.SharingUniform
+import Tests.Ix.SharingTiered
+import Tests.Ix.SharingExactFFI
 import Tests.Ix.SourceContract
 import Tests.Ix.SourceContract.ImportCheck
 import Tests.Ix.SourceContract.SyntaxCheck
@@ -101,7 +105,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("commit", Tests.Commit.suite),
   ("canon", [Tests.CanonM.suite]),
   ("keccak", Tests.Keccak.suite),
-  ("sharing", Tests.Sharing.suite),
+  ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
+  ("exact-sharing-ffi", Tests.SharingExactFFI.suite),
   ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
@@ -167,10 +172,12 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 `primarySuites`, but kept as deferred `IO` actions (not `TestSeq`
 values) so their setup — Aiur system builds, STARK proofs — does not
 execute at module initialization for unrelated invocations. All are
-seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
-each). -/
+seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
+about 11 s and the rest 2-4 s each (measured 2026-08-05). -/
 def primaryRunners : List (String × IO UInt32) := [
   ("aiur-rust-syntax", AiurTests.RustSyntax.run),
+  -- The circuit TagN codec against the host codec (about 16 s).
+  ("ixvm-tagn", Tests.Ix.IxVM.TagN.runSuite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -293,8 +300,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 7_189_745_580, got {actual}"
-              (actual = 7_189_745_580))
+              s!"Shard pipeline FFT matches: expected 6_236_673_618, got {actual}"
+              (actual = 6_236_673_618))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) []),

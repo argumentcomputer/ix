@@ -1,10 +1,9 @@
 module
 public import Ix.Ixon
-public import Ix.Sharing
 
 public section
 
-namespace Tests.IxonV3
+namespace Tests.IxonV4
 open Ixon
 
 structure ExprCase where
@@ -27,7 +26,36 @@ def fixtures : List (String × Expr) := [
   ("borrow", .letE (.borrow false .affine) (.sort 0) (.prj 2 1 (.var 1)) (.var 0)),
   ("borrow_nondep", .letE (.borrow true .many) (.sort 0) (.var 1) (.var 0)),
   ("reference", .ref 0 #[]),
-  ("recursion", .recur 2 #[0, 1])
+  ("recursion", .recur 2 #[0, 1]),
+  -- The last and first value of every TagN rung, f = 4 (an expression
+  -- header) and f = 0 (a Ref index); the bytes are derived by hand in the
+  -- fixture file.
+  ("tagn4_rung1_last", .var 7),
+  ("tagn4_rung2_first", .var 8),
+  ("tagn4_rung2_last", .var 1031),
+  ("tagn4_rung3_first", .var 1032),
+  ("tagn4_rung3_last", .var 66567),
+  ("tagn4_rung4_first", .var 66568),
+  ("tagn4_rung4_last", .var 16843783),
+  ("tagn4_rung5_first", .var 16843784),
+  ("tagn4_rung5_last", .var 4311811079),
+  ("tagn4_rung6_first", .var 4311811080),
+  ("tagn4_rung6_last", .var 18446744073709551615),
+  ("tagn0_rung1_last", .ref 127 #[]),
+  ("tagn0_rung2_first", .ref 128 #[]),
+  ("tagn0_rung2_last", .ref 16511 #[]),
+  ("tagn0_rung3_first", .ref 16512 #[]),
+  ("tagn0_rung3_last", .ref 82047 #[]),
+  ("tagn0_rung4_first", .ref 82048 #[]),
+  ("tagn0_rung4_last", .ref 16859263 #[]),
+  ("tagn0_rung5_first", .ref 16859264 #[]),
+  ("tagn0_rung5_last", .ref 4311826559 #[]),
+  ("tagn0_rung6_first", .ref 4311826560 #[]),
+  ("tagn0_rung6_last", .ref 18446744073709551615 #[]),
+  ("app_telescope_8",
+    (List.range 8).reverse.foldl (fun f i => .app f (.var i.toUInt64)) (.var 8)),
+  ("ref_univs_8", .ref 0 #[0, 1, 2, 3, 4, 5, 6, 7]),
+  ("share_rung3", .share 1032)
 ]
 
 def valueContracts : Array ValueContract := #[.unique, .shared, .localUnique, .localShared]
@@ -59,8 +87,12 @@ def modeCases : List ExprCase := Id.run do
 
 /-- Load independent golden bytes once for the Lean, Rust FFI, and VM suites. -/
 def readExprCases : IO (List ExprCase) := do
-  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v3/expressions.txt"
+  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v4/expressions.txt"
   let lines := file.splitOn "\n"
+  -- Every row of the file is a case here (and in the Rust golden test).
+  let rows := lines.filter fun line => !line.isEmpty && !line.startsWith "#"
+  unless rows.length == fixtures.length do
+    throw <| IO.userError s!"expressions.txt has {rows.length} rows, {fixtures.length} cases"
   let golden : List ExprCase ← fixtures.mapM fun (name, expr) => do
     let some line := lines.find? (·.startsWith (name ++ " "))
       | throw <| IO.userError s!"missing fixture {name}"
@@ -94,9 +126,17 @@ def malformedCases : Array (String × ByteArray) := #[
   ("split-lambda-telescope", .mk #[0x81, 0x07, 0x00, 0x81, 0x07, 0x00, 0x10]),
   ("split-forall-telescope", .mk #[0x91, 0x17, 0x00, 0x91, 0x17, 0x00, 0x10]),
   ("reserved-let-flags", .mk #[0xA4, 0x07, 0x00, 0x10, 0x10]),
-  ("nonminimal-variable", .mk #[0x18, 0x00]),
-  ("nonminimal-reference-count", .mk #[0x28, 0x07, 0x00]),
-  ("nonminimal-reference-index", .mk #[0x20, 0x80, 0x00]),
+  -- TagN is bijective, so no integer has a second encoding (the v3
+  -- non-minimal cases `18 00` and `20 80 00` are now `Var(8)` and
+  -- `Ref(128, [])`, and `28 07` heads a 15-universe reference). The integer
+  -- rejections are a missing rung byte, an invalid `f = 0` code, a value
+  -- reaching 2^64, and a count larger than the remaining input. A
+  -- reference header carries its universe count, then the TagN index.
+  ("truncated-variable-rung", .mk #[0x18]),
+  ("truncated-reference-count-rung", .mk #[0x2C, 0x00]),
+  ("invalid-reference-index-code", .mk #[0x20, 0xC4]),
+  ("overflowing-variable", .mk #[0x1F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+  ("oversized-reference-universe-count", .mk #[0x28, 0xFF, 0x00]),
   ("truncated-lambda-telescope", .mk #[0x87, 0x07, 0x00, 0x10]),
   ("truncated-app-telescope", .mk #[0x77, 0x10])
 ]
@@ -121,4 +161,4 @@ def runGolden (cases : List ExprCase) : IO Nat := do
     checks := checks + 1
   return checks
 
-end Tests.IxonV3
+end Tests.IxonV4

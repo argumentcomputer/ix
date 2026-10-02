@@ -6,7 +6,7 @@ public import Tests.Ix.Claim
 
 public section
 
-namespace Tests.ClaimsV3
+namespace Tests.ClaimsV4
 
 def fixtures : Array (String × Ix.Claim) :=
   let a := Address.blake3 "a".toUTF8
@@ -18,29 +18,40 @@ def fixtures : Array (String × Ix.Claim) :=
      ("resource", .resource a b) ]
 
 def fixtureText : String := Id.run do
-  let mut text := "# Ixon v3 claims: name, BLAKE3, canonical bytes\n"
+  let mut text := s!"# Ixon v{Ixon.Env.VERSION} claims: name, BLAKE3, canonical bytes\n"
   for (name, claim) in fixtures do
     text := text ++ s!"{name}\t{Ix.Claim.commit claim}\t{hexOfBytes (Ix.Claim.ser claim)}\n"
   return text
 
 def run : IO Unit := do
-  let expected ← IO.FS.readFile "Tests/Fixtures/ixon-v3/claims.tsv"
-  unless expected == fixtureText do throw <| IO.userError "v3 claim fixture bytes differ"
+  let expected ← IO.FS.readFile "Tests/Fixtures/ixon-v4/claims.tsv"
+  unless expected == fixtureText do
+    throw <| IO.userError "claim fixture differs from its producer; regenerate it with \
+      `lake exe ixon-v4-tests --export-fixtures`"
   for (_, claim) in fixtures do
     let bytes := Ix.Claim.ser claim
-    unless (Ix.Claim.de bytes).toOption == some claim do throw <| IO.userError "v3 claim roundtrip"
+    unless (Ix.Claim.de bytes).toOption == some claim do throw <| IO.userError "claim roundtrip"
     for n in [:bytes.size] do
       unless (Ix.Claim.de (bytes.extract 0 n)).toOption.isNone do
-        throw <| IO.userError "truncated v3 claim accepted"
-    unless (Ix.Claim.de (bytes.push 0)).toOption.isNone do throw <| IO.userError "trailing v3 claim accepted"
+        throw <| IO.userError "truncated claim accepted"
+    unless (Ix.Claim.de (bytes.push 0)).toOption.isNone do throw <| IO.userError "trailing claim accepted"
     let header := if Ix.Claim.variantOf claim >= 8 then 2 else 1
-    unless (Ix.Claim.de (bytes.set! header 2)).toOption.isNone do throw <| IO.userError "legacy claim version accepted"
+    match Ix.Claim.de (bytes.set! header 3) with
+    | .ok _ => throw <| IO.userError "version 3 object format accepted"
+    | .error e =>
+      unless e.startsWith "claim: unsupported object format 3, expected 4" do
+        throw <| IO.userError s!"version 3 object format: unexpected error {e}"
     unless (Ix.Claim.de (bytes.set! (header + 1) 255)).toOption.isNone do throw <| IO.userError "wrong validator accepted"
     let proof : Ixon.Proof := { claim, proof := ⟨#[1, 2, 3]⟩ }
     let proofBytes := Ixon.Proof.ser proof
     let decoded ← IO.ofExcept (Ixon.Proof.de proofBytes)
-    unless decoded.claim == claim && decoded.proof == proof.proof do throw <| IO.userError "v3 proof roundtrip"
+    unless decoded.claim == claim && decoded.proof == proof.proof do throw <| IO.userError "proof roundtrip"
     unless (Ixon.Proof.de (proofBytes.push 0)).toOption.isNone do throw <| IO.userError "trailing proof bytes accepted"
+    -- Every proof variant is below 8 (a one-byte header), so the proof's
+    -- object-format byte is byte 1.
+    unless proofBytes[1]! == Ixon.Env.OBJECT_FORMAT do throw <| IO.userError "proof scope offset"
+    unless (Ixon.Proof.de (proofBytes.set! 1 3)).toOption.isNone do
+      throw <| IO.userError "proof with version 3 object format accepted"
   let (base, unit) := Tests.ResourceAddressed.unitEnv
   let (env, _) := Tests.ResourceAddressed.store base (Tests.ResourceAddressed.identity unit)
   let profile : Ix.Resource.Profile := {}
@@ -52,10 +63,10 @@ def run : IO Unit := do
     (Ix.Resource.checkClaim base profile claim) false
   Tests.ResourceAddressed.check "resource claim binds limits"
     (Ix.Resource.checkClaim env { profile with limits := { steps := 100001 } } claim) false
-  let result ← LSpec.lspecIO (.ofList [("v3 claims", Tests.Claim.suite)]) []
+  let result ← LSpec.lspecIO (.ofList [("claims", Tests.Claim.suite)]) []
   unless result == 0 do throw <| IO.userError "existing claim tests failed"
-  IO.println "V3 claims: fixtures, strict envelopes, proof wrappers, subjects, and profiles passed"
+  IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers, subjects, and profiles passed"
 
-end Tests.ClaimsV3
+end Tests.ClaimsV4
 
 end
