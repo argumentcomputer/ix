@@ -483,7 +483,7 @@ def roots : Array RootAllowance := #[
   -- Compiled component search (`@[csimp]`): the loop of `searchComponents`
   -- runs the area- and closure-local search.
   { root := ``Ix.Sharing.Exact.searchComponents_eq_via,
-    standardAxioms := noChoice },
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.searchComponentsWith_eq_fast,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.Tiered.canonicalTieredCore_select,
@@ -592,7 +592,7 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Exact.propagateCounts_eq_fast,
     standardAxioms := noChoice },
   { root := ``Ix.Sharing.Exact.SCtx.phiE_eq_fast,
-    standardAxioms := noChoice },
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.csBase_eq_fast,
     standardAxioms := noChoice }
 ]
