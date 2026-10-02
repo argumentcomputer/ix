@@ -355,9 +355,11 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 
 ## Audits and fences
 
-The audits are Lean modules that fail elaboration on a violation. They are
-built by the strict standalone package `IxKernel/` (`lake -d IxKernel build
---wfail`, sources from the repository, no dependency beyond the toolchain).
+The audits are Lean modules that fail elaboration on a violation. The core
+kernel and codec audits are built by the strict standalone package `IxKernel/`
+(`lake -d IxKernel build --wfail`, sources from the repository, no dependency
+beyond the toolchain). The projection and block-order audits build in the root
+package, and the model audit builds in `Models/SetTheory`.
 
 | Module | Checks |
 | --- | --- |
@@ -383,7 +385,7 @@ re-records it states why the closure or the statement moved.
 
 `lake run check-kernel [--with-model]` is the gate. In order:
 
-1. the strict `IxKernel` build with every audit;
+1. the strict `IxKernel` build with the core kernel and codec audits;
 2. the host build of the kernel tests (`Tests/Ix/Kernel/{ByteAdmission,
    Reader, CertifiedEntry, Projection, BlockOrder, Codec, ...}`),
    whose `#guard`s run at elaboration;
@@ -578,8 +580,21 @@ completeness), which the changed `Level` files import.
 and `Ix/Kernel/NOTICE` states the origin, the revisions and the changes;
 `Models/SetTheory` carries its own copy for the file it takes from con-leche.
 
-**Builds.** All of `Ix/Kernel` is one library, `IxKernelTree`, in both
-`lakefile.lean` and `IxKernel/lakefile.lean`, for one option:
+**Builds.** `IxKernel/lakefile.lean` owns the certified modules: `IxKernelTree`
+contains `Ix/Kernel`, and `IxKernel` contains the pure address and codec
+modules. The root package depends on `ix-kernel`, and all workspaces reuse
+its artifacts in the repository's `.lake/kernel` directory. The standalone
+build still checks that these sources need only the Lean toolchain.
+
+In the root package, `Ix` is the main library and carries the Rust linkage.
+`IxCertified` owns the BLAKE3-based projection and block-order extensions,
+`IxSharingVerify` owns the sharing proofs, and `KernelEntry` owns the benchmark
+helpers. Their module globs are disjoint from the kernel package and each other.
+The default `IxImports` target contains only `Ix.lean`, so a default build
+follows its imports rather than building every module or proof. The kernel
+fixtures live in the root test library and are all built by `check-kernel`.
+
+`IxKernelTree` has one special option:
 `linter.deprecated` is off, so the con-leche-derived sources, written for
 Lean 4.33.0, build under `--wfail` on 4.34.1 without renaming the deprecated
 `if_pos`/`if_neg`/`dif_pos`/`dif_neg` lemmas they use (2,885 uses in 209

@@ -12,7 +12,7 @@ writer, audits), `Ix.Address.Core`, and the pure Ixon types, codecs and
 their proofs. Data import closures use Lean core and the kernel only (`Lean` only
 at elaboration time, in the kernel's ruled generators); proofs additionally
 use Lean/Std proof tooling.
-The root `ix` package builds the same modules for its host consumers; this
+The root `ix` package depends on this package for its host consumers; this
 package is what the certified gate builds (`lake -d IxKernel build --wfail`),
 so a kernel module that imports anything outside the kernel fails here even
 if it would build inside the root workspace, and it is what
@@ -21,10 +21,13 @@ kernel only. See `docs/kernel.md`. -/
 
 package «ix-kernel» where
   version := v!"0.1.0"
+  -- Keep dependency artifacts with the root workspace's reusable build cache.
+  buildDir := "../.lake/kernel"
+  moreLeancArgs :=
+    if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
-/-- `Ix.Kernel` and every module under `Ix/Kernel/` (as `IxKernelTree` in the
-root `lakefile.lean`), with `linter.deprecated` off for the con-leche-derived
-sources written for Lean 4.33.0. -/
+/-- `Ix.Kernel` and every module under `Ix/Kernel/`, with `linter.deprecated`
+off for the con-leche-derived sources written for Lean 4.33.0. -/
 @[default_target]
 lean_lib IxKernelTree where
   srcDir := ".."
@@ -43,15 +46,3 @@ lean_lib IxKernel where
   globs := #[.one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
     .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.WireCheck, .submodules `Ix.Ixon.Bounded,
     .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit]
-
-/-- Certified fixtures also run without the host package's dependencies: the
-Ixon record fixtures, the codec, and the certified entry's byte admission. -/
-def kernelFixtureRoots : Array Lean.Name := #[
-  `Tests.Ix.Kernel.IxonFixtures, `Tests.Ix.Kernel.Codec,
-  `Tests.Ix.Kernel.ByteAdmission, `Tests.Ix.Kernel.ParserWork]
-
-@[default_target]
-lean_lib KernelFixtures where
-  srcDir := ".."
-  roots := kernelFixtureRoots
-  globs := kernelFixtureRoots.map (fun root => .one root)

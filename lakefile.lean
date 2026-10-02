@@ -18,20 +18,26 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
+require «ix-kernel» from "IxKernel" with
+  if (get_config? profile).isSome then
+    ({} : Lean.NameMap String).insert `profile ""
+  else {}
+
 /-! ## FFI
 
 The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` because different Lean executables need different Cargo features:
 
 - `ix` uses `ix_rs_net` (`parallel,net`) for networking support (iroh).
 - `IxTests` uses `ix_rs_test` (`parallel,test-ffi`) for test-only FFI code.
-- Everything else inherits `ix_rs` (`parallel`, plus opt-in `cuda`) from the
-  `Ix` `lean_lib`.
+- Other application targets inherit `ix_rs` (`parallel`, plus opt-in `cuda`)
+  from the `Ix` `lean_lib`.
 
 The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
 before Cargo overwrites its release archive, then snapshot distinct Lake artifacts.
 The second Cargo build is incremental — only feature-affected crates recompile.
 
-`extern_lib` only runs at link time, so `lake build` on a `lean_lib` alone wouldn't trigger the Cargo build. With `target` + `moreLinkObjs`, the Rust static lib is built during module compilation on the default `Ix` lib, allowing Lake to conditional compile the Rust lib per build target.
+The archives are built when native targets need them. Keeping Rust linkage on
+`Ix` keeps `ix_rs` out of the certified kernel's build.
 -/
 section FFI
 
@@ -107,18 +113,50 @@ end FFI
 lean_lib MultiStark where
   moreLinkObjs := #[ix_rs]
 
-/-- `lake build -K profile` compiles with frame pointers, so `perf` can unwind
+/-- `lake -R -Kprofile build` compiles with frame pointers, so `perf` can unwind
 call graphs through generated C (LBR and DWARF unwinding are unavailable on
 the benchmark machines). The default build is unaffected. -/
 def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
-@[default_target]
+/-- Namespace roots of the main Ix library. Explicit globs keep these modules
+separate from the certified libraries and their dependencies. -/
+def ixRoots : Array Lean.Name :=
+  #[`Ix.Aggr, `Ix.Aiur, `Ix.AssumptionTree, `Ix.BenchConstants,
+    `Ix.CallSitePlan, `Ix.CallSiteSurgery, `Ix.CanonM, `Ix.Catalog, `Ix.Check,
+    `Ix.Claim, `Ix.Commit, `Ix.Common, `Ix.CompileDriver, `Ix.CompileM,
+    `Ix.CondenseM, `Ix.Cronos, `Ix.DecompileDriver, `Ix.DecompileM,
+    `Ix.DecompileRoundtrip, `Ix.EnvScope, `Ix.Environment, `Ix.GraphM,
+    `Ix.Ground, `Ix.ImportIxe, `Ix.IndexMap, `Ix.IxEval, `Ix.IxVM,
+    `Ix.IxonContract, `Ix.IxonSyntax, `Ix.IxonUniv, `Ix.Keccak,
+    `Ix.KernelCheck, `Ix.Lib, `Ix.Merkle, `Ix.Meta, `Ix.Mutual, `Ix.Replay,
+    `Ix.SOrder, `Ix.SemanticContract, `Ix.ShardMap, `Ix.Sharing.Exact, `Ix.SmallMap,
+    `Ix.Store, `Ix.Tc, `Ix.TracingTexray, `Ix.UnionFind, `Ix.Unsigned,
+    `Ix.Watchdog]
+
 lean_lib Ix where
+  roots := ixRoots
+  globs := ixRoots.map .one ++ #[.one `Ix.Address, .one `Ix.Ixon] ++
+    (#[`Ix.AuxGen, `Ix.Benchmark, `Ix.Cli, `Ix.Compile, `Ix.Iroh,
+      `Ix.Resource, `Ix.Shard].map .submodules)
   moreLinkObjs := #[ix_rs]
   moreLeancArgs := profileLeancArgs
   -- disabled because it breaks the binary
   --precompileModules := true
+
+/-- The public umbrella builds only its import closure by default. -/
+@[default_target]
+lean_lib IxImports where
+  roots := #[]
+  globs := #[.one `Ix]
+  moreLeancArgs := profileLeancArgs
+
+/-- Certified extensions that compute projection addresses with pure BLAKE3. -/
+lean_lib IxCertified where
+  roots := #[]
+  globs := #[.one `Ix.Address.Pure, .one `Ix.Ixon.ReduceUniverse,
+    .andSubmodules `Ix.Ixon.Projection, .andSubmodules `Ix.Ixon.BlockOrder]
+  moreLeancArgs := profileLeancArgs
 
 lean_exe ix where
   root := `Main
@@ -301,30 +339,12 @@ script "build-all" (args) := do
 
 end Scripts
 
-section IxKernelTree
-
-/- `Ix.Kernel` and every module under `Ix/Kernel/`, as a library of its own for
-one option: `linter.deprecated` is off, so the con-leche-derived sources,
-written for Lean 4.33.0, build under `--wfail` on 4.34.1 without renaming the
-deprecated `if_pos`/`if_neg`/`dif_pos`/`dif_neg` lemmas they use (Lake options
-are per library). Lake gives a module to the last-declared library that can
-build it, and `Ix` (above) can build every `Ix.*` module, so this library stays
-below `Ix`. Not a default target; `IxKernel/lakefile.lean` declares the same
-library. -/
-lean_lib IxKernelTree where
-  roots := #[`Ix.Kernel]
-  globs := #[.andSubmodules `Ix.Kernel]
-  leanOptions := #[⟨`linter.deprecated, false⟩]
-
-end IxKernelTree
-
 section IxSharingVerify
 
 /- Proofs of the canonical sharing construction (`Ix.Sharing.Exact`) and their
 audits: `Ix.Sharing.Verify` and every module under `Ix/Sharing/Verify/`. Not a
-default target; `lake lint` builds it. Declared below `Ix` for the reason given
-at `IxKernelTree`: `Ix` can build every `Ix.*` module, and the last-declared
-library that can build a module owns it. -/
+default target; `lake lint` builds it. The runtime modules under
+`Ix.Sharing.Exact` belong to `Ix`. -/
 lean_lib IxSharingVerify where
   roots := #[`Ix.Sharing.Verify]
   globs := #[.andSubmodules `Ix.Sharing.Verify]
@@ -333,12 +353,9 @@ end IxSharingVerify
 
 section IxKernel
 
-/- The certified kernel, `Ix.Kernel`, lives in this repository's `Ix/` tree but
-is built for certification by the separate `IxKernel/` package, which reads the
-same sources with no dependencies beyond the Lean toolchain:
-`lake -d IxKernel build --wfail` is the strict gate. The root package builds the
-same modules for its host consumers through the `Ix` library. See
-`docs/kernel.md`. -/
+/- The `ix-kernel` dependency owns the certified modules and their artifacts.
+`lake -d IxKernel build --wfail` checks them without host dependencies;
+the host tests below consume that same package. See `docs/kernel.md`. -/
 
 /-- The kernel's fences, derived from con-leche's (`Tests/Ix/Kernel/{Layering,
 TrustSurface}.lean`, over the layout of `Tests/Ix/Kernel/KernelLayout.lean`):
@@ -382,11 +399,9 @@ lean_exe «kernel-reader-fidelity» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
-/-- The verified checker through the Ixon reader: the `checkBytes`-shaped
-entry and its per-constant check (untrusted). -/
+/-- The certified checker's benchmark drivers and reporting helpers. -/
 lean_lib KernelEntry where
-  roots := #[`Ix.Kernel.Admission, `Ix.Kernel.Admission.Theorems,
-    `Benchmarks.Kernel.CheckIxeStep,
+  roots := #[`Benchmarks.Kernel.CheckIxeStep,
     `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxeStream, `Benchmarks.Kernel.CheckIxePool,
     `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold,
     `Benchmarks.Kernel.CheckIxeGuarded, `Benchmarks.Kernel.CheckIxeRows,
