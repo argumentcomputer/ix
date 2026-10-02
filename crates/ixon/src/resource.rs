@@ -183,6 +183,12 @@ struct Value {
   duplicable: bool,
   place: Option<usize>,
   loan_root: Option<usize>,
+  /// A unique value of a plain-data type (an inductive type whose
+  /// constructors all have default contracts). It may enter a shared
+  /// position as its last use: the freeze moves its owner, so the value is
+  /// never used again as unique or otherwise. Never set for functions or
+  /// abstract types.
+  freezable: bool,
 }
 impl Value {
   fn shared(typ: Term) -> Self {
@@ -193,6 +199,7 @@ impl Value {
       duplicable: true,
       place: None,
       loan_root: None,
+      freezable: false,
     }
   }
   fn fresh(typ: Term) -> Self {
@@ -477,11 +484,17 @@ impl<'a> Checker<'a> {
     if required.owned == Owned::Unique && v.owned != Owned::Unique {
       return Err(Error::SharedToUnique);
     }
-    if required.owned == Owned::Shared && !v.duplicable {
+    // A non-duplicable value cannot become shared, except a freezable unique
+    // value, whose owner the freeze moves (its last use).
+    let freeze = required.owned == Owned::Shared && !v.duplicable;
+    if freeze && !(v.owned == Owned::Unique && v.freezable) {
       return Err(Error::Nonduplicable);
     }
-    v.owned = required.owned;
+    v.owned = if freeze { Owned::Unique } else { required.owned };
     v = self.materialize(v)?;
+    v.owned = required.owned;
+    v.duplicable |= freeze;
+    v.freezable &= !freeze;
     if required.locality == Locality::Local {
       v.origins = union(&v.origins, &[destination]);
     }
@@ -947,6 +960,7 @@ impl<'a> Checker<'a> {
         let typ = self.field_type(fuel, &f, &v.typ, projected)?;
         v.duplicable =
           f.contract.owned == Owned::Shared || self.is_shareable(fuel, &typ)?;
+        v.freezable = false;
         v.typ = typ;
         if v.owned != Owned::Unique || f.contract.owned != Owned::Unique {
           v.owned = Owned::Shared;
@@ -1031,6 +1045,7 @@ impl<'a> Checker<'a> {
       },
     }
   }
+  #[allow(clippy::too_many_arguments)]
   fn ordinary_call(
     &mut self,
     fuel: usize,
@@ -1039,6 +1054,7 @@ impl<'a> Checker<'a> {
     a: &Term,
     destination: usize,
     grade: Uses,
+    fresh: bool,
   ) -> Result<Value, Error> {
     let fn_type = self.type_of(fuel, ctx, f)?;
     let (input, result, domain, codomain) = self.arrow(fuel, &fn_type)?;
@@ -1060,9 +1076,14 @@ impl<'a> Checker<'a> {
     } else {
       vec![]
     };
-    let duplicable =
-      result.owned == Owned::Shared || self.is_shareable(fuel, &typ)?;
-    Ok(Value { owned: result.owned, origins, duplicable, ..Value::shared(typ) })
+    let owned = if fresh { Owned::Unique } else { result.owned };
+    let duplicable = owned == Owned::Shared || self.is_shareable(fuel, &typ)?;
+    let freezable = if owned == Owned::Unique && !duplicable {
+      self.plain_data(fuel, &typ)?
+    } else {
+      false
+    };
+    Ok(Value { owned, origins, duplicable, freezable, ..Value::shared(typ) })
   }
   /// The interface callers see: an admitted interface, or the declared type.
   fn interface_type(&self, index: u64) -> Result<Term, Error> {
@@ -1122,6 +1143,58 @@ impl<'a> Checker<'a> {
       Expr::Prj(_, _, v) => self.plain(fuel, v)?,
       _ => true,
     })
+  }
+  /// The head constant of a type's final codomain.
+  fn result_head(
+    &mut self,
+    fuel: usize,
+    typ: &Term,
+  ) -> Result<Option<u64>, Error> {
+    let fuel = fuel.checked_sub(1).ok_or(Error::Budget)?;
+    let reduced = self.whnf(fuel, typ)?;
+    if let Expr::All(_, _, _, body) = reduced.as_ref() {
+      return self.result_head(fuel, body);
+    }
+    let (head, _) = self.split_app(fuel, &reduced)?;
+    Ok(match head.as_ref() {
+      Expr::Ref(i, _) => Some(*i),
+      _ => None,
+    })
+  }
+  /// Whether a type is plain data: an inductive type of an addressed block
+  /// whose constructors all carry only default contracts, so that a value of
+  /// it holds nothing finite-use or unique. Functions, type parameters and
+  /// types without a known block are not.
+  fn plain_data(&mut self, fuel: usize, typ: &Term) -> Result<bool, Error> {
+    let reduced = self.whnf(fuel, typ)?;
+    let (head, _) = self.split_app(fuel, &reduced)?;
+    let Expr::Ref(t, _) = head.as_ref() else { return Ok(false) };
+    let Some(d) =
+      usize::try_from(*t).ok().and_then(|i| self.program.declarations.get(i))
+    else {
+      return Ok(false);
+    };
+    if d.kind != DeclKind::TypeConstructor {
+      return Ok(false);
+    }
+    let index = usize::try_from(*t).unwrap_or(usize::MAX);
+    let Some(group) =
+      self.program.groups.iter().find(|g| g.contains(&index)).cloned()
+    else {
+      return Ok(false);
+    };
+    for c in group {
+      let Some(cd) = self.program.declarations.get(c).cloned() else {
+        return Ok(false);
+      };
+      if cd.kind == DeclKind::Constructor
+        && self.result_head(fuel, &cd.typ)? == Some(*t)
+        && !self.plain(fuel, &cd.typ)?
+      {
+        return Ok(false);
+      }
+    }
+    Ok(true)
   }
   /// Whether variable `index` occurs in `e`.
   fn occurs(
@@ -1391,6 +1464,7 @@ impl<'a> Checker<'a> {
       },
       origins: union(&a.origins, &b.origins),
       duplicable: a.duplicable && b.duplicable,
+      freezable: a.freezable && b.freezable,
       place: if a.place == b.place { a.place } else { None },
       loan_root: if a.loan_root == b.loan_root { a.loan_root } else { None },
     }
@@ -1771,7 +1845,17 @@ impl<'a> Checker<'a> {
             "selection primitives cannot escape as function values",
           ));
         }
-        Value::shared(self.interface_type(*i)?)
+        let d = self.declaration(*i)?.clone();
+        let typ = self.interface_type(*i)?;
+        // A nullary constructor is a fresh value: unique.
+        if d.kind == DeclKind::Constructor && self.arity(fuel, &d.typ)? == 0 {
+          let duplicable = self.is_shareable(fuel, &typ)?;
+          let freezable =
+            if duplicable { false } else { self.plain_data(fuel, &typ)? };
+          Value { duplicable, freezable, ..Value::fresh(typ) }
+        } else {
+          Value::shared(typ)
+        }
       },
       Expr::Rec(..) => {
         return Err(Error::Unsupported("unresolved recursive reference"));
@@ -1802,11 +1886,17 @@ impl<'a> Checker<'a> {
         let body_scope = self.scope(caller_scope)?;
         let duplicable = input.value.owned == Owned::Shared
           || self.is_shareable(fuel, domain)?;
+        let freezable = if input.value.owned == Owned::Unique && !duplicable {
+          self.plain_data(fuel, domain)?
+        } else {
+          false
+        };
         let parameter = self.push(
           *input,
           Value {
             owned: input.value.owned,
             duplicable,
+            freezable,
             origins: if input.value.locality == Locality::Local {
               vec![caller_scope]
             } else {
@@ -1900,7 +1990,7 @@ impl<'a> Checker<'a> {
             }
             let mut v = self.place(fuel, ctx, initializer)?;
             self.require_type(fuel, &v.typ, typ)?;
-            if !self.is_shareable(fuel, typ)? && !v.duplicable {
+            if !self.is_shareable(fuel, typ)? && !v.duplicable && !v.freezable {
               return Err(Error::Nonduplicable);
             }
             let owner_place = v.place.ok_or(Error::InvalidPlace)?;
@@ -1944,6 +2034,7 @@ impl<'a> Checker<'a> {
         let typ = self.field_type(fuel, &field, &v.typ, value)?;
         v.duplicable = field.contract.owned == Owned::Shared
           || self.is_shareable(fuel, &typ)?;
+        v.freezable = false;
         v.typ = typ;
         if v.owned != Owned::Unique || field.contract.owned != Owned::Unique {
           v.owned = Owned::Shared;
@@ -1952,6 +2043,16 @@ impl<'a> Checker<'a> {
       },
       Expr::App(f, a) => {
         let (head, args) = self.split_app(fuel, e)?;
+        // A fully applied constructor allocates a fresh value: unique,
+        // whatever its declared result contract.
+        let fresh = match head.as_ref() {
+          Expr::Ref(i, _) => {
+            let d = self.declaration(*i)?.clone();
+            d.kind == DeclKind::Constructor
+              && args.len() == self.arity(fuel, &d.typ)?
+          },
+          _ => false,
+        };
         match head.as_ref() {
           Expr::Ref(i, _) if self.program.choices.contains(i) => {
             self.choice(fuel, ctx, *i, &args, &expected, destination, grade)?
@@ -1970,9 +2071,15 @@ impl<'a> Checker<'a> {
                 destination,
                 grade,
               )?,
-              Some(_) => {
-                self.ordinary_call(fuel, ctx, f, a, destination, grade)?
-              },
+              Some(_) => self.ordinary_call(
+                fuel,
+                ctx,
+                f,
+                a,
+                destination,
+                grade,
+                fresh,
+              )?,
               None => match self.case_wrapper(fuel, 4, *i)? {
                 Some(n) if args.len() >= n => {
                   // A wrapper around a case split or a choice is unfolded.
@@ -1989,12 +2096,26 @@ impl<'a> Checker<'a> {
                         grade,
                       )?
                     },
-                    None => {
-                      self.ordinary_call(fuel, ctx, f, a, destination, grade)?
-                    },
+                    None => self.ordinary_call(
+                      fuel,
+                      ctx,
+                      f,
+                      a,
+                      destination,
+                      grade,
+                      fresh,
+                    )?,
                   }
                 },
-                _ => self.ordinary_call(fuel, ctx, f, a, destination, grade)?,
+                _ => self.ordinary_call(
+                  fuel,
+                  ctx,
+                  f,
+                  a,
+                  destination,
+                  grade,
+                  fresh,
+                )?,
               },
             }
           },
@@ -2009,7 +2130,9 @@ impl<'a> Checker<'a> {
               grade,
             )?
           },
-          _ => self.ordinary_call(fuel, ctx, f, a, destination, grade)?,
+          _ => {
+            self.ordinary_call(fuel, ctx, f, a, destination, grade, fresh)?
+          },
         }
       },
     };
@@ -2914,6 +3037,21 @@ mod tests {
     p.eq_type = Some(33);
     p.equations = vec![(35, 34)];
     p
+  }
+
+  /// The case program with `Box` as an addressed block, so that it is plain
+  /// data. Mirrors `Tests.Resource.freezeProgram`.
+  fn freeze_program() -> Program {
+    let mut p = cases_program();
+    p.groups = vec![vec![21, 22, 23]];
+    p
+  }
+
+  #[test]
+  fn freeze_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-freeze.tsv");
+    assert!(run_fixture_lines(&freeze_program(), text) >= 9);
   }
 
   #[test]

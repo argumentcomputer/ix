@@ -1,0 +1,12 @@
+# name	expected	type (ixon-v4 hex)	body (ixon-v4 hex)
+# Cases over Tests.Resource.freezeProgram (Rust: freeze_program): Box is an
+# addressed block, so plain data; freezing, fresh constructors, borrowing.
+a unique plain value may be shared as its last use	ok	911320152015	8103201510
+a frozen value cannot be used again	moved	911320152015	81032015a00620151011
+a frozen value cannot be moved as unique	moved	910320152015	81032015a00620151011
+a unique value of an abstract type is not frozen	capture	9113200b200b	8103200b10
+a fresh constructor result is unique	ok	9107200b2015	8107200b71201710
+a fresh nullary constructor is unique	ok	9107200b2015	8107200b2016
+a constructor as a function value is not fresh	ownership	9207200b17200b2015	8107200b2017
+a plain-data owner may be borrowed	ok	910120152015	81012015a006200ba20f201510201e11
+a borrowed plain-data owner cannot move during the loan	loan	910120152015	81012015a20f20151011

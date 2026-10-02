@@ -58,6 +58,11 @@ structure Value where
   place : Option OwnerId := none
   /-- Shared views keep the identity of their root owner through aliases. -/
   loanRoot : Option OwnerId := none
+  /-- A unique value of a plain-data type (an inductive type whose
+  constructors all have default contracts). It may enter a shared position
+  as its last use: the freeze moves its owner, so the value is never used
+  again as unique or otherwise. Never set for functions or abstract types. -/
+  freezable : Bool := false
   deriving BEq, Repr, Inhabited
 
 structure Owner where
@@ -203,9 +208,16 @@ def consumeAs (required : ValueContract) (destination : ScopeId) (v : Value) :
   | .local => liftExcept (checkOrigins parents v.origins destination)
   if required.owned == .unique && v.owned != .unique then
     throw .sharedToUnique
-  if required.owned == .shared && !v.duplicable then
+  -- A non-duplicable value cannot become shared, except a freezable unique
+  -- value, whose owner the freeze moves (its last use).
+  let freeze := required.owned == .shared && !v.duplicable
+  if freeze && !(v.owned == .unique && v.freezable) then
     throw .nonduplicable
-  let v ← materialize { v with owned := required.owned }
+  let v ← materialize { v with owned := if freeze then .unique else required.owned }
+  let v := { v with
+    owned := required.owned
+    duplicable := v.duplicable || freeze
+    freezable := v.freezable && !freeze }
   let origins := match required.locality with
     | .unrestricted => v.origins
     | .local => unionOrigins v.origins [destination]
@@ -237,6 +249,7 @@ def joinValue (left right : Value) : Value :=
     owned := if left.owned == .unique && right.owned == .unique then .unique else .shared
     origins := unionOrigins left.origins right.origins
     duplicable := left.duplicable && right.duplicable
+    freezable := left.freezable && right.freezable
     place := if left.place == right.place then left.place else none
     loanRoot := if left.loanRoot == right.loanRoot then left.loanRoot else none }
 

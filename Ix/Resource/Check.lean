@@ -340,6 +340,7 @@ def place (ctx : Context) : Nat → Ixon.Expr → CheckM Value
       return { value with
         type
         duplicable
+        freezable := false
         owned := if value.owned == .unique && field.contract.owned == .unique then .unique else .shared }
     | _ => throw .invalidPlace
 
@@ -477,6 +478,35 @@ def plain (program : Program) : Nat → Ixon.Expr → CheckM Bool
         (← plain program fuel v) && (← plain program fuel b)
     | .prj _ _ v => plain program fuel v
     | _ => return true
+
+/-- The head constant of a type's final codomain. -/
+def resultHead (program : Program) : Nat → Ixon.Expr → CheckM (Option UInt64)
+  | 0, _ => throw .budget
+  | fuel + 1, type => do
+    match ← whnf program fuel type with
+    | .all _ _ _ body => resultHead program fuel body
+    | other =>
+      let (head, _) ← splitApp program fuel other []
+      match head with
+      | .ref i _ => pure (some i)
+      | _ => pure none
+
+/-- Whether a type is plain data: an inductive type of an addressed block whose
+constructors all carry only default contracts, so that a value of it holds
+nothing finite-use or unique. Functions, type parameters and types without a
+known block are not. -/
+def plainData (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Bool := do
+  let (head, _) ← splitApp program fuel (← whnf program fuel type) []
+  let .ref t _ := head | return false
+  let some d := program.declarations[t.toNat]? | return false
+  unless d.kind == .typeConstructor do return false
+  let some group := program.groups.find? (·.contains t.toNat) | return false
+  for c in group do
+    let some cd := program.declarations[c]? | return false
+    if cd.kind == .constructor then
+      if (← resultHead program fuel cd.type) == some t then
+        unless ← plain program fuel cd.type do return false
+  return true
 
 /-- Whether variable `index` occurs in `e`. -/
 def occurs (program : Program) : Nat → Ixon.Expr → Nat → CheckM Bool
@@ -666,7 +696,14 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
       | .ref idx _ =>
         if ctx.program.choices.contains idx then
           throw (.unsupported "selection primitives cannot escape as function values")
-        pure { type := ← interfaceType ctx.program idx }
+        let d ← declaration ctx.program idx
+        let type ← interfaceType ctx.program idx
+        -- A nullary constructor is a fresh value: unique.
+        if d.kind == .constructor && (← arity ctx.program fuel d.type) == 0 then
+          let duplicable ← isShareable ctx.program fuel type
+          let freezable ← if duplicable then pure false else plainData ctx.program fuel type
+          pure { type, owned := .unique, duplicable, freezable }
+        else pure { type }
       | .recur .. => throw (.unsupported "unresolved recursive reference")
       | .sort _ | .all .. => pure { type := .sort 0, owned := .unique }
       | .nat _ => pure { type := ← literalType ctx.program.natType, owned := .unique }
@@ -688,11 +725,15 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         let origins := if input.value.locality == .local then [callerScope] else []
         let duplicable ← if input.value.owned == .shared then pure true
           else isShareable ctx.program fuel domain
+        let freezable ← if input.value.owned == .unique && !duplicable then
+            plainData ctx.program fuel domain
+          else pure false
         let parameter ← pushBinding input {
           type := domain
           owned := input.value.owned
           origins
-          duplicable }
+          duplicable
+          freezable }
         let bodyCtx := { ctx with vars := ctx.vars.push parameter, scope := bodyScope }
         let bodyExpected := codomain.map (fun ty => (ty, result))
         let output ← analyze fuel bodyCtx body bodyExpected callerScope .linear
@@ -746,7 +787,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             if contract.binder.value != .localShared then throw .invalidBorrow
             let v ← place ctx fuel initializer
             requireType ctx.program fuel v.type type
-            if !(← isShareable ctx.program fuel type) && !v.duplicable then throw .nonduplicable
+            if !(← isShareable ctx.program fuel type) && !v.duplicable && !v.freezable then
+              throw .nonduplicable
             let some ownerPlace := v.place | throw .invalidPlace
             let root := v.loanRoot.getD ownerPlace
             let b ← binding root
@@ -778,8 +820,19 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         pure { value with
           type
           duplicable
+          freezable := false
           owned := if value.owned == .unique && field.contract.owned == .unique then .unique else .shared }
       | .app fn arg => do
+        let (head, arguments) ← splitApp ctx.program fuel e []
+        let args := arguments.toArray
+        -- A fully applied constructor allocates a fresh value: unique,
+        -- whatever its declared result contract.
+        let fresh ← match head with
+          | .ref index _ => do
+            let d ← declaration ctx.program index
+            if d.kind == .constructor then pure (args.size == (← arity ctx.program fuel d.type))
+            else pure false
+          | _ => pure false
         let ordinary : CheckM Value := do
           let fnType ← typeOf fuel ctx fn
           let (input, result, domain, codomain) ← arrow ctx.program fuel fnType
@@ -800,15 +853,17 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           let type ← substitute ctx.program fuel codomain arg 0
           let origins := if result.locality == .local then
             unionOrigins (unionOrigins fnValue.origins argValue.origins) [callScope] else []
-          let duplicable ← if result.owned == .shared then pure true
+          let owned := if fresh then .unique else result.owned
+          let duplicable ← if owned == .shared then pure true
             else isShareable ctx.program fuel type
+          let freezable ← if owned == .unique && !duplicable then plainData ctx.program fuel type
+            else pure false
           pure {
             type
-            owned := result.owned
+            owned
             origins
-            duplicable }
-        let (head, arguments) ← splitApp ctx.program fuel e []
-        let args := arguments.toArray
+            duplicable
+            freezable }
         -- Analyze alternatives from the same state and join them. Each
         -- alternative first binds the values the primitive supplies to it
         -- (one per flag in its array; `true` marks an induction hypothesis,

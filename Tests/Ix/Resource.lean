@@ -493,6 +493,34 @@ def equationCases : Array Case := #[
     lam (b .erased) (ref 30) resTy, "usage"⟩
 ]
 
+/-- The case program with `Box` as an addressed block (type and
+constructors), so that it is plain data. Mirrors the Rust `freeze_program`. -/
+def freezeProgram : Program := { casesProgram with groups := #[#[21, 22, 23]] }
+
+def freezeCases : Array Case := #[
+  -- Freeze: a unique plain value enters a shared position as its last use.
+  ⟨"a unique plain value may be shared as its last use", arr (b .many .unique) .shared boxTy boxTy,
+    lam (b .many .unique) (v 0) boxTy, "ok"⟩,
+  ⟨"a frozen value cannot be used again", arr (b .many .unique) .shared boxTy boxTy,
+    lam (b .many .unique) (bind (b .affine) (v 0) (v 1) boxTy) boxTy, "moved"⟩,
+  ⟨"a frozen value cannot be moved as unique", arr (b .many .unique) .unique boxTy boxTy,
+    lam (b .many .unique) (bind (b .affine) (v 0) (v 1) boxTy) boxTy, "moved"⟩,
+  ⟨"a unique value of an abstract type is not frozen", arr (b .many .unique) .shared resTy resTy,
+    lam (b .many .unique) (v 0) resTy, "capture"⟩,
+  -- Fresh constructor results are unique.
+  ⟨"a fresh constructor result is unique", arr (b .many) .unique resTy boxTy,
+    lam (b .many) (call 23 (v 0)) resTy, "ok"⟩,
+  ⟨"a fresh nullary constructor is unique", arr (b .many) .unique resTy boxTy,
+    lam (b .many) (ref 22) resTy, "ok"⟩,
+  ⟨"a constructor as a function value is not fresh", arr (b .many) .unique resTy (arr (b .many) .shared resTy boxTy),
+    lam (b .many) (ref 23) resTy, "ownership"⟩,
+  -- Plain-data owners can be borrowed.
+  ⟨"a plain-data owner may be borrowed", arr (b .linear .unique) .unique boxTy boxTy,
+    lam (b .linear .unique) (bind (b .affine) (borrow (v 0) (ref 30) .many boxTy) (v 1) resTy) boxTy, "ok"⟩,
+  ⟨"a borrowed plain-data owner cannot move during the loan", arr (b .linear .unique) .unique boxTy boxTy,
+    lam (b .linear .unique) (borrow (v 0) (v 1) .many boxTy) boxTy, "loan"⟩
+]
+
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=
   let p := { base with declarations := base.declarations.push { type, body := some value } }
   checkDefinition p base.declarations.size limits
@@ -520,7 +548,8 @@ def runFixtureCases : IO Nat := do
   let modes ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-modes.tsv" modesProgram modeCases
   let cases ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-cases.tsv" casesProgram caseCases
   let equations ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-equations.tsv" equationsProgram equationCases
-  return base + modes + cases + equations
+  let freeze ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-freeze.tsv" freezeProgram freezeCases
+  return base + modes + cases + equations + freeze
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

@@ -70,6 +70,18 @@ live, unique, and no loans. Permanent sharing clears uniqueness. Ending a
 loan removes that loan and preserves both the liveness and sharing state.
 A branch join preserves availability only when every incoming path does.
 
+A unique value of a *plain-data* type — an inductive type of an addressed
+block whose constructors all carry only default contracts, so that the value
+holds nothing finite-use or unique — may enter a shared position as its last
+use (a *freeze*): the owner is moved, so any later use, unique or shared, is
+rejected. A pair `(xs, xs)` of a unique list is therefore still rejected (the
+second use finds the owner moved). Functions, type parameters and abstract
+types never freeze. A fully applied constructor allocates a fresh value, which
+is unique whatever the constructor's declared result contract; a consumer
+must not substitute a shared static object for it. A plain-data owner may be
+borrowed: the loan suspends it as it does a shareable one, and the view's
+origins keep it inside the loan.
+
 Constructing a closure transfers captured unique owners. That transfer counts
 even when the closure's body only borrows the captured owner. A reusable shared
 closure cannot hide a finite-use or uniquely consumed capture, unless the
@@ -276,8 +288,9 @@ allocation behavior.
 [Shared resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
 accepted and rejected terms in both implementations; `resource-modes.tsv`
 covers usage crossing, proofs and open field rules, `resource-cases.tsv`
-case splits, case wrappers, beta-redexes and choices, and
-`resource-equations.tsv` checking through unfolding equations. The suites also cover
+case splits, case wrappers, beta-redexes and choices,
+`resource-equations.tsv` checking through unfolding equations, and
+`resource-freeze.tsv` freezing, fresh constructors and plain-data borrows. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.
