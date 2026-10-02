@@ -182,7 +182,7 @@ theorem reachLabels_allows {dag : Dag} (hwf : DagWF dag) (opq : Nat → Bool)
       refine ⟨(dag.node y).child k, ?_, ?_⟩
       · rw [child_eq_getElem _ k (by omega)]
         exact Array.mem_toList_iff.mpr (Array.getElem_mem _)
-      · rw [if_pos hO, hℓ]; exact Or.inr rfl
+      · rw [ite_eq_left hO, hℓ]; exact Or.inr rfl
     · right
       have har := hwf.arity y hy
       rw [← dag_node_eq hy] at har
@@ -191,7 +191,7 @@ theorem reachLabels_allows {dag : Dag} (hwf : DagWF dag) (opq : Nat → Bool)
       refine ⟨(dag.node y).child k, ?_, ?_⟩
       · rw [child_eq_getElem _ k (by omega)]
         exact Array.mem_toList_iff.mpr (Array.getElem_mem _)
-      · rw [if_neg (by simp [hO])]
+      · rw [ite_eq_right (by simp [hO])]
         exact ih _ hlt (by omega) v hc ℓ hℓ
 
 /-- **Checked separation.** If the check passes, every listed term carries a
@@ -327,8 +327,8 @@ theorem setBang_getElem!_le {a a' : Array Nat} {t v v' : Nat} (u : Nat)
     (a.set! t v)[u]! ≤ (a'.set! t v')[u]! := by
   rw [Ix.Sharing.Verify.SharingExact.setBang_getElem!, Ix.Sharing.Verify.SharingExact.setBang_getElem!]
   by_cases h : t = u ∧ t < a.size
-  · rw [if_pos h, if_pos ⟨h.1, hs ▸ h.2⟩]; exact hv
-  · rw [if_neg h, if_neg (fun h' => h ⟨h'.1, hs ▸ h'.2⟩)]; exact hle
+  · rw [ite_eq_left h, ite_eq_left ⟨h.1, hs ▸ h.2⟩]; exact hv
+  · rw [ite_eq_right h, ite_eq_right (fun h' => h ⟨h'.1, hs ▸ h'.2⟩)]; exact hle
 
 /-- Fields of equal sizes. -/
 def BSize (b : UBounds) (n : Nat) : Prop :=
@@ -400,7 +400,7 @@ theorem uniformBounds_antitone (p : Prep) (w : Nat) {ms ms' : Array Bool}
 
 theorem setBang_self {α : Type} [Inhabited α] (a : Array α) {t : Nat} (ht : t < a.size) :
     a.set! t a[t]! = a := by
-  rw [Array.set!_eq_setIfInBounds, Array.setIfInBounds_def, dif_pos ht, getElem!_pos a t ht]
+  rw [Array.set!_eq_setIfInBounds, Array.setIfInBounds_def, dite_eq_left ht, getElem!_pos a t ht]
   exact Array.set_getElem_self ht
 
 theorem uniformBounds_size (p : Prep) (w : Nat) (ms : Array Bool) :

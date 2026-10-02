@@ -78,11 +78,11 @@ theorem setBang_improves {ndp : CTable} {j : Nat} {e : Entry} (hb : betterEntry 
   intro i x hx
   by_cases hij : j = i ∧ j < ndp.size
   · obtain ⟨rfl, hj⟩ := hij
-    refine ⟨e, by rw [setBang_getElem!, if_pos ⟨rfl, hj⟩], ?_⟩
+    refine ⟨e, by rw [setBang_getElem!, ite_eq_left ⟨rfl, hj⟩], ?_⟩
     rw [hx] at hb
     simp only [betterEntry, Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq] at hb
     omega
-  · exact ⟨x, by rw [setBang_getElem!, if_neg hij, hx], Int.le_refl _⟩
+  · exact ⟨x, by rw [setBang_getElem!, ite_eq_right hij, hx], Int.le_refl _⟩
 
 theorem knapIn_improves (cap c : Nat) (d : _root_.Int) (s : Array Nat) (bySize ndp : CTable) (k : Nat) :
     Improves ndp (knapIn cap c d s bySize ndp k) := by
@@ -103,9 +103,9 @@ theorem knapIn_hasAt (cap c : Nat) (d : _root_.Int) (s : Array Nat) (bySize ndp 
     (hsz : cap < ndp.size) : HasAt (knapIn cap c d s bySize ndp k) (c + k) (d + dk) := by
   rw [knapIn_eq, hk]
   simp only
-  rw [if_neg (by omega)]
+  rw [ite_eq_right (by omega)]
   split
-  · exact ⟨_, by rw [setBang_getElem!, if_pos ⟨rfl, by omega⟩], Int.le_refl _⟩
+  · exact ⟨_, by rw [setBang_getElem!, ite_eq_left ⟨rfl, by omega⟩], Int.le_refl _⟩
   · rename_i hbet
     cases ho : ndp[c + k]! with
     | none => rw [ho] at hbet; simp [betterEntry] at hbet
@@ -363,10 +363,10 @@ theorem knapIn_tie {cap c : Nat} {d : _root_.Int} {s : Array Nat} {bySize ndp : 
         · intro j x hx
           by_cases hij : c + k = j ∧ c + k < ndp.size
           · obtain ⟨rfl, hj⟩ := hij
-            refine ⟨_, by rw [setBang_getElem!, if_pos ⟨rfl, hj⟩], ?_⟩
+            refine ⟨_, by rw [setBang_getElem!, ite_eq_left ⟨rfl, hj⟩], ?_⟩
             rw [hx] at hbet
             exact (better_tle hm (hn _ x hx)).1 hbet
-          · exact ⟨x, by rw [setBang_getElem!, if_neg hij, hx], tle_refl x⟩
+          · exact ⟨x, by rw [setBang_getElem!, ite_eq_right hij, hx], tle_refl x⟩
       · exact ⟨hn, improvesT_refl _⟩
 
 theorem knapIn_hasAtT {cap c : Nat} {d : _root_.Int} {s : Array Nat} {bySize ndp : CTable} {k : Nat}
@@ -375,9 +375,9 @@ theorem knapIn_hasAtT {cap c : Nat} {d : _root_.Int} {s : Array Nat} {bySize ndp
     HasAtT (knapIn cap c d s bySize ndp k) (c + k) (d + dk) (mergeSorted s sk).toList := by
   rw [knapIn_eq, hk]
   simp only
-  rw [if_neg (by omega)]
+  rw [ite_eq_right (by omega)]
   split
-  · exact ⟨_, by rw [setBang_getElem!, if_pos ⟨rfl, by omega⟩], Or.inr ⟨rfl, leL_refl _⟩⟩
+  · exact ⟨_, by rw [setBang_getElem!, ite_eq_left ⟨rfl, by omega⟩], Or.inr ⟨rfl, leL_refl _⟩⟩
   · rename_i hbet
     cases ho : ndp[c + k]! with
     | none => rw [ho] at hbet; simp [betterEntry] at hbet

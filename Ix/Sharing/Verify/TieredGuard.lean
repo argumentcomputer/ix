@@ -276,7 +276,7 @@ theorem PrepWF.gBuild_tree {p : Prep} (hp : PrepWF p)
       intro c e' hc he
       have hc' : ∃ e', c < p.dag.size ∧ p.build ev index width false fuel c = .ok e' :=
         ⟨e', hc, he⟩
-      simp only [Tof, dif_pos hc']
+      simp only [Tof, dite_eq_left hc']
       have hsame : Classical.choose hc' = e' := by
         have h2 : (Except.ok (Classical.choose hc') : Except SharingError Ixon.Expr) = .ok e' :=
           (Classical.choose_spec hc').2.symm.trans he
@@ -292,7 +292,7 @@ theorem PrepWF.gBuild_tree {p : Prep} (hp : PrepWF p)
       have hent : entry = true → choice ≠ .share := by
         intro he
         subst he
-        simp only [if_true] at hpick
+        simp only [ite_true] at hpick
         exact pickOption_filter_ne_share _ hpick
       split at h
       · rename_i hcheck
@@ -700,7 +700,7 @@ theorem prefix_lookup {n : Nat} {table : Array Nat} (hnd : table.toList.Nodup)
     apply indexOfPairs_isSome _ _ d (by simp; exact hd)
     refine Or.inr ⟨j, List.mem_zipIdx_iff_getElem?.mpr ?_⟩
     simp only [List.getElem?_take]
-    rw [if_pos hjk]
+    rw [ite_eq_left hjk]
     simpa using hj
   obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hsome
   obtain ⟨hik, hti⟩ := indexOfPrefix_spec n table k d i hi

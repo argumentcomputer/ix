@@ -349,11 +349,11 @@ theorem spineParentLists_spec {dag : Dag} (x : Nat) (hx : x < dag.size) :
           rw [Array.getElem?_modify]
           by_cases hxj : (dag.node j).spineNext = x
           · subst hxj
-            rw [if_pos rfl, Array.getElem?_eq_getElem (by rw [hs]; exact hx)]
+            rw [ite_eq_left rfl, Array.getElem?_eq_getElem (by rw [hs]; exact hx)]
             simp only [Option.map_some, Option.getD_some, Array.toList_push]
             rw [← hl _ hx, Array.getElem?_eq_getElem (by rw [hs]; exact hx)]
             simp [cond, hc]
-          · rw [if_neg hxj, hl x hx]
+          · rw [ite_eq_right hxj, hl x hx]
             simp [hxj]
         · rename_i hc
           rw [hl x hx]
@@ -487,7 +487,7 @@ theorem filter_length_unique {L : List Nat} (hL : L.Nodup) (q : Nat → Prop) [D
         subst this
         exact ha hy
       simp [hqa, hnone]
-    · simp only [List.filter_cons, hqa, decide_false, Bool.false_eq_true, if_false, ih']
+    · simp only [List.filter_cons, hqa, decide_false, Bool.false_eq_true, ite_false, ih']
       congr 1
       apply propext
       constructor
@@ -606,7 +606,7 @@ theorem spineCount_add {A A' : Nat → Bool} {t : Nat} (hA't : A' t = true) (hAt
   by_cases hf : (Prep.ofDag dag).family[u]! = .none
   · have : ¬ OnSpine (Prep.ofDag dag) t u := fun h => h.1 hf
     simp [hf, this]
-  · simp only [hf, if_false]
+  · simp only [hf, ite_false]
     unfold spineAvailCount
     rw [filter_length_or _ (fun k => A (spineAt (Prep.ofDag dag) u k))
       (fun k => A' (spineAt (Prep.ofDag dag) u k)) (fun k => decide (spineAt (Prep.ofDag dag) u k = t))
@@ -714,7 +714,7 @@ theorem awGo_spec :
           · rw [setBang_getElem!, Array.mem_push]
             by_cases hv : v = ((parentEdgeLists dag)[queue[k]]?.getD #[])[j]
             · subst hv; simp [hinv.size, hpar.1]
-            · simp only [hv, false_and, if_false, Ne.symm hv]
+            · simp only [hv, false_and, ite_false, Ne.symm hv]
               rw [hinv.marked v]
               simp
           · rw [setBang_getElem!]
@@ -804,7 +804,7 @@ theorem ancestorWork_spec (hwf : DagWF dag) {mark queue mark' queue' : Array Nat
     · rw [setBang_getElem!, ← Array.mem_toList_iff, hq0, List.mem_singleton]
       by_cases hut : u = t
       · subst hut; simp [hms, ht]
-      · rw [if_neg (fun h => hut h.1.symm)]
+      · rw [ite_eq_right (fun h => hut h.1.symm)]
         have := hlt u
         constructor
         · intro h; omega
@@ -866,7 +866,7 @@ theorem evalHidden_model {wdK wdi : Nat → Nat} {AK Ai : Nat → Bool} {ev : Di
     rw [widthOf_setBang_none]
     by_cases hu : u = t
     · simp [hu]
-    · simp only [hu, if_false]; exact hwidth u
+    · simp only [hu, ite_false]; exact hwidth u
   have hrows : ∀ u, u < t → GEvalRow (Prep.ofDag dag) (fun u => if u = t then 0 else wdK u)
       (fun u => if u = t then false else AK u) ev u := by
     intro u hu
@@ -881,7 +881,7 @@ theorem evalHidden_model {wdK wdi : Nat → Nat} {AK Ai : Nat → Bool} {ev : Di
   refine gCost_local hwf t ht fun v hv => ?_
   by_cases hvt : v = t
   · subst hvt; simp [hAi, hwdi]
-  · simp only [hvt, if_false]; exact hag v hv hvt
+  · simp only [hvt, ite_false]; exact hag v hv hvt
 
 variable {wdA wdB : Nat → Nat} {A B : Nat → Bool}
   {ev ev' : DictEval} {index index' width width' : Array (Option Nat)}
@@ -916,9 +916,9 @@ theorem buildTop_eq {t : Nat} (ht : t < dag.size) (hnone : index'[t]?.getD none 
   have hpick : (Prep.ofDag dag).pickBuild ev index width true t =
       pickOption ((Prep.ofDag dag).options ev' index' width' t) := by
     have h1 := pick_options_lazy (Prep.ofDag dag) ev index width true t
-    rw [pickLazy_eq_pickBuild, if_pos rfl] at h1
+    rw [pickLazy_eq_pickBuild, ite_eq_left rfl] at h1
     rw [← h1, options_filter, hopts, optRest_congr hwf hev hev' hwA hwB hiA hiB ht hag]
-  simp only [Prep.buildTop, Prep.build, hpick, Bool.false_eq_true, if_false, Bool.false_or]
+  simp only [Prep.buildTop, Prep.build, hpick, Bool.false_eq_true, ite_false, Bool.false_or]
   generalize hpk : pickOption ((Prep.ofDag dag).options ev' index' width' t) = pk
   rcases pk with _ | ⟨choice, c⟩
   · rfl
@@ -926,7 +926,7 @@ theorem buildTop_eq {t : Nat} (ht : t < dag.size) (hnone : index'[t]?.getD none 
     have hopt' := hp.gOptions_mem ev' hev' index' width' hwB hiB ht hb
     simp only [ofDag_dag]
     by_cases hchk : (c == ev'.cost[t]!) = true
-    · simp only [hchk, if_true]
+    · simp only [hchk, ite_true]
       cases choice with
       | share =>
         rw [hopts] at hb
@@ -994,7 +994,7 @@ theorem buildTop_eq {t : Nat} (ht : t < dag.size) (hnone : index'[t]?.getD none 
               (spineAt (Prep.ofDag dag) t j) with
             | error e => rfl
             | ok tl => exact foldrM_congr_mem hside _
-    · simp only [hchk, Bool.false_eq_true, if_false]
+    · simp only [hchk, Bool.false_eq_true, ite_false]
       rfl
 
 end Entry
@@ -1041,7 +1041,7 @@ theorem maxBelow_ge {dag : Dag} (hwf : DagWF dag) (pos : Nat → Nat) :
       have hkeep : ∀ x, x ≠ m → (F st m)[x]! = st[x]! := by
         intro x hx
         simp only [F]
-        rw [setBang_getElem!, if_neg (fun h => hx h.1.symm)]
+        rw [setBang_getElem!, ite_eq_right (fun h => hx h.1.symm)]
       refine ⟨by simp [F, hs], fun u hu c hc => ?_⟩
       have hcu := hwf.child_lt (by omega) hc
       rw [hkeep c (by omega)]
@@ -1050,7 +1050,7 @@ theorem maxBelow_ge {dag : Dag} (hwf : DagWF dag) (pos : Nat → Nat) :
         have hset : (F st u)[u]! = (dag.node u).children.foldl
             (fun m c => max m (max (pos c) st[c]!)) 0 := by
           simp only [F]
-          rw [setBang_getElem!, if_pos ⟨rfl, by omega⟩]
+          rw [setBang_getElem!, ite_eq_left ⟨rfl, by omega⟩]
         rw [hset, ← Array.foldl_toList]
         have := (foldl_max_bound (fun c => max (pos c) st[c]!) (dag.node u).children.toList 0).2 c
           (Array.mem_toList_iff.mpr hc)
@@ -1094,12 +1094,12 @@ theorem indexOfPrefix_iff {n : Nat} {table : Array Nat}
     have htk := htab k (by omega)
     by_cases hut : u = table[k]!
     · subst hut
-      rw [if_pos ⟨rfl, htk⟩, Option.some.injEq]
+      rw [ite_eq_left ⟨rfl, htk⟩, Option.some.injEq]
       constructor
       · rintro rfl; exact ⟨by omega, rfl⟩
       · rintro ⟨hj, hjk⟩
         exact (hdist j k (by omega) (by omega) hjk).symm
-    · rw [if_neg (fun h => hut h.1.symm), hiff]
+    · rw [ite_eq_right (fun h => hut h.1.symm), hiff]
       constructor
       · rintro ⟨hj, rfl⟩; exact ⟨by omega, rfl⟩
       · rintro ⟨hj, rfl⟩
@@ -1313,12 +1313,12 @@ theorem onePassLoop_sim :
     simp only [hE1] at h
     simp only [ofDag_dag] at h
     by_cases hc : st.ev.cost[table[i]!]! > limits.maxMaterialize
-    · simp only [hc, if_true, Option.some.injEq] at h
+    · simp only [hc, ite_true, Option.some.injEq] at h
       subst h
       apply loopRel_error
       rw [materializeStep_eq]
       simp [hc]
-    · simp only [hc, if_false] at h
+    · simp only [hc, ite_false] at h
       rw [hE2] at h
       cases hb : (Prep.ofDag dag).build st.ev st.index st.width false (dag.size + 1) table[i]! with
       | error e =>
@@ -1332,12 +1332,12 @@ theorem onePassLoop_sim :
         rw [hb] at h
         simp only at h
         by_cases hw : st.work + st.ev.work + st.ev.cost[table[i]!]! > limits.maxMaterializeWork
-        · simp only [hw, if_true, Option.some.injEq] at h
+        · simp only [hw, ite_true, Option.some.injEq] at h
           subst h
           apply loopRel_error
           rw [materializeStep_eq]
           simp [hc, hb, hw, ofDag_dag]
-        · simp only [hw, if_false] at h
+        · simp only [hw, ite_false] at h
           cases hsa : spineAdd (spineParentLists dag (Prep.ofDag dag).family) sc table[i]! with
           | none => rw [hsa] at h; cases h
           | some sc' =>
@@ -1356,7 +1356,7 @@ theorem onePassLoop_sim :
                 st.predicted + st.ev.cost[table[i]!]!, st.work + st.ev.work + st.ev.cost[table[i]!]!⟩
               have hstep : materializeStep (Prep.ofDag dag) table limits widthAt st i = .ok st' := by
                 rw [materializeStep_eq]
-                simp only [ofDag_dag, hc, if_false, hb, hw]
+                simp only [ofDag_dag, hc, ite_false, hb, hw]
                 rfl
               have hI' := tableEvInv_step hwf hsize hrange ⟨by omega, hidx, hwid, hev, by assumption,
                 by assumption, by assumption⟩ hi hstep
@@ -1423,7 +1423,7 @@ theorem materializeTableOnePass_eq (dag : Dag) (table roots : Array Nat) (limits
   · unfold materializeTable; simp [h1]
   cases h2 : table.all (· < (Prep.ofDag dag).dag.size)
   · unfold materializeTable; simp [h1, h2]
-  simp only [h1, if_false, Bool.not_true, Bool.false_eq_true]
+  simp only [h1, ite_false, Bool.not_true, Bool.false_eq_true]
   by_cases h3f : onePassOrder (Prep.ofDag dag).dag table roots
       (indexOfPrefix (Prep.ofDag dag).dag.size table table.size) = false
   · simp [h3f]
@@ -1434,7 +1434,7 @@ theorem materializeTableOnePass_eq (dag : Dag) (table roots : Array Nat) (limits
   have h3' : (!onePassOrder (Prep.ofDag dag).dag table roots
       (indexOfPrefix (Prep.ofDag dag).dag.size table table.size)) = false := by
     rw [ofDag_dag, h3]; rfl
-  simp only [h3', Bool.false_eq_true, if_false]
+  simp only [h3', Bool.false_eq_true, ite_false]
   obtain ⟨hwf, hroots, hord⟩ := onePassOrder_spec h3
   have hp := prepWF_ofDag hwf
   have htab : ∀ i, i < table.size → table[i]! < dag.size := by
@@ -1497,7 +1497,7 @@ theorem materializeTableOnePass_eq (dag : Dag) (table roots : Array Nat) (limits
     (by simp [ofDag_dag]) (fun u => by by_cases hu : u < dag.size <;> simp [hu, ofDag_dag])
     hloop
   unfold materializeTable
-  simp only [h1, h2, if_false, Bool.not_true, Bool.false_eq_true]
+  simp only [h1, h2, ite_false, Bool.not_true, Bool.false_eq_true]
   rw [List.range_eq_range']
   rcases res with e | ⟨entries, work, evWork, predicted⟩
   · simp only [LoopRel] at hrel

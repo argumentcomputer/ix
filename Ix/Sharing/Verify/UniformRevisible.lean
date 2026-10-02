@@ -106,14 +106,14 @@ theorem vis_mono {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
         have hyn := List.mem_range.mp hy
         unfold visWeight
         by_cases h1 : ms'[y]! = true
-        · rw [if_pos h1, if_pos (hms y h1)]
+        · rw [ite_eq_left h1, ite_eq_left (hms y h1)]
           exact Nat.le_refl 1
-        · rw [if_neg h1]
+        · rw [ite_eq_right h1]
           by_cases h2 : ms[y]! = true
-          · rw [if_pos h2]
+          · rw [ite_eq_left h2]
             have := vis_pos hwf roots hroots hreach ms' y hyn
             unfold visibleCap; simp only [Nat.le_min]; omega
-          · rw [if_neg h2]
+          · rw [ite_eq_right h2]
             have := (ih (dag.size - y) (by omega) y rfl hyn).1
             simp only [Nat.min_def]; split <;> split <;> omega
       have hterm : ∀ (e : Nat → Nat), (∀ y, y ≤ t → e y = 0) →
@@ -249,18 +249,18 @@ theorem revisible_le {dag : Dag} (hwf : DagWF dag) {roots : Array Nat}
       have e := visibleCounts_spec hwf roots hroots ms ht
       refine ⟨?_, ?_⟩
       · by_cases hs : y < ds.size
-        · rw [if_pos ⟨rfl, hs⟩]
+        · rw [ite_eq_left ⟨rfl, hs⟩]
           have := hbound false ht
-          simp only [Bool.false_eq_true, if_false] at this
+          simp only [Bool.false_eq_true, ite_false] at this
           rw [e.1]; exact this
-        · rw [if_neg (fun h => hs h.2)]; exact (hinv y ht).1
+        · rw [ite_eq_right (fun h => hs h.2)]; exact (hinv y ht).1
       · by_cases hs : y < hs.size
-        · rw [if_pos ⟨rfl, hs⟩]
+        · rw [ite_eq_left ⟨rfl, hs⟩]
           have := hbound true ht
-          simp only [if_true] at this
+          simp only [ite_true] at this
           rw [e.2]; exact this
-        · rw [if_neg (fun h => hs h.2)]; exact (hinv y ht).2
-    · rw [if_neg (fun h => hyt h.1), if_neg (fun h => hyt h.1)]
+        · rw [ite_eq_right (fun h => hs h.2)]; exact (hinv y ht).2
+    · rw [ite_eq_right (fun h => hyt h.1), ite_eq_right (fun h => hyt h.1)]
       exact hinv t ht
   have hall : ∀ (l : List Nat) (acc : Array Nat × Array Nat), (∀ k ∈ l, k < cx.area.size) →
       Inv acc → Inv (l.foldl (fun (acc : Array Nat × Array Nat) k =>

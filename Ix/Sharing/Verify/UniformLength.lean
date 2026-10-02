@@ -210,14 +210,14 @@ theorem PrepWF.cutOptions_pairs {p : Prep} (hp : PrepWF p) {w : Nat} {avail : Na
       have hcand : tag4Size (p.spineLen[t]! - p.spineLen[spineAt p t k]!) +
           (prefixSides p (uCost p w avail) t p.spineLen[t]! - ev.sides[spineAt p t k]!) +
           (widthOf width (spineAt p t k)).getD 0 = cutCost p w (uCost p w avail) t k := by
-        rw [hlenk, hsides k (by omega) hkl, hwidth, if_pos hav]
+        rw [hlenk, hsides k (by omega) hkl, hwidth, ite_eq_left hav]
         have hsplit := prefixSides_add p (uCost p w avail) k (p.spineLen[t]! - k) t
         rw [show k + (p.spineLen[t]! - k) = p.spineLen[t]! by omega] at hsplit
         unfold cutCost
         rw [show p.spineLen[t]! - (p.spineLen[t]! - k) = k by omega, hsplit]
         simp
       have hidx : (index[spineAt p t k]?.getD none).isSome = true := by rw [hindex]; exact hav
-      simp only [Prep.cutOptions, hidx, if_true]
+      simp only [Prep.cutOptions, hidx, ite_true]
       obtain ⟨L, hL, hcost⟩ := ih (k + 1) _ _ (by omega) (by omega) (by omega)
         (FirstAvail.shift hlenk (hbelow k (by omega) hkl))
       refine ⟨(Choice.cut (p.spineLen[t]! - p.spineLen[spineAt p t k]!),
@@ -266,7 +266,7 @@ theorem PrepWF.options_mem {p : Prep} (hp : PrepWF p)
   unfold Prep.options at h
   by_cases hf : p.family[t]! = .none
   · have hfb : (p.family[t]! == Family.none) = true := by simp [hf]
-    simp only [hfb, if_true, Array.toList_push, List.mem_append, List.mem_singleton] at h
+    simp only [hfb, ite_true, Array.toList_push, List.mem_append, List.mem_singleton] at h
     rcases h with h | h
     · obtain ⟨h1, h2, h3⟩ := hbase _ h
       exact Or.inl ⟨h1, h2, h3⟩
@@ -274,10 +274,10 @@ theorem PrepWF.options_mem {p : Prep} (hp : PrepWF p)
       obtain ⟨rfl, rfl, _⟩ := h
       refine Or.inr (Or.inl ⟨rfl, hf, ?_⟩)
       unfold uInl inlOf
-      rw [if_pos hf]
+      rw [ite_eq_left hf]
       exact foldl_add_congr _ _ fun c _ => hcost c
   · have hfb : (p.family[t]! == Family.none) = false := by simpa using hf
-    simp only [hfb, Bool.false_eq_true, if_false] at h
+    simp only [hfb, Bool.false_eq_true, ite_false] at h
     obtain ⟨hs, hb⟩ := (hrow t ht).2 hf
     obtain ⟨hl1, hk, _, htl, _⟩ := hp.spine t ht hf
     have hspine : ∀ k, 1 ≤ k → k < p.spineLen[t]! →
@@ -373,13 +373,13 @@ theorem PrepWF.build_size {p : Prep} (hp : PrepWF p)
           cases entry with
           | false =>
             simp only [Bool.false_or, beq_iff_eq] at hcheck
-            simp only [Bool.false_eq_true, if_false]
+            simp only [Bool.false_eq_true, ite_false]
             rw [← hcost, hcheck]
           | true =>
-            simp only [if_true]
+            simp only [ite_true]
             rw [← hp.inlineCost_eq hempty index width hwidth hindex t ht]
             unfold Prep.inlineCost
-            simp only [if_true] at hpick
+            simp only [ite_true] at hpick
             rw [hpick]
             rfl
         rw [hc]
@@ -399,7 +399,7 @@ theorem PrepWF.build_size {p : Prep} (hp : PrepWF p)
           · cases h1
           · rw [hcv]
             unfold uInl inlOf
-            rw [if_pos hf]
+            rw [ite_eq_left hf]
             have har := hp.dag.arity t ht
             rw [← dag_node_eq ht] at har
             cases hh : (p.dag.node t).head <;> simp only [hh] at h har
@@ -409,7 +409,7 @@ theorem PrepWF.build_size {p : Prep} (hp : PrepWF p)
               have hc0 : (p.dag.node t).child 0 < t :=
                 hp.dag.childAt_lt ht (by simp [hh, Head.arity])
               obtain ⟨hvs, _⟩ := ih false _ v (by omega) hv
-              simp only [Bool.false_eq_true, if_false] at hvs
+              simp only [Bool.false_eq_true, ite_false] at hvs
               refine ⟨?_, fun F' _ => by cases F' <;> rfl⟩
               rw [← Array.foldl_toList, children_toList (m := 1) (by simpa [Head.arity] using har)]
               simp [sizeInfoWith, SizeInfo.plain, hvs, Head.ownBytes] <;> omega
@@ -427,7 +427,7 @@ theorem PrepWF.build_size {p : Prep} (hp : PrepWF p)
               obtain ⟨hs0, _⟩ := ih false _ ty (by omega) hty
               obtain ⟨hs1, _⟩ := ih false _ v (by omega) hv
               obtain ⟨hs2, _⟩ := ih false _ bd (by omega) hbd
-              simp only [Bool.false_eq_true, if_false] at hs0 hs1 hs2
+              simp only [Bool.false_eq_true, ite_false] at hs0 hs1 hs2
               refine ⟨?_, fun F' _ => by cases F' <;> rfl⟩
               rw [← Array.foldl_toList, children_toList (m := 3) (by simpa [Head.arity] using har)]
               simp [sizeInfoWith, SizeInfo.plain, hs0, hs1, hs2, Head.ownBytes,
@@ -506,7 +506,7 @@ theorem PrepWF.build_size {p : Prep} (hp : PrepWF p)
             simp only at htl'
             rw [hjeq, hend] at htl'
             obtain ⟨htfull, htonly⟩ := ih false _ tl (by omega) htl'
-            simp only [Bool.false_eq_true, if_false] at htfull
+            simp only [Bool.false_eq_true, ite_false] at htfull
             obtain ⟨_, hfull, honly⟩ := spineFold_size sc p.family[t]! _
               (fun n => uCost p w avail n.sideChild) _ _ _ hfam hsz
               (htonly _ (Ne.symm htf)) hfold

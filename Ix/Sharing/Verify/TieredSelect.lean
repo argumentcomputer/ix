@@ -89,25 +89,25 @@ theorem select_three (c₁ c₂ c₃ : TieredSharingResult) (h₁ : c₁.stats.w
     rcases hc with rfl | rfl | rfl <;> assumption
   by_cases b₁ : tieredBetter c₂ c₁ = true
   · have f₁ := e₁.mp b₁
-    rw [if_pos b₁]
+    rw [ite_eq_left b₁]
     by_cases b₂ : tieredBetter c₃ c₂ = true
     · have f₂ := e₃.mp b₂
-      rw [if_pos b₂]
+      rw [ite_eq_left b₂]
       exact key c₃ (by simp) (mem3 _ (by omega) (by omega) (by omega))
         (mem3 _ (by rw [h₁, h₃]; omega) (by rw [h₂, h₃]; omega) (fun _ => by omega))
     · have f₂ := mt e₃.mpr b₂
-      rw [if_neg b₂]
+      rw [ite_eq_right b₂]
       exact key c₂ (by simp) (mem3 _ (by omega) (by omega) (by omega))
         (mem3 _ (by rw [h₁, h₂]; omega) (fun _ => by omega) (by rw [h₂, h₃]; omega))
   · have f₁ := mt e₁.mpr b₁
-    rw [if_neg b₁]
+    rw [ite_eq_right b₁]
     by_cases b₂ : tieredBetter c₃ c₁ = true
     · have f₂ := e₂.mp b₂
-      rw [if_pos b₂]
+      rw [ite_eq_left b₂]
       exact key c₃ (by simp) (mem3 _ (by omega) (by omega) (by omega))
         (mem3 _ (by rw [h₁, h₃]; omega) (by rw [h₂, h₃]; omega) (fun _ => by omega))
     · have f₂ := mt e₂.mpr b₂
-      rw [if_neg b₂]
+      rw [ite_eq_right b₂]
       exact key c₁ (by simp) (mem3 _ (by omega) (by omega) (by omega))
         (mem3 _ (fun _ => by omega) (by rw [h₁, h₂]; omega) (by rw [h₁, h₃]; omega))
 

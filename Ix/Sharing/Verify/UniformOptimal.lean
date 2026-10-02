@@ -481,7 +481,7 @@ theorem msOf_spec (cand : Array Bool) (O : Array Nat) (v : Nat) :
   by_cases hv : v ∈ O.toList
   · by_cases hs : v < cand.size
     · simp [hv, hs]
-    · simp only [hv, hs, and_false, if_false, not_true_eq_false, and_false, iff_false]
+    · simp only [hv, hs, and_false, ite_false, not_true_eq_false, and_false, iff_false]
       simp [hs]
   · simp [hv]
 
@@ -538,13 +538,13 @@ theorem opaqueArr_opaqueOn {dag : Dag} (hwf : DagWF dag) {roots : Array Nat}
     rw [hcx.prep, hcx.width] at hun
     refine ⟨hAin t htI, fun hf => ?_, fun hf => ?_⟩
     · have hfb : ((Prep.ofDag dag).family[t]! == .none) = true := by simp [hf]
-      rw [if_pos hfb] at hun
+      rw [ite_eq_left hfb] at hun
       have h1 := (hble t).1
       have h2 := hbs.2.1
       simp only [ge_iff_le, decide_eq_true_eq] at hun
       omega
     · have hfb : ((Prep.ofDag dag).family[t]! == .none) = false := by simpa using hf
-      rw [if_neg (by simp [hfb])] at hun
+      rw [ite_eq_right (by simp [hfb])] at hun
       have h1 := (hble t).2.1
       have h2 := (hbs.2.2 hf).1
       simp only [ge_iff_le, decide_eq_true_eq] at hun
@@ -565,10 +565,10 @@ theorem ucand_of_ucls {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int
   rw [getElem!_range_map _ (by rw [ofDag_dag]; exact ht)]
   simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq]
   by_cases hce : certainExcludedTest (Prep.ofDag dag) (graphFacts dag roots) w t = true
-  · exact absurd (by rw [if_pos hce]) h1
-  · rw [if_neg hce] at h1 h2
+  · exact absurd (by rw [ite_eq_left hce]) h1
+  · rw [ite_eq_right hce] at h1 h2
     by_cases hdeg : (graphFacts dag roots).deg[t]! < 2
-    · exact absurd (by rw [if_pos hdeg]) h2
+    · exact absurd (by rw [ite_eq_left hdeg]) h2
     · exact ⟨by simpa using hce, by omega⟩
 
 /-- **Groups are modular.** If a group passes the separation check under the
@@ -756,10 +756,10 @@ theorem deg_of_ucls {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} 
     2 ≤ (graphFacts dag roots).deg[t]! := by
   rw [ucls_eq ht] at h
   by_cases hce : certainExcludedTest (Prep.ofDag dag) (graphFacts dag roots) w t = true
-  · rw [if_pos hce] at h; rcases h with h | h <;> cases h
-  · rw [if_neg hce] at h
+  · rw [ite_eq_left hce] at h; rcases h with h | h <;> cases h
+  · rw [ite_eq_right hce] at h
     by_cases hdeg : (graphFacts dag roots).deg[t]! < 2
-    · rw [if_pos hdeg] at h; rcases h with h | h <;> cases h
+    · rw [ite_eq_left hdeg] at h; rcases h with h | h <;> cases h
     · omega
 
 /-- The threshold condition of `classify_sound` at a candidate a minimum omits. -/
@@ -803,7 +803,7 @@ theorem GlobalWF.min_class {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root
     unfold certainExcludedTest at hce
     simp only [decide_eq_true_eq] at hce
     exact excluded_of_minimum hG.wf hG.spines roots hG.hroots w hX htn hce ht
-  · rw [if_neg hce, if_neg (by omega)]
+  · rw [ite_eq_right hce, ite_eq_right (by omega)]
     split
     · exact Or.inl rfl
     · exact Or.inr rfl

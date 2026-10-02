@@ -133,7 +133,7 @@ theorem PrepWF.gCost_eq (wd : Nat → Nat) (avail : Nat → Bool) (t : Nat) (ht 
       have hsame : ∀ c, c < m → (step A m)[c]! = A[c]! := by
         intro c hc
         simp only [step, setBang_getElem!]
-        rw [if_neg (by omega)]
+        rw [ite_eq_right (by omega)]
       refine ⟨by simp [step, hsize], fun t' ht' => ?_⟩
       have hcongr : gCostOf p wd avail ((step A m)[·]!) t' = gCostOf p wd avail (A[·]!) t' :=
         hp.gCostOf_congr (by omega) fun c hc => hsame c (by omega)
@@ -141,7 +141,7 @@ theorem PrepWF.gCost_eq (wd : Nat → Nat) (avail : Nat → Bool) (t : Nat) (ht 
       by_cases htm : t' = m
       · subst htm
         simp only [step, setBang_getElem!, hsize]
-        rw [if_pos (by simp; omega)]
+        rw [ite_eq_left (by simp; omega)]
       · rw [hsame t' (by omega)]
         exact hprev t' (by omega)
   have := (hinv p.dag.size (Nat.le_refl _)).2 t ht
@@ -219,7 +219,7 @@ theorem PrepWF.gCutScan_spec {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {avai
       have hcand : tag4Size (p.spineLen[t]! - p.spineLen[spineAt p t k]!) +
           (prefixSides p cost t p.spineLen[t]! - sides[spineAt p t k]!) +
           (widthOf width (spineAt p t k)).getD 0 = gCutCost p wd cost t k := by
-        rw [hlenk, hsides k (by omega) hkl, hwidth, if_pos hav]
+        rw [hlenk, hsides k (by omega) hkl, hwidth, ite_eq_left hav]
         have hsplit := prefixSides_add p cost k (p.spineLen[t]! - k) t
         rw [show k + (p.spineLen[t]! - k) = p.spineLen[t]! by omega] at hsplit
         unfold gCutCost
@@ -251,18 +251,18 @@ theorem PrepWF.gEvalStep_spec {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {ava
   obtain ⟨hcs, hss, hbs⟩ := hsz
   have keepN : ∀ (v : Nat) (arr : Array Nat) (i : Nat), i ≠ m → (arr.set! m v)[i]! = arr[i]! := by
     intro v arr i hi
-    rw [setBang_getElem!, if_neg (by intro h; exact hi h.1.symm)]
+    rw [setBang_getElem!, ite_eq_right (by intro h; exact hi h.1.symm)]
   have keepO : ∀ (v : Option Nat) (arr : Array (Option Nat)) (i : Nat), i ≠ m →
       (arr.set! m v)[i]! = arr[i]! := by
     intro v arr i hi
-    rw [setBang_getElem!, if_neg (by intro h; exact hi h.1.symm)]
+    rw [setBang_getElem!, ite_eq_right (by intro h; exact hi h.1.symm)]
   have atN : ∀ (v : Nat) (arr : Array Nat), arr.size = p.dag.size → (arr.set! m v)[m]! = v := by
     intro v arr hs
-    rw [setBang_getElem!, if_pos ⟨rfl, by omega⟩]
+    rw [setBang_getElem!, ite_eq_left ⟨rfl, by omega⟩]
   have atO : ∀ (v : Option Nat) (arr : Array (Option Nat)), arr.size = p.dag.size →
       (arr.set! m v)[m]! = v := by
     intro v arr hs
-    rw [setBang_getElem!, if_pos ⟨rfl, by omega⟩]
+    rw [setBang_getElem!, ite_eq_left ⟨rfl, by omega⟩]
   have hcostLt : ∀ c, c < m → st.cost[c]! = gCost p wd avail c := fun c hc => (hrows c hc).1
   have hcm := hp.gCost_eq wd avail m hm
   have hcostOf : ∀ inl, gInlOf p wd avail (gCost p wd avail) m = inl →
@@ -279,11 +279,11 @@ theorem PrepWF.gEvalStep_spec {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {ava
     have hfold : (p.dag.node m).children.foldl (fun acc c => acc + st.cost[c]!)
         (p.dag.node m).head.ownBytes = gInlOf p wd avail (gCost p wd avail) m := by
       unfold gInlOf
-      rw [if_pos hf]
+      rw [ite_eq_left hf]
       exact foldl_add_congr _ _ fun c hc => hcostLt c (hp.dag.child_lt hm hc)
     have hst' : st'.cost = st.cost.set! m (gCost p wd avail m) ∧ st'.sides = st.sides ∧
         st'.below = st.below := by
-      simp only [st', evalStep, haff, if_true, hf, beq_self_eq_true]
+      simp only [st', evalStep, haff, ite_true, hf, beq_self_eq_true]
       refine ⟨?_, trivial, trivial⟩
       congr 1
       exact hcostOf _ hfold.symm
@@ -306,28 +306,28 @@ theorem PrepWF.gEvalStep_spec {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {ava
         prefixSides p (gCost p wd avail) m p.spineLen[m]! := by
       rw [hcostLt _ hside]
       rcases hp.spine_step hm hf with ⟨hs, hl, _⟩ | ⟨hs, hl, _⟩
-      · rw [if_pos hs, ((hrows _ hlt).2 (by rw [hs]; exact hf)).1, hl]
+      · rw [ite_eq_left hs, ((hrows _ hlt).2 (by rw [hs]; exact hf)).1, hl]
         rfl
-      · rw [if_neg hs, hl]
+      · rw [ite_eq_right hs, hl]
         simp [prefixSides, sideCost]
     have hB : FirstAvail p avail m 1
         (if p.family[snext p m]! = p.family[m]! then
           (if (widthOf width (snext p m)).isSome then some (snext p m)
             else st.below[snext p m]!) else none) := by
       rcases hp.spine_step hm hf with ⟨hs, hl, _⟩ | ⟨hs, hl, _⟩
-      · rw [if_pos hs, hwidth]
+      · rw [ite_eq_left hs, hwidth]
         have hn1 := (hp.spine (snext p m) (by omega) (by rw [hs]; exact hf)).1
         by_cases hav : avail (snext p m) = true
-        · rw [if_pos hav]
+        · rw [ite_eq_left hav]
           exact ⟨1, Nat.le_refl _, by omega, rfl, hav, fun k' h1 h2 => by omega⟩
-        · rw [if_neg hav]
-          simp only [Option.isSome_none, Bool.false_eq_true, if_false]
+        · rw [ite_eq_right hav]
+          simp only [Option.isSome_none, Bool.false_eq_true, ite_false]
           have hrow := ((hrows _ hlt).2 (by rw [hs]; exact hf)).2
           have hlen1 : p.spineLen[spineAt p m 1]! = p.spineLen[m]! - 1 := by
             simp only [spineAt]; omega
           exact FirstAvail.unshift (by omega) (by simpa [spineAt] using hav)
             (FirstAvail.shift hlen1 hrow)
-      · rw [if_neg hs]
+      · rw [ite_eq_right hs]
         intro k h1 h2
         omega
     generalize hBdef : (if p.family[snext p m]! = p.family[m]! then
@@ -365,12 +365,12 @@ theorem PrepWF.gEvalStep_spec {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {ava
           p.spineLen[m]! B (tag4Size p.spineLen[m]! + S + st.cost[p.tail[m]!]!) st.work).1 := by
       rw [hscan, hcostLt _ htl]
       unfold gInlOf
-      rw [if_neg hf, gCutCosts_eq, naturalCost, hSdef]
+      rw [ite_eq_right hf, gCutCosts_eq, naturalCost, hSdef]
     have hst' : st'.cost = st.cost.set! m (gCost p wd avail m) ∧
         st'.sides = st.sides.set! m S ∧ st'.below = st.below.set! m B := by
-      simp only [st', evalStep, haff, if_true]
+      simp only [st', evalStep, haff, ite_true]
       have hfb : (p.family[m]! == Family.none) = false := by simpa using hf
-      simp only [hfb, Bool.false_eq_true, if_false]
+      simp only [hfb, Bool.false_eq_true, ite_false]
       simp only [ite_beq_family]
       rw [show (p.dag.node m).spineNext = snext p m from rfl, hS, hBdef]
       refine ⟨?_, rfl, rfl⟩
@@ -519,14 +519,14 @@ theorem PrepWF.gCutOptions_spec {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {a
       have hcand : tag4Size (p.spineLen[t]! - p.spineLen[spineAt p t k]!) +
           (prefixSides p (gCost p wd avail) t p.spineLen[t]! - ev.sides[spineAt p t k]!) +
           (widthOf width (spineAt p t k)).getD 0 = gCutCost p wd (gCost p wd avail) t k := by
-        rw [hlenk, hsides k (by omega) hkl, hwidth, if_pos hav]
+        rw [hlenk, hsides k (by omega) hkl, hwidth, ite_eq_left hav]
         have hsplit := prefixSides_add p (gCost p wd avail) k (p.spineLen[t]! - k) t
         rw [show k + (p.spineLen[t]! - k) = p.spineLen[t]! by omega] at hsplit
         unfold gCutCost
         rw [show p.spineLen[t]! - (p.spineLen[t]! - k) = k by omega, hsplit]
         simp
       have hidx : (index[spineAt p t k]?.getD none).isSome = true := by rw [hindex]; exact hav
-      simp only [Prep.cutOptions, hidx, if_true]
+      simp only [Prep.cutOptions, hidx, ite_true]
       obtain ⟨L, hL, hcost, hnot⟩ := ih (k + 1) _ _ (by omega) (by omega) (by omega)
         (FirstAvail.shift hlenk (hbelow k (by omega) hkl))
       refine ⟨(Choice.cut (p.spineLen[t]! - p.spineLen[spineAt p t k]!),
@@ -562,11 +562,11 @@ theorem PrepWF.gInlineCost_eq {p : Prep} (hp : PrepWF p)
   unfold Prep.inlineCost Prep.options gInl
   by_cases hf : p.family[t]! = .none
   · have hfb : (p.family[t]! == Family.none) = true := by simp [hf]
-    simp only [hfb, if_true]
+    simp only [hfb, ite_true]
     have hfold : (p.dag.node t).children.foldl (fun acc c => acc + ev.cost[c]!)
         (p.dag.node t).head.ownBytes = gInlOf p wd avail (gCost p wd avail) t := by
       unfold gInlOf
-      rw [if_pos hf]
+      rw [ite_eq_left hf]
       exact foldl_add_congr _ _ fun c hc =>
         hcost c (by have := hp.dag.child_lt ht hc; omega)
     rw [pickOption_cost _ (Choice.inline, gInlOf p wd avail (gCost p wd avail) t,
@@ -577,7 +577,7 @@ theorem PrepWF.gInlineCost_eq {p : Prep} (hp : PrepWF p)
       rw [hbase, hfold]
       rfl
   · have hfb : (p.family[t]! == Family.none) = false := by simpa using hf
-    simp only [hfb, Bool.false_eq_true, if_false]
+    simp only [hfb, Bool.false_eq_true, ite_false]
     obtain ⟨hs, hb⟩ := (hrow t ht).2 hf
     obtain ⟨_, hk, _, htl, _⟩ := hp.spine t ht hf
     have hspine : ∀ k, 1 ≤ k → k < p.spineLen[t]! →
@@ -610,7 +610,7 @@ theorem PrepWF.gInlineCost_eq {p : Prep} (hp : PrepWF p)
     rw [pickOption_cost _ natOpt L]
     · rw [hLcost, hnat]
       unfold gInlOf
-      rw [if_neg hf, gCutCosts_eq]
+      rw [ite_eq_right hf, gCutCosts_eq]
     · simp only [base, natOpt] at hL hbase
       rw [Array.toList_filter]
       refine (congrArg (List.filter _) hL).trans ?_
@@ -704,14 +704,14 @@ theorem PrepWF.gCutOptions_pairs {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {
       have hcand : tag4Size (p.spineLen[t]! - p.spineLen[spineAt p t k]!) +
           (prefixSides p (gCost p wd avail) t p.spineLen[t]! - ev.sides[spineAt p t k]!) +
           (widthOf width (spineAt p t k)).getD 0 = gCutCost p wd (gCost p wd avail) t k := by
-        rw [hlenk, hsides k (by omega) hkl, hwidth, if_pos hav]
+        rw [hlenk, hsides k (by omega) hkl, hwidth, ite_eq_left hav]
         have hsplit := prefixSides_add p (gCost p wd avail) k (p.spineLen[t]! - k) t
         rw [show k + (p.spineLen[t]! - k) = p.spineLen[t]! by omega] at hsplit
         unfold gCutCost
         rw [show p.spineLen[t]! - (p.spineLen[t]! - k) = k by omega, hsplit]
         simp
       have hidx : (index[spineAt p t k]?.getD none).isSome = true := by rw [hindex]; exact hav
-      simp only [Prep.cutOptions, hidx, if_true]
+      simp only [Prep.cutOptions, hidx, ite_true]
       obtain ⟨L, hL, hcost⟩ := ih (k + 1) _ _ (by omega) (by omega) (by omega)
         (FirstAvail.shift hlenk (hbelow k (by omega) hkl))
       refine ⟨(Choice.cut (p.spineLen[t]! - p.spineLen[spineAt p t k]!),
@@ -758,7 +758,7 @@ theorem PrepWF.gOptions_mem {p : Prep} (hp : PrepWF p)
   unfold Prep.options at h
   by_cases hf : p.family[t]! = .none
   · have hfb : (p.family[t]! == Family.none) = true := by simp [hf]
-    simp only [hfb, if_true, Array.toList_push, List.mem_append, List.mem_singleton] at h
+    simp only [hfb, ite_true, Array.toList_push, List.mem_append, List.mem_singleton] at h
     rcases h with h | h
     · obtain ⟨h1, h2, h3⟩ := hbase _ h
       exact Or.inl ⟨h1, h2, h3⟩
@@ -766,10 +766,10 @@ theorem PrepWF.gOptions_mem {p : Prep} (hp : PrepWF p)
       obtain ⟨rfl, rfl, _⟩ := h
       refine Or.inr (Or.inl ⟨rfl, hf, ?_⟩)
       unfold gInl gInlOf
-      rw [if_pos hf]
+      rw [ite_eq_left hf]
       exact foldl_add_congr _ _ fun c _ => hcost c
   · have hfb : (p.family[t]! == Family.none) = false := by simpa using hf
-    simp only [hfb, Bool.false_eq_true, if_false] at h
+    simp only [hfb, Bool.false_eq_true, ite_false] at h
     obtain ⟨hs, hb⟩ := (hrow t ht).2 hf
     obtain ⟨hl1, hk, _, htl, _⟩ := hp.spine t ht hf
     have hspine : ∀ k, 1 ≤ k → k < p.spineLen[t]! →
@@ -852,13 +852,13 @@ theorem PrepWF.gBuild_size {p : Prep} (hp : PrepWF p)
           cases entry with
           | false =>
             simp only [Bool.false_or, beq_iff_eq] at hcheck
-            simp only [Bool.false_eq_true, if_false]
+            simp only [Bool.false_eq_true, ite_false]
             rw [← hcost, hcheck]
           | true =>
-            simp only [if_true]
+            simp only [ite_true]
             rw [← hp.gInlineCost_eq ev hev index width hwidth hindex t ht]
             unfold Prep.inlineCost
-            simp only [if_true] at hpick
+            simp only [ite_true] at hpick
             rw [hpick]
             rfl
         rw [hc]
@@ -878,7 +878,7 @@ theorem PrepWF.gBuild_size {p : Prep} (hp : PrepWF p)
           · cases h1
           · rw [hcv]
             unfold gInl gInlOf
-            rw [if_pos hf]
+            rw [ite_eq_left hf]
             have har := hp.dag.arity t ht
             rw [← dag_node_eq ht] at har
             cases hh : (p.dag.node t).head <;> simp only [hh] at h har
@@ -888,7 +888,7 @@ theorem PrepWF.gBuild_size {p : Prep} (hp : PrepWF p)
               have hc0 : (p.dag.node t).child 0 < t :=
                 hp.dag.childAt_lt ht (by simp [hh, Head.arity])
               obtain ⟨hvs, _⟩ := ih false _ v (by omega) hv
-              simp only [Bool.false_eq_true, if_false] at hvs
+              simp only [Bool.false_eq_true, ite_false] at hvs
               refine ⟨?_, fun F' _ => by cases F' <;> rfl⟩
               rw [← Array.foldl_toList, children_toList (m := 1) (by simpa [Head.arity] using har)]
               simp [sizeInfoWith, SizeInfo.plain, hvs, Head.ownBytes] <;> omega
@@ -906,7 +906,7 @@ theorem PrepWF.gBuild_size {p : Prep} (hp : PrepWF p)
               obtain ⟨hs0, _⟩ := ih false _ ty (by omega) hty
               obtain ⟨hs1, _⟩ := ih false _ v (by omega) hv
               obtain ⟨hs2, _⟩ := ih false _ bd (by omega) hbd
-              simp only [Bool.false_eq_true, if_false] at hs0 hs1 hs2
+              simp only [Bool.false_eq_true, ite_false] at hs0 hs1 hs2
               refine ⟨?_, fun F' _ => by cases F' <;> rfl⟩
               rw [← Array.foldl_toList, children_toList (m := 3) (by simpa [Head.arity] using har)]
               simp [sizeInfoWith, SizeInfo.plain, hs0, hs1, hs2, Head.ownBytes,
@@ -986,7 +986,7 @@ theorem PrepWF.gBuild_size {p : Prep} (hp : PrepWF p)
             simp only at htl'
             rw [hjeq, hend] at htl'
             obtain ⟨htfull, htonly⟩ := ih false _ tl (by omega) htl'
-            simp only [Bool.false_eq_true, if_false] at htfull
+            simp only [Bool.false_eq_true, ite_false] at htfull
             obtain ⟨_, hfull, honly⟩ := spineFold_size sc p.family[t]! _
               (fun n => gCost p wd avail n.sideChild) _ _ _ hfam hsz
               (htonly _ (Ne.symm htf)) hfold
@@ -1030,7 +1030,7 @@ theorem PrepWF.gInl_node {p : Prep} (hp : PrepWF p) (wd : Nat → Nat) (S : Nat 
     gInlOf p wd S f x = (p.dag.node x).head.ownBytes +
       ((List.range (p.dag.node x).head.arity).map fun i => f ((p.dag.node x).child i)).sum := by
   unfold gInlOf
-  rw [if_pos hf, ← Array.foldl_toList, foldl_add_eq_sum]
+  rw [ite_eq_left hf, ← Array.foldl_toList, foldl_add_eq_sum]
   have har := hp.dag.arity x hx
   rw [← dag_node_eq hx] at har
   rw [children_toList har, List.map_map]
@@ -1040,7 +1040,7 @@ theorem gInl_tele {p : Prep} (wd : Nat → Nat) (S : Nat → Bool) (f : Nat → 
     {x : Nat} (hf : p.family[x]! ≠ .none) :
     gInlOf p wd S f x = (gCutCosts p wd S f x).foldl min (naturalCost p f x) := by
   unfold gInlOf
-  rw [if_neg hf]
+  rw [ite_eq_right hf]
 
 theorem gCut_mem_cutCosts (p : Prep) (wd : Nat → Nat) (S : Nat → Bool) (f : Nat → Nat) {x j : Nat}
     (hj1 : 1 ≤ j) (hj : j < p.spineLen[x]!) (hS : S (spineAt p x j) = true) :
@@ -1049,7 +1049,7 @@ theorem gCut_mem_cutCosts (p : Prep) (wd : Nat → Nat) (S : Nat → Bool) (f : 
   unfold gCutsFrom
   apply List.mem_filterMap.mpr
   refine ⟨j, List.mem_range'_1.mpr ⟨hj1, by omega⟩, ?_⟩
-  rw [if_pos hS]
+  rw [ite_eq_left hS]
 
 theorem gcosts_eq_range (p : Prep) (wd : Nat → Nat) (l : List WTree) :
     WTree.gcosts p wd l = ((List.range l.length).map fun k => (l[k]?.getD default).gcost p wd).sum := by
@@ -1073,7 +1073,7 @@ theorem PrepWF.gValid_cost {p : Prep} (hp : PrepWF p) (wd : Nat → Nat) (S : Na
     refine ⟨?_, fun h => by simp [WTree.isShare] at h⟩
     rw [hp.gCost_eq wd S _ hx]
     unfold gCostOf
-    simp only [hS, if_true, WTree.gcost]
+    simp only [hS, ite_true, WTree.gcost]
     omega
   | @node x kids hf hlen _ ih =>
     intro hx
@@ -1173,7 +1173,7 @@ theorem PrepWF.gExists_opt {p : Prep} (hp : PrepWF p) (wd : Nat → Nat) (S : Na
     have hg : ∀ c, c < x → Valid p S c (g c) ∧ (g c).gcost p wd = gCost p wd S c := by
       intro c hc
       have hcn : c < p.dag.size := by omega
-      simp only [g, dif_pos (And.intro hc hcn)]
+      simp only [g, dite_eq_left (And.intro hc hcn)]
       exact Classical.choose_spec (ih c hc hcn).1
     -- an optimal inline writing
     have hinl : ∃ T, Valid p S x T ∧ T.isShare = false ∧ T.gcost p wd = gInl p wd S x := by
@@ -1243,14 +1243,14 @@ theorem PrepWF.gExists_opt {p : Prep} (hp : PrepWF p) (wd : Nat → Nat) (S : Na
     by_cases hS : S x = true
     · by_cases hle : wd x ≤ gInlOf p wd S (gCost p wd S) x
       · refine ⟨.share x, Valid.share hS, ?_⟩
-        simp only [hS, if_true, WTree.gcost]
+        simp only [hS, ite_true, WTree.gcost]
         omega
       · refine ⟨T, hT, ?_⟩
-        simp only [hS, if_true]
+        simp only [hS, ite_true]
         unfold gInl at hTc
         omega
     · refine ⟨T, hT, ?_⟩
-      simp only [hS, Bool.false_eq_true, if_false]
+      simp only [hS, Bool.false_eq_true, ite_false]
       exact hTc
 
 /-! ## Locality and the incremental re-evaluation -/
@@ -1513,7 +1513,7 @@ theorem evalUp_ok {dag : Dag} (hwf : DagWF dag) {wd wd' : Nat → Nat} {A A' : N
         exact ⟨k1.trans r1, k2.trans r2, k3.trans r3⟩
       · have hid : step st (t + m) = st := by
           simp only [step, evalStep]
-          rw [if_neg hmark]
+          rw [ite_eq_right hmark]
         rw [hid]
         refine ⟨hs, fun u hu => ?_, fun u hu => hrest u (by omega)⟩
         by_cases hum : u < t + m
@@ -1670,10 +1670,10 @@ theorem options_split (p : Prep) (ev : DictEval) (index width : Array (Option Na
     p.options ev index width t = optShare index width t ++ optRest p ev index width t := by
   unfold Prep.options optShare optRest
   by_cases hf : (p.family[t]! == Family.none) = true
-  · simp only [hf, if_true]
+  · simp only [hf, ite_true]
     rw [Array.push_eq_append]
     rfl
-  · simp only [hf, if_false, Bool.false_eq_true]
+  · simp only [hf, ite_false, Bool.false_eq_true]
     rw [Array.push_eq_append, cutOptions_append]
     rfl
 
@@ -1787,9 +1787,9 @@ theorem optRest_congr {t : Nat} (ht : t < dag.size)
       hagB w (hc.trans hw) (by have := Desc.le_of_wf hwf hw (by omega); omega)
   unfold optRest
   by_cases hf : ((Prep.ofDag dag).family[t]! == .none) = true
-  · simp only [hf, if_true, ofDag_dag]
+  · simp only [hf, ite_true, ofDag_dag]
     rw [foldl_add_congr _ _ fun c hc => hcostBelow c (desc_of_child hc) (hwf.child_lt ht hc)]
-  · simp only [hf, if_false, Bool.false_eq_true]
+  · simp only [hf, ite_false, Bool.false_eq_true]
     have hf' : (Prep.ofDag dag).family[t]! ≠ .none := by simpa using hf
     obtain ⟨_, _, hend, htl, _⟩ := hp.spine t ht hf'
     obtain ⟨hs, hb⟩ := rows_agree_strict hwf hev hev' ht hf' hagB
@@ -1857,7 +1857,7 @@ theorem build_congr :
       have hopt' := hp.gOptions_mem ev' hev' index' width' hwB hiB ht hmem
       simp only [ofDag_dag]
       by_cases hchk : (entry || c == ev'.cost[t]!) = true
-      · simp only [hchk, if_true]
+      · simp only [hchk, ite_true]
         cases choice with
         | share => rw [(hag t (.refl _)).1]
         | inline =>
@@ -1921,7 +1921,7 @@ theorem build_congr :
                 (spineAt (Prep.ofDag dag) t j) with
               | error e => rfl
               | ok tl => exact foldrM_congr_mem hside _
-      · simp only [hchk, Bool.false_eq_true, if_false]
+      · simp only [hchk, Bool.false_eq_true, ite_false]
         rfl
 
 end Congr
@@ -2010,9 +2010,9 @@ theorem PrepWF.gEvalStep_work {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {ava
   have keepO : ∀ (v : Option Nat) (arr : Array (Option Nat)) (i : Nat), i ≠ m →
       (arr.set! m v)[i]! = arr[i]! := by
     intro v arr i hi
-    rw [setBang_getElem!, if_neg (by intro h; exact hi h.1.symm)]
+    rw [setBang_getElem!, ite_eq_right (by intro h; exact hi h.1.symm)]
   by_cases hf : p.family[m]! = .none
-  · simp only [evalStep, haff, if_true, hf, beq_self_eq_true]
+  · simp only [evalStep, haff, ite_true, hf, beq_self_eq_true]
   · obtain ⟨hl1, hk, _, _, _⟩ := hp.spine m hm hf
     have hlt := hp.snext_lt hm hf
     have hB : FirstAvail p avail m 1
@@ -2020,19 +2020,19 @@ theorem PrepWF.gEvalStep_work {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {ava
           (if (widthOf width (snext p m)).isSome then some (snext p m)
             else st.below[snext p m]!) else none) := by
       rcases hp.spine_step hm hf with ⟨hs, hl, _⟩ | ⟨hs, hl, _⟩
-      · rw [if_pos hs, hwidth]
+      · rw [ite_eq_left hs, hwidth]
         have hn1 := (hp.spine (snext p m) (by omega) (by rw [hs]; exact hf)).1
         by_cases hav : avail (snext p m) = true
-        · rw [if_pos hav]
+        · rw [ite_eq_left hav]
           exact ⟨1, Nat.le_refl _, by omega, rfl, hav, fun k' h1 h2 => by omega⟩
-        · rw [if_neg hav]
-          simp only [Option.isSome_none, Bool.false_eq_true, if_false]
+        · rw [ite_eq_right hav]
+          simp only [Option.isSome_none, Bool.false_eq_true, ite_false]
           have hrow := ((hrows _ hlt).2 (by rw [hs]; exact hf)).2
           have hlen1 : p.spineLen[spineAt p m 1]! = p.spineLen[m]! - 1 := by
             simp only [spineAt]; omega
           exact FirstAvail.unshift (by omega) (by simpa [spineAt] using hav)
             (FirstAvail.shift hlen1 hrow)
-      · rw [if_neg hs]
+      · rw [ite_eq_right hs]
         intro k h1 h2
         omega
     generalize hBdef : (if p.family[snext p m]! = p.family[m]! then
@@ -2052,11 +2052,11 @@ theorem PrepWF.gEvalStep_work {p : Prep} (hp : PrepWF p) {wd : Nat → Nat} {ava
       ((p.dag.node m).sideExtra + st.cost[(p.dag.node m).sideChild]! +
           (if p.family[snext p m]! = p.family[m]! then st.sides[snext p m]! else 0))
       hbelow p.spineLen[m]! 1 B best st.work (Nat.le_refl _) (by omega) (by omega) hB
-    simp only [evalStep, haff, if_true]
+    simp only [evalStep, haff, ite_true]
     have hfb : (p.family[m]! == Family.none) = false := by simpa using hf
-    simp only [hfb, Bool.false_eq_true, if_false]
+    simp only [hfb, Bool.false_eq_true, ite_false]
     simp only [ite_beq_family]
-    rw [show (p.dag.node m).spineNext = snext p m from rfl, hBdef, if_neg hf]
+    rw [show (p.dag.node m).spineNext = snext p m from rfl, hBdef, ite_eq_right hf]
     rw [hwork]
     omega
 
@@ -2117,13 +2117,13 @@ theorem evalUp_work {dag : Dag} (hwf : DagWF dag) {wd wd' : Nat → Nat} {A A' :
           obtain ⟨r1, r2, r3⟩ := hrest u (by omega)
           exact ⟨k1.trans r1, k2.trans r2, k3.trans r3⟩
         · rw [hw', hwork]
-          simp only [List.filter_cons, List.filter_nil, hmark, if_true, List.map_cons,
+          simp only [List.filter_cons, List.filter_nil, hmark, ite_true, List.map_cons,
             List.map_nil, List.sum_cons, List.sum_nil]
           unfold nodeWork
           omega
       · have hid : step st (t + m) = st := by
           simp only [step, evalStep]
-          rw [if_neg hmark]
+          rw [ite_eq_right hmark]
         rw [hid]
         refine ⟨hs, fun u hu => ?_, fun u hu => hrest u (by omega), ?_⟩
         · by_cases hum : u < t + m
@@ -2150,7 +2150,7 @@ theorem evalAll_none_work {dag : Dag} (hwf : DagWF dag) :
   have hwidth : ∀ u, widthOf (Array.replicate dag.size none) u =
       if (fun _ => false) u then some ((fun _ => 0) u) else none := by
     intro u
-    simp only [widthOf, Array.getElem?_replicate, Bool.false_eq_true, if_false]
+    simp only [widthOf, Array.getElem?_replicate, Bool.false_eq_true, ite_false]
     split <;> rfl
   let step := evalStep (Prep.ofDag dag).dag (Prep.ofDag dag).family (Prep.ofDag dag).spineLen
     (Prep.ofDag dag).tail (Array.replicate dag.size none) (Array.replicate dag.size true)

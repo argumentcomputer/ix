@@ -123,7 +123,7 @@ theorem PrepWF.inl_node {p : Prep} (hp : PrepWF p) (w : Nat) (S : Nat → Bool) 
     inlOf p w S f x = (p.dag.node x).head.ownBytes +
       ((List.range (p.dag.node x).head.arity).map fun i => f ((p.dag.node x).child i)).sum := by
   unfold inlOf
-  rw [if_pos hf, ← Array.foldl_toList, foldl_add_eq_sum]
+  rw [ite_eq_left hf, ← Array.foldl_toList, foldl_add_eq_sum]
   have har := hp.dag.arity x hx
   rw [← dag_node_eq hx] at har
   rw [children_toList har, List.map_map]
@@ -133,7 +133,7 @@ theorem inl_tele {p : Prep} (w : Nat) (S : Nat → Bool) (f : Nat → Nat)
     {x : Nat} (hf : p.family[x]! ≠ .none) :
     inlOf p w S f x = (cutCosts p w S f x).foldl min (naturalCost p f x) := by
   unfold inlOf
-  rw [if_neg hf]
+  rw [ite_eq_right hf]
 
 theorem cut_mem_cutCosts (p : Prep) (w : Nat) (S : Nat → Bool) (f : Nat → Nat) {x j : Nat}
     (hj1 : 1 ≤ j) (hj : j < p.spineLen[x]!) (hS : S (spineAt p x j) = true) :
@@ -142,7 +142,7 @@ theorem cut_mem_cutCosts (p : Prep) (w : Nat) (S : Nat → Bool) (f : Nat → Na
   unfold cutsFrom
   apply List.mem_filterMap.mpr
   refine ⟨j, List.mem_range'_1.mpr ⟨hj1, by omega⟩, ?_⟩
-  rw [if_pos hS]
+  rw [ite_eq_left hS]
 
 theorem sum_le_sum_of_le {f g : Nat → Nat} :
     ∀ (l : List Nat), (∀ k ∈ l, f k ≤ g k) → (l.map f).sum ≤ (l.map g).sum := by
@@ -178,7 +178,7 @@ theorem PrepWF.valid_cost {p : Prep} (hp : PrepWF p) (w : Nat) (S : Nat → Bool
     refine ⟨?_, fun h => by simp [WTree.isShare] at h⟩
     rw [hp.uCost_eq w S _ hx]
     unfold costOf
-    simp only [hS, if_true, WTree.cost]
+    simp only [hS, ite_true, WTree.cost]
     omega
   | @node x kids hf hlen _ ih =>
     intro hx
@@ -278,7 +278,7 @@ theorem PrepWF.exists_opt {p : Prep} (hp : PrepWF p) (w : Nat) (S : Nat → Bool
     have hg : ∀ c, c < x → Valid p S c (g c) ∧ (g c).cost p w = uCost p w S c := by
       intro c hc
       have hcn : c < p.dag.size := by omega
-      simp only [g, dif_pos (And.intro hc hcn)]
+      simp only [g, dite_eq_left (And.intro hc hcn)]
       exact Classical.choose_spec (ih c hc hcn).1
     -- an optimal inline writing
     have hinl : ∃ T, Valid p S x T ∧ T.isShare = false ∧ T.cost p w = uInl p w S x := by
@@ -348,14 +348,14 @@ theorem PrepWF.exists_opt {p : Prep} (hp : PrepWF p) (w : Nat) (S : Nat → Bool
     by_cases hS : S x = true
     · by_cases hle : w ≤ inlOf p w S (uCost p w S) x
       · refine ⟨.share x, Valid.share hS, ?_⟩
-        simp only [hS, if_true, WTree.cost]
+        simp only [hS, ite_true, WTree.cost]
         omega
       · refine ⟨T, hT, ?_⟩
-        simp only [hS, if_true]
+        simp only [hS, ite_true]
         unfold uInl at hTc
         omega
     · refine ⟨T, hT, ?_⟩
-      simp only [hS, Bool.false_eq_true, if_false]
+      simp only [hS, Bool.false_eq_true, ite_false]
       exact hTc
 
 /-! ## Complete encodings -/
@@ -413,14 +413,14 @@ theorem PrepWF.uniformCost_attained {p : Prep} (hp : PrepWF p) (w : Nat) (avail 
   have hentry : ∀ s, s < p.dag.size → Valid p avail s (entry s) ∧ (entry s).isShare = false ∧
       (entry s).cost p w = uInl p w avail s := by
     intro s hs
-    simp only [entry, dif_pos hs]
+    simp only [entry, dite_eq_left hs]
     exact Classical.choose_spec (hp.exists_opt w avail s hs).2
   let rootW : Nat → WTree := fun r =>
     if h : r < p.dag.size then Classical.choose (hp.exists_opt w avail r h).1 else default
   have hrootW : ∀ r, r < p.dag.size → Valid p avail r (rootW r) ∧
       (rootW r).cost p w = uCost p w avail r := by
     intro r hr
-    simp only [rootW, dif_pos hr]
+    simp only [rootW, dite_eq_left hr]
     exact Classical.choose_spec (hp.exists_opt w avail r hr).1
   refine ⟨entry, roots.map rootW, ⟨fun s hs => ⟨(hentry s (htable s hs)).1,
     (hentry s (htable s hs)).2.1⟩, ?_⟩, ?_⟩
