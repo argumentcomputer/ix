@@ -29,11 +29,10 @@ diagnostics change between its samples is an error; so is a binary, input or
 source that changes during the run. It exits 1 when a pair loses a baseline
 acceptance, 2 on an error.
 
-Both were `scripts/bench-check-ixe.py` (`compare`, `run`) until 2026-10-01;
-the comparison's JSON is unchanged (`Benchmarks.Kernel.CheckIxeRows`). The
-runner's own fingerprint (`runner_sha256`) is now that of the executable
-running it, and `--fuel`, which the current driver does not take, is passed
-only when given. -/
+The comparison's JSON is `Benchmarks.Kernel.CheckIxeRows`'s. The runner's own
+fingerprint (`runner_sha256`) is that of the executable running it, and
+`--fuel`, which the current driver does not take, is passed only when
+given. -/
 
 namespace Benchmarks.Kernel.CheckIxePaired
 

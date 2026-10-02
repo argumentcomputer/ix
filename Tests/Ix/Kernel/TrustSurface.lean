@@ -6,8 +6,7 @@ Derived from con-leche's `tests/trust-surface.sh` (Apache-2.0), modified; see
 `Ix/Kernel/NOTICE`. Its lexer fixture, upstream's
 `tests/trust-surface/lexer.lean`, is kept unchanged as
 `Tests/Fixtures/trust-surface/lexer.lean` (its text still names upstream's
-script). Until 2026-10-01 this was `scripts/trust-surface.sh`, a Python
-program in a shell wrapper, as upstream's is.
+script). Upstream's is a Python program in a shell wrapper.
 
 It scans the checker and the theory under `Ix/Kernel/`
 (`Tests.Ix.Kernel.KernelLayout`, whose table `topLevel` must classify every

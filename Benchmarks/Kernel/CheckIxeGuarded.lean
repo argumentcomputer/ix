@@ -12,10 +12,7 @@ is the exit code. `--binary` runs another driver with the same contract
 (`kernel-check-ixe-opt`); the default is this executable. With
 `--memory-max`, every run is a memory-capped cgroup scope of its own
 (`Ix.Watchdog.run`: `MemoryMax`, no swap, the whole scope killed at the cap,
-exit code 137).
-
-Until 2026-10-01 this was `scripts/check-ixe-guarded.sh`, run inside a
-`systemd-run --user --scope -p MemoryMax=…` line. -/
+exit code 137). -/
 
 namespace Benchmarks.Kernel.CheckIxeGuarded
 

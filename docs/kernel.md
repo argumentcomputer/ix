@@ -347,7 +347,10 @@ re-records it states why the closure or the statement moved.
    `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); 11 escapes in four
    allowlisted files (`Ix/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`)
    are permitted, each with its justification in the tool's header;
-7. `kernel-entry-cases`: Lean declarations of
+7. `kernel-level-comparison`: the level comparison (`Level.leq`,
+   `Level.isEquiv` and its Géran fallback) against brute-force evaluation,
+   on random levels and on Ixon's canonical forms;
+8. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
    submitted as canonical bytes to `checkBytes`, each with an exact expected
    verdict (accepts: a definition, a theorem, an inductive with its
@@ -359,10 +362,16 @@ re-records it states why the closure or the statement moved.
    bytes, a duplicate constant, a duplicate blob, `Nat.rec` with a wrong K
    flag; declines: `Nat.add` with another value, a `partial` definition's
    `_unsafe_rec` body, a non-standard axiom, a theorem of `False`). Rows go
-   to `.lake/build/kernel-entry-cases.jsonl`.
+   to `.lake/build/kernel-entry-cases.jsonl`;
+9. `kernel-reader-fidelity --fixture` and `--check-kernel`: the Ixon reader
+   against a direct translation of the Lean constants it was compiled from,
+   and the projection output against the compiler's records, on the fixture
+   closure (the check the `lake test` suite `kernel-reader-roundtrip` runs)
+   and on the first records of Init and Std; the log goes to
+   `.lake/build/kernel-reader-fidelity.log`.
 
-The CI job runs the same gate and keeps the codec, order and entry-case
-logs.
+The CI job runs the same gate and keeps the codec, order, entry-case and
+reader-fidelity logs.
 
 ### On a toolchain bump
 
@@ -552,9 +561,9 @@ is unchanged.
 | `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Regenerated configuration without the independent upstream dependency; deleted the generated driver | Done; 78 retained package entries |
 | `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Removed inherited package entries and generated member; retained unrelated pins | Done; 24 and 80 retained package entries |
 | `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the `certified-kernel` job covers PRs and merge groups; runtime parity jobs remain | Done |
-| `flake.nix` | Removed dependency override; added Python to development shells | Done |
+| `flake.nix` | Removed dependency override | Done |
 | `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Obsolete active commands retired; historical audit labeled explicitly; replacement guarantees stated below | Done |
-| Kernel/model LICENSE and NOTICE; explanatory attribution in Rust, IxVM, tests and historical documentation | Retained | Preserved |
+| Explanatory attribution in Rust, IxVM, tests and historical documentation | Retained | Preserved |
 
 The retired dependency smoke test replayed `Nat.add_comm` and submitted an
 axiom whose type was the natural-number literal zero. `Nat.add_comm` remains

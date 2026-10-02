@@ -48,7 +48,8 @@ lake exe cache get Mathlib.SetTheory.Cardinal.Regular Mathlib.SetTheory.ZFC.VonN
 lake build --wfail
 ```
 
-Lean and Mathlib use release `v4.34.0`; `lake-manifest.json` pins all resolved
+Lean is the release in `lean-toolchain` (the same as the repository root's), and
+Mathlib the tag in `lakefile.toml`; `lake-manifest.json` pins all resolved
 dependencies. The cache command retrieves the three imported Mathlib modules
 and their dependencies. The build checks the axiom guard. CI's
 `certified-kernel` job (`.github/workflows/ci.yml`) runs these commands

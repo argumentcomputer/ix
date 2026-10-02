@@ -5,8 +5,7 @@ import Tests.Ix.Kernel.KernelLayout
 /-! # The kernel's import-layering fence (`kernel-layering`)
 
 Derived from con-leche's `tests/layering.sh` (Apache-2.0), modified; see
-`Ix/Kernel/NOTICE`. Until 2026-10-01 this was `scripts/layering.sh`, a
-Python program in a shell wrapper, as upstream's is.
+`Ix/Kernel/NOTICE`. Upstream's is a Python program in a shell wrapper.
 
 It covers the checker and the theory under `Ix/Kernel/`, each file
 classified by its path (`Tests.Ix.Kernel.KernelLayout`, whose table

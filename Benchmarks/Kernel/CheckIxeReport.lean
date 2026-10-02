@@ -13,9 +13,7 @@ same run as Markdown tables: outcome counts by declaration kind, first-cause
 decline and reject reasons, root blockers by records blocked, quantiles and
 the slowest rows; `--json` also writes the summary as JSON.
 
-Both were Python scripts until 2026-10-01 (`scripts/check-ixe-report.py`,
-`scripts/check-ixe-summary.py`); their output is unchanged
-(`Benchmarks.Kernel.CheckIxeRows`). Rows are read as written, so a
+Rows are those of `Benchmarks.Kernel.CheckIxeRows`, read as written, so a
 compressed row file is decompressed first (`zcat`). -/
 
 namespace Benchmarks.Kernel.CheckIxeReport
@@ -53,7 +51,7 @@ def group (reason : String) : String :=
   let pfx := "check-ixe: expanded term size exceeds"
   if reason.startsWith pfx then pfx else reason
 
-/-- `--report`, the former `check-ixe-report.py`. -/
+/-- `--report`: outcome and reason counts, root blockers, and the slowest rows. -/
 def report (path : String) (top : Nat) : IO Unit := do
   let rows ← readRows path false
   let byAddr := byAddress rows
@@ -93,7 +91,7 @@ def report (path : String) (top : Nat) : IO Unit := do
   for (_, r) in slow do
     IO.println s!"  {rjust 9 (fixed (secs (micros r) 1e3) 1)} ms  {take 80 (reportName r)}"
 
-/-- `--summary`, the former `check-ixe-summary.py`. -/
+/-- `--summary`: outcome counts, quantiles and the slowest rows; with `--json`, also as JSON. -/
 def summary (path : String) (top : Nat) (json : Option String) : IO Unit := do
   let rows ← readRows path true
   let byAddr := byAddress rows

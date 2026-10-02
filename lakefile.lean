@@ -381,10 +381,11 @@ lean_exe «kernel-pin-gen» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, the layering and
-trust-surface fences, the certified entry's host-compiled cases, and the
-reader's fidelity against Lean (the fixture closure and the first records of Init
-and Std). -/
+the host-side tests, the codec and block-order differentials against Rust,
+optionally the set-theory model, the layering and trust-surface fences, the
+level comparison, the certified entry's host-compiled cases, and the reader's
+fidelity against Lean (the fixture closure and the first records of Init and
+Std). -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -415,11 +416,11 @@ script "check-kernel" (args) := do
   run "lake" #["build", "--wfail", "kernel-layering", "kernel-trust-surface"]
   run ".lake/build/bin/kernel-layering" #[]
   run ".lake/build/bin/kernel-trust-surface" #[]
-  -- Host-compiled Lean declarations through the certified entry, each with
-  -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
-  -- Con-leche's level comparison against brute-force evaluation (cl-level).
+  -- The level comparison against brute-force evaluation.
   run "lake" #["build", "--wfail", "kernel-level-comparison"]
   run ".lake/build/bin/kernel-level-comparison" #[]
+  -- Host-compiled Lean declarations through the certified entry, each with
+  -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
   run "lake" #["build", "--wfail", "kernel-entry-cases"]
   let entry ← IO.Process.output { cmd := ".lake/build/bin/kernel-entry-cases" }
   IO.FS.writeFile ".lake/build/kernel-entry-cases.jsonl" entry.stdout
