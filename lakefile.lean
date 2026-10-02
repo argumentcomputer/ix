@@ -356,13 +356,15 @@ entry and its per-constant check (untrusted). -/
 lean_lib KernelEntry where
   roots := #[`Ix.Ixon.KernelAdmission, `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency,
     `Benchmarks.Kernel.CheckIxeStep,
-    `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold,
+    `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxeStream, `Benchmarks.Kernel.CheckIxePool,
+    `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold,
     `Benchmarks.Kernel.CheckIxeGuarded, `Benchmarks.Kernel.CheckIxeRows,
     `Benchmarks.Kernel.CheckIxeReport, `Benchmarks.Kernel.CheckIxePaired]
 
 /-- The certified checker's environment check over a compiled `.ixe`: the
 verified checker through the Ixon reader, one row per constant (untrusted
-step). -/
+step); the records streamed (`--load eager` decodes them all up front), and
+with `--jobs <n>` the checks on a pool of `n` workers. -/
 lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]

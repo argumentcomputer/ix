@@ -5,8 +5,9 @@ import Benchmarks.Kernel.CheckIxeReport
 import Benchmarks.Kernel.CheckIxePaired
 
 /-! Entry point of `kernel-check-ixe`, the certified checker's environment check:
-the verified checker through the Ixon reader; see `Benchmarks.Kernel.CheckIxe`. A first
-flag selects another mode:
+the verified checker through the Ixon reader; see `Benchmarks.Kernel.CheckIxe` (its
+`--load` and `--jobs` options: the streaming or eager load, and the worker pool of
+`Benchmarks.Kernel.CheckIxePool`). A first flag selects another mode:
 
 * `--fold`: the batch fold over the records the environment check accepts
   (`Benchmarks.Kernel.CheckIxeFold`);
