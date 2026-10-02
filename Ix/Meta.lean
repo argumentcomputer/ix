@@ -19,6 +19,13 @@ open System (FilePath)
 def lakeSpawnEnv : Array (String × Option String) :=
   #[("LD_LIBRARY_PATH", none)]
 
+/-- Print `[lean] <what>: <time since start>` to stderr when `IX_VERBOSE` (or
+the driver's `IX_COMPILE_DBG`) is set: the wall time of one step of the Lean
+side before the compiler runs (Lake, search path, import, elaboration). -/
+def leanPhaseLine (what : String) (startMs : Nat) : IO Unit := do
+  if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
+    IO.eprintln s!"[lean] {what}: {((← IO.monoMsNow) - startMs).formatMs}"
+
 /-- Initialize Lean's module search path.
 
 When `cwd` is provided, query `lake env printenv LEAN_PATH` from that directory
@@ -30,7 +37,9 @@ def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
   -- If a target cwd is supplied, always query that cwd's LEAN_PATH.
   -- Otherwise, trust the inherited LEAN_PATH when present.
   if cwd.isSome || (← IO.getEnv "LEAN_PATH").isNone then
+    let start ← IO.monoMsNow
     let out ← IO.Process.output { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd, env := lakeSpawnEnv }
+    leanPhaseLine "search path (lake env)" start
     let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
     initSearchPath (← findSysroot) paths
   else
@@ -88,9 +97,11 @@ def getFileEnvCore (path : FilePath) : IO FileEnv := do
   -- Required for `processHeaderCore`'s `loadExts := true` import; a completed
   -- import resets the flag, so it is re-armed before every import.
   unsafe enableInitializersExecution
+  let start ← IO.monoMsNow
   let (env, messages) ← processHeaderCore
     (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
     (isModule := false) default messages inputCtx 0
+  leanPhaseLine "import" start
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
@@ -98,7 +109,9 @@ def getFileEnvCore (path : FilePath) : IO FileEnv := do
   -- definitions and not just its imports. Classic elaboration accepts
   -- module-syntax bodies (`public def` etc.) and yields their real content.
   let env := env.setMainModule default
+  let start ← IO.monoMsNow
   let s ← IO.processCommands inputCtx parserState (Command.mkState env messages)
+  leanPhaseLine "elaborate file body" start
   let cmdMessages := s.commandState.messages
   if cmdMessages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
@@ -126,9 +139,11 @@ def moduleVisibleNames (path : FilePath) : IO (Option NameSet) := do
   let (header, _, messages) ← Parser.parseHeader inputCtx
   if !HeaderSyntax.isModule header then return none
   unsafe enableInitializersExecution  -- re-armed per import; see `getFileEnvCore`
+  let start ← IO.monoMsNow
   let (env, messages) ← processHeaderCore
     (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
     (isModule := true) default messages inputCtx 0
+  leanPhaseLine "import at the exported level (module-visible names)" start
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
@@ -214,6 +229,7 @@ def buildFile (path : FilePath) : IO Unit := do
     | throw $ IO.userError s!"{path} is not under {root}"
   let moduleName := ".".intercalate (relParts ++ [stem])
   fetchMathlibCache root
+  let start ← IO.monoMsNow
   let child ← IO.Process.spawn {
     cmd := "lake"
     args := #["build", moduleName]
@@ -223,6 +239,7 @@ def buildFile (path : FilePath) : IO Unit := do
     stderr := .inherit
   }
   let exitCode ← child.wait
+  leanPhaseLine s!"lake build {moduleName}" start
   if exitCode != 0 then
     throw $ IO.userError "lake build failed"
 
