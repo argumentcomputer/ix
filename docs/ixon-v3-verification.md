@@ -78,8 +78,10 @@ production-driver and fidelity gates require zero mismatches.
 ## Formal trust frontier (v3)
 
 At the v3 change the compiler manifest audited 143 roots. (For v4 the
-manifest has 250 roots at the head of the v4 change, including the TagN and
-sharing-construction theorems.) The typechecker manifests audited 2,034
+manifest had 250 roots at the head of the v4 change, including the TagN and
+sharing-construction theorems; those theorems are now audited by
+`Ix/Sharing/Verify/Audit/Statements.lean`, 111 roots, and the rest of that
+manifest is retired with `IxCompileVerify`.) The typechecker manifests audited 2,034
 completed roots, one conditional root, and seven statement roots. Their
 existing transitive assumptions remain explicit in the manifests. Both local
 sorry-frontier checks passed.

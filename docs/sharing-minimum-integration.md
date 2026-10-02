@@ -32,16 +32,16 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
 | Exact-sharing pricing and tie-break bytes at TagN widths; count threshold θmax (finding 7); telescope-spine guard (finding 9) | done |
 | Canonical construction as the only compiler route in Lean and Rust; heuristic removed | done (§3.2, §8) |
 | Compiler limits as a safety net with a CLI override | done (§8) |
-| Proofs: TagN codec, phase-1 minimality, per-phase specifications, serialized length and wire validity of the output, compiler endpoint theorems over it; fast twins attached by audited `@[csimp]` theorems | done; 250 audit roots (§4) |
+| Proofs: TagN codec, phase-1 minimality, per-phase specifications, serialized length and wire validity of the output, the compiler's sharing builder over it; fast twins attached by audited `@[csimp]` theorems | done; 111 audit roots in `IxSharingVerify` on Lean 4.34.0 (§4) |
 | Version 4, object format 4, `ixon-v4` identifiers; readers reject other versions | done (§6) |
 | Fixtures and pins regenerated through their producers | done, except the FLT benchmark artifact and a new dated aggregate fixture (§6) |
 | `.ixe` caches keyed by the format version | done (§6) |
 | Metadata `Share` reader rule in both decompilers | done; no metadata construction (§5.3) |
 | IxVM: TagN codec, claim scope bytes, v4 primitive addresses, re-pinned FFT costs | done (§3.1, §6) |
-| Lean/Rust differential at this PR's head (Init, Mathlib sample) | done: 56,622 and 20,284 constants, 0 disagreements (§7 risk 1) |
+| Lean/Rust differential (Init, Init+Std, Mathlib sample) | done: on Lean 4.34.0, Init 56,783 and Init+Std 100,277 stored constants; on Lean 4.33.1, Init 56,622 and a Mathlib sample of 20,284; 0 disagreements (§7 risk 1) |
 | `ix compile` time: Mathlib within 1.5× of the heuristic route | done: 1.13–1.26× in the final back-to-back runs (`sharing-minimum-performance.md`) |
 | CI-equivalent gates at this PR's head | passed (§8, "Gates at this PR's head") |
-| Lean construction within 2–4× of Rust | not met: 8–15× single-threaded (follow-up, `sharing-minimum.md` §12.18) |
+| Lean construction within 2–4× of Rust | not met: about 8–12× single-threaded on Lean 4.34.0 (8.3–15.4× on 4.33.1; follow-up, `sharing-minimum.md` §12.18) |
 
 ## 1. Key findings
 
@@ -62,7 +62,8 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
    the shorter encoding. That the price of the tiered output is its serialized length is a
    theorem (`canonicalSharingTiered_serialized`); Rust also serializes the returned candidate
    and compares the lengths at run time (`tiered.rs`, check 9).
-4. **There are three codecs.** Besides Lean (`Ix/Ixon.lean`) and Rust (`crates/ixon`), the IxVM
+4. **There are three codecs.** Besides Lean (`Ix/Ixon/Codec.lean`, with the metadata and
+   environment codecs in `Ix/Ixon.lean`) and Rust (`crates/ixon`), the IxVM
    circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`, `Ix/IxVM/IxonSerialize.lean`),
    generated into `crates/ixvm-codegen/src/aiur_ixvm.rs` by `lake exe ix codegen`. CI runs
    `lake exe ix codegen --check`.
@@ -70,11 +71,11 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
    sharingIdx` and `callSite.origHead` index `ConstantMeta.metaSharing` directly, arena roots
    follow the unshared logical tree, and every consumer expands `Share` transparently.
    Re-sharing a constant leaves its metadata valid (§5).
-6. **The compiler endpoint theorems are stated over the tiered construction.**
-   `Ix.Compile.Verify.Tiered.canonicalSharingTiered_format` (`TieredWire.lean`) gives
+6. **The compiler's sharing builder theorems are stated over the tiered construction.**
+   `Ix.Sharing.Verify.Tiered.canonicalSharingTiered_format` (`TieredWire.lean`) gives
    `FormatOK sharing roots`: every entry and root `wireWF`, `sharing.size < UInt64.size`, entry
    `k` references only `Share(i)` with `i < k`, roots only `i < sharing.size`. The builder can
-   fail, so the run endpoints conclude `SharingRunOK`: the run returns an exactly decodable
+   fail, so the singleton-driver tail concludes `SharingRunOK`: the run returns an exactly decodable
    block, or fails with an error the builder returns on some payload (§4).
 7. **The certain-stored threshold follows the TagN count growth.** The uniform optimizer
    (`Uniform.lean`, Rust `uniform.rs`) once used θ = 2 because one more table entry grew the
@@ -105,7 +106,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
 
 ### 3.1 The integer code: writers and readers
 
-**Lean** (`Ix/Ixon.lean`): `putTagN f flag value` / `getTagN f` (a `TagN` is `{flag, value}`;
+**Lean** (`Ix/Ixon/Codec.lean`; metadata, names and environments in `Ix/Ixon.lean`): `putTagN f flag value` / `getTagN f` (a `TagN` is `{flag, value}`;
 `getTagN0Values` reads a run of `f = 0` values). Every site uses them: expressions (`putExpr`,
 `getExprFuel`, `getExprFromTag`), universes (`putUniv`, `getUnivFromTag`), constants and
 projections, metadata (`ConstantMeta`, `ExprMeta` arenas), names, environments (`putEnv`,
@@ -196,20 +197,22 @@ table logically.
 
 ## 4. Verification theorems
 
-Everything below builds in `lake build IxCompileVerify`. Its trust audit
-(`Ix/Compile/Verify/Audit/Statements.lean`, 250 roots at this PR's head) fixes each root's axioms
-exactly; `Audit/SorryFrontier.lean` checks that no declaration of `Ix.Compile.Verify` or
-`Ix.Sharing` uses `sorry`; and `Audit/CompiledCode.lean` checks the compiled code (below).
+Everything below builds in `lake build --wfail IxSharingVerify` (the proofs under
+`Ix/Sharing/Verify`), except the TagN and codec theorems, which are in `Ix/Ixon/Verify` and build
+with the certified checker's byte stage (`lake -d IxKernel build --wfail`). Its trust audit
+(`Ix/Sharing/Verify/Audit/Statements.lean`, 111 roots on Lean 4.34.0, among them the TagN roots)
+fixes each root's axioms exactly; `Audit/SorryFrontier.lean` checks that no declaration of an
+`Ix.Sharing` module uses `sorry`; and `Audit/CompiledCode.lean` checks the compiled code (below).
 `lake lint` builds it as well.
 
-- **TagN** (`Ix/Compile/Verify/TagN.lean`): the byte specification `tagNBytes`, the writer and
+- **TagN** (`Ix/Ixon/Verify/Basic.lean` and `TagN.lean`): the byte specification `tagNBytes`, the writer and
   reader laws `putTagN_writes` and `getTagN_reads`, canonicity and injectivity
   (`runGetExact_getTagN_eq`, `runGetExact_getTagN_iff`, `runGetExact_getTagN_inj`,
   `putTagN_inj`) and the two rejection laws (`getTagN_rejects_code`,
-  `getTagN_rejects_overflow`). The codec theorems of `Codec.lean`, `ExprCodec.lean`,
-  `ExprSpineCodec.lean` and the constant codecs (`ConstantCodec.lean`,
-  `ConstantTablesCodec.lean`, `NonrecursiveConstantCodec.lean`, `RecursorConstantCodec.lean`,
-  `MutualConstantCodec.lean`) are stated over these facts; TagN is bijective, so no
+  `getTagN_rejects_overflow`). The codec theorems of `Ix/Ixon/Verify/` `Basic.lean`, `Expr.lean`,
+  `ExprSpine.lean` and the constant codecs (`Constant.lean`, `ConstantTables.lean`,
+  `NonrecursiveConstant.lean`, `RecursorConstant.lean`, `MutualConstant.lean`) are stated over
+  these facts; TagN is bijective, so no
   canonical-integer side conditions remain.
 - **Size model**: `SharingExact.lean` proves `exprSize_eq_serExpr` (the TagN-priced size is the
   serialized length of every `wireWF` expression) and `serConstant_size_decomposition`;
@@ -227,15 +230,20 @@ exactly; `Audit/SorryFrontier.lean` checks that no declaration of `Ix.Compile.Ve
   (`canonicalSharingTiered_serialized`, `canonicalSharingTieredTable_serialized`:
   `variableBytes` is `tag0Size` of the table count plus the `serExpr` lengths of every entry and
   root, and `modelBytes = variableBytes`).
-- **Compiler endpoints** (`CompileSharingCodec.lean` and the `Compile*Codec.lean` modules):
+- **The compiler's sharing builder** (`Builder.lean`):
   `buildConstantWithSharing_wireWF` takes the entries' and roots' `wireWF` and the table
   capacity from `FormatOK`. `SharingRunOK limits run` states the outcome of a run whose only
   possible failure is the builder: either `run = .ok (result, state')` with
   `BlockResultCodecWF result` (the block is `wireWF` and its bytes decode to it exactly), or
   `run = .error err` where the builder returns `.error err` on some payload and tables. Under
-  `SharingSucceeds` only the first case remains. Every `*_codecWF` endpoint concludes
-  `SharingRunOK compileEnv.sharingLimits (run ..)`. `FormatOK`'s backwardness conjuncts can
-  discharge `DecodeCtx.SharingWF` (`Ix/Compile/Verify/Catalog.lean`); no endpoint states it.
+  `SharingSucceeds` only the first case remains. The singleton-driver tail concludes
+  `SharingRunOK compileEnv.sharingLimits (run ..)` (`finishConstantInfoWithSharing_run_codecWF`).
+  The theorems about the stored bytes (`BlockResult.mk'_codec_roundtrip`,
+  `BlockResult.constantInfo_codec_roundtrip`, `finishConstantInfoWithSharing_run_codecWF`) are not
+  audit roots: `BlockResult.mk'` hashes the block with Blake3, whose package carries a
+  `native_decide` axiom that the manifest does not admit. No theorem covers the per-declaration
+  drivers before that tail. `FormatOK`'s backwardness conjuncts are the decoders' rule that a
+  `Share` refers only to an earlier entry.
 
 **Specification, fast twin, csimp theorem, audit root.** The theorems describe the
 specification modules of `Ix/Sharing/Exact/` (`Basic`, `Dag`, `Dictionary`, `Search`,
@@ -247,7 +255,7 @@ so compiled code calls the twin. A csimp applies only to code compiled after it,
 recompiles the callers (`allocate`, `tieredAtWidth`, `canonicalTieredCore`,
 `canonicalTieredExpanded`, `optimizeUniformExpanded`; `*_eq_C`) to reach the twins. Each csimp
 theorem is an audit root, and `Audit/CompiledCode.lean` fails the build if a csimp theorem of an
-`Ix` module on `Ix.CompileM`'s import path is not (19 at this PR's head), or if `Ix.Sharing.*`
+`Ix` module on `Ix.CompileM`'s import path is not (19), or if `Ix.Sharing.*`
 declares anything `unsafe`, `partial`, `@[implemented_by]` or `@[extern]` other than the
 interner's pointer-cache key `exprPtr`. The module map in the docstring of
 `Ix/Sharing/Exact.lean` lists every specification, twin and csimp theorem; the three widths run
@@ -266,10 +274,8 @@ The Rust construction is not proved. Its phase-1 search evaluates a component's 
 truncated cost model, where the Lean specification evaluates the component's whole closure; the
 outputs are equal on every input tested.
 
-`IxTcVerify` mentions none of these names, but its `native_decide` serde fixtures
-(`Ix/Tc/Verify/Ingress/SerializedBoolean.lean`, `Ingress/LiteralBlobs.lean`,
-`Inductive/ConcreteFixture.lean`, `Inductive/EnumerationFixture.lean`) recompute bytes with the
-current codec.
+The former `Ix.Tc.Verify` tree, whose `native_decide` serde fixtures recomputed bytes with the
+codec, is retired ([kernel](kernel.md), "Removal ledger").
 
 ## 5. Metadata
 
@@ -386,11 +392,12 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
 ## 7. Risks
 
 1. **Lean/Rust disagreement of tiered outputs** would fork the address space. Fixtures,
-   generated inputs and the compiler route agree byte for byte (`exact-sharing-ffi`). On corpora
-   compiled at this PR's head, with Rust in its checked mode, all 56,622 Init constants and a
-   Mathlib sample of 20,284 constants give identical bytes, with no resource exhaustion on
-   either side, and the merge-queue suite `lake test -- --ignored compile` requires the Lean and
-   Rust compilers to write identical environments (237,295 constants)
+   generated inputs and the compiler route agree byte for byte (`exact-sharing-ffi`). With Rust
+   in its checked mode, all stored constants of Init (56,783) and of Init+Std (100,277) compiled
+   on Lean 4.34.0 give identical bytes, as did all of Init (56,622) and a Mathlib sample of
+   20,284 constants on Lean 4.33.1, with no resource exhaustion on either side; and the
+   merge-queue suite `lake test -- --ignored compile` requires the Lean and Rust compilers to
+   write identical environments (238,574 constants on Lean 4.34.0)
    (`sharing-minimum-performance.md`).
 2. **Resource exhaustion in the compiler.** The construction fails closed; a constant over the
    limits is a compile error for every caller (compile, aux-gen, kernel egress, decompile
@@ -509,7 +516,11 @@ encoding (`mss.rs`, test-only) are labelled as test oracles; the compiler path n
 
 ### Gates at this PR's head
 
-All passed:
+Recorded on Lean 4.33.1 at the head of the canonical-sharing change, before it was merged with
+the certified checker. Since then `IxTcVerify` is retired ([kernel](kernel.md), "Removal
+ledger"), and the sharing proofs and their audit are the `IxSharingVerify` library (§4: 111
+roots on Lean 4.34.0, all 19 `@[csimp]` theorems among them, sorry frontier clean for
+`Ix.Sharing`). All passed:
 
 - Lean: `lake build --wfail -v`; `lake test --wfail` (primary tier, 3,957 checks); `lake lint --
   --wfail -v`; `lake build IxTcVerify` (audits of 2,034, 1 and 7 roots, sorry frontier clean);
@@ -538,7 +549,9 @@ All passed:
 2. Object-format byte, validator ID, `wireFormatId`: bumped with the version to `4`,
    `"ixon-v4/resource-v1"`, `"ixon-v4"` (§6). Applied.
 3. Endpoint theorem: the real `wireWF` + capacity + backwardness theorem
-   (`canonicalSharingTiered_format`), with the endpoints stated over it (§4). Applied.
+   (`canonicalSharingTiered_format`), with the endpoints stated over it (§4). Applied; the
+   compiler's sharing builder theorems remain over it, and the per-declaration endpoints
+   are retired with the compiler-correctness proofs.
 4. Compiler limits: a safety net with a CLI override (§7 risk 2). Applied.
 5. `metaSharing`: the extended index space of `sharing-minimum.md` §13 (§5.3). Readers applied;
    no construction.

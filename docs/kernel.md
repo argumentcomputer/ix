@@ -41,9 +41,13 @@ does not build the proof tree: the import closure of
 `Ix.Kernel.MainTheorem`.
 
 `records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
-Ixon constant per pair; `blobs` holds literal payloads (`Nat` little-endian
+Ixon v4 constant payload per pair (the bytes of one `Ixon.Constant`, without
+an environment header); `blobs` holds literal payloads (`Nat` little-endian
 bytes, `String` UTF-8 bytes) by address; `hint` is an optional, untrusted
-reducibility hint per constant. The entry runs, in order:
+reducibility hint per constant. The entry takes no format version: a payload
+is read as Ixon v4, and the host's `.ixe` readers, which supply the payloads
+of a compiled environment, reject a file of any other version by its header.
+The entry runs, in order:
 
 | Stage | Function | Fails with |
 | --- | --- | --- |
@@ -149,6 +153,9 @@ equation, by upstream's design.
 - `RecordsRead`: each payload is the canonical encoding of its decoded
   constant within the per-record limits, keys unchanged
   (`decodeRecords_ok_iff`, unique by `RecordsRead.deterministic`).
+  "Canonical encoding" is the codec's: the payload is the bytes the v4
+  writer produces for the decoded constant. It is not a statement about the
+  constant's sharing table (see "Sharing tables" below).
 - `Installed` (`Ix/Kernel/Admission/Theorems.lean`): the reader's output is a
   record-by-record reading of the decoded records (`StreamRead`, from
   `readRecords_spec`), no two decoded records share an address
@@ -211,6 +218,30 @@ admitted through pins and certificates the checker checks itself
 
 ## Keys, pins and the prelude
 
+**Records** are Ixon v4 constant payloads ([Ixon](Ixon.md), [Ixon v4](Ixon-v4.md)):
+TagN integers, and a sharing table per constant. The reader consumes decoded
+constants (`Ix.Ixon.Types`) and never sees the integer code; only the byte
+stage (`Ix/Ixon/{Codec,Bounded/*,Canonical,WireCheck}.lean`) and its proofs
+(`Ix/Ixon/Verify`, including the TagN laws in `Ix/Ixon/Verify/TagN.lean`) do.
+
+**Sharing tables.** In Ixon v4 the table the compiler writes is canonical:
+`Ix.Sharing.Exact.canonicalSharingTiered .tagN` of the constant's expanded
+roots ([Ixon](Ixon.md), "Sharing System"). The certified entry does not check
+that. It accepts any table whose entries refer only to earlier entries: the
+reader expands every `Share` against the record's own table and rejects a
+reference that is not to an earlier entry as malformed
+(`Ix/Kernel/Ixon/Reader.lean`), so the declarations it reads do not depend
+on which backward table the record carries. This is deliberate. Checking
+canonicity would put the sharing construction `Ix.Sharing.Exact` (its `Std`
+maps, the `@[csimp]` fast twins the compiler runs, and the `unsafe`
+pointer-cache key `exprPtr`) into the certified closure, and no theorem
+needs it. A record with a valid but non-canonical table is therefore read and
+checked like any other; its address is not the one the compiler would give
+the same constant, which matters only to a host that derives addresses (the
+projection variant hashes the records it writes, which carry no table). A
+check of table canonicity, if wanted, belongs in a separate variant, as the
+block-order check is.
+
 **Keys** (`Ix/Kernel/Ixon/Reader.lean`). The kernel's environment is keyed
 by `Ix.Kernel.Name`. A reference `ConstRef Address` is encoded under the
 reserved root `ix`: `.member b i` is `ix.<hex b>.i` and `.ctor b i c` is
@@ -271,8 +302,8 @@ lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \
 ```
 
 The full `--consts` list and the source hashes are in the generated files'
-headers. The table names addresses, so a toolchain or compiler change that
-moves Init's addresses requires regeneration: until then the moved
+headers. The table names addresses, so a toolchain, compiler or format
+change that moves Init's addresses requires regeneration: until then the moved
 constants are not pinned and the inputs that need them (literals, the
 pinned `Nat` operations, the standard axioms) decline. Soundness does not
 depend on the table.
@@ -436,6 +467,71 @@ Mathlib tag but regenerates nothing), the change also does the following.
    re-records it states what entered or left the closure and why.
 4. **Gate.** `lake run check-kernel --with-model` passes in full.
 
+### On a format change
+
+A change of the Ixon wire format (a new `Ixon.Env.VERSION`, as from v3 to
+v4) moves essentially every address: an integer whose bytes change, or a
+different sharing table, changes a constant's hash, and addresses propagate
+through references. The readers reject files of another version, so every
+stored artifact is regenerated, not converted. The change does everything a
+toolchain bump does, in this order, with the format-specific steps
+interleaved:
+
+1. **Codec proofs.** `Ix/Ixon/Verify` proves the codec the byte stage runs.
+   Re-prove it for the new grammar keeping the name and statement of every
+   lemma used outside `Ix/Ixon/Verify` (the `#check` records in
+   `Ix/Ixon/Audit.lean` list them; the byte stage's theorems in
+   `Ix/Kernel/Admission/Bytes/Theorems.lean` must then build unchanged).
+   `lake -d IxKernel build --wfail IxKernel` is the acceptance.
+2. **Primitive addresses.** `lake exe ixon-v4-primitives` compiles the
+   primitive closure into `$IX_IXON_V4_DIR` and fails if
+   `Tests/Fixtures/ixon-v4/primitives.tsv` differs from the live addresses;
+   copy the file it names over the fixture. Mirror every changed address
+   into `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`),
+   `Ix/Tc/Primitive.lean` and the IxVM literals in `Ix/IxVM/Kernel/*.lean`
+   (search each old address in hex and in 32-byte array form). The suites
+   `prim-addrs` and `primitive-address-parity` and
+   `lake exe ixon-v4-tests --primitives` must pass.
+3. **Generated IxVM Rust.** `lake exe ix codegen` regenerates
+   `crates/ixvm-codegen/src/*.rs` from the IxVM sources (the literals of step
+   2 among them); `lake exe ix codegen --check` must pass.
+4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
+   writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
+   to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
+   `lake exe ixon-v4-tests` validates them. If they moved, so did the
+   catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`)
+   and the environment-bytes hash (`crates/compile/src/graph.rs`); re-pin
+   them from the serializers' output. The independent expression vectors
+   (`Tests/Fixtures/ixon-v4/expressions.txt`) are written by hand from the
+   specification.
+5. **Pin tables**, as step 2 of a toolchain bump: the three commands under
+   "Regeneration" above. Write the two environments to fresh files, never
+   to paths that are symbolic links to another format's stored environments:
+   the commands write through a link.
+6. **The reader test's frozen records.** `Tests/Ix/Kernel/Reader.lean`
+   holds compiled records as bytes. `lake exe kernel-entry-cases --records
+   nested-through-nested` and `--records level-comparison` print them
+   (`lTreeRecords`, `levelRecords`) with the names of the blocks they
+   belong to; replace the lists and the owner addresses with the output. The
+   byte vectors of `Tests/Ix/Kernel/{Codec,ParserWork,ByteAdmission}.lean`
+   are the codec's: rewrite them for the new grammar (`kernel-codec`
+   compares the Lean codec with Rust's on them).
+7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
+   kernel-check FFT-cost pin of `Tests/Ix/IxVM.lean` and the shard pin in
+   `Tests/Main.lean` that moved; set each to the measured value.
+8. **Frozen audit records**, as step 3 of a toolchain bump, including the
+   codec's own closure in `Ix/Ixon/Audit.lean`.
+9. **Stored environments.** Recompile every `.ixe` the documentation's
+   measurements use (`Benchmarks/Compile/CompileInitStd.lean`,
+   `CompileMathlib.lean`), and compare environment-check rows with the
+   previous format's by name, not by address.
+10. **Gate.** `lake run check-kernel --with-model`, `lake test --wfail`, and
+    `lake exe ixon-v4-primitives && lake exe ixon-v4-tests --primitives`.
+
+Version-pinned external artifacts (a benchmark artifact pinned by hash, a
+dated proof fixture) cannot be regenerated without their inputs; they stay
+pinned and are rejected by the new readers, never misread.
+
 ## Origin and attribution
 
 [Con-leche](https://github.com/leanprover/con-leche) is a Lean kernel
@@ -583,9 +679,10 @@ lines); it never reached `main`. Its level normalizer is the source of
 
 This ledger records what was removed from `main` with the lean4ix/Lean4Lean
 dependency and the `Ix.Tc` and `Ix.Compile` verification trees, and what
-replaced each part. Where it names `Ix.Kernel` roots, audits or fixtures, it
-describes the retired intrinsic kernel (above); the current gate is
-described above.
+replaced each part. The codec proofs and the proofs of the canonical sharing
+construction were kept and moved, not removed (the rows below say where).
+Where it names `Ix.Kernel` roots, audits or fixtures, it describes the
+retired intrinsic kernel (above); the current gate is described above.
 
 Both dependency paths are removed: the root Lake package `lean4lean`
 fetched `argumentcomputer/lean4ix` at
@@ -598,9 +695,12 @@ is unchanged.
 | --- | --- | --- |
 | `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots and adversarial fixtures; behavior outside the supported profile remains in runtime tests | Done |
 | `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits supply strict checks and negative controls; obsolete upstream/native/sorry allowances were deleted | Done |
-| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `Ix/Ixon/Verify`, with complete wire domains, frozen contracts, and independent audits | Done; old copies deleted |
+| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `Ix/Ixon/Verify` (`Basic`, `Expr`, `ExprSpine`, `Constant`, `ConstantTables`, `NonrecursiveConstant`, `RecursorConstant`, `MutualConstant`), for the Ixon v4 codec, with complete wire domains, frozen contracts, and independent audits | Done; old copies deleted |
+| `Ix/Compile/Verify/TagN.lean` (the TagN bijection and rejection laws) | `Ix/Ixon/Verify/TagN.lean` (namespace `Ixon.Verify.TagN`), built with the codec proofs by `lake -d IxKernel build --wfail` | Done |
+| `Ix/Compile/Verify/{SharingExact,SharingExactCanon,SharingExactPasses}.lean`, `Tiered*`, `Uniform*` and `Audit/CompiledCode.lean` (the canonical sharing construction) | Moved to `Ix/Sharing/Verify` (namespace `Ix.Sharing.Verify`; deprecated lemma names replaced for Lean 4.34.0; no statement changed), library `IxSharingVerify` (`lake build --wfail IxSharingVerify`, also built by `lake lint`); audits `Ix/Sharing/Verify/Audit/{Statements,SorryFrontier,CompiledCode}.lean` | Done; no theorem of these files dropped |
+| `Ix/Compile/Verify/CompileSharingCodec.lean` | Its builder part (`buildConstantWithSharing_wireWF`, `SharingRunOK`, the singleton-driver tail) is `Ix/Sharing/Verify/Builder.lean`; its expression-compilation roundtrips are retired with the compiler chain they rest on | Done |
 | `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural predicates live in `Ix/Ixon/Wire`; the intrinsic kernel's exact readings covered resolved values; the old semantic square is retired | Done |
-| Remaining `Ix/Compile/Verify/**`, including `Compile*`, `Arena`, `Sharing`, `Statements`, and its audits | Retired compiler/specification machinery; no Ix.Kernel compiler-correctness theorem is claimed | Done |
+| Remaining `Ix/Compile/Verify/**`, including `Compile*` (the per-declaration compiler endpoint theorems among them), `Arena`, the former heuristic `Sharing`, `Statements`, and its audits | Retired compiler/specification machinery; no Ix.Kernel compiler-correctness theorem is claimed | Done |
 | Root `lakefile.lean` / `lake-manifest.json` | Removed dependency, proof libraries, replay benchmark, proof loader, and `build-all` exception; Lake regenerated the manifest | Done; the remaining targets build strictly |
 | `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Removed the proof-only crate and loader; ordinary runtime FFI remains | Done; Cargo regenerated the lockfile |
 | `Benchmarks/Lean4Lean.lean`, `Benchmarks/Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Removed replay library, executable, smoke runner and registration; fixture dispositions below | Done |
@@ -629,9 +729,17 @@ acceptance/rejection behavior or full `Nat.add_comm` certified parity.
 | `deExpr_serExpr` | `Ixon.Verify.deExpr_serExpr` (implemented) | Wire-sized vectors, spine counts, binder bits, and whole-buffer consumption retained |
 | `deConstant_serConstant` | `Ixon.Verify.deConstant_serConstant`, plus `deConstantExact_serConstant` (implemented) | All variants and arbitrary side tables retained with count/address/table bounds |
 | `Reads` / `Writes` | `Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
+| Tag0/Tag2/Tag4 integer laws and their minimal-width checks | the TagN writer and reader laws `Ixon.Verify.Codec.{putTagN_writes, getTagN_reads}` over the byte specification `tagNBytes` (`Ix/Ixon/Verify/Basic.lean`), and `Ixon.Verify.TagN`: `runGetExact_getTagN_iff` (a read succeeds exactly on the written bytes), `putTagN_inj`, `getTagN_rejects_code`, `getTagN_rejects_overflow` (implemented) | Ixon v4 has one integer code, and it is bijective, so no minimal-width check remains |
 | `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
 | Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader erases binder contracts | No Lean4Lean interpretation is retained as a hidden premise |
 | Production compiler refinement/value-preservation and end-to-end semantic square | Retired; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
+
+These contracts are stated about the Ixon v4 codec (TagN integers), with the
+same names and statements as for v3, as is every codec lemma the byte stage
+uses. The byte stage's resource proofs (`Ix/Ixon/Verify/Work*`,
+`ReaderBounds`, `ConstantBounds`) charge a TagN read at most two units per
+consumed byte, which the per-byte budget of `Work.Costs` covers, so
+`checkBytes_resources` has the same statement.
 
 The retained codec chain imports the pure structural `wireWF` predicates,
 so the former `ExprSpineCodec → Catalog → IxonValue → Lean4Lean` dependency

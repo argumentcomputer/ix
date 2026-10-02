@@ -854,12 +854,12 @@ aux-gen blocks, and in Rust also kernel egress and the decompiler's
 recompile. The recompile invariant `Named.original` (§9.2) relies on
 recompile using exactly this route.
 
-On the Init and Mathlib files compiled at this PR's head, Lean and Rust
-produce identical bytes for all 56,622 Init constants and for a Mathlib
-sample of 20,284 constants, and the merge-queue suite
-`lake test -- --ignored compile` requires the Lean and Rust compilers to
-write identical environments for its whole test environment (237,295
-constants).
+Lean and Rust produce identical bytes for every stored constant of the
+Init (56,783) and Init+Std (100,277) files compiled on Lean 4.34.0, and
+did for Init (56,622) and a Mathlib sample of 20,284 constants on Lean
+4.33.1; the merge-queue suite `lake test -- --ignored compile` requires
+the Lean and Rust compilers to write identical environments for its whole
+test environment (238,574 constants on Lean 4.34.0).
 
 ## 7. The Compile Pipeline
 
@@ -2593,7 +2593,7 @@ is known to be partial.
   [`docs/sharing-minimum.md`](./sharing-minimum.md) §12 — the canonical sharing
   construction (§6.7): `Ix/Sharing/Exact/Tiered.lean`,
   `crates/ixon/src/sharing_exact/tiered.rs`, proofs in
-  `Ix/Compile/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
+  `Ix/Sharing/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
 - `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
 - `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
   port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,

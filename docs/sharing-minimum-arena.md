@@ -19,7 +19,7 @@ no 4-byte TagN rung; §7 ends with the sizes of the final v4 files.
     by 19.95% on Mathlib (−667,051,250 bytes) and 19.11% on Init (−37,332,515).
   - Lean and Rust are byte-identical (§4).
 - **Stacked PR: hash-consing.** It saves a further 10.6% (Mathlib) and 10.3% (Init). It
-  changes the producers, both compilers and the metadata finalizer proofs. It is designed
+  changes the producers and both compilers. It is designed
   in §5 and kept separable.
 
 All figures below are exact byte counts from the `arena_study` tool (§8). Its v3 pricing
@@ -164,7 +164,8 @@ so none of these change:
 - the decompilers (`Ix/DecompileM.lean`, `crates/compile/src/decompile.rs`);
 - kernel meta ingress (`Ix/Tc/IngressMeta.lean`, `crates/kernel/src/ingress.rs`);
 - the FFI marshalling (`crates/ffi/src/lean_ixon/meta.rs`);
-- the proofs (`Ix/Compile/Verify/*`, which are about the in-memory arena);
+- the proofs (none is about the serialized arena; the sharing proofs in `Ix/Sharing/Verify`
+  do not touch metadata);
 - IxVM, which does not read metadata.
 
 **The one API change** is in the node-level (de)serializers: they now need the node's
@@ -309,10 +310,10 @@ Tag0 → TagN replacement had not landed.
   - `UnivPatch.arenaIdx`.
 - **Order and acyclicity.** First-occurrence order keeps every reference backward and the
   output deterministic. The result is the same as allocation-time dedup.
-- **Proofs.** The post-pass keeps the `run_allocArenaNode` proof steps in
-  `Ix/Compile/Verify/CompileExpr.lean` (about 20 uses) intact. The proved drivers carry
-  the arena through the "metadata drain/finalizer" (`Statements.lean`), so the stacked PR
-  needs a lemma: `hashCons` preserves `ArenaRel` at the remapped roots.
+- **Proofs.** No theorem covers the compiler's metadata or its arenas: the proofs of the
+  arena allocation and the metadata finalizer were part of the compiler-correctness proof
+  tree, which is retired ([kernel](kernel.md), "Removal ledger"). The post-pass needs no
+  lemma.
 
 **Size estimate.**
 
@@ -321,7 +322,6 @@ Tag0 → TagN replacement had not landed.
   `Ix/CompileM.lean` (defn, axio, quot, recr, ctor, inductive and mutual paths) and
   `Ix/AuxGen/CompileAux.lean`, and the Rust equivalents in `compile.rs`, `mutual.rs` and
   `kernel_egress.rs`;
-- the finalizer lemma;
 - fixture regeneration, which v4 needs anyway.
 
 That is too large for "serializer only", hence a stacked PR. It needs no format change:

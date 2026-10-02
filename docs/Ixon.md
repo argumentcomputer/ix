@@ -78,7 +78,7 @@ and Tag0, which had the same flag widths (4, 2 and 0 bits). For values below
 byte. Larger values are encoded differently.
 
 The implementation is Lean `Ixon.putTagN f flag value` / `Ixon.getTagN f`
-(`Ix/Ixon.lean`, which documents the bit layout) and Rust
+(`Ix/Ixon/Codec.lean`, which documents the bit layout) and Rust
 `ixon::tag::TagN::put` / `TagN::get`.
 
 ### Layout
@@ -122,13 +122,15 @@ to reject. A reader rejects only three things:
 - an 8-byte rung whose value would reach `2^64`;
 - truncated input.
 
-The Lean proofs are in `Ix/Compile/Verify/TagN.lean`:
+The Lean proofs are in `Ix/Ixon/Verify/TagN.lean` (namespace
+`Ixon.Verify.TagN`, built with the codec proofs by `lake -d IxKernel build`):
 
 - `runGetExact_getTagN_eq`: accepted encodings are canonical;
 - `putTagN_inj`: distinct values or flags have distinct encodings;
 - `getTagN_rejects_code` and `getTagN_rejects_overflow`: the two rejection rules.
 
-All four are roots of the compiler audit manifest.
+All four are roots of the sharing proofs' audit manifest
+(`Ix/Sharing/Verify/Audit/Statements.lean`).
 
 ### Flag allocation (`f = 4`)
 
@@ -691,7 +693,7 @@ table normalizes to the same bytes (tested; proved under a hypothesis, see
    (`docs/sharing-minimum.md` §3.2). Hashes and the interner's pointer
    cache only speed up discovery: identity is the structural key, never a
    hash, pointer or traversal order. `canonicalize_det`
-   (`Ix/Compile/Verify/SharingExactCanon.lean`) proves that the numbering
+   (`Ix/Sharing/Verify/SharingExactCanon.lean`) proves that the numbering
    of interned terms depends only on the terms the roots denote, not on the
    interner's temporary IDs.
 2. **Phase 1: selection, at each uniform width `w ∈ {1, 2, 3}`.**
@@ -784,15 +786,18 @@ construction, and a partial or best-so-far table is never emitted.
 
 ### What is proved, and what is not
 
-The following theorems are machine-checked in Lean. They are roots of the
-compiler audit manifest `Ix/Compile/Verify/Audit/Statements.lean` (250 roots at
-this PR's head), which `lake build IxCompileVerify` checks: every root
-uses exactly its listed axioms, and no declaration of `Ix.Compile.Verify` or
-`Ix.Sharing` uses `sorry`. The construction theorems are stated for a
+The following theorems are machine-checked in Lean, in `Ix/Sharing/Verify`
+(the `IxSharingVerify` library; the TagN theorems are in
+`Ix/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
+`Ix/Sharing/Verify/Audit/Statements.lean` (111 roots), which
+`lake build --wfail IxSharingVerify` checks: every root uses exactly its
+listed axioms, which are among `propext`, `Classical.choice` and
+`Quot.sound`, and no declaration of an `Ix.Sharing` module uses `sorry`
+(`Audit/SorryFrontier.lean`). `lake lint` builds the library too. The construction theorems are stated for a
 successful run on the canonical DAG of the input (`ex.dag`, `ex.roots`); the
 step that builds that DAG is outside them (see "Expansion" below).
 
-- **Phase 1 minimality** (`Ix/Compile/Verify/UniformOptimality.lean`):
+- **Phase 1 minimality** (`Ix/Sharing/Verify/UniformOptimality.lean`):
   `optimizeUniform_minimum` and `optimizeUniform_least`. Suppose
   `optimizeUniformExpanded w limits ex` succeeds with the default
   branch-and-bound search (`limits.uniformSubsetSearch = false`; the
@@ -841,13 +846,22 @@ step that builds that DAG is outside them (see "Expansion" below).
   every output entry and root is `wireWF`, the table count is below `2^64`,
   and Shares are backward: entry `k` references only entries below `k`, and
   roots only table entries.
-- **Compiler endpoints** (`buildConstantWithSharing_wireWF` and the
-  `*_codecWF` theorems of `Ix/Compile/Verify/Compile*Codec.lean`, stated over
-  the wire-validity theorem): a compiler run either returns a block that is
-  `wireWF` and decodes exactly from its bytes, or fails with an error that
-  the sharing builder returns (`SharingRunOK`; the builder's payload in that
-  case is existentially quantified, so the theorem does not say it is this
-  block's).
+- **The compiler's sharing builder** (`Ix/Sharing/Verify/Builder.lean`,
+  stated over the wire-validity theorem): every block
+  `Ix.CompileM.buildConstantWithSharing` builds from a `wireWF` payload and
+  representable reference and universe tables is `wireWF`
+  (`buildConstantWithSharing_wireWF`), and its stored bytes decode
+  exactly to it. The singleton-driver tail `finishConstantInfoWithSharing`
+  either returns such a block or fails with an error that the sharing
+  builder returns (`finishConstantInfoWithSharing_run_codecWF`, concluding
+  `SharingRunOK`). The theorems about the stored bytes
+  (`BlockResult.mk'_codec_roundtrip`,
+  `BlockResult.constantInfo_codec_roundtrip`,
+  `finishConstantInfoWithSharing_run_codecWF`) are proved but are not audit
+  roots: `BlockResult.mk'` hashes the block, and the Blake3 package's
+  `HasherOps.hash` carries a `native_decide` axiom, which the manifest does
+  not admit. No theorem covers the compiler's per-declaration drivers
+  before that tail.
 - **Structural IDs** (`SharingExactCanon.lean`: `canonicalize_det`): two
   interner outputs that pass the interner's checks, are hash-consed and
   whose roots denote the same terms canonicalize to the same DAG and root
@@ -860,9 +874,9 @@ the theorems describe. Each fast twin is attached to its specification by a
 (results, metered counts and errors), so compiled code calls the twin while
 every theorem keeps talking about the specification; the module map of
 `Ix/Sharing/Exact.lean` lists them. The audit module
-`Ix/Compile/Verify/Audit/CompiledCode.lean` fails the build unless every
+`Ix/Sharing/Verify/Audit/CompiledCode.lean` fails the build unless every
 `@[csimp]` theorem of an `Ix` module on the compiler's import path is an audit
-root (19 at this PR's head), and unless no declaration of `Ix.Sharing.*` is
+root (19), and unless no declaration of `Ix.Sharing.*` is
 `unsafe`, `partial`, `@[implemented_by]` or `@[extern]`, except the
 interner's pointer-cache key `exprPtr`.
 
@@ -898,21 +912,24 @@ Not claimed:
 - **Idempotence** is proved only under the hypothesis that expanding the
   output yields the input's canonical DAG and root IDs
   (`canonicalSharingTieredTable_idem`). It is tested: re-running the Rust
-  construction on every stored constant of the Init and Mathlib files
-  compiled at this PR's head reproduces the stored bytes.
+  construction on every stored constant reproduces the stored bytes, for
+  the Init and Init+Std files compiled on Lean 4.34.0 and for the Init and
+  Mathlib files compiled on Lean 4.33.1.
 - **Rust.** The Rust implementation is not proved. It is checked against
   Lean by differential tests (`exact-sharing-ffi`; with `IX_SHARING_CORPUS`
   it runs over a whole `.ixe`). Its phase-1 search evaluates each
   component's area under a truncated cost model, where Lean's specification
   evaluates the component's whole closure; the outputs are equal on every
-  input tested. On corpora compiled with `ix compile` at this PR's head,
-  with Rust in its checked mode, Lean and Rust produce the same bytes for
-  all 56,622 Init constants and for all 20,284 constants of a Mathlib sample
-  (every 50th constant, plus every constant with more than 2,000
-  candidates), with no resource exhaustion on either side. The merge-queue
-  suite `lake test -- --ignored compile` compiles every constant of its test
-  environment (237,295) with the Lean and the Rust compiler and requires
-  identical serialized environments
+  input tested. On corpora compiled with `ix compile` on Lean 4.34.0, with
+  Rust in its checked mode, Lean and Rust produce the same bytes for all
+  56,783 stored constants of Init and all 100,277 of Init+Std, with no
+  resource exhaustion on either side; on Lean 4.33.1 the same held for
+  Init (56,622 stored constants; the 4.34.0 `Init` is a larger library) and
+  for all 20,284 constants of a Mathlib sample (every 50th constant, plus
+  every constant with more than 2,000 candidates). The merge-queue suite
+  `lake test -- --ignored compile` compiles every constant of its test
+  environment (238,574 on Lean 4.34.0) with the Lean and the Rust compiler
+  and requires identical serialized environments
   ([performance](sharing-minimum-performance.md)).
 - **Length range in Rust.** Lean computes lengths with arbitrary-precision
   `Nat`. Rust's phase 1 uses 128-bit length arithmetic and fails closed
