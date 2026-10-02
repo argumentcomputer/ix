@@ -105,7 +105,7 @@ Three kinds of names are not of this form:
 * `defn`/`axio`/`quot` singletons become one declaration each; projection
   records emit nothing (they are only checked to resolve).
 * Every binder carries `pw := .never` (the checker's annotation pass computes
-  the datum); Ixon v3 binder contracts are erased, as by Ix's own reader.
+  the datum); Ixon binder contracts are erased, as by Ix's own reader.
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
 -/
