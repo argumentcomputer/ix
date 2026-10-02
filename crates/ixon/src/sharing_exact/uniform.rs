@@ -1252,17 +1252,28 @@ impl Overlay<'_> {
 
 /// What a `node` call takes from its caller instead of computing it: the
 /// bounds (`SCtx::rebound`) and visible counts (`SCtx::revisible`) of its
-/// "not stored" set, when the caller has them for the same set. Both are
-/// functions of that set alone.
+/// "not stored" set, when the caller has them for the same set (both are
+/// functions of that set alone), and an evaluation of `phi` the caller made
+/// (`Eval`), which the call's own `phi` takes when its availability flags
+/// are the same.
 struct Known<'b> {
   bounds: Option<Overlay<'b>>,
   vis: Option<Buf<'b, (u64, u64)>>,
+  eval: Option<Eval<'b>>,
 }
 
 impl Known<'_> {
   fn none() -> Self {
-    Known { bounds: None, vis: None }
+    Known { bounds: None, vis: None, eval: None }
   }
+}
+
+/// One evaluation of `SCtx::phi`: the value of each area term, the
+/// availability flags it was made for, and its work.
+struct Eval<'b> {
+  vals: Buf<'b, UVal>,
+  avail: Buf<'b, bool>,
+  work: u64,
 }
 
 /// The search of one component (Lean `SCtx`). Sets of decided members are
@@ -1293,6 +1304,11 @@ struct SCtx<'a, 'd> {
   memo_hits: u64,
   /// Scratch of `phi`: the value of each area term.
   vals: Buf<'a, UVal>,
+  /// The availability flags `vals` were last evaluated for, with the work
+  /// of that evaluation, while `vals_valid`.
+  vals_for: Buf<'a, bool>,
+  vals_work: u64,
+  vals_valid: bool,
   pool: &'a Pool,
 }
 
@@ -1319,29 +1335,44 @@ impl<'a> SCtx<'a, '_> {
   /// and the entries of `stored`, and the evaluation work (Lean
   /// `SCtx.phi`). Every area term is evaluated, children first; other terms
   /// keep their root-level values.
+  ///
+  /// The evaluation and its work depend on `avail` alone (`stored` only
+  /// selects the entries summed), so when `avail` equals the flags of the
+  /// last evaluation, its values and work are taken as they are (the
+  /// "stored" child of a branch evaluates the same flags as its parent).
   fn phi(
     &mut self,
     avail: &[bool],
     stored: &[TermId],
   ) -> Result<(u128, u64), SharingError> {
-    let mut work = 0u64;
-    for k in 0..self.area.len() {
-      let t = self.area[k];
-      let (v, s) = {
-        let (vals, base, pos) = (&self.vals, &self.up.base, self.pos);
-        let get = |c: TermId| match pos[ix(c)] {
-          NO_POS => base[ix(c)],
-          j => vals[j as usize],
+    let work = if self.vals_valid && self.vals_for[..] == *avail {
+      self.vals_work
+    } else {
+      self.vals_valid = false;
+      let mut work = 0u64;
+      for k in 0..self.area.len() {
+        let t = self.area[k];
+        let (v, s) = {
+          let (vals, base, pos) = (&self.vals, &self.up.base, self.pos);
+          let get = |c: TermId| match pos[ix(c)] {
+            NO_POS => base[ix(c)],
+            j => vals[j as usize],
+          };
+          let av = |c: TermId| match pos[ix(c)] {
+            NO_POS => false,
+            j => avail[j as usize],
+          };
+          self.up.node(&get, &av, t)?
         };
-        let av = |c: TermId| match pos[ix(c)] {
-          NO_POS => false,
-          j => avail[j as usize],
-        };
-        self.up.node(&get, &av, t)?
-      };
-      self.vals[k] = v;
-      work = work.saturating_add(1 + s);
-    }
+        self.vals[k] = v;
+        work = work.saturating_add(1 + s);
+      }
+      self.vals_for.clear();
+      self.vals_for.extend_from_slice(avail);
+      self.vals_work = work;
+      self.vals_valid = true;
+      work
+    };
     let get = |c: TermId| match self.pos[ix(c)] {
       NO_POS => self.up.base[ix(c)],
       j => self.vals[j as usize],
@@ -1357,6 +1388,30 @@ impl<'a> SCtx<'a, '_> {
       return Err(overflow());
     }
     Ok((total, work))
+  }
+
+  /// The last evaluation of `phi`, set aside (the next `phi` evaluates into
+  /// other buffers).
+  fn take_eval(&mut self) -> Option<Eval<'a>> {
+    if !self.vals_valid {
+      return None;
+    }
+    self.vals_valid = false;
+    let vals = Buf::filled(&self.pool.uvals, self.area.len(), UVal::default());
+    let avail = Buf::filled(&self.pool.flags, 0, false);
+    Some(Eval {
+      vals: std::mem::replace(&mut self.vals, vals),
+      avail: std::mem::replace(&mut self.vals_for, avail),
+      work: self.vals_work,
+    })
+  }
+
+  /// Make `e` the last evaluation of `phi`.
+  fn put_eval(&mut self, e: Eval<'a>) {
+    self.vals = e.vals;
+    self.vals_for = e.avail;
+    self.vals_work = e.work;
+    self.vals_valid = true;
   }
 
   fn charge(meter: &mut Meter<'_>, work: u64) -> Result<(), SharingError> {
@@ -1660,7 +1715,7 @@ impl<'a> SCtx<'a, '_> {
       Vec::new(),
       g,
       Vec::new(),
-      Known { bounds: Some(b), vis: None },
+      Known { bounds: Some(b), vis: None, eval: None },
     )?;
     let tb = Rc::new(table_trim(tb, self.slack));
     self.memo.insert(key, Rc::clone(&tb));
@@ -1683,12 +1738,16 @@ impl<'a> SCtx<'a, '_> {
     known: Known<'a>,
   ) -> Result<CTable, SharingError> {
     let out = self.flags(&out_all);
+    let Known { bounds, vis, eval } = known;
+    if let Some(e) = eval {
+      self.put_eval(e);
+    }
     // Reclassify.
-    let b = match known.bounds {
+    let b = match bounds {
       Some(b) => b,
       None => self.rebound(&out)?,
     };
-    let vis = match known.vis {
+    let vis = match vis {
       Some(v) => v,
       None => self.revisible(&out),
     };
@@ -1722,7 +1781,7 @@ impl<'a> SCtx<'a, '_> {
         opaque_in[j] = true;
       }
     }
-    let known = Known { bounds: Some(b), vis: Some(vis) };
+    let mut known = Known { bounds: Some(b), vis: Some(vis), eval: None };
     let forced: Vec<TermId> =
       gains.iter().filter(|(_, g)| *g >= self.theta).map(|(t, _)| *t).collect();
     let local_in = if forced.is_empty() {
@@ -1797,7 +1856,10 @@ impl<'a> SCtx<'a, '_> {
     drop(in_f);
     // Branch on the largest |gain|, "stored" first when it is positive. The
     // "stored" child decides "not stored" the same set, `out_all`, and takes
-    // its bounds and visible counts.
+    // its bounds and visible counts; its lower bound evaluates `phi` with
+    // the same availability (`t` moves from undecided to stored), so it
+    // also takes this node's evaluation: directly when it runs first,
+    // set aside from the other child otherwise.
     let Some((t, gt)) = pick_branch(&open) else {
       return Ok(tb);
     };
@@ -1824,6 +1886,7 @@ impl<'a> SCtx<'a, '_> {
         Known::none(),
       )
     } else {
+      known.eval = self.take_eval();
       let tb = self.node(
         meter,
         phi0,
@@ -2297,6 +2360,9 @@ pub(crate) fn optimize_uniform_with(
       memo: pool.memo.take(),
       memo_hits: 0,
       vals: Buf::filled(&pool.uvals, area.len(), UVal::default()),
+      vals_for: Buf::filled(&pool.flags, 0, false),
+      vals_work: 0,
+      vals_valid: false,
       pool,
     };
     let tb = cx.solve(meter, members, &[], &[], None);
