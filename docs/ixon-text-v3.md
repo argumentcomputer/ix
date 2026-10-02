@@ -1,7 +1,12 @@
-# Ixon v3 text syntax
+# Ixon text syntax (grammar version 3)
 
 The Lean and Rust parsers use grammar version **3**. Whole files start with
 `ixon 3`; missing headers and explicit older versions are rejected.
+The text grammar has its own version, separate from the binary format
+version (Lean `Ixon.Syntax.VERSION`, Rust `ixon::syntax::VERSION`). Binary
+format v4 (TagN integers, canonical sharing) does not change the text
+grammar.
+
 Canonical printing includes the header, a blank line between sections,
 and a final newline. Standalone term parsing uses the current grammar
 without a file header.
@@ -66,7 +71,7 @@ intermediate result explicitly:
 ```
 
 The local interpretation and closure restrictions are specified in
-[Ixon v3](Ixon-v3.md).
+[Ixon v4](Ixon-v4.md) (§2; the contract model is unchanged from v3).
 
 ## Let and shared borrow
 
@@ -99,7 +104,7 @@ In particular, the text grammar can represent every wire-level let
 combination; the resource checker is responsible for rejecting a borrow
 view whose contract is not shared and local.
 
-The shared [contract fixtures](../Tests/Fixtures/ixon-v3/text.tsv) cover
+The shared [contract fixtures](../Tests/Fixtures/ixon-v4/text.tsv) cover
 all 16 lambda inputs, 64 dependent arrow input/result pairs, four
 non-dependent arrow results, and 64 let flag/contract combinations.
 Both implementations check the parsed fields and canonical text.

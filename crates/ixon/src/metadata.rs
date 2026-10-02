@@ -18,7 +18,7 @@ use ix_common::env::{self, BinderInfo, Name};
 use super::env::AuxLayout;
 use super::expr::Expr;
 use super::serialize::{get_expr, put_expr};
-use super::tag::Tag0;
+use super::tag::TagN;
 use super::univ::{Univ, get_univ, put_univ};
 
 // ===========================================================================
@@ -34,7 +34,8 @@ pub enum CallSiteEntry {
   /// Argument exists in canonical form at App-spine position `canon_idx`.
   /// `meta` is the arena index for this argument's metadata subtree.
   Kept { canon_idx: u64, meta: u64 },
-  /// Argument was collapsed. Expression stored in `ConstantMeta.meta_sharing[sharing_idx]`.
+  /// Argument was collapsed. Expression stored in `ConstantMeta.meta_sharing[sharing_idx]`
+  /// (a direct index, not offset by the primary sharing table's length).
   /// `meta` is the arena index for this argument's metadata subtree
   /// (may differ from the representative's metadata — different names, refs, etc.).
   Collapsed { sharing_idx: u64, meta: u64 },
@@ -234,20 +235,39 @@ pub struct UnivPatch {
 
 /// Per-constant metadata wrapper: variant payload + extension tables.
 ///
-/// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) form a
-/// virtual address space extending the primary `Constant` tables. They are
-/// used by `CallSite` nodes in the metadata arena for call-site surgery
-/// roundtrip: collapsed argument expressions reference these tables via
-/// `Share(idx)`, `Ref(idx)`, and universe indices — and by `univ_patches`
+/// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) extend the
+/// index spaces of the primary `Constant` tables (for a projection, the
+/// tables of its `Muts` block). They are used by `CallSite` nodes in the
+/// metadata arena for call-site surgery roundtrip — collapsed argument
+/// expressions use `Ref(idx)` and universe indices in the extended spaces,
+/// and `Share(idx)` as specified on `meta_sharing` — and by `univ_patches`
 /// for original level spellings (canonicity §10.6).
 ///
-/// At decompile time, extension tables are appended to the block cache,
-/// creating a contiguous address space.
+/// At decompile time `meta_refs`/`meta_univs` are appended to the block
+/// cache's primary tables, creating contiguous index spaces; `meta_sharing`
+/// is kept in its own table and read by the rule on that field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantMeta {
   pub info: ConstantMetaInfo,
-  /// Compiled Ixon expressions for collapsed call-site arguments.
-  /// May contain `Share(idx)` references into the extended sharing table.
+  /// Compiled Ixon expressions for collapsed call-site arguments and
+  /// rewritten call-site heads, indexed DIRECTLY (no offset) by
+  /// `CallSiteEntry::Collapsed.sharing_idx` and
+  /// `orig_head = Some((sharing_idx, _))`.
+  ///
+  /// Extended index space for `Share` (a reader rule; the bytes are
+  /// unchanged). Let the primary table `sharing` have `p` entries and this
+  /// table `q`. A `Share(i)` occurring inside an expression of
+  /// `meta_sharing[j]` denotes primary entry `i` when `i < p` (expanded
+  /// against the primary table only: shares nested in a primary entry stay
+  /// primary) and `meta_sharing[i - p]` when `p <= i < p + j`. Entry `j`
+  /// may reference every primary entry and only the metadata entries
+  /// before it; `i >= p + q` (out of range) and `p + j <= i < p + q` (a
+  /// forward or self reference) are reader errors, so expansion is well
+  /// founded. A `Share` in a primary expression always denotes a primary
+  /// entry: metadata never changes how primary bytes decode. Readers: the
+  /// Rust and Lean decompilers (`ix_compile::decompile::ShareScope`, Lean
+  /// `Ix.DecompileM.ShareScope`); kernel ingress never reads this table.
+  /// The compilers emit no `Share` here today.
   pub meta_sharing: Vec<Arc<Expr>>,
   /// Extension refs table (addresses referenced by collapsed arg expressions).
   pub meta_refs: Vec<Address>,
@@ -400,7 +420,7 @@ impl ConstantMeta {
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
     self.info.put_with(idx, buf)?;
-    // Extension tables (backward-compatible: 0-length for old constants)
+    // Extension tables (each empty when the constant has none)
     put_vec_len(self.meta_sharing.len(), buf);
     for expr in &self.meta_sharing {
       put_expr(expr, buf);
@@ -413,14 +433,14 @@ impl ConstantMeta {
     for univ in &self.meta_univs {
       put_univ(univ, buf);
     }
-    // Level-spelling patches (canonicity §10.6): per entry, Tag0
-    // arena_idx, Tag0 len, Tag0 virtual univ indices.
+    // Level-spelling patches (canonicity §10.6): per entry, TagN
+    // arena_idx, TagN len, TagN virtual univ indices.
     put_vec_len(self.univ_patches.len(), buf);
     for patch in &self.univ_patches {
-      Tag0::new(patch.arena_idx).put(buf);
+      TagN::put(0, 0, patch.arena_idx, buf);
       put_vec_len(patch.univ_idxs.len(), buf);
       for idx in &patch.univ_idxs {
-        Tag0::new(*idx).put(buf);
+        TagN::put(0, 0, *idx, buf);
       }
     }
     Ok(())
@@ -462,11 +482,11 @@ impl ConstantMeta {
     let patches_len = get_vec_len(buf)?;
     let mut univ_patches = Vec::with_capacity(patches_len);
     for _ in 0..patches_len {
-      let arena_idx = Tag0::get(buf)?.size;
+      let arena_idx = TagN::get(0, buf)?.value;
       let idxs_len = get_vec_len(buf)?;
       let mut univ_idxs = Vec::with_capacity(idxs_len);
       for _ in 0..idxs_len {
-        univ_idxs.push(Tag0::get(buf)?.size);
+        univ_idxs.push(TagN::get(0, buf)?.value);
       }
       univ_patches.push(UnivPatch { arena_idx, univ_idxs });
     }
@@ -550,8 +570,8 @@ fn deser_u8(buf: &mut &[u8]) -> Option<u8> {
   Some(x)
 }
 
-fn deser_tag0(buf: &mut &[u8]) -> Option<u64> {
-  Tag0::get(buf).ok().map(|t| t.size)
+fn deser_tagn0(buf: &mut &[u8]) -> Option<u64> {
+  TagN::get(0, buf).ok().map(|t| t.value)
 }
 
 fn deser_addr(buf: &mut &[u8]) -> Option<Address> {
@@ -580,8 +600,8 @@ fn deser_substring(
 ) -> Option<env::Substring> {
   let str_addr = deser_addr(buf)?;
   let s = String::from_utf8(ixon_env.get_blob(&str_addr)?).ok()?;
-  let start_pos = bignat::Nat::from(deser_tag0(buf)?);
-  let stop_pos = bignat::Nat::from(deser_tag0(buf)?);
+  let start_pos = bignat::Nat::from(deser_tagn0(buf)?);
+  let stop_pos = bignat::Nat::from(deser_tagn0(buf)?);
   Some(env::Substring { str: s, start_pos, stop_pos })
 }
 
@@ -592,9 +612,9 @@ fn deser_source_info(
   match deser_u8(buf)? {
     0 => {
       let leading = deser_substring(buf, ixon_env)?;
-      let leading_pos = bignat::Nat::from(deser_tag0(buf)?);
+      let leading_pos = bignat::Nat::from(deser_tagn0(buf)?);
       let trailing = deser_substring(buf, ixon_env)?;
-      let trailing_pos = bignat::Nat::from(deser_tag0(buf)?);
+      let trailing_pos = bignat::Nat::from(deser_tagn0(buf)?);
       Some(env::SourceInfo::Original(
         leading,
         leading_pos,
@@ -603,8 +623,8 @@ fn deser_source_info(
       ))
     },
     1 => {
-      let start = bignat::Nat::from(deser_tag0(buf)?);
-      let end = bignat::Nat::from(deser_tag0(buf)?);
+      let start = bignat::Nat::from(deser_tagn0(buf)?);
+      let end = bignat::Nat::from(deser_tagn0(buf)?);
       let canonical = deser_u8(buf)? != 0;
       Some(env::SourceInfo::Synthetic(start, end, canonical))
     },
@@ -624,7 +644,7 @@ fn deser_preresolved(
     },
     1 => {
       let name = ixon_env.get_name(&deser_addr(buf)?)?;
-      let count = deser_tag0(buf)? as usize;
+      let count = deser_tagn0(buf)? as usize;
       let mut fields = Vec::with_capacity(count);
       for _ in 0..count {
         let addr = deser_addr(buf)?;
@@ -645,7 +665,7 @@ fn deser_syntax(
     1 => {
       let info = deser_source_info(buf, ixon_env)?;
       let kind = ixon_env.get_name(&deser_addr(buf)?)?;
-      let arg_count = deser_tag0(buf)? as usize;
+      let arg_count = deser_tagn0(buf)? as usize;
       let mut args = Vec::with_capacity(arg_count);
       for _ in 0..arg_count {
         args.push(deser_syntax(buf, ixon_env)?);
@@ -662,7 +682,7 @@ fn deser_syntax(
       let info = deser_source_info(buf, ixon_env)?;
       let raw_val = deser_substring(buf, ixon_env)?;
       let val = ixon_env.get_name(&deser_addr(buf)?)?;
-      let pr_count = deser_tag0(buf)? as usize;
+      let pr_count = deser_tagn0(buf)? as usize;
       let mut preresolved = Vec::with_capacity(pr_count);
       for _ in 0..pr_count {
         preresolved.push(deser_preresolved(buf, ixon_env)?);
@@ -720,19 +740,19 @@ fn get_address_raw(buf: &mut &[u8]) -> Result<Address, String> {
 }
 
 fn put_u64(x: u64, buf: &mut Vec<u8>) {
-  Tag0::new(x).put(buf);
+  TagN::put(0, 0, x, buf);
 }
 
 fn get_u64(buf: &mut &[u8]) -> Result<u64, String> {
-  Ok(Tag0::get(buf)?.size)
+  Ok(TagN::get(0, buf)?.value)
 }
 
 pub(super) fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
-  Tag0::new(len as u64).put(buf);
+  TagN::put(0, 0, len as u64, buf);
 }
 
 pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
-  Ok(Tag0::get(buf)?.size as usize)
+  Ok(TagN::get(0, buf)?.value as usize)
 }
 
 // ===========================================================================
@@ -769,7 +789,7 @@ impl IxonByteSerde for BinderInfo {
 
 // `ReducibilityHints` has no `IxonByteSerde` impl: its only wire home
 // is the env-level §3 section, which fuses the variant and height into
-// a single Tag0 value (see `serialize.rs::fuse_hint`).
+// a single TagN value (see `serialize.rs::fuse_hint`).
 
 // ===========================================================================
 // Indexed serialization (Address -> u64 index)
@@ -969,89 +989,266 @@ fn get_mdata_stack_indexed(
 }
 
 // ===========================================================================
-// ExprMetaData indexed serialization
+// ExprMeta (arena) indexed serialization
 // ===========================================================================
+//
+// Wire format of an arena (`docs/Ixon.md`, "ExprMeta Arena"):
+//
+//   arena  := len node_0 … node_{len-1}
+//   node_i := tag payload,   tag = kind << 3 | mask
+//
+// Kinds: 0 Leaf, 1 App, 2..5 Binder (2 + BinderInfo), 6 LetBinder, 7 Ref,
+// 8 Prj, 9 Mdata, 10 CallSite, 11 EtaCallSite. The payload is the node's
+// fields in declaration order. Child references are never absolute:
+//
+// * The *structural* slots (App fun/arg, Binder type/body, Let
+//   type/value/body, Prj child, Mdata child) may be **implicit**: bit `s` of
+//   `mask` set means slot `s` is not written and refers to the node the
+//   post-order cursor expects. The cursor `top` starts at `i` and visits the
+//   slots last to first; an implicit slot is node `top - 1`, after which
+//   `top` becomes `lo[top - 1]`; `lo[i]` is `top` after the last slot (the
+//   first index of node `i`'s contiguous post-order block; `lo[i] = i` for a
+//   node without structural slots). A tree allocated bottom-up in post-order
+//   writes no child references at all.
+// * Every other reference (a structural slot whose bit is clear, and every
+//   call-site reference) is **explicit**: TagN (`f = 0`) of the backward
+//   delta `(i - 1 - c) mod 2^64`. Forward references are representable
+//   (wrapping), so every arena of `u64` indices has an encoding.
+//
+// The writer marks a slot implicit exactly when its child is `top - 1`, and
+// the reader rejects an explicit slot equal to `top - 1` and an implicit
+// slot with `top = 0`, so each arena has exactly one encoding. Mirrors
+// `Ixon.putExprMetaArenaIndexed` / `getExprMetaArenaIndexed`.
+
+const EM_LEAF: u8 = 0;
+const EM_APP: u8 = 1;
+const EM_BINDER: u8 = 2;
+const EM_LET: u8 = 6;
+const EM_REF: u8 = 7;
+const EM_PRJ: u8 = 8;
+const EM_MDATA: u8 = 9;
+const EM_CALL_SITE: u8 = 10;
+const EM_ETA_CALL_SITE: u8 = 11;
+
+/// Number of structural (possibly implicit) child slots of a node kind.
+fn em_slot_count(kind: u8) -> Option<u32> {
+  match kind {
+    EM_LEAF | EM_REF | EM_CALL_SITE | EM_ETA_CALL_SITE => Some(0),
+    EM_APP | 2..=5 => Some(2),
+    EM_LET => Some(3),
+    EM_PRJ | EM_MDATA => Some(1),
+    _ => None,
+  }
+}
 
 impl ExprMetaData {
-  // Tag 0: Leaf (no payload)
-  // Tag 1: App { children: [u32, u32] }
-  // Tags 2-5: Binder with BinderInfo packed into tag (2 + variant)
-  // Tag 6: LetBinder { name_idx, children: [u32, u32, u32] }
-  // Tag 7: Ref { name_idx }
-  // Tag 8: Prj { struct_name_idx, child: u32 }
-  // Tag 9: Mdata { kvmap_count, kvmaps..., child: u32 }
+  /// The structural child slots, in field order.
+  fn structural_slots(&self) -> &[u64] {
+    match self {
+      Self::App { children } | Self::Binder { children, .. } => children,
+      Self::LetBinder { children, .. } => children,
+      Self::Prj { child, .. } | Self::Mdata { child, .. } => {
+        std::slice::from_ref(child)
+      },
+      Self::Leaf
+      | Self::Ref { .. }
+      | Self::CallSite { .. }
+      | Self::EtaCallSite { .. } => &[],
+    }
+  }
+}
 
-  pub fn put_with(
+/// The implicit-slot mask of node `i` and its block start `lo[i]`.
+fn em_implicit_mask(node: &ExprMetaData, i: u64, lo: &[u64]) -> (u8, u64) {
+  let mut top = i;
+  let mut mask = 0u8;
+  for (s, &c) in node.structural_slots().iter().enumerate().rev() {
+    if top > 0 && c == top - 1 {
+      mask |= 1 << s;
+      top = lo[(top - 1) as usize];
+    }
+  }
+  (mask, top)
+}
+
+/// Explicit reference from node `i` to node `c`: the backward delta
+/// `(i - 1 - c) mod 2^64` as a TagN (`f = 0`) integer.
+fn put_em_ref(i: u64, c: u64, buf: &mut Vec<u8>) {
+  put_u64(i.wrapping_sub(1).wrapping_sub(c), buf);
+}
+
+fn get_em_ref(i: u64, buf: &mut &[u8]) -> Result<u64, String> {
+  Ok(i.wrapping_sub(1).wrapping_sub(get_u64(buf)?))
+}
+
+/// Structural slot `s` of node `i`: written only when not implicit.
+fn put_em_slot(i: u64, mask: u8, s: u32, c: u64, buf: &mut Vec<u8>) {
+  if mask & (1 << s) == 0 {
+    put_em_ref(i, c, buf);
+  }
+}
+
+/// Structural slot `s` of node `i`: read when explicit, a placeholder
+/// (resolved by [`em_resolve_slots`]) when implicit.
+fn get_em_slot(
+  i: u64,
+  mask: u8,
+  s: u32,
+  buf: &mut &[u8],
+) -> Result<u64, String> {
+  if mask & (1 << s) == 0 { get_em_ref(i, buf) } else { Ok(0) }
+}
+
+/// Resolve the implicit slots of node `i` in place and return `lo[i]`.
+fn em_resolve_slots(
+  slots: &mut [u64],
+  mask: u8,
+  i: u64,
+  lo: &[u64],
+) -> Result<u64, String> {
+  let mut top = i;
+  for s in (0..slots.len()).rev() {
+    if mask & (1 << s) != 0 {
+      if top == 0 {
+        return Err(format!(
+          "ExprMeta::get: node {i}: implicit child slot {s} with no \
+           preceding node"
+        ));
+      }
+      slots[s] = top - 1;
+      top = lo[(top - 1) as usize];
+    } else if top > 0 && slots[s] == top - 1 {
+      return Err(format!(
+        "ExprMeta::get: node {i}: explicit child slot {s} refers to the \
+         implicit position {} (noncanonical)",
+        top - 1
+      ));
+    }
+  }
+  Ok(top)
+}
+
+fn put_em_entries(i: u64, entries: &[CallSiteEntry], buf: &mut Vec<u8>) {
+  put_vec_len(entries.len(), buf);
+  for entry in entries {
+    match entry {
+      CallSiteEntry::Kept { canon_idx, meta } => {
+        put_u8(0, buf);
+        put_u64(*canon_idx, buf);
+        put_em_ref(i, *meta, buf);
+      },
+      CallSiteEntry::Collapsed { sharing_idx, meta } => {
+        put_u8(1, buf);
+        put_u64(*sharing_idx, buf);
+        put_em_ref(i, *meta, buf);
+      },
+    }
+  }
+}
+
+fn get_em_entries(
+  i: u64,
+  buf: &mut &[u8],
+) -> Result<Vec<CallSiteEntry>, String> {
+  let n_entries = get_vec_len(buf)?;
+  let mut entries = Vec::with_capacity(n_entries.min(buf.len()));
+  for _ in 0..n_entries {
+    let entry = match get_u8(buf)? {
+      0 => {
+        let canon_idx = get_u64(buf)?;
+        let meta = get_em_ref(i, buf)?;
+        CallSiteEntry::Kept { canon_idx, meta }
+      },
+      1 => {
+        let sharing_idx = get_u64(buf)?;
+        let meta = get_em_ref(i, buf)?;
+        CallSiteEntry::Collapsed { sharing_idx, meta }
+      },
+      x => return Err(format!("CallSiteEntry::get: invalid tag {x}")),
+    };
+    entries.push(entry);
+  }
+  Ok(entries)
+}
+
+fn put_em_refs(i: u64, refs: &[u64], buf: &mut Vec<u8>) {
+  put_vec_len(refs.len(), buf);
+  for &c in refs {
+    put_em_ref(i, c, buf);
+  }
+}
+
+fn get_em_refs(i: u64, buf: &mut &[u8]) -> Result<Vec<u64>, String> {
+  let len = get_vec_len(buf)?;
+  let mut v = Vec::with_capacity(len.min(buf.len()));
+  for _ in 0..len {
+    v.push(get_em_ref(i, buf)?);
+  }
+  Ok(v)
+}
+
+impl ExprMetaData {
+  /// Write node `i` with its implicit-slot `mask` (see the module comment
+  /// above).
+  fn put_node(
     &self,
+    i: u64,
+    mask: u8,
     idx: NamePut<'_>,
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
     match self {
-      Self::Leaf => put_u8(0, buf),
+      Self::Leaf => put_u8(EM_LEAF << 3, buf),
       Self::App { children } => {
-        put_u8(1, buf);
-        put_u64(children[0], buf);
-        put_u64(children[1], buf);
+        put_u8((EM_APP << 3) | mask, buf);
+        put_em_slot(i, mask, 0, children[0], buf);
+        put_em_slot(i, mask, 1, children[1], buf);
       },
       Self::Binder { name, info, children } => {
-        let tag = 2
+        let kind = EM_BINDER
           + match info {
             BinderInfo::Default => 0u8,
             BinderInfo::Implicit => 1,
             BinderInfo::StrictImplicit => 2,
             BinderInfo::InstImplicit => 3,
           };
-        put_u8(tag, buf);
+        put_u8((kind << 3) | mask, buf);
         put_idx(name, idx, buf)?;
-        put_u64(children[0], buf);
-        put_u64(children[1], buf);
+        put_em_slot(i, mask, 0, children[0], buf);
+        put_em_slot(i, mask, 1, children[1], buf);
       },
       Self::LetBinder { name, children } => {
-        put_u8(6, buf);
+        put_u8((EM_LET << 3) | mask, buf);
         put_idx(name, idx, buf)?;
-        put_u64(children[0], buf);
-        put_u64(children[1], buf);
-        put_u64(children[2], buf);
+        put_em_slot(i, mask, 0, children[0], buf);
+        put_em_slot(i, mask, 1, children[1], buf);
+        put_em_slot(i, mask, 2, children[2], buf);
       },
       Self::Ref { name } => {
-        put_u8(7, buf);
+        put_u8(EM_REF << 3, buf);
         put_idx(name, idx, buf)?;
       },
       Self::Prj { struct_name, child } => {
-        put_u8(8, buf);
+        put_u8((EM_PRJ << 3) | mask, buf);
         put_idx(struct_name, idx, buf)?;
-        put_u64(*child, buf);
+        put_em_slot(i, mask, 0, *child, buf);
       },
       Self::Mdata { mdata, child } => {
-        put_u8(9, buf);
+        put_u8((EM_MDATA << 3) | mask, buf);
         put_mdata_stack_indexed(mdata, idx, buf)?;
-        put_u64(*child, buf);
+        put_em_slot(i, mask, 0, *child, buf);
       },
       Self::CallSite { name, entries, canon_meta, orig_head } => {
-        put_u8(10, buf);
+        put_u8(EM_CALL_SITE << 3, buf);
         put_idx(name, idx, buf)?;
-        put_vec_len(entries.len(), buf);
-        for entry in entries {
-          match entry {
-            CallSiteEntry::Kept { canon_idx, meta } => {
-              put_u8(0, buf);
-              put_u64(*canon_idx, buf);
-              put_u64(*meta, buf);
-            },
-            CallSiteEntry::Collapsed { sharing_idx, meta } => {
-              put_u8(1, buf);
-              put_u64(*sharing_idx, buf);
-              put_u64(*meta, buf);
-            },
-          }
-        }
-        put_u64_vec(canon_meta, buf);
+        put_em_entries(i, entries, buf);
+        put_em_refs(i, canon_meta, buf);
         match orig_head {
           None => put_u8(0, buf),
           Some((sharing_idx, meta)) => {
             put_u8(1, buf);
             put_u64(*sharing_idx, buf);
-            put_u64(*meta, buf);
+            put_em_ref(i, *meta, buf);
           },
         }
       },
@@ -1062,146 +1259,113 @@ impl ExprMetaData {
         canon_meta,
         wrapper_meta,
       } => {
-        put_u8(11, buf);
+        put_u8(EM_ETA_CALL_SITE << 3, buf);
         put_u64(*n_synth, buf);
         put_idx(name, idx, buf)?;
-        put_vec_len(entries.len(), buf);
-        for entry in entries {
-          match entry {
-            CallSiteEntry::Kept { canon_idx, meta } => {
-              put_u8(0, buf);
-              put_u64(*canon_idx, buf);
-              put_u64(*meta, buf);
-            },
-            CallSiteEntry::Collapsed { sharing_idx, meta } => {
-              put_u8(1, buf);
-              put_u64(*sharing_idx, buf);
-              put_u64(*meta, buf);
-            },
-          }
-        }
-        put_u64_vec(canon_meta, buf);
-        put_u64(*wrapper_meta, buf);
+        put_em_entries(i, entries, buf);
+        put_em_refs(i, canon_meta, buf);
+        put_em_ref(i, *wrapper_meta, buf);
       },
     }
     Ok(())
   }
 
-  pub fn get_with(buf: &mut &[u8], rev: NameGet<'_>) -> Result<Self, String> {
-    match get_u8(buf)? {
-      0 => Ok(Self::Leaf),
-      1 => {
-        let c0 = get_u64(buf)?;
-        let c1 = get_u64(buf)?;
-        Ok(Self::App { children: [c0, c1] })
+  /// Read node `i`, given the block starts `lo[0..i]`; returns the node
+  /// and `lo[i]`.
+  fn get_node(
+    buf: &mut &[u8],
+    rev: NameGet<'_>,
+    i: u64,
+    lo: &[u64],
+  ) -> Result<(Self, u64), String> {
+    let tag = get_u8(buf)?;
+    let kind = tag >> 3;
+    let mask = tag & 7;
+    match em_slot_count(kind) {
+      Some(n) if u32::from(mask) < (1 << n) => {},
+      _ => return Err(format!("ExprMetaData::get: invalid tag {tag}")),
+    }
+    let mut node = match kind {
+      EM_LEAF => Self::Leaf,
+      EM_APP => {
+        let c0 = get_em_slot(i, mask, 0, buf)?;
+        let c1 = get_em_slot(i, mask, 1, buf)?;
+        Self::App { children: [c0, c1] }
       },
-      tag @ 2..=5 => {
-        let info = match tag {
+      2..=5 => {
+        let info = match kind {
           2 => BinderInfo::Default,
           3 => BinderInfo::Implicit,
           4 => BinderInfo::StrictImplicit,
-          5 => BinderInfo::InstImplicit,
-          _ => unreachable!(),
+          _ => BinderInfo::InstImplicit,
         };
         let name = get_idx(buf, rev)?;
-        let c0 = get_u64(buf)?;
-        let c1 = get_u64(buf)?;
-        Ok(Self::Binder { name, info, children: [c0, c1] })
+        let c0 = get_em_slot(i, mask, 0, buf)?;
+        let c1 = get_em_slot(i, mask, 1, buf)?;
+        Self::Binder { name, info, children: [c0, c1] }
       },
-      6 => {
+      EM_LET => {
         let name = get_idx(buf, rev)?;
-        let c0 = get_u64(buf)?;
-        let c1 = get_u64(buf)?;
-        let c2 = get_u64(buf)?;
-        Ok(Self::LetBinder { name, children: [c0, c1, c2] })
+        let c0 = get_em_slot(i, mask, 0, buf)?;
+        let c1 = get_em_slot(i, mask, 1, buf)?;
+        let c2 = get_em_slot(i, mask, 2, buf)?;
+        Self::LetBinder { name, children: [c0, c1, c2] }
       },
-      7 => {
-        let name = get_idx(buf, rev)?;
-        Ok(Self::Ref { name })
-      },
-      8 => {
+      EM_REF => Self::Ref { name: get_idx(buf, rev)? },
+      EM_PRJ => {
         let struct_name = get_idx(buf, rev)?;
-        let child = get_u64(buf)?;
-        Ok(Self::Prj { struct_name, child })
+        let child = get_em_slot(i, mask, 0, buf)?;
+        Self::Prj { struct_name, child }
       },
-      9 => {
+      EM_MDATA => {
         let mdata = get_mdata_stack_indexed(buf, rev)?;
-        let child = get_u64(buf)?;
-        Ok(Self::Mdata { mdata, child })
+        let child = get_em_slot(i, mask, 0, buf)?;
+        Self::Mdata { mdata, child }
       },
-      10 => {
+      EM_CALL_SITE => {
         let name = get_idx(buf, rev)?;
-        let n_entries = get_vec_len(buf)?;
-        let mut entries = Vec::with_capacity(n_entries);
-        for _ in 0..n_entries {
-          let entry = match get_u8(buf)? {
-            0 => {
-              let canon_idx = get_u64(buf)?;
-              let meta = get_u64(buf)?;
-              CallSiteEntry::Kept { canon_idx, meta }
-            },
-            1 => {
-              let sharing_idx = get_u64(buf)?;
-              let meta = get_u64(buf)?;
-              CallSiteEntry::Collapsed { sharing_idx, meta }
-            },
-            x => return Err(format!("CallSiteEntry::get: invalid tag {x}")),
-          };
-          entries.push(entry);
-        }
-        let canon_meta = get_u64_vec(buf)?;
+        let entries = get_em_entries(i, buf)?;
+        let canon_meta = get_em_refs(i, buf)?;
         let orig_head = match get_u8(buf)? {
           0 => None,
           1 => {
             let sharing_idx = get_u64(buf)?;
-            let meta = get_u64(buf)?;
+            let meta = get_em_ref(i, buf)?;
             Some((sharing_idx, meta))
           },
           x => {
             return Err(format!("CallSite::get: invalid orig_head tag {x}"));
           },
         };
-        Ok(Self::CallSite { name, entries, canon_meta, orig_head })
+        Self::CallSite { name, entries, canon_meta, orig_head }
       },
-      11 => {
+      _ => {
         let n_synth = get_u64(buf)?;
         let name = get_idx(buf, rev)?;
-        let n_entries = get_vec_len(buf)?;
-        let mut entries = Vec::with_capacity(n_entries);
-        for _ in 0..n_entries {
-          let entry = match get_u8(buf)? {
-            0 => {
-              let canon_idx = get_u64(buf)?;
-              let meta = get_u64(buf)?;
-              CallSiteEntry::Kept { canon_idx, meta }
-            },
-            1 => {
-              let sharing_idx = get_u64(buf)?;
-              let meta = get_u64(buf)?;
-              CallSiteEntry::Collapsed { sharing_idx, meta }
-            },
-            x => return Err(format!("CallSiteEntry::get: invalid tag {x}")),
-          };
-          entries.push(entry);
-        }
-        let canon_meta = get_u64_vec(buf)?;
-        let wrapper_meta = get_u64(buf)?;
-        Ok(Self::EtaCallSite {
-          n_synth,
-          name,
-          entries,
-          canon_meta,
-          wrapper_meta,
-        })
+        let entries = get_em_entries(i, buf)?;
+        let canon_meta = get_em_refs(i, buf)?;
+        let wrapper_meta = get_em_ref(i, buf)?;
+        Self::EtaCallSite { n_synth, name, entries, canon_meta, wrapper_meta }
       },
-      x => Err(format!("ExprMetaData::get: invalid tag {x}")),
-    }
+    };
+    let top = match &mut node {
+      Self::App { children } | Self::Binder { children, .. } => {
+        em_resolve_slots(children, mask, i, lo)?
+      },
+      Self::LetBinder { children, .. } => {
+        em_resolve_slots(children, mask, i, lo)?
+      },
+      Self::Prj { child, .. } | Self::Mdata { child, .. } => {
+        em_resolve_slots(std::slice::from_mut(child), mask, i, lo)?
+      },
+      Self::Leaf
+      | Self::Ref { .. }
+      | Self::CallSite { .. }
+      | Self::EtaCallSite { .. } => i,
+    };
+    Ok((node, top))
   }
 }
-
-// ===========================================================================
-// ExprMeta (arena) indexed serialization
-// ===========================================================================
 
 impl ExprMeta {
   pub fn put_with(
@@ -1210,17 +1374,26 @@ impl ExprMeta {
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
     put_vec_len(self.nodes.len(), buf);
-    for node in &self.nodes {
-      node.put_with(idx, buf)?;
+    let mut lo: Vec<u64> = Vec::with_capacity(self.nodes.len());
+    for (i, node) in self.nodes.iter().enumerate() {
+      let i = i as u64;
+      let (mask, top) = em_implicit_mask(node, i, &lo);
+      node.put_node(i, mask, idx, buf)?;
+      lo.push(top);
     }
     Ok(())
   }
 
   pub fn get_with(buf: &mut &[u8], rev: NameGet<'_>) -> Result<Self, String> {
     let len = get_vec_len(buf)?;
-    let mut nodes = Vec::with_capacity(len);
-    for _ in 0..len {
-      nodes.push(ExprMetaData::get_with(buf, rev)?);
+    // Every node takes at least one byte.
+    let cap = len.min(buf.len());
+    let mut nodes = Vec::with_capacity(cap);
+    let mut lo: Vec<u64> = Vec::with_capacity(cap);
+    for i in 0..len {
+      let (node, top) = ExprMetaData::get_node(buf, rev, i as u64, &lo)?;
+      nodes.push(node);
+      lo.push(top);
     }
     Ok(ExprMeta { nodes })
   }
@@ -1324,7 +1497,7 @@ impl ConstantMetaInfo {
         }
         // Option<AuxLayout>: 0 tag = None, 1 tag = Some(perm_vec,
         // ctor_vec, evaporated_vec). The usize vecs are written as
-        // Vec<u64> via Tag0 so the serialized form is target-word-size
+        // Vec<u64> via TagN so the serialized form is target-word-size
         // independent; `evaporated` is one u8 (0/1) per entry.
         match aux_layout {
           None => put_u8(0, buf),
@@ -1588,5 +1761,215 @@ mod tests {
     let recovered =
       ExprMeta::get_with(&mut buf.as_slice(), NameGet::Indexed(&rev)).unwrap();
     assert_eq!(arena, recovered);
+  }
+
+  /// Names for the arena byte vectors: index 0 and 1 (one-byte indices in
+  /// every integer code).
+  fn vec_names() -> (Address, Address, NameIndex, NameReverseIndex) {
+    let a = Address::from_slice(&[1u8; 32]).unwrap();
+    let b = Address::from_slice(&[2u8; 32]).unwrap();
+    let mut idx = NameIndex::new();
+    idx.insert(a.clone(), 0);
+    idx.insert(b.clone(), 1);
+    (a.clone(), b.clone(), idx, vec![a, b])
+  }
+
+  fn arena_bytes(arena: &ExprMeta, idx: &NameIndex) -> Vec<u8> {
+    let mut buf = Vec::new();
+    arena.put_with(NamePut::Indexed(idx), &mut buf).unwrap();
+    buf
+  }
+
+  fn arena_from(
+    bytes: &[u8],
+    rev: &NameReverseIndex,
+  ) -> Result<ExprMeta, String> {
+    let mut slice = bytes;
+    let arena = ExprMeta::get_with(&mut slice, NameGet::Indexed(rev))?;
+    assert!(slice.is_empty(), "trailing bytes");
+    Ok(arena)
+  }
+
+  /// Check `arena` against its expected bytes in both directions.
+  fn check_vector(arena: &ExprMeta, bytes: &[u8]) {
+    let (_, _, idx, rev) = vec_names();
+    assert_eq!(arena_bytes(arena, &idx), bytes);
+    assert_eq!(&arena_from(bytes, &rev).unwrap(), arena);
+  }
+
+  /// A post-order tree (`fun (x : T) => f x`): every child is implicit and
+  /// no reference is written.
+  #[test]
+  fn arena_vector_post_order_tree() {
+    let (f, t, _, _) = vec_names();
+    let arena = ExprMeta {
+      nodes: vec![
+        ExprMetaData::Ref { name: t },
+        ExprMetaData::Ref { name: f.clone() },
+        ExprMetaData::Leaf,
+        ExprMetaData::App { children: [1, 2] },
+        ExprMetaData::Binder {
+          name: f,
+          info: BinderInfo::Default,
+          children: [0, 3],
+        },
+      ],
+    };
+    check_vector(
+      &arena,
+      &[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00],
+    );
+  }
+
+  /// Shared nodes: explicit backward deltas next to implicit slots.
+  #[test]
+  fn arena_vector_dag() {
+    let (a, b, _, _) = vec_names();
+    let arena = ExprMeta {
+      nodes: vec![
+        ExprMetaData::Leaf,
+        // arg implicit (node 0); fun explicit: Δ = 1 - 1 - 0 = 0.
+        ExprMetaData::App { children: [0, 0] },
+        // value implicit (node 1); type and body explicit (Δ = 1).
+        ExprMetaData::LetBinder { name: a, children: [0, 1, 0] },
+        // child 1 is not the cursor (2): explicit, Δ = 1.
+        ExprMetaData::Prj { struct_name: b, child: 1 },
+        ExprMetaData::Mdata { mdata: vec![], child: 3 },
+      ],
+    };
+    check_vector(
+      &arena,
+      &[
+        0x05, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x01, 0x01, 0x40, 0x01, 0x01, 0x49,
+        0x00,
+      ],
+    );
+  }
+
+  /// Call-site references are always explicit; a forward reference wraps
+  /// to a 9-byte TagN delta.
+  #[test]
+  fn arena_vector_call_sites_and_forward() {
+    let (a, b, _, _) = vec_names();
+    let arena = ExprMeta {
+      nodes: vec![
+        ExprMetaData::Leaf,
+        ExprMetaData::CallSite {
+          name: a.clone(),
+          entries: vec![
+            CallSiteEntry::Kept { canon_idx: 0, meta: 0 },
+            CallSiteEntry::Collapsed { sharing_idx: 1, meta: 0 },
+          ],
+          canon_meta: vec![0],
+          orig_head: Some((2, 0)),
+        },
+        ExprMetaData::EtaCallSite {
+          n_synth: 1,
+          name: b,
+          entries: vec![CallSiteEntry::Kept { canon_idx: 0, meta: 1 }],
+          canon_meta: vec![1],
+          wrapper_meta: 1,
+        },
+        // Δ = 3 - 1 - 7 wraps to 2^64 - 5.
+        ExprMetaData::Prj { struct_name: a, child: 7 },
+      ],
+    };
+    check_vector(
+      &arena,
+      &[
+        0x04, 0x00, // leaf
+        0x50, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01,
+        0x02, 0x00, // callSite
+        0x58, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, // eta
+        0x40, 0x00, 0xC3, 0x7B, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF,
+        0xFF, // prj (TagN f = 0 rung 6: 2^64 - 5 - R5 = 0xFFFFFFFE_FEFEBF7B)
+      ],
+    );
+  }
+
+  /// The reader accepts exactly the writer's encoding.
+  #[test]
+  fn arena_rejects_noncanonical() {
+    let (_, _, _, rev) = vec_names();
+    // App with both slots explicit, the argument at the implicit position.
+    assert!(arena_from(&[0x02, 0x00, 0x08, 0x00, 0x00], &rev).is_err());
+    // Implicit slot with no preceding node.
+    assert!(arena_from(&[0x01, 0x09, 0x00], &rev).is_err());
+    // Mask bits beyond the kind's slots, and unknown kinds.
+    assert!(arena_from(&[0x01, 0x01], &rev).is_err());
+    assert!(arena_from(&[0x02, 0x00, 0x0C], &rev).is_err());
+    assert!(arena_from(&[0x01, 0x39, 0x00], &rev).is_err());
+    assert!(arena_from(&[0x01, 0x60], &rev).is_err());
+    // The same arenas, written canonically, are accepted.
+    assert!(arena_from(&[0x02, 0x00, 0x0A, 0x00], &rev).is_ok());
+  }
+
+  /// Pseudo-random arenas (every kind, arbitrary references including
+  /// forward and self references) roundtrip, and re-encoding the decoded
+  /// arena reproduces the bytes.
+  #[test]
+  fn arena_random_roundtrip() {
+    let (a, b, idx, rev) = vec_names();
+    let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = |m: u64| {
+      s = s.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+      (s >> 33) % m
+    };
+    for _ in 0..2000 {
+      let n = next(24);
+      let mut nodes = Vec::new();
+      for i in 0..n {
+        // Mostly post-order-ish (just below), sometimes anywhere.
+        let r = |next: &mut dyn FnMut(u64) -> u64| match next(4) {
+          0 => next(n + 2),
+          _ => i.saturating_sub(1 + next(3)),
+        };
+        let name = if next(2) == 0 { a.clone() } else { b.clone() };
+        let node = match next(9) {
+          0 => ExprMetaData::Leaf,
+          1 => ExprMetaData::App { children: [r(&mut next), r(&mut next)] },
+          2 => ExprMetaData::Binder {
+            name,
+            info: BinderInfo::InstImplicit,
+            children: [r(&mut next), r(&mut next)],
+          },
+          3 => ExprMetaData::LetBinder {
+            name,
+            children: [r(&mut next), r(&mut next), r(&mut next)],
+          },
+          4 => ExprMetaData::Ref { name },
+          5 => ExprMetaData::Prj { struct_name: name, child: r(&mut next) },
+          6 => ExprMetaData::Mdata {
+            mdata: vec![vec![(name, DataValue::OfBool(true))]],
+            child: r(&mut next),
+          },
+          7 => ExprMetaData::CallSite {
+            name,
+            entries: vec![CallSiteEntry::Kept {
+              canon_idx: 3,
+              meta: r(&mut next),
+            }],
+            canon_meta: vec![r(&mut next), r(&mut next)],
+            orig_head: Some((4, r(&mut next))),
+          },
+          _ => ExprMetaData::EtaCallSite {
+            n_synth: 2,
+            name,
+            entries: vec![CallSiteEntry::Collapsed {
+              sharing_idx: 5,
+              meta: r(&mut next),
+            }],
+            canon_meta: vec![],
+            wrapper_meta: r(&mut next),
+          },
+        };
+        nodes.push(node);
+      }
+      let arena = ExprMeta { nodes };
+      let bytes = arena_bytes(&arena, &idx);
+      let back = arena_from(&bytes, &rev).unwrap();
+      assert_eq!(back, arena);
+      assert_eq!(arena_bytes(&back, &idx), bytes);
+    }
   }
 }

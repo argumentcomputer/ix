@@ -6,7 +6,7 @@ public import Ix.Ixon
 /-!
 Mirror: crates/kernel/src/ingress.rs (the Ixon → kernel, anonymous-mode half)
 
-This is the **erased typing** boundary. V3 contracts are retained in the
+This is the **erased typing** boundary. Ixon contracts are retained in the
 addressed source but erased for Lean kernel typing. Resource promises require
 `Ix.Resource.Validate`; successful ordinary typechecking alone establishes
 none of those promises.

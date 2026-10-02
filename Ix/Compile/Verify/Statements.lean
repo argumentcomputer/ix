@@ -12,7 +12,6 @@ import Ix.Compile.Verify.CompileExpr
 import Ix.Compile.Verify.CompileExprCodec
 import Ix.Compile.Verify.CompileConstantCodec
 import Ix.Compile.Verify.CompilePreseed
-import Ix.Compile.Verify.Sharing
 import Ix.Compile.Verify.CompileSharingCodec
 import Ix.Compile.Verify.CompileAxiomCodec
 import Ix.Compile.Verify.CompileDefinitionCodec
@@ -23,6 +22,23 @@ import Ix.Compile.Verify.CompileInductiveCodec
 import Ix.Compile.Verify.CompileMutualCodec
 import Ix.Compile.Verify.Reference
 import Ix.Compile.Verify.SourceValue
+import Ix.Compile.Verify.TagN
+import Ix.Compile.Verify.SharingExactCanon
+import Ix.Compile.Verify.SharingExactPasses
+import Ix.Compile.Verify.UniformOptimizer
+import Ix.Compile.Verify.UniformLength
+import Ix.Compile.Verify.UniformDecomp
+import Ix.Compile.Verify.UniformChecks
+import Ix.Compile.Verify.UniformFinal
+import Ix.Compile.Verify.UniformSearch
+import Ix.Compile.Verify.UniformOptimality
+import Ix.Compile.Verify.TieredSelect
+import Ix.Compile.Verify.TieredTier
+import Ix.Compile.Verify.TieredModel
+import Ix.Compile.Verify.TieredPhase3
+import Ix.Compile.Verify.TieredIdem
+import Ix.Compile.Verify.TieredWire
+import Ix.Compile.Verify.TieredGuard
 
 /-!
 # Public compiler-verification frontier
@@ -45,17 +61,13 @@ reference-address and universe-table conditions required by the constant
 wire. Frozen table views transport it across compilation, and the one-root
 axiom and sequential two-root definition phases now assemble unshared
 constants that round-trip through `serConstant`/`deConstant`. Production
-`buildConstantWithSharing` is connected on its exact no-sharing branch: for
-both axiom and definition roots, the actual builder equals the verified
-unshared assembly, and `BlockResult.mk'` stores bytes that decode back to its
-block. The production sharing pipeline is now proof-visible from recursive
-Merkle analysis through usage propagation and nonempty table construction.
-Analysis retains only wire-safe representatives, rewriting cannot increase
-application, lambda, or forall spine counts, and `applySharing` preserves the
-expression wire domain for every rewritten root and emitted sharing entry.
-An explicit overflow fallback makes its sharing count unconditionally
-representable by `UInt64`, closing the complete axiom and definition builders
-against the constant codec. Pointwise recursor-rule and constructor updaters,
+`buildConstantWithSharing` is the canonical construction
+`canonicalSharingTiered .tagN` of the payload's roots: every successful build
+is wire-safe, because `Tiered.canonicalSharingTiered_format` (`FormatOK`) makes
+every table entry and root wire-safe and the table count representable by
+`UInt64`; on the no-sharing outcome (roots kept, empty table) the builder
+equals the verified unshared assembly, and `BlockResult.mk'` stores bytes that
+decode back to its block. A compile step succeeds under `SharingSucceeds`. Pointwise recursor-rule and constructor updaters,
 together with a verified heterogeneous mutual-member fold, preserve all
 nested wire conditions and counted child arrays. Quotient, standalone
 recursor, mutual-block, and all four projection variants are consolidated by
@@ -181,7 +193,7 @@ all old lookups and establish exact recovery for every traversed name,
 ancestor name component, and blob payload.
 The v2 universe writer and reader are now kernel-visible total definitions;
 an exact-consumption runner rejects trailing bytes, trimmed little-endian
-integers and both `Tag2` forms have proved production inverses, and every
+integers and the TagN integer code have proved production inverses, and every
 universe whose compressed successor counts fit `UInt64` has an exact
 serializer/decoder inverse.  In particular, the `Sort 1` universe required by
 the first declaration fixture is covered. The v2 expression writer and reader
@@ -191,7 +203,7 @@ compiler-facing wire domain, including arbitrary canonical application,
 lambda, and forall spines. Reference and recursive-reference instantiations
 may carry arbitrary wire-sized universe-index vectors. That domain includes
 the `A` type and both the type and value shapes of `idA`, with unrestricted
-`UInt64` fields backed by complete `Tag0` and `Tag4` inverse laws.
+`UInt64` fields backed by complete TagN (`f = 0`, `f = 4`) inverse laws.
 The declaration layer now composes those results through production definition
 and axiom payloads, their `ConstantInfo` discriminants, and the top-level
 `serConstant`/`deConstant` pair with arbitrary wire-representable sharing,

@@ -8,10 +8,7 @@
 
 use dashmap::{DashMap, DashSet};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{
-  cmp::Ordering,
-  sync::{Arc, atomic::Ordering as AtomicOrdering},
-};
+use std::{cmp::Ordering, sync::Arc};
 
 use bignat::Nat;
 
@@ -27,7 +24,7 @@ use ix_common::env::{
 use ix_common::strong_ordering::SOrd;
 
 use ixon::{
-  CompileError, Tag0,
+  CompileError, TagN,
   canon_univ::canon_univ,
   constant::{
     Axiom, Constant, ConstantInfo, Constructor, Definition, Inductive,
@@ -41,7 +38,9 @@ use ixon::{
     ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap,
     UnivPatch,
   },
-  sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
+  sharing_exact::{
+    ExactSharingLimits, ShareLayout, SharingError, canonical_sharing_tiered,
+  },
   univ::Univ,
 };
 
@@ -49,17 +48,6 @@ use crate::{
   graph::NameSet,
   mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
 };
-
-/// Whether to track hash-consed sizes during compilation.
-/// This adds overhead to sharing analysis and can be disabled for production.
-/// Set to `true` to enable hash-consed vs serialized size comparison.
-pub static TRACK_HASH_CONSED_SIZE: std::sync::atomic::AtomicBool =
-  std::sync::atomic::AtomicBool::new(false);
-
-/// Whether to output verbose sharing analysis for pathological blocks.
-/// Set via IX_ANALYZE_SHARING=1 environment variable.
-pub static ANALYZE_SHARING: std::sync::atomic::AtomicBool =
-  std::sync::atomic::AtomicBool::new(false);
 
 /// Whether to output timing diagnostics for slow blocks and aux_gen phases.
 /// Set via IX_TIMING=1 environment variable.
@@ -89,17 +77,6 @@ pub struct CompileOptions {
   /// Override the scheduler worker ceiling. `None` uses available parallelism
   /// or `IX_COMPILE_WORKERS`; adaptive admission may run fewer active blocks.
   pub max_workers: Option<usize>,
-}
-
-/// Size statistics for a compiled block.
-#[derive(Clone, Debug, Default)]
-pub struct BlockSizeStats {
-  /// Hash-consed size: sum of unique subterm sizes (theoretical minimum with perfect sharing)
-  pub hash_consed_size: usize,
-  /// Serialized Ixon size: actual bytes when serialized
-  pub serialized_size: usize,
-  /// Number of constants in the block
-  pub const_count: usize,
 }
 
 /// Worker-local kernel context for aux_gen sort-level inference.
@@ -147,8 +124,6 @@ pub struct CompileState {
   /// block. Each entry is the list of equivalence classes (in `sort_consts` order),
   /// where each class is a list of names.
   pub blocks: DashMap<Name, Vec<Vec<Name>>>,
-  /// Per-block size statistics (keyed by low-link name)
-  pub block_stats: DashMap<Name, BlockSizeStats>,
   /// Constants that couldn't be compiled (name -> error description).
   ///
   /// Populated in two phases:
@@ -223,6 +198,13 @@ pub struct CompileState {
   /// registered, so [`Self::finalize_hints`] resolves this map through
   /// `env.named` into `env.anon_hints` once compilation completes.
   pub def_hints: DashMap<Name, ReducibilityHints>,
+  /// Resource limits of every canonical sharing construction run against
+  /// this state: compilation, and the decompiler's recompile check.
+  /// `compile_env` sets them once, from [`SHARING_LIMITS_ENV`], before it
+  /// schedules any block; an entry point that builds a state from a
+  /// deserialized environment sets them with [`compiler_sharing_limits`].
+  /// The default is [`ExactSharingLimits::default`].
+  pub sharing_limits: ExactSharingLimits,
 }
 
 /// Cached compiled expression with arena root index.
@@ -303,7 +285,6 @@ impl Default for CompileState {
       env: Default::default(),
       name_to_addr: Default::default(),
       blocks: Default::default(),
-      block_stats: Default::default(),
       ungrounded: Default::default(),
       aux_gen_extra_names: Default::default(),
       aux_gen_pending: std::sync::Mutex::new(Vec::new()),
@@ -314,6 +295,7 @@ impl Default for CompileState {
       below_call_site_plans: Default::default(),
       aux_perms: Default::default(),
       def_hints: Default::default(),
+      sharing_limits: ExactSharingLimits::default(),
     }
   }
 }
@@ -2339,7 +2321,7 @@ fn serialize_syntax_inner(
       bytes.push(1);
       serialize_source_info(info, stt, bytes);
       bytes.extend_from_slice(compile_name(kind, stt).as_bytes());
-      Tag0::new(args.len() as u64).put(bytes);
+      TagN::put(0, 0, args.len() as u64, bytes);
       for arg in args {
         serialize_syntax_inner(arg, stt, bytes);
       }
@@ -2354,7 +2336,7 @@ fn serialize_syntax_inner(
       serialize_source_info(info, stt, bytes);
       serialize_substring(raw_val, stt, bytes);
       bytes.extend_from_slice(compile_name(val, stt).as_bytes());
-      Tag0::new(preresolved.len() as u64).put(bytes);
+      TagN::put(0, 0, preresolved.len() as u64, bytes);
       for pr in preresolved {
         serialize_preresolved(pr, stt, bytes);
       }
@@ -2372,14 +2354,14 @@ fn serialize_source_info(
       bytes.push(0);
       serialize_substring(leading, stt, bytes);
       // u64::MAX sentinel for positions that overflow u64 (should never happen in practice)
-      Tag0::new(leading_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
+      TagN::put(0, 0, leading_pos.to_u64().unwrap_or(u64::MAX), bytes);
       serialize_substring(trailing, stt, bytes);
-      Tag0::new(trailing_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
+      TagN::put(0, 0, trailing_pos.to_u64().unwrap_or(u64::MAX), bytes);
     },
     LeanSourceInfo::Synthetic(start, end, canonical) => {
       bytes.push(1);
-      Tag0::new(start.to_u64().unwrap_or(u64::MAX)).put(bytes);
-      Tag0::new(end.to_u64().unwrap_or(u64::MAX)).put(bytes);
+      TagN::put(0, 0, start.to_u64().unwrap_or(u64::MAX), bytes);
+      TagN::put(0, 0, end.to_u64().unwrap_or(u64::MAX), bytes);
       bytes.push(if *canonical { 1 } else { 0 });
     },
     LeanSourceInfo::None => bytes.push(2),
@@ -2392,8 +2374,8 @@ fn serialize_substring(
   bytes: &mut Vec<u8>,
 ) {
   bytes.extend_from_slice(store_string(&ss.str, stt).as_bytes());
-  Tag0::new(ss.start_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
-  Tag0::new(ss.stop_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
+  TagN::put(0, 0, ss.start_pos.to_u64().unwrap_or(u64::MAX), bytes);
+  TagN::put(0, 0, ss.stop_pos.to_u64().unwrap_or(u64::MAX), bytes);
 }
 
 fn serialize_preresolved(
@@ -2409,7 +2391,7 @@ fn serialize_preresolved(
     SyntaxPreresolved::Decl(n, fields) => {
       bytes.push(1);
       bytes.extend_from_slice(compile_name(n, stt).as_bytes());
-      Tag0::new(fields.len() as u64).put(bytes);
+      TagN::put(0, 0, fields.len() as u64, bytes);
       for f in fields {
         bytes.extend_from_slice(store_string(f, stt).as_bytes());
       }
@@ -2418,189 +2400,158 @@ fn serialize_preresolved(
 }
 
 // ===========================================================================
-// Sharing analysis helper
+// Canonical sharing
 // ===========================================================================
 
-/// Result of sharing analysis including size statistics.
-struct SharingResult {
-  /// Rewritten expressions with Share nodes
-  rewritten: Vec<Arc<Expr>>,
-  /// Shared subexpressions
-  sharing: Vec<Arc<Expr>>,
-  /// Hash-consed size: sum of unique subterm base_sizes
-  hash_consed_size: usize,
-}
+// The compiler shares every block with the canonical tiered construction
+// (`canonical_sharing_tiered`, TagN layout). Every construction error,
+// resource exhaustion included, is a compile error: there is no fallback.
+// Mirrors `Ix.CompileM.buildConstantWithSharing`.
 
-/// Compute the hash-consed size from the info_map.
-/// This is the theoretical size if each unique subterm were stored once in a content-addressed store.
-/// Each unique expression = 32-byte key + value (with 32-byte hash references for children/externals).
-fn compute_hash_consed_size(
-  info_map: &FxHashMap<blake3::Hash, sharing::SubtermInfo>,
-) -> usize {
-  info_map.values().map(|info| info.hash_consed_size).sum()
-}
+/// Environment variable carrying a sharing-limit override in the format of
+/// [`ExactSharingLimits::with_overrides`] (for example
+/// `states=2^44,height=2^34` or `unbounded`). `ix compile --sharing-limits`
+/// and `ix compile-lean --sharing-limits` set it. Mirrors Lean
+/// `Ix.CompileM.sharingLimitsEnvVar`.
+pub const SHARING_LIMITS_ENV: &str = "IX_SHARING_LIMITS";
 
-/// Apply sharing analysis to a set of expressions.
-/// Returns the rewritten expressions, sharing vector, and hash-consed size.
-///
-/// Hash-consed size tracking is controlled by the global `TRACK_HASH_CONSED_SIZE` flag.
-fn apply_sharing_with_stats(
-  exprs: Vec<Arc<Expr>>,
-  block_name: Option<&str>,
-) -> SharingResult {
-  let track = TRACK_HASH_CONSED_SIZE.load(AtomicOrdering::Relaxed);
-  let analyze = ANALYZE_SHARING.load(AtomicOrdering::Relaxed);
-  let (info_map, ptr_to_hash, topo_order) = analyze_block(&exprs, track);
-
-  // Compute hash-consed size (sum from info_map, which is 0 if tracking disabled)
-  let hash_consed_size = compute_hash_consed_size(&info_map);
-
-  // Output detailed analysis if requested and this is a large block
-  // Use threshold to catch pathological cases
-  if analyze && info_map.len() > 5000 {
-    let name = block_name.unwrap_or("<unknown>");
-    let stats = sharing::analyze_sharing_stats(&info_map, &topo_order);
-    eprintln!(
-      "\n=== Sharing analysis for block {:?} with {} unique subterms ===",
-      name,
-      info_map.len()
-    );
-    eprintln!("{}", stats);
-    eprintln!(
-      "hash_consed_size from analysis: {} bytes (tracking={})",
-      hash_consed_size, track
-    );
+/// The [`ExactSharingLimits`] defaults with the override `spec` applied.
+pub fn compiler_sharing_limits_with(
+  spec: Option<&str>,
+) -> Result<ExactSharingLimits, String> {
+  let limits = ExactSharingLimits::default();
+  match spec {
+    None => Ok(limits),
+    Some(spec) => limits
+      .with_overrides(spec)
+      .map_err(|e| format!("{SHARING_LIMITS_ENV}: {e}")),
   }
+}
 
-  // Early exit if no sharing opportunities (< 2 repeated subterms)
-  let has_candidates = info_map.values().any(|info| info.usage_count >= 2);
-  if !has_candidates {
-    return SharingResult {
-      rewritten: exprs,
-      sharing: Vec::new(),
-      hash_consed_size,
-    };
+/// Resource limits of the compiler's canonical sharing construction: the
+/// [`ExactSharingLimits`] defaults (a safety net far above every corpus
+/// maximum) with the [`SHARING_LIMITS_ENV`] override. Each entry point reads
+/// it once and carries the result ([`CompileState::sharing_limits`]), so an
+/// invalid override fails the run once, before any block is shared. Mirrors
+/// `Ix.CompileM.compilerSharingLimitsFromEnv`.
+pub fn compiler_sharing_limits() -> Result<ExactSharingLimits, String> {
+  compiler_sharing_limits_with(
+    std::env::var(SHARING_LIMITS_ENV).ok().as_deref(),
+  )
+}
+
+/// A sharing-construction failure as a compile error: resource exhaustion is
+/// `ResourceLimit` (naming the limit and how to raise it), every other kind
+/// `SharingConstruction`. Mirrors `Ix.CompileM.sharingCompileError`.
+fn sharing_compile_error(e: SharingError) -> CompileError {
+  match e {
+    SharingError::ResourceExhausted(r) => CompileError::ResourceLimit {
+      reason: format!(
+        "canonical sharing: {e}; raise it with --sharing-limits {}=N \
+         ({SHARING_LIMITS_ENV})",
+        r.resource.key()
+      ),
+    },
+    other => CompileError::SharingConstruction {
+      reason: format!("canonical sharing: {other}"),
+    },
   }
+}
 
-  let shared_hashes = decide_sharing(&info_map, &topo_order);
-
-  // Early exit if nothing to share
-  if shared_hashes.is_empty() {
-    return SharingResult {
-      rewritten: exprs,
-      sharing: Vec::new(),
-      hash_consed_size,
-    };
+/// Share the ordered roots of one block: the rewritten roots (same order and
+/// count) and the sharing table.
+fn share_roots(
+  limits: &ExactSharingLimits,
+  exprs: &[Arc<Expr>],
+) -> Result<(Vec<Arc<Expr>>, Vec<Arc<Expr>>), CompileError> {
+  let res = canonical_sharing_tiered(ShareLayout::TagN, exprs, limits)
+    .map_err(sharing_compile_error)?;
+  if res.roots.len() != exprs.len() {
+    return Err(CompileError::SharingConstruction {
+      reason: format!(
+        "canonical sharing returned {} roots for {}",
+        res.roots.len(),
+        exprs.len()
+      ),
+    });
   }
-
-  let (rewritten, sharing) = build_sharing_vec(
-    &exprs,
-    &shared_hashes,
-    &ptr_to_hash,
-    &info_map,
-    &topo_order,
-  );
-  SharingResult { rewritten, sharing, hash_consed_size }
+  Ok((res.roots, res.sharing))
 }
 
-/// Apply sharing analysis to a set of expressions (without stats).
-/// Returns the rewritten expressions and the sharing vector.
-#[cfg(test)]
-fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
-  let result = apply_sharing_with_stats(exprs, None);
-  (result.rewritten, result.sharing)
-}
-
-/// Result of applying sharing to a singleton constant.
-pub struct SingletonSharingResult {
-  /// The compiled Constant
-  pub constant: Constant,
-  /// Hash-consed size of expressions
-  pub hash_consed_size: usize,
-}
-
-/// Apply sharing to a Definition and return a Constant with stats.
+/// Apply the compiler's sharing under `limits` (a compile passes
+/// [`CompileState::sharing_limits`]) to a definition payload.
 #[allow(clippy::needless_pass_by_value)]
-pub fn apply_sharing_to_definition_with_stats(
+pub fn apply_sharing_to_definition_with_limits(
+  limits: &ExactSharingLimits,
   def: Definition,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-  block_name: Option<&str>,
-) -> SingletonSharingResult {
-  let result = apply_sharing_with_stats(
-    vec![def.typ.clone(), def.value.clone()],
-    block_name,
-  );
+) -> Result<Constant, CompileError> {
+  let (roots, sharing) =
+    share_roots(limits, &[def.typ.clone(), def.value.clone()])?;
   let def = Definition {
     kind: def.kind,
     safety: def.safety,
     lvls: def.lvls,
-    typ: result.rewritten[0].clone(),
-    value: result.rewritten[1].clone(),
+    typ: roots[0].clone(),
+    value: roots[1].clone(),
   };
   let constant =
-    Constant::with_tables(ConstantInfo::Defn(def), result.sharing, refs, univs);
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+    Constant::with_tables(ConstantInfo::Defn(def), sharing, refs, univs);
+  Ok(constant)
 }
 
-/// Apply sharing to an Axiom and return a Constant with stats.
+/// Apply the compiler's sharing under `limits` to an axiom payload.
 #[allow(clippy::needless_pass_by_value)]
-pub fn apply_sharing_to_axiom_with_stats(
+pub fn apply_sharing_to_axiom_with_limits(
+  limits: &ExactSharingLimits,
   ax: Axiom,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> SingletonSharingResult {
-  let result = apply_sharing_with_stats(vec![ax.typ.clone()], None);
-  let ax = Axiom {
-    is_unsafe: ax.is_unsafe,
-    lvls: ax.lvls,
-    typ: result.rewritten[0].clone(),
-  };
+) -> Result<Constant, CompileError> {
+  let (roots, sharing) = share_roots(limits, std::slice::from_ref(&ax.typ))?;
+  let ax =
+    Axiom { is_unsafe: ax.is_unsafe, lvls: ax.lvls, typ: roots[0].clone() };
   let constant =
-    Constant::with_tables(ConstantInfo::Axio(ax), result.sharing, refs, univs);
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+    Constant::with_tables(ConstantInfo::Axio(ax), sharing, refs, univs);
+  Ok(constant)
 }
 
-/// Apply sharing to a Quotient and return a Constant with stats.
+/// Apply the compiler's sharing under `limits` to a quotient payload.
 #[allow(clippy::needless_pass_by_value)]
-pub fn apply_sharing_to_quotient_with_stats(
+pub fn apply_sharing_to_quotient_with_limits(
+  limits: &ExactSharingLimits,
   quot: Quotient,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> SingletonSharingResult {
-  let result = apply_sharing_with_stats(vec![quot.typ.clone()], None);
-  let quot = Quotient {
-    kind: quot.kind,
-    lvls: quot.lvls,
-    typ: result.rewritten[0].clone(),
-  };
-  let constant = Constant::with_tables(
-    ConstantInfo::Quot(quot),
-    result.sharing,
-    refs,
-    univs,
-  );
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+) -> Result<Constant, CompileError> {
+  let (roots, sharing) = share_roots(limits, std::slice::from_ref(&quot.typ))?;
+  let quot =
+    Quotient { kind: quot.kind, lvls: quot.lvls, typ: roots[0].clone() };
+  let constant =
+    Constant::with_tables(ConstantInfo::Quot(quot), sharing, refs, univs);
+  Ok(constant)
 }
 
-/// Apply sharing to a Recursor and return a Constant with stats.
-pub fn apply_sharing_to_recursor_with_stats(
+/// Apply the compiler's sharing under `limits` to a recursor payload.
+pub fn apply_sharing_to_recursor_with_limits(
+  limits: &ExactSharingLimits,
   rec: Recursor,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> SingletonSharingResult {
-  // Collect all expressions: typ + all rule rhs
+) -> Result<Constant, CompileError> {
+  // The roots: typ, then every rule rhs.
   let mut exprs = vec![rec.typ.clone()];
   for rule in &rec.rules {
     exprs.push(rule.rhs.clone());
   }
 
-  let result = apply_sharing_with_stats(exprs, None);
-  let typ = result.rewritten[0].clone();
+  let (roots, sharing) = share_roots(limits, &exprs)?;
+  let typ = roots[0].clone();
   let rules: Vec<RecursorRule> = rec
     .rules
     .into_iter()
-    .zip(result.rewritten.into_iter().skip(1))
+    .zip(roots.into_iter().skip(1))
     .map(|(r, rhs)| RecursorRule { fields: r.fields, rhs })
     .collect();
 
@@ -2616,26 +2567,19 @@ pub fn apply_sharing_to_recursor_with_stats(
     rules,
   };
   let constant =
-    Constant::with_tables(ConstantInfo::Recr(rec), result.sharing, refs, univs);
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+    Constant::with_tables(ConstantInfo::Recr(rec), sharing, refs, univs);
+  Ok(constant)
 }
 
-/// Result of applying sharing to a mutual block.
-pub struct MutualBlockSharingResult {
-  /// The compiled Constant
-  pub constant: Constant,
-  /// Hash-consed size of all expressions in the block
-  pub hash_consed_size: usize,
-}
-
-/// Apply sharing to a mutual block and return a Constant with stats.
-pub fn apply_sharing_to_mutual_block(
+/// Apply the compiler's sharing under `limits` to a mutual block: one sharing
+/// table for the roots of every member, in member order.
+pub fn apply_sharing_to_mutual_block_with_limits(
+  limits: &ExactSharingLimits,
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-  block_name: Option<&str>,
-) -> MutualBlockSharingResult {
-  // Collect all expressions from all constants in the block
+) -> Result<Constant, CompileError> {
+  // The roots of every member, in member order.
   let mut all_exprs: Vec<Arc<Expr>> = Vec::new();
   let mut layout: Vec<(MutConstKind, Vec<usize>)> = Vec::new();
 
@@ -2671,49 +2615,8 @@ pub fn apply_sharing_to_mutual_block(
     layout.push((kind, indices));
   }
 
-  // Apply sharing analysis to all expressions at once (with stats)
-  let sharing_result = apply_sharing_with_stats(all_exprs, block_name);
-  let rewritten = sharing_result.rewritten;
-  let sharing = sharing_result.sharing;
-  let expr_hash_consed_size = sharing_result.hash_consed_size;
-
-  // Compute structural overhead for hash-consed store.
-  // In a hash-consed store, each unique node = 32-byte key + value (with 32-byte refs for children).
-  // This accounts for Inductive/Constructor/Recursor/Definition structures, not just expressions.
-  let mut structural_overhead: usize = 0;
-  for mc in &mut_consts {
-    match mc {
-      IxonMutConst::Defn(_) => {
-        // Definition: 32-byte key + (kind + safety + lvls + typ_ref + value_ref)
-        // = 32 + (1 + 1 + 8 + 32 + 32) = 106 bytes
-        structural_overhead += 106;
-      },
-      IxonMutConst::Indc(ind) => {
-        // Inductive: 32-byte key + (flags + lvls + params + indices + nested + typ_ref + ctors_array_ref)
-        // = 32 + (3 + 8 + 8 + 8 + 8 + 32 + 32) = 131 bytes
-        structural_overhead += 131;
-        // Each Constructor: 32-byte key + (flags + lvls + cidx + params + fields + typ_ref)
-        // = 32 + (1 + 8 + 8 + 8 + 8 + 32) = 97 bytes
-        structural_overhead += ind.ctors.len() * 97;
-        // Ctors array: 32-byte key + N * 32-byte refs
-        structural_overhead += 32 + ind.ctors.len() * 32;
-      },
-      IxonMutConst::Recr(rec) => {
-        // Recursor: 32-byte key + (k + flags + lvls + params + indices + motives + minors + typ_ref + rules_array_ref)
-        // = 32 + (1 + 1 + 8 + 8 + 8 + 8 + 8 + 32 + 32) = 138 bytes
-        structural_overhead += 138;
-        // Each RecursorRule: 32-byte key + (fields + rhs_ref) = 32 + (8 + 32) = 72 bytes
-        structural_overhead += rec.rules.len() * 72;
-        // Rules array: 32-byte key + N * 32-byte refs
-        structural_overhead += 32 + rec.rules.len() * 32;
-      },
-    }
-  }
-  // Refs: each is a 32-byte address (already content-addressed, no extra overhead)
-  // Univs: each unique univ needs storage. Estimate 32 + 8 bytes per univ.
-  structural_overhead += univs.len() * 40;
-
-  let hash_consed_size = expr_hash_consed_size + structural_overhead;
+  // One sharing table for the whole block.
+  let (rewritten, sharing) = share_roots(limits, &all_exprs)?;
 
   // Rebuild the constants with rewritten expressions
   let mut new_consts = Vec::with_capacity(mut_consts.len());
@@ -2781,7 +2684,7 @@ pub fn apply_sharing_to_mutual_block(
 
   let constant =
     Constant::with_tables(ConstantInfo::Muts(new_consts), sharing, refs, univs);
-  MutualBlockSharingResult { constant, hash_consed_size }
+  Ok(constant)
 }
 
 /// Helper enum for tracking mutual constant layout during sharing.
@@ -3193,33 +3096,25 @@ pub struct CompiledMutualBlock {
   pub constant: Constant,
   /// Content-addressed hash
   pub addr: Address,
-  /// Hash-consed size (theoretical minimum with perfect DAG sharing)
-  pub hash_consed_size: usize,
-  /// Serialized size (actual bytes)
-  pub serialized_size: usize,
 }
 
-/// Compile a mutual block with block-level sharing.
-/// Returns the Constant, its content-addressed hash, and size statistics.
+/// Compile a mutual block with block-level sharing under `limits`.
+/// Returns the Constant and its content-addressed hash.
 pub fn compile_mutual_block(
+  limits: &ExactSharingLimits,
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-  block_name: Option<&str>,
-) -> CompiledMutualBlock {
-  // Apply sharing analysis across all expressions in the mutual block
-  let result =
-    apply_sharing_to_mutual_block(mut_consts, refs, univs, block_name);
-  let constant = result.constant;
-  let hash_consed_size = result.hash_consed_size;
+) -> Result<CompiledMutualBlock, CompileError> {
+  // One sharing table across all expressions of the mutual block.
+  let constant =
+    apply_sharing_to_mutual_block_with_limits(limits, mut_consts, refs, univs)?;
 
-  // Compute content address and serialized size
   let mut bytes = Vec::new();
   constant.put(&mut bytes);
-  let serialized_size = bytes.len();
   let addr = Address::hash(&bytes);
 
-  CompiledMutualBlock { constant, addr, hash_consed_size, serialized_size }
+  Ok(CompiledMutualBlock { constant, addr })
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -4158,25 +4053,24 @@ fn compile_const_inner(
     let n_unique_exprs = cache.exprs.len();
     let refs: Vec<Address> = cache.refs.iter().cloned().collect();
     let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-    let name_str = name.pretty();
     let _t1 = std::time::Instant::now();
-    let result = apply_sharing_to_definition_with_stats(
+    let constant = apply_sharing_to_definition_with_limits(
+      &stt.sharing_limits,
       data,
       refs,
       univs,
-      Some(&name_str),
-    );
+    )?;
     let _t_sharing = _t1.elapsed();
     let _t2 = std::time::Instant::now();
     let mut bytes = Vec::new();
-    result.constant.put(&mut bytes);
+    constant.put(&mut bytes);
     let serialized_size = bytes.len();
     let addr = Address::hash(&bytes);
     let _t_serial = _t2.elapsed();
     if *IX_TIMING && _t0.elapsed().as_secs_f32() > 1.0 {
       eprintln!(
         "[slow_single] {:?} compile={:.2}s sharing={:.2}s serial={:.2}s unique_exprs={} refs={} bytes={}",
-        name_str,
+        name.pretty(),
         _t_compile.as_secs_f32(),
         _t_sharing.as_secs_f32(),
         _t_serial.as_secs_f32(),
@@ -4186,18 +4080,10 @@ fn compile_const_inner(
       );
     }
     if aux {
-      stt.env.store_const(addr.clone(), result.constant);
+      stt.env.store_const(addr.clone(), constant);
       stt
         .env
         .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
-      stt.block_stats.insert(
-        name.clone(),
-        BlockSizeStats {
-          hash_consed_size: result.hash_consed_size,
-          serialized_size,
-          const_count: 1,
-        },
-      );
     } else {
       // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
       // original (addr, meta) in Named.original for decompilation metadata.
@@ -4245,22 +4131,18 @@ fn compile_const_inner(
       let (data, meta) = compile_axiom(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-      let result = apply_sharing_to_axiom_with_stats(data, refs, univs);
+      let constant = apply_sharing_to_axiom_with_limits(
+        &stt.sharing_limits,
+        data,
+        refs,
+        univs,
+      )?;
       let mut bytes = Vec::new();
-      result.constant.put(&mut bytes);
-      let serialized_size = bytes.len();
+      constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), result.constant);
+        stt.env.store_const(addr.clone(), constant);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-        stt.block_stats.insert(
-          name.clone(),
-          BlockSizeStats {
-            hash_consed_size: result.hash_consed_size,
-            serialized_size,
-            const_count: 1,
-          },
-        );
       }
       addr
     },
@@ -4276,22 +4158,18 @@ fn compile_const_inner(
       let (data, meta) = compile_quotient(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-      let result = apply_sharing_to_quotient_with_stats(data, refs, univs);
+      let constant = apply_sharing_to_quotient_with_limits(
+        &stt.sharing_limits,
+        data,
+        refs,
+        univs,
+      )?;
       let mut bytes = Vec::new();
-      result.constant.put(&mut bytes);
-      let serialized_size = bytes.len();
+      constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), result.constant);
+        stt.env.store_const(addr.clone(), constant);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-        stt.block_stats.insert(
-          name.clone(),
-          BlockSizeStats {
-            hash_consed_size: result.hash_consed_size,
-            serialized_size,
-            const_count: 1,
-          },
-        );
       }
       addr
     },
@@ -4314,24 +4192,20 @@ fn compile_const_inner(
           compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let result = apply_sharing_to_recursor_with_stats(data, refs, univs);
+        let constant = apply_sharing_to_recursor_with_limits(
+          &stt.sharing_limits,
+          data,
+          refs,
+          univs,
+        )?;
         let mut bytes = Vec::new();
-        result.constant.put(&mut bytes);
-        let serialized_size = bytes.len();
+        constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
         if aux {
-          stt.env.store_const(addr.clone(), result.constant);
+          stt.env.store_const(addr.clone(), constant);
           stt.env.register_name(
             name.clone(),
             Named::new(addr.clone(), meta.clone()),
-          );
-          stt.block_stats.insert(
-            name.clone(),
-            BlockSizeStats {
-              hash_consed_size: result.hash_consed_size,
-              serialized_size,
-              const_count: 1,
-            },
           );
         } else {
           stt.promote_aux(name, addr.clone(), meta)?;
@@ -4482,8 +4356,6 @@ fn compile_mutual(
   // Create mutual block with sharing
   let refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-  let const_count = ixon_mutuals.len();
-  let name_str = name.pretty();
 
   // Singleton non-inductive: emit as a standalone `Defn`/`Recr`
   // Constant instead of wrapping in `Muts(vec![one])`. Self-reference
@@ -4499,31 +4371,22 @@ fn compile_mutual(
     && !matches!(&ixon_mutuals[0], IxonMutConst::Indc(_))
   {
     let single = ixon_mutuals.pop().unwrap();
-    let result = match single {
-      IxonMutConst::Defn(def) => apply_sharing_to_definition_with_stats(
-        def,
-        refs,
-        univs,
-        Some(&name_str),
-      ),
+    let limits = &stt.sharing_limits;
+    let standalone_constant = match single {
+      IxonMutConst::Defn(def) => {
+        apply_sharing_to_definition_with_limits(limits, def, refs, univs)?
+      },
       IxonMutConst::Recr(rec) => {
-        apply_sharing_to_recursor_with_stats(rec, refs, univs)
+        apply_sharing_to_recursor_with_limits(limits, rec, refs, univs)?
       },
       IxonMutConst::Indc(_) => unreachable!(),
     };
-    let standalone_constant = result.constant;
-    let hash_consed_size = result.hash_consed_size;
     let mut bytes = Vec::new();
     standalone_constant.put(&mut bytes);
-    let serialized_size = bytes.len();
     let addr = Address::hash(&bytes);
 
     if aux {
       stt.env.store_const(addr.clone(), standalone_constant);
-      stt.block_stats.insert(
-        name.clone(),
-        BlockSizeStats { hash_consed_size, serialized_size, const_count: 1 },
-      );
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
@@ -4547,7 +4410,7 @@ fn compile_mutual(
   }
 
   let compiled =
-    compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str));
+    compile_mutual_block(&stt.sharing_limits, ixon_mutuals, refs, univs)?;
   let block_addr = compiled.addr.clone();
 
   if aux {
@@ -4562,16 +4425,6 @@ fn compile_mutual(
         stt.blocks.insert(cnst.name(), class_ordering.clone());
       }
     }
-
-    // Store block size statistics (keyed by low-link name)
-    stt.block_stats.insert(
-      name.clone(),
-      BlockSizeStats {
-        hash_consed_size: compiled.hash_consed_size,
-        serialized_size: compiled.serialized_size,
-        const_count,
-      },
-    );
   }
 
   // Create projections for each constant.
@@ -6014,7 +5867,13 @@ mod tests {
       value: Expr::var(1),
     });
 
-    let compiled = compile_mutual_block(vec![def1, def2], vec![], vec![], None);
+    let compiled = compile_mutual_block(
+      &ExactSharingLimits::default(),
+      vec![def1, def2],
+      vec![],
+      vec![],
+    )
+    .unwrap();
     let constant = compiled.constant;
     let addr = compiled.addr;
 
@@ -6039,6 +5898,13 @@ mod tests {
   // =========================================================================
   // Constant-level sharing tests
   // =========================================================================
+
+  /// The compiler's sharing (the canonical construction) of `exprs` under
+  /// the default limits: the rewritten roots and the table.
+  #[allow(clippy::needless_pass_by_value)]
+  fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
+    share_roots(&ExactSharingLimits::default(), &exprs).unwrap()
+  }
 
   #[test]
   fn test_apply_sharing_basic() {
@@ -7481,5 +7347,143 @@ mod tests {
       },
       _ => panic!("Expected RecInfo"),
     }
+  }
+
+  // ==========================================================================
+  // The canonical sharing route
+  // ==========================================================================
+
+  /// The `T2 → T2` witness of `docs/sharing-minimum.md` §2 as an axiom
+  /// payload (with univs `[Zero]` and no refs).
+  fn t2_arrow_t2() -> Axiom {
+    let p = Expr::sort(0);
+    let t1 = Expr::all(p.clone(), p.clone());
+    let t2 = Expr::all(p, t1);
+    Axiom { is_unsafe: false, lvls: 0, typ: Expr::all(t2.clone(), t2) }
+  }
+
+  fn constant_hex(c: &Constant) -> String {
+    let mut buf = Vec::new();
+    c.put(&mut buf);
+    buf.iter().map(|b| format!("{b:02x}")).collect()
+  }
+
+  /// The compiler route is the canonical construction: it reaches the
+  /// 17-byte minimum of the witness.
+  #[test]
+  fn compiler_route_reaches_the_17_byte_minimum() {
+    let r = apply_sharing_to_axiom_with_limits(
+      &ExactSharingLimits::default(),
+      t2_arrow_t2(),
+      vec![],
+      vec![Univ::zero()],
+    )
+    .unwrap();
+    assert_eq!(constant_hex(&r), "d200009117b0b001921700170000000100");
+  }
+
+  /// The compiler route builds exactly what the library normalizer builds
+  /// from the unshared Constant, for every payload kind it dispatches on.
+  #[test]
+  fn compiler_route_matches_the_normalizer() {
+    use ixon::constant::{DefKind, Definition, MutConst as IxonMutConst};
+    use ixon::sharing_exact::normalize_constant_sharing_tiered;
+    let ax = t2_arrow_t2();
+    let def = Definition {
+      kind: DefKind::Definition,
+      safety: ix_common::env::DefinitionSafety::Safe,
+      lvls: 0,
+      typ: ax.typ.clone(),
+      value: Expr::app(ax.typ.clone(), ax.typ.clone()),
+    };
+    let limits = ExactSharingLimits::default();
+    let univs = vec![Univ::zero()];
+    let cases = [
+      (
+        ConstantInfo::Axio(ax.clone()),
+        apply_sharing_to_axiom_with_limits(
+          &limits,
+          ax.clone(),
+          vec![],
+          univs.clone(),
+        )
+        .unwrap(),
+      ),
+      (
+        ConstantInfo::Defn(def.clone()),
+        apply_sharing_to_definition_with_limits(
+          &limits,
+          def.clone(),
+          vec![],
+          univs.clone(),
+        )
+        .unwrap(),
+      ),
+      (
+        ConstantInfo::Muts(vec![
+          IxonMutConst::Defn(def.clone()),
+          IxonMutConst::Defn(def.clone()),
+        ]),
+        apply_sharing_to_mutual_block_with_limits(
+          &limits,
+          vec![IxonMutConst::Defn(def.clone()), IxonMutConst::Defn(def)],
+          vec![],
+          univs.clone(),
+        )
+        .unwrap(),
+      ),
+    ];
+    for (info, routed) in cases {
+      let unshared = Constant::with_tables(info, vec![], vec![], univs.clone());
+      let (normalized, _) = normalize_constant_sharing_tiered(
+        ShareLayout::TagN,
+        &unshared,
+        &limits,
+      )
+      .unwrap();
+      assert_eq!(routed, normalized);
+    }
+  }
+
+  /// A construction that runs out of its limits is a compile error; there is
+  /// no fallback.
+  #[test]
+  fn compiler_route_fails_closed() {
+    let limits = ExactSharingLimits {
+      max_distinct_nodes: 2,
+      ..ExactSharingLimits::default()
+    };
+    let err = apply_sharing_to_axiom_with_limits(
+      &limits,
+      t2_arrow_t2(),
+      vec![],
+      vec![Univ::zero()],
+    )
+    .expect_err("the route must fail under these limits");
+    assert!(matches!(err, CompileError::ResourceLimit { .. }), "{err}");
+    // The error names the limit and how to raise it.
+    let msg = format!("{err}");
+    assert!(
+      msg.contains("resource exhausted: distinct_nodes (limit 2)")
+        && msg.contains("--sharing-limits distinct_nodes=N")
+        && msg.contains(SHARING_LIMITS_ENV),
+      "{msg}"
+    );
+  }
+
+  /// The compiler limits are the library defaults plus the override, and an
+  /// invalid override is an error that names the variable.
+  #[test]
+  fn compiler_sharing_limits_override() {
+    assert_eq!(
+      compiler_sharing_limits_with(None).unwrap(),
+      ExactSharingLimits::default()
+    );
+    let l = compiler_sharing_limits_with(Some("states=2^10, work=7,depth=3"))
+      .unwrap();
+    assert_eq!((l.max_states, l.max_work), (1024, 7));
+    assert_eq!(l.max_height, ExactSharingLimits::default().max_height);
+    let err = compiler_sharing_limits_with(Some("bogus=1")).unwrap_err();
+    assert!(err.starts_with("IX_SHARING_LIMITS: unknown sharing limit bogus"));
   }
 }

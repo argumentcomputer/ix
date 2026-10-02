@@ -3,7 +3,7 @@ module
 public import Ix.Claim
 public import Ix.Resource.Validate
 
-/-! A resource claim binds the complete constant set, format v3,
+/-! A resource claim binds the complete constant set, format v4,
 resource-v1 validator, and the canonical policy bytes. -/
 
 @[expose] public section

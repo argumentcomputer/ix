@@ -115,8 +115,11 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
       IO.eprintln "Stage 2 fixture bytes or historical root drifted"
       return false
     match Aggr.decodeAggregateWrapperAt address bytes with
-    | .error "claim: unsupported object format" => pure ()
-    | _ =>
+    | .error e =>
+      unless e.startsWith "claim: unsupported object format" do
+        IO.eprintln s!"Stage 2 fixture did not reject at its format boundary: {e}"
+        return false
+    | .ok _ =>
       IO.eprintln "Stage 2 fixture did not reject at its format boundary"
       return false
     let ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"

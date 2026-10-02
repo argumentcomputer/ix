@@ -1,157 +1,154 @@
-//! Ixon sharing analysis FFI.
+//! Exact and canonical sharing FFI (test hooks for the Lean/Rust
+//! differential, `Tests/Ix/SharingExactFFI.lean`).
 
-use std::sync::Arc;
+use ixon::sharing_exact::ExactSharingLimits;
+use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned};
 
-use crate::lean::LeanIxonExpr;
-use ixon::expr::Expr as IxonExpr;
-use ixon::serialize::put_expr;
-use ixon::sharing::{analyze_block, build_sharing_vec, decide_sharing};
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanOwned};
+/// The limits of every hook: the defaults (the compiler's) in the checked
+/// mode (`full_check`), so that the differential also builds and checks
+/// every candidate of the tiered construction. The checked mode changes no
+/// output and no limit outcome; it fails only on an internal discrepancy.
+fn parity_limits() -> ExactSharingLimits {
+  ExactSharingLimits { full_check: true, ..ExactSharingLimits::default() }
+}
 
-/// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
-/// This helps diagnose why Lean and Rust make different sharing decisions.
+/// FFI: exact-minimum sharing of one serialized Constant (the width-state
+/// search, a test oracle; not the compiler path).
+///
+/// Lean signature:
+/// `@[extern "rs_exact_sharing_normalize"]
+///  opaque exactSharingNormalize : @& ByteArray → Except String ByteArray`
+///
+/// Decodes exactly one Constant (trailing bytes are rejected), expands and
+/// validates its sharing table under the backward-reference rule, and
+/// returns the serialized exact-minimum encoding computed with the default
+/// limits ([`parity_limits`]). Error strings start with `decode:`,
+/// `malformed sharing:`, `format bound:`, `resource exhausted:` or
+/// `internal error:`; no error carries a partial encoding.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_debug_sharing_analysis(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-) {
-  let exprs: Vec<Arc<IxonExpr>> =
-    exprs_obj.map(|x| Arc::new(LeanIxonExpr(x).decode()));
+extern "C" fn rs_exact_sharing_normalize(
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ixon::sharing_exact::normalize_constant_bytes;
+  match normalize_constant_bytes(bytes_obj.as_bytes(), &parity_limits()) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
+  }
+}
 
-  println!("[Rust] Analyzing {} input expressions", exprs.len());
+/// FFI: uniform-width exact sharing of one serialized Constant (phase 1 of
+/// the canonical construction, at a given width).
+///
+/// Lean signature:
+/// `@[extern "rs_uniform_sharing_normalize"]
+///  opaque uniformSharingNormalize : UInt64 → @& ByteArray → Except String ByteArray`
+///
+/// Every Share is priced `w` bytes (the uniform-width model of
+/// `Ix.Sharing.Exact.Uniform`); the output uses real table indices. Uses the
+/// default limits ([`parity_limits`]); `w = 0` is a `format bound:` error.
+#[unsafe(no_mangle)]
+extern "C" fn rs_uniform_sharing_normalize(
+  w: u64,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ixon::sharing_exact::normalize_constant_bytes_uniform;
+  match normalize_constant_bytes_uniform(
+    w,
+    bytes_obj.as_bytes(),
+    &parity_limits(),
+  ) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
+  }
+}
 
-  let (info_map, _ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let effective_sizes =
-    ixon::sharing::compute_effective_sizes(&info_map, &topo_order);
+/// FFI: tiered canonical sharing of one serialized Constant.
+///
+/// Lean signature:
+/// `@[extern "rs_tiered_sharing_normalize"]
+///  opaque tieredSharingNormalize : @& ByteArray → Except String ByteArray`
+///
+/// Expands the Constant's table and re-shares it with the canonical tiered
+/// construction under the TagN layout and the default limits in the checked
+/// mode ([`parity_limits`]); the output is serialized with the wire (TagN)
+/// Share code.
+#[unsafe(no_mangle)]
+extern "C" fn rs_tiered_sharing_normalize(
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ixon::sharing_exact::{ShareLayout, normalize_constant_bytes_tiered};
+  match normalize_constant_bytes_tiered(
+    ShareLayout::TagN,
+    bytes_obj.as_bytes(),
+    &parity_limits(),
+  ) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
+  }
+}
 
-  println!("[Rust] Found {} unique subterms", info_map.len());
-
-  // Collect subterms with usage >= 2
-  let mut candidates: Vec<_> = info_map
-    .iter()
-    .filter(|(_, info)| info.usage_count >= 2)
-    .filter_map(|(hash, info)| {
-      let eff_size = *effective_sizes.get(hash)?;
-      Some((hash, info, eff_size))
-    })
-    .collect();
-
-  // Sort by usage count descending
-  candidates.sort_by_key(|entry| std::cmp::Reverse(entry.1.usage_count));
-
-  println!("[Rust] Subterms with usage >= 2:");
-  for (hash, info, eff_size) in candidates {
-    let n = info.usage_count;
-    let n_i = n.cast_signed();
-    let eff_size_i = eff_size.cast_signed();
-    let potential = (n_i - 1) * eff_size_i - (n_i + eff_size_i);
-    println!(
-      "  usage={} eff_size={} potential={} hash={:.8}",
-      n, eff_size, potential, hash
+/// FFI: build one block Constant through the compiler's sharing functions.
+///
+/// Lean signature:
+/// `@[extern "rs_compiler_sharing_build"]
+///  opaque compilerSharingBuild : @& ByteArray → Except String ByteArray`
+///
+/// Decodes exactly one Constant whose roots carry no sharing table, and
+/// rebuilds it with `ix_compile::compile::apply_sharing_to_*_with_limits`
+/// (the explicit-limits forms of the functions every compile, aux-gen,
+/// kernel-egress and decompile-recompile path calls) under the default
+/// limits in the checked mode ([`parity_limits`]; the compiler itself runs
+/// the default mode, which writes the same bytes). Projections are returned
+/// unchanged. Errors are the compile error's text, prefixed `decode:` for
+/// input errors.
+#[unsafe(no_mangle)]
+extern "C" fn rs_compiler_sharing_build(
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ix_compile::compile::{
+    apply_sharing_to_axiom_with_limits,
+    apply_sharing_to_definition_with_limits,
+    apply_sharing_to_mutual_block_with_limits,
+    apply_sharing_to_quotient_with_limits,
+    apply_sharing_to_recursor_with_limits,
+  };
+  use ixon::constant::{Constant, ConstantInfo};
+  let limits = parity_limits();
+  let mut input = bytes_obj.as_bytes();
+  let c = match Constant::get(&mut input) {
+    Ok(c) => c,
+    Err(e) => return LeanExcept::error_string(&format!("decode: {e}")),
+  };
+  if !input.is_empty() || !c.sharing.is_empty() {
+    return LeanExcept::error_string(
+      "decode: expected one Constant with an empty sharing table",
     );
-    println!("    expr={:?}", info.expr);
   }
-}
-
-/// FFI: Run Rust's sharing analysis on Lean-provided Ixon.Expr array.
-/// Returns the number of shared items Rust would produce.
-#[unsafe(no_mangle)]
-extern "C" fn rs_analyze_sharing_count(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-) -> u64 {
-  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
-
-  let (info_map, _ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map, &topo_order);
-
-  shared_hashes.len() as u64
-}
-
-/// FFI: Run Rust's full sharing pipeline on Lean-provided Ixon.Expr array.
-/// Writes the sharing vector and rewritten exprs to output arrays.
-/// Returns number of shared items.
-#[unsafe(no_mangle)]
-extern "C" fn rs_run_sharing_analysis(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-  out_sharing_vec: LeanByteArray<LeanOwned>,
-  out_rewritten: LeanByteArray<LeanOwned>,
-) -> u64 {
-  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
-
-  let (info_map, ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map, &topo_order);
-  let (rewritten_exprs, sharing_vec) = build_sharing_vec(
-    &exprs,
-    &shared_hashes,
-    &ptr_to_hash,
-    &info_map,
-    &topo_order,
-  );
-
-  // Serialize sharing vector to bytes
-  let mut sharing_bytes: Vec<u8> = Vec::new();
-  for expr in &sharing_vec {
-    put_expr(expr, &mut sharing_bytes);
+  let (refs, univs) = (c.refs.clone(), c.univs.clone());
+  let built = match c.info.clone() {
+    ConstantInfo::Defn(d) => {
+      apply_sharing_to_definition_with_limits(&limits, d, refs, univs)
+    },
+    ConstantInfo::Recr(r) => {
+      apply_sharing_to_recursor_with_limits(&limits, r, refs, univs)
+    },
+    ConstantInfo::Axio(a) => {
+      apply_sharing_to_axiom_with_limits(&limits, a, refs, univs)
+    },
+    ConstantInfo::Quot(q) => {
+      apply_sharing_to_quotient_with_limits(&limits, q, refs, univs)
+    },
+    ConstantInfo::Muts(ms) => {
+      apply_sharing_to_mutual_block_with_limits(&limits, ms, refs, univs)
+    },
+    _ => Ok(c),
+  };
+  match built {
+    Ok(out) => {
+      let mut buf = Vec::new();
+      out.put(&mut buf);
+      LeanExcept::ok(LeanByteArray::from_bytes(&buf))
+    },
+    Err(e) => LeanExcept::error_string(&e.to_string()),
   }
-
-  // Serialize rewritten exprs to bytes
-  let mut rewritten_bytes: Vec<u8> = Vec::new();
-  for expr in &rewritten_exprs {
-    put_expr(expr, &mut rewritten_bytes);
-  }
-
-  // Write to output arrays
-  unsafe { out_sharing_vec.set_data(&sharing_bytes) };
-  unsafe { out_rewritten.set_data(&rewritten_bytes) };
-
-  shared_hashes.len() as u64
-}
-
-/// FFI: Compare Lean's sharing analysis with Rust's on the same input.
-/// Takes: exprs (Array Expr), lean_sharing (Array Expr), lean_rewritten (Array Expr)
-/// Returns packed u64:
-///   - bits 0-31: 1 if sharing vectors match, 0 otherwise
-///   - bits 32-47: Lean sharing count
-///   - bits 48-63: Rust sharing count
-#[unsafe(no_mangle)]
-extern "C" fn rs_compare_sharing_analysis(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-  lean_sharing_obj: LeanArray<LeanBorrowed<'_>>,
-  _lean_rewritten_obj: LeanArray<LeanBorrowed<'_>>,
-) -> u64 {
-  // Decode input expressions
-  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
-
-  // Decode Lean's sharing vector
-  let lean_sharing = LeanIxonExpr::decode_array(&lean_sharing_obj);
-
-  // Run Rust's sharing analysis
-  let (info_map, ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map, &topo_order);
-  let (_rewritten_exprs, rust_sharing) = build_sharing_vec(
-    &exprs,
-    &shared_hashes,
-    &ptr_to_hash,
-    &info_map,
-    &topo_order,
-  );
-
-  // Compare sharing vectors
-  let lean_count = lean_sharing.len() as u64;
-  let rust_count = rust_sharing.len() as u64;
-
-  // Serialize both to bytes for comparison
-  let mut lean_bytes: Vec<u8> = Vec::new();
-  for expr in &lean_sharing {
-    put_expr(expr, &mut lean_bytes);
-  }
-
-  let mut rust_bytes: Vec<u8> = Vec::new();
-  for expr in &rust_sharing {
-    put_expr(expr, &mut rust_bytes);
-  }
-
-  let matches = if lean_bytes == rust_bytes { 1u64 } else { 0u64 };
-
-  // Pack result: matches | (lean_count << 32) | (rust_count << 48)
-  matches | (lean_count << 32) | (rust_count << 48)
 }

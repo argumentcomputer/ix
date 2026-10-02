@@ -196,7 +196,9 @@ private def decompileIndcEntries (denv : DecompileEnv)
     Parameter mapping (see the Rust signature at decompile.rs:2692-2698):
     where Rust reads `stt.env.named` / `stt.env.get_const` this uses
     `ixonEnv.named` / `ixonEnv.getConst?`; where it reads `dstt.env` this
-    uses `workEnv`; `orig_env` (the debug-track source env) is `origEnv?`.
+    uses `workEnv`; `orig_env` (the debug-track source env) is `origEnv?`;
+    `stt.sharing_limits` (the run's sharing limits, read once by the
+    driver) is `sharingLimits`.
     The trailing optional plan maps mirror `stt.call_site_plans` /
     `stt.brec_on_call_site_plans` / `stt.below_call_site_plans`, which in
     Rust ride along inside `stt` (populated by plan rehydration);
@@ -215,6 +217,7 @@ def roundtripBlock (consts : List Ix.MutConst)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo))
     (workEnv : Std.HashMap Ix.Name Ix.ConstantInfo)
     (ixonEnv : Ixon.Env)
+    (sharingLimits : Ix.Sharing.Exact.Limits)
     (callSitePlans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {})
     (brecOnCallSitePlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {})
     (belowCallSitePlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {})
@@ -230,6 +233,7 @@ def roundtripBlock (consts : List Ix.MutConst)
   let cenv : Ix.CompileM.CompileEnv :=
     { Ix.CompileM.CompileEnv.new { consts := workEnv } with
       nameToNamed := ixonEnv.named
+      sharingLimits
       nameToAddr := ixonEnv.named.fold (init := {})
         fun m n named => m.insert n named.addr
       callSitePlans := callSitePlans

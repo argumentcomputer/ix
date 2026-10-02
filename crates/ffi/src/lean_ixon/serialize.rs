@@ -6,25 +6,12 @@
 use std::sync::Arc;
 
 use crate::lean::{
-  LeanIxAddress, LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
+  LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
 };
 use ix_common::address::Address;
 use ixon::serialize::put_expr;
-use ixon::sharing::hash_expr;
 use ixon::univ::put_univ;
 use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned};
-
-/// Check if Lean's computed hash matches Rust's computed hash.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_expr_hash_matches(
-  expr_obj: LeanIxonExpr<LeanBorrowed<'_>>,
-  expected_hash: LeanIxAddress<LeanBorrowed<'_>>,
-) -> bool {
-  let expr = Arc::new(expr_obj.decode());
-  let hash = hash_expr(&expr);
-  let expected = expected_hash.decode();
-  Address::from_slice(hash.as_bytes()).is_ok_and(|h| h == expected)
-}
 
 /// Check if Lean's Ixon.Univ serialization matches Rust.
 #[unsafe(no_mangle)]

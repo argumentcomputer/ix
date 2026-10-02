@@ -49,7 +49,7 @@ impl std::error::Error for SerializeError {}
 
 /// Errors during compilation (Lean → Ixon).
 ///
-/// Variant order matches Lean constructor tags (0–6).
+/// Variant order matches Lean constructor tags (0–7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompileError {
   /// Referenced constant not found (tag 0).
@@ -67,6 +67,9 @@ pub enum CompileError {
   Serialize(SerializeError),
   /// Compilation could not stay within its resource budget (tag 6).
   ResourceLimit { reason: String },
+  /// The sharing construction failed other than by resource exhaustion,
+  /// which is `ResourceLimit` (tag 7).
+  SharingConstruction { reason: String },
 }
 
 impl std::fmt::Display for CompileError {
@@ -87,6 +90,9 @@ impl std::fmt::Display for CompileError {
       },
       Self::Serialize(e) => write!(f, "serialization error: {e}"),
       Self::ResourceLimit { reason } => write!(f, "resource limit: {reason}"),
+      Self::SharingConstruction { reason } => {
+        write!(f, "sharing construction: {reason}")
+      },
     }
   }
 }
@@ -108,7 +114,7 @@ impl From<SerializeError> for CompileError {
 
 /// Errors during decompilation (Ixon → Lean).
 ///
-/// Variant order matches Lean constructor tags (0–10).
+/// Variant order matches Lean constructor tags (0–11).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecompileError {
   /// Invalid Ref(idx) reference - refs table too small (tag 0)
@@ -133,6 +139,18 @@ pub enum DecompileError {
   BadConstantFormat { msg: String },
   /// Serialization error during decompilation (tag 10)
   Serialize(SerializeError),
+  /// `Share(idx)` occurring in `meta_sharing[entry]` outside that entry's
+  /// index space (`ConstantMeta::meta_sharing`; tag 11): with `primary_len`
+  /// primary and `meta_len` metadata entries the valid indices are
+  /// `idx < primary_len + entry`. `idx >= primary_len + meta_len` is out of
+  /// range; any other rejected index is a forward or self reference.
+  InvalidMetaShareIndex {
+    idx: u64,
+    entry: u64,
+    primary_len: usize,
+    meta_len: usize,
+    constant: String,
+  },
 }
 
 impl std::fmt::Display for DecompileError {
@@ -180,6 +198,33 @@ impl std::fmt::Display for DecompileError {
         write!(f, "bad constant format: {msg}")
       },
       Self::Serialize(e) => write!(f, "serialization error: {e}"),
+      Self::InvalidMetaShareIndex {
+        idx,
+        entry,
+        primary_len,
+        meta_len,
+        constant,
+      } => {
+        let end = u64::try_from(primary_len.saturating_add(*meta_len))
+          .unwrap_or(u64::MAX);
+        if *idx >= end {
+          write!(
+            f,
+            "invalid Share({idx}) in meta_sharing[{entry}] of '{constant}': \
+             out of range ({primary_len} primary + {meta_len} metadata entries)"
+          )
+        } else {
+          let bound = u64::try_from(*primary_len)
+            .unwrap_or(u64::MAX)
+            .saturating_add(*entry);
+          write!(
+            f,
+            "invalid Share({idx}) in meta_sharing[{entry}] of '{constant}': \
+             forward or self reference (this entry may reference only \
+             indices below {bound})"
+          )
+        }
+      },
     }
   }
 }

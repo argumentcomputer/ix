@@ -1,0 +1,982 @@
+/-
+  Exact minimum sharing under a uniform reference width: graph facts,
+  classification, components and the per-component exact search.
+
+  This is the first part of the uniform-width optimizer; the cost model, the
+  classes, the components, the reclassifying branch and bound and the tie
+  order are described in the module doc of `Ix.Sharing.Exact.Uniform`, which
+  combines the component tables (count-bracket knapsack), materializes the
+  chosen set and checks it.
+-/
+module
+
+public import Ix.Sharing.Exact.Search
+
+public section
+
+namespace Ix.Sharing.Exact
+
+open Ixon
+
+/-! ## Graph facts -/
+
+/-- In-degrees, head in-degrees, occurrences and parent lists. -/
+structure GraphFacts where
+  deg : Array Nat
+  headDeg : Array Nat
+  occ : Array Nat
+  parents : Array (Array Nat)
+  deriving Inhabited
+
+/-- Edge counts per target: the root occurrences plus, over every node and
+child index, one per child edge (only non-continuation edges if `headOnly`). -/
+def edgeCounts (dag : Dag) (roots : Array Nat) (headOnly : Bool) : Array Nat :=
+  let base := roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate dag.size 0)
+  foldRange (fun acc t =>
+      let node := dag.node t
+      (List.range node.children.size).foldl (fun acc i =>
+        let c := node.child i
+        if headOnly && continuationEdge node i (dag.node c) then acc
+        else acc.modify c (· + 1)) acc)
+    0 dag.size base
+
+/-- Distinct parents of every term, in increasing order. Terms are visited in
+increasing order, so a repeated child edge of `t` can only meet `t` as the
+last parent recorded: checking `back?` instead of searching the whole list
+keeps this linear in the edges. -/
+def parentLists (dag : Dag) : Array (Array Nat) := Id.run do
+  let n := dag.size
+  let mut parents : Array (Array Nat) := Array.replicate n #[]
+  for t in [0:n] do
+    let node := dag.node t
+    for c in node.children do
+      unless (parents[c]!).back? == some t do parents := parents.modify c (·.push t)
+  return parents
+
+def graphFacts (dag : Dag) (roots : Array Nat) : GraphFacts :=
+  { deg := edgeCounts dag roots false, headDeg := edgeCounts dag roots true,
+    occ := occurrences dag roots, parents := parentLists dag }
+
+/-! ## Classes -/
+
+/-- Classification of a term for the uniform-width search. -/
+inductive UClass where
+  /-- Not certain-excluded, but in-degree `< 2`: never searched. -/
+  | lowDegree
+  | certainExcluded
+  | certainStored
+  | uncertain
+  deriving BEq, Repr, Inhabited
+
+/-- Lower bounds used by the certain-stored test. `inlineLB`: bytes of the
+term written inline at a head position; `mergedLB`: bytes of a telescope
+node inside a telescope running through it (no header); `headLB`/`contLB`:
+the same at a head/continuation position when the term may be a Share. -/
+structure UBounds where
+  inlineLB : Array Nat
+  mergedLB : Array Nat
+  headLB : Array Nat
+  contLB : Array Nat
+  deriving Inhabited
+
+/-- One step of `uniformBounds`: the bounds of `t` from those of its
+children. -/
+def boundsStep (p : Prep) (w : Nat) (maybeStored : Array Bool) (b : UBounds) (t : Nat) :
+    UBounds :=
+  let node := p.dag.node t
+  let fam := p.family[t]!
+  let (i, m) :=
+    if fam == .none then
+      let i := node.children.foldl (fun acc c => acc + b.headLB[c]!) node.head.ownBytes
+      (i, i)
+    else
+      let nxt := node.spineNext
+      let rest := if p.family[nxt]! == fam then b.contLB[nxt]! else b.headLB[nxt]!
+      let m := node.sideExtra + b.headLB[node.sideChild]! + rest
+      (1 + m, m)
+  { inlineLB := b.inlineLB.set! t i, mergedLB := b.mergedLB.set! t m,
+    headLB := b.headLB.set! t (if maybeStored[t]! then min w i else i),
+    contLB := b.contLB.set! t (if maybeStored[t]! then min w m else m) }
+
+def uniformBounds (p : Prep) (w : Nat) (maybeStored : Array Bool) : UBounds :=
+  let n := p.dag.size
+  foldRange (boundsStep p w maybeStored) 0 n
+    { inlineLB := Array.replicate n 0, mergedLB := Array.replicate n 0,
+      headLB := Array.replicate n 0, contLB := Array.replicate n 0 }
+
+/-- The certain-stored gain bound with explicit occurrence lower bounds: `d`
+inline occurrences in all, `h` of them at head positions (see the module
+doc). -/
+def storedGainWith (p : Prep) (b : UBounds) (w t d h : Nat) : _root_.Int :=
+  let deg := _root_.Int.ofNat d
+  let wI := _root_.Int.ofNat w
+  if p.family[t]! == .none then
+    (deg - 1) * _root_.Int.ofNat b.inlineLB[t]! - deg * wI
+  else if h ≥ 1 then
+    (deg - 1) * _root_.Int.ofNat b.mergedLB[t]! + (_root_.Int.ofNat h - 1) - deg * wI
+  else
+    (deg - 1) * _root_.Int.ofNat b.mergedLB[t]! - _root_.Int.ofNat (tag4Size p.spineLen[t]!) - deg * wI
+
+/-- The certain-stored gain bound `g` of a term with its in-degrees as the
+occurrence counts. -/
+def storedGain (p : Prep) (f : GraphFacts) (b : UBounds) (w t : Nat) : _root_.Int :=
+  storedGainWith p b w t f.deg[t]! f.headDeg[t]!
+
+/-- Cap of the visible counts (any lower bound keeps the gain test sound). -/
+def visibleCap : Nat := 1 <<< 20
+
+/-- Visible occurrence counts: lower bounds on the inline occurrences of each
+term `t` in every encoding of a set `S ⊆ maybeStored` with `t ∉ S`. Each root
+occurrence counts 1, and each edge from `z` counts the writes of `z`: at least
+1 when `z` may be stored (every reachable term is written somewhere), else at
+least the visible count of `z` (every occurrence of an unstored term is an
+inline write). The second array counts only head (non-continuation) edges.
+Values are capped at `visibleCap` where they are passed on. -/
+def visibleCounts (dag : Dag) (roots : Array Nat) (maybeStored : Array Bool) :
+    Array Nat × Array Nat :=
+  propagateCounts dag roots fun y c => if maybeStored[y]! then 1 else min c visibleCap
+
+/-- Whether a term is certain-excluded: `(occ-1)·size < occ·w`. -/
+def certainExcludedTest (p : Prep) (f : GraphFacts) (w t : Nat) : Bool :=
+  (f.occ[t]! - 1) * p.base[t]! < f.occ[t]! * w
+
+/-- The search candidates (in-degree ≥ 2, not certain-excluded): only these
+can be stored in the encodings the search ranges over. -/
+def searchCandidates (p : Prep) (f : GraphFacts) (w : Nat) : Array Bool :=
+  (Array.range p.dag.size).map fun t => !certainExcludedTest p f w t && f.deg[t]! ≥ 2
+
+/-- Classify every term under the root-level bounds `b`
+(`uniformBounds p w (searchCandidates p f w)`) and the certain-stored
+threshold `theta` (`uniformStage` passes 1 or `tag0StepBound n + 1`). -/
+def classifyWith (p : Prep) (f : GraphFacts) (w : Nat) (b : UBounds)
+    (vis : Array Nat × Array Nat) (theta : _root_.Int) : Array UClass :=
+  (Array.range p.dag.size).map fun t =>
+    if certainExcludedTest p f w t then .certainExcluded
+    else if f.deg[t]! < 2 then .lowDegree
+    else if storedGainWith p b w t vis.1[t]! vis.2[t]! ≥ theta then .certainStored
+    else .uncertain
+
+/-! ## Components -/
+
+/-- Union-find root (fuel-bounded; `parent[x] ≤ x` is maintained). -/
+def ufFind (parent : Array Nat) (x : Nat) : Nat := Id.run do
+  let mut cur := x
+  for _ in [0:parent.size + 1] do
+    let q := parent[cur]!
+    if q == cur then break
+    cur := q
+  return cur
+
+/-- Components of the uncertain terms: joined by DAG paths that avoid
+certain-stored terms. Each component is sorted; components are sorted by
+their smallest term. -/
+def uncertainComponents (dag : Dag) (cls : Array UClass) : Array (Array Nat) := Id.run do
+  let n := dag.size
+  let mut uf : Array Nat := Array.range n
+  -- Component representatives reachable at or below each term.
+  let mut reps : Array (Array Nat) := Array.replicate n #[]
+  for t in [0:n] do
+    if cls[t]! == .certainStored then continue
+    let mut rs : Array Nat := #[]
+    for c in (dag.node t).children do
+      for r in reps[c]! do
+        let fr := ufFind uf r
+        unless rs.contains fr do rs := rs.push fr
+    if cls[t]! == .uncertain then
+      for r in rs do
+        let a := ufFind uf t
+        let b := ufFind uf r
+        if a != b then
+          if a < b then uf := uf.set! b a else uf := uf.set! a b
+      reps := reps.set! t #[t]
+    else
+      reps := reps.set! t rs
+  let mut groups : Std.HashMap Nat (Array Nat) := {}
+  for t in [0:n] do
+    if cls[t]! == .uncertain then
+      let r := ufFind uf t
+      groups := groups.insert r ((groups.getD r #[]).push t)
+  let comps := groups.toArray.map (·.2)
+  return comps.qsort fun a b => a[0]! < b[0]!
+
+/-! ## Checked separation of labeled terms -/
+
+/-- Join of two reach summaries: `none` (no labeled term), `some (some ℓ)`
+(every labeled term has label `ℓ`), `some none` (several labels). -/
+def labelJoin : Option (Option Nat) → Option (Option Nat) → Option (Option Nat)
+  | none, x => x
+  | some x, none => some x
+  | some (some a), some (some b) => if a = b then some (some a) else some none
+  | some _, some _ => some none
+
+/-- For every term, the labels of the labeled terms reachable from it along
+DAG paths whose intermediate terms are not opaque (children first). -/
+def reachLabels (dag : Dag) (opq : Nat → Bool) (lab : Nat → Option Nat) :
+    Array (Option (Option Nat)) :=
+  foldRange (fun acc t =>
+      acc.set! t ((dag.node t).children.foldl (fun v c =>
+        labelJoin v (if opq c then (lab c).map some else acc[c]!)) ((lab t).map some)))
+    0 dag.size (Array.replicate dag.size none)
+
+/-- `reachLabels` computed only at the terms of `order` (ascending), every
+other entry staying `none`: exact at those terms when `order` contains every
+non-opaque child of its terms that reaches a labeled term. -/
+def reachLabelsOn (dag : Dag) (order : Array Nat) (opq : Nat → Bool) (lab : Nat → Option Nat) :
+    Array (Option (Option Nat)) :=
+  order.foldl (fun acc t =>
+      acc.set! t ((dag.node t).children.foldl (fun v c =>
+        labelJoin v (if opq c then (lab c).map some else acc[c]!)) ((lab t).map some)))
+    (Array.replicate dag.size none)
+
+/-- Every term of `terms` reaches only terms carrying its own label. -/
+def labelsSeparated (dag : Dag) (opq : Nat → Bool) (lab : Nat → Option Nat)
+    (terms : Array Nat) : Bool :=
+  let rl := reachLabels dag opq lab
+  terms.all fun y => match lab y with
+    | some ℓ => rl[y]! == some (some ℓ)
+    | none => false
+
+/-- The components partition the uncertain terms (each listed once, in
+increasing order, labeled with its component) and are separated by the
+certain-stored terms. -/
+def componentsChecked (dag : Dag) (cls : Array UClass) (opaq : Array Bool)
+    (comps : Array (Array Nat)) (label : Array (Option Nat)) : Bool :=
+  let n := dag.size
+  ((Array.range comps.size).all fun i =>
+      (List.range comps[i]!.size).all (fun j =>
+        let t := comps[i]![j]!
+        t < n && cls[t]! == .uncertain && label[t]! == some i &&
+          (j + 1 < comps[i]!.size → t < comps[i]![j + 1]!))) &&
+    ((Array.range n).all fun t =>
+      cls[t]! != .uncertain || match label[t]! with
+        | some i => i < comps.size && comps[i]!.contains t
+        | none => false) &&
+    labelsSeparated dag (opaq[·]!) (label[·]!) ((Array.range n).filter (cls[·]! == .uncertain))
+
+/-- Component index of every listed term. -/
+def componentLabels (n : Nat) (comps : Array (Array Nat)) : Array (Option Nat) :=
+  (Array.range comps.size).foldl
+    (fun acc i => comps[i]!.foldl (fun acc t => acc.set! t (some i)) acc) (Array.replicate n none)
+
+/-! ## Truncated evaluation (certain-stored terms opaque) -/
+
+/-- Values of one term in the truncated evaluation. -/
+structure UVal where
+  cost : Nat := 0
+  inl : Nat := 0
+  sides : Nat := 0
+  below : Option Nat := none
+  deriving Inhabited, Repr
+
+/-- Static data of the truncated evaluation. -/
+structure UPrep where
+  prep : Prep
+  w : Nat
+  opaq : Array Bool
+  /-- Spine length and natural tail, with spines ending at opaque terms. -/
+  tLen : Array Nat
+  tTail : Array Nat
+  /-- Values with no uncertain term available. -/
+  base : Array UVal
+  deriving Inhabited
+
+/-- Evaluate one term given its children's values. Returns the value and the
+number of available spine descendants visited. -/
+def UPrep.node (up : UPrep) (get : Nat → UVal) (avail : Nat → Bool) (t : Nat) :
+    UVal × Nat := Id.run do
+  let p := up.prep
+  let node := p.dag.node t
+  let fam := p.family[t]!
+  let mut steps := 0
+  let mut v : UVal := {}
+  if fam == .none then
+    v := { v with inl := node.children.foldl (fun acc c => acc + (get c).cost) node.head.ownBytes }
+  else
+    let nxt := node.spineNext
+    let same := p.family[nxt]! == fam && !up.opaq[nxt]!
+    let s := node.sideExtra + (get node.sideChild).cost + (if same then (get nxt).sides else 0)
+    let bl : Option Nat :=
+      if same then (if avail nxt then some nxt else (get nxt).below) else none
+    let l := up.tLen[t]!
+    let mut best := tag4Size l + s + (get up.tTail[t]!).cost
+    let mut cur := bl
+    for _ in [0:l] do
+      match cur with
+      | none => break
+      | some u =>
+        steps := steps + 1
+        let cand := tag4Size (l - up.tLen[u]!) + (s - (get u).sides) + up.w
+        if cand < best then best := cand
+        cur := (get u).below
+    v := { v with inl := best, sides := s, below := bl }
+  let cost :=
+    if up.opaq[t]! then up.w
+    else if avail t then min up.w v.inl
+    else v.inl
+  return ({ v with cost }, steps)
+
+/-- Build the truncated evaluation with certain-stored terms opaque. -/
+def UPrep.mk' (p : Prep) (w : Nat) (opaq : Array Bool) : UPrep := Id.run do
+  let n := p.dag.size
+  let mut tLen : Array Nat := Array.replicate n 0
+  let mut tTail : Array Nat := Array.replicate n 0
+  for t in [0:n] do
+    let fam := p.family[t]!
+    if fam != .none then
+      let nxt := (p.dag.node t).spineNext
+      if p.family[nxt]! == fam && !opaq[nxt]! then
+        tLen := tLen.set! t (tLen[nxt]! + 1)
+        tTail := tTail.set! t tTail[nxt]!
+      else
+        tLen := tLen.set! t 1
+        tTail := tTail.set! t nxt
+  let up0 : UPrep := { prep := p, w, opaq, tLen, tTail, base := #[] }
+  let mut base : Array UVal := Array.mkEmpty n
+  for t in [0:n] do
+    let (v, _) := up0.node (fun c => base[c]!) (fun _ => false) t
+    base := base.push v
+  return { up0 with base }
+
+/-! ## Per-component exact search -/
+
+/-- Static context of one component search. -/
+structure CompCtx where
+  up : UPrep
+  members : Array Nat
+  /-- Terms whose truncated values can depend on the component, ascending. -/
+  area : Array Nat
+  /-- Roots in `area` with their multiplicities. -/
+  rootMult : Array (Nat × Nat)
+  /-- Certain-stored terms in `area` (their entry bodies may change). -/
+  storedIn : Array Nat
+  /-- The component's cost with nothing chosen. -/
+  phi0 : Nat
+  /-- Keep subsets within this much of the best (table-count coupling). -/
+  slack : Nat
+
+/-- Numeric order reversed: the element order under which `setPrec` is a
+lexicographic order. -/
+def compareDesc (x y : Nat) : Ordering := compare y x
+
+/-- Tie order on sorted sets: `a` precedes `b` when the smallest term of their
+symmetric difference is in `b` (so `a` leaves it out). On sorted arrays this
+is the lexicographic order under `compareDesc`, a proper prefix first: at the
+first position where they differ, the smaller term belongs to one set only. -/
+def setPrec (a b : Array Nat) : Bool :=
+  Array.compareLex compareDesc a b == .lt
+
+/-- Union of two sorted arrays (sorted). -/
+def mergeSorted (a b : Array Nat) : Array Nat :=
+  ((a.toList ++ b.toList).mergeSort fun x y => decide (x ≤ y)).toArray
+
+/-- Strictly increasing. -/
+def strictInc (a : Array Nat) : Bool :=
+  (List.range a.size).all fun i => decide (i + 1 < a.size → a[i]! < a[i + 1]!)
+
+/-- The groups partition `und`: their terms, sorted, are `und`'s, sorted. -/
+def partitionCheck (und : Array Nat) (groups : Array (Array Nat)) : Bool :=
+  (groups.toList.flatMap (·.toList)).mergeSort (fun x y => decide (x ≤ y)) ==
+    und.toList.mergeSort (fun x y => decide (x ≤ y))
+
+/-- Search state of one component. -/
+structure CompState where
+  best : Option (_root_.Int × Array Nat) := none
+  /-- Best `(Δ, set)` per chosen-set size, within `slack` of the best. -/
+  bySize : Array (Option (_root_.Int × Array Nat)) := #[]
+  states : Nat := 0
+  costEvals : Nat := 0
+
+abbrev CompM := StateT CompState (Except SharingError)
+
+/-- Cost of the component's parts with `avail` available and `chosen`
+stored (the entries of undecided terms are omitted), and the evaluation
+work. -/
+def CompCtx.phi (cx : CompCtx) (avail : Nat → Bool) (chosen : Array Nat) : Nat × Nat := Id.run do
+  let mut vals : Std.HashMap Nat UVal := {}
+  let mut work := 0
+  for t in cx.area do
+    let get := fun c => (vals.get? c).getD cx.up.base[c]!
+    let (v, s) := cx.up.node get avail t
+    vals := vals.insert t v
+    work := work + 1 + s
+  let get := fun c => (vals.get? c).getD cx.up.base[c]!
+  let roots := cx.rootMult.foldl (fun acc (r, m) => acc + m * (get r).cost) 0
+  let stored := cx.storedIn.foldl (fun acc c => acc + (get c).inl) 0
+  let entries := chosen.foldl (fun acc x => acc + (get x).inl) 0
+  return (roots + stored + entries, work)
+
+/-- Record a complete choice. -/
+def CompState.record (st : CompState) (delta : _root_.Int) (set : Array Nat) : CompState :=
+  let better (o : Option (_root_.Int × Array Nat)) : Bool :=
+    match o with
+    | none => true
+    | some (d, s) => delta < d || (delta == d && setPrec set s)
+  let best := if better st.best then some (delta, set) else st.best
+  let k := set.size
+  let bySize := if st.bySize.size ≤ k then
+      st.bySize ++ Array.replicate (k + 1 - st.bySize.size) none
+    else st.bySize
+  let bySize := if better bySize[k]! then bySize.set! k (some (delta, set)) else bySize
+  { st with best, bySize }
+
+/-- Depth-first branch and bound over the members (ascending), trying
+"not stored" first. -/
+def CompCtx.dfs (cx : CompCtx) (limits : Limits) : Nat → Nat → Array Nat → CompM Unit
+  | 0, _, _ => throw (.internal "component search fuel exhausted")
+  | fuel + 1, i, chosen => do
+    let st ← get
+    if st.states + 1 > limits.maxStates then
+      throw (.resourceExhausted .states limits.maxStates)
+    let undecided := cx.members.extract i cx.members.size
+    let avail := fun t => chosen.contains t || undecided.contains t
+    let (phi, work) := cx.phi avail chosen
+    if st.costEvals + work > limits.maxCostEvals then
+      throw (.resourceExhausted .costEvals limits.maxCostEvals)
+    set { st with states := st.states + 1, costEvals := st.costEvals + work }
+    let delta : _root_.Int := (phi : _root_.Int) - (cx.phi0 : _root_.Int)
+    if i ≥ cx.members.size then
+      modify fun st => st.record delta chosen
+    else
+      match (← get).best with
+      | some (b, _) => if delta > b + (cx.slack : _root_.Int) then return
+      | none => pure ()
+      let t := cx.members[i]!
+      cx.dfs limits fuel (i + 1) chosen
+      cx.dfs limits fuel (i + 1) (chosen.push t)
+
+/-- Terms whose truncated values can change with the component: its members
+and their ancestors, not continuing above an opaq term. -/
+def componentArea (up : UPrep) (f : GraphFacts) (members : Array Nat) : Array Nat := Id.run do
+  let mut seen : Std.HashSet Nat := {}
+  let mut stack := members
+  for t in members do seen := seen.insert t
+  for _ in [0:up.prep.dag.size + 1] do
+    match stack.back? with
+    | none => break
+    | some t =>
+      stack := stack.pop
+      if up.opaq[t]! then continue
+      for q in f.parents[t]! do
+        unless seen.contains q do
+          seen := seen.insert q
+          stack := stack.push q
+  return seen.toArray.qsort (· < ·)
+
+/-- The undecided member to branch on: the largest `|gain|`, then the smaller
+ID. -/
+def pickBranch (gains : Array (Nat × _root_.Int)) : Option (Nat × _root_.Int) :=
+  gains.foldl (init := none) fun acc (t, g) =>
+    match acc with
+    | none => some (t, g)
+    | some (a, ga) => if g.natAbs > ga.natAbs || (g.natAbs == ga.natAbs && t < a) then some (t, g) else acc
+
+/-! ## Reclassifying branch and bound with splitting -/
+
+/-- Best `(Δ, set)` per chosen count (index = set size). -/
+abbrev CTable := Array (Option (_root_.Int × Array Nat))
+
+/-- Whether `e` beats the entry `o` (smaller `Δ`, then `setPrec`). -/
+def betterEntry (e : _root_.Int × Array Nat) (o : Option (_root_.Int × Array Nat)) : Bool :=
+  match o with
+  | none => true
+  | some (d, s) => e.1 < d || (e.1 == d && setPrec e.2 s)
+
+/-- The smallest `Δ` of a table. -/
+def CTable.best (tb : CTable) : Option _root_.Int :=
+  tb.foldl (init := none) fun acc o =>
+    match o, acc with
+    | none, _ => acc
+    | some (d, _), none => some d
+    | some (d, _), some b => some (min d b)
+
+/-- Record an entry at its count. -/
+def CTable.add (tb : CTable) (e : _root_.Int × Array Nat) : CTable :=
+  let k := e.2.size
+  let tb := if tb.size ≤ k then tb ++ Array.replicate (k + 1 - tb.size) none else tb
+  if betterEntry e tb[k]! then tb.set! k (some e) else tb
+
+/-- Whether a lower bound exceeds the table's best by more than `slack`. -/
+def CTable.prunes (tb : CTable) (delta : _root_.Int) (slack : Nat) : Bool :=
+  match tb.best with
+  | some bd => decide (delta > bd + (slack : _root_.Int))
+  | none => false
+
+/-- Drop the entries more than `slack` above the best. -/
+def CTable.trim (tb : CTable) (slack : Nat) : CTable :=
+  match tb.best with
+  | none => tb
+  | some b => tb.map fun o =>
+    match o with
+    | some (d, s) => if d > b + (slack : _root_.Int) then none else some (d, s)
+    | none => none
+
+/-- Combine the tables of disjoint groups: every pair of entries, summed. -/
+def CTable.conv (a b : CTable) : CTable :=
+  a.foldl (fun out oa => match oa with
+    | none => out
+    | some (da, sa) => b.foldl (fun out ob => match ob with
+      | none => out
+      | some (db, sb) => out.add (da + db, mergeSorted sa sb)) out) #[]
+
+/-- Static context of one component's search. -/
+structure SCtx where
+  up : UPrep
+  facts : GraphFacts
+  /-- Root-level search candidates, bounds and visible counts. -/
+  cand : Array Bool
+  bounds0 : UBounds
+  vis0 : Array Nat × Array Nat
+  members : Array Nat
+  memberIdx : Std.HashMap Nat Nat
+  /-- Members and their ancestors, not continuing above a certain-stored
+  term, ascending; and the index of each. -/
+  area : Array Nat
+  areaIdx : Std.HashMap Nat Nat
+  /-- Per area node: `(parent, edges, head edges)` for every distinct parent,
+  and its root occurrences. -/
+  inEdges : Array (Array (Nat × Nat × Nat))
+  rootOcc : Array Nat
+  slack : Nat
+  theta : _root_.Int
+  /-- Full evaluation with the certain-stored terms available, their widths,
+  the members and their ancestors (ascending), the roots among them (with
+  repetitions), and the certain-stored terms among them. -/
+  baseEv : DictEval
+  widthCs : Array (Option Nat)
+  allTrue : Array Bool
+  closure : Array Nat
+  rootsC : Array Nat
+  storedInC : Array Nat
+  /-- Every uncertain term (all components). -/
+  allUnc : Array Nat
+
+/-- Search state of one component. -/
+structure SState where
+  states : Nat := 0
+  costEvals : Nat := 0
+  memo : Std.HashMap (Array Nat × Array Nat) CTable := {}
+  memoHits : Nat := 0
+
+/-- Members and their ancestors, ascending. -/
+def upClosure (dag : Dag) (isMember : Nat → Bool) : Array Nat :=
+  let marks := foldRange (fun (acc : Array Bool) t =>
+    acc.set! t (isMember t || (dag.node t).children.any (acc[·]!))) 0 dag.size
+    (Array.replicate dag.size false)
+  (Array.range dag.size).filter (marks[·]!)
+
+/-- The component's cost by the full evaluation, recomputing only the members
+and their ancestors. -/
+def SCtx.phiE (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) : Nat × Nat :=
+  let p := cx.up.prep
+  let width := cx.members.foldl (fun acc t => if avail t then acc.set! t (some cx.up.w) else acc)
+    cx.widthCs
+  let ev := cx.closure.foldl (evalStep p.dag p.family p.spineLen p.tail width cx.allTrue) cx.baseEv
+  let inl := fun x =>
+    (evalStep p.dag p.family p.spineLen p.tail (width.set! x none) cx.allTrue ev x).cost[x]!
+  let roots := cx.rootsC.foldl (fun acc r => acc + ev.cost[r]!) 0
+  let base := cx.storedInC.foldl (fun acc c => acc + inl c) 0
+  let entries := stored.foldl (fun acc x => acc + inl x) 0
+  (roots + base + entries, cx.closure.size + stored.size)
+
+/-- `SCtx.phiE` with each entry cost read in place (`evalHidden`). -/
+def SCtx.phiEFast (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) : Nat × Nat :=
+  let p := cx.up.prep
+  let width := cx.members.foldl (fun acc t => if avail t then acc.set! t (some cx.up.w) else acc)
+    cx.widthCs
+  let ev := cx.closure.foldl (evalStep p.dag p.family p.spineLen p.tail width cx.allTrue) cx.baseEv
+  let inl := fun x => evalHidden p.dag p.family p.spineLen p.tail width cx.allTrue ev x
+  let roots := cx.rootsC.foldl (fun acc r => acc + ev.cost[r]!) 0
+  let base := cx.storedInC.foldl (fun acc c => acc + inl c) 0
+  let entries := stored.foldl (fun acc x => acc + inl x) 0
+  (roots + base + entries, cx.closure.size + stored.size)
+
+@[csimp] theorem SCtx.phiE_eq_fast : @SCtx.phiE = @SCtx.phiEFast := by
+  funext cx avail stored
+  simp only [SCtx.phiE, SCtx.phiEFast, evalHidden_eq]
+
+/-- Bounds under a decided-out set: the root-level bounds recomputed over the
+area (ascending) with the decided-out members no longer maybe-stored. Every
+value is at most the bounds of exactly that maybe-stored set (`boundsStep` is
+monotone and the start is pointwise below). -/
+def SCtx.rebound (cx : SCtx) (ms : Array Bool) : UBounds :=
+  cx.area.foldl (boundsStep cx.up.prep cx.up.w ms) cx.bounds0
+
+/-- Visible counts under a maybe-stored set: the area nodes recomputed from
+their parents (descending), every other term at its root-level count. -/
+def SCtx.revisible (cx : SCtx) (ms : Array Bool) : Array Nat × Array Nat :=
+  (List.range cx.area.size).foldl (fun (acc : Array Nat × Array Nat) k =>
+    match acc with
+    | (ds, hs) =>
+      let j := cx.area.size - 1 - k
+      let y := cx.area[j]!
+      let r := cx.rootOcc[j]!
+      let dh := cx.inEdges[j]!.foldl (fun (dh : Nat × Nat) (e : Nat × Nat × Nat) =>
+        let wq := if ms[e.1]! then 1 else min ds[e.1]! visibleCap
+        (dh.1 + e.2.1 * wq, dh.2 + e.2.2 * wq)) (r, r)
+      (ds.set! y dh.1, hs.set! y dh.2)) cx.vis0
+
+/-- Whether a decided-stored term costs exactly `w` wherever it occurs and
+ends every telescope running into it, under bounds `b`. -/
+def SCtx.opaqueUnder (cx : SCtx) (b : UBounds) (t : Nat) : Bool :=
+  if cx.up.prep.family[t]! == .none then b.inlineLB[t]! ≥ cx.up.w
+  else b.mergedLB[t]! ≥ cx.up.w
+
+/-- Groups of the undecided members: joined by DAG paths whose intermediate
+terms are not opaque, and below a common non-opaque decided-stored term. -/
+def SCtx.groups (cx : SCtx) (opq : Nat → Bool) (availFixed : Nat → Bool) (und : Array Nat) :
+    Array (Array Nat) := Id.run do
+  let undSet : Std.HashSet Nat := und.foldl (·.insert ·) {}
+  let mut uf : Array Nat := Array.range cx.members.size
+  let mut reps : Array (Array Nat) := Array.replicate cx.area.size #[]
+  for j in [0:cx.area.size] do
+    let y := cx.area[j]!
+    if opq y then continue
+    let mut rs : Array Nat := #[]
+    for c in (cx.up.prep.dag.node y).children do
+      match cx.areaIdx.get? c with
+      | none => pure ()
+      | some jc =>
+        for r in reps[jc]! do
+          let fr := ufFind uf r
+          unless rs.contains fr do rs := rs.push fr
+    if undSet.contains y then
+      let iy := cx.memberIdx.getD y 0
+      for r in rs do
+        let a := ufFind uf iy
+        let b := ufFind uf r
+        if a != b then
+          if a < b then uf := uf.set! b a else uf := uf.set! a b
+      reps := reps.set! j #[ufFind uf iy]
+    else if availFixed y && rs.size > 1 then
+      for r in rs do
+        let a := ufFind uf rs[0]!
+        let b := ufFind uf r
+        if a != b then
+          if a < b then uf := uf.set! b a else uf := uf.set! a b
+      reps := reps.set! j #[ufFind uf rs[0]!]
+    else
+      reps := reps.set! j rs
+  let mut groups : Std.HashMap Nat (Array Nat) := {}
+  for t in und do
+    let r := ufFind uf (cx.memberIdx.getD t 0)
+    groups := groups.insert r ((groups.getD r #[]).push t)
+  let gs := groups.toArray.map fun (_, g) => g.qsort (· < ·)
+  return gs.qsort fun a b => a[0]! < b[0]!
+
+/-- Memo key of a group: its members and the decisions that can change the
+group's `Δ`, each as `3·t + code` (code 0 not stored, 1 stored, 2 stored
+and opaque). Those are the decided members joined to a group member by a
+directed DAG path (up or down) whose intermediate terms are not opaque, and
+the decided members below (through non-opaque terms) a stored, non-opaque
+ancestor reached that way, whose `min(w, ·)` couples its subterms. Any other
+decision is reached only through ancestors whose cost it enters additively.
+Also returns the set of those decided members. -/
+def SCtx.memoKey (cx : SCtx) (opq : Nat → Bool) (inSet outSet : Std.HashSet Nat)
+    (g : Array Nat) : Array Nat × Std.HashSet Nat := Id.run do
+  let mut entries : Array Nat := #[]
+  let mut rel : Std.HashSet Nat := {}
+  -- Up from the group; stored non-opaque ancestors also start a down search.
+  let mut downStart := g
+  let mut seen : Std.HashSet Nat := g.foldl (·.insert ·) {}
+  let mut stack := g
+  for _ in [0:cx.area.size + 1] do
+    match stack.back? with
+    | none => break
+    | some y =>
+      stack := stack.pop
+      for q in cx.facts.parents[y]! do
+        if !cx.areaIdx.contains q || seen.contains q then continue
+        seen := seen.insert q
+        if outSet.contains q then
+          entries := entries.push (3 * q)
+          rel := rel.insert q
+        else if inSet.contains q then
+          entries := entries.push (3 * q + (if opq q then 2 else 1))
+          rel := rel.insert q
+          unless opq q do downStart := downStart.push q
+        unless opq q do stack := stack.push q
+  -- Down through non-opaque terms.
+  seen := downStart.foldl (·.insert ·) {}
+  stack := downStart
+  for _ in [0:cx.area.size + 1] do
+    match stack.back? with
+    | none => break
+    | some y =>
+      stack := stack.pop
+      for c in (cx.up.prep.dag.node y).children do
+        if !cx.areaIdx.contains c || seen.contains c then continue
+        seen := seen.insert c
+        if !rel.contains c then
+          if outSet.contains c then
+            entries := entries.push (3 * c)
+            rel := rel.insert c
+          else if inSet.contains c then
+            entries := entries.push (3 * c + (if opq c then 2 else 1))
+            rel := rel.insert c
+        unless opq c do stack := stack.push c
+  return (entries.qsort (· < ·), rel)
+
+/-- One search state: count it, charge `work`, enforce the limits. -/
+def chargeP (limits : Limits) (work : Nat) (st : SState) : Except SharingError SState := do
+  if st.states + 1 > limits.maxStates then
+    throw (.resourceExhausted .states limits.maxStates)
+  if st.costEvals + work > limits.maxCostEvals then
+    throw (.resourceExhausted .costEvals limits.maxCostEvals)
+  pure { st with states := st.states + 1, costEvals := st.costEvals + work }
+
+/-- The opaque terms under a decided context, as a table: the certain-stored
+terms and the decided-stored terms whose bounds (with the decided-out terms
+removed from the maybe-stored set) reach `w`. -/
+def SCtx.opaqueArr (cx : SCtx) (inAll outAll : Array Nat) : Array Bool :=
+  let b := cx.rebound (outAll.foldl (fun acc t => acc.set! t false) cx.cand)
+  inAll.foldl (fun acc t => acc.set! t (acc[t]! || cx.opaqueUnder b t)) cx.up.opaq
+
+/-- The reduced context encoded by a memo key's entries: the decided-stored
+and the decided-unstored terms. -/
+def keyContext (entries : Array Nat) : Array Nat × Array Nat :=
+  (entries.filterMap fun e => if e % 3 == 0 then none else some (e / 3),
+   entries.filterMap fun e => if e % 3 == 0 then some (e / 3) else none)
+
+/-- Mark the terms of `ts` in a table of `n` entries. -/
+def markTable (n : Nat) (ts : Array Nat) : Array Bool :=
+  ts.foldl (fun acc t => acc.set! t true) (Array.replicate n false)
+
+/-- Labels of the separation check: group terms 1, other members outside the
+context 2, everything else unlabeled. -/
+def sepLabels (n : Nat) (members g inRed outRed : Array Nat) : Array (Option Nat) :=
+  let lab := members.foldl (fun acc t => acc.set! t (some 2)) (Array.replicate n none)
+  let lab := g.foldl (fun acc t => acc.set! t (some 1)) lab
+  (inRed ++ outRed).foldl (fun acc t => acc.set! t none) lab
+
+/-- **Separation check of a group under a reduced context.** The group's
+terms are members outside the context; and with the opaque terms of the
+context, no non-opaque member that can be stored (every member not in
+`outRed`) reaches both a group term and a member outside the group and the
+context. Computed over the members and their ancestors. -/
+def SCtx.sepCheck (cx : SCtx) (g inRed outRed : Array Nat) : Bool :=
+  let n := cx.up.prep.dag.size
+  let opqR := cx.opaqueArr inRed outRed
+  let isMem := markTable n cx.members
+  let isOut := markTable n outRed
+  let lab := sepLabels n cx.members g inRed outRed
+  let rl := reachLabelsOn cx.up.prep.dag cx.closure (opqR[·]!) (lab[·]!)
+  g.all (fun t => isMem[t]! && lab[t]! == some 1) &&
+    cx.members.all fun v => isOut[v]! || opqR[v]! || rl[v]! != some none
+
+/-- Reclassification at a search node: the undecided members whose gain under
+the node's bounds (with the decided-out members no longer maybe-stored) and
+recomputed counts reaches the threshold are merged into `localIn`; returns
+the new `localIn`, the open members with their gains, and the node's bounds. -/
+def SCtx.reclassify (cx : SCtx) (outAll localIn und : Array Nat) :
+    Array Nat × Array (Nat × _root_.Int) × UBounds :=
+  let ms := outAll.foldl (fun acc t => acc.set! t false) cx.cand
+  let b := cx.rebound ms
+  let vis := cx.revisible ms
+  let gains := und.map fun t =>
+    let d := vis.1[t]!
+    let h := vis.2[t]!
+    (t, storedGainWith cx.up.prep b cx.up.w t d h, 1 ≤ d && h ≤ d)
+  let isForced := fun (e : Nat × _root_.Int × Bool) => e.2.2 && e.2.1 ≥ cx.theta
+  let forced := (gains.filter isForced).map (·.1)
+  let localIn := if forced.isEmpty then localIn else mergeSorted localIn forced
+  let open_ := (gains.filter (!isForced ·)).map fun e => (e.1, e.2.1)
+  (localIn, open_, b)
+
+mutual
+/-- Exact table of a group under the decided sets `inAll`/`outAll` (members
+of the component decided stored / not stored outside the group): for each
+count, the best `Δ` within `slack` of the group's best, where `Δ` is the
+change of the component cost from leaving the whole group unstored. Only the
+decisions that reach the group (`memoKey`) enter its search, which is
+memoized under them; the group's separation is checked first. -/
+def SCtx.solveP (cx : SCtx) (limits : Limits) :
+    Nat → Array Nat → Array Nat → Array Nat → SState → Except SharingError (CTable × SState)
+  | 0, _, _, _, _ => throw (.internal "component search fuel exhausted")
+  | fuel + 1, g, inAll, outAll, st => do
+    let opqA := cx.opaqueArr inAll outAll
+    let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
+    let outSet : Std.HashSet Nat := outAll.foldl (·.insert ·) {}
+    let (entries, _) := cx.memoKey (opqA[·]!) inSet outSet g
+    let (inRed, outRed) := keyContext entries
+    unless strictInc g && strictInc inRed && strictInc outRed &&
+        inRed.all inSet.contains && outRed.all outSet.contains do
+      throw (.internal "memo key context is not part of the decided context")
+    match st.memo.get? (g, entries) with
+    | some tb => pure (tb, { st with memoHits := st.memoHits + 1 })
+    | none =>
+      unless cx.sepCheck g inRed outRed do
+        throw (.internal "search group is not separated")
+      let (tb, st) ← cx.solveBody limits fuel g inRed outRed st
+      pure (tb, { st with memo := st.memo.insert (g, entries) tb })
+
+/-- The search of a group under its reduced context. -/
+def SCtx.solveBody (cx : SCtx) (limits : Limits) :
+    Nat → Array Nat → Array Nat → Array Nat → SState → Except SharingError (CTable × SState)
+  | 0, _, _, _, _ => throw (.internal "component search fuel exhausted")
+  | fuel + 1, g, inRed, outRed, st => do
+    let inSet : Std.HashSet Nat := inRed.foldl (·.insert ·) {}
+    let (phi0, work) := cx.phiE (fun t => inSet.contains t) inRed
+    let st ← chargeP limits (work + cx.area.size) st
+    let (tb, st) ← cx.nodeP limits fuel phi0 inRed outRed outRed.size #[] g #[] st
+    pure (tb.trim cx.slack, st)
+
+/-- Branch-and-bound node of a group: `localIn` are the group's members
+decided stored, `und` the undecided ones, `tb` the table so far. -/
+def SCtx.nodeP (cx : SCtx) (limits : Limits) :
+    Nat → Nat → Array Nat → Array Nat → Nat → Array Nat → Array Nat → CTable → SState →
+      Except SharingError (CTable × SState)
+  | 0, _, _, _, _, _, _, _, _ => throw (.internal "component search fuel exhausted")
+  | fuel + 1, phi0, inCtx, outAll, nOutCtx, localIn, und, tb, st => do
+    -- Reclassify: an undecided member whose gain under this partial
+    -- assignment reaches the threshold is stored in every minimum that
+    -- respects it.
+    let (localIn, open_, b) := cx.reclassify outAll localIn und
+    let und := open_.map (·.1)
+    let inAll := inCtx ++ localIn
+    let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
+    let undSet : Std.HashSet Nat := und.foldl (·.insert ·) {}
+    -- Lower bound: every undecided member available, its entry free.
+    let (phi, work) := cx.phiE (fun t => inSet.contains t || undSet.contains t) inAll
+    let st ← chargeP limits (work + 2 * cx.area.size) st
+    let delta : _root_.Int := (phi : _root_.Int) - (phi0 : _root_.Int)
+    if und.isEmpty then return (tb.add (delta, localIn), st)
+    if tb.prunes delta cx.slack then return (tb, st)
+    -- Split into independent groups.
+    let opq := fun t => cx.up.opaq[t]! || (inSet.contains t && cx.opaqueUnder b t)
+    let availFixed := fun t => inSet.contains t && !opq t
+    let groups := cx.groups opq availFixed und
+    unless partitionCheck und groups do
+      throw (.internal "search groups do not partition the undecided members")
+    -- Hand a single group to the memoized solver when a decision of this
+    -- search no longer reaches it.
+    let route :=
+      if groups.size > 1 then true
+      else if groups.size == 1 then
+        let outSet : Std.HashSet Nat := outAll.foldl (·.insert ·) {}
+        let (_, rel) := cx.memoKey opq inSet outSet groups[0]!
+        localIn.any (!rel.contains ·) || (outAll.extract nOutCtx outAll.size).any (!rel.contains ·)
+      else false
+    if route then
+      let (phiNone, work) := cx.phiE (fun t => inSet.contains t) inAll
+      let st ← chargeP limits work st
+      let base : _root_.Int := (phiNone : _root_.Int) - (phi0 : _root_.Int)
+      let (comb, st) ← cx.splitP limits fuel inAll outAll groups.toList
+        #[some (base, localIn)] st
+      return (comb.foldl (fun acc o => match o with
+        | some e => acc.add e
+        | none => acc) tb, st)
+    -- Branch on the largest |gain|, "stored" first when it is positive.
+    let some (t, gt) := pickBranch open_ | return (tb, st)
+    let und' := und.erase t
+    if gt > 0 then
+      let (tb, st) ← cx.nodeP limits fuel phi0 inCtx outAll nOutCtx (mergeSorted localIn #[t]) und' tb st
+      cx.nodeP limits fuel phi0 inCtx (outAll.push t) nOutCtx localIn und' tb st
+    else
+      let (tb, st) ← cx.nodeP limits fuel phi0 inCtx (outAll.push t) nOutCtx localIn und' tb st
+      cx.nodeP limits fuel phi0 inCtx outAll nOutCtx (mergeSorted localIn #[t]) und' tb st
+
+/-- Solve the groups of a split one after the other and combine their
+tables. -/
+def SCtx.splitP (cx : SCtx) (limits : Limits) :
+    Nat → Array Nat → Array Nat → List (Array Nat) → CTable → SState →
+      Except SharingError (CTable × SState)
+  | 0, _, _, _, _, _ => throw (.internal "component search fuel exhausted")
+  | _ + 1, _, _, [], comb, st => pure (comb, st)
+  | fuel + 1, inAll, outAll, grp :: grps, comb, st => do
+    let (sub, st) ← cx.solveP limits fuel grp inAll outAll st
+    cx.splitP limits fuel inAll outAll grps (comb.conv sub) st
+end
+
+
+/-- Result of one component search. -/
+structure CompResult where
+  members : Array Nat
+  bestDelta : _root_.Int
+  bestSet : Array Nat
+  bySize : Array (Option (_root_.Int × Array Nat))
+  deriving Inhabited
+
+/-- The edge counts from `q` into `y`: all edges and head (non-continuation)
+edges. -/
+def edgeCount (dag : Dag) (q y : Nat) : Nat × Nat × Nat :=
+  let node := dag.node q
+  (List.range node.children.size).foldl (fun (acc : Nat × Nat × Nat) i =>
+    if node.child i == y then
+      (q, acc.2.1 + 1, acc.2.2 + (if continuationEdge node i (dag.node y) then 0 else 1))
+    else acc) (q, 0, 0)
+
+/-- The search context of a component. -/
+def mkSCtx (ex : Expanded) (f : GraphFacts) (up : UPrep) (cand : Array Bool) (b0 : UBounds)
+    (vis0 : Array Nat × Array Nat) (rootCount : Array Nat) (slack : Nat) (theta : _root_.Int)
+    (baseEv : DictEval) (widthCs : Array (Option Nat)) (allTrue : Array Bool) (unc : Array Nat)
+    (members : Array Nat) : SCtx :=
+  let n := ex.dag.size
+  let area := componentArea up f members
+  let areaIdx : Std.HashMap Nat Nat :=
+    (Array.range area.size).foldl (fun acc j => acc.insert area[j]! j) {}
+  let memberIdx : Std.HashMap Nat Nat :=
+    (Array.range members.size).foldl (fun acc j => acc.insert members[j]! j) {}
+  let inEdges := area.map fun y => f.parents[y]!.map fun q => edgeCount ex.dag q y
+  let rootOcc := area.map (rootCount[·]!)
+  let isMem := markTable n members
+  let closure := upClosure ex.dag (isMem[·]!)
+  let inClosure := markTable n closure
+  let rootsC := ex.roots.filter (inClosure[·]!)
+  let storedInC := closure.filter (up.opaq[·]!)
+  { up, facts := f, cand, bounds0 := b0, vis0, members, memberIdx, area, areaIdx,
+    inEdges, rootOcc, slack, theta, baseEv, widthCs, allTrue, closure, rootsC, storedInC,
+    allUnc := unc }
+
+/-- The recorded parents of every area node are strictly increasing terms. -/
+def areaParentsOK (n : Nat) (cx : SCtx) : Bool :=
+  (List.range cx.area.size).all fun j =>
+    strictInc ((cx.inEdges[j]!).map (·.1)) && (cx.inEdges[j]!).all (·.1 < n)
+
+/-- The entry of a table with value `bd` whose set comes first in `setPrec`. -/
+def bestSetOf (tb : CTable) (bd : _root_.Int) : Option (Array Nat) :=
+  tb.foldl (init := (none : Option (Array Nat))) fun acc o =>
+    match o with
+    | some (d, s) =>
+      if d == bd then
+        match acc with
+        | none => some s
+        | some a => if setPrec s a then some s else acc
+      else acc
+    | none => acc
+
+/-- Search one component and pick its best entry. -/
+def searchComponent (cx : SCtx) (limits : Limits) (states costEvals : Nat) :
+    Except SharingError (CompResult × Nat × Nat) := do
+  unless areaParentsOK cx.up.prep.dag.size cx do
+    throw (.internal "component parents are not duplicate-free terms")
+  let st0 : SState := { states, costEvals }
+  let (tb, st) ← cx.solveP limits (8 * cx.members.size + 8) cx.members #[] #[] st0
+  let some bd := tb.best | throw (.internal "component search found no choice")
+  let some bs := bestSetOf tb bd | throw (.internal "component search found no choice")
+  pure ({ members := cx.members, bestDelta := bd, bestSet := bs, bySize := tb },
+    st.states, st.costEvals)
+
+/-- Search one component with the subset enumeration (the test oracle of
+`Limits.uniformSubsetSearch`). -/
+def searchComponentRef (up : UPrep) (f : GraphFacts) (opaq : Array Bool) (roots : Array Nat)
+    (slack : Nat) (limits : Limits) (members : Array Nat) (states costEvals : Nat) :
+    Except SharingError (CompResult × Nat × Nat) := do
+  let area := componentArea up f members
+  let areaSet : Std.HashSet Nat := area.foldl (·.insert ·) {}
+  let rootMult : Std.HashMap Nat Nat := roots.foldl (fun acc r =>
+    if areaSet.contains r then acc.insert r (acc.getD r 0 + 1) else acc) {}
+  let rootArr := rootMult.toArray.qsort (fun a b => a.1 < b.1)
+  let storedIn := area.filter (opaq[·]!)
+  let cx0 : CompCtx :=
+    { up := up, members := members, area := area, rootMult := rootArr,
+      storedIn, phi0 := 0, slack := slack }
+  let (phi0, _) := cx0.phi (fun _ => false) #[]
+  let cx := { cx0 with phi0 }
+  let st0 : CompState := { states, costEvals }
+  let ((), st) ← (cx.dfs limits (members.size + 2) 0 #[]).run st0
+  let some (bd, bs) := st.best | throw (.internal "component search found no choice")
+  pure ({ members, bestDelta := bd, bestSet := bs, bySize := st.bySize }, st.states, st.costEvals)
+
+end Ix.Sharing.Exact
+
+end

@@ -280,19 +280,9 @@ theorem compileDefinitionDataBlock_run_ordinary_codecWF
       (frozenRefCompileCtx compileEnv
         (definitionDataCompileBlockEnv blockEnv definitionData) snapshot)
       definitionData.value = some valueTarget) :
-    ∃ constMeta state',
-      let info : Ixon.ConstantInfo :=
-        .defn (compiledDefinitionDataPayload definitionData
-          typeTarget valueTarget)
-      let result := Ix.CompileM.BlockResult.mk'
-        (Ix.CompileM.buildConstantWithSharing info
-          (Ix.CompileM.constantInfoRootExprs info)
-          state'.refs state'.univs)
-        constMeta
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileDefinitionDataBlock definitionData) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileDefinitionDataBlock definitionData)) := by
   obtain ⟨constMeta, state', hdefinition, htables', _, hinfo, _, _⟩ :=
     compileDefinitionData_run_ordinary_wireWF compileEnv blockEnv snapshot
       hfree hclosed hlevelFaithful hexprFaithful htables definitionData
@@ -302,9 +292,6 @@ theorem compileDefinitionDataBlock_run_ordinary_codecWF
     compileEnv blockEnv state'
     (.defn (compiledDefinitionDataPayload definitionData
       typeTarget valueTarget)) constMeta hinfo htables'
-  refine ⟨constMeta, state', ?_⟩
-  dsimp only
-  dsimp only at hfinish
   unfold Ix.CompileM.compileDefinitionDataBlock
   rw [run_bind, hdefinition]
   exact hfinish
@@ -343,25 +330,14 @@ theorem compileDefinitionDataInfo_run_ordinary_codecWF
       (frozenRefCompileCtx compileEnv
         (definitionDataCompileBlockEnv blockEnv definitionData) snapshot)
       definitionData.value = some valueTarget) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileDefinitionDataInfo definitionData) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
-  obtain ⟨constMeta, state', hrun, hcodec⟩ :=
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileDefinitionDataInfo definitionData)) := by
+  have hrun :=
     compileDefinitionDataBlock_run_ordinary_codecWF compileEnv blockEnv
       snapshot hfree hclosed hlevelFaithful hexprFaithful htables
       definitionData htypeSource hvalueSource htypeBound hvalueBound hstate
       htypeRef hvalueRef
-  let info : Ixon.ConstantInfo :=
-    .defn (compiledDefinitionDataPayload definitionData
-      typeTarget valueTarget)
-  let result := Ix.CompileM.BlockResult.mk'
-    (Ix.CompileM.buildConstantWithSharing info
-      (Ix.CompileM.constantInfoRootExprs info)
-      state'.refs state'.univs)
-    constMeta
-  refine ⟨result, state', ?_, hcodec⟩
   unfold Ix.CompileM.compileDefinitionDataInfo
   rw [run_bind, hpreseed]
   exact hrun
@@ -391,11 +367,9 @@ theorem compileDefinitionDataInfo_run_ready_codecWF
       definitionData.type definitionData.value)
     (htypeBound : ExprWireBound definitionData.type)
     (hvalueBound : ExprWireBound definitionData.value) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileDefinitionDataInfo definitionData) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileDefinitionDataInfo definitionData)) := by
   let params := definitionData.levelParams.toList
   obtain ⟨preseedState, typeTarget, valueTarget, hpreseed, htables,
       htypeRef, hvalueRef, hexpr, hcanonState, harena, hfinal⟩ :=
@@ -521,20 +495,17 @@ theorem compileConstantInfo_theorem_run_ready_codecWF
       theoremVal.cnst.type theoremVal.value)
     (htypeBound : ExprWireBound theoremVal.cnst.type)
     (hvalueBound : ExprWireBound theoremVal.value) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstantInfo (.thmInfo theoremVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstantInfo (.thmInfo theoremVal))) := by
   let definitionData := Ix.CompileM.theoremValData theoremVal
   let singletonEnv :=
     singletonDefinitionDataBlockEnv blockEnv definitionData
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+  have hrun :=
     compileDefinitionDataInfo_run_ready_codecWF compileEnv singletonEnv
       hfree hclosed hlevelFaithful hexprFaithful definitionData state
       hexprCache hcanonCache hrefTable hunivTable htypeReady hvalueReady
       htableBound htypeBound hvalueBound
-  refine ⟨result, state', ?_, hcodec⟩
   rw [compileConstantInfo_theorem_run_surgeryFree_eq
     compileEnv blockEnv state theoremVal hfree]
   exact hrun
@@ -571,12 +542,10 @@ theorem compileConstantInfo_theorem_default_run_ready_codecWF
       theoremVal.cnst.type theoremVal.value)
     (htypeBound : ExprWireBound theoremVal.cnst.type)
     (hvalueBound : ExprWireBound theoremVal.value) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv
           (default : Ix.CompileM.BlockState)
-          (Ix.CompileM.compileConstantInfo (.thmInfo theoremVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+          (Ix.CompileM.compileConstantInfo (.thmInfo theoremVal))) := by
   apply compileConstantInfo_theorem_run_ready_codecWF compileEnv blockEnv
     hfree hclosed hlevelFaithful hexprFaithful theoremVal
     (default : Ix.CompileM.BlockState) rfl CanonUnivCacheWF.empty
@@ -658,20 +627,17 @@ theorem compileConstantInfo_opaque_run_ready_codecWF
       opaqueVal.cnst.type opaqueVal.value)
     (htypeBound : ExprWireBound opaqueVal.cnst.type)
     (hvalueBound : ExprWireBound opaqueVal.value) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstantInfo (.opaqueInfo opaqueVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstantInfo (.opaqueInfo opaqueVal))) := by
   let definitionData := Ix.CompileM.opaqueValData opaqueVal
   let singletonEnv :=
     singletonDefinitionDataBlockEnv blockEnv definitionData
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+  have hrun :=
     compileDefinitionDataInfo_run_ready_codecWF compileEnv singletonEnv
       hfree hclosed hlevelFaithful hexprFaithful definitionData state
       hexprCache hcanonCache hrefTable hunivTable htypeReady hvalueReady
       htableBound htypeBound hvalueBound
-  refine ⟨result, state', ?_, hcodec⟩
   rw [compileConstantInfo_opaque_run_surgeryFree_eq
     compileEnv blockEnv state opaqueVal hfree]
   exact hrun
@@ -708,12 +674,10 @@ theorem compileConstantInfo_opaque_default_run_ready_codecWF
       opaqueVal.cnst.type opaqueVal.value)
     (htypeBound : ExprWireBound opaqueVal.cnst.type)
     (hvalueBound : ExprWireBound opaqueVal.value) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv
           (default : Ix.CompileM.BlockState)
-          (Ix.CompileM.compileConstantInfo (.opaqueInfo opaqueVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+          (Ix.CompileM.compileConstantInfo (.opaqueInfo opaqueVal))) := by
   apply compileConstantInfo_opaque_run_ready_codecWF compileEnv blockEnv
     hfree hclosed hlevelFaithful hexprFaithful opaqueVal
     (default : Ix.CompileM.BlockState) rfl CanonUnivCacheWF.empty

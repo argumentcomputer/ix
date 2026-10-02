@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Scoped phase timers of the canonical sharing construction
+# (`sharing_exact::profile_report`); diagnostic only, off by default.
+sharing-profile = []
+
 [dependencies]
 bignat = { workspace = true }
 blake3 = { workspace = true }
@@ -23,6 +28,8 @@ rayon = { workspace = true }
 
 [dev-dependencies]
 ix-common = { workspace = true, features = ["quickcheck"] }
+# The process allocator of the `ix` binary, for the `sharing_corpus` runner.
+mimalloc = { workspace = true }
 quickcheck = { workspace = true }
 quickcheck_macros = { workspace = true }
 

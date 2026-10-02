@@ -16,10 +16,10 @@
 
   ## Serialization
 
-  Tag4 size 2 under flag 0xE:
+  TagN (`f = 4`) value 2 under flag 0xE:
 
   ```text
-  [Tag4(0xE, 2) = 0xE2] [body]
+  [TagN(4, 0xE, 2) = 0xE2] [body]
 
   body recursive:
     leaf(addr):  [0x00] [addr:32]
@@ -160,7 +160,7 @@ partial def putBody : AssumptionTree → PutM Unit
     putBody r
 
 def put (t : AssumptionTree) : PutM Unit := do
-  putTag4 ⟨FLAG, VARIANT⟩
+  putTagN 4 FLAG VARIANT
   putBody t
 
 partial def getBody : GetM AssumptionTree := do
@@ -177,9 +177,9 @@ partial def getBody : GetM AssumptionTree := do
     throw s!"AssumptionTree.getBody: invalid body tag {tag.toNat}"
 
 def get : GetM AssumptionTree := do
-  let tag ← getTag4
-  if tag.flag != FLAG || tag.size != VARIANT then
-    throw s!"AssumptionTree.get: expected Tag4 0xE/2, got {tag.flag.toNat}/{tag.size}"
+  let tag ← getTagN 4
+  if tag.flag != FLAG || tag.value != VARIANT then
+    throw s!"AssumptionTree.get: expected header 0xE/2, got {tag.flag.toNat}/{tag.value}"
   getBody
 
 def ser (t : AssumptionTree) : ByteArray := runPut (put t)

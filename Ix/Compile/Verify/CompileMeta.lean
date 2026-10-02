@@ -17,18 +17,18 @@ def concatSerialized (parts : Array ByteArray) : ByteArray :=
 /-- Pure reference encoding for a source substring. -/
 def serializeIxSubstringRef (source : Ix.Substring) : ByteArray :=
   (Address.blake3 source.str.toUTF8).hash ++
-    Ix.CompileM.putTag0 source.startPos ++
-    Ix.CompileM.putTag0 source.stopPos
+    Ix.CompileM.tagN0Bytes source.startPos ++
+    Ix.CompileM.tagN0Bytes source.stopPos
 
 /-- Pure reference encoding for source-location metadata. -/
 def serializeIxSourceInfoRef : Ix.SourceInfo → ByteArray
   | .original leading leadingPos trailing trailingPos =>
     ByteArray.mk #[0] ++ serializeIxSubstringRef leading ++
-      Ix.CompileM.putTag0 leadingPos ++ serializeIxSubstringRef trailing ++
-      Ix.CompileM.putTag0 trailingPos
+      Ix.CompileM.tagN0Bytes leadingPos ++ serializeIxSubstringRef trailing ++
+      Ix.CompileM.tagN0Bytes trailingPos
   | .synthetic start stop canonical =>
-    ByteArray.mk #[1] ++ Ix.CompileM.putTag0 start ++
-      Ix.CompileM.putTag0 stop ++ ByteArray.mk #[if canonical then 1 else 0]
+    ByteArray.mk #[1] ++ Ix.CompileM.tagN0Bytes start ++
+      Ix.CompileM.tagN0Bytes stop ++ ByteArray.mk #[if canonical then 1 else 0]
   | .none => ByteArray.mk #[2]
 
 /-- Pure reference encoding for a preresolved syntax identifier. -/
@@ -36,7 +36,7 @@ def serializeIxSyntaxPreresolvedRef : Ix.SyntaxPreresolved → ByteArray
   | .namespace name => ByteArray.mk #[0] ++ name.getHash.hash
   | .decl name aliases =>
     let header := ByteArray.mk #[1] ++ name.getHash.hash ++
-      Ix.CompileM.putTag0 aliases.size
+      Ix.CompileM.tagN0Bytes aliases.size
     let aliasHashes := aliases.map fun aliasValue =>
       (Address.blake3 aliasValue.toUTF8).hash
     header ++ concatSerialized aliasHashes
@@ -49,7 +49,7 @@ def serializeIxSyntaxRef (source : Ix.Syntax) : ByteArray :=
     let serializedArgs := args.attach.map fun arg =>
       serializeIxSyntaxRef arg.1
     ByteArray.mk #[1] ++ serializeIxSourceInfoRef info ++ kind.getHash.hash ++
-      Ix.CompileM.putTag0 args.size ++ concatSerialized serializedArgs
+      Ix.CompileM.tagN0Bytes args.size ++ concatSerialized serializedArgs
   | .atom info value =>
     ByteArray.mk #[2] ++ serializeIxSourceInfoRef info ++
       (Address.blake3 value.toUTF8).hash
@@ -57,7 +57,7 @@ def serializeIxSyntaxRef (source : Ix.Syntax) : ByteArray :=
     let serializedPres := preresolved.map serializeIxSyntaxPreresolvedRef
     ByteArray.mk #[3] ++ serializeIxSourceInfoRef info ++
       serializeIxSubstringRef rawValue ++ value.getHash.hash ++
-      Ix.CompileM.putTag0 preresolved.size ++ concatSerialized serializedPres
+      Ix.CompileM.tagN0Bytes preresolved.size ++ concatSerialized serializedPres
 termination_by sizeOf source
 decreasing_by
   simp_wf

@@ -946,8 +946,8 @@ private theorem serializeIxSubstring_run_strict
     hsupported.blobs (by simp [substringStoreItems])
   obtain ⟨addr, state', hrun, hstep⟩ :=
     storeString_run_strict compileEnv blockEnv hfaithful source.str hstate hbytes
-  refine ⟨addr.hash ++ Ix.CompileM.putTag0 source.startPos ++
-      Ix.CompileM.putTag0 source.stopPos, state', ?_, ?_⟩
+  refine ⟨addr.hash ++ Ix.CompileM.tagN0Bytes source.startPos ++
+      Ix.CompileM.tagN0Bytes source.stopPos, state', ?_, ?_⟩
   · rw [Ix.CompileM.serializeIxSubstring,
       run_bind_strict compileEnv blockEnv state _ _, hrun]
     rfl
@@ -971,8 +971,8 @@ private theorem serializeIxSourceInfo_run_strict
       serializeIxSubstring_run_strict compileEnv blockEnv hfaithful leadingState
         hleadingStep.strict trailing hsupported.right
     refine ⟨ByteArray.mk #[0] ++ leadingBytes ++
-        Ix.CompileM.putTag0 leadingPos ++ trailingBytes ++
-        Ix.CompileM.putTag0 trailingPos, finalState, ?_, ?_⟩
+        Ix.CompileM.tagN0Bytes leadingPos ++ trailingBytes ++
+        Ix.CompileM.tagN0Bytes trailingPos, finalState, ?_, ?_⟩
     · rw [Ix.CompileM.serializeIxSourceInfo,
         run_bind_strict compileEnv blockEnv state _ _, hleadingRun]
       simp only
@@ -1027,7 +1027,7 @@ private theorem serializeIxSyntaxPreresolved_run_strict
           rw [MetaStoreItems.concat_singletonBlobs]
           exact haliasSupported)
     refine ⟨ByteArray.mk #[1] ++ name.getHash.hash ++
-        Ix.CompileM.putTag0 aliases.size ++
+        Ix.CompileM.tagN0Bytes aliases.size ++
         aliasAddrs.foldl (fun bytes addr => bytes ++ addr.hash)
           ByteArray.empty,
       finalState, ?_, ?_⟩
@@ -1098,7 +1098,7 @@ private theorem serializeIxSyntax_run_strict_effect
         (fun current arg hcurrent harg => ih arg current hcurrent harg)
         infoState hinfoStep.strict args.attach hargsSupported
     refine ⟨ByteArray.mk #[1] ++ infoBytes ++ kind.getHash.hash ++
-        Ix.CompileM.putTag0 args.size ++
+        Ix.CompileM.tagN0Bytes args.size ++
         serializedArgs.foldl (fun bytes arg => bytes ++ arg) ByteArray.empty,
       finalState, ?_, ?_⟩
     · rw [Ix.CompileM.serializeIxSyntax.eq_2,
@@ -1155,7 +1155,7 @@ private theorem serializeIxSyntax_run_strict_effect
       serializeIxSyntaxPreresolved_array_run_strict compileEnv blockEnv
         hfaithful rawState hrawStep.strict preresolved hpreSupported
     refine ⟨ByteArray.mk #[3] ++ infoBytes ++ rawBytes ++
-        value.getHash.hash ++ Ix.CompileM.putTag0 preresolved.size ++
+        value.getHash.hash ++ Ix.CompileM.tagN0Bytes preresolved.size ++
         serializedPres.foldl (fun bytes pr => bytes ++ pr) ByteArray.empty,
       finalState, ?_, ?_⟩
     · rw [Ix.CompileM.serializeIxSyntax.eq_4,

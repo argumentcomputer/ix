@@ -545,10 +545,11 @@ def circuit := ⟦
   -- The fixed sequence (36 or 68 bytes) and final Nil check rule out cycles
   -- in preimages and output claims without a separate depth traversal.
   fn aggr_parse_check_env(bytes: ByteStream) -> (Addr, Option‹Addr›) {
+    -- TagN4(0xE, 5) is the one byte 0xE5; object format 4 is Ixon v4.
     let (tag, s) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE5u8, "aggr: claim is not CheckEnv");
     let (format, s) = aggr_read_byte(s);
-    assert_eq!(format, 3u8, "aggr: unsupported object format");
+    assert_eq!(format, 4u8, "aggr: unsupported object format");
     let (validator, s) = aggr_read_byte(s);
     assert_eq!(validator, 1u8, "aggr: wrong validator identity");
     let (root, s2) = aggr_read_address(s);

@@ -4202,6 +4202,7 @@ pub extern "C" fn rs_decompile_roundtrip(
   if let Err(e) = compile_state.env.put(&mut bytes) {
     return build_string_array(&[format!("serialize error: {e}")]);
   }
+  let sharing_limits = compile_state.sharing_limits.clone();
   drop(compile_state);
   let mut slice: &[u8] = &bytes;
   let env = match ixon::env::Env::get_demoted_named(&mut slice) {
@@ -4217,7 +4218,7 @@ pub extern "C" fn rs_decompile_roundtrip(
   );
   drop(bytes);
 
-  let stt = CompileState { env, ..CompileState::default() };
+  let stt = CompileState { env, sharing_limits, ..CompileState::default() };
   for entry in stt.env.named.iter() {
     stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
   }
@@ -4301,12 +4302,14 @@ pub extern "C" fn rs_kernel_roundtrip(
   // Egress KEnv → IxonEnv (reusing the original env's `ConstantMeta` +
   // blobs + names).
   let t3 = Instant::now();
-  let egressed_ixon = match ixon_egress(&kenv, &compile_state.env) {
-    Ok(e) => e,
-    Err(msg) => {
-      return build_string_array(&[format!("ixon_egress error: {msg}")]);
-    },
-  };
+  let egressed_ixon =
+    match ixon_egress(&kenv, &compile_state.env, &compile_state.sharing_limits)
+    {
+      Ok(e) => e,
+      Err(msg) => {
+        return build_string_array(&[format!("ixon_egress error: {msg}")]);
+      },
+    };
   eprintln!(
     "[rs_kernel_roundtrip] ixon egress:   {:>8.1?} ({} consts, {} named)",
     t3.elapsed(),

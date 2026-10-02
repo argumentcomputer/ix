@@ -6,7 +6,7 @@ public section
 namespace IxVM
 
 def ixon := ⟦
-  -- Ixon v3 keeps usage, ownership, and locality independent.
+  -- Ixon keeps usage, ownership, and locality independent.
   enum Uses {
     Erased,
     Linear,

@@ -1,4 +1,4 @@
-# Ixon v3 resource checking
+# Ixon resource checking (resource-v1)
 
 The Lean and Rust resource validators consume the same canonical addressed
 environment and an explicit profile. Both production compilers run this
@@ -120,22 +120,22 @@ its resource result is never cached by expression identity alone.
 ## Profiles, claims, and consumers
 
 A canonical profile begins with the UTF-8 bytes
-`ixon-v3/resource-v1/profile` and a zero byte, followed by:
+`ixon-v4/resource-v1/profile` and a zero byte, followed by:
 
 1. Assumptions, shareable type addresses, and selection primitive addresses:
-   each list has a minimal Tag0 count and strictly increasing 32-byte addresses.
+   each list has a TagN (`f = 0`) count and strictly increasing 32-byte addresses.
 2. Optional Nat and String type addresses: a byte `0`, or `1` and an address.
-3. Nonzero depth and step limits, each a minimal Tag0 unsigned integer.
+3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
 
 Selection primitives must also be assumptions. Literal types, when selected,
-must match the kernel's pinned v3 primitive identities. The profile address is
+must match the kernel's pinned primitive identities. The profile address is
 BLAKE3 of these exact bytes. Changing limits or assumptions changes the claim.
 The default profile admits no external resource interfaces and only grants
 shareability to present canonical Nat, Bool, and String types.
 
 `makeClaim` validates before producing a `Resource` claim. `checkClaim` checks
 the complete subject root and profile address, then reruns combined validation.
-The claim has format byte `3` and validator byte `2` (`resource-v1`).
+The claim has format byte `4` and validator byte `2` (`resource-v1`).
 Assumptions describe admitted behavior; they do not remove constants from the
 required closure. Merely parsing a claim or proof wrapper validates no program.
 
@@ -147,7 +147,7 @@ required closure. Merely parsing a claim or proof wrapper validates no program.
 | IxVM `Reveal` and `Contains` | Structural validation, validator byte `0` |
 | IxVM `Resource` | Explicitly unsupported; native success is not a circuit proof |
 
-IxVM preserves all v3 fields in serialization and revelation. Its typing
+IxVM preserves every contract field in serialization and revelation. Its typing
 conversion erases contracts and interprets a borrow let as an ordinary let.
 The committed validator identity prevents these typing proofs from claiming
 resource validity. Backends relying on ownership or locality must require
@@ -171,7 +171,7 @@ These are executable-check and transition invariants. They do not replace the
 ordinary typechecking prerequisite or claim a proof of a machine backend's
 allocation behavior.
 
-[Shared resource fixtures](../Tests/Fixtures/ixon-v3/resource.tsv) exercise
+[Shared resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
 accepted and rejected terms in both implementations. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
