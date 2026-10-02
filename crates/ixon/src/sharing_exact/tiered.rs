@@ -45,9 +45,11 @@
 //! ([`finish`]).
 //!
 //! When the order is closed under stored descendants (every stored
-//! descendant of an entry precedes it; `descendant_closed` decides it in one
-//! pass), the cost and choice of every term below entry `j` are the same
-//! under the prefix `order[..j]` as under the whole table (Lean
+//! descendant of an entry precedes it; decided from the nearest stored
+//! descendants phase 1 found for its pinned order,
+//! `NearestStored::closed_under`, or in one pass over the DAG by
+//! `descendant_closed`), the cost and choice of every term below entry `j`
+//! are the same under the prefix `order[..j]` as under the whole table (Lean
 //! `gCost_local`), so one evaluation of the whole table gives every task:
 //! entry `j` with its own Share hidden, the roots as they are (the one-pass
 //! phase 3). Every order of Init and Mathlib is closed. An order that is not
@@ -97,12 +99,15 @@
 //! checks them as `optimize_uniform` does (re-expansion, real length) and
 //! compares them with the dry run (the Shares of each entry, the entries
 //! each entry shares, the expression nodes, the real length and the layout
-//! price); a one-pass candidate is also evaluated per prefix and its task
-//! lengths and decisions are compared; and checks 5-9 run for every
-//! candidate, the returned one first (the work of check 5 is charged to the
-//! returned candidate only, as in the default mode, so every limit has the
-//! outcome it has there). The output and the result equal the default
-//! mode's; any discrepancy is an internal error.
+//! price); the first tier's pinned order and the closure of the final order,
+//! which phase 2 derives from phase 1's nearest stored descendants, are
+//! compared with their direct computations on the DAG (`pinned_order`,
+//! `descendant_closed`); a one-pass candidate is also evaluated per prefix
+//! and its task lengths and decisions are compared; and checks 5-9 run for
+//! every candidate, the returned one first (the work of check 5 is charged
+//! to the returned candidate only, as in the default mode, so every limit
+//! has the outcome it has there). The output and the result equal the
+//! default mode's; any discrepancy is an internal error.
 
 use std::sync::Arc;
 
