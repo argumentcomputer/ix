@@ -4220,9 +4220,8 @@ fn compile_const_inner(
     cache: &mut BlockCache,
     stt: &CompileState,
     aux: bool,
-  ) -> Result<(Address, ConstantMeta), CompileError> {
+  ) -> Result<Address, CompileError> {
     let _t0 = std::time::Instant::now();
-    let _name_str_entry = name.pretty();
     let mut_ctx = MutConst::single_ctx(def.name.clone());
     preseed_expr_tables(
       &[
@@ -4272,24 +4271,22 @@ fn compile_const_inner(
     }
     if aux {
       stt.env.store_const_serialized(addr.clone(), constant, bytes);
-      stt
-        .env
-        .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
+      stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
     } else {
       // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
       // original (addr, meta) in Named.original for decompilation metadata.
       // Do NOT store the constant blob — it's ephemeral and would pollute
       // the Ixon env with unreferenced constants.
-      stt.promote_aux(name, addr.clone(), meta.clone())?;
+      stt.promote_aux(name, addr.clone(), meta)?;
     }
-    Ok((addr, meta))
+    Ok(addr)
   }
 
   // Handle each constant type
   let addr = match &cnst {
     LeanConstantInfo::DefnInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_defn(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_defn(val), cache, stt, aux)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
@@ -4297,7 +4294,7 @@ fn compile_const_inner(
 
     LeanConstantInfo::ThmInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_theo(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_theo(val), cache, stt, aux)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
@@ -4305,7 +4302,7 @@ fn compile_const_inner(
 
     LeanConstantInfo::OpaqueInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_opaq(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_opaq(val), cache, stt, aux)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
@@ -4396,10 +4393,7 @@ fn compile_const_inner(
         let addr = Address::hash(&bytes);
         if aux {
           stt.env.store_const_serialized(addr.clone(), constant, bytes);
-          stt.env.register_name(
-            name.clone(),
-            Named::new(addr.clone(), meta.clone()),
-          );
+          stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
         } else {
           stt.promote_aux(name, addr.clone(), meta)?;
         }
