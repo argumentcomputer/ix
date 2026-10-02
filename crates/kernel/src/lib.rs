@@ -1,5 +1,5 @@
-// Diagnostic env-var helpers. zkVM std targets (`target_os = "zkvm"` — Zisk,
-// SP1, risc0, …) return `Ok` from `std::env::var` for any key (no real env
+// Diagnostic env-var helpers. Some zkVM standard libraries return `Ok`
+// from `std::env::var` for any key (no real env
 // in the guest), so every `IX_*` flag fires "on" by default and runs
 // expensive diagnostic code paths whose output the guest can't even surface.
 // These wrappers short-circuit to "not present" on any zkVM target and

@@ -356,10 +356,8 @@ fn mk_info_decor<M: KernelMode>(
 /// is global, not per-table), so cache keys built from uids stay sound
 /// across intern-table clears: a stale key can only miss, never alias.
 ///
-/// This replaces the per-node blake3 content hash: profiling on the Zisk
-/// guest put `app_hash` + the blake3 wrapper at ~20% of cycles on
-/// reduction-heavy constants, all of it spent computing identity that the
-/// intern table can assign in one atomic increment.
+/// Assigning identity with one atomic increment avoids hashing each node's
+/// content during term construction.
 static NEXT_UID: std::sync::atomic::AtomicU64 =
   std::sync::atomic::AtomicU64::new(1);
 

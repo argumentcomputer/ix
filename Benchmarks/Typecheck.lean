@@ -30,8 +30,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                         (writes `foo.ixe`). Required.
   --consts <n1,n2,…>    comma-separated fully-qualified constant names to
                         benchmark (e.g. `Nat.add_comm,String.append`). Same
-                        flag/shape as `ix check --consts`, `zisk-host --consts`,
-                        and `sp1-host --consts`.
+                        flag/shape as `ix check --consts`.
   --consts-file <path>  additionally read names from a file: one per line, blank
                         lines and `#` comments ignored. Unions with --consts.
 
@@ -42,7 +41,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
 
   --skip-deps    check only each target itself (verify_const, trusting its
                  deps) instead of its whole transitive closure (verify_claim,
-                 the default). Same flag as `zisk-host --skip-deps`; reserved
+                 the default). Reserved
                  for targets too expensive to full-closure-check.
   --json <path>  write results JSON to <path> (per constant, plus one pair row
                  with --join). Off by default: normal CLI usage prints only
@@ -978,10 +977,10 @@ def typecheckCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "ixe"          : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
-    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`, `zisk-host --consts`, and `sp1-host --consts`."
+    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`."
     "consts-file"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
     "json"      : String; "Write results JSON to this path (per constant, plus one pair row with --join). Off by default; normal CLI usage prints only the human-readable summary."
-    "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
+    "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim)."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the fri-verifier-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
     "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, then execute/prove/verify one direct flat aggregate join (ix_aggr shape 2). Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."

@@ -40,12 +40,8 @@ use scratch::ScratchMap;
 /// see `docs/kernel_identity.md` for the boundary rule and the
 /// proof-carrying-code implications.
 ///
-/// Earlier revisions stored the blake3 content hash of every node here,
-/// computed at construction: profiling on the Zisk guest put that hashing
-/// (`app_hash` + the blake3 wrapper) at ~20% of guest cycles on
-/// reduction-heavy constants. Identity is now assigned by the intern
-/// table from shallow structural keys ([`ExprKey`]/[`UnivKey`]) instead
-/// of computed from content.
+/// The intern table assigns identity from shallow structural keys
+/// ([`ExprKey`]/[`UnivKey`]), avoiding a content hash for every node.
 pub type Addr = u64;
 
 /// Key type for local-context hashing (`tc.rs::ctx_addr_for_lbr`) and

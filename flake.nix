@@ -40,14 +40,6 @@
       inputs.lean4-nix.follows = "lean4-nix";
     };
 
-    # Zisk dev shell (cargo-zisk, ziskemu, RISC-V toolchain) for `zisk-guest`.
-    zisk.url = "github:argumentcomputer/zisk.nix/blake3-precompile";
-
-    # SP1 dev shell (cargo-prove + succinct Rust toolchain) for `sp1/guest`.
-    sp1 = {
-      url = "github:argumentcomputer/sp1.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -57,8 +49,6 @@
       fenix,
       crane,
       blake3-lean,
-      zisk,
-      sp1,
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
@@ -453,32 +443,6 @@
               '';
             };
           };
-
-          # TODO: Re-enable the zkVM shells once they build in CI.
-          # Zisk shell for `zisk-guest/` (cargo-zisk, ziskemu, RISC-V toolchain).
-          # Kept separate from `default`: merging cross-pollinates NIX_CFLAGS_COMPILE
-          # between zisk.nix's and this flake's nixpkgs, which breaks bindgen on
-          # `lean.h`.
-          # devShells.zisk = zisk.devShells.${system}.default;
-
-          # SP1 shell for `sp1/host` + `sp1/guest`: host Rust toolchain plus
-          # cargo-prove and the succinct Rust toolchain (~/.sp1) from sp1.nix.
-          # `rustup-shim` wraps the host `rustc` to dispatch to the succinct
-          # toolchain when `RUSTUP_TOOLCHAIN=succinct` (set by `sp1-build`); the
-          # plain host rustc doesn't know `riscv64im-succinct-zkvm-elf`.
-          # `sp1-prover-types`'s build script needs `protoc`.
-          # devShells.sp1 = pkgs.mkShell {
-          #   name = "sp1";
-          #   inputsFrom = [ sp1.devShells.${system}.default ];
-          #   LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-          #   packages = with pkgs; [
-          #     pkg-config
-          #     openssl
-          #     protobuf
-          #     clang
-          #     (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
-          #   ];
-          # };
 
           # The treefmt wrapper around `nixfmt`, so `nix fmt .` can take a
           # directory; bare `nixfmt` only accepts individual files.

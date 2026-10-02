@@ -116,4 +116,4 @@ incremental reads and reduces every kernel pin, by 0.021%–6.975%. For
 new per-circuit counts. These figures are deterministic estimates of FFT work.
 
 The v3 suite and primitive-closure validation are registered in CI. This record
-does not claim execution of the specialized CUDA, SP1, or Zisk toolchain jobs.
+does not claim execution of the specialized CUDA toolchain job.

@@ -41,8 +41,7 @@ row** — an empty or quietly-partial cell can't be green.
 
 | subcommand | job |
 |---|---|
-| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur/zkVM), fold each spawn's span window into its row, gate on the rows |
-| `shard`      | pre-cut the closure-shard artifacts for the env's zisk constants (`ix shard extract` → `ix profile` → `ix shard`) |
+| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur), fold each spawn's span window into its row, gate on the rows |
 | `compare`    | two rows files → Markdown base-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
@@ -114,8 +113,6 @@ measurements and marks the unfinished pair `OOM`.
 | backend | what it measures | tool |
 |---|---|---|
 | `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
-| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (the runtime-planned partition size; 1 when the closure fits). Available locally; benchmark CI is disabled. | `zisk-host` |
-| `sp1`     | SP1 VM execute. Available locally; benchmark CI is disabled. | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `lean4lean` | the reference Lean4-in-Lean4 kernel ([digama0/lean4lean](https://github.com/digama0/lean4lean), required by the lakefile at a pinned rev) — the external yardstick for the Ix kernels on the same libraries. Olean-driven (no `.ixe`): the whole-library row replays every module in the env's import closure through lean4lean, module-parallel (check-time, constants, throughput, peak-rss; tune parallelism with `LEAN_NUM_THREADS`), plus one full-closure row per constant (the name's transitive closure into a fresh kernel env), mirroring ooc's row shape. Registry-disabled for CI (no bencher testbed yet); `ix bench run --backend lean4lean` works locally regardless | `bench-lean4lean` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
@@ -152,12 +149,11 @@ query, so the post-E2 replacement is `--queries 1` (still PoW 0): a
 values, not W0 cost estimates; the q=50 join run remains a large-box benchmark.
 
 All tools emit the same rows, and all the constant-driven ones take the same
-`--consts`/`--consts-file` grammar. The ooc and zkVM cells share per-constant
-**full-closure** scope, so their delta isolates in-circuit vs out-of-circuit
-overhead.
+`--consts`/`--consts-file` grammar. The ooc and Aiur cells share per-constant
+**full-closure** scope.
 
 With `--texray`, tools write per-phase span timings (`aiur/prove_ixvm`,
-`aiur/witness`, `stark/*`, `zisk/execute`, …) to `<json>.spans`. The
+`aiur/witness`, `stark/*`, …) to `<json>.spans`. The
 per-constant backends run **one process per constant**, so each spawn's
 window belongs wholly to its constant: `ix bench run` folds it into the
 row as flat `phase-<span>` fields, which flow to bencher as independent
@@ -186,15 +182,6 @@ ooc and compile run as single processes instead — their checks never
 approach the ceiling, and a kill there means missing rows and a red cell.
 There are **no per-constant timeouts**; the job-level `timeout-minutes` is
 the only clock.
-
-Every local zisk benchmark constant runs as a closure-shard partition sized at
-runtime: `ix shard extract` → `ix profile` → `ix shard` cut a manifest
-whose shard count comes from the planner's RAM budget (a closure that
-fits gets a one-shard plan), and one `--shard-plan` host run executes the
-shards sequentially, emitting the constant's row with per-shard
-breakdowns. `ix bench shard` can pre-cut these artifacts; a zisk run cuts
-lazily when they're absent and falls back to the whole closure if the cut
-fails.
 
 ## Registry and constant set
 
@@ -238,7 +225,7 @@ BENCH_TRACE_SHARDS=<GiB>       # aiur prove: plan each constant's proof as
                                # `ixvm-trace-shards`; a base checkout
                                # that predates the flag proves whole
 RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
-                               # RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS,
+                               # RUST_LOG, RUSTFLAGS,
                                # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,
                                # IX_COMPILE_WORKERS, BENCH_TRACE_SHARDS,
                                # IX_DECOMPILE_KENV_CLEAR_ENTRIES)
@@ -288,7 +275,8 @@ run step while the clean rows still upload.
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
 lines on the historical Warp and native r8i testbeds, with a separate line
 per benchmark row and testbed so hardware changes preserve the visible history,
-plus the cross-kernel input-constants overlay. Registry-derived like the job matrices (titles,
+plus the cross-kernel input-constants overlay, sourced from the native ooc
+backend. Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally
 (needs the bencher CLI and a user API key in `BENCHER_API_KEY`;
@@ -426,11 +414,6 @@ the same artifacts.
 
 ## Not yet covered
 
-- **Zisk and SP1 benchmarks** — on demand only: `!benchmark zisk` or
-  `!benchmark sp1` on a PR, or `ix bench run` locally. No CI job schedules,
-  builds, or uploads them, and `all` leaves them out.
-- **zkVM prove** — the hosts prove, but local proving requires suitable GPU
-  infrastructure.
 - **aiur prove numbers for the biggest closures** — every constant in the
   shared set runs the full pipeline, but the largest ones exceed the CI
   host's RAM ceiling and land as honest `oom` rows, which never upload

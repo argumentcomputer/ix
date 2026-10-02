@@ -205,8 +205,8 @@ pub fn closure_addrs(
 /// copying each constant's GENUINE bytes via `store_const_lazy` so the guest's
 /// per-const integrity check (`hash(bytes) == addr`) and the env merkle root
 /// still hold. The guest decodes this instead of the whole env, so it pays only
-/// its closure's decode — essential for envs that don't fit the guest whole
-/// (Init, 184 MB doesn't fit the 512 MB Zisk guest). Missing hints are
+/// its closure's decode, bounding memory use for large environments.
+/// Missing hints are
 /// performance-only: ingress falls back to `Regular(0)`, so the typecheck
 /// result — and thus the committed claim — is unchanged.
 /// External refs (not in `source`) are omitted and remain open assumptions,

@@ -11,11 +11,11 @@
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
   3. spawns the run's measured tool — `bench-typecheck` (aiur),
-     `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
+     `ix check-rs` (ooc),
      `bench-lean4lean` (lean4lean; olean-driven, no `.ixe`),
      `ix compile` (compile) — wrapped in the RAM watchdog (`Ix.Watchdog`:
      cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
-     at the ceiling). The per-constant backends (aiur, zkVM) spawn
+     at the ceiling). The per-constant backend (aiur) spawns
      ONE PROCESS PER CONSTANT: a kill costs exactly that constant (its row
      is marked `status: oom`, keeping whatever the tool flushed), and each
      spawn's texray window (`<out>.spans`) belongs wholly to it, folded
@@ -29,10 +29,6 @@
   exit codes only. Registry data (envs, backends, testbeds) lives in this
   module (`envSpecs`/`backendSpecs`) — one language, one owner.
 
-  Note for the zisk backend: ZisK's ASM microservices need an unlimited
-  memlock hard limit (mmap with MAP_LOCKED). Raise it in the invoking shell
-  before running (`sudo prlimit --pid $$ --memlock=unlimited:unlimited`);
-  the tools inherit it.
 -/
 module
 public import Cli
@@ -41,7 +37,6 @@ public import Ix.BenchConstants
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Watchdog
-import Ix.Ixon
 
 public section
 
@@ -57,13 +52,7 @@ namespace Ix.Cli.BenchCmd
     in a cell — not merely expensive (a too-large prove records an honest
     `oom` row instead). `--consts` runs bypass this: an explicit request
     always runs. -/
-def benchExclusions : List (String × String × String) :=
-  let bitblast :=
-    "Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual"
-  [ -- ~18B-step atomic mutual block: Aiur executes it, but the zkVM
-    -- executor OOMs (ASM MO crash) before any measurement lands.
-    (bitblast, "zisk", "*"),
-    (bitblast, "sp1", "*") ]
+def benchExclusions : List (String × String × String) := []
 
 /-- Whether `benchExclusions` bars `name` from this `(backend, mode)`. -/
 def isExcluded (name backend mode : String) : Bool :=
@@ -121,7 +110,7 @@ def findEnv (token : String) : Option EnvSpec :=
       · `perConstant` — one row per selected `benchConstants` entry, over
         the envs whose entries select any — an env joins this fan-out by
         gaining constants, not by a registry flag. The prove/execute
-        backends (aiur, zisk, sp1).
+        backend (aiur).
       · `perConstantWithEnv` — `perConstant` plus a whole-env row (ooc). -/
 inductive BenchInputs
   | perEnv
@@ -329,29 +318,6 @@ def backendSpecs : List BackendSpec := [
     thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
                    ("check-time", "0.10", "_"), ("throughput", "_", "0.10"),
                    ("peak-rss", "0.10", "_")] },
-  -- zisk / sp1: on demand only (`!benchmark zisk`, `ix bench run`). No CI
-  -- job schedules them, so nothing uploads to bencher or plots, and `all`
-  -- leaves them out.
-  { name := "zisk", defaultMode := "execute", inputs := .perConstant,
-    unscheduled := ["execute"],
-    testbeds := [("execute", "zisk-check-execute")],
-    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
-                             "cycles", "constants", "shards"])],
-    -- cycles / shards / max-shard-cycles are deterministic per guest ELF,
-    -- but a real guest / packer improvement legitimately drops them →
-    -- upper-only 0% bounds.
-    thresholds := [("constants", "0", "0"), ("cycles", "0", "_"),
-                   ("shards", "0", "_"), ("max-shard-cycles", "0", "_"),
-                   ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_"),
-                   ("throughput", "_", "0.10")] },
-  { name := "sp1", defaultMode := "execute", inputs := .perConstant,
-    unscheduled := ["execute"],
-    testbeds := [("execute", "sp1-check-execute")],
-    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
-                             "cycles"])],
-    thresholds := [("constants", "0", "0"), ("cycles", "0", "_"),
-                   ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_"),
-                   ("throughput", "_", "0.10")] },
   { name := "ooc", defaultMode := "execute", inputs := .perConstantWithEnv,
     testbeds := [("execute", "ooc-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss"])],
@@ -534,8 +500,7 @@ def markKilled (out : String) (name : String) (status : String) : IO Unit := do
 /-- Status for a 128+signal death: explicit kills (137 KILL — cgroup breach
     or watchdog; 143 TERM) and allocator aborts (134 — e.g. Rust's OOM
     abort) are capacity kills, `oom`. Everything else (139 SIGSEGV, 135
-    SIGBUS, …) is a genuine fault in the tool, `crash` — conflating the two
-    turned a zisk mem-planner segfault into a phantom OOM row. -/
+    SIGBUS, …) is a fault in the tool, recorded as `crash`. -/
 def killStatus (exit : UInt32) : String :=
   if exit == 137 || exit == 143 || exit == 134 then "oom" else "crash"
 
@@ -569,8 +534,7 @@ def slugify (s : String) : String :=
   String.ofList folded.reverse
 
 /-- Fold a spawn's texray window (`<out>.spans`) into its constant's row as
-    flat `phase-<span>` fields — the aiur prover's tracing spans and the
-    zkVM hosts' `record_manual` entries alike — then drop the window file.
+    flat `phase-<span>` fields, then drop the window file.
     The keys pass straight through `bmf` as independent bencher measures
     and come back from `fetch-main` in the same shape. No row (the tool
     died before writing one) → nothing to attach the spans to. -/
@@ -674,38 +638,6 @@ def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
   if exit != 0 then
     throw <| IO.userError s!"ix compile {info.module} failed (exit {exit})"
   return ixe
-
-/-- Cut the closure-shard artifacts for one constant: `ix shard
-    extract` (standalone closure env) → `ix profile` → `ix shard`
-    (heartbeat-profiled min-cut manifest, capped by predicted RAM). Skips
-    work when the artifacts already exist under the current `.ixe` format
-    version (`<dir>/ixe-v<VERSION>/`: artifacts cut under another version
-    are unreadable and never reused). Returns `(ixe, ixes)` on
-    success, `none` when any step fails (the caller falls back to the
-    single-leaf run — the watchdog then records the honest OOM row). -/
-def cutClosureShards (ix : String) (envIxe : String)
-    (dir : String) (name : String) (maxRamGb : Nat) :
-    IO (Option (String × String)) := do
-  let slug := name.map fun c =>
-    if c == '/' || c == ' ' || c == '.' || c == ':' then '_' else c
-  let dir := s!"{dir}/ixe-v{Ixon.Env.VERSION}"
-  let subIxe := s!"{dir}/{slug}.ixe"
-  let manifest := s!"{dir}/{slug}.ixes"
-  if (← FilePath.pathExists subIxe) && (← FilePath.pathExists manifest) then
-    return some (subIxe, manifest)
-  IO.FS.createDirAll dir
-  let prof := s!"{dir}/{slug}.ixprof"
-  let steps : List (Array String) :=
-    [ #["shard", "extract", envIxe, "--consts", name, "--out", subIxe]
-    , #["profile", subIxe, "--out", prof]
-    , #["shard", subIxe, "--profile", prof, "--max-ram", toString maxRamGb,
-        "--out", manifest] ]
-  for args in steps do
-    let exit ← runGuarded false 0 ix args
-    if exit != 0 then
-      IO.eprintln s!"[bench] shard pipeline failed for '{name}' (exit {exit}); falling back to single leaf"
-      return none
-  return some (subIxe, manifest)
 
 /-- Final run gate from the rows themselves: exit 1 when any EXPECTED name
     lacks a row (an aborted loop, a killed batch, or a dropped whole-env
@@ -908,48 +840,6 @@ is not a benchmark run"
         runGuarded watchdog ceilingGb bt
           #["--ixe", ixe, "--consts", ",".intercalate aiurJoinConstants.toList,
             "--json", pairOut, "--texray", "--recursive", "--join"]
-  | "zisk" | "sp1" =>
-    if mode != "execute" then
-      p.printError s!"error: {backend} supports only execute mode"
-      return exitUsage
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-    let ixeAbs := (← IO.FS.realPath ixe).toString
-    let outAbs ← do
-      IO.FS.writeFile out ""  -- realPath needs an existing file
-      pure (← IO.FS.realPath out).toString
-    let host := s!"{backend}-host"
-    let work := s!"{repo}/{backend}"
-    let build ← runGuarded false 0 "cargo"
-      #["build", "--quiet", "--release", "--bin", host] (cwd := some work)
-    if build != 0 then
-      IO.eprintln s!"[bench] cargo build {host} failed (exit {build})"
-      return 1
-    let bin := (← IO.FS.realPath s!"{work}/target/release/{host}").toString
-    -- zisk decides sharding at run time, per constant: the closure is
-    -- extracted and profiled, and the shard planner's RAM budget sizes
-    -- the partition from the closure's predicted cost — a closure that
-    -- fits gets a one-shard plan and runs as a single leaf. The artifacts
-    -- are cached under `zkshards-<env>/` (pre-cut next to the fresh
-    -- `.ixe` by `ix bench shard` when available). A failed cut falls
-    -- back to the whole closure from the env's `.ixe` — the watchdog
-    -- then records the honest OOM row if it doesn't fit. sp1 always
-    -- runs whole closures.
-    let ix ← resolveBin repo "ix"
-    runPerConstant outAbs names "execute-time" fun name => do
-      let plan ← if backend == "zisk"
-        then cutClosureShards ix ixe s!"{repo}/zkshards-{env}" name ceilingGb
-        else pure none
-      match plan with
-      | some (subIxe, manifest) =>
-        runGuarded watchdog ceilingGb bin
-          #["--execute", "--ixe", (← IO.FS.realPath subIxe).toString,
-            "--shard-plan", (← IO.FS.realPath manifest).toString,
-            "--json", outAbs, "--json-name", name, "--texray"]
-          (cwd := some work)
-      | none =>
-        runGuarded watchdog ceilingGb bin
-          #["--execute", "--ixe", ixeAbs, "--consts", name,
-            "--json", outAbs, "--texray"] (cwd := some work)
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
@@ -967,30 +857,6 @@ is not a benchmark run"
     saveBaseline out s!"{backend}-{env}-{mode}"
   return code
 
-/-- `ix bench shard`: pre-cut the closure-shard artifacts for the env's
-    zisk constants into `zkshards-<env>/` — `ix shard extract` →
-    `ix profile` → `ix shard` per name, skipping names whose artifacts
-    already exist. Not a benchmark run (no rows, no watchdog): bench-main's
-    compile job runs it next to the fresh `.ixe` so the artifacts ride the
-    same cache; the zisk runs cut lazily as a fallback when they're
-    absent. -/
-def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some info := findEnv ((p.flag? "env").map (·.as! String) |>.getD "InitStd")
-    | p.printError "error: unknown env (see envSpecs)"
-      return exitUsage
-  let env := info.name
-  let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
-  let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
-    | some f => pure (f.as! Nat)
-    | none => defaultCeilingGb
-  let names := (selectNames env "zisk" "execute").map (·.name)
-  IO.eprintln s!"[bench] shard {env}: {names.size} constant(s)"
-  let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-  let ix ← resolveBin repo "ix"
-  for name in names do
-    let _ ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}" name ceilingGb
-  return 0
-
 end Ix.Cli.BenchCmd
 
 open Ix.Cli.BenchCmd in
@@ -999,7 +865,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | aiur-sharded-env | zisk | sp1 | ooc | lean4lean | compile | decompile"
+    backend      : String; "aiur | aiur-sharded-env | ooc | lean4lean | compile | decompile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
@@ -1007,16 +873,4 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     consts       : String; "Run exactly these comma-separated names instead of the shared benchConstants selection (same grammar as the tools' --consts)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 15 GB)"
-]
-
-open Ix.Cli.BenchCmd in
-def benchShardCmd : Cli.Cmd := `[Cli|
-  "shard" VIA runBenchShardCmd;
-  "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's zisk constants into zkshards-<env>/; skips names already cut. The zisk runs cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
-
-  FLAGS:
-    env          : String; "Benchmark env from the registry (default: InitStd)"
-    repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
-    ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh)"
-    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: machine RAM minus 15 GB)"
 ]

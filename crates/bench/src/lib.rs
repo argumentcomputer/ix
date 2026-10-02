@@ -1,6 +1,6 @@
 //! The benchmark row contract shared by every measured tool.
 //!
-//! Each tool (`bench-typecheck`, `zisk-host`, `sp1-host`, `ix check-rs`,
+//! Each tool (`bench-typecheck`, `ix check-rs`,
 //! `ix compile`) reports its results as one JSON object per benchmark name in
 //! a single file:
 //!
@@ -77,8 +77,7 @@ impl std::error::Error for Rejection {}
 /// Peak resident set size (bytes) across this process *and its children*,
 /// from tracing-texray's tree sampler. `None` until the sampler has started
 /// or off Linux. Unlike a bare `/proc/self/status` read this includes child
-/// processes (e.g. Zisk's ASM microservices, which mmap large ROMs in
-/// separate PIDs).
+/// processes.
 pub fn peak_rss_bytes() -> Option<u64> {
   match tracing_texray::rss_sampler::peak_tree_rss_bytes() {
     0 => None,
@@ -87,8 +86,7 @@ pub fn peak_rss_bytes() -> Option<u64> {
 }
 
 /// Constants checked per second — the one meaning `throughput` has on
-/// every backend (a zkVM's cycle rate stays derivable from its `cycles`
-/// and `execute-time` fields). Zero when the timed window is empty.
+/// every backend. Zero when the timed window is empty.
 ///
 /// The count converts through u32, the widest type with a lossless
 /// `f64::from`. A count beyond u32 (no env comes within orders of

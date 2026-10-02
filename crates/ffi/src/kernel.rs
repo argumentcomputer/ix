@@ -1359,8 +1359,7 @@ enum AnonWorkItem {
 /// (blocks aren't kernel KIds).
 ///
 /// Delegates the enumeration to
-/// [`ix_kernel::anon_work::build_anon_work`] (shared with the
-/// SP1/Zisk guests) and layers the FFI's per-target result-slot
+/// [`ix_kernel::anon_work::build_anon_work`] and layers per-target result-slot
 /// bookkeeping on top.
 /// Assign result slots to a set of kernel work items — the indexing step
 /// shared by the whole-env check (every item) and the per-constant closure
@@ -1877,13 +1876,11 @@ fn closure_work_items(
 }
 
 /// FFI: anon-mode type-check of named constants with (by default) their full
-/// dependency closures — the same mode and scope as the zkVM hosts' `--consts`
-/// execute path, so an out-of-circuit run is directly comparable to the
-/// in-circuit one. `skip_deps` restricts the check to each name's own work
-/// item (subject-only; deps trusted), mirroring `zisk-host --skip-deps`.
+/// dependency closures. `skip_deps` restricts the check to each name's own
+/// work item (subject-only; deps trusted).
 ///
-/// Names resolve through the env's `named` metadata by displayed form (the
-/// same string match the zkVM hosts use), then the metadata is dropped and
+/// Names resolve through the env's `named` metadata by displayed form,
+/// then the metadata is dropped and
 /// the check runs on the anon view — the kernel never sees names. A member
 /// of a mutual block selects the whole block's work item (blocks check
 /// atomically). Multiple names union their closures into one check set.
@@ -2791,7 +2788,7 @@ pub extern "C" fn rs_shard_static_graph(
 }
 
 /// Print the general-purpose cost breakdown for `ix profile` — the kernel-work
-/// metrics plus the predicted Zisk leaf cost/RAM (à la `cargo-zisk … -p summary`).
+/// metrics plus the legacy guest-cost and RAM estimates.
 // `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss
 // past 2⁵³ steps is irrelevant to a two-sig-fig estimate.
 #[allow(clippy::cast_precision_loss)]
@@ -2838,7 +2835,7 @@ fn print_profile_summary(
      \u{20}\u{20}nat-arith      {nat:>14}\n\
      \u{20}\u{20}intern nodes   {intern:>14}\n\
      \u{20}\u{20}ingress bytes  {ingress:>14}\n\n\
-     predicted Zisk leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
+     estimated guest leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
      \u{20}\u{20}cost units ≈ {:.2e}  (~92.5/guest step)\n\
      \u{20}\u{20}RAM        ≈ {ram_gib:.0} GiB{warn}",
     sink.records.len(),
