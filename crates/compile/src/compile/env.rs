@@ -1102,8 +1102,8 @@ impl<'a> SchedDeps<'a> {
       }
     }
     // Dependency names are graph nodes, so members of some block; a name
-    // that is not still gets an index (it never resolves, so its
-    // dependents stay blocked, as they did with per-block name sets).
+    // that is not still gets an index, and resolves exactly when it did
+    // with per-block name sets (only if aux_gen queues it).
     let missing: Vec<&'a Name> = blocks
       .par_iter()
       .flat_map_iter(|b| b.deps.iter().filter(|d| !ids.contains_key(*d)))
