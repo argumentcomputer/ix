@@ -232,6 +232,9 @@ lean_exe «bench-lean4lean» where
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
+lean_exe «lean-sharing-prof» where
+  root := `Benchmarks.LeanSharingProf
+
 /-- Corpus measurement for canonical sharing (`docs/sharing-minimum.md`):
 expands every stored sharing table in an `.ixe`, checks the production
 rebuild and reports subterm, candidate and MSS statistics. -/
