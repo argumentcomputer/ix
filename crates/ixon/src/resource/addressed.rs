@@ -38,6 +38,12 @@ pub struct Profile {
   /// contract byte (`pack_all_contract`) for each leading arrow, replacing
   /// the declared contracts for callers. Each must also be an assumption.
   pub interfaces: Vec<(Address, Vec<u8>)>,
+  /// The `Eq` type, present exactly when there are equations.
+  pub eq_type: Option<Address>,
+  /// Unfolding equations `(definition, theorem)` the consumer runs; a
+  /// definition with one is checked through the equation
+  /// (`Program::equations`). Strictly increasing by definition.
+  pub equations: Vec<(Address, Address)>,
 }
 
 impl Profile {
@@ -78,6 +84,17 @@ impl Profile {
         return Err("resource profile: invalid interface contract".into());
       }
     }
+    if self.eq_type.is_some() == self.equations.is_empty() {
+      return Err(
+        "resource profile: the equality type must accompany the equations"
+          .into(),
+      );
+    }
+    if self.equations.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+      return Err(
+        "resource profile: address lists must be strictly increasing".into(),
+      );
+    }
     Ok(())
   }
 
@@ -101,13 +118,23 @@ impl Profile {
     TagN::put(0, 0, self.limits.depth as u64, &mut bytes);
     TagN::put(0, 0, self.limits.steps as u64, &mut bytes);
     // An optional extension, present only when it is not empty.
-    if self.cases || !self.interfaces.is_empty() {
-      TagN::put(0, 0, u64::from(self.cases), &mut bytes);
+    let flags =
+      u64::from(self.cases) | (u64::from(!self.equations.is_empty()) << 1);
+    if flags != 0 || !self.interfaces.is_empty() {
+      TagN::put(0, 0, flags, &mut bytes);
       TagN::put(0, 0, self.interfaces.len() as u64, &mut bytes);
       for (address, mask) in &self.interfaces {
         bytes.extend_from_slice(address.as_bytes());
         TagN::put(0, 0, mask.len() as u64, &mut bytes);
         bytes.extend_from_slice(mask);
+      }
+      if let Some(eq) = &self.eq_type {
+        bytes.extend_from_slice(eq.as_bytes());
+        TagN::put(0, 0, self.equations.len() as u64, &mut bytes);
+        for (definition, equation) in &self.equations {
+          bytes.extend_from_slice(definition.as_bytes());
+          bytes.extend_from_slice(equation.as_bytes());
+        }
       }
     }
     bytes
@@ -169,10 +196,12 @@ impl Profile {
       },
       cases: false,
       interfaces: vec![],
+      eq_type: None,
+      equations: vec![],
     };
     if !bytes.is_empty() {
       let flags = TagN::get(0, &mut bytes)?.value;
-      if flags > 1 {
+      if flags > 3 {
         return Err("resource profile: unknown behavior flags".into());
       }
       let count = TagN::get(0, &mut bytes)?.value;
@@ -197,7 +226,35 @@ impl Profile {
       if flags == 0 && profile.interfaces.is_empty() {
         return Err("resource profile: empty extension".into());
       }
-      profile.cases = flags == 1;
+      if flags & 2 != 0 {
+        let mut address = || -> Result<Address, String> {
+          let (head, tail) = bytes
+            .split_at_checked(32)
+            .ok_or("resource profile: truncated address")?;
+          bytes = tail;
+          Address::from_slice(head)
+            .map_err(|_error| "resource profile: invalid address".into())
+        };
+        let eq = address()?;
+        drop(address);
+        let count = TagN::get(0, &mut bytes)?.value;
+        if count == 0 || count > (bytes.len() / 64) as u64 {
+          return Err("resource profile: impossible equation count".into());
+        }
+        for _ in 0..count {
+          let (head, tail) = bytes
+            .split_at_checked(64)
+            .ok_or("resource profile: truncated address")?;
+          bytes = tail;
+          let definition = Address::from_slice(&head[..32])
+            .map_err(|_error| "resource profile: invalid address")?;
+          let equation = Address::from_slice(&head[32..])
+            .map_err(|_error| "resource profile: invalid address")?;
+          profile.equations.push((definition, equation));
+        }
+        profile.eq_type = Some(eq);
+      }
+      profile.cases = flags & 1 == 1;
       if !bytes.is_empty() {
         return Err("resource profile: trailing bytes".into());
       }
@@ -844,6 +901,21 @@ pub fn prepare(
       })?;
     program.interfaces.push((i, overlaid));
   }
+  let mut equations = vec![];
+  for (definition, equation) in &profile.equations {
+    equations.push((index(&indices, definition)?, index(&indices, equation)?));
+  }
+  if let Some(eq) = &profile.eq_type {
+    let i = index(&indices, eq)?;
+    if kinds.get(native_index(i)?) != Some(&DeclKind::TypeConstructor) {
+      return Err(
+        "resource adapter: the equality type must be a checked nominal type"
+          .into(),
+      );
+    }
+    program.eq_type = Some(i);
+  }
+  program.equations = equations.clone();
   for (typ, ctor, params, count) in field_specs {
     if let Ok(derived) = fields(
       &program,
@@ -874,6 +946,10 @@ pub fn prepare(
         .map(native_index)
         .collect::<Result<_, _>>()?,
       cases: profile.cases,
+      equations: equations
+        .into_iter()
+        .map(|(d, t)| Ok((native_index(d)?, native_index(t)?)))
+        .collect::<Result<_, String>>()?,
     },
   })
 }
@@ -1524,5 +1600,36 @@ mod tests {
         .address()
         .is_err()
     );
+    // Unfolding equations and the equality type travel in the same extension.
+    let with_equations = Profile {
+      eq_type: Some(unit.clone()),
+      equations: vec![(unit.clone(), unit.clone())],
+      ..p.clone()
+    };
+    let hex: String =
+      with_equations.bytes().iter().map(|b| format!("{b:02x}")).collect();
+    let line = format!(
+      "profile-equations\t{}\t{hex}",
+      with_equations.address().unwrap().hex()
+    );
+    assert!(
+      fixture.lines().any(|s| s == line),
+      "equations profile fixture mismatch: {line}"
+    );
+    assert_eq!(
+      Profile::from_bytes(&with_equations.bytes()).unwrap(),
+      with_equations
+    );
+    assert!(
+      Profile { eq_type: None, ..with_equations.clone() }.address().is_err()
+    );
+    assert!(
+      Profile { eq_type: Some(unit.clone()), ..p.clone() }.address().is_err()
+    );
+    let mut empty = bytes.clone();
+    empty.extend_from_slice(&[2, 0]);
+    empty.extend_from_slice(unit.as_bytes());
+    empty.push(0);
+    assert!(Profile::from_bytes(&empty).is_err());
   }
 }

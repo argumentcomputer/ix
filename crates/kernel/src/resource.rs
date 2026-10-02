@@ -33,9 +33,11 @@ pub fn standard_profile(env: &Env) -> Profile {
 
 pub fn check_literal_profile(profile: &Profile) -> Result<(), String> {
   let p = PrimAddrs::new();
-  for (selected, actual) in
-    [(&profile.nat_type, &p.nat), (&profile.string_type, &p.string)]
-  {
+  for (selected, actual) in [
+    (&profile.nat_type, &p.nat),
+    (&profile.string_type, &p.string),
+    (&profile.eq_type, &p.eq),
+  ] {
     if selected.as_ref().is_some_and(|selected| selected != actual) {
       return Err("resource validator: literal type differs from the kernel primitive identity".into());
     }
@@ -93,6 +95,8 @@ fn contract_byte(token: &str) -> Option<u8> {
 /// - `interface NAME C…`: an admitted interface, one contract token per
 ///   leading arrow (see `contract_byte`); also an assumption;
 /// - `cases`: recursor case splits, case wrappers and beta-redexes;
+/// - `equation NAME THEOREM`: check `NAME` through the unfolding equation
+///   `THEOREM` (`∀ xs, NAME xs = rhs`), which the consumer runs;
 /// - `limits DEPTH STEPS`.
 ///
 /// `resolve` maps a dotted name to the address it compiled to. Entries whose
@@ -108,6 +112,7 @@ pub fn profile_from_source(
   let mut shareable = BTreeSet::new();
   let mut choices = BTreeSet::new();
   let mut interfaces = BTreeMap::new();
+  let mut equations = BTreeMap::new();
   let mut profile = Profile::default();
   for (n, raw) in text.lines().enumerate() {
     let line = raw.split('#').next().unwrap_or("").trim();
@@ -150,6 +155,14 @@ pub fn profile_from_source(
         }
       },
       ("cases", 1) => profile.cases = true,
+      ("equation", 3) => {
+        if let (Some(definition), Some(equation)) =
+          (present(words[1]), present(words[2]))
+          && equations.insert(definition, equation).is_some()
+        {
+          return Err(error("duplicate equation"));
+        }
+      },
       ("limits", 3) => {
         let parse = |word: &str| {
           word.parse::<usize>().map_err(|_error| error("invalid limit"))
@@ -164,6 +177,16 @@ pub fn profile_from_source(
   profile.shareable_types = shareable.into_iter().collect();
   profile.choices = choices.into_iter().collect();
   profile.interfaces = interfaces.into_iter().collect();
+  if !equations.is_empty() {
+    let eq = PrimAddrs::new().eq;
+    if !env.consts.contains_key(&eq) {
+      return Err(
+        "resource profile source: equations need Eq in the closure".into(),
+      );
+    }
+    profile.eq_type = Some(eq);
+    profile.equations = equations.into_iter().collect();
+  }
   profile.validate()?;
   Ok(profile)
 }
@@ -425,7 +448,14 @@ mod tests {
       )]
     );
     assert_eq!((profile.limits.depth, profile.limits.steps), (64, 1000));
-    for bad in ["frobnicate", "interface Unit ?", "limits 0 0", "choice"] {
+    // Equations need Eq in the closure (not in this one).
+    for bad in [
+      "frobnicate",
+      "interface Unit ?",
+      "limits 0 0",
+      "choice",
+      "equation Unit Unit",
+    ] {
       assert!(profile_from_source(bad, &env, &resolve).is_err(), "{bad}");
     }
   }

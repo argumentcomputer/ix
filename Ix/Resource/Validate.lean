@@ -24,7 +24,8 @@ def standardProfile (env : Ixon.Env) : Profile :=
 profile. A profile may omit unused literal types, but cannot redirect them. -/
 def checkLiteralProfile (profile : Profile) : Except String Unit := do
   let primitives := Ix.Tc.PrimAddrs.canonical
-  for (selected, actual) in #[(profile.natType, primitives.nat), (profile.stringType, primitives.string)] do
+  for (selected, actual) in #[(profile.natType, primitives.nat), (profile.stringType, primitives.string),
+      (profile.eqType, primitives.eq)] do
     if let some selected := selected then
       unless selected == actual do throw "resource validator: literal type differs from the kernel primitive identity"
 

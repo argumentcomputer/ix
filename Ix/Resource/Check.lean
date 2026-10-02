@@ -106,6 +106,14 @@ structure Program where
   declaration's own. The profile must also list the declaration as an
   assumption. -/
   interfaces : Array (UInt64 × Ixon.Expr) := #[]
+  /-- The `Eq` type, when the profile names unfolding equations. -/
+  eqType : Option UInt64 := none
+  /-- Profile-bound unfolding equations `(definition, equation)`: a definition
+  with one is checked through the right-hand side of the theorem's statement
+  `∀ xs, f xs = rhs` instead of its own body (for example a `brecOn` or
+  `WellFounded.fix` encoding). The consumer must run the definition by that
+  equation. -/
+  equations : Array (UInt64 × UInt64) := #[]
   deriving BEq, Repr, Inhabited
 
 structure Context where
@@ -487,6 +495,23 @@ def occurs (program : Program) : Nat → Ixon.Expr → Nat → CheckM Bool
     | .prj _ _ v => occurs program fuel v index
     | _ => return false
 
+/-- Number of occurrences of variable `index` in `e`. -/
+def occurrences (program : Program) : Nat → Ixon.Expr → Nat → CheckM Nat
+  | 0, _, _ => throw .budget
+  | fuel + 1, e, index => do
+    tick
+    match e with
+    | .var i => return if i.toNat == index then 1 else 0
+    | .share i => occurrences program fuel (← expansion program i) index
+    | .app f a => return (← occurrences program fuel f index) + (← occurrences program fuel a index)
+    | .lam _ t b | .all _ _ t b =>
+      return (← occurrences program fuel t index) + (← occurrences program fuel b (index + 1))
+    | .letE _ t v b =>
+      return (← occurrences program fuel t index) + (← occurrences program fuel v index) +
+        (← occurrences program fuel b (index + 1))
+    | .prj _ _ v => occurrences program fuel v index
+    | _ => return 0
+
 /-- Number of leading arrows of a type. -/
 def arity (program : Program) : Nat → Ixon.Expr → CheckM Nat
   | 0, _ => throw .budget
@@ -565,11 +590,14 @@ def substitutable (ctx : Context) (fuel : Nat) (arg domain : Ixon.Expr) : CheckM
     if ← typeFormer ctx.program fuel 16 domain then return true
     isProposition fuel ctx domain
 
-/-- Apply a lambda telescope to arguments, as `let`s: an argument of a binder
-with the default contract that is a variable, a value form, a type or a proof
-is substituted; any other argument is bound by a `let` carrying the binder's
-own contract, so it is evaluated once, before the body, exactly as a call
-would evaluate it. Arguments beyond the telescope are applied to the body. -/
+/-- Apply a lambda telescope to arguments, as `let`s. An argument of a binder
+with the default contract is substituted when the binder occurs at most once
+(it is then evaluated where, and only if, that occurrence is: a minor premise
+of `casesOn` or a matcher alternative is evaluated in its own branch) or when
+it is a variable, a value form, a type or a proof. Any other argument is bound
+by a `let` carrying the binder's own contract, so it is evaluated once,
+before the body, as a call would evaluate it. Arguments beyond the telescope
+are applied to the body. -/
 def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : List Ixon.Expr) :
     CheckM Ixon.Expr := do
   let before ← get
@@ -584,7 +612,8 @@ def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : L
       match ← unshare ctx.program fuel term with
       | .lam c domain body =>
         let arg ← shift ctx.program fuel arg lets.size 0
-        if c == .many && (← substitutable inner fuel arg domain) then
+        let once := (← occurrences ctx.program fuel body 0) ≤ 1
+        if c == .many && (once || (← substitutable inner fuel arg domain)) then
           term ← substitute ctx.program fuel body arg 0
         else
           lets := lets.push ({ nonDep := false, binder := c }, domain, arg)
@@ -940,10 +969,62 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         | _ => ordinary
     finishValue ctx fuel destination expected value
 
+/-- The body an annotated recursive definition is checked through: the
+right-hand side of its unfolding equation `∀ xs, f xs = rhs`, abstracted over
+the equation's binders with the definition's own input contracts. The
+statement must be an equality whose left side is the definition applied to
+exactly those binders, in order. -/
+def equationBody (program : Program) (fuel : Nat) (index equation : UInt64) : CheckM Ixon.Expr := do
+  let some eq := program.eqType
+    | throw (.unsupported "the equality type is absent from the profile")
+  let d ← declaration program index
+  let t ← declaration program equation
+  unless t.kind == .theorem do throw (.unsupported "an unfolding equation must be a theorem")
+  let mut statement := t.type
+  let mut type := d.type
+  let mut binders : Array (BinderContract × Ixon.Expr) := #[]
+  repeat
+    match ← whnf program fuel statement with
+    | .all _ _ domain body =>
+      let (input, _, _, codomain) ← arrow program fuel type
+      binders := binders.push (input, domain)
+      statement := body
+      type := codomain
+    | other => statement := other; break
+  let (head, args) ← splitApp program fuel statement []
+  let (lhs, rhs) ← match head, args with
+    | .ref e _, [_, lhs, rhs] =>
+      if e == eq then pure (lhs, rhs)
+      else throw (.unsupported "an unfolding equation must state an equality")
+    | _, _ => throw (.unsupported "an unfolding equation must state an equality")
+  let (fn, fargs) ← splitApp program fuel lhs []
+  let unfolds ← match fn with
+    | .ref f _ =>
+      if f == index && fargs.length == binders.size then do
+        let mut ok := true
+        let mut k := binders.size
+        for arg in fargs do
+          k := k - 1
+          match ← unshare program fuel arg with
+          | .var i => ok := ok && i.toNat == k
+          | _ => ok := false
+        pure ok
+      else pure false
+    | _ => pure false
+  unless unfolds do throw (.unsupported "an unfolding equation must unfold its definition")
+  let mut body := rhs
+  for (input, domain) in binders.reverse do
+    body := .lam input domain body
+  return body
+
 def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit := do
   let some declaration := program.declarations[index]? | throw (.badReference index)
-  let some body := declaration.body | throw (.unsupported "definition has no body")
   let action : CheckM Unit := do
+    let body ← match program.equations.find? (·.1 == index.toUInt64) with
+      | some (_, equation) => equationBody program limits.depth index.toUInt64 equation
+      | none => match declaration.body with
+        | some body => pure body
+        | none => throw (.unsupported "definition has no body")
     let scope ← newScope 0
     let _ ← analyze limits.depth { program, scope } body
       (some (declaration.type, .shared)) scope .linear

@@ -471,6 +471,28 @@ def caseCases : Array Case := #[
     lam (b .linear) (.app (.app (call 32 resTy) zero) (v 0)) resTy, "unsupported"⟩
 ]
 
+/-- The case program extended with `Eq` and an unfolding equation for the
+definition under test (index 35): `∀ r, f r = r`. Mirrors the Rust
+`equations_program`. -/
+def equationsProgram : Program := { casesProgram with
+  declarations := casesProgram.declarations ++ #[
+    { type := arr (b .many) .shared (.sort 0)                                -- 33 Eq
+        (arr (b .many) .shared (v 0) (arr (b .many) .shared (v 1) (.sort 1))),
+      kind := .typeConstructor },
+    { type := arr (b .many) .shared resTy                                    -- 34 ∀ r, f r = r
+        (.app (.app (.app (ref 33) resTy) (.app (ref 35) (v 0))) (v 0)),
+      body := some (lam (b .many) (ref 30) resTy), kind := .theorem }
+  ]
+  eqType := some 33
+  equations := #[(35, 34)] }
+
+def equationCases : Array Case := #[
+  ⟨"a definition is checked through its unfolding equation", resToRes (b .linear),
+    lam (b .linear) (ref 30) resTy, "ok"⟩,
+  ⟨"an unfolding equation keeps the definition's contracts", resToRes (b .erased),
+    lam (b .erased) (ref 30) resTy, "usage"⟩
+]
+
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=
   let p := { base with declarations := base.declarations.push { type, body := some value } }
   checkDefinition p base.declarations.size limits
@@ -497,7 +519,8 @@ def runFixtureCases : IO Nat := do
       `lake exe ixon-v4-tests --export-fixtures`"
   let modes ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-modes.tsv" modesProgram modeCases
   let cases ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-cases.tsv" casesProgram caseCases
-  return base + modes + cases
+  let equations ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-equations.tsv" equationsProgram equationCases
+  return base + modes + cases + equations
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

@@ -143,6 +143,14 @@ pub struct Program {
   /// declaration's own. The profile must also list the declaration as an
   /// assumption.
   pub interfaces: Vec<(u64, Term)>,
+  /// The `Eq` type, when the profile names unfolding equations.
+  pub eq_type: Option<u64>,
+  /// Profile-bound unfolding equations `(definition, theorem)`: a definition
+  /// with one is checked through the right-hand side of the theorem's
+  /// statement `∀ xs, f xs = rhs` instead of its own body (for example a
+  /// `brecOn` or `WellFounded.fix` encoding). The consumer must run the
+  /// definition by that equation.
+  pub equations: Vec<(u64, u64)>,
 }
 
 /// The shape of an addressed recursor of a single, non-mutual inductive type,
@@ -1149,6 +1157,36 @@ impl<'a> Checker<'a> {
       _ => false,
     })
   }
+  /// Number of occurrences of variable `index` in `e`.
+  fn occurrences(
+    &mut self,
+    fuel: usize,
+    e: &Term,
+    index: u64,
+  ) -> Result<usize, Error> {
+    let fuel = self.tick(fuel)?;
+    Ok(match e.as_ref() {
+      Expr::Var(i) => usize::from(*i == index),
+      Expr::Share(i) => {
+        let expanded = self.expansion(*i)?;
+        self.occurrences(fuel, &expanded, index)?
+      },
+      Expr::App(f, a) => {
+        self.occurrences(fuel, f, index)? + self.occurrences(fuel, a, index)?
+      },
+      Expr::Lam(_, t, b) | Expr::All(_, _, t, b) => {
+        self.occurrences(fuel, t, index)?
+          + self.occurrences(fuel, b, index + 1)?
+      },
+      Expr::Let(_, t, v, b) => {
+        self.occurrences(fuel, t, index)?
+          + self.occurrences(fuel, v, index)?
+          + self.occurrences(fuel, b, index + 1)?
+      },
+      Expr::Prj(_, _, v) => self.occurrences(fuel, v, index)?,
+      _ => 0,
+    })
+  }
   /// Number of leading arrows of a type.
   fn arity(&mut self, fuel: usize, typ: &Term) -> Result<usize, Error> {
     let fuel = fuel.checked_sub(1).ok_or(Error::Budget)?;
@@ -1294,12 +1332,14 @@ impl<'a> Checker<'a> {
       },
     }
   }
-  /// Apply a lambda telescope to arguments, as `let`s: an argument of a
-  /// binder with the default contract that is a variable, a value form, a
-  /// type or a proof is substituted; any other argument is bound by a `let`
-  /// carrying the binder's own contract, so it is evaluated once, before the
-  /// body, exactly as a call would evaluate it. Arguments beyond the
-  /// telescope are applied to the body.
+  /// Apply a lambda telescope to arguments, as `let`s. An argument of a
+  /// binder with the default contract is substituted when the binder occurs at
+  /// most once (it is then evaluated where, and only if, that occurrence is:
+  /// a minor premise of `casesOn` or a matcher alternative is evaluated in its
+  /// own branch) or when it is a variable, a value form, a type or a proof.
+  /// Any other argument is bound by a `let` carrying the binder's own
+  /// contract, so it is evaluated once, before the body, as a call would
+  /// evaluate it. Arguments beyond the telescope are applied to the body.
   fn bind_arguments(
     &mut self,
     fuel: usize,
@@ -1316,9 +1356,9 @@ impl<'a> Checker<'a> {
       let unshared = self.unshare(fuel, &term)?;
       let Expr::Lam(c, domain, body) = unshared.as_ref() else { break };
       let arg = self.shift(fuel, &args[rest], lets.len() as u64, 0)?;
-      if *c == BinderContract::default()
-        && self.substitutable(fuel, &inner, &arg, domain)?
-      {
+      let once = self.occurrences(fuel, body, 0)? <= 1;
+      let substitutable = self.substitutable(fuel, &inner, &arg, domain)?;
+      if *c == BinderContract::default() && (once || substitutable) {
         term = self.substitute(fuel, body, &arg, 0)?;
       } else {
         lets.push((
@@ -1545,6 +1585,76 @@ impl<'a> Checker<'a> {
       typ = body.clone();
     }
     Ok(found)
+  }
+  /// The body an annotated recursive definition is checked through: the
+  /// right-hand side of its unfolding equation `∀ xs, f xs = rhs`,
+  /// abstracted over the equation's binders with the definition's own input
+  /// contracts. The statement must be an equality whose left side is the
+  /// definition applied to exactly those binders, in order.
+  fn equation_body(
+    &mut self,
+    fuel: usize,
+    index: u64,
+    equation: u64,
+  ) -> Result<Term, Error> {
+    let eq = self.program.eq_type.ok_or(Error::Unsupported(
+      "the equality type is absent from the profile",
+    ))?;
+    let d = self.declaration(index)?.clone();
+    let t = self.declaration(equation)?.clone();
+    if t.kind != DeclKind::Theorem {
+      return Err(Error::Unsupported(
+        "an unfolding equation must be a theorem",
+      ));
+    }
+    let mut statement = t.typ;
+    let mut typ = d.typ;
+    let mut binders = vec![];
+    loop {
+      let reduced = self.whnf(fuel, &statement)?;
+      match reduced.as_ref() {
+        Expr::All(_, _, domain, body) => {
+          let (input, _, _, codomain) = self.arrow(fuel, &typ)?;
+          binders.push((input, domain.clone()));
+          statement = body.clone();
+          typ = codomain;
+        },
+        _ => {
+          statement = reduced;
+          break;
+        },
+      }
+    }
+    let (head, args) = self.split_app(fuel, &statement)?;
+    let not_equality =
+      Error::Unsupported("an unfolding equation must state an equality");
+    let (lhs, rhs) = match (head.as_ref(), args.as_slice()) {
+      (Expr::Ref(e, _), [_, lhs, rhs]) if *e == eq => {
+        (lhs.clone(), rhs.clone())
+      },
+      _ => return Err(not_equality),
+    };
+    let (function, fargs) = self.split_app(fuel, &lhs)?;
+    let mut unfolds = matches!(function.as_ref(), Expr::Ref(f, _) if *f == index)
+      && fargs.len() == binders.len();
+    if unfolds {
+      let mut k = binders.len();
+      for arg in &fargs {
+        k -= 1;
+        let arg = self.unshare(fuel, arg)?;
+        unfolds &= matches!(arg.as_ref(), Expr::Var(i) if *i == k as u64);
+      }
+    }
+    if !unfolds {
+      return Err(Error::Unsupported(
+        "an unfolding equation must unfold its definition",
+      ));
+    }
+    let mut body = rhs;
+    for (input, domain) in binders.into_iter().rev() {
+      body = Expr::lam_contract(input, domain, body);
+    }
+    Ok(body)
   }
   /// A case split. Parameters, motives and indices have no run-time demand;
   /// the major premise is inspected, not consumed; each minor binds the
@@ -1914,16 +2024,21 @@ pub fn check_definition(
 ) -> Result<(), Error> {
   let declaration =
     program.declarations.get(index).ok_or(Error::BadReference(index as u64))?;
-  let body = declaration
-    .body
-    .as_ref()
-    .ok_or(Error::Unsupported("definition has no body"))?;
   let mut checker = Checker::new(program, limits);
+  let body = match program.equations.iter().find(|(d, _)| *d == index as u64) {
+    Some((_, equation)) => {
+      checker.equation_body(limits.depth, index as u64, *equation)?
+    },
+    None => declaration
+      .body
+      .clone()
+      .ok_or(Error::Unsupported("definition has no body"))?,
+  };
   let scope = checker.scope(0)?;
   checker.analyze(
     limits.depth,
     &Context { scope, vars: vec![] },
-    body,
+    &body,
     Some((declaration.typ.clone(), ValueContract::shared())),
     scope,
     Uses::Linear,
@@ -2143,6 +2258,8 @@ pub struct Policy {
   pub choices: Vec<usize>,
   /// The profile admits case splits, case wrappers and beta-redexes.
   pub cases: bool,
+  /// Unfolding equations `(definition, theorem)` bound by the profile.
+  pub equations: Vec<(usize, usize)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2206,6 +2323,20 @@ pub fn admit_program(
         "case behavior is absent from the bound profile",
       ),
     });
+  }
+  for (definition, equation) in &program.equations {
+    let pair = (
+      usize::try_from(*definition).unwrap_or(usize::MAX),
+      usize::try_from(*equation).unwrap_or(usize::MAX),
+    );
+    if !policy.equations.contains(&pair) {
+      return Err(AdmissionError {
+        declaration: Some(pair.0),
+        error: Error::Unsupported(
+          "unfolding equation is absent from the bound profile",
+        ),
+      });
+    }
   }
   for index in &program.shareable_types {
     let index = usize::try_from(*index).map_err(|_error| AdmissionError {
@@ -2741,6 +2872,138 @@ mod tests {
     assert!(run_fixture_lines(&cases_program(), text) >= 19);
   }
 
+  /// The case program extended with `Eq` and an unfolding equation for the
+  /// definition under test (index 35): `∀ r, f r = r`. Mirrors
+  /// `Tests.Resource.equationsProgram`.
+  fn equations_program() -> Program {
+    let mut p = cases_program();
+    let many = b(Uses::Many, ValueContract::shared());
+    let shared = ValueContract::shared();
+    let all = |d: Term, c: Term| arr(many, shared, d, c);
+    let res = || Expr::reference(11, vec![]);
+    p.declarations.extend([
+      // 33 Eq.
+      Declaration {
+        typ: all(
+          Expr::sort(0),
+          all(Expr::var(0), all(Expr::var(1), Expr::sort(1))),
+        ),
+        body: None,
+        kind: DeclKind::TypeConstructor,
+      },
+      // 34 ∀ r, f r = r.
+      Declaration {
+        typ: all(
+          res(),
+          Expr::app(
+            Expr::app(
+              Expr::app(Expr::reference(33, vec![]), res()),
+              Expr::app(Expr::reference(35, vec![]), Expr::var(0)),
+            ),
+            Expr::var(0),
+          ),
+        ),
+        body: Some(Expr::lam_contract(
+          many,
+          res(),
+          Expr::reference(30, vec![]),
+        )),
+        kind: DeclKind::Theorem,
+      },
+    ]);
+    p.eq_type = Some(33);
+    p.equations = vec![(35, 34)];
+    p
+  }
+
+  #[test]
+  fn unfolding_equation_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-equations.tsv");
+    assert!(run_fixture_lines(&equations_program(), text) >= 2);
+  }
+
+  /// Mirrors the R17 part of `Tests.Resource.runAdmission`.
+  #[test]
+  fn definitions_are_checked_through_bound_equations() {
+    let many = b(Uses::Many, ValueContract::shared());
+    let linear = b(Uses::Linear, ValueContract::shared());
+    let statement = |lhs: Term, rhs: Term| {
+      arr(
+        many,
+        ValueContract::shared(),
+        nat(),
+        Expr::app(
+          Expr::app(Expr::app(Expr::reference(11, vec![]), nat()), lhs),
+          rhs,
+        ),
+      )
+    };
+    let base = |typ: Term, kind: DeclKind, eq_type: Option<u64>| {
+      let mut p = program();
+      p.declarations.extend([
+        Declaration {
+          typ: arr(
+            many,
+            ValueContract::shared(),
+            Expr::sort(0),
+            arr(
+              many,
+              ValueContract::shared(),
+              Expr::var(0),
+              arr(many, ValueContract::shared(), Expr::var(1), Expr::sort(1)),
+            ),
+          ),
+          body: None,
+          kind: DeclKind::TypeConstructor,
+        },
+        Declaration {
+          typ,
+          body: Some(Expr::lam_contract(many, nat(), Expr::nat(0))),
+          kind,
+        },
+        Declaration {
+          typ: unary(linear, ValueContract::shared()),
+          body: Some(Expr::lam_contract(linear, nat(), Expr::nat(0))),
+          kind: DeclKind::Definition,
+        },
+      ]);
+      p.eq_type = eq_type;
+      p.equations = vec![(13, 12)];
+      p
+    };
+    let good = || {
+      statement(
+        Expr::app(Expr::reference(13, vec![]), Expr::var(0)),
+        Expr::var(0),
+      )
+    };
+    let mut bound = policy();
+    bound.equations = vec![(13, 12)];
+    let p = base(good(), DeclKind::Theorem, Some(11));
+    assert!(admit_program(&p, &bound, Limits::default()).is_ok());
+    assert!(admit_program(&p, &policy(), Limits::default()).is_err());
+    for p in [
+      base(good(), DeclKind::Definition, Some(11)),
+      base(
+        arr(many, ValueContract::shared(), nat(), nat()),
+        DeclKind::Theorem,
+        Some(11),
+      ),
+      base(
+        statement(
+          Expr::app(Expr::reference(5, vec![]), Expr::var(0)),
+          Expr::var(0),
+        ),
+        DeclKind::Theorem,
+        Some(11),
+      ),
+      base(good(), DeclKind::Theorem, None),
+    ] {
+      assert!(check_definition(&p, 13, Limits::default()).is_err());
+    }
+  }
+
   #[test]
   fn theorem_proofs_carry_no_resource_obligation() {
     let mut p = program();
@@ -2861,6 +3124,7 @@ mod tests {
       shareable_types: vec![0, 7],
       choices: vec![6, 9, 10],
       cases: false,
+      equations: vec![],
     }
   }
 

@@ -161,15 +161,15 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Realize it for every recursive definition in the closure (library
   -- definitions included), add it and its dependencies to the closure, and
   -- record which theorem unfolds which definition.
-  let (leanEnv, constList) ← if p.hasFlag "equations" then do
+  let (leanEnv, constList, associations) ← if p.hasFlag "equations" then do
       let (env, closed, found, failed) ←
         Ix.Compile.Equations.close leanEnv (constList.map (·.1))
       IO.println s!"[compile] equations: {found.size} unfolding theorem(s), {failed.size} failure(s); {closed.length} constants"
       let sidecar := (p.flag? "equations-out").map (·.as! String)
         |>.getD (outPath ++ ".equations.json")
       IO.FS.writeFile sidecar ((Ix.Compile.Equations.toJson found failed).pretty ++ "\n")
-      pure (env, closed)
-    else pure (leanEnv, constList)
+      pure (env, closed, found)
+    else pure (leanEnv, constList, #[])
 
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
@@ -196,7 +196,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `--profile FILE`: a resource profile source (see docs/resource-checking.md)
   -- replaces the standard profile; the native compiler resolves its names
   -- against the compiled closure and reports the effective profile address.
-  let profileSource ← (p.flag? "profile").mapM fun flag => IO.FS.readFile (flag.as! String)
+  -- With `--equations`, each realized unfolding equation is added as an
+  -- `equation` directive: an annotated recursive definition is then checked
+  -- through its equation (R17), which the consumer runs.
+  let profileSource ← (p.flag? "profile").mapM fun flag => do
+    let source ← IO.FS.readFile (flag.as! String)
+    return associations.foldl (init := source ++ "\n") fun source a =>
+      source ++ s!"equation {a.definition} {a.equation}\n"
   let status ← match profileSource with
     | some source =>
       Ix.CompileM.rsCompileEnvBytesProfileSourceFFI constList outPath allowPartial strictAnon source
@@ -303,7 +309,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
     equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition in the closure, library definitions included; compile each theorem with its dependencies to a fixpoint, and write the definition/theorem associations to --equations-out."
     "equations-out" : String; "Path for the --equations association JSON (`ix/compile-equations/1`); defaults to <out>.equations.json."
-    profile        : String; "Resource profile source for annotated closures (one directive per line: standard, shareable NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, limits DEPTH STEPS); replaces the standard profile. Names are resolved against the compiled closure and the effective profile address is printed. The Lean core profile is profiles/lean-core.profile."
+    profile        : String; "Resource profile source for annotated closures (one directive per line: standard, shareable NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, equation NAME THEOREM, limits DEPTH STEPS); replaces the standard profile. Names are resolved against the compiled closure and the effective profile address is printed. With --equations, every realized unfolding equation is added as an equation directive, so annotated recursion is checked through it. The Lean core profile is profiles/lean-core.profile."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

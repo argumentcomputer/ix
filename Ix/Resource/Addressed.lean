@@ -43,6 +43,12 @@ structure Profile where
   contract byte (`packAllContract`) for each leading arrow, replacing the
   declared contracts for callers. Each must also be an assumption. -/
   interfaces : Array (Address × ByteArray) := #[]
+  /-- The `Eq` type, present exactly when there are equations. -/
+  eqType : Option Address := none
+  /-- Unfolding equations `(definition, equation)` the consumer runs; a
+  definition with one is checked through the equation (`Program.equations`).
+  Strictly increasing by definition. -/
+  equations : Array (Address × Address) := #[]
   deriving Inhabited
 
 def Profile.validate (profile : Profile) : Except String Unit := do
@@ -75,6 +81,18 @@ def Profile.validate (profile : Profile) : Except String Unit := do
     if mask.isEmpty then throw "resource profile: empty interface"
     for byte in mask.toList do
       if (unpackAllContract? byte).isNone then throw "resource profile: invalid interface contract"
+  if profile.eqType.isSome != !profile.equations.isEmpty then
+    throw "resource profile: the equality type must accompany the equations"
+  let mut previousDefinition : Option Address := none
+  for (definition, equation) in profile.equations do
+    if definition.hash.size != 32 || equation.hash.size != 32 then
+      throw "resource profile: invalid address length"
+    if let some before := previousDefinition then
+      unless Address.cmpBytes before definition == .lt do
+        throw "resource profile: address lists must be strictly increasing"
+    previousDefinition := some definition
+  if let some eq := profile.eqType then
+    if eq.hash.size != 32 then throw "resource profile: invalid address length"
 
 /-- Canonical, domain-separated profile bytes, including the checker limits.
 Lists are validated before these bytes are used as a commitment. -/
@@ -90,13 +108,20 @@ def Profile.bytes (profile : Profile) : ByteArray :=
     putTagN 0 0 profile.limits.depth.toUInt64
     putTagN 0 0 profile.limits.steps.toUInt64
     -- An optional extension, present only when it is not empty.
-    if profile.cases || !profile.interfaces.isEmpty then
-      putTagN 0 0 (if profile.cases then 1 else 0)
+    let flags : UInt64 := (if profile.cases then 1 else 0) ||| (if profile.equations.isEmpty then 0 else 2)
+    if flags != 0 || !profile.interfaces.isEmpty then
+      putTagN 0 0 flags
       putTagN 0 0 profile.interfaces.size.toUInt64
       for (address, mask) in profile.interfaces do
         Serialize.put address
         putTagN 0 0 mask.size.toUInt64
         for byte in mask.toList do putU8 byte
+      if let some eq := profile.eqType then
+        Serialize.put eq
+        putTagN 0 0 profile.equations.size.toUInt64
+        for (definition, equation) in profile.equations do
+          Serialize.put definition
+          Serialize.put equation
 
 def Profile.address (profile : Profile) : Except String Address := do
   profile.validate
@@ -126,9 +151,9 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
     let depth := (← getTagN 0).value.toNat
     let steps := (← getTagN 0).value.toNat
     let state ← get
-    let (cases, interfaces) ← if state.idx < state.bytes.size then do
+    let (cases, interfaces, eqType, equations) ← if state.idx < state.bytes.size then do
         let flags := (← getTagN 0).value
-        if flags > 1 then throw "resource profile: unknown behavior flags"
+        if flags > 3 then throw "resource profile: unknown behavior flags"
         let count := (← getTagN 0).value.toNat
         let state ← get
         if count > (state.bytes.size - state.idx) / 33 then throw "resource profile: impossible interface count"
@@ -140,10 +165,23 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
           if length > state.bytes.size - state.idx then throw "resource profile: truncated interface"
           result := result.push (address, ← getBytes length)
         if flags == 0 && result.isEmpty then throw "resource profile: empty extension"
-        pure (flags == 1, result)
-      else pure (false, #[])
+        let (eqType, equations) ← if flags &&& 2 != 0 then do
+            let eq ← Serialize.get
+            let count := (← getTagN 0).value.toNat
+            let state ← get
+            if count == 0 || count > (state.bytes.size - state.idx) / 64 then
+              throw "resource profile: impossible equation count"
+            let mut pairs := #[]
+            for _ in [:count] do
+              let definition ← Serialize.get
+              let equation ← Serialize.get
+              pairs := pairs.push (definition, equation)
+            pure (some eq, pairs)
+          else pure (none, #[])
+        pure (flags &&& 1 == 1, result, eqType, equations)
+      else pure (false, #[], none, #[])
     return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps },
-             cases, interfaces }) bytes
+             cases, interfaces, eqType, equations }) bytes
   profile.validate
   return profile
 
@@ -482,6 +520,14 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     let type ← (overlay program profile.limits program.declarations[i.toNat]!.type mask.toList).mapError
       fun _ => s!"resource profile: interface does not match the arrows of {address}"
     program := { program with interfaces := program.interfaces.push (i, type) }
+  let equations ← profile.equations.mapM fun (definition, equation) => do
+    return (← index indices definition, ← index indices equation)
+  if let some eq := profile.eqType then
+    let i ← index indices eq
+    unless kinds[i.toNat]? == some .typeConstructor do
+      throw "resource adapter: the equality type must be a checked nominal type"
+    program := { program with eqType := some i }
+  program := { program with equations }
   for (typeAddr, ctorAddr, params, count) in fieldSpecs do
     if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) params count then
       program := { program with fields := program.fields ++ derived }
@@ -490,7 +536,8 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     policy := {
       assumptions := assumptions.map UInt64.toNat
       shareableTypes := shareable.map UInt64.toNat, choices := choices.map UInt64.toNat
-      cases := profile.cases } }
+      cases := profile.cases
+      equations := equations.map fun (d, t) => (d.toNat, t.toNat) } }
 
 /-- Resource-only validation of addressed bytes. Erased typechecking and
 claim construction belong to the combined validator, not this helper. -/

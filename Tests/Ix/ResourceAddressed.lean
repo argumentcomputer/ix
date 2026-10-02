@@ -68,6 +68,12 @@ def casesProfile : Profile :=
     assumptions := #[unit], cases := true
     interfaces := #[(unit, ⟨#[packAllContract ⟨.linear, .localShared⟩ .shared]⟩)] }
 
+/-- The profile with unfolding equations the shared fixture pins
+(`profile-equations`): the equality type and one `(definition, theorem)` pair. -/
+def equationsProfile : Profile :=
+  let (_, unit) := unitEnv
+  { fixtureProfile with eqType := some unit, equations := #[(unit, unit)] }
+
 /-- One `addressed.tsv` row: a constant's address and canonical bytes. -/
 def fixtureLine (label : String) (constant : Constant) : String :=
   s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
@@ -80,6 +86,8 @@ def fixtureText : Except String String := do
   let rows := rows.push s!"profile\t{profileAddress}\t{hexOfBytes fixtureProfile.bytes}"
   let casesAddress ← casesProfile.address
   let rows := rows.push s!"profile-cases\t{casesAddress}\t{hexOfBytes casesProfile.bytes}"
+  let equationsAddress ← equationsProfile.address
+  let rows := rows.push s!"profile-equations\t{equationsAddress}\t{hexOfBytes equationsProfile.bytes}"
   return rows.foldl (fun text row => text ++ row ++ "\n") "# name\taddress\tcanonical bytes\n"
 
 def run : IO Unit := do
@@ -118,6 +126,18 @@ def run : IO Unit := do
   check "unknown profile behavior" (Profile.ofBytes (profile.bytes ++ ⟨#[2, 0]⟩)) false
   check "admitted interface must be assumed" ({ extended with assumptions := #[] }.address) false
   check "invalid interface contract" ({ extended with interfaces := #[(unit, ⟨#[64]⟩)] }.address) false
+  -- Unfolding equations and the equality type travel in the same extension.
+  let withEquations : Profile := equationsProfile
+  let equationsAddress ← get "equations profile address" withEquations.address
+  let equationsLine := s!"profile-equations\t{equationsAddress}\t{hexOfBytes withEquations.bytes}"
+  unless lines.contains equationsLine do
+    throw <| IO.userError s!"addressed equations profile fixture differs; expected line:\n{equationsLine}"
+  let decoded ← get "equations profile roundtrip" (Profile.ofBytes withEquations.bytes)
+  unless decoded.bytes == withEquations.bytes && decoded.equations.size == 1 do
+    throw <| IO.userError "equations profile roundtrip differs"
+  check "equations need the equality type" ({ withEquations with eqType := none }.address) false
+  check "the equality type needs equations" ({ profile with eqType := some unit }.address) false
+  check "empty equation list" (Profile.ofBytes (profile.bytes ++ ⟨#[2, 0]⟩ ++ unit.hash ++ ⟨#[0]⟩)) false
   let (env, id) := store base (identity unit)
   let prepared ← get "valid identity" (Addressed.checkResources env profile)
   unless prepared.program.declarations.size == 3 && prepared.program.groups.size == 1 do

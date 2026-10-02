@@ -100,7 +100,30 @@ def runAdmission : IO Unit := do
   checkAdmission "case behavior absent from the profile" { program with cases := true } false
   checkAdmission "case behavior bound by the profile" { program with cases := true } true
     { policy with cases := true }
-  IO.println "Resource admission: 27 profile, dependency, constructor, theorem, interface, and DAG checks passed"
+  -- R17: an annotated recursive definition is checked through its unfolding
+  -- equation, a theorem `∀ r, f r = rhs` bound by the profile.
+  let eqStatement (lhs rhs : E) : E :=
+    arr (b .many) .shared natTy (.app (.app (.app (ref 11) natTy) lhs) rhs)
+  let eqBase (statement : E) (kind : DeclKind := .theorem) (eqType : Option UInt64 := some 11) :
+      Program := { program with
+    declarations := program.declarations ++ #[
+      { type := arr (b .many) .shared (.sort 0)
+          (arr (b .many) .shared (v 0) (arr (b .many) .shared (v 1) (.sort 1))),
+        kind := .typeConstructor },
+      { type := statement, body := some (lam (b .many) zero), kind },
+      { type := arr (b .linear), body := some (lam (b .linear) zero) } ]
+    eqType, equations := #[(13, 12)] }
+  let good := eqStatement (call 13 (v 0)) (v 0)
+  checkAdmission "definition checked through its unfolding equation" (eqBase good) true
+    { policy with equations := #[(13, 12)] }
+  checkAdmission "unfolding equation absent from the profile" (eqBase good) false
+  for (label, p) in #[("an equation must be a theorem", eqBase good .definition),
+      ("an equation must state an equality", eqBase (arr (b .many) .shared natTy natTy)),
+      ("an equation must unfold its definition", eqBase (eqStatement (call 5 (v 0)) (v 0))),
+      ("an equation needs the equality type", eqBase good .theorem none)] do
+    unless (checkDefinition p 13).toOption.isNone do
+      throw <| IO.userError s!"resource equations: {label}"
+  IO.println "Resource admission: 33 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
 
 end Tests.Resource
 

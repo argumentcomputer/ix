@@ -1,0 +1,5 @@
+# name	expected	type (ixon-v4 hex)	body (ixon-v4 hex)
+# Cases over Tests.Resource.equationsProgram (Rust: equations_program): the
+# definition under test (index 35) is checked through the equation 34.
+a definition is checked through its unfolding equation	ok	9115200b200b	8105200b201e
+an unfolding equation keeps the definition's contracts	usage	9114200b200b	8104200b201e

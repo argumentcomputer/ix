@@ -1098,9 +1098,7 @@ pub fn compile_env_with_resource_profile(
       },
       ResourceProfile::Source(text) => {
         let resolve = |name: &str| {
-          let name = name
-            .split('.')
-            .fold(Name::anon(), |pre, part| Name::str(pre, part.to_string()));
+          let name = parse_name(name)?;
           stt.name_to_addr.get(&name).map(|entry| entry.value().clone())
         };
         default_profile =
@@ -1110,12 +1108,13 @@ pub fn compile_env_with_resource_profile(
           .address()
           .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
         println!(
-          "[compile] resource profile {}: {} assumption(s), {} shareable type(s), {} choice(s), {} interface(s){}",
+          "[compile] resource profile {}: {} assumption(s), {} shareable type(s), {} choice(s), {} interface(s), {} equation(s){}",
           address.hex(),
           default_profile.assumptions.len(),
           default_profile.shareable_types.len(),
           default_profile.choices.len(),
           default_profile.interfaces.len(),
+          default_profile.equations.len(),
           if default_profile.cases { ", case splits" } else { "" },
         );
         &default_profile
@@ -1302,4 +1301,48 @@ fn precompile_aux_gen_prereqs(
   }
 
   Ok(())
+}
+
+/// A Lean name as `Name.toString` prints it: dot-separated components, a
+/// component in `«…»` taken verbatim, and an unescaped all-digit component
+/// numeric. `None` for malformed input.
+fn parse_name(text: &str) -> Option<Name> {
+  let mut name = Name::anon();
+  let mut chars = text.chars().peekable();
+  loop {
+    if chars.peek() == Some(&'«') {
+      chars.next();
+      let mut part = String::new();
+      loop {
+        match chars.next()? {
+          '»' => break,
+          c => part.push(c),
+        }
+      }
+      name = Name::str(name, part);
+    } else {
+      let mut part = String::new();
+      while let Some(c) = chars.peek().copied() {
+        if c == '.' {
+          break;
+        }
+        part.push(c);
+        chars.next();
+      }
+      if part.is_empty() {
+        return None;
+      }
+      name = match part.parse::<u64>() {
+        Ok(n) if part.chars().all(|c| c.is_ascii_digit()) => {
+          Name::num(name, bignat::Nat::from(n))
+        },
+        _ => Name::str(name, part),
+      };
+    }
+    match chars.next() {
+      None => return Some(name),
+      Some('.') => {},
+      Some(_) => return None,
+    }
+  }
 }

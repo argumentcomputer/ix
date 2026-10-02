@@ -155,9 +155,12 @@ closures; the consumer must compile them the same way:
   joined. A minor that uses an induction hypothesis is rejected.
 - An unannotated definition whose body only wraps such a case split
   (`casesOn`, matchers) is unfolded at a full application. An argument of a
-  default binder that is a variable, a value form, a type or a proof is
-  substituted; any other argument is bound by a `let` with the binder's own
-  contract, so it is evaluated once, before the body, as a call evaluates it.
+  default binder is substituted when the binder occurs at most once (it is
+  then evaluated where, and only if, that occurrence is: a `casesOn` minor
+  premise or a matcher alternative only in its own branch) or when it is a
+  variable, a value form, a type or a proof; any other argument is bound by a
+  `let` with the binder's own contract, so it is evaluated once, before the
+  body, as a call evaluates it.
 - A beta-redex binds its arguments the same way.
 
 Case splits on indexed families are not supported (their index unification
@@ -171,6 +174,20 @@ Recursion uses the declared interfaces of the mutually checked definitions.
 Calls conservatively retain all origins permitted by those interfaces, rather
 than assuming that an unknown recursive body has no captures. Ordinary
 typechecking remains responsible for the language's recursion admissibility.
+
+A kernel recursion encoding (`brecOn`, `WellFounded.fix`) passes values
+through motives with default contracts, so an annotated recursive definition
+generally fails as written. A profile may instead bind an *unfolding
+equation* `(f, theorem)`: `f` is then checked through the theorem's statement
+`∀ xs, f xs = rhs` (`f.eq_def`), as the body `fun xs => rhs` with `f`'s own
+input contracts, against `f`'s declared type; recursive calls in `rhs` use
+that interface. The statement must be an equality (the profile's `Eq`, pinned
+to the kernel primitive) whose left side is `f` applied to exactly the
+statement's binders, in order, and the theorem must be a safe theorem (its
+proof is checked by erased typing). The profile binds the consumer to run `f`
+by that equation; the kernel body is then not checked. `ix compile
+--equations --profile FILE` adds every realized `f ↦ f.eq_def` association
+as an `equation` directive.
 
 The default analysis bounds are depth 256 and 100,000 steps per declaration.
 Exhaustion is a rejection. Open sharing is analyzed in each binding context;
@@ -186,10 +203,13 @@ A canonical profile begins with the UTF-8 bytes
 2. Optional Nat and String type addresses: a byte `0`, or `1` and an address.
 3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
 4. An optional extension, present only when it is not empty: a TagN (`f = 0`)
-   behavior flag (`1`: case splits, case wrappers and beta-redexes, above; no
-   other value), then a TagN (`f = 0`) count of admitted interfaces, each a
-   32-byte address (strictly increasing), a TagN (`f = 0`) length, and that
-   many bytes, one packed input/result contract byte per leading arrow.
+   behavior flag (bit 0: case splits, case wrappers and beta-redexes; bit 1:
+   unfolding equations; no other bits), then a TagN (`f = 0`) count of
+   admitted interfaces, each a 32-byte address (strictly increasing), a TagN
+   (`f = 0`) length, and that many bytes, one packed input/result contract
+   byte per leading arrow; then, when bit 1 is set, the `Eq` type address and
+   a nonzero TagN (`f = 0`) count of `(definition, theorem)` address pairs,
+   strictly increasing by definition.
 
 Selection primitives and admitted interfaces must also be assumptions. An
 admitted interface replaces the declaration's own arrow contracts for its
@@ -204,14 +224,16 @@ shareability to present canonical Nat, Bool, and String types.
 source: one directive per line (`#` starts a comment): `standard` (the
 standard profile's entries), `shareable NAME`, `assume NAME`, `choice NAME`,
 `interface NAME C…` (one contract token per leading arrow, `INPUT[:RESULT]`
-in source prefix syntax, `_` for the default), `cases`, and `limits DEPTH
-STEPS`. Names are resolved against the compiled closure, entries outside it
+in source prefix syntax, `_` for the default), `cases`, `equation NAME
+THEOREM`, and `limits DEPTH STEPS`. Names are resolved against the compiled closure, entries outside it
 are omitted, and the command prints the effective profile address; the
 validation itself binds addresses only. The published Lean core profile is
 [`profiles/lean-core.profile`](../profiles/lean-core.profile): the standard
 entries, the scalar immediates `Char` and `UInt8`–`UInt64`, the choices `ite`,
 `dite` and `cond`, case behavior, and readers (`List.length`, `Array.size`,
 `String.length`) with a local input.
+With `--equations`, the realized unfolding equations are added to the
+profile source, so annotated recursion is checked through them.
 
 `makeClaim` validates before producing a `Resource` claim. `checkClaim` checks
 the complete subject root and profile address, then reruns combined validation.
@@ -253,8 +275,9 @@ allocation behavior.
 
 [Shared resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
 accepted and rejected terms in both implementations; `resource-modes.tsv`
-covers usage crossing, proofs and open field rules, and `resource-cases.tsv`
-case splits, case wrappers, beta-redexes and choices. The suites also cover
+covers usage crossing, proofs and open field rules, `resource-cases.tsv`
+case splits, case wrappers, beta-redexes and choices, and
+`resource-equations.tsv` checking through unfolding equations. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.
