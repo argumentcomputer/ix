@@ -1000,13 +1000,19 @@ pub fn generate_aux_patches(
           patches.get(&rep_below),
           Some(PatchedConstant::BelowIndc(_))
         ) {
-          let rep_name = Name::str(rep_below, "rec".to_string());
-          let alias_name = Name::str(
-            Name::str(alias.clone(), "below".to_string()),
-            "rec".to_string(),
-          );
-          if lean_env.get(&alias_name).is_some() {
-            aliases.insert(alias_name, rep_name);
+          // And `.below.casesOn`, regenerated from the canonical
+          // below-recs beside them: the member's Lean-authored wrapper
+          // applies its `.below.rec` with Lean's motives, which the
+          // collapsed canonical recursor does not take.
+          for sub in ["rec", "casesOn"] {
+            let rep_name = Name::str(rep_below.clone(), sub.to_string());
+            let alias_name = Name::str(
+              Name::str(alias.clone(), "below".to_string()),
+              sub.to_string(),
+            );
+            if lean_env.get(&alias_name).is_some() {
+              aliases.insert(alias_name, rep_name);
+            }
           }
         }
       }
@@ -1102,6 +1108,33 @@ pub fn generate_aux_patches(
               source_name.pretty(),
               target_name.pretty(),
             );
+          }
+          // A Prop-level `.below_N` is an inductive: its constructors, its
+          // recursor and its `.casesOn` are Lean-exported names too. Both
+          // auxiliaries nest the same external inductive, so the
+          // constructors pair positionally.
+          if *suffix == "below"
+            && let Some(PatchedConstant::BelowIndc(target_bi)) =
+              patches.get(&target_name)
+            && let Some(ix_common::env::ConstantInfo::InductInfo(source_v)) =
+              lean_env.get(&source_name).as_deref()
+          {
+            for (source_ctor, target_ctor) in
+              source_v.ctors.iter().zip(&target_bi.ctors)
+            {
+              if lean_env.get(source_ctor).is_some() {
+                aliases.insert(source_ctor.clone(), target_ctor.name.clone());
+              }
+            }
+            for sub in ["rec", "casesOn"] {
+              let source_sub = Name::str(source_name.clone(), sub.to_string());
+              if lean_env.get(&source_sub).is_some() {
+                aliases.insert(
+                  source_sub,
+                  Name::str(target_name.clone(), sub.to_string()),
+                );
+              }
+            }
           }
           aliases.insert(source_name, target_name);
         }

@@ -595,6 +595,14 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
     if let some n := belowCasesName? recName then
       if (← liftM (lookupConst? n : CompileM _)).isSome then
         emitBelowCases := true
+  -- A collapsed class's non-representative `.below.casesOn` aliases the
+  -- representative's, so any member of a `.below` block Lean declared
+  -- counts.
+  for c in belowIndcs do
+    if let some (.inductInfo v) ← liftM (lookupConst? c.name : CompileM _) then
+      for m in v.all do
+        if (← liftM (lookupConst? (Name.mkStr m "casesOn") : CompileM _)).isSome then
+          emitBelowCases := true
   let mut belowCases : Array MutConst := #[]
   for (recName, recVal) in recs do
     if let some casesOnName := belowCasesName? recName then

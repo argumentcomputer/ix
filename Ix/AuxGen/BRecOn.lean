@@ -1453,11 +1453,18 @@ TcScope::get_level on major domain returned {e}. This typically means \
     and the below-ctor gains (ih, proof) args. -/
 def buildPropBelowMinorFvar (minorDom : Expr) (belowCtorName : Name)
     (paramFvars motiveFvars fFvars : Array Expr) (belowNames : Array Name)
-    (indUnivs : Array Level) : Expr := Id.run do
+    (indUnivs : Array Level) (betaFields : Bool) : Expr := Id.run do
   -- Open all minor fields; field domains reference motive FVars directly.
   let nFields := countForalls minorDom
-  let (fieldFvars, fieldDecls, _returnType) :=
+  let (fieldFvars, fieldDecls0, _returnType) :=
     forallTelescope minorDom nFields "pbmf" 0
+  -- In a nested block, an auxiliary's minor can carry a field type
+  -- instantiated with a lambda-valued parameter (`h : (fun n => E n) w`);
+  -- Lean binds it head-beta-reduced (`h : E w`), as in the `.below`
+  -- constructors (`buildPropBelowFamily`).
+  let fieldDecls := if betaFields then
+      fieldDecls0.map fun d => { d with domain := betaReduce d.domain }
+    else fieldDecls0
 
   -- Classify fields and build lambda binders + ctor args.
   let mut lambdaDecls : Array LocalDecl := #[]
@@ -1528,7 +1535,8 @@ def buildPropBelowMinorFvar (minorDom : Expr) (belowCtorName : Name)
 
 /-- Mirrors Rust `build_prop_brecon` (brecon.rs:223).
 
-    Build Prop-level `.brecOn` for class `ci`:
+    Build Prop-level `.brecOn` for motive `ci` of the flat block (a class,
+    or a nested auxiliary when `ci ≥ nClasses`):
 
     ```text
     I_i.brecOn : ∀ {params} {motives} (t : I_i params)
@@ -1539,15 +1547,21 @@ def buildPropBelowMinorFvar (minorDom : Expr) (belowCtorName : Name)
       F_i t (I_i.rec params below_motives below_minors t)
     ```
 
-    (Rust also receives `_lean_env`, unused — dropped here.) -/
+    There is one `F` per motive, and `belowConsts[j]` is motive `j`'s
+    `.below` (for a nested block, `buildPropBelowFamily`'s order). `ind`
+    supplies the level parameters and safety (the block's); `nIndices` is
+    the index count of `recVal0`'s major. -/
 def buildPropBrecon (ci : Nat) (recVal0 : RecursorVal) (ind : InductiveVal)
-    (nClasses : Nat) (sortedClasses : Array (Array Name))
+    (breconName : Name) (nIndices : Nat) (sortedClasses : Array (Array Name))
     (belowConsts : Array BelowConstant) : KBridgeM BRecOnDef := do
   let nParams := recVal0.numParams
   let nMotives := recVal0.numMotives
   let nMinors := recVal0.numMinors
-  let nIndices := ind.numIndices
   let indLevelParams := ind.cnst.levelParams
+  if belowConsts.size < nMotives || ci >= nMotives then
+    throw (CompileError.invalidMutualBlock
+      s!"{sortedClasses[0]![0]!.pretty}: Prop brecOn needs one .below per \
+motive ({nMotives}), have {belowConsts.size}")
 
   -- For Prop brecOn with large elimination (drec), substitute
   -- u -> Level::zero(). Invariant: generate_canonical_recursors always
@@ -1565,19 +1579,16 @@ def buildPropBrecon (ci : Nat) (recVal0 : RecursorVal) (ind : InductiveVal)
     else
       recVal0
 
-  let breconName := Name.mkStr ind.cnst.name "brecOn"
-
-  let belowNames : Array Name := (Array.range nClasses).map fun j =>
-    Name.mkStr sortedClasses[j]![0]! "below"
-
-  let mut belowCtorNames : Array (Array Name) := #[]
-  for j in [0:nClasses] do
-    let some bc := belowConsts[j]?
-      | throw (CompileError.unsupportedExpr
-          s!"prop brecOn: missing below constant for class {j}")
-    belowCtorNames := belowCtorNames.push (match bc with
+  -- Motive `j`'s `.below` and its constructors.
+  let belowNames : Array Name := (belowConsts.extract 0 nMotives).map fun bc =>
+    match bc with
+    | .indc bi => bi.name
+    | .defn d => d.name
+  let belowCtorNames : Array (Array Name) :=
+    (belowConsts.extract 0 nMotives).map fun bc =>
+      match bc with
       | .indc bi => bi.ctors.map (·.name)
-      | _ => #[])
+      | .defn _ => #[]
 
   -- --- Phase 1: Open rec type into FVars ---
   let (paramFvars, paramDecls, afterParams) :=
@@ -1677,13 +1688,10 @@ def buildPropBrecon (ci : Nat) (recVal0 : RecursorVal) (ind : InductiveVal)
     recApp := Expr.mkApp recApp belowMotive
 
   -- Apply below_minors: for each ctor, λ (fields) => below_ctor params
-  -- motives args.
+  -- motives args (the minors are grouped by motive, in motive order).
+  let nested := nMotives > sortedClasses.size
   let mut globalCtorIdx := 0
-  for j in [0:nClasses] do
-    let some classCtorNames := belowCtorNames[j]?
-      | throw (CompileError.unsupportedExpr
-          s!"prop brecOn: missing below ctor names for class {j}")
-
+  for classCtorNames in belowCtorNames do
     for (belowCtorName, cidx) in classCtorNames.zipIdx do
       if globalCtorIdx + cidx >= minorDoms.size then
         break
@@ -1691,7 +1699,7 @@ def buildPropBrecon (ci : Nat) (recVal0 : RecursorVal) (ind : InductiveVal)
 
       -- Build the below minor using FVars.
       let minor := buildPropBelowMinorFvar minorDom belowCtorName
-        paramFvars motiveFvars fFvars belowNames indUnivs
+        paramFvars motiveFvars fFvars belowNames indUnivs nested
       recApp := Expr.mkApp recApp minor
     globalCtorIdx := globalCtorIdx + classCtorNames.size
 
@@ -1777,9 +1785,32 @@ def generateBreconConstants (sortedClasses : Array (Array Name))
       results := results ++ defs
     else
       -- Prop-level: single .brecOn theorem (IndPredBelow.lean path).
-      let d ← buildPropBrecon ci recVal ind nClasses sortedClasses
-        belowConsts
+      let d ← buildPropBrecon ci recVal ind (Name.mkStr ind.cnst.name "brecOn")
+        ind.numIndices sortedClasses belowConsts
       results := results.push d
+
+  -- Prop-level `.brecOn_N` for nested auxiliary members: Lean's
+  -- `IndPredBelow.mkBRecOn` declares one `.brecOn` theorem per motive,
+  -- `<all0>.brecOn_N` for the auxiliaries (IndPredBelow.lean:185-208, 230).
+  if isProp && canonicalRecs.size > nClasses then
+    if let some (.inductInfo firstInd) ← lookupConst? sortedClasses[0]![0]! then
+      if firstInd.isRec then
+        let all0 := firstInd.all[0]?.getD firstInd.cnst.name
+        for (pair, j) in
+            (canonicalRecs.extract nClasses canonicalRecs.size).zipIdx do
+          let (auxRecName, auxRecVal) := pair
+          let some idx := auxRecSuffixIdx auxRecName
+            | throw (CompileError.invalidMutualBlock
+                s!"brecOn aux recursor '{auxRecName.pretty}' is not \
+source-indexed; refusing to synthesize brecOn_{j + 1}")
+          let breconName := Name.mkStr all0 s!"brecOn_{idx}"
+          let cenv ← Ix.CompileM.getCompileEnv
+          let existsInEnv := allAux || (← lookupConst? breconName).isSome
+            || cenv.nameToNamed.contains breconName
+          if existsInEnv then
+            let d ← buildPropBrecon (nClasses + j) auxRecVal firstInd
+              breconName auxRecVal.numIndices sortedClasses belowConsts
+            results := results.push d
 
   -- Generate .brecOn_N for nested auxiliary members (Type-level only).
   -- Lean (BRecOn.lean:320-326): for each nested auxiliary recursor

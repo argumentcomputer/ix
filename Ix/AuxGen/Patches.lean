@@ -517,12 +517,17 @@ refusing to synthesize canonical-indexed _N names")
       -- without this alias the member's Lean-exported name never
       -- resolves (regression fixture: Canonicity PropCollapseA/B).
       -- Mirrors the aux_gen.rs `.below.rec` alias block.
+      -- And `.below.casesOn`, regenerated from the canonical below-recs
+      -- beside them: the member's Lean-authored wrapper applies its
+      -- `.below.rec` with Lean's motives, which the collapsed canonical
+      -- recursor does not take.
       let repBelow := Name.mkStr rep "below"
       if let some (.belowIndc _) := patches.get? repBelow then
-        let repName := Name.mkStr repBelow "rec"
-        let aliasName := Name.mkStr (Name.mkStr aliasMem "below") "rec"
-        if (← liftM (lookupConst? aliasName : CompileM _)).isSome then
-          aliases := aliases.insert aliasName repName
+        for sub in #["rec", "casesOn"] do
+          let repName := Name.mkStr repBelow sub
+          let aliasName := Name.mkStr (Name.mkStr aliasMem "below") sub
+          if (← liftM (lookupConst? aliasName : CompileM _)).isSome then
+            aliases := aliases.insert aliasName repName
 
       -- Note: _N suffixed names (rec_1, below_1, brecOn_1, etc.) are NOT
       -- aliased here. They always hang off all[0], not
@@ -573,6 +578,26 @@ maps to canonical aux #{canonicalI} but no generated {suffix} patch \
 exists")
               | some targetName =>
                 if targetName != sourceName then
+                  -- A Prop-level `.below_N` is an inductive: its
+                  -- constructors, its recursor and its `.casesOn` are
+                  -- Lean-exported names too. Both auxiliaries nest the
+                  -- same external inductive, so the constructors pair
+                  -- positionally (aux_gen.rs, same pass).
+                  if suffix == "below" then
+                    if let some (.belowIndc targetBi) := patches.get? targetName then
+                      if let some (.inductInfo sourceV) ←
+                          liftM (lookupConst? sourceName : CompileM _) then
+                        for (sourceCtor, targetCtor) in
+                            sourceV.ctors.zip targetBi.ctors do
+                          if (← liftM
+                              (lookupConst? sourceCtor : CompileM _)).isSome then
+                            aliases := aliases.insert sourceCtor targetCtor.name
+                        for sub in #["rec", "casesOn"] do
+                          let sourceSub := Name.mkStr sourceName sub
+                          if (← liftM
+                              (lookupConst? sourceSub : CompileM _)).isSome then
+                            aliases := aliases.insert sourceSub
+                              (Name.mkStr targetName sub)
                   aliases := aliases.insert sourceName targetName
 
             for sub in #["go", "eq"] do

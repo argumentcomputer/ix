@@ -1276,8 +1276,18 @@ fn compile_below_recursors(
     },
     _ => None,
   };
+  // A collapsed class's non-representative `.below.casesOn` aliases the
+  // representative's, so any member of a `.below` block Lean declared
+  // counts.
   let emit_below_cases = recs.iter().any(|(rec_name, _)| {
     below_cases_name(rec_name).is_some_and(|n| lean_env.get(&n).is_some())
+  }) || below_indcs.iter().any(|c| {
+    matches!(
+      lean_env.get(&c.name()).as_deref(),
+      Some(LeanConstantInfo::InductInfo(v)) if v.all.iter().any(|m| {
+        lean_env.get(&Name::str(m.clone(), "casesOn".to_string())).is_some()
+      })
+    )
   });
   let mut below_cases: Vec<MutConst> = Vec::new();
   for (rec_name, rec_val) in &recs {

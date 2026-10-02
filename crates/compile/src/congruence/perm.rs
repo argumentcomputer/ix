@@ -62,7 +62,9 @@
 //! - `DefnInfo` / `ThmInfo` / `OpaqueInfo` — type (∀ params motives
 //!   [minors] indices major, body) and value (λ params motives
 //!   [indices major [minors]], body).
-//! - `InductInfo`, `CtorInfo`, `AxiomInfo`, `QuotInfo` — pass-through
+//! - `InductInfo`, `CtorInfo` of a Prop-level `.below` family — the
+//!   motives follow the parameters, as in a `.below` definition.
+//! - Other `InductInfo`, `CtorInfo`, `AxiomInfo`, `QuotInfo` — pass-through
 //!   (no permutation needed).
 
 use bignat::Nat;
@@ -156,6 +158,9 @@ pub enum RecHeadKind {
   /// Motives and fs are permuted with the same permutation (the fs
   /// are per-motive in Lean's layout).
   BRecOn,
+  /// Constructor of a Prop-level `.below` inductive:
+  /// `params | motives | fields`. Motives are permuted; fields stay.
+  BelowCtor,
   /// `.casesOn`: outer chain is `params | target_motive | indices |
   /// major | target_minors`. The public spine has only one motive
   /// and one ctor-group's worth of minors — **no block-wide
@@ -475,6 +480,46 @@ pub fn const_alpha_eq_with_perm(
     },
     (ConstantInfo::OpaqueInfo(g), ConstantInfo::OpaqueInfo(o)) => {
       defn_alpha_eq_with_perm(&g.cnst, &g.value, &o.cnst, &o.value, ctx, shape)
+    },
+
+    // A Prop-level `.below` inductive and its constructors take the
+    // block's motives after the parameters (`IndPredBelow`), so their
+    // types compare like a `.below` definition's.
+    (ConstantInfo::InductInfo(g), ConstantInfo::InductInfo(o))
+      if shape == DefnShape::Below =>
+    {
+      outer_telescope_alpha_eq(
+        &g.cnst.typ,
+        &o.cnst.typ,
+        ctx,
+        true,
+        DefnShape::Below,
+      )
+      .map_err(|e| format!("type: {e}"))?;
+      check_nat_eq(&g.num_indices, &o.num_indices, "indices")?;
+      if g.ctors.len() != o.ctors.len() {
+        return Err(format!(
+          "ctor count: generated={} orig={}",
+          g.ctors.len(),
+          o.ctors.len()
+        ));
+      }
+      Ok(())
+    },
+    (ConstantInfo::CtorInfo(g), ConstantInfo::CtorInfo(o))
+      if classify_defn_shape(&o.induct) == DefnShape::Below =>
+    {
+      outer_telescope_alpha_eq(
+        &g.cnst.typ,
+        &o.cnst.typ,
+        ctx,
+        true,
+        DefnShape::Below,
+      )
+      .map_err(|e| format!("type: {e}"))?;
+      check_nat_eq(&g.cidx, &o.cidx, "cidx")?;
+      check_nat_eq(&g.num_fields, &o.num_fields, "fields")?;
+      Ok(())
     },
 
     // These don't embed permuted positions — plain alpha-eq suffices.
@@ -1154,6 +1199,16 @@ fn outer_telescope_alpha_eq(
     );
   }
   add_motive_alts(&mut corr, ctx, &orig_decls, &gen_decls);
+  if has_fs_section {
+    add_f_alts(
+      &mut corr,
+      ctx,
+      &orig_decls,
+      &gen_decls,
+      tail_start_src,
+      gen_tail_start,
+    );
+  }
 
   if std::env::var("IX_MAPPOS_DEBUG").is_ok() {
     eprintln!(
@@ -1265,6 +1320,43 @@ fn n_canonical_minors_of(ctx: &PermCtx) -> usize {
     aux += canonical_ctor_count_at(ctx, ci);
   }
   primary + aux
+}
+
+/// The `F_k` binders of a `.brecOn` follow the motives: where motive `k`
+/// (source) and motive `j` (canonical) are interchangeable (alpha-collapsed
+/// classes, see [`add_motive_alts`]), so are `F_k` and `F_j`. A Prop-level
+/// `.brecOn` passes them inside the auxiliaries' `.below` constructor
+/// arguments, where a collapsed member's occurrence names the
+/// representative's.
+fn add_f_alts(
+  corr: &mut Corr,
+  ctx: &PermCtx,
+  orig_decls: &[crate::compile::aux_gen::expr_utils::LocalDecl],
+  gen_decls: &[crate::compile::aux_gen::expr_utils::LocalDecl],
+  orig_fs_start: usize,
+  gen_fs_start: usize,
+) {
+  let n_params = ctx.n_params;
+  let n_source_motives = ctx.n_source_motives();
+  let n_canonical_motives = ctx.n_canonical_motives();
+  if orig_decls.len() < orig_fs_start + n_source_motives
+    || gen_decls.len() < gen_fs_start + n_canonical_motives
+  {
+    return;
+  }
+  for src_i in 0..n_source_motives {
+    for gen_i in 0..n_canonical_motives {
+      if corr.accepts(
+        &orig_decls[n_params + src_i].fvar_name,
+        &gen_decls[n_params + gen_i].fvar_name,
+      ) {
+        corr.insert_alt(
+          orig_decls[orig_fs_start + src_i].fvar_name.clone(),
+          gen_decls[gen_fs_start + gen_i].fvar_name.clone(),
+        );
+      }
+    }
+  }
 }
 
 fn add_motive_alts(
@@ -1593,6 +1685,7 @@ fn app_spine_alpha_eq_ctx(
 /// The layout depends on `rh.kind`:
 /// - `Rec`:    `params | motives | minors | indices | major`.
 /// - `Below`:  `params | motives | indices | major`.
+/// - `BelowCtor`: `params | motives | fields`.
 /// - `BRecOn`: `params | motives | indices | major | fs` (one F_k
 ///   per motive).
 /// - `CasesOn`: no permutation — the public spine has only one motive
@@ -1674,24 +1767,25 @@ fn permute_rec_app_args(orig_args: &[Expr], rh: &RecHeadInfo) -> Vec<Expr> {
       out.extend(orig_args[source_full..].iter().cloned());
       out
     },
-    RecHeadKind::Below => {
-      let source_full = n_params + n_source_motives + rh.n_indices + 1;
-      if orig_args.len() < source_full {
+    // `.below`: `params | motives | indices | major`; a Prop-level
+    // `.below` constructor: `params | motives | fields`. Only the motive
+    // section moves, so a partial application (a Prop-level `.below`
+    // passed as a recursor's motive) permutes as long as its motive
+    // section is complete.
+    RecHeadKind::Below | RecHeadKind::BelowCtor => {
+      let source_motives_end = n_params + n_source_motives;
+      if orig_args.len() < source_motives_end {
         return orig_args.to_vec();
       }
       let mut out = Vec::with_capacity(
-        n_params
-          + n_canonical_motives
-          + rh.n_indices
-          + 1
-          + orig_args.len().saturating_sub(source_full),
+        n_params + n_canonical_motives + orig_args.len() - source_motives_end,
       );
       out.extend(orig_args[..n_params].iter().cloned());
-      let motive_start = n_params;
-      let motive_end = motive_start + n_source_motives;
-      push_canonical_motives(&mut out, &orig_args[motive_start..motive_end]);
-      out.extend(orig_args[motive_end..source_full].iter().cloned());
-      out.extend(orig_args[source_full..].iter().cloned());
+      push_canonical_motives(
+        &mut out,
+        &orig_args[n_params..source_motives_end],
+      );
+      out.extend(orig_args[source_motives_end..].iter().cloned());
       out
     },
     RecHeadKind::BRecOn => {
