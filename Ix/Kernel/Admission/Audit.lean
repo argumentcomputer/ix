@@ -58,12 +58,7 @@ constructs are the fold's computed-field overrides and proved csimps and
 the in-model generator's `partial` definitions. The committed
 Nat-operation pins are decoded from a string table at first use
 (`Ix.Kernel.Reader.builtinNatOpPins`), which adds eight
-string-scanning externs (below). 5307 is one less than the 5308 frozen before
-the alias of the former API (`Ix.Ixon.Admission.checkBytes`, which only
-called the kernel entry `Ix.Ixon.KernelAdmission.checkBytes`) was deleted and
-the entry took its name (now `Ix.Kernel.Admission.checkBytes`): the alias's
-own compiled function left the closure, and nothing else did (compared name
-by name). -/
+string-scanning externs (below). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.decodeRecords,

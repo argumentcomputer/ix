@@ -293,11 +293,6 @@ unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
--- 5309: one less than the 5310 frozen before the alias of the former API
--- (`Ix.Ixon.Admission.checkBytes`, which only called the kernel entry
--- `Ix.Ixon.KernelAdmission.checkBytes`) was deleted and the entry took its name
--- (now `Ix.Kernel.Admission.checkBytes`): the alias's own compiled function left
--- the closure, and nothing else did (compared name by name).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
