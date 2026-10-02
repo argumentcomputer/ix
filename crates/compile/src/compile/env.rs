@@ -1021,6 +1021,7 @@ pub fn compile_env_with_profile(
   }
   areas::report("scheduler");
   areas::report_blocks();
+  areas::report_ktrack();
 
   // Check for errors
   if let Some(e) = error.into_inner().unwrap() {

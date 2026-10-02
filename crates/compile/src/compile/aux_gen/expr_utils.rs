@@ -1475,6 +1475,7 @@ pub fn ensure_prelude_in_kenv_of(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) {
+  let _kin = ix_common::areas::KIngress::new();
   use ix_kernel::constant::KConst;
   use ix_kernel::expr::KExpr;
   use ix_kernel::id::KId;
@@ -1697,6 +1698,7 @@ fn ensure_in_kenv_of_inner_env(
   replace_axio_stub: bool,
   stub_proof_values: bool,
 ) {
+  let _kin = ix_common::areas::KIngress::new();
   use ix_common::env::{ConstantInfo as LCI, DefinitionSafety};
   use ix_kernel::constant::KConst;
   use ix_kernel::id::KId;

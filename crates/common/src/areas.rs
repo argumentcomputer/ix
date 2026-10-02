@@ -346,6 +346,102 @@ pub fn report_blocks() {
   }
 }
 
+// Kernel-env use during aux_gen: distinct constants the kernel looks up
+// outside ingress, against the constants ingressed.
+thread_local! {
+  static KTRACK: RefCell<(bool, u32, std::collections::HashSet<[u8; 32]>)> =
+    RefCell::new((false, 0, std::collections::HashSet::new()));
+}
+static KT_CALLS: AtomicU64 = AtomicU64::new(0);
+static KT_INGESTED: AtomicU64 = AtomicU64::new(0);
+static KT_TOUCHED: AtomicU64 = AtomicU64::new(0);
+static KT_MAX_INGESTED: AtomicU64 = AtomicU64::new(0);
+
+/// Start tracking kernel lookups on this thread (one aux_gen call).
+pub fn ktrack_begin() {
+  if *ENABLED {
+    KTRACK.with(|k| {
+      let mut k = k.borrow_mut();
+      k.0 = true;
+      k.2.clear();
+    });
+  }
+}
+
+/// Stop tracking; record the env size and the distinct constants looked up.
+pub fn ktrack_end(ingested: usize) {
+  if *ENABLED {
+    let touched = KTRACK.with(|k| {
+      let mut k = k.borrow_mut();
+      k.0 = false;
+      k.2.len()
+    });
+    KT_CALLS.fetch_add(1, Ordering::Relaxed);
+    KT_INGESTED.fetch_add(ingested as u64, Ordering::Relaxed);
+    KT_TOUCHED.fetch_add(touched as u64, Ordering::Relaxed);
+    KT_MAX_INGESTED.fetch_max(ingested as u64, Ordering::Relaxed);
+  }
+}
+
+/// Entering (`true`) or leaving ingress code: lookups there do not count.
+pub fn ktrack_ingress(enter: bool) {
+  if *ENABLED {
+    KTRACK.with(|k| {
+      let mut k = k.borrow_mut();
+      if enter {
+        k.1 += 1;
+      } else {
+        k.1 = k.1.saturating_sub(1);
+      }
+    });
+  }
+}
+
+/// RAII marker of ingress code.
+pub struct KIngress;
+impl KIngress {
+  pub fn new() -> Self {
+    ktrack_ingress(true);
+    KIngress
+  }
+}
+impl Default for KIngress {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+impl Drop for KIngress {
+  fn drop(&mut self) {
+    ktrack_ingress(false);
+  }
+}
+
+/// A kernel-env lookup of `addr`.
+#[inline]
+pub fn ktrack_get(addr: &[u8; 32]) {
+  if *ENABLED {
+    KTRACK.with(|k| {
+      let mut k = k.borrow_mut();
+      if k.0 && k.1 == 0 {
+        k.2.insert(*addr);
+      }
+    });
+  }
+}
+
+/// Print the kernel-use counters.
+pub fn report_ktrack() {
+  if *ENABLED {
+    eprintln!(
+      "[areas] kernel use in aux_gen: {} calls, {} constants ingested (max {} in one call), {} distinct looked up outside ingress",
+      KT_CALLS.load(Ordering::Relaxed),
+      KT_INGESTED.load(Ordering::Relaxed),
+      KT_MAX_INGESTED.load(Ordering::Relaxed),
+      KT_TOUCHED.load(Ordering::Relaxed),
+    );
+  }
+}
+
 /// Reset all counters (between phases).
 pub fn reset() {
   for i in 0..N {

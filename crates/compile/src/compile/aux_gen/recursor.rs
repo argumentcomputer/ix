@@ -2619,6 +2619,7 @@ fn drain_ingress_queue(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) {
+  let _kin = ix_common::areas::KIngress::new();
   use ix_kernel::id::KId;
   use ix_kernel::ingress::resolve_lean_name_addr;
   use ix_kernel::mode::Meta;
@@ -2700,6 +2701,7 @@ fn ingress_type_stub(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) {
+  let _kin = ix_common::areas::KIngress::new();
   use ix_kernel::constant::KConst;
   use ix_kernel::id::KId;
   use ix_kernel::ingress::{

@@ -890,6 +890,7 @@ impl<M: KernelMode> KEnv<M> {
   }
 
   pub fn get(&self, id: &KId<M>) -> Option<KConst<M>> {
+    ix_common::areas::ktrack_get(id.addr.as_bytes());
     self.consts.get(id).cloned()
   }
 
