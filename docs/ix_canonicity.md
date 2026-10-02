@@ -514,11 +514,16 @@ A few key consequences:
   `A.brecOn` without `B.brecOn`, or `T.brecOn` without `T.brecOn_1`.
   `generate_aux_patches` emits a family's whole block whenever Lean
   exported any of its members, so each block (and every projection into
-  it) has the same address as in a whole-environment compile. The one
-  exception: a brecOn batch whose whole block needs a constant the slice
-  lacks (a nested block's `.brecOn.eq` block cases on the external
-  inductive, `List.casesOn`) falls back to the members present; closing
-  the slice over that dependency restores the canonical block.
+  it) has the same address as in a whole-environment compile. Building a
+  whole block can need constants none of the slice's own members reach
+  (a nested block's `.brecOn.eq` block holds `<all0>.brecOn_N.eq`, which
+  cases on the external inductive, `List.casesOn`), so the closure
+  producers close slices under "block of" as well as "references":
+  `Lean.auxFamilySiblings` (`Ix/Common.lean`) names a member's family, and
+  `Ix.EnvScope.collectDeps` and `Lean.collectDependencies` pull it and its
+  dependencies. A slice built any other way that still lacks such a
+  dependency gets the members present, with an `[aux_gen] warning` naming
+  it. `ix pack` needs nothing extra: a block is one Ixon constant.
 
 This structure is what gives canonicity its operational form: the
 content of each block is byte-determined by `(sorted_classes, expanded

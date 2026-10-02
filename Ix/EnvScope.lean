@@ -19,8 +19,9 @@ names. Mirrors the identically-named helper in `Tests/Ix/Compile/ValidateAux.lea
 so the CLI and test runner share the same dep-discovery semantics.
 
 Walks each seed's type + value + recursor rules + ctor links + `all` links
-(of inductives, recursors, definitions, theorems and opaques) until no
-new names are discovered. The returned list preserves the source environment's
+(of inductives, recursors, definitions, theorems and opaques) + auxiliary
+family siblings (`Lean.auxFamilySiblings`) until no new names are
+discovered. The returned list preserves the source environment's
 iteration order over the computed name set. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
     : List (Lean.Name × Lean.ConstantInfo) := Id.run do
@@ -35,6 +36,11 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
       needed := needed.insert n
       if let some ci := env.constants.find? n then
         let mut refs : Lean.NameSet := ci.type.getUsedConstantsAsSet
+        -- An auxiliary's family (`A.brecOn`/`B.brecOn`/`A.brecOn_1`, …) is
+        -- one compiled block: its other members, and their dependencies,
+        -- must be in the closure or the block's address depends on it
+        -- (`Lean.auxFamilySiblings`).
+        for r in Lean.auxFamilySiblings env.constants n do refs := refs.insert r
         match ci with
         -- A definition's `all` (its `mutual` siblings) is metadata the
         -- compiled entry names, and meta kernel ingress resolves each name
