@@ -5048,8 +5048,10 @@ pub mod mutual;
 pub mod nat_conv;
 pub mod surgery;
 pub(crate) mod validation;
+pub(crate) use env::IX_VERBOSE;
 pub use env::{
   compile_env, compile_env_with_options, compile_env_with_profile,
+  compile_env_with_scanner,
 };
 
 #[cfg(test)]

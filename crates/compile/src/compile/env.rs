@@ -12,7 +12,8 @@
 //! owned copy, accumulator constants and named metadata live as their
 //! serialized bytes rather than ~20×-larger structured forms, worker
 //! kernel contexts are fresh per block (canonicity §10.5), the setup
-//! passes share one whole-env decode, and the `.ixe` streams to disk
+//! scan reads the Lean objects without decoding them (a
+//! [`ConstScanner`] from the ffi crate), and the `.ixe` streams to disk
 //! from Rust rather than crossing the FFI as an env-sized ByteArray.
 //! All of it is always on, and every mode produces a bit-identical
 //! `.ixe`.
@@ -28,9 +29,13 @@
 //!   `ix validate`); `ix compile` itself never reads them back.
 //! - `IX_COMPILE_EAGER=1` — decode the whole Lean environment up
 //!   front instead of on demand. Spends the single largest memory
-//!   term (FLT: +13 GiB for −8 % wall; Mathlib needs a large-memory
-//!   machine) to shave the last few percent on hardware with RAM to
-//!   spare.
+//!   term (Mathlib: peak 38–44 GB against 18–19 GB, for about 15%
+//!   less user CPU) on hardware with RAM to spare; see
+//!   `decode_env_for_compile` in the ffi crate.
+//!
+//! And one validation knob: `IX_SETUP_SCAN_CHECK=1` also runs the
+//! decoding setup scan and fails the compile unless the scanner's
+//! outputs are identical to it.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -49,7 +54,9 @@ use crate::compile::{
   aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
 };
 use crate::condense::compute_sccs;
-use crate::graph::{NameSet, setup_scan};
+use crate::graph::{
+  ConstScanner, NameSet, compare_setup_scans, setup_scan, setup_scan_with,
+};
 use crate::ground::proliferate_ungrounded;
 use ix_common::address::Address;
 use ix_common::env::{Env as LeanEnv, Name};
@@ -63,7 +70,7 @@ use ixon::CompileError;
 /// per-phase timings and scheduler progress. `IX_COMPILE_DBG=1` (the
 /// Lean driver's phase-attribution knob) is accepted as an alias so one
 /// flag lights up both sides of the pipeline.
-pub(super) static IX_VERBOSE: LazyLock<bool> = LazyLock::new(|| {
+pub(crate) static IX_VERBOSE: LazyLock<bool> = LazyLock::new(|| {
   std::env::var("IX_VERBOSE").is_ok() || std::env::var("IX_COMPILE_DBG").is_ok()
 });
 
@@ -155,6 +162,25 @@ pub fn compile_env_with_profile(
   options: CompileOptions,
   profile: Option<&ixon::resource::addressed::Profile>,
 ) -> Result<CompileState, CompileError> {
+  compile_env_with_scanner(lean_env, options, profile, None)
+}
+
+/// `IX_SETUP_SCAN_CHECK=1`: when the compile runs its setup scan through
+/// a [`ConstScanner`], also run the decoding [`setup_scan`] and fail the
+/// compile unless every output is identical. A validation knob: the
+/// second scan decodes the whole environment.
+static IX_SETUP_SCAN_CHECK: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_SETUP_SCAN_CHECK").as_deref() == Ok("1"));
+
+/// [`compile_env_with_profile`] whose setup scan reads each constant
+/// through `scanner` (see [`setup_scan_with`]) instead of decoding it.
+/// The ffi crate passes a scanner that walks the Lean objects directly.
+pub fn compile_env_with_scanner(
+  lean_env: &Arc<LeanEnv>,
+  options: CompileOptions,
+  profile: Option<&ixon::resource::addressed::Profile>,
+  scanner: Option<&dyn ConstScanner>,
+) -> Result<CompileState, CompileError> {
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
   // The sharing limits of the whole run, read once: an invalid
   // `IX_SHARING_LIMITS` fails the compile here, before any block is
@@ -163,10 +189,40 @@ pub fn compile_env_with_profile(
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
-  // groups in one decode per constant — the env decodes lazily, so
-  // each additional full sweep would decode every constant again.
+  // groups in one pass per constant — the env decodes lazily, so each
+  // additional full sweep would decode every constant again. A scanner
+  // reads the source objects without decoding them at all.
   let phase_start = Instant::now();
-  let scan = setup_scan(lean_env.as_ref());
+  let scan = match scanner {
+    Some(scanner) => {
+      let scan = setup_scan_with(lean_env.as_ref(), scanner);
+      if *IX_SETUP_SCAN_CHECK {
+        let check_start = Instant::now();
+        let reference = setup_scan(lean_env.as_ref());
+        compare_setup_scans(&scan, &reference).map_err(|diff| {
+          CompileError::UnsupportedExpr {
+            desc: format!("IX_SETUP_SCAN_CHECK: setup scans differ: {diff}"),
+          }
+        })?;
+        eprintln!(
+          "[compile_env] IX_SETUP_SCAN_CHECK: identical to the decoding scan \
+           ({} out_refs, {} in_refs, {} edges, {} ungrounded, {} groups, \
+           {} source contracts, semantic {:?}; reference scan {:.2}s)",
+          scan.graph.out_refs.len(),
+          scan.graph.in_refs.len(),
+          scan.graph.out_refs.values().map(NameSet::len).sum::<usize>(),
+          scan.immediate_ungrounded.len(),
+          scan.ind_groups.len(),
+          scan.source_contracts.len(),
+          scan.semantic_sources.as_ref().map(Vec::len),
+          check_start.elapsed().as_secs_f32(),
+        );
+      }
+      scanner.release();
+      scan
+    },
+    None => setup_scan(lean_env.as_ref()),
+  };
   let semantic_sources = scan.semantic_sources?;
   if let Some(name) =
     scan.source_contracts.iter().min_by_key(|name| name.pretty())
