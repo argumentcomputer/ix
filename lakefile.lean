@@ -369,13 +369,6 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- `kernel-check-ixe` with driver-side optimization switches (load mode,
-worker-thread lane, persistent mark, two-phase pool), for measurement only
-(`Benchmarks.Kernel.CheckIxeOpt`, untrusted). -/
-lean_exe «kernel-check-ixe-opt» where
-  root := `Benchmarks.Kernel.CheckIxeOpt
-  moreLinkObjs := #[ix_rs]
-
 /-- Regenerates `Ix/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
