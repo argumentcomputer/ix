@@ -3140,8 +3140,8 @@ fn knapsack_cells_limit() {
 #[test]
 fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
   use super::dict::{
-    Evaluation, IncrementalCosts, Materializer, ReadEdges, all_costs,
-    materialize,
+    Evaluation, IncrementalCosts, LazyCosts, Materializer, ReadEdges,
+    all_costs, materialize,
   };
   let mut rng = Rng(97);
   let mut cases: Vec<Vec<E>> =
@@ -3150,7 +3150,7 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
     cases.push(gen_search_roots(&mut rng));
     cases.push(gen_spines(&mut rng));
   }
-  let (mut steps, mut materialized) = (0u64, 0u64);
+  let (mut steps, mut materialized, mut lazy_steps) = (0u64, 0u64, 0u64);
   for (i, roots) in cases.iter().enumerate() {
     if roots.is_empty() {
       continue;
@@ -3174,6 +3174,10 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
       &edges,
       Evaluation::new(nodes, &own, &dict),
     );
+    let base = Evaluation::new(nodes, &own, &dict);
+    let lazy_applies = LazyCosts::applies(&base);
+    let mut lazy = LazyCosts::new(nodes, &own, &edges, base, &dict);
+    let all: Vec<TermId> = (0..n as TermId).collect();
     let mut mat = Materializer::new(n);
     let mut index = rng.below(20);
     for (step, &t) in terms.iter().enumerate() {
@@ -3185,6 +3189,23 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
       let full = all_costs(nodes, &own, &dict, &mut w);
       assert_eq!(eval.costs(), &full[..], "case {i} step {step}");
       assert_eq!(eval.work(), w, "case {i} step {step}");
+      if lazy_applies {
+        lazy.add(t, &dict);
+        assert_eq!(lazy.work(), w, "lazy case {i} step {step}");
+        // Some steps prepare one target, others every term.
+        let targets: &[TermId] =
+          if step % 4 == 3 { &all } else { std::slice::from_ref(&t) };
+        lazy.prepare(targets, &dict);
+        for &x in targets {
+          assert_eq!(
+            lazy.costs()[x as usize],
+            full[x as usize],
+            "lazy case {i} step {step}"
+          );
+        }
+        assert_eq!(lazy.work(), w, "lazy case {i} step {step}");
+        lazy_steps += 1;
+      }
       steps += 1;
       if step % 3 == 0 || step + 1 == terms.len() {
         let mut targets =
@@ -3211,7 +3232,7 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
   eprintln!(
     "incremental evaluation: {steps} steps, {materialized} materializations"
   );
-  assert!(steps > 1000 && materialized > 300);
+  assert!(steps > 1000 && materialized > 300 && lazy_steps > 1000);
 }
 
 /// Replace one random leaf of `e` (a Share index or a variable) by a

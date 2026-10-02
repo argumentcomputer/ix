@@ -497,6 +497,203 @@ impl<'a> IncrementalCosts<'a> {
   }
 }
 
+/// The phase-3 evaluation of a growing dictionary that evaluates a term only
+/// when its cost or its work is needed, with the work count of a full
+/// [`all_costs`] evaluation of the current dictionary at every step.
+///
+/// **Work.** [`eval_node`] counts 1 for a term plus, for an App/Lam/All term
+/// `t`, one per telescope option [`scan_telescope`] visits. When no term of
+/// `t`'s spine (`t` and its same-family successors) is available, the scan
+/// cannot stop before the natural end: no head is found before it and `t`
+/// has no Share, so the bound it compares with, `min(best, share)`, stays
+/// [`Len::OVERFLOW`], which no unsaturated length reaches. Its work is then
+/// `1 + spine length` whatever the costs, and a non-telescope term's work is
+/// always 1. Only the telescope terms with an available term on their spine
+/// (`spined`; the set only grows) can have cost-dependent work; they are
+/// evaluated again at every step where one of their inputs may have
+/// changed. Every other term's last recorded work is its current work, so
+/// the sum of the recorded work is the full evaluation's count. Saturation
+/// is excluded up front ([`LazyCosts::applies`]): every cost of the empty
+/// dictionary is below `2^62`, costs only decrease as terms become
+/// available, and every partial length of a scan is at most the term's cost
+/// of the empty dictionary plus a header and 2.
+///
+/// **Costs.** When a term becomes available, it and all its ancestors are
+/// marked stale (the stale set is closed upward), and a stale term is
+/// evaluated again only when it is needed: before a materialization, every
+/// stale descendant of the targets (children first, so its inputs are
+/// current), and every stale spined term at each step. Evaluating a term
+/// from current inputs gives what a full evaluation gives.
+pub(crate) struct LazyCosts<'a> {
+  nodes: &'a [Node],
+  own: &'a [Len],
+  edges: &'a ReadEdges,
+  eval: Evaluation,
+  stale: Vec<bool>,
+  spined: Vec<bool>,
+  /// Scratch of `ensure`: visited marks of the current call.
+  mark: Vec<u32>,
+  epoch: u32,
+  stack: Vec<TermId>,
+  order: Vec<(TermId, bool)>,
+}
+
+impl<'a> LazyCosts<'a> {
+  /// Whether the work argument applies: every cost of the empty dictionary
+  /// (`base`) is below `2^62`.
+  pub(crate) fn applies(base: &Evaluation) -> bool {
+    base.costs.iter().all(|c| c.raw() < 1 << 62)
+  }
+
+  /// Continue from `eval`, the full evaluation of `widths`.
+  pub(crate) fn new<W: Widths>(
+    nodes: &'a [Node],
+    own: &'a [Len],
+    edges: &'a ReadEdges,
+    eval: Evaluation,
+    widths: &W,
+  ) -> Self {
+    let n = nodes.len();
+    // `reach[t]`: `t` or a same-family successor on its spine is available.
+    let mut reach = vec![false; n];
+    let mut spined = vec![false; n];
+    for t in 0..n {
+      let tid = TermId::try_from(t).unwrap_or(TermId::MAX);
+      let avail = widths.width(tid).is_some();
+      if let Some((_, next)) = spine_parts(&nodes[t]) {
+        let same = nodes[ix(next)].family() == nodes[t].family();
+        reach[t] = avail || (same && reach[ix(next)]);
+        spined[t] = reach[t];
+      } else {
+        reach[t] = avail;
+      }
+    }
+    LazyCosts {
+      nodes,
+      own,
+      edges,
+      eval,
+      stale: vec![false; n],
+      spined,
+      mark: vec![0; n],
+      epoch: 0,
+      stack: Vec::new(),
+      order: Vec::new(),
+    }
+  }
+
+  /// `C_M` of every term that is not stale; [`LazyCosts::prepare`] makes the
+  /// descendants of targets current.
+  pub(crate) fn costs(&self) -> &[Len] {
+    &self.eval.costs
+  }
+
+  /// The work [`all_costs`] counts for the current dictionary (saturating).
+  pub(crate) fn work(&self) -> u64 {
+    self.eval.work()
+  }
+
+  /// Make the costs of `targets` and of all their descendants current.
+  pub(crate) fn prepare<W: Widths>(&mut self, targets: &[TermId], widths: &W) {
+    for &t in targets {
+      self.ensure(t, widths);
+    }
+  }
+
+  /// `widths` is the previous dictionary with `t` added.
+  pub(crate) fn add<W: Widths>(&mut self, t: TermId, widths: &W) {
+    let nodes = self.nodes;
+    // `t` and every ancestor become stale.
+    let mut due: Vec<TermId> = Vec::new();
+    self.stack.clear();
+    if !self.stale[ix(t)] {
+      self.stale[ix(t)] = true;
+      self.stack.push(t);
+    }
+    while let Some(x) = self.stack.pop() {
+      if self.spined[ix(x)] {
+        due.push(x);
+      }
+      for &(p, _) in self.edges.of(ix(x)) {
+        if !self.stale[ix(p)] {
+          self.stale[ix(p)] = true;
+          self.stack.push(p);
+        }
+      }
+    }
+    // `t` and the terms whose spine reaches it are spined from now on. The
+    // spined set is closed under spine predecessors, so the walk stops at a
+    // term that already is.
+    self.stack.clear();
+    if spine_parts(&nodes[ix(t)]).is_some() && !self.spined[ix(t)] {
+      self.spined[ix(t)] = true;
+      self.stack.push(t);
+    }
+    while let Some(x) = self.stack.pop() {
+      due.push(x);
+      for &(p, f) in self.edges.of(ix(x)) {
+        if f & READS_SPINE != 0 && !self.spined[ix(p)] {
+          self.spined[ix(p)] = true;
+          self.stack.push(p);
+        }
+      }
+    }
+    for x in due {
+      self.ensure(x, widths);
+    }
+  }
+
+  /// Evaluate the stale terms among `x` and its descendants, children
+  /// first. The stale set is closed upward, so they are reached through
+  /// stale terms only.
+  fn ensure<W: Widths>(&mut self, x: TermId, widths: &W) {
+    if !self.stale[ix(x)] {
+      return;
+    }
+    if self.epoch == u32::MAX {
+      self.mark.fill(0);
+      self.epoch = 0;
+    }
+    self.epoch += 1;
+    let ep = self.epoch;
+    let nodes = self.nodes;
+    // Post-order over the stale region: a term is evaluated after all its
+    // stale descendants (which its evaluation may read). A term popped again
+    // after its first visit is done: it cannot be its own descendant.
+    let mut post: Vec<(TermId, bool)> = std::mem::take(&mut self.order);
+    post.clear();
+    post.push((x, false));
+    while let Some((y, expanded)) = post.pop() {
+      let yi = ix(y);
+      if !expanded {
+        if self.mark[yi] == ep {
+          continue;
+        }
+        self.mark[yi] = ep;
+        post.push((y, true));
+        for &c in nodes[yi].children().as_slice() {
+          if self.stale[ix(c)] && self.mark[ix(c)] != ep {
+            post.push((c, false));
+          }
+        }
+        continue;
+      }
+      let mut w = 0u64;
+      let c = {
+        let costs = &self.eval.costs;
+        eval_node(nodes, self.own, y, widths, &|z| costs[ix(z)], false, &mut w)
+          .0
+      };
+      let ev = &mut self.eval;
+      ev.total = ev.total - u128::from(ev.term_work[yi]) + u128::from(w);
+      ev.term_work[yi] = w;
+      ev.costs[yi] = c;
+      self.stale[yi] = false;
+    }
+    self.order = post;
+  }
+}
+
 /// Side child and spine successor of an App/Lam/All node.
 fn spine_parts(node: &Node) -> Option<(TermId, TermId)> {
   match node {
@@ -645,11 +842,8 @@ pub(crate) struct Materializer {
   /// `stamp[t] == epoch`: `t` is needed in the current call.
   stamp: Vec<u32>,
   epoch: u32,
-  choice: Vec<Choice>,
   rep: Vec<Option<Arc<Expr>>>,
   heap: std::collections::BinaryHeap<TermId>,
-  /// Needed terms in decision (decreasing) order.
-  decided: Vec<TermId>,
 }
 
 impl Materializer {
@@ -657,10 +851,8 @@ impl Materializer {
     Materializer {
       stamp: vec![0; n],
       epoch: 0,
-      choice: vec![Choice::Share; n],
       rep: vec![None; n],
       heap: std::collections::BinaryHeap::new(),
-      decided: Vec::new(),
     }
   }
 
@@ -673,6 +865,7 @@ impl Materializer {
   }
 
   /// [`materialize`]`(nodes, own, dict, costs, targets, work)`.
+  #[cfg(test)]
   pub(crate) fn run<D: Indices>(
     &mut self,
     nodes: &[Node],
@@ -682,23 +875,43 @@ impl Materializer {
     targets: &[TermId],
     work: &mut u64,
   ) -> Result<Vec<Arc<Expr>>, SharingError> {
+    let plan = self.decide(nodes, own, dict, costs, targets, work)?;
+    self.build(nodes, dict, &plan)
+  }
+
+  /// The decisions of [`Materializer::run`] (with all its work) without
+  /// building the expressions: the needed terms with their choices, and the
+  /// number of expression nodes [`Materializer::build`] allocates for them.
+  pub(crate) fn decide<D: Indices>(
+    &mut self,
+    nodes: &[Node],
+    own: &[Len],
+    dict: &D,
+    costs: &[Len],
+    targets: &[TermId],
+    work: &mut u64,
+  ) -> Result<Plan, SharingError> {
     if self.epoch == u32::MAX {
       self.stamp.fill(0);
       self.epoch = 0;
     }
     self.epoch += 1;
     self.heap.clear();
-    self.decided.clear();
     for &t in targets {
       self.need(t);
     }
+    let mut plan =
+      Plan { decided: Vec::new(), targets: targets.to_vec(), nodes: 0 };
     // Top-down: decide every needed standalone occurrence.
     while let Some(tid) = self.heap.pop() {
       let t = ix(tid);
       let (_, ch) =
         eval_node(nodes, own, tid, dict, &|x| costs[ix(x)], true, work);
-      self.choice[t] = ch;
-      self.decided.push(tid);
+      plan.decided.push((tid, ch));
+      match ch {
+        Choice::Share | Choice::Inline => plan.nodes += 1,
+        Choice::Telescope(j) => plan.nodes += j,
+      }
       match ch {
         Choice::Share => {},
         Choice::Inline => {
@@ -723,20 +936,33 @@ impl Materializer {
           }
           if nodes[ix(cur)].family() != nodes[t].family() {
             self.need(cur);
+          } else {
+            // The cut: a Share of the spine node where the telescope stops.
+            plan.nodes += 1;
           }
         },
       }
     }
+    Ok(plan)
+  }
+
+  /// Build the expressions of `plan` (from [`Materializer::decide`] under a
+  /// dictionary with the same indices as `dict` for the terms it shares).
+  pub(crate) fn build<D: Indices>(
+    &mut self,
+    nodes: &[Node],
+    dict: &D,
+    plan: &Plan,
+  ) -> Result<Vec<Arc<Expr>>, SharingError> {
     // Bottom-up: build each needed standalone representation once.
     let get = |rep: &[Option<Arc<Expr>>], c: TermId| {
       rep.get(ix(c)).cloned().flatten().ok_or_else(|| internal("missing child"))
     };
-    for k in (0..self.decided.len()).rev() {
-      let tid = self.decided[k];
+    for &(tid, ch) in plan.decided.iter().rev() {
       let t = ix(tid);
       let node = &nodes[t];
       let rep = &self.rep;
-      let e = match self.choice[t] {
+      let e = match ch {
         Choice::Share => Arc::new(Expr::Share(
           dict.index(tid).ok_or_else(|| internal("share index"))?,
         )),
@@ -780,12 +1006,23 @@ impl Materializer {
       self.rep[t] = Some(e);
     }
     let out: Result<Vec<Arc<Expr>>, SharingError> =
-      targets.iter().map(|&t| get(&self.rep, t)).collect();
-    for &t in &self.decided {
+      plan.targets.iter().map(|&t| get(&self.rep, t)).collect();
+    for &(t, _) in &plan.decided {
       self.rep[ix(t)] = None;
     }
     out
   }
+}
+
+/// The decisions of one materialization ([`Materializer::decide`]): the
+/// needed terms in decision (decreasing) order with their choices, the
+/// targets, and the number of expression nodes the build allocates (one
+/// per Share or inline node, one per spine node of a telescope and one for
+/// a telescope's cut Share).
+pub(crate) struct Plan {
+  decided: Vec<(TermId, Choice)>,
+  targets: Vec<TermId>,
+  pub(crate) nodes: u64,
 }
 
 /// `C_M(t)` for a fixed dictionary (§5).

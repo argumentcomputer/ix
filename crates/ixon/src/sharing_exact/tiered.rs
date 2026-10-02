@@ -35,8 +35,10 @@
 //! **Phase 3 (re-materialization).** Every entry is re-encoded with `C_M`
 //! under the entries before it, priced by `width_at(index)`, and the roots
 //! under all entries; byte-least ties. The result is checked to be no
-//! longer (in layout bytes) than phase 1, and is serialized, measured and
-//! re-expanded.
+//! longer (in layout bytes) than phase 1. The selection needs only the
+//! lengths, so only the returned candidate's expressions are built; they are
+//! measured and re-expanded (every candidate's limits are still checked with
+//! the same counts; see [`Candidate`]).
 
 use std::sync::Arc;
 
@@ -45,7 +47,7 @@ use rustc_hash::FxHashMap;
 use super::cost::{Len, exprs_len_with, tag0_len};
 use super::dag::{SharingDag, TermId, ix};
 use super::dict::{
-  Evaluation, IncrementalCosts, Indices, Materializer, Widths,
+  Evaluation, IncrementalCosts, Indices, LazyCosts, Materializer, Plan, Widths,
 };
 use super::prof::{self, Phase};
 use super::uniform::{
@@ -370,6 +372,44 @@ pub fn first_tier(
   }
 }
 
+/// The phase-3 evaluation of the growing dictionary: [`LazyCosts`] when its
+/// work argument applies, otherwise [`IncrementalCosts`]. Both give the
+/// costs of the descendants of prepared targets and the work count of a
+/// full evaluation of the current dictionary.
+enum Phase3Eval<'a> {
+  Lazy(LazyCosts<'a>),
+  Eager(IncrementalCosts<'a>),
+}
+
+impl Phase3Eval<'_> {
+  fn add<W: Widths>(&mut self, t: TermId, widths: &W) {
+    match self {
+      Phase3Eval::Lazy(e) => e.add(t, widths),
+      Phase3Eval::Eager(e) => e.add(t, widths),
+    }
+  }
+
+  fn prepare<W: Widths>(&mut self, targets: &[TermId], widths: &W) {
+    if let Phase3Eval::Lazy(e) = self {
+      e.prepare(targets, widths);
+    }
+  }
+
+  fn costs(&self) -> &[Len] {
+    match self {
+      Phase3Eval::Lazy(e) => e.costs(),
+      Phase3Eval::Eager(e) => e.costs(),
+    }
+  }
+
+  fn work(&self) -> u64 {
+    match self {
+      Phase3Eval::Lazy(e) => e.work(),
+      Phase3Eval::Eager(e) => e.work(),
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Result and driver
 // ---------------------------------------------------------------------------
@@ -440,35 +480,137 @@ pub(crate) fn tiered(
     let mut meter = Meter::with_parallelism(limits, par);
     tiered_at(layout, dag, &prep, &mut meter, w)
   };
-  let candidates: Vec<Result<TieredSharingResult, SharingError>> =
-    if par.widths <= 1 {
-      // The sequential reference stops at the first failing width.
-      let mut v = Vec::with_capacity(3);
-      for w in 1..=3 {
-        v.push(Ok(run(w)?));
-      }
-      v
-    } else {
-      super::par::map_ranges(3, par.widths, |r| {
-        r.map(|i| run(len64(i) + 1)).collect()
-      })
-    };
-  let mut best: Option<TieredSharingResult> = None;
+  let candidates: Vec<Result<Candidate, SharingError>> = if par.widths <= 1 {
+    // The sequential reference stops at the first failing width.
+    let mut v = Vec::with_capacity(3);
+    for w in 1..=3 {
+      v.push(Ok(run(w)?));
+    }
+    v
+  } else {
+    super::par::map_ranges(3, par.widths, |r| {
+      r.map(|i| run(len64(i) + 1)).collect()
+    })
+  };
+  let mut best: Option<Candidate> = None;
   let mut lengths = Vec::with_capacity(3);
   let mut meters = Vec::with_capacity(3);
   for (w, c) in (1..=3).zip(candidates) {
     // In width order: the error of the lowest failing width, as above.
     let c = c?;
-    lengths.push((w, c.stats.phase3_layout_bytes));
-    meters.extend_from_slice(&c.stats.candidate_meters);
-    if best.as_ref().is_none_or(|b| tiered_better(&c, b)) {
+    lengths.push((w, c.result.stats.phase3_layout_bytes));
+    meters.extend_from_slice(&c.result.stats.candidate_meters);
+    if best.as_ref().is_none_or(|b| tiered_better(&c.result, &b.result)) {
       best = Some(c);
     }
   }
-  let mut best = best.ok_or_else(|| internal("no tiered candidate"))?;
+  let best = best.ok_or_else(|| internal("no tiered candidate"))?;
+  let mut best = finish(layout, dag, best)?;
   best.stats.candidate_lengths = lengths;
   best.stats.candidate_meters = meters;
   Ok(best)
+}
+
+/// A candidate before its expressions are built: the result with empty
+/// `roots` and `sharing`, and the phase-3 decisions of every task (entry
+/// `j` for `j < k`, then the roots).
+///
+/// Only the returned candidate is built ([`finish`]): the selection reads
+/// the final length, the width and the stored set, which phase 3 computes
+/// from the costs. Every limit of a candidate is still checked in
+/// [`tiered_at`], in the same order and with the same counts (the work of
+/// every task, the input nodes of the re-expansion check, which are the
+/// expression nodes the build allocates, and the output length, which the
+/// checks of [`finish`] prove equal to the evaluated length); the internal
+/// consistency checks of the built expressions run on the returned
+/// candidate.
+pub(crate) struct Candidate {
+  result: TieredSharingResult,
+  plans: Vec<Plan>,
+}
+
+/// Build the expressions of a candidate and check them: the layout price
+/// against the evaluation, the re-expansion (same DAG, entries expanding to
+/// the stored terms, as many expression nodes as counted) and the real
+/// length.
+fn finish(
+  layout: ShareLayout,
+  dag: &SharingDag,
+  cand: Candidate,
+) -> Result<TieredSharingResult, SharingError> {
+  let Candidate { mut result, plans } = cand;
+  let nodes = dag.nodes();
+  let p = prof::scope(Phase::RematerializeBuild);
+  let order = &result.table_terms;
+  let k_entries = order.len();
+  // Every Share of a task names an entry before it, whose index is its
+  // position in the final order.
+  let mut dict = LayoutIndex { index: vec![None; nodes.len()], layout };
+  for (i, &t) in order.iter().enumerate() {
+    dict.index[ix(t)] = Some(len64(i));
+  }
+  let mut mat = Materializer::new(nodes.len());
+  let mut entries = Vec::with_capacity(k_entries);
+  let mut roots = Vec::new();
+  let mut allocated = 0u64;
+  for (j, plan) in plans.iter().enumerate() {
+    let mut es = mat.build(nodes, &dict, plan)?;
+    allocated = allocated.saturating_add(plan.nodes);
+    if j < k_entries {
+      entries.push(es.pop().ok_or_else(|| internal("missing entry"))?);
+    } else {
+      roots = es;
+    }
+  }
+  drop(p);
+  let _p = prof::scope(Phase::RematerializeCheck);
+  let predicted = result.model_len;
+  // The layout price and the re-expansion check in one walk; when it
+  // reports a mismatch or an overflow, the separate checks run.
+  let price = |i: u64| layout.width_at(i);
+  let fused = dag.check_and_measure(order, &entries, &roots, &price);
+  let priced = match fused {
+    Some((_, len)) => len,
+    None => layout_bytes(layout, &entries, &roots).ok_or_else(overflow)?,
+  };
+  if priced != predicted {
+    return Err(internal(format!(
+      "layout length {priced} differs from the evaluation {predicted}"
+    )));
+  }
+  match fused {
+    Some((visited, _)) => {
+      if visited != allocated {
+        return Err(internal(format!(
+          "the re-materialized expressions have {visited} nodes, {allocated} counted"
+        )));
+      }
+    },
+    None => dag.check_reexpansion(
+      order,
+      &entries,
+      &roots,
+      &ExactSharingLimits::unbounded(),
+      "re-materialized encoding changes the expanded AST",
+      "re-materialized entries do not expand to the stored terms",
+    )?,
+  }
+  // The real length: Shares priced by the current wire codec, every other
+  // header as written by `put_expr`. The TagN layout prices a Share at its
+  // wire width (`TagN::byte_width(4, i)`), so this is `priced`.
+  let measured = match layout {
+    ShareLayout::TagN => priced,
+  };
+  if layout == ShareLayout::wire() && measured != predicted {
+    return Err(internal(format!(
+      "serialized length {measured} differs from the wire-layout price \
+       {predicted}"
+    )));
+  }
+  result.roots = roots;
+  result.sharing = entries;
+  result.variable_len = measured;
+  Ok(result)
 }
 
 /// Whether candidate `a` beats `b` (Lean `tieredBetter`): fewer final layout
@@ -489,7 +631,7 @@ fn tiered_at(
   prep: &DagPrep,
   meter: &mut Meter<'_>,
   w: u64,
-) -> Result<TieredSharingResult, SharingError> {
+) -> Result<Candidate, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
   let p = prof::scope(Phase::Prep);
@@ -575,11 +717,11 @@ fn tiered_at(
   //
   // Task `j` is charged the work of a full evaluation `all_costs` of the
   // dictionary `order[..j]` plus its materialization. The evaluation is
-  // maintained incrementally from one prefix to the next
-  // (`IncrementalCosts`), which yields the same costs and the same work
-  // count as evaluating every prefix from scratch; the materialization
-  // (`Materializer`) makes the same choices with the same work as
-  // `materialize`.
+  // maintained from one prefix to the next (`LazyCosts`, or
+  // `IncrementalCosts` when its work argument does not apply), which yields
+  // the same costs for the materialized terms and the same work count as
+  // evaluating every prefix from scratch; the materialization decisions
+  // (`Materializer::decide`) are those of `materialize`, with its work.
   let k_entries = order.len();
   let phase3 = |range: std::ops::Range<usize>| {
     let p = prof::scope(Phase::RematerializeCosts);
@@ -594,10 +736,14 @@ fn tiered_at(
     } else {
       Evaluation::new(nodes, own, &dict)
     };
-    let mut eval = IncrementalCosts::new(nodes, own, &prep.edges, start);
+    let mut eval = if LazyCosts::applies(&prep.base) {
+      Phase3Eval::Lazy(LazyCosts::new(nodes, own, &prep.edges, start, &dict))
+    } else {
+      Phase3Eval::Eager(IncrementalCosts::new(nodes, own, &prep.edges, start))
+    };
     let mut mat = Materializer::new(n);
     drop(p);
-    let mut out: Vec<Result<(Vec<Arc<Expr>>, Len, u64), SharingError>> =
+    let mut out: Vec<Result<(Plan, Len, u64), SharingError>> =
       Vec::with_capacity(range.len());
     for j in range.clone() {
       if j > range.start {
@@ -607,86 +753,57 @@ fn tiered_at(
         eval.add(t, &dict);
         drop(p);
       }
+      let target = order.get(j).map(std::slice::from_ref);
+      let p = prof::scope(Phase::RematerializeCosts);
+      eval.prepare(target.unwrap_or(dag.roots()), &dict);
+      drop(p);
       let _p = prof::scope(Phase::RematerializeBuild);
       let mut w = eval.work();
       let costs = eval.costs();
       if let Some(&t) = order.get(j) {
-        let r = mat.run(nodes, own, &dict, costs, &[t], &mut w);
-        out.push(r.map(|e| (e, costs[ix(t)], w)));
+        let r = mat.decide(nodes, own, &dict, costs, &[t], &mut w);
+        out.push(r.map(|plan| (plan, costs[ix(t)], w)));
       } else {
         let mut c = Len::ZERO;
         for &r in dag.roots() {
           c = c.plus(costs[ix(r)]);
         }
-        let r = mat.run(nodes, own, &dict, costs, dag.roots(), &mut w);
-        out.push(r.map(|rs| (rs, c, w)));
+        let r = mat.decide(nodes, own, &dict, costs, dag.roots(), &mut w);
+        out.push(r.map(|plan| (plan, c, w)));
       }
     }
     out
   };
   let tasks =
     super::par::map_ranges(k_entries + 1, meter.parallel.materialize, phase3);
-  let mut entries = Vec::with_capacity(k_entries);
-  let mut roots = Vec::new();
+  let mut plans = Vec::with_capacity(k_entries + 1);
   let mut predicted = Len::new(tag0_len(len64(k_entries)));
   // The work counted before phase 3 is charged with the first task, as the
   // sequential loop does.
   let mut carried = work;
-  for (j, task) in tasks.into_iter().enumerate() {
-    let (mut es, cost, w) = task?;
-    if j < k_entries {
-      entries.push(es.pop().ok_or_else(|| internal("missing entry"))?);
-    } else {
-      roots = es;
-    }
+  for task in tasks {
+    let (plan, cost, w) = task?;
+    plans.push(plan);
     predicted = predicted.plus(cost);
     meter.work(carried.saturating_add(w))?;
     carried = 0;
   }
   let _p = prof::scope(Phase::RematerializeCheck);
   let predicted = predicted.exact().ok_or_else(overflow)?;
-  // The layout price and the re-expansion check in one walk; when it
-  // reports a mismatch or an overflow, the separate checks run in their
-  // order.
-  let price = |i: u64| layout.width_at(i);
-  let fused = dag.check_and_measure(&order, &entries, &roots, &price);
-  let priced = match fused {
-    Some((_, len)) => len,
-    None => layout_bytes(layout, &entries, &roots).ok_or_else(overflow)?,
-  };
-  if priced != predicted {
-    return Err(internal(format!(
-      "layout length {priced} differs from the evaluation {predicted}"
-    )));
-  }
   if predicted > phase1_layout {
     return Err(internal(format!(
       "re-materialization {predicted} is longer than phase 1 {phase1_layout}"
     )));
   }
-  match fused {
-    Some((visited, _)) => dag.check_input_nodes(visited, meter.limits())?,
-    None => dag.check_reexpansion(
-      &order,
-      &entries,
-      &roots,
-      meter.limits(),
-      "re-materialized encoding changes the expanded AST",
-      "re-materialized entries do not expand to the stored terms",
-    )?,
-  }
-  // The real length: Shares priced by the current wire codec, every other
-  // header as written by `put_expr`. The TagN layout prices a Share at its
-  // wire width (`TagN::byte_width(4, i)`), so this is `priced`.
-  let measured = match layout {
-    ShareLayout::TagN => priced,
-  };
-  if layout == ShareLayout::wire() && measured != predicted {
-    return Err(internal(format!(
-      "serialized length {measured} differs from the wire-layout price \
-       {predicted}"
-    )));
-  }
+  // The input nodes the re-expansion check of the built expressions
+  // charges: one per expression node, all of them pointer-distinct (every
+  // task builds fresh nodes).
+  let allocated =
+    plans.iter().fold(0u64, |acc, plan| acc.saturating_add(plan.nodes));
+  dag.check_input_nodes(allocated, meter.limits())?;
+  // The real length equals the evaluated one (checked when the candidate
+  // is built).
+  let measured = predicted;
   meter.output(measured)?;
   let stats = TieredStats {
     layout,
@@ -710,16 +827,17 @@ fn tiered_at(
     savings: phase1_layout - predicted,
   };
   let unshared_len = u.unshared_len;
-  Ok(TieredSharingResult {
-    roots,
-    sharing: entries,
+  let result = TieredSharingResult {
+    roots: Vec::new(),
+    sharing: Vec::new(),
     table_terms: order,
     model_len: predicted,
     variable_len: measured,
     unshared_len,
     phase1: u,
     stats,
-  })
+  };
+  Ok(Candidate { result, plans })
 }
 
 /// Tiered canonical sharing of fully expanded roots under a layout.
@@ -770,7 +888,9 @@ pub(crate) fn normalize_constant_sharing_tiered_at_width(
   w: u64,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   normalize_tiered_with(c, limits, |dag| {
-    tiered_at(layout, dag, &DagPrep::new(dag), &mut Meter::new(limits), w)
+    let prep = DagPrep::new(dag);
+    let c = tiered_at(layout, dag, &prep, &mut Meter::new(limits), w)?;
+    finish(layout, dag, c)
   })
 }
 
