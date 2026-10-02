@@ -31,6 +31,13 @@ pub struct Profile {
   pub nat_type: Option<Address>,
   pub string_type: Option<Address>,
   pub limits: Limits,
+  /// Behavior: recursor case splits, case wrappers and beta-redexes (see
+  /// `Program::cases`).
+  pub cases: bool,
+  /// Admitted resource interfaces: per declaration, one packed input/result
+  /// contract byte (`pack_all_contract`) for each leading arrow, replacing
+  /// the declared contracts for callers. Each must also be an assumption.
+  pub interfaces: Vec<(Address, Vec<u8>)>,
 }
 
 impl Profile {
@@ -50,6 +57,26 @@ impl Profile {
     }
     if self.limits.depth == 0 || self.limits.steps == 0 {
       return Err("resource profile: invalid checker limits".into());
+    }
+    if self.interfaces.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+      return Err(
+        "resource profile: address lists must be strictly increasing".into(),
+      );
+    }
+    for (address, mask) in &self.interfaces {
+      if !self.assumptions.contains(address) {
+        return Err(
+          "resource profile: an admitted interface must be an explicit assumption"
+            .into(),
+        );
+      }
+      if mask.is_empty() {
+        return Err("resource profile: empty interface".into());
+      }
+      if mask.iter().any(|b| crate::contract::unpack_all_contract(*b).is_none())
+      {
+        return Err("resource profile: invalid interface contract".into());
+      }
     }
     Ok(())
   }
@@ -73,6 +100,16 @@ impl Profile {
     }
     TagN::put(0, 0, self.limits.depth as u64, &mut bytes);
     TagN::put(0, 0, self.limits.steps as u64, &mut bytes);
+    // An optional extension, present only when it is not empty.
+    if self.cases || !self.interfaces.is_empty() {
+      TagN::put(0, 0, u64::from(self.cases), &mut bytes);
+      TagN::put(0, 0, self.interfaces.len() as u64, &mut bytes);
+      for (address, mask) in &self.interfaces {
+        bytes.extend_from_slice(address.as_bytes());
+        TagN::put(0, 0, mask.len() as u64, &mut bytes);
+        bytes.extend_from_slice(mask);
+      }
+    }
     bytes
   }
 
@@ -118,7 +155,7 @@ impl Profile {
         _ => Err("resource profile: invalid optional address tag".into()),
       }
     }
-    let profile = Self {
+    let mut profile = Self {
       assumptions: list(&mut bytes)?,
       shareable_types: list(&mut bytes)?,
       choices: list(&mut bytes)?,
@@ -130,9 +167,40 @@ impl Profile {
         steps: usize::try_from(TagN::get(0, &mut bytes)?.value)
           .map_err(|_error| "resource profile: steps overflow")?,
       },
+      cases: false,
+      interfaces: vec![],
     };
     if !bytes.is_empty() {
-      return Err("resource profile: trailing bytes".into());
+      let flags = TagN::get(0, &mut bytes)?.value;
+      if flags > 1 {
+        return Err("resource profile: unknown behavior flags".into());
+      }
+      let count = TagN::get(0, &mut bytes)?.value;
+      if count > (bytes.len() / 33) as u64 {
+        return Err("resource profile: impossible interface count".into());
+      }
+      for _ in 0..count {
+        let (head, tail) = bytes
+          .split_at_checked(32)
+          .ok_or("resource profile: truncated address")?;
+        let address = Address::from_slice(head)
+          .map_err(|_error| "resource profile: invalid address")?;
+        bytes = tail;
+        let length = usize::try_from(TagN::get(0, &mut bytes)?.value)
+          .map_err(|_error| "resource profile: truncated interface")?;
+        let (mask, tail) = bytes
+          .split_at_checked(length)
+          .ok_or("resource profile: truncated interface")?;
+        bytes = tail;
+        profile.interfaces.push((address, mask.to_vec()));
+      }
+      if flags == 0 && profile.interfaces.is_empty() {
+        return Err("resource profile: empty extension".into());
+      }
+      profile.cases = flags == 1;
+      if !bytes.is_empty() {
+        return Err("resource profile: trailing bytes".into());
+      }
     }
     profile.validate()?;
     Ok(profile)
@@ -316,6 +384,77 @@ impl Tables<'_> {
   }
 }
 
+/// The leading binders (fields, then induction hypotheses) of each minor
+/// premise of a recursor type, after its parameters and motives.
+fn recursor_binders(
+  program: &Program,
+  limits: Limits,
+  typ: &Term,
+  skip: usize,
+  minors: usize,
+) -> Result<Vec<usize>, Error> {
+  let mut checker = Checker::new(program, limits);
+  let mut typ = typ.clone();
+  for _ in 0..skip {
+    let unshared = checker.unshare(limits.depth, &typ)?;
+    let Expr::All(_, _, _, body) = unshared.as_ref() else {
+      return Err(Error::Unsupported("recursor telescope"));
+    };
+    typ = body.clone();
+  }
+  let mut result = vec![];
+  for _ in 0..minors {
+    let unshared = checker.unshare(limits.depth, &typ)?;
+    let Expr::All(_, _, domain, body) = unshared.as_ref() else {
+      return Err(Error::Unsupported("recursor telescope"));
+    };
+    let mut count = 0;
+    let mut inner = domain.clone();
+    loop {
+      let unshared = checker.unshare(limits.depth, &inner)?;
+      let Expr::All(_, _, _, b) = unshared.as_ref() else { break };
+      count += 1;
+      inner = b.clone();
+    }
+    result.push(count);
+    typ = body.clone();
+  }
+  Ok(result)
+}
+
+/// Replace the contracts of a type's leading arrows by packed input/result
+/// contract bytes.
+fn overlay(
+  program: &Program,
+  limits: Limits,
+  typ: &Term,
+  mask: &[u8],
+) -> Result<Term, Error> {
+  fn go(
+    checker: &mut Checker<'_>,
+    fuel: usize,
+    typ: &Term,
+    mask: &[u8],
+  ) -> Result<Term, Error> {
+    let Some((byte, rest)) = mask.split_first() else { return Ok(typ.clone()) };
+    let fuel = fuel.checked_sub(1).ok_or(Error::Budget)?;
+    let unshared = checker.unshare(fuel, typ)?;
+    let Expr::All(_, _, domain, body) = unshared.as_ref() else {
+      return Err(Error::Unsupported("interface arrow"));
+    };
+    let (input, result) = crate::contract::unpack_all_contract(*byte)
+      .ok_or(Error::Unsupported("interface contract"))?;
+    Ok(Expr::all_contract(
+      input,
+      result,
+      domain.clone(),
+      go(checker, fuel, body, rest)?,
+    ))
+  }
+  let mut checker = Checker::new(program, limits);
+  go(&mut checker, limits.depth, typ, mask)
+}
+
 fn closed(
   checker: &mut Checker<'_>,
   fuel: usize,
@@ -420,6 +559,7 @@ pub fn prepare(
   let mut pending = vec![];
   let mut groups = vec![];
   let mut field_specs = vec![];
+  let mut recursor_specs: Vec<(Address, Recursor)> = vec![];
   for (address, _) in &entries {
     let constant = &constants[address];
     let parent = address.clone();
@@ -440,12 +580,15 @@ pub fn prepare(
       ConstantInfo::Defn(d) => {
         push(address.clone(), vec![address.clone()], definition(d), vec![])
       },
-      ConstantInfo::Recr(r) => push(
-        address.clone(),
-        vec![address.clone()],
-        recursor(r),
-        r.rules.iter().map(|r| r.rhs.clone()).collect(),
-      ),
+      ConstantInfo::Recr(r) => {
+        recursor_specs.push((address.clone(), r.clone()));
+        push(
+          address.clone(),
+          vec![address.clone()],
+          recursor(r),
+          r.rules.iter().map(|r| r.rhs.clone()).collect(),
+        )
+      },
       ConstantInfo::Axio(a) => push(
         address.clone(),
         vec![],
@@ -484,12 +627,15 @@ pub fn prepare(
             MutConst::Defn(d) => {
               push(addr.clone(), addresses.clone(), definition(d), vec![])
             },
-            MutConst::Recr(r) => push(
-              addr.clone(),
-              addresses.clone(),
-              recursor(r),
-              r.rules.iter().map(|r| r.rhs.clone()).collect(),
-            ),
+            MutConst::Recr(r) => {
+              recursor_specs.push((addr.clone(), r.clone()));
+              push(
+                addr.clone(),
+                addresses.clone(),
+                recursor(r),
+                r.rules.iter().map(|r| r.rhs.clone()).collect(),
+              )
+            },
             MutConst::Indc(ind) => {
               push(
                 addr.clone(),
@@ -651,6 +797,53 @@ pub fn prepare(
   program.shareable_types = shareable.clone();
   program.prop_sort = Some(PROP_SORT);
   program.choices = choices.clone();
+  program.cases = profile.cases;
+  if profile.cases {
+    for (address, r) in &recursor_specs {
+      // Only index-free inductive types: a case on an indexed family needs the
+      // index unification (casts) that this checker's conversion lacks.
+      if r.is_unsafe
+        || r.motives != 1
+        || r.indices != 0
+        || r.minors != r.rules.len() as u64
+      {
+        continue;
+      }
+      let i = index(&indices, address)?;
+      let fields: Vec<usize> =
+        r.rules.iter().map(|rule| rule.fields as usize).collect();
+      let typ = program.declarations[native_index(i)?].typ.clone();
+      if let Ok(binders) = recursor_binders(
+        &program,
+        profile.limits,
+        &typ,
+        (r.params + r.motives) as usize,
+        r.minors as usize,
+      ) && binders.iter().zip(&fields).all(|(b, f)| f <= b)
+      {
+        program.recursors.push(RecursorInfo {
+          index: i,
+          params: r.params as usize,
+          motives: r.motives as usize,
+          minors: r.minors as usize,
+          indices: r.indices as usize,
+          fields,
+          binders,
+        });
+      }
+    }
+  }
+  for (address, mask) in &profile.interfaces {
+    let i = index(&indices, address)?;
+    let typ = program.declarations[native_index(i)?].typ.clone();
+    let overlaid =
+      overlay(&program, profile.limits, &typ, mask).map_err(|_error| {
+        format!(
+          "resource profile: interface does not match the arrows of {address:?}"
+        )
+      })?;
+    program.interfaces.push((i, overlaid));
+  }
   for (typ, ctor, params, count) in field_specs {
     if let Ok(derived) = fields(
       &program,
@@ -680,6 +873,7 @@ pub fn prepare(
         .into_iter()
         .map(native_index)
         .collect::<Result<_, _>>()?,
+      cases: profile.cases,
     },
   })
 }
@@ -1119,6 +1313,106 @@ mod tests {
     (env, duo)
   }
 
+  /// Case-split shapes come from addressed recursors, under a `cases`
+  /// profile: `B` with `e : B` and `f : unit → B`, and `B.rec` in the same
+  /// block. Mirrors the Lean adapter test.
+  #[test]
+  fn case_split_shapes_come_from_addressed_recursors() {
+    let (env, unit) = unit_env();
+    let many = BinderContract::default();
+    let shared = ValueContract::shared();
+    let all = |d: Term, b: Term| Expr::all_contract(many, shared, d, b);
+    let case_type = all(
+      all(Expr::rec(0, vec![]), Expr::sort(0)),
+      all(
+        Expr::app(Expr::var(0), Expr::var(0)),
+        all(
+          all(
+            Expr::reference(0, vec![]),
+            Expr::app(Expr::var(2), Expr::var(0)),
+          ),
+          all(Expr::rec(0, vec![]), Expr::app(Expr::var(3), Expr::var(0))),
+        ),
+      ),
+    );
+    let rule = |fields| RecursorRule {
+      fields,
+      rhs: Expr::lam_contract(many, Expr::sort(0), Expr::var(0)),
+    };
+    let block = store(
+      &env,
+      Constant::with_tables(
+        ConstantInfo::Muts(vec![
+          MutConst::Indc(Inductive {
+            is_unsafe: false,
+            lvls: 0,
+            params: 0,
+            indices: 0,
+            typ: Expr::sort(0),
+            ctors: vec![
+              Constructor {
+                is_unsafe: false,
+                lvls: 0,
+                cidx: 0,
+                params: 0,
+                fields: 0,
+                typ: Expr::rec(0, vec![]),
+              },
+              Constructor {
+                is_unsafe: false,
+                lvls: 0,
+                cidx: 1,
+                params: 0,
+                fields: 1,
+                typ: all(Expr::reference(0, vec![]), Expr::rec(0, vec![])),
+              },
+            ],
+          }),
+          MutConst::Recr(Recursor {
+            k: false,
+            is_unsafe: false,
+            lvls: 0,
+            params: 0,
+            indices: 0,
+            motives: 1,
+            minors: 2,
+            typ: case_type,
+            rules: vec![rule(0), rule(1)],
+          }),
+        ]),
+        vec![],
+        vec![unit.clone()],
+        vec![Univ::succ(Univ::zero())],
+      ),
+    );
+    store(&env, indc_proj_constant(0, block.clone()));
+    store(&env, ctor_proj_constant(0, 0, block.clone()));
+    store(&env, ctor_proj_constant(0, 1, block.clone()));
+    let rec_address = store(&env, recr_proj_constant(1, block));
+    let cases = Profile { cases: true, ..profile(&unit) };
+    let resolved = prepare(&env, &cases).unwrap();
+    let shapes: Vec<_> = resolved
+      .program
+      .recursors
+      .iter()
+      .map(|r| {
+        (
+          resolved.addresses[usize::try_from(r.index).unwrap()] == rec_address,
+          r.params,
+          r.motives,
+          r.minors,
+          r.indices,
+          r.fields.clone(),
+          r.binders.clone(),
+        )
+      })
+      .collect();
+    assert_eq!(shapes, vec![(true, 0, 1, 2, 0, vec![0, 1], vec![0, 1])]);
+    assert!(resolved.program.cases);
+    let ordinary = prepare(&env, &profile(&unit)).unwrap();
+    assert!(ordinary.program.recursors.is_empty() && !ordinary.program.cases);
+  }
+
   #[test]
   fn parameterised_fields_stay_open_over_their_telescope() {
     let (_, unit) = unit_env();
@@ -1185,8 +1479,50 @@ mod tests {
     let mut trailing = bytes.clone();
     trailing.push(0);
     assert!(Profile::from_bytes(&trailing).is_err());
-    let mut wrong_validator = bytes;
+    let mut wrong_validator = bytes.clone();
     wrong_validator[0] ^= 1;
     assert!(Profile::from_bytes(&wrong_validator).is_err());
+    // The optional extension: case behavior and admitted interfaces.
+    let mut extended = p.clone();
+    extended.assumptions = vec![unit.clone()];
+    extended.cases = true;
+    extended.interfaces = vec![(
+      unit.clone(),
+      vec![crate::contract::pack_all_contract(
+        BinderContract {
+          uses: Uses::Linear,
+          value: ValueContract::local_shared(),
+        },
+        ValueContract::shared(),
+      )],
+    )];
+    let hex: String =
+      extended.bytes().iter().map(|b| format!("{b:02x}")).collect();
+    let line =
+      format!("profile-cases\t{}\t{hex}", extended.address().unwrap().hex());
+    assert!(
+      fixture.lines().any(|s| s == line),
+      "extended profile fixture mismatch: {line}"
+    );
+    let extended_bytes = extended.bytes();
+    assert_eq!(Profile::from_bytes(&extended_bytes).unwrap(), extended);
+    let base =
+      Profile { cases: false, interfaces: vec![], ..extended.clone() }.bytes();
+    for length in base.len() + 1..extended_bytes.len() {
+      assert!(Profile::from_bytes(&extended_bytes[..length]).is_err());
+    }
+    for suffix in [[0u8, 0], [2, 0]] {
+      let mut bad = bytes.clone();
+      bad.extend_from_slice(&suffix);
+      assert!(Profile::from_bytes(&bad).is_err());
+    }
+    assert!(
+      Profile { assumptions: vec![], ..extended.clone() }.address().is_err()
+    );
+    assert!(
+      Profile { interfaces: vec![(unit.clone(), vec![64])], ..extended }
+        .address()
+        .is_err()
+    );
   }
 }

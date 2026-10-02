@@ -60,6 +60,14 @@ def fixtureProfile : Profile :=
   let (_, unit) := unitEnv
   { natType := some unit, shareableTypes := #[unit] }
 
+/-- The extended profile the shared fixture pins (`profile-cases`): case
+behavior and one admitted interface. -/
+def casesProfile : Profile :=
+  let (_, unit) := unitEnv
+  { fixtureProfile with
+    assumptions := #[unit], cases := true
+    interfaces := #[(unit, ⟨#[packAllContract ⟨.linear, .localShared⟩ .shared]⟩)] }
+
 /-- One `addressed.tsv` row: a constant's address and canonical bytes. -/
 def fixtureLine (label : String) (constant : Constant) : String :=
   s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
@@ -70,6 +78,8 @@ def fixtureText : Except String String := do
   let profileAddress ← fixtureProfile.address
   let rows := fixtures.map fun (label, constant) => fixtureLine label constant
   let rows := rows.push s!"profile\t{profileAddress}\t{hexOfBytes fixtureProfile.bytes}"
+  let casesAddress ← casesProfile.address
+  let rows := rows.push s!"profile-cases\t{casesAddress}\t{hexOfBytes casesProfile.bytes}"
   return rows.foldl (fun text row => text ++ row ++ "\n") "# name\taddress\tcanonical bytes\n"
 
 def run : IO Unit := do
@@ -92,6 +102,22 @@ def run : IO Unit := do
     check "truncated profile" (Profile.ofBytes (profile.bytes.extract 0 length)) false
   check "profile trailing bytes" (Profile.ofBytes (profile.bytes.push 0)) false
   check "wrong validator" (Profile.ofBytes (profile.bytes.set! 0 0)) false
+  -- The optional extension: case behavior and admitted interfaces.
+  let extended : Profile := casesProfile
+  let extendedAddress ← get "extended profile address" extended.address
+  let extendedLine := s!"profile-cases\t{extendedAddress}\t{hexOfBytes extended.bytes}"
+  unless lines.contains extendedLine do
+    throw <| IO.userError s!"addressed extended profile fixture differs; expected line:\n{extendedLine}"
+  let decoded ← get "extended profile roundtrip" (Profile.ofBytes extended.bytes)
+  unless decoded.bytes == extended.bytes && decoded.cases && decoded.interfaces.size == 1 do
+    throw <| IO.userError "extended profile roundtrip differs"
+  let unextended : Profile := { extended with cases := false, interfaces := #[] }
+  for length in [unextended.bytes.size + 1:extended.bytes.size] do
+    check "truncated profile extension" (Profile.ofBytes (extended.bytes.extract 0 length)) false
+  check "empty profile extension" (Profile.ofBytes (profile.bytes ++ ⟨#[0, 0]⟩)) false
+  check "unknown profile behavior" (Profile.ofBytes (profile.bytes ++ ⟨#[2, 0]⟩)) false
+  check "admitted interface must be assumed" ({ extended with assumptions := #[] }.address) false
+  check "invalid interface contract" ({ extended with interfaces := #[(unit, ⟨#[64]⟩)] }.address) false
   let (env, id) := store base (identity unit)
   let prepared ← get "valid identity" (Addressed.checkResources env profile)
   unless prepared.program.declarations.size == 3 && prepared.program.groups.size == 1 do
@@ -214,6 +240,33 @@ def run : IO Unit := do
     throw <| IO.userError "parameterised field rules are not open over their telescope"
   check "an instantiated field type is still checked"
     (Addressed.checkResources (store duoEnv (second (.ref 1 #[]))).1 profile) false
+  -- Case-split shapes come from addressed recursors, under a `cases` profile:
+  -- `B` with `e : B` and `f : unit → B`, and `B.rec` in the same block.
+  let caseType : E := .all .many .shared (.all .many .shared (.recur 0 #[]) (.sort 0))
+    (.all .many .shared (.app (.var 0) (.var 0))
+      (.all .many .shared (.all .many .shared (.ref 0 #[]) (.app (.var 2) (.var 0)))
+        (.all .many .shared (.recur 0 #[]) (.app (.var 3) (.var 0)))))
+  let caseBlock : Constant := {
+    info := .muts #[
+      .indc ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
+        ⟨false, 0, 1, 0, 1, .all .many .shared (.ref 0 #[]) (.recur 0 #[])⟩]⟩,
+      .recr ⟨false, false, 0, 0, 0, 1, 2, caseType,
+        #[⟨0, .lam .many (.sort 0) (.var 0)⟩, ⟨1, .lam .many (.sort 0) (.var 0)⟩]⟩]
+    sharing := #[], refs := #[unit], univs := #[.succ .zero] }
+  let (caseEnv, caseAddress) := store base caseBlock
+  let (caseEnv, _) := store caseEnv (Addressed.wrapper (.iPrj ⟨0, caseAddress⟩))
+  let (caseEnv, _) := store caseEnv (Addressed.constructorWrapper caseAddress 0 0)
+  let (caseEnv, _) := store caseEnv (Addressed.constructorWrapper caseAddress 0 1)
+  let (caseEnv, recAddress) := store caseEnv (Addressed.wrapper (.rPrj ⟨1, caseAddress⟩))
+  let resolved ← get "case recursors" (Addressed.prepare caseEnv { profile with cases := true })
+  let shapes := resolved.program.recursors.map fun r =>
+    (resolved.addresses[r.index.toNat]? == some recAddress, r.params, r.motives, r.minors, r.indices,
+      r.fields, r.binders)
+  unless shapes == #[(true, 0, 1, 2, 0, #[0, 1], #[0, 1])] && resolved.program.cases do
+    throw <| IO.userError "addressed recursor did not give its case-split shape"
+  let ordinary ← get "no case behavior" (Addressed.prepare caseEnv profile)
+  unless ordinary.program.recursors.isEmpty && !ordinary.program.cases do
+    throw <| IO.userError "case-split shapes without case behavior"
   IO.println "Addressed resources: integrity, profile codecs, fixtures, fields, and dependency checks passed"
 
 end Tests.ResourceAddressed

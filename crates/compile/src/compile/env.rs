@@ -156,6 +156,37 @@ pub fn compile_env_with_profile(
   options: CompileOptions,
   profile: Option<&ixon::resource::addressed::Profile>,
 ) -> Result<CompileState, CompileError> {
+  compile_env_with_resource_profile(
+    lean_env,
+    options,
+    match profile {
+      Some(profile) => ResourceProfile::Explicit(profile),
+      None => ResourceProfile::Standard,
+    },
+  )
+}
+
+/// The resource profile of a compile.
+#[derive(Clone, Copy, Debug)]
+pub enum ResourceProfile<'a> {
+  /// The built-in standard profile, restricted to the closure; validation
+  /// runs when the closure has source contracts.
+  Standard,
+  /// An explicit canonical profile; validation always runs.
+  Explicit(&'a ixon::resource::addressed::Profile),
+  /// A profile source naming constants (`ix compile --profile`), resolved
+  /// against the compiled closure; validation runs when the closure has
+  /// source contracts. The effective profile address is reported.
+  Source(&'a str),
+}
+
+/// Compile semantic input under a resource profile. No annotated result can
+/// bypass combined validation.
+pub fn compile_env_with_resource_profile(
+  lean_env: &Arc<LeanEnv>,
+  options: CompileOptions,
+  profile: ResourceProfile<'_>,
+) -> Result<CompileState, CompileError> {
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
   // The sharing limits of the whole run, read once: an invalid
   // `IX_SHARING_LIMITS` fails the compile here, before any block is
@@ -1039,7 +1070,9 @@ pub fn compile_env_with_profile(
 
   stt.finalize_hints();
 
-  if !semantic_sources.is_empty() || profile.is_some() {
+  if !semantic_sources.is_empty()
+    || matches!(profile, ResourceProfile::Explicit(_))
+  {
     if !stt.ungrounded.is_empty() {
       return Err(CompileError::UnsupportedExpr {
         desc: "resource compilation requires the complete requested closure"
@@ -1058,9 +1091,33 @@ pub fn compile_env_with_profile(
     }
     let default_profile;
     let profile = match profile {
-      Some(profile) => profile,
-      None => {
+      ResourceProfile::Explicit(profile) => profile,
+      ResourceProfile::Standard => {
         default_profile = ix_kernel::resource::standard_profile(&stt.env);
+        &default_profile
+      },
+      ResourceProfile::Source(text) => {
+        let resolve = |name: &str| {
+          let name = name
+            .split('.')
+            .fold(Name::anon(), |pre, part| Name::str(pre, part.to_string()));
+          stt.name_to_addr.get(&name).map(|entry| entry.value().clone())
+        };
+        default_profile =
+          ix_kernel::resource::profile_from_source(text, &stt.env, &resolve)
+            .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
+        let address = default_profile
+          .address()
+          .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
+        println!(
+          "[compile] resource profile {}: {} assumption(s), {} shareable type(s), {} choice(s), {} interface(s){}",
+          address.hex(),
+          default_profile.assumptions.len(),
+          default_profile.shareable_types.len(),
+          default_profile.choices.len(),
+          default_profile.interfaces.len(),
+          if default_profile.cases { ", case splits" } else { "" },
+        );
         &default_profile
       },
     };

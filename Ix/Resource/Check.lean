@@ -53,6 +53,21 @@ structure Field where
   binders : Nat := 0
   deriving BEq, Repr, Inhabited
 
+/-- The shape of an addressed recursor of a single, non-mutual inductive type,
+as the case-split rule needs it. -/
+structure RecursorInfo where
+  index : UInt64
+  params : Nat
+  motives : Nat
+  minors : Nat
+  indices : Nat
+  /-- Constructor fields of each minor premise, in minor order. -/
+  fields : Array Nat
+  /-- Leading binders of each minor's declared domain: its fields, then its
+  induction hypotheses. -/
+  binders : Array Nat
+  deriving BEq, Repr, Inhabited
+
 structure Program where
   declarations : Array Declaration
   /-- Members and constructors addressed by the same mutual block. -/
@@ -68,14 +83,29 @@ structure Program where
   /-- Types whose shared views have a checked, duplicable representation.
   Abstract type parameters are deliberately absent from this list. -/
   shareableTypes : Array UInt64 := #[]
-  /-- Profile-bound non-strict selection primitives, with exactly selector,
-  left alternative, and right alternative as their three arguments. -/
+  /-- Profile-bound non-strict selection primitives. A choice is applied to
+  exactly as many arguments as its type has leading arrows (more are passed
+  on to both alternatives). Its last two arguments are the alternatives,
+  evaluated by need; the others are strict. An alternative expecting a proof
+  (`dite`) is entered with a fresh proof binder. -/
   choices : Array UInt64 := #[]
   /-- The sort index that denotes `Prop`. The address adapter rewrites every
   sort to `0` (some type universe) or this index (literally `Sort 0`). An
   argument whose domain is a proposition is erased computation. Without this
   index no type is recognized as a proposition. -/
   propSort : Option UInt64 := none
+  /-- Recursors the case-split rule can read. -/
+  recursors : Array RecursorInfo := #[]
+  /-- Profile behavior: a recursor application whose minor premises ignore
+  their induction hypotheses is a case split; an unannotated definition that
+  only wraps a case split or a choice (`casesOn`, matchers) is inlined, and a
+  β-redex binds its argument. The consumer must compile these without
+  closures. -/
+  cases : Bool := false
+  /-- Admitted resource interfaces: callers see this type in place of the
+  declaration's own. The profile must also list the declaration as an
+  assumption. -/
+  interfaces : Array (UInt64 × Ixon.Expr) := #[]
   deriving BEq, Repr, Inhabited
 
 structure Context where
@@ -94,6 +124,12 @@ def expansion (program : Program) (index : UInt64) : CheckM Ixon.Expr :=
   match program.sharing[index.toNat]? with
   | some e => pure e
   | none => throw (.unresolvedSharing index.toNat)
+
+/-- The interface callers see: an admitted interface, or the declared type. -/
+def interfaceType (program : Program) (index : UInt64) : CheckM Ixon.Expr := do
+  match program.interfaces.find? (·.1 == index) with
+  | some (_, type) => pure type
+  | none => return (← declaration program index).type
 
 def literalType (type : Option Ixon.Expr) : CheckM Ixon.Expr :=
   match type with
@@ -313,7 +349,7 @@ def typeOf : Nat → Context → Ixon.Expr → CheckM Ixon.Expr
       if n >= ctx.vars.size then throw (.unbound n)
       let b ← binding ctx.vars[ctx.vars.size - 1 - n]!
       shift ctx.program fuel b.value.type (n + 1) 0
-    | .ref index _ => return (← declaration ctx.program index).type
+    | .ref index _ => interfaceType ctx.program index
     | .share index => typeOf fuel ctx (← expansion ctx.program index)
     | .recur .. => throw (.unsupported "unresolved recursive reference")
     | .sort _ | .all .. => return .sort 0
@@ -407,6 +443,164 @@ def joinBindings (count : Nat) (left right : State) : CheckM (Array Binding) := 
       touched := a.touched || b.touched }
   return result
 
+/-- Expand sharing at the head of an expression. -/
+def unshare (program : Program) : Nat → Ixon.Expr → CheckM Ixon.Expr
+  | 0, _ => throw .budget
+  | fuel + 1, e => do
+    tick
+    match e with
+    | .share index => unshare program fuel (← expansion program index)
+    | _ => return e
+
+/-- Whether an expression carries no resource contract (every binder, arrow
+and let has the default contract). -/
+def plain (program : Program) : Nat → Ixon.Expr → CheckM Bool
+  | 0, _ => throw .budget
+  | fuel + 1, e => do
+    tick
+    match e with
+    | .share index => plain program fuel (← expansion program index)
+    | .app f a => return (← plain program fuel f) && (← plain program fuel a)
+    | .lam c t b => return c == .many && (← plain program fuel t) && (← plain program fuel b)
+    | .all c r t b =>
+      return c == .many && r == .shared && (← plain program fuel t) && (← plain program fuel b)
+    | .letE c t v b =>
+      return c.binder == .many && c.kind == .value && (← plain program fuel t) &&
+        (← plain program fuel v) && (← plain program fuel b)
+    | .prj _ _ v => plain program fuel v
+    | _ => return true
+
+/-- Whether variable `index` occurs in `e`. -/
+def occurs (program : Program) : Nat → Ixon.Expr → Nat → CheckM Bool
+  | 0, _, _ => throw .budget
+  | fuel + 1, e, index => do
+    tick
+    match e with
+    | .var i => return i.toNat == index
+    | .share i => occurs program fuel (← expansion program i) index
+    | .app f a => return (← occurs program fuel f index) || (← occurs program fuel a index)
+    | .lam _ t b | .all _ _ t b =>
+      return (← occurs program fuel t index) || (← occurs program fuel b (index + 1))
+    | .letE _ t v b =>
+      return (← occurs program fuel t index) || (← occurs program fuel v index) ||
+        (← occurs program fuel b (index + 1))
+    | .prj _ _ v => occurs program fuel v index
+    | _ => return false
+
+/-- Number of leading arrows of a type. -/
+def arity (program : Program) : Nat → Ixon.Expr → CheckM Nat
+  | 0, _ => throw .budget
+  | fuel + 1, type => do
+    match ← whnf program fuel type with
+    | .all _ _ _ body => return (← arity program fuel body) + 1
+    | _ => return 0
+
+def recursorInfo (program : Program) (index : UInt64) : Option RecursorInfo :=
+  program.recursors.find? (·.index == index)
+
+def RecursorInfo.arity (info : RecursorInfo) : Nat :=
+  info.params + info.motives + info.minors + info.indices + 1
+
+/-- Whether a minor premise ignores its induction hypotheses: it binds all
+of the minor's binders and its body mentions none of the hypotheses. -/
+def ignoresHypotheses (program : Program) (fuel : Nat) (minor : Ixon.Expr)
+    (fields binders : Nat) : CheckM Bool := do
+  if binders == fields then return true
+  let mut body := minor
+  for _ in [0:binders] do
+    match ← unshare program fuel body with
+    | .lam _ _ b => body := b
+    | _ => return false
+  for k in [0:binders - fields] do
+    if ← occurs program fuel body k then return false
+  return true
+
+/-- The arity of an unannotated, non-recursive definition that only wraps a
+case split: its body is a lambda telescope around a full application of a
+case recursor whose minors ignore their induction hypotheses, or of another
+such wrapper (`casesOn`, matchers). A definition that wraps a choice is an
+ordinary function. -/
+def caseWrapper (program : Program) (fuel : Nat) : Nat → UInt64 → CheckM (Option Nat)
+  | 0, _ => pure none
+  | depth + 1, index => do
+    if !program.cases || program.choices.contains index then return none
+    let some d := program.declarations[index.toNat]? | return none
+    let some body := d.body | return none
+    unless d.kind == .definition && (← plain program fuel d.type) && (← plain program fuel body) do
+      return none
+    let mut inner := body
+    let mut params := 0
+    repeat
+      match ← unshare program fuel inner with
+      | .lam _ _ b => inner := b; params := params + 1
+      | other => inner := other; break
+    let (head, args) ← splitApp program fuel inner []
+    let .ref target _ := head | return none
+    if let some info := recursorInfo program target then
+      if args.length < info.arity then return none
+      for j in [0:info.minors] do
+        let minor := args[info.params + info.motives + j]!
+        unless ← ignoresHypotheses program fuel minor info.fields[j]! info.binders[j]! do
+          return none
+      return some params
+    match ← caseWrapper program fuel depth target with
+    | some n => return if args.length >= n then some params else none
+    | none => return none
+
+/-- Whether a type is a sort or an arrow into a sort. -/
+def typeFormer (program : Program) (fuel : Nat) : Nat → Ixon.Expr → CheckM Bool
+  | 0, _ => pure false
+  | n + 1, t => do
+    match ← whnf program fuel t with
+    | .sort _ => pure true
+    | .all _ _ _ b => typeFormer program fuel n b
+    | _ => pure false
+
+/-- Whether an argument may be substituted into a lambda telescope: a
+variable, a value form, or a type or proof (erased computation). -/
+def substitutable (ctx : Context) (fuel : Nat) (arg domain : Ixon.Expr) : CheckM Bool := do
+  match ← unshare ctx.program fuel arg with
+  | .var _ | .lam .. | .sort _ | .all .. | .nat _ | .str _ | .ref .. => return true
+  | _ =>
+    if ← typeFormer ctx.program fuel 16 domain then return true
+    isProposition fuel ctx domain
+
+/-- Apply a lambda telescope to arguments, as `let`s: an argument of a binder
+with the default contract that is a variable, a value form, a type or a proof
+is substituted; any other argument is bound by a `let` carrying the binder's
+own contract, so it is evaluated once, before the body, exactly as a call
+would evaluate it. Arguments beyond the telescope are applied to the body. -/
+def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : List Ixon.Expr) :
+    CheckM Ixon.Expr := do
+  let before ← get
+  let mut term := telescope
+  let mut lets : Array (Ixon.LetContract × Ixon.Expr × Ixon.Expr) := #[]
+  let mut inner := ctx
+  let mut rest := args
+  repeat
+    match rest with
+    | [] => break
+    | arg :: more =>
+      match ← unshare ctx.program fuel term with
+      | .lam c domain body =>
+        let arg ← shift ctx.program fuel arg lets.size 0
+        if c == .many && (← substitutable inner fuel arg domain) then
+          term ← substitute ctx.program fuel body arg 0
+        else
+          lets := lets.push ({ nonDep := false, binder := c }, domain, arg)
+          let id ← pushBinding c { type := domain }
+          inner := { inner with vars := inner.vars.push id }
+          term := body
+        rest := more
+      | _ => break
+  for arg in rest do
+    term := .app term (← shift ctx.program fuel arg lets.size 0)
+  modify fun s => { s with bindings := before.bindings }
+  let mut result := term
+  for (c, domain, value) in lets.reverse do
+    result := .letE c domain value result
+  return result
+
 def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContract) →
     ScopeId → Uses → CheckM Value
   | 0, _, _, _, _, _ => throw .budget
@@ -443,8 +637,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
       | .ref idx _ =>
         if ctx.program.choices.contains idx then
           throw (.unsupported "selection primitives cannot escape as function values")
-        let d ← declaration ctx.program idx
-        pure { type := d.type }
+        pure { type := ← interfaceType ctx.program idx }
       | .recur .. => throw (.unsupported "unresolved recursive reference")
       | .sort _ | .all .. => pure { type := .sort 0, owned := .unique }
       | .nat _ => pure { type := ← literalType ctx.program.natType, owned := .unique }
@@ -561,6 +754,10 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         let ordinary : CheckM Value := do
           let fnType ← typeOf fuel ctx fn
           let (input, result, domain, codomain) ← arrow ctx.program fuel fnType
+          -- Applying a proof (a function whose type is a proposition) yields
+          -- a proof: erased computation, as a proof argument is.
+          if ← isProposition fuel ctx fnType then
+            return { type := ← substitute ctx.program fuel codomain arg 0, owned := .unique }
           let callScope := if result.locality == .local then destination else ctx.scope
           let fnValue ← analyze fuel ctx fn none callScope grade
           requireType ctx.program fuel fnValue.type fnType
@@ -582,38 +779,165 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             origins
             duplicable }
         let (head, arguments) ← splitApp ctx.program fuel e []
-        match head, arguments with
-        | .ref index _, [selector, left, right] =>
+        let args := arguments.toArray
+        -- Analyze alternatives from the same state and join them. Each
+        -- alternative first binds the values the primitive supplies to it
+        -- (one per flag in its array; `true` marks an induction hypothesis,
+        -- which must stay unused), then is analyzed with the given contract.
+        let alternatives (branches : Array (Ixon.Expr × Ixon.Expr × Array Bool))
+            (supplied : Nat → Nat → Ixon.Expr → BinderContract → CheckM Value)
+            (extra : Array Ixon.Expr) (contract : Option ValueContract)
+            (outputType : Ixon.Expr) : CheckM Value := do
+          let before ← get
+          let count := before.bindings.size
+          let mut joined : Option (Array Binding) := none
+          let mut result : Option Value := none
+          for j in [0:branches.size] do
+            let (alternative, alternativeType, hypotheses) := branches[j]!
+            modify fun s => { s with bindings := before.bindings }
+            let mut body := alternative
+            let mut type := alternativeType
+            let mut inner := ctx
+            let mut entered : Array (OwnerId × Bool) := #[]
+            for k in [0:hypotheses.size] do
+              let (field, _, domain, codomain) ← arrow ctx.program fuel type
+              let (c, rest) ← match ← unshare ctx.program fuel body with
+                | .lam c _ b => pure (c, b)
+                | other => pure (BinderContract.many, Ixon.Expr.app (← shift ctx.program fuel other 1 0) (.var 0))
+              let value ← supplied j k domain field
+              let id ← pushBinding c value
+              entered := entered.push (id, hypotheses[k]!)
+              inner := { inner with vars := inner.vars.push id }
+              body := rest
+              type := codomain
+            for x in extra do
+              let x ← shift ctx.program fuel x entered.size 0
+              let (_, _, _, codomain) ← arrow ctx.program fuel type
+              type ← substitute ctx.program fuel codomain x 0
+              body := .app body x
+            let output ← analyze fuel inner body (contract.map (type, ·)) destination grade
+            for (id, hypothesis) in entered do
+              if hypothesis then
+                if (← binding id).touched then
+                  throw (.unsupported "a case split uses an induction hypothesis")
+              else validateUsage id
+            let output := match output.place with
+              | some p => if p < count then output else { output with place := none }
+              | none => output
+            let after ← get
+            let bindings := after.bindings.extract 0 count
+            joined ← match joined with
+              | none => pure (some bindings)
+              | some acc => some <$> joinBindings count { after with bindings := acc } { after with bindings }
+            result := some (match result with | none => output | some v => joinValue v output)
+          modify fun s => { s with bindings := joined.getD before.bindings }
+          return { (result.getD { type := outputType, owned := .unique }) with type := outputType }
+        match head with
+        | .ref index _ =>
           if ctx.program.choices.contains index then
-            let decl ← declaration ctx.program index
-            let (c, _, selectorType, tail) ← arrow ctx.program fuel decl.type
-            unless ← isProposition fuel ctx selectorType do
-              let _ ← analyze fuel ctx selector (some (selectorType, c.value)) ctx.scope
-                (← argumentGrade ctx.program fuel grade c.uses selectorType)
-            let tail ← substitute ctx.program fuel tail selector 0
-            let (_, _, leftType, tail) ← arrow ctx.program fuel tail
-            let tail ← substitute ctx.program fuel tail left 0
-            let (_, result, rightType, outputType) ← arrow ctx.program fuel tail
-            let outputType ← substitute ctx.program fuel outputType right 0
-            requireType ctx.program fuel leftType rightType
-            requireType ctx.program fuel leftType outputType
-            let before ← get
-            let left ← analyze fuel ctx left (some (leftType, result)) destination grade
-            let leftState ← get
-            -- Preserve fresh scope identities and charge the shared budget
-            -- while restoring the pre-branch owner/use state.
-            set { leftState with bindings := before.bindings }
-            let right ← analyze fuel ctx right (some (rightType, result)) destination grade
-            let rightState ← get
-            let bindings ← joinBindings before.bindings.size leftState rightState
-            set { rightState with bindings }
-            pure { joinValue left right with type := outputType }
-          else ordinary
-        | _, _ =>
-          if let .ref index _ := head then
-            if ctx.program.choices.contains index then
+            -- A choice: strict leading arguments, then two alternatives
+            -- evaluated by need. Proof binders of an alternative (`dite`)
+            -- are supplied by the primitive.
+            let declared := (← declaration ctx.program index).type
+            let n ← arity ctx.program fuel declared
+            if args.size < n then
               throw (.unsupported "selection primitives require a complete application")
-          ordinary
+            if n < 2 then throw (.unsupported "a selection primitive needs two alternatives")
+            let mut tail := declared
+            for i in [0:n - 2] do
+              let (c, _, domain, codomain) ← arrow ctx.program fuel tail
+              unless ← isProposition fuel ctx domain do
+                let _ ← analyze fuel ctx args[i]! (some (domain, c.value)) ctx.scope
+                  (← argumentGrade ctx.program fuel grade c.uses domain)
+              tail ← substitute ctx.program fuel codomain args[i]! 0
+            let left := args[n - 2]!
+            let right := args[n - 1]!
+            let (_, _, leftType, afterLeft) ← arrow ctx.program fuel tail
+            let afterLeft ← substitute ctx.program fuel afterLeft left 0
+            let (_, result, rightType, afterRight) ← arrow ctx.program fuel afterLeft
+            let mut outputType ← substitute ctx.program fuel afterRight right 0
+            let extra := args.extract n args.size
+            for x in extra do
+              let (_, _, _, codomain) ← arrow ctx.program fuel outputType
+              outputType ← substitute ctx.program fuel codomain x 0
+            -- The proof binders an alternative expects (`dite`).
+            let proofs (type : Ixon.Expr) : CheckM (Array Bool) := do
+              let mut type := type
+              let mut found := #[]
+              let mut inner := ctx
+              repeat
+                match ← whnf ctx.program fuel type with
+                | .all c _ domain body =>
+                  if ← isProposition fuel inner domain then
+                    found := found.push false
+                    let id ← pushBinding c { type := domain }
+                    inner := { inner with vars := inner.vars.push id }
+                    type := body
+                  else break
+                | _ => break
+              return found
+            let before ← get
+            let leftProofs ← proofs leftType
+            let rightProofs ← proofs rightType
+            modify fun s => { s with bindings := before.bindings }
+            if leftProofs.isEmpty && rightProofs.isEmpty && extra.isEmpty then
+              requireType ctx.program fuel leftType rightType
+              requireType ctx.program fuel leftType outputType
+            -- The chosen alternative is the result: the caller's contract
+            -- applies to it, or else the primitive's own result contract.
+            let contract := match expected with
+              | some (_, c) => c
+              | none => result
+            alternatives #[(left, leftType, leftProofs), (right, rightType, rightProofs)]
+              (fun _ _ domain _ => pure { type := domain }) extra (some contract) outputType
+          else
+            match (if ctx.program.cases then recursorInfo ctx.program index else none) with
+            | some info =>
+              if args.size < info.arity then ordinary else do
+                -- A case split. Parameters, motives and indices have no run-time
+                -- demand; the major premise is inspected, not consumed; each
+                -- minor binds the constructor's fields, which keep the major's
+                -- origins and are unique only when both the major and the field
+                -- binder are.
+                let mut tail := (← declaration ctx.program index).type
+                let mut minorTypes := #[]
+                for i in [0:info.arity] do
+                  let (_, _, domain, codomain) ← arrow ctx.program fuel tail
+                  if info.params + info.motives ≤ i && i < info.params + info.motives + info.minors then
+                    minorTypes := minorTypes.push domain
+                  tail ← substitute ctx.program fuel codomain args[i]! 0
+                let mut outputType := tail
+                let extra := args.extract info.arity args.size
+                for x in extra do
+                  let (_, _, _, codomain) ← arrow ctx.program fuel outputType
+                  outputType ← substitute ctx.program fuel codomain x 0
+                let major ← analyze fuel ctx args[info.arity - 1]! none ctx.scope grade
+                let branches := (List.range info.minors).toArray.map fun j =>
+                  (args[info.params + info.motives + j]!, minorTypes[j]!,
+                    (List.range info.binders[j]!).toArray.map (fun k => decide (k ≥ info.fields[j]!)))
+                let supplied (j k : Nat) (domain : Ixon.Expr) (c : BinderContract) : CheckM Value :=
+                  if k < info.fields[j]! then
+                    pure { type := domain
+                           owned := if major.owned == .unique && c.value.owned == .unique then .unique else .shared
+                           origins := major.origins
+                           loanRoot := major.loanRoot }
+                  else pure { type := domain }
+                alternatives branches supplied extra (expected.map (·.2)) outputType
+            | none =>
+              match ← caseWrapper ctx.program fuel 4 index with
+              | some n =>
+                if args.size < n then ordinary else do
+                  -- A wrapper around a case split or a choice is unfolded.
+                  match (← declaration ctx.program index).body with
+                  | some body =>
+                    analyze fuel ctx (← bindArguments ctx fuel body arguments) expected destination grade
+                  | none => ordinary
+              | none => ordinary
+        | .lam .. =>
+          if ctx.program.cases then
+            analyze fuel ctx (← bindArguments ctx fuel head arguments) expected destination grade
+          else ordinary
+        | _ => ordinary
     finishValue ctx fuel destination expected value
 
 def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit := do

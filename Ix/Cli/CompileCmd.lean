@@ -193,10 +193,18 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv constList
   if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
     IO.eprintln s!"[compile] source contract preparation: {((← IO.monoMsNow) - start).formatMs}"
-  let status ← if strictAnon then
-      Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
-    else
-      Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  -- `--profile FILE`: a resource profile source (see docs/resource-checking.md)
+  -- replaces the standard profile; the native compiler resolves its names
+  -- against the compiled closure and reports the effective profile address.
+  let profileSource ← (p.flag? "profile").mapM fun flag => IO.FS.readFile (flag.as! String)
+  let status ← match profileSource with
+    | some source =>
+      Ix.CompileM.rsCompileEnvBytesProfileSourceFFI constList outPath allowPartial strictAnon source
+    | none =>
+      if strictAnon then
+        Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
+      else
+        Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 
@@ -295,6 +303,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
     equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition in the closure, library definitions included; compile each theorem with its dependencies to a fixpoint, and write the definition/theorem associations to --equations-out."
     "equations-out" : String; "Path for the --equations association JSON (`ix/compile-equations/1`); defaults to <out>.equations.json."
+    profile        : String; "Resource profile source for annotated closures (one directive per line: standard, shareable NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, limits DEPTH STEPS); replaces the standard profile. Names are resolved against the compiled closure and the effective profile address is printed. The Lean core profile is profiles/lean-core.profile."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

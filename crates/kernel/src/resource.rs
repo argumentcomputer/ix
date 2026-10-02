@@ -43,6 +43,131 @@ pub fn check_literal_profile(profile: &Profile) -> Result<(), String> {
   Ok(())
 }
 
+/// One packed input/result contract byte from a token in source prefix
+/// syntax: `INPUT[:RESULT]`, where `INPUT` uses the binder atoms `0`, `1`,
+/// `&`, `!`, `~` and `RESULT` the atoms `!`, `~`; `_` is the default.
+fn contract_byte(token: &str) -> Option<u8> {
+  use ixon::contract::{
+    BinderContract, Locality, ValueContract, pack_all_contract,
+  };
+  use ixon::expr::{Owned, Uses};
+  let (input, result) = token.split_once(':').unwrap_or((token, "_"));
+  let value = |atoms: &str, allow_uses: bool| {
+    let mut uses = None;
+    let mut owned = Owned::Shared;
+    let mut locality = Locality::Unrestricted;
+    if atoms != "_" {
+      if atoms.is_empty() {
+        return None;
+      }
+      for c in atoms.chars() {
+        match c {
+          '0' | '1' | '&' if allow_uses && uses.is_none() => {
+            uses = Some(match c {
+              '0' => Uses::Erased,
+              '1' => Uses::Linear,
+              _ => Uses::Affine,
+            });
+          },
+          '!' if owned == Owned::Shared => owned = Owned::Unique,
+          '~' if locality == Locality::Unrestricted => {
+            locality = Locality::Local;
+          },
+          _ => return None,
+        }
+      }
+    }
+    Some((uses.unwrap_or(Uses::Many), ValueContract { owned, locality }))
+  };
+  let (uses, input) = value(input, true)?;
+  let (_, result) = value(result, false)?;
+  Some(pack_all_contract(BinderContract { uses, value: input }, result))
+}
+
+/// Build a profile from its source text (`ix compile --profile FILE`). Each
+/// line is a directive; `#` starts a comment:
+///
+/// - `standard`: the standard profile's literal and shareable types;
+/// - `shareable NAME`, `assume NAME`, `choice NAME` (a choice is also an
+///   assumption);
+/// - `interface NAME C…`: an admitted interface, one contract token per
+///   leading arrow (see `contract_byte`); also an assumption;
+/// - `cases`: recursor case splits, case wrappers and beta-redexes;
+/// - `limits DEPTH STEPS`.
+///
+/// `resolve` maps a dotted name to the address it compiled to. Entries whose
+/// constant is not in the closure are omitted, as the standard profile omits
+/// absent primitives; the profile commits to addresses only.
+pub fn profile_from_source(
+  text: &str,
+  env: &Env,
+  resolve: &dyn Fn(&str) -> Option<ix_common::address::Address>,
+) -> Result<Profile, String> {
+  use std::collections::{BTreeMap, BTreeSet};
+  let mut assumptions = BTreeSet::new();
+  let mut shareable = BTreeSet::new();
+  let mut choices = BTreeSet::new();
+  let mut interfaces = BTreeMap::new();
+  let mut profile = Profile::default();
+  for (n, raw) in text.lines().enumerate() {
+    let line = raw.split('#').next().unwrap_or("").trim();
+    if line.is_empty() {
+      continue;
+    }
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let error = |message: &str| {
+      format!("resource profile source, line {}: {message}", n + 1)
+    };
+    let present = |name: &str| {
+      resolve(name).filter(|address| env.consts.contains_key(address))
+    };
+    match (words[0], words.len()) {
+      ("standard", 1) => {
+        let standard = standard_profile(env);
+        profile.nat_type = standard.nat_type;
+        profile.string_type = standard.string_type;
+        shareable.extend(standard.shareable_types);
+      },
+      ("shareable", 2) => shareable.extend(present(words[1])),
+      ("assume", 2) => assumptions.extend(present(words[1])),
+      ("choice", 2) => {
+        if let Some(address) = present(words[1]) {
+          assumptions.insert(address.clone());
+          choices.insert(address);
+        }
+      },
+      ("interface", 3..) => {
+        let mask = words[2..]
+          .iter()
+          .map(|token| contract_byte(token))
+          .collect::<Option<Vec<_>>>()
+          .ok_or_else(|| error("invalid contract token"))?;
+        if let Some(address) = present(words[1]) {
+          assumptions.insert(address.clone());
+          if interfaces.insert(address, mask).is_some() {
+            return Err(error("duplicate interface"));
+          }
+        }
+      },
+      ("cases", 1) => profile.cases = true,
+      ("limits", 3) => {
+        let parse = |word: &str| {
+          word.parse::<usize>().map_err(|_error| error("invalid limit"))
+        };
+        profile.limits.depth = parse(words[1])?;
+        profile.limits.steps = parse(words[2])?;
+      },
+      _ => return Err(error("unknown directive")),
+    }
+  }
+  profile.assumptions = assumptions.into_iter().collect();
+  profile.shareable_types = shareable.into_iter().collect();
+  profile.choices = choices.into_iter().collect();
+  profile.interfaces = interfaces.into_iter().collect();
+  profile.validate()?;
+  Ok(profile)
+}
+
 /// Validate both resources and erased types of the same canonical addressed
 /// closure. A caller advertising a resource claim must bind the returned
 /// profile address and this validator's identity to its subject.
@@ -262,5 +387,46 @@ mod tests {
     // This ordinary component has no resource annotation. It still must typecheck.
     assert!(check_resources(&malformed, &Profile::default()).is_ok());
     assert!(validate(&malformed, &Profile::default()).is_err());
+  }
+
+  #[test]
+  fn profile_sources_resolve_names_in_the_closure() {
+    use ixon::contract::{
+      BinderContract, Locality, ValueContract, pack_all_contract,
+    };
+    use ixon::expr::{Owned, Uses};
+    let (env, unit) = base();
+    let absent = Address::hash(b"absent");
+    let resolve = |name: &str| match name {
+      "Unit" => Some(unit.clone()),
+      "Absent" => Some(absent.clone()),
+      _ => None,
+    };
+    let source = "# comment\nchoice Unit\ninterface Unit _ ~:!\ncases\n\
+      shareable Absent # outside the closure\nassume Missing\nlimits 64 1000\n";
+    let profile = profile_from_source(source, &env, &resolve).unwrap();
+    assert_eq!(profile.assumptions, vec![unit.clone()]);
+    assert_eq!(profile.choices, vec![unit.clone()]);
+    assert!(profile.shareable_types.is_empty());
+    assert!(profile.cases);
+    let local =
+      ValueContract { owned: Owned::Shared, locality: Locality::Local };
+    assert_eq!(
+      profile.interfaces,
+      vec![(
+        unit.clone(),
+        vec![
+          pack_all_contract(BinderContract::default(), ValueContract::shared()),
+          pack_all_contract(
+            BinderContract { uses: Uses::Many, value: local },
+            ValueContract::unique()
+          ),
+        ]
+      )]
+    );
+    assert_eq!((profile.limits.depth, profile.limits.steps), (64, 1000));
+    for bad in ["frobnicate", "interface Unit ?", "limits 0 0", "choice"] {
+      assert!(profile_from_source(bad, &env, &resolve).is_err(), "{bad}");
+    }
   }
 }

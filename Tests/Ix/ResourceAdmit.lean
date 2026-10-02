@@ -80,7 +80,27 @@ def runAdmission : IO Unit := do
     { program with declarations := program.declarations.push { unusedLinear with kind := .theorem } } true
   checkAdmission "definition with the same body is checked"
     { program with declarations := program.declarations.push unusedLinear } false
-  IO.println "Resource admission: 20 profile, dependency, constructor, theorem, and DAG checks passed"
+  -- R15: an assumed definition is admitted, not checked; a choice may be an
+  -- assumed definition; admitted interfaces and case behavior must be bound.
+  let assumedDefinition := { program with declarations := program.declarations.push unusedLinear }
+  checkAdmission "assumed definition is admitted by the profile" assumedDefinition true
+    { policy with assumptions := policy.assumptions.push 11 }
+  let definitionChoice := { assumedDefinition with
+    declarations := assumedDefinition.declarations.push
+      { type := choiceType .shared, body := some (lam (b .linear) (lam (b .affine) (lam (b .affine) (v 0)))) }
+    choices := program.choices.push 12 }
+  checkAdmission "assumed definition as a selection primitive" definitionChoice true
+    { policy with assumptions := policy.assumptions ++ #[11, 12], choices := policy.choices.push 12 }
+  checkAdmission "unassumed definition as a selection primitive" definitionChoice false
+    { policy with assumptions := policy.assumptions.push 11, choices := policy.choices.push 12 }
+  let interfaced := { program with interfaces := #[(5, arr (b .many .localShared))] }
+  checkAdmission "admitted interface bound by the profile" interfaced true
+    { policy with assumptions := policy.assumptions.push 5 }
+  checkAdmission "admitted interface absent from the profile" interfaced false
+  checkAdmission "case behavior absent from the profile" { program with cases := true } false
+  checkAdmission "case behavior bound by the profile" { program with cases := true } true
+    { policy with cases := true }
+  IO.println "Resource admission: 27 profile, dependency, constructor, theorem, interface, and DAG checks passed"
 
 end Tests.Resource
 

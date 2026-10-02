@@ -158,6 +158,8 @@ structure Policy where
   assumptions : Array Nat := #[]
   shareableTypes : Array Nat := #[]
   choices : Array Nat := #[]
+  /-- The profile admits case splits, case wrappers and β-redexes. -/
+  cases : Bool := false
   deriving Inhabited, Repr
 
 structure AdmissionError where
@@ -172,8 +174,15 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
       throw ⟨some index.toNat, .unsupported "selection behavior is absent from the bound profile"⟩
     let some d := program.declarations[index.toNat]?
       | throw ⟨none, .badReference index.toNat⟩
-    unless d.kind == .assumption do
+    -- A choice is an external primitive or an assumed definition (whose
+    -- selection behavior the profile admits; its body is not checked).
+    unless d.kind == .assumption || d.kind == .definition do
       throw ⟨some index.toNat, .unsupported "selection behavior requires an external primitive interface"⟩
+  for (index, _) in program.interfaces do
+    unless policy.assumptions.contains index.toNat do
+      throw ⟨some index.toNat, .unsupported "admitted interface is absent from the bound profile"⟩
+  if program.cases && !policy.cases then
+    throw ⟨none, .unsupported "case behavior is absent from the bound profile"⟩
   for index in program.shareableTypes do
     unless policy.shareableTypes.contains index.toNat do
       throw ⟨some index.toNat, .unsupported "shareable representation is absent from the bound profile"⟩
@@ -182,7 +191,9 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
     if marked[i]! then
       let d := program.declarations[i]!
       let checked : Except Error Unit := match d.kind with
-        | .definition => checkDefinition program i limits
+        | .definition =>
+          -- An assumed definition's interface is admitted by the profile.
+          if policy.assumptions.contains i then .ok () else checkDefinition program i limits
         | .assumption =>
           if policy.assumptions.contains i then .ok ()
           else .error (.unsupported "external resource interface is absent from the bound profile")

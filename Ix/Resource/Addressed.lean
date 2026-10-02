@@ -36,7 +36,14 @@ structure Profile where
   natType : Option Address := none
   stringType : Option Address := none
   limits : Limits := {}
-  deriving Inhabited, Repr
+  /-- Behavior: recursor case splits, case wrappers and β-redexes (see
+  `Program.cases`). -/
+  cases : Bool := false
+  /-- Admitted resource interfaces: per declaration, one packed input/result
+  contract byte (`packAllContract`) for each leading arrow, replacing the
+  declared contracts for callers. Each must also be an assumption. -/
+  interfaces : Array (Address × ByteArray) := #[]
+  deriving Inhabited
 
 def Profile.validate (profile : Profile) : Except String Unit := do
   for addresses in #[profile.assumptions, profile.shareableTypes, profile.choices] do
@@ -56,6 +63,18 @@ def Profile.validate (profile : Profile) : Except String Unit := do
   if profile.limits.depth == 0 || profile.limits.steps == 0 ||
       profile.limits.depth >= UInt64.size || profile.limits.steps >= UInt64.size then
     throw "resource profile: invalid checker limits"
+  let mut previous : Option Address := none
+  for (address, mask) in profile.interfaces do
+    if address.hash.size != 32 then throw "resource profile: invalid address length"
+    if let some before := previous then
+      unless Address.cmpBytes before address == .lt do
+        throw "resource profile: address lists must be strictly increasing"
+    previous := some address
+    unless profile.assumptions.contains address do
+      throw "resource profile: an admitted interface must be an explicit assumption"
+    if mask.isEmpty then throw "resource profile: empty interface"
+    for byte in mask.toList do
+      if (unpackAllContract? byte).isNone then throw "resource profile: invalid interface contract"
 
 /-- Canonical, domain-separated profile bytes, including the checker limits.
 Lists are validated before these bytes are used as a commitment. -/
@@ -70,6 +89,14 @@ def Profile.bytes (profile : Profile) : ByteArray :=
       | some address => putU8 1; Serialize.put address
     putTagN 0 0 profile.limits.depth.toUInt64
     putTagN 0 0 profile.limits.steps.toUInt64
+    -- An optional extension, present only when it is not empty.
+    if profile.cases || !profile.interfaces.isEmpty then
+      putTagN 0 0 (if profile.cases then 1 else 0)
+      putTagN 0 0 profile.interfaces.size.toUInt64
+      for (address, mask) in profile.interfaces do
+        Serialize.put address
+        putTagN 0 0 mask.size.toUInt64
+        for byte in mask.toList do putU8 byte
 
 def Profile.address (profile : Profile) : Except String Address := do
   profile.validate
@@ -98,7 +125,25 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
     let stringType ← optional
     let depth := (← getTagN 0).value.toNat
     let steps := (← getTagN 0).value.toNat
-    return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps } }) bytes
+    let state ← get
+    let (cases, interfaces) ← if state.idx < state.bytes.size then do
+        let flags := (← getTagN 0).value
+        if flags > 1 then throw "resource profile: unknown behavior flags"
+        let count := (← getTagN 0).value.toNat
+        let state ← get
+        if count > (state.bytes.size - state.idx) / 33 then throw "resource profile: impossible interface count"
+        let mut result := #[]
+        for _ in [:count] do
+          let address ← Serialize.get
+          let length := (← getTagN 0).value.toNat
+          let state ← get
+          if length > state.bytes.size - state.idx then throw "resource profile: truncated interface"
+          result := result.push (address, ← getBytes length)
+        if flags == 0 && result.isEmpty then throw "resource profile: empty extension"
+        pure (flags == 1, result)
+      else pure (false, #[])
+    return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps },
+             cases, interfaces }) bytes
   profile.validate
   return profile
 
@@ -264,6 +309,44 @@ def fields (program : Program) (limits : Limits) (typeId ctorId : UInt64) (param
     type := body
   return fields
 
+/-- The leading binders (fields, then induction hypotheses) of each minor
+premise of a recursor type, after its parameters and motives. -/
+def recursorBinders (program : Program) (limits : Limits) (type : Ixon.Expr) (skip minors : Nat) :
+    Except Error (Array Nat) := runCheck limits do
+  let mut type := type
+  for _ in [:skip] do
+    let .all _ _ _ body ← unshare program limits.depth type
+      | throw (.unsupported "recursor telescope")
+    type := body
+  let mut result := #[]
+  for _ in [:minors] do
+    let .all _ _ domain body ← unshare program limits.depth type
+      | throw (.unsupported "recursor telescope")
+    let mut count := 0
+    let mut inner := domain
+    repeat
+      match ← unshare program limits.depth inner with
+      | .all _ _ _ b => count := count + 1; inner := b
+      | _ => break
+    result := result.push count
+    type := body
+  return result
+
+/-- Replace the contracts of a type's leading arrows by packed
+input/result contract bytes. -/
+def overlay (program : Program) (limits : Limits) (type : Ixon.Expr) (mask : List UInt8) :
+    Except Error Ixon.Expr := runCheck limits (go limits.depth type mask)
+where
+  go : Nat → Ixon.Expr → List UInt8 → CheckM Ixon.Expr
+    | _, type, [] => pure type
+    | 0, _, _ :: _ => throw .budget
+    | fuel + 1, type, byte :: rest => do
+      let .all _ _ domain body ← unshare program fuel type
+        | throw (.unsupported "interface arrow")
+      let some (input, result) := unpackAllContract? byte
+        | throw (.unsupported "interface contract")
+      return .all input result domain (← go fuel body rest)
+
 def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String AddressedProgram := do
   let profileAddress ← profile.address
   let entries := env.consts.toArray.qsort fun a b => Address.cmpBytes a.1 b.1 == .lt
@@ -279,6 +362,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   let mut pending : Array Pending := #[]
   let mut groups : Array (Array Address) := #[]
   let mut fieldSpecs : Array (Address × Address × Nat × Nat) := #[]
+  let mut recursorSpecs : Array (Address × Ixon.Recursor) := #[]
   for (address, _) in entries do
     let constant := constants[address]!
     match constant.info with
@@ -286,6 +370,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       pending := pending.push ⟨address, constant, #[address], definition d, #[]⟩
     | .recr r =>
       pending := pending.push ⟨address, constant, #[address], recursor r, r.rules.map (·.rhs)⟩
+      recursorSpecs := recursorSpecs.push (address, r)
     | .axio a =>
       pending := pending.push ⟨address, constant, #[], { type := a.typ, kind := .assumption }, #[]⟩
     | .quot q =>
@@ -303,6 +388,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
           pending := pending.push ⟨member, constant, addresses, definition d, #[]⟩
         | .recr r =>
           pending := pending.push ⟨member, constant, addresses, recursor r, r.rules.map (·.rhs)⟩
+          recursorSpecs := recursorSpecs.push (member, r)
         | .indc ind =>
           pending := pending.push ⟨member, constant, addresses,
             { type := ind.typ, kind := .typeConstructor }, #[]⟩
@@ -377,7 +463,25 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   program := { program with
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
-    shareableTypes := shareable, choices, propSort := some propSort }
+    shareableTypes := shareable, choices, propSort := some propSort, cases := profile.cases }
+  if profile.cases then
+    for (address, r) in recursorSpecs do
+      -- Only index-free inductive types: a case on an indexed family needs the
+      -- index unification (casts) that this checker's conversion lacks.
+      if r.isUnsafe || r.motives != 1 || r.indices != 0 || r.minors.toNat != r.rules.size then continue
+      let i ← index indices address
+      let fields := r.rules.map (·.fields.toNat)
+      if let .ok binders := recursorBinders program profile.limits program.declarations[i.toNat]!.type
+          (r.params + r.motives).toNat r.minors.toNat then
+        if (binders.zip fields).all (fun (b, f) => f ≤ b) then
+          program := { program with recursors := program.recursors.push {
+            index := i, params := r.params.toNat, motives := r.motives.toNat
+            minors := r.minors.toNat, indices := r.indices.toNat, fields, binders } }
+  for (address, mask) in profile.interfaces do
+    let i ← index indices address
+    let type ← (overlay program profile.limits program.declarations[i.toNat]!.type mask.toList).mapError
+      fun _ => s!"resource profile: interface does not match the arrows of {address}"
+    program := { program with interfaces := program.interfaces.push (i, type) }
   for (typeAddr, ctorAddr, params, count) in fieldSpecs do
     if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) params count then
       program := { program with fields := program.fields ++ derived }
@@ -385,7 +489,8 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     program, addresses, profileAddress
     policy := {
       assumptions := assumptions.map UInt64.toNat
-      shareableTypes := shareable.map UInt64.toNat, choices := choices.map UInt64.toNat } }
+      shareableTypes := shareable.map UInt64.toNat, choices := choices.map UInt64.toNat
+      cases := profile.cases } }
 
 /-- Resource-only validation of addressed bytes. Erased typechecking and
 claim construction belong to the combined validator, not this helper. -/

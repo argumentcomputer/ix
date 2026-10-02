@@ -311,7 +311,7 @@ pub extern "C" fn rs_compile_env(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, false)
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, false, None)
 }
 
 /// `rs_compile_env` with strict-anon output (`ix compile --anon`):
@@ -331,7 +331,36 @@ pub extern "C" fn rs_compile_env_anon(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, true)
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, true, None)
+}
+
+/// `rs_compile_env` (or its strict-anon variant) under a resource profile
+/// given as source text (`ix compile --profile FILE`). The profile names
+/// constants; they are resolved against the compiled closure and the
+/// effective profile address is reported. Same status shape.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_compile_env_profile_source"]
+/// opaque rsCompileEnvBytesProfileSourceFFI
+///   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool → Bool
+///   → @& String → IO CompileEnvStatus
+/// ```
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_compile_env_profile_source(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  allow_partial: u8,
+  strict_anon: u8,
+  profile_source: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  compile_env_inner(
+    env_consts_ptr,
+    out_path,
+    allow_partial,
+    strict_anon != 0,
+    Some(profile_source.as_str()),
+  )
 }
 
 fn compile_env_inner(
@@ -339,18 +368,26 @@ fn compile_env_inner(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
   strict_anon: bool,
+  profile_source: Option<&str>,
 ) -> LeanIOResult<LeanOwned> {
   let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
 
-  let compile_stt =
-    match compile_env_with_options(&rust_env, CompileOptions::default()) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+  let profile = match profile_source {
+    Some(text) => ix_compile::compile::ResourceProfile::Source(text),
+    None => ix_compile::compile::ResourceProfile::Standard,
+  };
+  let compile_stt = match ix_compile::compile::compile_env_with_resource_profile(
+    &rust_env,
+    CompileOptions::default(),
+    profile,
+  ) {
+    Ok(stt) => stt,
+    Err(e) => {
+      let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+      return LeanIOResult::error_string(&msg);
+    },
+  };
 
   // Deterministically ordered (pretty name, reason) pairs — DashMap
   // iteration order is shard-dependent.

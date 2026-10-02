@@ -133,6 +133,40 @@ and cannot escape through an ordinary callback value. An arbitrary ordinary
 function does not acquire branch semantics because its name resembles a
 conditional.
 
+A choice (for example `ite`, `dite`, `cond`) is applied to at least as many
+arguments as its type has leading arrows; further arguments are passed on to
+both alternatives. Its last two arguments are the alternatives, analyzed from
+the same state and joined; the others are strict. An alternative whose
+expected type takes proofs (`dite`) is entered with fresh proof binders. The
+chosen alternative is the result, so the caller's contract applies to it (or,
+without one, the primitive's result contract). A choice may be an assumed
+definition: its body is then not checked.
+
+With the profile's case behavior, three more forms are analyzed without
+closures; the consumer must compile them the same way:
+
+- A recursor application whose minor premises ignore their induction
+  hypotheses, on an inductive type without indices (one motive, one minor per
+  constructor), is a case split. Parameters, motives and indices have no
+  run-time demand. The major premise is inspected, not consumed: its read is
+  charged, but no ownership is transferred. Each minor binds the constructor's
+  fields, which keep all of the major's origins and loan root and are unique
+  only when both the major and the field binder are; the alternatives are
+  joined. A minor that uses an induction hypothesis is rejected.
+- An unannotated definition whose body only wraps such a case split
+  (`casesOn`, matchers) is unfolded at a full application. An argument of a
+  default binder that is a variable, a value form, a type or a proof is
+  substituted; any other argument is bound by a `let` with the binder's own
+  contract, so it is evaluated once, before the body, as a call evaluates it.
+- A beta-redex binds its arguments the same way.
+
+Case splits on indexed families are not supported (their index unification
+needs casts this checker's conversion does not follow); such matchers remain
+ordinary calls.
+
+An application whose function is a proof (its type is a proposition) is
+erased computation, as a proof argument is.
+
 Recursion uses the declared interfaces of the mutually checked definitions.
 Calls conservatively retain all origins permitted by those interfaces, rather
 than assuming that an unknown recursive body has no captures. Ordinary
@@ -151,12 +185,33 @@ A canonical profile begins with the UTF-8 bytes
    each list has a TagN (`f = 0`) count and strictly increasing 32-byte addresses.
 2. Optional Nat and String type addresses: a byte `0`, or `1` and an address.
 3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
+4. An optional extension, present only when it is not empty: a TagN (`f = 0`)
+   behavior flag (`1`: case splits, case wrappers and beta-redexes, above; no
+   other value), then a TagN (`f = 0`) count of admitted interfaces, each a
+   32-byte address (strictly increasing), a TagN (`f = 0`) length, and that
+   many bytes, one packed input/result contract byte per leading arrow.
 
-Selection primitives must also be assumptions. Literal types, when selected,
+Selection primitives and admitted interfaces must also be assumptions. An
+admitted interface replaces the declaration's own arrow contracts for its
+callers (for example `List.length` reading a `~` input and returning a fresh
+unrestricted value); the declaration's body is not checked against it. Literal types, when selected,
 must match the kernel's pinned primitive identities. The profile address is
 BLAKE3 of these exact bytes. Changing limits or assumptions changes the claim.
 The default profile admits no external resource interfaces and only grants
 shareability to present canonical Nat, Bool, and String types.
+
+`ix compile --profile FILE` replaces the standard profile with a profile
+source: one directive per line (`#` starts a comment): `standard` (the
+standard profile's entries), `shareable NAME`, `assume NAME`, `choice NAME`,
+`interface NAME C…` (one contract token per leading arrow, `INPUT[:RESULT]`
+in source prefix syntax, `_` for the default), `cases`, and `limits DEPTH
+STEPS`. Names are resolved against the compiled closure, entries outside it
+are omitted, and the command prints the effective profile address; the
+validation itself binds addresses only. The published Lean core profile is
+[`profiles/lean-core.profile`](../profiles/lean-core.profile): the standard
+entries, the scalar immediates `Char` and `UInt8`–`UInt64`, the choices `ite`,
+`dite` and `cond`, case behavior, and readers (`List.length`, `Array.size`,
+`String.length`) with a local input.
 
 `makeClaim` validates before producing a `Resource` claim. `checkClaim` checks
 the complete subject root and profile address, then reruns combined validation.
@@ -197,7 +252,9 @@ ordinary typechecking prerequisite or claim a proof of a machine backend's
 allocation behavior.
 
 [Shared resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
-accepted and rejected terms in both implementations. The suites also cover
+accepted and rejected terms in both implementations; `resource-modes.tsv`
+covers usage crossing, proofs and open field rules, and `resource-cases.tsv`
+case splits, case wrappers, beta-redexes and choices. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.

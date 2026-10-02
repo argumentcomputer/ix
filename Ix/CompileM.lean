@@ -3990,6 +3990,16 @@ opaque rsCompileEnvBytesAnonFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
   → IO CompileEnvStatus
 
+/-- `rsCompileEnvBytesFFI` (or, with the second flag, its strict-anon
+    variant) under a resource profile given as source text (`ix compile
+    --profile FILE`): directives name constants, which the native
+    compiler resolves against the compiled closure; it reports the
+    effective profile address. -/
+@[extern "rs_compile_env_profile_source"]
+opaque rsCompileEnvBytesProfileSourceFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool → Bool
+  → @& String → IO CompileEnvStatus
+
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
     decompile + roundtrip + alpha-equivalence + nested-detect checks).
     Returns total failure count across all phases. The second argument

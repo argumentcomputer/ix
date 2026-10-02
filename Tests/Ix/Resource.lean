@@ -358,6 +358,119 @@ def modeCases : Array Case := #[
     lam (b .linear) (.prj 18 0 (v 0)) resTy, "unsupported"⟩
 ]
 
+def boxTy : E := ref 21
+def chainTy : E := ref 25
+/-- `∀ (motive : T → Sort 0), …` premises over a constant motive. -/
+def constMotive (t result : E) : E := lam (b .many) result t
+def app4 (f a b c d : E) : E := .app (.app (.app (.app f a) b) c) d
+
+/-- The mode program extended with case splits (`cases`), two inductive
+types with recursors, a `casesOn`-style wrapper, and two more choices: one
+whose alternatives receive a proof (as `dite`) and one with a leading type
+argument (as `cond`). Mirrors the Rust `cases_program`. -/
+def casesProgram : Program := { modesProgram with
+  declarations := modesProgram.declarations ++ #[
+    { type := .sort 0, kind := .typeConstructor },                            -- 21 Box
+    { type := boxTy, kind := .constructor },                                  -- 22 Box.empty
+    { type := arr (b .many) .shared resTy boxTy, kind := .constructor },      -- 23 Box.full
+    { type := arr (b .many) .shared (arr (b .many) .shared boxTy (.sort 0))   -- 24 Box.rec
+        (arr (b .many) .shared (.app (v 0) (ref 22))
+          (arr (b .many) .shared (arr (b .many) .shared resTy (.app (v 2) (.app (ref 23) (v 0))))
+            (arr (b .many) .shared boxTy (.app (v 3) (v 0))))),
+      kind := .assumption },
+    { type := .sort 0, kind := .typeConstructor },                            -- 25 Chain
+    { type := chainTy, kind := .constructor },                                -- 26 Chain.stop
+    { type := arr (b .many) .shared chainTy chainTy, kind := .constructor },  -- 27 Chain.link
+    { type := arr (b .many) .shared (arr (b .many) .shared chainTy (.sort 0)) -- 28 Chain.rec
+        (arr (b .many) .shared (.app (v 0) (ref 26))
+          (arr (b .many) .shared
+            (arr (b .many) .shared chainTy (arr (b .many) .shared (.app (v 2) (v 0))
+              (.app (v 3) (.app (ref 27) (v 1)))))
+            (arr (b .many) .shared chainTy (.app (v 3) (v 0))))),
+      kind := .assumption },
+    { type := arr (b .many) .shared (arr (b .many) .shared boxTy (.sort 0))   -- 29 Box.casesOn
+        (arr (b .many) .shared boxTy
+          (arr (b .many) .shared (.app (v 1) (ref 22))
+            (arr (b .many) .shared (arr (b .many) .shared resTy (.app (v 3) (.app (ref 23) (v 0))))
+              (.app (v 3) (v 2))))),
+      body := some (lam (b .many) (lam (b .many) (lam (b .many) (lam (b .many)
+        (app4 (ref 24) (v 3) (v 1) (lam (b .many) (.app (v 1) (v 0)) resTy) (v 2))
+        (arr (b .many) .shared resTy (.app (v 3) (.app (ref 23) (v 0)))))
+        (.app (v 1) (ref 22))) boxTy) (arr (b .many) .shared boxTy (.sort 0))) },
+    { type := resTy, kind := .assumption },                                   -- 30 fresh Res
+    { type := arr (b .many) .shared natTy                                     -- 31 proof choice
+        (arr (b .many) .shared (arr (b .many) .shared prfTy resTy)
+          (arr (b .many) .shared (arr (b .many) .shared prfTy resTy) resTy)),
+      kind := .assumption },
+    { type := arr (b .many) .shared (.sort 0) (arr (b .many) .shared natTy    -- 32 typed choice
+        (arr (b .many) .shared (v 1) (arr (b .many) .shared (v 2) (v 3)))),
+      kind := .assumption }
+  ]
+  choices := modesProgram.choices ++ #[31, 32]
+  recursors := #[
+    { index := 24, params := 0, motives := 1, minors := 2, indices := 0,
+      fields := #[0, 1], binders := #[0, 1] },
+    { index := 28, params := 0, motives := 1, minors := 2, indices := 0,
+      fields := #[0, 1], binders := #[0, 2] } ]
+  cases := true }
+
+def resToRes (input : BinderContract) (result : ValueContract := .shared) : E :=
+  arr input result resTy resTy
+/-- `(r : Res) → (t : Box) → Res`, one-shot after `r`. -/
+def resBoxRes (input : BinderContract) : E :=
+  arr input .unique resTy (arr (b .many) .shared boxTy resTy)
+def boxSplit (empty full major : E) : E :=
+  app4 (ref 24) (constMotive boxTy resTy) empty full major
+
+def caseCases : Array Case := #[
+  -- Case splits over a recursor whose minors ignore their hypotheses.
+  ⟨"a case split joins its alternatives", resBoxRes (b .linear),
+    lam (b .linear) (lam (b .many) (boxSplit (v 1) (lam (b .many) (v 2) resTy) (v 0)) boxTy) resTy, "ok"⟩,
+  ⟨"a linear value missing from one alternative", resBoxRes (b .linear),
+    lam (b .linear) (lam (b .many) (boxSplit (v 1) (lam (b .many) (v 0) resTy) (v 0)) boxTy) resTy, "usage"⟩,
+  ⟨"fields keep the major's locality", arr (b .many .localShared) .shared boxTy resTy,
+    lam (b .many .localShared) (boxSplit (ref 30) (lam (b .many) (v 0) resTy) (v 0)) boxTy, "unrestricted"⟩,
+  ⟨"a local field may return locally", arr (b .many .localShared) .localShared boxTy resTy,
+    lam (b .many .localShared) (boxSplit (ref 30) (lam (b .many) (v 0) resTy) (v 0)) boxTy, "ok"⟩,
+  ⟨"the major is inspected, not moved", arr (b .many .unique) .unique boxTy boxTy,
+    lam (b .many .unique)
+      (app4 (ref 24) (constMotive boxTy boxTy) (v 0) (lam (b .many) (v 1) resTy) (v 0)) boxTy, "ok"⟩,
+  ⟨"a case split may not use an induction hypothesis", arr (b .many) .shared chainTy natTy,
+    lam (b .many) (app4 (ref 28) (constMotive chainTy natTy) zero
+      (lam (b .many) (lam (b .many) (v 0) natTy) chainTy) (v 0)) chainTy, "unsupported"⟩,
+  ⟨"a dead induction hypothesis is ignored", arr (b .many) .shared chainTy natTy,
+    lam (b .many) (app4 (ref 28) (constMotive chainTy natTy) zero
+      (lam (b .many) (lam (b .many) zero natTy) chainTy) (v 0)) chainTy, "ok"⟩,
+  -- Wrappers and β-redexes.
+  ⟨"a case wrapper is unfolded", resBoxRes (b .linear),
+    lam (b .linear) (lam (b .many) (app4 (ref 29) (constMotive boxTy resTy) (v 0) (v 1)
+      (lam (b .many) (v 2) resTy)) boxTy) resTy, "ok"⟩,
+  ⟨"an unfolded wrapper still joins its alternatives", resBoxRes (b .linear),
+    lam (b .linear) (lam (b .many) (app4 (ref 29) (constMotive boxTy resTy) (v 0) (v 1)
+      (lam (b .many) (v 0) resTy)) boxTy) resTy, "usage"⟩,
+  ⟨"a beta-redex binds a variable argument", resToRes (b .linear),
+    lam (b .linear) (.app (lam (b .many) (v 0) resTy) (v 0)) resTy, "ok"⟩,
+  ⟨"an annotated beta-redex keeps its binder contract", resToRes (b .linear),
+    lam (b .linear) (.app (lam (b .linear) (v 0) resTy) (v 0)) resTy, "ok"⟩,
+  ⟨"an affine beta-redex binder may drop a linear argument", resToRes (b .linear),
+    lam (b .linear) (.app (lam (b .affine) (v 0) resTy) (v 0)) resTy, "usage"⟩,
+  ⟨"a beta-redex binder still counts its uses", resToRes (b .linear),
+    lam (b .linear) (.app (lam (b .linear) (ref 30) resTy) (v 0)) resTy, "usage"⟩,
+  -- Generalized choices.
+  ⟨"proof alternatives are entered", resToRes (b .linear),
+    lam (b .linear) (.app (.app (call 31 zero) (lam (b .many) (v 1) prfTy)) (lam (b .many) (v 1) prfTy)) resTy, "ok"⟩,
+  ⟨"proof alternatives still join", resToRes (b .linear),
+    lam (b .linear) (.app (.app (call 31 zero) (lam (b .many) (v 1) prfTy)) (lam (b .many) (ref 30) prfTy)) resTy, "usage"⟩,
+  ⟨"a typed choice selects by need", resToRes (b .linear),
+    lam (b .linear) (app4 (ref 32) resTy zero (v 0) (v 0)) resTy, "ok"⟩,
+  ⟨"a typed choice joins its alternatives", resToRes (b .linear),
+    lam (b .linear) (app4 (ref 32) resTy zero (v 0) (ref 30)) resTy, "usage"⟩,
+  ⟨"a choice takes its caller's contract", resToRes (b .linear .unique) .unique,
+    lam (b .linear .unique) (app4 (ref 32) resTy zero (v 0) (v 0)) resTy, "ok"⟩,
+  ⟨"a typed choice needs every argument", resToRes (b .linear),
+    lam (b .linear) (.app (.app (call 32 resTy) zero) (v 0)) resTy, "unsupported"⟩
+]
+
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=
   let p := { base with declarations := base.declarations.push { type, body := some value } }
   checkDefinition p base.declarations.size limits
@@ -383,7 +496,8 @@ def runFixtureCases : IO Nat := do
     throw <| IO.userError "resource fixture differs from its producer; regenerate it with \
       `lake exe ixon-v4-tests --export-fixtures`"
   let modes ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-modes.tsv" modesProgram modeCases
-  return base + modes
+  let cases ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-cases.tsv" casesProgram caseCases
+  return base + modes + cases
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

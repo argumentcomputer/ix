@@ -4822,7 +4822,8 @@ pub mod nat_conv;
 pub mod surgery;
 pub(crate) mod validation;
 pub use env::{
-  compile_env, compile_env_with_options, compile_env_with_profile,
+  ResourceProfile, compile_env, compile_env_with_options,
+  compile_env_with_profile, compile_env_with_resource_profile,
 };
 
 #[cfg(test)]

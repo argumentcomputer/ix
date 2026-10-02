@@ -7,7 +7,9 @@
 
 pub mod addressed;
 
-use crate::contract::{BinderContract, LetKind, Locality, ValueContract};
+use crate::contract::{
+  BinderContract, LetContract, LetKind, Locality, ValueContract,
+};
 use crate::expr::{Expr, Owned, Uses};
 use std::sync::Arc;
 
@@ -118,13 +120,51 @@ pub struct Program {
   pub nat_type: Option<Term>,
   pub string_type: Option<Term>,
   pub shareable_types: Vec<u64>,
-  /// Profile-bound non-strict selection, with exactly three arguments.
+  /// Profile-bound non-strict selection primitives. A choice is applied to
+  /// exactly as many arguments as its type has leading arrows (more are
+  /// passed on to both alternatives). Its last two arguments are the
+  /// alternatives, evaluated by need; the others are strict. An alternative
+  /// expecting a proof (`dite`) is entered with a fresh proof binder.
   pub choices: Vec<u64>,
   /// The sort index that denotes `Prop`. The address adapter rewrites every
   /// sort to `0` (some type universe) or this index (literally `Sort 0`).
   /// Values of a proposition are erased computation with zero demand; without
   /// this index no type is recognized as a proposition.
   pub prop_sort: Option<u64>,
+  /// Recursors the case-split rule can read.
+  pub recursors: Vec<RecursorInfo>,
+  /// Profile behavior: a recursor application whose minor premises ignore
+  /// their induction hypotheses is a case split; an unannotated definition
+  /// that only wraps a case split or a choice (`casesOn`, matchers) is
+  /// inlined, and a beta-redex binds its argument. The consumer must compile
+  /// these without closures.
+  pub cases: bool,
+  /// Admitted resource interfaces: callers see this type in place of the
+  /// declaration's own. The profile must also list the declaration as an
+  /// assumption.
+  pub interfaces: Vec<(u64, Term)>,
+}
+
+/// The shape of an addressed recursor of a single, non-mutual inductive type,
+/// as the case-split rule needs it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RecursorInfo {
+  pub index: u64,
+  pub params: usize,
+  pub motives: usize,
+  pub minors: usize,
+  pub indices: usize,
+  /// Constructor fields of each minor premise, in minor order.
+  pub fields: Vec<usize>,
+  /// Leading binders of each minor's declared domain: its fields, then its
+  /// induction hypotheses.
+  pub binders: Vec<usize>,
+}
+
+impl RecursorInfo {
+  pub fn arity(&self) -> usize {
+    self.params + self.motives + self.minors + self.indices + 1
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -256,6 +296,40 @@ fn union(a: &[usize], b: &[usize]) -> Vec<usize> {
     }
   }
   result
+}
+
+/// What a selection primitive supplies to the binders of its alternatives.
+enum Supply {
+  /// Proofs (`dite`): erased computation with no origins.
+  Proofs,
+  /// Constructor fields of an inspected major premise, followed by induction
+  /// hypotheses.
+  Fields { fields: Vec<usize>, major: Value },
+}
+impl Supply {
+  fn value(
+    &self,
+    j: usize,
+    k: usize,
+    domain: Term,
+    field: BinderContract,
+  ) -> Value {
+    match self {
+      Self::Fields { fields, major } if k < fields[j] => Value {
+        owned: if major.owned == Owned::Unique
+          && field.value.owned == Owned::Unique
+        {
+          Owned::Unique
+        } else {
+          Owned::Shared
+        },
+        origins: major.origins.clone(),
+        loan_root: major.loan_root,
+        ..Value::shared(domain)
+      },
+      _ => Value::shared(domain),
+    }
+  }
 }
 
 struct Checker<'a> {
@@ -893,7 +967,7 @@ impl<'a> Checker<'a> {
         let typ = self.binding(ctx.vars[pos])?.value.typ.clone();
         self.shift(fuel, &typ, i.checked_add(1).ok_or(Error::Budget)?, 0)
       },
-      Expr::Ref(i, _) => Ok(self.declaration(*i)?.typ.clone()),
+      Expr::Ref(i, _) => self.interface_type(*i),
       Expr::Share(i) => self.type_of(fuel, ctx, &self.expansion(*i)?),
       Expr::Rec(..) => {
         Err(Error::Unsupported("unresolved recursive reference"))
@@ -960,6 +1034,11 @@ impl<'a> Checker<'a> {
   ) -> Result<Value, Error> {
     let fn_type = self.type_of(fuel, ctx, f)?;
     let (input, result, domain, codomain) = self.arrow(fuel, &fn_type)?;
+    // Applying a proof (a function whose type is a proposition) yields a
+    // proof: erased computation, as a proof argument is.
+    if self.is_proposition(fuel, ctx, &fn_type)? {
+      return Ok(Value::fresh(self.substitute(fuel, &codomain, a, 0)?));
+    }
     let scope =
       if result.locality == Locality::Local { destination } else { ctx.scope };
     let f = self.analyze(fuel, ctx, f, None, scope, grade)?;
@@ -977,77 +1056,557 @@ impl<'a> Checker<'a> {
       result.owned == Owned::Shared || self.is_shareable(fuel, &typ)?;
     Ok(Value { owned: result.owned, origins, duplicable, ..Value::shared(typ) })
   }
-  fn selection(
+  /// The interface callers see: an admitted interface, or the declared type.
+  fn interface_type(&self, index: u64) -> Result<Term, Error> {
+    match self.program.interfaces.iter().find(|(i, _)| *i == index) {
+      Some((_, typ)) => Ok(typ.clone()),
+      None => Ok(self.declaration(index)?.typ.clone()),
+    }
+  }
+  /// Expand sharing at the head of an expression.
+  fn unshare(&mut self, fuel: usize, e: &Term) -> Result<Term, Error> {
+    let fuel = self.tick(fuel)?;
+    match e.as_ref() {
+      Expr::Share(i) => {
+        let expanded = self.expansion(*i)?;
+        self.unshare(fuel, &expanded)
+      },
+      _ => Ok(e.clone()),
+    }
+  }
+  /// Whether an expression carries no resource contract (every binder, arrow
+  /// and let has the default contract).
+  fn plain(&mut self, fuel: usize, e: &Term) -> Result<bool, Error> {
+    let fuel = self.tick(fuel)?;
+    Ok(match e.as_ref() {
+      Expr::Share(i) => {
+        let expanded = self.expansion(*i)?;
+        self.plain(fuel, &expanded)?
+      },
+      Expr::App(f, a) => {
+        let f = self.plain(fuel, f)?;
+        let a = self.plain(fuel, a)?;
+        f && a
+      },
+      Expr::Lam(c, t, b) => {
+        let t = self.plain(fuel, t)?;
+        let b = self.plain(fuel, b)?;
+        *c == BinderContract::default() && t && b
+      },
+      Expr::All(c, r, t, b) => {
+        let t = self.plain(fuel, t)?;
+        let b = self.plain(fuel, b)?;
+        *c == BinderContract::default()
+          && *r == ValueContract::shared()
+          && t
+          && b
+      },
+      Expr::Let(c, t, v, b) => {
+        let t = self.plain(fuel, t)?;
+        let v = self.plain(fuel, v)?;
+        let b = self.plain(fuel, b)?;
+        c.binder == BinderContract::default()
+          && c.kind == LetKind::Value
+          && t
+          && v
+          && b
+      },
+      Expr::Prj(_, _, v) => self.plain(fuel, v)?,
+      _ => true,
+    })
+  }
+  /// Whether variable `index` occurs in `e`.
+  fn occurs(
+    &mut self,
+    fuel: usize,
+    e: &Term,
+    index: u64,
+  ) -> Result<bool, Error> {
+    let fuel = self.tick(fuel)?;
+    Ok(match e.as_ref() {
+      Expr::Var(i) => *i == index,
+      Expr::Share(i) => {
+        let expanded = self.expansion(*i)?;
+        self.occurs(fuel, &expanded, index)?
+      },
+      Expr::App(f, a) => {
+        let f = self.occurs(fuel, f, index)?;
+        let a = self.occurs(fuel, a, index)?;
+        f || a
+      },
+      Expr::Lam(_, t, b) | Expr::All(_, _, t, b) => {
+        let t = self.occurs(fuel, t, index)?;
+        let b = self.occurs(fuel, b, index + 1)?;
+        t || b
+      },
+      Expr::Let(_, t, v, b) => {
+        let t = self.occurs(fuel, t, index)?;
+        let v = self.occurs(fuel, v, index)?;
+        let b = self.occurs(fuel, b, index + 1)?;
+        t || v || b
+      },
+      Expr::Prj(_, _, v) => self.occurs(fuel, v, index)?,
+      _ => false,
+    })
+  }
+  /// Number of leading arrows of a type.
+  fn arity(&mut self, fuel: usize, typ: &Term) -> Result<usize, Error> {
+    let fuel = fuel.checked_sub(1).ok_or(Error::Budget)?;
+    let typ = self.whnf(fuel, typ)?;
+    match typ.as_ref() {
+      Expr::All(_, _, _, body) => Ok(self.arity(fuel, body)? + 1),
+      _ => Ok(0),
+    }
+  }
+  fn recursor_info(&self, index: u64) -> Option<RecursorInfo> {
+    self.program.recursors.iter().find(|r| r.index == index).cloned()
+  }
+  /// Whether a minor premise ignores its induction hypotheses: it binds all
+  /// of the minor's binders and its body mentions none of the hypotheses.
+  fn ignores_hypotheses(
+    &mut self,
+    fuel: usize,
+    minor: &Term,
+    fields: usize,
+    binders: usize,
+  ) -> Result<bool, Error> {
+    if binders == fields {
+      return Ok(true);
+    }
+    let mut body = minor.clone();
+    for _ in 0..binders {
+      match self.unshare(fuel, &body)?.as_ref() {
+        Expr::Lam(_, _, b) => body = b.clone(),
+        _ => return Ok(false),
+      }
+    }
+    for k in 0..binders.saturating_sub(fields) {
+      if self.occurs(fuel, &body, k as u64)? {
+        return Ok(false);
+      }
+    }
+    Ok(true)
+  }
+  /// The arity of an unannotated, non-recursive definition that only wraps a
+  /// case split: its body is a lambda telescope around a full application of
+  /// a case recursor whose minors ignore their induction hypotheses, or of
+  /// another such wrapper (`casesOn`, matchers). A definition that wraps a
+  /// choice is an ordinary function.
+  fn case_wrapper(
+    &mut self,
+    fuel: usize,
+    depth: usize,
+    index: u64,
+  ) -> Result<Option<usize>, Error> {
+    let Some(depth) = depth.checked_sub(1) else { return Ok(None) };
+    if !self.program.cases || self.program.choices.contains(&index) {
+      return Ok(None);
+    }
+    let Some(d) = usize::try_from(index)
+      .ok()
+      .and_then(|i| self.program.declarations.get(i))
+      .cloned()
+    else {
+      return Ok(None);
+    };
+    let Some(body) = d.body.clone() else { return Ok(None) };
+    let plain_type = self.plain(fuel, &d.typ)?;
+    let plain_body = self.plain(fuel, &body)?;
+    if !(d.kind == DeclKind::Definition && plain_type && plain_body) {
+      return Ok(None);
+    }
+    let mut inner = body;
+    let mut params = 0;
+    loop {
+      let unshared = self.unshare(fuel, &inner)?;
+      match unshared.as_ref() {
+        Expr::Lam(_, _, b) => {
+          inner = b.clone();
+          params += 1;
+        },
+        _ => {
+          inner = unshared;
+          break;
+        },
+      }
+    }
+    let (head, args) = self.split_app(fuel, &inner)?;
+    let Expr::Ref(target, _) = head.as_ref() else { return Ok(None) };
+    if let Some(info) = self.recursor_info(*target) {
+      if args.len() < info.arity() {
+        return Ok(None);
+      }
+      for j in 0..info.minors {
+        let minor = args[info.params + info.motives + j].clone();
+        if !self.ignores_hypotheses(
+          fuel,
+          &minor,
+          info.fields[j],
+          info.binders[j],
+        )? {
+          return Ok(None);
+        }
+      }
+      return Ok(Some(params));
+    }
+    Ok(match self.case_wrapper(fuel, depth, *target)? {
+      Some(n) => (args.len() >= n).then_some(params),
+      None => None,
+    })
+  }
+  /// Whether a type is a sort or an arrow into a sort.
+  fn type_former(
+    &mut self,
+    fuel: usize,
+    depth: usize,
+    typ: &Term,
+  ) -> Result<bool, Error> {
+    let Some(depth) = depth.checked_sub(1) else { return Ok(false) };
+    let typ = self.whnf(fuel, typ)?;
+    match typ.as_ref() {
+      Expr::Sort(_) => Ok(true),
+      Expr::All(_, _, _, b) => self.type_former(fuel, depth, b),
+      _ => Ok(false),
+    }
+  }
+  /// Whether an argument may be substituted into a lambda telescope: a
+  /// variable, a value form, or a type or proof (erased computation).
+  fn substitutable(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    arg: &Term,
+    domain: &Term,
+  ) -> Result<bool, Error> {
+    match self.unshare(fuel, arg)?.as_ref() {
+      Expr::Var(_)
+      | Expr::Lam(..)
+      | Expr::Sort(_)
+      | Expr::All(..)
+      | Expr::Nat(_)
+      | Expr::Str(_)
+      | Expr::Ref(..) => Ok(true),
+      _ => {
+        if self.type_former(fuel, 16, domain)? {
+          return Ok(true);
+        }
+        self.is_proposition(fuel, ctx, domain)
+      },
+    }
+  }
+  /// Apply a lambda telescope to arguments, as `let`s: an argument of a
+  /// binder with the default contract that is a variable, a value form, a
+  /// type or a proof is substituted; any other argument is bound by a `let`
+  /// carrying the binder's own contract, so it is evaluated once, before the
+  /// body, exactly as a call would evaluate it. Arguments beyond the
+  /// telescope are applied to the body.
+  fn bind_arguments(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    telescope: &Term,
+    args: &[Term],
+  ) -> Result<Term, Error> {
+    let before = self.state.bindings.clone();
+    let mut term = telescope.clone();
+    let mut lets: Vec<(LetContract, Term, Term)> = vec![];
+    let mut inner = ctx.clone();
+    let mut rest = 0;
+    while rest < args.len() {
+      let unshared = self.unshare(fuel, &term)?;
+      let Expr::Lam(c, domain, body) = unshared.as_ref() else { break };
+      let arg = self.shift(fuel, &args[rest], lets.len() as u64, 0)?;
+      if *c == BinderContract::default()
+        && self.substitutable(fuel, &inner, &arg, domain)?
+      {
+        term = self.substitute(fuel, body, &arg, 0)?;
+      } else {
+        lets.push((
+          LetContract { non_dep: false, kind: LetKind::Value, binder: *c },
+          domain.clone(),
+          arg,
+        ));
+        let id = self.push(*c, Value::shared(domain.clone()));
+        inner.vars.push(id);
+        term = body.clone();
+      }
+      rest += 1;
+    }
+    for arg in &args[rest..] {
+      term = Expr::app(term, self.shift(fuel, arg, lets.len() as u64, 0)?);
+    }
+    self.state.bindings = before;
+    for (c, domain, value) in lets.into_iter().rev() {
+      term = Expr::let_contract(c, domain, value, term);
+    }
+    Ok(term)
+  }
+  fn join_value(a: Value, b: Value) -> Value {
+    Value {
+      typ: a.typ,
+      owned: if a.owned == Owned::Unique && b.owned == Owned::Unique {
+        Owned::Unique
+      } else {
+        Owned::Shared
+      },
+      origins: union(&a.origins, &b.origins),
+      duplicable: a.duplicable && b.duplicable,
+      place: if a.place == b.place { a.place } else { None },
+      loan_root: if a.loan_root == b.loan_root { a.loan_root } else { None },
+    }
+  }
+  /// Analyze alternatives from the same state and join them. Each alternative
+  /// first binds the values the primitive supplies to it (one per flag;
+  /// `true` marks an induction hypothesis, which must stay unused), then is
+  /// analyzed with the given contract.
+  #[allow(clippy::too_many_arguments)]
+  fn alternatives(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    branches: &[(Term, Term, Vec<bool>)],
+    supply: &Supply,
+    extra: &[Term],
+    contract: Option<ValueContract>,
+    output_type: Term,
+    destination: usize,
+    grade: Uses,
+  ) -> Result<Value, Error> {
+    let before = self.state.bindings.clone();
+    let count = before.len();
+    let mut joined: Option<Vec<Binding>> = None;
+    let mut result: Option<Value> = None;
+    for (j, (alternative, alternative_type, hypotheses)) in
+      branches.iter().enumerate()
+    {
+      self.state.bindings = before.clone();
+      let mut body = alternative.clone();
+      let mut typ = alternative_type.clone();
+      let mut inner = ctx.clone();
+      let mut entered = vec![];
+      for (k, hypothesis) in hypotheses.iter().enumerate() {
+        let (field, _, domain, codomain) = self.arrow(fuel, &typ)?;
+        let unshared = self.unshare(fuel, &body)?;
+        let (c, rest) = match unshared.as_ref() {
+          Expr::Lam(c, _, b) => (*c, b.clone()),
+          _ => (
+            BinderContract::default(),
+            Expr::app(self.shift(fuel, &unshared, 1, 0)?, Expr::var(0)),
+          ),
+        };
+        let value = supply.value(j, k, domain, field);
+        let id = self.push(c, value);
+        entered.push((id, *hypothesis));
+        inner.vars.push(id);
+        body = rest;
+        typ = codomain;
+      }
+      for x in extra {
+        let x = self.shift(fuel, x, entered.len() as u64, 0)?;
+        let (_, _, _, codomain) = self.arrow(fuel, &typ)?;
+        typ = self.substitute(fuel, &codomain, &x, 0)?;
+        body = Expr::app(body, x);
+      }
+      let output = self.analyze(
+        fuel,
+        &inner,
+        &body,
+        contract.map(|c| (typ, c)),
+        destination,
+        grade,
+      )?;
+      for (id, hypothesis) in entered {
+        if hypothesis {
+          if self.binding(id)?.touched {
+            return Err(Error::Unsupported(
+              "a case split uses an induction hypothesis",
+            ));
+          }
+        } else {
+          self.validate_usage(id)?;
+        }
+      }
+      let mut output = output;
+      if output.place.is_some_and(|p| p >= count) {
+        output.place = None;
+      }
+      let bindings: Vec<Binding> =
+        self.state.bindings.iter().take(count).cloned().collect();
+      joined = Some(match joined {
+        None => bindings,
+        Some(acc) => acc
+          .into_iter()
+          .zip(bindings)
+          .map(|(mut a, b)| {
+            a.owner = a.owner.join(&b.owner);
+            a.demand = join(a.demand, b.demand);
+            a.touched |= b.touched;
+            a
+          })
+          .collect(),
+      });
+      result = Some(match result {
+        None => output,
+        Some(v) => Self::join_value(v, output),
+      });
+    }
+    self.state.bindings = joined.unwrap_or(before);
+    let mut value = result.unwrap_or_else(|| Value::fresh(output_type.clone()));
+    value.typ = output_type;
+    Ok(value)
+  }
+  /// A choice: strict leading arguments, then two alternatives evaluated by
+  /// need. Proof binders of an alternative (`dite`) are supplied by the
+  /// primitive. The chosen alternative is the result: the caller's contract
+  /// applies to it, or else the primitive's own result contract.
+  #[allow(clippy::too_many_arguments)]
+  fn choice(
     &mut self,
     fuel: usize,
     ctx: &Context,
     index: u64,
     args: &[Term],
+    expected: &Expected,
     destination: usize,
     grade: Uses,
   ) -> Result<Value, Error> {
-    let typ = self.declaration(index)?.typ.clone();
-    let (c, _, selector_type, tail) = self.arrow(fuel, &typ)?;
-    self.analyze_argument(
+    let declared = self.declaration(index)?.typ.clone();
+    let n = self.arity(fuel, &declared)?;
+    if args.len() < n {
+      return Err(Error::Unsupported(
+        "selection primitives require a complete application",
+      ));
+    }
+    if n < 2 {
+      return Err(Error::Unsupported(
+        "a selection primitive needs two alternatives",
+      ));
+    }
+    let mut tail = declared;
+    for arg in &args[..n - 2] {
+      let (c, _, domain, codomain) = self.arrow(fuel, &tail)?;
+      self.analyze_argument(fuel, ctx, arg, domain, c, ctx.scope, grade)?;
+      tail = self.substitute(fuel, &codomain, arg, 0)?;
+    }
+    let left = args[n - 2].clone();
+    let right = args[n - 1].clone();
+    let (_, _, left_type, after_left) = self.arrow(fuel, &tail)?;
+    let after_left = self.substitute(fuel, &after_left, &left, 0)?;
+    let (_, result, right_type, after_right) = self.arrow(fuel, &after_left)?;
+    let mut output_type = self.substitute(fuel, &after_right, &right, 0)?;
+    let extra = &args[n..];
+    for x in extra {
+      let (_, _, _, codomain) = self.arrow(fuel, &output_type)?;
+      output_type = self.substitute(fuel, &codomain, x, 0)?;
+    }
+    let before = self.state.bindings.clone();
+    let left_proofs = self.proofs(fuel, ctx, &left_type)?;
+    let right_proofs = self.proofs(fuel, ctx, &right_type)?;
+    self.state.bindings = before;
+    if left_proofs.is_empty() && right_proofs.is_empty() && extra.is_empty() {
+      self.require_type(fuel, &left_type, &right_type)?;
+      self.require_type(fuel, &left_type, &output_type)?;
+    }
+    let contract = match expected {
+      Some((_, c)) => *c,
+      None => result,
+    };
+    self.alternatives(
       fuel,
       ctx,
-      &args[0],
-      selector_type,
-      c,
+      &[(left, left_type, left_proofs), (right, right_type, right_proofs)],
+      &Supply::Proofs,
+      extra,
+      Some(contract),
+      output_type,
+      destination,
+      grade,
+    )
+  }
+  /// The proof binders an alternative expects (`dite`).
+  fn proofs(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    typ: &Term,
+  ) -> Result<Vec<bool>, Error> {
+    let mut typ = typ.clone();
+    let mut found = vec![];
+    let mut inner = ctx.clone();
+    loop {
+      let reduced = self.whnf(fuel, &typ)?;
+      let Expr::All(c, _, domain, body) = reduced.as_ref() else { break };
+      if !self.is_proposition(fuel, &inner, domain)? {
+        break;
+      }
+      found.push(false);
+      let id = self.push(*c, Value::shared(domain.clone()));
+      inner.vars.push(id);
+      typ = body.clone();
+    }
+    Ok(found)
+  }
+  /// A case split. Parameters, motives and indices have no run-time demand;
+  /// the major premise is inspected, not consumed; each minor binds the
+  /// constructor's fields, which keep the major's origins and are unique only
+  /// when both the major and the field binder are.
+  #[allow(clippy::too_many_arguments)]
+  fn case_split(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    index: u64,
+    info: &RecursorInfo,
+    args: &[Term],
+    expected: &Expected,
+    destination: usize,
+    grade: Uses,
+  ) -> Result<Value, Error> {
+    let mut tail = self.declaration(index)?.typ.clone();
+    let mut minor_types = vec![];
+    for (i, arg) in args[..info.arity()].iter().enumerate() {
+      let (_, _, domain, codomain) = self.arrow(fuel, &tail)?;
+      if info.params + info.motives <= i
+        && i < info.params + info.motives + info.minors
+      {
+        minor_types.push(domain);
+      }
+      tail = self.substitute(fuel, &codomain, arg, 0)?;
+    }
+    let mut output_type = tail;
+    let extra = &args[info.arity()..];
+    for x in extra {
+      let (_, _, _, codomain) = self.arrow(fuel, &output_type)?;
+      output_type = self.substitute(fuel, &codomain, x, 0)?;
+    }
+    let major = self.analyze(
+      fuel,
+      ctx,
+      &args[info.arity() - 1],
+      None,
       ctx.scope,
       grade,
     )?;
-    let tail = self.substitute(fuel, &tail, &args[0], 0)?;
-    let (_, _, left_type, tail) = self.arrow(fuel, &tail)?;
-    let tail = self.substitute(fuel, &tail, &args[1], 0)?;
-    let (_, result, right_type, output_type) = self.arrow(fuel, &tail)?;
-    let output_type = self.substitute(fuel, &output_type, &args[2], 0)?;
-    self.require_type(fuel, &left_type, &right_type)?;
-    self.require_type(fuel, &left_type, &output_type)?;
-    let before = self.state.bindings.clone();
-    let left = self.analyze(
+    let branches: Vec<_> = (0..info.minors)
+      .map(|j| {
+        (
+          args[info.params + info.motives + j].clone(),
+          minor_types[j].clone(),
+          (0..info.binders[j]).map(|k| k >= info.fields[j]).collect(),
+        )
+      })
+      .collect();
+    self.alternatives(
       fuel,
       ctx,
-      &args[1],
-      Some((left_type, result)),
+      &branches,
+      &Supply::Fields { fields: info.fields.clone(), major },
+      extra,
+      expected.as_ref().map(|(_, c)| *c),
+      output_type,
       destination,
       grade,
-    )?;
-    let left_bindings = self.state.bindings.clone();
-    self.state.bindings = before.clone();
-    let right = self.analyze(
-      fuel,
-      ctx,
-      &args[2],
-      Some((right_type, result)),
-      destination,
-      grade,
-    )?;
-    let mut bindings = vec![];
-    for (i, mut b) in left_bindings.into_iter().take(before.len()).enumerate() {
-      let r = self.binding(i)?;
-      b.owner = b.owner.join(&r.owner);
-      b.demand = join(b.demand, r.demand);
-      b.touched |= r.touched;
-      bindings.push(b);
-    }
-    self.state.bindings = bindings;
-    Ok(Value {
-      typ: output_type,
-      owned: if left.owned == Owned::Unique && right.owned == Owned::Unique {
-        Owned::Unique
-      } else {
-        Owned::Shared
-      },
-      origins: union(&left.origins, &right.origins),
-      duplicable: left.duplicable && right.duplicable,
-      place: if left.place == right.place { left.place } else { None },
-      loan_root: if left.loan_root == right.loan_root {
-        left.loan_root
-      } else {
-        None
-      },
-    })
+    )
   }
   fn analyze(
     &mut self,
@@ -1102,7 +1661,7 @@ impl<'a> Checker<'a> {
             "selection primitives cannot escape as function values",
           ));
         }
-        Value::shared(self.declaration(*i)?.typ.clone())
+        Value::shared(self.interface_type(*i)?)
       },
       Expr::Rec(..) => {
         return Err(Error::Unsupported("unresolved recursive reference"));
@@ -1282,34 +1841,65 @@ impl<'a> Checker<'a> {
         v
       },
       Expr::App(f, a) => {
-        let mut head = e.clone();
-        let mut args = vec![];
-        let mut split_fuel = fuel;
-        loop {
-          split_fuel = self.tick(split_fuel)?;
-          match head.as_ref() {
-            Expr::App(f, a) => {
-              args.push(a.clone());
-              head = f.clone();
-            },
-            Expr::Share(index) => head = self.expansion(*index)?,
-            _ => break,
-          }
-        }
-        args.reverse();
-        if let Expr::Ref(i, _) = head.as_ref() {
-          if self.program.choices.contains(i) {
-            if args.len() != 3 {
-              return Err(Error::Unsupported(
-                "selection primitives require a complete application",
-              ));
+        let (head, args) = self.split_app(fuel, e)?;
+        match head.as_ref() {
+          Expr::Ref(i, _) if self.program.choices.contains(i) => {
+            self.choice(fuel, ctx, *i, &args, &expected, destination, grade)?
+          },
+          Expr::Ref(i, _) => {
+            let info =
+              if self.program.cases { self.recursor_info(*i) } else { None };
+            match info {
+              Some(info) if args.len() >= info.arity() => self.case_split(
+                fuel,
+                ctx,
+                *i,
+                &info,
+                &args,
+                &expected,
+                destination,
+                grade,
+              )?,
+              Some(_) => {
+                self.ordinary_call(fuel, ctx, f, a, destination, grade)?
+              },
+              None => match self.case_wrapper(fuel, 4, *i)? {
+                Some(n) if args.len() >= n => {
+                  // A wrapper around a case split or a choice is unfolded.
+                  match self.declaration(*i)?.body.clone() {
+                    Some(body) => {
+                      let term =
+                        self.bind_arguments(fuel, ctx, &body, &args)?;
+                      self.analyze(
+                        fuel,
+                        ctx,
+                        &term,
+                        expected.clone(),
+                        destination,
+                        grade,
+                      )?
+                    },
+                    None => {
+                      self.ordinary_call(fuel, ctx, f, a, destination, grade)?
+                    },
+                  }
+                },
+                _ => self.ordinary_call(fuel, ctx, f, a, destination, grade)?,
+              },
             }
-            self.selection(fuel, ctx, *i, &args, destination, grade)?
-          } else {
-            self.ordinary_call(fuel, ctx, f, a, destination, grade)?
-          }
-        } else {
-          self.ordinary_call(fuel, ctx, f, a, destination, grade)?
+          },
+          Expr::Lam(..) if self.program.cases => {
+            let term = self.bind_arguments(fuel, ctx, &head, &args)?;
+            self.analyze(
+              fuel,
+              ctx,
+              &term,
+              expected.clone(),
+              destination,
+              grade,
+            )?
+          },
+          _ => self.ordinary_call(fuel, ctx, f, a, destination, grade)?,
         }
       },
     };
@@ -1551,6 +2141,8 @@ pub struct Policy {
   pub assumptions: Vec<usize>,
   pub shareable_types: Vec<usize>,
   pub choices: Vec<usize>,
+  /// The profile admits case splits, case wrappers and beta-redexes.
+  pub cases: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1582,7 +2174,9 @@ pub fn admit_program(
       declaration: None,
       error: Error::BadReference(index as u64),
     })?;
-    if d.kind != DeclKind::Assumption {
+    // A choice is an external primitive or an assumed definition (whose
+    // selection behavior the profile admits; its body is not checked).
+    if d.kind != DeclKind::Assumption && d.kind != DeclKind::Definition {
       return Err(AdmissionError {
         declaration: Some(index),
         error: Error::Unsupported(
@@ -1590,6 +2184,28 @@ pub fn admit_program(
         ),
       });
     }
+  }
+  for (index, _) in &program.interfaces {
+    let index = usize::try_from(*index).map_err(|_error| AdmissionError {
+      declaration: None,
+      error: Error::BadReference(*index),
+    })?;
+    if !policy.assumptions.contains(&index) {
+      return Err(AdmissionError {
+        declaration: Some(index),
+        error: Error::Unsupported(
+          "admitted interface is absent from the bound profile",
+        ),
+      });
+    }
+  }
+  if program.cases && !policy.cases {
+    return Err(AdmissionError {
+      declaration: None,
+      error: Error::Unsupported(
+        "case behavior is absent from the bound profile",
+      ),
+    });
   }
   for index in &program.shareable_types {
     let index = usize::try_from(*index).map_err(|_error| AdmissionError {
@@ -1610,6 +2226,8 @@ pub fn admit_program(
   for (i, d) in program.declarations.iter().enumerate() {
     if marked[i] {
       let result = match d.kind {
+        // An assumed definition's interface is admitted by the profile.
+        DeclKind::Definition if policy.assumptions.contains(&i) => Ok(()),
         DeclKind::Definition => check_definition(program, i, limits),
         DeclKind::Assumption => {
           if policy.assumptions.contains(&i) {
@@ -1908,6 +2526,221 @@ mod tests {
     assert!(run_fixture_lines(&modes_program(), text) >= 8);
   }
 
+  /// The mode program extended with case splits. Mirrors
+  /// `Tests.Resource.casesProgram`; new declarations are only appended.
+  fn cases_program() -> Program {
+    let mut p = modes_program();
+    let many = b(Uses::Many, ValueContract::shared());
+    let shared = ValueContract::shared();
+    let res = || Expr::reference(11, vec![]);
+    let prf = || Expr::reference(13, vec![]);
+    let boxt = || Expr::reference(21, vec![]);
+    let chain = || Expr::reference(25, vec![]);
+    let all = |d: Term, c: Term| arr(many, shared, d, c);
+    let lam = |d: Term, body: Term| Expr::lam_contract(many, d, body);
+    let app = Expr::app;
+    let motive = |t: Term| all(t, Expr::sort(0));
+    let ctor =
+      |typ: Term| Declaration { typ, body: None, kind: DeclKind::Constructor };
+    let inductive = || Declaration {
+      typ: Expr::sort(0),
+      body: None,
+      kind: DeclKind::TypeConstructor,
+    };
+    p.declarations.extend([
+      // 21 Box, 22 Box.empty, 23 Box.full.
+      inductive(),
+      ctor(boxt()),
+      ctor(all(res(), boxt())),
+      // 24 Box.rec.
+      assumption(all(
+        motive(boxt()),
+        all(
+          app(Expr::var(0), Expr::reference(22, vec![])),
+          all(
+            all(
+              res(),
+              app(Expr::var(2), app(Expr::reference(23, vec![]), Expr::var(0))),
+            ),
+            all(boxt(), app(Expr::var(3), Expr::var(0))),
+          ),
+        ),
+      )),
+      // 25 Chain, 26 Chain.stop, 27 Chain.link.
+      inductive(),
+      ctor(chain()),
+      ctor(all(chain(), chain())),
+      // 28 Chain.rec.
+      assumption(all(
+        motive(chain()),
+        all(
+          app(Expr::var(0), Expr::reference(26, vec![])),
+          all(
+            all(
+              chain(),
+              all(
+                app(Expr::var(2), Expr::var(0)),
+                app(
+                  Expr::var(3),
+                  app(Expr::reference(27, vec![]), Expr::var(1)),
+                ),
+              ),
+            ),
+            all(chain(), app(Expr::var(3), Expr::var(0))),
+          ),
+        ),
+      )),
+      // 29 Box.casesOn.
+      Declaration {
+        typ: all(
+          motive(boxt()),
+          all(
+            boxt(),
+            all(
+              app(Expr::var(1), Expr::reference(22, vec![])),
+              all(
+                all(
+                  res(),
+                  app(
+                    Expr::var(3),
+                    app(Expr::reference(23, vec![]), Expr::var(0)),
+                  ),
+                ),
+                app(Expr::var(3), Expr::var(2)),
+              ),
+            ),
+          ),
+        ),
+        body: Some(lam(
+          motive(boxt()),
+          lam(
+            boxt(),
+            lam(
+              app(Expr::var(1), Expr::reference(22, vec![])),
+              lam(
+                all(
+                  res(),
+                  app(
+                    Expr::var(3),
+                    app(Expr::reference(23, vec![]), Expr::var(0)),
+                  ),
+                ),
+                app(
+                  app(
+                    app(
+                      app(Expr::reference(24, vec![]), Expr::var(3)),
+                      Expr::var(1),
+                    ),
+                    lam(res(), app(Expr::var(1), Expr::var(0))),
+                  ),
+                  Expr::var(2),
+                ),
+              ),
+            ),
+          ),
+        )),
+        kind: DeclKind::Definition,
+      },
+      // 30 a fresh Res.
+      assumption(res()),
+      // 31 a choice whose alternatives receive a proof.
+      assumption(all(
+        nat(),
+        all(all(prf(), res()), all(all(prf(), res()), res())),
+      )),
+      // 32 a choice with a leading type argument.
+      assumption(all(
+        Expr::sort(0),
+        all(nat(), all(Expr::var(1), all(Expr::var(2), Expr::var(3)))),
+      )),
+    ]);
+    p.choices.extend([31, 32]);
+    p.recursors = vec![
+      RecursorInfo {
+        index: 24,
+        params: 0,
+        motives: 1,
+        minors: 2,
+        indices: 0,
+        fields: vec![0, 1],
+        binders: vec![0, 1],
+      },
+      RecursorInfo {
+        index: 28,
+        params: 0,
+        motives: 1,
+        minors: 2,
+        indices: 0,
+        fields: vec![0, 1],
+        binders: vec![0, 2],
+      },
+    ];
+    p.cases = true;
+    p
+  }
+
+  /// Mirrors the R15 part of `Tests.Resource.runAdmission`.
+  #[test]
+  fn assumed_definitions_interfaces_and_case_behavior() {
+    let linear = b(Uses::Linear, ValueContract::shared());
+    let unused = Declaration {
+      typ: unary(linear, ValueContract::shared()),
+      body: Some(Expr::lam_contract(linear, nat(), Expr::nat(0))),
+      kind: DeclKind::Definition,
+    };
+    let mut assumed = program();
+    assumed.declarations.push(unused);
+    let mut p = policy();
+    p.assumptions.push(11);
+    assert!(admit_program(&assumed, &p, Limits::default()).is_ok());
+    let affine = b(Uses::Affine, ValueContract::shared());
+    let mut chooser = assumed.clone();
+    chooser.declarations.push(Declaration {
+      typ: choice(ValueContract::shared()),
+      body: Some(Expr::lam_contract(
+        linear,
+        nat(),
+        Expr::lam_contract(
+          affine,
+          nat(),
+          Expr::lam_contract(affine, nat(), Expr::var(0)),
+        ),
+      )),
+      kind: DeclKind::Definition,
+    });
+    chooser.choices.push(12);
+    let mut q = p.clone();
+    q.choices.push(12);
+    assert!(admit_program(&chooser, &q, Limits::default()).is_err());
+    q.assumptions.push(12);
+    assert!(admit_program(&chooser, &q, Limits::default()).is_ok());
+    let mut interfaced = program();
+    interfaced.interfaces.push((
+      5,
+      unary(
+        b(Uses::Many, ValueContract::local_shared()),
+        ValueContract::shared(),
+      ),
+    ));
+    assert!(admit_program(&interfaced, &policy(), Limits::default()).is_err());
+    let mut r = policy();
+    r.assumptions.push(5);
+    assert!(admit_program(&interfaced, &r, Limits::default()).is_ok());
+    let mut cases = program();
+    cases.cases = true;
+    assert!(admit_program(&cases, &policy(), Limits::default()).is_err());
+    let mut s = policy();
+    s.cases = true;
+    assert!(admit_program(&cases, &s, Limits::default()).is_ok());
+  }
+
+  #[test]
+  fn case_split_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-cases.tsv");
+    assert!(run_fixture_lines(&cases_program(), text) >= 19);
+  }
+
   #[test]
   fn theorem_proofs_carry_no_resource_obligation() {
     let mut p = program();
@@ -2027,6 +2860,7 @@ mod tests {
       assumptions: vec![1, 4, 6, 8, 9, 10],
       shareable_types: vec![0, 7],
       choices: vec![6, 9, 10],
+      cases: false,
     }
   }
 
