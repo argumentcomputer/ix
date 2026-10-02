@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.SharingExact
+import Ix.Sharing.Verify.SharingExact
 import Ix.Sharing.Exact
 
 /-!
@@ -13,10 +13,10 @@ these three candidates only. The composition is NOT claimed to be a global
 byte minimum over all tables, orders and encodings.
 -/
 
-namespace Ix.Compile.Verify.Tiered
+namespace Ix.Sharing.Verify.Tiered
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (bind_eq_ok)
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok)
 
 /-- A successful candidate is assembled from its three phases. -/
 theorem tieredAtWidth_parts {layout : ShareLayout} {limits : Limits} {ex : Expanded} {w : Nat}
@@ -167,4 +167,4 @@ theorem canonicalTiered_core {layout : ShareLayout} {limits : Limits} {ex : Expa
   subst hr
   exact ⟨r₀, hr₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
-end Ix.Compile.Verify.Tiered
+end Ix.Sharing.Verify.Tiered

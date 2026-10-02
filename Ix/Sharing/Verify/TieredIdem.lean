@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.TieredPhase3
+import Ix.Sharing.Verify.TieredPhase3
 
 /-!
 # Tiered construction: determinism and idempotence
@@ -18,10 +18,10 @@ import Ix.Compile.Verify.TieredPhase3
   can be proved here, so the proviso is stated, not proved.
 -/
 
-namespace Ix.Compile.Verify.Tiered
+namespace Ix.Sharing.Verify.Tiered
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (bind_eq_ok)
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok)
 
 /-- The parts of a result the encoding is made of. -/
 def encodingOf (r : TieredSharingResult) : Array Ixon.Expr × Array Ixon.Expr × Array Nat :=
@@ -97,4 +97,4 @@ theorem canonicalSharingTieredTable_idem {layout : ShareLayout} {limits : Limits
     simp only [Except.map, Except.ok.injEq, Prod.mk.injEq] at hdet
     exact ⟨r', rfl, hdet.1, hdet.2⟩
 
-end Ix.Compile.Verify.Tiered
+end Ix.Sharing.Verify.Tiered

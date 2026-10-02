@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformLength
+import Ix.Sharing.Verify.UniformLength
 
 /-!
 # Writings: the model as a minimum over encodings
@@ -14,7 +14,7 @@ writing of a term with the stored terms `S` (`valid_cost`), and both minima
 are attained (`exists_opt`).
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
 
@@ -437,4 +437,4 @@ theorem PrepWF.uniformCost_attained {p : Prep} (hp : PrepWF p) (w : Nat) (avail 
     intro r hr
     exact (hrootW r (hroots r hr)).2
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

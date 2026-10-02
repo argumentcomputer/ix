@@ -2,7 +2,7 @@ import Lean.Compiler.CSimpAttr
 import Lean.Compiler.ImplementedByAttr
 import Lean.Compiler.ExternAttr
 import Ix.CompileM
-import Ix.Compile.Verify.Audit.Statements
+import Ix.Sharing.Verify.Audit.Statements
 
 /-!
 # Compiled-code replacements on the compiler's path
@@ -13,7 +13,7 @@ and everything it imports) therefore runs a body that only the csimp theorem
 ties to its specification, so that theorem must be checked like any other
 claim: every csimp theorem declared in an `Ix` module on the compiler's
 import path must be a root of the statement manifest
-(`Ix.Compile.Verify.Audit.Statements.roots`), whose check fixes its axioms
+(`Ix.Sharing.Verify.Audit.Statements.roots`), whose check fixes its axioms
 exactly and rejects `sorryAx`. The theorems are read from the environment's
 csimp extension, not from a hand-kept list, so a new unregistered one fails
 this module.
@@ -28,7 +28,7 @@ skipped.
 
 open Lean Lean.Elab.Command
 
-namespace Ix.Compile.Verify.Audit.CompiledCode
+namespace Ix.Sharing.Verify.Audit.CompiledCode
 
 /-- The accepted unsafe items of `Ix.Sharing.*`, by the declaration they come
 from: the interner's pointer-cache key `exprPtr` (`unsafe ptrAddrUnsafe`).
@@ -69,7 +69,7 @@ def checkCSimpRoots : CommandElabM Unit := do
   let missing := thms.filter (!registered.contains ·)
   unless missing.isEmpty do
     throwError m!"{missing.size} @[csimp] theorem(s) on the compiler's import path are not \
-      roots of Ix.Compile.Verify.Audit.Statements:\n\
+      roots of Ix.Sharing.Verify.Audit.Statements:\n\
       {String.intercalate "\n" (missing.toList.map (s!"  {·}"))}"
   logInfo m!"compiled-code audit: all {thms.size} @[csimp] theorems of Ix modules on the \
     compiler's import path are audit roots"
@@ -104,4 +104,4 @@ def checkSharingReplacements : CommandElabM Unit := do
 run_cmd checkCSimpRoots
 run_cmd checkSharingReplacements
 
-end Ix.Compile.Verify.Audit.CompiledCode
+end Ix.Sharing.Verify.Audit.CompiledCode

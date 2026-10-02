@@ -1,5 +1,5 @@
-import Ix.Compile.Verify.TieredIdem
-import Ix.Compile.Verify.Catalog
+import Ix.Sharing.Verify.TieredIdem
+import Ix.Ixon.Wire
 
 /-!
 # Tiered construction: the output is in the wire domain
@@ -16,10 +16,10 @@ construction reports is the serialized length of its output
 (`canonicalSharingTiered_serialized`).
 -/
 
-namespace Ix.Compile.Verify.Tiered
+namespace Ix.Sharing.Verify.Tiered
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (bind_eq_ok SharesIn materializeTable_parts
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok SharesIn materializeTable_parts
   materializeTable_backward)
 
 /-- `wireCounts` decides the wire domain and computes the telescope counts. -/
@@ -216,10 +216,10 @@ theorem layoutBytes_tagN_eq_serialized (entries roots : Array Ixon.Expr)
     intro e he
     rw [Array.all_eq_true'] at h
     obtain ⟨c, hc⟩ := Option.isSome_iff_exists.mp (h e (Array.mem_toList_iff.mp he))
-    have hser := Ix.Compile.Verify.SharingExact.exprSize_eq_serExpr e (wireCounts_spec e c hc).1
+    have hser := Ix.Sharing.Verify.SharingExact.exprSize_eq_serExpr e (wireCounts_spec e c hc).1
     exact hser
   unfold layoutBytes
-  simp only [Ix.Compile.Verify.UniformModel.array_foldl_add_sum, Array.toList_append,
+  simp only [Ix.Sharing.Verify.UniformModel.array_foldl_add_sum, Array.toList_append,
     List.map_append, List.sum_append] at hsz ⊢
   rw [List.map_congr_left (fun e he => hsz e (List.mem_append_left _ he)),
     List.map_congr_left (fun e he => hsz e (List.mem_append_right _ he))]
@@ -276,4 +276,4 @@ theorem canonicalSharingTieredTable_serialized {sharing roots : Array Ixon.Expr}
   obtain ⟨ex, -, h⟩ := bind_eq_ok h
   exact canonicalTiered_serialized h
 
-end Ix.Compile.Verify.Tiered
+end Ix.Sharing.Verify.Tiered

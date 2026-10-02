@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformSearchSpec
+import Ix.Sharing.Verify.UniformSearchSpec
 
 /-!
 # Stage 4: the count knapsack of the uniform optimizer
@@ -9,10 +9,10 @@ count cap is matched by a no-worse combination, and the chosen total is at
 most every candidate's.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (setBang_getElem!)
+open Ix.Sharing.Verify.SharingExact (setBang_getElem!)
 
 /-- `foldl_hasAt` under an invariant of the accumulator. -/
 theorem foldl_hasAt_inv {α : Type} (f : CTable → α → CTable) (Inv : CTable → Prop)
@@ -725,4 +725,4 @@ theorem knapFold_sorted {cap : Nat} (Uf : Nat → Nat → Prop)
       exact ⟨i, by omega, hxi⟩
     · exact ⟨j0, by omega, htU k1 ek' hek' x h⟩
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

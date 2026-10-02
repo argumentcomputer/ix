@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformTies
+import Ix.Sharing.Verify.UniformTies
 
 /-!
 # Stage 4: the search tables
@@ -7,10 +7,10 @@ Count-indexed tables of `(Δ, set)` entries: what `add`, `best`, `trim`,
 `conv` and folds of `add` keep and produce.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (setBang_getElem!)
+open Ix.Sharing.Verify.SharingExact (setBang_getElem!)
 
 /-- A table entry. -/
 abbrev Entry := _root_.Int × Array Nat
@@ -762,4 +762,4 @@ theorem conv_tie {a b : CTable} (ha : ∀ e, some e ∈ a.toList → e.2.toList.
       · exact ih (fun o' ho' => hl o' (List.mem_cons_of_mem _ ho')) hmem _ hs1
   exact key a.toList (fun o ho => ho) hea #[] hsorted0
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

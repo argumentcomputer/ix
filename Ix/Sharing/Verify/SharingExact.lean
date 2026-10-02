@@ -1,7 +1,7 @@
-import Ix.Compile.Verify.ExprSpineCodec
-import Ix.Compile.Verify.TagN
-import Ix.Compile.Verify.Catalog
-import Ix.Compile.Verify.MutualConstantCodec
+import Ix.Ixon.Verify.ExprSpine
+import Ix.Ixon.Verify.TagN
+import Ix.Ixon.Wire
+import Ix.Ixon.Verify.MutualConstant
 import Ix.Sharing.Exact
 
 /-!
@@ -10,7 +10,7 @@ import Ix.Sharing.Exact
 Proofs about the executable exact-sharing core (`Ix.Sharing.Exact`):
 
 * the integer widths `tag0Size`, `tag4Size`, `shareWidth` are the sizes of
-  the production TagN encodings (`f = 0`, `f = 4`; `Ix.Compile.Verify.Codec`);
+  the production TagN encodings (`f = 0`, `f = 4`; `Ixon.Verify.Codec`);
   `tagNWidth` is the length of the `f = 4` TagN encoding and is monotone with
   the stated rung ends;
 * `exprSize` is the length of the production expression encoding for every
@@ -21,36 +21,36 @@ Proofs about the executable exact-sharing core (`Ix.Sharing.Exact`):
   keys does not depend on the input order.
 -/
 
-namespace Ix.Compile.Verify.SharingExact
+namespace Ix.Sharing.Verify.SharingExact
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.Codec
-open Ix.Compile.Verify.Codec.Ixon.Expr
+open Ixon.Verify.Codec
+open Ixon.Verify.Codec.Expr
 
 /-! ## TagN (`f = 0`, `f = 4`) lengths -/
 
 theorem trimmedBytes_size (x : UInt64) (len : Nat) : (trimmedBytes x len).size = len :=
-  Codec.trimmedBytes_size x len
+  Ixon.Verify.Codec.trimmedBytes_size x len
 
 /-- `tag4Size` is the length of the production TagN (`f = 4`) bytes. -/
 theorem tag4Bytes_size (flag : UInt8) (size : UInt64) :
-    (Codec.tag4Bytes flag size).size = tag4Size size.toNat :=
-  Codec.tagNBytes_size 4 flag size
+    (Ixon.Verify.Codec.tag4Bytes flag size).size = tag4Size size.toNat :=
+  Ixon.Verify.Codec.tagNBytes_size 4 flag size
 
 /-- `tag0Size` is the length of the production TagN (`f = 0`) bytes. -/
 theorem tag0Bytes_size (size : UInt64) :
     (tag0Bytes size).size = tag0Size size.toNat :=
-  Codec.tagNBytes_size 0 0 size
+  Ixon.Verify.Codec.tagNBytes_size 0 0 size
 
 /-- `tag4Size` is the size of what `putTagN 4` writes. -/
 theorem putTag4_size (flag : UInt8) (size : UInt64) :
     (Ixon.runPut (Ixon.putTagN 4 flag size)).size = tag4Size size.toNat :=
-  Codec.runPut_putTagN_size 4 flag size
+  Ixon.Verify.Codec.runPut_putTagN_size 4 flag size
 
 /-- `tag0Size` is the size of what `putTagN 0` writes. -/
 theorem putTag0_size (size : UInt64) :
     (Ixon.runPut (Ixon.putTagN 0 0 size)).size = tag0Size size.toNat :=
-  Codec.runPut_putTagN_size 0 0 size
+  Ixon.Verify.Codec.runPut_putTagN_size 0 0 size
 
 /-- The Share width is the size of the serialized `Share`. -/
 theorem shareWidth_eq_putTag4 (idx : UInt64) :
@@ -60,16 +60,16 @@ theorem shareWidth_eq_putTag4 (idx : UInt64) :
 
 /-! ## TagN widths -/
 
-theorem tagNRung1End_eq : tagNRung1End = 8 := TagN.tagNEnd1_eq_4
-theorem tagNRung2End_eq : tagNRung2End = 1032 := TagN.tagNEnd2_eq_4
-theorem tagNRung3End_eq : tagNRung3End = 66568 := TagN.tagNEnd3_eq_4
+theorem tagNRung1End_eq : tagNRung1End = 8 := Ixon.Verify.TagN.tagNEnd1_eq_4
+theorem tagNRung2End_eq : tagNRung2End = 1032 := Ixon.Verify.TagN.tagNEnd2_eq_4
+theorem tagNRung3End_eq : tagNRung3End = 66568 := Ixon.Verify.TagN.tagNEnd3_eq_4
 /-- `66568 + 2^24`. -/
-theorem tagNRung4End_eq : tagNRung4End = 16843784 := TagN.tagNEnd4_eq_4
+theorem tagNRung4End_eq : tagNRung4End = 16843784 := Ixon.Verify.TagN.tagNEnd4_eq_4
 /-- `66568 + 2^24 + 2^32`. -/
-theorem tagNRung5End_eq : tagNRung5End = 4311811080 := TagN.tagNEnd5_eq_4
+theorem tagNRung5End_eq : tagNRung5End = 4311811080 := Ixon.Verify.TagN.tagNEnd5_eq_4
 /-- `66568 + 2^24 + 2^32 + 2^64`. -/
 theorem tagNRung6End_eq : tagNRung6End = 18446744078021362696 := by
-  unfold tagNRung6End Ixon.tagNEnd6; rw [TagN.tagNEnd5_eq_4]
+  unfold tagNRung6End Ixon.tagNEnd6; rw [Ixon.Verify.TagN.tagNEnd5_eq_4]
 
 /-- `tagNWidth` with the rung ends evaluated. -/
 theorem tagNWidth_eq (i : Nat) :
@@ -77,8 +77,8 @@ theorem tagNWidth_eq (i : Nat) :
       if i < 8 then 1 else if i < 1032 then 2 else if i < 66568 then 3
       else if i < 16843784 then 4 else if i < 4311811080 then 5 else 9 := by
   unfold tagNWidth Ixon.tagNByteWidth
-  rw [TagN.tagNEnd1_eq_4, TagN.tagNEnd2_eq_4, TagN.tagNEnd3_eq_4, TagN.tagNEnd4_eq_4,
-    TagN.tagNEnd5_eq_4]
+  rw [Ixon.Verify.TagN.tagNEnd1_eq_4, Ixon.Verify.TagN.tagNEnd2_eq_4, Ixon.Verify.TagN.tagNEnd3_eq_4, Ixon.Verify.TagN.tagNEnd4_eq_4,
+    Ixon.Verify.TagN.tagNEnd5_eq_4]
 
 theorem tagNWidth_pos (i : Nat) : 1 ≤ tagNWidth i := by
   rw [tagNWidth_eq]
@@ -134,8 +134,8 @@ theorem tagNWidth_eq_encoded (i : UInt64) :
     tagNWidth i.toNat = (Ixon.runPut (Ixon.putTagN 4 0xB i)).size ∧
       Ixon.runGetExact (Ixon.getTagN 4) (Ixon.runPut (Ixon.putTagN 4 0xB i)) =
         .ok ⟨0xB, i⟩ :=
-  ⟨(Codec.runPut_putTagN_size 4 0xB i).symm,
-    Codec.runGetExact_getTagN_putTagN 4 (by decide) 0xB (by decide) i⟩
+  ⟨(Ixon.Verify.Codec.runPut_putTagN_size 4 0xB i).symm,
+    Ixon.Verify.Codec.runGetExact_getTagN_putTagN 4 (by decide) 0xB (by decide) i⟩
 
 /-! ## Expression length -/
 
@@ -402,11 +402,11 @@ theorem exprSize_eq_serExpr (e : Ixon.Expr) (h : e.wireWF) :
 
 section ConstantLength
 
-open Ix.Compile.Verify.Codec.Ixon.Constant
-open Ix.Compile.Verify.Codec.Ixon.ConstantTables
-open Ix.Compile.Verify.Codec.Ixon.NonrecursiveConstant
-open Ix.Compile.Verify.Codec.Ixon.RecursorConstant
-open Ix.Compile.Verify.Codec.Ixon.MutualConstant
+open Ixon.Verify.Codec.Constant
+open Ixon.Verify.Codec.ConstantTables
+open Ixon.Verify.Codec.NonrecursiveConstant
+open Ixon.Verify.Codec.RecursorConstant
+open Ixon.Verify.Codec.MutualConstant
 
 theorem listBytes_size {α : Type} (enc : α → ByteArray) (xs : List α) :
     (listBytes enc xs).size = (xs.map fun x => (enc x).size).sum := by
@@ -675,24 +675,24 @@ theorem exprsSize_eq (es : Array Ixon.Expr) (h : ∀ e ∈ es, e.wireWF) :
 
 /-- `putConstant` writes `constantBytes` for every wire-well-formed Constant. -/
 theorem serConstant_eq_constantBytes (c : Ixon.Constant) (h : c.wireWF) :
-    Ixon.serConstant c = Ix.Compile.Verify.Codec.Ixon.MutualConstant.constantBytes c := by
+    Ixon.serConstant c = Ixon.Verify.Codec.MutualConstant.constantBytes c := by
   have hw := putConstant_writes c ((constantWireWF_iff_catalog c).mpr h) ByteArray.empty
   simp only [Ixon.serConstant, Ixon.runPut, hw, ByteArray.empty_append]
 
 theorem constantBytes_size (c : Ixon.Constant) :
-    (Ix.Compile.Verify.Codec.Ixon.MutualConstant.constantBytes c).size =
+    (Ixon.Verify.Codec.MutualConstant.constantBytes c).size =
       (constantInfoBytes c.info).size + tag0Size c.sharing.size.toUInt64.toNat +
         (c.sharing.toList.map S).sum +
           ((tag0Bytes c.refs.size.toUInt64).size + (listBytes Address.hash c.refs.toList).size +
             (tag0Bytes c.univs.size.toUInt64).size +
-              (listBytes Ix.Compile.Verify.Codec.Ixon.Univ.wireEncode c.univs.toList).size) := by
-  simp only [Ix.Compile.Verify.Codec.Ixon.MutualConstant.constantBytes, ByteArray.size_append,
+              (listBytes Ixon.Verify.Codec.Univ.wireEncode c.univs.toList).size) := by
+  simp only [Ixon.Verify.Codec.MutualConstant.constantBytes, ByteArray.size_append,
     tag0Bytes_size, listBytes_size]
   rw [map_S_eq]
   omega
 
 theorem S_var_zero : S (.var 0) = 1 := by
-  simp [S, spineWireEncode, tag4Bytes_size, tag4Size, Ixon.tagNByteWidth, TagN.tagNEnd1_eq_4]
+  simp [S, spineWireEncode, tag4Bytes_size, tag4Size, Ixon.tagNByteWidth, Ixon.Verify.TagN.tagNEnd1_eq_4]
 
 /-- The complete-Constant length decomposes into the root-free bytes
 (`fixedConstantBytes`), the roots, the table count and the table bodies. -/
@@ -1223,4 +1223,4 @@ theorem materializeWith_correct (p : Prep) (index width : Array (Option Nat))
 end Materialize
 
 
-end Ix.Compile.Verify.SharingExact
+end Ix.Sharing.Verify.SharingExact

@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformSearch
+import Ix.Sharing.Verify.UniformSearch
 
 /-!
 # Stage 4: the component cost and its decompositions
@@ -8,10 +8,10 @@ entries and the entries of a member set), its relation to the uniform length
 (`ulen`), and its modularity over separated groups of members.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (Desc)
+open Ix.Sharing.Verify.SharingExact (Desc)
 
 /-! ## Hash sets, sorted merges, partitions -/
 
@@ -1035,4 +1035,4 @@ theorem group_rep {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {c
   simp only [Y', List.length_append] at ht2 hle
   omega
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

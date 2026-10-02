@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformOptimal
+import Ix.Sharing.Verify.UniformOptimal
 
 /-!
 # Stage 4: the visible counts of a search node
@@ -8,10 +8,10 @@ counts `revisible` recomputes at a search node are below the visible counts
 of the node's maybe-stored set, so the node's reclassification is sound.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (Desc child_eq_getElem setBang_getElem!)
+open Ix.Sharing.Verify.SharingExact (Desc child_eq_getElem setBang_getElem!)
 
 /-- A path is empty or ends in an edge. -/
 theorem desc_last {dag : Dag} {r y : Nat} (h : Desc dag r y) :
@@ -339,4 +339,4 @@ theorem forced_mem {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {
         · left; rw [h] at hgain; exact hgain
         · right; rw [h] at hgain; exact ⟨hgain, hb⟩)
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

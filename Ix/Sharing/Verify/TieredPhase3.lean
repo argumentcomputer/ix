@@ -1,5 +1,5 @@
-import Ix.Compile.Verify.TieredModel
-import Ix.Compile.Verify.TieredTier
+import Ix.Sharing.Verify.TieredModel
+import Ix.Sharing.Verify.TieredTier
 
 /-!
 # Tiered construction, phase 3: re-materialization
@@ -21,11 +21,11 @@ Each part is exact for its dictionary; the composition of the phases is NOT
 claimed to be a global byte minimum.
 -/
 
-namespace Ix.Compile.Verify.Tiered
+namespace Ix.Sharing.Verify.Tiered
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.UniformModel
-open Ix.Compile.Verify.SharingExact (bind_eq_ok indexOfPrefix_succ indexOfPrefix_zero
+open Ix.Sharing.Verify.UniformModel
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok indexOfPrefix_succ indexOfPrefix_zero
   foldlM_range_inv materializeStep_spec materializeTable_parts toNat_toUInt64_of_lt
   indexOfPrefix_spec mapM_ok_forall₂ forall₂_getElem)
 
@@ -228,7 +228,7 @@ theorem materializeTable_spec {dag : Dag} (hwf : DagWF dag) {table roots : Array
     rw [hpred, hstpred, ← hsz, sum_range_eq (fun e => (sizeInfoWith widthAt e).full) _
       (fun j hj => (hent j hj).symm)]
     unfold rootsCost
-    rw [Ix.Compile.Verify.UniformModel.array_foldl_add_sum]
+    rw [Ix.Sharing.Verify.UniformModel.array_foldl_add_sum]
     have hr := forall₂_sum (f := fun r => gCost (Prep.ofDag dag)
       (prefixWd dag.size table widthAt table.size) (prefixAvail dag.size table table.size) r)
       (g := fun e => (sizeInfoWith widthAt e).full) hroots' (fun a _ b h => h)
@@ -297,7 +297,7 @@ below holds for it:
 
 section OnePass
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans setBang_getElem! child_eq_getElem
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans setBang_getElem! child_eq_getElem
   pickOption_mem)
 
 /-! ## Spine counts -/
@@ -1541,8 +1541,8 @@ theorem layoutBytes_eq (l : ShareLayout) (sharing roots : Array Ixon.Expr) :
       (roots.toList.map fun e => (sizeInfoWith l.widthAt e).full).sum := by
   unfold layoutBytes
   simp only
-  rw [Ix.Compile.Verify.UniformModel.array_foldl_add_sum,
-    Ix.Compile.Verify.UniformModel.array_foldl_add_sum]
+  rw [Ix.Sharing.Verify.UniformModel.array_foldl_add_sum,
+    Ix.Sharing.Verify.UniformModel.array_foldl_add_sum]
 
 /-- The parts of a successful phase 3. -/
 theorem rematerialize_parts {layout : ShareLayout} {limits : Limits} {ex : Expanded}
@@ -1629,25 +1629,25 @@ theorem rematerialize_spec {layout : ShareLayout} {limits : Limits} {ex : Expand
         T.gcost (Prep.ofDag ex.dag) (prefixWd ex.dag.size order layout.widthAt order.size) =
           (sizeInfoWith layout.widthAt e).full) ex.roots.toList m.roots.toList ∧
     m.bytes = layoutBytes layout m.entries m.roots ∧ m.bytes ≤ phase1Layout ∧
-    (∀ k (hk : k < m.entries.size), Ix.Compile.Verify.SharingExact.SharesIn (· < k)
+    (∀ k (hk : k < m.entries.size), Ix.Sharing.Verify.SharingExact.SharesIn (· < k)
       m.entries[k]) ∧
-    (∀ r ∈ m.roots.toList, Ix.Compile.Verify.SharingExact.SharesIn (· < order.size) r) ∧
-    (∀ (E : Nat → Ixon.Expr), Ix.Compile.Verify.SharingExact.DagModel ex.dag E →
+    (∀ r ∈ m.roots.toList, Ix.Sharing.Verify.SharingExact.SharesIn (· < order.size) r) ∧
+    (∀ (E : Nat → Ixon.Expr), Ix.Sharing.Verify.SharingExact.DagModel ex.dag E →
       (∀ k (hk : k < m.entries.size),
-        Ix.Compile.Verify.SharingExact.substShares (fun i => E order[i]!) m.entries[k] =
+        Ix.Sharing.Verify.SharingExact.substShares (fun i => E order[i]!) m.entries[k] =
           E order[k]!) ∧
       List.Forall₂ (fun r e =>
-        Ix.Compile.Verify.SharingExact.substShares (fun i => E order[i]!) e = E r)
+        Ix.Sharing.Verify.SharingExact.substShares (fun i => E order[i]!) e = E r)
         ex.roots.toList m.roots.toList) ∧
     ∃ k, reexpand limits ex.dag m.entries m.roots = .ok (order, ex.roots, k) := by
   obtain ⟨work, hmat, hle, hre, -⟩ := rematerialize_parts h
   obtain ⟨hsz, -, -, hpred⟩ := materializeTable_spec hwf hroots hmat
   obtain ⟨hmin, hrmin⟩ := materializeTable_min hwf hroots hmat
   obtain ⟨hsize, -, -⟩ := materializeTable_parts _ _ _ _ _ hmat
-  obtain ⟨_, hback, hrback⟩ := Ix.Compile.Verify.SharingExact.materializeTable_backward _ _ _ _ _
+  obtain ⟨_, hback, hrback⟩ := Ix.Sharing.Verify.SharingExact.materializeTable_backward _ _ _ _ _
     (by omega) hmat
   refine ⟨hsz, hmin, hrmin, by rw [layoutBytes_eq, hpred], hle, hback, hrback,
-    fun E hE => Ix.Compile.Verify.SharingExact.materializeTable_correct _ _ _ _ _ (by omega)
+    fun E hE => Ix.Sharing.Verify.SharingExact.materializeTable_correct _ _ _ _ _ (by omega)
       hmat E hE, hre⟩
 
-end Ix.Compile.Verify.Tiered
+end Ix.Sharing.Verify.Tiered

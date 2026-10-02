@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformKnapsack
+import Ix.Sharing.Verify.UniformKnapsack
 
 /-!
 # Stage 4: the uniform optimizer returns a minimum
@@ -11,10 +11,10 @@ over the restricted class (the optimizer checks that every telescope spine
 is shorter than `teleSubaddEnd`, `SpinesFit`).
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (Desc bind_eq_ok)
+open Ix.Sharing.Verify.SharingExact (Desc bind_eq_ok)
 
 /-! ## The classification stage -/
 
@@ -1424,4 +1424,4 @@ theorem optimizeUniform_least {w : Nat} {limits : Limits} {ex : Expanded}
     (leL_refl _) hcle'
   exact hu
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

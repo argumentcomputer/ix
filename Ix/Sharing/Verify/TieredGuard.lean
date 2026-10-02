@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.TieredPhase3
+import Ix.Sharing.Verify.TieredPhase3
 
 /-!
 # Tiered construction: phase 3 is never longer than phase 1
@@ -21,7 +21,7 @@ on has width 2), the allocated order has the minimum reference cost
 body reference before its user.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
 
@@ -189,8 +189,8 @@ theorem spineFold_shares' (buildSide : Node → Except SharingError Ixon.Expr) (
   | cons n ns ih =>
     intro tail e hS h
     rw [List.foldrM_cons] at h
-    obtain ⟨acc, hacc, hstep⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
-    obtain ⟨side, hs, hre⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok hstep
+    obtain ⟨acc, hacc, hstep⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
+    obtain ⟨side, hs, hre⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok hstep
     have h1 := ih tail acc (fun m hm => hS m (List.mem_cons_of_mem _ hm)) hacc
     have h2 := rebuild_shares hre
     have h3 := hS n List.mem_cons_self side hs
@@ -209,8 +209,8 @@ theorem spineFold_sides_ok (buildSide : Node → Except SharingError Ixon.Expr) 
   | cons m ns ih =>
     intro tail e h n hn
     rw [List.foldrM_cons] at h
-    obtain ⟨acc, hacc, hstep⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
-    obtain ⟨side, hs, _⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok hstep
+    obtain ⟨acc, hacc, hstep⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
+    obtain ⟨side, hs, _⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok hstep
     rcases List.mem_cons.mp hn with rfl | hn
     · exact ⟨side, hs⟩
     · exact ih tail acc hacc n hn
@@ -233,7 +233,7 @@ def TreeOf (p : Prep) (avail : Nat → Bool) (index : Array (Option Nat)) (entry
     ∀ (sc wd' : Nat → Nat), (∀ (u i : Nat), index[u]?.getD none = some i → sc i = wd' u) →
       (sizeInfoWith sc e).full = T.gcost p wd' ∧ OnlyCont p.family[t]! (sizeInfoWith sc e)
 
-open Ix.Compile.Verify.SharingExact (bind_eq_ok toNat_toUInt64_of_lt pickOption_mem
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok toNat_toUInt64_of_lt pickOption_mem
   pickOption_filter_ne_share) in
 /-- **The writing of a build.** Every expression `build` emits (against an
 evaluation with the model rows of the dictionary) is a writing of its term
@@ -533,7 +533,7 @@ theorem Valid.leaves_avail {p : Prep} {S : Nat → Bool} {x : Nat} {T : WTree}
 
 /-! ## The phase-1 writings -/
 
-open Ix.Compile.Verify.SharingExact (materializeDependent_parts indexOfTable_spec) in
+open Ix.Sharing.Verify.SharingExact (materializeDependent_parts indexOfTable_spec) in
 /-- The phase-1 table bodies and roots are writings with the phase-1
 dictionary (its stored set, Shares by phase-1 index). -/
 theorem phase1_trees {w : Nat} {limits : Limits} {ex : Expanded} {u : UniformSharingResult}
@@ -578,18 +578,18 @@ theorem phase1_trees {w : Nat} {limits : Limits} {ex : Expanded} {u : UniformSha
   have hev := hp.evalAll_ok (ofDag_empty_size ex.dag) (wd := fun _ => w) (avail := avail1)
     width1 hwidth
   refine ⟨hwf, hroots, hin', hsize, hindex, ?_, ?_⟩
-  · refine Ix.Compile.Verify.Tiered.forall₂_imp_mem hents fun t ht e he => ?_
+  · refine Ix.Sharing.Verify.Tiered.forall₂_imp_mem hents fun t ht e he => ?_
     exact hp.gBuild_tree _ hev index1 width1 hwidth hindex hidx _ true t e (hin' t ht) he
-  · refine Ix.Compile.Verify.Tiered.forall₂_imp_mem hrts fun r hr e he => ?_
+  · refine Ix.Sharing.Verify.Tiered.forall₂_imp_mem hrts fun r hr e he => ?_
     exact hp.gBuild_tree _ hev index1 width1 hwidth hindex hidx _ false r e (hroots r hr) he
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel
 
-namespace Ix.Compile.Verify.Tiered
+namespace Ix.Sharing.Verify.Tiered
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.UniformModel
-open Ix.Compile.Verify.SharingExact (indexOfPrefix_spec indexOfTable_spec)
+open Ix.Sharing.Verify.UniformModel
+open Ix.Sharing.Verify.SharingExact (indexOfPrefix_spec indexOfTable_spec)
 
 /-! ## Sums -/
 
@@ -605,7 +605,7 @@ theorem refCost_eq_sum (layout : ShareLayout) (weight : Nat → Nat) (ord : Arra
     refCost layout weight ord =
       ((List.range ord.size).map fun k => weight ord[k]! * layout.widthAt k).sum := by
   unfold refCost
-  rw [← Array.foldl_toList, Ix.Compile.Verify.UniformModel.foldl_add_eq_sum, Nat.zero_add]
+  rw [← Array.foldl_toList, Ix.Sharing.Verify.UniformModel.foldl_add_eq_sum, Nat.zero_add]
   congr 1
   apply List.ext_getElem (by simp)
   intro k h1 h2
@@ -832,9 +832,9 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
     simp only [pos3, this]
     rfl
   -- the indexed phase-1 writings
-  obtain ⟨hlenE, hgetE⟩ := Ix.Compile.Verify.SharingExact.forall₂_getElem hents
-  obtain ⟨hlenR, hgetR⟩ := Ix.Compile.Verify.SharingExact.forall₂_getElem hrts
-  obtain ⟨hlenR3, hgetR3⟩ := Ix.Compile.Verify.SharingExact.forall₂_getElem hrmin3
+  obtain ⟨hlenE, hgetE⟩ := Ix.Sharing.Verify.SharingExact.forall₂_getElem hents
+  obtain ⟨hlenR, hgetR⟩ := Ix.Sharing.Verify.SharingExact.forall₂_getElem hrts
+  obtain ⟨hlenR3, hgetR3⟩ := Ix.Sharing.Verify.SharingExact.forall₂_getElem hrmin3
   simp only [Array.length_toList] at hlenE hlenR hlenR3
   -- entries
   have hentry : ∀ k, k < N →
@@ -907,9 +907,9 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
     rw [hidxSelf j (by simp only [N]; omega), getElem!_pos entries1 j hj]
   have hsumE : (entries.toList.map s).sum + (entries1.toList.map A).sum ≤
       (entries1.toList.map s).sum + (entries1.toList.map B).sum := by
-    have h := Ix.Compile.Verify.UniformModel.sum_le_sum_of_le (List.range N) (fun k hk =>
+    have h := Ix.Sharing.Verify.UniformModel.sum_le_sum_of_le (List.range N) (fun k hk =>
       hentry k (List.mem_range.mp hk))
-    rw [Ix.Compile.Verify.SharingExact.sum_map_add, Ix.Compile.Verify.SharingExact.sum_map_add,
+    rw [Ix.Sharing.Verify.SharingExact.sum_map_add, Ix.Sharing.Verify.SharingExact.sum_map_add,
       hreindex A, hreindex s, hreindex B] at h
     have hE : ((List.range N).map fun k => s entries[k]!).sum = (entries.toList.map s).sum := by
       rw [show N = entries.size by omega]
@@ -918,9 +918,9 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
     exact h
   have hsumR : (rs.toList.map s).sum + (roots1.toList.map A).sum ≤
       (roots1.toList.map s).sum + (roots1.toList.map B).sum := by
-    have h := Ix.Compile.Verify.UniformModel.sum_le_sum_of_le (List.range ex.roots.size)
+    have h := Ix.Sharing.Verify.UniformModel.sum_le_sum_of_le (List.range ex.roots.size)
       (fun k hk => hroot k (List.mem_range.mp hk))
-    rw [Ix.Compile.Verify.SharingExact.sum_map_add, Ix.Compile.Verify.SharingExact.sum_map_add] at h
+    rw [Ix.Sharing.Verify.SharingExact.sum_map_add, Ix.Sharing.Verify.SharingExact.sum_map_add] at h
     have h1 : ∀ (F : Ixon.Expr → Nat), ((List.range ex.roots.size).map fun k => F roots1[k]!).sum =
         (roots1.toList.map F).sum := by
       intro F
@@ -1000,12 +1000,12 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
 
 /-! ## Optimality of the allocation in the 2-byte tier -/
 
-open Ix.Compile.Verify.SharingExact (tagNWidth_rung1 tagNRung1End_eq) in
+open Ix.Sharing.Verify.SharingExact (tagNWidth_rung1 tagNRung1End_eq) in
 theorem widthAt_lt8 (layout : ShareLayout) {k : Nat} (hk : k < 8) : layout.widthAt k = 1 := by
   cases layout with
   | tagN => exact tagNWidth_rung1 (by rw [tagNRung1End_eq]; exact hk)
 
-open Ix.Compile.Verify.SharingExact (tagNWidth_rung2 tagNRung1End_eq) in
+open Ix.Sharing.Verify.SharingExact (tagNWidth_rung2 tagNRung1End_eq) in
 theorem widthAt_tier2 (layout : ShareLayout) {k : Nat} (h1 : 8 ≤ k) (h2 : k < layout.tier2End) :
     layout.widthAt k = 2 := by
   cases layout with
@@ -1118,4 +1118,4 @@ theorem allocate_optimal {layout : ShareLayout} {limits : Limits} {dag : Dag} {d
     exact Nat.le_add_right _ _
   omega
 
-end Ix.Compile.Verify.Tiered
+end Ix.Sharing.Verify.Tiered

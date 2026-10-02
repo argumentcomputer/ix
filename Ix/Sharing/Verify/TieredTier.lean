@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.TieredSelect
+import Ix.Sharing.Verify.TieredSelect
 
 /-!
 # Tiered construction, phase 2: the first tier
@@ -17,7 +17,7 @@ the leaves are in the tie order, and pruning only skips leaves that are no
 heavier than the best set found so far.
 -/
 
-namespace Ix.Compile.Verify.Tiered
+namespace Ix.Sharing.Verify.Tiered
 
 open Ix.Sharing.Exact
 
@@ -348,9 +348,9 @@ theorem tierClosures_fold {deps : Nat → List Nat} {cap : Nat} :
   | cons t ts ih =>
     intro done cl cl' hinv h
     simp only [List.foldlM_cons] at h
-    obtain ⟨cl1, h1, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
-    obtain ⟨_, hc1, h1⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h1
-    obtain ⟨_, hc2, h1⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h1
+    obtain ⟨cl1, h1, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
+    obtain ⟨_, hc1, h1⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h1
+    obtain ⟨_, hc2, h1⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h1
     have hnew := checkInternal_ok hc1
     have hdeps := checkInternal_ok hc2
     simp only [pure, Except.pure, Except.ok.injEq] at h1
@@ -1010,7 +1010,7 @@ theorem tierDfs_spec {deps : Nat → List Nat} {closure : Nat → Option (List N
             cases hc : closure items[pos]! with
             | none =>
               rw [hc] at h
-              obtain ⟨st2, hst2, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+              obtain ⟨st2, hst2, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
               simp only [pure, Except.pure, Except.ok.injEq] at hst2
               subst hst2
               rw [ih _ _ _ _ _ _ _ hcur hex' hinvE h, hb1]
@@ -1022,7 +1022,7 @@ theorem tierDfs_spec {deps : Nat → List Nat} {closure : Nat → Option (List N
               split at h
               · rename_i hcond
                 rw [if_pos hcond]
-                obtain ⟨st2, hst2, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+                obtain ⟨st2, hst2, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
                 simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hcond
                 obtain ⟨hinv', -⟩ := hinv.include hctx hitems ht' hc hcond.1 hcond.2
                 rw [ih _ _ _ _ _ _ _ hcur hex' hinvE h,
@@ -1030,7 +1030,7 @@ theorem tierDfs_spec {deps : Nat → List Nat} {closure : Nat → Option (List N
                     (by rw [htake]; exact hinv') hst2, hb1]
               · rename_i hcond
                 rw [if_neg hcond]
-                obtain ⟨st2, hst2, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+                obtain ⟨st2, hst2, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
                 simp only [pure, Except.pure, Except.ok.injEq] at hst2
                 subst hst2
                 rw [ih _ _ _ _ _ _ _ hcur hex' hinvE h, hb1]
@@ -1077,8 +1077,8 @@ theorem firstTier_spec {topo : Array Nat} {weight : Nat → Nat} {deps : Nat →
         (∀ x, x ∈ G ↔ x ∈ tier.toList) ∨
           PrecIn (topo.toList.mergeSort (tierOrder weight)) tier.toList G := by
   unfold firstTier at h
-  obtain ⟨cl, hcl, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
-  obtain ⟨st, hst, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+  obtain ⟨cl, hcl, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
+  obtain ⟨st, hst, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
   obtain ⟨hnd, hok, hdeps⟩ := tierClosures_spec hcl
   generalize hitemsL : topo.toList.mergeSort (tierOrder weight) = itemsL at h hst ⊢
   have hperm : itemsL.Perm topo.toList := hitemsL ▸ List.mergeSort_perm _ _
@@ -1153,7 +1153,7 @@ theorem firstTier_nodup {topo : Array Nat} {weight : Nat → Nat} {deps : Nat �
     {cap : Nat} {limits : Limits} {r : Array Nat × Nat}
     (h : firstTier topo weight deps cap limits = .ok r) : topo.toList.Nodup := by
   unfold firstTier at h
-  obtain ⟨cl, hcl, -⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+  obtain ⟨cl, hcl, -⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
   exact (tierClosures_spec hcl).1
 
 /-! ## Phase 2 -/
@@ -1390,11 +1390,11 @@ theorem allocate_spec {layout : ShareLayout} {limits : Limits} {dag : Dag} {deg 
   intro weight deps cap
   unfold allocate at h
   dsimp only at h
-  obtain ⟨⟨tier, states⟩, hft, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+  obtain ⟨⟨tier, states⟩, hft, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
   dsimp only at h
-  obtain ⟨_, hc2, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+  obtain ⟨_, hc2, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
   try dsimp only at h
-  obtain ⟨_, hc1, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+  obtain ⟨_, hc1, h⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
   have hresp := checkInternal_ok hc1
   have hperm := checkInternal_ok hc2
   simp only [pure, Except.pure, Except.ok.injEq] at h
@@ -1428,4 +1428,4 @@ theorem allocate_spec {layout : ShareLayout} {limits : Limits} {dag : Dag} {deg 
       exact Nat.le_of_lt hk
     · exact Nat.le_refl _
 
-end Ix.Compile.Verify.Tiered
+end Ix.Sharing.Verify.Tiered

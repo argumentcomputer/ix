@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformOptimizer
+import Ix.Sharing.Verify.UniformOptimizer
 
 /-!
 # Materialized length
@@ -10,10 +10,10 @@ serialized length of the uniform optimizer's output (`variableBytes`) is its
 model length (`modelBytes = uniformCost`).
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (bind_eq_ok sizeInfoWith_app_full sizeInfoWith_app_appCont
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok sizeInfoWith_app_full sizeInfoWith_app_appCont
   sizeInfoWith_lam_full sizeInfoWith_lam_lamCont sizeInfoWith_all_full sizeInfoWith_all_allCont
   toNat_toUInt64_of_lt mapM_ok_forall₂ forall₂_getElem array_mapM_forall₂ materializeDependent_parts
   pickOption_mem pickOption_filter_ne_share child_eq_getElem indexOfTable_spec)
@@ -587,4 +587,4 @@ theorem optimizeUniform_variableBytes {w : Nat} {limits : Limits} {ex : Expanded
     rw [← Array.length_toList]; exact hperm'.length_eq
   rw [hl, List.Perm.sum_nat (hperm'.map _)]
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

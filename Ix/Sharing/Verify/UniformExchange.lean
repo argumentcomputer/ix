@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformWritings
+import Ix.Sharing.Verify.UniformWritings
 
 /-!
 # The monotone exchange
@@ -11,7 +11,7 @@ its entry. Descendants of `t` are untouched, each ancestor body gets a
 `w`-byte leaf where `t`'s part was, and telescopes only shorten.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
 
@@ -50,22 +50,22 @@ theorem merged_mem_mergedCuts (p : Prep) (w : Nat) (S : Nat → Bool) (f : Nat �
   rw [if_pos hS]
 
 theorem tag4Size_pos (n : Nat) : 1 ≤ tag4Size n :=
-  Ix.Compile.Verify.TagN.tagNByteWidth_pos 4 n
+  Ixon.Verify.TagN.tagNByteWidth_pos 4 n
 
 theorem tag4Size_mono {a b : Nat} (h : a ≤ b) : tag4Size a ≤ tag4Size b :=
-  Ix.Compile.Verify.TagN.tagNByteWidth_mono 4 h
+  Ixon.Verify.TagN.tagNByteWidth_mono 4 h
 
 theorem tag0Size_mono {a b : Nat} (h : a ≤ b) : tag0Size a ≤ tag0Size b :=
-  Ix.Compile.Verify.TagN.tagNByteWidth_mono 0 h
+  Ixon.Verify.TagN.tagNByteWidth_mono 0 h
 
 /-- One more table entry grows the TagN (`f = 0`) table count by at most
 `tag0StepBound n` bytes, for every count below `n`. -/
 theorem tag0Size_succ_le {k n : Nat} (h : k < n) :
     tag0Size (k + 1) ≤ tag0Size k + tag0StepBound n := by
   unfold tag0Size tag0StepBound Ixon.tagNByteWidth
-  simp only [Ix.Compile.Verify.TagN.tagNEnd1_eq_0, Ix.Compile.Verify.TagN.tagNEnd2_eq_0,
-    Ix.Compile.Verify.TagN.tagNEnd3_eq_0, Ix.Compile.Verify.TagN.tagNEnd4_eq_0,
-    Ix.Compile.Verify.TagN.tagNEnd5_eq_0]
+  simp only [Ixon.Verify.TagN.tagNEnd1_eq_0, Ixon.Verify.TagN.tagNEnd2_eq_0,
+    Ixon.Verify.TagN.tagNEnd3_eq_0, Ixon.Verify.TagN.tagNEnd4_eq_0,
+    Ixon.Verify.TagN.tagNEnd5_eq_0]
   repeat' split
   all_goals omega
 
@@ -1130,7 +1130,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
         rw [hT, List.map_congr_left (fun T hT => (hside T hT).2.1), ht2]
 /-! ## Every reachable term is written -/
 
-open Ix.Compile.Verify.SharingExact (Desc)
+open Ix.Sharing.Verify.SharingExact (Desc)
 
 mutual
 /-- The Shares a writing uses. -/
@@ -1354,4 +1354,4 @@ theorem PrepWF.cover {p : Prep} (hp : PrepWF p) {S : Nat → Bool} :
             exact ihi (m + 1) (by omega) hd''
     exact key (p.spineLen[x]! - 1) 0 (by omega) hd
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

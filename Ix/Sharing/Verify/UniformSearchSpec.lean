@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformTables
+import Ix.Sharing.Verify.UniformTables
 
 /-!
 # Stage 4: the component search finds every minimum's choice
@@ -9,10 +9,10 @@ exact `Δ`, and for every minimum respecting a node's decisions the table has
 an entry at that minimum's count of the group that is at most its `Δ`.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (bind_eq_ok)
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok)
 
 /-! ## The setting of one component's search -/
 
@@ -1149,4 +1149,4 @@ theorem Env.component_table {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
   rw [hOn] at hcov
   refine ⟨htab, fun Y hY => hcov Y ⟨hY, fun t ht => by simp at ht, fun t ht => by simp at ht⟩⟩
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

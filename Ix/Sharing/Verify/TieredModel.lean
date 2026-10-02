@@ -1,5 +1,5 @@
-import Ix.Compile.Verify.UniformWritings
-import Ix.Compile.Verify.UniformSearch
+import Ix.Sharing.Verify.UniformWritings
+import Ix.Sharing.Verify.UniformSearch
 
 /-!
 # The fixed-dictionary model at per-term Share widths
@@ -19,10 +19,10 @@ same model with a width per term, `wd : Nat → Nat` (used where `avail` holds):
   one term to the dictionary computes the new model.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (CP NodeArity getElem!_eq_getElem setBang_getElem!
+open Ix.Sharing.Verify.SharingExact (CP NodeArity getElem!_eq_getElem setBang_getElem!
   child_eq_getElem cp_of_childrenPrecede bind_eq_ok sizeInfoWith_app_full sizeInfoWith_app_appCont
   sizeInfoWith_lam_full sizeInfoWith_lam_lamCont sizeInfoWith_all_full sizeInfoWith_all_allCont
   toNat_toUInt64_of_lt pickOption_mem pickOption_filter_ne_share)
@@ -1255,7 +1255,7 @@ theorem PrepWF.gExists_opt {p : Prep} (hp : PrepWF p) (wd : Nat → Nat) (S : Na
 
 /-! ## Locality and the incremental re-evaluation -/
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans) in
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans) in
 /-- The spine nodes of `y` up to its tail are below it. -/
 theorem desc_spineAt {dag : Dag} (hwf : DagWF dag) {y : Nat} (hy : y < dag.size)
     (hf : (Prep.ofDag dag).family[y]! ≠ .none) :
@@ -1278,7 +1278,7 @@ theorem desc_spineAt {dag : Dag} (hwf : DagWF dag) {y : Nat} (hy : y < dag.size)
     rw [← snext_spineAt, ← he]
     exact desc_snoc hd (by rw [hwf.children_size hks]; exact hm)
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans) in
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans) in
 theorem desc_sideAt {dag : Dag} (hwf : DagWF dag) {y : Nat} (hy : y < dag.size)
     (hf : (Prep.ofDag dag).family[y]! ≠ .none) {k : Nat} (hk : k < (Prep.ofDag dag).spineLen[y]!) :
     Desc dag y (sideAt (Prep.ofDag dag) y k) := by
@@ -1296,7 +1296,7 @@ theorem desc_sideAt {dag : Dag} (hwf : DagWF dag) {y : Nat} (hy : y < dag.size)
   exact desc_snoc (desc_spineAt hwf hy hf k (by omega))
     (by rw [hwf.children_size hks]; exact hm)
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans) in
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans) in
 /-- **Locality.** The model cost of `y` depends only on the dictionary on the
 terms at or below `y`. -/
 theorem gCost_local {dag : Dag} (hwf : DagWF dag) {wdA wdB : Nat → Nat} {A B : Nat → Bool} :
@@ -1349,7 +1349,7 @@ theorem gCost_local {dag : Dag} (hwf : DagWF dag) {wdA wdB : Nat → Nat} {A B :
     unfold gCostOf
     rw [hinl, hAy, hwy]
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans) in
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans) in
 /-- The evaluation rows of `t` carry over between dictionaries that agree
 at and below `t`. -/
 theorem gEvalRow_local {dag : Dag} (hwf : DagWF dag) {wdA wdB : Nat → Nat} {A B : Nat → Bool}
@@ -1381,14 +1381,14 @@ theorem gEvalRow_local {dag : Dag} (hwf : DagWF dag) {wdA wdB : Nat → Nat} {A 
       refine ⟨k, hk1, hk2, hu, by rw [hu, ← hagk k hk2, ← hu]; exact hau, fun k' h1 h2 => ?_⟩
       rw [← hagk k' (by omega)]; exact hnone k' h1 h2
 
-open Ix.Compile.Verify.SharingExact (Desc) in
+open Ix.Sharing.Verify.SharingExact (Desc) in
 theorem desc_inv {dag : Dag} {a b : Nat} (h : Desc dag a b) :
     a = b ∨ ∃ k, ∃ _ : k < (dag.node a).children.size, Desc dag ((dag.node a).child k) b := by
   cases h with
   | refl => exact Or.inl rfl
   | child k hk h => exact Or.inr ⟨k, hk, h⟩
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans) in
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans) in
 /-- The marks of `ancestorMarks`: `u` is marked iff `t` is at or below it. -/
 theorem ancestorMarks_iff {dag : Dag} (hwf : DagWF dag) {t : Nat} (ht : t < dag.size) :
     ∀ u, u < dag.size → ((ancestorMarks dag t)[u]! = true ↔ Desc dag u t) := by
@@ -1461,7 +1461,7 @@ theorem gEvalRow_of_agree {p : Prep} {wd : Nat → Nat} {A : Nat → Bool} {st s
   obtain ⟨hc, hs⟩ := h
   exact ⟨by rw [h1, hc], fun hf => by rw [h2, h3]; exact hs hf⟩
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans) in
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans) in
 /-- **Incremental re-evaluation.** If `ev` gives the model rows of a
 dictionary and the new dictionary (`width`, model `A'`, `wd'`) differs from
 it only at `t`, then `Prep.evalUp ev width t` gives the new model rows. -/
@@ -1544,7 +1544,7 @@ that agree below a term), `evalUp_work` (the work `Prep.evalUp` counts). -/
 
 section OnePass
 
-open Ix.Compile.Verify.SharingExact (Desc Desc.trans)
+open Ix.Sharing.Verify.SharingExact (Desc Desc.trans)
 
 /-! ## Agreement of evaluations below a term -/
 
@@ -2181,4 +2181,4 @@ theorem evalAll_none_work {dag : Dag} (hwf : DagWF dag) :
 
 end OnePass
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

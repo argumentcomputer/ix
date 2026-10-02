@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.SharingExactCanon
+import Ix.Sharing.Verify.SharingExactCanon
 
 /-!
 # The uniform-width cost model
@@ -22,10 +22,10 @@ every reference):
 This is the objective `L(S)` of `Ix.Sharing.Exact.Uniform`.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (CP NodeArity getElem!_eq_getElem setBang_getElem!
+open Ix.Sharing.Verify.SharingExact (CP NodeArity getElem!_eq_getElem setBang_getElem!
   child_eq_getElem cp_of_childrenPrecede)
 
 /-! ## Counted loops -/
@@ -1245,4 +1245,4 @@ theorem PrepWF.inlineCost_eq {p : Prep} (hp : PrepWF p)
         hbase, List.filter_eq_self.mpr (fun o ho => choice_ne_share (hLnot o ho))]
       rfl
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

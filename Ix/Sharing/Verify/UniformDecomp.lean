@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformClasses
+import Ix.Sharing.Verify.UniformClasses
 
 /-!
 # Stage 4 (part): additive decomposition of the uniform cost
@@ -32,7 +32,7 @@ minimum (`optimizeUniform_minimum`) and the `setPrec`-least one
 (`optimizeUniform_least`, both in `UniformOptimality`).
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
 
@@ -473,7 +473,7 @@ theorem PrepWF.uCost_local {p : Prep} (hp : PrepWF p) (w : Nat) (O : Nat → Boo
         have har := hp.dag.arity y hy
         rw [← dag_node_eq hy] at har
         have hci : (p.dag.node y).child i = (p.dag.node y).children[i] :=
-          Ix.Compile.Verify.SharingExact.child_eq_getElem _ i hi
+          Ix.Sharing.Verify.SharingExact.child_eq_getElem _ i hi
         rw [← hci]
         have hlt := hp.dag.childAt_lt hy (k := i) (by omega)
         exact hp.cost_agree_of hy hA hB hc hlt ⟨i, by omega, rfl⟩ .refl (Or.inl rfl) hagree
@@ -1040,4 +1040,4 @@ theorem lower_bound_sound {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
   unfold ulen uniformCost
   omega
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

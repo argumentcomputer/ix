@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.SharingExact
+import Ix.Sharing.Verify.SharingExact
 
 /-!
 # Exact sharing: tie order and table materialization
@@ -12,7 +12,7 @@ import Ix.Compile.Verify.SharingExact
   output expands to its term.
 -/
 
-namespace Ix.Compile.Verify.SharingExact
+namespace Ix.Sharing.Verify.SharingExact
 
 open Ix.Sharing.Exact
 
@@ -759,4 +759,4 @@ theorem materializeDependent_correct (p : Prep) (table roots : Array Nat)
 
 end Table
 
-end Ix.Compile.Verify.SharingExact
+end Ix.Sharing.Verify.SharingExact

@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformGain
+import Ix.Sharing.Verify.UniformGain
 
 /-!
 # Stage 3: the certain classes
@@ -22,7 +22,7 @@ import Ix.Compile.Verify.UniformGain
   subadditive there).
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
 
@@ -697,7 +697,7 @@ theorem propagateCounts_spec {dag : Dag} (h : DagWF dag) (roots : Array Nat)
           (dag.node (dag.size - 1 - k)).child i < st.2.size := by
       intro i hi
       have hi' := List.mem_range.mp hi
-      rw [Ix.Compile.Verify.SharingExact.child_eq_getElem _ i hi']
+      rw [Ix.Sharing.Verify.SharingExact.child_eq_getElem _ i hi']
       have := h.child_lt hy (Array.getElem_mem hi')
       omega
     obtain ⟨h1, h2, h3, h4⟩ := vis_inner (dag.node (dag.size - 1 - k)).child
@@ -910,7 +910,7 @@ theorem occurrences_spec {dag : Dag} (h : DagWF dag) (roots : Array Nat)
 
 /-! ## Writes of an encoding and the visible counts -/
 
-open Ix.Compile.Verify.SharingExact (Desc)
+open Ix.Sharing.Verify.SharingExact (Desc)
 
 theorem le_sum_map_of_mem {α : Type} (f : α → Nat) {l : List α} {a : α} (h : a ∈ l) :
     f a ≤ (l.map f).sum := by
@@ -1341,9 +1341,9 @@ theorem tag4Size_add_le {a b : Nat} (ha : 1 ≤ a) (hb : 1 ≤ b) (hab : a + b <
     tag4Size (a + b) ≤ tag4Size a + tag4Size b := by
   unfold teleSubaddEnd at hab
   unfold tag4Size Ixon.tagNByteWidth
-  simp only [Ix.Compile.Verify.TagN.tagNEnd1_eq_4, Ix.Compile.Verify.TagN.tagNEnd2_eq_4,
-    Ix.Compile.Verify.TagN.tagNEnd3_eq_4, Ix.Compile.Verify.TagN.tagNEnd4_eq_4,
-    Ix.Compile.Verify.TagN.tagNEnd5_eq_4] at hab ⊢
+  simp only [Ixon.Verify.TagN.tagNEnd1_eq_4, Ixon.Verify.TagN.tagNEnd2_eq_4,
+    Ixon.Verify.TagN.tagNEnd3_eq_4, Ixon.Verify.TagN.tagNEnd4_eq_4,
+    Ixon.Verify.TagN.tagNEnd5_eq_4] at hab ⊢
   repeat' split
   all_goals omega
 
@@ -2189,4 +2189,4 @@ theorem threshold_one_sound {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep
   · simp only [C, List.mem_filter, List.mem_range]
     exact ⟨htn, htc⟩
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

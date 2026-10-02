@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformModel
+import Ix.Sharing.Verify.UniformModel
 
 /-!
 # The uniform-width optimizer against the model
@@ -8,10 +8,10 @@ import Ix.Compile.Verify.UniformModel
 a permutation of that set.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (bind_eq_ok indexOfTable_spec indexOfPairs_mem
+open Ix.Sharing.Verify.SharingExact (bind_eq_ok indexOfTable_spec indexOfPairs_mem
   getElem!_of_getElem? foldl_some_mem setBang_getElem! cp_of_childrenPrecede)
 
 /-! ## Pinned order -/
@@ -239,7 +239,7 @@ theorem dagWF_of_checks {dag : Dag} (hcp : childrenPrecede dag.nodes = true)
     intro t ht
     rw [Array.all_eq_true] at har
     have := har t ht
-    rw [Ix.Compile.Verify.SharingExact.getElem!_eq_getElem _ t ht]
+    rw [Ix.Sharing.Verify.SharingExact.getElem!_eq_getElem _ t ht]
     simpa using this
 
 /-- The optimizer's checks and its last stage. -/
@@ -336,4 +336,4 @@ theorem optimizeUniform_modelBytes {w : Nat} {limits : Limits} {ex : Expanded}
   simp only [p, order] at hentries hroots hlen
   rw [hlen, hentries, hroots]
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

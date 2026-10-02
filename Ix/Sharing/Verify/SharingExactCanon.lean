@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.SharingExactPasses
+import Ix.Sharing.Verify.SharingExactPasses
 
 /-!
 # Exact sharing: determinism of canonical structural IDs
@@ -10,7 +10,7 @@ unreachable nodes) whose roots denote the same terms canonicalize to the
 same DAG and root IDs.
 -/
 
-namespace Ix.Compile.Verify.SharingExact
+namespace Ix.Sharing.Verify.SharingExact
 
 open Ix.Sharing.Exact
 
@@ -994,4 +994,4 @@ theorem canonicalize_det (h₁ : Run temp₁ roots₁) (h₂ : Run temp₂ roots
 
 end Canon
 
-end Ix.Compile.Verify.SharingExact
+end Ix.Sharing.Verify.SharingExact

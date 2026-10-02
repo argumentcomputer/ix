@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformDecomp
+import Ix.Sharing.Verify.UniformDecomp
 
 /-!
 # Runtime-checked facts of the uniform search
@@ -8,10 +8,10 @@ Specifications of the checkers the optimizer runs: `reachLabels` /
 `componentsChecked` (the uncertain components are a separated partition).
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (child_eq_getElem)
+open Ix.Sharing.Verify.SharingExact (child_eq_getElem)
 
 /-! ## Reach summaries -/
 
@@ -325,7 +325,7 @@ theorem arr_foldl_add_mono {f g : Nat → Nat} (a : Nat) (arr : Array Nat) (h : 
 theorem setBang_getElem!_le {a a' : Array Nat} {t v v' : Nat} (u : Nat)
     (hs : a.size = a'.size) (hle : a[u]! ≤ a'[u]!) (hv : v ≤ v') :
     (a.set! t v)[u]! ≤ (a'.set! t v')[u]! := by
-  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, Ix.Compile.Verify.SharingExact.setBang_getElem!]
+  rw [Ix.Sharing.Verify.SharingExact.setBang_getElem!, Ix.Sharing.Verify.SharingExact.setBang_getElem!]
   by_cases h : t = u ∧ t < a.size
   · rw [if_pos h, if_pos ⟨h.1, hs ▸ h.2⟩]; exact hv
   · rw [if_neg h, if_neg (fun h' => h ⟨h'.1, hs ▸ h'.2⟩)]; exact hle
@@ -481,4 +481,4 @@ theorem PrepWF.boundsFold_le {p : Prep} (hp : PrepWF p) (w : Nat) {ms : Array Bo
           Array.setIfInBounds_eq_of_size_le (show b.contLB.size ≤ t by omega)]
         exact h u
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

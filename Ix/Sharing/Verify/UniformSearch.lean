@@ -1,5 +1,5 @@
-import Ix.Compile.Verify.UniformChecks
-import Ix.Compile.Verify.UniformFinal
+import Ix.Sharing.Verify.UniformChecks
+import Ix.Sharing.Verify.UniformFinal
 
 /-!
 # Stage 4: specifications of the component search's checks and tables
@@ -8,13 +8,13 @@ The restricted reach-label pass (`reachLabelsOn`) over the members'
 ancestors (`upClosure`), the label and mark tables, and what a passing
 group separation check (`SCtx.sepCheck`) guarantees. These are proofs about the
 implementation module of the same name, `Ix.Sharing.Exact.UniformSearch`;
-they extend the namespace `Ix.Compile.Verify.UniformModel`.
+they extend the namespace `Ix.Sharing.Verify.UniformModel`.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (Desc child_eq_getElem setBang_getElem!)
+open Ix.Sharing.Verify.SharingExact (Desc child_eq_getElem setBang_getElem!)
 
 /-! ## Folds of `set!` -/
 
@@ -739,4 +739,4 @@ theorem phiE_spec {cx : SCtx} {dag : Dag} (hwf : DagWF dag) (hprep : cx.up.prep 
   · congr 1
     exact List.map_congr_left (fun x hx => hent x (hst x (Array.mem_toList_iff.mp hx)))
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformExchange
+import Ix.Sharing.Verify.UniformExchange
 
 /-!
 # The certain-stored gain bound
@@ -11,7 +11,7 @@ within the candidates (`bounds_sound`). With the exchange of
 `uniformCost (S ∪ {t}) ≤ uniformCost S - storedGain t + 1`.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
 
@@ -101,7 +101,7 @@ theorem edgeCounts_spec {dag : Dag} (h : DagWF dag) (roots : Array Nat)
       intro c hc
       obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hc
       have hi' := List.mem_range.mp (List.mem_filter.mp hi).1
-      rw [Ix.Compile.Verify.SharingExact.child_eq_getElem _ i hi']
+      rw [Ix.Sharing.Verify.SharingExact.child_eq_getElem _ i hi']
       have := h.child_lt hy (Array.getElem_mem hi')
       omega
     obtain ⟨h1, h2⟩ := foldl_modify_count _ acc t hlt
@@ -193,11 +193,11 @@ theorem BoundsRow.congr {p : Prep} (hp : PrepWF p) {w : Nat} {ms : Array Bool} {
 
 theorem setBang_getElem!_ne {α : Type} [Inhabited α] (a : Array α) {i j : Nat} (v : α)
     (h : j ≠ i) : (a.set! i v)[j]! = a[j]! := by
-  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, if_neg (fun h' => h h'.1.symm)]
+  rw [Ix.Sharing.Verify.SharingExact.setBang_getElem!, if_neg (fun h' => h h'.1.symm)]
 
 theorem setBang_getElem!_self {α : Type} [Inhabited α] (a : Array α) {i : Nat} (v : α)
     (h : i < a.size) : (a.set! i v)[i]! = v := by
-  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, if_pos ⟨rfl, h⟩]
+  rw [Ix.Sharing.Verify.SharingExact.setBang_getElem!, if_pos ⟨rfl, h⟩]
 
 /-- `uniformBounds` satisfies its recurrence at every term. -/
 theorem PrepWF.uniformBounds_spec {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Array Bool) (t : Nat)
@@ -418,11 +418,11 @@ theorem PrepWF.encoding_covers {p : Prep} (hp : PrepWF p) {S : List Nat} {entry 
     {roots : List Nat} {rootsW : List WTree}
     (h : EncodingWF p (fun y => decide (y ∈ S)) S entry roots rootsW)
     (_hSin : ∀ s ∈ S, s < p.dag.size) (hroots : ∀ r ∈ roots, r < p.dag.size)
-    (hreach : ∀ y, y < p.dag.size → ∃ r ∈ roots, Ix.Compile.Verify.SharingExact.Desc p.dag r y) :
+    (hreach : ∀ y, y < p.dag.size → ∃ r ∈ roots, Ix.Sharing.Verify.SharingExact.Desc p.dag r y) :
     ∀ y, y < p.dag.size →
       y ∈ (rootsW.map (WTree.written p)).flatten ++ (S.map fun s => (entry s).written p).flatten := by
   -- terms below a stored term are written by the entries
-  have hentry : ∀ s, s < p.dag.size → s ∈ S → ∀ y, Ix.Compile.Verify.SharingExact.Desc p.dag s y →
+  have hentry : ∀ s, s < p.dag.size → s ∈ S → ∀ y, Ix.Sharing.Verify.SharingExact.Desc p.dag s y →
       y ∈ (S.map fun s => (entry s).written p).flatten := by
     intro s
     induction s using Nat.strongRecOn with
@@ -437,8 +437,8 @@ theorem PrepWF.encoding_covers {p : Prep} (hp : PrepWF p) {S : List Nat} {entry 
   intro y hy
   obtain ⟨r, hr, hd⟩ := hreach y hy
   obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hr
-  have hlen := (Ix.Compile.Verify.SharingExact.forall₂_getElem h.2).1
-  have hv := (Ix.Compile.Verify.SharingExact.forall₂_getElem h.2).2 i hi (by omega)
+  have hlen := (Ix.Sharing.Verify.SharingExact.forall₂_getElem h.2).1
+  have hv := (Ix.Sharing.Verify.SharingExact.forall₂_getElem h.2).2 i hi (by omega)
   rcases hp.cover hv (hroots _ hr) y hd with hw | ⟨s, hs, hd'⟩
   · exact List.mem_append_left _ (List.mem_flatten.mpr ⟨_, List.mem_map.mpr
       ⟨rootsW[i], List.getElem_mem (by omega), rfl⟩, hw⟩)
@@ -583,7 +583,7 @@ theorem PrepWF.exchange_counts {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Na
     (fun s => (E s).occC p t) (fun s => (E s).cost p w) Ah Ac S (fun s hs => (hsubE s hs).2)
   have hsumR := sum_ineq (fun T => (T.subst p t rh rc).cost p w) (WTree.occH t) (WTree.occC p t)
     (WTree.cost p w) Ah Ac R (fun T hT => by
-      obtain ⟨r, hr⟩ := Ix.Compile.Verify.SharingExact.forall₂_mem_right hsubR T hT
+      obtain ⟨r, hr⟩ := Ix.Sharing.Verify.SharingExact.forall₂_mem_right hsubR T hT
       exact hr.2)
   have hI : I = uInl p w A t := rfl
   have hc' : uniformCost p w (fun y => decide (y ∈ S)) S roots = uniformCost p w A S roots := rfl
@@ -601,7 +601,7 @@ non-continuation edges into `t`, the continuation occurrences at least the
 continuation edges into `t`. -/
 theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
     (hSin : ∀ s ∈ S, s < p.dag.size) (roots : List Nat) (hroots : ∀ r ∈ roots, r < p.dag.size)
-    (hreach : ∀ y, y < p.dag.size → ∃ r ∈ roots, Ix.Compile.Verify.SharingExact.Desc p.dag r y)
+    (hreach : ∀ y, y < p.dag.size → ∃ r ∈ roots, Ix.Sharing.Verify.SharingExact.Desc p.dag r y)
     {t : Nat} (htn : t < p.dag.size) (htS : t ∉ S) :
     let A := fun y => decide (y ∈ S)
     let I := uInl p w A t
@@ -717,7 +717,7 @@ candidate `t ∉ S` with in-degree at least one,
 theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size)
     (hreach : ∀ y, y < dag.size →
-      ∃ r ∈ roots.toList, Ix.Compile.Verify.SharingExact.Desc dag r y)
+      ∃ r ∈ roots.toList, Ix.Sharing.Verify.SharingExact.Desc dag r y)
     (w : Nat) (ms : Array Bool) {S : List Nat} (hSin : ∀ s ∈ S, s < dag.size)
     (hSms : ∀ s ∈ S, ms[s]! = true) {t : Nat} (htn : t < dag.size) (htS : t ∉ S)
     (hdeg : 1 ≤ (graphFacts dag roots).deg[t]!) :
@@ -803,4 +803,4 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
         Nat.zero_add, _root_.Int.sub_mul] at f5 hAh hexI hdeg ⊢
       omega
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformRevisible
+import Ix.Sharing.Verify.UniformRevisible
 
 /-!
 # Stage 4: the tie order of sets
@@ -9,7 +9,7 @@ order on such sets, and it is monotone under unions of sets from disjoint
 universes.
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
 
@@ -207,4 +207,4 @@ theorem setPrec_iff {a b : Array Nat} (ha : a.toList.Pairwise (· < ·)) (hb : b
   rw [← h]
   cases List.compareLex compareDesc a.toList b.toList <;> decide
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel

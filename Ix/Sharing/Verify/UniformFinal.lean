@@ -1,5 +1,5 @@
-import Ix.Compile.Verify.UniformDecomp
-import Ix.Compile.Verify.UniformOptimizer
+import Ix.Sharing.Verify.UniformDecomp
+import Ix.Sharing.Verify.UniformOptimizer
 
 /-!
 # Stage 4: every term of an optimized DAG is reachable from a root
@@ -9,10 +9,10 @@ Facts about the run of `optimizeUniformExpanded` that the optimality theorem
 reachable from a root (`optimizeUniform_reach`).
 -/
 
-namespace Ix.Compile.Verify.UniformModel
+namespace Ix.Sharing.Verify.UniformModel
 
 open Ix.Sharing.Exact
-open Ix.Compile.Verify.SharingExact (Desc Reach reach_lt reachMarks_spec reachMarks_eq
+open Ix.Sharing.Verify.SharingExact (Desc Reach reach_lt reachMarks_spec reachMarks_eq
   marksFrom_size child_eq_getElem)
 
 /-! ## Every term is reachable from a root -/
@@ -25,7 +25,7 @@ theorem desc_snoc {dag : Dag} {r t : Nat} (h : Desc dag r t) {k : Nat}
   | child k' hk' _ ih => exact .child k' hk' (ih hk)
 
 theorem desc_of_reach {dag : Dag} {roots : Array Nat} (hin : ∀ r ∈ roots, r < dag.size)
-    (hcp : Ix.Compile.Verify.SharingExact.CP dag.nodes) {t : Nat}
+    (hcp : Ix.Sharing.Verify.SharingExact.CP dag.nodes) {t : Nat}
     (h : Reach dag.nodes roots t) : ∃ r ∈ roots.toList, Desc dag r t := by
   induction h with
   | root hr => exact ⟨_, Array.mem_toList_iff.mpr hr, .refl _⟩
@@ -62,4 +62,4 @@ theorem optimizeUniform_reach {w : Nat} {limits : Limits} {ex : Expanded}
   obtain ⟨_, hwf, hroots, hm, _⟩ := optimizeUniform_parts h
   exact reach_of_marks hwf hroots hm
 
-end Ix.Compile.Verify.UniformModel
+end Ix.Sharing.Verify.UniformModel
