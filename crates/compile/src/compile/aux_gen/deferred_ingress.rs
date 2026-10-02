@@ -251,6 +251,15 @@ pub(super) fn defers(
 
 /// The deferred counterpart of `recursor::drain_ingress_queue`: the same
 /// walk, registering instead of converting. Requires [`defers`].
+///
+/// The eager walk pushes each processed constant's references onto one
+/// stack and pops from its end. Here that stack is kept as frames — the
+/// roots, then each processed constant's cached push list — each consumed
+/// from its end, which pops the same names in the same order without
+/// copying them. A name popped a second time within one drain is skipped
+/// before it is resolved again: nothing registers a name while a drain
+/// runs, so it resolves as it did at its first pop, and that id is already
+/// in the dedup set (the eager walk skips it there).
 pub(super) fn drain(
   queue: &mut Vec<Name>,
   lean_env: &LeanEnv,
@@ -258,7 +267,26 @@ pub(super) fn drain(
   kctx: &mut crate::compile::KernelCtx,
 ) {
   let mut seen = std::mem::take(&mut kctx.aux_ingress_seen);
-  while let Some(name) = queue.pop() {
+  let mut popped: rustc_hash::FxHashSet<Name> =
+    rustc_hash::FxHashSet::default();
+  let roots = Arc::new(AuxDep {
+    kind: None,
+    pushes: std::mem::take(queue).into_boxed_slice(),
+  });
+  let n_roots = roots.pushes.len();
+  let mut frames: Vec<(Arc<AuxDep>, usize)> = vec![(roots, n_roots)];
+  while let Some((top, next)) = frames.last_mut() {
+    if *next == 0 {
+      frames.pop();
+      continue;
+    }
+    *next -= 1;
+    let name = &top.pushes[*next];
+    if popped.contains(name) {
+      continue;
+    }
+    let name = name.clone();
+    popped.insert(name.clone());
     let zid = resolve(&name, stt);
     if !seen.insert(zid.clone()) {
       continue;
@@ -277,7 +305,10 @@ pub(super) fn drain(
       },
       Some(_) | None => {},
     }
-    queue.extend(dep.pushes.iter().cloned());
+    if !dep.pushes.is_empty() {
+      let len = dep.pushes.len();
+      frames.push((dep, len));
+    }
   }
   kctx.aux_ingress_seen = seen;
 }
