@@ -342,17 +342,29 @@ refusing to synthesize canonical-indexed _N names")
 
   -- Phase 2: Generate `.below` constants (if originals exist)
   -- (aux_gen.rs:603-660).
-  let firstClassName := sortedClasses[0]![0]!
-  let belowName := Name.mkStr firstClassName "below"
-  -- Guard: the existing constant must actually be a `.below` auxiliary,
-  -- not a coincidental name collision (e.g., a structure field accessor
-  -- like `IndPredBelow.NewDecl.below : NewDecl → LocalDecl`). A genuine
-  -- `.below` type always ends in `Sort _` after peeling foralls.
-  let belowShaped ←
-    match ← liftM (lookupConst? belowName : CompileM _) with
-    | some ci => pure (isBelowShaped ci.getCnst.type)
-    | none => pure false
-  if belowShaped then
+  -- Whether Lean exported any member of the block's `.{suffix}` family:
+  -- some class's `.{suffix}` or a nested auxiliary's `<all0>.{suffix}_N`
+  -- (aux_gen.rs `family_exported`). A closure-only environment can hold
+  -- `<all0>.brecOn_N`, or one class's `.brecOn`, without the canonical
+  -- first class's; gating on that one name skipped generation.
+  let familyExported (suffix : String) (checkShape : Bool) : KBridgeM Bool := do
+    for cls in sortedClasses do
+      for n in cls do
+        match ← liftM (lookupConst? (Name.mkStr n suffix) : CompileM _) with
+        | some ci =>
+          -- Guard: an existing `.below` must actually be a `.below`
+          -- auxiliary, not a coincidental name collision (e.g., a structure
+          -- field accessor like `IndPredBelow.NewDecl.below : NewDecl →
+          -- LocalDecl`). A genuine `.below` type always ends in `Sort _`.
+          if !checkShape || isBelowShaped ci.getCnst.type then return true
+        | none => pure ()
+    if let some all0 := originalAll[0]? then
+      for (recName, _) in canonicalRecs.toList.drop nClasses do
+        if let some idx := auxRecSuffixIdx recName then
+          let n := Name.mkStr all0 s!"{suffix}_{idx}"
+          if (← liftM (lookupConst? n : CompileM _)).isSome then return true
+    return false
+  if ← familyExported "below" true then
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
       isProp maps
     -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
@@ -373,8 +385,7 @@ refusing to synthesize canonical-indexed _N names")
 
     -- Phase 3: Generate .brecOn constants (if originals exist)
     -- (aux_gen.rs:659-702).
-    let brecOnName := Name.mkStr firstClassName "brecOn"
-    if (← liftM (lookupConst? brecOnName : CompileM _)).isSome then
+    if ← familyExported "brecOn" false then
       let breconConsts ← generateBreconConstants sortedClasses
         canonicalRecs belowConsts isProp maps
       for d in breconConsts do

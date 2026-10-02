@@ -614,16 +614,35 @@ pub fn generate_aux_patches(
   // Phase 2: Generate .below constants (if originals exist).
   let _p2_start = std::time::Instant::now();
   {
-    let first_class_name = &sorted_classes[0][0];
-    let below_name = Name::str(first_class_name.clone(), "below".to_string());
-    // Guard: the existing constant must actually be a `.below` auxiliary,
+    // Whether Lean exported any member of the block's `.{suffix}` family:
+    // some class's `.{suffix}` or a nested auxiliary's `<all0>.{suffix}_N`.
+    // A closure-only environment (`ix compile --consts`) can hold
+    // `<all0>.brecOn_N`, or one class's `.brecOn`, without the canonical
+    // first class's: gating on that one name alone skipped generation, so
+    // the nested auxiliaries had no patch ("aux_gen alias target missing")
+    // and a class `.brecOn` was compiled in its source form against the
+    // canonical `.rec`/`.below`, an ill-typed constant.
+    let family_exported = |suffix: &str, check_shape: bool| -> bool {
+      let primary = sorted_classes.iter().flatten().any(|n| {
+        lean_env
+          .get(&Name::str(n.clone(), suffix.to_string()))
+          .is_some_and(|ci| !check_shape || is_below_shaped(ci.get_type()))
+      });
+      primary
+        || original_all.first().is_some_and(|all0| {
+          canonical_recs.iter().skip(n_classes).any(|(rec_name, _)| {
+            below::aux_rec_suffix_idx(rec_name).is_some_and(|idx| {
+              let n = Name::str(all0.clone(), format!("{suffix}_{idx}"));
+              lean_env.get(&n).is_some()
+            })
+          })
+        })
+    };
+    // Guard: an existing `.below` must actually be a `.below` auxiliary,
     // not a coincidental name collision (e.g., a structure field accessor
     // like `IndPredBelow.NewDecl.below : NewDecl → LocalDecl`).
     // A genuine `.below` type always ends in `Sort _` after peeling foralls.
-    if lean_env
-      .get(&below_name)
-      .is_some_and(|ci| is_below_shaped(ci.get_type()))
-    {
+    if family_exported("below", true) {
       let _bt = std::time::Instant::now();
       let raw_below_consts = below::generate_below_constants(
         sorted_classes,
@@ -669,9 +688,7 @@ pub fn generate_aux_patches(
       );
 
       // Phase 3: Generate .brecOn constants (if originals exist).
-      let brecon_name =
-        Name::str(first_class_name.clone(), "brecOn".to_string());
-      if lean_env.get(&brecon_name).is_some() {
+      if family_exported("brecOn", false) {
         let _brt = std::time::Instant::now();
         let brecon_consts = brecon::generate_brecon_constants(
           sorted_classes,

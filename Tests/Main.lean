@@ -14,6 +14,7 @@ import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.DecompileDiff
+import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -166,6 +167,8 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-tutorial", Tests.Tc.TutorialTc.suite),
   ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
   ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
+  -- aux_gen on closure-only environments (`ix compile --consts`)
+  ("aux-gen-closure", Tests.Ix.Compile.AuxGenClosure.suite),
 ]
 
 /-- Primary test runners — quick suites run by default alongside
