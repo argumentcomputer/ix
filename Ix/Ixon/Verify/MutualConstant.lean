@@ -1,7 +1,9 @@
 /-
 Extracted from Ix/Compile/Verify/MutualConstantCodec.lean at Ix revision
 b067697b9d97552c6f52b2f72c892f84e4c7170f, with the Ixon v3 changes to that
-file at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c.
+file at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c,
+and the Ixon v4 (TagN) changes to that file at Ix revision
+22afee6d9245bd5f974ad59019affed034d84615.
 -/
 
 import Ix.Ixon.Verify.RecursorConstant
@@ -76,41 +78,41 @@ theorem getConstructor_reads (constructor : Ixon.Constructor)
         Ixon.GetM Ixon.Constructor))
     htyp hreturn
   have hafterFields := Reads.bind
-    (next := fun fields : Ixon.Tag0 => do
+    (next := fun fields : Ixon.TagN => do
       let typ ← Ixon.getExpr
-      return ({ constructor with fields := fields.size, typ } :
+      return ({ constructor with fields := fields.value, typ } :
         Ixon.Constructor))
     hfields hafterTyp
   have hafterParams := Reads.bind
-    (next := fun params : Ixon.Tag0 => do
-      let fields := (← Ixon.getTag0).size
+    (next := fun params : Ixon.TagN => do
+      let fields := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
-      return ({ constructor with params := params.size, fields, typ } :
+      return ({ constructor with params := params.value, fields, typ } :
         Ixon.Constructor))
     hparams hafterFields
   have hafterCidx := Reads.bind
-    (next := fun cidx : Ixon.Tag0 => do
-      let params := (← Ixon.getTag0).size
-      let fields := (← Ixon.getTag0).size
+    (next := fun cidx : Ixon.TagN => do
+      let params := (← Ixon.getTagN 0).value
+      let fields := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
-      return ({ constructor with cidx := cidx.size, params, fields, typ } :
+      return ({ constructor with cidx := cidx.value, params, fields, typ } :
         Ixon.Constructor))
     hcidx hafterParams
   have hafterLvls := Reads.bind
-    (next := fun lvls : Ixon.Tag0 => do
-      let cidx := (← Ixon.getTag0).size
-      let params := (← Ixon.getTag0).size
-      let fields := (← Ixon.getTag0).size
+    (next := fun lvls : Ixon.TagN => do
+      let cidx := (← Ixon.getTagN 0).value
+      let params := (← Ixon.getTagN 0).value
+      let fields := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
-      return (⟨constructor.isUnsafe, lvls.size, cidx, params, fields, typ⟩ :
+      return (⟨constructor.isUnsafe, lvls.value, cidx, params, fields, typ⟩ :
         Ixon.Constructor))
     hlvls hafterCidx
   have hall := Reads.bind
     (next := fun isUnsafe : Bool => do
-      let lvls := (← Ixon.getTag0).size
-      let cidx := (← Ixon.getTag0).size
-      let params := (← Ixon.getTag0).size
-      let fields := (← Ixon.getTag0).size
+      let lvls := (← Ixon.getTagN 0).value
+      let cidx := (← Ixon.getTagN 0).value
+      let params := (← Ixon.getTagN 0).value
+      let fields := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       return (⟨isUnsafe, lvls, cidx, params, fields, typ⟩ :
         Ixon.Constructor))
@@ -175,7 +177,7 @@ theorem putInductive_writes (inductiveInfo : Ixon.Inductive)
 
 def getInductiveConstructors (isUnsafe : Bool) (lvls params indices : UInt64)
     (typ : Ixon.Expr) : Ixon.GetM Ixon.Inductive := do
-  let count := (← Ixon.getTag0).size.toNat
+  let count := (← Ixon.getTagN 0).value.toNat
   Ixon.checkCount count.toUInt64 6
   let mut constructors : Array Ixon.Constructor := #[]
   for _ in [0:count] do
@@ -183,9 +185,9 @@ def getInductiveConstructors (isUnsafe : Bool) (lvls params indices : UInt64)
   return ⟨isUnsafe, lvls, params, indices, typ, constructors⟩
 
 def getInductiveAfterFlags (isUnsafe : Bool) : Ixon.GetM Ixon.Inductive := do
-  let lvls := (← Ixon.getTag0).size
-  let params := (← Ixon.getTag0).size
-  let indices := (← Ixon.getTag0).size
+  let lvls := (← Ixon.getTagN 0).value
+  let params := (← Ixon.getTagN 0).value
+  let indices := (← Ixon.getTagN 0).value
   let typ ← Ixon.getExpr
   getInductiveConstructors isUnsafe lvls params indices typ
 
@@ -228,10 +230,10 @@ theorem getInductiveConstructors_reads (inductiveInfo : Ixon.Inductive)
             constructorBytes_size_ge)
     simpa [getMany, hdecode] using hafterConstructors
   have hall := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
-      Ixon.checkCount count.size.toNat.toUInt64 6
+    (next := fun count : Ixon.TagN => do
+      Ixon.checkCount count.value.toNat.toUInt64 6
       let mut constructors : Array Ixon.Constructor := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         constructors := constructors.push (← Ixon.getConstructor)
       return ({ inductiveInfo with ctors := constructors } : Ixon.Inductive))
     htag htail
@@ -258,24 +260,24 @@ theorem getInductiveAfterFlags_reads (inductiveInfo : Ixon.Inductive)
         inductiveInfo.params inductiveInfo.indices typ)
     htyp hconstructors
   have hafterIndices := Reads.bind
-    (next := fun indices : Ixon.Tag0 => do
+    (next := fun indices : Ixon.TagN => do
       let typ ← Ixon.getExpr
       getInductiveConstructors inductiveInfo.isUnsafe inductiveInfo.lvls
-        inductiveInfo.params indices.size typ)
+        inductiveInfo.params indices.value typ)
     hindices hafterTyp
   have hafterParams := Reads.bind
-    (next := fun params : Ixon.Tag0 => do
-      let indices := (← Ixon.getTag0).size
+    (next := fun params : Ixon.TagN => do
+      let indices := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       getInductiveConstructors inductiveInfo.isUnsafe inductiveInfo.lvls
-        params.size indices typ)
+        params.value indices typ)
     hparams hafterIndices
   have hall := Reads.bind
-    (next := fun lvls : Ixon.Tag0 => do
-      let params := (← Ixon.getTag0).size
-      let indices := (← Ixon.getTag0).size
+    (next := fun lvls : Ixon.TagN => do
+      let params := (← Ixon.getTagN 0).value
+      let indices := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
-      getInductiveConstructors inductiveInfo.isUnsafe lvls.size params indices
+      getInductiveConstructors inductiveInfo.isUnsafe lvls.value params indices
         typ)
     hlvls hafterParams
   simpa [getInductiveAfterFlags, ByteArray.append_assoc] using hall

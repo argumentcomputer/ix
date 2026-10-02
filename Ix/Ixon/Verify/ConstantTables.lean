@@ -1,6 +1,8 @@
 /-
 Extracted from Ix/Compile/Verify/ConstantTablesCodec.lean at Ix revision
-b067697b9d97552c6f52b2f72c892f84e4c7170f.
+b067697b9d97552c6f52b2f72c892f84e4c7170f,
+and the Ixon v4 (TagN) changes to that file at Ix revision
+22afee6d9245bd5f974ad59019affed034d84615.
 -/
 
 import Ix.Ixon.Verify.Constant
@@ -309,9 +311,9 @@ theorem getConstantUnivs_reads_core (info : Ixon.ConstantInfo)
       ⟨info, sharing, refs, univs⟩ := by
     simpa [getMany, hdecode] using hafterValues
   have hall := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
+    (next := fun count : Ixon.TagN => do
       let mut decoded : Array Ixon.Univ := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         decoded := decoded.push (← Ixon.getUniv)
       return (⟨info, sharing, refs, decoded⟩ : Ixon.Constant))
     htag htail
@@ -350,9 +352,9 @@ theorem getConstantRefs_reads_core (info : Ixon.ConstantInfo)
       ⟨info, sharing, refs, univs⟩ := by
     simpa [getMany, hdecode, ByteArray.append_assoc] using hafterValues
   have hall := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
+    (next := fun count : Ixon.TagN => do
       let mut decoded : Array Address := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         decoded := decoded.push (← Ixon.Serialize.get)
       getConstantUnivs info sharing decoded)
     htag htail
@@ -396,9 +398,9 @@ theorem getConstantAfterInfo_reads_core (info : Ixon.ConstantInfo)
       ⟨info, sharing, refs, univs⟩ := by
     simpa [getMany, hdecode, ByteArray.append_assoc] using hafterValues
   have hall := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
+    (next := fun count : Ixon.TagN => do
       let mut decoded : Array Ixon.Expr := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         decoded := decoded.push (← Ixon.getExpr)
       getConstantRefs info decoded)
     htag htail

@@ -1,7 +1,9 @@
 /-
 Extracted from Ix/Compile/Verify/RecursorConstantCodec.lean at Ix revision
 b067697b9d97552c6f52b2f72c892f84e4c7170f, with the Ixon v3 changes to that
-file at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c.
+file at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c,
+and the Ixon v4 (TagN) changes to that file at Ix revision
+22afee6d9245bd5f974ad59019affed034d84615.
 -/
 
 import Ix.Ixon.Verify.NonrecursiveConstant
@@ -68,9 +70,9 @@ theorem getRecursorRule_reads (rule : Ixon.RecursorRule)
         Ixon.GetM Ixon.RecursorRule))
     hrhs hreturn
   have hall := Reads.bind
-    (next := fun fields : Ixon.Tag0 => do
+    (next := fun fields : Ixon.TagN => do
       let rhs ← Ixon.getExpr
-      return (⟨fields.size, rhs⟩ : Ixon.RecursorRule))
+      return (⟨fields.value, rhs⟩ : Ixon.RecursorRule))
     hfields hafterRhs
   simpa [Ixon.getRecursorRule, recursorRuleBytes] using hall
 
@@ -132,7 +134,7 @@ theorem putRecursor_writes (recursor : Ixon.Recursor)
 
 def getRecursorRules (k isUnsafe : Bool) (lvls params indices motives minors : UInt64)
     (typ : Ixon.Expr) : Ixon.GetM Ixon.Recursor := do
-  let count := (← Ixon.getTag0).size.toNat
+  let count := (← Ixon.getTagN 0).value.toNat
   Ixon.checkCount count.toUInt64 2
   let mut rules : Array Ixon.RecursorRule := #[]
   for _ in [0:count] do
@@ -140,11 +142,11 @@ def getRecursorRules (k isUnsafe : Bool) (lvls params indices motives minors : U
   return ⟨k, isUnsafe, lvls, params, indices, motives, minors, typ, rules⟩
 
 def getRecursorAfterFlags (k isUnsafe : Bool) : Ixon.GetM Ixon.Recursor := do
-  let lvls := (← Ixon.getTag0).size
-  let params := (← Ixon.getTag0).size
-  let indices := (← Ixon.getTag0).size
-  let motives := (← Ixon.getTag0).size
-  let minors := (← Ixon.getTag0).size
+  let lvls := (← Ixon.getTagN 0).value
+  let params := (← Ixon.getTagN 0).value
+  let indices := (← Ixon.getTagN 0).value
+  let motives := (← Ixon.getTagN 0).value
+  let minors := (← Ixon.getTagN 0).value
   let typ ← Ixon.getExpr
   getRecursorRules k isUnsafe lvls params indices motives minors typ
 
@@ -190,10 +192,10 @@ theorem getRecursorRules_reads (recursor : Ixon.Recursor)
             recursorRuleBytes_size_ge)
     simpa [getMany, hdecode] using hafterRules
   have hall := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
-      Ixon.checkCount count.size.toNat.toUInt64 2
+    (next := fun count : Ixon.TagN => do
+      Ixon.checkCount count.value.toNat.toUInt64 2
       let mut rules : Array Ixon.RecursorRule := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         rules := rules.push (← Ixon.getRecursorRule)
       return ({ recursor with rules } : Ixon.Recursor))
     htag htail
@@ -223,43 +225,43 @@ theorem getRecursorAfterFlags_reads (recursor : Ixon.Recursor)
         recursor.params recursor.indices recursor.motives recursor.minors typ)
     htyp hrules
   have hafterMinors := Reads.bind
-    (next := fun minors : Ixon.Tag0 => do
+    (next := fun minors : Ixon.TagN => do
       let typ ← Ixon.getExpr
       getRecursorRules recursor.k recursor.isUnsafe recursor.lvls
-        recursor.params recursor.indices recursor.motives minors.size typ)
+        recursor.params recursor.indices recursor.motives minors.value typ)
     hminors hafterTyp
   have hafterMotives := Reads.bind
-    (next := fun motives : Ixon.Tag0 => do
-      let minors := (← Ixon.getTag0).size
+    (next := fun motives : Ixon.TagN => do
+      let minors := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       getRecursorRules recursor.k recursor.isUnsafe recursor.lvls
-        recursor.params recursor.indices motives.size minors typ)
+        recursor.params recursor.indices motives.value minors typ)
     hmotives hafterMinors
   have hafterIndices := Reads.bind
-    (next := fun indices : Ixon.Tag0 => do
-      let motives := (← Ixon.getTag0).size
-      let minors := (← Ixon.getTag0).size
+    (next := fun indices : Ixon.TagN => do
+      let motives := (← Ixon.getTagN 0).value
+      let minors := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       getRecursorRules recursor.k recursor.isUnsafe recursor.lvls
-        recursor.params indices.size motives minors typ)
+        recursor.params indices.value motives minors typ)
     hindices hafterMotives
   have hafterParams := Reads.bind
-    (next := fun params : Ixon.Tag0 => do
-      let indices := (← Ixon.getTag0).size
-      let motives := (← Ixon.getTag0).size
-      let minors := (← Ixon.getTag0).size
+    (next := fun params : Ixon.TagN => do
+      let indices := (← Ixon.getTagN 0).value
+      let motives := (← Ixon.getTagN 0).value
+      let minors := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       getRecursorRules recursor.k recursor.isUnsafe recursor.lvls
-        params.size indices motives minors typ)
+        params.value indices motives minors typ)
     hparams hafterIndices
   have hall := Reads.bind
-    (next := fun lvls : Ixon.Tag0 => do
-      let params := (← Ixon.getTag0).size
-      let indices := (← Ixon.getTag0).size
-      let motives := (← Ixon.getTag0).size
-      let minors := (← Ixon.getTag0).size
+    (next := fun lvls : Ixon.TagN => do
+      let params := (← Ixon.getTagN 0).value
+      let indices := (← Ixon.getTagN 0).value
+      let motives := (← Ixon.getTagN 0).value
+      let minors := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
-      getRecursorRules recursor.k recursor.isUnsafe lvls.size params indices
+      getRecursorRules recursor.k recursor.isUnsafe lvls.value params indices
         motives minors typ)
     hlvls hafterParams
   simpa [getRecursorAfterFlags, ByteArray.append_assoc] using hall

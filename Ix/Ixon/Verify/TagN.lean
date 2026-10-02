@@ -1,4 +1,9 @@
-import Ix.Compile.Verify.Codec
+/-
+Moved from Ix/Compile/Verify/TagN.lean at Ix revision
+22afee6d9245bd5f974ad59019affed034d84615.
+-/
+
+import Ix.Ixon.Verify.Basic
 
 /-!
 # TagN integer code
@@ -6,16 +11,16 @@ import Ix.Compile.Verify.Codec
 Proofs about `Ixon.putTagN` / `Ixon.getTagN` for flag widths `f ∈ {0, 2, 4}`.
 The explicit bytes written (`Codec.tagNBytes`), their length
 (`Ixon.tagNByteWidth`) and the exact reads (roundtrip) are in
-`Ix.Compile.Verify.Codec`, where every wire codec proof uses them. This module
+`Ixon.Verify.Codec`, where every wire codec proof uses them. This module
 adds the rung ends, monotonicity of the width, and the converse: every successful
 read consumed exactly the encoding of the decoded value, so the code is a
 bijection between `UInt64` values (per flag) and accepted byte strings.
 Invalid codes and overflowing 8-byte payloads are rejected.
 -/
 
-namespace Ix.Compile.Verify.TagN
+namespace Ixon.Verify.TagN
 
-open Ix.Compile.Verify.Codec
+open Ixon.Verify.Codec
 
 /-! ## Rung ends -/
 
@@ -201,19 +206,19 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
   generalize b.toNat % 2 ^ (8 - f) = p at h hhdr hpR
   generalize (b.toNat / 2 ^ (8 - f)).toUInt8 = flag at h hhdr hflag
   by_cases h1 : p < 2 ^ (8 - f - 1)
-  · rw [if_pos h1] at h
+  · rw [ite_eq_left h1] at h
     obtain ⟨rfl, rfl⟩ := pure_ok_inv h
     have hv : p.toUInt64.toNat = p := toUInt64_toNat_of_lt (by omega)
     refine ⟨?_, hflag⟩
     have henc : tagNBytes f flag p.toUInt64 = [b].toByteArray ++ ByteArray.empty := by
       unfold tagNBytes
       simp only
-      rw [hv, if_pos (by omega), hhdr, ByteArray.append_empty]
+      rw [hv, ite_eq_left (by omega), hhdr, ByteArray.append_empty]
     rw [henc]
     exact hc1.trans (Consumed.empty _)
-  rw [if_neg h1] at h
+  rw [ite_eq_right h1] at h
   by_cases h2 : p - 2 ^ (8 - f - 1) < 2 ^ (8 - f - 2)
-  · rw [if_pos h2] at h
+  · rw [ite_eq_left h2] at h
     obtain ⟨lo, s2, hlo, h⟩ := bind_ok_inv h
     obtain ⟨rfl, rfl⟩ := pure_ok_inv h
     obtain ⟨hc2, -⟩ := getU8_ok hlo
@@ -225,7 +230,7 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
         lo.toNat).toUInt64 = [b].toByteArray ++ [lo].toByteArray := by
       unfold tagNBytes
       simp only
-      rw [hv, if_neg (by omega), if_pos (by omega)]
+      rw [hv, ite_eq_right (by omega), ite_eq_left (by omega)]
       have e1 : 2 ^ (8 - f - 1) + (Ixon.tagNEnd1 f + (p - 2 ^ (8 - f - 1)) * 256 +
           lo.toNat - Ixon.tagNEnd1 f) / 256 = p := by omega
       have e2 : ((Ixon.tagNEnd1 f + (p - 2 ^ (8 - f - 1)) * 256 + lo.toNat -
@@ -236,10 +241,10 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
       rw [e1, e2, hhdr]
     rw [henc]
     exact hc1.trans hc2
-  rw [if_neg h2] at h
+  rw [ite_eq_right h2] at h
   unfold Ixon.getTagNWide at h
   by_cases h3 : p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2) = 0
-  · rw [if_pos h3] at h
+  · rw [ite_eq_left h3] at h
     obtain ⟨x, s2, hx, h⟩ := bind_ok_inv h
     obtain ⟨rfl, rfl⟩ := pure_ok_inv h
     obtain ⟨hc2, hxlt⟩ := getU64TrimmedLEAux_ok (by omega) hx
@@ -250,15 +255,15 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
         [b].toByteArray ++ trimmedBytes x 2 := by
       unfold tagNBytes
       simp only
-      rw [hv, if_neg (by omega), if_neg (by omega), if_pos (by omega),
+      rw [hv, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_left (by omega),
         show 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) = p by omega, hhdr,
         show Ixon.tagNEnd2 f + x.toNat - Ixon.tagNEnd2 f = x.toNat by omega]
       simp
     rw [henc]
     exact hc1.trans hc2
-  rw [if_neg h3] at h
+  rw [ite_eq_right h3] at h
   by_cases h4 : p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2) = 1
-  · rw [if_pos h4] at h
+  · rw [ite_eq_left h4] at h
     obtain ⟨x, s2, hx, h⟩ := bind_ok_inv h
     obtain ⟨rfl, rfl⟩ := pure_ok_inv h
     obtain ⟨hc2, hxlt⟩ := getU64TrimmedLEAux_ok (by omega) hx
@@ -269,15 +274,15 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
         [b].toByteArray ++ trimmedBytes x 3 := by
       unfold tagNBytes
       simp only
-      rw [hv, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega),
+      rw [hv, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_left (by omega),
         show 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 1 = p by omega, hhdr,
         show Ixon.tagNEnd3 f + x.toNat - Ixon.tagNEnd3 f = x.toNat by omega]
       simp
     rw [henc]
     exact hc1.trans hc2
-  rw [if_neg h4] at h
+  rw [ite_eq_right h4] at h
   by_cases h5 : p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2) = 2
-  · rw [if_pos h5] at h
+  · rw [ite_eq_left h5] at h
     obtain ⟨x, s2, hx, h⟩ := bind_ok_inv h
     obtain ⟨rfl, rfl⟩ := pure_ok_inv h
     obtain ⟨hc2, hxlt⟩ := getU64TrimmedLEAux_ok (by omega) hx
@@ -288,20 +293,20 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
         [b].toByteArray ++ trimmedBytes x 4 := by
       unfold tagNBytes
       simp only
-      rw [hv, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
-        if_pos (by omega),
+      rw [hv, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega),
+        ite_eq_left (by omega),
         show 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 2 = p by omega, hhdr,
         show Ixon.tagNEnd4 f + x.toNat - Ixon.tagNEnd4 f = x.toNat by omega]
       simp
     rw [henc]
     exact hc1.trans hc2
-  rw [if_neg h5] at h
+  rw [ite_eq_right h5] at h
   by_cases h6 : p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2) = 3
-  · rw [if_pos h6] at h
+  · rw [ite_eq_left h6] at h
     obtain ⟨x, s2, hx, h⟩ := bind_ok_inv h
     obtain ⟨hc2, hxlt⟩ := getU64TrimmedLEAux_ok (by omega) hx
     by_cases hov : Ixon.tagNEnd5 f + x.toNat < 2 ^ 64
-    · rw [if_pos hov] at h
+    · rw [ite_eq_left hov] at h
       obtain ⟨rfl, rfl⟩ := pure_ok_inv h
       have hv := toUInt64_toNat_of_lt hov
       refine ⟨?_, hflag⟩
@@ -309,16 +314,16 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
           [b].toByteArray ++ trimmedBytes x 8 := by
         unfold tagNBytes
         simp only
-        rw [hv, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
-          if_neg (by omega),
+        rw [hv, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega),
+          ite_eq_right (by omega),
           show 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 3 = p by omega, hhdr,
           show Ixon.tagNEnd5 f + x.toNat - Ixon.tagNEnd5 f = x.toNat by omega]
         simp
       rw [henc]
       exact hc1.trans hc2
-    · rw [if_neg hov] at h
+    · rw [ite_eq_right hov] at h
       exact (throw_ok_false h).elim
-  rw [if_neg h6] at h
+  rw [ite_eq_right h6] at h
   exact (throw_ok_false h).elim
 
 /-- Every byte string accepted by the full-buffer TagN decoder is the
@@ -395,9 +400,9 @@ theorem getTagN_rejects_code (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
   rw [hbyte] at hcode
   simp only at h
   generalize b.toNat % 2 ^ (8 - f) = p at h hcode
-  rw [if_neg (by omega), if_neg (by omega)] at h
+  rw [ite_eq_right (by omega), ite_eq_right (by omega)] at h
   unfold Ixon.getTagNWide at h
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)] at h
+  rw [ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega)] at h
   exact throw_ok_false h
 
 /-- With a 4-bit flag every header code is valid: the `L = M = 1` code has two
@@ -431,9 +436,9 @@ theorem getTagN_rejects_overflow (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
     simp [ByteArray.append_assoc], getU8_reads hdr before (trimmedBytes x 8 ++ after)] at hb
   cases hb
   simp only [hdiv, hmod] at h
-  rw [if_neg (by omega), if_neg (by omega)] at h
+  rw [ite_eq_right (by omega), ite_eq_right (by omega)] at h
   unfold Ixon.getTagNWide at h
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega)] at h
+  rw [ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_left (by omega)] at h
   obtain ⟨y, s2, hy, h⟩ := bind_ok_inv h
   have hr := getU64TrimmedLEAux_reads x 8
     (shiftBytes_eq_zero_of_lt x 8 (by simpa using x.toNat_lt))
@@ -443,7 +448,7 @@ theorem getTagN_rejects_overflow (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
       before ++ [hdr].toByteArray ++ trimmedBytes x 8 ++ after by
     simp [ByteArray.append_assoc], hr] at hy
   cases hy
-  rw [if_neg (by omega)] at h
+  rw [ite_eq_right (by omega)] at h
   exact throw_ok_false h
 
-end Ix.Compile.Verify.TagN
+end Ixon.Verify.TagN
