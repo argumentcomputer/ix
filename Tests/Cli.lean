@@ -65,17 +65,32 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
   let source := dir / "Contracts.lean"
   let output := dir / "contracts.ixe"
   try
+    -- `cliLocalCopy` carries `cliLocal`'s binder markers but no registration,
+    -- and `cliSemantic` a reserved semantic key: the CLI finds both through
+    -- the Rust setup scan and hands them back to the Lean preparation.
     IO.FS.writeFile source
       "import Ix.Compile.SourceContract.Elab\n\
        import Tests.Ix.SourceContract.Imported\n\
        def cliLocal (~1 x : Nat) : ~ Nat := x\n\
-       def cliEscape (~1 x : Nat) : Nat := x\n"
+       def cliEscape (~1 x : Nat) : Nat := x\n\
+       open Lean in\n\
+       run_cmd Elab.Command.liftCoreM do\n\
+       \x20 let some (.defnInfo d) := (← getEnv).find? `cliLocal | throwError \"cliLocal\"\n\
+       \x20 addDecl (.defnDecl { d with name := `cliLocalCopy })\n\
+       \x20 addDecl (.axiomDecl {\n\
+       \x20   name := `cliSemantic, levelParams := [], isUnsafe := false\n\
+       \x20   type := .mdata (({} : MData).setNat `ix.contract.unknown 1) (.sort .zero) })\n"
     let compile := fun name flags => IO.Process.output {
       cmd := ix.toString
       args := #["compile", source.toString, "--no-build", "--consts", name,
         "--out", output.toString] ++ flags }
-    for flags in [#[], #["--anon"]] do
-      let result ← compile "cliLocal" flags
+    let semantic ← compile "cliSemantic" #[]
+    if semantic.exitCode == 0 || (← output.pathExists) ||
+        (semantic.stderr.splitOn "reserved semantic metadata in unprocessed source: cliSemantic").length < 2 then
+      throw <| IO.userError s!"CLI did not reject unprocessed semantic metadata: {semantic.stderr}"
+    for (name, flags) in [("cliLocal", #[]), ("cliLocal", #["--anon"]),
+        ("cliLocalCopy", #[]), ("cliLocalCopy", #["--anon"])] do
+      let result ← compile name flags
       unless result.exitCode == 0 do
         throw <| IO.userError s!"annotated CLI compile failed: {result.stderr}\n{result.stdout}"
       let env ← IO.ofExcept (Ixon.runGetExact Ixon.Env.getEnv (← IO.FS.readBinFile output))

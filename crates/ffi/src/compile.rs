@@ -8,6 +8,7 @@
 //! - `build_*` / `decode_*`: convert between Lean constructor layouts and Rust types
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
 use crate::lean::{
   LeanIxBlock, LeanIxCompileEnvStatus, LeanIxCompileError, LeanIxCompilePhases,
@@ -23,7 +24,7 @@ use ix_compile::compile::{
 };
 use ix_compile::condense::compute_sccs;
 use ix_compile::decompile::decompile_env;
-use ix_compile::graph::build_ref_graph;
+use ix_compile::graph::{ConstScan, ConstScanner, build_ref_graph};
 use ixon::constant::Constant as IxonConstant;
 #[cfg(feature = "test-ffi")]
 use ixon::constant::ConstantInfo;
@@ -33,8 +34,8 @@ use ixon::{Comm, ConstantMeta};
 use lean_ffi::object::LeanIOResult;
 use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanList, LeanOwned, LeanProd,
-  LeanRef, LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanList, LeanOption, LeanOwned,
+  LeanProd, LeanRef, LeanString,
 };
 
 use crate::builder::LeanBuildCache;
@@ -311,7 +312,7 @@ pub extern "C" fn rs_compile_env(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, false)
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, false, false)
 }
 
 /// `rs_compile_env` with strict-anon output (`ix compile --anon`):
@@ -331,7 +332,80 @@ pub extern "C" fn rs_compile_env_anon(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, true)
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, true, false)
+}
+
+/// `rs_compile_env` (or `rs_compile_env_anon` with `strict_anon`) for a
+/// constant list that Lean has not prepared for source contracts
+/// (`ix compile`). Lean checked the names and the contract registrations
+/// but did not walk the expressions for contract markers; the setup scan,
+/// which reads every expression anyway, looks for them instead, with the
+/// same rule as Lean's `hasContractMetadata`: an `Mdata` key in the
+/// `ix.source.binder` or the `ix.contract` namespace, malformed ones
+/// included, in a type, a definition value or a recursor rule.
+///
+/// If some constant carries a marker, nothing is compiled or written and
+/// the result is `none`: Lean then prepares the list as before and calls
+/// `rs_compile_env` again with the prepared list, so every outcome
+/// (decoration, Lean's errors, Rust's errors) is the one of the prepared
+/// path. Otherwise the result is `some status`, exactly what
+/// `rs_compile_env` returns for the same list. An invalid
+/// `IX_SHARING_LIMITS` also gives `none`, without scanning: the compile
+/// would stop on it before the scan, and Lean's preparation errors must
+/// keep coming first.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_compile_env_unprepared"]
+/// opaque rsCompileEnvBytesUnpreparedFFI
+///   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool → Bool
+///   → IO (Option CompileEnvStatus)
+/// ```
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_compile_env_unprepared(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  allow_partial: u8,
+  strict_anon: u8,
+) -> LeanIOResult<LeanOwned> {
+  if compiler_sharing_limits().is_err() {
+    return LeanIOResult::ok(LeanOption::none());
+  }
+  compile_env_inner(
+    env_consts_ptr,
+    out_path,
+    allow_partial,
+    strict_anon != 0,
+    true,
+  )
+}
+
+/// The setup scanner of `rs_compile_env_unprepared`: the compile's scanner,
+/// which also notes whether any constant carries a contract marker, and
+/// stops the compile right after the setup scan when one does. The
+/// marked constant's scan reports a semantic error, and
+/// `compile_env_with_scanner` returns the first semantic error of the
+/// scan before it compiles anything.
+struct UnpreparedScanner<'a> {
+  inner: &'a crate::lean_env::scan::LeanScanner,
+  marked: AtomicBool,
+}
+
+impl ConstScanner for UnpreparedScanner<'_> {
+  fn scan(&self, name: &Name, env: &ix_common::env::Env) -> Option<ConstScan> {
+    let mut scan = self.inner.scan(name, env)?;
+    if scan.source_contract || !matches!(scan.semantic, Ok(false)) {
+      self.marked.store(true, AtomicOrdering::Relaxed);
+      scan.semantic = Err(Box::new(CompileError::UnsupportedExpr {
+        desc: "contract markers in a list Lean has not prepared".into(),
+      }));
+    }
+    Some(scan)
+  }
+
+  fn release(&self) {
+    self.inner.release();
+  }
 }
 
 fn compile_env_inner(
@@ -339,16 +413,19 @@ fn compile_env_inner(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
   strict_anon: bool,
+  unprepared: bool,
 ) -> LeanIOResult<LeanOwned> {
   let (rust_env, scanner) =
     crate::lean_env::decode_env_for_compile_with_scanner(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
 
+  let probe =
+    UnpreparedScanner { inner: &scanner, marked: AtomicBool::new(false) };
   let compiled = ix_compile::compile::compile_env_with_scanner(
     &rust_env,
     CompileOptions::default(),
     None,
-    Some(&scanner),
+    Some(if unprepared { &probe } else { &scanner }),
   );
   if std::env::var("IX_VERBOSE").is_ok() {
     eprintln!(
@@ -358,6 +435,19 @@ fn compile_env_inner(
       scanner.decodes(),
       rust_env.len(),
     );
+  }
+  if probe.marked.load(AtomicOrdering::Relaxed) {
+    // Nothing was compiled. Lean prepares the list and calls again; free
+    // this decode first (a rare path: lists with contract markers).
+    if std::env::var("IX_VERBOSE").is_ok() {
+      eprintln!(
+        "[compile] setup scan: contract markers found; the list goes back to Lean for preparation"
+      );
+    }
+    drop(compiled);
+    drop(scanner);
+    drop(rust_env);
+    return LeanIOResult::ok(LeanOption::none());
   }
   // The scanner holds the Lean handles and the name cache; like the env
   // below, it is left to the process exit.
@@ -456,7 +546,11 @@ fn compile_env_inner(
   // Mathlib scale.
   std::mem::forget(compile_stt);
   std::mem::forget(rust_env);
-  LeanIOResult::ok(status)
+  if unprepared {
+    LeanIOResult::ok(LeanOption::some(status))
+  } else {
+    LeanIOResult::ok(status)
+  }
 }
 
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.

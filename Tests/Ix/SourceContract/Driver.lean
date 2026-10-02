@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.CompileDriver
+public import Ix.Cli.CompileCmd
 
 public section
 
@@ -99,6 +100,46 @@ def suite : List TestSeq := [
           pure ((error.toString.splitOn "unresolved source binder contracts").length > 1)
         if !rejected || (← output.pathExists) ||
             (← (System.FilePath.mk (output.toString ++ ".tmp")).pathExists) then
+          return false
+      return true
+    finally
+      IO.FS.removeDirAll directory,
+  ioTest "unprepared Rust FFI hands back every marked list without compiling, in every output mode" do
+    let directory ← IO.FS.createTempDir
+    try
+      let semanticSource : ConstantInfo := .axiomInfo {
+        name := plainSource.name, levelParams := []
+        type := .mdata (({} : Lean.MData).setNat `ix.contract.unknown 1) plainSource.type
+        isUnsafe := false }
+      for source in [markedSource, semanticSource] do
+        for allowPartial in [false, true] do
+          for strictAnon in [false, true] do
+            let output := directory / s!"unprepared-{allowPartial}-{strictAnon}.ixe"
+            let result ← rsCompileEnvBytesUnpreparedFFI (constants source)
+              output.toString allowPartial strictAnon
+            if result.isSome || (← output.pathExists) ||
+                (← (System.FilePath.mk (output.toString ++ ".tmp")).pathExists) then
+              return false
+      return true
+    finally
+      IO.FS.removeDirAll directory,
+  ioTest "unprepared Rust FFI compiles an unmarked list exactly as the prepared FFI" do
+    let directory ← IO.FS.createTempDir
+    try
+      for strictAnon in [false, true] do
+        let prepared := directory / s!"prepared-{strictAnon}.ixe"
+        let unprepared := directory / s!"unprepared-{strictAnon}.ixe"
+        let expected ← if strictAnon
+          then rsCompileEnvBytesAnonFFI (constants plainSource) prepared.toString false
+          else rsCompileEnvBytesFFI (constants plainSource) prepared.toString false
+        let some status ← rsCompileEnvBytesUnpreparedFFI (constants plainSource)
+            unprepared.toString false strictAnon
+          | return false
+        if status.root != expected.root || status.bytes != expected.bytes ||
+            status.named != expected.named || status.uniqueAnon != expected.uniqueAnon ||
+            status.ungrounded != expected.ungrounded then
+          return false
+        if (← IO.FS.readBinFile prepared) != (← IO.FS.readBinFile unprepared) then
           return false
       return true
     finally

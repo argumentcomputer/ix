@@ -133,11 +133,11 @@ def hasAnyContractMetadata
     tasks := tasks.push <| Task.spawn fun _ => batch.any hasContractMetadata
   return tasks.any (·.get)
 
-/-- Ordinary declarations need no occurrence resolution or decoration. Check
-both reserved namespaces in one shared-expression walk, retaining the input
-name/uniqueness checks even when there are no contracts to resolve. Any selected
-registration or metadata marker uses the full validation path below. -/
-def checkOrdinaryConstants (constants : List (Lean.Name × Lean.ConstantInfo))
+/-- The name half of `checkOrdinaryConstants`: the input name/uniqueness
+checks, stopping at the first selected registration. `false` when a
+registration selects the full validation path; `true` when only a metadata
+marker still could. -/
+def checkOrdinaryNames (constants : List (Lean.Name × Lean.ConstantInfo))
     (registered : Lean.Name → Bool) : Except String Bool := do
   let mut selected : Std.HashSet Lean.Name := {}
   for (name, source) in constants do
@@ -147,6 +147,15 @@ def checkOrdinaryConstants (constants : List (Lean.Name × Lean.ConstantInfo))
       throw (toString <| SourceContractError.duplicateDeclaration name)
     selected := selected.insert name
     if registered name then return false
+  return true
+
+/-- Ordinary declarations need no occurrence resolution or decoration. Check
+both reserved namespaces in one shared-expression walk, retaining the input
+name/uniqueness checks even when there are no contracts to resolve. Any selected
+registration or metadata marker uses the full validation path below. -/
+def checkOrdinaryConstants (constants : List (Lean.Name × Lean.ConstantInfo))
+    (registered : Lean.Name → Bool) : Except String Bool := do
+  if !(← checkOrdinaryNames constants registered) then return false
   return !hasAnyContractMetadata constants
 
 def prepareSourceConstants (constants : List (Lean.Name × Lean.ConstantInfo)) :
@@ -155,15 +164,26 @@ def prepareSourceConstants (constants : List (Lean.Name × Lean.ConstantInfo)) :
   let input ← (CompileInput.fromAnnotations constants).mapError toString
   input.prepare
 
+/-- Whether `name` has a source-contract or measure registration in `env`. -/
+def isRegisteredSource (env : Lean.Environment) : Lean.Name → Bool :=
+  let registry := sourceContractExtension.getState env
+  let hints := sourceMeasureExtension.getState env
+  fun name => registry.contains name || hints.contains name
+
+/-- The full validation path of `prepareRegisteredConstants`: resolve the
+registrations and markers of `constants` against `env` and decorate. -/
+def prepareRegisteredInput (env : Lean.Environment)
+    (constants : List (Lean.Name × Lean.ConstantInfo)) :
+    Except String (List (Lean.Name × Lean.ConstantInfo)) := do
+  let input ← (compileInputFromEnv env constants).mapError toString
+  input.prepare
+
 def prepareRegisteredConstants (env : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo)) := do
-  let registry := sourceContractExtension.getState env
-  let hints := sourceMeasureExtension.getState env
-  if ← checkOrdinaryConstants constants (fun name => registry.contains name || hints.contains name) then
+  if ← checkOrdinaryConstants constants (isRegisteredSource env) then
     return constants
-  let input ← (compileInputFromEnv env constants).mapError toString
-  input.prepare
+  prepareRegisteredInput env constants
 
 end Ix.Compile
 

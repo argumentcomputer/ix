@@ -32,6 +32,20 @@ def applySharingLimitsFlag (p : Cli.Parsed) : IO (Option String) := do
     Std.Internal.UV.System.osSetenv Ix.CompileM.sharingLimitsEnvVar spec
     return none
 
+/-- `Ix.CompileM.rsCompileEnvBytesFFI` (`rsCompileEnvBytesAnonFFI` with
+`strictAnon`) for a constant list whose names and contract registrations
+`Ix.Compile.checkOrdinaryNames` accepted, but whose expressions were not
+searched for contract markers: the Rust setup scan searches them, with the
+rule of `Ix.Compile.hasContractMetadata`. `none` when some constant carries
+one (or `IX_SHARING_LIMITS` is invalid): nothing was compiled or written,
+and the list needs `Ix.Compile.prepareRegisteredInput` and the ordinary FFI,
+as when `prepareRegisteredConstants` finds a marker. Otherwise the status of
+the compile, as the ordinary FFI returns it. -/
+@[extern "rs_compile_env_unprepared"]
+opaque rsCompileEnvBytesUnpreparedFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool → Bool
+  → IO (Option Ix.CompileM.CompileEnvStatus)
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch. The Rust compiler and serializer
@@ -176,13 +190,30 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let allowPartial := p.hasFlag "allow-partial"
   let strictAnon := p.hasFlag "anon"
   let start ← IO.monoMsNow
-  let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv constList
-  if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
+  let verbose := (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome
+  let compilePrepared (constList : List (Lean.Name × Lean.ConstantInfo)) :=
+    if strictAnon then Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
+    else Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  -- Source-contract preparation (`Ix.Compile.prepareRegisteredConstants`)
+  -- with its expression walk left to the Rust setup scan: the names and the
+  -- registrations are checked here, and `rsCompileEnvBytesUnpreparedFFI`
+  -- looks for markers in the expressions while it scans, compiles the list
+  -- when there are none, and otherwise hands it back for the full path.
+  let ordinary ← IO.ofExcept <|
+    Ix.Compile.checkOrdinaryNames constList (Ix.Compile.isRegisteredSource leanEnv)
+  if verbose then
     IO.eprintln s!"[compile] source contract preparation: {((← IO.monoMsNow) - start).formatMs}"
-  let status ← if strictAnon then
-      Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
-    else
-      Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  let prepareAndCompile : IO Ix.CompileM.CompileEnvStatus := do
+    let prepareStart ← IO.monoMsNow
+    let prepared ← IO.ofExcept <| Ix.Compile.prepareRegisteredInput leanEnv constList
+    if verbose then
+      IO.eprintln s!"[compile] source contract resolution: \
+{((← IO.monoMsNow) - prepareStart).formatMs}"
+    compilePrepared prepared
+  let status ← if !ordinary then prepareAndCompile else
+    match ← rsCompileEnvBytesUnpreparedFFI constList outPath allowPartial strictAnon with
+    | some status => pure status
+    | none => prepareAndCompile
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 
