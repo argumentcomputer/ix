@@ -160,6 +160,22 @@ declaration or the auxiliary definitions it generates.
 Default inputs are many/shared/unrestricted. Default arrow results are
 shared/unrestricted. An implicit or instance binder is not automatically erased.
 
+## Unfolding equations
+
+`ix compile --equations` realizes `f.eq_def : ∀ xs, f xs = rhs` for every
+recursive definition in the closure. The statement's right side is elaborated
+from `f`'s body, so contracts written inside the body reach it. `f`'s header
+input contracts are carried onto the equation: the statement's binder at the
+same telescope position, and the proof's matching lambda, are registered with
+the same input contract (usage, ownership, locality), so the exported theorem
+reads `∀ (c₁ x₁ : A₁) … (cₙ xₙ : Aₙ), f x₁ … xₙ = rhs`. Result contracts are not
+carried (the statement's arrows end in an equality). The association sidecar
+(`ix/compile-equations/1`) lists, for an equation that carries any, a
+`contracts` array of `{position, binder, uses, owned, locality}`; an equation
+whose telescope does not match is left unchanged and listed under `failures`
+with `contracts not carried`. Definitions without header contracts, and so all
+unannotated closures, are unchanged.
+
 ## Registration and imports
 
 `SourceContract.ofTelescope source requests` expands declaration shorthand
