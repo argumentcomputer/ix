@@ -1,4 +1,4 @@
-import Ix.Ixon.Admission.Theorems
+import Ix.Kernel.Admission.Theorems
 
 /-! # Ixon records through the verified checker
 

@@ -1,5 +1,5 @@
 import Benchmarks.Kernel.CheckIxeStep
-import Ix.Ixon.Admission
+import Ix.Kernel.Admission
 
 /-! # The batch fold over an environment check's accepted records (untrusted harness)
 

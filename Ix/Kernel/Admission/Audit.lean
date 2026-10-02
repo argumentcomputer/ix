@@ -1,6 +1,6 @@
-import Ix.Ixon.Admission.Bytes.Theorems
+import Ix.Kernel.Admission.Bytes.Theorems
 import Ix.Ixon.Verify.WorkAdmission
-import Ix.Ixon.Admission.Theorems
+import Ix.Kernel.Admission.Theorems
 import Ix.Ixon.Audit
 import Ix.Kernel.Audit.Roots
 
@@ -25,31 +25,31 @@ reader beside it; `Lean` only below the kernel's ruled
 elaboration-time imports), whose closure admits `Std`
 (`Ix.Kernel.Audit.importAllowlist`). -/
 def dataImports : Array Lean.Name :=
-  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission]
+  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Kernel.Admission]
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `Ix.Ixon.Verify,
-  `Ix.Ixon.Admission.Theorems]
+  `Ix.Kernel.Admission.Theorems]
 
 end Ix.Ixon.Admission.Audit
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.Admission] Ix.Ixon.Admission.Audit.dataImports Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel.Admission] Ix.Ixon.Admission.Audit.dataImports Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Admission.Bytes.Theorems] Ix.Ixon.Admission.Audit.proofImports
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel.Admission.Bytes.Theorems] Ix.Ixon.Admission.Audit.proofImports
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Admission.Audit.proofImports
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Admission.Theorems] Ix.Ixon.Admission.Audit.proofImports
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel.Admission.Theorems] Ix.Ixon.Admission.Audit.proofImports
 
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Admission.Bytes.Theorems Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Kernel.Admission.Bytes.Theorems Ix.Kernel.Audit.importDenylist
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Lean Ix.Kernel.Audit.importDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Std.Data.TreeMap Ix.Kernel.Audit.importDenylist
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Batteries Ix.Kernel.Audit.importDenylist
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Admission
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.Admission
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Kernel.Admission Ix.Kernel.Audit.kernelImportDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Kernel.Admission
 
 /- Measured independently before freezing. The certified entry reaches the
 codec, the byte stage (`preflight`, `uniqueKeys`, `decodeRecords`), the

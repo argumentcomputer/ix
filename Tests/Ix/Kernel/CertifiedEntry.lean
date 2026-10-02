@@ -1,4 +1,4 @@
-import Ix.Ixon.Admission.Theorems
+import Ix.Kernel.Admission.Theorems
 import Ix.Ixon.BlockOrder.Theorems
 import Tests.Ix.Kernel.Reader
 

@@ -16,8 +16,9 @@ list fails both fences.
   `PinGen` and `MainTheorem`. Within it the layering fence tells apart the
   model lane (`Model{,/*}`), the capstone assembly (`MainTheorem`,
   `Verify/Cached{,/*}`) and the base (the rest).
-* **Ix's boundary** (`Part.ix`): `Ref`, `Search`, `Audit`, `Ingress`,
-  `Egress` and `Ixon`, Ix's modules between Ixon and the checker. The fences
+* **Ix's boundary** (`Part.ix`): `Admission` (the certified entry), `Ref`,
+  `Search`, `Audit`, `Ingress`, `Egress` and `Ixon`, Ix's modules between
+  Ixon and the checker. The fences
   do not cover them, and the layering fence requires the checker and the
   theory never to import them: the boundary imports the kernel, never the
   other way round. They are fenced by Ix's Lean audits instead
@@ -56,7 +57,8 @@ def topLevel : List (String × Part) := [
   ("Rules", .theory), ("Semantics", .theory), ("SetModel", .theory), ("SetTheory", .theory),
   ("Term", .theory), ("Verify", .theory),
   -- Ix's boundary
-  ("Audit", .ix), ("Egress", .ix), ("Ingress", .ix), ("Ixon", .ix), ("Ref", .ix), ("Search", .ix)]
+  ("Admission", .ix), ("Audit", .ix), ("Egress", .ix), ("Ingress", .ix), ("Ixon", .ix), ("Ref", .ix),
+  ("Search", .ix)]
 
 def root : String := "Ix/Kernel/"
 

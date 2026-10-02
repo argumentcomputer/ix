@@ -1,6 +1,6 @@
 import Ix.Address.Pure
 import Ix.Ixon.Codec
-import Ix.Ixon.Admission
+import Ix.Kernel.Admission
 import Ix.Kernel.Egress.Projection
 
 /-! Pure projection reconstruction outside the hash-free kernel.

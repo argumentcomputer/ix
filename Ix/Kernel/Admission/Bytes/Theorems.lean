@@ -1,4 +1,4 @@
-import Ix.Ixon.Admission.Bytes
+import Ix.Kernel.Admission.Bytes
 import Ix.Ixon.Verify.Canonical
 import Ix.Ixon.Verify.ConstantBounds
 import Std.Data.HashSet.Lemmas

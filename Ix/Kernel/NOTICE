@@ -56,8 +56,8 @@ Modifications
 Ix's own files
 --------------
 
-LevelGeran.lean, Verify/LevelGeran.lean, Ref.lean, Search.lean, and the
-Audit, Ingress, Egress and Ixon directories are this repository's, under
-its root licence.
+LevelGeran.lean, Verify/LevelGeran.lean, Ref.lean, Search.lean,
+Admission.lean, and the Admission, Audit, Ingress, Egress and Ixon
+directories are this repository's, under its root licence.
 
 This NOTICE is informational and does not modify any applicable license.

@@ -1,4 +1,4 @@
-import Ix.Ixon.Admission.Theorems
+import Ix.Kernel.Admission.Theorems
 import Tests.Ix.Kernel.Codec
 
 /-! Byte admission: the byte stage (batch limits, key uniqueness, canonical

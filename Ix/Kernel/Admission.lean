@@ -1,4 +1,4 @@
-import Ix.Ixon.Admission.Bytes
+import Ix.Kernel.Admission.Bytes
 import Ix.Kernel.Ixon.Prelude
 import Ix.Kernel.Cached.Installed
 

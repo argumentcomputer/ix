@@ -1,5 +1,5 @@
 import Ix.Ixon.Projection.Theorems
-import Ix.Ixon.Admission.Audit
+import Ix.Kernel.Admission.Audit
 
 /-! Projection hashing has an explicit boundary outside the dependency-free
 kernel and codec. Only the shared Blake3 types and pure implementation are
@@ -23,7 +23,7 @@ def allowedData (name : Lean.Name) : Bool :=
 
 def allowedProof (name : Lean.Name) : Bool :=
   allowedData name || Kernel.Audit.allowed #[`Lean, `Ix.Ixon.Verify, `Ix.Ixon.Projection.Theorems,
-    `Ix.Ixon.Admission.Theorems, `Ix.Ixon.Admission.Bytes.Theorems] name
+    `Ix.Kernel.Admission.Theorems, `Ix.Kernel.Admission.Bytes.Theorems] name
 
 /-- The import closure of `roots` stays inside `allowed`, below the kernel's
 ruled elaboration-time imports inside `Kernel.Audit.elaborationImports`
@@ -52,7 +52,7 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection] Ix.Ixon.Pro
 run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ix.Ixon.Projection.Audit.allowedProof
 
 #guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Theorems
-#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Admission.Bytes.Theorems
+#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Kernel.Admission.Bytes.Theorems
 #guard !Ix.Ixon.Projection.Audit.allowedData `Blake3.Rust
 #guard !Ix.Ixon.Projection.Audit.allowedData `Blake3.C
 #guard !Ix.Ixon.Projection.Audit.allowedData `Blake3.Pure.Proofs
@@ -62,7 +62,7 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ix
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.Projection
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Projection Ix.Kernel.Audit.importDenylist
 #guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Audit
-#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Admission.Theorems
+#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Kernel.Admission.Theorems
 #guard Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection
 
 /- Measured independently before freezing. The certified entry adds

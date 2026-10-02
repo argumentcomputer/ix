@@ -84,7 +84,7 @@ order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 
 ## The theorems
 
-All public theorems are in `Ix/Ixon/Admission/Theorems.lean` (namespace
+All public theorems are in `Ix/Kernel/Admission/Theorems.lean` (namespace
 `Ix.Ixon.Admission`), about the executed function `checkBytes`, at the
 committed tables. Each follows from the corresponding theorem at
 `checkBytesWith`, where it holds for every pin table, prelude and
@@ -117,13 +117,13 @@ equation, by upstream's design.
 
 **Fidelity** is what `checkBytes_reading` adds to consistency:
 
-- `WithinBatch` and `UniqueKeys` (`Ix/Ixon/Admission/Bytes/Theorems.lean`): the
+- `WithinBatch` and `UniqueKeys` (`Ix/Kernel/Admission/Bytes/Theorems.lean`): the
   batch limits hold, and the record keys and the blob keys are each
   pairwise distinct (`preflight_ok_iff`, `uniqueKeys_ok_iff`).
 - `RecordsRead`: each payload is the canonical encoding of its decoded
   constant within the per-record limits, keys unchanged
   (`decodeRecords_ok_iff`, unique by `RecordsRead.deterministic`).
-- `Installed` (`Ix/Ixon/Admission/Theorems.lean`): the reader's output is a
+- `Installed` (`Ix/Kernel/Admission/Theorems.lean`): the reader's output is a
   record-by-record reading of the decoded records (`StreamRead`, from
   `readRecords_spec`), no two decoded records share an address
   (`Installed.keys`, from `readRecords_nodup`), and the fold accepted
@@ -302,7 +302,7 @@ built by the strict standalone package `IxKernel/` (`lake -d IxKernel build
 | Module | Checks |
 | --- | --- |
 | `Ix/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 15, `fidelityRoots` 16, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements; a control showing the fold fails without the rulings |
-| `Ix/Ixon/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
+| `Ix/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
 | `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports, closures, extern differences and statements, and the projection writer's guards |
 | `Ix/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
@@ -337,8 +337,8 @@ re-records it states why the closure or the statement moved.
    base never imports the model lane, the rules fence and its five recorded
    doors, and the boundary: the checker and the theory import only
    themselves, `Init`, `Std` and, at elaboration time, `Lean` (Ix's
-   boundary modules `Ixon`, `Audit`, `Ingress`, `Egress`, `Ref` and `Search`
-   import the kernel, not the reverse);
+   boundary modules `Admission`, `Ixon`, `Audit`, `Ingress`, `Egress`, `Ref`
+   and `Search` import the kernel, not the reverse);
 6. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
@@ -393,7 +393,7 @@ Mathlib tag but regenerates nothing), the change also does the following.
    inherited externs M, ...`), the extern differences and the frozen
    `#check` statements are `#guard_msgs` records in
    `Ix/Kernel/Audit/Roots.lean`, `Ix/Ixon/Audit.lean` and
-   `Ix/Ixon/Admission/Audit.lean` (built by `lake -d IxKernel build
+   `Ix/Kernel/Admission/Audit.lean` (built by `lake -d IxKernel build
    --wfail`), and in `Ix/Ixon/Projection/Audit.lean` and
    `Ix/Ixon/BlockOrder/Audit.lean` (built by `lake build --wfail
    Ix.Ixon.Projection.Audit Ix.Ixon.BlockOrder.Audit`). A record that no
@@ -440,10 +440,12 @@ files carry further changes:
 | `Ix/Kernel/Level.lean`, `Ix/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `Ix/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
-Ix's own files under `Ix/Kernel/` are `Ref.lean`, `Search.lean`, the
-`Audit`, `Ingress`, `Egress` and `Ixon` directories (the Ixon reader and its
-specification, the committed pins and prelude, the record store, the
-projection writer and the audits), and `LevelGeran.lean` and
+Ix's own files under `Ix/Kernel/` are `Admission.lean` and the `Admission`
+directory (the certified entry, its byte stage, theorems and audit),
+`Ref.lean`, `Search.lean`, the `Audit`, `Ingress`, `Egress` and `Ixon`
+directories (the Ixon reader and its specification, the committed pins and
+prelude, the record store, the projection writer and the audits), and
+`LevelGeran.lean` and
 `Verify/LevelGeran.lean` (Géran's sublevels and their soundness and
 completeness), which the changed `Level` files import.
 
@@ -605,4 +607,4 @@ use only the three standard axioms; native hash/name allowances from the
 old compiler proofs are not inherited. For the certified entry, the
 resource bound, canonical decoding and the byte-admission composition are
 proved (`checkBytes_resources`, `decodeRecords_ok_iff`,
-`Ix/Ixon/Admission/Bytes/Theorems.lean`).
+`Ix/Kernel/Admission/Bytes/Theorems.lean`).

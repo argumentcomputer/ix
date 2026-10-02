@@ -1,5 +1,5 @@
-import Ix.Ixon.Admission
-import Ix.Ixon.Admission.Bytes.Theorems
+import Ix.Kernel.Admission
+import Ix.Kernel.Admission.Bytes.Theorems
 import Ix.Kernel.Ixon.ReaderSpec
 import Ix.Kernel.Ixon.Installed
 import Ix.Kernel.Ixon.Values
