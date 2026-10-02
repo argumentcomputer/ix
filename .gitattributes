@@ -1,0 +1,19 @@
+# Collapse in GitHub's diff the files a reviewer does not read line by line.
+
+# The certified checker's kernel, derived from con-leche (docs/kernel.md),
+# except Ix's own boundary and modules beside it.
+Ix/Kernel/**/*.lean linguist-generated=true
+Ix/Kernel/Admission.lean -linguist-generated
+Ix/Kernel/Admission/** -linguist-generated
+Ix/Kernel/Ixon/** -linguist-generated
+Ix/Kernel/Audit/** -linguist-generated
+Ix/Kernel/Ingress/** -linguist-generated
+Ix/Kernel/Egress/** -linguist-generated
+Ix/Kernel/Ref.lean -linguist-generated
+Ix/Kernel/Search.lean -linguist-generated
+Ix/Kernel/LevelGeran.lean -linguist-generated
+Ix/Kernel/Verify/LevelGeran.lean -linguist-generated
+
+# The pin tables, written by `kernel-pin-gen`.
+Ix/Kernel/Ixon/PinData.lean linguist-generated=true
+Ix/Kernel/Ixon/NatOpPinData.lean linguist-generated=true

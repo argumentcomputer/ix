@@ -580,14 +580,30 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   -- wrapper is ill-typed in the compiled env. Regenerate from the
   -- canonical rec and register here so the ordinary compile of the
   -- Lean value is skipped.
+  --
+  -- Per family, not per name (as `generateAuxPatches` decides every other
+  -- aux block; mutual.rs `compile_below_recursors`): if Lean exported any
+  -- below inductive's `.casesOn`, regenerate all of them.
+  let belowCasesName? (recName : Name) : Option Name := match recName with
+    | .str parent "rec" _ => some (Name.mkStr parent "casesOn")
+    | _ => none
+  let mut emitBelowCases := false
+  for (recName, _) in recs do
+    if let some n := belowCasesName? recName then
+      if (← liftM (lookupConst? n : CompileM _)).isSome then
+        emitBelowCases := true
+  -- A collapsed class's non-representative `.below.casesOn` aliases the
+  -- representative's, so any member of a `.below` block Lean declared
+  -- counts.
+  for c in belowIndcs do
+    if let some (.inductInfo v) ← liftM (lookupConst? c.name : CompileM _) then
+      for m in v.all do
+        if (← liftM (lookupConst? (Name.mkStr m "casesOn") : CompileM _)).isSome then
+          emitBelowCases := true
   let mut belowCases : Array MutConst := #[]
   for (recName, recVal) in recs do
-    let indName? := match recName with
-      | .str parent "rec" _ => some parent
-      | _ => none
-    if let some indName := indName? then
-      let casesOnName := Name.mkStr indName "casesOn"
-      if (← liftM (lookupConst? casesOnName : CompileM _)).isSome then
+    if let some casesOnName := belowCasesName? recName then
+      if emitBelowCases then
         if let some d ←
             liftM (generateCasesOn casesOnName recVal : CompileM _) then
           belowCases := belowCases.push (.defn {
@@ -1020,16 +1036,18 @@ def compileMutualAuxTail (cs : Array MutConst)
 blocks claim one source-indexed aux name")
       if plan.headRewrite.isNone then
         if let some breconName := recNameToBreconName name then
-          if (← liftM (lookupConst? breconName : CompileM _)).isSome then
+          -- Mirror compile.rs: Type-level `.brecOn.go` / `.brecOn.eq`
+          -- share `.brecOn`'s telescope and are referenced directly by
+          -- equation-lemma proofs, so they carry the same plan keys. Keyed
+          -- per name present, not gated on `.brecOn` itself: a closure can
+          -- hold `X.brecOn.go` without `X.brecOn`.
+          let mut planKeys : Array Name := #[]
+          for key in [breconName, Name.mkStr breconName "go",
+              Name.mkStr breconName "eq"] do
+            if (← liftM (lookupConst? key : CompileM _)).isSome then
+              planKeys := planKeys.push key
+          if !planKeys.isEmpty then
             let newPlan := BRecOnCallSitePlan.fromRecPlan plan
-            -- Mirror compile.rs: Type-level `.brecOn.go` / `.brecOn.eq`
-            -- share `.brecOn`'s telescope and are referenced directly by
-            -- equation-lemma proofs, so they carry the same plan keys.
-            let mut planKeys : Array Name := #[breconName]
-            for sub in ["go", "eq"] do
-              let subName := Name.mkStr breconName sub
-              if (← liftM (lookupConst? subName : CompileM _)).isSome then
-                planKeys := planKeys.push subName
             for key in planKeys do
               if let some existing :=
                   cenvGlobal.brecOnCallSitePlans.get? key then

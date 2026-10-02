@@ -33,8 +33,12 @@ jobs:
           # The root package plus every package under Benchmarks/ — `/**`
           # walks the whole tree (catching Catalog's nested fixture
           # workspaces) and skips dotted directories, so `.lake`
-          # dependency checkouts are never swept up.
-          lake_package_directory: ". Benchmarks/**"
+          # dependency checkouts are never swept up — and the certified
+          # kernel's package and its model, whose Mathlib `rev` is a Lean
+          # version tag and moves with the toolchain. The pin tables and
+          # frozen audit counts are not regenerated here: see "On a
+          # toolchain bump" in docs/kernel.md.
+          lake_package_directory: ". Benchmarks/** IxKernel Models/SetTheory"
           bump_mode: pinned-tags
           pr: true
           update_lean4_nix: true

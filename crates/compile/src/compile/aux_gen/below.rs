@@ -115,9 +115,51 @@ pub fn generate_below_constants(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BelowConstant>, CompileError> {
+  generate_below_constants_with(
+    sorted_classes,
+    canonical_recs,
+    lean_env,
+    is_prop,
+    false,
+    stt,
+    kctx,
+  )
+}
+
+/// [`generate_below_constants`], with the per-name existence gate on the
+/// nested auxiliaries' `.below_N` optionally lifted.
+///
+/// `all_aux = true` generates `.below_N` for every canonical auxiliary
+/// recursor, whether or not its own name is in `lean_env`. The compile path
+/// (`aux_gen::generate_aux_patches`) passes it once the block's `.below`
+/// family is exported at all: the members of the below-definition block
+/// must not depend on which of its names happen to be in a closure-only
+/// environment, or the block (and every `.below` projection into it) gets a
+/// different address than in a whole-environment compile.
+pub fn generate_below_constants_with(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  lean_env: &LeanEnv,
+  is_prop: bool,
+  all_aux: bool,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<Vec<BelowConstant>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() {
     return Ok(vec![]);
+  }
+
+  // A Prop-level block with nested auxiliaries: the `.below` family has one
+  // inductive per motive (the classes' and each auxiliary's), built from the
+  // recursor's minor premises.
+  if is_prop && canonical_recs.len() > n_classes {
+    return Ok(
+      build_prop_below_family(sorted_classes, canonical_recs, lean_env)?
+        .into_iter()
+        .map(BelowConstant::Indc)
+        .collect(),
+    );
   }
 
   let mut results = Vec::new();
@@ -168,10 +210,9 @@ pub fn generate_below_constants(
     }
   }
 
-  // Generate .below_N for nested auxiliary members (Type-level only).
-  // Lean generates these via mkBelowFromRec for each nested auxiliary
-  // recursor (BRecOn.lean:125-129). They're always definitions, even for
-  // Prop-level blocks, but we only implement Type-level for now.
+  // Generate .below_N for nested auxiliary members (Type-level; the
+  // Prop-level family returned above). Lean generates these via
+  // mkBelowFromRec for each nested auxiliary recursor (BRecOn.lean:125-129).
   //
   // The auxiliary recursors are at canonical_recs[n_classes..]. Each gets
   // a 1-based suffix: .below_1, .below_2, etc., hanging off the first
@@ -221,7 +262,8 @@ pub fn generate_below_constants(
         // stt.env.named (Ixon compile state — has all constants during
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
-        let exists = lean_env.contains_key(&below_name)
+        let exists = all_aux
+          || lean_env.contains_key(&below_name)
           || stt.env.named.contains_key(&below_name);
         if !exists {
           continue;
@@ -714,10 +756,18 @@ fn build_below_indc_type(
   rec_val: &RecursorVal,
   ind: &InductiveVal,
 ) -> LeanExpr {
+  build_below_indc_type_n(rec_val, nat_to_usize(&ind.num_indices))
+}
+
+/// [`build_below_indc_type`] for a recursor whose major has `n_indices`
+/// indices (a nested auxiliary's recursor targets the external inductive).
+fn build_below_indc_type_n(
+  rec_val: &RecursorVal,
+  n_indices: usize,
+) -> LeanExpr {
   let n_params = nat_to_usize(&rec_val.num_params);
   let n_motives = nat_to_usize(&rec_val.num_motives);
   let n_minors = nat_to_usize(&rec_val.num_minors);
-  let n_indices = nat_to_usize(&ind.num_indices);
 
   // Open all rec type binders into FVars.
   let (_, param_decls, after_params) =
@@ -1005,6 +1055,252 @@ fn build_below_indc_ctor(
     n_params: n_params + n_motives,
     n_fields: n_fields_total,
   }
+}
+
+/// Build the Prop-level `.below` family of a block with nested auxiliaries.
+///
+/// Lean's `IndPredBelow.mkBelow` (IndPredBelow.lean:83-140, 211-238) declares
+/// one `.below` inductive per motive of the block's recursor, all in one
+/// mutual declaration: `<I>.below` for each class and `<all0>.below_N` for
+/// each nested auxiliary (an occurrence such as `Forall2 V xs ys`). The
+/// constructors come from the recursor's minor premises: each minor with
+/// return motive `k` becomes a constructor of the `k`-th `.below`, whose
+/// fields are the minor's arguments with a `.below` proof inserted before
+/// each induction hypothesis (`ihTypeToBelowType`), and whose result is the
+/// minor's return with the motive replaced by the `.below`.
+///
+/// Returns the classes' inductives first, then the auxiliaries' in
+/// `canonical_recs` order, so position `k` holds motive `k`'s `.below`.
+fn build_prop_below_family(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  lean_env: &LeanEnv,
+) -> Result<Vec<BelowIndc>, CompileError> {
+  let n_classes = sorted_classes.len();
+  let block_label = sorted_classes[0][0].pretty();
+  let class_ind =
+    |rep: &Name, caller: &str| -> Result<InductiveVal, CompileError> {
+      match lean_env.get(rep).as_deref() {
+        Some(ConstantInfo::InductInfo(v)) => Ok(v.clone()),
+        _ => Err(CompileError::MissingConstant {
+          name: rep.pretty(),
+          caller: caller.into(),
+        }),
+      }
+    };
+  let class_inds: Vec<InductiveVal> = sorted_classes
+    .iter()
+    .map(|c| {
+      class_ind(&c[0], "build_prop_below_family: class rep not an inductive")
+    })
+    .collect::<Result<_, _>>()?;
+  let first_ind = &class_inds[0];
+  let all0 = first_ind
+    .all
+    .first()
+    .cloned()
+    .unwrap_or_else(|| sorted_classes[0][0].clone());
+  let ind_level_params = &first_ind.cnst.level_params;
+  let univs: Vec<Level> =
+    ind_level_params.iter().map(|lp| Level::param(lp.clone())).collect();
+
+  // `.below` name per motive: classes, then auxiliaries (source-indexed
+  // like `.below_N` in the Type-level path).
+  let mut below_names: Vec<Name> = class_inds
+    .iter()
+    .map(|ind| Name::str(ind.cnst.name.clone(), "below".to_string()))
+    .collect();
+  for (aux_rec_name, _) in &canonical_recs[n_classes..] {
+    let idx = aux_rec_suffix_idx(aux_rec_name).ok_or_else(|| {
+      CompileError::InvalidMutualBlock {
+        reason: format!(
+          "{block_label}: Prop below aux recursor '{}' is not source-indexed",
+          aux_rec_name.pretty(),
+        ),
+      }
+    })?;
+    below_names.push(Name::str(all0.clone(), format!("below_{idx}")));
+  }
+
+  // Every recursor of the flat block shares the parameter, motive and minor
+  // telescope; open it once from the first.
+  let rec0 = &canonical_recs[0].1;
+  let n_params = try_nat_to_usize(&rec0.num_params)?;
+  let n_motives = try_nat_to_usize(&rec0.num_motives)?;
+  let n_minors = try_nat_to_usize(&rec0.num_minors)?;
+  if n_motives != canonical_recs.len() {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "{block_label}: Prop below: {} recursors for {n_motives} motives",
+        canonical_recs.len(),
+      ),
+    });
+  }
+  let (param_fvars, param_decls, after_params) =
+    forall_telescope(&rec0.cnst.typ, n_params, "pbfp", 0);
+  let mut motive_fvars: Vec<LeanExpr> = Vec::new();
+  let mut motive_decls: Vec<LocalDecl> = Vec::new();
+  let mut cur = after_params;
+  for mi in 0..n_motives {
+    if let ExprData::ForallE(name, dom, body, _, _) = cur.as_data() {
+      let (fv_name, fv) = fresh_fvar("pbfm", mi);
+      motive_decls.push(LocalDecl {
+        fvar_name: fv_name,
+        binder_name: name.clone(),
+        domain: replace_result_sort_with_prop(dom),
+        info: BinderInfo::Implicit,
+      });
+      motive_fvars.push(fv.clone());
+      cur = instantiate1(body, &fv);
+    }
+  }
+  let (_, minor_decls, _) = forall_telescope(&cur, n_minors, "pbfx", 0);
+  if param_decls.len() != n_params
+    || motive_decls.len() != n_motives
+    || minor_decls.len() != n_minors
+  {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "{block_label}: Prop below: recursor type has fewer binders than its \
+         parameter, motive and minor counts"
+      ),
+    });
+  }
+
+  // `ihTypeToBelowType`: `∀ ys, motive_j args` ↦ `∀ ys, below_j params motives args`.
+  let ih_to_below = |ty: &LeanExpr, prefix: &str| -> Option<LeanExpr> {
+    let j = find_motive_fvar(ty, &motive_fvars)?;
+    let n_inner = count_foralls_expr(ty);
+    let (_, inner_decls, leaf) = forall_telescope(ty, n_inner, prefix, 0);
+    let (_, args) = decompose_apps(&leaf);
+    let mut app = mk_const(&below_names[j], &univs);
+    app = mk_app_n(app, &param_fvars);
+    app = mk_app_n(app, &motive_fvars);
+    app = mk_app_n(app, &args);
+    Some(mk_forall(app, &inner_decls))
+  };
+
+  let mut out = Vec::with_capacity(n_motives);
+  for (k, (_, rec_k)) in canonical_recs.iter().enumerate() {
+    // The minors whose return motive is `k`, in order; they pair with
+    // `rec_k`'s rules (one per constructor of motive `k`'s inductive).
+    let minors_k: Vec<(usize, &LocalDecl)> = minor_decls
+      .iter()
+      .enumerate()
+      .filter(|(_, d)| find_motive_fvar(&d.domain, &motive_fvars) == Some(k))
+      .collect();
+    if minors_k.len() != rec_k.rules.len() {
+      return Err(CompileError::InvalidMutualBlock {
+        reason: format!(
+          "{block_label}: Prop below: motive {k} has {} minors but '{}' has {} rules",
+          minors_k.len(),
+          rec_k.cnst.name.pretty(),
+          rec_k.rules.len(),
+        ),
+      });
+    }
+    let below_name = &below_names[k];
+    let mut ctors = Vec::with_capacity(minors_k.len());
+    for ((mi, minor), rule) in minors_k.into_iter().zip(&rec_k.rules) {
+      let ctor_induct = match lean_env.get(&rule.ctor).as_deref() {
+        Some(ConstantInfo::CtorInfo(c)) => c.induct.clone(),
+        _ => {
+          return Err(CompileError::MissingConstant {
+            name: rule.ctor.pretty(),
+            caller: "build_prop_below_family: constructor not found".into(),
+          });
+        },
+      };
+      let suffix = rule
+        .ctor
+        .strip_prefix(&ctor_induct)
+        .unwrap_or_else(|| rule.ctor.components());
+      let ctor_name = below_name.append_components(&suffix);
+
+      let n_args = count_foralls_expr(&minor.domain);
+      let (_, arg_decls, ret) =
+        forall_telescope(&minor.domain, n_args, &format!("pbfa{mi}"), 0);
+      let mut fields: Vec<LocalDecl> = Vec::new();
+      for (ai, mut decl) in arg_decls.into_iter().enumerate() {
+        // Lean stores the fields head-beta-reduced: an auxiliary's minor
+        // has `h : (fun n => E n) w` where the external constructor's
+        // field type was instantiated with a lambda-valued parameter, and
+        // the `.below` constructor has `h : E w`.
+        decl.domain = super::expr_utils::beta_reduce(&decl.domain);
+        if let Some(ih_dom) =
+          ih_to_below(&decl.domain, &format!("pbfh{mi}_{ai}"))
+        {
+          let (ih_name, _) = fresh_fvar(&format!("pbfi{mi}"), ai);
+          fields.push(LocalDecl {
+            fvar_name: ih_name,
+            binder_name: Name::str(Name::anon(), "ih".to_string()),
+            domain: ih_dom,
+            info: BinderInfo::Default,
+          });
+        }
+        fields.push(decl);
+      }
+      let ret = ih_to_below(&ret, &format!("pbfr{mi}")).ok_or_else(|| {
+        CompileError::InvalidMutualBlock {
+          reason: format!(
+            "{block_label}: Prop below: minor {mi} does not return a motive"
+          ),
+        }
+      })?;
+
+      // Keep the binder names of Lean's own constructor where it exists.
+      if let Some(ConstantInfo::CtorInfo(cv)) =
+        lean_env.get(&ctor_name).as_deref()
+      {
+        let mut ty = cv.cnst.typ.clone();
+        for _ in 0..nat_to_usize(&cv.num_params) {
+          if let ExprData::ForallE(_, _, body, _, _) = ty.as_data() {
+            ty = body.clone();
+          }
+        }
+        let mut names = Vec::new();
+        while let ExprData::ForallE(name, _, body, _, _) = ty.as_data() {
+          names.push(name.clone());
+          ty = body.clone();
+        }
+        if names.len() == fields.len() {
+          for (f, n) in fields.iter_mut().zip(names) {
+            f.binder_name = n;
+          }
+        }
+      }
+
+      let n_fields = fields.len();
+      let binders: Vec<LocalDecl> = param_decls
+        .iter()
+        .cloned()
+        .chain(motive_decls.iter().cloned())
+        .chain(fields)
+        .collect();
+      ctors.push(BelowCtor {
+        name: ctor_name,
+        typ: mk_forall(ret, &binders),
+        n_params: n_params + n_motives,
+        n_fields,
+      });
+    }
+
+    let owner = class_inds.get(k).unwrap_or(first_ind);
+    let n_indices = try_nat_to_usize(&rec_k.num_indices)?;
+    out.push(BelowIndc {
+      name: below_name.clone(),
+      level_params: ind_level_params.clone(),
+      n_params: n_params + n_motives,
+      n_indices: n_indices + 1,
+      // Reflexivity and safety are properties of the whole (nested-expanded)
+      // block, which the `.below` block inherits.
+      is_reflexive: owner.is_reflexive,
+      is_unsafe: owner.is_unsafe,
+      typ: build_below_indc_type_n(rec_k, n_indices),
+      ctors,
+    });
+  }
+  Ok(out)
 }
 
 /// Transform a recursive field type `∀ ys, I_j args` (FVar-based) to the

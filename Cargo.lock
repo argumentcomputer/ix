@@ -1845,13 +1845,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ix-ffi-dyn"
-version = "0.1.0"
-dependencies = [
- "lean-ffi",
-]
-
-[[package]]
 name = "ix-kernel"
 version = "0.1.0"
 dependencies = [

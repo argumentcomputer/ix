@@ -55,14 +55,15 @@ jobs:
           test-args: "--wfail"
           lint-args: "-- --wfail -v"
           use-github-cache: false
-      - name: Build Ix.Tc formal verification
-        run: lake build IxTcVerify
       - name: Check codegen'd IxVM kernel is up to date
         if: github.event_name != 'push'
         run: lake exe ix codegen --check
-      - name: Check Lean versions match for Ix and compiler bench
+      - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
         if: github.event_name != 'push'
-        run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
+        run: |
+          diff lean-toolchain Benchmarks/Compile/lean-toolchain
+          diff lean-toolchain IxKernel/lean-toolchain
+          diff lean-toolchain Models/SetTheory/lean-toolchain
       - name: Test Ix CLI
         if: github.event_name != 'push'
         run: lake test --wfail -- cli
@@ -71,6 +72,47 @@ jobs:
         run: |
           lake exe ixon-v4-primitives
           lake exe ixon-v4-tests --primitives
+
+  # A fresh package build keeps host dependencies out of the certified import
+  # closure. Mathlib is confined to its separate model package; its cache only
+  # supplies pinned dependency objects, not this checkout's kernel or fixtures.
+  # No sticky disk and no Cargo cache: the job builds from an empty tree.
+  certified-kernel:
+    name: Certified Lean kernel
+    runs-on: runs-on=${{ github.run_id }}-certified-kernel-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    steps:
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-rust-toolchain
+        with:
+          codegen: portable
+          use-github-cache: "false"
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Fetch pinned set-theory dependencies
+        run: |
+          MATHLIB_NO_CACHE_ON_UPDATE=1 lake -d Models/SetTheory update
+          lake -d Models/SetTheory exe cache get \
+            Mathlib.SetTheory.Cardinal.Regular \
+            Mathlib.SetTheory.ZFC.VonNeumann \
+            Mathlib.SetTheory.ZFC.Cardinal
+      - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
+        run: lake run check-kernel --with-model
+      - name: Retain codec, block-order, entry-case and reader-fidelity results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: certified-kernel-differential
+          path: |
+            .lake/build/kernel-codec.log
+            .lake/build/kernel-order.jsonl
+            .lake/build/kernel-entry-cases.jsonl
+            .lake/build/kernel-reader-fidelity.log
+          if-no-files-found: warn
 
   rust-test:
     runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-rust-test-x86-64-v4:50gb/extras=s3-cache
@@ -190,7 +232,7 @@ jobs:
 
   ci-gate:
     if: ${{ always() }}
-    needs: [lean-test, rust-test, cuda-compile, lints]
+    needs: [lean-test, certified-kernel, rust-test, cuda-compile, lints]
     permissions:
       actions: read
       checks: read

@@ -5,7 +5,7 @@
   to Rust) but pipes the env through `rs_kernel_ingress` instead of
   `rs_kernel_check_consts`.
 
-  Pipeline (Rust side, `src/ffi/kernel.rs::rs_kernel_ingress`):
+  Pipeline (Rust side, `crates/ffi/src/kernel.rs::rs_kernel_ingress`):
     Lean env  →  compile_env  →  ixon_ingress  →  KEnv  (stop)
 
   Use it like
@@ -39,7 +39,7 @@ namespace Ix.Cli.IngressCmd
     pipeline, stopping before typechecking. Returns the number of kernel
     constants ingressed.
 
-    Implemented in `src/ffi/kernel.rs::rs_kernel_ingress`. The Rust side
+    Implemented in `crates/ffi/src/kernel.rs::rs_kernel_ingress`. The Rust side
     prints `[rs_kernel_ingress] read env / compile / ingress` timing lines
     to stderr, mirroring `rs_kernel_check_consts`. -/
 @[extern "rs_kernel_ingress"]

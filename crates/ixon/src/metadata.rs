@@ -412,6 +412,33 @@ impl ConstantMeta {
     dag.extend(self.meta_refs.iter().cloned());
   }
 
+  /// The name addresses of this metadata that meta kernel ingress resolves
+  /// to *constants* through `Env.named` (`resolve_all` / `build_mut_ctx`):
+  /// a definition's, inductive's or recursor's `all` and `ctx`, and an
+  /// inductive's `ctors`. A bundle carrying this entry must carry a Named
+  /// entry for each, even when no value edge reaches it: a `mutual`
+  /// definition's `all` names its siblings, which a structural,
+  /// well-founded or `partial` member's value does not mention.
+  pub fn named_refs(&self, out: &mut Vec<Address>) {
+    use ConstantMetaInfo as I;
+    match &self.info {
+      I::Def { all, ctx, .. } | I::Rec { all, ctx, .. } => {
+        out.extend(all.iter().cloned());
+        out.extend(ctx.iter().cloned());
+      },
+      I::Indc { ctors, all, ctx, .. } => {
+        out.extend(ctors.iter().cloned());
+        out.extend(all.iter().cloned());
+        out.extend(ctx.iter().cloned());
+      },
+      I::Empty
+      | I::Axio { .. }
+      | I::Quot { .. }
+      | I::Ctor { .. }
+      | I::Muts { .. } => {},
+    }
+  }
+
   /// Delegate indexed serialization to the inner enum, then serialize
   /// extension tables.
   pub fn put_with(

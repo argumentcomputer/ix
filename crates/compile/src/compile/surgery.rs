@@ -362,6 +362,23 @@ pub fn compute_call_site_plans(
         _ => None,
       }
     })
+    .or_else(|| {
+      // A closure-only environment can hold the block's auxiliaries (a
+      // matcher on a Prop-level `.below` reaches `.below.casesOn`) without
+      // its recursors. The inductive carries the same counts: Lean's
+      // recursor has `all.size + numNested` motives and one minor per
+      // constructor of the block and of its nested auxiliaries.
+      original_all.iter().find_map(|n| match lean_env.get(n).as_deref() {
+        Some(LeanConstantInfo::InductInfo(v)) => Some((
+          nat_to_usize(&v.num_params),
+          nat_to_usize(&v.num_indices),
+          n_source + nat_to_usize(&v.num_nested),
+          ctor_counts.iter().sum::<usize>()
+            + aux_layout.map_or(0, |l| l.source_ctor_counts.iter().sum()),
+        )),
+        _ => None,
+      })
+    })
     .unwrap_or((0, 0, n_source, ctor_counts.iter().sum()));
 
   // User vs aux split. The user-visible portion has one motive per
@@ -724,10 +741,11 @@ pub fn compute_call_site_plans(
     if plan.is_identity() {
       continue;
     }
+    // Keyed whether or not the environment holds the recursor: the plans
+    // derived from it (`.below` family, `.brecOn`) are what a closure
+    // without it needs (`compile_mutual` gates those per name present).
     let rec_name = Name::str(x_name.clone(), "rec".to_string());
-    if lean_env.get(&rec_name).is_some() {
-      plans.insert(rec_name, plan);
-    }
+    plans.insert(rec_name, plan);
   }
 
   // Register plans for each nested-auxiliary recursor `all[0].rec_N`
@@ -769,16 +787,20 @@ pub fn compute_call_site_plans(
       Vec::new()
     };
 
+    let mut aux_heads: Option<Vec<Name>> = None;
     for aux_idx in 0..(n_source_motives - n_user_motives) {
       let x_pos = n_user_motives + aux_idx;
       let rec_name =
         Name::str(head_name.clone(), format!("rec_{}", aux_idx + 1));
-      if lean_env.get(&rec_name).is_none() {
-        continue;
-      }
+      let rec_present = lean_env.get(&rec_name).is_some();
       let evaporated_here = aux_layout
         .is_some_and(|l| l.evaporated.get(aux_idx).copied().unwrap_or(false));
       if evaporated_here {
+        // The head rewrite goes with the name's alias, which exists only
+        // for a Lean-exported name.
+        if !rec_present {
+          continue;
+        }
         let Some(ext_head) = src_heads.get(aux_idx) else {
           // The alias for this position was registered from the same
           // source-order walk — a missing entry here would ship a claim
@@ -815,9 +837,39 @@ pub fn compute_call_site_plans(
         // way this block contributes nothing for the name.
         continue;
       }
-      let plan = build_plan(x_pos);
+      let mut plan = build_plan(x_pos);
       if plan.is_identity() {
         continue;
+      }
+      // The auxiliary's own index count (the external inductive's), not
+      // the block's: the `.brecOn_N` / `.below_N` plans derived from this
+      // one slice their call sites' fixed tail (indices + major) by it,
+      // e.g. a `V 0 1 ∧ V 1 0` auxiliary of a two-index `V` has none.
+      // Without the recursor (a closure), the external inductive's.
+      if let Some(LeanConstantInfo::RecInfo(r)) =
+        lean_env.get(&rec_name).as_deref()
+      {
+        plan.n_indices = nat_to_usize(&r.num_indices);
+      } else {
+        if aux_heads.is_none() {
+          aux_heads = Some(
+            crate::compile::aux_gen::nested::source_aux_order(
+              original_all,
+              lean_env,
+            )?
+            .into_iter()
+            .map(|(head, _)| head)
+            .collect(),
+          );
+        }
+        if let Some(LeanConstantInfo::InductInfo(v)) = aux_heads
+          .as_ref()
+          .and_then(|h| h.get(aux_idx))
+          .and_then(|head| lean_env.get(head))
+          .as_deref()
+        {
+          plan.n_indices = nat_to_usize(&v.num_indices);
+        }
       }
       plans.insert(rec_name, plan);
     }

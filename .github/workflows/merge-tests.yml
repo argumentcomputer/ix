@@ -131,6 +131,7 @@ jobs:
               rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip
               graph-cross condense-cross rust-serialize ixon-corpus
               rust-decompile validate-aux aux-gen-diff decompile-diff
+              aux-gen-closure canon-closure-aux
           - name: Lake ignored tests (compile)
             kind: lake
             test_args: --ignored compile
@@ -149,7 +150,7 @@ jobs:
             kind: tc
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
-              tc-pins tc-accel-diff lean4lean
+              tc-pins tc-accel-diff
     # On-demand rather than Spot: a reclaimed partition restarts from scratch
     # only after the whole attempt finishes, and the longest partitions
     # already run close to the merge queue's status-check timeout, so one

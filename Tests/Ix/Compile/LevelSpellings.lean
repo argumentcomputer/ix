@@ -5,7 +5,8 @@
   one per kernel-rebuild rule M1–M7/I1–I5 — plus spelling twins inside a
   single constant (the Design-A killer), const-arg twins, Géran
   order/association twins (mk*-normal but non-canonical; stage-2
-  relevant), and a WF-recursive definition whose `.eq_def` machinery
+  relevant), a level whose canonical form once changed its value (the
+  P0 witness), and a WF-recursive definition whose `.eq_def` machinery
   flows through unary packing.
 
   Everything weird is declared via raw `addDecl` with explicit `Level`
@@ -73,6 +74,12 @@ run_cmd Elab.Command.liftCoreM do
   ax (n "orderMaxVU") [`u, `v] (.sort (.max v u))
   ax (n "orderAssocL") [`u, `v, `w] (.sort (.max (.max u v) w))
   ax (n "orderAssocR") [`u, `v, `w] (.sort (.max u (.max v w)))
+  -- The smallest level whose canonical form changes its value without the
+  -- leak-free self-strip proviso (canonicity §10.6, P0):
+  -- `imax (imax (imax u w + 1) u) v` is `1` at `u = 0, v = 1, w = 2`.
+  -- Its canonical form must be too; the spelling is patched back.
+  ax (n "canonValueWitness") [`u, `v, `w]
+    (.sort (.imax (.imax (.succ (.imax u w)) u) v))
   -- Const-arg twins in VALUE position (defn):
   -- constArgTwin.{u} : ∀ (α : Sort u), α → α
   --   := fun α a => @id.{imax (imax 1 u) u} α (@id.{u} α a)

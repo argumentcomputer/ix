@@ -68,6 +68,34 @@ pub fn generate_brecon_constants(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
+  generate_brecon_constants_with(
+    sorted_classes,
+    canonical_recs,
+    below_consts,
+    lean_env,
+    is_prop,
+    false,
+    stt,
+    kctx,
+  )
+}
+
+/// [`generate_brecon_constants`], with the per-name existence gate on the
+/// nested auxiliaries' `.brecOn_N` optionally lifted (`all_aux = true`:
+/// generate `.brecOn_N[.go|.eq]` for every canonical auxiliary recursor).
+/// See [`super::below::generate_below_constants_with`] for why the compile
+/// path decides block membership by family rather than by name.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_brecon_constants_with(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  below_consts: &[BelowConstant],
+  lean_env: &LeanEnv,
+  is_prop: bool,
+  all_aux: bool,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<Vec<BRecOnDef>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() || below_consts.is_empty() {
     return Ok(vec![]);
@@ -125,16 +153,63 @@ pub fn generate_brecon_constants(
       results.extend(defs);
     } else {
       // Prop-level: generate single .brecOn theorem (IndPredBelow.lean path)
+      let brecon_name = Name::str(ind.cnst.name.clone(), "brecOn".to_string());
+      let n_indices = try_nat_to_usize(&ind.num_indices)?;
       let def = build_prop_brecon(
         ci,
         rec_val,
         ind,
-        lean_env,
-        n_classes,
+        &brecon_name,
+        n_indices,
         sorted_classes,
         below_consts,
       )?;
       results.push(def);
+    }
+  }
+
+  // Prop-level `.brecOn_N` for nested auxiliary members: Lean's
+  // `IndPredBelow.mkBRecOn` declares one `.brecOn` theorem per motive,
+  // `<all0>.brecOn_N` for the auxiliaries (IndPredBelow.lean:185-208, 230).
+  if is_prop {
+    let n_aux = canonical_recs.len().saturating_sub(n_classes);
+    let first_ind_ref = lean_env.get(&sorted_classes[0][0]);
+    if n_aux > 0
+      && let Some(ConstantInfo::InductInfo(first_ind)) =
+        first_ind_ref.as_deref()
+      && first_ind.is_rec
+    {
+      let all0 = first_ind.all.first().unwrap_or(&first_ind.cnst.name);
+      for j in 0..n_aux {
+        let (aux_rec_name, aux_rec_val) = &canonical_recs[n_classes + j];
+        let idx = super::below::aux_rec_suffix_idx(aux_rec_name).ok_or_else(|| {
+          CompileError::InvalidMutualBlock {
+            reason: format!(
+              "brecOn aux recursor '{}' is not source-indexed; refusing to synthesize brecOn_{}",
+              aux_rec_name.pretty(),
+              j + 1,
+            ),
+          }
+        })?;
+        let brecon_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let exists = all_aux
+          || lean_env.contains_key(&brecon_name)
+          || stt.env.named.contains_key(&brecon_name);
+        if !exists {
+          continue;
+        }
+        let n_indices = try_nat_to_usize(&aux_rec_val.num_indices)?;
+        let def = build_prop_brecon(
+          n_classes + j,
+          aux_rec_val,
+          first_ind,
+          &brecon_name,
+          n_indices,
+          sorted_classes,
+          below_consts,
+        )?;
+        results.push(def);
+      }
     }
   }
 
@@ -172,7 +247,8 @@ pub fn generate_brecon_constants(
         // stt.env.named (Ixon compile state — has all constants during
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
-        let exists = lean_env.contains_key(&brecon_name)
+        let exists = all_aux
+          || lean_env.contains_key(&brecon_name)
           || stt.env.named.contains_key(&brecon_name);
         if !exists {
           continue;
@@ -209,7 +285,8 @@ pub fn generate_brecon_constants(
 // Prop-level brecOn
 // =========================================================================
 
-/// Build Prop-level `.brecOn` for class `ci`.
+/// Build Prop-level `.brecOn` for motive `ci` of the flat block (a class, or
+/// a nested auxiliary when `ci >= n_classes`).
 ///
 /// ```text
 /// I_i.brecOn : ∀ {params} {motives} (t : I_i params)
@@ -220,20 +297,33 @@ pub fn generate_brecon_constants(
 /// I_i.brecOn = λ {params} {motives} t F_1..F_n =>
 ///   F_i t (I_i.rec params below_motives below_minors t)
 /// ```
+///
+/// There is one `F` per motive, and `below_consts[j]` is motive `j`'s
+/// `.below` (for a nested block, `build_prop_below_family`'s order).
+/// `ind` supplies the level parameters and safety (the block's); `n_indices`
+/// is the index count of `rec_val`'s major.
 fn build_prop_brecon(
   ci: usize,
   rec_val: &RecursorVal,
   ind: &InductiveVal,
-  _lean_env: &LeanEnv,
-  n_classes: usize,
+  brecon_name: &Name,
+  n_indices: usize,
   sorted_classes: &[Vec<Name>],
   below_consts: &[BelowConstant],
 ) -> Result<BRecOnDef, CompileError> {
   let n_params = try_nat_to_usize(&rec_val.num_params)?;
   let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
   let n_minors = try_nat_to_usize(&rec_val.num_minors)?;
-  let n_indices = try_nat_to_usize(&ind.num_indices)?;
   let ind_level_params = &ind.cnst.level_params;
+  if below_consts.len() < n_motives || ci >= n_motives {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "{}: Prop brecOn needs one .below per motive ({n_motives}), have {}",
+        sorted_classes[0][0].pretty(),
+        below_consts.len(),
+      ),
+    });
+  }
 
   // For Prop brecOn with large elimination (drec), substitute u -> Level::zero().
   // Invariant: generate_canonical_recursors always prepends the elimination level
@@ -257,26 +347,23 @@ fn build_prop_brecon(
   };
   let rec_val = &rec_val;
 
-  let brecon_name = Name::str(ind.cnst.name.clone(), "brecOn".to_string());
-
-  let below_names: Vec<Name> = (0..n_classes)
-    .map(|j| Name::str(sorted_classes[j][0].clone(), "below".to_string()))
-    .collect();
-
-  let below_ctor_names: Vec<Vec<Name>> = (0..n_classes)
-    .map(|j| {
-      let bc =
-        below_consts.get(j).ok_or_else(|| CompileError::UnsupportedExpr {
-          desc: format!("prop brecOn: missing below constant for class {j}"),
-        })?;
-      Ok(match bc {
-        BelowConstant::Indc(bi) => {
-          bi.ctors.iter().map(|c| c.name.clone()).collect()
-        },
-        _ => vec![],
-      })
+  // Motive `j`'s `.below` and its constructors.
+  let below_names: Vec<Name> = below_consts[..n_motives]
+    .iter()
+    .map(|bc| match bc {
+      BelowConstant::Indc(bi) => bi.name.clone(),
+      BelowConstant::Def(d) => d.name.clone(),
     })
-    .collect::<Result<Vec<_>, CompileError>>()?;
+    .collect();
+  let below_ctor_names: Vec<Vec<Name>> = below_consts[..n_motives]
+    .iter()
+    .map(|bc| match bc {
+      BelowConstant::Indc(bi) => {
+        bi.ctors.iter().map(|c| c.name.clone()).collect()
+      },
+      BelowConstant::Def(_) => vec![],
+    })
+    .collect();
 
   // --- Phase 1: Open rec type into FVars ---
   let (param_fvars, param_decls, after_params) =
@@ -415,15 +502,10 @@ fn build_prop_brecon(
   }
 
   // Apply below_minors: for each ctor, build λ (fields) => below_ctor params motives args
+  // (the minors are grouped by motive, in motive order).
+  let nested = n_motives > sorted_classes.len();
   let mut global_ctor_idx = 0usize;
-  for j in 0..n_classes {
-    let class_ctor_names: &[Name] = below_ctor_names
-      .get(j)
-      .ok_or_else(|| CompileError::UnsupportedExpr {
-        desc: format!("prop brecOn: missing below ctor names for class {j}"),
-      })?
-      .as_slice();
-
+  for class_ctor_names in &below_ctor_names {
     for (cidx, below_ctor_name) in class_ctor_names.iter().enumerate() {
       if global_ctor_idx + cidx >= minor_doms.len() {
         break;
@@ -439,6 +521,7 @@ fn build_prop_brecon(
         &f_fvars,
         &below_names,
         &ind_univs,
+        nested,
       );
       rec_app = LeanExpr::app(rec_app, minor);
     }
@@ -468,7 +551,7 @@ fn build_prop_brecon(
   let val = mk_lambda(val_body, &all_decls);
 
   Ok(BRecOnDef {
-    name: brecon_name,
+    name: brecon_name.clone(),
     level_params: ind_level_params.clone(),
     typ,
     value: val,
@@ -490,6 +573,7 @@ fn build_prop_brecon(
 /// For each IH field (head is motive FVar):
 ///   - Replace binder domain with `I_{j'}.below params motives args`
 ///   - Add below arg (ih FVar) and proof arg (F_{j'+1} applied to args + ih)
+#[allow(clippy::too_many_arguments)]
 fn build_prop_below_minor_fvar(
   minor_dom: &LeanExpr,
   below_ctor_name: &Name,
@@ -498,12 +582,22 @@ fn build_prop_below_minor_fvar(
   f_fvars: &[LeanExpr],
   below_names: &[Name],
   ind_univs: &[Level],
+  beta_fields: bool,
 ) -> LeanExpr {
   // Open all minor fields with forall_telescope.
   // After this, field domains reference motive FVars directly.
   let n_fields = super::expr_utils::count_foralls(minor_dom);
-  let (field_fvars, field_decls, _return_type) =
+  let (field_fvars, mut field_decls, _return_type) =
     forall_telescope(minor_dom, n_fields, "pbmf", 0);
+  // In a nested block, an auxiliary's minor can carry a field type
+  // instantiated with a lambda-valued parameter (`h : (fun n => E n) w`);
+  // Lean binds it head-beta-reduced (`h : E w`), as in the `.below`
+  // constructors (`below::build_prop_below_family`).
+  if beta_fields {
+    for decl in &mut field_decls {
+      decl.domain = super::expr_utils::beta_reduce(&decl.domain);
+    }
+  }
 
   // Classify fields and build lambda binders + ctor args
   let mut lambda_decls: Vec<LocalDecl> = Vec::new();

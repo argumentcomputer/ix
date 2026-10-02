@@ -524,6 +524,22 @@ A few key consequences:
   them for user-declared inductives. The blocks contain exactly
   `n` entries.
 
+- **Block membership is per family, not per name.** A closure-only
+  compile (`ix compile --consts`, a claim's dependency closure) may hold
+  `A.brecOn` without `B.brecOn`, or `T.brecOn` without `T.brecOn_1`.
+  `generate_aux_patches` emits a family's whole block whenever Lean
+  exported any of its members, so each block (and every projection into
+  it) has the same address as in a whole-environment compile. Building a
+  whole block can need constants none of the slice's own members reach
+  (a nested block's `.brecOn.eq` block holds `<all0>.brecOn_N.eq`, which
+  cases on the external inductive, `List.casesOn`), so the closure
+  producers close slices under "block of" as well as "references":
+  `Lean.auxFamilySiblings` (`Ix/Common.lean`) names a member's family, and
+  `Ix.EnvScope.collectDeps` and `Lean.collectDependencies` pull it and its
+  dependencies. A slice built any other way that still lacks such a
+  dependency gets the members present, with an `[aux_gen] warning` naming
+  it. `ix pack` needs nothing extra: a block is one Ixon constant.
+
 This structure is what gives canonicity its operational form: the
 content of each block is byte-determined by `(sorted_classes, expanded
 nested aux, level params, parameter telescope)` — none of which depend
@@ -838,12 +854,12 @@ aux-gen blocks, and in Rust also kernel egress and the decompiler's
 recompile. The recompile invariant `Named.original` (§9.2) relies on
 recompile using exactly this route.
 
-On the Init and Mathlib files compiled at this PR's head, Lean and Rust
-produce identical bytes for all 56,622 Init constants and for a Mathlib
-sample of 20,284 constants, and the merge-queue suite
-`lake test -- --ignored compile` requires the Lean and Rust compilers to
-write identical environments for its whole test environment (237,295
-constants).
+Lean and Rust produce identical bytes for every stored constant of the
+Init (56,783) and Init+Std (100,277) files compiled on Lean 4.34.0, and
+did for Init (56,622) and a Mathlib sample of 20,284 constants on Lean
+4.33.1; the merge-queue suite `lake test -- --ignored compile` requires
+the Lean and Rust compilers to write identical environments for its whole
+test environment (238,574 constants on Lean 4.34.0).
 
 ## 7. The Compile Pipeline
 
@@ -1140,9 +1156,14 @@ canonicalization), the compiler:
    (`compile.rs:2584`), which is a pristine compile that does NOT
    enter aux_gen — its address becomes `named.original.0`, its
    metadata `named.original.1`.
-3. Both entries go into `env.consts` (keyed by distinct addresses);
-   the `Named` entry points at the canonical via `addr` and retains
-   the original via `original`.
+3. Only the canonical patch goes into `env.consts`. The source-form
+   compile is ephemeral: its constant is never stored (validate-aux
+   phase 3, "No ephemeral leaks", fails if one is), so `original.0` is
+   a provenance address, not a reference. The `Named` entry points at
+   the canonical via `addr` and records the original via `original`;
+   decompile tolerates the original's bytes being absent, and
+   `Env::prune_to_closure` (`ix pack`) follows `original.0` only when
+   the source env happens to store it.
 
 **Who reads it.** `src/ix/decompile.rs`:
 
@@ -1625,18 +1646,52 @@ atoms `succ^c zero` / `succ^k (var i)`; entries at non-empty paths
 are reconstructed as `imax`-gated subterms by **per-atom gate
 inversion**: each atom self-strips gates its own value already
 dominates (`covered` — a subset-path constant `≥ k`, or a var
-`offset+1 ≥ k`), the remaining gate order is recovered greedily
-outermost-first (the smallest gate carrying a `(g,·)` absorber atom
-at a path within the chosen set), marker entries are consumed, and a
-root constant is absorbed into the emission (settled empirically
-during implementation — formerly open detail O1; P2 pins it
-exhaustively over all ≤7-node terms). Required properties, pinned by
-tests in both languages:
+`offset+1 ≥ k`) **provided the stripped context stays leak-free**
+(`gatesLeakFree` / `gate_order(..).1`: each of its gates keeps an
+absorber atom at a map path inside the gate's prefix, since
+`imax t u_g ≥ u_g` wherever the outer gates are active), the
+remaining gate order is recovered greedily outermost-first (the
+smallest gate carrying a `(g,·)` absorber atom at a path within the
+chosen set), marker entries are consumed, and a root constant is
+absorbed into the emission (settled empirically during
+implementation — formerly open detail O1; P2 pins it exhaustively over
+all ≤8-node terms). Required properties, pinned by tests in both
+languages:
 
+- **P0 (value preservation):** `canonUniv u` and `u` take the same
+  value at every valuation of the parameters. The compiler must not
+  change the universe a declaration states: the kernel checks the
+  stored canonical levels. Without the leak-free proviso above, P0
+  fails on deep `imax`-by-parameter chains over three or more
+  parameters: `imax (imax (imax u w + 1) u) v` canonicalizes to
+  `max (imax (imax (w+1) u) v) (imax (imax (u+1) w) v)`, which is `2`
+  at `u = 0, v = 1, w = 2` where the level is `1` (the self-strip of
+  `u + 1` from `[u, v, w]` leaves gate `w` without an absorber in
+  `[v, w]`). The proviso changes a canonical form only where the form
+  without it has the wrong value; it changes no stored level of the
+  Init+Std or Mathlib environments (0 of 345,177 and 3,343,350 table entries,
+  0 of 16,621 and 426,093 original spellings), so no address moved.
+  Tests: the witness family, every ≤8-node term (Rust) / ≤6-node term
+  (Lean) over three parameters, and the kernel level comparison's
+  biased random levels in both languages, with exact valuation sets.
 - **P1 (idempotence):** `canonUniv (canonUniv u) = canonUniv u`.
+  It holds wherever the normal forms involved carry no subsumption
+  leftover (below), which covers every stored level of both environments;
+  the random family pins how rare the exceptions are.
 - **P2 (roundtrip-fixpoint):** `geran (linearize L) = L` on canonical
   forms — `linearize` picks a genuine representative of its class;
-  with P1, `canonUniv` is constant on Géran classes.
+  with P1, `canonUniv` is constant on Géran classes. Like P1, it fails
+  only on normal forms with a **subsumption leftover**: `subsumption`
+  mirrors the kernels' normalizers, which test a gated constant
+  against its own node's vars instead of the dominator's, so
+  `max (v+1) (imax (imax 2 u) v)` keeps a constant `2` at `[u, v]` that
+  `v + 1` dominates (`Ix/Tc/Level.lean`, `crates/kernel/src/level.rs`,
+  `Ix/IxonUniv.lean` alike). Then two equal levels can have different
+  normal forms. 239 of the 125,000 levels of the random family hit
+  it, and none of the environments'. An exact subsumption (in all
+  normalizers together, to keep P4's oracle aligned) would make P1, P2
+  and P6 unconditional and the quotient exact; measured on both
+  environments it changes no stored level either.
 - **P3 (mk\*-fixpoint):** `linearize` output triggers no rule of the
   kernel-rebuild set below — rebuilding it through the `mk*`
   constructors is the node-for-node identity, so kernel ingress
@@ -2538,7 +2593,7 @@ is known to be partial.
   [`docs/sharing-minimum.md`](./sharing-minimum.md) §12 — the canonical sharing
   construction (§6.7): `Ix/Sharing/Exact/Tiered.lean`,
   `crates/ixon/src/sharing_exact/tiered.rs`, proofs in
-  `Ix/Compile/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
+  `Ix/Sharing/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
 - `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
 - `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
   port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,

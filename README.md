@@ -172,6 +172,22 @@ Ix consists of the following core components:
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
   different ix users can easily share `ixon` data between themselves.
 
+### Certified Ixon checker
+
+`Ix/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
+consistency. It is Ix's own kernel, derived from the verified checker of
+[con-leche](https://github.com/leanprover/con-leche). Its entry,
+`Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
+environment it accepts the theorems give a set-theoretic model and no proof of
+`False`, on the standard axioms only. It does not certify the compiler, the
+Rust kernel, `Ix.Tc` or IxVM. [docs/kernel.md](docs/kernel.md) states what is
+proved, what is trusted and what the gate checks; `--with-model` also builds
+the Mathlib-based model package `Models/SetTheory`:
+
+```sh
+lake run check-kernel --with-model
+```
+
 ## Benchmarks
 
 Benchmarks (compiler, kernel, and zk-prover backends) are tracked at
@@ -215,10 +231,12 @@ not this stable overview.
 
 **Lean tests:** `lake test`
 
-- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `meta-env`, `catalog`, `import-ixe`, `truthmines-spec`, `ixon`, `ixon-syntax`, `claim`, `merkle`, `assumption-tree`, `commit`, `canon`, `keccak`, `exact-sharing`, `exact-sharing-ffi`, `source-contract`, `graph-unit`, `condense-unit`, `bench-measures`, `aux-gen-unit`, `ground-unit`, `aiur-cross`, `aiur-cost`, `prim-addrs`, `primitive-address-parity`, `decompile-unit`, `tc-unit`
+- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `meta-env`, `catalog`, `import-ixe`, `truthmines-spec`, `ixon`, `ixon-syntax`, `claim`, `merkle`, `assumption-tree`, `commit`, `canon`, `keccak`, `exact-sharing`, `exact-sharing-ffi`, `source-contract`, `graph-unit`, `condense-unit`, `bench-measures`, `aux-gen-unit`, `ground-unit`, `aiur-cross`, `aiur-cost`, `prim-addrs`, `kernel-reader-roundtrip`, `kernel-read-cache`, `primitive-address-parity`, `decompile-unit`, `tc-unit`
     - `exact-sharing` tests the canonical sharing construction of Ixon v4; `exact-sharing-ffi` checks that Lean and Rust produce identical bytes
+    - `kernel-reader-roundtrip` checks the certified checker's Ixon reader against a direct translation of the compiled Lean constants; `kernel-read-cache` checks the environment check's persistent read cache
     - Primary runners run with the primary suites and can be selected by name in the same way: `aiur-rust-syntax`, `ixvm-tagn`, `aiur-prove`, `aiur-hashes`, `rbtree-map`, `multi-stark`, `recursive-verifier`, `ix-aggr`, `ixes-manifest`; `ixvm-tagn` holds the IxVM circuit's TagN codec to the Lean codec
 - `lake exe ixon-v4-tests` runs the Ixon v4 format suite (golden bytes, FFI, VM, text grammar, resource admission, claims, and the fixtures in `Tests/Fixtures/ixon-v4/`); `lake exe ixon-v4-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_V4_DIR` (default `/tmp`)
+- `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`Ix/Sharing/Verify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxKernel build --wfail`
 - `lake test -- --ignored` runs all expensive test suites and runners
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM

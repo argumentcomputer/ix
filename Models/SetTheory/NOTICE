@@ -1,0 +1,20 @@
+Set-theory model construction
+
+Derived from con-leche revision 86cd20a65660d757cedc81561a44579099b565d0,
+bridge/lean4lean-model/ConLecheBridge/Carneiro.lean.
+Original SHA-256:
+389b5fff365cf47a5040e6eac540d6ddedde4b95d9f4176c3c08f675f586c1c4
+
+The countable-inaccessibles hypothesis was transcribed by con-leche from
+Mario Carneiro's Lean4LeanModel/Consistency.lean. Namespaces, imports, and
+documentation were adapted for Ix; the mathematical construction is retained.
+Con-leche's Apache-2.0 license is preserved in LICENSE-CON-LECHE.
+
+The file carries the source's instance of con-leche's class
+(`ConLeche.SetTheory` upstream, `Ix.Kernel.SetTheory` here) under
+other names: the source's `setTheoryOfChain`, `setTheoryOfCarneiro` and
+`carneiro_implies_conleche` are `zfSetTheoryOfChain`,
+`zfSetTheoryOfCarneiro` and `carneiro_implies_setTheory` here. Its lemmas
+are stated over con-leche's `IsTGUniverse` and `Equinumerous` (in Ix,
+`Ix.Kernel.IsTGUniverse` and `Ix.Kernel.Equinumerous`), as the source's
+are. IxSetTheoryModel/Consistency.lean is authored in this repository.

@@ -112,7 +112,9 @@ join, cites both.
     20,264 are identical and one (`CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`)
     fails with a resource-limit error on both sides, the case *knapsack-limit* addresses; 0 disagreements.
     The final differential at this PR's head supersedes these runs: 56,622 Init and 20,284
-    Mathlib-sample constants, identical bytes, no exhaustion on either side.
+    Mathlib-sample constants, identical bytes, no exhaustion on either side. On Lean 4.34.0,
+    whose `Init` is a larger library, all 56,783 stored constants of Init and all 100,277 of
+    Init+Std give identical bytes with no exhaustion; the Mathlib sample was not re-run there.
 - **Final route** (the canonical construction as the compiler's only route, after the Rust
   optimizations) [C2] [C3] [R11] [R12] [L1] [M1]:
   - `ix compile` of Mathlib takes 1.13–1.26× the heuristic route's wall time in the final
@@ -124,7 +126,8 @@ join, cites both.
     byte-identical. The checked mode, which builds and verifies all three candidates, agrees with the
     default mode on every constant of both corpora.
   - The Lean construction is 8.3–15.4× slower than Rust single-threaded on Init samples (about 61×
-    before its own optimizations). The 2–4× target is not met.
+    before its own optimizations); on Lean 4.34.0, 7.9–12.1× on samples drawn the same way. The
+    2–4× target is not met.
   - The merge-queue compile partition (Lean and Rust compile the same test environment and are
     compared) takes 11:51, against 15:30 before the route switch.
 - **Not covered:**
@@ -1385,6 +1388,12 @@ average was 6–9.
 | slowest 15 by Rust time (`N` 2k–28k) | 15 | 18,985 ms | 1,229 ms | 15.4× | 9,209 ms |
 
 - All 454 constants give the same bytes in both languages.
+- **On Lean 4.34.0** the same method on the 4.34.0 Init file (56,783 stored constants), with the
+  samples drawn again by the same rules (bulk median `N` 79; slowest 15 with `N` 1,056–27,628),
+  under a load average of 4.7–12.4 on a shared machine: bulk 1,312 ms against 167 ms (7.9×), p99
+  7,434 ms against 706 ms (10.5×), slowest 15 18,314 ms against 1,518 ms (12.1×); with the width
+  tasks 1,179, 4,845 and 12,197 ms. All 454 constants give the same bytes. The slowest-15 sample
+  is a different set of constants, so its ratio is not a like-for-like comparison.
 - **Before the Lean optimizations** (*optimized-main*) the same samples gave 29×, 151× and 453×, about 61×
   overall.
 - **The 2–4× target set for the Lean construction is not met.** The remaining gap is structural: the

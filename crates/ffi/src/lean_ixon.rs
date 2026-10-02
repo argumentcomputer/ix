@@ -12,6 +12,8 @@ pub mod enums;
 pub mod env;
 pub mod expr;
 pub mod meta;
+#[cfg(feature = "test-ffi")]
+pub mod order;
 pub mod pack;
 #[cfg(feature = "test-ffi")]
 pub mod serialize;

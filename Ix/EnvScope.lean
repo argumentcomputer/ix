@@ -18,8 +18,10 @@ namespace Ix.EnvScope
 names. Mirrors the identically-named helper in `Tests/Ix/Compile/ValidateAux.lean`
 so the CLI and test runner share the same dep-discovery semantics.
 
-Walks each seed's type + value + recursor rules + ctor/all links until no
-new names are discovered. The returned list preserves the source environment's
+Walks each seed's type + value + recursor rules + ctor links + `all` links
+(of inductives, recursors, definitions, theorems and opaques) + auxiliary
+family siblings (`Lean.auxFamilySiblings`) until no new names are
+discovered. The returned list preserves the source environment's
 iteration order over the computed name set. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
     : List (Lean.Name × Lean.ConstantInfo) := Id.run do
@@ -34,13 +36,26 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
       needed := needed.insert n
       if let some ci := env.constants.find? n then
         let mut refs : Lean.NameSet := ci.type.getUsedConstantsAsSet
+        -- An auxiliary's family (`A.brecOn`/`B.brecOn`/`A.brecOn_1`, …) is
+        -- one compiled block: its other members, and their dependencies,
+        -- must be in the closure or the block's address depends on it
+        -- (`Lean.auxFamilySiblings`).
+        for r in Lean.auxFamilySiblings env.constants n do refs := refs.insert r
         match ci with
+        -- A definition's `all` (its `mutual` siblings) is metadata the
+        -- compiled entry names, and meta kernel ingress resolves each name
+        -- through `named`: the sibling must be in the closure even when the
+        -- value does not mention it (structural, well-founded and `partial`
+        -- mutual definitions go through auxiliaries).
         | .defnInfo v =>
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+          for mutName in v.all do refs := refs.insert mutName
         | .thmInfo v =>
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+          for mutName in v.all do refs := refs.insert mutName
         | .opaqueInfo v =>
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+          for mutName in v.all do refs := refs.insert mutName
         | .inductInfo v =>
           for ctorName in v.ctors do
             refs := refs.insert ctorName

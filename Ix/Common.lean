@@ -1,4 +1,5 @@
 module
+public import Ix.Ixon.Types.Kinds
 public import Lean.Data.Name
 public import Lean.Expr
 public import Lean.Declaration
@@ -115,25 +116,6 @@ def Nat.toBytesLE (x: Nat) : Array UInt8 :=
 def Nat.fromBytesLE (xs: Array UInt8) : Nat :=
   (xs.toList.zipIdx 0).foldl (fun acc (b, i) => acc + (UInt8.toNat b) * 256 ^ i) 0
 
-/-- Distinguish different kinds of Ix definitions --/
-inductive Ix.DefKind where
-| defn : Ix.DefKind
-| opaq : Ix.DefKind
-| thm : Ix.DefKind
-deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
-
-inductive Ix.DefinitionSafety where
-  | unsaf : Ix.DefinitionSafety
-  | safe : Ix.DefinitionSafety
-  | part : Ix.DefinitionSafety
-  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
-
-inductive Ix.QuotKind where
-  | type : Ix.QuotKind
-  | ctor : Ix.QuotKind
-  | lift : Ix.QuotKind
-  | ind : Ix.QuotKind
-  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
 
 namespace List
 
@@ -355,9 +337,60 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
 abbrev ConstList := List (Lean.Name × Lean.ConstantInfo)
 private abbrev CollectM := StateM Lean.NameHashSet
 
+/-- The other members of `name`'s auxiliary FAMILY, when `name` is one:
+    `X.rec`/`.casesOn`/`.recOn`/`.below`/`.brecOn` (and `.brecOn.go`,
+    `.brecOn.eq`) of an inductive `X`, or a nested auxiliary's
+    `<all0>.rec_N`/`.below_N`/`.brecOn_N[.go|.eq]`. The members are the same
+    suffix for every inductive in `X.all` plus, for `rec`/`below`/`brecOn`,
+    every `<all0>.<suffix>_N`; only names in `consts` are returned.
+
+    The compiler builds each family as ONE Ixon block (docs/ix_canonicity.md
+    §6.0), so a dependency closure that holds one member must hold them all,
+    and their dependencies: otherwise the block, and the address of every
+    member, depends on the closure (a nested block's `T.brecOn.eq` shares a
+    block with `T.brecOn_1.eq`, which needs `List.casesOn`). A family of a
+    single (non-mutual, non-nested) inductive has no other member. A Prop
+    `.below` is itself an inductive, so `X.below.casesOn` gets the other
+    `.below.casesOn`s through the same rule. -/
+def auxFamilySiblings (consts : Lean.ConstMap) (name : Lean.Name) :
+    List Lean.Name := Id.run do
+  let isBrecOnBase : Lean.Name → Bool
+    | .str _ s => s == "brecOn" || s.startsWith "brecOn_"
+    | _ => false
+  let (base, sub) : Lean.Name × Option String := match name with
+    | .str p s =>
+      if (s == "go" || s == "eq") && isBrecOnBase p then (p, some s)
+      else (name, none)
+    | _ => (name, none)
+  let .str owner last := base | return []
+  let family : Option String :=
+    if ["rec", "casesOn", "recOn", "below", "brecOn"].contains last then
+      some last
+    else
+      ["rec", "below", "brecOn"].find? fun fam =>
+        let rest := last.toList.drop (fam.length + 1)
+        last.startsWith (fam ++ "_") && !rest.isEmpty && rest.all Char.isDigit
+  let some fam := family | return []
+  if sub.isSome && fam != "brecOn" then return []
+  let some (.inductInfo v) := consts.find? owner | return []
+  let withSub (n : Lean.Name) : Lean.Name := match sub with
+    | some t => .str n t
+    | none => n
+  let mut out : List Lean.Name :=
+    v.all.map fun m => withSub (.str m fam)
+  if ["rec", "below", "brecOn"].contains fam then
+    if let some all0 := v.all.head? then
+      let mut i := 1
+      while consts.contains (.str all0 s!"rec_{i}") do
+        out := withSub (.str all0 s!"{fam}_{i}") :: out
+        i := i + 1
+  return out.filter fun n => n != name && consts.contains n
+
 private partial def collectDependenciesAux (const : Lean.ConstantInfo)
     (consts : Lean.ConstMap) (acc : ConstList) : CollectM ConstList := do
   modify (·.insert const.name)
+  -- An auxiliary's family is one compiled block: pull its other members.
+  let acc ← collectNames (auxFamilySiblings consts const.name) acc
   match const with
   | .ctorInfo val =>
     let acc ← collectNames [val.induct] acc

@@ -404,10 +404,13 @@ def modeTests : TestSeq :=
 
 /-! ### Universe-level canonicalization (canonicity §10.6, `Ix.IxonUniv`)
 
-P1/P2/P3/P6 + class stability, swept exhaustively over every ≤6-node
-term with 3 params (the property-relevant shapes — nested imax at depth
-≥ 3 — sit outside `genUniv`'s shallow-resized sampling; every
-linearizer bug found during development lived there), plus:
+P0 (value preservation), P1/P2/P3/P6 + class stability, swept
+exhaustively over every ≤6-node term with 3 params (the
+property-relevant shapes — nested imax at depth ≥ 3 — sit outside
+`genUniv`'s shallow-resized sampling; every linearizer bug found during
+development lived there), on the value-change witness family, and on
+the kernel level comparison's biased random levels (where P1/P2/class/P6
+are conditional on slip-free normal forms, `normHasSlip`), plus:
 
 - P4 against the kernel's own Géran machinery (`Level.normalizeLevel`
   on the mk*-rebuilt `KUniv`s), modulo subsumption's empty-entry
@@ -423,7 +426,8 @@ def strippedKernelNorm (u : AU) : List (Level.Path × Level.NormNode) :=
     !(n.constant == 0 && n.vars.isEmpty)
 
 def canonUnivSweep :
-    Bool × Bool × Bool × Bool × Bool × Bool := Id.run do
+    Bool × Bool × Bool × Bool × Bool × Bool × Bool := Id.run do
+  let mut p0 := true
   let mut p1 := true
   let mut p2 := true
   let mut p3 := true
@@ -433,6 +437,7 @@ def canonUnivSweep :
   for u in Tests.Gen.Ixon.enumerateUniv 6 do
     let c := Ixon.canonUniv u
     let n := Ixon.CanonUniv.normalize u
+    p0 := p0 && (Tests.Gen.Ixon.univDifferAt? 3 u c).isNone
     p1 := p1 && (Ixon.canonUniv c == c)
     p2 := p2 && Ixon.CanonUniv.normEqSemantic
       (Ixon.CanonUniv.normalize (Ixon.CanonUniv.linearize n)) n
@@ -442,7 +447,102 @@ def canonUnivSweep :
         == strippedKernelNorm (ixonUnivToK c))
     p6 := p6 && (Ixon.canonUniv (Ixon.reduceUniv u) == c)
     agree := agree && (Ixon.reduceUniv u == reduceIxonUniv u)
-  return (p1, p2, p3, p4, p6, agree)
+  return (p0, p1, p2, p3, p4, p6, agree)
+
+/-- Does `subsumption` leave a sublevel that a single other sublevel
+    dominates (`canon_univ.rs::tests::has_slip`)? A constant `c@P` is
+    dominated by a constant `≥ c` at a strict sub-path, or by an atom
+    `(y, k)` with `k + 1 ≥ c` at a sub-path; an atom `(x, k)@P` by an
+    atom `(x, ≥ k)` at a strict sub-path. `subsumption` mirrors the
+    kernels' normalizers, which test a constant against its own node's
+    vars instead of the dominator's (`max (v+1) (imax (imax 2 u) v)`
+    keeps the constant `2` at `[u, v]`). Only such leftovers make equal
+    levels' normal forms differ, so a slip-free normal form is the
+    unique one of its class. -/
+def normHasSlip (n : Ixon.CanonUniv.CNorm) : Bool :=
+  let es := n.toList
+  es.any fun (p, node) =>
+    let c := node.constant
+    let constDominated := c > 0 && es.any fun (q, m) =>
+      Ixon.CanonUniv.isSubset q p
+        && ((q.length < p.length && m.constant ≥ c)
+          || m.vars.any (fun v => v.2 + 1 ≥ c))
+    let varDominated := node.vars.any fun (x, k) => es.any fun (q, m) =>
+      q.length < p.length && Ixon.CanonUniv.isSubset q p
+        && m.vars.any (fun (y, k2) => y == x && k2 ≥ k)
+    constDominated || varDominated
+
+/-- Failures and slip-skipped draws of `checkCanon`. -/
+structure CanonCheck where
+  failures : Array String := #[]
+  slips : Nat := 0
+  count : Nat := 0
+
+/-- P0–P4, P6 and class stability of one level over params `0..params`
+    (`canon_univ.rs::tests::check_canon`, plus the kernel-oracle P4).
+    P0 and P3 are checked unconditionally. With `strict`, so are the
+    rest; otherwise P1, P2, P4 and class stability are checked when
+    neither `u`'s nor its canonical form's normal form has a
+    subsumption leftover (`normHasSlip`), and P6 when neither `u`'s nor
+    `reduceUniv u`'s has. -/
+def checkCanon (params : Nat) (strict : Bool) (acc : CanonCheck)
+    (u : Ixon.Univ) : CanonCheck := Id.run do
+  let mut acc := { acc with count := acc.count + 1 }
+  let fail (acc : CanonCheck) (msg : String) : CanonCheck :=
+    { acc with failures := acc.failures.push msg }
+  let n := Ixon.CanonUniv.normalize u
+  let c := Ixon.canonUniv u
+  if let some vals := Tests.Gen.Ixon.univDifferAt? params u c then
+    acc := fail acc s!"P0 {repr u} ↦ {repr c} at {vals}"
+  if Ixon.reduceUniv c != c then
+    acc := fail acc s!"P3 {repr u} ↦ {repr c}"
+  let nc := Ixon.CanonUniv.normalize c
+  if strict || !(normHasSlip n || normHasSlip nc) then
+    if Ixon.canonUniv c != c then
+      acc := fail acc s!"P1 {repr u} ↦ {repr c}"
+    if !Ixon.CanonUniv.normEqSemantic (Ixon.CanonUniv.normalize (Ixon.CanonUniv.linearize n)) n then
+      acc := fail acc s!"P2 {repr u}"
+    if !Ixon.CanonUniv.normEqSemantic nc n then
+      acc := fail acc s!"CLASS {repr u} ↦ {repr c}"
+    if strippedKernelNorm (ixonUnivToK u) != strippedKernelNorm (ixonUnivToK c) then
+      acc := fail acc s!"P4 {repr u} ↦ {repr c}"
+  else
+    acc := { acc with slips := acc.slips + 1 }
+  let r := Ixon.reduceUniv u
+  if (strict || !(normHasSlip n || normHasSlip (Ixon.CanonUniv.normalize r)))
+      && Ixon.canonUniv r != c then
+    acc := fail acc s!"P6 {repr u} ↦ {repr c}"
+  return acc
+
+/-- A `checkCanon` run as a test: no failures (the first three shown). -/
+def canonCheckTest (name : String) (r : CanonCheck) : TestSeq :=
+  test s!"{name} ({r.count} levels, {r.slips} slip-skipped){
+    if r.failures.isEmpty then "" else s!": {r.failures.toList.take 3}"}"
+    r.failures.isEmpty
+
+/-- P0 on the smallest value-change witness and its family (strict),
+    with the witness's representative pinned (`canon_univ.rs::tests::p0_witness`
+    pins the same term), and on the biased random family. -/
+def canonUnivValueTests : TestSeq :=
+  let (u, v, w) : Ixon.Univ × Ixon.Univ × Ixon.Univ := (.var 0, .var 1, .var 2)
+  let l : Ixon.Univ := .imax (.imax (.succ (.imax u w)) u) v
+  let σ : Nat → Nat := fun i => [0, 1, 2].getD i 0
+  let witness := Tests.Gen.Ixon.univWitnessFamily.foldl (checkCanon 4 true) {}
+  let random :=
+    (Tests.Gen.Ixon.biasedUnivFamily 3 10 4000 41).foldl (checkCanon 3 false) {}
+  let random4 :=
+    (Tests.Gen.Ixon.biasedUnivFamily 4 12 1000 43).foldl (checkCanon 4 false) {}
+  test "canonUniv P0: imax (imax (imax u w + 1) u) v keeps its value 1 at (0, 1, 2)"
+    (Tests.Gen.Ixon.univEval σ l == 1 && Tests.Gen.Ixon.univEval σ (Ixon.canonUniv l) == 1)
+  ++ test "canonUniv: the witness's representative is pinned (Rust pins the same)"
+    (Ixon.canonUniv l == .max (.imax (.imax (.succ w) u) v)
+      (.imax (.imax (.imax (.succ u) w) u) v))
+  ++ canonCheckTest "canonUniv P0–P6: the witness family" witness
+  ++ canonCheckTest "canonUniv P0–P6: biased random, 3 params" random
+  ++ canonCheckTest "canonUniv P0–P6: biased random, 4 params" random4
+  -- The slip is rare; a jump here means the normal forms changed.
+  ++ test "canonUniv: subsumption slips stay rare (< 1 in 200)"
+    ((random.slips + random4.slips) * 200 < random.count + random4.count)
 
 def canonUnivVectors : TestSeq :=
   let v : UInt64 → Ixon.Univ := .var
@@ -470,8 +570,10 @@ def canonUnivVectors : TestSeq :=
       && Ixon.reduceUniv (.imax (s z) (v 0)) == v 0)
 
 def canonUnivTests : TestSeq :=
-  let (p1, p2, p3, p4, p6, agree) := canonUnivSweep
+  let (p0, p1, p2, p3, p4, p6, agree) := canonUnivSweep
   canonUnivVectors
+  ++ canonUnivValueTests
+  ++ test "canonUniv P0: value-preserving (exhaustive ≤6)" p0
   ++ test "canonUniv P1: idempotent (exhaustive ≤6)" p1
   ++ test "canonUniv P2: linearize∘normalize fixpoint (exhaustive ≤6)" p2
   ++ test "canonUniv P3: canonical forms are mk* fixpoints (exhaustive ≤6)"

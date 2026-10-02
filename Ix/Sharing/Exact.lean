@@ -29,11 +29,11 @@
   success into `resourceExhausted`, but never change a successful result.
 
   Modules. A specification module defines what the theorems
-  (`Ix.Compile.Verify`) describe; a fast twin holds a faster body proved equal
+  (`Ix.Sharing.Verify`) describe; a fast twin holds a faster body proved equal
   to a specification for every input by a `@[csimp]` theorem `@f = @fFast`,
   so compiled code runs the twin while every theorem keeps talking about the
   specification. All 19 csimp theorems are audit roots
-  (`Ix.Compile.Verify.Audit.CompiledCode` fails the build otherwise), and a
+  (`Ix.Sharing.Verify.Audit.CompiledCode` fails the build otherwise), and a
   twin that drifts from its specification breaks its equality proof.
 
   Specifications (with the csimp theorems declared in the same module):

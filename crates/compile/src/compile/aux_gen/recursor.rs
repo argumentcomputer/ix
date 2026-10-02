@@ -2742,7 +2742,7 @@ fn ingress_type_stub(
 /// subterms are walked once (DAG cost) instead of once per occurrence
 /// (unshared-tree cost — exponential on the eta-expanded structure
 /// types this pass sees constantly).
-fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
+pub(crate) fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
   let mut visited: rustc_hash::FxHashSet<&LeanExpr> =
     rustc_hash::FxHashSet::default();
   let mut stack: Vec<&LeanExpr> = vec![expr];
@@ -4545,6 +4545,246 @@ mod tests {
       brecon[0].level_params.is_empty(),
       "Prop brecOn for parameterless inductive should have no level params"
     );
+  }
+
+  /// A Prop inductive nested through a Prop inductive:
+  /// `Box (p : Prop) : Prop | mk : p → Box p`,
+  /// `W : Prop | base : W | node : Box W → W`, with Lean's recursors
+  /// `W.rec` / `W.rec_1` (two motives: `W`, and the auxiliary `Box W`).
+  fn build_prop_nested_env() -> (LeanEnv, Name, Vec<(Name, RecursorVal)>) {
+    let mut env = LeanEnv::default();
+    let bx = n("Box");
+    let w = n("W");
+    let bx_mk = Name::str(bx.clone(), "mk".into());
+    let w_base = Name::str(w.clone(), "base".into());
+    let w_node = Name::str(w.clone(), "node".into());
+    let prop = LeanExpr::sort(Level::zero());
+    let bv = |i: u64| LeanExpr::bvar(Nat::from(i));
+    let w_c = LeanExpr::cnst(w.clone(), vec![]);
+    let box_w = LeanExpr::app(LeanExpr::cnst(bx.clone(), vec![]), w_c.clone());
+    for (name, typ, ctors, params, nested) in [
+      (
+        &bx,
+        epi(n("p"), prop.clone(), prop.clone()),
+        vec![bx_mk.clone()],
+        1u64,
+        0u64,
+      ),
+      (&w, prop.clone(), vec![w_base.clone(), w_node.clone()], 0, 1),
+    ] {
+      env.insert(
+        name.clone(),
+        ConstantInfo::InductInfo(InductiveVal {
+          cnst: ConstantVal { name: name.clone(), level_params: vec![], typ },
+          num_params: Nat::from(params),
+          num_indices: Nat::from(0u64),
+          all: vec![name.clone()],
+          ctors,
+          num_nested: Nat::from(nested),
+          is_rec: nested != 0,
+          is_unsafe: false,
+          is_reflexive: false,
+        }),
+      );
+    }
+    // Box.mk : ∀ {p : Prop} (h : p), Box p
+    let bx_mk_ty = LeanExpr::all(
+      n("p"),
+      prop.clone(),
+      epi(
+        n("h"),
+        bv(0),
+        LeanExpr::app(LeanExpr::cnst(bx.clone(), vec![]), bv(1)),
+      ),
+      BinderInfo::Implicit,
+    );
+    for (name, typ, induct, cidx, params, fields) in [
+      (&bx_mk, bx_mk_ty, &bx, 0u64, 1u64, 1u64),
+      (&w_base, w_c.clone(), &w, 0, 0, 0),
+      (&w_node, epi(n("a"), box_w.clone(), w_c.clone()), &w, 1, 0, 1),
+    ] {
+      env.insert(
+        name.clone(),
+        ConstantInfo::CtorInfo(ConstructorVal {
+          cnst: ConstantVal { name: name.clone(), level_params: vec![], typ },
+          induct: induct.clone(),
+          cidx: Nat::from(cidx),
+          num_params: Nat::from(params),
+          num_fields: Nat::from(fields),
+          is_unsafe: false,
+        }),
+      );
+    }
+    // ∀ {motive_1 : W → Prop} {motive_2 : Box W → Prop}
+    //   (base : motive_1 W.base)
+    //   (node : ∀ (a : Box W), motive_2 a → motive_1 (W.node a))
+    //   (mk : ∀ (a : W), motive_1 a → motive_2 (@Box.mk W a))
+    //   (t : <major>), <motive> t
+    let rec_ty = |major: LeanExpr, motive: u64| {
+      let imp = |nm: &str, d: LeanExpr, b: LeanExpr| {
+        LeanExpr::all(n(nm), d, b, BinderInfo::Implicit)
+      };
+      imp(
+        "motive_1",
+        epi(n("t"), w_c.clone(), prop.clone()),
+        imp(
+          "motive_2",
+          epi(n("t"), box_w.clone(), prop.clone()),
+          epi(
+            n("base"),
+            LeanExpr::app(bv(1), LeanExpr::cnst(w_base.clone(), vec![])),
+            epi(
+              n("node"),
+              epi(
+                n("a"),
+                box_w.clone(),
+                epi(
+                  n("a_ih"),
+                  LeanExpr::app(bv(2), bv(0)),
+                  LeanExpr::app(
+                    bv(4),
+                    LeanExpr::app(
+                      LeanExpr::cnst(w_node.clone(), vec![]),
+                      bv(1),
+                    ),
+                  ),
+                ),
+              ),
+              epi(
+                n("mk"),
+                epi(
+                  n("a"),
+                  w_c.clone(),
+                  epi(
+                    n("a_ih"),
+                    LeanExpr::app(bv(4), bv(0)),
+                    LeanExpr::app(
+                      bv(4),
+                      LeanExpr::app(
+                        LeanExpr::app(
+                          LeanExpr::cnst(bx_mk.clone(), vec![]),
+                          w_c.clone(),
+                        ),
+                        bv(1),
+                      ),
+                    ),
+                  ),
+                ),
+                epi(n("t"), major, LeanExpr::app(bv(5 - motive), bv(0))),
+              ),
+            ),
+          ),
+        ),
+      )
+    };
+    let mk_rec = |name: Name, major: LeanExpr, motive: u64, ctors: &[&Name]| {
+      let rv = RecursorVal {
+        cnst: ConstantVal {
+          name: name.clone(),
+          level_params: vec![],
+          typ: rec_ty(major, motive),
+        },
+        all: vec![w.clone()],
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        num_motives: Nat::from(2u64),
+        num_minors: Nat::from(3u64),
+        rules: ctors
+          .iter()
+          .map(|c| RecursorRule {
+            ctor: (*c).clone(),
+            n_fields: Nat::from(1u64),
+            rhs: prop.clone(),
+          })
+          .collect(),
+        k: false,
+        is_unsafe: false,
+      };
+      (name, rv)
+    };
+    let recs = vec![
+      mk_rec(
+        Name::str(w.clone(), "rec".into()),
+        w_c.clone(),
+        0,
+        &[&w_base, &w_node],
+      ),
+      mk_rec(Name::str(w.clone(), "rec_1".into()), box_w.clone(), 1, &[&bx_mk]),
+    ];
+    for (name, rv) in &recs {
+      env.insert(name.clone(), ConstantInfo::RecInfo(rv.clone()));
+    }
+    (env, w, recs)
+  }
+
+  /// A Prop-level block with a nested auxiliary: Lean's `IndPredBelow`
+  /// declares one `.below` inductive and one `.brecOn` theorem per motive
+  /// (`W.below`, `W.below_1`; `W.brecOn`, `W.brecOn_1`), each `.brecOn`
+  /// taking one `F` per motive. `.brecOn` generation used to index the
+  /// classes' `.below` names by motive number (index out of bounds).
+  #[test]
+  fn test_prop_nested_below_brecon_family() {
+    use crate::compile::aux_gen::below::generate_below_constants;
+    use crate::compile::aux_gen::brecon::generate_brecon_constants_with;
+
+    let (env, w, recs) = build_prop_nested_env();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
+    let classes = vec![vec![w]];
+
+    let below =
+      generate_below_constants(&classes, &recs, &env, true, &stt, &mut kctx)
+        .unwrap();
+    let summary: Vec<(String, Vec<(String, usize)>)> = below
+      .iter()
+      .map(|bc| match bc {
+        BelowConstant::Indc(i) => (
+          i.name.pretty(),
+          i.ctors.iter().map(|c| (c.name.pretty(), c.n_fields)).collect(),
+        ),
+        BelowConstant::Def(d) => {
+          panic!("Prop .below {} is a definition", d.name.pretty())
+        },
+      })
+      .collect();
+    assert_eq!(
+      summary,
+      vec![
+        (
+          "W.below".to_string(),
+          vec![
+            ("W.below.base".to_string(), 0),
+            ("W.below.node".to_string(), 3)
+          ],
+        ),
+        ("W.below_1".to_string(), vec![("W.below_1.mk".to_string(), 3)]),
+      ],
+      "one .below per motive; a .below proof before each induction hypothesis",
+    );
+    // `W.below.node : ∀ {m1 m2} (a : Box W), W.below_1 m1 m2 a → m2 a → W.below m1 m2 (W.node a)`
+    let BelowConstant::Indc(w_below) = &below[0] else { unreachable!() };
+    let node_ty = w_below.ctors[1].typ.pretty();
+    assert!(node_ty.contains("W.below_1"), "W.below.node: {node_ty}");
+
+    // The compile path's family emission (`all_aux`): the auxiliary's
+    // `.brecOn_1` whether or not the environment holds its name.
+    let brecon = generate_brecon_constants_with(
+      &classes, &recs, &below, &env, true, true, &stt, &mut kctx,
+    )
+    .unwrap();
+    let names: Vec<String> = brecon.iter().map(|d| d.name.pretty()).collect();
+    assert_eq!(names, vec!["W.brecOn", "W.brecOn_1"]);
+    for d in &brecon {
+      assert!(d.is_prop);
+      // ∀ {motive_1 motive_2} (t) (F_1 F_2), motive t
+      assert_eq!(
+        super::super::expr_utils::count_foralls(&d.typ),
+        5,
+        "{}: {}",
+        d.name.pretty(),
+        d.typ.pretty()
+      );
+    }
   }
 
   /// Non-recursive inductives should NOT generate brecOn.
