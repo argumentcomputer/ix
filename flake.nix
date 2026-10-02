@@ -157,46 +157,43 @@
             };
           # Build dependencies once with every host feature enabled so the
           # `net` stack (tokio/iroh) is compiled and cached here, then shared
-          # by the package builds and clippy. CUDA remains opt-in and is
-          # compiled separately in CI with the CUDA toolkit available.
+          # by the package builds, clippy, and nextest. CUDA remains opt-in
+          # and is compiled separately in CI with the CUDA toolkit available.
           cargoArtifacts = craneLib.buildDepsOnly (
             craneArgs
             // {
               cargoExtraArgs = "--locked --features parallel,test-ffi,net";
             }
           );
+          # Every build below enables the same features as `cargoArtifacts`,
+          # except that `test-ffi` is left to the test library. Cargo unifies
+          # features across the whole graph, so dropping `net` would change
+          # the feature sets of serde, libc, and other base crates and make
+          # cargo recompile them and everything above them, discarding the
+          # prebuilt artifacts. `test-ffi` declares no dependencies, so
+          # toggling it leaves the dependency graph untouched. The lakefile's
+          # `ix_rs_net` target skips `net` on macOS, mirrored here.
+          hostFeatures = "parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
 
-          # Test build: parallel + test-ffi (only used by ixTest).
+          # Static library for the Lean library and every executable but the
+          # test binary; `net` carries the `ix serve` / `ix connect` iroh stack.
           # doCheck = false: the `nextest` check is the single place cargo
           # tests run, so package builds only compile.
+          rustPkg = craneLib.buildPackage (
+            craneArgs
+            // {
+              inherit cargoArtifacts;
+              cargoExtraArgs = "--locked --features ${hostFeatures}";
+              doCheck = false;
+            }
+          );
+
+          # Test build adds the test-only FFI symbols (only used by ixTest).
           rustPkgTest = craneLib.buildPackage (
             craneArgs
             // {
               inherit cargoArtifacts;
-              cargoExtraArgs = "--locked --features parallel,test-ffi";
-              doCheck = false;
-            }
-          );
-
-          # Release build without test-ffi (for distribution)
-          rustPkgRelease = craneLib.buildPackage (
-            craneArgs
-            // {
-              inherit cargoArtifacts;
-              cargoExtraArgs = "--locked --features parallel";
-              doCheck = false;
-            }
-          );
-
-          # Net build for the `ix` CLI (`ix serve` / `ix connect` iroh stack),
-          # mirroring the lakefile's `ix_rs_net` target, which skips `net` on
-          # macOS.
-          rustPkgNet = craneLib.buildPackage (
-            craneArgs
-            // {
-              inherit cargoArtifacts;
-              cargoExtraArgs =
-                "--locked --features parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
+              cargoExtraArgs = "--locked --features ${hostFeatures},test-ffi";
               doCheck = false;
             }
           );
@@ -261,10 +258,7 @@
             ];
           };
 
-          # Release build args (no test-ffi symbols)
-          lakeBuildArgs = mkLakeBuildArgs rustPkgRelease;
-          # CLI build args (net symbols for `ix serve` / `ix connect`)
-          lakeNetBuildArgs = mkLakeBuildArgs rustPkgNet;
+          lakeBuildArgs = mkLakeBuildArgs rustPkg;
           # Test build args (includes test-ffi symbols)
           lakeTestBuildArgs = mkLakeBuildArgs rustPkgTest;
 
@@ -294,19 +288,16 @@
                   --set LEAN_PATH "${drv}/.lake/build/lib/lean:${leanPath}"
               done
             '';
-          # The CLI links rustPkgNet (lakefile: `ix` uses `ix_rs_net`), reusing
-          # ixLib's oleans.
+          # The CLI reuses ixLib's oleans and links the same static library.
           ixCLI = wrapBin (
             lake2nix.mkPackage (
-              lakeNetBuildArgs
+              lakeBinArgs
               // {
-                lakeArtifacts = ixLib;
-                installArtifacts = true;
                 name = "ix";
               }
             )
           );
-          # Test binary links rustPkg (with test-ffi) instead of rustPkgRelease
+          # Test binary links rustPkgTest (with test-ffi) instead of rustPkg
           ixTest = wrapBin (
             lake2nix.mkPackage (
               lakeTestBuildArgs
@@ -338,7 +329,7 @@
               craneArgs
               // {
                 inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --workspace";
+                cargoExtraArgs = "--locked --workspace --features ${hostFeatures},test-ffi";
                 cargoNextestExtraArgs = "--profile ci --run-ignored only";
               }
             );
@@ -362,7 +353,7 @@
               craneArgs
               // {
                 inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --workspace";
+                cargoExtraArgs = "--locked --workspace --features ${hostFeatures},test-ffi";
                 cargoNextestExtraArgs = "--profile ci";
               }
             );
