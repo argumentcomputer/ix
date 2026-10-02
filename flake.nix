@@ -269,11 +269,30 @@
               buildLibrary = true;
             }
           );
-          lakeBinArgs = lakeBuildArgs // {
+          # Executables continue from ixLib's artifacts and install only the
+          # binaries plus the module files the wrapper puts on LEAN_PATH, which
+          # binaries that import Ix.Meta read at runtime. The rest of Lake's
+          # tree (static libraries, C output, IR, traces) only serves a build
+          # that continues from these artifacts, and nothing continues from an
+          # executable; it would multiply the output size several times over
+          # and put every file through the ELF fixup.
+          exeArtifacts = {
             lakeArtifacts = ixLib;
-            # Binaries that import Ix.Meta need .olean files at runtime via LEAN_PATH
-            installArtifacts = true;
+            installArtifacts = false;
+            postInstall = ''
+              mkdir -p $out/.lake/build/lib/lean
+              rsync -a --prune-empty-dirs \
+                --include='*/' \
+                --include='*.olean' \
+                --include='*.olean.private' \
+                --include='*.olean.server' \
+                --exclude='*' \
+                .lake/build/lib/lean/ $out/.lake/build/lib/lean/
+              find .lake/build/bin -maxdepth 1 -type f -executable \
+                -exec install -Dm755 -t $out/bin {} +
+            '';
           };
+          lakeBinArgs = lakeBuildArgs // exeArtifacts;
           leanPath = pkgs.lib.concatStringsSep ":" (
             map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
           );
@@ -301,10 +320,9 @@
           ixTest = wrapBin (
             lake2nix.mkPackage (
               lakeTestBuildArgs
+              // exeArtifacts
               // {
-                lakeArtifacts = ixLib;
                 name = "IxTests";
-                installArtifacts = true;
               }
             )
           );
@@ -313,7 +331,6 @@
               lakeBinArgs
               // {
                 name = "Apps.ZKVoting.Prover";
-                installArtifacts = true;
               }
             )
           );
