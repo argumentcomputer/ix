@@ -274,17 +274,10 @@
           );
           # Executables continue from ixLib's artifacts. lean4-nix installs
           # them wrapped for standalone use, with the module files that
-          # binaries importing Ix.Meta read at runtime. The IR files are left
-          # out: every module these binaries can import is linked into them,
-          # so the interpreter never needs IR for it.
+          # binaries importing Ix.Meta read at runtime.
           exeArgs = {
             lakeArtifacts = ixLib;
             installBin = true;
-            binFiles = [
-              "*.olean"
-              "*.olean.private"
-              "*.olean.server"
-            ];
           };
           lakeBinArgs = lakeBuildArgs // exeArgs;
           # The CLI reuses ixLib's oleans and links the same static library.
