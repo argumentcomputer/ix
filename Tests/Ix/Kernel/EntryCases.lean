@@ -342,8 +342,48 @@ def runStep (leanEnv : Lean.Environment) (test : StepCase) : IO Bool := do
     IO.eprintln s!"{test.label}: expected {test.outcome}, got {row.map (·.outcome)}: {row.map (·.reason)}"
   return passed
 
-def main : IO UInt32 := do
+/-! ## Producing the records of `Tests.Ix.Kernel.Reader`
+
+`kernel-entry-cases --records <case>` prints the records a case submits, as
+the `(address, canonical record bytes)` list of hex strings that
+`Tests/Ix/Kernel/Reader.lean` freezes (`lTreeRecords` is
+`--records nested-through-nested`, `levelRecords` is
+`--records level-comparison`), and runs no case. The prelude's own records
+(here `Eq`, `Eq.rec` and their projections, which a case submits when its
+closure reaches them) are left out: the entry supplies them, and the frozen
+lists hold only the case's own records. -/
+
+def hex (bytes : ByteArray) : String :=
+  bytes.foldl (init := "") fun acc b =>
+    let digit (n : UInt8) : Char := "0123456789abcdef".toList[n.toNat]!
+    acc.push (digit (b / 16)) |>.push (digit (b % 16))
+
+/-- `s` in pieces of at most `n` characters. -/
+partial def chunks (n : Nat) (s : String) : List String :=
+  if s.length ≤ n then [s] else (s.take n).toString :: chunks n (s.drop n).toString
+
+def recordsSource (submission : Submission) : String :=
+  let entry (address : Address) (bytes : ByteArray) : String :=
+    let pieces := (chunks 72 (hex bytes)).map fun piece => s!"\"{piece}\""
+    s!"  (\"{hex address.hash}\",\n    " ++ " ++\n    ".intercalate pieces ++ ")"
+  "[\n" ++ ",\n".intercalate (submission.records.map fun (a, b) => entry a b) ++ "]"
+
+def main (args : List String) : IO UInt32 := do
   let leanEnv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
+  if let ["--records", label] := args then
+    let some test := cases.find? (·.label == label)
+      | IO.eprintln s!"no case {label}"; return 2
+    let input ← prepare leanEnv test.seeds
+    let pre ← IO.ofExcept builtinPrelude
+    let submission ← IO.ofExcept (test.alter input)
+    let own := submission.records.filter fun (a, _) => !pre.records.any (·.1 == a)
+    IO.println (recordsSource { submission with records := own })
+    -- which compiled name each record holds, for the hand-written addresses
+    -- beside the list (`lTreeBlock`, `levelTheorem`, ...)
+    for (n, _) in ← IO.ofExcept (closure leanEnv test.seeds) do
+      if let some a := input.named n then
+        if own.any (·.1 == a) then IO.println s!"-- {n} {hex a.hash}"
+    return 0
   let mut failed := 0
   for test in cases do
     let passed ← try run leanEnv test catch e => do
@@ -361,4 +401,4 @@ def main : IO UInt32 := do
 
 end Tests.Ix.Kernel.EntryCases
 
-def main : IO UInt32 := Tests.Ix.Kernel.EntryCases.main
+def main (args : List String) : IO UInt32 := Tests.Ix.Kernel.EntryCases.main args
