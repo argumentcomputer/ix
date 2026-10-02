@@ -308,13 +308,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             -- Exact pin, same convention as `kernelCheckEntries`
             -- (`.round.toUInt64.toNat`): any cost shift must be an
             -- explicit, reviewed bump.
-            -- PROVISIONAL: sharing's v4 × Lean 4.33.1 pin; re-pinned for
-            -- v4 × 4.34.0 by the regeneration package (D).
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_236_673_618, got {actual}"
-              (actual = 6_236_673_618))
+              s!"Shard pipeline FFT matches: expected 6_233_496_998, got {actual}"
+              (actual = 6_233_496_998))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) []),
