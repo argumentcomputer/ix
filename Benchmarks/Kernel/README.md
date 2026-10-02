@@ -83,7 +83,7 @@ coverage is flagged next to the wall-time ratio.
 Measured on an AWS r8i.16xlarge (Intel Xeon 6975P-C, 32 cores, 64 threads),
 one process at a time on an otherwise idle machine, each started with the
 1-minute load below 1, under `CHECK_IXE_WATCH_MB=60000`; one-core runs are
-pinned with `taskset -c 6`. Lean 4.34.0.
+pinned with `taskset -c 6`. Lean 4.34.0, Ixon v4.
 
 Init+Std (`initstd.ixe`, 97,877 constants):
 
@@ -95,8 +95,8 @@ Init+Std (`initstd.ixe`, 97,877 constants):
 
 | Load | Wall | Peak RSS | Check (summed over accepts) | Reading |
 | --- | ---: | ---: | ---: | ---: |
-| streaming (default) | 1 min 32.7 s | 1.53 GB | 76.1 s | 7.0 s |
-| `--load eager` | 1 min 38.7 s | 3.93 GB | 75.4 s | 3.6 s |
+| streaming (default) | 1 min 39.7 s | 1.52 GB | 75.4 s | 11.0 s |
+| `--load eager` | 1 min 54.8 s | 3.60 GB | 74.6 s | 3.3 s |
 
 On the same machine, upstream con-leche (`ae0c0c4e`, Lean 4.33.0) takes
 88.0 s of install plus check at one worker (90.2 s wall) on a lean4export of
@@ -109,8 +109,8 @@ rejected, 0 blocked, with the same rows in every mode below.
 
 | Load | Wall | Peak RSS | Load phase | Check (summed over accepts) | Reading |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| streaming (default) | 18 min 3.4 s | 15.2 GB | 61.2 s | 896.7 s | 86.2 s |
-| `--load eager` | 18 min 56.6 s | 38.8 GB | 198.0 s | 850.8 s | 39.7 s |
+| streaming (default) | 19 min 3.5 s | 14.7 GB | 98.1 s | 887.3 s | 119.0 s |
+| `--load eager` | 20 min 58.7 s | 34.2 GB | 328.7 s | 844.8 s | 36.3 s |
 
 The eager load holds the decoded environment; the streaming load decodes a
 record at its turn (its reading time includes the decoding) and drops its
@@ -125,17 +125,17 @@ failures:
 
 | Workers | Phase B | Phase B speed-up | Wall | Wall speed-up | Peak RSS |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 943.1 s | 1.00× | 20 min 10.0 s | 1.00× | 15.5 GB |
-| 4 | 242.4 s | 3.89× | 8 min 28.2 s | 2.38× | 15.5 GB |
-| 8 | 122.1 s | 7.72× | 6 min 28.7 s | 3.11× | 15.6 GB |
-| 16 | 61.2 s | 15.4× | 5 min 27.7 s | 3.69× | 15.6 GB |
-| 32 | 32.6 s | 28.9× | 4 min 59.2 s | 4.04× | 16.0 GB |
+| 1 | 949.1 s | 1.00× | 21 min 25.0 s | 1.00× | 15.2 GB |
+| 4 | 241.8 s | 3.93× | 9 min 36.8 s | 2.23× | 15.3 GB |
+| 8 | 121.1 s | 7.84× | 7 min 35.8 s | 2.82× | 15.3 GB |
+| 16 | 60.9 s | 15.6× | 6 min 35.7 s | 3.25× | 15.4 GB |
+| 32 | 30.8 s | 30.8× | 6 min 6.7 s | 3.50× | 15.7 GB |
 
-Phase B's time summed over the workers grows from 942.3 s at one worker to
-987.6 s at 32. The sequential part bounds the wall time: the load (61 s),
-phase A's install (177–179 s, ending about 241 s after the start), marking
-the installed environment persistent (7.8 s), and the rows pass after phase
-B (about 17 s), about 266 s in all. At one worker the two phases are slower
+Phase B's time summed over the workers grows from 948.3 s at one worker to
+983.1 s at 32. The sequential part bounds the wall time: the load (98 s),
+phase A's install (208–210 s, ending about 310 s after the start), marking
+the installed environment persistent (7.6 s), and the rows pass after phase
+B (about 18 s), about 335 s in all. At one worker the two phases are slower
 than the per-record check.
 
 The certified entry `Ix.Kernel.Admission.checkBytes` is sequential.

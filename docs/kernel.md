@@ -632,8 +632,8 @@ its install plus its checks. Environment:
   the constant's address to `<output>.runaway` (with `--jobs`, every
   worker's check is watched). The resident size includes what the driver
   holds of the environment. Measured peaks: Init+Std 1.5 GB streaming and
-  3.9 GB with `--load eager`; Mathlib 15.2 GB streaming (16.0 GB with
-  `--jobs 32`) and 38.8 GB with `--load eager`
+  3.6 GB with `--load eager`; Mathlib 14.7 GB streaming (15.7 GB with
+  `--jobs 32`) and 34.2 GB with `--load eager`
   (`Benchmarks/Kernel/README.md`). `CHECK_IXE_WATCH_MB` must exceed the
   run's peak, or the watchdog fires before the check ends: the default
   covers every streaming run, including Mathlib's; an eager Mathlib run
