@@ -67,10 +67,13 @@ run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ixon.
 
 /- Measured independently before freezing. The certified entry adds
 projection reconstruction (pure BLAKE3) to the certified byte admission
-(`Ix.Kernel.Admission.Audit`), with the same ruled constructs. -/
+(`Ix.Kernel.Admission.Audit`), with the same ruled constructs and the same
+codec: projection records are written with Ixon v4's TagN writer
+(`Ixon.putTagN`, `tagNHeader`, `tagNEnd1..6`) and read with its reader
+(`getTagN`, `getTagNWide`, `getTagN0Values`). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5430 compiled functions; inherited externs 132, implemented_by 0,
+ Ixon.Projection.checkBytes]: 5416 compiled functions; inherited externs 130, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

@@ -52,8 +52,10 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel.Admission.Theorems] Ix.Kernel.
 #guard !Ix.Kernel.Audit.allowed Ixon.Audit.dataImports `Ix.Kernel.Admission
 
 /- Measured independently before freezing. The certified entry reaches the
-codec, the byte stage (`preflight`, `uniqueKeys`, `decodeRecords`), the
-Ixon reader, the committed tables and the verified fold. Its ruled
+codec, with Ixon v4's TagN integer code (`Ixon.getTagN`, `getTagNWide`,
+`getTagN0Values`, `putTagN`, `tagNHeader`, `tagNEnd1..6`), the byte stage
+(`preflight`, `uniqueKeys`, `decodeRecords`), the Ixon reader, the committed
+tables and the verified fold. Its ruled
 constructs are the fold's computed-field overrides and proved csimps and
 the in-model generator's `partial` definitions. The committed
 Nat-operation pins are decoded from a string table at first use
@@ -62,7 +64,7 @@ string-scanning externs (below). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5307 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Kernel.Admission.checkBytes]: 5293 compiled functions; inherited externs 121, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

@@ -41,9 +41,11 @@ reaches 3022 compiled functions, with the computed-field overrides of
 `Level`, `Expr` and `Name` and 20 proved csimps; the Ixon reader
 (`readRecords` with `Admission.readStream`) reaches 1886, adding the
 in-model generator's 10 `partial` definitions; the entry (the four
-`publicOperations`) reaches 5309 with 123 inherited externs, adding the
+`publicOperations`) reaches 5295 with 121 inherited externs, adding the
 byte stage (`preflight`, `uniqueKeys`, `decodeRecords`) and the committed
-tables. The committed Nat-operation pins (`builtinNatOpPins`) are decoded
+tables. The byte stage reads and re-encodes Ixon v4's TagN integers
+(`Ixon.getTagN`, `getTagNWide`, `getTagN0Values`, `putTagN`, `tagNHeader`,
+`tagNEnd1..6`), and no other integer code. The committed Nat-operation pins (`builtinNatOpPins`) are decoded
 from a string table at first use, which brings in the eight string-scanning
 externs `String.decodeChar`, `String.Pos.next`, `UInt32.decLe`,
 `String.toUTF8` and `String.Pos.Raw.{extract, next, get, atEnd}`. No
@@ -254,7 +256,7 @@ the rulings they use: the fold reaches the kernel's computed-field
 overrides of `Level`, `Expr` and `Name` (18) and 20 project csimps; the
 reader adds the in-model generator's 10 `partial` definitions; the entry
 adds the byte stage and the committed tables. The pin-parametric forms
-(`checkBytesWith`, `checkConstantsWith`) reach 4539 functions; the
+(`checkBytesWith`, `checkConstantsWith`) reach 4525 functions; the
 committed pin table, prelude and Nat-operation pin decoder add the rest. -/
 
 #guard_msgs (drop info) in
@@ -296,7 +298,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5309 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Kernel.Admission.checkConstants]: 5295 compiled functions; inherited externs 121, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings

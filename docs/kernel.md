@@ -281,7 +281,7 @@ depend on the table.
 
 The theorems are about the Lean functions. Trusted beneath them: Lean's
 kernel, compiler and runtime, and the inherited `Init`/`Std` primitives the
-compiled code reaches (the entry's closure reaches 123 inherited externs,
+compiled code reaches (the entry's closure reaches 121 inherited externs,
 for example `ByteArray` and `String` primitives and `lean_sarray_dec_eq`,
 which implements `ByteArray` equality and therefore `Address` equality).
 Not in the closure: `ix_rs`, C or Rust BLAKE3, `Ix.Tc`, any JSON or
@@ -342,10 +342,10 @@ Frozen runtime closures (compiled functions; inherited externs):
 | --- | ---: | ---: |
 | fold `Ix.Kernel.Cached.checkDecls` | 3022 | 83 |
 | reader `readRecords`, `readStream` | 1886 | 82 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5309 | 123 |
-| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5307 | 123 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5430 | 132 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5563 | 132 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5295 | 121 |
+| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5293 | 121 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5416 | 130 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5549 | 130 |
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.
