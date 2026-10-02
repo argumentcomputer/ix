@@ -48,7 +48,7 @@ use super::cost::{Len, exprs_len_with, tag0_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{
   Evaluation, Hide, IncrementalCosts, Indices, LazyCosts, Materializer, Plan,
-  Widths, eval_node,
+  PlanShares, Widths, eval_node,
 };
 use super::prof::{self, Phase};
 use super::uniform::{
@@ -134,6 +134,7 @@ pub fn layout_bytes(
 
 /// All `Share` indices of an expression, with multiplicity, in left-to-right
 /// pre-order.
+#[cfg(test)]
 pub(crate) fn share_indices(e: &Expr, out: &mut Vec<u64>) {
   let mut stack: Vec<&Expr> = vec![e];
   while let Some(x) = stack.pop() {
@@ -772,44 +773,26 @@ fn tiered_at(
   );
   drop(p);
   // Phase 1.
-  let u = optimize_uniform_with(w, dag, prep, meter)?;
+  // Phase 1, without materializing its table: phase 2 reads only what the
+  // phase-1 expressions contain, which the dry run reports from the same
+  // decisions (`PlanShares`).
+  let (u, shares) = optimize_uniform_with(w, dag, prep, meter, false)?;
+  let shares = shares.ok_or_else(|| internal("phase 1 without its shares"))?;
   let p = prof::scope(Phase::Allocate);
   let order1 = u.table_terms.clone();
-  let entries1 = &u.sharing;
-  let roots1 = &u.roots;
   // The phase-1 output priced by the layout. The TagN layout prices a Share
   // at its wire width, so this is the real length that phase 1 measured.
   let phase1_layout = match layout {
     ShareLayout::TagN => u.variable_len,
   };
-  // Phase 2: reference counts and dependencies from the phase-1 output.
-  let mut refs = vec![0u64; order1.len()];
-  let mut idx = Vec::new();
-  for e in entries1.iter().chain(roots1) {
-    idx.clear();
-    share_indices(e, &mut idx);
-    for &i in &idx {
-      if let Some(r) = usize::try_from(i).ok().and_then(|i| refs.get_mut(i)) {
-        *r += 1;
-      }
-    }
-  }
+  // Phase 2: reference counts (the Shares of each entry in all the phase-1
+  // expression trees) and dependencies (the entries an entry's phase-1
+  // expression shares, in pre-order of first occurrence).
   let mut weight: FxHashMap<TermId, u64> = FxHashMap::default();
   let mut deps: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
-  for (i, &t) in order1.iter().enumerate() {
-    weight.insert(t, refs[i]);
-    idx.clear();
-    if let Some(e) = entries1.get(i) {
-      share_indices(e, &mut idx);
-    }
-    let mut ds: Vec<TermId> = Vec::new();
-    for &j in &idx {
-      if let Some(&d) = usize::try_from(j).ok().and_then(|j| order1.get(j))
-        && !ds.contains(&d)
-      {
-        ds.push(d);
-      }
-    }
+  let PlanShares { refs, deps: entry_deps, .. } = shares;
+  for ((&t, &r), ds) in order1.iter().zip(&refs).zip(entry_deps) {
+    weight.insert(t, r);
     deps.insert(t, ds);
   }
   let mut stored = order1.clone();

@@ -95,7 +95,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::cost::{Len, exprs_len_with, tag0_len, tag4_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{
-  Evaluation, ReadEdges, UniformIndex, all_costs, materialize_dependent,
+  Evaluation, PlanShares, ReadEdges, UniformIndex, all_costs, build_dependent,
+  decide_dependent,
 };
 use super::prof::{self, Phase};
 use super::{
@@ -1676,7 +1677,7 @@ pub(crate) fn optimize_uniform(
   if w == 0 {
     return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
   }
-  optimize_uniform_with(w, dag, &DagPrep::new(dag), meter)
+  optimize_uniform_with(w, dag, &DagPrep::new(dag), meter, true).map(|(r, _)| r)
 }
 
 /// The tables of one DAG that do not depend on the uniform width, computed
@@ -1716,13 +1717,17 @@ impl DagPrep {
 }
 
 /// [`optimize_uniform`] (`w >= 1`) with the width-independent tables of
-/// `prep`.
+/// `prep`. With `exprs` the result carries the materialized table and roots
+/// (checked by re-expansion); without, it carries none and the second
+/// component describes what they contain ([`PlanShares`]), from the same
+/// decisions, for phase 2 of the tiered construction.
 pub(crate) fn optimize_uniform_with(
   w: u64,
   dag: &SharingDag,
   prep: &DagPrep,
   meter: &mut Meter<'_>,
-) -> Result<UniformSharingResult, SharingError> {
+  exprs: bool,
+) -> Result<(UniformSharingResult, Option<PlanShares>), SharingError> {
   if w == 0 {
     return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
   }
@@ -2047,7 +2052,7 @@ pub(crate) fn optimize_uniform_with(
   let own = &prep.own;
   let mut work = 0u64;
   let costs = all_costs(nodes, own, &dict, &mut work);
-  let (entries, roots, predicted) = materialize_dependent(
+  let plan = decide_dependent(
     nodes,
     own,
     &dict,
@@ -2057,45 +2062,22 @@ pub(crate) fn optimize_uniform_with(
     &mut work,
   )?;
   meter.work(work)?;
-  let predicted = predicted.plus_u64(tag0_len(k));
+  let predicted = plan.predicted.plus_u64(tag0_len(k));
   if predicted != Len::new(model) {
     return Err(internal(format!(
       "uniform model length {model} differs from the full evaluation {predicted:?}"
     )));
   }
-  drop(p);
-  let _p = prof::scope(Phase::UniformCheck);
-  // The re-expansion check, then the real length (Shares at their TagN
-  // width, `expr_len`); both in one walk when the check passes.
-  let measured =
-    match dag.check_and_measure(&order, &entries, &roots, &tag4_len) {
-      Some((visited, len)) => {
-        dag.check_input_nodes(visited, meter.limits())?;
-        len
-      },
-      None => {
-        dag.check_reexpansion(
-          &order,
-          &entries,
-          &roots,
-          meter.limits(),
-          "materialized encoding changes the expanded AST",
-          "materialized entries do not expand to the stored terms",
-        )?;
-        exprs_len_with(k, entries.iter().chain(&roots), &tag4_len)
-          .ok_or_else(overflow)?
-      },
-    };
   let mut unshared = Len::new(tag0_len(0));
   for &r in dag.roots() {
     unshared = unshared.plus(prep.base.costs[ix(r)]);
   }
-  Ok(UniformSharingResult {
-    roots,
-    sharing: entries,
+  let mut result = UniformSharingResult {
+    roots: Vec::new(),
+    sharing: Vec::new(),
     table_terms: order,
     model_len: model,
-    variable_len: measured,
+    variable_len: 0,
     unshared_len: unshared.exact(),
     stored,
     certain_stored: cs,
@@ -2106,7 +2088,62 @@ pub(crate) fn optimize_uniform_with(
     states_visited,
     lower_bracket,
     stats: meter.stats.clone(),
-  })
+  };
+  if !exprs {
+    // Dry run: what the expressions contain, from the decisions alone. The
+    // input nodes their re-expansion check would charge are the nodes the
+    // build allocates; the real length is the model with every Share
+    // priced at its TagN width instead of `w`, Share by Share.
+    drop(p);
+    let _p = prof::scope(Phase::UniformCheck);
+    let position =
+      |t: TermId| dict.index[ix(t)].and_then(|i| usize::try_from(i).ok());
+    let shares =
+      plan.shares(nodes, &result.table_terms, dag.roots(), &position)?;
+    dag.check_input_nodes(shares.nodes, meter.limits())?;
+    let mut real = i128::from(model);
+    for (i, &r) in shares.refs.iter().enumerate() {
+      let delta = i128::from(tag4_len(len64(i))) - i128::from(w);
+      real = real
+        .checked_add(i128::from(r).checked_mul(delta).ok_or_else(overflow)?)
+        .ok_or_else(overflow)?;
+    }
+    result.variable_len = u64::try_from(real)
+      .ok()
+      .filter(|&l| l < u64::MAX)
+      .ok_or_else(overflow)?;
+    return Ok((result, Some(shares)));
+  }
+  let (entries, roots) =
+    build_dependent(nodes, &dict, &plan, &result.table_terms, dag.roots())?;
+  drop(p);
+  let _p = prof::scope(Phase::UniformCheck);
+  // The re-expansion check, then the real length (Shares at their TagN
+  // width, `expr_len`); both in one walk when the check passes.
+  let order = &result.table_terms;
+  let measured = match dag.check_and_measure(order, &entries, &roots, &tag4_len)
+  {
+    Some((visited, len)) => {
+      dag.check_input_nodes(visited, meter.limits())?;
+      len
+    },
+    None => {
+      dag.check_reexpansion(
+        order,
+        &entries,
+        &roots,
+        meter.limits(),
+        "materialized encoding changes the expanded AST",
+        "materialized entries do not expand to the stored terms",
+      )?;
+      exprs_len_with(k, entries.iter().chain(&roots), &tag4_len)
+        .ok_or_else(overflow)?
+    },
+  };
+  result.roots = roots;
+  result.sharing = entries;
+  result.variable_len = measured;
+  Ok((result, None))
 }
 
 /// Exact uniform-width sharing of ordered, fully expanded roots.

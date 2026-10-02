@@ -1097,7 +1097,7 @@ impl Indices for UniformIndex {
 /// and builds it exactly. Entry tops take their best non-Share choice; every
 /// nested occurrence takes its standalone choice. Returns entries, roots and
 /// the predicted cost `sum inline(entry) + sum C(root)` (without the count).
-pub(crate) fn materialize_dependent<D: Indices>(
+pub(crate) fn decide_dependent<D: Indices>(
   nodes: &[Node],
   own: &[Len],
   dict: &D,
@@ -1105,7 +1105,7 @@ pub(crate) fn materialize_dependent<D: Indices>(
   table: &[TermId],
   roots: &[TermId],
   work: &mut u64,
-) -> Result<(Vec<Arc<Expr>>, Vec<Arc<Expr>>, Len), SharingError> {
+) -> Result<DependentPlan, SharingError> {
   let n = nodes.len();
   let mut predicted = Len::ZERO;
   let mut entry_choice: Vec<Choice> = Vec::with_capacity(table.len());
@@ -1171,6 +1171,202 @@ pub(crate) fn materialize_dependent<D: Indices>(
     choice[t] = Some(ch);
     mark_children(tid, ch, &mut needed, work)?;
   }
+  Ok(DependentPlan { entry_choice, choice, predicted })
+}
+
+/// The decisions of [`materialize_dependent`]: each entry's top choice,
+/// the standalone choice of every needed term, and the predicted length.
+pub(crate) struct DependentPlan {
+  entry_choice: Vec<Choice>,
+  choice: Vec<Option<Choice>>,
+  pub(crate) predicted: Len,
+}
+
+/// What the expressions of a [`DependentPlan`] contain, computed without
+/// building them: per table position the number of Shares of that entry in
+/// all the expression trees (entries and roots, with multiplicity, as a walk
+/// of each tree counts them), per entry the entries its expression shares
+/// in pre-order of first occurrence, and the number of expression nodes the
+/// build allocates (all pointer-distinct).
+pub(crate) struct PlanShares {
+  pub(crate) refs: Vec<u64>,
+  pub(crate) deps: Vec<Vec<TermId>>,
+  pub(crate) nodes: u64,
+}
+
+/// One item of the pre-order walk of [`DependentPlan::shares`].
+#[derive(Clone, Copy)]
+enum WalkItem {
+  /// The standalone representation of a term (shared by its occurrences).
+  Rep(TermId),
+  /// A Share of a term.
+  Shr(TermId),
+}
+
+impl DependentPlan {
+  /// The spine nodes of a telescope choice of `j` nodes at `t`, the node
+  /// after them, and whether the telescope stops at a Share of it (a cut).
+  fn telescope(
+    nodes: &[Node],
+    t: TermId,
+    j: u64,
+  ) -> Result<(Vec<TermId>, TermId, bool), SharingError> {
+    let mut spine = Vec::new();
+    let mut cur = t;
+    for _ in 0..j {
+      spine.push(cur);
+      cur = spine_next(&nodes[ix(cur)]).ok_or_else(|| internal("spine"))?;
+    }
+    let cut = nodes[ix(cur)].family() == nodes[ix(t)].family();
+    Ok((spine, cur, cut))
+  }
+
+  /// The children of the expression of `t` written with choice `ch`, in
+  /// expression order (`Expr` children, left to right).
+  fn items(
+    nodes: &[Node],
+    t: TermId,
+    ch: Choice,
+    out: &mut Vec<WalkItem>,
+  ) -> Result<u64, SharingError> {
+    out.clear();
+    match ch {
+      Choice::Share => {
+        out.push(WalkItem::Shr(t));
+        Ok(1)
+      },
+      Choice::Inline => {
+        for &c in nodes[ix(t)].children().as_slice() {
+          out.push(WalkItem::Rep(c));
+        }
+        Ok(1)
+      },
+      Choice::Telescope(j) => {
+        let (spine, cur, cut) = Self::telescope(nodes, t, j)?;
+        let head = if cut { WalkItem::Shr(cur) } else { WalkItem::Rep(cur) };
+        // App: `App(App(head, a_{j-1}) .., a_0)`, so the head, then the
+        // arguments from the deepest spine node up. Lam/All:
+        // `Lam(ty_0, Lam(ty_1, .. head))`, so the binder types from the top,
+        // then the head.
+        if matches!(nodes[ix(t)], Node::App(..)) {
+          out.push(head);
+          for &s in spine.iter().rev() {
+            if let Node::App(_, a) = nodes[ix(s)] {
+              out.push(WalkItem::Rep(a));
+            }
+          }
+        } else {
+          for &s in &spine {
+            match nodes[ix(s)] {
+              Node::Lam(_, ty, _) | Node::All(_, _, ty, _) => {
+                out.push(WalkItem::Rep(ty));
+              },
+              _ => return Err(internal("telescope walked off its spine")),
+            }
+          }
+          out.push(head);
+        }
+        Ok(j + u64::from(cut))
+      },
+    }
+  }
+
+  /// See [`PlanShares`]; `pos[t]` is the table position of a stored term.
+  pub(crate) fn shares(
+    &self,
+    nodes: &[Node],
+    table: &[TermId],
+    roots: &[TermId],
+    pos: &dyn Fn(TermId) -> Option<usize>,
+  ) -> Result<PlanShares, SharingError> {
+    let n = nodes.len();
+    let mut refs = vec![0u64; table.len()];
+    let add_ref = |refs: &mut Vec<u64>, x: TermId, m: u64| {
+      if let Some(r) = pos(x).and_then(|i| refs.get_mut(i)) {
+        *r = r.saturating_add(m);
+      }
+    };
+    let mut items: Vec<WalkItem> = Vec::new();
+    // Occurrence counts of the standalone representations in all trees.
+    let mut mult = vec![0u64; n];
+    let mut count = 0u64;
+    for &r in roots {
+      mult[ix(r)] = mult[ix(r)].saturating_add(1);
+    }
+    for (&t, &ch) in table.iter().zip(&self.entry_choice) {
+      count = count.saturating_add(Self::items(nodes, t, ch, &mut items)?);
+      for &it in &items {
+        match it {
+          WalkItem::Rep(c) => mult[ix(c)] = mult[ix(c)].saturating_add(1),
+          WalkItem::Shr(x) => add_ref(&mut refs, x, 1),
+        }
+      }
+    }
+    for t in (0..n).rev() {
+      let Some(ch) = self.choice[t] else { continue };
+      let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
+      count = count.saturating_add(Self::items(nodes, tid, ch, &mut items)?);
+      let m = mult[t];
+      if m == 0 {
+        continue;
+      }
+      for &it in &items {
+        match it {
+          WalkItem::Rep(c) => mult[ix(c)] = mult[ix(c)].saturating_add(m),
+          WalkItem::Shr(x) => add_ref(&mut refs, x, m),
+        }
+      }
+    }
+    // Per entry, the shared entries in pre-order of first occurrence. A
+    // representation met again contributes nothing new, so each is walked
+    // once per entry.
+    let mut deps = Vec::with_capacity(table.len());
+    let mut seen_rep = vec![0usize; n];
+    let mut seen_dep = vec![0usize; n];
+    let mut stack: Vec<WalkItem> = Vec::new();
+    for (e, (&t, &ch)) in table.iter().zip(&self.entry_choice).enumerate() {
+      let ep = e + 1;
+      let mut ds: Vec<TermId> = Vec::new();
+      Self::items(nodes, t, ch, &mut items)?;
+      stack.clear();
+      stack.extend(items.iter().rev());
+      while let Some(it) = stack.pop() {
+        match it {
+          WalkItem::Shr(x) => {
+            if seen_dep[ix(x)] != ep {
+              seen_dep[ix(x)] = ep;
+              ds.push(x);
+            }
+          },
+          WalkItem::Rep(c) => {
+            if seen_rep[ix(c)] == ep {
+              continue;
+            }
+            seen_rep[ix(c)] = ep;
+            let cch =
+              self.choice[ix(c)].ok_or_else(|| internal("missing choice"))?;
+            Self::items(nodes, c, cch, &mut items)?;
+            stack.extend(items.iter().rev());
+          },
+        }
+      }
+      deps.push(ds);
+    }
+    Ok(PlanShares { refs, deps, nodes: count })
+  }
+}
+
+/// The expressions of the decisions of [`decide_dependent`] for the same
+/// `table` and `roots`: entries and roots.
+pub(crate) fn build_dependent<D: Indices>(
+  nodes: &[Node],
+  dict: &D,
+  plan: &DependentPlan,
+  table: &[TermId],
+  roots: &[TermId],
+) -> Result<(Vec<Arc<Expr>>, Vec<Arc<Expr>>), SharingError> {
+  let n = nodes.len();
+  let DependentPlan { entry_choice, choice, .. } = plan;
   let mut rep: Vec<Option<Arc<Expr>>> = vec![None; n];
   let get = |rep: &Vec<Option<Arc<Expr>>>, c: TermId| {
     rep.get(ix(c)).cloned().flatten().ok_or_else(|| internal("missing child"))
@@ -1229,10 +1425,10 @@ pub(crate) fn materialize_dependent<D: Indices>(
     }
   }
   let mut entries = Vec::with_capacity(table.len());
-  for (&t, &ch) in table.iter().zip(&entry_choice) {
+  for (&t, &ch) in table.iter().zip(entry_choice) {
     entries.push(build(t, ch, &rep)?);
   }
   let roots_out =
     roots.iter().map(|&r| get(&rep, r)).collect::<Result<_, _>>()?;
-  Ok((entries, roots_out, predicted))
+  Ok((entries, roots_out))
 }

@@ -3383,3 +3383,80 @@ fn one_pass_phase3_matches_per_prefix() {
   }
   assert!(compared > 200);
 }
+
+/// The phase-1 dry run reports what the materialized phase-1 expressions
+/// contain: the Shares of each entry in all expression trees, the entries
+/// each entry shares in pre-order of first occurrence, the number of
+/// expression nodes (the re-expansion check's input nodes) and the real
+/// length; everything else in the result is the same.
+#[test]
+fn phase1_dry_run_matches_materialized_expressions() {
+  use super::tiered::share_indices;
+  use super::uniform::{DagPrep, optimize_uniform_with};
+  let mut rng = Rng(107);
+  let mut cases: Vec<Vec<E>> =
+    par_cases().iter().map(|c| constant_info_root_exprs(&c.info)).collect();
+  for _ in 0..80 {
+    cases.push(gen_search_roots(&mut rng));
+    cases.push(gen_spines(&mut rng));
+  }
+  let mut compared = 0;
+  for (i, roots) in cases.iter().enumerate() {
+    if roots.is_empty() {
+      continue;
+    }
+    let dag = SharingDag::from_expanded_roots(roots, &limits()).unwrap();
+    let prep = DagPrep::new(&dag);
+    for w in 1..=3 {
+      let (full, none) =
+        optimize_uniform_with(w, &dag, &prep, &mut Meter::new(&limits()), true)
+          .unwrap();
+      assert!(none.is_none());
+      let (dry, shares) = optimize_uniform_with(
+        w,
+        &dag,
+        &prep,
+        &mut Meter::new(&limits()),
+        false,
+      )
+      .unwrap();
+      let shares = shares.unwrap();
+      let order = &full.table_terms;
+      let mut refs = vec![0u64; order.len()];
+      let mut deps: Vec<Vec<TermId>> = Vec::new();
+      let mut idx = Vec::new();
+      for e in full.sharing.iter().chain(&full.roots) {
+        idx.clear();
+        share_indices(e, &mut idx);
+        for &j in &idx {
+          refs[j as usize] += 1;
+        }
+      }
+      for e in &full.sharing {
+        idx.clear();
+        share_indices(e, &mut idx);
+        let mut ds: Vec<TermId> = Vec::new();
+        for &j in &idx {
+          let d = order[j as usize];
+          if !ds.contains(&d) {
+            ds.push(d);
+          }
+        }
+        deps.push(ds);
+      }
+      let visited = dag.check_encoding(order, &full.sharing, &full.roots);
+      assert_eq!(shares.refs, refs, "case {i} w {w}");
+      assert_eq!(shares.deps, deps, "case {i} w {w}");
+      assert_eq!(Some(shares.nodes), visited, "case {i} w {w}");
+      assert_eq!(dry.variable_len, full.variable_len, "case {i} w {w}");
+      assert_eq!(
+        (&dry.table_terms, dry.model_len, &dry.stored, &dry.stats),
+        (&full.table_terms, full.model_len, &full.stored, &full.stats),
+        "case {i} w {w}"
+      );
+      assert!(dry.sharing.is_empty() && dry.roots.is_empty());
+      compared += 1;
+    }
+  }
+  assert!(compared > 900);
+}
