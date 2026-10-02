@@ -116,10 +116,16 @@ Abstract unique function values are not assumed safe to borrow as reusable
 callbacks. A representation needs a checked or explicitly admitted rule before
 the checker grants that permission.
 
-Field rules must be derived from transparent constructor interfaces. The
-initial projection fragment requires closed field types and field usage
-`many`; other projection transformations are rejected before artifact emission.
-It does not split availability between fields of the same owner.
+Field rules must be derived from transparent constructor interfaces of
+structures (one constructor, no indices). The projection fragment requires
+field usage `many`; other projection transformations are rejected before
+artifact emission. A field type may depend on the structure's parameters and
+on earlier fields (`Prod`, `PProd`, `Subtype`, `Sigma`, class structures): its
+rule stays open over the constructor telescope, and a projection instantiates
+it with the type arguments of the projected value's type and with the earlier
+fields as projections of the same value. A projected value whose type does not
+reduce to the structure applied to exactly its parameters is rejected. The
+fragment does not split availability between fields of the same owner.
 
 Special alternative-path analysis requires a profile-bound selection primitive
 with the specified evaluation behavior. Such a primitive must be fully applied

@@ -289,9 +289,26 @@ def modesProgram : Program := { program with
       body := some (lam (b .many) (.prj 0 0 (v 0))) },                       -- 16 a proposition whose
                                                                               --    unfolding has no field rule
     { type := arr (b .many) .shared (.app (ref 16) zero) natTy,
-      kind := .assumption }                                                  -- 17 consumes its proof
+      kind := .assumption },                                                 -- 17 consumes its proof
+    { type := arr (b .many) .shared (.sort 0) (arr (b .many) .shared (.sort 0) (.sort 0)),
+      kind := .typeConstructor },                                            -- 18 Duo α β
+    { type := arr (b .many) .shared (.sort 0)
+        (arr (b .many) .shared (arr (b .many) .shared (v 0) (.sort 0)) (.sort 0)),
+      kind := .typeConstructor },                                            -- 19 Sig α β
+    { type := arr (b .many) .shared natTy (.sort 0), kind := .typeConstructor } -- 20 F : Nat → Type
+  ]
+  -- Open field rules: `Duo α β` has `fst : α`, `snd : β`; `Sig α β` has
+  -- `fst : α`, `snd : β fst`.
+  fields := program.fields ++ #[
+    { typeRef := 18, index := 0, type := v 1, contract := .shared, binders := 2 },
+    { typeRef := 18, index := 1, type := v 1, contract := .shared, binders := 3 },
+    { typeRef := 19, index := 0, type := v 1, contract := .shared, binders := 2 },
+    { typeRef := 19, index := 1, type := .app (v 1) (v 0), contract := .shared, binders := 3 }
   ]
   propSort := some 1 }
+
+def duoTy : E := .app (.app (ref 18) natTy) resTy
+def sigTy : E := .app (.app (ref 19) natTy) (ref 20)
 
 def modeCases : Array Case := #[
   -- Usage crossing for shareable immediates at call boundaries.
@@ -325,7 +342,20 @@ def modeCases : Array Case := #[
   ⟨"a unique non-shareable capture stays one-shot", arr (b .linear .unique) .shared resTy (arr (b .many) .unique natTy resTy),
     lam (b .linear .unique) (lam (b .many) (v 1)) resTy, "capture"⟩,
   ⟨"a one-shot closure may carry a unique non-shareable capture", arr (b .linear .unique) .unique resTy (arr (b .many) .unique natTy resTy),
-    lam (b .linear .unique) (lam (b .many) (v 1)) resTy, "ok"⟩
+    lam (b .linear .unique) (lam (b .many) (v 1)) resTy, "ok"⟩,
+  -- Fields of parameterised and dependent structures.
+  ⟨"a parameterised field takes its type from the value's type", arr (b .linear) .shared duoTy natTy,
+    lam (b .linear) (.prj 18 0 (v 0)) duoTy, "ok"⟩,
+  ⟨"a later field is instantiated past the earlier ones", arr (b .linear) .shared duoTy resTy,
+    lam (b .linear) (.prj 18 1 (v 0)) duoTy, "ok"⟩,
+  ⟨"an instantiated field type is still checked", arr (b .linear) .shared duoTy natTy,
+    lam (b .linear) (.prj 18 1 (v 0)) duoTy, "type"⟩,
+  ⟨"a dependent field refers to the earlier field", arr (b .linear) .shared sigTy (.app (ref 20) (.prj 19 0 (v 0))),
+    lam (b .linear) (.prj 19 1 (v 0)) sigTy, "ok"⟩,
+  ⟨"a dependent field is not an arbitrary family member", arr (b .linear) .shared sigTy (.app (ref 20) zero),
+    lam (b .linear) (.prj 19 1 (v 0)) sigTy, "type"⟩,
+  ⟨"a projection needs the structure's own type", arr (b .linear) .shared resTy natTy,
+    lam (b .linear) (.prj 18 0 (v 0)) resTy, "unsupported"⟩
 ]
 
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=

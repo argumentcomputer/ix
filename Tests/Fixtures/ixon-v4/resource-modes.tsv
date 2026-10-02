@@ -14,3 +14,9 @@ a unique immediate capture keeps a closure reusable	ok	921120001520002000	820120
 a finite non-shareable capture stays one-shot	capture	9216200b172000200b	8206200b07200011
 a unique non-shareable capture stays one-shot	capture	9211200b072000200b	8201200b07200011
 a one-shot closure may carry a unique non-shareable capture	ok	9201200b072000200b	8201200b07200011
+a parameterised field takes its type from the value's type	ok	91157220122000200b2000	81057220122000200b401210
+a later field is instantiated past the earlier ones	ok	91157220122000200b200b	81057220122000200b411210
+an instantiated field type is still checked	type	91157220122000200b2000	81057220122000200b411210
+a dependent field refers to the earlier field	ok	911572201320002014712014401310	810572201320002014411310
+a dependent field is not an arbitrary family member	type	91157220132000201471201460	810572201320002014411310
+a projection needs the structure's own type	unsupported	9115200b2000	8105200b401210

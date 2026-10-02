@@ -101,6 +101,10 @@ pub struct Field {
   pub index: u64,
   pub typ: Term,
   pub contract: ValueContract,
+  /// `0` when `typ` is closed. Otherwise `typ` is open over the constructor
+  /// telescope: the structure's parameters, then the fields before this one
+  /// (innermost last), `binders` variables in all.
+  pub binders: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -776,6 +780,66 @@ impl<'a> Checker<'a> {
       .cloned()
       .ok_or(Error::Unsupported("projection has no checked field rule"))
   }
+  fn split_app(
+    &mut self,
+    fuel: usize,
+    e: &Term,
+  ) -> Result<(Term, Vec<Term>), Error> {
+    let mut head = e.clone();
+    let mut args = vec![];
+    let mut fuel = fuel;
+    loop {
+      fuel = self.tick(fuel)?;
+      match head.as_ref() {
+        Expr::App(f, a) => {
+          args.push(a.clone());
+          head = f.clone();
+        },
+        Expr::Share(index) => head = self.expansion(*index)?,
+        _ => break,
+      }
+    }
+    args.reverse();
+    Ok((head, args))
+  }
+  /// The type of `field` projected from `value`, whose type is `value_type`.
+  /// An open field rule is instantiated with the structure's type arguments,
+  /// taken from `value_type`, and with the earlier fields as projections of
+  /// `value`.
+  fn field_type(
+    &mut self,
+    fuel: usize,
+    field: &Field,
+    value_type: &Term,
+    value: &Term,
+  ) -> Result<Term, Error> {
+    if field.binders == 0 {
+      return Ok(field.typ.clone());
+    }
+    let mismatch = Error::Unsupported(
+      "projected value does not have the field's structure type",
+    );
+    let params =
+      field.binders.checked_sub(field.index).ok_or(mismatch.clone())?;
+    let reduced = self.whnf(fuel, value_type)?;
+    let (head, args) = self.split_app(fuel, &reduced)?;
+    if !matches!(head.as_ref(), Expr::Ref(i, _) if *i == field.type_ref)
+      || args.len() as u64 != params
+    {
+      return Err(mismatch);
+    }
+    let mut values = args;
+    for j in 0..field.index {
+      values.push(Expr::prj(field.type_ref, j, value.clone()));
+    }
+    let mut typ = field.typ.clone();
+    let mut depth = values.len() as u64;
+    for x in &values {
+      depth -= 1;
+      typ = self.substitute(fuel, &typ, x, depth)?;
+    }
+    Ok(typ)
+  }
   fn place(
     &mut self,
     fuel: usize,
@@ -795,12 +859,13 @@ impl<'a> Checker<'a> {
         Ok(value)
       },
       Expr::Share(i) => self.place(fuel, ctx, &self.expansion(*i)?),
-      Expr::Prj(t, i, v) => {
-        let mut v = self.place(fuel, ctx, v)?;
+      Expr::Prj(t, i, projected) => {
+        let mut v = self.place(fuel, ctx, projected)?;
         let f = self.field(*t, *i)?;
-        v.duplicable = f.contract.owned == Owned::Shared
-          || self.is_shareable(fuel, &f.typ)?;
-        v.typ = f.typ;
+        let typ = self.field_type(fuel, &f, &v.typ, projected)?;
+        v.duplicable =
+          f.contract.owned == Owned::Shared || self.is_shareable(fuel, &typ)?;
+        v.typ = typ;
         if v.owned != Owned::Unique || f.contract.owned != Owned::Unique {
           v.owned = Owned::Shared;
         }
@@ -836,7 +901,14 @@ impl<'a> Checker<'a> {
       Expr::Sort(_) | Expr::All(..) => Ok(Expr::sort(0)),
       Expr::Nat(_) => Self::literal_type(&self.program.nat_type),
       Expr::Str(_) => Self::literal_type(&self.program.string_type),
-      Expr::Prj(t, i, _) => Ok(self.field(*t, *i)?.typ),
+      Expr::Prj(t, i, v) => {
+        let field = self.field(*t, *i)?;
+        if field.binders == 0 {
+          return Ok(field.typ);
+        }
+        let value_type = self.type_of(fuel, ctx, v)?;
+        self.field_type(fuel, &field, &value_type, v)
+      },
       Expr::App(f, a) => {
         let t = self.type_of(fuel, ctx, f)?;
         let (_, _, _, b) = self.arrow(fuel, &t)?;
@@ -1200,9 +1272,10 @@ impl<'a> Checker<'a> {
       Expr::Prj(t, i, value) => {
         let mut v = self.analyze(fuel, ctx, value, None, destination, grade)?;
         let field = self.field(*t, *i)?;
+        let typ = self.field_type(fuel, &field, &v.typ, value)?;
         v.duplicable = field.contract.owned == Owned::Shared
-          || self.is_shareable(fuel, &field.typ)?;
-        v.typ = field.typ;
+          || self.is_shareable(fuel, &typ)?;
+        v.typ = typ;
         if v.owned != Owned::Unique || field.contract.owned != Owned::Unique {
           v.owned = Owned::Shared;
         }
@@ -1651,6 +1724,7 @@ mod tests {
       index: 0,
       typ: nat(),
       contract: ValueContract::unique(),
+      binders: 0,
     });
     p.fields.push(Field {
       type_ref: 7,
@@ -1660,6 +1734,7 @@ mod tests {
         ValueContract::shared(),
       ),
       contract: ValueContract::unique(),
+      binders: 0,
     });
     p.fields.push(Field {
       type_ref: 7,
@@ -1669,6 +1744,7 @@ mod tests {
         ValueContract::shared(),
       ),
       contract: ValueContract::shared(),
+      binders: 0,
     });
     p.nat_type = Some(nat());
     p.string_type = Some(nat());
@@ -1771,7 +1847,56 @@ mod tests {
         Expr::app(Expr::reference(16, vec![]), Expr::nat(0)),
         nat(),
       )),
+      // 18 Duo α β.
+      Declaration {
+        typ: arr(
+          many,
+          ValueContract::shared(),
+          Expr::sort(0),
+          arr(many, ValueContract::shared(), Expr::sort(0), Expr::sort(0)),
+        ),
+        body: None,
+        kind: DeclKind::TypeConstructor,
+      },
+      // 19 Sig α β, with β : α → Type.
+      Declaration {
+        typ: arr(
+          many,
+          ValueContract::shared(),
+          Expr::sort(0),
+          arr(
+            many,
+            ValueContract::shared(),
+            arr(many, ValueContract::shared(), Expr::var(0), Expr::sort(0)),
+            Expr::sort(0),
+          ),
+        ),
+        body: None,
+        kind: DeclKind::TypeConstructor,
+      },
+      // 20 F : Nat → Type.
+      Declaration {
+        typ: arr(many, ValueContract::shared(), nat(), Expr::sort(0)),
+        body: None,
+        kind: DeclKind::TypeConstructor,
+      },
     ]);
+    // Open field rules: `Duo α β` has `fst : α`, `snd : β`; `Sig α β` has
+    // `fst : α`, `snd : β fst`.
+    for (type_ref, index, typ, binders) in [
+      (18, 0, Expr::var(1), 2),
+      (18, 1, Expr::var(1), 3),
+      (19, 0, Expr::var(1), 2),
+      (19, 1, Expr::app(Expr::var(1), Expr::var(0)), 3),
+    ] {
+      p.fields.push(Field {
+        type_ref,
+        index,
+        typ,
+        contract: ValueContract::shared(),
+        binders,
+      });
+    }
     p.prop_sort = Some(1);
     p
   }

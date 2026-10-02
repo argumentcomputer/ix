@@ -47,6 +47,10 @@ structure Field where
   index : UInt64
   type : Ixon.Expr
   contract : ValueContract
+  /-- `0` when `type` is closed. Otherwise `type` is open over the
+  constructor telescope: the structure's parameters, then the fields before
+  this one (innermost last), `binders` variables in all. -/
+  binders : Nat := 0
   deriving BEq, Repr, Inhabited
 
 structure Program where
@@ -217,6 +221,43 @@ def isShareable (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Boo
   | .sort _ => return true
   | _ => return false
 
+def splitApp (program : Program) :
+    Nat → Ixon.Expr → List Ixon.Expr → CheckM (Ixon.Expr × List Ixon.Expr)
+  | 0, _, _ => throw .budget
+  | fuel + 1, e, args => do
+    tick
+    match e with
+    | .app fn arg => splitApp program fuel fn (arg :: args)
+    | .share index => splitApp program fuel (← expansion program index) args
+    | _ => return (e, args)
+
+def fieldRule (program : Program) (typeRef index : UInt64) : CheckM Field :=
+  match program.fields.find? (fun f => f.typeRef == typeRef && f.index == index) with
+  | some field => pure field
+  | none => throw (.unsupported "projection has no checked field rule")
+
+/-- The type of `field` projected from `value`, whose type is `valueType`.
+An open field rule is instantiated with the structure's type arguments, taken
+from `valueType`, and with the earlier fields as projections of `value`. -/
+def fieldType (program : Program) (fuel : Nat) (field : Field) (valueType value : Ixon.Expr) :
+    CheckM Ixon.Expr := do
+  if field.binders == 0 then return field.type
+  let index := field.index.toNat
+  let params := field.binders - index
+  let (head, args) ← splitApp program fuel (← whnf program fuel valueType) []
+  let structural := match head with
+    | .ref i _ => i == field.typeRef && args.length == params
+    | _ => false
+  unless structural && params + index == field.binders do
+    throw (.unsupported "projected value does not have the field's structure type")
+  let values := args ++ (List.range index).map fun j => Ixon.Expr.prj field.typeRef j.toUInt64 value
+  let mut type := field.type
+  let mut depth := values.length
+  for x in values do
+    depth := depth - 1
+    type ← substitute program fuel type x depth
+  return type
+
 def readVariable (ctx : Context) (fuel : Nat) (index : UInt64) (uses : Uses) : CheckM Value := do
   let n := index.toNat
   if n >= ctx.vars.size then throw (.unbound n)
@@ -246,14 +287,14 @@ def place (ctx : Context) : Nat → Ixon.Expr → CheckM Value
         throw (.unsupported "an erased binding cannot be borrowed")
       return value
     | .share idx => place ctx fuel (← expansion ctx.program idx)
-    | .prj t i value =>
-      let value ← place ctx fuel value
-      let some field := ctx.program.fields.find? (fun f => f.typeRef == t && f.index == i)
-        | throw (.unsupported "projection has no checked field rule")
+    | .prj t i projected =>
+      let value ← place ctx fuel projected
+      let field ← fieldRule ctx.program t i
+      let type ← fieldType ctx.program fuel field value.type projected
       let duplicable ← if field.contract.owned == .shared then pure true
-        else isShareable ctx.program fuel field.type
+        else isShareable ctx.program fuel type
       return { value with
-        type := field.type
+        type
         duplicable
         owned := if value.owned == .unique && field.contract.owned == .unique then .unique else .shared }
     | _ => throw .invalidPlace
@@ -278,10 +319,10 @@ def typeOf : Nat → Context → Ixon.Expr → CheckM Ixon.Expr
     | .sort _ | .all .. => return .sort 0
     | .nat _ => literalType ctx.program.natType
     | .str _ => literalType ctx.program.stringType
-    | .prj typeRef index _ =>
-      let some field := ctx.program.fields.find? (fun f => f.typeRef == typeRef && f.index == index)
-        | throw (.unsupported "projection has no checked field rule")
-      return field.type
+    | .prj typeRef index value =>
+      let field ← fieldRule ctx.program typeRef index
+      if field.binders == 0 then return field.type
+      fieldType ctx.program fuel field (← typeOf fuel ctx value) value
     | .app fn arg =>
       let (_, _, _, codomain) ← arrow ctx.program fuel (← typeOf fuel ctx fn)
       substitute ctx.program fuel codomain arg 0
@@ -343,16 +384,6 @@ def argumentGrade (program : Program) (fuel : Nat) (grade input : Uses)
     (domain : Ixon.Expr) : CheckM Uses := do
   if input != .erased && (← isShareable program fuel domain) then return grade
   return grade.mul input
-
-def splitApp (program : Program) :
-    Nat → Ixon.Expr → List Ixon.Expr → CheckM (Ixon.Expr × List Ixon.Expr)
-  | 0, _, _ => throw .budget
-  | fuel + 1, e, args => do
-    tick
-    match e with
-    | .app fn arg => splitApp program fuel fn (arg :: args)
-    | .share index => splitApp program fuel (← expansion program index) args
-    | _ => return (e, args)
 
 def finishValue (ctx : Context) (fuel : Nat) (destination : ScopeId)
     (expected : Option (Ixon.Expr × ValueContract)) (value : Value) : CheckM Value := do
@@ -516,14 +547,14 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         closeScope scope output
         let type ← substitute ctx.program fuel output.type initializer 0
         pure { output with type }
-      | .prj typeRef index value => do
-        let value ← analyze fuel ctx value none destination grade
-        let some field := ctx.program.fields.find? (fun f => f.typeRef == typeRef && f.index == index)
-          | throw (.unsupported "projection has no checked field rule")
+      | .prj typeRef index projected => do
+        let value ← analyze fuel ctx projected none destination grade
+        let field ← fieldRule ctx.program typeRef index
+        let type ← fieldType ctx.program fuel field value.type projected
         let duplicable ← if field.contract.owned == .shared then pure true
-          else isShareable ctx.program fuel field.type
+          else isShareable ctx.program fuel type
         pure { value with
-          type := field.type
+          type
           duplicable
           owned := if value.owned == .unique && field.contract.owned == .unique then .unique else .shared }
       | .app fn arg => do

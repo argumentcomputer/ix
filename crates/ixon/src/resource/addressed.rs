@@ -343,33 +343,47 @@ fn closed(
   })
 }
 
+/// Transparent projection rule of a structure: a single constructor with no
+/// indices and unrestricted field quantities. A field type that depends on the
+/// structure's parameters or on earlier fields stays open over that
+/// telescope; the checker instantiates it from the projected value's type.
 fn fields(
   program: &Program,
   limits: Limits,
   type_ref: u64,
   ctor: u64,
+  params: u64,
   count: u64,
 ) -> Result<Vec<Field>, Error> {
   let mut checker = Checker::new(program, limits);
   let mut typ = checker.declaration(ctor)?.typ.clone();
+  for _ in 0..params {
+    typ = checker.whnf(limits.depth, &typ)?;
+    let Expr::All(_, _, _, body) = typ.as_ref() else {
+      return Err(Error::Unsupported("constructor parameter telescope"));
+    };
+    typ = body.clone();
+  }
   let mut fields = vec![];
   for index in 0..count {
     typ = checker.whnf(limits.depth, &typ)?;
     let Expr::All(input, _, domain, body) = typ.as_ref() else {
       return Err(Error::Unsupported("constructor field telescope"));
     };
-    if input.uses != Uses::Many
-      || !closed(&mut checker, limits.depth, 0, domain)?
-    {
-      return Err(Error::Unsupported(
-        "dependent or finite-use projection field",
-      ));
+    if input.uses != Uses::Many {
+      return Err(Error::Unsupported("finite-use projection field"));
     }
+    let binders = if closed(&mut checker, limits.depth, 0, domain)? {
+      0
+    } else {
+      params + index
+    };
     fields.push(Field {
       type_ref,
       index,
       typ: domain.clone(),
       contract: input.value,
+      binders,
     });
     typ = body.clone();
   }
@@ -521,11 +535,15 @@ pub fn prepare(
                 group.push(ctor_addr.clone());
                 if !ind.is_unsafe
                   && !ctor.is_unsafe
-                  && ind.params == 0
                   && ind.indices == 0
                   && ind.ctors.len() == 1
                 {
-                  field_specs.push((addr.clone(), ctor_addr, ctor.fields));
+                  field_specs.push((
+                    addr.clone(),
+                    ctor_addr,
+                    ind.params,
+                    ctor.fields,
+                  ));
                 }
               }
             },
@@ -633,12 +651,13 @@ pub fn prepare(
   program.shareable_types = shareable.clone();
   program.prop_sort = Some(PROP_SORT);
   program.choices = choices.clone();
-  for (typ, ctor, count) in field_specs {
+  for (typ, ctor, params, count) in field_specs {
     if let Ok(derived) = fields(
       &program,
       profile.limits,
       index(&indices, &typ)?,
       index(&indices, &ctor)?,
+      params,
       count,
     ) {
       program.fields.extend(derived);
@@ -1022,6 +1041,107 @@ mod tests {
       nominal
     );
     assert_eq!(field.contract, ValueContract::unique());
+  }
+
+  /// `Duo α β` with fields `fst : α` and `snd : β`, and a definition
+  /// `(1 x : Duo unit (Duo unit unit)) → result := x.2`. Mirrors the Lean
+  /// adapter test.
+  fn duo_env(result: Term) -> (Env, Address) {
+    let (env, unit) = unit_env();
+    let many = BinderContract::default();
+    let shared = ValueContract::shared();
+    let all = |d: Term, b: Term| Expr::all_contract(many, shared, d, b);
+    let ctor = all(
+      Expr::sort(0),
+      all(
+        Expr::sort(0),
+        all(
+          Expr::var(1),
+          all(
+            Expr::var(1),
+            Expr::app(
+              Expr::app(Expr::rec(0, vec![]), Expr::var(3)),
+              Expr::var(2),
+            ),
+          ),
+        ),
+      ),
+    );
+    let block = store(
+      &env,
+      Constant::with_tables(
+        ConstantInfo::Muts(vec![MutConst::Indc(Inductive {
+          is_unsafe: false,
+          lvls: 0,
+          params: 2,
+          indices: 0,
+          typ: all(Expr::sort(0), all(Expr::sort(0), Expr::sort(0))),
+          ctors: vec![Constructor {
+            is_unsafe: false,
+            lvls: 0,
+            cidx: 0,
+            params: 2,
+            fields: 2,
+            typ: ctor,
+          }],
+        })]),
+        vec![],
+        vec![],
+        vec![Univ::succ(Univ::zero())],
+      ),
+    );
+    let duo = store(&env, indc_proj_constant(0, block.clone()));
+    store(&env, ctor_proj_constant(0, 0, block));
+    let pair =
+      |a: Term, b: Term| Expr::app(Expr::app(Expr::reference(0, vec![]), a), b);
+    let unit_ref = Expr::reference(1, vec![]);
+    let outer = pair(unit_ref.clone(), pair(unit_ref.clone(), unit_ref));
+    let linear = BinderContract { uses: Uses::Linear, value: shared };
+    store(
+      &env,
+      Constant::with_tables(
+        ConstantInfo::Defn(Definition {
+          kind: DefKind::Definition,
+          safety: DefinitionSafety::Safe,
+          lvls: 0,
+          typ: Expr::all_contract(linear, shared, outer.clone(), result),
+          value: Expr::lam_contract(
+            linear,
+            outer,
+            Expr::prj(0, 1, Expr::var(0)),
+          ),
+        }),
+        vec![],
+        vec![duo.clone(), unit.clone()],
+        vec![],
+      ),
+    );
+    (env, duo)
+  }
+
+  #[test]
+  fn parameterised_fields_stay_open_over_their_telescope() {
+    let (_, unit) = unit_env();
+    let unit_ref = Expr::reference(1, vec![]);
+    let inner = Expr::app(
+      Expr::app(Expr::reference(0, vec![]), unit_ref.clone()),
+      unit_ref.clone(),
+    );
+    let (env, duo) = duo_env(inner);
+    let resolved = check_resources(&env, &profile(&unit)).unwrap();
+    let fields: Vec<_> = resolved
+      .program
+      .fields
+      .iter()
+      .filter(|f| {
+        resolved.addresses[usize::try_from(f.type_ref).unwrap()] == duo
+      })
+      .map(|f| (f.binders, f.typ.clone()))
+      .collect();
+    assert_eq!(fields, vec![(2, Expr::var(1)), (3, Expr::var(1))]);
+    // The instantiated field type is still checked against the interface.
+    let (env, _) = duo_env(unit_ref);
+    assert!(check_resources(&env, &profile(&unit)).is_err());
   }
 
   #[test]

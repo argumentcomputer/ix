@@ -187,6 +187,33 @@ def run : IO Unit := do
       resolved.addresses[resolved.program.fields[0]!.typeRef.toNat]? == some nominal &&
       resolved.program.fields[0]!.contract == .unique do
     throw <| IO.userError "field rule did not come from the addressed constructor"
+  -- A parameterised structure `Duo α β` (fields `fst : α`, `snd : β`): its
+  -- field rules stay open over the parameters and the earlier fields, and a
+  -- projection takes its type from the projected value's type arguments.
+  let duoCtor : E := .all .many .shared (.sort 0) (.all .many .shared (.sort 0)
+    (.all .many .shared (.var 1) (.all .many .shared (.var 1)
+      (.app (.app (.recur 0 #[]) (.var 3)) (.var 2)))))
+  let duo : Constant := {
+    info := .muts #[.indc ⟨false, 0, 2, 0,
+      .all .many .shared (.sort 0) (.all .many .shared (.sort 0) (.sort 0)),
+      #[⟨false, 0, 0, 2, 2, duoCtor⟩]⟩]
+    sharing := #[], refs := #[], univs := #[.succ .zero] }
+  let (duoEnv, duoBlock) := store base duo
+  let (duoEnv, duoType) := store duoEnv (Addressed.wrapper (.iPrj ⟨0, duoBlock⟩))
+  let (duoEnv, _) := store duoEnv (Addressed.constructorWrapper duoBlock 0 0)
+  let inner : E := .app (.app (.ref 0 #[]) (.ref 1 #[])) (.ref 1 #[])
+  let outer : E := .app (.app (.ref 0 #[]) (.ref 1 #[])) inner
+  let second (result : E) : Constant := {
+    info := .defn ⟨.defn, .safe, 0, .all ⟨.linear, .shared⟩ .shared outer result,
+      .lam ⟨.linear, .shared⟩ outer (.prj 0 1 (.var 0))⟩
+    sharing := #[], refs := #[duoType, unit], univs := #[] }
+  let resolved ← get "parameterised fields" (Addressed.checkResources (store duoEnv (second inner)).1 profile)
+  let duoFields := resolved.program.fields.filter fun f =>
+    resolved.addresses[f.typeRef.toNat]? == some duoType
+  unless duoFields.map (·.binders) == #[2, 3] && duoFields.map (·.type) == #[.var 1, .var 1] do
+    throw <| IO.userError "parameterised field rules are not open over their telescope"
+  check "an instantiated field type is still checked"
+    (Addressed.checkResources (store duoEnv (second (.ref 1 #[]))).1 profile) false
   IO.println "Addressed resources: integrity, profile codecs, fixtures, fields, and dependency checks passed"
 
 end Tests.ResourceAddressed
