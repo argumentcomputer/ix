@@ -1,8 +1,8 @@
 # Sharing corpus measurements on Mathlib
 
 This document reruns the corpus harness of [`sharing-minimum.md`](sharing-minimum.md),
-`Benchmarks/SharingStudy.lean` (`lake exe sharing-study`), on a Mathlib corpus instead of `Init`. The harness is the
-version at `5f284b7a`. The Init numbers quoted for comparison come from
+`Benchmarks/SharingStudy.lean` (`lake exe sharing-study`), on a Mathlib corpus instead of `Init`. The harness is a
+development version from before the heuristic was removed. The Init numbers quoted for comparison come from
 [`sharing-minimum-measurements.md`](sharing-minimum-measurements.md) (its eighth run). Like that document,
 this one reports measurements and does not choose a design.
 
@@ -11,12 +11,13 @@ heuristic sharing pass, the compiler route at the time; "stored", "current" and 
 tables. Format v4 replaces the integer codes by TagN and the heuristic by the canonical construction
 ([`Ixon.md`, "Sharing System"](Ixon.md#sharing-system)); canonical-construction results on Mathlib are in
 [`sharing-minimum-performance.md`](sharing-minimum-performance.md). The harness was trimmed twice afterwards: when
-the heuristic was removed, and again at `3918e4db`, after which it keeps only the production rebuild check, the
+the heuristic was removed, and again before this PR, after which it keeps only the production rebuild check, the
 decode/encode roundtrip, the unshared size and the MSS baseline (`--occ-check-max`, the candidate statistics and
 `--meta` are gone), and its rebuild check now runs the canonical construction. Reproducing this document therefore
-needs the harness at `5f284b7a` and the v3 corpus.
+needs the development version of the harness used for the Mathlib run and the v3 corpus,
+neither of which is in this PR.
 
-The harness at `5f284b7a` has six measurements:
+The harness used for the Mathlib run has six measurements:
 
 - P1.5 statistics;
 - the production rebuild check;
@@ -379,7 +380,7 @@ and 5 constants took more than 2 s. The harness's deliberate verification limits
 
 ## Reproduction
 
-The commands ran at `5f284b7a`, from the repository root, detached with `setsid nohup … > log 2>&1 &`. `$S` is
+The commands ran with that harness version, from the repository root, detached with `setsid nohup … > log 2>&1 &`. `$S` is
 any output directory. The `time` command is GNU time 1.9.
 
 ```text

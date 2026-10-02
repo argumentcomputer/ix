@@ -12,7 +12,7 @@ replaces the integer codes by TagN and the heuristic by the canonical constructi
 ([`Ixon.md`, "Sharing System"](Ixon.md#sharing-system)); canonical-construction results
 are in [`sharing-minimum-performance.md`](sharing-minimum-performance.md). When the
 heuristic was removed, the harness was trimmed to the stored, canonical, unshared and MSS
-measurements and the `--meta` study. It was later trimmed again (`3918e4db`) to the
+measurements and the `--meta` study. It was later trimmed again, before this PR, to the
 production rebuild check, the decode/encode roundtrip, the unshared size and the MSS
 baseline: `--meta`, `--meta-crosscheck`, `--occ-check-max` and the candidate statistics
 were removed. Every other section needs the harness at the commits listed under
@@ -202,7 +202,7 @@ compact DAG for each `w`:
   continuation-position child: the function child of an App when that child is an App,
   or the body of a Lam (All) when that body is a Lam (All).
 - The certain-excluded test, the component definition and everything else are unchanged.
-- The previous numbers were reported in commit `0b2ccbb3`:
+- The previous numbers, reported in an earlier revision of this document:
 
   | w | certain-stored (previous) | uncertain (previous) | largest component, median / p90 / p99 / max (previous) |
   |---:|---:|---:|---|
@@ -497,7 +497,7 @@ only as a reference point for F and G.
 This section runs the Lean exact optimizer for the uniform-width cost model
 (`Ix.Sharing.Exact`) over the corpus.
 
-- **Code.** The harness ran on `ix-sharing` at `bd3e7482`, which contains the Lean exact
+- **Code.** The harness ran on the development branch once it contained the Lean exact
   core (`Ix/Sharing/Exact/*`) and its Rust port. The harness files merged unchanged.
 - **Call.** For every rooted constant and `w ∈ {1, 2, 3}` the harness calls
   `Ix.Sharing.Exact.optimizeSharingUniformTable w c.sharing (constantInfoRoots c.info) limits`.
@@ -703,8 +703,8 @@ The question is whether metadata expressions should participate in sharing. This
 section measures where the bytes of a whole `.ixe` go, and what `metaSharing`
 contains, on Init (`init.ixe`, 195,387,870 bytes) and on Mathlib (`mathlib.ixe`,
 3,343,271,273 bytes; the corpus of `sharing-minimum-measurements-mathlib.md`). It was
-implemented as the harness's `--meta` mode, which existed from `32d80249` until
-`3918e4db`.
+implemented as the harness's `--meta` mode, which existed only in development versions of
+the harness and was removed before this PR.
 
 ### Method
 
@@ -813,7 +813,7 @@ how far child references reach, and how much repeats within an arena. The encodi
 to (implicit post-order children) is part of format v4; hash-consing is left for a later
 PR ([`sharing-minimum-arena.md`](sharing-minimum-arena.md)). It covers every arena,
 primary and `original`, of Init and Mathlib, with the `--meta` scanner (code in
-`arenaStudy` / `arenaReport`, removed with `--meta` at `3918e4db`). An arena stores its
+`arenaStudy` / `arenaReport`, removed with `--meta` before this PR). An arena stores its
 nodes bottom-up, and a child field is the `Tag0` of the child's absolute index within the
 arena.
 
@@ -964,9 +964,9 @@ The harness ran at the commits in the table below. `$S` is any directory holding
 corpus `init.ixe` (195,387,870 bytes, format v3), written by
 `lake exe ix compile Benchmarks/CompileInit.lean --out $S/init.ixe` before format v4. The
 corpus was not regenerated between runs. A reader accepts only its own format version,
-and the harness was later trimmed (see the status note), so these commands need a v3
-checkout: the tenth run's harness is the one at `a6eff514` (the trimmed harness has no
-`--no-uniform` or `--uni-max-states`).
+and the harness was later trimmed (see the status note), so these commands need the
+development version of the harness used for the tenth run and a v3 corpus; neither is in this
+PR (the trimmed harness has no `--no-uniform` or `--uni-max-states`).
 
 ```text
 nix develop --command bash -c 'lake build sharing-study'
@@ -985,16 +985,16 @@ There were ten full runs.
 
 | run | measured | harness-internal time | end to end |
 |---|---|---|---|
-| First (commit `ecdd47ed`) | P1.5 only | 146.8 s | about 152 s |
-| Second (commit `1598a9be`) | P1.5 + MSS | 185.2 s | 193.3 s |
-| Third (commit `97824804`) | + uniform-width classification (first `payloadMin`) | 316.3 s | 335.0 s |
-| Fourth (commit `ccebc800`) | same, with the corrected `payloadMin` | 379.5 s | 397.6 s |
-| Fifth (commit `8c73b11a`) | + Share-width schemes A–C | 199.1 s | 210.0 s |
-| Sixth (commit `74296aaf`) | + scheme D | 210.5 s | 222.0 s |
-| Seventh (commit `7232adbe`) | + scheme E | 237.2 s | 262.0 s |
-| Eighth (commit `43439654`) | + schemes F and G | 295.3 s | 315.7 s |
+| First | P1.5 only | 146.8 s | about 152 s |
+| Second | P1.5 + MSS | 185.2 s | 193.3 s |
+| Third | + uniform-width classification (first `payloadMin`) | 316.3 s | 335.0 s |
+| Fourth | same, with the corrected `payloadMin` | 379.5 s | 397.6 s |
+| Fifth | + Share-width schemes A–C | 199.1 s | 210.0 s |
+| Sixth | + scheme D | 210.5 s | 222.0 s |
+| Seventh | + scheme E | 237.2 s | 262.0 s |
+| Eighth | + schemes F and G | 295.3 s | 315.7 s |
 | Ninth (see note) | + exact uniform optimizer, w = 1, 2, 3 | 7,125.3 s, of which 6,875.4 s in the optimizer | 7,140.9 s |
-| Tenth (commit `a6eff514`) | + TagN repricing, `--no-uniform` | 374.7 s | 386.3 s |
+| Tenth | + TagN repricing, `--no-uniform` | 374.7 s | 386.3 s |
 
 - **Ninth run.** It was built from the tenth run's harness minus the TagN code and the last
   six CSV columns, which were added while it ran. Its sections that also appear in the
@@ -1026,9 +1026,9 @@ There were ten full runs.
 
 Rerunning the commands above regenerates both CSVs.
 
-Metadata study (`--meta` mode, `ix-sharing` merged at `4cf8ba2e`). `--meta` and
-`--meta-crosscheck` existed only from `32d80249` until `3918e4db`, so these commands need a
-checkout in that range, and the v3 corpora:
+Metadata study (`--meta` mode). `--meta` and `--meta-crosscheck` existed only in development
+versions of the harness, removed before this PR, so these commands need such a version and the
+v3 corpora:
 
 ```text
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe --meta --meta-crosscheck \
@@ -1039,7 +1039,7 @@ nix develop --command bash -c "lake exe sharing-study $S/mathlib.ixe --meta \
 #   -> exit 0; 203 s end to end, peak RSS 4.75 GB; an earlier identical run gave the same output
 ```
 
-With the arena measurements (rerun after commit `f95bea09`; these are the outputs below):
+With the arena measurements (rerun once the arena tables were added; these are the outputs below):
 
 ```text
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe --meta --meta-crosscheck \

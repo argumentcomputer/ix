@@ -25,8 +25,8 @@ through phases 2 and 3, and the result with the fewest real layout bytes is kept
 canonical numbers below are that rule's.
 
 They were measured through the experiment hook `normalize_constant_sharing_tiered_at_width`
-(`faf1a7c7`). That hook runs exactly the three candidate constructions the rule compares. The Lean and
-Rust canonical entry points adopted the rule afterwards (`3eb09b9c`, `a80c16cf`).
+(*width-hook*). That hook runs exactly the three candidate constructions the rule compares. The Lean and
+Rust canonical entry points adopted the rule afterwards (*b3-lean*, *b3-rust*).
 
 The experiment hooks named in this document were removed after the experiments: the best-of-four
 candidate `Phase1Choice::AllCandidates`, the MSS inspector and the runner modes `--width-experiment`,
@@ -103,20 +103,21 @@ join, cites both.
   - K-based (superseded): 0 byte disagreements on all of Init, on a 20,263-constant Mathlib sample, and
     on half of Mathlib (339,749 constants) [D1]–[D6].
   - Every one-sided exhaustion was Lean's, and every one gave Rust's bytes once its limit was raised.
-    With `maxMaterializeWork` = 2^36 (`3ddda798`) there are none.
-- **Format v4** (TagN-only wire, six rungs; regenerated corpora at `36fe2777`) [R10] [D10] [D11]:
+    With `maxMaterializeWork` = 2^36 (*work-limit*) there are none.
+- **Format v4** (TagN-only wire, six rungs; regenerated corpora at *six-rung*) [R10] [D10] [D11]:
   - The Rust canonical output is 14.81% below the stored v4 bytes on Init and 21.16% below on Mathlib.
-  - One Mathlib constant hit a limit. `ce38cdc7` gave the table-count knapsack its own limit, after
+  - One Mathlib constant hit a limit. *knapsack-limit* gave the table-count knapsack its own limit, after
     which that constant certifies.
   - Lean/Rust parity: all 56,622 Init constants are identical. Of the 20,265-constant Mathlib sample,
     20,264 are identical and one (`CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`)
-    fails with a resource-limit error on both sides, the case `ce38cdc7` addresses; 0 disagreements.
-    The final differential at the PR commit supersedes these runs.
+    fails with a resource-limit error on both sides, the case *knapsack-limit* addresses; 0 disagreements.
+    The final differential at this PR's head supersedes these runs: 56,622 Init and 20,284
+    Mathlib-sample constants, identical bytes, no exhaustion on either side.
 - **Final route** (the canonical construction as the compiler's only route, after the Rust
   optimizations) [C2] [C3] [R11] [R12] [L1] [M1]:
-  - `ix compile` of Mathlib takes 1.24–1.30× the heuristic route's wall time, back to back
-    (2:14.5–2:29.8 against 1:46.6–1:55.4); before the Rust optimizations it took 8:56.6. Init takes
-    0:11.3–0:12.0 against 0:09.2.
+  - `ix compile` of Mathlib takes 1.13–1.26× the heuristic route's wall time in the final
+    back-to-back runs at this PR's head (2:08.8–2:09.9 against 1:42.0–1:54.8; 1.24–1.30× in
+    earlier pairs); before the Rust optimizations it took 8:56.6. Init takes 10.9 s against 8.6 s.
   - The output is 2,318,833,546 bytes for Mathlib and 143,680,738 for Init, against 2,620,063,965 and
     155,259,078 with heuristic sharing (−11.50% and −7.46%).
   - The Rust construction alone, summed per constant: Mathlib 9,685 s → 940 s, Init 379 s → 50 s,
@@ -147,62 +148,103 @@ Terms used in the table:
 - **differential:** the Lean/Rust suite `exact-sharing-ffi` (`Tests/Ix/SharingExactFFI.lean`) in corpus
   mode;
 - **search, old:** phase 1's uniform search used the subset enumeration;
-- **search, new:** phase 1 used the reclassifying branch and bound (Lean `985de744`, Rust `0aca9b39`).
+- **search, new:** phase 1 used the reclassifying branch and bound (Lean *bb-lean*, Rust *bb-rust*).
+
+**Builds.** The code column and the text name development builds of this work, which are not
+commits of the repository. In order:
+
+| build | what it added |
+|---|---|
+| *ml-harness* | the corpus harness version of the Mathlib measurements |
+| *diff-1* | the first Lean/Rust differential test |
+| *runner-1* | the first version of the Rust corpus runner |
+| *diag* | corpus selection and the Lean limit diagnosis in the differential |
+| *bb-lean* | the reclassifying branch and bound, Lean |
+| *bb-rust* | the reclassifying branch and bound, Rust |
+| *k-bb* | branch and bound against subset-enumeration tests (K-based width rule) |
+| *work-split* | a separate materialization-work limit in Lean |
+| *work-limit* | that limit in the differential diagnosis (`maxMaterializeWork` 2^36) |
+| *parity-record* | documentation only: parity and speed results |
+| *width-hook* | the forced phase-1 width hook and the width experiment |
+| *b3-record* | documentation only: the best-of-three rule |
+| *b3-lean* | the best-of-three width rule, Lean |
+| *best-of-four* | the all-candidates hook and the best-of-four runner mode |
+| *b3-rust* | the best-of-three width rule, Rust |
+| *plan-b4* | documentation only: the plan with the best-of-four record |
+| *kahn-lean* | the Kahn order beyond the first tier, Lean |
+| *par* | deterministic parallelism inside one construction |
+| *tagn-only* | TagN as the only integer code |
+| *kahn-rust* | the Kahn order beyond the first tier, Rust |
+| *mss-hooks* | the MSS and encoding-inspector hooks |
+| *kahn* | documentation only: the outlier explained (code as *kahn-rust*) |
+| *serial-mode* | the runner mode `--serial-constants` |
+| *rung4* | the 4-byte TagN rung |
+| *six-rung* | the six TagN rungs in the construction; the last heuristic-route compiler used below (corpora with header `0xE3`) |
+| *knapsack-lean* | the knapsack-cell limit, Lean |
+| *knapsack-limit* | the telescope-spine guard and the knapsack-cell limit, Rust |
+| *v4-flip* | format version 4 (canonical route, before any optimization) |
+| *pre-opt* | the canonical route before the Rust optimizations |
+| *dry-run* | the phase-1 dry run, during the Rust optimizations |
+| *optimized* | the end of the Rust optimizations |
+| *optimized-main* | *optimized* merged with `main` |
+| *candidate-fix* | the candidate count no longer limits the canonical route |
+| *review-fixes* | the Rust review fixes (checked mode) |
+| *lean-optimized* | the Lean fast implementations |
 
 | key | what | code | search | outputs (untracked) |
 |---|---|---|---|---|
-| [P] | the plan, §0 and §12 | `6da48067` | | `docs/sharing-minimum.md` |
+| [P] | the plan, §0 and §12 | *plan-b4* | | `docs/sharing-minimum.md` |
 | [Init] | Init corpus harness (`sharing-study`), tenth run | see the doc | | `docs/sharing-minimum-measurements.md` |
-| [ML] | Mathlib corpus harness (`sharing-study`) | `5f284b7a` | | `docs/sharing-minimum-measurements-mathlib.md` |
-| [X1] | **best of three**, TagN layout, Init and Mathlib, 8 threads | `faf1a7c7` | new | `wx_{init,ml}_tagN.{md,err,csv}`, `wx_*_tagN_{join,best}.txt` |
-| [X2] | **best of three**, Tag4 layout, Init and Mathlib, 8 threads | `faf1a7c7` | new | `wx_{init,ml}_tag4.{md,err,csv}`, `wx_*_tag4_{join,best}.txt` |
-| [X3] | best of three, TagN layout, Init, 1 thread | `faf1a7c7` | new | `wx_init_tagN_t1.{md,err,csv}` |
-| [X4] | best of four (w = 1, 2, 3 and all candidates), both layouts, Init and Mathlib, 12 threads | `94882265` | new | `wx4_{init,ml}_{tagN,tag4}.{md,err,csv}`, `wx4_*_{join,best}.txt` |
-| [X5] | MSS (ties by structural ID and by blake3) against "all", all of Mathlib; entry-level diffs | `7b083108` | new | `cmp_{id,blake3}.{md,err,csv}`, `outlier_diff2.md`, `diff_up7_blake3.md`, `diff_sample13_id.md` |
-| [X6] | the outlier with the Kahn order, per width and "all", both layouts | `0ef72793` | new | `outlier_kahn_{tagN,tag4}.csv` |
-| [X7] | parallelism timings on Mathlib: whole corpus (a), (b), (c) at 20 threads, and per-constant latency (`--serial-constants`) | `7b083108`, `dcf3b318` | new | `ml_{a,b,c}.{md,err,csv,load,loadlog}`, `serial_{a,b,c}.{md,err,csv,loadlog}` |
-| [X8] | parallel against sequential, all of Init, four budgets (`--check-sequential`) | `dee8604e` | new | `init_check_*.{md,err}` |
-| [R1] | K-based, runner, Init, TagN layout, 16 threads | `2072a9bf` | old | `init_tiered.{md,err,csv}` |
-| [R2] | K-based, runner, Mathlib, TagN layout, 20 threads | `2072a9bf` | old | `mathlib_tiered.{md,err,csv}` |
-| [R3] | K-based, runner, Mathlib, TagN layout, 20 threads | `e4c0dead` | new | `mathlib_tiered_bb.{md,err,csv}` |
-| [R4] | K-based, runner, Init, TagN layout, 20 threads | `e4c0dead` | new | `init_tagN_t20.{md,err,csv}` |
-| [R5] | K-based, runner, Init, Tag4 layout, 20 threads | `e4c0dead` | new | `init_tag4_t20.{md,err,csv}` |
-| [R6] | K-based, runner, Init, TagN layout, 1 thread | `e4c0dead` | new | `init_tagN_t1.{md,err,csv}` |
-| [R7] | K-based, runner, Mathlib, Tag4 layout, 20 threads | `e4c0dead` | new | `ml_tag4_t20.{md,err,csv}` |
+| [ML] | Mathlib corpus harness (`sharing-study`) | *ml-harness* | | `docs/sharing-minimum-measurements-mathlib.md` |
+| [X1] | **best of three**, TagN layout, Init and Mathlib, 8 threads | *width-hook* | new | `wx_{init,ml}_tagN.{md,err,csv}`, `wx_*_tagN_{join,best}.txt` |
+| [X2] | **best of three**, Tag4 layout, Init and Mathlib, 8 threads | *width-hook* | new | `wx_{init,ml}_tag4.{md,err,csv}`, `wx_*_tag4_{join,best}.txt` |
+| [X3] | best of three, TagN layout, Init, 1 thread | *width-hook* | new | `wx_init_tagN_t1.{md,err,csv}` |
+| [X4] | best of four (w = 1, 2, 3 and all candidates), both layouts, Init and Mathlib, 12 threads | *best-of-four* | new | `wx4_{init,ml}_{tagN,tag4}.{md,err,csv}`, `wx4_*_{join,best}.txt` |
+| [X5] | MSS (ties by structural ID and by blake3) against "all", all of Mathlib; entry-level diffs | *mss-hooks* | new | `cmp_{id,blake3}.{md,err,csv}`, `outlier_diff2.md`, `diff_up7_blake3.md`, `diff_sample13_id.md` |
+| [X6] | the outlier with the Kahn order, per width and "all", both layouts | *kahn-rust* | new | `outlier_kahn_{tagN,tag4}.csv` |
+| [X7] | parallelism timings on Mathlib: whole corpus (a), (b), (c) at 20 threads, and per-constant latency (`--serial-constants`) | *mss-hooks*, *serial-mode* | new | `ml_{a,b,c}.{md,err,csv,load,loadlog}`, `serial_{a,b,c}.{md,err,csv,loadlog}` |
+| [X8] | parallel against sequential, all of Init, four budgets (`--check-sequential`) | *par* | new | `init_check_*.{md,err}` |
+| [R1] | K-based, runner, Init, TagN layout, 16 threads | *runner-1* | old | `init_tiered.{md,err,csv}` |
+| [R2] | K-based, runner, Mathlib, TagN layout, 20 threads | *runner-1* | old | `mathlib_tiered.{md,err,csv}` |
+| [R3] | K-based, runner, Mathlib, TagN layout, 20 threads | *k-bb* | new | `mathlib_tiered_bb.{md,err,csv}` |
+| [R4] | K-based, runner, Init, TagN layout, 20 threads | *k-bb* | new | `init_tagN_t20.{md,err,csv}` |
+| [R5] | K-based, runner, Init, Tag4 layout, 20 threads | *k-bb* | new | `init_tag4_t20.{md,err,csv}` |
+| [R6] | K-based, runner, Init, TagN layout, 1 thread | *k-bb* | new | `init_tagN_t1.{md,err,csv}` |
+| [R7] | K-based, runner, Mathlib, Tag4 layout, 20 threads | *k-bb* | new | `ml_tag4_t20.{md,err,csv}` |
 | [J1] | K-based, join of [Init]'s CSV with [R4] and [R5] | | | `init_join.txt`, `init_byw.txt` |
 | [J2] | K-based, join of [ML]'s CSV with [R3] and [R7] | | | `ml_join.txt`, `ml_byw.txt` |
-| [D0] | differential, Init, the 10 Lean-only constants, limit diagnosis | `86df8874` | old | `diag_init.log` |
-| [D1] | differential, Init, all constants, 1 process | `871eef12` | old | `corpus_full.log` |
-| [D2] | differential, Init, all constants, 6 processes | `e4c0dead` | new | `init_bb_s{0..5}.log` |
-| [D3] | differential, Mathlib sample, 2 processes | `86df8874` | old | `mathlib_diff_{a,b}.log` |
-| [D4] | differential, Mathlib sample, 4 processes | `e4c0dead` | new | `ml_bb_s{0..3}.log` |
-| [D5] | differential, the Lean-only constants of [D2]/[D4] | `3ddda798` | new | `lo_s{0..3}.log`, `lo_init.log` |
-| [D6] | differential, K-based, Mathlib, all constants in 6 address shards; 3 shards (339,749 constants) completed | `3ddda798` | new | `lf_s{0,3,4}.log` (and the empty `lf_s{1,2,5}.log`) |
-| [D7] | differential, **best of three**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `a80c16cf` | new | `b3_init_s{0..5}.log` |
-| [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes; aborted, no tallies | `a80c16cf` | new | `b3_ml_s{0..3}.log` |
-| [D9] | differential, **best of three with the Kahn order**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `d19f21c0` | new | `init_s{0..5}.log` |
-| [D10] | differential, best of three with the Kahn order, **v4 Init corpus**, all constants, tiered-TagN, 6 processes | `36fe2777` | new | `init_s{0..5}.log` |
-| [D11] | differential, same build, **v4 Mathlib sample** (20,265 constants), tiered-TagN, 8 processes | `36fe2777` | new | `ml_s{0..7}.log` |
-| [R10] | Rust canonical runner over the v4 corpora, 20 threads (also writes the address lists and the sample) | `36fe2777` | new | `{init,ml}_rust.{md,err,csv}`, `init_all.txt`, `ml_select.txt` |
-| [C1] | v4 corpus compiles | `36fe2777` | | `compile_{init,mathlib}.log` |
-| [X9] | `IsDenseSubsite…` per width on the v4 corpus: defaults at `36fe2777`, `--max-states 2^26`, and defaults with the knapsack limit | `36fe2777`, `ce38cdc7` | new | `dense_widths{,_26,_knap}.csv` |
-| [C2] | `ix compile` of Mathlib and Init back to back: heuristic route (binary built at `36fe2777`), then canonical route | `36fe2777`, `fb5221dc` | | `run_{mathlib,init}_verify_{heur,final}.log`, the two `.ixe` outputs |
-| [C3] | `ix compile` back-to-back pairs on a quieter machine, and the canonical route before the Rust optimizations | `36fe2777`, `8402af07`, `aaa9d944`, `e181534c` | | `run_mathlib_{heur_final,final,heur_c,i4_a,base_a}.log`, `run_init_{heur_final,final,base_final}.log` |
+| [D0] | differential, Init, the 10 Lean-only constants, limit diagnosis | *diag* | old | `diag_init.log` |
+| [D1] | differential, Init, all constants, 1 process | *diff-1* | old | `corpus_full.log` |
+| [D2] | differential, Init, all constants, 6 processes | *k-bb* | new | `init_bb_s{0..5}.log` |
+| [D3] | differential, Mathlib sample, 2 processes | *diag* | old | `mathlib_diff_{a,b}.log` |
+| [D4] | differential, Mathlib sample, 4 processes | *k-bb* | new | `ml_bb_s{0..3}.log` |
+| [D5] | differential, the Lean-only constants of [D2]/[D4] | *work-limit* | new | `lo_s{0..3}.log`, `lo_init.log` |
+| [D6] | differential, K-based, Mathlib, all constants in 6 address shards; 3 shards (339,749 constants) completed | *work-limit* | new | `lf_s{0,3,4}.log` (and the empty `lf_s{1,2,5}.log`) |
+| [D7] | differential, **best of three**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | *b3-rust* | new | `b3_init_s{0..5}.log` |
+| [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes; aborted, no tallies | *b3-rust* | new | `b3_ml_s{0..3}.log` |
+| [D9] | differential, **best of three with the Kahn order**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | *kahn* | new | `init_s{0..5}.log` |
+| [D10] | differential, best of three with the Kahn order, **v4 Init corpus**, all constants, tiered-TagN, 6 processes | *six-rung* | new | `init_s{0..5}.log` |
+| [D11] | differential, same build, **v4 Mathlib sample** (20,265 constants), tiered-TagN, 8 processes | *six-rung* | new | `ml_s{0..7}.log` |
+| [R10] | Rust canonical runner over the v4 corpora, 20 threads (also writes the address lists and the sample) | *six-rung* | new | `{init,ml}_rust.{md,err,csv}`, `init_all.txt`, `ml_select.txt` |
+| [C1] | v4 corpus compiles | *six-rung* | | `compile_{init,mathlib}.log` |
+| [X9] | `IsDenseSubsite…` per width on the v4 corpus: defaults at *six-rung*, `--max-states 2^26`, and defaults with the knapsack limit | *six-rung*, *knapsack-limit* | new | `dense_widths{,_26,_knap}.csv` |
+| [C2] | `ix compile` of Mathlib and Init back to back: heuristic route (binary built at *six-rung*), then canonical route | *six-rung*, *optimized-main* | | `run_{mathlib,init}_verify_{heur,final}.log`, the two `.ixe` outputs |
+| [C3] | `ix compile` back-to-back pairs on a quieter machine, and the canonical route before the Rust optimizations | *six-rung*, *optimized*, *dry-run*, *pre-opt* | | `run_mathlib_{heur_final,final,heur_c,i4_a,base_a}.log`, `run_init_{heur_final,final,base_final}.log` |
 | [R11] | Rust runner, 20 threads, at the start and at the end of the Rust optimization work, over the patched Mathlib corpus and the canonical-route Init file | | new | `{ml,init}_base.{md,csv}`, `{ml,init}_i4.{md,csv}` |
-| [R12] | Rust runner, 12 threads, default mode, checked mode (`--full-check`) and `--check-sequential`, over the canonical-route files | `f2ec8b50` | new | `{init,mathlib}_f2{,full,seq}.{md,csv,log}` and the CSV comparison |
-| [L1] | Lean (`exact-sharing-ffi` corpus mode, `LEAN_NUM_THREADS=1` and default) against the Rust runner (1 thread, default mode) on three Init samples | `1179d7ba` | new | `ffi_{bulk,p99,slow}_{1,default}.log`, `rust1.{csv,log}` |
-| [M1] | merge-queue partition `lake test --wfail -- --ignored compile` | `1179d7ba` | | `ignored_compile.log` |
+| [R12] | Rust runner, 12 threads, default mode, checked mode (`--full-check`) and `--check-sequential`, over the canonical-route files | *review-fixes* | new | `{init,mathlib}_f2{,full,seq}.{md,csv,log}` and the CSV comparison |
+| [L1] | Lean (`exact-sharing-ffi` corpus mode, `LEAN_NUM_THREADS=1` and default) against the Rust runner (1 thread, default mode) on three Init samples | *lean-optimized* | new | `ffi_{bulk,p99,slow}_{1,default}.log`, `rust1.{csv,log}` |
+| [M1] | merge-queue partition `lake test --wfail -- --ignored compile` | *lean-optimized* | | `ignored_compile.log` |
 
 Notes on the sources:
 
-- **Code identity.** No file under `crates/` changed between `e4c0dead` and `8f0ffa04`. The runner binary
-  for [R4]–[R7] was built at `e4c0dead`. The binary for [X1]–[X3] was built from `faf1a7c7`'s source
-  before two lint-only edits to the runner; `faf1a7c7` itself refactors the canonical path into
-  `tiered_at(…, None)` without changing it. The Lean side of [D5]/[D6] was built at `3ddda798`; later
-  commits change only documentation and Rust. [X4] used a copy of the runner built at `94882265`. [X5] and [X6] used runner binaries
-  built from the sources of `7b083108` and `0ef72793` before those were committed; only lint and
+- **Code identity.** No file under `crates/` changed between *k-bb* and *parity-record*. The runner binary
+  for [R4]–[R7] was built at *k-bb*. The binary for [X1]–[X3] was built from *width-hook*'s source
+  before two lint-only edits to the runner; *width-hook* itself refactors the canonical path into
+  `tiered_at(…, None)` without changing it. The Lean side of [D5]/[D6] was built at *work-limit*; later
+  commits change only documentation and Rust. [X4] used a copy of the runner built at *best-of-four*. [X5] and [X6] used runner binaries
+  built from the sources of *mss-hooks* and *kahn-rust* before those were committed; only lint and
   documentation edits followed. [D7] and [D8]
-  used `IxTests` built at `a80c16cf`, whose Lean side is the best of three of `3eb09b9c`.
+  used `IxTests` built at *b3-rust*, whose Lean side is the best of three of *b3-lean*.
 - **The Mathlib sample** used by [D3]/[D4] has 20,263 constants: every 50th constant in address order,
   plus every constant with more than 2,000 R1/R2 candidates. It was written by the runner's
   `--select-out` during [R2].
@@ -394,7 +436,7 @@ of these runs, used by every runner run:
 | `max_work` | 2^36 |
 | `max_output_bytes` | 2^32 |
 
-**Lean** limits were `Ix.Sharing.Exact.Limits` in `Ix/Sharing/Exact/Basic.lean`, defaults at `9341656e`:
+**Lean** limits were `Ix.Sharing.Exact.Limits` in `Ix/Sharing/Exact/Basic.lean`, defaults at *b3-record*:
 
 | limit | value |
 |---|---:|
@@ -408,11 +450,11 @@ of these runs, used by every runner run:
 | `maxMaterialize` (predicted output size) | 2^26 |
 | `maxMaterializeWork` | 2^36 |
 
-`maxMaterializeWork` was added in `84dd662f`. Before it, the per-entry materialization work was
+`maxMaterializeWork` was added in *work-split*. Before it, the per-entry materialization work was
 checked against `maxMaterialize`.
 
 After the v4 runs, the table-count knapsack got its own limit, 2^28 cells (`max_knapsack_cells` in Rust,
-`ce38cdc7`; `maxKnapsackCells` in Lean; see the Format v4 section). The compiler defaults were later raised far above all of these
+*knapsack-limit*; `maxKnapsackCells` in Lean; see the Format v4 section). The compiler defaults were later raised far above all of these
 values, as a safety net with a `--sharing-limits` override ([`Ixon.md`, "Sharing System"](Ixon.md#sharing-system)).
 On the canonical (tiered) path neither language limits the candidate count or meters `transitions`:
 Rust's `candidates` limit and both languages' `transitions` limits bound only the width-state test
@@ -457,14 +499,14 @@ limit types).
   - Mathlib needed 2^27 (62 constants), 2^28 (29), 2^29 (16), 2^30 (7), 2^31 (5) and 2^32 (1,
     `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`) [D4].
   - The needed limit grows with `k·N` (stored entries × DAG nodes), about 1.95·k·N on Init [D0] [R1].
-- **At `3ddda798`** (`maxMaterializeWork` 2^36, all other limits at defaults), all 120 Mathlib and all 10
+- **At *work-limit*** (`maxMaterializeWork` 2^36, all other limits at defaults), all 120 Mathlib and all 10
   Init constants succeed with Rust's bytes, the Init ones under both layouts [D5].
 - **Old search, sample** [D3] [D4]. Two kinds of exhaustion in [D3] do not occur with the new search:
   - the 2 `maxCostEvals` cases (`mpullback_mulInvariantVectorField` and
     `mpullback_addInvariantVectorField`, in both modes);
   - 200 exhaustions on both sides (101 tiered-TagN, 99 uniform-w2).
-- **K-based, half of Mathlib at `3ddda798`:** no exhaustion on either side in 339,749 constants [D6].
-- **Best of three** (Lean `3eb09b9c`, Rust `a80c16cf`, default limits): no exhaustion on either side
+- **K-based, half of Mathlib at *work-limit*:** no exhaustion on either side in 339,749 constants [D6].
+- **Best of three** (Lean *b3-lean*, Rust *b3-rust*, default limits): no exhaustion on either side
   for any of the 56,622 Init constants under either layout [D7]. The Mathlib sample run [D8] was stopped after 2 h 5 min, before it had written any tally (its output is
   buffered); see [Lean/Rust parity](#leanrust-parity).
 
@@ -549,8 +591,8 @@ started. Their times are therefore not directly comparable with the K-based rows
 | Mathlib sample | 20,263 | uniform-w2 | old | 4,879.5 s | 399.7 s | (same processes) | | [D3] |
 | Mathlib sample | 20,263 | tiered-TagN | new | 5,092.5 s | 703.4 s | 4, 1:01:54–1:37:49 for both modes | 4,704,176–4,717,480 kB | [D4] |
 | Mathlib sample | 20,263 | uniform-w2 | new | 1,379.8 s | 89.3 s | (same processes) | | [D4] |
-| Mathlib, the 120 Lean-only constants | 120 | tiered-TagN | new, `3ddda798` | 5,128.7 s | 257.6 s | 4, 17:20–28:39 | 4,732,112–4,735,896 kB | [D5] |
-| Mathlib, half the corpus | 339,749 | tiered-TagN | new, `3ddda798` | 8,563.0 s | 1,091.0 s | 3, 53:12–55:03 | 4,724,964–4,731,392 kB | [D6] |
+| Mathlib, the 120 Lean-only constants | 120 | tiered-TagN | new, *work-limit* | 5,128.7 s | 257.6 s | 4, 17:20–28:39 | 4,732,112–4,735,896 kB | [D5] |
+| Mathlib, half the corpus | 339,749 | tiered-TagN | new, *work-limit* | 8,563.0 s | 1,091.0 s | 3, 53:12–55:03 | 4,724,964–4,731,392 kB | [D6] |
 
 - The sample is heavy by construction (it includes every constant with more than 2,000 candidates), so
   its per-constant times are not corpus averages.
@@ -563,7 +605,7 @@ started. Their times are therefore not directly comparable with the K-based rows
 
 ### Parallelism inside one constant (Rust) [X7] [X8]
 
-`normalize_constant_sharing_tiered_par` (`dee8604e`) runs the canonical construction with thread budgets
+`normalize_constant_sharing_tiered_par` (*par*) runs the canonical construction with thread budgets
 `Parallelism { widths, components, materialize }` on the current rayon pool. Budgets of 1 give the
 sequential reference path, which every other entry point uses.
 
@@ -746,17 +788,17 @@ How the differential counts:
 - A one-sided exhaustion is reported. `diagnose` then reruns Lean with the limit that fired doubled, at
   most 12 times.
 
-**Best of three** (the canonical rule, Lean `3eb09b9c` and Rust `a80c16cf`):
+**Best of three** (the canonical rule, Lean *b3-lean* and Rust *b3-rust*):
 
 | corpus | build | mode | same bytes | same error | Lean-only exhaustion | Rust-only | disagreements | source |
 |---|---|---|---:|---:|---:|---:|---:|---|
-| fixtures (§2), 7 modes | `a80c16cf` | | 89 | 0 | 0 | 0 | 0 | [D7] |
-| 350 generated inputs × modes | `a80c16cf` | | 2,398 | 0 | 0 | 0 | 0 | [D7] |
-| Init, all | `a80c16cf` | tiered-TagN | **56,622** | 0 | 0 | 0 | **0** | [D7] |
+| fixtures (§2), 7 modes | *b3-rust* | | 89 | 0 | 0 | 0 | 0 | [D7] |
+| 350 generated inputs × modes | *b3-rust* | | 2,398 | 0 | 0 | 0 | 0 | [D7] |
+| Init, all | *b3-rust* | tiered-TagN | **56,622** | 0 | 0 | 0 | **0** | [D7] |
 | | | tiered-Tag4 | **56,622** | 0 | 0 | 0 | **0** | [D7] |
-| Init, all, **Kahn order** | `d19f21c0` | tiered-TagN | **56,622** | 0 | 0 | 0 | **0** | [D9] |
+| Init, all, **Kahn order** | *kahn* | tiered-TagN | **56,622** | 0 | 0 | 0 | **0** | [D9] |
 | | | tiered-Tag4 | **56,622** | 0 | 0 | 0 | **0** | [D9] |
-| Mathlib sample | `a80c16cf` | tiered-TagN, tiered-Tag4 | aborted, no tallies | | | | | [D8] |
+| Mathlib sample | *b3-rust* | tiered-TagN, tiered-Tag4 | aborted, no tallies | | | | | [D8] |
 
 **K-based (superseded):**
 
@@ -764,20 +806,20 @@ How the differential counts:
 |---|---|---|---:|---:|---:|---:|---:|---|
 | fixtures (§2), 7 modes | every build | | 89 | 0 | 0 | 0 | 0 | [D1]–[D6] |
 | 350 generated inputs × modes | every build | | 2,398 | 0 | 0 | 0 | 0 | [D1]–[D6] |
-| Init, all | old (`871eef12`) | tiered-TagN | 56,587 | 25 | 10 | 0 | **0** | [D1] |
+| Init, all | old (*diff-1*) | tiered-TagN | 56,587 | 25 | 10 | 0 | **0** | [D1] |
 | | | tiered-Tag4 | 56,583 | 29 | 10 | 0 | **0** | [D1] |
 | | | uniform-w2 | 56,594 | 28 | 0 | 0 | **0** | [D1] |
-| Init, all | new (`e4c0dead`) | tiered-TagN | 56,612 | 0 | 10 | 0 | **0** | [D2] |
+| Init, all | new (*k-bb*) | tiered-TagN | 56,612 | 0 | 10 | 0 | **0** | [D2] |
 | | | uniform-w2 | 56,622 | 0 | 0 | 0 | **0** | [D2] |
-| Mathlib sample | old (`86df8874`) | tiered-TagN | 20,056 | 101 | 106 | 0 | **0** | [D3] |
+| Mathlib sample | old (*diag*) | tiered-TagN | 20,056 | 101 | 106 | 0 | **0** | [D3] |
 | | | uniform-w2 | 20,162 | 99 | 2 | 0 | **0** | [D3] |
-| Mathlib sample | new (`e4c0dead`) | tiered-TagN | 20,143 | 0 | 120 | 0 | **0** | [D4] |
+| Mathlib sample | new (*k-bb*) | tiered-TagN | 20,143 | 0 | 120 | 0 | **0** | [D4] |
 | | | uniform-w2 | 20,263 | 0 | 0 | 0 | **0** | [D4] |
-| the 120 + 10 Lean-only constants | `3ddda798` | tiered-TagN (and Tag4 for the 10 Init) | 120 + 10 (+ 10) | 0 | 0 | 0 | **0** | [D5] |
-| **Mathlib, half the corpus** (3 of 6 address shards) | `3ddda798` | tiered-TagN | **339,749** | 0 | 0 | 0 | **0** | [D6] |
+| the 120 + 10 Lean-only constants | *work-limit* | tiered-TagN (and Tag4 for the 10 Init) | 120 + 10 (+ 10) | 0 | 0 | 0 | **0** | [D5] |
+| **Mathlib, half the corpus** (3 of 6 address shards) | *work-limit* | tiered-TagN | **339,749** | 0 | 0 | 0 | **0** | [D6] |
 
 - **One-sided exhaustions.** After `diagnose` raised the limit that fired, every Lean-only exhaustion in
-  every run gave bytes equal to Rust's [D0] [D3] [D4]. With `maxMaterializeWork` (`3ddda798` onwards)
+  every run gave bytes equal to Rust's [D0] [D3] [D4]. With `maxMaterializeWork` (*work-limit* onwards)
   there were none in [D5]–[D7].
 - **The aborted run [D8].** The best-of-three Mathlib-sample differential was stopped
   after 2 h 5 min, at 07:23 on 2026-10-01. It used the phase-2 order that §12.14 replaces, so the
@@ -790,7 +832,7 @@ How the differential counts:
   constants (every constant whose position in the address list is 0, 3 or 4 mod 6).
 - **Exit status of [D3].** Its two processes exited with status 1 after all groups had passed. The test
   driver then failed to spawn `lean`, which was not on their `PATH` [D3].
-- **Rust-only tests.** `cargo test -p ixon` passes 392 tests at `a80c16cf`. Among them are the comparison
+- **Rust-only tests.** `cargo test -p ixon` passes 392 tests at *b3-rust*. Among them are the comparison
   of the branch and bound against the enumeration on 600 generated inputs, and the best-of-three selection
   rule against the forced-width candidates (`tiered_at_width_hook`, now
   `tiered_selects_the_best_width_candidate`).
@@ -810,7 +852,7 @@ excluded terms that pay at width 1.
 
 **Method.**
 
-- **The hook.** `normalize_constant_sharing_tiered_at_width` (`faf1a7c7`) runs phases 1–3 with the
+- **The hook.** `normalize_constant_sharing_tiered_at_width` (*width-hook*) runs phases 1–3 with the
   phase-1 width forced to `w`. Phases 2 and 3 are unchanged. At the K-based width it reproduces the
   canonical construction (test `tiered_at_width_hook` at that commit; it is now
   `tiered_selects_the_best_width_candidate`, which checks that the canonical construction is the best of
@@ -935,7 +977,7 @@ above MSS. The best-of-four experiment below stores MSS's exact set as a fourth 
 
 **Method.** A fourth phase-1 candidate, "all", stores every candidate: compact in-degree ≥ 2 and
 unshared length ≥ 2, which is exactly MSS's set. Its bodies are materialized at uniform width 1 and
-carried through phases 2 and 3 like the others (hook `Phase1Choice::AllCandidates`, `94882265`, removed after the experiment). The best
+carried through phases 2 and 3 like the others (hook `Phase1Choice::AllCandidates`, *best-of-four*, removed after the experiment). The best
 of four takes the fewest layout bytes, with ties going to w = 1, 2, 3 and then "all". No candidate failed
 on any constant of either corpus under either layout.
 
@@ -962,7 +1004,7 @@ on any constant of either corpus under either layout.
   That is worse than its own `w = 2` candidate (65,264) and 3,588 bytes worse than MSS (63,779) [X4] CSV.
   Under Tag4 "all" gives 72,065.
 - §12.14 first attributed the gap to phase 2's pinned order beyond the first tier. Phase 2 now uses the
-  Kahn priority order by reference count there (Lean `7a7113cf`, Rust `0ef72793`), and this does not
+  Kahn priority order by reference count there (Lean *kahn-lean*, Rust *kahn-rust*), and this does not
   close the gap [X6]:
   - TagN bytes at w = 1 / 2 / 3: 65,444 / 65,264 / **65,247**; "all" 67,367 (unchanged).
   - The best of three is now 65,247, +1,468 over MSS (was +1,485).
@@ -988,7 +1030,7 @@ on any constant of either corpus under either layout.
 ### Store-all against MSS under both tie rules (plan §12.15) [X5]
 
 All 679,499 Mathlib constants, TagN prices. "all" is the all-candidates construction with the Kahn order.
-The comparison ran with the runner modes `--mss-compare` and `--mss-ties` at `7b083108`; those modes, the
+The comparison ran with the runner modes `--mss-compare` and `--mss-ties` at *mss-hooks*; those modes, the
 MSS inspector and the blake3 tie rule were removed after the experiment, and the Rust MSS encoding
 (`mss.rs`) is now a test-only reference encoding.
 
@@ -1022,7 +1064,7 @@ MSS inspector and the blake3 tie rule were removed after the experiment, and the
 - **Decision.** No rule change; structural-ID ties stay pinned [P §12.15]. The order beyond the first
   tier is a greedy rule. An exact maximum-weight closed set for the 1,032-entry second rung is a possible
   refinement, not adopted.
-- **Against the best of three.** The best of three (`faf1a7c7`, before the Kahn order) is larger than
+- **Against the best of three.** The best of three (*width-hook*, before the Kahn order) is larger than
   ID-tie MSS on 902 constants, by +2,504 B in total and at most +37 bytes [X1] [X5].
 
 ### What the experiment shows
@@ -1038,22 +1080,22 @@ MSS inspector and the blake3 tie rule were removed after the experiment, and the
 
 ## Format v4: the TagN-only wire with six rungs
 
-These results come from the code as of `36fe2777` and `ce38cdc7`. Those corpora still have the header
+These results come from the code as of *six-rung* and *knapsack-limit*. Those corpora still have the header
 byte `0xE3` and heuristic sharing tables: the version flip to 4 (`0xE4`) and the canonical compiler route
 came later.
 
-**What changed.** Ixon now writes TagN for every integer (`93e2895c`), and the TagN code gained a
-4-byte rung (`480923f2`): the widths are 1, 2, 3, 4, 5 and 9 bytes [P §12.12] [P §12.16]. The v3
+**What changed.** Ixon now writes TagN for every integer (*tagn-only*), and the TagN code gained a
+4-byte rung (*rung4*): the widths are 1, 2, 3, 4, 5 and 9 bytes [P §12.12] [P §12.16]. The v3
 corpora above can no longer be read; this is by design. The tiered construction now uses TagN only
-(`36fe2777`).
+(*six-rung*).
 
 ### Corpora
 
-The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
+The corpora were regenerated at *six-rung* and are named after that commit [C1]:
 
 | | Init | Mathlib |
 |---|---:|---:|
-| file | `$S/init_v4r_36fe2777.ixe` | `$S/mathlib_v4r_36fe2777.ixe` |
+| file | `$S/init_v4r_six-rung.ixe` | `$S/mathlib_v4r_six-rung.ixe` |
 | size | 155,259,078 B | 2,620,063,965 B |
 | compile time (GNU `time`, wall; under load) | 0:51.10 | 3:51.09 |
 | compile peak RSS | 2,945,116 kB | 18,726,024 kB |
@@ -1066,7 +1108,7 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
 - Both used the compiler's heuristic sharing route, since the route switch had not landed. The
   compile times were taken under heavy load: back to back on a quieter machine, the same binary
   compiles Mathlib in 1:46.6–1:55.4 and Init in 0:09.2 [C2] [C3].
-- **With the canonical route and version 4** (`e77bd3a6`), `lake exe ix compile Benchmarks/CompileInit.lean`
+- **With the canonical route and version 4** (*v4-flip*), `lake exe ix compile Benchmarks/CompileInit.lean`
   writes 143,680,738 bytes (`Total constants: 65995`); the compile step took 51.6 s, GNU `time` 0:55.74
   wall and 2,963,976 kB peak RSS, on a loaded machine, so the times are indicative. The Mathlib compile at
   that commit was not completed; [Final route](#final-route-compile-time-and-the-optimized-construction)
@@ -1097,7 +1139,7 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
   - Under TagN (f = 0) the table-count bracket starts at 16,512, which this constant's roughly 18.5k
     stored entries cross. The knapsack over its roughly 2,550 components therefore needed about 6
     million cells, which were charged to `max_states` (2^20).
-  - `ce38cdc7` gives the knapsack its own limit, `max_knapsack_cells` (default 2^28), with resource
+  - *knapsack-limit* gives the knapsack its own limit, `max_knapsack_cells` (default 2^28), with resource
     `KnapsackCells`. The rule is unchanged [P].
   - At default limits the constant now certifies:
 
@@ -1107,7 +1149,7 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
     | w = 2 | 18,877 | **337,241** (best of three) | 48.6 s |
     | w = 3 | 18,440 | 340,770 | 38.0 s |
 
-### Lean/Rust parity on the v4 corpora (IxTests at `36fe2777`)
+### Lean/Rust parity on the v4 corpora (IxTests at *six-rung*)
 
 | corpus | mode | constants | same bytes | same error | Lean-only | Rust-only | disagreements | Lean Σ | Rust Σ | source |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
@@ -1119,36 +1161,61 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
   constants agree [D10] [D11].
 - **The Mathlib sample** has 20,265 constants: every 50th of the v4 corpus plus every constant with
   more than 2,000 candidates, selected by the runner [R10]. The run used 8 processes, one per address
-  shard (the sample split round-robin), with IxTests built at `36fe2777`. Each process took
+  shard (the sample split round-robin), with IxTests built at *six-rung*. Each process took
   1:01:52–1:40:01, with a peak RSS of about 4.0 GB.
 - **The one same-error constant** is `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`
   (address `ca5b91d8…`). Lean and Rust both fail with a resource-limit error (the differential's error
   category `resource`), which counts as agreement of the error category, not as a one-sided exhaustion.
   The differential does not record which limit fired; the runner at the same commit reports Rust's as
   `resource:States` at every width [X9]. It is the table-count knapsack case above: with the separate
-  knapsack-cell limit of `ce38cdc7` the constant certifies.
+  knapsack-cell limit of *knapsack-limit* the constant certifies.
 - **Reproduction.** Build `IxTests`, write the sample with the runner's `--select-out` (as in [R10]),
   split it round-robin into 8 address files, and run one process per file:
 
   ```text
   nix develop --command bash -c 'lake build IxTests'
   for i in 0 1 2 3 4 5 6 7; do
-    IX_SHARING_CORPUS=$S/mathlib_v4r_36fe2777.ixe IX_SHARING_CORPUS_MODES=tiered-tagN \
+    IX_SHARING_CORPUS=$S/mathlib_v4r_six-rung.ixe IX_SHARING_CORPUS_MODES=tiered-tagN \
     IX_SHARING_CORPUS_SELECT=$S/ml_shards/s$i.txt \
     ./.lake/build/bin/IxTests exact-sharing-ffi > $S/ml_s$i.log 2>&1 &
   done
   ```
 
-  A build at or after `ce38cdc7` needs the matching Lean knapsack-cell limit (`maxKnapsackCells`,
-  `941ce87a`; both implementations have it from then on). Without it
-  `CategoryTheory.Functor.IsDenseSubsite…` can be exhausted on one side only. From `f2ec8b50` on, the
+  A build at or after *knapsack-limit* needs the matching Lean knapsack-cell limit (`maxKnapsackCells`,
+  *knapsack-lean*; both implementations have it from then on). Without it
+  `CategoryTheory.Functor.IsDenseSubsite…` can be exhausted on one side only. From *review-fixes* on, the
   differential's Rust side runs in the checked mode ([Checks](#checks-default-and-checked-mode-r12)),
   so its Rust Σ is not the compiler's time.
 - **Superseded.** These runs predate the route switch and the optimizations of both constructions.
-  The final differential, at the PR commit on corpora compiled there with the canonical route,
-  replaces them.
+  The final differential below, at this PR's head on corpora compiled there with the canonical
+  route, replaces them.
 
-<!-- PENDING: [parity] final Lean/Rust differential at the PR commit on corpora compiled at that commit with the canonical route (Init full + the Mathlib sample): constants compared, same bytes, same error, Lean-only, Rust-only, disagreements, Lean Σ, Rust Σ; add as rows of this table and update the Summary. -->
+### Final Lean/Rust differential (this PR's head)
+
+The tree is this PR's head, and the corpora are compiled with `ix compile` at that head (the
+canonical route). The differential runs in corpus mode, `tiered-tagN`, with the Rust side in the
+checked mode, so every Rust candidate is built and verified.
+
+| corpus | constants | same bytes | same error | Lean-only | Rust-only | disagreements | Lean Σ | Rust Σ (checked) | processes |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Init, all | 56,622 | **56,622** | 0 | 0 | 0 | **0** | 204 s | 63 s | 6, about 50 s wall each |
+| Mathlib sample | 20,284 | **20,284** | 0 | 0 | 0 | **0** | 944 s | 346 s | 8, about 3 min wall and 3.8 GB each |
+
+- The Mathlib sample is every 50th constant plus every constant with more than 2,000 candidates.
+  `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`, which failed
+  identically on both sides in [D11], succeeds on both.
+- **Rust over the whole corpora** (`sharing_corpus`, 20 threads): all 56,622 Init and
+  all 679,499 Mathlib constants succeed. Re-running the construction on each stored constant
+  reproduces the stored bytes for every constant of both files (0 smaller, 0 larger): the compiled
+  output is a fixed point of the construction. No candidate took the per-prefix phase 3.
+  Processing took 3.1 s (Init) and 54.4 s (Mathlib) of wall time; the stored constant bytes are
+  66,653,874 (Init) and 1,121,703,681 (Mathlib).
+- **Rust in the default mode**, for comparison: all of Init single-threaded in 24.4 s; summed
+  per-constant times at 20 threads 48.7 s (Init), 824.0 s (Mathlib) and 183.4 s (the Mathlib
+  sample).
+- The merge-queue suite `lake test -- --ignored compile` (the Lean and the Rust compiler on every
+  constant of its test environment, 237,295 constants, with exact equality of the serialized
+  environments) also passes.
 
 ## Final route: compile time and the optimized construction
 
@@ -1166,24 +1233,24 @@ start of each run is given where it was recorded.
 
 ### `ix compile`: heuristic route against canonical route [C2] [C3]
 
-The heuristic route is the `ix` binary built at `36fe2777`, before the route switch, when the compiler
+The heuristic route is the `ix` binary built at *six-rung*, before the route switch, when the compiler
 still used the heuristic: it writes the same environments with heuristic sharing tables (TagN integers, implicit arenas,
 header `0xE3`). Each pair ran back to back, heuristic first, so the load at the start of a canonical
 run includes the heuristic compile that had just ended.
 
 | Mathlib | binary | wall | user CPU | peak RSS | load at start |
 |---|---|---:|---:|---:|---:|
-| pair [C2], heuristic | `36fe2777` | 1:55.43 | 1,653.3 s | 19,157,400 kB | 7.8 |
-| pair [C2], canonical | `fb5221dc` | 2:29.81 | 2,293.8 s | 18,659,548 kB | 19.0 |
-| pair [C3] a, heuristic | `36fe2777` | 1:50.86 | 1,628.0 s | 18,827,240 kB | 3.0 |
-| pair [C3] a, canonical | `8402af07` | 2:17.84 | 2,213.1 s | 18,765,916 kB | 15.9 |
-| pair [C3] b, heuristic | `36fe2777` | 1:46.62 | 1,599.5 s | 19,027,544 kB | 5.3 |
-| pair [C3] b, canonical | `aaa9d944` | 2:14.51 | 2,203.8 s | 18,497,872 kB | 16.1 |
-| canonical before the Rust optimizations [C3] | `e181534c` | 8:56.56 | 10,528.6 s | 18,722,136 kB | 17.8 |
+| pair [C2], heuristic | *six-rung* | 1:55.43 | 1,653.3 s | 19,157,400 kB | 7.8 |
+| pair [C2], canonical | *optimized-main* | 2:29.81 | 2,293.8 s | 18,659,548 kB | 19.0 |
+| pair [C3] a, heuristic | *six-rung* | 1:50.86 | 1,628.0 s | 18,827,240 kB | 3.0 |
+| pair [C3] a, canonical | *optimized* | 2:17.84 | 2,213.1 s | 18,765,916 kB | 15.9 |
+| pair [C3] b, heuristic | *six-rung* | 1:46.62 | 1,599.5 s | 19,027,544 kB | 5.3 |
+| pair [C3] b, canonical | *dry-run* | 2:14.51 | 2,203.8 s | 18,497,872 kB | 16.1 |
+| canonical before the Rust optimizations [C3] | *pre-opt* | 8:56.56 | 10,528.6 s | 18,722,136 kB | 17.8 |
 
 - **Ratio.** The canonical route takes 1.30× the heuristic route's wall time in [C2] (+34.4 s) and
   1.24× and 1.26× in the two [C3] pairs. Before the Rust optimizations it took about 4.8×.
-- **Same bytes.** Every canonical-route compile in the table, `e181534c`'s included, wrote the same
+- **Same bytes.** Every canonical-route compile in the table, *pre-opt*'s included, wrote the same
   2,318,833,546-byte file (sha256 `a893a449…917bfc`). Every heuristic-route compile wrote 2,620,063,965
   bytes.
 - **The heuristic baseline under load.** The 3:51.09 of the corpus table above is the same heuristic
@@ -1191,20 +1258,45 @@ run includes the heuristic compile that had just ended.
 
 | Init | binary | wall | user CPU | peak RSS | load at start |
 |---|---|---:|---:|---:|---:|
-| heuristic | `36fe2777` | 0:09.23 | 49.3 s | 2,863,148 kB | 20.7 |
-| canonical | `8402af07` | 0:11.28 | 68.4 s | 2,869,828 kB | 19.6 |
-| canonical | `fb5221dc` | 0:11.95 | 73.6 s | 2,930,720 kB | 23.4 |
-| canonical before the Rust optimizations | `e181534c` | 0:32.39 | 357.8 s | 3,019,744 kB | 18.2 |
+| heuristic | *six-rung* | 0:09.23 | 49.3 s | 2,863,148 kB | 20.7 |
+| canonical | *optimized* | 0:11.28 | 68.4 s | 2,869,828 kB | 19.6 |
+| canonical | *optimized-main* | 0:11.95 | 73.6 s | 2,930,720 kB | 23.4 |
+| canonical before the Rust optimizations | *pre-opt* | 0:32.39 | 357.8 s | 3,019,744 kB | 18.2 |
 
-The canonical Init file is 143,680,738 bytes (sha256 `317d63bb…873363`, also written at `e77bd3a6`
-and `e181534c`); the heuristic one is 155,259,078 bytes.
+The canonical Init file is 143,680,738 bytes (sha256 `317d63bb…873363`, also written at *v4-flip*
+and *pre-opt*); the heuristic one is 155,259,078 bytes.
 
-<!-- PENDING: [measure] final back-to-back re-measurement of `ix compile` (Mathlib and Init, heuristic route vs canonical route) at the PR commit: wall, user CPU, peak RSS and load at start for each run, the ratio, and the output sizes and sha256; add as rows of the two tables above and update the Summary. -->
+### Final back-to-back runs (this PR's head)
+
+On a quiet machine (1-minute load 2.1 at the start of the series), GNU `time`. The heuristic route is
+an `ix` binary built at the last commit that still compiled with the heuristic; the canonical route
+is this PR's head. The compile step is the compiler's own timing inside the run.
+
+| Mathlib | wall | CPU | peak RSS | compile step | ratio |
+|---|---:|---:|---:|---:|---:|
+| pair a, heuristic | 1:54.8 | 1,577 s | 19.0 GB | 94.4 s | |
+| pair a, canonical | 2:09.9 | 2,127 s | 18.8 GB | 117.4 s | 1.13× (+15 s) |
+| pair b, heuristic | 1:42.0 | 1,551 s | 18.9 GB | 92.6 s | |
+| pair b, canonical | 2:08.8 | 2,134 s | 18.8 GB | 117.7 s | 1.26× (+27 s) |
+
+| Init | wall | CPU |
+|---|---:|---:|
+| heuristic | 8.6 s | 45 s |
+| canonical | 10.9 s | 65 s |
+
+- The outputs are the Mathlib `.ixe` of 2,318,833,546 bytes (sha256
+  `a893a4498335267cf92fbbff8b9e228658829d2856ab460314b296b059917bfc`) and the Init `.ixe` of
+  143,680,738 bytes (sha256 `317d63bb3cbcd49cb77d602d796276ca7de234bb92dd4455a02c482374873363`),
+  identical in every canonical run, including the runs of the binary from before the Rust
+  optimizations.
+- These runs supersede the pairs above as the final figures: the canonical route takes 1.13–1.26×
+  the heuristic route's wall time on Mathlib. A run made while another job was using the machine
+  (heuristic 2:23.6, canonical 3:28.0) is not counted.
 
 ### The Rust construction alone [R11]
 
 The runner, 20 threads, at the start and at the end of the Rust optimization work. The Mathlib corpus
-is the heuristic-route file of `36fe2777` with its header byte set to `0xE4` (otherwise byte-identical,
+is the heuristic-route file of *six-rung* with its header byte set to `0xE4` (otherwise byte-identical,
 so a v4 reader accepts it); the Init corpus is the canonical-route file.
 
 | | Mathlib, start | Mathlib, end | Init, start | Init, end |
@@ -1242,7 +1334,7 @@ From the module documentation of `crates/ixon/src/sharing_exact/tiered.rs` ("Che
   The output, the statistics and the outcome of every limit are those of the default mode; any
   discrepancy is an internal error.
 
-At `f2ec8b50`, over the canonical-route files (12 threads):
+At *review-fixes*, over the canonical-route files (12 threads):
 
 | | Init, default | Init, checked | Mathlib, default | Mathlib, checked |
 |---|---:|---:|---:|---:|
@@ -1269,7 +1361,7 @@ nodes ending in a stored term; its output is 7,105 bytes and its candidate lengt
 
 - **Candidate count.** In both languages the canonical construction records its candidate count and
   does not limit it. Rust's `candidates` limit (2^16) bounds only the width-state test oracle (an
-  earlier version also enforced it on the compiler path; `eb22a2d7` removed that).
+  earlier version also enforced it on the compiler path; *candidate-fix* removed that).
 - **Knapsack cells.** The default `knapsack_cells` limit is 2^28. The largest table-count knapsacks
   over all widths need 3,195 cells (Init) and 9,959,424 cells (Mathlib), 27× below the default. A
   constructed constant of 25,000 candidates exceeds it and fails identically in both languages.
@@ -1281,7 +1373,7 @@ nodes ending in a stored term; its output is 7,105 bytes and its candidate lengt
 
 ### The Lean construction [L1] [M1]
 
-Single-threaded comparison on three samples of the canonical-route Init file at `1179d7ba`: Lean
+Single-threaded comparison on three samples of the canonical-route Init file at *lean-optimized*: Lean
 through the `exact-sharing-ffi` corpus mode with `LEAN_NUM_THREADS=1`, Rust through the runner with
 1 thread in the default mode (the differential's own Rust times are in the checked mode). The load
 average was 6–9.
@@ -1293,7 +1385,7 @@ average was 6–9.
 | slowest 15 by Rust time (`N` 2k–28k) | 15 | 18,985 ms | 1,229 ms | 15.4× | 9,209 ms |
 
 - All 454 constants give the same bytes in both languages.
-- **Before the Lean optimizations** (`fb5221dc`) the same samples gave 29×, 151× and 453×, about 61×
+- **Before the Lean optimizations** (*optimized-main*) the same samples gave 29×, 151× and 453×, about 61×
   overall.
 - **The 2–4× target set for the Lean construction is not met.** The remaining gap is structural: the
   specification's phase-1 cost model evaluates the whole closure of a component, where Rust evaluates
@@ -1306,7 +1398,7 @@ average was 6–9.
   compiled with the canonical route, and checks that every output equals the stored bytes.
 
 **The merge-queue compile partition** [M1] (`lake test --wfail -- --ignored compile`: Lean and Rust
-compile the same test environment and the results are compared), at `1179d7ba`, load 8.5 at the
+compile the same test environment and the results are compared), at *lean-optimized*, load 8.5 at the
 start: exit 0; all 237,295 constants, their metadata and their full `ConstantMeta` match; the
 serialized environments match exactly (428.4 MB each). The Lean step took 237.7 s, against 176.6 s
 before the route switch and 3,683.7 s right after it; the Rust step took 62.3 s. The whole run took
@@ -1336,14 +1428,14 @@ before the route switch and 3,683.7 s right after it; the Rust step took 62.3 s.
   TagN for all integers [P §12.12] is not priced in them. The Format v4 section serializes TagN.
 - **Best of three, beyond the byte totals.**
   - The Rust byte figures come from the experiment hook, which runs the same three candidates that the
-    canonical path (`a80c16cf`) compares. No full-corpus run of the canonical runner mode was repeated on
+    canonical path (*b3-rust*) compares. No full-corpus run of the canonical runner mode was repeated on
     the v3 corpora; [R10], [R11] and [R12] are runs on the v4 corpora.
   - On the v3 corpora, Lean/Rust parity under the best of three covers Init only [D7]; the
     Mathlib-sample run [D8] was aborted. On the v4 corpora (Kahn order) it covers Init and the Mathlib
     sample [D10] [D11].
   - The phase statistics above are for one phase-1 run (the K-based width). Per-width search statistics
     (states, components) were not recorded.
-- **The Kahn order beyond the first tier** (Lean `7a7113cf`, Rust `0ef72793`) is measured on the v3 corpora
+- **The Kahn order beyond the first tier** (Lean *kahn-lean*, Rust *kahn-rust*) is measured on the v3 corpora
   only on the outlier [X6] and in the store-all comparison [X5] (the best-of-three byte totals above
   predate it), and on the v4 corpora in [R10] [D10] [D11].
 - **Lean on all of Mathlib.** The K-based tiered-TagN differential over all 679,499 constants ran in 6
@@ -1381,7 +1473,7 @@ Run from the repository root, with `$S` as above.
 - **Historical runs** need the commit named in the Sources table. `--layout` (and the Tag4 layout) and
   `--width-experiment` existed only up to the experiment-hook cleanup and are not available at the current
   head; the K-based rule of [R3]–[R7] exists only at its commits; the best-of-four columns of [X4] only at
-  `94882265`.
+  *best-of-four*.
 
 ```text
 # Rust runner, current head: canonical construction over corpora compiled at the same commit   [R10]
@@ -1390,10 +1482,10 @@ R=./target/release/examples/sharing_corpus
 time -v $R $S/init_v4.ixe    --threads 20 --csv $S/init_rust.csv --select-out $S/init_all.txt --select-stride 1
 time -v $R $S/mathlib_v4.ixe --threads 20 --csv $S/ml_rust.csv   --select-out $S/ml_select.txt
 
-# Final route: ix compile back to back, heuristic route (an ix binary built at 36fe2777) first   [C2] [C3]
-time -v $IX_36fe2777 compile Benchmarks/Compile/CompileMathlib.lean --out $S/mathlib_heur.ixe
+# Final route: ix compile back to back, heuristic route (an ix binary built at six_rung) first   [C2] [C3]
+time -v $IX_six_rung compile Benchmarks/Compile/CompileMathlib.lean --out $S/mathlib_heur.ixe
 time -v lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out $S/mathlib_v4.ixe
-time -v $IX_36fe2777 compile Benchmarks/CompileInit.lean --out $S/init_heur.ixe
+time -v $IX_six_rung compile Benchmarks/CompileInit.lean --out $S/init_heur.ixe
 time -v lake exe ix compile Benchmarks/CompileInit.lean --out $S/init_v4.ixe
 # Default mode, checked mode and the sequential check over the canonical-route files      [R12]
 time -v $R $S/init_v4.ixe --threads 12 --csv $S/init_f2.csv --select-out $S/init_f2.sel
@@ -1402,16 +1494,16 @@ time -v $R $S/init_v4.ixe --threads 12 --csv $S/init_f2seq.csv --select-out $S/i
     --check-sequential --par-widths 3 --par-components 4 --par-materialize 4
 # (the same three for $S/mathlib_v4.ixe; compare the CSVs without their last, timing, column)
 
-# Rust runner, historical: [X1]-[X3] at faf1a7c7, [X4] at 94882265 (--layout and --width-experiment
+# Rust runner, historical: [X1]-[X3] at width_hook, [X4] at best_of_four (--layout and --width-experiment
 # existed only at those commits)
 time -v $R $S/init.ixe    --layout tagN --threads 8 --width-experiment --csv $S/wx_init_tagN.csv     # [X1]
 time -v $R $S/mathlib.ixe --layout tagN --threads 8 --width-experiment --csv $S/wx_ml_tagN.csv       # [X1]
 time -v $R $S/init.ixe    --layout tag4 --threads 8 --width-experiment --csv $S/wx_init_tag4.csv     # [X2]
 time -v $R $S/mathlib.ixe --layout tag4 --threads 8 --width-experiment --csv $S/wx_ml_tag4.csv       # [X2]
 time -v $R $S/init.ixe    --layout tagN --threads 1 --width-experiment --csv $S/wx_init_tagN_t1.csv  # [X3]
-# best of four: the same mode at 94882265, which adds the "all" candidate and the best4 columns   # [X4]
+# best of four: the same mode at best_of_four, which adds the "all" candidate and the best4 columns   # [X4]
 time -v $R $S/mathlib.ixe --layout tagN --threads 12 --width-experiment --csv $S/wx4_ml_tagN.csv     # [X4]
-# Rust runner, historical: K-based rule at e4c0dead (--layout existed only up to the cleanup)
+# Rust runner, historical: K-based rule at k_bb (--layout existed only up to the cleanup)
 time -v $R $S/init.ixe    --layout tagN --threads 1  --csv $S/init_tagN_t1.csv                       # [R6]
 time -v $R $S/init.ixe    --layout tagN --threads 20 --csv $S/init_tagN_t20.csv                      # [R4]
 time -v $R $S/init.ixe    --layout tag4 --threads 20 --csv $S/init_tag4_t20.csv                      # [R5]
@@ -2310,7 +2402,7 @@ exit=0
 
 ```text
 # sharing_corpus report
-- corpus: $S/init_v4r_36fe2777.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init_v4r_six_rung.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 863 ms, processing 32.6 s with 20 threads; peak RSS 756420 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -2338,7 +2430,7 @@ exit=0
   - 3430 ms Std.Iter.step_flatMapAfterM (4baea8cab97cbac0): defn ok, N 10787, cand 8261, k 1858, w 1, uncertain 240, components 212 (largest 3), states uniform 917 first-tier 1654
 - total wall 39.8 s
 
-	Command being timed: "./target/release/examples/sharing_corpus $S/init_v4r_36fe2777.ixe --threads 20 --csv $S/init_rust.csv --select-out $S/init_all.txt --select-stride 1"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init_v4r_six_rung.ixe --threads 20 --csv $S/init_rust.csv --select-out $S/init_all.txt --select-stride 1"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:39.93
 	Maximum resident set size (kbytes): 754936
 	Exit status: 0
@@ -2351,7 +2443,7 @@ exit=0
 
 ```text
 # sharing_corpus report
-- corpus: $S/mathlib_v4r_36fe2777.ixe (679499 constants; 679499 processed); layout TagN
+- corpus: $S/mathlib_v4r_six_rung.ixe (679499 constants; 679499 processed); layout TagN
 - wall: index 7453 ms, processing 772.3 s with 20 threads; peak RSS 4696000 KiB
 - certified: 679498 / 679499; failed: 1
 - failures by status: {"resource:States": 1}
@@ -2380,7 +2472,7 @@ exit=0
   - 52028 ms WeierstrassCurve.Projective.negDblY_eq' (ce121b7a563b352f): defn ok, N 45785, cand 14522, k 7073, w 3, uncertain 452, components 446 (largest 3), states uniform 1804 first-tier 13128
 - total wall 1011.2 s
 
-	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib_v4r_36fe2777.ixe --threads 20 --csv $S/ml_rust.csv --select-out $S/ml_select.txt"
+	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib_v4r_six_rung.ixe --threads 20 --csv $S/ml_rust.csv --select-out $S/ml_select.txt"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 16:52.30
 	Maximum resident set size (kbytes): 4713784
 	Exit status: 0
@@ -3907,7 +3999,7 @@ idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,byte
 For each differential log: the tally lines and the `DIAGNOSIS` lines, unedited apart from local paths
 (written `$S/…`). The per-constant `NOTE` lines are omitted, except the one same-error case of [D11].
 
-<details><summary>[D0] Init, the 10 Lean-only constants, limit diagnosis (86df8874)</summary>
+<details><summary>[D0] Init, the 10 Lean-only constants, limit diagnosis (*diag*)</summary>
 
 `diag_init.log`
 
@@ -3942,7 +4034,7 @@ For each differential log: the tally lines and the `DIAGNOSIS` lines, unedited a
 
 </details>
 
-<details><summary>[D1] Init, all constants, old search, K-based (871eef12)</summary>
+<details><summary>[D1] Init, all constants, old search, K-based (*diff-1*)</summary>
 
 `corpus_full.log`
 
@@ -3970,7 +4062,7 @@ exit=0 wall=4543s
 
 </details>
 
-<details><summary>[D2] Init, all constants, new search, K-based (e4c0dead)</summary>
+<details><summary>[D2] Init, all constants, new search, K-based (*k-bb*)</summary>
 
 `init_bb_s0.log`
 
@@ -4074,7 +4166,7 @@ exit=0
 
 </details>
 
-<details><summary>[D3] Mathlib sample, old search, K-based (86df8874)</summary>
+<details><summary>[D3] Mathlib sample, old search, K-based (*diag*)</summary>
 
 `mathlib_diff_a.log`
 
@@ -4220,7 +4312,7 @@ exit=1
 
 </details>
 
-<details><summary>[D4] Mathlib sample, new search, K-based (e4c0dead)</summary>
+<details><summary>[D4] Mathlib sample, new search, K-based (*k-bb*)</summary>
 
 `ml_bb_s0.log`
 
@@ -4404,7 +4496,7 @@ exit=0
 
 </details>
 
-<details><summary>[D5] Lean-only constants at 3ddda798, K-based</summary>
+<details><summary>[D5] Lean-only constants at *work-limit*, K-based</summary>
 
 `lo_s0.log`
 
@@ -4474,7 +4566,7 @@ exit=0
 
 </details>
 
-<details><summary>[D6] Mathlib, all constants, K-based: the 3 completed address shards, then the 3 empty logs (3ddda798)</summary>
+<details><summary>[D6] Mathlib, all constants, K-based: the 3 completed address shards, then the 3 empty logs (*work-limit*)</summary>
 
 `lf_s0.log`
 
@@ -4688,7 +4780,7 @@ exit=0
 
 </details>
 
-<details><summary>[D7] Init, all constants, best of three, tiered-TagN and tiered-Tag4 (a80c16cf)</summary>
+<details><summary>[D7] Init, all constants, best of three, tiered-TagN and tiered-Tag4 (*b3-rust*)</summary>
 
 `b3_init_s0.log`
 
@@ -4782,7 +4874,7 @@ exit=0
 
 </details>
 
-<details><summary>[D8] Mathlib sample, best of three, tiered-TagN and tiered-Tag4 (a80c16cf), aborted</summary>
+<details><summary>[D8] Mathlib sample, best of three, tiered-TagN and tiered-Tag4 (*b3-rust*), aborted</summary>
 
 `b3_ml_s0.log`
 
@@ -4822,7 +4914,7 @@ exit=143
 
 </details>
 
-<details><summary>[D9] Init, all constants, best of three with the Kahn order, tiered-TagN and tiered-Tag4 (d19f21c0)</summary>
+<details><summary>[D9] Init, all constants, best of three with the Kahn order, tiered-TagN and tiered-Tag4 (*kahn*)</summary>
 
 `init_s0.log`
 
@@ -4916,14 +5008,14 @@ exit=0
 
 </details>
 
-<details><summary>[D10] v4 Init corpus, all constants, tiered-TagN (36fe2777)</summary>
+<details><summary>[D10] v4 Init corpus, all constants, tiered-TagN (*six-rung*)</summary>
 
 `init_s0.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 116 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 889 ms, Rust 187 ms
-    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 874 ms]
+    [corpus: $S/init_v4r_six_rung.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 874 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 718281 ms, Rust 60459 ms]
     [corpus: decode failures 0; total 782552 ms]
@@ -4937,7 +5029,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 165 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1343 ms, Rust 325 ms
-    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 830 ms]
+    [corpus: $S/init_v4r_six_rung.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 830 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 620439 ms, Rust 63470 ms]
     [corpus: decode failures 0; total 688022 ms]
@@ -4951,7 +5043,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 145 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1131 ms, Rust 247 ms
-    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 661 ms]
+    [corpus: $S/init_v4r_six_rung.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 661 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 503446 ms, Rust 51849 ms]
     [corpus: decode failures 0; total 558610 ms]
@@ -4965,7 +5057,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 116 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1271 ms, Rust 264 ms
-    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 906 ms]
+    [corpus: $S/init_v4r_six_rung.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 906 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 682788 ms, Rust 67449 ms]
     [corpus: decode failures 0; total 754759 ms]
@@ -4979,7 +5071,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 155 ms, Rust 9 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1247 ms, Rust 275 ms
-    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1262 ms]
+    [corpus: $S/init_v4r_six_rung.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1262 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 363005 ms, Rust 49208 ms]
     [corpus: decode failures 0; total 416363 ms]
@@ -4993,7 +5085,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 242 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1852 ms, Rust 353 ms
-    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1039 ms]
+    [corpus: $S/init_v4r_six_rung.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1039 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 550026 ms, Rust 57611 ms]
     [corpus: decode failures 0; total 611339 ms]
@@ -5004,14 +5096,14 @@ exit=0
 
 </details>
 
-<details><summary>[D11] v4 Mathlib sample, tiered-TagN (36fe2777)</summary>
+<details><summary>[D11] v4 Mathlib sample, tiered-TagN (*six-rung*)</summary>
 
 `ml_s0.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 169 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1120 ms, Rust 265 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13779 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13779 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 3372948 ms, Rust 313156 ms]
     [corpus: decode failures 0; total 3709009 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:01:52
@@ -5024,7 +5116,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 129 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1310 ms, Rust 326 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2534 under [tiered-tagN]; loaded in 13378 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2534 under [tiered-tagN]; loaded in 13378 ms]
     [corpus tiered-tagN: 2534 constants; 2534 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4178724 ms, Rust 328739 ms]
     [corpus: decode failures 0; total 4532338 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15:36
@@ -5037,7 +5129,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 133 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1179 ms, Rust 300 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15778 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15778 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4160060 ms, Rust 315849 ms]
     [corpus: decode failures 0; total 4502713 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15:06
@@ -5050,7 +5142,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 158 ms, Rust 9 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1077 ms, Rust 225 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 14888 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 14888 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4823239 ms, Rust 340491 ms]
     [corpus: decode failures 0; total 5188350 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:26:31
@@ -5063,7 +5155,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 118 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1014 ms, Rust 230 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17410 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17410 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4467566 ms, Rust 358723 ms]
     [corpus: decode failures 0; total 4852768 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:20:56
@@ -5076,7 +5168,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 122 ms, Rust 39 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1007 ms, Rust 241 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17326 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17326 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4821142 ms, Rust 353157 ms]
     [corpus: decode failures 0; total 5199302 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:26:43
@@ -5089,7 +5181,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 211 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 944 ms, Rust 198 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13571 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13571 ms]
     [corpus tiered-tagN: 2533 constants; 2532 same bytes, 1 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 5610089 ms, Rust 366112 ms]
       NOTE CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (ca5b91d86331eb4a78896d3a3d6507d595c1fe23606596e426a34ef83bbe33d3): both resource
     [corpus: decode failures 0; total 5997624 ms]
@@ -5103,7 +5195,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 144 ms, Rust 9 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1146 ms, Rust 280 ms
-    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15357 ms]
+    [corpus: $S/mathlib_v4r_six_rung.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15357 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4060627 ms, Rust 311506 ms]
     [corpus: decode failures 0; total 4394967 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:13:19

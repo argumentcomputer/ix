@@ -24,7 +24,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
   `sharing-minimum.md` §13.1; there is no metadata construction;
 - the IxVM circuit codec changes in the same PR.
 
-**Status at commit `d47b39f9`:**
+**Status at this PR's head:**
 
 | Item | State |
 |---|---|
@@ -32,17 +32,16 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
 | Exact-sharing pricing and tie-break bytes at TagN widths; count threshold θmax (finding 7); telescope-spine guard (finding 9) | done |
 | Canonical construction as the only compiler route in Lean and Rust; heuristic removed | done (§3.2, §8) |
 | Compiler limits as a safety net with a CLI override | done (§8) |
-| Proofs: TagN codec, phase-1 minimality, per-phase specifications, serialized length and wire validity of the output, compiler endpoint theorems over it; fast twins attached by audited `@[csimp]` theorems | done; 250 audit roots at `d47b39f9` (§4) |
+| Proofs: TagN codec, phase-1 minimality, per-phase specifications, serialized length and wire validity of the output, compiler endpoint theorems over it; fast twins attached by audited `@[csimp]` theorems | done; 250 audit roots (§4) |
 | Version 4, object format 4, `ixon-v4` identifiers; readers reject other versions | done (§6) |
 | Fixtures and pins regenerated through their producers | done, except the FLT benchmark artifact and a new dated aggregate fixture (§6) |
 | `.ixe` caches keyed by the format version | done (§6) |
 | Metadata `Share` reader rule in both decompilers | done; no metadata construction (§5.3) |
 | IxVM: TagN codec, claim scope bytes, v4 primitive addresses, re-pinned FFT costs | done (§3.1, §6) |
-| Lean/Rust differential at the PR commit (Init, Mathlib sample) | pending (§7 risk 1) |
-| `ix compile` time: Mathlib within 1.5× of the heuristic route | done: 1.24–1.30× (`sharing-minimum-performance.md`) |
+| Lean/Rust differential at this PR's head (Init, Mathlib sample) | done: 56,622 and 20,284 constants, 0 disagreements (§7 risk 1) |
+| `ix compile` time: Mathlib within 1.5× of the heuristic route | done: 1.13–1.26× in the final back-to-back runs (`sharing-minimum-performance.md`) |
+| CI-equivalent gates at this PR's head | passed (§8, "Gates at this PR's head") |
 | Lean construction within 2–4× of Rust | not met: 8–15× single-threaded (follow-up, `sharing-minimum.md` §12.18) |
-
-<!-- PENDING: [parity] Lean/Rust differential at the PR commit (Init in full, Mathlib sample): mark the status row done with the counts. -->
 
 ## 1. Key findings
 
@@ -198,7 +197,7 @@ table logically.
 ## 4. Verification theorems
 
 Everything below builds in `lake build IxCompileVerify`. Its trust audit
-(`Ix/Compile/Verify/Audit/Statements.lean`, 250 roots at `d47b39f9`) fixes each root's axioms
+(`Ix/Compile/Verify/Audit/Statements.lean`, 250 roots at this PR's head) fixes each root's axioms
 exactly; `Audit/SorryFrontier.lean` checks that no declaration of `Ix.Compile.Verify` or
 `Ix.Sharing` uses `sorry`; and `Audit/CompiledCode.lean` checks the compiled code (below).
 `lake lint` builds it as well.
@@ -248,7 +247,7 @@ so compiled code calls the twin. A csimp applies only to code compiled after it,
 recompiles the callers (`allocate`, `tieredAtWidth`, `canonicalTieredCore`,
 `canonicalTieredExpanded`, `optimizeUniformExpanded`; `*_eq_C`) to reach the twins. Each csimp
 theorem is an audit root, and `Audit/CompiledCode.lean` fails the build if a csimp theorem of an
-`Ix` module on `Ix.CompileM`'s import path is not (19 at `d47b39f9`), or if `Ix.Sharing.*`
+`Ix` module on `Ix.CompileM`'s import path is not (19 at this PR's head), or if `Ix.Sharing.*`
 declares anything `unsafe`, `partial`, `@[implemented_by]` or `@[extern]` other than the
 interner's pointer-cache key `exprPtr`. The module map in the docstring of
 `Ix/Sharing/Exact.lean` lists every specification, twin and csimp theorem; the three widths run
@@ -387,9 +386,12 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
 ## 7. Risks
 
 1. **Lean/Rust disagreement of tiered outputs** would fork the address space. Fixtures,
-   generated inputs and the compiler route agree byte for byte (`exact-sharing-ffi`), and so did
-   the corpus differentials on Init and a Mathlib sample at earlier commits
-   (`sharing-minimum-performance.md`). The final differential runs at the PR commit.
+   generated inputs and the compiler route agree byte for byte (`exact-sharing-ffi`). On corpora
+   compiled at this PR's head, with Rust in its checked mode, all 56,622 Init constants and a
+   Mathlib sample of 20,284 constants give identical bytes, with no resource exhaustion on
+   either side, and the merge-queue suite `lake test -- --ignored compile` requires the Lean and
+   Rust compilers to write identical environments (237,295 constants)
+   (`sharing-minimum-performance.md`).
 2. **Resource exhaustion in the compiler.** The construction fails closed; a constant over the
    limits is a compile error for every caller (compile, aux-gen, kernel egress, decompile
    recompile). The defaults sit far above every corpus maximum (Mathlib: largest MSS table
@@ -423,8 +425,6 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
     length of another candidate would change the selection without an error. The checked mode
     (`ExactSharingLimits::full_check`) builds and checks all three; over all of Init and Mathlib
     it gives the default mode's output.
-
-<!-- PENDING: [parity] Lean/Rust differential at the PR commit (Init in full, Mathlib sample, corpora compiled at that commit): add its counts to risk 1. -->
 
 ## 8. Implementation notes
 
@@ -507,7 +507,29 @@ encoding (`mss.rs`, test-only) are labelled as test oracles; the compiler path n
   `--check-sequential`, which compares the parallel and sequential paths under the run's
   limits).
 
-<!-- PENDING: [verify] CI-equivalent gates at the PR commit (lake build; lake build IxCompileVerify IxTcVerify; lake test and the ignored suites; lake test -- cli; ixon-v4-tests and ixon-v4-primitives; cargo test --workspace; cargo clippy -D warnings; cargo fmt --check; lake lint; lake exe ix codegen --check): record the results here. -->
+### Gates at this PR's head
+
+All passed:
+
+- Lean: `lake build --wfail -v`; `lake test --wfail` (primary tier, 3,957 checks); `lake lint --
+  --wfail -v`; `lake build IxTcVerify` (audits of 2,034, 1 and 7 roots, sorry frontier clean);
+  `lake build IxCompileVerify --wfail` (250 roots; sorry frontier clean for `Ix.Compile.Verify`
+  and `Ix.Sharing`; all 19 `@[csimp]` theorems are roots); `lake exe ix codegen --check`; `diff
+  lean-toolchain Benchmarks/Compile/lean-toolchain`; `lake test --wfail -- cli`; `lake test
+  --wfail -- ffi`; `lake exe ixon-v4-primitives` then `lake exe ixon-v4-tests --primitives`
+  (2,052 golden checks, 4,054 VM checks, 3,540 addressed interfaces validated).
+- Rust: `cargo fmt --all --check`; `cargo clippy --release --workspace --all-targets --features
+  ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile -- -D warnings`; `cargo check`
+  with the same features; `cargo test --release --workspace` (1,716 passed, 20 ignored); `cargo
+  deny check`.
+- Merge-queue partitions run locally: `tc-unit`; the compile-pipeline partition
+  (`--ignored rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip graph-cross
+  condense-cross rust-serialize ixon-corpus rust-decompile validate-aux aux-gen-diff
+  decompile-diff`); and `--ignored compile` (Lean and Rust compile all 237,295 constants of the
+  test environment; constants, metadata and serialized environments are identical), run on the
+  tree just before the final cleanup and documentation commits. The other ignored partitions
+  (`--ignored decompile`, the misc partition with the `ixvm` runner, the Tc ignored suites) are
+  run by the merge queue.
 
 ## 9. Owner decisions on the questions of this map
 

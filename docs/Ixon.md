@@ -785,8 +785,8 @@ construction, and a partial or best-so-far table is never emitted.
 ### What is proved, and what is not
 
 The following theorems are machine-checked in Lean. They are roots of the
-compiler audit manifest `Ix/Compile/Verify/Audit/Statements.lean` (250 roots
-at commit `d47b39f9`), which `lake build IxCompileVerify` checks: every root
+compiler audit manifest `Ix/Compile/Verify/Audit/Statements.lean` (250 roots at
+this PR's head), which `lake build IxCompileVerify` checks: every root
 uses exactly its listed axioms, and no declaration of `Ix.Compile.Verify` or
 `Ix.Sharing` uses `sorry`. The construction theorems are stated for a
 successful run on the canonical DAG of the input (`ex.dag`, `ex.roots`); the
@@ -862,7 +862,7 @@ every theorem keeps talking about the specification; the module map of
 `Ix/Sharing/Exact.lean` lists them. The audit module
 `Ix/Compile/Verify/Audit/CompiledCode.lean` fails the build unless every
 `@[csimp]` theorem of an `Ix` module on the compiler's import path is an audit
-root (19 at commit `d47b39f9`), and unless no declaration of `Ix.Sharing.*` is
+root (19 at this PR's head), and unless no declaration of `Ix.Sharing.*` is
 `unsafe`, `partial`, `@[implemented_by]` or `@[extern]`, except the
 interner's pointer-cache key `exprPtr`.
 
@@ -897,21 +897,22 @@ Not claimed:
   the exact search (120 generated inputs).
 - **Idempotence** is proved only under the hypothesis that expanding the
   output yields the input's canonical DAG and root IDs
-  (`canonicalSharingTieredTable_idem`); it is tested.
+  (`canonicalSharingTieredTable_idem`). It is tested: re-running the Rust
+  construction on every stored constant of the Init and Mathlib files
+  compiled at this PR's head reproduces the stored bytes.
 - **Rust.** The Rust implementation is not proved. It is checked against
   Lean by differential tests (`exact-sharing-ffi`; with `IX_SHARING_CORPUS`
   it runs over a whole `.ixe`). Its phase-1 search evaluates each
   component's area under a truncated cost model, where Lean's specification
   evaluates the component's whole closure; the outputs are equal on every
-  input tested. On corpora compiled with the TagN encoding at commit
-  `36fe2777` of this work, Lean and Rust produced the same bytes for all
-  56,622 Init constants. On a Mathlib sample (every 50th constant, plus every
-  constant with more than 2,000 candidates), they produced the same bytes for
-  20,264 of 20,265 constants. On the remaining constant,
-  `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`,
-  both implementations exhausted a resource limit (Rust reports `states`).
-  That limit was charged by the count-bracket knapsack, which has since
-  been given its own limit, `knapsack_cells`
+  input tested. On corpora compiled with `ix compile` at this PR's head,
+  with Rust in its checked mode, Lean and Rust produce the same bytes for
+  all 56,622 Init constants and for all 20,284 constants of a Mathlib sample
+  (every 50th constant, plus every constant with more than 2,000
+  candidates), with no resource exhaustion on either side. The merge-queue
+  suite `lake test -- --ignored compile` compiles every constant of its test
+  environment (237,295) with the Lean and the Rust compiler and requires
+  identical serialized environments
   ([performance](sharing-minimum-performance.md)).
 - **Length range in Rust.** Lean computes lengths with arbitrary-precision
   `Nat`. Rust's phase 1 uses 128-bit length arithmetic and fails closed
@@ -922,8 +923,6 @@ Not claimed:
   known divergence of the two implementations.
 - **Failure.** The theorems describe successful runs. A run that exceeds a
   limit returns an error.
-
-<!-- PENDING: [parity] Lean/Rust differential at the PR commit, on Init (all constants) and the Mathlib sample, both compiled at that commit: replace the 36fe2777 figures in the "Rust" item with constants compared, same bytes, and disagreements. -->
 
 ### Example
 

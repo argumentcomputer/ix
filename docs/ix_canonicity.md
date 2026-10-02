@@ -838,7 +838,12 @@ aux-gen blocks, and in Rust also kernel egress and the decompiler's
 recompile. The recompile invariant `Named.original` (§9.2) relies on
 recompile using exactly this route.
 
-<!-- PENDING: [parity] Lean/Rust differential at the PR commit (Init in full, Mathlib sample): state here that Lean and Rust produce identical bytes on both corpora at that commit, with the counts. -->
+On the Init and Mathlib files compiled at this PR's head, Lean and Rust
+produce identical bytes for all 56,622 Init constants and for a Mathlib
+sample of 20,284 constants, and the merge-queue suite
+`lake test -- --ignored compile` requires the Lean and Rust compilers to
+write identical environments for its whole test environment (237,295
+constants).
 
 ## 7. The Compile Pipeline
 

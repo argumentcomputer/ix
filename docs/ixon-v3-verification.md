@@ -8,7 +8,8 @@
 > were measured on v3 and are not re-asserted for v4. In particular, the
 > byte sizes, addresses and FFT-cost pins all change with the v4 bytes.
 
-<!-- PENDING: [verify] v4 verification record: run the CI-equivalent gates at the PR commit (lake build; lake build IxCompileVerify IxTcVerify; lake test, the ignored suites compile-determinism, fidelity-*, rust-compile, rust-serialize, rust-decompile, decompile-diff, ixon-corpus, ixvm; lake test -- cli; ixon-v4-tests and ixon-v4-primitives; cargo test --workspace; cargo clippy -D warnings; cargo fmt --check; lake lint; lake exe ix codegen --check) and record the commands and results in a v4 record linked from here. -->
+The gates executed for v4 at the head of the v4 change are listed in the
+[integration map](sharing-minimum-integration.md#gates-at-this-prs-head).
 
 Ixon v3 carries independent usage, ownership, and relative-locality contracts
 through the Ix source frontend, Lean and Rust compilers, canonical bytes,
@@ -77,7 +78,7 @@ production-driver and fidelity gates require zero mismatches.
 ## Formal trust frontier (v3)
 
 At the v3 change the compiler manifest audited 143 roots. (For v4 the
-manifest has 250 roots at commit `d47b39f9`, including the TagN and
+manifest has 250 roots at the head of the v4 change, including the TagN and
 sharing-construction theorems.) The typechecker manifests audited 2,034
 completed roots, one conditional root, and seven statement roots. Their
 existing transitive assumptions remain explicit in the manifests. Both local

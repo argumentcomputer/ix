@@ -179,7 +179,7 @@ position and the block starts.
 
 ### Diff size (this PR's share)
 
-From `git diff --numstat` against `ad2a583a`:
+From `git diff --numstat` against the development branch before the arena change:
 
 | file | added | removed | what |
 |---|---:|---:|---|
@@ -240,20 +240,20 @@ Tag0 → TagN replacement had not landed.
   under `lake env`): 692 passed, exit 0.
 - **Before TagN replaced Tag0.** The results above are from before that change.
 
-**After TagN became the only integer code** (`ix-sharing` at c5cd2078):
+**After TagN became the only integer code** (on the development branch, once TagN became the only code):
 
 - **Lean `ixon` suite: 331 passed, 0 failed.** The share-codec tests were removed with the
   TagN change.
 - **The `ixon-corpus` gate passed** (242 s).
 - **Rust:** `cargo test --release -p ixon --lib --tests`: 387 passed, 4 failed. The four
-  failures also occur on a clean c5cd2078 checkout (382 passed, the same 4 failed), so
+  failures also occur on a clean checkout of that state (382 passed, the same 4 failed), so
   they are not caused by the merge:
   - `proof::tests::catalog_claim_wire_bytes_pinned`;
   - `proof::tests::v3_claim_fixtures_and_strict_scope`;
   - `resource::addressed::tests::canonical_cross_language_fixtures`;
   - `sharing_exact::tests::parallel_tiered_matches_sequential`.
 - **Lint:** clippy (`--lib --tests --example arena_study`, `-D warnings`) is clean.
-- **Known breaks on c5cd2078 itself** (both fixed later on `ix-sharing`):
+- **Known breaks in that state itself** (both fixed later on `ix-sharing`):
   - The `sharing_corpus` example did not compile: it imported the removed
     `put_expr_with`.
   - The `sharing-study` harness did not compile: it had 35 uses of `Ixon.getTag0` and
@@ -404,19 +404,20 @@ sharing, five-rung TagN, header `0xE3`):
   from a fresh compile: Init 16,335,501 nodes in both; Mathlib 272,299,589 v4 vs
   272,299,746 v3.
 - **Not yet the final v4 file.** These files still have the header byte `0xE3`,
-  heuristic sharing tables and no 4-byte rung. With the rung (`36fe2777`; still `0xE3`
-  and heuristic sharing) the same compiles write 155,259,078 and 2,620,063,965 bytes.
+  heuristic sharing tables and no 4-byte rung. With the rung (still `0xE3` and heuristic
+  sharing, before the route switch) the same compiles write 155,259,078 and 2,620,063,965 bytes.
 
 The final format adds version 4 (header `0xE4`), canonical sharing and the rung of §6.
-Compiled with it (`lake exe ix compile`, same inputs, measured at `fb5221dc`):
+Compiled with it (`lake exe ix compile`, same inputs, at this PR's head; the same bytes were
+written before and after the Rust optimizations):
 
 | | v3 file | final v4 file | change |
 |---|---:|---:|---:|
 | Init | 195,387,870 | 143,680,738 | −51,707,132 (−26.46%) |
 | Mathlib | 3,343,271,273 | 2,318,833,546 | −1,024,437,727 (−30.64%) |
 
-- **Canonical sharing's share.** Against the `36fe2777` files above (the same environments
-  with heuristic sharing), the final files are 11,578,340 bytes (−7.46%, Init) and
+- **Canonical sharing's share.** Against the heuristic-sharing files above (the same
+  environments), the final files are 11,578,340 bytes (−7.46%, Init) and
   301,230,419 bytes (−11.50%, Mathlib) smaller.
 - **Identity.** sha256 `317d63bb…873363` (Init) and `a893a449…917bfc` (Mathlib). Every
   canonical-route compile of these inputs that was measured, before and after the Rust
@@ -430,13 +431,13 @@ Compiled with it (`lake exe ix compile`, same inputs, measured at `fb5221dc`):
 `lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out $S/mathlib.ixe` (the
 Mathlib setup is in `sharing-minimum-measurements-mathlib.md`, "Reproduction"). A reader
 accepts only its own format version, so the v3 rows need v3 files and a v3 checkout
-(the merge base `ad2a583a`), and the §6–§7 rows need files written by the same checkout
+(the development branch before the arena change), and the §6–§7 rows need files written by the same checkout
 that reads them.
 
 ```text
 nix develop --command bash -c 'cargo build --release -p ixon --example arena_study'
 # Pricing of all encodings + v3 writer check: build against the v3 metadata.rs
-# (merge base ad2a583a), then
+# (the development branch before the arena change), then
 arena_study $S/init.ixe --check-writer --writer v3
 #   -> 0 size / 0 roundtrip / 0 node mismatches (67,995 arenas, 83,050,319 bytes)
 arena_study $S/mathlib.ixe --check-writer --writer v3

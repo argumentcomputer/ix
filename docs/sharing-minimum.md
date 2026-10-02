@@ -22,8 +22,8 @@
 >   tied to the specifications by audited `@[csimp]` equalities (§12.18).
 > - **Limits.** Resource limits are a safety net with a CLI override (`ix compile
 >   --sharing-limits`). Exceeding one is a compile error; there is no fallback.
-> - **Compile time.** Mathlib `ix compile` takes 1.24–1.30× the time of the heuristic route
->   (§12.18).
+> - **Compile time.** Mathlib `ix compile` takes 1.13–1.26× the time of the heuristic route
+>   in the final back-to-back runs (§12.18).
 > - **Metadata.** The decompilers implement the extended index space of §13.1. The
 >   construction of §13.2 is not implemented.
 > - **Oracles.** The exact search of §6 is kept as a test oracle for small inputs (§12.1).
@@ -857,8 +857,8 @@ Lean/Rust parity on Init: 0 byte disagreements in 56,622 constants, tiered and u
   tiered-TagN 0 byte disagreements; uniform-w2 56,622/56,622 identical with no exhaustion.
 - Mathlib sample (20,263 constants: every 50th plus every constant with > 2,000 candidates):
   0 byte disagreements in tiered-TagN and uniform-w2; every one-sided Lean exhaustion was the
-  phase-3 materialisation work limit and gives Rust's bytes once raised; at head 3ddda798
-  (`maxMaterializeWork` = 2^36) all 120 such constants and the 10 Init ones succeed at defaults.
+  phase-3 materialisation work limit and gives Rust's bytes once raised; once the separate
+  `maxMaterializeWork` limit was set to 2^36, all 120 such constants and the 10 Init ones succeed at defaults.
 - Rust canonical construction over all 679,499 Mathlib constants: 0 failures, 184 s processing
   on 20 threads (315 s wall), 5.3 GB peak RSS; TagN bytes −22.65% vs the stored heuristic.
 
@@ -884,10 +884,10 @@ code with one proof of roundtrip/bijectivity (`Ix/Compile/Verify/TagN.lean`); th
 `tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
 sharing + integers together.
 
-### 12.13 What is machine-checked (first recorded 2026-10-01; stated at `d47b39f9`)
+### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
 The theorems below are roots of the compiler audit manifest
-(`Ix/Compile/Verify/Audit/Statements.lean`, 250 roots at `d47b39f9`; each root's axioms are
+(`Ix/Compile/Verify/Audit/Statements.lean`, 250 roots at this PR's head; each root's axioms are
 fixed exactly, and no declaration of `Ix.Compile.Verify` or `Ix.Sharing` uses `sorry`; checked
 by `lake build IxCompileVerify`). The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
@@ -925,7 +925,7 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
 - **Compiled code.** The compiler runs fast twins attached to the specifications by
   unconditional `@[csimp]` equalities; `Ix/Compile/Verify/Audit/CompiledCode.lean` fails the
   build unless every csimp theorem on the compiler's import path is an audit root (19 at
-  `d47b39f9`) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
+  this PR's head) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
   declaration besides the pointer-cache key `exprPtr`.
 
 Run-time checks that remain in Lean's phase 3 (`rematerialize`), each failing closed with an
@@ -983,7 +983,7 @@ Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With
 longer than the old codes on any field measured. Still bijective; `Ix/Ixon.lean`'s TagN docstring is
 the normative layout.
 
-### 12.17 Proof-library status after the TagN switch (2026-10-01, head 6b9f7767)
+### 12.17 Proof-library status after the TagN switch (2026-10-01)
 
 The whole verification library is restated against the TagN-only codec and the six-rung table
 (`IxCompileVerify` 227 audit roots, `IxTcVerify` 2034+7+1, sorry frontier clean, no new axioms).
@@ -1001,9 +1001,10 @@ Removing the heuristic later dropped its two audit roots (`rewriteWithSharing_wi
 
 **Owner acceptance.** Mathlib `ix compile` with the canonical route must stay within 1.5× of the
 heuristic route, ideally closer, and only speedups specific to the canonical route belong in
-this PR (general pipeline work is deferred). Measured: 1.24–1.30× (numbers in
-`sharing-minimum-performance.md`). Width 3 stays: dropping it would cost 35,783 bytes on Mathlib
-(1,395 constants) and 6,891 bytes on Init (184 constants) and is held in reserve.
+this PR (general pipeline work is deferred). Measured: 1.13–1.26× in the final back-to-back runs
+(1.24–1.30× in earlier ones; numbers in `sharing-minimum-performance.md`). Width 3 stays:
+dropping it would cost 35,783 bytes on Mathlib (1,395 constants) and 6,891 bytes on Init (184
+constants) and is held in reserve.
 
 **Rust** (byte-identical on all of Init and Mathlib). Phase 3 evaluates the whole table once when
 the order is closed under stored descendants (every order of Init and Mathlib is) and falls back
