@@ -71,9 +71,10 @@ tree from witness data.
 
 /-! ## Helpers -/
 
-/-- Sort an Array of Addresses lex-ascending by hash bytes. -/
+/-- Sort an Array of Addresses lex-ascending by hash bytes. `Address.cmpBytes`
+is the order of `Ord Address` without building byte lists per comparison. -/
 private def sortAddrs (xs : Array Address) : Array Address :=
-  xs.qsort fun a b => compare a b == .lt
+  xs.qsort fun a b => a.cmpBytes b == .lt
 
 /-- Deduplicate a sorted Array of Addresses. -/
 private def dedupSortedAddrs (xs : Array Address) : Array Address := Id.run do
