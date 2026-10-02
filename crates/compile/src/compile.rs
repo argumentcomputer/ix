@@ -115,16 +115,25 @@ impl KernelCtx {
   }
 }
 
+/// `DashMap` hashed with `FxBuildHasher`. The compile state's keys are
+/// `Name`s, whose `Hash` feeds 32 blake3 bytes, so SipHash buys nothing.
+/// Iteration order is unspecified with either hasher; nothing reads it.
+pub type FxDashMap<K, V> = DashMap<K, V, rustc_hash::FxBuildHasher>;
+/// `DashSet` hashed with `FxBuildHasher` (see [`FxDashMap`]).
+pub type FxDashSet<K> = DashSet<K, rustc_hash::FxBuildHasher>;
+
 /// Compile state for building the Ixon environment.
 pub struct CompileState {
   /// Ixon environment being built
   pub env: IxonEnv,
-  /// Map from Lean constant name to Ixon address
+  /// Map from Lean constant name to Ixon address. (This map and
+  /// `aux_name_to_addr` keep the default hasher: kernel ingress takes
+  /// them as `&DashMap<Name, Address>`.)
   pub name_to_addr: DashMap<Name, Address>,
   /// Mutual block canonical class ordering, keyed by any inductive name in the
   /// block. Each entry is the list of equivalence classes (in `sort_consts` order),
   /// where each class is a list of names.
-  pub blocks: DashMap<Name, Vec<Vec<Name>>>,
+  pub blocks: FxDashMap<Name, Vec<Vec<Name>>>,
   /// Constants that couldn't be compiled (name -> error description).
   ///
   /// Populated in two phases:
@@ -137,11 +146,11 @@ pub struct CompileState {
   ///
   /// `DashMap` (rather than `FxHashMap`) because scheduler workers insert
   /// concurrently on per-block failure paths.
-  pub ungrounded: DashMap<Name, String>,
+  pub ungrounded: FxDashMap<Name, String>,
   /// Persistent set of names compiled by aux_gen. Used for membership
   /// checks (e.g., "is this name aux_gen-rewritten?") throughout compilation.
   /// Never drained — callers rely on `.contains()` long after insertion.
-  pub aux_gen_extra_names: DashSet<Name>,
+  pub aux_gen_extra_names: FxDashSet<Name>,
   /// Pending aux_gen names awaiting scheduler dependency resolution.
   /// Drained after each block completion. Separated from the persistent
   /// `aux_gen_extra_names` to avoid O(N×M) re-iteration of the full set
@@ -157,11 +166,11 @@ pub struct CompileState {
   /// Per-auxiliary-name surgery plans for call-site argument reordering.
   /// Keyed by the original auxiliary name (e.g., `A.rec`, `B.rec`).
   /// Computed per original recursor name in `compile_mutual` after `sort_consts`.
-  pub call_site_plans: DashMap<Name, surgery::CallSitePlan>,
+  pub call_site_plans: FxDashMap<Name, surgery::CallSitePlan>,
   /// Per-`.brecOn` surgery plans. These share the motive permutation with
   /// `.rec`, but `.brecOn` places indices+major before the handler binders,
   /// so the telescope has to be rewritten by a separate layout rule.
-  pub brec_on_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
+  pub brec_on_call_site_plans: FxDashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Per-`.below`-family surgery plans. A `X.below`/`X.below_N` HEAD has
   /// the motive-only telescope `params, motives, indices, major`. For
   /// Prop-level (IndPredBelow) families the map also carries the rest of
@@ -179,7 +188,7 @@ pub struct CompileState {
   /// member); `X.below.rec` is deliberately NOT registered (nothing
   /// user-visible references it — only regenerated wrappers, which skip
   /// surgery via the aux-regen guard).
-  pub below_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
+  pub below_call_site_plans: FxDashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Set once one of the three call-site plan maps above has been seen
   /// holding an entry. Entries are never removed from them, so it stays
   /// true, and the plan-head audit skips their emptiness test, which
@@ -196,14 +205,22 @@ pub struct CompileState {
   /// Computed once per block in `generate_and_compile_aux_recursors`
   /// right after `aux_gen::generate_aux_patches`. Blocks without nested
   /// auxiliaries simply aren't inserted.
-  pub aux_perms: DashMap<Name, surgery::AuxLayout>,
+  pub aux_perms: FxDashMap<Name, surgery::AuxLayout>,
   /// Reducibility hints per definition NAME, recorded by
   /// `compile_definition` (the only place the Lean-side hints are in
   /// scope — hints are not part of `ConstantMeta`). The constant
   /// address a name resolves to isn't final until its `Named` entry is
   /// registered, so [`Self::finalize_hints`] resolves this map through
   /// `env.named` into `env.anon_hints` once compilation completes.
-  pub def_hints: DashMap<Name, ReducibilityHints>,
+  pub def_hints: FxDashMap<Name, ReducibilityHints>,
+  /// The constants of `lean_env` whose expressions carry semantic contract
+  /// annotations, when a whole-environment scan has established it: the
+  /// compile-env setup runs `semantic_contract::inspect_constant` on every
+  /// constant and stops on any error, so for a constant not in this set
+  /// `semantic_contract::inspect` answers `Ok(false)` on each of its
+  /// expressions, and the plan-head audit skips that walk. `None` (any
+  /// other entry point) makes the audit inspect every expression.
+  pub contract_sources: Option<FxHashSet<Name>>,
   /// Resource limits of every canonical sharing construction run against
   /// this state: compilation, and the decompiler's recompile check.
   /// `compile_env` sets them once, from [`SHARING_LIMITS_ENV`], before it
@@ -229,16 +246,18 @@ pub struct BlockCache {
   /// Cache for compiled expressions (keyed by Lean hash address)
   pub exprs: FxHashMap<Address, CachedExpr>,
   /// Cache for compiled universes (Level -> Univ conversion)
-  /// Keyed by `(level, univ_params_key)`, NOT by `level` alone. A
-  /// `Level::Param` compiles to `Univ::Var(i)` where `i` is the
+  /// Keyed by `(level, univ_params_key)` — the level by its blake3
+  /// address, so a lookup touches no reference count — NOT by `level`
+  /// alone. A `Level::Param` compiles to `Univ::Var(i)` where `i` is the
   /// parameter's POSITION in `univ_params`, so the result depends on the
   /// context. This cache lives for a whole block (unlike the expression
   /// cache, which is cleared per constant) and `compile_definition`
   /// compiles each member under its own `level_params`, so a shared key
   /// would hand the second member the first member's index — a silently
   /// wrong constant under a correct-looking name, with no abort.
-  /// `collect_expr_tables` keys its `seen_exprs` the same way.
-  pub univ_cache: FxHashMap<(Level, Address), Arc<Univ>>,
+  /// `collect_expr_tables` keys its `seen_exprs` by context the same way
+  /// (by the context's index among one preseed's contexts).
+  pub univ_cache: FxHashMap<(Address, Address), Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
   /// Arena for expression metadata (append-only within a constant)
@@ -246,12 +265,12 @@ pub struct BlockCache {
   /// Arena root indices parallel to the results stack
   pub arena_roots: Vec<u64>,
   /// Reference table: unique addresses of constants referenced by Expr::Ref
-  pub refs: indexmap::IndexSet<Address>,
+  pub refs: ix_common::FxIndexSet<Address>,
   /// Universe table: unique universes referenced by expressions.
   /// Canonicity §10.6: every entry is `canon_univ`-fixed —
   /// `compile_univ_idx` interns only canonical forms and
   /// `preseed_expr_tables` canonicalizes before sorting.
-  pub univs: indexmap::IndexSet<Arc<Univ>>,
+  pub univs: ix_common::FxIndexSet<Arc<Univ>>,
   /// `canon_univ` memo (positional trees — context-free, so the cache is
   /// sound across constants and univ contexts).
   pub canon_cache: FxHashMap<Arc<Univ>, Arc<Univ>>,
@@ -265,7 +284,7 @@ pub struct BlockCache {
   /// spellings referenced by `univ_patches`, in first-use order.
   /// Canonicity §10.6 — drained into `ConstantMeta.meta_univs` alongside
   /// the arena.
-  pub meta_univs: indexmap::IndexSet<Arc<Univ>>,
+  pub meta_univs: ix_common::FxIndexSet<Arc<Univ>>,
   /// Level-spelling patches of the CURRENT constant, keyed by the arena
   /// root of each affected `sort`/`const` occurrence — drained into
   /// `ConstantMeta.univ_patches` alongside the arena.
@@ -275,6 +294,56 @@ pub struct BlockCache {
   /// Accumulated compiled Ixon expressions for collapsed call-site args.
   /// Drained into `ConstantMeta.meta_sharing` after compilation completes.
   pub surgery_sharing: Vec<Arc<Expr>>,
+  /// [`plan_head_arity`] by head name, for the whole block: the plan-head
+  /// audit and `compile_expr` ask it for every head and bare constant
+  /// they meet, and a fresh answer costs three `DashMap` reads. The memo
+  /// answers what a fresh lookup would: a head's plans are installed when
+  /// the block that defines it compiles, which is either a dependency of
+  /// this block (finished before it started) or this block itself, which
+  /// installs its plans at the very end of `compile_mutual`, after its
+  /// last use of this cache.
+  plan_heads: PlanHeadMemo,
+  /// Addresses of the names this block has passed through
+  /// [`compile_name_cached`]: their `env.names` entries (and those of
+  /// their prefixes and string components) exist, and nothing removes
+  /// entries from those maps while compiling, so a repeated name needs
+  /// no `DashMap` read.
+  stored_names: FxHashSet<Address>,
+  /// Set by [`BlockCache::exempt_from_plan_audit`]: the plan-head audit
+  /// provably finds nothing in this block, so it is skipped.
+  plan_audit_exempt: bool,
+}
+
+impl BlockCache {
+  /// Before compiling a block, establish that the plan-head audit
+  /// ([`audit_constant_info_plan_heads`]) can find nothing in it, and if so
+  /// let the block skip it. `referenced` must include every constant name
+  /// the block's audited expressions mention: the block's members (with
+  /// constructors) and the names they reference outside the block (the
+  /// scheduler passes the members and the block's dependency names, which
+  /// come from the reference graph of exactly those expressions).
+  ///
+  /// The audit fails only (a) at a constant with a non-identity call-site
+  /// plan, or (b) on a malformed contract annotation. (a) is ruled out when
+  /// no referenced name has a plan: the answers come from the block memo
+  /// (`plan_heads`), which the audit would consult itself. (b) is ruled out
+  /// when [`CompileState::contract_sources`] is known: the setup scan then
+  /// validated every annotation of the environment.
+  pub fn exempt_from_plan_audit<'a>(
+    &mut self,
+    stt: &CompileState,
+    referenced: impl IntoIterator<Item = &'a Name>,
+  ) {
+    if stt.contract_sources.is_none() {
+      return;
+    }
+    for name in referenced {
+      if plan_head_arity_cached(name, self, stt).is_some() {
+        return;
+      }
+    }
+    self.plan_audit_exempt = true;
+  }
 }
 
 #[derive(Debug)]
@@ -302,6 +371,7 @@ impl Default for CompileState {
       plan_maps_nonempty: AtomicBool::new(false),
       aux_perms: Default::default(),
       def_hints: Default::default(),
+      contract_sources: None,
       sharing_limits: ExactSharingLimits::default(),
     }
   }
@@ -468,6 +538,22 @@ pub fn compile_name(name: &Name, stt: &CompileState) -> Address {
   addr
 }
 
+/// [`compile_name`] through the block's memo ([`BlockCache::stored_names`]):
+/// the same address and the same stored entries, without a `DashMap` read
+/// for a name the block has already stored.
+fn compile_name_cached(
+  name: &Name,
+  stt: &CompileState,
+  cache: &mut BlockCache,
+) -> Address {
+  let addr = Address::from_blake3_hash(*name.get_hash());
+  if !cache.stored_names.contains(&addr) {
+    compile_name(name, stt);
+    cache.stored_names.insert(addr.clone());
+  }
+  addr
+}
+
 // ===========================================================================
 // Universe compilation
 // ===========================================================================
@@ -478,26 +564,37 @@ pub fn compile_univ(
   univ_params: &[Name],
   cache: &mut BlockCache,
 ) -> Result<Arc<Univ>, CompileError> {
-  let ctx_key = univ_params_key(univ_params);
-  if let Some(cached) = cache.univ_cache.get(&(level.clone(), ctx_key.clone()))
-  {
+  compile_univ_keyed(level, univ_params, &univ_params_key(univ_params), cache)
+}
+
+/// [`compile_univ`] with `ctx_key = univ_params_key(univ_params)` supplied
+/// by the caller, which computes it once per expression instead of once per
+/// level node visited (cache hits included).
+fn compile_univ_keyed(
+  level: &Level,
+  univ_params: &[Name],
+  ctx_key: &Address,
+  cache: &mut BlockCache,
+) -> Result<Arc<Univ>, CompileError> {
+  let key = (Address::from_blake3_hash(*level.get_hash()), ctx_key.clone());
+  if let Some(cached) = cache.univ_cache.get(&key) {
     return Ok(cached.clone());
   }
 
   let univ = match level.as_data() {
     LevelData::Zero(_) => Univ::zero(),
     LevelData::Succ(inner, _) => {
-      let inner_univ = compile_univ(inner, univ_params, cache)?;
+      let inner_univ = compile_univ_keyed(inner, univ_params, ctx_key, cache)?;
       Univ::succ(inner_univ)
     },
     LevelData::Max(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_keyed(a, univ_params, ctx_key, cache)?;
+      let b_univ = compile_univ_keyed(b, univ_params, ctx_key, cache)?;
       Univ::max(a_univ, b_univ)
     },
     LevelData::Imax(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_keyed(a, univ_params, ctx_key, cache)?;
+      let b_univ = compile_univ_keyed(b, univ_params, ctx_key, cache)?;
       Univ::imax(a_univ, b_univ)
     },
     LevelData::Param(name, _) => {
@@ -517,7 +614,7 @@ pub fn compile_univ(
     },
   };
 
-  cache.univ_cache.insert((level.clone(), ctx_key), univ.clone());
+  cache.univ_cache.insert(key, univ.clone());
   Ok(univ)
 }
 
@@ -540,9 +637,10 @@ fn canon_univ_cached(u: &Arc<Univ>, cache: &mut BlockCache) -> Arc<Univ> {
 fn compile_univ_idx(
   level: &Level,
   univ_params: &[Name],
+  ctx_key: &Address,
   cache: &mut BlockCache,
 ) -> Result<(u64, Option<u64>), CompileError> {
-  let univ = compile_univ(level, univ_params, cache)?;
+  let univ = compile_univ_keyed(level, univ_params, ctx_key, cache)?;
   let canon = canon_univ_cached(&univ, cache);
   let (idx, fresh) = cache.univs.insert_full(canon.clone());
   debug_assert!(
@@ -565,9 +663,13 @@ fn compile_univ_idx(
 fn compile_univ_indices(
   levels: &[Level],
   univ_params: &[Name],
+  ctx_key: &Address,
   cache: &mut BlockCache,
 ) -> Result<Vec<(u64, Option<u64>)>, CompileError> {
-  levels.iter().map(|l| compile_univ_idx(l, univ_params, cache)).collect()
+  levels
+    .iter()
+    .map(|l| compile_univ_idx(l, univ_params, ctx_key, cache))
+    .collect()
 }
 
 fn univ_sort_key(univ: &Arc<Univ>) -> Vec<u8> {
@@ -584,33 +686,53 @@ fn univ_params_key(univ_params: &[Name]) -> Address {
   Address::from_blake3_hash(hasher.finalize())
 }
 
+/// Expressions [`collect_expr_tables`] has visited, as (expression hash,
+/// index of the universe context among the contexts of one
+/// [`preseed_expr_tables`] call): the pair stands for (expression, context
+/// key) one-to-one.
+type PreseedSeen = FxHashSet<(blake3::Hash, u32)>;
+
+thread_local! {
+  /// [`preseed_expr_tables`]'s seen-set, kept per thread and cleared before
+  /// each use, so a block's walk does not regrow it from empty. Dropped
+  /// instead when it has grown past [`PRESEED_SEEN_KEEP`] entries, so one
+  /// huge block does not keep its memory.
+  static PRESEED_SEEN: std::cell::RefCell<PreseedSeen> =
+    std::cell::RefCell::new(PreseedSeen::default());
+}
+
+/// Capacity up to which [`PRESEED_SEEN`] is kept between uses. Clearing
+/// costs time proportional to the capacity, so a set grown by a large
+/// block is dropped rather than cleared for every small one after it.
+const PRESEED_SEEN_KEEP: usize = 1 << 12;
+
 fn collect_expr_tables(
   expr: &LeanExpr,
   univ_params: &[Name],
+  ctx_key: &Address,
+  ctx_idx: u32,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
   refs: &mut Vec<Address>,
   univs: &mut Vec<Arc<Univ>>,
-  seen_exprs: &mut FxHashMap<(Address, Address), ()>,
+  seen_exprs: &mut PreseedSeen,
   caller: &str,
 ) -> Result<(), CompileError> {
-  let ctx_key = univ_params_key(univ_params);
   let mut stack = vec![expr];
   while let Some(e) = stack.pop() {
-    let key = Address::from_blake3_hash(*e.get_hash());
-    if seen_exprs.insert((key, ctx_key.clone()), ()).is_some() {
+    if !seen_exprs.insert((*e.get_hash(), ctx_idx)) {
       continue;
     }
 
     match e.as_data() {
       ExprData::Bvar(..) => {},
       ExprData::Sort(level, _) => {
-        univs.push(compile_univ(level, univ_params, cache)?);
+        univs.push(compile_univ_keyed(level, univ_params, ctx_key, cache)?);
       },
       ExprData::Const(name, levels, _) => {
         for level in levels {
-          univs.push(compile_univ(level, univ_params, cache)?);
+          univs.push(compile_univ_keyed(level, univ_params, ctx_key, cache)?);
         }
         if !mut_ctx.contains_key(name) {
           let const_addr = stt.resolve_addr(name).ok_or_else(|| {
@@ -679,21 +801,40 @@ pub fn preseed_expr_tables(
 ) -> Result<(), CompileError> {
   let mut refs = Vec::new();
   let mut univs = Vec::new();
-  let mut seen_exprs = FxHashMap::default();
+  // The universe contexts of `exprs`, in first-use order; a context's
+  // position stands for its key in the seen-set.
+  let mut ctx_keys: Vec<Address> = Vec::new();
 
-  for (expr, univ_params) in exprs {
-    collect_expr_tables(
-      expr,
-      univ_params,
-      mut_ctx,
-      cache,
-      stt,
-      &mut refs,
-      &mut univs,
-      &mut seen_exprs,
-      caller,
-    )?;
-  }
+  PRESEED_SEEN.with_borrow_mut(|seen_exprs| {
+    seen_exprs.clear();
+    let walked = exprs.iter().try_for_each(|(expr, univ_params)| {
+      let ctx_key = univ_params_key(univ_params);
+      let ctx_idx = match ctx_keys.iter().position(|k| *k == ctx_key) {
+        Some(i) => i,
+        None => {
+          ctx_keys.push(ctx_key.clone());
+          ctx_keys.len() - 1
+        },
+      };
+      collect_expr_tables(
+        expr,
+        univ_params,
+        &ctx_key,
+        u32::try_from(ctx_idx).expect("universe contexts exceed u32"),
+        mut_ctx,
+        cache,
+        stt,
+        &mut refs,
+        &mut univs,
+        seen_exprs,
+        caller,
+      )
+    });
+    if seen_exprs.capacity() > PRESEED_SEEN_KEEP {
+      *seen_exprs = PreseedSeen::default();
+    }
+    walked
+  })?;
 
   refs.sort();
   refs.dedup();
@@ -761,14 +902,14 @@ fn compiling_is_aux_regen(cache: &BlockCache, stt: &CompileState) -> bool {
 fn eta_adapter_needed(
   name: &Name,
   n_args: usize,
-  cache: &BlockCache,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> bool {
-  if compiling_is_aux_regen(cache, stt) {
-    return false;
-  }
-  plan_head_arity(stt, name)
+  // Both conjuncts are pure reads; the plan test goes first because it
+  // answers from the block memo and almost every head has no plan.
+  plan_head_arity_cached(name, cache, stt)
     .is_some_and(|arity| !arity.head_rewrite && n_args < arity.floor)
+    && !compiling_is_aux_regen(cache, stt)
 }
 
 /// Build the source-interface eta wrapper for a short plan-bearing
@@ -843,11 +984,12 @@ fn compile_const_expr_raw(
   name: &Name,
   levels: &[Level],
   univ_params: &[Name],
+  univ_key: &Address,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Arc<Expr>, u64), CompileError> {
-  let compiled = compile_univ_indices(levels, univ_params, cache)?;
+  let compiled = compile_univ_indices(levels, univ_params, univ_key, cache)?;
   let univ_indices: Vec<u64> = compiled.iter().map(|(c, _)| *c).collect();
   let patch_idxs: Option<Vec<u64>> =
     if compiled.iter().any(|(_, o)| o.is_some()) {
@@ -855,7 +997,7 @@ fn compile_const_expr_raw(
     } else {
       None
     };
-  let name_addr = compile_name(name, stt);
+  let name_addr = compile_name_cached(name, stt, cache);
   let expr = if let Some(idx) = mut_ctx.get(name) {
     let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
     Expr::rec(idx_u64, univ_indices)
@@ -934,6 +1076,9 @@ pub fn compile_expr(
     return Ok(cached.expr);
   }
 
+  // The context key of the universe cache, once per expression rather
+  // than once per level node.
+  let univ_key = univ_params_key(univ_params);
   let mut stack: Vec<Frame> = vec![Frame::Compile(expr.clone())];
   let mut results: Vec<Arc<Expr>> = Vec::new();
 
@@ -949,6 +1094,7 @@ pub fn compile_expr(
           name,
           levels,
           univ_params,
+          &univ_key,
           mut_ctx,
           cache,
           stt,
@@ -977,7 +1123,8 @@ pub fn compile_expr(
           },
 
           ExprData::Sort(level, _) => {
-            let (univ_idx, orig) = compile_univ_idx(level, univ_params, cache)?;
+            let (univ_idx, orig) =
+              compile_univ_idx(level, univ_params, &univ_key, cache)?;
             results.push(Expr::sort(univ_idx));
             let root = cache.arena.alloc(ExprMetaData::Leaf);
             cache.arena_roots.push(root);
@@ -1004,6 +1151,7 @@ pub fn compile_expr(
               name,
               levels,
               univ_params,
+              &univ_key,
               mut_ctx,
               cache,
               stt,
@@ -1036,7 +1184,16 @@ pub fn compile_expr(
             // `AppTypeMismatch` whenever `sort_consts` reordered a
             // mutual block (the `Alt`↔`Cases`, `EqCnstr`↔`DiseqCnstr`
             // failure family in `kernel-check-env`).
-            if let ExprData::Const(name, levels, _) = head_expr.as_data() {
+            //
+            // A head without a non-identity plan in any of the three maps
+            // (the block memo's `None`, almost every head) takes none of
+            // the branches below — each requires such a plan, the eta
+            // adapter included — so the guard skips them, and with them
+            // three plan-map reads and the aux-regen test per application.
+            if let ExprData::Const(name, levels, _) = head_expr.as_data()
+              && (*IX_SURGERY_APPLY_DEBUG
+                || plan_head_arity_cached(name, cache, stt).is_some())
+            {
               // Call-site surgery guard. Surgery applies iff:
               //  (1) the compiling constant is *not* an AuxRegen name —
               //      i.e. not one of the Lean auto-generated auxiliaries
@@ -1150,7 +1307,7 @@ pub fn compile_expr(
                           ),
                         }
                       })?;
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1298,7 +1455,7 @@ pub fn compile_expr(
                   if args.len() >= minimal_full_prefix {
                     // Surgery path: separate args into kept/collapsed,
                     // reorder kept to canonical, compile everything.
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1455,7 +1612,7 @@ pub fn compile_expr(
                   // major+minors alike.
                   let minimal_full_prefix = plan.below_minimal_full_prefix();
                   if args.len() >= minimal_full_prefix {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1540,7 +1697,7 @@ pub fn compile_expr(
                   let fixed_tail_len = plan.n_indices + 1; // indices + major
                   let expected_total = plan.brecon_minimal_full_prefix();
                   if args.len() >= expected_total {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1688,21 +1845,21 @@ pub fn compile_expr(
           },
 
           ExprData::Lam(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name_cached(name, stt, cache);
             stack.push(Frame::BuildLam(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::ForallE(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name_cached(name, stt, cache);
             stack.push(Frame::BuildAll(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::LetE(name, ty, val, body, non_dep, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name_cached(name, stt, cache);
             stack.push(Frame::BuildLet(name_addr, *non_dep));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(val.clone()));
@@ -1738,7 +1895,7 @@ pub fn compile_expr(
             })?;
 
             let (ref_idx, _) = cache.refs.insert_full(type_addr.clone());
-            let name_addr = compile_name(type_name, stt);
+            let name_addr = compile_name_cached(type_name, stt, cache);
 
             stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
             stack.push(Frame::Compile(struct_val.clone()));
@@ -1754,7 +1911,7 @@ pub fn compile_expr(
             // Compile KV map
             let mut pairs = Vec::new();
             for (k, v) in kv {
-              let k_addr = compile_name(k, stt);
+              let k_addr = compile_name_cached(k, stt, cache);
               let v_data = compile_data_value(v, stt);
               pairs.push((k_addr, v_data));
             }
@@ -2134,6 +2291,26 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
   None
 }
 
+/// Memo of [`plan_head_arity`] keyed by the head name's blake3 hash, the
+/// name's identity, compared as 32 bytes: equal names reached through
+/// different `Arc`s (the reference graph's and an expression's) would
+/// otherwise compare structurally, component by component.
+type PlanHeadMemo = FxHashMap<blake3::Hash, Option<PlanHeadArity>>;
+
+/// [`plan_head_arity`] through the block memo ([`BlockCache::plan_heads`]).
+fn plan_head_arity_cached(
+  name: &Name,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Option<PlanHeadArity> {
+  if let Some(arity) = cache.plan_heads.get(name.get_hash()) {
+    return *arity;
+  }
+  let arity = plan_head_arity(stt, name);
+  cache.plan_heads.insert(*name.get_hash(), arity);
+  arity
+}
+
 /// Whether all three call-site plan maps are empty. `DashMap::is_empty`
 /// read-locks every shard of a map (`4 × threads` of them); once a map has
 /// been seen non-empty, [`CompileState::plan_maps_nonempty`] answers
@@ -2158,33 +2335,35 @@ fn plan_maps_empty(stt: &CompileState) -> bool {
 /// App spine is split by `Mdata`/`LetE` (the telescope collector cannot see the
 /// surrounding arguments).
 ///
-/// `heads` memoizes [`plan_head_arity`] by head name across the walks over
-/// one constant: a head that recurs costs one set of plan-map lookups
-/// instead of up to three `DashMap` reads (each taking a shard lock) at each
-/// occurrence. The memo answers what a fresh lookup would: a head's plans
-/// are installed when the block that defines it compiles, which is either a
-/// dependency of the audited constant's block (finished before it starts)
-/// or that block itself (whose plans are installed after its members are
-/// audited).
+/// `heads` memoizes [`plan_head_arity`] by head name (the compiler passes
+/// its block memo, [`BlockCache::plan_heads`], whose docs say why the memo
+/// answers what a fresh lookup would): a head that recurs costs one set of
+/// plan-map lookups instead of up to three `DashMap` reads (each taking a
+/// shard lock) at each occurrence.
 fn audit_plan_head_arities(
   owner: &Name,
   top: &LeanExpr,
   stt: &CompileState,
-  heads: &mut FxHashMap<Name, Option<PlanHeadArity>>,
+  heads: &mut PlanHeadMemo,
 ) -> Result<usize, CompileError> {
   if plan_maps_empty(stt) {
     return Ok(0);
   }
   let mut head_arity = |name: &Name| -> Option<PlanHeadArity> {
-    if let Some(arity) = heads.get(name) {
+    if let Some(arity) = heads.get(name.get_hash()) {
       return *arity;
     }
     let arity = plan_head_arity(stt, name);
-    heads.insert(name.clone(), arity);
+    heads.insert(*name.get_hash(), arity);
     arity
   };
 
-  let annotated = crate::semantic_contract::inspect(top)?;
+  // A constant the setup scan found free of contract annotations (see
+  // `CompileState::contract_sources`) needs no second walk to say so.
+  let annotated = match &stt.contract_sources {
+    Some(sources) if !sources.contains(owner) => false,
+    _ => crate::semantic_contract::inspect(top)?,
+  };
   // `obscured` means this expression occurs in the function part of an outer
   // App whose telescope stopped at a non-App wrapper.  A short plan spine in
   // that position cannot be assigned a local source-order interface safely.
@@ -2300,16 +2479,20 @@ fn audit_plan_head_arities(
 fn audit_constant_info_plan_heads(
   ci: &LeanConstantInfo,
   stt: &CompileState,
+  cache: &mut BlockCache,
 ) -> Result<(), CompileError> {
+  if cache.plan_audit_exempt {
+    return Ok(());
+  }
+  let heads = &mut cache.plan_heads;
   let owner = ci.get_name();
-  let mut heads = FxHashMap::default();
-  audit_plan_head_arities(owner, ci.get_type(), stt, &mut heads)?;
+  audit_plan_head_arities(owner, ci.get_type(), stt, heads)?;
   if let Some(value) = ci.get_value() {
-    audit_plan_head_arities(owner, value, stt, &mut heads)?;
+    audit_plan_head_arities(owner, value, stt, heads)?;
   }
   if let LeanConstantInfo::RecInfo(rec) = ci {
     for rule in &rec.rules {
-      audit_plan_head_arities(owner, &rule.rhs, stt, &mut heads)?;
+      audit_plan_head_arities(owner, &rule.rhs, stt, heads)?;
     }
   }
   Ok(())
@@ -2771,11 +2954,11 @@ pub fn compile_definition(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&def.name, stt);
+  let name_addr = compile_name_cached(&def.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let all_addrs: Vec<Address> =
-    def.all.iter().map(|n| compile_name(n, stt)).collect();
+    def.all.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let data = Definition {
@@ -2812,7 +2995,7 @@ fn compile_recursor_rule(
   stt: &CompileState,
 ) -> Result<(RecursorRule, Address), CompileError> {
   let rhs = compile_expr(&rule.rhs, univ_params, mut_ctx, cache, stt)?;
-  let ctor_addr = compile_name(&rule.ctor, stt);
+  let ctor_addr = compile_name_cached(&rule.ctor, stt, cache);
   let fields = nat_to_u64(&rule.n_fields, "n_fields too large")?;
 
   Ok((RecursorRule { fields, rhs }, ctor_addr))
@@ -2862,9 +3045,9 @@ pub fn compile_recursor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&rec.cnst.name, stt);
+  let name_addr = compile_name_cached(&rec.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data = Recursor {
     k: rec.k,
@@ -2879,7 +3062,7 @@ pub fn compile_recursor(
   };
 
   let all_addrs: Vec<Address> =
-    rec.all.iter().map(|n| compile_name(n, stt)).collect();
+    rec.all.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Rec {
@@ -2929,10 +3112,10 @@ fn compile_constructor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&ctor.cnst.name, stt);
+  let name_addr = compile_name_cached(&ctor.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
-  let induct_addr = compile_name(&ctor.induct, stt);
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
+  let induct_addr = compile_name_cached(&ctor.induct, stt, cache);
 
   let data = Constructor {
     is_unsafe: ctor.is_unsafe,
@@ -2995,15 +3178,15 @@ pub fn compile_inductive(
   let mut ctor_name_addrs = Vec::new();
   for ctor in &ind.ctors {
     let (c, m) = compile_constructor(ctor, mut_ctx, cache, stt)?;
-    let ctor_name_addr = compile_name(&ctor.cnst.name, stt);
+    let ctor_name_addr = compile_name_cached(&ctor.cnst.name, stt, cache);
     ctor_name_addrs.push(ctor_name_addr);
     ctor_const_metas.push(m);
     ctors.push(c);
   }
 
-  let name_addr = compile_name(&ind.ind.cnst.name, stt);
+  let name_addr = compile_name_cached(&ind.ind.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data = Inductive {
     is_unsafe: ind.ind.is_unsafe,
@@ -3018,7 +3201,7 @@ pub fn compile_inductive(
   };
 
   let all_addrs: Vec<Address> =
-    ind.ind.all.iter().map(|n| compile_name(n, stt)).collect();
+    ind.ind.all.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Indc {
@@ -3063,9 +3246,9 @@ fn compile_axiom(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
+  let name_addr = compile_name_cached(&val.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
@@ -3109,9 +3292,9 @@ fn compile_quotient(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
+  let name_addr = compile_name_cached(&val.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
@@ -3138,6 +3321,9 @@ pub struct CompiledMutualBlock {
   pub constant: Constant,
   /// Content-addressed hash
   pub addr: Address,
+  /// The constant's serialization (`Constant::put`), which `addr` hashes
+  /// (for [`ixon::env::Env::store_const_serialized`]).
+  pub bytes: Vec<u8>,
 }
 
 /// Compile a mutual block with block-level sharing under `limits`.
@@ -3156,7 +3342,7 @@ pub fn compile_mutual_block(
   constant.put(&mut bytes);
   let addr = Address::hash(&bytes);
 
-  Ok(CompiledMutualBlock { constant, addr })
+  Ok(CompiledMutualBlock { constant, addr, bytes })
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -4052,7 +4238,7 @@ fn compile_const_inner(
       caller: "compile_const".into(),
     })?
     .clone();
-  audit_constant_info_plan_heads(&cnst, stt)?;
+  audit_constant_info_plan_heads(&cnst, stt, cache)?;
   let _cnst_kind = match &cnst {
     LeanConstantInfo::DefnInfo(_) => "defn",
     LeanConstantInfo::ThmInfo(_) => "thm",
@@ -4073,9 +4259,8 @@ fn compile_const_inner(
     cache: &mut BlockCache,
     stt: &CompileState,
     aux: bool,
-  ) -> Result<(Address, ConstantMeta), CompileError> {
+  ) -> Result<Address, CompileError> {
     let _t0 = std::time::Instant::now();
-    let _name_str_entry = name.pretty();
     let mut_ctx = MutConst::single_ctx(def.name.clone());
     preseed_expr_tables(
       &[
@@ -4087,8 +4272,10 @@ fn compile_const_inner(
       stt,
       "compile_single_def",
     )?;
-    let ctx_addrs: Vec<Address> =
-      ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+    let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+      .iter()
+      .map(|n| compile_name_cached(n, stt, cache))
+      .collect();
     let (data, meta) =
       compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
     let _t_compile = _t0.elapsed();
@@ -4122,25 +4309,23 @@ fn compile_const_inner(
       );
     }
     if aux {
-      stt.env.store_const(addr.clone(), constant);
-      stt
-        .env
-        .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
+      stt.env.store_const_serialized(addr.clone(), constant, bytes);
+      stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
     } else {
       // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
       // original (addr, meta) in Named.original for decompilation metadata.
       // Do NOT store the constant blob — it's ephemeral and would pollute
       // the Ixon env with unreferenced constants.
-      stt.promote_aux(name, addr.clone(), meta.clone())?;
+      stt.promote_aux(name, addr.clone(), meta)?;
     }
-    Ok((addr, meta))
+    Ok(addr)
   }
 
   // Handle each constant type
   let addr = match &cnst {
     LeanConstantInfo::DefnInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_defn(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_defn(val), cache, stt, aux)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
@@ -4148,7 +4333,7 @@ fn compile_const_inner(
 
     LeanConstantInfo::ThmInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_theo(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_theo(val), cache, stt, aux)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
@@ -4156,7 +4341,7 @@ fn compile_const_inner(
 
     LeanConstantInfo::OpaqueInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_opaq(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_opaq(val), cache, stt, aux)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
@@ -4183,7 +4368,7 @@ fn compile_const_inner(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const_serialized(addr.clone(), constant, bytes);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
@@ -4210,7 +4395,7 @@ fn compile_const_inner(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const_serialized(addr.clone(), constant, bytes);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
@@ -4228,8 +4413,10 @@ fn compile_const_inner(
           exprs.push((&rule.rhs, val.cnst.level_params.as_slice()));
         }
         preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_recursor")?;
-        let ctx_addrs: Vec<Address> =
-          ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+        let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+          .iter()
+          .map(|n| compile_name_cached(n, stt, cache))
+          .collect();
         let (data, meta) =
           compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
@@ -4244,11 +4431,8 @@ fn compile_const_inner(
         constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
         if aux {
-          stt.env.store_const(addr.clone(), constant);
-          stt.env.register_name(
-            name.clone(),
-            Named::new(addr.clone(), meta.clone()),
-          );
+          stt.env.store_const_serialized(addr.clone(), constant, bytes);
+          stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
         } else {
           stt.promote_aux(name, addr.clone(), meta)?;
         }
@@ -4312,7 +4496,7 @@ fn compile_mutual(
         caller: "compile_mutual".into(),
       });
     };
-    audit_constant_info_plan_heads(&const_info, stt)?;
+    audit_constant_info_plan_heads(&const_info, stt, cache)?;
     let mut_const = match &const_info {
       LeanConstantInfo::InductInfo(val) => {
         for ctor_name in &val.ctors {
@@ -4322,7 +4506,7 @@ fn compile_mutual(
               caller: "plan-head arity audit (constructor)".into(),
             }
           })?;
-          audit_constant_info_plan_heads(&ctor, stt)?;
+          audit_constant_info_plan_heads(&ctor, stt, cache)?;
         }
         MutConst::Indc(mk_indc(val, lean_env)?)
       },
@@ -4350,8 +4534,10 @@ fn compile_mutual(
   // computed once here instead of sorted+re-interned per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name_cached(n, stt, cache))
+    .collect();
 
   for class in &sorted_classes {
     // Only push one representative per equivalence class into ixon_mutuals,
@@ -4428,7 +4614,7 @@ fn compile_mutual(
     let addr = Address::hash(&bytes);
 
     if aux {
-      stt.env.store_const(addr.clone(), standalone_constant);
+      stt.env.store_const_serialized(addr.clone(), standalone_constant, bytes);
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
@@ -4456,7 +4642,11 @@ fn compile_mutual(
   let block_addr = compiled.addr.clone();
 
   if aux {
-    stt.env.store_const(block_addr.clone(), compiled.constant);
+    stt.env.store_const_serialized(
+      block_addr.clone(),
+      compiled.constant,
+      compiled.bytes,
+    );
     // Register class ordering for each inductive name in the block.
     let class_ordering: Vec<Vec<Name>> = sorted_classes
       .iter()
@@ -4490,7 +4680,11 @@ fn compile_mutual(
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
           if aux {
-            stt.env.store_const(proj_addr.clone(), indc_proj);
+            stt.env.store_const_serialized(
+              proj_addr.clone(),
+              indc_proj,
+              proj_bytes,
+            );
             stt
               .env
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
@@ -4509,7 +4703,11 @@ fn compile_mutual(
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
             if aux {
-              stt.env.store_const(ctor_addr.clone(), ctor_proj);
+              stt.env.store_const_serialized(
+                ctor_addr.clone(),
+                ctor_proj,
+                ctor_bytes,
+              );
               stt.env.register_name(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
@@ -4529,7 +4727,7 @@ fn compile_mutual(
       proj.put(&mut proj_bytes);
       let proj_addr = Address::hash(&proj_bytes);
       if aux {
-        stt.env.store_const(proj_addr.clone(), proj);
+        stt.env.store_const_serialized(proj_addr.clone(), proj, proj_bytes);
         stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.name_to_addr.insert(n.clone(), proj_addr);
       } else {
@@ -4548,9 +4746,9 @@ fn compile_mutual(
   // reaches the kernel env.
   //
   // Only register on `aux=true` since that's the path that actually stores
-  // the block constant (`stt.env.store_const(block_addr, ...)` above is
-  // guarded by `if aux`). The `aux=false` promotion path reuses entries
-  // that were already registered in a prior `aux=true` call.
+  // the block constant (`stt.env.store_const_serialized(block_addr, ...)`
+  // above is guarded by `if aux`). The `aux=false` promotion path reuses
+  // entries that were already registered in a prior `aux=true` call.
   if aux {
     let first_name = sorted_classes
       .first()
@@ -4850,8 +5048,10 @@ pub mod mutual;
 pub mod nat_conv;
 pub mod surgery;
 pub(crate) mod validation;
+pub(crate) use env::IX_VERBOSE;
 pub use env::{
   compile_env, compile_env_with_options, compile_env_with_profile,
+  compile_env_with_scanner,
 };
 
 #[cfg(test)]
@@ -5180,7 +5380,10 @@ mod tests {
         .unwrap(),
       0
     );
-    assert!(audit_constant_info_plan_heads(&ci, &stt).is_ok());
+    assert!(
+      audit_constant_info_plan_heads(&ci, &stt, &mut BlockCache::default())
+        .is_ok()
+    );
     assert!(!stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed));
 
     stt.call_site_plans.insert(
@@ -5200,9 +5403,10 @@ mod tests {
     );
     // Installed later: the next audit sees it, and from then on the
     // emptiness test is skipped.
-    let err = audit_constant_info_plan_heads(&ci, &stt)
-      .expect_err("an obscured short plan head must fail the audit")
-      .to_string();
+    let err =
+      audit_constant_info_plan_heads(&ci, &stt, &mut BlockCache::default())
+        .expect_err("an obscured short plan head must fail the audit")
+        .to_string();
     assert!(err.contains("A.rec"), "missing head in: {err}");
     assert!(err.contains("has 0 args"), "missing arity in: {err}");
     assert!(stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed));

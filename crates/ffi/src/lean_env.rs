@@ -12,6 +12,8 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
 
+pub mod scan;
+
 use dashmap::DashMap;
 use rayon::prelude::*;
 
@@ -1159,69 +1161,162 @@ fn decode_name_constant_info(
 
 /// Resident-decoded-constant bound for [`decode_env_lazy`]'s cache.
 ///
-/// Sized by sweep, not by hit rate: on FLT (511k consts) wall time is
-/// flat from 4096 through 1M entries (60–67 s; misses hide in the
-/// scheduler's dependency-stall slack) while peak RSS climbs from
-/// 11.5 GiB (4k) → 13.0 (64k) → 24.7 (1M); Mathlib (737k consts)
-/// confirms parity at this size (87.5 s / 17.0 GiB vs 87.3 s /
-/// 18.3 GiB at 64k). So the cache buys RAM, not speed, and the bound
-/// sits at the small end with headroom over the 4k floor measured to
-/// still not thrash.
+/// Mathlib (771k constants, canonical sharing, FIFO eviction): the
+/// whole compile decodes 896k constants at 8192 entries (peak RSS
+/// 18.7 GB), 860k at 16384 (19.3 GB), 821k at 65536 (22.8 GB) and 771k,
+/// one per constant, at 1M (40.7 GB). An older sweep that found wall
+/// time flat from 4k to 1M entries ran with an eviction that kept the
+/// first constants and evicted the newest. Override with
+/// `IX_COMPILE_LAZY_CACHE=N`.
 const LAZY_ENV_CACHE_ENTRIES: usize = 16384;
 
 /// Decode for the production compile FFI entries: an on-demand view
 /// that avoids materializing the full Rust copy of the environment —
-/// the eager copy is the single largest memory term at scale. The
-/// on-demand decode costs a few percent of wall (per-constant fetches
-/// vs one batched decode); `IX_COMPILE_EAGER=1` buys that back on
-/// machines with RAM to spare. Measured on FLT: −8 % wall for
-/// +13 GiB peak; Mathlib eager exceeds a 56 GB machine outright
-/// (the copy sits alongside the Lean-held env). Test and roundtrip
-/// entries keep [`decode_env`] (they re-read the env structurally
-/// throughout).
+/// the eager copy is the single largest memory term at scale.
+/// `IX_COMPILE_EAGER=1` decodes everything up front instead: on Mathlib
+/// it peaks at 38–44 GB against 18–19 GB and spends about 15% less user
+/// CPU than the FIFO-evicting lazy view, and under memory pressure
+/// from other processes the larger footprint makes the admission gate
+/// back off (measured runs of 5–8 min instead of 2.5–3.5). Test and
+/// roundtrip entries keep [`decode_env`] (they re-read the env
+/// structurally throughout).
 pub fn decode_env_for_compile(list: LeanList<LeanBorrowed<'_>>) -> Env {
-  if std::env::var("IX_COMPILE_EAGER").as_deref() == Ok("1") {
-    return decode_env(list);
-  }
-  decode_env_lazy(list, LAZY_ENV_CACHE_ENTRIES)
+  decode_env_for_compile_with_scanner(list).0
 }
 
-/// Lazy variant of [`decode_env`]: decode only the *names* eagerly,
-/// keep a per-constant `LeanShared` handle, and decode `ConstantInfo`s
-/// on demand through `Env`'s bounded cache.
+/// [`decode_env_for_compile`], plus a [`scan::LeanScanner`] over the
+/// same Lean objects for the compile's setup scan, which then reads the
+/// constants without decoding them (see `scan.rs`).
+pub fn decode_env_for_compile_with_scanner(
+  list: LeanList<LeanBorrowed<'_>>,
+) -> (Env, scan::LeanScanner) {
+  let start = std::time::Instant::now();
+  let (names, constants) = LeanConstants::index(list);
+  let indexed = start.elapsed();
+  let eager = std::env::var("IX_COMPILE_EAGER").as_deref() == Ok("1");
+  // `IX_COMPILE_LAZY_CACHE=N`: resident decoded constants of the lazy
+  // view (default `LAZY_ENV_CACHE_ENTRIES`), for measurements.
+  let cache_entries = std::env::var("IX_COMPILE_LAZY_CACHE")
+    .ok()
+    .and_then(|n| n.parse().ok())
+    .unwrap_or(LAZY_ENV_CACHE_ENTRIES);
+  let env = if eager {
+    constants.decode_all(&names)
+  } else {
+    constants.clone().into_lazy_env(names, cache_entries)
+  };
+  if std::env::var("IX_VERBOSE").is_ok() {
+    eprintln!(
+      "[compile] env index: {} constants in {:.2}s{}",
+      env.len(),
+      indexed.as_secs_f32(),
+      if eager {
+        format!(
+          "; eager decode (IX_COMPILE_EAGER=1): {:.2}s",
+          (start.elapsed() - indexed).as_secs_f32()
+        )
+      } else {
+        format!("; lazy view, {cache_entries} cached constants")
+      },
+    );
+  }
+  (env, scan::LeanScanner::new(constants, eager))
+}
+
+/// The Lean objects behind a compile's environment: each constant's
+/// `Prod (Name × ConstantInfo)` object by name, and the name cache the
+/// decoders share.
 ///
 /// Thread-safety is identical to the eager path, which already decodes
 /// in parallel: `lean_mark_mt` (via `LeanShared::new`) transitions the
 /// reachable graph to atomic refcounting, structural reads through
 /// `LeanBorrowed` accessors are refcount-silent, and each element's
-/// owned handle keeps its Lean objects alive for the `Env`'s lifetime
-/// regardless of what the Lean side does after the FFI call.
+/// owned handle keeps its Lean objects alive for as long as this value
+/// lives, regardless of what the Lean side does after the FFI call.
+pub struct LeanConstants {
+  handles: FxHashMap<Name, LeanShared>,
+  global: GlobalCache,
+  /// Constants decoded so far, repeats included.
+  decodes: std::sync::atomic::AtomicUsize,
+}
+
+impl LeanConstants {
+  /// Decode only the *names* (in parallel; bodies untouched) and keep a
+  /// handle per constant. Returns the names in list order, duplicates
+  /// included; a duplicated name's handle is its last occurrence.
+  fn index(list: LeanList<LeanBorrowed<'_>>) -> (Vec<Name>, Arc<Self>) {
+    let shared_list = LeanShared::new(list.inner().to_owned_ref());
+    let objs = collect_list_shared(shared_list.borrow().as_list());
+    let global = GlobalCache::with_capacity(objs.len() * 3);
+    // Each element is a `Prod (Name × ConstantInfo)` ctor — field 0 is
+    // the name.
+    let named: Vec<(Name, LeanShared)> = objs
+      .into_par_iter()
+      .map(|o| {
+        let name = decode_name(o.borrow().as_ctor().get(0), &global);
+        (name, o)
+      })
+      .collect();
+    let names: Vec<Name> = named.iter().map(|(n, _)| n.clone()).collect();
+    let handles: FxHashMap<Name, LeanShared> = named.into_iter().collect();
+    let decodes = std::sync::atomic::AtomicUsize::new(0);
+    (names, Arc::new(Self { handles, global, decodes }))
+  }
+
+  /// Constants decoded so far, repeats included.
+  pub fn decodes(&self) -> usize {
+    self.decodes.load(std::sync::atomic::Ordering::Relaxed)
+  }
+
+  /// The `Lean.ConstantInfo` object of `name` (field 1 of its pair).
+  fn info(&self, name: &Name) -> Option<LeanBorrowed<'_>> {
+    let pair = self.handles.get(name)?.as_raw();
+    // SAFETY: the pair is a live `Prod` ctor owned by `self.handles`, so
+    // its fields live as long as `self`.
+    Some(unsafe {
+      LeanBorrowed::from_raw(lean_ffi::include::lean_ctor_get(pair, 1))
+    })
+  }
+
+  fn decode(&self, name: &Name) -> Option<ConstantInfo> {
+    let info = self.info(name)?;
+    self.decodes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut cache = Cache::new(&self.global);
+    Some(decode_constant_info(info, &mut cache))
+  }
+
+  /// The on-demand view: constants decode through `Env`'s bounded cache.
+  fn into_lazy_env(self: Arc<Self>, names: Vec<Name>, cache: usize) -> Env {
+    Env::new_lazy(names, Box::new(move |name| self.decode(name)), cache)
+  }
+
+  /// The eager copy, as [`decode_env`] builds it: every constant decoded
+  /// in parallel, inserted in list order.
+  fn decode_all(&self, names: &[Name]) -> Env {
+    let pairs: Vec<(Name, ConstantInfo)> = names
+      .par_iter()
+      .map(|name| {
+        let constant = self.decode(name).expect("indexed constant");
+        (name.clone(), constant)
+      })
+      .collect();
+    let mut env = Env::default();
+    for (name, constant) in pairs {
+      env.insert(name, constant);
+    }
+    env
+  }
+}
+
+/// Lazy variant of [`decode_env`]: decode only the *names* eagerly,
+/// keep a per-constant `LeanShared` handle, and decode `ConstantInfo`s
+/// on demand through `Env`'s bounded cache (see [`LeanConstants`]).
 pub fn decode_env_lazy(
   list: LeanList<LeanBorrowed<'_>>,
   cache_entries: usize,
 ) -> Env {
-  let shared_list = LeanShared::new(list.inner().to_owned_ref());
-  let objs = collect_list_shared(shared_list.borrow().as_list());
-  let global = Arc::new(GlobalCache::with_capacity(objs.len() * 3));
-
-  // Name index (parallel; bodies untouched). Each element is a
-  // `Prod (Name × ConstantInfo)` ctor — field 0 is the name.
-  let named: Vec<(Name, LeanShared)> = objs
-    .into_par_iter()
-    .map(|o| {
-      let name = decode_name(o.borrow().as_ctor().get(0), &global);
-      (name, o)
-    })
-    .collect();
-  let names: Vec<Name> = named.iter().map(|(n, _)| n.clone()).collect();
-  let handles: FxHashMap<Name, LeanShared> = named.into_iter().collect();
-
-  let fetch = move |name: &Name| {
-    let obj = handles.get(name)?;
-    let mut cache = Cache::new(&global);
-    Some(decode_constant_info(obj.borrow().as_ctor().get(1), &mut cache))
-  };
-  Env::new_lazy(names, Box::new(fetch), cache_entries)
+  let (names, constants) = LeanConstants::index(list);
+  constants.into_lazy_env(names, cache_entries)
 }
 
 // Decode a Lean environment in parallel with hybrid caching.

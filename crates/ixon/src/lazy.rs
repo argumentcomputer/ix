@@ -179,8 +179,14 @@ impl LazyConstant {
   pub fn from_constant(c: Constant) -> Self {
     let mut buf = Vec::new();
     c.put(&mut buf);
+    Self::from_constant_serialized(c, buf)
+  }
+
+  /// [`Self::from_constant`] with the serialization already in hand:
+  /// `bytes` must be exactly what `c.put` produces.
+  pub fn from_constant_serialized(c: Constant, bytes: Vec<u8>) -> Self {
     LazyConstant {
-      bytes: BytesSource::Heap(buf.into()),
+      bytes: BytesSource::Heap(bytes.into()),
       cache: Some(Arc::new(c)),
       pending_addr: None,
       verified: Arc::new(AtomicBool::new(false)),
