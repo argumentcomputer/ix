@@ -193,7 +193,6 @@ pub fn compile_aux_block_with_rename(
   // Compile the mutual block.
   let block_refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let block_univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-  let name_str = aux_consts[0].name().pretty();
 
   // Singleton non-inductive aux blocks: emit as a standalone
   // `Defn`/`Recr` Constant instead of `Muts(vec![one])`. Same
@@ -204,24 +203,28 @@ pub fn compile_aux_block_with_rename(
     && !matches!(&ixon_mutuals[0], IxonMutConst::Indc(_))
   {
     use crate::compile::{
-      apply_sharing_to_definition_with_stats,
-      apply_sharing_to_recursor_with_stats,
+      apply_sharing_to_definition_with_limits,
+      apply_sharing_to_recursor_with_limits,
     };
+    let limits = &stt.sharing_limits;
     let single = ixon_mutuals.pop().unwrap();
     let result = match single {
-      IxonMutConst::Defn(def) => apply_sharing_to_definition_with_stats(
+      IxonMutConst::Defn(def) => apply_sharing_to_definition_with_limits(
+        limits,
         def,
         block_refs,
         block_univs,
-        Some(&name_str),
-      ),
-      IxonMutConst::Recr(rec) => {
-        apply_sharing_to_recursor_with_stats(rec, block_refs, block_univs)
-      },
+      )?,
+      IxonMutConst::Recr(rec) => apply_sharing_to_recursor_with_limits(
+        limits,
+        rec,
+        block_refs,
+        block_univs,
+      )?,
       IxonMutConst::Indc(_) => unreachable!(),
     };
-    let standalone_addr = content_address(&result.constant);
-    stt.env.store_const(standalone_addr.clone(), result.constant);
+    let standalone_addr = content_address(&result);
+    stt.env.store_const(standalone_addr.clone(), result);
 
     let mut pending_names: Vec<Name> = Vec::new();
     for cnst in &sorted_classes[0] {
@@ -251,11 +254,11 @@ pub fn compile_aux_block_with_rename(
   }
 
   let compiled = compile_mutual_block(
+    &stt.sharing_limits,
     ixon_mutuals,
     block_refs,
     block_univs,
-    Some(&name_str),
-  );
+  )?;
   let block_addr = compiled.addr.clone();
   stt.env.store_const(block_addr.clone(), compiled.constant);
 

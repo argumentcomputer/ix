@@ -729,10 +729,10 @@ mod tests {
       assert!(compiled.ungrounded.is_empty());
       let mut bytes = Vec::new();
       compiled.env.put(&mut bytes).unwrap();
-      // Migrated to Ixon v3; both worker counts must preserve these bytes.
+      // Ixon v4; both worker counts must preserve these bytes.
       assert_eq!(
         blake3::hash(&bytes).to_hex().as_str(),
-        "34fe80b5eae41a9d430a4e2a61d499e9db25ea587af289f0b4fc63b7770924f5"
+        "ea6cf4ca0e86e8db054f872a11fc2115284a9638e7b67d697940e1d19555725e"
       );
     }
   }

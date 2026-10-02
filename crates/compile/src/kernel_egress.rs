@@ -405,9 +405,9 @@ use std::sync::Arc;
 use indexmap::IndexSet;
 
 use crate::compile::{
-  apply_sharing_to_axiom_with_stats, apply_sharing_to_definition_with_stats,
-  apply_sharing_to_mutual_block, apply_sharing_to_quotient_with_stats,
-  apply_sharing_to_recursor_with_stats,
+  apply_sharing_to_axiom_with_limits, apply_sharing_to_definition_with_limits,
+  apply_sharing_to_mutual_block_with_limits,
+  apply_sharing_to_quotient_with_limits, apply_sharing_to_recursor_with_limits,
 };
 use ix_common::address::Address;
 use ixon::constant::{
@@ -420,6 +420,7 @@ use ixon::constant::{
 use ixon::env::{Env as IxonEnv, Named};
 use ixon::expr::Expr as IxonExpr;
 use ixon::metadata::ConstantMetaInfo;
+use ixon::sharing_exact::ExactSharingLimits;
 use ixon::univ::Univ as IxonUniv;
 
 /// Per-constant (or per-block) working context accumulated while converting
@@ -980,6 +981,7 @@ fn egress_muts_block(
   original_env: &IxonEnv,
   names: &FxHashMap<Address, Name>,
   name_index: &FxHashMap<Name, (KId<Meta>, KConst<Meta>)>,
+  limits: &ExactSharingLimits,
   out: &IxonEnv,
 ) -> Result<(), String> {
   let mut_ctx_vec = build_block_mut_ctx(all, names, name_index)?;
@@ -1049,19 +1051,15 @@ fn egress_muts_block(
   }
 
   let (refs, univs) = ctx.into_vecs();
-  let first_name = names
+  // The block must name its first member.
+  names
     .get(all.first().and_then(|c| c.first()).ok_or("empty Muts")?)
-    .cloned()
     .ok_or("first name missing")?;
-  let block_name_str = first_name.pretty();
-  let result = apply_sharing_to_mutual_block(
-    mut_consts,
-    refs,
-    univs,
-    Some(&block_name_str),
-  );
-  let block_addr = content_address_of(&result.constant);
-  out.store_const(block_addr.clone(), result.constant);
+  let result =
+    apply_sharing_to_mutual_block_with_limits(limits, mut_consts, refs, univs)
+      .map_err(|e| format!("egress '{muts_name}': {e}"))?;
+  let block_addr = content_address_of(&result);
+  out.store_const(block_addr.clone(), result);
 
   // Register the synthetic Muts Named entry at the new block_addr. Preserve
   // the original `meta` / `original` fields — decompile's Pass 2 keys off
@@ -1171,6 +1169,7 @@ fn egress_standalone(
   original_named: &Named,
   original_env: &IxonEnv,
   name_index: &FxHashMap<Name, (KId<Meta>, KConst<Meta>)>,
+  limits: &ExactSharingLimits,
   out: &IxonEnv,
 ) -> Result<(), String> {
   let (_, kc) = name_index
@@ -1182,39 +1181,44 @@ fn egress_standalone(
   if let Some(orig_const) = original_env.get_const(&original_named.addr) {
     ctx.preseed_univs(&orig_const.univs);
   }
+  // A sharing failure (resource limit or construction error) names the
+  // constant it stopped.
+  let sharing_err = |e: ixon::CompileError| format!("egress '{name}': {e}");
   let (constant, addr) = match kc {
     KConst::Defn { .. } => {
       let def = kdefn_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_definition_with_stats(
-        def,
-        refs,
-        univs,
-        Some(&name.pretty()),
-      );
-      let addr = content_address_of(&result.constant);
-      (result.constant, addr)
+      let result =
+        apply_sharing_to_definition_with_limits(limits, def, refs, univs)
+          .map_err(sharing_err)?;
+      let addr = content_address_of(&result);
+      (result, addr)
     },
     KConst::Recr { .. } => {
       let rec = krecr_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_recursor_with_stats(rec, refs, univs);
-      let addr = content_address_of(&result.constant);
-      (result.constant, addr)
+      let result =
+        apply_sharing_to_recursor_with_limits(limits, rec, refs, univs)
+          .map_err(sharing_err)?;
+      let addr = content_address_of(&result);
+      (result, addr)
     },
     KConst::Axio { .. } => {
       let ax = kaxio_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_axiom_with_stats(ax, refs, univs);
-      let addr = content_address_of(&result.constant);
-      (result.constant, addr)
+      let result = apply_sharing_to_axiom_with_limits(limits, ax, refs, univs)
+        .map_err(sharing_err)?;
+      let addr = content_address_of(&result);
+      (result, addr)
     },
     KConst::Quot { .. } => {
       let q = kquot_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_quotient_with_stats(q, refs, univs);
-      let addr = content_address_of(&result.constant);
-      (result.constant, addr)
+      let result =
+        apply_sharing_to_quotient_with_limits(limits, q, refs, univs)
+          .map_err(sharing_err)?;
+      let addr = content_address_of(&result);
+      (result, addr)
     },
     other => {
       return Err(format!(
@@ -1240,9 +1244,12 @@ fn egress_standalone(
 /// Partitions original Named entries into Muts-block drivers and standalone
 /// constants, then processes each partition in parallel via rayon. Storing
 /// into the output `IxonEnv` is thread-safe because the env uses DashMaps.
+/// Every rebuilt constant is shared under `limits` (the compile's
+/// `CompileState::sharing_limits`); a sharing failure names its constant.
 pub fn ixon_egress(
   kenv: &KEnv<Meta>,
   original_env: &IxonEnv,
+  limits: &ExactSharingLimits,
 ) -> Result<IxonEnv, String> {
   let t_start = std::time::Instant::now();
   let out = IxonEnv::new();
@@ -1336,6 +1343,7 @@ pub fn ixon_egress(
         original_env,
         &names,
         &name_index,
+        limits,
         &out,
       )
     },
@@ -1346,7 +1354,7 @@ pub fn ixon_egress(
   let t_solo = std::time::Instant::now();
   standalone_entries.par_iter().try_for_each(
     |(name, named)| -> Result<(), String> {
-      egress_standalone(name, named, original_env, &name_index, &out)
+      egress_standalone(name, named, original_env, &name_index, limits, &out)
     },
   )?;
   eprintln!("[ixon_egress] standalone consts:   {:.2?}", t_solo.elapsed());
@@ -1789,5 +1797,58 @@ mod tests {
       let ci = le.get(&mk_name(name)).expect("missing name");
       assert!(matches!(&*ci, LeanCI::AxiomInfo(..)));
     }
+  }
+
+  // ---- ixon egress: sharing limits ----
+
+  /// A sharing failure while rebuilding a constant names the constant and
+  /// keeps the compile error's category (here a resource limit).
+  #[test]
+  fn egress_standalone_sharing_failure_names_the_constant() {
+    let name = mk_name("Egress.Limited");
+    let kc = KConst::<Meta>::Axio {
+      name: name.clone(),
+      level_params: vec![],
+      is_unsafe: false,
+      lvls: 0,
+      ty: KExpr::all(
+        mk_name("x"),
+        BinderInfo::Default,
+        sort0(),
+        KExpr::all(mk_name("y"), BinderInfo::Default, sort0(), sort0()),
+      ),
+    };
+    let mut name_index = FxHashMap::default();
+    name_index.insert(name.clone(), (mk_id("Egress.Limited"), kc));
+    let original_named =
+      Named::new(mk_addr("Egress.Limited"), ixon::ConstantMeta::default());
+    let limits =
+      ExactSharingLimits { max_output_bytes: 1, ..Default::default() };
+    let out = IxonEnv::new();
+    let err = egress_standalone(
+      &name,
+      &original_named,
+      &IxonEnv::new(),
+      &name_index,
+      &limits,
+      &out,
+    )
+    .expect_err("one output byte cannot hold the axiom");
+    assert!(
+      err.starts_with("egress 'Egress.Limited': resource limit:"),
+      "{err}"
+    );
+    assert!(err.contains("--sharing-limits output_bytes=N"), "{err}");
+    // Under the default limits the same constant egresses.
+    egress_standalone(
+      &name,
+      &original_named,
+      &IxonEnv::new(),
+      &name_index,
+      &ExactSharingLimits::default(),
+      &out,
+    )
+    .unwrap();
+    assert!(out.named.contains_key(&name));
   }
 }

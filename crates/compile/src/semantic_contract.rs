@@ -302,30 +302,31 @@ pub fn of_ixon(expr: &Expr) -> Option<Contract> {
 }
 
 /// Context-free presence scan only; never used as resource-validity evidence.
-pub fn contains_ixon(
+/// A `Share` node met in index space `scope` is expanded by `resolve`, which
+/// returns the target and the index space the target's own `Share` nodes are
+/// read in (the decompiler's primary/metadata share scopes). Mirrors Lean
+/// `Ix.SemanticContract.containsIxon`.
+pub fn contains_ixon<S, E>(
   expr: &Arc<Expr>,
-  sharing: &[Arc<Expr>],
-) -> Result<bool, String> {
+  scope: S,
+  mut resolve: impl FnMut(S, u64) -> Result<(Arc<Expr>, S), E>,
+) -> Result<bool, E>
+where
+  S: Copy + Eq + std::hash::Hash,
+{
   let mut seen = rustc_hash::FxHashSet::default();
-  let mut stack = vec![expr];
-  while let Some(e) = stack.pop() {
-    if !seen.insert(Arc::as_ptr(e)) {
+  let mut stack = vec![(expr.clone(), scope)];
+  while let Some((e, s)) = stack.pop() {
+    if !seen.insert((Arc::as_ptr(&e), s)) {
       continue;
     }
-    if of_ixon(e).is_some() {
+    if of_ixon(&e).is_some() {
       return Ok(true);
     }
     if let Expr::Share(index) = e.as_ref() {
-      stack.push(
-        sharing
-          .get(
-            usize::try_from(*index)
-              .map_err(|_error| "semantic scan: sharing index overflow")?,
-          )
-          .ok_or("semantic scan: invalid sharing index")?,
-      );
+      stack.push(resolve(s, *index)?);
     } else {
-      stack.extend(e.children());
+      stack.extend(e.children().into_iter().map(|c| (c.clone(), s)));
     }
   }
   Ok(false)

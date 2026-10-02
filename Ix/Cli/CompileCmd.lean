@@ -19,12 +19,28 @@ private def defaultOutPathFor (pathStr : String) : String :=
   let stem := path.fileStem.getD (path.fileName.getD pathStr)
   stem.toLower ++ ".ixe"
 
+/-- `--sharing-limits SPEC`: validate the override (the format of
+`Ix.Sharing.Exact.Limits.withOverrides`, which also accepts the Rust limit
+keys) and publish it through `IX_SHARING_LIMITS`, which both compilers read.
+Returns the parse error, if any. -/
+def applySharingLimitsFlag (p : Cli.Parsed) : IO (Option String) := do
+  let some flag := p.flag? "sharing-limits" | return none
+  let spec := flag.as! String
+  match Ix.CompileM.compilerSharingLimits.withOverrides spec with
+  | .error e => return some s!"--sharing-limits: {e}"
+  | .ok _ =>
+    Std.Internal.UV.System.osSetenv Ix.CompileM.sharingLimitsEnvVar spec
+    return none
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch. The Rust compiler and serializer
   -- both consult IX_VERBOSE, so setting it once enables the whole pipeline.
   if p.hasFlag "verbose" then
     Std.Internal.UV.System.osSetenv "IX_VERBOSE" "1"
+  if let some e ← applySharingLimitsFlag p then
+    p.printError s!"error: {e}"
+    return 1
 
   let some path := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a Lean source file"
@@ -258,6 +274,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
     "allow-partial" ;        "Serialize the grounded subset and exit 0 even when some requested constants fail to compile. Default is fail-closed: any ungrounded constant means a nonzero exit and NO output file."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
+    "sharing-limits" : String; "Override resource limits of the canonical sharing construction: comma-separated key=value items (values: digits, 2^k or max) or `unbounded`. Keys: expr_visits, depth, nodes, states, transitions, cost_evals, output_bytes, materialize, materialize_work, knapsack_cells (Lean); input_nodes, distinct_nodes, height, candidates, states, layer_states, transitions, work, output_bytes, knapsack_cells (Rust). The defaults are far above every corpus maximum; a constant that reaches one fails to compile and names the limit. Sets IX_SHARING_LIMITS."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
 
   ARGS:
