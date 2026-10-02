@@ -16,9 +16,10 @@
 //! three; one block (serial progress) between one and two; and no admissions
 //! below one reserve. Below the supported cap the gate ramps up by doubling
 //! per sample after completed work. Reclaim counts once it lasts two
-//! samples: this process's own swap-out below four reserves of headroom,
-//! memory stalls of its cgroup (which may be shared, so not attributable)
-//! only below two. It halves the cap, but not below `RECLAIM_FLOOR` while
+//! samples: this process's own swap-out below four reserves of system (or
+//! cgroup) headroom, memory stalls of its cgroup (which may be shared, so
+//! not attributable) only below two; a budget does not lower these
+//! thresholds. It halves the cap, but not below `RECLAIM_FLOOR` while
 //! two reserves remain, and closes admissions below two reserves. System-wide
 //! swap is not consulted. With no block active, the gate fails after
 //! `idle_timeout` when headroom is below two reserves; with more headroom
@@ -213,9 +214,8 @@ impl Policy {
       options.max_workers,
     );
     let low = headroom < reserve.saturating_mul(2);
-    // Attributed and gated by headroom in `reclaiming`; debounced here.
-    self.reclaim_samples = if reclaiming(memory, self.previous, elapsed, budget)
-    {
+    // Attributed and gated by system headroom in `reclaiming`; debounced here.
+    self.reclaim_samples = if reclaiming(memory, self.previous, elapsed) {
       self.reclaim_samples.saturating_add(1)
     } else {
       0
@@ -852,12 +852,24 @@ mod tests {
     let policy = Policy::new(memory, now, opt);
     assert!(!policy.open);
     assert_eq!(policy.pressure, Pressure::Critical);
-    // The budget's reserve (2.5 GiB) also scales the reclaim threshold.
+    // Reclaim is judged by system headroom, not the budget's: own swap-out
+    // with 8 GiB of budget headroom left but 90 GiB available is ignored...
     let near = Memory { process: 12 * GIB, process_swap: GIB, ..memory };
     let mut policy = Policy::new(near, now, opt);
     assert_eq!(policy.limit, 8);
     for n in 1..=2 {
       let swapped = Memory { process_swap: GIB + n * 9 * MIB, ..near };
+      policy.sample(swapped, now + ms(2 * n), 0, opt);
+    }
+    assert_eq!((policy.limit, policy.open), (8, true));
+    // ...and counts when the system is short (40 GiB available, under four
+    // system reserves), however far away the budget is.
+    let opt = Options { process_budget: Some(1000 * GIB), ..options(8) };
+    let short = Memory { available: 40 * GIB, ..memory };
+    let mut policy = Policy::new(short, now, opt);
+    assert_eq!(policy.limit, 8);
+    for n in 1..=2 {
+      let swapped = Memory { process_swap: n * 9 * MIB, ..short };
       policy.sample(swapped, now + ms(2 * n), 0, opt);
     }
     assert_eq!((policy.limit, policy.open), (4, true));

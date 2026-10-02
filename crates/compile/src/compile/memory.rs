@@ -233,15 +233,17 @@ const STALL_HEADROOM: u64 = 2;
 /// blocks: its own pages being swapped out (more than 8 MiB since the last
 /// sample) below four reserves of headroom, or its innermost cgroup stalled
 /// on memory for over a tenth of the interval below two. System-wide swap
-/// traffic is never consulted.
+/// traffic is never consulted. Headroom and reserve here are the system's or
+/// cgroup's, never a process budget's: the kernel reclaims when memory is
+/// short, not when this process nears its own soft budget, which the
+/// callers enforce from headroom alone.
 pub(super) fn reclaiming(
   now: Memory,
   before: Memory,
   elapsed: Duration,
-  budget: Option<u64>,
 ) -> bool {
-  let headroom = now.headroom(budget);
-  let reserve = now.reserve(budget);
+  let headroom = now.available;
+  let reserve = now.reserve(None);
   let swapping = headroom < reserve.saturating_mul(SWAP_HEADROOM)
     && now.process_swap.saturating_sub(before.process_swap) > 8 * MIB;
   let stalled = headroom < reserve.saturating_mul(STALL_HEADROOM)
@@ -261,7 +263,7 @@ pub(super) fn pressure(
   if available < reserve / 2 {
     return Pressure::Critical;
   }
-  if available < reserve * 2 || reclaiming(now, before, elapsed, budget) {
+  if available < reserve * 2 || reclaiming(now, before, elapsed) {
     Pressure::Backoff
   } else if available < reserve * 3 {
     Pressure::Hold

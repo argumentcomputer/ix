@@ -48,11 +48,13 @@ is healthy. The controller samples
 `MemAvailable`, visible cgroup-v2 ancestor limits, the growth of this
 process's own swapped-out memory, and the memory stall pressure of its
 innermost cgroup (system-wide when the cgroup exposes none) every 250 ms.
-This process's swap growth counts only below four safety reserves of
-headroom (above that it is LRU balancing against other workloads), and
-stalls only below two: the cgroup is often shared with other jobs, and its
-stalls include refaults of this process's file mappings, which running fewer
-jobs does not cure. It stops admissions and cancels excess attempts
+This process's swap growth counts only below four safety reserves of system
+or cgroup headroom (above that it is LRU balancing against other workloads),
+and stalls only below two: the cgroup is often shared with other jobs, and
+its stalls include refaults of this process's file mappings, which running
+fewer jobs does not cure. A memory budget does not change these thresholds:
+the kernel reclaims when memory is short, not when this process nears its
+own budget. It stops admissions and cancels excess attempts
 under pressure; those attempts return normally, drop their scratch data, and
 retry once alone after other work finishes. Completed validations are retained.
 When retained data leaves limited headroom, validation continues one job at a

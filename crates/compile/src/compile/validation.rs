@@ -208,12 +208,7 @@ where
       if let Some(memory) = read() {
         blocked = memory.headroom(options.process_budget)
           < memory.reserve(options.process_budget)
-          || reclaiming(
-            memory,
-            previous,
-            now.duration_since(sampled),
-            options.process_budget,
-          );
+          || reclaiming(memory, previous, now.duration_since(sampled));
         state = pressure(
           memory,
           previous,
@@ -591,7 +586,7 @@ mod tests {
       let before = Memory { available, ..mem };
       let after = Memory { stall_us: stalls, ..before };
       assert_eq!(
-        reclaiming(after, before, second, None),
+        reclaiming(after, before, second),
         expected,
         "{available} {stalls}"
       );
@@ -605,7 +600,9 @@ mod tests {
       ),
       Pressure::Healthy
     );
-    // A budget scales the threshold: 40 GiB of budget headroom is moderate.
+    // Reclaim is measured against system (or cgroup) headroom, not a budget:
+    // the kernel reclaims when memory is short, not when this process nears
+    // its own soft budget. 40 GiB of budget headroom with 90 GiB available...
     let budgeted = Memory { process: 60 * GIB, ..mem };
     assert_eq!(
       pressure(
@@ -613,6 +610,16 @@ mod tests {
         budgeted,
         second,
         Some(100 * GIB)
+      ),
+      Pressure::Healthy
+    );
+    // ...against 40 GiB available, with the budget far away.
+    assert_eq!(
+      pressure(
+        Memory { process_swap: 9 * MIB, ..moderate },
+        moderate,
+        second,
+        Some(1000 * GIB)
       ),
       Pressure::Backoff
     );
