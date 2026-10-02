@@ -270,7 +270,7 @@ pub fn report(label: &str) {
   );
   for (i, name) in CTR_NAMES.iter().enumerate() {
     let v = CTRS[i].load(Ordering::Relaxed);
-    if name.contains("ns") {
+    if name.ends_with(" ns") || name.contains("ns of") {
       eprintln!("[areas] ctr {name}: {:.2} s", v as f64 / 1e9);
     } else {
       eprintln!("[areas] ctr {name}: {v}");
