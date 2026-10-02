@@ -28,7 +28,7 @@ verified checker `Ix.Kernel` (derived from con-leche, `Ix/Kernel/NOTICE`):
   list, so the pins are untrusted).
 
 This module holds definitions only, so that running the entry does not
-build the proof tree; its theorems are in `Ix.Ixon.KernelConsistency`.
+build the proof tree; its theorems are in `Ix.Ixon.Admission.Theorems`.
 There `checkBytes_has_model` is `Ix.Kernel.model_exists` at the prepared
 declarations: the reader owes nothing, because the main theorem holds for
 every declaration array. The host supplies record order, address keys

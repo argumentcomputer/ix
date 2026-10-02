@@ -354,7 +354,7 @@ lean_exe «kernel-reader-fidelity» where
 /-- The verified checker through the Ixon reader: the `checkBytes`-shaped
 entry and its per-constant check (untrusted). -/
 lean_lib KernelEntry where
-  roots := #[`Ix.Ixon.Admission, `Ix.Ixon.KernelConsistency,
+  roots := #[`Ix.Ixon.Admission, `Ix.Ixon.Admission.Theorems,
     `Benchmarks.Kernel.CheckIxeStep,
     `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxeStream, `Benchmarks.Kernel.CheckIxePool,
     `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold,
@@ -391,7 +391,7 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)

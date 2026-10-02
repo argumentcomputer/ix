@@ -1,6 +1,6 @@
 import Ix.Kernel
 import Ix.Ixon.Types
-import Ix.Ixon.KernelConsistency
+import Ix.Ixon.Admission.Theorems
 import Ix.Kernel.Audit.Axioms
 import Ix.Kernel.Audit.Imports
 import Ix.Kernel.Audit.Runtime
@@ -11,7 +11,7 @@ This module is the certified gate's manifest. Its public roots are the
 verified checker `Ix.Kernel.Cached.checkDecls` behind the Ixon reader: the
 certified entry `Ix.Ixon.Admission.checkBytes` (and its pin-parametric form
 `checkBytesWith`, and `checkConstants`/`checkConstantsWith` over decoded
-records), and the public theorems of `Ix.Ixon.KernelConsistency` (model
+records), and the public theorems of `Ix.Ixon.Admission.Theorems` (model
 existence, no proof of the pinned `False`, fidelity, resources). The rulings `runtimeRulings` and
 `elaborationImports` apply to them.
 
@@ -128,17 +128,23 @@ Each is pure Lean core and is audited on its own terms elsewhere:
   the batch limits (`preflight`) and the decoding loop (`decodeRecords`)
   (`Ix.Ixon.Admission.Audit`).
 Nothing else under `Ix.Ixon` (in particular no projection hashing,
-`Ix.Address.Pure`, block order or proof module) and still no `Lean` outside
-the ruled elaboration-time edges. -/
+`Ix.Address.Pure`, block order or proof module: `importDenylist` carves the
+entry's theorem and audit modules out of `Ix.Ixon.Admission`) and still no
+`Lean` outside the ruled elaboration-time edges. -/
 def importAllowlist : Array Lean.Name :=
   kernelImportAllowlist ++ #[`Ix.Ixon.Codec, `Ix.Ixon.Wire, `Ix.Ixon.WireCheck,
     `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Canonical, `Ix.Ixon.Admission]
+
+/-- The modules under `importAllowlist`'s prefixes that the certified import
+closure may not use: the entry's theorems and audit. -/
+def importDenylist : Array Lean.Name :=
+  #[`Ix.Ixon.Admission.Theorems, `Ix.Ixon.Admission.Bytes.Theorems, `Ix.Ixon.Admission.Audit]
 
 /-- The proofs of the public theorems may additionally use the Ixon codec's
 proof modules (`Ix.Ixon.Verify`, `Ix.Ixon.Bounded.Size`, with their Lean
 proof tooling) and the theorem module itself. -/
 def proofImportAllowlist : Array Lean.Name :=
-  importAllowlist ++ #[`Ix.Ixon.Bounded.Size, `Ix.Ixon.Verify, `Ix.Ixon.KernelConsistency, `Lean]
+  importAllowlist ++ #[`Ix.Ixon.Bounded.Size, `Ix.Ixon.Verify, `Ix.Ixon.Admission.Theorems, `Lean]
 
 /-- The kernel's elaboration-time imports:
 `Ix/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
@@ -246,21 +252,24 @@ adds the byte stage and the committed tables. The pin-parametric forms
 committed pin table, prelude and Nat-operation pin decoder add the rest. -/
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
+run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.KernelConsistency] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.Admission.Theorems] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
 
 -- The entry's byte stage is admitted; projection hashing, block order, the
 -- codec proofs and `kernelImportAllowlist` are not widened.
-#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Canonical
-#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Projection
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.BlockOrder
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Verify
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.KernelConsistency
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Address.Pure
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Data.Json
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Canonical Ix.Kernel.Audit.importDenylist
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Projection Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.BlockOrder Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Verify Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission.Theorems Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission.Bytes.Theorems Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission.Audit Ix.Kernel.Audit.importDenylist
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission.Bytes Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Address.Pure Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Data.Json Ix.Kernel.Audit.importDenylist
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Canonical
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Admission
 
@@ -444,7 +453,7 @@ inside `kernelImportAllowlist`. The allowlists admit `Std` and `Ix.Kernel`,
 and `Lean` only below the ruled elaboration-time imports. -/
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel] Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel] Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel.Ixon.Reader, `Ix.Kernel.Ixon.ReaderSpec,
@@ -452,12 +461,12 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel.Ixon.Reader, `Ix.Kernel.Ix
   `Ix.Ixon.Types] Ix.Kernel.Audit.kernelImportAllowlist Ix.Kernel.Audit.elaborationImports
 
 -- `Std` is admitted; the compiler frontend and third-party libraries are not.
-#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Std.Data.TreeMap
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Elab.Command
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Std.Data.TreeMap Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Elab.Command Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap Ix.Kernel.Audit.importDenylist
 -- `Ix.Kernel` is admitted; `Lean` only below the ruled elaboration-time imports.
-#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Kernel.Core
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Elab.Term
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Kernel.Core Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Elab.Term Ix.Kernel.Audit.importDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.allowed `Lean.Elab.Term
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.importers `Ix.Kernel.Core
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.allowed `Ix.Tc

@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Cached.AgreeFloor
 /-! # What the verified fold installs
 
 The kernel half of the fidelity theorem of the kernel entry
-(`Ix.Ixon.KernelConsistency`). The kernel proves that the environment an
+(`Ix.Ixon.Admission.Theorems`). The kernel proves that the environment an
 accepted `Cached.checkDecls` returns has exactly the install skeletons its
 input declares (`Cached.checkDecls_skels`, `Ix/Kernel/Verify/Cached/AgreeFloor.lean`):
 the same constants, in the same order, with the same names, kinds,

@@ -1,5 +1,5 @@
 import Ix.Ixon.Verify.WorkRecord
-import Ix.Ixon.Verify.Admission
+import Ix.Ixon.Admission.Bytes.Theorems
 
 namespace Ix.Ixon.Verify.Work.Admission
 

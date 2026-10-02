@@ -47,8 +47,10 @@ where
         let next := (graph.find? name).getD #[]
         go (todo ++ next) (seen.insert name) (acc.push name)
 
-def allowed (prefixes : Array Name) (module : Name) : Bool :=
-  prefixes.any (·.isPrefixOf module)
+/-- `module` lies under one of `prefixes` and under none of `denied`: a
+denied prefix carves the modules beneath it out of an allowed one. -/
+def allowed (prefixes : Array Name) (module : Name) (denied : Array Name := #[]) : Bool :=
+  prefixes.any (·.isPrefixOf module) && !denied.any (·.isPrefixOf module)
 
 /-- Elaboration-time import edges: a `meta import` by a module under one of
 `importers` leads into the elaboration closure, whose modules must lie under
@@ -74,21 +76,22 @@ def splitClosure (graph : NameMap (Array Import)) (elaboration : ElaborationImpo
   (runtime, below.filter (!runtime.contains ·))
 
 /-- Fail unless every module in the runtime import closure of `roots` lies
-under one of `prefixes`, every module reached only through an
-elaboration-time edge lies under `elaboration.allowed` or `prefixes`, and
-every root is present. -/
+under one of `prefixes` and under none of `denied`, every module reached
+only through an elaboration-time edge lies under `elaboration.allowed` or
+`prefixes`, and every root is present. -/
 def checkImportsWith (roots : Array Name) (prefixes : Array Name)
-    (elaboration : ElaborationImports) : CommandElabM Unit := do
+    (elaboration : ElaborationImports) (denied : Array Name := #[]) : CommandElabM Unit := do
   let env ← getEnv
   let graph := importEdges env
   for root in roots do
     unless graph.contains root do throwError m!"required root module is missing: {root}"
   let (runtime, below) := splitClosure graph elaboration roots
-  let offenders := runtime.filter (!allowed prefixes ·) |>.qsort Name.lt
+  let offenders := runtime.filter (!allowed prefixes · denied) |>.qsort Name.lt
   unless offenders.isEmpty do
     throwError m!"forbidden modules in the certified import closure:\n{offenders}"
   let elaborationOffenders := below.filter (fun module =>
-    !allowed prefixes module && !allowed elaboration.allowed module) |>.qsort Name.lt
+    !allowed prefixes module denied && !allowed elaboration.allowed module denied)
+    |>.qsort Name.lt
   unless elaborationOffenders.isEmpty do
     throwError m!"forbidden modules below the elaboration-time imports:\n{elaborationOffenders}"
   let elaborationSummary := if below.isEmpty then "" else
@@ -96,8 +99,9 @@ def checkImportsWith (roots : Array Name) (prefixes : Array Name)
   logInfo m!"import closure of {roots}: {runtime.size} modules, all under {prefixes}{elaborationSummary}"
 
 /-- `checkImportsWith` with no elaboration-time edges. -/
-def checkImports (roots : Array Name) (prefixes : Array Name) : CommandElabM Unit :=
-  checkImportsWith roots prefixes {}
+def checkImports (roots : Array Name) (prefixes : Array Name) (denied : Array Name := #[]) :
+    CommandElabM Unit :=
+  checkImportsWith roots prefixes {} denied
 
 end Ix.Kernel.Audit
 
@@ -115,6 +119,18 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Init.Prelude] #[`Std]
 /-- error: required root module is missing: Ix.Kernel.Audit.NoSuchModule -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel.Audit.NoSuchModule] #[`Ix]
+
+/-- error: forbidden modules in the certified import closure:
+[Init.Prelude] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkImports #[`Init.Prelude] #[`Init] #[`Init.Prelude]
+
+-- A denied prefix carves its modules out of an allowed one, and only those.
+#guard Ix.Kernel.Audit.allowed #[`A] `A.B.C
+#guard !Ix.Kernel.Audit.allowed #[`A] `A.B.C #[`A.B]
+#guard !Ix.Kernel.Audit.allowed #[`A] `A.B #[`A.B]
+#guard Ix.Kernel.Audit.allowed #[`A] `A.C #[`A.B]
+#guard Ix.Kernel.Audit.allowed #[`A] `A #[`A.B]
 
 /-! The elaboration-time split, on a synthetic graph: `A.Gen` meta-imports
 `L.Elab`, which imports `L.Core`; `A.Main` imports `A.Gen` and `B`, and `B`

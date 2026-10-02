@@ -7,7 +7,7 @@ import Std.Data.HashSet.Lemmas
 
 The reading relation names every supplied address and canonical payload in
 order, independently of any decoder. It is the byte half of the certified
-entry's theorems (`Ix.Ixon.KernelConsistency`).
+entry's theorems (`Ix.Ixon.Admission.Theorems`).
 -/
 
 namespace Ix.Ixon.Verify.Admission

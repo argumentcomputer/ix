@@ -1,11 +1,11 @@
 import IxSetTheoryModel.Carneiro
-import Ix.Ixon.KernelConsistency
+import Ix.Ixon.Admission.Theorems
 
 /-!
 # The certified checker's consistency under Carneiro's hypothesis
 
 The checker's theorems hold in every `Ix.Kernel.SetTheory V`
-(`Ix.Ixon.KernelConsistency`). With the instance on Mathlib's `ZFSet` built
+(`Ix.Ixon.Admission.Theorems`). With the instance on Mathlib's `ZFSet` built
 from `ω` inaccessible cardinals (`zfSetTheoryOfCarneiro`), they hold in
 a concrete model: every environment the certified Ixon entry accepts has a
 model in `ZFSet`, and no accepted constant has the pinned `False` as its type.

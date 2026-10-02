@@ -6,7 +6,7 @@ import Std.Data.HashSet.Lemmas
 
 Facts about the executed reader (`Ix.Kernel.IxonReader`), proved about
 its definitions as they stand. They are the reader half of the fidelity
-theorem of the kernel entry (`Ix.Ixon.KernelConsistency`): the
+theorem of the kernel entry (`Ix.Ixon.Admission.Theorems`): the
 declarations the fold checks are the ones the records describe.
 
 * `readRecords_spec`: an accepted stream reading is a record-by-record

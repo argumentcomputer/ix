@@ -1,4 +1,4 @@
-import Ix.Ixon.ProjectionProofs
+import Ix.Ixon.Projection.Theorems
 import Ix.Address
 import Tests.Ix.Kernel.ByteAdmission
 

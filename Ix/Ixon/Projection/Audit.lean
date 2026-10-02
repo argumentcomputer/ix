@@ -1,4 +1,4 @@
-import Ix.Ixon.ProjectionProofs
+import Ix.Ixon.Projection.Theorems
 import Ix.Ixon.Admission.Audit
 
 /-! Projection hashing has an explicit boundary outside the dependency-free
@@ -14,12 +14,16 @@ def operations : Array Lean.Name :=
 def dataPrefixes : Array Lean.Name :=
   Admission.Audit.dataImports ++ #[`Std, `Ix.Address.Pure, `Ix.Ixon.Projection]
 
+/-- The theorem and audit modules under `dataPrefixes`. -/
+def dataDenied : Array Lean.Name :=
+  Kernel.Audit.importDenylist ++ #[`Ix.Ixon.Projection.Theorems, `Ix.Ixon.Projection.Audit]
+
 def allowedData (name : Lean.Name) : Bool :=
-  name == `Blake3 || name == `Blake3.Pure || Kernel.Audit.allowed dataPrefixes name
+  name == `Blake3 || name == `Blake3.Pure || Kernel.Audit.allowed dataPrefixes name dataDenied
 
 def allowedProof (name : Lean.Name) : Bool :=
-  allowedData name || Kernel.Audit.allowed #[`Lean, `Ix.Ixon.Verify, `Ix.Ixon.ProjectionProofs,
-    `Ix.Ixon.KernelConsistency] name
+  allowedData name || Kernel.Audit.allowed #[`Lean, `Ix.Ixon.Verify, `Ix.Ixon.Projection.Theorems,
+    `Ix.Ixon.Admission.Theorems, `Ix.Ixon.Admission.Bytes.Theorems] name
 
 /-- The import closure of `roots` stays inside `allowed`, below the kernel's
 ruled elaboration-time imports inside `Kernel.Audit.elaborationImports`
@@ -45,18 +49,21 @@ end Ix.Ixon.Projection.Audit
 run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection] Ix.Ixon.Projection.Audit.allowedData
 
 #guard_msgs (drop info) in
-run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.ProjectionProofs] Ix.Ixon.Projection.Audit.allowedProof
+run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ix.Ixon.Projection.Audit.allowedProof
 
-#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.ProjectionProofs
-#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Verify.Admission
+#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Theorems
+#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Admission.Bytes.Theorems
 #guard !Ix.Ixon.Projection.Audit.allowedData `Blake3.Rust
 #guard !Ix.Ixon.Projection.Audit.allowedData `Blake3.C
 #guard !Ix.Ixon.Projection.Audit.allowedData `Blake3.Pure.Proofs
 #guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Tc
 #guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Address
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Address.Pure
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Address.Pure Ix.Kernel.Audit.importDenylist
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.Projection
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Projection
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Projection Ix.Kernel.Audit.importDenylist
+#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Audit
+#guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Admission.Theorems
+#guard Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection
 
 /- Measured independently before freezing. The certified entry adds
 projection reconstruction (pure BLAKE3) to the certified byte admission

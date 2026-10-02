@@ -84,7 +84,7 @@ order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 
 ## The theorems
 
-All public theorems are in `Ix/Ixon/KernelConsistency.lean` (namespace
+All public theorems are in `Ix/Ixon/Admission/Theorems.lean` (namespace
 `Ix.Ixon.Admission`), about the executed function `checkBytes`, at the
 committed tables. Each follows from the corresponding theorem at
 `checkBytesWith`, where it holds for every pin table, prelude and
@@ -117,13 +117,13 @@ equation, by upstream's design.
 
 **Fidelity** is what `checkBytes_reading` adds to consistency:
 
-- `WithinBatch` and `UniqueKeys` (`Ix/Ixon/Verify/Admission.lean`): the
+- `WithinBatch` and `UniqueKeys` (`Ix/Ixon/Admission/Bytes/Theorems.lean`): the
   batch limits hold, and the record keys and the blob keys are each
   pairwise distinct (`preflight_ok_iff`, `uniqueKeys_ok_iff`).
 - `RecordsRead`: each payload is the canonical encoding of its decoded
   constant within the per-record limits, keys unchanged
   (`decodeRecords_ok_iff`, unique by `RecordsRead.deterministic`).
-- `Installed` (`Ix/Ixon/KernelConsistency.lean`): the reader's output is a
+- `Installed` (`Ix/Ixon/Admission/Theorems.lean`): the reader's output is a
   record-by-record reading of the decoded records (`StreamRead`, from
   `readRecords_spec`), no two decoded records share an address
   (`Installed.keys`, from `readRecords_nodup`), and the fold accepted
@@ -303,7 +303,7 @@ built by the strict standalone package `IxKernel/` (`lake -d IxKernel build
 | --- | --- |
 | `Ix/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 15, `fidelityRoots` 16, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements; a control showing the fold fails without the rulings |
 | `Ix/Ixon/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
-| `Ix/Ixon/ProjectionAudit.lean`, `Ix/Ixon/BlockOrderAudit.lean` | the variants' imports, closures, extern differences and statements, and the projection writer's guards |
+| `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports, closures, extern differences and statements, and the projection writer's guards |
 | `Ix/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
 
@@ -394,9 +394,9 @@ Mathlib tag but regenerates nothing), the change also does the following.
    `#check` statements are `#guard_msgs` records in
    `Ix/Kernel/Audit/Roots.lean`, `Ix/Ixon/Audit.lean` and
    `Ix/Ixon/Admission/Audit.lean` (built by `lake -d IxKernel build
-   --wfail`), and in `Ix/Ixon/ProjectionAudit.lean` and
-   `Ix/Ixon/BlockOrderAudit.lean` (built by `lake build --wfail
-   Ix.Ixon.ProjectionAudit Ix.Ixon.BlockOrderAudit`). A record that no
+   --wfail`), and in `Ix/Ixon/Projection/Audit.lean` and
+   `Ix/Ixon/BlockOrder/Audit.lean` (built by `lake build --wfail
+   Ix.Ixon.Projection.Audit Ix.Ixon.BlockOrder.Audit`). A record that no
    longer matches fails the build and prints the message its command now
    produces; re-record it by replacing the record's docstring with that
    message, and update the closure table above and the counts in
@@ -605,4 +605,4 @@ use only the three standard axioms; native hash/name allowances from the
 old compiler proofs are not inherited. For the certified entry, the
 resource bound, canonical decoding and the byte-admission composition are
 proved (`checkBytes_resources`, `decodeRecords_ok_iff`,
-`Ix/Ixon/Verify/Admission.lean`).
+`Ix/Ixon/Admission/Bytes/Theorems.lean`).

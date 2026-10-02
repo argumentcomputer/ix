@@ -1,6 +1,6 @@
-import Ix.Ixon.Verify.Admission
+import Ix.Ixon.Admission.Bytes.Theorems
 import Ix.Ixon.Verify.WorkAdmission
-import Ix.Ixon.KernelConsistency
+import Ix.Ixon.Admission.Theorems
 import Ix.Ixon.Audit
 import Ix.Kernel.Audit.Roots
 
@@ -28,26 +28,26 @@ def dataImports : Array Lean.Name :=
   Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission]
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `Ix.Ixon.Verify,
-  `Ix.Ixon.KernelConsistency]
+  `Ix.Ixon.Admission.Theorems]
 
 end Ix.Ixon.Admission.Audit
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.Admission] Ix.Ixon.Admission.Audit.dataImports Ix.Kernel.Audit.elaborationImports
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.Admission] Ix.Ixon.Admission.Audit.dataImports Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.Admission] Ix.Ixon.Admission.Audit.proofImports
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Admission.Bytes.Theorems] Ix.Ixon.Admission.Audit.proofImports
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Admission.Audit.proofImports
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.KernelConsistency] Ix.Ixon.Admission.Audit.proofImports
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Admission.Theorems] Ix.Ixon.Admission.Audit.proofImports
 
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Verify.Admission
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Lean
-#guard Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Std.Data.TreeMap
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Batteries
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Admission.Bytes.Theorems Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Lean Ix.Kernel.Audit.importDenylist
+#guard Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Std.Data.TreeMap Ix.Kernel.Audit.importDenylist
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Batteries Ix.Kernel.Audit.importDenylist
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Admission
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.Admission
 

@@ -25,7 +25,7 @@ only make the fold reject or decline, or make it accept a different
 environment than the records describe, which is still a modelled one. What
 the reader does decide is coverage, and the faithfulness of the accepted
 environment to the Ixon records; the latter is the fidelity theorem
-(`Ix.Kernel.Ixon.ReaderSpec`, `Ix.Ixon.KernelConsistency`).
+(`Ix.Kernel.Ixon.ReaderSpec`, `Ix.Ixon.Admission.Theorems`).
 
 ## Keys
 

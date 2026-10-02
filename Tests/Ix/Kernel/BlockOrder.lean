@@ -1,4 +1,4 @@
-import Ix.Ixon.BlockOrderProofs
+import Ix.Ixon.BlockOrder.Theorems
 import Tests.Ix.Kernel.Projection
 
 /-! Canonical block order (`Ix.Ixon.BlockOrder`): canonical classes,

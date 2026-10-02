@@ -1,5 +1,5 @@
-import Ix.Ixon.BlockOrderProofs
-import Ix.Ixon.ProjectionAudit
+import Ix.Ixon.BlockOrder.Theorems
+import Ix.Ixon.Projection.Audit
 
 namespace Ix.Ixon.BlockOrder.Audit
 
@@ -10,7 +10,7 @@ def allowedData (name : Lean.Name) : Bool :=
   Projection.Audit.allowedData name || name == `Ix.Ixon.ReduceUniverse || name == `Ix.Ixon.BlockOrder
 
 def allowedProof (name : Lean.Name) : Bool :=
-  allowedData name || Projection.Audit.allowedProof name || name == `Ix.Ixon.BlockOrderProofs
+  allowedData name || Projection.Audit.allowedProof name || name == `Ix.Ixon.BlockOrder.Theorems
 
 end Ix.Ixon.BlockOrder.Audit
 
@@ -18,20 +18,21 @@ end Ix.Ixon.BlockOrder.Audit
 run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.BlockOrder] Ix.Ixon.BlockOrder.Audit.allowedData
 
 #guard_msgs (drop info) in
-run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.BlockOrderProofs] Ix.Ixon.BlockOrder.Audit.allowedProof
+run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.BlockOrder.Theorems] Ix.Ixon.BlockOrder.Audit.allowedProof
 
-#guard !Ix.Ixon.BlockOrder.Audit.allowedData `Ix.Ixon.BlockOrderProofs
+#guard !Ix.Ixon.BlockOrder.Audit.allowedData `Ix.Ixon.BlockOrder.Theorems
 #guard !Ix.Ixon.BlockOrder.Audit.allowedData `Ix.Tc.CanonicalCheck
 #guard !Ix.Ixon.BlockOrder.Audit.allowedData `Blake3.Rust
 #guard !Ix.Ixon.BlockOrder.Audit.allowedData `Blake3.C
 #guard !Ix.Ixon.BlockOrder.Audit.allowedData `Ix.IxonUniv
 #guard !Ix.Ixon.Projection.Audit.allowedData `Ix.Ixon.BlockOrder
-#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.BlockOrder
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.BlockOrder Ix.Kernel.Audit.importDenylist
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.BlockOrder
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.BlockOrder
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.BlockOrder Ix.Kernel.Audit.importDenylist
+#guard !Ix.Ixon.BlockOrder.Audit.allowedData `Ix.Ixon.BlockOrder.Audit
 
 /- Measured before freezing: the certified entry adds the order check to the
-certified projection entry (`Ix.Ixon.ProjectionAudit`), with the same ruled
+certified projection entry (`Ix.Ixon.Projection.Audit`), with the same ruled
 constructs. A block of recursors is checked in motive order (`checkRecord`,
 `isRecursor`, `checkMotives`, `recursorMotive`), which reuses the reader's
 `stripAll` and `appHead` (`IxonReader.analyseRecursor`); every other block

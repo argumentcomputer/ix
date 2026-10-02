@@ -1,6 +1,6 @@
 import Ix.Ixon.Projection
-import Ix.Ixon.Verify.Admission
-import Ix.Ixon.KernelConsistency
+import Ix.Ixon.Admission.Bytes.Theorems
+import Ix.Ixon.Admission.Theorems
 
 namespace Ix.Ixon.Projection
 

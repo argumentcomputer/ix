@@ -1,5 +1,5 @@
 import Ix.Ixon.BlockOrder
-import Ix.Ixon.ProjectionProofs
+import Ix.Ixon.Projection.Theorems
 
 namespace Ix.Ixon.BlockOrder
 

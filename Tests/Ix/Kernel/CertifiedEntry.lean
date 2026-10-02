@@ -1,5 +1,5 @@
-import Ix.Ixon.KernelConsistency
-import Ix.Ixon.BlockOrderProofs
+import Ix.Ixon.Admission.Theorems
+import Ix.Ixon.BlockOrder.Theorems
 import Tests.Ix.Kernel.Reader
 
 /-! # The certified Ixon API
