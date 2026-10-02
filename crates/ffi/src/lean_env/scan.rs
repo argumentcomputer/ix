@@ -308,11 +308,14 @@ pub struct LeanScanner {
   constants: Arc<LeanConstants>,
   /// Constants handed to the decoding path.
   fallbacks: AtomicUsize,
+  /// The environment is the eager copy, so nothing decodes from
+  /// `constants` once the scan is over.
+  eager: bool,
 }
 
 impl LeanScanner {
-  pub(super) fn new(constants: Arc<LeanConstants>) -> Self {
-    Self { constants, fallbacks: AtomicUsize::new(0) }
+  pub(super) fn new(constants: Arc<LeanConstants>, eager: bool) -> Self {
+    Self { constants, fallbacks: AtomicUsize::new(0), eager }
   }
 
   /// How many constants took the decoding path so far.
@@ -391,21 +394,26 @@ impl LeanScanner {
       if semantic && !matches!(kind, AXIOM | DEFN | THM | OPAQUE) {
         return Err(Fallback);
       }
+      // A dependency present in the environment is recorded as the
+      // environment's own `Name` (equal, and the same `Arc` as the graph's
+      // keys), so the graph's later lookups compare names by pointer.
+      let dep = |name: Obj| {
+        let name = decode_name(borrowed(name), global);
+        env.key(&name).cloned().ok_or(name)
+      };
       let mut deps = NameSet::default();
       deps.reserve(s.names.len());
       for &name in &s.names {
-        let name = decode_name(borrowed(name as Obj), global);
-        if !env.contains_key(&name) {
-          return Err(Fallback);
-        }
-        deps.insert(name);
+        // Every `Const` and `Proj` name must be present.
+        deps.insert(dep(name as Obj).map_err(|_absent| Fallback)?);
       }
       let mut ind_group = None;
       match kind {
         INDUCT => {
           // InductiveVal: cnst, numParams, numIndices, all, ctors, …
           for ctor in list(field(val, 4)) {
-            let ctor = decode_name(borrowed(ctor), global);
+            // Every constructor must be present, as a constructor.
+            let ctor = dep(ctor).map_err(|_absent| Fallback)?;
             match self.constants.info(&ctor) {
               Some(info) if tag(info.as_raw()) == CTOR => {},
               _ => return Err(Fallback),
@@ -413,18 +421,19 @@ impl LeanScanner {
             deps.insert(ctor);
           }
           let all: Vec<Name> = list(field(val, 3))
-            .map(|n| decode_name(borrowed(n), global))
+            .map(|n| dep(n).unwrap_or_else(|name| name))
             .collect();
           ind_group = all.first().cloned().map(|first| (first, all));
         },
-        // ConstructorVal: cnst, induct, …
+        // ConstructorVal: cnst, induct, … The inductive and the rules'
+        // constructors need not be present.
         CTOR => {
-          deps.insert(decode_name(borrowed(field(val, 1)), global));
+          deps.insert(dep(field(val, 1)).unwrap_or_else(|name| name));
         },
         // RecursorRule: ctor, nfields, rhs.
         REC => {
           for rule in list(field(val, 6)) {
-            deps.insert(decode_name(borrowed(field(rule, 0)), global));
+            deps.insert(dep(field(rule, 0)).unwrap_or_else(|name| name));
           }
         },
         _ => {},
@@ -449,6 +458,15 @@ impl ConstScanner for LeanScanner {
         let constant = env.get(name)?;
         Some(scan_constant(&constant, env))
       },
+    }
+  }
+
+  fn release(&self) {
+    // The lazy environment keeps decoding names through the cache; the
+    // eager copy is complete, and its names are its own.
+    if self.eager {
+      self.constants.global.names.clear();
+      self.constants.global.names.shrink_to_fit();
     }
   }
 }
@@ -476,7 +494,7 @@ pub extern "C" fn rs_setup_scan_compare(
 
   let (names, constants) = LeanConstants::index(list);
   let env = constants.clone().into_lazy_env(names, 1 << 14);
-  let scanner = LeanScanner::new(constants);
+  let scanner = LeanScanner::new(constants, false);
   let keys: Vec<&Name> = env.keys().collect();
   // Per constant: (fast scan accepted, reference had an error), or the
   // first difference.

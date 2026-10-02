@@ -1195,10 +1195,16 @@ pub fn decode_env_for_compile_with_scanner(
   let (names, constants) = LeanConstants::index(list);
   let indexed = start.elapsed();
   let eager = std::env::var("IX_COMPILE_EAGER").as_deref() == Ok("1");
+  // `IX_COMPILE_LAZY_CACHE=N`: resident decoded constants of the lazy
+  // view (default `LAZY_ENV_CACHE_ENTRIES`), for measurements.
+  let cache_entries = std::env::var("IX_COMPILE_LAZY_CACHE")
+    .ok()
+    .and_then(|n| n.parse().ok())
+    .unwrap_or(LAZY_ENV_CACHE_ENTRIES);
   let env = if eager {
     constants.decode_all(&names)
   } else {
-    constants.clone().into_lazy_env(names, LAZY_ENV_CACHE_ENTRIES)
+    constants.clone().into_lazy_env(names, cache_entries)
   };
   if std::env::var("IX_VERBOSE").is_ok() {
     eprintln!(
@@ -1211,11 +1217,11 @@ pub fn decode_env_for_compile_with_scanner(
           (start.elapsed() - indexed).as_secs_f32()
         )
       } else {
-        String::new()
+        format!("; lazy view, {cache_entries} cached constants")
       },
     );
   }
-  (env, scan::LeanScanner::new(constants))
+  (env, scan::LeanScanner::new(constants, eager))
 }
 
 /// The Lean objects behind a compile's environment: each constant's

@@ -12,7 +12,8 @@
 //! owned copy, accumulator constants and named metadata live as their
 //! serialized bytes rather than ~20×-larger structured forms, worker
 //! kernel contexts are fresh per block (canonicity §10.5), the setup
-//! passes share one whole-env decode, and the `.ixe` streams to disk
+//! scan reads the Lean objects without decoding them (a
+//! [`ConstScanner`] from the ffi crate), and the `.ixe` streams to disk
 //! from Rust rather than crossing the FFI as an env-sized ByteArray.
 //! All of it is always on, and every mode produces a bit-identical
 //! `.ixe`.
@@ -31,6 +32,10 @@
 //!   term (FLT: +13 GiB for −8 % wall; Mathlib needs a large-memory
 //!   machine) to shave the last few percent on hardware with RAM to
 //!   spare.
+//!
+//! And one validation knob: `IX_SETUP_SCAN_CHECK=1` also runs the
+//! decoding setup scan and fails the compile unless the scanner's
+//! outputs are identical to it.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -214,6 +219,7 @@ pub fn compile_env_with_scanner(
           check_start.elapsed().as_secs_f32(),
         );
       }
+      scanner.release();
       scan
     },
     None => setup_scan(lean_env.as_ref()),

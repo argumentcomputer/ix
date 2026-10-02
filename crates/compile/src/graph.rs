@@ -186,6 +186,9 @@ pub fn scan_constant(constant: &ConstantInfo, env: &Env) -> ConstScan {
 pub trait ConstScanner: Sync {
   /// `None` exactly when `env.get(name)` is `None`.
   fn scan(&self, name: &Name, env: &Env) -> Option<ConstScan>;
+
+  /// The setup scan is over: release what only the scan needed.
+  fn release(&self) {}
 }
 
 /// [`ConstScanner`] over the decoded environment.
@@ -1125,6 +1128,24 @@ mod tests {
     assert!(scan.semantic_sources.is_err());
     compare_setup_scans(&setup_scan_with(&broken, &DecodedScanner), &scan)
       .unwrap();
+  }
+
+  /// `Env::key` returns the environment's own `Arc` for an equal name
+  /// built separately, in both the eager and the lazy environment.
+  #[test]
+  fn env_key_returns_the_environments_own_name() {
+    let backing = setup_fixture(4);
+    let lazy =
+      Env::new_lazy(backing.keys().cloned().collect(), Box::new(|_| None), 16);
+    for env in [&backing, &lazy] {
+      let fresh = n("alias_2");
+      let key = env.key(&fresh).unwrap();
+      assert_eq!(key, &fresh);
+      assert!(!std::sync::Arc::ptr_eq(&key.0, &fresh.0));
+      let own = env.keys().find(|k| *k == &fresh).unwrap();
+      assert!(std::sync::Arc::ptr_eq(&key.0, &own.0));
+      assert!(env.key(&n("absent")).is_none());
+    }
   }
 
   #[test]

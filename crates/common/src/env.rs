@@ -1685,6 +1685,18 @@ impl Env {
     self.eager.contains_key(name)
   }
 
+  /// The environment's own key equal to `name`, if any. Equal names
+  /// built separately are distinct `Arc`s, compared component by
+  /// component; maps keyed by the environment's copies compare equal
+  /// names by pointer instead.
+  pub fn key(&self, name: &Name) -> Option<&Name> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return lazy.index.get_key_value(name).map(|(key, _)| key);
+    }
+    self.eager.get_key_value(name).map(|(key, _)| key)
+  }
+
   pub fn len(&self) -> usize {
     #[cfg(not(target_arch = "riscv64"))]
     if let Some(lazy) = &self.lazy {
