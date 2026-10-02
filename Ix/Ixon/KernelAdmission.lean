@@ -1,6 +1,6 @@
 import Ix.Ixon.Admission.Bytes
 import Ix.Kernel.Ixon.Prelude
-import Ix.Kernel.MainTheorem
+import Ix.Kernel.Cached.Installed
 
 /-! # Admission from ordered Ixon record bytes through the kernel
 
@@ -27,7 +27,9 @@ certified API `Ix.Ixon.Admission.checkBytes` runs:
   `Ix/Kernel/Ixon/NatOpPinData.lean`; the theorem holds at every pin
   list, so the pins are untrusted).
 
-`checkBytes_has_model` is `Ix.Kernel.model_exists` at the prepared
+This module holds definitions only, so that running the entry does not
+build the proof tree; its theorems are in `Ix.Ixon.KernelConsistency`.
+There `checkBytes_has_model` is `Ix.Kernel.model_exists` at the prepared
 declarations: the reader owes nothing, because the main theorem holds for
 every declaration array. The host still supplies record order, address keys
 and literal blobs; addresses are keys, not authenticated content hashes. The
@@ -141,58 +143,5 @@ def checkConstants (constants : List (Address × Ixon.Constant)) (blobs : List (
   let pre ← builtinPrelude.mapError Error.prelude
   let natPins ← builtinNatOpPins.mapError Error.prelude
   checkConstantsWith pins pre natPins constants blobs hint
-
-universe u
-
-/-- Every accept of the entry, at any pin table and prelude, is an accept
-of the verified fold on the prepared declarations. -/
-theorem checkBytesWith_checkDecls {pins : Pins} {pre : Prelude}
-    {natPins : List Ix.Kernel.NatOpPinSet}
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
-    ∃ decls, prepareWith pins pre limits records blobs hint = .ok decls ∧
-      Ix.Kernel.Cached.checkDecls .verified natPins decls = .ok env := by
-  unfold checkBytesWith at h
-  cases hp : prepareWith pins pre limits records blobs hint with
-  | error e => simp [hp, bind, Except.bind] at h
-  | ok decls =>
-    simp only [hp, bind, Except.bind] at h
-    cases hc : Ix.Kernel.Cached.checkDecls .verified natPins decls with
-    | error e => simp [hc, Except.mapError] at h
-    | ok env' =>
-      simp only [hc, Except.mapError, Except.ok.injEq] at h
-      exact ⟨decls, rfl, h ▸ hc⟩
-
-/-- **Model existence for the Ixon entry** (any pin table, prelude and
-Nat-operation pin list). -/
-theorem checkBytesWith_has_model (V : Type u) [Ix.Kernel.SetTheory V]
-    {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
-    Nonempty (Ix.Kernel.Model V env) := by
-  obtain ⟨decls, _, hc⟩ := checkBytesWith_checkDecls h
-  exact Ix.Kernel.model_exists V natPins decls env hc
-
-/-- **Model existence for the Ixon entry**: every environment `checkBytes`
-accepts has a model in every set theory. -/
-theorem checkBytes_has_model (V : Type u) [Ix.Kernel.SetTheory V]
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (h : checkBytes limits records blobs hint = .ok env) :
-    Nonempty (Ix.Kernel.Model V env) := by
-  unfold checkBytes at h
-  cases hp : defaultPins with
-  | error e => simp [hp, bind, Except.bind, Except.mapError] at h
-  | ok pins =>
-    cases hq : builtinPrelude with
-    | error e => simp [hp, hq, bind, Except.bind, Except.mapError] at h
-    | ok pre =>
-      cases hn : builtinNatOpPins with
-      | error e => simp [hp, hq, hn, bind, Except.bind, Except.mapError] at h
-      | ok natPins =>
-        simp only [hp, hq, hn, bind, Except.bind, Except.mapError] at h
-        exact checkBytesWith_has_model V h
 
 end Ix.Ixon.KernelAdmission

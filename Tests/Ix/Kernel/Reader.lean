@@ -1,4 +1,4 @@
-import Ix.Ixon.KernelAdmission
+import Ix.Ixon.KernelConsistency
 
 /-! # Ixon records through the verified checker
 
