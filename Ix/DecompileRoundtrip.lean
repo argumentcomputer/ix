@@ -172,7 +172,8 @@ private def decompileIndcEntries (denv : DecompileEnv)
   -- CompileEnv (the `fixupInductiveFlags` pattern).
   let cenv := Ix.CompileM.CompileEnv.new { consts := generatedConsts }
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := name, mutCtx := default, univCtx := [] }
+    { all := {}, current := name, mutCtx := default, univCtx := [],
+      provenanceOnly := true }
   let flags ← match Ix.CompileM.CompileM.run cenv blockEnv {}
       (Ix.AuxGen.computeLeanIndFlags iv.all) with
     | .ok (flags, _) => pure flags
@@ -239,8 +240,12 @@ def roundtripBlock (consts : List Ix.MutConst)
       callSitePlans := callSitePlans
       brecOnCallSitePlans := brecOnCallSitePlans
       belowCallSitePlans := belowCallSitePlans }
+  -- A decompile recompile only verifies a reconstructed form against its
+  -- stored address and stores no constant: the A0 collapse-drop checks do
+  -- not apply (Rust `roundtrip_block`, `BlockCache::provenance_only`).
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := firstName, mutCtx := default, univCtx := [] }
+    { all := {}, current := firstName, mutCtx := default, univCtx := [],
+      provenanceOnly := true }
   -- One shared run mirrors Rust's one shared `BlockCache` across
   -- sort_consts (:2717), preseed (:2742) and the member compiles.
   let (sorted, blockRes, cache) ←

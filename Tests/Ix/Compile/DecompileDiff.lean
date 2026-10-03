@@ -134,6 +134,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[decompile-diff]   aux errors: {auxErrs.size}  (aux-fidelity gate — must be 0)"
   if !auxErrs.isEmpty then
     IO.println s!"[decompile-diff]     e.g. {sample auxErrs}"
+    for (n, e) in (errors.filter fun (n, _) => auxErrs.contains n).toList.take 3 do
+      IO.println s!"[decompile-diff]       {n}: {e.take 300}"
   IO.println s!"[decompile-diff]   other errors: {otherErrs.size}  (plain-fidelity gate — must be 0)"
   for (n, e) in otherErrs.toList.take 8 do
     IO.println s!"[decompile-diff]     {n.pretty}: {e.take 200}"

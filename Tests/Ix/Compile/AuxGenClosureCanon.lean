@@ -29,8 +29,8 @@
     the compiler's per-family block membership on its own. Every address
     must match except a nested block's class `.brecOn.eq`: its canonical
     block holds `<all0>.brecOn_N.eq`, which needs `List.casesOn`, not in
-    the raw closure, so the compiler builds the members present (with a
-    warning). Those seeds must still compile and type-check.
+    the raw closure, so the compiler refuses the block with "partial
+    auxiliary family" (A0, WB-E3), and those seeds must be refused.
   - `pack`: `ix pack` (`rsPackEnv`) of the reference to each auxiliary
     seed keeps the seed's address and type-checks (`rsCheckIxonFFI`).
 
@@ -212,19 +212,32 @@ partial def rawDeps (env : Lean.Environment) (seeds : List Lean.Name)
   env.constants.toList.filter fun (n, _) => needed.contains n
 
 /-- One leg: per seed, compile `closureOf seed`, compare every shared name's
-    address with `ref` (unless `exempt seed`), kernel-check the seed. -/
+    address with `ref`, kernel-check the seed. A seed with `refused seed =
+    some msg` must instead be refused by the compiler with `msg` in the
+    error (and is not kernel-checked: nothing was written). -/
 def runLeg (env : Lean.Environment) (dir : System.FilePath) (ref : Ixon.Env)
     (label : String) (seeds : Array Lean.Name)
     (closureOf : Lean.Name → List (Lean.Name × Lean.ConstantInfo))
-    (exempt : Lean.Name → Bool) : IO Nat := do
+    (refused : Lean.Name → Option String) : IO Nat := do
   let mut failed := 0
   for seed in seeds do
     let mut errs : Array String := #[]
     let closure := closureOf seed
-    match ← compileClosure env dir s!"{label}-{seed}" closure with
+    let compiled ← compileClosure env dir s!"{label}-{seed}" closure
+    if let some msg := refused seed then
+      match compiled with
+      | .error e =>
+        unless (e.splitOn msg).length > 1 do
+          errs := errs.push s!"refused, but without '{msg}': {e}"
+      | .ok _ => errs := errs.push s!"expected a refusal with '{msg}', but it compiled"
+      if !errs.isEmpty then
+        failed := failed + 1
+        for e in errs do IO.println s!"[canon-closure-aux] {label} FAIL {seed}: {e}"
+      continue
+    match compiled with
     | .error e => errs := errs.push e
     | .ok out =>
-      if !exempt seed then
+      do
         for (n, _) in closure do
           let ixn := Ix.Name.fromLeanName n
           match out.getAddr? ixn, ref.getAddr? ixn with
@@ -261,15 +274,17 @@ def suite : List TestSeq := [
     -- Leg 1, the closure producers (`collectDeps`): every address is the
     -- reference's, every seed type-checks.
     let f1 ← runLeg env dir ref "collectDeps" seeds
-      (fun s => Ix.EnvScope.collectDeps env [s]) (fun _ => false)
+      (fun s => Ix.EnvScope.collectDeps env [s]) (fun _ => none)
     -- Leg 2, the compiler on family-incomplete slices: same, except a
     -- nested block's class `.brecOn.eq`, whose canonical block needs
-    -- `List.casesOn` (not in the raw closure): the compiler builds the
-    -- members present, with a warning; it must still compile and check.
+    -- `List.casesOn` (not in the raw closure): the compiler refuses the
+    -- block, naming it (A0, WB-E3; it used to build the members present
+    -- with a warning, at addresses differing from the whole compile).
     let nestedEq (s : Lean.Name) : Bool :=
       s.toString.endsWith ".brecOn.eq" &&
         [`T, `C, `D, `Rose].any (fun c => (fx ++ c).isPrefixOf s)
-    let f2 ← runLeg env dir ref "raw" seeds (fun s => rawDeps env [s]) nestedEq
+    let f2 ← runLeg env dir ref "raw" seeds (fun s => rawDeps env [s])
+      (fun s => if nestedEq s then some "partial auxiliary family" else none)
     -- Leg 3, the pack-side closure (`ix pack`, `Env::prune_to_closure`):
     -- a block is one Ixon constant, so pruning the reference to an
     -- auxiliary keeps its whole block; the bundle must name the seed at the
