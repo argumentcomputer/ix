@@ -757,9 +757,25 @@ pub fn compile_env_with_profile(
                 }
 
                 if !aux_precompile_incomplete {
-                  // Promote remaining names from aux_name_to_addr.
+                  // Promote remaining names from aux_name_to_addr. A name
+                  // another block already compiled at a different address
+                  // than aux_gen claimed is a conflict (single ownership),
+                  // recorded instead of silently skipped.
                   for name in &all {
-                    if stt_ref.name_to_addr.contains_key(name) {
+                    let compiled =
+                      stt_ref.name_to_addr.get(name).map(|r| r.value().clone());
+                    if let Some(existing) = compiled {
+                      if let Some(claimed) = stt_ref.aux_name_to_addr.get(name)
+                        && *claimed.value() != existing
+                      {
+                        let msg = crate::compile::name_claim_conflict(
+                          name,
+                          &existing,
+                          claimed.value(),
+                        )
+                        .to_string();
+                        stt_ref.ungrounded.insert(name.clone(), msg);
+                      }
                       continue;
                     }
                     if let Some(addr) = stt_ref.resolve_addr(name) {

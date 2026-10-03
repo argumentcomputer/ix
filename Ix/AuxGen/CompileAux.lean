@@ -1026,6 +1026,12 @@ def compileMutualAuxTail (cs : Array MutConst)
     -- (compile.rs checked plan inserts;
     -- plans/aux-recursor-alias-collision.md §2.4).
     let cenvGlobal ← liftM (getCompileEnv : CompileM _)
+    -- Shape check for the derived plans (A0, WB-A5/C3): `.brecOn` and
+    -- `.below` plans exist only when Lean generates those families
+    -- (`belowFamilyLeanExists`), the rule aux_gen uses. A user constant
+    -- `X.brecOn`/`X.below` of a reordered non-recursive block is the
+    -- user's and keeps its call sites (compile.rs, same place).
+    let belowLean ← liftM (belowFamilyLeanExistsM originalAll : CompileM _)
     -- Head-rewritten (evaporated-aux) recursors get NO derived
     -- brecOn/below plans (compile.rs:4117-4140).
     for (name, plan) in plans do
@@ -1034,7 +1040,7 @@ def compileMutualAuxTail (cs : Array MutConst)
           throw (.invalidMutualBlock
             s!"conflicting call-site plans for '{name.pretty}' — two \
 blocks claim one source-indexed aux name")
-      if plan.headRewrite.isNone then
+      if plan.headRewrite.isNone && belowLean then
         if let some breconName := recNameToBreconName name then
           -- Mirror compile.rs: Type-level `.brecOn.go` / `.brecOn.eq`
           -- share `.brecOn`'s telescope and are referenced directly by

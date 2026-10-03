@@ -81,6 +81,13 @@ pub struct CallSitePlan {
   /// "canonical recursor supplies an IH binder" from "the IH must be
   /// synthesized by a recursive call into another canonical block".
   pub source_in_block: Vec<bool>,
+  /// `true` when source minor `i` belongs to a source motive of this
+  /// canonical SCC (`source_in_block` of its parent motive). A dropped
+  /// minor with this bit set is a collapse drop: its canonical slot is held
+  /// by a kept sibling, and the call site must show the two equal
+  /// ([`collapse_partner`]). A dropped minor without it belongs to another
+  /// SCC (split) or to the evaporated head-rewrite telescope.
+  pub minor_in_block: Vec<bool>,
   /// `Some` when the callee is an EVAPORATED aux recursor — a
   /// `<all0>.rec_N` whose nested occurrence lost every spec-param inductive
   /// to another SCC. Its claim is aliased to the external inductive's own
@@ -143,6 +150,115 @@ impl CallSitePlan {
   }
 }
 
+impl CallSitePlan {
+  /// Whether the plan drops a motive of a collapsed member of this SCC (its
+  /// minors follow the motive).
+  pub fn drops_collapsed(&self) -> bool {
+    self.motive_keep.iter().zip(&self.source_in_block).any(|(&k, &b)| !k && b)
+  }
+}
+
+/// Where the compiled form of one source argument of a surgered call site
+/// lives: at a canonical position of the rebuilt spine, or in the call
+/// site's collapsed (metadata-sharing) list. A split-adapted minor's source
+/// form is in the collapsed list, so `Collapsed` also covers kept arguments
+/// whose canonical slot holds a rewritten term.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArgSlot {
+  Canon(usize),
+  Collapsed(usize),
+}
+
+/// One obligation of a collapse drop: the compiled form of the dropped
+/// source argument `src` (a motive, minor or handler) must equal the
+/// compiled form of the kept argument `kept_src` at the same canonical slot.
+///
+/// Compiled forms, not Lean terms: the motives of collapsed members are
+/// written over different Lean types (`A` vs `B`) and become equal only
+/// after compilation, where collapsed members share one projection address.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CollapseCheck {
+  pub what: &'static str,
+  pub src: usize,
+  pub kept_src: usize,
+  pub dropped: ArgSlot,
+  pub kept: ArgSlot,
+}
+
+/// The message of every refused collapse drop (both compilers).
+pub const COLLAPSE_DROP_ERROR: &str =
+  "collapse call site drops distinct arguments";
+
+/// The message of a refused eta-wrapped partial application of a plan head
+/// that drops collapsed arguments (both compilers): the wrapper's dropped
+/// arguments are bound variables, distinct from the kept ones by
+/// construction.
+pub const COLLAPSE_ETA_ERROR: &str =
+  "collapse call site is a partial application";
+
+/// The kept source argument whose canonical slot a dropped one shares.
+///
+/// `Ok(None)`: argument `i` is kept, or it is dropped without being a
+/// collapse drop (its motive belongs to another SCC). `Ok(Some(j))`: `i` is
+/// a collapse drop and `j` is the kept argument at its canonical slot.
+/// `Err(())`: `i` is a collapse drop with no kept argument at its slot.
+#[allow(clippy::result_unit_err)]
+pub fn collapse_partner(
+  keep: &[bool],
+  source_to_canon: &[usize],
+  in_block: &[bool],
+  i: usize,
+) -> Result<Option<usize>, ()> {
+  if keep.get(i).copied().unwrap_or(true)
+    || !in_block.get(i).copied().unwrap_or(false)
+  {
+    return Ok(None);
+  }
+  let slot = source_to_canon.get(i).ok_or(())?;
+  (0..keep.len())
+    .find(|&j| keep[j] && source_to_canon.get(j) == Some(slot))
+    .map(Some)
+    .ok_or(())
+}
+
+/// The collapse checks of one band of a call site (`what` names the band:
+/// motive, minor or handler). `slots[i]` is where source argument `i` of
+/// the band was compiled. A drop with no kept partner is an error naming
+/// `compiling` and `head`.
+pub fn collapse_checks(
+  what: &'static str,
+  keep: &[bool],
+  source_to_canon: &[usize],
+  in_block: &[bool],
+  slots: &[ArgSlot],
+  compiling: &str,
+  head: &str,
+) -> Result<Vec<CollapseCheck>, CompileError> {
+  let mut out = Vec::new();
+  for i in 0..slots.len() {
+    match collapse_partner(keep, source_to_canon, in_block, i) {
+      Ok(None) => {},
+      Ok(Some(j)) => out.push(CollapseCheck {
+        what,
+        src: i,
+        kept_src: j,
+        dropped: slots[i],
+        kept: slots[j],
+      }),
+      Err(()) => {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "{COLLAPSE_DROP_ERROR}: compiling '{compiling}', call-site head \
+             '{head}': dropped {what} #{i} has no kept argument at its \
+             canonical slot"
+          ),
+        });
+      },
+    }
+  }
+  Ok(out)
+}
+
 /// Call-site surgery plan for `.brecOn` / `.brecOn_N`.
 ///
 /// `.rec` telescope layout is:
@@ -159,6 +275,9 @@ pub struct BRecOnCallSitePlan {
   pub n_indices: usize,
   pub motive_keep: Vec<bool>,
   pub source_to_canon_motive: Vec<usize>,
+  /// The recursor plan's `source_in_block`: a dropped motive (and handler)
+  /// with this bit set is a collapse drop, checked at the call site.
+  pub source_in_block: Vec<bool>,
 }
 
 impl BRecOnCallSitePlan {
@@ -169,7 +288,14 @@ impl BRecOnCallSitePlan {
       n_indices: plan.n_indices,
       motive_keep: plan.motive_keep.clone(),
       source_to_canon_motive: plan.source_to_canon_motive.clone(),
+      source_in_block: plan.source_in_block.clone(),
     }
+  }
+
+  /// Whether the plan drops a motive (and its handler) of a collapsed
+  /// member of this SCC.
+  pub fn drops_collapsed(&self) -> bool {
+    self.motive_keep.iter().zip(&self.source_in_block).any(|(&k, &b)| !k && b)
   }
 
   pub fn n_canonical_motives(&self) -> usize {
@@ -569,6 +695,7 @@ pub fn compute_call_site_plans(
     // aux motive's keep/drop decision and are mapped into the canonical
     // aux-minor band starting at `n_canon_user_minors`.
     let mut minor_keep = Vec::with_capacity(n_source_minors);
+    let mut minor_in_block: Vec<bool> = Vec::with_capacity(n_source_minors);
     let mut source_to_canon_minor = Vec::with_capacity(n_source_minors);
 
     // Track how many minors we've placed per class (for positioning).
@@ -582,6 +709,7 @@ pub fn compute_call_site_plans(
 
       for ctor_j in 0..n_ctors {
         minor_keep.push(parent_kept);
+        minor_in_block.push(source_in_block[src_i]);
         if parent_kept {
           let canon_pos =
             canon_minor_offset[src_class] + class_minor_placed[src_class];
@@ -645,6 +773,8 @@ pub fn compute_call_site_plans(
           .unwrap_or(0);
         for k in 0..n_ctors {
           minor_keep.push(parent_kept);
+          minor_in_block
+            .push(source_in_block.get(src_i).copied().unwrap_or(false));
           // Both kept and unkept positions reuse the canonical slot — this
           // mirrors the user-side mapping where dropped sources still record
           // where their canonical sibling landed.
@@ -658,12 +788,14 @@ pub fn compute_call_site_plans(
       while minor_keep.len() < n_source_minors {
         let k = source_to_canon_minor.len().saturating_sub(n_user_minors);
         minor_keep.push(true);
+        minor_in_block.push(true);
         source_to_canon_minor.push(n_canon_user_minors + k);
       }
     } else {
       // Identity mapping when no layout is provided.
       for k in 0..n_aux_minors {
         minor_keep.push(true);
+        minor_in_block.push(true);
         source_to_canon_minor.push(n_canon_user_minors + k);
       }
     }
@@ -678,6 +810,7 @@ pub fn compute_call_site_plans(
       source_to_canon_motive: source_to_canon_motive.clone(),
       source_to_canon_minor,
       source_in_block: source_in_block.clone(),
+      minor_in_block,
       head_rewrite: None,
     }
   };
@@ -712,6 +845,7 @@ pub fn compute_call_site_plans(
       }
       let mut source_in_block = vec![false; n_source_motives];
       source_in_block[x_pos] = true;
+      let minor_in_block = minor_keep.clone();
       CallSitePlan {
         n_params,
         n_source_motives,
@@ -722,6 +856,7 @@ pub fn compute_call_site_plans(
         source_to_canon_motive,
         source_to_canon_minor,
         source_in_block,
+        minor_in_block,
         head_rewrite: Some(AuxHeadRewrite {
           target_rec,
           target_motive_pos: x_pos,
@@ -1645,6 +1780,7 @@ mod tests {
       source_to_canon_motive: vec![0, 1],
       source_to_canon_minor: vec![0, 1],
       source_in_block: vec![true, true],
+      minor_in_block: vec![true, true],
       head_rewrite: None,
     };
     assert!(plan.is_identity());
@@ -1665,6 +1801,7 @@ mod tests {
       source_to_canon_motive: vec![0],
       source_to_canon_minor: vec![0],
       source_in_block: vec![true],
+      minor_in_block: vec![true],
       head_rewrite: Some(AuxHeadRewrite {
         target_rec: nn("List", "rec"),
         target_motive_pos: 0,
@@ -1685,6 +1822,7 @@ mod tests {
       source_to_canon_motive: vec![0, 1, 0],
       source_to_canon_minor: vec![0, 1, 0],
       source_in_block: vec![true, true, true],
+      minor_in_block: vec![true, true, true],
       head_rewrite: None,
     };
     assert!(!plan.is_identity());
@@ -1702,6 +1840,7 @@ mod tests {
       source_to_canon_motive: vec![2, 0, 1], // permuted
       source_to_canon_minor: vec![2, 0, 1],
       source_in_block: vec![true, true, true],
+      minor_in_block: vec![true, true, true],
       head_rewrite: None,
     };
     assert!(!plan.is_identity());

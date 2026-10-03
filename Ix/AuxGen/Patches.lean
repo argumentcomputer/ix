@@ -31,27 +31,16 @@ namespace Ix.AuxGen
 
 open Ix.CompileM (CompileM CompileError)
 
-/-- Mirrors Rust `is_below_shaped` (aux_gen.rs:998).
-
-    Check whether a type expression is shaped like a `.below` auxiliary.
-
-    A genuine `.below` type is a forall telescope ending in `Sort _`:
-      `∀ {params} {motives} (indices) (major), Sort rlvl`
-
-    This distinguishes `.below` auxiliaries from coincidental name
-    collisions like structure field accessors (e.g.,
-    `NewDecl.below : NewDecl → LocalDecl`).
-
-    (Defined before `generateAuxPatches` — its only caller — instead of
-    at its Rust source position after it; no semantic difference.) -/
-def isBelowShaped (typ : Expr) : Bool := Id.run do
-  let mut cur := typ
-  repeat
-    match cur with
-    | .forallE _ _ body _ _ => cur := body
-    | .sort _ _ => return true
-    | _ => return false
-  return false -- unreachable: the loop always returns
+/-- `belowFamilyLeanExists` over the base compile environment: the Lean
+    conditions under which the `.below`/`.brecOn` families of the Lean block
+    `originalAll` exist (A0, WB-B1). Mirrors Rust
+    `below_family_lean_exists` (aux_gen.rs). -/
+def belowFamilyLeanExistsM (originalAll : Array Name) : CompileM Bool := do
+  let mut infos : Std.HashMap Name ConstantInfo := {}
+  for n in originalAll do
+    if let some ci ← lookupConst? n then
+      infos := infos.insert n ci
+  return belowFamilyLeanExists (infos.get? ·) originalAll
 
 /-- Mirrors Rust `populate_canon_kenv_with_below` (aux_gen.rs:1017).
 
@@ -301,21 +290,26 @@ refusing to synthesize canonical-indexed _N names")
   -- family (some class's name, or a nested auxiliary's
   -- `<all0>.<suffix>_N`), emit the whole family. A whole environment
   -- exports every family all-or-nothing, so nothing changes there.
-  -- `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`);
-  -- `checkShape` applies the `.below` name-collision guard (a structure
-  -- field accessor named `below`, e.g. `IndPredBelow.NewDecl.below`; a
-  -- genuine `.below` type ends in `Sort _` after peeling foralls).
-  let familyExported (suffix : String) (sub : Option String)
-      (checkShape : Bool) : KBridgeM Bool := do
+  -- `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`).
+  --
+  -- Existence is decided by Lean's conditions first, never by name shape:
+  -- `.rec`, `.casesOn` and `.recOn` exist for every inductive, while the
+  -- `.below`/`.brecOn` families exist only when `belowFamilyLeanExists`
+  -- holds (the block is recursive, …). Only then does the presence of a
+  -- member's name decide whether a closure carries the family. A user
+  -- constant `T.below` on a non-recursive `T` stays the user's (WB-B1).
+  let belowLean ← liftM (belowFamilyLeanExistsM originalAll : CompileM _)
+  let familyExported (suffix : String) (sub : Option String) :
+      KBridgeM Bool := do
+    if (suffix == "below" || suffix == "brecOn") && !belowLean then
+      return false
     let withSub (n : Name) : Name := match sub with
       | some s => Name.mkStr n s
       | none => n
     for cls in sortedClasses do
       for n in cls do
-        match ← liftM (lookupConst? (withSub (Name.mkStr n suffix)) : CompileM _) with
-        | some ci =>
-          if !checkShape || isBelowShaped ci.getCnst.type then return true
-        | none => pure ()
+        if (← liftM (lookupConst? (withSub (Name.mkStr n suffix)) : CompileM _)).isSome then
+          return true
     if let some all0 := originalAll[0]? then
       for (recName, _) in canonicalRecs.toList.drop nClasses do
         if let some idx := auxRecSuffixIdx recName then
@@ -324,7 +318,7 @@ refusing to synthesize canonical-indexed _N names")
     return false
 
   let mut patches := patches
-  if ← familyExported "rec" none false then
+  if ← familyExported "rec" none then
     for (recName, recVal) in canonicalRecs do
       patches := patches.insert recName (.recr recVal)
 
@@ -341,8 +335,8 @@ refusing to synthesize canonical-indexed _N names")
   -- `.brecOn.eq` is proved by cases on the block's own inductives; emitting
   -- the `.eq` family whole (Phase 3) needs the `.casesOn` family
   -- (aux_gen.rs Phase 1b).
-  let emitCasesOn ← pure (← familyExported "casesOn" none false)
-    <||> familyExported "brecOn" (some "eq") false
+  let emitCasesOn ← pure (← familyExported "casesOn" none)
+    <||> familyExported "brecOn" (some "eq")
   for (recName, recVal) in canonicalRecs.toList.take nClasses do
     -- Build casesOn name: recName is "I.rec", casesOn name is "I.casesOn"
     -- (Rust matches `NameData::Str(parent, _, _)` — the suffix itself is
@@ -357,7 +351,12 @@ refusing to synthesize canonical-indexed _N names")
         match ← liftM (generateCasesOn casesOnName recVal : CompileM _) with
         | some auxDef =>
           patches := patches.insert casesOnName (.casesOnDef auxDef)
-        | none => pure ()
+        | none =>
+          -- A declined generation is refused, naming the block (A0,
+          -- WB-F5): skipping it would compile Lean's source-form
+          -- `.casesOn` against the canonical `.rec` (aux_gen.rs Phase 1b).
+          throw (.invalidMutualBlock s!"casesOn generation declined \
+'{casesOnName.pretty}' in the block of '{blockLabel sortedClasses}'")
     | _ => pure ()
 
   -- Phase 1c: Generate `.recOn` definitions (arg-reordered `.rec`
@@ -365,7 +364,7 @@ refusing to synthesize canonical-indexed _N names")
   --
   -- Only generate for original recursors (first `nClasses`), not
   -- auxiliary `rec_N` — same intentional restriction as Phase 1b.
-  let emitRecOn ← familyExported "recOn" none false
+  let emitRecOn ← familyExported "recOn" none
   for (recName, recVal) in canonicalRecs.toList.take nClasses do
     match recName with
     | .str indName _ _ =>
@@ -381,7 +380,7 @@ refusing to synthesize canonical-indexed _N names")
   -- (aux_gen.rs:603-660).
   -- `familyExported` (above) also counts a nested auxiliary's
   -- `<all0>.below_N`: a closure can hold one without any class's `.below`.
-  if ← familyExported "below" none true then
+  if ← familyExported "below" none then
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
       isProp maps (allAux := true)
     -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
@@ -405,9 +404,9 @@ refusing to synthesize canonical-indexed _N names")
     -- `.brecOn.go`, `.brecOn` and `.brecOn.eq` are three blocks (three
     -- families): a closure can hold `X.brecOn.go` without any `.brecOn`,
     -- or `.brecOn` without `.brecOn.eq` (aux_gen.rs Phase 3).
-    let emitGo ← familyExported "brecOn" (some "go") false
-    let emitMain ← familyExported "brecOn" none false
-    let emitEq ← familyExported "brecOn" (some "eq") false
+    let emitGo ← familyExported "brecOn" (some "go")
+    let emitMain ← familyExported "brecOn" none
+    let emitEq ← familyExported "brecOn" (some "eq")
     if emitGo || emitMain || emitEq then
       let breconConsts ← generateBreconConstants sortedClasses
         canonicalRecs belowConsts isProp maps (allAux := true)
@@ -418,8 +417,8 @@ refusing to synthesize canonical-indexed _N names")
       -- form directly — no post-generation rewrite. A whole family can
       -- need constants a closure lacks (a nested block's
       -- `<all0>.brecOn_N.eq` is proved by cases on the external inductive,
-      -- `List.casesOn`): that batch then falls back to the members present
-      -- (aux_gen.rs Phase 3).
+      -- `List.casesOn`): such a slice is refused, naming the block (A0,
+      -- WB-E3; aux_gen.rs Phase 3).
       let batchOf (n : Name) : Nat := match n with
         | .str _ "go" _ => 0
         | .str _ "eq" _ => 2
@@ -430,7 +429,7 @@ refusing to synthesize canonical-indexed _N names")
         let mut present : Array Bool := #[]
         for d in defs do
           present := present.push (← liftM (lookupConst? d.name : CompileM _)).isSome
-        let mut take := if emitFamily[b]! then defs.map (fun _ => true) else present
+        let take := if emitFamily[b]! then defs.map (fun _ => true) else present
         if emitFamily[b]! && present.any (!·) then
           let batchNames : Std.HashSet Name :=
             defs.foldl (fun acc d => acc.insert d.name) {}
@@ -438,13 +437,24 @@ refusing to synthesize canonical-indexed _N names")
           for d in defs do
             refs := collectConstRefs d.typ refs
             refs := collectConstRefs d.value refs
-          let mut resolvable := true
+          let mut missing : Option Name := none
           for n in refs do
-            if resolvable && !patches.contains n && !batchNames.contains n then
+            if missing.isNone && !patches.contains n && !batchNames.contains n then
               if (← liftM (lookupConst? n : CompileM _)).isNone then
-                resolvable := false
-          if !resolvable then
-            take := present
+                missing := some n
+          -- The block cannot be built from this slice, and the members
+          -- present alone would get addresses that differ from the
+          -- whole-environment compile: refused, naming the block (A0,
+          -- WB-E3; formerly a silent partial family here, a warning in
+          -- Rust).
+          if let some m := missing then
+            let absent := (defs.zip present).filterMap fun (d, p) =>
+              if p then none else some d.name.pretty
+            throw (.invalidMutualBlock s!"partial auxiliary family in the \
+block of '{blockLabel sortedClasses}': the environment lacks {m.pretty}, which the \
+canonical block of {", ".intercalate (defs.map (·.name.pretty)).toList} needs \
+(absent members: {", ".intercalate absent.toList}); close the slice over aux \
+families (Lean.auxFamilySiblings)")
         for (d, t) in defs.zip take do
           if t then
             patches := patches.insert d.name (.brecOnDef d)
@@ -701,15 +711,22 @@ address for the name")
           -- Target guard mirrors the head-rewrite plan registration in
           -- surgery (driven by the same `evaporated` flags) —
           -- multi-motive external targets are outside the supported
-          -- rewrite domain; skipping leaves the original compile.
-          let targetOk ←
-            match ← liftM (lookupConst? targetName : CompileM _) with
-            | some (.recInfo r) => pure (r.numMotives == 1)
-            | _ => pure false
+          -- rewrite domain, and so is a target the environment lacks. Both
+          -- are refused, naming the block (A0, WB-E1): compiling Lean's
+          -- original form would ship a specialized recursor the kernels
+          -- reject (aux_gen.rs, same place).
+          let targetCi ← liftM (lookupConst? targetName : CompileM _)
+          let targetOk := match targetCi with
+            | some (.recInfo r) => r.numMotives == 1
+            | _ => false
           if patches.contains sourceName then
             continue
           if !targetOk then
-            continue
+            let why := if targetCi.isSome then "is not a one-motive recursor"
+              else "is absent from the environment"
+            throw (.invalidMutualBlock s!"evaporated auxiliary '{sourceName.pretty}' \
+of the block of '{blockLabel sortedClasses}': its target '{targetName.pretty}' {why}; \
+refusing to compile the original form")
           aliases := aliases.insert sourceName targetName
           evaporatedFlags := evaporatedFlags.set! sourceJ true
         evaporated := some evaporatedFlags

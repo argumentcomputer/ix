@@ -33,6 +33,13 @@ open Ix.EnvScope
 
 namespace Ix.Cli.CompileLeanCmd
 
+/-- Failures listed root causes first: a constant that failed only because a
+    dependency is missing is a cascade, listed after the ones that name the
+    cause (a refusal's message must be visible in the bounded listing). -/
+private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
+  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
+  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
+
 def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let args : Array String := p.variableArgsAs! String
   let some (pathStr : String) := args[0]?
@@ -73,7 +80,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[compile-lean] error: {ungroundedCount} constant(s) \
 failed to compile; nothing written to {outPath} (use --allow-partial to \
 serialize the grounded subset)"
-      for (n, e) in out.cenv.ungrounded.toList.take 8 do
+      for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
       return 1
     IO.FS.writeBinFile outPath out.bytes
@@ -82,7 +89,7 @@ serialize the grounded subset)"
 {ungroundedCount} block failures) in {elapsed}ms"
     if ungroundedCount > 0 then
       IO.println s!"[compile-lean] PARTIAL: {ungroundedCount} constants failed to compile"
-      for (n, e) in out.cenv.ungrounded.toList.take 8 do
+      for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.println s!"  {n.pretty}: {e.take 200}"
 
     if p.hasFlag "rust-check" then

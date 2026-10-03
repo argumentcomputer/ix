@@ -150,7 +150,7 @@ lean_lib Tests
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix]
+  needs := #[`@/ix, `@/«kernel-check-ixe»]
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where

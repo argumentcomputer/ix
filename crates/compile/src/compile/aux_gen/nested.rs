@@ -365,12 +365,13 @@ impl<'a> ExpandCtx<'a> {
         }
         app
       };
+      // Every member `J As` of the group registers under its own nested
+      // hash (Lean's `elim_nested_inductive_fn`; A0, WB-A1): a later
+      // occurrence of a sibling, e.g. `Forest T` inside the `Tree T`
+      // auxiliary's constructors, dedups to that sibling's auxiliary
+      // instead of opening a second copy of the group.
+      self.aux_seen.entry(*j_as.get_hash()).or_insert_with(|| aux_name.clone());
       self.aux_to_nested.insert(aux_name.clone(), j_as);
-      // Only the *first* j_name (head) registers under this nested-hash so
-      // subsequent hits of the same occurrence dedup to the right aux.
-      // Extra mutual-group members live in `aux_to_nested` but are reached
-      // through the normal queue walk, not via `aux_seen` lookup.
-      self.aux_seen.entry(i_as_hash).or_insert_with(|| aux_name.clone());
 
       // Build auxiliary type:
       // 1. subst_levels(J.type, J.level_params, I_lvls)
@@ -2467,11 +2468,11 @@ fn try_detect_nested_fvar(
   let head_ref = overlay
     .and_then(|o| o.get(&head_name))
     .or_else(|| lean_env.get(&head_name));
-  let (ext_n_params, ext_n_indices) = match head_ref.as_deref() {
+  let (ext_n_params, ext_n_indices, ext_all) = match head_ref.as_deref() {
     Some(ConstantInfo::InductInfo(v)) => {
       let p = nat_to_usize(&v.num_params);
       let i = nat_to_usize(&v.num_indices);
-      (p, i)
+      (p, i, v.all.clone())
     },
     _ => return,
   };
@@ -2535,18 +2536,46 @@ fn try_detect_nested_fvar(
   }) {
     return;
   }
-  aux_seen.push((head_name.clone(), level_hashes, spec_hashes));
-
+  // Lean's rule (`elim_nested_inductive_fn`; A0): the first occurrence of
+  // an external inductive `I As` registers an auxiliary for EVERY member
+  // `J As` of I's mutual group, in group order, and marks each one seen.
+  // A later occurrence of a sibling `J As` then dedups to that auxiliary
+  // instead of opening a second copy of the group (WB-A1: 4 auxiliaries
+  // where Lean has 2, and a `numNested` mismatch).
+  //
   // Use the raw levels from the Const node in the constructor type.
   // These match the Lean kernel's `restore_nested` output, which
   // preserves the exact level structure from the original elaboration.
-  flat.push(FvarFlatMember {
-    name: head_name,
-    spec_params,
-    occurrence_level_args: head_levels,
-    own_params: ext_n_params,
-    n_indices: ext_n_indices,
-  });
+  let group: Vec<Name> =
+    if ext_all.is_empty() { vec![head_name.clone()] } else { ext_all };
+  for j_name in group {
+    let seen = aux_seen.iter().any(|(name, levels, hashes)| {
+      *name == j_name && *levels == level_hashes && *hashes == spec_hashes
+    });
+    if seen {
+      continue;
+    }
+    let (own_params, n_indices) = if j_name == head_name {
+      (ext_n_params, ext_n_indices)
+    } else {
+      let j_ref =
+        overlay.and_then(|o| o.get(&j_name)).or_else(|| lean_env.get(&j_name));
+      match j_ref.as_deref() {
+        Some(ConstantInfo::InductInfo(v)) => {
+          (nat_to_usize(&v.num_params), nat_to_usize(&v.num_indices))
+        },
+        _ => continue,
+      }
+    };
+    aux_seen.push((j_name.clone(), level_hashes.clone(), spec_hashes.clone()));
+    flat.push(FvarFlatMember {
+      name: j_name,
+      spec_params: spec_params.clone(),
+      occurrence_level_args: head_levels.clone(),
+      own_params,
+      n_indices,
+    });
+  }
 }
 
 /// Lean-faithful declaration flags for an original mutual block

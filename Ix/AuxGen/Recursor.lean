@@ -228,8 +228,8 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
     return (flat, auxSeen)
 
   -- Verify head is an external inductive.
-  let (extNParams, extNIndices) ← match ← envGet overlay headName with
-    | some (.inductInfo v) => pure (v.numParams, v.numIndices)
+  let (extNParams, extNIndices, extAll) ← match ← envGet overlay headName with
+    | some (.inductInfo v) => pure (v.numParams, v.numIndices, v.all)
     | _ => return (flat, auxSeen)
 
   -- Must have at least extNParams applied args.
@@ -261,15 +261,33 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
         && hashes.size == specHashes.size
         && ((hashes.zip specHashes).all fun (a, b) => a == b)) then
     return (flat, auxSeen)
-  let auxSeen := auxSeen.push (headName, levelHashes, specHashes)
-
-  -- Use the raw levels from the Const node in the constructor type.
-  let flat := flat.push
-    { name := headName
-      specParams
-      occurrenceLevelArgs := headLevels
-      ownParams := extNParams
-      nIndices := extNIndices }
+  -- Lean's rule (`elim_nested_inductive_fn`; A0, WB-A1): the first
+  -- occurrence of an external inductive `I As` registers an auxiliary for
+  -- EVERY member `J As` of I's mutual group, in group order, and marks each
+  -- one seen, so a later occurrence of a sibling dedups instead of opening
+  -- a second copy of the group. Use the raw levels from the Const node in
+  -- the constructor type. Mirrors Rust `try_detect_nested_fvar`.
+  let group : Array Name := if extAll.isEmpty then #[headName] else extAll
+  let mut flat := flat
+  let mut auxSeen := auxSeen
+  for jName in group do
+    if auxSeen.any (fun (name, levels, hashes) =>
+        name == jName && levels == levelHashes && hashes == specHashes) then
+      continue
+    let dims : Option (Nat × Nat) ←
+      if jName == headName then pure (some (extNParams, extNIndices))
+      else do
+        match ← envGet overlay jName with
+        | some (.inductInfo v) => pure (some (v.numParams, v.numIndices))
+        | _ => pure none
+    let some (ownParams, nIndices) := dims | continue
+    auxSeen := auxSeen.push (jName, levelHashes, specHashes)
+    flat := flat.push
+      { name := jName
+        specParams
+        occurrenceLevelArgs := headLevels
+        ownParams
+        nIndices }
   return (flat, auxSeen)
 
 /-- Mirrors Rust `build_compile_flat_block_with_overlay`
@@ -1628,8 +1646,12 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
         s!"compute_is_large_and_k: is_large_eliminator failed for \
 {classes[0]!.ind.cnst.name.pretty}: {e}")
 
-  -- Spec-level override: non-Prop inductives always get large elimination.
-  let isLarge := if !isLarge && !resultKuniv.isSemanticZero then true else isLarge
+  -- No override (A0, WB-B8): Lean's kernel (`elim_only_at_universe_zero`)
+  -- gives large elimination when the result level is provably never zero
+  -- and otherwise applies the Prop restrictions, which is exactly
+  -- `isLargeEliminator`. A former override forced large elimination
+  -- whenever the level was not semantically zero, so a `Sort u` inductive
+  -- (reachable through `addDecl`) got a large recursor both kernels reject.
 
   -- Prop determination from the WHNF-reduced kernel-derived level.
   let isProp := resultKuniv.isSemanticZero

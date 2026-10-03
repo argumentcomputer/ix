@@ -578,12 +578,20 @@ pub fn generate_aux_patches(
   // whole environment Lean exports every family all-or-nothing, so this
   // changes nothing there.
   //
-  // `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`);
-  // `check_shape` applies the `.below` name-collision guard (a structure
-  // field accessor named `below`, e.g. `IndPredBelow.NewDecl.below`; a
-  // genuine `.below` type ends in `Sort _` after peeling foralls).
-  let family_exported =
-    |suffix: &str, sub: Option<&str>, check_shape: bool| -> bool {
+  // `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`).
+  //
+  // Existence is decided by Lean's conditions first, never by name shape:
+  // `.rec`, `.casesOn` and `.recOn` exist for every inductive, while the
+  // `.below`/`.brecOn` families exist only when `below_family_lean_exists`
+  // holds (the block is recursive, …). Only then does the presence of a
+  // member's name decide whether a closure carries the family. A user
+  // constant `T.below` on a non-recursive `T` stays the user's (WB-B1).
+  let below_lean = below_family_lean_exists(lean_env, original_all);
+  let family_exported = |suffix: &str, sub: Option<&str>| -> bool {
+    if matches!(suffix, "below" | "brecOn") && !below_lean {
+      return false;
+    }
+    {
       let with_sub = |n: Name| match sub {
         Some(s) => Name::str(n, s.to_string()),
         None => n,
@@ -591,7 +599,7 @@ pub fn generate_aux_patches(
       let primary = sorted_classes.iter().flatten().any(|n| {
         lean_env
           .get(&with_sub(Name::str(n.clone(), suffix.to_string())))
-          .is_some_and(|ci| !check_shape || is_below_shaped(ci.get_type()))
+          .is_some()
       });
       primary
         || original_all.first().is_some_and(|all0| {
@@ -603,7 +611,8 @@ pub fn generate_aux_patches(
             })
           })
         })
-    };
+    }
+  };
   if *crate::compile::IX_LOG_AUX_NAMES {
     // Diagnostic for the whole-environment invariant above: a family
     // exported in part. In a whole environment this never prints; in a
@@ -646,7 +655,7 @@ pub fn generate_aux_patches(
     }
   }
 
-  if family_exported("rec", None, false) {
+  if family_exported("rec", None) {
     for (rec_name, rec_val) in &canonical_recs {
       patches.insert(rec_name.clone(), PatchedConstant::Rec(rec_val.clone()));
     }
@@ -665,8 +674,8 @@ pub fn generate_aux_patches(
   // the external's `.casesOn` but not the classes'. Emitting the `.eq`
   // family whole (Phase 3) needs the `.casesOn` family, which is always
   // generatable from the recursors.
-  let emit_cases_on = family_exported("casesOn", None, false)
-    || family_exported("brecOn", Some("eq"), false);
+  let emit_cases_on =
+    family_exported("casesOn", None) || family_exported("brecOn", Some("eq"));
   for (rec_name, rec_val) in canonical_recs.iter().take(n_classes) {
     // Build casesOn name: rec_name is "I.rec", casesOn name is "I.casesOn"
     let ind_name = match rec_name.as_data() {
@@ -676,10 +685,21 @@ pub fn generate_aux_patches(
     let cases_on_name = Name::str(ind_name, "casesOn".to_string());
     // Only generate if Lean exported the block's `.casesOn` family (see
     // `family_exported` above: per family, not per name).
-    if emit_cases_on
-      && let Some(aux_def) =
+    if emit_cases_on {
+      // A declined generation is refused, naming the block (A0, WB-F5):
+      // skipping it would compile Lean's source-form `.casesOn` against
+      // the canonical `.rec`.
+      let Some(aux_def) =
         cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
-    {
+      else {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "casesOn generation declined '{}' in the block of '{}'",
+            cases_on_name.pretty(),
+            block_label(sorted_classes),
+          ),
+        });
+      };
       patches.insert(cases_on_name, PatchedConstant::CasesOn(aux_def));
     }
   }
@@ -689,7 +709,7 @@ pub fn generate_aux_patches(
   // Only generate for original recursors (first n_classes), not auxiliary rec_N.
   // This is intentional: Lean does NOT generate recOn_N for nested auxiliary
   // types (unlike below_N/brecOn_N which ARE generated via BRecOn.lean).
-  let emit_rec_on = family_exported("recOn", None, false);
+  let emit_rec_on = family_exported("recOn", None);
   for (rec_name, rec_val) in canonical_recs.iter().take(n_classes) {
     let ind_name = match rec_name.as_data() {
       ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
@@ -706,13 +726,14 @@ pub fn generate_aux_patches(
   // Phase 2: Generate .below constants (if originals exist).
   let _p2_start = std::time::Instant::now();
   {
-    // Guard: an existing `.below` must actually be a `.below` auxiliary,
-    // not a coincidental name collision (e.g., a structure field accessor
-    // like `IndPredBelow.NewDecl.below : NewDecl → LocalDecl`).
-    // A genuine `.below` type always ends in `Sort _` after peeling foralls.
+    // Guard: the family exists only by Lean's conditions
+    // (`below_family_lean_exists`: a recursive block), so a coincidental
+    // name (a structure field accessor like
+    // `IndPredBelow.NewDecl.below : NewDecl → LocalDecl`, or a user
+    // `def T.below` on a non-recursive `T`) is never replaced.
     // `family_exported` (above) also counts a nested auxiliary's
     // `<all0>.below_N`: a closure can hold one without any class's `.below`.
-    if family_exported("below", None, true) {
+    if family_exported("below", None) {
       let _bt = std::time::Instant::now();
       let raw_below_consts = below::generate_below_constants_with(
         sorted_classes,
@@ -763,9 +784,9 @@ pub fn generate_aux_patches(
       // families): a closure can hold `X.brecOn.go` (an equation lemma
       // references it directly) without any `.brecOn`, or `.brecOn`
       // without `.brecOn.eq`.
-      let emit_go = family_exported("brecOn", Some("go"), false);
-      let emit_main = family_exported("brecOn", None, false);
-      let emit_eq = family_exported("brecOn", Some("eq"), false);
+      let emit_go = family_exported("brecOn", Some("go"));
+      let emit_main = family_exported("brecOn", None);
+      let emit_eq = family_exported("brecOn", Some("eq"));
       if emit_go || emit_main || emit_eq {
         let _brt = std::time::Instant::now();
         let brecon_consts = brecon::generate_brecon_constants_with(
@@ -791,13 +812,13 @@ pub fn generate_aux_patches(
         // A whole family can need constants a closure lacks: a nested
         // block's `<all0>.brecOn_N.eq` is proved by cases on the external
         // inductive (`List.casesOn`), which `X.brecOn.eq`'s closure does
-        // not reach. The block cannot be built from such a slice, so that
-        // batch falls back to the members present (its pre-family
-        // behaviour: compiles, but the block differs from the whole-env
-        // one) with a warning. The slice producers (`Ix.EnvScope.collectDeps`,
-        // `Lean.collectDependencies`) close slices over aux families
-        // (`Lean.auxFamilySiblings`), so this fires only for a slice built
-        // some other way.
+        // not reach. The block cannot be built from such a slice, and the
+        // members present alone would get addresses that differ from the
+        // whole-environment compile, so the block is refused, naming it
+        // (A0, WB-E3; formerly a warning and a partial family). The slice
+        // producers (`Ix.EnvScope.collectDeps`, `Lean.collectDependencies`)
+        // close slices over aux families (`Lean.auxFamilySiblings`), so
+        // this fires only for a slice built some other way.
         let batch_of = |n: &Name| match n.last_str() {
           Some("go") => 0usize,
           Some("eq") => 2,
@@ -811,7 +832,7 @@ pub fn generate_aux_patches(
         for (b, defs) in by_batch.into_iter().enumerate() {
           let present: Vec<bool> =
             defs.iter().map(|d| lean_env.get(&d.name).is_some()).collect();
-          let mut take: Vec<bool> = if emit_family[b] {
+          let take: Vec<bool> = if emit_family[b] {
             vec![true; defs.len()]
           } else {
             present.clone()
@@ -831,31 +852,28 @@ pub fn generate_aux_patches(
                 && !batch_names.contains(n)
             });
             if let Some(m) = missing {
-              // Loud: the members present get a different address than in
-              // a whole-environment compile.
               let absent: Vec<String> = defs
                 .iter()
                 .zip(&present)
                 .filter(|(_, p)| !**p)
                 .map(|(d, _)| d.name.pretty())
                 .collect();
-              eprintln!(
-                "[aux_gen] warning: the environment lacks {}, which the \
-                 canonical block of {} needs; compiling the members present \
-                 without {} — their addresses differ from a whole-environment \
-                 compile (close the slice over aux families: \
-                 Lean.auxFamilySiblings)",
-                m.pretty(),
-                defs
-                  .iter()
-                  .zip(&present)
-                  .filter(|(_, p)| **p)
-                  .map(|(d, _)| d.name.pretty())
-                  .collect::<Vec<_>>()
-                  .join(", "),
-                absent.join(", "),
-              );
-              take = present;
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "partial auxiliary family in the block of '{}': the \
+                   environment lacks {}, which the canonical block of {} \
+                   needs (absent members: {}); close the slice over aux \
+                   families (Lean.auxFamilySiblings)",
+                  block_label(sorted_classes),
+                  m.pretty(),
+                  defs
+                    .iter()
+                    .map(|d| d.name.pretty())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                  absent.join(", "),
+                ),
+              });
             }
           }
           for (d, t) in defs.into_iter().zip(take) {
@@ -1301,8 +1319,10 @@ pub fn generate_aux_patches(
       // `surgery::compute_call_site_plans` (now driven by the same
       // `evaporated` flags). Multi-motive external targets
       // (mutual/nested external families) are outside the supported
-      // rewrite domain; skipping leaves the original compile, which
-      // kernel-check reports per constant.
+      // rewrite domain, and so is a target the environment lacks (a slice
+      // without the external container's recursor). Both are refused,
+      // naming the block (A0, WB-E1): compiling Lean's original form
+      // instead would ship a specialized recursor the kernels reject.
       let target_ok = matches!(
         lean_env.get(&target_name).as_deref(),
         Some(ix_common::env::ConstantInfo::RecInfo(r))
@@ -1321,8 +1341,24 @@ pub fn generate_aux_patches(
           !patch_present && target_ok,
         );
       }
-      if patch_present || !target_ok {
+      if patch_present {
         continue;
+      }
+      if !target_ok {
+        let why = if lean_env.get(&target_name).is_some() {
+          "is not a one-motive recursor"
+        } else {
+          "is absent from the environment"
+        };
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "evaporated auxiliary '{}' of the block of '{}': its target \
+             '{}' {why}; refusing to compile the original form",
+            source_name.pretty(),
+            block_label(sorted_classes),
+            target_name.pretty(),
+          ),
+        });
       }
       aliases.insert(source_name, target_name);
       evaporated_flags[source_j] = true;
@@ -1340,23 +1376,57 @@ pub fn generate_aux_patches(
   })
 }
 
-/// Check whether a type expression is shaped like a `.below` auxiliary.
-///
-/// A genuine `.below` type is a forall telescope ending in `Sort _`:
-///   `∀ {params} {motives} (indices) (major), Sort rlvl`
-///
-/// This distinguishes `.below` auxiliaries from coincidental name collisions
-/// like structure field accessors (e.g., `NewDecl.below : NewDecl → LocalDecl`).
-fn is_below_shaped(typ: &LeanExpr) -> bool {
-  use ix_common::env::ExprData;
+/// The block a refusal names: the first member of its first canonical class.
+pub(crate) fn block_label(sorted_classes: &[Vec<Name>]) -> String {
+  sorted_classes
+    .first()
+    .and_then(|c| c.first())
+    .map_or_else(|| "<empty>".to_string(), |n| n.pretty())
+}
+
+/// Whether a type is a Prop former: a forall telescope ending in `Prop`
+/// (Lean's `isPropFormerType` on an inductive's type, which is a syntactic
+/// telescope for every inductive the elaborator emits).
+fn is_prop_former(typ: &LeanExpr) -> bool {
+  use ix_common::env::{ExprData, LevelData};
   let mut cur = typ;
   loop {
     match cur.as_data() {
       ExprData::ForallE(_, _, body, _, _) => cur = body,
-      ExprData::Sort(_, _) => return true,
+      ExprData::Sort(l, _) => return matches!(l.as_data(), LevelData::Zero(_)),
       _ => return false,
     }
   }
+}
+
+/// Whether Lean generates the `.below`/`.brecOn` families (and their nested
+/// `_N` members) for the Lean mutual block `original_all`, by Lean's own
+/// conditions, never by name shape (A0, WB-B1):
+///
+/// - Type-level (`Lean.Meta.mkBelow`/`mkBRecOn`): the inductive is
+///   recursive (`isRec`) and not a Prop former;
+/// - Prop-level (`Lean.Meta.IndPredBelow.mkBelow`): the inductive predicate
+///   is recursive and not `unsafe` (Lean also skips classes, which the
+///   compiler's environment does not record).
+///
+/// `isRec` is a property of the whole Lean block, so any member decides.
+/// A user constant named `T.below`/`T.brecOn` for a non-recursive `T` (a
+/// definition, or a structure field accessor such as
+/// `IndPredBelow.NewDecl.below`) is therefore never taken for the
+/// auxiliary.
+pub fn below_family_lean_exists(
+  lean_env: &LeanEnv,
+  original_all: &[Name],
+) -> bool {
+  original_all
+    .iter()
+    .find_map(|n| match lean_env.get(n).as_deref() {
+      Some(ix_common::env::ConstantInfo::InductInfo(v)) => {
+        Some(v.is_rec && !(v.is_unsafe && is_prop_former(&v.cnst.typ)))
+      },
+      _ => None,
+    })
+    .unwrap_or(false)
 }
 
 /// Populate `stt.canon_kenv` with canonical `.below` types and their

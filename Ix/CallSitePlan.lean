@@ -66,6 +66,14 @@ structure CallSitePlan where
       must be synthesized by a recursive call into another canonical
       block". -/
   sourceInBlock : Array Bool
+  /-- `true` when source minor `i` belongs to a source motive of this
+      canonical SCC (`sourceInBlock` of its parent motive). A dropped minor
+      with this bit set is a collapse drop: its canonical slot is held by a
+      kept sibling, and the call site must show the two equal
+      (`collapsePartner`). A dropped minor without it belongs to another SCC
+      (split) or to the evaporated head-rewrite telescope. Mirrors Rust
+      `CallSitePlan::minor_in_block`. -/
+  minorInBlock : Array Bool
   /-- `some` when the callee is an EVAPORATED aux recursor — a
       `<all0>.rec_N` whose nested occurrence lost every spec-param
       inductive to another SCC. Its claim is aliased to the external
@@ -138,6 +146,9 @@ structure BRecOnCallSitePlan where
   nIndices : Nat
   motiveKeep : Array Bool
   sourceToCanonMotive : Array Nat
+  /-- The recursor plan's `sourceInBlock`: a dropped motive (and handler)
+      with this bit set is a collapse drop, checked at the call site. -/
+  sourceInBlock : Array Bool
   deriving Repr, Nonempty, Inhabited, BEq
 
 namespace BRecOnCallSitePlan
@@ -148,7 +159,8 @@ def fromRecPlan (plan : CallSitePlan) : BRecOnCallSitePlan :=
     nSourceMotives := plan.nSourceMotives
     nIndices := plan.nIndices
     motiveKeep := plan.motiveKeep
-    sourceToCanonMotive := plan.sourceToCanonMotive }
+    sourceToCanonMotive := plan.sourceToCanonMotive
+    sourceInBlock := plan.sourceInBlock }
 
 /-- Mirrors Rust `BRecOnCallSitePlan::n_canonical_motives` (surgery.rs:167). -/
 def nCanonicalMotives (plan : BRecOnCallSitePlan) : Nat :=
@@ -185,5 +197,139 @@ def belowPlanKeyIsHead (name : Name) : Bool :=
   match name with
   | .str _ s _ => s == "below" || s.startsWith "below_"
   | _ => false
+
+/-! ## Collapse drops (A0, WB-B4)
+
+A plan drops the motives and minors (and `.brecOn` handlers) of collapsed
+members: their canonical slot is held by one kept argument. The drop is
+sound only when the dropped argument compiles to the same Ixon as the kept
+argument at its slot; otherwise the rebuilt spine runs the kept member's
+code at the dropped member's nodes (the `SurgCollapse` miscompile). The
+comparison is on compiled forms, not Lean terms: the motives of collapsed
+members are written over different Lean types (`A` vs `B`) and become equal
+only after compilation, where collapsed members share one projection
+address. Mirrors the Rust helpers of `surgery.rs` (`ArgSlot`,
+`CollapseCheck`, `collapse_partner`, `collapse_checks`). -/
+
+/-- The message of every refused collapse drop (both compilers). -/
+def collapseDropError : String := "collapse call site drops distinct arguments"
+
+/-- The message of a refused eta-wrapped partial application of a plan head
+    that drops collapsed arguments (both compilers): the wrapper's dropped
+    arguments are bound variables, distinct from the kept ones by
+    construction. -/
+def collapseEtaError : String := "collapse call site is a partial application"
+
+/-- Whether the plan drops a motive of a collapsed member of this SCC (its
+    minors follow the motive). Mirrors Rust `CallSitePlan::drops_collapsed`. -/
+def CallSitePlan.dropsCollapsed (plan : CallSitePlan) : Bool :=
+  (plan.motiveKeep.zip plan.sourceInBlock).any fun (k, b) => !k && b
+
+/-- Mirrors Rust `BRecOnCallSitePlan::drops_collapsed`. -/
+def BRecOnCallSitePlan.dropsCollapsed (plan : BRecOnCallSitePlan) : Bool :=
+  (plan.motiveKeep.zip plan.sourceInBlock).any fun (k, b) => !k && b
+
+/-- Where the compiled form of one source argument of a surgered call site
+    lives: at a canonical position of the rebuilt spine, or in the call
+    site's collapsed list (which also holds the source form of a kept,
+    split-adapted minor). Mirrors Rust `ArgSlot`. -/
+inductive ArgSlot where
+  | canon (i : Nat)
+  | collapsed (i : Nat)
+  deriving Repr, Inhabited, BEq
+
+/-- One obligation of a collapse drop: the compiled form of the dropped
+    source argument `src` must equal that of the kept argument `keptSrc` at
+    the same canonical slot. Mirrors Rust `CollapseCheck`. -/
+structure CollapseCheck where
+  what : String
+  src : Nat
+  keptSrc : Nat
+  dropped : ArgSlot
+  kept : ArgSlot
+  deriving Repr, Inhabited
+
+/-- The kept source argument whose canonical slot a dropped one shares:
+    `.ok none` when `i` is kept or dropped without being a collapse drop
+    (its motive belongs to another SCC), `.ok (some j)` for a collapse drop
+    with kept partner `j`, `.error ()` for a collapse drop with no kept
+    argument at its slot. Mirrors Rust `collapse_partner`. -/
+def collapsePartner (keep : Array Bool) (sourceToCanon : Array Nat)
+    (inBlock : Array Bool) (i : Nat) : Except Unit (Option Nat) :=
+  if keep.getD i true || !(inBlock.getD i false) then
+    .ok none
+  else
+    match sourceToCanon[i]? with
+    | none => .error ()
+    | some slot =>
+      match (List.range keep.size).find? fun j =>
+          keep[j]! && sourceToCanon[j]? == some slot with
+      | some j => .ok (some j)
+      | none => .error ()
+
+/-- The collapse checks of one band of a call site (`what` names the band:
+    motive, minor or handler); `slots[i]` is where source argument `i` of the
+    band was compiled. A drop with no kept partner is an error (the message
+    names `compiling` and `head`). Mirrors Rust `collapse_checks`. -/
+def collapseChecks (what : String) (keep : Array Bool) (sourceToCanon : Array Nat)
+    (inBlock : Array Bool) (slots : Array ArgSlot) (compiling head : String) :
+    Except String (Array CollapseCheck) := do
+  let mut out : Array CollapseCheck := #[]
+  for i in [0:slots.size] do
+    match collapsePartner keep sourceToCanon inBlock i with
+    | .ok none => pure ()
+    | .ok (some j) =>
+      out := out.push { what, src := i, keptSrc := j, dropped := slots[i]!,
+                        kept := slots[j]! }
+    | .error () =>
+      throw s!"{collapseDropError}: compiling '{compiling}', call-site head \
+'{head}': dropped {what} #{i} has no kept argument at its canonical slot"
+  return out
+
+/-! ## Existence of the `.below`/`.brecOn` families (A0, WB-B1) -/
+
+/-- Whether a type is a Prop former: a forall telescope ending in `Prop`
+    (Lean's `isPropFormerType` on an inductive's type, a syntactic telescope
+    for every inductive the elaborator emits). Mirrors Rust
+    `is_prop_former` (aux_gen.rs). -/
+def isPropFormer (typ : Expr) : Bool := Id.run do
+  let mut cur := typ
+  repeat
+    match cur with
+    | .forallE _ _ body _ _ => cur := body
+    | .sort (.zero _) _ => return true
+    | _ => return false
+  return false -- unreachable: the loop always returns
+
+/-- Whether Lean generates the `.below`/`.brecOn` families (and their nested
+    `_N` members) for the Lean mutual block `originalAll`, by Lean's own
+    conditions, never by name shape:
+
+    - Type-level (`Lean.Meta.mkBelow`/`mkBRecOn`): the inductive is
+      recursive (`isRec`) and not a Prop former;
+    - Prop-level (`Lean.Meta.IndPredBelow.mkBelow`): the inductive predicate
+      is recursive and not `unsafe` (Lean also skips classes, which the
+      compiler's environment does not record).
+
+    `isRec` is a property of the whole Lean block, so the first member found
+    decides. A user constant named `T.below`/`T.brecOn` for a non-recursive
+    `T` (a definition, or a structure field accessor such as
+    `IndPredBelow.NewDecl.below`) is therefore never taken for the
+    auxiliary. Mirrors Rust `below_family_lean_exists` (aux_gen.rs). -/
+def belowFamilyLeanExists (lookup : Name → Option ConstantInfo)
+    (originalAll : Array Name) : Bool := Id.run do
+  for n in originalAll do
+    match lookup n with
+    | some (.inductInfo v) =>
+      return v.isRec && !(v.isUnsafe && isPropFormer v.cnst.type)
+    | _ => pure ()
+  return false
+
+/-- The block a refusal names: the first member of its first canonical
+    class. Mirrors Rust `aux_gen::block_label`. -/
+def blockLabel (sortedClasses : Array (Array Name)) : String :=
+  match sortedClasses[0]? >>= (·[0]?) with
+  | some n => n.pretty
+  | none => "<empty>"
 
 end Ix.AuxGen

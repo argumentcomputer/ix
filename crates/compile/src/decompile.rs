@@ -4457,6 +4457,9 @@ fn install_decompile_call_site_plans(
   }
 
   let original_all: Vec<Name> = all_names.to_vec();
+  // Same existence rule as the compile side (A0, WB-B1/A5): derived
+  // `.brecOn`/`.below` plans only for families Lean generates.
+  let below_lean = aux_gen::below_family_lean_exists(env, &original_all);
   let mut plan_blocks =
     stored_plan_blocks_for_original_all(&original_all, stt, muts_index);
   if plan_blocks.is_empty() {
@@ -4509,6 +4512,7 @@ fn install_decompile_call_site_plans(
       // decompiling with whichever block's plan happened to install
       // first (plans/aux-recursor-alias-collision.md §2.4).
       if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
+        && below_lean
         && (aux_member_names.contains(&brecon_name)
           || env.contains_key(&brecon_name))
       {
@@ -4547,6 +4551,7 @@ fn install_decompile_call_site_plans(
         }
       }
       if let Some(below_name) = surgery::rec_name_to_below_name(&name)
+        && below_lean
         && (aux_member_names.contains(&below_name)
           || env.contains_key(&below_name))
       {

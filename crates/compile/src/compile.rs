@@ -269,6 +269,13 @@ pub struct BlockCache {
   /// Accumulated compiled Ixon expressions for collapsed call-site args.
   /// Drained into `ConstantMeta.meta_sharing` after compilation completes.
   pub surgery_sharing: Vec<Arc<Expr>>,
+  /// Set while compiling the original Lean form of a regenerated auxiliary
+  /// (`compile_const_inner` with `aux = false`): the result is provenance
+  /// only (`Named.original` address and metadata, never a stored constant),
+  /// and its call sites keep every dropped argument in `Collapsed`
+  /// metadata, so the collapse-drop check (A0) does not apply there. Every
+  /// stored constant is compiled with this flag unset.
+  pub provenance_only: bool,
 }
 
 #[derive(Debug)]
@@ -313,6 +320,53 @@ impl CompileState {
       blobs: self.env.blob_count(),
       blocks: self.blocks.len(),
     }
+  }
+
+  /// Claim `name` for an aux_gen product at `addr` (A0: single ownership).
+  ///
+  /// Insert-once: the first claim wins and an identical re-claim is a no-op,
+  /// but a claim at a different address — by another aux block, or on a
+  /// name a non-aux block has already compiled — is a hard error instead of
+  /// a schedule-dependent overwrite (the `FieldBelowRace` shape, WB-C1).
+  pub fn claim_aux_name(
+    &self,
+    name: &Name,
+    addr: &Address,
+  ) -> Result<(), CompileError> {
+    if let Some(existing) = self.name_to_addr.get(name)
+      && *existing.value() != *addr
+    {
+      return Err(name_claim_conflict(name, existing.value(), addr));
+    }
+    match self.aux_name_to_addr.entry(name.clone()) {
+      dashmap::mapref::entry::Entry::Occupied(e) => {
+        if e.get() != addr {
+          return Err(name_claim_conflict(name, e.get(), addr));
+        }
+      },
+      dashmap::mapref::entry::Entry::Vacant(e) => {
+        e.insert(addr.clone());
+      },
+    }
+    self.aux_gen_extra_names.insert(name.clone());
+    Ok(())
+  }
+
+  /// Claim `name` for the block that compiles it (aux mode) at `addr`.
+  /// A name aux_gen has claimed at another address is a hard error: two
+  /// producers would otherwise race for it.
+  pub fn claim_compiled_name(
+    &self,
+    name: &Name,
+    addr: &Address,
+  ) -> Result<(), CompileError> {
+    if let Some(existing) = self.aux_name_to_addr.get(name)
+      && *existing.value() != *addr
+    {
+      return Err(name_claim_conflict(name, existing.value(), addr));
+    }
+    self.name_to_addr.insert(name.clone(), addr.clone());
+    Ok(())
   }
 
   /// Look up a compiled constant's address by name.
@@ -411,6 +465,23 @@ impl CompileState {
 // ===========================================================================
 // Helper functions
 // ===========================================================================
+
+/// Two producers claim one name at different addresses.
+pub fn name_claim_conflict(
+  name: &Name,
+  existing: &Address,
+  claimed: &Address,
+) -> CompileError {
+  CompileError::InvalidMutualBlock {
+    reason: format!(
+      "conflicting claims for name '{}': already registered at {:.12}, \
+       claimed again at {:.12}",
+      name.pretty(),
+      existing.hex(),
+      claimed.hex(),
+    ),
+  }
+}
 
 /// Convert a Nat to u64, returning an error if the value is too large.
 fn nat_to_u64(n: &Nat, context: &'static str) -> Result<u64, CompileError> {
@@ -764,6 +835,40 @@ fn eta_adapter_needed(
     .is_some_and(|arity| !arity.head_rewrite && n_args < arity.floor)
 }
 
+/// The constant being compiled, for error messages.
+fn compiling_label(cache: &BlockCache) -> String {
+  cache.compiling.as_ref().map_or_else(|| "<none>".to_string(), |c| c.pretty())
+}
+
+/// Refuse the Tier-B eta adapter for a head whose plan drops arguments of
+/// collapsed members. The wrapper binds the missing source arguments as
+/// variables, so a dropped motive or minor is a bound variable that no kept
+/// argument equals: the drop cannot be justified (and both kernels reject
+/// such users anyway).
+fn refuse_collapsed_eta(
+  name: &Name,
+  n_args: usize,
+  cache: &BlockCache,
+  stt: &CompileState,
+) -> Result<(), CompileError> {
+  if cache.provenance_only {
+    return Ok(());
+  }
+  if plan_head_arity(stt, name).is_some_and(|arity| arity.drops_collapsed) {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "{}: compiling '{}', call-site head '{}' applied to {} argument(s) \
+         would be eta-wrapped, dropping bound arguments of collapsed members",
+        surgery::COLLAPSE_ETA_ERROR,
+        compiling_label(cache),
+        name.pretty(),
+        n_args,
+      ),
+    });
+  }
+  Ok(())
+}
+
 /// Build the source-interface eta wrapper for a short plan-bearing
 /// application. Binder types/names/info come from the source declaration's
 /// stored Pi telescope after universe and applied-prefix instantiation.
@@ -909,6 +1014,11 @@ pub fn compile_expr(
       /// expression of a head-rewritten call site. It gets a
       /// `CallSite.orig_head` pointer instead of a source-order entry.
       orig_head_collapsed: bool,
+      /// Collapse drops to justify once the arguments are compiled: each
+      /// dropped argument's compiled form must equal its kept partner's.
+      collapse_checks: Vec<surgery::CollapseCheck>,
+      /// The call-site head, for the refusal message.
+      head_name: Name,
     },
     /// Replace the ordinary synthesized Binder/CallSite root with the
     /// decompile-facing eta marker after the wrapper has compiled.
@@ -987,6 +1097,7 @@ pub fn compile_expr(
 
           ExprData::Const(name, levels, _) => {
             if is_eta {
+              refuse_collapsed_eta(name, 0, cache, stt)?;
               let (wrapper, n_synth) =
                 synthesize_eta_call_site(name, levels, &[], stt)?;
               stack.push(Frame::BuildEtaCallSite { n_synth, n_applied: 0 });
@@ -1191,10 +1302,16 @@ pub fn compile_expr(
                         meta: 0,
                       });
                     }
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
+                    let mut minor_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(minors.len());
                     let n_specs = specs.len();
                     canonical_args.extend(specs);
                     for (src_i, motive) in motives.iter().enumerate() {
                       if plan.motive_keep[src_i] {
+                        motive_slots
+                          .push(surgery::ArgSlot::Canon(canonical_args.len()));
                         canonical_args.push(motive.clone());
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: n_specs as u64,
@@ -1203,6 +1320,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1230,11 +1349,14 @@ pub fn compile_expr(
                         if adapted_minor.is_some() {
                           let sharing_idx = collapsed_args.len();
                           collapsed_args.push(minor.clone());
+                          minor_slots
+                            .push(surgery::ArgSlot::Collapsed(sharing_idx));
                           entries.push(CallSiteEntry::Collapsed {
                             sharing_idx: sharing_idx as u64,
                             meta: 0,
                           });
                         } else {
+                          minor_slots.push(surgery::ArgSlot::Canon(canon_pos));
                           entries.push(CallSiteEntry::Kept {
                             canon_idx: canon_pos as u64,
                             meta: 0,
@@ -1243,6 +1365,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(minor.clone());
+                        minor_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1271,12 +1395,34 @@ pub fn compile_expr(
                     // the target's level list.
                     let head_for_canon =
                       LeanExpr::cnst(name.clone(), target_levels);
+                    let compiling = compiling_label(cache);
+                    let head = name.pretty();
+                    let mut collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling,
+                      &head,
+                    )?;
+                    collapse_checks.extend(surgery::collapse_checks(
+                      "minor",
+                      &plan.minor_keep,
+                      &plan.source_to_canon_minor,
+                      &plan.minor_in_block,
+                      &minor_slots,
+                      &compiling,
+                      &head,
+                    )?);
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: true,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1321,6 +1467,10 @@ pub fn compile_expr(
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
+                    let mut minor_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(minors.len());
 
                     // Params: always kept, identity mapping
                     for (i, p) in params.iter().enumerate() {
@@ -1338,6 +1488,7 @@ pub fn compile_expr(
                         let canon_pos =
                           canon_base + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, motive.clone()));
+                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1345,6 +1496,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1372,11 +1525,14 @@ pub fn compile_expr(
                         if adapted_minor.is_some() {
                           let sharing_idx = collapsed_args.len();
                           collapsed_args.push(minor.clone());
+                          minor_slots
+                            .push(surgery::ArgSlot::Collapsed(sharing_idx));
                           entries.push(CallSiteEntry::Collapsed {
                             sharing_idx: sharing_idx as u64,
                             meta: 0,
                           });
                         } else {
+                          minor_slots.push(surgery::ArgSlot::Canon(canon_pos));
                           entries.push(CallSiteEntry::Kept {
                             canon_idx: canon_pos as u64,
                             meta: 0,
@@ -1385,6 +1541,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(minor.clone());
+                        minor_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1414,12 +1572,34 @@ pub fn compile_expr(
                     let n_collapsed = collapsed_args.len();
 
                     // Push frames in reverse order (LIFO)
+                    let compiling = compiling_label(cache);
+                    let head = name.pretty();
+                    let mut collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling,
+                      &head,
+                    )?;
+                    collapse_checks.extend(surgery::collapse_checks(
+                      "minor",
+                      &plan.minor_keep,
+                      &plan.source_to_canon_minor,
+                      &plan.minor_in_block,
+                      &minor_slots,
+                      &compiling,
+                      &head,
+                    )?);
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: false,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1464,6 +1644,8 @@ pub fn compile_expr(
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
 
                     for (i, p) in params.iter().enumerate() {
                       canonical_args.push((i, p.clone()));
@@ -1479,6 +1661,7 @@ pub fn compile_expr(
                         let canon_pos = motive_canon_base
                           + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, motive.clone()));
+                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1486,6 +1669,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1510,12 +1695,23 @@ pub fn compile_expr(
 
                     let n_canonical = sorted_canon.len();
                     let n_collapsed = collapsed_args.len();
+                    let collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling_label(cache),
+                      &name.pretty(),
+                    )?;
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: false,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1560,6 +1756,10 @@ pub fn compile_expr(
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
+                    let mut handler_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(handlers.len());
 
                     for (i, p) in params.iter().enumerate() {
                       canonical_args.push((i, p.clone()));
@@ -1575,6 +1775,7 @@ pub fn compile_expr(
                         let canon_pos = motive_canon_base
                           + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, motive.clone()));
+                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1582,6 +1783,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1606,6 +1809,7 @@ pub fn compile_expr(
                         let canon_pos = handler_canon_base
                           + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, handler.clone()));
+                        handler_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1613,6 +1817,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(handler.clone());
+                        handler_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1639,12 +1845,34 @@ pub fn compile_expr(
 
                     let n_canonical = sorted_canon.len();
                     let n_collapsed = collapsed_args.len();
+                    let compiling = compiling_label(cache);
+                    let head = name.pretty();
+                    let mut collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling,
+                      &head,
+                    )?;
+                    collapse_checks.extend(surgery::collapse_checks(
+                      "handler",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &handler_slots,
+                      &compiling,
+                      &head,
+                    )?);
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: false,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1657,6 +1885,7 @@ pub fn compile_expr(
                   }
                 }
                 if eta_adapter_needed(name, args.len(), cache, stt) {
+                  refuse_collapsed_eta(name, args.len(), cache, stt)?;
                   let (wrapper, n_synth) =
                     synthesize_eta_call_site(name, levels, &args, stt)?;
                   stack.push(Frame::BuildEtaCallSite {
@@ -1946,6 +2175,8 @@ pub fn compile_expr(
         n_canonical,
         n_collapsed,
         orig_head_collapsed,
+        collapse_checks,
+        head_name,
       } => {
         // Pop collapsed arg results and their arena roots
         let mut collapsed_exprs = Vec::with_capacity(n_collapsed);
@@ -1981,6 +2212,50 @@ pub fn compile_expr(
         }
         canonical_exprs.reverse();
         canonical_roots.reverse();
+
+        // A collapse drop is sound only when the dropped argument compiles
+        // to the same Ixon as the kept argument at its canonical slot (the
+        // two members share one projection address, so motives written
+        // over `A` and `B` agree here). Otherwise the rebuilt spine would
+        // run the kept member's code at the dropped member's nodes.
+        let checks: &[surgery::CollapseCheck] =
+          if cache.provenance_only { &[] } else { &collapse_checks };
+        for check in checks {
+          let slot_expr = |slot: surgery::ArgSlot| match slot {
+            surgery::ArgSlot::Canon(i) => canonical_exprs.get(i),
+            surgery::ArgSlot::Collapsed(i) => collapsed_exprs.get(i),
+          };
+          let (Some(dropped), Some(kept)) =
+            (slot_expr(check.dropped), slot_expr(check.kept))
+          else {
+            return Err(CompileError::InvalidMutualBlock {
+              reason: format!(
+                "{}: compiling '{}', call-site head '{}': {} #{} has no \
+                 compiled argument",
+                surgery::COLLAPSE_DROP_ERROR,
+                compiling_label(cache),
+                head_name.pretty(),
+                check.what,
+                check.src,
+              ),
+            });
+          };
+          if dropped != kept {
+            return Err(CompileError::InvalidMutualBlock {
+              reason: format!(
+                "{}: compiling '{}', call-site head '{}': dropped {} #{} \
+                 differs from the kept {} #{}",
+                surgery::COLLAPSE_DROP_ERROR,
+                compiling_label(cache),
+                head_name.pretty(),
+                check.what,
+                check.src,
+                check.what,
+                check.kept_src,
+              ),
+            });
+          }
+        }
         let canon_meta = canonical_roots.clone();
 
         // Pop head result and root
@@ -2086,6 +2361,9 @@ struct PlanHeadArity {
   expected: usize,
   /// Evaporated-aux head rewrites do not yet have a Tier-B adapter.
   head_rewrite: bool,
+  /// The plan drops arguments of collapsed members: a Tier-B eta wrapper
+  /// would drop bound variables, which no kept argument equals.
+  drops_collapsed: bool,
 }
 
 fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
@@ -2101,6 +2379,7 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
       floor: plan.minimal_full_prefix(),
       expected,
       head_rewrite: plan.head_rewrite.is_some(),
+      drops_collapsed: plan.drops_collapsed(),
     });
   }
   if let Some(plan) = stt.below_call_site_plans.get(name)
@@ -2112,7 +2391,12 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
     } else {
       floor
     };
-    return Some(PlanHeadArity { floor, expected, head_rewrite: false });
+    return Some(PlanHeadArity {
+      floor,
+      expected,
+      head_rewrite: false,
+      drops_collapsed: plan.drops_collapsed(),
+    });
   }
   if let Some(plan) = stt.brec_on_call_site_plans.get(name)
     && !plan.is_identity()
@@ -2122,6 +2406,7 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
       floor: expected,
       expected,
       head_rewrite: false,
+      drops_collapsed: plan.drops_collapsed(),
     });
   }
   None
@@ -3985,7 +4270,28 @@ pub fn compile_const_no_aux(
   compile_const_inner(name, &filtered, lean_env, cache, stt, kctx, false)
 }
 
+/// `aux = false` is the original-form compile of a regenerated auxiliary
+/// (`Named.original` provenance): its constants are never stored, so the
+/// block cache is marked `provenance_only` for its duration (see
+/// `BlockCache::provenance_only`).
 fn compile_const_inner(
+  name: &Name,
+  all: &NameSet,
+  lean_env: &Arc<LeanEnv>,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+  kctx: &mut KernelCtx,
+  aux: bool,
+) -> Result<Address, CompileError> {
+  let prev = cache.provenance_only;
+  cache.provenance_only = !aux;
+  let res =
+    compile_const_inner_body(name, all, lean_env, cache, stt, kctx, aux);
+  cache.provenance_only = prev;
+  res
+}
+
+fn compile_const_inner_body(
   name: &Name,
   all: &NameSet,
   lean_env: &Arc<LeanEnv>,
@@ -4241,7 +4547,7 @@ fn compile_const_inner(
   };
 
   if aux {
-    stt.name_to_addr.insert(name.clone(), addr.clone());
+    stt.claim_compiled_name(name, &addr)?;
   }
   Ok(addr)
 }
@@ -4394,7 +4700,7 @@ fn compile_mutual(
           // once, and ConstantMeta is an arena-sized deep clone.
           let meta = all_metas.remove(&n).unwrap_or_default();
           stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
-          stt.name_to_addr.insert(n.clone(), addr.clone());
+          stt.claim_compiled_name(&n, &addr)?;
         }
       }
     } else {
@@ -4452,7 +4758,7 @@ fn compile_mutual(
             stt
               .env
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.name_to_addr.insert(n.clone(), proj_addr.clone());
+            stt.claim_compiled_name(&n, &proj_addr)?;
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
           }
@@ -4472,7 +4778,7 @@ fn compile_mutual(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
-              stt.name_to_addr.insert(ctor.cnst.name.clone(), ctor_addr);
+              stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
             } else {
               stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta)?;
             }
@@ -4489,7 +4795,7 @@ fn compile_mutual(
       if aux {
         stt.env.store_const(proj_addr.clone(), proj);
         stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-        stt.name_to_addr.insert(n.clone(), proj_addr);
+        stt.claim_compiled_name(&n, &proj_addr)?;
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
       }
@@ -4647,6 +4953,13 @@ fn compile_mutual(
         lean_env,
         aux_layout_stored.as_ref(),
       )?;
+      // Shape check for the derived plans (A0, WB-A5/C3): `.brecOn` and
+      // `.below` plans exist only when Lean generates those families
+      // (`below_family_lean_exists`), the same rule aux_gen uses. A user
+      // constant `X.brecOn`/`X.below` of a reordered non-recursive block
+      // is the user's and keeps its call sites.
+      let below_lean =
+        aux_gen::below_family_lean_exists(lean_env, &original_all);
       for (name, plan) in plans {
         if *IX_LOG_AUX_NAMES {
           eprintln!(
@@ -4677,7 +4990,7 @@ fn compile_mutual(
         // differing pre-existing entry is a claim collision — fail
         // loudly instead of shipping schedule-dependent rewrites
         // (plans/aux-recursor-alias-collision.md §2.4).
-        if plan.head_rewrite.is_none() {
+        if plan.head_rewrite.is_none() && below_lean {
           // Keyed per name present, not gated on `.brecOn` itself: a
           // closure-only environment can hold `X.brecOn.go` (an equation
           // lemma's dependency) without `X.brecOn`, and aux_gen regenerates
@@ -5049,6 +5362,7 @@ mod tests {
         source_to_canon_motive: vec![1, 0],
         source_to_canon_minor: vec![1, 0],
         source_in_block: vec![true, true],
+        minor_in_block: vec![true, true],
         head_rewrite: None,
       },
     );
@@ -5094,6 +5408,7 @@ mod tests {
         source_to_canon_motive: vec![1, 0],
         source_to_canon_minor: vec![1, 0],
         source_in_block: vec![true, true],
+        minor_in_block: vec![true, true],
         head_rewrite: None,
       },
     );
@@ -5142,6 +5457,7 @@ mod tests {
         source_to_canon_motive: vec![0, 1, 3, 2],
         source_to_canon_minor: vec![0, 1, 3, 2],
         source_in_block: vec![true, true, true, true],
+        minor_in_block: vec![true, true, true, true],
         head_rewrite: None,
       },
     );
@@ -5233,6 +5549,7 @@ mod tests {
         n_indices: 0,
         motive_keep: vec![true, true, true, true],
         source_to_canon_motive: vec![0, 3, 1, 2],
+        source_in_block: vec![true, true, true, true],
       },
     );
 
@@ -5289,6 +5606,7 @@ mod tests {
         n_indices: 0,
         motive_keep: vec![true, true, true, true],
         source_to_canon_motive: vec![0, 3, 1, 2],
+        source_in_block: vec![true, true, true, true],
       },
     );
 

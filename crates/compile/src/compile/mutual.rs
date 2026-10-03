@@ -234,8 +234,7 @@ pub fn compile_aux_block_with_rename(
       stt
         .env
         .register_name(n.clone(), Named::new(standalone_addr.clone(), meta));
-      stt.aux_name_to_addr.insert(n.clone(), standalone_addr.clone());
-      stt.aux_gen_extra_names.insert(n.clone());
+      stt.claim_aux_name(&n, &standalone_addr)?;
       pending_names.push(n);
     }
     if !pending_names.is_empty() {
@@ -295,8 +294,7 @@ pub fn compile_aux_block_with_rename(
             stt
               .env
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.aux_name_to_addr.insert(n.clone(), proj_addr.clone());
-            stt.aux_gen_extra_names.insert(n.clone());
+            stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
 
             // Constructor projections. Inductives don't typically get a
@@ -315,10 +313,7 @@ pub fn compile_aux_block_with_rename(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
-              stt
-                .aux_name_to_addr
-                .insert(ctor.cnst.name.clone(), ctor_addr.clone());
-              stt.aux_gen_extra_names.insert(ctor.cnst.name.clone());
+              stt.claim_aux_name(&ctor.cnst.name, &ctor_addr)?;
               pending_names.push(ctor.cnst.name.clone());
             }
           },
@@ -329,8 +324,7 @@ pub fn compile_aux_block_with_rename(
             stt
               .env
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.aux_name_to_addr.insert(n.clone(), proj_addr);
-            stt.aux_gen_extra_names.insert(n.clone());
+            stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
           },
           MutConst::Defn(_) => {
@@ -340,8 +334,7 @@ pub fn compile_aux_block_with_rename(
             stt
               .env
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.aux_name_to_addr.insert(n.clone(), proj_addr);
-            stt.aux_gen_extra_names.insert(n.clone());
+            stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
           },
         }
@@ -492,8 +485,7 @@ fn register_aux_aliases(
 
     compile_name(&source, stt);
     stt.env.register_name(source.clone(), alias_named);
-    stt.aux_name_to_addr.insert(source.clone(), target_addr);
-    stt.aux_gen_extra_names.insert(source.clone());
+    stt.claim_aux_name(&source, &target_addr)?;
     pending_names.push(source);
   }
 
