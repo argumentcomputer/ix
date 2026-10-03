@@ -3,7 +3,7 @@
 This reference holds the enduring architecture and design constraints. The
 [roadmap](roadmap.md) owns priorities, delivery state and acceptance gates.
 Normative wire and trust contracts remain in their focused specifications:
-- [Ixon v3](ixon-v3.md);
+- [Ixon v4](ixon-v4.md);
 - [x86 instructions](x86-encoded-instructions.md);
 - [x86 streams and objects](x86-stream-objects.md);
 - the [trust ledger](trusted-extern-ledger.md).
@@ -18,7 +18,7 @@ pipeline, its IRs and their contracts are on branch `jcb/ixby-archive`.
   only when a proved checker validates their output, or when the
   transformation is proved correct for every heuristic choice. A rejected
   optimisation falls back to a checked baseline; invalid input is an error.
-- **Contracts are lower bounds.** Ixon v3 usage, ownership, locality and
+- **Contracts are lower bounds.** Ixon usage, ownership, locality and
   borrow contracts are part of source identity.
   - The compiler honours every written contract and never weakens one.
   - It may establish a *stronger* guarantee (unique, local, borrowed,

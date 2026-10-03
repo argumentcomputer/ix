@@ -1,14 +1,14 @@
 import Compilatrix.Ixon.V3.Validate
 import Compilatrix.Tools.Check
 
-/-! Admission census over an Ixon v3 closure.
+/-! Admission census over an Ixon v4 closure.
 
 For every constant, the census records the first stage that rejects it:
 strict decoding, erased typing, then the compilation policy for constants
 without usable kernel semantics (`partial` and `unsafe` definitions, plan
 decision D12). Constants that pass every implemented stage report the next
 stage of the rebuilt pipeline, which does not exist yet. The report also
-records headroom against the v3 consumer budgets. Output is deterministic:
+records headroom against the consumer budgets. Output is deterministic:
 constants are sorted by address and every summary is a sorted count. -/
 
 namespace Compilatrix.Tools.Census

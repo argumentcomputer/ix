@@ -1,11 +1,26 @@
-# Ix frontend and Ixon v3
+# Ix frontend and Ixon v4
 
-Compilatrix's new source boundary consumes ix `jcb/ix-compilatrix` at
-`0a31c8dbc63755924c645bf1afedc563e395e88a`: ix `main` at `b413cd93` plus the
-Lean 4.34.0 update. The producer implements a shared Lean frontend with
-usage, ownership, relative locality and scoped shared borrowing. Aiur is one
-consumer. Compilatrix consumes the resulting binary objects; it does not
+Compilatrix consumes closures produced by ix's shared Lean frontend: usage,
+ownership, relative locality and scoped shared borrowing are written in the
+source and carried, as contracts, in the content-addressed objects. Aiur is
+one consumer. Compilatrix consumes the resulting binary objects; it does not
 introduce another parser or elaborator.
+
+Two ix revisions are pinned, for two different things:
+
+- **The wire** is Ixon **v4** (`ixon-v4`), as written by ix `jcb/ix-certified`
+  at `f829b76044a44a61023d0983516137147bbb12a7`. Its pure codec (`IxKernel/`,
+  the 11 modules of `Ix.Ixon.Canonical`'s import closure, Init only) is a Lake
+  dependency, and it is the only reader and writer of constant, expression and
+  universe bytes ([trust ledger](trusted-extern-ledger.md), `lean_dependencies`).
+- **The data model, the resource rules and the erased checker** come from ix
+  `jcb/ix-compilatrix` at `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3,
+  which introduced the contract-carrying model; v4 changed only the wire),
+  with the erased checker's primitive table and the resource profile and claim
+  framing moved to `f829b760`.
+
+The producer of the frozen fixtures is a third, local revision: `f829b760`
+plus the `--equations` export (`be45a159`, [corpus](corpus.md)).
 
 This source pin is independent of the Aiur target snapshot in
 [`vendor/aiur/README.md`](../vendor/aiur/README.md). That target contains the
@@ -14,8 +29,9 @@ Changing the source producer does not replace that target vocabulary.
 
 ## Contract and wire boundary
 
-[`Compilatrix.Ixon.V3`](../Compilatrix/Ixon/V3.lean) retains all twelve
-expression constructors with these addressed fields:
+[`Compilatrix.Ixon.V3`](../Compilatrix/Ixon/V3.lean) is the data model: all
+twelve expression constructors with these addressed fields (the namespace
+keeps the name of the Ixon version that introduced it):
 
 | Field | Meaning and encoding |
 | --- | --- |
@@ -38,34 +54,48 @@ It does not promise stack placement, a region allocator or RC elimination.
 The resource algorithms preserve upstream's scope, owner availability,
 capture, quantity and supported projection rules.
 
-The environment header is format **3**, protocol **`ixon-v3`**. Raw constant
-bytes carry no self-identifying version, so consumers must select this API
-from an authenticated versioned boundary. Never try v2 decoding as a fallback
-or reuse v2 primitive addresses. The frozen v3 primitive inventory is in
-[`primitives.tsv`](../fixtures/ixon-v4/primitives.tsv).
+**The wire.** Every integer is a TagN integer (ix's `putTagN`/`getTagN`): a
+flag of `f` bits and a value in rungs of 1, 2, 3, 4, 5 or 9 bytes, one
+encoding per value. Sharing is canonical. The environment header is TagN(4)
+flag `0xE` value 4, the single byte `0xE4`; there is no v3 reader or writer
+(a v3 header, `0xE3`, is rejected). Raw constant bytes carry no
+self-identifying version, so consumers must select this API from an
+authenticated versioned boundary. The v4 primitive inventory is ix's
+[`primitives.tsv`](../fixtures/ixon-v4/primitives.tsv) (copied unchanged); 66
+of the erased checker's primitive addresses moved from v3.
 
-The checker dispatches primitive reductions by these v3 identities. Its
-`eagerReduce` entry is a reserved synthetic marker: the ordinary declaration
-has the same content address as `id`, and cannot select special reduction
-by its address. The regression suite checks this producer exception.
+[`Ixon.V4.Convert`](../Compilatrix/Ixon/V4/Convert.lean) is the total
+structural correspondence between ix's `Ixon.*` data and ours (the only
+failure is an ix address of other than 32 bytes), and
+[`Ixon.V3.Wire`](../Compilatrix/Ixon/V3/Wire.lean) defines our encoders as
+ix's (`constantBytes c = Ixon.serConstant (constantToIx c)`, likewise
+expressions and universes). `decodeConstant` runs ix's
+`Ixon.Canonical.deConstant` (a byte and universe-expansion budget, the wire
+domain check, and re-encoding to exactly the input), converts, applies the
+consumer budgets below, and retains `constantBytes value = bytes` as evidence.
+This is not a universal codec roundtrip or source-typing theorem; ix proves
+its codec's roundtrip at the same revision (`Ix.Ixon.Verify`), which we do not
+import. Neither `Src`, nor `Recheck.run`, nor any proof mentions an ix type:
+`Recheck.run`'s import closure contains no ix module.
 
-The strict expression/constant decoders reject reserved bits, noncanonical
-encodings, truncation and trailing bytes. Successful decoding retains an
-equality proof to the canonical reencoding. This is not a universal codec
-roundtrip or source-typing theorem. Unlike the old v2 source gate, the v3
-adapter admits upstream's single-use sharing entries.
-
-Anonymous environment ingress checks sorted address tables, object hashes,
-the complete constant-set Merkle root, main membership, assumptions and
-hint indices. Metadata after the hint section is retained as opaque bytes
-and is outside admission, matching the producer's anonymous-reader boundary.
-It is not validated as a complete metadata serialization.
+[`Ixon.V3.Env`](../Compilatrix/Ixon/V3/Env.lean) frames environments itself,
+after ix's `Env.getEnv` (whose module is outside the pure package): it checks
+sorted address tables, every blob's and constant's hash, the complete
+constant-set Merkle root, main membership, assumptions and hint indices.
+Hashes are **pure BLAKE3** (`Blake3.Pure`, through `Address.blake3Pure` and
+`Merkle.rootCanonicalBy`): ix's certified reader treats addresses as keys, so
+authentication is ours, and it involves no foreign hash. Metadata after the
+hint section is retained as opaque bytes and is outside admission, matching
+the producer's anonymous-reader boundary.
 
 Default consumer budgets are 16 MiB per environment, 1 MiB per object/profile,
-16,384 environment entries per table, 4,096 entries per constant field and
-256 expression depth. Universe successor expansion retains the existing
-4,096 bound. Resource admission allows profile depth at most 256 and 100,000
-steps per declaration. Budget restrictions do not change committed bytes.
+16,384 environment entries per table, 4,096 entries per counted list of a
+constant (sharing, references, universes, mutual members, constructors,
+rules, universe arguments) and 256 expression depth (a `share` node is a
+leaf), checked on the decoded value. Universes are bounded by ix's decoder:
+65,536 expanded constructors per constant. Resource admission allows profile
+depth at most 256 and 100,000 steps per declaration. Budget restrictions do
+not change committed bytes.
 
 Typing additionally caps declaration counts and variable/field indices at
 4,096, expression conversion at 100,000 steps and 1,024 pending frames, and
@@ -89,8 +119,9 @@ all references, sharing, mutual members and supported fields from canonical
 raw bytes. There is no materialized cache that can replace those bytes.
 
 Profiles commit to explicit external interfaces, shareable types, selection
-behavior, literal pins and checker limits under `ixon-v3/resource-v1`.
-The native Resource claim binds object format 3, validator 2, the complete
+behavior, literal pins and checker limits under `ixon-v4/resource-v1`
+(TagN counts and limits). The native Resource claim (TagN(4) flag `0xE`
+value 9, the bytes `E8 01`) binds object format 4, validator 2, the complete
 constant-set root and that profile's address. `checkClaimBinding` verifies
 only those identities on a resource-only input. `ValidatedInput.checkClaim`
 checks the binding after combined validation. The command runs that combined
@@ -104,32 +135,33 @@ lake exe check-ixon-v3 fixtures/ixon-v4/handoff/accepted.ixe \
 
 The anonymous checker adapts upstream `Ix/Tc`: universes, inference,
 definitional equality, safety, inductive positivity and generated-recursor
-comparison. It decodes raw constants afresh, always verifies their hashes,
-rejects cyclic sharing, and checks every source key. Empty mutual blocks and
-orphan projections fail. There is no caller-supplied checker verdict or
-materialized cache that can replace the bytes.
+comparison. Its projection addresses hash v4 projection constants. It decodes
+raw constants afresh, always verifies their hashes, rejects cyclic sharing,
+and checks every source key. Empty mutual blocks and orphan projections fail.
+There is no caller-supplied checker verdict or materialized cache that can
+replace the bytes.
 
 Successful admission certifies execution of these algorithms, conditional
-on the existing native BLAKE3 boundary and the pinned checker's correctness.
+on the existing native BLAKE3 boundary (the checker's internal hashing and
+the resource commitments still use it) and the pinned checker's correctness.
 A whole-checker semantic soundness theorem is not provided by the adapter.
 IxVM Resource proofs remain unsupported.
 
-No compiler stage consumes v3 yet; the rebuilt pipeline ([compiler
-design](compiler-design.md)) starts from this boundary. Its ownership
-checker re-establishes every contract on the compiled program, so resource
-admission is an early, diagnosable gate rather than a proof premise, and
-stronger guarantees are granted only by that checker. Aiur Ixon/DSL
-lowering remains a later target milestone.
+The compiler's front end ([compiler design](compiler-design.md)) starts from
+this boundary (`Src.load`: decoding and erased typing, no resource
+admission). Its ownership checker re-establishes every contract on the
+compiled program, so resource admission is an early, diagnosable gate rather
+than a proof premise, and stronger guarantees are granted only by that
+checker. Aiur Ixon/DSL lowering remains a later target milestone.
 
 ## Catalog-v2 admission
 
 [`Ixon.V3.Catalog.admit`](../Compilatrix/Ixon/V3/Catalog/Admit.lean) accepts
-manifest **version 2**, object format **3**, and validator **1**
+manifest **version 2**, object format **4**, and validator **1**
 (`erased-lean-v1`). It checks the manifest, original piece bytes, membership,
 and the erased typing of every constant in the complete union. `load` exposes
 the structural boundary without granting a typing verdict. The byte-indexed
 `Admitted` record retains the load, scope, content-root and typing equations.
-Neither function projects into the frozen v2 compiler types.
 
 The loader recomputes both catalog roots, checks every piece's size, file hash
 and constant root, and rejects unresolved external assumptions. Fat members
@@ -182,31 +214,33 @@ different provenance and independent Rust verification.
 
 ## Evidence and provenance
 
-The [K1 pack](../fixtures/ixon-v4/k1/README.md) adds a 1,651-constant closure of
-ordinary Lean programs (`fib`, a `for` loop, Ackermann, `tak`, `gcd`) with the
-unfolding theorems of all 40 recursive definitions it reaches. The suite checks
-strict ingress, the recorded root, definition and equation addresses, and erased
-typing of the whole closure.
+The [K1 pack](../fixtures/ixon-v4/k1/README.md) adds a 1,596-constant closure
+of ordinary Lean programs (`fib`, a `for` loop, Ackermann, `tak`, `gcd`) with
+the unfolding theorems of all 40 recursive definitions it reaches. The suite
+checks strict ingress, the recorded root, definition and equation addresses,
+and erased typing of the whole closure.
 
-The complete portable fixture package is copied byte-for-byte from the
-producer snapshot. The compiled `tests-ixon-v3` suite checks expression
-vectors, every binder/arrow bit pattern, all 66 resource cases, addressed
-constant/profile identities, native claim framing, and complete handoff
-files. The accepted linear local identity has subject
+The portable fixture package (expressions, addressed constants and profile,
+claims, the 66 resource cases, the handoff, the text grammar and the primitive
+inventory) is copied byte for byte from ix `f829b760`
+`Tests/Fixtures/ixon-v4/`. The compiled `tests-ixon-v3` suite (2,300
+assertions) decodes and re-encodes them with this boundary, checks every
+binder/arrow bit pattern, truncation and trailing bytes, native claim framing,
+and the complete handoff. The accepted linear local identity has subject
 `f0e971f93ae7a7aa0fbf87df16a2445afdbb8d89dc0c20934cb9ae7901958269`.
 Changing its result to unrestricted changes its address/root and fails
 resource admission with `unrestrictedEscape`. Malformed bytes, wrong scopes,
-wrong claim bindings and exhausted ingress budgets are regression cases.
-The package also retains upstream text/primitive fixtures as provenance;
-this adapter implements neither a text parser nor primitive regeneration.
+wrong claim bindings, a v3 header and exhausted ingress budgets are regression
+cases. The package also retains upstream text/primitive fixtures as
+provenance; this adapter implements no text parser.
 
 The typing suite also rejects ordinary ill-typed declarations that resource
 analysis skips, and confirms that erased typing alone accepts the local-escape
 fixture. It covers scope/universe errors, sharing cycles, unsafe references,
 positivity, constructor headers, canonical recursors and tampered rules.
 Four [primitive bundles](../fixtures/ixon-v4/typing/README.md) retain producer
-bytes for Nat, Nat.add, String and Quot.lift. The larger closures passed
-upstream Rust checking; required tests run combined admission, valid literals,
+bytes for Nat, Nat.add, String and Quot.lift. They passed upstream Rust
+checking; required tests run combined admission, valid literals,
 `20 + 22 = 42`, and rejection of false arithmetic and redirected literal pins.
 
 Contract bit roundtrips, quantity laws and the executed state invariants have
@@ -224,9 +258,9 @@ its 32-byte length bound, avoiding the dependency's default native reflection.
 
 The adapted source files identify their upstream origin. Resource algorithms
 come from `Ix/Resource/{Basic,Check,Admit,Addressed}.lean`; local changes are
-module factoring, AST/address/codec interfaces and explicit consumer budgets.
-The MIT/Apache notices are retained beside the frozen fixtures. No Lean
-toolchain, native dependency or axiom is added.
+module factoring, AST/address interfaces and explicit consumer budgets. The
+MIT/Apache notices are retained beside the frozen fixtures. The ix codec is
+the only added dependency (no native code, standard axioms).
 
 Typing modules retain the upstream algorithm boundaries, including their
 large mutual recursion groups. Local adaptations replace namespace and AST
@@ -235,3 +269,17 @@ interfaces, supply pure integer-byte helpers and sized hashes, use
 parallel-worker, metadata-ingress and egress dependencies. Anonymous metadata
 types remain only to preserve the checker's mode parameterization. The driver
 adds the consumer bounds above and accounts for every raw constant key.
+
+## Name clashes
+
+ix's codec declares a root-namespace `Address` (and `hexOfByte`,
+`bytesOfHex`, …) and the root namespace `Ixon`. In a module that imports the
+codec (directly or through `Ixon.V3.Env`), a bare `Address` under
+`open Compilatrix.Ixon` is ambiguous, and `Ixon.X` under `open Compilatrix`
+outside the `Compilatrix` namespace can resolve to ix's; write
+`Ixon.Address` inside `namespace Compilatrix …` and `Compilatrix.Ixon.X`
+elsewhere. `vendor/aiur`'s `Ix.Aiur`/`Ix.Lib`/`Ix.IndexMap` and the codec's
+`Ix.Ixon.*`/`Ix.Address.Core` share the module root `Ix` but no module:
+`lake build` and `lake lean` resolve both, while a raw `lake env lean FILE`
+importing modules of both libraries finds only the first `Ix` directory on
+`LEAN_PATH`.

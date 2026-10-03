@@ -1,13 +1,13 @@
 # Compilatr.ix
 
 A certified compiler for [ix](https://github.com/argumentcomputer/ix),
-implemented in Lean 4. It compiles Ixon v3, ix's content-addressed Lean
+implemented in Lean 4. It compiles Ixon v4, ix's content-addressed Lean
 kernel terms, to x86-64. The goal is certified native code that competes
 with Lean → Clang. Compilatrix is the project's Lean namespace.
 
 The design combines three ideas:
 
-- **Explicit contracts.** Ixon v3 binders and results record usage,
+- **Explicit contracts.** Ixon binders and results record usage,
   ownership, locality and borrowing. The compiler honours them exactly, and
   may prove stronger guarantees where a checker certifies them. They drive
   erasure, reference counting, borrowing and in-place reuse.
@@ -23,7 +23,7 @@ The design combines three ideas:
 
 The compiler is being rebuilt (2026-09-29); see the
 [roadmap](docs/roadmap.md). Main currently holds:
-- [Ixon v3 ingress](docs/ixon-v3.md);
+- [Ixon v4 ingress](docs/ixon-v4.md) (through ix's pinned Ixon v4 codec);
 - the x86 target model with its certified
   [encoder](docs/x86-encoded-instructions.md) and
   [stream/ELF layer](docs/x86-stream-objects.md);

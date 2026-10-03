@@ -4,7 +4,7 @@ import Compilatrix.Ixon.V3.Tc.Env
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
 The eagerReduce address is a reserved synthetic marker: the real declaration
 shares its content address with id and must not trigger special reduction.
-See docs/ixon-v3.md for the adaptation and validation boundary. -/
+See docs/ixon-v4.md for the adaptation and validation boundary. -/
 
 namespace Compilatrix.Ixon.V3.Tc
 

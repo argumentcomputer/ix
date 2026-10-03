@@ -19,7 +19,7 @@ derives bounded limbs and natural rank increase from scalar-range balance
 and complete physical function-message binding. Source lowering and full
 extraction from the keyed AIR remain subsequent work.
 
-The source boundary now follows the [ix frontend and Ixon v3](ixon-v3.md),
+The source boundary now follows the [ix frontend and Ixon v4](ixon-v4.md),
 including independent usage, ownership, relative locality and scoped loans.
 Its resource admission consumes the published frontend handoff; erased
 typing and contract-preserving Ixon-to-Aiur lowering remain separate work.

@@ -5,7 +5,7 @@ import Compilatrix.Src.NatMap
 /-! # Src syntax
 
 The first IR of the rebuilt pipeline (design note `plans/x86-v2/01-src.md`
-§2): the resolved, table-free reading of a Tc-typed Ixon v3 closure, with the
+§2): the resolved, table-free reading of a Tc-typed Ixon closure, with the
 relevance annotation (note 02 §3) written into its binders, arguments and
 lets, and the evaluation modes that `Src.Lazify` sets.
 

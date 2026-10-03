@@ -4,7 +4,7 @@ import Std.Data.HashMap
 
 /-! # Src ingress
 
-Reads a decoded, Tc-typed v3 closure into the table-free `Src.Program`
+Reads a decoded, Tc-typed Ixon closure into the table-free `Src.Program`
 (design note 01 §2). Share nodes expand through a per-constant cache, so the
 result is a DAG in memory. `ref` resolves through the constant's `refs` table
 and the program's address map, `recur` through the block's members, `nat`

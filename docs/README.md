@@ -17,7 +17,7 @@ backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 
 ## Source boundary
 
-- [Ixon v3](ixon-v3.md): the ix producer pin, contract encoding, strict
+- [Ixon v4](ixon-v4.md): the ix pins (the v4 codec and the producer), contract encoding, strict
   decoding, catalog-v2 admission, erased typing, resource admission and
   claims.
 

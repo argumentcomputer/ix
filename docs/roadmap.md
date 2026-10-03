@@ -8,7 +8,7 @@ and evidence.
 
 ## Mission
 
-Certified compilation from Ixon v3 (ix's content-addressed Lean kernel
+Certified compilation from Ixon v4 (ix's content-addressed Lean kernel
 terms, with their usage, ownership, locality and borrow contracts) to x86-64,
 with performance competitive with Lean → Clang.
 
@@ -38,7 +38,7 @@ remain, with every former gate and measurement, on branch
 
 | Component | Scope |
 | --- | --- |
-| [Ixon v3 ingress](ixon-v3.md) | Strict decoder with canonicity evidence, catalog-v2 admission, erased typing, resource admission, claim binding |
+| [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, catalog-v2 admission, erased typing, resource admission, claim binding |
 | [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | [Aiur target](aiur-backend.md) | Pinned bytecode vocabulary, wire format, semantics, static checks, counter analysis, memory and rank AIRs |
 | Tools | Trust ledger, build-graph manifest, check helpers |
@@ -51,7 +51,7 @@ The required check surface is empty and returns gate by gate
 The pipeline being built, with each layer's proof technique:
 
 ```text
-Ixon v3 → Src (relevance-annotated kernel terms + unfolding table)
+Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
         → Lam (erased λ-calculus) → Anf (join points; shrink, inline, specialise)
         → Fir (closure-converted, first order) → Own (explicit RC, borrow, reuse)
         → Cfg (control-flow graph) → Lir (words, memory, runtime)
@@ -79,7 +79,7 @@ data:
 
 | Decision | Summary |
 | --- | --- |
-| Source | Ixon v3 is the only input. Written contracts are lower bounds. The compiler honours them exactly, and may infer stronger guarantees (unique, local, borrowed, erased, one-shot) only when a proved checker certifies them; inferred facts never change Ixon bytes or addresses. |
+| Source | Ixon (v4 since 2026-10-03) is the only input. Written contracts are lower bounds. The compiler honours them exactly, and may infer stronger guarantees (unique, local, borrowed, erased, one-shot) only when a proved checker certifies them; inferred facts never change Ixon bytes or addresses. |
 | Semantic anchor | Stated against the source evaluator first, then `Ix.Kernel`'s model: an accepted equation theorem holds in the model, so replacements it justifies are sound. |
 | Recursion and replacements | Compiled through kernel-checked equation theorems (`f.eq_def`, `@[csimp]`) collected in an unfolding table, not by recovering structure from `brecOn` or `WellFounded.fix`. `partial` and `unsafe` definitions are rejected; `implemented_by` compiles the reference body. |
 | Erasure | An untrusted relevance annotation checked by a proved structural checker. A wrong but consistent annotation can only make a compile fail, never produce a wrong result. |

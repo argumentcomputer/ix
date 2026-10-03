@@ -5,7 +5,7 @@ import Compilatrix.Ixon.V3.Tc.Level
 
 /-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Expr.lean`.
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
-See docs/ixon-v3.md for the adaptation and validation boundary. -/
+See docs/ixon-v4.md for the adaptation and validation boundary. -/
 
 namespace Compilatrix.Ixon.V3.Tc
 

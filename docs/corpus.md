@@ -1,7 +1,7 @@
 # Fixture corpora
 
-The compiler is tested on corpora of real Lean programs, frozen as Ixon v3
-closures with their `eq_def` sidecars (phase 1 plan, MT). Each *family* is a
+The compiler is tested on corpora of real Lean programs, frozen as Ixon v4
+closures ([Ixon v4](ixon-v4.md)) with their `eq_def` sidecars (phase 1 plan, MT). Each *family* is a
 directory of closures described by one manifest in the format
 `compilatrix/corpus/1`. Required CI uses only the frozen files; it never runs
 ix.
@@ -15,6 +15,7 @@ ix.
 | `phase1-decline` | [`fixtures/corpus/phase1-decline/corpus.json`](../fixtures/corpus/phase1-decline/corpus.json) | [`fixtures/corpus/phase1-decline/src`](../fixtures/corpus/phase1-decline/README.md) | MT.4: programs outside the Phase 1 fragment, each with its exact `stage: code`, and colliding export symbols |
 | `phase1-abi` | [`fixtures/corpus/phase1-abi/corpus.json`](../fixtures/corpus/phase1-abi/corpus.json) | [`fixtures/corpus/phase1-abi/src`](../fixtures/corpus/phase1-abi/README.md) | MT.4: the ABI and readback matrix, arities 0–6 by `Nat`, `Bool` and an enumeration |
 | `ownership` | [`fixtures/ownership/corpus.json`](../fixtures/ownership/corpus.json) | [`fixtures/ownership/src`](../fixtures/ownership/README.md) | the ownership suite (MT.7): annotated programs ix accepts, each beside its plain twin, and plain erasure and allocation fixtures; run by `tests-own` (with ix's verdicts on the annotated sources it rejects), not among `tests-corpus`'s registered families |
+| `k1` | [`fixtures/ixon-v4/k1/corpus.json`](../fixtures/ixon-v4/k1/corpus.json) | [`fixtures/ixon-v4/k1`](../fixtures/ixon-v4/k1/README.md) | the K1 pack: the five K1 programs in one closure with their 40 unfolding equations and its census, without cases (the stage suites run its roots); not among `tests-corpus`'s registered families, so `corpus check` takes its manifest by path |
 
 ## The manifest
 
@@ -131,12 +132,10 @@ definition and equation name with `ix addr-of` against the twin, and writes
 the sidecar and census. It draws the generated cases, runs every case through
 `lean -Dlinter.all=false --run`, checks the constants, and rewrites the
 derived fields. Files that do not change are not rewritten; the log says which
-did. The pinned ix (`9c4b9c65`, SHA-256 `d8ba031a…`) asks `lake env` for
-`LEAN_PATH`, so `--ix-path` names a directory with a `lake` stand-in that
-answers it (`plans/fixtures/ix-usage-ownership/fakebin`). On 2026-10-01,
-`corpus rebuild` of `bench-k1` rewrote none of the five K1 closures, sidecars
-and censuses, and reproduced every named-twin hash of their provenance: it
-replaces `plans/x86-phase1/bench-k1/build.sh`.
+did. The pinned ix (`be45a159`, SHA-256 `fc4e07ab…`; see [Refreezing](#refreezing))
+asks `lake env` for `LEAN_PATH`, so `--ix-path` names a directory with a
+`lake` stand-in that answers it. It replaces
+`plans/x86-phase1/bench-k1/build.sh`.
 
 ## The suite: `lake exe tests-corpus`
 
@@ -190,3 +189,99 @@ fresh ingress, `produce` and native run. The manual target
 `Recheck.run` gives the object's bytes, by `decide +kernel` (20–24 s and
 about 4 GB each on 2026-10-01). Like `CompilatrixTests.Recheck.KernelSlow`,
 nothing in the default build or the programs derivation imports it.
+
+## Refreezing
+
+Every frozen closure is a function of the producer (ix binary, its Lean
+libraries, the toolchain). When the producer changes its output (a new Ixon
+format, canonical order, repacked cliques), every family is refrozen at once
+with the tools below, and nothing is written by hand: the closures,
+sidecars, censuses, values, verdicts, pins and provenance all come from a
+command. The last refreeze (2026-10-03, Ixon v3 → v4) changed every closure
+and almost every address, and no source, root, case, value, equation list or
+failure list. Check that for every manifest: with the fields a refreeze may
+change removed, the old and new manifests are equal (a difference is a
+stop-and-review):
+
+```sh
+norm='del(.producer.ix_revision, .producer.ix_binary_sha256, .producer.ix_version,
+  .producer.ix_build, .lean.version) | .fixtures |= map(del(.source.sha256, .closure.sha256,
+  .closure.bytes, .equations.sha256, .named_env_sha256, .census.sha256)
+  | .roots |= map(del(.address)))'
+diff <(git show HEAD:$m | jq -S "$norm") <(jq -S "$norm" $m)
+```
+
+What a refreeze needs:
+- `IX`: the producer binary (now ix `be45a159`, `f829b760` plus the
+  `--equations` export, SHA-256 `fc4e07ab…`);
+- `FAKE`: a directory holding a `lake` stand-in that answers
+  `lake env printenv LEAN_PATH` with the producer workspace's built Lean
+  libraries at the same revision (ix elaborates the sources against them; the
+  ownership sources import `Ix.Compile.SourceContract.Elab`), and refuses
+  everything else;
+- `IXREPO`, `IXPIN`: a read-only ix checkout and the revision whose
+  `Tests/Fixtures/ixon-v4/` and `Ix/Tc/Primitive.lean` apply (the pinned
+  `ix-kernel` revision);
+- the pinned toolchain's `lean` on `PATH` (`nix develop`).
+
+The commands, in order, from the repository root, with `lake build` of the
+tools first:
+
+```sh
+REV=<the producer's 40-digit revision>
+BUILD="Built with Lake (lake build ix) from the recorded revision, …; not a Nix build."
+# 1. pin the producer and the interpreter's Lean in every manifest and in the verdicts
+lake exe refreeze-ixon producer --ix $IX --revision $REV --build "$BUILD"
+# 2. every corpus family: closures, sidecars, censuses, values (manifests rewritten)
+for m in fixtures/ixon-v4/bench-k1/corpus.json fixtures/ixon-v4/k1/corpus.json \
+         fixtures/corpus/*/corpus.json; do
+  lake exe corpus rebuild $m --ix $IX --ix-path $FAKE
+done
+LEAN_PATH=$($FAKE/lake env printenv LEAN_PATH) \
+  lake exe corpus rebuild fixtures/ownership/corpus.json --ix $IX --ix-path $FAKE
+# 3. ix's verdicts on the annotated ownership sources
+lake exe tests-own verdicts --ix $IX --ix-path $FAKE
+# 4. the Src tables and the roots-only fixtures
+PATH=$FAKE:$PATH lake exe pin-src-tables --ix $IX --revision $REV
+PATH=$FAKE:$PATH lake exe pin-src-tables --ix $IX --revision $REV --diagnostics fixtures/ixon-v4/src-diag
+PATH=$FAKE:$PATH lake exe pin-src-tables --ix $IX --revision $REV --sortpoly fixtures/ixon-v4/src-sortpoly
+# 5. ix's fixture package (vectors, handoff, primitives.tsv) and the erased
+#    checker's primitive table, unchanged from ix
+lake exe refreeze-ixon package --ix-repo $IXREPO --ix-revision $IXPIN
+lake exe refreeze-ixon tc-primitives --ix-repo $IXREPO --ix-revision $IXPIN
+# 6. Src.Pinned from the old and new primitives.tsv/src-tables.tsv
+git show HEAD:fixtures/ixon-v4/primitives.tsv > old-primitives.tsv
+git show HEAD:fixtures/ixon-v4/src-tables.tsv > old-src-tables.tsv
+lake exe pin-src-tables --repin Compilatrix/Src/Pinned.lean \
+  --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
+# 7. the typing bundles, then the catalogs over them
+PATH=$FAKE:$PATH lake exe refreeze-ixon typing --ix $IX --revision $REV
+lake exe refreeze-ixon catalog --ix $IX --revision $REV
+# 8. the generated kernel artifacts (rebuild the generators first: Pinned changed)
+lake build gen-src-artifacts gen-recheck-artifacts corpus tests-fir
+lake exe gen-src-artifacts
+lake exe gen-recheck-artifacts
+lake exe corpus kernel-artifacts
+lake exe tests-fir --render-artifacts > CompilatrixTests/Fir/Artifacts.lean
+# 9. checks that must not change
+lake exe check-steps          # the step baseline: a change is a stop-and-review
+lake exe corpus check
+lake exe corpus check fixtures/ixon-v4/k1/corpus.json fixtures/ownership/corpus.json
+```
+
+Then:
+- the tests that name constants by number (`CompilatrixTests/Lam/KernelK1/*.lean`,
+  which state facts about the Src artifacts by `decide +kernel`) are renumbered
+  by their meaning (the entry root, the `prim`/`eqn`/`case` entries, the
+  subsingleton recursor, the `lazy` constant, `Nat.zero`), each evaluated
+  natively before the kernel build;
+- the fixed identities in tests (the catalog roots in
+  `CompilatrixTests/IxonV3/Catalog/Files.lean`) come from the catalog
+  provenance;
+- the trust ledger's integrity pins are recomputed for every tracked file
+  that changed, `nix/lean-modules.json` with `lake exe check-build-graph
+  --write` if a module changed, and the fixture READMEs' producer lines
+  follow the manifests;
+- the suites run in full (`docs/ci.md`); their assertion counts can move
+  where a test samples by constant number (`tests-relevance`'s annotation
+  mutants are drawn over the renumbered constants).

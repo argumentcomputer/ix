@@ -16,7 +16,7 @@ import Compilatrix.X86.Layout.Tunnel
 The untrusted half of the compiler (design note 00 "Produce and recheck",
 D17) and the whole compiler:
 
-* `ingress` (01 §1.2; not on the recheck path): strict v3 decoding, the
+* `ingress` (01 §1.2; not on the recheck path): Ixon v4 decoding, the
   `compilatrix/k1-equations/1` sidecar (the roots chosen by name, and the
   table proposals), erased typing, ingress into a `Src.Program` and the
   pinned identities;

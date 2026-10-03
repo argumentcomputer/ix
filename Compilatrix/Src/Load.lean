@@ -8,7 +8,7 @@ import Compilatrix.Src.Readback
 
 /-! # Loading a Src program
 
-The front-end pipeline (design note 01 §4.4, 06 S24): strict v3 decoding and
+The front-end pipeline (design note 01 §4.4, 06 S24): Ixon v4 decoding and
 erased typing (no resource admission, 06 S40) → ingress → pinned identities →
 unfolding table → the table's revalidation → relevance annotation (an
 oracle) → installation → the relevance check → `Lazify` → `Admit`. A failure

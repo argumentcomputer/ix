@@ -171,24 +171,27 @@ address fixtures either remain byte-identical or undergo an explicit versioned
 address roll, the official vector corpus passes, and the Rust static library
 is absent from the runtime closure.
 
-## Ix frontend / Ixon v3 source boundary
+## Ix frontend / Ixon v4 source boundary
 
-The [v3 source adapter](ixon-v3.md) is pinned independently to ix
-`0a31c8dbc63755924c645bf1afedc563e395e88a`. It preserves independent usage,
-ownership, relative locality, arrow results, and borrow lets. Pure resource
-algorithms and selected state invariants are adapted from that snapshot;
-canonical bytes, source roots, profile identities and native resource claim
-framing are checked against frozen producer fixtures. The combined validator
-now executes the pinned anonymous erased typechecker on the same raw bytes,
-fixes literal primitives, and checks every source key. Pure integer codecs,
-ordered universe maps and explicit hash-length proofs avoid additional native
-interfaces or reflection axioms. Eight new exact fences retain the existing
-BLAKE3 axiom basis. Four frozen primitive closures, canonical recursors and
-adversarial cases run in the required suite. A whole-checker semantic soundness
-theorem, v3 backend simulation and IxVM resource proofs remain outside this boundary.
-The old v2 compiler entry points keep their original proof and fixture scope.
+The [source adapter](ixon-v4.md) reads Ixon v4 through ix's pure codec (the
+pure Lean dependency below) and keeps the data model, resource algorithms and
+erased checker adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
+(Ixon v3), with the checker's primitive table and the resource profile and
+claim framing moved to ix `f829b76044a44a61023d0983516137147bbb12a7`. It
+preserves independent usage, ownership, relative locality, arrow results, and
+borrow lets. Canonical bytes, source roots, profile identities and native
+resource claim framing are checked against ix's frozen v4 fixture package.
+Ingress authenticates every object and the constant root with pure BLAKE3
+(`Blake3.Pure`); the erased checker's internal hashing and the resource
+commitments keep the Rust BLAKE3 interface above. The combined validator
+executes the pinned anonymous erased typechecker on the same raw bytes, fixes
+literal primitives, and checks every source key. Explicit hash-length proofs
+avoid reflection axioms. Eight exact fences retain the existing BLAKE3 axiom
+basis. Four frozen primitive closures, canonical recursors and adversarial
+cases run in the required suite. A whole-checker semantic soundness theorem,
+backend simulation and IxVM resource proofs remain outside this boundary.
 
-Catalog-v2 admission additionally binds manifest version 2, object format 3
+Catalog-v2 admission additionally binds manifest version 2, object format 4
 and erased-lean-v1 (validator 1) to original manifest/piece bytes. It verifies
 roots, file hashes, counts, aggregate bounds, closed union assumptions and
 actual union typing. Chunked membership requires complete sorted address
@@ -198,6 +201,31 @@ pins and preimage hashes are metadata, not proof. Four further exact fences
 preserve the same axiom basis. The 445 catalog assertions include producer
 fat and independently Rust-verified chunk fixtures, corruptions, exact bounds
 and filesystem/CLI tests. Validator 1 does not select a resource profile.
+
+## Pure Lean dependencies
+
+`lean_dependencies` records Lake dependencies that contain no native code, so
+they are not trusted externs, but whose behaviour Compilatr.ix relies on. Each
+entry pins the Lake package and revision (`lake-manifest.json`), the flake
+input with the same revision (Nix), the modules our sources import from it,
+and the SHA-256 of every file of their import closure. The checker requires
+every import of the project's sources that names neither a project module nor
+a toolchain module to be such a recorded module; checks each closure file's
+hash; rejects a closure file that declares a native symbol, uses
+`implemented_by`, `axiom`, `sorry` or `native_decide`, or imports a module
+outside the closure or the toolchain; and requires the Lake and flake pins to
+agree.
+
+The one entry, `ix-kernel-ixon-v4-codec`, is ix's `IxKernel/` package at
+`f829b760`, of which Compilatr.ix imports `Ix.Ixon.Canonical` and
+`Ix.Ixon.Codec` (an 11-module closure importing only `Init`; its public roots
+use `propext` and `Quot.sound`). It is the ingress decoder and encoder; it is
+not on the recheck path (`Recheck.run`'s import closure contains no ix
+module), so a codec defect can make ingress reject a closure or read a
+different program than ix compiled, which `Recheck.run` then checks as given.
+Nix packages the same 11 sources under the same package name with a codec-only
+library (`nix/build.nix`), so the kernel is never built; the
+`trusted-extern-ledger` check reads the pinned source (`ix-src`).
 
 ## Aiur logical-trace boundary
 
