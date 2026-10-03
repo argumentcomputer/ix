@@ -61,7 +61,8 @@ def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   Ix.PhaseTimers.timeWall "lake build of the input module" (buildFile pathStr)
   let fe ← Ix.PhaseTimers.timeWall "Lean environment import and elaboration"
     (getFileEnvCore pathStr)
-  let constList ← Ix.PhaseTimers.timeWall "constant list" (defaultConstList fe pathStr)
+  let constList ← Ix.PhaseTimers.timeWall "constant list" do
+    if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow
@@ -136,6 +137,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
   FLAGS:
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
+    "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies, instead of the whole import env (as `ix compile --local`); applies to --rust-check too."
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
