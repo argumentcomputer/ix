@@ -9,8 +9,8 @@ Mirror: crates/kernel/src/canonical_check.rs
 Kernel-side canonical-block validation — the compile-side `sort_consts`
 machinery replicated so the kernel can independently verify that stored
 mutual blocks ship in canonical (alpha-collapsed, structurally sorted)
-order, and so `canonicalAuxOrder` can re-derive the compiler's nested-aux
-permutation:
+order. (Nested auxiliaries are not sorted: since A2-order their canonical
+order is the discovery order, which `buildFlatBlock` produces directly.)
 
 1. `validateCanonicalBlockSinglePass` — treats the stored order as the
    alleged canonical partition and checks adjacent pairs are strictly

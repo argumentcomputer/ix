@@ -3433,58 +3433,78 @@ pub fn mk_indc(
 // data) or "weak" (needed a name-based tiebreaker).
 // ===========================================================================
 
-/// Compare two universe levels structurally, using level parameter position
-/// (not name) for `Param` comparisons.
+/// Compare two universe levels after `canon_univ`, with level parameters by
+/// position (not name): both levels are compiled to `Univ` (parameter `i`
+/// of its context is `Var(i)`), put in canonical form, and compared
+/// structurally with the constructor order `Zero < Succ < Max < IMax < Var`.
+///
+/// Phase A decision (design document §2.8, A2-order; Lean
+/// `Ix.Compile.Canon.compareLevel .afterCanonUniv`): collapse is equality of
+/// compiled content, and the stored universes are canonical forms, so the
+/// order does not depend on how a level was spelled. Before A2-order the
+/// levels were compared syntactically; the A1C census measured that the
+/// change moves no block or clique order in Init+Std or Mathlib.
 pub fn compare_level(
   x: &Level,
   y: &Level,
   x_ctx: &[Name],
   y_ctx: &[Name],
 ) -> Result<SOrd, CompileError> {
-  match (x.as_data(), y.as_data()) {
-    (LevelData::Mvar(..), _) | (_, LevelData::Mvar(..)) => {
-      Err(CompileError::UnsupportedExpr {
+  let ux = canon_univ(&level_to_univ(x, x_ctx)?);
+  let uy = canon_univ(&level_to_univ(y, y_ctx)?);
+  Ok(SOrd { strong: true, ordering: compare_univ(&ux, &uy) })
+}
+
+/// A level as a `Univ` with parameters by position, without simplification
+/// (Lean `Ix.Compile.Canon.toUniv`).
+fn level_to_univ(l: &Level, ctx: &[Name]) -> Result<Arc<Univ>, CompileError> {
+  Ok(match l.as_data() {
+    LevelData::Zero(_) => Univ::zero(),
+    LevelData::Succ(a, _) => Univ::succ(level_to_univ(a, ctx)?),
+    LevelData::Max(a, b, _) => {
+      Univ::max(level_to_univ(a, ctx)?, level_to_univ(b, ctx)?)
+    },
+    LevelData::Imax(a, b, _) => {
+      Univ::imax(level_to_univ(a, ctx)?, level_to_univ(b, ctx)?)
+    },
+    LevelData::Param(n, _) => {
+      let i = ctx.iter().position(|m| m == n).ok_or_else(|| {
+        CompileError::UnknownUnivParam {
+          curr: String::new(),
+          param: n.pretty(),
+        }
+      })?;
+      Univ::var(i as u64)
+    },
+    LevelData::Mvar(..) => {
+      return Err(CompileError::UnsupportedExpr {
         desc: "level metavariable in comparison".into(),
-      })
+      });
     },
-    (LevelData::Zero(_), LevelData::Zero(_)) => Ok(SOrd::eq(true)),
-    (LevelData::Zero(_), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Zero(_)) => Ok(SOrd::gt(true)),
-    (LevelData::Succ(x, _), LevelData::Succ(y, _)) => {
-      compare_level(x, y, x_ctx, y_ctx)
+  })
+}
+
+/// Structural order on `Univ`: `Zero < Succ < Max < IMax < Var`, arguments
+/// left to right, variables by index (Lean `Ix.Compile.Canon.compareUniv`;
+/// the kernels' `compare_kuniv` and the certified `compareUniverse`).
+fn compare_univ(x: &Univ, y: &Univ) -> Ordering {
+  fn rank(u: &Univ) -> u8 {
+    match u {
+      Univ::Zero => 0,
+      Univ::Succ(_) => 1,
+      Univ::Max(..) => 2,
+      Univ::IMax(..) => 3,
+      Univ::Var(_) => 4,
+    }
+  }
+  match (x, y) {
+    (Univ::Succ(a), Univ::Succ(b)) => compare_univ(a, b),
+    (Univ::Max(a, b), Univ::Max(c, d))
+    | (Univ::IMax(a, b), Univ::IMax(c, d)) => {
+      compare_univ(a, c).then_with(|| compare_univ(b, d))
     },
-    (LevelData::Succ(_, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Succ(_, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Max(xl, xr, _), LevelData::Max(yl, yr, _)) => {
-      SOrd::try_compare(compare_level(xl, yl, x_ctx, y_ctx)?, || {
-        compare_level(xr, yr, x_ctx, y_ctx)
-      })
-    },
-    (LevelData::Max(_, _, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Max(_, _, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Imax(xl, xr, _), LevelData::Imax(yl, yr, _)) => {
-      SOrd::try_compare(compare_level(xl, yl, x_ctx, y_ctx)?, || {
-        compare_level(xr, yr, x_ctx, y_ctx)
-      })
-    },
-    (LevelData::Imax(_, _, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Imax(_, _, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Param(x, _), LevelData::Param(y, _)) => {
-      match (
-        x_ctx.iter().position(|n| x == n),
-        y_ctx.iter().position(|n| y == n),
-      ) {
-        (Some(xi), Some(yi)) => Ok(SOrd::cmp(&xi, &yi)),
-        (None, _) => Err(CompileError::UnknownUnivParam {
-          curr: String::new(),
-          param: x.pretty(),
-        }),
-        (_, None) => Err(CompileError::UnknownUnivParam {
-          curr: String::new(),
-          param: y.pretty(),
-        }),
-      }
-    },
+    (Univ::Var(i), Univ::Var(j)) => i.cmp(j),
+    _ => rank(x).cmp(&rank(y)),
   }
 }
 

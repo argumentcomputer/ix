@@ -2013,10 +2013,11 @@ fn aux_dump_block(
     )
   });
 
-  let mut expanded = match nested::expand_nested_block(
+  let mut expanded = match nested::expand_nested_block_canonical(
     &ordered_originals,
     lean_env,
     &alias_to_rep,
+    stt,
   ) {
     Ok(x) => x,
     Err(e) => {

@@ -151,7 +151,7 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
     for aliasName in cls.toList.drop 1 do
       aliasToRep := aliasToRep.insert aliasName rep
   let expandedProbe ← liftM
-    (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep : CompileM _)
+    (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep true : CompileM _)
   let structuralHasNested : Bool :=
     expandedProbe.types.size > expandedProbe.nOriginals
   let mut metadataHasNested := false
@@ -246,7 +246,7 @@ refusing to synthesize canonical-indexed _N names")
         -- Defensive: post-sort aux tail empty (aux_gen.rs:454-499).
         if structuralHasNested then do
           let expandedForPerm ← liftM
-            (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep
+            (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep true
               : CompileM _)
           let mut origToCanonMap : Std.HashMap Name Name := {}
           for cls in sortedClasses do

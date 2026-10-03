@@ -262,8 +262,12 @@ pub fn generate_aux_patches(
       class[1..].iter().map(move |alias| (alias.clone(), class[0].clone()))
     })
     .collect();
-  let expanded_probe =
-    nested::expand_nested_block(&ordered_originals, lean_env, &alias_to_rep)?;
+  let expanded_probe = nested::expand_nested_block_canonical(
+    &ordered_originals,
+    lean_env,
+    &alias_to_rep,
+    stt,
+  )?;
   let structural_has_nested =
     expanded_probe.types.len() > expanded_probe.n_originals;
   let metadata_has_nested = original_all.iter().any(|name| {
@@ -471,10 +475,11 @@ pub fn generate_aux_patches(
       // permutation so extra Lean aux names can become address aliases instead
       // of falling back to original compilation.
       if structural_has_nested {
-        let expanded_for_perm = nested::expand_nested_block(
+        let expanded_for_perm = nested::expand_nested_block_canonical(
           &ordered_originals,
           lean_env,
           &alias_to_rep,
+          stt,
         )?;
         let orig_to_canon_map: std::collections::HashMap<Name, Name> =
           sorted_classes

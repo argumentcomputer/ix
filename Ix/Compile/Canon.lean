@@ -2,10 +2,11 @@
   Ix.Compile.Canon: Pass 1 of the Lean compiler (canonical form of inductive
   blocks and definition cliques) as total pure functions.
 
-  **Wired into the compiler under `Rules.compiler`** (today's rules with the
-  two Lean-port comparator fixes, which change no byte; A2's byte-neutral
-  half). The compiler's Step 1 calls into this package through thin
-  adapters that only convert data:
+  **Wired into the compiler under `Rules.compiler`**, which is `Rules.phaseA`
+  since A2-order (levels compared after `canonUniv`, nested auxiliaries in
+  discovery order, the two Lean-port comparator fixes; A2-wire wired it
+  under today's rules with no byte change). The compiler's Step 1 calls
+  into this package through thin adapters that only convert data:
   * `Ix.CondenseM.run` (the split of the whole reference graph) is
     `condensation`, presented in today's traversal order so that block
     representatives and map iteration orders are unchanged;
@@ -13,8 +14,9 @@
     primary and auxiliary) is `sortClasses Rules.compiler`, with external
     addresses from `Ix.CompileM.constAddrLookup`;
   * `Ix.AuxGen.sortAuxByPartitionRefinement` takes its order from
-    `structuralAuxClasses` and `Ix.AuxGen.computeAuxPerm` is `computePerm`,
-    both on `Ix.AuxGen.ExpandedBlock.toCanon`.
+    `canonicalAuxOrder` (the identity on the canonical expansion) and
+    `Ix.AuxGen.computeAuxPerm` is `computePerm`, both on
+    `Ix.AuxGen.ExpandedBlock.toCanon`.
   The compiler's nested expansion (`expandNestedBlock`, locally nameless)
   and the evaporation probe (`positionClaimedBySpecScc`) are still its own.
 

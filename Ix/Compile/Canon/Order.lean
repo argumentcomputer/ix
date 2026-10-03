@@ -21,9 +21,9 @@
     name); projections the same way on the structure name;
   * only strong results are cached, keyed by the unordered name pair.
 
-  **Rule sets** (`Rules`): `Rules.today` reproduces the compiler as it was;
-  `Rules.compiler` is what the compiler runs now (today plus the port
-  fixes); `Rules.phaseA` is the Phase A decision set
+  **Rule sets** (`Rules`): `Rules.today` reproduces the compiler as it was
+  before A2; `Rules.compiler` is what the compiler runs now, which since
+  A2-order is `Rules.phaseA`; `Rules.phaseA` is the Phase A decision set
   (`PLAN-A-compiler-design.md` §3.1, owner's decisions of 2026-10-03 on Q1
   and Q2): today's comparator (external references by address at the first
   difference), today's name-hash seed and least-name-hash representative,
@@ -116,18 +116,23 @@ structure Rules where
 def Rules.today : Rules :=
   ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural, false⟩
 
-/-- What the compiler runs (A2's byte-neutral half): today's rules with the
-two Lean-port comparator defects fixed (C1 and C2, owner's decision of
-2026-10-03). Neither fix is reachable on Lean input (components are
-kind-homogeneous; every class is sorted in name-hash order, so a cached
-ordering is never read back for the swapped pair inside the sort), so the
-output is `Rules.today`'s. -/
-def Rules.compiler : Rules := { Rules.today with portFixes := true }
-
 /-- The Phase A decisions (`PLAN-A-compiler-design.md` §3.1; owner, 2026-10-03:
 first-difference address comparison, name-hash seed and representative kept). -/
 def Rules.phaseA : Rules :=
   ⟨.byNameHash, .afterCanonUniv, .leastNameHash, .inline, .discovery, true⟩
+
+/-- What the compiler runs: the Phase A rules (A2-order, 2026-10-03). Against
+`Rules.today` three things change:
+* the two Lean-port comparator defects are fixed (C1 and C2). No Lean input
+  reaches them (A2-wire: components are kind-homogeneous, and no cached
+  ordering is read back for the swapped pair inside the sort);
+* levels are compared after `canonUniv`. This moves no block or clique order
+  in Init+Std or Mathlib (A1C census);
+* nested auxiliaries are in discovery order over the canonical block (design
+  document §2.5). This equals Lean's `rec_N` order on every identity block,
+  so such a block stores the identity `AuxLayout.perm` and registers no
+  call-site plan. It is the one change that moves addresses. -/
+def Rules.compiler : Rules := Rules.phaseA
 
 /-- Today's rules with only the tie-break changed to `(k₀, k₁)`. -/
 def Rules.todayK : Rules := { Rules.today with tieBreak := .byAddress, portFixes := true }

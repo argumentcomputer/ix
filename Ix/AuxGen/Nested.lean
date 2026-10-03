@@ -1,3 +1,5 @@
+
+module
 /-
   Ix.AuxGen.Nested: nested-inductive expansion and the canonical aux order.
 
@@ -5,29 +7,26 @@
   canonicity core). An inductive with nested occurrences (`Array (Part α)`)
   is expanded into a flat mutual block whose auxiliary members
   (`<all0>._nested.Array_1 …`) share the block's params/levels — mirroring
-  the C++ kernel's `elim_nested_inductive`. The aux tail is then sorted
-  STRUCTURALLY (each aux carrying a synthetic trailing `_nested_id`
-  identity-marker ctor, ordered by the ordinary content-addressed
-  `sortConsts`) so the canonical layout is independent of Lean's
-  source-walk discovery order; `computeAuxPerm` maps Lean's source
-  numbering (`X.rec_N`) onto the canonical positions. Both the order and
-  the permutation are Pass 1's (`Ix.Compile.Canon.Nested`:
-  `structuralAuxClasses` under `Rules.compiler`, `computePerm`), read
-  through `ExpandedBlock.toCanon`; this module keeps the expansion and
-  applies the order to its data.
+  the C++ kernel's `elim_nested_inductive`. The canonical order of the aux
+  tail is the DISCOVERY order of the expansion of the canonical block (the
+  class representatives in canonical order, external groups opened as
+  their compiled canonical classes; design document §2.5, A2-order), which
+  equals Lean's `X.rec_N` numbering on every identity block;
+  `computeAuxPerm` maps Lean's source numbering onto the canonical
+  positions. Both the order and the permutation are Pass 1's
+  (`Ix.Compile.Canon.Nested`: `canonicalAuxOrder` under `Rules.compiler`,
+  `computePerm`), read through `ExpandedBlock.toCanon`; this module keeps
+  the expansion and applies the order to its data.
 
   The auxiliaries are EPHEMERAL: they exist only during recursor
   generation and are restored to nested applications before emission —
   only regenerated recursors/below/brecOn persist, plus the
   `AuxLayout {perm, sourceCtorCounts}` metadata.
 
-  The kernel re-derives this order via blake3 `AUX_INDC_VIEW` /
-  `AUX_MARKER_VIEW` seed addresses (`Ix/Tc/Inductive.lean:canonicalAuxOrder`,
-  `crates/kernel/src/inductive.rs:canonical_aux_order`) — those seed
-  strings are the CONSUMER's reconstruction and must not appear here: the
-  compile side orders purely by marker ctor + `sortConsts`.
+  The kernels recompute this order by the same walk over the stored
+  canonical members (`Ix/Tc/Inductive.lean:buildFlatBlock`,
+  `crates/kernel/src/inductive.rs:build_flat_block`), with no sort.
 -/
-module
 public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
@@ -438,6 +437,14 @@ structure ExpandSt where
   blockParamDecls : Array LocalDecl := #[]
   blockParamFvarNames : Array Name := #[]
   nParams : Nat := 0
+  /-- Open an external group as its compiled canonical classes
+      (`CompileEnv.blocks`, Pass 1's `groupOfBlocks`) instead of Lean's
+      `I.all`: the expansion of a canonical block (design document §2.5).
+      Off for Lean's source walk (`X.rec_N` numbering, `numNested`). -/
+  canonicalGroups : Bool := false
+  /-- With `canonicalGroups`: deduplicate occurrences up to compiled
+      addresses (Pass 1's `addrKey`, from `constAddrLookup`). -/
+  keyAddr? : Option (Name → Option Address) := none
   walkCache : ExprCache := {}
   deriving Inhabited
 
@@ -493,7 +500,10 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
   let iAs := mkAppN (Expr.mkConst headName headLevels) specParams
 
   -- Dedup by nested-app identity.
-  if let some auxName := st.auxSeen.get? iAs then
+  let keyOf := fun (x : Expr) => match st.keyAddr? with
+    | some f => Ix.Compile.Canon.addrKey f st.typeNameSet.contains x
+    | none => x
+  if let some auxName := st.auxSeen.get? (keyOf iAs) then
     let mut result := Expr.mkConst auxName st.blockLevels
     for af in asFvars do
       result := Expr.mkApp result af
@@ -502,10 +512,19 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     return some result
 
   -- New occurrence — create auxiliaries for the whole external group.
-  let extAll := extInd.all
+  -- The group the occurrence opens, as classes (representative first):
+  -- Lean's `I.all` on the source walk; on a canonical expansion, `I`'s
+  -- compiled canonical classes (Pass 1's `groupOfBlocks`), which is what
+  -- the kernels recompute from Ixon. The two agree on identity blocks.
+  let groups : Array (Array Name) ←
+    if (← get).canonicalGroups then do
+      let cenv ← Ix.CompileM.getCompileEnv
+      pure (Ix.Compile.Canon.blockGroup cenv.blocks headName extInd.all)
+    else pure (extInd.all.map (#[·]))
   let mut result : Option Expr := none
 
-  for jName in extAll do
+  for cls in groups do
+    let some jName := cls[0]? | continue
     let some (.inductInfo jInfo) ← lookupConst? jName | continue
 
     -- `<all0>._nested.<Ext>_N`
@@ -523,9 +542,13 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     -- auxiliary's constructors, dedups to that sibling's auxiliary instead
     -- of opening a second copy of the group. Mirrors Rust
     -- `expand_nested_block`.
-    modify fun s =>
-      if s.auxSeen.contains jAs then s
-      else { s with auxSeen := s.auxSeen.insert jAs auxName }
+    -- A canonical class registers each of its names (collapsed members of
+    -- the external block share the representative's auxiliary).
+    for k in cls do
+      let kAs := keyOf (mkAppN (Expr.mkConst k headLevels) specParams)
+      modify fun s =>
+        if s.auxSeen.contains kAs then s
+        else { s with auxSeen := s.auxSeen.insert kAs auxName }
 
     -- Aux type: substLevels → instantiatePiParams → block-param space →
     -- re-abstract block params.
@@ -553,7 +576,7 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
         { name := auxCtorName, typ := auxCtorType, nFields := jCtor.numFields }
 
     -- The head inductive supplies the replacement expression.
-    if jName == headName then
+    if cls.contains headName then
       let mut r := Expr.mkConst auxName (← get).blockLevels
       for af in asFvars do
         r := Expr.mkApp r af
@@ -611,9 +634,13 @@ partial def replaceAllNested (e : Expr) (asFvars : Array Expr)
 /-- Build an expanded mutual block: replace nested inductive occurrences
     with auxiliary types sharing the block's params and levels.
     Mirrors Rust `expand_nested_block` (nested.rs:428) / C++
-    `elim_nested_inductive_fn::operator()` (inductive.cpp:1045-1077). -/
+    `elim_nested_inductive_fn::operator()` (inductive.cpp:1045-1077).
+    `canonicalGroups`: the expansion of a canonical block, whose external
+    groups open as their compiled canonical classes (see `ExpandSt`); off
+    for Lean's source walk. -/
 def expandNestedBlock (orderedOriginals : Array Name)
-    (aliasToRep : Std.HashMap Name Name) : CompileM ExpandedBlock := do
+    (aliasToRep : Std.HashMap Name Name) (canonicalGroups : Bool := false) :
+    CompileM ExpandedBlock := do
   let some firstName := orderedOriginals[0]?
     | throw (.invalidMutualBlock "expand_nested_block: empty ordered_originals")
   let some (.inductInfo firstInd) ← lookupConst? firstName
@@ -630,10 +657,12 @@ def expandNestedBlock (orderedOriginals : Array Name)
 
   let all0 := firstInd.all[0]?.getD firstName
 
+  let addr? ← Ix.CompileM.constAddrLookup
   let init : ExpandSt := {
     all0, blockLevels
     blockParamFvars, blockParamDecls, blockParamFvarNames
-    nParams
+    nParams, canonicalGroups
+    keyAddr? := if canonicalGroups then some addr? else none
   }
 
   let build : ExpandM ExpandedBlock := do
@@ -734,20 +763,21 @@ def ExpandedBlock.toCanon (x : ExpandedBlock) : Ix.Compile.Canon.Expanded :=
     levelParams := x.levelParams
     nParams := np }
 
-/-- Reorder the aux tail of an `ExpandedBlock` structurally so the
-    canonical order is independent of Lean's source-walk discovery order,
-    returning the updated block and `perm[oldJ] = canonicalJ`.
+/-- The canonical order of the aux tail of an `ExpandedBlock`, applied to
+    it, returning the updated block and `perm[oldJ] = canonicalJ`.
 
-    The order is Pass 1's (`Ix.Compile.Canon.structuralAuxClasses` under
-    `Rules.compiler`, on `ExpandedBlock.toCanon`): each aux member gets a
-    synthetic trailing `_nested_id` identity-marker ctor whose type is its
-    occurrence with block parameter `i` as `bvar i`, and the aux tail is
-    sorted by the ordinary class refinement with the block's members
-    external (by address). This function applies that order to the
-    compiler's data: the renaming (`<all0>._nested.<Ext>_<newJ+1>`)
-    cascades through `auxCtorMap`, `auxToNested`, and every member/ctor
-    type. Mirrors Rust `sort_aux_by_partition_refinement` (nested.rs:616).
-    (Rust's `IX_RECURSOR_DUMP` debug block is not ported.) -/
+    The order is Pass 1's (`Ix.Compile.Canon.canonicalAuxOrder` under
+    `Rules.compiler`, on `ExpandedBlock.toCanon`). Under the Phase A rules
+    (A2-order) it is the discovery order: the expansion of the canonical
+    block (`expandNestedBlock` over the class representatives in canonical
+    order, with `canonicalGroups`) is already in canonical order, so the
+    permutation is the identity and the block is returned unchanged. Under
+    `Rules.today` it was the structural sort (an identity-marker ctor per
+    auxiliary, sorted by class refinement with the block's members external,
+    by address); the renaming below (`<all0>._nested.<Ext>_<newJ+1>`, with
+    the cascade through `auxCtorMap`, `auxToNested` and every member/ctor
+    type) is then still what applies a non-identity order. Mirrors Rust
+    `sort_aux_by_partition_refinement`. -/
 def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
     : CompileM (ExpandedBlock × Array Nat) := do
   let nOriginals := expanded.nOriginals
@@ -758,12 +788,12 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
 
   let addr? ← Ix.CompileM.constAddrLookup
   let sortedClasses ←
-    match Ix.Compile.Canon.structuralAuxClasses Ix.Compile.Canon.Rules.compiler addr?
+    match Ix.Compile.Canon.canonicalAuxOrder Ix.Compile.Canon.Rules.compiler addr?
         expanded.toCanon with
-    | .ok classes => pure classes
+    | .ok (classes, _) => pure classes
     | .error e => throw (.invalidMutualBlock s!"aux sort: {e}")
 
-  let nCanon := sortedClasses.length
+  let nCanon := sortedClasses.size
 
   -- Build oldJ → canonicalJ; equivalence classes map many-to-one.
   let auxTailNames : Array Name :=
@@ -772,9 +802,9 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
   let mut sortedOrder : Array Nat := #[]
   for (cls, canonicalJ) in sortedClasses.zipIdx do
     for (member, memberJ) in cls.zipIdx do
-      let some oldJ := auxTailNames.findIdx? (· == member.name)
+      let some oldJ := auxTailNames.findIdx? (· == member)
         | throw (.invalidMutualBlock
-            s!"aux sort returned unknown member {member.name.pretty}")
+            s!"aux sort returned unknown member {member.pretty}")
       perm := perm.set! oldJ canonicalJ
       if memberJ == 0 then
         sortedOrder := sortedOrder.push oldJ
@@ -1002,7 +1032,7 @@ def buildSccClaimCtx (memberClasses : Array (Array Name))
   for cls in filtered do
     for aliasName in cls.toList.drop 1 do
       aliasToRep := aliasToRep.insert aliasName cls[0]!
-  let expanded ← expandNestedBlock reps aliasToRep
+  let expanded ← expandNestedBlock reps aliasToRep (canonicalGroups := true)
   let signatures := auxSignaturesOfExpanded expanded
   let byHead := signaturesByHead signatures
   let mut origToCanon : Std.HashMap Name Name := {}

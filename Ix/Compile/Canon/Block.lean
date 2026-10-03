@@ -43,6 +43,10 @@ environment, or the compiler's name map). -/
 structure Env where
   const? : Name → Option ConstantInfo
   addr? : Name → Option Address
+  /-- External groups of the canonical expansion (`Nested.GroupOf`): the
+  compiled canonical classes of an external block when the caller has them;
+  Lean's `I.all` otherwise (the census, which compiles nothing). -/
+  groupOf : GroupOf := leanGroup
 
 def Env.ind? (env : Env) : Name → Option IndView := IndView.ofConst? env.const?
 
@@ -144,7 +148,8 @@ def componentNested (rules : Rules) (env : Env) (all : Array Name)
   let metaNested := all.any fun n => match env.const? n with
     | some (.inductInfo v) => v.numNested > 0
     | _ => false
-  let x ← expand env.ind? rules.dedup reps (aliasesOf classes)
+  let x ← expand env.ind? rules.dedup reps (aliasesOf classes) env.groupOf
+    (if rules.nested == .discovery then some env.addr? else none)
   let structNested := x.types.size > x.nOriginals
   if !metaNested && !structNested then return none
   let (order, addrDecided) ←
@@ -182,7 +187,8 @@ def evaporate (env : Env) (rules : Rules) (all : Array Name)
         let compMembers : Std.HashSet Name := cls.foldl (fun s c => c.foldl (·.insert ·) s) {}
         if !refs.toList.any compMembers.contains then continue
         let reps := cls.filterMap (·[0]?)
-        let x ← expand env.ind? rules.dedup reps (aliasesOf cls)
+        let x ← expand env.ind? rules.dedup reps (aliasesOf cls) env.groupOf
+          (if rules.nested == .discovery then some env.addr? else none)
         let o2c := origToCanonOf cls
         let strict : Std.HashSet Name := all.foldl (init := {}) fun st m =>
           if compMembers.contains m then st else st.insert m

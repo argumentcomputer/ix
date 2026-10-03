@@ -518,7 +518,23 @@ Two consequences:
 - `m₁ … m_n` := the class representatives of one component, in canonical order;
 - every reference to a non-representative member rewritten to its representative first
   (`aliasToRep`, `Nested.lean:678-696`);
-- members of other components counted as external: they are not in `Q`.
+- members of other components counted as external: they are not in `Q`;
+- an external group opened by a new occurrence `I As` taken as **`I`'s canonical component**: its
+  class representatives in canonical order, every name of a class registered as seen (A2-order).
+  This is what the kernels can recompute from the stored Ixon, where `I`'s block holds exactly
+  that component in that order and Lean's `I.all` is not available. It equals `I.all` whenever
+  `I`'s block is an identity block (no split, no collapse, Lean's order). In Init, Std and
+  Mathlib the choice moves nothing [measured, A2-order: Init+Std is byte-identical and every
+  Mathlib root of the address diff lies in the 16 predicted blocks]. Where it differs, the nesting block's permutation
+  records the difference and the block is not an identity block. A Lean group that Ix splits
+  opens only `I`'s component, so Lean's auxiliaries for the other components have no canonical
+  position (`computePerm` refuses such a block; none occurs in the libraries).
+- occurrences deduplicated **up to compiled addresses** (`Canon.addrKey`: every constant outside
+  `Q` replaced by its address, binder names and `mdata` erased), so that `List C₁` and `List C₂`
+  with `C₁`, `C₂` collapsed or content-equal share one auxiliary, as in the kernels' walk, which
+  sees only addresses (A2-order). The structural sort merged such auxiliaries before; Lean's walk
+  keeps both, and the permutation maps both of Lean's positions to the one canonical auxiliary.
+  `computePerm` matches an exact spelling before an address-equal one.
 
 Consequences:
 - two occurrences `List A` and `List B` with `A ≅ B` become one key, so one auxiliary (merged nested
@@ -553,14 +569,20 @@ Evidence:
   blocks: 55 fixtures, 3 in Init+Std, 40 in Mathlib.
 - Under discovery order, Mathlib's changed blocks fall from 20 today to 6.
 
-**What changes.** This replaces the structural sort:
-- `sortAuxByPartitionRefinement`, `Nested.lean:731-918`;
-- Rust `sort_aux_by_partition_refinement`, `nested.rs:681-760`, with an identity-marker constructor
-  per auxiliary;
-- the kernels' mirrors: `canonical_aux_order`, `crates/kernel/src/inductive.rs:1284-1450`;
-  `Ix/Tc/CanonicalCheck.lean`;
-- the certified modeller's "largest family first" in `Ix/Kernel/Frontend/InModel/Nested.lean`;
-- the certified `BlockOrder` variant.
+**What changed (A2-order, 2026-10-03).** Discovery order replaced the structural sort everywhere:
+- the Lean compiler: `Rules.compiler := Rules.phaseA`; `sortAuxByPartitionRefinement` takes
+  `Canon.canonicalAuxOrder`, the identity on the canonical expansion (`expandNestedBlock … true`,
+  external groups from `CompileEnv.blocks`); `computeAuxPerm`, the stored `AuxLayout.perm`, the
+  `rec_{j+1}` registration, evaporation and the call-site plan predicate follow unchanged;
+- Rust `sort_aux_by_partition_refinement` returns the identity on `expand_nested_block_canonical`'s
+  output (the identity-marker sort is deleted);
+- the kernels: `canonical_aux_order` (Rust) and `canonicalAuxOrder` (`Ix/Tc/Inductive.lean`) are
+  deleted; `build_flat_block`/`buildFlatBlock` open a new occurrence's whole stored block in
+  canonical order (Lean's rule) when checking a compiled environment, and the flat block is used
+  in discovery order;
+- the certified modeller's "largest family first" accepts discovery order unchanged (its comment
+  is updated); the certified `BlockOrder` variant checks a recursor block in motive order and never
+  encoded the auxiliary order, so it is unchanged and its audit is not re-recorded.
 
 ### 2.6 Evaporation
 

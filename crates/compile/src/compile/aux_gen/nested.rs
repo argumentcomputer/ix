@@ -28,7 +28,8 @@ use super::expr_utils::{
 use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
 use crate::compile::validation::{self, AttemptError, Cancelled, Checkpoint};
 use ix_common::env::{
-  ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData, Level, Name,
+  BinderInfo, ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData, Level,
+  Name,
 };
 use ixon::CompileError;
 
@@ -141,11 +142,28 @@ struct ExpandCtx<'a> {
   block_param_decls: Vec<LocalDecl>,
   block_param_fvar_names: Vec<Name>,
   lean_env: &'a LeanEnv,
+  /// The compile state when this is the expansion of a canonical block: an
+  /// external group then opens as its compiled canonical classes
+  /// (`stt.blocks`) instead of Lean's `I.all` (Pass 1's `groupOfBlocks`), and
+  /// occurrences are deduplicated up to compiled addresses (`stt.resolve_addr`,
+  /// Pass 1's `addrKey`), design document §2.5. `None` for Lean's source walk.
+  canon: Option<&'a crate::compile::CompileState>,
   control: &'a Checkpoint,
   n_params: usize,
 }
 
 impl<'a> ExpandCtx<'a> {
+  /// The deduplication key of an occurrence: its hash on Lean's source walk;
+  /// on a canonical expansion, the hash of [`addr_key`], so that occurrences
+  /// equal up to compiled addresses share one auxiliary, as in the kernels'
+  /// walk (Lean `Ix.Compile.Canon.addrKey`).
+  fn dedup_key(&self, e: &LeanExpr) -> Hash {
+    match self.canon {
+      None => *e.get_hash(),
+      Some(stt) => *addr_key(e, stt, &self.type_name_set).get_hash(),
+    }
+  }
+
   /// Push a new member and keep `type_name_set` in sync. All pushes to
   /// `types` must go through this method so the incremental name set
   /// stays consistent with the vector.
@@ -322,7 +340,7 @@ impl<'a> ExpandCtx<'a> {
       }
       app
     };
-    let i_as_hash = *i_as.get_hash();
+    let i_as_hash = self.dedup_key(&i_as);
 
     // Dedup: check if we've already created an auxiliary for this occurrence.
     // O(1) HashMap lookup; previously a linear scan over `Vec<(Hash, Name)>`.
@@ -338,11 +356,22 @@ impl<'a> ExpandCtx<'a> {
     }
 
     // New nested occurrence — create auxiliary types for all members of
-    // the external inductive's mutual group.
-    let ext_all = ext_ind.all.clone();
+    // the external inductive's mutual group. The group is a list of classes,
+    // representative first: Lean's `I.all` on the source walk; on a
+    // canonical expansion, `I`'s compiled canonical classes (Pass 1's
+    // `groupOfBlocks`), which is what the kernels recompute from Ixon. The
+    // two agree whenever `I`'s block is an identity block.
+    let registered: Option<Vec<Vec<Name>>> = self
+      .canon
+      .and_then(|stt| stt.blocks.get(&head_name).map(|g| g.value().clone()));
+    let groups: Vec<Vec<Name>> = match registered {
+      Some(classes) => classes.into_iter().filter(|c| !c.is_empty()).collect(),
+      None => ext_ind.all.iter().map(|n| vec![n.clone()]).collect(),
+    };
     let mut result: Option<LeanExpr> = None;
 
-    for j_name in &ext_all {
+    for class in &groups {
+      let j_name = &class[0];
       self.control.visit()?;
       let j_info_ref = self.lean_env.get(j_name);
       let j_info = match j_info_ref.as_deref() {
@@ -370,7 +399,16 @@ impl<'a> ExpandCtx<'a> {
       // occurrence of a sibling, e.g. `Forest T` inside the `Tree T`
       // auxiliary's constructors, dedups to that sibling's auxiliary
       // instead of opening a second copy of the group.
-      self.aux_seen.entry(*j_as.get_hash()).or_insert_with(|| aux_name.clone());
+      // A canonical class registers each of its names: collapsed members
+      // of the external block share the representative's auxiliary.
+      for k in class {
+        let mut k_as = LeanExpr::cnst(k.clone(), head_levels.clone());
+        for sp in &spec_params {
+          k_as = LeanExpr::app(k_as, sp.clone());
+        }
+        let key = self.dedup_key(&k_as);
+        self.aux_seen.entry(key).or_insert_with(|| aux_name.clone());
+      }
       self.aux_to_nested.insert(aux_name.clone(), j_as);
 
       // Build auxiliary type:
@@ -456,7 +494,7 @@ impl<'a> ExpandCtx<'a> {
       }
 
       // If this is the head inductive, build the replacement expression.
-      if *j_name == head_name {
+      if class.contains(&head_name) {
         let mut r = LeanExpr::cnst(aux_name.clone(), self.block_levels.clone());
         for af in as_fvars {
           r = LeanExpr::app(r, af.clone());
@@ -495,6 +533,30 @@ pub fn expand_nested_block(
     ordered_originals,
     lean_env,
     alias_to_rep,
+    None,
+    &Checkpoint::default(),
+  )
+  .map_err(AttemptError::into_compile)
+}
+
+/// The expansion of a canonical block (`ordered_originals` are the class
+/// representatives in canonical order): like [`expand_nested_block`], but an
+/// external group opens as its compiled canonical classes from `stt.blocks`
+/// when registered and occurrences are deduplicated up to compiled addresses,
+/// so that the discovery order is the one the
+/// kernels recompute from Ixon (design document §2.5; Lean
+/// `expandNestedBlock … (canonicalGroups := true)`).
+pub fn expand_nested_block_canonical(
+  ordered_originals: &[Name],
+  lean_env: &LeanEnv,
+  alias_to_rep: &FxHashMap<Name, Name>,
+  stt: &crate::compile::CompileState,
+) -> Result<ExpandedBlock, CompileError> {
+  expand_nested_block_checked(
+    ordered_originals,
+    lean_env,
+    alias_to_rep,
+    Some(stt),
     &Checkpoint::default(),
   )
   .map_err(AttemptError::into_compile)
@@ -504,6 +566,7 @@ fn expand_nested_block_checked(
   ordered_originals: &[Name],
   lean_env: &LeanEnv,
   alias_to_rep: &FxHashMap<Name, Name>,
+  canon: Option<&crate::compile::CompileState>,
   control: &Checkpoint,
 ) -> Result<ExpandedBlock, AttemptError> {
   control.visit()?;
@@ -561,6 +624,7 @@ fn expand_nested_block_checked(
     block_param_decls: block_param_decls.clone(),
     block_param_fvar_names,
     lean_env,
+    canon,
     control,
     n_params,
   };
@@ -677,391 +741,38 @@ fn expand_nested_block_checked(
 }
 
 // =========================================================================
-// Canonical structural sort of the aux section
+// Canonical order of the aux section: discovery order
 // =========================================================================
 
-/// Reorder the aux section of an `ExpandedBlock` structurally so that
-/// the canonical (compile-side) aux ordering is independent of Lean's
-/// source-walk discovery order.
+/// The canonical order of the aux section of an `ExpandedBlock`, as
+/// `perm: Vec<usize>` mapping each aux index (0-based, 0 = first aux after
+/// the `n_originals` user members) to its canonical index.
 ///
-/// Returns `perm: Vec<usize>` mapping original aux index (0-based, where
-/// 0 = first aux after the `n_originals` user members) to the new
-/// canonical aux index. Callers use the permutation to:
-/// - permute source-aux motives/minors at call sites (`surgery.rs`)
-/// - register Lean source aux rec names (`X.rec_{source_j+1}`) at the
-///   canonical DPrj/RPrj position `perm[source_j]`
+/// The canonical order is the **discovery order** of the expansion of the
+/// canonical block (design document §2.5, Phase A decision D2; Lean
+/// `Ix.Compile.Canon.canonicalAuxOrder` under `Rules.compiler`): the
+/// callers expand the class representatives in canonical order, with
+/// alias references rewritten to them and external groups opened as their
+/// compiled canonical classes ([`expand_nested_block_canonical`]), and that
+/// expansion lists its auxiliaries in discovery order already. So the
+/// permutation is the identity and `expanded` is left unchanged. On every
+/// block whose canonical member order is Lean's `all` order (no split, no
+/// collapse) this is Lean's own `X.rec_N` order, so the block is an identity
+/// block (`compute_aux_perm` is the identity and no call-site plan is
+/// registered); the kernels recompute the same order by the same walk over
+/// the stored members (`build_flat_block`), with no sort.
 ///
-/// Each aux member is compared using the same structural order as normal
-/// mutual block constants, with original members fixed as a prefix in the
-/// mutual context. The compared data includes:
-/// - `aux_to_nested[name]`: the normalized nested-app with block-param
-///   FVars (the unique semantic identity of this aux, independent of the
-///   aux's own name or position)
-/// - `member.typ`: the aux inductive's type
-/// - each ctor's `typ`
-///
-/// Renaming is cascaded through every site that references aux names:
-/// - `aux_to_nested` keys (the aux name → nested-expr map)
-/// - `aux_ctor_map` keys (aux-ctor names carry the aux prefix) and their
-///   aux-ind component
-/// - every member's ctor types (aux inductives may reference sibling
-///   auxes via `Const` nodes) and the member's own type
-///
-/// Aux names themselves are internal (`<all0>._nested.<Ext>_N`) and never
-/// appear in user-visible env: `RestoreCtx` converts them back to
-/// `ExtInd spec_params` expressions during recursor emission. So renaming
-/// them by canonical index is purely an internal-labeling change.
+/// This replaces the structural sort of A2-wire and before (an
+/// identity-marker constructor per auxiliary, ordered by `sort_consts` with
+/// the block's members external by address), which made the order depend on
+/// addresses and moved Lean's auxiliaries on 16 of Mathlib's nested blocks.
+/// The name and signature are kept for the callers.
 pub fn sort_aux_by_partition_refinement(
   expanded: &mut ExpandedBlock,
-  stt: &crate::compile::CompileState,
+  _stt: &crate::compile::CompileState,
 ) -> Result<Vec<usize>, CompileError> {
-  let n_originals = expanded.n_originals;
-  let n_total = expanded.types.len();
-  if n_total <= n_originals {
-    return Ok(Vec::new());
-  }
-  let n_aux = n_total - n_originals;
-
-  // Sort aux members using the same name-insensitive structural comparison
-  // used for non-expanded block members. References to source originals inside
-  // aux signatures intentionally resolve by compiled address rather than by a
-  // fixed positional MutRef, so alpha-equivalent originals collapse to the same
-  // aux signature. If any referenced original is unresolved, compare_expr now
-  // errors instead of falling back to namespace-sensitive name hashes.
-  use crate::compile::{BlockCache, sort_consts};
-  use crate::mutual::{Ind, MutConst};
-  use ix_common::env::{ConstantVal, ConstructorVal, InductiveVal};
-
-  let level_params = expanded.level_params.clone();
-
-  // Build MutConst::Indc for all members, then sort only the aux tail. The
-  // original prefix is still needed so the aux slice can borrow stable
-  // `MutConst`s from one vector; source-original references inside aux
-  // expressions intentionally remain external references and compare by
-  // resolved content address.
-  //
-  // Each AUX member additionally carries a synthetic trailing "identity
-  // marker" ctor whose type is its `aux_to_nested` nested-app (block-param
-  // FVars abstracted to loose BVars by position). Two distinct nested
-  // occurrences of the same external inductive can instantiate to
-  // alpha-identical aux types+ctors when the distinguishing spec param is
-  // phantom in the external's constructors (e.g. `Bar2 M Nat` vs
-  // `Bar2 M Bool` where `Bar2.mk : α → Bar2 α β` never uses `β`) — the
-  // marker keeps such auxes in distinct canonical classes and orders them
-  // by spec-param content, while genuinely alias-collapsed occurrences
-  // (already deduped at creation by `aux_seen` post-`alias_to_rep`) are
-  // unaffected. The kernel's `canonical_aux_order` mirrors this marker.
-  let block_param_bvars: Vec<LeanExpr> = (0..expanded.block_param_fvars.len())
-    .map(|i| LeanExpr::bvar(Nat::from(i as u64)))
-    .collect();
-  let all_mut_consts: Vec<MutConst> = expanded
-    .types
-    .iter()
-    .enumerate()
-    .map(|(mi, mem)| {
-      let mut ctor_names: Vec<Name> =
-        mem.ctors.iter().map(|c| c.name.clone()).collect();
-      let mut ctors: Vec<ConstructorVal> = mem
-        .ctors
-        .iter()
-        .enumerate()
-        .map(|(ci, c)| ConstructorVal {
-          cnst: ConstantVal {
-            name: c.name.clone(),
-            typ: c.typ.clone(),
-            level_params: level_params.clone(),
-          },
-          induct: mem.name.clone(),
-          cidx: Nat::from(ci as u64),
-          num_params: Nat::from(mem.n_params as u64),
-          num_fields: Nat::from(c.n_fields as u64),
-          is_unsafe: false,
-        })
-        .collect();
-      if mi >= n_originals
-        && let Some(nested) = expanded.aux_to_nested.get(&mem.name)
-      {
-        let marker_typ = replace_params_expr(
-          nested,
-          &expanded.block_param_fvars,
-          &block_param_bvars,
-        );
-        let marker_name = Name::str(mem.name.clone(), "_nested_id".into());
-        ctors.push(ConstructorVal {
-          cnst: ConstantVal {
-            name: marker_name.clone(),
-            typ: marker_typ,
-            level_params: level_params.clone(),
-          },
-          induct: mem.name.clone(),
-          cidx: Nat::from(ctors.len() as u64),
-          num_params: Nat::from(mem.n_params as u64),
-          num_fields: Nat::from(0u64),
-          is_unsafe: false,
-        });
-        ctor_names.push(marker_name);
-      }
-      MutConst::Indc(Ind {
-        ind: InductiveVal {
-          cnst: ConstantVal {
-            name: mem.name.clone(),
-            typ: mem.typ.clone(),
-            level_params: level_params.clone(),
-          },
-          num_params: Nat::from(mem.n_params as u64),
-          num_indices: Nat::from(mem.n_indices as u64),
-          all: vec![],
-          ctors: ctor_names,
-          num_nested: Nat::from(0u64),
-          is_rec: false,
-          is_unsafe: false,
-          is_reflexive: false,
-        },
-        ctors,
-      })
-    })
-    .collect();
-
-  let aux_consts: Vec<&MutConst> =
-    all_mut_consts[n_originals..].iter().collect();
-  let mut cache = BlockCache::default();
-
-  // Optional debug dump (mirror kernel `canonical_aux_order.dump`). Triggered
-  // when `IX_RECURSOR_DUMP` matches the all0 name. Used to compare against the
-  // kernel's reconstruction.
-  let dump = std::env::var("IX_RECURSOR_DUMP")
-    .ok()
-    .filter(|s| !s.is_empty())
-    .filter(|prefix| {
-      expanded
-        .types
-        .first()
-        .is_some_and(|m| m.name.pretty().contains(prefix.as_str()))
-    });
-  if dump.is_some() {
-    let all0 = expanded.types.first().map(|m| m.name.pretty());
-    eprintln!(
-      "[compile.canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
-      all0,
-      aux_consts.len(),
-      expanded.types.first().map_or(0, |m| m.n_params)
-    );
-    for (i, c) in aux_consts.iter().enumerate() {
-      let name_pretty = c.name().pretty();
-      if let MutConst::Indc(ind) = c {
-        eprintln!(
-          "  pre-sort[{i}] name={name_pretty} n_ctors={}",
-          ind.ctors.len()
-        );
-        eprintln!("    indc.ty={}", ind.ind.cnst.typ.pretty());
-        for (ci, ctor) in ind.ctors.iter().enumerate() {
-          eprintln!(
-            "    ctor[{ci}].fields={:?} ty={}",
-            ctor.num_fields,
-            ctor.cnst.typ.pretty()
-          );
-        }
-      }
-    }
-  }
-
-  let sorted_classes = sort_consts(&aux_consts, &mut cache, stt)?;
-
-  if dump.is_some() {
-    eprintln!("[compile.canonical_aux_order.dump] post-sort classes:");
-    for (ci, class) in sorted_classes.iter().enumerate() {
-      for (mi, m) in class.iter().enumerate() {
-        eprintln!("  class[{ci}][{mi}] name={}", m.name().pretty());
-      }
-    }
-  }
-
-  let n_canon = sorted_classes.len();
-
-  // Build old_j → canonical_j. `sort_consts` returns equivalence classes, so
-  // duplicate auxes intentionally map many-to-one into a single canonical slot.
-  let mut perm = vec![usize::MAX; n_aux];
-  let mut sorted_order: Vec<usize> = Vec::with_capacity(n_canon);
-  for (canonical_j, class) in sorted_classes.iter().enumerate() {
-    for (member_j, member) in class.iter().enumerate() {
-      let Some(old_j) = expanded.types[n_originals..]
-        .iter()
-        .position(|m| m.name == member.name())
-      else {
-        return Err(CompileError::InvalidMutualBlock {
-          reason: format!(
-            "aux sort returned unknown member {}",
-            member.name().pretty()
-          ),
-        });
-      };
-      perm[old_j] = canonical_j;
-      if member_j == 0 {
-        sorted_order.push(old_j);
-      }
-    }
-  }
-  if perm.contains(&usize::MAX) {
-    return Err(CompileError::InvalidMutualBlock {
-      reason: "aux sort did not assign every auxiliary member".into(),
-    });
-  }
-
-  // Short-circuit if already in canonical order.
-  if n_canon == n_aux && perm.iter().enumerate().all(|(i, &p)| i == p) {
-    return Ok(perm);
-  }
-
-  // Compute the `<all0>._nested` prefix. Every aux name is of shape
-  // `Name::str(Name::str(all0, "_nested"), "<Ext>_N")`. We'll use this
-  // prefix to rebuild canonical aux names after sorting.
-  let nested_prefix = {
-    let first_aux_name = &expanded.types[n_originals].name;
-    match first_aux_name.as_data() {
-      ix_common::env::NameData::Str(prefix, _, _) => prefix.clone(),
-      _ => {
-        return Err(CompileError::InvalidMutualBlock {
-          reason: format!(
-            "nested aux name is not a string name: {}",
-            first_aux_name.pretty()
-          ),
-        });
-      },
-    }
-  };
-
-  // Build old_aux_name → new_aux_name rename map.
-  //
-  // New aux name: `<all0>._nested.<Ext>_<new_j+1>` where `<Ext>` is
-  // recovered from the OLD name by stripping the trailing `_<old_j+1>`
-  // suffix. This preserves the "Ext" identifier (e.g. `Array`, `Option`,
-  // `List`) so downstream name-based diagnostics remain readable, while
-  // canonicalizing the trailing index by sort position.
-  let mut name_rename: FxHashMap<Name, Name> = FxHashMap::default();
-  let mut new_aux_names: Vec<Name> = Vec::with_capacity(n_canon);
-  for (new_j, &old_j) in sorted_order.iter().take(n_canon).enumerate() {
-    let old_name = expanded.types[n_originals + old_j].name.clone();
-
-    // Extract the "<Ext>" identifier from old suffix.
-    let ext_name = match old_name.as_data() {
-      ix_common::env::NameData::Str(_, suffix, _) => {
-        // Old suffix is "<Ext>_<old_j+1>" — strip the trailing "_<N>".
-        let s: &str = suffix.as_ref();
-        // Find the last underscore — everything before is "<Ext>".
-        if let Some(ub) = s.rfind('_') {
-          let (ext, _) = s.split_at(ub);
-          ext.to_string()
-        } else {
-          s.to_string()
-        }
-      },
-      _ => {
-        return Err(CompileError::InvalidMutualBlock {
-          reason: format!(
-            "nested aux name is not a string name: {}",
-            old_name.pretty()
-          ),
-        });
-      },
-    };
-
-    let new_suffix = format!("{}_{}", ext_name, new_j + 1);
-    let new_name = Name::str(nested_prefix.clone(), new_suffix);
-    new_aux_names.push(new_name);
-  }
-
-  for (old_j, &canonical_j) in perm.iter().enumerate() {
-    let old_name = expanded.types[n_originals + old_j].name.clone();
-    name_rename.insert(old_name, new_aux_names[canonical_j].clone());
-  }
-
-  // Rewrite aux_ctor_map: both keys (aux-ctor names) and the
-  // aux-inductive component of the value.
-  //
-  // Aux ctor names are produced by `name_replace_prefix(j_ctor_name,
-  // j_name, &aux_name)` — i.e. the prefix of the ctor name is replaced
-  // with the aux inductive name. Renaming the aux inductive therefore
-  // requires a corresponding prefix-swap on every ctor name that starts
-  // with the old aux name.
-  let mut new_aux_ctor_map: FxHashMap<Name, (Name, Name)> =
-    FxHashMap::default();
-  for (old_ctor_name, (orig_ctor_name, old_aux_ind_name)) in
-    std::mem::take(&mut expanded.aux_ctor_map)
-  {
-    let new_aux_ind_name = name_rename
-      .get(&old_aux_ind_name)
-      .cloned()
-      .unwrap_or_else(|| old_aux_ind_name.clone());
-    let new_ctor_name =
-      name_replace_prefix(&old_ctor_name, &old_aux_ind_name, &new_aux_ind_name);
-    new_aux_ctor_map
-      .entry(new_ctor_name)
-      .or_insert((orig_ctor_name, new_aux_ind_name));
-  }
-  expanded.aux_ctor_map = new_aux_ctor_map;
-
-  // Rewrite aux_to_nested: keys rename; values (nested exprs) are
-  // independent of aux name — they describe the nested semantic form,
-  // not the aux name that represents it.
-  let mut new_aux_to_nested: FxHashMap<Name, LeanExpr> = FxHashMap::default();
-  for (old_name, nested_expr) in std::mem::take(&mut expanded.aux_to_nested) {
-    let new_name =
-      name_rename.get(&old_name).cloned().unwrap_or_else(|| old_name.clone());
-    new_aux_to_nested.entry(new_name).or_insert(nested_expr);
-  }
-  expanded.aux_to_nested = new_aux_to_nested;
-
-  // Rewrite every member's typ and ctor types to replace aux-name Const
-  // references with the renamed names. Sibling auxes may reference each
-  // other (e.g. `_nested.Array_3` containing `_nested.Option_1` fields),
-  // so this sweep must cover user members too (in case user ctor types
-  // got rewritten during expansion).
-  //
-  // Share a cache across every member/ctor: they all use the same
-  // `name_rename_std`, and Mathlib types tend to share large implicit-arg
-  // substructure across sibling ctors.
-  let name_rename_std: std::collections::HashMap<Name, Name> =
-    name_rename.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-  let mut rename_cache: FxHashMap<Hash, LeanExpr> = FxHashMap::default();
-  for member in &mut expanded.types {
-    member.typ = super::expr_utils::replace_const_names_cached(
-      &member.typ,
-      &name_rename_std,
-      &mut rename_cache,
-    );
-    for ctor in &mut member.ctors {
-      ctor.typ = super::expr_utils::replace_const_names_cached(
-        &ctor.typ,
-        &name_rename_std,
-        &mut rename_cache,
-      );
-    }
-  }
-
-  // Reorder the aux section of `expanded.types` and rewrite member/ctor
-  // names to their canonical forms.
-  //
-  // For each new canonical position `new_j`, pick the aux at
-  // `aux_tail[old_j]` (where `sorted_order[new_j] == old_j`) and
-  // rename its own name + its ctors' prefixes from the old aux name to
-  // the new one. We can't move out of `aux_tail` by index because we
-  // pick in new_j order; clone instead (cheap — ctor vec is a small Vec).
-  let aux_tail: Vec<ExpandedMember> = expanded.types.split_off(n_originals);
-  let mut reordered: Vec<ExpandedMember> = Vec::with_capacity(n_canon);
-  for new_j in 0..n_canon {
-    let old_j = sorted_order[new_j];
-    let mut mem = aux_tail[old_j].clone();
-    let old_name = mem.name.clone();
-    let new_name = new_aux_names[new_j].clone();
-    mem.name = new_name.clone();
-    for ctor in &mut mem.ctors {
-      ctor.name = name_replace_prefix(&ctor.name, &old_name, &new_name);
-    }
-    reordered.push(mem);
-  }
-  expanded.types.extend(reordered);
-
-  Ok(perm)
+  let n_aux = expanded.types.len().saturating_sub(expanded.n_originals);
+  Ok((0..n_aux).collect())
 }
 
 /// Compute the source-walk discovery order of nested auxiliaries by
@@ -1345,6 +1056,8 @@ pub fn compute_aux_perm(
   // calls use the same `orig_to_canon_names`, so DAG-shared subterms
   // between source spec_params collapse to a single rewrite.
   let mut normalize_cache: FxHashMap<Hash, LeanExpr> = FxHashMap::default();
+  let no_addresses = crate::compile::CompileState::new_empty();
+  let mut exact_eq_cache: FxHashMap<(Hash, Hash), bool> = FxHashMap::default();
 
   for (j, (src_owner, src_head, src_levels, src_specs)) in
     source_order.iter().enumerate()
@@ -1372,6 +1085,29 @@ pub fn compute_aux_perm(
     // occurrences (fixture `AuxOwnership.SplitSpecs`; the old
     // out-of-SCC pre-filter skipped these and then failed the
     // covered-check below with "canonical aux has no source mapping").
+    // A canonical auxiliary whose occurrence is spelled exactly as the
+    // source's (constants equal by name) is preferred over one equal only
+    // up to compiled addresses: the canonical expansion is deduplicated by
+    // address (`aux_seen`), so in a canonical block at most one candidate
+    // matches either way, but a caller that expands uncollapsed classes
+    // (`validate-aux`'s Lean-order classes) can hold two candidates equal up
+    // to addresses, and each source position must keep its own (A2-order;
+    // Lean `Canon.computePerm`). The empty state resolves no address.
+    let exact = match_aux_signature(
+      src_head,
+      src_levels,
+      &normalized,
+      &canonical_signatures,
+      &canon_by_head,
+      &no_addresses,
+      &source_to_canon_fvar,
+      &strict_names,
+      &mut exact_eq_cache,
+    );
+    if let Some(canon_idx) = exact {
+      perm[j] = canon_idx;
+      continue;
+    }
     if let Some(canon_idx) = match_aux_signature(
       src_head,
       src_levels,
@@ -1485,6 +1221,7 @@ fn build_scc_claim_ctx(
   source_expanded: &ExpandedBlock,
   original_all: &[Name],
   lean_env: &LeanEnv,
+  stt: &crate::compile::CompileState,
 ) -> Result<SccClaimCtx, CompileError> {
   // Mirror `generate_and_compile_aux_recursors`'s `aux_class_names`
   // filtering: the scheduler SCC can contain extra members through
@@ -1506,7 +1243,8 @@ fn build_scc_claim_ctx(
       class[1..].iter().map(move |alias| (alias.clone(), class[0].clone()))
     })
     .collect();
-  let expanded = expand_nested_block(&reps, lean_env, &alias_to_rep)?;
+  let expanded =
+    expand_nested_block_canonical(&reps, lean_env, &alias_to_rep, stt)?;
   let signatures = aux_signatures_of_expanded(&expanded);
   let by_head = signatures_by_head(&signatures);
   let orig_to_canon: std::collections::HashMap<Name, Name> = filtered
@@ -1610,6 +1348,7 @@ pub fn position_claimed_by_spec_scc(
           source_expanded,
           original_all,
           lean_env,
+          stt,
         )?;
         e.insert(ctx);
       }
@@ -1955,66 +1694,58 @@ fn name_replace_prefix(
   }
 }
 
-/// Convert an expression from constructor-local param FVars (`as_fvars`)
-/// to block param FVars (`block_param_fvars`).
-///
-/// Matches C++ `replace_params`: abstract over `As`, then instantiate with
-/// `m_params`.
-fn replace_params_expr(
+/// `e` with every constant outside the queue (`keep`) whose compiled address
+/// is known replaced by that address (as the name `#<hex>`): the
+/// deduplication key of a canonical expansion (design document §2.5,
+/// A2-order; Lean `Ix.Compile.Canon.addrKey`). Collapsed or content-equal
+/// constants under different names, which the stored Ixon cannot tell apart,
+/// then give one auxiliary.
+fn addr_key(
   e: &LeanExpr,
-  as_fvars: &[LeanExpr],
-  block_param_fvars: &[LeanExpr],
+  stt: &crate::compile::CompileState,
+  keep: &FxHashSet<Name>,
 ) -> LeanExpr {
-  if as_fvars.is_empty() {
-    return e.clone();
-  }
-  let fvar_map: FxHashMap<Name, LeanExpr> = as_fvars
-    .iter()
-    .zip(block_param_fvars.iter())
-    .filter_map(|(local, block)| match local.as_data() {
-      ExprData::Fvar(n, _) => Some((n.clone(), block.clone())),
-      _ => None,
-    })
-    .collect();
-  replace_fvars(e, &fvar_map)
-}
-
-fn replace_fvars(
-  e: &LeanExpr,
-  fvar_map: &FxHashMap<Name, LeanExpr>,
-) -> LeanExpr {
+  let key_name = |n: &Name| -> Option<Name> {
+    if keep.contains(n) {
+      return None;
+    }
+    stt
+      .resolve_addr(n)
+      .map(|a| Name::str(Name::anon(), format!("#{}", a.hex())))
+  };
   match e.as_data() {
-    ExprData::Fvar(n, _) => {
-      fvar_map.get(n).cloned().unwrap_or_else(|| e.clone())
+    ExprData::Const(n, ls, _) => match key_name(n) {
+      Some(k) => LeanExpr::cnst(k, ls.clone()),
+      None => e.clone(),
     },
     ExprData::App(f, a, _) => {
-      LeanExpr::app(replace_fvars(f, fvar_map), replace_fvars(a, fvar_map))
+      LeanExpr::app(addr_key(f, stt, keep), addr_key(a, stt, keep))
     },
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      replace_fvars(t, fvar_map),
-      replace_fvars(b, fvar_map),
-      bi.clone(),
+    ExprData::Lam(_, t, b, _, _) => LeanExpr::lam(
+      Name::anon(),
+      addr_key(t, stt, keep),
+      addr_key(b, stt, keep),
+      BinderInfo::Default,
     ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      replace_fvars(t, fvar_map),
-      replace_fvars(b, fvar_map),
-      bi.clone(),
+    ExprData::ForallE(_, t, b, _, _) => LeanExpr::all(
+      Name::anon(),
+      addr_key(t, stt, keep),
+      addr_key(b, stt, keep),
+      BinderInfo::Default,
     ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      replace_fvars(t, fvar_map),
-      replace_fvars(v, fvar_map),
-      replace_fvars(b, fvar_map),
+    ExprData::LetE(_, t, v, b, nd, _) => LeanExpr::letE(
+      Name::anon(),
+      addr_key(t, stt, keep),
+      addr_key(v, stt, keep),
+      addr_key(b, stt, keep),
       *nd,
     ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), replace_fvars(e, fvar_map))
-    },
-    ExprData::Mdata(md, e, _) => {
-      LeanExpr::mdata(md.clone(), replace_fvars(e, fvar_map))
-    },
+    ExprData::Proj(n, i, s, _) => LeanExpr::proj(
+      key_name(n).unwrap_or_else(|| n.clone()),
+      i.clone(),
+      addr_key(s, stt, keep),
+    ),
+    ExprData::Mdata(_, x, _) => addr_key(x, stt, keep),
     _ => e.clone(),
   }
 }
@@ -2603,8 +2334,13 @@ fn compute_lean_ind_flags_checked(
   lean_env: &LeanEnv,
   control: &Checkpoint,
 ) -> Result<LeanIndFlags, AttemptError> {
-  let expanded =
-    expand_nested_block_checked(all, lean_env, &FxHashMap::default(), control)?;
+  let expanded = expand_nested_block_checked(
+    all,
+    lean_env,
+    &FxHashMap::default(),
+    None,
+    control,
+  )?;
   let num_nested = (expanded.types.len() - expanded.n_originals) as u64;
   let block_names: FxHashSet<&Name> =
     expanded.types.iter().map(|m| &m.name).collect();
@@ -2800,15 +2536,14 @@ mod tests {
 
   // ---- expr_mentions_any_name ----
 
-  /// Two auxes whose instantiated views are alpha-identical — the
-  /// distinguishing spec param is phantom in the external's ctors, the
-  /// `IxVMInd.DedupM` shape (`Bar2 M Nat` vs `Bar2 M Bool` where
-  /// `Bar2.mk : α → Bar2 α β` never uses `β`) — must stay in DISTINCT
-  /// canonical classes: the identity-marker ctor carries
-  /// `aux_to_nested` into the compared data. Conversely, auxes with
-  /// equal nested identities still collapse (the alias-dedup net).
+  /// The canonical aux order is the discovery order (A2-order): the
+  /// order function is the identity on an expansion and leaves it unchanged,
+  /// including two auxes whose instantiated views are alpha-identical
+  /// because the distinguishing spec param is phantom in the external's
+  /// ctors (the `IxVMInd.DedupM` shape: `Bar2 M Nat` vs `Bar2 M Bool` where
+  /// `Bar2.mk : α → Bar2 α β` never uses `β`).
   #[test]
-  fn sort_aux_distinguishes_phantom_spec_params() {
+  fn aux_order_is_discovery_order() {
     use crate::compile::CompileState;
 
     let all0 = mk_name_for("M");
@@ -2835,7 +2570,7 @@ mod tests {
           mk_name_for("_"),
           LeanExpr::cnst(mk_name_for("Nat"), vec![]),
           LeanExpr::cnst(aux_name(i), vec![]),
-          ix_common::env::BinderInfo::Default,
+          BinderInfo::Default,
         ),
         n_fields: 1,
       }],
@@ -2862,33 +2597,22 @@ mod tests {
       }
     };
     let stt = CompileState::new_empty();
-    // The structural comparator resolves external consts by compiled
-    // address; register the externals the fixtures reference.
-    for ext in ["Nat", "Bool", "Bar2"] {
-      stt.name_to_addr.insert(
-        mk_name_for(ext),
-        ix_common::address::Address::hash(ext.as_bytes()),
-      );
+    // Discovery order (A2-order): the canonical order is the expansion's
+    // own, so every aux keeps its discovery position and its name. Two
+    // auxes whose instantiated views are alpha-identical (the phantom
+    // `IxVMInd.DedupM` shape) stay distinct, as they are distinct
+    // occurrences. Equal nested identities never reach this point: the
+    // expansion deduplicates occurrences by `aux_seen`.
+    for spec2 in ["Bool", "Nat"] {
+      let mut expanded = build(spec2);
+      let before: Vec<Name> =
+        expanded.types.iter().map(|m| m.name.clone()).collect();
+      let perm = sort_aux_by_partition_refinement(&mut expanded, &stt).unwrap();
+      assert_eq!(perm, vec![0, 1], "discovery order is the identity");
+      let after: Vec<Name> =
+        expanded.types.iter().map(|m| m.name.clone()).collect();
+      assert_eq!(before, after, "the expansion is left unchanged");
     }
-
-    // Distinct nested identities → distinct canonical classes.
-    let mut expanded = build("Bool");
-    let perm = sort_aux_by_partition_refinement(&mut expanded, &stt).unwrap();
-    assert_eq!(perm.len(), 2);
-    assert_ne!(
-      perm[0], perm[1],
-      "phantom-spec-param auxes must not collapse (IxVMInd.DedupM shape)"
-    );
-    assert_eq!(expanded.types.len(), 3, "both auxes survive the sort");
-
-    // Equal nested identities → still one class (legitimate dedup).
-    let mut expanded = build("Nat");
-    let perm = sort_aux_by_partition_refinement(&mut expanded, &stt).unwrap();
-    assert_eq!(perm.len(), 2);
-    assert_eq!(
-      perm[0], perm[1],
-      "semantically equal nested identities still collapse"
-    );
   }
 
   #[test]
@@ -2919,7 +2643,7 @@ mod tests {
       mk_name_for("x"),
       sort0(),
       LeanExpr::cnst(mk_name_for("Target"), vec![]),
-      ix_common::env::BinderInfo::Default,
+      BinderInfo::Default,
     );
     assert!(expr_mentions_any_name(&e, &names_of([mk_name_for("Target")])));
   }
@@ -3004,7 +2728,7 @@ mod tests {
       mk_name_for("x"),
       sort0(),
       LeanExpr::bvar(Nat::from(0u64)),
-      ix_common::env::BinderInfo::Default,
+      BinderInfo::Default,
     );
     assert!(!has_invalid_spec_ref(&e, &[]));
   }
@@ -3016,7 +2740,7 @@ mod tests {
       mk_name_for("x"),
       sort0(),
       LeanExpr::fvar(unknown),
-      ix_common::env::BinderInfo::Default,
+      BinderInfo::Default,
     );
     assert!(has_invalid_spec_ref(&e, &[]));
   }
@@ -3070,7 +2794,7 @@ mod tests {
             mk_name_for("_"),
             LeanExpr::cnst(nat_name.clone(), vec![]),
             LeanExpr::cnst(nat_name.clone(), vec![]),
-            ix_common::env::BinderInfo::Default,
+            BinderInfo::Default,
           ),
         },
         is_unsafe: false,
@@ -3299,7 +3023,7 @@ mod tests {
             mk_name_for("_"),
             LeanExpr::cnst(n.clone(), vec![]),
             LeanExpr::cnst(n.clone(), vec![]),
-            ix_common::env::BinderInfo::Default,
+            BinderInfo::Default,
           ),
         },
         induct: n,

@@ -214,7 +214,7 @@ def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
     if let some (.inductInfo v) ← Ix.AuxGen.lookupConst? name then
       if v.numNested > 0 then metadataHasNested := true
 
-  let expanded ← Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep
+  let expanded ← Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep true
   let structuralHasNested : Bool := expanded.types.size > expanded.nOriginals
 
   out := out ++ s!"flags meta_nested={metadataHasNested} structural_nested={structuralHasNested} n_classes={sortedClasses.length}\n"

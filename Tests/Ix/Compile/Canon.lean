@@ -4,11 +4,12 @@
   (`Tests.Ix.Compile.{Mutual,Canonicity,LevelSpellings}`, `IxVMInd`,
   `Test.Ix.Fixtures` and their dependencies).
 
-  The compiler's Step 1 is wired into Pass 1 under `Rules.compiler`
-  (today's rules with the two Lean-port comparator fixes): `Ix.CondenseM.run`
-  is `condensation`, `Ix.CompileM.sortConsts` is `sortClasses`, and
+  The compiler's Step 1 is wired into Pass 1 under `Rules.compiler`, which
+  is `Rules.phaseA` since A2-order (levels after `canonUniv`, nested
+  auxiliaries in discovery order, the port fixes): `Ix.CondenseM.run` is
+  `condensation`, `Ix.CompileM.sortConsts` is `sortClasses`, and
   `Ix.AuxGen.sortAuxByPartitionRefinement`/`computeAuxPerm` take their
-  order and permutation from `structuralAuxClasses`/`computePerm`. The
+  order and permutation from `canonicalAuxOrder`/`computePerm`. The
   compiler side below is that wired path, called in a `CompileEnv` seeded
   with the Rust compile of the same closure (the `aux-gen-diff` harness's
   setup). Checked:
@@ -19,11 +20,18 @@
   2. for every component with two or more members or an inductive, the
      wired `sortConsts` (in `CompileM`, addresses through
      `constAddrLookup`) gives the classes of the pure
-     `sortClasses Rules.today`, member by member and in order;
+     `sortClasses Rules.compiler`, member by member and in order (and the
+     components whose order today's rules would give differently, i.e.
+     the order moves of comparing levels after `canonUniv`, are counted);
   3. for every inductive component with nested auxiliaries, the wired
      compiler path (`expandNestedBlock` → `sortAuxByPartitionRefinement` →
      `computeAuxPerm`) gives the canonical auxiliary count and the source
-     permutation of Pass 1's own expansion (`componentNested Rules.today`);
+     permutation of Pass 1's own expansion (`componentNested
+     Rules.compiler`, external groups from the compiled class registry).
+     Under discovery order this is Lean's `rec_N` order wherever the
+     member order is Lean's, so the oracle of today's structural order is
+     replaced by Lean's own; the components with a moved auxiliary are
+     counted under both orders;
   4. for every Lean block with nested auxiliaries, the discovery order
      (`Nested.expand`, Lean's deduplication) equals the occurrences of the
      environment's `all₀.rec_1 …` in order;
@@ -36,7 +44,7 @@
   9. **the port fixes change nothing on the fixtures**: on every component
      (and every nested block's auxiliary sort) the classes and their order
      are identical with `portFixes` off (`Rules.today`) and on
-     (`Rules.compiler`), and today's comparator reads no cached ordering
+     (`todayFixed`), and today's comparator reads no cached ordering
      back for the swapped pair inside a sort; and two synthetic pairs show
      what each fix does (a definition against an inductive: `lt` both ways
      today, by kind tag fixed; a cached strong `lt` read back for the
@@ -105,6 +113,10 @@ def showE {α : Type} [Repr α] : Except String α → String
   | .ok a => reprStr a
   | .error e => s!"error: {e}"
 
+/-- Today's rules with only the two port fixes on (what `Rules.compiler` was
+before A2-order). -/
+def todayFixed : Rules := { Rules.today with portFixes := true }
+
 /-- What each port fix does, on synthetic members (design document §3.4).
 C1: a definition and an inductive compare `lt` in both orders today, and by
 kind tag (definition < inductive) with the fix. C2: a strong `lt` cached
@@ -121,7 +133,7 @@ def portFixUnitChecks (t : Tally) : Tally :=
   let y := defn "canonPortFixY" #[nm "u"]
   let none? : Ix.Name → Option Address := fun _ => none
   let fresh := fun (r : Rules) (a b : Ix.MutConst) => compareFresh r none? {} a b
-  let t := match fresh .today d i, fresh .today i d, fresh .compiler d i, fresh .compiler i d with
+  let t := match fresh .today d i, fresh .today i d, fresh todayFixed d i, fresh todayFixed i d with
     | .ok .lt, .ok .lt, .ok .lt, .ok .gt => t.check true ""
     | a, b, c, e => t.check false s!"C1: today {showE a}/{showE b}, fixed {showE c}/{showE e}"
   let seq := fun (r : Rules) =>
@@ -129,7 +141,7 @@ def portFixUnitChecks (t : Tally) : Tally :=
       let a ← compareConst r none? {} x y
       let b ← compareConst r none? {} y x
       pure (a, b) : CmpM (Ordering × Ordering)).run' {}
-  match seq .today, seq .compiler, fresh .today y x with
+  match seq .today, seq todayFixed, fresh .today y x with
   | .ok (.lt, .lt), .ok (.lt, .gt), .ok .gt => t.check true ""
   | a, b, c => t.check false s!"C2: today {showE a}, fixed {showE b}, uncached {showE c}"
 
@@ -184,6 +196,9 @@ def run (env : Lean.Environment) : IO UInt32 := do
     | some a => some a
     | none => cenv.auxNameToAddr.get? n
   let cenvRef : Env := { const? := rawEnv.consts.get?, addr? }
+  -- the canonical expansion as the compiler runs it: external groups from
+  -- the compiled class registry
+  let cenvRefC : Env := { cenvRef with groupOf := groupOfBlocks cenv.blocks }
 
   -- 1. components: the wired condensation against Rust's and `sccsOf`
   let names := rawEnv.consts.toArray.map (·.1)
@@ -217,7 +232,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let mut nCollapsed := 0
   let mut nMulti := 0
   let mut nPermMoved := 0
-  let mut nPhaseADiffers := 0
+  let mut nTodayDiffers := 0
+  let mut nPermMovedToday := 0
   let mut nPortFix := 0
   let mut nPortFixAux := 0
   for (lo, members) in condensed.blocks do
@@ -259,7 +275,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
         for n in originalAll do
           if let some (.inductInfo v) ← Ix.AuxGen.lookupConst? n then
             if v.numNested > 0 then metaNested := true
-        let probe ← Ix.AuxGen.expandNestedBlock reps aliasToRep
+        let probe ← Ix.AuxGen.expandNestedBlock reps aliasToRep true
         let structNested := probe.types.size > probe.nOriginals
         if metaNested || structNested then
           if metaNested && structNested then auxX := some probe.toCanon
@@ -275,7 +291,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
       -- 9. the port fixes change nothing: classes and order with them off
       -- (`Rules.today`) and on (`Rules.compiler`), and no reversed
       -- non-equal cache hit inside today's sort
-      match sortClasses Rules.today addr? cs.toList, sortClasses Rules.compiler addr? cs.toList with
+      match sortClasses Rules.today addr? cs.toList, sortClasses todayFixed addr? cs.toList with
       | .ok (off, st), .ok (on, _) =>
         nPortFix := nPortFix + 1
         t := t.check (classNames off == classNames on)
@@ -284,27 +300,29 @@ def run (env : Lean.Environment) : IO UInt32 := do
           s!"port fixes {namePretty lo}: {st.hazards} reversed non-equal cache hits today"
       | .error e, _ | _, .error e => t := t.check false s!"port fixes {namePretty lo}: {e}"
       if let some x := auxX then
-        match structuralAuxClasses Rules.today addr? x, structuralAuxClasses Rules.compiler addr? x with
+        match structuralAuxClasses Rules.today addr? x, structuralAuxClasses todayFixed addr? x with
         | .ok off, .ok on =>
           nPortFixAux := nPortFixAux + 1
           t := t.check (classNames off == classNames on)
             s!"port fixes, auxiliaries of {namePretty lo}: {pretty (classNames off)} off vs \
               {pretty (classNames on)} on"
         | .error e, _ | _, .error e => t := t.check false s!"port fixes, auxiliaries of {namePretty lo}: {e}"
-      match sortClasses Rules.today addr? cs.toList with
+      match sortClasses Rules.compiler addr? cs.toList with
       | .error e => t := t.check false s!"sortClasses {namePretty lo}: {e}"
       | .ok (mine, _) =>
         nClasses := nClasses + 1
         if classes.any (·.size > 1) then nCollapsed := nCollapsed + 1
         if classes.size > 1 then nMulti := nMulti + 1
-        match sortClasses Rules.phaseA addr? cs.toList with
+        -- the order moves of A2-order's level rule: today's classes against
+        -- the wired ones (measured; the census predicts none)
+        match sortClasses Rules.today addr? cs.toList with
         | .ok (a, _) =>
-          if classNames a != classes then nPhaseADiffers := nPhaseADiffers + 1
+          if classNames a != classes then nTodayDiffers := nTodayDiffers + 1
           t := t.check (nameSorted (classNames a))
-            s!"representative phaseA {namePretty lo}: {pretty (classNames a)}"
-        | .error e => t := t.check false s!"sortClasses phaseA {namePretty lo}: {e}"
+            s!"representative today {namePretty lo}: {pretty (classNames a)}"
+        | .error e => t := t.check false s!"sortClasses today {namePretty lo}: {e}"
         t := t.check (nameSorted (classNames mine))
-          s!"representative today {namePretty lo}: {pretty (classNames mine)}"
+          s!"representative compiler {namePretty lo}: {pretty (classNames mine)}"
         t := t.check (classNames mine == classes)
           s!"classes {namePretty lo}: {pretty (classNames mine)} vs {pretty classes}"
         if let some (nCanon, perm) := nestedOut then
@@ -312,22 +330,26 @@ def run (env : Lean.Environment) : IO UInt32 := do
             for c in cs do
               if let .indc i := c then return i.all
             return #[]
-          match componentNested Rules.today cenvRef originalAll classes with
+          match componentNested Rules.compiler cenvRefC originalAll classes with
           | .error e => t := t.check false s!"nested {namePretty lo}: {e}"
           | .ok none => t := t.check false s!"nested {namePretty lo}: none, compiler has {perm}"
           | .ok (some n) =>
             nNested := nNested + 1
             if perm.zipIdx.any (fun (p, j) => p != Ix.AuxGen.PERM_OUT_OF_SCC && p != j) then
               nPermMoved := nPermMoved + 1
+            -- today's structural order, for the count of blocks it moved
+            if let .ok (some n0) := componentNested Rules.today cenvRef originalAll classes then
+              if n0.perm.zipIdx.any (fun (p, j) => p.isSome && p != some j) then
+                nPermMovedToday := nPermMovedToday + 1
             let permMine := n.perm.map fun
               | some i => i
               | none => Ix.AuxGen.PERM_OUT_OF_SCC
             t := t.check (permMine == perm && n.canonClasses.size == nCanon)
               s!"nested {namePretty lo}: perm {permMine} / {n.canonClasses.size} vs {perm} / {nCanon}"
   IO.println s!"[canon-pass1] compared {nClasses} components ({nMulti} with several classes, \
-    {nCollapsed} with a collapse; phaseA differs on {nPhaseADiffers}), {nNested} nested \
-    ({nPermMoved} with a moved auxiliary); port fixes neutral on {nPortFix} components and \
-    {nPortFixAux} auxiliary sorts"
+    {nCollapsed} with a collapse; today's rules differ on {nTodayDiffers}), {nNested} nested \
+    ({nPermMoved} with a moved auxiliary under discovery order, {nPermMovedToday} under today's \
+    structural order); port fixes neutral on {nPortFix} components and {nPortFixAux} auxiliary sorts"
 
   -- 4, 5. Lean blocks: discovery vs rec_N; canonBlock under both rule sets
   let mut seen : Std.HashSet Ix.Name := {}
