@@ -551,7 +551,14 @@ def crosses (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Bool :=
     if program.linearTypes.contains t then return false
   if ← isShareable program fuel type then return true
   if !program.crossing then return false
-  plainData program fuel type
+  -- Whether a type is plain data depends only on its head constant: decide
+  -- it once per head (`State.plainHeads`), so that crossing costs no more
+  -- than a reduction per argument.
+  let .ref t _ := head | return false
+  if let some (_, known) := (← get).plainHeads.find? (·.1 == t) then return known
+  let known ← plainData program fuel type
+  modify fun s => { s with plainHeads := s.plainHeads.push (t, known) }
+  return known
 
 /-- Argument demand at a call. A callee's multiplicity does not scale the
 demand on a value of a crossing type (`crosses`): under R19 the callee

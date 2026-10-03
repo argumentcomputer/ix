@@ -321,6 +321,8 @@ struct State {
   /// Binders whose written `1`/`&` contract was not enforced because their
   /// type crosses the usage axis (plain-data crossing), for the diagnostic.
   crossed: Vec<usize>,
+  /// The plain-data decisions `crosses` has taken, by type head.
+  plain_heads: Vec<(u64, bool)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -433,6 +435,7 @@ impl<'a> Checker<'a> {
         parents: vec![None],
         remaining: limits.steps,
         crossed: vec![],
+        plain_heads: vec![],
       },
     }
   }
@@ -1307,7 +1310,19 @@ impl<'a> Checker<'a> {
     if !self.program.crossing {
       return Ok(false);
     }
-    self.plain_data(fuel, typ)
+    // Whether a type is plain data depends only on its head constant: decide
+    // it once per head (`State::plain_heads`), so that crossing costs no more
+    // than a reduction per argument.
+    let Expr::Ref(t, _) = head.as_ref() else { return Ok(false) };
+    if let Some((_, known)) =
+      self.state.plain_heads.iter().find(|(head, _)| head == t)
+    {
+      return Ok(*known);
+    }
+    let t = *t;
+    let known = self.plain_data(fuel, typ)?;
+    self.state.plain_heads.push((t, known));
+    Ok(known)
   }
   /// Check a binder's usage contract when its scope finishes. Under
   /// plain-data crossing, a written `1`/`&` contract on a binder whose type

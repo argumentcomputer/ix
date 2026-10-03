@@ -92,6 +92,8 @@ structure State where
   /-- Binders whose written `1`/`&` contract was not enforced because their
   type crosses the usage axis (plain-data crossing), for the diagnostic. -/
   crossed : Array OwnerId := #[]
+  /-- The plain-data decisions `crosses` has taken, by type head. -/
+  plainHeads : Array (UInt64 × Bool) := #[]
   deriving BEq, Repr, Inhabited
 
 abbrev CheckM := EStateM Error State
