@@ -485,6 +485,17 @@ structure Pass2Ctx where
   /-- Sharing limits of every recompile in the run (Rust
       `stt.sharing_limits`). -/
   sharingLimits : Ix.Sharing.Exact.Limits
+  /-- The environment was compiled by Pass 3 (it has `_ix` display names):
+      nothing in it is surgered, so no call-site plan is installed and every
+      verification recompile runs without surgery, as the compiler's
+      original-form compile did. -/
+  pass3 : Bool := false
+
+/-- Was this environment compiled by Pass 3 (`IX_PASS3=images`)? Its
+    changed blocks' Ix auxiliaries carry reserved `_ix` display names (D14);
+    an environment with no changed block is the switch-off output. -/
+def pass3Env (ixonEnv : Ixon.Env) : Bool :=
+  ixonEnv.named.fold (init := false) fun acc n _ => acc || Ix.Compile.Pass.hasReserved n
 
 /-- Mutable state threaded through Pass 2. -/
 structure Pass2St where
@@ -698,15 +709,17 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   -- this is where nested/collapsed-member plans become computable.
   let auxMemberNames : Ix.Set Ix.Name :=
     auxMembers.foldl (fun s (_, n) => s.insert n) {}
-  match installDecompileCallSitePlans ctx.ixonEnv ctx.mutsIndex st.workEnv
-      st.auxPerms allNames auxMemberNames
-      st.callSitePlans st.brecOnPlans st.belowPlans with
-  | .ok ((cs, brec, below), (newCs, newBrec, newBelow)) =>
-    st := { st with callSitePlans := cs, brecOnPlans := brec, belowPlans := below
-                    deltaCs := st.deltaCs ++ newCs
-                    deltaBrec := st.deltaBrec ++ newBrec
-                    deltaBelow := st.deltaBelow ++ newBelow }
-  | .error e => st := recordErr st lo e
+  -- (Pass 3 environments carry no surgery: no plan is installed.)
+  if !ctx.pass3 then
+    match installDecompileCallSitePlans ctx.ixonEnv ctx.mutsIndex st.workEnv
+        st.auxPerms allNames auxMemberNames
+        st.callSitePlans st.brecOnPlans st.belowPlans with
+    | .ok ((cs, brec, below), (newCs, newBrec, newBelow)) =>
+      st := { st with callSitePlans := cs, brecOnPlans := brec, belowPlans := below
+                      deltaCs := st.deltaCs ++ newCs
+                      deltaBrec := st.deltaBrec ++ newBrec
+                      deltaBelow := st.deltaBelow ++ newBelow }
+    | .error e => st := recordErr st lo e
 
   -- Phases 1b/1c: .casesOn / .recOn wrappers (:4330-4520). Shared arm.
   let wrapPhase (st₀ : Pass2St)
@@ -985,7 +998,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     ixonEnv, mutsIndex
     nameToAddr := ixonEnv.named.fold (init := {})
       fun m n named => m.insert n named.addr
-    origEnv?, sharingLimits }
+    origEnv?, sharingLimits, pass3 := pass3Env ixonEnv }
   -- name → block key (members + their ctors), then block deps
   -- (decompile.rs:5096-5133).
   let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
@@ -1123,7 +1136,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
     ixonEnv, mutsIndex
     nameToAddr := ixonEnv.named.fold (init := {})
       fun m n named => m.insert n named.addr
-    origEnv?, sharingLimits }
+    origEnv?, sharingLimits, pass3 := pass3Env ixonEnv }
   -- name → block key + block deps, exactly as the sequential driver.
   let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
   for (blockKey, (allNames, _)) in blocks do
@@ -1320,7 +1333,8 @@ def decompileEnvFull (ixonEnv : Ixon.Env)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) × Pass2St := Id.run do
   let (pass1Raw, pass1Errs) := decompileAllParallel ixonEnv
     (skip := fun n named =>
-      named.original.isSome && Ix.AuxGen.isAuxGenSuffix n)
+      (named.original.isSome && Ix.AuxGen.isAuxGenSuffix n)
+        || Ix.Compile.Pass.hasReserved n)
   let pass1 := match fixupInductiveFlags pass1Raw with
     | .ok fixed => fixed
     | .error _ => pass1Raw
@@ -1350,7 +1364,8 @@ def decompileEnvFullParallel (ixonEnv : Ixon.Env)
     | none => pure numWorkers
   let (pass1Raw, pass1Errs) := decompileAllParallel ixonEnv
     (skip := fun n named =>
-      named.original.isSome && Ix.AuxGen.isAuxGenSuffix n)
+      (named.original.isSome && Ix.AuxGen.isAuxGenSuffix n)
+        || Ix.Compile.Pass.hasReserved n)
   let pass1 := match fixupInductiveFlags pass1Raw with
     | .ok fixed => fixed
     | .error _ => pass1Raw

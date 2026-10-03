@@ -679,6 +679,14 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
   let patches := auxOut.patches
   if patches.isEmpty then
     return none
+  -- Pass 3 (`IX_PASS3=images`): the canonical recursors are the image
+  -- generator's input (`Ix.Compile.Pass.ImageView`).
+  if (← liftM (getCompileEnv : CompileM _)).pass3 then
+    let recs := patches.fold (init := #[]) fun acc n p =>
+      match p with
+      | .recr r => acc.push (n, r)
+      | _ => acc
+    liftM (modifyBlockState fun st => { st with p3AuxRecs := st.p3AuxRecs ++ recs } : CompileM _)
 
   -- Record the nested-aux permutation + per-source ctor counts
   -- (mutual.rs:590-643). Fail closed on missing ctor metadata: silently
