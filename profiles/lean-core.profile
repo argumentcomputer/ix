@@ -8,6 +8,12 @@
 #
 # Named assumptions (docs/resource-checking.md, "Named assumptions"); a
 # consumer relying on admission under this profile must establish them:
+# - A fully applied constructor, a nullary constructor and a literal are
+#   fresh: the checker treats each evaluation as a new, unique object. The
+#   consumer must allocate it anew at each evaluation that reaches a unique
+#   position -- never replace it by a shared static object (no hoisting,
+#   CSE, float-out or closed-term extraction of such a value), or else keep
+#   the run-time exclusivity check before any in-place update of it.
 # - The linearity of a shareable immediate has no run-time meaning: a `1` or
 #   `&` contract on a Nat, Bool, String, Char or UIntN value bounds how often
 #   the program names it, not a resource the consumer relies on. (Uniqueness
@@ -16,6 +22,10 @@
 #   case split stays valid after its aggregate is dropped (the consumer takes
 #   its own reference, as Lean's runtime does). The checker ties a field to
 #   its aggregate only until the field is consumed.
+# And the behaviour this profile states below: choices by need; case splits
+# and case definitions without closures and without dead induction
+# hypotheses; every other call strict; each definition the equation sidecar
+# lists under `resourceChecked` run by its unfolding equation.
 
 # The standard profile: Nat and String literal types; Nat, Bool and String
 # are shareable immediates.

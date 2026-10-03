@@ -88,8 +88,9 @@ use (a *freeze*): the owner is moved, so any later use, unique or shared, is
 rejected. A pair `(xs, xs)` of a unique list is therefore still rejected (the
 second use finds the owner moved). Functions, type parameters and abstract
 types never freeze. A fully applied constructor allocates a fresh value, which
-is unique whatever the constructor's declared result contract; a consumer
-must not substitute a shared static object for it. A plain-data owner may be
+is unique whatever the constructor's declared result contract (a nullary
+constructor and a literal likewise); this rests on a named assumption below:
+a consumer must not substitute a shared static object for it. A plain-data owner may be
 borrowed: the loan suspends it as it does a shareable one, and the view's
 origins keep it inside the loan.
 
@@ -268,6 +269,21 @@ Some rules rest on facts about the consumer that the checker cannot see. Each
 is stated here and in the header of the Lean core profile; a consumer relying
 on resource admission must establish it.
 
+- **A fresh value is a new object.** A fully applied constructor, a nullary
+  constructor reference and a literal are fresh: the checker treats every
+  evaluation of one as a new object referenced nowhere else, so its result
+  is unique whatever the constructor's declared result contract (R20; this
+  is what lets `x :: acc` or `.node r k l` be returned as `!`). The consumer
+  must allocate such a value anew at each evaluation that reaches a unique
+  position: it must not replace it by a shared static object (hoisting,
+  common-subexpression elimination, float-out, closed-term extraction,
+  persistent literal objects), or else it must keep the run-time exclusivity
+  check before any in-place update of it. Lean's own compiler extracts
+  closed terms and string literals into persistent objects and relies on
+  that run-time check; a consumer that skips the check because a contract
+  says `!` must not do the same. Making the checker independent of this
+  assumption would mean treating fresh results as shared, which would reject
+  most unique results (`x :: acc`, `[]`, `.node …`); that is not done.
 - **The linearity of a shareable immediate has no run-time meaning.** A value
   of a profile-shareable type (`Nat`, `Bool`, `String`, the scalar types of
   the core profile) is copied across call and closure boundaries; a `1` or
@@ -285,6 +301,12 @@ on resource admission must establish it.
   aggregate's owner, so the aggregate is never updated in place afterwards —
   but lets the field outlive the aggregate. A consumer that represents
   fields as loans into the aggregate's cell must not rely on admission.
+
+The behaviour a profile states is a consumer obligation as well: under the
+Lean core profile, choices by need; case splits and bound case definitions
+without closures and without computing dead induction hypotheses; every other
+call strict; and each definition the equation sidecar lists under
+`resourceChecked` run by its unfolding equation.
 
 ## Profiles, claims, and consumers
 

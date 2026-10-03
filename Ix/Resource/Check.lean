@@ -937,7 +937,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         let (head, arguments) ← splitApp ctx.program fuel e []
         let args := arguments.toArray
         -- A fully applied constructor allocates a fresh value: unique,
-        -- whatever its declared result contract.
+        -- whatever its declared result contract (named assumption: the
+        -- consumer allocates it anew, never as a shared static object).
         let fresh ← match head with
           | .ref index _ => do
             let d ← declaration ctx.program index

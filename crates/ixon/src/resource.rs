@@ -2255,7 +2255,8 @@ impl<'a> Checker<'a> {
       Expr::App(f, a) => {
         let (head, args) = self.split_app(fuel, e)?;
         // A fully applied constructor allocates a fresh value: unique,
-        // whatever its declared result contract.
+        // whatever its declared result contract (named assumption: the
+        // consumer allocates it anew, never as a shared static object).
         let fresh = match head.as_ref() {
           Expr::Ref(i, _) => {
             let d = self.declaration(*i)?.clone();
