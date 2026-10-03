@@ -287,4 +287,30 @@ def go (! xs : List Nat) : Nat :=
   | _ :: t => go t + 1
 end M12
 
+/-! ## Partial and opaque definitions are native (second review R2-2) -/
+
+/- Violation (V10): a `partial def` runs its `_unsafe_rec` twin, which stores
+its unique input and also moves it; only the opaque inhabitant was checked. -/
+namespace V10
+def keep (! xs : List Nat) : ! List Nat := xs
+partial def loop (n : Nat) (! xs : List Nat) : List Nat × List Nat :=
+  if n = 0 then (xs, keep xs) else loop (n - 1) xs
+end V10
+
+/- Violation (V03): as V10, with an in-place update of a stored value. -/
+namespace V03
+def bump (! xs : List Nat) : ! List Nat :=
+  match xs with
+  | [] => []
+  | h :: t => (h + 1) :: t
+partial def loop (n : Nat) (! xs : List Nat) : List Nat × List Nat :=
+  if n = 0 then (xs, bump xs) else loop (n - 1) xs
+end V03
+
+/- Control: an unannotated `partial def` has no resource obligation. -/
+namespace PartialPlain
+partial def loop (n : Nat) (xs : List Nat) : List Nat :=
+  if n = 0 then xs else loop (n - 1) xs
+end PartialPlain
+
 end Tests.Ix.SourceContract.ReviewFixture

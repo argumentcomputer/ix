@@ -448,7 +448,13 @@ example `String.push`'s shared result). When it carries a resource contract,
 or a `choice`/`interface` entry) and refuses the compile otherwise (the
 standard profile assumes nothing): its Lean body is only a model of the code
 that runs, so checking the contract against it would certify the model, not
-the implementation.
+the implementation. The same holds for an `opaque` (its value is an
+inhabitant the compiler never runs) and so for every `partial def`, which
+Lean compiles from its `_unsafe_rec` twin while the kernel sees only the
+opaque inhabitant (second review, R2-2): `ix compile` counts both as native
+implementations (`Ix.Compile.ResourceProfile.native`). A *definition* with
+an `_unsafe_rec` twin (structural or well-founded recursion) is not: it is
+admitted only through its bound unfolding equation (above).
 
 Because the case definitions and the equations are those of the compiled
 closure, the effective profile address depends on the program, as name

@@ -60,6 +60,10 @@ def standardProbe (name : String) (accepted : Bool) (finding : String) : Probe :
 /-- Review R2-3: the refusal of annotated recursion outside a bound equation. -/
 def recursionReason : String := "annotated recursive definition"
 
+/-- Review F7 and R2-2: the refusal of an annotated declaration whose Lean body
+is only a model of the code that runs. -/
+def nativeReason : String := "has a native implementation"
+
 def probes : List Probe := [
   probe "A01" false "F1", probe "A04" false "F1", probe "B07" false "F1", probe "A03b" false "F1",
   probe "M01" true "F1", probe "M02" true "F1", probe "I06" true "F1",
@@ -87,13 +91,22 @@ def probes : List Probe := [
     { probe name false "R2-3" with reason := recursionReason },
     { strictProbe name false "R2-3" with reason := recursionReason },
     { probe name false "R2-3" with equations := true },
-    { strictProbe name false "R2-3" with equations := true }])
+    { strictProbe name false "R2-3" with equations := true }]) ++
+  -- Review R2-2: an annotated partial (opaque) definition is native: refused
+  -- unless assumed; an unannotated one compiles.
+  [{ standardProbe "V10" false "R2-2" with reason := nativeReason },
+   { probe "V10" false "R2-2" with reason := nativeReason },
+   { probe "V03" false "R2-2" with reason := nativeReason },
+   { strictProbe "V03" false "R2-2" with reason := nativeReason },
+   standardProbe "PartialPlain" true "R2-2", probe "PartialPlain" true "R2-2"]
 
-/-- The definitions and theorems of a probe's namespace. -/
+/-- The safe definitions, theorems and opaques (`partial def`s) of a probe's
+namespace. -/
 def roots (env : Environment) (ns : Name) : List Name :=
   env.constants.toList.filterMap fun (name, info) =>
     match info with
-    | .defnInfo _ | .thmInfo _ => if name.getPrefix == ns then some name else none
+    | .defnInfo d => if name.getPrefix == ns && d.safety != .unsafe then some name else none
+    | .thmInfo _ | .opaqueInfo _ => if name.getPrefix == ns then some name else none
     | _ => none
 
 /-- Compile one probe as `ix compile --anon` does, with its profile source
@@ -182,8 +195,22 @@ private def nativeImplementations : IO (Bool × Nat × Nat × Option String) := 
     (Ix.Compile.ResourceProfile.checkNative (some "standard\n") env constants).toOption.isNone
   let assumed := (Ix.Compile.ResourceProfile.checkNative (some "assume String.push\n") env constants).toOption.isSome
   let plain := (Ix.Compile.ResourceProfile.checkNative none (← getCompileEnv #[fixtureModule]) constants).toOption.isSome
-  if refused && assumed && plain then return (true, 1, 0, none)
-  return (false, 0, 1, some s!"refused {refused}, assumed {assumed}, unannotated {plain}")
+  -- Review R2-2: an annotated `partial def` (an opaque run through its
+  -- `_unsafe_rec` twin) likewise, and only through the profile's assumption.
+  let env ← getCompileEnv #[fixtureModule]
+  let loop := fixtureModule ++ `V10.loop
+  let some loopInfo := env.find? loop | return (false, 0, 1, some s!"{loop} is missing")
+  let partials := [(loop, loopInfo)]
+  let partialRefused := (Ix.Compile.ResourceProfile.checkNative none env partials).toOption.isNone &&
+    (Ix.Compile.ResourceProfile.checkNative (some "standard\n") env partials).toOption.isNone
+  let partialAssumed :=
+    (Ix.Compile.ResourceProfile.checkNative (some s!"assume {loop}\n") env partials).toOption.isSome
+  let recursiveDefinition := Ix.Compile.ResourceProfile.native env (fixtureModule ++ `Q06.down)
+  if refused && assumed && plain && partialRefused && partialAssumed && !recursiveDefinition then
+    return (true, 1, 0, none)
+  return (false, 0, 1, some s!"refused {refused}, assumed {assumed}, unannotated {plain}, \
+    partial refused {partialRefused}, partial assumed {partialAssumed}, \
+    recursive definition native {recursiveDefinition}")
 
 /-- Strict setting S3: the sidecar of a compile under the core profile with
 equations (Q06) lists its checked pair with both addresses, the profile and
