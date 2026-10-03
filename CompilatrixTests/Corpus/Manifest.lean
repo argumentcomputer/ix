@@ -27,7 +27,7 @@ def format : String := "compilatrix/corpus/1"
 /-- The registered families (`corpus check` and `tests-corpus` with no
 manifest take all of them). -/
 def families : List System.FilePath :=
-  ["fixtures/ixon-v3/bench-k1/corpus.json", "fixtures/corpus/phase1-scalar/corpus.json",
+  ["fixtures/ixon-v4/bench-k1/corpus.json", "fixtures/corpus/phase1-scalar/corpus.json",
    "fixtures/corpus/phase1-boundary/corpus.json",
    "fixtures/corpus/phase1-resource/corpus.json",
    "fixtures/corpus/phase1-decline/corpus.json",

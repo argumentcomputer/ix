@@ -7,7 +7,7 @@ root on the typed x86 machine (`X86.step` from the exported wrapper) and on
 the byte machine (`ByteEval` over the object's own `.text`), as
 `tests-pipeline`'s `x86` and `bytes` levels do. The step counts, the result
 (`rax:rdx` and its readback) and the arguments must equal the reviewed
-baseline [`fixtures/ixon-v3/bench-k1/steps.json`] exactly.
+baseline [`fixtures/ixon-v4/bench-k1/steps.json`] exactly.
 
 The counts are a property of the emitted code: they change when selection,
 allocation, stacking, layout or the runtime lowering changes what runs, so
@@ -26,7 +26,7 @@ open Compilatrix Compilatrix.Recheck CompilatrixTests.Src
 open Lean (Json ToJson FromJson toJson fromJson?)
 open System
 
-def baseline : FilePath := "fixtures/ixon-v3/bench-k1/steps.json"
+def baseline : FilePath := "fixtures/ixon-v4/bench-k1/steps.json"
 def formatName : String := "compilatrix/x86-steps/1"
 def regenerate : String := "lake exe check-steps --write"
 

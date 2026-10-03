@@ -49,13 +49,13 @@ lean_lib CompilatrixTests where
 /- The K1 research fixture compiled natively: the independent oracle of the
 Src differential suite. Test-only; nothing in `Compilatrix` imports it. -/
 lean_lib K1Fixture where
-  srcDir := "fixtures/ixon-v3/k1"
+  srcDir := "fixtures/ixon-v4/k1"
   roots := #[`K1]
 
 /- The sort-polymorphism fixture compiled natively: the independent oracle of
 the level-exact relevance regression (D18). Test-only, like `K1Fixture`. -/
 lean_lib SortPolyFixture where
-  srcDir := "fixtures/ixon-v3/src-sortpoly"
+  srcDir := "fixtures/ixon-v4/src-sortpoly"
   roots := #[`SortPoly]
 
 /- Src: rules, the K1 table and runs, the native differential, pins,
@@ -120,7 +120,7 @@ lean_exe «tests-pipeline» where
 
 /- Deterministic x86 step counts (M3.2, MEAS-3): each bench-k1 program's
 `cx_init` and root on the typed x86 machine and on `ByteEval`, compared
-exactly with the reviewed baseline `fixtures/ixon-v3/bench-k1/steps.json`
+exactly with the reviewed baseline `fixtures/ixon-v4/bench-k1/steps.json`
 (`--write` regenerates it). -/
 lean_exe «check-steps» where
   root := `CompilatrixTests.Pipeline.StepsMain
@@ -255,7 +255,7 @@ lean_exe «check-x86-hardware» where
   srcDir := "scripts"
   root := `CheckX86Hardware
 
-/- Manual generator for `fixtures/ixon-v3/src-tables.tsv` (runs ix). -/
+/- Manual generator for `fixtures/ixon-v4/src-tables.tsv` (runs ix). -/
 lean_exe «pin-src-tables» where
   srcDir := "scripts"
   root := `PinSrcTables

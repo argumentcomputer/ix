@@ -3,7 +3,7 @@ import CompilatrixTests.Src.Rules
 import K1
 
 /-! SrcEval against native Lean (design note 01 §10 part 4). The fixture
-`fixtures/ixon-v3/k1/K1.lean` is compiled into this executable by the
+`fixtures/ixon-v4/k1/K1.lean` is compiled into this executable by the
 test-only Lake library `K1Fixture`, so each K1 definition runs natively
 beside its SrcEval run on the same `k1.ixe` closure. Primitives are compared
 with Lean's `Nat` at the word boundaries, and the primitive route against

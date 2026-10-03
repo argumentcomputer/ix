@@ -1,6 +1,6 @@
 import Compilatrix.Recheck.Run
 
-/-! The root `entry` of the `bench-k1/even-odd` corpus closure (`fixtures/ixon-v3/bench-k1/even-odd.ixe`) as `Recheck.run`'s input (M1.K1): the `Src.Program`
+/-! The root `entry` of the `bench-k1/even-odd` corpus closure (`fixtures/ixon-v4/bench-k1/even-odd.ixe`) as `Recheck.run`'s input (M1.K1): the `Src.Program`
 ingress makes from its closure (56 constants, no table),
 the configuration and `produce`'s certificate, with the laid-out typed program and the
 object's bytes the native run computes. Terms are shared: 5825 tree nodes, 1047

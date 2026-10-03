@@ -21,24 +21,24 @@ in
     # the store copy of the source tree rather than the symlinked work tree.
     ixon-v3 = mkCheck "ixon-v3" [] ''
       ./.lake/build/bin/tests-ixon-v3
-      ./.lake/build/bin/check-ixon-v3 ${auditSrc}/fixtures/ixon-v3/handoff/accepted.ixe \
-        ${auditSrc}/fixtures/ixon-v3/handoff/profile.bin \
-        ${auditSrc}/fixtures/ixon-v3/handoff/accepted.claim
-      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v3/catalog/fat.ixc
-      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v3/catalog/chunked.ixc \
-        ${auditSrc}/fixtures/ixon-v3/catalog/chunked.ixc/members.json
+      ./.lake/build/bin/check-ixon-v3 ${auditSrc}/fixtures/ixon-v4/handoff/accepted.ixe \
+        ${auditSrc}/fixtures/ixon-v4/handoff/profile.bin \
+        ${auditSrc}/fixtures/ixon-v4/handoff/accepted.claim
+      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v4/catalog/fat.ixc
+      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v4/catalog/chunked.ixc \
+        ${auditSrc}/fixtures/ixon-v4/catalog/chunked.ixc/members.json
     '';
 
     # The admission census must reproduce its reviewed baseline exactly, so
     # per-constant verdicts and budget headroom change only with review.
     census = mkCheck "census" [pkgs.diffutils] ''
-      ./.lake/build/bin/census ${auditSrc}/fixtures/ixon-v3/k1/k1.ixe \
-        --names ${auditSrc}/fixtures/ixon-v3/k1/equations.json --out census.json
-      diff -u ${auditSrc}/fixtures/ixon-v3/k1/census.json census.json
+      ./.lake/build/bin/census ${auditSrc}/fixtures/ixon-v4/k1/k1.ixe \
+        --names ${auditSrc}/fixtures/ixon-v4/k1/equations.json --out census.json
+      diff -u ${auditSrc}/fixtures/ixon-v4/k1/census.json census.json
       for name in fib sum-loop ackermann tak gcd; do
-        ./.lake/build/bin/census ${auditSrc}/fixtures/ixon-v3/bench-k1/$name.ixe \
-          --names ${auditSrc}/fixtures/ixon-v3/bench-k1/$name.equations.json --out $name.census.json
-        diff -u ${auditSrc}/fixtures/ixon-v3/bench-k1/$name.census.json $name.census.json
+        ./.lake/build/bin/census ${auditSrc}/fixtures/ixon-v4/bench-k1/$name.ixe \
+          --names ${auditSrc}/fixtures/ixon-v4/bench-k1/$name.equations.json --out $name.census.json
+        diff -u ${auditSrc}/fixtures/ixon-v4/bench-k1/$name.census.json $name.census.json
       done
     '';
 
@@ -142,7 +142,7 @@ in
     '';
 
     # Deterministic typed-x86 and ByteEval step counts (M3.2, MEAS-3) must
-    # equal the reviewed baseline fixtures/ixon-v3/bench-k1/steps.json.
+    # equal the reviewed baseline fixtures/ixon-v4/bench-k1/steps.json.
     x86-steps = mkCheck "x86-steps" [] ''
       ./.lake/build/bin/check-steps
     '';

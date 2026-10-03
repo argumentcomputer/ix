@@ -2,7 +2,7 @@ import CompilatrixTests.Src.StuckEval
 import SortPoly
 
 /-! Level-exact relevance (D18) on ix-compiled sort-polymorphic code
-(`fixtures/ixon-v3/src-sortpoly`, research note `relevance-checker.md`
+(`fixtures/ixon-v4/src-sortpoly`, research note `relevance-checker.md`
 §2.4, §4.7): every covered root loads through the whole front end and
 evaluates without getting stuck, matching the same Lean source compiled
 natively (the test-only `SortPolyFixture` library); the level-blind

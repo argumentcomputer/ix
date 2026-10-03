@@ -5,7 +5,7 @@ benchmark ladder and targets. [Performance reports](performance/README.md)
 retain earlier results. The first-wave [fixtures](../benchmarks/fixtures/README.md)
 and the optional [runner](../benchmarks/runner/README.md) implement these rules for
 the `compilatrix`, `lean-clang` and `clang-idiomatic` rows. The `compilatrix`
-row compiles each K1 fixture's frozen closure (`fixtures/ixon-v3/bench-k1`)
+row compiles each K1 fixture's frozen closure (`fixtures/ixon-v4/bench-k1`)
 with the `compilatrix` executable; the runner times every row in the process
 (startup) profile and, for `Nat` entries, in the entry profile with
 calibrated repetition counts, and adds two diagnostic rows for attribution

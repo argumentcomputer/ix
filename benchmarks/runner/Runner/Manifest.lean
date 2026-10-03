@@ -74,7 +74,7 @@ def Fixture.natArity? (f : Fixture) : Option Nat :=
   compiler and bundled `leanc`/clang at `-O3`.
 * `clang-O2`/`clang-O3` compile the natural C or C++ twin.
 * `compilatrix` compiles the fixture's frozen Ixon closure
-  (`fixtures/ixon-v3/bench-k1/<name>.ixe`, the closure of the same `entry`)
+  (`fixtures/ixon-v4/bench-k1/<name>.ixe`, the closure of the same `entry`)
   with the `compilatrix` executable.
 * Diagnostic rows, entry profile only, which attribute a gap and are never
   real-program results: `clang-tagged`, the K1 algorithms on compilatrix's

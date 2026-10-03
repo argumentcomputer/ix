@@ -18,7 +18,7 @@ open System CompilatrixTests.Recheck
 covering mutual recursion (even-odd), an allocated tuple, shifts and a
 `Bool` result. -/
 def sample : List (FilePath × String × String × String) :=
-  [("fixtures/ixon-v3/bench-k1/corpus.json", "even-odd", "entry", "CorpusEvenOdd"),
+  [("fixtures/ixon-v4/bench-k1/corpus.json", "even-odd", "entry", "CorpusEvenOdd"),
    ("fixtures/corpus/phase1-scalar/corpus.json", "tuple", "entry", "CorpusTuple"),
    ("fixtures/corpus/phase1-scalar/corpus.json", "natShiftr", "entry", "CorpusNatShiftr"),
    ("fixtures/corpus/phase1-scalar/corpus.json", "strictAndOr", "entryStrictAnd", "CorpusStrictAnd")]

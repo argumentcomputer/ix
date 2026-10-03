@@ -8,7 +8,7 @@ namespace CompilatrixTests.Src
 open Compilatrix Compilatrix.Src Compilatrix.Ixon
 open Compilatrix.Sem (Result)
 
-def fixtures : System.FilePath := "fixtures/ixon-v3"
+def fixtures : System.FilePath := "fixtures/ixon-v4"
 
 /-- The K1 benchmark closures, with their `entry` arity and test arguments
 from `benchmarks/fixtures/manifest.json`. -/

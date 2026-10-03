@@ -10,7 +10,7 @@ implements.
 
 | Row | Build |
 | --- | --- |
-| `compilatrix` | The fixture's frozen Ixon closure (`fixtures/ixon-v3/bench-k1/<name>.ixe`, the closure of the same `entry`) through `compilatrix compile … --no-typecheck`, linked with the timing driver |
+| `compilatrix` | The fixture's frozen Ixon closure (`fixtures/ixon-v4/bench-k1/<name>.ixe`, the closure of the same `entry`) through `compilatrix compile … --no-typecheck`, linked with the timing driver |
 | `lean-clang` | The fixture's Lean source through `lean -c` and Lean's `leanc -O3 -DNDEBUG` (bundled clang and Lean runtime) |
 | `clang-O2`, `clang-O3` | The fixture's natural C or C++ twin at `-O2` and `-O3` |
 | `clang-tagged` | Diagnostic, entry profile only: the K1 algorithms on compilatrix's value representation (tagged words, carry-checked `+ 1`; [`../meas4/twins.c`](../meas4/twins.c) and [`entry/tagged.c`](entry/tagged.c)) at `-O2` |

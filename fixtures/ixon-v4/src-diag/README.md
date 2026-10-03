@@ -4,7 +4,7 @@
 §10, part 5). `diag.ixe` is the anonymous v3 closure of those roots and
 `diag.equations.json` names them by address (a `compilatrix/k1-equations/1`
 sidecar with no equations), from `lake exe pin-src-tables --diagnostics
-fixtures/ixon-v3/src-diag` with ix `9c4b9c65`; `provenance.json` records the
+fixtures/ixon-v4/src-diag` with ix `9c4b9c65`; `provenance.json` records the
 binary, commands and file hashes.
 
 | Root | Expected |

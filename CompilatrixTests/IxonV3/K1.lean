@@ -4,8 +4,8 @@ import Compilatrix.Tools.Check
 /-! The K1 fixture packs: ordinary Lean scalar programs and the unfolding
 theorems of every recursive definition in their closures, produced by
 `ix compile --equations`. `k1/` holds the five programs in one closure (see
-`fixtures/ixon-v3/k1/README.md`); `bench-k1/` holds one closure per K1
-benchmark fixture's `entry` (see `fixtures/ixon-v3/bench-k1/README.md`). -/
+`fixtures/ixon-v4/k1/README.md`); `bench-k1/` holds one closure per K1
+benchmark fixture's `entry` (see `fixtures/ixon-v4/bench-k1/README.md`). -/
 
 namespace CompilatrixTests.IxonV3.K1
 

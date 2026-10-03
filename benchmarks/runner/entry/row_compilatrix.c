@@ -1,7 +1,7 @@
 /*
  * The runner's adapter for the compilatrix row (untrusted measurement code).
  * The row's code is `compilatrix compile`'s object for the fixture's frozen
- * closure (fixtures/ixon-v3/bench-k1/<fixture>.ixe), which exports, as
+ * closure (fixtures/ixon-v4/bench-k1/<fixture>.ixe), which exports, as
  * fixtures/x86/runtime_driver.c describes,
  *
  *     cx_result cx_init(void *region, uint64_t size, uint64_t stack_budget);

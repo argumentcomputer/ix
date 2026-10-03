@@ -250,7 +250,7 @@ def render (a : Input) (tiny : Nat := 24) (long : Nat := 2000) : String × Strin
   let originText := match a.origin with
     | some o => o
     | none => s!"The `{a.name}` bench-k1 closure"
-  let fromText := if a.origin.isSome then "its closure" else s!"`fixtures/ixon-v3/bench-k1/{a.name}.ixe`"
+  let fromText := if a.origin.isSome then "its closure" else s!"`fixtures/ixon-v4/bench-k1/{a.name}.ixe`"
   let genText := if a.origin.isSome then "`lake exe corpus kernel-artifacts`" else "`lake exe gen-recheck-artifacts`"
   let mut out := s!"import Compilatrix.Recheck.Run
 

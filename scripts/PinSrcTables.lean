@@ -1,7 +1,7 @@
 import Lean
 import Compilatrix.Tools.Check
 
-/-! Generator for `fixtures/ixon-v3/src-tables.tsv` (design note 01 §4.2).
+/-! Generator for `fixtures/ixon-v4/src-tables.tsv` (design note 01 §4.2).
 
 It enumerates `@[macro_inline]` declarations over the Lean `Init`
 environment of the running toolchain (excluding the generated `T.ctorIdx`
@@ -16,13 +16,13 @@ Regeneration is a manual gate:
 
 ```
 lake exe pin-src-tables --ix PATH/TO/ix --work plans/<task>/src-tables \
-  --out fixtures/ixon-v3/src-tables.tsv \
-  --provenance fixtures/ixon-v3/src-tables.provenance.json \
-  --names fixtures/ixon-v3/src-names.tsv
+  --out fixtures/ixon-v4/src-tables.tsv \
+  --provenance fixtures/ixon-v4/src-tables.provenance.json \
+  --names fixtures/ixon-v4/src-names.tsv
 ```
 
-`--diagnostics fixtures/ixon-v3/src-diag` and `--sortpoly
-fixtures/ixon-v3/src-sortpoly` instead compile a roots-only fixture from the
+`--diagnostics fixtures/ixon-v4/src-diag` and `--sortpoly
+fixtures/ixon-v4/src-sortpoly` instead compile a roots-only fixture from the
 Lean source in that directory.
 -/
 
@@ -71,14 +71,14 @@ structure RootsFixture where
   stem : String
   roots : List Name
 
-/-- The admission-diagnostics fixture `fixtures/ixon-v3/src-diag/`. -/
+/-- The admission-diagnostics fixture `fixtures/ixon-v4/src-diag/`. -/
 def diagFixture : RootsFixture where
   source := "Diag.lean"
   stem := "diag"
   roots := [`SrcDiag.rootPartial, `SrcDiag.rootMixHash, `SrcDiag.rootFloat,
     `SrcDiag.rootClassical, `SrcDiag.rootSorry, `SrcDiag.rootOpaqueId]
 
-/-- The sort-polymorphism fixture `fixtures/ixon-v3/src-sortpoly/` (level-exact
+/-- The sort-polymorphism fixture `fixtures/ixon-v4/src-sortpoly/` (level-exact
 relevance, D18). -/
 def sortPolyFixture : RootsFixture where
   source := "SortPoly.lean"
@@ -136,10 +136,10 @@ def main (args : List String) : IO Unit := do
       return
   let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
   let work : System.FilePath := option options "--work" "plans/src-tables"
-  let out : System.FilePath := option options "--out" "fixtures/ixon-v3/src-tables.tsv"
+  let out : System.FilePath := option options "--out" "fixtures/ixon-v4/src-tables.tsv"
   let provenance : System.FilePath :=
-    option options "--provenance" "fixtures/ixon-v3/src-tables.provenance.json"
-  let namesOut : System.FilePath := option options "--names" "fixtures/ixon-v3/src-names.tsv"
+    option options "--provenance" "fixtures/ixon-v4/src-tables.provenance.json"
+  let namesOut : System.FilePath := option options "--names" "fixtures/ixon-v4/src-names.tsv"
   initSearchPath (← findSysroot)
   let env ← importModules #[{ module := `Init }] {} (trustLevel := 1024)
   let macroInline := (env.constants.fold (init := #[]) fun acc name _ =>

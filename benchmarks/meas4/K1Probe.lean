@@ -1,6 +1,6 @@
 /-! MEAS-4 `lean-clang` row: the K1 definitions of `fib`, `sum-loop` and
 `gcd`, verbatim from `benchmarks/fixtures/{fib,sum-loop,gcd}` (and so from
-`fixtures/ixon-v3/k1/K1.lean`), exported to the C timing driver in place of
+`fixtures/ixon-v4/k1/K1.lean`), exported to the C timing driver in place of
 the fixtures' `entry` and `main`. -/
 
 namespace K1

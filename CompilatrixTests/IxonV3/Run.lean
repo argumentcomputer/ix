@@ -22,7 +22,7 @@ private def dataLines (file : System.FilePath) : IO (List String) := do
 
 def run : IO Bool := do
   try
-    let root : System.FilePath := "fixtures/ixon-v3"
+    let root : System.FilePath := "fixtures/ixon-v4"
     let mut assertions := 0
     for line in ← dataLines (root / "expressions.txt") do
       let [label, encoded] := line.splitOn " "

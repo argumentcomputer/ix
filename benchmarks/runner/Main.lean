@@ -75,7 +75,7 @@ def main (args : List String) : IO UInt32 := do
         fixtures := only
         compilatrix := ((get "compilatrix").map (·.splitOn " " |>.filter (!·.isEmpty))).getD
           ["../../.lake/build/bin/compilatrix"]
-        closures := (get "closures").getD "../../fixtures/ixon-v3/bench-k1"
+        closures := (get "closures").getD "../../fixtures/ixon-v4/bench-k1"
         probe := (get "probe").map FilePath.mk
         cc := (get "cc").getD "cc" }
     | "check" => check manifest root out only

@@ -65,11 +65,11 @@
   {"path": "X86ObjectFixture.lean",
    "imports": ["Compilatrix.X86.ELFValidate", "Compilatrix.X86.EvalExamples"]},
   "SortPoly":
-  {"path": "fixtures/ixon-v3/src-sortpoly/SortPoly.lean", "imports": []},
+  {"path": "fixtures/ixon-v4/src-sortpoly/SortPoly.lean", "imports": []},
   "PinSrcTables":
   {"path": "scripts/PinSrcTables.lean",
    "imports": ["Lean", "Compilatrix.Tools.Check"]},
-  "K1": {"path": "fixtures/ixon-v3/k1/K1.lean", "imports": []},
+  "K1": {"path": "fixtures/ixon-v4/k1/K1.lean", "imports": []},
   "Ix.Lib":
   {"path": "vendor/aiur/Ix/Lib.lean",
    "imports": ["Std.Data.HashMap.Basic", "Std.Data.HashMap.Lemmas"]},

@@ -48,7 +48,7 @@ def run (a : Assert) : IO Unit := do
   let (p, _) := rootCalling w w.ident
   expect a (codes (admit p (cfg := { maxConsts := 1 })) == ["budget"]) "admit: budget"
 
-/-- The ix-compiled diagnostics fixture (`fixtures/ixon-v3/src-diag/`): each
+/-- The ix-compiled diagnostics fixture (`fixtures/ixon-v4/src-diag/`): each
 root, loaded alone, gets its expected outcome through the whole pipeline. -/
 def ixFixture (a : Assert) : IO (Array String) := do
   let dir := fixtures / "src-diag"

@@ -48,7 +48,7 @@ structure Options where
   example `nix run ../..#compilatrix --`. -/
   compilatrix : List String := ["../../.lake/build/bin/compilatrix"]
   /-- The frozen closures (`<fixture>.ixe`, `<fixture>.equations.json`). -/
-  closures : FilePath := "../../fixtures/ixon-v3/bench-k1"
+  closures : FilePath := "../../fixtures/ixon-v4/bench-k1"
   /-- `backend-probe`, for the diagnostic `lir-kernel` row (left out when absent). -/
   probe : Option FilePath := none
   /-- The C compiler of the entry profile. -/

@@ -4,7 +4,7 @@
   "description": "The benchmark fixtures' pure entry closures (phase1.md M0.4, MT.2): the five K1 programs, and the four MT.2 rows (collatz, prime-count, even-odd, sfib), with unfolding equations.",
   "tier": "required",
   "phase": 1,
-  "directory": "fixtures/ixon-v3/bench-k1",
+  "directory": "fixtures/ixon-v4/bench-k1",
   "source_root": "benchmarks/fixtures",
   "lean": {
     "version": "4.34.0",
@@ -78,7 +78,7 @@
           {
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.fib",
-            "path": "fixtures/ixon-v3/k1/K1.lean",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "https://github.com/argumentcomputer/Compilatr.ix"
           }
         ]
@@ -196,7 +196,7 @@
           {
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.sumLoop",
-            "path": "fixtures/ixon-v3/k1/K1.lean",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "https://github.com/argumentcomputer/Compilatr.ix"
           }
         ]
@@ -314,7 +314,7 @@
           {
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.ack",
-            "path": "fixtures/ixon-v3/k1/K1.lean",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "https://github.com/argumentcomputer/Compilatr.ix"
           }
         ]
@@ -469,7 +469,7 @@
           {
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.tak",
-            "path": "fixtures/ixon-v3/k1/K1.lean",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "https://github.com/argumentcomputer/Compilatr.ix"
           }
         ]
@@ -613,7 +613,7 @@
           {
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.gcd",
-            "path": "fixtures/ixon-v3/k1/K1.lean",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "https://github.com/argumentcomputer/Compilatr.ix"
           }
         ]

@@ -42,7 +42,7 @@ The environment header is format **3**, protocol **`ixon-v3`**. Raw constant
 bytes carry no self-identifying version, so consumers must select this API
 from an authenticated versioned boundary. Never try v2 decoding as a fallback
 or reuse v2 primitive addresses. The frozen v3 primitive inventory is in
-[`primitives.tsv`](../fixtures/ixon-v3/primitives.tsv).
+[`primitives.tsv`](../fixtures/ixon-v4/primitives.tsv).
 
 The checker dispatches primitive reductions by these v3 identities. Its
 `eagerReduce` entry is a reserved synthetic marker: the ordinary declaration
@@ -97,9 +97,9 @@ checks the binding after combined validation. The command runs that combined
 boundary:
 
 ```sh
-lake exe check-ixon-v3 fixtures/ixon-v3/handoff/accepted.ixe \
-  fixtures/ixon-v3/handoff/profile.bin \
-  fixtures/ixon-v3/handoff/accepted.claim
+lake exe check-ixon-v3 fixtures/ixon-v4/handoff/accepted.ixe \
+  fixtures/ixon-v4/handoff/profile.bin \
+  fixtures/ixon-v4/handoff/accepted.claim
 ```
 
 The anonymous checker adapts upstream `Ix/Tc`: universes, inference,
@@ -148,9 +148,9 @@ producer's structural verifier does not authenticate these full lists; this
 consumer requires the supplemental witness explicitly.
 
 ```sh
-lake exe check-ixon-v3-catalog fixtures/ixon-v3/catalog/fat.ixc
-lake exe check-ixon-v3-catalog fixtures/ixon-v3/catalog/chunked.ixc \
-  fixtures/ixon-v3/catalog/chunked.ixc/members.json
+lake exe check-ixon-v3-catalog fixtures/ixon-v4/catalog/fat.ixc
+lake exe check-ixon-v3-catalog fixtures/ixon-v4/catalog/chunked.ixc \
+  fixtures/ixon-v4/catalog/chunked.ixc/members.json
 ```
 
 The optional JSON witness is an array of member arrays containing 64 literal
@@ -177,12 +177,12 @@ that the local-escape fixture passes catalog typing and fails resource checks.
 Catalog identity alone grants no ownership, locality or backend optimization.
 Four exact fences retain the existing logical/native BLAKE3 basis; they do not
 prove the whole loader or checker semantically sound. Frozen producer and
-chunk-partition [fixtures](../fixtures/ixon-v3/catalog/README.md) record their
+chunk-partition [fixtures](../fixtures/ixon-v4/catalog/README.md) record their
 different provenance and independent Rust verification.
 
 ## Evidence and provenance
 
-The [K1 pack](../fixtures/ixon-v3/k1/README.md) adds a 1,651-constant closure of
+The [K1 pack](../fixtures/ixon-v4/k1/README.md) adds a 1,651-constant closure of
 ordinary Lean programs (`fib`, a `for` loop, Ackermann, `tak`, `gcd`) with the
 unfolding theorems of all 40 recursive definitions it reaches. The suite checks
 strict ingress, the recorded root, definition and equation addresses, and erased
@@ -204,7 +204,7 @@ The typing suite also rejects ordinary ill-typed declarations that resource
 analysis skips, and confirms that erased typing alone accepts the local-escape
 fixture. It covers scope/universe errors, sharing cycles, unsafe references,
 positivity, constructor headers, canonical recursors and tampered rules.
-Four [primitive bundles](../fixtures/ixon-v3/typing/README.md) retain producer
+Four [primitive bundles](../fixtures/ixon-v4/typing/README.md) retain producer
 bytes for Nat, Nat.add, String and Quot.lift. The larger closures passed
 upstream Rust checking; required tests run combined admission, valid literals,
 `20 + 22 = 42`, and rejection of false arithmetic and redirected literal pins.
