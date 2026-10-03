@@ -52,6 +52,30 @@
       "«ix-kernel»" = ixKernel;
     };
   };
+  # lean4-nix shadows each dependency under `.lake/packages/<manifest name>`;
+  # for `«ix-kernel»` that directory name is not ASCII, and Lake mangles it
+  # when it passes object paths to the linker (`.lake/packages/302253ix-kernel302273/…`
+  # in clang's arguments). Move it to `ix-kernel`, the directory Lake itself
+  # checks the package out to, and point the package overrides there.
+  packageOverrides = pkgs.writers.writeJSON "package-overrides.json" (let
+    manifest = builtins.fromJSON (builtins.readFile (root + "/lake-manifest.json"));
+    dir = name: if name == "«ix-kernel»" then "ix-kernel" else name;
+  in
+    manifest
+    // {
+      packages = map (p: {
+        inherit (p) name;
+        inherited = p.inherited or false;
+        type = "path";
+        dir = ".lake/packages/${dir p.name}";
+      })
+      manifest.packages;
+    });
+  asciiPackages = ''
+    mv ".lake/packages/«ix-kernel»" .lake/packages/ix-kernel
+    rm -f .lake/package-overrides.json
+    cp ${packageOverrides} .lake/package-overrides.json
+  '';
   buildInputs = [pkgs.gmp lean pkgs.rsync];
   compilatrixLib = lake2nix.mkPackage {
     inherit lakeDeps buildInputs;
@@ -59,6 +83,7 @@
     name = "Compilatrix";
     buildLibrary = true;
     meta.description = "Production compiler library and reusable Lake artifacts";
+    postConfigure = asciiPackages;
   };
   # Build every executable and the proof/fence collection once, reusing the
   # library's artifacts; each check below runs the resulting programs.
@@ -66,6 +91,7 @@
     inherit lakeDeps buildInputs;
     src = sources.programs;
     name = "compilatrix-programs";
+    postConfigure = asciiPackages;
     prePatch = ''
       mkdir -p .lake
       cp -R ${compilatrixLib}/.lake/build .lake/build

@@ -1205,7 +1205,7 @@
       "lakefile.lean": "0203c91ffca654c2df1529fee7292b9774d3f1eacb3e6c7b2943309959867e11",
       "lake-manifest.json": "a9ba65e4a5c7853ad71f3a02e2fc24d74a9ba6d4811ff01880747b212c809e2a",
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
-      "nix/build.nix": "aca483be559ef0349530212e195965a210a61c71deb89ac0b8290e828909e2bc",
+      "nix/build.nix": "cc5575d9e87f363c0606d9dd24e8a6e0f0513204807c7081df20a25fb8469883",
       "nix/checks.nix": "3d0d14a06564647c79c2d195cbbaea0b84948ce1958f4d2580f6da2ecba304ce",
       "nix/ci-coverage.json": "aa6a8ca1f5cb115463cd018675e810467162530563e0e7a233082a1a2d186348",
       "nix/lean-modules.json": "5355276a4bed34ace81445fef73543ee941fcb463dde49ad31ea50101d5c73c4",
