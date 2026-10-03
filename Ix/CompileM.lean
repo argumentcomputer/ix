@@ -542,10 +542,9 @@ def takeUnivPatches : CompileM (Array Ixon.Univ × Array Ixon.UnivPatch) :=
 
 /-! ## Reference Handling -/
 
-/-- Intern an address into the block's refs table, returning its index. -/
-def internRef (addr : Address) : CompileM UInt64 := do
-  let st ← getBlockState
-  if st.p3MetaMode then
+/-- Pass 3 decompile-record interning (see `internRef`). -/
+def internRefMeta (addr : Address) : CompileM UInt64 := do
+    let st ← getBlockState
     if let some idx := st.refsIndex.get? addr then return idx
     -- Pass 3 decompile record: an address outside the primary table goes
     -- to the constant's extension (`metaRefs`, virtual `refs.size + j`).
@@ -559,6 +558,12 @@ def internRef (addr : Address) : CompileM UInt64 := do
         p3MetaRefs := c.p3MetaRefs.push addr
         p3MetaRefsIndex := c.p3MetaRefsIndex.insert addr j }
       return st.refs.size.toUInt64 + j
+
+/-- Intern an address into the block's refs table, returning its index.
+    (The state is read only for the mode flag, so the update below stays in
+    place: no reference to the old state is alive.) -/
+def internRef (addr : Address) : CompileM UInt64 := do
+  if (← getBlockState).p3MetaMode then return ← internRefMeta addr
   modifyGetBlockState fun state =>
     let (state', idx) := state.internRef addr
     (idx, state')

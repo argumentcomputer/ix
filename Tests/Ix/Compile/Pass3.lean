@@ -589,6 +589,21 @@ def runView (path : String) : IO UInt32 := do
           | .error e => IO.println s!"[pass3-view]   image {r.pretty}: {e}"
   return 0
 
+/-- Debugging aid: `PASS3_CLOSURE=<file.lean>,<constant>` compiles the
+closure of one constant of the file's environment with the switch off and on,
+timing both. -/
+def runClosure (path : String) (c : String) : IO UInt32 := do
+  let env ← getFileEnv path
+  let n := c.toName
+  let closure := closureOf env [n]
+  IO.println s!"[pass3-closure] {c}: {closure.length} constants"
+  let u : CUnit := { name := c, env, seeds := #[n], closure }
+  for p3 in [false, true] do
+    let t0 ← IO.monoMsNow
+    let o ← compileUnit u p3
+    IO.println s!"[pass3-closure] pass3={p3}: {o.bytes.size} bytes, {o.cenv.ungrounded.size} failures, {(← IO.monoMsNow) - t0} ms"
+  return 0
+
 /-! ## The suite -/
 
 /-- Fixtures Lean itself rejects (the aux-cert record: audit notes). -/
@@ -602,6 +617,10 @@ def protoFiles : List String :=
    "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean"
 
 def run (env : Environment) : IO UInt32 := do
+  if let some spec := ← IO.getEnv "PASS3_CLOSURE" then
+    match spec.splitOn "," with
+    | [p, c] => return ← runClosure p c
+    | _ => return 2
   if let some p := ← IO.getEnv "PASS3_VIEW" then return ← runView p
   if let some spec := ← IO.getEnv "PASS3_FIND" then
     match spec.splitOn "," with

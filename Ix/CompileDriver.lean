@@ -912,6 +912,9 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   -- the whole-Mathlib memory spike lives — identifies which block a
   -- worker is inside when RSS blows up.
   let logBlocks := (← IO.getEnv "IX_LOG_BLOCKS").isSome
+  -- IX_LOG_SLOW=<ms>: BEGIN for every block and END for the blocks slower
+  -- than <ms> (stderr; diagnostics only, the output is unaffected).
+  let logSlow := (← IO.getEnv "IX_LOG_SLOW").bind String.toNat?
   let worker (_workerId : Nat) : IO Unit := do
     while true do
       match ← workChan.recv with
@@ -921,9 +924,13 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         if logThis then
           IO.println s!"  [block] BEGIN {item.lo.pretty} ({item.all.size} members)"
           (← IO.getStdout).flush
+        if logSlow.isSome then
+          IO.eprintln s!"[block] BEGIN {item.lo.pretty}"
         let t0 ← IO.monoMsNow
         let outcome := auxBlockOutcome item.cenv item.lo item.all
         let t1 ← IO.monoMsNow
+        if let some ms := logSlow then
+          IO.eprintln s!"[block] {if t1 - t0 ≥ ms then "SLOW" else "END"} {item.lo.pretty} {t1 - t0}ms"
         if logThis then
           let rssKb ← do
             let st ← IO.FS.readFile "/proc/self/status"
