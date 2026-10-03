@@ -295,7 +295,12 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Exact.SCtx.phiE_eq_fast,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.csBase_eq_fast,
-    standardAxioms := noChoice }
+    standardAxioms := noChoice },
+  -- Outside the sharing core, on the compiler's import path (`Ix.Common`):
+  -- compiled code compares byte arrays with core's `ByteArray.beq`
+  -- (`memcmp`) in place of the derived `BEq ByteArray`.
+  { root := ``instBEqByteArray_ix_beq_eq_core,
+    standardAxioms := quotOnly }
 ]
 
 /-- Check every root: no duplicates, only Lean's standard axioms listed, and
