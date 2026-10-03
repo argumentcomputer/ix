@@ -1898,7 +1898,7 @@ def pass3CompileRecords (e : Expr) : CompileM Unit := do
       | throw (.invalidMutualBlock s!"Pass 3: no source occurrence for call-site record {n}")
     let savedCache := (← getBlockState).exprCache
     modifyBlockState fun c => { c with p3MetaMode := true }
-    let (ix, root) ← compileExprNoSurgery src
+    let (ix, root) ← compileExprSurgical src
     modifyBlockState fun c => { c with
       p3MetaMode := false
       exprCache := savedCache
@@ -1919,7 +1919,13 @@ def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   let cenv ← getCompileEnv
   if cenv.pass3 && !cenv.p3Sources.isEmpty then
     pass3CompileRecords e
-  if cenv.surgeryFree then
+  -- Under Pass 3 no plan exists, so `surgeryFree` holds everywhere, but the
+  -- ordinary implementation sizes its fuel with `exprCompileDepth`, a tree
+  -- walk that is exponential on the DAG-shaped proofs of a library (a
+  -- Mathlib theorem never finishes). The plan-bearing implementation, with an
+  -- empty plan map, takes its ordinary path on every node and gives the same
+  -- bytes (it is what every library compile with a changed block runs today).
+  if cenv.surgeryFree && !cenv.pass3 then
     compileExprNoSurgery e
   else
     compileExprSurgical e
