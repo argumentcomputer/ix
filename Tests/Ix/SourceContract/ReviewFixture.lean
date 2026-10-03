@@ -133,4 +133,33 @@ noncomputable def f (xs : List Nat) (! u : List Nat) : ! List Nat :=
   @List.rec Nat (fun _ => List Nat) (keep u) (fun _ _ ih => drop0 ih (keep u)) xs
 end I01
 
+/-! ## Unfolding equations (review F3) -/
+
+/- Violation: `dup` moves `xs` twice; a forged profile binds it to a
+`sorry`-proved false equation, which must not be admitted. -/
+namespace E04
+def keep (! xs : List Nat) : ! List Nat := xs
+def dup (! xs : List Nat) : List Nat × List Nat := (keep xs, keep xs)
+theorem dup_eq : ∀ (xs : List Nat), dup xs = ([], []) := sorry
+end E04
+
+/- Violation: `dup` moves `xs` twice; a true but different equation exists,
+yet `ix compile --equations` binds only realized `eq_def` theorems (none for a
+non-recursive definition), so `dup` is checked by its own body. -/
+namespace E01
+def keep (! xs : List Nat) : ! List Nat := xs
+def dup (! xs : List Nat) : ! List Nat :=
+  (fun (_a : List Nat) (b : List Nat) => b) (keep xs) (keep xs)
+theorem dup_eq : ∀ (xs : List Nat), dup xs = xs := fun _ => rfl
+end E01
+
+/- Control (Q06): well-founded recursion with a unique accumulator, checked
+through its realized `eq_def`, whose proof uses only standard axioms. -/
+namespace Q06
+def down (n : Nat) (! acc : List Nat) : ! List Nat :=
+  if n = 0 then acc else down (n - 1) (n :: acc)
+termination_by n
+decreasing_by omega
+end Q06
+
 end Tests.Ix.SourceContract.ReviewFixture

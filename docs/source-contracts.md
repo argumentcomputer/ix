@@ -174,7 +174,12 @@ carried (the statement's arrows end in an equality). The association sidecar
 `contracts` array of `{position, binder, uses, owned, locality}`; an equation
 whose telescope does not match is left unchanged and listed under `failures`
 with `contracts not carried`. Definitions without header contracts, and so all
-unannotated closures, are unchanged.
+unannotated closures, are unchanged. With `--profile`, the sidecar is
+rewritten after a successful compile with a `resourceChecked` array of
+`{definition, equation}`: the pairs through which resource admission checked
+a definition (see [resource checking](resource-checking.md)); a consumer
+must run each such definition by its equation. Without `--profile` the
+sidecar is unchanged.
 
 ## Registration and imports
 

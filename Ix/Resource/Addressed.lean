@@ -29,6 +29,16 @@ tables. A sort that is not literally `Sort 0` is never treated as `Prop`. -/
 def typeSort : UInt64 := 0
 def propSort : UInt64 := 1
 
+/-- The content addresses (Ixon v4) of the three standard axioms, `propext`,
+`Quot.sound` and `Classical.choice`. Every other axiom of a program (for
+example `sorryAx`) is recorded in `Program.axioms`, and an unfolding equation
+whose proof depends on one is not admitted. Mirrors Rust `STANDARD_AXIOMS`. -/
+def standardAxioms : Array Address := #[
+  "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+  "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+  "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40"
+].filterMap Address.fromString
+
 structure Profile where
   assumptions : Array Address := #[]
   shareableTypes : Array Address := #[]
@@ -427,6 +437,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   let mut groups : Array (Array Address) := #[]
   let mut fieldSpecs : Array (Address × Address × Nat × Nat) := #[]
   let mut recursorSpecs : Array (Address × Ixon.Recursor) := #[]
+  let mut axioms : Array Address := #[]
   for (address, _) in entries do
     let constant := constants[address]!
     match constant.info with
@@ -437,6 +448,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       recursorSpecs := recursorSpecs.push (address, r)
     | .axio a =>
       pending := pending.push ⟨address, constant, #[], { type := a.typ, kind := .assumption }, #[]⟩
+      unless standardAxioms.contains address do axioms := axioms.push address
     | .quot q =>
       pending := pending.push ⟨address, constant, #[], { type := q.typ, kind := .assumption }, #[]⟩
     | .muts members =>
@@ -555,7 +567,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     program := { program with eqType := some i }
   program := { program with equations }
   let caseDefinitions ← resolveList profile.caseDefinitions
-  program := { program with caseDefinitions }
+  program := { program with caseDefinitions, axioms := ← resolveList axioms }
   for (typeAddr, ctorAddr, params, count) in fieldSpecs do
     if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) params count then
       program := { program with fields := program.fields ++ derived }

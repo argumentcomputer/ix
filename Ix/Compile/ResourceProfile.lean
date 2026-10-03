@@ -10,6 +10,10 @@
   * `case NAME` binds a case definition — a `casesOn` or a matcher, as Lean
     records them — whose alternatives the consumer evaluates by need. Every
     other definition, however match-shaped its body, is an ordinary call.
+  * `equation NAME THEOREM` binds an unfolding equation; `ix compile
+    --equations` adds one for every `f.eq_def` it realized (`Ix.Compile.
+    Equations.realize`), so only Lean's own unfolding theorem of `f` is ever
+    bound, never an author's theorem about `f`.
 -/
 module
 public import Lean.AuxRecursor
@@ -24,7 +28,7 @@ namespace Ix.Compile.ResourceProfile
 open Lean
 
 /-- Directives the compiler generates; a hand-written source may not use them. -/
-def generatedDirectives : List String := ["case"]
+def generatedDirectives : List String := ["case", "equation"]
 
 /-- The words of each directive line of a profile source: `#` starts a
 comment, words are separated by spaces or tabs. Empty lines are dropped. -/

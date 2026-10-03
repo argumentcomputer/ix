@@ -5,6 +5,7 @@ public import Ix.Meta
 public import Ix.EnvScope
 public import Ix.CompileDriver
 public import Ix.Compile.ResourceProfile
+public import Ix.Compile.Equations
 
 /-!
 # Resource review probes as source-level checks
@@ -31,18 +32,34 @@ structure Probe where
   accepted : Bool
   /-- Review finding the probe pins. -/
   finding : String
+  /-- Compile as `ix compile --equations` does: realize the unfolding
+  equations of the closure and bind them by generated directives. -/
+  equations : Bool := false
+  /-- Equation directives `(definition, theorem)`, names relative to the
+  namespace, appended to the profile source as a forged profile would (the
+  CLI refuses them in a written profile). -/
+  forced : List (String × String) := []
+  /-- What a rejection message must contain. -/
+  reason : String := "resource admission"
+
+def probe (name : String) (accepted : Bool) (finding : String) : Probe :=
+  { name, accepted, finding }
 
 def probes : List Probe := [
-  ⟨"A01", false, "F1"⟩, ⟨"A04", false, "F1"⟩, ⟨"B07", false, "F1"⟩, ⟨"A03b", false, "F1"⟩,
-  ⟨"M01", true, "F1"⟩, ⟨"M02", true, "F1"⟩, ⟨"I06", true, "F1"⟩,
-  ⟨"A05b", false, "F2"⟩, ⟨"X07", false, "F2"⟩, ⟨"OS09", true, "F2"⟩,
-  ⟨"I08", false, "F4"⟩, ⟨"I01", false, "F4"⟩]
+  probe "A01" false "F1", probe "A04" false "F1", probe "B07" false "F1", probe "A03b" false "F1",
+  probe "M01" true "F1", probe "M02" true "F1", probe "I06" true "F1",
+  probe "A05b" false "F2", probe "X07" false "F2", probe "OS09" true "F2",
+  probe "I08" false "F4", probe "I01" false "F4",
+  { name := "E04", accepted := false, finding := "F3", forced := [("dup", "dup_eq")],
+    reason := "an unfolding equation depends on an axiom other than propext" },
+  { name := "E01", accepted := false, finding := "F3", equations := true },
+  { name := "Q06", accepted := true, finding := "F3", equations := true }]
 
-/-- The definitions of a probe's namespace. -/
+/-- The definitions and theorems of a probe's namespace. -/
 def roots (env : Environment) (ns : Name) : List Name :=
   env.constants.toList.filterMap fun (name, info) =>
     match info with
-    | .defnInfo _ => if name.getPrefix == ns then some name else none
+    | .defnInfo _ | .thmInfo _ => if name.getPrefix == ns then some name else none
     | _ => none
 
 /-- Compile one probe with the core profile; `.ok` when it compiles, else the
@@ -52,10 +69,16 @@ def compileProbe (env : Environment) (profile : String) (directory : System.File
   let ns := fixtureModule ++ probe.name.toName
   let seeds := roots env ns
   if seeds.isEmpty then return .error s!"no definitions in {ns}"
-  let constList := Ix.EnvScope.collectDeps env seeds
+  let (env, constList, equations) ← if probe.equations then do
+      let (env, closed, found, _) ← Ix.Compile.Equations.close env seeds
+      let (env, found, _) := Ix.Compile.Equations.carryContracts env found
+      pure (env, closed, found.toList.map fun a => s!"equation {a.definition} {a.equation}\n")
+    else pure (env, Ix.EnvScope.collectDeps env seeds, [])
   let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants env constList
   let source ← IO.ofExcept <|
     Ix.Compile.ResourceProfile.build profile env (constList.map (·.1))
+  let forced := probe.forced.map fun (d, t) => s!"equation {ns ++ d.toName} {ns ++ t.toName}\n"
+  let source := String.join (source :: equations ++ forced)
   let output := directory / s!"{probe.name}.ixe"
   try
     let status ← Ix.CompileM.rsCompileEnvBytesProfileSourceFFI constList output.toString
@@ -75,8 +98,8 @@ private def verdicts : IO (Bool × Nat × Nat × Option String) := do
       match ← compileProbe env profile directory probe, probe.accepted with
       | .ok (), true => pure ()
       | .error message, false =>
-        unless (message.splitOn "resource admission").length > 1 do
-          failures := failures.push s!"{probe.name} ({probe.finding}): rejected outside resource admission: {message.take 300}"
+        unless (message.splitOn probe.reason).length > 1 do
+          failures := failures.push s!"{probe.name} ({probe.finding}): rejected without `{probe.reason}`: {message.take 300}"
       | .ok (), false => failures := failures.push s!"{probe.name} ({probe.finding}): violation accepted"
       | .error message, true =>
         failures := failures.push s!"{probe.name} ({probe.finding}): control rejected: {message.take 300}"
@@ -89,6 +112,7 @@ def suite : List TestSeq := [
   .individualIO "review probes: violations rejected, controls accepted (core profile)" none verdicts .done,
   test "a written profile may not contain generated directives"
     ((Ix.Compile.ResourceProfile.checkWritten "cases\ncase List.casesOn\n").toOption.isNone &&
+     (Ix.Compile.ResourceProfile.checkWritten "cases\nequation dup dup_eq\n").toOption.isNone &&
      (Ix.Compile.ResourceProfile.checkWritten "cases # case in a comment\n").toOption.isSome)
 ]
 

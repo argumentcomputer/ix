@@ -205,6 +205,10 @@ pub struct CompileState {
   /// deserialized environment sets them with [`compiler_sharing_limits`].
   /// The default is [`ExactSharingLimits::default`].
   pub sharing_limits: ExactSharingLimits,
+  /// The `(definition, equation)` pairs, by name, through which resource
+  /// admission checked a definition (`ix compile --profile` with
+  /// `equation` directives): resource-relevant, bound, not assumed.
+  pub resource_equations: Vec<(String, String)>,
 }
 
 /// Cached compiled expression with arena root index.
@@ -296,6 +300,7 @@ impl Default for CompileState {
       aux_perms: Default::default(),
       def_hints: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
+      resource_equations: vec![],
     }
   }
 }

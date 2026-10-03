@@ -314,7 +314,7 @@ pub fn compile_env_with_resource_profile(
     );
   }
 
-  let stt = CompileState {
+  let mut stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
@@ -1089,6 +1089,10 @@ pub fn compile_env_with_resource_profile(
         });
       }
     }
+    let source_text = match profile {
+      ResourceProfile::Source(text) => Some(text),
+      _ => None,
+    };
     let default_profile;
     let profile = match profile {
       ResourceProfile::Explicit(profile) => profile,
@@ -1121,8 +1125,14 @@ pub fn compile_env_with_resource_profile(
         &default_profile
       },
     };
-    ix_kernel::resource::validate(&stt.env, profile)
+    let resolved = ix_kernel::resource::validate(&stt.env, profile)
       .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
+    if let Some(text) = source_text
+      && !resolved.program.equations.is_empty()
+    {
+      stt.resource_equations =
+        checked_equations(&stt, text, &resolved, profile.limits)?;
+    }
   }
 
   if *IX_VERBOSE {
@@ -1140,6 +1150,54 @@ pub fn compile_env_with_resource_profile(
   }
 
   Ok(stt)
+}
+
+/// The `(definition, equation)` directives of a profile source, by name,
+/// through which resource admission checked the definition: the pair is
+/// bound, the definition is resource-relevant and not an assumed one.
+fn checked_equations(
+  stt: &CompileState,
+  text: &str,
+  resolved: &ixon::resource::addressed::AddressedProgram,
+  limits: ixon::resource::Limits,
+) -> Result<Vec<(String, String)>, CompileError> {
+  let marked =
+    ixon::resource::relevance(&resolved.program, limits).map_err(|error| {
+      CompileError::UnsupportedExpr { desc: error.to_string() }
+    })?;
+  let mut checked = vec![];
+  for (definition, equation) in &resolved.program.equations {
+    let (Ok(d), Ok(t)) =
+      (usize::try_from(*definition), usize::try_from(*equation))
+    else {
+      continue;
+    };
+    if marked.get(d) == Some(&true)
+      && !resolved.policy.assumptions.contains(&d)
+      && let (Some(d), Some(t)) =
+        (resolved.addresses.get(d), resolved.addresses.get(t))
+    {
+      checked.push((d.clone(), t.clone()));
+    }
+  }
+  let address = |name: &str| {
+    let name = parse_name(name)?;
+    stt.name_to_addr.get(&name).map(|entry| entry.value().clone())
+  };
+  let mut pairs = vec![];
+  for line in text.lines() {
+    let words: Vec<&str> =
+      line.split('#').next().unwrap_or("").split_whitespace().collect();
+    if let ["equation", definition, equation] = words.as_slice()
+      && let (Some(d), Some(t)) = (address(definition), address(equation))
+      && checked.contains(&(d, t))
+    {
+      pairs.push(((*definition).to_string(), (*equation).to_string()));
+    }
+  }
+  pairs.sort();
+  pairs.dedup();
+  Ok(pairs)
 }
 
 /// Seed names for the aux_gen prereq closure.

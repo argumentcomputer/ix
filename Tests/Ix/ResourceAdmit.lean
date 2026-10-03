@@ -129,7 +129,19 @@ def runAdmission : IO Unit := do
       ("an equation needs the equality type", eqBase good .theorem none)] do
     unless (checkDefinition p 13).toOption.isNone do
       throw <| IO.userError s!"resource equations: {label}"
-  IO.println "Resource admission: 35 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
+  -- Review F3: an equation whose proof depends on an axiom other than the
+  -- standard three (here 14, as `sorryAx`) is not admitted.
+  let withAxiom (proof : E) : Program :=
+    let base := eqBase good
+    { base with
+      declarations := (base.declarations.set! 12 { base.declarations[12]! with body := some proof }).push
+        { type := natTy, kind := .assumption }
+      axioms := #[14] }
+  checkAdmission "an equation proved with a non-standard axiom" (withAxiom (lam (b .many) (ref 14))) false
+    { policy with equations := #[(13, 12)] }
+  checkAdmission "an equation that does not use a present axiom" (withAxiom (lam (b .many) zero)) true
+    { policy with equations := #[(13, 12)] }
+  IO.println "Resource admission: 37 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
 
 end Tests.Resource
 

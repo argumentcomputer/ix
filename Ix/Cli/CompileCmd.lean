@@ -162,18 +162,18 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Realize it for every recursive definition in the closure (library
   -- definitions included), add it and its dependencies to the closure, and
   -- record which theorem unfolds which definition.
-  let (leanEnv, constList, associations) ← if p.hasFlag "equations" then do
+  let sidecar := (p.flag? "equations-out").map (·.as! String)
+    |>.getD (outPath ++ ".equations.json")
+  let (leanEnv, constList, associations, equationFailures) ← if p.hasFlag "equations" then do
       let (env, closed, found, failed) ←
         Ix.Compile.Equations.close leanEnv (constList.map (·.1))
       -- R1 amendment: carry header input contracts onto the equations.
       let (env, found, uncarried) := Ix.Compile.Equations.carryContracts env found
       let failed := failed ++ uncarried
       IO.println s!"[compile] equations: {found.size} unfolding theorem(s), {failed.size} failure(s); {closed.length} constants"
-      let sidecar := (p.flag? "equations-out").map (·.as! String)
-        |>.getD (outPath ++ ".equations.json")
       IO.FS.writeFile sidecar ((Ix.Compile.Equations.toJson found failed).pretty ++ "\n")
-      pure (env, closed, found)
-    else pure (leanEnv, constList, #[])
+      pure (env, closed, found, failed)
+    else pure (leanEnv, constList, #[], #[])
 
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
@@ -219,6 +219,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
       else
         Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  -- Under a profile, the sidecar also lists the (definition, equation) pairs
+  -- resource admission checked a definition through; the consumer must run
+  -- each by its equation.
+  if profileSource.isSome && p.hasFlag "equations" then
+    IO.FS.writeFile sidecar ((Ix.Compile.Equations.toJson associations equationFailures
+      (some status.resourceEquations)).pretty ++ "\n")
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 
@@ -316,8 +322,8 @@ def compileCmd : Cli.Cmd := `[Cli|
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction: comma-separated key=value items (values: digits, 2^k or max) or `unbounded`. Keys: expr_visits, depth, nodes, states, transitions, cost_evals, output_bytes, materialize, materialize_work, knapsack_cells (Lean); input_nodes, distinct_nodes, height, candidates, states, layer_states, transitions, work, output_bytes, knapsack_cells (Rust). The defaults are far above every corpus maximum; a constant that reaches one fails to compile and names the limit. Sets IX_SHARING_LIMITS."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
     equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition in the closure, library definitions included; compile each theorem with its dependencies to a fixpoint, and write the definition/theorem associations to --equations-out. An annotated definition's header input contracts are carried onto its equation's statement and listed in the sidecar."
-    "equations-out" : String; "Path for the --equations association JSON (`ix/compile-equations/1`); defaults to <out>.equations.json."
-    profile        : String; "Resource profile source for annotated closures (one directive per line: standard, shareable NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, equation NAME THEOREM, limits DEPTH STEPS); replaces the standard profile. With cases, every casesOn and matcher of the closure is bound as a generated `case NAME` directive, which the file itself may not contain. Names are resolved against the compiled closure and the effective profile address is printed. With --equations, every realized unfolding equation is added as an equation directive, so annotated recursion is checked through it. The Lean core profile is profiles/lean-core.profile."
+    "equations-out" : String; "Path for the --equations association JSON (`ix/compile-equations/1`); defaults to <out>.equations.json. With --profile it also lists, under resourceChecked, the definition/equation pairs resource admission checked a definition through."
+    profile        : String; "Resource profile source for annotated closures (one directive per line: standard, shareable NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, equation NAME THEOREM, limits DEPTH STEPS); replaces the standard profile. With cases, every casesOn and matcher of the closure is bound as a generated `case NAME` directive, which the file itself may not contain. Names are resolved against the compiled closure and the effective profile address is printed. With --equations, every realized unfolding equation is added as an equation directive (generated; the file itself may not contain equation directives), so annotated recursion is checked through it. The Lean core profile is profiles/lean-core.profile."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

@@ -141,21 +141,30 @@ def carryContracts (env : Lean.Environment) (found : Array Association) :
 private def usesName : Ixon.Uses → String
   | .erased => "erased" | .linear => "linear" | .affine => "affine" | .many => "many"
 
-/-- The association records as JSON, sorted by definition name. -/
-def toJson (found : Array Association) (failed : Array (Lean.Name × String)) : Lean.Json :=
+/-- The association records as JSON, sorted by definition name. With
+`checked` (a compile under a resource profile), also the `(definition,
+equation)` pairs through which resource admission checked a definition, under
+`"resourceChecked"`: a consumer must run each of these definitions by its
+equation. -/
+def toJson (found : Array Association) (failed : Array (Lean.Name × String))
+    (checked : Option (Array (String × String)) := none) : Lean.Json :=
   let found := found.qsort (fun a b => a.definition.toString < b.definition.toString)
   let contract (c : CarriedContract) := Lean.Json.mkObj [
     ("position", Lean.toJson c.position), ("binder", Lean.Json.str c.binder.toString),
     ("uses", Lean.Json.str (usesName c.uses)),
     ("owned", Lean.Json.str (if c.value.owned == .unique then "unique" else "shared")),
     ("locality", Lean.Json.str (if c.value.locality == .local then "local" else "unrestricted"))]
-  Lean.Json.mkObj [
+  Lean.Json.mkObj <| [
     ("format", Lean.Json.str "ix/compile-equations/1"),
     ("equations", Lean.Json.arr <| found.map fun a => Lean.Json.mkObj <| [
       ("definition", Lean.Json.str a.definition.toString),
       ("equation", Lean.Json.str a.equation.toString)] ++
       (if a.contracts.isEmpty then [] else [("contracts", Lean.Json.arr (a.contracts.map contract))])),
     ("failures", Lean.Json.arr <| failed.map fun (name, message) => Lean.Json.mkObj [
-      ("definition", Lean.Json.str name.toString), ("message", Lean.Json.str message)])]
+      ("definition", Lean.Json.str name.toString), ("message", Lean.Json.str message)])] ++
+    (match checked with
+    | none => []
+    | some pairs => [("resourceChecked", Lean.Json.arr <| pairs.map fun (definition, equation) =>
+        Lean.Json.mkObj [("definition", Lean.Json.str definition), ("equation", Lean.Json.str equation)])])
 
 end Ix.Compile.Equations

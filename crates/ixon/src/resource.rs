@@ -155,6 +155,10 @@ pub struct Program {
   /// `brecOn` or `WellFounded.fix` encoding). The consumer must run the
   /// definition by that equation.
   pub equations: Vec<(u64, u64)>,
+  /// Axioms other than `propext`, `Quot.sound` and `Classical.choice` (the
+  /// adapter recognizes those three by address): an unfolding equation whose
+  /// proof depends on one (`sorryAx`, any user axiom) is not admitted.
+  pub axioms: Vec<u64>,
 }
 
 /// The shape of an addressed recursor of a single, non-mutual inductive type,
@@ -2462,17 +2466,17 @@ impl Checker<'_> {
   }
 }
 
-/// Dependencies propagate resource relevance to callers and to every member
-/// of a mutually addressed block. Only wholly ordinary components bypass the
-/// resource analysis; erased typechecking is still required for them.
-pub fn relevance(
+/// The reverse dependency edges of a program (a declaration to the
+/// declarations that refer to it, and every member of a mutual block to every
+/// other), with the declarations that carry a resource contract themselves.
+#[allow(clippy::type_complexity)]
+pub fn dependency_graph(
   program: &Program,
   limits: Limits,
-) -> Result<Vec<bool>, Error> {
+) -> Result<(Vec<Vec<usize>>, Vec<bool>), Error> {
   let size = program.declarations.len();
   let mut reverse = vec![vec![]; size];
   let mut marked = vec![false; size];
-  let mut queue = vec![];
   for (i, d) in program.declarations.iter().enumerate() {
     let mut checker = Checker::new(program, limits);
     let scan = checker.scan(limits.depth, &d.typ)?;
@@ -2482,7 +2486,6 @@ pub fn relevance(
     };
     if scan.annotated {
       marked[i] = true;
-      queue.push(i);
     }
     for dependency in scan.dependencies {
       reverse
@@ -2497,9 +2500,8 @@ pub fn relevance(
     }
     let mut checker = Checker::new(program, limits);
     let scan = checker.scan(limits.depth, expression)?;
-    if scan.annotated && !marked[*i] {
+    if scan.annotated {
       marked[*i] = true;
-      queue.push(*i);
     }
     for dependency in scan.dependencies {
       reverse
@@ -2512,9 +2514,8 @@ pub fn relevance(
     let i = usize::try_from(f.type_ref)
       .map_err(|_error| Error::BadReference(f.type_ref))?;
     let m = marked.get_mut(i).ok_or(Error::BadReference(f.type_ref))?;
-    if f.contract != ValueContract::shared() && !*m {
+    if f.contract != ValueContract::shared() {
       *m = true;
-      queue.push(i);
     }
   }
   for group in &program.groups {
@@ -2531,18 +2532,50 @@ pub fn relevance(
       }
     }
   }
+  Ok((reverse, marked))
+}
+
+/// Every declaration that depends, through `reverse`, on a marked one.
+pub fn propagate(reverse: &[Vec<usize>], mut marked: Vec<bool>) -> Vec<bool> {
+  let mut queue: Vec<usize> =
+    (0..marked.len()).filter(|i| marked[*i]).collect();
   let mut cursor = 0;
   while cursor < queue.len() {
     let i = queue[cursor];
     cursor += 1;
-    for dependent in &reverse[i] {
-      if !marked[*dependent] {
+    for dependent in reverse.get(i).map_or(&[][..], Vec::as_slice) {
+      if marked.get(*dependent) == Some(&false) {
         marked[*dependent] = true;
         queue.push(*dependent);
       }
     }
   }
-  Ok(marked)
+  marked
+}
+
+/// Dependencies propagate resource relevance to callers and to every member
+/// of a mutually addressed block. Only wholly ordinary components bypass the
+/// resource analysis; erased typechecking is still required for them.
+pub fn relevance(
+  program: &Program,
+  limits: Limits,
+) -> Result<Vec<bool>, Error> {
+  let (reverse, marked) = dependency_graph(program, limits)?;
+  Ok(propagate(&reverse, marked))
+}
+
+/// The declarations that depend on an axiom outside the standard three
+/// (`Program::axioms`).
+pub fn tainted(
+  program: &Program,
+  reverse: &[Vec<usize>],
+) -> Result<Vec<bool>, Error> {
+  let mut seeds = vec![false; program.declarations.len()];
+  for index in &program.axioms {
+    let i = usize::try_from(*index).unwrap_or(usize::MAX);
+    *seeds.get_mut(i).ok_or(Error::BadReference(*index))? = true;
+  }
+  Ok(propagate(reverse, seeds))
 }
 
 #[derive(Clone, Debug, Default)]
@@ -2660,14 +2693,36 @@ pub fn admit_program(
       });
     }
   }
-  let marked = relevance(program, limits)
+  let (reverse, seeds) = dependency_graph(program, limits)
+    .map_err(|error| AdmissionError { declaration: None, error })?;
+  let marked = propagate(&reverse, seeds);
+  let tainted = tainted(program, &reverse)
     .map_err(|error| AdmissionError { declaration: None, error })?;
   for (i, d) in program.declarations.iter().enumerate() {
     if marked[i] {
       let result = match d.kind {
         // An assumed definition's interface is admitted by the profile.
         DeclKind::Definition if policy.assumptions.contains(&i) => Ok(()),
-        DeclKind::Definition => check_definition(program, i, limits),
+        // A definition checked through an unfolding equation relies on the
+        // equation being true: its proof may use only the standard axioms.
+        DeclKind::Definition => match program
+          .equations
+          .iter()
+          .find(|(d, _)| usize::try_from(*d).ok() == Some(i))
+        {
+          Some((_, equation))
+            if usize::try_from(*equation)
+              .ok()
+              .and_then(|t| tainted.get(t))
+              .copied()
+              .unwrap_or(true) =>
+          {
+            Err(Error::Unsupported(
+              "an unfolding equation depends on an axiom other than propext, Quot.sound and Classical.choice",
+            ))
+          },
+          _ => check_definition(program, i, limits),
+        },
         DeclKind::Assumption => {
           if policy.assumptions.contains(&i) {
             Ok(())
@@ -3417,6 +3472,20 @@ mod tests {
     ] {
       assert!(check_definition(&p, 13, Limits::default()).is_err());
     }
+    // Review F3: an equation whose proof depends on an axiom other than the
+    // standard three (here 14, as `sorryAx`) is not admitted.
+    let with_axiom = |proof: Term| {
+      let mut p = base(good(), DeclKind::Theorem, Some(11));
+      p.declarations[12].body = Some(proof);
+      p.declarations.push(assumption(nat()));
+      p.axioms = vec![14];
+      p
+    };
+    let uses =
+      with_axiom(Expr::lam_contract(many, nat(), Expr::reference(14, vec![])));
+    assert!(admit_program(&uses, &bound, Limits::default()).is_err());
+    let unused = with_axiom(Expr::lam_contract(many, nat(), Expr::nat(0)));
+    assert!(admit_program(&unused, &bound, Limits::default()).is_ok());
   }
 
   #[test]

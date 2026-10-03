@@ -77,11 +77,14 @@ def runCheck (limits : Limits) (action : CheckM α) : Except Error α :=
   | .ok result _ => .ok result
   | .error error _ => .error error
 
-def relevance (program : Program) (limits : Limits := {}) : Except Error (Array Bool) := do
+/-- The reverse dependency edges of a program (a declaration to the
+declarations that refer to it, and every member of a mutual block to every
+other), with the declarations that carry a resource contract themselves. -/
+def dependencyGraph (program : Program) (limits : Limits := {}) :
+    Except Error (Array (Array Nat) × Array Bool) := do
   let size := program.declarations.size
   let mut reverse : Array (Array Nat) := Array.replicate size #[]
   let mut marked := Array.replicate size false
-  let mut queue := #[]
   for i in [0:size] do
     let d := program.declarations[i]!
     let scan ← runCheck limits do
@@ -91,25 +94,22 @@ def relevance (program : Program) (limits : Limits := {}) : Except Error (Array 
       | some value => return type.merge (← scanExpr program limits.depth value)
     if scan.annotated then
       marked := marked.set! i true
-      queue := queue.push i
     for dependency in scan.dependencies do
       if dependency >= size then throw (.badReference dependency)
       reverse := reverse.set! dependency (reverse[dependency]!.push i)
   for (i, expression) in program.auxiliary do
     if i >= size then throw (.badReference i)
     let scan ← runCheck limits (scanExpr program limits.depth expression)
-    if scan.annotated && !marked[i]! then
+    if scan.annotated then
       marked := marked.set! i true
-      queue := queue.push i
     for dependency in scan.dependencies do
       if dependency >= size then throw (.badReference dependency)
       reverse := reverse.set! dependency (reverse[dependency]!.push i)
   for field in program.fields do
     let i := field.typeRef.toNat
     if i >= size then throw (.badReference i)
-    if field.contract != .shared && !marked[i]! then
+    if field.contract != .shared then
       marked := marked.set! i true
-      queue := queue.push i
   for group in program.groups do
     if let some first := group[0]? then
       if first >= size then throw (.badReference first)
@@ -117,15 +117,36 @@ def relevance (program : Program) (limits : Limits := {}) : Except Error (Array 
         if member >= size then throw (.badReference member)
         reverse := reverse.set! first (reverse[first]!.push member)
         reverse := reverse.set! member (reverse[member]!.push first)
+  return (reverse, marked)
+
+/-- Every declaration that depends, through `reverse`, on a marked one. -/
+def propagate (reverse : Array (Array Nat)) (marked : Array Bool) : Array Bool := Id.run do
+  let mut marked := marked
+  let mut queue := #[]
+  for i in [0:marked.size] do
+    if marked[i]! then queue := queue.push i
   let mut cursor := 0
   while cursor < queue.size do
     let i := queue[cursor]!
     cursor := cursor + 1
-    for dependent in reverse[i]! do
-      if !marked[dependent]! then
+    for dependent in reverse[i]?.getD #[] do
+      if !(marked[dependent]?.getD true) then
         marked := marked.set! dependent true
         queue := queue.push dependent
   return marked
+
+def relevance (program : Program) (limits : Limits := {}) : Except Error (Array Bool) := do
+  let (reverse, marked) ← dependencyGraph program limits
+  return propagate reverse marked
+
+/-- The declarations that depend on an axiom outside the standard three
+(`Program.axioms`). -/
+def tainted (program : Program) (reverse : Array (Array Nat)) : Except Error (Array Bool) := do
+  let mut seeds := Array.replicate program.declarations.size false
+  for index in program.axioms do
+    if index.toNat >= seeds.size then throw (.badReference index.toNat)
+    seeds := seeds.set! index.toNat true
+  return propagate reverse seeds
 
 /-- Constructors retain runtime fields. Finite/unique captures require a
 unique result, and local captures require a local result. This applies to
@@ -196,14 +217,24 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
   for index in program.shareableTypes do
     unless policy.shareableTypes.contains index.toNat do
       throw ⟨some index.toNat, .unsupported "shareable representation is absent from the bound profile"⟩
-  let marked ← (relevance program limits).mapError (⟨none, ·⟩)
+  let (reverse, seeds) ← (dependencyGraph program limits).mapError (⟨none, ·⟩)
+  let marked := propagate reverse seeds
+  let tainted ← (tainted program reverse).mapError (⟨none, ·⟩)
   for i in [0:program.declarations.size] do
     if marked[i]! then
       let d := program.declarations[i]!
       let checked : Except Error Unit := match d.kind with
         | .definition =>
           -- An assumed definition's interface is admitted by the profile.
-          if policy.assumptions.contains i then .ok () else checkDefinition program i limits
+          if policy.assumptions.contains i then .ok () else
+          -- A definition checked through an unfolding equation relies on the
+          -- equation being true: its proof may use only the standard axioms.
+          match program.equations.find? (·.1.toNat == i) with
+          | some (_, equation) =>
+            if tainted[equation.toNat]?.getD true then
+              .error (.unsupported "an unfolding equation depends on an axiom other than propext, Quot.sound and Classical.choice")
+            else checkDefinition program i limits
+          | none => checkDefinition program i limits
         | .assumption =>
           if policy.assumptions.contains i then .ok ()
           else .error (.unsupported "external resource interface is absent from the bound profile")

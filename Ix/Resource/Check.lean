@@ -118,6 +118,10 @@ structure Program where
   `WellFounded.fix` encoding). The consumer must run the definition by that
   equation. -/
   equations : Array (UInt64 × UInt64) := #[]
+  /-- Axioms other than `propext`, `Quot.sound` and `Classical.choice` (the
+  adapter recognizes those three by address): an unfolding equation whose
+  proof depends on one (`sorryAx`, any user axiom) is not admitted. -/
+  axioms : Array UInt64 := #[]
   deriving BEq, Repr, Inhabited
 
 structure Context where

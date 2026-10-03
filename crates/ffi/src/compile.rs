@@ -303,7 +303,9 @@ pub extern "C" fn rs_compile_env_full(
 /// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle
 /// root — matches the serialized header, computed even when nothing is
 /// written), ungrounded (`Array (String × String)` of pretty-name /
-/// reason, sorted by name), bytes (0 when not written), named count,
+/// reason, sorted by name), resourceEquations (`Array (String × String)`
+/// of the `(definition, equation)` pairs resource admission checked a
+/// definition through, under a profile source), bytes (0 when not written), named count,
 /// unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
@@ -463,9 +465,19 @@ fn compile_env_inner(
     ungrounded_arr
       .set(i, LeanProd::new(LeanString::new(name), LeanString::new(reason)));
   }
+  let equations_arr = LeanArray::alloc(compile_stt.resource_equations.len());
+  for (i, (definition, equation)) in
+    compile_stt.resource_equations.iter().enumerate()
+  {
+    equations_arr.set(
+      i,
+      LeanProd::new(LeanString::new(definition), LeanString::new(equation)),
+    );
+  }
   let status = LeanIxCompileEnvStatus::alloc(0);
   status.set_obj(0, LeanString::new(&root.hex()));
   status.set_obj(1, ungrounded_arr);
+  status.set_obj(2, equations_arr);
   status.set_num_64(0, written);
   status.set_num_64(1, named_count);
   status.set_num_64(2, unique_anon);

@@ -23,6 +23,17 @@ pub const VALIDATOR_ID: &str = "ixon-v4/resource-v1";
 pub const TYPE_SORT: u64 = 0;
 pub const PROP_SORT: u64 = 1;
 
+/// The content addresses (Ixon v4) of the three standard axioms, `propext`,
+/// `Quot.sound` and `Classical.choice`. Every other axiom of a program (for
+/// example `sorryAx`) is recorded in `Program::axioms`, and an unfolding
+/// equation whose proof depends on one is not admitted. Mirrors Lean
+/// `standardAxioms`.
+pub const STANDARD_AXIOMS: [&str; 3] = [
+  "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+  "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+  "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+];
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Profile {
   pub assumptions: Vec<Address>,
@@ -657,6 +668,7 @@ pub fn prepare(
   let mut groups = vec![];
   let mut field_specs = vec![];
   let mut recursor_specs: Vec<(Address, Recursor)> = vec![];
+  let mut axioms: Vec<Address> = vec![];
   for (address, _) in &entries {
     let constant = &constants[address];
     let parent = address.clone();
@@ -686,16 +698,21 @@ pub fn prepare(
           r.rules.iter().map(|r| r.rhs.clone()).collect(),
         )
       },
-      ConstantInfo::Axio(a) => push(
-        address.clone(),
-        vec![],
-        Declaration {
-          typ: a.typ.clone(),
-          body: None,
-          kind: DeclKind::Assumption,
-        },
-        vec![],
-      ),
+      ConstantInfo::Axio(a) => {
+        if !STANDARD_AXIOMS.contains(&address.hex().as_str()) {
+          axioms.push(address.clone());
+        }
+        push(
+          address.clone(),
+          vec![],
+          Declaration {
+            typ: a.typ.clone(),
+            body: None,
+            kind: DeclKind::Assumption,
+          },
+          vec![],
+        )
+      },
       ConstantInfo::Quot(q) => push(
         address.clone(),
         vec![],
@@ -958,6 +975,7 @@ pub fn prepare(
   program.equations = equations.clone();
   let case_definitions = resolve(&profile.case_definitions)?;
   program.case_definitions = case_definitions.clone();
+  program.axioms = resolve(&axioms)?;
   for (typ, ctor, params, count) in field_specs {
     if let Ok(derived) = fields(
       &program,

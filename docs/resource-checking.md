@@ -231,7 +231,20 @@ statement's binders, in order, and the theorem must be a safe theorem (its
 proof is checked by erased typing). The profile binds the consumer to run `f`
 by that equation; the kernel body is then not checked. `ix compile
 --equations --profile FILE` adds every realized `f ↦ f.eq_def` association
-as an `equation` directive.
+as an `equation` directive, and only those: `equation` is a generated
+directive, which a written profile may not contain, so the theorem bound to
+`f` is always Lean's own unfolding theorem (`Ix.Compile.Equations.realize`),
+never an author's theorem about `f` (a true but different equation, `f xs = f
+xs`, or a false one). Admission also refuses a definition whose bound
+equation depends on an axiom other than `propext`, `Quot.sound` and
+`Classical.choice` (`sorryAx` or any user axiom): the adapter records every
+other axiom of the closure by address (`Program.axioms`; the three standard
+ones are pinned by their Ixon v4 content addresses) and admission propagates
+that dependency through the reverse reference graph. Under `--profile`, the
+equation sidecar lists, under `"resourceChecked"`, the `(definition,
+equation)` pairs through which admission checked a definition (bound,
+resource-relevant, not assumed): the consumer must run each of these
+definitions by its equation.
 
 The default analysis bounds are depth 256 and 100,000 steps per declaration.
 Exhaustion is a rejection. Open sharing is analyzed in each binding context;
@@ -296,6 +309,13 @@ entries, the scalar immediates `Char` and `UInt8`–`UInt64`, the choices `ite`,
 `String.length`) with a local input.
 With `--equations`, the realized unfolding equations are added to the
 profile source, so annotated recursion is checked through them.
+
+A profile is a trust root for what it states by design: an `assume`,
+`interface`, `choice` or `shareable` entry is an explicit claim that the
+checker does not verify (a false interface or a strict function declared a
+choice is admitted as stated). The directives whose truth is a fact about
+Lean's own declarations are instead generated and never written: `equation`
+(above) and `case`.
 
 The directive `case NAME` (a case definition) is generated, never written: a
 profile file containing it is rejected. When the file asks for `cases`, `ix
