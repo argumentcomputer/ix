@@ -2,20 +2,30 @@
   Ix.Compile.Canon: Pass 1 of the Lean compiler (canonical form of inductive
   blocks and definition cliques) as total pure functions.
 
-  Not imported by the compiler: `Ix.CompileM` and the driver still use
-  `sortConsts`, `CondenseM` and `Ix.AuxGen.Nested`. Under `Rules.today` these
-  functions reproduce them (checked by `Tests/Ix/Compile/Canon.lean`); under
-  `Rules.phaseA` they compute the Phase A canonical form
-  (`plans/PLAN-A-compiler-design.md` §3.1). The census executable
-  `canon-census` (`Benchmarks/Canon/Census.lean`) runs both on libraries.
+  **Wired into the compiler under `Rules.compiler`** (today's rules with the
+  two Lean-port comparator fixes, which change no byte; A2's byte-neutral
+  half). The compiler's Step 1 calls into this package through thin
+  adapters that only convert data:
+  * `Ix.CondenseM.run` (the split of the whole reference graph) is
+    `condensation`, presented in today's traversal order so that block
+    representatives and map iteration orders are unchanged;
+  * `Ix.CompileM.sortConsts` (classes and canonical order of every block,
+    primary and auxiliary) is `sortClasses Rules.compiler`, with external
+    addresses from `Ix.CompileM.constAddrLookup`;
+  * `Ix.AuxGen.sortAuxByPartitionRefinement` takes its order from
+    `structuralAuxClasses` and `Ix.AuxGen.computeAuxPerm` is `computePerm`,
+    both on `Ix.AuxGen.ExpandedBlock.toCanon`.
+  The compiler's nested expansion (`expandNestedBlock`, locally nameless)
+  and the evaporation probe (`positionClaimedBySpecScc`) are still its own.
 
-  Proposed entry points for the compiler (A2):
+  Under `Rules.phaseA` the functions compute the Phase A canonical form
+  (`plans/PLAN-A-compiler-design.md` §3.1). The census executable
+  `canon-census` (`Benchmarks/Canon/Census.lean`) runs both on libraries;
+  `Tests/Ix/Compile/Canon.lean` (`canon-pass1`) checks the wired path.
+
+  Further entry points (A2 proper and later):
   * `canonBlock rules env all : Except String BlockCanon` per Lean block;
-  * `sortClasses rules addr? members` for any component (replaces
-    `sortConsts`);
-  * `sccsOf names refs` / `tarjan adj` (replaces `CondenseM`);
-  * `expand`, `canonicalAuxOrder`, `computePerm` (replace
-    `expandNestedBlock`, `sortAuxByPartitionRefinement`, `computeAuxPerm`);
+  * `expand`, `canonicalAuxOrder` (discovery order under `Rules.phaseA`);
   * `cliqueClasses rules addr? clique`;
   * `blockNameMap`, `cliqueNameMap`.
 -/

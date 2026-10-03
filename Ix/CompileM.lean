@@ -25,6 +25,7 @@ public import Ix.Mutual
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.SOrder
+public import Ix.Compile.Canon.Classes
 public import Ix.CallSitePlan
 public import Ix.CallSiteSurgery
 public import Ix.CanonM
@@ -152,8 +153,6 @@ structure BlockState where
   exprCache : Std.HashMap Expr (Ixon.Expr × UInt64) := {}
   /-- Universe compilation cache (keyed by Level for O(1) lookup) -/
   univCache : Std.HashMap Level Ixon.Univ := {}
-  /-- Constant comparison cache (by name pairs) -/
-  cmpCache : Std.HashMap (Name × Name) Ordering := {}
   /-- Reference table (ordered unique addresses) -/
   refs : Array Address := #[]
   refsIndex : Std.HashMap Address UInt64 := {}
@@ -1977,270 +1976,36 @@ def mutConstPreseedInputs (c : MutConst) : List (Expr × List Name) :=
 def mutConstPreseedExprs (c : MutConst) : Array (Expr × List Name) :=
   (mutConstPreseedInputs c).toArray
 
-/-! ## Level Comparison -/
+/-! ## Classes and canonical order (Pass 1, `Ix.Compile.Canon`)
 
-/-- Compare two Ix levels for ordering. -/
-def compareLevel (xctx yctx : List Name)
-    : Level → Level → CompileM SOrder
-  | .mvar .., _ => throw (.unsupportedExpr "level metavariable")
-  | _, .mvar .. => throw (.unsupportedExpr "level metavariable")
-  | .zero _, .zero _ => pure ⟨true, .eq⟩
-  | .zero _, _ => pure ⟨true, .lt⟩
-  | _, .zero _ => pure ⟨true, .gt⟩
-  | .succ x _, .succ y _ => compareLevel xctx yctx x y
-  | .succ .., _ => pure ⟨true, .lt⟩
-  | _, .succ .. => pure ⟨true, .gt⟩
-  | .max xl xr _, .max yl yr _ => SOrder.cmpM
-    (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
-  | .max .., _ => pure ⟨true, .lt⟩
-  | _, .max .. => pure ⟨true, .gt⟩
-  | .imax xl xr _, .imax yl yr _ => SOrder.cmpM
-      (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
-  | .imax .., _ => pure ⟨true, .lt⟩
-  | _, .imax .. => pure ⟨true, .gt⟩
-  | .param x _, .param y _ => do
-    match (xctx.idxOf? x), (yctx.idxOf? y) with
-    | some xi, some yi => pure ⟨true, compare xi yi⟩
-    | none, _ => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{x}")
-    | _, none => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{y}")
+Step 1 of a block's compilation, the classes (collapse) and their canonical
+order, is `Ix.Compile.Canon.sortClasses` under `Rules.compiler`: today's
+rules (name-hash seed and least-name-hash representative, syntactic levels,
+external references by address at the first difference, today's structural
+nested order) with the two Lean-port comparator fixes on (mixed kinds by
+kind tag; the comparison cache normalised to the key's orientation, design
+document §3.4, C1 and C2). Neither fix is reachable on Lean input, so the
+output is today's. The pure functions are the definition; what follows only
+converts between them and `CompileM`. -/
 
-/-! ## Expression Comparison -/
-
-/-- Structural size used to expose termination of name-irrelevant expression
-comparison. The body is exposed because it is also the public comparator's
-well-founded measure. -/
-@[expose] def compareExprSize : Expr → Nat
-  | .bvar .. | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => 1
-  | .app fn arg _ => compareExprSize fn + compareExprSize arg + 1
-  | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
-      compareExprSize ty + compareExprSize body + 1
-  | .letE _ ty value body _ _ =>
-      compareExprSize ty + compareExprSize value + compareExprSize body + 1
-  | .proj _ _ value _ | .mdata _ value _ => compareExprSize value + 1
-
-@[simp] theorem compareExprSize_app (fn arg : Expr)
-    (hash : Address) :
-    compareExprSize (.app fn arg hash) =
-      compareExprSize fn + compareExprSize arg + 1 := by rfl
-
-@[simp] theorem compareExprSize_lam (name : Name) (ty body : Expr)
-    (bi : Lean.BinderInfo) (hash : Address) :
-    compareExprSize (.lam name ty body bi hash) =
-      compareExprSize ty + compareExprSize body + 1 := by rfl
-
-@[simp] theorem compareExprSize_forallE (name : Name)
-    (ty body : Expr) (bi : Lean.BinderInfo) (hash : Address) :
-    compareExprSize (.forallE name ty body bi hash) =
-      compareExprSize ty + compareExprSize body + 1 := by rfl
-
-@[simp] theorem compareExprSize_letE (name : Name)
-    (ty value body : Expr) (nonDep : Bool) (hash : Address) :
-    compareExprSize (.letE name ty value body nonDep hash) =
-      compareExprSize ty + compareExprSize value + compareExprSize body + 1 :=
-  by rfl
-
-@[simp] theorem compareExprSize_proj (typeName : Name) (field : Nat)
-    (value : Expr) (hash : Address) :
-    compareExprSize (.proj typeName field value hash) =
-      compareExprSize value + 1 := by rfl
-
-@[simp] theorem compareExprSize_mdata
-    (data : Array (Name × DataValue)) (inner : Expr) (hash : Address) :
-    compareExprSize (.mdata data inner hash) = compareExprSize inner + 1 :=
-  by rfl
-
-/-- Name-irrelevant ordering of Ix expressions.
-    Matches Rust's compare_expr - no caching, handles mdata inline. -/
-@[expose] def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
-    (x y : Expr) : CompileM SOrder := do
-  match x, y with
-  | .mvar .., _ => throw (.unsupportedExpr "metavariable in comparison")
-  | _, .mvar .. => throw (.unsupportedExpr "metavariable in comparison")
-  | .fvar .., _ => throw (.unsupportedExpr "fvar in comparison")
-  | _, .fvar .. => throw (.unsupportedExpr "fvar in comparison")
-  | .mdata dx xi hx, .mdata dy yi hy => do
-    if SemanticContract.hasMetadata dx then
-      if SemanticContract.hasMetadata dy then
-        let cx ← match SemanticContract.read dx with
-          | .ok c => pure c | .error e => throw (.unsupportedExpr e)
-        let cy ← match SemanticContract.read dy with
-          | .ok c => pure c | .error e => throw (.unsupportedExpr e)
-        let order := compare cx.orderKey cy.orderKey
-        if order != .eq then return ⟨true, order⟩
-        compareExpr ctx xlvls ylvls xi yi
-      else compareExpr ctx xlvls ylvls (.mdata dx xi hx) yi
-    else compareExpr ctx xlvls ylvls xi (.mdata dy yi hy)
-  | .mdata data x _, y =>
-    if SemanticContract.hasMetadata data then pure ⟨true, .gt⟩
-    else compareExpr ctx xlvls ylvls x y
-  | x, .mdata data y _ =>
-    if SemanticContract.hasMetadata data then pure ⟨true, .lt⟩
-    else compareExpr ctx xlvls ylvls x y
-  | .bvar x _, .bvar y _ => pure ⟨true, compare x y⟩
-  | .bvar .., _ => pure ⟨true, .lt⟩
-  | _, .bvar .. => pure ⟨true, .gt⟩
-  | .sort x _, .sort y _ => compareLevel xlvls ylvls x y
-  | .sort .., _ => pure ⟨true, .lt⟩
-  | _, .sort .. => pure ⟨true, .gt⟩
-  | .const x xls _, .const y yls _ => do
-    let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls.toList yls.toList
-    if univs.ord != .eq then pure univs
-    else if x == y then pure ⟨true, .eq⟩
-    else match ctx.get? x, ctx.get? y with
-    | some nx, some ny => pure ⟨false, compare nx ny⟩
-    | some _, none => pure ⟨true, .lt⟩
-    | none, some _ => pure ⟨true, .gt⟩
-    | none, none => do
-      let x' ← lookupConstAddr x
-      let y' ← lookupConstAddr y
-      pure ⟨true, compare x' y'⟩
-  | .const .., _ => pure ⟨true, .lt⟩
-  | _, .const .. => pure ⟨true, .gt⟩
-  | .app xf xa _, .app yf ya _ =>
-    SOrder.cmpM
-      (compareExpr ctx xlvls ylvls xf yf)
-      (compareExpr ctx xlvls ylvls xa ya)
-  | .app .., _ => pure ⟨true, .lt⟩
-  | _, .app .. => pure ⟨true, .gt⟩
-  | .lam _ xt xb _ _, .lam _ yt yb _ _ =>
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
-  | .lam .., _ => pure ⟨true, .lt⟩
-  | _, .lam .. => pure ⟨true, .gt⟩
-  | .forallE _ xt xb _ _, .forallE _ yt yb _ _ =>
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
-  | .forallE .., _ => pure ⟨true, .lt⟩
-  | _, .forallE .. => pure ⟨true, .gt⟩
-  | .letE _ xt xv xb _ _, .letE _ yt yv yb _ _ =>
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) <|
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xv yv)
-      (compareExpr ctx xlvls ylvls xb yb)
-  | .letE .., _ => pure ⟨true, .lt⟩
-  | _, .letE .. => pure ⟨true, .gt⟩
-  | .lit x _, .lit y _ => pure ⟨true, compare x y⟩
-  | .lit .., _ => pure ⟨true, .lt⟩
-  | _, .lit .. => pure ⟨true, .gt⟩
-  | .proj tnx ix tx _, .proj tny iy ty _ => do
-    let tn ← match ctx.get? tnx, ctx.get? tny with
-      | some nx, some ny => pure ⟨false, compare nx ny⟩
-      | none, some _ => pure ⟨true, .gt⟩
-      | some _, none => pure ⟨true, .lt⟩
-      | none, none =>
-        if tnx == tny then pure ⟨true, .eq⟩
-        else do
-          let x' ← lookupConstAddr tnx
-          let y' ← lookupConstAddr tny
-          pure ⟨true, compare x' y'⟩
-    SOrder.cmpM (pure tn) <|
-    SOrder.cmpM (pure ⟨true, compare ix iy⟩)
-      (compareExpr ctx xlvls ylvls tx ty)
-termination_by compareExprSize x + compareExprSize y
-decreasing_by
-  all_goals simp only [compareExprSize_app, compareExprSize_lam,
-    compareExprSize_forallE, compareExprSize_letE, compareExprSize_proj,
-    compareExprSize_mdata]
-  all_goals omega
-
-/-! ## Constant Comparison -/
-
-/-- Canonicalize an unordered pair of declaration names for the private
-comparison cache. -/
-def comparisonCacheKey (x y : Name) : Name × Name :=
-  match compare x y with
-  | .lt => (x, y)
-  | _ => (y, x)
-
-/-- Compare two definition members after the outer variant dispatch. -/
-def compareDef (ctx : Ix.MutCtx) (x y : Def) : CompileM SOrder := do
-  SOrder.cmpM (pure ⟨true, compare x.kind y.kind⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.levelParams.size y.levelParams.size⟩) <|
-  SOrder.cmpM
-    (compareExpr ctx x.levelParams.toList y.levelParams.toList x.type y.type)
-    (compareExpr ctx x.levelParams.toList y.levelParams.toList x.value y.value)
-
-/-- Compare two constructors, memoizing strong results in the private sort
-cache. -/
-def compareCtor (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
-    (x y : ConstructorVal) : CompileM SOrder := do
-  let key := comparisonCacheKey x.cnst.name y.cnst.name
-  let cache ← getBlockState
-  if let some o := cache.cmpCache.get? key then
-    return ⟨true, o⟩
-  let sorder ←
-    SOrder.cmpM
-      (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.cidx y.cidx⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.numFields y.numFields⟩)
-      (compareExpr ctx xlvls ylvls x.cnst.type y.cnst.type)
-  if sorder.strong then
-    modifyBlockState fun c =>
-      { c with cmpCache := c.cmpCache.insert key sorder.ord }
-  return sorder
-
-/-- Compare two inductive members after the outer variant dispatch. -/
-def compareInd (ctx : Ix.MutCtx) (x y : Ind) : CompileM SOrder := do
-  SOrder.cmpM (pure ⟨true, compare x.levelParams.size y.levelParams.size⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.ctors.size y.ctors.size⟩) <|
-  SOrder.cmpM
-    (compareExpr ctx x.levelParams.toList y.levelParams.toList x.type y.type)
-    (SOrder.zipM
-      (compareCtor ctx x.levelParams.toList y.levelParams.toList)
-      x.ctors.toList y.ctors.toList)
-
-/-- Compare two recursor rules under their parent universe contexts. -/
-def compareRule (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
-    (x y : RecursorRule) : CompileM SOrder := do
-  SOrder.cmpM (pure ⟨true, compare x.nfields y.nfields⟩)
-    (compareExpr ctx xlvls ylvls x.rhs y.rhs)
-
-/-- Compare two recursor members after the outer variant dispatch. -/
-def compareRecr (ctx : Ix.MutCtx) (x y : RecursorVal) : CompileM SOrder := do
-  SOrder.cmpM
-    (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numMotives y.numMotives⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numMinors y.numMinors⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.k y.k⟩) <|
-  SOrder.cmpM
-    (compareExpr ctx x.cnst.levelParams.toList y.cnst.levelParams.toList
-      x.cnst.type y.cnst.type)
-    (SOrder.zipM
-      (compareRule ctx x.cnst.levelParams.toList y.cnst.levelParams.toList)
-      x.rules.toList y.rules.toList)
-
-/-- Uncached variant dispatch for mutual-constant comparison. -/
-def compareConstBody (ctx : Ix.MutCtx) (x y : MutConst) :
-    CompileM SOrder :=
-  match x, y with
-  | .defn x, .defn y => compareDef ctx x y
-  | .defn _, _ => pure ⟨true, .lt⟩
-  | .indc x, .indc y => compareInd ctx x y
-  | .indc _, _ => pure ⟨true, .lt⟩
-  | .recr x, .recr y => compareRecr ctx x y
-  | .recr _, _ => pure ⟨true, .lt⟩
-
-/-- Compare two mutual constants for ordering. -/
-def compareConst (ctx : Ix.MutCtx) (x y : MutConst) : CompileM Ordering := do
-  let key := comparisonCacheKey x.name y.name
-  let cache ← getBlockState
-  if let some o := cache.cmpCache.get? key then
-    return o
-  let sorder ← compareConstBody ctx x y
-  if sorder.strong then
-    modifyBlockState fun c =>
-      { c with cmpCache := c.cmpCache.insert key sorder.ord }
-  pure sorder.ord
-
-/-- Check if two mutual constants are equal (for grouping). -/
-def eqConst (ctx : Ix.MutCtx) (x y : MutConst) : CompileM Bool :=
-  do
-    let order ← compareConst ctx x y
-    pure (order == .eq)
-
-/-! ## sortConsts Fixed-Point Algorithm -/
+/-- The compiled address of a constant as `lookupConstAddr` resolves it
+(current block's primary registrations, the merged name map, the current
+block's auxiliary registrations, the merged auxiliary map), as a pure
+function of the current state. Sorting writes none of these maps, so a
+snapshot taken before a sort answers every lookup the sort makes. -/
+def constAddrLookup : CompileM (Name → Option Address) := do
+  let env ← getCompileEnv
+  let bstate ← getBlockState
+  pure fun name =>
+    match bstate.blockNameToAddr.get? name with
+    | some addr => some addr
+    | none =>
+    match env.nameToAddr.get? name with
+    | some addr => some addr
+    | none =>
+    match bstate.auxNameToAddr.get? name with
+    | some addr => some addr
+    | none => env.auxNameToAddr.get? name
 
 /-- Resolve one inductive member's constructors for SCC collection. -/
 def collectMutConstConstructors :
@@ -2259,94 +2024,15 @@ def MutConst.mkIndc (i : InductiveVal) : CompileM MutConst := do
     i.numIndices, i.all, ctors, i.numNested, i.isRec, i.isReflexive,
     i.isUnsafe⟩)
 
-/-- A sorter member retains erased evidence that it came from the SCC source
-list. This makes the classification boundary provenance-preserving by type. -/
-abbrev SortMutConstMember (sources : List MutConst) :=
-  { source : MutConst // source ∈ sources }
-
-def sortMutConstCtx {sources : List MutConst}
-    (classes : List (List (SortMutConstMember sources))) : Ix.MutCtx :=
-  MutConst.ctx (classes.map fun constClass => constClass.map (fun x => x.1))
-
-/-- Insert one tagged member into canonical source-name order. -/
-def insertSortMutConstMemberByName {sources : List MutConst}
-    (source : SortMutConstMember sources) :
-    List (SortMutConstMember sources) → List (SortMutConstMember sources)
-  | [] => [source]
-  | current :: rest =>
-    if compare source.1.name current.1.name == .gt then
-      current :: insertSortMutConstMemberByName source rest
-    else source :: current :: rest
-
-/-- Stable canonical source-name order used at every refinement boundary. -/
-def sortMutConstMembersByName {sources : List MutConst} :
-    List (SortMutConstMember sources) → List (SortMutConstMember sources)
-  | [] => []
-  | source :: rest =>
-    insertSortMutConstMemberByName source (sortMutConstMembersByName rest)
-
-/-- Refine one tentative equivalence class and restore canonical name order
-inside each resulting group. -/
-def refineMutConstClass {sources : List MutConst} (ctx : Ix.MutCtx) :
-    List (SortMutConstMember sources) →
-      CompileM (List (List (SortMutConstMember sources)))
-  | [] => throw (.invalidMutualBlock "empty class in sortConsts")
-  | [source] => pure [[source]]
-  | members => do
-    let sorted ← members.sortByM fun x y => compareConst ctx x.1 y.1
-    let groups ← List.groupByM (fun x y => eqConst ctx x.1 y.1) sorted
-    pure (groups.map sortMutConstMembersByName)
-
-/-- Refine every tentative class from left to right. -/
-def refineMutConstClasses {sources : List MutConst} (ctx : Ix.MutCtx) :
-    List (List (SortMutConstMember sources)) →
-      CompileM (List (List (SortMutConstMember sources)))
-  | [] => pure []
-  | sources :: rest => do
-    let groups ← refineMutConstClass ctx sources
-    let tail ← refineMutConstClasses ctx rest
-    pure (groups ++ tail)
-
-/-- Fuel-bounded fixed-point refinement. Refinement is class-local and emits
-one or more nonempty groups for every incoming class, so an increased class
-count consumes the finite source-member budget. Equal counts mean no class
-split occurred. The extra round observes that fixed point; exhaustion turns a
-malformed comparison relation into a deterministic compiler error. -/
-def sortConstsLoop {sources : List MutConst} :
-    Nat → List (List (SortMutConstMember sources)) →
-      CompileM (List (List (SortMutConstMember sources)))
-  | 0, _ => throw (.invalidMutualBlock "sortConsts did not converge")
-  | fuel + 1, classes => do
-    let refined ← refineMutConstClasses (sortMutConstCtx classes) classes
-    if classes.length == refined.length then pure refined
-    else sortConstsLoop fuel refined
-
-/-- Sort mutual constants into ordered equivalence classes using bounded
-partition refinement, starting from one canonical name-sorted class. The
-erased source-membership tags are removed only after refinement; final guards
-make nonempty classes and the representative-count bound explicit. -/
+/-- The classes of a block's members in canonical order, each class's
+representative first: `Ix.Compile.Canon.sortClasses Rules.compiler`, with
+external addresses from `constAddrLookup`. Pure: the comparison cache lives
+inside the call, so nothing leaks into the block state. -/
 def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) := do
-  let members : List (SortMutConstMember sources) := sources.attach
-  let initial := sortMutConstMembersByName members
-  let taggedClasses ← sortConstsLoop (sources.length + 1) [initial]
-  let classes := taggedClasses.map fun constClass =>
-    constClass.map fun source => source.1
-  if classes.any (fun constClass => constClass.isEmpty) then
-    throw (.invalidMutualBlock "empty class after sortConsts")
-  else if sources.length < classes.length then
-    throw (.invalidMutualBlock "too many classes after sortConsts")
-  else
-    pure classes
-
-/-- Run classification with a private comparison cache. Sorting is a pure
-classification phase; restoring the incoming block state makes that boundary
-explicit and prevents its memoization strategy from leaking into compilation. -/
-def sortConstsIsolated (sources : List MutConst) :
-    CompileM (List (List MutConst)) := do
-  let saved ← getBlockState
-  let classes ← sortConsts sources
-  modifyBlockState fun _ => saved
-  pure classes
+  let addr? ← constAddrLookup
+  match Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addr? sources with
+  | .ok (classes, _) => pure classes
+  | .error e => throw (.invalidMutualBlock s!"sortConsts: {e}")
 
 /-! ## Constant Building -/
 
@@ -3455,7 +3141,7 @@ def collectMutConsts : List Name → Array MutConst →
 /-- Resolve, canonically classify, and compile a non-singleton SCC. -/
 def compileMutualConstants (all : Set Name) : CompileM BlockResult := do
   let consts ← collectMutConsts all.toList #[]
-  let mutConsts ← sortConstsIsolated consts.toList
+  let mutConsts ← sortConsts consts.toList
   compileMutualBlock mutConsts
 
 /-- Compile a constant by name (looks it up in the environment).

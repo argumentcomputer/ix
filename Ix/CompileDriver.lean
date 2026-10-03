@@ -1147,8 +1147,11 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     for (n, e) in ungrounded.toList.take 5 do
       IO.println s!"    ungrounded: {n.pretty} ({repr e.kind})"
   let t ← tick s!"ground ({ungrounded.size} ungrounded)" t
-  -- 4. Condense (Tarjan SCCs over the filtered graph).
-  let condensed := Ix.CondenseM.run groundedOutRefs
+  -- 4. Condense (Tarjan SCCs over the filtered graph: Pass 1's
+  --    `Ix.Compile.Canon.condensation`).
+  let condensed ← match Ix.CondenseM.run groundedOutRefs with
+    | .ok c => pure c
+    | .error e => return .error e
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
   -- 5. Aux-aware parallel compile against the HYBRID environment: code
   --    kinds are the materialized (shared) map; proof bodies

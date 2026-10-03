@@ -51,7 +51,9 @@
     auxiliaries, each with a trailing identity-marker constructor typed by
     its occurrence (block parameters as `bvar i`, literally, as the
     compiler does), are sorted by `Classes.sortClasses` with today's rules;
-    references to the block's members are external (by address).
+    references to the block's members are external (by address). The
+    compiler reads this order through `structuralAuxClasses` and the
+    permutation through `computePerm`.
   * `NestedOrder.discovery` (Phase A): the discovery order of the expansion
     of the canonical block (members in canonical order, collapsed members
     renamed to their representatives).
@@ -469,19 +471,31 @@ def auxMutConsts (x : Expanded) : Array MutConst :=
             numParams := mem.nParams, numIndices := mem.nIndices, all := #[],
             ctors, numNested := 0, isRec := false, isReflexive := false, isUnsafe := false }
 
+/-- The rules of today's structural auxiliary sort: today's comparator,
+with the port fixes as `rules` sets them (`Rules.compiler` turns them on;
+they change no result, see `Order.lean`). The seed, levels and tie-break of
+`rules` do not apply: the structural order is today's by definition. -/
+def Rules.structuralAux (rules : Rules) : Rules :=
+  { Rules.today with portFixes := rules.portFixes }
+
+/-- Today's structural order of the auxiliaries of an expansion: their
+classes, in order, under `rules.structuralAux`
+(`sortAuxByPartitionRefinement` reads this). -/
+def structuralAuxClasses (rules : Rules) (addr? : Name → Option Address) (x : Expanded) :
+    Except String (List (List MutConst)) :=
+  (·.1) <$> sortClasses rules.structuralAux addr? (auxMutConsts x).toList
+
 /-- Canonical auxiliary order of an expansion: the auxiliaries' names, one
-per class, in order. Today: sorted structurally (classes by
-`Rules.today`); Phase A: the expansion's own discovery order. Also returns
-whether the structural order needs addresses (it differs from the blind
-sort). -/
+per class, in order. Today: sorted structurally (`structuralAuxClasses`);
+Phase A: the expansion's own discovery order. Also returns whether the
+structural order needs addresses (it differs from the blind sort). -/
 def canonicalAuxOrder (rules : Rules) (addr? : Name → Option Address) (x : Expanded) :
     Except String (Array (Array Name) × Bool) := do
   match rules.nested with
   | .discovery => return (x.aux.map fun m => #[m.name], false)
   | .structural =>
-    let cs := (auxMutConsts x).toList
-    let (classes, _) ← sortClasses Rules.today addr? cs
-    let blind ← sortClassesBlind Rules.today cs
+    let classes ← structuralAuxClasses rules addr? x
+    let blind ← sortClassesBlind rules.structuralAux (auxMutConsts x).toList
     return (classNames classes, classNames classes != classNames blind)
 
 /-- Canonical signatures for an order of class representatives. -/

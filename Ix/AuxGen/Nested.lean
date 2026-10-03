@@ -10,7 +10,11 @@
   identity-marker ctor, ordered by the ordinary content-addressed
   `sortConsts`) so the canonical layout is independent of Lean's
   source-walk discovery order; `computeAuxPerm` maps Lean's source
-  numbering (`X.rec_N`) onto the canonical positions.
+  numbering (`X.rec_N`) onto the canonical positions. Both the order and
+  the permutation are Pass 1's (`Ix.Compile.Canon.Nested`:
+  `structuralAuxClasses` under `Rules.compiler`, `computePerm`), read
+  through `ExpandedBlock.toCanon`; this module keeps the expansion and
+  applies the order to its data.
 
   The auxiliaries are EPHEMERAL: they exist only during recursor
   generation and are restored to nested applications before emission —
@@ -31,11 +35,12 @@ public import Ix.Mutual
 public import Ix.CompileM
 public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
+public import Ix.Compile.Canon.Nested
 public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError findConst getBlockState modifyBlockState)
+open Ix.CompileM (CompileM CompileError findConst)
 
 /-! ## Expanded block (expand/restore model) -/
 
@@ -264,33 +269,6 @@ partial def hasIndOcc (e : Expr) (names : Std.HashSet Name)
   modify (·.insert e result)
   return result
 
-/-- Memoized "contains a Const that is an original mutual member NOT in
-    the current SCC" check. Mirrors Rust `has_out_of_scc_const`
-    (nested.rs:1352). -/
-partial def hasOutOfSccConst (e : Expr) (inSccNames : Std.HashMap Name Name)
-    (originalNames : Std.HashSet Name)
-    : StateM (Std.HashMap Expr Bool) Bool := do
-  if let some cached := (← get).get? e then
-    return cached
-  let result ← match e with
-    | .const name _ _ =>
-      pure (originalNames.contains name && !inSccNames.contains name)
-    | .app f a _ => do
-      if (← hasOutOfSccConst f inSccNames originalNames) then pure true
-      else hasOutOfSccConst a inSccNames originalNames
-    | .lam _ t b _ _ | .forallE _ t b _ _ => do
-      if (← hasOutOfSccConst t inSccNames originalNames) then pure true
-      else hasOutOfSccConst b inSccNames originalNames
-    | .letE _ t v b _ _ => do
-      if (← hasOutOfSccConst t inSccNames originalNames) then pure true
-      else if (← hasOutOfSccConst v inSccNames originalNames) then pure true
-      else hasOutOfSccConst b inSccNames originalNames
-    | .proj _ _ s _ => hasOutOfSccConst s inSccNames originalNames
-    | .mdata _ inner _ => hasOutOfSccConst inner inSccNames originalNames
-    | _ => pure false
-  modify (·.insert e result)
-  return result
-
 /-! ## Level alpha-equivalence (congruence.rs port, nested-scope) -/
 
 /-- Normalize a level bottom-up via the smart max/imax constructors.
@@ -409,7 +387,7 @@ partial def auxSpecEq (canon src : Expr)
 
 /-- Collect every `Const` reference to an original mutual-block member
     inside `expr` into the returned set. DAG-memoized via the visited
-    set (same rationale as `hasOutOfSccConst`). Mirrors Rust
+    set. Mirrors Rust
     `collect_member_refs` (nested.rs). -/
 partial def collectMemberRefs (expr : Expr)
     (originalNames : Std.HashSet Name)
@@ -728,20 +706,43 @@ def expandNestedBlock (orderedOriginals : Array Name)
 
 /-! ## Canonical structural sort of the aux section -/
 
+/-- The expansion as Pass 1 reads it (`Ix.Compile.Canon.Expanded`): the
+same members, constructors and names; member and constructor types are
+closed already and are copied; each occurrence in `auxToNested` has its
+block-parameter FVars abstracted to Pass 1's de Bruijn convention (parameter
+`i` of `n` is `bvar (n - 1 - i)` at depth 0). A conversion only: nothing is
+recomputed. -/
+def ExpandedBlock.toCanon (x : ExpandedBlock) : Ix.Compile.Canon.Expanded :=
+  let np := x.blockParamFvars.size
+  let fvarPos : Std.HashMap Name Nat :=
+    x.blockParamFvars.zipIdx.foldl (init := {}) fun m (fv, i) =>
+      match fv with
+      | .fvar n _ => m.insert n i
+      | _ => m
+  { types := x.types.map fun m =>
+      { name := m.name, sourceOwner := m.sourceOwner, typ := m.typ,
+        ctors := m.ctors.map fun c => { name := c.name, typ := c.typ, nFields := c.nFields },
+        nParams := m.nParams, nIndices := m.nIndices }
+    auxToNested := x.auxToNested.fold (init := {}) fun m k v =>
+      m.insert k (batchAbstract v fvarPos np 0)
+    auxCtorMap := x.auxCtorMap
+    nOriginals := x.nOriginals
+    levelParams := x.levelParams
+    nParams := np }
+
 /-- Reorder the aux tail of an `ExpandedBlock` structurally so the
     canonical order is independent of Lean's source-walk discovery order,
     returning the updated block and `perm[oldJ] = canonicalJ`.
 
-    Each aux member gets a synthetic trailing `_nested_id` identity-marker
-    ctor whose type is its `auxToNested` entry with block-param FVars
-    abstracted to loose BVars by position — two occurrences of the same
-    external inductive can be alpha-identical when the distinguishing spec
-    param is phantom; the marker orders them by spec-param content. The
-    aux tail is then sorted by the ordinary `sortConsts` (fresh comparison
-    cache, mirroring Rust's fresh `BlockCache`), and the renaming
-    (`<all0>._nested.<Ext>_<newJ+1>`) cascades through `auxCtorMap`,
-    `auxToNested`, and every member/ctor type.
-    Mirrors Rust `sort_aux_by_partition_refinement` (nested.rs:616).
+    The order is Pass 1's (`Ix.Compile.Canon.structuralAuxClasses` under
+    `Rules.compiler`, on `ExpandedBlock.toCanon`): each aux member gets a
+    synthetic trailing `_nested_id` identity-marker ctor whose type is its
+    occurrence with block parameter `i` as `bvar i`, and the aux tail is
+    sorted by the ordinary class refinement with the block's members
+    external (by address). This function applies that order to the
+    compiler's data: the renaming (`<all0>._nested.<Ext>_<newJ+1>`)
+    cascades through `auxCtorMap`, `auxToNested`, and every member/ctor
+    type. Mirrors Rust `sort_aux_by_partition_refinement` (nested.rs:616).
     (Rust's `IX_RECURSOR_DUMP` debug block is not ported.) -/
 def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
     : CompileM (ExpandedBlock × Array Nat) := do
@@ -751,62 +752,12 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
     return (expanded, #[])
   let nAux := nTotal - nOriginals
 
-  let levelParams := expanded.levelParams
-  let blockParamBvars : Array Expr :=
-    (Array.range expanded.blockParamFvars.size).map Expr.mkBVar
-
-  -- Synthetic MutConst::Indc views for all members; aux members carry the
-  -- trailing identity marker (nested.rs:656-725).
-  let mut allMutConsts : Array MutConst := #[]
-  for _h : mi in [0:expanded.types.size] do
-    let mem := expanded.types[mi]!
-    let mut ctorNames : Array Name := mem.ctors.map (·.name)
-    let mut ctors : Array ConstructorVal := #[]
-    for _h2 : ci in [0:mem.ctors.size] do
-      let c := mem.ctors[ci]!
-      ctors := ctors.push {
-        cnst := { name := c.name, levelParams, type := c.typ }
-        induct := mem.name
-        cidx := ci
-        numParams := mem.nParams
-        numFields := c.nFields
-        isUnsafe := false
-      }
-    if mi ≥ nOriginals then
-      if let some nested := expanded.auxToNested.get? mem.name then
-        let markerTyp :=
-          replaceParamsExpr nested expanded.blockParamFvars blockParamBvars
-        let markerName := Name.mkStr mem.name "_nested_id"
-        ctors := ctors.push {
-          cnst := { name := markerName, levelParams, type := markerTyp }
-          induct := mem.name
-          cidx := ctors.size
-          numParams := mem.nParams
-          numFields := 0
-          isUnsafe := false
-        }
-        ctorNames := ctorNames.push markerName
-    allMutConsts := allMutConsts.push (.indc {
-      name := mem.name
-      levelParams
-      type := mem.typ
-      numParams := mem.nParams
-      numIndices := mem.nIndices
-      all := #[]
-      ctors
-      numNested := 0
-      isRec := false
-      isReflexive := false
-      isUnsafe := false
-    })
-
-  let auxConsts := allMutConsts.toList.drop nOriginals
-
-  -- Fresh comparison cache (Rust: `BlockCache::default()`), restored after.
-  let savedCmp := (← getBlockState).cmpCache
-  modifyBlockState fun c => { c with cmpCache := {} }
-  let sortedClasses ← Ix.CompileM.sortConsts auxConsts
-  modifyBlockState fun c => { c with cmpCache := savedCmp }
+  let addr? ← Ix.CompileM.constAddrLookup
+  let sortedClasses ←
+    match Ix.Compile.Canon.structuralAuxClasses Ix.Compile.Canon.Rules.compiler addr?
+        expanded.toCanon with
+    | .ok classes => pure classes
+    | .error e => throw (.invalidMutualBlock s!"aux sort: {e}")
 
   let nCanon := sortedClasses.length
 
@@ -1142,129 +1093,33 @@ its dependents")
 canonically claimed by two SCCs: '{prev.pretty}' and '{rep.pretty}'")
       claimant := some rep
   return (claimant.isSome, sccCtxCache)
-
 /-- Compute `perm[sourceJ] = canonicalI` mapping Lean's source aux-walk
     positions onto canonical aux positions (`PERM_OUT_OF_SCC` for source
     auxes whose spec_params reference out-of-SCC inductives; many-to-one
     under alpha-collapse). Mirrors Rust `compute_aux_perm`
     (nested.rs:1067). `resolveAddr` mirrors `stt.resolve_addr`
-    (name→addr with aux fallback). -/
+    (name→addr with aux fallback).
+
+    The permutation is Pass 1's (`Ix.Compile.Canon.computePerm`): the
+    canonical signatures of `expanded` against those of the source-order
+    expansion of `originalAll`, both read through `ExpandedBlock.toCanon`
+    (block parameters by position, so the two expansions' parameter FVars
+    need no correspondence map). -/
 def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
     (origToCanonNames : Std.HashMap Name Name)
     (resolveAddr : Name → Option Address) : CompileM (Array Nat) := do
-  let nOriginals := expanded.nOriginals
-  let canonicalAux := (expanded.types.toList.drop nOriginals).toArray
-  let nCanon := canonicalAux.size
-
-  let sourceExpanded ← expandNestedBlock originalAll {}
-  let sourceOrder := sourceAuxOrderFromExpanded sourceExpanded
-  let nSource := sourceOrder.size
-
-  -- Source→canonical block-param FVar correspondence.
-  let mut sourceToCanonFvar : Std.HashMap Name Name := {}
-  for (src, canon) in sourceExpanded.blockParamFvars.zip expanded.blockParamFvars do
-    if let (.fvar srcName _, .fvar canonName _) := (src, canon) then
-      sourceToCanonFvar := sourceToCanonFvar.insert srcName canonName
-
-  -- Canonical `(head, headLevels, specParams)` signatures (semantic
-  -- identities). Not keyed by raw hash: alpha-collapse can express the
-  -- same aux via different source names that resolve to one address.
-  let canonicalSignatures := auxSignaturesOfExpanded expanded
-  if canonicalSignatures.size != nCanon then
+  let canonX := expanded.toCanon
+  let canonical := canonX.sigs
+  if canonical.size != canonX.aux.size then
     throw (.invalidMutualBlock
       "compute_aux_perm: canonical aux missing nested_expr entries")
-
-  -- Head-name buckets.
-  let canonByHead := signaturesByHead canonicalSignatures
-
-  let originalNames : Std.HashSet Name :=
-    originalAll.foldl (init := {}) (·.insert ·)
-
-  -- Original members OUTSIDE this SCC compare name-strictly during
-  -- matching (see `auxSpecEq`): they behave as external constants in
-  -- specs, but address-equating them would let an alpha-twin member of
-  -- a different SCC spuriously match, making two SCCs claim one source
-  -- position's `all0.rec_N` name family.
-  let mut strictNamesM : Std.HashSet Name := {}
-  for n in originalAll do
-    if !origToCanonNames.contains n then
-      strictNamesM := strictNamesM.insert n
-  let strictNames := strictNamesM
-
-  let mut perm : Array Nat := Array.replicate nSource PERM_OUT_OF_SCC
-  let mut specEqCache : Std.HashMap (Expr × Expr) Bool := {}
-  let mut outOfSccCache : Std.HashMap Expr Bool := {}
-  let mut normalizeCache : ExprCache := {}
-
-  for ((srcOwner, srcHead, srcLevels, srcSpecs), j) in sourceOrder.zipIdx do
-    -- Normalize source spec_params to the canonical walk's view. In-SCC
-    -- alpha-collapse aliases rewrite to their representatives;
-    -- everything else (genuine external types AND other-SCC original
-    -- members) stays as spelled.
-    let mut normalized : Array Expr := #[]
-    for sp in srcSpecs do
-      let (sp', cache') :=
-        (replaceConstNamesCached sp origToCanonNames).run normalizeCache
-      normalizeCache := cache'
-      normalized := normalized.push sp'
-
-    -- Match FIRST, then classify misses. A position whose specs mention
-    -- other-SCC members can still be canonical HERE when this SCC's own
-    -- constructors mention the same occurrence — e.g.
-    -- `S.mk : List (S × T) → S` with `T` split into its own SCC: the
-    -- canonical expansion of {S} carries the `T`-spelling verbatim, so
-    -- strict-name matching identifies exactly the discovered-here
-    -- occurrences (fixture `AuxOwnership.SplitSpecs`; the old
-    -- out-of-SCC pre-filter skipped these and then failed the
-    -- covered-check below with "canonical aux has no source mapping").
-    let (canonIdx, specEqCache') := matchAuxSignature srcHead srcLevels
-      normalized canonicalSignatures canonByHead resolveAddr
-      sourceToCanonFvar strictNames specEqCache
-    specEqCache := specEqCache'
-
-    match canonIdx with
-    | some ci => perm := perm.set! j ci
-    | none =>
-      -- No canonical match here. A position whose specs reference
-      -- out-of-SCC original members is another block's business:
-      -- canonical in the SCC that discovers it, or evaporated by the
-      -- owner's SCC — the disposition pass in `generateAuxPatches`
-      -- decides. Other constants are ordinary external parameters.
-      let mut referencesOut := false
-      for sp in srcSpecs do
-        let (bad, cache') :=
-          (hasOutOfSccConst sp origToCanonNames originalNames).run
-            outOfSccCache
-        outOfSccCache := cache'
-        if bad then referencesOut := true
-      if referencesOut then
-        continue
-      -- Discovered from a different split SCC's ctor walk → skip; an
-      -- in-SCC owner with no match is a construction bug.
-      if !origToCanonNames.contains srcOwner then
-        continue
-      let srcSig := ", ".intercalate
-        (normalized.toList.map (fun e => toString e.getHash))
-      let canonSigs := " · ".intercalate (canonicalSignatures.toList.map
-        fun (head, levels, specs) =>
-          s!"{head.pretty}.\{{", ".intercalate (levels.toList.map (toString ·.getHash))}}[{", ".intercalate (specs.toList.map (toString ·.getHash))}]")
-      throw (.invalidMutualBlock
-        s!"compute_aux_perm: no canonical match for in-SCC source aux #{j} \
-owned by {srcOwner.pretty} (head={srcHead.pretty}); normalized source \
-specs: [{srcSig}]; canonical signatures: {canonSigs}")
-
-  -- Coverage: every canonical aux needs at least one source mapping.
-  let mut covered : Array Bool := Array.replicate nCanon false
-  for p in perm do
-    if p != PERM_OUT_OF_SCC && p < nCanon then
-      covered := covered.set! p true
-  for (c, i) in covered.zipIdx do
-    if !c then
-      throw (.invalidMutualBlock
-        s!"compute_aux_perm: canonical aux #{i} has no source mapping \
-(canonical produced an aux that source walk missed)")
-
-  return perm
+  let sourceExpanded ← expandNestedBlock originalAll {}
+  match Ix.Compile.Canon.computePerm resolveAddr canonical sourceExpanded.toCanon.sigs
+      originalAll origToCanonNames with
+  | .ok perm => pure (perm.map fun
+      | some i => i
+      | none => PERM_OUT_OF_SCC)
+  | .error e => throw (.invalidMutualBlock s!"compute_aux_perm: {e}")
 
 /-! ## Lean-faithful inductive flags -/
 

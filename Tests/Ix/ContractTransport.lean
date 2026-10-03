@@ -66,8 +66,12 @@ def run : IO Unit := do
   let canonical := Id.run ((sources.mapM Ix.CanonM.canonExpr).run' {})
   for i in [:canonical.size] do
     for j in [:canonical.size] do
-      let (comparison, _) ← get "ordering" <|
-        Ix.CompileM.CompileM.run default block {} (Ix.CompileM.compareExpr {} [] [] canonical[i]! canonical[j]!)
+      -- The compiler's comparator (Pass 1, `Ix.Compile.Canon.compareExpr`),
+      -- with no block members and no external constants.
+      let ctx : Ix.Compile.Canon.CmpCtx :=
+        { levels := .syntactic, mode := .addr, addr? := fun _ => none, mutCtx := {} }
+      let comparison ← get "ordering" <|
+        Ix.Compile.Canon.compareExpr ctx [] [] canonical[i]! canonical[j]!
       unless (comparison.ord == .eq) == (i == j) do
         throw <| IO.userError "canonical ordering merged distinct contracts"
   let rawLet := Lean.Expr.letE `view (.sort .zero) (.bvar 0) (.bvar 0) false

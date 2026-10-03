@@ -27,10 +27,10 @@
   Cache model: Rust's `compile_aux_block` creates a fresh
   `BlockCache::default()` per call (mutual.rs:114). Here that means
   saving, clearing, and afterwards restoring the cache-like `BlockState`
-  fields (`exprCache`/`univCache`/`cmpCache`/`refs`/`refsIndex`/`univs`/
-  `univsIndex`/`arena`) around each `compileAuxBlockWithRename` call —
-  the same precedent as `sortAuxByPartitionRefinement` in
-  `Ix.AuxGen.Nested`. The stt-like fields (`blockBlobs`/`blockNames`/
+  fields (`exprCache`/`univCache`/`refs`/`refsIndex`/`univs`/
+  `univsIndex`/`arena`) around each `compileAuxBlockWithRename` call
+  (sorting itself is pure: `sortConsts` is Pass 1's `sortClasses`, whose
+  comparison cache is local to the call). The stt-like fields (`blockBlobs`/`blockNames`/
   `defHints` and the `aux*` fields) accumulate across phases, mirroring
   Rust's global state.
 
@@ -337,7 +337,7 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
   -- Fresh BlockCache: save + clear the cache fields.
   let saved ← liftM (getBlockState : CompileM _)
   liftM (modifyBlockState (fun c => { c with
-    exprCache := {}, univCache := {}, cmpCache := {},
+    exprCache := {}, univCache := {},
     refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
     arena := {} }) : CompileM _)
   compileAuxBlockCore auxConsts maps nameRename classOrderKey
@@ -345,7 +345,7 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
   -- registrations and blob/name/hint accumulators persist).
   liftM (modifyBlockState (fun c => { c with
     exprCache := saved.exprCache, univCache := saved.univCache,
-    cmpCache := saved.cmpCache, refs := saved.refs,
+    refs := saved.refs,
     refsIndex := saved.refsIndex, univs := saved.univs,
     univsIndex := saved.univsIndex, arena := saved.arena }) : CompileM _)
 
@@ -861,19 +861,9 @@ source-indexed aux name")
     if belowRaw.size ≤ 1 then pure belowRaw else do
       let prelimNames := belowRaw.map (·.name)
       let prelim := belowRaw.map (belowIndcToMutConst · prelimNames)
-      -- Fresh-cache sort, mirroring Rust's `BlockCache::default()`
-      -- (same save/clear/restore as compileAuxBlockWithRename).
-      let saved ← liftM (getBlockState : CompileM _)
-      liftM (modifyBlockState (fun c => { c with
-        exprCache := {}, univCache := {}, cmpCache := {},
-        refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
-        arena := {} }) : CompileM _)
+      -- `sortConsts` is pure (Pass 1, its comparison cache local to the
+      -- call), so it needs no fresh block cache around it.
       let sorted ← liftM (sortConsts prelim.toList : CompileM _)
-      liftM (modifyBlockState (fun c => { c with
-        exprCache := saved.exprCache, univCache := saved.univCache,
-        cmpCache := saved.cmpCache, refs := saved.refs,
-        refsIndex := saved.refsIndex, univs := saved.univs,
-        univsIndex := saved.univsIndex, arena := saved.arena }) : CompileM _)
       let canonical : Array Name :=
         sorted.toArray.flatMap fun cls => (cls.map (·.name)).toArray
       pure <| belowRaw.qsort fun a b =>

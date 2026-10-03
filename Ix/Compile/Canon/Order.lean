@@ -109,6 +109,14 @@ structure Rules where
 def Rules.today : Rules :=
   ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural, false⟩
 
+/-- What the compiler runs (A2's byte-neutral half): today's rules with the
+two Lean-port comparator defects fixed (C1 and C2, owner's decision of
+2026-10-03). Neither fix is reachable on Lean input (components are
+kind-homogeneous; every class is sorted in name-hash order, so a cached
+ordering is never read back for the swapped pair inside the sort), so the
+output is `Rules.today`'s. -/
+def Rules.compiler : Rules := { Rules.today with portFixes := true }
+
 /-- The Phase A decisions (`PLAN-A-compiler-design.md` §3.1). -/
 def Rules.phaseA : Rules :=
   ⟨.allOrder, .afterCanonUniv, .firstInCanonicalOrder, .byAddress, .discovery, true⟩
@@ -121,6 +129,7 @@ def Rules.todayU : Rules := { Rules.today with levels := .afterCanonUniv, portFi
 
 def Rules.name (r : Rules) : String :=
   if r == .today then "today" else if r == .phaseA then "phaseA"
+  else if r == .compiler then "compiler"
   else if r == .todayK then "today+(k0,k1)" else if r == .todayU then "today+canonUniv"
   else reprStr r
 
