@@ -20,7 +20,7 @@ lean_lib AiurReference where
 `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
-  "c32002eeed36c520dfb73de32ef53483652e3aa5"
+  "3f8b805614a0bae1c033469ff893a8f0ee85f601"
 
 @[default_target]
 lean_lib Compilatrix where

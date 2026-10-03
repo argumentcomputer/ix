@@ -107,13 +107,13 @@ and its coverage changes.
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
 | Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, catalog admission, typing and claim binding) expose the exact native hash dependency, pinned in the `CompilatrixTests/Fences/IxonV3*.lean` fences. |
 | Evidence | Official empty-input vector, output length, determinism and input-sensitivity checks, and the frozen Ixon v3 constant, environment, catalog and claim fixtures with independently recorded addresses |
-| Primary pin | Blake3.lean `c32002eeed36c520dfb73de32ef53483652e3aa5` |
+| Primary pin | Blake3.lean `3f8b805614a0bae1c033469ff893a8f0ee85f601` |
 | Rust implementation | `blake3` 1.8.7; `lean-ffi` `163a661847d8171a685570ed12b4c03bfa092778` |
 | Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend |
 
-The Nix build shares the root Lean 4.34.0 toolchain with Blake3's Lean modules
+The Nix build shares the root Lean 4.34.1 toolchain with Blake3's Lean modules
 and Rust FFI header generation. It rejects differing root and dependency
-`lean-toolchain` pins. The Lean 4.34.0 update moves Blake3.lean from
+`lean-toolchain` pins. The Lean 4.34.0 update moved Blake3.lean from
 `c9b2273f` to `c32002ee`. That revision updates the `blake3` crate and C
 sources to 1.8.7 and lean-ffi to `163a6618`, and refreshes the Cargo lock.
 The lock now resolves two `shlex` releases, which the ledger records as a
@@ -121,7 +121,11 @@ version list. The package precompiles its Lean libraries, so importing
 elaborators load the same native objects as shared libraries. It also adds a
 pure Lean `Blake3.Pure` module with no extern declarations, which Compilatr.ix
 does not import. The native symbol set and the Rust entry points are unchanged
-apart from the reported version string.
+apart from the reported version string. The Lean 4.34.1 update moves
+Blake3.lean from `c32002ee` to `3f8b8056`, the revision ix's certified line
+pins. It changes only the package's `lean-toolchain`, its `lean4-nix` lock and
+its CI workflows; the Lean sources, Rust sources and Cargo lock are
+unchanged.
 
 The v3 checker uses incremental `Hasher.init`, `update` and
 `finalizeWithLength` for tagged node and context preimages. These call the
@@ -431,7 +435,7 @@ a project FFI symbol.
 
 | Entry | Current role | Retirement/containment |
 | --- | --- | --- |
-| Lean 4.34.0 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the public lean4ix/ix verified checker |
+| Lean 4.34.1 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the public lean4ix/ix verified checker |
 | GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled by Compilatr.ix |
 | Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean/Rust and the native x86 test harness | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
 | Locked Nix supply chain | nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, host C compiler/linker, GNU binutils readelf/objdump, rsync, binary substitution | Locked hashes now; later diverse reproduction and address-exact output comparison remove it from the semantic TCB |

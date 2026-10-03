@@ -42,7 +42,7 @@ attribute a gap; they are never real-program results.
 
 ## Commands
 
-Run from this directory with Lean 4.34.0 (`lean`, `leanc`), `clang`/`clang++`,
+Run from this directory with Lean 4.34.1 (`lean`, `leanc`), `clang`/`clang++`,
 `cc` and `objdump` on `PATH` (for example inside `nix develop ../..`), and
 with the compiler built (`lake build compilatrix` at the repository root, or
 pass `--compilatrix "nix run ../..#compilatrix --"`). `OUT` should be an

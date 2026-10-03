@@ -45,7 +45,7 @@ Sail introduced an experimental Lean backend in 0.19, and a
 [`lean-sail` support library](https://github.com/rems-project/lean-sail)
 exists. Thus an absent Lean target in this older x86 snapshot does not imply
 that Sail lacks Lean support. Compatibility of this snapshot, the current
-backend and this project's Lean 4.34.0 has not been established.
+backend and this project's Lean 4.34.1 has not been established.
 [Sail changelog](https://github.com/rems-project/sail/blob/sail2/CHANGELOG.md).
 
 The next reference steps are concrete:
@@ -58,7 +58,7 @@ The next reference steps are concrete:
    this reference model.
 2. For S1, pin the Sail compiler and Lean support-library revisions; record
    all generation options and source inputs from `model/Makefile`; generate
-   the Lean model and kernel-check it with Lean 4.34.0. Make generation
+   the Lean model and kernel-check it with Lean 4.34.1. Make generation
    reproducible in Nix and audit the generated definitions and axioms.
    Keep any syntax compatibility changes as reviewed patches against the
    pinned source. A hand-written replacement for the reference step is not
