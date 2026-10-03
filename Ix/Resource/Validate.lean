@@ -11,7 +11,13 @@ addressed v4 bytes. Kernel typechecking alone has no resource meaning. -/
 namespace Ix.Resource
 
 /-- A minimal built-in profile, restricted to actual interfaces present in
-the supplied closure. All assumptions are explicit in its committed bytes. -/
+the supplied closure. All assumptions are explicit in its committed bytes.
+Its shareable types (Nat, Bool, String) make usage contracts cross call and
+closure boundaries on those types, so it relies on the named assumption that
+the linearity of a shareable immediate has no run-time meaning
+(docs/resource-checking.md); the strict profile source
+(profiles/lean-core-strict.profile, `literals` in place of `standard`) has
+no shareable type. -/
 def standardProfile (env : Ixon.Env) : Profile :=
   let primitives := Ix.Tc.PrimAddrs.canonical
   let present := fun address => if env.consts.contains address then some address else none

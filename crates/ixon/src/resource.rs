@@ -3517,7 +3517,22 @@ mod tests {
   fn freeze_fixtures() {
     let text =
       include_str!("../../../Tests/Fixtures/ixon-v4/resource-freeze.tsv");
-    assert!(run_fixture_lines(&freeze_program(), text) >= 9);
+    assert!(run_fixture_lines(&freeze_program(), text) >= 15);
+  }
+
+  /// The mode program without shareable types, as under the strict profile
+  /// (strict setting S2). Mirrors `Tests.Resource.noshareProgram`.
+  fn noshare_program() -> Program {
+    let mut p = modes_program();
+    p.shareable_types.clear();
+    p
+  }
+
+  #[test]
+  fn noshare_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-noshare.tsv");
+    assert!(run_fixture_lines(&noshare_program(), text) >= 5);
   }
 
   /// The case program extended for strict binding (review F1): a unique

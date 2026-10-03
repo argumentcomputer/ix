@@ -15,6 +15,13 @@ use ixon::env::Env;
 use ixon::resource::addressed::{AddressedProgram, Profile, check_resources};
 
 /// Minimal built-in profile, restricted to interfaces present in the closure.
+///
+/// Its shareable types (Nat, Bool, String) make usage contracts cross call
+/// and closure boundaries on those types: the profile relies on the named
+/// assumption that the linearity of a shareable immediate has no run-time
+/// meaning (docs/resource-checking.md, "Named assumptions"). A profile source
+/// with `literals` instead of `standard` (profiles/lean-core-strict.profile)
+/// keeps the literal types without any shareable type.
 pub fn standard_profile(env: &Env) -> Profile {
   let p = PrimAddrs::new();
   let mut shareable_types: Vec<_> =
@@ -90,6 +97,8 @@ fn contract_byte(token: &str) -> Option<u8> {
 /// line is a directive; `#` starts a comment:
 ///
 /// - `standard`: the standard profile's literal and shareable types;
+/// - `literals`: the standard profile's literal types (Nat, String) only, with
+///   no shareable type, so usage contracts never cross (the strict profile);
 /// - `shareable NAME`, `assume NAME`, `choice NAME` (a choice is also an
 ///   assumption);
 /// - `interface NAME C…`: an admitted interface, one contract token per
@@ -136,6 +145,11 @@ pub fn profile_from_source(
         profile.nat_type = standard.nat_type;
         profile.string_type = standard.string_type;
         shareable.extend(standard.shareable_types);
+      },
+      ("literals", 1) => {
+        let standard = standard_profile(env);
+        profile.nat_type = standard.nat_type;
+        profile.string_type = standard.string_type;
       },
       ("shareable", 2) => shareable.extend(present(words[1])),
       ("assume", 2) => assumptions.extend(present(words[1])),
@@ -456,6 +470,16 @@ mod tests {
       )]
     );
     assert_eq!((profile.limits.depth, profile.limits.steps), (64, 1000));
+    // `literals` selects the literal types without any shareable type (the
+    // strict profile), unlike `standard`.
+    let literals = profile_from_source("literals\n", &env, &resolve).unwrap();
+    let standard = standard_profile(&env);
+    assert!(literals.shareable_types.is_empty());
+    assert_eq!(
+      (&literals.nat_type, &literals.string_type),
+      (&standard.nat_type, &standard.string_type)
+    );
+    assert!(profile_from_source("literals Unit", &env, &resolve).is_err());
     // Equations need Eq in the closure (not in this one).
     for bad in [
       "frobnicate",

@@ -5,7 +5,8 @@ import Ix.Compile.SourceContract.Elab
 
 Programs from the phase 1.5 review of the resource checker, one namespace
 each. `Tests.Ix.SourceContract.Review` compiles every namespace's definitions
-through `ix compile`'s resource path with the Lean core profile and checks the
+through `ix compile`'s resource path with the Lean core profile (or the strict
+profile, as `Review.probes` says) and checks the
 verdict: each violation must be rejected; each control must be accepted.
 -/
 
@@ -195,5 +196,48 @@ namespace S02
 def keep (! s : String) : ! String := s
 def f (s : String) : String × String := (keep (s.push (Char.ofNat 97)), s)
 end S02
+
+/-! ## Literals and closed constructions are shared (strict setting S1) -/
+
+/- Violation (review F06): a closed list is static data a consumer may
+extract once; every call would return the same object as unique. -/
+namespace F06
+def keep (! xs : List Nat) : ! List Nat := xs
+def mk (_u : Unit) : ! List Nat := [1, 2, 3]
+def f (_u : Unit) : List Nat × List Nat := (keep (mk ()), keep (mk ()))
+end F06
+
+/- Violation: a string literal is one persistent object, not a fresh one. -/
+namespace LitString
+def lit (_u : Unit) : ! String := "abc"
+end LitString
+
+/- Control: a construction from a run-time local is fresh; `[]` has no
+run-time field, so it is an immediate. -/
+namespace FreshLocal
+def single (x : Nat) : ! List Nat := [x]
+def empty (_u : Unit) : ! List Nat := []
+end FreshLocal
+
+/-! ## No usage crossing under the strict profile (strict setting S2) -/
+
+/- Violation under the strict profile (N-07): a linear Nat dropped by one
+alternative of a choice. -/
+namespace N07
+def pickOne (b : Bool) (1 x : Nat) : Nat := if b then x else 0
+end N07
+
+/- Violation under the strict profile: a linear Nat passed to a many-use
+library function (`HAdd.hAdd`) does not cross. -/
+namespace LinearAdd
+def inc (1 x : Nat) : Nat := x + 1
+end LinearAdd
+
+/- Control under the strict profile: a linear Nat consumed once by a linear
+callee. -/
+namespace LinearId
+def linId (1 x : Nat) : Nat := x
+def entry (n : Nat) : Nat := linId n
+end LinearId
 
 end Tests.Ix.SourceContract.ReviewFixture

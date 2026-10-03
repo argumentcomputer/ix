@@ -1,0 +1,9 @@
+# name	expected	type (ixon-v4 hex)	body (ixon-v4 hex)
+# Cases over Tests.Resource.noshareProgram (Rust: noshare_program): the mode
+# program without shareable types, as under profiles/lean-core-strict.profile
+# (strict setting S2): usage contracts never cross a call or closure.
+without shareable types a linear value does not cross a many call	usage	911520002000	8105200071200510
+without shareable types a linear value may reach a linear callee	ok	913d20002000	810d200071200210
+without shareable types a linear capture makes a closure one-shot	capture	921520001720002000	8205200007200011
+without shareable types a unique capture read by a closure makes it one-shot	capture	921120001720002000	8201200007200071200511
+without shareable types an erased proof still has no demand	ok	9114200d2000	8104200d71200e10

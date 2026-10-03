@@ -15,7 +15,8 @@ compile --anon --profile profiles/lean-core.profile` compiles it: its
 definitions seed the closure, the profile source is built by
 `Ix.Compile.ResourceProfile.build` (generated `case` lines included), and the
 native compiler validates resources. A violation must be rejected by resource
-admission; a control must compile.
+admission; a control must compile. Probes marked strict are compiled with
+`profiles/lean-core-strict.profile` instead (no shareable types).
 -/
 
 public section
@@ -41,9 +42,15 @@ structure Probe where
   forced : List (String × String) := []
   /-- What a rejection message must contain. -/
   reason : String := "resource admission"
+  /-- The profile source file, relative to the repository root. -/
+  profile : String := "profiles/lean-core.profile"
 
 def probe (name : String) (accepted : Bool) (finding : String) : Probe :=
   { name, accepted, finding }
+
+/-- A probe compiled with the strict Lean core profile (no shareable types). -/
+def strictProbe (name : String) (accepted : Bool) (finding : String) : Probe :=
+  { name, accepted, finding, profile := "profiles/lean-core-strict.profile" }
 
 def probes : List Probe := [
   probe "A01" false "F1", probe "A04" false "F1", probe "B07" false "F1", probe "A03b" false "F1",
@@ -55,7 +62,13 @@ def probes : List Probe := [
   { name := "E01", accepted := false, finding := "F3", equations := true },
   { name := "Q06", accepted := true, finding := "F3", equations := true },
   probe "P03" false "F5", probe "C09" false "F5",
-  probe "S02" false "F7"]
+  probe "S02" false "F7",
+  probe "F06" false "S1", probe "LitString" false "S1", probe "FreshLocal" true "S1",
+  strictProbe "F06" false "S1",
+  probe "N07" false "S2", strictProbe "N07" false "S2",
+  probe "LinearAdd" true "S2", strictProbe "LinearAdd" false "S2",
+  probe "OS09" true "S2", strictProbe "OS09" false "S2",
+  strictProbe "LinearId" true "S2", strictProbe "FreshLocal" true "S2", strictProbe "M01" true "S2"]
 
 /-- The definitions and theorems of a probe's namespace. -/
 def roots (env : Environment) (ns : Name) : List Name :=
@@ -93,11 +106,11 @@ def compileProbe (env : Environment) (profile : String) (directory : System.File
 
 private def verdicts : IO (Bool × Nat × Nat × Option String) := do
   let env ← getCompileEnv #[fixtureModule]
-  let profile ← IO.FS.readFile "profiles/lean-core.profile"
   let directory ← IO.FS.createTempDir
   try
     let mut failures := #[]
     for probe in probes do
+      let profile ← IO.FS.readFile probe.profile
       match ← compileProbe env profile directory probe, probe.accepted with
       | .ok (), true => pure ()
       | .error message, false =>
@@ -129,7 +142,7 @@ private def nativeImplementations : IO (Bool × Nat × Nat × Option String) := 
   return (false, 0, 1, some s!"refused {refused}, assumed {assumed}, unannotated {plain}")
 
 def suite : List TestSeq := [
-  .individualIO "review probes: violations rejected, controls accepted (core profile)" none verdicts .done,
+  .individualIO "review probes: violations rejected, controls accepted (core and strict profiles)" none verdicts .done,
   .individualIO "an annotated native implementation must be a profile assumption" none
     nativeImplementations .done,
   test "a written profile may not contain generated directives"

@@ -58,7 +58,15 @@ closure one-shot whatever its type, since a second call would move it again
 — a reusable closure returning a captured unique `String` or `Nat` as unique
 on every call is rejected. A unique immediate that the body only reads keeps
 the closure reusable. A finite or unique capture of any other type still
-requires a unique (one-shot) closure. An argument whose domain is a proposition is a proof,
+requires a unique (one-shot) closure. Crossing is a profile choice: it
+applies exactly to the types the profile declares `shareable` (and to types
+themselves, which are erased), with no other exemption in either checker.
+The standard profile (Nat, Bool, String) and the Lean core profile (also
+`Char`, `UInt8`–`UInt64`) rely on it; the strict profile
+([`profiles/lean-core-strict.profile`](../profiles/lean-core-strict.profile))
+declares no shareable type, so a `1` or `&` value is consumed exactly or at
+most once on every type, at calls and in closures alike, as in Idris 2 and
+Linear Haskell. An argument whose domain is a proposition is a proof,
 which is erased computation: it has no demand, owner transfer, or origin. The
 adapter recognizes propositions from addressed universes (only a literal
 `Sort 0` is `Prop`); the unreduced type is typed first, because reduction can
@@ -330,7 +338,9 @@ on resource admission must establish it.
   represented by an immediate). The checker therefore lets a linear immediate
   cross into a many callee or a reusable closure. Uniqueness is not covered
   by this assumption: a unique immediate is moved, and a closure that moves
-  its captured immediate is one-shot.
+  its captured immediate is one-shot. The standard and Lean core profiles
+  rely on this assumption; the strict profile, which has no shareable type,
+  does not.
 - **A field is an owned reference.** A value extracted from an aggregate, by
   a projection or by a case split, is a reference the consumer owns (Lean's
   reference-counted representation takes one when it extracts a field): it
@@ -377,7 +387,8 @@ shareability to present canonical Nat, Bool, and String types.
 
 `ix compile --profile FILE` replaces the standard profile with a profile
 source: one directive per line (`#` starts a comment): `standard` (the
-standard profile's entries), `shareable NAME`, `assume NAME`, `choice NAME`,
+standard profile's entries), `literals` (only the standard profile's Nat and
+String literal types, no shareable type), `shareable NAME`, `assume NAME`, `choice NAME`,
 `interface NAME C…` (one contract token per leading arrow, `INPUT[:RESULT]`
 in source prefix syntax, `_` for the default), `cases`, `equation NAME
 THEOREM`, and `limits DEPTH STEPS`. Names are resolved against the compiled closure, entries outside it
@@ -386,7 +397,12 @@ validation itself binds addresses only. The published Lean core profile is
 [`profiles/lean-core.profile`](../profiles/lean-core.profile): the standard
 entries, the scalar immediates `Char` and `UInt8`–`UInt64`, the choices `ite`,
 `dite` and `cond`, case behavior, and readers (`List.length`, `Array.size`,
-`String.length`) with a local input.
+`String.length`) with a local input. The strict Lean core profile
+[`profiles/lean-core-strict.profile`](../profiles/lean-core-strict.profile)
+is the same with `literals` in place of `standard` and no scalar
+immediates: it has no shareable type, so no usage contract crosses (see "Uses
+and availability"); choices and case behavior are unchanged, since they are
+about evaluation, not crossing.
 With `--equations`, the realized unfolding equations are added to the
 profile source, so annotated recursion is checked through them.
 
@@ -469,7 +485,8 @@ constructions, and plain-data borrows,
 `resource-strict.tsv` strict arguments of calls and beta-redexes against
 by-need alternatives of bound case definitions, and `resource-fields.tsv`
 case-split fields as views of the major and joins without an expected
-contract. The suites also cover
+contract, and `resource-noshare.tsv` the absence of usage crossing without
+shareable types (the strict profile). The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.

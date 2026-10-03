@@ -363,6 +363,25 @@ def modeCases : Array Case := #[
     lam (b .linear) (.prj 18 0 (v 0)) resTy, "unsupported"⟩
 ]
 
+/-- The mode program without shareable types, as under the strict profile
+(strict setting S2): usage contracts never cross. Mirrors the Rust
+`noshare_program`. -/
+def noshareProgram : Program := { modesProgram with shareableTypes := #[] }
+
+def noshareCases : Array Case := #[
+  ⟨"without shareable types a linear value does not cross a many call", arr (b .linear),
+    lam (b .linear) (call 5 (v 0)), "usage"⟩,
+  ⟨"without shareable types a linear value may reach a linear callee",
+    arr (b .linear .localShared) .localShared, lam (b .linear .localShared) (call 2 (v 0)), "ok"⟩,
+  ⟨"without shareable types a linear capture makes a closure one-shot", arr (b .linear) .shared natTy (arr (b .many)),
+    lam (b .linear) (lam (b .many) (v 1)), "capture"⟩,
+  ⟨"without shareable types a unique capture read by a closure makes it one-shot",
+    arr (b .linear .unique) .shared natTy (arr (b .many)),
+    lam (b .linear .unique) (lam (b .many) (call 5 (v 1))), "capture"⟩,
+  ⟨"without shareable types an erased proof still has no demand", arr (b .erased) .shared prfTy natTy,
+    lam (b .erased) (call 14 (v 0)) prfTy, "ok"⟩
+]
+
 def boxTy : E := ref 21
 def chainTy : E := ref 25
 /-- `∀ (motive : T → Sort 0), …` premises over a constant motive. -/
@@ -679,7 +698,8 @@ def runFixtureCases : IO Nat := do
   let freeze ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-freeze.tsv" freezeProgram freezeCases
   let strict ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-strict.tsv" strictProgram strictCases
   let fields ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-fields.tsv" fieldProgram fieldCases
-  return base + modes + cases + equations + freeze + strict + fields
+  let noshare ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-noshare.tsv" noshareProgram noshareCases
+  return base + modes + cases + equations + freeze + strict + fields + noshare
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0
