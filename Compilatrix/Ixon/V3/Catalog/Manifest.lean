@@ -1,8 +1,9 @@
 import Compilatrix.Ixon.V3.Catalog.Basic
 
 /-! Bounded manifest-v2 parser, from ix 0a31c8dbc63755924c645bf1afedc563e395e88a
+(object format 4 from f829b76044a44a61023d0983516137147bbb12a7)
 Ix/Catalog.lean and crates/ixon/src/catalog.rs. Fixed-width little-endian
-integers are distinct from the environment's canonical Tag0 encoding. -/
+integers are distinct from the environment's canonical TagN encoding. -/
 
 namespace Compilatrix.Ixon.V3.Catalog
 
@@ -65,7 +66,7 @@ private def member (limits : Limits) (i previousDeps : Nat) : Parser (Member × 
     | _ => throw (.syntax "invalid preimage tag")
   return (⟨envRoot, constCount, label, toolchain, sourcePin, deps, preimage⟩, next)
 
-/-- Parse only manifest v2 / object format 3 / erased-lean-v1. Unknown future
+/-- Parse only manifest v2 / object format 4 (Ixon v4) / erased-lean-v1. Unknown future
 sections are retained, never promoted to proof or resource evidence. -/
 def decodeManifestWith (limits : Limits) (bytes : ByteArray) : Except Error Manifest := do
   requireLimit "manifest bytes" bytes.size limits.manifestBytes
@@ -77,7 +78,7 @@ def decodeManifestWith (limits : Limits) (bytes : ByteArray) : Except Error Mani
     unless flags ≤ 1 do throw (.manifest "unknown catalog flags")
     let objectFormat ← u8
     let validator ← u8
-    unless objectFormat == 3 && validator == 1 do
+    unless objectFormat == V3.objectFormat && validator == 1 do
       throw (.scope version objectFormat validator)
     let membersRoot ← addr
     let contentRoot ← addr

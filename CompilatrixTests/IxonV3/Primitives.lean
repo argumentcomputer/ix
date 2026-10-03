@@ -10,7 +10,7 @@ private def expect (label : String) (result : Except String α) (accepted : Bool
     throw (IO.userError s!"v3 primitive {label}: expected {accepted}, got {detail}")
 
 def storeLiteral (env : Environment) (blob : ByteArray) (string : Bool)
-    (type : Address) : Environment :=
+    (type : Compilatrix.Ixon.Address) : Environment :=
   let address := Address.blake3 blob
   let env := { env with blobs := env.blobs.insert address blob }
   (store env ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], if string then .str 1 else .nat 1⟩,

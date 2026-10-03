@@ -40,7 +40,7 @@ def handoff (root : System.FilePath) : IO Nat := do
     "accepted wrong claim subject"
   require ((input.checkClaimBinding { claim with profile := input.env.root }.bytes).toOption.isNone)
     "accepted wrong claim profile"
-  require ((decodeAnonymousEnv (bytes.set! 0 0xE2)).toOption.isNone) "accepted v2 environment"
+  require ((decodeAnonymousEnv (bytes.set! 0 0xE3)).toOption.isNone) "accepted v3 environment"
   require ((decodeAnonymousEnv (bytes.set! 1 (bytes[1]! ^^^ 1))).toOption.isNone) "accepted corrupt root"
   require ((decodeAnonymousEnv bytes (bytes.size - 1)).toOption.isNone) "ignored environment byte budget"
   require ((decodeAnonymousEnv (bytes.set! 180 (bytes[180]! ^^^ 1))).toOption.isNone) "accepted corrupt object"

@@ -14,7 +14,7 @@ open Compilatrix.Ixon Compilatrix.Ixon.V3 Compilatrix.Tools.Check
 private def require (accepted : Bool) (message : String) : IO Unit :=
   unless accepted do throw (IO.userError s!"v3 K1: {message}")
 
-private def address (text : String) : IO Address := do
+private def address (text : String) : IO Compilatrix.Ixon.Address := do
   match Address.ofBytes? (← IO.ofExcept (unhex text)) with
   | some address => return address
   | none => throw (IO.userError s!"v3 K1: invalid address {text}")

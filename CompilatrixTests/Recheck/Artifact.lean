@@ -242,7 +242,7 @@ def render (a : Input) (tiny : Nat := 24) (long : Nat := 2000) : String × Strin
   let (hoisted, _) := hoist dag roots tiny long
   let r := refText dag hoisted
   let addrs := Src.Artifact.addresses p
-  let addrName := fun (x : Ixon.Address) => s!"a{(addrs.findIdx? (· == x)).getD 0}"
+  let addrName := fun (x : Compilatrix.Ixon.Address) => s!"a{(addrs.findIdx? (· == x)).getD 0}"
   let cref : CRef → String
     | .member x i => paren s!".member {addrName x} {i}"
     | .ctor x i c => paren s!".ctor {addrName x} {i} {c}"
@@ -268,8 +268,8 @@ open Compilatrix Compilatrix.Src Compilatrix.Src.Relevance
 set_option maxRecDepth 100000
 
 /-- An address from its 32 bytes. -/
-private def addr (bs : List UInt8) : Ixon.Address :=
-  (Ixon.Address.ofBytes? ⟨bs.toArray⟩).getD default
+private def addr (bs : List UInt8) : Compilatrix.Ixon.Address :=
+  (Compilatrix.Ixon.Address.ofBytes? ⟨bs.toArray⟩).getD default
 
 "
   for (x, i) in addrs.toList.zipIdx do
@@ -286,7 +286,7 @@ private def addr (bs : List UInt8) : Ixon.Address :=
 noncomputable def program : Program :=
   \{ consts := {natMapK (fun c (_ : ConstEntry) => s!"c{c}") p.consts 0 1}
     size := {p.size}
-    roots := {listOf (fun ((x, c) : Ixon.Address × CId) => s!"({addrName x}, {c})") p.roots}
+    roots := {listOf (fun ((x, c) : Compilatrix.Ixon.Address × CId) => s!"({addrName x}, {c})") p.roots}
     known := {known p.known} }
 
 /-- The configuration (the roots' names). -/

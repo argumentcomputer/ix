@@ -151,8 +151,8 @@ def known (k : Known) : String :=
     decIsTrue := {optId k.decIsTrue} }"
 
 /-- The addresses a program mentions, in first-use order. -/
-def addresses (p : Program) : Array Address := Id.run do
-  let mut out : Array Address := #[]
+def addresses (p : Program) : Array Compilatrix.Ixon.Address := Id.run do
+  let mut out : Array Compilatrix.Ixon.Address := #[]
   for e in p.entries do
     let block := match e.ref with
       | .member a _ | .ctor a _ _ => a
@@ -162,13 +162,13 @@ def addresses (p : Program) : Array Address := Id.run do
     unless out.contains a do out := out.push a
   return out
 
-def bytes (a : Address) : String :=
+def bytes (a : Compilatrix.Ixon.Address) : String :=
   listOf (fun (b : UInt8) => s!"{b}") a.hash.data.toList
 
 /-- One bench-k1 artifact's module text. -/
 def render (name modName : String) (p : Program) (ann : Ann) : String := Id.run do
   let addrs := addresses p
-  let addrName := fun (a : Address) => s!"a{(addrs.findIdx? (· == a)).getD 0}"
+  let addrName := fun (a : Compilatrix.Ixon.Address) => s!"a{(addrs.findIdx? (· == a)).getD 0}"
   let cref : CRef → String
     | .member a i => paren s!".member {addrName a} {i}"
     | .ctor a i c => paren s!".ctor {addrName a} {i} {c}"
@@ -186,8 +186,8 @@ open Compilatrix Compilatrix.Src Compilatrix.Src.Relevance
 set_option maxRecDepth 100000
 
 /-- An address from its 32 bytes (read only by the pins). -/
-private def addr (bs : List UInt8) : Ixon.Address :=
-  (Ixon.Address.ofBytes? ⟨bs.toArray⟩).getD default
+private def addr (bs : List UInt8) : Compilatrix.Ixon.Address :=
+  (Compilatrix.Ixon.Address.ofBytes? ⟨bs.toArray⟩).getD default
 
 "
   for (a, i) in addrs.toList.zipIdx do
@@ -210,7 +210,7 @@ noncomputable def program : Program :=
   \{ consts := {natMapK (fun c (_ : ConstEntry) => s!"c{c}") p.consts 0 1}
     size := {p.size}
     table
-    roots := {listOf (fun ((a, c) : Address × CId) => s!"({addrName a}, {c})") p.roots}
+    roots := {listOf (fun ((a, c) : Compilatrix.Ixon.Address × CId) => s!"({addrName a}, {c})") p.roots}
     known := {known p.known} }
 
 /-- The relevance annotation (the annotator's output for the program). -/
@@ -238,7 +238,7 @@ def load (name : String) : IO (Program × Ann) := do
   let json ← IO.ofExcept (Lean.Json.parse
     (← IO.FS.readFile (fixtures / "bench-k1" / s!"{name}.equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let env ← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes)
   let (p, _, _) ← IO.ofExcept ((prepare { typecheck := false } env hints).mapError toString)
   let ann ← IO.ofExcept (Relevance.annotate env p)
   return (p, ann)

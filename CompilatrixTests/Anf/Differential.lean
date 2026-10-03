@@ -50,7 +50,7 @@ def fallback (a : Assert) (stages : Stages) : IO (Array String) := do
   let bytes ← IO.FS.readBinFile (fixtures / "k1/k1.ixe")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (fixtures / "k1/equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let env ← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes)
   let l ← match loadEnv { typecheck := false } env { hints with proposals := #[] } with
     | .ok l => pure l
     | .error d => throw (IO.userError s!"fallback load: {d}")
@@ -77,7 +77,7 @@ def sortpoly (a : Assert) (stages : Stages) : IO (Array String) := do
   let bytes ← IO.FS.readBinFile (dir / "sortpoly.ixe")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "sortpoly.equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let env ← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes)
   let mut t : Tally := {}
   let mut n := 0
   for root in hints.roots do

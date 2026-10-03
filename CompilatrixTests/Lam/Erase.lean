@@ -240,7 +240,7 @@ def run (a : Assert) : IO (Array String) := do
   expect a (keys el |>.any (· matches .byName ..)) "a saturated lazy spine uses the by-name variant"
   -- One recursor at two profiles: two globals.
   let unitAt := fun (u : Nat) (minor : Nat) (major : A) =>
-    let lv : Ixon.Univ := if u == 0 then .zero else .succ .zero
+    let lv : Compilatrix.Ixon.Univ := if u == 0 then .zero else .succ .zero
     appM (.const b.unitRec [.succ .zero, lv]) [motive, (lit minor, .strict),
       (.const b.unitMk [lv], major)]
   let (t1, e2) ← accepted a w "a recursor at two profiles"

@@ -68,7 +68,7 @@ def describe (constant : V3.Constant) : String × String :=
 
 /-- One constant's census record. -/
 structure Entry where
-  address : Address
+  address : Ixon.Address
   name : Option String
   kind : String
   safety : String
@@ -92,7 +92,7 @@ def Entry.json (entry : Entry) : Json :=
         [("rejected_at", Json.str stage), ("message", Json.str message)]
 
 /-- A constant that strict decoding rejected. -/
-def undecoded (address : Address) (name : Option String) (bytes : Nat)
+def undecoded (address : Ixon.Address) (name : Option String) (bytes : Nat)
     (message : String) : Entry :=
   { address := address, name := name, kind := "undecodable", safety := "unknown",
     bytes := bytes, depth := 0, reached := "ingress", rejected := some ("decode", message) }
@@ -100,7 +100,7 @@ def undecoded (address : Address) (name : Option String) (bytes : Nat)
 /-- Decode, type and classify every constant. Typing continues after a
 rejection from the last accepted checker state, so one failure does not hide
 the verdicts of unrelated constants. -/
-def entries (env : V3.Env) (names : Std.HashMap Address String) : Array Entry := Id.run do
+def entries (env : V3.Env) (names : Std.HashMap Ixon.Address String) : Array Entry := Id.run do
   let addresses := env.consts.keys.toArray.qsort (fun a b => a.cmpBytes b == .lt)
   let mut state := Tc.initialState env
   let mut sinceClear := 0
@@ -156,7 +156,7 @@ def headroom (label : String) (actual limit : Nat) : Json :=
   Json.mkObj [("budget", Json.str label), ("actual", toJson actual), ("limit", toJson limit)]
 
 /-- The complete census report for one environment. -/
-def report (raw : ByteArray) (names : Std.HashMap Address String) : Json :=
+def report (raw : ByteArray) (names : Std.HashMap Ixon.Address String) : Json :=
   match decodeAnonymousEnv raw with
   | .error error =>
       Json.mkObj [("format", Json.str "compilatrix/census/1"),
@@ -184,9 +184,9 @@ def report (raw : ByteArray) (names : Std.HashMap Address String) : Json :=
 
 /-- Addresses named by a K1-style `equations.json` (roots, definitions and
 their unfolding equations), for readable reports. Names are diagnostic only. -/
-def names (pack : Json) : IO (Std.HashMap Address String) := do
-  let mut map : Std.HashMap Address String := {}
-  let decode (hex : String) : IO Address := do
+def names (pack : Json) : IO (Std.HashMap Ixon.Address String) := do
+  let mut map : Std.HashMap Ixon.Address String := {}
+  let decode (hex : String) : IO Ixon.Address := do
     Compilatrix.Tools.Check.present (Address.ofBytes? (← Compilatrix.Tools.Check.checked
       (Compilatrix.Tools.Check.unhex hex))) s!"invalid address {hex}"
   for root in ← Compilatrix.Tools.Check.arrField pack "roots" do

@@ -3,7 +3,7 @@ import Compilatrix.Tools.Census
 open Lean Compilatrix.Ixon Compilatrix.Tools.Check Compilatrix.Tools.Census
 
 /-- Addresses named by a K1-style `equations.json`, when one is given. -/
-def namesFile (path : Option String) : IO (Std.HashMap Address String) := do
+def namesFile (path : Option String) : IO (Std.HashMap Compilatrix.Ixon.Address String) := do
   let some path := path | return {}
   Compilatrix.Tools.Census.names (← readJson path)
 

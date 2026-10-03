@@ -28,10 +28,10 @@ relevant parameter of a type-polymorphic callee. -/
 def typeRoot : String := "SortPoly.typeArg"
 
 /-- The pack's environment and sidecar. -/
-def pack : IO (Ixon.V3.Env × Hints) := do
+def pack : IO (Compilatrix.Ixon.V3.Env × Hints) := do
   let bytes ← IO.FS.readBinFile (dir / "sortpoly.ixe")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "sortpoly.equations.json")))
-  return (← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes), ← IO.ofExcept (Hints.ofK1Json json))
+  return (← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes), ← IO.ofExcept (Hints.ofK1Json json))
 
 /-- The native value of each root. -/
 def native : String → Option (Nat → Nat)

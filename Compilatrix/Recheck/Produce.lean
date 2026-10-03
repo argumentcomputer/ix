@@ -48,8 +48,8 @@ structure Input where
 
 /-- The sidecar roots named `names`, in that order (every root when `names`
 is empty); an unknown or repeated name is an error. -/
-def selectRoots (roots : Array (Address × Option String)) (names : List String) :
-    Except Err (Array (Address × Option String)) := do
+def selectRoots (roots : Array (Ixon.Address × Option String)) (names : List String) :
+    Except Err (Array (Ixon.Address × Option String)) := do
   if names.isEmpty then return roots
   let mut out := #[]
   for n in names do
@@ -91,7 +91,7 @@ structure Produced where
   alloc : List Xv.Alloc.Outcome
 
 /-- Untrusted names from the sidecar, for diagnostics. -/
-def sidecarName (h : Src.Hints) (a : Address) : Option String :=
+def sidecarName (h : Src.Hints) (a : Ixon.Address) : Option String :=
   match h.roots.find? (·.1 == a) with
   | some (_, n) => n
   | none => (h.proposals.find? (·.subject == a)).bind (·.name?)

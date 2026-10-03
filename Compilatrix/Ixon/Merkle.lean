@@ -44,14 +44,19 @@ def dedupSorted (addresses : Array Address) : Array Address := Id.run do
     | none => result := result.push address
   return result
 
-def leafHash (address : Address) : Address :=
-  Address.blake3 (ByteArray.mk #[leafDomain] ++ address.hash)
+/-- Leaf and node hashing over a given BLAKE3 implementation. -/
+def leafHashBy (hash : ByteArray → Address) (address : Address) : Address :=
+  hash (ByteArray.mk #[leafDomain] ++ address.hash)
 
-def nodeHash (left right : Address) : Address :=
-  Address.blake3
-    (ByteArray.mk #[nodeDomain] ++ left.hash ++ right.hash)
+def nodeHashBy (hash : ByteArray → Address) (left right : Address) : Address :=
+  hash (ByteArray.mk #[nodeDomain] ++ left.hash ++ right.hash)
 
-private def reduceLevel (level : Array Address) : Array Address := Id.run do
+def leafHash (address : Address) : Address := leafHashBy Address.blake3 address
+
+def nodeHash (left right : Address) : Address := nodeHashBy Address.blake3 left right
+
+private def reduceLevel (node : Address → Address → Address)
+    (level : Array Address) : Array Address := Id.run do
   let mut next := #[]
   let mut index := 0
   while index < level.size do
@@ -60,25 +65,31 @@ private def reduceLevel (level : Array Address) : Array Address := Id.run do
       level[index + 1]!
     else
       zeroAddress
-    next := next.push (nodeHash left right)
+    next := next.push (node left right)
     index := index + 2
   return next
 
-private def buildTree (initial : Array Address) : Address := Id.run do
+private def buildTree (node : Address → Address → Address)
+    (initial : Array Address) : Address := Id.run do
   let mut level := initial
   while level.size > 1 do
-    level := reduceLevel level
+    level := reduceLevel node level
   return level[0]!
 
-/-- Canonical root over a set of addresses.  The empty set uses ix's fixed
-zero sentinel; all nonempty leaves are hashed before tree construction. -/
-def rootCanonical (addresses : Array Address) : Address :=
+/-- Canonical root over a set of addresses, with the given BLAKE3
+implementation. The empty set uses ix's fixed zero sentinel; all nonempty
+leaves are hashed before tree construction. -/
+def rootCanonicalBy (hash : ByteArray → Address) (addresses : Array Address) : Address :=
   let unique := dedupSorted (sortAddresses addresses)
   if unique.isEmpty then
     zeroAddress
   else if unique.size == 1 then
-    leafHash unique[0]!
+    leafHashBy hash unique[0]!
   else
-    buildTree (unique.map leafHash)
+    buildTree (nodeHashBy hash) (unique.map (leafHashBy hash))
+
+/-- Canonical root with the Rust BLAKE3 backend (`Address.blake3`). -/
+def rootCanonical (addresses : Array Address) : Address :=
+  rootCanonicalBy Address.blake3 addresses
 
 end Compilatrix.Ixon.Merkle

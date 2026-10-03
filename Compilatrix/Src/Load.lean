@@ -48,13 +48,13 @@ def readback (l : Loaded) (v : Value) : Option Sem.Obs :=
   Src.readback l.program l.checked.keeps v
 
 /-- The root with this address, or the first root. -/
-def root? (l : Loaded) (addr : Option Address := none) : Option CId :=
+def root? (l : Loaded) (addr : Option Ixon.Address := none) : Option CId :=
   match addr with
   | some a => (l.program.roots.find? (·.1 == a)).map (·.2)
   | none => l.program.roots[0]?.map (·.2)
 
 /-- Untrusted sidecar names, for diagnostics. -/
-def names (h : Hints) (a : Address) : Option String :=
+def names (h : Hints) (a : Ixon.Address) : Option String :=
   match h.roots.find? (·.1 == a) with
   | some (_, n) => n
   | none => (h.proposals.find? (·.subject == a)).bind (·.name?)

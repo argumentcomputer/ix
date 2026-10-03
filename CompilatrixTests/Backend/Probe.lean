@@ -32,7 +32,7 @@ namespace CompilatrixTests.Backend.Probe
 open Lean Compilatrix Compilatrix.Xv CompilatrixTests.Lir
 
 /-- The object's provenance; `i` only varies the timed runs. -/
-def provenance (i : Nat) : X86.ELF.Provenance := .ixir1Policy (Ixon.Address.replicate 0x42) (UInt32.ofNat i) 1
+def provenance (i : Nat) : X86.ELF.Provenance := .ixir1Policy (Compilatrix.Ixon.Address.replicate 0x42) (UInt32.ofNat i) 1
 
 /-! ## Timed phases (not inlined, so each run recomputes) -/
 

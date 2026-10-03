@@ -1,7 +1,7 @@
 import Compilatrix.Ixon.V3.Env
 
 /-! Catalog-v2 data at the pinned ix source boundary. The manifest's scope
-is object format 3 and erased-lean-v1 (validator 1), not a resource claim. -/
+is object format 4 (Ixon v4) and erased-lean-v1 (validator 1), not a resource claim. -/
 
 namespace Compilatrix.Ixon.V3.Catalog
 
@@ -47,7 +47,7 @@ structure Manifest where
   deriving BEq, Inhabited
 
 def Manifest.scopeMatches (m : Manifest) : Bool :=
-  m.version == 2 && m.objectFormat == 3 && m.validator == 1
+  m.version == 2 && m.objectFormat == V3.objectFormat && m.validator == 1
 
 structure Limits where
   manifestBytes : Nat := 1024 * 1024

@@ -11,13 +11,13 @@ namespace CompilatrixTests.Src.Relevance.Census
 open Compilatrix Compilatrix.Src Compilatrix.Src.Relevance CompilatrixTests.Src
 open Lean (Json toJson)
 
-def names : IO (List (String × Ixon.Address)) := do
+def names : IO (List (String × Compilatrix.Ixon.Address)) := do
   let text ← IO.FS.readFile (fixtures / "src-names.tsv")
   let rows := (text.splitOn "\n").filter fun l => !l.isEmpty && !l.startsWith "#"
   rows.mapM fun row => do
     match row.splitOn "\t" with
     | [name, hex] =>
-      match Ixon.Address.fromString hex with
+      match Compilatrix.Ixon.Address.fromString hex with
       | some a => pure (name, a)
       | none => throw (IO.userError s!"src-names.tsv: bad address for {name}")
     | _ => throw (IO.userError s!"src-names.tsv: bad row {row}")

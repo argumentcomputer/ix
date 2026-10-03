@@ -26,9 +26,9 @@ inductive ProposalKind where
 `inline f` or `case f`. -/
 structure Proposal where
   kind : ProposalKind
-  subject : Address
-  theorem? : Option Address := none
-  target? : Option Address := none
+  subject : Ixon.Address
+  theorem? : Option Ixon.Address := none
+  target? : Option Ixon.Address := none
   arity? : Option Nat := none
   /-- Untrusted name from the sidecar, for diagnostics only. -/
   name? : Option String := none
@@ -36,7 +36,7 @@ structure Proposal where
 
 /-- A parsed sidecar: the roots it names and its proposals. -/
 structure Hints where
-  roots : Array (Address × Option String) := #[]
+  roots : Array (Ixon.Address × Option String) := #[]
   proposals : Array Proposal := #[]
   deriving Inhabited
 
@@ -45,9 +45,9 @@ namespace Hints
 private def str (j : Json) (key : String) : Except String String := do
   (← j.getObjVal? key).getStr?
 
-private def address (j : Json) (key : String) : Except String Address := do
+private def address (j : Json) (key : String) : Except String Ixon.Address := do
   let text ← str j key
-  match Address.fromString text with
+  match Ixon.Address.fromString text with
   | some a => pure a
   | none => throw s!"hints: invalid address {text}"
 

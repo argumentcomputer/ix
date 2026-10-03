@@ -11,23 +11,25 @@ structure ResourceClaim where
   profile : Address
   deriving BEq, DecidableEq, Repr
 
-def ResourceClaim.bytes (claim : ResourceClaim) : ByteArray := runPut do
-  putTag4 ⟨0xE, 9⟩
-  putU8 3
-  putU8 2
-  Serialize.put claim.subject
-  Serialize.put claim.profile
+/-- The resource claim: TagN(4) flag `0xE` value 9 (bytes `E8 01`), the object
+format, validator 2 (resource-v1), subject and profile. -/
+def ResourceClaim.bytes (claim : ResourceClaim) : ByteArray := _root_.Ixon.runPut do
+  _root_.Ixon.putTagN 4 0xE 9
+  _root_.Ixon.putU8 objectFormat
+  _root_.Ixon.putU8 2
+  _root_.Ixon.putBytes claim.subject.hash
+  _root_.Ixon.putBytes claim.profile.hash
 
 /-- Parse only the native resource claim variant. This checks framing and
 identity tags, not the truth of the claim. -/
 def ResourceClaim.decode (bytes : ByteArray) : Except String ResourceClaim :=
-  runGet (do
-    let tag ← getTag4
-    unless tag.flag == 0xE && tag.size == 9 do
-      throw "ixon-v3: expected a resource claim"
-    unless (← getU8) == 3 do throw "ixon-v3: claim object format mismatch"
-    unless (← getU8) == 2 do throw "ixon-v3: claim validator mismatch"
-    return ⟨← Serialize.get, ← Serialize.get⟩) bytes
+  _root_.Ixon.runGetExact (do
+    let tag ← _root_.Ixon.getTagN 4
+    unless tag.flag == 0xE && tag.value == 9 do
+      throw "ixon-v4: expected a resource claim"
+    unless (← _root_.Ixon.getU8) == objectFormat do throw "ixon-v4: claim object format mismatch"
+    unless (← _root_.Ixon.getU8) == 2 do throw "ixon-v4: claim validator mismatch"
+    return ⟨← getAddress, ← getAddress⟩) bytes
 
 structure ResourceInput (bytes profileBytes : ByteArray) where
   env : Env

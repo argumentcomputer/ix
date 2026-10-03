@@ -1,8 +1,9 @@
 import Compilatrix.Ixon.Const
 import Compilatrix.Ixon.V3.Expr
 
-/-! V3 declaration headers are unchanged; their expression fields carry
-complete v3 contracts. Raw v3 identities do not use the legacy v2 compressor. -/
+/-! Ixon declarations with contract-carrying expression fields (the data model
+introduced by Ixon v3 and kept by v4); their canonical bytes are the v4
+encoding of `Compilatrix.Ixon.V3.Wire`. -/
 
 namespace Compilatrix.Ixon.V3
 
@@ -172,98 +173,5 @@ def ConstantInfo.exprs : ConstantInfo → List Expr
   | .quot q => q.exprs
   | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => []
   | .muts ms => ms.toList.flatMap MutConst.exprs
-
-def definitionBytes (d : Definition) : ByteArray :=
-  u8Bytes (definitionModeByte d.kind d.safety) ++
-    tag0Bytes ⟨d.lvls⟩ ++ exprBytes d.typ ++ exprBytes d.value
-
-def recursorRuleBytes (r : RecursorRule) : ByteArray :=
-  tag0Bytes ⟨r.fields⟩ ++ exprBytes r.rhs
-
-def recursorBytes (r : Recursor) : ByteArray :=
-  u8Bytes (recursorModeByte r.k r.isUnsafe) ++
-    tag0Bytes ⟨r.lvls⟩ ++ tag0Bytes ⟨r.params⟩ ++
-    tag0Bytes ⟨r.indices⟩ ++ tag0Bytes ⟨r.motives⟩ ++
-    tag0Bytes ⟨r.minors⟩ ++ exprBytes r.typ ++
-    countedArrayBytes recursorRuleBytes r.rules
-
-def axiomBytes (a : Axiom) : ByteArray :=
-  boolBytes a.isUnsafe ++
-    tag0Bytes ⟨a.lvls⟩ ++ exprBytes a.typ
-
-def quotientBytes (q : Quotient) : ByteArray :=
-  u8Bytes q.kind.toBits ++ tag0Bytes ⟨q.lvls⟩ ++ exprBytes q.typ
-
-def constructorBytes (c : Constructor) : ByteArray :=
-  boolBytes c.isUnsafe ++
-    tag0Bytes ⟨c.lvls⟩ ++ tag0Bytes ⟨c.cidx⟩ ++
-    tag0Bytes ⟨c.params⟩ ++ tag0Bytes ⟨c.fields⟩ ++ exprBytes c.typ
-
-def inductiveBytes (i : Inductive) : ByteArray :=
-  boolBytes i.isUnsafe ++
-    tag0Bytes ⟨i.lvls⟩ ++ tag0Bytes ⟨i.params⟩ ++
-    tag0Bytes ⟨i.indices⟩ ++ exprBytes i.typ ++
-    countedArrayBytes constructorBytes i.ctors
-
-def inductiveProjBytes (p : InductiveProj) : ByteArray :=
-  tag0Bytes ⟨p.idx⟩ ++ p.block.hash
-
-def constructorProjBytes (p : ConstructorProj) : ByteArray :=
-  tag0Bytes ⟨p.idx⟩ ++ tag0Bytes ⟨p.cidx⟩ ++ p.block.hash
-
-def recursorProjBytes (p : RecursorProj) : ByteArray :=
-  tag0Bytes ⟨p.idx⟩ ++ p.block.hash
-
-def definitionProjBytes (p : DefinitionProj) : ByteArray :=
-  tag0Bytes ⟨p.idx⟩ ++ p.block.hash
-
-def mutConstPayloadBytes : MutConst → ByteArray
-  | .defn d => definitionBytes d
-  | .indc i => inductiveBytes i
-  | .recr r => recursorBytes r
-
-def mutConstTag : MutConst → UInt8
-  | .defn _ => 0
-  | .indc _ => 1
-  | .recr _ => 2
-
-def mutConstBytes (m : MutConst) : ByteArray :=
-  u8Bytes (mutConstTag m) ++ mutConstPayloadBytes m
-
-def constantInfoTag : ConstantInfo → Tag4
-  | .defn _ => ⟨Constant.FLAG, ConstantInfo.CONST_DEFN⟩
-  | .recr _ => ⟨Constant.FLAG, ConstantInfo.CONST_RECR⟩
-  | .axio _ => ⟨Constant.FLAG, ConstantInfo.CONST_AXIO⟩
-  | .quot _ => ⟨Constant.FLAG, ConstantInfo.CONST_QUOT⟩
-  | .cPrj _ => ⟨Constant.FLAG, ConstantInfo.CONST_CPRJ⟩
-  | .rPrj _ => ⟨Constant.FLAG, ConstantInfo.CONST_RPRJ⟩
-  | .iPrj _ => ⟨Constant.FLAG, ConstantInfo.CONST_IPRJ⟩
-  | .dPrj _ => ⟨Constant.FLAG, ConstantInfo.CONST_DPRJ⟩
-  | .muts ms => ⟨Constant.FLAG_MUTS, ms.size.toUInt64⟩
-
-def constantInfoPayloadBytes : ConstantInfo → ByteArray
-  | .defn d => definitionBytes d
-  | .recr r => recursorBytes r
-  | .axio a => axiomBytes a
-  | .quot q => quotientBytes q
-  | .cPrj p => constructorProjBytes p
-  | .rPrj p => recursorProjBytes p
-  | .iPrj p => inductiveProjBytes p
-  | .dPrj p => definitionProjBytes p
-  | .muts ms => encodedArrayBytes mutConstBytes ms
-
-def constantInfoBytes (info : ConstantInfo) : ByteArray :=
-  tag4Bytes (constantInfoTag info) ++ constantInfoPayloadBytes info
-
-def constantTablesBytes (c : Constant) : ByteArray :=
-  countedArrayBytes exprBytes c.sharing ++
-    countedArrayBytes (fun a : Address => a.hash) c.refs ++
-    countedArrayBytes univBytes c.univs
-
-def constantBytes (c : Constant) : ByteArray :=
-  constantInfoBytes c.info ++ constantTablesBytes c
-
-def putConstantInfo (info : ConstantInfo) : PutM Unit := putBytes (constantInfoBytes info)
-def putConstant (c : Constant) : PutM Unit := putBytes (constantBytes c)
 
 end Compilatrix.Ixon.V3

@@ -195,6 +195,7 @@
   "Compilatrix.Ixon.Expr",
   "Compilatrix.Ixon.Hash",
   "Compilatrix.Ixon.Merkle",
+  "Compilatrix.Ixon.PureHash",
   "Compilatrix.Ixon.Serialize",
   "Compilatrix.Ixon.Sharing.Basic",
   "Compilatrix.Ixon.Univ",
@@ -206,7 +207,6 @@
   "Compilatrix.Ixon.V3.Catalog.Load",
   "Compilatrix.Ixon.V3.Catalog.Manifest",
   "Compilatrix.Ixon.V3.Const",
-  "Compilatrix.Ixon.V3.ConstDecode",
   "Compilatrix.Ixon.V3.Contracts",
   "Compilatrix.Ixon.V3.Env",
   "Compilatrix.Ixon.V3.Expr",
@@ -241,6 +241,8 @@
   "Compilatrix.Ixon.V3.Tc.Support",
   "Compilatrix.Ixon.V3.Tc.Whnf",
   "Compilatrix.Ixon.V3.Validate",
+  "Compilatrix.Ixon.V3.Wire",
+  "Compilatrix.Ixon.V4.Convert",
   "Compilatrix.Key",
   "Compilatrix.Lam.Erase",
   "Compilatrix.Lam.Erase.Input",
@@ -680,7 +682,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/x86: merge M2.7b backend half and M2.8 Recheck.sound",
+ "baseline": "jcb/p15-ixon-v4: Ixon v4 ingress through ix's codec",
  "axiom_sha256":
  "93c9479fee1d18c5cebe05d5013e4e69f79b6eff7a8dab964236db4ab6bb4850",
  "axiom_count": 4098}

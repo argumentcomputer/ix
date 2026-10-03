@@ -14,7 +14,7 @@ namespace Compilatrix.Src.Pinned
 
 open Compilatrix.Ixon
 
-def addr (hex : String) : Address := (Address.fromString hex).getD default
+def addr (hex : String) : Ixon.Address := (Ixon.Address.fromString hex).getD default
 
 /-- Primitive operations, keyed by their `primitives.tsv` name. -/
 def primRows : List (PrimOp × String × String) :=
@@ -93,14 +93,14 @@ def lazyRows : List (String × String × Nat) :=
 def opaqueByValueRows : List (String × String) :=
   [ ("Lean.opaqueId", "d0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046") ]
 
-def constAddr (name : String) : Address :=
+def constAddr (name : String) : Ixon.Address :=
   addr ((constRows.find? (·.1 == name)).map (·.2) |>.getD "")
 
-def primAddr (op : PrimOp) : Address :=
+def primAddr (op : PrimOp) : Ixon.Address :=
   addr ((primRows.find? (·.1 == op)).map (·.2.2) |>.getD "")
 
 /-- The primitive pinned at `a`, if any. -/
-def primAt? (a : Address) : Option PrimOp :=
+def primAt? (a : Ixon.Address) : Option PrimOp :=
   (primRows.find? fun (_, _, hex) => addr hex == a).map (·.1)
 
 /-! ## Kernel-evaluable pins
@@ -111,7 +111,7 @@ also written as a 256-bit number: an address's bytes read big-endian. The
 `#guard`s below tie each number to its row. -/
 
 /-- An address as a 256-bit number, its bytes read big-endian. -/
-def addrNat (a : Address) : Nat := a.hash.data.toList.foldl (fun n b => n * 256 + b.toNat) 0
+def addrNat (a : Ixon.Address) : Nat := a.hash.data.toList.foldl (fun n b => n * 256 + b.toNat) 0
 
 /-- The pinned address of each primitive operation, as a number. -/
 def primPin : PrimOp → Nat

@@ -70,7 +70,7 @@ def setCtor (ann : Ann) (c : CId) (fields : List FieldClass) : Ann :=
 def c (id : CId) : Term := .const id []
 
 /-- The universe `u` as a level: `0` or `1`. -/
-def lv : Nat → Ixon.Univ
+def lv : Nat → Compilatrix.Ixon.Univ
   | 0 => .zero
   | _ => .succ .zero
 

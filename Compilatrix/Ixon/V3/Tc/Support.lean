@@ -1,4 +1,4 @@
-import Compilatrix.Ixon.V3.Env
+import Compilatrix.Ixon.Hash
 import Lean.Declaration
 import Std.Data.TreeMap
 

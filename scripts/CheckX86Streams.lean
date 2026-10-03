@@ -28,7 +28,7 @@ private def sameBytes (left right : Memory) (addresses : List Word) : Bool :=
   addresses.all fun address => left.bytes address == right.bytes address &&
     left.readable address == right.readable address && left.writable address == right.writable address
 
-private def provenance : ELF.Provenance := .ixir1Policy (Ixon.Address.replicate 0x42) 3 7
+private def provenance : ELF.Provenance := .ixir1Policy (Compilatrix.Ixon.Address.replicate 0x42) 3 7
 private def sentinel : Word := 0xff00
 private def textBase : Word := 0x100000
 
@@ -329,7 +329,7 @@ private def objectCorruptions : Except String Nat := do
   for cut in [:bytes.size] do need (!ELF.check input (bytes.extract 0 cut)) s!"object accepted truncated prefix {cut}"
   need (!ELF.check input (bytes.push 0)) "object accepted trailing data"
   need ((ELF.entry? bytes "wrong_export").isNone) "wrong exported name resolved"
-  need (!ELF.check { input with provenance := .ixir2 (Ixon.Address.replicate 0x42) } bytes) "wrong provenance family accepted"
+  need (!ELF.check { input with provenance := .ixir2 (Compilatrix.Ixon.Address.replicate 0x42) } bytes) "wrong provenance family accepted"
   let (_, otherInput, otherBytes) ← artifact Examples.arithmeticProgram
   need (!ELF.check otherInput bytes && !ELF.check input otherBytes) "cross-object substitution accepted"
   return fieldMutations.length + bytes.size + 4

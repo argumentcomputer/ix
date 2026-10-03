@@ -48,31 +48,31 @@ def manifestBytes (m : Manifest) : ByteArray := runPut do
   putBytes m.trailing
 
 /-- Environment writer used only to exercise independent admission gates. -/
-def envBytes (env : Env) : ByteArray := runPut do
+def envBytes (env : Env) : ByteArray := _root_.Ixon.runPut do
   let constants := env.consts.toArray.qsort (fun a b => Merkle.addressLT a.1 b.1)
   let blobs := env.blobs.toArray.qsort (fun a b => Merkle.addressLT a.1 b.1)
-  putTag4 ⟨0xE, 3⟩
-  Serialize.put (Merkle.rootCanonical (constants.map Prod.fst))
+  _root_.Ixon.putTagN 4 0xE envVersion
+  _root_.Ixon.putBytes (Merkle.rootCanonical (constants.map Prod.fst)).hash
   match env.main with
-  | none => putU8 0
-  | some a => putU8 1; Serialize.put a
-  putTag0 ⟨env.assumptions.size.toUInt64⟩
-  for a in env.assumptions do Serialize.put a
+  | none => _root_.Ixon.putU8 0
+  | some a => _root_.Ixon.putU8 1; _root_.Ixon.putBytes a.hash
+  _root_.Ixon.putTagN 0 0 env.assumptions.size.toUInt64
+  for a in env.assumptions do _root_.Ixon.putBytes a.hash
   for table in #[blobs, constants] do
-    putTag0 ⟨table.size.toUInt64⟩
+    _root_.Ixon.putTagN 0 0 table.size.toUInt64
     for (address, raw) in table do
-      Serialize.put address
-      putTag0 ⟨raw.size.toUInt64⟩
-      putBytes raw
+      _root_.Ixon.putBytes address.hash
+      _root_.Ixon.putTagN 0 0 raw.size.toUInt64
+      _root_.Ixon.putBytes raw
   let hints := env.hints.qsort (fun a b => Merkle.addressLT a.1 b.1)
-  putTag0 ⟨hints.size.toUInt64⟩
+  _root_.Ixon.putTagN 0 0 hints.size.toUInt64
   let mut cursor := 0
   for (address, hint) in hints do
     let index := (constants.findIdx? (·.1 == address)).getD 0
-    putTag0 ⟨(index + 1 - cursor).toUInt64⟩
-    putTag0 ⟨hint⟩
+    _root_.Ixon.putTagN 0 0 (index + 1 - cursor).toUInt64
+    _root_.Ixon.putTagN 0 0 hint
     cursor := index + 1
-  putBytes env.metadata
+  _root_.Ixon.putBytes env.metadata
 
 def member (env : Env) (i : Nat) : Member :=
   { envRoot := Merkle.rootCanonical (constantAddresses env)
@@ -83,7 +83,7 @@ def fat (pieces : Array ByteArray) : Except String Manifest := do
   let envs ← pieces.mapM decodeAnonymousEnv
   let members := envs.mapIdx fun i env => member env i
   return {
-    version := 2, objectFormat := 3, validator := 1
+    version := 2, objectFormat := V3.objectFormat, validator := 1
     membersRoot := membersRootOf members
     contentRoot := Merkle.rootCanonical (envs.flatMap constantAddresses)
     members, storage := .fat (pieces.map fun raw => ⟨Address.blake3 raw, raw.size.toUInt64⟩) }
@@ -93,7 +93,7 @@ def chunked (members : Array Member) (pieces : Array (ByteArray × Nat)) : Excep
   let rows := pieces.mapIdx fun i (raw, owner) =>
     (⟨envs[i]!.root, Address.blake3 raw, raw.size.toUInt64, owner.toUInt32⟩ : Chunk)
   return {
-    version := 2, objectFormat := 3, validator := 1
+    version := 2, objectFormat := V3.objectFormat, validator := 1
     membersRoot := membersRootOf members
     contentRoot := Merkle.rootCanonical (envs.flatMap constantAddresses)
     members, storage := .chunked rows }

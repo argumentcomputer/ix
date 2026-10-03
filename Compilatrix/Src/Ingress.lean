@@ -42,21 +42,21 @@ structure Source where
 
 structure Layout where
   refs : Array CRef := #[]
-  addrs : Array Address := #[]
+  addrs : Array Ixon.Address := #[]
   items : Array Item := #[]
   sources : Array Source := #[]
-  byAddr : Std.HashMap Address CId := {}
+  byAddr : Std.HashMap Ixon.Address CId := {}
   deriving Inhabited
 
 namespace Layout
 
-def push (l : Layout) (ref : CRef) (addr : Address) (item : Item) : Layout × CId :=
+def push (l : Layout) (ref : CRef) (addr : Ixon.Address) (item : Item) : Layout × CId :=
   let id := l.refs.size
   ({ l with refs := l.refs.push ref, addrs := l.addrs.push addr, items := l.items.push item
             byAddr := l.byAddr.insert addr id }, id)
 
 /-- Lay out one stored constant. Projections are aliases and add nothing. -/
-def add (l : Layout) (address : Address) (c : V3.Constant) : Layout := Id.run do
+def add (l : Layout) (address : Ixon.Address) (c : V3.Constant) : Layout := Id.run do
   let src := l.sources.size
   match c.info with
   | .muts members =>
@@ -112,7 +112,7 @@ end Layout
 structure Ctx where
   env : V3.Env
   source : Source
-  byAddr : Std.HashMap Address CId
+  byAddr : Std.HashMap Ixon.Address CId
 
 abbrev ConvM := StateT (Std.HashMap UInt64 Term) (Except String)
 
@@ -121,7 +121,7 @@ def univ (ctx : Ctx) (i : UInt64) : ConvM Univ :=
   | some u => pure u
   | none => throw s!"src ingress: universe index {i} out of range"
 
-def refAddr (ctx : Ctx) (i : UInt64) : ConvM Address :=
+def refAddr (ctx : Ctx) (i : UInt64) : ConvM Ixon.Address :=
   match ctx.source.constant.refs[i.toNat]? with
   | some a => pure a
   | none => throw s!"src ingress: reference index {i} out of range"
@@ -193,7 +193,7 @@ def majorInductive (isInductive : CId → Bool) (r : V3.Recursor) (type : Term) 
 resolved by address. The table is left empty (`Table.build` fills it).
 Ingress works on arrays and hash maps (it is not on the recheck path) and
 returns the kernel-evaluable `Program`. -/
-def ofEnv (env : V3.Env) (roots : Array Address) : Except String Program := do
+def ofEnv (env : V3.Env) (roots : Array Ixon.Address) : Except String Program := do
   let addresses := env.consts.keys.toArray.qsort (fun a b => a.cmpBytes b == .lt)
   let mut layout : Layout := {}
   for address in addresses do
@@ -258,7 +258,7 @@ def ofEnv (env : V3.Env) (roots : Array Address) : Except String Program := do
         pure (Decl.axio (!a.isUnsafe) a.lvls.toNat ty, c0)
     cache := cache'
     consts := consts.push { ref, addr, decl }
-  let mut rootIds : Array (Address × CId) := #[]
+  let mut rootIds : Array (Ixon.Address × CId) := #[]
   for root in roots do
     match byAddr[root]? with
     | some c => rootIds := rootIds.push (root, c)

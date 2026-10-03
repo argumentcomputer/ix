@@ -40,7 +40,7 @@ def fixture (a : Assert) (name : String) (count seed : Nat) : IO MTally := do
   let json ← IO.ofExcept (Lean.Json.parse
     (← IO.FS.readFile (fixtures / "bench-k1" / s!"{name}.equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let env ← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes)
   let cfg : LoadConfig := { typecheck := false }
   let (p0, _, _) ← IO.ofExcept ((prepare cfg env hints).mapError toString)
   let ann ← IO.ofExcept (annotate env p0)

@@ -55,7 +55,7 @@ def ixFixture (a : Assert) : IO (Array String) := do
   let bytes ← IO.FS.readBinFile (dir / "diag.ixe")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "diag.equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let env ← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes)
   let mut out := #[]
   for (name, expected) in [("SrcDiag.rootPartial", "opaque"), ("SrcDiag.rootMixHash", "opaque"),
       ("SrcDiag.rootFloat", ""), ("SrcDiag.rootClassical", "relevant-axiom"),

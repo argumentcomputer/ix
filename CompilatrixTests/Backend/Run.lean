@@ -45,7 +45,7 @@ namespace CompilatrixTests.Backend
 
 open Compilatrix Compilatrix.Xv CompilatrixTests.Lir
 
-def testProvenance : X86.ELF.Provenance := .ixir1Policy (Ixon.Address.replicate 0x42) 1 1
+def testProvenance : X86.ELF.Provenance := .ixir1Policy (Compilatrix.Ixon.Address.replicate 0x42) 1 1
 
 structure Input where
   args : List Word

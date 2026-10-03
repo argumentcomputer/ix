@@ -57,7 +57,7 @@ def run : IO Bool := do
         | .error error => Fixtures.errorCode error
       require (actual == expected) s!"resource {label}: expected {expected}, got {actual}"
       assertions := assertions + 1
-    let huge := tag4Bytes ⟨8, UInt64.ofNat (UInt64.size - 1)⟩
+    let huge := _root_.Ixon.runPut (_root_.Ixon.putTagN 4 8 (UInt64.ofNat (UInt64.size - 1)))
     require ((decodeExpr huge).toOption.isNone) "accepted impossible telescope count"
     require ((decodeExpr (← hex "a400000000")).toOption.isNone) "accepted reserved let flags"
     require ((decodeExpr (← hex "81200010")).toOption.isNone) "accepted reserved binder bits"
@@ -69,8 +69,8 @@ def run : IO Bool := do
     let nested := Compilatrix.Ixon.V3.Expr.lam .many (.sort 0) bounded
     require ((decodeExpr (exprBytes nested) (depth := 2)).toOption.isNone)
       "telescope bypassed semantic expression depth"
-    let oversizedLevels := tag4Bytes ⟨2, 4097⟩ ++ tag0Bytes ⟨0⟩ ++
-      ByteArray.mk (Array.replicate 4097 0)
+    let oversizedLevels := _root_.Ixon.runPut (_root_.Ixon.putTagN 4 2 4097) ++
+      _root_.Ixon.runPut (_root_.Ixon.putTagN 0 0 0) ++ ByteArray.mk (Array.replicate 4097 0)
     require ((decodeExpr oversizedLevels).toOption.isNone) "universe arguments bypassed count bound"
     assertions := assertions + 3
     assertions := assertions + (← handoff root)

@@ -101,11 +101,11 @@ def admission (root : System.FilePath) : IO Nat := do
   for i in [:raws[0]!.size] do
     let corrupt := raws.set! 0 (mutate raws[0]! i (raws[0]![i]! ^^^ 1))
     expect s!"file byte {i}" (load (manifestBytes m) corrupt) false
-  let mixed := raws.set! 0 (mutate raws[0]! 0 0xE2)
+  let mixed := raws.set! 0 (mutate raws[0]! 0 0xE3)
   let .fat fatRows := m.storage | throw (IO.userError "expected fat")
   let mixedM := { m with storage := .fat (fatRows.set! 0
     ⟨Address.blake3 mixed[0]!, mixed[0]!.size.toUInt64⟩) }
-  expect "v2 piece in v3 catalog" (load (manifestBytes mixedM) mixed) false
+  expect "v3 piece in v4 catalog" (load (manifestBytes mixedM) mixed) false
   let emptyM ← IO.ofExcept (fat #[])
   expect "empty catalog" (admit (manifestBytes emptyM) #[]) true
   return 25 + raws[0]!.size

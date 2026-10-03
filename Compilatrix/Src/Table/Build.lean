@@ -28,16 +28,16 @@ structure Stats where
 
 /-- The address index of a program (the producer's inverse of `consts`;
 later constants win, as in ingress). -/
-def addrIndex (p : Program) : Std.HashMap Address CId :=
+def addrIndex (p : Program) : Std.HashMap Ixon.Address CId :=
   (List.range p.size).foldl (fun m c => m.insert (p.addr c) c) {}
 
-private def resolveHint (index : Std.HashMap Address CId) (a : Address) (what : String) :
+private def resolveHint (index : Std.HashMap Ixon.Address CId) (a : Ixon.Address) (what : String) :
     Except String CId :=
   match index[a]? with
   | some c => .ok c
   | none => .error s!"{what} {((toString a).take 8).toString} is not in the closure"
 
-def csimpProposal (p : Program) (index : Std.HashMap Address CId) (prop : Proposal) :
+def csimpProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Proposal) :
     Except String (CId × Resolve) := do
   let f ← resolveHint index prop.subject "subject"
   let some ga := prop.target? | throw "csimp: missing target"
@@ -46,7 +46,7 @@ def csimpProposal (p : Program) (index : Std.HashMap Address CId) (prop : Propos
   let thm ← resolveHint index ta "theorem"
   return (f, ← checkCsimp p f g thm)
 
-def eqnProposal (p : Program) (index : Std.HashMap Address CId) (prop : Proposal) :
+def eqnProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Proposal) :
     Except String (CId × Resolve) := do
   let f ← resolveHint index prop.subject "subject"
   let some ta := prop.theorem? | throw "eqn: missing theorem"
@@ -67,7 +67,7 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
     Table × Array Diag × Stats := Id.run do
   let n := p.size
   let index := addrIndex p
-  let lookup := fun (a : Address) => index[a]?
+  let lookup := fun (a : Ixon.Address) => index[a]?
   let mut resolve : NatMap Resolve := .leaf
   let mut diags : Array Diag := #[]
   let mut stats : Stats := {}

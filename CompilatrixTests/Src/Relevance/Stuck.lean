@@ -195,7 +195,7 @@ structure Verdict where
   level : LevelStats := {}
 
 /-- Annotate, install, check (recording the verdict) and lazify `p`. -/
-def prepareRuns (env : Ixon.V3.Env) (p : Program) : Except String (Program × String) := do
+def prepareRuns (env : Compilatrix.Ixon.V3.Env) (p : Program) : Except String (Program × String) := do
   let ann ← annotate env p
   let pI ← install p ann
   let verdict := match check pI ann with
@@ -223,13 +223,13 @@ def censusPack (a : Assert) (pack : Pack) : IO Verdict := do
   let bytes ← IO.FS.readBinFile pack.ixe
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile pack.equations))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let env ← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes)
   let (p0, _, _) ← IO.ofExcept ((prepare { typecheck := false } env hints).mapError toString)
   -- The pack's own roots, each prepared alone, so that one rejected root does
   -- not hide the others.
   let mut v : Verdict := { checker := "" }
   let mut verdicts : Array String := #[]
-  let mut accepted : Array (Ixon.Address × CId) := #[]
+  let mut accepted : Array (Compilatrix.Ixon.Address × CId) := #[]
   for (addr, c) in p0.roots do
     let label := (Loaded.names hints addr).getD (p0.short c)
     let argss := pack.args label

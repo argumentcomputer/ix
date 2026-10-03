@@ -77,12 +77,12 @@ def loadK1 (cfg : LoadConfig := { typecheck := false }) (oracle : RelOracle := R
 
 /-- Load `k1.ixe` with extra roots (constants run directly by a test must be
 roots, so that the annotator and `Admit` reach them). -/
-def loadK1Roots (extra : Array Address) (cfg : LoadConfig := { typecheck := false }) :
+def loadK1Roots (extra : Array Compilatrix.Ixon.Address) (cfg : LoadConfig := { typecheck := false }) :
     IO Loaded := do
   let bytes ← IO.FS.readBinFile (fixtures / "k1/k1.ixe")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (fixtures / "k1/equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let env ← IO.ofExcept (Compilatrix.Ixon.V3.decodeAnonymousEnv bytes)
   let hints := { hints with roots := hints.roots ++ extra.map (·, none) }
   match loadEnv cfg env hints with
   | .ok l => pure l
@@ -111,7 +111,7 @@ structure Builder where
 
 namespace Builder
 
-def fakeAddr (i : Nat) : Address :=
+def fakeAddr (i : Nat) : Compilatrix.Ixon.Address :=
   Address.ofFn fun j => if j.val < 8 then UInt8.ofNat ((i >>> (8 * j.val)) % 256) else 0xab
 
 def add (b : Builder) (decl : Decl) : Builder × CId :=

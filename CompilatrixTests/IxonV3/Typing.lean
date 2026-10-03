@@ -136,8 +136,8 @@ def run (root : System.FilePath) : IO Nat := do
   let blobAddr := Address.blake3 blob
   let literal : C := ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], .nat 1⟩, #[], #[a, blobAddr], #[]⟩
   expect "Nat literal cannot have arbitrary type" (Tc.checkEnv
-    (store { env with blobs := ({} : Std.HashMap Address ByteArray).insert blobAddr blob } literal).1) false
-  let wrongBlob := { env with blobs := ({} : Std.HashMap Address ByteArray).insert blobAddr ⟨#[43]⟩ }
+    (store { env with blobs := ({} : Std.HashMap Compilatrix.Ixon.Address ByteArray).insert blobAddr blob } literal).1) false
+  let wrongBlob := { env with blobs := ({} : Std.HashMap Compilatrix.Ixon.Address ByteArray).insert blobAddr ⟨#[43]⟩ }
   expect "literal bytes are checked" (Tc.checkEnv (store wrongBlob literal).1) false
   assertions := assertions + 4
   for n in #[0, 1, 255, 256, 65535, 18446744073709551615, 2^130 + 513] do

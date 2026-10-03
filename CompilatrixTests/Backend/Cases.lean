@@ -151,7 +151,7 @@ def sharedSymbol : LProgram :=
   { twoExports with funcs := twoExports.funcs.modify 1 fun f => { f with conv := .sysvExport "t_add" } }
 
 def emitted (p : LProgram) : Except Backend.Error Backend.Artifact :=
-  Backend.emit p { provenance := .ixir1Policy (Ixon.Address.replicate 0x42) 1 1 }
+  Backend.emit p { provenance := .ixir1Policy (Compilatrix.Ixon.Address.replicate 0x42) 1 1 }
 
 #guard (Stacking.run sharedSymbol (Stacking.produce sharedSymbol)).toOption.isSome
 #guard match emitted sharedSymbol with | .error (.symbols "t_add") => true | _ => false

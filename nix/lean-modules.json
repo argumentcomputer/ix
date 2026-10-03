@@ -2951,6 +2951,12 @@
     "Compilatrix.Lam.ModesOk"]},
   "Compilatrix.Key":
   {"path": "Compilatrix/Key.lean", "imports": ["Compilatrix.Src.Value"]},
+  "Compilatrix.Ixon.V4.Convert":
+  {"path": "Compilatrix/Ixon/V4/Convert.lean",
+   "imports": ["Ix.Ixon.Codec", "Compilatrix.Ixon.V3.Const"]},
+  "Compilatrix.Ixon.V3.Wire":
+  {"path": "Compilatrix/Ixon/V3/Wire.lean",
+   "imports": ["Ix.Ixon.Canonical", "Compilatrix.Ixon.V4.Convert"]},
   "Compilatrix.Ixon.V3.Validate":
   {"path": "Compilatrix/Ixon/V3/Validate.lean",
    "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Ixon.V3.Tc.Driver"]},
@@ -2963,7 +2969,7 @@
   "Compilatrix.Ixon.V3.Tc.Support":
   {"path": "Compilatrix/Ixon/V3/Tc/Support.lean",
    "imports":
-   ["Compilatrix.Ixon.V3.Env", "Lean.Declaration", "Std.Data.TreeMap"]},
+   ["Compilatrix.Ixon.Hash", "Lean.Declaration", "Std.Data.TreeMap"]},
   "Compilatrix.Ixon.V3.Tc.Subst":
   {"path": "Compilatrix/Ixon/V3/Tc/Subst.lean",
    "imports": ["Compilatrix.Ixon.V3.Tc.Env"]},
@@ -3065,13 +3071,13 @@
    "imports": ["Compilatrix.Ixon.Expr", "Compilatrix.Ixon.V3.Contracts"]},
   "Compilatrix.Ixon.V3.Env":
   {"path": "Compilatrix/Ixon/V3/Env.lean",
-   "imports": ["Compilatrix.Ixon.V3.ConstDecode", "Compilatrix.Ixon.Merkle"]},
+   "imports":
+   ["Compilatrix.Ixon.V3.Wire",
+    "Compilatrix.Ixon.Merkle",
+    "Compilatrix.Ixon.PureHash"]},
   "Compilatrix.Ixon.V3.Contracts":
   {"path": "Compilatrix/Ixon/V3/Contracts.lean",
    "imports": ["Compilatrix.Ixon.Uses"]},
-  "Compilatrix.Ixon.V3.ConstDecode":
-  {"path": "Compilatrix/Ixon/V3/ConstDecode.lean",
-   "imports": ["Compilatrix.Ixon.V3.Const"]},
   "Compilatrix.Ixon.V3.Const":
   {"path": "Compilatrix/Ixon/V3/Const.lean",
    "imports": ["Compilatrix.Ixon.Const", "Compilatrix.Ixon.V3.Expr"]},
@@ -3109,6 +3115,9 @@
    "imports": ["Compilatrix.Ixon.Expr"]},
   "Compilatrix.Ixon.Serialize":
   {"path": "Compilatrix/Ixon/Serialize.lean", "imports": ["Std"]},
+  "Compilatrix.Ixon.PureHash":
+  {"path": "Compilatrix/Ixon/PureHash.lean",
+   "imports": ["Blake3.Pure", "Compilatrix.Ixon.Address"]},
   "Compilatrix.Ixon.Merkle":
   {"path": "Compilatrix/Ixon/Merkle.lean",
    "imports": ["Compilatrix.Ixon.Hash"]},

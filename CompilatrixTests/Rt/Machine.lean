@@ -27,7 +27,7 @@ namespace CompilatrixTests.Rt.Machine
 open Compilatrix Compilatrix.Xv CompilatrixTests.Src
 open CompilatrixTests.Backend (Exit expected runTyped runBytes Shadow sentinels sp0 retSentinel stackLo stackHi entryCore)
 
-def testProvenance : X86.ELF.Provenance := .ixir1Policy (Ixon.Address.replicate 0x42) 1 1
+def testProvenance : X86.ELF.Provenance := .ixir1Policy (Compilatrix.Ixon.Address.replicate 0x42) 1 1
 
 /-- A lowered program through selection, allocation and emission. -/
 structure Compiled where

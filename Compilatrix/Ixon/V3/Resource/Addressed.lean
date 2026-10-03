@@ -4,9 +4,11 @@ import Compilatrix.Ixon.V3.Env
 /-!
 # Addressed resource interfaces
 
-Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`:
-imports/namespaces use the local v3 AST, fixed-width addresses, strict bounded
-constant decoder, and raw-byte environment (there is no decoded cache).
+Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, with the Ixon v4
+profile framing (TagN counts and limits, `ixon-v4/resource-v1`) of ix
+`f829b76044a44a61023d0983516137147bbb12a7`: imports/namespaces use the local
+AST, fixed-width addresses, strict bounded constant decoder, and raw-byte
+environment (there is no decoded cache).
 
 This boundary reads canonical bytes and ignores presentation metadata. It
 resolves each constant's local tables to one program, derives nominal kinds
@@ -19,7 +21,10 @@ namespace Compilatrix.Ixon.V3.Resource
 
 open Compilatrix.Ixon Compilatrix.Ixon.V3
 
-def validatorId : String := "ixon-v3/resource-v1"
+/-- The resource validator's identifier: the wire format it reads
+(`wireFormatId`, `"ixon-v4"`), so a format version moves profile addresses to
+a new domain (ix's `Ix.Resource.validatorId` at `producerRevision`). -/
+def validatorId : String := wireFormatId ++ "/resource-v1"
 
 structure Profile where
   assumptions : Array Address := #[]
@@ -52,16 +57,16 @@ def Profile.validate (profile : Profile) : Except String Unit := do
 /-- Canonical, domain-separated profile bytes, including the checker limits.
 Lists are validated before these bytes are used as a commitment. -/
 def Profile.bytes (profile : Profile) : ByteArray :=
-  (validatorId ++ "/profile\x00").toUTF8 ++ runPut do
+  (validatorId ++ "/profile\x00").toUTF8 ++ _root_.Ixon.runPut do
     for addresses in #[profile.assumptions, profile.shareableTypes, profile.choices] do
-      putTag0 ⟨addresses.size.toUInt64⟩
-      for address in addresses do Serialize.put address
+      _root_.Ixon.putTagN 0 0 addresses.size.toUInt64
+      for address in addresses do _root_.Ixon.putBytes address.hash
     for address in #[profile.natType, profile.stringType] do
       match address with
-      | none => putU8 0
-      | some address => putU8 1; Serialize.put address
-    putTag0 ⟨profile.limits.depth.toUInt64⟩
-    putTag0 ⟨profile.limits.steps.toUInt64⟩
+      | none => _root_.Ixon.putU8 0
+      | some address => _root_.Ixon.putU8 1; _root_.Ixon.putBytes address.hash
+    _root_.Ixon.putTagN 0 0 profile.limits.depth.toUInt64
+    _root_.Ixon.putTagN 0 0 profile.limits.steps.toUInt64
 
 def Profile.address (profile : Profile) : Except String Address := do
   profile.validate
@@ -69,28 +74,28 @@ def Profile.address (profile : Profile) : Except String Address := do
 
 def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
   if bytes.size > 1024 * 1024 then throw "resource profile: byte budget exceeded"
-  let profile : Profile ← runGet (do
+  let profile : Profile ← _root_.Ixon.runGetExact (do
     let header := (validatorId ++ "/profile\x00").toUTF8
-    unless (← getBytes header.size) == header do throw "resource profile: wrong validator identifier"
-    let list : GetM (Array Address) := do
-      let count := (← getTag0).size.toNat
+    unless (← _root_.Ixon.getBytes header.size) == header do throw "resource profile: wrong validator identifier"
+    let list : EnvM (Array Address) := do
+      let count ← getNat
       let state ← get
       if count > (state.bytes.size - state.idx) / 32 then throw "resource profile: impossible address count"
       let mut result := #[]
-      for _ in [:count] do result := result.push (← Serialize.get)
+      for _ in [:count] do result := result.push (← getAddress)
       return result
-    let optional : GetM (Option Address) := do
-      match (← getU8) with
+    let optional : EnvM (Option Address) := do
+      match (← _root_.Ixon.getU8) with
       | 0 => pure none
-      | 1 => some <$> Serialize.get
+      | 1 => some <$> getAddress
       | _ => throw "resource profile: invalid optional address tag"
     let assumptions ← list
     let shareableTypes ← list
     let choices ← list
     let natType ← optional
     let stringType ← optional
-    let depth := (← getTag0).size.toNat
-    let steps := (← getTag0).size.toNat
+    let depth ← getNat
+    let steps ← getNat
     return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps } }) bytes
   profile.validate
   return profile
