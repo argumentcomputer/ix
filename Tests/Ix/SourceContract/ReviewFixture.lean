@@ -88,4 +88,30 @@ noncomputable def f (xs : List Nat) (! u : List Nat) : ! List Nat :=
   @List.rec Nat (fun _ => List Nat) (keep u) (fun _ _ _ => keep u) xs
 end I06
 
+/-! ## Captured immediates (review F2) -/
+
+/- Violation: a reusable closure moves its captured unique `String` on every
+call: two unique transfers of one heap object. -/
+namespace A05b
+def keep (! s : String) : ! String := s
+def mk (! s : String) : Unit → ! String := fun _ => keep s
+def use (! s : String) : Nat :=
+  let g := mk s
+  (keep (g ())).length + (keep (g ())).length
+end A05b
+
+/- Violation: the same with a let-bound closure returned twice. -/
+namespace X07
+def keep (! s : String) : ! String := s
+def f (! s : String) : String × String :=
+  let h : (u : Unit) → ! String := fun _ => keep s
+  (keep (h ()), keep (h ()))
+end X07
+
+/- Control (OS-09): a linear immediate read by a curried closure; its
+linearity has no run-time meaning (named assumption). -/
+namespace OS09
+def lin (1 x : Nat) (1 y : Nat) : Nat := x + y
+end OS09
+
 end Tests.Ix.SourceContract.ReviewFixture

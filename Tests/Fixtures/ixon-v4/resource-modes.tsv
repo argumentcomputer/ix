@@ -10,7 +10,9 @@ erased data passed to an ordinary binder	usage	911420002000	8104200071200510
 a returned proof is still checked as a value	unrestricted	911d200d200d	810d200d10
 a proposition is recognized before its unfolding	ok	9114712010602000	81047120106071201110
 a linear immediate capture keeps a closure reusable	ok	921520001520002000	8205200005200072200f1110
-a unique immediate capture keeps a closure reusable	ok	921120001520002000	8201200005200072200f1110
+a unique immediate capture read by a closure keeps it reusable	ok	921120001520002000	8201200005200072200f1110
+a unique immediate capture moved by a closure makes it one-shot	capture	921120001520002000	8201200005200072200f7120031110
+a one-shot closure may move a unique immediate capture	ok	920120001520002000	8201200005200072200f7120031110
 a finite non-shareable capture stays one-shot	capture	9216200b172000200b	8206200b07200011
 a unique non-shareable capture stays one-shot	capture	9211200b072000200b	8201200b07200011
 a one-shot closure may carry a unique non-shareable capture	ok	9201200b072000200b	8201200b07200011

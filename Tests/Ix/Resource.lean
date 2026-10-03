@@ -335,8 +335,13 @@ def modeCases : Array Case := #[
   -- Captured immediates are copied into a closure.
   ⟨"a linear immediate capture keeps a closure reusable", arr (b .linear) .shared natTy (arr (b .linear)),
     lam (b .linear) (lam (b .linear) (.app (call 15 (v 1)) (v 0))), "ok"⟩,
-  ⟨"a unique immediate capture keeps a closure reusable", arr (b .linear .unique) .shared natTy (arr (b .linear)),
+  ⟨"a unique immediate capture read by a closure keeps it reusable", arr (b .linear .unique) .shared natTy (arr (b .linear)),
     lam (b .linear .unique) (lam (b .linear) (.app (call 15 (v 1)) (v 0))), "ok"⟩,
+  -- Review F2: a capture the closure moves makes it one-shot, immediate or not.
+  ⟨"a unique immediate capture moved by a closure makes it one-shot", arr (b .linear .unique) .shared natTy (arr (b .linear)),
+    lam (b .linear .unique) (lam (b .linear) (.app (call 15 (call 3 (v 1))) (v 0))), "capture"⟩,
+  ⟨"a one-shot closure may move a unique immediate capture", arr (b .linear .unique) .unique natTy (arr (b .linear)),
+    lam (b .linear .unique) (lam (b .linear) (.app (call 15 (call 3 (v 1))) (v 0))), "ok"⟩,
   ⟨"a finite non-shareable capture stays one-shot", arr (b .affine) .shared resTy (arr (b .many) .shared natTy resTy),
     lam (b .affine) (lam (b .many) (v 1)) resTy, "capture"⟩,
   ⟨"a unique non-shareable capture stays one-shot", arr (b .linear .unique) .shared resTy (arr (b .many) .unique natTy resTy),

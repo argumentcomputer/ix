@@ -843,11 +843,17 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           if used.touched then
             origins := unionOrigins origins old.value.origins
             -- A captured immediate (a value of a profile-shareable type) is
-            -- copied into the closure, as at a call boundary: neither its
-            -- finite use nor its uniqueness makes the closure one-shot.
+            -- copied into the closure, as at a call boundary: its finite use
+            -- does not make the closure one-shot (the linearity of an
+            -- immediate has no run-time meaning), nor does its uniqueness
+            -- when the body only reads it.
             let immediate ← isShareable ctx.program fuel old.value.type
             if (old.contract.uses != .many && !immediate) || !old.value.duplicable then
               duplicable := false
+            -- A capture the body moves (a unique transfer, a freeze or a
+            -- unique invocation) would be moved again by a second call:
+            -- the closure is one-shot, immediate or not.
+            if !used.owner.live then duplicable := false
             if old.owner.unique then
               -- Capturing an owner transfers its availability even when the
               -- body only borrows it. An explicit outer view permits reusable

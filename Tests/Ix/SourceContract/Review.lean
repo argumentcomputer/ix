@@ -34,7 +34,8 @@ structure Probe where
 
 def probes : List Probe := [
   ⟨"A01", false, "F1"⟩, ⟨"A04", false, "F1"⟩, ⟨"B07", false, "F1"⟩, ⟨"A03b", false, "F1"⟩,
-  ⟨"M01", true, "F1"⟩, ⟨"M02", true, "F1"⟩, ⟨"I06", true, "F1"⟩]
+  ⟨"M01", true, "F1"⟩, ⟨"M02", true, "F1"⟩, ⟨"I06", true, "F1"⟩,
+  ⟨"A05b", false, "F2"⟩, ⟨"X07", false, "F2"⟩, ⟨"OS09", true, "F2"⟩]
 
 /-- The definitions of a probe's namespace. -/
 def roots (env : Environment) (ns : Name) : List Name :=

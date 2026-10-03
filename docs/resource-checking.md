@@ -47,12 +47,18 @@ Two call-boundary rules refine the scaling. A value of a profile-shareable type
 is an immediate: the callee receives a copy that holds no resource, so passing
 it to a nonzero input counts as one consumption whatever the callee's
 multiplicity. The caller's own reads still add, and a zero-use input still has
-zero demand. A closure boundary crosses in the same way: a captured value of a
-profile-shareable type is copied into the closure, so neither its finite use
-nor its uniqueness makes the closure one-shot. A curried definition such as
-`(1 x : Nat) → (1 y : Nat) → Nat` therefore keeps its shared intermediate
-result, while a finite or unique capture of any other type still requires a
-unique (one-shot) closure. An argument whose domain is a proposition is a proof,
+zero demand. A closure boundary crosses in the same way on the usage axis: a
+captured value of a profile-shareable type is copied into the closure, so its
+finite use does not make the closure one-shot (the linearity of an immediate
+has no run-time meaning; see "Named assumptions"). A curried definition such
+as `(1 x : Nat) → (1 y : Nat) → Nat` therefore keeps its shared intermediate
+result. Ownership is not exempt: a capture that the closure body *moves* (a
+unique transfer, a freeze, the invocation of a unique closure) makes the
+closure one-shot whatever its type, since a second call would move it again
+— a reusable closure returning a captured unique `String` or `Nat` as unique
+on every call is rejected. A unique immediate that the body only reads keeps
+the closure reusable. A finite or unique capture of any other type still
+requires a unique (one-shot) closure. An argument whose domain is a proposition is a proof,
 which is erased computation: it has no demand, owner transfer, or origin. The
 adapter recognizes propositions from addressed universes (only a literal
 `Sort 0` is `Prop`); the unreduced type is typed first, because reduction can
@@ -84,8 +90,9 @@ origins keep it inside the loan.
 
 Constructing a closure transfers captured unique owners. That transfer counts
 even when the closure's body only borrows the captured owner. A reusable shared
-closure cannot hide a finite-use or uniquely consumed capture, unless the
-captured value is a shareable immediate (above). A unique
+closure cannot hide a finite-use or uniquely consumed capture; only the finite
+use of a shareable immediate is exempt (above), never a capture the body
+moves. A unique
 closure can carry these captures and is consumed when invoked. Borrowing does
 not turn such a closure into a reusable shared callback.
 
@@ -225,6 +232,22 @@ as an `equation` directive.
 The default analysis bounds are depth 256 and 100,000 steps per declaration.
 Exhaustion is a rejection. Open sharing is analyzed in each binding context;
 its resource result is never cached by expression identity alone.
+
+## Named assumptions
+
+Some rules rest on facts about the consumer that the checker cannot see. Each
+is stated here and in the header of the Lean core profile; a consumer relying
+on resource admission must establish it.
+
+- **The linearity of a shareable immediate has no run-time meaning.** A value
+  of a profile-shareable type (`Nat`, `Bool`, `String`, the scalar types of
+  the core profile) is copied across call and closure boundaries; a `1` or
+  `&` contract on it bounds how often the program names it, not a resource
+  the consumer may rely on (no move-only handle, no single-use capability is
+  represented by an immediate). The checker therefore lets a linear immediate
+  cross into a many callee or a reusable closure. Uniqueness is not covered
+  by this assumption: a unique immediate is moved, and a closure that moves
+  its captured immediate is one-shot.
 
 ## Profiles, claims, and consumers
 

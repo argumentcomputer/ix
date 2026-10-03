@@ -2074,12 +2074,20 @@ impl<'a> Checker<'a> {
           if used_touched {
             origins = union(&origins, &old.value.origins);
             // A captured immediate (a value of a profile-shareable type) is
-            // copied into the closure, as at a call boundary: neither its
-            // finite use nor its uniqueness makes the closure one-shot.
+            // copied into the closure, as at a call boundary: its finite use
+            // does not make the closure one-shot (the linearity of an
+            // immediate has no run-time meaning), nor does its uniqueness
+            // when the body only reads it.
             let immediate = self.is_shareable(fuel, &old.value.typ)?;
             if (old.contract.uses != Uses::Many && !immediate)
               || !old.value.duplicable
             {
+              duplicable = false;
+            }
+            // A capture the body moves (a unique transfer, a freeze or a
+            // unique invocation) would be moved again by a second call: the
+            // closure is one-shot, immediate or not.
+            if !owner.live {
               duplicable = false;
             }
             if old.owner.unique {

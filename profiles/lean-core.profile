@@ -5,6 +5,13 @@
 # `ix compile` prints. Entries naming constants outside the compiled closure
 # are omitted. See docs/resource-checking.md, "Profiles, claims, and
 # consumers".
+#
+# Named assumptions (docs/resource-checking.md, "Named assumptions"); a
+# consumer relying on admission under this profile must establish them:
+# - The linearity of a shareable immediate has no run-time meaning: a `1` or
+#   `&` contract on a Nat, Bool, String, Char or UIntN value bounds how often
+#   the program names it, not a resource the consumer relies on. (Uniqueness
+#   is not covered: a closure that moves a captured immediate is one-shot.)
 
 # The standard profile: Nat and String literal types; Nat, Bool and String
 # are shareable immediates.
