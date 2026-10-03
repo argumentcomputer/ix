@@ -143,6 +143,8 @@ structure PFLayout where
   /-- Lean's packed type (for the projections' structure names) -/
   spine : Spine
   proofPerm : Std.HashMap Name (Array Nat) := {}
+  /-- `monotone_compose`'s universe parameters (for the fallback) -/
+  composeLevels : Array Name := #[]
   deriving Inhabited
 
 def PFLayout.isClique (L : PFLayout) (s : Spine) : Bool :=
@@ -256,13 +258,11 @@ def decodePathProof (L : PFLayout) (e : Expr) : Option (OrderData × Nat) := do
 /-- `PProd.monotone_mk` over the per-function proofs (`mkMonoPProd` folded
 from the right): `fs` the functionals `F_k` (each `λ x. …`), `hs` their
 proofs. -/
-def mkMonoTree (d : OrderData) (fs hs : Array Expr) : Expr := Id.run do
+def mkMonoTreeOver (γ : Expr) (lγ : Level) (poγ : Expr) (d : OrderData) (fs hs : Array Expr) :
+    Expr := Id.run do
   let s := d.spine
   let n := s.size
   let suf := s.suffixes
-  let γ := s.type
-  let lγ := (suf[0]!).2
-  let poγ := d.packedPO
   let xName := Ix.Name.mkStr Ix.Name.mkAnon "x"
   -- `g` for the rest from `k`: `F_{n-1}`, or `λ x. ⟨F_k[x], g_{k+1}[x]⟩`
   let instBody (f : Expr) : Expr := match stripMdata f with
@@ -280,6 +280,43 @@ def mkMonoTree (d : OrderData) (fs hs : Array Expr) : Expr := Id.run do
         #[liftLoose s.leaves[k]! 1, liftLoose r 1, instBody fs[k]!, instBody g]
       g := Expr.mkLam xName γ tup .default
   return h
+
+/-- The `monotone_mk` tree of a fixpoint, over its own packed type. -/
+def mkMonoTree (d : OrderData) (fs hs : Array Expr) : Expr :=
+  mkMonoTreeOver d.spine.type (d.spine.suffixes[0]!).2 d.packedPO d fs hs
+
+/-- The composition fallback of §5.2 for the per-function proof `h : monotone F`
+(Lean's, over Lean's packing `d`): `monotone_compose (mono φ) h`, a proof of
+`monotone (λ y. F (φ y))`, which is `monotone F'` by β and projection of a
+constructor (`F'` the transported functional), where `φ : γ' → γ` is
+`y ↦ ⟨y.π'_{σ 0}, …⟩` and `mono φ` a `monotone_mk` tree over regenerated
+path proofs (G). `compose?` gives `monotone_compose`'s universe parameters. -/
+def mkComposeFallback (σ : Array Nat) (d d' : OrderData) (k : Nat) (F h : Expr)
+    (composeLevels : Array Name) : Except String Expr := do
+  let s := d.spine
+  let n := s.size
+  let γ' := d'.spine.type
+  let lγ' := (d'.spine.suffixes[0]!).2
+  let γ := s.type
+  let lγ := (s.suffixes[0]!).2
+  let yName := Ix.Name.mkStr Ix.Name.mkAnon "y"
+  -- φ = λ y. ⟨y.π'_{σ 0}, …⟩ over Lean's packing
+  let lifted : Spine := { s with leaves := s.leaves.map (liftLoose · 1) }
+  let lifted' : Spine := { d'.spine with leaves := d'.spine.leaves.map (liftLoose · 1) }
+  let comps := (List.range n).toArray.map fun i => mkPathApp lifted' σ[i]! (Expr.mkBVar 0)
+  let φ := Expr.mkLam yName γ' (mkTuple lifted comps) .default
+  -- mono φ: the component functions and their path proofs
+  let paths := (List.range n).toArray.map fun i => mkPathProof d' σ[i]!
+  let monoφ := mkMonoTreeOver γ' lγ' d'.packedPO d (paths.map (·.2)) (paths.map (·.1))
+  let poD := toPO d.lattice s.lvls[k]! s.leaves[k]! d.insts[k]!
+  let lvl (nm : Name) : Except String Level :=
+    if nm == Ix.Name.mkStr Ix.Name.mkAnon "u" then pure lγ'
+    else if nm == Ix.Name.mkStr Ix.Name.mkAnon "v" then pure lγ
+    else if nm == Ix.Name.mkStr Ix.Name.mkAnon "w" then pure s.lvls[k]!
+    else throw "monotone_compose: unexpected universe parameter"
+  let us ← composeLevels.mapM lvl
+  return mkAppN (Expr.mkConst nMonoCompose us)
+    #[γ', d'.packedPO, γ, d.packedPO, s.leaves[k]!, poD, φ, F, monoφ, h]
 
 /-- Decode a `monotone_mk` tree over the clique's packing, checked by
 re-encoding. -/
@@ -319,7 +356,16 @@ def phiPFStep (L : PFLayout) (go : Array Expr → Expr → TM Expr) (ctx : Array
   if let some (d, fs, hs) := decodeMonoTree L e then
     let d' ← goD d
     let fs' ← fs.mapM (go ctx)
-    let hs' ← hs.mapM (go ctx)
+    let mut hs' := #[]
+    for k in [0:L.n] do
+      let st ← get
+      match (go ctx hs[k]!).run st with
+      | .ok (h, st') => set st'; hs' := hs'.push h
+      | .error err =>
+        -- outside the grammar: the composition fallback (§5.2)
+        let h ← liftE (mkComposeFallback L.sigma d d' k fs[k]! hs[k]! L.composeLevels)
+        modify fun st => { st with fallbacks := st.fallbacks.push s!"monotonicity proof {k}: {err}" }
+        hs' := hs'.push h
     return mkMonoTree d' (permute L.sigma fs') (permute L.sigma hs')
   if let some (h, s, insts) := decodeInstTree L.n e then
     if L.isClique s then
@@ -431,8 +477,12 @@ def pfLayout (members : Array Decl) (packed : Decl) (σ : Array Nat) (newPackedN
 
 /-- Transport a `partial_fixpoint` clique. -/
 def transportPF (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ : Array Nat)
-    (newPackedName : Name) : TM WFOutput := do
+    (newPackedName : Name) (const? : Name → Option ConstantInfo) : TM WFOutput := do
   let L ← liftE (pfLayout members packed σ newPackedName)
+  let composeLevels := match const? nMonoCompose with
+    | some ci => ci.getCnst.levelParams
+    | none => #[]
+  let L := { L with composeLevels }
   let m := L.numFixed
   let proofNames : Std.HashSet Name := proofs.foldl (init := {}) fun s p => s.insert p.name
   let (xs, body) ← openBinders true m packed.value
@@ -448,8 +498,11 @@ def transportPF (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ
   for p in proofs do
     let ρ := (proofPerm.get? p.name).getD #[]
     let type ← withReorderedBinders false ρ.size ρ p.type phi
+    let before := (← get).fallbacks.size
     let value ← withReorderedBinders true ρ.size ρ p.value phi
-    out := out.push { decl := { p with type, value } }
+    let fb := (← get).fallbacks.extract before (← get).fallbacks.size
+    out := out.push { decl := { p with type, value },
+                      fallback := if fb.isEmpty then none else some ("; ".intercalate fb.toList) }
   for d in members do
     out := out.push { decl := { d with type := ← phi d.type, value := ← phi d.value } }
   -- (R): the proofs follow the packed fixpoint's name

@@ -315,6 +315,9 @@ structure TState where
   recursion types paths into `below` dictionaries): keyed by the term's and
   the context's hashes, both checked on a hit. -/
   cacheCtx : Std.HashMap UInt64 (Expr × Array Expr × Expr) := {}
+  /-- grammar failures that took a local fallback (`partial_fixpoint`'s
+  composition), for the caller to record -/
+  fallbacks : Array String := #[]
 
 /-- Pure, over `Except String`: an error is a grammar failure (or an
 exhausted bound), which the caller turns into the faithful fallback. -/

@@ -108,7 +108,7 @@ def transport (inp : Input) : Output :=
     | none => .baselineOf inp "no packed fixpoint"
     | some packed =>
       let proofs := inp.aux.filter fun d => d.name != packed.name
-      match (transportPF inp.members packed proofs inp.sigma inp.newEncName).run {} with
+      match (transportPF inp.members packed proofs inp.sigma inp.newEncName inp.const?).run {} with
       | .error e => .baselineOf inp e
       | .ok (out, st) =>
         { decls := out.decls.map (·.decl), renames := out.renames, log := st.log

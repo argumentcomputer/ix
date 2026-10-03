@@ -349,6 +349,111 @@ def kernelCheck (env : Environment) (fam : String) (p0 pk : Pres) (decls : Array
   let (r, _) ← (checkDecls scratch p0.ns decls).toIO ctx { env }
   return r
 
+/-! ## Negative controls -/
+
+def familyNamed (fam : String) : Option Family :=
+  cliqueFamilies.find? (·.fixture.getString! == fam)
+
+/-- (d1) A wrong permutation must fail the oracle. -/
+def wrongPermutation (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name))
+    (fam : String) : IO (Option String) := do
+  let some f := familyNamed fam | return some s!"{fam}: no family"
+  let some p0 := f.pres.head? | return some s!"{fam}: no presentation"
+  let some pk := f.pres[1]? | return some s!"{fam}: one presentation"
+  let .ok (inp, ms0, auxs) := pairInput env eqn p0 pk | return some s!"{fam}: no input"
+  -- swap the images of the first two members
+  let σ := inp.sigma
+  let σ' := (σ.set! 0 σ[1]!).set! 1 σ[0]!
+  let out := _root_.Ix.Compile.Clique.transport { inp with sigma := σ' }
+  let rs ← compare env (fam ++ "-wrongσ") p0 pk out (ms0 ++ auxs) false
+  let exact := (rs.filter (·.verdict == "EXACT")).size
+  IO.println s!"[clique-transport] (d) wrong permutation {fam} {p0.id}/{pk.id}: σ' = {σ'}, \
+    {exact}/{rs.size} exact{if out.baseline then " (BASELINE)" else ""}"
+  return if exact < rs.size then none else some s!"{fam}: a wrong permutation reproduced {pk.id}"
+
+/-- Wrap `v` as `(λ (_ : A → B). v) g`: a well-typed term with the same type
+as `v` that carries `g`. -/
+def carrying (v : IxExpr) (arrowDom arrowCod g : IxExpr) : IxExpr :=
+  let ty := _root_.Ix.Expr.mkForallE (ixName `_a) arrowDom (_root_.Ix.Compile.Canon.liftLoose arrowCod 1) .default
+  _root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkLam (ixName `_g) ty (_root_.Ix.Compile.Canon.liftLoose v 1) .default) g
+
+/-- (d2) A decreasing proof with a term outside the grammar (a partial
+injection into the packing) keeps Lean's body under the transported
+statement, records `SHAPE`, and is accepted by the kernel. -/
+def strayProof (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name)) :
+    IO (Option String) := do
+  let some f := familyNamed "WD" | return some "WD: no family"
+  let some p0 := f.pres.head? | return some "WD: no presentation"
+  let some pk := f.pres[1]? | return some "WD: one presentation"
+  let .ok (inp, _, _) := pairInput env eqn p0 pk | return some "WD: no input"
+  let some packed := _root_.Ix.Compile.Clique.findPacked? inp.members inp.aux | return some "WD: no packed function"
+  let some proof := inp.aux.find? (·.name != packed.name) | return some "WD: no proof"
+  -- `@PSum.inl.{u,v} A B : A → α`, partially applied
+  let ar := _root_.Ix.Compile.Image.forallArity packed.type
+  let (bs, _) := _root_.Ix.Compile.Canon.peelForalls ar packed.type #[]
+  let some (_, α, _) := bs[ar - 1]? | return some "WD: no packed domain"
+  let some (_, us, #[a, b]) := _root_.Ix.Compile.Clique.constApp? α | return some "WD: packed domain"
+  let inl := _root_.Ix.Compile.Canon.mkAppN (_root_.Ix.Expr.mkConst _root_.Ix.Compile.Clique.nPSumInl us) #[a, b]
+  let _ := (b, us)
+  -- the proof's body, under its binders
+  let n := _root_.Ix.Compile.Clique.lamArity proof.value
+  let (ps, body) := _root_.Ix.Compile.Clique.peelLams n proof.value #[]
+  let body' := carrying body a α inl
+  let proof' := { proof with value := _root_.Ix.Compile.Clique.mkLams ps body' }
+  let aux := inp.aux.map fun d => if d.name == proof.name then proof' else d
+  let out := _root_.Ix.Compile.Clique.transport { inp with aux }
+  let causes := out.causes.filter fun (_, c, _) => c == .shape
+  let kept := out.decls.find? fun d => causes.any (·.1 == d.name)
+  let verbatim := match kept with
+    | some d => _root_.Ix.Compile.Clique.alphaEq d.value proof'.value
+    | none => false
+  let ks ← kernelCheck env "WD-stray" p0 pk out.decls
+  let accepted := ks.all (·.2.isNone)
+  IO.println s!"[clique-transport] (d) stray term in {proof.name.pretty}: causes {causes.map fun (n, c, w) => s!"{n.pretty} {c.tag} ({w})"}, \
+    body kept verbatim: {verbatim}, kernel {(ks.filter (·.2.isNone)).size}/{ks.size}"
+  for (n, r) in ks do
+    if let some m := r then IO.println s!"[clique-transport]   KERNEL-REJECT {n}: {(m.take 300).toString}"
+  return if causes.size == 1 && verbatim && accepted && !out.baseline then none
+    else some "WD: the stray proof did not take the verbatim fallback"
+
+/-- (d3) A `partial_fixpoint` monotonicity proof outside the grammar takes
+the composition fallback `monotone_compose (mono φ) h`, records `SHAPE`, and
+is accepted by the kernel. -/
+def strayMonotonicity (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name)) :
+    IO (Option String) := do
+  let some f := familyNamed "PF" | return some "PF: no family"
+  let some p0 := f.pres.head? | return some "PF: no presentation"
+  let some pk := f.pres[1]? | return some "PF: one presentation"
+  let .ok (inp, _, _) := pairInput env eqn p0 pk | return some "PF: no input"
+  let some packed := _root_.Ix.Compile.Clique.findPacked? inp.members inp.aux | return some "PF: no packed fixpoint"
+  let some proof := inp.aux.find? (·.name != packed.name) | return some "PF: no proof"
+  let n := inp.members.size
+  let L : _root_.Ix.Compile.Clique.PFLayout ← IO.ofExcept
+    (_root_.Ix.Compile.Clique.pfLayout inp.members packed inp.sigma inp.newEncName)
+  let some (d, fs, hs) := _root_.Ix.Compile.Clique.decodeMonoTree L proof.value
+    | return some "PF: the proof is not a monotone_mk tree"
+  -- `λ x. x.2` is not a path into a three-component packing: outside the grammar
+  let γ := d.spine.type
+  let suf := d.spine.suffixes
+  let some (s1, _) := suf[1]? | return some "PF: no suffix"
+  let snd := _root_.Ix.Expr.mkLam (ixName `x) γ
+    (_root_.Ix.Expr.mkProj _root_.Ix.Compile.Clique.nPProd 1 (_root_.Ix.Expr.mkBVar 0)) .default
+  let h0 := carrying hs[0]! γ s1 snd
+  let value := _root_.Ix.Compile.Clique.mkMonoTree d fs (hs.set! 0 h0)
+  let proof' := { proof with value }
+  let aux := inp.aux.map fun x => if x.name == proof.name then proof' else x
+  let out := _root_.Ix.Compile.Clique.transport { inp with aux }
+  let causes := out.causes.filter fun (_, c, _) => c == .shape
+  let ks ← kernelCheck env "PF-stray" p0 pk out.decls
+  let accepted := ks.all (·.2.isNone)
+  let _ := n
+  IO.println s!"[clique-transport] (d) stray term in a monotonicity proof: causes {causes.map fun (n, c, w) => s!"{n.pretty} {c.tag} ({w})"}, \
+    kernel {(ks.filter (·.2.isNone)).size}/{ks.size}{if out.baseline then " (BASELINE)" else ""}"
+  for (n, r) in ks do
+    if let some m := r then IO.println s!"[clique-transport]   KERNEL-REJECT {n}: {(m.take 300).toString}"
+  return if causes.size == 1 && accepted && !out.baseline then none
+    else some "PF: the stray monotonicity proof did not take the composition fallback"
+
 /-! ## The suite -/
 
 def isPendingTransport (e : NonCanonicalEntry) : Bool :=
@@ -422,6 +527,11 @@ def run : IO UInt32 := do
   IO.println s!"[clique-transport] (c) WG: {wgExact} exact, {wgGuess} equal up to the measures (GUESSLEX), {wg.size - wgExact - wgGuess} other"
   unless wg.size > 0 && wgGuess > 0 && wgExact + wgGuess == wg.size do
     failures := failures.push "WG: not classified as GUESSLEX"
+  -- (d) negative controls
+  for fam in ["W3", "S3", "PF", "WD"] do
+    if let some err ← wrongPermutation env eqn fam then failures := failures.push s!"control: {err}"
+  if let some err ← strayProof env eqn then failures := failures.push s!"control: {err}"
+  if let some err ← strayMonotonicity env eqn then failures := failures.push s!"control: {err}"
   -- (b) the kernel
   let rejected := kernelRows.filter (·.2.2.isSome)
   IO.println s!"[clique-transport] (b) kernel: {kernelRows.size - rejected.size}/{kernelRows.size} transported constants accepted"
