@@ -622,7 +622,17 @@ def fieldCases : Array Case := #[
     splitBox (v 0), "ok"⟩,
   ⟨"a case split on a field with a contract has no rule", arr (b .many) .shared uboxTy resTy,
     lam (b .many) (.app (.app (.app (ref 41) (constMotive uboxTy resTy)) (lam (b .many) (v 0) resTy)) (v 0))
-      uboxTy, "unsupported"⟩
+      uboxTy, "unsupported"⟩,
+  -- Review F6: a join with no expected contract keeps every owner. The split
+  -- returns `p1` or `p2` under a projection (no contract); moving its unique
+  -- field moves both, so `p1` cannot be moved again.
+  ⟨"a join without a contract keeps every owner", arr (b .many .unique) .shared pairTy
+      (arr (b .many .unique) .shared pairTy (arr (b .many) .shared boxTy natTy)),
+    lam (b .many .unique) (lam (b .many .unique) (lam (b .many)
+      (.app (.app (ref 15)
+        (call 3 (.prj 7 0 (app4 (ref 24) (constMotive boxTy pairTy) (v 2) (lam (b .many) (v 2) resTy) (v 0)))))
+        (call 3 (.prj 7 0 (v 2))))
+      boxTy) pairTy) pairTy, "moved"⟩
 ]
 
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=

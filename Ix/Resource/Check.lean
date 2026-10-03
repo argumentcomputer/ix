@@ -322,7 +322,7 @@ def readVariable (ctx : Context) (fuel : Nat) (index : UInt64) (uses : Uses) : C
   -- A field bound by a case split is a view of the matched value, as a
   -- projection is: reading it needs that value's owner live, and consuming
   -- it acts on that owner.
-  if let some matched := b.value.place then
+  for matched in b.value.place.toList ++ b.value.alsoPlaces do
     let owner ← binding matched
     if !owner.owner.live then throw (.moved matched)
   let type ← shift ctx.program fuel b.value.type (n + 1) 0
@@ -898,6 +898,9 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             if !(← isShareable ctx.program fuel type) && !v.duplicable && !v.freezable then
               throw .nonduplicable
             let some ownerPlace := v.place | throw .invalidPlace
+            -- A view of a joined value (several possible owners) has no
+            -- single root to suspend.
+            unless v.alsoPlaces.isEmpty do throw .invalidPlace
             let root := v.loanRoot.getD ownerPlace
             let b ← binding root
             let owner ← liftExcept (beginLoan root scope b.owner)
@@ -1013,9 +1016,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
                 if (← binding id).touched then
                   throw (.unsupported "a case split uses an induction hypothesis")
               else validateUsage id
-            let output := match output.place with
-              | some p => if p < count then output else { output with place := none }
-              | none => output
+            let places := (output.place.toList ++ output.alsoPlaces).filter (· < count)
+            let output := { output with place := places.head?, alsoPlaces := places.drop 1 }
             let after ← get
             let bindings := after.bindings.extract 0 count
             joined ← match joined with
@@ -1128,6 +1130,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
                            owned := if major.owned == .unique && c.value.owned == .unique then .unique else .shared
                            origins := major.origins
                            place := major.place
+                           alsoPlaces := major.alsoPlaces
                            loanRoot := major.loanRoot }
                   else pure { type := domain }
                 alternatives branches supplied extra (expected.map (·.2)) outputType

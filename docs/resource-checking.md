@@ -75,6 +75,11 @@ subject to active loans. A unique transfer requires all three conditions:
 live, unique, and no loans. Permanent sharing clears uniqueness. Ending a
 loan removes that loan and preserves both the liveness and sharing state.
 A branch join preserves availability only when every incoming path does.
+A joined result keeps every owner reference: when the alternatives return
+different places and no contract is expected at the join (the result is
+projected or applied, for example), consuming or invoking the joined value
+acts on every owner it may be — conservatively, since only one of them is
+the actual value — and a view of such a value cannot be borrowed.
 
 A unique value of a *plain-data* type — an inductive type of an addressed
 block whose constructors all carry only default contracts, so that the value

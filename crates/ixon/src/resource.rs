@@ -212,6 +212,10 @@ struct Value {
   origins: Vec<usize>,
   duplicable: bool,
   place: Option<usize>,
+  /// Further owners this value may be: a join of alternatives that returned
+  /// different places keeps every one of them, and each action on `place`
+  /// is performed on these too.
+  also: Vec<usize>,
   loan_root: Option<usize>,
   /// A unique value of a plain-data type (an inductive type whose
   /// constructors all have default contracts). It may enter a shared
@@ -228,9 +232,14 @@ impl Value {
       origins: vec![],
       duplicable: true,
       place: None,
+      also: vec![],
       loan_root: None,
       freezable: false,
     }
+  }
+  /// Every owner this value may be: its place, then the joined ones.
+  fn places(&self) -> Vec<usize> {
+    self.place.iter().copied().chain(self.also.iter().copied()).collect()
   }
   fn fresh(typ: Term) -> Self {
     Self { owned: Owned::Unique, ..Self::shared(typ) }
@@ -381,6 +390,7 @@ impl Supply {
           },
           origins: major.origins.clone(),
           place: major.place,
+          also: major.also.clone(),
           loan_root: major.loan_root,
           ..Value::shared(domain)
         })
@@ -500,7 +510,7 @@ impl<'a> Checker<'a> {
   /// Perform a place's ownership action once. Scope exit materializes its
   /// result before ending loans, even when the result is being inferred.
   fn materialize(&mut self, mut v: Value) -> Result<Value, Error> {
-    if let Some(id) = v.place {
+    for id in v.places() {
       let b = self.binding_mut(id)?;
       b.owner = match v.owned {
         Owned::Unique => b.owner.move_out(id)?,
@@ -508,6 +518,7 @@ impl<'a> Checker<'a> {
       };
     }
     v.place = None;
+    v.also = vec![];
     Ok(v)
   }
   fn consume_as(
@@ -547,7 +558,7 @@ impl<'a> Checker<'a> {
     if v.owned == Owned::Shared && !v.duplicable {
       return Err(Error::Nonduplicable);
     }
-    if let Some(id) = v.place {
+    for id in v.places() {
       let b = self.binding_mut(id)?;
       if v.owned == Owned::Unique {
         b.owner = b.owner.move_out(id)?;
@@ -899,10 +910,10 @@ impl<'a> Checker<'a> {
     // A field bound by a case split is a view of the matched value, as a
     // projection is: reading it needs that value's owner live, and consuming
     // it acts on that owner.
-    if let Some(matched) = b.value.place
-      && !self.binding(matched)?.owner.live
-    {
-      return Err(Error::Moved(matched));
+    for matched in b.value.places() {
+      if !self.binding(matched)?.owner.live {
+        return Err(Error::Moved(matched));
+      }
     }
     let typ = self.shift(
       fuel,
@@ -1619,8 +1630,14 @@ impl<'a> Checker<'a> {
     }
     Ok(term)
   }
+  /// A join keeps every owner either alternative may be: an action on the
+  /// joined value is performed on all of them (conservatively, since only
+  /// one is the actual value).
   fn join_value(a: Value, b: Value) -> Value {
+    let places = union(&a.places(), &b.places());
     Value {
+      place: places.first().copied(),
+      also: places.get(1..).map_or(vec![], <[usize]>::to_vec),
       typ: a.typ,
       owned: if a.owned == Owned::Unique && b.owned == Owned::Unique {
         Owned::Unique
@@ -1630,7 +1647,6 @@ impl<'a> Checker<'a> {
       origins: union(&a.origins, &b.origins),
       duplicable: a.duplicable && b.duplicable,
       freezable: a.freezable && b.freezable,
-      place: if a.place == b.place { a.place } else { None },
       loan_root: if a.loan_root == b.loan_root { a.loan_root } else { None },
     }
   }
@@ -1706,9 +1722,10 @@ impl<'a> Checker<'a> {
         }
       }
       let mut output = output;
-      if output.place.is_some_and(|p| p >= count) {
-        output.place = None;
-      }
+      let places: Vec<usize> =
+        output.places().into_iter().filter(|p| *p < count).collect();
+      output.place = places.first().copied();
+      output.also = places.get(1..).map_or(vec![], <[usize]>::to_vec);
       let bindings: Vec<Binding> =
         self.state.bindings.iter().take(count).cloned().collect();
       joined = Some(match joined {
@@ -2183,6 +2200,11 @@ impl<'a> Checker<'a> {
               return Err(Error::Nonduplicable);
             }
             let owner_place = v.place.ok_or(Error::InvalidPlace)?;
+            // A view of a joined value (several possible owners) has no
+            // single root to suspend.
+            if !v.also.is_empty() {
+              return Err(Error::InvalidPlace);
+            }
             let root = v.loan_root.unwrap_or(owner_place);
             let b = self.binding_mut(root)?;
             b.owner.begin_loan(root, scope)?;
@@ -3473,7 +3495,7 @@ mod tests {
   fn case_field_and_join_fixtures() {
     let text =
       include_str!("../../../Tests/Fixtures/ixon-v4/resource-fields.tsv");
-    assert!(run_fixture_lines(&field_program(), text) >= 4);
+    assert!(run_fixture_lines(&field_program(), text) >= 5);
   }
 
   #[test]

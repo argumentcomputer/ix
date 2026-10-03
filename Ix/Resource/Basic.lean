@@ -56,6 +56,10 @@ structure Value where
   duplicable : Bool := true
   /-- An unevaluated transfer from this binding; conversion consumes it once. -/
   place : Option OwnerId := none
+  /-- Further owners this value may be: a join of alternatives that returned
+  different places keeps every one of them, and each action on `place` is
+  performed on these too. -/
+  alsoPlaces : List OwnerId := []
   /-- Shared views keep the identity of their root owner through aliases. -/
   loanRoot : Option OwnerId := none
   /-- A unique value of a plain-data type (an inductive type whose
@@ -189,13 +193,13 @@ def endLoan (scope : ScopeId) (owner : Owner) : Owner :=
 /-- Perform a place's ownership action once. Scope exit materializes its
 result before ending loans, even when the result is being inferred. -/
 def materialize (v : Value) : CheckM Value := do
-  if let some id := v.place then
+  for id in v.place.toList ++ v.alsoPlaces do
     let b ← binding id
     let owner ← liftExcept <| match v.owned with
       | .unique => moveOwner id b.owner
       | .shared => shareOwner id b.owner
     setBinding id { b with owner }
-  return { v with place := none }
+  return { v with place := none, alsoPlaces := [] }
 
 /-- Check a conversion and perform the transfer or permanent alias. Local
 conversion is relative to the inferred destination scope; it narrows an
@@ -225,7 +229,7 @@ def consumeAs (required : ValueContract) (destination : ScopeId) (v : Value) :
 
 def invoke (v : Value) : CheckM Unit := do
   if v.owned == .shared && !v.duplicable then throw .nonduplicable
-  if let some id := v.place then
+  for id in v.place.toList ++ v.alsoPlaces do
     let b ← binding id
     if v.owned == .unique then
       let owner ← liftExcept (moveOwner id b.owner)
@@ -244,13 +248,18 @@ def joinOwner (left right : Owner) : Owner :=
     unique := left.unique && right.unique
     loans := unionOrigins left.loans right.loans }
 
+/-- A join keeps every owner either alternative may be: an action on the
+joined value is performed on all of them (conservatively, since only one is
+the actual value). -/
 def joinValue (left right : Value) : Value :=
+  let places := unionOrigins (left.place.toList ++ left.alsoPlaces) (right.place.toList ++ right.alsoPlaces)
   { type := left.type
     owned := if left.owned == .unique && right.owned == .unique then .unique else .shared
     origins := unionOrigins left.origins right.origins
     duplicable := left.duplicable && right.duplicable
     freezable := left.freezable && right.freezable
-    place := if left.place == right.place then left.place else none
+    place := places.head?
+    alsoPlaces := places.drop 1
     loanRoot := if left.loanRoot == right.loanRoot then left.loanRoot else none }
 
 /-- The meaning of an internal scope bound, independent of the executable
