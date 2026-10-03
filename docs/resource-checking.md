@@ -138,6 +138,54 @@ moves. A unique
 closure can carry these captures and is consumed when invoked. Borrowing does
 not turn such a closure into a reusable shared callback.
 
+### Usage crossing on plain data (the plain profile)
+
+[`profiles/lean-core-plain.profile`](../profiles/lean-core-plain.profile)
+(the directive `crossing plain`, profile extension bit 3) adopts OxCaml's
+division of the usage axis. In OxCaml, uniqueness and linearity are separate
+modes, and "linearity is about functions: its purpose is to track unique
+values in closures … Linearity is irrelevant for types that do not contain
+functions" (OxCaml, `jane/doc/extensions/modes/intro.md`, the linearity
+axis); values of types that do not contain functions mode-cross to `many`
+(`jane/doc/extensions/kinds/02-syntax.md`, `everything`), and a field
+declared `@@ many` makes its type cross even when it holds a function
+(`kinds/01-intro.md`, modalities). Every constructor field of an admitted ix
+inductive carries the default contract (`many`, shared): annotated
+constructors are refused by the frontend, and a `1` or non-duplicable value
+cannot be stored in a field. So the faithful predicate for ix is plain data
+(`plainData`): an inductive of an addressed block whose constructors all
+carry default contracts in their effective interfaces (the profile's
+`interface` lines applied), whatever its parameters and even with function
+fields.
+
+Under `crossing plain`, a type *crosses* the usage axis (`crosses`) when,
+after weak-head reduction, it is plain data or profile-shareable, and the
+profile does not opt it out (`linear NAME`, extension bit 4, for capability
+tokens). `Prod`, `Sigma`, `Subtype`, `Fin`, `Decidable`, class dictionaries,
+`List`, `Option`, `Thunk`, `Task`, nested and recursive inductives cross;
+so do `Nat`, `String`, `Bool`, `Char`, `UInt8`–`UInt64` and `Array`, whose
+blocks are visible in Ixon v4 (no `shareable` declaration is needed).
+Arrows and Π-types (`IO α`, `StateM`, `Unit → α` once unfolded), type
+variables of the definition (at a call site the caller's argument type
+decides), inductives with an annotated constructor, and types without a
+visible block (axioms, `opaque` types) do not cross, unless the profile
+declares them `shareable`. On a crossing type:
+
+- both bounds of a written `1`/`&` contract are dropped — OxCaml has no
+  relevance axis, and its `once` is "at most once" — and `ix compile`
+  reports the binder (`[compile] resource: plain-data crossing: …`;
+  `AddressedProgram.crossed`);
+- passing the value to a many-use callee is one consumption, and capturing
+  it does not make a closure one-shot on the usage axis.
+
+`0` (erased) inputs and the zero demand of proof arguments are unchanged.
+Ownership is unchanged: uniqueness, moves, freeze, locality, borrows, the
+one-shot rule for a closure that moves a capture, and case-split field views
+apply on every type exactly as under the strict profile (the plain profile
+has no shareable type). This rests on the named assumption "usage on plain
+data carries no consumer obligation" below. Compilatr.ix compiles usage
+contracts on data to nothing, so its code is not affected.
+
 ## Scopes and calls
 
 Scopes form an internal parent tree. Values retain all local origins that can
@@ -360,6 +408,15 @@ on resource admission must establish it.
   its captured immediate is one-shot. The standard and Lean core profiles
   rely on this assumption; the strict profile, which has no shareable type,
   does not.
+- **Usage on plain data carries no consumer obligation** (the plain
+  profile; it extends the previous assumption from the shareable immediates
+  to every crossing type). A `1` or `&` contract on a value of a plain-data
+  type bounds nothing the consumer may rely on: no elided drop or increment,
+  no move-only representation, no single-use capability. Ownership (`!`) on
+  such a value is still checked and may be relied on. A data type that does
+  represent a capability must be opted out with `linear NAME`. The worst
+  outcome of a consumer wrongly trusting such a `1` is a leak (an elided
+  drop), not an unsafe access, since no ownership is inferred from it.
 - **A field is an owned reference.** A value extracted from an aggregate, by
   a projection or by a case split, is a reference the consumer owns (Lean's
   reference-counted representation takes one when it extracts a field): it
@@ -387,14 +444,17 @@ A canonical profile begins with the UTF-8 bytes
 3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
 4. An optional extension, present only when it is not empty: a TagN (`f = 0`)
    behavior flag (bit 0: case splits, bound case definitions and
-   beta-redexes; bit 1: unfolding equations; bit 2: case definitions; no
+   beta-redexes; bit 1: unfolding equations; bit 2: case definitions; bit 3:
+   usage crossing on plain data; bit 4: linear types; no
    other bits), then a TagN (`f = 0`) count of admitted interfaces, each a
    32-byte address (strictly increasing), a TagN (`f = 0`) length, and that
    many bytes, one packed input/result contract byte per leading arrow; then,
    when bit 1 is set, the `Eq` type address and a nonzero TagN (`f = 0`) count
    of `(definition, theorem)` address pairs, strictly increasing by
    definition; then, when bit 2 is set (which requires bit 0), a nonzero TagN
-   (`f = 0`) count of case definition addresses, strictly increasing.
+   (`f = 0`) count of case definition addresses, strictly increasing; then,
+   when bit 4 is set, a nonzero TagN (`f = 0`) count of linear (opted-out)
+   type addresses, strictly increasing. Bit 3 carries no data.
 
 Selection primitives and admitted interfaces must also be assumptions. An
 admitted interface replaces the declaration's own arrow contracts for its
@@ -410,7 +470,8 @@ source: one directive per line (`#` starts a comment): `standard` (the
 standard profile's entries), `literals` (only the standard profile's Nat and
 String literal types, no shareable type), `shareable NAME`, `assume NAME`, `choice NAME`,
 `interface NAME C…` (one contract token per leading arrow, `INPUT[:RESULT]`
-in source prefix syntax, `_` for the default), `cases`, `equation NAME
+in source prefix syntax, `_` for the default), `cases`, `crossing plain` (usage
+crossing on plain data), `linear NAME` (opt a type out of it), `equation NAME
 THEOREM`, and `limits DEPTH STEPS`. Names are resolved against the compiled closure, entries outside it
 are omitted, and the command prints the effective profile address; the
 validation itself binds addresses only. The published Lean core profile is
@@ -422,14 +483,19 @@ entries, the scalar immediates `Char` and `UInt8`–`UInt64`, the choices `ite`,
 is the same with `literals` in place of `standard` and no scalar
 immediates: it has no shareable type, so no usage contract crosses (see "Uses
 and availability"); choices and case behavior are unchanged, since they are
-about evaluation, not crossing.
+about evaluation, not crossing. The plain-data Lean core profile
+[`profiles/lean-core-plain.profile`](../profiles/lean-core-plain.profile)
+is the strict profile with `crossing plain`: usage crosses on plain data
+and is enforced on everything else ("Usage crossing on plain data").
 With `--equations`, the realized unfolding equations are added to the
 profile source, so annotated recursion is checked through them.
 
 A profile is a trust root for what it states by design: an `assume`,
 `interface`, `choice` or `shareable` entry is an explicit claim that the
 checker does not verify (a false interface or a strict function declared a
-choice is admitted as stated). The directives whose truth is a fact about
+choice is admitted as stated). `crossing plain` rests on the named assumption
+that usage on plain data carries no consumer obligation; `linear` only adds
+checking. The directives whose truth is a fact about
 Lean's own declarations are instead generated and never written: `equation`
 (above) and `case`.
 
@@ -512,7 +578,8 @@ constructions, and plain-data borrows,
 by-need alternatives of bound case definitions, and `resource-fields.tsv`
 case-split fields as views of the major and joins without an expected
 contract, and `resource-noshare.tsv` the absence of usage crossing without
-shareable types (the strict profile). The suites also cover
+shareable types (the strict profile), and `resource-plain.tsv` usage crossing
+on plain data with an opted-out type (the plain profile). The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.

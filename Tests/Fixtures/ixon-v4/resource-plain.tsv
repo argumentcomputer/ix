@@ -1,0 +1,15 @@
+# name	expected	type (ixon-v4 hex)	body (ixon-v4 hex)
+# Cases over Tests.Resource.plainProgram (Rust: plain_program): plain-data
+# crossing as under profiles/lean-core-plain.profile (setting S6): usage is not
+# enforced on plain data, but on functions, blockless and opted-out types;
+# ownership is unchanged.
+a linear plain-data value crosses a many call	ok	911520152000	8105201571202110
+a dropped linear plain-data value is not enforced	ok	911520152000	8105201560
+an affine plain-data value may be used twice	ok	911620152000	8106201572200f7120211071202110
+a linear plain-data capture keeps a closure reusable	ok	921520151720002000	8205201507200071202111
+a linear value of a type without a visible block does not cross	usage	9115200b200b	8105200b71200c10
+a linear function does not cross	usage	91159117200020002000	810591172000200072200f711060711060
+an opted-out plain-data type does not cross	usage	911520192000	8105201960
+an erased plain-data binder stays erased	usage	911420152000	8104201571202110
+a unique plain-data capture moved by a closure still makes it one-shot	capture	921320150720002015	8203201507200071202211
+a unique plain-data value still moves once	moved	911320152000	8103201572200f7120217120221071202171202210

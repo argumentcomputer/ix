@@ -89,6 +89,9 @@ structure State where
   /-- Root 0 has no parent. Every new parent precedes its child. -/
   parents : Array (Option ScopeId) := #[none]
   remaining : Nat := 100000
+  /-- Binders whose written `1`/`&` contract was not enforced because their
+  type crosses the usage axis (plain-data crossing), for the diagnostic. -/
+  crossed : Array OwnerId := #[]
   deriving BEq, Repr, Inhabited
 
 abbrev CheckM := EStateM Error State

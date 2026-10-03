@@ -110,6 +110,10 @@ fn contract_byte(token: &str) -> Option<u8> {
 /// - `equation NAME THEOREM`: check `NAME` through the unfolding equation
 ///   `THEOREM` (`∀ xs, NAME xs = rhs`), which the consumer runs;
 /// - `limits DEPTH STEPS`;
+/// - `crossing plain`: usage crossing on plain data (the plain profile): a
+///   `1`/`&` contract on a value of a plain-data type is not enforced;
+/// - `linear NAME`: opt the type `NAME` out of usage crossing (a capability
+///   token whose single use the consumer relies on);
 /// - `generated`: the end of the written source. `case` and `equation` are
 ///   generated directives: they are accepted only after this line, which
 ///   `ix compile` appends to a written profile before the lines it
@@ -141,6 +145,7 @@ pub fn profile_from_source(
   let mut interfaces = BTreeMap::new();
   let mut equations = BTreeMap::new();
   let mut case_definitions = BTreeSet::new();
+  let mut linear_types = BTreeSet::new();
   let mut profile = Profile::default();
   let mut generated = false;
   for (n, raw) in text.split('\n').enumerate() {
@@ -206,6 +211,8 @@ pub fn profile_from_source(
         profile.string_type = standard.string_type;
       },
       ("shareable", 2) => shareable.extend(present(words[1])),
+      ("crossing", 2) if words[1] == "plain" => profile.crossing = true,
+      ("linear", 2) => linear_types.extend(present(words[1])),
       ("assume", 2) => assumptions.extend(present(words[1])),
       ("choice", 2) => {
         if let Some(address) = present(words[1]) {
@@ -251,6 +258,7 @@ pub fn profile_from_source(
   profile.choices = choices.into_iter().collect();
   profile.interfaces = interfaces.into_iter().collect();
   profile.case_definitions = case_definitions.into_iter().collect();
+  profile.linear_types = linear_types.into_iter().collect();
   if !equations.is_empty() {
     let eq = PrimAddrs::new().eq;
     if !env.consts.contains_key(&eq) {
@@ -534,6 +542,19 @@ mod tests {
       (&standard.nat_type, &standard.string_type)
     );
     assert!(profile_from_source("literals Unit", &env, &resolve).is_err());
+    // `crossing plain` selects plain-data crossing; `linear NAME` opts a
+    // type out of it (the plain profile, setting S6).
+    let plain = profile_from_source(
+      "literals\ncrossing plain\nlinear Unit\nlinear Absent\n",
+      &env,
+      &resolve,
+    )
+    .unwrap();
+    assert!(plain.crossing);
+    assert_eq!(plain.linear_types, vec![unit.clone()]);
+    for bad in ["crossing", "crossing full", "linear", "linear Unit Unit"] {
+      assert!(profile_from_source(bad, &env, &resolve).is_err(), "{bad}");
+    }
     // Equations need Eq in the closure (not in this one).
     for bad in [
       "frobnicate",

@@ -59,6 +59,13 @@ pub struct Profile {
   /// definition with one is checked through the equation
   /// (`Program::equations`). Strictly increasing by definition.
   pub equations: Vec<(Address, Address)>,
+  /// Usage crossing on plain data (`crossing plain`, extension bit 3): a
+  /// `1`/`&` usage contract on a value of a plain-data type is not enforced
+  /// (`Program::crossing`).
+  pub crossing: bool,
+  /// Types opted out of usage crossing (`linear NAME`, extension bit 4):
+  /// capability tokens. Strictly increasing.
+  pub linear_types: Vec<Address>,
 }
 
 impl Profile {
@@ -120,6 +127,11 @@ impl Profile {
         "resource profile: case definitions require case behavior".into(),
       );
     }
+    if self.linear_types.windows(2).any(|pair| pair[0] >= pair[1]) {
+      return Err(
+        "resource profile: address lists must be strictly increasing".into(),
+      );
+    }
     Ok(())
   }
 
@@ -145,7 +157,9 @@ impl Profile {
     // An optional extension, present only when it is not empty.
     let flags = u64::from(self.cases)
       | (u64::from(!self.equations.is_empty()) << 1)
-      | (u64::from(!self.case_definitions.is_empty()) << 2);
+      | (u64::from(!self.case_definitions.is_empty()) << 2)
+      | (u64::from(self.crossing) << 3)
+      | (u64::from(!self.linear_types.is_empty()) << 4);
     if flags != 0 || !self.interfaces.is_empty() {
       TagN::put(0, 0, flags, &mut bytes);
       TagN::put(0, 0, self.interfaces.len() as u64, &mut bytes);
@@ -165,6 +179,12 @@ impl Profile {
       if !self.case_definitions.is_empty() {
         TagN::put(0, 0, self.case_definitions.len() as u64, &mut bytes);
         for address in &self.case_definitions {
+          bytes.extend_from_slice(address.as_bytes());
+        }
+      }
+      if !self.linear_types.is_empty() {
+        TagN::put(0, 0, self.linear_types.len() as u64, &mut bytes);
+        for address in &self.linear_types {
           bytes.extend_from_slice(address.as_bytes());
         }
       }
@@ -231,10 +251,12 @@ impl Profile {
       eq_type: None,
       equations: vec![],
       case_definitions: vec![],
+      crossing: false,
+      linear_types: vec![],
     };
     if !bytes.is_empty() {
       let flags = TagN::get(0, &mut bytes)?.value;
-      if flags > 7 {
+      if flags > 31 {
         return Err("resource profile: unknown behavior flags".into());
       }
       let count = TagN::get(0, &mut bytes)?.value;
@@ -305,7 +327,24 @@ impl Profile {
           );
         }
       }
+      if flags & 16 != 0 {
+        let count = TagN::get(0, &mut bytes)?.value;
+        if count == 0 || count > (bytes.len() / 32) as u64 {
+          return Err("resource profile: impossible linear type count".into());
+        }
+        for _ in 0..count {
+          let (head, tail) = bytes
+            .split_at_checked(32)
+            .ok_or("resource profile: truncated address")?;
+          bytes = tail;
+          profile.linear_types.push(
+            Address::from_slice(head)
+              .map_err(|_error| "resource profile: invalid address")?,
+          );
+        }
+      }
       profile.cases = flags & 1 == 1;
+      profile.crossing = flags & 8 != 0;
       if !bytes.is_empty() {
         return Err("resource profile: trailing bytes".into());
       }
@@ -321,6 +360,9 @@ pub struct AddressedProgram {
   pub policy: Policy,
   pub addresses: Vec<Address>,
   pub profile_address: Address,
+  /// After admission (`check_resources`): the `(declaration, binder)` pairs
+  /// whose written `1`/`&` contract plain-data crossing did not enforce.
+  pub crossed: Vec<(usize, usize)>,
 }
 
 struct Pending {
@@ -1019,6 +1061,9 @@ pub fn prepare(
       ))
     })
     .collect::<Result<_, String>>()?;
+  let linear_types = resolve(&profile.linear_types)?;
+  program.crossing = profile.crossing;
+  program.linear_types = linear_types.clone();
   for (typ, ctor, params, count) in field_specs {
     if let Ok(derived) = fields(
       &program,
@@ -1057,7 +1102,13 @@ pub fn prepare(
         .into_iter()
         .map(|(d, t)| Ok((native_index(d)?, native_index(t)?)))
         .collect::<Result<_, String>>()?,
+      crossing: profile.crossing,
+      linear_types: linear_types
+        .into_iter()
+        .map(native_index)
+        .collect::<Result<_, _>>()?,
     },
+    crossed: vec![],
   })
 }
 
@@ -1067,16 +1118,16 @@ pub fn check_resources(
   profile: &Profile,
 ) -> Result<AddressedProgram, String> {
   let resolved = prepare(env, profile)?;
-  admit_program(&resolved.program, &resolved.policy, profile.limits).map_err(
-    |error| {
-      format!(
-        "resource admission {:?}: {:?}",
-        error.declaration.and_then(|i| resolved.addresses.get(i)),
-        error.error
-      )
-    },
-  )?;
-  Ok(resolved)
+  let crossed =
+    admit_program_crossed(&resolved.program, &resolved.policy, profile.limits)
+      .map_err(|error| {
+        format!(
+          "resource admission {:?}: {:?}",
+          error.declaration.and_then(|i| resolved.addresses.get(i)),
+          error.error
+        )
+      })?;
+  Ok(AddressedProgram { crossed, ..resolved })
 }
 
 #[cfg(test)]
@@ -1764,10 +1815,34 @@ mod tests {
       .address()
       .is_err()
     );
-    for suffix in [[5u8, 0, 0], [8, 0, 0]] {
+    for suffix in [[5u8, 0, 0], [8, 0, 0], [32, 0, 0], [16, 0, 0]] {
       let mut bad = bytes.clone();
       bad.extend_from_slice(&suffix);
       assert!(Profile::from_bytes(&bad).is_err());
     }
+    // Plain-data crossing (bit 3, no data) and opted-out types (bit 4, a
+    // list) travel in the same extension, after the case definitions.
+    let with_plain =
+      Profile { crossing: true, linear_types: vec![unit.clone()], ..p.clone() };
+    let hex: String =
+      with_plain.bytes().iter().map(|b| format!("{b:02x}")).collect();
+    let line = format!(
+      "profile-plain-crossing\t{}\t{hex}",
+      with_plain.address().unwrap().hex()
+    );
+    assert!(
+      fixture.lines().any(|s| s == line),
+      "plain crossing profile fixture mismatch: {line}"
+    );
+    assert_eq!(Profile::from_bytes(&with_plain.bytes()).unwrap(), with_plain);
+    let mut crossing_only = bytes.clone();
+    crossing_only.extend_from_slice(&[8, 0]);
+    let decoded = Profile::from_bytes(&crossing_only).unwrap();
+    assert!(decoded.crossing && decoded.linear_types.is_empty());
+    assert!(
+      Profile { linear_types: vec![unit.clone(), unit.clone()], ..with_plain }
+        .address()
+        .is_err()
+    );
   }
 }

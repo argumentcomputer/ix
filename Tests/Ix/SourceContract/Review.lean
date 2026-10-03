@@ -16,8 +16,10 @@ compile --anon --profile profiles/lean-core.profile` compiles it: its
 definitions seed the closure, the profile source is built by
 `Ix.Compile.ResourceProfile.build` (generated `case` lines included), and the
 native compiler validates resources. A violation must be rejected by resource
-admission; a control must compile. Probes marked strict are compiled with
-`profiles/lean-core-strict.profile` instead (no shareable types).
+admission; a control must compile. Strict, plain and standard probes are
+compiled with `profiles/lean-core-strict.profile` (no shareable types),
+`profiles/lean-core-plain.profile` (usage crossing on plain data) or the
+standard profile instead.
 -/
 
 public section
@@ -52,6 +54,10 @@ def probe (name : String) (accepted : Bool) (finding : String) : Probe :=
 /-- A probe compiled with the strict Lean core profile (no shareable types). -/
 def strictProbe (name : String) (accepted : Bool) (finding : String) : Probe :=
   { name, accepted, finding, profile := "profiles/lean-core-strict.profile" }
+
+/-- A probe compiled with the plain-data Lean core profile (setting S6). -/
+def plainProbe (name : String) (accepted : Bool) (finding : String) : Probe :=
+  { name, accepted, finding, profile := "profiles/lean-core-plain.profile" }
 
 /-- A probe compiled with the standard profile (no `--profile`). -/
 def standardProbe (name : String) (accepted : Bool) (finding : String) : Probe :=
@@ -98,7 +104,18 @@ def probes : List Probe := [
    { probe "V10" false "R2-2" with reason := nativeReason },
    { probe "V03" false "R2-2" with reason := nativeReason },
    { strictProbe "V03" false "R2-2" with reason := nativeReason },
-   standardProbe "PartialPlain" true "R2-2", probe "PartialPlain" true "R2-2"]
+   standardProbe "PartialPlain" true "R2-2", probe "PartialPlain" true "R2-2"] ++
+  -- Setting S6: usage crosses on plain data (linear Nats used any number of
+  -- times or dropped), is enforced on functions, and ownership is unchanged.
+  [plainProbe "N07" true "S6", plainProbe "LinearAdd" true "S6", plainProbe "OS09" true "S6",
+   plainProbe "LinearId" true "S6", plainProbe "M01" true "S6", plainProbe "FreshLocal" true "S6",
+   plainProbe "LinearFunction" false "S6", probe "LinearFunction" false "S6",
+   strictProbe "LinearFunction" false "S6",
+   plainProbe "A05b" false "S6", plainProbe "X07" false "S6", plainProbe "F06" false "S6",
+   plainProbe "P03" false "S6", plainProbe "A01" false "S6",
+   { plainProbe "E11" false "S6" with equations := true },
+   { plainProbe "E11" false "S6" with reason := recursionReason },
+   { plainProbe "Q06" true "S6" with equations := true }]
 
 /-- The safe definitions, theorems and opaques (`partial def`s) of a probe's
 namespace. -/
@@ -299,7 +316,7 @@ private def smuggledDirectives : IO (Bool × Nat × Nat × Option String) := do
     IO.FS.removeDirAll directory
 
 def suite : List TestSeq := [
-  .individualIO "review probes: violations rejected, controls accepted (core and strict profiles)" none verdicts .done,
+  .individualIO "review probes: violations rejected, controls accepted (standard, core, strict and plain profiles)" none verdicts .done,
   .individualIO "an annotated native implementation must be a profile assumption" none
     nativeImplementations .done,
   .individualIO "check-equations verifies the checked pairs a sidecar lists" none

@@ -240,6 +240,12 @@ def linId (1 x : Nat) : Nat := x
 def entry (n : Nat) : Nat := linId n
 end LinearId
 
+/- Violation under every profile, the plain one included (setting S6): a
+linear function called twice; usage is enforced on functions. -/
+namespace LinearFunction
+def twiceF (1 g : Nat → Nat) : Nat := g (g 0)
+end LinearFunction
+
 /-! ## Annotated recursion only through bound equations (second review R2-3) -/
 
 /- Violation (W03): the recursion as written passes the shared tail `t` to

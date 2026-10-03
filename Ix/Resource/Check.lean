@@ -126,6 +126,16 @@ structure Program where
   arguments of a constructor application that are its inductive type's
   parameters, not fields. A constructor that is absent has none. -/
   constructors : Array (UInt64 × Nat) := #[]
+  /-- Usage crossing on plain data (the plain profile, `crossing plain`): a
+  value of a type that crosses (`crosses`: plain data, or a profile-shareable
+  type, and not opted out) is not bound by a written `1`/`&` usage contract
+  (both bounds are dropped; the binder is reported), as OxCaml's data types
+  cross linearity. Ownership, locality, borrows and the closure rules are
+  unaffected. -/
+  crossing : Bool := false
+  /-- Types opted out of usage crossing (`linear NAME`): capability tokens
+  whose single use the consumer relies on. -/
+  linearTypes : Array UInt64 := #[]
   deriving BEq, Repr, Inhabited
 
 structure Context where
@@ -438,16 +448,6 @@ def isProposition : Nat → Context → Ixon.Expr → CheckM Bool
       if ← hasSort fuel ctx type prop then return true
       hasSort fuel ctx reduced prop
 
-/-- Argument demand at a call. A callee's multiplicity does not scale the
-demand on a value of a profile-shareable (immediate) type: the callee
-receives a copy that holds no resource, so passing it is one consumption.
-The caller's own reads still count, and a zero-use input still has zero
-demand. -/
-def argumentGrade (program : Program) (fuel : Nat) (grade input : Uses)
-    (domain : Ixon.Expr) : CheckM Uses := do
-  if input != .erased && (← isShareable program fuel domain) then return grade
-  return grade.mul input
-
 def finishValue (ctx : Context) (fuel : Nat) (destination : ScopeId)
     (expected : Option (Ixon.Expr × ValueContract)) (value : Value) : CheckM Value := do
   match expected with
@@ -522,9 +522,61 @@ def plainData (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Bool 
   for c in group do
     let some cd := program.declarations[c]? | return false
     if cd.kind == .constructor then
-      if (← resultHead program fuel cd.type) == some t then
-        unless ← plain program fuel cd.type do return false
+      -- The effective interface: an admitted interface replaces the
+      -- constructor's declared contracts.
+      let type ← interfaceType program c.toUInt64
+      if (← resultHead program fuel type) == some t then
+        unless ← plain program fuel type do return false
   return true
+
+/-- Whether a value of `type` crosses the usage axis: a written `1`/`&`
+contract on it is not enforced, and passing it to a many-use callee or
+capturing it in a reusable closure is one consumption. Without plain-data
+crossing (`Program.crossing`) and opt-outs this is exactly a profile-shareable
+type (R19: the standard and core profiles' immediates; nothing under the
+strict profile). With plain-data crossing (the plain profile), a type crosses
+when it is plain data (`plainData`: an inductive of an addressed block whose
+constructors all carry default contracts in their effective interfaces —
+`Prod`, `List`, `Option`, `Subtype`, `Decidable`, class dictionaries,
+inductives with function fields, `Nat`, `String`, … whatever their
+parameters) or profile-shareable, unless the profile opts it out (`linear
+NAME`). Arrows, type variables and types without a visible block do not
+cross; OxCaml's data types cross linearity the same way (fields of an ix
+inductive are implicitly `many`). -/
+def crosses (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Bool := do
+  if !program.crossing && program.linearTypes.isEmpty then
+    return ← isShareable program fuel type
+  let (head, _) ← splitApp program fuel (← whnf program fuel type) []
+  if let .ref t _ := head then
+    if program.linearTypes.contains t then return false
+  if ← isShareable program fuel type then return true
+  if !program.crossing then return false
+  plainData program fuel type
+
+/-- Argument demand at a call. A callee's multiplicity does not scale the
+demand on a value of a crossing type (`crosses`): under R19 the callee
+receives a copy of an immediate that holds no resource; under plain-data
+crossing the usage of data carries no obligation. Passing it is one
+consumption. The caller's own reads still count, and a zero-use input still
+has zero demand. -/
+def argumentGrade (program : Program) (fuel : Nat) (grade input : Uses)
+    (domain : Ixon.Expr) : CheckM Uses := do
+  if input != .erased && (← crosses program fuel domain) then return grade
+  return grade.mul input
+
+/-- Check a binder's usage contract when its scope finishes. Under plain-data
+crossing, a written `1`/`&` contract on a binder whose type crosses
+(`crosses`) is not enforced — neither bound, as in OxCaml, which has no
+relevance axis — and the binder is recorded in `State.crossed` for the
+diagnostic. `0` (erased) is always enforced. -/
+def validateBinder (program : Program) (fuel : Nat) (id : OwnerId) : CheckM Unit := do
+  let b ← binding id
+  if program.crossing then
+    if b.contract.uses == .linear || b.contract.uses == .affine then
+      if ← crosses program fuel b.value.type then
+        modify fun s => { s with crossed := s.crossed.push id }
+        return
+  validateUsage id
 
 /-- Whether variable `index` occurs in `e`. -/
 def occurs (program : Program) : Nat → Ixon.Expr → Nat → CheckM Bool
@@ -948,7 +1000,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         let bodyExpected := codomain.map (fun ty => (ty, result))
         let output ← analyze fuel bodyCtx body bodyExpected callerScope .linear
         let output ← if bodyExpected.isSome then pure output else consumeAs result callerScope output
-        validateUsage parameter
+        validateBinder ctx.program fuel parameter
         let after ← get
         let mut origins := []
         let mut duplicable := true
@@ -964,9 +1016,14 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             -- copied into the closure, as at a call boundary: its finite use
             -- does not make the closure one-shot (the linearity of an
             -- immediate has no run-time meaning), nor does its uniqueness
-            -- when the body only reads it.
+            -- when the body only reads it. Under plain-data crossing the usage
+            -- axis follows `crosses` (any plain data); the ownership axis
+            -- below stays with the shareable types.
             let immediate ← isShareable ctx.program fuel old.value.type
-            if (old.contract.uses != .many && !immediate) || !old.value.duplicable then
+            let crossing ← if ctx.program.crossing || !ctx.program.linearTypes.isEmpty then
+                crosses ctx.program fuel old.value.type
+              else pure immediate
+            if (old.contract.uses != .many && !crossing) || !old.value.duplicable then
               duplicable := false
             -- A capture the body moves (a unique transfer, a freeze or a
             -- unique invocation) would be moved again by a second call:
@@ -1025,7 +1082,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           | none => pure none
           | some (ty, mode) => pure (some (← shift ctx.program fuel ty 1 0, mode))
         let output ← analyze fuel bodyCtx body bodyExpected destination grade
-        validateUsage id
+        validateBinder ctx.program fuel id
         let output ← materialize output
         closeScope scope output
         let type ← substitute ctx.program fuel output.type initializer 0
@@ -1128,7 +1185,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
               if hypothesis then
                 if (← binding id).touched then
                   throw (.unsupported "a case split uses an induction hypothesis")
-              else validateUsage id
+              else validateBinder ctx.program fuel id
             let places := (output.place.toList ++ output.alsoPlaces).filter (· < count)
             let output := { output with place := places.head?, alsoPlaces := places.drop 1 }
             let after ← get
@@ -1315,7 +1372,11 @@ def equationBody (program : Program) (fuel : Nat) (index equation : UInt64) : Ch
     body := .lam input domain body
   return body
 
-def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit := do
+/-- Check a definition; on success, the binders (in the order their scopes
+finished; a header binder's id is its position) whose written `1`/`&`
+contract plain-data crossing did not enforce (`validateBinder`). -/
+def checkDefinitionCrossed (program : Program) (index : Nat) (limits : Limits := {}) :
+    Except Error (Array OwnerId) := do
   let some declaration := program.declarations[index]? | throw (.badReference index)
   let action : CheckM Unit := do
     let body ← match program.equations.find? (·.1 == index.toUInt64) with
@@ -1328,8 +1389,11 @@ def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : 
       (some (declaration.type, .shared)) scope .linear
     pure ()
   match action.run { remaining := limits.steps } with
-  | .ok _ _ => pure ()
+  | .ok _ state => pure state.crossed
   | .error error _ => throw error
+
+def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit :=
+  (checkDefinitionCrossed program index limits).map fun _ => ()
 
 end Ix.Resource
 

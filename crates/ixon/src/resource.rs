@@ -163,6 +163,16 @@ pub struct Program {
   /// arguments of a constructor application that are its inductive type's
   /// parameters, not fields. A constructor that is absent has none.
   pub constructors: Vec<(u64, usize)>,
+  /// Usage crossing on plain data (the plain profile, `crossing plain`): a
+  /// value of a type that crosses (`crosses`: plain data, or a
+  /// profile-shareable type, and not opted out) is not bound by a written
+  /// `1`/`&` usage contract (both bounds are dropped; the binder is
+  /// reported), as OxCaml's data types cross linearity. Ownership,
+  /// locality, borrows and the closure rules are unaffected.
+  pub crossing: bool,
+  /// Types opted out of usage crossing (`linear NAME`): capability tokens
+  /// whose single use the consumer relies on.
+  pub linear_types: Vec<u64>,
 }
 
 /// The shape of an addressed recursor of a single, non-mutual inductive type,
@@ -308,6 +318,9 @@ struct State {
   bindings: Vec<Binding>,
   parents: Vec<Option<usize>>,
   remaining: usize,
+  /// Binders whose written `1`/`&` contract was not enforced because their
+  /// type crosses the usage axis (plain-data crossing), for the diagnostic.
+  crossed: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -419,6 +432,7 @@ impl<'a> Checker<'a> {
         bindings: vec![],
         parents: vec![None],
         remaining: limits.steps,
+        crossed: vec![],
       },
     }
   }
@@ -847,10 +861,11 @@ impl<'a> Checker<'a> {
     }
   }
   /// Argument demand at a call. A callee's multiplicity does not scale the
-  /// demand on a value of a profile-shareable (immediate) type: the callee
-  /// receives a copy that holds no resource, so passing it is one
-  /// consumption. The caller's own reads still count, and a zero-use input
-  /// still has zero demand.
+  /// demand on a value of a crossing type (`crosses`): under R19 the callee
+  /// receives a copy of an immediate that holds no resource; under
+  /// plain-data crossing the usage of data carries no obligation. Passing
+  /// it is one consumption. The caller's own reads still count, and a
+  /// zero-use input still has zero demand.
   fn argument_grade(
     &mut self,
     fuel: usize,
@@ -858,7 +873,7 @@ impl<'a> Checker<'a> {
     input: Uses,
     domain: &Term,
   ) -> Result<Uses, Error> {
-    if input != Uses::Erased && self.is_shareable(fuel, domain)? {
+    if input != Uses::Erased && self.crosses(fuel, domain)? {
       Ok(grade)
     } else {
       Ok(scale(grade, input))
@@ -1253,14 +1268,62 @@ impl<'a> Checker<'a> {
       let Some(cd) = self.program.declarations.get(c).cloned() else {
         return Ok(false);
       };
-      if cd.kind == DeclKind::Constructor
-        && self.result_head(fuel, &cd.typ)? == Some(*t)
-        && !self.plain(fuel, &cd.typ)?
-      {
-        return Ok(false);
+      if cd.kind == DeclKind::Constructor {
+        // The effective interface: an admitted interface replaces the
+        // constructor's declared contracts.
+        let typ = self.interface_type(c as u64)?;
+        if self.result_head(fuel, &typ)? == Some(*t)
+          && !self.plain(fuel, &typ)?
+        {
+          return Ok(false);
+        }
       }
     }
     Ok(true)
+  }
+  /// Whether a value of `typ` crosses the usage axis: a written `1`/`&`
+  /// contract on it is not enforced, and passing it to a many-use callee or
+  /// capturing it in a reusable closure is one consumption. Without
+  /// plain-data crossing (`Program::crossing`) and opt-outs this is exactly
+  /// a profile-shareable type (R19). With plain-data crossing (the plain
+  /// profile), a type crosses when it is plain data (`plain_data`, on
+  /// effective interfaces) or profile-shareable, unless the profile opts it
+  /// out (`linear NAME`). Arrows, type variables and types without a visible
+  /// block do not cross.
+  fn crosses(&mut self, fuel: usize, typ: &Term) -> Result<bool, Error> {
+    if !self.program.crossing && self.program.linear_types.is_empty() {
+      return self.is_shareable(fuel, typ);
+    }
+    let reduced = self.whnf(fuel, typ)?;
+    let (head, _) = self.split_app(fuel, &reduced)?;
+    if let Expr::Ref(t, _) = head.as_ref()
+      && self.program.linear_types.contains(t)
+    {
+      return Ok(false);
+    }
+    if self.is_shareable(fuel, typ)? {
+      return Ok(true);
+    }
+    if !self.program.crossing {
+      return Ok(false);
+    }
+    self.plain_data(fuel, typ)
+  }
+  /// Check a binder's usage contract when its scope finishes. Under
+  /// plain-data crossing, a written `1`/`&` contract on a binder whose type
+  /// crosses (`crosses`) is not enforced (neither bound, as in OxCaml, which
+  /// has no relevance axis), and the binder is recorded in `State::crossed`
+  /// for the diagnostic. `0` (erased) is always enforced.
+  fn validate_binder(&mut self, fuel: usize, id: usize) -> Result<(), Error> {
+    let b = self.binding(id)?.clone();
+    if self.program.crossing
+      && (b.contract.uses == Uses::Linear || b.contract.uses == Uses::Affine)
+      && self.crosses(fuel, &b.value.typ)?
+    {
+      self.state.crossed.push(id);
+      return Ok(());
+    }
+    self.validate_usage(id)
   }
   /// Whether variable `index` occurs in `e`.
   fn occurs(
@@ -1888,7 +1951,7 @@ impl<'a> Checker<'a> {
             ));
           }
         } else {
-          self.validate_usage(id)?;
+          self.validate_binder(fuel, id)?;
         }
       }
       let mut output = output;
@@ -2294,7 +2357,7 @@ impl<'a> Checker<'a> {
         } else {
           self.consume_as(result, caller_scope, output)?
         };
-        self.validate_usage(parameter)?;
+        self.validate_binder(fuel, parameter)?;
         let mut origins = vec![];
         let mut duplicable = true;
         let mut bindings = vec![];
@@ -2309,9 +2372,18 @@ impl<'a> Checker<'a> {
             // copied into the closure, as at a call boundary: its finite use
             // does not make the closure one-shot (the linearity of an
             // immediate has no run-time meaning), nor does its uniqueness
-            // when the body only reads it.
+            // when the body only reads it. Under plain-data crossing the usage
+            // axis follows `crosses` (any plain data); the ownership axis
+            // below stays with the shareable types.
             let immediate = self.is_shareable(fuel, &old.value.typ)?;
-            if (old.contract.uses != Uses::Many && !immediate)
+            let crossing = if self.program.crossing
+              || !self.program.linear_types.is_empty()
+            {
+              self.crosses(fuel, &old.value.typ)?
+            } else {
+              immediate
+            };
+            if (old.contract.uses != Uses::Many && !crossing)
               || !old.value.duplicable
             {
               duplicable = false;
@@ -2407,7 +2479,7 @@ impl<'a> Checker<'a> {
           destination,
           grade,
         )?;
-        self.validate_usage(id)?;
+        self.validate_binder(fuel, id)?;
         let mut output = self.materialize(output)?;
         self.close_scope(scope, &output)?;
         output.typ = self.substitute(fuel, &output.typ, initializer, 0)?;
@@ -2540,6 +2612,17 @@ pub fn check_definition(
   index: usize,
   limits: Limits,
 ) -> Result<(), Error> {
+  check_definition_crossed(program, index, limits).map(|_crossed| ())
+}
+
+/// Check a definition; on success, the binders (in the order their scopes
+/// finished; a header binder's id is its position) whose written `1`/`&`
+/// contract plain-data crossing did not enforce (`validate_binder`).
+pub fn check_definition_crossed(
+  program: &Program,
+  index: usize,
+  limits: Limits,
+) -> Result<Vec<usize>, Error> {
   let declaration =
     program.declarations.get(index).ok_or(Error::BadReference(index as u64))?;
   let mut checker = Checker::new(program, limits);
@@ -2561,7 +2644,7 @@ pub fn check_definition(
     scope,
     Uses::Linear,
   )?;
-  Ok(())
+  Ok(checker.state.crossed)
 }
 
 #[derive(Clone, Debug, Default)]
@@ -2810,6 +2893,10 @@ pub struct Policy {
   pub case_definitions: Vec<usize>,
   /// Unfolding equations `(definition, theorem)` bound by the profile.
   pub equations: Vec<(usize, usize)>,
+  /// The profile admits usage crossing on plain data.
+  pub crossing: bool,
+  /// Types the profile opts out of usage crossing.
+  pub linear_types: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2823,6 +2910,17 @@ pub fn admit_program(
   policy: &Policy,
   limits: Limits,
 ) -> Result<(), AdmissionError> {
+  admit_program_crossed(program, policy, limits).map(|_crossed| ())
+}
+
+/// Admit a program; on success, the `(declaration, binder)` pairs whose
+/// written `1`/`&` contract plain-data crossing did not enforce
+/// (`check_definition_crossed`), for the compiler's diagnostic.
+pub fn admit_program_crossed(
+  program: &Program,
+  policy: &Policy,
+  limits: Limits,
+) -> Result<Vec<(usize, usize)>, AdmissionError> {
   for index in &program.choices {
     let index = usize::try_from(*index).map_err(|_error| AdmissionError {
       declaration: None,
@@ -2913,16 +3011,37 @@ pub fn admit_program(
       });
     }
   }
+  if program.crossing && !policy.crossing {
+    return Err(AdmissionError {
+      declaration: None,
+      error: Error::Unsupported(
+        "plain-data crossing is absent from the bound profile",
+      ),
+    });
+  }
+  // Opting a type out of crossing only adds checking; every opt-out the
+  // profile binds must be in effect.
+  for index in &policy.linear_types {
+    if !program.linear_types.contains(&(*index as u64)) {
+      return Err(AdmissionError {
+        declaration: Some(*index),
+        error: Error::Unsupported(
+          "a linear type of the bound profile is not in effect",
+        ),
+      });
+    }
+  }
   let (reverse, seeds) = dependency_graph(program, limits)
     .map_err(|error| AdmissionError { declaration: None, error })?;
   let marked = propagate(&reverse, seeds);
   let tainted = tainted(program, &reverse)
     .map_err(|error| AdmissionError { declaration: None, error })?;
+  let mut crossed = vec![];
   for (i, d) in program.declarations.iter().enumerate() {
     if marked[i] {
       let result = match d.kind {
         // An assumed definition's interface is admitted by the profile.
-        DeclKind::Definition if policy.assumptions.contains(&i) => Ok(()),
+        DeclKind::Definition if policy.assumptions.contains(&i) => Ok(vec![]),
         // A definition checked through an unfolding equation relies on the
         // equation being true: its proof may use only the standard axioms.
         DeclKind::Definition => match program
@@ -2941,11 +3060,11 @@ pub fn admit_program(
               "an unfolding equation depends on an axiom other than propext, Quot.sound and Classical.choice",
             ))
           },
-          _ => check_definition(program, i, limits),
+          _ => check_definition_crossed(program, i, limits),
         },
         DeclKind::Assumption => {
           if policy.assumptions.contains(&i) {
-            Ok(())
+            Ok(vec![])
           } else {
             Err(Error::Unsupported(
               "external resource interface is absent from the bound profile",
@@ -2953,13 +3072,16 @@ pub fn admit_program(
           }
         },
         DeclKind::Constructor => Checker::new(program, limits)
-          .check_constructor_type(limits.depth, &d.typ, false, false),
-        DeclKind::TypeConstructor | DeclKind::Theorem => Ok(()),
+          .check_constructor_type(limits.depth, &d.typ, false, false)
+          .map(|()| vec![]),
+        DeclKind::TypeConstructor | DeclKind::Theorem => Ok(vec![]),
       };
-      result.map_err(|error| AdmissionError { declaration: Some(i), error })?;
+      let binders = result
+        .map_err(|error| AdmissionError { declaration: Some(i), error })?;
+      crossed.extend(binders.into_iter().map(|binder| (i, binder)));
     }
   }
-  Ok(())
+  Ok(crossed)
 }
 
 #[cfg(test)]
@@ -3535,6 +3657,66 @@ mod tests {
     assert!(run_fixture_lines(&noshare_program(), text) >= 5);
   }
 
+  /// The case program with plain-data crossing, as under the plain profile
+  /// (setting S6): `Box` and `Chain` are addressed blocks (plain data),
+  /// `Chain` is opted out (`linear`), with a many and a unique `Box`
+  /// consumer. Mirrors `Tests.Resource.plainProgram`.
+  fn plain_program() -> Program {
+    let mut p = cases_program();
+    let boxt = || Expr::reference(21, vec![]);
+    p.declarations.extend([
+      // 33 useBox: Box → Nat.
+      assumption(arr(
+        b(Uses::Many, ValueContract::shared()),
+        ValueContract::shared(),
+        boxt(),
+        nat(),
+      )),
+      // 34 keepBox: (! b : Box) → ! Box.
+      assumption(arr(
+        b(Uses::Many, ValueContract::unique()),
+        ValueContract::unique(),
+        boxt(),
+        boxt(),
+      )),
+    ]);
+    p.groups = vec![vec![21, 22, 23], vec![25, 26, 27]];
+    p.crossing = true;
+    p.linear_types = vec![25];
+    p
+  }
+
+  #[test]
+  fn plain_crossing_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-plain.tsv");
+    assert!(run_fixture_lines(&plain_program(), text) >= 10);
+  }
+
+  /// The diagnostic: plain-data crossing reports the binders whose `1`/`&`
+  /// contract it did not enforce (a header binder by its position).
+  #[test]
+  fn plain_crossing_reports_binders() {
+    let linear = b(Uses::Linear, ValueContract::shared());
+    let many = b(Uses::Many, ValueContract::shared());
+    let boxt = || Expr::reference(21, vec![]);
+    let run = |mut p: Program, input: BinderContract, body: Term| {
+      let index = p.declarations.len();
+      p.declarations.push(Declaration {
+        typ: arr(input, ValueContract::shared(), boxt(), nat()),
+        body: Some(Expr::lam_contract(input, boxt(), body)),
+        kind: DeclKind::Definition,
+      });
+      check_definition_crossed(&p, index, Limits::default())
+    };
+    assert_eq!(run(plain_program(), linear, Expr::nat(0)), Ok(vec![0]));
+    assert_eq!(run(plain_program(), many, Expr::nat(0)), Ok(vec![]));
+    let use_box = Expr::app(Expr::reference(33, vec![]), Expr::var(0));
+    let mut without = plain_program();
+    without.crossing = false;
+    assert!(run(without, linear, use_box).is_err());
+  }
+
   /// The case program extended for strict binding (review F1): a unique
   /// consumer, a match-shaped definition that is not bound, and a
   /// matcher-shaped definition that is bound (35) next to an unbound copy
@@ -3918,6 +4100,8 @@ mod tests {
       cases: false,
       case_definitions: vec![],
       equations: vec![],
+      crossing: false,
+      linear_types: vec![],
     }
   }
 

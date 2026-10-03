@@ -1129,6 +1129,24 @@ pub fn compile_env_with_resource_profile(
       .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
     stt.resource_profile =
       profile.bytes().iter().map(|byte| format!("{byte:02x}")).collect();
+    // Plain-data crossing: report every written `1`/`&` contract that was
+    // not enforced because its binder's type is plain data.
+    for (declaration, binder) in &resolved.crossed {
+      let name = resolved
+        .addresses
+        .get(*declaration)
+        .and_then(|address| {
+          stt
+            .name_to_addr
+            .iter()
+            .find(|entry| entry.value() == address)
+            .map(|entry| entry.key().pretty())
+        })
+        .unwrap_or_else(|| format!("declaration {declaration}"));
+      println!(
+        "[compile] resource: plain-data crossing: the 1/& usage contract on binder #{binder} of {name} is not enforced (its type is plain data)"
+      );
+    }
     if let Some(text) = source_text
       && !resolved.program.equations.is_empty()
     {

@@ -568,6 +568,64 @@ def freezeCases : Array Case := #[
     lam (b .linear .unique) (borrow (v 0) (v 1) .many boxTy) boxTy, "loan"⟩
 ]
 
+/-- The case program with plain-data crossing, as under the plain profile
+(setting S6): `Box` and `Chain` are addressed blocks (plain data), `Chain` is
+opted out (`linear`), with a many and a unique `Box` consumer. Mirrors the
+Rust `plain_program`. -/
+def plainProgram : Program := { casesProgram with
+  declarations := casesProgram.declarations ++ #[
+    { type := arr (b .many) .shared boxTy natTy, kind := .assumption },             -- 33 useBox
+    { type := arr (b .many .unique) .unique boxTy boxTy, kind := .assumption } ]    -- 34 keepBox
+  groups := #[#[21, 22, 23], #[25, 26, 27]]
+  crossing := true
+  linearTypes := #[25] }
+
+def natToNat : E := arr (b .many) .shared natTy natTy
+
+def plainCases : Array Case := #[
+  -- Usage crosses on plain data: both bounds of a written `1`/`&` dropped.
+  ⟨"a linear plain-data value crosses a many call", arr (b .linear) .shared boxTy natTy,
+    lam (b .linear) (call 33 (v 0)) boxTy, "ok"⟩,
+  ⟨"a dropped linear plain-data value is not enforced", arr (b .linear) .shared boxTy natTy,
+    lam (b .linear) zero boxTy, "ok"⟩,
+  ⟨"an affine plain-data value may be used twice", arr (b .affine) .shared boxTy natTy,
+    lam (b .affine) (.app (.app (ref 15) (call 33 (v 0))) (call 33 (v 0))) boxTy, "ok"⟩,
+  ⟨"a linear plain-data capture keeps a closure reusable", arr (b .linear) .shared boxTy natToNat,
+    lam (b .linear) (lam (b .many) (call 33 (v 1))) boxTy, "ok"⟩,
+  -- Usage is enforced on everything else.
+  ⟨"a linear value of a type without a visible block does not cross", arr (b .linear) .shared resTy resTy,
+    lam (b .linear) (call 12 (v 0)) resTy, "usage"⟩,
+  ⟨"a linear function does not cross", arr (b .linear) .shared natToNat natTy,
+    lam (b .linear) (.app (.app (ref 15) (.app (v 0) zero)) (.app (v 0) zero)) natToNat, "usage"⟩,
+  ⟨"an opted-out plain-data type does not cross", arr (b .linear) .shared chainTy natTy,
+    lam (b .linear) zero chainTy, "usage"⟩,
+  ⟨"an erased plain-data binder stays erased", arr (b .erased) .shared boxTy natTy,
+    lam (b .erased) (call 33 (v 0)) boxTy, "usage"⟩,
+  -- Ownership does not cross.
+  ⟨"a unique plain-data capture moved by a closure still makes it one-shot",
+    arr (b .many .unique) .shared boxTy (arr (b .many) .unique natTy boxTy),
+    lam (b .many .unique) (lam (b .many) (call 34 (v 1))) boxTy, "capture"⟩,
+  ⟨"a unique plain-data value still moves once", arr (b .many .unique) .shared boxTy natTy,
+    lam (b .many .unique) (.app (.app (ref 15) (call 33 (call 34 (v 0)))) (call 33 (call 34 (v 0))))
+      boxTy, "moved"⟩
+]
+
+/-- The diagnostic: plain-data crossing reports the binders whose `1`/`&`
+contract it did not enforce (a header binder by its position). -/
+def checkCrossedBinders : IO Unit := do
+  let reported (type value : E) : Except Error (Array OwnerId) :=
+    let p := { plainProgram with declarations := plainProgram.declarations.push { type, body := some value } }
+    checkDefinitionCrossed p plainProgram.declarations.size
+  let dropped := reported (arr (b .linear) .shared boxTy natTy) (lam (b .linear) zero boxTy)
+  let enforced := reported (arr (b .many) .shared boxTy natTy) (lam (b .many) zero boxTy)
+  let tested : Declaration :=
+    { type := arr (b .linear) .shared boxTy natTy, body := some (lam (b .linear) (call 33 (v 0)) boxTy) }
+  let withoutCrossing : Program :=
+    { plainProgram with crossing := false, declarations := plainProgram.declarations.push tested }
+  let strict := checkDefinitionCrossed withoutCrossing plainProgram.declarations.size
+  unless dropped.toOption == some #[0] && enforced.toOption == some #[] && strict.toOption.isNone do
+    throw <| IO.userError s!"plain-data crossing diagnostic differs: {repr dropped}, {repr enforced}, {repr strict}"
+
 def app3 (f a b c : E) : E := .app (.app (.app f a) b) c
 /-- `(t : Box) → (e : Nat → Res) → (f : Res → Res) → Res`, a matcher shape. -/
 def matcherTy : E :=
@@ -699,7 +757,9 @@ def runFixtureCases : IO Nat := do
   let strict ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-strict.tsv" strictProgram strictCases
   let fields ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-fields.tsv" fieldProgram fieldCases
   let noshare ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-noshare.tsv" noshareProgram noshareCases
-  return base + modes + cases + equations + freeze + strict + fields + noshare
+  let plain ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-plain.tsv" plainProgram plainCases
+  checkCrossedBinders
+  return base + modes + cases + equations + freeze + strict + fields + noshare + plain + 1
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

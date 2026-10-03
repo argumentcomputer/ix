@@ -80,6 +80,12 @@ def caseDefinitionsProfile : Profile :=
   let (_, unit) := unitEnv
   { fixtureProfile with cases := true, caseDefinitions := #[unit] }
 
+/-- The profile with plain-data crossing the shared fixture pins
+(`profile-plain-crossing`): crossing and one opted-out (`linear`) type. -/
+def plainCrossingProfile : Profile :=
+  let (_, unit) := unitEnv
+  { fixtureProfile with crossing := true, linearTypes := #[unit] }
+
 /-- One `addressed.tsv` row: a constant's address and canonical bytes. -/
 def fixtureLine (label : String) (constant : Constant) : String :=
   s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
@@ -96,6 +102,8 @@ def fixtureText : Except String String := do
   let rows := rows.push s!"profile-equations\t{equationsAddress}\t{hexOfBytes equationsProfile.bytes}"
   let caseAddress ← caseDefinitionsProfile.address
   let rows := rows.push s!"profile-case-definitions\t{caseAddress}\t{hexOfBytes caseDefinitionsProfile.bytes}"
+  let plainAddress ← plainCrossingProfile.address
+  let rows := rows.push s!"profile-plain-crossing\t{plainAddress}\t{hexOfBytes plainCrossingProfile.bytes}"
   return rows.foldl (fun text row => text ++ row ++ "\n") "# name\taddress\tcanonical bytes\n"
 
 def run : IO Unit := do
@@ -159,7 +167,23 @@ def run : IO Unit := do
   check "case definitions are strictly increasing"
     ({ withCases with caseDefinitions := #[unit, unit] }.address) false
   check "empty case definition list" (Profile.ofBytes (profile.bytes ++ ⟨#[5, 0, 0]⟩)) false
-  check "unknown profile behavior bit" (Profile.ofBytes (profile.bytes ++ ⟨#[8, 0]⟩)) false
+  check "unknown profile behavior bit" (Profile.ofBytes (profile.bytes ++ ⟨#[32, 0]⟩)) false
+  -- Plain-data crossing (bit 3, no data) and opted-out types (bit 4, a list).
+  let withPlain : Profile := plainCrossingProfile
+  let plainAddress ← get "plain crossing profile address" withPlain.address
+  let plainLine := s!"profile-plain-crossing\t{plainAddress}\t{hexOfBytes withPlain.bytes}"
+  unless lines.contains plainLine do
+    throw <| IO.userError s!"addressed plain crossing profile fixture differs; expected line:\n{plainLine}"
+  let decodedPlain ← get "plain crossing profile roundtrip" (Profile.ofBytes withPlain.bytes)
+  unless decodedPlain.bytes == withPlain.bytes && decodedPlain.crossing &&
+      decodedPlain.linearTypes == #[unit] do
+    throw <| IO.userError "plain crossing profile roundtrip differs"
+  let crossingOnly ← get "crossing bit alone" (Profile.ofBytes (profile.bytes ++ ⟨#[8, 0]⟩))
+  unless crossingOnly.crossing && crossingOnly.linearTypes.isEmpty do
+    throw <| IO.userError "the crossing bit alone does not decode"
+  check "linear types are strictly increasing"
+    ({ withPlain with linearTypes := #[unit, unit] }.address) false
+  check "empty linear type list" (Profile.ofBytes (profile.bytes ++ ⟨#[16, 0, 0]⟩)) false
   let (env, id) := store base (identity unit)
   let prepared ← get "valid identity" (Addressed.checkResources env profile)
   unless prepared.program.declarations.size == 3 && prepared.program.groups.size == 1 do

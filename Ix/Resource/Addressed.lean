@@ -63,6 +63,12 @@ structure Profile where
   definition with one is checked through the equation (`Program.equations`).
   Strictly increasing by definition. -/
   equations : Array (Address × Address) := #[]
+  /-- Usage crossing on plain data (`crossing plain`, extension bit 3,
+  `Program.crossing`). -/
+  crossing : Bool := false
+  /-- Types opted out of usage crossing (`linear NAME`, extension bit 4,
+  `Program.linearTypes`). Strictly increasing. -/
+  linearTypes : Array Address := #[]
   deriving Inhabited
 
 def Profile.validate (profile : Profile) : Except String Unit := do
@@ -116,6 +122,13 @@ def Profile.validate (profile : Profile) : Except String Unit := do
     previousCase := some address
   if !profile.caseDefinitions.isEmpty && !profile.cases then
     throw "resource profile: case definitions require case behavior"
+  let mut previousLinear : Option Address := none
+  for address in profile.linearTypes do
+    if address.hash.size != 32 then throw "resource profile: invalid address length"
+    if let some before := previousLinear then
+      unless Address.cmpBytes before address == .lt do
+        throw "resource profile: address lists must be strictly increasing"
+    previousLinear := some address
 
 /-- Canonical, domain-separated profile bytes, including the checker limits.
 Lists are validated before these bytes are used as a commitment. -/
@@ -132,7 +145,8 @@ def Profile.bytes (profile : Profile) : ByteArray :=
     putTagN 0 0 profile.limits.steps.toUInt64
     -- An optional extension, present only when it is not empty.
     let flags : UInt64 := (if profile.cases then 1 else 0) ||| (if profile.equations.isEmpty then 0 else 2) |||
-      (if profile.caseDefinitions.isEmpty then 0 else 4)
+      (if profile.caseDefinitions.isEmpty then 0 else 4) ||| (if profile.crossing then 8 else 0) |||
+      (if profile.linearTypes.isEmpty then 0 else 16)
     if flags != 0 || !profile.interfaces.isEmpty then
       putTagN 0 0 flags
       putTagN 0 0 profile.interfaces.size.toUInt64
@@ -149,6 +163,9 @@ def Profile.bytes (profile : Profile) : ByteArray :=
       if !profile.caseDefinitions.isEmpty then
         putTagN 0 0 profile.caseDefinitions.size.toUInt64
         for address in profile.caseDefinitions do Serialize.put address
+      if !profile.linearTypes.isEmpty then
+        putTagN 0 0 profile.linearTypes.size.toUInt64
+        for address in profile.linearTypes do Serialize.put address
 
 def Profile.address (profile : Profile) : Except String Address := do
   profile.validate
@@ -178,9 +195,10 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
     let depth := (← getTagN 0).value.toNat
     let steps := (← getTagN 0).value.toNat
     let state ← get
-    let (cases, interfaces, eqType, equations, caseDefinitions) ← if state.idx < state.bytes.size then do
+    let (cases, interfaces, eqType, equations, caseDefinitions, crossing, linearTypes) ←
+      if state.idx < state.bytes.size then do
         let flags := (← getTagN 0).value
-        if flags > 7 then throw "resource profile: unknown behavior flags"
+        if flags > 31 then throw "resource profile: unknown behavior flags"
         let count := (← getTagN 0).value.toNat
         let state ← get
         if count > (state.bytes.size - state.idx) / 33 then throw "resource profile: impossible interface count"
@@ -214,10 +232,19 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
             for _ in [:count] do addresses := addresses.push (← Serialize.get)
             pure addresses
           else pure #[]
-        pure (flags &&& 1 == 1, result, eqType, equations, caseDefinitions)
-      else pure (false, #[], none, #[], #[])
+        let linearTypes ← if flags &&& 16 != 0 then do
+            let count := (← getTagN 0).value.toNat
+            let state ← get
+            if count == 0 || count > (state.bytes.size - state.idx) / 32 then
+              throw "resource profile: impossible linear type count"
+            let mut addresses := #[]
+            for _ in [:count] do addresses := addresses.push (← Serialize.get)
+            pure addresses
+          else pure #[]
+        pure (flags &&& 1 == 1, result, eqType, equations, caseDefinitions, flags &&& 8 != 0, linearTypes)
+      else pure (false, #[], none, #[], #[], false, #[])
     return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps },
-             cases, interfaces, eqType, equations, caseDefinitions }) bytes
+             cases, interfaces, eqType, equations, caseDefinitions, crossing, linearTypes }) bytes
   profile.validate
   return profile
 
@@ -226,6 +253,9 @@ structure AddressedProgram where
   policy : Policy
   addresses : Array Address
   profileAddress : Address
+  /-- After admission (`checkResources`): the `(declaration, binder)` pairs
+  whose written `1`/`&` contract plain-data crossing did not enforce. -/
+  crossed : Array (Nat × Nat) := #[]
   deriving Inhabited
 
 namespace Addressed
@@ -588,7 +618,8 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   program := { program with caseDefinitions, axioms := ← resolveList axioms }
   let constructors ← constructorSpecs.mapM fun (address, params) => do
     return (← index indices address, params)
-  program := { program with constructors }
+  let linearTypes ← resolveList profile.linearTypes
+  program := { program with constructors, crossing := profile.crossing, linearTypes }
   for (typeAddr, ctorAddr, params, count) in fieldSpecs do
     if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) params count then
       program := { program with fields := program.fields ++ derived }
@@ -599,16 +630,18 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       shareableTypes := shareable.map UInt64.toNat, choices := choices.map UInt64.toNat
       cases := profile.cases
       caseDefinitions := caseDefinitions.map UInt64.toNat
-      equations := equations.map fun (d, t) => (d.toNat, t.toNat) } }
+      equations := equations.map fun (d, t) => (d.toNat, t.toNat)
+      crossing := profile.crossing
+      linearTypes := linearTypes.map UInt64.toNat } }
 
 /-- Resource-only validation of addressed bytes. Erased typechecking and
 claim construction belong to the combined validator, not this helper. -/
 def checkResources (env : Ixon.Env) (profile : Profile := {}) : Except String AddressedProgram := do
   let resolved ← prepare env profile
-  (admitProgram resolved.program resolved.policy profile.limits).mapError fun error =>
+  let crossed ← (admitProgramCrossed resolved.program resolved.policy profile.limits).mapError fun error =>
     let location := error.declaration.bind fun i => resolved.addresses[i]?
     s!"resource admission {location}: {repr error.error}"
-  return resolved
+  return { resolved with crossed }
 
 end Addressed
 

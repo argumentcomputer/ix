@@ -185,6 +185,10 @@ structure Policy where
   caseDefinitions : Array Nat := #[]
   /-- Unfolding equations `(definition, equation)` bound by the profile. -/
   equations : Array (Nat × Nat) := #[]
+  /-- The profile admits usage crossing on plain data. -/
+  crossing : Bool := false
+  /-- Types the profile opts out of usage crossing. -/
+  linearTypes : Array Nat := #[]
   deriving Inhabited, Repr
 
 structure AdmissionError where
@@ -192,8 +196,11 @@ structure AdmissionError where
   error : Error
   deriving Repr
 
-def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits := {}) :
-    Except AdmissionError Unit := do
+/-- Admit a program; on success, the `(declaration, binder)` pairs whose
+written `1`/`&` contract plain-data crossing did not enforce
+(`checkDefinitionCrossed`), for the compiler's diagnostic. -/
+def admitProgramCrossed (program : Program) (policy : Policy := {}) (limits : Limits := {}) :
+    Except AdmissionError (Array (Nat × Nat)) := do
   for index in program.choices do
     unless policy.choices.contains index.toNat && policy.assumptions.contains index.toNat do
       throw ⟨some index.toNat, .unsupported "selection behavior is absent from the bound profile"⟩
@@ -217,30 +224,45 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
   for index in program.shareableTypes do
     unless policy.shareableTypes.contains index.toNat do
       throw ⟨some index.toNat, .unsupported "shareable representation is absent from the bound profile"⟩
+  if program.crossing && !policy.crossing then
+    throw ⟨none, .unsupported "plain-data crossing is absent from the bound profile"⟩
+  -- Opting a type out of crossing only adds checking; every opt-out the
+  -- profile binds must be in effect.
+  for index in policy.linearTypes do
+    unless program.linearTypes.contains index.toUInt64 do
+      throw ⟨some index, .unsupported "a linear type of the bound profile is not in effect"⟩
   let (reverse, seeds) ← (dependencyGraph program limits).mapError (⟨none, ·⟩)
   let marked := propagate reverse seeds
   let tainted ← (tainted program reverse).mapError (⟨none, ·⟩)
+  let mut crossed := #[]
   for i in [0:program.declarations.size] do
     if marked[i]! then
       let d := program.declarations[i]!
-      let checked : Except Error Unit := match d.kind with
+      let checked : Except Error (Array OwnerId) := match d.kind with
         | .definition =>
           -- An assumed definition's interface is admitted by the profile.
-          if policy.assumptions.contains i then .ok () else
+          if policy.assumptions.contains i then .ok #[] else
           -- A definition checked through an unfolding equation relies on the
           -- equation being true: its proof may use only the standard axioms.
           match program.equations.find? (·.1.toNat == i) with
           | some (_, equation) =>
             if tainted[equation.toNat]?.getD true then
               .error (.unsupported "an unfolding equation depends on an axiom other than propext, Quot.sound and Classical.choice")
-            else checkDefinition program i limits
-          | none => checkDefinition program i limits
+            else checkDefinitionCrossed program i limits
+          | none => checkDefinitionCrossed program i limits
         | .assumption =>
-          if policy.assumptions.contains i then .ok ()
+          if policy.assumptions.contains i then .ok #[]
           else .error (.unsupported "external resource interface is absent from the bound profile")
-        | .constructor => runCheck limits (checkConstructorType program limits.depth d.type false false)
-        | .typeConstructor | .theorem => .ok ()
-      checked.mapError (⟨some i, ·⟩)
+        | .constructor =>
+          (runCheck limits (checkConstructorType program limits.depth d.type false false)).map fun _ => #[]
+        | .typeConstructor | .theorem => .ok #[]
+      let binders ← checked.mapError (⟨some i, ·⟩)
+      crossed := crossed ++ binders.map (i, ·)
+  return crossed
+
+def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits := {}) :
+    Except AdmissionError Unit :=
+  (admitProgramCrossed program policy limits).map fun _ => ()
 
 end Ix.Resource
 
