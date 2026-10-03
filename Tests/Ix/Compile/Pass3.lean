@@ -506,6 +506,7 @@ def runLib (offPath onPath : String) : IO UInt32 := do
   let mut roots := 0
   let mut rippled := 0
   let mut rewritten := 0
+  let mut siblings := 0
   let mut changedSet : Std.HashSet String := {}
   let byPretty : Std.HashMap String _root_.Ix.Name :=
     onParts.namedRows.foldl (fun m r => m.insert r.name.pretty r.name) {}
@@ -520,6 +521,10 @@ def runLib (offPath onPath : String) : IO UInt32 := do
     match named? with
     | some nd =>
       if hasRecord nd.constMeta then rewritten := rewritten + 1
+      -- a member of a mutual block whose sibling was rewritten: only the
+      -- block (and its index in it) moved
+      else if d.fields.all (fun f => f == "idx" || f.startsWith "block") then
+        siblings := siblings + 1
       else problems := problems.push s!"root without a decompile record: {d.name} ({d.fields})"
     | none => problems := problems.push s!"root not found: {d.name}"
   let mut added := 0
@@ -530,7 +535,7 @@ def runLib (offPath onPath : String) : IO UInt32 := do
     else problems := problems.push s!"new name not reserved: {n}"
   for (n, _) in diff.namedRemoved do
     if !n.startsWith "Ix." then problems := problems.push s!"name removed with the switch on: {n}"
-  IO.println s!"[pass3-lib] moved: {roots} roots ({rewritten} rewritten call-site constants), \
+  IO.println s!"[pass3-lib] moved: {roots} roots ({rewritten} rewritten call-site constants, {siblings} block siblings of one), \
     {rippled} rippled; added {added} (reserved or synthetic)"
   -- the surgery's rewritten constants
   let mut surgered : Array _root_.Ix.Name := #[]
