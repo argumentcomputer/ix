@@ -1,6 +1,9 @@
 # The Lean compiler as passes: design document (Phase A)
 
-Status: **draft for the owner's signature (review R1)**, revised 2026-10-03 with the owner's
+Status: **draft for the owner's signature (review R1)**. It was folded onto `564d03f0` (wave 2: the
+A2 migration, Pass 3 behind its switch, the A7 driver checks, the perf ports) and revised 2026-10-03
+with the owner's
+
 decisions on the first draft's questions (§8). Written 2026-10-02/03
  on `jcb/ix-certified`
 at `f829b760` (Lean 4.34.1). No compiler file changed between `e9cb732e` (where the planning reports
@@ -28,6 +31,22 @@ A fact about code carries a citation and no marker.
   `study-mutual-definitions-1.md`).
 - *A1C*: `plans/wave1/a1c.md` (untracked): the Pass 1 port and census at `f829b760`, Lean 4.34.1,
   Ixon v4 (bookmark `jcb/ix-cc-a1c`).
+- Wave-2 reports, all under `plans/wave1/` (untracked):
+
+  | Tag | File | Subject |
+  |---|---|---|
+  | *A2O* | `a2o.md` | discovery order |
+  | *A2P* | `a2p.md` | one constant per auxiliary |
+  | *A2M* | `a2m.md` | the migration commit |
+  | *A3W* | `a3w.md` | Pass 3 |
+  | *A3M* | `a3m.md` | Pass 3 merged onto the migrated head |
+  | *A7S* | `a7s.md` | driver claims and the A7 worklist |
+  | *A1G2* | `a1g2.md` | twins and oracle reconciled with A0 |
+  | *PERF* | `perf.md` | the perf ports |
+  | *CI* | `ci.md` | `aux-cert --local`, phase timers |
+
+  All of them ran under Lean 4.34.1 on the box. Their measurements were taken under load unless
+  stated otherwise.
 
 Every definition used here is restated, so this document does not depend on those files.
 
@@ -105,6 +124,24 @@ plan's "residual image". "Image" keeps its meaning: the extra constants of Def 3
 
 ---
 
+### 0.2 Status at `564d03f0` (wave 2)
+
+- **Pass 1 and the A2 migration.** Pass 1 is implemented as total pure functions
+  (`Ix/Compile/Canon/**`). The compiler's comparator is Pass 1's `Rules.compiler := Rules.phaseA`:
+  name-hash seed, least-name-hash representative, addresses at the first difference, `canonUniv`
+  levels, discovery order, and the C1/C2 port fixes (`Ix/Compile/Canon/Order.lean:446-461`).
+- **D2 and D6** (discovery order; one constant per auxiliary) landed in one migration, with every
+  moved address accounted for (§2.8) [measured, A2M].
+- **Pass 2** is today's generators with D6 packaging.
+- **Pass 3 (images, the faithful rewrite)** exists behind `IX_PASS3=images`, off by default (§4.8).
+  With the switch off, no byte moves [measured, A3W/A3M].
+- **Not yet wired into the compiler:**
+  - the clique transport (`Ix/Compile/Clique/**`, §5.7–5.8), which nothing outside
+    `Ix/Compile/` imports at this head;
+  - the optimisation passes (A4).
+- **The Lean drivers' claims are insert-once with Rust's error (§6).** The Lean environment writer
+  and the area search were ported (§10).
+
 ## 1. The pipeline and the convention
 
 ### 1.1 The passes
@@ -134,6 +171,17 @@ Output:
 
 P1 is written as total pure functions over data types. They have no `partial`, and import nothing
 from `Lean` beyond the data types (Phase A §3.1).
+
+**As built at `564d03f0`.** The modules differ from the planned names above:
+
+| Pass | Built as |
+|---|---|
+| P1 | `Ix/Compile/Canon/{Expr,Graph,Order,Classes,Nested,Block,Clique,NameMap}.lean` |
+| image generator | `Ix/Compile/Image/{Expr,Spec,Develop,Build}.lean` |
+| Pass 3 wiring | `Ix/Compile/Pass/{Names,Translate,ImageView,SideCar,Driver}.lean`, about 1,050 lines [A3W §1] |
+| clique transport | `Ix/Compile/Clique/**`, including `Recover.lean` and `FixPerm.lean` |
+
+P2 is today's `Ix/AuxGen/*` with D6 packaging.
 
 ### 1.2 The five-part docstring
 
@@ -306,7 +354,7 @@ Evidence:
     right-hand sides;
   - a projection `proj S i e` gives an edge to `S` (`Ix/GraphM.lean:26-71`; Rust
     `get_constant_info_references`).
-- **Components.** The SCCs of this graph, by Tarjan (`Ix/CondenseM.lean:54-108`).
+- **Components.** The SCCs of this graph, by Tarjan, now the total `Ix.Compile.Canon.condensation` (`Ix/Compile/Canon/Graph.lean:173`), presented through `Ix/CondenseM.lean:43-86` byte for byte as before.
   - For an inductive block, the inductive → constructor → (constructor-type references) path makes the
     component of `T` exactly the SCC of Def 2.1's member graph: there is an edge `Tᵢ → Tⱼ` when `Tⱼ`
     occurs in the type of `Tᵢ` or of one of its constructors [argued]. Lean declarations cannot
@@ -317,7 +365,7 @@ Evidence:
   input is kind-homogeneous and safety-homogeneous [argued]. §3 relies on this.
 - **Unaffected by traversal order.** The *set* of members of a component does not depend on the
   traversal order. The SCC *representative* `lo` (the Tarjan root) does
-  (`Ix/CondenseM.lean:110-144`), and so does the member iteration order (a `Set`): neither may reach
+  (`Ix/CondenseM.lean:1-22, 43-86`), and so does the member iteration order (a `Set`): neither may reach
   the output (§6).
 - **Definitions.** Safe structural and well-founded cliques are acyclic after elaboration: each
   member is a non-recursive definition over `brecOn`, `WellFounded.fix` or `Lean.Order.fix` (MUT
@@ -670,6 +718,22 @@ implemented in both producers and landed in one migration commit. Library sha256
 The level rule moves nothing. No pinned Init address and no `Tests/Fixtures/ixon-v4` address
 moves; the certificate environment is unchanged. `canon-census`: 6 changed Mathlib blocks, 0 in
 Init+Std.
+
+**Status of the decisions at `564d03f0`:**
+- **Kept** (owner Q1/Q2): today's comparator (first-difference addresses), the name-hash seed and
+  the least-name-hash representative.
+- **Fixed in the Lean compiler:** C1 and C2, through Pass 1's `portFixes` (A2O §1.1).
+- **Still in Rust:** C6 (`is_rec`/`is_unsafe`, `crates/compile/src/compile.rs:3780`), until the
+  catch-up PR.
+- **Done:** D2 (discovery order) and D6 (one constant per auxiliary) [measured, A2M].
+- **Packaging detail** [A2P §0; measured, A2M]: every regenerated auxiliary definition is compiled
+  as one SCC per auxiliary (`auxComponents`/`aux_components`); every SCC measured is a singleton.
+  - The recursor family (`rec`, `rec_N`) stays one block, because its members reference one another.
+    So does the Prop `.below` family with `.below.rec`.
+  - A recursor block compiled from Lean's declarations (the compile of originals, and decompile's
+    verification recompile) is laid out in its family's flat order (`orderRecursorFamily` /
+    `order_recursor_family`). No stored recursor address moves.
+- **New references:** `initstd-a2.ixe`, `mathlib-a2.ixe` and `links-a2/` [A2M §0].
 
 ---
 
@@ -1076,10 +1140,10 @@ over `rec`, `rec_N`, `recOn`, `casesOn`, `below*`, `brecOn*`, `.go`, `.eq` and `
     - This is definitionally harmless: 154/154 inline sites equal the original by `rfl` [measured,
       A3I].
     - The rule that matters is the old surgery's defect, dropping *used* minors, and that cannot
-      happen here;
-
+      happen here.
   - O7/O10/O12 are the only passes that may later remove duplicates, and only under their side
     conditions.
+
 - **Bare or partial** (`def r := @A.rec`, `List.map A.casesOn`, `@f._mutual`): reference the
   **image constant** `img(a)`.
   - It has Lean's type exactly and is a λ over Lean's telescope, so it *is* the eta adapter. A
@@ -1088,8 +1152,15 @@ over `rec`, `rec_N`, `recOn`, `casesOn`, `below*`, `brecOn*`, `.go`, `.eq` and `
   - The alternative, an inline η-expansion `λ ys. inline(a, args ++ ys)`, duplicates the image per
     occurrence and is no more canonical: the type is Lean's, which follows the grouping. It is not
     used (Q11, §8).
-  - An image constant referenced after the engine's fixed point is a **residual image**: an ordinary
-    constant of `E`, flagged in metadata, with provenance in `Named.original`.
+  - **Decision (orchestrator, 2026-10-03; A3M decision 3): images are always stored, and the Lean
+    names of a changed block's image-kind auxiliaries denote their images.**
+    - Each image is an ordinary definition under the Lean name, with `Named.original` set to Lean's
+      form compiled without any rewrite.
+    - So a bare or partial occurrence keeps the Lean name and needs no record. The "residual image"
+      of the first draft (`a._ix`) no longer exists.
+    - The Ix auxiliaries carry `_ix` display names (§4.8).
+    - D7 may move the images to a separate file in Phase B.
+
   - Library population: 0 bare or partial applications in Init+Std, Lean, Batteries and Mathlib
     [measured: CEN:33].
 - **`casesOn` and `recOn` keep Lean's arity.**
@@ -1153,6 +1224,90 @@ Two neighbouring findings:
   That is O10/O12's territory.
 
 ---
+
+### 4.8 Pass 3 as built (A3W, A3M)
+
+Everything here is [measured, A3W/A3M] unless marked. The figures come from the gates of `ca90424b`
+(A3M) and of the A3W chain.
+
+**Switch.** `IX_PASS3=images`, or the `pass3?` argument of the drivers; it is **off by default**.
+Under the switch no call-site surgery plan is registered. Pass 3 then works as follows:
+- a full application of a changed block's `rec`, `rec_N`, `casesOn`, `recOn`, `below*`, `brecOn*`,
+  `.go` or `.eq` is inlined from its image by hereditary substitution (§4.3, Q10);
+- `casesOn`, `recOn` and the `below`/`brecOn` family are expanded to Lean's own values, rewritten
+  (Def 3.5);
+- other Lean auxiliaries (`noConfusion`, `sizeOf`, matchers, …) are baselines.
+
+**Modules** (`Ix/Compile/Pass/`):
+
+| Module | Content |
+|---|---|
+| `Names` | the switch; the reserved `_ix` component (D14); display names; image kinds |
+| `Translate` | `base(c)`, memoised over shared subterms |
+| `ImageView` | Pass 1's form, Pass 2's recursors renamed into the generator's view, `imageOf` |
+| `SideCar` | the `_ix` display entries and metadata renaming |
+| `Driver` | the two hooks: after a changed block's aux tail, and before a block compiles |
+
+**Names (D14).**
+- Pass 2's auxiliaries of a changed block are registered under `_ix` display names: `A._ix.rec`,
+  `A._ix.casesOn`, nested ones by canonical position (`rep₀._ix.rec_i`).
+- The `Muts` member lists follow, so terms reference them by `_ix` names [A3M decision 3].
+- An input name with a component starting `_ix` is rejected under the switch; negative control:
+  `Tests/Ix/Compile/AuxCert/ReservedIx.lean`.
+- The canonical `IndPredBelow` family of a changed Prop block moves to its display names, so Lean's
+  own `IndPredBelow` block compiles as an ordinary block (§4.6).
+
+**Images are always stored** (decision 3, §4.5).
+- `Driver.compileImageBlock` / `CompileDriver.runImageBlock` compile Lean's own block of image-kind
+  auxiliaries to the images under the Lean names.
+- `Named.original` holds Lean's form compiled without any rewrite.
+- One stored image per Lean auxiliary of each changed block.
+- The `below`/`brecOn` family counts as image-kind only for a recursive block (Lean's rule).
+
+**The seam.**
+- The generator, the rewrite and the compiler all work on `Ix.Expr` (§4).
+- Images are λs over Lean's telescope with Lean's level parameters. At a call site `substLevels`
+  instantiates them before the development, and the compiler canonicalises the levels as usual.
+- `Develop` is memoised per node, because user arguments are DAG-shaped proofs.
+- Two compile-order rules:
+  - images are built only over components already compiled (`canonBlockCompiled`), because the
+    comparator reads addresses;
+  - `And` is pre-compiled with the aux-gen seeds (`PProd`, `True`, `Eq` already were).
+
+**Side-car record of an inline rewrite.**
+- The arena node is wrapped in `mdata [(_ix.inline, s), (_ix.inline_meta, m)]`. `metaSharing[s]` is
+  the compiled source occurrence with the user's arguments unrewritten, and `m` is its arena root.
+- Decompile replays the record. The kernels see an ordinary `mdata`. No new Ixon tag is needed.
+- Cost: a rewritten constant's metadata holds its source call sites once more.
+
+**Decompile.** In a Pass 3 environment no plan is installed, so verification recompiles run
+un-surgered. `decompile-diff` is 0 on every complete unit.
+
+**Counts.**
+- **Switch off:** no byte moved. Init+Std and Mathlib are identical to the references in both
+  compilers, and all fixtures are `ALIGNED`.
+- **Switch on, Init+Std:** identical to the reference, since no block is changed (`468ad7ae…` on the
+  migrated head) [A3M].
+- **Switch on, Mathlib**, on the pre-migration base [A3W §4]:
+  - it compiles completely (772,896 blocks, 29 min);
+  - 4,467 names move: 278 roots and 4,189 ripples, all in the cones of the 20 changed blocks;
+  - of the **242** surgery-rewritten library constants, **109** are byte-identical (pure
+    permutations, nested-order moves) and **133** differ: they are the baseline, which A4's O1–O6
+    bring back. That covers `_sparseCasesOn_N` (O3), `Linear.EqCnstr._sizeOf_1..7` (O2/O11a), and
+    the `Ring` structural functions and their `_f` (O4).
+  - Mathlib with the switch on was **not** re-measured on `564d03f0` [open].
+- **Fixtures:** the `pass3` suite has 53 units and 0 problems; 535 images and 885 rule statements
+  hold by `rfl` in Ix.Tc, the Rust kernel and the certified checker [A3M].
+  - Every switch-off kernel failure caused by surgery passes with the switch on: SurgSplit,
+    SurgAlias, SurgIdx, C2Split, PropSplit, Coind, twins 496 of 511.
+  - Every A0 collapse refusal compiles faithfully over the paired image [A3W §0].
+
+**The suite's exemption rule** (orchestrator, A3). A meta-mode kernel failure (BB-F7, BB-F1,
+BELOW-ORDER) is accepted only where the certified checker accepts the same constant, and it is named
+by defect id in the output. REFUSED-SIBLING consequences are listed per unit (§7.3).
+
+**Rust stays on surgery until A4 lands.** `--rust-check` compares switch-off bytes. Rust's reader
+already accepts Pass 3's output.
 
 ## 5. Transport of proof terms
 
@@ -1652,20 +1807,52 @@ stale.
 
 ## 6. Determinism: the compiler as a function of the closure
 
-### 6.1 Global reads and order dependences today
+### 6.1 Global reads and order dependences: the A7 worklist
 
-| # | Site | What it reads or depends on | Output effect |
-|---|---|---|---|
-| D1 | Wave driver `compileEnvParallelAux` (`Ix/CompileDriver.lean:838-…`) and the sequential `compileEnvAux` | Each wave snapshots the accumulated `CompileEnv`; merges are applied on the main thread. The module doc claims every merge is "insert-once or last-wins-per-name in dependency order" (`CompileDriver.lean:17-22, 653-662`) | "Last-wins" is an order dependence unless the conflicting writes are equal. Nothing checks that they are |
-| D2 | Promotion path (`AuxBlockOutcome.promoted`, `CompileDriver.lean:665-689`; `auxBlockOutcome`, `:691-735`; `precompileAuxGenPrereqs`, `:379`) | A block may have been pre-compiled by `precompileAuxGenPrereqs` or by *another block's* aux tail. The promote-remaining loop "runs at merge time against the live env" (`:676, 807-815`; the sequential driver does the same at `:601-610`) | A block's output depends on which other blocks merged first: a cross-block read |
-| D3 | `surgeryFree` (`Ix/CompileM.lean:717-723, 1661-1670`) | Chooses between two expression compilers according to whether **any** call-site plan exists anywhere in the environment | Equal output is intended but not proved. A closure compile and a whole compile can take different implementations for the same constant |
-| D4 | `nameForAddr` (`Ix/AuxGen/Kernel.lean:731-745`) | A linear scan of a `HashMap` (`nameToNamed`): the first name whose address matches wins, then `nameByHash`, then `env.consts` by name hash | When aliases share an address, which name is used for kernel ingress, and so for display metadata, follows hash-map iteration order. Content is unaffected, since aliases have equal content [argued] |
-| D5 | Provisional addresses (`Kernel.lean:62-77`; `Ix/AuxGen/CompileAux.lean:37-46`) | The name hash stands in for the address of a constant compiled after the `AddrMaps` snapshot | Consistent within one bridge kenv. `CompileAux` states that output-visible paths go through the live chain. Whether any path leaks a provisional address into output is [open] |
-| D6 | Synthetic primitive names (`Kernel.lean:150-156`) | Primitive `KId`s get synthetic display names. Rust uses real names when the primitive is in the walked closure (B §F7(b)) | Display metadata; a Lean/Rust difference |
-| D7 | Kernel intern history (B §F7(a)) | Binder names and which alias a `Const` names are "fixed by whichever constant was interned first". Both compilers mitigate this with a fresh context per block (`CompileDriver.lean:23-27`) | Display metadata |
-| D8 | `]!` accesses | 252 sites in `Ix/AuxGen`, `Ix/CompileM.lean` and `Ix/CallSiteSurgery.lean` print and continue with a default where Rust aborts [measured: `grep -c ']!'` over those paths at `f829b760` gives 252, matching B §F7(f)] | A wrong default can reach output silently |
-| D9 | SCC iteration (`Ix/CondenseM.lean:110-144`; `CompileDriver.lean:82-90`) | Blocks are keyed by the Tarjan root `lo`; members are iterated in `Set` order | Harmless today, because `sortConsts` re-sorts by name hash. **Must not become the seed** (§2.8) |
-| D10 | Seed and representative (`Ix/Environment.lean:148-153`) | Name hash | Representative and metadata (§3.3) |
+A7S §4 refreshes the first draft's inventory. Lines are at `b86e2043`.
+
+Columns:
+- **Reach** is where the dependence lands: **content** (a stored address), **side-car** (metadata,
+  `Named.original`, hints, names) or **neither** (not serialized).
+- **Measured** means it reaches nothing today on Init+Std, Mathlib or the fixtures: Lean and Rust
+  agree byte for byte there (A7S).
+
+| # | Site | Dependence | Reach | Removed by |
+|---|---|---|---|---|
+| D1 | merges in both drivers (`CompileDriver.lean:265-318`, `mergeCompiledBlock`) | last-wins name, aux and plan claims | would have, on a conflict | **Done** [measured, A7S]: insert-once with Rust's `conflicting claims for name` error in both Lean drivers, cross-SCC and prereq paths included (`checkBlockClaims`, `Ix/CompileDriver.lean:367` at `564d03f0`). Pass 3's three merges are insert-once too [A3M]. `Named` stays last-wins by design |
+| D2a | promotion path (sequential `:519-610`; wave `auxBlockOutcome` `:692-735`, applied `:738-819`) | a block already claimed by a prereq or by another block's tail takes the promotion route | content and side-car (`Named.original`) | A7: each auxiliary compiled with its owning block; may move side-car bytes |
+| D2b | `precompileAuxGenPrereqs` (`:380-434`) | the seed closure is compiled before the schedule, then re-promoted | side-car, possibly | A7: seeds are ordinary dependencies |
+| D2c | `compileConstNoAuxPure` (`:156-240`) | reads the global `auxGenExtraNames`; `leanAll` comes from the first match in `Set` order | side-car | A7, with D2a |
+| D2d | scheduler asymmetry (`resolveAddrPure acc.cenv lo`, `:519`/`:694`) | if aux-gen claims a name first, a user block of that name is promoted; in the other order it is a conflict (now raised) | content and side-car, on such input only | A7: claim set = f(block) (D11) |
+| D3 | `surgeryFree` (`Ix/CompileM.lean:722-728`, dispatch `:1770-1778`) | one of two expression compilers, chosen by whether any plan exists anywhere | content in principle | A3 (one compiler) |
+| D3b | `compilingIsAuxRegen` (`CompileM.lean:1040-1051`, `:1320-1336`) | whether a constant is a regenerated auxiliary, read from global maps | content (surgery) | A3 |
+| D4 | `nameForAddr` (`Ix/AuxGen/Kernel.lean:729-745`) | `HashMap` scan picks among aliases | side-car only [measured: none] | A7: anonymous mode and the canonical alias |
+| D5 | provisional name-hash addresses (`Kernel.lean:59-77`; `CompileAux.lean:37-46`) | an unresolved name is keyed by its hash | none measured; leak [open] | A7: ingress from the closure only |
+| D6 | synthetic primitive names (`Kernel.lean:150-156`) | display names | measured none | A7 |
+| D7 | kernel intern history (`CompileDriver.lean:118`) | binder and alias names | display; mitigated | A7, by anonymous mode |
+| D8 | `]!` sites | panic, print, continue with `default` | if one fires; 0 `PANIC` on Init+Std | A7: total code or named errors |
+| D9 | SCC keying (`Ix/CondenseM.lean:43-86`); `readyQueue.back!` `:516`; `unresolvedNames[0]!` `:548`/`:717` | `lo` and `Set` order | neither [argued] | A7 |
+| D10 | seed and representative (`Ix/Environment.lean:149-153`) | name hash | side-car only | **kept** (Q2) |
+| D11 | aux-gen claim set (`Patches.lean:302-318`; `registerAuxAliases` `CompileAux.lean:367-405`) | the alias pass skips names already resolved globally and clones `Named` from the global registry | side-car, possibly | A7: claims and alias metadata from the block |
+| D12 | in-block plan checks (`CompileAux.lean:1018-1090`) | checked against the snapshot only; Rust inserts as it goes | content, on such input only | A3 (plans retire) |
+| D13 | global registries read by generators (`Nested.lean:1059`; `BRecOn.lean:1815, 1855`; `Below.lean:1194`) | the class ordering of another block (closure-determined); dead reads on the compile path | content (layout), closure-determined | A7: pass the closure in |
+| D14 | `assembleEnv` `addrToName` (`CompileDriver.lean:439-442`) | last-wins over `HashMap` order | neither | A7 |
+| D15 | which block reports a wave conflict | arrival order | neither | inherent; the error itself is schedule-free |
+| D16 | Rust keeps a refused block's primary claims (`compile.rs:4740-4800`) | dependents compile against leftovers | content (partial output), Rust only | Rust catch-up |
+| D17 | `exprCompileDepth` (A3W §3.6) | fuel sizing by a tree walk, exponential on DAG-shaped proofs; one Mathlib block stalled 20+ min under Pass 3, because plan-free compiles take the ordinary compiler | time only (no bytes) | **Fixed** [A3M]: `@[implemented_by exprCompileDepthImpl]`, a per-node memoised height (`Ix/CompileM.lean:835-857` at `564d03f0`). The structural definition stays for the proofs. Verified on Init+Std and the fixtures; Mathlib was not rerun. The runtime implementation is a `partial def` (`exprCompileDepthMemo`) |
+
+`]!` count [measured, A7S]:
+- in the first draft's scope: 251 lines and 278 occurrences at `b86e2043` (252 lines at `f829b760`);
+- in `Ix/Compile/**` (the Phase A code itself): a further 173 lines and 245 occurrences, most of
+  them in `Clique/*`.
+
+A7's order: D8; then D9/D14; D13; D11+D2d; D2a–c (the side-car migration, if any); D4–D7 with
+anonymous mode.
+
+**Schedule identity** [measured, A7S and A1G2]. `compile-schedule-identity` runs seven schedules:
+sequential, wave 1/4/16, and `compile-lean` 1/4/16. It requires identical bytes, and identical
+refusals equal to the closure's `expectedRefusals`, with their messages. At `de10a62e` all seven
+gave 14,835,441 B and the same 12 refusals.
 
 ### 6.2 The definition Phase A adopts
 
@@ -1817,6 +2004,41 @@ Entries change only in a commit that states the cause.
 **Policy.** Recording is the Phase A policy (Q-A5), following the principle of §0.1. A
 `TACTIC-ASYM` or `SHAPE` entry on library code is reported in the migration's PR text.
 
+### 7.3 Current state (wave 2)
+
+**The twins gate.** Recorded differences:
+- 427 measured through the A2 migration [measured, A2M: 0 unrecorded, 0 stale, no evidence drift];
+- plus A5F's 70, giving **497** [measured, A5F: 0 unrecorded, 0 stale].
+
+The total has not yet been re-measured on `564d03f0`, where the gate is running [open]. The causes
+are those of §5.5/§7.2: the permanent ones and the `pending*`/`inherited` markers. Two features
+came in wave 1:
+- `TN` moved from `NOSPEC` to `pendingTransport`, since the recovered specification orders it
+  (§5.4);
+- **`expectedRefusals`** lists the 12 constants that A0 refuses (WB-B4 collapse call sites, F4's
+  partial `@A.rec`, C7's IndPred "below" matchers, and their users). The gates require exactly
+  these refusals in both directions, and the constants are not canonicity data [measured, A1G2].
+
+**The `pass3` suite (switch on)** keeps its own recorded classes, by defect id. These are switch-on
+consequences, not entries of the twins fixture:
+- **BB-F7 / BB-F1.** These are meta-mode kernel ingress failures on collapsed blocks. The suite
+  accepts them only where the certified checker accepts the same constant (orchestrator, A3).
+- **BELOW-ORDER** [measured, A3W §5.3].
+  - Pass 1 orders Lean's own `IndPredBelow` block of a collapsed Prop pair `[P.below, Q.below]`.
+    The first round decides it on a bound variable, but under the final classes the cross
+    references compare the other way.
+  - The kernels' single-pass canonicity gate rejects the block; the certified checker accepts it.
+  - This is §2.3's "not a declarative fixed point", now observed. It belongs to A2 (Pass 1 order)
+    [open].
+  - No library has such a block.
+- **REFUSED-SIBLING** [measured, A3M]. A0 refuses some components in both modes: evaporation in
+  C4Evap, F3, NestRoseSplit, NestMutExt and NestMutExtA. Under decision 3 a sibling auxiliary *is*
+  its image, so its type mentions the refused member and it cannot compile. This costs 2–11
+  constants per unit, listed per unit as consequences.
+
+Units: 53, with 0 problems; 535 images and 885 rule statements hold by `rfl`, with 0 kernel
+failures [measured, A3M].
+
 ---
 
 ## 8. Decisions (owner, 2026-10-03)
@@ -1857,6 +2079,91 @@ match.
 
 ---
 
+## 9. The validators
+
+**Validator of record** (Phase A plan, package A3v). For Phase A it is **`ix validate-lean`**,
+extended in Lean with five legs:
+- the oracle leg for unchanged blocks;
+- the image computation rules for changed blocks;
+- the provenance rule for images (`Named.original` against Lean's form);
+- the decompile round trip, images and inline records included;
+- the kernel round trips, with the phase-4 collapsed-block failure (BB-F7) fixed or routed through
+  anonymous mode.
+
+It runs on Init+Std at every integration. The Rust `ix validate` (8 phases) is rewritten to the same
+phase list in the Rust catch-up PR; until then it runs with the switch off only. In Phase B the
+certifier is the validator.
+
+**Phase table with the switch on** [measured, A3W §7.1; A3M]. `ix validate-lean`:
+
+| input | 1 compile | 2 serde | 3 kernel anon | 4 kernel meta | 5 decompile |
+|---|---|---|---|---|---|
+| Init+Std | PASS | PASS | PASS | PASS | PASS (117,694) |
+| SurgSplit, C1Perm | PASS | PASS | PASS | PASS (rewritten constants skipped as altering) | PASS |
+| SurgCollapse, F4FlatAlphaUsers, C8Collapse3 | PASS | PASS | PASS | FAIL 4–13 (BB-F7/BB-F1, as with the switch off) | PASS |
+| PropCollapse | PASS | PASS | PASS | FAIL 492 (BELOW-ORDER) | PASS |
+| `Canonicity`, `Mutual` corpus files | PASS | PASS | PASS | FAIL (BB-F7, plus BELOW-ORDER on PropCollapseA/B) | PASS |
+
+So phases 3 and 5 pass everywhere, and phase 4 fails only on collapsed blocks and on BELOW-ORDER.
+
+**What A3v must add to phase 4** [A3W §7.1]:
+- (i) compare a rewritten constant through its `_ix.inline` record, not skip it;
+- (ii) check stored images by their computation rules;
+- (iii) treat `_ix` entries as aliases of the Ix auxiliaries;
+- (iv) check an image's `Named.original` against Lean's form.
+
+**Rust's `ix validate` cannot validate Pass 3 output without changes.** It compiles the input
+itself, and Rust has no Pass 3. By its phase definitions, on Lean's Pass 3 output:
+- phase 3 ("an original's bytes are never stored") would fail on every stored image;
+- phases 2 and 6 would see the `_ix` entries as unknown auxiliaries;
+- phases 5, 7 and 7b need the inline-record replay.
+
+These are the catch-up PR's rules.
+
+**`aux-cert`** [measured, CI]:
+- It now compiles each fixture's local closure (`ix compile --local`). That takes 19 s at 4-way,
+  against 39 min 41 s before, with identical verdicts on all 42 fixtures.
+- `AUX_CERT_WHOLE=1` restores the whole-file compiles plus a bridge checking `--local` against them.
+  It runs per checkpoint.
+
+**Open:** the `--consts` closure producers omit the recursors of the inductives they carry, so the
+certified checker declines those blocks [CI §7]. Not fixed.
+
+## 10. Performance
+
+All measurements were taken on the shared box under load (load 15–80). Read the shares, not the
+seconds.
+
+**Profile of the Lean compiler on Mathlib** [measured, CI §3.2]: `IX_PHASE_TIMERS=1`, 32 workers,
+25.6 min wall, before the writer port. The flag changes no byte.
+
+| Phase | Share | Notes |
+|---|---|---|
+| sharing construction | **70%** of block-compile thread time (5,609 of 8,002 thread-s) | 81% on Init+Std |
+| `serEnv` (2.36 GB) | **25% of wall** (367 s), single-threaded | |
+| eager kernel ingress | 5.2% of thread time (417 s) | 3.6 M constants ingested, of which 0.7% were ever looked up |
+| driver merge | 357 s | on the driving thread, so it serialises against the waves |
+| source-contract preparation and semantic inspection | 92 s | sequential, before Pass 1 |
+
+Lazy ingress through `Ix.Tc`'s `lazyFault` would remove most of the ingress cost [CI; argued].
+
+**The perf ports** [measured, PERF] (owner: the proof-carrying area search and the proof-neutral
+environment writer; no Rust work):
+- **Area search.** Ported as is: no statement or audit root changed, and the bytes are identical.
+- **Environment writer, bytewise sort.** Landed.
+- **`TagN` writer.** Inlined on the host side only, through one `@[csimp]` proved by `rfl`.
+  - Inlining in the codec would change two frozen runtime-closure records, because the codec belongs
+    to the certified checker's package.
+  - So the decode side (`deEnv`) keeps its cost.
+- **`BEq ByteArray`.** A `@[csimp]` to core's `ByteArray.beq`.
+- **Sharing audit:** 111 roots / 19 csimps before, **113 / 21** after.
+- **Effects:**
+  - Init+Std `[compile-lean] serialize`: 31.3 s → **9.4 s**.
+  - Pure `serEnv` of the decoded reference: about 31–40 s → about **6 s**, bytes identical.
+  - On the migrated head, Init+Std `serEnv` takes 9.1 s, the compile 51.8 s, and sharing 80.5% of
+    worker thread time [CI §7, light load].
+- Mathlib was not re-profiled after the ports [open].
+
 ## Appendix: what is still not established
 
 **Settled since the first draft** by A1C's measurements:
@@ -1880,7 +2187,21 @@ match.
   requires is to be noted in Phase B's audit.
 
 - **Cause (e) of §4.7** has not been re-measured at v4 [open].
+- **Wave 2** (§0.2, §4.8, §6, §7.3, §9, §10):
+  - the twins total (497) and Pass 3 with the switch on, on Mathlib, have not been re-measured on
+    `564d03f0` [open];
+  - BELOW-ORDER, the Pass 1 order of Lean's `IndPredBelow` block of a collapsed Prop pair, is with
+    A2 [open];
+  - BB-F7/BB-F1, the meta-mode ingress of collapsed blocks, is with A3v [open];
+  - REFUSED-SIBLING follows A0's evaporation refusal and lasts as long as that refusal does;
+  - neither the clique transport nor the optimisation passes are wired into the compiler;
+  - Rust stays on surgery until A4, and C6 remains in Rust until the catch-up PR;
+  - A7's items D2a–D16 are open, and D2a may move side-car bytes;
+  - the `exprCompileDepth` fix has not been rerun on Mathlib;
+  - the `--consts` closure producers omit recursors;
+  - Mathlib has not been re-profiled after the perf ports.
 - **Remaining transport gaps** (§5.8):
+
   - kernel evidence for A5F's 70 new entries;
   - the composition fallback on a lattice clique with a user proof;
   - recovery of the inductive-predicate route, without which IP stays `NOSPEC`.
