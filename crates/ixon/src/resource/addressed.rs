@@ -530,6 +530,31 @@ fn recursor_binders(
   Ok(result)
 }
 
+/// Whether a recursor's major premise has a plain-data type (an inductive of
+/// an addressed block whose constructors carry no contracts): only then do
+/// its minor premises bind fields that need no contract-carrying case rule.
+fn recursor_on_plain_data(
+  program: &Program,
+  limits: Limits,
+  typ: &Term,
+  skip: usize,
+) -> Result<bool, Error> {
+  let mut checker = Checker::new(program, limits);
+  let mut typ = typ.clone();
+  for _ in 0..skip {
+    let unshared = checker.unshare(limits.depth, &typ)?;
+    let Expr::All(_, _, _, body) = unshared.as_ref() else {
+      return Err(Error::Unsupported("recursor telescope"));
+    };
+    typ = body.clone();
+  }
+  let unshared = checker.unshare(limits.depth, &typ)?;
+  let Expr::All(_, _, domain, _) = unshared.as_ref() else {
+    return Err(Error::Unsupported("recursor telescope"));
+  };
+  checker.plain_data(limits.depth, domain)
+}
+
 /// Replace the contracts of a type's leading arrows by packed input/result
 /// contract bytes.
 fn overlay(
@@ -934,6 +959,12 @@ pub fn prepare(
         (r.params + r.motives) as usize,
         r.minors as usize,
       ) && binders.iter().zip(&fields).all(|(b, f)| f <= b)
+        && recursor_on_plain_data(
+          &program,
+          profile.limits,
+          &typ,
+          (r.params + r.motives + r.minors + r.indices) as usize,
+        ) == Ok(true)
       {
         program.recursors.push(RecursorInfo {
           index: i,

@@ -406,6 +406,20 @@ def recursorBinders (program : Program) (limits : Limits) (type : Ixon.Expr) (sk
     type := body
   return result
 
+/-- Whether a recursor's major premise has a plain-data type (an inductive
+of an addressed block whose constructors carry no contracts): only then do its
+minor premises bind fields that need no contract-carrying case rule. -/
+def recursorOnPlainData (program : Program) (limits : Limits) (type : Ixon.Expr) (skip : Nat) :
+    Except Error Bool := runCheck limits do
+  let mut type := type
+  for _ in [:skip] do
+    let .all _ _ _ body ← unshare program limits.depth type
+      | throw (.unsupported "recursor telescope")
+    type := body
+  let .all _ _ domain _ ← unshare program limits.depth type
+    | throw (.unsupported "recursor telescope")
+  plainData program limits.depth domain
+
 /-- Replace the contracts of a type's leading arrows by packed
 input/result contract bytes. -/
 def overlay (program : Program) (limits : Limits) (type : Ixon.Expr) (mask : List UInt8) :
@@ -549,7 +563,9 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       let fields := r.rules.map (·.fields.toNat)
       if let .ok binders := recursorBinders program profile.limits program.declarations[i.toNat]!.type
           (r.params + r.motives).toNat r.minors.toNat then
-        if (binders.zip fields).all (fun (b, f) => f ≤ b) then
+        if (binders.zip fields).all (fun (b, f) => f ≤ b) &&
+            (recursorOnPlainData program profile.limits program.declarations[i.toNat]!.type
+              (r.params + r.motives + r.minors + r.indices).toNat).toOption == some true then
           program := { program with recursors := program.recursors.push {
             index := i, params := r.params.toNat, motives := r.motives.toNat
             minors := r.minors.toNat, indices := r.indices.toNat, fields, binders } }

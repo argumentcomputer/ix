@@ -588,6 +588,43 @@ def strictCases : Array Case := #[
       (lam (b .many) (v 0) resTy)) resTy, "ok"⟩
 ]
 
+def uboxTy : E := ref 39
+
+/-- The strict program extended for case-split fields (review F5) and joins
+(F6): a unique consumer of `Box`, a binary consumer of `Res`, and `UBox`,
+whose only constructor has a unique field. Mirrors the Rust `field_program`. -/
+def fieldProgram : Program := { strictProgram with
+  declarations := strictProgram.declarations ++ #[
+    { type := arr (b .linear .unique) .shared boxTy resTy, kind := .assumption }, -- 37 takeBox
+    { type := arr (b .many) .shared resTy (arr (b .many) .shared resTy resTy),     -- 38 pairR
+      kind := .assumption },
+    { type := .sort 0, kind := .typeConstructor },                               -- 39 UBox
+    { type := arr (b .many .unique) .shared resTy uboxTy, kind := .constructor }, -- 40 UBox.mk
+    { type := arr (b .many) .shared (arr (b .many) .shared uboxTy (.sort 0))     -- 41 UBox.rec
+        (arr (b .many) .shared (arr (b .many .unique) .shared resTy (.app (v 1) (.app (ref 40) (v 0))))
+          (arr (b .many) .shared uboxTy (.app (v 2) (v 0)))),
+      kind := .assumption }
+  ]
+  recursors := strictProgram.recursors.push
+    { index := 41, params := 0, motives := 1, minors := 1, indices := 0, fields := #[1], binders := #[1] } }
+
+/-- `(! b : Box) → Res` splitting `b`: `Box.rec motive fresh (fun r => full) b`. -/
+def splitBox (full : E) : E :=
+  lam (b .many .unique) (app4 (ref 24) (constMotive boxTy resTy) (ref 30) (lam (b .many) full resTy) (v 0)) boxTy
+
+def fieldCases : Array Case := #[
+  -- Review F5: a case-split field is a view of the major.
+  ⟨"a field is unusable after its major is moved", arr (b .many .unique) .shared boxTy resTy,
+    splitBox (.app (.app (ref 38) (call 37 (v 1))) (v 0)), "moved"⟩,
+  ⟨"consuming a field shares its major", arr (b .many .unique) .shared boxTy resTy,
+    splitBox (.app (.app (ref 38) (v 0)) (call 37 (v 1))), "ownership"⟩,
+  ⟨"a field may be used while its major is live", arr (b .many .unique) .shared boxTy resTy,
+    splitBox (v 0), "ok"⟩,
+  ⟨"a case split on a field with a contract has no rule", arr (b .many) .shared uboxTy resTy,
+    lam (b .many) (.app (.app (.app (ref 41) (constMotive uboxTy resTy)) (lam (b .many) (v 0) resTy)) (v 0))
+      uboxTy, "unsupported"⟩
+]
+
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=
   let p := { base with declarations := base.declarations.push { type, body := some value } }
   checkDefinition p base.declarations.size limits
@@ -617,7 +654,8 @@ def runFixtureCases : IO Nat := do
   let equations ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-equations.tsv" equationsProgram equationCases
   let freeze ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-freeze.tsv" freezeProgram freezeCases
   let strict ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-strict.tsv" strictProgram strictCases
-  return base + modes + cases + equations + freeze + strict
+  let fields ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-fields.tsv" fieldProgram fieldCases
+  return base + modes + cases + equations + freeze + strict + fields
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

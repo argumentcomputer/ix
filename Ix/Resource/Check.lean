@@ -319,10 +319,16 @@ def readVariable (ctx : Context) (fuel : Nat) (index : UInt64) (uses : Uses) : C
   if let some root := b.value.loanRoot then
     let owner ← binding root
     if !owner.owner.live then throw (.moved root)
+  -- A field bound by a case split is a view of the matched value, as a
+  -- projection is: reading it needs that value's owner live, and consuming
+  -- it acts on that owner.
+  if let some matched := b.value.place then
+    let owner ← binding matched
+    if !owner.owner.live then throw (.moved matched)
   let type ← shift ctx.program fuel b.value.type (n + 1) 0
   return { b.value with
     type
-    place := some id
+    place := some (b.value.place.getD id)
     owned := if b.owner.unique then .unique else .shared }
 
 /-- Resolve a borrow place without charging a consumption. Every projection
@@ -1108,11 +1114,20 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
                 let branches := (List.range info.minors).toArray.map fun j =>
                   (args[info.params + info.motives + j]!, minorTypes[j]!,
                     (List.range info.binders[j]!).toArray.map (fun k => decide (k ≥ info.fields[j]!)))
-                let supplied (j k : Nat) (domain : Ixon.Expr) (c : BinderContract) : CheckM Value :=
+                -- Each field is a view of the major, as a projection is: it
+                -- keeps the major's origins and loan root and names the
+                -- major's owner as its place, so consuming a field acts on
+                -- the major and a field cannot outlive a move of the major.
+                -- A field with a contract (unique or finite use) has no case
+                -- rule.
+                let supplied (j k : Nat) (domain : Ixon.Expr) (c : BinderContract) : CheckM Value := do
                   if k < info.fields[j]! then
+                    unless c == .many do
+                      throw (.unsupported "a case split on a constructor field with a contract")
                     pure { type := domain
                            owned := if major.owned == .unique && c.value.owned == .unique then .unique else .shared
                            origins := major.origins
+                           place := major.place
                            loanRoot := major.loanRoot }
                   else pure { type := domain }
                 alternatives branches supplied extra (expected.map (·.2)) outputType

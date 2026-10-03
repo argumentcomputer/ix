@@ -352,27 +352,40 @@ enum Supply {
   Fields { fields: Vec<usize>, major: Value },
 }
 impl Supply {
+  /// Each field is a view of the major, as a projection is: it keeps the
+  /// major's origins and loan root and names the major's owner as its place,
+  /// so consuming a field acts on the major and a field cannot outlive a
+  /// move of the major. A field with a contract (unique or finite use) has
+  /// no case rule.
   fn value(
     &self,
     j: usize,
     k: usize,
     domain: Term,
     field: BinderContract,
-  ) -> Value {
+  ) -> Result<Value, Error> {
     match self {
-      Self::Fields { fields, major } if k < fields[j] => Value {
-        owned: if major.owned == Owned::Unique
-          && field.value.owned == Owned::Unique
-        {
-          Owned::Unique
-        } else {
-          Owned::Shared
-        },
-        origins: major.origins.clone(),
-        loan_root: major.loan_root,
-        ..Value::shared(domain)
+      Self::Fields { fields, major } if k < fields[j] => {
+        if field != BinderContract::default() {
+          return Err(Error::Unsupported(
+            "a case split on a constructor field with a contract",
+          ));
+        }
+        Ok(Value {
+          owned: if major.owned == Owned::Unique
+            && field.value.owned == Owned::Unique
+          {
+            Owned::Unique
+          } else {
+            Owned::Shared
+          },
+          origins: major.origins.clone(),
+          place: major.place,
+          loan_root: major.loan_root,
+          ..Value::shared(domain)
+        })
       },
-      _ => Value::shared(domain),
+      _ => Ok(Value::shared(domain)),
     }
   }
 }
@@ -883,6 +896,14 @@ impl<'a> Checker<'a> {
     {
       return Err(Error::Moved(root));
     }
+    // A field bound by a case split is a view of the matched value, as a
+    // projection is: reading it needs that value's owner live, and consuming
+    // it acts on that owner.
+    if let Some(matched) = b.value.place
+      && !self.binding(matched)?.owner.live
+    {
+      return Err(Error::Moved(matched));
+    }
     let typ = self.shift(
       fuel,
       &b.value.typ,
@@ -891,7 +912,7 @@ impl<'a> Checker<'a> {
     )?;
     Ok(Value {
       typ,
-      place: Some(id),
+      place: Some(b.value.place.unwrap_or(id)),
       owned: if b.owner.unique { Owned::Unique } else { Owned::Shared },
       ..b.value
     })
@@ -1652,7 +1673,7 @@ impl<'a> Checker<'a> {
             Expr::app(self.shift(fuel, &unshared, 1, 0)?, Expr::var(0)),
           ),
         };
-        let value = supply.value(j, k, domain, field);
+        let value = supply.value(j, k, domain, field)?;
         let id = self.push(c, value);
         entered.push((id, *hypothesis));
         inner.vars.push(id);
@@ -3384,6 +3405,75 @@ mod tests {
     let text =
       include_str!("../../../Tests/Fixtures/ixon-v4/resource-strict.tsv");
     assert!(run_fixture_lines(&strict_program(), text) >= 7);
+  }
+
+  /// The strict program extended for case-split fields (review F5) and joins
+  /// (F6): a unique consumer of `Box`, a binary consumer of `Res`, and
+  /// `UBox`, whose only constructor has a unique field. Mirrors
+  /// `Tests.Resource.fieldProgram`.
+  fn field_program() -> Program {
+    let mut p = strict_program();
+    let many = b(Uses::Many, ValueContract::shared());
+    let shared = ValueContract::shared();
+    let all = |d: Term, c: Term| arr(many, shared, d, c);
+    let res = || Expr::reference(11, vec![]);
+    let boxt = || Expr::reference(21, vec![]);
+    let ubox = || Expr::reference(39, vec![]);
+    let unique_many = b(Uses::Many, ValueContract::unique());
+    p.declarations.extend([
+      // 37 takeBox: (1 ! b : Box) → Res.
+      assumption(arr(
+        b(Uses::Linear, ValueContract::unique()),
+        shared,
+        boxt(),
+        res(),
+      )),
+      // 38 pairR: Res → Res → Res.
+      assumption(all(res(), all(res(), res()))),
+      // 39 UBox, 40 UBox.mk (! r : Res), 41 UBox.rec.
+      Declaration {
+        typ: Expr::sort(0),
+        body: None,
+        kind: DeclKind::TypeConstructor,
+      },
+      Declaration {
+        typ: arr(unique_many, shared, res(), ubox()),
+        body: None,
+        kind: DeclKind::Constructor,
+      },
+      assumption(all(
+        all(ubox(), Expr::sort(0)),
+        all(
+          arr(
+            unique_many,
+            shared,
+            res(),
+            Expr::app(
+              Expr::var(1),
+              Expr::app(Expr::reference(40, vec![]), Expr::var(0)),
+            ),
+          ),
+          all(ubox(), Expr::app(Expr::var(2), Expr::var(0))),
+        ),
+      )),
+    ]);
+    p.recursors.push(RecursorInfo {
+      index: 41,
+      params: 0,
+      motives: 1,
+      minors: 1,
+      indices: 0,
+      fields: vec![1],
+      binders: vec![1],
+    });
+    p
+  }
+
+  #[test]
+  fn case_field_and_join_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-fields.tsv");
+    assert!(run_fixture_lines(&field_program(), text) >= 4);
   }
 
   #[test]

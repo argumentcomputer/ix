@@ -162,4 +162,29 @@ termination_by n
 decreasing_by omega
 end Q06
 
+/-! ## Case-split fields (review F5) -/
+
+/- Violation unless fields are owned references: a field of the matched
+unique pair is kept while the pair itself is moved uniquely (its projection
+twin P02 is rejected). -/
+namespace P03
+def keepP (! p : List Nat × List Nat) : ! (List Nat × List Nat) := p
+def f (! p : List Nat × List Nat) : List Nat × (List Nat × List Nat) :=
+  match p with
+  | (a, _) => (a, keepP p)
+end P03
+
+/- Violation unless fields are owned references: the tail of a unique list is
+used after the list is moved (and possibly reused in place). -/
+namespace C09
+def bump (! xs : List Nat) : ! List Nat :=
+  match xs with
+  | [] => []
+  | h :: t => (h + 1) :: t
+def f (! xs : List Nat) : ! List Nat × List Nat :=
+  match xs with
+  | [] => ([], [])
+  | _ :: t => (bump xs, t)
+end C09
+
 end Tests.Ix.SourceContract.ReviewFixture

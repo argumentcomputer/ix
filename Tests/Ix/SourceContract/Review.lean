@@ -53,7 +53,8 @@ def probes : List Probe := [
   { name := "E04", accepted := false, finding := "F3", forced := [("dup", "dup_eq")],
     reason := "an unfolding equation depends on an axiom other than propext" },
   { name := "E01", accepted := false, finding := "F3", equations := true },
-  { name := "Q06", accepted := true, finding := "F3", equations := true }]
+  { name := "Q06", accepted := true, finding := "F3", equations := true },
+  probe "P03" false "F5", probe "C09" false "F5"]
 
 /-- The definitions and theorems of a probe's namespace. -/
 def roots (env : Environment) (ns : Name) : List Name :=

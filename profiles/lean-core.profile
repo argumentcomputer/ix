@@ -12,6 +12,10 @@
 #   `&` contract on a Nat, Bool, String, Char or UIntN value bounds how often
 #   the program names it, not a resource the consumer relies on. (Uniqueness
 #   is not covered: a closure that moves a captured immediate is one-shot.)
+# - A field is an owned reference: a value extracted by a projection or a
+#   case split stays valid after its aggregate is dropped (the consumer takes
+#   its own reference, as Lean's runtime does). The checker ties a field to
+#   its aggregate only until the field is consumed.
 
 # The standard profile: Nat and String literal types; Nat, Bool and String
 # are shareable immediates.

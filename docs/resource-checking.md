@@ -169,9 +169,16 @@ closures; the consumer must compile them the same way:
   constructor), is a case split. Parameters, motives and indices have no
   run-time demand. The major premise is inspected, not consumed: its read is
   charged, but no ownership is transferred. Each minor binds the constructor's
-  fields, which keep all of the major's origins and loan root and are unique
-  only when both the major and the field binder are; the alternatives are
-  joined. A minor in which an induction hypothesis occurs at all is rejected:
+  fields as views of the major, as a projection is: a field keeps all of the
+  major's origins and loan root and names the major's owner as its place, so
+  reading a field requires the major to be live, consuming a field shares
+  (or, for a unique field of a unique major, moves) the major's owner, and a
+  field read after the major was moved, or a unique move of the major after
+  a field was consumed, is rejected. A constructor field with a contract has
+  no case rule: such a split is rejected, and the adapter derives case shapes
+  only for recursors whose major premise has a plain-data type (constructors
+  with default contracts only), so a recursor type cannot hide a field
+  contract. The alternatives are joined. A minor in which an induction hypothesis occurs at all is rejected:
   the test is syntactic, so a hypothesis passed to a dead binder or to an
   erased argument, or mentioned in a type, counts (a consumer that computes
   hypotheses eagerly would recurse there); a minor that does not mention its
@@ -265,6 +272,14 @@ on resource admission must establish it.
   cross into a many callee or a reusable closure. Uniqueness is not covered
   by this assumption: a unique immediate is moved, and a closure that moves
   its captured immediate is one-shot.
+- **A field is an owned reference.** A value extracted from an aggregate, by
+  a projection or by a case split, is a reference the consumer owns (Lean's
+  reference-counted representation takes one when it extracts a field): it
+  stays valid after the aggregate is dropped. The checker ties a field to its
+  aggregate only until the field is consumed — consuming it shares the
+  aggregate's owner, so the aggregate is never updated in place afterwards —
+  but lets the field outlive the aggregate. A consumer that represents
+  fields as loans into the aggregate's cell must not rely on admission.
 
 ## Profiles, claims, and consumers
 
@@ -375,8 +390,10 @@ covers usage crossing, proofs and open field rules, `resource-cases.tsv`
 case splits, case wrappers, beta-redexes and choices,
 `resource-equations.tsv` checking through unfolding equations,
 `resource-freeze.tsv` freezing, fresh constructors and plain-data borrows,
-and `resource-strict.tsv` strict arguments of calls and beta-redexes against
-by-need alternatives of bound case definitions. The suites also cover
+`resource-strict.tsv` strict arguments of calls and beta-redexes against
+by-need alternatives of bound case definitions, and `resource-fields.tsv`
+case-split fields as views of the major and joins without an expected
+contract. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.
