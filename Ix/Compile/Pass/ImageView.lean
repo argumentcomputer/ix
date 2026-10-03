@@ -66,7 +66,7 @@ public section
 namespace Ix.Compile.Pass
 
 open Ix (Name Level Expr ConstantInfo InductiveVal ConstructorVal RecursorVal)
-open Ix.Compile.Canon (BlockCanon canonicalizeConstNames)
+open Ix.Compile.Canon (BlockCanon ComponentCanon canonicalizeConstNames)
 open Ix.Compile.Image (ImageSpec Naming Image)
 
 /-- Placeholder names of the view (Naming.default for the canonical
@@ -96,11 +96,42 @@ def BlockView.const? (inp : ViewInput) (v : BlockView) (n : Name) : Option Const
   | some c => some c
   | none => inp.const? n
 
+/-- Pass 1's canonical form of `all` (`canonBlock` under the compiler's
+rules), computed only for the components whose members are all compiled
+(`compiled? n`): an uncompiled component cannot be sorted (the comparator
+reads compiled addresses), and no image a compiled constant needs can use it
+(a component an image relocates into is a dependency of the major's
+component, hence compiled first). Uncompiled components get one class per
+member, in `all` order, and no nested data. -/
+def canonBlockCompiled (env : Ix.Compile.Canon.Env) (compiled? : Name → Bool)
+    (all : Array Name) : Except String BlockCanon := do
+  let rules := Ix.Compile.Canon.Rules.compiler
+  let comps ← Ix.Compile.Canon.blockComponents env all
+  let mut out : Array ComponentCanon := #[]
+  for members in comps do
+    if members.all compiled? then
+      let cs ← members.toList.mapM (Ix.Compile.Canon.mutConstOf env)
+      let (classes, stats) ← Ix.Compile.Canon.sortClasses rules env.addr? cs
+      out := out.push { members, classes := Ix.Compile.Canon.classNames classes,
+                        blindClasses := Ix.Compile.Canon.classNames classes, stats, nested := none }
+    else
+      out := out.push { members, classes := members.map (#[·]), blindClasses := members.map (#[·]),
+                        stats := default, nested := none }
+  let classesAll := out.map (·.classes)
+  let mut out' : Array ComponentCanon := #[]
+  for (c, i) in out.zipIdx do
+    if c.members.all compiled? then
+      let nested ← Ix.Compile.Canon.componentNested rules env all c.classes
+      let nested ← nested.mapM (Ix.Compile.Canon.evaporate env rules all classesAll i)
+      out' := out'.push { c with nested }
+    else out' := out'.push c
+  return { all, components := out' }
+
 /-- The view of `all`. Missing canonical recursors (a component not compiled
 yet) are left out: an image that needs one fails naming it. -/
 def buildView (inp : ViewInput) (all : Array Name) : Except String BlockView := do
   let env : Ix.Compile.Canon.Env := { const? := inp.const?, addr? := inp.addr? }
-  let canon ← Ix.Compile.Canon.canonBlock Ix.Compile.Canon.Rules.compiler env all
+  let canon ← canonBlockCompiled env (fun n => (inp.addr? n).isSome) all
   let spec ← ImageSpec.ofBlock viewNaming inp.const? canon
   let some all0 := all[0]? | throw "Pass 3 view: empty block"
   let mut consts : Std.HashMap Name ConstantInfo := {}
