@@ -1817,7 +1817,73 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.sizeOf_spec "user constant" .inherited
     "b5083cb595f0e1ca587616cea952d75c24e55d150f6c8682b75cd133c9da67aa"
     "806f8abf939ed83b0b7831373f5ef13890970302e81cd7ecf866163f1b4890b3"
-    "" "via [EqCnstr._sizeOf_inst, IneqCnstrProof._sizeOf_inst, IneqCnstr._sizeOf_inst]"
+    "" "via [EqCnstr._sizeOf_inst, IneqCnstrProof._sizeOf_inst, IneqCnstr._sizeOf_inst]",
+  -- Cliques.WA P0 P1 (A5t, the TACTIC-ASYM probe; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual "clique encoding" .pendingTransport
+    "77072c5e6560d1be6a9bc9685b5e7c79aa56f2065994f84d86c4c2d6b749b28a"
+    "3b0e15526feeeacadb93a1a5eef651ad56ddc066b50212431324a6a92bdb4779"
+    "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "ROOT[V|K]; PSum order of the domain, motive, case trees and measure tree; the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_1 "encoding obligation" .pendingTransport
+    "2f26cbff694f6a8bb72246aaa44ff036340467b83cba9f59b64b4e12127053e2"
+    "7d5de2d4739bfa89706b90112b4e6679596ba69c90bd83b447f17585844dec15"
+    "type.∀.body.∀.body.@5.fn" "ROOT[TV|K]; obligation re-stated over the packing; the goal-specific decreasing_by gives the same proof in both orders (no TACTIC-ASYM)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_2 "encoding obligation" .pendingTransport
+    "266d5a80810da61f2cdb9a05392dd32e8f1f8e19b8a523dcd9980bf9d4f8b7d1"
+    "10331ba20de201615de5919ad83281e9c5fdd020902cf78beff8fdbd62719e6e"
+    "type.∀.body.∀.body.@4.fn" "ROOT[TV|K]; obligation re-stated over the packing (no TACTIC-ASYM)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_3 "encoding obligation" .pendingTransport
+    "9a89308b9978c15485d5e24b90d25e240a0b20aa76ca8f8cad49fdaf7d7298a8"
+    "adf61a53598121f7b789c3363512982f6c8f0be8ea7eb2714358053fe36e7a7b"
+    "type.∀.body.∀.body.@4.fn" "ROOT[TV|K]; obligation re-stated over the packing (no TACTIC-ASYM)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_4 "encoding obligation" .pendingTransport
+    "ebafd6516a002329594de44610e5b29caa9a7b1ec0e96c307e0cc61eaf227425"
+    "9037a9baf5fd0aa1923085d1063c69088bf90196b57d59073019802980a446ba"
+    "type.∀.body.∀.body.@4.fn" "ROOT[TV|K]; obligation re-stated over the packing (no TACTIC-ASYM)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta "clique member" .pendingTransport
+    "deec05de7b347d76dbf742d9a27ff97653086ffdbf18a8b5de4c7a3580d26992"
+    "88be839c49a3224cd64a80ef9852bd686dc4a12851e7a7b0d51832972c1fcb8e"
+    "value.λ.body.@0.fn" "ROOT[V|K]; member injection at its clique position",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tc "clique member" .pendingTransport
+    "41bcc27da9f28ffd1eaca4151a3064ca03fce76cfe4e5d7286446563d1038a12"
+    "f519ad6711975650e15ca602b08522ed1a9207d7d59977fe3462f06214227260"
+    "value.λ.body.@0.fn" "ROOT[V|K]; member injection at its clique position",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tb "user constant" .inherited
+    "060e9defd68316c2b6f13f719ad81b2e08737319aaa3f6745331aaed4d080f78"
+    "5b8df7a16a1ca945d6443430cad1d45195909c1cbdb777ee86a9990143597d1a"
+    "" "via [ta._mutual] (tb is at the same summand in both clique orders)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta.eq_def "equation lemma" .lazy
+    "cf825df0fcdc215d96592a72d56d9a67d42e587d49464fee89ff21aca5cc0271"
+    "1b2f24b1a260bd9002ac4e0541802782dd493f452e46cabb20fa6dd5bca61acf"
+    "value.λ.body.@1.@0.fn" "ROOT[V|K]; proof unfolds the encoding",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tc.eq_def "equation lemma" .lazy
+    "2cba5fe7547104f0b93943b1c609b25d54c43287149b3e9987d643ab8a2d23d8"
+    "cf4fc56bc13c1093ff201d3d1de52a259243c01ede0dceaef0b563abea4bccd5"
+    "value.λ.body.@1.@0.fn" "ROOT[V|K]; proof unfolds the encoding",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tb.eq_def "user constant" .inherited
+    "087b311976df8ed12f1184ecba573e5665c896d2dd105c72ccf174b047c297a7"
+    "aa747436471a140a76269da1c4ec0f7f2442ee9dd52c899a3b8dc852cf9d0dfa"
+    "" "via [ta._mutual.eq_def, tb, ta]",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual.eq_def "encoding equation" .orderStmt
+    "1fe0c2bdbc40ee7e7b51cc3ecc79ab82366db41efd0e90e30c51105e045001c3"
+    "106e35daeb35e4579cc1bfa0610afaf7705543552ea524d2e4d8c483a1fdb629"
+    "type.∀.body.@2.@4.λ.body.@1" "ROOT[TV]; statement over the packed _mutual",
+  -- Cliques.TN P0 P1 (A5t, the NOSPEC probe; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na "clique member" .noSpec
+    "6acfa58679ee85cdf1aaccdf61558625f8a41cd5f83c6ff584bf28e956a95b31"
+    "95c284613996b282c88299bcd6c4028256be8388656282563cdef3a0ceb2ce27"
+    "value.λ.body" "ROOT[V]; identical statements: Q6 cannot order the clique, Lean's form kept (na of P0 is nb of P1 byte for byte)",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `nb "clique member" .noSpec
+    "95c284613996b282c88299bcd6c4028256be8388656282563cdef3a0ceb2ce27"
+    "6acfa58679ee85cdf1aaccdf61558625f8a41cd5f83c6ff584bf28e956a95b31"
+    "value.λ.body" "ROOT[V]; identical statements: Q6 cannot order the clique, Lean's form kept",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na._f "structural functional" .noSpec
+    "ad617d6050b9c71451d88c8b0afbbc8593d98af5452ed0dcdef9492090d5e67a"
+    "992a551847a56ae1a88b48b4c37ef9b0ab8311e5dc7836421375b8471321bea4"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "ROOT[V]; path into the packed below motive; identical statements (NOSPEC)",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `nb._f "structural functional" .noSpec
+    "992a551847a56ae1a88b48b4c37ef9b0ab8311e5dc7836421375b8471321bea4"
+    "ad617d6050b9c71451d88c8b0afbbc8593d98af5452ed0dcdef9492090d5e67a"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "ROOT[V]; path into the packed below motive; identical statements (NOSPEC)"
 ]
 
 end Tests.Ix.Compile.NonCanonical

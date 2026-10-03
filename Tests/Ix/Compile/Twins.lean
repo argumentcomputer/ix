@@ -128,7 +128,9 @@ def cliqueFamilies : List Family := [
   clique "TP" [("P0", []), ("P1", [])],
   clique "SP" [("P0", []), ("P1", [])],
   clique "WP" [("P0", []), ("P1", [(`hb._mutual, `ha._mutual)])],
-  clique "PT" [("P0", []), ("P1", [])]
+  clique "PT" [("P0", []), ("P1", [])],
+  clique "WA" [("P0", []), ("P1", [(`tc._mutual, `ta._mutual)])],
+  clique "TN" [("P0", []), ("P1", [])]
 ]
 
 private def rp (s : String) : Name := `Tests.Ix.Compile.Twins.Repro ++ s.toName
