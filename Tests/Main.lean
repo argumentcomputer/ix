@@ -14,6 +14,7 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -322,6 +323,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
+  -- Pass 1 (Ix.Compile.Canon) under today's rules against the compiler's
+  -- CondenseM / sortConsts / nested order on the same fixture corpus, and
+  -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
+  ("canon-pass1", Tests.Ix.Compile.Canon.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
