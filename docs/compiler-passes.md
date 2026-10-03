@@ -1169,6 +1169,10 @@ position: one of the constructs above, or a copy of a statement produced by the 
 recogniser decides this. When it fails, the fallback of each encoding applies. That fallback is the
 faithful form (§0.1), and the constant enters the non-canonical set with cause `SHAPE` (§7.2).
 
+*As implemented* [measured, A5T]: a construct counts as recognised only if a re-implementation of
+Lean's own construction rebuilds it exactly.
+
+
 
 **Faithfulness never depends on transport.**
 - Theorem statements and definition types are translated exactly.
@@ -1226,6 +1230,9 @@ faithful form (§0.1), and the constant enters the non-canonical set with cause 
     motives inside the trees are rebuilt by `mkCodomain`'s rule.
   - `PSigma` parts are per function and are unchanged.
   - The fixed-parameter telescope is reordered to the first canonical member's order.
+  - The fixed-parameter binders of the abstracted `proof_k` theorems are reordered the same way
+    [measured, A5T; omitted from the first draft].
+
 - **(S).** Each `proof_k : ∀ ctx, wfRel.rel y x` becomes `proof′_k : ∀ ctx′, wfRel′.rel y′ x′`.
   `wfRel′` combines the *same* per-function measures by the canonical case tree (D22: Lean's measure,
   pinned and re-indexed). `y′` and `x′` are the canonical injections of the same tuples.
@@ -1354,7 +1361,9 @@ the restriction of `σ` to group `k`.
 - **(R).**
   - `f._f ↦ g._ix._f`.
   - Each transformed matcher becomes a canonical transformed matcher, itself transported by (A).
-  - Each IndPred "below" matcher becomes a regenerated one.
+  - Each IndPred "below" matcher is *transported* by (A) on its `funType` binders, not regenerated
+    [measured, A5T; this corrects the first draft].
+
 - **(A).**
   - The packed motive of group `k` is rebuilt in the order `σ_k`, and so is the packed functional
     tuple.
@@ -1416,12 +1425,14 @@ These are the causes that the non-canonical set must be able to record (§7.2).
 
 | Cause | Mechanism | Encoding |
 |---|---|---|
-| `TACTIC-ASYM` | Lean's proof for presentation `P₁`, transported, differs from Lean's proof for `P₂`, because the tactic's output depends on the order beyond the packing. Candidates: user `decreasing_by` or monotonicity scripts that depend on goal order *across* functions; `simp` traces when the goal still contains packed structure; proof terms mentioning the packed type through generic lemmas (`PSum.inr.injEq`, `sizeOf` of a `PSum`). Goals are grouped per function (`Fix.lean:239-248`) and merged only when their types are equal (`:216-230`), so the default path is symmetric [argued] | WF, `partial_fixpoint`, theorems |
+| `TACTIC-ASYM` | Lean's proof for presentation `P₁`, transported, differs from Lean's proof for `P₂`, because the tactic's output depends on the order beyond the packing. Candidates: user `decreasing_by` or monotonicity scripts that depend on goal order *across* functions; `simp` traces when the goal still contains packed structure; proof terms mentioning the packed type through generic lemmas (`PSum.inr.injEq`, `sizeOf` of a `PSum`). Goals are grouped per function (`Fix.lean:239-248`) and merged only when their types are equal (`:216-230`), so the default path is symmetric [argued]. **Not observed; probe family WA**, whose `decreasing_by` depends on goal order: the transported proofs are exact [measured, A5T] | WF, `partial_fixpoint`, theorems |
+
 | `SHAPE` | The grammar check fails, so the fallback (verbatim proof, composition with `φ`, or the baseline) carries Lean's packing in its content | all |
 | `GUESSLEX` | GuessLex enumerates measure combinations in function order, uniform ones first; function-index measures `.func i` come last, in index order; it takes the first that works (`GuessLex.lean:524-629`). Two presentations may pick different per-function tuples. Pinning (D22) keeps each faithful, but the canonical functionals then differ | WF |
 | `RECARG` | Structural `allCombinations` takes the first working combination in clique order (`FindRecArg.lean:228-310`, per MUT §1.2) | structural |
 | `ORDER-STMT` | Statements that follow the order: `_mutual.eq_unfold`, `mutual_induct`, `induct`, bare `@f._mutual`. These are faithful only | all |
-| `NOSPEC` | A theorem clique whose order cannot be determined (§5.4) | theorems |
+| `NOSPEC` | A theorem clique whose order cannot be determined (§5.4). Recorded on family TN, whose theorem statements are identical [measured, A5T] | theorems |
+
 | `LAZY` | The equation lemmas Lean realises lazily (`f.eq_def`, `eq_N`, `eq_unfold`) are excluded from the canonicity claim, because which of them exist varies between builds (A Δ13). Their proofs also unfold the encoding | all |
 
 
@@ -1498,9 +1509,55 @@ This agrees with ORA (DQReord 53/53) and with MUT §1.7.
   would reorder [estimate, MUT §5.1];
 - four well-founded `_mutual` in an Init-sized environment [measured: MUT §5.1].
 
-**Still not measured:**
-- No transport is implemented. §5.1–5.4 are [argued]; A1G measures only what transport must remove.
-- O16's lemma is [open].
+### 5.7 The transport as implemented (A5T)
+
+*A5T* is `plans/wave1/a5t.md` (untracked). The code is at `Ix/Compile/Clique/**` on the A5-core
+workspace. Everything in this subsection is [measured, A5T] unless marked otherwise.
+
+**Scope.**
+- About 2,400 lines, total and pure over `Ix.Expr`.
+- It covers well-founded, structural (including the inductive-predicate route) and
+  `partial_fixpoint` cliques, and theorem cliques on all three routes.
+
+**Exact oracle.**
+- Transporting presentation P₁ onto P₂'s order reproduces P₂'s constants exactly for 100 of 100
+  constants. These are A1G's 93 packing-order-only constants plus 7 of the new family WA.
+- Lean's `addDecl` accepts 130 of 130 transported constants.
+- Negative controls:
+  - a wrong permutation fails the oracle;
+  - a stray partial injection gives the verbatim fallback, recorded `SHAPE`, kernel-accepted;
+  - a stray projection gives the composition fallback, recorded `SHAPE`, kernel-accepted.
+
+**Residual causes.**
+- **`GUESSLEX`** is confirmed on WG. The members transport exactly, and `_mutual` and both proofs
+  are equal once the measure is masked. The *caller* decides `GUESSLEX`, because it needs both
+  presentations.
+- **`TACTIC-ASYM`** was not observed on the probe WA. Lean groups the decreasing goals per function,
+  so the transported proofs are exact.
+- **`NOSPEC`** is recorded on TN. `Canon.statementOrder` implements Q6's first source, statements.
+  The recovered specification for tied statements is not built. Under statement order, both
+  presentations of TS, TM, TW, IP and TP give identical constants.
+
+**Fallbacks.** These are implemented as §5.1–5.4 say, each recorded `SHAPE`:
+- the verbatim proof under the re-stated obligation;
+- `monotone_compose (mono φ) h`;
+- the whole clique in Lean's form.
+
+**Deviations from §5.1–5.3:**
+- splitting a structural path needs the environment, to unfold `below`; the transport is therefore
+  not purely syntactic;
+- the fixed-parameter binders of abstracted proofs are reordered (now in §5.1);
+- the inductive-predicate "below" matchers are transported, not regenerated (now in §5.3);
+- in `partial_fixpoint`, instance trees and application-form paths are re-associated as well;
+- the canonical name of the packed constant is an *input* to the transport.
+
+**Still open:**
+- O16's lemma is stated in `PartialFixpoint.lean`'s docstring, not proved [open].
+- Should the well-founded grammar be restricted by position? Today a user value whose type is exactly
+  the clique's packing type would be transported [open].
+- No fixtures yet for reflexive and nested structural recursion, lattice fixpoints
+  (`inductive_fixpoint`/`coinductive_fixpoint`), real user monotonicity proofs, `RECARG`, or the
+  recovered specification for `NOSPEC` [open].
 
 ---
 
@@ -1726,12 +1783,17 @@ match.
 **Still open:**
 - **Lean source version.** The elaborator sources (`src/lean/Lean/...`) were read at 4.34.0; the
   4.34.1 line numbers of those citations are [open]. The C++ kernel citations are at 4.34.1 (A1C).
-- **The grammar's coverage** of real `proof_k` and monotonicity terms, and how often `TACTIC-ASYM`
-  occurs [open].
+- **The grammar's coverage** beyond the fixtures. On them it is exact, 100/100 (§5.7). Not yet
+  covered: reflexive and nested structural recursion, lattice fixpoints, real user monotonicity
+  proofs, and a positional restriction of the well-founded grammar [open].
+
 - **Leaks of provisional addresses into output** (D5) [open].
 - **O11a's `rfl`** on `Linear.EqCnstr` [open].
-- **O16's lemma** [open].
+- **O16's lemma**: stated in the transport's docstring, not proved [open].
+
 - **Cause (e) of §4.7** has not been re-measured at v4 [open].
-- Transport is not implemented. Cliques have been measured under permutation (A1G, §5.6), but
-  `TACTIC-ASYM`, `SHAPE`, `RECARG` and `NOSPEC` have no provoking fixture yet.
+- **Remaining transport gaps** (§5.7). Transport is implemented and exact on the fixtures. Still
+  missing: a `RECARG` fixture, and the recovered specification for `NOSPEC` ties (TN is recorded
+  `NOSPEC`).
+
 
