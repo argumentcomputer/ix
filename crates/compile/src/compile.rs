@@ -205,10 +205,17 @@ pub struct CompileState {
   /// deserialized environment sets them with [`compiler_sharing_limits`].
   /// The default is [`ExactSharingLimits::default`].
   pub sharing_limits: ExactSharingLimits,
-  /// The `(definition, equation)` pairs, by name, through which resource
-  /// admission checked a definition (`ix compile --profile` with
-  /// `equation` directives): resource-relevant, bound, not assumed.
-  pub resource_equations: Vec<(String, String)>,
+  /// The `(definition, equation)` pairs through which resource admission
+  /// checked a definition (`ix compile --profile` with `equation`
+  /// directives): resource-relevant, bound, not assumed. Each entry is
+  /// `(definition name, equation name, definition address, equation
+  /// address)`, addresses in hex.
+  pub resource_equations: Vec<(String, String, String, String)>,
+  /// The canonical bytes of the effective resource profile, in hex, when
+  /// resource admission ran (the closure has a resource obligation or an
+  /// explicit profile); empty otherwise. Its BLAKE3 hash is the profile
+  /// address a resource claim binds.
+  pub resource_profile: String,
 }
 
 /// Cached compiled expression with arena root index.
@@ -301,6 +308,7 @@ impl Default for CompileState {
       def_hints: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
       resource_equations: vec![],
+      resource_profile: String::new(),
     }
   }
 }

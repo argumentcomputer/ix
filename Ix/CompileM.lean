@@ -3946,8 +3946,9 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
 /-- Structured result of `rs_compile_env`. Field kinds/order must match
     the `LeanIxCompileEnvStatus` FFI layout in `crates/ffi/src/lean.rs`:
-    boxed fields first (`root`, `ungrounded`, `resourceEquations`), then the
-    UInt64 scalars (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
+    boxed fields first (`root`, `ungrounded`, `resourceEquations`,
+    `resourceProfile`), then the UInt64 scalars (`bytes`, `named`,
+    `uniqueAnon`) in declaration order. -/
 structure CompileEnvStatus where
   /-- 64-hex canonical consts merkle root. Equals the `.ixe` header root
       when a file was written; still computed on a fail-closed abort. -/
@@ -3955,10 +3956,14 @@ structure CompileEnvStatus where
   /-- `(pretty name, reason)` for every requested constant whose block
       failed to compile, sorted by name. Empty ⇔ complete environment. -/
   ungrounded : Array (String × String)
-  /-- Under a profile source, the `(definition, equation)` directives, by
-      name, through which resource admission checked the definition
-      (resource-relevant, bound, not assumed), sorted. -/
-  resourceEquations : Array (String × String)
+  /-- Under a profile source, the `(definition, equation)` directives
+      through which resource admission checked the definition
+      (resource-relevant, bound, not assumed), sorted: definition name,
+      equation name, definition address, equation address (hex). -/
+  resourceEquations : Array (String × String × String × String)
+  /-- The canonical bytes of the effective resource profile, in hex, when
+      resource admission ran; empty otherwise. -/
+  resourceProfile : String
   /-- Bytes written to `outPath` (0 when nothing was written). -/
   bytes : UInt64
   /-- Named constants in the compiled env. -/

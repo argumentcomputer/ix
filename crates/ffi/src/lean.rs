@@ -176,9 +176,10 @@ lean_ffi::lean_inductive! {
   LeanIxCondensedBlocks [ { num_obj: 3 } ];
   LeanIxCompilePhases   [ { num_obj: 3 } ];
   // Ix.CompileM.CompileEnvStatus: root (String), ungrounded
-  // (Array (String × String)), resourceEquations (Array (String × String)),
+  // (Array (String × String)), resourceEquations
+  // (Array (String × String × String × String)), resourceProfile (String),
   // then UInt64 scalars bytes/named/uniqueAnon
-  LeanIxCompileEnvStatus [ { num_obj: 3, num_64: 3 } ];
+  LeanIxCompileEnvStatus [ { num_obj: 4, num_64: 3 } ];
   LeanIxSubstring       [ { num_obj: 3 } ];
 
   // --- Ix multi-variant inductives ---

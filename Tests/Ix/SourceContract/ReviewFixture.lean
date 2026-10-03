@@ -240,4 +240,51 @@ def linId (1 x : Nat) : Nat := x
 def entry (n : Nat) : Nat := linId n
 end LinearId
 
+/-! ## Annotated recursion only through bound equations (second review R2-3) -/
+
+/- Violation (W03): the recursion as written passes the shared tail `t` to
+the unique input; the `brecOn` kernel body hid it. -/
+namespace W03
+def sumAll (! xs : List Nat) : Nat :=
+  match xs with
+  | [] => 0
+  | h :: t => h + sumAll t
+def use (ys : List Nat) : Nat × List Nat := (sumAll (0 :: ys), ys)
+end W03
+
+/- Violation (E11): the `[]` branch stores the unique `u` twice. -/
+namespace E11
+def cnt (xs : List Nat) (! u : List Nat) : List Nat × List Nat :=
+  match xs with
+  | [] => (u, u)
+  | _ :: t => cnt t u
+end E11
+
+/- Violation (J06): well-founded recursion moves `acc`, then uses it again. -/
+namespace J06
+def len (xs : List Nat) : Nat := xs.length
+def f (n : Nat) (! acc : List Nat) : Nat :=
+  if n = 0 then len acc else f (n - 1) acc + len acc
+termination_by n
+decreasing_by omega
+end J06
+
+/- Violation (Z03): well-founded recursion with an erased proof parameter;
+the base case stores the unique `acc` twice. -/
+namespace Z03
+def down (n : Nat) (0 _h : n ≥ 0) (! acc : List Nat) : List Nat × List Nat :=
+  if h : n = 0 then (acc, acc) else down (n - 1) (Nat.zero_le _) acc
+termination_by n
+decreasing_by omega
+end Z03
+
+/- Violation (M12): the recursion passes a field (a shared tail) to the
+unique input. -/
+namespace M12
+def go (! xs : List Nat) : Nat :=
+  match xs with
+  | [] => 0
+  | _ :: t => go t + 1
+end M12
+
 end Tests.Ix.SourceContract.ReviewFixture

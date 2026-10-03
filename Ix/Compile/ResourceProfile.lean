@@ -21,6 +21,7 @@ public import Lean.Meta.Match.MatcherInfo
 public import Lean.Compiler.ExternAttr
 public import Lean.Compiler.ImplementedByAttr
 public import Ix.Compile.SourceContract.Registry
+public import Ix.Compile.Equations
 
 public section
 
@@ -54,18 +55,18 @@ def checkWritten (source : String) : Except String Unit := do
 
 /-- Whether a declaration has a native implementation (`@[extern]`,
 `@[implemented_by]`): its Lean body is only a model of the code that runs. -/
-def native (env : Environment) (name : Name) : Bool :=
+def native (env : Lean.Environment) (name : Lean.Name) : Bool :=
   isExtern env name || (Compiler.getImplementedBy? env name).isSome
 
 /-- The case definitions of a closure: every `casesOn` and matcher Lean
 records, excluding any declaration with a native implementation, whose Lean
 body is only a model. -/
-def caseDefinitions (env : Environment) (names : List Name) : Array Name :=
+def caseDefinitions (env : Lean.Environment) (names : List Lean.Name) : Array Lean.Name :=
   names.toArray.filter fun name =>
     (isCasesOnRecursor env name || Meta.isMatcherCore env name) && !native env name
 
 /-- Whether a declaration carries a source contract (registered or written). -/
-def annotated (env : Environment) (name : Name) (info : ConstantInfo) : Bool :=
+def annotated (env : Lean.Environment) (name : Lean.Name) (info : Lean.ConstantInfo) : Bool :=
   (Ix.Compile.sourceContractExtension.getState env).contains name ||
     Ix.Compile.sourceHasAnnotations info
 
@@ -80,8 +81,8 @@ def assumed (source : String) : List String :=
 admitted only as an explicit assumption of the profile (`source`; `none` is
 the standard profile, which assumes nothing): its contract cannot be checked
 against the model body, so callers rely on it as stated. -/
-def checkNative (source : Option String) (env : Environment)
-    (constants : List (Name × ConstantInfo)) : Except String Unit := do
+def checkNative (source : Option String) (env : Lean.Environment)
+    (constants : List (Lean.Name × Lean.ConstantInfo)) : Except String Unit := do
   let admitted := (source.map assumed).getD []
   for (name, info) in constants do
     if native env name && annotated env name info && !admitted.contains (toString name) then
@@ -89,10 +90,56 @@ def checkNative (source : Option String) (env : Environment)
         @[implemented_by]) and a resource contract; its Lean body is only a model, so the \
         contract must be an explicit profile assumption (assume {name})"
 
+/-- Whether a constant is an auxiliary of a kernel recursion encoding:
+`brecOn`/`binductionOn` (structural recursion), `WellFounded.fix` and its
+variants, or a definition's `_unary`/`_binary`/`_mutual`/`_f` auxiliary. -/
+def recursionAuxiliary : Lean.Name → Bool
+  | .str p s =>
+    s == "brecOn" || s == "binductionOn" || s == "_unary" || s == "_binary" ||
+      s == "_mutual" || s == "_f" ||
+      (p.getRoot == `WellFounded && (s == "fix" || s == "fixF"))
+  | _ => false
+
+/-- Review R2-3: an annotated recursive definition — one Lean realizes an
+unfolding theorem for, or whose kernel body references a recursion
+auxiliary (`recursionAuxiliary`) — is admitted only when resource admission
+checks it through a bound unfolding equation (`bound`: the definitions the
+compile binds an `equation` directive for, under `ix compile --equations
+--profile FILE`), or when the profile admits it as an explicit assumption
+(`assume`/`choice`/`interface`). Its kernel body (`brecOn`, `WellFounded.fix`
+with unchecked `_f`/`_unary` auxiliaries) is not what a consumer runs, so it
+is never the checked path. `source` is the profile source (`none`: the
+standard profile, which binds no equation and assumes nothing, so every
+annotated recursive definition is refused). Returns the definitions that
+must appear among the checked pairs after the compile. -/
+def checkRecursion (source : Option String) (env : Lean.Environment)
+    (constants : List (Lean.Name × Lean.ConstantInfo)) (bound : List Lean.Name) :
+    IO (Except String (List Lean.Name)) := do
+  let admitted := (source.map assumed).getD []
+  let annotatedDefinitions := constants.filterMap fun (name, info) =>
+    match info with
+    | .defnInfo _ => if annotated env name info then some (name, info) else none
+    | _ => none
+  if annotatedDefinitions.isEmpty then return .ok []
+  let (_, realized, failed) ← Ix.Compile.Equations.realize env (annotatedDefinitions.map (·.1))
+  let mut required := []
+  for (name, info) in annotatedDefinitions do
+    let recursive := realized.any (·.definition == name) || failed.any (·.1 == name) ||
+      info.value!.getUsedConstants.any recursionAuxiliary
+    unless recursive do continue
+    if admitted.contains (toString name) then continue
+    unless bound.contains name do
+      return .error s!"resource profile: `{name}` is an annotated recursive definition; it is \
+        admitted only when checked through its unfolding equation (ix compile --equations \
+        --profile FILE) or assumed by the profile (assume {name}), never through its kernel \
+        encoding"
+    required := name :: required
+  return .ok required.reverse
+
 /-- The profile source the native compiler receives: the hand-written source,
 then, when it asks for case behavior, a `case` directive for every case
 definition of the closure. -/
-def build (source : String) (env : Environment) (constants : List (Name × ConstantInfo)) :
+def build (source : String) (env : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String String := do
   checkWritten source
   checkNative (some source) env constants

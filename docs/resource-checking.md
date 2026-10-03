@@ -289,11 +289,30 @@ equation depends on an axiom other than `propext`, `Quot.sound` and
 `Classical.choice` (`sorryAx` or any user axiom): the adapter records every
 other axiom of the closure by address (`Program.axioms`; the three standard
 ones are pinned by their Ixon v4 content addresses) and admission propagates
-that dependency through the reverse reference graph. Under `--profile`, the
-equation sidecar lists, under `"resourceChecked"`, the `(definition,
+that dependency through the reverse reference graph.
+
+Annotated recursion is admitted only through a bound equation (second
+review, R2-3): `ix compile` refuses an annotated recursive definition — one
+Lean realizes an unfolding theorem for, or whose kernel body references a
+recursion auxiliary (`brecOn`, `binductionOn`, `WellFounded.fix`, a
+`_unary`/`_binary`/`_mutual`/`_f` auxiliary) — unless it is checked through
+its bound equation (`--equations --profile FILE`) or the profile assumes it
+(`Ix.Compile.ResourceProfile.checkRecursion`), and it confirms after the
+compile that each such definition is among the checked pairs. Its kernel
+body, with its unchecked `_f`/`_unary` auxiliaries, is not what a consumer
+runs, so it is never the checked path; under the standard profile, which
+binds no equation, annotated recursion is therefore refused outright.
+
+Whenever resource admission runs or a profile is given, the equation
+sidecar records the closure root, the effective profile (address and
+canonical bytes) and, under `"resourceChecked"`, the `(definition,
 equation)` pairs through which admission checked a definition (bound,
-resource-relevant, not assumed): the consumer must run each of these
-definitions by its equation.
+resource-relevant, not assumed), each with both addresses, the profile
+address and the contracts the equation carries ([source
+contracts](source-contracts.md), "Checked pairs"): the consumer must run
+each of these definitions by the bound equation's right-hand side, fetched
+by address. `ix check-equations SIDECAR CLOSURE` re-verifies the list
+against the closure.
 
 The default analysis bounds are depth 256 and 100,000 steps per declaration.
 Exhaustion is a rejection. Open sharing is analyzed in each binding context;
@@ -354,7 +373,8 @@ The behaviour a profile states is a consumer obligation as well: under the
 Lean core profile, choices by need; case splits and bound case definitions
 without closures and without computing dead induction hypotheses; every other
 call strict; and each definition the equation sidecar lists under
-`resourceChecked` run by its unfolding equation.
+`resourceChecked` run by its bound equation's right-hand side, fetched by
+address (no annotated recursive definition is admitted any other way).
 
 ## Profiles, claims, and consumers
 

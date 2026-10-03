@@ -37,7 +37,9 @@
 # And the behaviour this profile states below: choices by need; case splits
 # and case definitions without closures and without dead induction
 # hypotheses; every other call strict; each definition the equation sidecar
-# lists under `resourceChecked` run by its unfolding equation.
+# lists under `resourceChecked` run by its bound equation's right-hand side,
+# fetched by address (`ix compile` refuses annotated recursion that is not
+# checked through its equation; `ix check-equations` re-verifies the list).
 
 # The standard profile: Nat and String literal types; Nat, Bool and String
 # are shareable immediates.

@@ -303,10 +303,12 @@ pub extern "C" fn rs_compile_env_full(
 /// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle
 /// root — matches the serialized header, computed even when nothing is
 /// written), ungrounded (`Array (String × String)` of pretty-name /
-/// reason, sorted by name), resourceEquations (`Array (String × String)`
-/// of the `(definition, equation)` pairs resource admission checked a
-/// definition through, under a profile source), bytes (0 when not written), named count,
-/// unique anon count.
+/// reason, sorted by name), resourceEquations (`Array (String × String ×
+/// String × String)` of the `(definition, equation)` pairs resource
+/// admission checked a definition through, under a profile source: names,
+/// then hex addresses), resourceProfile (hex canonical bytes of the
+/// effective resource profile when resource admission ran, else empty),
+/// bytes (0 when not written), named count, unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
@@ -466,18 +468,28 @@ fn compile_env_inner(
       .set(i, LeanProd::new(LeanString::new(name), LeanString::new(reason)));
   }
   let equations_arr = LeanArray::alloc(compile_stt.resource_equations.len());
-  for (i, (definition, equation)) in
+  for (i, (definition, equation, definition_address, equation_address)) in
     compile_stt.resource_equations.iter().enumerate()
   {
     equations_arr.set(
       i,
-      LeanProd::new(LeanString::new(definition), LeanString::new(equation)),
+      LeanProd::new(
+        LeanString::new(definition),
+        LeanProd::new(
+          LeanString::new(equation),
+          LeanProd::new(
+            LeanString::new(definition_address),
+            LeanString::new(equation_address),
+          ),
+        ),
+      ),
     );
   }
   let status = LeanIxCompileEnvStatus::alloc(0);
   status.set_obj(0, LeanString::new(&root.hex()));
   status.set_obj(1, ungrounded_arr);
   status.set_obj(2, equations_arr);
+  status.set_obj(3, LeanString::new(&compile_stt.resource_profile));
   status.set_num_64(0, written);
   status.set_num_64(1, named_count);
   status.set_num_64(2, unique_anon);

@@ -215,6 +215,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- profile assumes nothing): its Lean body is only a model.
   if profileSource.isNone then
     IO.ofExcept <| Ix.Compile.ResourceProfile.checkNative none leanEnv constList
+  -- Review R2-3: an annotated recursive definition is admitted only through
+  -- a bound unfolding equation (or as a profile assumption), never through
+  -- its kernel encoding; the standard profile binds no equation.
+  let bound := if profileSource.isSome then associations.toList.map (·.definition) else []
+  let required ← IO.ofExcept
+    (← Ix.Compile.ResourceProfile.checkRecursion profileSource leanEnv constList bound)
   let status ← match profileSource with
     | some source =>
       Ix.CompileM.rsCompileEnvBytesProfileSourceFFI constList outPath allowPartial strictAnon source
@@ -223,12 +229,25 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
       else
         Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
-  -- Under a profile, the sidecar also lists the (definition, equation) pairs
-  -- resource admission checked a definition through; the consumer must run
-  -- each by its equation.
-  if profileSource.isSome && p.hasFlag "equations" then
+  -- Every required definition must have been checked through its equation.
+  for name in required do
+    unless status.resourceEquations.any (·.1 == toString name) do
+      if status.bytes != 0 then
+        try IO.FS.removeFile outPath catch _ => pure ()
+      throw <| IO.userError s!"resource profile: `{name}` is an annotated recursive definition \
+        that resource admission did not check through its unfolding equation; nothing written"
+  -- Whenever resource admission ran or a profile is given, the sidecar
+  -- records the closure root, the effective profile (address and canonical
+  -- bytes) and the (definition, equation) pairs resource admission checked a
+  -- definition through, with addresses; the consumer must run each by the
+  -- bound equation, and `ix check-equations` re-verifies the list.
+  if profileSource.isSome || !status.resourceProfile.isEmpty then
+    let profile ← if status.resourceProfile.isEmpty then pure none else
+      match bytesOfHex status.resourceProfile with
+      | some bytes => pure (some (toString (Address.blake3 bytes), status.resourceProfile))
+      | none => throw <| IO.userError "resource profile: invalid canonical bytes from the compiler"
     IO.FS.writeFile sidecar ((Ix.Compile.Equations.toJson associations equationFailures
-      (some status.resourceEquations)).pretty ++ "\n")
+      (some { root := status.root, profile, checked := status.resourceEquations })).pretty ++ "\n")
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 
@@ -326,7 +345,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction: comma-separated key=value items (values: digits, 2^k or max) or `unbounded`. Keys: expr_visits, depth, nodes, states, transitions, cost_evals, output_bytes, materialize, materialize_work, knapsack_cells (Lean); input_nodes, distinct_nodes, height, candidates, states, layer_states, transitions, work, output_bytes, knapsack_cells (Rust). The defaults are far above every corpus maximum; a constant that reaches one fails to compile and names the limit. Sets IX_SHARING_LIMITS."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
     equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition in the closure, library definitions included; compile each theorem with its dependencies to a fixpoint, and write the definition/theorem associations to --equations-out. An annotated definition's header input contracts are carried onto its equation's statement and listed in the sidecar."
-    "equations-out" : String; "Path for the --equations association JSON (`ix/compile-equations/1`); defaults to <out>.equations.json. With --profile it also lists, under resourceChecked, the definition/equation pairs resource admission checked a definition through."
+    "equations-out" : String; "Path for the --equations association JSON (`ix/compile-equations/1`); defaults to <out>.equations.json. Whenever resource admission runs (an annotated closure) or --profile is given, the file is written (with or without --equations) and also records the closure root, the effective resourceProfile (address and canonical bytes) and, under resourceChecked, the definition/equation pairs resource admission checked a definition through, with their addresses, the profile address and the carried contracts; `ix check-equations SIDECAR CLOSURE` re-verifies them. An annotated recursive definition is refused unless it is checked through its equation (--equations --profile) or assumed by the profile."
     profile        : String; "Resource profile source for annotated closures (one directive per line: standard, literals, shareable NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, equation NAME THEOREM, limits DEPTH STEPS); replaces the standard profile. With cases, every casesOn and matcher of the closure is bound as a generated `case NAME` directive, which the file itself may not contain. Names are resolved against the compiled closure and the effective profile address is printed. With --equations, every realized unfolding equation is added as an equation directive (generated; the file itself may not contain equation directives), so annotated recursion is checked through it. The Lean core profile is profiles/lean-core.profile; profiles/lean-core-strict.profile is the same without shareable types (no usage crossing)."
 
   ARGS:

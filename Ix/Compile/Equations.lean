@@ -141,30 +141,68 @@ def carryContracts (env : Lean.Environment) (found : Array Association) :
 private def usesName : Ixon.Uses → String
   | .erased => "erased" | .linear => "linear" | .affine => "affine" | .many => "many"
 
+/-- The sidecar's format identifier. The keys `resourceChecked` and
+`resourceProfile` are optional, so a reader of the association records alone
+is unaffected by them. -/
+def sidecarFormat : String := "ix/compile-equations/1"
+
+/-- What a compile under resource admission records in the sidecar: the
+closure's canonical root, the effective profile when resource admission ran
+(`(address, canonical bytes)`, both hex; `none` when the closure had no
+resource obligation), and the pairs through which admission checked a
+definition, as `(definition, equation, definition address, equation
+address)`. -/
+structure ResourceRecord where
+  root : String
+  profile : Option (String × String) := none
+  checked : Array (String × String × String × String) := #[]
+  deriving Inhabited, Repr
+
+private def contractJson (c : CarriedContract) : Lean.Json := Lean.Json.mkObj [
+  ("position", Lean.toJson c.position), ("binder", Lean.Json.str c.binder.toString),
+  ("uses", Lean.Json.str (usesName c.uses)),
+  ("owned", Lean.Json.str (if c.value.owned == .unique then "unique" else "shared")),
+  ("locality", Lean.Json.str (if c.value.locality == .local then "local" else "unrestricted"))]
+
 /-- The association records as JSON, sorted by definition name. With
-`checked` (a compile under a resource profile), also the `(definition,
-equation)` pairs through which resource admission checked a definition, under
-`"resourceChecked"`: a consumer must run each of these definitions by its
-equation. -/
+`resource` (a compile under resource admission), also `"root"`, the
+effective `"resourceProfile"` and, under `"resourceChecked"`, the pairs
+through which resource admission checked a definition, each with both
+addresses, the profile address and the contracts its equation carries: a
+consumer must run each of these definitions by the bound equation's
+right-hand side, fetched by address (`ix check-equations` re-verifies the
+list against the closure). -/
 def toJson (found : Array Association) (failed : Array (Lean.Name × String))
-    (checked : Option (Array (String × String)) := none) : Lean.Json :=
+    (resource : Option ResourceRecord := none) : Lean.Json :=
   let found := found.qsort (fun a b => a.definition.toString < b.definition.toString)
-  let contract (c : CarriedContract) := Lean.Json.mkObj [
-    ("position", Lean.toJson c.position), ("binder", Lean.Json.str c.binder.toString),
-    ("uses", Lean.Json.str (usesName c.uses)),
-    ("owned", Lean.Json.str (if c.value.owned == .unique then "unique" else "shared")),
-    ("locality", Lean.Json.str (if c.value.locality == .local then "local" else "unrestricted"))]
+  let checkedJson (r : ResourceRecord) := Lean.Json.arr <| r.checked.map
+    fun (definition, equation, definitionAddress, equationAddress) =>
+      let contracts := (found.find? (·.definition.toString == definition)).map (·.contracts) |>.getD #[]
+      Lean.Json.mkObj <| [
+        ("definition", Lean.Json.str definition), ("equation", Lean.Json.str equation),
+        ("definitionAddress", Lean.Json.str definitionAddress),
+        ("equationAddress", Lean.Json.str equationAddress)] ++
+        (match r.profile with
+          | some (address, _) => [("profile", Lean.Json.str address)]
+          | none => []) ++
+        [("contracts", Lean.Json.arr (contracts.map contractJson))]
   Lean.Json.mkObj <| [
-    ("format", Lean.Json.str "ix/compile-equations/1"),
+    ("format", Lean.Json.str sidecarFormat),
     ("equations", Lean.Json.arr <| found.map fun a => Lean.Json.mkObj <| [
       ("definition", Lean.Json.str a.definition.toString),
       ("equation", Lean.Json.str a.equation.toString)] ++
-      (if a.contracts.isEmpty then [] else [("contracts", Lean.Json.arr (a.contracts.map contract))])),
+      (if a.contracts.isEmpty then [] else [("contracts", Lean.Json.arr (a.contracts.map contractJson))])),
     ("failures", Lean.Json.arr <| failed.map fun (name, message) => Lean.Json.mkObj [
       ("definition", Lean.Json.str name.toString), ("message", Lean.Json.str message)])] ++
-    (match checked with
+    (match resource with
     | none => []
-    | some pairs => [("resourceChecked", Lean.Json.arr <| pairs.map fun (definition, equation) =>
-        Lean.Json.mkObj [("definition", Lean.Json.str definition), ("equation", Lean.Json.str equation)])])
+    | some r =>
+      [("root", Lean.Json.str r.root)] ++
+      (match r.profile with
+        | some (address, bytes) =>
+          [("resourceProfile", Lean.Json.mkObj [
+            ("address", Lean.Json.str address), ("bytes", Lean.Json.str bytes)])]
+        | none => []) ++
+      [("resourceChecked", checkedJson r)])
 
 end Ix.Compile.Equations

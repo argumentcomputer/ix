@@ -1127,6 +1127,8 @@ pub fn compile_env_with_resource_profile(
     };
     let resolved = ix_kernel::resource::validate(&stt.env, profile)
       .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
+    stt.resource_profile =
+      profile.bytes().iter().map(|byte| format!("{byte:02x}")).collect();
     if let Some(text) = source_text
       && !resolved.program.equations.is_empty()
     {
@@ -1152,15 +1154,17 @@ pub fn compile_env_with_resource_profile(
   Ok(stt)
 }
 
-/// The `(definition, equation)` directives of a profile source, by name,
-/// through which resource admission checked the definition: the pair is
-/// bound, the definition is resource-relevant and not an assumed one.
+/// The `(definition, equation)` directives of a profile source through which
+/// resource admission checked the definition: the pair is bound, the
+/// definition is resource-relevant and not an assumed one. Each entry is
+/// `(definition name, equation name, definition address, equation address)`,
+/// addresses in hex.
 fn checked_equations(
   stt: &CompileState,
   text: &str,
   resolved: &ixon::resource::addressed::AddressedProgram,
   limits: ixon::resource::Limits,
-) -> Result<Vec<(String, String)>, CompileError> {
+) -> Result<Vec<(String, String, String, String)>, CompileError> {
   let marked =
     ixon::resource::relevance(&resolved.program, limits).map_err(|error| {
       CompileError::UnsupportedExpr { desc: error.to_string() }
@@ -1190,9 +1194,14 @@ fn checked_equations(
       line.split('#').next().unwrap_or("").split_whitespace().collect();
     if let ["equation", definition, equation] = words.as_slice()
       && let (Some(d), Some(t)) = (address(definition), address(equation))
-      && checked.contains(&(d, t))
+      && checked.contains(&(d.clone(), t.clone()))
     {
-      pairs.push(((*definition).to_string(), (*equation).to_string()));
+      pairs.push((
+        (*definition).to_string(),
+        (*equation).to_string(),
+        d.hex(),
+        t.hex(),
+      ));
     }
   }
   pairs.sort();

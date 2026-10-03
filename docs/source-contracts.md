@@ -174,12 +174,59 @@ carried (the statement's arrows end in an equality). The association sidecar
 `contracts` array of `{position, binder, uses, owned, locality}`; an equation
 whose telescope does not match is left unchanged and listed under `failures`
 with `contracts not carried`. Definitions without header contracts, and so all
-unannotated closures, are unchanged. With `--profile`, the sidecar is
-rewritten after a successful compile with a `resourceChecked` array of
-`{definition, equation}`: the pairs through which resource admission checked
-a definition (see [resource checking](resource-checking.md)); a consumer
-must run each such definition by its equation. Without `--profile` the
-sidecar is unchanged.
+unannotated closures, are unchanged.
+
+### Checked pairs
+
+Whenever resource admission runs (the closure carries a contract) or
+`--profile` is given, `ix compile` writes the sidecar after a successful
+compile (to `--equations-out`, default `<out>.equations.json`, with or
+without `--equations`) with three more keys. The format id stays
+`ix/compile-equations/1`: the new keys are optional additions, so a reader of
+the association records is unaffected. Without resource admission and
+without `--profile` the sidecar is unchanged (and written only with
+`--equations`).
+
+```json
+{
+  "format": "ix/compile-equations/1",
+  "equations": [ … ], "failures": [ … ],
+  "root": "<64-hex canonical consts merkle root of the closure>",
+  "resourceProfile": {
+    "address": "<64-hex BLAKE3 of bytes: the profile address a resource claim binds>",
+    "bytes": "<hex canonical profile bytes (docs/resource-checking.md)>"
+  },
+  "resourceChecked": [
+    { "definition": "revAcc", "equation": "revAcc.eq_def",
+      "definitionAddress": "<64-hex>", "equationAddress": "<64-hex>",
+      "profile": "<64-hex, = resourceProfile.address>",
+      "contracts": [ { "position": 1, "binder": "acc", "uses": "many",
+                       "owned": "unique", "locality": "unrestricted" } ] }
+  ]
+}
+```
+
+`resourceProfile` is absent when no resource admission ran (an unannotated
+closure under `--profile`); `resourceChecked` is then empty. Each
+`resourceChecked` entry is a pair through which resource admission checked
+a definition: the profile binds `definition ↦ equation`, the definition is
+resource-relevant and not assumed. `contracts` lists the header contracts
+the equation's statement carries (above), possibly none. The consumer must
+run each listed definition by the bound equation's right-hand side, fetched
+by `equationAddress`; an annotated recursive definition is never admitted
+otherwise ([resource checking](resource-checking.md), unfolding equations).
+
+`ix check-equations SIDECAR CLOSURE` (`Ix.Compile.CheckEquations.verify`)
+re-verifies a sidecar against its closure, in Lean, independently of the
+compile: the profile bytes are a valid canonical profile hashing to the
+stated address (which every entry names) and `root` is the closure's root;
+the closure is admitted under that profile (resources and erased typing:
+the resource claim `(root, profile)`); the entries are exactly the bound
+pairs of resource-relevant, unassumed definitions, by address; each theorem
+is a theorem of the closure whose statement is `∀ xs, f xs = rhs` for the
+stated definition, and carries each stated contract at its position. It
+exits `0` and prints the claim and the pairs, or exits `1` with the first
+discrepancy.
 
 ## Registration and imports
 
