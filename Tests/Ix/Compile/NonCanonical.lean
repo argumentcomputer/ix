@@ -25,6 +25,11 @@
   where a certified decline or a blocked row counts as not accepted. Most
   rejections are open audit defects of the presentations themselves
   (PropSplit, FieldBelow, F4, collapse; report `plans/wave1/a1g.md`).
+
+  Re-run on the merged tree `de10a62e` (A0's safety fixes included): every
+  remaining entry has the same addresses as at `f829b760`; the entries of
+  the constants A0 now refuses were removed and the refusals are listed in
+  `expectedRefusals` (report `plans/wave1/a1g2.md`).
 -/
 import Lean
 
@@ -969,10 +974,6 @@ def nonCanonical : List NonCanonicalEntry := [
     "435319816b6206ccd7eeab703e1c2bc0bf35de933c9cb66a9e3fe1f973256b86"
     "" "ONLY-B; §4.7 (b): exists for the Lean block, not for the Ix component",
   -- Repro.F4_NestedAlphaUsers twin orig
-  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `r "user constant over the block" .bare
-    "86299fa8f0c366ae2631be68e91d8b14c1b3e342e11670eaeba6dcc994681448"
-    "e1c4d3722d61b64a8b62b83d776b589abe9e8b0e127c860a8cb7e804cf55c228"
-    "type.∀.body.∀.dom.∀.dom" "ROOT[T]; bare `@A.rec`: its type follows the grouping" (kernelsB := (false, false, false)),
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A._sizeOf_2 "sizeOf family" .o11aPending
     "c0d565ce645018032c7aae2532bd445df402682958293efbd1c1d5ed84832a01"
     "3b894264fb2b61fa899db79e1b64ace46e4c3391452a5711668292b060f6fffa"
@@ -1024,42 +1025,14 @@ def nonCanonical : List NonCanonicalEntry := [
     "1058623f06ffd2ca2dd967d8d7272a87bab174fd233bfdc3e3d09cd04f6276a8"
     "value.λ.body" "ROOT[V]; user of a split Prop member recursor (WB PropSplit: universe count; images, A3)" (kernelsB := (false, false, false)),
   -- Repro.SurgCollapse twin orig
-  e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `A.f._sunfold "user constant" .inherited
-    "20c99d4437f9bab6f7f011cdc25dd9ee8fa9bb6e423ca29ac2b0c0ccae5b2d0b"
-    "7636e396e02c68d40b90aa64d57cd383adc9ff6e178331a50918d13367015cbd"
-    "" "via [B.g]",
-  e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `f "user constant over the block" .collapseArms
-    "3c9135f1e3f63dfd29969a8d01c25a8645a4a945598f61c6a26732dd711d6ab6"
-    "499400ea4502ecbb33aca48161db72f399d875d84e7605b0bdc94a5b632013ac"
-    "value" "ROOT[V]; collapsed pair with different arms (WB-B4; refused after A0)",
   e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `B.g._f "user constant over the block" .collapseArms
     "613f59a1c61670d3010245031560fec838787e2cd97f1de4c5c4481c24310a3a"
     "5fda7ac48a527b0b71e330df93c67f2ab158fefb0c9fbfff37a7670a351af848"
     "type.∀.body.∀.dom" "ROOT[TV]; collapsed pair with different arms (WB-B4; refused after A0)",
-  e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `fg_ab "user constant" .inherited
-    "41ff23acda237cb9bb054d197a1b5637f5383f5b00f0c81efc3b8147143e8c26"
-    "d134337f3e0c00a608debbb55f2429863f4cee68454b2e157a8d37a6da59823d"
-    "" "via [A.f]" (kernelsB := (false, false, false)),
-  e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `B.g "user constant over the block" .collapseArms
-    "134a7a9f34fc485fac30cec655ec00100c540956a105cdcd37d7e86c98ffe269"
-    "c157092a95fb45e35eecf49dcf02951be735193bf3bbd02a10cc8c1970953121"
-    "value.λ.body" "ROOT[V]; collapsed pair with different arms (WB-B4; refused after A0)",
   e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `A.f._f "user constant over the block" .collapseArms
     "e800823c91a33fa63d7fde3629e0a00848f7316f8d091c7541922145298bb764"
     "c0ed98ee378360d330b40f22a2fd2b9a06153d051825644cec6ae0333f7250b2"
     "type.∀.body.∀.dom" "ROOT[TV]; collapsed pair with different arms (WB-B4; refused after A0)",
-  e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `A.f "user constant over the block" .collapseArms
-    "eb51753163b5c03ca62651f58f5819aee628d81d70bb82576db800be3617ac21"
-    "1976b151603e58bd9808bf74d8c80155e0f44c94d7b2f1041493c9c6d639cddb"
-    "value.λ.body" "ROOT[V]; collapsed pair with different arms (WB-B4; refused after A0)",
-  e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `B.g._sunfold "user constant over the block" .collapseArms
-    "5e43692a9ebf82c357e0fcf3aae38885984ad14a9e9470afebc0f241434c57bc"
-    "cc691d4e7f2bcc3dd87ae4f456135e1cd6c4cc44f750f6631b9d87c764613a4a"
-    "value.λ.body.fn" "ROOT[V]; collapsed pair with different arms (WB-B4; refused after A0)",
-  e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `f_ab "user constant over the block" .collapseArms
-    "-"
-    "698fd5c11c25e89b1d6d63a0fc6f60f0fdfd0c31deaf53c8760356282ff4c69b"
-    "" "ONLY-B; collapsed pair with different arms (WB-B4; refused after A0)" (kernelsB := (false, false, false)),
   -- Repro.SurgIdx twin orig
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending
     "9355113f809718723b3a8de22294befb19bb17826d40108439ed9ebd2c43dedd"
@@ -1486,18 +1459,6 @@ def nonCanonical : List NonCanonicalEntry := [
     "203831d813d2dd11fdb6657a41dbb43dc270341bb11c039dae14f3c436c1dd12"
     "" "ONLY-B; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   -- Proto.C7 can src
-  e `Tests.Ix.Compile.Twins.Proto.C7 "can" "src" `X.self "user constant over the block" .pendingCollapse
-    "9286fa32b14a78f4a7c1928f9065999665a8963b7881d11a88626b05b1bc7275"
-    "a4a16434e0c27b1c2ab1ec7138ccc2f10c0835c161ad813f42d6caa3c775679f"
-    "value.λ.body.λ.body.let.body" "ROOT[V]; structural theorems over a collapsed IndPred pair (O10)" (kernelsB := (true, true, false)),
-  e `Tests.Ix.Compile.Twins.Proto.C7 "can" "src" `X.self.match_1_7 "user constant over the block" .pendingCollapse
-    "81f827493b8098b3c94644163b3a2a0728dc6d134e195b285c866f94be603b51"
-    "-"
-    "" "ONLY-A; structural theorems over a collapsed IndPred pair (O10)",
-  e `Tests.Ix.Compile.Twins.Proto.C7 "can" "src" `X.self.match_2 "user constant over the block" .pendingCollapse
-    "-"
-    "920cfd422111124ad7f09da844c8e3d13025aa372c557ccc962331789ffcc971"
-    "" "ONLY-B; structural theorems over a collapsed IndPred pair (O10)" (kernelsB := (false, false, false)),
   -- Proto.C7b can src
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR.match_2 "user constant over the block" .indPredBelow
     "798cdebbd7c748dcfec2c80a49bc29a7d196ab1b0b6629ebe66299db68c83187"
@@ -1857,6 +1818,48 @@ def nonCanonical : List NonCanonicalEntry := [
     "b5083cb595f0e1ca587616cea952d75c24e55d150f6c8682b75cd133c9da67aa"
     "806f8abf939ed83b0b7831373f5ef13890970302e81cd7ecf866163f1b4890b3"
     "" "via [EqCnstr._sizeOf_inst, IneqCnstrProof._sizeOf_inst, IneqCnstr._sizeOf_inst]"
+]
+
+end Tests.Ix.Compile.NonCanonical
+
+namespace Tests.Ix.Compile.NonCanonical
+
+/-- A constant of a twin presentation that the compilers refuse at this head,
+    with a fragment of the expected message (both compilers' spellings
+    contain it) and the reason. The twins and oracle gates require exactly
+    these refusals and leave the refused constants (and the constants of the
+    reference they map to) out of the comparison. -/
+structure ExpectedRefusal where
+  constant : Lean.Name
+  message : String
+  reason : String
+
+private def rr (c : Lean.Name) (m r : String) : ExpectedRefusal := ⟨c, m, r⟩
+
+private def dropsDistinct : String := "collapse call site drops distinct arguments"
+
+/-- A0's safety refusals (`plans/wave1/a0.md`, WB-B4/D13), measured on the
+    merged tree `de10a62e`. At `f829b760` these constants compiled to output
+    that changed meaning or that the kernels rejected. -/
+def expectedRefusals : List ExpectedRefusal := [
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.f dropsDistinct
+    "raw `A.rec` user with different minors for the collapsed A and B (WB-B4)",
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.A.f dropsDistinct
+    "structural recursion with different arms over the collapsed pair (WB-B4)",
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.B.g dropsDistinct
+    "structural recursion with different arms over the collapsed pair (WB-B4)",
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.f_ab "missing" "user of the refused `f`",
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.fg_ab "missing" "user of the refused `A.f`",
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.A.f._sunfold "missing" "user of the refused `B.g`",
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.B.g._sunfold "missing" "user of the refused `A.f`",
+  rr `Tests.Ix.Compile.Twins.Repro.Orig.F4.r "collapse call site is a partial application"
+    "bare `@A.rec` over the collapsed nested pair (eta-wrapped bare recursor)",
+  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.P.toQ.match_2 dropsDistinct
+    "IndPred \"below\" matcher over the collapsed P/Q: distinct motives for the two members",
+  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.Q.toP.match_2 dropsDistinct
+    "IndPred \"below\" matcher over the collapsed P/Q: distinct motives for the two members",
+  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.P.toQ "missing" "user of the refused `P.toQ.match_2`",
+  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.Q.toP "missing" "user of the refused `P.toQ.match_2`"
 ]
 
 end Tests.Ix.Compile.NonCanonical

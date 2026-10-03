@@ -463,11 +463,42 @@ def entrySyntax (k : KernelVerdicts) (f : Family) (a b : Pres) (d : DiffRec) : S
   s!"  e `{f.fixture} \"{a.id}\" \"{b.id}\" `{d.constant} \"{role}\" {cause}\n" ++
   s!"    \"{d.addrA}\" \"{d.addrB}\" \"{d.firstDiff}\" \"{note}\"{ks},"
 
+/-- The expected refusals (`NonCanonical.expectedRefusals`) as a set. -/
+def refusedSet : Std.HashSet Name :=
+  expectedRefusals.foldl (init := {}) fun s r => s.insert r.constant
+
+/-- Check one compiler's block failures against the expected refusals of
+    the constants in `scope`: every failure must be an expected refusal with
+    its message, and every expected refusal in scope must happen. Returns
+    the number of violations. -/
+def refusalCheck (label : String) (scope : Std.HashSet Name)
+    (fails : List (String × String)) : IO Nat := do
+  let mut bad := 0
+  for (n, e) in fails do
+    match expectedRefusals.find? (·.constant.toString == n) with
+    | some r =>
+      if (e.splitOn r.message).length > 1 then
+        IO.println s!"[{label}] expected refusal: {n} ({r.reason})"
+      else
+        IO.println s!"[{label}] refusal with another message: {n}: {(e.replace "\n" " ").take 200}"
+        bad := bad + 1
+    | none =>
+      IO.println s!"[{label}] block failure: {n}: {(e.replace "\n" " ").take 200}"
+      bad := bad + 1
+  for r in expectedRefusals do
+    if scope.contains r.constant && !(fails.any (·.1 == r.constant.toString)) then
+      IO.println s!"[{label}] expected refusal did not happen: {r.constant}"
+      bad := bad + 1
+  return bad
+
 /-- Compare one pair; returns the differences. -/
 def comparePair (env : Environment) (lean : Compiled) (f : Family) (a b : Pres)
     (dumpDir : Option System.FilePath) : IO (Array DiffRec) := do
-  let ca := presConsts env a
-  let cb := presConsts env b
+  -- refused constants (and the constants of A they map to) are not compared
+  let cb := (presConsts env b).filter (!refusedSet.contains ·.1)
+  let refusedA : Std.HashSet Name := refusedSet.fold (init := {}) fun s r =>
+    if b.ns.isPrefixOf r then s.insert (mapInto a b r) else s
+  let ca := (presConsts env a).filter fun (n, _) => !refusedSet.contains n && !refusedA.contains n
   let aSet : Std.HashMap Name ConstantInfo := ca.foldl (init := {}) fun m (n, ci) => m.insert n ci
   let mapB := mapInto a b
   -- pair B's constants into A. Numbered generated names (`_proof_N`,
@@ -665,9 +696,8 @@ def run : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env closure)
   let rsPath := dir / "twins-rs.ixe"
-  for (n, e) in leanOut.cenv.ungrounded.toList do
-    IO.println s!"[twins] Lean block failure: {n.pretty}: {(e.replace "\n" " ").take 200}"
-  let mut failures := leanOut.cenv.ungrounded.size
+  let mut failures ← refusalCheck "twins: Lean" ((closure.foldl (init := {}) fun s (n, _) => s.insert n))
+    (leanOut.cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e))
   let mut rsUngrounded : Array (String × String) := #[]
   let mut rsEnv : Ixon.Env := {}
   try
@@ -683,9 +713,8 @@ def run : IO UInt32 := do
     (leanOut.env.getAddr? (Ix.Name.fromLeanName n)).map toString
   let rsAddr (n : Name) : Option String :=
     (rsEnv.getAddr? (Ix.Name.fromLeanName n)).map toString
-  for (n, e) in rsUngrounded do
-    IO.println s!"[twins] Rust ungrounded: {n}: {(e.replace "\n" " ").take 200}"
-    failures := failures + 1
+  let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
+  failures := failures + (← refusalCheck "twins: Rust" scope rsUngrounded.toList)
   -- 1. Lean and Rust agree on every fixture constant
   let mut lr := 0
   for n in seeds do
@@ -715,6 +744,12 @@ def run : IO UInt32 := do
         if d.cls == "INHERITED" then nInh := nInh + 1 else nRoot := nRoot + 1
         unless es.any (·.constant == d.constant) do
           unexpected := unexpected.push (entrySyntax kernels f a b d)
+        -- evidence drift: the entry still matches, but an address moved since
+        -- the measurement (informational; the gate keys entries by constant)
+        if let some e := es.find? (·.constant == d.constant) then
+          if e.evidence.addrA != d.addrA || e.evidence.addrB != d.addrB then
+            IO.println s!"[twins] DRIFT {f.fixture.getString!} {a.id}/{b.id} {d.constant} ({e.cause.tag}): \
+{e.evidence.addrA.take 12}/{e.evidence.addrB.take 12} -> {d.addrA.take 12}/{d.addrB.take 12}"
       for e in es do
         unless ds.any (·.constant == e.constant) do
           stale := stale.push s!"{f.fixture} {a.id}/{b.id} {e.constant} ({e.cause.tag})"

@@ -180,9 +180,8 @@ def run : IO UInt32 := do
   IO.println s!"[aux-oracle] {families.length} families, {seeds.size} fixture constants, \
 {closure.length} in the closure"
   let out ← leanCompile env closure
-  let mut failures := out.cenv.ungrounded.size
-  for (nm, e) in out.cenv.ungrounded.toList do
-    IO.println s!"[aux-oracle] block failure: {nm.pretty}: {(e.replace "\n" " ").take 200}"
+  let mut failures ← refusalCheck "aux-oracle" (closure.foldl (init := {}) fun s (x, _) => s.insert x)
+    (out.cenv.ungrounded.toList.map fun (x, e) => (x.pretty, e))
   let mut total := 0
   let mut byClass : Std.HashMap String Nat := {}
   for f in families do
