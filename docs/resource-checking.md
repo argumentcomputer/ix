@@ -171,7 +171,11 @@ closures; the consumer must compile them the same way:
   charged, but no ownership is transferred. Each minor binds the constructor's
   fields, which keep all of the major's origins and loan root and are unique
   only when both the major and the field binder are; the alternatives are
-  joined. A minor that uses an induction hypothesis is rejected.
+  joined. A minor in which an induction hypothesis occurs at all is rejected:
+  the test is syntactic, so a hypothesis passed to a dead binder or to an
+  erased argument, or mentioned in a type, counts (a consumer that computes
+  hypotheses eagerly would recurse there); a minor that does not mention its
+  hypotheses lets the consumer skip computing them.
 - A *case definition* bound by the profile (`casesOn` and matchers; `ix
   compile` binds exactly those Lean records, see below) is unfolded at a full
   application when its body is an unannotated lambda telescope around a full

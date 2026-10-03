@@ -114,4 +114,23 @@ namespace OS09
 def lin (1 x : Nat) (1 y : Nat) : Nat := x + y
 end OS09
 
+/-! ## Induction hypotheses (review F4) -/
+
+/- Violation if the consumer computes hypotheses: the hypothesis is passed to
+a dead beta-redex binder; an eager recursor moves `u` once per element. -/
+namespace I08
+def keep (! xs : List Nat) : ! List Nat := xs
+noncomputable def f (xs : List Nat) (! u : List Nat) : ! List Nat :=
+  @List.rec Nat (fun _ => List Nat) (keep u) (fun _ _ ih => (fun (_z : List Nat) => keep u) ih) xs
+end I08
+
+/- Violation if the consumer computes hypotheses: the hypothesis is used only
+in an erased argument. -/
+namespace I01
+def keep (! xs : List Nat) : ! List Nat := xs
+def drop0 (0 _n : List Nat) (! u : List Nat) : ! List Nat := u
+noncomputable def f (xs : List Nat) (! u : List Nat) : ! List Nat :=
+  @List.rec Nat (fun _ => List Nat) (keep u) (fun _ _ ih => drop0 ih (keep u)) xs
+end I01
+
 end Tests.Ix.SourceContract.ReviewFixture

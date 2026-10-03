@@ -1080,7 +1080,14 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
                 -- demand; the major premise is inspected, not consumed; each
                 -- minor binds the constructor's fields, which keep the major's
                 -- origins and are unique only when both the major and the field
-                -- binder are.
+                -- binder are. Every minor must ignore its induction hypotheses
+                -- syntactically: an occurrence anywhere (a dead binder, an
+                -- erased argument, a type) is a use for a consumer that
+                -- computes it.
+                for j in [0:info.minors] do
+                  unless ← ignoresHypotheses ctx.program fuel args[info.params + info.motives + j]!
+                      info.fields[j]! info.binders[j]! do
+                    throw (.unsupported "a case split uses an induction hypothesis")
                 let mut tail := (← declaration ctx.program index).type
                 let mut minorTypes := #[]
                 for i in [0:info.arity] do

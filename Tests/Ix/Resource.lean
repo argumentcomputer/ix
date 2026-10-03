@@ -447,6 +447,14 @@ def caseCases : Array Case := #[
   ⟨"a dead induction hypothesis is ignored", arr (b .many) .shared chainTy natTy,
     lam (b .many) (app4 (ref 28) (constMotive chainTy natTy) zero
       (lam (b .many) (lam (b .many) zero natTy) chainTy) (v 0)) chainTy, "ok"⟩,
+  -- Review F4: any occurrence of a hypothesis is a use.
+  ⟨"a hypothesis passed to a dead binder is a use", arr (b .many) .shared chainTy natTy,
+    lam (b .many) (app4 (ref 28) (constMotive chainTy natTy) zero
+      (lam (b .many) (lam (b .many) (.app (lam (b .many) zero natTy) (v 0)) natTy) chainTy) (v 0)) chainTy,
+    "unsupported"⟩,
+  ⟨"a hypothesis in an erased argument is a use", arr (b .many) .shared chainTy natTy,
+    lam (b .many) (app4 (ref 28) (constMotive chainTy natTy) zero
+      (lam (b .many) (lam (b .many) (call 4 (v 0)) natTy) chainTy) (v 0)) chainTy, "unsupported"⟩,
   -- Wrappers and β-redexes.
   ⟨"a case wrapper is unfolded", resBoxRes (b .linear),
     lam (b .linear) (lam (b .many) (app4 (ref 29) (constMotive boxTy resTy) (v 0) (v 1)

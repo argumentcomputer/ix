@@ -1886,6 +1886,22 @@ impl<'a> Checker<'a> {
     destination: usize,
     grade: Uses,
   ) -> Result<Value, Error> {
+    // Every minor must ignore its induction hypotheses syntactically: an
+    // occurrence anywhere (a dead binder, an erased argument, a type) is a
+    // use for a consumer that computes it.
+    for j in 0..info.minors {
+      let minor = args[info.params + info.motives + j].clone();
+      if !self.ignores_hypotheses(
+        fuel,
+        &minor,
+        info.fields[j],
+        info.binders[j],
+      )? {
+        return Err(Error::Unsupported(
+          "a case split uses an induction hypothesis",
+        ));
+      }
+    }
     let mut tail = self.declaration(index)?.typ.clone();
     let mut minor_types = vec![];
     for (i, arg) in args[..info.arity()].iter().enumerate() {
@@ -3167,7 +3183,7 @@ mod tests {
   fn case_split_fixtures() {
     let text =
       include_str!("../../../Tests/Fixtures/ixon-v4/resource-cases.tsv");
-    assert!(run_fixture_lines(&cases_program(), text) >= 19);
+    assert!(run_fixture_lines(&cases_program(), text) >= 21);
   }
 
   /// The case program extended with `Eq` and an unfolding equation for the
