@@ -10,6 +10,8 @@ public import Ix.EnvScope
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.CompileM
+public import Ix.Compile.Canon
+public import Ix.Compile.Image
 public import Ix.DecompileM
 public import Ix.Replay
 public import Ix.Catalog

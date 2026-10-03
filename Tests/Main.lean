@@ -14,6 +14,8 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.Canon
+import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -191,6 +193,9 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
 about 11 s and the rest 2-4 s each (measured 2026-08-05). -/
 def primaryRunners : List (String × IO UInt32) := [
+  -- The pure image generator (Ix.Compile.Image) on the prototype's fifteen sub-cases, with
+  -- Lean's kernel as the oracle (Tests.Ix.Compile.Image).
+  ("image-gen", Tests.Ix.Compile.Image.run),
   ("aiur-rust-syntax", AiurTests.RustSyntax.run),
   -- The circuit TagN codec against the host codec (about 16 s).
   ("ixvm-tagn", Tests.Ix.IxVM.TagN.runSuite),
@@ -326,6 +331,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
+  -- Pass 1 (Ix.Compile.Canon) under today's rules against the compiler's
+  -- CondenseM / sortConsts / nested order on the same fixture corpus, and
+  -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
+  ("canon-pass1", Tests.Ix.Compile.Canon.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).

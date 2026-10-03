@@ -402,6 +402,14 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
+/-- The canonicalisation census computed by Pass 1 (`Ix.Compile.Canon`) under
+today's rules and the Phase A rules: `canon-census <source.lean> <stored.ixe>
+[--tsv <blocks.tsv>]` (`Benchmarks/Canon/Census.lean`). -/
+lean_exe «canon-census» where
+  root := `Benchmarks.Canon.Census
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /-- Regenerates `IxC/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
