@@ -16,10 +16,14 @@
 
   Deliberate deviations from Rust, none output-visible:
   - Sequential scheduling instead of work-stealing threads. Output maps
-    are keyed by name/address and every merge is insert-once or
-    last-wins-per-name in dependency order, so scheduling order does not
-    affect the result (Rust relies on the same property for its
-    nondeterministic work-stealing order).
+    are keyed by name/address. Name claims (`nameToAddr`,
+    `auxNameToAddr`) and call-site plans are insert-once: a second claim
+    at a different address, or a different plan, is the error Rust's
+    insert-once scheduler raises (`checkBlockClaims`, A0's single
+    ownership). `Named` entries are last-wins overrides within one block's
+    registrations, and constants and blobs are content-keyed. So
+    scheduling order does not affect the result (Rust relies on the same
+    property for its nondeterministic work-stealing order).
   - A fresh `AuxKernelCtx` per block instead of Rust's per-worker
     `KernelCtx` reused across blocks (cleared every `KENV_CLEAR_EVERY`).
     The kernel env is content-addressed, so reuse is a cache, not an
@@ -256,12 +260,110 @@ structure DriverAcc where
       mutual.rs:235/400/480). -/
   pending : Array Name := #[]
 
+/-- Two producers claim one name at different addresses. Mirrors Rust
+    `name_claim_conflict` (compile.rs:470-482), including the 12-hex-digit
+    address prefixes. -/
+def nameClaimConflict (name : Name) (existing claimed : Address) : CompileError :=
+  .invalidMutualBlock s!"conflicting claims for name '{name.pretty}': already \
+registered at {(toString existing).take 12}, claimed again at \
+{(toString claimed).take 12}"
+
+/-- The primary names a compiled block claims, with their addresses, in
+    Rust's claim order: the lone constant of a block without projections,
+    else each member projection. -/
+def primaryClaims (lo : Name) (result : BlockResult) : Array (Name × Address) :=
+  if result.projections.isEmpty then
+    #[(lo, result.blockAddr)]
+  else
+    result.projections.map fun (name, proj, _) => (name, Address.blake3 (Ixon.ser proj))
+
+/-- Single ownership of the names a block claims (A0; Rust
+    `CompileState::claim_compiled_name` and `claim_aux_name`,
+    compile.rs:324-370, and the checked plan inserts, compile.rs:4990-5115),
+    checked against the LIVE driver state before anything is merged.
+
+    Rust claims inside the block, against the shared state, in this order:
+    - the primary names (`claim_compiled_name`): an `aux_name_to_addr` entry
+      at another address is a conflict;
+    - the aux tail's names (`claim_aux_name`): a `name_to_addr` entry
+      (including this block's own primary names) or an earlier
+      `aux_name_to_addr` claim at another address is a conflict, and an
+      identical re-claim is a no-op;
+    - the call-site plans: a different plan already registered under the
+      name is a conflict.
+
+    The Lean block computes against a snapshot and the driver merges
+    afterwards, so the same checks run here, in the same order, with the
+    same messages. In the sequential driver the snapshot is the live state;
+    in the wave driver these checks are what catch two blocks of one wave
+    claiming one name. A refused block merges nothing; the driver records
+    the error for every member, like any other block failure.
+
+    The aux claims are replayed from `auxNamed` in registration order:
+    every claim in `Ix.AuxGen.CompileAux` registers its `Named` at the
+    claimed address immediately before inserting the claim, and the
+    synthetic `Muts` entries, the only other `auxNamed` entries, are not
+    claims. -/
+def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
+    (cache : BlockState)
+    (plans : Std.HashMap Name CallSitePlan)
+    (brecPlans belowPlans : Std.HashMap Name BRecOnCallSitePlan)
+    : Except CompileError Unit := do
+  let mut compiled : Std.HashMap Name Address := {}
+  for (name, addr) in primary do
+    if let some existing := cenv.auxNameToAddr.get? name then
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    compiled := compiled.insert name addr
+  let mut claimed : Std.HashMap Name Address := {}
+  for (name, named) in cache.auxNamed do
+    unless cache.auxGenExtraNames.contains name && cache.auxNameToAddr.contains name do
+      continue
+    let addr := named.addr
+    let registered := match compiled.get? name with
+      | some a => some a
+      | none => cenv.nameToAddr.get? name
+    if let some existing := registered then
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    let earlier := match claimed.get? name with
+      | some a => some a
+      | none => cenv.auxNameToAddr.get? name
+    match earlier with
+    | some existing =>
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    | none => claimed := claimed.insert name addr
+  for (name, plan) in plans do
+    if let some existing := cenv.callSitePlans.get? name then
+      if existing != plan then
+        throw (.invalidMutualBlock s!"conflicting call-site plans for \
+'{name.pretty}' — two blocks claim one source-indexed aux name")
+  for (name, plan) in brecPlans do
+    if let some existing := cenv.brecOnCallSitePlans.get? name then
+      if existing != plan then
+        throw (.invalidMutualBlock s!"conflicting brecOn call-site plans for \
+'{name.pretty}' — two blocks claim one source-indexed aux name")
+  for (name, plan) in belowPlans do
+    if let some existing := cenv.belowCallSitePlans.get? name then
+      if existing != plan then
+        throw (.invalidMutualBlock s!"conflicting below call-site plans for \
+'{name.pretty}' — two blocks claim one source-indexed aux name")
+
 /-- Merge one compiled block's outputs into the driver state, mirroring
     the Rust global-mutation order: block constant, member projections
     (primary `register_name` + `name_to_addr`, compile.rs:3902-3969),
     then the tail's aux constants, Named overrides (incl. the synthetic
     `Muts` entry and aliases), aux name→addr map, extra names, and
-    call-site plans. -/
+    call-site plans.
+
+    Every caller first checks the block for single ownership against the
+    live state (`checkBlockClaims`) and merges only if the check passes: a
+    conflict is an error and nothing is merged. The check is a separate
+    step, not part of this function, so that the merge keeps consuming the
+    driver state uniquely (a merge returning `Except` would keep the old
+    state alive for the error branch and copy every map it inserts into).
+    `Named` entries are overrides by design (the tail re-registers
+    regenerated names and the `Muts` entry), as with Rust's
+    `register_name`; content-keyed tables (constants, blobs) are unioned by
+    content. -/
 def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     (result : BlockResult) (cache : BlockState)
     (plans : Std.HashMap Name CallSitePlan)
@@ -316,6 +418,30 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
     defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints
     pending }
+
+/-- The scheduler's promote-remaining pass over a pre-compiled block's
+    members (Rust env.rs:757-789). A member already in `nameToAddr` keeps
+    its address; an aux claim on it at a different address is recorded as
+    a conflict for that member (single ownership, A0) instead of being
+    skipped silently. A member not yet registered takes its resolved
+    address. Returns the members newly registered. -/
+def promoteRemaining (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Name := Id.run do
+  let mut acc := acc
+  let mut newNames : Array Name := #[]
+  for name in all do
+    match acc.cenv.nameToAddr.get? name with
+    | some existing =>
+      if let some claimed := acc.cenv.auxNameToAddr.get? name then
+        if claimed != existing then
+          let msg := toString (nameClaimConflict name existing claimed)
+          acc := { acc with cenv := { acc.cenv with
+            ungrounded := acc.cenv.ungrounded.insert name msg } }
+    | none =>
+      if let some addr := resolveAddrPure acc.cenv name then
+        acc := { acc with cenv := { acc.cenv with
+          nameToAddr := acc.cenv.nameToAddr.insert name addr } }
+        newNames := newNames.push name
+  return (acc, newNames)
 
 /-- Self-name address of a `ConstantMeta`, for the promote coherence
     check (Rust `promote_aux`, compile.rs:317-328). -/
@@ -409,16 +535,20 @@ def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
     if acc.cenv.auxNameToAddr.contains rep then
       continue
     let some all := blocks.blocks.get? rep | continue
-    match runBlockWithAux acc.cenv all rep with
-    | .error e =>
-      return .error s!"aux_gen prereq pre-compile failed for SCC \
+    let failed (e : CompileError) : String := s!"aux_gen prereq pre-compile failed for SCC \
 '{rep.pretty}' ({all.size} members): {e}. The SCC closure is traversed \
 in reverse-topological order starting from the aux_gen seed names, so \
 all transitive deps should be compiled before this — if you're hitting \
 this, a dep relationship isn't captured in the ref graph, or the source \
 env is inconsistent."
+    match runBlockWithAux acc.cenv all rep with
+    | .error e => return .error (failed e)
     | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-      acc := mergeCompiledBlock acc rep result cache plans brecPlans belowPlans
+      -- A conflicting claim fails the pre-compile like a block error
+      -- (Rust's claims raise inside `compile_const`, env.rs:1105-1117).
+      match checkBlockClaims acc.cenv (primaryClaims rep result) cache plans brecPlans belowPlans with
+      | .error e => return .error (failed e)
+      | .ok () => acc := mergeCompiledBlock acc rep result cache plans brecPlans belowPlans
       -- Move compiled names → auxNameToAddr (env.rs:1119-1137). At this
       -- stage `nameToAddr` contains exactly the prereq registrations.
       let moved := acc.cenv.nameToAddr
@@ -551,13 +681,19 @@ missing canonical aliases: {missing}"
             -- will get MissingConstant rather than broken data.
             pure ()
           | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-            acc := mergeCompiledBlock acc unresolvedNames[0]! result cache
-              plans brecPlans belowPlans
-            for n in unresolvedNames do
-              acc := { acc with
-                cenv := { acc.cenv with
-                  auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n }
-                pending := acc.pending.push n }
+            -- A conflicting claim is a compile failure of the subset (Rust
+            -- claims inside `compile_const`): nothing is registered.
+            let clo := unresolvedNames[0]!
+            match checkBlockClaims acc.cenv (primaryClaims clo result) cache plans brecPlans
+                belowPlans with
+            | .error _ => pure ()
+            | .ok () =>
+              acc := mergeCompiledBlock acc clo result cache plans brecPlans belowPlans
+              for n in unresolvedNames do
+                acc := { acc with
+                  cenv := { acc.cenv with
+                    auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n }
+                  pending := acc.pending.push n }
       if anyAuxGen && !auxIncomplete then
         -- Compile the original Lean form and promote (env.rs:656-693).
         match compileConstNoAuxPure acc.cenv lo all with
@@ -599,24 +735,27 @@ missing canonical aliases: {missing}"
             defHints := cache.defHints.fold (fun m k v => m.insert k v)
               acc.defHints }
       if !auxIncomplete then
-        -- Promote remaining names from auxNameToAddr (env.rs:697-707).
-        for name in all do
-          if !acc.cenv.nameToAddr.contains name then
-            if let some addr := resolveAddrPure acc.cenv name then
-              acc := { acc with cenv := { acc.cenv with
-                nameToAddr := acc.cenv.nameToAddr.insert name addr } }
+        -- Promote remaining names from auxNameToAddr (env.rs:757-789).
+        acc := (promoteRemaining acc all).1
     else
       -- Normal path: compile the block with the aux tail.
-      match runBlockWithAux acc.cenv all lo with
-      | .error e =>
+      let fail (acc : DriverAcc) (e : CompileError) : DriverAcc := Id.run do
         -- Soft failure (env.rs:727-737): record per member; the
         -- scheduler keeps running and dependents cascade.
         let msg := toString e
+        let mut acc := acc
         for m in all do
           acc := { acc with cenv := { acc.cenv with
             ungrounded := acc.cenv.ungrounded.insert m msg } }
+        return acc
+      match runBlockWithAux acc.cenv all lo with
+      | .error e => acc := fail acc e
       | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-        acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
+        -- A conflicting claim is a failure of this block (Rust raises it
+        -- inside `compile_const`).
+        match checkBlockClaims acc.cenv (primaryClaims lo result) cache plans brecPlans belowPlans with
+        | .error e => acc := fail acc e
+        | .ok () => acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
 
     -- Release dependents: block members plus drained pending-aux names
     -- (env.rs:838-870).
@@ -658,9 +797,11 @@ Wave-based parallel version of `compileEnvAux`, mirroring the plain
 `CompileEnv`, workers compute a pure per-block outcome against the
 snapshot, and the main thread applies the same merges as the sequential
 driver. Blocks within a wave are dependency-independent, and every merge
-is per-name-disjoint or content-keyed, so intra-wave completion order
-cannot affect the output — the same property Rust's work-stealing
-scheduler relies on. -/
+is per-name-disjoint or content-keyed: two blocks of one wave that claim
+one name at different addresses (or one plan key with different plans)
+are refused by the merge-time check (`checkBlockClaims`) against the live
+state, as Rust's insert-once claims refuse them. Which of the two blocks
+reports the conflict follows completion order, in both compilers. -/
 
 /-- Pure per-block outcome computed by a wave worker. -/
 inductive AuxBlockOutcome where
@@ -734,14 +875,25 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       return .compiled result cache plans brecPlans belowPlans
 
 /-- Apply a worker outcome to the live driver state. Returns the names
-    newly REGISTERED by this block (for rustRef fail-fast comparison). -/
+    newly REGISTERED by this block (for rustRef fail-fast comparison), and
+    whether the block failed at merge time: a conflicting claim
+    (`checkBlockClaims`) fails the block like a compile error, so the wave
+    loop must release its dependents as failed. -/
 def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
-    (outcome : AuxBlockOutcome) : DriverAcc × Array Name := Id.run do
+    (outcome : AuxBlockOutcome) : DriverAcc × Array Name × Bool := Id.run do
   let mut acc := acc
   let mut newNames : Array Name := #[]
+  let recordFailure (acc : DriverAcc) (msg : String) : DriverAcc := Id.run do
+    let mut acc := acc
+    for m in all do
+      acc := { acc with cenv := { acc.cenv with
+        ungrounded := acc.cenv.ungrounded.insert m msg } }
+    return acc
   match outcome with
   | .compiled result cache plans brecPlans belowPlans =>
-    acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
+    match checkBlockClaims acc.cenv (primaryClaims lo result) cache plans brecPlans belowPlans with
+    | .error e => return (recordFailure acc (toString e), #[], true)
+    | .ok () => acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
     if result.projections.isEmpty then
       newNames := newNames.push lo
     else
@@ -750,33 +902,32 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     for (n, _) in cache.auxNamed do
       newNames := newNames.push n
   | .failed msg =>
-    for m in all do
-      acc := { acc with cenv := { acc.cenv with
-        ungrounded := acc.cenv.ungrounded.insert m msg } }
+    acc := recordFailure acc msg
   | .promoted crossScc crossNames incompleteMsg noAux noAuxFailMsg =>
     if let some (clo, result, cache, plans, brecPlans, belowPlans) := crossScc then
-      acc := mergeCompiledBlock acc clo result cache plans brecPlans belowPlans
-      if result.projections.isEmpty then
-        newNames := newNames.push clo
-      else
-        for (name, _, _) in result.projections do
-          newNames := newNames.push name
-      for (n, _) in cache.auxNamed do
-        newNames := newNames.push n
-    for n in crossNames do
-      acc := { acc with cenv := { acc.cenv with
-        auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n } }
+      -- A conflicting claim is a compile failure of the cross-SCC subset,
+      -- as in the sequential driver: nothing is registered.
+      match checkBlockClaims acc.cenv (primaryClaims clo result) cache plans brecPlans belowPlans with
+      | .error _ => pure ()
+      | .ok () =>
+        acc := mergeCompiledBlock acc clo result cache plans brecPlans belowPlans
+        if result.projections.isEmpty then
+          newNames := newNames.push clo
+        else
+          for (name, _, _) in result.projections do
+            newNames := newNames.push name
+        for (n, _) in cache.auxNamed do
+          newNames := newNames.push n
+        for n in crossNames do
+          acc := { acc with cenv := { acc.cenv with
+            auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n } }
     match incompleteMsg with
     | some msg =>
-      for m in all do
-        acc := { acc with cenv := { acc.cenv with
-          ungrounded := acc.cenv.ungrounded.insert m msg } }
+      acc := recordFailure acc msg
     | none =>
       match noAuxFailMsg with
       | some msg =>
-        for m in all do
-          acc := { acc with cenv := { acc.cenv with
-            ungrounded := acc.cenv.ungrounded.insert m msg } }
+        acc := recordFailure acc msg
       | none =>
         if let some (result, cache) := noAux then
           let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
@@ -791,10 +942,7 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
             match promoteAuxDriver acc.cenv name origAddr origMeta with
             | .error e =>
               promoteFailed := true
-              let msg := toString e
-              for m in all do
-                acc := { acc with cenv := { acc.cenv with
-                  ungrounded := acc.cenv.ungrounded.insert m msg } }
+              acc := recordFailure acc (toString e)
             | .ok cenv' =>
               acc := { acc with cenv := cenv' }
           acc := { acc with
@@ -805,16 +953,12 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
               acc.blockNames
             defHints := cache.defHints.fold (fun m k v => m.insert k v)
               acc.defHints }
-      -- Promote remaining names from auxNameToAddr (env.rs:697-707) —
+      -- Promote remaining names from auxNameToAddr (env.rs:757-789) —
       -- against the LIVE env; also counts as registration for rustRef.
-      if incompleteMsg.isNone then
-        for name in all do
-          if !acc.cenv.nameToAddr.contains name then
-            if let some addr := resolveAddrPure acc.cenv name then
-              acc := { acc with cenv := { acc.cenv with
-                nameToAddr := acc.cenv.nameToAddr.insert name addr } }
-              newNames := newNames.push name
-  return (acc, newNames)
+      let (acc', promoted) := promoteRemaining acc all
+      acc := acc'
+      newNames := newNames ++ promoted
+  return (acc, newNames, false)
 
 /-- Work item for the aux-aware parallel driver. -/
 structure AuxWorkItem where
@@ -943,7 +1087,10 @@ blocks remaining but none ready"
         if let .promoted _ _ (some _) _ _ := outcome then
           for n in all do
             failedNames := failedNames.insert n
-        let (acc', newNames) := applyAuxBlockOutcome acc lo all outcome
+        let (acc', newNames, mergeFailed) := applyAuxBlockOutcome acc lo all outcome
+        if mergeFailed then
+          for n in all do
+            failedNames := failedNames.insert n
         acc := acc'
         if let some rust := rustRef then
           for name in newNames do

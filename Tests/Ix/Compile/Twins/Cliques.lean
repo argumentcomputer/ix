@@ -38,6 +38,25 @@
            goal-specific `decreasing_by` (the TACTIC-ASYM probe)
   - `TN`   theorems by mutual structural recursion with identical
            statements (the NOSPEC probe)
+  - `RF`   structural over a reflexive inductive (a field `Nat → Rt`): paths
+           into `below` through an application (A5f)
+  - `NS`   structural over a nested inductive (`Rose`, `List Rose`), two
+           functions on `Rose` and one on the nested `List Rose` (A5f)
+  - `LI`   `inductive_fixpoint`, three predicates (the lattice route) (A5f)
+  - `LC`   `coinductive_fixpoint`, two predicates (A5f)
+  - `PU`   `partial_fixpoint` with user-written monotonicity proofs: one
+           tactic block that unfolds the order, one explicit lemma chain (A5f)
+  - `RA`   structural, two candidate recursive arguments per function and
+           no `termination_by structural` (the RECARG probe) (A5f)
+  - `WH`   well-founded, fixed proofs in another order per function and a
+           `decreasing_by` that picks a hypothesis by context order (the
+           TACTIC-ASYM probe within one goal) (A5f)
+  - `TR`   theorems by mutual structural recursion, identical statements,
+           different recursion (Q6's recovered specification) (A5f)
+  - `TQ`   theorems by mutual well-founded recursion, identical statements,
+           different recursion (Q6's recovered specification) (A5f)
+  - `WU`   well-founded, a user value of exactly the clique's packing type
+           (the position restriction's negative control) (A5f)
 -/
 
 namespace Tests.Ix.Compile.Twins.Cliques
@@ -64,6 +83,21 @@ end
 def ev : Nat → Bool
   | 0 => true
   | n + 1 => !ev n
+
+/-- A reflexive inductive (family `RF`). -/
+inductive Rt where
+  | leaf : Nat → Rt
+  | node : (Nat → Rt) → Rt
+
+/-- A nested inductive (family `NS`). -/
+inductive Rose where
+  | node : Nat → List Rose → Rose
+
+/-- A user function on the packing type of a two-function well-founded
+clique over `Nat` (family `WU`). -/
+def pv : PSum Nat Nat → Nat
+  | .inl a => a
+  | .inr b => b + 1
 
 end Common
 
@@ -679,5 +713,365 @@ theorem na : ∀ n, ev (2 * n) = true
 end
 end P1
 end TN
+
+/-! ## RF: structural recursion over a reflexive inductive. The recursive
+calls go through the field `f : Nat → Rt`, so the path into the `below`
+dictionary applies the dictionary entry to the argument before projecting
+into the packed motive. -/
+namespace RF
+namespace P0
+mutual
+def ra : Rt → Nat
+  | .leaf n => n
+  | .node f => rb (f 0) + 1
+def rb : Rt → Nat
+  | .leaf n => n + 1
+  | .node f => ra (f 1) + rb (f 2)
+end
+end P0
+namespace P1
+mutual
+def rb : Rt → Nat
+  | .leaf n => n + 1
+  | .node f => ra (f 1) + rb (f 2)
+def ra : Rt → Nat
+  | .leaf n => n
+  | .node f => rb (f 0) + 1
+end
+end P1
+-- regrouping: `rb` as a `where` function of `ra`
+namespace P2
+def ra : Rt → Nat
+  | .leaf n => n
+  | .node f => rb (f 0) + 1
+where
+  rb : Rt → Nat
+    | .leaf n => n + 1
+    | .node f => ra (f 1) + rb (f 2)
+end P2
+end RF
+
+/-! ## NS: structural recursion over a nested inductive: two functions on
+`Rose`, one on the nested occurrence `List Rose` (the nested block's
+`below_1`/`brecOn_1`). -/
+namespace NS
+namespace P0
+mutual
+def na : Rose → Nat
+  | .node n cs => n + nl cs
+def nb : Rose → Nat
+  | .node _ cs => nl cs + 1
+def nl : List Rose → Nat
+  | [] => 0
+  | c :: cs => na c + nb c + nl cs
+end
+end P0
+namespace P1
+mutual
+def nb : Rose → Nat
+  | .node _ cs => nl cs + 1
+def na : Rose → Nat
+  | .node n cs => n + nl cs
+def nl : List Rose → Nat
+  | [] => 0
+  | c :: cs => na c + nb c + nl cs
+end
+end P1
+namespace P2
+mutual
+def nl : List Rose → Nat
+  | [] => 0
+  | c :: cs => na c + nb c + nl cs
+def nb : Rose → Nat
+  | .node _ cs => nl cs + 1
+def na : Rose → Nat
+  | .node n cs => n + nl cs
+end
+end P2
+end NS
+
+/-! ## LI: `inductive_fixpoint`, three predicates (the `CompleteLattice`
+route: `ImplicationOrder`, `instCompleteLatticePProd`, `lfp_monotone`). -/
+namespace LI
+namespace P0
+mutual
+def la (n : Nat) : Prop := if n = 0 then True else lb (n - 1)
+inductive_fixpoint
+def lb (n : Nat) : Prop := if n = 0 then False else lc (n - 1) ∧ la (n - 1)
+inductive_fixpoint
+def lc (n : Nat) : Prop := la n ∨ lb (n + 1)
+inductive_fixpoint
+end
+end P0
+namespace P1
+mutual
+def lc (n : Nat) : Prop := la n ∨ lb (n + 1)
+inductive_fixpoint
+def la (n : Nat) : Prop := if n = 0 then True else lb (n - 1)
+inductive_fixpoint
+def lb (n : Nat) : Prop := if n = 0 then False else lc (n - 1) ∧ la (n - 1)
+inductive_fixpoint
+end
+end P1
+namespace P2
+mutual
+def lb (n : Nat) : Prop := if n = 0 then False else lc (n - 1) ∧ la (n - 1)
+inductive_fixpoint
+def la (n : Nat) : Prop := if n = 0 then True else lb (n - 1)
+inductive_fixpoint
+def lc (n : Nat) : Prop := la n ∨ lb (n + 1)
+inductive_fixpoint
+end
+end P2
+end LI
+
+/-! ## LC: `coinductive_fixpoint`, two predicates
+(`ReverseImplicationOrder`). -/
+namespace LC
+namespace P0
+mutual
+def ca (n : Nat) : Prop := cb (n + 1) ∧ n ≥ 0
+coinductive_fixpoint
+def cb (n : Nat) : Prop := ca (n + 1)
+coinductive_fixpoint
+end
+end P0
+namespace P1
+mutual
+def cb (n : Nat) : Prop := ca (n + 1)
+coinductive_fixpoint
+def ca (n : Nat) : Prop := cb (n + 1) ∧ n ≥ 0
+coinductive_fixpoint
+end
+end P1
+end LC
+
+/-! ## PU: `partial_fixpoint` with user-written monotonicity proofs. `ua`'s
+proof unfolds the order and projects the hypothesis `h : f ⊑ g` (an `And`
+over the packing); `ub`'s is an explicit lemma chain, the shape `solveMono`
+builds. Each presentation's proofs are written against its own packing, as
+a user would write them. -/
+namespace PU
+namespace P0
+mutual
+def ua (n : Nat) : Option Nat := if n = 0 then some 0 else ub (n - 1)
+partial_fixpoint monotonicity by
+  intro f g h n
+  dsimp only
+  split
+  · exact Lean.Order.PartialOrder.rel_refl
+  · exact h.2 (n - 1)
+def ub (n : Nat) : Option Nat := if n = 0 then some 1 else ua (n - 1)
+partial_fixpoint monotonicity by
+  apply Lean.Order.monotone_of_monotone_apply
+  intro n
+  apply Lean.Order.monotone_ite
+  · apply Lean.Order.monotone_const
+  · apply Lean.Order.monotone_apply
+    apply Lean.Order.PProd.monotone_fst
+    apply Lean.Order.monotone_id
+end
+end P0
+namespace P1
+mutual
+def ub (n : Nat) : Option Nat := if n = 0 then some 1 else ua (n - 1)
+partial_fixpoint monotonicity by
+  apply Lean.Order.monotone_of_monotone_apply
+  intro n
+  apply Lean.Order.monotone_ite
+  · apply Lean.Order.monotone_const
+  · apply Lean.Order.monotone_apply
+    apply Lean.Order.PProd.monotone_snd
+    apply Lean.Order.monotone_id
+def ua (n : Nat) : Option Nat := if n = 0 then some 0 else ub (n - 1)
+partial_fixpoint monotonicity by
+  intro f g h n
+  dsimp only
+  split
+  · exact Lean.Order.PartialOrder.rel_refl
+  · exact h.1 (n - 1)
+end
+end P1
+end PU
+
+/-! ## RA: the RECARG probe. Each function has two `Nat` arguments; the
+recursion is structural on the first argument of one function together with
+the second of the other, in either assignment, never on the same position
+in both. Lean's `allCombinations` tries the combinations with the first
+function's candidate varying slowest (`FindRecArg.lean`), so the two
+presentations pick different recursive arguments. -/
+namespace RA
+namespace P0
+mutual
+def ra : Nat → Nat → Nat
+  | n + 1, m + 1 => rb m n + 1
+  | _, _ => 0
+def rb : Nat → Nat → Nat
+  | n + 1, m + 1 => ra m n + 2
+  | _, _ => 1
+end
+end P0
+namespace P1
+mutual
+def rb : Nat → Nat → Nat
+  | n + 1, m + 1 => ra m n + 2
+  | _, _ => 1
+def ra : Nat → Nat → Nat
+  | n + 1, m + 1 => rb m n + 1
+  | _, _ => 0
+end
+end P1
+end RA
+
+/-! ## WH: the TACTIC-ASYM probe within one goal. The fixed parameters
+include two proofs of `1 < k`, in another order per function; the decreasing
+goals live in the packed function's context, whose fixed parameters follow
+the first function (`FixedParams.lean`); `assumption` takes the most recent
+matching hypothesis, so the proof it picks follows the clique order. `hb`'s
+goals are closed by `omega`. -/
+namespace WH
+namespace P0
+mutual
+def ha (k : Nat) (h₁ : 1 < k) (h₂ : 1 < k) (n : Nat) : Nat :=
+  if hn : n = 0 then 0 else hb k h₂ h₁ (n / k) + 1
+termination_by n
+decreasing_by all_goals (simp_wf; apply Nat.div_lt_self (by omega); assumption)
+def hb (k : Nat) (g₂ : 1 < k) (g₁ : 1 < k) (n : Nat) : Nat :=
+  if hn : n = 0 then 1 else ha k g₁ g₂ (n / k) + 2
+termination_by n
+decreasing_by all_goals (simp_wf; exact Nat.div_lt_self (by omega) (by omega))
+end
+end P0
+namespace P1
+mutual
+def hb (k : Nat) (g₂ : 1 < k) (g₁ : 1 < k) (n : Nat) : Nat :=
+  if hn : n = 0 then 1 else ha k g₁ g₂ (n / k) + 2
+termination_by n
+decreasing_by all_goals (simp_wf; exact Nat.div_lt_self (by omega) (by omega))
+def ha (k : Nat) (h₁ : 1 < k) (h₂ : 1 < k) (n : Nat) : Nat :=
+  if hn : n = 0 then 0 else hb k h₂ h₁ (n / k) + 1
+termination_by n
+decreasing_by all_goals (simp_wf; apply Nat.div_lt_self (by omega); assumption)
+end
+end P1
+end WH
+
+/-! ## TR: theorems by mutual structural recursion with identical statements
+and different recursion (`ra` steps by one and calls `rb`; `rb` steps by two
+and calls `ra`): the statements tie, the recovered specifications do not. -/
+namespace TR
+namespace P0
+mutual
+theorem ra : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have := rb n
+    have h2 : 2 * (n + 1) = 2 * n + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+theorem rb : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | 1 => rfl
+  | n + 2 => by
+    have := ra (n + 1)
+    have h2 : 2 * (n + 2) = 2 * (n + 1) + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+end
+end P0
+namespace P1
+mutual
+theorem rb : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | 1 => rfl
+  | n + 2 => by
+    have := ra (n + 1)
+    have h2 : 2 * (n + 2) = 2 * (n + 1) + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+theorem ra : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have := rb n
+    have h2 : 2 * (n + 1) = 2 * n + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+end
+end P1
+end TR
+
+/-! ## TQ: theorems by mutual well-founded recursion with identical
+statements and different recursion (different guards and base cases). -/
+namespace TQ
+namespace P0
+mutual
+theorem qa (n : Nat) : ev (2 * n) = true :=
+  if h : n = 0 then by subst h; rfl
+  else by
+    have := qb (n - 1)
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 1 := ⟨n - 1, by omega⟩
+    have h2 : 2 * (k + 1) = 2 * k + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+termination_by n
+theorem qb (n : Nat) : ev (2 * n) = true :=
+  if h : n ≤ 1 then by
+    have : n = 0 ∨ n = 1 := by omega
+    rcases this with rfl | rfl <;> rfl
+  else by
+    have := qa (n - 1)
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 1 := ⟨n - 1, by omega⟩
+    have h2 : 2 * (k + 1) = 2 * k + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+termination_by n
+end
+end P0
+namespace P1
+mutual
+theorem qb (n : Nat) : ev (2 * n) = true :=
+  if h : n ≤ 1 then by
+    have : n = 0 ∨ n = 1 := by omega
+    rcases this with rfl | rfl <;> rfl
+  else by
+    have := qa (n - 1)
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 1 := ⟨n - 1, by omega⟩
+    have h2 : 2 * (k + 1) = 2 * k + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+termination_by n
+theorem qa (n : Nat) : ev (2 * n) = true :=
+  if h : n = 0 then by subst h; rfl
+  else by
+    have := qb (n - 1)
+    obtain ⟨k, rfl⟩ : ∃ k, n = k + 1 := ⟨n - 1, by omega⟩
+    have h2 : 2 * (k + 1) = 2 * k + 1 + 1 := by omega
+    rw [h2, ev.eq_2, ev.eq_2]
+    simpa using this
+termination_by n
+end
+end P1
+end TQ
+
+/-! ## WU: the position restriction's negative control. `wx` and `wy` build
+user values of type `PSum Nat Nat`, exactly the clique's packing type, and
+hand them to a user function and a user `let`: the encoding never generated
+them, so transport must leave them alone. -/
+namespace WU
+namespace P0
+mutual
+def wx (n : Nat) : Nat :=
+  if h : n = 0 then (let p : PSum Nat Nat := PSum.inr n; pv p) else wy (n - 1) + 1
+def wy (n : Nat) : Nat := if h : n = 0 then pv (PSum.inl 3) else wx (n - 1) + 2
+end
+end P0
+namespace P1
+mutual
+def wy (n : Nat) : Nat := if h : n = 0 then pv (PSum.inl 3) else wx (n - 1) + 2
+def wx (n : Nat) : Nat :=
+  if h : n = 0 then (let p : PSum Nat Nat := PSum.inr n; pv p) else wy (n - 1) + 1
+end
+end P1
+end WU
 
 end Tests.Ix.Compile.Twins.Cliques

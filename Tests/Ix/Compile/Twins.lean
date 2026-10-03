@@ -130,7 +130,17 @@ def cliqueFamilies : List Family := [
   clique "WP" [("P0", []), ("P1", [(`hb._mutual, `ha._mutual)])],
   clique "PT" [("P0", []), ("P1", [])],
   clique "WA" [("P0", []), ("P1", [(`tc._mutual, `ta._mutual)])],
-  clique "TN" [("P0", []), ("P1", [])]
+  clique "TN" [("P0", []), ("P1", [])],
+  clique "RF" [("P0", []), ("P1", []), ("P2", [(`ra.rb, `rb)])],
+  clique "NS" [("P0", []), ("P1", []), ("P2", [])],
+  clique "LI" [("P0", []), ("P1", [(`lc.mutual, `la.mutual)]), ("P2", [(`lb.mutual, `la.mutual)])],
+  clique "LC" [("P0", []), ("P1", [(`cb.mutual, `ca.mutual)])],
+  clique "PU" [("P0", []), ("P1", [(`ub.mutual, `ua.mutual)])],
+  clique "RA" [("P0", []), ("P1", [])],
+  clique "WH" [("P0", []), ("P1", [(`hb._mutual, `ha._mutual)])],
+  clique "TR" [("P0", []), ("P1", [])],
+  clique "TQ" [("P0", []), ("P1", [(`qb._mutual, `qa._mutual)])],
+  clique "WU" [("P0", []), ("P1", [(`wy._mutual, `wx._mutual)])]
 ]
 
 private def rp (s : String) : Name := `Tests.Ix.Compile.Twins.Repro ++ s.toName

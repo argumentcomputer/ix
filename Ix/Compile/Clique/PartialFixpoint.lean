@@ -39,32 +39,26 @@
   term, or anything the recognisers do not cover) takes the composition
   fallback of §5.2: `monotone_compose (mono φ) h`, with `φ : γ' → γ` the
   re-association `y ↦ ⟨y.π_{σ 0}, …⟩` and `mono φ` a `monotone_mk` tree over
-  regenerated path proofs; it is recorded as `SHAPE`.
+  regenerated path proofs; it is recorded as `SHAPE`. A per-function proof is
+  outside the grammar when it binds a variable whose type mentions the
+  packing other than as the packed type (a user's `intro f g h` unfolds the
+  order: `h : f ⊑ g` is an `And` over the packing, and `h.2` selects a factor
+  by position), or when it contains a `monotone_fst`/`monotone_snd`/
+  `monotone_id` over the packing that is not `solveMonoCall`'s chain (a
+  user's lemma chain, with the instances its own unification found).
 
-  **O16, for A5 proper (statement only; not proved, not used here).** The
-  members' faithfulness rests on `Lean.Order.fix` commuting with an order
-  isomorphism of the packed product (design document §5.2, decision Q9). With
-  `Lean.Order.fix : [CCPO α] → (f : α → α) → monotone f → α` and
-  `monotone_compose (hf : monotone f) (hg : monotone g) : monotone (fun x => g (f x))`
-  (`Init/Internal/Order/Basic.lean`, Lean 4.34.1):
+  The lattice-theoretic fixpoints (`inductive_fixpoint`,
+  `coinductive_fixpoint`) spell a component `∀ x, ImplicationOrder` (or
+  `ReverseImplicationOrder`) where the packed constant's type says
+  `∀ x, Prop`; the packing is recognised up to that alias.
 
-  ```
-  theorem Lean.Order.fix_iso {α : Sort u} {β : Sort v} [CCPO α] [CCPO β]
-      (φ : β → α) (ψ : α → β) (hφ : monotone φ) (hψ : monotone ψ)
-      (hψφ : ∀ b, ψ (φ b) = b) (hφψ : ∀ a, φ (ψ a) = a)
-      (f : α → α) (hf : monotone f) :
-      fix (fun b => ψ (f (φ b))) (monotone_compose hφ (monotone_compose hf hψ))
-        = ψ (fix f hf)
-  ```
-
-  instantiated with `α := γ` (Lean's packing), `β := γ'` (the canonical one),
-  `φ y := ⟨y.π'_{σ 0}, …⟩`, `ψ x := ⟨x.π_{σ⁻¹ 0}, …⟩` (both monotone by
-  `monotone_mk` trees over the path proofs of (G); mutually inverse by η for
-  `PProd`) and `f := λ x. ⟨F₀[x], …⟩`: the canonical functional is `ψ ∘ f ∘ φ`
-  up to β and projection of a constructor, so component `σ i` of the canonical
-  fixpoint is component `i` of Lean's, which is O16 for every member. The
-  `CompleteLattice` variant (`inductive_fixpoint`, `coinductive_fixpoint`) has
-  the same statement with the least/greatest fixpoint in place of `fix`.
+  **O16** (the members' faithfulness, design document §5.2, decision Q9) is
+  proved in `FixPerm.lean`: `fix_iso` (`Lean.Order.fix` commutes with an
+  order isomorphism), `lfp_monotone_iso` (the lattice variant), and the
+  `PProd` re-associations as order isomorphisms. With `φ` the
+  re-association onto the canonical packing, the canonical functional is
+  `φ ∘ F ∘ φ⁻¹` up to β and projection of a constructor, so component `σ i`
+  of the canonical fixpoint is component `i` of Lean's (`fix_iso_proj`).
 -/
 module
 public import Ix.Compile.Clique.Packing
@@ -172,8 +166,27 @@ structure PFLayout where
   composeLevels : Array Name := #[]
   deriving Inhabited
 
+def nImplicationOrder : Name := leanName ``Lean.Order.ImplicationOrder
+def nReverseImplicationOrder : Name := leanName ``Lean.Order.ReverseImplicationOrder
+
+/-- `ImplicationOrder` and `ReverseImplicationOrder` (both `:= Prop`) read
+as `Prop`. The lattice-theoretic fixpoints spell a component type
+`∀ x, ImplicationOrder` where the packed constant's type says `∀ x, Prop`
+(the functional's binder takes its type from the instances, `Meta/Order.lean`
+and `PartialFixpoint/Main.lean`), so the clique's packing is recognised up to
+the alias; each occurrence keeps its own spelling when it is rebuilt. -/
+def normOrderAlias : Expr → Expr
+  | e@(.const c _ _) =>
+    if c == nImplicationOrder || c == nReverseImplicationOrder then Expr.mkSort Level.mkZero else e
+  | .app f a _ => Expr.mkApp (normOrderAlias f) (normOrderAlias a)
+  | .lam n t b bi _ => Expr.mkLam n (normOrderAlias t) (normOrderAlias b) bi
+  | .forallE n t b bi _ => Expr.mkForallE n (normOrderAlias t) (normOrderAlias b) bi
+  | .mdata _ x _ => normOrderAlias x
+  | e => e
+
 def PFLayout.isClique (L : PFLayout) (s : Spine) : Bool :=
-  s.size == L.n && (s.leaves.zip L.leaves).all fun (a, b) => eqModVars a b
+  s.size == L.n && (s.leaves.zip L.leaves).all fun (a, b) =>
+    eqModVars (normOrderAlias a) (normOrderAlias b)
 
 /-- The `toPartialOrder` of a `CCPO`/`CompleteLattice` instance. -/
 def toPO (lattice : Bool) (lvl : Level) (ty inst : Expr) : Expr :=
@@ -182,9 +195,19 @@ def toPO (lattice : Bool) (lvl : Level) (ty inst : Expr) : Expr :=
 /-- The order data of a clique, read off `toPartialOrder γ I`: the packed
 type, Lean's spine, the leaf instances and the instance kind. -/
 structure OrderData where
+  /-- the packing as the instances spell it -/
   spine : Spine
   insts : Array Expr
   lattice : Bool
+  /-- the packing as the component types spell it: the same as `spine`
+  for a CCPO; for the lattice-theoretic fixpoints `∀ x, Prop` where the
+  instances say `∀ x, ImplicationOrder`. Lean uses each spelling at fixed
+  positions: the component types (the codomain of the monotonicity
+  statement, `monotone_mk`'s `α`, `β` and their orders) and the domain of a
+  path proof (`monotone_fst`'s `γ`, the functions' binders, `monotone_id`)
+  take this one; the instances, the packed order and a path's nodes the
+  other. -/
+  tspine : Spine
   deriving Inhabited
 
 def decodeOrderData (L : PFLayout) (po : Expr) : Option OrderData := do
@@ -192,7 +215,7 @@ def decodeOrderData (L : PFLayout) (po : Expr) : Option OrderData := do
   unless (h == nCCPOToPO || h == nLatticeToPO) && args.size == 2 do none
   let (ih, s, insts) ← decodeInstTree L.n args[1]!
   unless L.isClique s do none
-  some { spine := s, insts, lattice := ih == nInstLatticePProd }
+  some { spine := s, insts, lattice := ih == nInstLatticePProd, tspine := s }
 
 /-- `toPartialOrder γ I`. -/
 def OrderData.packedPO (d : OrderData) : Expr :=
@@ -214,15 +237,17 @@ def OrderData.suffixPO (d : OrderData) (k : Nat) : Expr :=
 /-- The `instPartialOrderPProd` tree of suffix `k` (the codomain order of
 `monotone_mk`'s statement). -/
 def OrderData.poTree (d : OrderData) (k : Nat) : Expr :=
-  let n := d.spine.size
-  let leafPO (j : Nat) := toPO d.lattice d.spine.lvls[j]! d.spine.leaves[j]! d.insts[j]!
+  let t := d.tspine
+  let n := t.size
+  let leafPO (j : Nat) := toPO d.lattice t.lvls[j]! t.leaves[j]! d.insts[j]!
   if k + 1 == n then leafPO (n - 1) else
   mkInstTree nInstPOPProd
-    { d.spine with leaves := d.spine.leaves.extract k n, lvls := d.spine.lvls.extract k n }
+    { t with leaves := t.leaves.extract k n, lvls := t.lvls.extract k n }
     ((List.range (n - k)).toArray.map fun j => leafPO (k + j))
 
 def OrderData.permute (d : OrderData) (σ : Array Nat) : OrderData :=
-  { d with spine := d.spine.permute σ, insts := Ix.Compile.Clique.permute σ d.insts }
+  { d with spine := d.spine.permute σ, insts := Ix.Compile.Clique.permute σ d.insts,
+           tspine := d.tspine.permute σ }
 
 /-! ## (G): `solveMonoCall`'s path proofs -/
 
@@ -233,7 +258,8 @@ def mkPathProof (d : OrderData) (j : Nat) : Expr × Expr := Id.run do
   let s := d.spine
   let n := s.size
   let suf := s.suffixes
-  let γ := s.type
+  -- the domain as the component types spell it
+  let γ := d.tspine.type
   let lγ := (suf[0]!).2
   let poγ := d.packedPO
   let xName := Ix.Name.mkStr Ix.Name.mkAnon "x"
@@ -261,6 +287,11 @@ def decodePathProof (L : PFLayout) (e : Expr) : Option (OrderData × Nat) := do
   let po ← if h == nMonoId then (if args.size == 2 then args[1]? else none)
     else (if args.size == 8 then args[5]? else none)
   let d ← decodeOrderData L po
+  -- the domain's spelling
+  let dom ← if h == nMonoId then args[0]? else args[2]?
+  let ts ← decodeSpine .pprod L.n dom
+  unless L.isClique ts do none
+  let d := { d with tspine := ts }
   -- count the steps
   let mut cur := e
   let mut snds := 0
@@ -285,7 +316,8 @@ from the right): `fs` the functionals `F_k` (each `λ x. …`), `hs` their
 proofs. -/
 def mkMonoTreeOver (γ : Expr) (lγ : Level) (poγ : Expr) (d : OrderData) (fs hs : Array Expr) :
     Expr := Id.run do
-  let s := d.spine
+  -- the components as their types spell them
+  let s := d.tspine
   let n := s.size
   let suf := s.suffixes
   let xName := Ix.Name.mkStr Ix.Name.mkAnon "x"
@@ -349,6 +381,12 @@ def decodeMonoTree (L : PFLayout) (e : Expr) : Option (OrderData × Array Expr �
   let (h, _, args) ← constApp? e
   unless h == nMonoMk && args.size == 10 do none
   let d ← decodeOrderData L args[5]!
+  -- the components' spelling, from the outermost node's `α` and `β`
+  let (_, us, _) ← constApp? e
+  let ts ← decodeSpine .pprod L.n
+    (mkNode .pprod (us[0]?.getD Level.mkZero) (us[1]?.getD Level.mkZero) args[0]! args[1]!)
+  unless L.isClique ts do none
+  let d := { d with tspine := ts }
   let mut fs := #[]
   let mut hs := #[]
   let mut cur := e
@@ -363,14 +401,76 @@ def decodeMonoTree (L : PFLayout) (e : Expr) : Option (OrderData × Array Expr �
   unless fs.size == L.n do none
   if alphaEq (mkMonoTree d fs hs) e then some (d, fs, hs) else none
 
+/-! ## User-written monotonicity proofs
+
+`solveMono`'s proofs (`Elab/Tactic/Monotonicity.lean`) are compositions of
+the `monotone_*` lemmas whose only binders are the functionals' packed
+variable (`λ x : γ. …`) and the functions' own arguments: the order on the
+packing is never unfolded. A per-function proof that binds a variable whose
+type mentions the packing in any other way (`h : f ⊑ g` after `intro f g h`,
+an `And` over the packing, whose projections `h.1`, `h.2` select factors by
+position) was written against Lean's packing in a way the grammar cannot see;
+it takes the composition fallback (§5.2). -/
+
+/-- Some subterm of `e` is the clique's packed type (any spelling of its
+leaves). -/
+def mentionsPacking (L : PFLayout) (e : Expr) : Bool := (go e).run' {}
+where
+  go (e : Expr) : StateM (Std.HashSet Expr) Bool := do
+    if (← get).contains e then return false
+    modify (·.insert e)
+    let here : Bool := match decodeSpine .pprod L.n e with
+      | some s => L.isClique s
+      | none => false
+    if here then return true
+    match e with
+    | .app f a _ => return (← go f) || (← go a)
+    | .lam _ t b _ _ | .forallE _ t b _ _ => return (← go t) || (← go b)
+    | .letE _ t v b _ _ => return (← go t) || (← go v) || (← go b)
+    | .proj _ _ x _ | .mdata _ x _ => go x
+    | _ => return false
+
+/-- `some why` when a per-function monotonicity proof binds a variable whose
+type mentions the packing other than as the packed type itself. -/
+def userProofCheck (L : PFLayout) (e : Expr) : Option String := (go e).run' {}
+where
+  isPacked (t : Expr) : Bool := match decodeSpine .pprod L.n (stripMdata t) with
+    | some s => L.isClique s
+    | none => false
+  bad (t : Expr) : Bool := !isPacked t && mentionsPacking L t
+  go (e : Expr) : StateM (Std.HashSet Expr) (Option String) := do
+    if (← get).contains e then return none
+    modify (·.insert e)
+    match e with
+    | .lam _ t b _ _ | .forallE _ t b _ _ =>
+      if bad t then return some "grammar: a binder whose type mentions the packing (a user-written monotonicity proof)"
+      match ← go t with
+      | some w => return some w
+      | none => go b
+    | .letE _ t v b _ _ =>
+      if bad t then return some "grammar: a let whose type mentions the packing (a user-written monotonicity proof)"
+      match ← go t with
+      | some w => return some w
+      | none => match ← go v with
+        | some w => return some w
+        | none => go b
+    | .app f a _ =>
+      match ← go f with
+      | some w => return some w
+      | none => go a
+    | .proj _ _ x _ | .mdata _ x _ => go x
+    | _ => return none
+
 /-! ## `Φ_σ` -/
 
 def phiPFStep (L : PFLayout) (go : Array Expr → Expr → TM Expr) (ctx : Array Expr) (e : Expr) :
     TM Expr := do
   let goD (d : OrderData) : TM OrderData := do
     let leaves ← d.spine.leaves.mapM (go ctx)
+    let tleaves ← d.tspine.leaves.mapM (go ctx)
     let insts ← d.insts.mapM (go ctx)
-    return ({ d with spine := { d.spine with leaves }, insts }).permute L.sigma
+    return ({ d with spine := { d.spine with leaves }, insts,
+                     tspine := { d.tspine with leaves := tleaves } }).permute L.sigma
   let isPackedTy (ty : Expr) : Bool := match decodeSpine .pprod L.n ty with
     | some s => L.isClique s
     | none => false
@@ -384,7 +484,10 @@ def phiPFStep (L : PFLayout) (go : Array Expr → Expr → TM Expr) (ctx : Array
     let mut hs' := #[]
     for k in [0:L.n] do
       let st ← get
-      match (go ctx hs[k]!).run st with
+      let attempt : TM Expr := do
+        if let some why := userProofCheck L hs[k]! then throw why
+        go ctx hs[k]!
+      match attempt.run st with
       | .ok (h, st') => set st'; hs' := hs'.push h
       | .error err =>
         -- outside the grammar: the composition fallback (§5.2)
@@ -392,6 +495,13 @@ def phiPFStep (L : PFLayout) (go : Array Expr → Expr → TM Expr) (ctx : Array
         modify fun st => { st with fallbacks := st.fallbacks.push s!"monotonicity proof {k}: {err}" }
         hs' := hs'.push h
     return mkMonoTree d' (permute L.sigma fs') (permute L.sigma hs')
+  -- a path proof over the packing that is not `solveMonoCall`'s (a user's
+  -- lemma chain, with other instances): outside the grammar
+  if let some (c, _, args) := constApp? e then
+    if (c == nMonoFst || c == nMonoSnd) && args.size ≥ 8 && isPackedTy args[2]! then
+      throw "grammar: a monotone_fst/monotone_snd chain over the packing that is not solveMonoCall's"
+    if c == nMonoId && args.size ≥ 2 && isPackedTy args[0]! then
+      throw "grammar: monotone_id over the packing outside a path proof"
   if let some (h, s, insts) := decodeInstTree L.n e then
     if L.isClique s then
       let leaves ← s.leaves.mapM (go ctx)

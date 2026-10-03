@@ -68,6 +68,16 @@ def withReorderedBinders (isLam : Bool) (m : Nat) (perm : Array Nat) (e : Expr)
   for x in xs do xs' := xs'.push { x with type := ← k x.type }
   liftE (closeBinders isLam (reorder perm xs') body')
 
+/-- `withReorderedBinders` with one transformation for the binders' types and
+another for the body. -/
+def withReorderedBinders2 (isLam : Bool) (m : Nat) (perm : Array Nat) (e : Expr)
+    (kTy kBody : Expr → TM Expr) : TM Expr := do
+  let (xs, body) ← openBinders isLam m e
+  let body' ← kBody body
+  let mut xs' : Array Local := #[]
+  for x in xs do xs' := xs'.push { x with type := ← kTy x.type }
+  liftE (closeBinders isLam (reorder perm xs') body')
+
 /-- The identity permutation of `Fin m`. -/
 def idPerm (m : Nat) : Array Nat := (List.range m).toArray
 

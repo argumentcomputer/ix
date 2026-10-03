@@ -19,6 +19,12 @@
   difference is reported with the constant and its two addresses; it is a
   finding for A7, not something this suite repairs.
 
+  Under every schedule the block failures must be exactly the expected
+  refusals of the closure (`NonCanonical.expectedRefusals`), each with its
+  message: a refusal that appears or disappears under one schedule fails
+  the suite, and so does any difference in the (name, message) list
+  between schedules.
+
   Run with: `lake test -- --ignored compile-schedule-identity`.
 -/
 import Tests.Ix.Compile.Twins
@@ -54,14 +60,17 @@ def run : IO UInt32 := do
   for (ln, _) in closure do
     let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
     nameByHash := nameByHash.insert ixn.getHash ixn
-  let mut runs : Array (String × ByteArray × Ixon.Env) := #[]
+  -- (label, bytes, environment, block failures as (name, message))
+  let mut runs : Array (String × ByteArray × Ixon.Env × List (String × String)) := #[]
+  let failuresOf (cenv : Ix.CompileM.CompileEnv) : List (String × String) :=
+    cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e)
   -- sequential
   match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash) with
   | .error e => throw (IO.userError s!"[schedule] sequential driver: {e}")
   | .ok (ixon, _, cenv) =>
     let bytes ← IO.ofExcept (Ixon.serEnv ixon)
     IO.println s!"[schedule] sequential: {bytes.size} bytes, {cenv.ungrounded.size} block failures"
-    runs := runs.push ("sequential", bytes, ixon)
+    runs := runs.push ("sequential", bytes, ixon, failuresOf cenv)
   -- wave driver
   for k in [1, 4, 16] do
     match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
@@ -70,16 +79,35 @@ def run : IO UInt32 := do
     | .ok (ixon, _, cenv) =>
       let bytes ← IO.ofExcept (Ixon.serEnv ixon)
       IO.println s!"[schedule] wave --jobs {k}: {bytes.size} bytes, {cenv.ungrounded.size} block failures"
-      runs := runs.push (s!"wave --jobs {k}", bytes, ixon)
+      runs := runs.push (s!"wave --jobs {k}", bytes, ixon, failuresOf cenv)
   -- the whole `ix compile-lean` pipeline
   for k in [1, 4, 16] do
     let out ← Tests.Ix.Compile.Twins.leanCompile env closure k
     IO.println s!"[schedule] compile-lean --workers {k}: {out.bytes.size} bytes, \
 {out.cenv.ungrounded.size} block failures"
-    runs := runs.push (s!"compile-lean --workers {k}", out.bytes, out.env)
-  let some (refLabel, refBytes, refEnv) := runs[0]? | return 1
+    runs := runs.push (s!"compile-lean --workers {k}", out.bytes, out.env, failuresOf out.cenv)
+  let some (refLabel, refBytes, refEnv, refFails) := runs[0]? | return 1
   let mut failures := 0
-  for (label, bytes, ixon) in runs[1:] do
+  -- Refusals: under every schedule the block failures are exactly the
+  -- expected refusals (`NonCanonical.expectedRefusals`) of the constants in
+  -- the closure, each with its message (`Twins.refusalCheck`: an unexpected
+  -- failure, a refusal with another message, and an expected refusal that
+  -- does not happen all fail), and the full (name, message) list is the same
+  -- in every schedule.
+  let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
+  let sortFails (xs : List (String × String)) : Array (String × String) :=
+    xs.toArray.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
+  for (label, _, _, fails) in runs do
+    let bad ← Tests.Ix.Compile.Twins.refusalCheck s!"schedule: {label}" scope fails
+    if bad == 0 then
+      IO.println s!"[schedule] {label}: refusals = expectedRefusals ({fails.length})"
+    else
+      failures := failures + 1
+      IO.println s!"[schedule] {label}: refusals ≠ expectedRefusals ({bad} violations)"
+    if sortFails fails != sortFails refFails then
+      failures := failures + 1
+      IO.println s!"[schedule] {label}: block failures (names or messages) differ from {refLabel}"
+  for (label, bytes, ixon, _) in runs[1:] do
     if bytes == refBytes then
       IO.println s!"[schedule] {label} = {refLabel}"
     else

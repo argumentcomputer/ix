@@ -318,6 +318,10 @@ structure TState where
   /-- grammar failures that took a local fallback (`partial_fixpoint`'s
   composition), for the caller to record -/
   fallbacks : Array String := #[]
+  /-- the well-founded `Φ`, which depends on the position (encoding or user
+  region) and on which bound variables are the recursion variable: keyed by
+  the hashes, all checked on a hit -/
+  cacheMode : Std.HashMap UInt64 (Expr × Bool × Array Bool × Expr) := {}
 
 /-- Pure, over `Except String`: an error is a grammar failure (or an
 exhausted bound), which the caller turns into the faithful fallback. -/

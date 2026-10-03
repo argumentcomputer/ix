@@ -23,6 +23,7 @@ import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.Oracle
 import Tests.Ix.Compile.ScheduleIdentity
+import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.Transport
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -355,6 +356,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Byte-identical output under the sequential and wave drivers and the
   -- compile-lean pipeline at 1, 4, 16 workers (Tests.Ix.Compile.ScheduleIdentity).
   ("compile-schedule-identity", Tests.Ix.Compile.ScheduleIdentity.run),
+  -- Single ownership of compiled names: the conflicting-claim error in both
+  -- compilers and every Lean schedule (Tests.Ix.Compile.ClaimConflict).
+  ("compile-claim-conflict", Tests.Ix.Compile.ClaimConflict.run),
   -- The clique transport `Φ_σ` (Ix.Compile.Clique) against the measured clique twins: the exact
   -- oracle, the kernel, GuessLex, negative controls (Tests.Ix.Compile.Transport).
   ("clique-transport", Tests.Ix.Compile.Transport.run),

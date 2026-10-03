@@ -31,6 +31,12 @@
   the constants A0 now refuses were removed and the refusals are listed in
   `expectedRefusals` (report `plans/wave1/a1g2.md`).
 
+  A5f (2026-10-03, report `plans/wave1/a5f.md`) added the clique families
+  `RF`, `NS`, `LI`, `LC`, `PU`, `RA`, `WH`, `TR`, `TQ` and `WU` (70 entries,
+  measured at `b86e2043`), with the first measured `RECARG` (`RA`),
+  `TACTIC-ASYM` (`WH`) and `SHAPE` (`PU`) entries, and moved `TN` from
+  `NOSPEC` to `pendingTransport` (Q6's recovered specification orders it).
+
   A2 (D6, one constant per auxiliary; report `plans/wave1/a2p.md`): the set
   is unchanged (same entries, same causes); the evidence addresses of 21
   entries moved. Four are auxiliaries that are now standalone constants
@@ -1884,23 +1890,313 @@ def nonCanonical : List NonCanonicalEntry := [
     "1fe0c2bdbc40ee7e7b51cc3ecc79ab82366db41efd0e90e30c51105e045001c3"
     "106e35daeb35e4579cc1bfa0610afaf7705543552ea524d2e4d8c483a1fdb629"
     "type.∀.body.@2.@4.λ.body.@1" "ROOT[TV]; statement over the packed _mutual",
-  -- Cliques.TN P0 P1 (A5t, the NOSPEC probe; kernel verdicts not run for these entries)
-  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na "clique member" .noSpec
+  -- Cliques.TN P0 P1 (A5t, the NOSPEC probe; A5f: ordered by the recovered specification, Q6; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na "clique member" .pendingTransport
     "6acfa58679ee85cdf1aaccdf61558625f8a41cd5f83c6ff584bf28e956a95b31"
     "95c284613996b282c88299bcd6c4028256be8388656282563cdef3a0ceb2ce27"
-    "value.λ.body" "ROOT[V]; identical statements: Q6 cannot order the clique, Lean's form kept (na of P0 is nb of P1 byte for byte)",
-  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `nb "clique member" .noSpec
+    "value.λ.body" "ROOT[V]; identical statements (na of P0 is nb of P1 byte for byte); the recovered specifications tie in one class, ordered by Pass 1's seed order (Q6, A5f); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `nb "clique member" .pendingTransport
     "95c284613996b282c88299bcd6c4028256be8388656282563cdef3a0ceb2ce27"
     "6acfa58679ee85cdf1aaccdf61558625f8a41cd5f83c6ff584bf28e956a95b31"
-    "value.λ.body" "ROOT[V]; identical statements: Q6 cannot order the clique, Lean's form kept",
-  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na._f "structural functional" .noSpec
+    "value.λ.body" "ROOT[V]; identical statements; the recovered specifications tie in one class, ordered by Pass 1's seed order (Q6, A5f); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na._f "structural functional" .pendingTransport
     "ad617d6050b9c71451d88c8b0afbbc8593d98af5452ed0dcdef9492090d5e67a"
     "992a551847a56ae1a88b48b4c37ef9b0ab8311e5dc7836421375b8471321bea4"
-    "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "ROOT[V]; path into the packed below motive; identical statements (NOSPEC)",
-  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `nb._f "structural functional" .noSpec
+    "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "ROOT[V]; path into the packed below motive; identical statements; ordered by the recovered specification (Q6, A5f); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `nb._f "structural functional" .pendingTransport
     "992a551847a56ae1a88b48b4c37ef9b0ab8311e5dc7836421375b8471321bea4"
     "ad617d6050b9c71451d88c8b0afbbc8593d98af5452ed0dcdef9492090d5e67a"
-    "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "ROOT[V]; path into the packed below motive; identical statements (NOSPEC)"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "ROOT[V]; path into the packed below motive; identical statements; ordered by the recovered specification (Q6, A5f); the transport reproduces it",
+  -- Cliques.RF (A5f, the reflexive structural family; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `rb "clique member" .pendingTransport
+    "ac60049a1892d2d7929e6245b9d38cc4e61693debee7b0a9886e2e9acecdf237"
+    "81ecddd3fbcf0168139a2e1e1f1a0384d90d3f3c8a8b1d826c654ee64e3b06c1"
+    "value.λ.body" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `rb._f "structural functional" .pendingTransport
+    "ce212569e61531f373a9766d9040cab31cf4bedcbd528748232748bc7c78c2d7"
+    "4c5dce85fe8586bb8a1ea4fa76cf70bcfec977748c8418dfd47f8c794b2afa8a"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `rb._sunfold "user constant" .inherited
+    "4125c6cad27672ccece179097e483aaca0c95328a1e4069f5b2787ab9bf076e9"
+    "34088b183e9c4bfd3ad3253b77197c359e44034d3fd56866cfe4bfbe63b70bc7"
+    "" "via [rb, ra]",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `ra._sunfold "user constant" .inherited
+    "0e10259004a1e15be0a34942ae27ac32cb04ab641159239103e307e0eb4c4d33"
+    "ea65b60d25f1477b9518d896fe934ddd7d0d68a58d6e009a48243a6c56439e2f"
+    "" "via [rb]",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `ra._f "structural functional" .pendingTransport
+    "adb0877becc21251dba32d6f1ccbe6735a0bba7f7b0a6550890f5bf4d9a80d44"
+    "bfc0b1efabc2c32500e3e3fbec6f4d7f7b87e8f00b09522dd2aebc99ffcadeb7"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `ra "clique member" .pendingTransport
+    "a1f04a02148000c792d8ae0aef37fd6a62cbe17ae0a191882ee888940c9c357d"
+    "45cd8d22b3641f5c5f2a66236c0dc3602aa02f13b3558bcb38dc41d4e0d9c456"
+    "value.λ.body" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `rb._f "structural functional" .pendingTransport
+    "ce212569e61531f373a9766d9040cab31cf4bedcbd528748232748bc7c78c2d7"
+    "4c5dce85fe8586bb8a1ea4fa76cf70bcfec977748c8418dfd47f8c794b2afa8a"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `ra._f "structural functional" .pendingTransport
+    "adb0877becc21251dba32d6f1ccbe6735a0bba7f7b0a6550890f5bf4d9a80d44"
+    "bfc0b1efabc2c32500e3e3fbec6f4d7f7b87e8f00b09522dd2aebc99ffcadeb7"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `ra._sunfold "user constant" .inherited
+    "0e10259004a1e15be0a34942ae27ac32cb04ab641159239103e307e0eb4c4d33"
+    "ea65b60d25f1477b9518d896fe934ddd7d0d68a58d6e009a48243a6c56439e2f"
+    "" "via [rb]",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `rb._sunfold "user constant" .inherited
+    "4125c6cad27672ccece179097e483aaca0c95328a1e4069f5b2787ab9bf076e9"
+    "34088b183e9c4bfd3ad3253b77197c359e44034d3fd56866cfe4bfbe63b70bc7"
+    "" "via [rb, ra]",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `ra "clique member" .pendingTransport
+    "a1f04a02148000c792d8ae0aef37fd6a62cbe17ae0a191882ee888940c9c357d"
+    "45cd8d22b3641f5c5f2a66236c0dc3602aa02f13b3558bcb38dc41d4e0d9c456"
+    "value.λ.body" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `rb "clique member" .pendingTransport
+    "ac60049a1892d2d7929e6245b9d38cc4e61693debee7b0a9886e2e9acecdf237"
+    "81ecddd3fbcf0168139a2e1e1f1a0384d90d3f3c8a8b1d826c654ee64e3b06c1"
+    "value.λ.body" "ROOT[V]; packed motive order and the paths into below through the reflexive field ((x 0).1.2 against .1.1); the transport reproduces it (clique-transport)",
+  -- Cliques.NS (A5f, the nested structural family; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nb._sunfold "user constant" .inherited
+    "fde9fe5d2c905f8bfd7ffd8172985f85b781c45efe14e3efcd537d584eb6b729"
+    "966348d6716e37b637736f7093b86ac26367bdf1d9b37361436f17bb2d70e505"
+    "" "via [nl]",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `na._sunfold "user constant" .inherited
+    "0784e4d31b968aaf163dd24a54710e45deea6bf8d6a733cdcb8474eade53b474"
+    "950442bd78c415e972380f7017c3629ab965735fb9806d44df19ff53e5d7fdd9"
+    "" "via [nl]",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nl._f "structural functional" .pendingTransport
+    "44a09cfbb06bd7fd97e101445ac87731923c60dd87a91cd28f309e21f9fe36a3"
+    "5ecb15bdc67c7d3b089a9798df36b3aa915edc8b3efa3f1d7d77940c4c1cdd39"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "ROOT[V]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `na "clique member" .pendingTransport
+    "fe2ce779aacd87f063f930dc49cc5804a922bcd9bfb70910df960690ad004915"
+    "b7f3db9d945710991b36ea5e357b516bbae08a1b0fd75b10621bae4bf3edf1d0"
+    "value.λ.body" "ROOT[V]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nl._sunfold "user constant" .inherited
+    "8975ccb2c7d2cc145185f04cbcee393d6c20b31bb46ca8e5141ec40272576cbb"
+    "aed9b2e370fd01debaa2c17cdf3759e0eb69a72734c8f335a936953f409cdd1a"
+    "" "via [nl, na, nb]",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nl "clique member" .pendingTransport
+    "ec27435dc7b8f0b619ead0c424d76cd490032a9cc9c9bb660b2a89330ec02660"
+    "e8654f8097cc96dc715a2881b47cda1c6295173e4188a0a978bec16a9921af53"
+    "value.λ.body.@3.λ.body.λ.body.@2.fn" "ROOT[V|K]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nb "clique member" .pendingTransport
+    "06cfcbc9ef246fd43f37997c676d92739e28165751c88b2b265c90f4e2ed150c"
+    "ac7329d3d4f6e99a9b05556ddc4edf764bd2240768c434f537ec8fb7cdca9a46"
+    "value.λ.body" "ROOT[V]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `na "clique member" .pendingTransport
+    "fe2ce779aacd87f063f930dc49cc5804a922bcd9bfb70910df960690ad004915"
+    "b7f3db9d945710991b36ea5e357b516bbae08a1b0fd75b10621bae4bf3edf1d0"
+    "value.λ.body" "ROOT[V]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `na._sunfold "user constant" .inherited
+    "0784e4d31b968aaf163dd24a54710e45deea6bf8d6a733cdcb8474eade53b474"
+    "950442bd78c415e972380f7017c3629ab965735fb9806d44df19ff53e5d7fdd9"
+    "" "via [nl]",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nl._sunfold "user constant" .inherited
+    "8975ccb2c7d2cc145185f04cbcee393d6c20b31bb46ca8e5141ec40272576cbb"
+    "aed9b2e370fd01debaa2c17cdf3759e0eb69a72734c8f335a936953f409cdd1a"
+    "" "via [nl, na, nb]",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nl "clique member" .pendingTransport
+    "ec27435dc7b8f0b619ead0c424d76cd490032a9cc9c9bb660b2a89330ec02660"
+    "e8654f8097cc96dc715a2881b47cda1c6295173e4188a0a978bec16a9921af53"
+    "value.λ.body.@3.λ.body.λ.body.@2.fn" "ROOT[V|K]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nb "clique member" .pendingTransport
+    "06cfcbc9ef246fd43f37997c676d92739e28165751c88b2b265c90f4e2ed150c"
+    "ac7329d3d4f6e99a9b05556ddc4edf764bd2240768c434f537ec8fb7cdca9a46"
+    "value.λ.body" "ROOT[V]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nb._sunfold "user constant" .inherited
+    "fde9fe5d2c905f8bfd7ffd8172985f85b781c45efe14e3efcd537d584eb6b729"
+    "966348d6716e37b637736f7093b86ac26367bdf1d9b37361436f17bb2d70e505"
+    "" "via [nl]",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nl._f "structural functional" .pendingTransport
+    "44a09cfbb06bd7fd97e101445ac87731923c60dd87a91cd28f309e21f9fe36a3"
+    "5ecb15bdc67c7d3b089a9798df36b3aa915edc8b3efa3f1d7d77940c4c1cdd39"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "ROOT[V]; packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+  -- Cliques.LI (A5f, inductive_fixpoint; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `la.mutual._proof_1 "encoding obligation" .pendingTransport
+    "23f2fcf243de4f203af437cecae5aa8e456a296211e7f854d84afba79be84183"
+    "c6f2eaa1f32e2bef4c81216442e92f4387ed945253669b02d356188afec72db4"
+    "type.@4.λ.body.@2.λ.body" "ROOT[TV]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `lc "clique member" .pendingTransport
+    "c6bf45aa737fa84ea64238f4834cf8da5b7d869963c25796f8e4c0b3d4c58275"
+    "5234d7f723dbab4efa505988576ae3f72c905c69da3ae46b572c03bc22876d6c"
+    "value" "ROOT[V]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `la "clique member" .pendingTransport
+    "794636154366ec6dc813c37fc84560f9dd123a2dc5189ec542d18f462b0af64a"
+    "343f2868bb45d3b0e5e94c8464a9f23feda4dc03bafe73b3faef36814ef4a1bf"
+    "value" "ROOT[V]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `lb "user constant" .inherited
+    "365e2b96a786e4251db200a6e5d9085c3eea6086ecd1d6bc80a64804479fc2ca"
+    "f5ce712e07338faf8adde6db117546817ac84b50c53b203c172c68eb7bbc02fb"
+    "" "via [la.mutual]",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `la.mutual "clique encoding" .pendingTransport
+    "844a3be331e7f7c758450925cb2a90675dcf0b0860acdc05e16d81c61e5df7ed"
+    "0df7605cdc6de89fc8c8e5a82f154ca3474e0411a1701835480f6af2bd4a7682"
+    "value.@2.λ.body.@2.λ.body" "ROOT[V|K]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P2" `la.mutual._proof_1 "encoding obligation" .pendingTransport
+    "23f2fcf243de4f203af437cecae5aa8e456a296211e7f854d84afba79be84183"
+    "1142aeb7fe76382e4b955041246185112babeb5fed14dc8cc1a4d65cb0c19b46"
+    "type.@4.λ.body.@2.λ.body.@3" "ROOT[TV]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P2" `lc "user constant" .inherited
+    "c6bf45aa737fa84ea64238f4834cf8da5b7d869963c25796f8e4c0b3d4c58275"
+    "07aca8decf37c349736afb62b21e3a1a1f41ac53b2b02785dcbe38fd19d86cf0"
+    "" "via [la.mutual]",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P2" `la "clique member" .pendingTransport
+    "794636154366ec6dc813c37fc84560f9dd123a2dc5189ec542d18f462b0af64a"
+    "7a884321a9426c7970621310d2f19b60b63bfe1b8890c24ecc9db23e40050aba"
+    "value.proj0" "ROOT[V]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P2" `lb "clique member" .pendingTransport
+    "365e2b96a786e4251db200a6e5d9085c3eea6086ecd1d6bc80a64804479fc2ca"
+    "f6af9ba245fe8ca2d99be2d31078f152f98f50bb75455c30895e1f9eec5c03e8"
+    "value.proj0" "ROOT[V]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P2" `la.mutual "clique encoding" .pendingTransport
+    "844a3be331e7f7c758450925cb2a90675dcf0b0860acdc05e16d81c61e5df7ed"
+    "7487e2bca961ef77d3aa8b7eca1691fe462020f9be2b4b99fa6dbab3b52d5e43"
+    "value.@2.λ.body.@2.λ.body.@3" "ROOT[V|K]; PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  -- Cliques.LC (A5f, coinductive_fixpoint; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.LC "P0" "P1" `ca.mutual._proof_1 "encoding obligation" .pendingTransport
+    "c0238e623b000ba4cab169e97fa2f5bbe19c1b19257da7c955f568859dcd9e39"
+    "d1986090ac5216fe4f2a0d6667c95969888402b565139e4191d8717f5ba63ad9"
+    "type.@4.λ.body.@2.λ.body" "ROOT[TV]; PProd factor order of the coinductive fixpoint (ReverseImplicationOrder), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LC "P0" "P1" `cb "clique member" .pendingTransport
+    "80120e58691cbe338529b87f7617bfe7187d814a86e1f4a0d304efa7564aa2d7"
+    "b76d692d77bf7afa6bd6d7c3714a6d56d53126863bbea898272ccdefc17af824"
+    "value" "ROOT[V]; PProd factor order of the coinductive fixpoint (ReverseImplicationOrder), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LC "P0" "P1" `ca.mutual "clique encoding" .pendingTransport
+    "ebf6e6b156580df2615158241987a80dad9d4c32fe0b016dcd3067ef5289eddf"
+    "26f0280c765173003d6dbf565073450987c730824676f6bd699c78134addd1c6"
+    "value.@2.λ.body.@2.λ.body" "ROOT[V|K]; PProd factor order of the coinductive fixpoint (ReverseImplicationOrder), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.LC "P0" "P1" `ca "clique member" .pendingTransport
+    "e86bf216cc4b16624aacd3e4ab50da5ff52925a9eb8841fecbd0ce263082834f"
+    "f0a459489ed8443f6cb1313451a2aab90fa87698e259a8b4e373422772a606b3"
+    "value" "ROOT[V]; PProd factor order of the coinductive fixpoint (ReverseImplicationOrder), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
+  -- Cliques.PU (A5f, partial_fixpoint with user-written monotonicity proofs; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ua.mutual._proof_1 "encoding obligation" .shape
+    "b7bc40a157711d751e43e91fc474e33b76c2fb4c878863a4ac3722312b1a8b0b"
+    "326b4257346d42a8eefa6b46b73df65f6862789cadf88ea8baa7fb8435a78296"
+    "type.@4.λ.body.@2.λ.body.@3.@1.@1" "ROOT[TV]; the user-written monotonicity proofs (an intro script projecting h : f ⊑ g, and a lemma chain with the instances its own unification found) are outside the grammar: the composition fallback monotone_compose (mono φ) h keeps Lean's proofs (clique-transport (f))",
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ub "clique member" .pendingTransport
+    "95b8e93dbb6bf28a4ac287b7b37ddd209f005d9ce94001abb50af0fec2500de1"
+    "f382cb3d3db3db3d41ff4548771c3e6a09c409d50346a7c712d880b496b55e83"
+    "value" "ROOT[V]; PProd factor order of the fixpoint and the members' paths; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ua.mutual "clique encoding" .pendingTransport
+    "98442a03f9dfa6b72b5ac7adb902937dfd834e3071aec027601dc2c8c245a95b"
+    "c98c6d8730e61475657d5c36d5642286dc8898eb0cefb389a14982923822f9cf"
+    "value.@2.λ.body.@2.λ.body.@3.@1.@1" "ROOT[V|K]; PProd factor order of the fixpoint and the members' paths; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ua "clique member" .pendingTransport
+    "c8e4b93e1e28fd1dcf8ef447ff7977c39411c7123d2cfddabbc0da9b7bf601a4"
+    "bbbe1e9e94849a0ac25db829e901e10bf54091ea7d597a4f329bc6ee2abfe771"
+    "value" "ROOT[V]; PProd factor order of the fixpoint and the members' paths; the transport reproduces it",
+  -- Cliques.RA (A5f, the RECARG probe; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `rb "clique member" .recArg
+    "d578cc4aed44eacedaa3d6c3b01a3f91a1df96a6619568c2295f3a538b538400"
+    "69ec6b468f31adb4416a5337d78d0a3683b962fc779aa41b8554f663f8c99af4"
+    "value.λ.body.λ.body.fn" "ROOT[V]; Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `rb._f "structural functional" .recArg
+    "17354ef0aeee92d76a8d286b6d7872b467fd3f60fe44a0a2fa5b0ec653ff1921"
+    "0b4277b06c6b8bc03ead07e16f0edbc44affdb19387289d0680576f912f10a83"
+    "value.λ.body.λ.body.λ.body.@0.λ.body.λ.body.∀.dom.@1" "ROOT[V]; Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra "clique member" .recArg
+    "2e382f44b64ef0d59ad37730359abdb14ab33271ebd7b616a348302c555198fc"
+    "36c4cfebb52faba910bfe2269aa5c77b87d855eab9e47eb07f8d4982f50ca86c"
+    "value.λ.body.λ.body.fn" "ROOT[V]; Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._f "structural functional" .recArg
+    "a4ca7ec36d6d47cba1a964f929947892dcaa354e1cda9c8f43b169ce83a4e220"
+    "bcaa8bdad6fddf93d4d61cb14fed4674b79cc401f7f900fd7a556e715b984a50"
+    "value.λ.body.λ.body.λ.body.@0.λ.body.λ.body.∀.dom.@1" "ROOT[V]; Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._sunfold "user constant" .inherited
+    "20b17d2ad280c9b4ddd850127fec81a0c06d4c66b3f05897fa0afecc4c221437"
+    "cf89d6a713e90d90f1c073e808471a6e8b060e158976270489471bd25f666d83"
+    "" "via [rb]",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `rb._sunfold "user constant" .inherited
+    "dd1cadd5effc2fc02b6642e09ed35b19d7ec83d85bd2b0e09a478f3a4abea61b"
+    "3dd5a6e4da52f7619e1b99a75ee18e22599a4748509a9abb410ce9e28531d17a"
+    "" "via [ra]",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._sparseCasesOn_1 "clique auxiliary" .recArg
+    "3a4d0a9cb60745860c348a96bb097d439c3b156a60085eedbf4febb58fc9821d"
+    "-"
+    "" "ONLY-A; Lean's sparse casesOn for ra's match on x, which exists only while x is ra's recursive argument; Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))",
+  -- Cliques.WH (A5f, the TACTIC-ASYM probe within one goal; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha "clique member" .pendingTransport
+    "81a1116c189347bb57bfeed4fdc7502c5269315582c04aa9815485162ea27be0"
+    "15ec7af204f1cc5615f11aa34dc0d3d54c919fabc00fe81d8781292884bbdca3"
+    "value.λ.body.λ.body.λ.body.λ.body.@1" "ROOT[V]; PSum order of the encoding and the fixed telescope; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha.eq_def "equation lemma" .lazy
+    "c8a926c0b15ac771de190bb1bb38887a9b14e03df3a51e239cb1954d3bf52183"
+    "479546722f8190cc7f83279478c11b5521d4d706f1d04b861b57e927cba53a2b"
+    "value.λ.body.λ.body.λ.body.λ.body.@1.@1" "ROOT[V]",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `hb.eq_def "equation lemma" .lazy
+    "895d6edfc2e83439b104aeb6f8a2e044351f4dd4a6dc95f9867ed343ae8edc7d"
+    "5190c7ce167080fce7857892a64aceaa792805a9c69f5615a0f01730fd508310"
+    "value.λ.body.λ.body.λ.body.λ.body.@1.@1" "ROOT[V]",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha._mutual.eq_def "encoding equation" .orderStmt
+    "713e343c7260eec8f36e0df24ebae7be003ad5f43c0913868cc6f35bccc135aa"
+    "c5647bc6499224213d33344f77cdf7498457ba83c22144acbc3b14dc3c4268a4"
+    "type.∀.body.∀.body.∀.body.∀.body.@2.@4.λ.body.@3.λ.body.@1" "ROOT[TV]",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `hb "clique member" .pendingTransport
+    "afc03d9f741d843fe9590666f7f260990cc457cc68a552ed117eff1ae1561f7c"
+    "5b029055e35a1a6ca14149c622e343b185991dfd6fae99026eb71cae6e73e90e"
+    "value.λ.body.λ.body.λ.body.λ.body.@1" "ROOT[V]; PSum order of the encoding and the fixed telescope; the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha._mutual "clique encoding" .tacticAsym
+    "a7bf3d2955497f278338733e61cc5d3dc811eb0b4f52a132982b9ee267ca1cfa"
+    "533939407aa6db690941e7c604843562fb5b16c7ca42c09118038d78f3bef142"
+    "value.λ.body.λ.body.λ.body.@3.λ.body.λ.body.@4.λ.body.λ.body.@3.λ.body.@1" "ROOT[V]; decreasing_by `assumption` takes the most recent `1 < k` in the packed function's context, whose fixed parameters follow the first function: _proof_k k h₂ under P0, k h₁ under P1 (Lean.Elab.Tactic.assumption, FixedParams.lean); the rest of the encoding transports exactly",
+  -- Cliques.TR (A5f, theorem tie, structural, Q6's recovered specification; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `rb "clique member" .pendingTransport
+    "7085cfdfb166749435e0c1d59f22e1796877dcb83ecfa64a8b3d05bf7362406d"
+    "55e412c17212dd415e079e198e94f2d0e5ee81ae9a232371140af0052f959767"
+    "value.λ.body" "ROOT[V]; identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `rb._f "structural functional" .pendingTransport
+    "98108fcdcffe277bf9fdce4b8af643b1b785867304c24a149d4b775f5160a4ab"
+    "cb12be024d8ab4425c89facd16419aa4416f8a35a02dc910c309e29fb3d6a16a"
+    "value.λ.body.λ.body.@4.λ.body.λ.body.let.val" "ROOT[V]; identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `ra._f "structural functional" .pendingTransport
+    "6b6a82b3efe33c928262df29a6e1e52725b2dd8a78d90979b1b57fd8353cbbc7"
+    "68deb3de80fe3694fc0389a033a873e633618467eaa924299bec4b449353613d"
+    "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "ROOT[V]; identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `ra "clique member" .pendingTransport
+    "f515069851bec772c86c3429da59017111da4e12fec7a2c50f55a4dc3ba2e7dd"
+    "c57bf565c6293ef91fd9162550ed5e87273fc22950125916325790cf69473b83"
+    "value.λ.body" "ROOT[V]; identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
+  -- Cliques.TQ (A5f, theorem tie, well-founded, Q6's recovered specification; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.TQ "P0" "P1" `qa "clique member" .pendingTransport
+    "b54f2593059f634aacbc338c3a6a9f1d174e9c878602a973ccb39b94a1da691b"
+    "808cbd7f9bf7daab6785c7cf800175ac51255af01e73840ef56b4f111b1da16d"
+    "value.λ.body.@0.fn" "ROOT[V|K]; identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TQ "P0" "P1" `qb "clique member" .pendingTransport
+    "5ff24256028f491cffba1917f580101010c8cd13ec8c2b5eb46b8a31c85be8a6"
+    "77b89a107f331e04c153051103491879bb066e16f5a60ed7614aaad2dd3a8e3c"
+    "value.λ.body.@0.fn" "ROOT[V|K]; identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.TQ "P0" "P1" `qa._mutual "clique encoding" .pendingTransport
+    "e221ec86aeb3fe776065dda776611fdc22c24a263d0fcf3e070a8d5bd1b4c39c"
+    "71fe3265b59618938cb2faf2c8de64ba2c21e021af3bc308451210711fa2af30"
+    "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "ROOT[V|K]; identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
+  -- Cliques.WU (A5f, the position restriction's negative control; kernel verdicts not run for these entries)
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx._mutual "clique encoding" .pendingTransport
+    "29ade7866807a108f74e5e7af9dd2d16e97e0bc0ec70d8c0348e2f72461a77e2"
+    "ea34c5fded17085a9976c048f5b01246fb7ace26452defea241709934aee40d1"
+    "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@3.λ.body" "ROOT[V|K]; PSum order of the encoding; the user values of type PSum Nat Nat stay (the position restriction); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wy.eq_def "equation lemma" .lazy
+    "5a031c526f0532f55fb04fe46bac9ce987909707d19a3f7842cb223a007318d8"
+    "f9a53f194d6e42939af76f7dd338862ff4c9081d9b15b7ed9a7137a63edf3e2e"
+    "value.λ.body.@1.@0.fn" "ROOT[V|K]",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx "clique member" .pendingTransport
+    "d4453beb9378ad0545d57b3921bd3679fc92382e9a8278fef1183e3c8247c289"
+    "1ae9cccb49d7220eb4d0e94e465b26444c563356f14ce8d6ba9ee97ca9248b90"
+    "value.λ.body.@0.fn" "ROOT[V|K]; PSum order of the encoding; the user values of type PSum Nat Nat stay (the position restriction); the transport reproduces it",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx.eq_def "equation lemma" .lazy
+    "578298758d13c63deba908d0afe1e68292db2343eb7f5587f4b2e701cb291b2a"
+    "1369d30019bbd8c870ac4a620feece8eaaf1963ade3dc8a01d756f4370422d97"
+    "value.λ.body.@1.@0.fn" "ROOT[V|K]",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx._mutual.eq_def "encoding equation" .orderStmt
+    "a3574f238552c2f40c8328764184166dd04daa2832607300df5528398e21d223"
+    "d80a2ec1dea3ed3a5569755bacc357727c3092c1b2f37454047f9f1ab969f2c7"
+    "type.∀.body.@2.@4.λ.body.@3.λ.body" "ROOT[TV]",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wy "clique member" .pendingTransport
+    "92a70374d60266f75c22cc5167b08c23ecd199f5e0fc61dbc36ee39e069dfee2"
+    "c65c287d359b894044850482f45c4d64856e31f7561d672d368ff84b6d7120a3"
+    "value.λ.body.@0.fn" "ROOT[V|K]; PSum order of the encoding; the user values of type PSum Nat Nat stay (the position restriction); the transport reproduces it"
 ]
 
 end Tests.Ix.Compile.NonCanonical
