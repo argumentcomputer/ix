@@ -850,8 +850,24 @@ difference outside the non-canonical set is a canonicity defect of a later pass.
 For each Lean recursor `r` of a changed block (Def 3.1), Pass 3 builds an **image** `img(r)`: a
 closed Ix term with Lean's type `tr_N(type r)` that computes as `r` does. The image is built from the
 *types* of the Ix recursors and from the specifications. It uses no reduction, unlike the prototype,
-which used `MetaM` (`plans/review/auxgen-certify/exp-prototype/CertProto/Lib.lean`, 516 lines; A3
-re-implements it as a generator over kernel terms).
+which used `MetaM` (`plans/review/auxgen-certify/exp-prototype/CertProto/Lib.lean`, 516 lines).
+
+*A3I* below means `plans/wave1/a3i.md` (untracked): the image generator `Ix/Compile/Image/**`, written
+as total pure functions. Its measurements:
+- 38/38 images, 62/62 rules by `rfl` and 45/45 bridges under Lean's kernel;
+- 36/38 images α-equal to the prototype's (the other 2 are C3b, see §4.2);
+- 154/154 inline call sites equal to the original by `rfl`.
+
+**Term representation** [measured, A3I §1, §4 item 1]. The generator builds `Ix.Expr`, the hashed
+mirror of `Lean.Expr` with the same constructors, not `Lean.Expr`. `CompileM`, `AuxGen` and Pass 1
+already work on `Ix.Expr`, so building `Lean.Expr` would force a conversion in both directions at
+every call site. Everything in this section applies unchanged to `Ix.Expr`.
+
+*This departs from a stated requirement.* The old plan's Def 2.9 asks generators to be pure over
+`Ix.Kernel.Expr`, the certified kernel's term language. `Ix.Expr` is not that language. A conversion
+`Ix.Expr → Ix.Kernel.Expr` is needed before Phase B can prove anything about the generator [open; for
+A3 proper and Phase B].
+
 
 ### 4.1 Eliminator choice (Def 3.3)
 
@@ -898,7 +914,9 @@ comparing *stripped* motive types, with the sort replaced by `Sort 0` (`Lib.lean
 - *tuple* (`|C_j| = k ≥ 2`): the motive is `λ ys. m_{i₁} ys ×' … ×' m_{i_k} ys`, nested to the right.
   - `PProd` is used at level `ℓ`; `And` replaces it exactly when Lean's motives are propositions
     (`PProdN.pack`, `src/lean/Lean/Meta/PProdN.lean:94-114`).
-  - [measured: PRO, C3b and C7 at level 0.]
+  - [measured: PRO, C3b and C7 at level 0. Under Pass 1, C3b is a split (see "What is established"
+    below), so C7 is the collapse case.]
+
 - *lifted* (`|C_j| = 1`, but some other slot is a tuple and `u` is not always zero): the motive is
   `λ ys. PProd.{u,0} (m_i ys) True`, of sort `Sort (max 1 u)` (`Lib.lean:227-238`).
   - Without the lift, `ρ.{max 1 u}` cannot take a `Sort u` motive.
@@ -925,8 +943,20 @@ hypotheses `ihs`:
 
 **Relocation terminates** [argued, old plan Prop 3.1 lemma]. A relocated field's type lies either in
 an Ix block strictly below `ρ`'s block in the condensation DAG, or in a container instance finitely
-nested in the field type. The prototype's fuel of 64 (`Lib.lean:241, 355`) becomes a structural
-recursion on (DAG height, nesting depth) in A3.
+nested in the field type. The prototype's fuel of 64 (`Lib.lean:241, 355`) is replaced in A3.
+
+*Implemented* [measured, A3I §4 item 2]. The generator recurses structurally on the bound (number of
+Lean motives + 1) and raises an error naming the block when it runs out. Along one relocation chain
+the eliminators are pairwise distinct, and each is `elim(t)` for a distinct Lean motive `t`, so the
+bound loses no terminating case [argued, A3I]. This departs from this section's earlier wording,
+which asked for structural recursion on (DAG height, nesting depth). That wording was a suggestion
+about the measure, not a requirement; the requirement is termination without fuel, and the new bound
+meets it.
+
+**Unused Lean motives.** A Lean motive that lies in no slot of the chosen eliminator is simply not
+used. Examples are C3b's `motive_2` and the split cases. This follows from the construction [A3I §4
+item 6].
+
 
 **Step 5: the result.**
 `img(r) := λ ps ms mins is x. unwrap_{pos(t_maj)} (ρ.{ℓ, us} ps motives′ minors′ is x)`
@@ -944,7 +974,13 @@ downstream depends on how an image was built: it is checked by its type and its 
 - 38/38 images typed at Lean's type and 62/62 iota rules by `Eq.refl` in Lean's kernel, over 15
   sub-cases: permutation, split with and without a cross field, Prop split and collapse, evaporated
   `List`, `Rose`, collapse, nested collapse, `IndPredBelow`, mixed class, parameters, universes and
-  reflexive fields [measured: PRO, `out/results.tsv`].
+  reflexive fields [measured: PRO, `out/results.tsv`; reproduced by the pure generator, A3I].
+- **C3b is now a Prop split, not a collapse.** The prototype hand-collapsed C3b's independent,
+  α-equivalent Prop pair `Q1`, `Q2`. Under Pass 1 they never reference each other, so they form two
+  components, and classes are formed within components (§2.1–2.2). C3b therefore tests a Prop split,
+  in which each member gains large elimination. C7, with `P` and `Q` mutually recursive, still tests
+  a real Prop collapse [measured, A3I §3 item 1].
+
 
 ### 4.3 The development
 
@@ -962,6 +998,17 @@ construction or the substitution created, and leave every redex the user wrote. 
      `body`, the created β-redex is contracted, and so on hereditarily.
    - So are projection-of-constructor redexes `(⟨a, b⟩).1 ↦ a` (`PProd`, `And`), and η-redexes,
      created at those positions.
+   - *Implemented, and narrower* [measured, A3I §4 item 3]. η is contracted only where the head is
+     the directly substituted value. The result of a hereditary β-step is not η-contracted, so a
+     user-written η-redex survives (unit check 5).
+     - This narrows the sentence above. It is consistent with Q10's decision ("η at the substituted
+       variables") and with the rule that user redexes are left alone. The rule is pinned this way.
+   - At the image (P3a), the motive and minor wrappers are η-contracted with Lean's `Expr.eta`, as
+     in the prototype.
+   - **[open] Reflexive-field wrappers.** In C9 and C9b, the reflexive-hypothesis wrappers
+     `fun a => a_ih a` are kept in the image, to match the prototype. Whether to contract them is
+     canonical-neutral, and it is decided by A3 proper before A4 pins the twins.
+
    - Termination [argued]: each hereditary step substitutes at a strictly smaller type, namely a
      motive's or minor's codomain, which is finitely nested in Lean's recursor type.
    - Redexes inside the user's arguments are not touched unless the substitution itself formed
@@ -992,8 +1039,19 @@ over `rec`, `rec_N`, `recOn`, `casesOn`, `below*`, `brecOn*`, `.go`, `.eq` and `
 
 - **Fully applied** (at least the image's arity in arguments): **inline**. Replace the occurrence by
   `img(a)`'s body with the arguments substituted, then develop (§4.3). Arguments beyond the arity stay
-  applied. Nothing is dropped:
-  - every motive and minor Lean supplied appears in the result, permuted, paired or relocated;
+  applied. **Nothing that is used is dropped:**
+  - every motive and minor that the major premise can reach appears in the result, permuted, paired
+    or relocated;
+  - the arguments that belong to members of other components vanish. Those members cannot occur in
+    the major's type, so their motives and minors are absent from the image body, and hereditary
+    substitution discards the user's arguments for them.
+    - Example: C2b, `A.rec ↦ fun … nil cons leaf two t => Gen.A.rec nil cons t` [measured, A3I §4
+      item 4].
+    - This is definitionally harmless: 154/154 inline sites equal the original by `rfl` [measured,
+      A3I].
+    - The rule that matters is the old surgery's defect, dropping *used* minors, and that cannot
+      happen here;
+
   - O7/O10/O12 are the only passes that may later remove duplicates, and only under their side
     conditions.
 - **Bare or partial** (`def r := @A.rec`, `List.map A.casesOn`, `@f._mutual`): reference the
