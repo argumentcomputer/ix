@@ -20,6 +20,7 @@ public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Sharing.Exact
 public import Ix.Common
+public import Ix.PhaseTimers
 public import Ix.Store
 public import Ix.Mutual
 public import Ix.GraphM
@@ -296,6 +297,16 @@ def CompileM.run (compileEnv : CompileEnv) (blockEnv : BlockEnv) (blockState : B
   match StateT.run (ExceptT.run (ReaderT.run m (compileEnv, blockEnv))) blockState with
   | (Except.ok a, state') => Except.ok (a, state')
   | (Except.error e, _) => Except.error e
+
+/-- Run `act` inside worker phase `ph` (`Ix.PhaseTimers`, off unless
+    `IX_PHASE_TIMERS` is set). The phase opens on the block state `act`
+    receives and closes on the block state it returns, on success and on
+    error alike; the result is `act`'s, unchanged. -/
+@[inline] def timedC (ph : Ix.PhaseTimers.Phase) (act : CompileM α) : CompileM α :=
+  fun r => ExceptT.mk fun s =>
+    if Ix.PhaseTimers.enabled () then
+      Ix.PhaseTimers.exitV ((ExceptT.run (act r)).run (Ix.PhaseTimers.enterV ph s))
+    else (ExceptT.run (act r)).run s
 
 /-- Get the global compile environment. -/
 def getCompileEnv : CompileM CompileEnv := do
@@ -2137,7 +2148,7 @@ def MutConst.mkIndc (i : InductiveVal) : CompileM MutConst := do
 representative first: `Ix.Compile.Canon.sortClasses Rules.compiler`, with
 external addresses from `constAddrLookup`. Pure: the comparison cache lives
 inside the call, so nothing leaks into the block state. -/
-def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) := do
+def sortConstsCore (sources : List MutConst) : CompileM (List (List MutConst)) := do
   let addr? ← constAddrLookup
   match Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addr? sources with
   | .ok (classes, _) => pure classes
@@ -2180,6 +2191,10 @@ def orderRecursorFamily (classes : List (List MutConst)) : List (List MutConst) 
     let decorated := classes.toArray.zipIdx.map fun (cls, i) => (key cls, i, cls)
     let sorted := decorated.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)
     (sorted.map (·.2.2)).toList
+
+/-- `sortConstsCore`, timed as the classes phase (`Ix.PhaseTimers`). -/
+def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) :=
+  timedC .classes (sortConstsCore sources)
 
 /-! ## Constant Building -/
 
@@ -2977,7 +2992,10 @@ def finishMutualCompilation (classes : List (List MutConst))
     (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   let cache ← getBlockState
-  match buildCompiledMutualBlock (← read).1.sharingLimits classes payloads metas cache with
+  let limits := (← read).1.sharingLimits
+  -- Timed at the call (`Ix.PhaseTimers`): the builders themselves carry proofs.
+  match Ix.PhaseTimers.withPhase .sharing payloads
+      (buildCompiledMutualBlock limits classes · metas cache) with
   | .ok result => pure result
   | .error e => throw e
 
@@ -3049,8 +3067,8 @@ def finishInductiveFamilyBlock (i : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   let cache ← getBlockState
-  let block ← buildBlockConstant
-    (.muts #[.indc ind]) cache.refs cache.univs
+  let block ← timedC .sharing (buildBlockConstant
+    (.muts #[.indc ind]) cache.refs cache.univs)
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
   let projections :=
@@ -3078,7 +3096,7 @@ def compileDefinitionBlock (definitionVal : DefinitionVal) :
     CompileM BlockResult := do
   let (defn, constMeta, _typeExpr, _valueExpr) ←
     compileDefinition definitionVal
-  finishConstantInfoWithSharing (.defn defn) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.defn defn) constMeta)
 
 /-- Preseed and compile a singleton definition after the common declaration
 audit and singleton mutual-context setup performed by `compileConstantInfo`. -/
@@ -3093,7 +3111,7 @@ def compileDefinitionInfo (definitionVal : DefinitionVal) :
 def compileDefinitionDataBlock (definitionData : Def) : CompileM BlockResult := do
   let (defn, constMeta, _typeExpr, _valueExpr) ←
     compileDefinitionData definitionData
-  finishConstantInfoWithSharing (.defn defn) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.defn defn) constMeta)
 
 /-- Preseed and compile a common two-expression definition-like payload. -/
 def compileDefinitionDataInfo (definitionData : Def) : CompileM BlockResult := do
@@ -3112,7 +3130,7 @@ def compileOpaqueInfo (opaqueVal : OpaqueVal) : CompileM BlockResult :=
 outer singleton driver remains responsible for auditing and preseeding. -/
 def compileAxiomBlock (axiomVal : AxiomVal) : CompileM BlockResult := do
   let (axiomInfo, constMeta, _typeExpr) ← compileAxiom axiomVal
-  finishConstantInfoWithSharing (.axio axiomInfo) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.axio axiomInfo) constMeta)
 
 /-- Preseed and compile a singleton axiom after the common declaration audit
 and singleton mutual-context setup performed by `compileConstantInfo`. -/
@@ -3124,7 +3142,7 @@ def compileAxiomInfo (axiomVal : AxiomVal) : CompileM BlockResult := do
 /-- Compile and finalize a singleton quotient payload. -/
 def compileQuotientBlock (quotientVal : QuotVal) : CompileM BlockResult := do
   let (quotientInfo, constMeta, _typeExpr) ← compileQuotient quotientVal
-  finishConstantInfoWithSharing (.quot quotientInfo) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.quot quotientInfo) constMeta)
 
 /-- Preseed and compile a singleton quotient after its driver setup. -/
 def compileQuotientInfo (quotientVal : QuotVal) : CompileM BlockResult := do
@@ -3135,7 +3153,7 @@ def compileQuotientInfo (quotientVal : QuotVal) : CompileM BlockResult := do
 /-- Compile and finalize a singleton recursor payload. -/
 def compileRecursorBlock (recursorVal : RecursorVal) : CompileM BlockResult := do
   let (recursor, constMeta, _typeExpr) ← compileRecursor recursorVal
-  finishConstantInfoWithSharing (.recr recursor) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.recr recursor) constMeta)
 
 /-- Preseed and compile a singleton recursor after its driver setup. -/
 def compileRecursorInfo (recursorVal : RecursorVal) : CompileM BlockResult := do

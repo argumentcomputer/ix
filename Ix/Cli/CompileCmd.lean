@@ -106,7 +106,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     p.printError "error: --consts/--consts-file and --module are mutually exclusive"
     return 1
   let constList ←
-    if !constsSeeds.isEmpty then do
+    if p.hasFlag "local" then do
+      if !constsSeeds.isEmpty || (p.flag? "module").isSome || !excludeSet.isEmpty then
+        p.printError "error: --local excludes --consts/--consts-file, --module and --exclude"
+        return 1
+      let closed := localConstList fe
+      IO.println s!"[compile] local: {closed.length} constants (the file's own and their dependencies)"
+      pure closed
+    else if !constsSeeds.isEmpty then do
       let mut seeds : List Lean.Name := []
       let mut missing : List String := []
       -- Displayed-form fallback, built at most once: a fresh
@@ -274,6 +281,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
     "consts-file"  : String; "Additionally read seed constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
+    "local" ;               "Compile only the constants the input file itself declares, with their transitive dependencies, instead of the whole import env. Mutually exclusive with --consts, --consts-file, --module and --exclude."
     module         : String; "Comma-separated module-name prefixes to filter on (e.g. 'Tests.Ix.Kernel.TutorialDefs,Tests.Ix.Kernel.NatReduction'). Match is against the SOURCE MODULE a constant came from (via `Lean.Environment.getModuleIdxFor?`), not the constant's own name — so macro-emitted decls that register under unqualified names still get caught when their host module's name matches. Transitive deps are pulled in automatically."
     exclude        : String; "Comma-separated exact Lean.Name(s) to strip from the seed set. Excluded names that are still referenced by another seed will reappear via the transitive-dep closure."
     "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check --consts-file`."

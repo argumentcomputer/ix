@@ -40,7 +40,7 @@ private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α ×
   let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
   xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
-def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
+def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let args : Array String := p.variableArgsAs! String
   let some (pathStr : String) := args[0]?
     | p.printError "error: must specify <path> to a Lean source file"
@@ -58,13 +58,16 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     return 2
 
   IO.println s!"[compile-lean] building {pathStr}..."
-  buildFile pathStr
-  let fe ← getFileEnvCore pathStr
-  let constList ← defaultConstList fe pathStr
+  Ix.PhaseTimers.timeWall "lake build of the input module" (buildFile pathStr)
+  let fe ← Ix.PhaseTimers.timeWall "Lean environment import and elaboration"
+    (getFileEnvCore pathStr)
+  let constList ← Ix.PhaseTimers.timeWall "constant list" do
+    if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow
-  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
+  let input ← Ix.PhaseTimers.timeWall "source-contract preparation (compileInputFromEnv)" do
+    IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
   match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
       (dbg := true) with
   | .error e =>
@@ -83,7 +86,7 @@ serialize the grounded subset)"
       for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
       return 1
-    IO.FS.writeBinFile outPath out.bytes
+    Ix.PhaseTimers.timeWall "write the output file" (IO.FS.writeBinFile outPath out.bytes)
     IO.println s!"[compile-lean] wrote {out.bytes.size} bytes to {outPath} \
 ({out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
 {ungroundedCount} block failures) in {elapsed}ms"
@@ -102,6 +105,7 @@ serialize the grounded subset)"
       let rustBytes ← IO.FS.readBinFile rustOut
       IO.FS.removeDirAll dir
       let tRe := (← IO.monoMsNow) - tR
+      Ix.PhaseTimers.wall " (not the Lean compiler) --rust-check: Rust compile" tRe
       if rustBytes == out.bytes then
         IO.println s!"[compile-lean] ALIGNED: {out.bytes.size} bytes byte-identical with Rust ({tRe}ms)"
       else
@@ -115,6 +119,14 @@ rust {rustBytes.size}B, first difference at byte {firstDiff}"
         return 1
     return 0
 
+/-- `runCompileLeanCmdCore`, then the phase table on stderr when
+    `IX_PHASE_TIMERS` is set (`Ix.PhaseTimers`; nothing otherwise). -/
+def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
+  let rc ← runCompileLeanCmdCore p
+  for line in ← Ix.PhaseTimers.report do
+    IO.eprintln line
+  return rc
+
 end Ix.Cli.CompileLeanCmd
 
 open Ix.Cli.CompileLeanCmd in
@@ -125,6 +137,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
   FLAGS:
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
+    "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies, instead of the whole import env (as `ix compile --local`); applies to --rust-check too."
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."

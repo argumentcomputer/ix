@@ -13,7 +13,18 @@
 
   Per fixture, as the CLI runs it (`IxTests` depends on the `ix` target):
 
-  1. `ix compile <file> --no-build` and `ix compile-lean <file> --rust-check`.
+  1. `ix compile <file> --no-build --local` and `ix compile-lean <file>
+     --rust-check --local`, run concurrently. `--local` compiles the
+     fixture's own constants with their dependency closure instead of the
+     whole import environment (Init, 117k constants, or Lean for
+     `SortUDecl`): a block's compiled form depends only on its closure, so
+     the fixture's constants come out as in a whole-file compile, without
+     recompiling Init twice per fixture (the whole-file suite took about 33
+     minutes at 4-way). `AUX_CERT_WHOLE=1` runs the whole-file compiles
+     instead and adds the bridge between the two scopes: a third compile,
+     `ix compile --local`, whose every named entry (address, metadata,
+     original, hints) must equal the whole-file entry, and which must hold
+     every fixture-owned name of the whole-file output.
      A fixture expected to compile must exit 0 in both and print `ALIGNED`,
      and the Rust output must be sha256-identical to the Lean output (which
      `--rust-check` showed byte-identical to a second Rust compile): two
@@ -29,16 +40,28 @@
   3. Required and forbidden names in the output (`NestMutGroup`: exactly the
      two nested auxiliaries Lean has).
 
+  The output's names are read from its own named section (all of them):
+  the required and forbidden names, the constants handed to `check-lean`, and
+  the attribution of a certified-checker failure to every fixture name of the
+  failing record (a projection belongs to its block). The checker's rows list
+  at most three names per record, chosen in hash-map order, so a suite reading
+  names off the rows saw a subset that depended on the rest of the
+  environment.
+
   The `rfl` theorems in the fixtures are the value pins: the only checks
   that see a meaning change (WB-B4's `fg_ab`), since `--rust-check` and
   `validate` compare the compilers with each other, not with Lean.
 
   Run with: `lake test -- --ignored aux-cert` (after `lake build ix
   kernel-check-ixe`). `AUX_CERT_JOBS` sets the fixture parallelism (default
-  4); `AUX_CERT_ONLY` restricts to a comma-separated list of fixture stems.
+  4); `AUX_CERT_ONLY` restricts to a comma-separated list of fixture stems;
+  `AUX_CERT_WHOLE=1` selects the whole-file scope (above). The verdict lines
+  are the same in both scopes; `[aux-cert] time` lines report each
+  fixture's wall time.
 -/
 import Lean.Data.Json
 import LSpec
+import Ix.Ixon
 
 open LSpec
 
@@ -139,7 +162,8 @@ def fixtures : List Fixture := [
   -- WB §6: the certified checker declines the reflexive nested `R`
   -- (its documented modeller limitation); its dependents are blocked.
   { stem := "NestShapes", ns := ["NestShapes"]
-    knownFails := kf "cert" "WB §6 (certified: reflexive nested decline)" ["NestShapes.R.*"] },
+    knownFails := kf "cert" "WB §6 (certified: reflexive nested decline)"
+      ["NestShapes.R", "NestShapes.R.*"] },
   -- Compiled, with constants a checker rejects: totality defects outside
   -- A0, recorded by id.
   { stem := "Coind", ns := ["Coind"]
@@ -256,9 +280,10 @@ private def failLines (out : String) : List (String × String) :=
       | [] => none
     else none
 
-/-- Rows of a `kernel-check-ixe` jsonl file: names, outcome, reason. -/
+/-- Rows of a `kernel-check-ixe` jsonl file: address, names (at most three,
+    for reporting), outcome, reason. -/
 private def certRows (path : System.FilePath) :
-    IO (Array (List String × String × String)) := do
+    IO (Array (String × List String × String × String)) := do
   let content ← IO.FS.readFile path
   let mut rows := #[]
   for line in content.splitOn "\n" do
@@ -269,26 +294,74 @@ private def certRows (path : System.FilePath) :
       | .error _ => []
     let outcome := (j.getObjValAs? String "outcome").toOption.getD ""
     let reason := (j.getObjValAs? String "reason").toOption.getD ""
-    rows := rows.push (names, outcome, reason)
+    let address := (j.getObjValAs? String "address").toOption.getD ""
+    rows := rows.push (address, names, outcome, reason)
   return rows
+
+/-- The record the certified checker reports the constant at `addr` under:
+    the block of a projection, else the constant itself (mirrors
+    `Benchmarks.Kernel.CheckIxeStep.owner`). -/
+def recordOf (env : Ixon.Env) (addr : Address) : Address :=
+  match (env.consts.get? addr).bind (·.get?) with
+  | some c => match c.info with
+    | .dPrj p => p.block
+    | .iPrj p => p.block
+    | .rPrj p => p.block
+    | .cPrj p => p.block
+    | _ => addr
+  | none => addr
+
+/-- The bridge between the two scopes (`AUX_CERT_WHOLE=1`): `ix compile
+    --local` must succeed, every named entry of its output (address,
+    metadata, original, hints) must be the whole-file output's entry for that
+    name, and the local output must hold every fixture-owned name `mine` of
+    the whole-file output. -/
+def scopeBridge (src : String) (wholeEnv : Ixon.Env) (localOut : System.FilePath)
+    (mine : List String) : IO (Array String) := do
+  let r ← run ixExe #["compile", src, "--no-build", "--local", "--out", localOut.toString]
+  if r.exitCode != 0 then
+    return #[s!"bridge: ix compile --local exit {r.exitCode}: \
+{((r.stdout ++ r.stderr).takeEnd 300).toString}"]
+  let load (p : System.FilePath) : IO Ixon.Env := do
+    IO.ofExcept (Ixon.rsDeEnv (← IO.FS.readBinFile p))
+  let localEnv ← load localOut
+  let mut problems : Array String := #[]
+  let mut differing : Nat := 0
+  for (n, named) in localEnv.named do
+    if wholeEnv.named.get? n != some named then
+      differing := differing + 1
+      if differing ≤ 5 then
+        problems := problems.push s!"bridge: {n} differs between the local and whole-file outputs"
+  if differing > 5 then
+    problems := problems.push s!"bridge: … {differing} differing entries in all"
+  let localNames : Std.HashSet String :=
+    localEnv.named.fold (fun s n _ => s.insert (toString n)) {}
+  for n in mine do
+    unless localNames.contains n do
+      problems := problems.push s!"bridge: {n} is in the whole-file output, not the local one"
+  return problems
 
 /-- Runs one fixture; returns its problems (empty: as recorded) and a
     one-line summary. -/
-def runFixture (f : Fixture) : IO (Array String × String) := do
+def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
   let src := s!"Tests/Ix/Compile/AuxCert/{f.stem}.lean"
   let dir ← IO.FS.createTempDir
   let mut problems : Array String := #[]
   try
     let rsOut := dir / "rs.ixe"
     let leanOut := dir / "lean.ixe"
-    let rs ← run ixExe #["compile", src, "--no-build", "--out", rsOut.toString]
-    let rsText := rs.stdout ++ rs.stderr
+    -- The two compiles are independent processes: run them concurrently.
+    let scope : Array String := if whole then #[] else #["--local"]
+    let rsTask ← IO.asTask (prio := .dedicated) (run ixExe
+      (#["compile", src, "--no-build", "--out", rsOut.toString] ++ scope))
     let runLean := match f.expect with
       | .xfail _ _ false => false
       | _ => true
     let ln : IO.Process.Output ← if runLean then
-        run ixExe #["compile-lean", src, "--rust-check", "--out", leanOut.toString]
+        run ixExe (#["compile-lean", src, "--rust-check", "--out", leanOut.toString] ++ scope)
       else pure { exitCode := (0 : UInt32), stdout := "", stderr := "" }
+    let rs ← IO.ofExcept (← IO.wait rsTask)
+    let rsText := rs.stdout ++ rs.stderr
     let lnText := ln.stdout ++ ln.stderr
     let rsCode : UInt32 := rs.exitCode
     let lnCode : UInt32 := ln.exitCode
@@ -300,6 +373,8 @@ def runFixture (f : Fixture) : IO (Array String × String) := do
         problems := problems.push s!"ix compile-lean: expected exit 1 with '{msg}', got exit {ln.exitCode}"
       if ← rsOut.pathExists then
         problems := problems.push "ix compile wrote an output for a refused fixture"
+      if ← leanOut.pathExists then
+        problems := problems.push "ix compile-lean wrote an output for a refused fixture"
       return (problems, s!"refused ({msg})")
     | .xfail defect msg leanToo =>
       if rsCode == 0 || !hasSub rsText msg then
@@ -317,26 +392,44 @@ def runFixture (f : Fixture) : IO (Array String × String) := do
       problems := problems.push s!"ix compile-lean --rust-check: exit {ln.exitCode}, no ALIGNED: {(lnText.takeEnd 400).toString}"
     else if (← sha256 rsOut) != (← sha256 leanOut) then
       problems := problems.push "two compiles differ: ix compile vs ix compile-lean --rust-check outputs"
-    -- The certified checker; its rows also list the output's names.
+    -- `check-rs` needs only the output: run it alongside the certified checker.
+    let rsCheckTask ← IO.asTask (prio := .dedicated)
+      (run ixExe #["check-rs", rsOut.toString, "--ns", ",".intercalate f.ns])
+    -- The output's names come from its own named section, complete: the
+    -- certified checker's rows list at most three names per record, chosen
+    -- in hash-map order, which depends on the rest of the environment.
+    let outEnv ← IO.ofExcept (Ixon.rsDeEnv (← IO.FS.readBinFile rsOut))
+    let allNames : List String :=
+      (outEnv.named.toArray.map (toString ·.1)).qsort (· < ·) |>.toList
+    let mine := allNames.filter (owns f)
+    -- A name belongs to the record the checker reports it under: its
+    -- constant, or the block of a projection (`CheckIxeStep.owner`).
+    let mut byRecord : Std.HashMap String (Array String) := {}
+    for (n, named) in outEnv.named do
+      let s := toString n
+      if owns f s then
+        let key := toString (recordOf outEnv named.addr)
+        byRecord := byRecord.insert key ((byRecord.getD key #[]).push s)
+    -- The certified checker.
     let certPath := dir / "cert.jsonl"
     let cert ← run certExe #[rsOut.toString, certPath.toString, "--jobs", "8"]
     let rows ← if ← certPath.pathExists then certRows certPath else pure #[]
     if rows.isEmpty then
       problems := problems.push s!"kernel-check-ixe wrote no rows (exit {cert.exitCode})"
-    let allNames : List String := rows.toList.flatMap (·.1) |>.eraseDups
-    let mine := allNames.filter (owns f)
+    if whole then
+      problems := problems ++ (← scopeBridge src outEnv (dir / "local.ixe") mine)
     for n in f.requireNames do
       unless allNames.contains n do problems := problems.push s!"output lacks {n}"
     for n in f.forbidNames do
       if allNames.contains n then problems := problems.push s!"output has {n}"
     -- Observed failures per leg.
     let mut failed : Array (String × String × String) := #[]
-    for (names, outcome, reason) in rows do
-      let ours := names.filter (owns f)
-      if ours.isEmpty || outcome == "accept" then continue
+    for (address, names, outcome, reason) in rows do
+      if outcome == "accept" then continue
       if outcome == "decline" && documentedDecline reason then continue
+      let ours := ((byRecord.getD address #[]).toList ++ names.filter (owns f)).eraseDups
       for n in ours do failed := failed.push ("cert", n, s!"{outcome}: {reason}")
-    let rsCheck ← run ixExe #["check-rs", rsOut.toString, "--ns", ",".intercalate f.ns]
+    let rsCheck ← IO.ofExcept (← IO.wait rsCheckTask)
     for (n, m) in failLines (rsCheck.stdout ++ rsCheck.stderr) do
       failed := failed.push ("rs", n, m)
     let namesFile := dir / "names.txt"
@@ -362,21 +455,26 @@ def runFixture (f : Fixture) : IO (Array String × String) := do
   finally
     IO.FS.removeDirAll dir
 
-/-- Runs `xs` with at most `jobs` tasks at a time, keeping the order. -/
+/-- Runs `xs` on `jobs` workers that each take the next unstarted item (no
+    straggler waits between batches), keeping the order of the results. -/
 private def mapPool (jobs : Nat) (xs : List Fixture)
     (k : Fixture → IO (Array String × String)) : IO (List (Array String × String)) := do
-  let mut out := #[]
-  let rec chunks (n : Nat) (ys : List Fixture) (fuel : Nat) : List (List Fixture) :=
-    match fuel with
-    | 0 => [ys]
-    | fuel + 1 => if ys.isEmpty then [] else ys.take n :: chunks n (ys.drop n) fuel
-  for chunk in chunks (max jobs 1) xs xs.length do
-    let tasks ← chunk.mapM fun x => IO.asTask (k x)
-    for t in tasks do
-      match ← IO.wait t with
-      | .ok r => out := out.push r
-      | .error e => out := out.push (#[s!"exception: {e}"], "exception")
-  return out.toList
+  let items := xs.toArray
+  let next ← IO.mkRef 0
+  let results ← IO.mkRef (Array.replicate items.size (#["not run"], "not run"))
+  let worker : IO Unit := do
+    repeat
+      let i ← next.modifyGet fun i => (i, i + 1)
+      if h : i < items.size then
+        let r ← try k items[i] catch e => pure (#[s!"exception: {e}"], "exception")
+        results.modify (·.set! i r)
+      else break
+  let tasks ← (List.range (max jobs 1)).mapM fun _ => IO.asTask (prio := .dedicated) worker
+  for t in tasks do
+    match ← IO.wait t with
+    | .ok () => pure ()
+    | .error e => throw e
+  return (← results.get).toList
 
 def suite : List TestSeq := [
   .individualIO "aux-cert: A0 fixtures through both compilers and three checkers"
@@ -386,8 +484,16 @@ def suite : List TestSeq := [
         return (false, 0, 0, some s!"{exe} missing — run `lake build ix kernel-check-ixe`")
     let jobs := ((← IO.getEnv "AUX_CERT_JOBS").bind String.toNat?).getD 4
     let only := ((← IO.getEnv "AUX_CERT_ONLY").map (·.splitOn ",")).getD []
+    let whole := ((← IO.getEnv "AUX_CERT_WHOLE").map (· != "0")).getD false
     let fs := if only.isEmpty then fixtures else fixtures.filter (only.contains ·.stem)
-    let results ← mapPool jobs fs runFixture
+    IO.println s!"[aux-cert] {fs.length} fixtures, {jobs} jobs, \
+{if whole then "whole-file scope with the local bridge" else "local scope"}"
+    let t0 ← IO.monoMsNow
+    let results ← mapPool jobs fs fun f => do
+      let t ← IO.monoMsNow
+      let r ← runFixture whole f
+      IO.println s!"[aux-cert] time {f.stem}: {(← IO.monoMsNow) - t} ms"
+      return r
     let mut failedN := 0
     for (f, (problems, summary)) in fs.zip results do
       if problems.isEmpty then
@@ -396,6 +502,7 @@ def suite : List TestSeq := [
         failedN := failedN + 1
         IO.println s!"[aux-cert] FAIL {f.stem} — {summary}"
         for p in problems do IO.println s!"[aux-cert]   {p}"
+    IO.println s!"[aux-cert] wall time: {(← IO.monoMsNow) - t0} ms"
     let n := fs.length
     return (failedN == 0, n - failedN, n,
       if failedN == 0 then none else some s!"{failedN} fixture(s) differ from the record"))

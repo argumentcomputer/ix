@@ -1449,7 +1449,7 @@ def collectConstRefs (expr : Expr) (out : Array Name) : Array Name := Id.run do
     Insert a type-only `KConst.axio` stub for `name` into the bridge kenv
     (skipped when an entry already exists under the resolved address). -/
 def ingressTypeStub (name : Name) (typ : Expr) (levelParams : Array Name)
-    (maps : AddrMaps) : KBridgeM Unit := do
+    (maps : AddrMaps) : KBridgeM Unit := timedK .auxIngress do
   let addr := maps.resolve name
   let zid : MKId := ⟨addr, name⟩
   if (← kenvGet? zid).isSome then
@@ -1506,7 +1506,7 @@ def ingressAuxGenDep (name : Name) (ci : ConstantInfo) (maps : AddrMaps)
     at final kenv fidelity and re-expanding its closure would be pure
     cost. -/
 def drainIngressQueue (queue₀ : Array Name) (maps : AddrMaps) :
-    KBridgeM Unit := do
+    KBridgeM Unit := timedK .auxIngress do
   let mut queue := queue₀
   repeat
     let some name := queue.back? | break

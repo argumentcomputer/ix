@@ -81,7 +81,7 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     | .inductInfo _ | .ctorInfo _ => true
     | _ => false
   if all.size == 1 && !isIndBlock then
-    let result ← compileConstantInfo const
+    let result ← timedC .exprCompile (compileConstantInfo const)
     return (result, none, {}, {}, {})
   let mut cs : Array MutConst := #[]
   for n in all do
@@ -93,7 +93,7 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     | .recInfo val => cs := cs.push (.recr val)
     | _ => continue
   let sortedClasses := orderRecursorFamily (← sortConsts cs.toList)
-  let blockResult ← compileMutualBlock sortedClasses
+  let blockResult ← timedC .exprCompile (compileMutualBlock sortedClasses)
   -- Alpha-collapsed standalone (single non-inductive class): Rust
   -- returns BEFORE the Muts registration and the aux tail
   -- (compile.rs:3872) — no synthetic Muts entry, no aux regeneration.
@@ -117,9 +117,13 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
-  let (auxLayout?, plans, brecPlans, belowPlans) ←
-    (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
-      maps).run' Ix.AuxGen.AuxKernelCtx.new
+  -- `tailBegin`/`tailEnd` count the tail's kernel ingress (`Ix.PhaseTimers`;
+  -- both are the identity, and do nothing unless `IX_PHASE_TIMERS` is set).
+  let kctx₀ := Ix.PhaseTimers.tailBegin lo Ix.AuxGen.AuxKernelCtx.new
+  let ((auxLayout?, plans, brecPlans, belowPlans), kctx) ← timedC .auxTail
+    ((Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
+      maps).run kctx₀)
+  let auxLayout? := Ix.PhaseTimers.tailEnd kctx.tcState.env.consts.size auxLayout?
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the
@@ -714,7 +718,8 @@ missing canonical aliases: {missing}"
           let mut promoteFailed := false
           for (name, origAddr, origMeta) in promotions do
             if promoteFailed then continue
-            match promoteAuxDriver acc.cenv name origAddr origMeta with
+            match Ix.PhaseTimers.withPhase .noAux acc.cenv
+              (promoteAuxDriver · name origAddr origMeta) with
             | .error e =>
               promoteFailed := true
               let msg := toString e
@@ -864,7 +869,7 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
     let mut noAux := none
     let mut noAuxFailMsg := none
     if anyAuxGen && incompleteMsg.isNone then
-      match compileConstNoAuxPure cenv lo all with
+      match Ix.PhaseTimers.withPhase .noAux cenv (compileConstNoAuxPure · lo all) with
       | .error e => noAuxFailMsg := some (toString e)
       | .ok out => noAux := some out
     return .promoted crossScc crossNames incompleteMsg noAux noAuxFailMsg
@@ -939,7 +944,8 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
           let mut promoteFailed := false
           for (name, origAddr, origMeta) in promotions do
             if promoteFailed then continue
-            match promoteAuxDriver acc.cenv name origAddr origMeta with
+            match Ix.PhaseTimers.withPhase .noAux acc.cenv
+              (promoteAuxDriver · name origAddr origMeta) with
             | .error e =>
               promoteFailed := true
               acc := recordFailure acc (toString e)
@@ -991,10 +997,13 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     | .ok l => pure l
     | .error e => return .error e
 
+  let tPre ← IO.monoMsNow
   let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
   | .ok a => acc := a
+  let tWaves ← IO.monoMsNow
+  Ix.PhaseTimers.wall " (compile) aux-gen prerequisite precompile" (tWaves - tPre)
 
   let workChan ← Std.CloseableChannel.Sync.new (α := AuxWorkItem)
   let resultChan ← Std.CloseableChannel.Sync.new
@@ -1015,7 +1024,8 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
           IO.println s!"  [block] BEGIN {item.lo.pretty} ({item.all.size} members)"
           (← IO.getStdout).flush
         let t0 ← IO.monoMsNow
-        let outcome := auxBlockOutcome item.cenv item.lo item.all
+        let outcome := Ix.PhaseTimers.withPhase .blockOther item.cenv
+          (auxBlockOutcome · item.lo item.all)
         let t1 ← IO.monoMsNow
         if logThis then
           let rssKb ← do
@@ -1087,7 +1097,8 @@ blocks remaining but none ready"
         if let .promoted _ _ (some _) _ _ := outcome then
           for n in all do
             failedNames := failedNames.insert n
-        let (acc', newNames, mergeFailed) := applyAuxBlockOutcome acc lo all outcome
+        let (acc', newNames, mergeFailed) := Ix.PhaseTimers.withPhase .merge acc
+          (applyAuxBlockOutcome · lo all outcome)
         if mergeFailed then
           for n in all do
             failedNames := failedNames.insert n
@@ -1125,7 +1136,13 @@ auxNames {acc.cenv.auxNameToAddr.size}"
     return .error s!"Only compiled {compiled}/{totalBlocks} blocks - \
 circular dependency?"
 
-  return .ok (assembleEnv acc)
+  let tAsm ← IO.monoMsNow
+  Ix.PhaseTimers.wall " (compile) block waves" (tAsm - tWaves)
+  let out := assembleEnv acc
+  match out with
+  | (env, n, cenv) =>
+    Ix.PhaseTimers.wall " (compile) assemble" ((← IO.monoMsNow) - tAsm)
+    return .ok (env, n, cenv)
 
 /-! ## The full pure-Lean pipeline
 
@@ -1189,6 +1206,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (resourceProfile : Option Ix.Resource.Profile := none)
     : IO (Except String LeanPipelineOut) := do
+  let tInspect ← IO.monoMsNow
   let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
   for (name, source) in consts do
     if Ix.Compile.sourceHasAnnotations source then
@@ -1196,6 +1214,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     match inspectSemanticSource source with
     | .error error => return .error error
     | .ok _ => pure ()
+  Ix.PhaseTimers.wall "semantic-contract inspection" ((← IO.monoMsNow) - tInspect)
   -- IX_COMPILE_DBG=1 forces phase timing + the driver's periodic memory
   -- attribution trace without threading a flag through callers.
   let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
@@ -1203,6 +1222,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     let t1 ← IO.monoMsNow
     if dbg then
       IO.println s!"  [compile-lean] {label}: {t1 - t0}ms"
+    Ix.PhaseTimers.wall label (t1 - t0)
     pure t1
   let t0 ← IO.monoMsNow
   let constArr := consts.toArray
@@ -1347,9 +1367,11 @@ def compileLeanInput (input : Ix.Compile.CompileInput)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (resourceProfile : Option Ix.Resource.Profile := none) :
     IO (Except String LeanPipelineOut) := do
+  let tPrep ← IO.monoMsNow
   let constants ← match input.prepare with
     | .ok constants => pure constants
     | .error error => return .error error
+  Ix.PhaseTimers.wall "source-contract preparation (prepare)" ((← IO.monoMsNow) - tPrep)
   compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile
 
 /-- Compile an isolated source list, extracting its checked occurrence records. -/

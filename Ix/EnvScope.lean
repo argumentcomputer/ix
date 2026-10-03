@@ -101,6 +101,43 @@ def defaultConstList (fe : FileEnv) (pathStr : String)
 {closed.length} after transitive-dep closure"
   return closed
 
+/-- The recursors Lean generated for inductive `n`: `n.rec` and the nested
+auxiliaries `n.rec_1`, `n.rec_2`, … (present on the first member of a block). -/
+def recursorsOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name := Id.run do
+  let mut out : List Lean.Name := []
+  if env.constants.contains (Lean.mkRecName n) then out := Lean.mkRecName n :: out
+  let mut i := 1
+  while env.constants.contains (n.str s!"rec_{i}") do
+    out := n.str s!"rec_{i}" :: out
+    i := i + 1
+  return out
+
+/-- The constants the file itself elaborates (no imported module owns them),
+closed over their transitive dependencies and over the recursors of every
+inductive in the closure: the `--local` scope of `ix compile` and `ix
+compile-lean`. A block's compiled form depends only on its dependency closure,
+so on the file's own constants this scope compiles what the whole import
+environment would, without recompiling the unrelated imports. The recursors
+are there for the checkers, which read an inductive block together with its
+recursor (a whole environment always has both). -/
+def localConstList (fe : FileEnv) : List (Lean.Name × Lean.ConstantInfo) := Id.run do
+  let env := fe.env
+  let mut seeds : Std.HashSet Lean.Name := env.constants.toList.foldl (init := {})
+    fun s (n, _) => if (env.getModuleIdxFor? n).isNone then s.insert n else s
+  let mut closed := collectDeps env seeds.toList
+  repeat
+    let mut added := false
+    for (n, ci) in closed do
+      if ci matches .inductInfo _ then
+        for r in recursorsOf env n do
+          if !seeds.contains r then
+            seeds := seeds.insert r
+            added := true
+    if !added then break
+    -- The closure so far stays in: every name in it is reachable from a seed.
+    closed := collectDeps env seeds.toList
+  return closed
+
 end Ix.EnvScope
 
 end
