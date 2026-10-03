@@ -51,6 +51,17 @@ deriving instance BEq, Repr, Ord, Hashable for Lean.QuotKind
 deriving instance BEq, Repr, Ord, Hashable for Lean.ReducibilityHints
 deriving instance BEq, Repr, Ord, Hashable for Lean.DefinitionSafety
 deriving instance BEq, Repr, Ord, Hashable for ByteArray
+
+/-- The derived `BEq ByteArray` above shadows core's wherever this module is
+imported. Its body compares `a.data == b.data`, and `ByteArray.data` copies the
+bytes into a boxed `Array UInt8` on every call; core's `ByteArray.beq` is the
+same function (`a.data == b.data`) implemented by `lean_sarray_dec_eq`
+(`memcmp`). Compiled code runs core's. Audit root in
+`Ix.Sharing.Verify.Audit.Statements` (`Audit.CompiledCode` requires it). -/
+@[csimp] theorem instBEqByteArray_ix_beq_eq_core :
+    @instBEqByteArray_ix.beq = @ByteArray.beq := by
+  funext a b
+  cases a; cases b; rfl
 deriving instance BEq, Repr, Ord, Hashable for String.Pos.Raw
 deriving instance BEq, Repr, Ord, Hashable for Substring.Raw
 deriving instance BEq, Repr, Ord, Hashable for Lean.SourceInfo

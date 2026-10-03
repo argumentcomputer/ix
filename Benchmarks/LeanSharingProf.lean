@@ -21,7 +21,9 @@ from the stored bytes.
 `tieredAtWidth` and the uniform optimizer's stages) and prints the time per
 phase, summed over the constants and the three widths, plus component
 statistics (`cstat.*`) and phase-3 statistics (`stat.*`), counts scaled by
-10^6 in the ms column. `hash` also prints each output's address.
+10^6 in the ms column. Every timed key also has a `#alloc` line: the small
+allocations made inside it (the heartbeat counter). `hash` also prints each
+output's address.
 A development tool: `profWidth` replicates internal stages and must follow
 them.
 -/
@@ -33,10 +35,13 @@ namespace Benchmarks.LeanSharingProf
 abbrev Acc := IO.Ref (Std.HashMap String Nat)
 
 @[noinline] def timeIt {α} (acc : Acc) (key : String) (f : Unit → α) : IO α := do
+  let h0 ← IO.getNumHeartbeats
   let t0 ← IO.monoNanosNow
   let r ← IO.lazyPure f
   let t1 ← IO.monoNanosNow
-  acc.modify fun m => m.insert key (m.getD key 0 + (t1 - t0))
+  let h1 ← IO.getNumHeartbeats
+  acc.modify fun m => (m.insert key (m.getD key 0 + (t1 - t0))).insert (key ++ "#alloc")
+    (m.getD (key ++ "#alloc") 0 + (h1 - h0))
   return r
 
 def must {α} [Inhabited α] (key : String) : Except SharingError α → IO α
@@ -64,10 +69,12 @@ def profWidth (acc : Acc) (limits : Limits) (ex : Expanded) (w : Nat) :
   let ok ← timeIt acc "u2.compCheck" fun _ =>
     componentsChecked ex.dag sg.cls sg.opaq sg.comps (componentLabels ex.dag.size sg.comps)
   unless ok do throw (IO.userError "components")
-  -- the component search as production runs it (`searchComponents`, which
-  -- compiled code replaces by the area- and closure-local search)
+  -- the component search as production runs it (`uniformChooseG`: the search
+  -- on each component's area, `searchComponentsArea`)
   let (results, states, costEvals) ← must "search"
-    (← timeIt acc "u3.search" fun _ => searchComponents limits ex sg)
+    (← timeIt acc "u3.search" fun _ => searchComponentsArea limits ex sg.f sg.up sg.cand sg.b0
+      sg.vis0 sg.rootCount sg.slack sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc sg.opaq
+      sg.comps)
   -- component statistics (untimed): the specification context of each
   -- component, for its closure and area sizes
   for members in sg.comps do
@@ -78,6 +85,8 @@ def profWidth (acc : Acc) (limits : Limits) (ex : Expanded) (w : Nat) :
       "cstat.area" (mm.getD "cstat.area" 0 + cx.area.size * 1000000)).insert
       "cstat.members" (mm.getD "cstat.members" 0 + cx.members.size * 1000000)).insert
       "cstat.comps" (mm.getD "cstat.comps" 0 + 1000000)
+  acc.modify fun mm => (mm.insert "cstat.states" (mm.getD "cstat.states" 0 + states * 1000000)).insert
+    "cstat.costEvals" (mm.getD "cstat.costEvals" 0 + costEvals * 1000000)
   let (chosenDelta, chosenX, lowerBracket) ← must "knap"
     (← timeIt acc "u4.knap" fun _ => uniformKnapsack limits sg.cs.size results)
   let csb ← timeIt acc "u4.csBase" fun _ => csBase ex p sg
@@ -196,7 +205,8 @@ def main (args : List String) : IO UInt32 := do
   let m ← acc.get
   let keys := m.toArray.qsort fun a b => a.1 < b.1
   for (k, v) in keys do
-    IO.println s!"  {k}: {v / 1000000} ms"
+    if k.endsWith "#alloc" then IO.println s!"  {k}: {v} allocations"
+    else IO.println s!"  {k}: {v / 1000000} ms"
   let slow := (perConst.qsort fun a b => a.1 > b.1).extract 0 15
   for (t, l, k) in slow do
     IO.println s!"  slow {t / 1000000} ms {l} (k {k})"
