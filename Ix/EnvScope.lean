@@ -14,16 +14,42 @@ public section
 
 namespace Ix.EnvScope
 
+/-- The recursors Lean generated for inductive `n`: `n.rec` and the nested
+auxiliaries `n.rec_1`, `n.rec_2`, … (present on the first member of a block). -/
+def recursorsOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name := Id.run do
+  let mut out : List Lean.Name := []
+  if env.constants.contains (Lean.mkRecName n) then out := Lean.mkRecName n :: out
+  let mut i := 1
+  while env.constants.contains (n.str s!"rec_{i}") do
+    out := n.str s!"rec_{i}" :: out
+    i := i + 1
+  return out
+
 /-- Collect the transitive closure of constants referenced by a set of seed
-names. Mirrors the identically-named helper in `Tests/Ix/Compile/ValidateAux.lean`
-so the CLI and test runner share the same dep-discovery semantics.
+names: the closure producer behind `ix compile --consts`/`--module`/`--exclude`,
+`ix validate-lean --ns`/`--local`, the module scope of `defaultConstList` and the
+closure suites.
 
 Walks each seed's type + value + recursor rules + ctor links + `all` links
 (of inductives, recursors, definitions, theorems and opaques) + auxiliary
-family siblings (`Lean.auxFamilySiblings`) until no new names are
-discovered. The returned list preserves the source environment's
-iteration order over the computed name set. -/
+family siblings (`Lean.auxFamilySiblings`) until no new names are discovered.
+The returned list preserves the source environment's iteration order over the
+computed name set. (`Tests/Ix/Compile/ValidateAux.lean` keeps its own mirror.)
+
+`withRecursors` also adds **the recursors of every inductive** (`recursorsOf`:
+`I.rec`, and `I.rec_N` on a nested block's first member). The closure modes
+whose output is handed to the checkers set it (`ix compile --consts`, `--local`
+via `localConstList`, `ix validate-lean --ns`, `--local`): the certified checker
+reads an inductive block together with its recursor and declines it otherwise
+(`reader: inductive block without a recursor in the input`); a whole
+environment always has both. It is off by default so that a whole-file compile
+(`defaultConstList`, including the module scope) and the other producers
+include exactly what they did before (A3v follow-up: the fixtures' bytes and
+the Rust producer are unchanged). A block's compiled form depends only on its
+dependency closure, so adding recursors moves no address already in the
+closure. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
+    (withRecursors : Bool := false)
     : List (Lean.Name × Lean.ConstantInfo) := Id.run do
   let mut needed : Std.HashSet Lean.Name := {}
   let mut worklist := seeds
@@ -57,6 +83,8 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
           for mutName in v.all do refs := refs.insert mutName
         | .inductInfo v =>
+          if withRecursors then
+            for r in recursorsOf env n do refs := refs.insert r
           for ctorName in v.ctors do
             refs := refs.insert ctorName
             if let some ctorCi := env.constants.find? ctorName then
@@ -101,42 +129,18 @@ def defaultConstList (fe : FileEnv) (pathStr : String)
 {closed.length} after transitive-dep closure"
   return closed
 
-/-- The recursors Lean generated for inductive `n`: `n.rec` and the nested
-auxiliaries `n.rec_1`, `n.rec_2`, … (present on the first member of a block). -/
-def recursorsOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name := Id.run do
-  let mut out : List Lean.Name := []
-  if env.constants.contains (Lean.mkRecName n) then out := Lean.mkRecName n :: out
-  let mut i := 1
-  while env.constants.contains (n.str s!"rec_{i}") do
-    out := n.str s!"rec_{i}" :: out
-    i := i + 1
-  return out
-
 /-- The constants the file itself elaborates (no imported module owns them),
-closed over their transitive dependencies and over the recursors of every
-inductive in the closure: the `--local` scope of `ix compile` and `ix
-compile-lean`. A block's compiled form depends only on its dependency closure,
-so on the file's own constants this scope compiles what the whole import
-environment would, without recompiling the unrelated imports. The recursors
-are there for the checkers, which read an inductive block together with its
-recursor (a whole environment always has both). -/
-def localConstList (fe : FileEnv) : List (Lean.Name × Lean.ConstantInfo) := Id.run do
+closed over their transitive dependencies (with the recursors of every
+inductive, as `collectDeps` always includes them): the `--local` scope of `ix
+compile`, `ix compile-lean` and `ix validate-lean`. A block's compiled form
+depends only on its dependency closure, so on the file's own constants this
+scope compiles what the whole import environment would, without recompiling
+the unrelated imports. -/
+def localConstList (fe : FileEnv) : List (Lean.Name × Lean.ConstantInfo) :=
   let env := fe.env
-  let mut seeds : Std.HashSet Lean.Name := env.constants.toList.foldl (init := {})
-    fun s (n, _) => if (env.getModuleIdxFor? n).isNone then s.insert n else s
-  let mut closed := collectDeps env seeds.toList
-  repeat
-    let mut added := false
-    for (n, ci) in closed do
-      if ci matches .inductInfo _ then
-        for r in recursorsOf env n do
-          if !seeds.contains r then
-            seeds := seeds.insert r
-            added := true
-    if !added then break
-    -- The closure so far stays in: every name in it is reachable from a seed.
-    closed := collectDeps env seeds.toList
-  return closed
+  let seeds := env.constants.toList.filterMap fun (n, _) =>
+    if (env.getModuleIdxFor? n).isNone then some n else none
+  collectDeps env seeds (withRecursors := true)
 
 end Ix.EnvScope
 

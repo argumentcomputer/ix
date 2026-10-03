@@ -135,7 +135,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         p.printError s!"error: no constant(s) named {missing} in the environment"
         return 1
       IO.println s!"[compile] consts: {seeds.length} seed constant(s)"
-      let closed := collectDeps leanEnv seeds
+      let closed := collectDeps leanEnv seeds (withRecursors := true)
       IO.println s!"[compile] consts: {closed.length} constants after transitive-dep closure"
       pure closed
     else match p.flag? "module" with
