@@ -319,4 +319,41 @@ partial def loop (n : Nat) (xs : List Nat) : List Nat :=
   if n = 0 then xs else loop (n - 1) xs
 end PartialPlain
 
+
+/-! ## KNOWN HOLE, second review R2-1 (not fixed): contracts erased by casts
+
+Contracts are invisible to Lean's and ix's type equality, so `rfl` proves an
+equality between types that differ only in contracts, and `cast` converts a
+value across it. These probes are VIOLATIONS that ix currently ACCEPTS; the
+suite pins the acceptance so that the fix of R2-1 (contracts significant in
+erased conversion, or a cast restriction) flips them visibly. They are not
+controls: nothing here is safe to rely on. -/
+
+/- KNOWN HOLE (R2-1): a shared input returned as unique through a cast. -/
+namespace K01
+def share (xs : List Nat) : List Nat := xs
+def evil (xs : List Nat) : ! List Nat :=
+  (@cast (List Nat → List Nat) (List Nat → ! List Nat) rfl share) xs
+end K01
+
+/- KNOWN HOLE (R2-1): a unique-input contract dropped through a cast of a
+synonym; a shared `xs` is updated in place while also returned. -/
+namespace K02
+def bump (! xs : List Nat) : ! List Nat :=
+  match xs with
+  | [] => []
+  | h :: t => (h + 1) :: t
+abbrev UF : Type := (! ys : List Nat) → ! List Nat
+def evil (xs : List Nat) : List Nat × List Nat :=
+  ((@cast UF (List Nat → List Nat) rfl bump) xs, xs)
+end K02
+
+/- KNOWN HOLE (R2-1): as K01 with both types as synonyms. -/
+namespace K08
+def share (xs : List Nat) : List Nat := xs
+abbrev UR : Type := List Nat → ! List Nat
+abbrev SR : Type := List Nat → List Nat
+def evil (xs : List Nat) : ! List Nat := (@cast SR UR rfl share) xs
+end K08
+
 end Tests.Ix.SourceContract.ReviewFixture
