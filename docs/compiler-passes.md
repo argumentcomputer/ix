@@ -14,6 +14,8 @@ readable when this was written; whether 4.34.1 changed any cited line is **[open
 - **[measured]**: an experiment or census recorded it; the input file is cited.
 - **[argued]**: a paper argument given here.
 - **[open]**: not established.
+- **[proved]**: machine-checked in Lean, with no `sorry` and only the standard axioms; the module is
+  cited.
 
 A fact about code carries a citation and no marker.
 
@@ -26,7 +28,6 @@ A fact about code carries a citation and no marker.
   `study-mutual-definitions-1.md`).
 - *A1C*: `plans/wave1/a1c.md` (untracked): the Pass 1 port and census at `f829b760`, Lean 4.34.1,
   Ixon v4 (bookmark `jcb/ix-cc-a1c`).
-
 
 Every definition used here is restated, so this document does not depend on those files.
 
@@ -105,7 +106,6 @@ plan's "residual image". "Image" keeps its meaning: the extra constants of Def 3
 ---
 
 ## 1. The pipeline and the convention
-
 
 ### 1.1 The passes
 
@@ -336,7 +336,6 @@ The key compares, lexicographically, in this order.
 - Rust implements this (`crates/compile/src/compile.rs:3586-3592, 3618`).
 - Lean does not (defect C1, §3.4); fixed in A2.
 
-
 **Definition** (`Ix/CompileM.lean:2153-2158`; `compile.rs:3369-3405`): `DefKind`, universe-parameter
 count, type, value. Safety and hints are not compared. Hints are per name in `Named.hints`.
 
@@ -346,7 +345,6 @@ count, type, value. Safety and hints are not compared. Hints are per name in `Na
   parameters, fields, type;
 - Rust additionally compares `is_rec` and `is_unsafe` first (C6, §3.4). The canonical key is
   content-only, and Rust drops both keys at catch-up (owner decision on Q4).
-
 
 **Recursor** (`Ix/CompileM.lean:2199-2212`; `compile.rs:3536-3580`): universe count, parameters,
 indices, motives, minors, `k`, type, rules (field count, right-hand side).
@@ -781,7 +779,6 @@ seed-dependent output [argued].
 - Measured: 0 preorder violations at the fixed point on every fixture component and on 17 Mathlib
   components of up to 40 members, under both rule sets [A1C §1.3, §4 item 8].
 
-
 ### 3.5 Phase A's comparator, stated for Phase B
 
 `cmpA_ctx(x, y)` is today's key of §3.2, external references by address at the first difference,
@@ -838,10 +835,8 @@ Phase B's L1 statements:
    catch-up PR. It gates the Rust catch-up's `canonUniv` levels and its removal of `is_rec` and
    `is_unsafe`.
 
-
 **Failure policy.** Any failure of leg 3 or leg 4 is a comparator defect and stops A2. A leg 5
 difference outside the non-canonical set is a canonicity defect of a later pass.
-
 
 ---
 
@@ -867,7 +862,6 @@ every call site. Everything in this section applies unchanged to `Ix.Expr`.
 `Ix.Kernel.Expr`, the certified kernel's term language. `Ix.Expr` is not that language. A conversion
 `Ix.Expr → Ix.Kernel.Expr` is needed before Phase B can prove anything about the generator [open; for
 A3 proper and Phase B].
-
 
 ### 4.1 Eliminator choice (Def 3.3)
 
@@ -957,7 +951,6 @@ meets it.
 used. Examples are C3b's `motive_2` and the split cases. This follows from the construction [A3I §4
 item 6].
 
-
 **Step 5: the result.**
 `img(r) := λ ps ms mins is x. unwrap_{pos(t_maj)} (ρ.{ℓ, us} ps motives′ minors′ is x)`
 (`Lib.lean:325-327`), followed by the development of §4.3.
@@ -980,7 +973,6 @@ downstream depends on how an image was built: it is checked by its type and its 
   components, and classes are formed within components (§2.1–2.2). C3b therefore tests a Prop split,
   in which each member gains large elimination. C7, with `P` and `Q` mutually recursive, still tests
   a real Prop collapse [measured, A3I §3 item 1].
-
 
 ### 4.3 The development
 
@@ -1172,8 +1164,6 @@ faithful form (§0.1), and the constant enters the non-canonical set with cause 
 *As implemented* [measured, A5T]: a construct counts as recognised only if a re-implementation of
 Lean's own construction rebuilds it exactly.
 
-
-
 **Faithfulness never depends on transport.**
 - Theorem statements and definition types are translated exactly.
 - A transported proof is a proof of the canonical obligation.
@@ -1264,7 +1254,6 @@ proofs differed between presentations only in the `id` goal copies, so the gramm
   otherwise;
 - some theorem cliques that look structural take the well-founded route (`TS`).
 
-
 **Closed values.**
 - On the `Nat.fix` route (single `Nat` measure), `WellFounded.Nat.fix` is a fuel-driven `Nat.rec`
   marked `@[implicit_reducible]` (`src/lean/Init/WF.lean:470-499`). Canonical and Lean members
@@ -1324,9 +1313,19 @@ proofs differed between presentations only in the `id` goal copies, so the gramm
 - The fallback embeds Lean's `hmono_i`, whose content follows Lean's packing. It therefore enters the
   non-canonical set (cause `SHAPE`), but it is always a proof (§0.1).
 
-
 **Faithfulness of the members** is O16: `Lean.Order.fix` commutes with an order isomorphism of the
-product. That lemma is still to be written once, in the checker's theory or as a Lean module [open].
+product.
+
+**[proved], A5F:** `Ix/Compile/Clique/FixPerm.lean` (bookmark `jcb/ix-cc-a5f`) proves it with no
+`sorry` and only the standard axioms:
+- `fix_iso`: `fix` commutes with an order isomorphism;
+- `lfp_monotone_iso`: the lattice variant;
+- the `PProd` re-associations, as order isomorphisms;
+- `fix_iso_proj`: the member correspondence `f_i = (fix F′).π_{σ i}`, directly, up to a definitional
+  conversion (β and projection of a constructor) that `fix_swap` checks.
+
+The module needs `import all Init.Internal.Order.Basic`, because `admissible` and `fix` are not
+exposed. Phase B's audit must account for this.
 
 ### 5.3 Structural recursion
 
@@ -1410,6 +1409,19 @@ sources exist:
 Decision (Q6, owner 2026-10-03): (i) first, then (ii) for statement ties. Otherwise Lean's form (the
 baseline) is used, recorded with cause `NOSPEC`.
 
+**As implemented** [measured, A5F]. `Recover.lean` builds source (ii):
+- It reads the recursive calls back from Lean's bodies.
+- It accepts them only if rebuilding by Lean's own construction gives Lean's term back.
+- It orders the clique by Pass 1's classes.
+
+Results:
+- TR and TQ come out distinct.
+- Wherever statements decide (TS, TM, TW, TP), it agrees with statement order.
+- The inductive-predicate route is not recovered, so IP falls back to `NOSPEC`.
+- **A complete tie** (TN: one class) is ordered by Pass 1's seed, the same rule as blocks (Q2), and
+  is not recorded `NOSPEC` (orchestrator's decision).
+
+`NOSPEC` therefore remains only where recovery fails.
 
 **Equation lemmas of definitions** (`eq_N`, `eq_def`, `_mutual.eq_unfold`) have proofs that unfold
 Lean's encoding. When a member maps to the canonical form, the old plan's §3.5 requirement 2 applies:
@@ -1419,26 +1431,23 @@ canonicity claim excludes them (§7.1).
 
 ### 5.5 The non-canonical set: where two presentations can still give different transported terms
 
-
 These are the causes that the non-canonical set must be able to record (§7.2).
-
 
 | Cause | Mechanism | Encoding |
 |---|---|---|
-| `TACTIC-ASYM` | Lean's proof for presentation `P₁`, transported, differs from Lean's proof for `P₂`, because the tactic's output depends on the order beyond the packing. Candidates: user `decreasing_by` or monotonicity scripts that depend on goal order *across* functions; `simp` traces when the goal still contains packed structure; proof terms mentioning the packed type through generic lemmas (`PSum.inr.injEq`, `sizeOf` of a `PSum`). Goals are grouped per function (`Fix.lean:239-248`) and merged only when their types are equal (`:216-230`), so the default path is symmetric [argued]. **Not observed; probe family WA**, whose `decreasing_by` depends on goal order: the transported proofs are exact [measured, A5T] | WF, `partial_fixpoint`, theorems |
+| `TACTIC-ASYM` | Lean's proof for presentation `P₁`, transported, differs from Lean's proof for `P₂`, because the tactic's output depends on the order beyond the packing. Candidates: user `decreasing_by` or monotonicity scripts that depend on goal order *across* functions; `simp` traces when the goal still contains packed structure; proof terms mentioning the packed type through generic lemmas (`PSum.inr.injEq`, `sizeOf` of a `PSum`). Goals are grouped per function (`Fix.lean:239-248`) and merged only when their types are equal (`:216-230`), so the default path is symmetric [argued]. On probe WA (a `decreasing_by` depending on goal order) the transported proofs are exact [measured, A5T]. **Observed on WH** [measured, A5F]: `assumption` and `omega` take the most recent `1 < k`, and the fixed parameters in that context follow the first function's order | WF, `partial_fixpoint`, theorems |
 
 | `SHAPE` | The grammar check fails, so the fallback (verbatim proof, composition with `φ`, or the baseline) carries Lean's packing in its content | all |
 | `GUESSLEX` | GuessLex enumerates measure combinations in function order, uniform ones first; function-index measures `.func i` come last, in index order; it takes the first that works (`GuessLex.lean:524-629`). Two presentations may pick different per-function tuples. Pinning (D22) keeps each faithful, but the canonical functionals then differ | WF |
-| `RECARG` | Structural `allCombinations` takes the first working combination in clique order (`FindRecArg.lean:228-310`, per MUT §1.2) | structural |
+| `RECARG` | Structural `allCombinations` takes the first working combination in clique order (`FindRecArg.lean:228-310`, per MUT §1.2). **Observed on RA** [measured, A5F]: Lean recurses on `x` under one order and on `x_1` under the other | structural |
+
 | `ORDER-STMT` | Statements that follow the order: `_mutual.eq_unfold`, `mutual_induct`, `induct`, bare `@f._mutual`. These are faithful only | all |
-| `NOSPEC` | A theorem clique whose order cannot be determined (§5.4). Recorded on family TN, whose theorem statements are identical [measured, A5T] | theorems |
+| `NOSPEC` | A theorem clique whose order cannot be determined (§5.4): recovery of the specification fails. Observed on IP, the inductive-predicate route, which is not recovered. TN's complete tie is now ordered by the seed [measured, A5F] | theorems |
 
 | `LAZY` | The equation lemmas Lean realises lazily (`f.eq_def`, `eq_N`, `eq_unfold`) are excluded from the canonicity claim, because which of them exist varies between builds (A Δ13). Their proofs also unfold the encoding | all |
 
-
 The numbering of `proof_N`, `match_N` and `_f` names, and which declaration owns a shared matcher,
 are names only. They are metadata, not members of the non-canonical set.
-
 
 ### 5.6 What is measured about cliques
 
@@ -1533,10 +1542,10 @@ workspace. Everything in this subsection is [measured, A5T] unless marked otherw
   are equal once the measure is masked. The *caller* decides `GUESSLEX`, because it needs both
   presentations.
 - **`TACTIC-ASYM`** was not observed on the probe WA. Lean groups the decreasing goals per function,
-  so the transported proofs are exact.
-- **`NOSPEC`** is recorded on TN. `Canon.statementOrder` implements Q6's first source, statements.
-  The recovered specification for tied statements is not built. Under statement order, both
-  presentations of TS, TM, TW, IP and TP give identical constants.
+  so the transported proofs are exact. A5F then observed it on WH (below).
+- **`NOSPEC`**: `Canon.statementOrder` implements Q6's first source, statements. Under statement
+  order, both presentations of TS, TM, TW, IP and TP give identical constants. The recovered
+  specification came with A5F (§5.4).
 
 **Fallbacks.** These are implemented as §5.1–5.4 say, each recorded `SHAPE`:
 - the verbatim proof under the re-stated obligation;
@@ -1551,13 +1560,53 @@ workspace. Everything in this subsection is [measured, A5T] unless marked otherw
 - in `partial_fixpoint`, instance trees and application-form paths are re-associated as well;
 - the canonical name of the packed constant is an *input* to the transport.
 
+### 5.8 The fixture families closing the open items (A5F)
+
+*A5F* is `plans/wave1/a5f.md` (untracked); the code is on bookmark `jcb/ix-cc-a5f`. Everything in
+this subsection is [measured, A5F] unless marked otherwise.
+
+**New families.** Ten new twin families, with 2–3 presentations each:
+
+| Family | What it probes |
+|---|---|
+| RF | reflexive structural recursion |
+| NS | nested structural recursion |
+| LI, LC | lattice fixpoints (`inductive_fixpoint`, `coinductive_fixpoint`) |
+| PU | a user-written monotonicity proof |
+| RA | the recursive-argument choice |
+| WH | a `decreasing_by` that depends on hypothesis order |
+| TR, TQ, WU | theorem and well-founded families |
+
+They add 70 recorded differences. The twins gate now stands at 497 differences, 0 unrecorded and 0
+stale.
+
+**Causes measured for the first time:**
+- `RECARG` on RA;
+- `TACTIC-ASYM` on WH;
+- `SHAPE` on PU: user monotonicity proofs take the composition fallback, and the kernel accepts it.
+
+**Three silent holes in the transport, found and fixed:**
+1. **A well-typed miscompile.** An untransported reflexive path produced a term the kernel
+   accepted: `(x 0).1.2` where `.1.1` was meant. It shows why transport must fail closed.
+2. A user proof rearranged piece by piece came out ill-typed.
+3. A user's own `PSum` value was moved.
+
+**Grammar changes:**
+- structural paths through applications of reflexive fields are followed;
+- a path the walk cannot follow now **fails** instead of passing unchanged;
+- lattice fixpoints spell components as `ImplicationOrder`/`ReverseImplicationOrder` in some
+  positions and as `Prop` in others, and the grammar handles each position separately;
+- user proofs are detected and sent to the fallback;
+- the well-founded grammar is restricted by position. WU is the negative control, 5/5 exact. This
+  settles the positional question of §5.7.
+
+**Oracle.**
+- The exact oracle is now 147/147: wave 1 97/97, WA 7/7, the new families 43/43.
+- The kernel accepts 189/189 transported constants.
+
 **Still open:**
-- O16's lemma is stated in `PartialFixpoint.lean`'s docstring, not proved [open].
-- Should the well-founded grammar be restricted by position? Today a user value whose type is exactly
-  the clique's packing type would be transported [open].
-- No fixtures yet for reflexive and nested structural recursion, lattice fixpoints
-  (`inductive_fixpoint`/`coinductive_fixpoint`), real user monotonicity proofs, `RECARG`, or the
-  recovered specification for `NOSPEC` [open].
+- the kernel evidence for the 70 new entries is not measured;
+- the composition fallback is untested on a lattice clique with a user proof.
 
 ---
 
@@ -1633,7 +1682,6 @@ the closure it read equals the final closure.
 
 ## 7. What is canonical and what is only faithful; the non-canonical set
 
-
 ### 7.1 The table (Phase A §3.4.5, made precise)
 
 "Canonical" means invariant, in bytes, under the presentations of Def 4.3:
@@ -1656,7 +1704,8 @@ the closure it read equals the final closure.
 | Two functions over a collapsed pair, different arms | O12 | the shared helper `fg` only | `COLLAPSE-ARMS` (the Lean names `A.f`, `B.g`) |
 | A changed structural clique | O13, O14 | **yes** | `RECARG` (an ambiguous recursive argument) |
 | A changed well-founded clique | O15 + §5.1 | functional: **yes**. Proofs: yes when transported | `GUESSLEX`, `TACTIC-ASYM`, `SHAPE` |
-| A changed `partial_fixpoint` clique | O16 + §5.2 | as above | `TACTIC-ASYM`, `SHAPE` |
+| A changed `partial_fixpoint` clique | O16 + §5.2 (O16's lemma [proved], §5.2) | as above | `TACTIC-ASYM`, `SHAPE` |
+
 | Clique members in one class | O17 | **yes** | — |
 | Theorems proved by mutual recursion | §5.4 | statement **yes**; proof when transported | `NOSPEC`, `TACTIC-ASYM`, `SHAPE` |
 | Statements following the order (`mutual_induct`, `induct`, `_mutual.eq_unfold`) | baseline | faithful only | `ORDER-STMT` |
@@ -1667,7 +1716,6 @@ the closure it read equals the final closure.
 | Theorem proofs in general | any | not promised (M7) | not recorded unless the theorem is in a clique fixture |
 
 ### 7.2 The non-canonical set (tracked fixture)
-
 
 **Location.** The fixture is tracked at `Tests/Ix/Compile/NonCanonical.lean`, as Lean data, because
 
@@ -1726,10 +1774,8 @@ Entries change only in a commit that states the cause.
 - **`inherited`** marks a constant whose Lean terms are equal under the name map, but which
   references a constant that is itself in the set. It disappears when its dependency does.
 
-
 **Policy.** Recording is the Phase A policy (Q-A5), following the principle of §0.1. A
 `TACTIC-ASYM` or `SHAPE` entry on library code is reported in the migration's PR text.
-
 
 ---
 
@@ -1745,7 +1791,8 @@ match.
 | Q3 | Fix C1 (kind tag) and C2 (cache orientation) in the Lean port | **Yes**, in A2's migration commit, with no byte change. C2 is a latent-bug fix |
 | Q4 | `is_rec`/`is_unsafe` in Rust's key | **Content-only key.** Rust drops both keys at catch-up. `isRec` is block-wide [measured, A1C §0.8] |
 | Q5 | Sibling deduplication in nested expansion | **Fix**, assigned to A0. Ix gives 4 auxiliaries where Lean has 2, and production rejects the block [measured, A1C item 7] |
-| Q6 | Order of theorem cliques without a specification | Statements first, then the recovered specification for ties, otherwise Lean's form, the baseline (§5.4) |
+| Q6 | Order of theorem cliques without a specification | Statements first, then the recovered specification for ties, otherwise Lean's form, the baseline (§5.4). A complete tie is ordered by the seed, as for blocks (orchestrator, after A5F) |
+
 | Q7 | Well-founded `proof_k` | Re-state the obligation. Use the transported term when recognised, else Lean's term verbatim. Never re-run a tactic (§5.1) |
 | Q8 | Pinned choices in M.3 | Compare last (§2.7) |
 | Q9 | `partial_fixpoint` monotonicity | Regenerate the path sub-proofs with `solveMonoCall`'s recipe; fall back to `monotone_compose (mono φ) hmono_i` (§5.2). O16's lemma is written once, in A5 |
@@ -1763,8 +1810,8 @@ match.
   - (a) proof internals that the grammar does not recognise;
   - (b) order-dependent choices (`GUESSLEX`, `RECARG`);
   - (c) statements that follow the order.
-- **Q-A6 (scope O1–O17): all**, in the order of §1.4. If O16's lemma is not written by A5, O16 is
-  deferred and `partial_fixpoint` cliques keep Lean's form.
+- **Q-A6 (scope O1–O17): all**, in the order of §1.4. O16's lemma is [proved] (A5F), so
+  O16 needs no deferral.
 - **Q-A9 (generator totality):** the sibling-deduplication defect (Q5) is added to the list and
   assigned to A0.
 
@@ -1783,17 +1830,18 @@ match.
 **Still open:**
 - **Lean source version.** The elaborator sources (`src/lean/Lean/...`) were read at 4.34.0; the
   4.34.1 line numbers of those citations are [open]. The C++ kernel citations are at 4.34.1 (A1C).
-- **The grammar's coverage** beyond the fixtures. On them it is exact, 100/100 (§5.7). Not yet
-  covered: reflexive and nested structural recursion, lattice fixpoints, real user monotonicity
-  proofs, and a positional restriction of the well-founded grammar [open].
+- **The grammar's coverage** beyond the fixtures. On them it is exact, 147/147 (§5.8), now including
+  reflexive and nested structural recursion, lattice fixpoints and user monotonicity proofs. Library
+  cliques are not yet measured [open].
 
 - **Leaks of provisional addresses into output** (D5) [open].
 - **O11a's `rfl`** on `Linear.EqCnstr` [open].
-- **O16's lemma**: stated in the transport's docstring, not proved [open].
+- **O16's lemma**: [proved], A5F (`FixPerm.lean`). The `import all Init.Internal.Order.Basic` it
+  requires is to be noted in Phase B's audit.
 
 - **Cause (e) of §4.7** has not been re-measured at v4 [open].
-- **Remaining transport gaps** (§5.7). Transport is implemented and exact on the fixtures. Still
-  missing: a `RECARG` fixture, and the recovered specification for `NOSPEC` ties (TN is recorded
-  `NOSPEC`).
-
+- **Remaining transport gaps** (§5.8):
+  - kernel evidence for A5F's 70 new entries;
+  - the composition fallback on a lattice clique with a user proof;
+  - recovery of the inductive-predicate route, without which IP stays `NOSPEC`.
 
