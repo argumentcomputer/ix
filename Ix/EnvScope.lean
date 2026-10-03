@@ -32,18 +32,24 @@ closure suites.
 
 Walks each seed's type + value + recursor rules + ctor links + `all` links
 (of inductives, recursors, definitions, theorems and opaques) + auxiliary
-family siblings (`Lean.auxFamilySiblings`) + **the recursors of every
-inductive** (`recursorsOf`: `I.rec`, and `I.rec_N` on a nested block's first
-member) until no new names are discovered. The recursors are there for the
-checkers: the certified checker reads an inductive block together with its
-recursor and declines it otherwise (`reader: inductive block without a
-recursor in the input`), and a whole environment always has both; a block's
-compiled form depends only on its dependency closure, so adding them moves no
-address of a constant already in the closure (`canon-closure-aux`,
-`aux-gen-closure`). The returned list preserves the source environment's
-iteration order over the computed name set. (`Tests/Ix/Compile/ValidateAux.lean`
-keeps its own, older mirror, which the Rust-side suites pin.) -/
+family siblings (`Lean.auxFamilySiblings`) until no new names are discovered.
+The returned list preserves the source environment's iteration order over the
+computed name set. (`Tests/Ix/Compile/ValidateAux.lean` keeps its own mirror.)
+
+`withRecursors` also adds **the recursors of every inductive** (`recursorsOf`:
+`I.rec`, and `I.rec_N` on a nested block's first member). The closure modes
+whose output is handed to the checkers set it (`ix compile --consts`, `--local`
+via `localConstList`, `ix validate-lean --ns`, `--local`): the certified checker
+reads an inductive block together with its recursor and declines it otherwise
+(`reader: inductive block without a recursor in the input`); a whole
+environment always has both. It is off by default so that a whole-file compile
+(`defaultConstList`, including the module scope) and the other producers
+include exactly what they did before (A3v follow-up: the fixtures' bytes and
+the Rust producer are unchanged). A block's compiled form depends only on its
+dependency closure, so adding recursors moves no address already in the
+closure. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
+    (withRecursors : Bool := false)
     : List (Lean.Name × Lean.ConstantInfo) := Id.run do
   let mut needed : Std.HashSet Lean.Name := {}
   let mut worklist := seeds
@@ -77,7 +83,8 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
           for mutName in v.all do refs := refs.insert mutName
         | .inductInfo v =>
-          for r in recursorsOf env n do refs := refs.insert r
+          if withRecursors then
+            for r in recursorsOf env n do refs := refs.insert r
           for ctorName in v.ctors do
             refs := refs.insert ctorName
             if let some ctorCi := env.constants.find? ctorName then
@@ -133,7 +140,7 @@ def localConstList (fe : FileEnv) : List (Lean.Name × Lean.ConstantInfo) :=
   let env := fe.env
   let seeds := env.constants.toList.filterMap fun (n, _) =>
     if (env.getModuleIdxFor? n).isNone then some n else none
-  collectDeps env seeds
+  collectDeps env seeds (withRecursors := true)
 
 end Ix.EnvScope
 

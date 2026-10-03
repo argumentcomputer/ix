@@ -415,6 +415,54 @@ def addTheorem (cenv : Ix.CompileM.CompileEnv) (env : Ixon.Env) (s : Ix.Compile.
       blobs := bs.blockBlobs.fold (fun m k v => m.insert k v) env.blobs }
     return (env, r.blockAddr)
 
+/-! ## Explaining an oracle-leg exception (`IX_VALIDATE_EXPLAIN=1`) -/
+
+/-- The first position at which two `∀`/`λ` telescopes differ: the binder
+    index (with its name on each side), or `body`. -/
+partial def telescopeDiff (a b : Ix.Expr) (i : Nat := 0) : String :=
+  match a, b with
+  | .forallE na ta ba _ _, .forallE nb tb bb _ _ =>
+    if ta != tb then s!"binder #{i} ({na.pretty} vs {nb.pretty})" else telescopeDiff ba bb (i + 1)
+  | .lam na ta ba _ _, .lam nb tb bb _ _ =>
+    if ta != tb then s!"binder #{i} ({na.pretty} vs {nb.pretty})" else telescopeDiff ba bb (i + 1)
+  | _, _ => if a == b then "equal" else s!"body after {i} binders"
+
+/-- How the Ix auxiliary stored under `n` (decompiled from its own bytes and
+    metadata, not from the original) differs from Lean's form: recursor
+    shape, rule order, the first differing binder of the type, the first
+    differing rule. -/
+def explainDiff (env : Ixon.Env) (view : View) (n : Ix.Name) : String := Id.run do
+  let some nd := env.named.get? n | return "not stored"
+  let some lean := view.get? n | return "Lean's form unknown"
+  let dec : Except String (Array (Ix.Name × Ix.ConstantInfo)) :=
+    Ix.DecompileM.decompileOne { ixonEnv := env } env n { nd with original := none }
+  let ix? : Option Ix.ConstantInfo := match dec with
+    | .ok xs => (xs.find? (·.1 == n)).map (·.2)
+    | .error _ => none
+  let some ix := ix? | return "the Ix auxiliary does not decompile on its own"
+  match lean, ix with
+  | .recInfo a, .recInfo b =>
+    let shape := s!"params {a.numParams}/{b.numParams} motives {a.numMotives}/{b.numMotives} \
+minors {a.numMinors}/{b.numMinors} indices {a.numIndices}/{b.numIndices} k {a.k}/{b.k} \
+unsafe {a.isUnsafe}/{b.isUnsafe}"
+    let ctorsA := a.rules.map (·.ctor.pretty)
+    let ctorsB := b.rules.map (·.ctor.pretty)
+    let rules := if ctorsA != ctorsB then s!"rule order {ctorsA} vs {ctorsB}"
+      else match (a.rules.zip b.rules).findIdx? (fun (x, y) => x.rhs != y.rhs) with
+        | some i => match a.rules[i]?, b.rules[i]? with
+          | some x, some y => s!"rule #{i} rhs: {telescopeDiff x.rhs y.rhs}"
+          | _, _ => "rules differ"
+        | none => "rules equal"
+    return s!"recursor (Lean/Ix) {shape}; type: {telescopeDiff a.cnst.type b.cnst.type}; {rules}; \
+all {a.all.map (·.pretty)} vs {b.all.map (·.pretty)}"
+  | .defnInfo a, .defnInfo b =>
+    return s!"definition; type: {telescopeDiff a.cnst.type b.cnst.type}; value: {telescopeDiff a.value b.value}"
+  | .inductInfo a, .inductInfo b =>
+    return s!"inductive; type: {telescopeDiff a.cnst.type b.cnst.type}; ctors {a.ctors.map (·.pretty)} vs {b.ctors.map (·.pretty)}; all {a.all.map (·.pretty)} vs {b.all.map (·.pretty)}"
+  | .ctorInfo a, .ctorInfo b =>
+    return s!"constructor; type: {telescopeDiff a.cnst.type b.cnst.type}"
+  | _, _ => return "different kinds"
+
 /-! ## The phases -/
 
 /-- Up to `k` names, pretty-printed. -/
@@ -534,7 +582,7 @@ rejected by the canonicity gate: {showNames (belowOrder.map (·.1))}"
     path) fails the phase. -/
 def phaseOracle (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompiled)
     (leanAux? : Option (Std.HashSet Ix.Name)) (ungrounded : Std.HashSet Ix.Name := {})
-    (pass3 : Bool := false) :
+    (pass3 : Bool := false) (explain : Bool := false) :
     PhaseResult × Array String := Id.run do
   let mut subjects := 0
   let mut equal := 0
@@ -581,7 +629,9 @@ def phaseOracle (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompiled)
   let surgeryLine := ", ".intercalate (surgery.toList.map fun (k, rs) =>
     s!"{k} {(dedup rs).size}")
   let mut lines : Array String := #[]
-  for (n, m) in mismatch.toList.take 8 do lines := lines.push s!"✗ {n.pretty}: {m}"
+  for (n, m) in mismatch.toList.take 8 do
+    lines := lines.push s!"✗ {n.pretty}: {m}"
+    if explain then lines := lines.push s!"    explain: {explainDiff env view n}"
   if !leanOnly.isEmpty then
     lines := lines.push s!"✗ §4.7(b) Lean auxiliary absent from the output: {showNames leanOnly}"
   if !ixOnly.isEmpty then
@@ -801,7 +851,7 @@ phases 6–8 read Lean's forms from the decompiler)"
           let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
             if prefixes.any (·.isPrefixOf n) then some n else none
           IO.println s!"[validate-lean] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
-          let closed := collectDeps leanEnv seeds
+          let closed := collectDeps leanEnv seeds (withRecursors := true)
           IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
           pure closed
       | none =>
@@ -811,6 +861,7 @@ phases 6–8 read Lean's forms from the decompiler)"
           let own := leanEnv.constants.toList.filterMap fun (n, _) =>
             if (leanEnv.getModuleIdxFor? n).isNone then some n else none
           let closed := collectDeps leanEnv (own ++ packingNames.filter leanEnv.contains)
+            (withRecursors := true)
           IO.println s!"[validate-lean] local: {own.length} own constants, {closed.length} with their closure"
           pure closed
         else defaultConstList fe pathStr
@@ -1019,6 +1070,7 @@ phases 6–8 read Lean's forms from the decompiler)"
         let t0 ← IO.monoMsNow
         let (r, lines) := phaseOracle ixonEnv view ch rc inputAux? ungrounded
           (pass3 := if inputAux?.isSome then switchOn else pass3Env)
+          (explain := (← IO.getEnv "IX_VALIDATE_EXPLAIN").isSome)
         phases ← pushPhase phases { key := "6", name := "Oracle leg (unchanged blocks)", result := r,
                                     ms := (← IO.monoMsNow) - t0 + tRc } lines
       if skipPhases.contains "7" then

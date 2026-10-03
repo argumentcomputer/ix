@@ -79,6 +79,7 @@ def expected : List Expected := [
   ⟨"RecAlias", "*", ["5", "6", "8"], "WB-B6 (Ix's PA.below family ≠ Lean's)"⟩,
   ⟨"UnsafeI", "*", ["5", "6", "8"], "WB-B9 (Ix's UNestNeg.rec ≠ Lean's)"⟩,
   ⟨"Neighbours", "*", ["6", "8"], "A3V-IPB (F8NoSplit's IndPredBelow .rec/.casesOn ≠ Lean's)"⟩,
+  ⟨"ValidateLeanIPB", "*", ["6", "8"], "A3V-IPB (reproducer: IPB.Nested, IPB.MutNested)"⟩,
   -- Pass 1's IndPredBelow order of a collapsed Prop pair
   ⟨"PropCollapse", "on", ["4"], "BELOW-ORDER"⟩,
   -- the twin families: their RecAlias (WB-B6), SurgCollapse (A0) and
@@ -94,7 +95,7 @@ def files : List String :=
   ++ (["C1Perm", "C2Split", "C3PropSplit", "C4Evap", "C5Collapse", "C6NestedCollapse", "C7IndPred",
        "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean")
   ++ (["Cliques", "Proto", "Repro"].map fun s => s!"Tests/Ix/Compile/Twins/{s}.lean")
-  ++ ["Tests/Ix/Compile/Oracle/Lib.lean"]
+  ++ ["Tests/Ix/Compile/Oracle/Lib.lean", "Tests/Ix/Compile/ValidateLeanIPB.lean"]
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
