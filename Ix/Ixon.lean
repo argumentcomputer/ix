@@ -12,6 +12,7 @@ public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
 public import IxC.Ixon.Codec
+import all IxC.Ixon.Codec
 public import Ix.Merkle
 
 public section
@@ -19,6 +20,60 @@ public section
 namespace Ixon
 
 open Ix (DefKind DefinitionSafety QuotKind)
+
+/-! ## The TagN writer, inlined for the host
+
+`putTagN` (`Ix.Ixon.Codec`) is compiled out of line with `f` as a runtime
+argument, so every integer it writes evaluates its rung ends and header shift
+(`2 ^ (8 - f - 1)`, ...) with `Nat.pow`. Every host caller (metadata, names,
+the environment's sections, claims) passes a literal `f`. `putTagNI` is the
+same body with its rung ends, header and byte writer `@[inline]`, so at each
+call site the compiler folds the powers to constants. The `@[csimp]` theorem
+`putTagN_eq_I` (by `rfl`) makes compiled code in this module and its importers
+call it; no definition changes.
+
+The codec module keeps the out-of-line writer: its compiled code is what the
+certified checker's runtime-closure audits count (`Ix.Ixon.Audit`,
+`Ix.Kernel.Audit.Roots`), and those modules do not import this one. -/
+
+@[inline] def putU8I (x : UInt8) : PutM Unit :=
+  StateT.modifyGet (fun s => ((), s.push x))
+@[inline] def tagNEnd1I (f : Nat) : Nat := 2 ^ (8 - f - 1)
+@[inline] def tagNEnd2I (f : Nat) : Nat := tagNEnd1I f + 2 ^ (8 - f - 2 + 8)
+@[inline] def tagNEnd3I (f : Nat) : Nat := tagNEnd2I f + 2 ^ 16
+@[inline] def tagNEnd4I (f : Nat) : Nat := tagNEnd3I f + 2 ^ 24
+@[inline] def tagNEnd5I (f : Nat) : Nat := tagNEnd4I f + 2 ^ 32
+@[inline] def tagNHeaderI (f : Nat) (flag : UInt8) (payload : Nat) : UInt8 :=
+  (flag.toNat * 2 ^ (8 - f) + payload).toUInt8
+
+/-- `putTagN` with every helper inlined (see above). -/
+@[inline] def putTagNI (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
+  let v := value.toNat
+  let lead := 2 ^ (8 - f - 1)
+  let mbit := 2 ^ (8 - f - 2)
+  if v < tagNEnd1I f then
+    putU8I (tagNHeaderI f flag v)
+  else if v < tagNEnd2I f then do
+    putU8I (tagNHeaderI f flag (lead + (v - tagNEnd1I f) / 256))
+    putU8I ((v - tagNEnd1I f) % 256).toUInt8
+  else if v < tagNEnd3I f then do
+    putU8I (tagNHeaderI f flag (lead + mbit))
+    putU64TrimmedLEAux (v - tagNEnd2I f).toUInt64 2
+  else if v < tagNEnd4I f then do
+    putU8I (tagNHeaderI f flag (lead + mbit + 1))
+    putU64TrimmedLEAux (v - tagNEnd3I f).toUInt64 3
+  else if v < tagNEnd5I f then do
+    putU8I (tagNHeaderI f flag (lead + mbit + 2))
+    putU64TrimmedLEAux (v - tagNEnd4I f).toUInt64 4
+  else do
+    putU8I (tagNHeaderI f flag (lead + mbit + 3))
+    putU64TrimmedLEAux (v - tagNEnd5I f).toUInt64 8
+
+/-- Compiled host code writes TagN integers with the inlined copy. Audit root
+in `Ix.Sharing.Verify.Audit.Statements`. -/
+@[csimp] theorem putTagN_eq_I : @putTagN = @putTagNI := by
+  funext f flag value
+  rfl
 
 -- These defaults intentionally use the host's BLAKE3-derived default address.
 -- The pure data module does not import that backend or replace its value.
