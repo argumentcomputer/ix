@@ -1482,6 +1482,14 @@ end RawEnv
 
 /-! ## Env Serialization -/
 
+/-- The section order of the env writer: ascending address bytes, the order
+    of `Ord Address` (lexicographic over the hash bytes). Decided by
+    `Address.cmpBytes`, which agrees with `Ord Address` without building the
+    two byte lists that instance compares; the sections sort hundreds of
+    thousands of addresses (a whole-environment names table has millions),
+    and the list-building comparison was most of the writer's time. -/
+@[inline] def addrLt (a b : Address) : Bool := a.cmpBytes b == .lt
+
 namespace Env
 
 /-- Convert Env with HashMaps to RawEnv with Arrays for FFI.
@@ -1498,10 +1506,8 @@ def toRawEnv (env : Env) : RawEnv := {
   comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
   names := env.names.toArray.map fun (addr, name) => { addr, name }
   main := env.main
-  assumptions := env.assumptions.toList.toArray.qsort
-    fun a b => (compare a b).isLT
-  anonHints := env.anonHints.toList.toArray.qsort
-    fun a b => (compare a.1 b.1).isLT
+  assumptions := env.assumptions.toArray.qsort addrLt
+  anonHints := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
 }
 
 /-- TagN (`f = 4`) header flag for Env (0xE). -/
@@ -1584,10 +1590,12 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
   -- index (arena nodes frequently reference it as a binder name).
   -- Matches Rust `topological_sort_names`, which emits it explicitly —
   -- required for byte-identical writer output across the mirrors.
-  let initVisited : Std.HashSet Address := ({} : Std.HashSet Address).insert anonAddr
-  let initResult : Array (Address × Ix.Name) := #[(anonAddr, Ix.Name.mkAnon)]
+  let initVisited : Std.HashSet Address :=
+    (Std.HashSet.emptyWithCapacity (names.size + 1)).insert anonAddr
+  let initResult : Array (Address × Ix.Name) :=
+    (Array.emptyWithCapacity (names.size + 1)).push (anonAddr, Ix.Name.mkAnon)
   -- Sort names by address before iterating to ensure deterministic DFS order
-  let sortedEntries := names.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let sortedEntries := names.toArray.qsort fun a b => addrLt a.1 b.1
   let (_, result) := sortedEntries.foldl (init := (initVisited, initResult)) fun (visited, result) (_, name) =>
     visit name visited result
   result
@@ -1606,9 +1614,9 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- Always 32 bytes: for empty const sets, the sentinel
   -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
   -- canonical root, which is always a Blake3 hash).
-  let constAddrs : Array Address :=
-    (env.consts.toList.toArray.map (·.1))
-  let root := (Ix.Merkle.merkleRootCanonical constAddrs).getD Ix.Merkle.zeroAddress
+  let consts := env.consts.toArray.qsort fun a b => addrLt a.1 b.1
+  let root := (Ix.Merkle.merkleRootCanonical (consts.map (·.1))).getD
+    Ix.Merkle.zeroAddress
   Serialize.put root
 
   -- Bundle header fields: main (Option, 0/1-tagged) + assumptions
@@ -1618,14 +1626,13 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   | some addr => do
     putU8 1
     Serialize.put addr
-  let assumptions := env.assumptions.toList.toArray.qsort
-    fun a b => (compare a b).isLT
+  let assumptions := env.assumptions.toArray.qsort addrLt
   putTagN 0 0 assumptions.size.toUInt64
   for addr in assumptions do
     Serialize.put addr
 
   -- Section 1: Blobs (Address -> bytes)
-  let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
   putTagN 0 0 blobs.size.toUInt64
   for (addr, bytes) in blobs do
     Serialize.put addr
@@ -1638,8 +1645,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- loader can slice each constant without parsing its header.
   -- The length is NOT part of the content-addressed bytes: the address
   -- is `Address.hash` over the constant body alone (which is
-  -- exactly what `serConstant` produces).
-  let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  -- exactly what `serConstant` produces). `consts` is sorted above.
   putTagN 0 0 consts.size.toUInt64
   for (addr, lc) in consts do
     Serialize.put addr
@@ -1652,7 +1658,8 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- Rank of each constant in §2's ascending-address order — §3 hint
   -- entries and §5 named entries key their constants through it.
   let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity consts.size)
 
   -- Section 3: anon_hints — the canonical hint channel for the
   -- anon/lazy readers, placed before the metadata sections so they can
@@ -1660,8 +1667,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- single home for hints, as delta-coded §2 ranks + fused hints (the
   -- address sort is load-bearing: it makes the ranks strictly
   -- ascending). Matches Rust `Env::put`.
-  let hintPairs := env.anonHints.toList.toArray.qsort
-    fun a b => (compare a.1 b.1).isLT
+  let hintPairs := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
   putTagN 0 0 hintPairs.size.toUInt64
   let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
   for (addr, hints) in hintPairs do
@@ -1678,8 +1684,9 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- Topologically sorted so parents come before children, with ties broken by address
   let sortedNames := topologicalSortNames env.names
   -- Build name index from sorted positions (matching Rust)
-  let nameIdx := sortedNames.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
+  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity sortedNames.size)
   putTagN 0 0 sortedNames.size.toUInt64
   for (addr, name) in sortedNames do
     Serialize.put addr
@@ -1691,7 +1698,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- then a length-prefixed metadata blob so hint scanners can skip the
   -- bodies. `original` keeps a raw address: it can reference an
   -- assumed constant that is NOT stored in §2 (prune cut bundles).
-  let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
   putTagN 0 0 named.size.toUInt64
   for (name, namedEntry) in named do
     -- The name's stored hash is bytewise its §4 component address.
@@ -1719,7 +1726,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
     putBytes blob
 
   -- Section 6: Comms (Address -> Comm)
-  let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
   putTagN 0 0 comms.size.toUInt64
   for (addr, comm) in comms do
     Serialize.put addr
@@ -2322,7 +2329,7 @@ def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
 def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
   -- Blobs section
   let blobsBytes := runPut do
-    let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
     putTagN 0 0 blobs.size.toUInt64
     for (addr, bytes) in blobs do
       Serialize.put addr
@@ -2330,8 +2337,8 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       putBytes bytes
 
   -- Consts section
+  let consts := env.consts.toArray.qsort fun a b => addrLt a.1 b.1
   let constsBytes := runPut do
-    let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
     putTagN 0 0 consts.size.toUInt64
     for (addr, lc) in consts do
       Serialize.put addr
@@ -2341,13 +2348,11 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
   -- is load-bearing (delta widths depend on it). Sizes assume a
   -- well-formed env — an out-of-consts key falls back to rank 0 here
   -- (diagnostics only; `serEnv` is where that is a hard error).
-  let sortedConstAddrs := (env.consts.toList.toArray.map (·.1)).qsort
-    fun a b => (compare a b).isLT
-  let constIdx : Std.HashMap Address UInt64 := sortedConstAddrs.zipIdx.foldl
-    (fun acc (addr, i) => acc.insert addr i.toUInt64) {}
+  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity consts.size)
   let hintsBytes := runPut do
-    let hintPairs := env.anonHints.toList.toArray.qsort
-      fun a b => (compare a.1 b.1).isLT
+    let hintPairs := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
     putTagN 0 0 hintPairs.size.toUInt64
     let mut prevRank : UInt64 := 0
     for (addr, hints) in hintPairs do
@@ -2357,8 +2362,8 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       prevRank := rank + 1
 
   -- Names section
+  let sortedNames := Env.topologicalSortNames env.names
   let namesBytes := runPut do
-    let sortedNames := Env.topologicalSortNames env.names
     putTagN 0 0 sortedNames.size.toUInt64
     for (addr, name) in sortedNames do
       Serialize.put addr
@@ -2369,10 +2374,10 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
   -- sizes are iteration-order independent — never delta-code here).
   -- Missing keys fall back to index 0 (diagnostics only).
   let namedBytes := runPut do
-    let sortedNames := Env.topologicalSortNames env.names
     let nameIdx : NameIndex := sortedNames.zipIdx.foldl
-      (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
-    let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+      (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+      (Std.HashMap.emptyWithCapacity sortedNames.size)
+    let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
     putTagN 0 0 named.size.toUInt64
     for (name, namedEntry) in named do
       putTagN 0 0 (nameIdx.get? name.getHash |>.getD 0)
@@ -2391,7 +2396,7 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
 
   -- Comms section
   let commsBytes := runPut do
-    let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
     putTagN 0 0 comms.size.toUInt64
     for (addr, comm) in comms do
       Serialize.put addr
