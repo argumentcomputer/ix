@@ -1749,9 +1749,15 @@ def generateBreconConstants (sortedClasses : Array (Array Name))
 
   let mut results : Array BRecOnDef := #[]
 
-  -- Rust: `for ci in 0..n_classes.min(canonical_recs.len())
-  --   .min(below_consts.len())`.
-  let hi := min nClasses (min canonicalRecs.size belowConsts.size)
+  -- Every class needs its recursor and its `.below`; a shorter list is an
+  -- inconsistent block, refused naming it (A0, WB-F5) instead of silently
+  -- generating `.brecOn` for a prefix of the classes (brecon.rs, same
+  -- place).
+  if canonicalRecs.size < nClasses || belowConsts.size < nClasses then
+    throw (.invalidMutualBlock s!"brecOn generation for the block of \
+'{blockLabel sortedClasses}': {nClasses} classes but {canonicalRecs.size} recursors \
+and {belowConsts.size} `.below` constants")
+  let hi := nClasses
   for (pair, ci) in (canonicalRecs.extract 0 hi).zipIdx do
     let (_, recVal) := pair
     let classRep := sortedClasses[ci]![0]!

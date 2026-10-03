@@ -17,6 +17,7 @@ import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
+import Tests.Ix.Compile.AuxCert
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -187,6 +188,9 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("canon-closure-aux", Tests.Ix.Compile.AuxGenClosureCanon.suite),
   -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
   ("cert-compile-parity-init", Tests.Ix.Cert.Statement.initSuite),
+  -- A0 safety fixtures (collapse refusal, aux existence, single ownership,
+  -- refused fallbacks): both compilers, both kernels, the certified checker
+  ("aux-cert", Tests.Ix.Compile.AuxCert.suite),
 ]
 
 /-- Primary test runners — quick suites run by default alongside

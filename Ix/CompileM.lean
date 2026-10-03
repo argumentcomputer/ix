@@ -255,6 +255,12 @@ structure BlockEnv where
   mutCtx : MutCtx
   /-- Universe parameter context (de Bruijn indices) -/
   univCtx : List Name
+  /-- Set while compiling the original Lean form of a regenerated auxiliary
+      (`compileConstNoAuxPure`; Rust `BlockCache::provenance_only`): the
+      result is provenance only (`Named.original`, never a stored
+      constant) and its call sites keep every dropped argument in
+      `collapsed` metadata, so the collapse-drop checks (A0) do not apply. -/
+  provenanceOnly : Bool := false
 
 /-! ## Compilation Error -/
 
@@ -892,6 +898,9 @@ structure PlanHeadArity where
   floor : Nat
   expected : Nat
   headRewrite : Bool
+  /-- The plan drops arguments of collapsed members: a Tier-B eta wrapper
+      would drop bound variables, which no kept argument equals. -/
+  dropsCollapsed : Bool
 
 /-- Shared Tier-A/Tier-B arity classification. Mirrors Rust
     `plan_head_arity`. -/
@@ -902,7 +911,8 @@ def planHeadArity? (cenv : CompileEnv) (name : Name) : Option PlanHeadArity :=
       some { floor := plan.minimalFullPrefix
              expected := plan.nParams + plan.nSourceMotives
                + plan.nSourceMinors + plan.nIndices + 1
-             headRewrite := plan.headRewrite.isSome }
+             headRewrite := plan.headRewrite.isSome
+             dropsCollapsed := plan.dropsCollapsed }
     else none
   | none =>
     match cenv.belowCallSitePlans.get? name with
@@ -912,14 +922,16 @@ def planHeadArity? (cenv : CompileEnv) (name : Name) : Option PlanHeadArity :=
         some { floor
                expected := if Ix.AuxGen.belowPlanKeyIsHead name then
                  floor + plan.nIndices + 1 else floor
-               headRewrite := false }
+               headRewrite := false
+               dropsCollapsed := plan.dropsCollapsed }
       else none
     | none =>
       match cenv.brecOnCallSitePlans.get? name with
       | some plan =>
         if !plan.isIdentity then
           let expected := plan.brecOnMinimalFullPrefix
-          some { floor := expected, expected, headRewrite := false }
+          some { floor := expected, expected, headRewrite := false
+                 dropsCollapsed := plan.dropsCollapsed }
         else none
       | none => none
 
@@ -1046,10 +1058,41 @@ def etaAdapterNeeded (name : Name) (nArgs : Nat) : CompileM Bool := do
     | some arity => !arity.headRewrite && nArgs < arity.floor
     | none => false
 
+/-- Refuse the Tier-B eta adapter for a head whose plan drops arguments of
+    collapsed members (A0, WB-B4): the wrapper binds the missing source
+    arguments as variables, so a dropped motive or minor is a bound variable
+    that no kept argument equals, and the drop cannot be justified (both
+    kernels reject such users anyway). Mirrors Rust `refuse_collapsed_eta`. -/
+def refuseCollapsedEta (name : Name) (nArgs : Nat) : CompileM Unit := do
+  if (← getBlockEnv).provenanceOnly then return
+  if let some arity := planHeadArity? (← getCompileEnv) name then
+    if arity.dropsCollapsed then
+      throw (.invalidMutualBlock s!"{Ix.AuxGen.collapseEtaError}: compiling \
+'{(← getBlockEnv).current.pretty}', call-site head '{name.pretty}' applied to \
+{nArgs} argument(s) would be eta-wrapped, dropping bound arguments of \
+collapsed members")
+
+/-- The collapse checks of a surgered call site's bands (A0, WB-B4). A drop
+    with no kept partner is refused here; a drop whose compiled form differs
+    from its partner's is refused in `buildCallSite`. Each band is `(what,
+    keep, sourceToCanon, inBlock, slots)`. -/
+def callSiteCollapseChecks (head : Name)
+    (bands : Array (String × Array Bool × Array Nat × Array Bool
+      × Array Ix.AuxGen.ArgSlot)) : CompileM (Array Ix.AuxGen.CollapseCheck) := do
+  let compiling := (← getBlockEnv).current.pretty
+  let mut out : Array Ix.AuxGen.CollapseCheck := #[]
+  for (what, keep, sourceToCanon, inBlock, slots) in bands do
+    match Ix.AuxGen.collapseChecks what keep sourceToCanon inBlock slots
+        compiling head.pretty with
+    | .ok cs => out := out ++ cs
+    | .error msg => throw (.invalidMutualBlock msg)
+  return out
+
 /-- Derive a partial call's residual source Pi telescope and build the
     source-interface eta wrapper. Mirrors Rust `synthesize_eta_call_site`. -/
 def synthesizeEtaCallSite (name : Name) (lvls : Array Level)
     (applied : Array Expr) : CompileM (Expr × Nat) := do
+  refuseCollapsedEta name applied.size
   let ci ← findConst name
   let cnst := ci.getCnst
   let instantiatedType := Ix.AuxGen.substLevels cnst.type cnst.levelParams lvls
@@ -1352,7 +1395,8 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     only the callSite root in hand. -/
 partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
     (sortedCanon : Array Expr) (collapsedArgs : Array Expr)
-    (entries : Array Ixon.CallSiteEntry) (origHeadCollapsed : Bool) :
+    (entries : Array Ixon.CallSiteEntry) (origHeadCollapsed : Bool)
+    (checks : Array Ix.AuxGen.CollapseCheck) (headName : Name) :
     CompileM (Ixon.Expr × UInt64) := do
   let (headIxon, headRoot) ← match headForCanon with
     | .const name lvls _ => compileConstExprRaw name lvls
@@ -1369,6 +1413,26 @@ partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
     let (a, aRoot) ← compileExprSurgical arg
     collapsedIxon := collapsedIxon.push a
     collapsedRoots := collapsedRoots.push aRoot
+  -- A collapse drop is sound only when the dropped argument compiles to the
+  -- same Ixon as the kept argument at its canonical slot (the two members
+  -- share one projection address, so motives written over `A` and `B`
+  -- agree here). Otherwise the rebuilt spine would run the kept member's
+  -- code at the dropped member's nodes (A0, WB-B4; Rust `BuildCallSite`).
+  let checks := if (← getBlockEnv).provenanceOnly then #[] else checks
+  for check in checks do
+    let slotExpr : Ix.AuxGen.ArgSlot → Option Ixon.Expr
+      | .canon i => canonicalExprs[i]?
+      | .collapsed i => collapsedIxon[i]?
+    match slotExpr check.dropped, slotExpr check.kept with
+    | some dropped, some kept =>
+      if dropped != kept then
+        throw (.invalidMutualBlock s!"{Ix.AuxGen.collapseDropError}: compiling \
+'{(← getBlockEnv).current.pretty}', call-site head '{headName.pretty}': dropped \
+{check.what} #{check.src} differs from the kept {check.what} #{check.keptSrc}")
+    | _, _ =>
+      throw (.invalidMutualBlock s!"{Ix.AuxGen.collapseDropError}: compiling \
+'{(← getBlockEnv).current.pretty}', call-site head '{headName.pretty}': \
+{check.what} #{check.src} has no compiled argument")
   -- Store collapsed arg expressions in surgery sharing (compile.rs:1637).
   let sharingBase := (← getBlockState).surgerySharing.size
   modifyBlockState fun c =>
@@ -1427,6 +1491,8 @@ partial def compileRecCallSite (name : Name) (lvls : Array Level)
   let mut canonicalArgs : Array (Nat × Expr) := #[]
   let mut collapsedArgs : Array Expr := #[]
   let mut entries : Array Ixon.CallSiteEntry := #[]
+  let mut motiveSlots : Array Ix.AuxGen.ArgSlot := #[]
+  let mut minorSlots : Array Ix.AuxGen.ArgSlot := #[]
 
   -- Params: always kept, identity mapping.
   for (p, i) in params.zipIdx do
@@ -1439,8 +1505,10 @@ partial def compileRecCallSite (name : Name) (lvls : Array Level)
     if plan.motiveKeep[srcI]! then
       let canonPos := canonBase + plan.sourceToCanonMotive[srcI]!
       canonicalArgs := canonicalArgs.push (canonPos, motive)
+      motiveSlots := motiveSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
     else
+      motiveSlots := motiveSlots.push (.collapsed collapsedArgs.size)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push motive
 
@@ -1457,11 +1525,14 @@ partial def compileRecCallSite (name : Name) (lvls : Array Level)
       let minorArg := adaptedMinor.getD minor
       canonicalArgs := canonicalArgs.push (canonPos, minorArg)
       if adaptedMinor.isSome then
+        minorSlots := minorSlots.push (.collapsed collapsedArgs.size)
         entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
         collapsedArgs := collapsedArgs.push minor
       else
+        minorSlots := minorSlots.push (.canon canonPos)
         entries := entries.push (.kept canonPos.toUInt64 0)
     else
+      minorSlots := minorSlots.push (.collapsed collapsedArgs.size)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push minor
 
@@ -1472,7 +1543,13 @@ partial def compileRecCallSite (name : Name) (lvls : Array Level)
     entries := entries.push (.kept (tailCanonBase + i).toUInt64 0)
 
   let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
-  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
+  let checks ← callSiteCollapseChecks name #[
+    ("motive", plan.motiveKeep, plan.sourceToCanonMotive, plan.sourceInBlock,
+      motiveSlots),
+    ("minor", plan.minorKeep, plan.sourceToCanonMinor, plan.minorInBlock,
+      minorSlots)]
+  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false checks
+    name
 
 /-- Evaporated-aux head-rewrite call-site surgery (compile.rs:844-1015):
     the callee's claim is aliased to the external inductive's recursor,
@@ -1510,6 +1587,8 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
   let mut canonicalArgs : Array Expr := #[]
   let mut collapsedArgs : Array Expr := #[]
   let mut entries : Array Ixon.CallSiteEntry := #[]
+  let mut motiveSlots : Array Ix.AuxGen.ArgSlot := #[]
+  let mut minorSlots : Array Ix.AuxGen.ArgSlot := #[]
 
   -- Source params don't appear in the target spine (the specs subsume
   -- them) — collapse for reconstruction.
@@ -1520,9 +1599,11 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
   canonicalArgs := canonicalArgs ++ specs
   for (motive, srcI) in motives.zipIdx do
     if plan.motiveKeep[srcI]! then
+      motiveSlots := motiveSlots.push (.canon canonicalArgs.size)
       canonicalArgs := canonicalArgs.push motive
       entries := entries.push (.kept nSpecs.toUInt64 0)
     else
+      motiveSlots := motiveSlots.push (.collapsed collapsedArgs.size)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push motive
   for (minor, srcI) in minors.zipIdx do
@@ -1533,11 +1614,14 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
       let minorArg := adaptedMinor.getD minor
       canonicalArgs := canonicalArgs.push minorArg
       if adaptedMinor.isSome then
+        minorSlots := minorSlots.push (.collapsed collapsedArgs.size)
         entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
         collapsedArgs := collapsedArgs.push minor
       else
+        minorSlots := minorSlots.push (.canon canonPos)
         entries := entries.push (.kept canonPos.toUInt64 0)
     else
+      minorSlots := minorSlots.push (.collapsed collapsedArgs.size)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push minor
   for t in tail do
@@ -1549,7 +1633,13 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
   -- LAST sharing entry so decompile can restore it (compile.rs:983).
   collapsedArgs := collapsedArgs.push headExpr
   let headForCanon := Expr.mkConst name targetLevels
+  let checks ← callSiteCollapseChecks name #[
+    ("motive", plan.motiveKeep, plan.sourceToCanonMotive, plan.sourceInBlock,
+      motiveSlots),
+    ("minor", plan.minorKeep, plan.sourceToCanonMinor, plan.minorInBlock,
+      minorSlots)]
   buildCallSite nameAddr headForCanon canonicalArgs collapsedArgs entries true
+    checks name
 
 /-- `.below`-family call-site surgery (compile.rs below-family branch).
     HEAD telescope is `params, motives, indices, major`; a Prop-below
@@ -1572,6 +1662,7 @@ partial def compileBelowCallSite (name : Name)
   let mut canonicalArgs : Array (Nat × Expr) := #[]
   let mut collapsedArgs : Array Expr := #[]
   let mut entries : Array Ixon.CallSiteEntry := #[]
+  let mut motiveSlots : Array Ix.AuxGen.ArgSlot := #[]
 
   for (p, i) in params.zipIdx do
     canonicalArgs := canonicalArgs.push (i, p)
@@ -1582,8 +1673,10 @@ partial def compileBelowCallSite (name : Name)
     if plan.motiveKeep[srcI]! then
       let canonPos := motiveCanonBase + plan.sourceToCanonMotive[srcI]!
       canonicalArgs := canonicalArgs.push (canonPos, motive)
+      motiveSlots := motiveSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
     else
+      motiveSlots := motiveSlots.push (.collapsed collapsedArgs.size)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push motive
 
@@ -1593,7 +1686,11 @@ partial def compileBelowCallSite (name : Name)
     entries := entries.push (.kept (tailCanonBase + i).toUInt64 0)
 
   let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
-  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
+  let checks ← callSiteCollapseChecks name #[
+    ("motive", plan.motiveKeep, plan.sourceToCanonMotive, plan.sourceInBlock,
+      motiveSlots)]
+  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false checks
+    name
 
 /-- `.brecOn` call-site surgery (compile.rs:1265-1396): telescope is
     `params, motives, indices, major, handlers` — one handler per motive,
@@ -1618,6 +1715,8 @@ partial def compileBRecOnCallSite (name : Name)
   let mut canonicalArgs : Array (Nat × Expr) := #[]
   let mut collapsedArgs : Array Expr := #[]
   let mut entries : Array Ixon.CallSiteEntry := #[]
+  let mut motiveSlots : Array Ix.AuxGen.ArgSlot := #[]
+  let mut handlerSlots : Array Ix.AuxGen.ArgSlot := #[]
 
   for (p, i) in params.zipIdx do
     canonicalArgs := canonicalArgs.push (i, p)
@@ -1628,8 +1727,10 @@ partial def compileBRecOnCallSite (name : Name)
     if plan.motiveKeep[srcI]! then
       let canonPos := motiveCanonBase + plan.sourceToCanonMotive[srcI]!
       canonicalArgs := canonicalArgs.push (canonPos, motive)
+      motiveSlots := motiveSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
     else
+      motiveSlots := motiveSlots.push (.collapsed collapsedArgs.size)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push motive
 
@@ -1643,8 +1744,10 @@ partial def compileBRecOnCallSite (name : Name)
     if plan.motiveKeep[srcI]! then
       let canonPos := handlerCanonBase + plan.sourceToCanonMotive[srcI]!
       canonicalArgs := canonicalArgs.push (canonPos, handler)
+      handlerSlots := handlerSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
     else
+      handlerSlots := handlerSlots.push (.collapsed collapsedArgs.size)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push handler
 
@@ -1654,7 +1757,13 @@ partial def compileBRecOnCallSite (name : Name)
     entries := entries.push (.kept (extraTailCanonBase + i).toUInt64 0)
 
   let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
-  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
+  let checks ← callSiteCollapseChecks name #[
+    ("motive", plan.motiveKeep, plan.sourceToCanonMotive, plan.sourceInBlock,
+      motiveSlots),
+    ("handler", plan.motiveKeep, plan.sourceToCanonMotive, plan.sourceInBlock,
+      handlerSlots)]
+  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false checks
+    name
 
 end
 

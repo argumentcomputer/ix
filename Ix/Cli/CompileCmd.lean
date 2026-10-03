@@ -32,6 +32,13 @@ def applySharingLimitsFlag (p : Cli.Parsed) : IO (Option String) := do
     Std.Internal.UV.System.osSetenv Ix.CompileM.sharingLimitsEnvVar spec
     return none
 
+/-- Failures listed root causes first: a constant that failed only because a
+    dependency is missing is a cascade, listed after the ones that name the
+    cause (a refusal's message must be visible in the bounded listing). -/
+private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
+  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
+  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch. The Rust compiler and serializer
@@ -232,7 +239,7 @@ grounded subset)"
 serialized the grounded subset ({status.named} named, \
 {status.uniqueAnon} unique constants)"
     stream.putStrLn verdict
-    for (n, r) in status.ungrounded.toList.take 10 do
+    for (n, r) in (rootCausesFirst status.ungrounded.toList).take 10 do
       stream.putStrLn s!"  [ungrounded] {n}: {(r.replace "\n" " ").take 200}"
     if ungroundedCount > 10 then
       stream.putStrLn s!"  … and {ungroundedCount - 10} more (see --report for the full list)"

@@ -101,9 +101,24 @@ pub fn generate_brecon_constants_with(
     return Ok(vec![]);
   }
 
+  // Every class needs its recursor and its `.below`; a shorter list is an
+  // inconsistent block, refused naming it (A0, WB-F5) instead of silently
+  // generating `.brecOn` for a prefix of the classes.
+  if canonical_recs.len() < n_classes || below_consts.len() < n_classes {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "brecOn generation for the block of '{}': {n_classes} classes \
+         but {} recursors and {} `.below` constants",
+        super::block_label(sorted_classes),
+        canonical_recs.len(),
+        below_consts.len(),
+      ),
+    });
+  }
+
   let mut results = Vec::new();
 
-  for ci in 0..n_classes.min(canonical_recs.len()).min(below_consts.len()) {
+  for ci in 0..n_classes {
     let (_, rec_val) = &canonical_recs[ci];
     let class_rep = &sorted_classes[ci][0];
     let ind_ref = lean_env.get(class_rep);

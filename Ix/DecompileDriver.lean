@@ -314,6 +314,9 @@ def installDecompileCallSitePlans
   if allNames.isEmpty then
     return ((callSitePlans, brecOnPlans, belowPlans), (#[], #[], #[]))
   let originalAll := allNames
+  -- Same existence rule as the compile side (A0, WB-B1/A5): derived
+  -- `.brecOn`/`.below` plans only for families Lean generates.
+  let belowLean := Ix.AuxGen.belowFamilyLeanExists (decompiledView.get? ·) originalAll
   let mut planBlocks := storedPlanBlocksForOriginalAll ixonEnv index originalAll
   if planBlocks.isEmpty then
     planBlocks ← fallbackPlanBlocksFromSort decompiledView auxPerms allNames
@@ -366,8 +369,8 @@ def installDecompileCallSitePlans
     -- plans/aux-recursor-alias-collision.md §2.4).
     for (name, plan) in plans do
       if let some breconName := Ix.AuxGen.recNameToBreconName name then
-        if auxMemberNames.contains breconName
-            || decompiledView.contains breconName then
+        if belowLean && (auxMemberNames.contains breconName
+            || decompiledView.contains breconName) then
           let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
           -- Mirror the compile side: Type-level `.brecOn.go` /
           -- `.brecOn.eq` share `.brecOn`'s telescope and are referenced
@@ -389,8 +392,8 @@ def installDecompileCallSitePlans
               brecOnPlans := brecOnPlans.insert key newPlan
               newBrec := newBrec.push (key, newPlan)
       if let some belowName := Ix.AuxGen.recNameToBelowName name then
-        if auxMemberNames.contains belowName
-            || decompiledView.contains belowName then
+        if belowLean && (auxMemberNames.contains belowName
+            || decompiledView.contains belowName) then
           let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
           -- Prop-level (IndPredBelow) `.below` families additionally
           -- expose constructors and a `.casesOn` wrapper to user code —

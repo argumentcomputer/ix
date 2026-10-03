@@ -188,7 +188,8 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     | _ => pure ()
   let run (target : Set Name) : Except CompileError (BlockResult × BlockState) :=
     let blockEnv : BlockEnv :=
-      { all := target, current := lo, mutCtx := default, univCtx := [] }
+      { all := target, current := lo, mutCtx := default, univCtx := []
+        provenanceOnly := true }
     CompileM.run cenv blockEnv {} (compileConstant lo)
   let some phase := phase?
     | return run all

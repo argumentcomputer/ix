@@ -539,11 +539,15 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     -- aux → `J.{I_lvls} spec_params` (semantic identity).
     let jAs := mkAppN (Expr.mkConst jName headLevels) specParams
     modify fun s => { s with auxToNested := s.auxToNested.insert auxName jAs }
-    -- Only the FIRST group member (the head) registers under this
-    -- occurrence hash; the rest are reached via the queue walk.
+    -- Every member `J As` of the group registers under its own nested
+    -- application (Lean's `elim_nested_inductive_fn`; A0, WB-A1): a later
+    -- occurrence of a sibling, e.g. `Forest T` inside the `Tree T`
+    -- auxiliary's constructors, dedups to that sibling's auxiliary instead
+    -- of opening a second copy of the group. Mirrors Rust
+    -- `expand_nested_block`.
     modify fun s =>
-      if s.auxSeen.contains iAs then s
-      else { s with auxSeen := s.auxSeen.insert iAs auxName }
+      if s.auxSeen.contains jAs then s
+      else { s with auxSeen := s.auxSeen.insert jAs auxName }
 
     -- Aux type: substLevels → instantiatePiParams → block-param space →
     -- re-abstract block params.
