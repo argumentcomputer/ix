@@ -26,6 +26,7 @@ import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -366,6 +367,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Pass 3, the faithful rewrite (IX_PASS3=images): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
+  -- Changed definition cliques under the switch (IX_PASS3=images): plans, cones,
+  -- decompile, kernels and the twins against the switch-on non-canonical set
+  -- (Tests.Ix.Compile.Pass3Cliques).
+  ("pass3-cliques", Tests.Ix.Compile.Pass3Cliques.run env),
 ]
 
 def main (args : List String) : IO UInt32 := do

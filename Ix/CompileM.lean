@@ -142,6 +142,12 @@ structure CompileEnv where
       names), to rewrite only blocks that reference a changed block's
       auxiliary. -/
   p3BlockRefs : Std.HashMap Name (Ix.Set Name) := {}
+  /-- Pass 3: the changed-clique table (`Ix.Compile.Pass.scheduleCliques`):
+      every member of an encoded definition clique, and every equation lemma
+      carried with it, ↦ (the clique in Lean's order, the carried lemmas,
+      the demotion reason: empty unless a dependent unfolds the encoding and
+      cannot be carried, in which case the clique compiles as today). -/
+  p3Cliques : Std.HashMap Name (Array Name × Array Name × String) := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=

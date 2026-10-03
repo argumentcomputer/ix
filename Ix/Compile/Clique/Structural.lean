@@ -92,6 +92,9 @@ structure StructLayout where
   matchers : Std.HashSet Name := {}
   /-- IndPred: the number of `funType` lets (`n`), else `0` -/
   numFunTypes : Nat := 0
+  /-- per member (Lean's order): the member's parameter (outermost `0`) at
+  each fixed position of its functionals' applications -/
+  memberFixed : Array (Array Nat) := #[]
   deriving Inhabited
 
 /-- new position `p` ↦ Lean position, for the `funType` telescope. -/
@@ -517,13 +520,14 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
   unless shapes.all (·.lets == numFunTypes) do throw "structLayout: inconsistent funType lets"
   unless numFunTypes == 0 || numFunTypes == n do throw "structLayout: unexpected lets"
   return { n, sigma := σ, const?, numParams := P, numMotives := K, aux := blockAux, groups,
-           fNames, numFixed := m, fixedPerm, matchers, numFunTypes }
+           fNames, numFixed := m, fixedPerm, matchers, numFunTypes, memberFixed := qss }
 
 /-- Transport a structural clique: the functionals (`_f`), the "below"
 matchers, the members. Fails (and the caller keeps the baseline) on anything
 outside the grammar. -/
 def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
-    (const? : Name → Option ConstantInfo) : TM (Array Transported) := do
+    (const? : Name → Option ConstantInfo) (lemmas : Array (Decl × Name) := #[]) :
+    TM (Array Transported) := do
   let L ← liftE (structLayout members aux σ const?)
   let phi (e : Expr) : TM Expr := phiS L #[] e
   let mut out : Array Transported := #[]
@@ -555,6 +559,9 @@ def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Na
       ctx := ctx.push t
     let body ← phiS L ctx b2
     out := out.push { decl := { d with type := ← phi d.type, value := mkLams ps' (mkLets ls' body) } }
+  -- the carried equation lemmas (a failure leaves the clique in Lean's form)
+  for (d, nn) in lemmas do
+    out := out.push { decl := { d with name := nn, type := ← phi d.type, value := ← phi d.value } }
   return out
 
 end Ix.Compile.Clique

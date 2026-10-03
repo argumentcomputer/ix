@@ -45,6 +45,7 @@ public import Ix.Compile.Pass.Names
 public import Ix.Compile.Pass.Translate
 public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.SideCar
+public import Ix.Compile.Pass.Cliques
 public section
 
 namespace Ix.Compile.Pass
@@ -212,16 +213,21 @@ decompile sources) and the initial block state (stored image constants).
 Identity when the switch is off or the block references no head. -/
 def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
     Except String (CompileEnv × BlockState) := do
-  if !cenv.pass3 || cenv.p3Heads.isEmpty then return (cenv, {})
+  if !cenv.pass3 then return (cenv, {})
+  -- changed definition cliques (`Ix.Compile.Pass.Cliques`, the A5 hook): the
+  -- members' transported values with their decompile records, and the
+  -- canonical constants they reference
+  let (cenv, init) ← prepareCliques cenv all (rewriteBlock (expansionLookup cenv {}))
+  if cenv.p3Heads.isEmpty then return (cenv, init)
   if let some refs := cenv.p3BlockRefs.get? lo then
-    if !refs.toList.any cenv.p3Heads.contains then return (cenv, {})
+    if !refs.toList.any cenv.p3Heads.contains then return (cenv, init)
   let mut members : Array (Name × ConstantInfo) := #[]
   let mut used : Std.HashSet Name := {}
   for n in all do
     if let some ci := cenv.env.get? n then
       members := members.push (n, ci)
       used := (headsIn cenv.p3Heads ci).fold (·.insert ·) used
-  if used.isEmpty then return (cenv, {})
+  if used.isEmpty then return (cenv, init)
   -- the views of the referenced changed blocks
   let mut views : Std.HashMap Name BlockView := {}
   for h in used do
@@ -231,10 +237,10 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   let lookup := expansionLookup cenv views
   let rwr ← rewriteBlock lookup members
   let overlay : Std.HashMap Name ConstantInfo :=
-    rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) {}
+    rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) cenv.env.overlay
   let sources : Std.HashMap Nat Expr :=
-    rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) {}
-  return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, {})
+    rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) cenv.p3Sources
+  return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, init)
 
 /-! ## The Lean names of a changed block's auxiliaries: their images -/
 

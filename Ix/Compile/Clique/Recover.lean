@@ -477,6 +477,180 @@ def recoveredOrder (rules : Rules) (addr? : Name → Option Address) (inp : Inpu
   unless isPerm σ do throw "recovery: the classes do not order every member"
   return (σ, cls)
 
+/-! ## The `partial_fixpoint` route (A5 proper)
+
+The packed fixpoint is `λ fixed. fix … (λ x. ⟨F₀, …, F_{n-1}⟩) h` (or a
+lattice fixpoint of the same shape); a recursive call in `F_i` is a full
+projection path `x.2.1` into the packed variable (`PProdN.proj`). `R` turns
+a path to component `j` into the member `f_j`; any other occurrence of the
+packed variable fails. `E` rebuilds each call as Lean's path
+(`Spine.projSteps`) and the recovery is accepted only if it gives Lean's
+component back. -/
+
+/-- `R` on a functional component; `d` is the packed variable's de Bruijn
+index at the current depth. -/
+def recP (s : Spine) (names : Array Name) (lvls : Array Level) :
+    Nat → Nat → Expr → Except String Expr
+  | 0, _, _ => throw "recovery: recursion bound exhausted"
+  | fuel + 1, d, e =>
+    let go := recP s names lvls fuel
+    match e with
+    | .proj sn i x _ =>
+      let (steps, base) := projChain e
+      match stripMdata base with
+      | .bvar b _ =>
+        if b == d then do
+          let some (j, len) := pathPrefix s.size steps
+            | throw "recovery: a projection of the packed variable that is not a path"
+          unless stepsFit s j (steps.extract 0 len) do
+            throw "recovery: a path whose projections are not the packing's"
+          let some m := names[j]? | throw "recovery: no such member"
+          return applyProjs (steps.extract len steps.size) (Expr.mkConst m lvls)
+        else return e
+      | _ => return Expr.mkProj sn i (← go d x)
+    | .bvar b _ =>
+      if b == d then throw "recovery: the packed variable outside a projection path" else return e
+    | .app f a _ => return Expr.mkApp (← go d f) (← go d a)
+    | .lam nm t b bi _ => return Expr.mkLam nm (← go d t) (← go (d + 1) b) bi
+    | .forallE nm t b bi _ => return Expr.mkForallE nm (← go d t) (← go (d + 1) b) bi
+    | .letE nm t v b nd _ => return Expr.mkLetE nm (← go d t) (← go d v) (← go (d + 1) b) nd
+    | .mdata md x _ => return Expr.mkMData md (← go d x)
+    | e => return e
+
+/-- `E` on a recovered component: every member constant becomes Lean's path. -/
+def encP (s : Spine) (names : Array Name) : Nat → Expr → Expr
+  | d, e@(.const c _ _) =>
+    match names.idxOf? c with
+    | some j => applyProjs (s.projSteps j) (Expr.mkBVar d)
+    | none => e
+  | d, .proj sn i x _ => Expr.mkProj sn i (encP s names d x)
+  | d, .app f a _ => Expr.mkApp (encP s names d f) (encP s names d a)
+  | d, .lam nm t b bi _ => Expr.mkLam nm (encP s names d t) (encP s names (d + 1) b) bi
+  | d, .forallE nm t b bi _ => Expr.mkForallE nm (encP s names d t) (encP s names (d + 1) b) bi
+  | d, .letE nm t v b nd _ =>
+    Expr.mkLetE nm (encP s names d t) (encP s names d v) (encP s names (d + 1) b) nd
+  | d, .mdata md x _ => Expr.mkMData md (encP s names d x)
+  | _, e => e
+
+/-- The recovered functional components of a `partial_fixpoint` clique (in
+the context of the fixed parameters and the packed variable, `bvar 0`), each
+checked by re-encoding, and the layout. -/
+def recoverPF (members : Array Decl) (packed : Decl) : Except String (Array Expr × PFLayout) := do
+  let n := members.size
+  let L ← pfLayout members packed (idPerm n) packed.name
+  let names := members.map (·.name)
+  let lvls := (members[0]!).levelParams.map Level.mkParam
+  let (_, body) := peelLams L.numFixed packed.value #[]
+  let (_, args) := getAppFnArgs (stripMdata body)
+  let fs := args.filterMap fun a => match stripMdata a with
+    | .lam _ _ b _ _ => decodeTuple n (stripMdata b)
+    | _ => none
+  let #[(_, cs)] := fs | throw "recovery: the packed fixpoint has no unique packed functional"
+  let mut out := #[]
+  for c in cs do
+    let spec ← recP L.spine names lvls defaultFuel 0 c
+    unless alphaEq (encP L.spine names 0 spec) c do
+      throw "recovery: re-encoding a functional component does not give Lean's term back"
+    out := out.push spec
+  return (out, L)
+
+/-! ## Specifications in each member's own parameters (A5 proper)
+
+Q6's recovery reads each member's body back out of the encoding, but in the
+encoding's context: the fixed parameters follow Lean's *first* function's
+order, so the recovered bodies of two presentations differ by a permutation
+of those binders (families `SP`, `WP`). A member's specification (M.2) is
+stated in the member's own parameters instead: the recovered body is
+instantiated at the member's own arguments of the fixed positions (read off
+its call of the encoding, `memberFixed`) and abstracted over the member's
+own parameters. The result is a function of the member's specification
+alone, so two presentations give the same specifications, whatever Lean's
+first function was. The encoding's own variables that `R` left (none, when
+the encoding is Lean's) become the recursion-variable placeholder. -/
+
+/-- The placeholder for an encoding variable in a specification. -/
+def phEnc : Expr := Expr.mkConst phRecVar #[]
+
+/-- The member's own arguments of the fixed positions, under its own
+parameters (`ps` binders). -/
+def fixedArgsOf (numParams : Nat) (q : Array Nat) : Array Expr :=
+  q.map fun p => Expr.mkBVar (numParams - 1 - p)
+
+/-- The normalised specifications of a clique (`inp.members` in Lean's
+order; `inp.sigma` is ignored): one closed term per member, a function of
+the member's specification alone. An error means the recovery failed. -/
+def normalisedSpecs (inp : Input) : Except String (Array Expr) := do
+  let n := inp.members.size
+  let paramsOf (d : Decl) := (peelLams (lamArity d.value) d.value #[]).1
+  match inp.encoding with
+  | .wellFounded =>
+    let some packed := findPacked? inp.members inp.aux | throw "recovery: no packed function"
+    let L ← wfLayout inp.members packed (idPerm n) packed.name
+    let leaves ← TM.run' (recoverWF inp.members packed)
+    -- a leaf lives under the fixed parameters, then `F`'s `x` and `a`
+    return (List.range n).toArray.map fun i =>
+      let d := inp.members[i]!
+      let ps := paramsOf d
+      let fixed := (fixedArgsOf ps.size (L.memberFixed[i]!)).reverse
+      mkLams ps (instantiateRev leaves[i]! (#[phEnc, phEnc] ++ fixed))
+  | .structural =>
+    let L ← structLayout inp.members inp.aux (idPerm n) inp.const?
+    let fs ← TM.run' (recoverStructural inp.members inp.aux inp.const?)
+    -- a functional `f._f` is closed: applied to the member's fixed arguments
+    return (List.range n).toArray.map fun i =>
+      let d := inp.members[i]!
+      let ps := paramsOf d
+      mkLams ps (mkAppN fs[i]! (fixedArgsOf ps.size (L.memberFixed[i]!)))
+  | .partialFixpoint =>
+    let some packed := findPacked? inp.members inp.aux | throw "recovery: no packed fixpoint"
+    let (cs, L) ← recoverPF inp.members packed
+    -- a component lives under the fixed parameters, then the packed variable
+    return (List.range n).toArray.map fun i =>
+      let d := inp.members[i]!
+      let ps := paramsOf d
+      let fixed := (fixedArgsOf ps.size (L.memberFixed[i]!)).reverse
+      mkLams ps (instantiateRev cs[i]! (#[phEnc] ++ fixed))
+
+/-- Where a clique's canonical order came from. -/
+inductive OrderSource where
+  /-- Pass 1's classes over (type, normalised specification) -/
+  | specification
+  /-- the specification could not be recovered; the statements decide (Q6,
+  first source) -/
+  | statements (why : String)
+  deriving Inhabited
+
+def OrderSource.tag : OrderSource → String
+  | .specification => "specification"
+  | .statements why => s!"statements ({why})"
+
+/-- The canonical order of a clique (M.3; Q6 for theorem cliques): Pass 1's
+classes over each member's type and normalised specification, statements
+compared first; members still in one class follow Pass 1's seed order (Q2).
+When the specification cannot be recovered, the statements alone (Q6's first
+source); when they tie too, an error (`NOSPEC`: the clique keeps its
+baseline). `σ[i]` is the canonical position of Lean's member `i`. -/
+def cliqueOrder (rules : Rules) (addr? : Name → Option Address) (inp : Input) :
+    Except String (Array Nat × Array (Array Name) × OrderSource) := do
+  let addr' (n : Name) : Option Address := (placeholderAddr? n).orElse fun _ => addr? n
+  match normalisedSpecs inp with
+  | .ok specs =>
+    let members : Array CliqueMember := (inp.members.zip specs).map fun (d, v) =>
+      { name := d.name, levelParams := d.levelParams, type := d.type, value := v }
+    let (cls, _) ← cliqueClasses rules addr' { kind := .noSpec, members }
+    let order := cls.foldl (· ++ ·) #[]
+    let σ := members.map fun m => (order.idxOf? m.name).getD 0
+    unless isPerm σ do throw "order: the classes do not order every member"
+    return (σ, cls, .specification)
+  | .error why =>
+    let members : Array CliqueMember := inp.members.map fun d =>
+      { name := d.name, levelParams := d.levelParams, type := d.type, value := d.value }
+    match ← Ix.Compile.Canon.statementOrder rules addr' members with
+    | some σ =>
+      let cls := (invPerm σ).map fun i => #[members[i]!.name]
+      return (σ, cls, .statements why)
+    | none => throw s!"NOSPEC: {why}; the statements tie"
+
 end Ix.Compile.Clique
 
 end

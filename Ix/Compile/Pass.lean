@@ -11,6 +11,9 @@
     (Pass 1's canonical form, Pass 2's recursors, the image generator);
   * `SideCar`: the `_ix` display names of the Ix auxiliaries and the
     metadata renaming;
+  * `Cliques`: changed definition cliques through the clique transport
+    (O13–O16): the members' transported values, the canonical constants,
+    the scheduling edges;
   * `Driver`: the two hooks of the block compile.
 -/
 module
@@ -18,4 +21,5 @@ public import Ix.Compile.Pass.Names
 public import Ix.Compile.Pass.Translate
 public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.SideCar
+public import Ix.Compile.Pass.Cliques
 public import Ix.Compile.Pass.Driver
