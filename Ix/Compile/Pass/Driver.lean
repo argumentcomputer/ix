@@ -20,6 +20,14 @@ Two hooks of the block compile (`Ix.CompileDriver`), both inert unless
    an ordinary constant and stored with the block (its `Named.original`, the
    provenance of Lean's `a`, is filled in at assembly).
 
+   The changed-clique hook (`Ix.Compile.Pass.Cliques.prepareCliques`, A5)
+   runs first, at this one call site: the members of a changed definition
+   clique and their carried equation lemmas get their transported values in
+   the overlay (with Lean's values as decompile records, placeholder indices
+   from `cliqueRecordBase`), and the canonical `_ix` constants they reach are
+   compiled into the block; the call-site rewrite then applies to the
+   overlay as to any member.
+
 ## Faithfulness
 See `Translate` (the rewrite is definitional) and `ImageView` (images compute
 as Lean's recursors). The originals of the regenerated auxiliaries are still

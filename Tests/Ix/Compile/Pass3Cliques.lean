@@ -21,10 +21,12 @@
      the switch-on output (the value pins `rfl` over clique members among
      them);
   5. **twins under the switch**: for every presentation pair, every Lean name
-     and every `_ix` name compiles to the reference's address, except the
-     entries of the switch-on non-canonical set
-     (`Tests.Ix.Compile.NonCanonical.nonCanonicalOn`), which is exact in both
-     directions.
+     compiles to the reference's address, except the entries of the switch-on
+     non-canonical set (`Tests.Ix.Compile.NonCanonical.nonCanonicalOn`), which
+     is exact in both directions. The canonical `_ix` constants are stored
+     only where a member or a carried lemma reaches them, by address, so equal
+     members imply equal canonical constants; an `_ix` name both sides carry
+     with different addresses is logged (`canonical constant differs`).
 
   Run with: `lake test -- --ignored pass3-cliques` (after `lake build ix
   kernel-check-ixe`). `PASS3_CLIQUES_ONLY=<substring>` restricts the
@@ -54,19 +56,26 @@ structure PlanRow where
   transported : Bool
   causes : Array String := #[]
 
-/-- Every clique of the seeds, planned as the compiler planned it. -/
-def plans (on : Ix.CompileM.LeanPipelineOut) (seeds : Array Name) : Array PlanRow := Id.run do
+/-- The cliques among Lean constants (M.1: `all` with two or more members, of a
+safe definition or a theorem), each once, as Lean names. -/
+def leanCliques (cs : List (Name × ConstantInfo)) : Array (Array Name) := Id.run do
+  let mut out := #[]
+  for (n, ci) in cs do
+    let (all, ok) := match ci with
+      | .defnInfo v => (v.all, v.safety == Lean.DefinitionSafety.safe)
+      | .thmInfo v => (v.all, true)
+      | _ => ([], false)
+    if ok && all.length ≥ 2 && all.head? == some n then out := out.push all.toArray
+  return out
+
+/-- Every clique, planned as the compiler planned it. -/
+def plans (on : Ix.CompileM.LeanPipelineOut) (cliques : Array (Array Name)) : Array PlanRow := Id.run do
   let cenv := on.cenv
   let const? := cenv.env.get?
-  let mut seen : Std.HashSet IxName := {}
   let mut out : Array PlanRow := #[]
-  for s in seeds do
-    let n := _root_.Ix.Name.fromLeanName s
-    if seen.contains n then continue
-    let some ci := const? n | continue
-    let all := Ix.Compile.Pass.allOf ci
-    if all.size < 2 || (Ix.Compile.Pass.cliqueDecl? ci).isNone then continue
-    for a in all do seen := seen.insert a
+  for cl in cliques do
+    let all := cl.map _root_.Ix.Name.fromLeanName
+    let some n := all[0]? | continue
     let row : PlanRow := match cenv.p3Cliques.get? n with
       | none => { all, outcome := "not in the clique table (no encoding marker, or members in one block)", transported := false }
       | some (_, _, demoted) =>
@@ -177,9 +186,61 @@ def entrySyntax (f : Family) (a b : Pres) (d : DiffRec) : String :=
   s!"  e `{f.fixture} \"{a.id}\" \"{b.id}\" `{d.constant} \"{role}\" {cause}\n" ++
   s!"    \"{d.addrA}\" \"{d.addrB}\" \"{d.firstDiff}\" \"{note}\","
 
+/-! ## A library (`PASS3_CLIQUES_FILE=<file.lean>`) -/
+
+/-- Compile a file's environment as `ix compile-lean` does, with the switch
+on, and list every clique of it as the compiler planned it; optionally write
+the output (`PASS3_CLIQUES_OUT`) and check the transported and canonical
+constants with the three kernels (`PASS3_CLIQUES_KERNELS=1`). -/
+def runFile (path : String) : IO UInt32 := do
+  let fe ← getFileEnvCore path
+  let constList ← Ix.EnvScope.defaultConstList fe path
+  IO.println s!"[pass3-cliques-file] {path}: {constList.length} constants"
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
+  let t0 ← IO.monoMsNow
+  let on ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) (pass3? := some true) with
+    | .ok o => pure o
+    | .error e => throw (IO.userError s!"compile failed: {e}")
+  IO.println s!"[pass3-cliques-file] switch on: {on.bytes.size} B, {on.cenv.ungrounded.size} block failures, \
+    {(← IO.monoMsNow) - t0} ms"
+  for (n, e) in on.cenv.ungrounded.toList.take 20 do
+    IO.println s!"[pass3-cliques-file]   failed: {n.pretty}: {e.take 300}"
+  if let some out := ← IO.getEnv "PASS3_CLIQUES_OUT" then
+    IO.FS.writeBinFile out on.bytes
+  -- the cliques
+  let rows := plans on (leanCliques constList)
+  let mut tally : Std.HashMap String Nat := {}
+  let mut members : Array String := #[]
+  for r in rows do
+    IO.println s!"[pass3-cliques-file] clique {r.all.map (·.pretty)}: {r.outcome}"
+    let key := (r.outcome.splitOn " ").headD "?"
+    tally := tally.insert key (tally.getD key 0 + 1)
+    if r.transported then members := members ++ r.all.map (·.pretty)
+  IO.println s!"[pass3-cliques-file] {rows.size} cliques of two or more members: {tally.toList}"
+  let table := on.cenv.p3Cliques.toList.filter fun (n, (all, _, _)) => all[0]? == some n
+  IO.println s!"[pass3-cliques-file] clique table: {table.length} cliques, \
+    {(table.filter fun (_, (_, _, d)) => !d.isEmpty).length} demoted, \
+    {(table.foldl (fun acc (_, (_, c, _)) => acc + c.size) 0)} carried lemmas"
+  if (← IO.getEnv "PASS3_CLIQUES_KERNELS") == some "1" then
+    let dir ← IO.FS.createTempDir
+    try
+      let p := dir / "on.ixe"
+      IO.FS.writeBinFile p on.bytes
+      let carried := table.foldl (fun acc (_, (_, c, _)) => acc ++ c.map (·.pretty)) #[]
+      let names := (on.env.named.toArray.filterMap fun (n, _) =>
+        if Ix.Compile.Pass.hasReserved n then some n.pretty else none) ++ members ++ carried
+      let failed ← Tests.Ix.Compile.Pass3.kernelFailures dir p names
+      IO.println s!"[pass3-cliques-file] kernels: {names.size} names, {failed.size} failure(s)"
+      for (leg, n, m) in failed.toList.take 40 do
+        IO.println s!"[pass3-cliques-file]   {leg}: {n}: {m.take 240}"
+      return if failed.isEmpty then 0 else 1
+    finally IO.FS.removeDirAll dir
+  return 0
+
 /-! ## The suite -/
 
 def run (env : Environment) : IO UInt32 := do
+  if let some p := ← IO.getEnv "PASS3_CLIQUES_FILE" then return ← runFile p
   let only := ← IO.getEnv "PASS3_CLIQUES_ONLY"
   let keep? := (← IO.getEnv "PASS3_KEEP").map System.FilePath.mk
   let dumpDir := (← IO.getEnv "IX_TWINS_DUMP").map System.FilePath.mk
@@ -206,7 +267,7 @@ def run (env : Environment) : IO UInt32 := do
     if !off.cenv.ungrounded.contains n then
       problems := problems.push s!"{n.pretty} fails only with the switch on: {e.take 300}"
   -- 1. plans
-  let rows := plans on seeds
+  let rows := plans on (leanCliques (seeds.toList.filterMap fun n => (env.find? n).map (n, ·)))
   let mut members : Array Name := #[]
   let mut nT := 0
   for r in rows do

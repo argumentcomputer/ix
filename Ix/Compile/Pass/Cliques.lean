@@ -385,6 +385,8 @@ structure CliquePlan where
   /-- the canonical functional(s): the side-car record goes on these -/
   functionals : Array Name
   causes : Array (Name × Cause × String)
+  /-- O17: a member ↦ the representative of its class, whose constant it is -/
+  aliases : Array (Name × Name) := #[]
   deriving Inhabited
 
 /-- What the hook does with a clique. -/
@@ -403,7 +405,8 @@ inductive CliqueOutcome where
 def CliquePlan.record (p : CliquePlan) : String :=
   let causes := p.causes.map fun (n, c, why) => s!"{n.pretty} {c.tag}: {why}"
   s!"{p.encoding.tag}; lean order {p.all.map (·.pretty)}; sigma {p.sigma}; \
-    order by {p.source.tag}; classes {p.classes.map (·.map (·.pretty))}; causes {causes}"
+    order by {p.source.tag}; classes {p.classes.map (·.map (·.pretty))}; \
+    aliases (O17) {p.aliases.map fun (m, r) => s!"{m.pretty} = {r.pretty}"}; causes {causes}"
 
 /-- The equation lemmas of the packed constant `p` that the carried lemmas
 reach (`p.eq_def`, `p.eq_unfold`, `p.eq_<k>`), transitively. -/
@@ -447,7 +450,34 @@ def planClique (const? : Name → Option ConstantInfo) (addr? : Name → Option 
   let ord := Ix.Compile.Clique.cliqueOrder Ix.Compile.Canon.Rules.phaseA addr? inp0
   if let .error why := ord then return .baseline enc "NOSPEC" why
   let .ok (σ, classes, source) := ord | return .notEncoded "unreachable"
-  if (List.range σ.size).all (fun i => σ[i]! == i) then return .unchanged enc source
+  -- O17: the members of a class of two or more (equal specifications) are
+  -- one constant, the representative's (the first of the class in the
+  -- canonical order); not when one of them carries an equation lemma, whose
+  -- proof unfolds that member
+  let carriedOwners : Std.HashSet Name := carried.foldl (init := {}) fun s c => match c with
+    | .str p _ _ => s.insert p
+    | _ => s
+  let mut aliases : Array (Name × Name) := #[]
+  for cls in classes do
+    let some rep := cls[0]? | continue
+    let some repDecl := members.find? (·.name == rep) | continue
+    if cls.size < 2 || cls.any carriedOwners.contains then continue
+    for m in cls.extract 1 cls.size do
+      let some md := members.find? (·.name == m) | continue
+      if md.levelParams == repDecl.levelParams &&
+          Ix.Compile.Clique.alphaEq (Ix.Compile.Clique.stripAllMdata md.type)
+            (Ix.Compile.Clique.stripAllMdata repDecl.type) then
+        aliases := aliases.push (m, rep)
+  let identity := (List.range σ.size).all (fun i => σ[i]! == i)
+  if identity && aliases.isEmpty then return .unchanged enc source
+  if identity then
+    -- the order is Lean's, but classes merge: the aliases alone
+    let mut transported : Std.HashMap Name Decl := {}
+    for (m, rep) in aliases do
+      if let some rd := members.find? (·.name == rep) then
+        transported := transported.insert m { rd with name := m }
+    return .transported { all, encoding := enc, sigma := σ, classes, source, members := transported,
+                          canon := #[], functionals := #[], causes := #[], aliases }
   let g := all[(Ix.Compile.Clique.invPerm σ)[0]!]!
   let newEncName := match enc with
     | .wellFounded => nameStr (nameStr g ixComponent) "_mutual"
@@ -498,6 +528,9 @@ def planClique (const? : Name → Option ConstantInfo) (addr? : Name → Option 
       canon := canon.push (d, src)
   if transported.size != all.size + carried.size then
     return .baseline enc "SHAPE" "the transport did not return every member and carried lemma"
+  for (m, rep) in aliases do
+    if let some rd := transported.get? rep then
+      transported := transported.insert m { rd with name := m }
   if !causes.isEmpty && !carried.isEmpty then
     -- a carried lemma must be transported exactly: a verbatim proof body
     -- would prove Lean's statement about Lean's encoding
@@ -517,7 +550,7 @@ def planClique (const? : Name → Option ConstantInfo) (addr? : Name → Option 
     | .structural => canon.filterMap fun (d, _) => if lastStr d.name == "_f" then some d.name else none
     | _ => #[newEncName]
   return .transported { all, encoding := enc, sigma := σ, classes, source, members := transported,
-                        canon, functionals, causes }
+                        canon, functionals, causes, aliases }
 
 /-! ## The hook -/
 

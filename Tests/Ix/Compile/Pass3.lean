@@ -138,12 +138,17 @@ def cone (u : CUnit) (blocks : Array (Array _root_.Ix.Name)) : Std.HashSet Name 
 def identityCheck (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : IdentityReport := Id.run do
   let blocks := on.cenv.p3Blocks.toArray.map (·.2)
   let mut r : IdentityReport := { changedBlocks := blocks }
-  if blocks.isEmpty then
+  if blocks.isEmpty && on.cenv.p3Cliques.isEmpty then
     r := { r with identical := off.bytes == on.bytes }
     if !r.identical then
       r := { r with problems := r.problems.push "no changed block, but the outputs differ" }
     return r
-  let c := cone u blocks
+  -- the changed blocks' cones, and the cones of the definition cliques the
+  -- switch may transport (`Ix.Compile.Pass.Cliques`: the clique table's
+  -- members and carried lemmas)
+  let cliques : Array (Array _root_.Ix.Name) := on.cenv.p3Cliques.toArray.filterMap
+    fun (n, (all, carried, demoted)) => if all[0]? == some n && demoted.isEmpty then some (all ++ carried) else none
+  let c := cone u (blocks ++ cliques)
   for (n, nd) in off.env.named do
     if isSyntheticMuts n then continue
     match on.env.named.get? n with

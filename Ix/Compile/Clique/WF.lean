@@ -465,6 +465,47 @@ def splitPSigma (motive : Expr → Expr) (leaf : Expr → Expr) :
       else return leaf (mk major)
     | _ => return leaf (mk major)
 
+/-- `bvar d` occurs in `e` only as the head of an application (a recursive
+call `a y h`), never passed on whole. -/
+def onlyCalls : Nat → Nat → Expr → Bool
+  | 0, _, _ => false
+  | fuel + 1, d, e@(.app ..) =>
+    let (h, args) := getAppFnArgs e
+    let headOk := match h with
+      | .bvar _ _ => true
+      | h => onlyCalls fuel d h
+    headOk && args.all fun x => (match stripMdata x with
+      | .bvar i _ => i != d
+      | _ => true) && onlyCalls fuel d x
+  | _, d, .bvar i _ => i != d
+  | fuel + 1, d, .lam _ t b _ _ | fuel + 1, d, .forallE _ t b _ _ =>
+    onlyCalls fuel d t && onlyCalls fuel (d + 1) b
+  | fuel + 1, d, .letE _ t v b _ _ =>
+    onlyCalls fuel d t && onlyCalls fuel d v && onlyCalls fuel (d + 1) b
+  | fuel + 1, d, .proj _ _ x _ | fuel + 1, d, .mdata _ x _ => onlyCalls fuel d x
+  | _, _, _ => true
+
+/-- A leaf of the packed function's case tree (`λ v a. E`) whose recursion
+variable reaches the bodies only through `PSigma.casesOn` layers (which the
+regenerated proof splits) and is used there only as recursive calls: the
+functional applied at a constructor then reduces to the statement's leaf by
+β and ι. A body that threads the recursion variable through a `match`
+(`MatcherApp.addArg`) needs Lean's argument pushing, which is not
+regenerated. -/
+def leafReduces : Nat → Expr → Bool
+  | 0, _ => false
+  | fuel + 1, e =>
+    let (bs, body) := peelLams (lamArity e) e #[]
+    if bs.isEmpty then false else
+    match constApp? body with
+    | some (h, _, args) =>
+      if h == leanName ``PSigma.casesOn && args.size == 6 &&
+          (match stripMdata args[5]! with
+            | .bvar 0 _ => true
+            | _ => false) then leafReduces fuel args[4]!
+      else onlyCalls defaultFuel 0 body
+    | none => onlyCalls defaultFuel 0 body
+
 /-- The canonical packed equation lemma (see above): the transported
 statement, and the case split whose leaves are the transported `fix_eq`
 step at each constructor. -/
@@ -548,6 +589,14 @@ def transportWF (members : Array Decl) (mutDecl : Decl) (proofs : Array Decl) (�
   let mut lemmas' : Array Transported := #[]
   for (d, nn) in lemmas do
     if d.name == Ix.Name.mkStr mutDecl.name "eq_def" then
+      -- the regenerated proof holds only when each leaf reduces at a constructor
+      let (_, fixApp) := peelLams m mutDecl.value #[]
+      let (_, fargs) := getAppFnArgs (stripMdata fixApp)
+      let some F := fargs.back? | throw "eq_def: no functional in the packed function"
+      let (_, tree) := peelLams 2 F #[]
+      let some t := decodeTree L.n tree | throw "eq_def: the functional is not Lean's case tree"
+      unless t.leaves.all (leafReduces 64) do
+        throw "eq_def: a body threads the recursion through a match (Lean's argument pushing is not regenerated)"
       lemmas' := lemmas'.push { decl := ← transportEqDef L phi d nn }
     else
       if isPackedLemma d then
