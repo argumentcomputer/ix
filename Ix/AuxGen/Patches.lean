@@ -702,7 +702,10 @@ exists")
                 || cenvGlobal.nameToAddr.contains sourceName
                 || bst.auxNameToAddr.contains sourceName
                 || cenvGlobal.auxNameToAddr.contains sourceName
-            if !registered then
+            -- (Pass 3 moves the Lean names of a changed block's auxiliaries
+            -- to their images and the Ix auxiliary to its `_ix` display name,
+            -- so the Lean-named registration is absent by design.)
+            if !registered && !cenvGlobal.pass3 then
               throw (.invalidMutualBlock
                 s!"aux position {sourceJ} ('{sourceName.pretty}') is \
 canonically owned by its spec members' SCC, but that SCC registered no \

@@ -13,6 +13,7 @@ public import Ix.CompileM
 public import Ix.Compile.Canon
 public import Ix.Compile.Image
 public import Ix.Compile.Clique
+public import Ix.Compile.Pass
 public import Ix.DecompileM
 public import Ix.Replay
 public import Ix.Catalog
