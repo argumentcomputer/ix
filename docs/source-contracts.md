@@ -164,7 +164,13 @@ shared/unrestricted. An implicit or instance binder is not automatically erased.
 
 `ix compile --equations` realizes `f.eq_def : ∀ xs, f xs = rhs` for every
 recursive definition in the closure. The statement's right side is elaborated
-from `f`'s body, so contracts written inside the body reach it. `f`'s header
+from `f`'s body, so contracts written inside the body reach it. Only Lean's
+own unfolding theorem is associated with `f`: a theorem merely named
+`f.eq_def` (a metaprogram can add one past the reserved-name check) whose
+statement is not the one `ix compile` re-derives from the pre-definition
+Lean recorded for `f` is not associated, and the sidecar lists `f` under
+`failures` with `equation not genuine` ([resource
+checking](resource-checking.md), unfolding equations). `f`'s header
 input contracts are carried onto the equation: the statement's binder at the
 same telescope position, and the proof's matching lambda, are registered with
 the same input contract (usage, ownership, locality), so the exported theorem
@@ -211,10 +217,22 @@ closure under `--profile`); `resourceChecked` is then empty. Each
 `resourceChecked` entry is a pair through which resource admission checked
 a definition: the profile binds `definition ↦ equation`, the definition is
 resource-relevant and not assumed. `contracts` lists the header contracts
-the equation's statement carries (above), possibly none. The consumer must
-run each listed definition by the bound equation's right-hand side, fetched
-by `equationAddress`; an annotated recursive definition is never admitted
-otherwise ([resource checking](resource-checking.md), unfolding equations).
+the equation's statement carries (above), possibly none. An annotated
+recursive definition is never admitted otherwise ([resource
+checking](resource-checking.md), unfolding equations).
+
+The list carries a consumer obligation (obligation (c) of [resource
+checking](resource-checking.md), "Consumer obligations"): **run exactly the
+bound right-hand side, fetched by `equationAddress`.** A call `f a₁ … aₙ` of
+a listed definition runs as the right-hand side `rhs` of the theorem at
+`equationAddress`, whose statement is `∀ x₁ … xₙ, f x₁ … xₙ = rhs`, with
+`aᵢ` for `xᵢ`; recursive calls in `rhs` run the same way. It never runs as
+Lean's compiled code for `f` (the `_unsafe_rec` twin), as a recompilation of
+`f`'s source or of another theorem about `f`, or as `f`'s kernel body
+(`brecOn`, `WellFounded.fix`). Resource safety rests on this obligation
+alone: the checked program is the program that runs, whatever theorem was
+bound. That only Lean's own unfolding theorem is bound (above) is defense in
+depth; it also gives functional agreement with Lean's compiled code.
 
 `ix check-equations SIDECAR CLOSURE` (`Ix.Compile.CheckEquations.verify`)
 re-verifies a sidecar against its closure, in Lean, independently of the

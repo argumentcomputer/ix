@@ -12,8 +12,13 @@
     other definition, however match-shaped its body, is an ordinary call.
   * `equation NAME THEOREM` binds an unfolding equation; `ix compile
     --equations` adds one for every `f.eq_def` it realized (`Ix.Compile.
-    Equations.realize`), so only Lean's own unfolding theorem of `f` is ever
-    bound, never an author's theorem about `f`.
+    Equations.realize`) whose statement it re-derived from Lean's recorded
+    pre-definition of `f` (`Equations.notGenuine`, second review R2-5), so
+    only Lean's own unfolding theorem of `f` is bound, never an author's
+    theorem about `f` nor one a metaprogram added under the name `f.eq_def`.
+    The consumer still runs the bound right-hand side by address (consumer
+    obligation (c), docs/resource-checking.md), on which resource safety
+    rests.
 -/
 module
 public import Lean.AuxRecursor

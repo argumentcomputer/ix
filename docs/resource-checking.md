@@ -329,10 +329,28 @@ proof is checked by erased typing). The profile binds the consumer to run `f`
 by that equation; the kernel body is then not checked. `ix compile
 --equations --profile FILE` adds every realized `f ↦ f.eq_def` association
 as an `equation` directive, and only those: `equation` is a generated
-directive, which a written profile may not contain, so the theorem bound to
-`f` is always Lean's own unfolding theorem (`Ix.Compile.Equations.realize`),
-never an author's theorem about `f` (a true but different equation, `f xs = f
-xs`, or a false one). Admission also refuses a definition whose bound
+directive, which a written profile may not contain. A theorem is associated
+with `f` only when it is Lean's own unfolding theorem
+(`Ix.Compile.Equations.notGenuine`, second review R2-5): the name `f.eq_def`
+proves nothing, since a metaprogram can `addDecl` a theorem of that name past
+Lean's reserved-name check (`cnt xs u = cnt xs u`, a true but different
+equation) and `getUnfoldEqnFor?` then returns it. `ix compile` re-derives the
+statement Lean generates — `∀ xs, f xs = body` from the pre-definition
+`fun xs => body` Lean recorded when it compiled `f`'s recursion (its
+structural, well-founded or `partial_fixpoint` equation record), or from
+`f`'s own value when `f` is not recursive — and requires the theorem's
+statement and universe parameters to equal it; the proof is irrelevant. The
+unfolding theorem of a well-founded definition's `_unary`/`_binary`/`_mutual`
+auxiliary has no recorded pre-definition; it is accepted when the
+definition's well-founded record names that auxiliary and the theorem lies
+in the auxiliary's module (Lean adds it while elaborating the definition, so
+the name cannot be taken first) or is Lean's importer alias of that private
+original. Any other theorem is not associated: the sidecar lists `f` under
+`failures` with `equation not genuine: …`, and an annotated `f` is then
+refused as annotated recursion without a bound equation (below). The
+records consulted are themselves environment state that a metaprogram could
+overwrite, so this check is defense in depth, not the premise of resource
+safety: that is consumer obligation (c) (below). Admission also refuses a definition whose bound
 equation depends on an axiom other than `propext`, `Quot.sound` and
 `Classical.choice` (`sorryAx` or any user axiom): the adapter records every
 other axiom of the closure by address (`Program.axioms`; the three standard
@@ -431,7 +449,38 @@ Lean core profile, choices by need; case splits and bound case definitions
 without closures and without computing dead induction hypotheses; every other
 call strict; and each definition the equation sidecar lists under
 `resourceChecked` run by its bound equation's right-hand side, fetched by
-address (no annotated recursive definition is admitted any other way).
+address (no annotated recursive definition is admitted any other way). The
+next section states these obligations precisely.
+
+## Consumer obligations
+
+Resource admission certifies the program it checked under the evaluation
+order the profile states. A consumer relying on admission must run exactly
+that program in that order. The obligations are lettered as in the second
+review of the checker; each names the objects it covers and what it
+forbids, so that a compiler's correctness proof can state it as a premise.
+
+- **(c) Run exactly the body that was checked.** *Covers:* every
+  definition of the admitted closure that resource admission checked (a
+  resource-relevant definition the profile does not assume). *Requires:* a
+  definition listed under `resourceChecked` in the equation sidecar runs by
+  the right-hand side `rhs` of the theorem fetched by its `equationAddress`
+  (its statement `∀ xs, f xs = rhs`, instantiated at the call's arguments;
+  recursive calls in `rhs` are calls of the listed definitions, run the same
+  way); every other checked definition runs by its exported Ixon body, the
+  value at its own address. *Forbids:* running, for a checked definition,
+  Lean's compiled code (its `_unsafe_rec` twin, a `partial def`'s
+  implementation, an `@[implemented_by]`/`@[extern]` replacement, a
+  `@[csimp]` replacement), a recompilation from its Lean source or from any
+  other theorem about it, or its kernel recursion encoding (`brecOn`,
+  `WellFounded.fix` with its `_f`/`_unary` auxiliaries) in place of the bound
+  equation. Resource safety rests on this obligation, not on the equation
+  being genuine: the program checked is then the program run, whatever
+  theorem was bound, so a forged (second review R2-5), smuggled (R2-4) or
+  false equation could only break functional agreement with Lean, never an
+  ownership guarantee. `ix compile` binds only Lean's own unfolding theorem
+  (above) and refuses annotated recursion that is not checked through it;
+  `ix check-equations` re-verifies the listed pairs by address.
 
 ## Profiles, claims, and consumers
 

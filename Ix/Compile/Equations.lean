@@ -9,6 +9,10 @@
 -/
 module
 public import Lean.Meta.Eqns
+public import Lean.Meta.LetToHave
+public import Lean.Elab.PreDefinition.Structural.Eqns
+public import Lean.Elab.PreDefinition.WF.Eqns
+public import Lean.Elab.PreDefinition.PartialFixpoint.Eqns
 public import Ix.EnvScope
 public import Ix.Compile.SourceContract.Registry
 
@@ -36,11 +40,88 @@ structure Association where
   contracts : Array CarriedContract := #[]
   deriving Inhabited, Repr, BEq
 
+/-- The statement of the unfolding theorem Lean generates for `name` from the
+pre-definition `value` (universe parameters `levels`): `∀ xs, name xs = body`
+where `value = fun xs => body`, with `let`s turned into `have`s, exactly as
+`Structural.mkUnfoldEq`, `WF.mkUnfoldEq`/`mkBinaryUnfoldEq`,
+`PartialFixpoint.mkUnfoldEq` and (for a non-recursive definition,
+`cleanup := true`) `mkSimpleEqThm` state it. -/
+def unfoldStatement (name : Lean.Name) (levels : List Lean.Name) (value : Lean.Expr)
+    (cleanup : Bool) : MetaM Lean.Expr :=
+  lambdaTelescope (cleanupAnnotations := cleanup) value fun xs body => do
+    let lhs := mkAppN (mkConst name (levels.map mkLevelParam)) xs
+    letToHave (← mkForallFVars xs (← mkEq lhs body))
+
+/-- Why the theorem `equation` that `getUnfoldEqnFor?` returned for `name` is
+not Lean's own unfolding theorem of `name`, or `none` when it is (second
+review R2-5). `getUnfoldEqnFor?` returns any constant that already bears the
+reserved name `name.eq_def`, and a metaprogram can `addDecl` one past the
+reserved-name check, so the name proves nothing. The statement is re-derived
+instead, from the pre-definition Lean recorded when it compiled `name`'s
+recursion (`Structural`/`WF`/`PartialFixpoint.eqnInfoExt`), or from `name`'s
+own value when `name` is not recursive, and the theorem's statement and
+universe parameters must equal it (the proof is irrelevant: any proof of
+that statement certifies the same equation). The `_unary`/`_binary`/
+`_mutual` auxiliary of a well-founded definition has no recorded
+pre-definition; Lean adds its unfolding theorem while it elaborates the
+definition (`WF.mkUnfoldEq`), so it is accepted when the definition's
+well-founded record names it as its non-recursive auxiliary and the theorem
+was added in the same module as the auxiliary (afterwards the name is taken,
+so a later forgery cannot replace it). The records are environment state that
+a metaprogram could also overwrite, so this check is defense in depth: the
+resource-safety obligation is that a consumer runs a checked definition by
+the bound right-hand side, fetched by its address (docs/source-contracts.md,
+"Checked pairs"). -/
+def notGenuine (name equation : Lean.Name) : MetaM (Option String) := do
+  let env ← getEnv
+  let some (.thmInfo thm) := env.find? equation
+    | return some s!"`{equation}` is not a theorem"
+  let some (.defnInfo info) := env.find? name
+    | return some s!"`{name}` is not a definition"
+  let recorded : Option (List Lean.Name × Lean.Expr) :=
+    match Elab.Structural.eqnInfoExt.find? env name with
+    | some i => some (i.levelParams, i.value)
+    | none => match Elab.WF.eqnInfoExt.find? env name with
+      | some i => some (i.levelParams, i.value)
+      | none => (Elab.PartialFixpoint.eqnInfoExt.find? env name).map
+          fun i => (i.levelParams, i.value)
+  let mut expected := none
+  if let some (levels, value) := recorded then
+    expected := some (levels, ← unfoldStatement name levels value false)
+  else if ← isRecursiveDefinition name then
+    let auxiliary := match name with
+      | .str parent _ => (Elab.WF.eqnInfoExt.find? env parent).any (·.declNameNonRec == name)
+      | _ => false
+    -- Lean's theorem lies in the auxiliary's module; an importer sees it
+    -- through `WF.copyPrivateUnfoldTheorem`'s alias of the private original.
+    let copied := match env.getModuleIdxFor? name with
+      | some idx =>
+        let original := mkPrivateNameCore env.allImportedModuleNames[idx.toNat]!
+          (.str (privateToUserName name) "eq_def")
+        match env.find? original, env.getModuleIdxFor? original with
+        | some (.thmInfo o), some home =>
+          home == idx && o.type == thm.type && o.levelParams == thm.levelParams &&
+            thm.value == mkConst original (o.levelParams.map mkLevelParam)
+        | _, _ => false
+      | none => false
+    if auxiliary && (env.getModuleIdxFor? equation == env.getModuleIdxFor? name || copied) then
+      return none
+  else
+    expected := some (info.levelParams, ← unfoldStatement name info.levelParams info.value true)
+  let some (levels, statement) := expected
+    | return some s!"no recorded pre-definition of `{name}` to re-derive `{equation}` from"
+  unless thm.levelParams == levels && thm.type == statement do
+    return some s!"the statement of `{equation}` is not the unfolding of `{name}`'s \
+      pre-definition"
+  return none
+
 /-- Realize `f.eq_def` for every recursive definition among `names`: structural,
 well-founded (including `WellFounded.Nat.fix` fuel encodings), mutual and
 `partial_fixpoint` definitions. Non-recursive definitions produce nothing.
 Definitions whose equation generation throws are returned with the message, so
-a caller can report them instead of silently dropping them. -/
+a caller can report them instead of silently dropping them. A theorem that is
+not Lean's own unfolding theorem (`notGenuine`, second review R2-5) is not
+associated: its definition is returned as a failure, `equation not genuine`. -/
 def realize (env : Lean.Environment) (names : List Lean.Name)
     : IO (Lean.Environment × Array Association × Array (Lean.Name × String)) := do
   let ctx : Core.Context := { fileName := "<ix-equations>", fileMap := default, maxHeartbeats := 0 }
@@ -51,7 +132,9 @@ def realize (env : Lean.Environment) (names : List Lean.Name)
       let some (.defnInfo _) := (← getEnv).find? name | continue
       try
         if let some equation ← getUnfoldEqnFor? name then
-          found := found.push { definition := name, equation }
+          match ← notGenuine name equation with
+          | none => found := found.push { definition := name, equation }
+          | some why => failed := failed.push (name, s!"equation not genuine: {why}")
       catch error =>
         failed := failed.push (name, ← error.toMessageData.toString)
     return (found, failed)

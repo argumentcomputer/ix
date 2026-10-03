@@ -98,6 +98,11 @@ def probes : List Probe := [
     { strictProbe name false "R2-3" with reason := recursionReason },
     { probe name false "R2-3" with equations := true },
     { strictProbe name false "R2-3" with equations := true }]) ++
+  -- Review R2-5: a forged `f.eq_def` is not bound (so `f` is refused as
+  -- annotated recursion); Lean's own one is.
+  ([probe, strictProbe, plainProbe].flatMap fun mk =>
+    [{ mk "E10" false "R2-5" with equations := true, reason := recursionReason },
+     { mk "E12" true "R2-5" with equations := true }]) ++
   -- Review R2-2: an annotated partial (opaque) definition is native: refused
   -- unless assumed; an unannotated one compiles.
   [{ standardProbe "V10" false "R2-2" with reason := nativeReason },
@@ -281,6 +286,21 @@ private def checkedEquations : IO (Bool × Nat × Nat × Option String) := do
   finally
     IO.FS.removeDirAll directory
 
+/-- Second review R2-5: `Equations.realize` associates a definition only with
+Lean's own unfolding theorem. E10's forged `cnt.eq_def` (`cnt xs u = cnt xs
+u`, added by a metaprogram) is reported as `equation not genuine` and not
+associated; E12's genuine one is. -/
+private def genuineEquations : IO (Bool × Nat × Nat × Option String) := do
+  let env ← getCompileEnv #[fixtureModule]
+  let forged := fixtureModule ++ `E10.cnt
+  let honest := fixtureModule ++ `E12.cnt
+  let (_, found, failed) ← Ix.Compile.Equations.realize env [forged, honest]
+  let refused := failed.any fun (name, message) =>
+    name == forged && (message.splitOn "equation not genuine").length > 1
+  let bound := found.any (·.definition == honest) && !found.any (·.definition == forged)
+  if refused && bound then return (true, 1, 0, none)
+  return (false, 0, 1, some s!"forged refused {refused}, genuine bound only {bound}: {failed}")
+
 /-- A no-break space (U+00A0). -/
 def nbsp : String := String.singleton (Char.ofNat 0xa0)
 
@@ -331,6 +351,8 @@ def suite : List TestSeq := [
     checkedEquations .done,
   .individualIO "generated directives cannot be smuggled into a written profile" none
     smuggledDirectives .done,
+  .individualIO "only Lean's own unfolding theorem is associated with a definition" none
+    genuineEquations .done,
   test "a written profile may not contain generated directives"
     ((Ix.Compile.ResourceProfile.checkWritten "cases\ncase List.casesOn\n").toOption.isNone &&
      (Ix.Compile.ResourceProfile.checkWritten "cases\nequation dup dup_eq\n").toOption.isNone &&

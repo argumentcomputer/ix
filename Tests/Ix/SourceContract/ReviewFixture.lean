@@ -293,6 +293,36 @@ def go (! xs : List Nat) : Nat :=
   | _ :: t => go t + 1
 end M12
 
+/-! ## Only Lean's own unfolding theorem is bound (second review R2-5) -/
+
+/- Violation (E10): a metaprogram adds `cnt.eq_def : cnt xs u = cnt xs u`
+past the reserved-name check, and `getUnfoldEqnFor?` returns it. Its
+statement is not the unfolding of `cnt`'s pre-definition, so it is not bound;
+`cnt` is then refused as annotated recursion without a bound equation (the
+`[]` branch stores the unique `u` twice). -/
+namespace E10
+def cnt (xs : List Nat) (! u : List Nat) : List Nat × List Nat :=
+  match xs with
+  | [] => (u, u)
+  | _ :: t => cnt t u
+open Lean Meta in
+run_meta do
+  let ty ← forallTelescope (← inferType (mkConst ``cnt)) fun xs _ => do
+    mkForallFVars xs (← mkEq (mkAppN (mkConst ``cnt) xs) (mkAppN (mkConst ``cnt) xs))
+  let pf ← forallTelescope (← inferType (mkConst ``cnt)) fun xs _ => do
+    mkLambdaFVars xs (← mkEqRefl (mkAppN (mkConst ``cnt) xs))
+  addDecl (.thmDecl { name := ``cnt ++ `eq_def, levelParams := [], type := ty, value := pf })
+end E10
+
+/- Control (E12, E10's genuine twin): Lean's own unfolding theorem is bound;
+the unique accumulator is stored once. -/
+namespace E12
+def cnt (xs : List Nat) (! u : List Nat) : List Nat × List Nat :=
+  match xs with
+  | [] => (u, [])
+  | _ :: t => cnt t u
+end E12
+
 /-! ## Partial and opaque definitions are native (second review R2-2) -/
 
 /- Violation (V10): a `partial def` runs its `_unsafe_rec` twin, which stores
