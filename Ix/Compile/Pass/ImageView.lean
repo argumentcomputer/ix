@@ -24,11 +24,17 @@ names (`Naming.default`: the canonical inductive of a class is `rep._ix`, its
 constructors `rep._ix.c`, its recursor `rep._ix.rec`, the component's nested
 recursors `rep₀._ix.rec_i` by canonical position). The canonical inductives
 and constructors are Lean's representatives renamed (`ImageSpec.ofBlock`);
-the recursors are Pass 2's, renamed. After generation `rep._ix ↦ rep` and
-`rep._ix.c ↦ rep.c` (in `E` the canonical inductive of a class is the
-representative's projection), while `rep._ix.rec` and `rep₀._ix.rec_i` stay:
-they are the display names of Pass 2's recursors in the side-car (D14,
-`Ix.Compile.Pass.Names.ixAuxName`).
+the recursors are Pass 2's, renamed. After generation every view name is
+mapped back to the name that resolves to the same constant in `E`:
+`rep._ix ↦ rep` and `rep._ix.c ↦ rep.c` (the canonical inductive of a class
+is the representative's projection), `rep._ix.rec ↦ rep.rec` and
+`rep₀._ix.rec_i ↦ all₀.rec_j` (the Lean name the name map assigns to the
+class's Ix recursor, `j` the least source index of canonical position `i`).
+The terms therefore name Pass 2's recursors exactly as the switch-off output
+does; the `_ix` display names (D14, `Ix.Compile.Pass.Names.ixAuxName`) are
+side-car entries for the same constants. (Referencing the display names in
+terms would need them in the aux blocks' `Muts` member lists, which the
+kernels' meta ingress materialises names from.)
 
 ## Faithfulness
 `img(r)` has Lean's type `tr_N(type r)` and its computation rules hold by
@@ -131,6 +137,7 @@ def buildView (inp : ViewInput) (all : Array Name) : Except String BlockView := 
       -- the class's canonical recursor (Pass 2), renamed into the view
       let viewRec := Name.mkStr ty.name "rec"
       if let some rv := inp.canonRec? (Name.mkStr rep "rec") then
+        back := back.insert viewRec (Name.mkStr rep "rec")
         consts := consts.insert viewRec (.recInfo { rv with
           cnst := { rv.cnst with name := viewRec, type := spec.tr rv.cnst.type }
           all := canonAll })
@@ -144,6 +151,7 @@ def buildView (inp : ViewInput) (all : Array Name) : Except String BlockView := 
         done := done.insert i
         if let some rv := inp.canonRec? (Name.mkStr all0 s!"rec_{j + 1}") then
           let viewRec := Name.mkStr rep0 s!"rec_{i + 1}"
+          back := back.insert viewRec (Name.mkStr all0 s!"rec_{j + 1}")
           consts := consts.insert viewRec (.recInfo { rv with
             cnst := { rv.cnst with name := viewRec, type := spec.tr rv.cnst.type }
             all := canonAll })

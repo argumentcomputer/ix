@@ -397,7 +397,11 @@ def auxGenSeedNames : Array Name := Id.run do
     Mirrors `precompile_aux_gen_prereqs` (env.rs:1036-1140). -/
 def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
     : Except String DriverAcc := Id.run do
-  let seedReps := auxGenSeedNames.filterMap (blocks.lowLinks.get? ·)
+  -- Pass 3: images pack with `And` at Prop motives (`PProd` and `True` are
+  -- seeds already), so it must precede every block whose rewrite uses it.
+  let seeds := if acc₀.cenv.pass3 then auxGenSeedNames.push (Name.mkStr .mkAnon "And")
+    else auxGenSeedNames
+  let seedReps := seeds.filterMap (blocks.lowLinks.get? ·)
   if seedReps.isEmpty then
     return .ok acc₀
   -- Iterative DFS post-order over the condensed graph (env.rs:1063-1097).
@@ -877,6 +881,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
+    (pass3? : Option Bool := none)
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
   let totalBlocks := blocks.blocks.size
   -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
@@ -885,7 +890,9 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     | .error e => return .error e
 
   -- Pass 3, the faithful rewrite (`IX_PASS3=images`); off by default.
-  let pass3 := Ix.Compile.Pass.switchOn (← IO.getEnv Ix.Compile.Pass.switchVar)
+  let pass3 ← match pass3? with
+    | some b => pure b
+    | none => pure (Ix.Compile.Pass.switchOn (← IO.getEnv Ix.Compile.Pass.switchVar))
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
   let p3BlockRefs := if pass3 then blocks.blockRefs else {}
@@ -1085,6 +1092,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (resourceProfile : Option Ix.Resource.Profile := none)
+    (pass3? : Option Bool := none)
     : IO (Except String LeanPipelineOut) := do
   let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
   for (name, source) in consts do
@@ -1208,7 +1216,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
   match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg
-      nameByHash with
+      nameByHash pass3? with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
     let t ← tick "compile" t
@@ -1242,23 +1250,25 @@ canonicalization, then validate resources and erased types before emission. -/
 def compileLeanInput (input : Ix.Compile.CompileInput)
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (resourceProfile : Option Ix.Resource.Profile := none)
+    (pass3? : Option Bool := none) :
     IO (Except String LeanPipelineOut) := do
   let constants ← match input.prepare with
     | .ok constants => pure constants
     | .error error => return .error error
-  compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile
+  compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile pass3?
 
 /-- Compile an isolated source list, extracting its checked occurrence records. -/
 def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (resourceProfile : Option Ix.Resource.Profile := none)
+    (pass3? : Option Bool := none) :
     IO (Except String LeanPipelineOut) := do
   let input ← match Ix.Compile.CompileInput.fromAnnotations consts with
     | .ok input => pure input
     | .error error => return .error (toString error)
-  compileLeanInput input rustRef numWorkers dbg resourceProfile
+  compileLeanInput input rustRef numWorkers dbg resourceProfile pass3?
 
 /-- Native compiler entrypoint with an explicitly committed resource profile. -/
 @[extern "rs_compile_env_to_ixon_profile"]
