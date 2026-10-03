@@ -217,7 +217,7 @@ def cases : Array Case := #[
   ⟨"unique move in each alternative", arr (b .linear .unique) .unique,
     lam (b .linear .unique) (choose 10 (v 0) (v 0)), "ok"⟩,
   ⟨"alternative move prevents later use", arr (b .many .unique) .unique,
-    lam (b .many .unique) (bind (b .affine .unique) (choose 10 (v 0) zero) (v 1)), "moved"⟩,
+    lam (b .many .unique) (bind (b .affine .unique) (choose 10 (v 0) (v 0)) (v 1)), "moved"⟩,
   ⟨"partial selection is not an ordinary function", arr (b .many),
     lam (b .many) (call 6 (v 0)), "unsupported"⟩,
   ⟨"selection cannot bypass its rule through a callback", arr (b .many) .shared natTy (choiceType .shared),
@@ -528,6 +528,20 @@ def freezeCases : Array Case := #[
     lam (b .many) (ref 22) resTy, "ok"⟩,
   ⟨"a constructor as a function value is not fresh", arr (b .many) .unique resTy (arr (b .many) .shared resTy boxTy),
     lam (b .many) (ref 23) resTy, "ownership"⟩,
+  -- Literals and closed constructions are static data, shared (strict
+  -- setting S1); a construction is fresh only through a run-time local.
+  ⟨"a literal is shared, not fresh", arr (b .many) .unique resTy natTy,
+    lam (b .many) zero resTy, "ownership"⟩,
+  ⟨"a string literal is shared, not fresh", arr (b .many) .unique resTy natTy,
+    lam (b .many) (.str 0) resTy, "ownership"⟩,
+  ⟨"a literal fills a shared position", arr (b .many) .shared resTy natTy,
+    lam (b .many) zero resTy, "ok"⟩,
+  ⟨"a closed constructor application is static, not fresh", arr (b .many) .unique resTy boxTy,
+    lam (b .many) (call 23 (ref 30)) resTy, "ownership"⟩,
+  ⟨"a field computed from a run-time local makes a construction fresh", arr (b .many) .unique resTy boxTy,
+    lam (b .many) (call 23 (call 12 (v 0))) resTy, "ok"⟩,
+  ⟨"a one-field constructor of a type without a known block is not fresh",
+    arr (b .many) .unique chainTy chainTy, lam (b .many) (call 27 (v 0)) chainTy, "ownership"⟩,
   -- Plain-data owners can be borrowed.
   ⟨"a plain-data owner may be borrowed", arr (b .linear .unique) .unique boxTy boxTy,
     lam (b .linear .unique) (bind (b .affine) (borrow (v 0) (ref 30) .many boxTy) (v 1) resTy) boxTy, "ok"⟩,
@@ -579,7 +593,7 @@ def strictCases : Array Case := #[
   ⟨"a dead beta-redex argument is still evaluated", resToRes (b .linear .unique) .unique,
     lam (b .linear .unique) (.app (lam (b .many) (v 1) resTy) (call 33 (v 0))) resTy, "moved"⟩,
   ⟨"a beta-redex argument is not re-evaluated under a closure", arr (b .many) .unique natTy boxTy,
-    .app (lam (b .many) (lam (b .many) (v 1) natTy) boxTy) (call 23 (ref 30)), "capture"⟩,
+    .app (lam (b .many) (lam (b .many) (v 1) natTy) boxTy) (ref 22), "capture"⟩,
   ⟨"a closure argument is built once, before the body", resToRes (b .linear .unique) .unique,
     lam (b .linear .unique) (.app (lam (b .many) (v 1) (arr (b .many) .shared natTy resTy))
       (lam (b .many) (call 33 (v 1)) natTy)) resTy, "capture"⟩,
@@ -676,7 +690,9 @@ def runContractMatrix : IO Nat := do
       let some result := ValueContract.ofBits? resultCode.toUInt8
         | throw <| IO.userError "invalid generated result code"
       let body := if input.uses == .erased then zero else v 0
-      let allowed := input.uses == .erased ||
+      -- An erased input leaves the literal `0`, which is shared: it satisfies
+      -- every shared result and no unique one.
+      let allowed := if input.uses == .erased then result.owned == .shared else
         ((input.value.owned == .unique || result.owned == .shared) &&
          (input.value.locality == .unrestricted || result.locality == .local))
       unless (runCase (arr input result) (lam input body)).toOption.isSome == allowed do

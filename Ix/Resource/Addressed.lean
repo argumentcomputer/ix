@@ -451,6 +451,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   let mut groups : Array (Array Address) := #[]
   let mut fieldSpecs : Array (Address × Address × Nat × Nat) := #[]
   let mut recursorSpecs : Array (Address × Ixon.Recursor) := #[]
+  let mut constructorSpecs : Array (Address × Nat) := #[]
   let mut axioms : Array Address := #[]
   for (address, _) in entries do
     let constant := constants[address]!
@@ -490,6 +491,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
             pending := pending.push ⟨ctorAddr, constant, addresses,
               { type := ctor.typ, kind := if ctor.isUnsafe then .assumption else .constructor }, #[]⟩
             group := group.push ctorAddr
+            constructorSpecs := constructorSpecs.push (ctorAddr, ind.params.toNat)
             if !ind.isUnsafe && !ctor.isUnsafe && ind.indices == 0 && ind.ctors.size == 1 then
               fieldSpecs := fieldSpecs.push (member, ctorAddr, ind.params.toNat, ctor.fields.toNat)
           if ind.isUnsafe then
@@ -584,6 +586,9 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   program := { program with equations }
   let caseDefinitions ← resolveList profile.caseDefinitions
   program := { program with caseDefinitions, axioms := ← resolveList axioms }
+  let constructors ← constructorSpecs.mapM fun (address, params) => do
+    return (← index indices address, params)
+  program := { program with constructors }
   for (typeAddr, ctorAddr, params, count) in fieldSpecs do
     if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) params count then
       program := { program with fields := program.fields ++ derived }

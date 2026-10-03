@@ -693,6 +693,7 @@ pub fn prepare(
   let mut groups = vec![];
   let mut field_specs = vec![];
   let mut recursor_specs: Vec<(Address, Recursor)> = vec![];
+  let mut constructor_specs: Vec<(Address, u64)> = vec![];
   let mut axioms: Vec<Address> = vec![];
   for (address, _) in &entries {
     let constant = &constants[address];
@@ -818,6 +819,7 @@ pub fn prepare(
                   vec![],
                 );
                 group.push(ctor_addr.clone());
+                constructor_specs.push((ctor_addr.clone(), ind.params));
                 if !ind.is_unsafe
                   && !ctor.is_unsafe
                   && ind.indices == 0
@@ -1007,6 +1009,16 @@ pub fn prepare(
   let case_definitions = resolve(&profile.case_definitions)?;
   program.case_definitions = case_definitions.clone();
   program.axioms = resolve(&axioms)?;
+  program.constructors = constructor_specs
+    .iter()
+    .map(|(address, params)| {
+      Ok((
+        index(&indices, address)?,
+        usize::try_from(*params)
+          .map_err(|_error| "resource adapter: parameter count overflow")?,
+      ))
+    })
+    .collect::<Result<_, String>>()?;
   for (typ, ctor, params, count) in field_specs {
     if let Ok(derived) = fields(
       &program,

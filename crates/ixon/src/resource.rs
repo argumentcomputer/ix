@@ -159,6 +159,10 @@ pub struct Program {
   /// adapter recognizes those three by address): an unfolding equation whose
   /// proof depends on one (`sorryAx`, any user axiom) is not admitted.
   pub axioms: Vec<u64>,
+  /// Parameter counts of constructors `(constructor, params)`: the leading
+  /// arguments of a constructor application that are its inductive type's
+  /// parameters, not fields. A constructor that is absent has none.
+  pub constructors: Vec<(u64, usize)>,
 }
 
 /// The shape of an addressed recursor of a single, non-mutual inductive type,
@@ -1536,13 +1540,179 @@ impl<'a> Checker<'a> {
       _ => true,
     })
   }
+  /// The parameter count of a constructor (`Program::constructors`; `0` when
+  /// the program records none).
+  fn constructor_params(&self, index: u64) -> usize {
+    self
+      .program
+      .constructors
+      .iter()
+      .find(|(i, _)| *i == index)
+      .map_or(0, |(_, params)| *params)
+  }
+  /// The arguments of `head` applied to `args` that are run-time values: not
+  /// a constructor's parameters, and not of a type-former or proposition
+  /// domain (types and proofs are erased).
+  fn runtime_arguments(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    head: &Term,
+    args: &[Term],
+  ) -> Result<Vec<Term>, Error> {
+    let params = match head.as_ref() {
+      Expr::Ref(i, _) => {
+        if self.declaration(*i)?.kind == DeclKind::Constructor {
+          self.constructor_params(*i)
+        } else {
+          0
+        }
+      },
+      _ => 0,
+    };
+    let mut typ = self.type_of(fuel, ctx, head)?;
+    let mut result = vec![];
+    for (k, arg) in args.iter().enumerate() {
+      let (_, _, domain, codomain) = self.arrow(fuel, &typ)?;
+      if k >= params
+        && !self.type_former(fuel, 16, &domain)?
+        && !self.is_proposition(fuel, ctx, &domain)?
+      {
+        result.push(arg.clone());
+      }
+      typ = self.substitute(fuel, &codomain, arg, 0)?;
+    }
+    Ok(result)
+  }
+  /// Whether evaluating `e` depends on a run-time local: a variable of the
+  /// context whose type is neither a type former nor a proposition, reached
+  /// only through run-time positions (a projected value, the head of an
+  /// application, or a run-time argument, see `runtime_arguments`). Anything
+  /// else (a constant, a literal, a type, a binder form) conservatively does
+  /// not.
+  fn runtime_local(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    e: &Term,
+  ) -> Result<bool, Error> {
+    let fuel = self.tick(fuel)?;
+    let e = self.unshare(fuel, e)?;
+    match e.as_ref() {
+      Expr::Var(i) => {
+        let n = usize::try_from(*i).map_err(|_error| Error::Budget)?;
+        let pos = ctx
+          .vars
+          .len()
+          .checked_sub(n)
+          .and_then(|v| v.checked_sub(1))
+          .ok_or(Error::Unbound(n))?;
+        let typ = self.binding(ctx.vars[pos])?.value.typ.clone();
+        let typ =
+          self.shift(fuel, &typ, i.checked_add(1).ok_or(Error::Budget)?, 0)?;
+        if self.type_former(fuel, 16, &typ)? {
+          return Ok(false);
+        }
+        Ok(!self.is_proposition(fuel, ctx, &typ)?)
+      },
+      Expr::Prj(_, _, value) => self.runtime_local(fuel, ctx, value),
+      Expr::App(..) => {
+        let (head, args) = self.split_app(fuel, &e)?;
+        if self.runtime_local(fuel, ctx, &head)? {
+          return Ok(true);
+        }
+        for arg in self.runtime_arguments(fuel, ctx, &head, &args)? {
+          if self.runtime_local(fuel, ctx, &arg)? {
+            return Ok(true);
+          }
+        }
+        Ok(false)
+      },
+      _ => Ok(false),
+    }
+  }
+  /// Whether a constructor's type may have it as its only constructor, as
+  /// far as the program's addressed blocks show (a type without a known
+  /// block counts as one).
+  fn single_constructor(
+    &mut self,
+    fuel: usize,
+    index: u64,
+  ) -> Result<bool, Error> {
+    let d = self.declaration(index)?.clone();
+    let Some(t) = self.result_head(fuel, &d.typ)? else { return Ok(true) };
+    let ti = usize::try_from(t).unwrap_or(usize::MAX);
+    let Some(group) =
+      self.program.groups.iter().find(|g| g.contains(&ti)).cloned()
+    else {
+      return Ok(true);
+    };
+    let mut count = 0usize;
+    for c in group {
+      let Some(cd) = self.program.declarations.get(c).cloned() else {
+        return Ok(true);
+      };
+      if cd.kind == DeclKind::Constructor
+        && self.result_head(fuel, &cd.typ)? == Some(t)
+      {
+        count += 1;
+      }
+    }
+    Ok(count <= 1)
+  }
+  /// Whether a full application of constructor `index` is a fresh object,
+  /// unique at every evaluation:
+  /// - a constructor with no run-time field (only parameters, types and
+  ///   proofs) is an immediate: it has no heap cell, so it is unique (Lean
+  ///   and Compilatr represent it as a scalar; named assumption);
+  /// - a constructor with exactly one run-time field whose type may have
+  ///   only this constructor is represented by that field (Lean's trivial
+  ///   structures, Compilatr's unboxed single-field structures): it
+  ///   allocates nothing, so it is not fresh;
+  /// - otherwise it is fresh only when a run-time field depends on a
+  ///   run-time local (`runtime_local`). A closed construction (`[1, 2, 3]`,
+  ///   `.node .nil .nil`) is static data that a consumer may materialize
+  ///   once (closed-term extraction), like a literal: it is not fresh.
+  ///
+  /// Anything the bounded inference cannot type is not fresh.
+  fn fresh_construction(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    head: &Term,
+    index: u64,
+    args: &[Term],
+  ) -> Result<bool, Error> {
+    let before = self.state.bindings.clone();
+    let result: Result<bool, Error> = (|| {
+      let fields = self.runtime_arguments(fuel, ctx, head, args)?;
+      if fields.is_empty() {
+        return Ok(true);
+      }
+      if fields.len() == 1 && self.single_constructor(fuel, index)? {
+        return Ok(false);
+      }
+      for field in &fields {
+        if self.runtime_local(fuel, ctx, field)? {
+          return Ok(true);
+        }
+      }
+      Ok(false)
+    })();
+    self.state.bindings = before;
+    match result {
+      Ok(fresh) => Ok(fresh),
+      Err(Error::Budget) => Err(Error::Budget),
+      Err(_) => Ok(false),
+    }
+  }
   /// Whether a strict argument may be substituted into a lambda telescope
   /// because evaluating it has no effect: a variable (a place; its reads are
   /// charged where it is used), a sort or `∀`, a constant that is not a
   /// nullary constructor (no allocation), a closed lambda (it captures and
   /// moves nothing), or a type or proof (erased computation). Literals,
-  /// constructor applications, nullary constructors (fresh values) and every
-  /// other computation are not.
+  /// constructor applications, nullary constructors (values `analyze`
+  /// classifies as fresh or static) and every other computation are not.
   fn substitutable(
     &mut self,
     fuel: usize,
@@ -2045,7 +2215,7 @@ impl<'a> Checker<'a> {
         }
         let d = self.declaration(*i)?.clone();
         let typ = self.interface_type(*i)?;
-        // A nullary constructor is a fresh value: unique.
+        // A nullary constructor is an immediate (no heap cell): unique.
         if d.kind == DeclKind::Constructor && self.arity(fuel, &d.typ)? == 0 {
           let duplicable = self.is_shareable(fuel, &typ)?;
           let freezable =
@@ -2059,9 +2229,13 @@ impl<'a> Checker<'a> {
         return Err(Error::Unsupported("unresolved recursive reference"));
       },
       Expr::Sort(_) | Expr::All(..) => Value::fresh(Expr::sort(0)),
-      Expr::Nat(_) => Value::fresh(Self::literal_type(&self.program.nat_type)?),
+      // A literal is static data (a consumer may keep one persistent object
+      // for it): shared, never fresh.
+      Expr::Nat(_) => {
+        Value::shared(Self::literal_type(&self.program.nat_type)?)
+      },
       Expr::Str(_) => {
-        Value::fresh(Self::literal_type(&self.program.string_type)?)
+        Value::shared(Self::literal_type(&self.program.string_type)?)
       },
       Expr::Lam(input, domain, body) => {
         let (result, codomain) = match &expected {
@@ -2254,14 +2428,16 @@ impl<'a> Checker<'a> {
       },
       Expr::App(f, a) => {
         let (head, args) = self.split_app(fuel, e)?;
-        // A fully applied constructor allocates a fresh value: unique,
-        // whatever its declared result contract (named assumption: the
-        // consumer allocates it anew, never as a shared static object).
+        // A fully applied constructor that allocates (`fresh_construction`)
+        // is a fresh value: unique, whatever its declared result contract
+        // (named assumption: the consumer allocates it anew at each
+        // evaluation).
         let fresh = match head.as_ref() {
           Expr::Ref(i, _) => {
             let d = self.declaration(*i)?.clone();
             d.kind == DeclKind::Constructor
               && args.len() == self.arity(fuel, &d.typ)?
+              && self.fresh_construction(fuel, ctx, &head, *i, &args)?
           },
           _ => false,
         };
@@ -3641,11 +3817,15 @@ mod tests {
           body: Some(Expr::lam_contract(input, nat(), body)),
           kind: DeclKind::Definition,
         });
-        let allowed = input.uses == Uses::Erased
-          || ((input.value.owned == Owned::Unique
-            || result.owned == Owned::Shared)
+        // An erased input leaves the literal `0`, which is shared: it
+        // satisfies every shared result and no unique one.
+        let allowed = if input.uses == Uses::Erased {
+          result.owned == Owned::Shared
+        } else {
+          (input.value.owned == Owned::Unique || result.owned == Owned::Shared)
             && (input.value.locality == Locality::Unrestricted
-              || result.locality == Locality::Local));
+              || result.locality == Locality::Local)
+        };
         assert_eq!(
           check_definition(&p, index, Limits::default()).is_ok(),
           allowed,

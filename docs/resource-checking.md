@@ -87,10 +87,38 @@ holds nothing finite-use or unique — may enter a shared position as its last
 use (a *freeze*): the owner is moved, so any later use, unique or shared, is
 rejected. A pair `(xs, xs)` of a unique list is therefore still rejected (the
 second use finds the owner moved). Functions, type parameters and abstract
-types never freeze. A fully applied constructor allocates a fresh value, which
-is unique whatever the constructor's declared result contract (a nullary
-constructor and a literal likewise); this rests on a named assumption below:
-a consumer must not substitute a shared static object for it. A plain-data owner may be
+types never freeze.
+
+A literal (`.nat`, `.str`) is static data: a consumer may keep one persistent
+object for it, so it is shared, never fresh, and cannot enter a unique (`!`)
+position (`SharedToUnique`); a unique value needs an explicit copy. Lean
+elaborates numerals, scientific literals, characters, string interpolation
+and array literals into calls (`OfNat.ofNat`, `OfScientific.ofScientific`,
+`Char.ofNat`, `toString`/`++`, `List.toArray`), whose results are the
+ordinary shared results of those functions. A fully applied constructor is
+classified by its *run-time fields* — the arguments after the inductive
+type's parameters whose domain is neither a type former nor a proposition:
+
+- with no run-time field (`Nat.zero`, `[]`, `none`, `.leaf`), it is an
+  immediate: it has no heap cell (Lean and Compilatr represent it as a
+  scalar), so it is unique;
+- with exactly one run-time field, of a type that may have only this
+  constructor (a single-constructor type, or one whose block the program
+  does not show), it is represented by that field (Lean's trivial
+  structures, Compilatr's unboxed single-field structures such as `Subtype`
+  and `Fin`): it allocates nothing and takes its declared result contract
+  (shared);
+- otherwise it allocates a cell, which is *fresh* — unique whatever the
+  constructor's declared result contract — only when a run-time field
+  depends on a run-time local (a variable of the definition whose type is
+  neither a type former nor a proposition, reached through projections,
+  application heads and run-time arguments): `x :: acc`, `.node r k l`,
+  `[x]`. A closed construction (`[1, 2, 3]`, `.node .nil .nil`, `some 3`)
+  is static data, like a literal, which a consumer may extract as a
+  persistent closed term: shared.
+
+Freshness rests on a named assumption below: a consumer must allocate a
+fresh construction anew at each evaluation. A plain-data owner may be
 borrowed: the loan suspends it as it does a shareable one, and the view's
 origins keep it inside the loan.
 
@@ -211,7 +239,7 @@ closures; the consumer must compile them the same way:
   it has no effect: a variable, a type or proof (erased computation), a sort,
   a constant that is not a nullary constructor, or a closed lambda (which
   captures and moves nothing). Any other argument — literals, constructor
-  applications and nullary constructors (fresh values), lambdas with free
+  applications and nullary constructors (fresh or static values), lambdas with free
   variables (closures that capture), every other computation — is bound by a
   `let` with the binder's own contract, so it is analysed exactly once,
   before the body, whether or not the binder occurs, as a strict consumer
@@ -269,21 +297,31 @@ Some rules rest on facts about the consumer that the checker cannot see. Each
 is stated here and in the header of the Lean core profile; a consumer relying
 on resource admission must establish it.
 
-- **A fresh value is a new object.** A fully applied constructor, a nullary
-  constructor reference and a literal are fresh: the checker treats every
-  evaluation of one as a new object referenced nowhere else, so its result
-  is unique whatever the constructor's declared result contract (R20; this
-  is what lets `x :: acc` or `.node r k l` be returned as `!`). The consumer
-  must allocate such a value anew at each evaluation that reaches a unique
-  position: it must not replace it by a shared static object (hoisting,
-  common-subexpression elimination, float-out, closed-term extraction,
-  persistent literal objects), or else it must keep the run-time exclusivity
-  check before any in-place update of it. Lean's own compiler extracts
-  closed terms and string literals into persistent objects and relies on
-  that run-time check; a consumer that skips the check because a contract
-  says `!` must not do the same. Making the checker independent of this
-  assumption would mean treating fresh results as shared, which would reject
-  most unique results (`x :: acc`, `[]`, `.node …`); that is not done.
+- **A fresh construction is a new object.** Literals and closed
+  constructions are shared (static data), so they need no assumption. A
+  construction with a run-time field that depends on a run-time local is
+  fresh: the checker treats every evaluation of it as a new object
+  referenced nowhere else, so its result is unique (this is what lets
+  `x :: acc` or `.node r k l` be returned as `!`). The consumer must
+  allocate it anew at each evaluation that reaches a unique position: it
+  must not share one object between evaluations (common-subexpression
+  elimination of two constructions, float-out or full laziness out of a
+  closure or loop, or inlining a local and then extracting the now closed
+  term), or else it must keep the run-time exclusivity check before any
+  in-place update of it. The construction must also be a cell of its own:
+  the checker counts a one-run-time-field constructor as unboxed only when
+  the program shows no other constructor of its type, so a consumer that
+  unboxes a constructor the checker counts as a cell (for example one of a
+  multi-constructor type) must not rely on admission. Making the checker
+  independent of this assumption would mean treating every construction as
+  shared, which would reject all unique results (`x :: acc`, `.node …`).
+- **A constructor without run-time fields is an immediate.** `Nat.zero`,
+  `[]`, `none` (a constructor whose arguments are only parameters, types
+  and proofs) are unique: they have no heap cell, so uniqueness grants
+  nothing to update or free. The consumer must represent such a value
+  without a heap object, as Lean and Compilatr do (a scalar), or allocate it
+  anew; it must not use a shared static object that a `!` consumer could
+  free or reuse.
 - **The linearity of a shareable immediate has no run-time meaning.** A value
   of a profile-shareable type (`Nat`, `Bool`, `String`, the scalar types of
   the core profile) is copied across call and closure boundaries; a `1` or
@@ -426,7 +464,8 @@ accepted and rejected terms in both implementations; `resource-modes.tsv`
 covers usage crossing, proofs and open field rules, `resource-cases.tsv`
 case splits, case wrappers, beta-redexes and choices,
 `resource-equations.tsv` checking through unfolding equations,
-`resource-freeze.tsv` freezing, fresh constructors and plain-data borrows,
+`resource-freeze.tsv` freezing, fresh constructors, literals and static
+constructions, and plain-data borrows,
 `resource-strict.tsv` strict arguments of calls and beta-redexes against
 by-need alternatives of bound case definitions, and `resource-fields.tsv`
 case-split fields as views of the major and joins without an expected

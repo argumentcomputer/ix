@@ -52,7 +52,7 @@ linear use in both alternatives	ok	911520002000	81052000732006601010
 linear missing in one alternative	usage	911520002000	81052000732006601060
 affine use in one alternative	ok	911620002000	81062000732006601060
 unique move in each alternative	ok	910120002000	8101200073200a601010
-alternative move prevents later use	moved	910320002000	81032000a002200073200a60106011
+alternative move prevents later use	moved	910320002000	81032000a002200073200a60101011
 partial selection is not an ordinary function	unsupported	911720002000	8107200071200610
 selection cannot bypass its rule through a callback	unsupported	941720001520001620001620002000	810720002006
 branch analysis follows a shared application head	ok	911520002000	8105200073b1601010

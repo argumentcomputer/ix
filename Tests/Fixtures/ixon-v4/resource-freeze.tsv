@@ -8,5 +8,13 @@ a unique value of an abstract type is not frozen	capture	9113200b200b	8103200b10
 a fresh constructor result is unique	ok	9107200b2015	8107200b71201710
 a fresh nullary constructor is unique	ok	9107200b2015	8107200b2016
 a constructor as a function value is not fresh	ownership	9207200b17200b2015	8107200b2017
+# Literals and closed constructions are static data, shared (strict setting
+# S1); a construction is fresh only through a run-time local.
+a literal is shared, not fresh	ownership	9107200b2000	8107200b60
+a string literal is shared, not fresh	ownership	9107200b2000	8107200b50
+a literal fills a shared position	ok	9117200b2000	8107200b60
+a closed constructor application is static, not fresh	ownership	9107200b2015	8107200b712017201e
+a field computed from a run-time local makes a construction fresh	ok	9107200b2015	8107200b71201771200c10
+a one-field constructor of a type without a known block is not fresh	ownership	910720192019	8107201971201b10
 a plain-data owner may be borrowed	ok	910120152015	81012015a006200ba20f201510201e11
 a borrowed plain-data owner cannot move during the loan	loan	910120152015	81012015a20f20151011

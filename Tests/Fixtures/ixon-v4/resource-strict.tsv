@@ -6,6 +6,6 @@ an unbound match-shaped definition is an ordinary call	moved	9201200b172015200b	
 a bound case definition takes its alternatives by need	ok	9201200b172015200b	8201200b0720157320231081072000712021128107200b71202112
 an unbound copy of a case definition takes closures	capture	9201200b172015200b	8201200b0720157320241081072000712021128107200b71202112
 a dead beta-redex argument is still evaluated	moved	9101200b200b	8101200b718107200b1171202110
-a beta-redex argument is not re-evaluated under a closure	capture	910720002015	718207201507200011712017201e
+a beta-redex argument is not re-evaluated under a closure	capture	910720002015	7182072015072000112016
 a closure argument is built once, before the body	capture	9101200b200b	8101200b71810791172000200b118107200071202111
 a closed lambda argument is substituted	ok	9101200b200b	8101200b7181079117200b200b7110118107200b10

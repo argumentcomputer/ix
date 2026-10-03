@@ -8,12 +8,19 @@
 #
 # Named assumptions (docs/resource-checking.md, "Named assumptions"); a
 # consumer relying on admission under this profile must establish them:
-# - A fully applied constructor, a nullary constructor and a literal are
-#   fresh: the checker treats each evaluation as a new, unique object. The
-#   consumer must allocate it anew at each evaluation that reaches a unique
-#   position -- never replace it by a shared static object (no hoisting,
-#   CSE, float-out or closed-term extraction of such a value), or else keep
-#   the run-time exclusivity check before any in-place update of it.
+# - A fresh construction is a new object. Literals and closed constructions
+#   (`[1, 2, 3]`) are shared static data and need no assumption; a
+#   constructor application with a run-time field that depends on a run-time
+#   local (`x :: acc`) is treated as a new, unique object at each
+#   evaluation. The consumer must allocate it anew at each evaluation that
+#   reaches a unique position -- no CSE, float-out, or extraction after
+#   inlining of such a value -- and keep it a cell of its own (the checker
+#   counts a one-field constructor as unboxed only for single-constructor
+#   types), or else keep the run-time exclusivity check before any in-place
+#   update of it.
+# - A constructor without run-time fields (`Nat.zero`, `[]`, `none`) is an
+#   immediate, unique: the consumer represents it without a heap object (a
+#   scalar, as Lean and Compilatr do), never as a shared static object.
 # - The linearity of a shareable immediate has no run-time meaning: a `1` or
 #   `&` contract on a Nat, Bool, String, Char or UIntN value bounds how often
 #   the program names it, not a resource the consumer relies on. (Uniqueness

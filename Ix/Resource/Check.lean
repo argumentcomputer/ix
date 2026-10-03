@@ -122,6 +122,10 @@ structure Program where
   adapter recognizes those three by address): an unfolding equation whose
   proof depends on one (`sorryAx`, any user axiom) is not admitted. -/
   axioms : Array UInt64 := #[]
+  /-- Parameter counts of constructors `(constructor, params)`: the leading
+  arguments of a constructor application that are its inductive type's
+  parameters, not fields. A constructor that is absent has none. -/
+  constructors : Array (UInt64 × Nat) := #[]
   deriving BEq, Repr, Inhabited
 
 structure Context where
@@ -698,12 +702,114 @@ def closedAt (program : Program) : Nat → Nat → Ixon.Expr → CheckM Bool
     | .prj _ _ v => closedAt program fuel depth v
     | _ => return true
 
+/-- The parameter count of a constructor (`Program.constructors`; `0` when
+the program records none). -/
+def constructorParams (program : Program) (index : UInt64) : Nat :=
+  match program.constructors.find? (·.1 == index) with
+  | some (_, params) => params
+  | none => 0
+
+/-- The arguments of `head` applied to `args` that are run-time values: not
+a constructor's parameters, and not of a type-former or proposition domain
+(types and proofs are erased). -/
+def runtimeArguments (fuel : Nat) (ctx : Context) (head : Ixon.Expr) (args : List Ixon.Expr) :
+    CheckM (Array Ixon.Expr) := do
+  let params ← match head with
+    | .ref index _ => do
+      let d ← declaration ctx.program index
+      pure (if d.kind == .constructor then constructorParams ctx.program index else 0)
+    | _ => pure 0
+  let mut type ← typeOf fuel ctx head
+  let mut result := #[]
+  let mut k := 0
+  for arg in args do
+    let (_, _, domain, codomain) ← arrow ctx.program fuel type
+    if k ≥ params then
+      unless ← typeFormer ctx.program fuel 16 domain do
+        unless ← isProposition fuel ctx domain do
+          result := result.push arg
+    type ← substitute ctx.program fuel codomain arg 0
+    k := k + 1
+  return result
+
+/-- Whether evaluating `e` depends on a run-time local: a variable of the
+context whose type is neither a type former nor a proposition, reached only
+through run-time positions (a projected value, the head of an application,
+or a run-time argument, see `runtimeArguments`). Anything else — a constant,
+a literal, a type, a binder form — conservatively does not. -/
+def runtimeLocal : Nat → Context → Ixon.Expr → CheckM Bool
+  | 0, _, _ => throw .budget
+  | fuel + 1, ctx, e => do
+    tick
+    match ← unshare ctx.program fuel e with
+    | .var index =>
+      let n := index.toNat
+      if n >= ctx.vars.size then throw (.unbound n)
+      let b ← binding ctx.vars[ctx.vars.size - 1 - n]!
+      let type ← shift ctx.program fuel b.value.type (n + 1) 0
+      if ← typeFormer ctx.program fuel 16 type then return false
+      return !(← isProposition fuel ctx type)
+    | .prj _ _ value => runtimeLocal fuel ctx value
+    | application@(.app ..) =>
+      let (head, args) ← splitApp ctx.program fuel application []
+      if ← runtimeLocal fuel ctx head then return true
+      for arg in ← runtimeArguments fuel ctx head args do
+        if ← runtimeLocal fuel ctx arg then return true
+      return false
+    | _ => return false
+
+/-- Whether a constructor's type may have it as its only constructor, as far
+as the program's addressed blocks show (a type without a known block counts
+as one). -/
+def singleConstructor (program : Program) (fuel : Nat) (index : UInt64) : CheckM Bool := do
+  let d ← declaration program index
+  let some t ← resultHead program fuel d.type | return true
+  let some group := program.groups.find? (·.contains t.toNat) | return true
+  let mut count := 0
+  for c in group do
+    let some cd := program.declarations[c]? | return true
+    if cd.kind == .constructor then
+      if (← resultHead program fuel cd.type) == some t then count := count + 1
+  return count ≤ 1
+
+/-- Whether a full application of constructor `index` is a fresh object,
+unique at every evaluation:
+- a constructor with no run-time field (only parameters, types and proofs)
+  is an immediate — it has no heap cell, so it is unique (Lean and Compilatr
+  represent it as a scalar; named assumption);
+- a constructor with exactly one run-time field whose type may have only
+  this constructor is represented by that field (Lean's trivial structures,
+  Compilatr's unboxed single-field structures): it allocates nothing, so it
+  is not fresh;
+- otherwise it is fresh only when a run-time field depends on a run-time
+  local (`runtimeLocal`). A closed construction (`[1, 2, 3]`, `.node .nil
+  .nil`) is static data that a consumer may materialize once (closed-term
+  extraction), like a literal: it is not fresh.
+Anything the bounded inference cannot type is not fresh. -/
+def freshConstruction (fuel : Nat) (ctx : Context) (head : Ixon.Expr) (index : UInt64)
+    (args : List Ixon.Expr) : CheckM Bool := do
+  let before ← get
+  let result ← tryCatch (do
+      let fields ← runtimeArguments fuel ctx head args
+      if fields.isEmpty then return true
+      if fields.size == 1 then
+        if ← singleConstructor ctx.program fuel index then return false
+      for field in fields do
+        if ← runtimeLocal fuel ctx field then return true
+      return false)
+    fun error => match error with
+      | .budget => throw .budget
+      | _ => pure false
+  modify fun s => { s with bindings := before.bindings }
+  return result
+
 /-- Whether a strict argument may be substituted into a lambda telescope
 because evaluating it has no effect: a variable (a place; its reads are
 charged where it is used), a sort or `∀`, a constant that is not a nullary
 constructor (no allocation), a closed lambda (it captures and moves nothing),
 or a type or proof (erased computation). Literals, constructor applications,
-nullary constructors (fresh values) and every other computation are not. -/
+nullary constructors (values `analyze` classifies as fresh or static) and
+every other computation are not. -/
 def substitutable (ctx : Context) (fuel : Nat) (arg domain : Ixon.Expr) : CheckM Bool := do
   match ← unshare ctx.program fuel arg with
   | .var _ | .sort _ | .all .. => return true
@@ -800,7 +906,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           throw (.unsupported "selection primitives cannot escape as function values")
         let d ← declaration ctx.program idx
         let type ← interfaceType ctx.program idx
-        -- A nullary constructor is a fresh value: unique.
+        -- A nullary constructor is an immediate (no heap cell): unique.
         if d.kind == .constructor && (← arity ctx.program fuel d.type) == 0 then
           let duplicable ← isShareable ctx.program fuel type
           let freezable ← if duplicable then pure false else plainData ctx.program fuel type
@@ -808,8 +914,10 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         else pure { type }
       | .recur .. => throw (.unsupported "unresolved recursive reference")
       | .sort _ | .all .. => pure { type := .sort 0, owned := .unique }
-      | .nat _ => pure { type := ← literalType ctx.program.natType, owned := .unique }
-      | .str _ => pure { type := ← literalType ctx.program.stringType, owned := .unique }
+      -- A literal is static data (a consumer may keep one persistent object
+      -- for it): shared, never fresh.
+      | .nat _ => pure { type := ← literalType ctx.program.natType }
+      | .str _ => pure { type := ← literalType ctx.program.stringType }
       | .lam input domain body => do
         let (result, codomain) ← match expected with
           | some (type, _) => do
@@ -936,13 +1044,17 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
       | .app fn arg => do
         let (head, arguments) ← splitApp ctx.program fuel e []
         let args := arguments.toArray
-        -- A fully applied constructor allocates a fresh value: unique,
-        -- whatever its declared result contract (named assumption: the
-        -- consumer allocates it anew, never as a shared static object).
+        -- A fully applied constructor that allocates (`freshConstruction`)
+        -- is a fresh value: unique, whatever its declared result contract
+        -- (named assumption: the consumer allocates it anew at each
+        -- evaluation).
         let fresh ← match head with
           | .ref index _ => do
             let d ← declaration ctx.program index
-            if d.kind == .constructor then pure (args.size == (← arity ctx.program fuel d.type))
+            if d.kind == .constructor then
+              if args.size == (← arity ctx.program fuel d.type) then
+                freshConstruction fuel ctx head index arguments
+              else pure false
             else pure false
           | _ => pure false
         let ordinary : CheckM Value := do
