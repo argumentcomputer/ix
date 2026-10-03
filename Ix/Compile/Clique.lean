@@ -11,6 +11,7 @@
   * `Telescope`: the fixed-parameter telescope in the first member's order
     (O13b);
   * `WF`: well-founded recursion (§5.1);
+  * `Whnf`: the small weak-head reducer that types paths into `below`;
   * `Structural`: structural recursion (§5.3);
   * `PartialFixpoint`: `partial_fixpoint` (§5.2), with the regeneration (G);
   * `Transport`: the interface, the fallbacks and the causes it records.
