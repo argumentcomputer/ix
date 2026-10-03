@@ -88,7 +88,7 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     | .thmInfo val => cs := cs.push (MutConst.fromTheoremVal val)
     | .recInfo val => cs := cs.push (.recr val)
     | _ => continue
-  let sortedClasses ← sortConsts cs.toList
+  let sortedClasses := orderRecursorFamily (← sortConsts cs.toList)
   let blockResult ← compileMutualBlock sortedClasses
   -- Alpha-collapsed standalone (single non-inductive class): Rust
   -- returns BEFORE the Muts registration and the aux tail

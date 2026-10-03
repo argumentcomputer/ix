@@ -3203,8 +3203,11 @@ fn roundtrip_block(
 
   let first_name = consts[0].name();
   let refs: Vec<&LeanMutConst> = consts.iter().collect();
-  let sorted_classes = sort_consts(&refs, &mut cache, stt)
+  let mut sorted_classes = sort_consts(&refs, &mut cache, stt)
     .map_err(|e| AuxGenError::recompile(&first_name, "sort_consts", e))?;
+  // A recursor block is laid out in its family's flat order, as the
+  // compile of Lean's own form lays it out (`order_recursor_family`).
+  crate::compile::order_recursor_family(&mut sorted_classes);
   let mut_ctx = LeanMutConst::ctx(&sorted_classes);
 
   // Mirror the production compile paths (`compile_single_def`, the

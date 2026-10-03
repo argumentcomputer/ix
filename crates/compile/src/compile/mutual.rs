@@ -9,7 +9,13 @@
 //!
 //! 2. **`generate_and_compile_aux_recursors`**: Orchestrates the full aux_gen
 //!    pipeline: generates canonical patches (recursors, `.below`, `.brecOn`),
-//!    then compiles each phase's output via `compile_aux_block`.
+//!    then compiles each phase's output: the recursor family (and the
+//!    Prop `.below` inductive family with its `.below.rec`) as one block,
+//!    laid out in the inductive block's flat order as the kernel requires,
+//!    and every definition (`casesOn`, `recOn`, `below`, `brecOn`, `.go`,
+//!    `.eq`, `.below.casesOn`) as its own constant, packed into a block only
+//!    when several genuinely form a strongly connected component
+//!    (`aux_components`; D6, one constant per auxiliary).
 
 use std::sync::Arc;
 
@@ -26,6 +32,8 @@ use crate::compile::{
   compile_inductive, compile_mutual_block, compile_name, compile_recursor,
   preseed_expr_tables, sort_consts,
 };
+use crate::condense::compute_sccs;
+use crate::graph::{NameSet, RefMap, collect_expr_references};
 use crate::mutual::{Def, Ind, MutConst, ctx_to_all};
 use ix_common::address::Address;
 use ix_common::env::{
@@ -64,6 +72,116 @@ pub fn compile_aux_block(
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(), CompileError> {
   compile_aux_block_with_rename(aux_consts, lean_env, stt, kctx, None, None)
+}
+
+/// The names a `MutConst` refers to (types, values, constructor types,
+/// rule right-hand sides), by the reference graph's rule
+/// (`graph::collect_expr_references`).
+fn mut_const_references(c: &MutConst) -> NameSet {
+  let mut acc = NameSet::default();
+  let mut visited = rustc_hash::FxHashSet::default();
+  match c {
+    MutConst::Defn(d) => {
+      collect_expr_references(&d.typ, &mut visited, &mut acc);
+      collect_expr_references(&d.value, &mut visited, &mut acc);
+    },
+    MutConst::Recr(r) => {
+      collect_expr_references(&r.cnst.typ, &mut visited, &mut acc);
+      for rule in &r.rules {
+        acc.insert(rule.ctor.clone());
+        collect_expr_references(&rule.rhs, &mut visited, &mut acc);
+      }
+    },
+    MutConst::Indc(i) => {
+      collect_expr_references(&i.ind.cnst.typ, &mut visited, &mut acc);
+      for ctor in &i.ctors {
+        acc.insert(ctor.cnst.name.clone());
+        collect_expr_references(&ctor.cnst.typ, &mut visited, &mut acc);
+      }
+    },
+  }
+  acc
+}
+
+/// The strongly connected components of a set of auxiliaries under their
+/// references to one another, in dependency order (a component comes after
+/// every component it refers to; ties by least member name).
+///
+/// D6, one constant per auxiliary: a component of one member is compiled as a
+/// standalone constant, and only a genuine cycle is packed into a block.
+/// Lean declares every `casesOn`, `recOn`, `below` definition and
+/// `brecOn`/`.go`/`.eq` as its own non-mutual definition, so their components
+/// are singletons; the order only matters for a member that refers to another
+/// member of the same batch.
+pub fn aux_components(consts: &[MutConst]) -> Vec<Vec<MutConst>> {
+  let by_name: FxHashMap<Name, &MutConst> =
+    consts.iter().map(|c| (c.name(), c)).collect();
+  let mut refs = RefMap::default();
+  for c in consts {
+    let r: NameSet = mut_const_references(c)
+      .into_iter()
+      .filter(|n| by_name.contains_key(n) && *n != c.name())
+      .collect();
+    refs.insert(c.name(), r);
+  }
+  let condensed = compute_sccs(&refs);
+  // Components keyed by representative; dependency order by repeated
+  // selection of the ready components, least member name first.
+  let mut comps: Vec<(Name, Vec<Name>)> = condensed
+    .blocks
+    .iter()
+    .map(|(root, members)| {
+      let mut ms: Vec<Name> = members.iter().cloned().collect();
+      ms.sort_by_key(|n| n.pretty());
+      (root.clone(), ms)
+    })
+    .collect();
+  comps.sort_by_key(|(_, ms)| ms[0].pretty());
+  let mut done: rustc_hash::FxHashSet<Name> = rustc_hash::FxHashSet::default();
+  let mut out: Vec<Vec<MutConst>> = Vec::with_capacity(comps.len());
+  while !comps.is_empty() {
+    let pos = comps
+      .iter()
+      .position(|(root, _)| {
+        condensed.block_refs.get(root).is_none_or(|deps| {
+          deps.iter().all(|d| {
+            condensed.low_links.get(d).is_some_and(|r| done.contains(r))
+          })
+        })
+      })
+      .unwrap_or(0);
+    let (root, ms) = comps.remove(pos);
+    done.insert(root);
+    // Keep the input order of the members inside a component.
+    let set: rustc_hash::FxHashSet<&Name> = ms.iter().collect();
+    out.push(
+      consts.iter().filter(|c| set.contains(&c.name())).cloned().collect(),
+    );
+  }
+  out
+}
+
+/// Compile a batch of auxiliaries one strongly connected component at a time
+/// (`aux_components`): each singleton component becomes a standalone
+/// constant, a genuine cycle one block.
+pub fn compile_aux_components(
+  aux_consts: &[MutConst],
+  lean_env: &Arc<LeanEnv>,
+  stt: &CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+  name_rename: Option<&FxHashMap<Name, Name>>,
+) -> Result<(), CompileError> {
+  for comp in aux_components(aux_consts) {
+    compile_aux_block_with_rename(
+      &comp,
+      lean_env,
+      stt,
+      kctx,
+      name_rename,
+      None,
+    )?;
+  }
+  Ok(())
 }
 
 /// Like `compile_aux_block`, but applies an optional name-rename map when
@@ -833,7 +951,7 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !cases_on_defs.is_empty() {
-    compile_aux_block(&cases_on_defs, lean_env, stt, kctx)?;
+    compile_aux_components(&cases_on_defs, lean_env, stt, kctx, None)?;
   }
   let cases_elapsed = t2.elapsed();
 
@@ -857,7 +975,7 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !rec_on_defs.is_empty() {
-    compile_aux_block(&rec_on_defs, lean_env, stt, kctx)?;
+    compile_aux_components(&rec_on_defs, lean_env, stt, kctx, None)?;
   }
   let rec_on_elapsed = t3.elapsed();
   // Phase 3: Compile .below inductives (Prop-level).
@@ -943,13 +1061,12 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !below_defs.is_empty() {
-    compile_aux_block_with_rename(
+    compile_aux_components(
       &below_defs,
       lean_env,
       stt,
       kctx,
       Some(&aux_name_rename),
-      None,
     )?;
   }
   let below_elapsed = t4.elapsed();
@@ -974,13 +1091,12 @@ pub fn generate_and_compile_aux_recursors(
       })
       .collect();
     if !defs.is_empty() {
-      compile_aux_block_with_rename(
+      compile_aux_components(
         &defs,
         lean_env,
         stt,
         kctx,
         Some(&aux_name_rename),
-        None,
       )?;
     }
   }
@@ -1306,7 +1422,7 @@ fn compile_below_recursors(
     }
   }
   if !below_cases.is_empty() {
-    compile_aux_block(&below_cases, lean_env, stt, kctx)?;
+    compile_aux_components(&below_cases, lean_env, stt, kctx, None)?;
   }
   Ok(())
 }

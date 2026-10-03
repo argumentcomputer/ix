@@ -2143,6 +2143,44 @@ def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) := do
   | .ok (classes, _) => pure classes
   | .error e => throw (.invalidMutualBlock s!"sortConsts: {e}")
 
+/-- The declared flat position of a recursor in its family: `X.rec` of the
+`i`-th member of `RecursorVal.all` is at `i`, and the nested auxiliary
+recursor `all[0].rec_N` at `all.size + N - 1` (`u64::MAX` otherwise).
+Mirrors Rust `recursor_family_position`. -/
+def recursorFamilyPosition (r : RecursorVal) : UInt64 :=
+  match r.cnst.name with
+  | .str parent "rec" _ =>
+    match r.all.findIdx? (· == parent) with
+    | some i => UInt64.ofNat i
+    | none => 0xFFFFFFFFFFFFFFFF
+  | .str parent s _ =>
+    match (s.dropPrefix? "rec_").bind (·.toString.toNat?) with
+    | some k =>
+      if k ≥ 1 && r.all[0]? == some parent then UInt64.ofNat (r.all.size + k - 1)
+      else 0xFFFFFFFFFFFFFFFF
+    | none => 0xFFFFFFFFFFFFFFFF
+  | _ => 0xFFFFFFFFFFFFFFFF
+
+/-- A block of recursors is laid out in its family's flat order (the
+order the kernel pairs with the inductive block's flat members), not in
+`sortConsts` order; other blocks are returned unchanged. The regenerated
+families get this from `compileAuxBlockWithRename`'s class-order key; this
+applies the same rule to a recursor block compiled from Lean's own
+declarations (`Named.original`, decompile's verification recompile), so
+that on a block canonicalisation leaves unchanged Lean's form and the Ix
+form of each recursor have one address (D6). Stable. Mirrors Rust
+`order_recursor_family`. -/
+def orderRecursorFamily (classes : List (List MutConst)) : List (List MutConst) :=
+  if classes.isEmpty || !classes.all (·.all fun c => c matches .recr _) then classes
+  else
+    let key (cls : List MutConst) : UInt64 := cls.foldl (init := 0xFFFFFFFFFFFFFFFF)
+      fun acc c => match c with
+        | .recr r => min acc (recursorFamilyPosition r)
+        | _ => acc
+    let decorated := classes.toArray.zipIdx.map fun (cls, i) => (key cls, i, cls)
+    let sorted := decorated.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)
+    (sorted.map (·.2.2)).toList
+
 /-! ## Constant Building -/
 
 /-- Expressions rewritten by production sharing for one mutual member, in
@@ -3250,7 +3288,7 @@ def collectMutConsts : List Name → Array MutConst →
 /-- Resolve, canonically classify, and compile a non-singleton SCC. -/
 def compileMutualConstants (all : Set Name) : CompileM BlockResult := do
   let consts ← collectMutConsts all.toList #[]
-  let mutConsts ← sortConsts consts.toList
+  let mutConsts := orderRecursorFamily (← sortConsts consts.toList)
   compileMutualBlock mutConsts
 
 /-- Compile a constant by name (looks it up in the environment).

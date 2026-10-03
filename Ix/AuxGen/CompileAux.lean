@@ -12,6 +12,11 @@
   2. `generateAndCompileAuxRecursors` (mutual.rs:511): the full aux_gen
      pipeline — generate patches, then compile recursors, `.casesOn`,
      `.recOn`, `.below`, `.below.rec`, and `.brecOn` (3 batches).
+     The recursor family and the Prop `.below` inductive family (with
+     its `.below.rec`) are one block each; every definition is its own
+     constant, packed into a block only when several form a strongly
+     connected component (`compileAuxComponents`; D6, one constant per
+     auxiliary).
 
   State model: Rust mutates the global `CompileState`
   (`stt.env.store_const` / `stt.env.register_name` /
@@ -58,6 +63,7 @@ public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.Patches
 public import Ix.AuxGen.Surgery
+public import Ix.Compile.Canon.Graph
 public section
 
 namespace Ix.AuxGen
@@ -358,6 +364,67 @@ def compileAuxBlock (auxConsts : Array MutConst) (maps : AddrMaps)
     : KBridgeM Unit :=
   compileAuxBlockWithRename auxConsts maps none none
 
+/-- The names a `MutConst` refers to (types, values, constructor types,
+    rule right-hand sides), by the reference graph's rule
+    (`Canon.refsExpr`). Mirrors Rust `mut_const_references`. -/
+def mutConstReferences : MutConst → Std.HashSet Name
+  | .defn d => Ix.Compile.Canon.refsExpr d.value (Ix.Compile.Canon.refsExpr d.type)
+  | .recr r => r.rules.foldl (init := Ix.Compile.Canon.refsExpr r.cnst.type)
+      fun acc rule => Ix.Compile.Canon.refsExpr rule.rhs (acc.insert rule.ctor)
+  | .indc i => i.ctors.foldl (init := Ix.Compile.Canon.refsExpr i.type)
+      fun acc c => Ix.Compile.Canon.refsExpr c.cnst.type (acc.insert c.cnst.name)
+
+/-- The strongly connected components of a set of auxiliaries under their
+    references to one another, in dependency order (a component comes
+    after every component it refers to; ties by least member name).
+
+    D6, one constant per auxiliary: a component of one member is compiled
+    as a standalone constant, and only a genuine cycle is packed into a
+    block. Lean declares every `casesOn`, `recOn`, `below` definition and
+    `brecOn`/`.go`/`.eq` as its own non-mutual definition, so their
+    components are singletons. Mirrors Rust `aux_components`. -/
+def auxComponents (consts : Array MutConst) : Except String (Array (Array MutConst)) := do
+  let names := consts.map (·.name)
+  let nameSet : Std.HashSet Name := names.foldl (·.insert ·) {}
+  let refsOf : Std.HashMap Name (Std.HashSet Name) := consts.foldl (init := {}) fun m c =>
+    m.insert c.name ((mutConstReferences c).filter fun n => nameSet.contains n && n != c.name)
+  let some comps := Ix.Compile.Canon.sccsOf names (fun n => refsOf.getD n {})
+    | throw "auxComponents: Tarjan fuel exhausted"
+  let compOf : Std.HashMap Name Nat := comps.zipIdx.foldl (init := {}) fun m (c, i) =>
+    c.foldl (fun m n => m.insert n i) m
+  let deps : Array (Std.HashSet Nat) := comps.zipIdx.map fun (c, i) =>
+    c.foldl (init := {}) fun s n =>
+      (refsOf.getD n {}).fold (init := s) fun s r =>
+        match compOf.get? r with
+        | some j => if j != i then s.insert j else s
+        | none => s
+  let label (i : Nat) : String :=
+    (comps[i]!.map (·.pretty)).foldl (init := "") fun acc s =>
+      if acc.isEmpty || s < acc then s else acc
+  let mut pending : Array Nat := (Array.range comps.size).qsort (label · < label ·)
+  let mut done : Std.HashSet Nat := {}
+  let mut out : Array (Array MutConst) := #[]
+  for _ in [0:comps.size] do
+    let pos := (pending.findIdx? fun i => deps[i]!.toList.all done.contains).getD 0
+    let i := pending[pos]!
+    pending := pending.eraseIdx! pos
+    done := done.insert i
+    let members : Std.HashSet Name := comps[i]!.foldl (·.insert ·) {}
+    out := out.push (consts.filter fun c => members.contains c.name)
+  return out
+
+/-- Compile a batch of auxiliaries one strongly connected component at a
+    time (`auxComponents`): each singleton component becomes a standalone
+    constant, a genuine cycle one block. Mirrors Rust
+    `compile_aux_components`. -/
+def compileAuxComponents (auxConsts : Array MutConst) (maps : AddrMaps)
+    (nameRename : Option (Std.HashMap Name Name)) : KBridgeM Unit := do
+  let comps ← match auxComponents auxConsts with
+    | .ok cs => pure cs
+    | .error e => liftM (throw (.invalidMutualBlock e) : CompileM _)
+  for comp in comps do
+    compileAuxBlockWithRename comp maps nameRename none
+
 /-! ## Alias registration (mutual.rs:420) -/
 
 /-- Register Lean-source aux names as aliases of already-compiled
@@ -616,7 +683,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
             safety := defSafety d.isUnsafe
             all := #[] })
   if !belowCases.isEmpty then
-    compileAuxBlock belowCases maps
+    compileAuxComponents belowCases maps none
 
 /-! ## generateAndCompileAuxRecursors (mutual.rs:511) -/
 
@@ -814,7 +881,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !casesOnDefs.isEmpty then
-    compileAuxBlock casesOnDefs maps
+    compileAuxComponents casesOnDefs maps none
 
   -- Phase 2c: Compile .recOn definitions (arg-reordered .rec wrapper),
   -- after .rec (mutual.rs:761-783).
@@ -833,7 +900,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !recOnDefs.isEmpty then
-    compileAuxBlock recOnDefs maps
+    compileAuxComponents recOnDefs maps none
 
   -- Phase 3: Compile .below inductives (Prop-level); all .below names
   -- first for the mutual `all` field (mutual.rs:784-816).
@@ -896,7 +963,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !belowDefs.isEmpty then
-    compileAuxBlockWithRename belowDefs maps (some auxNameRename) none
+    compileAuxComponents belowDefs maps (some auxNameRename)
 
   -- Phase 5: Compile .below.rec for Prop-level .below inductives
   -- (mutual.rs:847-852).
@@ -914,7 +981,7 @@ source-indexed aux name")
             out := out.push (brecOnToMutConst d)
       return out
     if !defs.isEmpty then
-      compileAuxBlockWithRename defs maps (some auxNameRename) none
+      compileAuxComponents defs maps (some auxNameRename)
 
   liftM (registerAuxAliases auxOut.aliases
     s!"{blockLabel}/final" : CompileM _)
