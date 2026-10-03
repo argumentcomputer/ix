@@ -672,10 +672,10 @@ unclassified {mismatch.size}; changed blocks skipped: {(if surgeryLine.isEmpty t
     phase 6). -/
 def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharing.Exact.Limits)
     (ungrounded : Std.HashSet Ix.Name := {}) :
-    PhaseResult × Array String := Id.run do
+    PhaseResult × Array String × Array String := Id.run do
   if ch.blocks.isEmpty then
     return (.skipped (if ch.unknown.isEmpty then "no changed block with `_ix` names (switch off, or no block changed)"
-      else s!"display members without a Lean block: {showNames ch.unknown}"), #[])
+      else s!"display members without a Lean block: {showNames ch.unknown}"), #[], #[])
   -- a block Pass 2 refused (its compile failed, phase 1) has no images to check
   let live := ch.blocks.filter fun all =>
     !(all.any ungrounded.contains) && !((Ix.Compile.Pass.imageKinds view.get? all).any ungrounded.contains)
@@ -731,8 +731,8 @@ def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharin
   let detail := s!"{ch.blocks.size} changed block(s) ({refused} refused by Pass 2, phase 1), {images.size} image(s) ({nRecs} of recursors), \
 {nRules} computation rule(s) by rfl; Ix.Tc (anonymous) accepts {checkAddrs.size - rejected}/{checkAddrs.size}"
   let lines := (problems.extract 0 12).map ("✗ " ++ ·)
-  if problems.isEmpty then return (.passed detail, lines)
-  return (.failed s!"{problems.size} problem(s); {detail}", lines)
+  if problems.isEmpty then return (.passed detail, lines, problems)
+  return (.failed s!"{problems.size} problem(s); {detail}", lines, problems)
 
 /-- **Phase 8, provenance.** Establishes that (i) `Named.original` of every
     image (and of every other auxiliary of a changed block) is the address
@@ -796,6 +796,50 @@ def phaseProvenance (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompil
   let lines := (violations.extract 0 12).map ("✗ " ++ ·)
   if violations.isEmpty then return (.passed detail, lines)
   return (.failed detail, lines)
+
+/-! ## The auxiliary table (`IX_VALIDATE_AUXTABLE=<path>`) -/
+
+/-- One TSV row per regenerated auxiliary and image of `env`: its name, the
+    block's status (`unchanged`, `permuted`, `split`, `collapsed`,
+    `nested-order` for a changed block whose members keep their positions,
+    `unknown`), whether its address differs from Lean's own form (the
+    recompiled form, else `Named.original`), the phase that handles it, and
+    that phase's verdict for it. The evidence table of A3v's follow-up (which
+    phase covers each auxiliary that is not identical to Lean's). -/
+def auxTableRows (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompiled)
+    (rulesProblems : Array String) (pass3 : Bool) : Array String := Id.run do
+  let mut rows : Array String := #["name\tstatus\tdiffers\tphase\tverdict"]
+  for (n, nd) in env.named do
+    if Ix.Compile.Pass.hasReserved n then continue
+    if nd.original.isNone && !ch.imageSet.contains n then continue
+    let leanAddr := (rc.addrs.get? n).orElse fun _ => nd.original.map (·.1)
+    let differs := leanAddr != some nd.addr
+    let root? := auxRoot? view n
+    let shape := match root?.bind view.get? with
+      | some (.inductInfo v) => blockShape env v.all
+      | _ => Shape.unknown
+    let changed := match root? with
+      | some r => ch.members.contains r
+      | none => false
+    let status := if changed then (if shape == .identity then "nested-order" else shape.name)
+      else if shape == .identity then "unchanged" else shape.name
+    let routed := if shape == .collapsed then "; 4: anonymous roundtrip (BB-F7 route)" else ""
+    let (phase, verdict) : String × String :=
+      if ch.imageSet.contains n then
+        let failed := rulesProblems.any fun p =>
+          p.startsWith (n.pretty ++ ":") || p.startsWith (n.pretty ++ "._ix_rule.")
+        ("7 image rules" ++ routed, if failed then "fail" else "pass")
+      else if changed then
+        let ok := match nd.original with
+          | some (oa, _) => rc.addrs.get? n == some oa
+          | none => false
+        ("8 provenance (changed-block auxiliary, not an image)" ++ routed, if ok then "pass" else "fail")
+      else if shape == .identity then
+        ("6 oracle leg" ++ routed, if differs then "exception" else "equal")
+      else if pass3 then ("6 oracle leg: changed block without `_ix` names", "fail")
+      else ("surgery path (switch off): 5 replay, 8 (iii)" ++ routed, "not re-derived")
+    rows := rows.push s!"{n.pretty}\t{status}\t{differs}\t{phase}\t{verdict}"
+  return rows
 
 /-! ## The command -/
 
@@ -1055,6 +1099,7 @@ phases 6–8 read Lean's forms from the decompiler)"
         | .ok l => pure l
         | .error e => throw (IO.userError s!"validate-lean: {e}")
       let ch := changedOf ixonEnv view
+      let mut rulesProblems : Array String := #[]
       -- one recompile of Lean's forms serves phases 6 and 8
       let t0 ← IO.monoMsNow
       let needed := ixonEnv.named.fold (init := #[]) fun acc n nd =>
@@ -1077,7 +1122,8 @@ phases 6–8 read Lean's forms from the decompiler)"
         phases ← pushPhase phases { key := "7", name := "Image rules (changed blocks)", result := .skipped "IX_SKIP_PHASES" }
       else
         let t0 ← IO.monoMsNow
-        let (r, lines) := phaseRules ixonEnv view ch limits ungrounded
+        let (r, lines, probs) := phaseRules ixonEnv view ch limits ungrounded
+        rulesProblems := probs
         phases ← pushPhase phases { key := "7", name := "Image rules (changed blocks)", result := r,
                                     ms := (← IO.monoMsNow) - t0 } lines
       if skipPhases.contains "8" then
@@ -1087,6 +1133,11 @@ phases 6–8 read Lean's forms from the decompiler)"
         let (r, lines) := phaseProvenance ixonEnv view ch rc
         phases ← pushPhase phases { key := "8", name := "Provenance", result := r,
                                     ms := (← IO.monoMsNow) - t0 } lines
+      if let some path := ← IO.getEnv "IX_VALIDATE_AUXTABLE" then
+        let rows := auxTableRows ixonEnv view ch rc rulesProblems
+          (if inputAux?.isSome then switchOn else pass3Env)
+        IO.FS.writeFile path ("\n".intercalate rows.toList ++ "\n")
+        IO.println s!"[validate-lean] auxiliary table: {rows.size - 1} row(s) to {path}"
   | _ =>
     for (k, n) in names678 do
       phases ← pushPhase phases { key := k, name := n, result := .skipped "no materialized environment" }

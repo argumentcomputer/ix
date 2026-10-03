@@ -27,6 +27,7 @@ import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.ValidateLean
+import Tests.Ix.Compile.ValidateLeanNC
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -370,6 +371,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- `ix validate-lean --local`, the Phase A validator of record, on every fixture
   -- family with the switch off and on, against its verdict table (Tests.Ix.Compile.ValidateLean).
   ("validate-lean", Tests.Ix.Compile.ValidateLean.run),
+  -- validate-lean on the non-canonical fixtures: every auxiliary that differs from
+  -- Lean's form, the phase that covers it, its match (Tests.Ix.Compile.ValidateLeanNC).
+  ("validate-lean-nc", Tests.Ix.Compile.ValidateLeanNC.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
