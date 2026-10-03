@@ -1,14 +1,17 @@
-# Frozen ix frontend handoff
+# Frozen ix frontend handoff (Ixon v4)
 
-Unchanged files from `argumentcomputer/ix`, branch `jcb/ix-compilatrix`, commit
-`0a31c8dbc63755924c645bf1afedc563e395e88a`, directory
-`Tests/Fixtures/ixon-v3/`. `README.md` and the copied license notices are
-Compilatrix packaging additions. Do not regenerate expected bytes from the
-consumer codec. The upstream handoff manifest records the original BLAKE3
-file and subject/profile/claim hashes.
+The vectors (`addressed.tsv`, `claims.tsv`, `expressions.txt`, `resource.tsv`,
+`text.tsv`), the primitive inventory `primitives.tsv` and `handoff/` are
+unchanged files from `argumentcomputer/ix`, branch `jcb/ix-certified`, commit
+`f829b76044a44a61023d0983516137147bbb12a7` (the pinned `ix-kernel`), directory
+`Tests/Fixtures/ixon-v4/`, copied by `lake exe refreeze-ixon package`.
+`README.md` and the copied license notices are Compilatrix packaging
+additions. Do not regenerate expected bytes from the consumer codec. The
+upstream handoff manifest records the original BLAKE3 file and
+subject/profile/claim hashes.
 
 Run `lake exe tests-ixon-v3` from the repository root. See
-[`docs/ixon-v3.md`](../../docs/ixon-v3.md) for admitted behavior, budgets,
+[`docs/ixon-v4.md`](../../docs/ixon-v4.md) for admitted behavior, budgets,
 the independent Aiur target pin, combined typing/resource admission, and
 remaining backend obligations. The additional `typing/` bundles have their
 own extraction provenance; they are not part of the original portable package.
@@ -21,15 +24,15 @@ chunk partition over those same primitive bytes.
 from ordinary Lean with `ix compile --equations`. The closure includes the
 realized unfolding theorem (`f.eq_def`) of every recursive definition it
 reaches, and `equations.json` names each definition/theorem pair by address.
-The producer is a local ix change on top of the pinned revision; its provenance
-records the exact revision, binary and commands.
+The producer is a local ix change on top of the pinned revision; its manifest
+(`k1/corpus.json`) records the exact revision, binary and commands.
 
 ## Src tables and diagnostics
 
 `src-tables.tsv` holds the Src front end's pinned `lazy` rows (the 28
 `@[macro_inline]` Init declarations, `Bool.or` and `Bool.and`, with their
 by-name arities) and its opaque-by-value row (`Lean.opaqueId`), transcribed
-in `Compilatrix.Src.Pinned`. `src-names.tsv` resolves a few Init names for
+in `Compilatrix.Src.Pinned` (`pin-src-tables --repin` after a refreeze). `src-names.tsv` resolves a few Init names for
 tests only; it is an untrusted oracle. [`src-diag/`](src-diag/README.md) is
 the admission-diagnostics closure, and [`src-sortpoly/`](src-sortpoly/README.md)
 the sort-polymorphism closure (level-exact relevance). All four come from

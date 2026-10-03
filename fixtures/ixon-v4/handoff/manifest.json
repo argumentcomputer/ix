@@ -1,16 +1,16 @@
-{"validator": "ixon-v3/resource-v1",
+{"validator": "ixon-v4/resource-v1",
  "subject": "f0e971f93ae7a7aa0fbf87df16a2445afdbb8d89dc0c20934cb9ae7901958269",
- "schema": "ixon-v3-handoff-1",
- "profile": "64abccc3a713372977c3f3857febbdccc7a20fb08c2a86f0bbbec6ab0e880794",
- "objectFormat": "ixon-v3",
+ "schema": "ixon-v4-handoff-1",
+ "profile": "b961b849d232f7250205507943cbc8351fc5c0a7beec0380025e3f50cf300a37",
+ "objectFormat": "ixon-v4",
  "ixvmResourceProof": false,
  "files":
  {"rejected-local-escape.ixe":
-  "b9a28e222a6deaf7fae2ca386e5f2dda91b464cf2d7e9e713b2c42bdfc6a3019",
+  "3018ef01f3ef7e176e170ba1dc259f6b799abcf71e8a4610c6073d12551caef5",
   "profile.bin":
-  "64abccc3a713372977c3f3857febbdccc7a20fb08c2a86f0bbbec6ab0e880794",
+  "b961b849d232f7250205507943cbc8351fc5c0a7beec0380025e3f50cf300a37",
   "accepted.ixe":
-  "b6d12995849c9dfdf2956653e41256a3567b1b9359148a34e1044ad4a7efff89",
+  "d32aec965df8d16ccc6818ed56e6e0a92ee823d1ab59eaaefe32d5109392fd46",
   "accepted.claim":
-  "0c770089a4c33228e1e46d8c040b8698c32fa785b5bde552664f677b45409a48"},
- "claim": "0c770089a4c33228e1e46d8c040b8698c32fa785b5bde552664f677b45409a48"}
+  "5b8c3e8ff2b39edc96a83f878d2298d95eec6b5cb6d276fad41e4be284d3c1d4"},
+ "claim": "5b8c3e8ff2b39edc96a83f878d2298d95eec6b5cb6d276fad41e4be284d3c1d4"}

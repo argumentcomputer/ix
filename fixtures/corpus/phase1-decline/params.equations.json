@@ -4,23 +4,23 @@
   "roots": [
     {
       "name": "Decline.six",
-      "address": "4ceb89594bc09d400c250edabf3a0c0f85ab03d7b48e126115fe968dd0864541"
+      "address": "08cff2eff5c6c7898218be4114fe238a759d0f76860316523eaa685815704f50"
     },
     {
       "name": "Decline.fiveAndType",
-      "address": "042b8dd03a09224d70d4c1ff80df7a1ffdb31ef6274450a659655588e4b2457b"
+      "address": "8d62b2b3ed3e42df1ed3518c56905733fc4209ef0767b8c1a33ae7f0cb1be4b6"
     },
     {
       "name": "Decline.fiveAndProof",
-      "address": "65ec4954947c2653c062b4cdb967eeb450772e765e55a3261e19dad13f81d72f"
+      "address": "8b106d022e50197f3dcf3b3f6943b5ccf124f1cb0701735d65dcff5a7f3dd7ff"
     }
   ],
   "equations": [
     {
       "definition": "Nat.add",
-      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
       "equation": "Nat.add.eq_def",
-      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
     }
   ],
   "failures": []

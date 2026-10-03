@@ -9,7 +9,7 @@ open CompilatrixTests.Src.Artifacts.Gcd
 
 set_option maxRecDepth 1000000
 
-/-- `gcd`'s entry (constant 19) erases to 13 globals rooted at `const 19`. -/
-example : facts program ann 13 19 = true := by decide +kernel
+/-- `gcd`'s entry (constant 127) erases to 13 globals rooted at `const 127`. -/
+example : facts program ann 13 127 = true := by decide +kernel
 
 end CompilatrixTests.Lam.KernelK1.Gcd

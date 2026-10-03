@@ -14,293 +14,293 @@ open Compilatrix Compilatrix.Src Compilatrix.Src.Relevance
 set_option maxRecDepth 100000
 
 /-- An address from its 32 bytes. -/
-private def addr (bs : List UInt8) : Ixon.Address :=
-  (Ixon.Address.ofBytes? ⟨bs.toArray⟩).getD default
+private def addr (bs : List UInt8) : Compilatrix.Ixon.Address :=
+  (Compilatrix.Ixon.Address.ofBytes? ⟨bs.toArray⟩).getD default
 
 noncomputable def a0 : Ixon.Address := addr [2, 1, 207, 17, 44, 128, 169, 32, 218, 175, 29, 186, 208, 247, 219, 163, 151, 224, 41, 20, 165, 148, 50, 128, 126, 189, 159, 55, 118, 75, 214, 74]
 noncomputable def a1 : Ixon.Address := addr [3, 97, 140, 79, 182, 202, 233, 231, 64, 202, 25, 152, 208, 232, 99, 134, 0, 200, 194, 93, 22, 156, 150, 218, 228, 225, 187, 70, 201, 168, 178, 122]
-noncomputable def a2 : Ixon.Address := addr [9, 29, 40, 138, 180, 96, 173, 98, 252, 118, 250, 245, 55, 121, 6, 220, 159, 184, 166, 65, 211, 232, 175, 73, 90, 14, 209, 70, 210, 138, 217, 109]
-noncomputable def a3 : Ixon.Address := addr [240, 190, 240, 85, 240, 59, 74, 166, 195, 155, 121, 129, 129, 252, 105, 255, 94, 50, 19, 81, 92, 184, 222, 211, 74, 47, 22, 246, 162, 62, 164, 95]
-noncomputable def a4 : Ixon.Address := addr [140, 192, 225, 54, 12, 27, 41, 16, 141, 171, 61, 97, 114, 231, 252, 232, 169, 170, 150, 64, 218, 164, 187, 233, 155, 161, 48, 93, 150, 35, 98, 75]
-noncomputable def a5 : Ixon.Address := addr [54, 61, 7, 17, 130, 190, 65, 78, 26, 88, 89, 155, 131, 245, 225, 159, 155, 135, 55, 35, 5, 79, 66, 135, 186, 105, 112, 90, 175, 239, 39, 218]
-noncomputable def a6 : Ixon.Address := addr [9, 221, 152, 75, 212, 180, 147, 110, 107, 238, 231, 217, 240, 39, 221, 235, 23, 3, 227, 209, 41, 103, 106, 145, 229, 131, 122, 36, 249, 133, 9, 131]
-noncomputable def a7 : Ixon.Address := addr [11, 94, 89, 63, 177, 70, 42, 135, 57, 132, 211, 33, 222, 0, 103, 94, 198, 107, 7, 59, 76, 85, 14, 29, 28, 211, 106, 22, 169, 226, 221, 253]
-noncomputable def a8 : Ixon.Address := addr [161, 35, 96, 69, 20, 10, 194, 171, 190, 21, 41, 88, 52, 132, 52, 251, 132, 73, 101, 150, 249, 252, 93, 203, 189, 88, 91, 129, 116, 196, 57, 39]
-noncomputable def a9 : Ixon.Address := addr [20, 25, 14, 30, 92, 209, 123, 243, 73, 253, 196, 225, 83, 246, 140, 169, 87, 62, 235, 39, 84, 15, 76, 82, 6, 68, 131, 158, 116, 87, 121, 60]
+noncomputable def a2 : Ixon.Address := addr [5, 199, 182, 224, 138, 234, 68, 58, 149, 61, 8, 60, 30, 231, 110, 202, 98, 58, 85, 180, 216, 170, 221, 68, 152, 250, 235, 100, 244, 23, 155, 77]
+noncomputable def a3 : Ixon.Address := addr [6, 130, 169, 187, 145, 109, 99, 25, 149, 171, 18, 87, 167, 82, 105, 228, 15, 62, 82, 43, 99, 203, 13, 117, 117, 79, 27, 182, 17, 178, 98, 154]
+noncomputable def a4 : Ixon.Address := addr [9, 29, 40, 138, 180, 96, 173, 98, 252, 118, 250, 245, 55, 121, 6, 220, 159, 184, 166, 65, 211, 232, 175, 73, 90, 14, 209, 70, 210, 138, 217, 109]
+noncomputable def a5 : Ixon.Address := addr [240, 190, 240, 85, 240, 59, 74, 166, 195, 155, 121, 129, 129, 252, 105, 255, 94, 50, 19, 81, 92, 184, 222, 211, 74, 47, 22, 246, 162, 62, 164, 95]
+noncomputable def a6 : Ixon.Address := addr [140, 192, 225, 54, 12, 27, 41, 16, 141, 171, 61, 97, 114, 231, 252, 232, 169, 170, 150, 64, 218, 164, 187, 233, 155, 161, 48, 93, 150, 35, 98, 75]
+noncomputable def a7 : Ixon.Address := addr [54, 61, 7, 17, 130, 190, 65, 78, 26, 88, 89, 155, 131, 245, 225, 159, 155, 135, 55, 35, 5, 79, 66, 135, 186, 105, 112, 90, 175, 239, 39, 218]
+noncomputable def a8 : Ixon.Address := addr [11, 94, 89, 63, 177, 70, 42, 135, 57, 132, 211, 33, 222, 0, 103, 94, 198, 107, 7, 59, 76, 85, 14, 29, 28, 211, 106, 22, 169, 226, 221, 253]
+noncomputable def a9 : Ixon.Address := addr [161, 35, 96, 69, 20, 10, 194, 171, 190, 21, 41, 88, 52, 132, 52, 251, 132, 73, 101, 150, 249, 252, 93, 203, 189, 88, 91, 129, 116, 196, 57, 39]
 noncomputable def a10 : Ixon.Address := addr [21, 82, 189, 84, 69, 166, 57, 241, 90, 253, 231, 25, 173, 73, 94, 73, 40, 27, 198, 238, 195, 105, 239, 14, 99, 135, 203, 177, 190, 110, 228, 82]
 noncomputable def a11 : Ixon.Address := addr [53, 225, 204, 128, 159, 111, 7, 101, 33, 164, 63, 133, 6, 141, 85, 146, 34, 4, 7, 192, 83, 43, 106, 8, 149, 47, 64, 216, 82, 61, 4, 188]
 noncomputable def a12 : Ixon.Address := addr [238, 178, 230, 38, 143, 246, 208, 230, 178, 233, 118, 77, 153, 64, 184, 27, 182, 75, 159, 143, 75, 19, 88, 210, 148, 255, 152, 23, 230, 148, 26, 70]
 noncomputable def a13 : Ixon.Address := addr [66, 214, 237, 49, 83, 111, 9, 88, 23, 111, 29, 201, 115, 56, 56, 8, 172, 133, 131, 34, 55, 70, 235, 202, 120, 219, 227, 137, 182, 83, 33, 166]
-noncomputable def a14 : Ixon.Address := addr [22, 207, 221, 218, 156, 39, 70, 96, 243, 145, 177, 14, 239, 224, 102, 39, 90, 255, 250, 225, 204, 212, 156, 109, 175, 67, 175, 184, 168, 10, 234, 133]
-noncomputable def a15 : Ixon.Address := addr [23, 50, 153, 199, 110, 250, 130, 230, 137, 33, 10, 9, 228, 154, 208, 156, 20, 238, 17, 8, 242, 218, 141, 53, 94, 249, 51, 59, 21, 131, 161, 213]
-noncomputable def a16 : Ixon.Address := addr [27, 127, 158, 121, 64, 65, 192, 17, 144, 70, 80, 111, 188, 27, 106, 28, 121, 124, 58, 203, 211, 232, 155, 244, 123, 239, 136, 157, 229, 162, 38, 218]
-noncomputable def a17 : Ixon.Address := addr [33, 184, 123, 171, 216, 194, 165, 52, 90, 241, 134, 171, 21, 68, 24, 175, 168, 60, 238, 191, 84, 61, 56, 163, 118, 243, 86, 192, 151, 120, 162, 61]
-noncomputable def a18 : Ixon.Address := addr [48, 55, 227, 139, 79, 144, 207, 131, 252, 153, 125, 97, 152, 58, 47, 97, 157, 115, 135, 26, 74, 6, 50, 30, 69, 126, 146, 52, 24, 132, 96, 80]
-noncomputable def a19 : Ixon.Address := addr [50, 242, 172, 147, 14, 116, 84, 169, 40, 68, 47, 88, 105, 234, 131, 149, 8, 103, 39, 203, 220, 62, 157, 236, 213, 65, 3, 84, 154, 77, 218, 100]
-noncomputable def a20 : Ixon.Address := addr [45, 252, 22, 175, 1, 184, 43, 59, 145, 194, 255, 112, 68, 9, 215, 98, 54, 168, 63, 149, 108, 12, 110, 102, 89, 166, 79, 226, 29, 118, 105, 91]
-noncomputable def a21 : Ixon.Address := addr [221, 146, 133, 172, 69, 212, 172, 133, 209, 127, 160, 211, 36, 61, 121, 9, 199, 130, 162, 162, 118, 238, 63, 176, 207, 254, 250, 154, 251, 219, 13, 225]
-noncomputable def a22 : Ixon.Address := addr [59, 221, 128, 220, 156, 145, 103, 10, 73, 69, 57, 146, 131, 200, 250, 144, 116, 111, 117, 222, 101, 218, 171, 215, 58, 64, 190, 212, 212, 177, 163, 136]
-noncomputable def a23 : Ixon.Address := addr [144, 202, 91, 207, 153, 93, 104, 215, 223, 203, 60, 124, 254, 70, 105, 134, 220, 75, 234, 164, 2, 178, 98, 202, 57, 91, 62, 83, 195, 111, 108, 173]
-noncomputable def a24 : Ixon.Address := addr [206, 48, 252, 15, 65, 53, 230, 121, 207, 59, 22, 208, 214, 103, 189, 157, 244, 231, 166, 157, 187, 129, 119, 162, 158, 92, 117, 180, 140, 76, 236, 16]
-noncomputable def a25 : Ixon.Address := addr [69, 46, 157, 43, 17, 234, 130, 185, 92, 201, 222, 137, 70, 232, 6, 148, 37, 64, 145, 12, 39, 150, 22, 99, 9, 34, 14, 210, 103, 236, 134, 122]
-noncomputable def a26 : Ixon.Address := addr [74, 91, 171, 151, 121, 127, 120, 107, 116, 163, 23, 244, 71, 119, 12, 202, 74, 206, 13, 190, 198, 97, 25, 143, 184, 24, 86, 208, 233, 215, 12, 48]
-noncomputable def a27 : Ixon.Address := addr [79, 153, 87, 29, 220, 183, 70, 21, 14, 126, 7, 183, 164, 247, 162, 82, 219, 215, 2, 250, 77, 205, 26, 216, 101, 173, 56, 40, 163, 21, 25, 226]
-noncomputable def a28 : Ixon.Address := addr [99, 227, 48, 5, 228, 70, 71, 79, 249, 169, 142, 220, 129, 47, 249, 84, 184, 240, 49, 110, 3, 162, 52, 171, 154, 4, 13, 194, 152, 241, 242, 17]
-noncomputable def a29 : Ixon.Address := addr [103, 234, 72, 246, 100, 94, 173, 198, 28, 57, 106, 83, 249, 45, 65, 85, 15, 116, 253, 123, 55, 209, 247, 118, 218, 184, 30, 43, 157, 200, 82, 240]
-noncomputable def a30 : Ixon.Address := addr [106, 210, 235, 161, 77, 137, 116, 60, 53, 254, 91, 98, 1, 130, 169, 180, 17, 56, 7, 127, 196, 142, 62, 33, 217, 255, 131, 176, 93, 213, 65, 33]
-noncomputable def a31 : Ixon.Address := addr [120, 192, 56, 5, 248, 234, 247, 211, 103, 224, 245, 121, 9, 171, 213, 102, 217, 74, 43, 235, 207, 98, 112, 254, 47, 231, 74, 249, 84, 237, 13, 0]
-noncomputable def a32 : Ixon.Address := addr [120, 244, 122, 247, 114, 87, 65, 29, 160, 45, 96, 156, 102, 100, 197, 100, 203, 62, 60, 185, 153, 71, 89, 34, 181, 0, 112, 124, 34, 77, 109, 199]
-noncomputable def a33 : Ixon.Address := addr [126, 8, 30, 243, 213, 142, 60, 213, 171, 66, 50, 211, 216, 144, 184, 115, 186, 113, 80, 205, 98, 137, 50, 70, 133, 87, 62, 251, 71, 244, 135, 32]
-noncomputable def a34 : Ixon.Address := addr [128, 13, 128, 19, 15, 177, 119, 26, 26, 78, 118, 253, 99, 195, 94, 76, 111, 9, 136, 178, 15, 73, 82, 27, 229, 225, 84, 134, 191, 46, 7, 156]
-noncomputable def a35 : Ixon.Address := addr [129, 155, 32, 93, 130, 126, 216, 1, 174, 44, 16, 223, 116, 26, 36, 65, 250, 58, 28, 159, 49, 94, 52, 206, 127, 27, 200, 243, 162, 108, 220, 158]
-noncomputable def a36 : Ixon.Address := addr [87, 37, 236, 155, 87, 31, 47, 96, 62, 242, 235, 229, 144, 227, 237, 62, 133, 119, 138, 63, 77, 207, 200, 178, 204, 121, 242, 2, 203, 120, 236, 204]
-noncomputable def a37 : Ixon.Address := addr [207, 235, 221, 252, 165, 221, 179, 59, 176, 100, 215, 6, 219, 226, 211, 113, 212, 182, 248, 164, 77, 6, 216, 243, 196, 225, 16, 221, 51, 26, 132, 57]
-noncomputable def a38 : Ixon.Address := addr [134, 159, 90, 206, 154, 210, 246, 178, 253, 200, 97, 11, 208, 168, 130, 16, 20, 110, 226, 178, 89, 166, 6, 214, 239, 73, 31, 172, 107, 231, 104, 86]
-noncomputable def a39 : Ixon.Address := addr [137, 92, 70, 72, 79, 44, 186, 97, 206, 219, 49, 12, 102, 189, 163, 49, 156, 22, 55, 176, 21, 196, 234, 167, 89, 51, 99, 188, 229, 178, 211, 124]
-noncomputable def a40 : Ixon.Address := addr [195, 125, 98, 144, 224, 15, 184, 101, 251, 93, 183, 188, 225, 143, 214, 158, 109, 22, 116, 173, 87, 55, 36, 184, 84, 102, 234, 159, 117, 120, 162, 7]
-noncomputable def a41 : Ixon.Address := addr [212, 148, 220, 96, 19, 134, 186, 142, 143, 11, 113, 31, 230, 42, 45, 96, 171, 96, 198, 72, 140, 140, 246, 206, 151, 121, 110, 188, 58, 213, 254, 251]
-noncomputable def a42 : Ixon.Address := addr [146, 50, 73, 134, 103, 247, 101, 244, 55, 222, 218, 172, 130, 142, 85, 95, 108, 198, 122, 32, 230, 219, 40, 246, 20, 253, 243, 194, 98, 113, 15, 235]
-noncomputable def a43 : Ixon.Address := addr [148, 0, 93, 3, 89, 119, 138, 139, 108, 161, 228, 142, 86, 127, 124, 110, 166, 88, 133, 226, 100, 93, 109, 228, 165, 47, 85, 54, 207, 116, 137, 114]
-noncomputable def a44 : Ixon.Address := addr [158, 87, 1, 114, 224, 140, 147, 241, 154, 103, 82, 164, 61, 135, 141, 106, 96, 133, 209, 199, 90, 253, 121, 1, 222, 221, 217, 145, 100, 44, 120, 149]
-noncomputable def a45 : Ixon.Address := addr [169, 157, 237, 187, 22, 118, 134, 106, 237, 130, 156, 61, 75, 186, 134, 163, 126, 152, 236, 98, 163, 88, 52, 56, 156, 50, 147, 126, 78, 43, 26, 74]
-noncomputable def a46 : Ixon.Address := addr [173, 28, 91, 18, 66, 8, 163, 176, 126, 15, 119, 237, 136, 120, 11, 79, 46, 18, 248, 177, 110, 160, 244, 135, 248, 123, 251, 26, 121, 199, 206, 169]
-noncomputable def a47 : Ixon.Address := addr [173, 193, 150, 73, 50, 210, 106, 19, 33, 223, 58, 105, 124, 161, 241, 14, 185, 211, 37, 220, 42, 223, 41, 167, 45, 8, 134, 75, 8, 216, 255, 25]
-noncomputable def a48 : Ixon.Address := addr [181, 178, 176, 217, 8, 179, 69, 81, 164, 20, 206, 12, 63, 213, 36, 205, 107, 134, 250, 243, 175, 14, 1, 77, 212, 108, 150, 93, 152, 17, 87, 58]
-noncomputable def a49 : Ixon.Address := addr [192, 249, 159, 60, 200, 70, 172, 234, 189, 186, 46, 179, 225, 144, 114, 0, 55, 46, 122, 75, 82, 164, 167, 51, 223, 127, 13, 48, 184, 75, 57, 120]
-noncomputable def a50 : Ixon.Address := addr [230, 235, 163, 200, 180, 209, 159, 106, 16, 118, 179, 159, 168, 154, 236, 97, 220, 203, 185, 96, 248, 61, 154, 98, 230, 172, 243, 90, 105, 201, 160, 164]
-noncomputable def a51 : Ixon.Address := addr [221, 161, 43, 203, 51, 7, 39, 246, 223, 184, 22, 188, 151, 82, 170, 189, 5, 32, 230, 81, 91, 121, 252, 138, 90, 158, 113, 56, 102, 244, 198, 62]
-noncomputable def a52 : Ixon.Address := addr [162, 154, 99, 97, 118, 207, 17, 53, 208, 119, 235, 7, 71, 152, 249, 0, 124, 120, 231, 128, 19, 131, 233, 207, 243, 99, 186, 229, 237, 240, 87, 98]
-noncomputable def a53 : Ixon.Address := addr [196, 105, 218, 66, 187, 59, 107, 41, 11, 227, 13, 94, 238, 170, 103, 232, 216, 80, 229, 187, 168, 241, 227, 60, 131, 226, 98, 159, 212, 231, 150, 221]
-noncomputable def a54 : Ixon.Address := addr [197, 117, 171, 176, 46, 253, 21, 128, 145, 53, 106, 167, 147, 200, 9, 192, 87, 15, 138, 36, 168, 167, 119, 242, 6, 169, 91, 156, 224, 184, 136, 85]
-noncomputable def a55 : Ixon.Address := addr [206, 13, 10, 44, 84, 49, 114, 91, 64, 42, 207, 250, 119, 144, 4, 61, 197, 11, 142, 105, 170, 208, 72, 97, 99, 111, 183, 89, 220, 39, 237, 104]
-noncomputable def a56 : Ixon.Address := addr [209, 5, 52, 73, 194, 23, 229, 204, 111, 194, 155, 44, 181, 156, 253, 94, 173, 56, 93, 57, 45, 0, 173, 162, 34, 29, 64, 0, 221, 167, 222, 243]
-noncomputable def a57 : Ixon.Address := addr [212, 130, 163, 153, 19, 119, 4, 125, 68, 64, 183, 130, 126, 98, 229, 245, 252, 144, 83, 215, 142, 21, 63, 153, 197, 58, 31, 155, 34, 201, 180, 117]
-noncomputable def a58 : Ixon.Address := addr [222, 123, 82, 60, 196, 71, 14, 21, 50, 138, 1, 217, 53, 152, 136, 97, 218, 223, 155, 208, 18, 36, 4, 0, 70, 77, 234, 140, 121, 169, 223, 226]
-noncomputable def a59 : Ixon.Address := addr [238, 84, 174, 140, 47, 180, 60, 79, 239, 35, 21, 200, 41, 45, 140, 246, 184, 133, 242, 37, 234, 211, 188, 26, 173, 66, 210, 22, 166, 160, 222, 33]
-noncomputable def a60 : Ixon.Address := addr [241, 131, 137, 23, 229, 170, 164, 223, 137, 193, 229, 159, 28, 66, 241, 129, 157, 218, 138, 112, 19, 42, 9, 151, 109, 194, 192, 170, 208, 42, 12, 167]
-noncomputable def a61 : Ixon.Address := addr [246, 86, 96, 199, 74, 30, 132, 6, 230, 167, 114, 231, 188, 238, 41, 243, 124, 251, 203, 161, 19, 192, 96, 46, 36, 118, 224, 166, 233, 34, 152, 24]
-noncomputable def a62 : Ixon.Address := addr [250, 121, 15, 232, 57, 123, 186, 90, 124, 69, 66, 47, 89, 229, 139, 57, 46, 198, 62, 18, 111, 43, 90, 98, 35, 237, 9, 45, 164, 164, 102, 168]
-noncomputable def a63 : Ixon.Address := addr [251, 3, 146, 7, 210, 210, 144, 100, 251, 38, 179, 92, 246, 179, 8, 114, 176, 156, 156, 67, 219, 209, 71, 155, 117, 102, 87, 83, 110, 147, 4, 21]
+noncomputable def a14 : Ixon.Address := addr [23, 50, 153, 199, 110, 250, 130, 230, 137, 33, 10, 9, 228, 154, 208, 156, 20, 238, 17, 8, 242, 218, 141, 53, 94, 249, 51, 59, 21, 131, 161, 213]
+noncomputable def a15 : Ixon.Address := addr [36, 183, 15, 65, 153, 47, 84, 55, 74, 119, 14, 36, 170, 158, 252, 234, 30, 72, 46, 231, 154, 204, 3, 245, 158, 190, 102, 159, 225, 169, 75, 182]
+noncomputable def a16 : Ixon.Address := addr [50, 172, 13, 11, 122, 180, 104, 147, 89, 127, 70, 21, 129, 18, 131, 46, 69, 102, 105, 247, 68, 39, 25, 108, 115, 146, 177, 135, 214, 218, 47, 28]
+noncomputable def a17 : Ixon.Address := addr [50, 242, 172, 147, 14, 116, 84, 169, 40, 68, 47, 88, 105, 234, 131, 149, 8, 103, 39, 203, 220, 62, 157, 236, 213, 65, 3, 84, 154, 77, 218, 100]
+noncomputable def a18 : Ixon.Address := addr [45, 252, 22, 175, 1, 184, 43, 59, 145, 194, 255, 112, 68, 9, 215, 98, 54, 168, 63, 149, 108, 12, 110, 102, 89, 166, 79, 226, 29, 118, 105, 91]
+noncomputable def a19 : Ixon.Address := addr [221, 146, 133, 172, 69, 212, 172, 133, 209, 127, 160, 211, 36, 61, 121, 9, 199, 130, 162, 162, 118, 238, 63, 176, 207, 254, 250, 154, 251, 219, 13, 225]
+noncomputable def a20 : Ixon.Address := addr [59, 221, 128, 220, 156, 145, 103, 10, 73, 69, 57, 146, 131, 200, 250, 144, 116, 111, 117, 222, 101, 218, 171, 215, 58, 64, 190, 212, 212, 177, 163, 136]
+noncomputable def a21 : Ixon.Address := addr [144, 202, 91, 207, 153, 93, 104, 215, 223, 203, 60, 124, 254, 70, 105, 134, 220, 75, 234, 164, 2, 178, 98, 202, 57, 91, 62, 83, 195, 111, 108, 173]
+noncomputable def a22 : Ixon.Address := addr [206, 48, 252, 15, 65, 53, 230, 121, 207, 59, 22, 208, 214, 103, 189, 157, 244, 231, 166, 157, 187, 129, 119, 162, 158, 92, 117, 180, 140, 76, 236, 16]
+noncomputable def a23 : Ixon.Address := addr [62, 1, 100, 105, 59, 64, 44, 213, 41, 112, 82, 202, 99, 162, 45, 190, 235, 53, 226, 124, 222, 165, 242, 159, 108, 142, 203, 229, 252, 62, 21, 242]
+noncomputable def a24 : Ixon.Address := addr [62, 167, 225, 143, 203, 183, 196, 152, 178, 164, 82, 55, 189, 166, 89, 192, 237, 201, 123, 61, 84, 164, 173, 13, 17, 188, 46, 190, 200, 12, 250, 23]
+noncomputable def a25 : Ixon.Address := addr [63, 71, 128, 249, 162, 66, 128, 224, 18, 166, 239, 86, 248, 17, 105, 96, 166, 198, 13, 163, 60, 188, 86, 222, 193, 25, 251, 191, 237, 189, 182, 67]
+noncomputable def a26 : Ixon.Address := addr [67, 40, 25, 102, 224, 87, 48, 194, 59, 58, 88, 233, 28, 125, 83, 141, 136, 38, 110, 142, 183, 243, 183, 196, 254, 158, 226, 139, 179, 15, 0, 62]
+noncomputable def a27 : Ixon.Address := addr [85, 179, 191, 20, 47, 181, 168, 7, 138, 211, 183, 81, 95, 144, 171, 35, 156, 50, 174, 4, 67, 223, 227, 131, 182, 125, 174, 111, 75, 161, 127, 197]
+noncomputable def a28 : Ixon.Address := addr [85, 205, 208, 226, 18, 230, 22, 59, 11, 225, 48, 54, 15, 21, 182, 23, 118, 217, 12, 186, 165, 145, 6, 171, 85, 229, 17, 165, 167, 106, 19, 251]
+noncomputable def a29 : Ixon.Address := addr [87, 167, 53, 35, 32, 67, 243, 33, 132, 94, 50, 178, 160, 142, 93, 54, 175, 23, 91, 174, 34, 234, 35, 34, 120, 68, 188, 69, 151, 153, 255, 69]
+noncomputable def a30 : Ixon.Address := addr [89, 117, 65, 203, 125, 21, 21, 222, 134, 24, 232, 171, 127, 127, 126, 15, 79, 86, 147, 207, 179, 234, 107, 227, 221, 28, 177, 253, 136, 145, 230, 98]
+noncomputable def a31 : Ixon.Address := addr [91, 200, 186, 175, 28, 224, 243, 100, 229, 66, 105, 233, 238, 44, 132, 68, 97, 202, 69, 3, 36, 117, 189, 206, 82, 109, 133, 255, 87, 20, 28, 101]
+noncomputable def a32 : Ixon.Address := addr [100, 244, 51, 228, 9, 216, 44, 53, 225, 232, 196, 102, 144, 99, 39, 128, 69, 176, 228, 211, 159, 96, 133, 187, 118, 108, 207, 5, 242, 137, 6, 241]
+noncomputable def a33 : Ixon.Address := addr [106, 149, 192, 227, 33, 198, 2, 207, 120, 139, 80, 38, 129, 162, 210, 115, 21, 122, 90, 6, 83, 194, 106, 247, 118, 145, 234, 131, 114, 29, 203, 93]
+noncomputable def a34 : Ixon.Address := addr [113, 116, 99, 130, 92, 85, 39, 2, 186, 25, 8, 185, 250, 93, 143, 63, 119, 134, 215, 115, 12, 99, 62, 65, 216, 211, 128, 147, 159, 238, 183, 72]
+noncomputable def a35 : Ixon.Address := addr [120, 192, 56, 5, 248, 234, 247, 211, 103, 224, 245, 121, 9, 171, 213, 102, 217, 74, 43, 235, 207, 98, 112, 254, 47, 231, 74, 249, 84, 237, 13, 0]
+noncomputable def a36 : Ixon.Address := addr [121, 148, 161, 187, 204, 53, 234, 113, 56, 2, 232, 221, 22, 225, 245, 220, 92, 16, 215, 46, 186, 198, 196, 158, 163, 104, 142, 113, 23, 35, 234, 73]
+noncomputable def a37 : Ixon.Address := addr [126, 8, 30, 243, 213, 142, 60, 213, 171, 66, 50, 211, 216, 144, 184, 115, 186, 113, 80, 205, 98, 137, 50, 70, 133, 87, 62, 251, 71, 244, 135, 32]
+noncomputable def a38 : Ixon.Address := addr [129, 155, 32, 93, 130, 126, 216, 1, 174, 44, 16, 223, 116, 26, 36, 65, 250, 58, 28, 159, 49, 94, 52, 206, 127, 27, 200, 243, 162, 108, 220, 158]
+noncomputable def a39 : Ixon.Address := addr [87, 37, 236, 155, 87, 31, 47, 96, 62, 242, 235, 229, 144, 227, 237, 62, 133, 119, 138, 63, 77, 207, 200, 178, 204, 121, 242, 2, 203, 120, 236, 204]
+noncomputable def a40 : Ixon.Address := addr [207, 235, 221, 252, 165, 221, 179, 59, 176, 100, 215, 6, 219, 226, 211, 113, 212, 182, 248, 164, 77, 6, 216, 243, 196, 225, 16, 221, 51, 26, 132, 57]
+noncomputable def a41 : Ixon.Address := addr [137, 92, 70, 72, 79, 44, 186, 97, 206, 219, 49, 12, 102, 189, 163, 49, 156, 22, 55, 176, 21, 196, 234, 167, 89, 51, 99, 188, 229, 178, 211, 124]
+noncomputable def a42 : Ixon.Address := addr [195, 125, 98, 144, 224, 15, 184, 101, 251, 93, 183, 188, 225, 143, 214, 158, 109, 22, 116, 173, 87, 55, 36, 184, 84, 102, 234, 159, 117, 120, 162, 7]
+noncomputable def a43 : Ixon.Address := addr [212, 148, 220, 96, 19, 134, 186, 142, 143, 11, 113, 31, 230, 42, 45, 96, 171, 96, 198, 72, 140, 140, 246, 206, 151, 121, 110, 188, 58, 213, 254, 251]
+noncomputable def a44 : Ixon.Address := addr [146, 50, 73, 134, 103, 247, 101, 244, 55, 222, 218, 172, 130, 142, 85, 95, 108, 198, 122, 32, 230, 219, 40, 246, 20, 253, 243, 194, 98, 113, 15, 235]
+noncomputable def a45 : Ixon.Address := addr [147, 115, 116, 237, 9, 184, 182, 47, 54, 239, 117, 240, 111, 30, 228, 109, 212, 135, 199, 169, 243, 231, 77, 185, 25, 189, 228, 139, 183, 107, 44, 198]
+noncomputable def a46 : Ixon.Address := addr [161, 125, 169, 10, 132, 125, 146, 232, 2, 77, 152, 15, 21, 33, 1, 163, 238, 143, 32, 150, 186, 166, 117, 221, 198, 203, 105, 115, 43, 45, 30, 188]
+noncomputable def a47 : Ixon.Address := addr [171, 138, 203, 87, 72, 37, 166, 210, 192, 10, 2, 100, 39, 87, 204, 144, 211, 122, 71, 133, 37, 234, 177, 95, 253, 118, 245, 48, 65, 87, 43, 112]
+noncomputable def a48 : Ixon.Address := addr [176, 177, 13, 178, 135, 1, 45, 21, 180, 105, 78, 118, 183, 137, 193, 46, 197, 228, 30, 252, 157, 184, 166, 99, 207, 215, 84, 191, 47, 196, 151, 23]
+noncomputable def a49 : Ixon.Address := addr [190, 157, 212, 157, 83, 204, 36, 101, 206, 205, 195, 209, 166, 213, 105, 252, 144, 73, 192, 56, 73, 11, 63, 130, 185, 39, 158, 48, 220, 225, 46, 180]
+noncomputable def a50 : Ixon.Address := addr [192, 249, 159, 60, 200, 70, 172, 234, 189, 186, 46, 179, 225, 144, 114, 0, 55, 46, 122, 75, 82, 164, 167, 51, 223, 127, 13, 48, 184, 75, 57, 120]
+noncomputable def a51 : Ixon.Address := addr [230, 235, 163, 200, 180, 209, 159, 106, 16, 118, 179, 159, 168, 154, 236, 97, 220, 203, 185, 96, 248, 61, 154, 98, 230, 172, 243, 90, 105, 201, 160, 164]
+noncomputable def a52 : Ixon.Address := addr [221, 161, 43, 203, 51, 7, 39, 246, 223, 184, 22, 188, 151, 82, 170, 189, 5, 32, 230, 81, 91, 121, 252, 138, 90, 158, 113, 56, 102, 244, 198, 62]
+noncomputable def a53 : Ixon.Address := addr [162, 154, 99, 97, 118, 207, 17, 53, 208, 119, 235, 7, 71, 152, 249, 0, 124, 120, 231, 128, 19, 131, 233, 207, 243, 99, 186, 229, 237, 240, 87, 98]
+noncomputable def a54 : Ixon.Address := addr [200, 50, 46, 3, 213, 88, 248, 90, 142, 220, 127, 230, 133, 36, 1, 56, 128, 173, 11, 188, 183, 220, 137, 1, 54, 210, 71, 21, 75, 35, 9, 146]
+noncomputable def a55 : Ixon.Address := addr [203, 132, 191, 250, 109, 112, 146, 163, 9, 99, 2, 20, 175, 41, 217, 236, 78, 53, 205, 94, 0, 3, 235, 156, 223, 117, 238, 72, 78, 36, 146, 91]
+noncomputable def a56 : Ixon.Address := addr [206, 13, 10, 44, 84, 49, 114, 91, 64, 42, 207, 250, 119, 144, 4, 61, 197, 11, 142, 105, 170, 208, 72, 97, 99, 111, 183, 89, 220, 39, 237, 104]
+noncomputable def a57 : Ixon.Address := addr [208, 181, 78, 3, 145, 240, 0, 22, 221, 224, 182, 15, 31, 36, 79, 104, 65, 185, 17, 34, 32, 20, 226, 96, 125, 118, 144, 14, 203, 228, 191, 157]
+noncomputable def a58 : Ixon.Address := addr [208, 251, 185, 220, 48, 9, 196, 91, 16, 214, 97, 64, 72, 221, 12, 143, 127, 166, 43, 237, 27, 131, 57, 70, 64, 59, 119, 48, 70, 109, 139, 252]
+noncomputable def a59 : Ixon.Address := addr [226, 94, 101, 45, 187, 137, 181, 227, 90, 47, 36, 47, 238, 235, 72, 46, 81, 100, 226, 84, 85, 25, 67, 11, 61, 9, 70, 223, 255, 235, 63, 98]
+noncomputable def a60 : Ixon.Address := addr [248, 28, 25, 95, 83, 35, 31, 11, 61, 143, 111, 208, 136, 195, 72, 14, 249, 171, 205, 195, 91, 196, 66, 224, 118, 62, 46, 129, 151, 174, 129, 48]
+noncomputable def a61 : Ixon.Address := addr [251, 3, 245, 167, 225, 65, 216, 64, 37, 179, 165, 3, 222, 220, 83, 206, 134, 242, 151, 189, 227, 107, 188, 27, 152, 104, 122, 234, 180, 53, 153, 104]
+noncomputable def a62 : Ixon.Address := addr [253, 133, 173, 38, 39, 25, 216, 58, 18, 252, 29, 149, 14, 156, 186, 181, 161, 94, 221, 241, 83, 236, 56, 219, 205, 95, 197, 7, 33, 105, 39, 167]
+noncomputable def a63 : Ixon.Address := addr [254, 151, 194, 209, 128, 155, 98, 73, 123, 114, 24, 233, 54, 53, 80, 136, 220, 22, 237, 127, 20, 28, 103, 136, 201, 83, 126, 133, 111, 54, 178, 226]
 
-noncomputable def t8 : Term := (.pi {} {} (.sort (.var 0)) (.pi {} {} (.var 0) (.app (.app (.app (.const 33 [(.var 0)]) (.var 1) .strict .rel) (.var 0) .strict .rel) (.var 0) .strict .rel)))
-noncomputable def t24 : Term := (.app (.const 2 []) (.var 1) .strict .rel)
-noncomputable def t30 : Term := (.pi {} {} (.const 42 []) (.sort (.var 0)))
-noncomputable def t32 : Term := (.app (.var 0) (.const 43 []) .strict .rel)
-noncomputable def t34 : Term := (.app (.var 1) (.const 44 []) .strict .rel)
-noncomputable def t42 : Term := (.app (.var 3) (.var 0) .strict .rel)
-noncomputable def t48 : Term := (.app (.const 33 [(.succ (.var 0))]) (.sort (.var 0)) .strict .rel)
-noncomputable def t50 : Term := (.app (.app t48 (.var 1) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t77 : Term := (.pi {} {} (.const 8 []) (.const 8 []))
-noncomputable def t78 : Term := (.app (.const 2 []) (.var 0) .strict .rel)
-noncomputable def t79 : Term := (.pi {} {} t78 (.sort (.var 0)))
-noncomputable def t85 : Term := (.pi {} {} (.app (.const 1 []) (.var 1) .strict .rel) (.app (.var 1) (.app (.app (.const 3 []) (.var 2) .strict .rel) (.var 0) .strict .rel) .strict .rel))
-noncomputable def t90 : Term := (.pi {} {} (.var 2) (.app (.var 2) (.app (.app (.const 4 []) (.var 3) .strict .rel) (.var 0) .strict .rel) .strict .rel))
-noncomputable def t91 : Term := (.app (.const 1 []) (.var 3) .strict .rel)
-noncomputable def t92 : Term := (.app (.var 2) (.var 0) .strict .rel)
-noncomputable def t98 : Term := (.app (.var 1) (.var 0) .strict .rel)
-noncomputable def t104 : Term := (.app (.const 2 []) (.var 3) .strict .rel)
-noncomputable def t115 : Term := (.const 18 [(.succ .zero), (.succ .zero)])
-noncomputable def t117 : Term := (.app (.app t115 (.const 42 []) .strict .rel) (.const 42 []) .strict .rel)
-noncomputable def t118 : Term := (.lam {} (.const 8 []) t117)
-noncomputable def t119 : Term := (.app (.const 22 [(.succ .zero)]) t118 .strict .rel)
-noncomputable def t120 : Term := (.app t119 (.var 0) .strict .rel)
-noncomputable def t121 : Term := (.pi {} {} t120 (.const 42 []))
-noncomputable def t122 : Term := (.pi {} {} (.const 8 []) t121)
-noncomputable def t123 : Term := (.const 40 [(.succ .zero)])
-noncomputable def t126 : Term := (.app (.app t123 (.lam {} (.const 8 []) t121) .strict .rel) (.var 1) .strict .rel)
-noncomputable def t129 : Term := (.app (.const 38 [.zero]) (.const 8 []) .strict .rel)
-noncomputable def t134 : Term := (.app (.app t129 (.natLit 0) .strict .rel) (.app (.const 47 []) (.natLit 0) .strict .rel) .strict .rel)
-noncomputable def t135 : Term := (.app t119 t134 .strict .rel)
-noncomputable def t140 : Term := (.app (.const 10 []) (.var 0) .strict .rel)
-noncomputable def t141 : Term := (.app t119 t140 .strict .rel)
-noncomputable def t143 : Term := (.proj 18 1 (.proj 18 0 (.var 0)))
-noncomputable def t147 : Term := (.app (.app (.app t126 (.lam {} (.const 35 []) (.lam {} t135 (.const 44 []))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t141 t143)) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t150 : Term := (.pi {} {} (.const 8 []) (.sort (.var 0)))
-noncomputable def t152 : Term := (.app (.const 22 [(.var 0)]) (.var 2) .strict .rel)
-noncomputable def t154 : Term := (.app (.var 3) (.var 1) .strict .rel)
-noncomputable def t156 : Term := (.pi {} {} (.const 8 []) (.pi {} {} (.app t152 (.var 0) .strict .rel) t154))
-noncomputable def t157 : Term := (.const 18 [(.var 0), (.max (.var 0) (.succ .zero))])
-noncomputable def t158 : Term := (.app (.var 2) (.var 1) .strict .rel)
-noncomputable def t169 : Term := (.app (.app t157 t42 .strict .rel) (.app (.app (.const 22 [(.var 0)]) (.var 3) .strict .rel) (.var 0) .strict .rel) .strict .rel)
-noncomputable def t172 : Term := (.const 19 [(.var 0), (.max (.var 0) (.succ .zero))])
-noncomputable def t174 : Term := (.app (.var 2) (.const 9 []) .strict .rel)
-noncomputable def t176 : Term := (.const 16 [(.max (.var 0) (.succ .zero))])
-noncomputable def t178 : Term := (.app (.var 0) (.const 9 []) .strict .rel)
-noncomputable def t179 : Term := (.const 17 [(.max (.var 0) (.succ .zero))])
-noncomputable def t185 : Term := (.app (.const 10 []) (.var 1) .strict .rel)
-noncomputable def t205 : Term := (.const 33 [(.succ .zero)])
-noncomputable def t206 : Term := (.app t205 (.const 42 []) .strict .rel)
-noncomputable def t208 : Term := (.app (.const 45 []) (.var 0) .strict .rel)
-noncomputable def t211 : Term := (.app t123 (.lam {} (.const 8 []) (.const 42 [])) .strict .rel)
-noncomputable def t212 : Term := (.app t211 (.var 0) .strict .rel)
-noncomputable def t213 : Term := (.lam {} (.const 35 []) (.const 43 []))
-noncomputable def t216 : Term := (.app (.const 21 []) (.var 0) .strict .rel)
-noncomputable def t217 : Term := (.lam {} (.const 8 []) t216)
-noncomputable def t219 : Term := (.app (.app t206 t208 .strict .rel) (.app (.app t212 t213 .strict .rel) t217 .strict .rel) .strict .rel)
-noncomputable def t224 : Term := (.app (.const 14 [(.succ .zero)]) t118 .strict .rel)
-noncomputable def t228 : Term := (.app (.app (.const 19 [(.succ .zero), (.succ .zero)]) (.const 42 []) .strict .rel) (.const 42 []) .strict .rel)
-noncomputable def t230 : Term := (.app (.const 13 []) (.var 1) .strict .rel)
-noncomputable def t234 : Term := (.app (.const 55 []) (.var 1) .strict .rel)
-noncomputable def t238 : Term := (.lam {} (.const 8 []) (.lam {} t120 (.app (.app t228 (.app t230 (.var 0) .strict .rel) .strict .rel) (.app t234 (.var 0) .strict .rel) .strict .rel)))
-noncomputable def t240 : Term := (.proj 18 1 (.app (.app t224 (.var 0) .strict .rel) t238 .strict .rel))
-noncomputable def t243 : Term := (.app (.const 29 [(.succ .zero)]) t118 .strict .rel)
-noncomputable def t245 : Term := (.app (.app t243 (.var 1) .strict .rel) t238 .strict .rel)
-noncomputable def t248 : Term := (.app t211 (.var 1) .strict .rel)
-noncomputable def t250 : Term := (.app (.app t248 t213 .strict .rel) t217 .strict .rel)
-noncomputable def t251 : Term := (.app (.app t206 (.proj 18 1 t245) .strict .rel) t250 .strict .rel)
-noncomputable def t255 : Term := (.app t211 (.var 2) .strict .rel)
-noncomputable def t259 : Term := (.lam {} t117 (.app (.app t206 (.proj 18 1 (.var 0)) .strict .rel) (.app (.app t255 t213 .strict .rel) t217 .strict .rel) .strict .rel))
-noncomputable def t261 : Term := (.app (.app t238 (.var 1) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t262 : Term := (.app t259 t261 .strict .rel)
-noncomputable def t264 : Term := (.app t205 (.sort .zero) .strict .rel)
-noncomputable def t274 : Term := (.proj 18 1 (.app (.app t224 (.var 1) .strict .rel) t238 .strict .rel))
-noncomputable def t279 : Term := (.app (.app (.app (.app (.const 32 [(.succ .zero), (.succ .zero)]) t117 .strict .rel) (.sort .zero) .strict .rel) t245 .strict .rel) (.app (.app t228 (.app t230 t274 .strict .rel) .strict .rel) (.app t234 t274 .strict .rel) .strict .rel) .strict .rel)
-noncomputable def t284 : Term := (.app (.app (.app (.const 24 [(.succ .zero)]) t118 .strict .rel) (.var 1) .strict .rel) t238 .strict .rel)
-noncomputable def t292 : Term := (.proj 18 0 (.proj 18 0 (.var 0)))
-noncomputable def t296 : Term := (.app (.app (.app t126 (.lam {} (.const 35 []) (.lam {} t135 (.const 43 []))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t141 t292)) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t302 : Term := (.app (.app t205 (.const 8 []) .strict .rel) (.var 2) .strict .rel)
-noncomputable def t303 : Term := (.app t302 (.var 0) .strict .rel)
-noncomputable def t307 : Term := (.const 16 [(.succ .zero)])
-noncomputable def t309 : Term := (.app t115 t117 .strict .rel)
-noncomputable def t313 : Term := (.app (.app (.app (.const 48 [(.succ (.succ .zero))]) (.lam {} (.const 8 []) (.sort (.succ .zero))) .strict .rel) t307 .strict .rel) (.lam {} (.const 8 []) (.lam {} (.sort (.succ .zero)) (.app t309 (.var 0) .strict .rel))) .strict .rel)
-noncomputable def t314 : Term := (.app t313 (.var 0) .strict .rel)
-noncomputable def t317 : Term := (.app t123 (.lam {} (.const 8 []) (.pi {} {} t314 (.const 42 []))) .strict .rel)
-noncomputable def t318 : Term := (.app t317 (.var 3) .strict .rel)
-noncomputable def t319 : Term := (.app t313 t134 .strict .rel)
-noncomputable def t321 : Term := (.lam {} (.const 35 []) (.lam {} t319 (.const 43 [])))
-noncomputable def t323 : Term := (.app t309 t314 .strict .rel)
-noncomputable def t325 : Term := (.lam {} (.const 8 []) (.lam {} t323 t292))
-noncomputable def t329 : Term := (.app t211 (.var 3) .strict .rel)
-noncomputable def t337 : Term := (.app t302 t134 .strict .rel)
-noncomputable def t339 : Term := (.app (.const 54 [.zero, (.succ .zero)]) (.const 8 []) .strict .rel)
-noncomputable def t340 : Term := (.app t339 t134 .strict .rel)
-noncomputable def t341 : Term := (.app t317 (.var 1) .strict .rel)
-noncomputable def t348 : Term := (.lam {} (.const 8 []) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t120 t240 (.app (.app t206 (.app (.app (.app t341 t321 .strict .rel) t325 .strict .rel) (.var 0) .strict .rel) .strict .rel) t250 .strict .rel)))
-noncomputable def t352 : Term := (.proj 18 1 (.app (.app t224 t134 .strict .rel) t238 .strict .rel))
-noncomputable def t353 : Term := (.app t317 t134 .strict .rel)
-noncomputable def t358 : Term := (.app t211 t134 .strict .rel)
-noncomputable def t363 : Term := (.const 34 [(.succ .zero)])
-noncomputable def t364 : Term := (.app t363 (.const 42 []) .strict .rel)
-noncomputable def t372 : Term := (.app (.app (.const 37 [(.succ .zero)]) (.const 8 []) .strict .rel) (.var 3) .strict .rel)
-noncomputable def t374 : Term := (.app (.app t372 t134 .strict .rel) (.var 0) .strict .rel)
-noncomputable def t379 : Term := (.app t302 t140 .strict .rel)
-noncomputable def t380 : Term := (.app t339 t185 .strict .rel)
-noncomputable def t382 : Term := (.app t119 t185 .strict .rel)
-noncomputable def t385 : Term := (.proj 18 1 (.app (.app t224 t185 .strict .rel) t238 .strict .rel))
-noncomputable def t386 : Term := (.app (.const 10 []) (.var 2) .strict .rel)
-noncomputable def t387 : Term := (.app t317 t386 .strict .rel)
-noncomputable def t392 : Term := (.app t211 t386 .strict .rel)
-noncomputable def t403 : Term := (.app (.app t372 t185 .strict .rel) (.var 0) .strict .rel)
-noncomputable def t409 : Term := (.app (.app t363 (.const 8 []) .strict .rel) (.var 1) .strict .rel)
-noncomputable def t413 : Term := (.app (.app (.app (.app (.const 7 [.zero]) t251 .strict .rel) t262 .strict .rel) (.app (.app (.const 12 [.zero]) (.app (.app t264 t251 .strict .rel) t262 .strict .rel) .strict .rel) (.app (.app t279 t259 .strict .rel) t284 .strict .rel) .strict .rel) .strict .rel) (.app (.app (.const 12 [.zero]) t262 .strict .rel) (.app (.app (.const 12 [.zero]) (.app (.app t206 t296 .strict .rel) t250 .strict .rel) .strict .rel) (.app (.app (.app (.app (.app (.const 52 [.zero]) (.lam {} (.const 8 []) (.pi {} {} t303 (.app (.app t206 (.app (.app (.app t318 t321 .strict .rel) t325 .strict .rel) (.var 2) .strict .rel) .strict .rel) (.app (.app t329 t213 .strict .rel) t217 .strict .rel) .strict .rel))) .strict .rel) (.var 1) .strict .rel) (.lam {} (.const 35 []) (.lam {} t337 (.app (.app (.app (.app t340 t348 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t135 t352 (.app (.app (.const 12 [.zero]) (.app (.app t206 (.app (.app (.app t353 t321 .strict .rel) t325 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t358 t213 .strict .rel) t217 .strict .rel) .strict .rel) .strict .rel) (.app t364 (.const 43 []) .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t374 .strict .rel))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t379 (.app (.app (.app (.app t380 t348 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t382 t385 (.app (.app (.const 12 [.zero]) (.app (.app t206 (.app (.app (.app t387 t321 .strict .rel) t325 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t392 t213 .strict .rel) t217 .strict .rel) .strict .rel) .strict .rel) (.app t364 t292 .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t403 .strict .rel))) .strict .rel) t409 .strict .rel) .strict .rel) .strict .rel) .strict .rel)
-noncomputable def t433 : Term := (.pi {} {} (.app (.const 1 []) (.var 2) .strict .rel) (.app (.var 2) (.app (.app (.const 3 []) (.var 3) .strict .rel) (.var 0) .strict .rel) .strict .rel))
-noncomputable def t437 : Term := (.pi {} {} (.var 3) (.app (.var 3) (.app (.app (.const 4 []) (.var 4) .strict .rel) (.var 0) .strict .rel) .strict .rel))
-noncomputable def t438 : Term := (.app (.var 3) (.var 2) .strict .rel)
-noncomputable def t458 : Term := (.pi {} {} (.const 8 []) (.const 42 []))
-noncomputable def t460 : Term := (.app (.app t243 (.var 0) .strict .rel) t238 .strict .rel)
-noncomputable def t463 : Term := (.sort (.max (.var 0) (.succ .zero)))
-noncomputable def t478 : Term := (.app t206 t216 .strict .rel)
-noncomputable def t479 : Term := (.lam {} (.const 35 []) (.const 44 []))
-noncomputable def t481 : Term := (.lam {} (.const 8 []) t208)
-noncomputable def t483 : Term := (.app t478 (.app (.app t212 t479 .strict .rel) t481 .strict .rel) .strict .rel)
-noncomputable def t489 : Term := (.app (.app t248 t479 .strict .rel) t481 .strict .rel)
-noncomputable def t490 : Term := (.app (.app t206 (.proj 18 0 t245) .strict .rel) t489 .strict .rel)
-noncomputable def t496 : Term := (.lam {} t117 (.app (.app t206 (.proj 18 0 (.var 0)) .strict .rel) (.app (.app t255 t479 .strict .rel) t481 .strict .rel) .strict .rel))
-noncomputable def t497 : Term := (.app t496 t261 .strict .rel)
-noncomputable def t511 : Term := (.lam {} (.const 35 []) (.lam {} t319 (.const 44 [])))
-noncomputable def t514 : Term := (.lam {} (.const 8 []) (.lam {} t323 t143))
-noncomputable def t531 : Term := (.lam {} (.const 8 []) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t120 t240 (.app (.app t206 (.app (.app (.app t341 t511 .strict .rel) t514 .strict .rel) (.var 0) .strict .rel) .strict .rel) t489 .strict .rel)))
-noncomputable def t571 : Term := (.app (.app (.app (.app (.const 7 [.zero]) t490 .strict .rel) t497 .strict .rel) (.app (.app (.const 12 [.zero]) (.app (.app t264 t490 .strict .rel) t497 .strict .rel) .strict .rel) (.app (.app t279 t496 .strict .rel) t284 .strict .rel) .strict .rel) .strict .rel) (.app (.app (.const 12 [.zero]) t497 .strict .rel) (.app (.app (.const 12 [.zero]) (.app (.app t206 t147 .strict .rel) t489 .strict .rel) .strict .rel) (.app (.app (.app (.app (.app (.const 52 [.zero]) (.lam {} (.const 8 []) (.pi {} {} t303 (.app (.app t206 (.app (.app (.app t318 t511 .strict .rel) t514 .strict .rel) (.var 2) .strict .rel) .strict .rel) (.app (.app t329 t479 .strict .rel) t481 .strict .rel) .strict .rel))) .strict .rel) (.var 1) .strict .rel) (.lam {} (.const 35 []) (.lam {} t337 (.app (.app (.app (.app t340 t531 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t135 t352 (.app (.app (.const 12 [.zero]) (.app (.app t206 (.app (.app (.app t353 t511 .strict .rel) t514 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t358 t479 .strict .rel) t481 .strict .rel) .strict .rel) .strict .rel) (.app t364 (.const 44 []) .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t374 .strict .rel))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t379 (.app (.app (.app (.app t380 t531 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t382 t385 (.app (.app (.const 12 [.zero]) (.app (.app t206 (.app (.app (.app t387 t511 .strict .rel) t514 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t392 t479 .strict .rel) t481 .strict .rel) .strict .rel) .strict .rel) (.app t364 t143 .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t403 .strict .rel))) .strict .rel) t409 .strict .rel) .strict .rel) .strict .rel) .strict .rel)
-noncomputable def t577 : Term := (.app (.const 29 [(.var 0)]) (.var 2) .strict .rel)
-noncomputable def t581 : Term := (.app (.var 0) (.var 1) .strict .rel)
-noncomputable def t585 : Term := (.app (.app (.app (.const 14 [(.var 0)]) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t594 : Term := (.app (.const 29 [(.var 0)]) (.var 3) .strict .rel)
-noncomputable def t612 : Term := (.app (.var 3) t140 .strict .rel)
-noncomputable def t622 : Term := (.app (.var 1) (.const 43 []) .strict .rel)
-noncomputable def t623 : Term := (.app (.var 2) (.const 44 []) .strict .rel)
-noncomputable def t638 : Term := (.pi {} {} (.const 42 []) t30)
-noncomputable def t642 : Term := (.app (.const 25 [(.succ (.var 0))]) (.lam {} (.const 42 []) (.sort (.var 0))) .strict .rel)
-noncomputable def t644 : Term := (.app t642 (.var 0) .strict .rel)
-noncomputable def t645 : Term := (.pi {} {} (.var 2) (.var 3))
-noncomputable def t658 : Term := (.app (.app (.app (.const 33 [(.var 0)]) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t679 : Term := (.pi {} {} (.var 3) (.var 3))
-noncomputable def t680 : Term := (.app (.const 33 [(.var 0)]) (.var 4) .strict .rel)
-noncomputable def t682 : Term := (.app (.app t680 (.var 2) .strict .rel) (.var 1) .strict .rel)
-noncomputable def t684 : Term := (.app (.const 33 [(.var 1)]) (.var 4) .strict .rel)
-noncomputable def t685 : Term := (.app (.var 1) (.var 3) .strict .rel)
-noncomputable def t695 : Term := (.const 53 [.zero, (.var 0)])
-noncomputable def t703 : Term := (.app (.const 33 [(.var 1)]) (.var 6) .strict .rel)
-noncomputable def t726 : Term := (.app (.app t206 (.var 1) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t727 : Term := (.app (.const 2 []) t726 .strict .rel)
-noncomputable def t736 : Term := (.app t206 (.const 43 []) .strict .rel)
-noncomputable def t740 : Term := (.app (.const 0 [(.succ .zero)]) (.const 42 []) .strict .rel)
-noncomputable def t745 : Term := (.app t736 (.const 44 []) .strict .rel)
-noncomputable def t748 : Term := (.app (.const 50 [.zero]) (.const 6 []) .strict .rel)
-noncomputable def t756 : Term := (.app t206 (.const 44 []) .strict .rel)
-noncomputable def t757 : Term := (.app t756 (.const 43 []) .strict .rel)
-noncomputable def t802 : Term := (.app (.app (.const 30 [(.var 0)]) (.var 1) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t830 : Term := (.pi {} {} (.const 35 []) (.app (.var 2) t134 .strict .rel))
-noncomputable def t831 : Term := (.pi {} {} (.const 8 []) t612)
-noncomputable def t835 : Term := (.pi {} {} t150 (.pi {} {} (.const 8 []) (.pi {} {} t830 (.pi {} {} t831 t438))))
-noncomputable def t837 : Term := (.app (.var 4) (.var 0) .strict .rel)
-noncomputable def t842 : Term := (.app (.var 1) (.const 26 []) .strict .rel)
-noncomputable def t855 : Term := (.app (.var 1) (.const 9 []) .strict .rel)
-noncomputable def t860 : Term := (.app (.const 48 [(.var 0)]) (.var 3) .strict .rel)
-noncomputable def t881 : Term := (.pi {} {} (.const 8 []) (.pi {} {} t92 (.app (.var 3) t185 .strict .rel)))
-noncomputable def t899 : Term := (.pi {} {} (.const 35 []) (.app (.app (.var 3) (.const 43 []) .strict .rel) (.const 43 []) .strict .rel))
-noncomputable def t902 : Term := (.pi {} {} (.const 35 []) (.app (.app (.var 4) (.const 43 []) .strict .rel) (.const 44 []) .strict .rel))
-noncomputable def t905 : Term := (.pi {} {} (.const 35 []) (.app (.app (.var 5) (.const 44 []) .strict .rel) (.const 43 []) .strict .rel))
-noncomputable def t908 : Term := (.pi {} {} (.const 35 []) (.app (.app (.var 6) (.const 44 []) .strict .rel) (.const 44 []) .strict .rel))
-noncomputable def t962 : Term := (.app (.const 27 [(.var 0)]) (.var 4) .strict .rel)
-noncomputable def t972 : Term := (.lam {} (.var 3) (.var 0))
-noncomputable def t1002 : Term := (.pi {} {} (.var 1) (.pi {} {} (.app (.app (.app (.const 33 [(.var 1)]) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) (.sort (.var 0))))
-noncomputable def t1006 : Term := (.app t581 (.app (.app (.const 34 [(.var 1)]) (.var 2) .strict .rel) (.var 1) .strict .rel) .strict .rel)
-noncomputable def t1012 : Term := (.app (.app t684 (.var 3) .strict .rel) (.var 0) .strict .rel)
-noncomputable def t1020 : Term := (.pi {} {} (.var 1) (.sort (.var 0)))
+noncomputable def t8 : Term := (.pi {} {} (.sort (.var 0)) (.pi {} {} (.var 0) (.app (.app (.app (.const 35 [(.var 0)]) (.var 1) .strict .rel) (.var 0) .strict .rel) (.var 0) .strict .rel)))
+noncomputable def t22 : Term := (.pi {} {} (.var 3) (.var 3))
+noncomputable def t24 : Term := (.app (.const 35 [(.var 0)]) (.var 4) .strict .rel)
+noncomputable def t26 : Term := (.app (.app t24 (.var 2) .strict .rel) (.var 1) .strict .rel)
+noncomputable def t28 : Term := (.app (.const 35 [(.var 1)]) (.var 4) .strict .rel)
+noncomputable def t29 : Term := (.app (.var 1) (.var 3) .strict .rel)
+noncomputable def t39 : Term := (.const 53 [.zero, (.var 0)])
+noncomputable def t47 : Term := (.app (.const 35 [(.var 1)]) (.var 6) .strict .rel)
+noncomputable def t50 : Term := (.app (.var 3) (.var 1) .strict .rel)
+noncomputable def t67 : Term := (.pi {} {} (.var 1) (.sort (.var 0)))
+noncomputable def t68 : Term := (.app (.var 0) (.var 1) .strict .rel)
+noncomputable def t70 : Term := (.app (.app t28 (.var 3) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t100 : Term := (.app (.const 4 []) (.var 1) .strict .rel)
+noncomputable def t106 : Term := (.pi {} {} (.const 8 []) (.const 8 []))
+noncomputable def t112 : Term := (.app (.const 35 [(.succ (.var 0))]) (.sort (.var 0)) .strict .rel)
+noncomputable def t114 : Term := (.app (.app t112 (.var 1) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t140 : Term := (.const 16 [(.succ .zero), (.succ .zero)])
+noncomputable def t143 : Term := (.app (.app t140 (.const 43 []) .strict .rel) (.const 43 []) .strict .rel)
+noncomputable def t144 : Term := (.lam {} (.const 8 []) t143)
+noncomputable def t145 : Term := (.app (.const 39 [(.succ .zero)]) t144 .strict .rel)
+noncomputable def t146 : Term := (.app t145 (.var 0) .strict .rel)
+noncomputable def t147 : Term := (.pi {} {} t146 (.const 43 []))
+noncomputable def t148 : Term := (.pi {} {} (.const 8 []) t147)
+noncomputable def t149 : Term := (.const 55 [(.succ .zero)])
+noncomputable def t152 : Term := (.app (.app t149 (.lam {} (.const 8 []) t147) .strict .rel) (.var 1) .strict .rel)
+noncomputable def t155 : Term := (.app (.const 47 [.zero]) (.const 8 []) .strict .rel)
+noncomputable def t160 : Term := (.app (.app t155 (.natLit 0) .strict .rel) (.app (.const 48 []) (.natLit 0) .strict .rel) .strict .rel)
+noncomputable def t161 : Term := (.app t145 t160 .strict .rel)
+noncomputable def t167 : Term := (.app (.const 10 []) (.var 0) .strict .rel)
+noncomputable def t168 : Term := (.app t145 t167 .strict .rel)
+noncomputable def t170 : Term := (.proj 16 1 (.proj 16 0 (.var 0)))
+noncomputable def t174 : Term := (.app (.app (.app t152 (.lam {} (.const 37 []) (.lam {} t161 (.const 45 []))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t168 t170)) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t188 : Term := (.const 35 [(.succ .zero)])
+noncomputable def t189 : Term := (.app t188 (.const 43 []) .strict .rel)
+noncomputable def t191 : Term := (.app (.const 50 []) (.var 0) .strict .rel)
+noncomputable def t194 : Term := (.app t149 (.lam {} (.const 8 []) (.const 43 [])) .strict .rel)
+noncomputable def t195 : Term := (.app t194 (.var 0) .strict .rel)
+noncomputable def t197 : Term := (.lam {} (.const 37 []) (.const 44 []))
+noncomputable def t200 : Term := (.app (.const 28 []) (.var 0) .strict .rel)
+noncomputable def t201 : Term := (.lam {} (.const 8 []) t200)
+noncomputable def t203 : Term := (.app (.app t189 t191 .strict .rel) (.app (.app t195 t197 .strict .rel) t201 .strict .rel) .strict .rel)
+noncomputable def t208 : Term := (.app (.const 25 [(.succ .zero)]) t144 .strict .rel)
+noncomputable def t212 : Term := (.app (.app (.const 17 [(.succ .zero), (.succ .zero)]) (.const 43 []) .strict .rel) (.const 43 []) .strict .rel)
+noncomputable def t214 : Term := (.app (.const 13 []) (.var 1) .strict .rel)
+noncomputable def t218 : Term := (.app (.const 21 []) (.var 1) .strict .rel)
+noncomputable def t222 : Term := (.lam {} (.const 8 []) (.lam {} t146 (.app (.app t212 (.app t214 (.var 0) .strict .rel) .strict .rel) (.app t218 (.var 0) .strict .rel) .strict .rel)))
+noncomputable def t224 : Term := (.proj 16 1 (.app (.app t208 (.var 0) .strict .rel) t222 .strict .rel))
+noncomputable def t227 : Term := (.app (.const 54 [(.succ .zero)]) t144 .strict .rel)
+noncomputable def t229 : Term := (.app (.app t227 (.var 1) .strict .rel) t222 .strict .rel)
+noncomputable def t232 : Term := (.app t194 (.var 1) .strict .rel)
+noncomputable def t234 : Term := (.app (.app t232 t197 .strict .rel) t201 .strict .rel)
+noncomputable def t235 : Term := (.app (.app t189 (.proj 16 1 t229) .strict .rel) t234 .strict .rel)
+noncomputable def t239 : Term := (.app t194 (.var 2) .strict .rel)
+noncomputable def t243 : Term := (.lam {} t143 (.app (.app t189 (.proj 16 1 (.var 0)) .strict .rel) (.app (.app t239 t197 .strict .rel) t201 .strict .rel) .strict .rel))
+noncomputable def t245 : Term := (.app (.app t222 (.var 1) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t246 : Term := (.app t243 t245 .strict .rel)
+noncomputable def t248 : Term := (.app t188 (.sort .zero) .strict .rel)
+noncomputable def t258 : Term := (.proj 16 1 (.app (.app t208 (.var 1) .strict .rel) t222 .strict .rel))
+noncomputable def t263 : Term := (.app (.app (.app (.app (.const 2 [(.succ .zero), (.succ .zero)]) t143 .strict .rel) (.sort .zero) .strict .rel) t229 .strict .rel) (.app (.app t212 (.app t214 t258 .strict .rel) .strict .rel) (.app t218 t258 .strict .rel) .strict .rel) .strict .rel)
+noncomputable def t268 : Term := (.app (.app (.app (.const 40 [(.succ .zero)]) t144 .strict .rel) (.var 1) .strict .rel) t222 .strict .rel)
+noncomputable def t276 : Term := (.proj 16 0 (.proj 16 0 (.var 0)))
+noncomputable def t280 : Term := (.app (.app (.app t152 (.lam {} (.const 37 []) (.lam {} t161 (.const 44 []))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t168 t276)) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t286 : Term := (.app (.app t188 (.const 8 []) .strict .rel) (.var 2) .strict .rel)
+noncomputable def t287 : Term := (.app t286 (.var 0) .strict .rel)
+noncomputable def t291 : Term := (.const 14 [(.succ .zero)])
+noncomputable def t293 : Term := (.app t140 t143 .strict .rel)
+noncomputable def t297 : Term := (.app (.app (.app (.const 46 [(.succ (.succ .zero))]) (.lam {} (.const 8 []) (.sort (.succ .zero))) .strict .rel) t291 .strict .rel) (.lam {} (.const 8 []) (.lam {} (.sort (.succ .zero)) (.app t293 (.var 0) .strict .rel))) .strict .rel)
+noncomputable def t298 : Term := (.app t297 (.var 0) .strict .rel)
+noncomputable def t301 : Term := (.app t149 (.lam {} (.const 8 []) (.pi {} {} t298 (.const 43 []))) .strict .rel)
+noncomputable def t302 : Term := (.app t301 (.var 3) .strict .rel)
+noncomputable def t303 : Term := (.app t297 t160 .strict .rel)
+noncomputable def t305 : Term := (.lam {} (.const 37 []) (.lam {} t303 (.const 44 [])))
+noncomputable def t307 : Term := (.app t293 t298 .strict .rel)
+noncomputable def t309 : Term := (.lam {} (.const 8 []) (.lam {} t307 t276))
+noncomputable def t313 : Term := (.app t194 (.var 3) .strict .rel)
+noncomputable def t321 : Term := (.app t286 t160 .strict .rel)
+noncomputable def t323 : Term := (.app (.const 3 [.zero, (.succ .zero)]) (.const 8 []) .strict .rel)
+noncomputable def t324 : Term := (.app t323 t160 .strict .rel)
+noncomputable def t325 : Term := (.app t301 (.var 1) .strict .rel)
+noncomputable def t332 : Term := (.lam {} (.const 8 []) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t146 t224 (.app (.app t189 (.app (.app (.app t325 t305 .strict .rel) t309 .strict .rel) (.var 0) .strict .rel) .strict .rel) t234 .strict .rel)))
+noncomputable def t336 : Term := (.proj 16 1 (.app (.app t208 t160 .strict .rel) t222 .strict .rel))
+noncomputable def t337 : Term := (.app t301 t160 .strict .rel)
+noncomputable def t342 : Term := (.app t194 t160 .strict .rel)
+noncomputable def t347 : Term := (.const 36 [(.succ .zero)])
+noncomputable def t348 : Term := (.app t347 (.const 43 []) .strict .rel)
+noncomputable def t356 : Term := (.app (.app (.const 26 [(.succ .zero)]) (.const 8 []) .strict .rel) (.var 3) .strict .rel)
+noncomputable def t358 : Term := (.app (.app t356 t160 .strict .rel) (.var 0) .strict .rel)
+noncomputable def t363 : Term := (.app t286 t167 .strict .rel)
+noncomputable def t364 : Term := (.app (.const 10 []) (.var 1) .strict .rel)
+noncomputable def t365 : Term := (.app t323 t364 .strict .rel)
+noncomputable def t367 : Term := (.app t145 t364 .strict .rel)
+noncomputable def t370 : Term := (.proj 16 1 (.app (.app t208 t364 .strict .rel) t222 .strict .rel))
+noncomputable def t371 : Term := (.app (.const 10 []) (.var 2) .strict .rel)
+noncomputable def t372 : Term := (.app t301 t371 .strict .rel)
+noncomputable def t377 : Term := (.app t194 t371 .strict .rel)
+noncomputable def t388 : Term := (.app (.app t356 t364 .strict .rel) (.var 0) .strict .rel)
+noncomputable def t394 : Term := (.app (.app t347 (.const 8 []) .strict .rel) (.var 1) .strict .rel)
+noncomputable def t398 : Term := (.app (.app (.app (.app (.const 12 [.zero]) t235 .strict .rel) t246 .strict .rel) (.app (.app (.const 11 [.zero]) (.app (.app t248 t235 .strict .rel) t246 .strict .rel) .strict .rel) (.app (.app t263 t243 .strict .rel) t268 .strict .rel) .strict .rel) .strict .rel) (.app (.app (.const 11 [.zero]) t246 .strict .rel) (.app (.app (.const 11 [.zero]) (.app (.app t189 t280 .strict .rel) t234 .strict .rel) .strict .rel) (.app (.app (.app (.app (.app (.const 49 [.zero]) (.lam {} (.const 8 []) (.pi {} {} t287 (.app (.app t189 (.app (.app (.app t302 t305 .strict .rel) t309 .strict .rel) (.var 2) .strict .rel) .strict .rel) (.app (.app t313 t197 .strict .rel) t201 .strict .rel) .strict .rel))) .strict .rel) (.var 1) .strict .rel) (.lam {} (.const 37 []) (.lam {} t321 (.app (.app (.app (.app t324 t332 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t161 t336 (.app (.app (.const 11 [.zero]) (.app (.app t189 (.app (.app (.app t337 t305 .strict .rel) t309 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t342 t197 .strict .rel) t201 .strict .rel) .strict .rel) .strict .rel) (.app t348 (.const 44 []) .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t358 .strict .rel))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t363 (.app (.app (.app (.app t365 t332 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t367 t370 (.app (.app (.const 11 [.zero]) (.app (.app t189 (.app (.app (.app t372 t305 .strict .rel) t309 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t377 t197 .strict .rel) t201 .strict .rel) .strict .rel) .strict .rel) (.app t348 t276 .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t388 .strict .rel))) .strict .rel) t394 .strict .rel) .strict .rel) .strict .rel) .strict .rel)
+noncomputable def t402 : Term := (.app (.const 4 []) (.var 0) .strict .rel)
+noncomputable def t403 : Term := (.pi {} {} t402 (.sort (.var 0)))
+noncomputable def t409 : Term := (.pi {} {} (.app (.const 1 []) (.var 1) .strict .rel) (.app (.var 1) (.app (.app (.const 5 []) (.var 2) .strict .rel) (.var 0) .strict .rel) .strict .rel))
+noncomputable def t414 : Term := (.pi {} {} (.var 2) (.app (.var 2) (.app (.app (.const 6 []) (.var 3) .strict .rel) (.var 0) .strict .rel) .strict .rel))
+noncomputable def t415 : Term := (.app (.const 1 []) (.var 3) .strict .rel)
+noncomputable def t416 : Term := (.app (.var 2) (.var 0) .strict .rel)
+noncomputable def t422 : Term := (.app (.var 1) (.var 0) .strict .rel)
+noncomputable def t428 : Term := (.app (.const 4 []) (.var 3) .strict .rel)
+noncomputable def t429 : Term := (.app (.var 3) (.var 0) .strict .rel)
+noncomputable def t435 : Term := (.pi {} {} (.const 43 []) (.sort (.var 0)))
+noncomputable def t436 : Term := (.pi {} {} (.const 43 []) t435)
+noncomputable def t439 : Term := (.pi {} {} (.const 37 []) (.app (.app (.var 3) (.const 44 []) .strict .rel) (.const 44 []) .strict .rel))
+noncomputable def t442 : Term := (.pi {} {} (.const 37 []) (.app (.app (.var 4) (.const 44 []) .strict .rel) (.const 45 []) .strict .rel))
+noncomputable def t445 : Term := (.pi {} {} (.const 37 []) (.app (.app (.var 5) (.const 45 []) .strict .rel) (.const 44 []) .strict .rel))
+noncomputable def t448 : Term := (.pi {} {} (.const 37 []) (.app (.app (.var 6) (.const 45 []) .strict .rel) (.const 45 []) .strict .rel))
+noncomputable def t481 : Term := (.app (.var 1) (.const 30 []) .strict .rel)
+noncomputable def t496 : Term := (.app (.app t189 (.var 1) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t508 : Term := (.app (.const 23 [(.var 0)]) (.var 4) .strict .rel)
+noncomputable def t518 : Term := (.lam {} (.var 3) (.var 0))
+noncomputable def t531 : Term := (.app (.const 24 [(.succ (.var 0))]) (.lam {} (.const 43 []) (.sort (.var 0))) .strict .rel)
+noncomputable def t533 : Term := (.app t531 (.var 0) .strict .rel)
+noncomputable def t534 : Term := (.pi {} {} (.var 2) (.var 3))
+noncomputable def t544 : Term := (.app (.var 1) (.const 44 []) .strict .rel)
+noncomputable def t545 : Term := (.app (.var 2) (.const 45 []) .strict .rel)
+noncomputable def t546 : Term := (.app (.var 3) (.var 2) .strict .rel)
+noncomputable def t560 : Term := (.pi {} {} (.const 8 []) (.sort (.var 0)))
+noncomputable def t562 : Term := (.app (.const 39 [(.var 0)]) (.var 2) .strict .rel)
+noncomputable def t565 : Term := (.pi {} {} (.const 8 []) (.pi {} {} (.app t562 (.var 0) .strict .rel) t50))
+noncomputable def t566 : Term := (.const 16 [(.var 0), (.max (.var 0) (.succ .zero))])
+noncomputable def t567 : Term := (.app (.var 2) (.var 1) .strict .rel)
+noncomputable def t578 : Term := (.app (.app t566 t429 .strict .rel) (.app (.app (.const 39 [(.var 0)]) (.var 3) .strict .rel) (.var 0) .strict .rel) .strict .rel)
+noncomputable def t581 : Term := (.const 17 [(.var 0), (.max (.var 0) (.succ .zero))])
+noncomputable def t583 : Term := (.app (.var 2) (.const 9 []) .strict .rel)
+noncomputable def t585 : Term := (.const 14 [(.max (.var 0) (.succ .zero))])
+noncomputable def t587 : Term := (.app (.var 0) (.const 9 []) .strict .rel)
+noncomputable def t588 : Term := (.const 15 [(.max (.var 0) (.succ .zero))])
+noncomputable def t614 : Term := (.app (.app (.app (.const 35 [(.var 0)]) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t642 : Term := (.app (.const 4 []) t496 .strict .rel)
+noncomputable def t651 : Term := (.app t189 (.const 44 []) .strict .rel)
+noncomputable def t655 : Term := (.app (.const 0 [(.succ .zero)]) (.const 43 []) .strict .rel)
+noncomputable def t660 : Term := (.app t651 (.const 45 []) .strict .rel)
+noncomputable def t663 : Term := (.app (.const 22 [.zero]) (.const 7 []) .strict .rel)
+noncomputable def t671 : Term := (.app t189 (.const 45 []) .strict .rel)
+noncomputable def t672 : Term := (.app t671 (.const 44 []) .strict .rel)
+noncomputable def t689 : Term := (.pi {} {} (.const 8 []) (.const 43 []))
+noncomputable def t691 : Term := (.app (.app t227 (.var 0) .strict .rel) t222 .strict .rel)
+noncomputable def t714 : Term := (.app t189 t200 .strict .rel)
+noncomputable def t715 : Term := (.lam {} (.const 37 []) (.const 45 []))
+noncomputable def t717 : Term := (.lam {} (.const 8 []) t191)
+noncomputable def t719 : Term := (.app t714 (.app (.app t195 t715 .strict .rel) t717 .strict .rel) .strict .rel)
+noncomputable def t725 : Term := (.app (.app t232 t715 .strict .rel) t717 .strict .rel)
+noncomputable def t726 : Term := (.app (.app t189 (.proj 16 0 t229) .strict .rel) t725 .strict .rel)
+noncomputable def t732 : Term := (.lam {} t143 (.app (.app t189 (.proj 16 0 (.var 0)) .strict .rel) (.app (.app t239 t715 .strict .rel) t717 .strict .rel) .strict .rel))
+noncomputable def t733 : Term := (.app t732 t245 .strict .rel)
+noncomputable def t747 : Term := (.lam {} (.const 37 []) (.lam {} t303 (.const 45 [])))
+noncomputable def t750 : Term := (.lam {} (.const 8 []) (.lam {} t307 t170))
+noncomputable def t767 : Term := (.lam {} (.const 8 []) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t146 t224 (.app (.app t189 (.app (.app (.app t325 t747 .strict .rel) t750 .strict .rel) (.var 0) .strict .rel) .strict .rel) t725 .strict .rel)))
+noncomputable def t807 : Term := (.app (.app (.app (.app (.const 12 [.zero]) t726 .strict .rel) t733 .strict .rel) (.app (.app (.const 11 [.zero]) (.app (.app t248 t726 .strict .rel) t733 .strict .rel) .strict .rel) (.app (.app t263 t732 .strict .rel) t268 .strict .rel) .strict .rel) .strict .rel) (.app (.app (.const 11 [.zero]) t733 .strict .rel) (.app (.app (.const 11 [.zero]) (.app (.app t189 t174 .strict .rel) t725 .strict .rel) .strict .rel) (.app (.app (.app (.app (.app (.const 49 [.zero]) (.lam {} (.const 8 []) (.pi {} {} t287 (.app (.app t189 (.app (.app (.app t302 t747 .strict .rel) t750 .strict .rel) (.var 2) .strict .rel) .strict .rel) (.app (.app t313 t715 .strict .rel) t717 .strict .rel) .strict .rel))) .strict .rel) (.var 1) .strict .rel) (.lam {} (.const 37 []) (.lam {} t321 (.app (.app (.app (.app t324 t767 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t161 t336 (.app (.app (.const 11 [.zero]) (.app (.app t189 (.app (.app (.app t337 t747 .strict .rel) t750 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t342 t715 .strict .rel) t717 .strict .rel) .strict .rel) .strict .rel) (.app t348 (.const 45 []) .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t358 .strict .rel))) .strict .rel) (.lam {} (.const 8 []) (.lam {} t363 (.app (.app (.app (.app t365 t767 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t367 t370 (.app (.app (.const 11 [.zero]) (.app (.app t189 (.app (.app (.app t372 t747 .strict .rel) t750 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app (.app t377 t715 .strict .rel) t717 .strict .rel) .strict .rel) .strict .rel) (.app t348 t170 .strict .rel) .strict .rel)) .strict .rel) (.var 3) .strict .rel) t388 .strict .rel))) .strict .rel) t394 .strict .rel) .strict .rel) .strict .rel) .strict .rel)
+noncomputable def t811 : Term := (.sort (.max (.var 0) (.succ .zero)))
+noncomputable def t829 : Term := (.app (.var 1) (.const 9 []) .strict .rel)
+noncomputable def t830 : Term := (.app (.var 3) t167 .strict .rel)
+noncomputable def t831 : Term := (.pi {} {} (.const 8 []) t830)
+noncomputable def t837 : Term := (.app (.const 46 [(.var 0)]) (.var 3) .strict .rel)
+noncomputable def t839 : Term := (.app (.var 4) (.var 0) .strict .rel)
+noncomputable def t864 : Term := (.app (.const 54 [(.var 0)]) (.var 2) .strict .rel)
+noncomputable def t871 : Term := (.app (.app (.app (.const 25 [(.var 0)]) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t880 : Term := (.app (.const 54 [(.var 0)]) (.var 3) .strict .rel)
+noncomputable def t907 : Term := (.app (.var 0) (.const 44 []) .strict .rel)
+noncomputable def t908 : Term := (.app (.var 1) (.const 45 []) .strict .rel)
+noncomputable def t936 : Term := (.pi {} {} (.const 8 []) (.pi {} {} t416 (.app (.var 3) t364 .strict .rel)))
+noncomputable def t953 : Term := (.app (.app (.const 33 [(.var 0)]) (.var 1) .strict .rel) (.var 0) .strict .rel)
+noncomputable def t971 : Term := (.pi {} {} (.const 37 []) (.app (.var 2) t160 .strict .rel))
+noncomputable def t974 : Term := (.pi {} {} t560 (.pi {} {} (.const 8 []) (.pi {} {} t971 (.pi {} {} t831 t546))))
+noncomputable def t982 : Term := (.pi {} {} (.app (.const 1 []) (.var 2) .strict .rel) (.app (.var 2) (.app (.app (.const 5 []) (.var 3) .strict .rel) (.var 0) .strict .rel) .strict .rel))
+noncomputable def t986 : Term := (.pi {} {} (.var 3) (.app (.var 3) (.app (.app (.const 6 []) (.var 4) .strict .rel) (.var 0) .strict .rel) .strict .rel))
+noncomputable def t1013 : Term := (.pi {} {} (.var 1) (.pi {} {} (.app (.app (.app (.const 35 [(.var 1)]) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) (.sort (.var 0))))
+noncomputable def t1017 : Term := (.app t68 (.app (.app (.const 36 [(.var 1)]) (.var 2) .strict .rel) (.var 1) .strict .rel) .strict .rel)
 
 noncomputable def c0 : ConstEntry :=
   { ref := (.member a0 0), addr := a0
     decl := (.defn .defn .safe 1
     t8
-    (.lam {} (.sort (.var 0)) (.lam {} (.var 0) (.app (.app (.const 34 [(.var 0)]) (.var 1) .strict .rel) (.var 0) .strict .rel)))) }
+    (.lam {} (.sort (.var 0)) (.lam {} (.var 0) (.app (.app (.const 36 [(.var 0)]) (.var 1) .strict .rel) (.var 0) .strict .rel)))) }
 
 noncomputable def c1 : ConstEntry :=
   { ref := (.member a1 0), addr := a1
     decl := (.defn .defn .safe 0
     (.pi {} {} (.sort .zero) (.sort .zero))
-    (.lam {} (.sort .zero) (.pi {} {} (.var 0) (.const 6 [])))) }
+    (.lam {} (.sort .zero) (.pi {} {} (.var 0) (.const 7 [])))) }
 
 noncomputable def c2 : ConstEntry :=
-  { ref := (.member a2 0), addr := a3
-    decl := (.induct true 0 1 0
-    (.pi {} {} (.sort .zero) (.sort (.succ .zero))) [3, 4]) }
+  { ref := (.member a2 0), addr := a2
+    decl := (.defn .thm .safe 2
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 1) (.pi {} {} (.var 2) (.pi {} {} t22 (.pi {} {} t26 (.app (.app t28 t29 .strict .rel) (.app (.var 1) (.var 2) .strict .rel) .strict .rel)))))))
+    (.lam {} (.sort (.var 0)) (.lam {} (.sort (.var 1)) (.lam {} (.var 1) (.lam {} (.var 2) (.lam {} t22 (.lam {} t26 (.app (.app (.app (.app (.app (.app t39 (.var 5) .strict .rel) (.var 3) .strict .rel) (.lam {} (.var 5) (.lam {} (.app (.app (.app (.const 35 [(.var 0)]) (.var 6) .strict .rel) (.var 4) .strict .rel) (.var 0) .strict .rel) (.app (.app t47 (.app (.var 3) (.var 5) .strict .rel) .strict .rel) t50 .strict .rel))) .strict .rel) (.app (.app (.const 0 [(.var 1)]) (.var 4) .strict .rel) t29 .strict .rel) .strict .rel) (.var 2) .strict .rel) (.var 0) .strict .rel)))))))) }
 
 noncomputable def c3 : ConstEntry :=
-  { ref := (.ctor a2 0 0), addr := a4
-    decl := (.ctor true 0 2 0 1 1
-    (.pi {} {} (.sort .zero) (.pi {} {} (.app (.const 1 []) (.var 0) .strict .rel) t24))) }
+  { ref := (.member a3 0), addr := a3
+    decl := (.defn .defn .safe 2
+    (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 0) (.pi {} {} t67 (.pi {} {} t68 (.pi {} {} (.var 3) (.pi {} {} t70 t50))))))
+    (.lam {} (.sort (.var 1)) (.lam {} (.var 0) (.lam {} t67 (.lam {} t68 (.lam {} (.var 3) (.lam {} t70 (.app (.app (.app (.app (.app (.app (.const 53 [(.var 0), (.var 1)]) (.var 5) .strict .rel) (.var 4) .strict .rel) (.lam {} (.var 5) (.lam {} (.app (.app t47 (.var 5) .strict .rel) (.var 0) .strict .rel) (.app (.var 5) (.var 1) .strict .rel))) .strict .rel) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)))))))) }
 
 noncomputable def c4 : ConstEntry :=
-  { ref := (.ctor a2 0 1), addr := a5
-    decl := (.ctor true 0 2 1 1 1
-    (.pi {} {} (.sort .zero) (.pi {} {} (.var 0) t24))) }
+  { ref := (.member a4 0), addr := a5
+    decl := (.induct true 0 1 0
+    (.pi {} {} (.sort .zero) (.sort (.succ .zero))) [5, 6]) }
 
 noncomputable def c5 : ConstEntry :=
-  { ref := (.member a6 0), addr := a6
-    decl := (.recr true false 1 0 1 2 0 42
-    [{ ctor := 43, fields := 0, rhs := (.lam {} t30 (.lam {} t32 (.lam {} t34 (.var 1)))) }, { ctor := 44, fields := 0, rhs := (.lam {} t30 (.lam {} t32 (.lam {} t34 (.var 0)))) }]
-    (.pi {} {} t30 (.pi {} {} t32 (.pi {} {} t34 (.pi {} {} (.const 42 []) t42))))) }
+  { ref := (.ctor a4 0 0), addr := a6
+    decl := (.ctor true 0 4 0 1 1
+    (.pi {} {} (.sort .zero) (.pi {} {} (.app (.const 1 []) (.var 0) .strict .rel) t100))) }
 
 noncomputable def c6 : ConstEntry :=
-  { ref := (.member a7 0), addr := a8
-    decl := (.induct true 0 0 0
-    (.sort .zero) []) }
+  { ref := (.ctor a4 0 1), addr := a7
+    decl := (.ctor true 0 4 1 1 1
+    (.pi {} {} (.sort .zero) (.pi {} {} (.var 0) t100))) }
 
 noncomputable def c7 : ConstEntry :=
-  { ref := (.member a9 0), addr := a9
-    decl := (.defn .defn .safe 1
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 0)) (.pi {} {} t50 (.pi {} {} (.var 1) (.var 3)))))
-    (.lam {} (.sort (.var 0)) (.lam {} (.sort (.var 0)) (.lam {} t50 (.lam {} (.var 1) (.app (.app (.app (.app (.app (.app (.const 53 [(.var 0), (.succ (.var 0))]) (.sort (.var 0)) .strict .rel) (.var 2) .strict .rel) (.lam {} (.sort (.var 0)) (.lam {} (.app (.app t48 (.var 3) .strict .rel) (.var 0) .strict .rel) (.var 1))) .strict .rel) (.var 0) .strict .rel) (.var 3) .strict .rel) (.app (.app (.app (.app (.const 37 [(.succ (.var 0))]) (.sort (.var 0)) .strict .rel) (.var 3) .strict .rel) (.var 2) .strict .rel) (.var 1) .strict .rel) .strict .rel)))))) }
+  { ref := (.member a8 0), addr := a9
+    decl := (.induct true 0 0 0
+    (.sort .zero) []) }
 
 noncomputable def c8 : ConstEntry :=
   { ref := (.member a10 0), addr := a11
@@ -315,285 +315,285 @@ noncomputable def c9 : ConstEntry :=
 noncomputable def c10 : ConstEntry :=
   { ref := (.ctor a10 0 1), addr := a13
     decl := (.ctor true 0 8 1 0 1
-    t77) }
+    t106) }
 
 noncomputable def c11 : ConstEntry :=
   { ref := (.member a14 0), addr := a14
-    decl := (.recr true false 1 1 1 2 0 2
-    [{ ctor := 3, fields := 1, rhs := (.lam {} (.sort .zero) (.lam {} t79 (.lam {} t85 (.lam {} t90 (.lam {} t91 t92))))) }, { ctor := 4, fields := 1, rhs := (.lam {} (.sort .zero) (.lam {} t79 (.lam {} t85 (.lam {} t90 (.lam {} (.var 3) t98))))) }]
-    (.pi {} {} (.sort .zero) (.pi {} {} t79 (.pi {} {} t85 (.pi {} {} t90 (.pi {} {} t104 t42)))))) }
-
-noncomputable def c12 : ConstEntry :=
-  { ref := (.member a15 0), addr := a15
     decl := (.defn .defn .safe 1
     (.pi {} {} (.sort (.var 0)) (.pi {} {} (.var 0) (.var 1)))
     (.lam {} (.sort (.var 0)) (.lam {} (.var 0) (.var 0)))) }
 
+noncomputable def c12 : ConstEntry :=
+  { ref := (.member a15 0), addr := a15
+    decl := (.defn .defn .safe 1
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 0)) (.pi {} {} t114 (.pi {} {} (.var 1) (.var 3)))))
+    (.lam {} (.sort (.var 0)) (.lam {} (.sort (.var 0)) (.lam {} t114 (.lam {} (.var 1) (.app (.app (.app (.app (.app (.app (.const 53 [(.var 0), (.succ (.var 0))]) (.sort (.var 0)) .strict .rel) (.var 2) .strict .rel) (.lam {} (.sort (.var 0)) (.lam {} (.app (.app t112 (.var 3) .strict .rel) (.var 0) .strict .rel) (.var 1))) .strict .rel) (.var 0) .strict .rel) (.var 3) .strict .rel) (.app (.app (.app (.app (.const 26 [(.succ (.var 0))]) (.sort (.var 0)) .strict .rel) (.var 3) .strict .rel) (.var 2) .strict .rel) (.var 1) .strict .rel) .strict .rel)))))) }
+
 noncomputable def c13 : ConstEntry :=
   { ref := (.member a16 0), addr := a16
     decl := (.defn .defn .safe 0
-    t122
-    (.lam {} (.const 8 []) (.lam {} t120 t147))) }
+    t148
+    (.lam {} (.const 8 []) (.lam {} t146 t174))) }
 
 noncomputable def c14 : ConstEntry :=
-  { ref := (.member a17 0), addr := a17
-    decl := (.defn .defn .safe 1
-    (.pi {} {} t150 (.pi {} {} (.const 8 []) (.pi {} {} t156 (.app (.app t157 t158 .strict .rel) (.app t152 (.var 1) .strict .rel) .strict .rel))))
-    (.lam {} t150 (.lam {} (.const 8 []) (.lam {} t156 (.app (.app (.app (.app (.const 48 [(.max (.var 0) (.succ .zero))]) (.lam {} (.const 8 []) t169) .strict .rel) (.app (.app (.app (.app t172 t174 .strict .rel) t176 .strict .rel) (.app t178 t179 .strict .rel) .strict .rel) t179 .strict .rel) .strict .rel) (.lam {} (.const 8 []) (.lam {} t169 (.app (.app (.app (.app t172 (.app (.var 4) t185 .strict .rel) .strict .rel) (.app (.app t157 (.app (.var 4) (.var 1) .strict .rel) .strict .rel) (.app (.app (.const 22 [(.var 0)]) (.var 4) .strict .rel) (.var 1) .strict .rel) .strict .rel) .strict .rel) (.app (.app (.var 2) t185 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.var 0) .strict .rel))) .strict .rel) (.var 1) .strict .rel))))) }
+  { ref := (.member a17 0), addr := a18
+    decl := (.induct true 1 0 0
+    (.sort (.var 0)) [15]) }
 
 noncomputable def c15 : ConstEntry :=
-  { ref := (.member a18 0), addr := a18
-    decl := (.defn .thm .safe 0
-    (.pi {} {} (.const 8 []) t219)
-    (.lam {} (.const 8 []) (.app (.app (.const 12 [.zero]) t219 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t120 t240 t413) .strict .rel))) }
+  { ref := (.ctor a17 0 0), addr := a19
+    decl := (.ctor true 1 14 0 0 0
+    (.const 14 [(.var 0)])) }
 
 noncomputable def c16 : ConstEntry :=
-  { ref := (.member a19 0), addr := a20
-    decl := (.induct true 1 0 0
-    (.sort (.var 0)) [17]) }
+  { ref := (.member a20 0), addr := a21
+    decl := (.induct true 2 2 0
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 1)) (.sort (.max (.var 0) (.max (.var 1) (.succ .zero)))))) [17]) }
 
 noncomputable def c17 : ConstEntry :=
-  { ref := (.ctor a19 0 0), addr := a21
-    decl := (.ctor true 1 16 0 0 0
-    (.const 16 [(.var 0)])) }
+  { ref := (.ctor a20 0 0), addr := a22
+    decl := (.ctor true 2 16 0 2 2
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 1) (.pi {} {} (.var 1) (.app (.app (.const 16 [(.var 0), (.var 1)]) (.var 3) .strict .rel) (.var 2) .strict .rel)))))) }
 
 noncomputable def c18 : ConstEntry :=
-  { ref := (.member a22 0), addr := a23
-    decl := (.induct true 2 2 0
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 1)) (.sort (.max (.var 0) (.max (.var 1) (.succ .zero)))))) [19]) }
+  { ref := (.member a23 0), addr := a23
+    decl := (.defn .thm .safe 0
+    (.pi {} {} (.const 8 []) t203)
+    (.lam {} (.const 8 []) (.app (.app (.const 11 [.zero]) t203 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t146 t224 t398) .strict .rel))) }
 
 noncomputable def c19 : ConstEntry :=
-  { ref := (.ctor a22 0 0), addr := a24
-    decl := (.ctor true 2 18 0 2 2
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 1) (.pi {} {} (.var 1) (.app (.app (.const 18 [(.var 0), (.var 1)]) (.var 3) .strict .rel) (.var 2) .strict .rel)))))) }
+  { ref := (.member a24 0), addr := a24
+    decl := (.recr true false 1 1 1 2 0 4
+    [{ ctor := 5, fields := 1, rhs := (.lam {} (.sort .zero) (.lam {} t403 (.lam {} t409 (.lam {} t414 (.lam {} t415 t416))))) }, { ctor := 6, fields := 1, rhs := (.lam {} (.sort .zero) (.lam {} t403 (.lam {} t409 (.lam {} t414 (.lam {} (.var 3) t422))))) }]
+    (.pi {} {} (.sort .zero) (.pi {} {} t403 (.pi {} {} t409 (.pi {} {} t414 (.pi {} {} t428 t429)))))) }
 
 noncomputable def c20 : ConstEntry :=
   { ref := (.member a25 0), addr := a25
     decl := (.defn .defn .safe 1
-    (.pi {} {} (.sort .zero) (.pi {} {} t79 (.pi {} {} t24 (.pi {} {} t433 (.pi {} {} t437 t438)))))
-    (.lam {} (.sort .zero) (.lam {} t79 (.lam {} t24 (.lam {} t433 (.lam {} t437 (.app (.app (.app (.app (.app (.const 11 [(.var 0)]) (.var 4) .strict .rel) (.var 3) .strict .rel) (.lam {} (.app (.const 1 []) (.var 4) .strict .rel) t92) .strict .rel) (.lam {} (.var 4) t98) .strict .rel) (.var 2) .strict .rel))))))) }
+    (.pi {} {} t436 (.pi {} {} (.const 43 []) (.pi {} {} (.const 43 []) (.pi {} {} t439 (.pi {} {} t442 (.pi {} {} t445 (.pi {} {} t448 (.app (.app (.var 6) (.var 5) .strict .rel) (.var 4) .strict .rel))))))))
+    (.lam {} t436 (.lam {} (.const 43 []) (.lam {} (.const 43 []) (.lam {} t439 (.lam {} t442 (.lam {} t445 (.lam {} t448 (.app (.app (.app (.app (.const 24 [(.var 0)]) (.lam {} (.const 43 []) (.app (.app (.var 7) (.var 0) .strict .rel) (.var 5) .strict .rel)) .strict .rel) (.var 5) .strict .rel) (.app (.app (.app (.app (.const 24 [(.var 0)]) (.lam {} (.const 43 []) (.app (.app (.var 7) (.const 44 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.var 4) .strict .rel) (.app (.var 3) (.const 30 []) .strict .rel) .strict .rel) (.app (.var 2) (.const 30 []) .strict .rel) .strict .rel) .strict .rel) (.app (.app (.app (.app (.const 24 [(.var 0)]) (.lam {} (.const 43 []) (.app (.app (.var 7) (.const 45 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.var 4) .strict .rel) t481 .strict .rel) (.app (.var 0) (.const 30 []) .strict .rel) .strict .rel) .strict .rel))))))))) }
 
 noncomputable def c21 : ConstEntry :=
   { ref := (.member a26 0), addr := a26
     decl := (.defn .defn .safe 0
-    t458
-    (.lam {} (.const 8 []) (.proj 18 0 t460))) }
+    t148
+    (.lam {} (.const 8 []) (.lam {} t146 t280))) }
 
 noncomputable def c22 : ConstEntry :=
   { ref := (.member a27 0), addr := a27
     decl := (.defn .defn .safe 1
-    (.pi {} {} t150 (.pi {} {} (.const 8 []) t463))
-    (.lam {} t150 (.lam {} (.const 8 []) (.app (.app (.app (.app (.const 48 [(.max (.succ (.var 0)) (.succ (.succ .zero)))]) (.lam {} (.const 8 []) t463) .strict .rel) t176 .strict .rel) (.lam {} (.const 8 []) (.lam {} t463 (.app (.app t157 t154 .strict .rel) (.var 0) .strict .rel))) .strict .rel) (.var 0) .strict .rel)))) }
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.const 43 []) (.pi {} {} (.const 43 []) (.pi {} {} t496 (.app (.app (.app (.const 23 [(.var 0)]) (.var 3) .strict .rel) (.var 2) .strict .rel) (.var 1) .strict .rel)))))
+    (.lam {} (.sort (.var 0)) (.lam {} (.const 43 []) (.lam {} (.const 43 []) (.lam {} t496 (.app (.app (.app (.app (.app (.app (.const 3 [(.var 0), (.succ .zero)]) (.const 43 []) .strict .rel) (.var 2) .strict .rel) (.lam {} (.const 43 []) (.app (.app t508 (.var 3) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.app (.app (.app (.app (.const 24 [(.var 0)]) (.lam {} (.const 43 []) (.app (.app t508 (.var 0) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.var 2) .strict .rel) t518 .strict .rel) t518 .strict .rel) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)))))) }
 
 noncomputable def c23 : ConstEntry :=
   { ref := (.member a28 0), addr := a28
-    decl := (.defn .thm .safe 0
-    (.pi {} {} (.const 8 []) t483)
-    (.lam {} (.const 8 []) (.app (.app (.const 12 [.zero]) t483 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t120 t240 t571) .strict .rel))) }
+    decl := (.defn .defn .safe 1
+    (.pi {} {} (.sort (.var 0)) t436)
+    (.lam {} (.sort (.var 0)) (.lam {} (.const 43 []) (.lam {} (.const 43 []) (.app (.app (.app t531 (.var 1) .strict .rel) (.app (.app t533 t534 .strict .rel) (.var 2) .strict .rel) .strict .rel) (.app (.app t533 (.var 2) .strict .rel) t534 .strict .rel) .strict .rel))))) }
 
 noncomputable def c24 : ConstEntry :=
   { ref := (.member a29 0), addr := a29
-    decl := (.defn .thm .safe 1
-    (.pi {} {} t150 (.pi {} {} (.const 8 []) (.pi {} {} t156 (.app (.app (.app (.const 33 [(.var 0)]) t158 .strict .rel) (.app (.app t577 (.var 1) .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app t581 (.proj 18 1 t585) .strict .rel) .strict .rel))))
-    (.lam {} t150 (.lam {} (.const 8 []) (.lam {} t156 (.app (.app (.app (.app (.const 46 [.zero]) (.lam {} (.const 8 []) (.app (.app (.app (.const 33 [(.var 0)]) t42 .strict .rel) (.app (.app t594 (.var 0) .strict .rel) (.var 1) .strict .rel) .strict .rel) (.app t98 (.proj 18 1 (.app (.app (.app (.const 14 [(.var 0)]) (.var 3) .strict .rel) (.var 0) .strict .rel) (.var 1) .strict .rel)) .strict .rel) .strict .rel)) .strict .rel) (.var 1) .strict .rel) (.app (.app (.const 34 [(.var 0)]) t174 .strict .rel) (.app (.app t577 (.const 9 []) .strict .rel) (.var 0) .strict .rel) .strict .rel) .strict .rel) (.lam {} (.const 8 []) (.app (.app (.const 34 [(.var 0)]) t612 .strict .rel) (.app (.app t594 t140 .strict .rel) (.var 1) .strict .rel) .strict .rel)) .strict .rel))))) }
+    decl := (.defn .defn .safe 1
+    (.pi {} {} t435 (.pi {} {} (.const 43 []) (.pi {} {} t544 (.pi {} {} t545 t546))))
+    (.lam {} t435 (.lam {} (.const 43 []) (.lam {} t544 (.lam {} t545 (.app (.app (.app (.app (.const 41 [(.var 0)]) (.var 3) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) (.var 2) .strict .rel)))))) }
 
 noncomputable def c25 : ConstEntry :=
   { ref := (.member a30 0), addr := a30
     decl := (.defn .defn .safe 1
-    (.pi {} {} t30 (.pi {} {} (.const 42 []) (.pi {} {} t622 (.pi {} {} t623 t438))))
-    (.lam {} t30 (.lam {} (.const 42 []) (.lam {} t622 (.lam {} t623 (.app (.app (.app (.app (.const 5 [(.var 0)]) (.var 3) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) (.var 2) .strict .rel)))))) }
+    (.pi {} {} t560 (.pi {} {} (.const 8 []) (.pi {} {} t565 (.app (.app t566 t567 .strict .rel) (.app t562 (.var 1) .strict .rel) .strict .rel))))
+    (.lam {} t560 (.lam {} (.const 8 []) (.lam {} t565 (.app (.app (.app (.app (.const 46 [(.max (.var 0) (.succ .zero))]) (.lam {} (.const 8 []) t578) .strict .rel) (.app (.app (.app (.app t581 t583 .strict .rel) t585 .strict .rel) (.app t587 t588 .strict .rel) .strict .rel) t588 .strict .rel) .strict .rel) (.lam {} (.const 8 []) (.lam {} t578 (.app (.app (.app (.app t581 (.app (.var 4) t364 .strict .rel) .strict .rel) (.app (.app t566 (.app (.var 4) (.var 1) .strict .rel) .strict .rel) (.app (.app (.const 39 [(.var 0)]) (.var 4) .strict .rel) (.var 1) .strict .rel) .strict .rel) .strict .rel) (.app (.app (.var 2) t364 .strict .rel) (.var 0) .strict .rel) .strict .rel) (.var 0) .strict .rel))) .strict .rel) (.var 1) .strict .rel))))) }
 
 noncomputable def c26 : ConstEntry :=
   { ref := (.member a31 0), addr := a31
-    decl := (.defn .defn .safe 0
-    (.const 35 [])
-    (.const 17 [(.succ .zero)])) }
+    decl := (.defn .thm .safe 1
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.var 0) (.pi {} {} (.var 1) (.pi {} {} t614 (.app (.app (.app (.const 35 [(.var 0)]) (.var 3) .strict .rel) (.var 1) .strict .rel) (.var 2) .strict .rel)))))
+    (.lam {} (.sort (.var 0)) (.lam {} (.var 0) (.lam {} (.var 1) (.lam {} t614 (.app (.app (.app (.app (.app (.app t39 (.var 3) .strict .rel) (.var 2) .strict .rel) (.lam {} (.var 3) (.lam {} (.app (.app t24 (.var 3) .strict .rel) (.var 0) .strict .rel) (.app (.app (.app (.const 35 [(.var 0)]) (.var 5) .strict .rel) (.var 1) .strict .rel) (.var 4) .strict .rel))) .strict .rel) (.app (.app (.const 0 [(.var 0)]) (.var 3) .strict .rel) (.var 2) .strict .rel) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)))))) }
 
 noncomputable def c27 : ConstEntry :=
   { ref := (.member a32 0), addr := a32
-    decl := (.defn .defn .safe 1
-    (.pi {} {} (.sort (.var 0)) t638)
-    (.lam {} (.sort (.var 0)) (.lam {} (.const 42 []) (.lam {} (.const 42 []) (.app (.app (.app t642 (.var 1) .strict .rel) (.app (.app t644 t645 .strict .rel) (.var 2) .strict .rel) .strict .rel) (.app (.app t644 (.var 2) .strict .rel) t645 .strict .rel) .strict .rel))))) }
+    decl := (.defn .defn .safe 0
+    (.pi {} {} (.const 43 []) (.pi {} {} (.const 43 []) t642))
+    (.lam {} (.const 43 []) (.lam {} (.const 43 []) (.app (.app (.app (.app (.app (.app (.app (.const 20 [(.succ .zero)]) (.lam {} (.const 43 []) (.lam {} (.const 43 []) t642)) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) (.lam {} (.const 37 []) (.app (.app (.const 6 []) (.app t651 (.const 44 []) .strict .rel) .strict .rel) (.app t655 (.const 44 []) .strict .rel) .strict .rel)) .strict .rel) (.lam {} (.const 37 []) (.app (.app (.const 5 []) t660 .strict .rel) (.lam {} t660 (.app (.app (.app t663 (.const 44 []) .strict .rel) (.const 45 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel)) .strict .rel) (.lam {} (.const 37 []) (.app (.app (.const 5 []) t672 .strict .rel) (.lam {} t672 (.app (.app (.app t663 (.const 45 []) .strict .rel) (.const 44 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel)) .strict .rel) (.lam {} (.const 37 []) (.app (.app (.const 6 []) (.app t671 (.const 45 []) .strict .rel) .strict .rel) (.app t655 (.const 45 []) .strict .rel) .strict .rel)) .strict .rel)))) }
 
 noncomputable def c28 : ConstEntry :=
   { ref := (.member a33 0), addr := a33
-    decl := (.defn .defn .safe 1
-    (.pi {} {} (.sort (.var 0)) t463)
-    (.lam {} (.sort (.var 0)) (.pi {} {} (.var 0) (.pi {} {} (.var 1) (.app (.const 2 []) t658 .strict .rel))))) }
+    decl := (.defn .defn .safe 0
+    t689
+    (.lam {} (.const 8 []) (.proj 16 0 t691))) }
 
 noncomputable def c29 : ConstEntry :=
   { ref := (.member a34 0), addr := a34
     decl := (.defn .defn .safe 1
-    (.pi {} {} t150 (.pi {} {} (.const 8 []) (.pi {} {} t156 t158)))
-    (.lam {} t150 (.lam {} (.const 8 []) (.lam {} t156 (.proj 18 0 t585))))) }
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort .zero) (.pi {} {} t402 (.pi {} {} (.var 2) (.pi {} {} (.var 3) (.var 4))))))
+    (.lam {} (.sort (.var 0)) (.lam {} (.sort .zero) (.lam {} t402 (.lam {} (.var 2) (.lam {} (.var 3) (.app (.app (.app (.app (.app (.const 51 [(.var 0)]) (.var 3) .strict .rel) (.lam {} t428 (.var 5)) .strict .rel) (.var 2) .strict .rel) (.lam {} t415 (.var 1)) .strict .rel) (.lam {} (.var 3) (.var 2)) .strict .rel))))))) }
 
 noncomputable def c30 : ConstEntry :=
-  { ref := (.member a35 0), addr := a36
-    decl := (.induct true 1 2 0
-    (.pi {} {} (.sort (.succ (.var 0))) (.pi {} {} (.const 8 []) (.sort (.succ (.var 0))))) [31]) }
+  { ref := (.member a35 0), addr := a35
+    decl := (.defn .defn .safe 0
+    (.const 37 [])
+    (.const 15 [(.succ .zero)])) }
 
 noncomputable def c31 : ConstEntry :=
-  { ref := (.ctor a35 0 0), addr := a37
-    decl := (.ctor true 1 30 0 2 1
-    (.pi {} {} (.sort (.succ (.var 0))) (.pi {} {} (.const 8 []) (.pi {} {} (.var 1) (.app (.app (.const 30 [(.var 0)]) (.var 2) .strict .rel) (.var 1) .strict .rel))))) }
+  { ref := (.member a36 0), addr := a36
+    decl := (.defn .thm .safe 0
+    (.pi {} {} (.const 8 []) t719)
+    (.lam {} (.const 8 []) (.app (.app (.const 11 [.zero]) t719 .strict .rel) (.letE { nonDep := false, kind := Compilatrix.Ixon.V3.LetKind.value, binder := { uses := Compilatrix.Ixon.Uses.many, value := { owned := Compilatrix.Ixon.Owned.shared, locality := Compilatrix.Ixon.V3.Locality.unrestricted } } } .rel t146 t224 t807) .strict .rel))) }
 
 noncomputable def c32 : ConstEntry :=
-  { ref := (.member a38 0), addr := a38
-    decl := (.defn .thm .safe 2
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 1) (.pi {} {} (.var 2) (.pi {} {} t679 (.pi {} {} t682 (.app (.app t684 t685 .strict .rel) (.app (.var 1) (.var 2) .strict .rel) .strict .rel)))))))
-    (.lam {} (.sort (.var 0)) (.lam {} (.sort (.var 1)) (.lam {} (.var 1) (.lam {} (.var 2) (.lam {} t679 (.lam {} t682 (.app (.app (.app (.app (.app (.app t695 (.var 5) .strict .rel) (.var 3) .strict .rel) (.lam {} (.var 5) (.lam {} (.app (.app (.app (.const 33 [(.var 0)]) (.var 6) .strict .rel) (.var 4) .strict .rel) (.var 0) .strict .rel) (.app (.app t703 (.app (.var 3) (.var 5) .strict .rel) .strict .rel) t154 .strict .rel))) .strict .rel) (.app (.app (.const 0 [(.var 1)]) (.var 4) .strict .rel) t685 .strict .rel) .strict .rel) (.var 2) .strict .rel) (.var 0) .strict .rel)))))))) }
+  { ref := (.member a37 0), addr := a37
+    decl := (.defn .defn .safe 1
+    (.pi {} {} (.sort (.var 0)) t811)
+    (.lam {} (.sort (.var 0)) (.pi {} {} (.var 0) (.pi {} {} (.var 1) (.app (.const 4 []) t614 .strict .rel))))) }
 
 noncomputable def c33 : ConstEntry :=
-  { ref := (.member a39 0), addr := a40
-    decl := (.induct true 1 2 1
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.var 0) (.pi {} {} (.var 1) (.sort .zero)))) [34]) }
+  { ref := (.member a38 0), addr := a39
+    decl := (.induct true 1 2 0
+    (.pi {} {} (.sort (.succ (.var 0))) (.pi {} {} (.const 8 []) (.sort (.succ (.var 0))))) [34]) }
 
 noncomputable def c34 : ConstEntry :=
-  { ref := (.ctor a39 0 0), addr := a41
-    decl := (.ctor true 1 33 0 2 0
-    t8) }
+  { ref := (.ctor a38 0 0), addr := a40
+    decl := (.ctor true 1 33 0 2 1
+    (.pi {} {} (.sort (.succ (.var 0))) (.pi {} {} (.const 8 []) (.pi {} {} (.var 1) (.app (.app (.const 33 [(.var 0)]) (.var 2) .strict .rel) (.var 1) .strict .rel))))) }
 
 noncomputable def c35 : ConstEntry :=
-  { ref := (.member a42 0), addr := a42
-    decl := (.defn .defn .safe 0
-    (.sort (.succ .zero))
-    t307) }
+  { ref := (.member a41 0), addr := a42
+    decl := (.induct true 1 2 1
+    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.var 0) (.pi {} {} (.var 1) (.sort .zero)))) [36]) }
 
 noncomputable def c36 : ConstEntry :=
-  { ref := (.member a43 0), addr := a43
-    decl := (.defn .defn .safe 0
-    (.pi {} {} (.const 42 []) (.pi {} {} (.const 42 []) t727))
-    (.lam {} (.const 42 []) (.lam {} (.const 42 []) (.app (.app (.app (.app (.app (.app (.app (.const 49 [(.succ .zero)]) (.lam {} (.const 42 []) (.lam {} (.const 42 []) t727)) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) (.lam {} (.const 35 []) (.app (.app (.const 4 []) (.app t736 (.const 43 []) .strict .rel) .strict .rel) (.app t740 (.const 43 []) .strict .rel) .strict .rel)) .strict .rel) (.lam {} (.const 35 []) (.app (.app (.const 3 []) t745 .strict .rel) (.lam {} t745 (.app (.app (.app t748 (.const 43 []) .strict .rel) (.const 44 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel)) .strict .rel) (.lam {} (.const 35 []) (.app (.app (.const 3 []) t757 .strict .rel) (.lam {} t757 (.app (.app (.app t748 (.const 44 []) .strict .rel) (.const 43 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel)) .strict .rel) (.lam {} (.const 35 []) (.app (.app (.const 4 []) (.app t756 (.const 44 []) .strict .rel) .strict .rel) (.app t740 (.const 44 []) .strict .rel) .strict .rel)) .strict .rel)))) }
+  { ref := (.ctor a41 0 0), addr := a43
+    decl := (.ctor true 1 35 0 2 0
+    t8) }
 
 noncomputable def c37 : ConstEntry :=
   { ref := (.member a44 0), addr := a44
-    decl := (.defn .thm .safe 1
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.var 0) (.pi {} {} (.var 1) (.pi {} {} t658 (.app (.app (.app (.const 33 [(.var 0)]) (.var 3) .strict .rel) (.var 1) .strict .rel) (.var 2) .strict .rel)))))
-    (.lam {} (.sort (.var 0)) (.lam {} (.var 0) (.lam {} (.var 1) (.lam {} t658 (.app (.app (.app (.app (.app (.app t695 (.var 3) .strict .rel) (.var 2) .strict .rel) (.lam {} (.var 3) (.lam {} (.app (.app t680 (.var 3) .strict .rel) (.var 0) .strict .rel) (.app (.app (.app (.const 33 [(.var 0)]) (.var 5) .strict .rel) (.var 1) .strict .rel) (.var 4) .strict .rel))) .strict .rel) (.app (.app (.const 0 [(.var 0)]) (.var 3) .strict .rel) (.var 2) .strict .rel) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)))))) }
+    decl := (.defn .defn .safe 0
+    (.sort (.succ .zero))
+    t291) }
 
 noncomputable def c38 : ConstEntry :=
   { ref := (.member a45 0), addr := a45
     decl := (.defn .defn .safe 1
-    (.pi {} {} (.sort (.succ (.var 0))) (.pi {} {} (.const 8 []) (.pi {} {} t802 (.var 2))))
-    (.lam {} (.sort (.succ (.var 0))) (.lam {} (.const 8 []) (.lam {} t802 (.proj 30 0 (.var 0)))))) }
+    (.pi {} {} t560 (.pi {} {} (.const 8 []) (.pi {} {} t829 (.pi {} {} t831 t546))))
+    (.lam {} t560 (.lam {} (.const 8 []) (.lam {} t829 (.lam {} t831 (.app (.app (.app t837 (.var 1) .strict .rel) (.lam {} (.const 8 []) (.lam {} t839 t567)) .strict .rel) (.var 2) .strict .rel)))))) }
 
 noncomputable def c39 : ConstEntry :=
   { ref := (.member a46 0), addr := a46
     decl := (.defn .defn .safe 1
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.sort .zero) (.pi {} {} t78 (.pi {} {} (.var 2) (.pi {} {} (.var 3) (.var 4))))))
-    (.lam {} (.sort (.var 0)) (.lam {} (.sort .zero) (.lam {} t78 (.lam {} (.var 2) (.lam {} (.var 3) (.app (.app (.app (.app (.app (.const 20 [(.var 0)]) (.var 3) .strict .rel) (.lam {} t104 (.var 5)) .strict .rel) (.var 2) .strict .rel) (.lam {} t91 (.var 1)) .strict .rel) (.lam {} (.var 3) (.var 2)) .strict .rel))))))) }
+    (.pi {} {} t560 (.pi {} {} (.const 8 []) t811))
+    (.lam {} t560 (.lam {} (.const 8 []) (.app (.app (.app (.app (.const 46 [(.max (.succ (.var 0)) (.succ (.succ .zero)))]) (.lam {} (.const 8 []) t811) .strict .rel) t585 .strict .rel) (.lam {} (.const 8 []) (.lam {} t811 (.app (.app t566 t50 .strict .rel) (.var 0) .strict .rel))) .strict .rel) (.var 0) .strict .rel)))) }
 
 noncomputable def c40 : ConstEntry :=
   { ref := (.member a47 0), addr := a47
-    decl := (.defn .defn .safe 1
-    t835
-    (.lam {} t150 (.lam {} (.const 8 []) (.lam {} t830 (.lam {} t831 (.app (.app (.app (.app (.const 46 [(.var 0)]) (.lam {} (.const 8 []) t837) .strict .rel) (.var 2) .strict .rel) t842 .strict .rel) (.lam {} (.const 8 []) t98) .strict .rel)))))) }
+    decl := (.defn .thm .safe 1
+    (.pi {} {} t560 (.pi {} {} (.const 8 []) (.pi {} {} t565 (.app (.app (.app (.const 35 [(.var 0)]) t567 .strict .rel) (.app (.app t864 (.var 1) .strict .rel) (.var 0) .strict .rel) .strict .rel) (.app t68 (.proj 16 1 t871) .strict .rel) .strict .rel))))
+    (.lam {} t560 (.lam {} (.const 8 []) (.lam {} t565 (.app (.app (.app (.app (.const 38 [.zero]) (.lam {} (.const 8 []) (.app (.app (.app (.const 35 [(.var 0)]) t429 .strict .rel) (.app (.app t880 (.var 0) .strict .rel) (.var 1) .strict .rel) .strict .rel) (.app t422 (.proj 16 1 (.app (.app (.app (.const 25 [(.var 0)]) (.var 3) .strict .rel) (.var 0) .strict .rel) (.var 1) .strict .rel)) .strict .rel) .strict .rel)) .strict .rel) (.var 1) .strict .rel) (.app (.app (.const 36 [(.var 0)]) t583 .strict .rel) (.app (.app t864 (.const 9 []) .strict .rel) (.var 0) .strict .rel) .strict .rel) .strict .rel) (.lam {} (.const 8 []) (.app (.app (.const 36 [(.var 0)]) t830 .strict .rel) (.app (.app t880 t167 .strict .rel) (.var 1) .strict .rel) .strict .rel)) .strict .rel))))) }
 
 noncomputable def c41 : ConstEntry :=
   { ref := (.member a48 0), addr := a48
-    decl := (.defn .defn .safe 0
-    (.app (.const 28 [(.succ .zero)]) (.const 42 []) .strict .rel)
-    (.const 36 [])) }
+    decl := (.recr true false 1 0 1 2 0 43
+    [{ ctor := 44, fields := 0, rhs := (.lam {} t435 (.lam {} t907 (.lam {} t908 (.var 1)))) }, { ctor := 45, fields := 0, rhs := (.lam {} t435 (.lam {} t907 (.lam {} t908 (.var 0)))) }]
+    (.pi {} {} t435 (.pi {} {} t907 (.pi {} {} t908 (.pi {} {} (.const 43 []) t429))))) }
 
 noncomputable def c42 : ConstEntry :=
-  { ref := (.member a49 0), addr := a50
-    decl := (.induct true 0 0 0
-    (.sort (.succ .zero)) [43, 44]) }
+  { ref := (.member a49 0), addr := a49
+    decl := (.defn .defn .safe 0
+    t106
+    (.lam {} (.const 8 []) (.app (.app (.app (.app (.app (.const 29 [(.succ .zero)]) (.const 8 []) .strict .rel) (.app t714 (.const 45 []) .strict .rel) .strict .rel) (.app (.app (.const 52 []) t200 .strict .rel) (.const 45 []) .strict .rel) .strict .rel) (.app (.app t155 (.natLit 1) .strict .rel) (.app (.const 48 []) (.natLit 1) .strict .rel) .strict .rel) .strict .rel) t160 .strict .rel))) }
 
 noncomputable def c43 : ConstEntry :=
-  { ref := (.ctor a49 0 0), addr := a51
-    decl := (.ctor true 0 42 0 0 0
-    (.const 42 [])) }
+  { ref := (.member a50 0), addr := a51
+    decl := (.induct true 0 0 0
+    (.sort (.succ .zero)) [44, 45]) }
 
 noncomputable def c44 : ConstEntry :=
-  { ref := (.ctor a49 0 1), addr := a52
-    decl := (.ctor true 0 42 1 0 0
-    (.const 42 [])) }
+  { ref := (.ctor a50 0 0), addr := a52
+    decl := (.ctor true 0 43 0 0 0
+    (.const 43 [])) }
 
 noncomputable def c45 : ConstEntry :=
-  { ref := (.member a53 0), addr := a53
-    decl := (.defn .defn .safe 0
-    t458
-    (.lam {} (.const 8 []) (.proj 18 1 t460))) }
+  { ref := (.ctor a50 0 1), addr := a53
+    decl := (.ctor true 0 43 1 0 0
+    (.const 43 [])) }
 
 noncomputable def c46 : ConstEntry :=
   { ref := (.member a54 0), addr := a54
-    decl := (.defn .defn .safe 1
-    (.pi {} {} t150 (.pi {} {} (.const 8 []) (.pi {} {} t855 (.pi {} {} t831 t438))))
-    (.lam {} t150 (.lam {} (.const 8 []) (.lam {} t855 (.lam {} t831 (.app (.app (.app t860 (.var 1) .strict .rel) (.lam {} (.const 8 []) (.lam {} t837 t158)) .strict .rel) (.var 2) .strict .rel)))))) }
+    decl := (.recr true false 1 0 1 2 0 8
+    [{ ctor := 9, fields := 0, rhs := (.lam {} t560 (.lam {} t587 (.lam {} t936 (.var 1)))) }, { ctor := 10, fields := 1, rhs := (.lam {} t560 (.lam {} t587 (.lam {} t936 (.lam {} (.const 8 []) (.app t422 (.app (.app (.app t837 (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) .strict .rel))))) }]
+    (.pi {} {} t560 (.pi {} {} t587 (.pi {} {} t936 (.pi {} {} (.const 8 []) t429))))) }
 
 noncomputable def c47 : ConstEntry :=
   { ref := (.member a55 0), addr := a55
-    decl := (.defn .defn .safe 0
-    (.pi {} {} (.const 8 []) (.app (.app (.const 30 [.zero]) (.const 8 []) .strict .rel) (.var 0) .strict .rel))
-    (.lam {} (.const 8 []) (.app (.app (.app (.const 31 [.zero]) (.const 8 []) .strict .rel) (.var 0) .strict .rel) (.var 0) .strict .rel))) }
+    decl := (.defn .defn .safe 1
+    (.pi {} {} (.sort (.succ (.var 0))) (.pi {} {} (.const 8 []) (.pi {} {} t953 (.var 2))))
+    (.lam {} (.sort (.succ (.var 0))) (.lam {} (.const 8 []) (.lam {} t953 (.proj 33 0 (.var 0)))))) }
 
 noncomputable def c48 : ConstEntry :=
   { ref := (.member a56 0), addr := a56
-    decl := (.recr true false 1 0 1 2 0 8
-    [{ ctor := 9, fields := 0, rhs := (.lam {} t150 (.lam {} t178 (.lam {} t881 (.var 1)))) }, { ctor := 10, fields := 1, rhs := (.lam {} t150 (.lam {} t178 (.lam {} t881 (.lam {} (.const 8 []) (.app t98 (.app (.app (.app t860 (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel) .strict .rel))))) }]
-    (.pi {} {} t150 (.pi {} {} t178 (.pi {} {} t881 (.pi {} {} (.const 8 []) t42))))) }
+    decl := (.defn .defn .safe 0
+    (.pi {} {} (.const 8 []) (.app (.app (.const 33 [.zero]) (.const 8 []) .strict .rel) (.var 0) .strict .rel))
+    (.lam {} (.const 8 []) (.app (.app (.app (.const 34 [.zero]) (.const 8 []) .strict .rel) (.var 0) .strict .rel) (.var 0) .strict .rel))) }
 
 noncomputable def c49 : ConstEntry :=
   { ref := (.member a57 0), addr := a57
     decl := (.defn .defn .safe 1
-    (.pi {} {} t638 (.pi {} {} (.const 42 []) (.pi {} {} (.const 42 []) (.pi {} {} t899 (.pi {} {} t902 (.pi {} {} t905 (.pi {} {} t908 (.app (.app (.var 6) (.var 5) .strict .rel) (.var 4) .strict .rel))))))))
-    (.lam {} t638 (.lam {} (.const 42 []) (.lam {} (.const 42 []) (.lam {} t899 (.lam {} t902 (.lam {} t905 (.lam {} t908 (.app (.app (.app (.app (.const 25 [(.var 0)]) (.lam {} (.const 42 []) (.app (.app (.var 7) (.var 0) .strict .rel) (.var 5) .strict .rel)) .strict .rel) (.var 5) .strict .rel) (.app (.app (.app (.app (.const 25 [(.var 0)]) (.lam {} (.const 42 []) (.app (.app (.var 7) (.const 43 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.var 4) .strict .rel) (.app (.var 3) (.const 26 []) .strict .rel) .strict .rel) (.app (.var 2) (.const 26 []) .strict .rel) .strict .rel) .strict .rel) (.app (.app (.app (.app (.const 25 [(.var 0)]) (.lam {} (.const 42 []) (.app (.app (.var 7) (.const 44 []) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.var 4) .strict .rel) t842 .strict .rel) (.app (.var 0) (.const 26 []) .strict .rel) .strict .rel) .strict .rel))))))))) }
+    t974
+    (.const 55 [(.var 0)])) }
 
 noncomputable def c50 : ConstEntry :=
   { ref := (.member a58 0), addr := a58
-    decl := (.defn .defn .safe 1
-    (.pi {} {} (.sort (.var 0)) (.pi {} {} (.const 42 []) (.pi {} {} (.const 42 []) (.pi {} {} t726 (.app (.app (.app (.const 27 [(.var 0)]) (.var 3) .strict .rel) (.var 2) .strict .rel) (.var 1) .strict .rel)))))
-    (.lam {} (.sort (.var 0)) (.lam {} (.const 42 []) (.lam {} (.const 42 []) (.lam {} t726 (.app (.app (.app (.app (.app (.app (.const 54 [(.var 0), (.succ .zero)]) (.const 42 []) .strict .rel) (.var 2) .strict .rel) (.lam {} (.const 42 []) (.app (.app t962 (.var 3) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.app (.app (.app (.app (.const 25 [(.var 0)]) (.lam {} (.const 42 []) (.app (.app t962 (.var 0) .strict .rel) (.var 0) .strict .rel)) .strict .rel) (.var 2) .strict .rel) t972 .strict .rel) t972 .strict .rel) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)))))) }
+    decl := (.defn .defn .safe 0
+    t689
+    (.lam {} (.const 8 []) (.proj 16 1 t691))) }
 
 noncomputable def c51 : ConstEntry :=
   { ref := (.member a59 0), addr := a59
-    decl := (.defn .defn .safe 0
-    t77
-    (.lam {} (.const 8 []) (.app (.app (.app (.app (.app (.const 39 [(.succ .zero)]) (.const 8 []) .strict .rel) (.app t478 (.const 44 []) .strict .rel) .strict .rel) (.app (.app (.const 41 []) t216 .strict .rel) (.const 44 []) .strict .rel) .strict .rel) (.app (.app t129 (.natLit 1) .strict .rel) (.app (.const 47 []) (.natLit 1) .strict .rel) .strict .rel) .strict .rel) t134 .strict .rel))) }
+    decl := (.defn .defn .safe 1
+    (.pi {} {} (.sort .zero) (.pi {} {} t403 (.pi {} {} t100 (.pi {} {} t982 (.pi {} {} t986 t546)))))
+    (.lam {} (.sort .zero) (.lam {} t403 (.lam {} t100 (.lam {} t982 (.lam {} t986 (.app (.app (.app (.app (.app (.const 19 [(.var 0)]) (.var 4) .strict .rel) (.var 3) .strict .rel) (.lam {} (.app (.const 1 []) (.var 4) .strict .rel) t416) .strict .rel) (.lam {} (.var 4) t422) .strict .rel) (.var 2) .strict .rel))))))) }
 
 noncomputable def c52 : ConstEntry :=
   { ref := (.member a60 0), addr := a60
-    decl := (.defn .defn .safe 1
-    t835
-    (.const 40 [(.var 0)])) }
+    decl := (.defn .defn .safe 0
+    (.app (.const 32 [(.succ .zero)]) (.const 43 []) .strict .rel)
+    (.const 27 [])) }
 
 noncomputable def c53 : ConstEntry :=
   { ref := (.member a61 0), addr := a61
-    decl := (.recr true true 2 2 1 1 1 33
-    [{ ctor := 34, fields := 0, rhs := (.lam {} (.sort (.var 1)) (.lam {} (.var 0) (.lam {} t1002 (.lam {} t1006 (.var 0))))) }]
-    (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 0) (.pi {} {} t1002 (.pi {} {} t1006 (.pi {} {} (.var 3) (.pi {} {} t1012 (.app t154 (.var 0) .strict .rel)))))))) }
+    decl := (.recr true true 2 2 1 1 1 35
+    [{ ctor := 36, fields := 0, rhs := (.lam {} (.sort (.var 1)) (.lam {} (.var 0) (.lam {} t1013 (.lam {} t1017 (.var 0))))) }]
+    (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 0) (.pi {} {} t1013 (.pi {} {} t1017 (.pi {} {} (.var 3) (.pi {} {} t70 (.app t50 (.var 0) .strict .rel)))))))) }
 
 noncomputable def c54 : ConstEntry :=
   { ref := (.member a62 0), addr := a62
-    decl := (.defn .defn .safe 2
-    (.pi {} {} (.sort (.var 1)) (.pi {} {} (.var 0) (.pi {} {} t1020 (.pi {} {} t581 (.pi {} {} (.var 3) (.pi {} {} t1012 t154))))))
-    (.lam {} (.sort (.var 1)) (.lam {} (.var 0) (.lam {} t1020 (.lam {} t581 (.lam {} (.var 3) (.lam {} t1012 (.app (.app (.app (.app (.app (.app (.const 53 [(.var 0), (.var 1)]) (.var 5) .strict .rel) (.var 4) .strict .rel) (.lam {} (.var 5) (.lam {} (.app (.app t703 (.var 5) .strict .rel) (.var 0) .strict .rel) (.app (.var 5) (.var 1) .strict .rel))) .strict .rel) (.var 2) .strict .rel) (.var 1) .strict .rel) (.var 0) .strict .rel)))))))) }
+    decl := (.defn .defn .safe 1
+    (.pi {} {} t560 (.pi {} {} (.const 8 []) (.pi {} {} t565 t567)))
+    (.lam {} t560 (.lam {} (.const 8 []) (.lam {} t565 (.proj 16 0 t871))))) }
 
 noncomputable def c55 : ConstEntry :=
   { ref := (.member a63 0), addr := a63
-    decl := (.defn .defn .safe 0
-    t122
-    (.lam {} (.const 8 []) (.lam {} t120 t296))) }
+    decl := (.defn .defn .safe 1
+    t974
+    (.lam {} t560 (.lam {} (.const 8 []) (.lam {} t971 (.lam {} t831 (.app (.app (.app (.app (.const 38 [(.var 0)]) (.lam {} (.const 8 []) t839) .strict .rel) (.var 2) .strict .rel) t481 .strict .rel) (.lam {} (.const 8 []) t422) .strict .rel)))))) }
 
 /-- The program as ingress leaves it: constants, roots and pinned identities. -/
 noncomputable def program : Program :=
   { consts := (.node (some c0) (.node none (.node none (.node none (.node none (.node none .leaf (.node (some c32) .leaf .leaf)) (.node (some c16) .leaf (.node (some c48) .leaf .leaf))) (.node (some c8) (.node none .leaf (.node (some c40) .leaf .leaf)) (.node (some c24) .leaf .leaf))) (.node (some c4) (.node none (.node none .leaf (.node (some c36) .leaf .leaf)) (.node (some c20) .leaf (.node (some c52) .leaf .leaf))) (.node (some c12) (.node none .leaf (.node (some c44) .leaf .leaf)) (.node (some c28) .leaf .leaf)))) (.node (some c2) (.node none (.node none (.node none .leaf (.node (some c34) .leaf .leaf)) (.node (some c18) .leaf (.node (some c50) .leaf .leaf))) (.node (some c10) (.node none .leaf (.node (some c42) .leaf .leaf)) (.node (some c26) .leaf .leaf))) (.node (some c6) (.node none (.node none .leaf (.node (some c38) .leaf .leaf)) (.node (some c22) .leaf (.node (some c54) .leaf .leaf))) (.node (some c14) (.node none .leaf (.node (some c46) .leaf .leaf)) (.node (some c30) .leaf .leaf))))) (.node (some c1) (.node none (.node none (.node none (.node none .leaf (.node (some c33) .leaf .leaf)) (.node (some c17) .leaf (.node (some c49) .leaf .leaf))) (.node (some c9) (.node none .leaf (.node (some c41) .leaf .leaf)) (.node (some c25) .leaf .leaf))) (.node (some c5) (.node none (.node none .leaf (.node (some c37) .leaf .leaf)) (.node (some c21) .leaf (.node (some c53) .leaf .leaf))) (.node (some c13) (.node none .leaf (.node (some c45) .leaf .leaf)) (.node (some c29) .leaf .leaf)))) (.node (some c3) (.node none (.node none (.node none .leaf (.node (some c35) .leaf .leaf)) (.node (some c19) .leaf (.node (some c51) .leaf .leaf))) (.node (some c11) (.node none .leaf (.node (some c43) .leaf .leaf)) (.node (some c27) .leaf .leaf))) (.node (some c7) (.node none (.node none .leaf (.node (some c39) .leaf .leaf)) (.node (some c23) .leaf (.node (some c55) .leaf .leaf))) (.node (some c15) (.node none .leaf (.node (some c47) .leaf .leaf)) (.node (some c31) .leaf .leaf))))))
     size := 56
-    roots := [(a59, 51)]
+    roots := [(a49, 42)]
     known := 
       { nat := (some 8), natZero := (some 9), natSucc := (some 10),
-        natRec := (some 48), bool := (some 42), boolTrue := (some 44),
-        boolFalse := (some 43), eq := (some 33), decIsFalse := (some 3),
-        decIsTrue := (some 4) } }
+        natRec := (some 46), bool := (some 43), boolTrue := (some 45),
+        boolFalse := (some 44), eq := (some 35), decIsFalse := (some 5),
+        decIsTrue := (some 6) } }
 
 /-- The configuration (the roots' names). -/
 def cfg : Recheck.Config := { names := ["entry"] }
 
 /-- `produce`'s certificate. -/
 noncomputable def cert : Recheck.Cert :=
-  { table := { resolve := [(20, .case), (46, .case), (25, .case), (21, (.eqn 23)), (45, (.eqn 15))], recKind := [48, 5, 53, 11], lazy := [(7, 4), (39, 5)], inline := [], opaqueByValue := [] }
-    relevance := { consts := (.node none (.node none (.node none (.node none (.node none .leaf (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, (.proof (.allZero [0])), (.proof (.allZero [0])), .rel] }) .leaf .leaf))) (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf)) .leaf)) (.node (some { result := .rel, params := [.type, (.proof (.allZero []))] }) (.node none (.node none .leaf (.node (some { result := .rel, params := [.rel, .rel] }) .leaf .leaf)) (.node (some { result := (.proof (.allZero [0])), params := [.type, .type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf)) (.node none (.node none .leaf (.node (some { result := .rel, params := [] }) .leaf .leaf)) .leaf))) (.node none (.node none .leaf (.node none .leaf (.node (some { result := .rel, params := [] }) .leaf .leaf))) (.node none (.node none (.node none .leaf (.node (some { result := .rel, params := [.type, .rel, .rel] }) .leaf .leaf)) .leaf) (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf)) .leaf)))) (.node none (.node none (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [] }) .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, .rel, (.proof (.allZero [0])), (.proof (.allZero [0])), (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf))) (.node none (.node none .leaf (.node (some { result := .rel, params := [] }) .leaf .leaf)) (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf))) (.node (some { result := (.proof (.allZero [0])), params := [.type, (.proof (.allZero [0])), (.proof (.allZero [0])), .rel] }) (.node none .leaf (.node (some { result := .rel, params := [.rel] }) .leaf .leaf)) (.node none (.node none .leaf (.node (some { result := .rel, params := [.rel] }) .leaf .leaf)) .leaf))) (.node (some { result := .rel, params := [.type, (.proof (.allZero []))] }) (.node none (.node none .leaf (.node none .leaf (.node (some { result := .rel, params := [.rel] }) .leaf .leaf))) (.node (some { result := (.proof (.allZero [0])), params := [.type, .type, (.proof (.allZero [0])), (.proof (.allZero [0])), .rel] }) (.node none .leaf (.node (some { result := .rel, params := [] }) .leaf .leaf)) .leaf)) (.node none (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf)) .leaf) (.node none (.node none .leaf (.node (some { result := .rel, params := [.rel] }) .leaf .leaf)) (.node (some { result := .rel, params := [.type, .rel, .rel] }) .leaf .leaf)))))), ctors := (.node none (.node none (.node none .leaf (.node (some { fields := [(.proof (.allZero []))] }) .leaf (.node none (.node none .leaf (.node (some { fields := [] }) .leaf .leaf)) .leaf))) (.node none (.node none .leaf (.node (some { fields := [.keep] }) .leaf .leaf)) .leaf)) (.node none (.node none (.node none (.node none .leaf (.node (some { fields := [] }) .leaf .leaf)) (.node (some { fields := [] }) .leaf .leaf)) .leaf) (.node (some { fields := [(.proof (.allZero []))] }) (.node none .leaf (.node none (.node none .leaf (.node (some { fields := [] }) .leaf .leaf)) .leaf)) (.node none .leaf (.node none .leaf (.node (some { fields := [.keep] }) .leaf .leaf)))))), nodes := [((.value 51), [(.lam .rel .never), (.arg .type), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel)]), ((.value 39), [(.lam .type (.allZero [0])), (.lam .type (.allZero [0])), (.lam .rel (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.arg .type), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.lam (.proof (.allZero [])) (.allZero [0])), (.arg (.proof (.allZero [0]))), (.lam (.proof (.allZero [])) (.allZero [0]))]), ((.value 41), []), ((.eqn 21), [(.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel), (.lam .rel .never), (.arg .rel), (.lam .rel .never), (.arg .rel)]), ((.value 38), [(.lam .type .never), (.lam .rel .never), (.lam .rel .never)]), ((.value 47), [(.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel)]), ((.value 36), [(.lam .rel .never), (.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero []))), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero []))), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero []))), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero [])))]), ((.value 40), [(.lam .type (.allZero [0])), (.lam .rel (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.lam .rel (.allZero [0])), (.arg .rel)]), ((.eqn 45), [(.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel), (.lam .rel .never), (.arg .rel), (.lam .rel .never), (.arg .rel)]), ((.rule 11 0), [(.lam .type (.allZero [0])), (.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [])) (.allZero [0])), (.arg (.proof (.allZero [])))]), ((.rule 11 1), [(.lam .type (.allZero [0])), (.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [])) (.allZero [0])), (.arg (.proof (.allZero [])))]), ((.value 49), [(.lam .type (.allZero [0])), (.lam .rel (.allZero [0])), (.lam .rel (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel)]), ((.value 26), []), ((.rule 48 0), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0]))]), ((.rule 48 1), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam .rel (.allZero [0])), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .type), (.arg (.proof (.allZero [0]))), (.arg (.proof (.allZero [0]))), (.arg .rel)]), ((.rule 5 0), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0]))]), ((.rule 5 1), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0]))])] }
+  { table := { resolve := [(24, .case), (28, (.eqn 31)), (50, (.eqn 18)), (38, .case), (51, .case)], recKind := [46, 41, 53, 19], lazy := [(12, 4), (29, 5)], inline := [], opaqueByValue := [] }
+    relevance := { consts := (.node none (.node none (.node none (.node none (.node none .leaf (.node none .leaf (.node (some { result := .rel, params := [.rel] }) .leaf .leaf))) (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf))) (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, .rel, (.proof (.allZero [0])), (.proof (.allZero [0])), (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf (.node (some { result := .rel, params := [] }) .leaf .leaf))) (.node none (.node none .leaf (.node (some { result := .rel, params := [] }) .leaf .leaf)) (.node (some { result := .rel, params := [.rel] }) .leaf .leaf)))) (.node none (.node none (.node none (.node none .leaf (.node (some { result := .rel, params := [.type, .rel, .rel] }) .leaf .leaf)) (.node none .leaf (.node (some { result := .rel, params := [.rel] }) .leaf .leaf))) (.node none (.node none .leaf (.node (some { result := .rel, params := [.rel] }) .leaf .leaf)) .leaf)) (.node (some { result := .rel, params := [.type, (.proof (.allZero []))] }) (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf)) .leaf) (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, (.proof (.allZero [0])), (.proof (.allZero [0])), .rel] }) .leaf .leaf)) (.node (some { result := .rel, params := [] }) .leaf .leaf))))) (.node none (.node none (.node none .leaf (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, (.proof (.allZero [0])), (.proof (.allZero [0])), .rel] }) .leaf .leaf)) .leaf)) (.node (some { result := .rel, params := [.type, (.proof (.allZero []))] }) .leaf (.node none (.node none .leaf (.node (some { result := .rel, params := [] }) .leaf .leaf)) (.node (some { result := (.proof (.allZero [0])), params := [.type, .type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf)))) (.node none (.node none (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .type, (.proof (.allZero [0])), (.proof (.allZero [0])), .rel] }) .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf))) (.node none .leaf (.node (some { result := .rel, params := [.rel, .rel] }) .leaf .leaf))) (.node none (.node none .leaf (.node none .leaf (.node (some { result := (.proof (.allZero [0])), params := [.type, .rel, (.proof (.allZero [0])), (.proof (.allZero [0]))] }) .leaf .leaf))) (.node (some { result := (.proof (.allZero [0])), params := [] }) (.node none .leaf (.node (some { result := .rel, params := [.type, .rel, .rel] }) .leaf .leaf)) .leaf))))), ctors := (.node none (.node none (.node none .leaf (.node none .leaf (.node none (.node none .leaf (.node (some { fields := [] }) .leaf .leaf)) .leaf))) (.node none (.node none (.node none (.node none .leaf (.node (some { fields := [.keep] }) .leaf .leaf)) .leaf) (.node (some { fields := [.keep] }) .leaf .leaf)) (.node (some { fields := [(.proof (.allZero []))] }) .leaf .leaf))) (.node none (.node none (.node none .leaf (.node (some { fields := [] }) .leaf .leaf)) (.node (some { fields := [(.proof (.allZero []))] }) .leaf (.node none (.node none .leaf (.node (some { fields := [] }) .leaf .leaf)) .leaf))) (.node none .leaf (.node none .leaf (.node (some { fields := [] }) .leaf .leaf))))), nodes := [((.value 42), [(.lam .rel .never), (.arg .type), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .rel), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel)]), ((.value 29), [(.lam .type (.allZero [0])), (.lam .type (.allZero [0])), (.lam .rel (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.arg .type), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.lam (.proof (.allZero [])) (.allZero [0])), (.arg (.proof (.allZero [0]))), (.lam (.proof (.allZero [])) (.allZero [0]))]), ((.value 52), []), ((.eqn 28), [(.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel), (.lam .rel .never), (.arg .rel), (.lam .rel .never), (.arg .rel)]), ((.value 47), [(.lam .type .never), (.lam .rel .never), (.lam .rel .never)]), ((.value 48), [(.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel)]), ((.value 27), [(.lam .rel .never), (.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero []))), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero []))), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero []))), (.arg .rel), (.lam .rel .never), (.arg .type), (.arg (.proof (.allZero [])))]), ((.value 55), [(.lam .type (.allZero [0])), (.lam .rel (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.lam .rel (.allZero [0])), (.arg .rel)]), ((.eqn 50), [(.lam .rel .never), (.arg .type), (.arg .rel), (.arg .rel), (.lam .rel .never), (.arg .rel), (.lam .rel .never), (.arg .rel)]), ((.rule 19 0), [(.lam .type (.allZero [0])), (.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [])) (.allZero [0])), (.arg (.proof (.allZero [])))]), ((.rule 19 1), [(.lam .type (.allZero [0])), (.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [])) (.allZero [0])), (.arg (.proof (.allZero [])))]), ((.value 20), [(.lam .type (.allZero [0])), (.lam .rel (.allZero [0])), (.lam .rel (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .type), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .rel)]), ((.value 30), []), ((.rule 46 0), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0]))]), ((.rule 46 1), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam .rel (.allZero [0])), (.arg .rel), (.arg (.proof (.allZero [0]))), (.arg .type), (.arg (.proof (.allZero [0]))), (.arg (.proof (.allZero [0]))), (.arg .rel)]), ((.rule 41 0), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0]))]), ((.rule 41 1), [(.lam .type (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0])), (.lam (.proof (.allZero [0])) (.allZero [0]))])] }
     mid := { shrink := { caseOfCase := 64, smallJoin := 24 }, steps := [.shrink [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], .prune, .inline [(0, [1, 4, 3, 5]), (2, [7]), (6, [9]), (7, [10]), (8, [7]), (9, [10])], .shrink [2, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0], .inline [(0, [6]), (2, [10]), (6, [10]), (8, [10])], .shrink [2, 0, 1, 0, 0, 0, 2, 0, 1, 0, 0], .inline [(0, [10])], .shrink [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], .specialize { inv := 0, decisions := [] }, .shrink [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], .prune] }
     alloc := [{ blocks := [{ locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [] }], numSlots := 0 }, { blocks := [{ locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }], numSlots := 0 }, { blocks := [{ locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }], numSlots := 0 }, { blocks := [{ locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)], edits := [(1, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [1])] }, { locs := [], termLocs := [], edits := [], cert := [] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [2]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [1]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }, { locs := [], termLocs := [], edits := [], cert := [] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [2]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [1]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), [4]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [2]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [1])] }, { locs := [], termLocs := [], edits := [], cert := [] }, { locs := [], termLocs := [], edits := [], cert := [] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [(79, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), [4]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [2]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [1])] }], numSlots := 0 }, { blocks := [{ locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [1])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [3]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [2]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0])] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [3]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [2])] }, { locs := [], termLocs := [], edits := [], cert := [] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)]], termLocs := [], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [3]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [2])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r8)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r10), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi))), (1, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx))), (3, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r10)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx))), (3, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax))), (3, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r8))), (3, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [6]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), [4]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), [5])] }, { locs := [], termLocs := [], edits := [], cert := [] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r10), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r10), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [8]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r10), [7]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [6]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9), [5]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), [4])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [14])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)]], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9))), (2, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [15]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [14]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.r9), [5])] }, { locs := [], termLocs := [], edits := [], cert := [] }, { locs := [], termLocs := [], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx))), (0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [15]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [14]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), [17])] }], numSlots := 0 }, { blocks := [{ locs := [], termLocs := [], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [0]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [1])] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)], edits := [], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [2]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [3])] }, { locs := [], termLocs := [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [2])] }, { locs := [[Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx)], [Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdx), Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)]], termLocs := [], edits := [(0, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi))), (1, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rcx)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi))), (5, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi))), (5, Compilatrix.Xv.Alloc.Edit.move (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi)) (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rax)))], cert := [(Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rsi), [3]), (Compilatrix.Xv.Loc.reg (Compilatrix.X86.GPR.rdi), [2])] }], numSlots := 0 }]
     frames := [{ size := 8, slotOff := [], saveOff := [], outArgs := 0 }, { size := 0, slotOff := [], saveOff := [], outArgs := 0 }, { size := 0, slotOff := [], saveOff := [], outArgs := 0 }, { size := 0, slotOff := [], saveOff := [], outArgs := 0 }, { size := 0, slotOff := [], saveOff := [], outArgs := 0 }, { size := 0, slotOff := [], saveOff := [], outArgs := 0 }]
@@ -605,7 +605,7 @@ def typed : X86.Program :=
 
 /-- The object's bytes the native `Recheck.run` computes (2008 bytes). -/
 def object : List UInt8 :=
-  [127, 69, 76, 70, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 62, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 216, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 8, 0, 7, 0, 83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 73, 137, 243, 77, 133, 219, 15, 140, 34, 4, 0, 0, 72, 141, 124, 54, 1, 232, 84, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 72, 137, 247, 72, 137, 214, 232, 124, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 76, 141, 92, 36, 184, 77, 59, 95, 200, 15, 130, 171, 3, 0, 0, 72, 131, 236, 8, 232, 30, 0, 0, 0, 72, 131, 248, 1, 15, 132, 10, 0, 0, 0, 184, 3, 0, 0, 0, 72, 131, 196, 8, 195, 184, 1, 0, 0, 0, 72, 131, 196, 8, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 6, 0, 0, 0, 184, 3, 0, 0, 0, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 212, 255, 255, 255, 184, 1, 0, 0, 0, 195, 73, 141, 71, 192, 72, 137, 193, 72, 131, 225, 7, 72, 133, 201, 15, 133, 52, 3, 0, 0, 72, 129, 255, 0, 16, 0, 0, 15, 130, 39, 3, 0, 0, 72, 137, 193, 72, 1, 249, 15, 130, 27, 3, 0, 0, 72, 133, 201, 15, 140, 18, 3, 0, 0, 72, 141, 144, 191, 2, 0, 0, 72, 131, 226, 192, 73, 137, 119, 208, 73, 137, 87, 216, 73, 137, 79, 224, 73, 137, 71, 232, 73, 199, 71, 240, 0, 0, 0, 0, 73, 199, 71, 248, 0, 0, 0, 0, 73, 199, 71, 8, 0, 0, 0, 0, 73, 199, 71, 16, 0, 0, 0, 0, 73, 199, 71, 24, 0, 0, 0, 0, 73, 199, 71, 32, 0, 0, 0, 0, 73, 199, 71, 40, 0, 0, 0, 0, 73, 199, 71, 48, 0, 0, 0, 0, 73, 199, 71, 56, 0, 0, 0, 0, 73, 199, 71, 64, 0, 0, 0, 0, 73, 199, 71, 72, 0, 0, 0, 0, 73, 199, 71, 80, 0, 0, 0, 0, 73, 199, 71, 88, 0, 0, 0, 0, 73, 199, 71, 96, 0, 0, 0, 0, 73, 199, 71, 104, 0, 0, 0, 0, 73, 199, 71, 112, 0, 0, 0, 0, 73, 199, 71, 120, 0, 0, 0, 0, 73, 199, 135, 128, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 64, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 72, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 80, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 88, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 96, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 104, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 112, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 120, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 128, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 2, 0, 0, 0, 0, 0, 0, 72, 137, 200, 72, 41, 208, 195, 184, 1, 0, 0, 0, 233, 20, 0, 0, 0, 184, 2, 0, 0, 0, 233, 10, 0, 0, 0, 184, 3, 0, 0, 0, 233, 0, 0, 0, 0, 73, 139, 103, 192, 49, 210, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 0, 0, 12, 0, 0, 0, 77, 0, 0, 0, 1, 88, 73, 67, 67, 79, 77, 80, 73, 76, 65, 84, 82, 73, 88, 0, 99, 111, 109, 112, 105, 108, 97, 116, 114, 105, 120, 47, 120, 56, 54, 45, 111, 98, 106, 101, 99, 116, 45, 112, 114, 111, 118, 101, 110, 97, 110, 99, 101, 47, 49, 0, 0, 238, 84, 174, 140, 47, 180, 60, 79, 239, 35, 21, 200, 41, 45, 140, 246, 184, 133, 242, 37, 234, 211, 188, 26, 173, 66, 210, 22, 166, 160, 222, 33, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 18, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 110, 4, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 18, 0, 1, 0, 75, 0, 0, 0, 0, 0, 0, 0, 35, 4, 0, 0, 0, 0, 0, 0, 0, 99, 120, 95, 101, 110, 116, 114, 121, 0, 99, 120, 95, 105, 110, 105, 116, 0, 0, 46, 116, 101, 120, 116, 0, 46, 114, 101, 108, 97, 46, 116, 101, 120, 116, 0, 46, 110, 111, 116, 101, 46, 99, 111, 109, 112, 105, 108, 97, 116, 114, 105, 120, 0, 46, 115, 121, 109, 116, 97, 98, 0, 46, 115, 116, 114, 116, 97, 98, 0, 46, 110, 111, 116, 101, 46, 71, 78, 85, 45, 115, 116, 97, 99, 107, 0, 46, 115, 104, 115, 116, 114, 116, 97, 98, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 110, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 176, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 176, 4, 0, 0, 0, 0, 0, 0, 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 5, 0, 0, 0, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 44, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 120, 5, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 52, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 138, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 138, 5, 0, 0, 0, 0, 0, 0, 78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  [127, 69, 76, 70, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 62, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 216, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 64, 0, 8, 0, 7, 0, 83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 73, 137, 243, 77, 133, 219, 15, 140, 34, 4, 0, 0, 72, 141, 124, 54, 1, 232, 84, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 72, 137, 247, 72, 137, 214, 232, 124, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 76, 141, 92, 36, 184, 77, 59, 95, 200, 15, 130, 171, 3, 0, 0, 72, 131, 236, 8, 232, 30, 0, 0, 0, 72, 131, 248, 1, 15, 132, 10, 0, 0, 0, 184, 3, 0, 0, 0, 72, 131, 196, 8, 195, 184, 1, 0, 0, 0, 72, 131, 196, 8, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 6, 0, 0, 0, 184, 3, 0, 0, 0, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 212, 255, 255, 255, 184, 1, 0, 0, 0, 195, 73, 141, 71, 192, 72, 137, 193, 72, 131, 225, 7, 72, 133, 201, 15, 133, 52, 3, 0, 0, 72, 129, 255, 0, 16, 0, 0, 15, 130, 39, 3, 0, 0, 72, 137, 193, 72, 1, 249, 15, 130, 27, 3, 0, 0, 72, 133, 201, 15, 140, 18, 3, 0, 0, 72, 141, 144, 191, 2, 0, 0, 72, 131, 226, 192, 73, 137, 119, 208, 73, 137, 87, 216, 73, 137, 79, 224, 73, 137, 71, 232, 73, 199, 71, 240, 0, 0, 0, 0, 73, 199, 71, 248, 0, 0, 0, 0, 73, 199, 71, 8, 0, 0, 0, 0, 73, 199, 71, 16, 0, 0, 0, 0, 73, 199, 71, 24, 0, 0, 0, 0, 73, 199, 71, 32, 0, 0, 0, 0, 73, 199, 71, 40, 0, 0, 0, 0, 73, 199, 71, 48, 0, 0, 0, 0, 73, 199, 71, 56, 0, 0, 0, 0, 73, 199, 71, 64, 0, 0, 0, 0, 73, 199, 71, 72, 0, 0, 0, 0, 73, 199, 71, 80, 0, 0, 0, 0, 73, 199, 71, 88, 0, 0, 0, 0, 73, 199, 71, 96, 0, 0, 0, 0, 73, 199, 71, 104, 0, 0, 0, 0, 73, 199, 71, 112, 0, 0, 0, 0, 73, 199, 71, 120, 0, 0, 0, 0, 73, 199, 135, 128, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 64, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 72, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 80, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 88, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 96, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 104, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 112, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 120, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 128, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 2, 0, 0, 0, 0, 0, 0, 72, 137, 200, 72, 41, 208, 195, 184, 1, 0, 0, 0, 233, 20, 0, 0, 0, 184, 2, 0, 0, 0, 233, 10, 0, 0, 0, 184, 3, 0, 0, 0, 233, 0, 0, 0, 0, 73, 139, 103, 192, 49, 210, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 0, 0, 12, 0, 0, 0, 77, 0, 0, 0, 1, 88, 73, 67, 67, 79, 77, 80, 73, 76, 65, 84, 82, 73, 88, 0, 99, 111, 109, 112, 105, 108, 97, 116, 114, 105, 120, 47, 120, 56, 54, 45, 111, 98, 106, 101, 99, 116, 45, 112, 114, 111, 118, 101, 110, 97, 110, 99, 101, 47, 49, 0, 0, 190, 157, 212, 157, 83, 204, 36, 101, 206, 205, 195, 209, 166, 213, 105, 252, 144, 73, 192, 56, 73, 11, 63, 130, 185, 39, 158, 48, 220, 225, 46, 180, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 18, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 110, 4, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 18, 0, 1, 0, 75, 0, 0, 0, 0, 0, 0, 0, 35, 4, 0, 0, 0, 0, 0, 0, 0, 99, 120, 95, 101, 110, 116, 114, 121, 0, 99, 120, 95, 105, 110, 105, 116, 0, 0, 46, 116, 101, 120, 116, 0, 46, 114, 101, 108, 97, 46, 116, 101, 120, 116, 0, 46, 110, 111, 116, 101, 46, 99, 111, 109, 112, 105, 108, 97, 116, 114, 105, 120, 0, 46, 115, 121, 109, 116, 97, 98, 0, 46, 115, 116, 114, 116, 97, 98, 0, 46, 110, 111, 116, 101, 46, 71, 78, 85, 45, 115, 116, 97, 99, 107, 0, 46, 115, 104, 115, 116, 114, 116, 97, 98, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 110, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 176, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 176, 4, 0, 0, 0, 0, 0, 0, 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 5, 0, 0, 0, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 44, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 120, 5, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 52, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 138, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 138, 5, 0, 0, 0, 0, 0, 0, 78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 /-- `Stages.upTo` at every stage (`Stages.Stage.all`), computed natively. -/
 def stages : List (Option (List Nat)) :=
@@ -614,6 +614,6 @@ def stages : List (Option (List Nat)) :=
 /-- The ELF writer's input the native run computes (for measuring the
 writer and its validator alone). -/
 noncomputable def elfInput : X86.ELF.Input :=
-  { encoded := X86.Encode.Output.ofLists [83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 73, 137, 243, 77, 133, 219, 15, 140, 34, 4, 0, 0, 72, 141, 124, 54, 1, 232, 84, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 72, 137, 247, 72, 137, 214, 232, 124, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 76, 141, 92, 36, 184, 77, 59, 95, 200, 15, 130, 171, 3, 0, 0, 72, 131, 236, 8, 232, 30, 0, 0, 0, 72, 131, 248, 1, 15, 132, 10, 0, 0, 0, 184, 3, 0, 0, 0, 72, 131, 196, 8, 195, 184, 1, 0, 0, 0, 72, 131, 196, 8, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 6, 0, 0, 0, 184, 3, 0, 0, 0, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 212, 255, 255, 255, 184, 1, 0, 0, 0, 195, 73, 141, 71, 192, 72, 137, 193, 72, 131, 225, 7, 72, 133, 201, 15, 133, 52, 3, 0, 0, 72, 129, 255, 0, 16, 0, 0, 15, 130, 39, 3, 0, 0, 72, 137, 193, 72, 1, 249, 15, 130, 27, 3, 0, 0, 72, 133, 201, 15, 140, 18, 3, 0, 0, 72, 141, 144, 191, 2, 0, 0, 72, 131, 226, 192, 73, 137, 119, 208, 73, 137, 87, 216, 73, 137, 79, 224, 73, 137, 71, 232, 73, 199, 71, 240, 0, 0, 0, 0, 73, 199, 71, 248, 0, 0, 0, 0, 73, 199, 71, 8, 0, 0, 0, 0, 73, 199, 71, 16, 0, 0, 0, 0, 73, 199, 71, 24, 0, 0, 0, 0, 73, 199, 71, 32, 0, 0, 0, 0, 73, 199, 71, 40, 0, 0, 0, 0, 73, 199, 71, 48, 0, 0, 0, 0, 73, 199, 71, 56, 0, 0, 0, 0, 73, 199, 71, 64, 0, 0, 0, 0, 73, 199, 71, 72, 0, 0, 0, 0, 73, 199, 71, 80, 0, 0, 0, 0, 73, 199, 71, 88, 0, 0, 0, 0, 73, 199, 71, 96, 0, 0, 0, 0, 73, 199, 71, 104, 0, 0, 0, 0, 73, 199, 71, 112, 0, 0, 0, 0, 73, 199, 71, 120, 0, 0, 0, 0, 73, 199, 135, 128, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 64, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 72, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 80, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 88, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 96, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 104, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 112, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 120, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 128, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 2, 0, 0, 0, 0, 0, 0, 72, 137, 200, 72, 41, 208, 195, 184, 1, 0, 0, 0, 233, 20, 0, 0, 0, 184, 2, 0, 0, 0, 233, 10, 0, 0, 0, 184, 3, 0, 0, 0, 233, 0, 0, 0, 0, 73, 139, 103, 192, 49, 210, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195] [0, 45, 75, 139, 154, 173, 183, 193, 203, 212, 218, 228, 237, 243, 263, 276, 288, 297, 1083, 1093, 1103, 1113] [], entryBlock := 0, exportName := "cx_entry", exports := [("cx_init", 2)], provenance := (.ixir1Policy (addr [238, 84, 174, 140, 47, 180, 60, 79, 239, 35, 21, 200, 41, 45, 140, 246, 184, 133, 242, 37, 234, 211, 188, 26, 173, 66, 210, 22, 166, 160, 222, 33]) 1 1) }
+  { encoded := X86.Encode.Output.ofLists [83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 73, 137, 243, 77, 133, 219, 15, 140, 34, 4, 0, 0, 72, 141, 124, 54, 1, 232, 84, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 83, 85, 65, 84, 65, 85, 65, 86, 65, 87, 72, 131, 236, 8, 76, 141, 127, 64, 73, 137, 103, 192, 73, 137, 227, 77, 43, 95, 208, 77, 137, 95, 200, 72, 137, 247, 72, 137, 214, 232, 124, 0, 0, 0, 72, 137, 194, 49, 192, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195, 76, 141, 92, 36, 184, 77, 59, 95, 200, 15, 130, 171, 3, 0, 0, 72, 131, 236, 8, 232, 30, 0, 0, 0, 72, 131, 248, 1, 15, 132, 10, 0, 0, 0, 184, 3, 0, 0, 0, 72, 131, 196, 8, 195, 184, 1, 0, 0, 0, 72, 131, 196, 8, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 6, 0, 0, 0, 184, 3, 0, 0, 0, 195, 72, 131, 255, 1, 15, 132, 9, 0, 0, 0, 72, 141, 127, 254, 233, 212, 255, 255, 255, 184, 1, 0, 0, 0, 195, 73, 141, 71, 192, 72, 137, 193, 72, 131, 225, 7, 72, 133, 201, 15, 133, 52, 3, 0, 0, 72, 129, 255, 0, 16, 0, 0, 15, 130, 39, 3, 0, 0, 72, 137, 193, 72, 1, 249, 15, 130, 27, 3, 0, 0, 72, 133, 201, 15, 140, 18, 3, 0, 0, 72, 141, 144, 191, 2, 0, 0, 72, 131, 226, 192, 73, 137, 119, 208, 73, 137, 87, 216, 73, 137, 79, 224, 73, 137, 71, 232, 73, 199, 71, 240, 0, 0, 0, 0, 73, 199, 71, 248, 0, 0, 0, 0, 73, 199, 71, 8, 0, 0, 0, 0, 73, 199, 71, 16, 0, 0, 0, 0, 73, 199, 71, 24, 0, 0, 0, 0, 73, 199, 71, 32, 0, 0, 0, 0, 73, 199, 71, 40, 0, 0, 0, 0, 73, 199, 71, 48, 0, 0, 0, 0, 73, 199, 71, 56, 0, 0, 0, 0, 73, 199, 71, 64, 0, 0, 0, 0, 73, 199, 71, 72, 0, 0, 0, 0, 73, 199, 71, 80, 0, 0, 0, 0, 73, 199, 71, 88, 0, 0, 0, 0, 73, 199, 71, 96, 0, 0, 0, 0, 73, 199, 71, 104, 0, 0, 0, 0, 73, 199, 71, 112, 0, 0, 0, 0, 73, 199, 71, 120, 0, 0, 0, 0, 73, 199, 135, 128, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 0, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 64, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 72, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 80, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 88, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 96, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 104, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 112, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 120, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 128, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 136, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 144, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 152, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 160, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 168, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 176, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 184, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 192, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 200, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 208, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 216, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 224, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 232, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 240, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 248, 1, 0, 0, 0, 0, 0, 0, 73, 199, 135, 0, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 8, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 16, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 24, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 32, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 40, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 48, 2, 0, 0, 0, 0, 0, 0, 73, 199, 135, 56, 2, 0, 0, 0, 0, 0, 0, 72, 137, 200, 72, 41, 208, 195, 184, 1, 0, 0, 0, 233, 20, 0, 0, 0, 184, 2, 0, 0, 0, 233, 10, 0, 0, 0, 184, 3, 0, 0, 0, 233, 0, 0, 0, 0, 73, 139, 103, 192, 49, 210, 72, 131, 196, 8, 65, 95, 65, 94, 65, 93, 65, 92, 93, 91, 195] [0, 45, 75, 139, 154, 173, 183, 193, 203, 212, 218, 228, 237, 243, 263, 276, 288, 297, 1083, 1093, 1103, 1113] [], entryBlock := 0, exportName := "cx_entry", exports := [("cx_init", 2)], provenance := (.ixir1Policy (addr [190, 157, 212, 157, 83, 204, 36, 101, 206, 205, 195, 209, 166, 213, 105, 252, 144, 73, 192, 56, 73, 11, 63, 130, 185, 39, 158, 48, 220, 225, 46, 180]) 1 1) }
 
 end CompilatrixTests.Recheck.Artifacts.CorpusEvenOdd

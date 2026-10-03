@@ -35,9 +35,9 @@ def nestedFor (k : Nat) : Nat := Id.run do
 
 /-! ## Strings
 
-`String.length` reaches the `String` library, whose closure exceeds a count
-budget of the Ixon v3 decoder (`ingress: decode`); a `panic!` message is a
-string literal in a relevant position (`admit: unsupported`). -/
+`String.length` reaches the `String` library and a `panic!` message is a string
+literal, both string literals in a relevant position (`admit: unsupported`;
+under the Ixon v3 decoder `stringLength` was declined at `ingress: decode`). -/
 
 /-- A string literal's length. -/
 def stringLength (n : Nat) : Nat := "abc".length + n

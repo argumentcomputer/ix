@@ -17,8 +17,7 @@ holds roots that compile alone and collide when compiled together.
 | `stage: code` | Root | Why |
 | --- | --- | --- |
 | `fir: fir.closures` | `applyArg`, `composeClosure`, `nestedFor` | a function argument applied; a closure composed with itself per iteration; nested `for` loops (Phase 2, P8) |
-| `ingress: decode` | `stringLength` | `String.length` reaches the `String` library, whose closure exceeds a count budget of the Ixon v3 decoder |
-| `admit: unsupported` | `withPanic` | a string literal in a relevant position (`panic!`'s message) |
+| `admit: unsupported` | `withPanic`, `stringLength` | a string literal in a relevant position (`panic!`'s message; `String.length` reaches the `String` library). Until the Ixon v4 refreeze, `stringLength`'s closure exceeded a count budget of the v3 decoder (`ingress: decode`); the v4 closure is within them |
 | `rt: rt.params` | `six`, `fiveAndType`, `fiveAndProof` | six parameters; an erased type or proof parameter counts |
 | `erase: erase-minor` | `recMinor` | `Nat.rec` with a variable minor premise (S25) |
 | `erase: erase-unbox-elim` | `unboxMatch`, `subtypeMatch` | a match on a one-field structure or a `Subtype` |

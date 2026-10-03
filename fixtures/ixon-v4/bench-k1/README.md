@@ -1,7 +1,7 @@
 # K1 benchmark closures with unfolding equations
 
 The Phase 1 compiler input: for each K1 benchmark fixture, the anonymous
-Ixon v3 closure of its pure `entry` function
+Ixon v4 closure of its pure `entry` function
 ([`benchmarks/fixtures/<name>/`](../../../benchmarks/fixtures/README.md)),
 with the kernel-checked unfolding theorem `f.eq_def` of every recursive
 definition in the closure. The Compilatrix and `lean-clang` benchmark rows
@@ -9,15 +9,15 @@ compile the same Lean source.
 
 | Fixture | Entry | Constants | Equations | Bytes |
 | --- | --- | ---: | ---: | ---: |
-| `fib` | `Nat → Nat` | 55 | 2 | 15,634 |
-| `sum-loop` | `Nat → Nat` | 1,540 | 34 | 1,138,673 |
-| `ackermann` | `Nat → Nat → Nat` | 1,405 | 34 | 992,719 |
-| `tak` | `Nat → Nat → Nat → Nat → Nat` | 149 | 5 | 52,623 |
-| `gcd` | `Nat → Nat → Nat` | 265 | 7 | 119,929 |
-| `collatz` | `Nat → Nat` | 1,545 | 35 | 1,143,952 |
-| `prime-count` | `Nat → Nat` | 1,546 | 35 | 1,144,816 |
-| `even-odd` | `Nat → Nat` | 64 | 2 | 18,906 |
-| `sfib` | `Nat → Nat` | 149 | 5 | 51,949 |
+| `fib` | `Nat → Nat` | 55 | 2 | 15,121 |
+| `sum-loop` | `Nat → Nat` | 1,540 | 34 | 1,030,158 |
+| `ackermann` | `Nat → Nat → Nat` | 1,405 | 34 | 911,594 |
+| `tak` | `Nat → Nat → Nat → Nat → Nat` | 149 | 5 | 49,721 |
+| `gcd` | `Nat → Nat → Nat` | 265 | 7 | 111,796 |
+| `collatz` | `Nat → Nat` | 1,545 | 35 | 1,034,864 |
+| `prime-count` | `Nat → Nat` | 1,546 | 35 | 1,035,505 |
+| `even-odd` | `Nat → Nat` | 64 | 2 | 18,339 |
+| `sfib` | `Nat → Nat` | 149 | 5 | 49,224 |
 
 The last four are the MT.2 benchmark rows (definitions from the scalar
 corpus, `fixtures/corpus/phase1-scalar`), added on 2026-10-01; `tests-ixon-v3`,
@@ -25,13 +25,14 @@ the `census` check and `tests-pipeline` still cover the first five.
 
 Files per fixture:
 - `<name>.ixe`: the closure, from `ix compile --consts entry --equations
-  --anon`, with ix at the local `jcb/compile-equations` change `9c4b9c65`, as
-  for the [`k1`](../k1/README.md) pack;
+  --anon`, with the producer the manifest pins (ix `be45a159`: the certified
+  line `f829b760` plus the local `--equations` export), as for the
+  [`k1`](../k1/README.md) pack;
 - `<name>.equations.json` (`compilatrix/k1-equations/1`): the root and each
   `(definition, equation)` pair by name and content address. Names are
   diagnostic only; addresses are authoritative, resolved with `ix addr-of`
   against the named twin of the same closure (not retained; its SHA-256 is in
-  the provenance);
+  the manifest);
 - `<name>.census.json`: the reviewed admission census. Every constant of
   every closure passes decoding, erased typing and the D12 policy stage;
 - `steps.json` (`compilatrix/x86-steps/1`): the reviewed typed-x86 and
@@ -45,15 +46,13 @@ Files per fixture:
 licences, the ix revision, binary hash and commands, every file hash, the
 roots' addresses, and per root its cases with the outputs Lean's interpreter
 printed and independent constants. `lake exe corpus rebuild` remakes the
-pack with the pinned ix and replaces `plans/x86-phase1/bench-k1/build.sh`: on
-2026-10-01 it rebuilt the five K1 closures, sidecars and censuses byte for
-byte, with the named-twin hashes [`provenance.json`](provenance.json)
-records. `lake exe corpus check` verifies the files offline, and
-`lake exe tests-corpus` runs every root at every level and natively.
-[`provenance.json`](provenance.json) is the original record of the first
-five (producer revision and binary hash, commands, file hashes).
+pack with the pinned ix (it replaced `plans/x86-phase1/bench-k1/build.sh`;
+the last refreeze, from Ixon v3 to v4 on 2026-10-03, is in
+[`docs/corpus.md`](../../../docs/corpus.md)). `lake exe corpus check` verifies
+the files offline, and `lake exe tests-corpus` runs every root at every level
+and natively.
 
-**Gates.** `tests-ixon-v3` decodes each closure through strict v3 ingress,
+**Gates.** `tests-ixon-v3` decodes each closure through strict v4 ingress,
 checks that every recorded address is present and the equation count is
 unchanged, and runs erased typing over the whole closure. The `census` check
 requires the tool to reproduce each census file exactly.

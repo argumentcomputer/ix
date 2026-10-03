@@ -61,28 +61,30 @@ later).
 ## The producer, and rebuilding
 
 The closures and the verdicts come from the pinned ix of
-[`docs/corpus.md`](../../docs/corpus.md) (revision `9c4b9c65`, binary SHA-256
-`d8ba031a…`), with the manifest's anonymous command (`ix compile --no-build
+[`docs/corpus.md`](../../docs/corpus.md) (revision `be45a159`: the certified
+line `f829b760` plus the local `--equations` export, Ixon v4, binary SHA-256
+`fc4e07ab…`), with the manifest's anonymous command (`ix compile --no-build
 --consts ROOTS --equations --anon`). ix elaborates an annotated source
-against the Lean libraries `lake env printenv LEAN_PATH` names, through the
-`lake` stand-in `plans/fixtures/ix-usage-ownership/fakebin`; on 2026-10-01
-that path held a later build of ix's libraries, and the pinned binary
-reproduced, byte for byte, the closures the design note's probes had made
-with its own libraries (P15, P32, P34, P38), and the verdicts of its probe
-matrix.
+against the Lean libraries `lake env printenv LEAN_PATH` names, through a
+`lake` stand-in (`FAKE`) that answers with the producer workspace's libraries
+at the same revision.
 
 ```sh
-D=plans/fixtures/ix-usage-ownership
 # closures, sidecars, censuses and the interpreter's values; Lean
 # interprets an annotated source with ix's libraries on LEAN_PATH
-LEAN_PATH=$($D/fakebin/lake env printenv LEAN_PATH) \
-  .lake/build/bin/corpus rebuild fixtures/ownership/corpus.json --ix $D/ix-base --ix-path $D/fakebin
+LEAN_PATH=$($FAKE/lake env printenv LEAN_PATH) \
+  lake exe corpus rebuild fixtures/ownership/corpus.json --ix $IX --ix-path $FAKE
 # the verdicts
-.lake/build/bin/tests-own verdicts --ix $D/ix-base --ix-path $D/fakebin
+lake exe tests-own verdicts --ix $IX --ix-path $FAKE
 ```
 
-A second rebuild left every file unchanged. `corpus check` of this family
-needs no ix; `corpus check --interpret` needs the `LEAN_PATH` above.
+The refreeze to Ixon v4 (2026-10-03, [`docs/corpus.md`](../../docs/corpus.md))
+changed every closure and no case or value, and three verdicts' first
+reported failure (all still rejected; admission reports the first failing
+constant in address order, and the addresses moved): N-02 `Nonduplicable` →
+`UnrestrictedEscape(2)`, OS-15 `Nonduplicable` → `Unsupported("projection has
+no checked field rule")`, OS-15b `Unsupported(…)` → `Nonduplicable`.
+`corpus check` of this family needs no ix; `corpus check --interpret` needs the `LEAN_PATH` above.
 
 ## Running
 

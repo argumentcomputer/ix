@@ -1,27 +1,36 @@
-{
-  "schema_version": 1,
-  "date": "2026-09-29",
-  "source_revision": "0a31c8dbc63755924c645bf1afedc563e395e88a",
-  "producer_version": "4.34.0|0.0.1",
-  "producer_binary_sha256": "8b485aaa5bbb0f092507c4f2c0299bd669d986debbe668048b324b0b9df57e6d",
-  "producer_build": "Built with Lake from an unmodified jcb/ix-compilatrix workspace at the recorded revision; not a Nix build.",
-  "fat_origin": "Upstream ix catalog assemble over the retained typing/Nat.ixe, Nat.add.ixe and Quot.lift.ixe bundles, in that order; labels Nat,Nat.add,Quot.lift; toolchains 4.34.0; pins equal source_revision; deps 1:0.",
-  "chunk_origin": "Consumer test-only wire writer partitions the same addressed bytes by first owner, retains original blobs/presentation sections and applicable hints/main, and records omitted original constants as assumptions. Complete member address lists are supplied separately.",
-  "independent_check": "The same upstream executable's Rust catalog verify --deep accepts both catalogs with 3 members and 23 union constants. It does not authenticate the full member witness lists or typecheck the union.",
-  "consumer_check": "Required tests authenticate full sorted member lists against roots/counts, enforce first ownership/disjointness/full coverage, and typecheck every union constant.",
-  "member_counts": [4, 18, 5],
-  "chunk_counts": [4, 14, 5],
-  "members_root": "beeaa41ba33be861b8c7c25a80e2f93293961b2cb95000a3471c3f782c0cfc5b",
-  "content_root": "1a40750cd8a9de7506ded7fdcfb3141e8a2453eab2a02159b50dfd506e081f76",
-  "file_sha256": {
-    "fat.ixc/manifest": "d3ea32e41ceb213ff44fa0b9e35de862715261eb9007686c5c97fd1223204597",
-    "fat.ixc/Nat.ixe": "c4273638c7b7e89ba24c38072dd71bab8e8a85144e04d132095ca774cd2a5d88",
-    "fat.ixc/Nat.add.ixe": "a4290c1b5dae5dbf175b1028869727ee10252d63f9866ba5db9abf0d7dc37eeb",
-    "fat.ixc/Quot.lift.ixe": "cd691ee096b3716c2c91e2310ef2c817bac26ba5d8d61ca9061989f76c929995",
-    "chunked.ixc/manifest": "01e0d2981aaac0a49c7aafd01999e874124b238e406ee19b470e988094076f4b",
-    "chunked.ixc/Nat.chunk0.ixe": "c4273638c7b7e89ba24c38072dd71bab8e8a85144e04d132095ca774cd2a5d88",
-    "chunked.ixc/Nat.add.chunk1.ixe": "6dc14ae559975fe6a9adc82a9071f3a6f3455f6c87e9717cab6ef58d6ae15f52",
-    "chunked.ixc/Quot.lift.chunk2.ixe": "cd691ee096b3716c2c91e2310ef2c817bac26ba5d8d61ca9061989f76c929995",
-    "chunked.ixc/members.json": "94fd519bf115e4b28c51b7d41dd619049792a36238b0ad3628ba9c502c539f5e"
-  }
-}
+{"source_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+ "schema_version": 1,
+ "producer_version": "4.34.1|0.0.1",
+ "producer_binary_sha256":
+ "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+ "members_root":
+ "93f5cb9a9b8215c4be11cffd6635f90974fac93141a998e9ac1646d8c59dad63",
+ "independent_check":
+ "ix catalog verify --deep accepts both catalogs: the members and content roots below",
+ "file_sha256":
+ {"fat.ixc/manifest":
+  "6e8998b7f25683e3def97cf8cfcf4e111a9fade6156c7e0fd9ca77ac9271ddb2",
+  "fat.ixc/Quot.lift.ixe":
+  "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
+  "fat.ixc/Nat.ixe":
+  "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
+  "fat.ixc/Nat.add.ixe":
+  "28b29a858d4c765bb8fe71c2b62ad7e3443ee689ca596ad0f4afd556da235e22",
+  "chunked.ixc/members.json":
+  "8a858792c729b7f25ff77e83b8c5eda0f9610496d36ead3854d67f1f09bca5d4",
+  "chunked.ixc/manifest":
+  "0145ce079b10ff73e1b14a46a04fb62a5176457ce3da4af2e50acc56251bbfda",
+  "chunked.ixc/Quot.lift.chunk2.ixe":
+  "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
+  "chunked.ixc/Nat.chunk0.ixe":
+  "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
+  "chunked.ixc/Nat.add.chunk1.ixe":
+  "077bbe0938fa961a200bf1e1d34079913b7637037bb7520ca7065dc2015eefa4"},
+ "fat_origin":
+ "ix catalog assemble --labels Nat,Nat.add,Quot.lift --toolchains 4.34.1 --pins SOURCE_REVISION --deps 1:0 fat.ixc Nat.ixe Nat.add.ixe Quot.lift.ixe (the typing bundles), then ix catalog verify --deep fat.ixc",
+ "content_root":
+ "fd480b2813819f8babf38f86c533536b21b0d5c16b346dd9fae834990b09a7e4",
+ "consumer_check":
+ "Required tests authenticate full sorted member lists against roots/counts, enforce first ownership/disjointness/full coverage, and typecheck every union constant.",
+ "chunk_origin":
+ "refreeze-ixon catalog (CatalogFixtures.writeChunked): the first-owner partition of the fat pieces; each chunk keeps its original blobs and presentation bytes and the hints and main of the constants it keeps, and lists the constants an earlier member owns as assumptions; members.json is every member's complete original address set"}

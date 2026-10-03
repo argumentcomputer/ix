@@ -4,33 +4,33 @@
   "roots": [
     {
       "name": "entry",
-      "address": "46ab4b63a591d1aa555fbb2b5c4d080d7a4a5a66bf8a38618cc38accf5e55a63"
+      "address": "6772d9f59ddae138bedc7fef91edb0643965c0b7f06d826896faad36ae754687"
     }
   ],
   "equations": [
     {
       "definition": "Nat.add",
-      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
       "equation": "Nat.add.eq_def",
-      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
     },
     {
       "definition": "build",
-      "definition_address": "dbfaaa579691944b99dd56689811f744e707bad27c7591df9281f6bad4adc324",
+      "definition_address": "33348d1a6bb3727b345e8382255de2053f6e8ff9b2414236c6cb3a0069fcd91f",
       "equation": "build.eq_def",
-      "equation_address": "8994593056ab14e5731f7972c625ea38e99014f893e7d2b4696ca18108f65dd5"
+      "equation_address": "13e5a8a793686693946b93ff99988b6e87c859508b9f0942c725ff50dda7fc80"
     },
     {
       "definition": "revAcc",
-      "definition_address": "bec95a11972ff7b9e913ab9c2df6143b752ef3fcbacb3354509b9e8cbb68eb5e",
+      "definition_address": "b0ce8a7b2a66fb3e41e81b99c33176e56dd388ecb671cafbcf1722bed9d4cefa",
       "equation": "revAcc.eq_def",
-      "equation_address": "f5c4fa9dde345af5eee9b1b59d08e4a914f84cab0d47bd29a76fadfd3a573dd5"
+      "equation_address": "5587d72d63ad04d5ba736ebe6e28b25752f766d3de1f420f9215dbf5299cba45"
     },
     {
       "definition": "sumL",
-      "definition_address": "e5ed01f82c9dcf16cf51bd51f1d7aebb96bc4c4fbde6b31df5ad438bd78b67d1",
+      "definition_address": "d101775a2757084141aa2b8e9e11ee10c79b4cb352c82469f3d1c8e0a6b2a2a0",
       "equation": "sumL.eq_def",
-      "equation_address": "0f9d03e92d8fb4d65e8e623cf0399efff2796b84adc9ac11d4001ba26265cbb9"
+      "equation_address": "96bfe99694e53741648272afccd3f23c240b0ffc6ab9112a1c8e22ce36fe4b4e"
     }
   ],
   "failures": []

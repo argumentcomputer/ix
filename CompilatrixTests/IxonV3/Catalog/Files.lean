@@ -38,8 +38,8 @@ def files (root : System.FilePath) : IO Nat := IO.FS.withTempDir fun temporary =
     let pieces ← readPieces {} directory m
     let input ← checked (admit raw pieces supplied)
     require (input.loaded.env.consts.size == 23 && m.members.size == 3 &&
-      m.membersRoot.toHex == "beeaa41ba33be861b8c7c25a80e2f93293961b2cb95000a3471c3f782c0cfc5b" &&
-      input.loaded.env.root.toHex == "1a40750cd8a9de7506ded7fdcfb3141e8a2453eab2a02159b50dfd506e081f76")
+      m.membersRoot.toHex == "93f5cb9a9b8215c4be11cffd6635f90974fac93141a998e9ac1646d8c59dad63" &&
+      input.loaded.env.root.toHex == "fd480b2813819f8babf38f86c533536b21b0d5c16b346dd9fae834990b09a7e4")
       s!"independent producer identities: {name}"
     require (input.loaded.memberSets.map Array.size == #[4, 18, 5]) s!"original membership: {name}"
     let args := #[directory.toString] ++ (if supplied.isSome then #[(directory / "members.json").toString] else #[])

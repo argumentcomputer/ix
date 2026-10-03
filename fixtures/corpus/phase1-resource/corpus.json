@@ -7,7 +7,7 @@
   "directory": "fixtures/corpus/phase1-resource",
   "source_root": "fixtures/corpus/phase1-resource/src",
   "lean": {
-    "version": "4.34.0",
+    "version": "4.34.1",
     "interpret": {
       "args": [
         "lean",
@@ -27,10 +27,10 @@
     }
   },
   "producer": {
-    "ix_revision": "9c4b9c654f06e88f021cfd9753701e52852e5500",
-    "ix_binary_sha256": "d8ba031a087810c8cbd0ea96a6251c27fcd07b0b161e1cadd67d8647604e580c",
-    "ix_version": "4.34.0|0.0.1",
-    "ix_build": "Built with Lake (lake build Ix ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix 0a31c8dbc63755924c645bf1afedc563e395e88a; not a Nix build.",
+    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
     "anonymous": [
       "ix",
       "compile",
@@ -91,24 +91,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "resource.ixe",
-        "sha256": "60c09e3071f4b7fdf4d89f18df0aac8132ceaeba8af757948af756b4fc48271d",
-        "bytes": 1159239
+        "sha256": "af52779e740a92b3662463245cdfa6a39f75247902ea8e357c6bd16a3f66e077",
+        "bytes": 1049324
       },
       "equations": {
         "path": "resource.equations.json",
-        "sha256": "291a431589e7f3f23715a191d280f3f1e0ae829f7967481ea6ecfff0fc61673b",
+        "sha256": "e1540d1e1b6f3b59e9a414371552582b7ea2b09e8fad09b8e4a65fb7045bfc18",
         "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "313a9b22de1296250a4a3ea76b7d7a5f4ac85d0d29fc46cf29a7ee3cdd6d1911",
+      "named_env_sha256": "39c5530351781767d1b17e95241e022fe0bf7a835fa06b07946635c2967276d8",
       "census": {
         "path": "resource.census.json",
-        "sha256": "afc084c8e0dad00bbae4b5ff3da1558e0f9dd7257be054dcb21cff1eb81f0d5e"
+        "sha256": "313439e7356e19bd24114dc470ab232eeb3d157980e843774e450f19b7f3febe"
       },
       "roots": [
         {
           "name": "Resource.heapList",
-          "address": "dedc477f21c843456a576d7d37d55df1ae677551df11b9397809b3b616713105",
+          "address": "28638c564b92e3018c9d70199342c139a2770cdca48be32467c29c8d1d491b61",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -166,7 +166,7 @@
         },
         {
           "name": "Resource.twoVars",
-          "address": "aa08a6c27932b2f00efbd2ae38a446e10863f58e188b82a0c2c7df569ff02279",
+          "address": "7a92d0c58d30db86d6be65abfb4d322a437780127a32975223f30825d8c8489f",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -233,7 +233,7 @@
         },
         {
           "name": "Resource.oneVar",
-          "address": "b375b2a2eab362e376d59479d98da5999bb75830789773b5cae877c89401f52e",
+          "address": "49367270c744e0856ff93cbcdabd99c8228874e7132b68264848d297031140c0",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -263,7 +263,7 @@
         },
         {
           "name": "Resource.depth",
-          "address": "7b1c56f9ad9bc00dc02dacc0567d5ed56a8c77809868938ae3a4bceda79f055f",
+          "address": "f81ae726847fead67405464836963e0bd615114bedb3cdb18c34b86dc9bc7467",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -320,7 +320,7 @@
         },
         {
           "name": "Resource.tail",
-          "address": "de1f94a240bd04d17fa9353dfc0a826a354263de4ff49e5dbc067af560de1ff4",
+          "address": "13dd70b3f01c8cfdfa5effa4afef0c40bf2b2f0174da2b92484022fb3c5d0cb0",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -350,7 +350,7 @@
         },
         {
           "name": "Resource.isEven",
-          "address": "4a5bab97797f786b74a317f447770cca4ace0dbec661198fb81856d0e9d70c30",
+          "address": "6a95c0e321c602cf788b502681a2d273157a5a0653c26af77691ea83721dcb5d",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -380,7 +380,7 @@
         },
         {
           "name": "Resource.isOdd",
-          "address": "c469da42bb3b6b290be30d5eeeaa67e8d850e5bba8f1e33c83e2629fd4e796dd",
+          "address": "d0fbb9dc3009c45b10d6614048dd0c8f7fa62bed1b833946403b7730466d8bfc",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -462,7 +462,7 @@
         },
         {
           "name": "Resource.trapAbsurd",
-          "address": "21a5c2bf2847fd1bc0cde6e32c2e11afa7acdf940ea817fd423fc0e382e6cbf1",
+          "address": "9f73ab07bb837426f8413a8760f60ccf6e61ec624c3739dccc00e9ac52e28e8a",
           "params": 2,
           "result": "nat",
           "oracles": [

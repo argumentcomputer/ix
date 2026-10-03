@@ -4,19 +4,19 @@
   "roots": [
     {
       "name": "entryStrictOr",
-      "address": "e033c1c279b1d94120d8707ead21e1611854572af54a4e73ba760897c23f840f"
+      "address": "1be57a4df5c9e29aac1c5d859b76404849193d8a23357b736404de6f9b390e72"
     },
     {
       "name": "entryStrictAnd",
-      "address": "2d7cdf9a603daf039d9da1f70a581ae7e1e5606d325054075dd7e4e7d8c2a379"
+      "address": "7157f32f4209052af5f2ba1de23fb5511869270711607bd0b12d7f59d3e973de"
     }
   ],
   "equations": [
     {
       "definition": "Nat.beq",
-      "definition_address": "ffd3f02a19fda649aa5608ed818db382e160231b76d5b09176d7dd1a8d5b1ec5",
+      "definition_address": "d3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337",
       "equation": "Nat.beq.eq_def",
-      "equation_address": "e73554caa775dedc1ccfbbc71d99f6d55a13ac99a4c201f2d258fe60bf3be65a"
+      "equation_address": "9ac282a4ad68bf13a9138fbdc44c7cb161307ddba94ea3a73e86652682092134"
     }
   ],
   "failures": []

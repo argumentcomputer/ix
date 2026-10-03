@@ -2,8 +2,8 @@
 The layout limits of Phase 1 cells (phase 1 plan, MT.3; 04 §3) as Lean
 sources reach them. A header holds a scanned-field count of at most 254 and
 a constructor tag of at most `0x7EFF`; `Rt.lower` declines anything larger
-(`rt.layout`). From a Lean source, the Ixon v3 decoder's expression depth
-budget (256) comes first:
+(`rt.layout`). From a Lean source, the Ixon decoder's budgets (expression
+depth 256) come first:
 
 * a structure of 254 `Nat` fields decodes, is allocated and read back;
   one of 255 fields is declined at ingress (`decode`: a constant of its

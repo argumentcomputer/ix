@@ -4,8 +4,8 @@
   "source_root": "fixtures/ownership/src",
   "manifest": "fixtures/ownership/corpus.json",
   "producer": {
-    "ix_revision": "9c4b9c654f06e88f021cfd9753701e52852e5500",
-    "ix_binary_sha256": "d8ba031a087810c8cbd0ea96a6251c27fcd07b0b161e1cadd67d8647604e580c",
+    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
     "command": [
       "ix",
       "compile",
@@ -57,7 +57,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "TypeMismatch",
-        "constant": "ad5a49fdcb00"
+        "constant": "42e36804a226"
       },
       "note": "a proof argument of a proposition over another argument; the base matrix had no such probe"
     },
@@ -117,7 +117,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "589140e9d5c7"
+        "constant": "d73587dc77c6"
       },
       "note": "accepted without --equations; the eq_def's brecOn projections have no field rule"
     },
@@ -157,7 +157,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(1, Erased, Many)",
-        "constant": "18894059f569"
+        "constant": "ecca83cd5237"
       }
     },
     {
@@ -178,7 +178,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(1, Erased, Many)",
-        "constant": "80801ff48ace"
+        "constant": "d3f425ef55a3"
       }
     },
     {
@@ -198,7 +198,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "93b8e2fb7f8c"
+        "constant": "6a961b4961fa"
       }
     },
     {
@@ -236,7 +236,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(2, Erased, Many)",
-        "constant": "377997b400f3"
+        "constant": "85de3c35d182"
       }
     },
     {
@@ -255,7 +255,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(1, Linear, Many)",
-        "constant": "89b8976b1789"
+        "constant": "8fbd540e9953"
       },
       "note": "over-conservative: the + reads each linear Nat once"
     },
@@ -275,7 +275,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(0, Linear, Many)",
-        "constant": "adcce5f2686b"
+        "constant": "ba3aa4c89626"
       },
       "note": "true negative"
     },
@@ -295,7 +295,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(0, Linear, Erased)",
-        "constant": "1ca0dbc4215a"
+        "constant": "c0e716e5f6a1"
       },
       "note": "true negative"
     },
@@ -315,7 +315,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(0, Affine, Many)",
-        "constant": "363599a2d84f"
+        "constant": "4636c068db47"
       },
       "note": "true negative"
     },
@@ -375,7 +375,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "SharedToUnique",
-        "constant": "0ae28bd9b370"
+        "constant": "5fb410e22c75"
       },
       "note": "OS-14 with a plain caller passing a shared Nat to the unique parameter"
     },
@@ -395,8 +395,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Nonduplicable",
-        "constant": "10bc768917b0"
+        "code": "Unsupported(\"projection has no checked field rule\")",
+        "constant": "c409c15276b3"
       },
       "note": "the annotated twin of OS-16"
     },
@@ -416,8 +416,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "2005ca2e74f2"
+        "code": "Nonduplicable",
+        "constant": "8628dba7ae07"
       }
     },
     {
@@ -436,7 +436,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "b373d5291a49"
+        "constant": "536d2509c6df"
       }
     },
     {
@@ -455,7 +455,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "d37976d7c785"
+        "constant": "b0555878c780"
       },
       "note": "true negative"
     },
@@ -475,7 +475,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "6c386f58a841"
+        "constant": "693ad4da2f1f"
       }
     },
     {
@@ -494,7 +494,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "SharedToUnique",
-        "constant": "b46fe1fff974"
+        "constant": "daf50444bdd4"
       }
     },
     {
@@ -515,7 +515,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "5ce6330e3f0f"
+        "constant": "f99f79d7dc9a"
       }
     },
     {
@@ -573,7 +573,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "UnrestrictedEscape(2)",
-        "constant": "fb356bc7c007"
+        "constant": "8ffc40bf54fa"
       },
       "note": "over-conservative"
     },
@@ -593,7 +593,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "UnrestrictedEscape(2)",
-        "constant": "309d87623af9"
+        "constant": "d737896e31ae"
       },
       "note": "over-conservative"
     },
@@ -655,7 +655,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "UnrestrictedEscape(2)",
-        "constant": "fb356bc7c007"
+        "constant": "8ffc40bf54fa"
       }
     },
     {
@@ -735,7 +735,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "5f568f034cb7"
+        "constant": "a47e889f32d7"
       }
     },
     {
@@ -754,7 +754,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "f139377cef90"
+        "constant": "5a070d894028"
       }
     },
     {
@@ -773,7 +773,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "258025002287"
+        "constant": "8202a0708a37"
       }
     },
     {
@@ -793,7 +793,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "f78abc512f66"
+        "constant": "7d21b97fe83e"
       }
     },
     {
@@ -812,8 +812,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Nonduplicable",
-        "constant": "3bb3cc1a2510"
+        "code": "UnrestrictedEscape(2)",
+        "constant": "8ffc40bf54fa"
       }
     },
     {
@@ -833,7 +833,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "eff2dbb9e06f"
+        "constant": "e42dcb559974"
       },
       "note": "true negative"
     },
@@ -854,7 +854,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Nonduplicable",
-        "constant": "e0b5bae092bb"
+        "constant": "acff213c0971"
       }
     },
     {
@@ -873,7 +873,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "UnrestrictedEscape(2)",
-        "constant": "300c76d1bfc3"
+        "constant": "a7dc3bd2492a"
       },
       "note": "true negative"
     },
@@ -893,7 +893,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "UnrestrictedEscape(2)",
-        "constant": "a1c4c6a7d5cd"
+        "constant": "67050ed3d329"
       },
       "note": "true negative"
     },
@@ -913,7 +913,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(1, Linear, Many)",
-        "constant": "7a0418c59c20"
+        "constant": "2f8c81dd71df"
       },
       "note": "true negative at this pin (R19 accepts it until R15)"
     },
@@ -933,7 +933,7 @@
         "verdict": "reject",
         "stage": "resource",
         "code": "Usage(0, Erased, Many)",
-        "constant": "119788c3688a"
+        "constant": "882cfa899204"
       },
       "note": "true negative: the producer's half of CX-1's negative; Compilatrix's half (relevance-C1) is tests-own's synthetic case"
     }
