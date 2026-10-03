@@ -405,6 +405,83 @@ def runCase (c : Case) : CoreM Unit := do
           name := d.name ++ `bridge_H, levelParams := d.levelParams, type := ty, value := pf })
           (d.name ++ `bridge_H)
 
+/-! ## The development on small terms (Q10) -/
+
+/-- `instantiate f args` against the expected developed term: hereditary β, projection of a
+constructor and η at the substituted variable; the user's own redexes and recursor applications
+(never ι) left alone. -/
+def devChecks : Array (String × Bool) :=
+  let ty := mkConst `Nat
+  let a := mkConst `a
+  let b := mkConst `b
+  let g := mkConst `g
+  let h := mkConst `h
+  let z := mkConst `z
+  let lam (n : Lean.Name) (body : Expr) : Expr := .lam n ty body .default
+  let dev (f : Expr) (args : Array Expr) : Option Expr :=
+    match _root_.Ix.Compile.Image.instantiate (toIxExpr f) (args.map toIxExpr) with
+    | .ok e => some (toLeanExpr e)
+    | .error _ => none
+  let pair := mkAppN (mkConst ``PProd.mk [1, 1]) #[ty, ty, a, b]
+  let natRec := fun (m : Expr) => mkAppN (mkConst ``Nat.rec [1]) #[m, z, h, mkApp (mkConst ``Nat.succ) a]
+  #[("β, hereditary: (λ m. m a) (λ x. x) = a",
+      dev (lam `m (mkApp (.bvar 0) a)) #[lam `x (.bvar 0)] == some a),
+    ("β, two levels: (λ m. m (λ y. y) b) (λ k x. k x) = b",
+      dev (lam `m (mkAppN (.bvar 0) #[lam `y (.bvar 0), b]))
+        #[lam `k (lam `x (mkApp (.bvar 1) (.bvar 0)))] == some b),
+    ("projection: (λ p. p.1) ⟨a, b⟩ = a",
+      dev (lam `p (.proj ``PProd 0 (.bvar 0))) #[pair] == some a),
+    ("η at the substituted variable: (λ m. λ y. m y) g = g",
+      dev (lam `m (lam `y (mkApp (.bvar 1) (.bvar 0)))) #[g] == some g),
+    ("the user's η-redex is kept: (λ m. λ y. m y) (λ x. h x) = λ y. h y",
+      dev (lam `m (lam `y (mkApp (.bvar 1) (.bvar 0)))) #[lam `x (mkApp h (.bvar 0))]
+        == some (lam `y (mkApp h (.bvar 0)))),
+    ("a redex already in the body is kept: (λ m. (λ w. w) m) g = (λ w. w) g",
+      dev (lam `m (mkApp (lam `w (.bvar 0)) (.bvar 0))) #[g] == some (mkApp (lam `w (.bvar 0)) g)),
+    ("never ι: (λ m. Nat.rec m z h (succ a)) (λ x. x) keeps the recursor",
+      dev (lam `m (natRec (.bvar 0))) #[lam `x (.bvar 0)] == some (natRec (lam `x (.bvar 0)))),
+    ("extra arguments stay applied: (λ m. m) g a = g a",
+      dev (lam `m (.bvar 0)) #[g, a] == some (mkApp g a))]
+
+/-! ## Optional: the view closures as `.ixe`, for the certified checker -/
+
+/-- Every constant reachable from `seeds`, with the constructors and recursors of each inductive
+(the checker declines a block without its recursor). -/
+partial def closure (env : Environment) (seeds : List Lean.Name) : Array (Lean.Name × ConstantInfo) :=
+  let find := fun n => (env.find? n).orElse fun _ => env.toKernelEnv.find? n
+  let rec go (todo : List Lean.Name) (seen : NameSet) (acc : Array (Lean.Name × ConstantInfo)) :=
+    match todo with
+    | [] => acc
+    | n :: rest =>
+      if seen.contains n then go rest seen acc else
+      let seen := seen.insert n
+      match find n with
+      | none => go rest seen acc
+      | some ci =>
+        let extra : List Lean.Name := match ci with
+          | .inductInfo iv =>
+            iv.ctors ++ iv.all.map (· ++ `rec) ++
+              (List.range iv.numNested).map fun i => iv.all.head! |>.str s!"rec_{i + 1}"
+          | .ctorInfo cv => [cv.induct]
+          | .recInfo rv => rv.all
+          | _ => []
+        go (ci.getUsedConstantsAsSet.toList ++ extra ++ rest) seen (acc.push (n, ci))
+  go seeds {} #[]
+
+/-- Compile the view and canonical constants of a fixture's cases with the Rust compiler into
+`out/image-gen/<stem>.ixe` (run `kernel-check-ixe` on it afterwards). -/
+def dumpIxe (env : Environment) (stem : String) (cases : Array Case) : IO String := do
+  let nss := cases.filter (·.ablationOf.isNone) |>.map fun c => (c.viewNs, c.genNs)
+  let seeds := env.constants.toList.filterMap fun (n, ci) =>
+    if nss.any (fun (v, g) => v.isPrefixOf n || g.isPrefixOf n) && !(ci matches .axiomInfo _) then
+      some n else none
+  let consts := (closure env seeds).toList
+  let consts ← IO.ofExcept <| _root_.Ix.Compile.prepareRegisteredConstants env consts
+  let path := s!"out/image-gen/{stem}.ixe"
+  let status ← _root_.Ix.CompileM.rsCompileEnvBytesFFI consts path true
+  return s!"{stem}: {seeds.length} seeds, {consts.length} constants, {status.bytes} bytes, \
+    {status.ungrounded.size} ungrounded"
+
 /-! ## The suite -/
 
 def countRows (rows : Array ImageProto.Row) (p : ImageProto.Row → Bool) : Nat :=
@@ -418,11 +495,15 @@ def run : IO UInt32 := do
     try
       let env ← getFileEnv path
       let ctx : Core.Context := { fileName := path, fileMap := default, maxHeartbeats := 0 }
-      discard <| (do
+      let (_, st) ← (do
           for c in cases do
             try runCase c
             catch e => record c.name "CASE" c.name "ERROR" (← e.toMessageData.toString)
         : CoreM Unit).toIO ctx { env }
+      if (← IO.getEnv "IMAGE_GEN_IXE").isSome then
+        IO.FS.createDirAll "out/image-gen"
+        let stem := (System.FilePath.mk path).fileStem.getD path
+        IO.println s!"[image-gen] ixe {← dumpIxe st.env stem cases}"
     catch e => failures := failures.push s!"{path}: {e}"
   let rows ← ImageProto.rowsRef.get
   let logs ← ImageProto.logRef.get
@@ -481,6 +562,10 @@ def run : IO UInt32 := do
     {eq "CMP:image" "DIFFERENT"}; rules EQUAL {eq "CMP:rule" "EQUAL"}, EQUAL-LEVELS \
     {eq "CMP:rule" "EQUAL-LEVELS"}, CANON-DIFF {eq "CMP:rule" "CANON-DIFF"}, DIFFERENT \
     {eq "CMP:rule" "DIFFERENT"}"
+  let devOk := devChecks.filter (·.2)
+  IO.println s!"[image-gen] development: {devOk.size}/{devChecks.size}"
+  for (msg, ok) in devChecks do
+    if !ok then failures := failures.push s!"development: {msg}"
   IO.println s!"[image-gen] {failures.size} failures"
   for f in failures do IO.println s!"[image-gen] FAIL {f}"
   return if failures.isEmpty then 0 else 1
