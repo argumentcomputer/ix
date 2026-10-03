@@ -323,6 +323,52 @@ def cnt (xs : List Nat) (! u : List Nat) : List Nat × List Nat :=
   | _ :: t => cnt t u
 end E12
 
+/-! ## Case lines only for generated case definitions (second review R2-6) -/
+
+/- Violation (N01): a user definition named `sel.casesOn`, tagged as an
+auxiliary recursor afterwards. It is not the `casesOn` Lean generates (`sel`
+is not an inductive type), so it gets no `case` line and is an ordinary
+call: `bump xs` moves `xs`, which is then passed again. -/
+namespace N01
+def bump (! xs : List Nat) : ! List Nat :=
+  match xs with
+  | [] => []
+  | h :: t => (h + 1) :: t
+def sel.casesOn (b : Bool) (x y : List Nat) : List Nat :=
+  match b with
+  | true => x
+  | false => y
+def g (b : Bool) (! xs : List Nat) : List Nat := sel.casesOn b (bump xs) xs
+run_cmd Lean.modifyEnv (Lean.markAuxRecursor · ``sel.casesOn)
+end N01
+
+/- Violation (N02): a user definition given forged `MatcherInfo` (two plain
+value alternatives). It is not a matcher-shaped wrapper of a generated
+`casesOn`, so it gets no `case` line and is an ordinary call. -/
+namespace N02
+def bump (! xs : List Nat) : ! List Nat :=
+  match xs with
+  | [] => []
+  | h :: t => (h + 1) :: t
+def pick.match_7 (b : Bool) (x y : List Nat) : List Nat :=
+  match b with
+  | true => x
+  | false => y
+def g (b : Bool) (! xs : List Nat) : List Nat := pick.match_7 b (bump xs) xs
+open Lean Meta in
+run_meta Match.addMatcherInfo ``pick.match_7 { numParams := 0, numDiscrs := 1, altInfos := #[{ numFields := 0, numOverlaps := 0, hasUnitThunk := false }, { numFields := 0, numOverlaps := 0, hasUnitThunk := false }], uElimPos? := none, discrInfos := #[{}], overlaps := {} }
+end N02
+
+/- Control (N10): a match with an equality hypothesis; Lean's matcher wraps
+the generated `Bool.casesOn` in a β-redex. `xs` is moved once per branch. -/
+namespace N10
+def keep (! xs : List Nat) : ! List Nat := xs
+def g (b : Bool) (! xs : List Nat) : ! List Nat :=
+  match h : b with
+  | true => have _ := h; keep xs
+  | false => xs
+end N10
+
 /-! ## Partial and opaque definitions are native (second review R2-2) -/
 
 /- Violation (V10): a `partial def` runs its `_unsafe_rec` twin, which stores

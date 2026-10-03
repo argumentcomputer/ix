@@ -200,13 +200,19 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `--profile FILE`: a resource profile source (see docs/resource-checking.md)
   -- replaces the standard profile; the native compiler resolves its names
   -- against the compiled closure and reports the effective profile address.
-  -- With `cases`, every `casesOn` and matcher of the closure is bound as a
+  -- With `cases`, every generated `casesOn` and matcher of the closure is bound as a
   -- `case` directive (generated, never written in the file). With
   -- `--equations`, each realized unfolding equation is added as an
   -- `equation` directive: an annotated recursive definition is then checked
   -- through its equation (R17), which the consumer runs.
   let profileSource ← (p.flag? "profile").mapM fun flag => do
     let source ← IO.FS.readFile (flag.as! String)
+    -- Review R2-6: a constant recorded as a `casesOn` or matcher that Lean
+    -- did not verifiably generate gets no `case` line.
+    if Ix.Compile.ResourceProfile.hasCases source then
+      for name in Ix.Compile.ResourceProfile.forgedCaseDefinitions leanEnv (constList.map (·.1)) do
+        IO.println s!"[compile] resource profile: `{name}` is recorded as a casesOn or matcher \
+          but is not one Lean generates; it gets no case line (an ordinary call)"
     let source ← IO.ofExcept <| Ix.Compile.ResourceProfile.build source leanEnv constList
     return associations.foldl (init := source) fun source a =>
       source ++ s!"equation {a.definition} {a.equation}\n"
@@ -346,7 +352,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
     equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition in the closure, library definitions included; compile each theorem with its dependencies to a fixpoint, and write the definition/theorem associations to --equations-out. An annotated definition's header input contracts are carried onto its equation's statement and listed in the sidecar."
     "equations-out" : String; "Path for the --equations association JSON (`ix/compile-equations/1`); defaults to <out>.equations.json. Whenever resource admission runs (an annotated closure) or --profile is given, the file is written (with or without --equations) and also records the closure root, the effective resourceProfile (address and canonical bytes) and, under resourceChecked, the definition/equation pairs resource admission checked a definition through, with their addresses, the profile address and the carried contracts; `ix check-equations SIDECAR CLOSURE` re-verifies them. An annotated recursive definition is refused unless it is checked through its equation (--equations --profile) or assumed by the profile."
-    profile        : String; "Resource profile source for annotated closures (one directive per line: standard, literals, shareable NAME, crossing plain, linear NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, equation NAME THEOREM, limits DEPTH STEPS); replaces the standard profile. With cases, every casesOn and matcher of the closure is bound as a generated `case NAME` directive, which the file itself may not contain. Names are resolved against the compiled closure and the effective profile address is printed. With --equations, every realized unfolding equation is added as an equation directive (generated; the file itself may not contain equation directives), so annotated recursion is checked through it. The Lean core profile is profiles/lean-core.profile; profiles/lean-core-strict.profile is the same without shareable types (no usage crossing); profiles/lean-core-plain.profile adds usage crossing on plain data."
+    profile        : String; "Resource profile source for annotated closures (one directive per line: standard, literals, shareable NAME, crossing plain, linear NAME, assume NAME, choice NAME, interface NAME CONTRACT..., cases, equation NAME THEOREM, limits DEPTH STEPS); replaces the standard profile. With cases, every casesOn and matcher of the closure that Lean verifiably generated is bound as a generated `case NAME` directive, which the file itself may not contain. Names are resolved against the compiled closure and the effective profile address is printed. With --equations, every realized unfolding equation is added as an equation directive (generated; the file itself may not contain equation directives), so annotated recursion is checked through it. The Lean core profile is profiles/lean-core.profile; profiles/lean-core-strict.profile is the same without shareable types (no usage crossing); profiles/lean-core-plain.profile adds usage crossing on plain data."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

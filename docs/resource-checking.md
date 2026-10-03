@@ -274,7 +274,7 @@ closures; the consumer must compile them the same way:
   hypotheses eagerly would recurse there); a minor that does not mention its
   hypotheses lets the consumer skip computing them.
 - A *case definition* bound by the profile (`casesOn` and matchers; `ix
-  compile` binds exactly those Lean records, see below) is unfolded at a full
+  compile` binds exactly those Lean generates, see below) is unfolded at a full
   application when its body is an unannotated lambda telescope around a full
   application of such a case split or of another bound case definition. Its
   parameters are classified from that body: a parameter is *by need* when
@@ -481,6 +481,25 @@ forbids, so that a compiler's correctness proof can state it as a premise.
   ownership guarantee. `ix compile` binds only Lean's own unfolding theorem
   (above) and refuses annotated recursion that is not checked through it;
   `ix check-equations` re-verifies the listed pairs by address.
+- **(e) Case definitions are taken from the profile, by address, with
+  by-need positions derived from the bound body.** *Covers:* every
+  application, in a checked definition, of a constant the effective profile
+  binds as a case definition (`case NAME`; the canonical profile lists their
+  addresses, extension bit 2). *Requires:* the consumer treats exactly the
+  constants whose addresses the profile lists as case definitions, and for
+  each derives its by-need positions from that constant's bound body by the
+  rule above (a parameter is by need when every occurrence lies in an
+  alternative of the inner case split or case definition, as the head of an
+  application whose arguments do not mention it); every other position, and
+  every other constant, is strict. *Forbids:* recognising case definitions
+  by the consumer's own criteria (a name ending in `casesOn` or `match_N`, an
+  auxiliary-recursor tag, `MatcherInfo`), compiling a constant the profile
+  lists as an ordinary strict function while relying on the admission, or
+  taking by need a position the bound body does not make by need. `ix
+  compile` lists only the verifiably generated `casesOn`s and matchers
+  (below), so a user definition never acquires branch semantics; resource
+  safety rests on this obligation, which holds whichever constants are
+  listed, since the consumer then evaluates exactly what was checked.
 
 ## Profiles, claims, and consumers
 
@@ -551,10 +570,31 @@ Lean's own declarations are instead generated and never written: `equation`
 The directive `case NAME` (a case definition) is generated, never written: a
 profile file containing it is rejected. When the file asks for `cases`, `ix
 compile` adds `case NAME` for every constant of the compiled closure that
-Lean records as a `casesOn` recursor or a matcher
-(`Ix.Compile.ResourceProfile`), except a declaration with a native
-implementation (`@[extern]`, `@[implemented_by]`), whose Lean body is only a
-model. A bound name whose body is not a case wrapper is an ordinary call.
+Lean records as a `casesOn` recursor or a matcher and that is verifiably
+generated (`Ix.Compile.ResourceProfile.caseDefinitions`; second review
+R2-6), except a declaration with a native implementation (`@[extern]`,
+`@[implemented_by]`), whose Lean body is only a model. A record alone proves
+nothing: a metaprogram can tag any definition as an auxiliary recursor
+(`markAuxRecursor`) or give it `MatcherInfo`. So:
+
+- `I.casesOn` qualifies only when `I` is an inductive type and Lean's own
+  construction (`mkCasesOnImp`, the kernel's `casesOn` generator) re-derives
+  exactly that declaration (universe parameters, type and value) from `I`'s
+  recursor;
+- a matcher qualifies only when its value is a lambda telescope of exactly
+  its `MatcherInfo` arity (parameters, motive, discriminants, alternatives)
+  around an application — after β-reducing its head, as for a match with an
+  equality hypothesis — of such a generated `casesOn`, and every
+  alternative parameter takes at least the arguments its `MatcherInfo`
+  records, at least one (an alternative without fields takes a `Unit`), so
+  no alternative is a plain value.
+
+Every other recorded constant gets no `case` line and is an ordinary call;
+`ix compile` reports it (`… is recorded as a casesOn or matcher but is not one
+Lean generates`). Lean's matchers over a sparse `casesOn` (`_sparseCasesOn`,
+for overlapping or wildcard patterns) are among them; they were ordinary
+calls before as well, since a sparse `casesOn` is not a case definition. A
+bound name whose body is not a case wrapper is an ordinary call.
 
 A declaration with a native implementation (`@[extern]`, `@[implemented_by]`)
 is therefore never unfolded: callers use its declared interface only (for

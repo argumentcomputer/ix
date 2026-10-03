@@ -61,13 +61,17 @@ choice cond
 
 # Case splits: a recursor application whose minor premises ignore their
 # induction hypotheses is a case on its major premise. `ix compile` binds
-# every `casesOn` and matcher of the closure as a case definition (generated
+# every `casesOn` and matcher of the closure that Lean verifiably generated
+# (not a definition merely tagged as one) as a case definition (generated
 # `case` lines; this file may not contain any); such a definition is
 # unfolded, its alternatives taken by need. Every other application -- a
 # beta-redex, or a call of any other definition however match-shaped --
 # evaluates each argument exactly once, before the body. The consumer must
 # compile case splits and case definitions without closures and without
-# computing dead induction hypotheses, and every other call strictly.
+# computing dead induction hypotheses, and every other call strictly; it
+# takes the case definitions from this profile, by address, with by-need
+# positions derived from their bound bodies (docs/resource-checking.md,
+# consumer obligation (e)).
 cases
 
 # Library readers: they inspect their input and return a fresh unrestricted

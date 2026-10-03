@@ -103,6 +103,9 @@ def probes : List Probe := [
   ([probe, strictProbe, plainProbe].flatMap fun mk =>
     [{ mk "E10" false "R2-5" with equations := true, reason := recursionReason },
      { mk "E12" true "R2-5" with equations := true }]) ++
+  -- Review R2-6: a user definition marked as a `casesOn` or given forged
+  -- `MatcherInfo` gets no `case` line; it is an ordinary (strict) call.
+  ([probe, strictProbe, plainProbe].flatMap fun mk => [mk "N01" false "R2-6", mk "N02" false "R2-6"]) ++
   -- Review R2-2: an annotated partial (opaque) definition is native: refused
   -- unless assumed; an unannotated one compiles.
   [{ standardProbe "V10" false "R2-2" with reason := nativeReason },
@@ -301,6 +304,22 @@ private def genuineEquations : IO (Bool × Nat × Nat × Option String) := do
   if refused && bound then return (true, 1, 0, none)
   return (false, 0, 1, some s!"forged refused {refused}, genuine bound only {bound}: {failed}")
 
+/-- Second review R2-6: `case` lines go to the `casesOn` Lean generates for an
+inductive type and to Lean's matchers over one (also behind a β-redex, as
+for a match with an equality hypothesis), never to a user definition marked
+as an auxiliary recursor (N01) or given forged `MatcherInfo` (N02). -/
+private def generatedCaseDefinitions : IO (Bool × Nat × Nat × Option String) := do
+  let env ← getCompileEnv #[fixtureModule]
+  let forged := [fixtureModule ++ `N01.sel.casesOn, fixtureModule ++ `N02.pick.match_7]
+  let honest := [`List.casesOn, `Bool.casesOn, `Prod.casesOn, fixtureModule ++ `A01.sel.match_1,
+    fixtureModule ++ `A01.bump.match_1, fixtureModule ++ `N10.g.match_1]
+  let recorded := Ix.Compile.ResourceProfile.recordedCaseDefinitions env (forged ++ honest)
+  let bound := Ix.Compile.ResourceProfile.caseDefinitions env (forged ++ honest)
+  let reported := Ix.Compile.ResourceProfile.forgedCaseDefinitions env (forged ++ honest)
+  if recorded.toList == forged ++ honest && bound.toList == honest && reported.toList == forged then
+    return (true, 1, 0, none)
+  return (false, 0, 1, some s!"recorded {recorded}, bound {bound}, reported {reported}")
+
 /-- A no-break space (U+00A0). -/
 def nbsp : String := String.singleton (Char.ofNat 0xa0)
 
@@ -353,6 +372,8 @@ def suite : List TestSeq := [
     smuggledDirectives .done,
   .individualIO "only Lean's own unfolding theorem is associated with a definition" none
     genuineEquations .done,
+  .individualIO "case lines only for generated casesOn and matchers" none
+    generatedCaseDefinitions .done,
   test "a written profile may not contain generated directives"
     ((Ix.Compile.ResourceProfile.checkWritten "cases\ncase List.casesOn\n").toOption.isNone &&
      (Ix.Compile.ResourceProfile.checkWritten "cases\nequation dup dup_eq\n").toOption.isNone &&

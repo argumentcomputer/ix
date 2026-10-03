@@ -8,8 +8,12 @@
   an author's claim:
 
   * `case NAME` binds a case definition — a `casesOn` or a matcher, as Lean
-    records them — whose alternatives the consumer evaluates by need. Every
-    other definition, however match-shaped its body, is an ordinary call.
+    records them, that is verifiably generated (`generatedCasesOn`,
+    `generatedMatcher`; second review R2-6) — whose alternatives the
+    consumer evaluates by need. Every other definition, however
+    match-shaped its body or whatever a metaprogram recorded about it, is an
+    ordinary call. The consumer takes the case definitions from the profile,
+    by address (consumer obligation (e), docs/resource-checking.md).
   * `equation NAME THEOREM` binds an unfolding equation; `ix compile
     --equations` adds one for every `f.eq_def` it realized (`Ix.Compile.
     Equations.realize`) whose statement it re-derived from Lean's recorded
@@ -22,6 +26,7 @@
 -/
 module
 public import Lean.AuxRecursor
+public import Lean.Meta.Constructions.CasesOn
 public import Lean.Meta.Match.MatcherInfo
 public import Lean.Compiler.ExternAttr
 public import Lean.Compiler.ImplementedByAttr
@@ -97,12 +102,81 @@ def native (env : Lean.Environment) (name : Lean.Name) : Bool :=
     | some (.defnInfo _) => false
     | _ => env.contains (Compiler.mkUnsafeRecName name)
 
-/-- The case definitions of a closure: every `casesOn` and matcher Lean
-records, excluding any declaration with a native implementation, whose Lean
-body is only a model. -/
-def caseDefinitions (env : Lean.Environment) (names : List Lean.Name) : Array Lean.Name :=
+/-- Whether `name` is the `casesOn` Lean generates for an inductive type `I`
+(`name = I.casesOn`): Lean's own construction (`mkCasesOnImp`, the kernel's
+`casesOn` generator) re-derives it from `I`'s recursor, and the declaration
+must equal the result in universe parameters, type and value. A user
+definition that is merely marked as an auxiliary recursor
+(`markAuxRecursor`, second review R2-6) is not. -/
+def generatedCasesOn (env : Lean.Environment) (name : Lean.Name) : Bool :=
+  match name with
+  | .str typeName "casesOn" =>
+    match env.find? typeName, env.find? name with
+    | some (.inductInfo _), some (.defnInfo d) =>
+      match mkCasesOnImp env.toKernelEnv typeName with
+      | .ok (.defnDecl e) =>
+        e.name == name && e.levelParams == d.levelParams && e.type == d.type && e.value == d.value
+      | _ => false
+    | _, _ => false
+  | _ => false
+
+/-- The number of leading `∀` binders of a type, syntactically. -/
+private def forallArity : Lean.Expr → Nat
+  | .forallE _ _ body _ => forallArity body + 1
+  | .mdata _ e => forallArity e
+  | _ => 0
+
+/-- Whether `name` is a matcher Lean generated, as far as its shape shows: it
+has `MatcherInfo`, its value is a lambda telescope of exactly the matcher's
+arity (parameters, motive, discriminants, alternatives) around an
+application of a generated `casesOn` (`generatedCasesOn`), and every
+alternative parameter takes at least the arguments its `MatcherInfo`
+records, at least one (Lean gives an alternative without fields a `Unit`
+argument), so no alternative is a plain value. A definition that only has
+forged `MatcherInfo` does not have this shape unless it is itself such a
+wrapper, which then behaves as a matcher does (second review R2-6). -/
+def generatedMatcher (env : Lean.Environment) (name : Lean.Name) : Bool :=
+  match Meta.getMatcherInfoCore? env name, env.find? name with
+  | some info, some (.defnInfo d) => Id.run do
+    let mut body := d.value
+    let mut binders : Array Lean.Expr := #[]
+    repeat
+      match body with
+      | .lam _ type b _ => binders := binders.push type; body := b
+      | .mdata _ e => body := e
+      | _ => break
+    unless binders.size == info.arity do return false
+    let alternatives := info.altNumParams
+    for i in [0:info.numAlts] do
+      let needed := alternatives[i]!
+      if needed == 0 || forallArity binders[info.getFirstAltPos + i]! < needed then
+        return false
+    match body.headBeta.getAppFn with
+    | .const head _ => return generatedCasesOn env head
+    | _ => return false
+  | _, _ => false
+
+/-- The constants of a closure that Lean records as a `casesOn` recursor or a
+matcher, without a native implementation. -/
+def recordedCaseDefinitions (env : Lean.Environment) (names : List Lean.Name) : Array Lean.Name :=
   names.toArray.filter fun name =>
     (isCasesOnRecursor env name || Meta.isMatcherCore env name) && !native env name
+
+/-- The case definitions of a closure: every `casesOn` and matcher Lean
+records that is verifiably generated (`generatedCasesOn`,
+`generatedMatcher`), excluding any declaration with a native implementation,
+whose Lean body is only a model. A recorded one that is not verifiably
+generated gets no `case` line: it is an ordinary call. -/
+def caseDefinitions (env : Lean.Environment) (names : List Lean.Name) : Array Lean.Name :=
+  (recordedCaseDefinitions env names).filter fun name =>
+    generatedCasesOn env name || generatedMatcher env name
+
+/-- The constants Lean records as a `casesOn` or a matcher that are not
+verifiably generated (`caseDefinitions` leaves them out); `ix compile`
+reports them. -/
+def forgedCaseDefinitions (env : Lean.Environment) (names : List Lean.Name) : Array Lean.Name :=
+  (recordedCaseDefinitions env names).filter fun name =>
+    !(generatedCasesOn env name || generatedMatcher env name)
 
 /-- Whether a declaration carries a source contract (registered or written). -/
 def annotated (env : Lean.Environment) (name : Lean.Name) (info : Lean.ConstantInfo) : Bool :=
