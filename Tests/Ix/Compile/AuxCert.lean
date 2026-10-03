@@ -67,7 +67,7 @@ structure Fixture where
   /-- Constants known to fail a check: `(leg, name, defect)` with leg
       `rs` (`check-rs`), `lean` (`check-lean`) or `cert` (certified checker,
       reject or undocumented decline); name `*` stands for every constant of
-      the fixture on that leg. -/
+      the fixture on that leg and `P.*` for every name under `P`. -/
   knownFails : List (String × String × String) := []
   /-- Names that must be in the compiled output. -/
   requireNames : List String := []
@@ -84,6 +84,10 @@ def hasSub (s pat : String) : Bool := (s.splitOn pat).length > 1
 def documentedDecline (reason : String) : Bool :=
   ["unsafe", "partial", "reflexive", "nested inductive"].any (hasSub reason ·)
 
+/-- Known failures of `names` on one leg. -/
+def kf (leg defect : String) (names : List String) : List (String × String × String) :=
+  names.map fun n => (leg, n, defect)
+
 -- The fixture record (filled from the A0 survey on 2026-10-03, Lean
 -- 4.34.1; expected behaviours from `plans/replan/D-evidence-digest.md` §2,
 -- `audit-whitebox-5.md` and `audit-blackbox-final.md`).
@@ -93,7 +97,7 @@ def fixtures : List Fixture := [
   { stem := "SurgCollapse", ns := ["SurgCollapse"]
     expect := .refuses "collapse call site drops distinct arguments" },
   { stem := "SurgCollapseEq", ns := ["SurgCollapseEq"]
-    knownFails := [("lean", "*", "BB-F7")] },
+    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
   { stem := "F4FlatAlphaUsers", ns := ["F4FlatAlphaUsers"]
     expect := .refuses "collapse call site is a partial application" },
   { stem := "F4_NestedAlphaUsers", ns := ["A", "B", "r", "t", "sizeL", "sizeLA"]
@@ -124,26 +128,68 @@ def fixtures : List Fixture := [
   -- Passing neighbours with value pins.
   { stem := "Neighbours"
     ns := ["F1Pair", "F1Ring", "F1Triple", "F4Flat", "F5PSigma", "F5Prod",
-      "F6AFirst", "F8NoSplit", "L2Data", "L2TwoCtors", "RecBelow"] },
+      "F6AFirst", "F8NoSplit", "L2Data", "L2TwoCtors", "RecBelow"]
+    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)"
+      ["F1Pair.*", "F1Ring.*", "F1Triple.*", "F4Flat.*"] },
   -- Reproducers that compile cleanly (the audits' refuted leads).
   { stem := "BetaField", ns := ["BetaField"] },
   { stem := "DotCtor", ns := ["DotCtor"] },
   { stem := "EvapClosure", ns := ["EvapClosure"] },
   { stem := "F2_SplitNestedClosure", ns := ["A", "B"] },
-  { stem := "NestShapes", ns := ["NestShapes"] },
+  -- WB §6: the certified checker declines the reflexive nested `R`
+  -- (its documented modeller limitation); its dependents are blocked.
+  { stem := "NestShapes", ns := ["NestShapes"]
+    knownFails := kf "cert" "WB §6 (certified: reflexive nested decline)" ["NestShapes.R.*"] },
   -- Compiled, with constants a checker rejects: totality defects outside
   -- A0, recorded by id.
-  { stem := "Coind", ns := ["Coind"] },
-  { stem := "PropSplit", ns := ["PropSplit"] },
-  { stem := "PropCollapse", ns := ["PropCollapse"] },
-  { stem := "L2_PropSplit", ns := ["A", "B", "ua"] },
-  { stem := "RecAlias", ns := ["RecAlias"] },
-  { stem := "SurgAlias", ns := ["SurgAlias"] },
-  { stem := "SurgSplit", ns := ["SurgSplit"] },
-  { stem := "UnsafeI", ns := ["UnsafeI"] },
-  { stem := "F1_Collapse2p1", ns := ["A", "B", "C"] },
-  { stem := "F5_SigmaNestedNested", ns := ["T"] },
-  { stem := "F7_AlphaVLean", ns := ["A", "B"] },
+  { stem := "Coind", ns := ["Coind"]
+    knownFails :=
+      kf "rs" "WB-B2" ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn",
+        "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] ++
+      kf "lean" "WB-B2" ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn",
+        "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] ++
+      kf "cert" "WB-B2" ["Coind.CA._functor.existential_equiv",
+        "Coind.CB._functor.existential_equiv", "Coind.CA.functor_unfold",
+        "Coind.CB.functor_unfold", "Coind.CA.mk", "Coind.CB.mk", "Coind.CA.casesOn",
+        "Coind.CB.casesOn"] },
+  { stem := "PropSplit", ns := ["PropSplit"]
+    knownFails := ["rs", "lean", "cert"].flatMap fun leg =>
+      kf leg "WB-B2" ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
+  { stem := "PropCollapse", ns := ["PropCollapse"]
+    knownFails := kf "rs" "WB-B2" ["PropCollapse.p_cases"] ++
+      kf "cert" "WB-B2" ["PropCollapse.p_cases"] ++
+      kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress), WB-B2" ["*"] },
+  { stem := "L2_PropSplit", ns := ["A", "B", "ua"]
+    knownFails := ["rs", "lean", "cert"].flatMap fun leg => kf leg "BB-L2 (= WB-B2)" ["ua"] },
+  { stem := "RecAlias", ns := ["RecAlias"]
+    knownFails := kf "rs" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] ++
+      kf "lean" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] ++
+      kf "cert" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2",
+        "RecAlias.PA.triv"] },
+  { stem := "SurgAlias", ns := ["SurgAlias"]
+    knownFails :=
+      kf "rs" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.f",
+        "SurgAlias.f1"] ++
+      kf "lean" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.f",
+        "SurgAlias.f1"] ++
+      kf "cert" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.f", "SurgAlias.f1",
+        "SurgAlias.A._sizeOf_inst", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec"] },
+  { stem := "SurgSplit", ns := ["SurgSplit"]
+    knownFails := kf "rs" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.len2"] ++
+      kf "lean" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.len2"] ++
+      kf "cert" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.A.len", "SurgSplit.len2",
+        "SurgSplit.A.len._sunfold"] },
+  { stem := "UnsafeI", ns := ["UnsafeI"]
+    knownFails := kf "rs" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] ++
+      kf "lean" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
+  { stem := "F1_Collapse2p1", ns := ["A", "B", "C"]
+    knownFails := kf "rs" "BB-F1 (metadata of collapsed aliases)" ["*"] ++
+      kf "lean" "BB-F1, BB-F7" ["*"] },
+  { stem := "F5_SigmaNestedNested", ns := ["T"]
+    knownFails := ["rs", "lean"].flatMap fun leg =>
+      kf leg "BB-F5 (kernel completeness)" ["T.rec", "T.rec_1", "T.rec_2"] },
+  { stem := "F7_AlphaVLean", ns := ["A", "B"]
+    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
   -- Expected compile failures outside A0 (totality defects).
   { stem := "AliasIdx", ns := ["AliasIdx"]
     expect := .xfail "WB-A3" "function expected, got Sort u" },
@@ -188,9 +234,16 @@ private def sha256 (path : System.FilePath) : IO String := do
 private def owns (f : Fixture) (name : String) : Bool :=
   f.ns.any fun p => name == p || name.startsWith (p ++ ".")
 
+/-- A recorded name pattern: an exact name, `*` (every constant of the
+    fixture), or `P.*` (every name under `P`). -/
+private def isPattern (n : String) : Bool := n == "*" || n.endsWith ".*"
+
+private def matchesPat (n name : String) : Bool :=
+  n == name || n == "*" || (n.endsWith ".*" && name.startsWith (n.dropEnd 1).toString)
+
 private def known (f : Fixture) (leg name : String) : Option String :=
   f.knownFails.findSome? fun (l, n, d) =>
-    if l == leg && (n == name || n == "*") then some d else none
+    if l == leg && matchesPat n name then some d else none
 
 /-- `✗ name: message` lines of a checker's output. -/
 private def failLines (out : String) : List (String × String) :=
@@ -302,7 +355,7 @@ def runFixture (f : Fixture) : IO (Array String × String) := do
       if (known f leg n).isNone then
         problems := problems.push s!"{leg}: {n} fails, not recorded: {m.take 200}"
     for (leg, n, d) in f.knownFails do
-      unless n == "*" || failed.any (fun (l, m, _) => l == leg && m == n) do
+      unless isPattern n || failed.any (fun (l, m, _) => l == leg && m == n) do
         problems := problems.push s!"{leg}: {n} recorded as failing ({d}) but passes"
     let nKnown := failed.size
     return (problems, s!"compiled, ALIGNED, {mine.length} names, {nKnown} recorded failure(s)")
