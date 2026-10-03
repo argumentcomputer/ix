@@ -3195,7 +3195,11 @@ fn roundtrip_block(
   // ------------------------------------------------------------------
   // Phase A: Compile to Ixon (mirrors compile_aux_block lines 69-121)
   // ------------------------------------------------------------------
-  let mut cache = CompileBlockCache::default();
+  // A decompile recompile only verifies a reconstructed form against its
+  // stored address; it stores no constant, so the collapse-drop checks of
+  // the compile side (A0) do not apply (`BlockCache::provenance_only`).
+  let mut cache =
+    CompileBlockCache { provenance_only: true, ..Default::default() };
 
   let first_name = consts[0].name();
   let refs: Vec<&LeanMutConst> = consts.iter().collect();
@@ -3500,7 +3504,8 @@ fn roundtrip_block(
             _ => None,
           };
           if let Some(omc) = omc {
-            let mut pcache = CompileBlockCache::default();
+            let mut pcache =
+              CompileBlockCache { provenance_only: true, ..Default::default() };
             let mut pexprs: Vec<(&LeanExpr, &[Name])> = Vec::new();
             collect_mut_const_exprs(&omc, &mut pexprs);
             let preseeded = preseed_expr_tables(

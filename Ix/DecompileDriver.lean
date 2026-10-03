@@ -60,7 +60,8 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
   let mut result := decompiled
   for (key, all) in groups do
     let blockEnv : Ix.CompileM.BlockEnv :=
-      { all := {}, current := key, mutCtx := default, univCtx := [] }
+      { all := {}, current := key, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
     match Ix.CompileM.CompileM.run cenv blockEnv {}
         (Ix.AuxGen.computeLeanIndFlags all) with
     | .error e =>
@@ -244,7 +245,8 @@ def fallbackPlanBlocksFromSort
   let cenv := Ix.CompileM.CompileEnv.new { consts := decompiledView }
   let lo := allNames[0]?.getD Ix.Name.mkAnon
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    { all := {}, current := lo, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
   let sorted ← match Ix.CompileM.CompileM.run cenv blockEnv {} (do
       let mut cs : Array Ix.MutConst := #[]
       for n in allNames do
@@ -347,7 +349,8 @@ def installDecompileCallSitePlans
       continue
     let cenv := Ix.CompileM.CompileEnv.new { consts := decompiledView }
     let blockEnv : Ix.CompileM.BlockEnv :=
-      { all := {}, current := originalAll[0]!, mutCtx := default, univCtx := [] }
+      { all := {}, current := originalAll[0]!, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
     let plans ← match Ix.CompileM.CompileM.run cenv blockEnv {}
         (Ix.AuxGen.computeCallSitePlans block.classNames originalAll
           block.auxLayout) with
@@ -548,7 +551,8 @@ private def runK (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
   let cenv := ctx.cenvFor (view?.getD st.workEnv)
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    { all := {}, current := lo, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
   match Ix.CompileM.CompileM.run cenv blockEnv {} ((act maps).run st.kctx) with
   | .ok ((a, kctx'), _) => .ok (a, kctx')
   | .error e => .error (toString e)
@@ -558,7 +562,8 @@ private def runC (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
     (act : Ix.CompileM.CompileM α) : Except String α :=
   let cenv := ctx.cenvFor st.workEnv
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    { all := {}, current := lo, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
   match Ix.CompileM.CompileM.run cenv blockEnv {} act with
   | .ok (a, _) => .ok a
   | .error e => .error (toString e)
