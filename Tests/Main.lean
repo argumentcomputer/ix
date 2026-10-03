@@ -20,6 +20,9 @@ import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.Compile.AuxCert
+import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.Oracle
+import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -342,6 +345,15 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Accelerated-vs-pure reduction differentials over that same real env
   -- (see Tests.Tc.AccelDiff and TcState.noAccel).
   ("tc-accel-diff", Tests.Tc.AccelDiff.run),
+  -- Phase A gates: twin canonicity against the non-canonical set
+  -- (Tests.Ix.Compile.Twins).
+  ("twins", Tests.Ix.Compile.Twins.run),
+  -- Lean's own auxiliaries on the canonical twin against Ix's regenerated
+  -- ones (Tests.Ix.Compile.Oracle).
+  ("aux-oracle", Tests.Ix.Compile.Oracle.run),
+  -- Byte-identical output under the sequential and wave drivers and the
+  -- compile-lean pipeline at 1, 4, 16 workers (Tests.Ix.Compile.ScheduleIdentity).
+  ("compile-schedule-identity", Tests.Ix.Compile.ScheduleIdentity.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
