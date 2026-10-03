@@ -54,7 +54,8 @@ def probes : List Probe := [
     reason := "an unfolding equation depends on an axiom other than propext" },
   { name := "E01", accepted := false, finding := "F3", equations := true },
   { name := "Q06", accepted := true, finding := "F3", equations := true },
-  probe "P03" false "F5", probe "C09" false "F5"]
+  probe "P03" false "F5", probe "C09" false "F5",
+  probe "S02" false "F7"]
 
 /-- The definitions and theorems of a probe's namespace. -/
 def roots (env : Environment) (ns : Name) : List Name :=
@@ -76,8 +77,9 @@ def compileProbe (env : Environment) (profile : String) (directory : System.File
       pure (env, closed, found.toList.map fun a => s!"equation {a.definition} {a.equation}\n")
     else pure (env, Ix.EnvScope.collectDeps env seeds, [])
   let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants env constList
-  let source ← IO.ofExcept <|
-    Ix.Compile.ResourceProfile.build profile env (constList.map (·.1))
+  let source ← match Ix.Compile.ResourceProfile.build profile env constList with
+    | .ok source => pure source
+    | .error message => return .error message
   let forced := probe.forced.map fun (d, t) => s!"equation {ns ++ d.toName} {ns ++ t.toName}\n"
   let source := String.join (source :: equations ++ forced)
   let output := directory / s!"{probe.name}.ixe"
@@ -109,8 +111,27 @@ private def verdicts : IO (Bool × Nat × Nat × Option String) := do
   finally
     IO.FS.removeDirAll directory
 
+/-- Review F7: an annotated declaration with a native implementation
+(`String.push`, `@[extern]`, given a registered contract here) is admitted
+only as an explicit assumption; its model body is never checked or inlined. -/
+private def nativeImplementations : IO (Bool × Nat × Nat × Option String) := do
+  let env ← getCompileEnv #[fixtureModule]
+  let some info := env.find? `String.push | return (false, 0, 1, some "String.push is missing")
+  let contract ← IO.ofExcept <| (Ix.Compile.SourceContract.ofTelescope info #[
+    { binder := .position 0, uses := .many, value := .unique }]).mapError toString
+  let env ← IO.ofExcept <| (Ix.Compile.registerSourceContract env contract).mapError toString
+  let constants := [(`String.push, info)]
+  let refused := (Ix.Compile.ResourceProfile.checkNative none env constants).toOption.isNone &&
+    (Ix.Compile.ResourceProfile.checkNative (some "standard\n") env constants).toOption.isNone
+  let assumed := (Ix.Compile.ResourceProfile.checkNative (some "assume String.push\n") env constants).toOption.isSome
+  let plain := (Ix.Compile.ResourceProfile.checkNative none (← getCompileEnv #[fixtureModule]) constants).toOption.isSome
+  if refused && assumed && plain then return (true, 1, 0, none)
+  return (false, 0, 1, some s!"refused {refused}, assumed {assumed}, unannotated {plain}")
+
 def suite : List TestSeq := [
   .individualIO "review probes: violations rejected, controls accepted (core profile)" none verdicts .done,
+  .individualIO "an annotated native implementation must be a profile assumption" none
+    nativeImplementations .done,
   test "a written profile may not contain generated directives"
     ((Ix.Compile.ResourceProfile.checkWritten "cases\ncase List.casesOn\n").toOption.isNone &&
      (Ix.Compile.ResourceProfile.checkWritten "cases\nequation dup dup_eq\n").toOption.isNone &&

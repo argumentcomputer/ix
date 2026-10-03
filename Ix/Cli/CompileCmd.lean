@@ -207,10 +207,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- through its equation (R17), which the consumer runs.
   let profileSource ← (p.flag? "profile").mapM fun flag => do
     let source ← IO.FS.readFile (flag.as! String)
-    let source ← IO.ofExcept <|
-      Ix.Compile.ResourceProfile.build source leanEnv (constList.map (·.1))
+    let source ← IO.ofExcept <| Ix.Compile.ResourceProfile.build source leanEnv constList
     return associations.foldl (init := source) fun source a =>
       source ++ s!"equation {a.definition} {a.equation}\n"
+  -- An annotated declaration with a native implementation goes by its
+  -- declared contract only, which the profile must assume (the standard
+  -- profile assumes nothing): its Lean body is only a model.
+  if profileSource.isNone then
+    IO.ofExcept <| Ix.Compile.ResourceProfile.checkNative none leanEnv constList
   let status ← match profileSource with
     | some source =>
       Ix.CompileM.rsCompileEnvBytesProfileSourceFFI constList outPath allowPartial strictAnon source

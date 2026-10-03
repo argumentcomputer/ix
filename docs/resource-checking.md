@@ -344,6 +344,16 @@ Lean records as a `casesOn` recursor or a matcher
 (`Ix.Compile.ResourceProfile`), except a declaration with a native
 implementation (`@[extern]`, `@[implemented_by]`), whose Lean body is only a
 model. A bound name whose body is not a case wrapper is an ordinary call.
+
+A declaration with a native implementation (`@[extern]`, `@[implemented_by]`)
+is therefore never unfolded: callers use its declared interface only (for
+example `String.push`'s shared result). When it carries a resource contract,
+`ix compile` admits it only as an explicit profile assumption (`assume NAME`,
+or a `choice`/`interface` entry) and refuses the compile otherwise (the
+standard profile assumes nothing): its Lean body is only a model of the code
+that runs, so checking the contract against it would certify the model, not
+the implementation.
+
 Because the case definitions and the equations are those of the compiled
 closure, the effective profile address depends on the program, as name
 resolution already makes it do; a consumer pins the address `ix compile`

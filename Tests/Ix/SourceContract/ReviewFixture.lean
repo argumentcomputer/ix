@@ -187,4 +187,13 @@ def f (! xs : List Nat) : ! List Nat × List Nat :=
   | _ :: t => (bump xs, t)
 end C09
 
+/-! ## Native implementations (review F7) -/
+
+/- Violation if model bodies were inlined: `String.push`'s Lean body is a
+model; its declared result is shared, so `keep` cannot take it as unique. -/
+namespace S02
+def keep (! s : String) : ! String := s
+def f (s : String) : String × String := (keep (s.push (Char.ofNat 97)), s)
+end S02
+
 end Tests.Ix.SourceContract.ReviewFixture
