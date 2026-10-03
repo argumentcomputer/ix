@@ -751,7 +751,7 @@ def run : IO UInt32 := do
         if let some e := es.find? (·.constant == d.constant) then
           if e.evidence.addrA != d.addrA || e.evidence.addrB != d.addrB then
             IO.println s!"[twins] DRIFT {f.fixture.getString!} {a.id}/{b.id} {d.constant} ({e.cause.tag}): \
-{e.evidence.addrA.take 12}/{e.evidence.addrB.take 12} -> {d.addrA.take 12}/{d.addrB.take 12}"
+{e.evidence.addrA}/{e.evidence.addrB} -> {d.addrA}/{d.addrB}"
       for e in es do
         unless ds.any (·.constant == e.constant) do
           stale := stale.push s!"{f.fixture} {a.id}/{b.id} {e.constant} ({e.cause.tag})"

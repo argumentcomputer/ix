@@ -301,7 +301,7 @@ fn is_source_contract_key(mut key: &Name) -> bool {
 /// accumulated set is value-identical to the old result; no downstream
 /// consumer reads set iteration order into output bytes (SCC members
 /// and serialized sections are canonically re-sorted).
-fn collect_expr_references<'a>(
+pub(crate) fn collect_expr_references<'a>(
   expr: &'a Expr,
   visited: &mut FxHashSet<&'a Expr>,
   acc: &mut NameSet,

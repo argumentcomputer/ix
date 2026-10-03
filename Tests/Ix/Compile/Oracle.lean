@@ -22,11 +22,16 @@
   classified, and the suite passes when every exception is in an expected
   class: the six split differences of §4.7 ((a) universe list, (b) existence
   for the Lean block, (c) `noConfusion` enumeration form, (d) the `sizeOf`
-  family, (e)/(f) surgery), plus `PACKAGING`, Ix's one-block-per-kind
-  packaging of a mutual block's auxiliaries (§2.8, D6: `ix(o) = ix(t)`, and
-  `ix(t)` is a projection into a block of several members while Lean's form
-  is compiled as its own constant, so the two are not comparable by address
-  until D6). Class (f) also takes the open audit defects of a fixture at
+  family, (e)/(f) surgery). Two further classes are still recognised but
+  now fail the suite, because each would be a regression of a canonical-form
+  change of the A2 migration: `PACKAGING` (`ix(o) = ix(t)`, and `ix(t)` is
+  a projection into a block of several members while Lean's form is packaged
+  otherwise; 0 since D6, one constant per auxiliary, §2.8) and
+  `NESTED-ORDER` (`ix(o) = ix(t)`, and `T`'s own block has its nested
+  auxiliaries in an order other than Lean's discovery order, a
+  non-identity `AuxLayout`, so Lean's forms of its recursors and their users
+  differ from Ix's; 0 since discovery order, §2.5; 84 Cutsat rows before).
+  Class (f) also takes the open audit defects of a fixture at
   this head (WB-B1 `FieldBelow`, WB `RecAlias`), with the defect id.
   A constant absent on one side is class (b).
 
@@ -124,6 +129,19 @@ def oracleFamily (env : Environment) (ixon : Ixon.Env) (f : Family) : IO (Nat ×
   let ca := (presConsts env a).filter (isAux env ·.1)
   let cb := (presConsts env b).filter (isAux env ·.1)
   let mapB := mapInto a b
+  -- the canonical presentation's nested auxiliaries are in Ix's structural
+  -- order, which differs from Lean's discovery order (a non-identity
+  -- `AuxLayout` on its block): Lean built `T`'s auxiliaries over the other
+  -- order, so they differ from Ix's by the nested order (A2-order)
+  let tInds : Std.HashSet Address := (presConsts env a).foldl (init := {}) fun s (n, ci) => match ci with
+    | .inductInfo _ => s.insert (Ix.Name.fromLeanName n).getHash
+    | _ => s
+  let nestedMoved := ixon.named.fold (init := false) fun acc _ nm =>
+    acc || match nm.constMeta.info with
+      | .muts all (some lay) =>
+        (lay.perm.zipIdx.any fun (p, i) => p != UInt64.ofNat i) &&
+          all.any (·.any tInds.contains)
+      | _ => false
   let mut rows : Array Row := #[]
   let mut n := 0
   let mut hit : Std.HashSet Name := {}
@@ -145,6 +163,10 @@ def oracleFamily (env : Environment) (ixon : Ixon.Env) (f : Family) : IO (Nat ×
     -- UnivSplit: the split member keeps the block's universe list, and the
     -- users of its recursor follow (§4.7 (a))
     let cls := if cls == "UNEXPECTED" && f.fixture.getString! == "UnivSplit" then "(a)" else cls
+    -- nested order (A2-order): `T`'s own block is not canonical in its nested
+    -- auxiliaries, so Lean's forms of its recursors and their users differ
+    let cls := if sameIx && nestedMoved && (cls == "UNEXPECTED" || cls == "PACKAGING")
+      then "NESTED-ORDER" else cls
     -- open audit defects of the fixture itself at this head (§4.7 (f) extended):
     -- a user constant named `below` taken for an auxiliary (WB-B1, FieldBelow;
     -- fixed by A0), the Prop `below` over a reducible alias (WB RecAlias)
@@ -206,7 +228,10 @@ def run : IO UInt32 := do
     for r in rows do
       byClass := byClass.insert r.cls ((byClass.getD r.cls 0) + 1)
       IO.println s!"[aux-oracle]   {r.cls} {r.aux}: {r.detail}"
-      if r.cls == "UNEXPECTED" then failures := failures + 1
+      -- since D6 a packaging difference, and since discovery order a
+      -- nested-order difference, is a regression (A2 migration)
+      if r.cls == "UNEXPECTED" || r.cls == "PACKAGING" || r.cls == "NESTED-ORDER" then
+        failures := failures + 1
   IO.println s!"[aux-oracle] {total} auxiliaries compared; exceptions by class: \
 {byClass.toList.map fun (c, k) => s!"{c} {k}"}"
   IO.println s!"[aux-oracle] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"

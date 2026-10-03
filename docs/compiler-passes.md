@@ -657,9 +657,21 @@ Census (`exp-census-1.md:24`) [measured]: no evaporation in Init, Std, Lean, Bat
 | Kind tag | Lean: none (C1) | definition < inductive < recursor | antisymmetry on all inputs (§3.4) |
 | Cache | Lean: unnormalised (C2) | stored for `(min, max)`, with the result reversed when swapped, as in Rust | latent-bug fix, no byte change (§3.4) |
 | `is_rec`/`is_unsafe` keys | Rust only (C6) | none: content-only key | the flags are block-wide [measured, A1C §0.8]; Rust drops them at catch-up |
-
 | Nested order | structural sort | discovery order over the canonical block (§2.5) | equals Lean on identity blocks; address-free |
-| Packaging | one block per auxiliary kind | one constant per auxiliary (D6) | minimality; 382 + 28 packaging-only differences [measured, CEN:27] |
+| Packaging | one block per auxiliary kind | one constant per auxiliary (D6); recursor blocks of Lean's form in flat order | minimality; packaging-only differences 382 + 28 before [measured, CEN:27, v3], 363 + 28 at `v4341`, **0 + 0** after [measured, A2 migration, `canon-census --originals`] |
+
+**The A2 migration (2026-10-03).** The rows "Level comparison", "Nested order" and "Packaging" are
+implemented in both producers and landed in one migration commit. Library sha256 (`ix compile` and
+`ix compile-lean --rust-check`, byte-identical; Lean 4.34.1):
+
+| | before (`*-v4341.ixe`) | after (`*-a2.ixe`) | moved names (packaging / nested order / cascade) |
+|---|---|---|---|
+| Init+Std | `adb7e1840b27…` | `468ad7ae6a5a…` | 28 (28 / 0 / 0) |
+| Mathlib | `d1aa3de54004…` | `0758ba0507a7…` | 16,321 (920 / 765 / 15,106; 470 of the 1,215 roots are both) |
+
+The level rule moves nothing. No pinned Init address and no `Tests/Fixtures/ixon-v4` address
+moves; the certificate environment is unchanged. `canon-census`: 6 changed Mathlib blocks, 0 in
+Init+Std.
 
 ---
 
@@ -1521,6 +1533,12 @@ This agrees with ORA (DQReord 53/53) and with MUT §1.7.
 - **Auxiliary oracle:** 1,501 of 1,908 auxiliary pairs are byte-equal to Lean's own constructions,
   and every exception falls in an expected class. A further 268 auxiliaries of mutual blocks cannot
   be compared by address with Lean's form until D6 (one constant per auxiliary).
+  After the A2 migration [measured, A2 migration]: 1,772 of 1,908 are byte-equal. The 136 that differ
+  are all in the split classes of §4.7 ((d) 111, (c) 14, (a) 9, (f) 2), and 300 one-sided
+  auxiliaries are class (b).
+  `PACKAGING` went from 268 to 0 with D6, and `NESTED-ORDER` (the 84 Cutsat rows whose nested
+  auxiliaries were in the structural order) went to 0 with discovery order. Both classes now fail the
+  suite.
 - **Schedule identity (§6):** the sequential driver, the wave driver at 1, 4 and 16 workers, and
   `compile-lean` at 1, 4 and 16 workers give identical bytes (14,854,564 B on the fixture closure).
 

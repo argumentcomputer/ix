@@ -30,6 +30,23 @@
   remaining entry has the same addresses as at `f829b760`; the entries of
   the constants A0 now refuses were removed and the refusals are listed in
   `expectedRefusals` (report `plans/wave1/a1g2.md`).
+
+  A2 (D6, one constant per auxiliary; report `plans/wave1/a2p.md`): the set
+  is unchanged (same entries, same causes); the evidence addresses of 21
+  entries moved. Four are auxiliaries that are now standalone constants
+  instead of projections into a per-kind block (F4 `A.below_2`,
+  `A.brecOn_2`, `.go`, `.eq`: packaging), and 17 reference such an
+  auxiliary (SX `cTr`, `lFo`, `cFo`, their `_f` and `_sunfold`; IP `evM`,
+  `odM`, their `match_2`; C7b `EvenP.toR`, `OddP.toR`, their `match_2`:
+  cascade).
+
+  A2 migration commit (discovery order for nested auxiliaries, levels after
+  `canonUniv`, one constant per auxiliary; reports `plans/wave1/a2o.md`,
+  `a2p.md`, `a2m.md`): re-measured on the merged tree. The set is unchanged
+  (427 differences, same entries, same causes), and the evidence addresses
+  are exactly those above: the 21 D6 updates are the whole move, because
+  discovery order and the level rule move no address of the twins closure
+  (no evidence drift on the merged tree).
 -/
 import Lean
 
@@ -266,40 +283,40 @@ def nonCanonical : List NonCanonicalEntry := [
     "value.λ.body" "ROOT[V]; projection into the packed `brecOn` result at the clique position; packed motive order",
   -- Cliques.SX P0 P2
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo._f "structural functional" .pendingTransport
-    "27fd98201750b729e0e181320130e171d176b22a73f90de9719a411eb6fc49f8"
-    "63b05e67d2da4ce10f6a63465b537af309d90244ef875fd775e1847498ae564a"
+    "946a04b42cf1cf5ca1420cc450facc5d4c25876b7017f5252801b58133e62e59"
+    "670c4e32a9d88760ada44a3976269be77726d24b4da8c9de453922e1b87e0822"
     "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@5" "ROOT[V]; path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo "clique member" .pendingTransport
-    "cb2ceccb026b6cc729980d52ee1206ff9530828ca7f1b45b89e860733f79783a"
-    "0b07971836a898b514ec7a4c899a1a43479a8a2755e0c591cacda0046bfce804"
+    "e55bb46e42de613f3f698f1f256bb0c43d4d2ab4126d267ea8b2a195b5979f67"
+    "7ecc1fcb2d7f097e778c164e9665d57efa098d9c1ebcee0d529130903d4c9630"
     "value.λ.body" "ROOT[V]; projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._f "structural functional" .pendingTransport
-    "026749257a9769d0dafdd5bd27121805d9845fbceecdf53dde000265bcb5be05"
-    "cb19c9d8bd5eb1ea673aff7a84c7935df7d49482f36c5a436f72c920264834fa"
+    "15d43c0ba995e823fbbd1c7227fa5a3b5182b11eff33a35da82a4b21704b3f59"
+    "a3b54b4648b2c97d9f1a17f4b95e1bcca4222acdae4d929574ac47cf28b500d5"
     "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "ROOT[V]; path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr._sunfold "user constant" .inherited
-    "c10eb23935078e5705e028d73b00f119fb90ecaa9cc66e0702302f4bfdd3bbe8"
-    "4425558d75f72897b2b3a973ea2ce839a907fe29b65fca637e2199c5c54a3f3b"
+    "fb34937e88e5d7e41ee2513fd96a275d23ec6806f3d1289cd1a6749a3ffaf220"
+    "d1af06d85247648a324db39dab8892b112e59ef91c4900e51f834cd489109a4a"
     "" "via [lFo, cFo]",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo "clique member" .pendingTransport
-    "7c83f22adaec27b49d53b79127eee72becf67ab69d066c52455b51976d023d9f"
-    "87c66ac135f6cb8062849a6eb4851d79cbaf136064d45d529e98ef02ca7832d1"
+    "925800c959defb61ab59e9ca4f1d03a8569d17c91230fcb5b683510ee78ae582"
+    "671bf000e880c2b96203922ab5521785be73b705ad390454002e10e31bce0bcd"
     "value.λ.body" "ROOT[V]; projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr "clique member" .pendingTransport
-    "55dfac14426048a54fccc82a14cea850dad11dd36e93c500dd54de76d1e1b514"
-    "8d9876206da19efa6cfa54581e2b59f0bb194445fcf339c6aef8093bc0e7a38f"
+    "9aa5f057ed6e7e54bad1f0149269970892b4c883a73f90ab6ca89c7301788317"
+    "8970fd3c2912f2e862b3ee0c5c82df3eff51905ff2f40e0719b63c2176ee8516"
     "value.λ.body.@4.λ.body.λ.body.@2.fn" "ROOT[V|K]; projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo._sunfold "user constant" .inherited
-    "7ca92bdd62426d1db06c262f8f7b95f939efcf18d9addf6d95e67c192d9a3400"
-    "df7ebbc14e8bded8891c032a4a42bd92961e739828648108c9f764896a53a56e"
+    "f7082d0443c1b38239ee1cfdff4e567d258b3d696b64d7fbbe3f92de7b225e16"
+    "239af410afc555c9c55293077a79ded46fd2e8874c6695be43156e2e18a40838"
     "" "via [cTr, cFo]",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr._f "structural functional" .pendingTransport
-    "e840b545c5d514be53b5ab03a879262a0991fd1caea1548134ad9b76291cb48a"
-    "0dc499524b6c8a644acd026036dcccfcc2d563f01362836dc87c3bb49c85a7f2"
+    "4cdb47b0efb189248c0332e19a478d3aab0fcbaa323105310b68494152f6a7df"
+    "237e78baff718f272ad46fe08fcaa9038834e3764fbc472e7c26bb96430c7d00"
     "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "ROOT[V]; path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._sunfold "user constant" .inherited
-    "75e43fe381ad00962db1fca94375d29f1e8c1b89557cf61a6d7c318a0cf4ccdd"
-    "3346125e3773800380c8151370b05a31c143dc878dba13ba3a3cb7a057c5c250"
+    "d27e527b120e8e2aebd09a605de7966c237b488a6220c5a6fee5eb1e110d4298"
+    "a4769f9dc5df3bc2011170a55507983f70af0b6bfd0bbb7cc9aaa7783bca257a"
     "" "via [lFo, cTr]",
   -- Cliques.WD P0 P1
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual._proof_2 "encoding obligation" .pendingTransport
@@ -618,20 +635,20 @@ def nonCanonical : List NonCanonicalEntry := [
     "value.λ.body.λ.body.@0.fn" "ROOT[V|K]; `PSum` injection at the clique position (A)",
   -- Cliques.IP P0 P1
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `odM.match_2 "transformed matcher" .pendingTransport
-    "68626a4237f13c422940ed7f762097a776ebe19ee83c9de8d1beddff43dd5865"
-    "9e603fee7874e8da8d3238dcb65741b2ac0c03d0d7c538eab60b0498eaaf7136"
+    "4c737e0ec02324907ffb50f846873186dd3cc3d66510eec89a212747be5ba459"
+    "faabdf4dfae1b3ca8b74378c129eb73defab49542de62aba22ec2e42331a9d73"
     "type.∀.dom.∀.body.∀.dom.fn" "ROOT[TV]; IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM.match_2 "transformed matcher" .pendingTransport
-    "3582fae2a150da5c36b53947dc78d1d0c89b6291302d5d19c864194c521ab6b4"
-    "de267bfb295f3e16b87badb849271d2b1643423f074bc2300a68c5331dcd918e"
+    "7a61df282f48e8bfa8c2ca603616f15e278c7c61c315c1fbb47aac40aba0c914"
+    "2beb358feb2e7a05ecc2be785dad6b152790d85f23972ace4cad05d7d9c1be5c"
     "type.∀.dom.∀.body.∀.dom.fn" "ROOT[TV]; IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `odM "clique member" .pendingTransport
-    "45f11f1e99ae48aadc8527b6bece926845e99a1ba0ef3eed86ade2d6ebc84d8f"
-    "e7e127abf6a278f86163f1ed60923a3e6a6c138403e79dffceb127cec0c94174"
+    "3dd63241391b7a881d2a7d21cdc88e01aaee05cf22b55383c4bd7532cce44f88"
+    "29d497b90092325ea818f848d4d95dacadb6f2ac187e52315434deb715bd3b27"
     "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "ROOT[V]; `let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM "clique member" .pendingTransport
-    "9efd0f3c75547dbf5b4164813e94dc5a96d7f09099cafab984b6c8567455b349"
-    "4126319694718f46e7c6afa06c63e08fb26098d2ec2ecc258d816262851b4bbc"
+    "55e92b0f4431c3cbb924303a7d04d6ab9bbbba2257b2e8def68994925dacd20e"
+    "ec18d622c25d595ae22f520d993ed32c870ed7c6d7e5a37094c67f5f7ab503ed"
     "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "ROOT[V]; `let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
   -- Repro.DQMut twin orig
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B._sizeOf_1 "sizeOf family" .o11aPending
@@ -984,11 +1001,11 @@ def nonCanonical : List NonCanonicalEntry := [
     "" "ONLY-B; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.eq "block auxiliary" .pendingCollapse
     "-"
-    "f9f356444c9e8ea3741bc7ffa246785a017f778edf0f8436c9c69e7de8a55ec8"
+    "0e365d4cda30bffdafe0e6576d147fc6fc288cafa2839e85680713603bafa0f2"
     "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2 "block auxiliary" .pendingCollapse
     "-"
-    "b477fc4695d6a2d6e91e08c6939fabe67e1e948f3e10fadeb5e8510537750659"
+    "6739616e5d84bf5a9240792f0588464613e15c9a479545a31b4acad21081205a"
     "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A._sizeOf_3 "sizeOf family" .o11aPending
     "-"
@@ -996,11 +1013,11 @@ def nonCanonical : List NonCanonicalEntry := [
     "" "ONLY-B; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.below_2 "block auxiliary" .pendingCollapse
     "-"
-    "694093dbce13e3f60731f046c62ef385f2e4e1c27b330e0f3a392ff9ce973fc3"
+    "d7f5d16bbb3c95c180ccf2e4fc1be40b70d3c86cb5d2017748ff4fc9abb5e306"
     "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.go "block auxiliary" .pendingCollapse
     "-"
-    "df56c854d9a96c311facb49986499e1a1c270ba4be3f052fc9c46d6cc0ff99de"
+    "bc2cc1290f485c52fa239c5176521e5ca35616fa432ecaf10746e5dada00439b"
     "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
   -- Repro.PropCollapse twin orig
   e `Tests.Ix.Compile.Twins.Repro.PropCollapse "twin" "orig" `p_cases "user constant over the block" .pendingCollapse
@@ -1461,20 +1478,20 @@ def nonCanonical : List NonCanonicalEntry := [
   -- Proto.C7 can src
   -- Proto.C7b can src
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR.match_2 "user constant over the block" .indPredBelow
-    "798cdebbd7c748dcfec2c80a49bc29a7d196ab1b0b6629ebe66299db68c83187"
-    "885530e94cb47575b8cdeea5d48647339a2fde64b57ebf95b0515883bc502eac"
+    "4e63421fe9885ad5f4197226213dda9164e3c1c9f129abe4abdffc5f35607998"
+    "976779949ffebcce10e408ec70d726423f4e86ba9918aeec7aa83b69e4df634e"
     "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "ROOT[TV]; Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.toR "user constant over the block" .indPredBelow
-    "50fe12a59dc160f4a631b0f53326e0e214ee13c12c261804c7e2587bde392179"
-    "60bcaf3e4f5eb2eda63082a5c8ec6541600f0f63b0fea9ff4e3ff7b2f01d87b5"
+    "3bb054b90e0582df85c92e346ffd1d629209328e85a6d36616531ab5fcb306f2"
+    "674a7f9d14e21c2e77bf4a555b9a993cf95d2f4f18a346dd9fa7dbca98b3d897"
     "value.λ.body.λ.body.let.body.let.body" "ROOT[V]; Lean IndPredBelow family (and its users) of the changed Prop block, R split off" (kernelsB := (true, true, false)),
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR "user constant over the block" .indPredBelow
-    "1b89d937bc08c34d761bcf15462418ddfa9a3b98c0edffd1a351a4a208652147"
-    "f7537566880bd04f60701e51fc36bab5aeb10e02ca06832e530e4b0957645591"
+    "be619db32fe0d4ea5d256ddc9db477cc9769a6c29e9c372778aeb990a0b9bce0"
+    "c96cdea7c81dd7aaf964b6626d8c3711b9593ab25bc5aa29f8c1d18d9ccd2846"
     "value.λ.body.λ.body.let.body.let.body" "ROOT[V]; Lean IndPredBelow family (and its users) of the changed Prop block, R split off" (kernelsB := (true, true, false)),
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.toR.match_2 "user constant over the block" .indPredBelow
-    "fe1c05ab20b887b350ab84a0425e4e26781c9aa4ca8ef3205308063baa11c51a"
-    "7064d688a309679e85646d41e78462c4e62d411b802385c3e25752b3a022e44e"
+    "d4fd427576f9b54f7c46c99776b0c0432d74ee8979de5a39e01c7908f4003eff"
+    "b39c2a2df534bcf7b296b8274809090cb96cda46a0d3ec51650b924fe7600bcf"
     "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "ROOT[TV]; Lean IndPredBelow family (and its users) of the changed Prop block, R split off" (kernelsB := (false, false, false)),
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `R.below.casesOn "block auxiliary" .indPredBelow
     "-"

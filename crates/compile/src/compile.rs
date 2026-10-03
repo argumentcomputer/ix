@@ -4091,6 +4091,57 @@ pub fn sort_consts<'a>(
   }
 }
 
+/// The declared flat position of a recursor in its family: `X.rec` of the
+/// `i`-th member of `RecursorVal.all` is at `i`, and the nested auxiliary
+/// recursor `all[0].rec_N` at `all.len() + N - 1` (`u64::MAX` otherwise).
+pub fn recursor_family_position(rec: &ix_common::env::RecursorVal) -> u64 {
+  let NameData::Str(parent, last, _) = rec.cnst.name.as_data() else {
+    return u64::MAX;
+  };
+  if last == "rec" {
+    return rec
+      .all
+      .iter()
+      .position(|n| n == parent)
+      .map_or(u64::MAX, |i| i as u64);
+  }
+  if let Some(k) = last.strip_prefix("rec_")
+    && let Ok(k) = k.parse::<u64>()
+    && k >= 1
+    && rec.all.first() == Some(parent)
+  {
+    return rec.all.len() as u64 + k - 1;
+  }
+  u64::MAX
+}
+
+/// A block of recursors is laid out in its family's flat order (the order
+/// the kernel's `populate_recursor_rules_from_block` pairs with the
+/// inductive block's flat members), not in `sort_consts` order. The
+/// regenerated families get this from `compile_aux_block_with_rename`'s
+/// class-order key; this applies the same rule to a recursor block compiled
+/// from Lean's own declarations (`Named.original`, and decompile's
+/// verification recompile), using Lean's `RecursorVal.all`. On a block that
+/// canonicalisation leaves unchanged the two layouts coincide, so Lean's
+/// form and the Ix form of each recursor have one address (D6). The sort is
+/// stable; other classes keep their `sort_consts` order.
+pub fn order_recursor_family(classes: &mut [Vec<&MutConst>]) {
+  if classes.is_empty()
+    || !classes.iter().flatten().all(|c| matches!(c, MutConst::Recr(_)))
+  {
+    return;
+  }
+  classes.sort_by_key(|class| {
+    class
+      .iter()
+      .map(|c| match c {
+        MutConst::Recr(r) => recursor_family_position(r),
+        _ => u64::MAX,
+      })
+      .min()
+      .unwrap_or(u64::MAX)
+  });
+}
 // ===========================================================================
 // Main compilation entry points
 // ===========================================================================
@@ -4620,7 +4671,9 @@ fn compile_mutual(
   }
 
   // Sort constants
-  let sorted_classes = sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
+  let mut sorted_classes =
+    sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
+  order_recursor_family(&mut sorted_classes);
   let mut_ctx = MutConst::ctx(&sorted_classes);
 
   let mut exprs = Vec::new();

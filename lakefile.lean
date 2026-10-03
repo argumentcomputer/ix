@@ -410,6 +410,15 @@ lean_exe «canon-census» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- The Lean names whose address differs between two compiled environments,
+grouped by block with a one-word cause (packaging, nested order, cascade,
+content); `--originals` lists the regenerated auxiliaries whose
+`Named.original` differs from their address: `ixe-diff <old.ixe> <new.ixe>
+[--names] [--tsv <rows.tsv>]` (`Benchmarks/Canon/IxeDiff.lean`). -/
+lean_exe «ixe-diff» where
+  root := `Benchmarks.Canon.IxeDiff
+  moreLinkObjs := #[ix_rs]
+
 /-- Regenerates `IxC/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where

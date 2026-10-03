@@ -287,11 +287,13 @@ def record (rules : Rules) (env : Env) (isProp : Ix.Name → Bool) (all : Array 
 def pct (a b : Nat) : String := s!"{a} of {b}"
 
 def main (args : List String) : IO UInt32 := do
+  let wantOrig := args.contains "--originals"
+  let args := args.filter (· != "--originals")
   let (src, ixe, tsv?) ← match args with
     | [s, i] => pure (s, i, none)
     | [s, i, "--tsv", t] => pure (s, i, some t)
     | _ =>
-      IO.eprintln "usage: canon-census <source.lean> <stored.ixe> [--tsv <blocks.tsv>]"
+      IO.eprintln "usage: canon-census <source.lean> <stored.ixe> [--tsv <blocks.tsv>] [--originals]"
       return 2
   let t0 ← IO.monoMsNow
   let fe ← getFileEnvCore src
@@ -341,6 +343,7 @@ def main (args : List String) : IO UInt32 := do
     | .str _ s _ => s == "below" || s.startsWith "below_"
     | _ => false) |>.size
 
+  let mut changedToday : Std.HashSet Ix.Name := {}
   let mut today : Counts := {}
   let mut phaseA : Counts := {}
   let mut discChecked := 0
@@ -386,6 +389,8 @@ def main (args : List String) : IO UInt32 := do
         if rules == .today then today := { today with errors := today.errors + 1, errorLines := today.errorLines.push line }
         else phaseA := { phaseA with errors := phaseA.errors + 1, errorLines := phaseA.errorLines.push line }
       | .ok b =>
+        if rules == .today && b.change.any then
+          changedToday := all.foldl (·.insert ·) changedToday
         let c0 := if rules == .today then today else phaseA
         let mut c := record rules env isProp all b c0
         -- comparator study
@@ -425,6 +430,52 @@ def main (args : List String) : IO UInt32 := do
           dedupDiffers := dedupDiffers.push s!"{namePretty a0}: Lean {sigs.size}, compiler {y.sigs.size}"
       | .error e, _ | _, .error e => discMismatch := discMismatch.push s!"{namePretty a0}: {e}"
   IO.eprintln s!"[census] blocks done ({(← IO.monoMsNow) - t0} ms)"
+
+  -- `Named.original` of the regenerated auxiliaries against their addresses
+  -- (CEN:25-27): an auxiliary whose block is unchanged and whose original
+  -- differs from its address differs by packaging only.
+  let blockOf : Std.HashMap Ix.Name Ix.Name := blocks.foldl (init := {}) fun m all =>
+    all.foldl (fun m n => m.insert n all[0]!) m
+  let generated (n : Ix.Name) : Bool := match n with
+    | .str _ s _ => s == "below" || s.startsWith "below_"
+    | _ => false
+  -- the owning (non-generated) inductive block of an auxiliary name
+  let rec owner (n : Ix.Name) (fuel : Nat) : Option Ix.Name :=
+    match fuel with
+    | 0 => none
+    | fuel + 1 =>
+      match blockOf.get? n with
+      | some b => if generated n then (match n with
+          | .str p _ _ => owner p fuel | _ => some b) else some b
+      | none => match n with
+        | .str p _ _ => owner p fuel
+        | .num p _ _ => owner p fuel
+        | _ => none
+  let mut origRows : Option (Nat × Nat × Nat × Nat × Array String) := none
+  if wantOrig then
+    let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy bytes)
+    let mut total := 0
+    let mut differ := 0
+    let mut onChanged := 0
+    let mut packOnly := 0
+    let mut packLines : Array String := #[]
+    for row in parts.namedRows do
+      let named ← IO.ofExcept (row.materialize parts.backing parts.nameRev)
+      let some (o, _) := named.original | continue
+      total := total + 1
+      if o == named.addr then continue
+      differ := differ + 1
+      match owner row.name 64 with
+      | some b =>
+        if changedToday.contains b then onChanged := onChanged + 1
+        else
+          packOnly := packOnly + 1
+          packLines := packLines.push s!"{namePretty row.name} (block {namePretty b})"
+      | none =>
+        packOnly := packOnly + 1
+        packLines := packLines.push s!"{namePretty row.name} (no owning block)"
+    origRows := some (total, differ, onChanged, packOnly, packLines)
+    IO.eprintln s!"[census] originals done ({(← IO.monoMsNow) - t0} ms)"
 
   -- cliques
   let (rawCliques, cliqueCounts) := readCliques leanEnv
@@ -492,6 +543,11 @@ def main (args : List String) : IO UInt32 := do
   p s!"| Reversed non-equal cache hits (Lean/Rust divergence) | {today.hazards} | {phaseA.hazards} |"
   p s!"| Comparator: components checked / with violations | {today.preorderBlocks} / {today.preorderViolations} | {phaseA.preorderBlocks} / {phaseA.preorderViolations} |"
   p s!"| Errors | {today.errors} | {phaseA.errors} |"
+  if let some (total, differ, onChanged, packOnly, packLines) := origRows then
+    p ""
+    p s!"Auxiliaries with `Named.original`: {total} total, {total - differ} equal to their address, {differ} differ; \
+      of these {onChanged} on blocks canonicalisation changes (today) and **{packOnly} on unchanged blocks (packaging only)**."
+    for l in packLines.toList.take 60 do p s!"- packaging only: {l}"
   p ""
   p s!"Member order moves against today (blocks with several classes): under `(k₀, k₁)` alone {movesK.size}; \
     under levels after `canonUniv` alone {movesU.size}; under `Rules.phaseA` {movesA.size}."
