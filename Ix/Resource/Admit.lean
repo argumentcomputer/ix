@@ -158,8 +158,10 @@ structure Policy where
   assumptions : Array Nat := #[]
   shareableTypes : Array Nat := #[]
   choices : Array Nat := #[]
-  /-- The profile admits case splits, case wrappers and β-redexes. -/
+  /-- The profile admits case splits, bound case definitions and β-redexes. -/
   cases : Bool := false
+  /-- Case definitions (`casesOn`, matchers) bound by the profile. -/
+  caseDefinitions : Array Nat := #[]
   /-- Unfolding equations `(definition, equation)` bound by the profile. -/
   equations : Array (Nat × Nat) := #[]
   deriving Inhabited, Repr
@@ -185,6 +187,9 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
       throw ⟨some index.toNat, .unsupported "admitted interface is absent from the bound profile"⟩
   if program.cases && !policy.cases then
     throw ⟨none, .unsupported "case behavior is absent from the bound profile"⟩
+  for index in program.caseDefinitions do
+    unless policy.caseDefinitions.contains index.toNat do
+      throw ⟨some index.toNat, .unsupported "case definition is absent from the bound profile"⟩
   for (definition, equation) in program.equations do
     unless policy.equations.contains (definition.toNat, equation.toNat) do
       throw ⟨some definition.toNat, .unsupported "unfolding equation is absent from the bound profile"⟩

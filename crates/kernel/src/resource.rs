@@ -94,7 +94,10 @@ fn contract_byte(token: &str) -> Option<u8> {
 ///   assumption);
 /// - `interface NAME C…`: an admitted interface, one contract token per
 ///   leading arrow (see `contract_byte`); also an assumption;
-/// - `cases`: recursor case splits, case wrappers and beta-redexes;
+/// - `cases`: recursor case splits, bound case definitions and
+///   beta-redexes;
+/// - `case NAME`: a case definition (`casesOn`, a matcher) whose
+///   alternatives are taken by need (`ix compile` generates these);
 /// - `equation NAME THEOREM`: check `NAME` through the unfolding equation
 ///   `THEOREM` (`∀ xs, NAME xs = rhs`), which the consumer runs;
 /// - `limits DEPTH STEPS`.
@@ -113,6 +116,7 @@ pub fn profile_from_source(
   let mut choices = BTreeSet::new();
   let mut interfaces = BTreeMap::new();
   let mut equations = BTreeMap::new();
+  let mut case_definitions = BTreeSet::new();
   let mut profile = Profile::default();
   for (n, raw) in text.lines().enumerate() {
     let line = raw.split('#').next().unwrap_or("").trim();
@@ -155,6 +159,7 @@ pub fn profile_from_source(
         }
       },
       ("cases", 1) => profile.cases = true,
+      ("case", 2) => case_definitions.extend(present(words[1])),
       ("equation", 3) => {
         if let (Some(definition), Some(equation)) =
           (present(words[1]), present(words[2]))
@@ -177,6 +182,7 @@ pub fn profile_from_source(
   profile.shareable_types = shareable.into_iter().collect();
   profile.choices = choices.into_iter().collect();
   profile.interfaces = interfaces.into_iter().collect();
+  profile.case_definitions = case_definitions.into_iter().collect();
   if !equations.is_empty() {
     let eq = PrimAddrs::new().eq;
     if !env.consts.contains_key(&eq) {
@@ -426,12 +432,14 @@ mod tests {
       _ => None,
     };
     let source = "# comment\nchoice Unit\ninterface Unit _ ~:!\ncases\n\
+      case Unit\ncase Missing\n\
       shareable Absent # outside the closure\nassume Missing\nlimits 64 1000\n";
     let profile = profile_from_source(source, &env, &resolve).unwrap();
     assert_eq!(profile.assumptions, vec![unit.clone()]);
     assert_eq!(profile.choices, vec![unit.clone()]);
     assert!(profile.shareable_types.is_empty());
     assert!(profile.cases);
+    assert_eq!(profile.case_definitions, vec![unit.clone()]);
     let local =
       ValueContract { owned: Owned::Shared, locality: Locality::Local };
     assert_eq!(
@@ -455,6 +463,8 @@ mod tests {
       "limits 0 0",
       "choice",
       "equation Unit Unit",
+      // Case definitions need case behavior.
+      "case Unit",
     ] {
       assert!(profile_from_source(bad, &env, &resolve).is_err(), "{bad}");
     }

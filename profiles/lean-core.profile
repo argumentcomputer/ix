@@ -1,4 +1,4 @@
-# The Lean core resource profile (Lean 4.34, Ixon v3), for
+# The Lean core resource profile (Lean 4.34.1, Ixon v4), for
 #   ix compile --profile profiles/lean-core.profile ...
 #
 # Every entry is an explicit assumption bound into the profile address that
@@ -25,9 +25,14 @@ choice dite
 choice cond
 
 # Case splits: a recursor application whose minor premises ignore their
-# induction hypotheses is a case on its major premise; `casesOn` and matchers
-# that only wrap such a split are unfolded, and a beta-redex binds its
-# argument. The consumer compiles these without closures.
+# induction hypotheses is a case on its major premise. `ix compile` binds
+# every `casesOn` and matcher of the closure as a case definition (generated
+# `case` lines; this file may not contain any); such a definition is
+# unfolded, its alternatives taken by need. Every other application -- a
+# beta-redex, or a call of any other definition however match-shaped --
+# evaluates each argument exactly once, before the body. The consumer must
+# compile case splits and case definitions without closures and without
+# computing dead induction hypotheses, and every other call strictly.
 cases
 
 # Library readers: they inspect their input and return a fresh unrestricted

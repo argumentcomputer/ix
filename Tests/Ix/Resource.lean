@@ -407,6 +407,7 @@ def casesProgram : Program := { modesProgram with
       kind := .assumption }
   ]
   choices := modesProgram.choices ++ #[31, 32]
+  caseDefinitions := #[29]
   recursors := #[
     { index := 24, params := 0, motives := 1, minors := 2, indices := 0,
       fields := #[0, 1], binders := #[0, 1] },
@@ -521,6 +522,59 @@ def freezeCases : Array Case := #[
     lam (b .linear .unique) (borrow (v 0) (v 1) .many boxTy) boxTy, "loan"⟩
 ]
 
+def app3 (f a b c : E) : E := .app (.app (.app f a) b) c
+/-- `(t : Box) → (e : Nat → Res) → (f : Res → Res) → Res`, a matcher shape. -/
+def matcherTy : E :=
+  arr (b .many) .shared boxTy (arr (b .many) .shared (arr (b .many) .shared natTy resTy)
+    (arr (b .many) .shared (arr (b .many) .shared resTy resTy) resTy))
+/-- `fun t e f => Box.casesOn motive t (e 0) (fun r => f r)`. -/
+def matcherBody : E :=
+  lam (b .many) (lam (b .many) (lam (b .many)
+    (app4 (ref 29) (constMotive boxTy resTy) (v 2) (.app (v 1) zero) (lam (b .many) (.app (v 1) (v 0)) resTy))
+    (arr (b .many) .shared resTy resTy)) (arr (b .many) .shared natTy resTy)) boxTy
+
+/-- The case program extended for strict binding (review F1): a unique
+consumer, a match-shaped definition that is not bound, and a matcher-shaped
+definition that is bound (35) next to an unbound copy (36). Mirrors the Rust
+`strict_program`. -/
+def strictProgram : Program := { casesProgram with
+  declarations := casesProgram.declarations ++ #[
+    { type := arr (b .linear .unique) .shared resTy resTy, kind := .assumption }, -- 33 take
+    { type := arr (b .many) .shared boxTy (arr (b .many) .shared resTy           -- 34 sel t e f
+        (arr (b .many) .shared resTy resTy)),
+      body := some (lam (b .many) (lam (b .many) (lam (b .many)
+        (app4 (ref 24) (constMotive boxTy resTy) (v 1) (lam (b .many) (v 1) resTy) (v 2))
+        resTy) resTy) boxTy) },
+    { type := matcherTy, body := some matcherBody },                             -- 35 bound matcher
+    { type := matcherTy, body := some matcherBody }                              -- 36 unbound copy
+  ]
+  caseDefinitions := #[29, 35] }
+
+/-- `(1 ! r : Res) → (t : Box) → Res` with body `x` over `t` (0) and `r` (1). -/
+def uniqueBox (x : E) : E := lam (b .linear .unique) (lam (b .many) x boxTy) resTy
+
+def strictCases : Array Case := #[
+  -- Ordinary calls and β-redexes evaluate every argument once, before the body.
+  ⟨"an unbound match-shaped definition is an ordinary call", resBoxRes (b .linear .unique),
+    uniqueBox (app3 (ref 34) (v 0) (call 33 (v 1)) (v 1)), "moved"⟩,
+  ⟨"a bound case definition takes its alternatives by need", resBoxRes (b .linear .unique),
+    uniqueBox (app3 (ref 35) (v 0) (lam (b .many) (call 33 (v 2)) natTy)
+      (lam (b .many) (call 33 (v 2)) resTy)), "ok"⟩,
+  ⟨"an unbound copy of a case definition takes closures", resBoxRes (b .linear .unique),
+    uniqueBox (app3 (ref 36) (v 0) (lam (b .many) (call 33 (v 2)) natTy)
+      (lam (b .many) (call 33 (v 2)) resTy)), "capture"⟩,
+  ⟨"a dead beta-redex argument is still evaluated", resToRes (b .linear .unique) .unique,
+    lam (b .linear .unique) (.app (lam (b .many) (v 1) resTy) (call 33 (v 0))) resTy, "moved"⟩,
+  ⟨"a beta-redex argument is not re-evaluated under a closure", arr (b .many) .unique natTy boxTy,
+    .app (lam (b .many) (lam (b .many) (v 1) natTy) boxTy) (call 23 (ref 30)), "capture"⟩,
+  ⟨"a closure argument is built once, before the body", resToRes (b .linear .unique) .unique,
+    lam (b .linear .unique) (.app (lam (b .many) (v 1) (arr (b .many) .shared natTy resTy))
+      (lam (b .many) (call 33 (v 1)) natTy)) resTy, "capture"⟩,
+  ⟨"a closed lambda argument is substituted", resToRes (b .linear .unique) .unique,
+    lam (b .linear .unique) (.app (lam (b .many) (.app (v 0) (v 1)) (arr (b .many) .shared resTy resTy))
+      (lam (b .many) (v 0) resTy)) resTy, "ok"⟩
+]
+
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=
   let p := { base with declarations := base.declarations.push { type, body := some value } }
   checkDefinition p base.declarations.size limits
@@ -549,7 +603,8 @@ def runFixtureCases : IO Nat := do
   let cases ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-cases.tsv" casesProgram caseCases
   let equations ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-equations.tsv" equationsProgram equationCases
   let freeze ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-freeze.tsv" freezeProgram freezeCases
-  return base + modes + cases + equations + freeze
+  let strict ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-strict.tsv" strictProgram strictCases
+  return base + modes + cases + equations + freeze + strict
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

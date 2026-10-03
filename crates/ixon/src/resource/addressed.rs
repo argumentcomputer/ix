@@ -31,9 +31,13 @@ pub struct Profile {
   pub nat_type: Option<Address>,
   pub string_type: Option<Address>,
   pub limits: Limits,
-  /// Behavior: recursor case splits, case wrappers and beta-redexes (see
-  /// `Program::cases`).
+  /// Behavior: recursor case splits, bound case definitions and
+  /// beta-redexes (see `Program::cases`).
   pub cases: bool,
+  /// Case definitions (`casesOn`, matchers) the consumer compiles as a case
+  /// on their major premise, with their alternatives by need
+  /// (`Program::case_definitions`). Strictly increasing; requires `cases`.
+  pub case_definitions: Vec<Address>,
   /// Admitted resource interfaces: per declaration, one packed input/result
   /// contract byte (`pack_all_contract`) for each leading arrow, replacing
   /// the declared contracts for callers. Each must also be an assumption.
@@ -95,6 +99,16 @@ impl Profile {
         "resource profile: address lists must be strictly increasing".into(),
       );
     }
+    if self.case_definitions.windows(2).any(|pair| pair[0] >= pair[1]) {
+      return Err(
+        "resource profile: address lists must be strictly increasing".into(),
+      );
+    }
+    if !self.case_definitions.is_empty() && !self.cases {
+      return Err(
+        "resource profile: case definitions require case behavior".into(),
+      );
+    }
     Ok(())
   }
 
@@ -118,8 +132,9 @@ impl Profile {
     TagN::put(0, 0, self.limits.depth as u64, &mut bytes);
     TagN::put(0, 0, self.limits.steps as u64, &mut bytes);
     // An optional extension, present only when it is not empty.
-    let flags =
-      u64::from(self.cases) | (u64::from(!self.equations.is_empty()) << 1);
+    let flags = u64::from(self.cases)
+      | (u64::from(!self.equations.is_empty()) << 1)
+      | (u64::from(!self.case_definitions.is_empty()) << 2);
     if flags != 0 || !self.interfaces.is_empty() {
       TagN::put(0, 0, flags, &mut bytes);
       TagN::put(0, 0, self.interfaces.len() as u64, &mut bytes);
@@ -134,6 +149,12 @@ impl Profile {
         for (definition, equation) in &self.equations {
           bytes.extend_from_slice(definition.as_bytes());
           bytes.extend_from_slice(equation.as_bytes());
+        }
+      }
+      if !self.case_definitions.is_empty() {
+        TagN::put(0, 0, self.case_definitions.len() as u64, &mut bytes);
+        for address in &self.case_definitions {
+          bytes.extend_from_slice(address.as_bytes());
         }
       }
     }
@@ -198,10 +219,11 @@ impl Profile {
       interfaces: vec![],
       eq_type: None,
       equations: vec![],
+      case_definitions: vec![],
     };
     if !bytes.is_empty() {
       let flags = TagN::get(0, &mut bytes)?.value;
-      if flags > 3 {
+      if flags > 7 {
         return Err("resource profile: unknown behavior flags".into());
       }
       let count = TagN::get(0, &mut bytes)?.value;
@@ -253,6 +275,24 @@ impl Profile {
           profile.equations.push((definition, equation));
         }
         profile.eq_type = Some(eq);
+      }
+      if flags & 4 != 0 {
+        let count = TagN::get(0, &mut bytes)?.value;
+        if count == 0 || count > (bytes.len() / 32) as u64 {
+          return Err(
+            "resource profile: impossible case definition count".into(),
+          );
+        }
+        for _ in 0..count {
+          let (head, tail) = bytes
+            .split_at_checked(32)
+            .ok_or("resource profile: truncated address")?;
+          bytes = tail;
+          profile.case_definitions.push(
+            Address::from_slice(head)
+              .map_err(|_error| "resource profile: invalid address")?,
+          );
+        }
       }
       profile.cases = flags & 1 == 1;
       if !bytes.is_empty() {
@@ -916,6 +956,8 @@ pub fn prepare(
     program.eq_type = Some(i);
   }
   program.equations = equations.clone();
+  let case_definitions = resolve(&profile.case_definitions)?;
+  program.case_definitions = case_definitions.clone();
   for (typ, ctor, params, count) in field_specs {
     if let Ok(derived) = fields(
       &program,
@@ -946,6 +988,10 @@ pub fn prepare(
         .map(native_index)
         .collect::<Result<_, _>>()?,
       cases: profile.cases,
+      case_definitions: case_definitions
+        .into_iter()
+        .map(native_index)
+        .collect::<Result<_, _>>()?,
       equations: equations
         .into_iter()
         .map(|(d, t)| Ok((native_index(d)?, native_index(t)?)))
@@ -1631,5 +1677,36 @@ mod tests {
     empty.extend_from_slice(unit.as_bytes());
     empty.push(0);
     assert!(Profile::from_bytes(&empty).is_err());
+    // Case definitions travel in the same extension, after the equations.
+    let with_cases = Profile {
+      cases: true,
+      case_definitions: vec![unit.clone()],
+      ..p.clone()
+    };
+    let hex: String =
+      with_cases.bytes().iter().map(|b| format!("{b:02x}")).collect();
+    let line = format!(
+      "profile-case-definitions\t{}\t{hex}",
+      with_cases.address().unwrap().hex()
+    );
+    assert!(
+      fixture.lines().any(|s| s == line),
+      "case definitions profile fixture mismatch: {line}"
+    );
+    assert_eq!(Profile::from_bytes(&with_cases.bytes()).unwrap(), with_cases);
+    assert!(Profile { cases: false, ..with_cases.clone() }.address().is_err());
+    assert!(
+      Profile {
+        case_definitions: vec![unit.clone(), unit.clone()],
+        ..with_cases
+      }
+      .address()
+      .is_err()
+    );
+    for suffix in [[5u8, 0, 0], [8, 0, 0]] {
+      let mut bad = bytes.clone();
+      bad.extend_from_slice(&suffix);
+      assert!(Profile::from_bytes(&bad).is_err());
+    }
   }
 }

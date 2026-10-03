@@ -100,6 +100,12 @@ def runAdmission : IO Unit := do
   checkAdmission "case behavior absent from the profile" { program with cases := true } false
   checkAdmission "case behavior bound by the profile" { program with cases := true } true
     { policy with cases := true }
+  -- Review F1: case definitions must be bound by the profile.
+  let caseBound := { program with cases := true, caseDefinitions := #[5] }
+  checkAdmission "case definition absent from the profile" caseBound false
+    { policy with cases := true }
+  checkAdmission "case definition bound by the profile" caseBound true
+    { policy with cases := true, caseDefinitions := #[5] }
   -- R17: an annotated recursive definition is checked through its unfolding
   -- equation, a theorem `∀ r, f r = rhs` bound by the profile.
   let eqStatement (lhs rhs : E) : E :=
@@ -123,7 +129,7 @@ def runAdmission : IO Unit := do
       ("an equation needs the equality type", eqBase good .theorem none)] do
     unless (checkDefinition p 13).toOption.isNone do
       throw <| IO.userError s!"resource equations: {label}"
-  IO.println "Resource admission: 33 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
+  IO.println "Resource admission: 35 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
 
 end Tests.Resource
 

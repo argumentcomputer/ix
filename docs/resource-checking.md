@@ -165,15 +165,36 @@ closures; the consumer must compile them the same way:
   fields, which keep all of the major's origins and loan root and are unique
   only when both the major and the field binder are; the alternatives are
   joined. A minor that uses an induction hypothesis is rejected.
-- An unannotated definition whose body only wraps such a case split
-  (`casesOn`, matchers) is unfolded at a full application. An argument of a
-  default binder is substituted when the binder occurs at most once (it is
-  then evaluated where, and only if, that occurrence is: a `casesOn` minor
-  premise or a matcher alternative only in its own branch) or when it is a
-  variable, a value form, a type or a proof; any other argument is bound by a
-  `let` with the binder's own contract, so it is evaluated once, before the
-  body, as a call evaluates it.
-- A beta-redex binds its arguments the same way.
+- A *case definition* bound by the profile (`casesOn` and matchers; `ix
+  compile` binds exactly those Lean records, see below) is unfolded at a full
+  application when its body is an unannotated lambda telescope around a full
+  application of such a case split or of another bound case definition. Its
+  parameters are classified from that body: a parameter is *by need* when
+  every occurrence lies in an alternative (a minor premise, or a by-need
+  position of the inner case definition), after at most the binders the case
+  enters there, as the head of an application whose arguments do not mention
+  it; occurrences in different alternatives are allowed, since one
+  alternative runs. Every other parameter — a discriminant, a motive, one
+  used under a closure, twice in one alternative, or not at all — is strict.
+  The argument at a by-need position is substituted, so it is evaluated only
+  in its own branch (a matcher alternative `h_i ()`); every other argument is
+  bound strictly (next item).
+- Every other application binds its arguments strictly: a beta-redex's
+  arguments, and the arguments of every definition that is not a bound case
+  definition, however match-shaped (a user helper `sel b x y := match b with
+  …`, `Option.getD`, `String.push`), which is an ordinary call against its
+  declared interface. A strict argument is substituted only when evaluating
+  it has no effect: a variable, a type or proof (erased computation), a sort,
+  a constant that is not a nullary constructor, or a closed lambda (which
+  captures and moves nothing). Any other argument — literals, constructor
+  applications and nullary constructors (fresh values), lambdas with free
+  variables (closures that capture), every other computation — is bound by a
+  `let` with the binder's own contract, so it is analysed exactly once,
+  before the body, whether or not the binder occurs, as a strict consumer
+  evaluates it. Whether a parameter "occurs at most once" is never a reason
+  to substitute: a dead argument is still evaluated, a once-used one is not
+  moved into a branch, and one used under a closure is not re-evaluated per
+  call.
 
 Case splits on indexed families are not supported (their index unification
 needs casts this checker's conversion does not follow); such matchers remain
@@ -215,13 +236,15 @@ A canonical profile begins with the UTF-8 bytes
 2. Optional Nat and String type addresses: a byte `0`, or `1` and an address.
 3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
 4. An optional extension, present only when it is not empty: a TagN (`f = 0`)
-   behavior flag (bit 0: case splits, case wrappers and beta-redexes; bit 1:
-   unfolding equations; no other bits), then a TagN (`f = 0`) count of
-   admitted interfaces, each a 32-byte address (strictly increasing), a TagN
-   (`f = 0`) length, and that many bytes, one packed input/result contract
-   byte per leading arrow; then, when bit 1 is set, the `Eq` type address and
-   a nonzero TagN (`f = 0`) count of `(definition, theorem)` address pairs,
-   strictly increasing by definition.
+   behavior flag (bit 0: case splits, bound case definitions and
+   beta-redexes; bit 1: unfolding equations; bit 2: case definitions; no
+   other bits), then a TagN (`f = 0`) count of admitted interfaces, each a
+   32-byte address (strictly increasing), a TagN (`f = 0`) length, and that
+   many bytes, one packed input/result contract byte per leading arrow; then,
+   when bit 1 is set, the `Eq` type address and a nonzero TagN (`f = 0`) count
+   of `(definition, theorem)` address pairs, strictly increasing by
+   definition; then, when bit 2 is set (which requires bit 0), a nonzero TagN
+   (`f = 0`) count of case definition addresses, strictly increasing.
 
 Selection primitives and admitted interfaces must also be assumptions. An
 admitted interface replaces the declaration's own arrow contracts for its
@@ -246,6 +269,20 @@ entries, the scalar immediates `Char` and `UInt8`–`UInt64`, the choices `ite`,
 `String.length`) with a local input.
 With `--equations`, the realized unfolding equations are added to the
 profile source, so annotated recursion is checked through them.
+
+The directive `case NAME` (a case definition) is generated, never written: a
+profile file containing it is rejected. When the file asks for `cases`, `ix
+compile` adds `case NAME` for every constant of the compiled closure that
+Lean records as a `casesOn` recursor or a matcher
+(`Ix.Compile.ResourceProfile`), except a declaration with a native
+implementation (`@[extern]`, `@[implemented_by]`), whose Lean body is only a
+model. A bound name whose body is not a case wrapper is an ordinary call.
+Because the case definitions and the equations are those of the compiled
+closure, the effective profile address depends on the program, as name
+resolution already makes it do; a consumer pins the address `ix compile`
+prints for that closure. (A stable address would need the claim to commit to
+a fixed base profile and, separately, to the per-program bindings; the claim
+format has one profile address, so this is not done.)
 
 `makeClaim` validates before producing a `Resource` claim. `checkClaim` checks
 the complete subject root and profile address, then reruns combined validation.
@@ -289,8 +326,10 @@ allocation behavior.
 accepted and rejected terms in both implementations; `resource-modes.tsv`
 covers usage crossing, proofs and open field rules, `resource-cases.tsv`
 case splits, case wrappers, beta-redexes and choices,
-`resource-equations.tsv` checking through unfolding equations, and
-`resource-freeze.tsv` freezing, fresh constructors and plain-data borrows. The suites also cover
+`resource-equations.tsv` checking through unfolding equations,
+`resource-freeze.tsv` freezing, fresh constructors and plain-data borrows,
+and `resource-strict.tsv` strict arguments of calls and beta-redexes against
+by-need alternatives of bound case definitions. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.

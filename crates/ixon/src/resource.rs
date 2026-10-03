@@ -134,11 +134,15 @@ pub struct Program {
   /// Recursors the case-split rule can read.
   pub recursors: Vec<RecursorInfo>,
   /// Profile behavior: a recursor application whose minor premises ignore
-  /// their induction hypotheses is a case split; an unannotated definition
-  /// that only wraps a case split or a choice (`casesOn`, matchers) is
-  /// inlined, and a beta-redex binds its argument. The consumer must compile
-  /// these without closures.
+  /// their induction hypotheses is a case split, a bound case definition
+  /// (`case_definitions`) is unfolded, and a beta-redex binds its arguments
+  /// strictly. The consumer must compile these without closures.
   pub cases: bool,
+  /// Profile-bound case definitions (`casesOn`, matchers): unannotated
+  /// definitions that only wrap a case split. Only these are unfolded, and
+  /// only the alternatives they take are bound by need; every other
+  /// definition is an ordinary call, however match-shaped its body.
+  pub case_definitions: Vec<u64>,
   /// Admitted resource interfaces: callers see this type in place of the
   /// declaration's own. The profile must also list the declaration as an
   /// assumption.
@@ -173,6 +177,28 @@ impl RecursorInfo {
   pub fn arity(&self) -> usize {
     self.params + self.motives + self.minors + self.indices + 1
   }
+}
+
+/// How an occurrence of a parameter sits in an alternative argument.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Occurrence {
+  /// The parameter does not occur.
+  Absent,
+  /// The parameter is the head of an application to this many arguments,
+  /// none of which mention it, and nothing else in the alternative does.
+  Applied(usize),
+  /// Any other occurrence (under a closure, as an argument, more than once).
+  Other,
+}
+
+/// The shape of a bound case definition: its parameter count, and for each
+/// parameter `Some(k)` when it is taken by need (it occurs only as the head
+/// of alternatives, applied to at least `k` arguments) or `None` when it is
+/// strict.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CaseShape {
+  arity: usize,
+  by_need: Vec<Option<usize>>,
 }
 
 #[derive(Clone, Debug)]
@@ -1230,36 +1256,6 @@ impl<'a> Checker<'a> {
       _ => false,
     })
   }
-  /// Number of occurrences of variable `index` in `e`.
-  fn occurrences(
-    &mut self,
-    fuel: usize,
-    e: &Term,
-    index: u64,
-  ) -> Result<usize, Error> {
-    let fuel = self.tick(fuel)?;
-    Ok(match e.as_ref() {
-      Expr::Var(i) => usize::from(*i == index),
-      Expr::Share(i) => {
-        let expanded = self.expansion(*i)?;
-        self.occurrences(fuel, &expanded, index)?
-      },
-      Expr::App(f, a) => {
-        self.occurrences(fuel, f, index)? + self.occurrences(fuel, a, index)?
-      },
-      Expr::Lam(_, t, b) | Expr::All(_, _, t, b) => {
-        self.occurrences(fuel, t, index)?
-          + self.occurrences(fuel, b, index + 1)?
-      },
-      Expr::Let(_, t, v, b) => {
-        self.occurrences(fuel, t, index)?
-          + self.occurrences(fuel, v, index)?
-          + self.occurrences(fuel, b, index + 1)?
-      },
-      Expr::Prj(_, _, v) => self.occurrences(fuel, v, index)?,
-      _ => 0,
-    })
-  }
   /// Number of leading arrows of a type.
   fn arity(&mut self, fuel: usize, typ: &Term) -> Result<usize, Error> {
     let fuel = fuel.checked_sub(1).ok_or(Error::Budget)?;
@@ -1298,19 +1294,72 @@ impl<'a> Checker<'a> {
     }
     Ok(true)
   }
-  /// The arity of an unannotated, non-recursive definition that only wraps a
-  /// case split: its body is a lambda telescope around a full application of
-  /// a case recursor whose minors ignore their induction hypotheses, or of
-  /// another such wrapper (`casesOn`, matchers). A definition that wraps a
-  /// choice is an ordinary function.
-  fn case_wrapper(
+  /// How variable `index` occurs in the alternative argument `e` of a case,
+  /// after entering at most `strip` of its leading lambdas (the binders the
+  /// case itself supplies: constructor fields, hypotheses, further
+  /// arguments).
+  fn alternative_occurrence(
+    &mut self,
+    fuel: usize,
+    e: &Term,
+    index: u64,
+    strip: usize,
+  ) -> Result<Occurrence, Error> {
+    let mut body = e.clone();
+    let mut index = index;
+    for _ in 0..strip {
+      let unshared = self.unshare(fuel, &body)?;
+      match unshared.as_ref() {
+        Expr::Lam(_, t, b) => {
+          if self.occurs(fuel, t, index)? {
+            return Ok(Occurrence::Other);
+          }
+          body = b.clone();
+          index += 1;
+        },
+        _ => break,
+      }
+    }
+    if !self.occurs(fuel, &body, index)? {
+      return Ok(Occurrence::Absent);
+    }
+    let (head, args) = self.split_app(fuel, &body)?;
+    let head = self.unshare(fuel, &head)?;
+    match head.as_ref() {
+      Expr::Var(i) if *i == index => {
+        for arg in &args {
+          if self.occurs(fuel, arg, index)? {
+            return Ok(Occurrence::Other);
+          }
+        }
+        Ok(Occurrence::Applied(args.len()))
+      },
+      _ => Ok(Occurrence::Other),
+    }
+  }
+  /// The shape of a profile-bound case definition (`casesOn`, a matcher): an
+  /// unannotated definition whose body is a lambda telescope around a full
+  /// application of a case recursor whose minors ignore their induction
+  /// hypotheses, or of another bound case definition. A parameter is by need
+  /// when every occurrence of it lies in an alternative of that application
+  /// (a minor premise, or a by-need position of the inner definition), after
+  /// at most the binders the case enters there, as the head of an
+  /// application whose arguments do not mention it; occurrences in different
+  /// alternatives are allowed (at most one alternative runs). A parameter
+  /// occurring anywhere else (a discriminant, under a closure, twice in one
+  /// alternative), or nowhere, is strict. A definition that is not bound, or
+  /// not of this shape, or wraps a choice, is an ordinary function.
+  fn case_definition(
     &mut self,
     fuel: usize,
     depth: usize,
     index: u64,
-  ) -> Result<Option<usize>, Error> {
+  ) -> Result<Option<CaseShape>, Error> {
     let Some(depth) = depth.checked_sub(1) else { return Ok(None) };
-    if !self.program.cases || self.program.choices.contains(&index) {
+    if !self.program.cases
+      || !self.program.case_definitions.contains(&index)
+      || self.program.choices.contains(&index)
+    {
       return Ok(None);
     }
     let Some(d) = usize::try_from(index)
@@ -1343,6 +1392,9 @@ impl<'a> Checker<'a> {
     }
     let (head, args) = self.split_app(fuel, &inner)?;
     let Expr::Ref(target, _) = head.as_ref() else { return Ok(None) };
+    // The alternative positions of the application, with the binders
+    // entered there.
+    let mut alternatives: Vec<Option<usize>> = vec![None; args.len()];
     if let Some(info) = self.recursor_info(*target) {
       if args.len() < info.arity() {
         return Ok(None);
@@ -1357,13 +1409,46 @@ impl<'a> Checker<'a> {
         )? {
           return Ok(None);
         }
+        alternatives[info.params + info.motives + j] =
+          Some(info.binders[j] + (args.len() - info.arity()));
       }
-      return Ok(Some(params));
+    } else {
+      let Some(shape) = self.case_definition(fuel, depth, *target)? else {
+        return Ok(None);
+      };
+      if args.len() < shape.arity {
+        return Ok(None);
+      }
+      for (i, by_need) in shape.by_need.iter().enumerate() {
+        alternatives[i] = by_need.map(|k| k + (args.len() - shape.arity));
+      }
     }
-    Ok(match self.case_wrapper(fuel, depth, *target)? {
-      Some(n) => (args.len() >= n).then_some(params),
-      None => None,
-    })
+    let mut by_need = vec![];
+    for p in 0..params {
+      let index = (params - 1 - p) as u64;
+      let mut applied: Option<usize> = None;
+      let mut lazy = true;
+      for (j, arg) in args.iter().enumerate() {
+        match alternatives[j] {
+          None => {
+            if self.occurs(fuel, arg, index)? {
+              lazy = false;
+            }
+          },
+          Some(strip) => {
+            match self.alternative_occurrence(fuel, arg, index, strip)? {
+              Occurrence::Absent => {},
+              Occurrence::Applied(k) => {
+                applied = Some(applied.map_or(k, |a| a.min(k)));
+              },
+              Occurrence::Other => lazy = false,
+            }
+          },
+        }
+      }
+      by_need.push(if lazy { applied } else { None });
+    }
+    Ok(Some(CaseShape { arity: params, by_need }))
   }
   /// Whether a type is a sort or an arrow into a sort.
   fn type_former(
@@ -1380,8 +1465,48 @@ impl<'a> Checker<'a> {
       _ => Ok(false),
     }
   }
-  /// Whether an argument may be substituted into a lambda telescope: a
-  /// variable, a value form, or a type or proof (erased computation).
+  /// Whether `e` has no loose variable at or above `depth`.
+  fn closed_at(
+    &mut self,
+    fuel: usize,
+    depth: u64,
+    e: &Term,
+  ) -> Result<bool, Error> {
+    let fuel = self.tick(fuel)?;
+    Ok(match e.as_ref() {
+      Expr::Var(i) => *i < depth,
+      Expr::Share(i) => {
+        let expanded = self.expansion(*i)?;
+        self.closed_at(fuel, depth, &expanded)?
+      },
+      Expr::Rec(..) => false,
+      Expr::App(f, a) => {
+        let f = self.closed_at(fuel, depth, f)?;
+        let a = self.closed_at(fuel, depth, a)?;
+        f && a
+      },
+      Expr::Lam(_, t, b) | Expr::All(_, _, t, b) => {
+        let t = self.closed_at(fuel, depth, t)?;
+        let b = self.closed_at(fuel, depth + 1, b)?;
+        t && b
+      },
+      Expr::Let(_, t, v, b) => {
+        let t = self.closed_at(fuel, depth, t)?;
+        let v = self.closed_at(fuel, depth, v)?;
+        let b = self.closed_at(fuel, depth + 1, b)?;
+        t && v && b
+      },
+      Expr::Prj(_, _, v) => self.closed_at(fuel, depth, v)?,
+      _ => true,
+    })
+  }
+  /// Whether a strict argument may be substituted into a lambda telescope
+  /// because evaluating it has no effect: a variable (a place; its reads are
+  /// charged where it is used), a sort or `∀`, a constant that is not a
+  /// nullary constructor (no allocation), a closed lambda (it captures and
+  /// moves nothing), or a type or proof (erased computation). Literals,
+  /// constructor applications, nullary constructors (fresh values) and every
+  /// other computation are not.
   fn substitutable(
     &mut self,
     fuel: usize,
@@ -1389,14 +1514,26 @@ impl<'a> Checker<'a> {
     arg: &Term,
     domain: &Term,
   ) -> Result<bool, Error> {
-    match self.unshare(fuel, arg)?.as_ref() {
-      Expr::Var(_)
-      | Expr::Lam(..)
-      | Expr::Sort(_)
-      | Expr::All(..)
-      | Expr::Nat(_)
-      | Expr::Str(_)
-      | Expr::Ref(..) => Ok(true),
+    let unshared = self.unshare(fuel, arg)?;
+    match unshared.as_ref() {
+      Expr::Var(_) | Expr::Sort(_) | Expr::All(..) => Ok(true),
+      Expr::Ref(i, _) => {
+        let d = self.declaration(*i)?.clone();
+        if d.kind == DeclKind::Constructor {
+          Ok(self.arity(fuel, &d.typ)? != 0)
+        } else {
+          Ok(true)
+        }
+      },
+      Expr::Lam(..) => {
+        if self.closed_at(fuel, 0, &unshared)? {
+          return Ok(true);
+        }
+        if self.type_former(fuel, 16, domain)? {
+          return Ok(true);
+        }
+        self.is_proposition(fuel, ctx, domain)
+      },
       _ => {
         if self.type_former(fuel, 16, domain)? {
           return Ok(true);
@@ -1405,20 +1542,23 @@ impl<'a> Checker<'a> {
       },
     }
   }
-  /// Apply a lambda telescope to arguments, as `let`s. An argument of a
-  /// binder with the default contract is substituted when the binder occurs at
-  /// most once (it is then evaluated where, and only if, that occurrence is:
-  /// a minor premise of `casesOn` or a matcher alternative is evaluated in its
-  /// own branch) or when it is a variable, a value form, a type or a proof.
-  /// Any other argument is bound by a `let` carrying the binder's own
-  /// contract, so it is evaluated once, before the body, as a call would
-  /// evaluate it. Arguments beyond the telescope are applied to the body.
+  /// Apply a lambda telescope to arguments, as `let`s. Arguments are strict:
+  /// an argument of a binder with the default contract is substituted only
+  /// when evaluating it has no effect (`substitutable`); any other argument
+  /// is bound by a `let` carrying the binder's own contract, so it is
+  /// analysed exactly once, before the body, whether or not the binder
+  /// occurs, as a call evaluates it. The only exception are the by-need
+  /// positions of a bound case definition (`by_need`, from
+  /// `case_definition`): their arguments are substituted, so each is
+  /// evaluated in the alternative that uses it. Arguments beyond the
+  /// telescope are applied to the body.
   fn bind_arguments(
     &mut self,
     fuel: usize,
     ctx: &Context,
     telescope: &Term,
     args: &[Term],
+    by_need: &[Option<usize>],
   ) -> Result<Term, Error> {
     let before = self.state.bindings.clone();
     let mut term = telescope.clone();
@@ -1429,9 +1569,9 @@ impl<'a> Checker<'a> {
       let unshared = self.unshare(fuel, &term)?;
       let Expr::Lam(c, domain, body) = unshared.as_ref() else { break };
       let arg = self.shift(fuel, &args[rest], lets.len() as u64, 0)?;
-      let once = self.occurrences(fuel, body, 0)? <= 1;
+      let lazy = by_need.get(rest).copied().flatten().is_some();
       let substitutable = self.substitutable(fuel, &inner, &arg, domain)?;
-      if *c == BinderContract::default() && (once || substitutable) {
+      if *c == BinderContract::default() && (lazy || substitutable) {
         term = self.substitute(fuel, body, &arg, 0)?;
       } else {
         lets.push((
@@ -2080,13 +2220,19 @@ impl<'a> Checker<'a> {
                 grade,
                 fresh,
               )?,
-              None => match self.case_wrapper(fuel, 4, *i)? {
-                Some(n) if args.len() >= n => {
-                  // A wrapper around a case split or a choice is unfolded.
+              None => match self.case_definition(fuel, 4, *i)? {
+                Some(shape) if args.len() >= shape.arity => {
+                  // A bound case definition is unfolded: its alternatives by
+                  // need, every other argument strictly.
                   match self.declaration(*i)?.body.clone() {
                     Some(body) => {
-                      let term =
-                        self.bind_arguments(fuel, ctx, &body, &args)?;
+                      let term = self.bind_arguments(
+                        fuel,
+                        ctx,
+                        &body,
+                        &args,
+                        &shape.by_need,
+                      )?;
                       self.analyze(
                         fuel,
                         ctx,
@@ -2120,7 +2266,8 @@ impl<'a> Checker<'a> {
             }
           },
           Expr::Lam(..) if self.program.cases => {
-            let term = self.bind_arguments(fuel, ctx, &head, &args)?;
+            // A beta-redex binds its arguments strictly.
+            let term = self.bind_arguments(fuel, ctx, &head, &args, &[])?;
             self.analyze(
               fuel,
               ctx,
@@ -2379,8 +2526,11 @@ pub struct Policy {
   pub assumptions: Vec<usize>,
   pub shareable_types: Vec<usize>,
   pub choices: Vec<usize>,
-  /// The profile admits case splits, case wrappers and beta-redexes.
+  /// The profile admits case splits, bound case definitions and
+  /// beta-redexes.
   pub cases: bool,
+  /// Case definitions (`casesOn`, matchers) bound by the profile.
+  pub case_definitions: Vec<usize>,
   /// Unfolding equations `(definition, theorem)` bound by the profile.
   pub equations: Vec<(usize, usize)>,
 }
@@ -2446,6 +2596,17 @@ pub fn admit_program(
         "case behavior is absent from the bound profile",
       ),
     });
+  }
+  for index in &program.case_definitions {
+    let index = usize::try_from(*index).unwrap_or(usize::MAX);
+    if !policy.case_definitions.contains(&index) {
+      return Err(AdmissionError {
+        declaration: Some(index),
+        error: Error::Unsupported(
+          "case definition is absent from the bound profile",
+        ),
+      });
+    }
   }
   for (definition, equation) in &program.equations {
     let pair = (
@@ -2930,6 +3091,7 @@ mod tests {
       },
     ];
     p.cases = true;
+    p.case_definitions = vec![29];
     p
   }
 
@@ -2985,6 +3147,11 @@ mod tests {
     assert!(admit_program(&cases, &policy(), Limits::default()).is_err());
     let mut s = policy();
     s.cases = true;
+    assert!(admit_program(&cases, &s, Limits::default()).is_ok());
+    // Review F1: case definitions must be bound by the profile.
+    cases.case_definitions = vec![5];
+    assert!(admit_program(&cases, &s, Limits::default()).is_err());
+    s.case_definitions = vec![5];
     assert!(admit_program(&cases, &s, Limits::default()).is_ok());
   }
 
@@ -3052,6 +3219,92 @@ mod tests {
     let text =
       include_str!("../../../Tests/Fixtures/ixon-v4/resource-freeze.tsv");
     assert!(run_fixture_lines(&freeze_program(), text) >= 9);
+  }
+
+  /// The case program extended for strict binding (review F1): a unique
+  /// consumer, a match-shaped definition that is not bound, and a
+  /// matcher-shaped definition that is bound (35) next to an unbound copy
+  /// (36). Mirrors `Tests.Resource.strictProgram`.
+  fn strict_program() -> Program {
+    let mut p = cases_program();
+    let many = b(Uses::Many, ValueContract::shared());
+    let shared = ValueContract::shared();
+    let all = |d: Term, c: Term| arr(many, shared, d, c);
+    let lam = |d: Term, body: Term| Expr::lam_contract(many, d, body);
+    let res = || Expr::reference(11, vec![]);
+    let boxt = || Expr::reference(21, vec![]);
+    let app = Expr::app;
+    let motive = || lam(boxt(), res());
+    let matcher_type =
+      all(boxt(), all(all(nat(), res()), all(all(res(), res()), res())));
+    // fun t e f => Box.casesOn motive t (e 0) (fun r => f r)
+    let matcher_body = lam(
+      boxt(),
+      lam(
+        all(nat(), res()),
+        lam(
+          all(res(), res()),
+          app(
+            app(
+              app(app(Expr::reference(29, vec![]), motive()), Expr::var(2)),
+              app(Expr::var(1), Expr::nat(0)),
+            ),
+            lam(res(), app(Expr::var(1), Expr::var(0))),
+          ),
+        ),
+      ),
+    );
+    p.declarations.extend([
+      // 33 take: (1 ! r : Res) → Res.
+      assumption(arr(
+        b(Uses::Linear, ValueContract::unique()),
+        shared,
+        res(),
+        res(),
+      )),
+      // 34 sel t e f := Box.rec motive e (fun _ => f) t, not bound.
+      Declaration {
+        typ: all(boxt(), all(res(), all(res(), res()))),
+        body: Some(lam(
+          boxt(),
+          lam(
+            res(),
+            lam(
+              res(),
+              app(
+                app(
+                  app(app(Expr::reference(24, vec![]), motive()), Expr::var(1)),
+                  lam(res(), Expr::var(1)),
+                ),
+                Expr::var(2),
+              ),
+            ),
+          ),
+        )),
+        kind: DeclKind::Definition,
+      },
+      // 35 a bound matcher.
+      Declaration {
+        typ: matcher_type.clone(),
+        body: Some(matcher_body.clone()),
+        kind: DeclKind::Definition,
+      },
+      // 36 an unbound copy.
+      Declaration {
+        typ: matcher_type,
+        body: Some(matcher_body),
+        kind: DeclKind::Definition,
+      },
+    ]);
+    p.case_definitions = vec![29, 35];
+    p
+  }
+
+  #[test]
+  fn strict_binding_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-strict.tsv");
+    assert!(run_fixture_lines(&strict_program(), text) >= 7);
   }
 
   #[test]
@@ -3262,6 +3515,7 @@ mod tests {
       shareable_types: vec![0, 7],
       choices: vec![6, 9, 10],
       cases: false,
+      case_definitions: vec![],
       equations: vec![],
     }
   }

@@ -74,6 +74,12 @@ def equationsProfile : Profile :=
   let (_, unit) := unitEnv
   { fixtureProfile with eqType := some unit, equations := #[(unit, unit)] }
 
+/-- The profile with case definitions the shared fixture pins
+(`profile-case-definitions`): case behavior and one bound case definition. -/
+def caseDefinitionsProfile : Profile :=
+  let (_, unit) := unitEnv
+  { fixtureProfile with cases := true, caseDefinitions := #[unit] }
+
 /-- One `addressed.tsv` row: a constant's address and canonical bytes. -/
 def fixtureLine (label : String) (constant : Constant) : String :=
   s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
@@ -88,6 +94,8 @@ def fixtureText : Except String String := do
   let rows := rows.push s!"profile-cases\t{casesAddress}\t{hexOfBytes casesProfile.bytes}"
   let equationsAddress ← equationsProfile.address
   let rows := rows.push s!"profile-equations\t{equationsAddress}\t{hexOfBytes equationsProfile.bytes}"
+  let caseAddress ← caseDefinitionsProfile.address
+  let rows := rows.push s!"profile-case-definitions\t{caseAddress}\t{hexOfBytes caseDefinitionsProfile.bytes}"
   return rows.foldl (fun text row => text ++ row ++ "\n") "# name\taddress\tcanonical bytes\n"
 
 def run : IO Unit := do
@@ -138,6 +146,20 @@ def run : IO Unit := do
   check "equations need the equality type" ({ withEquations with eqType := none }.address) false
   check "the equality type needs equations" ({ profile with eqType := some unit }.address) false
   check "empty equation list" (Profile.ofBytes (profile.bytes ++ ⟨#[2, 0]⟩ ++ unit.hash ++ ⟨#[0]⟩)) false
+  -- Case definitions travel in the same extension, after the equations.
+  let withCases : Profile := caseDefinitionsProfile
+  let caseAddress ← get "case definitions profile address" withCases.address
+  let caseLine := s!"profile-case-definitions\t{caseAddress}\t{hexOfBytes withCases.bytes}"
+  unless lines.contains caseLine do
+    throw <| IO.userError s!"addressed case definitions profile fixture differs; expected line:\n{caseLine}"
+  let decoded ← get "case definitions profile roundtrip" (Profile.ofBytes withCases.bytes)
+  unless decoded.bytes == withCases.bytes && decoded.caseDefinitions == #[unit] do
+    throw <| IO.userError "case definitions profile roundtrip differs"
+  check "case definitions need case behavior" ({ withCases with cases := false }.address) false
+  check "case definitions are strictly increasing"
+    ({ withCases with caseDefinitions := #[unit, unit] }.address) false
+  check "empty case definition list" (Profile.ofBytes (profile.bytes ++ ⟨#[5, 0, 0]⟩)) false
+  check "unknown profile behavior bit" (Profile.ofBytes (profile.bytes ++ ⟨#[8, 0]⟩)) false
   let (env, id) := store base (identity unit)
   let prepared ← get "valid identity" (Addressed.checkResources env profile)
   unless prepared.program.declarations.size == 3 && prepared.program.groups.size == 1 do

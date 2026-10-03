@@ -97,11 +97,15 @@ structure Program where
   /-- Recursors the case-split rule can read. -/
   recursors : Array RecursorInfo := #[]
   /-- Profile behavior: a recursor application whose minor premises ignore
-  their induction hypotheses is a case split; an unannotated definition that
-  only wraps a case split or a choice (`casesOn`, matchers) is inlined, and a
-  β-redex binds its argument. The consumer must compile these without
-  closures. -/
+  their induction hypotheses is a case split, a bound case definition
+  (`caseDefinitions`) is unfolded, and a β-redex binds its arguments strictly.
+  The consumer must compile these without closures. -/
   cases : Bool := false
+  /-- Profile-bound case definitions (`casesOn`, matchers): unannotated
+  definitions that only wrap a case split. Only these are unfolded, and only
+  the alternatives they take are bound by need; every other definition is an
+  ordinary call, however match-shaped its body. -/
+  caseDefinitions : Array UInt64 := #[]
   /-- Admitted resource interfaces: callers see this type in place of the
   declaration's own. The profile must also list the declaration as an
   assumption. -/
@@ -525,23 +529,6 @@ def occurs (program : Program) : Nat → Ixon.Expr → Nat → CheckM Bool
     | .prj _ _ v => occurs program fuel v index
     | _ => return false
 
-/-- Number of occurrences of variable `index` in `e`. -/
-def occurrences (program : Program) : Nat → Ixon.Expr → Nat → CheckM Nat
-  | 0, _, _ => throw .budget
-  | fuel + 1, e, index => do
-    tick
-    match e with
-    | .var i => return if i.toNat == index then 1 else 0
-    | .share i => occurrences program fuel (← expansion program i) index
-    | .app f a => return (← occurrences program fuel f index) + (← occurrences program fuel a index)
-    | .lam _ t b | .all _ _ t b =>
-      return (← occurrences program fuel t index) + (← occurrences program fuel b (index + 1))
-    | .letE _ t v b =>
-      return (← occurrences program fuel t index) + (← occurrences program fuel v index) +
-        (← occurrences program fuel b (index + 1))
-    | .prj _ _ v => occurrences program fuel v index
-    | _ => return 0
-
 /-- Number of leading arrows of a type. -/
 def arity (program : Program) : Nat → Ixon.Expr → CheckM Nat
   | 0, _ => throw .budget
@@ -570,15 +557,66 @@ def ignoresHypotheses (program : Program) (fuel : Nat) (minor : Ixon.Expr)
     if ← occurs program fuel body k then return false
   return true
 
-/-- The arity of an unannotated, non-recursive definition that only wraps a
-case split: its body is a lambda telescope around a full application of a
-case recursor whose minors ignore their induction hypotheses, or of another
-such wrapper (`casesOn`, matchers). A definition that wraps a choice is an
+/-- How an occurrence of a parameter sits in an alternative argument. -/
+inductive Occurrence where
+  /-- The parameter does not occur. -/
+  | absent
+  /-- The parameter is the head of an application to this many arguments,
+  none of which mention it, and nothing else in the alternative does. -/
+  | applied (arguments : Nat)
+  /-- Any other occurrence (under a closure, as an argument, more than once). -/
+  | other
+  deriving BEq, Repr, Inhabited
+
+/-- How variable `index` occurs in the alternative argument `e` of a case,
+after entering at most `strip` of its leading lambdas (the binders the case
+itself supplies: constructor fields, hypotheses, further arguments). -/
+def alternativeOccurrence (program : Program) (fuel : Nat) (e : Ixon.Expr) (index strip : Nat) :
+    CheckM Occurrence := do
+  let mut body := e
+  let mut index := index
+  for _ in [0:strip] do
+    match ← unshare program fuel body with
+    | .lam _ t b =>
+      if ← occurs program fuel t index then return .other
+      body := b
+      index := index + 1
+    | _ => break
+  if !(← occurs program fuel body index) then return .absent
+  let (head, args) ← splitApp program fuel body []
+  match ← unshare program fuel head with
+  | .var i =>
+    if i.toNat != index then return .other
+    for arg in args do
+      if ← occurs program fuel arg index then return .other
+    return .applied args.length
+  | _ => return .other
+
+/-- The shape of a bound case definition: its parameter count, and for each
+parameter `some k` when it is taken by need (it occurs only as the head of
+alternatives, applied to at least `k` arguments) or `none` when it is strict. -/
+structure CaseShape where
+  arity : Nat
+  byNeed : Array (Option Nat)
+  deriving BEq, Repr, Inhabited
+
+/-- The shape of a profile-bound case definition (`casesOn`, a matcher): an
+unannotated definition whose body is a lambda telescope around a full
+application of a case recursor whose minors ignore their induction
+hypotheses, or of another bound case definition. A parameter is by need when
+every occurrence of it lies in an alternative of that application (a minor
+premise, or a by-need position of the inner definition), after at most the
+binders the case enters there, as the head of an application whose arguments
+do not mention it; occurrences in different alternatives are allowed (at most
+one alternative runs). A parameter occurring anywhere else (a discriminant,
+under a closure, twice in one alternative), or nowhere, is strict. A
+definition that is not bound, or not of this shape, or wraps a choice, is an
 ordinary function. -/
-def caseWrapper (program : Program) (fuel : Nat) : Nat → UInt64 → CheckM (Option Nat)
+def caseDefinition (program : Program) (fuel : Nat) : Nat → UInt64 → CheckM (Option CaseShape)
   | 0, _ => pure none
   | depth + 1, index => do
-    if !program.cases || program.choices.contains index then return none
+    if !program.cases || !program.caseDefinitions.contains index || program.choices.contains index then
+      return none
     let some d := program.declarations[index.toNat]? | return none
     let some body := d.body | return none
     unless d.kind == .definition && (← plain program fuel d.type) && (← plain program fuel body) do
@@ -591,16 +629,37 @@ def caseWrapper (program : Program) (fuel : Nat) : Nat → UInt64 → CheckM (Op
       | other => inner := other; break
     let (head, args) ← splitApp program fuel inner []
     let .ref target _ := head | return none
+    -- The alternative positions of the application, with the binders entered there.
+    let mut alternatives : Array (Option Nat) := Array.replicate args.length none
     if let some info := recursorInfo program target then
       if args.length < info.arity then return none
       for j in [0:info.minors] do
         let minor := args[info.params + info.motives + j]!
         unless ← ignoresHypotheses program fuel minor info.fields[j]! info.binders[j]! do
           return none
-      return some params
-    match ← caseWrapper program fuel depth target with
-    | some n => return if args.length >= n then some params else none
-    | none => return none
+        alternatives := alternatives.set! (info.params + info.motives + j)
+          (some (info.binders[j]! + (args.length - info.arity)))
+    else
+      let some shape ← caseDefinition program fuel depth target | return none
+      if args.length < shape.arity then return none
+      for i in [0:shape.arity] do
+        alternatives := alternatives.set! i
+          (shape.byNeed[i]!.map (· + (args.length - shape.arity)))
+    let mut byNeed := #[]
+    for p in [0:params] do
+      let index := params - 1 - p
+      let mut applied : Option Nat := none
+      let mut lazy := true
+      for j in [0:args.length] do
+        match alternatives[j]! with
+        | none => if ← occurs program fuel args[j]! index then lazy := false
+        | some strip =>
+          match ← alternativeOccurrence program fuel args[j]! index strip with
+          | .absent => pure ()
+          | .applied k => applied := some (min k (applied.getD k))
+          | .other => lazy := false
+      byNeed := byNeed.push (if lazy then applied else none)
+    return some { arity := params, byNeed }
 
 /-- Whether a type is a sort or an arrow into a sort. -/
 def typeFormer (program : Program) (fuel : Nat) : Nat → Ixon.Expr → CheckM Bool
@@ -611,30 +670,62 @@ def typeFormer (program : Program) (fuel : Nat) : Nat → Ixon.Expr → CheckM B
     | .all _ _ _ b => typeFormer program fuel n b
     | _ => pure false
 
-/-- Whether an argument may be substituted into a lambda telescope: a
-variable, a value form, or a type or proof (erased computation). -/
+/-- Whether `e` has no loose variable at or above `depth`. -/
+def closedAt (program : Program) : Nat → Nat → Ixon.Expr → CheckM Bool
+  | 0, _, _ => throw .budget
+  | fuel + 1, depth, e => do
+    tick
+    match e with
+    | .var i => return i.toNat < depth
+    | .share i => closedAt program fuel depth (← expansion program i)
+    | .recur .. => return false
+    | .app f a => return (← closedAt program fuel depth f) && (← closedAt program fuel depth a)
+    | .lam _ t b | .all _ _ t b =>
+      return (← closedAt program fuel depth t) && (← closedAt program fuel (depth + 1) b)
+    | .letE _ t v b =>
+      return (← closedAt program fuel depth t) && (← closedAt program fuel depth v) &&
+        (← closedAt program fuel (depth + 1) b)
+    | .prj _ _ v => closedAt program fuel depth v
+    | _ => return true
+
+/-- Whether a strict argument may be substituted into a lambda telescope
+because evaluating it has no effect: a variable (a place; its reads are
+charged where it is used), a sort or `∀`, a constant that is not a nullary
+constructor (no allocation), a closed lambda (it captures and moves nothing),
+or a type or proof (erased computation). Literals, constructor applications,
+nullary constructors (fresh values) and every other computation are not. -/
 def substitutable (ctx : Context) (fuel : Nat) (arg domain : Ixon.Expr) : CheckM Bool := do
   match ← unshare ctx.program fuel arg with
-  | .var _ | .lam .. | .sort _ | .all .. | .nat _ | .str _ | .ref .. => return true
+  | .var _ | .sort _ | .all .. => return true
+  | .ref index _ =>
+    let d ← declaration ctx.program index
+    if d.kind == .constructor then return (← arity ctx.program fuel d.type) != 0
+    return true
+  | lam@(.lam ..) =>
+    if ← closedAt ctx.program fuel 0 lam then return true
+    if ← typeFormer ctx.program fuel 16 domain then return true
+    isProposition fuel ctx domain
   | _ =>
     if ← typeFormer ctx.program fuel 16 domain then return true
     isProposition fuel ctx domain
 
-/-- Apply a lambda telescope to arguments, as `let`s. An argument of a binder
-with the default contract is substituted when the binder occurs at most once
-(it is then evaluated where, and only if, that occurrence is: a minor premise
-of `casesOn` or a matcher alternative is evaluated in its own branch) or when
-it is a variable, a value form, a type or a proof. Any other argument is bound
-by a `let` carrying the binder's own contract, so it is evaluated once,
-before the body, as a call would evaluate it. Arguments beyond the telescope
+/-- Apply a lambda telescope to arguments, as `let`s. Arguments are strict:
+an argument of a binder with the default contract is substituted only when
+evaluating it has no effect (`substitutable`); any other argument is bound by
+a `let` carrying the binder's own contract, so it is analysed exactly once,
+before the body, whether or not the binder occurs, as a call evaluates it.
+The only exception are the by-need positions of a bound case definition
+(`byNeed`, from `caseDefinition`): their arguments are substituted, so each
+is evaluated in the alternative that uses it. Arguments beyond the telescope
 are applied to the body. -/
-def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : List Ixon.Expr) :
-    CheckM Ixon.Expr := do
+def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : List Ixon.Expr)
+    (byNeed : Array (Option Nat) := #[]) : CheckM Ixon.Expr := do
   let before ← get
   let mut term := telescope
   let mut lets : Array (Ixon.LetContract × Ixon.Expr × Ixon.Expr) := #[]
   let mut inner := ctx
   let mut rest := args
+  let mut position := 0
   repeat
     match rest with
     | [] => break
@@ -642,8 +733,8 @@ def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : L
       match ← unshare ctx.program fuel term with
       | .lam c domain body =>
         let arg ← shift ctx.program fuel arg lets.size 0
-        let once := (← occurrences ctx.program fuel body 0) ≤ 1
-        if c == .many && (once || (← substitutable inner fuel arg domain)) then
+        let lazy := (byNeed[position]?.bind id).isSome
+        if c == .many && (lazy || (← substitutable inner fuel arg domain)) then
           term ← substitute ctx.program fuel body arg 0
         else
           lets := lets.push ({ nonDep := false, binder := c }, domain, arg)
@@ -651,6 +742,7 @@ def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : L
           inner := { inner with vars := inner.vars.push id }
           term := body
         rest := more
+        position := position + 1
       | _ => break
   for arg in rest do
     term := .app term (← shift ctx.program fuel arg lets.size 0)
@@ -1008,17 +1100,20 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
                   else pure { type := domain }
                 alternatives branches supplied extra (expected.map (·.2)) outputType
             | none =>
-              match ← caseWrapper ctx.program fuel 4 index with
-              | some n =>
-                if args.size < n then ordinary else do
-                  -- A wrapper around a case split or a choice is unfolded.
+              match ← caseDefinition ctx.program fuel 4 index with
+              | some shape =>
+                if args.size < shape.arity then ordinary else do
+                  -- A bound case definition is unfolded: its alternatives by
+                  -- need, every other argument strictly.
                   match (← declaration ctx.program index).body with
                   | some body =>
-                    analyze fuel ctx (← bindArguments ctx fuel body arguments) expected destination grade
+                    analyze fuel ctx (← bindArguments ctx fuel body arguments shape.byNeed)
+                      expected destination grade
                   | none => ordinary
               | none => ordinary
         | .lam .. =>
           if ctx.program.cases then
+            -- A β-redex binds its arguments strictly.
             analyze fuel ctx (← bindArguments ctx fuel head arguments) expected destination grade
           else ordinary
         | _ => ordinary

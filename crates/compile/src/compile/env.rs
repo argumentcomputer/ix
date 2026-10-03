@@ -1108,13 +1108,14 @@ pub fn compile_env_with_resource_profile(
           .address()
           .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
         println!(
-          "[compile] resource profile {}: {} assumption(s), {} shareable type(s), {} choice(s), {} interface(s), {} equation(s){}",
+          "[compile] resource profile {}: {} assumption(s), {} shareable type(s), {} choice(s), {} interface(s), {} equation(s), {} case definition(s){}",
           address.hex(),
           default_profile.assumptions.len(),
           default_profile.shareable_types.len(),
           default_profile.choices.len(),
           default_profile.interfaces.len(),
           default_profile.equations.len(),
+          default_profile.case_definitions.len(),
           if default_profile.cases { ", case splits" } else { "" },
         );
         &default_profile

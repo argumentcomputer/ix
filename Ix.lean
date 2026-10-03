@@ -8,6 +8,7 @@ public import Ix.IxonSyntax
 public import Ix.Meta
 public import Ix.EnvScope
 public import Ix.Compile.Equations
+public import Ix.Compile.ResourceProfile
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.CompileM

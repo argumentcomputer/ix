@@ -36,9 +36,13 @@ structure Profile where
   natType : Option Address := none
   stringType : Option Address := none
   limits : Limits := {}
-  /-- Behavior: recursor case splits, case wrappers and β-redexes (see
-  `Program.cases`). -/
+  /-- Behavior: recursor case splits, bound case definitions and β-redexes
+  (see `Program.cases`). -/
   cases : Bool := false
+  /-- Case definitions (`casesOn`, matchers) the consumer compiles as a case
+  on their major premise, with their alternatives by need
+  (`Program.caseDefinitions`). Strictly increasing; requires `cases`. -/
+  caseDefinitions : Array Address := #[]
   /-- Admitted resource interfaces: per declaration, one packed input/result
   contract byte (`packAllContract`) for each leading arrow, replacing the
   declared contracts for callers. Each must also be an assumption. -/
@@ -93,6 +97,15 @@ def Profile.validate (profile : Profile) : Except String Unit := do
     previousDefinition := some definition
   if let some eq := profile.eqType then
     if eq.hash.size != 32 then throw "resource profile: invalid address length"
+  let mut previousCase : Option Address := none
+  for address in profile.caseDefinitions do
+    if address.hash.size != 32 then throw "resource profile: invalid address length"
+    if let some before := previousCase then
+      unless Address.cmpBytes before address == .lt do
+        throw "resource profile: address lists must be strictly increasing"
+    previousCase := some address
+  if !profile.caseDefinitions.isEmpty && !profile.cases then
+    throw "resource profile: case definitions require case behavior"
 
 /-- Canonical, domain-separated profile bytes, including the checker limits.
 Lists are validated before these bytes are used as a commitment. -/
@@ -108,7 +121,8 @@ def Profile.bytes (profile : Profile) : ByteArray :=
     putTagN 0 0 profile.limits.depth.toUInt64
     putTagN 0 0 profile.limits.steps.toUInt64
     -- An optional extension, present only when it is not empty.
-    let flags : UInt64 := (if profile.cases then 1 else 0) ||| (if profile.equations.isEmpty then 0 else 2)
+    let flags : UInt64 := (if profile.cases then 1 else 0) ||| (if profile.equations.isEmpty then 0 else 2) |||
+      (if profile.caseDefinitions.isEmpty then 0 else 4)
     if flags != 0 || !profile.interfaces.isEmpty then
       putTagN 0 0 flags
       putTagN 0 0 profile.interfaces.size.toUInt64
@@ -122,6 +136,9 @@ def Profile.bytes (profile : Profile) : ByteArray :=
         for (definition, equation) in profile.equations do
           Serialize.put definition
           Serialize.put equation
+      if !profile.caseDefinitions.isEmpty then
+        putTagN 0 0 profile.caseDefinitions.size.toUInt64
+        for address in profile.caseDefinitions do Serialize.put address
 
 def Profile.address (profile : Profile) : Except String Address := do
   profile.validate
@@ -151,9 +168,9 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
     let depth := (← getTagN 0).value.toNat
     let steps := (← getTagN 0).value.toNat
     let state ← get
-    let (cases, interfaces, eqType, equations) ← if state.idx < state.bytes.size then do
+    let (cases, interfaces, eqType, equations, caseDefinitions) ← if state.idx < state.bytes.size then do
         let flags := (← getTagN 0).value
-        if flags > 3 then throw "resource profile: unknown behavior flags"
+        if flags > 7 then throw "resource profile: unknown behavior flags"
         let count := (← getTagN 0).value.toNat
         let state ← get
         if count > (state.bytes.size - state.idx) / 33 then throw "resource profile: impossible interface count"
@@ -178,10 +195,19 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
               pairs := pairs.push (definition, equation)
             pure (some eq, pairs)
           else pure (none, #[])
-        pure (flags &&& 1 == 1, result, eqType, equations)
-      else pure (false, #[], none, #[])
+        let caseDefinitions ← if flags &&& 4 != 0 then do
+            let count := (← getTagN 0).value.toNat
+            let state ← get
+            if count == 0 || count > (state.bytes.size - state.idx) / 32 then
+              throw "resource profile: impossible case definition count"
+            let mut addresses := #[]
+            for _ in [:count] do addresses := addresses.push (← Serialize.get)
+            pure addresses
+          else pure #[]
+        pure (flags &&& 1 == 1, result, eqType, equations, caseDefinitions)
+      else pure (false, #[], none, #[], #[])
     return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps },
-             cases, interfaces, eqType, equations }) bytes
+             cases, interfaces, eqType, equations, caseDefinitions }) bytes
   profile.validate
   return profile
 
@@ -528,6 +554,8 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       throw "resource adapter: the equality type must be a checked nominal type"
     program := { program with eqType := some i }
   program := { program with equations }
+  let caseDefinitions ← resolveList profile.caseDefinitions
+  program := { program with caseDefinitions }
   for (typeAddr, ctorAddr, params, count) in fieldSpecs do
     if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) params count then
       program := { program with fields := program.fields ++ derived }
@@ -537,6 +565,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       assumptions := assumptions.map UInt64.toNat
       shareableTypes := shareable.map UInt64.toNat, choices := choices.map UInt64.toNat
       cases := profile.cases
+      caseDefinitions := caseDefinitions.map UInt64.toNat
       equations := equations.map fun (d, t) => (d.toNat, t.toNat) } }
 
 /-- Resource-only validation of addressed bytes. Erased typechecking and
