@@ -26,6 +26,7 @@ import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.ValidateLean
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -366,6 +367,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Pass 3, the faithful rewrite (IX_PASS3=images): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
+  -- `ix validate-lean --local`, the Phase A validator of record, on every fixture
+  -- family with the switch off and on, against its verdict table (Tests.Ix.Compile.ValidateLean).
+  ("validate-lean", Tests.Ix.Compile.ValidateLean.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
