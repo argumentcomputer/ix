@@ -46,6 +46,7 @@ public import Ix.CompileM
 public import Ix.AuxGen.CompileAux
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Resource.Validate
+public import Ix.Compile.Pass.Driver
 public section
 
 namespace Ix.CompileM
@@ -124,11 +125,17 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     ((Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
       maps).run kctx₀)
   let auxLayout? := Ix.PhaseTimers.tailEnd kctx.tcState.env.consts.size auxLayout?
+  -- Pass 3 (`IX_PASS3=images`): a changed block registers no surgery plan;
+  -- its Ix auxiliaries get their `_ix` display names and the block records
+  -- its image-kind heads (`Ix.Compile.Pass.Driver.editChangedBlock`).
+  if cenv.pass3 && Ix.Compile.Pass.isChanged cs blockResult.classNames auxLayout? then
+    Ix.Compile.Pass.editChangedBlock cs blockResult.classNames auxLayout?
+    return (blockResult, auxLayout?, {}, {}, {})
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the
     final block state. -/
-def runBlockWithAux (cenv : CompileEnv) (all : Set Name) (lo : Name)
+def runBlockWithAuxCore (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError
         (BlockResult × BlockState × Option Ixon.AuxLayout
           × Std.HashMap Name CallSitePlan
@@ -136,8 +143,13 @@ def runBlockWithAux (cenv : CompileEnv) (all : Set Name) (lo : Name)
           × Std.HashMap Name BRecOnCallSitePlan) := do
   let blockEnv : BlockEnv :=
     { all, current := lo, mutCtx := default, univCtx := [] }
+  -- Pass 3: the block's members rewritten (Def 3.6) and its image constants
+  -- compiled; identity when the switch is off.
+  let (cenv, init) ← match Ix.Compile.Pass.prepareBlock cenv all lo with
+    | .ok r => pure r
+    | .error e => throw (.invalidMutualBlock e)
   let ((result, layout?, plans, brecPlans, belowPlans), cache) ←
-    CompileM.run cenv blockEnv {} (compileBlockWithAux lo all)
+    CompileM.run cenv blockEnv init (compileBlockWithAux lo all)
   pure (result, cache, layout?, plans, brecPlans, belowPlans)
 
 /-! ## The no-aux (original-form) compile — compile.rs:3263-3440 -/
@@ -249,6 +261,50 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     return run all
   return run filtered
 
+/-! ## Pass 3: the images of a changed block's Lean auxiliaries -/
+
+/-- Pass 3: compile an image block (every member an image-kind auxiliary of
+a changed block): the images under the Lean names, each with
+`Named.original` = Lean's own form compiled without any rewrite (the
+provenance decompile verifies against). -/
+def runImageBlock (cenv : CompileEnv) (all : Set Name) (lo : Name)
+    : Except CompileError (BlockResult × BlockState) := do
+  let imgs ← match Ix.Compile.Pass.compileImageBlock cenv all with
+    | .ok r => pure r
+    | .error e => throw (.invalidMutualBlock e)
+  let (origRes, origCache) ← compileConstNoAuxPure cenv lo all
+  let origs : Std.HashMap Name (Address × Ixon.ConstantMeta) :=
+    if origRes.projections.isEmpty then ({} : Std.HashMap Name _).insert lo (origRes.blockAddr, origRes.blockMeta)
+    else origRes.projections.foldl (init := {}) fun m (n, proj, cm) =>
+      m.insert n (Address.blake3 (Ixon.ser proj), cm)
+  let mut cache : BlockState := { blockBlobs := origCache.blockBlobs, blockNames := origCache.blockNames }
+  let mut result? : Option BlockResult := none
+  for (a, r, bs) in imgs do
+    cache := { cache with
+      auxConsts := cache.auxConsts.push (r.blockAddr, r.block)
+      auxNamed := cache.auxNamed.push (a, { addr := r.blockAddr, constMeta := r.blockMeta
+                                            original := origs.get? a })
+      auxNameToAddr := cache.auxNameToAddr.insert a r.blockAddr
+      blockBlobs := bs.blockBlobs.fold (fun m k v => m.insert k v) cache.blockBlobs
+      blockNames := bs.blockNames.fold (fun m k v => m.insert k v) cache.blockNames
+      defHints := bs.defHints.fold (fun m k v => m.insert k v) cache.defHints }
+    if a == lo then result? := some r
+  let some result := result? | throw (.invalidMutualBlock s!"Pass 3: no image for {lo.pretty}")
+  return (result, cache)
+
+/-- Compile one block with the aux tail (`runBlockWithAuxCore`); under Pass 3
+an image block compiles to its images (`runImageBlock`). -/
+def runBlockWithAux (cenv : CompileEnv) (all : Set Name) (lo : Name)
+    : Except CompileError
+        (BlockResult × BlockState × Option Ixon.AuxLayout
+          × Std.HashMap Name CallSitePlan
+          × Std.HashMap Name BRecOnCallSitePlan
+          × Std.HashMap Name BRecOnCallSitePlan) := do
+  if Ix.Compile.Pass.isImageBlock cenv all then
+    let (result, cache) ← runImageBlock cenv all lo
+    return (result, cache, none, {}, {}, {})
+  runBlockWithAuxCore cenv all lo
+
 /-! ## Driver state and merges -/
 
 /-- Accumulated driver-level side maps that live OUTSIDE `CompileEnv`
@@ -350,6 +406,26 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
       if existing != plan then
         throw (.invalidMutualBlock s!"conflicting below call-site plans for \
 '{name.pretty}' — two blocks claim one source-indexed aux name")
+  -- Pass 3 (empty unless the switch is on): the reserved names a block
+  -- registers (`_ix` display names, image constants `a._ix`) and its records
+  -- are insert-once too: several components of one Lean block may register
+  -- the same entry, never a different one.
+  for (name, addr) in cache.auxNameToAddr do
+    if Ix.Compile.Pass.hasReserved name then
+      if let some existing := cenv.auxNameToAddr.get? name then
+        if existing != addr then throw (nameClaimConflict name existing addr)
+  for (name, key) in cache.p3Heads do
+    if let some existing := cenv.p3Heads.get? name then
+      if existing != key then
+        throw (.invalidMutualBlock s!"Pass 3: conflicting image-kind head '{name.pretty}'")
+  for (key, all) in cache.p3Blocks do
+    if let some existing := cenv.p3Blocks.get? key then
+      if existing != all then
+        throw (.invalidMutualBlock s!"Pass 3: conflicting Lean block '{key.pretty}'")
+  for (name, rv) in cache.p3AuxRecs do
+    if let some existing := cenv.p3CanonRecs.get? name then
+      if existing != rv then
+        throw (.invalidMutualBlock s!"Pass 3: conflicting canonical recursor '{name.pretty}'")
 
 /-- Merge one compiled block's outputs into the driver state, mirroring
     the Rust global-mutation order: block constant, member projections
@@ -408,6 +484,12 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv.brecOnCallSitePlans
     belowCallSitePlans := belowPlans.fold (fun m k v => m.insert k v)
       cenv.belowCallSitePlans }
+  -- Pass 3 records of a changed block (empty unless the switch is on).
+  if cenv.pass3 then
+    cenv := { cenv with
+      p3CanonRecs := cache.p3AuxRecs.foldl (fun m (k, v) => m.insert k v) cenv.p3CanonRecs
+      p3Heads := cache.p3Heads.foldl (fun m (k, v) => m.insert k v) cenv.p3Heads
+      p3Blocks := cache.p3Blocks.foldl (fun m (k, v) => m.insert k v) cenv.p3Blocks }
   -- Class-ordering registry (Rust `stt.blocks`, compile.rs:4048-4057):
   -- one entry per member, all pointing at the block's full ordering.
   if !result.classNames.isEmpty then
@@ -509,7 +591,11 @@ def auxGenSeedNames : Array Name := Id.run do
     Mirrors `precompile_aux_gen_prereqs` (env.rs:1036-1140). -/
 def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
     : Except String DriverAcc := Id.run do
-  let seedReps := auxGenSeedNames.filterMap (blocks.lowLinks.get? ·)
+  -- Pass 3: images pack with `And` at Prop motives (`PProd` and `True` are
+  -- seeds already), so it must precede every block whose rewrite uses it.
+  let seeds := if acc₀.cenv.pass3 then auxGenSeedNames.push (Name.mkStr .mkAnon "And")
+    else auxGenSeedNames
+  let seedReps := seeds.filterMap (blocks.lowLinks.get? ·)
   if seedReps.isEmpty then
     return .ok acc₀
   -- Iterative DFS post-order over the condensed graph (env.rs:1063-1097).
@@ -598,6 +684,14 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   }
   return (ixonEnv, cenv.totalBytes, cenv)
 
+/-- Pass 3: the first input name with a reserved `_ix` component (D14),
+    as a rejection message. -/
+def pass3ReservedInput? (blocks : Ix.CondensedBlocks) : Option String := Id.run do
+  for (_, all) in blocks.blocks do
+    for n in all do
+      if let some msg := Ix.Compile.Pass.reservedInput? n then return some msg
+  return none
+
 /-! ## The aux-aware sequential driver -/
 
 /-- Compile an entire environment with the FULL production pipeline
@@ -616,8 +710,14 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
+    (pass3 : Bool := false)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
+  if pass3 then
+    if let some msg := pass3ReservedInput? blocks then return .error msg
+  let p3BlockRefs := if pass3 then blocks.blockRefs else {}
+  let cenv0 : CompileEnv :=
+    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs }
+  let mut acc : DriverAcc := { cenv := cenv0 }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
   | .ok a => acc := a
@@ -990,6 +1090,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
+    (pass3? : Option Bool := none)
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
   let totalBlocks := blocks.blocks.size
   -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
@@ -998,7 +1099,16 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     | .error e => return .error e
 
   let tPre ← IO.monoMsNow
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
+  -- Pass 3, the faithful rewrite (`IX_PASS3=images`); off by default.
+  let pass3 ← match pass3? with
+    | some b => pure b
+    | none => pure (Ix.Compile.Pass.switchOn (← IO.getEnv Ix.Compile.Pass.switchVar))
+  if pass3 then
+    if let some msg := pass3ReservedInput? blocks then return .error msg
+  let p3BlockRefs := if pass3 then blocks.blockRefs else {}
+  let cenv0 : CompileEnv :=
+    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs }
+  let mut acc : DriverAcc := { cenv := cenv0 }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
   | .ok a => acc := a
@@ -1014,6 +1124,9 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   -- the whole-Mathlib memory spike lives — identifies which block a
   -- worker is inside when RSS blows up.
   let logBlocks := (← IO.getEnv "IX_LOG_BLOCKS").isSome
+  -- IX_LOG_SLOW=<ms>: BEGIN for every block and END for the blocks slower
+  -- than <ms> (stderr; diagnostics only, the output is unaffected).
+  let logSlow := (← IO.getEnv "IX_LOG_SLOW").bind String.toNat?
   let worker (_workerId : Nat) : IO Unit := do
     while true do
       match ← workChan.recv with
@@ -1023,10 +1136,14 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         if logThis then
           IO.println s!"  [block] BEGIN {item.lo.pretty} ({item.all.size} members)"
           (← IO.getStdout).flush
+        if logSlow.isSome then
+          IO.eprintln s!"[block] BEGIN {item.lo.pretty}"
         let t0 ← IO.monoMsNow
         let outcome := Ix.PhaseTimers.withPhase .blockOther item.cenv
           (auxBlockOutcome · item.lo item.all)
         let t1 ← IO.monoMsNow
+        if let some ms := logSlow then
+          IO.eprintln s!"[block] {if t1 - t0 ≥ ms then "SLOW" else "END"} {item.lo.pretty} {t1 - t0}ms"
         if logThis then
           let rssKb ← do
             let st ← IO.FS.readFile "/proc/self/status"
@@ -1205,6 +1322,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (resourceProfile : Option Ix.Resource.Profile := none)
+    (pass3? : Option Bool := none)
     : IO (Except String LeanPipelineOut) := do
   let tInspect ← IO.monoMsNow
   let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
@@ -1331,7 +1449,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
   match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg
-      nameByHash with
+      nameByHash pass3? with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
     let t ← tick "compile" t
@@ -1365,25 +1483,27 @@ canonicalization, then validate resources and erased types before emission. -/
 def compileLeanInput (input : Ix.Compile.CompileInput)
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (resourceProfile : Option Ix.Resource.Profile := none)
+    (pass3? : Option Bool := none) :
     IO (Except String LeanPipelineOut) := do
   let tPrep ← IO.monoMsNow
   let constants ← match input.prepare with
     | .ok constants => pure constants
     | .error error => return .error error
   Ix.PhaseTimers.wall "source-contract preparation (prepare)" ((← IO.monoMsNow) - tPrep)
-  compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile
+  compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile pass3?
 
 /-- Compile an isolated source list, extracting its checked occurrence records. -/
 def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (resourceProfile : Option Ix.Resource.Profile := none)
+    (pass3? : Option Bool := none) :
     IO (Except String LeanPipelineOut) := do
   let input ← match Ix.Compile.CompileInput.fromAnnotations consts with
     | .ok input => pure input
     | .error error => return .error (toString error)
-  compileLeanInput input rustRef numWorkers dbg resourceProfile
+  compileLeanInput input rustRef numWorkers dbg resourceProfile pass3?
 
 /-- Native compiler entrypoint with an explicitly committed resource profile. -/
 @[extern "rs_compile_env_to_ixon_profile"]

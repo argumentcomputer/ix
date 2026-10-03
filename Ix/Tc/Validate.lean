@@ -5,6 +5,7 @@ public import Ix.Tc.IngressMeta
 public import Ix.Tc.ParCheck
 public import Ix.Tc.EgressLean
 public import Ix.CanonM
+public import Ix.Compile.Pass.Names
 
 /-!
 Whole-env validation drivers for the pure-Lean `Ix.Tc` pipeline — the
@@ -148,6 +149,10 @@ def metaHasAlteringSurgery (cm : Ixon.ConstantMeta) : Bool :=
         | .collapsed .. => true
         | .kept canonIdx _ => canonIdx.toNat != i)
     | .etaCallSite .. => true
+    -- Pass 3's decompile record of a rewritten call site (`_ix.inline`):
+    -- the term is the inline form, the source lives in `metaSharing`.
+    | .mdata kvmaps _ => kvmaps.any fun kv => kv.any fun (k, _) =>
+      k == Ix.Compile.Pass.inlineKey.getHash
     | _ => false
 
 /-- Meta roundtrip summary counts. -/

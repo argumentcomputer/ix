@@ -30,6 +30,7 @@ public import Ix.Compile.Canon.Classes
 public import Ix.CallSitePlan
 public import Ix.CallSiteSurgery
 public import Ix.CanonM
+public import Ix.Compile.Pass.Names
 
 namespace Ix.CompileM
 public section
@@ -117,6 +118,30 @@ structure CompileEnv where
       (`compilerSharingLimitsFromEnv`). Limits decide only whether a block
       compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
+  /-- Pass 3, the faithful rewrite (`IX_PASS3=images`; design document
+      §4.5, `Ix.Compile.Pass.Translate`), replaces call-site surgery. Off by
+      default: with it off no field below is ever written and the compiler
+      is byte-identical to the surgery pipeline. -/
+  pass3 : Bool := false
+  /-- Pass 3: each image-kind auxiliary name of a changed Lean block (its
+      recursors, `casesOn`, `recOn` and the Type-level `below`/`brecOn`
+      family) ↦ the block's key (`all₀`). Merged from the block tails. -/
+  p3Heads : Std.HashMap Name Name := {}
+  /-- Pass 3: changed Lean block key ↦ its `all`. -/
+  p3Blocks : Std.HashMap Name (Array Name) := {}
+  /-- Pass 3: the canonical recursors (Pass 2's output) of the changed
+      blocks under aux-gen's names (`rep.rec`, `all₀.rec_j` by source
+      index), the image generator's input. -/
+  p3CanonRecs : Std.HashMap Name RecursorVal := {}
+  /-- Pass 3, set per block by the driver: the source occurrence of each
+      rewritten call site of the block, keyed by the placeholder index the
+      rewrite left in the term (`Ix.Compile.Pass.Translate`). Compiled into
+      `metaSharing` as the decompile record. -/
+  p3Sources : Std.HashMap Nat Expr := {}
+  /-- Pass 3: the input's block reference graph (block key ↦ referenced
+      names), to rewrite only blocks that reference a changed block's
+      auxiliary. -/
+  p3BlockRefs : Std.HashMap Name (Ix.Set Name) := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -216,6 +241,25 @@ structure BlockState where
       drained into `ConstantMeta.metaSharing` when the constant's
       metadata is built (Rust `BlockCache.surgery_sharing`). -/
   surgerySharing : Array Ixon.Expr := #[]
+  /-- Pass 3: compiling a decompile record (the source occurrence of a
+      rewritten call site) into `metaSharing`. References and universes
+      outside the primary tables go to the per-constant extension tables
+      (`p3MetaRefs`, `metaUnivs`) instead, so the record never changes the
+      constant's bytes. -/
+  p3MetaMode : Bool := false
+  /-- Pass 3: the current constant's extension refs (`ConstantMeta.metaRefs`;
+      virtual index `refs.size + slot`). -/
+  p3MetaRefs : Array Address := #[]
+  p3MetaRefsIndex : Std.HashMap Address UInt64 := {}
+  /-- Pass 3: placeholder index ↦ (`metaSharing` index, arena root) of the
+      current constant's compiled decompile records. -/
+  p3Records : Std.HashMap Nat (Nat × UInt64) := {}
+  /-- Pass 3, filled by the aux tail of a changed block for the driver:
+      the canonical recursors aux-gen generated (Pass 2), the image-kind
+      heads (name ↦ Lean block key) and the Lean blocks (key ↦ `all`). -/
+  p3AuxRecs : Array (Name × RecursorVal) := #[]
+  p3Heads : Array (Name × Name) := #[]
+  p3Blocks : Array (Name × Array Name) := #[]
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/
@@ -384,7 +428,8 @@ def takeArena : CompileM Ixon.ExprMetaArena :=
 def resetArena : CompileM Unit :=
   modifyBlockState fun c =>
     { c with arena := {}, metaUnivs := #[], metaUnivsIndex := {},
-             univPatches := #[] }
+             univPatches := #[], p3MetaRefs := #[], p3MetaRefsIndex := {},
+             p3Records := {} }
 
 /-- Clear the expression cache (between constants to avoid cross-constant arena references). -/
 def clearExprCache : CompileM Unit :=
@@ -396,6 +441,13 @@ def clearExprCache : CompileM Unit :=
     result becomes the constant's `ConstantMeta.metaSharing`. -/
 def takeSurgerySharing : CompileM (Array Ixon.Expr) :=
   modifyGetBlockState fun c => (c.surgerySharing, { c with surgerySharing := #[] })
+
+/-- Take the current constant's Pass 3 extension refs (`ConstantMeta.metaRefs`;
+    empty unless a decompile record referenced an address outside the
+    primary table). -/
+def takeMetaRefs : CompileM (Array Address) :=
+  modifyGetBlockState fun c =>
+    (c.p3MetaRefs, { c with p3MetaRefs := #[], p3MetaRefsIndex := {} })
 
 /-! ## Universe Compilation -/
 
@@ -464,6 +516,13 @@ def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 :=
 def compileAndInternUnivCanon (lvl : Level) : CompileM (UInt64 × Option UInt64) := do
   let raw ← compileUniv lvl
   let canon ← canonUnivCached raw
+  -- Pass 3 decompile record: a universe outside the primary table goes to
+  -- the extension (virtual index), never into the primary table.
+  if (← getBlockState).p3MetaMode then
+    if !(← getBlockState).univsIndex.contains canon then
+      let cidx ← internMetaUniv canon
+      if canon == raw then return (cidx, none)
+      return (cidx, some (← internMetaUniv raw))
   let sizeBefore := (← getBlockState).univs.size
   let cidx ← internUniv canon
   -- V3 tripwire (canonicity §10.6): the primary table must not grow
@@ -494,8 +553,28 @@ def takeUnivPatches : CompileM (Array Ixon.Univ × Array Ixon.UnivPatch) :=
 
 /-! ## Reference Handling -/
 
-/-- Intern an address into the block's refs table, returning its index. -/
-def internRef (addr : Address) : CompileM UInt64 :=
+/-- Pass 3 decompile-record interning (see `internRef`). -/
+def internRefMeta (addr : Address) : CompileM UInt64 := do
+    let st ← getBlockState
+    if let some idx := st.refsIndex.get? addr then return idx
+    -- Pass 3 decompile record: an address outside the primary table goes
+    -- to the constant's extension (`metaRefs`, virtual `refs.size + j`).
+    -- The primary table is preseed-final here (preseeding walks the
+    -- rewritten terms, which are all that the constant's bytes contain).
+    match st.p3MetaRefsIndex.get? addr with
+    | some j => return st.refs.size.toUInt64 + j
+    | none =>
+      let j := st.p3MetaRefs.size.toUInt64
+      modifyBlockState fun c => { c with
+        p3MetaRefs := c.p3MetaRefs.push addr
+        p3MetaRefsIndex := c.p3MetaRefsIndex.insert addr j }
+      return st.refs.size.toUInt64 + j
+
+/-- Intern an address into the block's refs table, returning its index.
+    (The state is read only for the mode flag, so the update below stays in
+    place: no reference to the old state is alive.) -/
+def internRef (addr : Address) : CompileM UInt64 := do
+  if (← getBlockState).p3MetaMode then return ← internRefMeta addr
   modifyGetBlockState fun state =>
     let (state', idx) := state.internRef addr
     (idx, state')
@@ -709,8 +788,23 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     pure (.ofSyntax addr)
 
-/-- Compile a KVMap (array of name-value pairs). -/
+/-- Compile a KVMap (array of name-value pairs).
+
+    Pass 3: the placeholder `[(_ix.inline, n)]` that the faithful rewrite
+    leaves around a rewritten call site (`Ix.Compile.Pass.Names.inlineKey`)
+    becomes the decompile record `[(_ix.inline, s), (_ix.inline_meta, m)]`:
+    the `metaSharing` index and the arena root of the compiled source
+    occurrence (`compileExpr` compiles it before the term). -/
 def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap := do
+  if let #[(k, .ofNat n)] := kvs then
+    if k == Ix.Compile.Pass.inlineKey && (← getCompileEnv).pass3 then
+      let some (s, m) := (← getBlockState).p3Records.get? n
+        | throw (.invalidMutualBlock s!"Pass 3: call-site record {n} was not compiled")
+      return ← #[(Ix.Compile.Pass.inlineKey, Ix.DataValue.ofNat s),
+          (Ix.Compile.Pass.inlineMetaKey, Ix.DataValue.ofNat m.toNat)].mapM fun (k, v) => do
+        compileName k
+        let vData ← compileDataValue v
+        pure (k.getHash, vData)
   kvs.mapM fun (k, v) => do
     compileName k
     let vData ← compileDataValue v
@@ -738,8 +832,30 @@ def CompileEnv.surgeryFree (env : CompileEnv) : Bool :=
   env.callSitePlans.isEmpty && env.brecOnCallSitePlans.isEmpty &&
     env.belowCallSitePlans.isEmpty
 
+/-- Memoised runtime implementation of `exprCompileDepth`: the same height,
+computed once per distinct node (`Ix.Expr` keys compare by their embedded
+hash). The structural definition below is a tree walk, exponential on the
+DAG-shaped proof terms of a library. -/
+private partial def exprCompileDepthMemo (e : Expr) : StateM (Std.HashMap Expr Nat) Nat := do
+  if let some d := (← get).get? e then return d
+  let d ← match e with
+    | .app fn arg _ => do pure (max (← exprCompileDepthMemo fn) (← exprCompileDepthMemo arg) + 1)
+    | .lam _ ty body _ _ | .forallE _ ty body _ _ => do
+      pure (max (← exprCompileDepthMemo ty) (← exprCompileDepthMemo body) + 1)
+    | .letE _ ty val body _ _ => do
+      pure (max (← exprCompileDepthMemo ty) (max (← exprCompileDepthMemo val)
+        (← exprCompileDepthMemo body)) + 1)
+    | .mdata _ inner _ | .proj _ _ inner _ => do pure ((← exprCompileDepthMemo inner) + 1)
+    | _ => pure 1
+  modify (·.insert e d)
+  return d
+
+private def exprCompileDepthImpl (e : Expr) : Nat := (exprCompileDepthMemo e).run' {}
+
 /-- Structural height used to fuel ordinary expression compilation. -/
+@[implemented_by exprCompileDepthImpl]
 def exprCompileDepth : Expr → Nat
+
   | .bvar .. | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => 1
   | .app fn arg _ => max (exprCompileDepth fn) (exprCompileDepth arg) + 1
   | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
@@ -1777,13 +1893,72 @@ partial def compileBRecOnCallSite (name : Name)
 
 end
 
+/-- Pass 3: the placeholder indices of the rewritten call sites in `e`
+    (`[(_ix.inline, n)]` mdata nodes), in first-occurrence order, each once.
+    The walk visits every distinct node once. -/
+def pass3Placeholders (e : Expr) : Array Nat := Id.run do
+  let mut seen : Std.HashSet Expr := {}
+  let mut out : Array Nat := #[]
+  let mut stack : Array Expr := #[e]
+  while !stack.isEmpty do
+    let x := stack.back!
+    stack := stack.pop
+    if seen.contains x then continue
+    seen := seen.insert x
+    match x with
+    | .mdata kvs inner _ =>
+      if let #[(k, .ofNat n)] := kvs then
+        if k == Ix.Compile.Pass.inlineKey && !out.contains n then out := out.push n
+      stack := stack.push inner
+    | .app f a _ => stack := stack.push a |>.push f
+    | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
+    | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
+    | .proj _ _ s _ => stack := stack.push s
+    | _ => pure ()
+  return out
+
+/-- Pass 3: compile the decompile record of every rewritten call site of
+    `e` that the current constant has not compiled yet: its source
+    occurrence (`CompileEnv.p3Sources`), into `metaSharing`, with
+    references and universes outside the primary tables in the extension
+    tables (`p3MetaMode`). The expression cache is saved and restored
+    around it, so no metadata-only form is ever reused by the term. -/
+def pass3CompileRecords (e : Expr) : CompileM Unit := do
+  let cenv ← getCompileEnv
+  for n in pass3Placeholders e do
+    if (← getBlockState).p3Records.contains n then continue
+    let some src := cenv.p3Sources.get? n
+      | throw (.invalidMutualBlock s!"Pass 3: no source occurrence for call-site record {n}")
+    let savedCache := (← getBlockState).exprCache
+    modifyBlockState fun c => { c with p3MetaMode := true }
+    let (ix, root) ← compileExprSurgical src
+    modifyBlockState fun c => { c with
+      p3MetaMode := false
+      exprCache := savedCache
+      p3Records := c.p3Records.insert n (c.surgerySharing.size, root)
+      surgerySharing := c.surgerySharing.push ix }
+
 /-- Production expression compiler.  Environments without any call-site
     plans use the total ordinary implementation, while plan-bearing
     environments retain the existing surgery state machine.  The split gives
     the ordinary refinement proof kernel-visible equations without changing
-    surgery behavior. -/
+    surgery behavior.
+
+    Under Pass 3 the block's terms were rewritten before compilation
+    (`Ix.Compile.Pass.Translate`): no plan is ever registered, so the
+    ordinary implementation runs, after the decompile records of the
+    rewritten call sites in `e` are compiled (`pass3CompileRecords`). -/
 def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
-  if (← getCompileEnv).surgeryFree then
+  let cenv ← getCompileEnv
+  if cenv.pass3 && !cenv.p3Sources.isEmpty then
+    pass3CompileRecords e
+  -- Under Pass 3 no plan exists, so `surgeryFree` holds everywhere, but the
+  -- ordinary implementation sizes its fuel with `exprCompileDepth`, a tree
+  -- walk that is exponential on the DAG-shaped proofs of a library (a
+  -- Mathlib theorem never finishes). The plan-bearing implementation, with an
+  -- empty plan map, takes its ordinary path on every node and gives the same
+  -- bytes (it is what every library compile with a changed block runs today).
+  if cenv.surgeryFree && !cenv.pass3 then
     compileExprNoSurgery e
   else
     compileExprSurgical e
@@ -2346,6 +2521,7 @@ def finishDefinitionDataCompilation (d : Def)
     CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) := do
   let arena ← takeArena
   let surgerySharing ← takeSurgerySharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2374,7 +2550,7 @@ def finishDefinitionDataCompilation (d : Def)
   recordDefHints d.name hints
   let constMeta := { Ixon.ConstantMeta.new
     (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := surgerySharing, metaRefs, metaUnivs, univPatches }
   pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Definition specialization of the common definition-like finalizer. -/
@@ -2438,6 +2614,7 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
     CompileM (Ixon.Axiom × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
   let surgerySharing ← takeSurgerySharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2455,7 +2632,7 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
   }
   let constMeta := { Ixon.ConstantMeta.new
     (.axio nameAddr lvlAddrs arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := surgerySharing, metaRefs, metaUnivs, univPatches }
   pure (axio, constMeta, typeExpr)
 
 /-- Compile an axiom to Ixon.Axiom with metadata. -/
@@ -2481,6 +2658,7 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
     CompileM (Ixon.Quotient × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
   let surgerySharing ← takeSurgerySharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2495,7 +2673,7 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
   let constMeta := { Ixon.ConstantMeta.new
     (.quot q.cnst.name.getHash
       (q.cnst.levelParams.map (·.getHash)) arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := surgerySharing, metaRefs, metaUnivs, univPatches }
   pure (quot, constMeta, typeExpr)
 
 /-- Compile a quotient to Ixon.Quotient with metadata. -/
@@ -2541,6 +2719,7 @@ def finishRecursorCompilation (r : RecursorVal)
     CompileM (Ixon.Recursor × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
   let surgerySharing ← takeSurgerySharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2571,7 +2750,7 @@ def finishRecursorCompilation (r : RecursorVal)
   let constMeta := { Ixon.ConstantMeta.new
     (.recr nameAddr lvlAddrs compiledRules.ruleAddrs allAddrs ctxAddrs
       arena typeRoot compiledRules.ruleRoots) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := surgerySharing, metaRefs, metaUnivs, univPatches }
   pure (recursor, constMeta, typeExpr)
 
 /-- Compile a recursor to Ixon.Recursor with metadata. -/
@@ -2589,6 +2768,7 @@ def finishConstructorCompilation (c : ConstructorVal)
     CompileM (Ixon.Constructor × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
   let surgerySharing ← takeSurgerySharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2609,7 +2789,7 @@ def finishConstructorCompilation (c : ConstructorVal)
   }
   let ctorMeta := { Ixon.ConstantMeta.new
     (.ctor nameAddr lvlAddrs c.induct.getHash arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := surgerySharing, metaRefs, metaUnivs, univPatches }
   pure (ctor, ctorMeta, typeExpr)
 
 /-- Compile a constructor to Ixon.Constructor with metadata (ConstantMeta.ctor). -/
@@ -2632,15 +2812,17 @@ starts. Each constructor subsequently owns an independent arena. -/
 structure InductiveTypeCompileMeta where
   arena : Ixon.ExprMetaArena
   surgerySharing : Array Ixon.Expr
+  metaRefs : Array Address := #[]
   metaUnivs : Array Ixon.Univ
   univPatches : Array Ixon.UnivPatch
 
 def takeInductiveTypeCompileMeta : CompileM InductiveTypeCompileMeta := do
   let arena ← takeArena
   let surgerySharing ← takeSurgerySharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
-  pure { arena, surgerySharing, metaUnivs, univPatches }
+  pure { arena, surgerySharing, metaRefs, metaUnivs, univPatches }
 
 /-- Compile constructors in source order. -/
 def compileInductiveConstructors :
@@ -2688,6 +2870,7 @@ def finishInductiveCompilation (i : InductiveVal)
     (.indc nameAddr lvlAddrs compiledCtors.ctorNameAddrs allAddrs ctxAddrs
       typeMeta.arena typeRoot) with
     metaSharing := typeMeta.surgerySharing
+    metaRefs := typeMeta.metaRefs
     metaUnivs := typeMeta.metaUnivs
     univPatches := typeMeta.univPatches }
   pure (ind, constMeta, compiledCtors.ctorMetaPairs,
@@ -2751,6 +2934,7 @@ def finishInductiveDataCompilation (i : Ind)
     (.indc nameAddr lvlAddrs compiledCtors.ctorNameAddrs allAddrs ctxAddrs
       typeMeta.arena typeRoot) with
     metaSharing := typeMeta.surgerySharing
+    metaRefs := typeMeta.metaRefs
     metaUnivs := typeMeta.metaUnivs
     univPatches := typeMeta.univPatches }
   pure (ind, constMeta, compiledCtors.ctorMetaPairs,

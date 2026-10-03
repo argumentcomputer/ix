@@ -17,6 +17,7 @@ public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
 public import Ix.AuxGen.ExprUtils
+public import Ix.Compile.Pass.Names
 
 public section
 
@@ -504,6 +505,9 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
   -- 2. Follow mdata chain
   let mut currentIdx := arenaIdx
   let mut mdataLayers : Array (Array (Ix.Name × Ix.DataValue)) := #[]
+  -- Pass 3 decompile record of a rewritten call site (`_ix.inline`,
+  -- `_ix.inline_meta`): the source occurrence in `metaSharing`.
+  let mut inlineRecord : Option (Nat × Nat) := none
   let mut done := false
   while !done do
     match ← getArenaNode currentIdx with
@@ -512,9 +516,25 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
         let data ← decompileKVMap kvm
         if Ix.SemanticContract.hasMetadata data then
           throw (.badConstantFormat "semantic contracts cannot come from optional metadata")
-        mdataLayers := mdataLayers.push data
+        match data with
+        | #[(k1, .ofNat s), (k2, .ofNat m)] =>
+          if k1 == Ix.Compile.Pass.inlineKey && k2 == Ix.Compile.Pass.inlineMetaKey then
+            if inlineRecord.isNone then inlineRecord := some (s, m)
+          else mdataLayers := mdataLayers.push data
+        | _ => mdataLayers := mdataLayers.push data
       currentIdx := child
     | _ => done := true
+
+  -- Pass 3 replay: the decompiled term is the recorded source occurrence;
+  -- the compiled (rewritten) term is not read.
+  if let some (s, m) := inlineRecord then
+    let ctx ← getCtx
+    let some shared := ctx.metaSharing[s]?
+      | throw (.invalidShareIndex s.toUInt64 ctx.metaSharing.size "Pass 3 inline record")
+    let src ← decompileExprIn (.metaEntry s) shared m.toUInt64
+    let result := applyMdata src mdataLayers
+    modify fun st => { st with exprCache := st.exprCache.insert cacheKey result }
+    return result
 
   let node ← getArenaNode currentIdx
 
