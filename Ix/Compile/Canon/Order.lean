@@ -26,26 +26,29 @@
   §3.1:
   * `seed`: `byNameHash` (today: the refinement starts from one class sorted
     by the blake3 hash of the name, and every group is re-sorted that way)
-    or `structural` (the caller's order, Lean's `all`, kept stably);
+    or `allOrder` (the caller's order: Lean's `all` restricted to the
+    component, or `EqnInfo.declNames` for a clique, kept stably);
   * `levels`: `syntactic` (today) or `afterCanonUniv` (levels compared after
     `Ixon.canonUniv`, with parameters by position);
   * `representative`: `leastNameHash` (today: first member after the name
     re-sort) or `firstInCanonicalOrder` (first member in the stable order);
   * `tieBreak`: `inline` (today: external references compare by address
-    wherever they occur), `byAddress` (Phase A: compare with every external
-    reference equal first, and by address only on a full tie; such
-    decisions are counted), or `blind` (never use addresses: the census's
+    wherever they occur, at the first difference), `byAddress` (Phase A: the
+    lexicographic pair `(k₀, k₁)`, `k₀` with every external reference equal
+    and `k₁` today's key; the partition is `k₁`'s, only the class order can
+    move; comparisons that `k₀` ties and `k₁` decides are counted), or `blind` (never use addresses: the census's
     order-stability probe);
   * `nested`: the order of nested auxiliaries, `structural` (today) or
     `discovery` (Lean's), used by `Nested.lean`.
 
-  **Cache direction.** Today's Lean cache is keyed by the unordered name
-  pair and returns the stored ordering without flipping it when the pair is
-  queried the other way round; Rust's flips (`compile.rs` `compare_const`,
-  `compare_ctor`). Under `Rules.today` this module mirrors Lean and counts
-  every such reversed non-equal hit in `CmpState.hazards` (a non-zero count
-  would be an observable Lean/Rust divergence); under `Rules.phaseA` it
-  flips.
+  **Port defects** (design document §3.4, C1 and C2). Today's Lean cache is
+  keyed by the unordered name pair but stores and returns the ordering in
+  the orientation of the call that computed it (Rust normalises it,
+  `compile.rs` `compare_const`, `compare_ctor`); and Lean's
+  `compareConstBody` answers `lt` for every mixed-kind pair (Rust compares
+  kind tags). With `portFixes := false` (`Rules.today`) both are mirrored and
+  every reversed non-equal cache hit is counted in `CmpState.hazards`; with
+  `portFixes := true` both are fixed as in Rust.
 -/
 module
 public import Ix.Environment
@@ -65,7 +68,7 @@ open Ix (Name Level Expr MutConst Def Ind Rec MutCtx ConstructorVal RecursorVal
 
 inductive Seed where
   | byNameHash
-  | structural
+  | allOrder
   deriving BEq, Repr, Inhabited
 
 inductive LevelCompare where
@@ -95,18 +98,31 @@ structure Rules where
   representative : Representative
   tieBreak : TieBreak
   nested : NestedOrder
+  /-- The two Lean-port comparator defects fixed as in Rust (design
+  document §3.4): C1, mixed kinds by kind tag; C2, the cache normalised to
+  the key's orientation. Off only for `Rules.today`, which mirrors the port;
+  required by any seed other than the name hash. -/
+  portFixes : Bool := true
   deriving BEq, Repr, Inhabited
 
 /-- Today's compiler. -/
 def Rules.today : Rules :=
-  ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural⟩
+  ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural, false⟩
 
 /-- The Phase A decisions (`PLAN-A-compiler-design.md` §3.1). -/
 def Rules.phaseA : Rules :=
-  ⟨.structural, .afterCanonUniv, .firstInCanonicalOrder, .byAddress, .discovery⟩
+  ⟨.allOrder, .afterCanonUniv, .firstInCanonicalOrder, .byAddress, .discovery, true⟩
+
+/-- Today's rules with only the tie-break changed to `(k₀, k₁)`. -/
+def Rules.todayK : Rules := { Rules.today with tieBreak := .byAddress, portFixes := true }
+
+/-- Today's rules with only the levels compared after `canonUniv`. -/
+def Rules.todayU : Rules := { Rules.today with levels := .afterCanonUniv, portFixes := true }
 
 def Rules.name (r : Rules) : String :=
-  if r == .today then "today" else if r == .phaseA then "phaseA" else reprStr r
+  if r == .today then "today" else if r == .phaseA then "phaseA"
+  else if r == .todayK then "today+(k0,k1)" else if r == .todayU then "today+canonUniv"
+  else reprStr r
 
 /-- How a comparison treats two different external constants. -/
 inductive ExtMode where
@@ -420,14 +436,14 @@ def compareConstIn (flip : Bool) (c : CmpCtx) (x y : MutConst) : CmpM Ordering :
   let blind := c.mode == .blind
   if let some o ← cacheGet flip blind x.name y.name then
     return o
-  let so ← compareConstBody flip flip c x y
+  let so ← compareConstBody flip flip c x y -- `flip` is `portFixes`
   cachePut blind x.name y.name so
   return so.ord
 
 /-- The comparison a rule set sorts by. -/
 def compareConst (rules : Rules) (addr? : Name → Option Address) (mutCtx : MutCtx)
     (x y : MutConst) : CmpM Ordering := do
-  let flip := rules != .today
+  let flip := rules.portFixes
   let c : CmpCtx := { levels := rules.levels, mode := .addr, addr?, mutCtx }
   match rules.tieBreak with
   | .inline => compareConstIn flip c x y

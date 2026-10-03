@@ -33,6 +33,8 @@ import Ix.Commit
 import Ix.CondenseM
 import Ix.AuxGen.Nested
 import Ix.Compile.Canon
+import Ix.CanonM
+import Ix.Meta
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
 
@@ -225,6 +227,56 @@ def run (env : Lean.Environment) : IO UInt32 := do
           ({sigs.map (namePretty ·.head)}), numNested {v.numNested}, rec_N heads \
           {recs.map fun r => (r.map fun (h, _, _) => namePretty h)}"
   IO.println s!"[canon-pass1] {nBlocks} Lean blocks, {nDisc} nested blocks checked against rec_N"
+
+  -- 7. seed sweep on every fixture component (today with the port fixes, phaseA)
+  let mut nSwept := 0
+  for (_, members) in condensed.blocks do
+    let ms := members.toArray
+    if ms.size < 2 then continue
+    let cs := ms.toList.filterMap fun n => (mutConstOf cenvRef n).toOption
+    if cs.length != ms.size then continue
+    nSwept := nSwept + 1
+    for rules in [Rules.today, Rules.phaseA] do
+      match seedSweep rules addr? cs with
+      | .ok r => t := t.check r.isNone s!"seed sweep {rules.name}: {r}"
+      | .error e => t := t.check false s!"seed sweep {rules.name}: {e}"
+  IO.println s!"[canon-pass1] seed sweep on {nSwept} components"
+
+  -- 8. sibling occurrences of an external mutual group; isRec on a split block
+  try
+    let fe ← getFileEnvCore "Tests/Ix/Compile/Fixtures/CanonSiblingNest.lean"
+    let lenv := fe.env
+    let indLike := lenv.constants.toList.toArray.filter fun (_, c) =>
+      match c with
+      | .inductInfo _ | .ctorInfo _ | .recInfo _ => true
+      | _ => false
+    let consts := (Ix.CanonM.canonChunk indLike).foldl (init := ({} : Std.HashMap Ix.Name Ix.ConstantInfo))
+      fun m (n, c) => m.insert n c
+    let fenv : Env := { const? := consts.get?, addr? := fun _ => none }
+    for nm in [`CanonSiblingNest.T, `CanonSiblingNest.F, `CanonSiblingNest.B] do
+      let n := Ix.Name.fromLeanName nm
+      let some (.inductInfo v) := consts.get? n | t := t.check false s!"sibling {nm}: missing"; continue
+      let leanX := expand fenv.ind? .lean v.all
+      let compX := expand fenv.ind? .compiler v.all
+      match leanX, compX with
+      | .ok x, .ok y =>
+        let sigs := x.sigs
+        let recs := recMajorSignatures fenv.const? n v.numParams (max sigs.size v.numNested)
+        let ok := sigs.size == v.numNested && (sigs.zip recs).all fun (s, r) =>
+          match r with
+          | some (h, ls, ps) => s.head == h && s.levels == ls && s.specs.size == ps.size &&
+              (s.specs.zip ps).all fun (a, b) => auxSpecEq (fun _ => none) {} a b
+          | none => false
+        t := t.check ok s!"sibling {nm}: Lean dedup {sigs.map (namePretty ·.head)} vs rec_N"
+        let recHeads := recs.map fun r => (r.map fun (h, _, _) => namePretty h).getD "-"
+        IO.println s!"[canon-pass1] sibling {nm}: numNested {v.numNested}, rec_N heads {recHeads}; \
+          Lean-dedup expansion {sigs.map (namePretty ·.head)}; compiler-dedup expansion \
+          {y.sigs.map (namePretty ·.head)}"
+      | .error e, _ | _, .error e => t := t.check false s!"sibling {nm}: {e}"
+    for nm in [`CanonSiblingNest.NR, `CanonSiblingNest.R] do
+      if let some (.inductInfo v) := lenv.find? nm then
+        IO.println s!"[canon-pass1] isRec {nm} = {v.isRec} (all {v.all})"
+  catch e => t := t.check false s!"sibling fixture: {e}"
 
   IO.println s!"[canon-pass1] {t.checked} checks, {t.failures.size} failures"
   for f in t.failures.toList.take 50 do

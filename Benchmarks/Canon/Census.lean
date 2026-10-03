@@ -347,7 +347,38 @@ def main (args : List String) : IO UInt32 := do
   let mut discMismatch : Array String := #[]
   let mut dedupDiffers : Array String := #[]
   let mut tsvRows : Array String := #["block\tmembers\trules\tchanged\tops\tclasses\tperm"]
+  let mut movesK : Array String := #[]
+  let mut movesU : Array String := #[]
+  let mut movesA : Array String := #[]
+  let mut swept := 0
+  let mut sweepFail : Array String := #[]
   for all in blocks do
+    -- order moves against today (member classes as sets, in order)
+    let setsOf : Rules → Except String (Array (Array (Array Ix.Name))) := fun r => do
+      let comps ← blockComponents env all
+      comps.mapM fun (ms : Array Ix.Name) => do
+        let cs ← ms.toList.mapM (mutConstOf env)
+        let (cls, _) ← sortClasses r env.addr? cs
+        pure (classSets cls)
+    match setsOf Rules.today, setsOf Rules.todayK, setsOf Rules.todayU,
+        setsOf { Rules.phaseA with seed := .byNameHash } with
+    | .ok t, .ok k, .ok u, .ok a =>
+      if t.any (·.size > 1) then
+        if k != t then movesK := movesK.push s!"{namePretty all[0]!}: {k.map (·.map (·.map namePretty))} vs {t.map (·.map (·.map namePretty))}"
+        if u != t then movesU := movesU.push s!"{namePretty all[0]!}: {u.map (·.map (·.map namePretty))} vs {t.map (·.map (·.map namePretty))}"
+        if a != t then movesA := movesA.push s!"{namePretty all[0]!}"
+    | _, _, _, _ => pure ()
+    -- seed sweep
+    if let .ok comps := blockComponents env all then
+      for ms in comps do
+        if ms.size ≥ 2 then
+          if let .ok cs := ms.toList.mapM (mutConstOf env) then
+            swept := swept + 1
+            for r in [Rules.today, Rules.phaseA] do
+              match seedSweep r env.addr? cs with
+              | .ok none => pure ()
+              | .ok (some d) => sweepFail := sweepFail.push s!"{r.name} {namePretty all[0]!}: {d}"
+              | .error e => sweepFail := sweepFail.push s!"{r.name} {namePretty all[0]!}: error {e}"
     for rules in [Rules.today, Rules.phaseA] do
       match canonBlock rules env all with
       | .error e =>
@@ -400,7 +431,24 @@ def main (args : List String) : IO UInt32 := do
   let cliques : Array Clique := (rawCliques.mapM convertClique).run' {} |>.run
   let mut cliqueRows : Std.HashMap String (Nat × Nat × Nat × Nat × Nat) := {}
   let mut cliqueLines : Array String := #[]
+  let mut cliqueMovesK := 0
+  let mut cliqueMovesU := 0
+  let mut cliqueSweepFail : Array String := #[]
   for cl in cliques do
+    let cs := cl.members.toList.map (·.toMutConst)
+    let setsOf := fun (r : Rules) => match sortClasses r env.addr? cs with
+      | .ok (x, _) => Except.ok (classSets x)
+      | .error e => Except.error e
+    match setsOf Rules.today, setsOf Rules.todayK, setsOf Rules.todayU with
+    | .ok t, .ok k, .ok u =>
+      if k != t then cliqueMovesK := cliqueMovesK + 1
+      if u != t then cliqueMovesU := cliqueMovesU + 1
+    | _, _, _ => pure ()
+    for r in [Rules.today, Rules.phaseA] do
+      match seedSweep r env.addr? cs with
+      | .ok none => pure ()
+      | .ok (some d) => cliqueSweepFail := cliqueSweepFail.push s!"{r.name} {cl.names.map namePretty}: {d}"
+      | .error e => cliqueSweepFail := cliqueSweepFail.push s!"{r.name}: error {e}"
     let several := cl.kind == .structural && severalPerTypeFormer cl
     let mut chT := false
     let mut chA := false
@@ -445,6 +493,14 @@ def main (args : List String) : IO UInt32 := do
   p s!"| Comparator: components checked / with violations | {today.preorderBlocks} / {today.preorderViolations} | {phaseA.preorderBlocks} / {phaseA.preorderViolations} |"
   p s!"| Errors | {today.errors} | {phaseA.errors} |"
   p ""
+  p s!"Member order moves against today (blocks with several classes): under `(k₀, k₁)` alone {movesK.size}; \
+    under levels after `canonUniv` alone {movesU.size}; under both {movesA.size}."
+  for l in movesK do p s!"- (k0,k1) moves: {l}"
+  for l in movesU do p s!"- canonUniv moves: {l}"
+  p s!"Seed sweep (identity, reverse, name-hash, 10 random presentations; today's comparator with the port fixes, and phaseA): \
+    {swept} components, {sweepFail.size} differences."
+  for l in sweepFail.toList.take 30 do p s!"- seed sweep: {l}"
+  p ""
   p s!"Discovery order vs Lean's `rec_N`: {discChecked} nested blocks checked, {discMismatch.size} mismatches; \
     compiler deduplication gives a different auxiliary count on {dedupDiffers.size}."
   for l in discMismatch.toList.take 30 do p s!"- rec_N mismatch: {l}"
@@ -469,6 +525,10 @@ def main (args : List String) : IO UInt32 := do
     let (n, m) := cliqueCounts.getD k.name (0, 0)
     let (s, sev, ct, ca, _) := cliqueRows.getD k.name (0, 0, 0, 0, 0)
     p s!"| {k.name} | {n} | {m} | {s} | {if k == .structural then toString sev else "n/a"} | {ct} | {ca} |"
+  p ""
+  p s!"Clique order moves against today: `(k₀, k₁)` alone {cliqueMovesK}, `canonUniv` alone {cliqueMovesU}; \
+    seed sweep differences {cliqueSweepFail.size} (of {cliques.size} specified cliques)."
+  for l in cliqueSweepFail.toList.take 20 do p s!"- clique seed sweep: {l}"
   p ""
   for l in cliqueLines do p s!"- {l}"
   if let some path := tsv? then

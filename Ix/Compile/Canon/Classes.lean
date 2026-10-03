@@ -7,7 +7,7 @@
 
   1. start from one class holding every member, in the seed order
      (`Seed.byNameHash`: sorted by the blake3 hash of the name, the same
-     insertion sort as `sortMutConstMembersByName`; `Seed.structural`: the
+     insertion sort as `sortMutConstMembersByName`; `Seed.allOrder`: the
      caller's order, Lean's `all`);
   2. in each round, every class of two or more members is sorted with the
      comparator of `Order.lean` under the context that maps each member to
@@ -66,8 +66,13 @@ def refineClass (rules : Rules) (addr? : Name → Option Address) (ctx : MutCtx)
   | [x] => pure [[x]]
   | xs => do
     let sorted ← xs.sortByM (compareConst rules addr? ctx)
+    -- `groupByM` compares each element with the previous group's head, the
+    -- reverse of the sort's orientation; only equality is read, so a reversed
+    -- cache hit there is harmless and is not counted as a hazard.
+    let h0 := (← get).hazards
     let groups ← List.groupByM
       (fun a b => do return (← compareConst rules addr? ctx a b) == .eq) sorted
+    modify fun st => { st with hazards := h0 }
     pure <| match rules.representative with
       | .leastNameHash => groups.map sortByName
       | .firstInCanonicalOrder => groups
@@ -96,7 +101,7 @@ def sortClasses (rules : Rules) (addr? : Name → Option Address)
   if sources.isEmpty then return ([], {})
   let seed := match rules.seed with
     | .byNameHash => sortByName sources
-    | .structural => sources
+    | .allOrder => sources
   let ((classes, rounds), st) ←
     (sortLoop rules addr? (sources.length + 1) 0 [seed]).run {}
   if classes.any (·.isEmpty) then .error "empty class after sortConsts"
@@ -146,6 +151,46 @@ def preorderViolations (rules : Rules) (addr? : Name → Option Address)
         if le i j && le j k && !le i k then
           out := out.push s!"not transitive: {nm i} ≤ {nm j} ≤ {nm k}"
   return out
+
+/-! ## Seed sweep (design document §3.6, leg 3) -/
+
+/-- A deterministic pseudo-random permutation (linear congruential draws,
+Fisher-Yates). -/
+def shuffle (seed : Nat) (xs : Array α) : Array α := Id.run do
+  let mut a := xs
+  let mut s := seed * 2654435761 + 12345
+  for i' in [0:a.size] do
+    let i := a.size - 1 - i'
+    s := (s * 6364136223846793005 + 1442695040888963407) % 18446744073709551616
+    let j := (s / 65536) % (i + 1)
+    a := a.swapIfInBounds i j
+  return a
+
+/-- Classes as sets (names sorted by hash), in class order. -/
+def classSets (classes : List (List MutConst)) : Array (Array Name) :=
+  (classNames classes).map (·.qsort fun a b => compare a b == .lt)
+
+/-- Run the refinement from the identity, reverse, name-hash and `random`
+pseudo-random presentations of `sources` (seed `allOrder`, so the
+presentation is the seed) and report the first presentation whose class
+list differs, as sets in order, from the identity's. -/
+def seedSweep (rules : Rules) (addr? : Name → Option Address) (sources : List MutConst)
+    (random : Nat := 10) : Except String (Option String) := do
+  let r := { rules with seed := .allOrder, portFixes := true }
+  let run := fun (xs : List MutConst) => do
+    let (cls, _) ← sortClasses r addr? xs
+    pure (classSets cls)
+  let base ← run sources
+  let arr := sources.toArray
+  let mut presentations : List (String × List MutConst) :=
+    [("reverse", sources.reverse), ("name-hash", sortByName sources)]
+  for k in [0:random] do
+    presentations := presentations ++ [(s!"random {k}", (shuffle k arr).toList)]
+  for (label, xs) in presentations do
+    let got ← run xs
+    if got != base then
+      return some s!"{label}: {got.map (·.map namePretty)} vs identity {base.map (·.map namePretty)}"
+  return none
 
 end Ix.Compile.Canon
 
