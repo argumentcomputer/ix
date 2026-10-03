@@ -1,3 +1,4 @@
+import Compilatrix.Ixon.Kinds
 import Compilatrix.Ixon.V3.Tc.Expr
 
 /-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Const.lean`.

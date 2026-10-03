@@ -1,3 +1,4 @@
+import Compilatrix.Ixon.Laws
 import Compilatrix.IxIR.Encoding
 
 /-!

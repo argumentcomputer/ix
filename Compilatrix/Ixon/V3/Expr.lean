@@ -1,4 +1,4 @@
-import Compilatrix.Ixon.Expr
+import Compilatrix.Ixon.Univ
 import Compilatrix.Ixon.V3.Contracts
 
 /-! Ixon expressions with all committed source contracts (the data model

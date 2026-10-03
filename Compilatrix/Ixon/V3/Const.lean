@@ -1,4 +1,6 @@
-import Compilatrix.Ixon.Const
+import Compilatrix.Ixon.Kinds
+import Compilatrix.Ixon.Address
+import Compilatrix.Ixon.Univ
 import Compilatrix.Ixon.V3.Expr
 
 /-! Ixon declarations with contract-carrying expression fields (the data model

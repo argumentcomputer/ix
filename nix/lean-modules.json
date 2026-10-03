@@ -511,8 +511,7 @@
     "Compilatrix.Ixon.Uses",
     "Compilatrix.Ixon.Address",
     "Compilatrix.Ixon.Univ",
-    "Compilatrix.Ixon.Expr",
-    "Compilatrix.Ixon.Const",
+    "Compilatrix.Ixon.Kinds",
     "Compilatrix.Ixon.Hash",
     "Compilatrix.Ixon.Merkle",
     "Compilatrix.IxIR.Encoding",
@@ -3016,7 +3015,8 @@
   "Compilatrix.Ixon.V3.Tc.Expr":
   {"path": "Compilatrix/Ixon/V3/Tc/Expr.lean",
    "imports":
-   ["Compilatrix.Ixon.V3.Tc.Mode",
+   ["Compilatrix.Ixon.Univ",
+    "Compilatrix.Ixon.V3.Tc.Mode",
     "Compilatrix.Ixon.V3.Tc.Id",
     "Compilatrix.Ixon.V3.Tc.Level"]},
   "Compilatrix.Ixon.V3.Tc.Error":
@@ -3037,7 +3037,7 @@
    "imports": ["Compilatrix.Ixon.V3.Tc.Infer"]},
   "Compilatrix.Ixon.V3.Tc.Const":
   {"path": "Compilatrix/Ixon/V3/Tc/Const.lean",
-   "imports": ["Compilatrix.Ixon.V3.Tc.Expr"]},
+   "imports": ["Compilatrix.Ixon.Kinds", "Compilatrix.Ixon.V3.Tc.Expr"]},
   "Compilatrix.Ixon.V3.Tc.Check":
   {"path": "Compilatrix/Ixon/V3/Tc/Check.lean",
    "imports": ["Compilatrix.Ixon.V3.Tc.Inductive"]},
@@ -3068,7 +3068,7 @@
    ["Compilatrix.Ixon.V3.Resource.Admit", "Compilatrix.Ixon.V3.Env"]},
   "Compilatrix.Ixon.V3.Expr":
   {"path": "Compilatrix/Ixon/V3/Expr.lean",
-   "imports": ["Compilatrix.Ixon.Expr", "Compilatrix.Ixon.V3.Contracts"]},
+   "imports": ["Compilatrix.Ixon.Univ", "Compilatrix.Ixon.V3.Contracts"]},
   "Compilatrix.Ixon.V3.Env":
   {"path": "Compilatrix/Ixon/V3/Env.lean",
    "imports":
@@ -3080,7 +3080,11 @@
    "imports": ["Compilatrix.Ixon.Uses"]},
   "Compilatrix.Ixon.V3.Const":
   {"path": "Compilatrix/Ixon/V3/Const.lean",
-   "imports": ["Compilatrix.Ixon.Const", "Compilatrix.Ixon.V3.Expr"]},
+   "imports":
+   ["Compilatrix.Ixon.Kinds",
+    "Compilatrix.Ixon.Address",
+    "Compilatrix.Ixon.Univ",
+    "Compilatrix.Ixon.V3.Expr"]},
   "Compilatrix.Ixon.V3.Catalog.Manifest":
   {"path": "Compilatrix/Ixon/V3/Catalog/Manifest.lean",
    "imports": ["Compilatrix.Ixon.V3.Catalog.Basic"]},
@@ -3110,9 +3114,6 @@
   "Compilatrix.Ixon.Univ":
   {"path": "Compilatrix/Ixon/Univ.lean",
    "imports": ["Compilatrix.Ixon.Serialize"]},
-  "Compilatrix.Ixon.Sharing.Basic":
-  {"path": "Compilatrix/Ixon/Sharing/Basic.lean",
-   "imports": ["Compilatrix.Ixon.Expr"]},
   "Compilatrix.Ixon.Serialize":
   {"path": "Compilatrix/Ixon/Serialize.lean", "imports": ["Std"]},
   "Compilatrix.Ixon.PureHash":
@@ -3121,21 +3122,14 @@
   "Compilatrix.Ixon.Merkle":
   {"path": "Compilatrix/Ixon/Merkle.lean",
    "imports": ["Compilatrix.Ixon.Hash"]},
+  "Compilatrix.Ixon.Laws":
+  {"path": "Compilatrix/Ixon/Laws.lean",
+   "imports": ["Compilatrix.Ixon.Serialize"]},
+  "Compilatrix.Ixon.Kinds":
+  {"path": "Compilatrix/Ixon/Kinds.lean", "imports": []},
   "Compilatrix.Ixon.Hash":
   {"path": "Compilatrix/Ixon/Hash.lean",
-   "imports":
-   ["Blake3.Rust", "Compilatrix.Ixon.Address", "Compilatrix.Ixon.Const"]},
-  "Compilatrix.Ixon.Expr":
-  {"path": "Compilatrix/Ixon/Expr.lean",
-   "imports": ["Compilatrix.Ixon.Serialize", "Compilatrix.Ixon.Uses"]},
-  "Compilatrix.Ixon.Const":
-  {"path": "Compilatrix/Ixon/Const.lean",
-   "imports":
-   ["Compilatrix.Ixon.Serialize",
-    "Compilatrix.Ixon.Address",
-    "Compilatrix.Ixon.Univ",
-    "Compilatrix.Ixon.Expr",
-    "Compilatrix.Ixon.Sharing.Basic"]},
+   "imports": ["Blake3.Rust", "Compilatrix.Ixon.Address"]},
   "Compilatrix.Ixon.Address":
   {"path": "Compilatrix/Ixon/Address.lean",
    "imports": ["Compilatrix.Ixon.Serialize"]},
@@ -3144,7 +3138,7 @@
    "imports": ["Compilatrix.Ixon.Hash"]},
   "Compilatrix.IxIR.Decode":
   {"path": "Compilatrix/IxIR/Decode.lean",
-   "imports": ["Compilatrix.IxIR.Encoding"]},
+   "imports": ["Compilatrix.Ixon.Laws", "Compilatrix.IxIR.Encoding"]},
   "Compilatrix.IxIR.Bounded":
   {"path": "Compilatrix/IxIR/Bounded.lean",
    "imports": ["Compilatrix.IxIR.Decode"]},

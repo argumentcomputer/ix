@@ -1,6 +1,5 @@
 import Blake3.Rust
 import Compilatrix.Ixon.Address
-import Compilatrix.Ixon.Const
 
 /-!
 # Content hashing
@@ -39,11 +38,5 @@ def Blake3NoCollision (left right : ByteArray) : Prop :=
   Address.blake3 left = Address.blake3 right → left = right
 
 end Address
-
-/-- Hash of a bare serialized expression. This is only a local cache key:
-table indices have meaning inside a `Constant.Frame`, so this is deliberately
-not named `address` and must not be used as a semantic object identity. -/
-def Expr.serializedHash (e : Expr) : Address :=
-  .blake3 (runPut (putExpr e))
 
 end Compilatrix.Ixon

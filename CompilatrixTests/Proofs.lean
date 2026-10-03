@@ -2,8 +2,7 @@ import Compilatrix.Ixon.Serialize
 import Compilatrix.Ixon.Uses
 import Compilatrix.Ixon.Address
 import Compilatrix.Ixon.Univ
-import Compilatrix.Ixon.Expr
-import Compilatrix.Ixon.Const
+import Compilatrix.Ixon.Kinds
 import Compilatrix.Ixon.Hash
 import Compilatrix.Ixon.Merkle
 import Compilatrix.IxIR.Encoding
