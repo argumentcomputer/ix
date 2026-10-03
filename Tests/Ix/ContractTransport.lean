@@ -15,7 +15,8 @@ def source : Lean.ConstantInfo := .defnInfo {
   value := .lam `x (.sort .zero) (.bvar 0) .default
   hints := .abbrev, safety := .safe, all := [`contractIdentity] }
 
-def block : Ix.CompileM.BlockEnv := ⟨{}, .mkAnon, {}, []⟩
+def block : Ix.CompileM.BlockEnv :=
+  { all := {}, current := .mkAnon, mutCtx := {}, univCtx := [] }
 
 def get (label : String) (result : Except α β) [ToString α] : IO β :=
   match result with
