@@ -60,6 +60,11 @@ jobs:
       - name: Check codegen'd IxVM kernel is up to date
         if: github.event_name != 'push'
         run: lake exe ix codegen --check
+      # A stale generated trace module is otherwise caught only when the
+      # generated GPU provider registers at proving time.
+      - name: Check generated trace writers, CUDA units and manifest are up to date
+        if: github.event_name != 'push'
+        run: lake exe ix codegen --trace-bundle --check
       - name: Check Lean versions match for Ix and compiler bench
         if: github.event_name != 'push'
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain

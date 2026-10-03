@@ -13,6 +13,7 @@ mod row_counts;
 pub mod shard;
 pub mod synthesis;
 pub mod trace;
+pub mod trace_codegen;
 mod trace_heights;
 pub mod vk_codec;
 
@@ -116,3 +117,6 @@ pub fn u16_range_check_channel() -> G {
 pub fn memseg_channel() -> G {
   G::from_u8(16)
 }
+
+#[cfg(feature = "cuda")]
+pub mod gpu_trace;

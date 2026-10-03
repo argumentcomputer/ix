@@ -99,11 +99,15 @@
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-          # Rust tests embed the shared golden and binary handoff fixtures.
+          # The Cargo files the workspace builds from.
+          cargoSource = pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.);
+          # The Rust tests `include_bytes!` the `.ixe` files under
+          # `Tests/Fixtures`: environments serialized by Lean, read back to check
+          # both sides agree on the format.
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
-              (pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.))
+              cargoSource
               ./Tests/Fixtures/ixon-v4
             ];
           };
@@ -210,13 +214,10 @@
           leanSrc = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
-              ./lakefile.lean
-              ./lake-manifest.json
-              ./lean-toolchain
-              ./Cargo.toml
-              ./Cargo.lock
-              (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./crates)
-              (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
+              # What `lake build` reads: Lean sources, manifests, FFI shims.
+              (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
+              # What its Rust archive target traces, as Crane sees it.
+              cargoSource
             ];
           };
           lakeDeps = lake2nix.buildDeps {

@@ -260,3 +260,81 @@ pub(super) fn plan_replay(
     || children.iter().any(|index| specs[*index].kind == ChildKind::Ixvm);
   Ok(ReplayPlan { children, needs_input_proofs })
 }
+
+/// Leaves under every slot of a post-order plan.
+pub(super) fn leaves_under(ops: &[PlanOp]) -> Vec<usize> {
+  let mut leaves = vec![0usize; ops.len()];
+  for (index, op) in ops.iter().enumerate() {
+    leaves[index] = match *op {
+      PlanOp::Leaf(_) => 1,
+      PlanOp::Join(left, right) => leaves[left] + leaves[right],
+    };
+  }
+  leaves
+}
+
+/// Splits frontier node `at` into its children when it is a join. A child
+/// that is a raw leaf becomes a one-leaf subtree: its claim proof is its
+/// published proof, and the join above it verifies that raw leaf beside
+/// its cached sibling. Returns whether it split.
+fn split_frontier(
+  ops: &[PlanOp],
+  frontier: &mut Vec<usize>,
+  at: usize,
+) -> bool {
+  let PlanOp::Join(left, right) = ops[frontier[at]] else {
+    return false;
+  };
+  frontier.swap_remove(at);
+  frontier.push(left);
+  frontier.push(right);
+  true
+}
+
+/// The plan cut into subtrees for dynamic scheduling: the tree is split from
+/// the root while any frontier node holds more leaves than
+/// `ceil(leaves / subtrees)`. Returns the frontier (the subtrees, post-order;
+/// a subtree may be a single raw leaf) and every join above it (post-order,
+/// so each appears after its children). A subtree of several leaves is
+/// proven as one `--subtree` task once its leaves' claims exist; a
+/// one-leaf subtree is published by its claim proof alone; an upper join
+/// once both children are published; whichever device is free takes the
+/// next ready task, so no packing is decided ahead of time.
+pub(super) fn subtree_plan(
+  ops: &[PlanOp],
+  max_leaves: usize,
+) -> (Vec<usize>, Vec<usize>) {
+  let Some(root) = ops.len().checked_sub(1) else {
+    return (Vec::new(), Vec::new());
+  };
+  let leaves = leaves_under(ops);
+  let target = max_leaves.max(1);
+  let mut frontier = vec![root];
+  while let Some(at) = (0..frontier.len())
+    .filter(|&at| leaves[frontier[at]] > target)
+    .max_by_key(|&at| leaves[frontier[at]])
+  {
+    if !split_frontier(ops, &mut frontier, at) {
+      break;
+    }
+  }
+  frontier.sort_unstable();
+  // Everything above the frontier: the ancestors of frontier nodes.
+  let mut above = vec![false; ops.len()];
+  let mut in_frontier = vec![false; ops.len()];
+  for &slot in &frontier {
+    in_frontier[slot] = true;
+  }
+  for index in 0..ops.len() {
+    if let PlanOp::Join(left, right) = ops[index]
+      && (in_frontier[left]
+        || in_frontier[right]
+        || above[left]
+        || above[right])
+    {
+      above[index] = true;
+    }
+  }
+  let upper: Vec<usize> = (0..ops.len()).filter(|&i| above[i]).collect();
+  (frontier, upper)
+}
