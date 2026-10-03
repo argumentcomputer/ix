@@ -125,9 +125,64 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
       (s!"{fx.stem}.equations.json", toJson (← sha256 sidecar))])]).pretty ++ "\n")
   IO.println s!"wrote {closure} with {fx.roots.length} roots"
 
+
+/-! ## Repinning `Compilatrix.Src.Pinned`
+
+After a refreeze, `--repin FILE --old-primitives OLD --old-tables OLD` rewrites
+every pinned address in FILE (as a hex string or a `0x` numeral) from the old
+`primitives.tsv`/`src-tables.tsv` rows to the current ones, matched by name.
+An old address that two rows map to different new addresses, or a pinned
+address no old row names, is an error; `tests-src` then compares the tables
+with the TSVs. -/
+
+/-- `name ↦ address` rows of a `primitives.tsv` (name, address) or
+`src-tables.tsv` (kind, name, address, arity) file. -/
+def tsvAddresses (path : System.FilePath) : IO (List (String × String)) := do
+  let text ← IO.FS.readFile path
+  return (text.splitOn "\n").filterMap fun line =>
+    if line.isEmpty || line.startsWith "#" then none
+    else match line.splitOn "\t" with
+      | [name, address] => some (name, address)
+      | [_, name, address, _] => some (name, address)
+      | _ => none
+
+def repin (file oldPrims oldTables : System.FilePath) (newPrims newTables : System.FilePath) :
+    IO Unit := do
+  let old := (← tsvAddresses oldPrims) ++ (← tsvAddresses oldTables)
+  let new := (← tsvAddresses newPrims) ++ (← tsvAddresses newTables)
+  let mut map : List (String × String) := []
+  for (name, before) in old do
+    let some after := (new.find? (·.1 == name)).map (·.2)
+      | throw (IO.userError s!"{name}: in the old tables, not in the new ones")
+    match map.find? (·.1 == before) with
+    | some (_, other) => need (other == after) s!"{before}: maps to {other} and {after}"
+    | none => map := (before, after) :: map
+  let mut text ← IO.FS.readFile file
+  let mut replaced := 0
+  -- two passes through placeholders, so a new address that equals another
+  -- row's old address is never rewritten twice
+  for h : i in [:map.length] do
+    let before := map[i].1
+    replaced := replaced + ((text.splitOn before).length - 1)
+    text := text.replace before s!"@@pin{i}@@"
+  for h : i in [:map.length] do
+    text := text.replace s!"@@pin{i}@@" map[i].2
+  -- no old address that is not also a current one is left
+  let current := new.map (·.2)
+  for (before, _) in map do
+    need (current.contains before || (text.splitOn before).length == 1)
+      s!"{before}: an old address is still pinned"
+  IO.FS.writeFile file text
+  IO.println s!"repinned {replaced} occurrences of {map.length} addresses in {file}"
+
 def main (args : List String) : IO Unit := do
   let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names", "--revision",
-    "--diagnostics", "--sortpoly"] args)
+    "--diagnostics", "--sortpoly", "--repin", "--old-primitives", "--old-tables"] args)
+  if let some file := optional options "--repin" then
+    let some oldPrims := optional options "--old-primitives" | throw (IO.userError "missing --old-primitives")
+    let some oldTables := optional options "--old-tables" | throw (IO.userError "missing --old-tables")
+    repin file oldPrims oldTables "fixtures/ixon-v4/primitives.tsv" "fixtures/ixon-v4/src-tables.tsv"
+    return
   for (flag, fx) in [("--diagnostics", diagFixture), ("--sortpoly", sortPolyFixture)] do
     if let some dir := optional options flag then
       let some ix := optional options "--ix" | throw (IO.userError "missing --ix")

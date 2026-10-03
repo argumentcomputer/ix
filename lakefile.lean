@@ -245,7 +245,7 @@ lean_exe «check-build-graph» where
   srcDir := "scripts"
   root := `CheckBuildGraph
 
-/- Admission census over an Ixon v3 closure: first rejecting stage per constant. -/
+/- Admission census over an Ixon v4 closure: first rejecting stage per constant. -/
 lean_exe census where
   srcDir := "scripts"
   root := `Census
@@ -260,3 +260,10 @@ lean_exe «pin-src-tables» where
   srcDir := "scripts"
   root := `PinSrcTables
   supportInterpreter := true
+
+/- Manual refreeze steps beside `corpus rebuild` and `pin-src-tables`: the
+producer pins, ix's fixture package, the erased checker's primitive table,
+the typing bundles and the catalogs (runs ix; `docs/corpus.md`). -/
+lean_exe «refreeze-ixon» where
+  srcDir := "scripts"
+  root := `RefreezeIxon

@@ -1,3 +1,4 @@
+import Lean.Data.Json
 import CompilatrixTests.IxonV3.TypingFixtures
 import Compilatrix.Ixon.V3.Catalog
 
@@ -97,6 +98,42 @@ def chunked (members : Array Member) (pieces : Array (ByteArray × Nat)) : Excep
     membersRoot := membersRootOf members
     contentRoot := Merkle.rootCanonical (envs.flatMap constantAddresses)
     members, storage := .chunked rows }
+
+/-- The chunked reference catalog (`fixtures/ixon-v4/catalog/chunked.ixc`): the
+first-owner partition of a fat catalog's pieces. Chunk `i` is member `i`'s
+original environment with the constants an earlier member owns removed and
+listed as assumptions; it keeps the original blobs and presentation bytes,
+and only the hints and `main` of the constants it keeps. The members are the
+fat manifest's, and `members.json` lists every member's complete original
+address set (the witness chunked admission requires). No constant or blob
+bytes are regenerated. -/
+def writeChunked (fat out : System.FilePath) : IO Unit := do
+  let raw ← IO.FS.readBinFile (fat / "manifest")
+  let m ← IO.ofExcept ((decodeManifest raw).mapError reprStr)
+  let envs ← (pieceSpecs m).mapM fun spec => do
+    IO.ofExcept (decodeAnonymousEnv (← IO.FS.readBinFile (fat / spec.filename)))
+  let mut owned : Std.HashSet Compilatrix.Ixon.Address := {}
+  let mut pieces : Array (ByteArray × Nat) := #[]
+  for h : i in [:envs.size] do
+    let env := envs[i]
+    let all := constantAddresses env
+    let omitted := all.filter owned.contains
+    let kept := env.consts.filter fun address _ => !owned.contains address
+    let chunk : Env := { env with
+      consts := kept
+      assumptions := Merkle.dedupSorted (Merkle.sortAddresses (env.assumptions ++ omitted))
+      hints := env.hints.filter fun (address, _) => kept.contains address
+      main := env.main.filter kept.contains }
+    for address in all do owned := owned.insert address
+    pieces := pieces.push (envBytes chunk, i)
+  let manifest ← IO.ofExcept (chunked m.members pieces)
+  IO.FS.createDirAll out
+  IO.FS.writeBinFile (out / "manifest") (manifestBytes manifest)
+  for (spec, (bytes, _)) in (pieceSpecs manifest).zip pieces do
+    IO.FS.writeBinFile (out / spec.filename) bytes
+  let witness := Lean.Json.arr (envs.map fun env =>
+    Lean.Json.arr ((constantAddresses env).map fun address => Lean.Json.str address.toHex))
+  IO.FS.writeFile (out / "members.json") (witness.pretty ++ "\n")
 
 def membersChanged (m : Manifest) (members : Array Member) : Manifest :=
   { m with members, membersRoot := membersRootOf members }

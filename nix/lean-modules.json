@@ -21,6 +21,7 @@
   {"roots": ["CompilatrixTests.Corpus.Main"], "kind": "lean_exe"},
   "tests-anf": {"roots": ["CompilatrixTests.Anf.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
+  "refreeze-ixon": {"roots": ["RefreezeIxon"], "kind": "lean_exe"},
   "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
   "gen-src-artifacts":
   {"roots": ["CompilatrixTests.Src.ArtifactMain"], "kind": "lean_exe"},
@@ -66,6 +67,10 @@
    "imports": ["Compilatrix.X86.ELFValidate", "Compilatrix.X86.EvalExamples"]},
   "SortPoly":
   {"path": "fixtures/ixon-v4/src-sortpoly/SortPoly.lean", "imports": []},
+  "RefreezeIxon":
+  {"path": "scripts/RefreezeIxon.lean",
+   "imports":
+   ["Compilatrix.Tools.Check", "CompilatrixTests.IxonV3.Catalog.Fixtures"]},
   "PinSrcTables":
   {"path": "scripts/PinSrcTables.lean",
    "imports": ["Lean", "Compilatrix.Tools.Check"]},
@@ -757,7 +762,9 @@
   "CompilatrixTests.IxonV3.Catalog.Fixtures":
   {"path": "CompilatrixTests/IxonV3/Catalog/Fixtures.lean",
    "imports":
-   ["CompilatrixTests.IxonV3.TypingFixtures", "Compilatrix.Ixon.V3.Catalog"]},
+   ["Lean.Data.Json",
+    "CompilatrixTests.IxonV3.TypingFixtures",
+    "Compilatrix.Ixon.V3.Catalog"]},
   "CompilatrixTests.IxonV3.Catalog.Files":
   {"path": "CompilatrixTests/IxonV3/Catalog/Files.lean",
    "imports":

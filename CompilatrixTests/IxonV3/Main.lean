@@ -1,4 +1,14 @@
 import CompilatrixTests.IxonV3.Run
 
-def main : IO UInt32 := do
-  return if ← CompilatrixTests.IxonV3.run then 0 else 1
+/-- `tests-ixon-v3` runs the suite. `tests-ixon-v3 write-chunked-catalog FAT OUT`
+writes the chunked reference catalog from the fat one (a refreeze step,
+`docs/corpus.md`). -/
+def main (args : List String) : IO UInt32 := do
+  match args with
+  | [] => return if ← CompilatrixTests.IxonV3.run then 0 else 1
+  | ["write-chunked-catalog", fat, out] =>
+    CompilatrixTests.IxonV3.CatalogFixtures.writeChunked fat out
+    return 0
+  | _ =>
+    IO.eprintln "usage: tests-ixon-v3 [write-chunked-catalog FAT.ixc OUT.ixc]"
+    return 2
