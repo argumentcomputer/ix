@@ -13,10 +13,10 @@
      comparator of `Order.lean` under the context that maps each member to
      its current class index (`Ix.MutConst.ctx`), and adjacent equal members
      are grouped (`List.sortByM`, a stable natural merge sort, and
-     `List.groupByM`, both total, from `Ix.Common`);
+     `groupAdjacent`, both total);
   3. today every group is then re-sorted by name hash
-     (`Representative.leastNameHash`); Phase A keeps the stable order
-     (`firstInCanonicalOrder`);
+     (`Representative.leastNameHash`, today and Phase A); the measurement
+     switch `firstInCanonicalOrder` keeps the stable order;
   4. stop when a round leaves the number of classes unchanged (refinement
      only splits, so this is the fixed point; Rust's stopping rule, an
      unchanged class list, agrees). The fuel is the member count plus one;
@@ -60,17 +60,34 @@ structure SortStats where
   hazards : Nat := 0
   deriving Repr, Inhabited
 
+/-- Group adjacent equal members, each group in input order. Each element is
+compared with its predecessor, `eq later earlier`, the calls
+`List.groupByM` makes; unlike it (whose last group comes out reversed), every
+group keeps the order of the input, so a class lists its members in the
+order the sort left them. -/
+def groupAdjacent (eq : MutConst → MutConst → CmpM Bool) :
+    List MutConst → CmpM (List (List MutConst))
+  | [] => pure []
+  | x :: xs => go x [x] [] xs
+where
+  go (prev : MutConst) (cur : List MutConst) (acc : List (List MutConst)) :
+      List MutConst → CmpM (List (List MutConst))
+    | [] => pure (cur.reverse :: acc).reverse
+    | a :: as => do
+      if ← eq a prev then go a (a :: cur) acc as
+      else go a [a] (cur.reverse :: acc) as
+
 def refineClass (rules : Rules) (addr? : Name → Option Address) (ctx : MutCtx) :
     List MutConst → CmpM (List (List MutConst))
   | [] => liftE (.error "empty class in sortConsts")
   | [x] => pure [[x]]
   | xs => do
     let sorted ← xs.sortByM (compareConst rules addr? ctx)
-    -- `groupByM` compares each element with the previous group's head, the
+    -- `groupAdjacent` compares each element with its predecessor, the
     -- reverse of the sort's orientation; only equality is read, so a reversed
     -- cache hit there is harmless and is not counted as a hazard.
     let h0 := (← get).hazards
-    let groups ← List.groupByM
+    let groups ← groupAdjacent
       (fun a b => do return (← compareConst rules addr? ctx a b) == .eq) sorted
     modify fun st => { st with hazards := h0 }
     pure <| match rules.representative with

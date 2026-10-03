@@ -41,6 +41,12 @@
      what each fix does (a definition against an inductive: `lt` both ways
      today, by kind tag fixed; a cached strong `lt` read back for the
      swapped pair: unflipped today, flipped fixed).
+  10. **representatives**: under `Rules.today` and `Rules.phaseA` every class
+     of every component lists its members in name-hash order, so the
+     representative is the least-name-hash member; on a synthetic three-way
+     collapse from four presentations likewise, and with the measurement
+     switches `allOrder`/`firstInCanonicalOrder` the class keeps the
+     presentation's order.
 
   Invoked as `lake test -- --ignored canon-pass1`.
 -/
@@ -127,8 +133,44 @@ def portFixUnitChecks (t : Tally) : Tally :=
   | .ok (.lt, .lt), .ok (.lt, .gt), .ok .gt => t.check true ""
   | a, b, c => t.check false s!"C2: today {showE a}, fixed {showE b}, uncached {showE c}"
 
+/-- Every class lists its members in name-hash order, so its first member
+(the representative) has the least name hash. -/
+def nameSorted (classes : Array (Array Ix.Name)) : Bool :=
+  classes.all fun cls =>
+    (List.range (cls.size - 1)).all fun k => compare cls[k]! cls[k + 1]! == .lt
+
+/-- Representatives on a synthetic collapse: three alpha-equal definitions
+form one class, listed in name-hash order (the representative is the
+least-name-hash member) under `Rules.today` and `Rules.phaseA` from every
+presentation; and with the measurement switches `allOrder` and
+`firstInCanonicalOrder` the class keeps the presentation's order (the last
+group of a refinement round used to come out reversed). -/
+def representativeUnitChecks (t : Tally) : Tally :=
+  let s0 := Ix.Expr.mkSort Ix.Level.mkZero
+  let mk := fun (s : String) =>
+    Ix.MutConst.defn ⟨Ix.Name.mkStr Ix.Name.mkAnon s, #[], s0, .defn, s0, .opaque, .safe, #[]⟩
+  let ms := [mk "canonRepA", mk "canonRepB", mk "canonRepC"]
+  let presentations := [ms, ms.reverse, [ms[1]!, ms[0]!, ms[2]!], [ms[2]!, ms[0]!, ms[1]!]]
+  let none? : Ix.Name → Option Address := fun _ => none
+  let stable : Rules :=
+    { Rules.today with seed := .allOrder, representative := .firstInCanonicalOrder }
+  presentations.foldl (init := t) fun t p =>
+    let t := [Rules.today, Rules.phaseA].foldl (init := t) fun t r =>
+      match sortClasses r none? p with
+      | .ok (cls, _) =>
+        let names := classNames cls
+        t.check (names.size == 1 && names[0]!.size == 3 && nameSorted names)
+          s!"representative {r.name}: {pretty names}"
+      | .error e => t.check false s!"representative {r.name}: {e}"
+    match sortClasses stable none? p with
+    | .ok (cls, _) =>
+      let names := classNames cls
+      t.check (names == #[(p.map (·.name)).toArray])
+        s!"stable class order: {pretty names} from {p.map (namePretty ·.name)}"
+    | .error e => t.check false s!"stable class order: {e}"
+
 def run (env : Lean.Environment) : IO UInt32 := do
-  let mut t : Tally := portFixUnitChecks (tarjanChecks {})
+  let mut t : Tally := representativeUnitChecks (portFixUnitChecks (tarjanChecks {}))
   let filtered := validateAuxClosure env
   IO.println s!"[canon-pass1] {filtered.length} constants"
   let raw ← Ix.CompileM.rsCompilePhasesFFI filtered
@@ -255,8 +297,14 @@ def run (env : Lean.Environment) : IO UInt32 := do
         nClasses := nClasses + 1
         if classes.any (·.size > 1) then nCollapsed := nCollapsed + 1
         if classes.size > 1 then nMulti := nMulti + 1
-        if let .ok (a, _) := sortClasses Rules.phaseA addr? cs.toList then
+        match sortClasses Rules.phaseA addr? cs.toList with
+        | .ok (a, _) =>
           if classNames a != classes then nPhaseADiffers := nPhaseADiffers + 1
+          t := t.check (nameSorted (classNames a))
+            s!"representative phaseA {namePretty lo}: {pretty (classNames a)}"
+        | .error e => t := t.check false s!"sortClasses phaseA {namePretty lo}: {e}"
+        t := t.check (nameSorted (classNames mine))
+          s!"representative today {namePretty lo}: {pretty (classNames mine)}"
         t := t.check (classNames mine == classes)
           s!"classes {namePretty lo}: {pretty (classNames mine)} vs {pretty classes}"
         if let some (nCanon, perm) := nestedOut then
