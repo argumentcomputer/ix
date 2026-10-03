@@ -981,26 +981,26 @@ def nonCanonical : List NonCanonicalEntry := [
     "-"
     "203831d813d2dd11fdb6657a41dbb43dc270341bb11c039dae14f3c436c1dd12"
     "" "ONLY-B; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.eq "block auxiliary" .pendingSplitAux
+  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.eq "block auxiliary" .pendingCollapse
     "-"
     "f9f356444c9e8ea3741bc7ffa246785a017f778edf0f8436c9c69e7de8a55ec8"
-    "" "ONLY-B; §4.7 (b): nested auxiliary of the Lean block that evaporates in the split" (kernelsB := (true, true, false)),
-  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2 "block auxiliary" .pendingSplitAux
+    "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2 "block auxiliary" .pendingCollapse
     "-"
     "b477fc4695d6a2d6e91e08c6939fabe67e1e948f3e10fadeb5e8510537750659"
-    "" "ONLY-B; §4.7 (b): nested auxiliary of the Lean block that evaporates in the split" (kernelsB := (true, true, false)),
+    "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A._sizeOf_3 "sizeOf family" .o11aPending
     "-"
     "c0d565ce645018032c7aae2532bd445df402682958293efbd1c1d5ed84832a01"
     "" "ONLY-B; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.below_2 "block auxiliary" .pendingSplitAux
+  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.below_2 "block auxiliary" .pendingCollapse
     "-"
     "694093dbce13e3f60731f046c62ef385f2e4e1c27b330e0f3a392ff9ce973fc3"
-    "" "ONLY-B; §4.7 (b): nested auxiliary of the Lean block that evaporates in the split" (kernelsB := (true, true, false)),
-  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.go "block auxiliary" .pendingSplitAux
+    "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.go "block auxiliary" .pendingCollapse
     "-"
     "df56c854d9a96c311facb49986499e1a1c270ba4be3f052fc9c46d6cc0ff99de"
-    "" "ONLY-B; §4.7 (b): nested auxiliary of the Lean block that evaporates in the split" (kernelsB := (true, true, false)),
+    "" "ONLY-B; nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)" (kernelsB := (true, true, false)),
   -- Repro.PropCollapse twin orig
   e `Tests.Ix.Compile.Twins.Repro.PropCollapse "twin" "orig" `p_cases "user constant over the block" .pendingCollapse
     "6a99811d2992052ed277106b72cc898e60dcd6a850b6bdcbd9bd9c8945cac093"
