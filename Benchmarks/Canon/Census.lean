@@ -361,7 +361,7 @@ def main (args : List String) : IO UInt32 := do
         let (cls, _) ← sortClasses r env.addr? cs
         pure (classSets cls)
     match setsOf Rules.today, setsOf Rules.todayK, setsOf Rules.todayU,
-        setsOf { Rules.phaseA with seed := .byNameHash } with
+        setsOf Rules.phaseA with
     | .ok t, .ok k, .ok u, .ok a =>
       if t.any (·.size > 1) then
         if k != t then movesK := movesK.push s!"{namePretty all[0]!}: {k.map (·.map (·.map namePretty))} vs {t.map (·.map (·.map namePretty))}"
@@ -494,7 +494,7 @@ def main (args : List String) : IO UInt32 := do
   p s!"| Errors | {today.errors} | {phaseA.errors} |"
   p ""
   p s!"Member order moves against today (blocks with several classes): under `(k₀, k₁)` alone {movesK.size}; \
-    under levels after `canonUniv` alone {movesU.size}; under both {movesA.size}."
+    under levels after `canonUniv` alone {movesU.size}; under `Rules.phaseA` {movesA.size}."
   for l in movesK do p s!"- (k0,k1) moves: {l}"
   for l in movesU do p s!"- canonUniv moves: {l}"
   p s!"Seed sweep (identity, reverse, name-hash, 10 random presentations; today's comparator with the port fixes, and phaseA): \

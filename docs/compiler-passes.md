@@ -1246,7 +1246,17 @@ unfolds a theorem, which Ix never does. So `p_k : T` is accepted at `Φ_σ(T)` b
 What `p_k` typically contains: the cleanup is a `simp only` over definitions (`clean_wf`), and the
 default tactic works on the cleaned goal, which mentions only measures. So the packing typically
 occurs in `p_k` only in copies of the goal: `Eq.mpr`/`id` annotations and motives of the rewrites.
-Those are recognised by the grammar [argued; the shapes are measured nowhere: open].
+Those are recognised by the grammar.
+
+[measured, A1G] On every well-founded fixture, the bodies of the `_mutual._proof_k` decreasing
+proofs differed between presentations only in the `id` goal copies, so the grammar must recognise
+`@id T p`. The same fixtures show three further features:
+- when the measure is lexicographic, the relation's own well-foundedness proof is abstracted as
+  `_proof_1`, and it is equal across presentations (`W3`);
+- both fixpoint routes occur: `WellFounded.Nat.fix` for a single `Nat` measure, `WellFounded.fix`
+  otherwise;
+- some theorem cliques that look structural take the well-founded route (`TS`).
+
 
 **Closed values.**
 - On the `Nat.fix` route (single `Nat` measure), `WellFounded.Nat.fix` is a fuel-driven `Nat.rec`
@@ -1412,6 +1422,8 @@ These are the causes that the non-canonical set must be able to record (§7.2).
 | `RECARG` | Structural `allCombinations` takes the first working combination in clique order (`FindRecArg.lean:228-310`, per MUT §1.2) | structural |
 | `ORDER-STMT` | Statements that follow the order: `_mutual.eq_unfold`, `mutual_induct`, `induct`, bare `@f._mutual`. These are faithful only | all |
 | `NOSPEC` | A theorem clique whose order cannot be determined (§5.4) | theorems |
+| `LAZY` | The equation lemmas Lean realises lazily (`f.eq_def`, `eq_N`, `eq_unfold`) are excluded from the canonicity claim, because which of them exist varies between builds (A Δ13). Their proofs also unfold the encoding | all |
+
 
 The numbering of `proof_N`, `match_N` and `_f` names, and which declaration owns a shared matcher,
 are names only. They are metadata, not members of the non-canonical set.
@@ -1419,26 +1431,76 @@ are names only. They are metadata, not members of the non-canonical set.
 
 ### 5.6 What is measured about cliques
 
-Measured:
-- Structural cliques with one function per type former are already canonical under reordering
-  [measured: ORA, DQReord 53/53 including the theorem; MUT §1.7: `M2_T_cyc_fun__p1`,
-  `M2_T_alpha_fun__p1`, `M3_T_ring_fun__p1…p5` with equal address multisets].
-- An inductive-predicate structural theorem clique is not canonical today: the "below" matchers
-  differ in content, and so do `A.two` and `B.two` [measured: MUT, F9 `M2_P_even_fun` against
-  `__p1`]. The data permute the inductives as well, so the two causes are not separated.
-- The theorems of a mutual structural pair change address when the definitions are reordered
-  [measured: old plan §4.6].
-- Population: about 5 order-dependent safe `mutual` definition cliques across all libraries, of which
-  about 2–3 would reorder [estimate, MUT §5.1]. Four well-founded `_mutual` in an Init-sized
-  environment [measured: MUT §5.1].
+**The first measurement under permutation (A1G).**
+- *A1G* is `plans/wave1/a1g.md` (untracked); the compared terms are in `a1g-clique-terms.txt` beside
+  it.
+- 51 twin families, 58 presentation pairs, 422 differences. Every difference is recorded, with cause
+  and evidence, in `Tests/Ix/Compile/NonCanonical.lean` [measured].
+- **Today's compiler does nothing to definition cliques.** Every difference between presentations is
+  a difference in Lean's own output.
 
-Not measured:
-- no well-founded or `partial_fixpoint` clique was compiled under permutation;
-- no transport was implemented;
-- the grammar's coverage of real `proof_k` terms is unmeasured.
+**Already canonical** [measured, A1G]:
+- structural recursion with one function per type former;
+- theorems proved by structural recursion over a mutual inductive;
+- renamings of members and binders;
+- permutations that keep each type-former group's clique order;
+- `partial def` cliques, a kernel SCC that Ix sorts.
 
-Everything in §5.1–5.4 is [argued], and O16's lemma is [open]. A5's first task is the census PD1
-(MUT §5.1) and one twin per encoding.
+This agrees with ORA (DQReord 53/53) and with MUT §1.7.
+
+**Packing order only, 93 constants: what transport fixes** [measured, A1G].
+- The families cover structural, well-founded (including theorem cliques), `partial_fixpoint` and
+  inductive-predicate encodings: `SA`, `S3`, `SX`, `TP`, `SP`, `WD`, `W3`, `WT`, `WB`, `WP`, `TS`, `TW`,
+  `PF`, `IP`.
+- The differences are exactly those §5.1–5.3 predict:
+  - `PSum`/`PProd` order in domains, motives, case trees, measure trees and tuples;
+  - injections and projection paths (A);
+  - decreasing obligations re-stated over the packing (S), with bodies differing only in `id` goal
+    copies;
+  - the `monotone_fst`/`monotone_snd` chains of the monotonicity proofs (G);
+  - the `let funType_i` order and the "below" matchers' `funType` binders (O13a);
+  - the fixed-parameter telescope in the first function's order (O13b).
+- `IP` keeps the inductive fixed and so separates MUT's F9 confound: the predicate order is not
+  involved.
+
+**`GUESSLEX`, 3 constants: the first measured case** [measured, A1G family `WG`].
+- GuessLex measures `ga` by `x` under one order and by `y` under the other.
+- So the canonical functional itself differs. Transport cannot fix this; D22 keeps each presentation
+  faithful.
+- The decreasing proofs are identical with their roles swapped.
+
+**Faithful only** [measured, A1G]:
+- 18 `LAZY` (`f.eq_def`);
+- 8 `ORDER-STMT` (`f._mutual.eq_def`).
+
+**Inherited, 17.** Value theorems and `_sunfold` that reference a differing member.
+
+**Not seen** [measured, A1G]: `TACTIC-ASYM`, `SHAPE`, `RECARG`, `NOSPEC`.
+- `omega`, `simp`, `decreasing_tactic` and an explicit `decreasing_by omega` all gave proofs equal up
+  to the packing.
+- Function-index measures travel with their functions (`TS`).
+- Three families that would provoke the unseen causes are still to be written:
+  - a `decreasing_by` that depends on goal order;
+  - an ambiguous recursive argument (`RECARG`);
+  - a theorem clique with tied statements (`NOSPEC`).
+
+**Related gates** [measured, A1G]:
+- **Auxiliary oracle:** 1,501 of 1,908 auxiliary pairs are byte-equal to Lean's own constructions,
+  and every exception falls in an expected class. A further 268 auxiliaries of mutual blocks cannot
+  be compared by address with Lean's form until D6 (one constant per auxiliary).
+- **Schedule identity (§6):** the sequential driver, the wave driver at 1, 4 and 16 workers, and
+  `compile-lean` at 1, 4 and 16 workers give identical bytes (14,854,564 B on the fixture closure).
+
+**Earlier measurements, still valid:**
+- the theorems of a mutual structural pair change address when the definitions are reordered
+  [measured: old plan §4.6];
+- about 5 order-dependent safe `mutual` definition cliques across all libraries, of which about 2–3
+  would reorder [estimate, MUT §5.1];
+- four well-founded `_mutual` in an Init-sized environment [measured: MUT §5.1].
+
+**Still not measured:**
+- No transport is implemented. §5.1–5.4 are [argued]; A1G measures only what transport must remove.
+- O16's lemma is [open].
 
 ---
 
@@ -1560,6 +1622,11 @@ tooling is in Lean. The twins gate (Phase A §5.2) reads it.
 inductive NonCanonicalCause where
   | tacticAsym | shape | guessLex | recArg | orderStmt | bare | collapseArms
   | indPredBelow | noSpec | lazy | o11aPending
+  -- differences that a later package removes (A1G's extension):
+  | pendingTransport | pendingSplitAux | pendingNoConfusion | pendingSurgery | pendingCollapse
+  -- a difference inherited from a non-canonical dependency:
+  | inherited
+
   deriving Repr, BEq
 
 structure NonCanonicalEvidence where
@@ -1589,9 +1656,23 @@ def nonCanonical : List NonCanonicalEntry := [ ... ]
 
 Entries change only in a commit that states the cause.
 
-**Policy.** Recording is the Phase A policy (Q-A5), following the principle of §0.1.
- A `TACTIC-ASYM` or `SHAPE` entry on library code
-is reported in the migration's PR text.
+**Markers.** Besides the causes of §5.5 and §7.1, the fixture uses two kinds of marker
+[A1G §3].
+- **`pending*`** marks a difference that a later package removes:
+  - `pendingTransport`: A5, O13–O16;
+  - `pendingSplitAux`: §4.7 (b);
+  - `pendingNoConfusion`: §4.7 (c) and O11b;
+  - `pendingSurgery`: O2/O9 and the surgery defects of §4.7 (e)/(f), in A3/A6;
+  - `pendingCollapse`: O7–O12, in A6.
+
+  When that package lands, its entries must disappear; the exactness rule above enforces this.
+- **`inherited`** marks a constant whose Lean terms are equal under the name map, but which
+  references a constant that is itself in the set. It disappears when its dependency does.
+
+
+**Policy.** Recording is the Phase A policy (Q-A5), following the principle of §0.1. A
+`TACTIC-ASYM` or `SHAPE` entry on library code is reported in the migration's PR text.
+
 
 ---
 
@@ -1651,4 +1732,6 @@ match.
 - **O11a's `rfl`** on `Linear.EqCnstr` [open].
 - **O16's lemma** [open].
 - **Cause (e) of §4.7** has not been re-measured at v4 [open].
-- No well-founded or `partial_fixpoint` clique has been compiled under permutation.
+- Transport is not implemented. Cliques have been measured under permutation (A1G, §5.6), but
+  `TACTIC-ASYM`, `SHAPE`, `RECARG` and `NOSPEC` have no provoking fixture yet.
+

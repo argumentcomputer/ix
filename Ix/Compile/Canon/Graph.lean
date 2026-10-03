@@ -20,10 +20,13 @@
   **Components** (`tarjan`): Tarjan's algorithm with an explicit call stack
   and fuel `|E| + |V| + 1` (each step either advances one edge or finishes
   one node, so the fuel is never exhausted; exhaustion is reported, not
-  hidden). Today's `Ix/CondenseM.lean:52` is the same algorithm as a
-  `partial` recursion over hash-map order; the partition into components does
-  not depend on the traversal order, only the representatives do (and Pass 1
-  has none: a component is the set of its members, listed in node order).
+  hidden). The partition into components does not depend on the traversal
+  order, only the representatives do (and Pass 1 has none: a component is
+  the set of its members, listed in node order). `condensation` also
+  returns each component's root (first-discovered node) and the discovery
+  order: the compiler's `Ix.CondenseM.run` presents the whole reference
+  graph in today's hash-map order and reads them back, so its block
+  representatives are the ones the former `partial` Tarjan chose.
 -/
 module
 public import Ix.Environment
@@ -81,29 +84,42 @@ structure TarjanState where
   calls : List (Nat × Nat) := []
   next : Nat := 1
   comps : Array (Array Nat) := #[]
+  /-- `roots[k]` is the root (first-discovered node) of `comps[k]`. -/
+  roots : Array Nat := #[]
+  /-- Every visited node, in discovery order. -/
+  order : Array Nat := #[]
   exhausted : Bool := false
 
 namespace TarjanState
 
-def visit (st : TarjanState) (v : Nat) : TarjanState :=
-  { st with
-    index := st.index.set! v st.next
-    low := st.low.set! v st.next
-    onStack := st.onStack.set! v true
-    stack := v :: st.stack
-    calls := (v, 0) :: st.calls
-    next := st.next + 1 }
+/-! The updates below take the state apart before writing into its arrays,
+so that each array is unshared and `set!`/`push` update it in place: on the
+whole environment (hundreds of thousands of nodes) a copy per step would be
+quadratic. -/
+
+def visit : TarjanState → Nat → TarjanState
+  | { index, low, onStack, stack, calls, next, comps, roots, order, exhausted }, v =>
+    { index := index.set! v next, low := low.set! v next,
+      onStack := onStack.set! v true, stack := v :: stack, calls := (v, 0) :: calls,
+      next := next + 1, comps, roots, order := order.push v, exhausted }
+
+def setLow : TarjanState → Nat → Nat → TarjanState
+  | { index, low, onStack, stack, calls, next, comps, roots, order, exhausted }, v, x =>
+    { index, low := low.set! v x, onStack, stack, calls, next, comps, roots, order,
+      exhausted }
 
 /-- Pop the component rooted at `v` off the Tarjan stack. -/
-def popComponent (st : TarjanState) (v : Nat) : TarjanState :=
-  let rec go : List Nat → Array Nat → Array Bool → List Nat × Array Nat × Array Bool
-    | [], comp, on => ([], comp, on)
-    | w :: ws, comp, on =>
-      let comp := comp.push w
-      let on := on.set! w false
-      if w == v then (ws, comp, on) else go ws comp on
-  let (stack, comp, onStack) := go st.stack #[] st.onStack
-  { st with stack, onStack, comps := st.comps.push (comp.qsort (· < ·)) }
+def popComponent : TarjanState → Nat → TarjanState
+  | { index, low, onStack, stack, calls, next, comps, roots, order, exhausted }, v =>
+    let rec go : List Nat → Array Nat → Array Bool → List Nat × Array Nat × Array Bool
+      | [], comp, on => ([], comp, on)
+      | w :: ws, comp, on =>
+        let comp := comp.push w
+        let on := on.set! w false
+        if w == v then (ws, comp, on) else go ws comp on
+    let (stack, comp, onStack) := go stack #[] onStack
+    { index, low, onStack, stack, calls, next, comps := comps.push (comp.qsort (· < ·)),
+      roots := roots.push v, order, exhausted }
 
 end TarjanState
 
@@ -123,7 +139,7 @@ def tarjanLoop (adj : Array (Array Nat)) : Nat → TarjanState → TarjanState
           tarjanLoop adj fuel (st.visit w)
         else if st.onStack[w]?.getD false then
           let lv := st.low[v]?.getD 0
-          tarjanLoop adj fuel { st with low := st.low.set! v (min lv iw) }
+          tarjanLoop adj fuel (st.setLow v (min lv iw))
         else tarjanLoop adj fuel st
       else
         let lv := st.low[v]?.getD 0
@@ -133,15 +149,28 @@ def tarjanLoop (adj : Array (Array Nat)) : Nat → TarjanState → TarjanState
         let st := match rest with
           | (u, _) :: _ =>
             let lu := st.low[u]?.getD 0
-            { st with low := st.low.set! u (min lu lv) }
+            st.setLow u (min lu lv)
           | [] => st
         tarjanLoop adj fuel st
 
-/-- Strongly connected components of the graph `adj` on `0 … n-1` (with
-`n = adj.size`; out-of-range successors are ignored), each sorted, in
-Tarjan's completion order (successors before predecessors). `none` only if
-the fuel bound were wrong. -/
-def tarjan (adj : Array (Array Nat)) : Option (Array (Array Nat)) :=
+/-- The full result of one run of Tarjan's algorithm. -/
+structure Condensation where
+  /-- Components, each sorted, in Tarjan's completion order (successors
+  before predecessors). -/
+  comps : Array (Array Nat)
+  /-- `roots[k]` is the root of `comps[k]`: its first-discovered node. -/
+  roots : Array Nat
+  /-- Every node, in discovery order. -/
+  order : Array Nat
+  deriving Inhabited
+
+/-- Tarjan's algorithm on the graph `adj` over `0 … n-1` (with
+`n = adj.size`; out-of-range successors are ignored). The traversal starts
+from the nodes in index order and follows each node's successors in the
+order given, so the roots and the discovery order are functions of that
+presentation; the partition into components is not. `none` only if the
+fuel bound were wrong. -/
+def condensation (adj : Array (Array Nat)) : Option Condensation :=
   let n := adj.size
   let adj := adj.map (·.filter (· < n))
   let edges := adj.foldl (init := 0) (· + ·.size)
@@ -155,7 +184,15 @@ def tarjan (adj : Array (Array Nat)) : Option (Array (Array Nat)) :=
         -- the whole run takes at most |E| + |V| steps, so one budget
         -- of that size suffices for every root
         (tarjanLoop adj fuel (st.visit r), fuel)
-  if st.exhausted then none else some st.comps
+  if st.exhausted then none
+  else some { comps := st.comps, roots := st.roots, order := st.order }
+
+/-- Strongly connected components of the graph `adj` on `0 … n-1` (with
+`n = adj.size`; out-of-range successors are ignored), each sorted, in
+Tarjan's completion order (successors before predecessors). `none` only if
+the fuel bound were wrong. -/
+def tarjan (adj : Array (Array Nat)) : Option (Array (Array Nat)) :=
+  (condensation adj).map (·.comps)
 
 /-- Components of the subgraph induced on `names` by `refs`, as name arrays
 (members in the order of `names`). Edges leaving `names` are dropped. -/

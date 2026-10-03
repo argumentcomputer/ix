@@ -21,22 +21,29 @@
     name); projections the same way on the structure name;
   * only strong results are cached, keyed by the unordered name pair.
 
-  **Rule sets** (`Rules`): `Rules.today` reproduces the compiler;
-  `Rules.phaseA` is the Phase A decision set of `PLAN-A-compiler-design.md`
-  §3.1:
-  * `seed`: `byNameHash` (today: the refinement starts from one class sorted
-    by the blake3 hash of the name, and every group is re-sorted that way)
-    or `allOrder` (the caller's order: Lean's `all` restricted to the
-    component, or `EqnInfo.declNames` for a clique, kept stably);
+  **Rule sets** (`Rules`): `Rules.today` reproduces the compiler as it was;
+  `Rules.compiler` is what the compiler runs now (today plus the port
+  fixes); `Rules.phaseA` is the Phase A decision set
+  (`PLAN-A-compiler-design.md` §3.1, owner's decisions of 2026-10-03 on Q1
+  and Q2): today's comparator (external references by address at the first
+  difference), today's name-hash seed and least-name-hash representative,
+  plus levels after `canonUniv`, nested auxiliaries in discovery order and
+  the port fixes. The other switches remain for measurement only:
+  * `seed`: `byNameHash` (today and Phase A: the refinement starts from one
+    class sorted by the blake3 hash of the name) or `allOrder` (the caller's
+    order: Lean's `all` restricted to the component, or `EqnInfo.declNames`
+    for a clique, kept stably; used by the seed sweep);
   * `levels`: `syntactic` (today) or `afterCanonUniv` (levels compared after
     `Ixon.canonUniv`, with parameters by position);
-  * `representative`: `leastNameHash` (today: first member after the name
-    re-sort) or `firstInCanonicalOrder` (first member in the stable order);
-  * `tieBreak`: `inline` (today: external references compare by address
-    wherever they occur, at the first difference), `byAddress` (Phase A: the
-    lexicographic pair `(k₀, k₁)`, `k₀` with every external reference equal
-    and `k₁` today's key; the partition is `k₁`'s, only the class order can
-    move; comparisons that `k₀` ties and `k₁` decides are counted), or `blind` (never use addresses: the census's
+  * `representative`: `leastNameHash` (today and Phase A: every group
+    re-sorted by name hash, so the first member has the least name hash) or
+    `firstInCanonicalOrder` (first member in the stable order);
+  * `tieBreak`: `inline` (today and Phase A: external references compare by
+    address wherever they occur, at the first difference), `byAddress` (the
+    considered and rejected lexicographic pair `(k₀, k₁)`, `k₀` with every
+    external reference equal and `k₁` today's key; the partition is `k₁`'s,
+    only the class order can move; comparisons that `k₀` ties and `k₁`
+    decides are counted), or `blind` (never use addresses: the census's
     order-stability probe);
   * `nested`: the order of nested auxiliaries, `structural` (today) or
     `discovery` (Lean's), used by `Nested.lean`.
@@ -109,9 +116,18 @@ structure Rules where
 def Rules.today : Rules :=
   ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural, false⟩
 
-/-- The Phase A decisions (`PLAN-A-compiler-design.md` §3.1). -/
+/-- What the compiler runs (A2's byte-neutral half): today's rules with the
+two Lean-port comparator defects fixed (C1 and C2, owner's decision of
+2026-10-03). Neither fix is reachable on Lean input (components are
+kind-homogeneous; every class is sorted in name-hash order, so a cached
+ordering is never read back for the swapped pair inside the sort), so the
+output is `Rules.today`'s. -/
+def Rules.compiler : Rules := { Rules.today with portFixes := true }
+
+/-- The Phase A decisions (`PLAN-A-compiler-design.md` §3.1; owner, 2026-10-03:
+first-difference address comparison, name-hash seed and representative kept). -/
 def Rules.phaseA : Rules :=
-  ⟨.allOrder, .afterCanonUniv, .firstInCanonicalOrder, .byAddress, .discovery, true⟩
+  ⟨.byNameHash, .afterCanonUniv, .leastNameHash, .inline, .discovery, true⟩
 
 /-- Today's rules with only the tie-break changed to `(k₀, k₁)`. -/
 def Rules.todayK : Rules := { Rules.today with tieBreak := .byAddress, portFixes := true }
@@ -121,6 +137,7 @@ def Rules.todayU : Rules := { Rules.today with levels := .afterCanonUniv, portFi
 
 def Rules.name (r : Rules) : String :=
   if r == .today then "today" else if r == .phaseA then "phaseA"
+  else if r == .compiler then "compiler"
   else if r == .todayK then "today+(k0,k1)" else if r == .todayU then "today+canonUniv"
   else reprStr r
 
