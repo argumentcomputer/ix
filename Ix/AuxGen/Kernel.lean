@@ -158,10 +158,15 @@ def AuxKernelCtx.new : AuxKernelCtx :=
 /-- Bridge monad: aux kernel state over CompileM. -/
 abbrev KBridgeM := StateT AuxKernelCtx CompileM
 
+/-- `Ix.CompileM.timedC` lifted to the bridge monad (`Ix.PhaseTimers`). -/
+@[inline] def timedK (ph : Ix.PhaseTimers.Phase) (act : KBridgeM α) : KBridgeM α :=
+  fun ctx => Ix.CompileM.timedC ph (act ctx)
+
 /-- Run an `Ix.Tc.TcM` action against the bridge's kernel state,
     threading the state back in BOTH outcomes (Rust's `&mut` semantics —
     caches warmed by a failing call stay warm). -/
-def runTc (act : Ix.Tc.TcM .meta α) : KBridgeM (Except (Ix.Tc.TcError .meta) α) := do
+def runTc (act : Ix.Tc.TcM .meta α) :
+    KBridgeM (Except (Ix.Tc.TcError .meta) α) := timedK .auxTc do
   let kctx ← get
   match act kctx.tcState with
   | .ok a st' =>
@@ -351,7 +356,7 @@ def ensurePreludeInKenvOf (maps : AddrMaps) : KBridgeM Unit := do
     the Rust contract note — callers own the dependency closure, missing
     deps surface as `unknownConst` at TC time and are faulted in).
     Mirrors Rust `ensure_in_kenv_of_inner_env` (expr_utils.rs:1944). -/
-partial def ensureInKenvOfInner (name : Name) (maps : AddrMaps)
+partial def ensureInKenvOfInnerCore (name : Name) (maps : AddrMaps)
     (replaceAxioStub : Bool) (stubProofValues : Bool) : KBridgeM Unit := do
   let addr := maps.resolve name
   let zid : MKId := ⟨addr, name⟩
@@ -419,10 +424,15 @@ partial def ensureInKenvOfInner (name : Name) (maps : AddrMaps)
     kenvInsert zid (.quot name lp (quotKindOfLean q.kind) (UInt64.ofNat lp.size) ty)
   | .ctorInfo ctor =>
     -- Constructors ingress via their parent (the one downstream walk).
-    ensureInKenvOfInner ctor.induct maps replaceAxioStub stubProofValues
+    ensureInKenvOfInnerCore ctor.induct maps replaceAxioStub stubProofValues
   | .recInfo _ =>
     -- Recursors are kernel-generated, never ingressed from Lean.
     pure ()
+
+/-- `ensureInKenvOfInnerCore`, timed as kernel ingress (`Ix.PhaseTimers`). -/
+def ensureInKenvOfInner (name : Name) (maps : AddrMaps)
+    (replaceAxioStub : Bool) (stubProofValues : Bool) : KBridgeM Unit :=
+  timedK .auxIngress (ensureInKenvOfInnerCore name maps replaceAxioStub stubProofValues)
 
 /-- Mirrors Rust `ensure_in_kenv_of` (expr_utils.rs:2162). -/
 def ensureInKenvOf (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
@@ -721,7 +731,7 @@ def popLocals (scope : TcScopeSt) (decls : Array LocalDecl)
 /-- Fault one name into the TC env (full ingress, stub-upgrading);
     reports whether its resolved address is now present. Mirrors Rust
     `fault_in_name` (expr_utils.rs:2290). -/
-def faultInName (scope : TcScopeSt) (name : Name) : KBridgeM Bool := do
+def faultInName (scope : TcScopeSt) (name : Name) : KBridgeM Bool := timedK .auxIngress do
   ensureFullInKenvOf name scope.maps
   let addr := scope.maps.resolve name
   return (← get).tcState.env.consts.toList.any fun (id, _) => id.addr == addr
@@ -744,7 +754,7 @@ def nameForAddr (addr : Address) : KBridgeM (Option Name) := do
 
 /-- Fault in the constant behind an address discovered mid-inference.
     Mirrors Rust `fault_in_addr` (expr_utils.rs:2303). -/
-def faultInAddr (scope : TcScopeSt) (addr : Address) : KBridgeM Bool := do
+def faultInAddr (scope : TcScopeSt) (addr : Address) : KBridgeM Bool := timedK .auxIngress do
   if (← get).tcState.env.consts.toList.any (fun (id, _) => id.addr == addr) then
     return true
   let some name ← nameForAddr addr | return false

@@ -40,7 +40,7 @@ private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α ×
   let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
   xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
-def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
+def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let args : Array String := p.variableArgsAs! String
   let some (pathStr : String) := args[0]?
     | p.printError "error: must specify <path> to a Lean source file"
@@ -58,13 +58,15 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     return 2
 
   IO.println s!"[compile-lean] building {pathStr}..."
-  buildFile pathStr
-  let fe ← getFileEnvCore pathStr
-  let constList ← defaultConstList fe pathStr
+  Ix.PhaseTimers.timeWall "lake build of the input module" (buildFile pathStr)
+  let fe ← Ix.PhaseTimers.timeWall "Lean environment import and elaboration"
+    (getFileEnvCore pathStr)
+  let constList ← Ix.PhaseTimers.timeWall "constant list" (defaultConstList fe pathStr)
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow
-  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
+  let input ← Ix.PhaseTimers.timeWall "source-contract preparation (compileInputFromEnv)" do
+    IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
   match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
       (dbg := true) with
   | .error e =>
@@ -83,7 +85,7 @@ serialize the grounded subset)"
       for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
       return 1
-    IO.FS.writeBinFile outPath out.bytes
+    Ix.PhaseTimers.timeWall "write the output file" (IO.FS.writeBinFile outPath out.bytes)
     IO.println s!"[compile-lean] wrote {out.bytes.size} bytes to {outPath} \
 ({out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
 {ungroundedCount} block failures) in {elapsed}ms"
@@ -102,6 +104,7 @@ serialize the grounded subset)"
       let rustBytes ← IO.FS.readBinFile rustOut
       IO.FS.removeDirAll dir
       let tRe := (← IO.monoMsNow) - tR
+      Ix.PhaseTimers.wall " (not the Lean compiler) --rust-check: Rust compile" tRe
       if rustBytes == out.bytes then
         IO.println s!"[compile-lean] ALIGNED: {out.bytes.size} bytes byte-identical with Rust ({tRe}ms)"
       else
@@ -114,6 +117,14 @@ serialize the grounded subset)"
 rust {rustBytes.size}B, first difference at byte {firstDiff}"
         return 1
     return 0
+
+/-- `runCompileLeanCmdCore`, then the phase table on stderr when
+    `IX_PHASE_TIMERS` is set (`Ix.PhaseTimers`; nothing otherwise). -/
+def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
+  let rc ← runCompileLeanCmdCore p
+  for line in ← Ix.PhaseTimers.report do
+    IO.eprintln line
+  return rc
 
 end Ix.Cli.CompileLeanCmd
 

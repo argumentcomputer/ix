@@ -340,7 +340,7 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
     exprCache := {}, univCache := {},
     refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
     arena := {} }) : CompileM _)
-  compileAuxBlockCore auxConsts maps nameRename classOrderKey
+  timedK .auxCompile (compileAuxBlockCore auxConsts maps nameRename classOrderKey)
   -- Drop the local cache (restore the caller's cache fields; the aux
   -- registrations and blob/name/hint accumulators persist).
   liftM (modifyBlockState (fun c => { c with
@@ -1005,8 +1005,8 @@ def compileMutualAuxTail (cs : Array MutConst)
   let mut brecPlans : Std.HashMap Name BRecOnCallSitePlan := {}
   let mut belowPlans : Std.HashMap Name BRecOnCallSitePlan := {}
   if userLayoutChanged || auxLayoutChanged then
-    plans ← liftM
-      (computeCallSitePlans planClassNames originalAll auxLayout : CompileM _)
+    plans ← liftM (Ix.CompileM.timedC .callSitePlans
+      (computeCallSitePlans planClassNames originalAll auxLayout : CompileM _))
     -- Plan keys (`X.rec`, `all0.rec_N`, …) are shared across every SCC
     -- split from one original mutual, and the driver's merge is
     -- last-writer-wins. With per-position ownership resolved in aux_gen

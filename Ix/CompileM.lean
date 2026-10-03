@@ -20,6 +20,7 @@ public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Sharing.Exact
 public import Ix.Common
+public import Ix.PhaseTimers
 public import Ix.Store
 public import Ix.Mutual
 public import Ix.GraphM
@@ -296,6 +297,16 @@ def CompileM.run (compileEnv : CompileEnv) (blockEnv : BlockEnv) (blockState : B
   match StateT.run (ExceptT.run (ReaderT.run m (compileEnv, blockEnv))) blockState with
   | (Except.ok a, state') => Except.ok (a, state')
   | (Except.error e, _) => Except.error e
+
+/-- Run `act` inside worker phase `ph` (`Ix.PhaseTimers`, off unless
+    `IX_PHASE_TIMERS` is set). The phase opens on the block state `act`
+    receives and closes on the block state it returns, on success and on
+    error alike; the result is `act`'s, unchanged. -/
+@[inline] def timedC (ph : Ix.PhaseTimers.Phase) (act : CompileM α) : CompileM α :=
+  fun r => ExceptT.mk fun s =>
+    if Ix.PhaseTimers.enabled () then
+      Ix.PhaseTimers.exitV ((ExceptT.run (act r)).run (Ix.PhaseTimers.enterV ph s))
+    else (ExceptT.run (act r)).run s
 
 /-- Get the global compile environment. -/
 def getCompileEnv : CompileM CompileEnv := do
@@ -2137,11 +2148,15 @@ def MutConst.mkIndc (i : InductiveVal) : CompileM MutConst := do
 representative first: `Ix.Compile.Canon.sortClasses Rules.compiler`, with
 external addresses from `constAddrLookup`. Pure: the comparison cache lives
 inside the call, so nothing leaks into the block state. -/
-def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) := do
+def sortConstsCore (sources : List MutConst) : CompileM (List (List MutConst)) := do
   let addr? ← constAddrLookup
   match Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addr? sources with
   | .ok (classes, _) => pure classes
   | .error e => throw (.invalidMutualBlock s!"sortConsts: {e}")
+
+/-- `sortConstsCore`, timed as the classes phase (`Ix.PhaseTimers`). -/
+def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) :=
+  timedC .classes (sortConstsCore sources)
 
 /-! ## Constant Building -/
 
@@ -2216,11 +2231,37 @@ def withRootExprs (info : Ixon.ConstantInfo) (rewrittenExprs : Array Ixon.Expr) 
     Except CompileError Ixon.ConstantInfo :=
   (Ix.Sharing.Exact.withRoots info rewrittenExprs).mapError sharingCompileError
 
+/-- The body of `buildConstantWithSharing`, run by compiled code inside the
+    sharing phase of `Ix.PhaseTimers` (`buildConstantWithSharingTimed`, equal
+    to `buildConstantWithSharing` by `buildConstantWithSharingTimed_eq`). -/
+def buildConstantWithSharingCore (limits : Ix.Sharing.Exact.Limits)
+    (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
+    Except CompileError Ixon.Constant := do
+  let roots := constantInfoRootExprs info
+  let r ← (Ix.Sharing.Exact.canonicalSharingTiered .tagN roots limits).mapError
+    sharingCompileError
+  unless r.result.roots.size == roots.size do
+    throw (.sharingConstruction
+      s!"canonical sharing: {r.result.roots.size} roots returned for {roots.size}")
+  let info ← withRootExprs info r.result.roots
+  pure { info, sharing := r.result.sharing, refs, univs }
+
+/-- `buildConstantWithSharingCore` inside the sharing phase (`Ix.PhaseTimers`). -/
+def buildConstantWithSharingTimed (limits : Ix.Sharing.Exact.Limits)
+    (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
+    Except CompileError Ixon.Constant :=
+  Ix.PhaseTimers.withPhase .sharing info fun info =>
+    buildConstantWithSharingCore limits info refs univs
+
 /-- Build a block Constant with the canonical sharing of its payload: the
     roots are `constantInfoRootExprs info`, shared by
     `Ix.Sharing.Exact.canonicalSharingTiered .tagN` under `limits`, and written
     back by `withRootExprs` (the construction must return one root per input
-    root). There is no fallback: every failure is a compile error. -/
+    root). There is no fallback: every failure is a compile error.
+
+    Compiled code runs `buildConstantWithSharingTimed`, the same function
+    (`buildConstantWithSharingTimed_eq`) inside the sharing phase timer. -/
+@[implemented_by buildConstantWithSharingTimed]
 def buildConstantWithSharing (limits : Ix.Sharing.Exact.Limits)
     (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
     Except CompileError Ixon.Constant := do
@@ -2232,6 +2273,15 @@ def buildConstantWithSharing (limits : Ix.Sharing.Exact.Limits)
       s!"canonical sharing: {r.result.roots.size} roots returned for {roots.size}")
   let info ← withRootExprs info r.result.roots
   pure { info, sharing := r.result.sharing, refs, univs }
+
+/-- The `implemented_by` of `buildConstantWithSharing` is that function: the
+    phase timers are logically the identity and `enabled` is logically `false`. -/
+theorem buildConstantWithSharingTimed_eq :
+    buildConstantWithSharingTimed = buildConstantWithSharing := by
+  funext limits info refs univs
+  simp only [buildConstantWithSharingTimed, Ix.PhaseTimers.withPhase, Ix.PhaseTimers.enabled,
+    Ix.PhaseTimers.exitV, Ix.PhaseTimers.enterV, Bool.false_eq_true, ite_false]
+  rfl
 
 /-- Lift a sharing result into `CompileM`. -/
 def liftSharing (r : Except CompileError Ixon.Constant) : CompileM Ixon.Constant :=
