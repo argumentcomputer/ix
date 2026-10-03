@@ -934,7 +934,22 @@ def runLib (offPath onPath : String) : IO UInt32 := do
     if changedSet.contains n.pretty then differ := differ.push n.pretty else same := same + 1
   IO.println s!"[pass3-lib] surgery-rewritten constants (switch off): {surgered.size}; \
     byte-identical with the switch on: {same}; baseline (differ): {differ.size}"
-  for n in (differ.qsort (· < ·)).toList do IO.println s!"[pass3-lib]   differs: {n}"
+  -- A4: classify each difference: the same expressions (the tables differ: the
+  -- surgery's leftover entries of dropped arguments or their order) or not
+  let rowsNames := fun (p : Ixon.LazyEnvParts) => p.namedRows.foldl (init := ({} : Std.HashMap Address String))
+    fun m r => if m.contains r.addr && (r.name.pretty.splitOn "._ix").length > 1 then m else m.insert r.addr r.name.pretty
+  let offNm := rowsNames offParts
+  let onNm := rowsNames onParts
+  let addrOf := fun (p : Ixon.LazyEnvParts) (s : String) =>
+    (byPretty.get? s).bind fun n => (p.rowIdx.get? n).map fun i => p.namedRows[i]!.addr
+  let mut tablesOnly := 0
+  for n in (differ.qsort (· < ·)).toList do
+    let detail := match addrOf offParts n, addrOf onParts n with
+      | some a, some b => describeDiff offParts.env onParts.env offNm onNm a b
+      | _, _ => "missing"
+    if detail.startsWith "same expressions" then tablesOnly := tablesOnly + 1
+    IO.println s!"[pass3-lib]   differs: {n}: {detail.take 1500}"
+  IO.println s!"[pass3-lib] of the {differ.size} that differ: {tablesOnly} have the switch-off expressions (tables only), {differ.size - tablesOnly} differ in an expression"
   for p in problems.toList.take 50 do IO.println s!"[pass3-lib] FAIL {p}"
   IO.println s!"[pass3-lib] {problems.size} problem(s) ({(← IO.monoMsNow) - t0} ms)"
   return if problems.isEmpty then 0 else 1

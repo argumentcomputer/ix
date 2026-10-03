@@ -128,7 +128,7 @@ Output:
 | P3b | Translation and baseline | every other constant | `tr_N`, Def 3.5 images, Def 3.6 baselines, inline call sites (§4.5) | `Ix/Compile/Pass/Translate.lean` |
 | P3c | Canonical cliques | changed cliques | the repacked functional, transported proofs, members as projections (§5) | `Ix/Compile/Pass/Clique/{Structural,WF,PartialFixpoint,Transport}.lean` |
 | P4+ | Optimisations | baselines | O1–O17, each a module with a side condition | `Ix/Compile/Pass/Opt/O*.lean` |
-| P4e | Rewrite engine | P4+ modules | the fixed point (§1.4) | `Ix/Compile/Pass/Engine.lean` |
+| P4e | Rewrite engine | P4+ modules | the fixed point (§1.4) | `Ix/Compile/Pass/Opt/Engine.lean` (A4: fused with P3b, §1.5) |
 | P5 | Emission | compiled terms | sharing, serialisation, side-car | `Ix/Compile/Pass/Emit.lean` |
 | — | Fold | all of the above | the sequential fold over blocks that defines `compile` (§6) | `Ix/Compile/Fold.lean` |
 
@@ -291,6 +291,50 @@ Evidence:
    set is finite, so the iteration reaches a fixed point. A demoted constant changes its own bytes
    and the addresses of its users, but no pass decision of a user: users reference it by address
    [argued].
+
+---
+
+### 1.5 The definitional passes as implemented (A4)
+
+Modules `Ix/Compile/Pass/Opt/{Core,O1,O2,O3,O4,O5,O6,O11a,Engine}.lean`, each with the five-part
+docstring. One hook: `Ix.Compile.Pass.Translate.rw` asks the engine at every full application of
+an image-kind head, after the arguments were rewritten and before the image is inlined; the
+engine's `none` is the baseline. The driver builds the blocks' data once per block rewrite
+(`Ix.Compile.Pass.optLookup`). With the switch off nothing runs.
+
+- **The shape of an image.** Every pass reads the image of the related Lean recursor: `img(r) =
+  λ ps ms mins is t. ρ.{ℓs} ps ms′ mins′ is t` with the parameters, indices and major as the
+  image's variables, each Ix motive a motive variable, each Ix minor a minor variable or a term
+  headed by one. The motive and minor correspondence is therefore the image generator's (§4.2
+  step 1, by motive type), never recomputed; the Ix auxiliary of another kind is the display name
+  next to `ρ` (D14); the universe arguments are `ℓs` at the occurrence's levels (O5's rule, which
+  covers the Prop member that gained large elimination).
+- **O1** `rec`/`recOn`, permutation-only block (Pass 1's change kind): `ρ` (or the Ix `recOn`)
+  with motives and minors permuted. `recOn` goes to the Ix `recOn`, the twin's term.
+- **O2** `rec`, split block: `ρ` with the component's motives, and each minor with a field into
+  another component adapted: `λ fs ihsᶜ. mⱼ fs ih⃗`, domains from Lean's minor type, the relocated
+  hypothesis the engine's rewrite of `r_T ps ms mins idx (f ys)`, `mⱼ` applied (β-redex left).
+  This is the term the old surgery emitted; the image's developed form differs from it only by β.
+- **O3** `casesOn`, no collapsed class (permuted or split): the Ix `casesOn`, same arguments.
+- **O4** `below`/`brecOn`/`.go`/`.eq` when the recursor's image is a *selection* (every minor a
+  bare variable): permuted blocks and the cross-field-free components of split blocks; motives and
+  handlers selected and permuted. Declines for a component with a cross field (O9, A6) and for the
+  `brecOn` family of a Prop block whose `below` is Lean's `IndPredBelow` inductive (the Ix `brecOn`
+  is over a different inductive; measured on the twins' `Cliques.IP`).
+- **O6** `rec`/`recOn` with a selection image, any change kind.
+- **O11a** definitional (one `rfl` per `Linear.EqCnstr` member, accepted by the three kernels) but
+  **not run**: its output references `T._sizeOf_inst`, which the input `_sizeOf_N` does not, and
+  the fold orders blocks by the input's references (measured `missingConstant`). It needs the
+  edge in P1a's graph.
+- **O13a/b**: A5's slot after the occurrence passes.
+
+**Measured (A4, Lean core part of the library, the `pass3` suite's surgery comparison).** Of the
+58 Lean-core constants the switch-off output marks as surgered (`Linear`, `Cutsat`, LCNF `Alt`:
+`_sizeOf_N` and `_sparseCasesOn`), 51 are byte-identical with the switch on; the other 7 (the
+`Linear.EqCnstr._sizeOf_N`, split) have exactly the surgery's expressions and differ only in their
+tables: the surgery compiled the dropped arguments of the other components into the reference and
+sharing tables (leftover entries, or a different first-occurrence order), Pass 3 derives the tables
+from the final term (§4.7 (e), now measured). The Mathlib measurement is in the A4 report.
 
 ---
 
@@ -1737,7 +1781,7 @@ the closure it read equals the final closure.
 | `rec`/`recOn`/`casesOn`/`below`/`brecOn` users over a permuted block | O1–O6 | **yes** [measured, ORA DQReord 53/53] | — |
 | The same over a split block, including relocated calls | O2, O3 | **yes** [argued; PRO B1/B2 `rfl` for `rec` and `casesOn` users] | — |
 | Structural recursion over a split block with a cross field | O9 | **yes** once the reference tables are derived from the final term (§4.7 (e)) [argued] | — |
-| `noConfusion` in enumeration form; mutual `_sizeOf` over a split block | O11b; O11a | **yes** | `O11A-PENDING` until the `rfl` is confirmed |
+| `noConfusion` in enumeration form; mutual `_sizeOf` over a split block | O11b; O11a | **yes** | O11a: the `rfl` holds under the three kernels (A4), but the pass is not run for want of a scheduling edge (§1.5); until then `pendingSurgery` |
 | `rec` users of a collapsed block that do not distinguish members | O7 | **yes** | — |
 | `casesOn` and matchers over a collapsed or lifted member | O8 | **yes** | — |
 | Two functions over a collapsed pair, equal arms | O10 | **yes** (the twin's single function) | — |

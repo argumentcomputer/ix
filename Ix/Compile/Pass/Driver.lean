@@ -14,7 +14,9 @@ Two hooks of the block compile (`Ix.CompileDriver`), both inert unless
    heads, its Lean `all` and Pass 2's canonical recursors for the driver.
 2. **Before a block compiles** (`prepareBlock`): when the block references
    an image-kind head of a changed block, its members are rewritten
-   (`Ix.Compile.Pass.Translate`, Def 3.6) into an environment overlay, the
+   (`Ix.Compile.Pass.Translate`, Def 3.6) into an environment overlay (the
+   definitional passes, `Ix.Compile.Pass.Opt.Engine`, are tried first at every
+   full application: `optLookup`, the one A4 call site), the
    source occurrences become the block's decompile records, and the image
    constant of every bare or partial occurrence (`a._ix`, Q11) is compiled as
    an ordinary constant and stored with the block (its `Named.original`, the
