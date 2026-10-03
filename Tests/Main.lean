@@ -18,6 +18,7 @@ import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.Oracle
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -333,6 +334,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Phase A gates: twin canonicity against the non-canonical set
   -- (Tests.Ix.Compile.Twins).
   ("twins", Tests.Ix.Compile.Twins.run),
+  -- Lean's own auxiliaries on the canonical twin against Ix's regenerated
+  -- ones (Tests.Ix.Compile.Oracle).
+  ("aux-oracle", Tests.Ix.Compile.Oracle.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

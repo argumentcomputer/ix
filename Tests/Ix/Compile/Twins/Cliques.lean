@@ -23,11 +23,16 @@
   - `WT`   well-founded, explicit `termination_by`
   - `WB`   well-founded, explicit `termination_by` and `decreasing_by`
   - `PF`   `partial_fixpoint`, three functions
-  - `TS`   theorems by mutual structural recursion, two on one type former
+  - `TS`   theorems meant as structural, two on one type former; Lean
+           elaborates them by well-founded recursion (`odT (n+1)` calls
+           `evT (n+1)`), with GuessLex function-index measures
   - `TM`   theorems by mutual structural recursion over a mutual inductive
   - `TW`   theorems by mutual well-founded recursion
   - `IP`   theorems by structural recursion over a mutual inductive
            predicate (the "below" matchers)
+  - `TP`   theorems by mutual structural recursion, two on one type former
+  - `SP`   structural, fixed parameters in another order per function
+  - `WP`   well-founded, fixed parameters in another order per function
   - `PT`   `partial def` clique (kernel-level SCC; control)
 -/
 
@@ -502,6 +507,83 @@ theorem evM : EvP n → n % 2 = 0
 end
 end P1
 end IP
+
+/-! ## TP: theorems by mutual structural recursion, two on one type former
+(each calls the other at the structurally smaller argument) -/
+namespace TP
+namespace P0
+mutual
+theorem sa : ∀ n, ev (n + n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have h := sb n
+    rw [show n + 1 + (n + 1) = n + n + 1 + 1 by omega, ev.eq_2, h]; rfl
+theorem sb : ∀ n, ev (n + n + 1) = false
+  | 0 => rfl
+  | n + 1 => by
+    have h := sa n
+    rw [show n + 1 + (n + 1) + 1 = n + n + 1 + 1 + 1 by omega, ev.eq_2, ev.eq_2, ev.eq_2, h]
+    rfl
+end
+end P0
+namespace P1
+mutual
+theorem sb : ∀ n, ev (n + n + 1) = false
+  | 0 => rfl
+  | n + 1 => by
+    have h := sa n
+    rw [show n + 1 + (n + 1) + 1 = n + n + 1 + 1 + 1 by omega, ev.eq_2, ev.eq_2, ev.eq_2, h]
+    rfl
+theorem sa : ∀ n, ev (n + n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have h := sb n
+    rw [show n + 1 + (n + 1) = n + n + 1 + 1 by omega, ev.eq_2, h]; rfl
+end
+end P1
+end TP
+
+/-! ## SP: structural, fixed parameters in a different order per function -/
+namespace SP
+namespace P0
+mutual
+def fa (k : Nat) (b : Bool) : Nat → Nat
+  | 0 => k
+  | n + 1 => fb b k n + 1
+def fb (b : Bool) (k : Nat) : Nat → Nat
+  | 0 => if b then 1 else 0
+  | n + 1 => fa k b n + 2
+end
+end P0
+namespace P1
+mutual
+def fb (b : Bool) (k : Nat) : Nat → Nat
+  | 0 => if b then 1 else 0
+  | n + 1 => fa k b n + 2
+def fa (k : Nat) (b : Bool) : Nat → Nat
+  | 0 => k
+  | n + 1 => fb b k n + 1
+end
+end P1
+end SP
+
+/-! ## WP: well-founded, fixed parameters in a different order per function -/
+namespace WP
+namespace P0
+mutual
+def ha (k : Nat) (b : Bool) (n : Nat) : Nat := if h : n ≤ 1 then k else hb b k (n - 2) + 1
+def hb (b : Bool) (k : Nat) (n : Nat) : Nat :=
+  if h : n = 0 then (if b then 1 else 0) else ha k b (n - 1) + 2
+end
+end P0
+namespace P1
+mutual
+def hb (b : Bool) (k : Nat) (n : Nat) : Nat :=
+  if h : n = 0 then (if b then 1 else 0) else ha k b (n - 1) + 2
+def ha (k : Nat) (b : Bool) (n : Nat) : Nat := if h : n ≤ 1 then k else hb b k (n - 2) + 1
+end
+end P1
+end WP
 
 /-! ## PT: `partial def` clique (a kernel-level SCC through `_unsafe_rec`) -/
 namespace PT

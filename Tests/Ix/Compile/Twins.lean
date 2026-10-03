@@ -49,6 +49,7 @@ import Tests.Ix.Compile.NonCanonical
 import Tests.Ix.Compile.Twins.Cliques
 import Tests.Ix.Compile.Twins.Repro
 import Tests.Ix.Compile.Twins.Proto
+import Tests.Ix.Compile.Oracle.Lib
 import LSpec
 
 open LSpec Lean
@@ -124,6 +125,9 @@ def cliqueFamilies : List Family := [
   clique "TM" [("P0", []), ("P1", [])],
   clique "TW" [("P0", []), ("P1", [(`wb._mutual, `wa._mutual)])],
   clique "IP" [("P0", []), ("P1", [(`evM.match_1, `evM.match_2), (`odM.match_1, `odM.match_2)])],
+  clique "TP" [("P0", []), ("P1", [])],
+  clique "SP" [("P0", []), ("P1", [])],
+  clique "WP" [("P0", []), ("P1", [(`hb._mutual, `ha._mutual)])],
   clique "PT" [("P0", []), ("P1", [])]
 ]
 
@@ -174,7 +178,21 @@ private def proto (c : String) (rename : List (Name × Name)) (skip : List Name)
 def protoFamilies : List Family := Tests.Ix.Compile.Twins.Proto.cases.map
   fun (c, rename, skip) => proto c rename skip
 
-def allFamilies : List Family := cliqueFamilies ++ reproFamilies ++ protoFamilies
+private def lib (fam : String) (ns : Name) : Family :=
+  { fixture := `Tests.Ix.Compile.Oracle.Lib ++ fam.toName, kind := .library
+    pres := [{ id := "twin", ns := `Tests.Ix.Compile.Oracle.Lib.Twin ++ ns },
+             { id := "orig", ns := `Tests.Ix.Compile.Oracle.Lib.Orig ++ ns }] }
+
+/-- The library twins (`Tests/Ix/Compile/Oracle/Lib.lean`): Lean's own
+    constructions on the library block in Lean's order and in Ix's. -/
+def libraryFamilies : List Family := [
+  lib "LCNF" `Lean.Compiler.LCNF,
+  lib "Cutsat" `Lean.Meta.Grind.Arith.Cutsat,
+  lib "Linear" `Lean.Meta.Grind.Arith.Linear
+]
+
+def allFamilies : List Family :=
+  cliqueFamilies ++ reproFamilies ++ protoFamilies ++ libraryFamilies
 
 /-! ## Lean terms under the name map -/
 
@@ -600,6 +618,25 @@ def closeWithRecursors (env : Environment) (closure : List (Name × ConstantInfo
   if extra.isEmpty then return closure
   Ix.EnvScope.collectDeps env (closure.map (·.1) ++ extra.toList)
 
+/-- The fixture constants of the families and the union of their closures
+    (with recursors, `closeWithRecursors`). -/
+def familyClosure (env : Environment) (families : List Family) :
+    Array Name × List (Name × ConstantInfo) := Id.run do
+  let mut seeds : Array Name := #[]
+  for f in families do
+    for p in f.pres do
+      seeds := seeds ++ (presConsts env p).map (·.1)
+  return (seeds, closeWithRecursors env (Ix.EnvScope.collectDeps env seeds.toList))
+
+/-- The Lean compiler on a closure: the `ix compile-lean` pipeline
+    (`compileInputFromEnv`, then `compileLeanInput`). -/
+def leanCompile (env : Environment) (closure : List (Name × ConstantInfo))
+    (workers : Nat := 32) : IO Ix.CompileM.LeanPipelineOut := do
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) with
+  | .ok o => pure o
+  | .error e => throw (IO.userError s!"Lean compile failed: {e}")
+
 /-- The gate. -/
 def run : IO UInt32 := do
   let env ← get_env!
@@ -613,20 +650,11 @@ def run : IO UInt32 := do
     | some d => loadKernels d
     | none => pure {}
   if let some d := dumpDir then IO.FS.createDirAll d
-  -- the union of every presentation's closure
-  let mut seeds : Array Name := #[]
-  for f in families do
-    for p in f.pres do
-      seeds := seeds ++ (presConsts env p).map (·.1)
-  let closure := closeWithRecursors env (Ix.EnvScope.collectDeps env seeds.toList)
+  let (seeds, closure) := familyClosure env families
   IO.println s!"[twins] {families.length} families, {seeds.size} fixture constants, \
 {closure.length} in the closure"
-  -- Lean compiler (the `ix compile-lean` pipeline)
   let t0 ← IO.monoMsNow
-  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  let leanOut ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) with
-    | .ok o => pure o
-    | .error e => throw (IO.userError s!"[twins] Lean compile failed: {e}")
+  let leanOut ← leanCompile env closure
   let t1 ← IO.monoMsNow
   IO.println s!"[twins] Lean compile: {leanOut.bytes.size} bytes, \
 {leanOut.cenv.ungrounded.size} block failures, {t1 - t0} ms"

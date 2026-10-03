@@ -1596,7 +1596,267 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.below "block auxiliary" .pendingSplitAux
     "-"
     "c386201cea0b1fc4b153400accab49ae5e466f3e836340cba8e0bd91ac35dd1e"
-    "" "ONLY-B; §4.7 (b): exists for the Lean block, not for the Ix component"
+    "" "ONLY-B; §4.7 (b): exists for the Lean block, not for the Ix component",
+  -- Cliques.TP P0 P1
+  e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sa "clique member" .pendingTransport
+    "e9d460ba7b4cd906fd0f660108b189fbfe154953883e20319d7dd6452d4ddaab"
+    "3c2d53a05c70b77a5269ac8412b0095ed0dcca53d9ccebb753fbc6368e74d723"
+    "value.λ.body" "ROOT[V]; projection into the packed `brecOn` result at the clique position" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sb._f "structural functional" .pendingTransport
+    "2d3cb49f17edbe9962dffe39839decfcef1b848e952b2b0f0eb5a6bcfb0a46e9"
+    "bb0d910606ace0c4f4f2ff9c4fe40706a578a62ae074e0184d55ed0b3758cf43"
+    "type.∀.body.∀.dom.@0.λ.body.@0.@1.@0.@4" "ROOT[TV]; type of `_f` mentions the packed `below` motive (theorem statements in clique order); path into it" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sa._f "structural functional" .pendingTransport
+    "fd47ab03aaa9797d850828664dca8a12002076c9a72c4ac8bac3309ffdaab7fd"
+    "dddcbfd408991573a7c2afd6458b448e746deaada99201f81ea52af60cdaf431"
+    "type.∀.body.∀.dom.@0.λ.body.@0.@1.@0.@4" "ROOT[TV]; type of `_f` mentions the packed `below` motive (theorem statements in clique order); path into it" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sb "clique member" .pendingTransport
+    "22717b47155044f9187d41730a2f8c2a576647cb2d98eb1ad6d8d7cb08ece66c"
+    "c4151352703a615979f59fe2a8d00d70f6afc7d99b28b8845845f23e1da01764"
+    "value.λ.body" "ROOT[V]; projection into the packed `brecOn` result at the clique position" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  -- Cliques.SP P0 P1
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fa._sunfold "user constant" .inherited
+    "524593d208bc2e19ec9b7718cde53e602dda7ef836f446de9199a2a7906ec7e1"
+    "139fdb2c10ccbe60a2a493900668e67f0788c53f9a57960a20982e1d348b0587"
+    "" "via [fb]" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fa "clique member" .pendingTransport
+    "527d25952a6ba44c02993e69db17900753c35a642dfbca24394a9d6397c12f23"
+    "0a8782a03088cd47ee3cdfc257b03f5e386e8548f945f5427065b0540c437611"
+    "value.λ.body.λ.body.λ.body" "ROOT[V]; fixed-parameter telescope in the first function order (O13b), plus the projection into the packed `brecOn` result" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fb._f "structural functional" .pendingTransport
+    "4755dc9f98893af601cf942a679f3239403d4ae45ab03eafd0be03414a48816b"
+    "9c564d42d27f9d5a1b58a4befaa82a883e5c438577317f2931ecf4e43078305c"
+    "type.∀.dom" "ROOT[TV]; fixed-parameter telescope in the first function order (O13b), plus the path into the packed `below` motive" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fb._sunfold "user constant" .inherited
+    "5964fafa5cc2ed01ffbd65046721bbd87504094c6adf3baf1c9622221c98f6fe"
+    "7c5ce3d71009032d8d428b9402e0fdf231689095fd78f0e053dc33bef2a285a2"
+    "" "via [fa]" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fa._f "structural functional" .pendingTransport
+    "f1623552388b51d41e965671cfc420cc8024ebffd72bf81675062fee794f180b"
+    "df188f2d008db128174d3049a067aea93c06d7dbcf69ef358032120e773aa144"
+    "type.∀.dom" "ROOT[TV]; fixed-parameter telescope in the first function order (O13b), plus the path into the packed `below` motive" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fb "clique member" .pendingTransport
+    "78f12253d960f64c81c3e72c93ce696a8bb79a6c0b2deb13853e1a161faefabb"
+    "b675671ee9607fb8c67697885976f9b1b0ed1ca10352c2163f153c204ea22122"
+    "value.λ.body.λ.body.λ.body" "ROOT[V]; fixed-parameter telescope in the first function order (O13b), plus the projection into the packed `brecOn` result" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  -- Cliques.WP P0 P1
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual._proof_1 "encoding obligation" .pendingTransport
+    "24ce7b01a7f68ecea1e59627248a615f58ccfd435f8c058016f1f95dfd6191b6"
+    "5fdb169ee5639e5367b7ca20abbab138e3c3b127b490901ade94083a6fed1f68"
+    "type.∀.body.∀.body.@4.fn" "ROOT[TV|K]; decreasing obligation re-stated over the packing (S); equal under packKey",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual._proof_2 "encoding obligation" .pendingTransport
+    "0c739daac4453efefe97ea2124eddc567c901a609e1a36d0191f7a499dde8307"
+    "848b4d81111d5d993e61fbba20672461261caef265d28eac51ec2bf032089408"
+    "type.∀.body.∀.body.@4.fn" "ROOT[TV|K]; decreasing obligation re-stated over the packing (S); equal under packKey",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha.eq_def "equation lemma" .lazy
+    "57a59c6c6683b306cca70ca5a92e04b85385414bff173296c04667216610c387"
+    "7024839b94a5786e1512be86fd721d95f38cbda1035ea692508c8b4206f3c6bf"
+    "value.λ.body.λ.body.λ.body.@1.@0" "ROOT[V]; lazily realised equation lemma; its proof unfolds the clique encoding" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `hb.eq_def "equation lemma" .lazy
+    "ba50c991443c66700984e2ebd7e783f68e71b5a574b26685aff7feb82265f671"
+    "d3e27bed829407376d4cb0c7da14671d63e7994196c558c340f953fa0f4aec1b"
+    "value.λ.body.λ.body.λ.body.@1.@0" "ROOT[V]; lazily realised equation lemma; its proof unfolds the clique encoding" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual.eq_def "encoding equation" .orderStmt
+    "304abeedf1bd87f73382bcfc024dedb0aac1a01ea5f7ccb92efa730fb2732633"
+    "89a8772f25d96b69de96009004693da023d46169108c225c9aab72ecc40a9aa7"
+    "type.∀.dom" "ROOT[TV]; statement over the packed `_mutual`" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `hb "clique member" .pendingTransport
+    "b71ab54eb93bd5f8e5cac47b1a83061f3fb5e05e1855139378d94d4a29516b4f"
+    "a58ab00877da16960b0d732d2fe021fa9f40fbf5e58b3c84e8bbd53e98fbb9bb"
+    "value.λ.body.λ.body.λ.body.@0" "ROOT[V]; fixed-parameter telescope in the first function order (O13b), plus the `PSum` injection" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha "clique member" .pendingTransport
+    "96439b5e84d57a74ff0dcacd08017d631b47efee00bacc29669b08843b53440e"
+    "97dfbfe76350192cf901c5d92e8c6ea1cb22b69d49e90a4cdd7aae657bab95a8"
+    "value.λ.body.λ.body.λ.body.@0" "ROOT[V]; fixed-parameter telescope in the first function order (O13b), plus the `PSum` injection" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual "clique encoding" .pendingTransport
+    "e5b17bdb3751da6746ae4ef84d225c3586b1d87a412334584fed79217c9c33ba"
+    "5a1b5db06609153eba1fec84761e1e7f3a2c91adc473ac9b6322cea011795fd4"
+    "type.∀.dom" "ROOT[TV]; fixed-parameter telescope in the first function order (O13b), plus the `PSum` summand order" (kernelsA := (true, true, false)) (kernelsB := (true, true, false)),
+  -- Oracle.Lib.Linear twin orig
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_2 "sizeOf family" .o11aPending
+    "e2a92f924f397ee61827e23616fd2e88e68658d4b276dc9934eefbc27bab7535"
+    "25c95b1529f249115cd17451f972f4f5963906105cd4c65ff4cec0c77bf07c33"
+    "value.λ.body" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_1 "sizeOf family" .o11aPending
+    "4b6555393b8582bec0208dd4d4b426976f7c1b76e4b849da5969ced982d1f170"
+    "cb18606bdbb2a92f5eaaf270c9014c8d90ba687bd0528f8ea96284388ce6b94e"
+    "value.λ.body" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_1 "sizeOf family" .o11aPending
+    "85a24f55398a917aee85d4a010268491ccdd46c1c6c910b170a42b4b498ca41e"
+    "f4b16ed704e853487af9e5ae3033a97db1608541e05882606e32ccfae10562cb"
+    "value.λ.body" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_3 "sizeOf family" .o11aPending
+    "1e09f92eaa14c13b438d30e2f0b19f39086586cb9fc76cb511fe797f3c9d58ce"
+    "f84f63c6753dbccfadeb3b6b325ef59e9945a35bf6ce0d3fee3bae4c9defe8d9"
+    "value.λ.body" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr._sizeOf_2 "sizeOf family" .o11aPending
+    "e36b321ad9ad145320a8ef45b0419ad6fb9dc9e2a6e763aa396f11c6ea418478"
+    "cdf9c8639d70b8bc8bd74bbeb4e841a3a5823188f0f2646f91363aa00a044dfe"
+    "value.λ.body" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_2 "sizeOf family" .o11aPending
+    "6d3da884671a32df7f6d48437ca32ea99ef2ade30c031f2e32a88ce03865ae8a"
+    "6d4d628d928d48a0cf005a5ba6a6b4f712d74d3b2c26c11228abacf1d7b81eb4"
+    "value.λ.body" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr._sizeOf_1 "sizeOf family" .o11aPending
+    "836e15b01373c36efd496f2a9ef23431ca20a3fef2aa9c0208fd1113ca14dfdd"
+    "fa43db4b479e66d33f60875e6dbbfab7bb0ee27670cfea2131ca7be5586343d2"
+    "value.λ.body" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.core.sizeOf_spec "user constant" .inherited
+    "38c747a2886cfa2b696c6ffffdcb25633b6e245bc54c30b0728223f16538a138"
+    "bc1889165cf9b5bae9b279ba2ee7e44c59c3fbeabc5d09142695239a05ee973c"
+    "" "via [EqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreOfNat.sizeOf_spec "user constant" .inherited
+    "b2851269787d55f1ecc786491e8e69ec4241e6272a3ba85c890f361f35bd6756"
+    "57aec33f492cc8bb0bef1c744c8331ff0ff344965aa1b5e743a3140334714d8a"
+    "" "via [EqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_inst "sizeOf family" .o11aPending
+    "a68dfd8ad37a0d7353c831effb9c40edcb120a99e3ed2832e29aedda3c2d11c1"
+    "0f407db68763ebde63661d236c572de8876c81fe1c097c1032581e9e2f106060"
+    "value.@1.λ.body.fn" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEq.sizeOf_spec "user constant" .inherited
+    "4603107e6a354c19517fa39721aa1ea28c43e97de795b2f9f2ef93fdd1600664"
+    "1cd29a7242433eef509e62f1ee0ff6aff782a36d80dab129b3240828e5f478d0"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof._sizeOf_inst "sizeOf family" .o11aPending
+    "6e544b31bccfa51cc310fc586f38ed01db34a47fa05118d1cc9341ffc1f8728b"
+    "fa61eb8600505a167ca0d08d06767cac5911396341049a7d23c30de8a3445c9a"
+    "value.@1.λ.body.fn" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof._sizeOf_inst "user constant" .inherited
+    "3b45d6efb915ae8821a7618d119a10461e296f9e04efb7b17614b46a08b6f37f"
+    "4c971bbd7f6029e630832bf5ad9857aac27b9a09d2869151840fdf3d7ff604d3"
+    "" "via [EqCnstr._sizeOf_2]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ring.sizeOf_spec "user constant" .inherited
+    "20d8f15b9079591b8cd8601a2f7152ca8364c933efd20e6fd75b21e0d2b1d02a"
+    "24b06d3251e12d864e45ae0e008bf877ff323dfd29e980619f46de5aa1a98819"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.oneNeZero.sizeOf_spec "user constant" .inherited
+    "c1b7f56c7036d87c4688486af4d27ccdf403beacbf4e836aa9b7ea881c12591d"
+    "82db7ed91a0216a06ef965614e0d67bece179165c80f318ca3f081422e66ecb9"
+    "" "via [DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof._sizeOf_inst "sizeOf family" .o11aPending
+    "4816bc5331a9808ef1352b97872725ebba359cdcb55544bf4cd105dd94541ca3"
+    "7c3721d0ea1074b4123f4b46d99d7674556da60661003912a38a208813da1b75"
+    "value.@1.λ.body.fn" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof._sizeOf_inst "sizeOf family" .o11aPending
+    "b56f470d7c99d75df77302315a9c774c6c697474d6008af73ed60c50f851ff8e"
+    "48770903088d994835c48ded4aa3b18a81e99a512bab850b42d10a14608e20be"
+    "value.@1.λ.body.fn" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.mk.sizeOf_spec "user constant" .inherited
+    "4fe3cccb6ddeaa49f11cc39b7ae31d30432fb38329907e56e21ed29907b72627"
+    "737a3e7fee9c3cea2d998268b6dc87f86fa3c275c12908a6c034b0ce4f1a2de5"
+    "" "via [IneqCnstrProof._sizeOf_inst, IneqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_inst "sizeOf family" .o11aPending
+    "21a3c8f414efd691ca6bb6d32535a5dee694108fd5b93ec2ae0f398e136e34dc"
+    "5e48486a54d17e7a8244580959d3fbf06f8b56998b4df8a630e801a885223e6e"
+    "value.@1.λ.body.fn" "ROOT[V]; §4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCoreOfNat.sizeOf_spec "user constant" .inherited
+    "c812f8fec228bc3d0143516bf67ad5adf8a653b086ba6d4b715d07dd3c9bac7c"
+    "b40a7a97045f79ff08ba74da3825bf8c0bde125e9879e7f0ad36755be3397551"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreCommRing.sizeOf_spec "user constant" .inherited
+    "cca3ad838c7a5d5ea75f9caf40f616ddb559af64af3ed426e4c0df22e76c9db5"
+    "de4b5ad517afb007a3c6dbbf6a8f6a367bb013c3400bf9b3c013e2bccc1ecaed"
+    "" "via [EqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst.sizeOf_spec "user constant" .inherited
+    "011aaf3cb0725ee66afc6d5b53e7782008e8ea675fd94feef58ae2d685d3cee0"
+    "195055ebacf43a0214d0ed0f0b14bb3cd7040b0bcbf1c773193f99998a840d53"
+    "" "via [EqCnstr._sizeOf_inst, DiseqCnstr._sizeOf_inst, DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.mk.sizeOf_spec "user constant" .inherited
+    "6088796e466cb3bd86c3a2673908402990ff17d41a41a6ed4d1c86ba77423b16"
+    "904e6310f4e906f6c24d45bf4c5668718432d4fe65682b0461b525ddbc138b34"
+    "" "via [EqCnstrProof._sizeOf_inst, EqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.oneGtZero.sizeOf_spec "user constant" .inherited
+    "7167f92dc8816fc4ec17978ab468441c41161719340123e4035fdf6319e5cb9d"
+    "058d15a4ac5de4b72da1eb552db666c6fe36d602a2796b6b43d4231166cbb053"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.coreOfNat.sizeOf_spec "user constant" .inherited
+    "35373a974552d40d5c66ff036d2c1f0b8b27d8e9dcf80a641654c50b2a2cb631"
+    "76377fb060d9be13013e7830b8fda1b70c5c7138c12a86847d33a7d4477f22c7"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.neg.sizeOf_spec "user constant" .inherited
+    "7d1085991126f6feed29521796230238703df6434cb4dbe5b55f366298221e53"
+    "733343592f030ac13ad16f4e157dbc6990b53a29d74233482856ac7e21069e3a"
+    "" "via [DiseqCnstr._sizeOf_inst, DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.neg.sizeOf_spec "user constant" .inherited
+    "d341e7c1651dad3b71ecfc490dce4831366fbd071e10780bc5d2b2b0b6bf055c"
+    "03b2dc7a4683b68bee8334b168b8fd9050ddfb3eb39314234f35c1f34e45e6e3"
+    "" "via [EqCnstrProof._sizeOf_inst, EqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst1.sizeOf_spec "user constant" .inherited
+    "c328caba9b28bc991619d28898951e676cc9bfc2d86dd1218af90c8003d99d42"
+    "3a18d140e9cf25c478617ce298e01a665933598ba910ee7f68ead1692c1edda0"
+    "" "via [EqCnstr._sizeOf_inst, DiseqCnstr._sizeOf_inst, DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.mk.sizeOf_spec "user constant" .inherited
+    "078ebac4ce215824bf4d84f657ee911a63ce9f4d48b014c1e9892dea048d93d9"
+    "ada312b8e0eb414b50282e459d1dc10fe9052a38623aebc0a2696ba6b642bbc1"
+    "" "via [DiseqCnstr._sizeOf_inst, DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.core.sizeOf_spec "user constant" .inherited
+    "a74a60920f98ef433c60fbba9817f6fa0cc32d585a599961ceb2fdac0ce9e0d1"
+    "1943bfa0948a7ee703f598c942a2cfb3d38cb07179cd8c3bbf3c131575b86edb"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.sizeOf_spec "user constant" .inherited
+    "950bd0ebc5c2b761d97af1eb27b38bbff010c3c62f16f2d7f3203f802f547988"
+    "aee51dde98107e66eb8eca83a704fe4830285fb0bbdbcafc8f0ef00947e03db2"
+    "" "via [UnsatProof._sizeOf_inst, DiseqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCore.sizeOf_spec "user constant" .inherited
+    "01a6e3b2e1158517ca0fb75bf042ca356c58bea423b5e38840bb4dbff6151c33"
+    "cad711bdb1d052095fc8896df6e88daf8dbdb3c99fc7409df481e60ce079220e"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.combine.sizeOf_spec "user constant" .inherited
+    "b5cbbe20fa4f4467aa7c6759cf65222e4d4be472f4f678f3da4c2176d979daca"
+    "e309aa562b1043c6f4f6f99882c2b5a7316fe7166facb8a845beb5ff2d8806e9"
+    "" "via [IneqCnstrProof._sizeOf_inst, IneqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ringEq.sizeOf_spec "user constant" .inherited
+    "3dacb1e7bed424eb8c096588d97449dfcee0876c69ee8db92e5205312b415d18"
+    "ea36aaa6854cbd334bcf646f22dccd6eb029975d03d4bd99632de2aaf8689d69"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.norm.sizeOf_spec "user constant" .inherited
+    "bea3ae8c8d027116b019c310417d5afd4853b2030515633d67079dcee0457dc7"
+    "ad4920cf1d29d205fb63d51f004914474b0e9aa221ce1d043a4e837911898b38"
+    "" "via [IneqCnstrProof._sizeOf_inst, IneqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr._sizeOf_inst "user constant" .inherited
+    "5bb1a932545ac2f115a43bcecc1330172c3beea63db10736357c029a4d7eb93a"
+    "333409b9d5579975170cac9270fa00619e0f6c7e7c028f4b25118657e87e049d"
+    "" "via [EqCnstr._sizeOf_1]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.core.sizeOf_spec "user constant" .inherited
+    "b85f2224ce8fdb1e90db7de74051355afe8a230ad0fe74dd3e509058b7d59265"
+    "35c0291f29dba0c657e65031928daeb6759ca5fbd83e0d8f108e8cd2a57709e5"
+    "" "via [DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.subst.sizeOf_spec "user constant" .inherited
+    "f5d587fa64b428b015747099633a3ac87c8baa2ed684e1d2a05cae6a238a8b86"
+    "65e19e24d86328a80477104d63eb0bac8a1314dcd53fad92eae59894ef24ba42"
+    "" "via [EqCnstrProof._sizeOf_inst, EqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.sizeOf_spec "user constant" .inherited
+    "7db1620eb349e5e89775e44bb0d7bb373a4bcf8a39373cd6a5bf33ce5e643fa2"
+    "e938f7d52cb54aa49030ec12d2a71f7c0bf08d3c69e0ffd646a37073bc057568"
+    "" "via [UnsatProof._sizeOf_inst, IneqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofDiseqSplit.sizeOf_spec "user constant" .inherited
+    "cfc29c7dfba8091979426e2637e589c43cbf670583d9287e67ee2d43dcf31cea"
+    "f4855e7b52d204782e618b77fec0756aa54e8fca1044b37df8f38104748ecb83"
+    "" "via [UnsatProof._sizeOf_inst, DiseqCnstr._sizeOf_inst, IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ring.sizeOf_spec "user constant" .inherited
+    "9f4deadfded52ac4e0eabcc5245b97b9552d3f6710121438e52a4221b12a387a"
+    "87808d7b367dd5b69359c76c3964d6b80567ef6cbbb2fc15c8c42e064c7856a3"
+    "" "via [DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.dec.sizeOf_spec "user constant" .inherited
+    "9f757738ff82e1c612a0d153fa9909275918cce4163d15ae8e213ba858d6c7d9"
+    "5fe676244e78612544c5a34eeca4d973bdb7eb170a97a0c10e181dbf32fc16d3"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.coreOfNat.sizeOf_spec "user constant" .inherited
+    "90deab7b8ec8624dddd1df088de74ed6753d9fbecd48ad87b6e9e1648b8a5e89"
+    "b1639b4bcb35d9c1be9a2b06d722f5d53cae610163fcd67ac6f79ce023ef906e"
+    "" "via [DiseqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coeff.sizeOf_spec "user constant" .inherited
+    "33c829aa7dda3aec93e1315ef80365f575e9e5d4e1e44cd71905f57922f48405"
+    "39129586f37effc86b35074a42b7adcabd96d082d89881ff9591e4ab857e931c"
+    "" "via [EqCnstrProof._sizeOf_inst, EqCnstr._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEqOfNat.sizeOf_spec "user constant" .inherited
+    "d06162abe66e36f46f4c3080c35613a3be5ec59a36ebc26c16f459f2d004a874"
+    "e31810ba46ab24f7bde322cb940bb41336555ca66f5dbd8757cd18dc81265e65"
+    "" "via [IneqCnstrProof._sizeOf_inst]",
+  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.sizeOf_spec "user constant" .inherited
+    "b5083cb595f0e1ca587616cea952d75c24e55d150f6c8682b75cd133c9da67aa"
+    "806f8abf939ed83b0b7831373f5ef13890970302e81cd7ecf866163f1b4890b3"
+    "" "via [EqCnstr._sizeOf_inst, IneqCnstrProof._sizeOf_inst, IneqCnstr._sizeOf_inst]"
 ]
 
 end Tests.Ix.Compile.NonCanonical
