@@ -30,15 +30,31 @@ namespace Ix.Compile.ResourceProfile
 
 open Lean
 
-/-- Directives the compiler generates; a hand-written source may not use them. -/
-def generatedDirectives : List String := ["case", "equation"]
+/-- Directives the compiler generates; a hand-written source may not use them.
+`generated` ends the written source: the native parser accepts `case` and
+`equation` only after it (second review R2-4). -/
+def generatedDirectives : List String := ["case", "equation", "generated"]
+
+/-- A character the text of a directive may contain: printable ASCII or a
+tab (Rust `profile_from_source` enforces the same). -/
+def directiveChar (c : Char) : Bool := c == '\t' || (' ' ≤ c && c ≤ '~')
+
+/-- The directive text of each line of a profile source, as the native
+parser reads it: lines split at `\n`, one trailing `\r` dropped, the text
+before `#`. -/
+def directiveLines (source : String) : List String :=
+  (source.splitOn "\n").map fun line =>
+    let chars := line.toList
+    let chars := if chars.getLast? == some '\r' then chars.dropLast else chars
+    (String.ofList (chars.takeWhile (· != '#')))
 
 /-- The words of each directive line of a profile source: `#` starts a
-comment, words are separated by spaces or tabs. Empty lines are dropped. -/
+comment, words are separated by spaces or tabs, exactly as the native parser
+splits them (a source with any other character in a directive is rejected by
+`checkWritten` and by the native parser). Empty lines are dropped. -/
 def directives (source : String) : List (List String) :=
-  (source.splitOn "\n").filterMap fun line =>
-    let text := ((line.splitOn "#").headD "").map fun c => if c.isWhitespace then ' ' else c
-    match (text.splitOn " ").filter (!·.isEmpty) with
+  (directiveLines source).filterMap fun text =>
+    match ((text.map fun c => if c == '\t' then ' ' else c).splitOn " ").filter (!·.isEmpty) with
     | [] => none
     | words => some words
 
@@ -46,8 +62,15 @@ def directives (source : String) : List (List String) :=
 def hasCases (source : String) : Bool :=
   (directives source).any (· == ["cases"])
 
-/-- Reject a hand-written source that uses a generated directive. -/
+/-- Reject a hand-written source that uses a generated directive, or whose
+directives contain a character other than printable ASCII and tabs (a
+vertical tab, a form feed or a no-break space must not hide a directive
+from one of the two tokenizers, second review R2-4). -/
 def checkWritten (source : String) : Except String Unit := do
+  for text in directiveLines source do
+    if let some c := text.toList.find? (!directiveChar ·) then
+      throw s!"resource profile source: character U+{String.ofList (Nat.toDigits 16 c.toNat)} \
+        in a directive: only printable ASCII, spaces and tabs are allowed"
   for words in directives source do
     if let some word := words.head? then
       if generatedDirectives.contains word then
@@ -149,13 +172,15 @@ def checkRecursion (source : Option String) (env : Lean.Environment)
   return .ok required.reverse
 
 /-- The profile source the native compiler receives: the hand-written source,
-then, when it asks for case behavior, a `case` directive for every case
-definition of the closure. -/
+then a `generated` line ending it, then, when it asks for case behavior, a
+`case` directive for every case definition of the closure (`ix compile
+--equations` appends its `equation` directives after these). -/
 def build (source : String) (env : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String String := do
   checkWritten source
   checkNative (some source) env constants
-  let mut text := source ++ "\n"
+  -- `generated` ends the written source; only generated directives follow.
+  let mut text := source ++ "\ngenerated\n"
   if hasCases source then
     for name in caseDefinitions env (constants.map (·.1)) do
       text := text ++ s!"case {name}\n"

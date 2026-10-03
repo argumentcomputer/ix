@@ -256,15 +256,64 @@ private def checkedEquations : IO (Bool × Nat × Nat × Option String) := do
   finally
     IO.FS.removeDirAll directory
 
+/-- A no-break space (U+00A0). -/
+def nbsp : String := String.singleton (Char.ofNat 0xa0)
+
+/-- Second review R2-4: a generated directive behind a vertical tab, a form
+feed or a no-break space (the review's smuggling profiles) is refused by the
+Lean guard (`build`), and the native parser refuses it on its own when the
+text reaches it without that guard. E01's `dup` moves `xs` twice; the
+smuggled `equation dup dup_eq` would check it through `dup xs = xs`. -/
+private def smuggledDirectives : IO (Bool × Nat × Nat × Option String) := do
+  let env ← getCompileEnv #[fixtureModule]
+  let core ← IO.FS.readFile "profiles/lean-core.profile"
+  let ns := fixtureModule ++ `E01
+  let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants env
+    (Ix.EnvScope.collectDeps env (roots env ns))
+  let line := s!"equation {ns ++ `dup} {ns ++ `dup_eq}\n"
+  let directory ← IO.FS.createTempDir
+  try
+    let mut failures := #[]
+    for (what, hidden) in [("vertical tab", "\x0b"), ("form feed", "\x0c"), ("no-break space", nbsp)] do
+      let written := core ++ hidden ++ line
+      if (Ix.Compile.ResourceProfile.build written env constList).toOption.isSome then
+        failures := failures.push s!"{what}: the Lean guard accepted the written profile"
+      -- Without the Lean guard, after the compiler's own `generated` line too.
+      for text in [written, written ++ "generated\n", core ++ "generated\n" ++ hidden ++ line] do
+        let rejected ← try
+            let _ ← Ix.CompileM.rsCompileEnvBytesProfileSourceFFI constList
+              (directory / "smuggled.ixe").toString false true text
+            pure false
+          catch error => pure (((toString error).splitOn "resource profile source").length > 1)
+        unless rejected do failures := failures.push s!"{what}: the native parser accepted it"
+    -- A plain written `equation` line is refused by both as well.
+    let rejected ← try
+        let _ ← Ix.CompileM.rsCompileEnvBytesProfileSourceFFI constList
+          (directory / "plain.ixe").toString false true (core ++ line)
+        pure false
+      catch _ => pure true
+    unless rejected do failures := failures.push "a written equation line reached the checker"
+    if failures.isEmpty then return (true, 1, 0, none)
+    return (false, 0, 1, some ("\n".intercalate failures.toList))
+  finally
+    IO.FS.removeDirAll directory
+
 def suite : List TestSeq := [
   .individualIO "review probes: violations rejected, controls accepted (core and strict profiles)" none verdicts .done,
   .individualIO "an annotated native implementation must be a profile assumption" none
     nativeImplementations .done,
   .individualIO "check-equations verifies the checked pairs a sidecar lists" none
     checkedEquations .done,
+  .individualIO "generated directives cannot be smuggled into a written profile" none
+    smuggledDirectives .done,
   test "a written profile may not contain generated directives"
     ((Ix.Compile.ResourceProfile.checkWritten "cases\ncase List.casesOn\n").toOption.isNone &&
      (Ix.Compile.ResourceProfile.checkWritten "cases\nequation dup dup_eq\n").toOption.isNone &&
+     (Ix.Compile.ResourceProfile.checkWritten "cases\ngenerated\n").toOption.isNone &&
+     (Ix.Compile.ResourceProfile.checkWritten "cases\n\x0bcase sel\n").toOption.isNone &&
+     (Ix.Compile.ResourceProfile.checkWritten "cases\n\x0ccase sel\n").toOption.isNone &&
+     (Ix.Compile.ResourceProfile.checkWritten ("cases\n" ++ nbsp ++ "equation dup dup_eq\n")).toOption.isNone &&
+     (Ix.Compile.ResourceProfile.checkWritten ("cases\r\n# a comment may say anything" ++ nbsp ++ "\n")).toOption.isSome &&
      (Ix.Compile.ResourceProfile.checkWritten "cases # case in a comment\n").toOption.isSome)
 ]
 
