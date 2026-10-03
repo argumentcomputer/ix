@@ -1,6 +1,8 @@
 # The Lean compiler as passes: design document (Phase A)
 
-Status: **draft for the owner's signature (review R1)**. Written 2026-10-02/03 on `jcb/ix-certified`
+Status: **draft for the owner's signature (review R1)**, revised 2026-10-03 with the owner's
+decisions on the first draft's questions (§8). Written 2026-10-02/03
+ on `jcb/ix-certified`
 at `f829b760` (Lean 4.34.1). No compiler file changed between `e9cb732e` (where the planning reports
 cite lines) and `f829b760`, so every `file:line` below is valid at both. Nothing was built or run to
 write this document.
@@ -22,6 +24,9 @@ A fact about code carries a citation and no marker.
 - *CEN*, *PRO*, *ORA*, *MUT*: the census, prototype, oracle and mutual-definition study under
   `plans/review/auxgen-certify/inputs/` (`exp-census-1.md`, `exp-prototype-1.md`, `exp-oracle-1.md`,
   `study-mutual-definitions-1.md`).
+- *A1C*: `plans/wave1/a1c.md` (untracked): the Pass 1 port and census at `f829b760`, Lean 4.34.1,
+  Ixon v4 (bookmark `jcb/ix-cc-a1c`).
+
 
 Every definition used here is restated, so this document does not depend on those files.
 
@@ -36,17 +41,28 @@ Every definition used here is restated, so this document does not depend on thos
    - The Lean port has two latent defects that the Rust original does not have. **C1:** comparing
      members of different kinds always returns `lt`. **C2:** the comparison cache is not normalised
      for argument order.
-   - Neither is reachable today [argued]. C2 becomes reachable as soon as the seed is made name-free,
-     so its fix is part of A2.
+   - Neither is reachable today [argued; measured by A1C §4: 0 reversed non-equal cache hits inside
+     the sort on Init+Std, Mathlib and the fixtures]. Both are fixed in A2's migration commit, with
+     no byte change.
+   - Measured by A1C §1.3: 0 seed-sweep differences on 145 fixture components, 17 Mathlib components
+     and 170 Mathlib cliques; 0 preorder violations on components of up to 40 members.
+
    - The order is *defined by the refinement procedure*. A declarative "fixed point of sorting" is not
      unique (§2.3, §3.4 C9).
-2. **"Addresses break only full ties" is not what the code does.** External references are compared
-   by address at the first position where two members differ, interleaved with the structural
-   comparison. Phase A's decision therefore needs a two-key comparator (§2.3, §3.5).
+2. **Addresses are compared at the first difference, and Phase A keeps that.** External references
+   are compared by address wherever two members first differ, interleaved with the structural
+   comparison. The owner decided to keep this comparator (2026-10-03): the canonical order may flip
+   across Ixon format versions, which are breaking changes anyway. A two-key alternative was
+   considered and rejected (§2.3).
+
 3. **Discovery order** is a FIFO queue over the block's types, each constructor walked pre-order. It
    is not "depth first into new auxiliaries" as the old plan's Def 2.5 says. It is pinned in §2.5.
-   - One rule is unverifiable from local sources: how an occurrence of a *sibling* of an external
-     mutual inductive is deduplicated [open, §2.5].
+   - The definition is confirmed against `src/kernel/inductive.cpp:985-1180` at v4.34.1, and it
+     matches Lean's `rec_N` on 98 of 98 nested blocks [measured, A1C §0.3, §1.3].
+   - Both Ix ports deduplicate sibling occurrences of an external mutual inductive wrongly: 4
+     auxiliaries where Lean has 2, and production `ix compile` rejects the block [measured, A1C
+     item 7]. The fix is assigned to A0.
+
 4. **Transport of clique proofs is not a pure renaming in any of the three encodings** (§5). They
    use up to four kinds of step:
    - (R) a renaming of the encoding's own constants;
@@ -62,15 +78,34 @@ Every definition used here is restated, so this document does not depend on thos
    - by composition with the re-association isomorphism, for monotonicity;
    - unchanged, for theorem bodies, whose statements never mention the encoding.
 
-   The fallback is recorded as residue.
+   The constant is then recorded in the non-canonical set (§0.1, §7.2).
+
 5. **Lean 4.34's well-founded definitions with a single `Nat` measure use `WellFounded.Nat.fix`.**
    That combinator reduces on closed arguments (`src/lean/Init/WF.lean:470-499`), so the old plan's
    "never meet by conversion, not even on closed arguments" holds only for the `WellFounded.fix`
    route (§5.2).
 
+### 0.1 The governing principle (owner, 2026-10-03)
+
+**Faithfulness comes first.** Canonicity is approximated as closely as the Lean-elaborated input
+allows. Some of Lean's proof terms were built against the non-canonical presentation in ways that
+cannot be re-created as the terms an Ix elaborator would have produced from the canonical input.
+Where faithfulness demands it, a pass emits non-canonical or non-minimal Ixon, records the constant
+with its cause in the **non-canonical set** (§7.2), and moves on.
+
+This is a temporary expedient until elaboration is under Ix's control. The Ix elaborator will then
+produce the canonical terms directly.
+
+Every pass's "Side condition and fallback" section refers to this principle: **the fallback is always
+the faithful form.**
+
+Terminology: "non-canonical set" replaces the first draft's "residue", which collided with the old
+plan's "residual image". "Image" keeps its meaning: the extra constants of Def 3.4–3.5.
+
 ---
 
 ## 1. The pipeline and the convention
+
 
 ### 1.1 The passes
 
@@ -120,12 +155,16 @@ Proof-justified pass: the equation, the statement Phase B formalises, and its pr
 
 ## Canonicity
 What the output depends on: canonical data only, or canonical data plus addresses (where), plus
-the residue. Why two presentations of one canonical block or clique give equal bytes.
+the members of the non-canonical set. Why two presentations of one canonical block or clique give
+equal bytes.
 
 ## Side condition and fallback
-The decidable condition. What remains when it fails (the baseline) and why that is faithful.
+The decidable condition. What remains when it fails, and why that is faithful. Per §0.1 the fallback
+is always the faithful form, usually the baseline. A constant the fallback leaves non-canonical is
+recorded in the non-canonical set with its cause.
 
-## Residue and evidence
+## Non-canonical set and evidence
+
 Known non-canonical outputs with their cause code (§7.2). The fixtures, twins, value pins and
 census counts that exercise the pass, with their status markers.
 -/
@@ -185,10 +224,11 @@ Addresses enter only through ρ's address, i.e. through the canonical block.
 ## Side condition and fallback
 Decidable: m ≥ n (fully applied), and b is permutation-only (read from P1).
 Otherwise the occurrence keeps its baseline reference to the image constant img(T.rec), which is
-faithful by Def 3.6 and Prop 3.3.
+faithful by Def 3.6 and Prop 3.3. This is the faithful form of §0.1.
 
-## Residue and evidence
-Residue: none for full applications. Bare or partial occurrences stay faithful only (cause BARE,
+## Non-canonical set and evidence
+Entries: none for full applications.
+ Bare or partial occurrences stay faithful only (cause BARE,
 §7.2).
 Evidence:
   - [measured] ORA (exp-oracle-1.md, DQReord): 53/53 constants of a reordered fixture equal the
@@ -294,7 +334,8 @@ The key compares, lexicographically, in this order.
 
 **Kind tag:** definition < inductive < recursor.
 - Rust implements this (`crates/compile/src/compile.rs:3586-3592, 3618`).
-- Lean does not (defect C1, §3.4).
+- Lean does not (defect C1, §3.4); fixed in A2.
+
 
 **Definition** (`Ix/CompileM.lean:2153-2158`; `compile.rs:3369-3405`): `DefKind`, universe-parameter
 count, type, value. Safety and hints are not compared. Hints are per name in `Named.hints`.
@@ -303,7 +344,9 @@ count, type, value. Safety and hints are not compared. Hints are per name in `Na
 - universe-parameter count, parameter count, index count, constructor count, type;
 - then the constructors pairwise (`Ix/CompileM.lean:2162-2178`): universe count, constructor index,
   parameters, fields, type;
-- Rust additionally compares `is_rec` and `is_unsafe` first (C6, §3.4).
+- Rust additionally compares `is_rec` and `is_unsafe` first (C6, §3.4). The canonical key is
+  content-only, and Rust drops both keys at catch-up (owner decision on Q4).
+
 
 **Recursor** (`Ix/CompileM.lean:2199-2212`; `compile.rs:3536-3580`): universe count, parameters,
 indices, motives, minors, `k`, type, rules (field count, right-hand side).
@@ -359,6 +402,14 @@ stop at the first n with classes_{n+1} = classes_n
 ```
 - The canonical order of `K`'s classes is the final list.
 - The representative of a class is its first member in seed order.
+- **Seed (Phase A, unchanged from today):** the blake3 hash of the name
+  (`Ix/Environment.lean:148-153`; `compile.rs:3734`), so the representative is the member with the
+  least name hash.
+  - The owner decided to keep this (2026-10-03). Collapse makes member order irrelevant for
+    anonymous constants, and the representative decides only metadata. Names belong in metadata,
+    not source order.
+  - §3.3 shows that the class order does not depend on the seed.
+
 - `cmp_ctx` is the key of §2.2 under the context `ctx`.
 
 Today's implementation:
@@ -375,24 +426,20 @@ mention each other symmetrically can be self-consistent in either order. The ref
 them deterministically. **The canonical order is therefore defined as the output of this procedure**,
 and Phase B proves properties of the procedure, not of a declarative characterisation [argued].
 
-**Phase A decision: addresses break only full ties.** Today an external reference compares by address
-wherever two members first differ (`Ix/CompileM.lean:2098-2104`), interleaved with structure. So the
-order depends on the Ixon format version whenever the first difference is an external constant.
+**Phase A decision: addresses at the first difference (today's comparator).** An external reference
+compares by address wherever two members first differ (`Ix/CompileM.lean:2098-2104`), interleaved
+with the structure. The order therefore depends on the Ixon format version whenever the first
+difference is an external constant.
 
-Phase A's key is the lexicographic pair `(k₀, k₁)`:
-- `k₀` is the key of §2.2 with **all external references equal** (in-block references still by class
-  index);
-- `k₁` is today's key.
+The owner accepts this: a format-version change is a breaking change anyway, and the single-key
+comparison is faster.
 
-Properties:
-- `k₁`-equality implies `k₀`-equality, so the pair's equality is `k₁`'s and **the partition does not
-  change** [argued];
-- only the order changes, and only in blocks where `k₀` decides differently from `k₁`.
-
-Census (CEN Q5, `exp-census-1.md:159-169`) [measured]: in Mathlib's closure, 1 of 16 multi-class
-member sorts (`Aesop.GoalUnsafe`) and 4 of 33 nested sorts "tie without addresses". Whether that
-census measured `k₀`-ties or today's first-difference rule is not stated, so the number of blocks
-whose order moves is [open]. A1's census instrumentation must count it.
+*Considered and rejected:* a two-key comparator `(k₀, k₁)`.
+- `k₀` treats every external constant as equal; `k₁` is today's key.
+- It leaves the partition unchanged and moves only the order.
+- Measured effect [A1C §1.3]: 0 member orders move in Mathlib or Init+Std, but 59 of 170 specified
+  Mathlib clique orders move (4 of 9 in Init+Std), because clique bodies mention external constants
+  early.
 
 ### 2.4 Member content (Def 2.4; D3/D16)
 
@@ -419,8 +466,8 @@ equal under the key, and every compared datum has a canonical compiled form:
 ### 2.5 Nested auxiliaries in discovery order (Def 2.5; D2)
 
 Lean's kernel replaces nested occurrences by auxiliary inductive types in `elim_nested_inductive`
-(C++ `src/kernel/inductive.cpp:963-1077`, cited through its ports; the C++ file is not in the local
-source tree). Ix ports it twice:
+(C++ `src/kernel/inductive.cpp:985-1180` at v4.34.1, read by A1C; the ports cite it as `:963-1077`).
+ Ix ports it twice:
 - Lean: `Ix/AuxGen/Nested.lean:485-729`;
 - Rust: `crates/compile/src/compile/aux_gen/nested.rs:172-700`.
 
@@ -456,7 +503,7 @@ Procedure:
     to the block parameters and `idx`;
   - otherwise, for each `J` in `I.all`, in order: append to `Q` the auxiliary type
     `aux_k := J.{lvls} As`, with `J`'s constructors specialised, result heads renamed to the
-    auxiliaries, and `k` a global counter. Record `seen[I As] := aux` of `I`. Replace `e` by `I`'s
+    auxiliaries, and `k` a global counter. Record `seen[J As] := aux_J` for **every** `J` (Lean's rule; see below). Replace `e` by `I`'s
     auxiliary (`Nested.lean:526-590`).
 - The **discovery order** of the auxiliaries is their order in `Q` after the members. Lean names the
   recursor of the `k`-th as `m₁.rec_k`.
@@ -487,16 +534,24 @@ Evidence:
   This is indirect evidence that the port's source walk reproduces Lean's numbering. The direct gate
   is the oracle on every nested fixture (Phase A §5.3).
 
-**[open] Deduplication of sibling occurrences.**
-- Both ports register only the *head* `I As` in `seen`, not the siblings `J As`
-  (`Nested.lean:542-546`; `nested.rs:369-373`). The comment says the siblings are "reached through
-  the normal queue walk".
-- If an auxiliary constructor's field is `J As`, with `J` a sibling of an external mutual `I`, the walk
-  finds no `seen` entry and would create a second group.
-- Whether Lean's kernel registers every `J` cannot be checked from local sources.
-- A2 must settle it with a fixture *before* the migration: a nested occurrence of an external mutual
-  pair, e.g. `Tree/Forest` used as `T | mk : Tree T → T`, compared against Lean's `rec_N` count and
-  order.
+**Deduplication of sibling occurrences: Lean registers every `J As`.**
+- Lean's kernel records `seen[J As]` for every member `J` of the external group
+  (`m_nested_aux.push_back` per `J`, `src/kernel/inductive.cpp`, v4.34.1) [A1C §4 item 4]. The
+  definition above is corrected accordingly: **record `seen[J As] := aux_J` for every `J`**, not
+  only for `I`.
+- Both Ix ports register only the head `I As` (`Nested.lean:542-546`; `nested.rs:369-373`).
+  - On `T | mk : Tree T → T`, with `Tree/Forest` mutual, they create 4 auxiliaries where Lean has 2.
+  - Production `ix compile` rejects the block (`InvalidMutualBlock`, `numNested` 2 against 4)
+    [measured, A1C item 7].
+  - No library block contains such an occurrence [measured, A1C §4].
+- The fix is assigned to A0 (owner decision on Q5).
+
+**Validation** [measured, A1C §0.3–0.5, §1.3]:
+- The corrected definition was checked against `elim_nested_inductive_fn`
+  (`src/kernel/inductive.cpp:985-1180`, v4.34.1).
+- It matches `all₀.rec_N` in auxiliary count, heads, levels and parameters on 98 of 98 nested
+  blocks: 55 fixtures, 3 in Init+Std, 40 in Mathlib.
+- Under discovery order, Mathlib's changed blocks fall from 20 today to 6.
 
 **What changes.** This replaces the structural sort:
 - `sortAuxByPartitionRefinement`, `Nested.lean:731-918`;
@@ -543,7 +598,8 @@ Census (`exp-census-1.md:24`) [measured]: no evaporation in Init, Std, Lean, Bat
   travels with its function.
 - **M.3, classes and order.** §2.2–2.3 applied to specifications, with "constructors" replaced by
   "value and pinned choices".
-  - **Phase A decision proposed (Q8, §8):** the pinned choices compare *last*. A GuessLex or
+  - **Phase A decision (Q8, owner 2026-10-03):** the pinned choices compare *last*.
+ A GuessLex or
     `recArgPos` tie-break that differs between presentations then changes the order only when
     everything else ties.
   - Matchers in values are compared by address. Original matchers are content-canonical; only their
@@ -573,11 +629,13 @@ Census (`exp-census-1.md:24`) [measured]: no evaporation in Init, Std, Lean, Bat
 | Decision | Today | Phase A | Reason |
 |---|---|---|---|
 | Level comparison | syntactic (`CompileM.lean:1983-2009`) | after `canonUniv`, parameters by position | collapse = equal compiled content; no level-spelling dependence (§2.2) |
-| Seed order | blake3 of the name (`Ix/Environment.lean:148-153`; `compile.rs:3734`) | Lean's `all` order restricted to the component; `EqnInfo.declNames` order for cliques | name-free. The seed affects only the order inside a class, i.e. metadata (§3.3) |
-| Representative | least name hash (`compile.rs:4318-4330`) | first member of the class in seed order | equal content within a class (§2.4); metadata only; no name dependence. Lean's order is what a user expects as "the" name |
-| Address use | first differing external (§2.3) | `(k₀, k₁)`: addresses only on full `k₀`-ties | format-version independence except on full ties |
+| Seed order | blake3 of the name (`Ix/Environment.lean:148-153`; `compile.rs:3734`) | **unchanged** | the seed affects only the order inside a class, i.e. metadata (§3.3), and names belong in metadata. Seed-independence measured [A1C §1.3] |
+| Representative | least name hash (`compile.rs:4318-4330`) | **unchanged** | equal content within a class (§2.4); metadata only |
+| Address use | first differing external (§2.3) | **unchanged** | faster; format-version flips accepted. `(k₀, k₁)` considered and rejected (§2.3) |
 | Kind tag | Lean: none (C1) | definition < inductive < recursor | antisymmetry on all inputs (§3.4) |
-| Cache | Lean: unnormalised (C2) | stored for `(min, max)` with the result reversed when swapped, as in Rust | required once the seed is not name-sorted (§3.4) |
+| Cache | Lean: unnormalised (C2) | stored for `(min, max)`, with the result reversed when swapped, as in Rust | latent-bug fix, no byte change (§3.4) |
+| `is_rec`/`is_unsafe` keys | Rust only (C6) | none: content-only key | the flags are block-wide [measured, A1C §0.8]; Rust drops them at catch-up |
+
 | Nested order | structural sort | discovery order over the canonical block (§2.5) | equals Lean on identity blocks; address-free |
 | Packaging | one block per auxiliary kind | one constant per auxiliary (D6) | minimality; 382 + 28 packaging-only differences [measured, CEN:27] |
 
@@ -693,11 +751,15 @@ seed-dependent output [argued].
 | # | Site | Property at risk | Lean | Rust | Reachable on Lean input? | Fix in A2 |
 |---|---|---|---|---|---|---|
 | C1 | kind dispatch | antisymmetry | `compareConstBody` returns `lt` for **every** pair of different kinds: `.defn _, _`, `.indc _, _` and `.recr _, _` all give `lt` (`CompileM.lean:2215-2224`), so `defn < indc` and `indc < defn` | tag order (`compile.rs:3586-3592, 3618`) | No. SCCs are kind-homogeneous (§2.1) and `MutConst`s are built per SCC (`CompileDriver.lean:82-90`) [argued] | tag order, as Rust |
-| C2 | cache orientation | antisymmetry: a cached `lt` read back for the swapped pair | key `(min,max)` by name hash, but the value stored is `ord` of the *call's* orientation, and the read returns it unchanged (`CompileM.lean:2147-2151, 2163-2177, 2226-2236`) | normalised: `stored = reversed ? ord.reverse : ord` and the read is reversed back (`compile.rs:3442-3459, 3602-3622`) | **Not today** [argued]. Every class handed to `sortByM` is in name-hash order. `sortByM` (runs, then merges of adjacent runs) only calls `cmp a b` with `a` earlier in the input (`Common.lean:122-199`), so the call orientation equals the key orientation. `groupByM` calls `eqConst later earlier` (`Common.lean:211-215`), but only on adjacent pairs that the sort already compared (§3.3(a)): a strong pair is a cache hit whose sign `eqConst` ignores, and a weak pair is never stored. The constructor cache (`:2163-2177`) inherits its parent's orientation. **Reachable as soon as the seed is not name-sorted:** a name-free seed makes the call orientation differ from the key orientation | store normalised, as Rust |
+| C2 | cache orientation | antisymmetry: a cached `lt` read back for the swapped pair | key `(min,max)` by name hash, but the value stored is `ord` of the *call's* orientation, and the read returns it unchanged (`CompileM.lean:2147-2151, 2163-2177, 2226-2236`) | normalised: `stored = reversed ? ord.reverse : ord` and the read is reversed back (`compile.rs:3442-3459, 3602-3622`) | **Not today** [argued]. Every class handed to `sortByM` is in name-hash order. `sortByM` (runs, then merges of adjacent runs) only calls `cmp a b` with `a` earlier in the input (`Common.lean:122-199`), so the call orientation equals the key orientation. `groupByM` calls `eqConst later earlier` (`Common.lean:211-215`), but only on adjacent pairs that the sort already compared (§3.3(a)): a strong pair is a cache hit whose sign `eqConst` ignores, and a weak pair is never stored. The constructor cache (`:2163-2177`) inherits its parent's orientation. It would become reachable under any seed that is not name-sorted; Phase A keeps the name-hash seed, so the fix is for a latent bug [measured: A1C §4, 0 reversed non-equal hits inside the sort] | store normalised, as Rust |
+
 | C3 | strength flag | soundness of caching | `SOrder` (`Ix/SOrder.lean:12-60`) | `SOrd` | — sound (§3.2) [argued] | none |
-| C4 | syntactic levels | not a preorder failure: minimality, and order follows level spelling | `CompileM.lean:1983-2009` | `compile.rs:3153-3205` | in principle yes; library population unmeasured [open] | compare `canonUniv` forms (§2.2) |
-| C5 | address interleaving | not a preorder failure: order depends on the format version beyond full ties | `CompileM.lean:2098-2104, 2129-2133` | `compile.rs:3210-3227, 3344-3356` | yes: 1/16 member and 4/33 nested sorts in Mathlib involve addresses [measured, CEN Q5] | `(k₀, k₁)` (§2.3) |
-| C6 | `is_rec`, `is_unsafe` | Lean/Rust parity, not order | absent (`CompileM.lean:2181-2192`) | first keys (`compile.rs:3468-3471`) | No, if both flags are uniform across Lean's block [argued for `isUnsafe`: Lean blocks share safety]. Whether Lean's `InductiveVal.isRec` is block-wide is [open] (the C++ kernel is not in the local tree). A split member keeps Lean's flag in either case | the canonical key compares content only. The Rust catch-up drops both keys, or computes them on the Ix block |
+| C4 | syntactic levels | not a preorder failure: minimality, and order follows level spelling | `CompileM.lean:1983-2009` | `compile.rs:3153-3205` | in principle yes. Library population: 0 member orders move in Mathlib and Init+Std, and 0 clique orders [measured, A1C §1.3] | compare `canonUniv` forms (§2.2) |
+
+| C5 | address interleaving | not a preorder failure: order depends on the format version beyond full ties | `CompileM.lean:2098-2104, 2129-2133` | `compile.rs:3210-3227, 3344-3356` | yes: 1/16 member and 4/33 nested sorts in Mathlib involve addresses [measured, CEN Q5] | none: kept by owner decision (§2.3) |
+
+| C6 | `is_rec`, `is_unsafe` | Lean/Rust parity, not order | absent (`CompileM.lean:2181-2192`) | first keys (`compile.rs:3468-3471`) | No. Both flags are block-wide: a non-recursive member of a split block still has `isRec = true` [measured, A1C §0.8], and safety is uniform within a block | the canonical key compares content only; the Rust catch-up drops both keys |
+
 | C7 | constructor indices in `ctx` | none at a fixed context | `Mutual.lean:109-121` | same | constructor references never occur in Lean member or constructor types [argued] | none |
 | C8 | semantic `mdata` | totality | orderKey, then body | same | Ix-internal only (source contracts) | none |
 | C9 | declarative "fixed point" | uniqueness of the specification | — | — | yes, as a definition (§2.3) | define the order as the procedure |
@@ -709,24 +771,27 @@ seed-dependent output [argued].
 - The fixed point is the coarsest consistent partition. Its class order does not depend on the seed;
   only the representative does [argued].
 - C1 and C2 are defects of the Lean port that today's inputs do not reach. Both are fixed in A2's
-  migration commit, and neither fix moves a byte: C1 is unreachable, and C2 is unreachable under
-  today's seed. The fix for C2 is a precondition of the name-free seed.
-- C4 and C5 are not preorder failures. They are the canonical-form changes Phase A already decided,
-  and both move addresses. C4 moves them where level spellings differ inside a block; C5 where
-  `k₀` and `k₁` order differently.
-- Whether the theory needs a further fix is [open] only for C6's flag question. It has no byte effect
-  either way.
+  migration commit, and neither fix moves a byte. C2 is a latent-bug fix. It is a precondition of
+  nothing, since the seed stays name-hash.
+- C4 and C5 are not preorder failures.
+  - C4 (`canonUniv` levels) is adopted. It moved 0 orders in the libraries [measured, A1C §1.3].
+  - C5 (first-difference addresses) is kept by owner decision.
+- C6 has no byte effect, because the flags are block-wide [measured, A1C §0.8]. The key becomes
+  content-only.
+- Measured: 0 preorder violations at the fixed point on every fixture component and on 17 Mathlib
+  components of up to 40 members, under both rule sets [A1C §1.3, §4 item 8].
+
 
 ### 3.5 Phase A's comparator, stated for Phase B
 
-`cmpA_ctx(x, y) := lex(k₀_ctx(x, y), k₁_ctx(x, y))`, where:
-- both keys are §3.2's comparison with levels replaced by `canonUniv` forms and the kind tag first;
-- `k₀` maps every external constant to one leaf value `(1, ⋆)`;
-- `k₁` maps it to `(1, addr)`.
+`cmpA_ctx(x, y)` is today's key of §3.2, external references by address at the first difference,
+with three changes:
+- levels are compared as `canonUniv` forms;
+- the kind tag comes first (C1);
+- the key is content-only, without `is_rec` or `is_unsafe` (C6).
 
-Both keys are total preorders, and a lexicographic pair of total preorders is one [argued]. The strong
-flag is computed per key as today. A result is strong iff both components are strong, or the first is
-strong and non-equal.
+The cache is normalised (C2), which changes no result. `cmpA_ctx` is a total preorder [argued; 0
+violations measured, A1C §1.3]. The strong flag is computed as today.
 
 Phase B's L1 statements:
 - (i) `cmpA_ctx` is a total preorder for every `ctx`;
@@ -751,20 +816,32 @@ Phase B's L1 statements:
    and split its components into separate declarations with the block's universes, parameters and
    sort.
 3. **Seed sweep, no recompilation.** On each block's prepared `MutConst` list, run the refinement
-   under the identity, reverse, name-hash and ten random seeds. Require identical class lists, as
-   sets, in identical order.
+   under the identity, reverse, name-hash and ten random seeds, with the C2 fix on. Require identical
+   class lists, as sets, in identical order.
+   - First run [measured, A1C §1.3]: 0 differences on 145 fixture components, 17 Mathlib components
+     and 170 Mathlib cliques.
+
 4. **Property check per round.** At every round of every run, evaluate `cmpA_ctx` on all ordered pairs
    and triples of the class being refined. Require reflexivity, antisymmetry up to equality, and
    transitivity, with the cache on and off. For `|K| ≤ 12` this costs at most 1,728 triples per round.
+   - First run [measured, A1C §1.3]: 0 violations.
+
 5. **Compile and compare.** For legs 1 and 2, compile each presentation and require all of:
    - the Ix block bytes and every Ix auxiliary are identical;
    - `N` sends corresponding names to corresponding canonical positions;
-   - every other constant is byte-identical except the entries of the residue fixture (§7.2).
+   - every other constant is byte-identical except the entries of the non-canonical set (§7.2).
+
+   Presentations that change the addresses of external constants, such as another format version,
+   are out of scope: the order may then flip by design (§2.3).
+
 6. **Lean/Rust.** Run the seed sweep on Rust's `sort_consts` through `rs_compile_phases` until the
-   catch-up PR; it gates the Rust port of `(k₀, k₁)`.
+   catch-up PR. It gates the Rust catch-up's `canonUniv` levels and its removal of `is_rec` and
+   `is_unsafe`.
+
 
 **Failure policy.** Any failure of leg 3 or leg 4 is a comparator defect and stops A2. A leg 5
-difference outside the residue fixture is a canonicity defect of a later pass.
+difference outside the non-canonical set is a canonicity defect of a later pass.
+
 
 ---
 
@@ -976,7 +1053,8 @@ From ORA, split row [measured], on `SurgSplit`, `DQSplit`, `DQMut`, `EvapClosure
 
 | Cause | What differs | Phase A |
 |---|---|---|
-| (a) | The split member keeps the block's universe list (`UnivSplit`: `lvls = 1` against `0`) | By design (D3/D16, §2.4). Recorded as faithful but not canonical against a separate declaration with fewer universes; not a residue entry, since Def 4.3 excludes such presentations |
+| (a) | The split member keeps the block's universe list (`UnivSplit`: `lvls = 1` against `0`) | By design (D3/D16, §2.4). Faithful but not canonical against a separate declaration with fewer universes. It is not an entry of the non-canonical set, since Def 4.3 excludes such presentations
+ |
 | (b) | `below`/`brecOn` generated for a split member that is no longer recursive | Fixed. Pass 2 decides existence by Lean's conditions on the Ix block (old plan Def 2.7), never by names or by the Lean block |
 | (c) | Lean's `noConfusion` takes the enumeration form only for `numTypeFormers == 1 && !isRec` (`src/lean/Lean/MonadEnv.lean:198`, per ORA) | Lean's form compiles by baseline (faithful); O11b rewrites users onto the canonical `noConfusion` (proof-justified) |
 | (d) | Lean's mutual `_sizeOf_N` inlines the block recursor, while the separate form goes through the instance | Baseline; O11a if one `rfl` on `Linear.EqCnstr` confirms it is definitional [open] |
@@ -1030,8 +1108,9 @@ and a permutation changes the nesting depth of a summand or factor. Well-founded
 
 **Precondition: the grammar.** Every occurrence of an encoding type in `p` must be in a recognised
 position: one of the constructs above, or a copy of a statement produced by the encoding. A
-recogniser decides this. When it fails, the fallback of each encoding applies, and the constant is a
-residue entry with cause `SHAPE` (§7.2).
+recogniser decides this. When it fails, the fallback of each encoding applies. That fallback is the
+faithful form (§0.1), and the constant enters the non-canonical set with cause `SHAPE` (§7.2).
+
 
 **Faithfulness never depends on transport.**
 - Theorem statements and definition types are translated exactly.
@@ -1167,8 +1246,9 @@ Those are recognised by the grammar [argued; the shapes are measured nowhere: op
 - `monotone_compose` is at `Init/Internal/Order/Basic.lean:209` in the 4.33.1 tree that could be read;
   its 4.34 location is [open].
 - `mono φ` is a `PProd.monotone_mk` tree over projection-path proofs, built by (G).
-- The fallback embeds Lean's `hmono_i`, whose content follows Lean's packing. It is therefore residue
-  (cause `SHAPE`), but always a proof.
+- The fallback embeds Lean's `hmono_i`, whose content follows Lean's packing. It therefore enters the
+  non-canonical set (cause `SHAPE`), but it is always a proof (§0.1).
+
 
 **Faithfulness of the members** is O16: `Lean.Order.fix` commutes with an order isomorphism of the
 product. That lemma is still to be written once, in the checker's theory or as a Lean module [open].
@@ -1219,7 +1299,7 @@ the restriction of `σ` to group `k`.
 - **No (S) and no (G).** A structural definition carries no separate proof obligation: its
   "decreasing" evidence *is* the `below` path, which is a term.
 
-**The fallback is the baseline.** If a functional uses a packed value outside the grammar (passes a
+**The fallback is the baseline, the faithful form of §0.1.** If a functional uses a packed value outside the grammar (passes a
 `below` dictionary to a helper other than a transformed matcher), the whole clique keeps its baseline.
 That is faithful.
 
@@ -1250,8 +1330,9 @@ sources exist:
   `below` paths against the packed motives for structural recursion. The result is checked by
   re-encoding it and comparing with Lean's bytes.
 
-The recommendation (Q6, §8): (i), and then (ii) for statement ties. Fall back to the baseline, with
-cause `NOSPEC`, when recovery fails.
+Decision (Q6, owner 2026-10-03): (i) first, then (ii) for statement ties. Otherwise Lean's form (the
+baseline) is used, recorded with cause `NOSPEC`.
+
 
 **Equation lemmas of definitions** (`eq_N`, `eq_def`, `_mutual.eq_unfold`) have proofs that unfold
 Lean's encoding. When a member maps to the canonical form, the old plan's §3.5 requirement 2 applies:
@@ -1259,9 +1340,11 @@ cast along the correspondence, else demote the clique, else a compile error nami
 equations are realised lazily (MUT §1.2), so which of them exist varies between builds (A Δ13). The
 canonicity claim excludes them (§7.1).
 
-### 5.5 Where two presentations can still give different transported terms
+### 5.5 The non-canonical set: where two presentations can still give different transported terms
 
-These are the residue causes the fixture must be able to record (§7.2).
+
+These are the causes that the non-canonical set must be able to record (§7.2).
+
 
 | Cause | Mechanism | Encoding |
 |---|---|---|
@@ -1273,7 +1356,8 @@ These are the residue causes the fixture must be able to record (§7.2).
 | `NOSPEC` | A theorem clique whose order cannot be determined (§5.4) | theorems |
 
 The numbering of `proof_N`, `match_N` and `_f` names, and which declaration owns a shared matcher,
-are names only. They are metadata, not residue.
+are names only. They are metadata, not members of the non-canonical set.
+
 
 ### 5.6 What is measured about cliques
 
@@ -1356,7 +1440,7 @@ every constant in `X`'s closure [argued].
   Primitives are recognised by address and shape, never by name.
 - **D7:** subsumed by anonymous mode plus metadata from the source declarations.
 - **D8:** every `]!` is replaced by total code or by a named error that reports the block.
-- **D9, D10:** the seed is Lean's `all` order (§2.8). `lo` and `Set` order are never observed.
+- **D9, D10:** the seed stays the name hash (§2.3, owner decision); it affects only metadata (§3.3). `lo` and `Set` order are never observed.
 
 **What the wave and speculative drivers must satisfy.** They are optimisations of the fold, gated by
 schedule identity: byte-equal output for every driver, every worker count, and closure against whole.
@@ -1370,7 +1454,8 @@ the closure it read equals the final closure.
 
 ---
 
-## 7. What is canonical and what is only faithful; the residue fixture
+## 7. What is canonical and what is only faithful; the non-canonical set
+
 
 ### 7.1 The table (Phase A §3.4.5, made precise)
 
@@ -1379,7 +1464,8 @@ the closure it read equals the final closure.
   parameters and sort; collapse;
 - for cliques: permutation, regrouping, renaming, equal members.
 
-| Source constant | Compiled by | Canonical? | Residue cause if not |
+| Source constant | Compiled by | Canonical? | Non-canonical cause if not |
+
 |---|---|---|---|
 | Ix blocks and every Ix auxiliary | P1, P2 | **yes** [argued; leg 5 of §3.6] | — |
 | Anything over an unchanged block or clique | identity translation | **yes** | — |
@@ -1403,20 +1489,22 @@ the closure it read equals the final closure.
 | A split member against the member declared alone with fewer universes, parameters or a smaller sort | — | not a presentation under Def 4.3 | not recorded |
 | Theorem proofs in general | any | not promised (M7) | not recorded unless the theorem is in a clique fixture |
 
-### 7.2 The residue fixture
+### 7.2 The non-canonical set (tracked fixture)
 
-**Location.** The fixture is tracked at `Tests/Ix/Compile/Residue.lean`, as Lean data, because
+
+**Location.** The fixture is tracked at `Tests/Ix/Compile/NonCanonical.lean`, as Lean data, because
+
 tooling is in Lean. The twins gate (Phase A §5.2) reads it.
 
 **Format.**
 
 ```lean
-inductive ResidueCause where
+inductive NonCanonicalCause where
   | tacticAsym | shape | guessLex | recArg | orderStmt | bare | collapseArms
   | indPredBelow | noSpec | lazy | o11aPending
   deriving Repr, BEq
 
-structure ResidueEvidence where
+structure NonCanonicalEvidence where
   addrA       : String          -- hex address under presentation A
   addrB       : String          -- hex address under presentation B
   firstDiff   : String          -- path to the first differing node of the decoded terms, e.g. "value.app.arg.3.proj"
@@ -1424,16 +1512,16 @@ structure ResidueEvidence where
   kernelsB    : Bool × Bool × Bool
   note        : String          -- one line; for TACTIC-ASYM the tactic or lemma responsible
 
-structure ResidueEntry where
+structure NonCanonicalEntry where
   fixture     : Lean.Name       -- the fixture module, e.g. `Tests.Ix.Compile.Fixtures.WFPair`
   presA       : String          -- presentation id, e.g. "orig"
   presB       : String          -- e.g. "perm[1,0]", "regroup:where", "rename"
   constant    : Lean.Name       -- the constant's name in presentation A
   canonical   : String          -- its canonical position (block or clique, class, role)
-  cause       : ResidueCause
-  evidence    : ResidueEvidence
+  cause       : NonCanonicalCause
+  evidence    : NonCanonicalEvidence
 
-def residue : List ResidueEntry := [ ... ]
+def nonCanonical : List NonCanonicalEntry := [ ... ]
 ```
 
 **Gate semantics.** The fixture is **exact** in both directions:
@@ -1443,100 +1531,66 @@ def residue : List ResidueEntry := [ ... ]
 
 Entries change only in a commit that states the cause.
 
-**Policy.** Recording is the Phase A policy (Q-A5). A `TACTIC-ASYM` or `SHAPE` entry on library code
+**Policy.** Recording is the Phase A policy (Q-A5), following the principle of §0.1.
+ A `TACTIC-ASYM` or `SHAPE` entry on library code
 is reported in the migration's PR text.
 
 ---
 
-## 8. Open questions for the owner
+## 8. Decisions (owner, 2026-10-03)
 
-Each question comes with the recommendation this document assumes.
+These are the first draft's questions with the owner's answers. The text above has been revised to
+match.
 
-**Canonical form and the comparator (decide before A2's migration).**
-- **Q1. Addresses only on full ties.** Adopt the two-key comparator `(k₀, k₁)` of §2.3 in A2's
-  migration? Today addresses are interleaved with the structural comparison.
-  - *Recommend: yes.* It is the stated Phase A decision, the partition is unchanged, and it removes
-    format-version dependence except on full ties.
-  - Cost: the order of some blocks moves. A1's census must count how many before A2.
-- **Q2. Seed and representative.** Seed = Lean's `all` order restricted to the component, and
-  `EqnInfo.declNames` order for cliques. Representative = first in seed order.
-  - *Recommend: yes.* It is name-free. Only metadata depends on it (§3.3). It names a collapsed class
-    by the member the user wrote first.
-- **Q3. Fixes C1 (kind tag) and C2 (cache orientation) in the Lean port.**
-  - *Recommend: both, in A2's migration commit.* Neither moves a byte. C2 is a precondition of Q2.
-- **Q4. `is_rec`/`is_unsafe` in Rust's key (C6).**
-  - *Recommend:* the canonical key compares content only. The Rust catch-up drops both keys, or
-    computes them on the Ix block. This has no byte effect if the flags are block-wide.
-  - One fact must be checked first: is Lean's `InductiveVal.isRec` block-wide? A one-line
-    `#eval` on a split fixture answers it [open].
-- **Q5. Discovery-order deduplication of a sibling of an external mutual inductive (§2.5).**
-  - *Recommend:* a blocking fixture before A2, comparing Lean's `rec_N` count and order on
-    `T | mk : Tree T → T` with `Tree/Forest` mutual. Fix both ports if Lean registers every sibling.
-- **Q6. Theorem cliques without a specification (§5.4).**
-  - *Recommend:* order theorem cliques by statement first, then by the recovered specification. The
-    recovery is checked by re-encoding against Lean's bytes. Fall back to the baseline with cause
-    `NOSPEC`.
-  - A smaller alternative: Phase A leaves theorem cliques at the baseline and records them. That gives
-    up theorem-address canonicity for cliques, which the decision log puts in scope.
-- **Q7. Well-founded decreasing proofs (§5.1).**
-  - *Recommend:* re-state every `proof_k` over the canonical packing. Its value is `Φ_σ(p_k)` when the
-    grammar recognises `p_k`, else Lean's `p_k` verbatim, which is accepted by conversion and recorded
-    as `SHAPE`. Never re-run a tactic.
-- **Q8. Pinned choices compare last in M.3 (§2.7).**
-  - *Recommend: yes.* Otherwise a GuessLex or `recArgPos` difference between presentations changes
-    the canonical *order* as well as the encoding.
-- **Q9. `partial_fixpoint` monotonicity (§5.2).**
-  - *Recommend:* regenerate the projection-path sub-proofs with `solveMonoCall`'s recipe. Fall back to
-    `monotone_compose (mono φ) hmono_i` for user-supplied terms (`SHAPE`).
-  - O16's lemma (fix commutes with a product reordering) is written once as an Ix-supplied Lean
-    module in A5.
-- **Q10. The development (§4.3).**
-  - *Recommend:* hereditary substitution of the image's parameters, contracting the β-, projection-
-    and η-redexes formed at the substituted variables, and never ι.
-  - Confirm, because it is part of the canonical form of every rewritten call site. A3 pins it with
-    twins whose motives and minors are λs.
-- **Q11. Bare and partial occurrences (§4.5).**
-  - *Recommend:* reference the image constant, which serves as the eta adapter. Do not inline
-    η-expansions. Library population: 0 [measured, CEN:33].
-- **Q12. Old Def 2.5 wording.**
-  - *Recommend:* replace "depth first into new auxiliaries" with the FIFO-queue definition of §2.5.
-    Same for `docs/ix_canonicity.md` at A8.
+| # | Question | Decision |
+|---|---|---|
+| Q1 | Two-key comparator `(k₀, k₁)`, addresses only on full ties | **Not adopted.** Today's first-difference comparator is the Phase A comparator. Format-version flips are accepted as part of a breaking change, and the single key is faster (§2.3, §3.5) |
+| Q2 | Name-free seed and representative | **Not adopted.** The name-hash seed and the least-name-hash representative stay. Collapse makes member order irrelevant for anonymous constants, and names belong in metadata (§2.3, §2.8) |
+| Q3 | Fix C1 (kind tag) and C2 (cache orientation) in the Lean port | **Yes**, in A2's migration commit, with no byte change. C2 is a latent-bug fix |
+| Q4 | `is_rec`/`is_unsafe` in Rust's key | **Content-only key.** Rust drops both keys at catch-up. `isRec` is block-wide [measured, A1C §0.8] |
+| Q5 | Sibling deduplication in nested expansion | **Fix**, assigned to A0. Ix gives 4 auxiliaries where Lean has 2, and production rejects the block [measured, A1C item 7] |
+| Q6 | Order of theorem cliques without a specification | Statements first, then the recovered specification for ties, otherwise Lean's form, the baseline (§5.4) |
+| Q7 | Well-founded `proof_k` | Re-state the obligation. Use the transported term when recognised, else Lean's term verbatim. Never re-run a tactic (§5.1) |
+| Q8 | Pinned choices in M.3 | Compare last (§2.7) |
+| Q9 | `partial_fixpoint` monotonicity | Regenerate the path sub-proofs with `solveMonoCall`'s recipe; fall back to `monotone_compose (mono φ) hmono_i` (§5.2). O16's lemma is written once, in A5 |
+| Q10 | The development | Hereditary substitution of the image's parameters: β, projection and η at the substituted variables, never ι (§4.3) |
+| Q11 | Bare and partial occurrences | Reference the image constant, which serves as the eta adapter (§4.5) |
+| Q12 | Old Def 2.5 wording | Replaced by the FIFO-queue definition of §2.5, confirmed against `inductive.cpp:985-1180` [A1C]. `docs/ix_canonicity.md` follows at A8 |
 
-**Phase A §7, answered better now.**
-- **Q-A2 (discovery order): confirm,** conditional on Q5.
-  - The cost is unchanged: `canonical_aux_order` (`crates/kernel/src/inductive.rs:1284-1450`),
-    `Ix/Tc/CanonicalCheck.lean`, the certified modeller's nested adaptation and `BlockOrder` are
-    re-recorded.
-- **Q-A5 (residue policy): accept and record.** §5 shows the residue is confined to (a) proof internals
-  the grammar does not recognise, (b) order-dependent *choices* (`GUESSLEX`, `RECARG`), and (c)
-  order-following statements.
-  - (a) is measurable per term.
-  - (b) is the larger risk, and it is a property of Lean's search, not of transport.
-  - Narrow D20 should be revisited only if (a) is frequent on library code.
-- **Q-A6 (scope O1–O17): all, in the stated order.**
-  - §1.4 shows the passes compose without order conflicts once definitional precedes clique precedes
-    collapse/split.
-  - O16 alone carries an [open] lemma. If it is not written by A5, O16 is deferred, and
-    `partial_fixpoint` cliques keep a transported functional with the baseline correspondence
-    unproved, i.e. no optimisation.
-- **Q-A9 (generator totality):** add to the list the head-only deduplication of external mutual
-  groups (Q5), if the fixture shows it diverges from Lean.
+**Phase A §7, updated.**
+- **Q-A2 (discovery order): confirmed.**
+  - Mathlib's changed blocks fall from 20 to 6 [measured, A1C §0.4–0.5].
+  - `canonical_aux_order` (`crates/kernel/src/inductive.rs:1284-1450`), `Ix/Tc/CanonicalCheck.lean`,
+    the certified modeller's nested adaptation and `BlockOrder` are re-recorded in the migration.
+- **Q-A5 (policy for the non-canonical set): accept and record**, following §0.1. §5 confines the set
+  to three kinds:
+  - (a) proof internals that the grammar does not recognise;
+  - (b) order-dependent choices (`GUESSLEX`, `RECARG`);
+  - (c) statements that follow the order.
+- **Q-A6 (scope O1–O17): all**, in the order of §1.4. If O16's lemma is not written by A5, O16 is
+  deferred and `partial_fixpoint` cliques keep Lean's form.
+- **Q-A9 (generator totality):** the sibling-deduplication defect (Q5) is added to the list and
+  assigned to A0.
 
 ---
 
-## Appendix: what this document could not establish without running anything
+## Appendix: what is still not established
 
-- **Lean source version.** The Lean 4.34.1 source tree was not readable; the elaborator was read at
-  4.34.0. Some line numbers may differ [open].
-- **C6's flag.** Whether `isRec` is block-wide (Q4) [open].
-- **Discovery-order deduplication** of siblings of external mutual inductives (Q5) [open].
-- **Address moves under `(k₀, k₁)` and `canonUniv` comparison.** Their population is unmeasured
-  [open].
-- **The grammar's coverage** of real `proof_k` and monotonicity terms, and the frequency of
-  `TACTIC-ASYM` [open].
-- **Leaks of provisional addresses into output.** Whether any output-visible path reads them (D5)
-  [open].
-- **O11a's `rfl`** on `Linear.EqCnstr` [open, carried from the old plan].
+**Settled since the first draft** by A1C's measurements:
+- `isRec` is block-wide;
+- Lean registers every `J As` when deduplicating siblings;
+- the discovery-order definition matches Lean's `rec_N` on 98 of 98 nested blocks;
+- `canonUniv` levels move 0 orders;
+- the seed sweep found 0 differences, and the preorder check 0 violations;
+- Mathlib has 20 changed blocks today and 6 under discovery order.
+
+**Still open:**
+- **Lean source version.** The elaborator sources (`src/lean/Lean/...`) were read at 4.34.0; the
+  4.34.1 line numbers of those citations are [open]. The C++ kernel citations are at 4.34.1 (A1C).
+- **The grammar's coverage** of real `proof_k` and monotonicity terms, and how often `TACTIC-ASYM`
+  occurs [open].
+- **Leaks of provisional addresses into output** (D5) [open].
+- **O11a's `rfl`** on `Linear.EqCnstr` [open].
 - **O16's lemma** [open].
-- **Cause (e) of §4.7 at v4.** The leftover-table-entry cause has not been re-measured under v4
-  sharing [open].
+- **Cause (e) of §4.7** has not been re-measured at v4 [open].
+- No well-founded or `partial_fixpoint` clique has been compiled under permutation.
