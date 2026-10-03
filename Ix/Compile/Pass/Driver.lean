@@ -45,6 +45,7 @@ public import Ix.Compile.Pass.Names
 public import Ix.Compile.Pass.Translate
 public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.SideCar
+public import Ix.Compile.Pass.Opt.Engine
 public section
 
 namespace Ix.Compile.Pass
@@ -207,6 +208,20 @@ def compileImage (cenv : CompileEnv) (known : Std.HashMap Name Address)
   | .ok (r, bs) => return (r, bs)
   | .error e => throw s!"Pass 3: image constant {name.pretty}: {e}"
 
+/-- The definitional passes (`Ix.Compile.Pass.Opt.engine`) over the views of a
+block's referenced changed blocks: the hook the rewrite tries at every full
+application before it inlines an image (heads of other blocks keep their
+baseline). -/
+def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+    Name → Array Ix.Level → Array Expr → Option Expr :=
+  let inp := viewInput cenv
+  let blocks : Std.HashMap Name Opt.OptBlock :=
+    views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
+  let env : Opt.OptEnv :=
+    { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
+      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
+  fun n us args => (Opt.engine env { head := n, us, args }).map (·.2)
+
 /-- Rewrite a block before it compiles: the compile environment (overlay,
 decompile sources) and the initial block state (stored image constants).
 Identity when the switch is off or the block references no head. -/
@@ -229,7 +244,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
       if !views.contains key then
         views := views.insert key (← viewOf cenv views key)
   let lookup := expansionLookup cenv views
-  let rwr ← rewriteBlock lookup members
+  let rwr ← rewriteBlock lookup members (optLookup cenv views)
   let overlay : Std.HashMap Name ConstantInfo :=
     rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) {}
   let sources : Std.HashMap Nat Expr :=

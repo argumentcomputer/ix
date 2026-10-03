@@ -19,3 +19,4 @@ public import Ix.Compile.Pass.Translate
 public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.SideCar
 public import Ix.Compile.Pass.Driver
+public import Ix.Compile.Pass.Opt.Engine

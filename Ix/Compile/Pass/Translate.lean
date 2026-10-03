@@ -92,6 +92,9 @@ structure RwState where
   /-- Rewritten expansions. -/
   exps : Std.HashMap Name Expansion := {}
   cache : Std.HashMap (Expr × Bool) Expr := {}
+  /-- The definitional passes (`Ix.Compile.Pass.Opt.engine`), tried at every full
+  application before the image is inlined; `none` keeps the baseline. -/
+  opt? : Name → Array Level → Array Expr → Option Expr := fun _ _ _ => none
 
 abbrev RwM := StateT RwState (Except String)
 
@@ -139,7 +142,9 @@ def rw : Nat → Bool → Expr → RwM Expr
               -- bare or partial: the Lean name denotes the stored image
               -- constant (Q11), so the occurrence stays as written
               return mkAppN (Expr.mkConst n us) args'
-            let body ← liftM (Ix.Compile.Image.instantiate (substLevels x.levelParams us x.value) args')
+            let body ← match (← get).opt? n us args' with
+              | some e => pure e
+              | none => liftM (Ix.Compile.Image.instantiate (substLevels x.levelParams us x.value) args')
             if record then
               let st ← get
               let k := st.base + st.sources.size
@@ -205,8 +210,10 @@ structure BlockRewrite where
 /-- Rewrite the members of one block (`base(c)` for each); placeholder
 indices are block-unique. -/
 def rewriteBlock (expansion? : Name → Except String (Option Expansion))
-    (members : Array (Name × ConstantInfo)) : Except String BlockRewrite := do
-  let mut st : RwState := { base := 0 }
+    (members : Array (Name × ConstantInfo))
+    (opt? : Name → Array Level → Array Expr → Option Expr := fun _ _ _ => none) :
+    Except String BlockRewrite := do
+  let mut st : RwState := { base := 0, opt? }
   let mut overlay : Array (Name × ConstantInfo) := #[]
   for (n, ci) in members do
     let (ci', st') ← (rewriteConstM expansion? ci).run st
