@@ -23,6 +23,17 @@
   * **(d) negative controls.** A wrong permutation fails the oracle; a proof
     with a term outside the grammar takes the fallback (kept verbatim,
     `SHAPE`) and still type-checks against the transported statement.
+  * **(e) theorem cliques (Q6).** Each presentation is transported onto the
+    order of its statements, or, when statements tie, of its recovered
+    specifications (`Ix.Compile.Clique.recoveredOrder`); both must give the
+    same constants. Where the statements decide, the recovered order must
+    agree with them. The inductive-predicate route is not recovered: its
+    recovery must fail (`NOSPEC`, the baseline).
+  * **(f) residual causes.** Every `RECARG`, `TACTIC-ASYM` and `SHAPE` entry
+    of the non-canonical set is a constant the transport does not reproduce;
+    a `SHAPE` entry must have taken a fallback.
+  * **(g) the position restriction.** `WU`'s user values of exactly the
+    clique's packing type are not transported (the family is exact).
 
   The test may use `MetaM`/`CoreM` (it reads Lean's `EqnInfo`, converts terms
   and calls the kernel); the transport itself may not and does not.
@@ -373,32 +384,82 @@ def stmtOrder (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Nam
   _root_.Ix.Compile.Canon.statementOrder _root_.Ix.Compile.Canon.Rules.phaseA
     (fun n => some (Address.blake3 n.pretty.toUTF8)) members
 
+/-- A content address for the comparator: a presentation's own constant by
+its type and value with the presentation's namespace erased (so the same
+matcher in two presentations has one address), any other constant by its
+name (shared by every presentation). -/
+def contentAddr (env : Environment) (p : Pres) (n : IxName) : Option Address :=
+  let ln := toLeanName n
+  if p.ns.isPrefixOf ln then
+    match env.find? ln with
+    | some ci =>
+      let rel (e : Expr) : Expr := e.replace fun x => match x with
+        | .const m us => if p.ns.isPrefixOf m then some (.const (m.replacePrefix p.ns `_pres) us) else none
+        | _ => none
+      let v := match ci.value? (allowOpaque := true) with
+        | some v => toString (rel v)
+        | none => ""
+      some (Address.blake3 s!"{toString (rel ci.type)}|{v}".toUTF8)
+    | none => none
+  else some (Address.blake3 ln.toString.toUTF8)
+
+/-- Q6's second source: the order of a theorem clique by its statements and
+recovered specifications (`Ix.Compile.Clique.recoveredOrder`). -/
+def recOrder (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name)) (p : Pres) :
+    Except String (Array Nat × Array (Array IxName)) := do
+  let some (_, ms) := presClique env eqn p | throw s!"{p.ns}: no clique"
+  let (inp, _, _) ← pairInput env eqn p p (σ? := (List.range ms.size).toArray)
+  _root_.Ix.Compile.Clique.recoveredOrder _root_.Ix.Compile.Canon.Rules.phaseA (contentAddr env p) inp
+
+/-- Transport both presentations onto their canonical orders and compare. -/
+def compareCanonical (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name))
+    (p0 pk : Pres) (σ0 σk : Array Nat) : IO (Except String (Nat × Nat)) := do
+  let .ok (inp0, _, _) := pairInput env eqn p0 p0 (σ? := σ0) | return .error "input"
+  let .ok (inpk, _, _) := pairInput env eqn pk pk (σ? := σk) | return .error "input"
+  let out0 := _root_.Ix.Compile.Clique.transport inp0
+  let outk := _root_.Ix.Compile.Clique.transport inpk
+  let mapB (n : IxName) : IxName := ixName (mapInto p0 pk (toLeanName n))
+  let kMap : Std.HashMap Name Decl := outk.decls.foldl (init := {}) fun m d =>
+    m.insert (mapInto p0 pk (toLeanName d.name)) d
+  let mut same := 0
+  let mut diff : Array Name := #[]
+  for d in out0.decls do
+    match kMap.get? (toLeanName d.name) with
+    | some dk =>
+      if _root_.Ix.Compile.Clique.eqUpTo mapB d.type dk.type &&
+          _root_.Ix.Compile.Clique.eqUpTo mapB d.value dk.value then same := same + 1
+      else diff := diff.push (relName p0.ns (toLeanName d.name))
+    | none => diff := diff.push (relName p0.ns (toLeanName d.name))
+  return if diff.isEmpty then .ok (same, out0.decls.size) else .error s!"DIFFERENT {diff}"
+
 /-- (e) Both presentations of a theorem clique, each transported onto the
-order of the statements, must give the same constants; a tie is `NOSPEC`. -/
+order of the statements (Q6's first source) or, when statements tie, of the
+recovered specifications (the second source), must give the same constants;
+a failed recovery is `NOSPEC`. -/
 def theoremCanonicity (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name))
     (_fam : String) (p0 pk : Pres) : IO String := do
   match stmtOrder env eqn p0, stmtOrder env eqn pk with
   | .error e, _ | _, .error e => return s!"ERROR {e}"
-  | .ok none, .ok none => return "NOSPEC"
+  | .ok none, .ok none =>
+    match recOrder env eqn p0, recOrder env eqn pk with
+    | .error e, _ | _, .error e => return s!"NOSPEC ({e})"
+    | .ok (σ0, cls0), .ok (σk, _) =>
+      let tied := cls0.filter (·.size ≥ 2)
+      let how := if tied.isEmpty then "recovered specifications distinct"
+        else s!"recovered specifications tie in {tied.size} class(es), Pass 1's seed order"
+      match ← compareCanonical env eqn p0 pk σ0 σk with
+      | .ok (same, total) =>
+        return s!"CANONICAL by the recovered specification ({how}; {same}/{total} identical; σ {p0.id} {σ0}, σ {pk.id} {σk})"
+      | .error e => return e
   | .ok (some σ0), .ok (some σk) =>
-    let .ok (inp0, _, _) := pairInput env eqn p0 p0 (σ? := σ0) | return "ERROR input"
-    let .ok (inpk, _, _) := pairInput env eqn pk pk (σ? := σk) | return "ERROR input"
-    let out0 := _root_.Ix.Compile.Clique.transport inp0
-    let outk := _root_.Ix.Compile.Clique.transport inpk
-    let mapB (n : IxName) : IxName := ixName (mapInto p0 pk (toLeanName n))
-    let kMap : Std.HashMap Name Decl := outk.decls.foldl (init := {}) fun m d =>
-      m.insert (mapInto p0 pk (toLeanName d.name)) d
-    let mut same := 0
-    let mut diff : Array Name := #[]
-    for d in out0.decls do
-      match kMap.get? (toLeanName d.name) with
-      | some dk =>
-        if _root_.Ix.Compile.Clique.eqUpTo mapB d.type dk.type &&
-            _root_.Ix.Compile.Clique.eqUpTo mapB d.value dk.value then same := same + 1
-        else diff := diff.push (relName p0.ns (toLeanName d.name))
-      | none => diff := diff.push (relName p0.ns (toLeanName d.name))
-    return if diff.isEmpty then s!"CANONICAL ({same}/{out0.decls.size} identical; σ {p0.id} {σ0}, σ {pk.id} {σk})"
-      else s!"DIFFERENT {diff}"
+    match ← compareCanonical env eqn p0 pk σ0 σk with
+    | .ok (same, total) =>
+      -- the recovered specification must agree with the statements where they decide
+      let agree := match recOrder env eqn p0 with
+        | .ok (σr, _) => if σr == σ0 then "recovered order agrees" else s!"RECOVERED ORDER DIFFERS {σr}"
+        | .error e => s!"recovery: {e}"
+      return s!"CANONICAL ({same}/{total} identical; σ {p0.id} {σ0}, σ {pk.id} {σk}; {agree})"
+    | .error e => return e
   | _, _ => return "NOSPEC in one presentation only"
 
 /-! ## Negative controls -/
@@ -515,6 +576,9 @@ def isGuessLex (e : NonCanonicalEntry) : Bool :=
   | .guessLex => true
   | _ => false
 
+/-- The families added by A5f (`plans/wave1/a5f.md`). -/
+def a5fFamilies : List String := ["RF", "NS", "LI", "LC", "PU", "RA", "WH", "TR", "TQ", "WU"]
+
 /-- Families the transport covers so far. -/
 def supported (_ : Encoding) : Bool := true
 
@@ -568,11 +632,44 @@ def run : IO UInt32 := do
       if r.verdict == "EXACT" then exact := exact + 1
       else failures := failures.push s!"oracle: {famName} {e.presA}/{e.presB} {e.constant}: {r.verdict} {r.note}"
     | none => failures := failures.push s!"oracle: {famName} {e.presA}/{e.presB} {e.constant}: not transported"
-  let isNew (e : NonCanonicalEntry) : Bool := e.fixture.getString! == "WA"
-  let exactNew := (pend.filter fun e => isNew e && rows.any fun r =>
-    r.fam == e.fixture.getString! && r.pair == s!"{e.presA}/{e.presB}" && r.src == e.constant && r.verdict == "EXACT").length
+  let isExact (e : NonCanonicalEntry) : Bool := rows.any fun r =>
+    r.fam == e.fixture.getString! && r.pair == s!"{e.presA}/{e.presB}" && r.src == e.constant && r.verdict == "EXACT"
+  let a5t (e : NonCanonicalEntry) : Bool := e.fixture.getString! == "WA"
+  let a5f (e : NonCanonicalEntry) : Bool := a5fFamilies.contains e.fixture.getString!
+  let wave1 (e : NonCanonicalEntry) : Bool := !a5t e && !a5f e
+  let count (p : NonCanonicalEntry → Bool) : String :=
+    s!"{(pend.filter fun e => p e && isExact e).length}/{(pend.filter p).length}"
   IO.println s!"[clique-transport] (a) exact oracle: {exact}/{pend.length} packing-order-only constants reproduced exactly \
-    (the wave-1 measured set: {exact - exactNew}/{(pend.filter (!isNew ·)).length}; the A5t probe WA: {exactNew}/{(pend.filter isNew).length})"
+    (the wave-1 measured set: {count wave1}; the A5t probe WA: {count a5t}; the A5f families: {count a5f})"
+  for fam in a5fFamilies do
+    let p (e : NonCanonicalEntry) : Bool := e.fixture.getString! == fam
+    if (pend.filter p).length > 0 then
+      IO.println s!"[clique-transport]   (a) {fam}: {count p} exact"
+  -- (f) the residual causes: transport cannot remove them, and says how
+  for e in entries do
+    let fam := e.fixture.getString!
+    unless cliqueFamilies.any (·.fixture == e.fixture) do continue
+    let expected : Option String := match e.cause with
+      | .recArg => some "RECARG"
+      | .tacticAsym => some "TACTIC-ASYM"
+      | .shape => some "SHAPE"
+      | _ => none
+    let some tag := expected | continue
+    match rows.find? fun r => r.fam == fam && r.pair == s!"{e.presA}/{e.presB}" && r.src == e.constant with
+    | some r =>
+      IO.println s!"[clique-transport] (f) {tag} {fam} {e.presA}/{e.presB} {e.constant}: {r.verdict} {r.note}"
+      if r.verdict == "EXACT" then
+        failures := failures.push s!"{tag}: {fam} {e.constant} is reproduced exactly (stale cause)"
+      if tag == "SHAPE" && !r.verdict.startsWith "FALLBACK" then
+        failures := failures.push s!"SHAPE: {fam} {e.constant} did not take a fallback ({r.verdict})"
+    | none =>
+      -- a one-sided constant (e.g. RA's `_sparseCasesOn`) is outside the encoding
+      IO.println s!"[clique-transport] (f) {tag} {fam} {e.presA}/{e.presB} {e.constant}: not an encoding constant"
+  -- (g) the position restriction's negative control: user values of the packing type stay
+  let wu := rows.filter (·.fam == "WU")
+  let wuExact := (wu.filter (·.verdict == "EXACT")).size
+  IO.println s!"[clique-transport] (g) position restriction: WU {wuExact}/{wu.size} exact (user values of exactly the packing type kept)"
+  unless wu.size > 0 && wuExact == wu.size do failures := failures.push "WU: a user value of the packing type was transported"
   -- (c) GuessLex: everything but the measures reproduced
   let wg := rows.filter (·.fam == "WG")
   let wgGuess := (wg.filter (·.verdict == "GUESSLEX")).size
@@ -590,8 +687,16 @@ def run : IO UInt32 := do
       IO.println s!"[clique-transport] (e) theorem clique {famName} {p0.id}/{pk.id}: {v}"
       let expectNoSpec := (entries.filter fun e => e.fixture == fam.fixture && e.cause matches .noSpec).length > 0
       if expectNoSpec then
-        unless v == "NOSPEC" do failures := failures.push s!"Q6: {famName}: expected NOSPEC, got {v}"
-      else unless v.startsWith "CANONICAL" do failures := failures.push s!"Q6: {famName}: {v}"
+        unless v.startsWith "NOSPEC" do failures := failures.push s!"Q6: {famName}: expected NOSPEC, got {v}"
+      else unless v.startsWith "CANONICAL" && !((v.splitOn "RECOVERED ORDER DIFFERS").length > 1) do
+        failures := failures.push s!"Q6: {famName}: {v}"
+  -- the recovery's fallback: the inductive-predicate route is not recovered, so a tie there is NOSPEC
+  if let some ip := familyNamed "IP" then
+    if let some p0 := ip.pres.head? then
+      match recOrder env eqn p0 with
+      | .ok (σ, _) =>
+        failures := failures.push s!"recovery: IP was recovered ({σ}); the control expects NOSPEC"
+      | .error err => IO.println s!"[clique-transport] (e) recovery fallback IP {p0.id}: NOSPEC ({err})"
   -- (d) negative controls
   for fam in ["W3", "S3", "PF", "WD"] do
     if let some err ← wrongPermutation env eqn fam then failures := failures.push s!"control: {err}"

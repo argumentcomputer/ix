@@ -30,15 +30,17 @@
   positions, the members' projections out of `brecOn`, and the motive-part of
   every path into a `below` dictionary — found, as Lean finds it, by reducing
   the dictionary's type with canaries in place of the packed motives
-  (`Whnf.lean`). The `let funType` telescope and the "below" matchers' binders
+  (`Whnf.lean`); a path through a reflexive field `f : A → T` applies the
+  field's entry to the argument in the middle of the path, and the walk
+  instantiates the entry's `∀` there, as `toBelowAux` does. The `let funType`
+  telescope and the "below" matchers' binders
   are reordered, the `_f` telescopes too (O13a, O13b). Nothing else moves: the
   prefix of a path, the bodies, the matchers' alternatives, `recArgPos` (D22).
 
   Unsupported shapes are outside the grammar and leave the clique in Lean's
   form (§5.3: the fallback is the baseline): a dictionary passed whole to a
-  helper other than a matcher, a path through a reflexive field (an
-  application in the middle of the path), a projection of a `brecOn` result
-  that is not a full path.
+  helper other than a matcher, a path the walk cannot follow, a projection
+  of a `brecOn` result that is not a full path.
 -/
 module
 public import Ix.Compile.Clique.Packing
@@ -50,7 +52,7 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr ConstantInfo)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata)
+open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata instantiateRev)
 
 /-- A `below` or `brecOn` constant of the block. -/
 structure BlockAux where
@@ -125,11 +127,50 @@ def transportPath (g : Group) (steps : Array (Name × Nat)) : Except String (Arr
   unless stepsFit g.spine idx part do throw "grammar: a path whose projections are not the packing's"
   return g.canonSpine.projSteps g.perm[idx]! ++ steps.extract len steps.size
 
+/-- One step of a path into a `below` dictionary: a projection, or (through
+a reflexive field `f : A → T`, whose dictionary entry is a function) an
+application to an argument. -/
+inductive PStep where
+  | proj (s : Name) (i : Nat)
+  | app (a : Expr)
+  deriving Inhabited
+
+/-- The chain of projections and applications around `e`: steps innermost
+first, and the base. -/
+def pathChain : Expr → Array PStep × Expr
+  | .proj s i x _ => let (st, b) := pathChain x; (st.push (.proj s i), b)
+  | .app f a _ => let (st, b) := pathChain f; (st.push (.app a), b)
+  | .mdata _ x _ => pathChain x
+  | e => (#[], e)
+
+def applySteps (steps : Array PStep) (e : Expr) : Expr :=
+  steps.foldl (init := e) fun acc st => match st with
+    | .proj s i => Expr.mkProj s i acc
+    | .app a => Expr.mkApp acc a
+
+/-- The maximal prefix of projections, and the rest. -/
+def projPrefix (steps : Array PStep) : Array (Name × Nat) × Array PStep := Id.run do
+  let mut acc := #[]
+  for i in [0:steps.size] do
+    match steps[i]! with
+    | .proj s j => acc := acc.push (s, j)
+    | .app _ => return (acc, steps.extract i steps.size)
+  return (acc, #[])
+
 /-- The motive-part of a path into a `below` dictionary of type `ty`:
-replay Lean's `searchPProd` with canaries for the packed motives; `none`
-when the path never reaches a dictionary entry. -/
-def belowPath (L : StructLayout) (ty : Expr) (steps : Array (Name × Nat)) :
-    TM (Option (Array (Name × Nat))) := do
+replay Lean's `searchPProd` and `toBelowAux` (`Structural/BRecOn.lean`) with
+canaries for the packed motives. The walk follows the `PProd`/`And` nodes of
+the dictionary's weak head normal form, and passes through a reflexive
+field's entry (a `∀`) by instantiating it at the path's argument, until it
+reaches an entry `C_j t`; the projections that follow select the function
+inside group `j`'s packed motive and are re-associated. `none` when the
+steps end inside the dictionary before any entry (a part of the dictionary,
+independent of the clique). A step the walk cannot follow (a weak head normal
+form that is neither a node nor a `∀`, or another structure than the node's)
+is a grammar failure: such a path might reach into the packed motives in a
+way the walk does not see, so it is never left alone. -/
+def belowPath (L : StructLayout) (ty : Expr) (steps : Array PStep) :
+    TM (Option (Array PStep)) := do
   let some (c, us, args) := constApp? ty | return none
   let some a := L.aux.get? c | return none
   if a.isBrecOn || args.size < L.numParams + L.numMotives then return none
@@ -142,26 +183,32 @@ def belowPath (L : StructLayout) (ty : Expr) (steps : Array (Name × Nat)) :
     args' := args'.set! (L.numParams + j) (Expr.mkFVar f)
   let mut cur := mkAppN (Expr.mkConst c us) args'
   for t in [0:steps.size] do
-    let (s, i) := steps[t]!
     let w := whnf L.const? whnfFuel cur
-    match decodeNode .pprod w with
-    | some (_, _, a, b) =>
-      let isAnd := match constApp? w with
-        | some (h, _, _) => h == nAnd
-        | none => false
-      unless (s == nAnd) == isAnd do return none
-      cur := if i == 0 then a else b
-    | none => return none
+    match steps[t]! with
+    | .proj s i =>
+      match decodeNode .pprod w with
+      | some (_, _, a, b) =>
+        let isAnd := match constApp? w with
+          | some (h, _, _) => h == nAnd
+          | none => false
+        unless (s == nAnd) == isAnd do
+          throw "grammar: a projection into a below dictionary whose structure is not the node's"
+        cur := if i == 0 then a else b
+      | none => throw "grammar: a projection into a below dictionary that the walk cannot follow"
+    | .app x =>
+      match stripMdata w with
+      | .forallE _ _ b _ _ => cur := instantiateRev b #[x]
+      | _ => throw "grammar: an application inside a below dictionary that the walk cannot follow"
     -- an entry of the dictionary: a canary applied
     match getAppFnArgs (stripMdata cur) with
     | (.fvar f _, _) =>
       match cans.idxOf? f with
       | some j =>
         let g := L.groups[j]!
-        let rest := steps.extract (t + 1) steps.size
-        let rest' ← liftE (transportPath g rest)
-        return some (steps.extract 0 (t + 1) ++ rest')
-      | none => return none
+        let (projs, tail) := projPrefix (steps.extract (t + 1) steps.size)
+        let projs' ← liftE (transportPath g projs)
+        return some (steps.extract 0 (t + 1) ++ projs'.map (fun (s, i) => PStep.proj s i) ++ tail)
+      | none => throw "grammar: a path into a below dictionary that reaches a foreign variable"
     | _ => pure ()
   return none
 
@@ -204,15 +251,23 @@ def phiSStep (L : StructLayout) (go : Array Expr → Expr → TM Expr) (ctx : Ar
       return mkTuple ({ s with leaves }.permute g.perm) (permute g.perm cs)
   match e with
   | .proj .. =>
-    let (steps, base) := projChain e
-    match stripMdata base with
-    | .bvar i _ =>
+    -- a path of projections and applications from a variable: a path into a
+    -- `below` dictionary when the variable is one (the applications are a
+    -- reflexive field's arguments, transported as terms)
+    let (gsteps, gbase) := pathChain e
+    if let .bvar i _ := stripMdata gbase then
       if h : i < ctx.size then
         let ty := liftLoose ctx[ctx.size - 1 - i] (i + 1)
-        match ← belowPath L ty steps with
-        | some steps' => return applyProjs steps' base
-        | none => return applyProjs steps base
-      else return applyProjs steps base
+        match ← belowPath L ty gsteps with
+        | some steps' =>
+          let steps'' ← steps'.mapM fun st => do match st with
+            | .app a => return PStep.app (← go ctx a)
+            | s => return s
+          return applySteps steps'' gbase
+        | none => pure ()
+    let (steps, base) := projChain e
+    match stripMdata base with
+    | .bvar _ _ => return applyProjs steps base
     | base' =>
       let isBrecOn : Bool := match constApp? base' with
         | some (c, _, _) => match L.aux.get? c with | some a => a.isBrecOn | none => false

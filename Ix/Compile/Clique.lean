@@ -14,7 +14,11 @@
   * `Whnf`: the small weak-head reducer that types paths into `below`;
   * `Structural`: structural recursion (§5.3);
   * `PartialFixpoint`: `partial_fixpoint` (§5.2), with the regeneration (G);
-  * `Transport`: the interface, the fallbacks and the causes it records.
+  * `Transport`: the interface, the fallbacks and the causes it records;
+  * `Recover`: Q6's second source, the recovered specification of a theorem
+    clique whose statements tie;
+  * `FixPerm`: O16's lemma, `Lean.Order.fix` (and `lfp_monotone`) commute
+    with an order isomorphism, and the `PProd` re-associations are ones.
 
   Not imported by the compiler (A5 proper wires it in). No `MetaM`, no
   kernel, no `partial`.
@@ -28,3 +32,5 @@ public import Ix.Compile.Clique.Whnf
 public import Ix.Compile.Clique.Structural
 public import Ix.Compile.Clique.PartialFixpoint
 public import Ix.Compile.Clique.Transport
+public import Ix.Compile.Clique.Recover
+public import Ix.Compile.Clique.FixPerm
