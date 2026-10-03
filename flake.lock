@@ -121,6 +121,23 @@
         "type": "github"
       }
     },
+    "ix-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790984456,
+        "narHash": "sha256-MfoQ54mEhyvyRVyC5+vp4Aol+GmsW8Gndzz8kPmDJVo=",
+        "owner": "argumentcomputer",
+        "repo": "ix",
+        "rev": "f829b76044a44a61023d0983516137147bbb12a7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "argumentcomputer",
+        "repo": "ix",
+        "rev": "f829b76044a44a61023d0983516137147bbb12a7",
+        "type": "github"
+      }
+    },
     "lean4-nix": {
       "inputs": {
         "flake-parts": "flake-parts_2",
@@ -194,6 +211,7 @@
           "lean4-nix",
           "flake-parts"
         ],
+        "ix-src": "ix-src",
         "lean4-nix": "lean4-nix",
         "nixpkgs": [
           "lean4-nix",

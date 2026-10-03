@@ -101,7 +101,9 @@ def imports (tokens : Array Token) : List String := Id.run do
   let mut result := []
   for index in [:tokens.size] do
     if tokens[index]!.text == "import" && tokens[index]!.kind == .name then
-      if let some next := tokens[index + 1]? then
+      -- `import all M` (module system) names M
+      let skip := if tokens[index + 1]?.map (·.text) == some "all" then 2 else 1
+      if let some next := tokens[index + skip]? then
         if next.kind == .name then result := next.text :: result
   return result.reverse
 

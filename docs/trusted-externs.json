@@ -905,8 +905,8 @@
       "Compilatrix/Tools/BuildGraph.lean": "74d752f5f41440bb19c1a67630b5c20ce2ba0a12ee8beb8905813383b1da9420",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
       "Compilatrix/Tools/IxonV3Catalog.lean": "4e3dbada0998d79fbf240bdd8ebace9e8e45d058f600bc1f3e8eb5cbe57fa196",
-      "Compilatrix/Tools/SourceScan.lean": "c5135b4f26379d49671dc43d3a126082ef6279e7fdaeb2b741d53e289fc93353",
-      "Compilatrix/Tools/TrustLedger.lean": "79e24898bfe50298f0aca8042f4adcb6235fda531987e5163e7d0d7b84305b1c",
+      "Compilatrix/Tools/SourceScan.lean": "fd0879e194bd8fd4cb27a849f6a139126c13cab148e27c11ec97b26392eafadb",
+      "Compilatrix/Tools/TrustLedger.lean": "fb3027dd2fb628ef86c46d5a07443aecfd6a8836b94e2982b15a0784ba3c6121",
       "Compilatrix/Tools/X86Check.lean": "a65a47eab6bc73447e927efc9e2edeaa3065ef460c5416a235d1dc203fa842e9",
       "Compilatrix/X86/BlockSharing.lean": "c552becbe5e1da98a5a270d889834cd6c66315850b0b846385cd40544a54c55a",
       "docs/aiur-counter-analysis.md": "0e371f8ce1c767a41f242d41b11bde4c2110b915657ab15944b5b2dabdfa7314",
@@ -1200,19 +1200,19 @@
       "fixtures/x86/hw_diff_harness.c": "39e0c301496321e1ce1b2821b3fd80cabd42812d7afee73da8dee9d80e24d9c9",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "fixtures/x86/runtime_driver.c": "e0a1b9413371487edf155040ca033d64e63f9563a289ea2e4610627e6a0929ac",
-      "flake.lock": "ac2a0fac538e82d8ef620278b450358f7d8afb0d403aa58476929baef557c6cd",
-      "flake.nix": "f6dcf6c589173f6317ee0316240fbb2eea70af51d691ef523e566c4b8067789e",
-      "lakefile.lean": "096bf8bf5a7cd7d4d3b99107f87d3f038ffb21c33a2a49c9b533e48c417bd7fb",
-      "lake-manifest.json": "4ec9608ad052f06fefa1ff0cdf4718ae5cc497aa79bed34abef851af6f3f35e8",
+      "flake.lock": "4674b9b9bc82fd7c4a818484b025b2495301674f2e951888c71318c9346b7d8c",
+      "flake.nix": "21d484d89cc5a2af8d0b33ae1521356736aea2ce2e2121aa92f47b4972872b96",
+      "lakefile.lean": "9b2adb67ecd447d2bfc010e38e65a75973aa49ea0c7d934d414c9cfd872d806a",
+      "lake-manifest.json": "a9ba65e4a5c7853ad71f3a02e2fc24d74a9ba6d4811ff01880747b212c809e2a",
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
-      "nix/build.nix": "19144af14c10247515becb1de7cfc87c27b1ed1f916ce5f60f67a2466ea4e2b0",
-      "nix/checks.nix": "502ef2e2011ed3ffa02e7a15e1cfbae3d4a9cbc209ae1fe19825bb57539c364d",
+      "nix/build.nix": "aca483be559ef0349530212e195965a210a61c71deb89ac0b8290e828909e2bc",
+      "nix/checks.nix": "1cdf6025dc2876c09bec1427db5afe4273f56a466fd73afd007e2bf0f73a2c78",
       "nix/ci-coverage.json": "a6ecd026e7639f18d15be96407cd3793218f5e0bfe75e749aef225b87736a9bc",
       "nix/lean-modules.json": "12b98f41f867a89766d8922693845c01a84736ba7a8996120d17013f84e8f03f",
       "nix/sources.nix": "247a3ff3bd7588e528005a48aebb53f97aea440181218082462967b3846edb2b",
       "scripts/CheckAiur.lean": "f7d14b79813a3c0702067aa1470e2d706907480a2d236854ee8fdaedd03f353d",
       "scripts/CheckBuildGraph.lean": "1db60bc2996ca295780aaba0078e631f526204f57fa419df50b84aedde1dc5c4",
-      "scripts/CheckToolsTests.lean": "efb189006284ae8d36f6ec0f433790ff85eb7a41133cfd88dc1b659133792cc1",
+      "scripts/CheckToolsTests.lean": "9a17034160c266104b0f5d51fe5cf56c67f6e2916008bb1682fdfc73a7ecf217",
       "scripts/CheckTrustedExterns.lean": "b0713e930fee2db7ebc6adc9b31b6412ba50e4a965a3a9833eb4bda523568bbf",
       "scripts/CheckX86Bytes.lean": "a4abffff49cbf4ed58cf230ea7e8288ce4d23df9581da569ddd987bd9597f29d",
       "scripts/CheckX86Encoder.lean": "12a3cdd79c32c7195add6655e659806b64db0fbc98271b06f17d7eca42792f1b",
@@ -1241,7 +1241,57 @@
       "nixpkgs": "1306659b587dc277866c7b69eb97e5f07864d8c4",
       "nixpkgs-lib": "0e79af5e3d4dcfcd676ab5ba3f95d2e3352e078c",
       "nixpkgs-lib_2": "2075416fcb47225d9b68ac469a5c4801a9c4dd85",
-      "rust-analyzer-src": "d2e55da49132fa70a13dfbdc99122432b02cf464"
+      "rust-analyzer-src": "d2e55da49132fa70a13dfbdc99122432b02cf464",
+      "ix-src": "f829b76044a44a61023d0983516137147bbb12a7"
     }
-  }
+  },
+  "lean_dependencies": [
+    {
+      "id": "ix-kernel-ixon-v4-codec",
+      "status": "active",
+      "owner": "Compilatr.ix maintainers",
+      "lake_package": "«ix-kernel»",
+      "source_dir": "..",
+      "imported_modules": [],
+      "closure": {
+        "Ix/Address/Core.lean": "3cdac349946ce8878578bd7d78883192d529bf53960dc08eddf7a5208733ebb2",
+        "Ix/Ixon/Types/Kinds.lean": "abcf8cdc09f72bb25e5f2c42b0184b17833d8fc173e3f7e10d6feca788745cf6",
+        "Ix/Ixon/Types/Modes.lean": "81b36aac72d624fe86f68fdc69c538a768f79c9eadb01d94b02f1ea38b504c92",
+        "Ix/Ixon/Types/Contract.lean": "39a7d07f1fb8122bee2019dd47605744bc8e967254c5f58bbec79713a1a880b1",
+        "Ix/Ixon/Types.lean": "09618bf333a0ba31281bb7c6765f734cda1c9767b54ce21cb4e09ac32d4c819c",
+        "Ix/Ixon/Codec.lean": "b9de5c6215716be9dd18c0a6297852abf7eb8dceba7180b06d1ad4f9ecb0b001",
+        "Ix/Ixon/Wire.lean": "bc1f94edc6168badba4354ada4ba1661ca5898d7b9cf72b1cb1e1fa87d63d7ec",
+        "Ix/Ixon/WireCheck.lean": "fd4442f76a7473279da2c0d7c318efbf4bd230370536093fce0a6712274788c4",
+        "Ix/Ixon/Bounded/Universe.lean": "39354339f20f14791adda3ad97f11127881b4d50c9332fc62c96e4c56c574356",
+        "Ix/Ixon/Bounded/Constant.lean": "ab76f7f23f6ac18e80a2ea014b4c7f704340c2fdc04911c21cf166825435776e",
+        "Ix/Ixon/Canonical.lean": "ad7fd494f4a064c5742c131b6bbb3ebfe2162f9855dab185015e8914a2ffb23f"
+      },
+      "pins": {
+        "lake_rev": "f829b76044a44a61023d0983516137147bbb12a7",
+        "flake_node": "ix-src",
+        "lake_subdir": "IxKernel"
+      },
+      "semantics_assumed": "Ix's pure Ixon v4 codec (argumentcomputer/ix jcb/ix-certified at the pinned revision, package IxKernel/) reads and writes the canonical bytes of universes, expressions and constants: Ixon.Canonical.deConstant accepts exactly the canonical encodings within its byte and universe-expansion budgets (it re-encodes and compares), and Ixon.serConstant/serExpr/serUniv are the encodings ix's compiler content-addresses. Compilatr.ix converts the decoded values to its own data types structurally (Compilatrix.Ixon.V4.Convert) and frames environments itself (Compilatrix.Ixon.V3.Env), authenticating every object with pure BLAKE3.",
+      "proof_effect": "None on the recheck path: Recheck.run and the kernel-checked artifacts import no ix module. The codec is the ingress decoder, so a codec defect can make ingress reject a closure or read a different program than ix compiled; the compiled program is then still the one Recheck.run checks. The imported closure uses only the standard axioms (#print axioms: propext and Quot.sound), no extern, implemented_by or unsafe, and no foreign code.",
+      "trust_basis": [
+        "the Lake revision, the flake input ix-src and this entry's lake_rev agree, and the SHA-256 of every file of the imported closure is recorded here and checked",
+        "the closure imports only Init (Ix.Address.Core, Ix.Ixon.Types{,.Kinds,.Modes,.Contract}, Ix.Ixon.Codec, Ix.Ixon.Wire, Ix.Ixon.WireCheck, Ix.Ixon.Bounded.{Universe,Constant}, Ix.Ixon.Canonical) and is scanned for native declarations, implemented_by, axiom, sorry and native_decide",
+        "ix proves the codec's round trip (Ix.Ixon.Verify.Canonical.deConstant_serConstant and the Verify tree) at the same revision; Compilatr.ix imports the executable codec, not those proofs",
+        "Nix packages exactly these sources under the same package name and toolchain (nix/build.nix ixKernel), so the kernel library is never built"
+      ],
+      "tests": [
+        "tests-ixon-v3: the unchanged ix v4 fixture package (expressions, addressed constants, claims, resource cases, handoff) decoded and re-encoded byte for byte, truncation and trailing-byte rejection, the typing and catalog fixtures",
+        "census and corpus check: every frozen closure decodes, authenticates and re-reads into the recorded census",
+        "tests-src, tests-corpus, tests-own, tests-recheck: every compiled fixture ingested through this codec"
+      ],
+      "retirement": {
+        "milestone": "Phase 2 typing gate (W1)",
+        "replacement": "The certified ix reader and checker (Ix.Kernel.Admission.checkBytes) as the ingress gate, or a proved Compilatr.ix decoder",
+        "exit_criteria": [
+          "ingress decoding is either proved against a byte specification or performed by a component whose correctness theorem Compilatr.ix consumes",
+          "the pinned revision is a merged, tagged ix release"
+        ]
+      }
+    }
+  ]
 }

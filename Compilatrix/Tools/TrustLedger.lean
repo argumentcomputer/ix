@@ -48,6 +48,17 @@ private def cargoPairs (value : Json) : IO (List (String × String)) := do
       need (versions.length ≥ 2) s!"Cargo crate {name}: a version list needs several versions"
       return acc ++ versions.map (name, ·)
 
+/-- Pure Lean Lake dependencies (`lean_dependencies`, absent: none). They carry
+no native code, so they have no `native_interfaces` entry; each records its
+Lake package and revision, the flake node pinning the same revision for Nix,
+the source directory of its modules relative to the package root, the
+modules Compilatr.ix imports from it, and the SHA-256 of every file of their
+import closure. -/
+def leanDependencies (ledger : Json) : IO (Array Json) :=
+  match ledger.getObjVal? "lean_dependencies" with
+  | .ok value => array value
+  | .error _ => pure #[]
+
 def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) := do
   need ((← nat (← field ledger "schema_version")) == 2) "unsupported ledger schema_version"
   let interfaces ← arrField ledger "native_interfaces"
@@ -72,6 +83,13 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
     ids := (← strField entry "id") :: ids
   for entry in specifications do
     fields entry ["id", "status", "owner", "scope", "assumption", "proof_effect", "trust_basis", "tests", "retirement"]
+    retirement entry
+    ids := (← strField entry "id") :: ids
+  for entry in ← leanDependencies ledger do
+    fields entry ["id", "status", "owner", "lake_package", "source_dir", "closure",
+      "pins", "semantics_assumed", "proof_effect", "trust_basis", "tests", "retirement"]
+    let _ ← jsonStrings (← field entry "imported_modules")
+    fields (← field entry "pins") ["lake_rev", "flake_node"]
     retirement entry
     ids := (← strField entry "id") :: ids
   unique ids "ledger ids"
@@ -200,7 +218,8 @@ def validateImports (root : FilePath) (ledger : Json) (interfaces : Array Json)
   let actual ← (← arrField manifest "packages").toList.mapM fun entry =>
     return (← strField entry "name", ← strField entry "rev")
   let deps ← dependencies interfaces
-  let expected ← deps.toList.mapM fun entry =>
+  let leanDeps ← leanDependencies ledger
+  let expected ← (deps ++ leanDeps).toList.mapM fun entry =>
     return (← strField entry "lake_package", ← strField (← field entry "pins") "lake_rev")
   sameSet actual expected "Lake dependency inventory"
   let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
@@ -325,6 +344,83 @@ def validateNative (root : FilePath) (interfaces : Array Json)
       (← strField pins "blake3_upstream_rev")) "upstream BLAKE3 revision drifted"
   return cargoCount
 
+
+/-! ## Pure Lean dependencies -/
+
+/-- Toolchain import roots a dependency's closure may import. -/
+private def toolchainRoots : List String := ["Init", "Lean", "Std", "Lake"]
+
+/-- Whether a module is one of this project's own Lake sources. -/
+private def localModule (root : FilePath) (lake : Array Token) (mod : String) : IO Bool := do
+  for (directory, _) in ← lakeRoots lake do
+    if ← (root / directory / (mod.replace "." "/" ++ ".lean")).pathExists then return true
+  return false
+
+/-- Lake's checkout directory name for a package (`«a-b»` is checked out as `a-b`). -/
+private def checkoutName (package : String) : String :=
+  if package.startsWith "«" && package.endsWith "»" then
+    ((package.drop 1).dropEnd 1).toString
+  else package
+
+/-- Every import of the project's sources that names neither a project module
+nor a toolchain module is a recorded module of a pure Lean dependency; every
+file of each dependency's recorded import closure has its recorded hash, no
+native declaration, no `implemented_by`, no `axiom`/`sorry`/`native_decide`,
+and imports only closure or toolchain modules; and its Lake and flake pins
+agree. Returns the number of closure files checked. -/
+def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Token)
+    (sources : List (FilePath × Array Token)) (overrides : List (String × String)) : IO Nat := do
+  let manifest ← readJson (root / "lake-manifest.json")
+  let packagesDir := (manifest.getObjValAs? String "packagesDir").toOption.getD ".lake/packages"
+  let packages ← arrField manifest "packages"
+  let nodes ← field (← readJson (root / "flake.lock")) "nodes"
+  let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
+  let mut unresolved := []
+  for mod in (sources.flatMap fun source => imports source.2).eraseDups do
+    let head := (mod.splitOn ".").headD ""
+    if toolchainRoots.contains head || !locals.contains head then continue
+    if ← localModule root lake mod then continue
+    unresolved := mod :: unresolved
+  let mut declared := []
+  let mut checkedFiles := 0
+  for entry in ← leanDependencies ledger do
+    let package ← strField entry "lake_package"
+    let pins ← field entry "pins"
+    let mut found := none
+    for candidate in packages do
+      if (← strField candidate "name") == package then found := some candidate
+    let some record := found | throw (IO.userError s!"lean dependency {package} is not in lake-manifest.json")
+    let packageRoot : FilePath := match optional overrides package with
+      | some path => path
+      | none => root / packagesDir / checkoutName package /
+          ((record.getObjValAs? String "subDir").toOption.getD ".")
+    let sourceRoot ← IO.FS.realPath (packageRoot / (← strField entry "source_dir"))
+    let closure ← stringPairs (← field entry "closure")
+    need (!closure.isEmpty) s!"{package}: empty closure"
+    let closureModules := closure.map fun (relative, _) =>
+      ((FilePath.mk relative).withExtension "").toString.replace "/" "."
+    for (relative, expected) in closure do
+      let path := sourceRoot / relative
+      need ((← sha256 path) == expected) s!"{package}: {relative} changed"
+      let tokens ← scanFile path
+      checked ((hygiene tokens).mapError (fun error => s!"{package}: {relative}: {error}"))
+      let natives ← checked ((externs tokens).mapError (fun error => s!"{package}: {relative}: {error}"))
+      need natives.isEmpty s!"{package}: {relative} declares native symbols"
+      need (!tokens.any fun token => token.kind == .name && token.text == "implemented_by")
+        s!"{package}: {relative} uses implemented_by"
+      for mod in imports tokens do
+        need (closureModules.contains mod || toolchainRoots.contains ((mod.splitOn ".").headD ""))
+          s!"{package}: {relative} imports {mod} outside the recorded closure"
+      checkedFiles := checkedFiles + 1
+    let imported ← jsonStrings (← field entry "imported_modules")
+    need (imported.all closureModules.contains) s!"{package}: an imported module is outside its closure"
+    declared := declared ++ imported
+    let node ← field nodes (← strField pins "flake_node")
+    need ((← strField (← field node "locked") "rev") == (← strField pins "lake_rev"))
+      s!"{package}: flake/Lake pin mismatch"
+  sameSet unresolved declared "imports of pure Lean dependencies"
+  return checkedFiles
+
 def validateSeeds (root : FilePath) (seeds : Array Json) (gmp : Option String) : IO Unit := do
   let toolchain := (← IO.FS.readFile (root / "lean-toolchain")).trimAscii.toString
   let marker := "leanprover/lean4:v"
@@ -384,10 +480,11 @@ def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option 
     checked ((hygiene tokens).mapError (fun error => s!"{path}: {error}"))
   validateImports root ledger interfaces sources
   let cargoCount ← validateNative root interfaces sources lake overrides
+  let leanFiles ← validateLeanDependencies root ledger lake sources overrides
   validateSeeds root seeds gmp
   validateCI root ledger
   let mut symbols := 0
   for entry in interfaces do symbols := symbols + (← arrField entry "foreign_symbols").size
-  IO.println s!"trusted-extern ledger ok: {interfaces.size} native interface, {symbols} symbols, {cargoCount} Cargo packages, {seeds.size} seed/build entries, {specifications.size} specification assumptions"
+  IO.println s!"trusted-extern ledger ok: {interfaces.size} native interface, {symbols} symbols, {cargoCount} Cargo packages, {(← leanDependencies ledger).size} pure Lean dependency ({leanFiles} files), {seeds.size} seed/build entries, {specifications.size} specification assumptions"
 
 end Compilatrix.Tools.TrustLedger

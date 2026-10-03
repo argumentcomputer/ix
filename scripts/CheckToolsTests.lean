@@ -129,11 +129,20 @@ private def buildGraphTests (root : FilePath) : IO Unit := do
   withFile runtime ((← IO.FS.readFile runtime).replace "FAIL:" "REMOVED:") do
     rejects "removed runtime assertions" "runtime assertion inventory changed" checkGraph
 
-private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
+private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let root := temporary / "project"
   let blake := temporary / "Blake3"
+  let ixKernel := temporary / "ix" / "IxKernel"
   cloneProject source root
   let originalLedger ← readJson (root / "docs/trusted-externs.json")
+  -- the pure Lean dependency's recorded closure, laid out as its package root sees it
+  let mut ixClosure : List String := []
+  for entry in ← arrField originalLedger "lean_dependencies" do
+    let sourceDir ← strField entry "source_dir"
+    for (relative, _) in ← pairs (← field entry "closure") do
+      copyFile (ixKernelSource / sourceDir / relative) (ixKernel / sourceDir / relative)
+      ixClosure := ixClosure ++ [relative]
+  need (!ixClosure.isEmpty) "test fixture lost the ix-kernel closure"
   for path in (← files blakeSource true).filter (·.extension == some "lean") do
     copyRelative blakeSource blake path
   let interfaces ← arrField originalLedger "native_interfaces"
@@ -145,8 +154,21 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
       blake3Version ← strField (← field entry "pins") "blake3_version"
   need (!cargoRelative.isEmpty) "test fixture lost the Blake3 Cargo lock"
   copyFile (blakeSource / cargoRelative) (blake / cargoRelative)
-  let check := audit root [("Blake3", blake.toString)] (some "6.3.0")
+  let check := audit root [("Blake3", blake.toString), ("«ix-kernel»", ixKernel.toString)] (some "6.3.0")
   check
+  withFile (root / "Compilatrix/AuditRegression.lean") "import Ix.Ixon.Verify\n" do
+    rejects "unledgered pure dependency import" "imports of pure Lean dependencies drifted" check
+  let codec := ixKernel / ".." / ixClosure.head!
+  withFile codec ((← IO.FS.readFile codec) ++ "\n") do
+    rejects "pure dependency source drift" "changed" check
+  withFile codec ((← IO.FS.readFile codec) ++ "\n@[extern \"rogue\"] opaque rogue : Nat\n") do
+    -- with its hash re-recorded, the native declaration itself is refused
+    let entries ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
+      let closure ← replaceField (← field entry "closure") ixClosure.head! (toJson (← sha256 codec))
+      replaceField entry "closure" closure
+    let ledger ← replaceField originalLedger "lean_dependencies" (Json.arr entries)
+    withFile (root / "docs/trusted-externs.json") ledger.compress do
+      rejects "pure dependency native code" "declares native symbols" check
   buildGraphTests root
   let regression := root / "Compilatrix/AuditRegression.lean"
   for token in ["axiom", "sorry", "native_decide"] do
@@ -206,10 +228,11 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
         rejects "Cargo metadata drift" diagnostic check
 
 def main (args : List String) : IO UInt32 := cli "Lean check regressions failed" do
-  let args ← checked (parseArgs ["--root", "--blake3"] args)
+  let args ← checked (parseArgs ["--root", "--blake3", "--ix-kernel"] args)
   let root ← IO.FS.realPath (option args "--root" ".")
   let blake ← IO.FS.realPath (option args "--blake3" (root / ".lake/packages/Blake3").toString)
+  let ixKernel ← IO.FS.realPath (option args "--ix-kernel" (root / ".lake/packages/ix-kernel/IxKernel").toString)
   lexerTests
   disassemblyTests
-  regressionTests root blake
+  regressionTests root blake ixKernel
   IO.println "Lean check regressions ok: source lexing, root/native inventories, build graph, proof/runtime coverage, integrity, Cargo, and CI rejection paths"
