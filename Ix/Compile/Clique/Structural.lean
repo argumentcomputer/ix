@@ -125,16 +125,6 @@ def transportPath (g : Group) (steps : Array (Name × Nat)) : Except String (Arr
   unless stepsFit g.spine idx part do throw "grammar: a path whose projections are not the packing's"
   return g.canonSpine.projSteps g.perm[idx]! ++ steps.extract len steps.size
 
-/-- The head of a term, for the trace. -/
-def headStr (e : Expr) : String :=
-  match getAppFnArgs (stripMdata e) with
-  | (.const c _ _, args) => s!"{c.pretty} /{args.size}"
-  | (.fvar f _, args) => s!"fvar {f.pretty} /{args.size}"
-  | (.bvar i _, args) => s!"bvar {i} /{args.size}"
-  | (.lam .., args) => s!"lam /{args.size}"
-  | (.proj s i _ _, args) => s!"proj {s.pretty}.{i} /{args.size}"
-  | (_, args) => s!"other /{args.size}"
-
 /-- The motive-part of a path into a `below` dictionary of type `ty`:
 replay Lean's `searchPProd` with canaries for the packed motives; `none`
 when the path never reaches a dictionary entry. -/
@@ -237,7 +227,7 @@ def phiSStep (L : StructLayout) (go : Array Expr → Expr → TM Expr) (ctx : Ar
   | .app .. =>
     let (h, args) := getAppFnArgs e
     match h with
-    | .const c us _ =>
+    | .const c _ _ =>
       if let some a := L.aux.get? c then
         let P := L.numParams
         let K := L.numMotives
@@ -260,7 +250,6 @@ def phiSStep (L : StructLayout) (go : Array Expr → Expr → TM Expr) (ctx : Ar
         if args.size < m then throw "grammar: a partial application of a below matcher"
         let args' ← args.mapM (go ctx)
         return mkAppN h (L.funPerm.map (args'[·]!) ++ args'.extract m args'.size)
-      let _ := us
       return mkAppN h (← args.mapM (go ctx))
     | _ => return mkAppN (← go ctx h) (← args.mapM (go ctx))
   | .const c _ _ =>

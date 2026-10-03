@@ -117,6 +117,22 @@ def severalPerTypeFormer (c : Clique) : Bool :=
   let formers := c.members.filterMap recArgTypeFormer
   formers.zipIdx.any fun (f, i) => (formers.extract (i + 1) formers.size).contains f
 
+/-- Q6 (owner, 2026-10-03), first source: the canonical order of a theorem
+clique (no specification, `CliqueKind.noSpec`) by its statements. The
+statements are classified and ordered as Pass 1 orders specifications (each
+statement compared as its own value); `σ[i]` is the canonical position of
+Lean's member `i`. `none` when two statements tie: the statements do not
+determine the order, and the clique keeps Lean's form (cause `NOSPEC`) unless
+Q6's second source, the recovered specification, separates them (not built
+here). -/
+def statementOrder (rules : Rules) (addr? : Name → Option Address) (members : Array CliqueMember) :
+    Except String (Option (Array Nat)) := do
+  let c : Clique := { kind := .noSpec
+                      members := members.map fun m => { m with value := m.type, recArgPos := none } }
+  let (cls, _) ← cliqueClasses rules addr? c
+  if cls.any (·.size ≥ 2) then return none
+  return some (c.members.map fun m => (cls.findIdx? (·.contains m.name)).getD 0)
+
 /-- Rename `_unsafe_rec` witnesses back to their members in a value. -/
 def unsafeRecToMembers (members : Array Name) (e : Expr) : Expr :=
   let m : Std.HashMap Name Name := members.foldl (init := {}) fun m n =>

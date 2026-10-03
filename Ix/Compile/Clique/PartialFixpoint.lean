@@ -40,6 +40,31 @@
   fallback of §5.2: `monotone_compose (mono φ) h`, with `φ : γ' → γ` the
   re-association `y ↦ ⟨y.π_{σ 0}, …⟩` and `mono φ` a `monotone_mk` tree over
   regenerated path proofs; it is recorded as `SHAPE`.
+
+  **O16, for A5 proper (statement only; not proved, not used here).** The
+  members' faithfulness rests on `Lean.Order.fix` commuting with an order
+  isomorphism of the packed product (design document §5.2, decision Q9). With
+  `Lean.Order.fix : [CCPO α] → (f : α → α) → monotone f → α` and
+  `monotone_compose (hf : monotone f) (hg : monotone g) : monotone (fun x => g (f x))`
+  (`Init/Internal/Order/Basic.lean`, Lean 4.34.1):
+
+  ```
+  theorem Lean.Order.fix_iso {α : Sort u} {β : Sort v} [CCPO α] [CCPO β]
+      (φ : β → α) (ψ : α → β) (hφ : monotone φ) (hψ : monotone ψ)
+      (hψφ : ∀ b, ψ (φ b) = b) (hφψ : ∀ a, φ (ψ a) = a)
+      (f : α → α) (hf : monotone f) :
+      fix (fun b => ψ (f (φ b))) (monotone_compose hφ (monotone_compose hf hψ))
+        = ψ (fix f hf)
+  ```
+
+  instantiated with `α := γ` (Lean's packing), `β := γ'` (the canonical one),
+  `φ y := ⟨y.π'_{σ 0}, …⟩`, `ψ x := ⟨x.π_{σ⁻¹ 0}, …⟩` (both monotone by
+  `monotone_mk` trees over the path proofs of (G); mutually inverse by η for
+  `PProd`) and `f := λ x. ⟨F₀[x], …⟩`: the canonical functional is `ψ ∘ f ∘ φ`
+  up to β and projection of a constructor, so component `σ i` of the canonical
+  fixpoint is component `i` of Lean's, which is O16 for every member. The
+  `CompleteLattice` variant (`inductive_fixpoint`, `coinductive_fixpoint`) has
+  the same statement with the least/greatest fixpoint in place of `fix`.
 -/
 module
 public import Ix.Compile.Clique.Packing

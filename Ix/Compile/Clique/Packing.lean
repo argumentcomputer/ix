@@ -256,7 +256,6 @@ def decodeTree (n : Nat) (e : Expr) : Option Tree := do
     let depth := k * (1 + r)
     leaves := leaves.push (← lower? args'[4]! depth)
     cur := args'[5]!
-    let _ := h'
   leaves := leaves.push (← lower? cur ((n - 2) * (1 + r)))
   let t : Tree := { spine := s, w, motiveBody := mBody, motiveName := mName, major := args[3]!,
                     leaves, extras, altNames := names }

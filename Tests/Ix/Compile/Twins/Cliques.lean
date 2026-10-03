@@ -34,6 +34,10 @@
   - `SP`   structural, fixed parameters in another order per function
   - `WP`   well-founded, fixed parameters in another order per function
   - `PT`   `partial def` clique (kernel-level SCC; control)
+  - `WA`   well-founded, three functions, one making two calls with a
+           goal-specific `decreasing_by` (the TACTIC-ASYM probe)
+  - `TN`   theorems by mutual structural recursion with identical
+           statements (the NOSPEC probe)
 -/
 
 namespace Tests.Ix.Compile.Twins.Cliques
@@ -600,5 +604,80 @@ partial def qa (n : Nat) : Nat := if n = 0 then 0 else qb (n - 1) + 1
 end
 end P1
 end PT
+
+/-! ## WA: the TACTIC-ASYM probe. `ta` calls `tb` and `tc`; its `decreasing_by`
+handles its two goals with different proofs, in goal order. Lean groups the
+goals per function (`WF/Fix.lean`, `groupGoalsByFunction`), in the order of the
+calls in the body, so the order of the clique does not reach the script. -/
+namespace WA
+namespace P0
+mutual
+def ta (n : Nat) : Nat := if _h : n ≤ 2 then n else tb (n - 1) + tc (n - 3)
+termination_by n
+decreasing_by
+  · exact Nat.sub_lt (by omega) (by decide)
+  · omega
+def tb (n : Nat) : Nat := if h : n = 0 then 0 else ta (n - 1) + 1
+termination_by n
+decreasing_by omega
+def tc (n : Nat) : Nat := if h : n = 0 then 1 else ta (n - 1) + 2
+termination_by n
+decreasing_by omega
+end
+end P0
+namespace P1
+mutual
+def tc (n : Nat) : Nat := if h : n = 0 then 1 else ta (n - 1) + 2
+termination_by n
+decreasing_by omega
+def ta (n : Nat) : Nat := if _h : n ≤ 2 then n else tb (n - 1) + tc (n - 3)
+termination_by n
+decreasing_by
+  · exact Nat.sub_lt (by omega) (by decide)
+  · omega
+def tb (n : Nat) : Nat := if h : n = 0 then 0 else ta (n - 1) + 1
+termination_by n
+decreasing_by omega
+end
+end P1
+end WA
+
+/-! ## TN: the NOSPEC probe. Two theorems with identical statements, each
+proved by structural recursion through the other: the statements tie, so
+Q6's first source cannot order the clique. -/
+namespace TN
+namespace P0
+mutual
+theorem na : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have := nb n
+    simp only [Nat.mul_succ, ev] at *
+    simpa using this
+theorem nb : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have := na n
+    simp only [Nat.mul_succ, ev] at *
+    simpa using this
+end
+end P0
+namespace P1
+mutual
+theorem nb : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have := na n
+    simp only [Nat.mul_succ, ev] at *
+    simpa using this
+theorem na : ∀ n, ev (2 * n) = true
+  | 0 => rfl
+  | n + 1 => by
+    have := nb n
+    simp only [Nat.mul_succ, ev] at *
+    simpa using this
+end
+end P1
+end TN
 
 end Tests.Ix.Compile.Twins.Cliques

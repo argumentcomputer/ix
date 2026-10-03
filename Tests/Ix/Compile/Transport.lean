@@ -31,6 +31,7 @@
 -/
 import Ix.Meta
 import Ix.CanonM
+import Ix.Compile.Canon
 import Ix.Compile.Clique
 import Ix.Compile.Clique.Transport
 import Tests.Ix.Compile.Twins
@@ -349,6 +350,57 @@ def kernelCheck (env : Environment) (fam : String) (p0 pk : Pres) (decls : Array
   let (r, _) ← (checkDecls scratch p0.ns decls).toIO ctx { env }
   return r
 
+/-! ## Theorem cliques (Q6) -/
+
+/-- A presentation whose clique is a theorem clique (no `EqnInfo`). -/
+def isTheoremClique (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name))
+    (p : Pres) : Bool :=
+  match presClique env eqn p with
+  | some (_, ms) => ms.all fun m => !eqn.contains m && (match env.find? m with
+      | some (.thmInfo _) => true
+      | _ => false)
+  | none => false
+
+/-- The canonical order of a theorem clique from its statements (Q6, first
+source; `Ix.Compile.Canon.statementOrder`). -/
+def stmtOrder (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name)) (p : Pres) :
+    Except String (Option (Array Nat)) := do
+  let some (_, ms) := presClique env eqn p | throw s!"{p.ns}: no clique"
+  let members ← ms.mapM fun m => match declOf env m with
+    | some d => pure ({ name := d.name, levelParams := d.levelParams, type := d.type,
+                        value := d.value } : _root_.Ix.Compile.Canon.CliqueMember)
+    | none => throw s!"{m}: not a theorem"
+  _root_.Ix.Compile.Canon.statementOrder _root_.Ix.Compile.Canon.Rules.phaseA
+    (fun n => some (Address.blake3 n.pretty.toUTF8)) members
+
+/-- (e) Both presentations of a theorem clique, each transported onto the
+order of the statements, must give the same constants; a tie is `NOSPEC`. -/
+def theoremCanonicity (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name))
+    (_fam : String) (p0 pk : Pres) : IO String := do
+  match stmtOrder env eqn p0, stmtOrder env eqn pk with
+  | .error e, _ | _, .error e => return s!"ERROR {e}"
+  | .ok none, .ok none => return "NOSPEC"
+  | .ok (some σ0), .ok (some σk) =>
+    let .ok (inp0, _, _) := pairInput env eqn p0 p0 (σ? := σ0) | return "ERROR input"
+    let .ok (inpk, _, _) := pairInput env eqn pk pk (σ? := σk) | return "ERROR input"
+    let out0 := _root_.Ix.Compile.Clique.transport inp0
+    let outk := _root_.Ix.Compile.Clique.transport inpk
+    let mapB (n : IxName) : IxName := ixName (mapInto p0 pk (toLeanName n))
+    let kMap : Std.HashMap Name Decl := outk.decls.foldl (init := {}) fun m d =>
+      m.insert (mapInto p0 pk (toLeanName d.name)) d
+    let mut same := 0
+    let mut diff : Array Name := #[]
+    for d in out0.decls do
+      match kMap.get? (toLeanName d.name) with
+      | some dk =>
+        if _root_.Ix.Compile.Clique.eqUpTo mapB d.type dk.type &&
+            _root_.Ix.Compile.Clique.eqUpTo mapB d.value dk.value then same := same + 1
+        else diff := diff.push (relName p0.ns (toLeanName d.name))
+      | none => diff := diff.push (relName p0.ns (toLeanName d.name))
+    return if diff.isEmpty then s!"CANONICAL ({same}/{out0.decls.size} identical; σ {p0.id} {σ0}, σ {pk.id} {σk})"
+      else s!"DIFFERENT {diff}"
+  | _, _ => return "NOSPEC in one presentation only"
+
 /-! ## Negative controls -/
 
 def familyNamed (fam : String) : Option Family :=
@@ -394,7 +446,6 @@ def strayProof (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Na
   let some (_, α, _) := bs[ar - 1]? | return some "WD: no packed domain"
   let some (_, us, #[a, b]) := _root_.Ix.Compile.Clique.constApp? α | return some "WD: packed domain"
   let inl := _root_.Ix.Compile.Canon.mkAppN (_root_.Ix.Expr.mkConst _root_.Ix.Compile.Clique.nPSumInl us) #[a, b]
-  let _ := (b, us)
   -- the proof's body, under its binders
   let n := _root_.Ix.Compile.Clique.lamArity proof.value
   let (ps, body) := _root_.Ix.Compile.Clique.peelLams n proof.value #[]
@@ -427,7 +478,6 @@ def strayMonotonicity (env : Environment) (eqn : Std.HashMap Name (Encoding × A
   let .ok (inp, _, _) := pairInput env eqn p0 pk | return some "PF: no input"
   let some packed := _root_.Ix.Compile.Clique.findPacked? inp.members inp.aux | return some "PF: no packed fixpoint"
   let some proof := inp.aux.find? (·.name != packed.name) | return some "PF: no proof"
-  let n := inp.members.size
   let L : _root_.Ix.Compile.Clique.PFLayout ← IO.ofExcept
     (_root_.Ix.Compile.Clique.pfLayout inp.members packed inp.sigma inp.newEncName)
   let some (d, fs, hs) := _root_.Ix.Compile.Clique.decodeMonoTree L proof.value
@@ -446,7 +496,6 @@ def strayMonotonicity (env : Environment) (eqn : Std.HashMap Name (Encoding × A
   let causes := out.causes.filter fun (_, c, _) => c == .shape
   let ks ← kernelCheck env "PF-stray" p0 pk out.decls
   let accepted := ks.all (·.2.isNone)
-  let _ := n
   IO.println s!"[clique-transport] (d) stray term in a monotonicity proof: causes {causes.map fun (n, c, w) => s!"{n.pretty} {c.tag} ({w})"}, \
     kernel {(ks.filter (·.2.isNone)).size}/{ks.size}{if out.baseline then " (BASELINE)" else ""}"
   for (n, r) in ks do
@@ -519,7 +568,11 @@ def run : IO UInt32 := do
       if r.verdict == "EXACT" then exact := exact + 1
       else failures := failures.push s!"oracle: {famName} {e.presA}/{e.presB} {e.constant}: {r.verdict} {r.note}"
     | none => failures := failures.push s!"oracle: {famName} {e.presA}/{e.presB} {e.constant}: not transported"
-  IO.println s!"[clique-transport] (a) exact oracle: {exact}/{pend.length} packing-order-only constants reproduced exactly"
+  let isNew (e : NonCanonicalEntry) : Bool := e.fixture.getString! == "WA"
+  let exactNew := (pend.filter fun e => isNew e && rows.any fun r =>
+    r.fam == e.fixture.getString! && r.pair == s!"{e.presA}/{e.presB}" && r.src == e.constant && r.verdict == "EXACT").length
+  IO.println s!"[clique-transport] (a) exact oracle: {exact}/{pend.length} packing-order-only constants reproduced exactly \
+    (the wave-1 measured set: {exact - exactNew}/{(pend.filter (!isNew ·)).length}; the A5t probe WA: {exactNew}/{(pend.filter isNew).length})"
   -- (c) GuessLex: everything but the measures reproduced
   let wg := rows.filter (·.fam == "WG")
   let wgGuess := (wg.filter (·.verdict == "GUESSLEX")).size
@@ -527,6 +580,18 @@ def run : IO UInt32 := do
   IO.println s!"[clique-transport] (c) WG: {wgExact} exact, {wgGuess} equal up to the measures (GUESSLEX), {wg.size - wgExact - wgGuess} other"
   unless wg.size > 0 && wgGuess > 0 && wgExact + wgGuess == wg.size do
     failures := failures.push "WG: not classified as GUESSLEX"
+  -- (e) theorem cliques ordered by their statements (Q6)
+  for fam in cliqueFamilies do
+    let famName := fam.fixture.getString!
+    let some p0 := fam.pres.head? | continue
+    unless isTheoremClique env eqn p0 do continue
+    for pk in fam.pres.tail do
+      let v ← theoremCanonicity env eqn famName p0 pk
+      IO.println s!"[clique-transport] (e) theorem clique {famName} {p0.id}/{pk.id}: {v}"
+      let expectNoSpec := (entries.filter fun e => e.fixture == fam.fixture && e.cause matches .noSpec).length > 0
+      if expectNoSpec then
+        unless v == "NOSPEC" do failures := failures.push s!"Q6: {famName}: expected NOSPEC, got {v}"
+      else unless v.startsWith "CANONICAL" do failures := failures.push s!"Q6: {famName}: {v}"
   -- (d) negative controls
   for fam in ["W3", "S3", "PF", "WD"] do
     if let some err ← wrongPermutation env eqn fam then failures := failures.push s!"control: {err}"
