@@ -480,10 +480,14 @@ has not been compiled")
 via '{target.pretty}' (registering block/phase: {ctx})")
       -- Consistent — skip (Rust `continue`).
     | none =>
-      -- Clone the target's Named, overriding the address
-      -- (mutual.rs:465-471).
+      -- Canonical metadata is shared, source provenance is not. The
+      -- target may already have been promoted: its `original` belongs to
+      -- another Lean declaration. This source gets its own original only
+      -- when its source block is promoted. Generated `_ix` display aliases
+      -- have no independent Lean source original. Borrowing the target's
+      -- original here made their metadata depend on promotion order (D11).
       let targetNamed := (← lookupNamed? target).getD { addr := targetAddr }
-      let aliasNamed := { targetNamed with addr := targetAddr }
+      let aliasNamed := { targetNamed with addr := targetAddr, original := none }
       compileName source
       auxRegisterName source aliasNamed
       auxInsertNameToAddr source targetAddr

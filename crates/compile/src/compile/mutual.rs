@@ -600,6 +600,10 @@ fn register_aux_aliases(
       .unwrap_or_else(|| Named::with_addr(target_addr.clone()));
     let mut alias_named = target_named;
     alias_named.addr = target_addr.clone();
+    // The target's original belongs to another source declaration. The
+    // alias receives its own original when its source block is promoted;
+    // generated display aliases have no independent source original.
+    alias_named.clear_original();
 
     compile_name(&source, stt);
     stt.env.register_name(source.clone(), alias_named);
