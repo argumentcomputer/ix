@@ -92,7 +92,8 @@ structure AcceptedAssociation (input : Input) extends AdmittedArtifact input.toA
   domain : DirectDomain input.source input.roots input.map
   map_agrees : MapAgrees ⟨input.source, input.map, pins⟩
     (streamContext pins prelude constants input.blobs input.hint)
-  correspondence : DirectCorrespondence ⟨input.source, input.map, pins⟩ declarations
+  correspondence : SourceCorrespondence ⟨input.source, input.map, pins⟩
+    (streamContext pins prelude constants input.blobs input.hint) constants declarations
   block_correspondence : BlockCorrespondence ⟨input.source, input.map, pins⟩ readerState
 
 inductive Decline where
@@ -140,7 +141,7 @@ def checkAssociation (input : Input) (artifact : AdmittedArtifact input.toArtifa
     let cx : ExportContext := ⟨input.source, input.map, artifact.pins⟩
     let reader := streamContext artifact.pins artifact.prelude artifact.constants input.blobs input.hint
     if hm : MapAgrees cx reader then
-      if hf : DirectCorrespondence cx artifact.declarations then
+      if hf : SourceCorrespondence cx reader artifact.constants artifact.declarations then
         if hb : BlockCorrespondence cx artifact.readerState then
           .ok ⟨artifact, hd, hm, hf, hb⟩
         else .error .blockCorrespondence
@@ -157,7 +158,9 @@ theorem faithful_sound {input : Input} {accepted : AcceptedAssociation input}
     (_h : checkCompiled input = .ok accepted) :
     checkBytes input.limits input.records input.blobs input.hint = .ok accepted.env ∧
     DirectDomain input.source input.roots input.map ∧
-    DirectCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.declarations ∧
+    SourceCorrespondence ⟨input.source, input.map, accepted.pins⟩
+      (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
+      accepted.constants accepted.declarations ∧
     BlockCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.readerState :=
   ⟨accepted.admitted, accepted.domain, accepted.correspondence, accepted.block_correspondence⟩
 
@@ -198,6 +201,35 @@ theorem AdmittedArtifact.installed_exact {input : ArtifactInput} (artifact : Adm
     | ok v =>
       simp only [hf, hk, artifact.decoded, bind, Except.bind, Except.mapError] at hc
       exact ⟨natPins, hn, checkConstantsWith_installed hc⟩
+
+/-- A raw-source definition is related to an actual declaration in the
+admitted fold by the reader's proved normalization specification. Its raw
+body remains explicit; no projection denotation theorem is smuggled into W. -/
+theorem AcceptedAssociation.raw_definition_reading {input : Input}
+    (accepted : AcceptedAssociation input) {ci : Lean.ConstantInfo}
+    {owner : Address} {record : Ixon.Constant} {cv : Kernel.ConstantVal}
+    {value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    (record_found : rawSourceRecord ⟨input.source, input.map, accepted.pins⟩
+      accepted.constants ci = some (owner, record))
+    (exported : directExport ⟨input.source, input.map, accepted.pins⟩ ci = .ok (.defn cv value hint))
+    (raw : RawSourceMatch ⟨input.source, input.map, accepted.pins⟩
+      (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
+      accepted.constants ci) :
+    ∃ natPins state decl ds, builtinNatOpPins = .ok natPins ∧
+      DefinitionDecl cv value (projRewrite state cv value) .defn decl ∧
+      decl ∈ ds ∧ Kernel.Cached.checkDecls .verified natPins ds = .ok accepted.env := by
+  have hm : RawEntryMatch
+      (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
+      owner record (.defn cv value hint) := by
+    simpa only [RawSourceMatch, exported, record_found] using raw
+  cases hi : record.info <;> simp only [RawEntryMatch, hi] at hm
+  all_goals try contradiction
+  case defn definition =>
+    obtain ⟨natPins, hn, installed⟩ := accepted.toAdmittedArtifact.installed_exact
+    obtain ⟨state, decl, ds, reading, member, checked, _⟩ :=
+      installed.singleton (rawSourceRecord_mem record_found) (by simp [hi, isSingleton])
+    exact ⟨natPins, state, decl, ds, hn,
+      RawDefinitionAgrees.reader_decl hi hm reading, member, checked⟩
 
 /-- Restrict only source associations. Target bytes remain exact, including
 their support/prelude; selecting a source root does not forge a new artifact. -/

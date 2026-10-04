@@ -1,4 +1,5 @@
 import Ix.CompileCert.Translate
+import Ix.Kernel.Ixon.ReaderSpec
 
 /-! # Direct reader correspondence
 
@@ -173,5 +174,130 @@ def BlockCorrespondence (cx : ExportContext) (state : Kernel.Reader.State) : Pro
 instance (cx : ExportContext) (state : Kernel.Reader.State) :
     Decidable (BlockCorrespondence cx state) :=
   inferInstanceAs (Decidable (∀ ci ∈ cx.source.declarations, BlockMatch cx state ci))
+
+/-! ## Source correspondence before the reader's specified normalization
+
+A projection definition can be read as a recursor term. W must keep two
+facts separate: independent source correspondence to the raw reader value,
+and the reader's proved `DefinitionDecl` relation to its emitted declaration.
+This layer establishes only the former; Entry composes the latter from the
+actual admitted stream. Projection semantic preservation is still an S
+obligation, not inferred from re-running `projRewrite`.
+-/
+
+def ResultIs {ε α : Type} (result : Except ε α) (expected : α) : Prop :=
+  match result with
+  | .error _ => False
+  | .ok actual => actual = expected
+
+instance {ε α : Type} [DecidableEq α] (result : Except ε α) (expected : α) :
+    Decidable (ResultIs result expected) := by
+  cases result <;> unfold ResultIs <;> infer_instance
+
+theorem ResultIs.eq_result {ε α : Type} {result : Except ε α} {expected : α}
+    (h : ResultIs result expected) : result = .ok expected := by
+  cases result with
+  | error _ => exact False.elim h
+  | ok actual => exact congrArg Except.ok h
+
+def RawDefinitionAgrees (reader : Kernel.Reader.Ctx) (owner : Address)
+    (record : Ixon.Constant) (definition : Ixon.Definition)
+    (cv : Kernel.ConstantVal) (value : Kernel.Expr) : Prop :=
+  definition.kind = .defn ∧
+  cv.name = reader.nameOf (.member owner 0) ∧
+  cv.levelParams = Kernel.Reader.singletonLps reader owner definition.lvls ∧
+  ResultIs ((Kernel.Reader.definitionReader reader owner record definition).read definition.typ) cv.type ∧
+  ResultIs ((Kernel.Reader.definitionReader reader owner record definition).read definition.value) value
+
+instance (reader : Kernel.Reader.Ctx) (owner : Address)
+    (record : Ixon.Constant) (definition : Ixon.Definition)
+    (cv : Kernel.ConstantVal) (value : Kernel.Expr) :
+    Decidable (RawDefinitionAgrees reader owner record definition cv value) :=
+  inferInstanceAs (Decidable (definition.kind = .defn ∧
+    cv.name = reader.nameOf (.member owner 0) ∧
+    cv.levelParams = Kernel.Reader.singletonLps reader owner definition.lvls ∧
+    ResultIs ((Kernel.Reader.definitionReader reader owner record definition).read definition.typ) cv.type ∧
+    ResultIs ((Kernel.Reader.definitionReader reader owner record definition).read definition.value) value))
+
+def RawEntryMatch (reader : Kernel.Reader.Ctx) (owner : Address)
+    (record : Ixon.Constant) (expected : DirectEntry) : Prop :=
+  match record.info, expected with
+  | .defn definition, .defn cv value _ => RawDefinitionAgrees reader owner record definition cv value
+  | _, _ => False
+
+instance (reader : Kernel.Reader.Ctx) (owner : Address)
+    (record : Ixon.Constant) (expected : DirectEntry) :
+    Decidable (RawEntryMatch reader owner record expected) := by
+  unfold RawEntryMatch
+  split <;> infer_instance
+
+/-- The source record is selected by an explicit proposed source key and
+must occur in the exact admitted byte stream. Prelude-only records continue
+using strict direct correspondence rather than fabricated stream membership. -/
+def rawSourceRecord (cx : ExportContext) (constants : List (Address × Ixon.Constant))
+    (ci : Lean.ConstantInfo) : Option (Address × Ixon.Constant) := do
+  let entry ← cx.map.find? (fun e => e.source == ci.name)
+  constants.find? (fun p => decide (p.1 = entry.record))
+
+def RawSourceMatch (cx : ExportContext) (reader : Kernel.Reader.Ctx)
+    (constants : List (Address × Ixon.Constant)) (ci : Lean.ConstantInfo) : Prop :=
+  match directExport cx ci, rawSourceRecord cx constants ci with
+  | .ok expected, some (owner, record) => RawEntryMatch reader owner record expected
+  | _, _ => False
+
+instance (cx : ExportContext) (reader : Kernel.Reader.Ctx)
+    (constants : List (Address × Ixon.Constant)) (ci : Lean.ConstantInfo) :
+    Decidable (RawSourceMatch cx reader constants ci) := by
+  unfold RawSourceMatch
+  split <;> infer_instance
+
+def SourceCorrespondence (cx : ExportContext) (reader : Kernel.Reader.Ctx)
+    (constants : List (Address × Ixon.Constant)) (decls : Array Kernel.Declaration) : Prop :=
+  ∀ ci ∈ cx.source.declarations,
+    DirectMatch cx (streamEntries decls) ci ∨ RawSourceMatch cx reader constants ci
+
+instance (cx : ExportContext) (reader : Kernel.Reader.Ctx)
+    (constants : List (Address × Ixon.Constant)) (decls : Array Kernel.Declaration) :
+    Decidable (SourceCorrespondence cx reader constants decls) :=
+  inferInstanceAs (Decidable (∀ ci ∈ cx.source.declarations,
+    DirectMatch cx (streamEntries decls) ci ∨ RawSourceMatch cx reader constants ci))
+
+theorem rawSourceRecord_mem {cx : ExportContext} {constants : List (Address × Ixon.Constant)}
+    {ci : Lean.ConstantInfo} {pair : Address × Ixon.Constant}
+    (h : rawSourceRecord cx constants ci = some pair) : pair ∈ constants := by
+  unfold rawSourceRecord at h
+  cases he : cx.map.find? (fun e => e.source == ci.name) with
+  | none => simp [he, bind, Option.bind] at h
+  | some entry =>
+    simp only [he, bind, Option.bind] at h
+    exact List.mem_of_find?_eq_some h
+
+/-- Compose independently checked raw source fields with the reader's
+existing normalization specification. The resulting value is explicitly
+`projRewrite ...`; this theorem does not assert semantic equality to it. -/
+theorem RawDefinitionAgrees.reader_decl {reader : Kernel.Reader.Ctx} {state : Kernel.Reader.State}
+    {owner : Address} {record : Ixon.Constant} {definition : Ixon.Definition}
+    {cv : Kernel.ConstantVal} {value : Kernel.Expr} {decl : Kernel.Declaration}
+    (info : record.info = .defn definition)
+    (raw : RawDefinitionAgrees reader owner record definition cv value)
+    (reading : Kernel.Reader.SingletonRead reader state owner record decl) :
+    Kernel.Reader.DefinitionDecl cv value (Kernel.Reader.projRewrite state cv value) .defn decl := by
+  obtain ⟨hkind, hname, hlevels, htype, hvalue⟩ := raw
+  cases reading with
+  | @defn d ty v decl hi ht hv hk =>
+    have hd : definition = d := Ixon.ConstantInfo.defn.inj (info.symm.trans hi)
+    subst d
+    have hty : ty = cv.type := Except.ok.inj (ht.symm.trans htype.eq_result)
+    have hval : v = value := Except.ok.inj (hv.symm.trans hvalue.eq_result)
+    subst ty
+    subst v
+    have hcv : cv = ⟨reader.nameOf (.member owner 0),
+        Kernel.Reader.singletonLps reader owner definition.lvls, cv.type⟩ := by
+      cases cv
+      simp_all
+    rw [← hcv] at hk
+    simpa only [hkind] using hk
+  | axio hi _ _ => cases info.symm.trans hi
+  | quot hi _ => cases info.symm.trans hi
 
 end Ix.CompileCert

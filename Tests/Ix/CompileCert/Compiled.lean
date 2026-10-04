@@ -37,6 +37,10 @@ def run : IO Unit := do
     | .error e => throw (IO.userError s!"compiler failed: {e}")
   unless compiled.ungroundedCount == 0 do throw (IO.userError "compiler output contains ungrounded declarations")
   let produced ← IO.ofExcept (Ixon.deEnv compiled.bytes)
+  IO.println s!"compiled bytes: {compiled.bytes.size}; Blake3: {Address.blake3 compiled.bytes}"
+  if let some directory ← IO.getEnv "C1_OUTPUT_DIR" then
+    IO.FS.createDirAll directory
+    IO.FS.writeBinFile (System.FilePath.mk directory / "compiled.ixe") compiled.bytes
   let mut store : Benchmarks.Kernel.CheckIxeStep.RecordStore := {}
   for (address, lazy) in produced.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
@@ -80,5 +84,22 @@ def run : IO Unit := do
       unexpected := unexpected + 1
   IO.println s!"{accepted}/{outcomes.length} certified; {unexpected} unexpected declines"
   if unexpected != 0 then throw (IO.userError "real compiler C1 probe found unresolved direct cones")
+  let some (.defnInfo zero) := env.find? (prefixName ++ `Node.zero)
+    | throw (IO.userError "missing checked alternative projection body")
+  let changed : Source := ⟨captured.source.declarations.map fun ci =>
+    if ci.name == prefixName ++ `Node.val then
+      match ci with
+      | .defnInfo original => .defnInfo { original with value := zero.value }
+      | _ => ci
+    else ci⟩
+  let wrong := checkRoot { input with source := changed } (prefixName ++ `Node.val)
+  match wrong with
+  | .error (.certification .correspondence) =>
+    IO.println "PASS: normalized projection rejects an alternative checked, same-typed value"
+  | .error (.selection reason) =>
+    throw (IO.userError s!"wrong-value control failed during source selection: {reason}")
+  | .error (.certification reason) =>
+    throw (IO.userError s!"wrong-value control had unexpected result: {declineLabel reason}")
+  | .ok _ => throw (IO.userError "normalized projection accepted wrong source value")
 
 end Tests.Ix.CompileCert.Compiled

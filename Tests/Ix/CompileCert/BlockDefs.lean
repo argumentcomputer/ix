@@ -18,4 +18,8 @@ structure Node where
   val : Nat
   kids : List Node
 
+/-- Explicit constructor keeps this alternative's dependencies inside the
+already checked Node/Nat cone; overloaded numeral elaboration adds OfNat. -/
+def Node.zero (_n : Node) : Nat := Nat.zero
+
 end Tests.Ix.CompileCert.BlockDefs
