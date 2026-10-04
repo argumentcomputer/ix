@@ -317,6 +317,52 @@ def ruleEnv (on : Ix.CompileM.LeanPipelineOut) :
     rules := rules.push s.name.pretty
   return (env, images, rules)
 
+/-! ## O11a: is Lean's mutual `_sizeOf` of a split member the instance form, by δ? -/
+
+/-- The members of `Linear.EqCnstr`'s block (the library twins, `Oracle.Lib`). -/
+def o11aMembers : List Name :=
+  [`EqCnstr, `EqCnstrProof, `IneqCnstr, `IneqCnstrProof, `DiseqCnstr, `DiseqCnstrProof,
+   `UnsatProof].map (`Lean.Meta.Grind.Arith.Linear ++ ·)
+
+/-- One `rfl` per member, in a test-only copy of the twins' switch-on output:
+`(fun t => @sizeOf Orig.X Orig.X._sizeOf_inst t) = (fun t => @sizeOf Twin.X
+Twin.X._sizeOf_inst t)`. `Orig` is the block as Lean declares it (its
+`_sizeOf_N` inline the block recursor, relocated by Pass 3 for the split);
+`Twin` declares the components separately (its `_sizeOf` goes through the
+instances of the other components). The kernels decide whether the two are
+definitionally equal (δ of the instances and the `_sizeOf` functions, β,
+projection; no induction). -/
+def o11aEnv (on : Ix.CompileM.LeanPipelineOut) : Except String (Ixon.Env × Array String) := do
+  let mut env := on.env
+  let mut names : Array String := #[]
+  let one := _root_.Ix.Level.mkSucc _root_.Ix.Level.mkZero
+  let nat := _root_.Ix.Expr.mkConst (ixN ``Nat) #[]
+  let mut known : Std.HashMap _root_.Ix.Name Address := {}
+  for m in o11aMembers do
+    let o := `Tests.Ix.Compile.Oracle.Lib.Orig ++ m
+    let t := `Tests.Ix.Compile.Oracle.Lib.Twin ++ m
+    let side := fun (x : Name) =>
+      _root_.Ix.Expr.mkLam (ixN `t) (_root_.Ix.Expr.mkConst (ixN x) #[])
+        (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp
+          (_root_.Ix.Expr.mkConst (ixN ``SizeOf.sizeOf) #[one]) (_root_.Ix.Expr.mkConst (ixN x) #[]))
+          (_root_.Ix.Expr.mkConst (ixN (x ++ `_sizeOf_inst)) #[])) (_root_.Ix.Expr.mkBVar 0))
+        .default
+    let ty := _root_.Ix.Expr.mkForallE (ixN `t) (_root_.Ix.Expr.mkConst (ixN t) #[]) nat .default
+    let lhs := side o
+    let rhs := side t
+    let stmt := _root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp
+      (_root_.Ix.Expr.mkConst (ixN ``Eq) #[one]) ty) lhs) rhs
+    let pf := _root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp
+      (_root_.Ix.Expr.mkConst (ixN ``Eq.refl) #[one]) ty) lhs
+    let name := ixN (`o11a ++ m)
+    let tv : _root_.Ix.TheoremVal := {
+      cnst := { name, levelParams := #[], type := stmt }, value := pf, all := #[name] }
+    let (env', a) ← addConst on.cenv known env (.thmInfo tv)
+    env := env'
+    known := known.insert name a
+    names := names.push name.pretty
+  return (env, names)
+
 /-! ## Expectations -/
 
 /-- Recorded kernel failures under the switch: `(unit, leg, name, cause)`;
@@ -373,6 +419,280 @@ def refusalClosure (off on : Ix.CompileM.LeanPipelineOut) : Std.HashSet _root_.I
 
 /-! ## One unit -/
 
+/-- A dotted name with numeric components (`_private.M.0.f`). -/
+def parseName (s : String) : Name :=
+  (s.splitOn ".").foldl (init := .anonymous) fun n c =>
+    match c.toNat? with
+    | some k => .num n k
+    | none => .str n c
+
+/-! ## Surgery comparison (A4): the switch-off call-site constants against the switch-on output -/
+
+/-- The expressions of the constant at `addr`, with the constant whose tables
+they index (a projection's block). -/
+def ixonBody (env : Ixon.Env) (addr : Address) : Option (Ixon.Constant × Array (String × Ixon.Expr)) := do
+  let c ← env.getConst? addr
+  let ofMut (b : Ixon.Constant) (idx : UInt64) (cidx : Option UInt64) : Option (Ixon.Constant × Array (String × Ixon.Expr)) :=
+    match b.info with
+    | .muts ms => match ms[idx.toNat]?, cidx with
+      | some (.defn d), _ => some (b, #[("type", d.typ), ("value", d.value)])
+      | some (.recr r), _ => some (b, #[("type", r.typ)] ++ r.rules.zipIdx.map fun (rr, i) => (s!"rule{i}", rr.rhs))
+      | some (.indc i), none => some (b, #[("type", i.typ)])
+      | some (.indc i), some k => (i.ctors[k.toNat]?).map fun ct => (b, #[("type", ct.typ)])
+      | none, _ => none
+    | _ => none
+  match c.info with
+  | .defn d => some (c, #[("type", d.typ), ("value", d.value)])
+  | .recr r => some (c, #[("type", r.typ)] ++ r.rules.zipIdx.map fun (rr, i) => (s!"rule{i}", rr.rhs))
+  | .axio a => some (c, #[("type", a.typ)])
+  | .quot q => some (c, #[("type", q.typ)])
+  | .dPrj p => do ofMut (← env.getConst? p.block) p.idx none
+  | .rPrj p => do ofMut (← env.getConst? p.block) p.idx none
+  | .iPrj p => do ofMut (← env.getConst? p.block) p.idx none
+  | .cPrj p => do ofMut (← env.getConst? p.block) p.idx (some p.cidx)
+  | .muts _ => none
+
+/-- Expand a sharing reference (bounded: a sharing entry only refers to
+earlier entries). -/
+def ixonExpand (c : Ixon.Constant) : Nat → Ixon.Expr → Ixon.Expr
+  | fuel + 1, .share i => match c.sharing[i.toNat]? with
+    | some e => ixonExpand c fuel e
+    | none => .share i
+  | _, e => e
+
+/-- The application spine of an Ixon expression (shares expanded). -/
+def ixonSpine (c : Ixon.Constant) (e : Ixon.Expr) : Ixon.Expr × Array Ixon.Expr := Id.run do
+  let mut args : Array Ixon.Expr := #[]
+  let mut cur := ixonExpand c 64 e
+  for _ in [0:1 <<< 20] do
+    match cur with
+    | .app f a => args := args.push a; cur := ixonExpand c 64 f
+    | _ => break
+  return (cur, args.reverse)
+
+/-- A compact, depth-limited rendering (refs by name). -/
+partial def ixonShow (c : Ixon.Constant) (nm : Address → String) (d : Nat) (e : Ixon.Expr) : String :=
+  if d == 0 then "…" else
+  let e := ixonExpand c 64 e
+  let univ := fun (i : UInt64) => match c.univs[i.toNat]? with
+    | some u => reprStr u
+    | none => s!"?u{i}"
+  match e with
+  | .sort i => s!"Sort({univ i})"
+  | .var i => s!"#{i}"
+  | .ref i us => s!"{(c.refs[i.toNat]?).map nm |>.getD s!"?r{i}"}.{us.toList.map univ}"
+  | .recur i _ => s!"rec#{i}"
+  | .prj t i x => s!"({ixonShow c nm (d - 1) x}).{(c.refs[t.toNat]?).map nm |>.getD "?"}#{i}"
+  | .str i => s!"str:{(c.refs[i.toNat]?).map toString |>.getD "?"}"
+  | .nat i => s!"nat:{(c.refs[i.toNat]?).map toString |>.getD "?"}"
+  | .app .. =>
+    let (h, as) := ixonSpine c e
+    "(" ++ " ".intercalate ((#[h] ++ as).toList.map (ixonShow c nm (d - 1))) ++ ")"
+  | .lam _ t b => s!"(λ {ixonShow c nm (d - 1) t}. {ixonShow c nm (d - 1) b})"
+  | .all _ _ t b => s!"(∀ {ixonShow c nm (d - 1) t}. {ixonShow c nm (d - 1) b})"
+  | .letE _ t v b => s!"(let {ixonShow c nm (d - 1) t} := {ixonShow c nm (d - 1) v}; {ixonShow c nm (d - 1) b})"
+  | .share i => s!"share#{i}"
+
+/-- The first difference of two Ixon expressions over their own tables: the
+path (`argK`, `body`, …) and the two subterms. -/
+partial def ixonFirstDiff (ca cb : Ixon.Constant) (path : String) (a b : Ixon.Expr) :
+    Option (String × Ixon.Expr × Ixon.Expr) :=
+  let a := ixonExpand ca 64 a
+  let b := ixonExpand cb 64 b
+  let uEq := fun (us vs : Array UInt64) =>
+    us.size == vs.size && (us.zip vs).all fun (i, j) => ca.univs[i.toNat]? == cb.univs[j.toNat]?
+  let rEq := fun (i j : UInt64) => ca.refs[i.toNat]? == cb.refs[j.toNat]?
+  let here := some (path, a, b)
+  match a, b with
+  | .sort i, .sort j => if uEq #[i] #[j] then none else here
+  | .var i, .var j => if i == j then none else here
+  | .ref i us, .ref j vs => if rEq i j && uEq us vs then none else here
+  | .recur i us, .recur j vs => if i == j && uEq us vs then none else here
+  | .prj t i x, .prj t' i' y => if rEq t t' && i == i' then ixonFirstDiff ca cb (path ++ ".proj") x y else here
+  | .str i, .str j | .nat i, .nat j => if rEq i j then none else here
+  | .app .., .app .. =>
+    let (f, xs) := ixonSpine ca a
+    let (g, ys) := ixonSpine cb b
+    if xs.size != ys.size then here else
+    match ixonFirstDiff ca cb (path ++ ".head") f g with
+    | some d => some d
+    | none => (xs.zip ys).zipIdx.findSome? fun ((x, y), k) => ixonFirstDiff ca cb (path ++ s!".arg{k}") x y
+  | .lam _ t x, .lam _ t' y | .all _ _ t x, .all _ _ t' y =>
+    match ixonFirstDiff ca cb (path ++ ".dom") t t' with
+    | some d => some d
+    | none => ixonFirstDiff ca cb (path ++ ".body") x y
+  | .letE _ t v x, .letE _ t' v' y =>
+    match ixonFirstDiff ca cb (path ++ ".ty") t t' with
+    | some d => some d
+    | none => match ixonFirstDiff ca cb (path ++ ".val") v v' with
+      | some d => some d
+      | none => ixonFirstDiff ca cb (path ++ ".body") x y
+  | _, _ => here
+
+/-- An address ↦ name map of an output (one name per address, `_ix` names last). -/
+def addrNames (env : Ixon.Env) : Std.HashMap Address String :=
+  env.named.fold (init := {}) fun m n nd =>
+    match m.get? nd.addr with
+    | some old => if (old.splitOn "._ix").length > 1 then m.insert nd.addr n.pretty else m
+    | none => m.insert nd.addr n.pretty
+
+/-- The first difference between the switch-off and switch-on forms of a
+constant, rendered. -/
+def describeDiff (off on : Ixon.Env) (offNames onNames : Std.HashMap Address String)
+    (a b : Address) : String := Id.run do
+  let some (ca, xs) := ixonBody off a | return "no switch-off body"
+  let some (cb, ys) := ixonBody on b | return "no switch-on body"
+  if xs.size != ys.size then return s!"different shapes ({xs.size} vs {ys.size} expressions)"
+  for ((l, x), (_, y)) in xs.zip ys do
+    if let some (p, u, v) := ixonFirstDiff ca cb l x y then
+      let nmA := fun (ad : Address) => (offNames.get? ad).getD (String.ofList ((toString ad).toList.take 12))
+      let nmB := fun (ad : Address) => (onNames.get? ad).getD (String.ofList ((toString ad).toList.take 12))
+      return s!"{p}\n        off: {(ixonShow ca nmA 6 u).take 1200}\n        on:  {(ixonShow cb nmB 6 v).take 1200}"
+  let extra := ca.refs.filter (!cb.refs.contains ·)
+  let missing := cb.refs.filter (!ca.refs.contains ·)
+  return s!"same expressions; tables: refs {ca.refs.size}/{cb.refs.size} (only off: {extra.toList.map fun ad => (offNames.get? ad).getD (toString ad)}; only on: {missing.toList.map fun ad => (onNames.get? ad).getD (toString ad)}), univs {ca.univs.size}/{cb.univs.size}, sharing {ca.sharing.size}/{cb.sharing.size}; same order: refs {ca.refs == cb.refs}, univs {ca.univs == cb.univs}, sharing {ca.sharing == cb.sharing}"
+
+/-- `describeDiff` within one output, following a differing reference up to
+`depth` times (twin diagnostics). -/
+partial def describeDeep (env : Ixon.Env) (nm : Std.HashMap Address String) (a b : Address)
+    (depth : Nat) : String := Id.run do
+  let here := describeDiff env env nm nm a b
+  if depth == 0 then return here
+  let some (ca, xs) := ixonBody env a | return here
+  let some (cb, ys) := ixonBody env b | return here
+  for ((l, x), (_, y)) in xs.zip ys do
+    if let some (_, .ref i _, .ref j _) := ixonFirstDiff ca cb l x y then
+      if let (some ra, some rb) := (ca.refs[i.toNat]?, cb.refs[j.toNat]?) then
+        if ra != rb then
+          return s!"{here}\n      → {(nm.get? ra).getD "?"} / {(nm.get? rb).getD "?"}: {describeDeep env nm ra rb (depth - 1)}"
+  return here
+
+/-- The constants the surgery rewrote (altering call-site metadata in the
+switch-off output), counted as byte-identical with the switch on or not; with
+`PASS3_DIFF` set, the first difference of each that differs. -/
+def surgeryComparison (off on : Ix.CompileM.LeanPipelineOut) (detail : Bool) : IO (Array String) := do
+  let mut lines : Array String := #[]
+  let mut same : Array String := #[]
+  let mut differ : Array (String × Address × Address) := #[]
+  for (n, nd) in off.env.named do
+    if isSyntheticMuts n then continue
+    if !Ix.Tc.metaHasAlteringSurgery nd.constMeta then continue
+    match on.env.named.get? n with
+    | some nd' => if nd'.addr == nd.addr then same := same.push n.pretty else differ := differ.push (n.pretty, nd.addr, nd'.addr)
+    | none => differ := differ.push (n.pretty, nd.addr, nd.addr)
+  lines := lines.push s!"  surgery call sites: {same.size + differ.size} constant(s), {same.size} byte-identical with the switch on, {differ.size} differ"
+  if detail then
+    let offNames := addrNames off.env
+    let onNames := addrNames on.env
+    for (n, a, b) in differ.qsort (fun x y => x.1 < y.1) do
+      lines := lines.push s!"    differs: {n}: {describeDiff off.env on.env offNames onNames a b}"
+  return lines
+
+/-! ## The definitional passes' fixtures (A4, `Tests/Ix/Compile/Pass/`) -/
+
+/-- The per-pass fixtures. -/
+def passFiles : List String :=
+  ["O1Perm", "O2Split", "O3Cases", "O4BRecOn", "O5PropSplit"].map
+    fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
+
+/-- Twins with the switch on: the two constants have one address (the pass
+made the permuted presentation's term the canonical one's). -/
+def passTwins : List (String × String × String) := [
+  ("O1Perm", "PassO1.Src.Even.viaRec", "PassO1.Can.Even.viaRec"),
+  ("O1Perm", "PassO1.Src.Odd.viaRecOn", "PassO1.Can.Odd.viaRecOn"),
+  ("O1Perm", "PassO1.Src.viaRec_two", "PassO1.Can.viaRec_two"),
+  ("O1Perm", "PassO1.Src.viaRecOn_three", "PassO1.Can.viaRecOn_three"),
+  ("O3Cases", "PassO3.Src.Even.isZero", "PassO3.Can.Even.isZero"),
+  ("O3Cases", "PassO3.Src.SA.isStop", "PassO3.Can.SA.isStop"),
+  ("O3Cases", "PassO3.Src.SB.isLeaf", "PassO3.Can.SB.isLeaf"),
+  ("O4BRecOn", "PassO4.Src.Odd.toNat", "PassO4.Can.Odd.toNat"),
+  ("O4BRecOn", "PassO4.Src.Even.toNat", "PassO4.Can.Even.toNat"),
+  ("O4BRecOn", "PassO4.Src.three", "PassO4.Can.three"),
+  ("O4BRecOn", "PassO4.Src.SB.depth", "PassO4.Can.SB.depth"),
+  ("O4BRecOn", "PassO4.Src.depth_two", "PassO4.Can.depth_two")]
+
+/-- Pass firing, read off the switch-on output: the constant references (or
+does not reference) the named constant. `(unit, constant, referenced name,
+expected)`. -/
+def passRefs : List (String × String × String × Bool) := [
+  -- O1: `recOn` goes to the Ix `recOn`; the collapsed block keeps the paired image
+  ("O1Perm", "PassO1.Src.Odd.viaRecOn", "PassO1.Src.Odd._ix.recOn", true),
+  ("O1Perm", "PassO1.Col.A.viaRec", "PProd", true),
+  -- O3: the Ix `casesOn` of the class (permuted, split); declines on a collapsed block
+  ("O3Cases", "PassO3.Src.Even.isZero", "PassO3.Src.Even._ix.casesOn", true),
+  ("O3Cases", "PassO3.Src.SA.isStop", "PassO3.Src.SA._ix.casesOn", true),
+  ("O3Cases", "PassO3.Src.SB.isLeaf", "PassO3.Src.SB._ix.casesOn", true),
+  ("O3Cases", "PassO3.Col.A.isNil", "PassO3.Col.A._ix.casesOn", false),
+  -- O4: the Ix `brecOn`/`below` (permuted pair; the split block's lower component);
+  -- declines on the upper component (cross field)
+  ("O4BRecOn", "PassO4.Src.Odd.toNat", "PassO4.Src.Odd._ix.brecOn", true),
+  ("O4BRecOn", "PassO4.Src.Even.toNat", "PassO4.Src.Even._ix.brecOn", true),
+  ("O4BRecOn", "PassO4.Src.SB.depth", "PassO4.Src.SB._ix.brecOn", true),
+  ("O4BRecOn", "PassO4.Src.SA.size", "PassO4.Src.SA._ix.brecOn", false),
+  -- O2/O6: the component recursors; the bare occurrence keeps the image constant
+  ("O2Split", "PassO2.SA.viaRec", "PassO2.SA._ix.rec", true),
+  ("O2Split", "PassO2.SA.viaRec", "PassO2.SB._ix.rec", true),
+  ("O2Split", "PassO2.SB.viaRec", "PassO2.SB._ix.rec", true),
+  ("O2Split", "PassO2.SA.recBare", "PassO2.SA.rec", true),
+  -- O5: the Ix auxiliaries at universe 0
+  ("O5PropSplit", "PassO5.P.toQ", "PassO5.P._ix.casesOn", true),
+  ("O5PropSplit", "PassO5.Q.elim", "PassO5.Q._ix.rec", true),
+  ("O5PropSplit", "PassO5.P.viaRec", "PassO5.P._ix.rec", true)]
+
+/-- Constants whose switch-on term equals the switch-off output's (the pass
+reproduces the old surgery's term): with `true`, byte for byte; with `false`,
+expression for expression, the tables differing only by the surgery's
+leftover entries of dropped arguments and their order (design document §4.7
+(e): Pass 3 derives the tables from the final term only). -/
+def passSameAsOff : List (String × String × Bool) := [
+  ("O1Perm", "PassO1.Src.Even.viaRec", true), ("O1Perm", "PassO1.Src.viaRec_two", true),
+  ("O2Split", "PassO2.SA.viaRec", false), ("O2Split", "PassO2.SB.viaRec", false),
+  ("O4BRecOn", "PassO4.Src.Odd.toNat", true), ("O4BRecOn", "PassO4.Src.Even.toNat", true),
+  ("O4BRecOn", "PassO4.Src.SB.depth._f", false)]
+
+/-- The per-pass checks of one fixture unit. -/
+def passChecks (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : Array String × Array String := Id.run do
+  let mut problems : Array String := #[]
+  let mut lines : Array String := #[]
+  let addr := fun (o : Ix.CompileM.LeanPipelineOut) (s : String) => o.env.getAddr? (ixN (parseName s))
+  let mut nt := 0
+  for (unit, a, b) in passTwins do
+    -- the debugging unit `names` (`PASS3_NAMES`) takes the twins unit's pairs it contains
+    if unit != u.name && !(unit == "twins" && u.name == "names" && (addr on a).isSome) then continue
+    nt := nt + 1
+    match addr on a, addr on b with
+    | some x, some y =>
+      if x != y then
+        problems := problems.push s!"{u.name}: twins differ with the switch on: {a} / {b}: {describeDeep on.env (addrNames on.env) x y 3}"
+    | _, _ => problems := problems.push s!"{u.name}: twin missing: {a} / {b}"
+  -- every name of an address
+  let names : Std.HashMap Address (Array String) := on.env.named.fold (init := {}) fun m n nd =>
+    m.insert nd.addr ((m.getD nd.addr #[]).push n.pretty)
+  let mut nr := 0
+  for (unit, c, r, want) in passRefs do
+    if unit != u.name then continue
+    nr := nr + 1
+    let some ad := addr on c | problems := problems.push s!"{u.name}: {c} missing"; continue
+    let some (k, _) := ixonBody on.env ad | problems := problems.push s!"{u.name}: {c} has no body"; continue
+    let has := k.refs.any fun x => (names.getD x #[]).contains r
+    if has != want then
+      problems := problems.push s!"{u.name}: {c} {if want then "does not reference" else "references"} {r}"
+  let mut ns := 0
+  for (unit, c, bytes) in passSameAsOff do
+    if unit != u.name then continue
+    ns := ns + 1
+    let (some a, some b) := (addr off c, addr on c) | problems := problems.push s!"{u.name}: {c} missing"; continue
+    if bytes then
+      if a != b then problems := problems.push s!"{u.name}: {c} differs from the switch-off output"
+    else
+      let same : Bool := match ixonBody off.env a, ixonBody on.env b with
+        | some (ca, xs), some (cb, ys) => xs.size == ys.size &&
+            (xs.zip ys).all fun ((l, x), (_, y)) => (ixonFirstDiff ca cb l x y).isNone
+        | _, _ => false
+      if !same then problems := problems.push s!"{u.name}: {c}: the term differs from the switch-off output's"
+  lines := lines.push s!"  passes: {nt} twin pairs equal with the switch on, {nr} firing checks, {ns} constants with the switch-off term ({problems.size} problem(s))"
+  return (problems, lines)
+
 def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × Array String) := do
   let mut problems : Array String := #[]
   let mut lines : Array String := #[]
@@ -391,6 +711,12 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
     identical {idr.identical}; equal names {idr.equalNames}, moved in cones {idr.movedInCone}, \
     new reserved {idr.newReserved}, compiled only with the switch on {idr.newCompiled}"
   problems := problems ++ idr.problems.map (s!"{u.name}: " ++ ·)
+  if !idr.changedBlocks.isEmpty then
+    lines := lines ++ (← surgeryComparison off on ((← IO.getEnv "PASS3_DIFF").isSome))
+  if u.name == "twins" || u.name == "names" || passFiles.any (fun p => (System.FilePath.mk p).fileStem == some u.name) then
+    let (pp, pl) := passChecks u off on
+    problems := problems ++ pp
+    lines := lines ++ pl
   -- 5. display names of the changed blocks' auxiliaries
   for all in idr.changedBlocks do
     let some x := all[0]? | continue
@@ -507,6 +833,22 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
             {rfailed.size} kernel failure(s)"
           for (leg, n, m) in rfailed do
             problems := problems.push s!"{u.name}: rule {leg}: {n} fails: {m.take 240}"
+    -- O11a (A4): one `rfl` per Linear member, under the three kernels (a verdict, not a gate)
+    if u.name == "twins" then
+      match o11aEnv on with
+      | .error e => lines := lines.push s!"  o11a: {e}"
+      | .ok (oenv, onames) =>
+        match Ixon.serEnv oenv with
+        | .error e => lines := lines.push s!"  o11a: {e}"
+        | .ok bytes =>
+          let opath := dir / "o11a.ixe"
+          IO.FS.writeBinFile opath bytes
+          let odir := dir / "o11a"
+          IO.FS.createDirAll odir
+          let ofailed ← kernelFailures odir opath onames (anon := true)
+          lines := lines.push s!"  o11a: {onames.size} rfl statements (Orig `_sizeOf` = Twin instance form), {ofailed.size} kernel failure(s)"
+          for (leg, n, m) in ofailed do
+            lines := lines.push s!"    o11a {leg}: {n}: {m.take 300}"
   finally
     if keep?.isNone then IO.FS.removeDirAll dir
   return (problems, lines)
@@ -550,6 +892,7 @@ def runLib (offPath onPath : String) : IO UInt32 := do
   let mut rippled := 0
   let mut rewritten := 0
   let mut siblings := 0
+  let mut images := 0
   let mut changedSet : Std.HashSet String := {}
   let byPretty : Std.HashMap String _root_.Ix.Name :=
     onParts.namedRows.foldl (fun m r => m.insert r.name.pretty r.name) {}
@@ -568,6 +911,10 @@ def runLib (offPath onPath : String) : IO UInt32 := do
       -- block (and its index in it) moved
       else if d.fields.all (fun f => f == "idx" || f.startsWith "block") then
         siblings := siblings + 1
+      -- A3 decision 3: the Lean name of a changed block's image-kind auxiliary
+      -- denotes its image, a definition with Lean's type, so it moves (no record)
+      else if (n.bind fun x => (Ix.Compile.Pass.Opt.classify x).map (·.1)).isSome then
+        images := images + 1
       else problems := problems.push s!"root without a decompile record: {d.name} ({d.fields})"
     | none => problems := problems.push s!"root not found: {d.name}"
   let mut added := 0
@@ -578,7 +925,7 @@ def runLib (offPath onPath : String) : IO UInt32 := do
     else problems := problems.push s!"new name not reserved: {n}"
   for (n, _) in diff.namedRemoved do
     if !n.startsWith "Ix." then problems := problems.push s!"name removed with the switch on: {n}"
-  IO.println s!"[pass3-lib] moved: {roots} roots ({rewritten} rewritten call-site constants, {siblings} block siblings of one), \
+  IO.println s!"[pass3-lib] moved: {roots} roots ({rewritten} rewritten call-site constants, {siblings} block siblings of one, {images} Lean auxiliaries of changed blocks now denoting their images), \
     {rippled} rippled; added {added} (reserved or synthetic)"
   -- the surgery's rewritten constants
   let mut surgered : Array _root_.Ix.Name := #[]
@@ -592,10 +939,40 @@ def runLib (offPath onPath : String) : IO UInt32 := do
     if changedSet.contains n.pretty then differ := differ.push n.pretty else same := same + 1
   IO.println s!"[pass3-lib] surgery-rewritten constants (switch off): {surgered.size}; \
     byte-identical with the switch on: {same}; baseline (differ): {differ.size}"
-  for n in (differ.qsort (· < ·)).toList do IO.println s!"[pass3-lib]   differs: {n}"
+  -- A4: classify each difference: the same expressions (the tables differ: the
+  -- surgery's leftover entries of dropped arguments or their order) or not
+  let rowsNames := fun (p : Ixon.LazyEnvParts) => p.namedRows.foldl (init := ({} : Std.HashMap Address String))
+    fun m r => if m.contains r.addr && (r.name.pretty.splitOn "._ix").length > 1 then m else m.insert r.addr r.name.pretty
+  let offNm := rowsNames offParts
+  let onNm := rowsNames onParts
+  let addrOf := fun (p : Ixon.LazyEnvParts) (s : String) =>
+    (byPretty.get? s).bind fun n => (p.rowIdx.get? n).map fun i => p.namedRows[i]!.addr
+  let mut tablesOnly := 0
+  for n in (differ.qsort (· < ·)).toList do
+    let detail := match addrOf offParts n, addrOf onParts n with
+      | some a, some b => describeDiff offParts.env onParts.env offNm onNm a b
+      | _, _ => "missing"
+    if detail.startsWith "same expressions" then tablesOnly := tablesOnly + 1
+    IO.println s!"[pass3-lib]   differs: {n}: {detail.take 1500}"
+  IO.println s!"[pass3-lib] of the {differ.size} that differ: {tablesOnly} have the switch-off expressions (tables only), {differ.size - tablesOnly} differ in an expression"
   for p in problems.toList.take 50 do IO.println s!"[pass3-lib] FAIL {p}"
   IO.println s!"[pass3-lib] {problems.size} problem(s) ({(← IO.monoMsNow) - t0} ms)"
   return if problems.isEmpty then 0 else 1
+
+/-- `PASS3_SURGERED=<file.ixe>`: the constants of a switch-off output that
+carry altering call-site metadata (the surgery's rewritten constants), one
+per line. -/
+def runSurgered (path : String) : IO UInt32 := do
+  let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy (← IO.FS.readBinFile path))
+  let mut n := 0
+  for row in parts.namedRows do
+    if isSyntheticMuts row.name then continue
+    if let .ok nd := row.materialize parts.backing parts.nameRev then
+      if Ix.Tc.metaHasAlteringSurgery nd.constMeta then
+        n := n + 1
+        IO.println s!"[pass3-surgered] {row.name.pretty}"
+  IO.println s!"[pass3-surgered] {n} constant(s)"
+  return 0
 
 /-- Debugging aid: `PASS3_FIND=<file.ixe>,<hex prefix>,…` lists the named
 entries and constants whose address starts with a prefix. -/
@@ -674,6 +1051,7 @@ def run (env : Environment) : IO UInt32 := do
     match spec.splitOn "," with
     | p :: pfxs => return ← runFind p pfxs
     | _ => return 2
+  if let some p := ← IO.getEnv "PASS3_SURGERED" then return ← runSurgered p
   if let some spec := ← IO.getEnv "PASS3_LIB" then
     match spec.splitOn "," with
     | [a, b] => return ← runLib a b
@@ -682,7 +1060,7 @@ def run (env : Environment) : IO UInt32 := do
   let keep? := (← IO.getEnv "PASS3_KEEP").map System.FilePath.mk
   let want := fun (s : String) => only.isEmpty || only.contains s
   let mut units : Array (String × IO CUnit) := #[]
-  for p in auxCertFiles ++ protoFiles do
+  for p in auxCertFiles ++ protoFiles ++ passFiles do
     let stem := (System.FilePath.mk p).fileStem.getD p
     if want stem then units := units.push (stem, unitOfFile p)
   if want "twins" then
@@ -690,6 +1068,12 @@ def run (env : Environment) : IO UInt32 := do
       let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env
         Tests.Ix.Compile.Twins.allFamilies
       pure { name := "twins", env, seeds, closure := closureOf env seeds.toList })
+  -- a unit of named constants of the test environment (Lean core included)
+  if let some ns := ← IO.getEnv "PASS3_NAMES" then
+    let seeds := (ns.splitOn ",").toArray.filterMap fun s =>
+      let n := parseName s.trimAscii.toString
+      if env.contains n then some n else none
+    units := units.push ("names", pure { name := "names", env, seeds, closure := closureOf env seeds.toList })
   if want "corpus" then
     units := units.push ("corpus", do
       let closure := closureOf env ((validateAuxClosure env).map (·.1))
