@@ -152,6 +152,8 @@ def sourceSupported : Lean.ConstantInfo → Bool
 
 def directExport (cx : ExportContext) (ci : Lean.ConstantInfo) : ExportM DirectEntry := do
   unless sourceSupported ci do throw s!"unsupported source safety: {ci.name}"
+  unless ci.levelParams.eraseDups.length == ci.levelParams.length do
+    throw s!"duplicate source universe parameters: {ci.name}"
   let levels ← cx.levels ci
   let tc : TermContext := ⟨cx, ci.levelParams, levels⟩
   let val : Kernel.ConstantVal := ⟨← cx.name ci.name, levels, ← exportExpr tc ci.type⟩
@@ -169,5 +171,49 @@ def directExport (cx : ExportContext) (ci : Lean.ConstantInfo) : ExportM DirectE
         (← exportExpr tc r.rhs) false false false
     return .recursor val (v.numParams + v.numMotives + v.numMinors + v.numIndices)
       (v.numParams + v.numMotives + v.numMinors) rules
+
+/-! ## Representation-bridge spike
+
+These structural functions never consult cached hashes or the compiler's
+hash-based equality. They define the initial supported representation
+relation; substitution/renaming and semantic preservation remain separately
+listed proof obligations. -/
+
+def ixName : Ix.Name → Lean.Name
+  | .anonymous _ => .anonymous
+  | .str p s _ => .str (ixName p) s
+  | .num p i _ => .num (ixName p) i
+
+def ixLevel : Ix.Level → ExportM Lean.Level
+  | .zero _ => return .zero
+  | .succ u _ => return .succ (← ixLevel u)
+  | .max u v _ => return .max (← ixLevel u) (← ixLevel v)
+  | .imax u v _ => return .imax (← ixLevel u) (← ixLevel v)
+  | .param n _ => return .param (ixName n)
+  | .mvar .. => throw "Ix universe metavariable"
+
+def ixExpr : Ix.Expr → ExportM Lean.Expr
+  | .bvar i _ => return .bvar i
+  | .sort u _ => return .sort (← ixLevel u)
+  | .const n us _ => return .const (ixName n) (← us.toList.mapM ixLevel)
+  | .app f a _ => return .app (← ixExpr f) (← ixExpr a)
+  | .lam n t b info _ => return .lam (ixName n) (← ixExpr t) (← ixExpr b) info
+  | .forallE n t b info _ => return .forallE (ixName n) (← ixExpr t) (← ixExpr b) info
+  | .letE n t v b nonDep _ => do
+    return .letE (ixName n) (← ixExpr t) (← ixExpr v) (← ixExpr b) nonDep
+  | .lit v _ => return .lit v
+  | .proj n i e _ => return .proj (ixName n) i (← ixExpr e)
+  | .mdata .. => throw "Ix metadata requires an erasure/semantic contract"
+  | .fvar .. => throw "Ix free variable"
+  | .mvar .. => throw "Ix metavariable"
+
+def ixToKernel (cx : TermContext) (e : Ix.Expr) : ExportM Kernel.Expr := do
+  exportExpr cx (← ixExpr e)
+
+theorem ixExpr_bvar_hash_irrelevant (i : Nat) (a b : Address) :
+    ixExpr (.bvar i a) = ixExpr (.bvar i b) := rfl
+
+theorem ixExpr_app_hash_irrelevant (f a : Ix.Expr) (h k : Address) :
+    ixExpr (.app f a h) = ixExpr (.app f a k) := rfl
 
 end Ix.CompileCert

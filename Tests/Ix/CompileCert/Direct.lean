@@ -128,7 +128,21 @@ def controls : List (String × (Unit → Bool)) := [
     let outcomes := checkRoots input
     outcomes.length == 2 &&
       (outcomes[0]?.map (fun r => r.result.isOk)).getD false &&
-      !(outcomes[1]?.map (fun r => r.result.isOk)).getD true) ]
+      !(outcomes[1]?.map (fun r => r.result.isOk)).getD true),
+  ("allowed definition hint difference", fun _ =>
+    accepted { choiceInput with hint := fun _ => some (.regular 7) }),
+  ("hint difference cannot hide wrong value", fun _ =>
+    sourceMismatch { wrongAlias with hint := fun _ => some (.regular 7) }),
+  ("Ix cached hash is not structural identity", fun _ =>
+    match ixExpr (.bvar 0 (address 1)), ixExpr (.bvar 1 (address 1)) with
+    | .ok (.bvar 0), .ok (.bvar 1) => true
+    | _, _ => false),
+  ("Ix differing cached hashes do not alter structure", fun _ =>
+    match ixExpr (.bvar 0 (address 1)), ixExpr (.bvar 0 (address 2)) with
+    | .ok (.bvar 0), .ok (.bvar 0) => true
+    | _, _ => false),
+  ("Ix semantic metadata explicitly unsupported", fun _ =>
+    !(ixExpr (.mdata #[] (.bvar 0 (address 1)) (address 1))).isOk) ]
 
 def run : IO Unit := do
   let mut failed := 0
@@ -139,5 +153,3 @@ def run : IO Unit := do
   if failed != 0 then throw (IO.userError s!"{failed}/{controls.length} C1 controls failed")
 
 end Tests.Ix.CompileCert.Direct
-
-def main : IO Unit := Tests.Ix.CompileCert.Direct.run

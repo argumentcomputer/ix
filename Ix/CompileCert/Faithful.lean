@@ -27,14 +27,38 @@ def readerEntries : Kernel.Declaration → List DirectEntry
 def streamEntries (decls : Array Kernel.Declaration) : List DirectEntry :=
   decls.toList.flatMap readerEntries
 
+/-- Reducibility hints control search, not the definition's type or value.
+Only this field is quotiented for correspondence. The exact hint supplied
+to admission remains bound in `Input`; no checker-behavior equivalence is
+claimed by this projection. -/
+def DirectEntry.withoutHint : DirectEntry → DirectEntry
+  | .defn cv value _ => .defn cv value .opaque
+  | other => other
+
+def EntryCompatible (actual expected : DirectEntry) : Prop :=
+  actual.withoutHint = expected.withoutHint
+
+instance (actual expected : DirectEntry) : Decidable (EntryCompatible actual expected) :=
+  inferInstanceAs (Decidable (actual.withoutHint = expected.withoutHint))
+
+/-- Quotienting hints cannot change either the statement or the body. This
+is a syntactic field-preservation theorem, not semantic source pull-back. -/
+theorem compatible_definition_fields {a b : Kernel.ConstantVal} {v w : Kernel.Expr}
+    {h k : Kernel.ReducibilityHint}
+    (same : EntryCompatible (.defn a v h) (.defn b w k)) : a = b ∧ v = w := by
+  simpa [EntryCompatible, DirectEntry.withoutHint] using same
+
+def compatibleEntries (entries : List DirectEntry) : List DirectEntry :=
+  entries.map DirectEntry.withoutHint
+
 /-- A source declaration agrees with an actual reader entry, including its
 kind, complete type/value, universe telescope and every recursor-rule field.
-This strict first mode intentionally has no auxiliary/hint exemption. -/
+Only definition hints are quotiented. There is no auxiliary exemption. -/
 def DirectMatch (cx : ExportContext) (entries : List DirectEntry)
     (ci : Lean.ConstantInfo) : Prop :=
   match directExport cx ci with
   | .error _ => False
-  | .ok e => e ∈ entries
+  | .ok e => e.withoutHint ∈ compatibleEntries entries
 
 instance (cx : ExportContext) (entries : List DirectEntry) (ci : Lean.ConstantInfo) :
     Decidable (DirectMatch cx entries ci) :=
@@ -62,11 +86,16 @@ no representative's success stands in for another source declaration. -/
 theorem DirectCorrespondence.member {cx : ExportContext} {decls : Array Kernel.Declaration}
     (h : DirectCorrespondence cx decls) {ci : Lean.ConstantInfo}
     (hc : ci ∈ cx.source.declarations) :
-    ∃ e ∈ streamEntries decls, directExport cx ci = .ok e := by
+    ∃ expected actual, directExport cx ci = .ok expected ∧
+      actual ∈ streamEntries decls ∧ EntryCompatible actual expected := by
   have hm := h ci hc
   cases he : directExport cx ci with
   | error e => simp [DirectMatch, he] at hm
-  | ok e => exact ⟨e, by simpa [DirectMatch, he] using hm, rfl⟩
+  | ok e =>
+    have hm' : e.withoutHint ∈ compatibleEntries (streamEntries decls) := by
+      simpa [DirectMatch, he] using hm
+    obtain ⟨actual, ha, heq⟩ := List.mem_map.mp hm'
+    exact ⟨e, actual, rfl, ha, heq⟩
 
 /-- Ordered whole-block description. This retains the shape fields that
 entry membership alone omits, and the separate recursor counts whose sums

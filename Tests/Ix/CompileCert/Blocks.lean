@@ -61,5 +61,3 @@ def run : IO Unit := do
     throw (IO.userError s!"{failed}/{cases.length} block controls failed")
 
 end Tests.Ix.CompileCert.Blocks
-
-def main : IO Unit := Tests.Ix.CompileCert.Blocks.run
