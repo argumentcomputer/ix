@@ -93,10 +93,56 @@ def auxStoreConst (addr : Address) (constant : Ixon.Constant) : CompileM Unit :=
   modifyBlockState fun st =>
     { st with auxConsts := st.auxConsts.push (addr, constant) }
 
-/-- Model of Rust `stt.env.register_name(name, named)` for aux blocks:
-    append to `auxNamed` (later entries for a name override earlier —
-    DashMap insert semantics). -/
-def auxRegisterName (name : Name) (named : Ixon.Named) : CompileM Unit :=
+/-- Source ownership follows the source declaration, including a recursor's
+explicit source family. The latter survives evaporation to external content;
+the external target's source identity is never consulted. -/
+def auxSourceRefs (ci : Ix.ConstantInfo) : Std.HashSet Name :=
+  let refs := Ix.Compile.Canon.refsConst ci
+  match ci with
+  | .recInfo r => r.all.foldl (fun acc n => acc.insert n) refs
+  | _ => refs
+
+/-- Check only forward provenance from the claimed input name. Names absent
+from the source are new generated declarations. `sourceCount` bounds the
+explicit source domain, including a streaming caller's name table. -/
+def sourceClaimOwned (env : Ix.Environment) (owners : Std.HashSet Name)
+    (name : Name) (sourceCount : Nat) : Except String Bool := Id.run do
+  if (env.get? name).isNone then return .ok true
+  let mut pending := [name]
+  let mut seen : Std.HashSet Name := ({} : Std.HashSet Name).insert name
+  for _ in [:sourceCount + 1] do
+    let n :: rest := pending | return .ok false
+    pending := rest
+    if owners.contains n then return .ok true
+    let some ci := env.get? n | continue
+    let refs := auxSourceRefs ci
+    if refs.toList.any owners.contains then return .ok true
+    for r in refs do
+      if !seen.contains r && (env.get? r).isSome then
+        seen := seen.insert r
+        pending := r :: pending
+  if pending.isEmpty then return .ok false
+  return .error "auxiliary source ownership walk exceeded the explicit source domain"
+
+/-- Reject a source-name claim unrelated to this input block before
+arrival order or an existing content-address alias can influence it. -/
+def checkAuxSourceClaim (name : Name) : CompileM Unit := do
+  let cenv ← getCompileEnv
+  let source := { cenv.env with overlay := {} }
+  let owners : Std.HashSet Name := (← Ix.CompileM.getBlockEnv).all.fold (init := {}) fun owners n =>
+    match source.get? n with
+    | some (.inductInfo _) => owners.insert n
+    | _ => owners
+  if owners.isEmpty then return
+  match sourceClaimOwned source owners name (source.consts.size + cenv.nameByHash.size) with
+  | .ok true => return
+  | .ok false => throw (.invalidMutualBlock
+      s!"auxiliary claim for source name '{name.pretty}' has no forward provenance to the claiming block")
+  | .error reason => throw (.invalidMutualBlock reason)
+
+/-- Register a checked source-owned auxiliary name in the block result. -/
+def auxRegisterName (name : Name) (named : Ixon.Named) : CompileM Unit := do
+  checkAuxSourceClaim name
   modifyBlockState fun st =>
     { st with auxNamed := st.auxNamed.push (name, named) }
 
@@ -464,6 +510,7 @@ def registerAuxAliases (aliases : Std.HashMap Name Name) (ctx : String)
   for (source, target) in entries do
     if source == target then
       continue
+    checkAuxSourceClaim source
 
     let some targetAddr ← resolveAddr? target
       | throw (.invalidMutualBlock

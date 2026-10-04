@@ -334,7 +334,7 @@ got {actual.getD "accepted"}"
   let belowPretty := (Ix.Name.fromLeanName belowName).pretty
   let tPretty := (Ix.Name.fromLeanName tName).pretty
   let isConflict (m : String) :=
-    m.startsWith s!"conflicting claims for name '{belowPretty}': already registered at "
+    m == s!"auxiliary claim for source name '{belowPretty}' has no forward provenance to the claiming block"
   if !(rust.any fun (n, m) => n == tPretty && isConflict m) then
     failures := failures + 1
     IO.println s!"[claim-conflict] FAIL: Rust does not refuse {tPretty} with the conflicting claim on {belowPretty}"
