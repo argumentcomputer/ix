@@ -538,4 +538,12 @@ def fast (xs : List Nat) : ! List Nat := shared xs
   cases xs <;> rfl
 end CSimpReplacement
 
+/- Two nondefault headers exercise exact carried-metadata order and completeness. -/
+namespace MetadataPair
+def keep (1 n : Nat) (! xs : List Nat) : ! List Nat :=
+  match n with
+  | 0 => xs
+  | k + 1 => keep k xs
+end MetadataPair
+
 end Tests.Ix.SourceContract.ReviewFixture

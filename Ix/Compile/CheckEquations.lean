@@ -120,6 +120,12 @@ def statementBinders (program : Program) (fuel : Nat) (equation : UInt64) :
     | _ => break
   return binders
 
+/-- The complete ordered list of nondefault input contracts. Binder names
+are diagnostic only; positions and contracts are authenticated by the type. -/
+def carriedContracts (binders : Array Ixon.BinderContract) : Array Contract :=
+  binders.zipIdx.filterMap fun (b, position) =>
+    if b == .many then none else some { position, uses := b.uses, value := b.value }
+
 private def runCheck (limits : Limits) (action : CheckM α) : Except String α :=
   match action.run { remaining := limits.steps } with
   | .ok value _ => .ok value
@@ -179,12 +185,14 @@ def verify (env : Ixon.Env) (sidecar : Json) : Except String Report := do
     -- The statement shape `∀ xs, f xs = rhs` for this definition.
     let _ ← (runCheck profile.limits (equationBody program profile.limits.depth d.toUInt64 t.toUInt64)).mapError
       fun m => s!"check-equations: {e.equation} does not unfold {e.definition}: {m}"
-    let binders ← runCheck profile.limits (statementBinders program profile.limits.depth t.toUInt64)
-    for c in e.contracts do
-      let some b := binders[c.position]?
-        | throw s!"check-equations: {e.equation}: no binder at position {c.position}"
-      unless b.uses == c.uses && b.value == c.value do
-        throw s!"check-equations: {e.equation}: the binder at position {c.position} does not carry the stated contract"
+    let sourceBinders ← runCheck profile.limits (statementBinders program profile.limits.depth d.toUInt64)
+    let theoremBinders ← runCheck profile.limits (statementBinders program profile.limits.depth t.toUInt64)
+    let sourceContracts := carriedContracts sourceBinders
+    let theoremContracts := carriedContracts theoremBinders
+    unless sourceContracts == theoremContracts do
+      throw s!"check-equations: {e.equation}: source and theorem header contracts differ"
+    unless e.contracts == sourceContracts do
+      throw s!"check-equations: {e.definition}: contracts must be the complete ordered nondefault header list"
   return { root, profile := profileAddress, claim, entries }
 
 end Ix.Compile.CheckEquations

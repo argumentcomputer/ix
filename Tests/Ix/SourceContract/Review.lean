@@ -252,7 +252,7 @@ private def nativeImplementations : IO (Bool × Nat × Nat × Option String) := 
     recursive definition native {recursiveDefinition}")
 
 /-- Strict setting S3: the sidecar of a compile under the core profile with
-equations (Q06) lists its checked pair with both addresses, the profile and
+equations (MetadataPair) lists its checked pair with both addresses, the profile and
 the carried contracts; `Ix.Compile.CheckEquations.verify` accepts it against
 the closure and refuses every tampered variant. -/
 private def checkedEquations : IO (Bool × Nat × Nat × Option String) := do
@@ -260,7 +260,7 @@ private def checkedEquations : IO (Bool × Nat × Nat × Option String) := do
   let profile ← IO.FS.readFile "profiles/lean-core.profile"
   let directory ← IO.FS.createTempDir
   try
-    let probe : Probe := { name := "Q06", accepted := true, finding := "S3", equations := true }
+    let probe : Probe := { name := "MetadataPair", accepted := true, finding := "S3", equations := true }
     let (status, found, output) ← match ← compileProbeStatus env profile directory probe with
       | .ok result => pure result
       | .error message => return (false, 0, 1, some message)
@@ -275,11 +275,16 @@ private def checkedEquations : IO (Bool × Nat × Nat × Option String) := do
         (record : Ix.Compile.Equations.ResourceRecord) :=
       Ix.Compile.CheckEquations.verify closure (Ix.Compile.Equations.toJson found #[] (some record))
     let accepted := match verify found record with
-      | .ok report => report.entries.size == 1 && report.entries.all (·.contracts.size == 1)
+      | .ok report => report.entries.size == 1 && report.entries.all (·.contracts.size == 2)
       | .error _ => false
     let swapped := record.checked.map fun (d, t, da, _) => (d, t, da, da)
     let flipped := found.map fun a => { a with contracts := a.contracts.map fun c =>
       { c with value := { c.value with owned := if c.value.owned == .unique then .shared else .unique } } }
+    let missingContracts := found.map fun a => { a with contracts := #[] }
+    let reorderedContracts := found.map fun a => { a with contracts := a.contracts.reverse }
+    let duplicateContracts := found.map fun a => { a with contracts := a.contracts ++ a.contracts }
+    let defaultExtra := found.map fun a => { a with contracts := a.contracts.push {
+      position := 0, binder := `diagnostic, uses := .many, value := .shared } }
     let otherAddress := toString (Address.blake3 "another profile".toUTF8)
     let tampered := [
       ("wrong theorem address", verify found { record with checked := swapped }),
@@ -287,7 +292,11 @@ private def checkedEquations : IO (Bool × Nat × Nat × Option String) := do
       ("duplicated pair", verify found { record with checked := record.checked ++ record.checked }),
       ("other profile address", verify found { record with profile := some (otherAddress, status.resourceProfile) }),
       ("other root", verify found { record with root := otherAddress }),
-      ("other contract", verify flipped record)]
+      ("other contract", verify flipped record),
+      ("missing carried contract", verify missingContracts record),
+      ("reordered carried contracts", verify reorderedContracts record),
+      ("duplicate carried contract", verify duplicateContracts record),
+      ("default-only extra contract", verify defaultExtra record)]
     let failures := tampered.filterMap fun (what, result) =>
       if result.toOption.isSome then some what else none
     if accepted && failures.isEmpty then return (true, 1 + tampered.length, 0, none)
