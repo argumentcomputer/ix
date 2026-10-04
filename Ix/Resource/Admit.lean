@@ -178,6 +178,7 @@ structure Policy where
   The address adapter obtains this list from the bound primitive profile. -/
   assumptions : Array Nat := #[]
   shareableTypes : Array Nat := #[]
+  scalarTypes : Array Nat := #[]
   choices : Array Nat := #[]
   /-- The profile admits case splits, bound case definitions and β-redexes. -/
   cases : Bool := false
@@ -224,6 +225,9 @@ def admitProgramCrossed (program : Program) (policy : Policy := {}) (limits : Li
   for index in program.shareableTypes do
     unless policy.shareableTypes.contains index.toNat do
       throw ⟨some index.toNat, .unsupported "shareable representation is absent from the bound profile"⟩
+  for index in program.scalarTypes do
+    unless policy.scalarTypes.contains index.toNat do
+      throw ⟨some index.toNat, .unsupported "scalar representation is absent from the bound profile"⟩
   if program.crossing && !policy.crossing then
     throw ⟨none, .unsupported "plain-data crossing is absent from the bound profile"⟩
   -- Opting a type out of crossing only adds checking; every opt-out the

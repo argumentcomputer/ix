@@ -141,6 +141,7 @@ pub fn profile_from_source(
   use std::collections::{BTreeMap, BTreeSet};
   let mut assumptions = BTreeSet::new();
   let mut shareable = BTreeSet::new();
+  let mut scalar = BTreeSet::new();
   let mut choices = BTreeSet::new();
   let mut interfaces = BTreeMap::new();
   let mut equations = BTreeMap::new();
@@ -211,6 +212,7 @@ pub fn profile_from_source(
         profile.string_type = standard.string_type;
       },
       ("shareable", 2) => shareable.extend(present(words[1])),
+      ("scalar", 2) => scalar.extend(present(words[1])),
       ("crossing", 2) if words[1] == "plain" => profile.crossing = true,
       ("linear", 2) => linear_types.extend(present(words[1])),
       ("assume", 2) => assumptions.extend(present(words[1])),
@@ -255,6 +257,7 @@ pub fn profile_from_source(
   }
   profile.assumptions = assumptions.into_iter().collect();
   profile.shareable_types = shareable.into_iter().collect();
+  profile.scalar_types = scalar.into_iter().collect();
   profile.choices = choices.into_iter().collect();
   profile.interfaces = interfaces.into_iter().collect();
   profile.case_definitions = case_definitions.into_iter().collect();
@@ -554,6 +557,29 @@ mod tests {
     assert_eq!(plain.linear_types, vec![unit.clone()]);
     for bad in ["crossing", "crossing full", "linear", "linear Unit Unit"] {
       assert!(profile_from_source(bad, &env, &resolve).is_err(), "{bad}");
+    }
+    let scalar = profile_from_source(
+      "scalar Unit\nscalar Unit\nscalar Absent\n",
+      &env,
+      &resolve,
+    )
+    .unwrap();
+    assert_eq!(scalar.scalar_types, vec![unit.clone()]);
+    assert!(scalar.shareable_types.is_empty() && !scalar.crossing);
+    for bad in ["scalar", "scalar Unit Unit", "generated\nscalar Unit"] {
+      assert!(profile_from_source(bad, &env, &resolve).is_err(), "{bad}");
+    }
+    for source in [
+      include_str!("../../../profiles/lean-core.profile"),
+      include_str!("../../../profiles/lean-core-strict.profile"),
+      include_str!("../../../profiles/lean-core-plain.profile"),
+    ] {
+      assert!(
+        profile_from_source(source, &env, &resolve)
+          .unwrap()
+          .scalar_types
+          .is_empty()
+      );
     }
     // Equations need Eq in the closure (not in this one).
     for bad in [

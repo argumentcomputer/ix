@@ -38,6 +38,8 @@ pub const STANDARD_AXIOMS: [&str; 3] = [
 pub struct Profile {
   pub assumptions: Vec<Address>,
   pub shareable_types: Vec<Address>,
+  /// Explicit resource-free scalar representation assumptions (extension bit 5).
+  pub scalar_types: Vec<Address>,
   pub choices: Vec<Address>,
   pub nat_type: Option<Address>,
   pub string_type: Option<Address>,
@@ -70,7 +72,12 @@ pub struct Profile {
 
 impl Profile {
   pub fn validate(&self) -> Result<(), String> {
-    for list in [&self.assumptions, &self.shareable_types, &self.choices] {
+    for list in [
+      &self.assumptions,
+      &self.shareable_types,
+      &self.choices,
+      &self.scalar_types,
+    ] {
       if list.windows(2).any(|pair| pair[0] >= pair[1]) {
         return Err(
           "resource profile: address lists must be strictly increasing".into(),
@@ -159,7 +166,8 @@ impl Profile {
       | (u64::from(!self.equations.is_empty()) << 1)
       | (u64::from(!self.case_definitions.is_empty()) << 2)
       | (u64::from(self.crossing) << 3)
-      | (u64::from(!self.linear_types.is_empty()) << 4);
+      | (u64::from(!self.linear_types.is_empty()) << 4)
+      | (u64::from(!self.scalar_types.is_empty()) << 5);
     if flags != 0 || !self.interfaces.is_empty() {
       TagN::put(0, 0, flags, &mut bytes);
       TagN::put(0, 0, self.interfaces.len() as u64, &mut bytes);
@@ -185,6 +193,12 @@ impl Profile {
       if !self.linear_types.is_empty() {
         TagN::put(0, 0, self.linear_types.len() as u64, &mut bytes);
         for address in &self.linear_types {
+          bytes.extend_from_slice(address.as_bytes());
+        }
+      }
+      if !self.scalar_types.is_empty() {
+        TagN::put(0, 0, self.scalar_types.len() as u64, &mut bytes);
+        for address in &self.scalar_types {
           bytes.extend_from_slice(address.as_bytes());
         }
       }
@@ -253,10 +267,11 @@ impl Profile {
       case_definitions: vec![],
       crossing: false,
       linear_types: vec![],
+      scalar_types: vec![],
     };
     if !bytes.is_empty() {
       let flags = TagN::get(0, &mut bytes)?.value;
-      if flags > 31 {
+      if flags > 63 {
         return Err("resource profile: unknown behavior flags".into());
       }
       let count = TagN::get(0, &mut bytes)?.value;
@@ -340,6 +355,22 @@ impl Profile {
           profile.linear_types.push(
             Address::from_slice(head)
               .map_err(|_error| "resource profile: invalid address")?,
+          );
+        }
+      }
+      if flags & 32 != 0 {
+        let count = TagN::get(0, &mut bytes)?.value;
+        if count == 0 || count > (bytes.len() / 32) as u64 {
+          return Err("resource profile: impossible scalar type count".into());
+        }
+        for _ in 0..count {
+          let (head, tail) = bytes
+            .split_at_checked(32)
+            .ok_or("resource profile: truncated address")?;
+          bytes = tail;
+          profile.scalar_types.push(
+            Address::from_slice(head)
+              .map_err(|_| "resource profile: invalid address")?,
           );
         }
       }
@@ -963,6 +994,7 @@ pub fn prepare(
     list.iter().map(|a| index(&indices, a)).collect::<Result<Vec<_>, String>>()
   };
   let assumptions = resolve(&profile.assumptions)?;
+  let scalar_types = resolve(&profile.scalar_types)?;
   let shareable = resolve(&profile.shareable_types)?;
   let choices = resolve(&profile.choices)?;
   let literal_type = |a: &Address| -> Result<Term, String> {
@@ -978,6 +1010,7 @@ pub fn prepare(
   program.string_type =
     profile.string_type.as_ref().map(literal_type).transpose()?;
   program.shareable_types = shareable.clone();
+  program.scalar_types = scalar_types.clone();
   program.prop_sort = Some(PROP_SORT);
   program.choices = choices.clone();
   program.cases = profile.cases;
@@ -1082,6 +1115,10 @@ pub fn prepare(
     profile_address,
     policy: Policy {
       assumptions: assumptions
+        .into_iter()
+        .map(native_index)
+        .collect::<Result<_, _>>()?,
+      scalar_types: scalar_types
         .into_iter()
         .map(native_index)
         .collect::<Result<_, _>>()?,
@@ -1835,6 +1872,34 @@ mod tests {
       "plain crossing profile fixture mismatch: {line}"
     );
     assert_eq!(Profile::from_bytes(&with_plain.bytes()).unwrap(), with_plain);
+    let scalar_unit = Address::from_slice(&[0; 32]).unwrap();
+    let scalar =
+      Profile { scalar_types: vec![scalar_unit.clone()], ..Default::default() };
+    let encoded = scalar.bytes();
+    let decoded = Profile::from_bytes(&encoded).unwrap();
+    assert_eq!(decoded.scalar_types, vec![scalar_unit.clone()]);
+    assert_eq!(decoded.bytes(), encoded);
+    let text =
+      include_str!("../../../../Tests/Fixtures/ixon-v4/scalar-profile.tsv");
+    let line = format!(
+      "scalar\t{}",
+      encoded.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    );
+    assert!(text.lines().any(|s| s == line));
+    assert!(
+      Profile {
+        scalar_types: vec![unit.clone(), unit.clone()],
+        ..scalar.clone()
+      }
+      .address()
+      .is_err()
+    );
+    for n in Profile::default().bytes().len() + 1..encoded.len() {
+      assert!(Profile::from_bytes(&encoded[..n]).is_err());
+    }
+    let mut empty_scalar = bytes.clone();
+    empty_scalar.extend_from_slice(&[32, 0, 0]);
+    assert!(Profile::from_bytes(&empty_scalar).is_err());
     let mut crossing_only = bytes.clone();
     crossing_only.extend_from_slice(&[8, 0]);
     let decoded = Profile::from_bytes(&crossing_only).unwrap();

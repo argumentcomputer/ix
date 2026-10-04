@@ -83,6 +83,8 @@ structure Program where
   /-- Types whose shared views have a checked, duplicable representation.
   Abstract type parameters are deliberately absent from this list. -/
   shareableTypes : Array UInt64 := #[]
+  /-- Explicit scalar representation assumptions; ownership only, never usage/locality. -/
+  scalarTypes : Array UInt64 := #[]
   /-- Profile-bound non-strict selection primitives. A choice is applied to
   exactly as many arguments as its type has leading arrows (more are passed
   on to both alternatives). Its last two arguments are the alternatives,
@@ -287,6 +289,21 @@ def isShareable (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Boo
   | .sort _ => return true
   | _ => return false
 
+/-- A scalar assumption applies only to a closed nominal type, never a
+polymorphic variable or an application of a type constructor. Every runtime
+representation must be resource-free, including at polymorphic/FFI boundaries. -/
+def isScalar (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Bool := do
+  if program.scalarTypes.isEmpty then return false
+  match ← whnf program fuel type with
+  | .ref idx _ =>
+    if !program.scalarTypes.contains idx then return false
+    let d ← declaration program idx
+    if d.kind != .typeConstructor then return false
+    match d.type with
+    | .sort u => return program.propSort != some u
+    | _ => return false
+  | _ => return false
+
 def splitApp (program : Program) :
     Nat → Ixon.Expr → List Ixon.Expr → CheckM (Ixon.Expr × List Ixon.Expr)
   | 0, _, _ => throw .budget
@@ -450,6 +467,11 @@ def isProposition : Nat → Context → Ixon.Expr → CheckM Bool
 
 def finishValue (ctx : Context) (fuel : Nat) (destination : ScopeId)
     (expected : Option (Ixon.Expr × ValueContract)) (value : Value) : CheckM Value := do
+  -- Copy a scalar payload, retaining locality but no heap-owner transition.
+  let value ← if ← isScalar ctx.program fuel value.type then
+      pure { value with owned := .unique, duplicable := true, freezable := false,
+                        place := none, alsoPlaces := [] }
+    else pure value
   match expected with
   | none => return value
   | some (type, contract) =>
@@ -1034,7 +1056,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         let bodyScope ← newScope callerScope
         let origins := if input.value.locality == .local then [callerScope] else []
         let duplicable ← if input.value.owned == .shared then pure true
-          else isShareable ctx.program fuel domain
+          else pure ((← isShareable ctx.program fuel domain) || (← isScalar ctx.program fuel domain))
         let freezable ← if input.value.owned == .unique && !duplicable then
             plainData ctx.program fuel domain
           else pure false
@@ -1077,7 +1099,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             -- unique invocation) would be moved again by a second call:
             -- the closure is one-shot, immediate or not.
             if !used.owner.live then duplicable := false
-            if old.owner.unique then
+            if old.owner.unique && !(← isScalar ctx.program fuel old.value.type) then
               -- Capturing an owner transfers its availability even when the
               -- body only borrows it. An explicit outer view permits reusable
               -- local closures without transferring that owner.

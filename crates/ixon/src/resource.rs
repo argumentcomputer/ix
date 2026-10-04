@@ -120,6 +120,8 @@ pub struct Program {
   pub nat_type: Option<Term>,
   pub string_type: Option<Term>,
   pub shareable_types: Vec<u64>,
+  /// Explicit resource-free scalar assumptions; ownership only.
+  pub scalar_types: Vec<u64>,
   /// Profile-bound non-strict selection primitives. A choice is applied to
   /// exactly as many arguments as its type has leading arrows (more are
   /// passed on to both alternatives). Its last two arguments are the
@@ -804,6 +806,23 @@ impl<'a> Checker<'a> {
       )),
     }
   }
+  fn is_scalar(&mut self, fuel: usize, typ: &Term) -> Result<bool, Error> {
+    if self.program.scalar_types.is_empty() {
+      return Ok(false);
+    }
+    let typ = self.whnf(fuel, typ)?;
+    match typ.as_ref() {
+      Expr::Ref(i, _) if self.program.scalar_types.contains(i) => {
+        let d = self.declaration(*i)?;
+        Ok(
+          d.kind == DeclKind::TypeConstructor
+            && matches!(d.typ.as_ref(),
+          Expr::Sort(u) if self.program.prop_sort != Some(*u)),
+        )
+      },
+      _ => Ok(false),
+    }
+  }
   fn is_shareable(&mut self, fuel: usize, typ: &Term) -> Result<bool, Error> {
     let typ = self.whnf(fuel, typ)?;
     Ok(match typ.as_ref() {
@@ -1121,6 +1140,19 @@ impl<'a> Checker<'a> {
     expected: Expected,
     value: Value,
   ) -> Result<Value, Error> {
+    // Copy the payload; scalar ownership never aliases or moves a heap owner.
+    let value = if self.is_scalar(fuel, &value.typ)? {
+      Value {
+        owned: Owned::Unique,
+        duplicable: true,
+        freezable: false,
+        place: None,
+        also: vec![],
+        ..value
+      }
+    } else {
+      value
+    };
     match expected {
       None => Ok(value),
       Some((typ, contract)) => {
@@ -2388,7 +2420,8 @@ impl<'a> Checker<'a> {
         let caller_scope = self.scope(ctx.scope)?;
         let body_scope = self.scope(caller_scope)?;
         let duplicable = input.value.owned == Owned::Shared
-          || self.is_shareable(fuel, domain)?;
+          || self.is_shareable(fuel, domain)?
+          || self.is_scalar(fuel, domain)?;
         let freezable = if input.value.owned == Owned::Unique && !duplicable {
           self.plain_data(fuel, domain)?
         } else {
@@ -2462,7 +2495,7 @@ impl<'a> Checker<'a> {
             if !owner.live {
               duplicable = false;
             }
-            if old.owner.unique {
+            if old.owner.unique && !self.is_scalar(fuel, &old.value.typ)? {
               old.owner.move_out(id)?;
               owner.live = false;
               if demand == Uses::Erased {
@@ -2953,6 +2986,7 @@ pub fn tainted(
 pub struct Policy {
   pub assumptions: Vec<usize>,
   pub shareable_types: Vec<usize>,
+  pub scalar_types: Vec<usize>,
   pub choices: Vec<usize>,
   /// The profile admits case splits, bound case definitions and
   /// beta-redexes.
@@ -3075,6 +3109,20 @@ pub fn admit_program_crossed(
         declaration: Some(index),
         error: Error::Unsupported(
           "shareable representation is absent from the bound profile",
+        ),
+      });
+    }
+  }
+  for index in &program.scalar_types {
+    let index = usize::try_from(*index).map_err(|_| AdmissionError {
+      declaration: None,
+      error: Error::Budget,
+    })?;
+    if !policy.scalar_types.contains(&index) {
+      return Err(AdmissionError {
+        declaration: Some(index),
+        error: Error::Unsupported(
+          "scalar representation is absent from the bound profile",
         ),
       });
     }
@@ -4230,10 +4278,48 @@ mod tests {
     ));
   }
 
+  #[test]
+  fn scalar_ownership_is_explicit_and_does_not_cross_other_axes() {
+    let mut p = program();
+    p.shareable_types.clear();
+    p.declarations.push(Declaration {
+      typ: Expr::all_contract(
+        b(Uses::Erased, ValueContract::shared()),
+        ValueContract::shared(),
+        Expr::sort(0),
+        Expr::sort(0),
+      ),
+      body: None,
+      kind: DeclKind::TypeConstructor,
+    });
+    assert_eq!(
+      run_fixture_lines(
+        &p,
+        include_str!(
+          "../../../Tests/Fixtures/ixon-v4/resource-scalar-disabled.tsv"
+        )
+      ),
+      11
+    );
+    p.scalar_types = vec![0, 11];
+    assert_eq!(
+      run_fixture_lines(
+        &p,
+        include_str!("../../../Tests/Fixtures/ixon-v4/resource-scalar.tsv")
+      ),
+      11
+    );
+    assert!(admit_program(&p, &policy(), Limits::default()).is_err());
+    let mut bound = policy();
+    bound.scalar_types = vec![0, 11];
+    assert!(admit_program(&p, &bound, Limits::default()).is_ok());
+  }
+
   fn policy() -> Policy {
     Policy {
       assumptions: vec![1, 4, 6, 8, 9, 10],
       shareable_types: vec![0, 7],
+      scalar_types: vec![],
       choices: vec![6, 9, 10],
       cases: false,
       case_definitions: vec![],

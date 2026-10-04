@@ -42,6 +42,8 @@ def standardAxioms : Array Address := #[
 structure Profile where
   assumptions : Array Address := #[]
   shareableTypes : Array Address := #[]
+  /-- Explicit resource-free scalar assumptions; extension bit 5. Disabled by default. -/
+  scalarTypes : Array Address := #[]
   choices : Array Address := #[]
   natType : Option Address := none
   stringType : Option Address := none
@@ -72,7 +74,7 @@ structure Profile where
   deriving Inhabited
 
 def Profile.validate (profile : Profile) : Except String Unit := do
-  for addresses in #[profile.assumptions, profile.shareableTypes, profile.choices] do
+  for addresses in #[profile.assumptions, profile.shareableTypes, profile.choices, profile.scalarTypes] do
     let mut previous : Option Address := none
     for address in addresses do
       if address.hash.size != 32 then throw "resource profile: invalid address length"
@@ -146,7 +148,7 @@ def Profile.bytes (profile : Profile) : ByteArray :=
     -- An optional extension, present only when it is not empty.
     let flags : UInt64 := (if profile.cases then 1 else 0) ||| (if profile.equations.isEmpty then 0 else 2) |||
       (if profile.caseDefinitions.isEmpty then 0 else 4) ||| (if profile.crossing then 8 else 0) |||
-      (if profile.linearTypes.isEmpty then 0 else 16)
+      (if profile.linearTypes.isEmpty then 0 else 16) ||| (if profile.scalarTypes.isEmpty then 0 else 32)
     if flags != 0 || !profile.interfaces.isEmpty then
       putTagN 0 0 flags
       putTagN 0 0 profile.interfaces.size.toUInt64
@@ -166,6 +168,9 @@ def Profile.bytes (profile : Profile) : ByteArray :=
       if !profile.linearTypes.isEmpty then
         putTagN 0 0 profile.linearTypes.size.toUInt64
         for address in profile.linearTypes do Serialize.put address
+      if !profile.scalarTypes.isEmpty then
+        putTagN 0 0 profile.scalarTypes.size.toUInt64
+        for address in profile.scalarTypes do Serialize.put address
 
 def Profile.address (profile : Profile) : Except String Address := do
   profile.validate
@@ -195,10 +200,10 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
     let depth := (← getTagN 0).value.toNat
     let steps := (← getTagN 0).value.toNat
     let state ← get
-    let (cases, interfaces, eqType, equations, caseDefinitions, crossing, linearTypes) ←
+    let (cases, interfaces, eqType, equations, caseDefinitions, crossing, linearTypes, scalarTypes) ←
       if state.idx < state.bytes.size then do
         let flags := (← getTagN 0).value
-        if flags > 31 then throw "resource profile: unknown behavior flags"
+        if flags > 63 then throw "resource profile: unknown behavior flags"
         let count := (← getTagN 0).value.toNat
         let state ← get
         if count > (state.bytes.size - state.idx) / 33 then throw "resource profile: impossible interface count"
@@ -241,10 +246,19 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
             for _ in [:count] do addresses := addresses.push (← Serialize.get)
             pure addresses
           else pure #[]
-        pure (flags &&& 1 == 1, result, eqType, equations, caseDefinitions, flags &&& 8 != 0, linearTypes)
-      else pure (false, #[], none, #[], #[], false, #[])
+        let scalarTypes ← if flags &&& 32 != 0 then do
+            let count := (← getTagN 0).value.toNat
+            let state ← get
+            if count == 0 || count > (state.bytes.size - state.idx) / 32 then
+              throw "resource profile: impossible scalar type count"
+            let mut addresses := #[]
+            for _ in [:count] do addresses := addresses.push (← Serialize.get)
+            pure addresses
+          else pure #[]
+        pure (flags &&& 1 == 1, result, eqType, equations, caseDefinitions, flags &&& 8 != 0, linearTypes, scalarTypes)
+      else pure (false, #[], none, #[], #[], false, #[], #[])
     return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps },
-             cases, interfaces, eqType, equations, caseDefinitions, crossing, linearTypes }) bytes
+             cases, interfaces, eqType, equations, caseDefinitions, crossing, linearTypes, scalarTypes }) bytes
   profile.validate
   return profile
 
@@ -575,6 +589,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     program := { program with groups := program.groups.push group }
   let resolveList := fun (list : Array Address) => list.mapM (index indices)
   let assumptions ← resolveList profile.assumptions
+  let scalarTypes ← resolveList profile.scalarTypes
   let shareable ← resolveList profile.shareableTypes
   let choices ← resolveList profile.choices
   let literalType := fun (address : Address) => do
@@ -585,7 +600,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   program := { program with
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
-    shareableTypes := shareable, choices, propSort := some propSort, cases := profile.cases }
+    shareableTypes := shareable, scalarTypes, choices, propSort := some propSort, cases := profile.cases }
   if profile.cases then
     for (address, r) in recursorSpecs do
       -- Only index-free inductive types: a case on an indexed family needs the
@@ -627,7 +642,8 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     program, addresses, profileAddress
     policy := {
       assumptions := assumptions.map UInt64.toNat
-      shareableTypes := shareable.map UInt64.toNat, choices := choices.map UInt64.toNat
+      shareableTypes := shareable.map UInt64.toNat
+      scalarTypes := scalarTypes.map UInt64.toNat, choices := choices.map UInt64.toNat
       cases := profile.cases
       caseDefinitions := caseDefinitions.map UInt64.toNat
       equations := equations.map fun (d, t) => (d.toNat, t.toNat)

@@ -4,6 +4,7 @@ import Tests.Ix.IxonV4VM
 import Tests.Ix.IxonText
 import Tests.Ix.ResourceAdmit
 import Tests.Ix.ResourceAddressed
+import Tests.Ix.ResourceScalar
 import Tests.Ix.ResourceValidate
 import Tests.Ix.ContractTransport
 import Tests.Ix.ContractPipeline
@@ -50,7 +51,12 @@ def exportFixtures (dir : System.FilePath) : IO Unit := do
   IO.FS.writeFile (out / "resource-order.tsv")
     (Tests.Resource.orderCases.foldl (fun text test => text ++ Tests.Resource.fixtureLine test ++ "\n")
       "# name\texpected\ttype (ixon-v4 hex)\tbody (ixon-v4 hex)\n")
-  IO.println s!"Exported claims.tsv, addressed.tsv, resource.tsv and resource-order.tsv to {out}"
+  IO.FS.writeFile (out / "resource-scalar.tsv")
+    (Tests.ResourceScalar.fixtureText Tests.ResourceScalar.cases)
+  IO.FS.writeFile (out / "resource-scalar-disabled.tsv")
+    (Tests.ResourceScalar.fixtureText Tests.ResourceScalar.disabledCases)
+  IO.FS.writeFile (out / "scalar-profile.tsv") (← IO.ofExcept Tests.ResourceScalar.profileFixture)
+  IO.println s!"Exported claim, addressed, resource-order and scalar fixtures to {out}"
 
 def main (args : List String) : IO Unit := do
   if args.contains "--help" then
@@ -76,6 +82,8 @@ def main (args : List String) : IO Unit := do
   Tests.Resource.run
   Tests.Resource.runAdmission
   Tests.ResourceAddressed.run
+  Tests.ResourceScalar.run
+  Tests.ResourceScalar.checkProfile
   Tests.ResourceValidate.run
   Tests.ContractTransport.run
   Tests.ContractPipeline.run

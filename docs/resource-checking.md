@@ -614,7 +614,8 @@ shareability to present canonical Nat, Bool, and String types.
 `ix compile --profile FILE` replaces the standard profile with a profile
 source: one directive per line (`#` starts a comment): `standard` (the
 standard profile's entries), `literals` (only the standard profile's Nat and
-String literal types, no shareable type), `shareable NAME`, `assume NAME`, `choice NAME`,
+String literal types, no shareable type), `shareable NAME`, `scalar NAME` (disabled
+by default; separate representation assumption below), `assume NAME`, `choice NAME`,
 `interface NAME C…` (one contract token per leading arrow, `INPUT[:RESULT]`
 in source prefix syntax, `_` for the default), `cases`, `crossing plain` (usage
 crossing on plain data), `linear NAME` (opt a type out of it), `equation NAME
@@ -772,3 +773,42 @@ in a resource-bound context and validate executed equation selection; until
 those changes are independently validated, the corresponding table entries
 remain obligations. These observations are source inspection, not additional
 resource-safety theorems or permission to rely on an ix verdict.
+
+### Disabled scalar representation preparation
+
+The optional written directive `scalar NAME` binds a separate explicit
+representation assumption by address. It is **disabled in all shipped/pinned
+profiles**. It does not follow from `shareable`, `crossing plain`, an inductive
+shape, a familiar type name, or an apparent small literal. It permits copying
+that scalar's payload across the ownership axis: a shared payload may satisfy
+a unique result, and a unique payload can be used again. Usage (including zero,
+linear and affine bounds), locality, and borrowing scopes retain their checks.
+No usage crossing is added by `scalar`.
+
+The necessary soundness condition is universal over the executed program:
+every value of the named closed nominal type must have a resource-free,
+non-owning representation that may be copied without sharing a heap owner,
+reference-count obligation, capability, or mutable identity. This must also
+hold at every generic call, closure capture, aggregate field, backend boxing,
+and FFI boundary. A backend that boxes a payload must independently retain or
+copy the box with ordinary ownership discipline; it cannot transfer the
+checker's scalar ownership exemption to that box. Until that implementation
+condition is established, such a type must not be listed. In particular,
+bounded machine arithmetic alone is insufficient: boxed `UInt64`, arbitrary
+`Nat`, `String`, and containers are not justified by their names or by a
+particular unboxed execution.
+
+The checker recognizes the assumption only on a reduced bare reference whose
+declaration is a nominal type of a non-proposition sort. An application of a
+type constructor and an abstract polymorphic type variable never inherit it.
+The explicit profile assumption remains a trust condition, not a representation
+proof. Shared enabled/disabled fixtures cover ownership copying, boxed
+containers, polymorphic/applied types, captures, and unchanged usage/locality
+refusals. The pinned-policy X09/L02/L03 refusals remain required.
+
+Canonical encoding uses optional extension bit 5 (`32`), followed after the
+linear-type list by a positive TagN length and a strictly increasing list of
+32-byte addresses. An empty list emits neither bit nor data, preserving all
+existing profile bytes. Duplicate, unordered, empty flagged, truncated, and
+unknown-bit encodings are refused. Consumers that have not established the
+representation condition must decline profiles with a nonempty scalar list.

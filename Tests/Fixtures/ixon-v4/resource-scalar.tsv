@@ -1,0 +1,12 @@
+# name	expected	type (ixon-v4 hex)	body (ixon-v4 hex)
+scalar literal unique	ok	910720002000	8107200060
+scalar shared to unique	ok	910720002000	8107200010
+scalar unique reuse	ok	910320002000	81032000a00720001011
+scalar linear duplication refused	usage	910120002000	81012000a00720001011
+scalar erased use refused	usage	910420002000	8104200010
+scalar usage does not cross	usage	911520002000	8105200071200510
+scalar locality retained	unrestricted	910f20002000	810f200010
+boxed scalar container not scalar	ownership	910720072007	8107200710
+polymorphic value not scalar	ownership	921400071011	820400071010
+applied nominal head not scalar	ownership	910771200b200071200b2000	810771200b200010
+scalar reusable capture	ok	921320000720002000	8203200007200011
