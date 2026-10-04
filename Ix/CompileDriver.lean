@@ -83,6 +83,27 @@ def canonicalBlockRefs (blocks : Ix.CondensedBlocks) : Std.HashMap Name (Set Nam
     | some rs => refs.insert (blockKey lo all) rs
     | none => refs
 
+/-- Source graph and code lookup retained by a streaming caller. O11a
+queries inductives and definitions, so proof bodies need not be decoded. -/
+structure SchedulingSource where
+  refs : Ix.Map Name (Set Name)
+  const? : Name → Option Ix.ConstantInfo
+
+/-- Add source-determined sizeOf producer edges at the common driver
+boundary, including direct sequential/wave callers. A pipeline that already
+has the source graph supplies it, so streaming proof bodies are not decoded
+again. These are scheduling edges, not changes to the source SCC partition. -/
+def prepareSizeOfScheduling (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (source? : Option SchedulingSource := none) : Ix.CondensedBlocks :=
+  let source := match source? with
+    | some source => source
+    | none => { const? := env.get?, refs :=
+        blocks.lowLinks.fold (init := {}) fun refs n _ =>
+          match env.get? n with
+          | some ci => refs.insert n (Ix.Compile.Canon.refsConst ci)
+          | none => refs.insert n {} }
+  Ix.Compile.Pass.Opt.addSizeOfEdges source.const? source.refs blocks
+
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
     singleton non-inductive constants take the plain single-constant
@@ -779,11 +800,13 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (nameByHash : Std.HashMap Address Name := {})
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     (pass3 : Bool := false)
+    (schedulingSource? : Option SchedulingSource := none)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
   let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
+  let blocks := if pass3 then prepareSizeOfScheduling env blocks schedulingSource? else blocks
   let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
     { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
@@ -1171,6 +1194,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
     (pass3? : Option Bool := none)
+    (schedulingSource? : Option SchedulingSource := none)
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
   let totalBlocks := blocks.blocks.size
   -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
@@ -1187,6 +1211,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
   let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
+  let blocks := if pass3 then prepareSizeOfScheduling env blocks schedulingSource? else blocks
   let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
     { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
@@ -1522,8 +1547,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let condensed ← match Ix.CondenseM.run groundedOutRefs with
     | .ok c => pure c
     | .error e => return .error e
-  -- O11a's scheduling edges `_sizeOf_N → T._sizeOf_inst` (block
-  -- dependencies only; no cycle, no component moves: `O11a.addSizeOfEdges`)
+  -- Preserve the pipeline's historical preparation in switch-off mode too.
+  -- On-mode common-driver preparation is idempotent with these same edges.
   let condensed := Ix.Compile.Pass.Opt.addSizeOfEdges codeConsts.get? groundedOutRefs condensed
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
   -- 5. Aux-aware parallel compile against the HYBRID environment: code
@@ -1536,7 +1561,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
   match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg
-      nameByHash pass3? with
+      nameByHash pass3? (some { refs := groundedOutRefs, const? := codeConsts.get? }) with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
     let t ← tick "compile" t
