@@ -284,9 +284,22 @@ closures; the consumer must compile them the same way:
   it; occurrences in different alternatives are allowed, since one
   alternative runs. Every other parameter — a discriminant, a motive, one
   used under a closure, twice in one alternative, or not at all — is strict.
-  The argument at a by-need position is substituted, so it is evaluated only
-  in its own branch (a matcher alternative `h_i ()`); every other argument is
-  bound strictly (next item).
+  The body also determines how many arguments are supplied to each by-need
+  parameter. A lambda alternative, or an evaluation-free argument (below),
+  is substituted and entered only in its selected branch. At a zero-argument
+  minor an application headed by a lambda is also eligible: this is an
+  executed alternative such as an inner `h_i ()`. A matcher thunk, which
+  takes at least one argument, does not accept a computation returning a
+  lambda as an alternative: `mk ys` and `(fun _ => mk ys) ()` are both bound
+  strictly, once before the case. Merely having a lambda at the application
+  head does not exempt that computation.
+- Arguments beyond the arity of a case split, bound case definition or
+  choice must be evaluation-free (the criterion in the next item). The
+  checker refuses an effectful over-application argument such as `bump xs`;
+  a source-level `let` must specify where it is evaluated. This prevents
+  moving or mutating the major before it is inspected when a consumer
+  evaluates extra arguments before dispatch. A variable extra argument is
+  allowed: reading its value does not perform the eventual callee's move.
 - Every other application binds its arguments strictly: a beta-redex's
   arguments, and the arguments of every definition that is not a bound case
   definition, however match-shaped (a user helper `sel b x y := match b with
@@ -460,6 +473,26 @@ that program in that order. The obligations are lettered as in the second
 review of the checker; each names the objects it covers and what it
 forbids, so that a compiler's correctness proof can state it as a premise.
 
+- **(a) Case alternatives and strict arguments.** *Covers:* arguments at
+  body-derived by-need positions of a bound case definition. *Requires:*
+  eligible lambda alternatives are entered in their selected branch without
+  first allocating capturing closures. Zero-argument minors may contain the
+  executed lambda application described above. Every ineligible argument is
+  evaluated exactly once, before dispatch, by the strict `let` introduced by
+  `bindArguments`. *Forbids:* deferring an arbitrary computation that produces
+  a matcher thunk, including a beta-wrapped one; or building a lambda
+  alternative's captures before branch selection while relying on admission.
+  Shared `resource-order.tsv` fixtures exercise the two checker paths;
+  source probes N03/N03Beta and the lambda control exercise generated matchers.
+- **(b) Over-application has no evaluation effects.** *Covers:* every
+  argument past a choice's or case split's arity, including through a bound
+  case definition. *Requires:* the argument satisfies `substitutable` before
+  branch analysis; otherwise admission refuses it. Its eventual consumption
+  remains in the selected branch. *Forbids:* hiding a move or update in an
+  extra argument whose evaluation could precede inspection of the major.
+  Shared case/wrapper/choice fixtures and source N04/N15 with value controls
+  cover the restriction. This check does not license code motion of an
+  explicit strict `let` across dispatch.
 - **(c) Run exactly the body that was checked.** *Covers:* every
   definition of the admitted closure that resource admission checked (a
   resource-relevant definition the profile does not assume). *Requires:* a

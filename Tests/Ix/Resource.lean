@@ -679,6 +679,48 @@ def strictCases : Array Case := #[
       (lam (b .many) (v 0) resTy)) resTy, "ok"⟩
 ]
 
+/-- Evaluation-order regressions (R2-7); kept separate so the field-fixture
+indices below do not move. `37` consumes an owner to produce a one-shot thunk. -/
+def orderProgram : Program := { strictProgram with
+  declarations := strictProgram.declarations.push {
+    type := arr (b .linear .unique) .unique resTy (arr (b .many) .shared natTy resTy)
+    kind := .assumption } }
+
+def orderFnTy : E := arr (b .linear) .shared resTy resTy
+def orderId : E := lam (b .linear) (v 0) resTy
+def orderBox (x : E) : E := lam (b .linear) (lam (b .many) x boxTy) resTy
+def orderCase (wrapper : Bool) : E :=
+  let motive := constMotive boxTy orderFnTy
+  let full := lam (b .many) orderId resTy
+  if wrapper then app4 (ref 29) motive (v 0) orderId full
+  else app4 (ref 24) motive orderId full (v 0)
+
+def orderCases : Array Case := #[
+  ⟨"a computation returning a matcher thunk is strict", resBoxRes (b .linear .unique),
+    uniqueBox (app3 (ref 35) (v 0) (call 37 (v 1))
+      (lam (b .many) (call 33 (v 2)) resTy)), "capture"⟩,
+  ⟨"a beta-wrapped computation returning a matcher thunk is strict", resBoxRes (b .linear .unique),
+    uniqueBox (app3 (ref 35) (v 0) (.app (lam (b .many) (call 37 (v 2)) natTy) zero)
+      (lam (b .many) (call 33 (v 2)) resTy)), "capture"⟩,
+  ⟨"a let-wrapped computation returning a matcher thunk is strict", resBoxRes (b .linear .unique),
+    uniqueBox (app3 (ref 35) (v 0) (bind (b .many) zero (call 37 (v 2)) natTy)
+      (lam (b .many) (call 33 (v 2)) resTy)), "capture"⟩,
+  ⟨"a case over-application rejects a computed argument", resBoxRes (b .linear .unique),
+    uniqueBox (.app (orderCase false) (call 33 (v 1))), "unsupported"⟩,
+  ⟨"a case over-application accepts a value argument", resBoxRes (b .linear),
+    orderBox (.app (orderCase false) (v 1)), "ok"⟩,
+  ⟨"a bound case over-application rejects a computed argument", resBoxRes (b .linear .unique),
+    uniqueBox (.app (orderCase true) (call 33 (v 1))), "unsupported"⟩,
+  ⟨"a bound case over-application accepts a value argument", resBoxRes (b .linear),
+    orderBox (.app (orderCase true) (v 1)), "ok"⟩,
+  ⟨"a choice over-application rejects a computed argument", resToRes (b .linear .unique),
+    lam (b .linear .unique) (.app (app4 (ref 32) orderFnTy zero orderId orderId)
+      (call 33 (v 0))) resTy, "unsupported"⟩,
+  ⟨"a choice over-application accepts a value argument", resToRes (b .linear),
+    lam (b .linear) (.app (app4 (ref 32) orderFnTy zero orderId orderId)
+      (v 0)) resTy, "ok"⟩
+]
+
 def uboxTy : E := ref 39
 
 /-- The strict program extended for case-split fields (review F5) and joins
@@ -745,6 +787,15 @@ def runFixtureFile (path : String) (base : Program) (tests : Array Case) : IO Na
     throw <| IO.userError s!"resource fixture bytes differ in {path}; expected lines:\n{"\n".intercalate missing.toList}"
   return tests.size
 
+def checkOrderShapes : IO Unit := do
+  for (index, expected) in [(29, #[none, none, some 0, some 1]),
+      (35, #[none, some 1, some 1])] do
+    match (caseDefinition orderProgram 256 4 index).run { remaining := 100000 } with
+    | .ok (some shape) _ =>
+      unless shape.byNeed == expected do
+        throw <| IO.userError s!"case {index}: unexpected by-need counts {repr shape.byNeed}"
+    | _ => throw <| IO.userError s!"case {index}: shape was not derived"
+
 def runFixtureCases : IO Nat := do
   let base ← runFixtureFile "Tests/Fixtures/ixon-v4/resource.tsv" program allCases
   unless (← IO.FS.readFile "Tests/Fixtures/ixon-v4/resource.tsv") == fixtureText do
@@ -755,11 +806,13 @@ def runFixtureCases : IO Nat := do
   let equations ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-equations.tsv" equationsProgram equationCases
   let freeze ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-freeze.tsv" freezeProgram freezeCases
   let strict ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-strict.tsv" strictProgram strictCases
+  let order ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-order.tsv" orderProgram orderCases
   let fields ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-fields.tsv" fieldProgram fieldCases
   let noshare ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-noshare.tsv" noshareProgram noshareCases
   let plain ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-plain.tsv" plainProgram plainCases
   checkCrossedBinders
-  return base + modes + cases + equations + freeze + strict + fields + noshare + plain + 1
+  checkOrderShapes
+  return base + modes + cases + equations + freeze + strict + order + fields + noshare + plain + 2
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

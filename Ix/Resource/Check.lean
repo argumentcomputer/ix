@@ -884,15 +884,49 @@ def substitutable (ctx : Context) (fuel : Nat) (arg domain : Ixon.Expr) : CheckM
     if ← typeFormer ctx.program fuel 16 domain then return true
     isProposition fuel ctx domain
 
+/-- Whether an argument at a by-need position of a bound case definition is
+an alternative that is substituted (evaluated in its branch): a lambda (an
+alternative proper), an application whose head is a lambda only at a
+zero-argument minor (the executed `h_i ()` of an inner case definition), or an argument
+whose evaluation has no effect (`substitutable`). Any other argument — a
+computation that returns the alternative, such as `mk ys` — is bound
+strictly, once before the case (second review R2-7, obligation (a)).
+The applied-argument count is derived by `caseDefinition`: a matcher thunk
+requires at least one argument. A beta-redex returning such a thunk is a
+computation, not a lambda alternative, even when its head is a lambda. -/
+def alternativeArgument (ctx : Context) (fuel applied : Nat) (arg domain : Ixon.Expr) : CheckM Bool := do
+  match ← unshare ctx.program fuel arg with
+  | .lam .. => return true
+  | application@(.app ..) =>
+    let (head, _) ← splitApp ctx.program fuel application []
+    match ← unshare ctx.program fuel head with
+    | .lam .. => if applied == 0 then return true else substitutable ctx fuel arg domain
+    | _ => substitutable ctx fuel arg domain
+  | _ => substitutable ctx fuel arg domain
+
+/-- An argument beyond the arity of a case split or a choice (an
+over-application, which reaches a case split also through a bound case
+definition) must be evaluation-free (`substitutable`: a variable, a constant
+other than a nullary constructor, a closed lambda, a type or proof). The
+checker analyses it in each branch, after the major premise is inspected,
+as Lean's compiler evaluates it; a consumer that evaluates it before the
+case would move or update what the branch then inspects. Requiring it to
+have no effect makes its position immaterial (second review R2-7,
+obligation (b)); a computation must be bound by a `let` before the case. -/
+def requireValue (ctx : Context) (fuel : Nat) (arg domain : Ixon.Expr) : CheckM Unit := do
+  unless ← substitutable ctx fuel arg domain do
+    throw (.unsupported "an over-applied case or choice takes an argument that is not a value")
+
 /-- Apply a lambda telescope to arguments, as `let`s. Arguments are strict:
 an argument of a binder with the default contract is substituted only when
 evaluating it has no effect (`substitutable`); any other argument is bound by
 a `let` carrying the binder's own contract, so it is analysed exactly once,
 before the body, whether or not the binder occurs, as a call evaluates it.
 The only exception are the by-need positions of a bound case definition
-(`byNeed`, from `caseDefinition`): their arguments are substituted, so each
-is evaluated in the alternative that uses it. Arguments beyond the telescope
-are applied to the body. -/
+(`byNeed`, from `caseDefinition`): an alternative there
+(`alternativeArgument`: a lambda, or an applied lambda at a zero-argument minor) is substituted,
+so it is evaluated in the branch that uses it. Arguments beyond the
+telescope are applied to the body. -/
 def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : List Ixon.Expr)
     (byNeed : Array (Option Nat) := #[]) : CheckM Ixon.Expr := do
   let before ← get
@@ -908,8 +942,10 @@ def bindArguments (ctx : Context) (fuel : Nat) (telescope : Ixon.Expr) (args : L
       match ← unshare ctx.program fuel term with
       | .lam c domain body =>
         let arg ← shift ctx.program fuel arg lets.size 0
-        let lazy := (byNeed[position]?.bind id).isSome
-        if c == .many && (lazy || (← substitutable inner fuel arg domain)) then
+        let substituted ← match byNeed[position]?.bind id with
+          | some applied => alternativeArgument inner fuel applied arg domain
+          | none => substitutable inner fuel arg domain
+        if c == .many && substituted then
           term ← substitute ctx.program fuel body arg 0
         else
           lets := lets.push ({ nonDep := false, binder := c }, domain, arg)
@@ -1229,7 +1265,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             let mut outputType ← substitute ctx.program fuel afterRight right 0
             let extra := args.extract n args.size
             for x in extra do
-              let (_, _, _, codomain) ← arrow ctx.program fuel outputType
+              let (_, _, domain, codomain) ← arrow ctx.program fuel outputType
+              requireValue ctx fuel x domain
               outputType ← substitute ctx.program fuel codomain x 0
             -- The proof binders an alternative expects (`dite`).
             let proofs (type : Ixon.Expr) : CheckM (Array Bool) := do
@@ -1287,7 +1324,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
                 let mut outputType := tail
                 let extra := args.extract info.arity args.size
                 for x in extra do
-                  let (_, _, _, codomain) ← arrow ctx.program fuel outputType
+                  let (_, _, domain, codomain) ← arrow ctx.program fuel outputType
+                  requireValue ctx fuel x domain
                   outputType ← substitute ctx.program fuel codomain x 0
                 let major ← analyze fuel ctx args[info.arity - 1]! none ctx.scope grade
                 let branches := (List.range info.minors).toArray.map fun j =>
@@ -1405,4 +1443,3 @@ def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : 
 end Ix.Resource
 
 end
-

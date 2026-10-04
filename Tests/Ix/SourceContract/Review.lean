@@ -106,6 +106,9 @@ def probes : List Probe := [
   -- Review R2-6: a user definition marked as a `casesOn` or given forged
   -- `MatcherInfo` gets no `case` line; it is an ordinary (strict) call.
   ([probe, strictProbe, plainProbe].flatMap fun mk => [mk "N01" false "R2-6", mk "N02" false "R2-6"]) ++
+  ([probe, strictProbe, plainProbe].flatMap fun mk =>
+    (["N03", "N03Beta", "N03Let", "N03Alias", "N04", "N15"].map fun name => mk name false "R2-7") ++
+    (["N03Control", "N04Control", "N15Control"].map fun name => mk name true "R2-7")) ++
   -- Review R2-2: an annotated partial (opaque) definition is native: refused
   -- unless assumed; an unannotated one compiles.
   [{ standardProbe "V10" false "R2-2" with reason := nativeReason },

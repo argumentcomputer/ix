@@ -432,4 +432,93 @@ abbrev SR : Type := List Nat → List Nat
 def evil (xs : List Nat) : ! List Nat := (@cast SR UR rfl share) xs
 end K08
 
+/- R2-7: a computation producing an alternative is evaluated strictly.
+The beta-wrapped form must not regain by-need treatment just from its head. -/
+-- Lean caches equal matchers within a module. Resolve the actual matcher
+-- used by a seed instead of guessing that its name is `seed.match_1`.
+open Lean Elab Term Meta in
+elab "reviewMatcher% " f:ident : term => do
+  let fn ← elabTerm f none
+  let .const name _ := fn.getAppFn | throwError "expected a constant"
+  let info ← getConstInfo name
+  let mut body := info.value!
+  repeat
+    match body.consumeMData with
+    | .lam _ _ rest _ => body := rest
+    | other => body := other; break
+  let .const matcher _ := body.getAppFn | throwError "seed has no matcher head"
+  unless isMatcherCore (← getEnv) matcher do throwError "seed head is not a matcher"
+  mkConstWithFreshMVarLevels matcher
+
+namespace N03
+def keep (! xs : List Nat) : ! List Nat := xs
+def mk (! ys : List Nat) : ! (Unit → ! List Nat) := fun _ => keep ys
+def f0 (xs : List Nat) : Nat := match xs with | [] => 0 | _ :: _ => 1
+def g (xs : List Nat) (! ys : List Nat) : ! List Nat :=
+  (reviewMatcher% f0) (fun _ => List Nat) xs (mk ys) (fun _ _ => ys)
+end N03
+
+namespace N03Beta
+def keep (! xs : List Nat) : ! List Nat := xs
+def mk (! ys : List Nat) : ! (Unit → ! List Nat) := fun _ => keep ys
+def f0 (xs : List Nat) : Nat := match xs with | [] => 0 | _ :: _ => 1
+def g (xs : List Nat) (! ys : List Nat) : ! List Nat :=
+  (reviewMatcher% f0) (fun _ => List Nat) xs ((fun (_ : Unit) => mk ys) ()) (fun _ _ => ys)
+end N03Beta
+
+namespace N03Control
+def keep (! xs : List Nat) : ! List Nat := xs
+def f0 (xs : List Nat) : Nat := match xs with | [] => 0 | _ :: _ => 1
+def g (xs : List Nat) (! ys : List Nat) : ! List Nat :=
+  (reviewMatcher% f0) (fun _ => List Nat) xs (fun _ => keep ys) (fun _ _ => keep ys)
+end N03Control
+
+namespace N03Let
+def keep (! xs : List Nat) : ! List Nat := xs
+def mk (! ys : List Nat) : ! (Unit → ! List Nat) := fun _ => keep ys
+def f0 (xs : List Nat) : Nat := match xs with | [] => 0 | _ :: _ => 1
+def g (xs : List Nat) (! ys : List Nat) : ! List Nat :=
+  (reviewMatcher% f0) (fun _ => List Nat) xs (let f := mk ys; f) (fun _ _ => ys)
+end N03Let
+
+namespace N03Alias
+def keep (! xs : List Nat) : ! List Nat := xs
+def mk (! ys : List Nat) : ! (Unit → ! List Nat) := fun _ => keep ys
+def f0 (xs : List Nat) : Nat := match xs with | [] => 0 | _ :: _ => 1
+def g (xs : List Nat) (! ys : List Nat) : ! List Nat :=
+  (reviewMatcher% f0) (fun _ => List Nat) xs
+    (let f := fun (_ : Unit) => mk ys; f ()) (fun _ _ => ys)
+end N03Alias
+
+/- R2-7: over-application cannot compute an argument before the major is
+inspected. Variables are a positive control. -/
+namespace N04
+def bump (! xs : List Nat) : ! List Nat :=
+  match xs with | [] => [] | h :: t => (h + 1) :: t
+def g (! xs : List Nat) : List Nat :=
+  @List.casesOn Nat (fun _ => List Nat → List Nat) xs
+    (fun y => y) (fun _ _ y => y) (bump xs)
+end N04
+
+namespace N04Control
+def g (xs ys : List Nat) : List Nat :=
+  @List.casesOn Nat (fun _ => List Nat → List Nat) xs
+    (fun y => y) (fun _ _ y => y) ys
+end N04Control
+
+namespace N15
+def bump (! xs : List Nat) : ! List Nat :=
+  match xs with | [] => [] | h :: t => (h + 1) :: t
+def g (! xs : List Nat) : List Nat :=
+  (reviewMatcher% bump) (fun _ => List Nat → List Nat) xs
+    (fun _ y => y) (fun _ _ y => y) (bump xs)
+end N15
+
+namespace N15Control
+def f0 (xs : List Nat) : Nat := match xs with | [] => 0 | _ :: _ => 1
+def g (xs ys : List Nat) : List Nat :=
+  (reviewMatcher% f0) (fun _ => List Nat → List Nat) xs
+    (fun _ y => y) (fun _ _ y => y) ys
+end N15Control
+
 end Tests.Ix.SourceContract.ReviewFixture

@@ -47,7 +47,10 @@ def exportFixtures (dir : System.FilePath) : IO Unit := do
   IO.FS.writeFile (out / "addressed.tsv")
     (← IO.ofExcept Tests.ResourceAddressed.fixtureText)
   IO.FS.writeFile (out / "resource.tsv") Tests.Resource.fixtureText
-  IO.println s!"Exported claims.tsv, addressed.tsv and resource.tsv to {out}"
+  IO.FS.writeFile (out / "resource-order.tsv")
+    (Tests.Resource.orderCases.foldl (fun text test => text ++ Tests.Resource.fixtureLine test ++ "\n")
+      "# name\texpected\ttype (ixon-v4 hex)\tbody (ixon-v4 hex)\n")
+  IO.println s!"Exported claims.tsv, addressed.tsv, resource.tsv and resource-order.tsv to {out}"
 
 def main (args : List String) : IO Unit := do
   if args.contains "--help" then

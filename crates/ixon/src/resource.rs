@@ -1826,6 +1826,50 @@ impl<'a> Checker<'a> {
       },
     }
   }
+  /// An alternative proper is a lambda, not a computation returning one.
+  /// A lambda application is allowed only at a zero-argument minor: there
+  /// it is the executed alternative, such as an inner `h_i ()`. The count
+  /// comes from `case_definition`, not from the argument's spelling.
+  fn alternative_argument(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    applied: usize,
+    arg: &Term,
+    domain: &Term,
+  ) -> Result<bool, Error> {
+    let unshared = self.unshare(fuel, arg)?;
+    match unshared.as_ref() {
+      Expr::Lam(..) => Ok(true),
+      Expr::App(..) => {
+        let (head, _) = self.split_app(fuel, &unshared)?;
+        let head = self.unshare(fuel, &head)?;
+        if matches!(head.as_ref(), Expr::Lam(..)) && applied == 0 {
+          Ok(true)
+        } else {
+          self.substitutable(fuel, ctx, arg, domain)
+        }
+      },
+      _ => self.substitutable(fuel, ctx, arg, domain),
+    }
+  }
+  /// Extra arguments of a case or choice must be evaluation-free so their
+  /// position before or after inspecting the major cannot change effects.
+  fn require_value(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    arg: &Term,
+    domain: &Term,
+  ) -> Result<(), Error> {
+    if self.substitutable(fuel, ctx, arg, domain)? {
+      Ok(())
+    } else {
+      Err(Error::Unsupported(
+        "an over-applied case or choice takes an argument that is not a value",
+      ))
+    }
+  }
   /// Apply a lambda telescope to arguments, as `let`s. Arguments are strict:
   /// an argument of a binder with the default contract is substituted only
   /// when evaluating it has no effect (`substitutable`); any other argument
@@ -1833,8 +1877,8 @@ impl<'a> Checker<'a> {
   /// analysed exactly once, before the body, whether or not the binder
   /// occurs, as a call evaluates it. The only exception are the by-need
   /// positions of a bound case definition (`by_need`, from
-  /// `case_definition`): their arguments are substituted, so each is
-  /// evaluated in the alternative that uses it. Arguments beyond the
+  /// `case_definition`): eligible alternatives (`alternative_argument`) are
+  /// substituted, so each is evaluated in its branch. Arguments beyond the
   /// telescope are applied to the body.
   fn bind_arguments(
     &mut self,
@@ -1853,9 +1897,13 @@ impl<'a> Checker<'a> {
       let unshared = self.unshare(fuel, &term)?;
       let Expr::Lam(c, domain, body) = unshared.as_ref() else { break };
       let arg = self.shift(fuel, &args[rest], lets.len() as u64, 0)?;
-      let lazy = by_need.get(rest).copied().flatten().is_some();
-      let substitutable = self.substitutable(fuel, &inner, &arg, domain)?;
-      if *c == BinderContract::default() && (lazy || substitutable) {
+      let substitutable = match by_need.get(rest).copied().flatten() {
+        Some(applied) => {
+          self.alternative_argument(fuel, &inner, applied, &arg, domain)?
+        },
+        None => self.substitutable(fuel, &inner, &arg, domain)?,
+      };
+      if *c == BinderContract::default() && substitutable {
         term = self.substitute(fuel, body, &arg, 0)?;
       } else {
         lets.push((
@@ -2040,7 +2088,8 @@ impl<'a> Checker<'a> {
     let mut output_type = self.substitute(fuel, &after_right, &right, 0)?;
     let extra = &args[n..];
     for x in extra {
-      let (_, _, _, codomain) = self.arrow(fuel, &output_type)?;
+      let (_, _, domain, codomain) = self.arrow(fuel, &output_type)?;
+      self.require_value(fuel, ctx, x, &domain)?;
       output_type = self.substitute(fuel, &codomain, x, 0)?;
     }
     let before = self.state.bindings.clone();
@@ -2206,7 +2255,8 @@ impl<'a> Checker<'a> {
     let mut output_type = tail;
     let extra = &args[info.arity()..];
     for x in extra {
-      let (_, _, _, codomain) = self.arrow(fuel, &output_type)?;
+      let (_, _, domain, codomain) = self.arrow(fuel, &output_type)?;
+      self.require_value(fuel, ctx, x, &domain)?;
       output_type = self.substitute(fuel, &codomain, x, 0)?;
     }
     let major = self.analyze(
@@ -3816,6 +3866,34 @@ mod tests {
     let text =
       include_str!("../../../Tests/Fixtures/ixon-v4/resource-strict.tsv");
     assert!(run_fixture_lines(&strict_program(), text) >= 7);
+  }
+
+  #[test]
+  fn evaluation_order_fixtures() {
+    let mut p = strict_program();
+    p.declarations.push(assumption(arr(
+      b(Uses::Linear, ValueContract::unique()),
+      ValueContract::unique(),
+      Expr::reference(11, vec![]),
+      arr(
+        b(Uses::Many, ValueContract::shared()),
+        ValueContract::shared(),
+        nat(),
+        Expr::reference(11, vec![]),
+      ),
+    )));
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-order.tsv");
+    assert!(run_fixture_lines(&p, text) >= 9);
+    let mut checker = Checker::new(&p, Limits::default());
+    assert_eq!(
+      checker.case_definition(256, 4, 29).unwrap().unwrap().by_need,
+      vec![None, None, Some(0), Some(1)],
+    );
+    assert_eq!(
+      checker.case_definition(256, 4, 35).unwrap().unwrap().by_need,
+      vec![None, Some(1), Some(1)],
+    );
   }
 
   /// The strict program extended for case-split fields (review F5) and joins
