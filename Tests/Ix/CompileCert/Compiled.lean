@@ -16,7 +16,7 @@ open _root_.Ix.CompileCert
 def prefixName : Lean.Name := `Tests.Ix.CompileCert.BlockDefs
 
 def roots : List Lean.Name :=
-  [`first, `firstAlias, `first_eq, `Void, `Pair, `getFst].map (prefixName ++ ·)
+  [`first, `firstAlias, `first_eq, `Void, `Pair, `getFst, `Node.val, `Node.kids].map (prefixName ++ ·)
 
 def declineLabel : Decline → String
   | .admission e => s!"admission: {e}"
@@ -77,9 +77,7 @@ def run : IO Unit := do
         | .selection s => s!"selection: {s}"
         | .certification e => declineLabel e
       IO.println s!"DECLINED {outcome.root}: {label}"
-      -- Projection normalization remains an explicit open C1 obligation.
-      unless outcome.root == prefixName ++ `getFst && label == "correspondence" do
-        unexpected := unexpected + 1
+      unexpected := unexpected + 1
   IO.println s!"{accepted}/{outcomes.length} certified; {unexpected} unexpected declines"
   if unexpected != 0 then throw (IO.userError "real compiler C1 probe found unresolved direct cones")
 

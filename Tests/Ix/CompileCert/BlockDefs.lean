@@ -12,4 +12,10 @@ structure Pair (α : Type u) where
 
 def getFst {α : Type u} (p : Pair α) : α := p.fst
 
+/-- Unlike an ordinary structure, this nested structure goes through the
+reader's modeller and exercises its projection-to-recursor normalization. -/
+structure Node where
+  val : Nat
+  kids : List Node
+
 end Tests.Ix.CompileCert.BlockDefs
