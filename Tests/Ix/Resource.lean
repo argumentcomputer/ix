@@ -682,9 +682,23 @@ def strictCases : Array Case := #[
 /-- Evaluation-order regressions (R2-7); kept separate so the field-fixture
 indices below do not move. `37` consumes an owner to produce a one-shot thunk. -/
 def orderProgram : Program := { strictProgram with
-  declarations := strictProgram.declarations.push {
+  declarations := strictProgram.declarations ++ #[{
     type := arr (b .linear .unique) .unique resTy (arr (b .many) .shared natTy resTy)
-    kind := .assumption } }
+    kind := .assumption }, -- 37 thunk producer
+    { type := arr (b .linear .unique) .unique resTy (arr (b .many) .shared resTy resTy)
+      kind := .assumption }, -- 38 field-alternative producer
+    { type := strictProgram.declarations[29]!.type,
+      body := some (lam (b .many) (lam (b .many) (lam (b .many) (lam (b .many)
+        (app4 (ref 24) (v 3) (v 1) (v 0) (v 2))
+        (arr (b .many) .shared resTy (.app (v 3) (.app (ref 23) (v 0)))))
+        (.app (v 1) (ref 22))) boxTy) (arr (b .many) .shared boxTy (.sort 0))) }, -- 39 bare minor
+    { type := strictProgram.declarations[29]!.type,
+      body := some (lam (b .many) (lam (b .many) (lam (b .many) (lam (b .many)
+        (app4 (ref 39) (v 3) (v 2) (v 1) (v 0))
+        (arr (b .many) .shared resTy (.app (v 3) (.app (ref 23) (v 0)))))
+        (.app (v 1) (ref 22))) boxTy) (arr (b .many) .shared boxTy (.sort 0))) } -- 40 nested bare minor
+  ]
+  caseDefinitions := strictProgram.caseDefinitions ++ #[39, 40] }
 
 def orderFnTy : E := arr (b .linear) .shared resTy resTy
 def orderId : E := lam (b .linear) (v 0) resTy
@@ -694,6 +708,12 @@ def orderCase (wrapper : Bool) : E :=
   let full := lam (b .many) orderId resTy
   if wrapper then app4 (ref 29) motive (v 0) orderId full
   else app4 (ref 24) motive orderId full (v 0)
+
+def bareMinorCase (wrapper : UInt64) (computed : Bool) : E :=
+  let empty := .app (lam (b .many) (call 33 (v 2)) natTy) zero
+  let full := if computed then .app (lam (b .many) (call 38 (v 2)) natTy) zero
+    else lam (b .many) (call 33 (v 2)) resTy
+  uniqueBox (app4 (ref wrapper) (constMotive boxTy resTy) (v 0) empty full)
 
 def orderCases : Array Case := #[
   ⟨"a computation returning a matcher thunk is strict", resBoxRes (b .linear .unique),
@@ -718,7 +738,15 @@ def orderCases : Array Case := #[
       (call 33 (v 0))) resTy, "unsupported"⟩,
   ⟨"a choice over-application accepts a value argument", resToRes (b .linear),
     lam (b .linear) (.app (app4 (ref 32) orderFnTy zero orderId orderId)
-      (v 0)) resTy, "ok"⟩
+      (v 0)) resTy, "ok"⟩,
+  ⟨"an eta-unexpanded field minor still requires an alternative", resBoxRes (b .linear .unique),
+    bareMinorCase 39 true, "capture"⟩,
+  ⟨"a nested eta-unexpanded field minor still requires an alternative", resBoxRes (b .linear .unique),
+    bareMinorCase 40 true, "capture"⟩,
+  ⟨"an eta-unexpanded field minor accepts a lambda alternative", resBoxRes (b .linear .unique),
+    bareMinorCase 39 false, "ok"⟩,
+  ⟨"a nested eta-unexpanded field minor accepts a lambda alternative", resBoxRes (b .linear .unique),
+    bareMinorCase 40 false, "ok"⟩
 ]
 
 def uboxTy : E := ref 39
@@ -789,7 +817,9 @@ def runFixtureFile (path : String) (base : Program) (tests : Array Case) : IO Na
 
 def checkOrderShapes : IO Unit := do
   for (index, expected) in [(29, #[none, none, some 0, some 1]),
-      (35, #[none, some 1, some 1])] do
+      (35, #[none, some 1, some 1]),
+      (39, #[none, none, some 0, some 1]),
+      (40, #[none, none, some 0, some 1])] do
     match (caseDefinition orderProgram 256 4 index).run { remaining := 100000 } with
     | .ok (some shape) _ =>
       unless shape.byNeed == expected do

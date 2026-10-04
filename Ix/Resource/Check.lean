@@ -648,12 +648,14 @@ def alternativeOccurrence (program : Program) (fuel : Nat) (e : Ixon.Expr) (inde
     CheckM Occurrence := do
   let mut body := e
   let mut index := index
+  let mut remaining := strip
   for _ in [0:strip] do
     match ← unshare program fuel body with
     | .lam _ t b =>
       if ← occurs program fuel t index then return .other
       body := b
       index := index + 1
+      remaining := remaining - 1
     | _ => break
   if !(← occurs program fuel body index) then return .absent
   let (head, args) ← splitApp program fuel body []
@@ -662,7 +664,10 @@ def alternativeOccurrence (program : Program) (fuel : Nat) (e : Ixon.Expr) (inde
     if i.toNat != index then return .other
     for arg in args do
       if ← occurs program fuel arg index then return .other
-    return .applied args.length
+    -- An eta-unexpanded minor is still applied to the case's remaining
+    -- fields/hypotheses/extras. Omitting them misclassifies a thunk producer
+    -- as an already-executed zero-argument alternative.
+    return .applied (args.length + remaining)
   | _ => return .other
 
 /-- The shape of a bound case definition: its parameter count, and for each

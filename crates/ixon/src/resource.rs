@@ -1425,6 +1425,7 @@ impl<'a> Checker<'a> {
   ) -> Result<Occurrence, Error> {
     let mut body = e.clone();
     let mut index = index;
+    let mut remaining = strip;
     for _ in 0..strip {
       let unshared = self.unshare(fuel, &body)?;
       match unshared.as_ref() {
@@ -1434,6 +1435,7 @@ impl<'a> Checker<'a> {
           }
           body = b.clone();
           index += 1;
+          remaining -= 1;
         },
         _ => break,
       }
@@ -1450,7 +1452,8 @@ impl<'a> Checker<'a> {
             return Ok(Occurrence::Other);
           }
         }
-        Ok(Occurrence::Applied(args.len()))
+        // A bare minor still receives the case-supplied fields/hypotheses/extras.
+        Ok(Occurrence::Applied(args.len() + remaining))
       },
       _ => Ok(Occurrence::Other),
     }
@@ -3882,9 +3885,45 @@ mod tests {
         Expr::reference(11, vec![]),
       ),
     )));
+    p.declarations.push(assumption(arr(
+      b(Uses::Linear, ValueContract::unique()),
+      ValueContract::unique(),
+      Expr::reference(11, vec![]),
+      arr(
+        b(Uses::Many, ValueContract::shared()),
+        ValueContract::shared(),
+        Expr::reference(11, vec![]),
+        Expr::reference(11, vec![]),
+      ),
+    )));
+    fn replace_body(telescope: &Term, depth: usize, body: Term) -> Term {
+      if depth == 0 {
+        return body;
+      }
+      let Expr::Lam(c, domain, rest) = telescope.as_ref() else {
+        panic!("expected a case-wrapper lambda telescope")
+      };
+      Expr::lam_contract(
+        *c,
+        domain.clone(),
+        replace_body(rest, depth - 1, body),
+      )
+    }
+    let base = p.declarations[29].clone();
+    for (head, args) in [(24, [3, 1, 0, 2]), (39, [3, 2, 1, 0])] {
+      let body =
+        args.into_iter().fold(Expr::reference(head, vec![]), |body, i| {
+          Expr::app(body, Expr::var(i))
+        });
+      p.declarations.push(Declaration {
+        body: Some(replace_body(base.body.as_ref().unwrap(), 4, body)),
+        ..base.clone()
+      });
+    }
+    p.case_definitions.extend([39, 40]);
     let text =
       include_str!("../../../Tests/Fixtures/ixon-v4/resource-order.tsv");
-    assert!(run_fixture_lines(&p, text) >= 9);
+    assert!(run_fixture_lines(&p, text) >= 13);
     let mut checker = Checker::new(&p, Limits::default());
     assert_eq!(
       checker.case_definition(256, 4, 29).unwrap().unwrap().by_need,
@@ -3894,6 +3933,12 @@ mod tests {
       checker.case_definition(256, 4, 35).unwrap().unwrap().by_need,
       vec![None, Some(1), Some(1)],
     );
+    for index in [39, 40] {
+      assert_eq!(
+        checker.case_definition(256, 4, index).unwrap().unwrap().by_need,
+        vec![None, None, Some(0), Some(1)],
+      );
+    }
   }
 
   /// The strict program extended for case-split fields (review F5) and joins

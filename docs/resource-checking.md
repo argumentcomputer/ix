@@ -285,7 +285,10 @@ closures; the consumer must compile them the same way:
   alternative runs. Every other parameter — a discriminant, a motive, one
   used under a closure, twice in one alternative, or not at all — is strict.
   The body also determines how many arguments are supplied to each by-need
-  parameter. A lambda alternative, or an evaluation-free argument (below),
+  parameter, including case-supplied fields, hypotheses and extra arguments
+  not consumed by explicit leading lambdas. Thus a bare field minor `h`
+  receives the same count as its eta-expanded form `fun x => h x`, including
+  through nested case wrappers. A lambda alternative, or an evaluation-free argument (below),
   is substituted and entered only in its selected branch. At a zero-argument
   minor an application headed by a lambda is also eligible: this is an
   executed alternative such as an inner `h_i ()`. A matcher thunk, which
