@@ -7,6 +7,44 @@ open Lean
 def failure (row : Verdict) : Bool :=
   #["fail", "infrastructure-error", "not-run"].contains row.status
 
+def verdictStatuses : Array String := #["pass", "known-unsupported", "documented-decline",
+  "fail", "infrastructure-error", "not-run", "not-selected", "not-applicable"]
+
+/-- Reporting requires exactly one row for every case/mode/phase, even when a
+phase was not selected or could not run. Optional infrastructure rows add context;
+they never replace the required phase rows. -/
+def checkLedger (cases : Array Case) (modes phases : Array String) (rows : Array Verdict) :
+    Except String Unit := do
+  if cases.isEmpty || modes.isEmpty || rows.isEmpty then throw "empty corpus execution ledger"
+  unless modes.all (#["off", "on"].contains ·) && modes.toList.eraseDups.length == modes.size do
+    throw "invalid or duplicate ledger modes"
+  unless phases.all (phaseNames.contains ·) && phases.toList.eraseDups.length == phases.size &&
+      phases.contains "elaborate" && phases.contains "compile" do
+    throw "invalid requested ledger phases"
+  if (cases.map (·.id)).toList.eraseDups.length != cases.size then throw "duplicate ledger case"
+  let mut seen : Std.HashSet (String × String × String) := {}
+  for row in rows do
+    unless cases.any (·.id == row.caseId) && modes.contains row.mode do
+      throw s!"unknown ledger case/mode {row.caseId}/{row.mode}"
+    unless verdictStatuses.contains row.status do throw s!"unknown verdict status {row.status}"
+    unless phaseNames.contains row.phase || row.phase == "infrastructure" do
+      throw s!"unknown verdict phase {row.phase}"
+    let key := (row.caseId, row.mode, row.phase)
+    if seen.contains key then throw s!"duplicate verdict {row.caseId}/{row.mode}/{row.phase}"
+    seen := seen.insert key
+    if row.phase == "infrastructure" then
+      unless row.status == "infrastructure-error" do throw "invalid infrastructure verdict"
+    else if !phases.contains row.phase then
+      unless row.status == "not-selected" do throw s!"unselected phase has a result: {row.phase}"
+    else if row.status == "not-selected" then throw s!"requested phase marked not-selected: {row.phase}"
+    if row.status == "not-applicable" && !(row.phase == "parity" && row.mode == "on") then
+      throw s!"invalid not-applicable phase {row.phase}/{row.mode}"
+  for case in cases do
+    for mode in modes do
+      for phase in phaseNames do
+        unless seen.contains (case.id, mode, phase) do
+          throw s!"missing verdict {case.id}/{mode}/{phase}"
+
 def validateExpected (cases : Array Case) (expected : Array Expected) : Except String Unit := do
   let mut seen : Std.HashSet (String × String × String) := {}
   for e in expected do
@@ -58,6 +96,7 @@ def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
     ("jobs", toJson cfg.jobs), ("workersPerCase", toJson cfg.workers),
     ("timeoutSeconds", toJson cfg.timeout), ("cases", toJson (cases.map (·.id))),
     ("closureBackend", toJson "rust --consts"), ("expected", toJson expected)]
+  writeJson (cfg.dir / "run-cases.json") cases
   -- compile-lean always invokes Lake. Build each selected module once before
   -- parallel off/on cases; their later Lake calls then only verify cached inputs.
   let modules ← cases.mapM fun case => do
@@ -91,6 +130,7 @@ def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
       pending := pending.push (← IO.asTask (runCaseSafe { cfg with mode } expected case))
   for task in pending do rows := rows ++ (← IO.ofExcept (← IO.wait task))
   writeJson (cfg.dir / "verdicts.json") rows
+  IO.ofExcept (checkLedger cases modes cfg.phases rows)
   let failures := rows.filter failure
   let unsupported := rows.filter fun row => #["known-unsupported", "documented-decline"].contains row.status
   IO.println s!"[corpus] {cases.size} cases × {modes.size} modes; {rows.size} phase rows; {unsupported.size} unsupported/declined, {failures.size} failures or unrun required phases"
@@ -152,11 +192,18 @@ def compareVariants (dir : System.FilePath) (modes : Array String) : IO UInt32 :
   return if failures.isEmpty then 0 else 1
 
 def matrix (dir : System.FilePath) : IO UInt32 := do
-  let cases : Array Case ← readJson (dir / "cases.json")
+  let config : Json ← readJson (dir / "run-config.json")
+  let ids ← IO.ofExcept (config.getObjValAs? (Array String) "cases")
+  let modes ← IO.ofExcept (config.getObjValAs? (Array String) "modes")
+  let phases ← IO.ofExcept (config.getObjValAs? (Array String) "phases")
+  let cases : Array Case ← readJson (dir / (if ← (dir / "run-cases.json").pathExists then "run-cases.json" else "cases.json"))
+  unless (cases.map (·.id)).qsort (· < ·) == ids.qsort (· < ·) do
+    throw <| IO.userError "case manifest does not match the executed cases"
   let rows : Array Verdict ← readJson (dir / "verdicts.json")
+  IO.ofExcept (checkLedger cases modes phases rows)
   let family := fun id => ((cases.find? (·.id == id)).map (·.family)).getD "unknown"
   let families := (cases.map (·.family)).toList.eraseDups.mergeSort (· ≤ ·)
-  let statuses := #["pass", "known-unsupported", "documented-decline", "fail", "infrastructure-error", "not-run", "not-selected", "not-applicable"]
+  let statuses := verdictStatuses
   let mut lines := #["| family | phase | mode | " ++ String.intercalate " | " statuses.toList ++ " |",
     "|---|---|---|" ++ String.join (statuses.toList.map fun _ => "---|")]
   for f in families do

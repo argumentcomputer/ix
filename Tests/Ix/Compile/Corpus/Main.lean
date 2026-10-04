@@ -98,6 +98,21 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
       ((rows.filter (·.status == "not-run")).size == 2 && rows.size == phaseNames.size + 1)
     check "infrastructure failure remains a failure"
       (rows.any fun r => r.phase == "infrastructure" && failure r)
+  let aggregateCase : Case := ⟨"Agg_test", "Agg_test", "aggregate-family", "aggregate", "AX", "aggregates/Agg_test.lean", #[], #[]⟩
+  let ledger : Array Verdict := phaseNames.map fun phase =>
+    ⟨aggregateCase.id, "off", phase, if #["elaborate", "compile"].contains phase then "pass" else "not-selected", "", ""⟩
+  check "complete aggregate ledger accepted"
+    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] ledger).toOption.isSome)
+  check "missing phase ledger rejected"
+    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] (ledger.extract 1 ledger.size)).toOption.isNone)
+  check "duplicate phase ledger rejected"
+    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] (ledger ++ ledger)).toOption.isNone)
+  check "wrong executed case manifest rejected"
+    ((checkLedger #[{ aggregateCase with id := "different" }] #["off"] #["elaborate", "compile"] ledger).toOption.isNone)
+  check "empty ledger rejected"
+    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] #[]).toOption.isNone)
+  check "unknown ledger phase selection rejected"
+    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile", "unknown"] ledger).toOption.isNone)
   IO.println s!"[corpus] curated {curated shapes |>.size} cases; smoke4; full{shapes.size}"
   return 0
 

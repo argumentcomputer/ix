@@ -151,7 +151,9 @@ retains the environments for investigation and requires sufficient disk space.
 `aggregate --dir DIR --size 45` writes family-grouped sources,
 `aggregates.json`, and an exact member manifest. A fresh generated directory can
 run those cases with `run --cases aggregates.json`; this uses the same oracle and
-parity machinery. Aggregate compilation is separate evidence from per-case and
+parity machinery. The matrix reads `run-cases.json`, the exact executed case
+manifest, including aggregate family IDs. Missing, duplicate, unknown, or empty
+phase ledgers fail before summarization. Aggregate compilation is separate evidence from per-case and
 metamorphic comparisons.
 
 A broad run uses `generate --select all`, then the same filter/assemble/run/compare
