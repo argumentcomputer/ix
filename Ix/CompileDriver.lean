@@ -60,6 +60,19 @@ def resolveAddrPure (cenv : CompileEnv) (name : Name) : Option Address :=
   | some a => some a
   | none => cenv.auxNameToAddr.get? name
 
+/-- The canonical key of a set of names: its earliest member in seed order
+    (`aliasPrecedes`), `dflt` for the empty set. A7 (D9): the drivers name a
+    block by this key, never by the condensation's representative (the
+    Tarjan root, which depends on the graph's iteration order and so differs
+    between a closure compile, the whole compile and the Rust condensation)
+    nor by the first element of a `Set` in iteration order. -/
+def canonicalKey (dflt : Name) (names : Array Name) : Name :=
+  names.foldl (init := names[0]?.getD dflt) fun k n => if aliasPrecedes n k then n else k
+
+/-- `canonicalKey` of a block's member set. -/
+def blockKey (lo : Name) (all : Set Name) : Name :=
+  canonicalKey lo all.toArray
+
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
     singleton non-inductive constants take the plain single-constant
@@ -647,10 +660,12 @@ def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
               if !visited.contains depRep then
                 stack := stack.push (depRep, false)
   let mut acc := acc₀
-  for rep in order do
+  for rep₀ in order do
+    let some all := blocks.blocks.get? rep₀ | continue
+    -- A7 (D9): the block is compiled under its canonical key.
+    let rep := blockKey rep₀ all
     if acc.cenv.auxNameToAddr.contains rep then
       continue
-    let some all := blocks.blocks.get? rep | continue
     let failed (e : CompileError) : String := s!"aux_gen prereq pre-compile failed for SCC \
 '{rep.pretty}' ({all.size} members): {e}. The SCC closure is traversed \
 in reverse-topological order starting from the aux_gen seed names, so \
@@ -763,10 +778,18 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
       reverseDeps := reverseDeps.alter depName fun
         | some arr => some (arr.push lo)
         | none => some #[lo]
-  let mut readyQueue : Array (Name × Set Name) := #[]
+  -- A7 (D9): the ready blocks keyed by their canonical key (`blockKey`), the
+  -- least taken first. The fold's order is then the least-key-first
+  -- topological order of the block graph, a function of the graph and the
+  -- keys alone. It was a stack filled in `HashMap` iteration order, so the
+  -- order depended on the condensation's representatives and the maps'
+  -- histories. The output does not depend on the order on valid input (the
+  -- schedule-identity gate), so this changes no value; it makes the
+  -- sequential driver the fold of design document §6.2 literally.
+  let mut readyQueue : Std.TreeMap Name (Set Name) Ix.nameCompare := {}
   for (lo, (all, depCount)) in blockInfo do
     if depCount == 0 then
-      readyQueue := readyQueue.push (lo, all)
+      readyQueue := readyQueue.insert (blockKey lo all) all
 
   let mut blocksCompleted : Nat := 0
   let mut lastPct : Nat := 0
@@ -776,8 +799,9 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let mut released : Set Name := {}
 
   while !readyQueue.isEmpty do
-    let (lo, all) := readyQueue.back!
-    readyQueue := readyQueue.pop
+    -- A7 (D9): `lo` is the block's canonical key from here on.
+    let some (lo, all) := readyQueue.minEntry? | break
+    readyQueue := readyQueue.erase lo
 
     if (resolveAddrPure acc.cenv lo).isSome then
       -- Promotion path (env.rs:566-708): the block was pre-compiled into
@@ -808,7 +832,10 @@ missing canonical aliases: {missing}"
           -- Cross-SCC compile of the unresolved subset (env.rs:617-651).
           let crossAll : Set Name :=
             unresolvedNames.foldl (fun s n => s.insert n) {}
-          match runBlockWithAux acc.cenv crossAll unresolvedNames[0]! with
+          -- A7 (D9): the subset is named by its canonical key, not by its
+          -- first name in `Set` order.
+          let clo := canonicalKey lo unresolvedNames
+          match runBlockWithAux acc.cenv crossAll clo with
           | .error _ =>
             -- Rust logs and does NOT register failed names — dependents
             -- will get MissingConstant rather than broken data.
@@ -816,7 +843,6 @@ missing canonical aliases: {missing}"
           | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
             -- A conflicting claim is a compile failure of the subset (Rust
             -- claims inside `compile_const`): nothing is registered.
-            let clo := unresolvedNames[0]!
             match checkBlockClaims acc.cenv (primaryClaims clo result) cache plans brecPlans
                 belowPlans with
             | .error _ => pure ()
@@ -909,7 +935,7 @@ missing canonical aliases: {missing}"
             let newCount := depCount - 1
             blockInfo := blockInfo.insert dependentLo (depAll, newCount)
             if newCount == 0 then
-              readyQueue := readyQueue.push (dependentLo, depAll)
+              readyQueue := readyQueue.insert (blockKey dependentLo depAll) depAll
 
     blocksCompleted := blocksCompleted + 1
     if dbg then
@@ -989,10 +1015,12 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       else
         let crossAll : Set Name :=
           unresolvedNames.foldl (fun s n => s.insert n) {}
-        match runBlockWithAux cenv crossAll unresolvedNames[0]! with
+        -- A7 (D9): named by its canonical key, as in the sequential driver.
+        let clo := canonicalKey lo unresolvedNames
+        match runBlockWithAux cenv crossAll clo with
         | .error _ => pure ()
         | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-          crossScc := some (unresolvedNames[0]!, result, cache,
+          crossScc := some (clo, result, cache,
             plans, brecPlans, belowPlans)
           crossNames := unresolvedNames
     let mut noAux := none
@@ -1209,7 +1237,9 @@ rss{(rssKb.getD "?").trimAscii}"
     let snapshot := acc.cenv
     let mut ready : Array (Name × Set Name) := #[]
     for lo in remaining do
-      let all := blocks.blocks.get! lo
+      let some all := blocks.blocks.get? lo
+        | discard <| workChan.close
+          return .error s!"wave driver: block {lo.pretty} is not in the condensation"
       let deps := match blocks.blockRefs.get? lo with
         | some d => d
         | none => {}
@@ -1230,8 +1260,11 @@ blocks remaining but none ready"
       let pct := (compiled * 100) / totalBlocks
       IO.println s!"  [Lean CompileAux] Wave {waveNum}: {ready.size} blocks ready, {pct}% ({compiled}/{totalBlocks})"
 
+    -- A7 (D9): a worker compiles the block under its canonical key, never
+    -- under the condensation's representative (which stays the key of
+    -- `remaining` only).
     for (lo, all) in ready do
-      discard <| workChan.send { lo, all, cenv := snapshot }
+      discard <| workChan.send { lo := blockKey lo all, all, cenv := snapshot }
 
     for _ in [:ready.size] do
       match ← resultChan.recv with
