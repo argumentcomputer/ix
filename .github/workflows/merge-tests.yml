@@ -132,6 +132,20 @@ jobs:
               graph-cross condense-cross rust-serialize ixon-corpus
               rust-decompile validate-aux aux-gen-diff decompile-diff
               aux-gen-closure canon-closure-aux aux-cert
+          # These are ignored runners: building IxTests or running the default
+          # tests does not execute them. Keep the expensive validator and
+          # schedule comparisons in their own partitions.
+          - name: Lake ignored tests (compiler passes)
+            kind: lake
+            test_args: >-
+              --ignored
+              canon-pass1 twins clique-transport aux-oracle pass3 pass3-cliques
+          - name: Lake ignored tests (compiler validation)
+            kind: lake
+            test_args: --ignored validate-lean validate-lean-nc
+          - name: Lake ignored tests (compiler scheduling)
+            kind: lake
+            test_args: --ignored compile-schedule-identity compile-claim-conflict
           - name: Lake ignored tests (compile)
             kind: lake
             test_args: --ignored compile
