@@ -327,6 +327,195 @@ def exportExpr (cx : TermContext) : Lean.Expr → ExportM Kernel.Expr
   | .fvar _ => throw "free source variable"
   | .mvar _ => throw "source metavariable"
 
+/-- Exact structural loose-variable bound, independent of cached Lean/Ix
+metadata and without the packed-field saturation used by fast operations. -/
+def sourceBvarBound : Lean.Expr → Nat
+  | .bvar i => i + 1
+  | .app f a => max (sourceBvarBound f) (sourceBvarBound a)
+  | .lam _ t b _ | .forallE _ t b _ => max (sourceBvarBound t) (sourceBvarBound b - 1)
+  | .letE _ t v b _ => max (max (sourceBvarBound t) (sourceBvarBound v)) (sourceBvarBound b - 1)
+  | .proj _ _ e | .mdata _ e => sourceBvarBound e
+  | _ => 0
+
+/-- Accepted export preserves the exact scope bound, including under nested
+binders and lets. Universe normalization cannot alter term-variable scope. -/
+theorem exportExpr_bvarBound {cx : TermContext} {source : Lean.Expr} {result : Kernel.Expr}
+    (exported : exportExpr cx source = .ok result) :
+    result.bvarBound = sourceBvarBound source := by
+  induction source generalizing result
+  case lit literal =>
+    cases literal <;> simp only [exportExpr, pure, Except.pure, Except.ok.injEq] at exported <;>
+      subst result <;> rfl
+  all_goals try simp only [exportExpr, bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try simp only [Except.ok.injEq] at exported
+  all_goals try subst result
+  all_goals simp_all [sourceBvarBound, Kernel.Expr.bvarBound]
+
+theorem exportExpr_scoped {cx : TermContext} {source : Lean.Expr} {result : Kernel.Expr}
+    (exported : exportExpr cx source = .ok result) {depth : Nat}
+    (scopeBound : sourceBvarBound source ≤ depth) : result.looseBVarsBounded depth = true := by
+  apply Kernel.Expr.looseBVarsBounded_iff.mpr
+  rw [exportExpr_bvarBound exported]
+  exact scopeBound
+
+theorem exportExpr_noFvar {cx : TermContext} {source : Lean.Expr} {result : Kernel.Expr}
+    (exported : exportExpr cx source = .ok result) : result.hasFvar = false := by
+  induction source generalizing result
+  case lit literal =>
+    cases literal <;> simp only [exportExpr, pure, Except.pure, Except.ok.injEq] at exported <;>
+      subst result <;> rfl
+  all_goals try simp only [exportExpr, bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try simp only [Except.ok.injEq] at exported
+  all_goals try subst result
+  all_goals simp_all [Kernel.Expr.hasFvar]
+
+/-- Structural lifting on the independent source view. This is a reference
+operation, not an assumed refinement of the compiler's optimized rewrites. -/
+def sourceLift (amount : Nat) : Nat → Lean.Expr → Lean.Expr
+  | cutoff, .bvar i => if i ≥ cutoff then .bvar (i + amount) else .bvar i
+  | cutoff, .app f a => .app (sourceLift amount cutoff f) (sourceLift amount cutoff a)
+  | cutoff, .lam n t b bi =>
+    .lam n (sourceLift amount cutoff t) (sourceLift amount (cutoff + 1) b) bi
+  | cutoff, .forallE n t b bi =>
+    .forallE n (sourceLift amount cutoff t) (sourceLift amount (cutoff + 1) b) bi
+  | cutoff, .letE n t v b nd =>
+    .letE n (sourceLift amount cutoff t) (sourceLift amount cutoff v)
+      (sourceLift amount (cutoff + 1) b) nd
+  | cutoff, .proj n i e => .proj n i (sourceLift amount cutoff e)
+  | cutoff, .mdata md e => .mdata md (sourceLift amount cutoff e)
+  | _, e => e
+
+theorem exportExpr_lift {cx : TermContext} {source : Lean.Expr} {result : Kernel.Expr}
+    (exported : exportExpr cx source = .ok result) (amount cutoff : Nat) :
+    exportExpr cx (sourceLift amount cutoff source) =
+      .ok (Kernel.Expr.liftLooseBVars amount cutoff result) := by
+  induction source generalizing result cutoff
+  case bvar i =>
+    simp [exportExpr, pure, Except.pure] at exported
+    subst result
+    by_cases hi : i ≥ cutoff <;>
+      simp [sourceLift, hi, exportExpr, Kernel.Expr.liftLooseBVars, pure, Except.pure]
+  case lit literal =>
+    cases literal <;> simp only [exportExpr, pure, Except.pure, Except.ok.injEq] at exported <;>
+      subst result <;> rfl
+  all_goals try simp only [exportExpr, bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try simp only [Except.ok.injEq] at exported
+  all_goals try subst result
+  all_goals simp_all [sourceLift, Kernel.Expr.liftLooseBVars, exportExpr, bind,
+    Except.bind, pure, Except.pure]
+
+/-- Capture-avoiding substitution on the independent source view. The
+replacement is lifted when crossing binders; open replacements are allowed. -/
+def sourceInstantiate (replacement : Lean.Expr) : Nat → Lean.Expr → Lean.Expr
+  | depth, .bvar i =>
+    if i = depth then sourceLift depth 0 replacement
+    else if i > depth then .bvar (i - 1) else .bvar i
+  | depth, .app f a => .app (sourceInstantiate replacement depth f) (sourceInstantiate replacement depth a)
+  | depth, .lam n t b bi =>
+    .lam n (sourceInstantiate replacement depth t) (sourceInstantiate replacement (depth + 1) b) bi
+  | depth, .forallE n t b bi =>
+    .forallE n (sourceInstantiate replacement depth t) (sourceInstantiate replacement (depth + 1) b) bi
+  | depth, .letE n t v b nd =>
+    .letE n (sourceInstantiate replacement depth t) (sourceInstantiate replacement depth v)
+      (sourceInstantiate replacement (depth + 1) b) nd
+  | depth, .proj n i e => .proj n i (sourceInstantiate replacement depth e)
+  | depth, .mdata md e => .mdata md (sourceInstantiate replacement depth e)
+  | _, e => e
+
+theorem exportExpr_instantiate {cx : TermContext} {source replacement : Lean.Expr}
+    {result targetReplacement : Kernel.Expr}
+    (exported : exportExpr cx source = .ok result)
+    (replacementExported : exportExpr cx replacement = .ok targetReplacement) (depth : Nat) :
+    exportExpr cx (sourceInstantiate replacement depth source) =
+      .ok (Kernel.Expr.instantiate1Lift result targetReplacement depth) := by
+  induction source generalizing result depth
+  case bvar i =>
+    simp [exportExpr, pure, Except.pure] at exported
+    subst result
+    by_cases equal : i = depth
+    · simp [sourceInstantiate, equal, Kernel.Expr.instantiate1Lift,
+        exportExpr_lift replacementExported]
+    · by_cases greater : i > depth <;>
+        simp [sourceInstantiate, equal, greater, Kernel.Expr.instantiate1Lift,
+          exportExpr, pure, Except.pure]
+  case lit literal =>
+    cases literal <;> simp only [exportExpr, pure, Except.pure, Except.ok.injEq] at exported <;>
+      subst result <;> rfl
+  all_goals try simp only [exportExpr, bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try simp only [Except.ok.injEq] at exported
+  all_goals try subst result
+  all_goals simp_all [sourceInstantiate, Kernel.Expr.instantiate1Lift, exportExpr, bind,
+    Except.bind, pure, Except.pure]
+
+/-- Rename constant and projection-owner identities, leaving binder labels
+and universe parameters in their distinct namespaces. -/
+def sourceRename (rename : Lean.Name → Lean.Name) : Lean.Expr → Lean.Expr
+  | .const n us => .const (rename n) us
+  | .app f a => .app (sourceRename rename f) (sourceRename rename a)
+  | .lam n t b bi => .lam n (sourceRename rename t) (sourceRename rename b) bi
+  | .forallE n t b bi => .forallE n (sourceRename rename t) (sourceRename rename b) bi
+  | .letE n t v b nd => .letE n (sourceRename rename t) (sourceRename rename v) (sourceRename rename b) nd
+  | .proj n i e => .proj (rename n) i (sourceRename rename e)
+  | .mdata md e => .mdata md (sourceRename rename e)
+  | e => e
+
+/-- Name renaming commutes with successful export under an explicit map
+square and unchanged universe telescopes. Neither renaming is assumed
+injective; compatible many-to-one fibers remain a separate map obligation. -/
+def kernelRenameAll (rename : Kernel.Name → Kernel.Name) : Kernel.Expr → Kernel.Expr
+  | .bvar i => .bvar i
+  | .fvar i t => .fvar i (kernelRenameAll rename t)
+  | .sort u => .sort u
+  | .const n us => .const (rename n) us
+  | .app f a => .app (kernelRenameAll rename f) (kernelRenameAll rename a)
+  | .lam t b m => .lam (kernelRenameAll rename t) (kernelRenameAll rename b) m
+  | .forallE t b m => .forallE (kernelRenameAll rename t) (kernelRenameAll rename b) m
+  | .letE t v b => .letE (kernelRenameAll rename t) (kernelRenameAll rename v) (kernelRenameAll rename b)
+  | .lit l => .lit l
+  | .proj n i e => .proj (rename n) i (kernelRenameAll rename e)
+
+def ProjectionOwnersFixed (rename : Kernel.Name → Kernel.Name) : Kernel.Expr → Prop
+  | .proj n _ e => rename n = n ∧ ProjectionOwnersFixed rename e
+  | .fvar _ t => ProjectionOwnersFixed rename t
+  | .app f a => ProjectionOwnersFixed rename f ∧ ProjectionOwnersFixed rename a
+  | .lam t b _ | .forallE t b _ => ProjectionOwnersFixed rename t ∧ ProjectionOwnersFixed rename b
+  | .letE t v b => ProjectionOwnersFixed rename t ∧ ProjectionOwnersFixed rename v ∧ ProjectionOwnersFixed rename b
+  | _ => True
+
+theorem kernelRenameAll_eq_renameConsts (rename : Kernel.Name → Kernel.Name) (e : Kernel.Expr)
+    (stable : ProjectionOwnersFixed rename e) :
+    kernelRenameAll rename e = Kernel.Expr.renameConsts rename e := by
+  induction e <;> simp_all [ProjectionOwnersFixed, kernelRenameAll, Kernel.Expr.renameConsts]
+
+/-- This uses full structural renaming. `Kernel.Expr.renameConsts` has a
+different, deliberate contract: it leaves projection owners unchanged.
+Reusing that kernel helper requires a projection-owner stability premise. -/
+theorem exportExpr_rename {cx cy : TermContext} {source : Lean.Expr} {result : Kernel.Expr}
+    (sourceNames : Lean.Name → Lean.Name) (targetNames : Kernel.Name → Kernel.Name)
+    (names : ∀ n k, cx.context.name n = .ok k →
+      cy.context.name (sourceNames n) = .ok (targetNames k))
+    (sourceLevels : cy.sourceLevels = cx.sourceLevels)
+    (targetLevels : cy.targetLevels = cx.targetLevels)
+    (exported : exportExpr cx source = .ok result) :
+    exportExpr cy (sourceRename sourceNames source) = .ok (kernelRenameAll targetNames result) := by
+  have levels : exportLevel cy = exportLevel cx := by
+    funext u
+    simp only [exportLevel, sourceLevels, targetLevels]
+  induction source generalizing result
+  case lit literal =>
+    cases literal <;> simp only [exportExpr, pure, Except.pure, Except.ok.injEq] at exported <;>
+      subst result <;> rfl
+  all_goals try simp only [exportExpr, bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try simp only [Except.ok.injEq] at exported
+  all_goals try subst result
+  all_goals simp_all [sourceRename, kernelRenameAll, exportExpr, bind,
+    Except.bind, pure, Except.pure]
+
 /-- All fields emitted for one source-associated reader constant. Source
 block membership and safety remain explicit source-domain obligations. -/
 inductive DirectEntry where
@@ -399,6 +588,39 @@ def ixLevel : Ix.Level → ExportM Lean.Level
   | .param n _ => return .param (ixName n)
   | .mvar .. => throw "Ix universe metavariable"
 
+def ixLevelEval (φ : Lean.Name → Nat) : Ix.Level → Option Nat
+  | .zero _ => some 0
+  | .succ u _ => return (← ixLevelEval φ u) + 1
+  | .max u v _ => return max (← ixLevelEval φ u) (← ixLevelEval φ v)
+  | .imax u v _ => do
+    let a ← ixLevelEval φ u
+    let b ← ixLevelEval φ v
+    return if b = 0 then 0 else max a b
+  | .param n _ => some (φ (ixName n))
+  | .mvar .. => none
+
+theorem ixLevel_eval {source : Ix.Level} {result : Lean.Level}
+    (translated : ixLevel source = .ok result) (φ : Lean.Name → Nat) :
+    sourceLevelEval φ result = ixLevelEval φ source := by
+  induction source generalizing result
+  all_goals try simp only [ixLevel, bind, Except.bind, pure, Except.pure] at translated
+  all_goals repeat' split at translated
+  all_goals try simp only [Except.ok.injEq] at translated
+  all_goals try subst result
+  all_goals simp_all [sourceLevelEval, ixLevelEval]
+
+/-- The cached Ix level participates in the same source/wire/target semantic
+bridge through its structural view; no cached level or name hash is a proof. -/
+theorem ixLevel_export_eval {cx : TermContext} {source : Ix.Level} {view : Lean.Level}
+    {result : Kernel.Level} (translated : ixLevel source = .ok view)
+    (exported : exportLevel cx view = .ok result)
+    (φ : Lean.Name → Nat) (ρ : UInt64 → Nat) (ψ : Kernel.Name → Nat)
+    (sourceAligned : ∀ n i, cx.sourceLevels.idxOf? n = some i → φ n = ρ i.toUInt64)
+    (targetAligned : ∀ i n, cx.targetLevels[i.toNat]? = some n → ρ i = ψ n) :
+    ixLevelEval φ source = some (Kernel.Level.Geran.levelEval ψ result) := by
+  rw [← ixLevel_eval translated φ]
+  exact exportLevel_eval exported φ ρ ψ sourceAligned targetAligned
+
 def ixExpr : Ix.Expr → ExportM Lean.Expr
   | .bvar i _ => return .bvar i
   | .sort u _ => return .sort (← ixLevel u)
@@ -416,6 +638,42 @@ def ixExpr : Ix.Expr → ExportM Lean.Expr
 
 def ixToKernel (cx : TermContext) (e : Ix.Expr) : ExportM Kernel.Expr := do
   exportExpr cx (← ixExpr e)
+
+def ixBvarBound : Ix.Expr → Nat
+  | .bvar i _ => i + 1
+  | .app f a _ => max (ixBvarBound f) (ixBvarBound a)
+  | .lam _ t b _ _ | .forallE _ t b _ _ => max (ixBvarBound t) (ixBvarBound b - 1)
+  | .letE _ t v b _ _ => max (max (ixBvarBound t) (ixBvarBound v)) (ixBvarBound b - 1)
+  | .proj _ _ e _ | .mdata _ e _ => ixBvarBound e
+  | _ => 0
+
+theorem ixExpr_bvarBound {source : Ix.Expr} {result : Lean.Expr}
+    (exported : ixExpr source = .ok result) :
+    sourceBvarBound result = ixBvarBound source := by
+  induction source generalizing result
+  all_goals try simp only [ixExpr, bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try simp only [Except.ok.injEq] at exported
+  all_goals try subst result
+  all_goals simp_all [sourceBvarBound, ixBvarBound]
+
+theorem ixToKernel_bvarBound {cx : TermContext} {source : Ix.Expr} {result : Kernel.Expr}
+    (exported : ixToKernel cx source = .ok result) :
+    result.bvarBound = ixBvarBound source := by
+  cases hs : ixExpr source with
+  | error reason => simp [ixToKernel, hs, bind, Except.bind] at exported
+  | ok intermediate =>
+    have final : exportExpr cx intermediate = .ok result := by
+      simpa only [ixToKernel, hs, bind, Except.bind] using exported
+    exact (exportExpr_bvarBound final).trans (ixExpr_bvarBound hs)
+
+/-- Scope well-formedness is preserved and reflected by successful structural
+translation. This statement concerns scope, not typing or installed binder
+annotations, and does not inspect any cached Ix hash. -/
+theorem ixToKernel_scoped_iff {cx : TermContext} {source : Ix.Expr} {result : Kernel.Expr}
+    (exported : ixToKernel cx source = .ok result) (depth : Nat) :
+    result.looseBVarsBounded depth = true ↔ ixBvarBound source ≤ depth := by
+  rw [Kernel.Expr.looseBVarsBounded_iff, ixToKernel_bvarBound exported]
 
 theorem ixExpr_bvar_hash_irrelevant (i : Nat) (a b : Address) :
     ixExpr (.bvar i a) = ixExpr (.bvar i b) := rfl
