@@ -672,11 +672,12 @@ def familyClosure (env : Environment) (families : List Family) :
   return (seeds, closeWithRecursors env (Ix.EnvScope.collectDeps env seeds.toList))
 
 /-- The Lean compiler on a closure: the `ix compile-lean` pipeline
-    (`compileInputFromEnv`, then `compileLeanInput`). -/
+    (`compileInputFromEnv`, then `compileLeanInput`). `pass3?` sets the Pass 3
+    switch explicitly (`none`: `IX_PASS3`, as `ix compile-lean`). -/
 def leanCompile (env : Environment) (closure : List (Name × ConstantInfo))
-    (workers : Nat := 32) : IO Ix.CompileM.LeanPipelineOut := do
+    (workers : Nat := 32) (pass3? : Option Bool := none) : IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) with
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (pass3? := pass3?) with
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")
 
