@@ -31,6 +31,11 @@ public section
 
 namespace Ix.AuxGen
 
+-- A7 (D8): out-of-range array accesses are bounds-carrying accesses or
+-- iterations (no `]!`); `RestoreCtx.restore` keeps one `get!` on the cache
+-- `ensureCache` has just initialised.
+
+
 /-- Local error channel for `Ix.AuxGen`. Mirrors the slice of Rust
     `ixon::CompileError` these utilities can actually produce.
     `Ix.AuxGen` must not import `Ix.CompileM` (dependency direction:
@@ -227,9 +232,9 @@ partial def instantiateRevAt (body : Expr) (args : Array Expr) (depth : Nat) : E
   | .bvar i _ =>
     if i >= depth then
       let ridx := i - depth
-      if ridx < n then
+      if h : ridx < args.size then
         -- Replace with args[ridx], shifted up by depth for the binders we're under.
-        shiftVars args[ridx]! depth 0
+        shiftVars args[ridx] depth 0
       else
         -- Free BVar past our substitution range: decrement by n.
         Expr.mkBVar (i - n)
@@ -274,8 +279,7 @@ def instantiateRev (body : Expr) (args : Array Expr) : Expr :=
     not replicated here.) -/
 def instantiatePiParams (typ : Expr) (n : Nat) (args : Array Expr) : Expr := Id.run do
   let mut cur := typ
-  for i in [0:Nat.min n args.size] do
-    let arg := args[i]!
+  for arg in args.extract 0 n do
     match cur with
     | .forallE _ _ body _ _ =>
       cur := instantiateRev body #[arg]
@@ -395,9 +399,9 @@ partial def substLevel (lvl : Level) (params : Array Name) (univs : Array Level)
   | .imax a b _ =>
     levelImaxSmart (substLevel a params univs) (substLevel b params univs)
   | .param name _ => Id.run do
-    for i in [0:params.size] do
-      if params[i]! == name && i < univs.size then
-        return univs[i]!
+    for h : i in [0:params.size] do
+      if hu : params[i] == name ∧ i < univs.size then
+        return univs[i]'hu.2
     return lvl
 
 /-- Mirrors Rust `subst_levels` (aux_gen/expr_utils.rs:864).
@@ -692,14 +696,12 @@ def mkBinderChain (body : Expr) (binders : Array LocalDecl) (kind : BinderKind) 
     return body
   -- Build FVar name → binder position map (0 = outermost).
   let mut fvarMap : Std.HashMap Name Nat := {}
-  for i in [0:k] do
-    fvarMap := fvarMap.insert binders[i]!.fvarName i
+  for (b, i) in binders.zipIdx do
+    fvarMap := fvarMap.insert b.fvarName i
   -- Abstract body: all k binders in scope.
   let mut result := batchAbstract body fvarMap k 0
   -- Build binder chain from innermost to outermost.
-  for j' in [0:k] do
-    let j := k - 1 - j'
-    let decl := binders[j]!
+  for (decl, j) in binders.zipIdx.reverse do
     -- Domain D_j: only binders 0..j-1 are in scope (scopeDepth = j).
     -- Binder j's domain is NOT under binder j itself — only the body is.
     let domain := batchAbstract decl.domain fvarMap j 0
@@ -746,10 +748,10 @@ def betaReduce (expr : Expr) : Expr := Id.run do
     -- Now `head` is a non-App; try to reduce `head args[0]` into head.
     let mut i := 0
     repeat
-      if i < args.size then
+      if h : i < args.size then
         match head with
         | .lam _ _ body _ _ =>
-          head := instantiate1 body args[i]!
+          head := instantiate1 body args[i]
           i := i + 1
         | _ => break
       else
@@ -889,12 +891,12 @@ partial def consumeTypeAnnotations (e : Expr) : Expr :=
   match head with
   | .const name _ _ =>
     let n := name.pretty
-    if (n == "outParam" || n == "semiOutParam") && args.size == 1 then
+    if h : (n == "outParam" || n == "semiOutParam") ∧ args.size = 1 then
       -- outParam.{u} (α : Sort u) := α — strip and recurse
-      consumeTypeAnnotations args[0]!
-    else if (n == "optParam" || n == "autoParam") && args.size == 2 then
+      consumeTypeAnnotations (args[0]'(by have := h.2; omega))
+    else if h : (n == "optParam" || n == "autoParam") ∧ args.size = 2 then
       -- optParam.{u} (α : Sort u) (default : α) := α — strip to first arg
-      consumeTypeAnnotations args[0]!
+      consumeTypeAnnotations (args[0]'(by have := h.2; omega))
     else e
   | _ => e
 
@@ -986,8 +988,8 @@ def findMotiveFVar (dom : Expr) (motiveFVars : Array Expr) : Option Nat := Id.ru
     | _ =>
       let (head, _) := decomposeApps ty
       if let .fvar name _ := head then
-        for j in [0:motiveFVars.size] do
-          if let .fvar mn _ := motiveFVars[j]! then
+        for h : j in [0:motiveFVars.size] do
+          if let .fvar mn _ := motiveFVars[j] then
             if name == mn then
               return some j
       return none
@@ -1124,8 +1126,8 @@ def ensureCache (ctx : RestoreCtx) : RestoreCtx := Id.run do
   let asFVars : Array Expr := (Array.range ctx.nParams).map (fun i => (freshFVar "rp" i).2)
   let substFVars : Array Expr := asFVars.reverse
   let mut bpFVarMap : Std.HashMap Name Nat := {}
-  for i in [0:ctx.blockParamFVars.size] do
-    match ctx.blockParamFVars[i]! with
+  for h : i in [0:ctx.blockParamFVars.size] do
+    match ctx.blockParamFVars[i] with
     | .fvar n _ => bpFVarMap := bpFVarMap.insert n i
     | _ => pure ()
   let mut auxRestored : Std.HashMap Name Expr := {}
@@ -1168,8 +1170,8 @@ partial def replaceWalkUncached (ctx : RestoreCtx) (e : Expr) :
       -- (Rust debug_asserts args.len() >= n — release no-op.)
       -- Apply remaining args (indices past params).
       let mut result := restored
-      for i in [n:args.size] do
-        result := Expr.mkApp result (← replaceWalk ctx args[i]!)
+      for a in args.extract n args.size do
+        result := Expr.mkApp result (← replaceWalk ctx a)
       return result
     -- Case 2: aux constructor reference → rename and restore. Matches C++
     -- restore_nested lines 852-866: look up the nested expression for the
@@ -1183,8 +1185,8 @@ partial def replaceWalkUncached (ctx : RestoreCtx) (e : Expr) :
         let mut result := newFn
         for a in origIndArgs do
           result := Expr.mkApp result a
-        for i in [ctx.nParams:args.size] do
-          result := Expr.mkApp result (← replaceWalk ctx args[i]!)
+        for a in args.extract ctx.nParams args.size do
+          result := Expr.mkApp result (← replaceWalk ctx a)
         return result
       -- Fallback: just rename the const and recurse args. In practice
       -- never hit, but kept for defensive parity with Rust.
