@@ -193,6 +193,10 @@ lean_exe «uniform-hard» where
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 
+lean_exe «bench-aiur-compile» where
+  root := `Benchmarks.AiurCompile
+  supportInterpreter := true
+
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
 
