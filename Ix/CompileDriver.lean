@@ -73,6 +73,16 @@ def canonicalKey (dflt : Name) (names : Array Name) : Name :=
 def blockKey (lo : Name) (all : Set Name) : Name :=
   canonicalKey lo all.toArray
 
+/-- The Pass 3 reference fast path is queried with the driver's canonical
+block key, not the condensation's Tarjan representative. Preserve missing
+entries so malformed/incomplete reference caches still take the scanning
+fallback; do not invent an empty reference set. -/
+def canonicalBlockRefs (blocks : Ix.CondensedBlocks) : Std.HashMap Name (Set Name) :=
+  blocks.blocks.fold (init := {}) fun refs lo all =>
+    match blocks.blockRefs.get? lo with
+    | some rs => refs.insert (blockKey lo all) rs
+    | none => refs
+
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
     singleton non-inductive constants take the plain single-constant
@@ -774,7 +784,7 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
   let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
-  let p3BlockRefs := if pass3 then blocks.blockRefs else {}
+  let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
     { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
   let mut acc : DriverAcc := { cenv := cenv0 }
@@ -1177,7 +1187,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
   let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
-  let p3BlockRefs := if pass3 then blocks.blockRefs else {}
+  let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
     { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
   let mut acc : DriverAcc := { cenv := cenv0 }
@@ -1598,6 +1608,4 @@ def rsCompileInput (input : Ix.Compile.CompileInput)
   return raw.toEnv
 
 end Ix.CompileM
-
-
 
