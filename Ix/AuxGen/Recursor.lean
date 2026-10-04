@@ -40,7 +40,7 @@ namespace Ix.AuxGen
 -- bounds-carrying access where the index is proved in range).
 
 
-open Ix.CompileM (CompileM CompileError arrIdx)
+open Ix.CompileM (CompileM CompileError arrIdx arrSet)
 
 /-! ## Environment view (overlay + base env)
 

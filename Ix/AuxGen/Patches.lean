@@ -32,7 +32,7 @@ namespace Ix.AuxGen
 -- A7 (D8): out-of-range array accesses are named errors (`arrIdx`).
 
 
-open Ix.CompileM (CompileM CompileError arrIdx)
+open Ix.CompileM (CompileM CompileError arrIdx arrSet)
 
 /-- `belowFamilyLeanExists` over the base compile environment: the Lean
     conditions under which the `.below`/`.brecOn` families of the Lean block

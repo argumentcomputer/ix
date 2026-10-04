@@ -43,7 +43,7 @@ namespace Ix.AuxGen
 -- `Option` access with a named error).
 
 
-open Ix.CompileM (CompileM CompileError findConst arrIdx)
+open Ix.CompileM (CompileM CompileError findConst arrIdx arrSet)
 
 /-! ## Expanded block (expand/restore model) -/
 

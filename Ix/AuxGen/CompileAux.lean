@@ -68,7 +68,7 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError arrIdx getBlockState modifyBlockState
+open Ix.CompileM (CompileM CompileError arrIdx arrSet getBlockState modifyBlockState
   getCompileEnv compileName withMutCtx preseedExprTables
   mutConstPreseedExprs compileMutConsts sortConsts buildBlockConstant)
 
