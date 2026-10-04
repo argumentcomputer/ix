@@ -1686,8 +1686,9 @@ impl<'a> Checker<'a> {
     let mut typ = self.type_of(fuel, ctx, head)?;
     let mut result = vec![];
     for (k, arg) in args.iter().enumerate() {
-      let (_, _, domain, codomain) = self.arrow(fuel, &typ)?;
+      let (input, _, domain, codomain) = self.arrow(fuel, &typ)?;
       if k >= params
+        && input.uses != Uses::Erased
         && !self.type_former(fuel, 16, &domain)?
         && !self.is_proposition(fuel, ctx, &domain)?
       {
@@ -3642,6 +3643,56 @@ mod tests {
     p.cases = true;
     p.case_definitions = vec![29];
     p
+  }
+
+  #[test]
+  fn erased_constructor_fields_do_not_establish_fresh_allocation() {
+    for (first, accepted) in [(Uses::Erased, false), (Uses::Many, true)] {
+      let p = Program {
+        declarations: vec![
+          Declaration {
+            typ: Expr::sort(0),
+            body: None,
+            kind: DeclKind::TypeConstructor,
+          },
+          Declaration {
+            typ: Expr::sort(0),
+            body: None,
+            kind: DeclKind::TypeConstructor,
+          },
+          Declaration {
+            typ: Expr::all_contract(
+              b(first, ValueContract::shared()),
+              ValueContract::shared(),
+              nat(),
+              Expr::all(nat(), Expr::reference(1, vec![])),
+            ),
+            body: None,
+            kind: DeclKind::Constructor,
+          },
+          Declaration {
+            typ: Expr::all_contract(
+              BinderContract::default(),
+              ValueContract::unique(),
+              nat(),
+              Expr::reference(1, vec![]),
+            ),
+            body: Some(Expr::lam(
+              nat(),
+              Expr::app(
+                Expr::app(Expr::reference(2, vec![]), Expr::var(0)),
+                Expr::var(0),
+              ),
+            )),
+            kind: DeclKind::Definition,
+          },
+        ],
+        constructors: vec![(2, 0)],
+        groups: vec![vec![1, 2]],
+        ..Program::default()
+      };
+      assert_eq!(check_definition(&p, 3, Limits::default()).is_ok(), accepted);
+    }
   }
 
   #[test]

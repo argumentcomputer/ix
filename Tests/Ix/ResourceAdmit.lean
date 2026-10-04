@@ -25,6 +25,17 @@ def withConstructor (type : E) : Program :=
   { program with declarations := program.declarations.push { type, kind := .constructor } }
 
 def runAdmission : IO Unit := do
+  for (first, accepted) in [(Uses.erased, false), (Uses.many, true)] do
+    let p : Program := {
+      declarations := #[
+        { type := .sort 0, kind := .typeConstructor },
+        { type := .sort 0, kind := .typeConstructor },
+        { type := arr (b first) .shared natTy (arr (b .many) .shared natTy (ref 1)), kind := .constructor },
+        { type := arr (b .many) .unique natTy (ref 1),
+          body := some (lam (b .many) (.app (call 2 (v 0)) (v 0))) }]
+      constructors := #[(2, 0)], groups := #[#[1, 2]] }
+    unless (checkDefinition p 3).toOption.isSome == accepted do
+      throw <| IO.userError "erased field changed a single surviving field into a fresh box"
   let overlay : Program := {
     declarations := #[
       { type := .sort 0, kind := .typeConstructor },
@@ -160,7 +171,7 @@ def runAdmission : IO Unit := do
     { policy with equations := #[(13, 12)] }
   checkAdmission "an equation that does not use a present axiom" (withAxiom (lam (b .many) zero)) true
     { policy with equations := #[(13, 12)] }
-  IO.println "Resource admission: 42 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
+  IO.println "Resource admission: 44 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
 
 end Tests.Resource
 

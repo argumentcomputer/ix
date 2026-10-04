@@ -796,7 +796,7 @@ def constructorParams (program : Program) (index : UInt64) : Nat :=
   | none => 0
 
 /-- The arguments of `head` applied to `args` that are run-time values: not
-a constructor's parameters, and not of a type-former or proposition domain
+a constructor's parameters, not explicitly erased inputs, and not of a type-former or proposition domain
 (types and proofs are erased). -/
 def runtimeArguments (fuel : Nat) (ctx : Context) (head : Ixon.Expr) (args : List Ixon.Expr) :
     CheckM (Array Ixon.Expr) := do
@@ -809,8 +809,8 @@ def runtimeArguments (fuel : Nat) (ctx : Context) (head : Ixon.Expr) (args : Lis
   let mut result := #[]
   let mut k := 0
   for arg in args do
-    let (_, _, domain, codomain) ← arrow ctx.program fuel type
-    if k ≥ params then
+    let (input, _, domain, codomain) ← arrow ctx.program fuel type
+    if k ≥ params && input.uses != .erased then
       unless ← typeFormer ctx.program fuel 16 domain do
         unless ← isProposition fuel ctx domain do
           result := result.push arg
