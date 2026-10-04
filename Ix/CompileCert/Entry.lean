@@ -18,14 +18,16 @@ namespace Ix.CompileCert
 open Kernel.Reader
 open Kernel.Admission
 
-structure Input where
-  source : Source
-  roots : List Lean.Name
-  map : SourceMap
+structure ArtifactInput where
   limits : Limits
   records : Records
   blobs : Kernel.Ingress.Blobs
   hint : Kernel.ConstRef Address → Option Kernel.ReducibilityHint := fun _ => none
+
+structure Input extends ArtifactInput where
+  source : Source
+  roots : List Lean.Name
+  map : SourceMap
 
 /-- Resolve actual record references and names, rather than comparing a
 producer's display label or allowing a fabricated member address. -/
@@ -70,10 +72,9 @@ instance (cx : ExportContext) (reader : Ctx) : Decidable (MapAgrees cx reader) :
 
 /-- Precise direct-cone relation. Reader declarations are deliberately kept
 separate from the installed `env`: binder annotations/lets may change there. -/
-structure AcceptedAssociation (input : Input) where
+structure AdmittedArtifact (input : ArtifactInput) where
   env : Kernel.Env
   admitted : checkBytes input.limits input.records input.blobs input.hint = .ok env
-  domain : DirectDomain input.source input.roots input.map
   pins : Pins
   pins_valid : defaultPins = .ok pins
   prelude : Prelude
@@ -85,6 +86,10 @@ structure AcceptedAssociation (input : Input) where
   detailed_reading : readRecords (streamContext pins prelude constants input.blobs input.hint)
     prelude.state constants.toArray = .ok (readerState, declarations)
   reading : readStream pins prelude constants input.blobs input.hint = .ok declarations
+
+/-- Source correspondence extends one reusable admitted artifact. -/
+structure AcceptedAssociation (input : Input) extends AdmittedArtifact input.toArtifactInput where
+  domain : DirectDomain input.source input.roots input.map
   map_agrees : MapAgrees ⟨input.source, input.map, pins⟩
     (streamContext pins prelude constants input.blobs input.hint)
   correspondence : DirectCorrespondence ⟨input.source, input.map, pins⟩ declarations
@@ -102,11 +107,10 @@ inductive Decline where
 
 /-- The runtime checks are the constructors' proof premises, not assumptions
 supplied by the caller. Structural equality decisions are kernel-checked. -/
-def checkCompiled (input : Input) : Except Decline (AcceptedAssociation input) :=
+def prepareArtifact (input : ArtifactInput) : Except Decline (AdmittedArtifact input) :=
   match ha : checkBytes input.limits input.records input.blobs input.hint with
   | .error e => .error (.admission e)
   | .ok env =>
-    if hd : DirectDomain input.source input.roots input.map then
       match hp : defaultPins with
       | .error e => .error (.setup e)
       | .ok pins =>
@@ -120,24 +124,32 @@ def checkCompiled (input : Input) : Except Decline (AcceptedAssociation input) :
                 pre.state constants.toArray with
             | .error (e, position) => .error (.reading (.read position e))
             | .ok (state, decls) =>
-              let cx : ExportContext := ⟨input.source, input.map, pins⟩
-              if hm : MapAgrees cx (streamContext pins pre constants input.blobs input.hint) then
-                if hf : DirectCorrespondence cx decls then
-                  if hb : BlockCorrespondence cx state then
-                    have hs : readStream pins pre constants input.blobs input.hint = .ok decls := by
-                      unfold readStream
-                      change (match readRecords
-                        (streamContext pins pre constants input.blobs input.hint)
-                        pre.state constants.toArray with
-                        | .ok (_, ds) => Except.ok ds
-                        | .error (e, i) => Except.error (Kernel.Admission.Error.read i e)) = .ok decls
-                      rw [hr]
-                    .ok ⟨env, ha, hd, pins, hp, pre, hq, constants, hc,
-                      decls, state, hr, hs, hm, hf, hb⟩
-                  else .error .blockCorrespondence
-                else .error .correspondence
-              else .error .mapMismatch
-    else .error .sourceDomain
+              have hs : readStream pins pre constants input.blobs input.hint = .ok decls := by
+                unfold readStream
+                change (match readRecords
+                  (streamContext pins pre constants input.blobs input.hint)
+                  pre.state constants.toArray with
+                  | .ok (_, ds) => Except.ok ds
+                  | .error (e, i) => Except.error (Kernel.Admission.Error.read i e)) = .ok decls
+                rw [hr]
+              .ok ⟨env, ha, pins, hp, pre, hq, constants, hc, decls, state, hr, hs⟩
+
+def checkAssociation (input : Input) (artifact : AdmittedArtifact input.toArtifactInput) :
+    Except Decline (AcceptedAssociation input) :=
+  if hd : DirectDomain input.source input.roots input.map then
+    let cx : ExportContext := ⟨input.source, input.map, artifact.pins⟩
+    let reader := streamContext artifact.pins artifact.prelude artifact.constants input.blobs input.hint
+    if hm : MapAgrees cx reader then
+      if hf : DirectCorrespondence cx artifact.declarations then
+        if hb : BlockCorrespondence cx artifact.readerState then
+          .ok ⟨artifact, hd, hm, hf, hb⟩
+        else .error .blockCorrespondence
+      else .error .correspondence
+    else .error .mapMismatch
+  else .error .sourceDomain
+
+def checkCompiled (input : Input) : Except Decline (AcceptedAssociation input) := do
+  checkAssociation input (← prepareArtifact input.toArtifactInput)
 
 /-- Executable success entails actual admission and every finite source
 declaration's independent direct correspondence in the exact reader stream. -/
@@ -166,6 +178,27 @@ theorem AcceptedAssociation.installed {input : Input} (accepted : AcceptedAssoci
         Installed pins pre natPins constants input.blobs input.hint accepted.env :=
   checkBytes_reading accepted.admitted
 
+/-- The installation witness uses these exact decoded constants, pins and
+prelude, rather than merely some existentially admitted reading. -/
+theorem AdmittedArtifact.installed_exact {input : ArtifactInput} (artifact : AdmittedArtifact input) :
+    ∃ natPins, builtinNatOpPins = .ok natPins ∧
+      Installed artifact.pins artifact.prelude natPins artifact.constants
+        input.blobs input.hint artifact.env := by
+  obtain ⟨pins, pre, natPins, hp, hq, hn, hc⟩ := checkBytes_with artifact.admitted
+  have hp' : pins = artifact.pins := Except.ok.inj (hp.symm.trans artifact.pins_valid)
+  have hq' : pre = artifact.prelude := Except.ok.inj (hq.symm.trans artifact.prelude_valid)
+  subst pins
+  subst pre
+  rw [checkBytesWith_eq] at hc
+  cases hf : preflight input.limits input.records input.blobs with
+  | error e => simp [hf, bind, Except.bind, Except.mapError] at hc
+  | ok u =>
+    cases hk : uniqueKeys input.records input.blobs with
+    | error e => simp [hf, hk, bind, Except.bind, Except.mapError] at hc
+    | ok v =>
+      simp only [hf, hk, artifact.decoded, bind, Except.bind, Except.mapError] at hc
+      exact ⟨natPins, hn, checkConstantsWith_installed hc⟩
+
 /-- Restrict only source associations. Target bytes remain exact, including
 their support/prelude; selecting a source root does not forge a new artifact. -/
 def selectedInput (input : Input) (root : Lean.Name)
@@ -185,21 +218,31 @@ inductive RootDecline where
 
 /-- One supported cone can certify despite unrelated unsupported ambient
 source declarations. Each requested root receives its own explicit outcome. -/
-def checkRoot (input : Input) (root : Lean.Name) :
+def checkRootWithArtifact (input : Input) (artifact : AdmittedArtifact input.toArtifactInput)
+    (root : Lean.Name) :
     Except RootDecline (RootAssociation input root) := do
   let selected ← (selectSource input.source [root]).mapError RootDecline.selection
-  let association ← (checkCompiled (selectedInput input root selected)).mapError RootDecline.certification
+  let association ← (checkAssociation (selectedInput input root selected) artifact).mapError
+    RootDecline.certification
   return ⟨selected, association⟩
+
+def checkRoot (input : Input) (root : Lean.Name) :
+    Except RootDecline (RootAssociation input root) := do
+  let artifact ← (prepareArtifact input.toArtifactInput).mapError RootDecline.certification
+  checkRootWithArtifact input artifact root
 
 structure RootOutcome (input : Input) where
   root : Lean.Name
   result : Except RootDecline (RootAssociation input root)
 
 def checkRoots (input : Input) : List (RootOutcome input) :=
-  input.roots.map (fun root => ⟨root, checkRoot input root⟩)
+  match prepareArtifact input.toArtifactInput with
+  | .error e => input.roots.map (fun root => ⟨root, .error (.certification e)⟩)
+  | .ok artifact => input.roots.map (fun root => ⟨root, checkRootWithArtifact input artifact root⟩)
 
 theorem checkRoots_coverage (input : Input) :
     (checkRoots input).map RootOutcome.root = input.roots := by
-  simp [checkRoots, List.map_map, Function.comp_def]
+  unfold checkRoots
+  split <;> simp [List.map_map, Function.comp_def]
 
 end Ix.CompileCert
