@@ -613,7 +613,7 @@ address is {metaAddr}")
     cenv := { cenv with nameToNamed := cenv.nameToNamed.insert name named' }
   pure cenv
 
-/-! ## Aux-gen prereq pre-compilation — env.rs:993-1140 -/
+/-! ## Aux-gen seeds: scheduling dependencies (Rust: the prereq pre-pass, env.rs:993-1140) -/
 
 /-- Seed names for the aux_gen prereq closure — the exact Const refs
     aux_gen emits in generated `.below`/`.brecOn`/`.brecOn.eq` bodies
@@ -635,20 +635,18 @@ def auxGenSeedNames : Array Name := Id.run do
     Name.mkStr root "eq_of_heq",
     Name.mkStr root "True"]
 
-/-- Pre-compile the transitive SCC closure of the aux_gen seed names in
-    reverse-topological (dep-first) order, then move the compiled names
-    from `nameToAddr` to `auxNameToAddr` so the scheduler's promotion
-    pass recognizes and re-promotes them when their blocks come up.
-    Mirrors `precompile_aux_gen_prereqs` (env.rs:1036-1140). -/
-def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
-    : Except String DriverAcc := Id.run do
-  -- Pass 3: images pack with `And` at Prop motives (`PProd` and `True` are
-  -- seeds already), so it must precede every block whose rewrite uses it.
-  let seeds := if acc₀.cenv.pass3 then auxGenSeedNames.push (Name.mkStr .mkAnon "And")
+/-- The aux-gen seeds of a compile: `auxGenSeedNames`, plus `And` under
+    Pass 3 (images pack with `And` at Prop motives; `PProd` and `True` are
+    seeds already), restricted to the names the condensation holds. -/
+def auxGenSeeds (blocks : Ix.CondensedBlocks) (pass3 : Bool) : Array Name :=
+  let seeds := if pass3 then auxGenSeedNames.push (Name.mkStr .mkAnon "And")
     else auxGenSeedNames
-  let seedReps := seeds.filterMap (blocks.lowLinks.get? ·)
-  if seedReps.isEmpty then
-    return .ok acc₀
+  seeds.filter blocks.lowLinks.contains
+
+/-- The blocks of the seeds' closure (their representatives, in DFS
+    post-order over the condensed graph; env.rs:1063-1097). -/
+def auxGenSeedClosure (blocks : Ix.CondensedBlocks) (pass3 : Bool) : Array Name := Id.run do
+  let seedReps := (auxGenSeeds blocks pass3).filterMap (blocks.lowLinks.get? ·)
   -- Iterative DFS post-order over the condensed graph (env.rs:1063-1097).
   let mut order : Array Name := #[]
   let mut visited : Set Name := {}
@@ -671,35 +669,41 @@ def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
             if let some depRep := blocks.lowLinks.get? referenced then
               if !visited.contains depRep then
                 stack := stack.push (depRep, false)
-  let mut acc := acc₀
-  for rep₀ in order do
-    let some all := blocks.blocks.get? rep₀ | continue
-    -- A7 (D9): the block is compiled under its canonical key.
-    let rep := blockKey rep₀ all
-    if acc.cenv.auxNameToAddr.contains rep then
-      continue
-    let failed (e : CompileError) : String := s!"aux_gen prereq pre-compile failed for SCC \
-'{rep.pretty}' ({all.size} members): {e}. The SCC closure is traversed \
-in reverse-topological order starting from the aux_gen seed names, so \
-all transitive deps should be compiled before this — if you're hitting \
-this, a dep relationship isn't captured in the ref graph, or the source \
-env is inconsistent."
-    match runBlockWithAux acc.cenv all rep with
-    | .error e => return .error (failed e)
-    | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-      -- A conflicting claim fails the pre-compile like a block error
-      -- (Rust's claims raise inside `compile_const`, env.rs:1105-1117).
-      match checkBlockClaims acc.cenv (primaryClaims rep result) cache plans brecPlans belowPlans with
-      | .error e => return .error (failed e)
-      | .ok () => acc := mergeCompiledBlock acc rep result cache plans brecPlans belowPlans
-      -- Move compiled names → auxNameToAddr (env.rs:1119-1137). At this
-      -- stage `nameToAddr` contains exactly the prereq registrations.
-      let moved := acc.cenv.nameToAddr
-      acc := { acc with cenv := { acc.cenv with
-        nameToAddr := {}
-        auxNameToAddr := moved.fold (fun m k v => m.insert k v)
-          acc.cenv.auxNameToAddr } }
-  return .ok acc
+  return order
+
+/-- The scheduling dependencies of each block: its references, and for a
+    block outside the seeds' closure also the seeds themselves.
+
+    A7 (D2b). Aux tails emit references to the seeds (`PUnit`, `PProd`,
+    `Eq`, …) that the Lean source of the block need not contain, so the
+    seeds must be compiled before any tail runs. Rust (and the Lean drivers
+    before A7) did that with a pre-pass (`precompile_aux_gen_prereqs`,
+    env.rs:1036-1140) that compiled the seeds' closure before the schedule,
+    moved the names into `aux_name_to_addr`, and re-promoted them when
+    their own blocks came up. Here the seeds are ordinary dependencies of
+    every block that is not in their closure (no cycle: nothing in the
+    closure reaches such a block), and the seeds' blocks are compiled by
+    the schedule like any other. Each seed block is compiled by the same
+    `runBlockWithAux` on its own closure either way, its names end at the
+    same addresses with the same `Named`, and the promotion route the
+    pre-pass forced on them registered nothing else (the pre-pass skipped
+    blocks an aux tail had claimed, which take the promotion route with
+    their original-form compile in both versions), so the output is the
+    same; the gates (Init+Std against both compilers,
+    schedule identity) check it. The pre-pass's failure mode (one failing
+    seed block failed the whole compile) becomes the ordinary per-block
+    failure with its cascade. -/
+def scheduleDeps (blocks : Ix.CondensedBlocks) (pass3 : Bool) : Std.HashMap Name (Set Name) :=
+  Id.run do
+  let seeds := auxGenSeeds blocks pass3
+  let inClosure : Std.HashSet Name :=
+    (auxGenSeedClosure blocks pass3).foldl (init := {}) (·.insert ·)
+  let mut out : Std.HashMap Name (Set Name) := {}
+  for (lo, _) in blocks.blocks do
+    let refs := (blocks.blockRefs.get? lo).getD {}
+    out := out.insert lo
+      (if inClosure.contains lo then refs else seeds.foldl (·.insert ·) refs)
+  return out
 
 /-- Assemble the final `Ixon.Env` from the accumulated driver state
     (shared tail of both aux drivers, identical to the plain drivers'
@@ -749,7 +753,7 @@ def pass3ReservedInput? (blocks : Ix.CondensedBlocks) : Option String := Id.run 
 /-! ## The aux-aware sequential driver -/
 
 /-- Compile an entire environment with the FULL production pipeline
-    semantics: aux-gen prereq pre-compilation, per-block aux tails
+    semantics: the aux-gen seeds as scheduling dependencies (A7, D2b), per-block aux tails
     (regeneration + call-site plans), the scheduler promotion pass with
     the no-aux original-form second compile (`Named.original`), and
     pending-aux dependency release. Sequential mirror of Rust
@@ -774,17 +778,14 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let cenv0 : CompileEnv :=
     { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
   let mut acc : DriverAcc := { cenv := cenv0 }
-  match precompileAuxGenPrereqs blocks acc with
-  | .error e => return .error e
-  | .ok a => acc := a
+  -- A7 (D2b): the aux-gen seeds are scheduling dependencies, not a pre-pass.
+  let schedDeps := scheduleDeps blocks pass3
 
   let totalBlocks := blocks.blocks.size
   let mut blockInfo : Std.HashMap Name (Set Name × Nat) := {}
   let mut reverseDeps : Std.HashMap Name (Array Name) := {}
   for (lo, all) in blocks.blocks do
-    let deps := match blocks.blockRefs.get? lo with
-      | some d => d
-      | none => {}
+    let deps := (schedDeps.get? lo).getD {}
     blockInfo := blockInfo.insert lo (all, deps.size)
     for depName in deps do
       reverseDeps := reverseDeps.alter depName fun
@@ -1180,11 +1181,10 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let cenv0 : CompileEnv :=
     { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
   let mut acc : DriverAcc := { cenv := cenv0 }
-  match precompileAuxGenPrereqs blocks acc with
-  | .error e => return .error e
-  | .ok a => acc := a
+  -- A7 (D2b): the aux-gen seeds are scheduling dependencies, not a pre-pass.
+  let schedDeps := scheduleDeps blocks pass3
   let tWaves ← IO.monoMsNow
-  Ix.PhaseTimers.wall " (compile) aux-gen prerequisite precompile" (tWaves - tPre)
+  Ix.PhaseTimers.wall " (compile) scheduling dependencies" (tWaves - tPre)
 
   let workChan ← Std.CloseableChannel.Sync.new (α := AuxWorkItem)
   let resultChan ← Std.CloseableChannel.Sync.new
@@ -1252,9 +1252,7 @@ rss{(rssKb.getD "?").trimAscii}"
       let some all := blocks.blocks.get? lo
         | discard <| workChan.close
           return .error s!"wave driver: block {lo.pretty} is not in the condensation"
-      let deps := match blocks.blockRefs.get? lo with
-        | some d => d
-        | none => {}
+      let deps := (schedDeps.get? lo).getD {}
       let depsOk := Id.run do
         for d in deps do
           if (resolveAddrPure snapshot d).isNone && !failedNames.contains d then
