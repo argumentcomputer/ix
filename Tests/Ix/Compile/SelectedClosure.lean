@@ -30,6 +30,15 @@ def suite : List TestSeq := [
     for seeds in roots.map (fun n => [n]) ++ [roots, roots.reverse] do
       let closed := Ix.EnvScope.collectSelectedDeps env seeds
       let ns := names closed
+      let ordinary := Lean.collectDependenciesMany seeds.toArray env.constants (withCompilerSupport := true)
+      unless sameNames closed ordinary do
+        errors := errors.push s!"{seeds}: ordinary and scoped selected collectors disagree"
+      unless sameNames ordinary (Lean.collectDependenciesMany (ordinary.map (·.1)).toArray
+          env.constants (withCompilerSupport := true)) do
+        errors := errors.push s!"{seeds}: ordinary selected closure is not a fixed point"
+      if let [seed] := seeds then
+        unless sameNames closed (Lean.collectDependencies seed env.constants (withCompilerSupport := true)) do
+          errors := errors.push s!"{seed}: ordinary singleton collector disagrees"
       for n in required do
         unless ns.contains n do errors := errors.push s!"{seeds}: missing support {n}"
       unless sameNames closed (Ix.EnvScope.collectSelectedDeps env (closed.map (·.1))) do
@@ -40,6 +49,8 @@ def suite : List TestSeq := [
     -- Raw dependencies intentionally do not supply rewrite-only instances.
     let raw := names (Ix.EnvScope.collectDeps env [`PassO2.SA._sizeOf_1])
     if required.all raw.contains then errors := errors.push "raw negative control unexpectedly complete"
+    let ordinaryRaw := names (Lean.collectDependencies `PassO2.SA._sizeOf_1 env.constants)
+    if required.all ordinaryRaw.contains then errors := errors.push "ordinary raw negative control unexpectedly complete"
     for e in errors do IO.println s!"[selected-closure] {e}"
     return (errors.isEmpty, if errors.isEmpty then 1 else 0, 1,
       if errors.isEmpty then none else some s!"{errors.size} closure failures"))

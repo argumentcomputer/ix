@@ -397,17 +397,48 @@ def auxFamilySiblings (consts : Lean.ConstMap) (name : Lean.Name) :
         i := i + 1
   return out.filter fun n => n != name && consts.contains n
 
+/-- Recursors owned by an explicit source inductive, including nested auxiliaries. -/
+def sourceRecursorsOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name := Id.run do
+  let mut out := []
+  if consts.contains (Lean.mkRecName n) then out := Lean.mkRecName n :: out
+  let mut i := 1
+  while consts.contains (n.str s!"rec_{i}") do
+    out := n.str s!"rec_{i}" :: out
+    i := i + 1
+  return out
+
+/-- Compiler support carried by a selected source declaration. A generated
+`all₀._sizeOf_N` needs the existing instances of its owner's mutual family
+and `SizeOf.sizeOf` after splitting. This is finite source-set completion,
+not scheduler edges: source membership can cycle through an instance's own
+function; O11a adds only precise cross-component scheduling dependencies.
+Argument pushers remain ordinary references of carried equation proofs;
+never discover them or equation lemmas by scanning callers. -/
+def compilerSupportOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name := Id.run do
+  let .str owner suffix := n | return []
+  let digits := suffix.toList.drop "_sizeOf_".length
+  unless suffix.startsWith "_sizeOf_" && !digits.isEmpty && digits.all Char.isDigit do return []
+  let some (.inductInfo ind) := consts.find? owner | return []
+  unless ind.all.head? == some owner do return []
+  let some index := (String.ofList digits).toNat? | return []
+  unless 0 < index && index <= ind.all.length + ind.numNested do return []
+  let support := `SizeOf.sizeOf :: ind.all.map (·.str "_sizeOf_inst")
+  return support.filter consts.contains
+
 private partial def collectDependenciesAux (const : Lean.ConstantInfo)
-    (consts : Lean.ConstMap) (acc : ConstList) : CollectM ConstList := do
+    (consts : Lean.ConstMap) (acc : ConstList) (withCompilerSupport : Bool := false)
+    : CollectM ConstList := do
   modify (·.insert const.name)
   -- An auxiliary's family is one compiled block: pull its other members.
   let acc ← collectNames (auxFamilySiblings consts const.name) acc
+  let acc ← if withCompilerSupport then collectNames (compilerSupportOf consts const.name) acc else pure acc
   match const with
   | .ctorInfo val =>
     let acc ← collectNames [val.induct] acc
     goExpr consts acc val.type
   | .axiomInfo val | .quotInfo val => goExpr consts acc val.type
   | .inductInfo val =>
+    let acc ← if withCompilerSupport then collectNames (sourceRecursorsOf consts val.name) acc else pure acc
     let acc ← collectNames val.all acc
     let acc ← collectNames val.ctors acc
     goExpr consts acc val.type
@@ -456,11 +487,15 @@ private partial def collectDependenciesAux (const : Lean.ConstantInfo)
 where
   collectNames all acc := do
     let visited ← get
-    all.foldlM (init := acc) fun acc name =>
+    all.foldlM (init := acc) fun acc name => do
+      -- Selected support can revisit this family through an instance's
+      -- own function. Consult the live set after each recursive ingress;
+      -- the raw collector retains its historical enumeration behavior.
+      let visited ← if withCompilerSupport then get else pure visited
       if visited.contains name then pure acc
       else
         let const := consts.find! name
-        collectDependenciesAux const consts $ (name, const) :: acc
+        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport
   goExpr (consts : Lean.ConstMap) (acc : ConstList) : Lean.Expr → CollectM ConstList
     | .bvar _ | .fvar _ | .mvar _ | .sort _ | .lit _ => pure acc
     | .const name _ => do
@@ -468,7 +503,7 @@ where
       if visited.contains name then pure acc
       else
         let const := consts.find! name
-        collectDependenciesAux const consts $ (name, const) :: acc
+        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport
     | .app f a => do
       let acc ← goExpr consts acc f
       goExpr consts acc a
@@ -479,11 +514,17 @@ where
       let acc ← goExpr consts acc t
       let acc ← goExpr consts acc v
       goExpr consts acc b
-    | .mdata _ e | .proj _ _ e => goExpr consts acc e
+    | .mdata _ e => goExpr consts acc e
+    | .proj typeName _ e => do
+      let acc ← if withCompilerSupport then collectNames [typeName] acc else pure acc
+      goExpr consts acc e
 
-def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap) : ConstList :=
+/-- Raw dependency closure by default. Selected compiler/checker consumers
+can opt into source-owned compiler support and recursor completion. -/
+def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap)
+    (withCompilerSupport : Bool := false) : ConstList :=
   let const := consts.find! name
-  let (constList, _) := collectDependenciesAux const consts [(name, const)] default
+  let (constList, _) := collectDependenciesAux const consts [(name, const)] withCompilerSupport default
   constList
 
 /-- Bulk closure: `collectDependencies` over many roots SHARING one
@@ -491,13 +532,13 @@ def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap) : ConstList 
     root. For n roots over a common library the per-root variant is
     O(n × closure); this is O(union closure). -/
 def collectDependenciesMany (names : Array Lean.Name)
-    (consts : Lean.ConstMap) : ConstList := Id.run do
+    (consts : Lean.ConstMap) (withCompilerSupport : Bool := false) : ConstList := Id.run do
   let mut acc : ConstList := []
   let mut seen : Lean.NameHashSet := default
   for n in names do
     if seen.contains n then continue
     let some const := consts.find? n | continue
-    let (acc', seen') := collectDependenciesAux const consts ((n, const) :: acc) seen
+    let (acc', seen') := collectDependenciesAux const consts ((n, const) :: acc) withCompilerSupport seen
     acc := acc'
     seen := seen'
   return acc

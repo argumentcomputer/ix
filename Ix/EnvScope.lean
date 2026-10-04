@@ -16,14 +16,8 @@ namespace Ix.EnvScope
 
 /-- The recursors Lean generated for inductive `n`: `n.rec` and the nested
 auxiliaries `n.rec_1`, `n.rec_2`, … (present on the first member of a block). -/
-def recursorsOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name := Id.run do
-  let mut out : List Lean.Name := []
-  if env.constants.contains (Lean.mkRecName n) then out := Lean.mkRecName n :: out
-  let mut i := 1
-  while env.constants.contains (n.str s!"rec_{i}") do
-    out := n.str s!"rec_{i}" :: out
-    i := i + 1
-  return out
+def recursorsOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name :=
+  Lean.sourceRecursorsOf env.constants n
 
 /-- Source declarations needed by the compiler's sizeOf rewrite, discovered
 from the selected declaration's own owner, never from its callers. A generated
@@ -38,17 +32,8 @@ Argument pushers need no synthetic discovery: the approved recipe takes them
 only from the carried packed equation proof, whose ordinary value references
 are already walked. Merely having a matcher must not pull an ambient pusher
 or equation lemma into the closure. -/
-def compilerSupportOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name := Id.run do
-  let .str owner suffix := n | return []
-  let digits := suffix.toList.drop "_sizeOf_".length
-  unless suffix.startsWith "_sizeOf_" && !digits.isEmpty && digits.all Char.isDigit do
-    return []
-  let some (.inductInfo ind) := env.constants.find? owner | return []
-  unless ind.all.head? == some owner do return []
-  let some index := (String.ofList digits).toNat? | return []
-  unless 0 < index && index <= ind.all.length + ind.numNested do return []
-  let support := `SizeOf.sizeOf :: ind.all.map (·.str "_sizeOf_inst")
-  return support.filter env.contains
+def compilerSupportOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name :=
+  Lean.compilerSupportOf env.constants n
 
 /-- Collect the transitive closure of constants referenced by a set of seed
 names: the closure producer behind `ix compile --consts`/`--module`/`--exclude`,
@@ -169,7 +154,7 @@ def defaultConstList (fe : FileEnv) (pathStr : String)
 
 /-- The constants the file itself elaborates (no imported module owns them),
 closed over their transitive dependencies (with the recursors of every
-inductive, as `collectDeps` always includes them): the `--local` scope of `ix
+inductive and compiler support, through `collectSelectedDeps`): the `--local` scope of `ix
 compile`, `ix compile-lean` and `ix validate-lean`. A block's compiled form
 depends only on its dependency closure, so on the file's own constants this
 scope compiles what the whole import environment would, without recompiling
