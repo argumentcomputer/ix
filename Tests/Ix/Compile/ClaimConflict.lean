@@ -16,8 +16,9 @@
      through `promoteRemaining`:
      a primary name over an aux claim, an aux claim over a compiled name, over
      an earlier aux claim and over itself within one block, an identical
-     re-claim (accepted), a conflicting plan of each of the three kinds, and
-     two differing Pass 3 records of one key inside one block (A7, D1).
+     re-claim (accepted), a conflicting plan of each of the three kinds, a
+     second compiled claim at another address (A7, a7s §6.2) and two
+     differing Pass 3 records of one key inside one block (A7, D1).
      The messages must be Rust's, character for character.
   2. **Both compilers.** A constructed closure that bypasses the B1
      existence rule: it holds a user constant named `T.below` (a plain
@@ -152,6 +153,11 @@ def driverCases : List (String × Option String × Option String) := Id.run do
   cases := cases ++ [("identical compiled name and aux claim", none,
     errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, x)])
       none₀ noneB noneB))]
+  -- A7 (a7s §6.2): a second compiled claim at another address
+  cases := cases ++ [("second compiled claim", some (rustConflict n x y),
+    errOf (merge withCompiled n (loneResult y) default none₀ noneB noneB))]
+  cases := cases ++ [("identical second compiled claim", none,
+    errOf (merge withCompiled n (loneResult x) default none₀ noneB noneB))]
   -- A7 (D1): two differing Pass 3 records of one key inside one block
   let p3Two : BlockState := { (default : BlockState) with
     p3Heads := #[(n, lo), (n, ixName "Fx.U")] }

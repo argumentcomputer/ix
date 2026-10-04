@@ -365,7 +365,21 @@ impl CompileState {
     {
       return Err(name_claim_conflict(name, existing.value(), addr));
     }
-    self.name_to_addr.insert(name.clone(), addr.clone());
+    // A7 (a7s §6.2): a second compiled claim at another address is the same
+    // conflict (design document §6.2: a name assigned twice is an error
+    // unless both assignments are equal). It was an overwrite, so the address
+    // a name kept depended on which block claimed last; an identical
+    // re-claim stays a no-op, so valid input registers the same values.
+    match self.name_to_addr.entry(name.clone()) {
+      dashmap::mapref::entry::Entry::Occupied(e) => {
+        if e.get() != addr {
+          return Err(name_claim_conflict(name, e.get(), addr));
+        }
+      },
+      dashmap::mapref::entry::Entry::Vacant(e) => {
+        e.insert(addr.clone());
+      },
+    }
     Ok(())
   }
 

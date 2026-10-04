@@ -346,8 +346,9 @@ def primaryClaims (lo : Name) (result : BlockResult) : Array (Name × Address) :
     checked against the LIVE driver state before anything is merged.
 
     Rust claims inside the block, against the shared state, in this order:
-    - the primary names (`claim_compiled_name`): an `aux_name_to_addr` entry
-      at another address is a conflict;
+    - the primary names (`claim_compiled_name`): an `aux_name_to_addr` or a
+      `name_to_addr` entry at another address is a conflict (the second
+      check since A7);
     - the aux tail's names (`claim_aux_name`): a `name_to_addr` entry
       (including this block's own primary names) or an earlier
       `aux_name_to_addr` claim at another address is a conflict, and an
@@ -375,6 +376,14 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
   let mut compiled : Std.HashMap Name Address := {}
   for (name, addr) in primary do
     if let some existing := cenv.auxNameToAddr.get? name then
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    -- A7 (a7s §6.2): a second compiled claim at another address, by an
+    -- earlier block or earlier in this block, is a conflict too (Rust's
+    -- `claim_compiled_name` now checks `name_to_addr` the same way). It
+    -- was an overwrite, so the address a name kept depended on which block
+    -- merged last; an identical re-claim stays a no-op, so valid input
+    -- (where no name is compiled twice) merges the same values.
+    if let some existing := (compiled.get? name).orElse fun _ => cenv.nameToAddr.get? name then
       if existing != addr then throw (nameClaimConflict name existing addr)
     compiled := compiled.insert name addr
   let mut claimed : Std.HashMap Name Address := {}
