@@ -153,6 +153,12 @@ lean_exe IxTests where
   needs := #[`@/ix, `@/«kernel-check-ixe»]
   moreLinkObjs := #[ix_rs_test]
 
+/-- Focused compiler-certification checks, including native producer FFI. -/
+lean_exe «compile-cert-c1» where
+  root := `Tests.Ix.CompileCert.Run
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
