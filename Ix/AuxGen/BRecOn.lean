@@ -1838,9 +1838,14 @@ and {belowConsts.size} `.below` constants")
                 s!"brecOn aux recursor '{auxRecName.pretty}' is not \
 source-indexed; refusing to synthesize brecOn_{j + 1}")
           let breconName := Name.mkStr all0 s!"brecOn_{idx}"
-          let cenv ← Ix.CompileM.getCompileEnv
-          let existsInEnv := allAux || (← lookupConst? breconName).isSome
-            || cenv.nameToNamed.contains breconName
+          -- A7 (D13): the compile path passes `allAux := true`
+          -- (`Patches.lean`), so the global `nameToNamed` (what other
+          -- blocks registered) is read only on the decompile path. The
+          -- value is the one the former `allAux || …` gave.
+          let existsInEnv ← if allAux then pure true else do
+            let cenv ← Ix.CompileM.getCompileEnv
+            pure ((← lookupConst? breconName).isSome
+              || cenv.nameToNamed.contains breconName)
           if existsInEnv then
             let d ← buildPropBrecon (nClasses + j) auxRecVal firstInd
               breconName auxRecVal.numIndices sortedClasses belowConsts
@@ -1877,11 +1882,13 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
         -- environment. Check lean_env OR stt.env.named (Ixon compile
         -- state — decompilation's work_env won't contain the constant
         -- we're about to generate).
-        let cenv ← Ix.CompileM.getCompileEnv
         -- `allAux`: see `generateBelowConstants` (brecon.rs
-        -- `generate_brecon_constants_with`).
-        let existsInEnv := allAux || (← lookupConst? breconName).isSome
-          || cenv.nameToNamed.contains breconName
+        -- `generate_brecon_constants_with`). A7 (D13): on the compile path
+        -- (`allAux := true`) the global `nameToNamed` is not read.
+        let existsInEnv ← if allAux then pure true else do
+          let cenv ← Ix.CompileM.getCompileEnv
+          pure ((← lookupConst? breconName).isSome
+            || cenv.nameToNamed.contains breconName)
         if existsInEnv then
           let ci := nClasses + j -- target motive index in the flat block
           let belowNames : Array Name := belowConsts.map fun bc =>

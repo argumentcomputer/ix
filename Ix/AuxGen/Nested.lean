@@ -522,6 +522,9 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
   -- the kernels recompute from Ixon. The two agree on identity blocks.
   let groups : Array (Array Name) ←
     if (← get).canonicalGroups then do
+      -- A7 (D13): read at `headName` and `extInd.all`, the external group
+      -- this block's nested occurrence references, so in closure(B): their
+      -- class orderings were registered by their own (earlier) block.
       let cenv ← Ix.CompileM.getCompileEnv
       pure (Ix.Compile.Canon.blockGroup cenv.blocks headName extInd.all)
     else pure (extInd.all.map (#[·]))
@@ -1091,6 +1094,13 @@ def positionClaimedBySpecScc (sourceExpanded : ExpandedBlock)
   let cenv ← Ix.CompileM.getCompileEnv
   let mut sccCtxCache := sccCtxCache
   let mut candidateReps : Array Name := #[]
+  -- A7 (D13): `cenv.blocks` is a global registry, but it is read only at
+  -- names `member` that the block's own spec expressions reference, so
+  -- every key is in the block's closure; its entry was registered by
+  -- `member`'s own block (a function of that block alone, Rust
+  -- `stt.blocks`), which the reference forces before this block in every
+  -- schedule. So the value read is a function of closure(B) (design
+  -- document §6.2, condition (i)), and a missing entry is the error below.
   for member in memberRefs do
     let some classes := cenv.blocks.get? member
       | throw (.invalidMutualBlock

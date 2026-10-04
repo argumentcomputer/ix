@@ -1200,13 +1200,16 @@ source-indexed; refusing to synthesize below_{j + 1}")
         -- constants during decompilation where lean_env is the
         -- incrementally-built work_env and won't contain the constant
         -- we're about to generate).
-        let cenv ← Ix.CompileM.getCompileEnv
         -- `allAux` (the compile path, once the block's `.below` family is
         -- exported; below.rs `generate_below_constants_with`) lifts the
         -- per-name gate: block membership must not depend on which names
-        -- a closure-only environment holds.
-        let existsInEnv := allAux || (← lookupConst? belowName).isSome
-          || cenv.nameToNamed.contains belowName
+        -- a closure-only environment holds. A7 (D13): with `allAux` the
+        -- global `nameToNamed` (other blocks' registrations) is not read;
+        -- the value is the one the former `allAux || …` gave.
+        let existsInEnv ← if allAux then pure true else do
+          let cenv ← Ix.CompileM.getCompileEnv
+          pure ((← lookupConst? belowName).isSome
+            || cenv.nameToNamed.contains belowName)
         if existsInEnv then
           -- Extract the actual external inductive from the auxiliary
           -- recursor's major premise. The major is the last binder in
