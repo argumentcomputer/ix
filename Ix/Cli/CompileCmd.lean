@@ -135,7 +135,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         p.printError s!"error: no constant(s) named {missing} in the environment"
         return 1
       IO.println s!"[compile] consts: {seeds.length} seed constant(s)"
-      let closed := collectDeps leanEnv seeds (withRecursors := true)
+      let closed := collectSelectedDeps leanEnv seeds
       IO.println s!"[compile] consts: {closed.length} constants after transitive-dep closure"
       pure closed
     else match p.flag? "module" with
@@ -148,7 +148,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         let seeds := base.filterMap fun (n, _) =>
           if excludeSet.contains n then none else some n
         IO.println s!"[compile] exclude applied: {seeds.length} seed constants"
-        pure (collectDeps leanEnv seeds)
+        pure (collectSelectedDeps leanEnv seeds)
     | some flag =>
       let raw := flag.as! String
       let prefixes := parsePrefixes raw
@@ -165,7 +165,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
             let mod := moduleNames[idx.toNat]!
             if prefixes.any (·.isPrefixOf mod) then some n else none
         IO.println s!"[compile] filter: {prefixes.length} module-prefix(es), {seeds.length} seed constants"
-        let closed := collectDeps leanEnv seeds
+        let closed := collectSelectedDeps leanEnv seeds
         IO.println s!"[compile] filter: {closed.length} constants after transitive-dep closure"
         pure closed
 
@@ -297,4 +297,3 @@ def compileCmd : Cli.Cmd := `[Cli|
 ]
 
 end
-

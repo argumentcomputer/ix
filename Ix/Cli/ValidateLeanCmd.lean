@@ -905,7 +905,7 @@ phases 6–8 read Lean's forms from the decompiler)"
           let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
             if prefixes.any (·.isPrefixOf n) then some n else none
           IO.println s!"[validate-lean] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
-          let closed := collectDeps leanEnv seeds (withRecursors := true)
+          let closed := collectSelectedDeps leanEnv seeds
           IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
           pure closed
       | none =>
@@ -914,8 +914,7 @@ phases 6–8 read Lean's forms from the decompiler)"
           -- and rule statements (a library has them; a closure must too)
           let own := leanEnv.constants.toList.filterMap fun (n, _) =>
             if (leanEnv.getModuleIdxFor? n).isNone then some n else none
-          let closed := collectDeps leanEnv (own ++ packingNames.filter leanEnv.contains)
-            (withRecursors := true)
+          let closed := collectSelectedDeps leanEnv (own ++ packingNames.filter leanEnv.contains)
           IO.println s!"[validate-lean] local: {own.length} own constants, {closed.length} with their closure"
           pure closed
         else defaultConstList fe pathStr

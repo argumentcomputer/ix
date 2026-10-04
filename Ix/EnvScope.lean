@@ -25,6 +25,31 @@ def recursorsOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name := Id.
     i := i + 1
   return out
 
+/-- Source declarations needed by the compiler's sizeOf rewrite, discovered
+from the selected declaration's own owner, never from its callers. A generated
+`all₀._sizeOf_N` may use the instances of other components of its declared
+mutual family after splitting. Include all existing family instances as a
+conservative source set; O11a's scheduler separately adds only the precise
+cross-component edges. These are closure-membership links, not dependency
+edges: the instance's reference back to its own sizeOf function is harmless
+in this finite visited-set walk and must not become a new scheduling cycle.
+
+Argument pushers need no synthetic discovery: the approved recipe takes them
+only from the carried packed equation proof, whose ordinary value references
+are already walked. Merely having a matcher must not pull an ambient pusher
+or equation lemma into the closure. -/
+def compilerSupportOf (env : Lean.Environment) (n : Lean.Name) : List Lean.Name := Id.run do
+  let .str owner suffix := n | return []
+  let digits := suffix.toList.drop "_sizeOf_".length
+  unless suffix.startsWith "_sizeOf_" && !digits.isEmpty && digits.all Char.isDigit do
+    return []
+  let some (.inductInfo ind) := env.constants.find? owner | return []
+  unless ind.all.head? == some owner do return []
+  let some index := (String.ofList digits).toNat? | return []
+  unless 0 < index && index <= ind.all.length + ind.numNested do return []
+  let support := `SizeOf.sizeOf :: ind.all.map (·.str "_sizeOf_inst")
+  return support.filter env.contains
+
 /-- Collect the transitive closure of constants referenced by a set of seed
 names: the closure producer behind `ix compile --consts`/`--module`/`--exclude`,
 `ix validate-lean --ns`/`--local`, the module scope of `defaultConstList` and the
@@ -47,9 +72,12 @@ environment always has both. It is off by default so that a whole-file compile
 include exactly what they did before (A3v follow-up: the fixtures' bytes and
 the Rust producer are unchanged). A block's compiled form depends only on its
 dependency closure, so adding recursors moves no address already in the
-closure. -/
+closure. `withCompilerSupport` additionally follows `compilerSupportOf` at
+every visited declaration. Selected CLI scopes use `collectSelectedDeps` to
+enable both; a raw caller must opt in explicitly. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
     (withRecursors : Bool := false)
+    (withCompilerSupport : Bool := false)
     : List (Lean.Name × Lean.ConstantInfo) := Id.run do
   let mut needed : Std.HashSet Lean.Name := {}
   let mut worklist := seeds
@@ -67,6 +95,8 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
         -- must be in the closure or the block's address depends on it
         -- (`Lean.auxFamilySiblings`).
         for r in Lean.auxFamilySiblings env.constants n do refs := refs.insert r
+        if withCompilerSupport then
+          for r in compilerSupportOf env n do refs := refs.insert r
         match ci with
         -- A definition's `all` (its `mutual` siblings) is metadata the
         -- compiled entry names, and meta kernel ingress resolves each name
@@ -104,6 +134,14 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
             worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
+/-- A selected compiler/checker input closes recursors and compiler support
+to the same fixed point as ordinary source references, mutual `all` members,
+and auxiliary-family siblings. Raw collection and whole-file/module-default
+selection retain their existing contract through `collectDeps`'s defaults. -/
+def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
+    List (Lean.Name × Lean.ConstantInfo) :=
+  collectDeps env seeds (withRecursors := true) (withCompilerSupport := true)
+
 /-- Default (unfiltered) constant list for a file env. Classic files keep the
 historical whole-import-env behavior (byte-identical artifacts). Module-mode
 files seed from the module-visible surface — the `OLeanLevel.exported` name
@@ -140,7 +178,7 @@ def localConstList (fe : FileEnv) : List (Lean.Name × Lean.ConstantInfo) :=
   let env := fe.env
   let seeds := env.constants.toList.filterMap fun (n, _) =>
     if (env.getModuleIdxFor? n).isNone then some n else none
-  collectDeps env seeds (withRecursors := true)
+  collectSelectedDeps env seeds
 
 end Ix.EnvScope
 

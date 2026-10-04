@@ -25,6 +25,7 @@ import Tests.Ix.Compile.Oracle
 import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.BridgeProvenance
+import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.KernelReportTests
@@ -130,6 +131,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("compiler-reports", Tests.Ix.Compile.KernelReportTests.suite),
   ("compiler-index-safety", Tests.Ix.Compile.IndexSafety.suite),
   ("compiler-provenance", Tests.Ix.Compile.BridgeProvenance.suite),
+  ("compiler-selected-closure", Tests.Ix.Compile.SelectedClosure.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
