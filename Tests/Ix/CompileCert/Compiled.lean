@@ -29,6 +29,7 @@ def declineLabel : Decline → String
   | .mapMismatch => "map"
   | .correspondence => "correspondence"
   | .blockCorrespondence => "block-correspondence"
+  | .definitionGroupCorrespondence => "definition-group-correspondence"
 
 def run : IO Unit := do
   let env ← getCompileEnv #[prefixName]

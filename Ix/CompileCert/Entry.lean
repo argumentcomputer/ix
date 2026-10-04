@@ -108,6 +108,7 @@ structure AcceptedAssociation (input : Input) extends AdmittedArtifact input.toA
   correspondence : SourceCorrespondence ⟨input.source, input.map, pins⟩
     (streamContext pins prelude constants input.blobs input.hint) constants declarations
   block_correspondence : BlockCorrespondence ⟨input.source, input.map, pins⟩ readerState
+  definition_groups : DefinitionGroupsCovered ⟨input.source, input.map, pins⟩ constants
 
 inductive Decline where
   | admission (error : Kernel.Admission.Error)
@@ -120,6 +121,7 @@ inductive Decline where
   | mapMismatch
   | correspondence
   | blockCorrespondence
+  | definitionGroupCorrespondence
 
 /-- The runtime checks are the constructors' proof premises, not assumptions
 supplied by the caller. Structural equality decisions are kernel-checked. -/
@@ -164,7 +166,9 @@ def checkAssociation (input : Input) (artifact : AdmittedArtifact input.toArtifa
     if hm : MapAgrees cx reader then
       if hf : SourceCorrespondence cx reader artifact.constants artifact.declarations then
         if hb : BlockCorrespondence cx artifact.readerState then
-          .ok ⟨artifact, hd, hm, hf, hb⟩
+          if hg : DefinitionGroupsCovered cx artifact.constants then
+            .ok ⟨artifact, hd, hm, hf, hb, hg⟩
+          else .error .definitionGroupCorrespondence
         else .error .blockCorrespondence
       else .error .correspondence
     else .error .mapMismatch
@@ -182,8 +186,10 @@ theorem faithful_sound {input : Input} {accepted : AcceptedAssociation input}
     SourceCorrespondence ⟨input.source, input.map, accepted.pins⟩
       (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
       accepted.constants accepted.declarations ∧
-    BlockCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.readerState :=
-  ⟨accepted.admitted, accepted.domain, accepted.correspondence, accepted.block_correspondence⟩
+    BlockCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.readerState ∧
+    DefinitionGroupsCovered ⟨input.source, input.map, accepted.pins⟩ accepted.constants :=
+  ⟨accepted.admitted, accepted.domain, accepted.correspondence,
+    accepted.block_correspondence, accepted.definition_groups⟩
 
 /-- The existing target model theorem applies to these exact accepted bytes.
 This is not yet source semantic pull-back (S). -/

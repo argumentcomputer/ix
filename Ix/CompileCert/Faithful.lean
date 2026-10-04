@@ -175,6 +175,64 @@ instance (cx : ExportContext) (state : Kernel.Reader.State) :
     Decidable (BlockCorrespondence cx state) :=
   inferInstanceAs (Decidable (∀ ci ∈ cx.source.declarations, BlockMatch cx state ci))
 
+/-- Preserve the source grouping verbatim. It need not equal a wire block:
+SCC decomposition and compatible identity aliases can split or identify it. -/
+def definitionGroup : Lean.ConstantInfo → List Lean.Name
+  | .defnInfo v => v.all
+  | .thmInfo v => v.all
+  | .opaqueInfo v => v.all
+  | _ => []
+
+/-- The explicit image retains a row for every source member, including
+repeated targets. It neither selects one representative nor sorts away the
+source order. Actual installation order comes from `checked_declarations`. -/
+def definitionGroupImage (cx : ExportContext) (ci : Lean.ConstantInfo) :
+    Option (List (Lean.Name × Kernel.ConstRef Address)) :=
+  (definitionGroup ci).mapM fun n => do return (n, ← cx.map.find n)
+
+/-- Every indexed member of a touched definition block must have a source
+fiber. Comparing each source separately would not establish this reverse
+coverage. Extra untouched records remain subject to target admission. -/
+def definitionBlockCovered (cx : ExportContext) (owner : Address) (record : Ixon.Constant) : Bool :=
+  match record.info with
+  | .muts members =>
+    if members.all (fun | .defn _ => true | _ => false) &&
+        cx.map.any (fun e => decide (e.target.block = owner)) then
+      (List.range members.size).all fun index =>
+        cx.map.any fun e => decide (e.target = .member owner index)
+    else true
+  | _ => true
+
+/-- Quotient-aware definition grouping. Source member rows remain explicit;
+wire partitions may differ, but no touched wire member is silently omitted.
+Full kind/type/value comparison is separately required by correspondence. -/
+def DefinitionGroupsCovered (cx : ExportContext) (constants : List (Address × Ixon.Constant)) : Prop :=
+  (∀ ci ∈ cx.source.declarations, (definitionGroupImage cx ci).isSome = true) ∧
+  (∀ row ∈ constants, definitionBlockCovered cx row.1 row.2 = true)
+
+instance (cx : ExportContext) (constants : List (Address × Ixon.Constant)) :
+    Decidable (DefinitionGroupsCovered cx constants) :=
+  inferInstanceAs (Decidable (
+    (∀ ci ∈ cx.source.declarations, (definitionGroupImage cx ci).isSome = true) ∧
+    (∀ row ∈ constants, definitionBlockCovered cx row.1 row.2 = true)))
+
+/-- Checked reverse coverage yields a concrete source-map fiber for every
+indexed member, even when several source names share the same target. -/
+theorem DefinitionGroupsCovered.member {cx : ExportContext}
+    {constants : List (Address × Ixon.Constant)}
+    (covered : DefinitionGroupsCovered cx constants)
+    {owner : Address} {record : Ixon.Constant} {members : Array Ixon.MutConst}
+    (present : (owner, record) ∈ constants) (info : record.info = .muts members)
+    (definitions : members.all (fun | .defn _ => true | _ => false) = true)
+    (touched : cx.map.any (fun e => decide (e.target.block = owner)) = true)
+    {index : Nat} (valid : index < members.size) :
+    ∃ e ∈ cx.map, e.target = .member owner index := by
+  have checked := covered.2 (owner, record) present
+  simp only [definitionBlockCovered, info, definitions, touched, Bool.true_and, ite_true] at checked
+  have entry := List.all_eq_true.mp checked index (List.mem_range.mpr valid)
+  obtain ⟨e, he, same⟩ := List.any_eq_true.mp entry
+  exact ⟨e, he, of_decide_eq_true same⟩
+
 /-! ## Source correspondence before the reader's specified normalization
 
 A projection definition can be read as a recursor term. W must keep two
