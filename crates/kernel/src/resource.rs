@@ -1,5 +1,7 @@
-//! Combined resource and erased-type validation for addressed Ixon.
+//! Combined ownership, erased-type, and source-contract validation for addressed Ixon.
 //! Kernel typechecking on its own makes no resource promise.
+
+mod transport;
 
 use crate::anon_work::build_anon_work;
 #[cfg(test)]
@@ -276,8 +278,8 @@ pub fn profile_from_source(
   Ok(profile)
 }
 
-/// Validate both resources and erased types of the same canonical addressed
-/// closure. A caller advertising a resource claim must bind the returned
+/// Validate ownership, erased types, and source-contract transport of the same
+/// canonical addressed closure. A caller advertising a resource claim must bind the returned
 /// profile address and this validator's identity to its subject.
 pub fn validate(
   env: &Env,
@@ -298,6 +300,7 @@ pub fn validate(
     // work item, as in the existing anonymous driver.
     checker.clear_reduction_caches();
   }
+  transport::gate(env, &resolved, profile.limits)?;
   Ok(resolved)
 }
 
@@ -495,6 +498,83 @@ mod tests {
     // This ordinary component has no resource annotation. It still must typecheck.
     assert!(check_resources(&malformed, &Profile::default()).is_ok());
     assert!(validate(&malformed, &Profile::default()).is_err());
+  }
+
+  #[test]
+  fn combined_rejects_rehashed_malformed_and_unsafe_families() {
+    for variant in 0..5 {
+      let env = Env::new();
+      let mut ind = Inductive {
+        is_unsafe: false,
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        typ: Expr::sort(0),
+        ctors: vec![Constructor {
+          is_unsafe: false,
+          lvls: 0,
+          cidx: 0,
+          params: 0,
+          fields: 0,
+          typ: Expr::rec(0, vec![]),
+        }],
+      };
+      match variant {
+        0 => ind.indices = 1,
+        1 => ind.ctors[0].typ = Expr::sort(0),
+        2 => ind.is_unsafe = true,
+        3 => {
+          ind.is_unsafe = true;
+          ind.ctors[0].is_unsafe = true;
+        },
+        4 => ind.ctors[0].is_unsafe = true,
+        _ => unreachable!(),
+      }
+      let block = store(
+        &env,
+        Constant::with_tables(
+          ConstantInfo::Muts(vec![MutConst::Indc(ind)]),
+          vec![],
+          vec![],
+          vec![Univ::zero()],
+        ),
+      );
+      let typ = store(&env, indc_proj_constant(0, block.clone()));
+      store(&env, ctor_proj_constant(0, 0, block));
+      let input = BinderContract {
+        uses: Uses::Linear,
+        value: ValueContract::local_shared(),
+      };
+      store(
+        &env,
+        Constant::with_tables(
+          ConstantInfo::Defn(Definition {
+            kind: DefKind::Definition,
+            safety: DefinitionSafety::Safe,
+            lvls: 0,
+            typ: Expr::all_contract(
+              input,
+              ValueContract::local_shared(),
+              Expr::reference(0, vec![]),
+              Expr::reference(0, vec![]),
+            ),
+            value: Expr::lam_contract(
+              input,
+              Expr::reference(0, vec![]),
+              Expr::var(0),
+            ),
+          }),
+          vec![],
+          vec![typ],
+          vec![],
+        ),
+      );
+      let result = validate(&env, &Profile::default());
+      assert!(
+        result.is_err(),
+        "rehashed malformed family {variant}: {result:?}"
+      );
+    }
   }
 
   #[test]

@@ -6,11 +6,13 @@
 //! an unbound primitive profile.
 
 pub mod addressed;
+pub mod transport_support;
 
 use crate::contract::{
   BinderContract, LetContract, LetKind, Locality, ValueContract,
 };
 use crate::expr::{Expr, Owned, Uses};
+use num_bigint::BigUint;
 use std::sync::Arc;
 
 pub type Term = Arc<Expr>;
@@ -109,6 +111,33 @@ pub struct Field {
   pub binders: u64,
 }
 
+/// Canonical projection reduction for a safe single-constructor structure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectionInfo {
+  pub type_ref: u64,
+  pub constructor: u64,
+  pub params: usize,
+  pub fields: usize,
+}
+
+/// Canonical source rule resolved to its exact constructor identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConversionRule {
+  pub constructor: u64,
+  pub params: usize,
+  pub fields: usize,
+  pub rhs: Term,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConversionRecursor {
+  pub index: u64,
+  /// Parameters, motives and minor premises supplied to the rule.
+  pub leading: usize,
+  pub major: usize,
+  pub rules: Vec<ConversionRule>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Program {
   pub declarations: Vec<Declaration>,
@@ -117,6 +146,14 @@ pub struct Program {
   pub auxiliary: Vec<(usize, Term)>,
   pub sharing: Vec<Term>,
   pub fields: Vec<Field>,
+  pub projections: Vec<ProjectionInfo>,
+  /// Safe index-free source rules; canonical erased validation is a prerequisite.
+  /// These affect conversion, not runtime case permissions.
+  pub conversion_recursors: Vec<ConversionRecursor>,
+  /// Authenticated blob values indexed by the same IDs as Expr::Nat.
+  pub natural_values: Vec<BigUint>,
+  /// Canonical Nat.zero/Nat.succ, only with the canonical Nat literal type.
+  pub natural_constructors: Option<(u64, u64)>,
   pub nat_type: Option<Term>,
   pub string_type: Option<Term>,
   pub shareable_types: Vec<u64>,
@@ -317,6 +354,8 @@ struct Binding {
 
 #[derive(Clone, Debug)]
 struct State {
+  resource_whnf_memo_enabled: bool,
+  resource_whnf_memo: Vec<(Term, Term)>,
   bindings: Vec<Binding>,
   parents: Vec<Option<usize>>,
   remaining: usize,
@@ -327,10 +366,30 @@ struct State {
   plain_heads: Vec<(u64, bool)>,
 }
 
+/// Lexical constructor fact, valid only within one alternative. The term is
+/// written after that alternative's supplied binders. It is not an initializer
+/// or an ownership permission.
+#[derive(Clone, Debug)]
+struct CaseValue {
+  owner: usize,
+  context_size: usize,
+  value: Term,
+}
+#[derive(Clone, Debug)]
+struct CaseRefinement {
+  owner: usize,
+  canonical: ConversionRecursor,
+  parameters: Vec<Term>,
+}
+
 #[derive(Clone, Debug, Default)]
 struct Context {
   vars: Vec<usize>,
   scope: usize,
+  /// Evaluated initializers in their original outer context, for type
+  /// conversion only. Runtime variable reads retain their owner identities.
+  let_values: Vec<(usize, Term)>,
+  case_values: Vec<CaseValue>,
 }
 
 fn add(a: Uses, b: Uses) -> Uses {
@@ -433,6 +492,8 @@ impl<'a> Checker<'a> {
     Self {
       program,
       state: State {
+        resource_whnf_memo_enabled: false,
+        resource_whnf_memo: vec![],
         bindings: vec![],
         parents: vec![None],
         remaining: limits.steps,
@@ -727,7 +788,14 @@ impl<'a> Checker<'a> {
   }
   fn whnf(&mut self, fuel: usize, e: &Term) -> Result<Term, Error> {
     let fuel = self.tick(fuel)?;
-    match e.as_ref() {
+    if self.state.resource_whnf_memo_enabled {
+      if let Some((_, value)) =
+        self.state.resource_whnf_memo.iter().find(|(key, _)| key == e)
+      {
+        return Ok(value.clone());
+      }
+    }
+    let result = (|| match e.as_ref() {
       Expr::Share(i) => self.whnf(fuel, &self.expansion(*i)?),
       Expr::Let(_, _, v, b) => {
         let body = self.substitute(fuel, b, v, 0)?;
@@ -739,17 +807,117 @@ impl<'a> Checker<'a> {
           let b = self.substitute(fuel, b, a, 0)?;
           self.whnf(fuel, &b)
         } else {
-          Ok(Expr::app(f, a.clone()))
+          let rebuilt = Expr::app(f, a.clone());
+          if self.program.conversion_recursors.is_empty() {
+            return Ok(rebuilt);
+          }
+          let (head, args) = self.split_app(fuel, &rebuilt)?;
+          let Expr::Ref(index, _) = head.as_ref() else {
+            return Ok(rebuilt);
+          };
+          let Some(recursor) = self
+            .program
+            .conversion_recursors
+            .iter()
+            .find(|r| r.index == *index)
+            .cloned()
+          else {
+            return Ok(rebuilt);
+          };
+          if args.len() <= recursor.major {
+            return Ok(rebuilt);
+          }
+          let major = self.whnf(fuel, &args[recursor.major])?;
+          let (ctor, fields) = self.split_app(fuel, &major)?;
+          let Expr::Ref(constructor, _) = ctor.as_ref() else {
+            return Ok(rebuilt);
+          };
+          let Some(rule) =
+            recursor.rules.iter().find(|r| r.constructor == *constructor)
+          else {
+            return Ok(rebuilt);
+          };
+          if rule.params.checked_add(rule.fields) != Some(fields.len())
+            || recursor.leading > recursor.major
+          {
+            return Err(Error::Unsupported(
+              "recursor conversion constructor arity mismatch",
+            ));
+          }
+          let values = args[..recursor.leading]
+            .iter()
+            .chain(&fields[rule.params..])
+            .chain(&args[recursor.major + 1..]);
+          let reduced =
+            values.fold(rule.rhs.clone(), |f, a| Expr::app(f, a.clone()));
+          self.whnf(fuel, &reduced)
         }
       },
       Expr::Ref(i, _) => match self.declaration(*i)?.body.clone() {
         Some(body) => self.whnf(fuel, &body),
         None => Ok(e.clone()),
       },
+      Expr::Prj(typ, field, value) => {
+        let value = self.whnf(fuel, value)?;
+        let (head, args) = self.split_app(fuel, &value)?;
+        if let Expr::Ref(constructor, _) = head.as_ref()
+          && let Some(info) = self
+            .program
+            .projections
+            .iter()
+            .find(|info| {
+              info.type_ref == *typ && info.constructor == *constructor
+            })
+            .cloned()
+        {
+          let field = usize::try_from(*field).map_err(|_| Error::Budget)?;
+          let total =
+            info.params.checked_add(info.fields).ok_or(Error::Budget)?;
+          if field < info.fields && args.len() == total {
+            return self.whnf(fuel, &args[info.params + field]);
+          }
+        }
+        Ok(Expr::prj(*typ, *field, value))
+      },
       Expr::Rec(..) => {
         Err(Error::Unsupported("unresolved recursive reference"))
       },
       _ => Ok(e.clone()),
+    })()?;
+    if self.state.resource_whnf_memo_enabled {
+      self.state.resource_whnf_memo.push((e.clone(), result.clone()));
+    }
+    Ok(result)
+  }
+  /// Do not expand large binary literals to unary syntax. Constructor chains
+  /// consume the usual depth and step budget; payload IDs are looked up.
+  fn natural_value(
+    &mut self,
+    fuel: usize,
+    e: &Term,
+  ) -> Result<Option<BigUint>, Error> {
+    let fuel = self.tick(fuel)?;
+    let Some((zero, succ)) = self.program.natural_constructors else {
+      return Ok(None);
+    };
+    let e = self.whnf(fuel, e)?;
+    match e.as_ref() {
+      Expr::Nat(payload) => {
+        let i = usize::try_from(*payload).map_err(|_| Error::Budget)?;
+        Ok(self.program.natural_values.get(i).cloned())
+      },
+      Expr::Ref(i, levels) if *i == zero && levels.is_empty() => {
+        Ok(Some(BigUint::from(0u32)))
+      },
+      Expr::App(head, arg) => {
+        if matches!(head.as_ref(), Expr::Ref(i, levels) if *i == succ && levels.is_empty())
+        {
+          Ok(self.natural_value(fuel, arg)?.map(|n| n + 1u32))
+        } else {
+          Ok(None)
+        }
+      },
+      _ => Ok(None),
     }
   }
   fn compatible(
@@ -782,20 +950,129 @@ impl<'a> Checker<'a> {
       },
       (Expr::Sort(_), Expr::Sort(_)) => true,
       (Expr::Ref(i, _), Expr::Ref(j, _)) => i == j,
+      (Expr::Nat(_), _) | (_, Expr::Nat(_)) => {
+        match (self.natural_value(fuel, &a)?, self.natural_value(fuel, &b)?) {
+          (Some(x), Some(y)) => x == y,
+          _ => a == b,
+        }
+      },
       _ => a == b,
     })
   }
   fn require_type(
     &mut self,
     fuel: usize,
+    ctx: &Context,
     actual: &Term,
     expected: &Term,
   ) -> Result<(), Error> {
     if self.compatible(fuel, actual, expected)? {
+      return Ok(());
+    }
+    if ctx.let_values.is_empty() && ctx.case_values.is_empty() {
+      return Err(Error::TypeMismatch);
+    }
+    let actual = self.expand_local_values(fuel, ctx, 0, actual)?;
+    let expected = self.expand_local_values(fuel, ctx, 0, expected)?;
+    if self.compatible(fuel, &actual, &expected)? {
       Ok(())
     } else {
       Err(Error::TypeMismatch)
     }
+  }
+  /// Expand local definitions in types without changing runtime expressions
+  /// or erasing arrow/lambda contracts. The initializer predates its binding.
+  fn expand_local_values(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    depth: u64,
+    expression: &Term,
+  ) -> Result<Term, Error> {
+    let fuel = self.tick(fuel)?;
+    Ok(match expression.as_ref() {
+      Expr::Var(index) if *index >= depth => {
+        let n = usize::try_from(*index - depth)
+          .map_err(|_| Error::Unsupported("variable index overflow"))?;
+        if n >= ctx.vars.len() {
+          return Err(Error::Unbound(n));
+        }
+        let id = ctx.vars[ctx.vars.len() - 1 - n];
+        if let Some(fact) = ctx.case_values.iter().find(|f| f.owner == id) {
+          let distance = ctx.vars.len().checked_sub(fact.context_size).ok_or(
+            Error::Unsupported(
+              "case conversion fact escaped its lexical context",
+            ),
+          )?;
+          let amount = u64::try_from(distance)
+            .map_err(|_| Error::Budget)?
+            .checked_add(depth)
+            .ok_or(Error::Budget)?;
+          let value = self.shift(fuel, &fact.value, amount, 0)?;
+          return self.expand_local_values(fuel, ctx, depth, &value);
+        }
+        let Some((_, value)) =
+          ctx.let_values.iter().find(|(key, _)| *key == id)
+        else {
+          return Ok(expression.clone());
+        };
+        let amount = index
+          .checked_add(1)
+          .ok_or(Error::Unsupported("variable index overflow"))?;
+        let value = self.shift(fuel, value, amount, 0)?;
+        self.expand_local_values(fuel, ctx, depth, &value)?
+      },
+      Expr::Share(index) => {
+        let value = self.expansion(*index)?;
+        self.expand_local_values(fuel, ctx, depth, &value)?
+      },
+      Expr::App(f, a) => Expr::app(
+        self.expand_local_values(fuel, ctx, depth, f)?,
+        self.expand_local_values(fuel, ctx, depth, a)?,
+      ),
+      Expr::All(c, r, a, b) => Expr::all_contract(
+        *c,
+        *r,
+        self.expand_local_values(fuel, ctx, depth, a)?,
+        self.expand_local_values(
+          fuel,
+          ctx,
+          depth
+            .checked_add(1)
+            .ok_or(Error::Unsupported("variable index overflow"))?,
+          b,
+        )?,
+      ),
+      Expr::Lam(c, a, b) => Expr::lam_contract(
+        *c,
+        self.expand_local_values(fuel, ctx, depth, a)?,
+        self.expand_local_values(
+          fuel,
+          ctx,
+          depth
+            .checked_add(1)
+            .ok_or(Error::Unsupported("variable index overflow"))?,
+          b,
+        )?,
+      ),
+      Expr::Let(c, a, v, b) => Expr::let_contract(
+        *c,
+        self.expand_local_values(fuel, ctx, depth, a)?,
+        self.expand_local_values(fuel, ctx, depth, v)?,
+        self.expand_local_values(
+          fuel,
+          ctx,
+          depth
+            .checked_add(1)
+            .ok_or(Error::Unsupported("variable index overflow"))?,
+          b,
+        )?,
+      ),
+      Expr::Prj(t, i, v) => {
+        Expr::prj(*t, *i, self.expand_local_values(fuel, ctx, depth, v)?)
+      },
+      _ => expression.clone(),
+    })
   }
   fn arrow(&mut self, fuel: usize, typ: &Term) -> Result<Arrow, Error> {
     let t = self.whnf(fuel, typ)?;
@@ -1136,6 +1413,7 @@ impl<'a> Checker<'a> {
   fn finish(
     &mut self,
     fuel: usize,
+    ctx: &Context,
     destination: usize,
     expected: Expected,
     value: Value,
@@ -1156,7 +1434,7 @@ impl<'a> Checker<'a> {
     match expected {
       None => Ok(value),
       Some((typ, contract)) => {
-        self.require_type(fuel, &value.typ, &typ)?;
+        self.require_type(fuel, ctx, &value.typ, &typ)?;
         self.consume_as(contract, destination, value)
       },
     }
@@ -1182,7 +1460,7 @@ impl<'a> Checker<'a> {
     let scope =
       if result.locality == Locality::Local { destination } else { ctx.scope };
     let f = self.analyze(fuel, ctx, f, None, scope, grade)?;
-    self.require_type(fuel, &f.typ, &fn_type)?;
+    self.require_type(fuel, ctx, &f.typ, &fn_type)?;
     self.invoke(&f)?;
     let arg =
       self.analyze_argument(fuel, ctx, a, domain, input, scope, grade)?;
@@ -1993,6 +2271,7 @@ impl<'a> Checker<'a> {
     ctx: &Context,
     branches: &[(Term, Term, Vec<bool>)],
     supply: &Supply,
+    refinement: Option<&CaseRefinement>,
     extra: &[Term],
     contract: Option<ValueContract>,
     output_type: Term,
@@ -2027,6 +2306,30 @@ impl<'a> Checker<'a> {
         inner.vars.push(id);
         body = rest;
         typ = codomain;
+      }
+      if let Some(refinement) = refinement {
+        let rule = &refinement.canonical.rules[j];
+        if rule.fields > entered.len() {
+          return Err(Error::Unsupported(
+            "case conversion field telescope mismatch",
+          ));
+        }
+        let mut value = Expr::reference(rule.constructor, vec![]);
+        for parameter in &refinement.parameters {
+          value = Expr::app(
+            value,
+            self.shift(fuel, parameter, entered.len() as u64, 0)?,
+          );
+        }
+        for k in 0..rule.fields {
+          value = Expr::app(value, Expr::var((entered.len() - 1 - k) as u64));
+        }
+        inner.case_values.retain(|fact| fact.owner != refinement.owner);
+        inner.case_values.push(CaseValue {
+          owner: refinement.owner,
+          context_size: inner.vars.len(),
+          value,
+        });
       }
       for x in extra {
         let x = self.shift(fuel, x, entered.len() as u64, 0)?;
@@ -2133,8 +2436,8 @@ impl<'a> Checker<'a> {
     let right_proofs = self.proofs(fuel, ctx, &right_type)?;
     self.state.bindings = before;
     if left_proofs.is_empty() && right_proofs.is_empty() && extra.is_empty() {
-      self.require_type(fuel, &left_type, &right_type)?;
-      self.require_type(fuel, &left_type, &output_type)?;
+      self.require_type(fuel, ctx, &left_type, &right_type)?;
+      self.require_type(fuel, ctx, &left_type, &output_type)?;
     }
     let contract = match expected {
       Some((_, c)) => *c,
@@ -2145,6 +2448,7 @@ impl<'a> Checker<'a> {
       ctx,
       &[(left, left_type, left_proofs), (right, right_type, right_proofs)],
       &Supply::Proofs,
+      None,
       extra,
       Some(contract),
       output_type,
@@ -2312,11 +2616,47 @@ impl<'a> Checker<'a> {
         )
       })
       .collect();
+    // Refine only a lexical major, never a potentially aliased Value.place.
+    let lexical_major = self.unshare(fuel, &args[info.arity() - 1])?;
+    let refinement = if let Expr::Var(n) = lexical_major.as_ref() {
+      let n = usize::try_from(*n).map_err(|_| Error::Budget)?;
+      if n < ctx.vars.len() {
+        self
+          .program
+          .conversion_recursors
+          .iter()
+          .find(|r| {
+            info.indices == 0
+              && info.fields.len() == info.minors
+              && info.binders.len() == info.minors
+              && r.index == index
+              && r.major == info.arity() - 1
+              && r.leading == info.params + info.motives + info.minors
+              && r.rules.len() == info.minors
+              && (0..info.minors).all(|j| {
+                r.rules[j].params == info.params
+                  && r.rules[j].fields == info.fields[j]
+                  && info.fields[j] <= info.binders[j]
+              })
+          })
+          .cloned()
+          .map(|canonical| CaseRefinement {
+            owner: ctx.vars[ctx.vars.len() - 1 - n],
+            canonical,
+            parameters: args[..info.params].to_vec(),
+          })
+      } else {
+        None
+      }
+    } else {
+      None
+    };
     self.alternatives(
       fuel,
       ctx,
       &branches,
       &Supply::Fields { fields: info.fields.clone(), major },
+      refinement.as_ref(),
       extra,
       expected.as_ref().map(|(_, c)| *c),
       output_type,
@@ -2337,7 +2677,7 @@ impl<'a> Checker<'a> {
     if grade == Uses::Erased {
       let typ = self.type_of(fuel, ctx, e)?;
       if let Some((expected_type, _)) = expected {
-        self.require_type(fuel, &typ, &expected_type)?;
+        self.require_type(fuel, ctx, &typ, &expected_type)?;
       }
       return Ok(Value::fresh(typ));
     }
@@ -2408,7 +2748,7 @@ impl<'a> Checker<'a> {
             if *input != declared {
               return Err(Error::BinderMismatch);
             }
-            self.require_type(fuel, domain, &t)?;
+            self.require_type(fuel, ctx, domain, &t)?;
             (r, Some(b))
           },
           None => (ValueContract::shared(), None),
@@ -2543,7 +2883,7 @@ impl<'a> Checker<'a> {
               return Err(Error::InvalidBorrow);
             }
             let mut v = self.place(fuel, ctx, initializer)?;
-            self.require_type(fuel, &v.typ, typ)?;
+            self.require_type(fuel, ctx, &v.typ, typ)?;
             if !self.is_shareable(fuel, typ)? && !v.duplicable && !v.freezable {
               return Err(Error::Nonduplicable);
             }
@@ -2569,6 +2909,7 @@ impl<'a> Checker<'a> {
         let mut inner = ctx.clone();
         inner.vars.push(id);
         inner.scope = scope;
+        inner.let_values.push((id, initializer.clone()));
         let body_expected = match &expected {
           None => None,
           Some((t, c)) => Some((self.shift(fuel, t, 1, 0)?, *c)),
@@ -2705,7 +3046,7 @@ impl<'a> Checker<'a> {
         }
       },
     };
-    self.finish(fuel, destination, expected, value)
+    self.finish(fuel, ctx, destination, expected, value)
   }
 }
 
@@ -2728,6 +3069,7 @@ pub fn check_definition_crossed(
   let declaration =
     program.declarations.get(index).ok_or(Error::BadReference(index as u64))?;
   let mut checker = Checker::new(program, limits);
+  checker.state.resource_whnf_memo_enabled = true;
   let body = match program.equations.iter().find(|(d, _)| *d == index as u64) {
     Some((_, equation)) => {
       checker.equation_body(limits.depth, index as u64, *equation)?
@@ -2740,7 +3082,7 @@ pub fn check_definition_crossed(
   let scope = checker.scope(0)?;
   checker.analyze(
     limits.depth,
-    &Context { scope, vars: vec![] },
+    &Context { scope, ..Context::default() },
     &body,
     Some((declaration.typ.clone(), ValueContract::shared())),
     scope,
@@ -3380,6 +3722,384 @@ mod tests {
   fn shared_resource_acceptance_and_rejection_fixtures() {
     let text = include_str!("../../../Tests/Fixtures/ixon-v4/resource.tsv");
     assert!(run_fixture_lines(&program(), text) >= 55);
+  }
+
+  fn conversion_program() -> Program {
+    Program {
+      declarations: vec![
+        Declaration {
+          typ: Expr::sort(0),
+          body: None,
+          kind: DeclKind::TypeConstructor,
+        },
+        Declaration { typ: nat(), body: None, kind: DeclKind::Constructor },
+        Declaration {
+          typ: Expr::all(nat(), nat()),
+          body: None,
+          kind: DeclKind::Constructor,
+        },
+        Declaration {
+          typ: Expr::all(Expr::sort(0), Expr::sort(0)),
+          body: None,
+          kind: DeclKind::TypeConstructor,
+        },
+        Declaration {
+          typ: Expr::all(
+            Expr::sort(0),
+            Expr::all(
+              Expr::var(0),
+              Expr::app(Expr::reference(3, vec![]), Expr::var(1)),
+            ),
+          ),
+          body: None,
+          kind: DeclKind::Constructor,
+        },
+        Declaration { typ: nat(), body: None, kind: DeclKind::Constructor },
+        Declaration {
+          typ: Expr::all(nat(), Expr::sort(0)),
+          body: None,
+          kind: DeclKind::TypeConstructor,
+        },
+        Declaration {
+          typ: Expr::all(
+            nat(),
+            Expr::app(Expr::reference(6, vec![]), Expr::var(0)),
+          ),
+          body: None,
+          kind: DeclKind::Assumption,
+        },
+      ],
+      sharing: vec![Arc::new(Expr::Share(0))],
+      nat_type: Some(nat()),
+      projections: vec![ProjectionInfo {
+        type_ref: 3,
+        constructor: 4,
+        params: 1,
+        fields: 1,
+      }],
+      natural_values: vec![
+        37u32.into(),
+        0u32.into(),
+        1u32.into(),
+        37u32.into(),
+        BigUint::from(1u32) << 100usize,
+      ],
+      natural_constructors: Some((1, 2)),
+      ..Program::default()
+    }
+  }
+
+  #[test]
+  fn shared_resource_conversion_fixtures() {
+    let p = conversion_program();
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-conversion.tsv");
+    let mut count = 0;
+    for line in
+      text.lines().filter(|line| !line.starts_with('#') && !line.is_empty())
+    {
+      let cols: Vec<_> = line.split('\t').collect();
+      assert_eq!(cols.len(), 5);
+      let actual = Checker::new(&p, Limits::default()).compatible(
+        cols[2].parse().unwrap(),
+        &parse(cols[3]),
+        &parse(cols[4]),
+      );
+      let code = match actual {
+        Ok(true) => "equal",
+        Ok(false) => "different",
+        Err(Error::Budget) => "budget",
+        Err(_) => "unexpected-error",
+      };
+      assert_eq!(code, cols[1], "{}", cols[0]);
+      count += 1;
+    }
+    assert_eq!(count, 18);
+    let disabled = Program { natural_constructors: None, ..p };
+    assert_eq!(
+      Checker::new(&disabled, Limits::default()).compatible(
+        32,
+        &Arc::new(Expr::Nat(1)),
+        &Expr::reference(1, vec![])
+      ),
+      Ok(false)
+    );
+  }
+
+  #[test]
+  fn shared_local_resource_conversion_fixtures() {
+    let p = conversion_program();
+    let successor = |e| Expr::app(Expr::reference(2, vec![]), e);
+    let ctx = Context {
+      vars: vec![40, 7, 91],
+      let_values: vec![
+        (7, successor(Expr::var(0))),
+        (91, successor(Expr::var(0))),
+      ],
+      ..Context::default()
+    };
+    let text = include_str!(
+      "../../../Tests/Fixtures/ixon-v4/resource-local-conversion.tsv"
+    );
+    let mut count = 0;
+    for line in
+      text.lines().filter(|line| !line.starts_with('#') && !line.is_empty())
+    {
+      let cols: Vec<_> = line.split('\t').collect();
+      assert_eq!(cols.len(), 5);
+      let result = Checker::new(&p, Limits::default()).require_type(
+        cols[2].parse().unwrap(),
+        &ctx,
+        &parse(cols[3]),
+        &parse(cols[4]),
+      );
+      let code = match result {
+        Ok(()) => "equal",
+        Err(Error::TypeMismatch) => "different",
+        Err(Error::Unbound(_)) => "unbound",
+        Err(Error::Budget) => "budget",
+        Err(_) => "unexpected-error",
+      };
+      assert_eq!(code, cols[1], "{}", cols[0]);
+      count += 1;
+    }
+    assert_eq!(count, 8);
+    let body = Expr::lam(
+      nat(),
+      Expr::let_contract(
+        LetContract::plain(false),
+        nat(),
+        successor(Expr::var(0)),
+        Expr::app(Expr::reference(7, vec![]), Expr::var(0)),
+      ),
+    );
+    for (index, accepted) in
+      [(successor(Expr::var(0)), true), (Expr::var(0), false)]
+    {
+      let expected =
+        Expr::all(nat(), Expr::app(Expr::reference(6, vec![]), index));
+      let result = Checker::new(&p, Limits::default()).analyze(
+        128,
+        &Context::default(),
+        &body,
+        Some((expected, ValueContract::shared())),
+        0,
+        Uses::Linear,
+      );
+      assert_eq!(result.is_ok(), accepted, "dependent local let: {result:?}");
+    }
+  }
+
+  #[test]
+  fn shared_iota_resource_conversion_fixtures() {
+    let mut p = conversion_program();
+    p.declarations.extend([
+      Declaration { typ: nat(), body: None, kind: DeclKind::Assumption },
+      Declaration { typ: nat(), body: None, kind: DeclKind::Assumption },
+    ]);
+    let box_value =
+      |e| Expr::app(Expr::app(Expr::reference(4, vec![]), nat()), e);
+    for index in [8, 9] {
+      let body = if index == 8 {
+        Expr::app(Expr::var(1), Expr::var(0))
+      } else {
+        Expr::app(
+          Expr::app(Expr::reference(9, vec![]), Expr::var(1)),
+          box_value(Expr::var(0)),
+        )
+      };
+      p.conversion_recursors.push(ConversionRecursor {
+        index,
+        leading: 1,
+        major: 1,
+        rules: vec![ConversionRule {
+          constructor: 4,
+          params: 1,
+          fields: 1,
+          rhs: Expr::lam(Expr::all(nat(), nat()), Expr::lam(nat(), body)),
+        }],
+      });
+    }
+    let text = include_str!(
+      "../../../Tests/Fixtures/ixon-v4/resource-iota-conversion.tsv"
+    );
+    let mut count = 0;
+    for line in
+      text.lines().filter(|line| !line.starts_with('#') && !line.is_empty())
+    {
+      let cols: Vec<_> = line.split('\t').collect();
+      assert_eq!(cols.len(), 5);
+      let result = Checker::new(&p, Limits::default()).compatible(
+        cols[2].parse().unwrap(),
+        &parse(cols[3]),
+        &parse(cols[4]),
+      );
+      let code = match result {
+        Ok(true) => "equal",
+        Ok(false) => "different",
+        Err(Error::Unsupported(_)) => "unsupported",
+        Err(Error::Budget) => "budget",
+        Err(_) => "unexpected-error",
+      };
+      assert_eq!(code, cols[1], "{}", cols[0]);
+      count += 1;
+    }
+    assert_eq!(count, 11);
+  }
+
+  #[test]
+  fn exact_whnf_memo_is_opt_in_and_records_only_success() {
+    let p = conversion_program();
+    let linear = Expr::lam_contract(
+      BinderContract::plain(Uses::Linear),
+      nat(),
+      Expr::var(0),
+    );
+    let many = Expr::lam(nat(), Expr::var(0));
+    let mut checker = Checker::new(&p, Limits::default());
+    checker.state.resource_whnf_memo_enabled = true;
+    assert_ne!(
+      checker.whnf(32, &linear).unwrap(),
+      checker.whnf(32, &many).unwrap()
+    );
+    assert_eq!(checker.state.resource_whnf_memo.len(), 2);
+    let before = checker.state.remaining;
+    assert_eq!(checker.whnf(1, &linear).unwrap(), linear);
+    assert_eq!(checker.state.remaining, before - 1);
+    let mut cyclic = Checker::new(&p, Limits::default());
+    cyclic.state.resource_whnf_memo_enabled = true;
+    assert_eq!(cyclic.whnf(8, &Arc::new(Expr::Share(0))), Err(Error::Budget));
+    assert!(cyclic.state.resource_whnf_memo.is_empty());
+    let first = Program {
+      declarations: vec![Declaration {
+        typ: nat(),
+        body: Some(Arc::new(Expr::Nat(1))),
+        kind: DeclKind::Definition,
+      }],
+      ..Program::default()
+    };
+    let second = Program {
+      declarations: vec![Declaration {
+        typ: nat(),
+        body: Some(Arc::new(Expr::Nat(0))),
+        kind: DeclKind::Definition,
+      }],
+      ..Program::default()
+    };
+    let mut mixed = Checker::new(&first, Limits::default());
+    mixed.whnf(32, &Expr::reference(0, vec![])).unwrap();
+    mixed.program = &second;
+    assert_eq!(
+      mixed.whnf(32, &Expr::reference(0, vec![])).unwrap(),
+      Arc::new(Expr::Nat(0))
+    );
+    assert!(mixed.state.resource_whnf_memo.is_empty());
+  }
+
+  #[test]
+  fn lexical_case_refinement_context_controls() {
+    let p = Program::default();
+    let ctor = Expr::reference(0, vec![]);
+    let construct =
+      |a, b| Expr::app(Expr::app(ctor.clone(), Expr::var(a)), Expr::var(b));
+    let constructed = construct(1, 0);
+    let lifted = construct(2, 1);
+    let branch = Context {
+      vars: vec![0, 1, 2],
+      case_values: vec![CaseValue {
+        owner: 0,
+        context_size: 3,
+        value: constructed.clone(),
+      }],
+      ..Context::default()
+    };
+    let deeper = Context { vars: vec![0, 1, 2, 3], ..branch.clone() };
+    let alias =
+      Context { let_values: vec![(3, Expr::var(2))], ..deeper.clone() };
+    let priority =
+      Context { let_values: vec![(0, Expr::sort(0))], ..branch.clone() };
+    let sibling = Context { case_values: vec![], ..branch.clone() };
+    let with_ih = Context {
+      vars: vec![0, 1, 2, 3],
+      case_values: vec![CaseValue {
+        owner: 0,
+        context_size: 4,
+        value: lifted.clone(),
+      }],
+      ..Context::default()
+    };
+    let linear = BinderContract::plain(Uses::Linear);
+    for (name, ctx, input, expected) in [
+      (
+        "two fields preserve order",
+        branch.clone(),
+        Expr::var(2),
+        constructed.clone(),
+      ),
+      ("distinct lexical major", branch.clone(), Expr::var(1), Expr::var(1)),
+      ("later lexical binder", deeper, Expr::var(3), lifted.clone()),
+      (
+        "lambda depth",
+        branch.clone(),
+        Expr::lam(Expr::sort(0), Expr::var(3)),
+        Expr::lam(Expr::sort(0), lifted.clone()),
+      ),
+      (
+        "bound variable untouched",
+        branch.clone(),
+        Expr::lam(Expr::sort(0), Expr::var(0)),
+        Expr::lam(Expr::sort(0), Expr::var(0)),
+      ),
+      (
+        "full arrow contracts preserved",
+        branch.clone(),
+        Expr::all_contract(
+          linear,
+          ValueContract::unique(),
+          Expr::var(2),
+          Expr::var(3),
+        ),
+        Expr::all_contract(
+          linear,
+          ValueContract::unique(),
+          constructed.clone(),
+          lifted.clone(),
+        ),
+      ),
+      ("actual let exposes case major", alias, Expr::var(0), lifted),
+      ("case precedes initializer", priority, Expr::var(2), constructed),
+      ("no sibling fact", sibling, Expr::var(2), Expr::var(2)),
+      (
+        "field vector skips trailing IH",
+        with_ih,
+        Expr::var(3),
+        construct(2, 1),
+      ),
+    ] {
+      let result = Checker::new(&p, Limits { depth: 100, steps: 10000 })
+        .expand_local_values(100, &ctx, 0, &input);
+      assert_eq!(result, Ok(expected), "{name}");
+    }
+    let escaped = Context { vars: vec![0], ..branch };
+    let cyclic = Context {
+      vars: vec![0],
+      case_values: vec![CaseValue {
+        owner: 0,
+        context_size: 1,
+        value: Expr::var(0),
+      }],
+      ..Context::default()
+    };
+    for (name, ctx) in
+      [("escaped context", escaped), ("cyclic fact bounded", cyclic)]
+    {
+      assert!(
+        Checker::new(&p, Limits { depth: 20, steps: 10000 })
+          .expand_local_values(20, &ctx, 0, &Expr::var(0))
+          .is_err(),
+        "{name}"
+      );
+    }
   }
 
   /// The base program extended for the usage and ownership modes. Mirrors
@@ -4569,3 +5289,6 @@ mod tests {
     }
   }
 }
+
+#[cfg(test)]
+mod case_admission_tests;

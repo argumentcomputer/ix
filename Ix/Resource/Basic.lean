@@ -85,6 +85,23 @@ structure Binding where
   deriving BEq, Repr, Inhabited
 
 structure State where
+  /-- Opt-in conversion cache for a single immutable Program. Only the fresh
+  definition-checking entry point enables it; mixed-program typing actions
+  leave it disabled. Entries record completed reductions, never pending ones. -/
+  resourceWhnfMemoEnabled : Bool := false
+  resourceWhnfMemo : Array (Ixon.Expr × Ixon.Expr) := #[]
+  /-- Source-contract typing universe pool; unused by resource diagnostics. -/
+  transportUniverses : Array Ixon.Univ := #[]
+  /-- Exact source weak-head reductions, scoped to one fixed-program run. -/
+  transportWhnf : Std.HashMap Ixon.Expr Ixon.Expr := {}
+  /-- Successful full checks only, in one fixed source/runtime program pair. -/
+  transportChecked : Std.HashMap
+    (Ixon.Expr × Ixon.Expr × Array (Ixon.BinderContract × Ixon.Expr) × Nat × Nat) Unit := {}
+  transportTypes : Std.HashMap
+    (Ixon.Expr × Array (Ixon.BinderContract × Ixon.Expr)) Ixon.Expr := {}
+  transportCompatible : Std.HashMap
+    (Ixon.Expr × Ixon.Expr × Array (Ixon.BinderContract × Ixon.Expr)) Bool := {}
+  transportInstances : Std.HashMap (Ixon.Expr × Array Ixon.Univ) Ixon.Expr := {}
   bindings : Array Binding := #[]
   /-- Root 0 has no parent. Every new parent precedes its child. -/
   parents : Array (Option ScopeId) := #[none]

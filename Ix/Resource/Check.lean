@@ -68,6 +68,34 @@ structure RecursorInfo where
   binders : Array Nat
   deriving BEq, Repr, Inhabited
 
+/-- Canonical projection reduction for a safe, single-constructor structure.
+The addressed adapter supplies the owner and constructor together; a field
+number alone never authorizes a projection reduction. -/
+structure ProjectionInfo where
+  typeRef : UInt64
+  constructor : UInt64
+  params : Nat
+  fields : Nat
+  deriving BEq, Repr, Inhabited
+
+/-- A canonical source recursor rule, after address resolution. Reduction
+uses this exact constructor and complete application, including parameters. -/
+structure ConversionRule where
+  constructor : UInt64
+  params : Nat
+  fields : Nat
+  rhs : Ixon.Expr
+  deriving BEq, Repr, Inhabited
+
+structure ConversionRecursor where
+  index : UInt64
+  /-- Parameters, motives and minor premises supplied to the rule. -/
+  leading : Nat
+  /-- Position of the major premise, after any indices. -/
+  major : Nat
+  rules : Array ConversionRule
+  deriving BEq, Repr, Inhabited
+
 structure Program where
   declarations : Array Declaration
   /-- Members and constructors addressed by the same mutual block. -/
@@ -78,6 +106,15 @@ structure Program where
   auxiliary : Array (Nat × Ixon.Expr) := #[]
   sharing : Array Ixon.Expr := #[]
   fields : Array Field := #[]
+  projections : Array ProjectionInfo := #[]
+  /-- Safe, index-free source families with canonical erased validation as a
+  prerequisite. These rules affect conversion, not runtime case permissions. -/
+  conversionRecursors : Array ConversionRecursor := #[]
+  /-- Authenticated blob values, indexed by the same IDs as `.nat` syntax. -/
+  naturalValues : Array Nat := #[]
+  /-- Canonical Nat.zero/Nat.succ, enabled only for the canonical Nat literal
+  type. These identities never come from a profile's arbitrary nominal type. -/
+  naturalConstructors : Option (UInt64 × UInt64) := none
   natType : Option Ixon.Expr := none
   stringType : Option Ixon.Expr := none
   /-- Types whose shared views have a checked, duplicable representation.
@@ -140,11 +177,26 @@ structure Program where
   linearTypes : Array UInt64 := #[]
   deriving BEq, Repr, Inhabited
 
+/-- A fact valid only inside one constructor alternative. The value is written
+in the context after all of that alternative's binders have been introduced;
+it is not an evaluated let initializer and confers no ownership permission. -/
+structure CaseValue where
+  owner : OwnerId
+  contextSize : Nat
+  value : Ixon.Expr
+  deriving Inhabited
+
 structure Context where
   program : Program
   /-- Oldest binding first; Ixon variables still count from the innermost. -/
   vars : Array OwnerId := #[]
   scope : ScopeId := 0
+  /-- Evaluated let initializers in their original outer context. These are
+  used only for type conversion; variable reads still use their owner IDs. -/
+  letValues : Array (OwnerId × Ixon.Expr) := #[]
+  /-- Constructor refinements of lexical major-premise variables. These affect
+  type comparison only and never escape their alternative's context. -/
+  caseValues : Array CaseValue := #[]
   deriving Inhabited
 
 def declaration (program : Program) (index : UInt64) : CheckM Declaration :=
@@ -223,28 +275,89 @@ def substitute (program : Program) : Nat → Ixon.Expr → Ixon.Expr → Nat →
     | .recur .. => throw (.unsupported "unresolved recursive reference")
     | _ => return e
 
+def splitApp (program : Program) :
+    Nat → Ixon.Expr → List Ixon.Expr → CheckM (Ixon.Expr × List Ixon.Expr)
+  | 0, _, _ => throw .budget
+  | fuel + 1, e, args => do
+    tick
+    match e with
+    | .app fn arg => splitApp program fuel fn (arg :: args)
+    | .share index => splitApp program fuel (← expansion program index) args
+    | _ => return (e, args)
+
 /-- This reduction is only for resource interfaces. The ordinary typechecker
 separately validates universes, dependent types, and definitional equality. -/
 def whnf (program : Program) : Nat → Ixon.Expr → CheckM Ixon.Expr
   | 0, _ => throw .budget
   | fuel + 1, e => do
     tick
-    match e with
-    | .share idx => whnf program fuel (← expansion program idx)
-    | .letE _ _ value body =>
-      whnf program fuel (← substitute program fuel body value 0)
-    | .app fn arg =>
-      let fn ← whnf program fuel fn
-      match fn with
-      | .lam _ _ body => whnf program fuel (← substitute program fuel body arg 0)
-      | _ => return .app fn arg
-    | .ref idx _ =>
-      let d ← declaration program idx
-      match d.body with
-      | some body => whnf program fuel body
-      | none => return e
-    | .recur .. => throw (.unsupported "unresolved recursive reference")
-    | _ => return e
+    if (← get).resourceWhnfMemoEnabled then
+      if let some (_, value) := (← get).resourceWhnfMemo.find? (·.1 == e) then return value
+    let reduce : Unit → CheckM Ixon.Expr := fun _ => do
+      match e with
+      | .share idx => whnf program fuel (← expansion program idx)
+      | .letE _ _ value body =>
+        whnf program fuel (← substitute program fuel body value 0)
+      | .app fn arg => do
+        let fn ← whnf program fuel fn
+        match fn with
+        | .lam _ _ body => whnf program fuel (← substitute program fuel body arg 0)
+        | _ => do
+          let rebuilt := .app fn arg
+          if program.conversionRecursors.isEmpty then return rebuilt
+          let (head, args) ← splitApp program fuel rebuilt []
+          let .ref index _ := head | return rebuilt
+          let some recursor := program.conversionRecursors.find? (·.index == index)
+            | return rebuilt
+          let args := args.toArray
+          if args.size ≤ recursor.major then return rebuilt
+          let major ← whnf program fuel args[recursor.major]!
+          let (ctor, fields) ← splitApp program fuel major []
+          let .ref constructor _ := ctor | return rebuilt
+          let some rule := recursor.rules.find? (·.constructor == constructor)
+            | return rebuilt
+          unless fields.length == rule.params + rule.fields && recursor.leading ≤ recursor.major do
+            throw (.unsupported "recursor conversion constructor arity mismatch")
+          let values := args.extract 0 recursor.leading ++
+            fields.toArray.extract rule.params fields.length ++
+            args.extract (recursor.major + 1) args.size
+          whnf program fuel (values.foldl Ixon.Expr.app rule.rhs)
+      | .ref idx _ => do
+        let d ← declaration program idx
+        match d.body with
+        | some body => whnf program fuel body
+        | none => return e
+      | .prj typeRef field value => do
+        let value ← whnf program fuel value
+        let (head, args) ← splitApp program fuel value []
+        if let .ref constructor _ := head then
+          if let some info := program.projections.find? fun info =>
+              info.typeRef == typeRef && info.constructor == constructor then
+            if field.toNat < info.fields && args.length == info.params + info.fields then
+              return ← whnf program fuel args[info.params + field.toNat]!
+        return .prj typeRef field value
+      | .recur .. => throw (.unsupported "unresolved recursive reference")
+      | _ => return e
+    let result ← reduce ()
+    if (← get).resourceWhnfMemoEnabled then
+      modify fun s => { s with resourceWhnfMemo := s.resourceWhnfMemo.push (e, result) }
+    return result
+
+/-- Recognize a natural value without expanding a binary literal into unary
+syntax. Constructor chains consume the ordinary depth/step budget. Blob IDs
+are looked up, never interpreted as numeric values. -/
+def naturalValue (program : Program) : Nat → Ixon.Expr → CheckM (Option Nat)
+  | 0, _ => throw .budget
+  | fuel + 1, expression => do
+    tick
+    let some (zero, succ) := program.naturalConstructors | return none
+    match ← whnf program fuel expression with
+    | .nat payload => return program.naturalValues[payload.toNat]?
+    | .ref index levels => return if index == zero && levels.isEmpty then some 0 else none
+    | .app (.ref index levels) argument =>
+      if index != succ || !levels.isEmpty then return none
+      return (← naturalValue program fuel argument).map (· + 1)
+    | _ => return none
 
 def compatible (program : Program) : Nat → Ixon.Expr → Ixon.Expr → CheckM Bool
   | 0, _, _ => throw .budget
@@ -271,10 +384,57 @@ def compatible (program : Program) : Nat → Ixon.Expr → Ixon.Expr → CheckM 
       compatible program fuel v v'
     | .sort _, .sort _ => return true
     | .ref i _, .ref j _ => return i == j
+    | .nat _, _ | _, .nat _ =>
+      match ← naturalValue program fuel left, ← naturalValue program fuel right with
+      | some a, some b => return a == b
+      | _, _ => return left == right
     | _, _ => return left == right
 
 def requireType (program : Program) (fuel : Nat) (actual expected : Ixon.Expr) : CheckM Unit := do
   if !(← compatible program fuel actual expected) then throw .typeMismatch
+
+/-- Expand known local definitions inside a type, retaining every arrow and
+lambda contract. A stored initializer predates its own binding, so lifting
+it by the variable distance plus one restores the current context. -/
+def expandLocalValues (ctx : Context) : Nat → Nat → Ixon.Expr → CheckM Ixon.Expr
+  | 0, _, _ => throw .budget
+  | fuel + 1, depth, expression => do
+    tick
+    match expression with
+    | .var index =>
+      if index.toNat < depth then return expression
+      let n := index.toNat - depth
+      if n >= ctx.vars.size then throw (.unbound n)
+      let id := ctx.vars[ctx.vars.size - 1 - n]!
+      if let some fact := ctx.caseValues.find? (·.owner == id) then
+        if fact.contextSize > ctx.vars.size then
+          throw (.unsupported "case conversion fact escaped its lexical context")
+        let value ← shift ctx.program fuel fact.value
+          (ctx.vars.size - fact.contextSize + depth) 0
+        return ← expandLocalValues ctx fuel depth value
+      let some (_, value) := ctx.letValues.find? (·.1 == id) | return expression
+      let value ← shift ctx.program fuel value (n + 1 + depth) 0
+      expandLocalValues ctx fuel depth value
+    | .share index => expandLocalValues ctx fuel depth (← expansion ctx.program index)
+    | .app f a =>
+      return .app (← expandLocalValues ctx fuel depth f) (← expandLocalValues ctx fuel depth a)
+    | .all c r a b =>
+      return .all c r (← expandLocalValues ctx fuel depth a)
+        (← expandLocalValues ctx fuel (depth + 1) b)
+    | .lam c a b =>
+      return .lam c (← expandLocalValues ctx fuel depth a)
+        (← expandLocalValues ctx fuel (depth + 1) b)
+    | .letE c a v b =>
+      return .letE c (← expandLocalValues ctx fuel depth a)
+        (← expandLocalValues ctx fuel depth v) (← expandLocalValues ctx fuel (depth + 1) b)
+    | .prj t i v => return .prj t i (← expandLocalValues ctx fuel depth v)
+    | _ => return expression
+
+def requireTypeIn (ctx : Context) (fuel : Nat) (actual expected : Ixon.Expr) : CheckM Unit := do
+  if ← compatible ctx.program fuel actual expected then return
+  if ctx.letValues.isEmpty && ctx.caseValues.isEmpty then throw .typeMismatch
+  requireType ctx.program fuel (← expandLocalValues ctx fuel 0 actual)
+    (← expandLocalValues ctx fuel 0 expected)
 
 def arrow (program : Program) (fuel : Nat) (type : Ixon.Expr) :
     CheckM (BinderContract × ValueContract × Ixon.Expr × Ixon.Expr) := do
@@ -303,16 +463,6 @@ def isScalar (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Bool :
     | .sort u => return program.propSort != some u
     | _ => return false
   | _ => return false
-
-def splitApp (program : Program) :
-    Nat → Ixon.Expr → List Ixon.Expr → CheckM (Ixon.Expr × List Ixon.Expr)
-  | 0, _, _ => throw .budget
-  | fuel + 1, e, args => do
-    tick
-    match e with
-    | .app fn arg => splitApp program fuel fn (arg :: args)
-    | .share index => splitApp program fuel (← expansion program index) args
-    | _ => return (e, args)
 
 def fieldRule (program : Program) (typeRef index : UInt64) : CheckM Field :=
   match program.fields.find? (fun f => f.typeRef == typeRef && f.index == index) with
@@ -475,7 +625,7 @@ def finishValue (ctx : Context) (fuel : Nat) (destination : ScopeId)
   match expected with
   | none => return value
   | some (type, contract) =>
-    requireType ctx.program fuel value.type type
+    requireTypeIn ctx fuel value.type type
     consumeAs contract destination value
 
 /-- Join only bindings that existed before an alternative. Branch-local
@@ -1000,7 +1150,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
     if grade == .erased then
       let type ← typeOf fuel ctx e
       if let some (expectedType, _) := expected then
-        requireType ctx.program fuel type expectedType
+        requireTypeIn ctx fuel type expectedType
       return { type, owned := .unique }
     if let some (type, _) := expected then
       if let .sort _ ← whnf ctx.program fuel type then
@@ -1045,7 +1195,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           | some (type, _) => do
             let (declared, result, ty, codomain) ← arrow ctx.program fuel type
             if input != declared then throw .binderMismatch
-            requireType ctx.program fuel domain ty
+            requireTypeIn ctx fuel domain ty
             pure (result, some codomain)
           | none => pure (.shared, none)
         let before ← get
@@ -1129,7 +1279,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           | .borrowShared => do
             if contract.binder.value != .localShared then throw .invalidBorrow
             let v ← place ctx fuel initializer
-            requireType ctx.program fuel v.type type
+            requireTypeIn ctx fuel v.type type
             if !(← isShareable ctx.program fuel type) && !v.duplicable && !v.freezable then
               throw .nonduplicable
             let some ownerPlace := v.place | throw .invalidPlace
@@ -1147,7 +1297,9 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
               place := none
               loanRoot := some root }
         let id ← pushBinding contract.binder { initialized with type }
-        let bodyCtx := { inner with vars := inner.vars.push id }
+        let bodyCtx := { inner with
+          vars := inner.vars.push id
+          letValues := inner.letValues.push (id, initializer) }
         let bodyExpected ← match expected with
           | none => pure none
           | some (ty, mode) => pure (some (← shift ctx.program fuel ty 1 0, mode))
@@ -1193,7 +1345,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             return { type := ← substitute ctx.program fuel codomain arg 0, owned := .unique }
           let callScope := if result.locality == .local then destination else ctx.scope
           let fnValue ← analyze fuel ctx fn none callScope grade
-          requireType ctx.program fuel fnValue.type fnType
+          requireTypeIn ctx fuel fnValue.type fnType
           invoke fnValue
           -- A proof argument is erased computation: no demand, transfer, or origin.
           let argValue ← if ← isProposition fuel ctx domain then
@@ -1221,6 +1373,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         -- which must stay unused), then is analyzed with the given contract.
         let alternatives (branches : Array (Ixon.Expr × Ixon.Expr × Array Bool))
             (supplied : Nat → Nat → Ixon.Expr → BinderContract → CheckM Value)
+            (specialize : Nat → Nat → Context → CheckM Context)
             (extra : Array Ixon.Expr) (contract : Option ValueContract)
             (outputType : Ixon.Expr) : CheckM Value := do
           let before ← get
@@ -1245,6 +1398,7 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
               inner := { inner with vars := inner.vars.push id }
               body := rest
               type := codomain
+            inner ← specialize j entered.size inner
             for x in extra do
               let x ← shift ctx.program fuel x entered.size 0
               let (_, _, _, codomain) ← arrow ctx.program fuel type
@@ -1316,15 +1470,16 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             let rightProofs ← proofs rightType
             modify fun s => { s with bindings := before.bindings }
             if leftProofs.isEmpty && rightProofs.isEmpty && extra.isEmpty then
-              requireType ctx.program fuel leftType rightType
-              requireType ctx.program fuel leftType outputType
+              requireTypeIn ctx fuel leftType rightType
+              requireTypeIn ctx fuel leftType outputType
             -- The chosen alternative is the result: the caller's contract
             -- applies to it, or else the primitive's own result contract.
             let contract := match expected with
               | some (_, c) => c
               | none => result
             alternatives #[(left, leftType, leftProofs), (right, rightType, rightProofs)]
-              (fun _ _ domain _ => pure { type := domain }) extra (some contract) outputType
+              (fun _ _ domain _ => pure { type := domain }) (fun _ _ inner => pure inner)
+              extra (some contract) outputType
           else
             match (if ctx.program.cases then recursorInfo ctx.program index else none) with
             | some info =>
@@ -1375,7 +1530,42 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
                            alsoPlaces := major.alsoPlaces
                            loanRoot := major.loanRoot }
                   else pure { type := domain }
-                alternatives branches supplied extra (expected.map (·.2)) outputType
+                -- Common trailing arguments were checked against the overall
+                -- recursor result above. Inside a minor their types may also
+                -- depend on the matched major. Refine only a lexical variable,
+                -- using the same authenticated canonical constructor order as
+                -- conversion. A Value.place can denote an alias and is never
+                -- sufficient evidence for this equation.
+                let refinement ← match ← unshare ctx.program fuel args[info.arity - 1]! with
+                  | .var n => do
+                    if n.toNat >= ctx.vars.size then pure none else do
+                      let owner := ctx.vars[ctx.vars.size - 1 - n.toNat]!
+                      let canonical := ctx.program.conversionRecursors.find? fun r =>
+                        info.indices == 0 && info.fields.size == info.minors &&
+                        info.binders.size == info.minors &&
+                        r.index == index && r.major == info.arity - 1 &&
+                        r.leading == info.params + info.motives + info.minors &&
+                        r.rules.size == info.minors &&
+                        (List.range info.minors).all fun j =>
+                          r.rules[j]!.params == info.params &&
+                          r.rules[j]!.fields == info.fields[j]! &&
+                          info.fields[j]! ≤ info.binders[j]!
+                      pure (canonical.map (owner, ·))
+                  | _ => pure none
+                let specialize (j entered : Nat) (inner : Context) : CheckM Context := do
+                  let some (owner, canonical) := refinement | return inner
+                  let rule := canonical.rules[j]!
+                  if rule.fields > entered then
+                    throw (.unsupported "case conversion field telescope mismatch")
+                  let mut value := Ixon.Expr.ref rule.constructor #[]
+                  for parameter in args.extract 0 rule.params do
+                    value := .app value (← shift ctx.program fuel parameter entered 0)
+                  for k in [:rule.fields] do
+                    value := .app value (.var (← checkedIndex (entered - 1 - k)))
+                  let fact : CaseValue := { owner, contextSize := inner.vars.size, value }
+                  return { inner with caseValues :=
+                    (inner.caseValues.filter (·.owner != owner)).push fact }
+                alternatives branches supplied specialize extra (expected.map (·.2)) outputType
             | none =>
               match ← caseDefinition ctx.program fuel 4 index with
               | some shape =>
@@ -1460,7 +1650,7 @@ def checkDefinitionCrossed (program : Program) (index : Nat) (limits : Limits :=
     let _ ← analyze limits.depth { program, scope } body
       (some (declaration.type, .shared)) scope .linear
     pure ()
-  match action.run { remaining := limits.steps } with
+  match action.run { remaining := limits.steps, resourceWhnfMemoEnabled := true } with
   | .ok _ state => pure state.crossed
   | .error error _ => throw error
 

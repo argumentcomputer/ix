@@ -11,6 +11,8 @@ result*
 #Ix
 *.ixe
 !Tests/Fixtures/ixon-v4/handoff/*.ixe
+!Tests/Fixtures/ixon-v4/transport/*.ixe
+!Tests/Fixtures/ixon-v4/transport/beta/*.ixe
 plans
 refs
 

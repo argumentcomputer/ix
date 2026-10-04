@@ -89,3 +89,9 @@ cases
 interface List.length _ ~
 interface Array.size _ ~
 interface String.length ~
+
+# Full source-contract typing also checks generated equation proofs. This
+# named profile permits bounded recursive proofs that exceed the API default
+# 100000 steps; unsupported or larger closures still fail closed. Depth stays
+# 256. The strict and ordinary core profiles retain their original budgets.
+limits 256 1000000

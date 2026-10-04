@@ -5,7 +5,16 @@ import Tests.Ix.IxonText
 import Tests.Ix.ResourceAdmit
 import Tests.Ix.ResourceAddressed
 import Tests.Ix.ResourceScalar
+import Tests.Ix.ResourceConversion
+import Tests.Ix.ResourceCaseConversion
+import Tests.Ix.ResourceCaseAdmission
 import Tests.Ix.ResourceValidate
+import Tests.Ix.ResourceTransport
+import Tests.Ix.ResourceTransportReplacement
+import Tests.Ix.ResourceTransportMemo
+import Tests.Ix.ResourceTransportRaw
+import Tests.Ix.ResourceTransportFixtures
+import Tests.Ix.ResourceTransportBetaFixtures
 import Tests.Ix.ContractTransport
 import Tests.Ix.ContractPipeline
 import Tests.Ix.ContractDecompile
@@ -56,6 +65,9 @@ def exportFixtures (dir : System.FilePath) : IO Unit := do
   IO.FS.writeFile (out / "resource-scalar-disabled.tsv")
     (Tests.ResourceScalar.fixtureText Tests.ResourceScalar.disabledCases)
   IO.FS.writeFile (out / "scalar-profile.tsv") (← IO.ofExcept Tests.ResourceScalar.profileFixture)
+  IO.FS.writeFile (out / "resource-conversion.tsv") Tests.ResourceConversion.fixtureText
+  IO.FS.writeFile (out / "resource-local-conversion.tsv") Tests.ResourceConversion.localFixtureText
+  IO.FS.writeFile (out / "resource-iota-conversion.tsv") Tests.ResourceConversion.iotaFixtureText
   IO.println s!"Exported claim, addressed, resource-order and scalar fixtures to {out}"
 
 def main (args : List String) : IO Unit := do
@@ -84,7 +96,19 @@ def main (args : List String) : IO Unit := do
   Tests.ResourceAddressed.run
   Tests.ResourceScalar.run
   Tests.ResourceScalar.checkProfile
+  Tests.ResourceConversion.run
+  Tests.ResourceCaseConversion.run
+  Tests.ResourceCaseAdmission.run
   Tests.ResourceValidate.run
+  unless (← Tests.ResourceTransport.run) == 0 do
+    throw <| IO.userError "source-contract transport regression"
+  unless (← Tests.ResourceTransportReplacement.run) == 0 do
+    throw <| IO.userError "replacement transport regression"
+  unless (← Tests.ResourceTransportMemo.run) == 0 do
+    throw <| IO.userError "transport cache regression"
+  Tests.ResourceTransportRaw.run
+  Tests.ResourceTransportFixtures.run
+  Tests.ResourceTransportBetaFixtures.run
   Tests.ContractTransport.run
   Tests.ContractPipeline.run
   Tests.ContractDecompile.run

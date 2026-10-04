@@ -130,14 +130,12 @@ def probes : List Probe := [
    { plainProbe "E11" false "S6" with equations := true },
    { plainProbe "E11" false "S6" with reason := recursionReason },
    { plainProbe "Q06" true "S6" with equations := true }] ++
-  -- KNOWN HOLE, second review R2-1 (not fixed): contracts erased by casts.
-  -- These are violations that ix ACCEPTS today; the entries pin the current
-  -- verdicts so that a fix of R2-1 flips them visibly (expect `control
-  -- rejected` for each then, and invert the entries). K02 is rejected under
-  -- the standard profile only because `bump`'s match is not a case there.
+  -- R2-1: source-contract typing refuses contract-changing casts even when
+  -- erased typing accepts the same bytes. K02 also fails the standard
+  -- profile's existing case restriction.
   ([probe, strictProbe, plainProbe].flatMap fun mk =>
-      ["K01", "K02", "K08"].map fun name => mk name true "R2-1 KNOWN HOLE") ++
-  [standardProbe "K01" true "R2-1 KNOWN HOLE", standardProbe "K08" true "R2-1 KNOWN HOLE"]
+      ["K01", "K02", "K08"].map fun name => mk name false "R2-1 transport") ++
+  [standardProbe "K01" false "R2-1 transport", standardProbe "K08" false "R2-1 transport"]
 
 /-- The safe definitions, theorems and opaques (`partial def`s) of a probe's
 namespace. -/

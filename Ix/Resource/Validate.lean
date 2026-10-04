@@ -1,10 +1,12 @@
 module
 
 public import Ix.Resource.Addressed
+public import Ix.Resource.Transport.Prepare
 public import Ix.Tc.Driver
 
-/-! The combined native validation boundary. Both validators consume the same
-addressed v4 bytes. Kernel typechecking alone has no resource meaning. -/
+/-! The combined native validation boundary. Ownership admission, erased
+typing, and source-contract transport consume the same addressed v4 bytes.
+Kernel typechecking alone has no resource meaning. -/
 
 @[expose] public section
 
@@ -52,6 +54,7 @@ def validate (env : Ixon.Env) (profile : Profile) : Except String AddressedProgr
   for result in checked do
     if let some error := result.err? then
       throw s!"resource validator: erased typing failed at {result.addr}: {error}"
+  Transport.checkAdmitted env resolved profile.limits
   return resolved
 
 end Ix.Resource

@@ -2,14 +2,74 @@
 
 The Lean and Rust resource validators consume the same canonical addressed
 environment and an explicit profile. Both production compilers run this
-validation, together with erased typechecking, before emitting annotated
-constants. Resource claims bind the complete constant set and profile address.
+ownership admission, erased typechecking, and source-contract transport
+validation before emitting annotated constants. Resource claims bind the complete constant set and profile address.
 
 The executable modules are [Basic](../Ix/Resource/Basic.lean),
 [Check](../Ix/Resource/Check.lean), and [Admit](../Ix/Resource/Admit.lean).
 [Rust](../crates/ixon/src/resource.rs) implements the same transitions.
 The production boundaries are [Validate](../Ix/Resource/Validate.lean) and
 [the Rust kernel adapter](../crates/kernel/src/resource.rs).
+
+## Source-contract transport boundary
+
+The combined native validators additionally reconstruct logical source types
+from the same authenticated bytes, retaining complete universe parameters and
+contract fields. Profile interfaces are runtime assumptions; they never replace
+these logical source types. Low-level `Addressed.checkResources`, Rust
+`addressed::check_resources`, and raw `Program` checks remain ownership
+diagnostics, conditional on source typing and the other stated prerequisites.
+
+[Lean Transport](../Ix/Resource/Transport/Validate.lean) and
+[Rust Transport](../crates/kernel/src/resource/transport/validate.rs) check the
+source signatures and bodies in the forward dependency closure of resource
+obligations and selected equations, including theorem bodies and bodies whose
+runtime behavior the profile assumes. Obligations include both source and
+runtime interface dependencies. Equation bindings must retain the original
+universe parameters and argument telescope; specialization to `Prop` cannot
+stand for a polymorphic equation.
+
+Runtime coverage is granted only where ownership admission checked that exact
+computational expression. Proof, type, and erased arguments do not inherit
+coverage from a surrounding runtime application. An uncovered computational
+witness must pass a contextual ownership check, or belong to the closed default
+fragment without resource-sensitive dependencies. A validated replacement
+covers only its original definition's public header promises, not arbitrary
+subterms in the original body.
+
+Canonical equality endpoints receive a distinct checking role, not runtime
+ownership coverage. A safe definition or theorem returning canonical equality
+may defer an argument's ownership check only while its instantiated body is
+rechecked at those actual arguments. Proof and type subterms reset this role;
+opaque declarations cannot supply that body justification. This rule does not
+grant a general exemption to indexed-family arguments.
+A direct lambda application constructing a canonical equality type checks its
+actual domain and argument, then checks the complete substituted body without
+runtime coverage. Proof witnesses in that body retain their ownership checks;
+this rule does not apply to arbitrary computational lambda applications.
+
+Successful typing, conversion, universe instantiation, and normalization results
+may be memoized within one fixed authenticated source/runtime program pair.
+Keys retain complete contracts, ordered lexical types and ownership contracts,
+expected types, universe instances, and coverage modes as applicable. Failed or
+pending checks are never cached, and cache hits still consume checking fuel.
+
+The current conservative fragment admits selected safe primitive families with
+default-contract transitive primitive syntax. Unsafe inductives bypass erased
+positivity checking and are explicitly refused when selected. Annotated
+primitive rules require a further contract-sensitive primitive justification.
+Conversion preserves contracts and supports bounded universe operations,
+beta/zeta/delta reduction, constructor projections and recursor iota, typed
+proof irrelevance, and checked function eta. Unsupported operations and budget
+exhaustion refuse admission; there is no fallback to erased equality.
+
+This fragment intentionally has false refusals. The harmless K00 cast changes a
+function contract and is refused. Some generated recursive equation theorems
+also fail their computational witness obligations or exhaust the typing budget;
+equation-enabled closure results must be reported separately from closures
+without those extra theorems. Acceptance of a plain core closure does not imply
+acceptance of its equation-enabled export. These checks do not establish a
+consumer execution theorem or enable an exclusivity optimization on their own.
 
 ## Preconditions and admission
 
@@ -707,7 +767,8 @@ required closure. Merely parsing a claim or proof wrapper validates no program.
 
 | Consumer | Advertised validation |
 | --- | --- |
-| Lean and Rust resource admission | Resources plus erased typing, with a committed profile |
+| Lean and Rust combined native validators | Ownership, erased typing, and source-contract transport, with a committed profile |
+| Addressed/raw resource diagnostics | Ownership under the documented source-typing prerequisites |
 | Ix.Tc and the Rust ordinary kernel | Erased Lean typing |
 | IxVM `Check` and `CheckEnv` | Erased Lean typing, validator byte `1` |
 | IxVM `Reveal` and `Contains` | Structural validation, validator byte `0` |

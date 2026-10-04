@@ -765,6 +765,8 @@ pub fn prepare(
   let mut pending = vec![];
   let mut groups = vec![];
   let mut field_specs = vec![];
+  let mut reduction_families: Vec<(Address, usize, Vec<(Address, usize)>)> =
+    vec![];
   let mut recursor_specs: Vec<(Address, Recursor)> = vec![];
   let mut constructor_specs: Vec<(Address, u64)> = vec![];
   let mut axioms: Vec<Address> = vec![];
@@ -864,6 +866,7 @@ pub fn prepare(
                 },
                 vec![],
               );
+              let mut reduction_ctors = vec![];
               for (j, ctor) in ind.ctors.iter().enumerate() {
                 let ctor_addr = require_wrapper(
                   &constants,
@@ -893,6 +896,8 @@ pub fn prepare(
                 );
                 group.push(ctor_addr.clone());
                 constructor_specs.push((ctor_addr.clone(), ind.params));
+                reduction_ctors
+                  .push((ctor_addr.clone(), native_index(ctor.fields)?));
                 if !ind.is_unsafe
                   && !ctor.is_unsafe
                   && ind.indices == 0
@@ -905,6 +910,21 @@ pub fn prepare(
                     ctor.fields,
                   ));
                 }
+              }
+              if !ind.is_unsafe
+                && ind.indices == 0
+                && ind.ctors.iter().all(|c| !c.is_unsafe)
+                && members
+                  .iter()
+                  .filter(|m| matches!(m, MutConst::Indc(_)))
+                  .count()
+                  == 1
+              {
+                reduction_families.push((
+                  addr.clone(),
+                  native_index(ind.params)?,
+                  reduction_ctors,
+                ));
               }
             },
           }
@@ -941,14 +961,16 @@ pub fn prepare(
     env.blobs.iter().map(|r| (r.key().clone(), r.value().clone())).collect();
   blob_entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
   let mut blobs = FxHashMap::default();
+  let mut natural_values = vec![];
   for (address, bytes) in blob_entries {
     if Address::hash(&bytes) != address {
       return Err(format!("resource adapter: blob hash mismatch {address:?}"));
     }
     blobs.insert(address, blobs.len() as u64);
+    natural_values.push(BigUint::from_bytes_le(&bytes));
   }
   let kinds: Vec<_> = pending.iter().map(|p| p.declaration.kind).collect();
-  let mut program = Program::default();
+  let mut program = Program { natural_values, ..Program::default() };
   let mut offsets = FxHashMap::default();
   for p in &pending {
     let tables = Tables {
@@ -990,6 +1012,85 @@ pub fn prepare(
       g.iter().map(|a| index(&indices, a).and_then(native_index)).collect()
     })
     .collect::<Result<_, _>>()?;
+  // Canonical source rules, independent of profile replacement interfaces.
+  // Combined admission separately checks the same bytes' primitive families.
+  for (address, r) in &recursor_specs {
+    if r.is_unsafe
+      || r.motives != 1
+      || r.indices != 0
+      || native_index(r.minors)? != r.rules.len()
+    {
+      continue;
+    }
+    let i = index(&indices, address)?;
+    let leading = native_index(r.params)?
+      .checked_add(native_index(r.motives)?)
+      .and_then(|n| n.checked_add(native_index(r.minors).ok()?))
+      .ok_or("resource adapter: recursor leading overflow")?;
+    let candidate = (|| -> Result<Option<ConversionRecursor>, Error> {
+      let mut checker = Checker::new(&program, profile.limits);
+      let mut typ = checker.declaration(i)?.typ.clone();
+      if !checker.plain(profile.limits.depth, &typ)? {
+        return Ok(None);
+      }
+      for _ in 0..leading {
+        let (_, _, _, body) = checker.arrow(profile.limits.depth, &typ)?;
+        typ = body;
+      }
+      let (_, _, major, _) = checker.arrow(profile.limits.depth, &typ)?;
+      let major = checker.whnf(profile.limits.depth, &major)?;
+      let (head, _) = checker.split_app(profile.limits.depth, &major)?;
+      let Expr::Ref(family, _) = head.as_ref() else {
+        return Ok(None);
+      };
+      let Some((_, params, ctors)) = reduction_families
+        .iter()
+        .find(|(a, _, _)| indices.get(a) == Some(family))
+      else {
+        return Ok(None);
+      };
+      if *params as u64 != r.params || ctors.len() != r.rules.len() {
+        return Ok(None);
+      }
+      let family_type = checker.declaration(*family)?.typ.clone();
+      if !checker.plain(profile.limits.depth, &family_type)? {
+        return Ok(None);
+      }
+      let bodies = program
+        .auxiliary
+        .iter()
+        .filter(|(owner, _)| *owner == i as usize)
+        .collect::<Vec<_>>();
+      if bodies.len() != r.rules.len() {
+        return Ok(None);
+      }
+      let mut rules = vec![];
+      for (j, (address, fields)) in ctors.iter().enumerate() {
+        let ctor = *indices
+          .get(address)
+          .ok_or(Error::Unsupported("conversion constructor"))?;
+        if r.rules[j].fields != *fields as u64 {
+          return Ok(None);
+        }
+        let ctor_type = checker.declaration(ctor)?.typ.clone();
+        if !checker.plain(profile.limits.depth, &ctor_type)?
+          || !checker.plain(profile.limits.depth, &bodies[j].1)?
+        {
+          return Ok(None);
+        }
+        rules.push(ConversionRule {
+          constructor: ctor,
+          params: *params,
+          fields: *fields,
+          rhs: bodies[j].1.clone(),
+        });
+      }
+      Ok(Some(ConversionRecursor { index: i, leading, major: leading, rules }))
+    })();
+    if let Ok(Some(recursor)) = candidate {
+      program.conversion_recursors.push(recursor);
+    }
+  }
   let resolve = |list: &[Address]| {
     list.iter().map(|a| index(&indices, a)).collect::<Result<Vec<_>, String>>()
   };
@@ -1007,6 +1108,21 @@ pub fn prepare(
     Ok(Expr::reference(i, vec![]))
   };
   program.nat_type = profile.nat_type.as_ref().map(literal_type).transpose()?;
+  let primitives = ix_common::prim_addrs::PrimAddrs::new();
+  if profile.nat_type.as_ref() == Some(&primitives.nat)
+    && let (Some(zero), Some(succ)) =
+      (indices.get(&primitives.nat_zero), indices.get(&primitives.nat_succ))
+  {
+    program.natural_constructors = Some((*zero, *succ));
+  }
+  for (typ, ctor, params, count) in &field_specs {
+    program.projections.push(ProjectionInfo {
+      type_ref: index(&indices, typ)?,
+      constructor: index(&indices, ctor)?,
+      params: native_index(*params)?,
+      fields: native_index(*count)?,
+    });
+  }
   program.string_type =
     profile.string_type.as_ref().map(literal_type).transpose()?;
   program.shareable_types = shareable.clone();
@@ -1659,7 +1775,7 @@ mod tests {
     store(&env, indc_proj_constant(0, block.clone()));
     store(&env, ctor_proj_constant(0, 0, block.clone()));
     let field_ctor = store(&env, ctor_proj_constant(0, 1, block.clone()));
-    let rec_address = store(&env, recr_proj_constant(1, block));
+    let rec_address = store(&env, recr_proj_constant(1, block.clone()));
     let cases = Profile { cases: true, ..profile(&unit) };
     let resolved = prepare(&env, &cases).unwrap();
     let shapes: Vec<_> = resolved
@@ -1727,6 +1843,92 @@ mod tests {
     );
     let ordinary = prepare(&env, &profile(&unit)).unwrap();
     assert!(ordinary.program.recursors.is_empty() && !ordinary.program.cases);
+    assert_eq!(ordinary.program.conversion_recursors.len(), 1);
+    assert_eq!(
+      ordinary.program.conversion_recursors,
+      resolved.program.conversion_recursors
+    );
+    assert_eq!(
+      ordinary.program.conversion_recursors,
+      prepare(&env, &overlaid).unwrap().program.conversion_recursors
+    );
+    // Adapter eligibility only: malformed mutations still require the
+    // independent erased canonical-family check before combined admission.
+    let stored = env.consts.get(&block).unwrap();
+    let mut bytes = stored.raw_bytes();
+    let original = Constant::get(&mut bytes).unwrap();
+    let ConstantInfo::Muts(original_members) = &original.info else {
+      panic!("fixture block");
+    };
+    for label in [
+      "indexed",
+      "unsafe family",
+      "unsafe constructor",
+      "unsafe recursor",
+      "annotated",
+      "mutual",
+    ] {
+      let mut members = original_members.clone();
+      let MutConst::Indc(ind) = &mut members[0] else {
+        panic!("fixture inductive");
+      };
+      match label {
+        "indexed" => ind.indices = 1,
+        "unsafe family" => ind.is_unsafe = true,
+        "unsafe constructor" => ind.ctors[1].is_unsafe = true,
+        "annotated" => {
+          ind.ctors[1].typ = Expr::all_contract(
+            BinderContract::plain(Uses::Linear),
+            shared,
+            Expr::reference(0, vec![]),
+            Expr::rec(0, vec![]),
+          )
+        },
+        _ => {},
+      }
+      if label == "unsafe recursor" {
+        let MutConst::Recr(rec) = &mut members[1] else {
+          panic!("fixture recursor");
+        };
+        rec.is_unsafe = true;
+      }
+      if label == "mutual" {
+        members.push(members[0].clone());
+      }
+      let (variant, _) = unit_env();
+      let changed = Constant::with_tables(
+        ConstantInfo::Muts(members.clone()),
+        original.sharing.clone(),
+        original.refs.clone(),
+        original.univs.clone(),
+      );
+      let block = store(&variant, changed);
+      for (i, member) in members.iter().enumerate() {
+        match member {
+          MutConst::Indc(ind) => {
+            store(&variant, indc_proj_constant(i as u64, block.clone()));
+            for j in 0..ind.ctors.len() {
+              store(
+                &variant,
+                ctor_proj_constant(i as u64, j as u64, block.clone()),
+              );
+            }
+          },
+          MutConst::Recr(_) => {
+            store(&variant, recr_proj_constant(i as u64, block.clone()));
+          },
+          _ => {},
+        }
+      }
+      assert!(
+        prepare(&variant, &profile(&unit))
+          .unwrap()
+          .program
+          .conversion_recursors
+          .is_empty(),
+        "{label}"
+      );
+    }
   }
 
   #[test]

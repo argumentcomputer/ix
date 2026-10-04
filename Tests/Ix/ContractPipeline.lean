@@ -10,8 +10,21 @@ open Ix.Compile
 
 def typeName : Lean.Name := `ContractA
 def identityName : Lean.Name := `contractId
+def constructorName : Lean.Name := `ContractA.mk
 
-def typeSource : Lean.ConstantInfo := .axiomInfo {
+/-- A genuine source type keeps this pipeline test independent of axiomatic
+profile assumptions. The local-escape rejection below remains unchanged. -/
+def typeSource : Lean.ConstantInfo := .inductInfo {
+  name := typeName, levelParams := [], type := .sort (.succ .zero)
+  numParams := 0, numIndices := 0, all := [typeName], ctors := [constructorName]
+  numNested := 0, isRec := false, isUnsafe := false, isReflexive := false }
+
+def constructorSource : Lean.ConstantInfo := .ctorInfo {
+  name := constructorName, levelParams := [], type := .const typeName []
+  induct := typeName, cidx := 0, numParams := 0, numFields := 0
+  isUnsafe := false }
+
+def unassumedTypeSource : Lean.ConstantInfo := .axiomInfo {
   name := typeName, levelParams := [], type := .sort (.succ .zero), isUnsafe := false }
 
 def identitySource : Lean.ConstantInfo := .defnInfo {
@@ -23,13 +36,18 @@ def identitySource : Lean.ConstantInfo := .defnInfo {
 def input (result : Ixon.ValueContract := .localShared) : Except SourceContractError CompileInput := do
   let contract ← SourceContract.ofTelescope identitySource #[{
     binder := .position 0, uses := .linear, value := .localShared, result := some result }]
-  return { constants := [(typeName, typeSource), (identityName, identitySource)], contracts := #[contract] }
+  return { constants := [(typeName, typeSource), (constructorName, constructorSource),
+    (identityName, identitySource)], contracts := #[contract] }
 
 def get (label : String) (r : Except String α) : IO α :=
   match r with | .ok value => pure value | .error e => throw <| IO.userError s!"contract pipeline {label}: {e}"
 
 def run : IO Unit := do
   let valid ← get "input" ((input).mapError toString)
+  let unassumed := { valid with constants :=
+    [(typeName, unassumedTypeSource), (identityName, identitySource)] }
+  if (← Ix.CompileM.compileLeanInput unassumed (numWorkers := 1)).toOption.isSome then
+    throw <| IO.userError "contract pipeline: accepted an unassumed custom source axiom"
   let lean ← Ix.CompileM.compileLeanInput valid (numWorkers := 1) >>= get "Lean compiler"
   let prepared ← get "preparation" valid.prepare
   let rust ← Ix.CompileM.rsCompileEnvFFI prepared

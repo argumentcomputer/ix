@@ -1,0 +1,12 @@
+# name	expected	depth	left (ixon-v4 hex)	right (ixon-v4 hex)
+iota selects exact field after parameter	equal	64	7220088107200010722004200060	63
+iota keeps trailing application	equal	64	732008820720000720001172200420006061	63
+iota preserves lambda contract	different	64	7220088207200005200010722004200060	8107200010
+iota exact constructor identity	different	64	7220088107200010722005200060	63
+partial recursor is neutral	different	64	7120088107200010	63
+undersaturated iota constructor	unsupported	64	72200881072000107120042000	63
+oversaturated iota constructor	unsupported	64	722008810720001073200420006061	63
+numeric major stays neutral	different	64	722008810720001061	61
+nested iota	equal	64	722008810720001072200420007220088107200010722004200060	63
+cyclic iota bounded	budget	24	7220098107200010722004200060	63
+iota zero depth	budget	0	7220088107200010722004200060	63

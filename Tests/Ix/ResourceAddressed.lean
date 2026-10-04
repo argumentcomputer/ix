@@ -347,6 +347,37 @@ def run : IO Unit := do
   let ordinary ← get "no case behavior" (Addressed.prepare caseEnv profile)
   unless ordinary.program.recursors.isEmpty && !ordinary.program.cases do
     throw <| IO.userError "case-split shapes without case behavior"
+  unless ordinary.program.conversionRecursors.size == 1 &&
+      ordinary.program.conversionRecursors == resolved.program.conversionRecursors &&
+      ordinary.program.conversionRecursors == overridden.program.conversionRecursors do
+    throw <| IO.userError "source conversion rules changed with runtime case/overlay policy"
+  -- These are adapter eligibility tests, not claims that mutated raw families
+  -- satisfy the separate erased canonical-family judgment.
+  let .muts members := caseBlock.info | throw <| IO.userError "case fixture block"
+  let .indc ind := members[0]! | throw <| IO.userError "case fixture inductive"
+  let .recr rec := members[1]! | throw <| IO.userError "case fixture recursor"
+  let annotatedCtor := { ind.ctors[1]! with
+    typ := .all { uses := .linear } .shared (.ref 0 #[]) (.recur 0 #[]) }
+  for (name, changed) in #[
+      ("indexed family", #[.indc { ind with indices := 1 }, .recr rec]),
+      ("unsafe family", #[.indc { ind with isUnsafe := true }, .recr rec]),
+      ("unsafe constructor", #[.indc { ind with ctors := ind.ctors.set! 1 { ind.ctors[1]! with isUnsafe := true } }, .recr rec]),
+      ("unsafe recursor", #[.indc ind, .recr { rec with isUnsafe := true }]),
+      ("annotated constructor", #[.indc { ind with ctors := ind.ctors.set! 1 annotatedCtor }, .recr rec]),
+      ("mutual family", #[.indc ind, .recr rec, .indc ind])] do
+    let (initial, block) := store base { caseBlock with info := .muts changed }
+    let mut env := initial
+    for i in [:changed.size] do
+      match changed[i]! with
+      | .indc ind =>
+        env := (store env (Addressed.wrapper (.iPrj ⟨i.toUInt64, block⟩))).1
+        for j in [:ind.ctors.size] do
+          env := (store env (Addressed.constructorWrapper block i.toUInt64 j.toUInt64)).1
+      | .recr _ => env := (store env (Addressed.wrapper (.rPrj ⟨i.toUInt64, block⟩))).1
+      | _ => pure ()
+    let result ← get name (Addressed.prepare env profile)
+    unless result.program.conversionRecursors.isEmpty do
+      throw <| IO.userError s!"unsupported {name} supplied conversion rules"
   IO.println "Addressed resources: integrity, profile codecs, fixtures, fields, and dependency checks passed"
 
 end Tests.ResourceAddressed

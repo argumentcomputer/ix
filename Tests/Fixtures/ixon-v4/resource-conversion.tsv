@@ -1,0 +1,19 @@
+# name	expected	depth	left (ixon-v4 hex)	right (ixon-v4 hex)
+payload ID is not numeric value	different	32	60	2001
+zero literal and constructor	equal	32	61	2001
+successor literal and constructor	equal	32	62	7120022001
+distinct payloads with equal value	equal	32	60	63
+missing literal payload	different	32	6801	2001
+unrelated nullary constructor	different	32	61	2005
+natural constructor universe arguments	different	32	61	210100
+large literal remains binary	different	32	64	60
+canonical structure projection	equal	32	4003722004200061	2001
+wrong projection owner	different	32	4000722004200061	2001
+wrong projection constructor	different	32	4003722005200061	2001
+out of range projection	different	32	4103722004200061	2001
+undersaturated constructor projection	different	32	400371200461	2001
+oversaturated constructor projection	different	32	400373200420006161	2001
+nested projection	equal	32	400372200420004003722004200060	63
+projection retains lambda contract	different	32	400372200420008105200010	8107200010
+cyclic sharing is bounded	budget	12	b0	61
+zero depth fails closed	budget	0	61	2001

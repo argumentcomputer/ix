@@ -496,6 +496,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   let mut fieldSpecs : Array (Address × Address × Nat × Nat) := #[]
   let mut recursorSpecs : Array (Address × Ixon.Recursor) := #[]
   let mut constructorSpecs : Array (Address × Nat) := #[]
+  let mut reductionFamilies : Array (Address × Nat × Array (Address × Nat)) := #[]
   let mut axioms : Array Address := #[]
   for (address, _) in entries do
     let constant := constants[address]!
@@ -527,6 +528,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
         | .indc ind =>
           pending := pending.push ⟨member, constant, addresses,
             { type := ind.typ, kind := .typeConstructor }, #[]⟩
+          let mut reductionCtors := #[]
           for j in [:ind.ctors.size] do
             let ctor := ind.ctors[j]!
             let ctorAddr ← requireWrapper constants (constructorWrapper address i.toUInt64 j.toUInt64)
@@ -536,8 +538,12 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
               { type := ctor.typ, kind := if ctor.isUnsafe then .assumption else .constructor }, #[]⟩
             group := group.push ctorAddr
             constructorSpecs := constructorSpecs.push (ctorAddr, ind.params.toNat)
+            reductionCtors := reductionCtors.push (ctorAddr, ctor.fields.toNat)
             if !ind.isUnsafe && !ctor.isUnsafe && ind.indices == 0 && ind.ctors.size == 1 then
               fieldSpecs := fieldSpecs.push (member, ctorAddr, ind.params.toNat, ctor.fields.toNat)
+          if !ind.isUnsafe && ind.indices == 0 && ind.ctors.all (fun c => !c.isUnsafe) &&
+              (members.filter fun m => match m with | .indc _ => true | _ => false).size == 1 then
+            reductionFamilies := reductionFamilies.push (member, ind.params.toNat, reductionCtors)
           if ind.isUnsafe then
             -- Unsafe nominal representations need an explicit profile assumption.
             let k := pending.size - ind.ctors.size - 1
@@ -559,12 +565,14 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       unless indices.contains address do throw s!"resource adapter: invalid or orphan projection {address}"
     | _ => pure ()
   let mut blobs : Std.HashMap Address UInt64 := {}
+  let mut naturalValues := #[]
   for (address, bytes) in env.blobs.toArray.qsort (fun a b => Address.cmpBytes a.1 b.1 == .lt) do
     unless address.hash.size == 32 && Address.blake3 bytes == address do
       throw s!"resource adapter: blob hash mismatch {address}"
     blobs := blobs.insert address (← checkedUInt blobs.size)
+    naturalValues := naturalValues.push (Nat.fromBytesLE bytes.data)
   let kinds := pending.map (·.declaration.kind)
-  let mut program : Program := { declarations := #[] }
+  let mut program : Program := { declarations := #[], naturalValues }
   -- One remapped sharing table per distinct parent constant.
   let mut offsets : Std.HashMap Address Nat := {}
   for p in pending do
@@ -587,6 +595,47 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   for group in groups do
     let group ← group.mapM fun a => return (← index indices a).toNat
     program := { program with groups := program.groups.push group }
+  -- Conversion reads canonical source rules, never a profile replacement.
+  -- Successful combined validation also requires canonical-family checking
+  -- of these same bytes; standalone resource diagnostics do not establish it.
+  -- Initially support only safe, single-motive, index-free, default-contract
+  -- families; unsupported metadata simply supplies no reduction rule.
+  for (address, r) in recursorSpecs do
+    if r.isUnsafe || r.motives != 1 || r.indices != 0 || r.minors.toNat != r.rules.size then continue
+    let i ← index indices address
+    let leading := (r.params + r.motives + r.minors).toNat
+    let candidate := runCheck profile.limits do
+      let mut type := program.declarations[i.toNat]!.type
+      unless ← plain program profile.limits.depth type do return none
+      for _ in [:leading] do
+        let (_, _, _, body) ← arrow program profile.limits.depth type
+        type := body
+      let (_, _, major, _) ← arrow program profile.limits.depth type
+      let (head, _) ← splitApp program profile.limits.depth (← whnf program profile.limits.depth major) []
+      let .ref family _ := head | return none
+      let some (_, params, ctors) := reductionFamilies.find? fun (a, _, _) =>
+          indices[a]? == some family | return none
+      if params != r.params.toNat || ctors.size != r.rules.size then return none
+      unless ← plain program profile.limits.depth (← declaration program family).type do
+        return none
+      let bodies := program.auxiliary.filter (·.1 == i.toNat)
+      if bodies.size != r.rules.size then return none
+      let mut rules := #[]
+      for j in [:ctors.size] do
+        let (ctorAddr, fields) := ctors[j]!
+        let ctor ← liftExcept ((index indices ctorAddr).mapError fun _ => .unsupported "conversion constructor")
+        if r.rules[j]!.fields.toNat != fields then return none
+        unless (← plain program profile.limits.depth program.declarations[ctor.toNat]!.type) &&
+            (← plain program profile.limits.depth bodies[j]!.2) do return none
+        rules := rules.push { constructor := ctor, params, fields, rhs := bodies[j]!.2 : ConversionRule }
+      return some { index := i, leading, major := leading, rules : ConversionRecursor }
+    if let .ok (some recursor) := candidate then
+      program := { program with conversionRecursors := program.conversionRecursors.push recursor }
+  for (typeAddr, ctorAddr, params, count) in fieldSpecs do
+    program := { program with projections := program.projections.push {
+      typeRef := ← index indices typeAddr
+      constructor := ← index indices ctorAddr
+      params, fields := count } }
   let resolveList := fun (list : Array Address) => list.mapM (index indices)
   let assumptions ← resolveList profile.assumptions
   let scalarTypes ← resolveList profile.scalarTypes
@@ -601,6 +650,15 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
     shareableTypes := shareable, scalarTypes, choices, propSort := some propSort, cases := profile.cases }
+  -- Mirrors Ix.Tc.PrimAddrs.canonical without importing the typechecker into
+  -- this resource-only adapter. Only authenticated canonical identities count.
+  let natAddress := (Address.fromString "35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc").get!
+  let zeroAddress := (Address.fromString "eeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46").get!
+  let succAddress := (Address.fromString "42d6ed31536f0958176f1dc973383808ac8583223746ebca78dbe389b65321a6").get!
+  if profile.natType == some natAddress then
+    if let some zero := indices[zeroAddress]? then
+      if let some succ := indices[succAddress]? then
+        program := { program with naturalConstructors := some (zero, succ) }
   for (address, mask) in profile.interfaces do
     let i ← index indices address
     let type ← (overlay program profile.limits program.declarations[i.toNat]!.type mask.toList).mapError

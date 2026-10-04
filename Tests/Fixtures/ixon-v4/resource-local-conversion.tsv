@@ -1,0 +1,9 @@
+# name	expected	depth	left (ixon-v4 hex)	right (ixon-v4 hex)
+two local aliases	equal	32	10	71200271200212
+outer local alias	equal	32	11	71200212
+different local values	different	32	10	71200212
+aliases under dependent binder	equal	32	9117200071200611	9117200071200671200271200213
+inner binder stays bound	different	32	9117200010	9117200013
+local conversion retains lambda contract	different	32	8105200011	8107200071200271200213
+escaping local index	unbound	32	13	2001
+local expansion bounded	budget	2	10	71200271200212
