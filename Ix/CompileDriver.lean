@@ -684,7 +684,8 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   let (addrToNameMap, namesMap, nameBlobs) :=
     cenv.nameToNamed.fold (init := ({}, acc.blockNames, {}))
       fun (addrMap, namesMap, blobs) name named =>
-        let addrMap := addrMap.insert named.addr name
+        -- A7 (D14): the canonical alias, not the last one the fold met.
+        let addrMap := insertCanonicalAlias addrMap named.addr name
         let (namesMap, blobs) :=
           Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
         (addrMap, namesMap, blobs)

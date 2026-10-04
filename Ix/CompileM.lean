@@ -156,6 +156,28 @@ def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
 instance : Inhabited CompileEnv where
   default := { env := { consts := {} }, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }
 
+/-- The canonical choice between two aliases (distinct names at one
+    address): the earlier in seed order (`Ix.nameCompare`, the name hash;
+    design document §6.2, the last tie-break of the canonical alias rule,
+    and the seed of §2.3). A total order on names that depends on nothing
+    else, so a choice made with it is a function of the SET of aliases, not
+    of the order a map was filled or iterated in. -/
+def aliasPrecedes (a b : Name) : Bool :=
+  Ix.nameCompare a b == .lt
+
+/-- Insert `name` into a reverse index (address → one name) keeping the
+    canonical alias (`aliasPrecedes`). A7 (D14): the reverse index was
+    filled last-wins over `HashMap` iteration, so which alias an address
+    named depended on the map's iteration order (and so on what else was in
+    the map: a closure compile could name an address differently from the
+    whole compile). With this insert it is the earliest alias in seed order
+    whatever the order of the inserts. -/
+def insertCanonicalAlias (m : Std.HashMap Address Name) (addr : Address) (name : Name)
+    : Std.HashMap Address Name :=
+  m.alter addr fun
+    | some prev => some (if aliasPrecedes name prev then name else prev)
+    | none => some name
+
 /-- Result of compiling a block, including the main constant and any projections. -/
 structure BlockResult where
   /-- The main block constant (Muts for mutual blocks, or direct constant) -/
@@ -3657,7 +3679,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   -- Seed with blockNames collected during compilation (binder names, level params, etc.)
   let (addrToNameMap, namesMap, nameBlobs) :=
     compileEnv.nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, blobs) name named =>
-      let addrMap := addrMap.insert named.addr name
+      let addrMap := insertCanonicalAlias addrMap named.addr name  -- A7 (D14)
       let (namesMap, blobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
       (addrMap, namesMap, blobs)
 
@@ -3973,7 +3995,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   -- Seed with blockNames collected during compilation (binder names, level params, etc.)
   let (addrToNameMap, namesMap, nameBlobs) :=
     nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, nameBlobs) name named =>
-      let addrMap := addrMap.insert named.addr name
+      let addrMap := insertCanonicalAlias addrMap named.addr name  -- A7 (D14)
       let (namesMap, nameBlobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap nameBlobs name
       (addrMap, namesMap, nameBlobs)
 
