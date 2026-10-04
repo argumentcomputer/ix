@@ -188,8 +188,8 @@ def normOrderAlias : Expr → Expr
   | e => e
 
 def PFLayout.isClique (L : PFLayout) (s : Spine) : Bool :=
-  s.size == L.n && (s.leaves.zip L.leaves).all fun (a, b) =>
-    eqModVars (normOrderAlias a) (normOrderAlias b)
+  s.size == L.n && (matchPackingLeaves (s.leaves.map normOrderAlias)
+    (L.leaves.map normOrderAlias)).isSome
 
 /-- The `toPartialOrder` of a `CCPO`/`CompleteLattice` instance. -/
 def toPO (lattice : Bool) (lvl : Level) (ty inst : Expr) : Expr :=

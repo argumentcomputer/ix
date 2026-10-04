@@ -191,24 +191,6 @@ def eqUpTo (mapB : Name → Name) : Expr → Expr → Bool
 /-- `eqUpTo` without renaming. -/
 def alphaEq (a b : Expr) : Bool := eqUpTo id a b
 
-/-- Structural equality where every variable (bound or free) matches every
-variable: the recognisers' test that a packing type has the clique's
-summands (whose variables are the fixed parameters, at whatever depth). -/
-def eqModVars : Expr → Expr → Bool
-  | .mdata _ a _, b => eqModVars a b
-  | a, .mdata _ b _ => eqModVars a b
-  | .bvar _ _, .bvar _ _ | .fvar _ _, .fvar _ _ | .bvar _ _, .fvar _ _
-  | .fvar _ _, .bvar _ _ => true
-  | .sort u _, .sort v _ => u == v
-  | .const a us _, .const b vs _ => a == b && us == vs
-  | .app f a _, .app g b _ => eqModVars f g && eqModVars a b
-  | .lam _ t b _ _, .lam _ t' b' _ _ => eqModVars t t' && eqModVars b b'
-  | .forallE _ t b _ _, .forallE _ t' b' _ _ => eqModVars t t' && eqModVars b b'
-  | .letE _ t v b _ _, .letE _ t' v' b' _ _ => eqModVars t t' && eqModVars v v' && eqModVars b b'
-  | .lit a _, .lit b _ => a == b
-  | .proj s i a _, .proj s' i' b _ => s == s' && i == i' && eqModVars a b
-  | _, _ => false
-
 /-- Replace loose `bvar 0` of `body` by `t`, where `t` lives in the same
 context as `body` (so its own `bvar 0` is the same binder): no variable is
 lowered. Used to instantiate a motive `λ x. M` at `pre(z)` under a new

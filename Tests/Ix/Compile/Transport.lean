@@ -478,6 +478,49 @@ def distinguish : PSum Nat Nat → PSum Nat Nat → Nat
 
 end RelationPositionControl
 
+/-- Recognition preserves repeated variables, distinguishes local binders
+from external parameters, and uses one correspondence across all leaves. -/
+def packingCorrespondenceControls : Except String Unit := do
+  let b := _root_.Ix.Expr.mkBVar
+  let f := fun n => _root_.Ix.Expr.mkFVar (ixName n)
+  let p := _root_.Ix.Expr.mkConst (ixName `P) #[]
+  let app := _root_.Ix.Compile.Canon.mkAppN
+  let compare := _root_.Ix.Compile.Clique.matchPackingLeaves
+  let check (label : String) (ok : Bool) : Except String Unit :=
+    unless ok do throw s!"packing correspondence: {label}"
+  check "consistent shifted repeated parameters"
+    (compare #[app p #[b 0, b 0], b 1] #[app p #[b 3, b 3], b 4]).isSome
+  check "repeated versus distinct parameter in one leaf"
+    (compare #[app p #[b 0, b 0]] #[app p #[b 3, b 4]]).isNone
+  check "distinct versus repeated parameter in one leaf"
+    (compare #[app p #[b 0, b 1]] #[app p #[b 3, b 3]]).isNone
+  check "sharing is checked across leaves"
+    (compare #[b 0, b 0] #[b 3, b 4]).isNone
+  check "injectivity is checked across leaves"
+    (compare #[b 0, b 1] #[b 3, b 3]).isNone
+  check "opened free-variable correspondence"
+    (compare #[app p #[b 0, b 0]] #[app p #[f `x, f `x]]).isSome
+  let lam := fun body => _root_.Ix.Expr.mkLam (ixName `x) p body .default
+  check "bound variable cannot become an outer variable"
+    (compare #[lam (b 0)] #[lam (b 1)]).isNone
+  check "bound variable cannot become a free variable"
+    (compare #[lam (b 0)] #[lam (f `x)]).isNone
+  check "inner binders remain rigid"
+    (compare #[lam (lam (b 0))] #[lam (lam (b 1))]).isNone
+  check "external indices adjust for local binder depth"
+    (compare #[b 0, lam (b 1)] #[b 2, lam (b 3)]).isSome
+  check "inconsistent shifted parameter under a binder"
+    (compare #[b 0, lam (b 1)] #[b 2, lam (b 4)]).isNone
+  for (name, args) in #[(``optParam, #[p, p]), (``autoParam, #[p, p]),
+      (``outParam, #[p]), (``semiOutParam, #[p])] do
+    let annotated := app (_root_.Ix.Expr.mkConst (ixName name) #[]) args
+    check s!"transparent annotation {name}" (compare #[annotated] #[p]).isSome
+  check "arbitrary aliases remain outside the normal form"
+    (compare #[app (_root_.Ix.Expr.mkConst (ixName `UserAlias) #[]) #[p]] #[p]).isNone
+  check "different numbers of leaves are rejected" (compare #[p] #[p, p]).isNone
+  check "exhausted recognition fuel is not evidence"
+    (_root_.Ix.Compile.Clique.matchPackingExpr 0 0 {} p p).isNone
+
 /-- A user record projection over exactly the clique's packing is not the
 encoding's relation. The old broad projection recognizer changed this term
 from 17 to 29, with both terms still accepted at Nat. Check its value as well
@@ -750,6 +793,9 @@ def run : IO UInt32 := do
   if let some err ← strayProof env eqn then failures := failures.push s!"control: {err}"
   if let some err ← strayMonotonicity env eqn then failures := failures.push s!"control: {err}"
   if let some err ← userRelationProjection env then failures := failures.push s!"control: {err}"
+  match packingCorrespondenceControls with
+  | .ok () => IO.println "[clique-transport] packing correspondence: all 18 controls pass"
+  | .error err => failures := failures.push s!"control: {err}"
   -- (b) the kernel
   let rejected := kernelRows.filter (·.2.2.isSome)
   IO.println s!"[clique-transport] (b) kernel: {kernelRows.size - rejected.size}/{kernelRows.size} transported constants accepted"

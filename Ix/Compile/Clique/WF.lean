@@ -40,6 +40,7 @@
 -/
 module
 public import Ix.Compile.Clique.Packing
+public import Ix.Compile.Clique.PackingMatch
 public import Ix.Compile.Clique.Telescope
 public section
 
@@ -75,7 +76,7 @@ structure WFLayout where
   deriving Inhabited
 
 def WFLayout.isClique (L : WFLayout) (s : Spine) : Bool :=
-  s.size == L.n && (s.leaves.zip L.leaves).all fun (a, b) => eqModVars a b
+  s.size == L.n && (matchPackingLeaves s.leaves L.leaves).isSome
 
 /-- A packing type that is a proper suffix of the clique's (`m` summands,
 `2 ≤ m < n`): it may occur only inside a recognised construct. -/
@@ -83,7 +84,7 @@ def WFLayout.isFragment (L : WFLayout) (ty : Expr) : Bool :=
   (List.range L.n).any fun m =>
     m ≥ 2 && m < L.n &&
       match decodeSpine .psum m ty with
-      | some s => (s.leaves.zip (L.leaves.extract (L.n - m) L.n)).all fun (a, b) => eqModVars a b
+      | some s => (matchPackingLeaves s.leaves (L.leaves.extract (L.n - m) L.n)).isSome
       | none => false
 
 /-- The packing type named by the type arguments of an injection or a case
