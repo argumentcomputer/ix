@@ -1116,15 +1116,15 @@ fn build_type_brecon_fvar(
   //
   // Compute the levels here while the index decls are still pushed into
   // the live `rtc` scope so `get_level` resolves any FVar references to
-  // earlier indices/params correctly. Then pop them back to the state the
-  // existing code below expects.
+  // earlier indices/params correctly. The following equality construction
+  // opens its own fresh scope; these existing locals need no duplicate frame.
   let index_sort_levels: Vec<Level> = {
-    rtc.push_locals(&index_decls);
+    // Indices, major and F-binders remain live from minor construction.
+    // Re-pushing indices would duplicate their free-variable identities.
     let mut out = Vec::with_capacity(index_decls.len());
     for d in &index_decls {
       out.push(rtc.get_level(&d.domain)?);
     }
-    rtc.pop_locals(&index_decls);
     out
   };
   let eq_result = build_type_brecon_eq_fvar(

@@ -26,6 +26,7 @@ import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.BridgeProvenance
 import Tests.Ix.Compile.BridgeBoundaries
+import Tests.Ix.Compile.BridgeScopes
 import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.CliqueOwnership
@@ -134,6 +135,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("compiler-index-safety", Tests.Ix.Compile.IndexSafety.suite),
   ("compiler-provenance", Tests.Ix.Compile.BridgeProvenance.suite),
   ("compiler-bridge-boundaries", Tests.Ix.Compile.BridgeBoundaries.suite),
+  ("compiler-bridge-scopes", Tests.Ix.Compile.BridgeScopes.suite),
   ("compiler-selected-closure", Tests.Ix.Compile.SelectedClosure.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),

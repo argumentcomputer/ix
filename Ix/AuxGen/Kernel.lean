@@ -717,13 +717,20 @@ def depth (scope : TcScopeSt) : Nat := scope.baseDepth + scope.extraLocals
     outer FVar types as kernel locals (Rust `TcScope::new`). -/
 def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
     (maps : AddrMaps) : KBridgeM TcScopeSt := do
+  let mut seenParams : Std.HashSet Name := {}
+  for name in paramNames do
+    if seenParams.contains name then
+      throw (.unsupportedExpr s!"aux kernel bridge: duplicate universe parameter '{name}'")
+    seenParams := seenParams.insert name
+  let mut fvarLevels : Std.HashMap Name Nat := {}
+  for (decl, i) in outerFvarCtx.zipIdx do
+    if fvarLevels.contains decl.fvarName then
+      throw (.unsupportedExpr s!"aux kernel bridge: duplicate outer free variable '{decl.fvarName}'")
+    fvarLevels := fvarLevels.insert decl.fvarName i
   -- Fresh TC portions, persistent env (caches live in KEnv).
   modify fun kctx => { kctx with tcState :=
     { Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims with
       inferOnly := true } }
-  let mut fvarLevels : Std.HashMap Name Nat := {}
-  for (decl, i) in outerFvarCtx.zipIdx do
-    fvarLevels := fvarLevels.insert decl.fvarName i
   let scope : TcScopeSt :=
     { fvarLevels, baseDepth := outerFvarCtx.size, paramNames, maps }
   for (decl, i) in outerFvarCtx.zipIdx do
@@ -736,9 +743,13 @@ def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
     `popLocals`. Mirrors Rust `push_locals` (expr_utils.rs:2257). -/
 def pushLocals (scope : TcScopeSt) (decls : Array LocalDecl)
     : KBridgeM TcScopeSt := do
+  if (← get).tcState.ctx.size != scope.depth then
+    throw (.unsupportedExpr "aux kernel bridge: stale scope depth before pushLocals")
   let mut scope := scope
   let depth0 := scope.depth
   for (decl, i) in decls.zipIdx do
+    if scope.fvarLevels.contains decl.fvarName then
+      throw (.unsupportedExpr s!"aux kernel bridge: duplicate pushed free variable '{decl.fvarName}'")
     scope := { scope with
       fvarLevels := scope.fvarLevels.insert decl.fvarName (depth0 + i) }
     rememberSourceExpr decl.domain scope.maps
@@ -750,6 +761,13 @@ def pushLocals (scope : TcScopeSt) (decls : Array LocalDecl)
 /-- Mirrors Rust `pop_locals` (expr_utils.rs:2274). -/
 def popLocals (scope : TcScopeSt) (decls : Array LocalDecl)
     : KBridgeM TcScopeSt := do
+  if (← get).tcState.ctx.size != scope.depth then
+    throw (.unsupportedExpr "aux kernel bridge: stale scope depth before popLocals")
+  if decls.size > scope.extraLocals then
+    throw (.unsupportedExpr "aux kernel bridge: popLocals exceeds pushed local count")
+  for (decl, i) in decls.zipIdx do
+    if scope.fvarLevels[decl.fvarName]? != some (scope.depth - decls.size + i) then
+      throw (.unsupportedExpr s!"aux kernel bridge: popLocals is not LIFO at '{decl.fvarName}'")
   let mut scope := scope
   for decl in decls.reverse do
     discard <| runTc Ix.Tc.TcM.popLocal
