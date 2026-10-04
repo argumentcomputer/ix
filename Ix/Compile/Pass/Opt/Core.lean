@@ -234,6 +234,9 @@ structure OptEnv where
   ienv : Ix.Environment
   /-- A name of `E` resolves to an address. -/
   resolves : Name → Bool
+  /-- The address of a name of `E`, when it resolves (the proof-justified
+  passes compare compiled references, `Opt.CollapseRec.agreeAddr`). -/
+  addrOf : Name → Option Address := fun _ => none
   /-- The block of a Lean image-kind head, when it is a changed block's. -/
   blockOf : Name → Option OptBlock
   /-- The dependents rule of the proof-justified passes (design document

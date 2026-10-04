@@ -705,7 +705,7 @@ def passSameAsOff : List (String × String × Bool) := [
 
 /-- The per-pass fixtures of O7–O12. -/
 def pjPassFiles : List String :=
-  ["O7Collapse", "O8Cases", "O9Split", "O11bNoConfusion"].map fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
+  ["O7Collapse", "O8Cases", "O9Split", "O10O12Collapse", "O11bNoConfusion"].map fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
 
 /-- Twins with the switch on (one address): the pass made the presentation's
 term the canonical one's. -/
@@ -733,7 +733,22 @@ def pjPassTwins : List (String × String × String) := [
   ("O9Split", "PassO9.Src.sum2", "PassO9.Can.sum2"),
   ("O9Split", "PassO9.Src.len_succ", "PassO9.Can.len_succ"),
   ("O9Split", "PassO9.Src.A.cnt", "PassO9.Can.A.cnt"),
-  ("O9Split", "PassO9.Src.cnt1", "PassO9.Can.cnt1")]
+  ("O9Split", "PassO9.Src.cnt1", "PassO9.Can.cnt1"),
+  ("O10O12Collapse", "PassO10.Src.A.h", "PassO10.Can.X.h"),
+  ("O10O12Collapse", "PassO10.Src.B.k", "PassO10.Can.X.h"),
+  ("O10O12Collapse", "PassO10.Src.A.h._ix._f", "PassO10.Can.X.h._f"),
+  ("O10O12Collapse", "PassO10.Src.h_two", "PassO10.Can.h_two"),
+  ("O10O12Collapse", "PassO10.Src.A.f", "PassO10.Perm.A.f"),
+  ("O10O12Collapse", "PassO10.Src.B.g", "PassO10.Perm.B.g"),
+  ("O10O12Collapse", "PassO10.Src.fg_ab", "PassO10.Perm.fg_ab"),
+  ("O10O12Collapse", "PassO10.Src.fg_bab", "PassO10.Perm.fg_bab"),
+  ("O10O12Collapse", "PassO10.C8.Src.A.h", "PassO10.C8.Can.X.h"),
+  ("O10O12Collapse", "PassO10.C8.Src.B.h", "PassO10.C8.Can.X.h"),
+  ("O10O12Collapse", "PassO10.C8.Src.C.h", "PassO10.C8.Can.C.h"),
+  ("O10O12Collapse", "PassO10.C8.Src.h_ex", "PassO10.C8.Can.h_ex"),
+  ("O10O12Collapse", "PassO10.Src.A.f._ix.fg", "PassO10.Perm.A.f._ix.fg"),
+  ("O10O12Collapse", "PassO10.Src.A.f._ix._f", "PassO10.Perm.A.f._ix._f"),
+  ("O10O12Collapse", "PassO10.Src.B.g._ix._f", "PassO10.Perm.B.g._ix._f")]
 
 /-- Twin pairs that still differ with the switch on: each must have its entry
 in `Tests.Ix.Compile.NonCanonical.nonCanonicalPasses` (fixture
@@ -767,7 +782,15 @@ def pjPassRefs : List (String × String × String × Bool) := [
   ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A._ix.brecOn", true),
   ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._ix._f", true),
   ("O9Split", "PassO9.Src.A.sum", "PassO9.Src.A._ix.brecOn", true),
-  ("O9Split", "PassO9.Src.A.cnt", "PassO9.Src.A._ix.brecOn", true)]
+  ("O9Split", "PassO9.Src.A.cnt", "PassO9.Src.A._ix.brecOn", true),
+  -- O10: the Ix `brecOn`, single motives; O12: the shared helper; C8's different arms decline
+  ("O10O12Collapse", "PassO10.Src.A.h", "PProd", false),
+  ("O10O12Collapse", "PassO10.C8.Src.A.h", "PProd", false),
+  ("O10O12Collapse", "PassO10.C8.Src.A.f", "PProd", true),
+  ("O10O12Collapse", "PassO10.Src.A.f", "PassO10.Src.A.f._ix.fg", true),
+  ("O10O12Collapse", "PassO10.Src.B.g", "PassO10.Src.A.f._ix.fg", true),
+  ("O10O12Collapse", "PassO10.Src.A.h", "PassO10.Src.A.h._ix._f", true),
+  ("O10O12Collapse", "PassO10.Src.B.k", "PassO10.Src.A.h._ix._f", true)]
 
 /-- The proof-justified passes' non-canonical set, exact in both directions
 for the unit (`passTwinsNC` against `nonCanonicalPasses`). -/

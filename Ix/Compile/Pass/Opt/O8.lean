@@ -47,7 +47,10 @@ arguments are copied). Phase B states this per constant as
 **Dependents.** `c` is only propositionally equal to `base(c)`. The
 dependents rule (`Opt.Packed`, `pjAllowed`): no constant outside `c`'s
 block references both `c` and an image-kind auxiliary of `b`, otherwise
-O8 declines for `c` (demotion). Closed computations (`rfl` value pins,
+O8 declines for `c` (demotion). For a matcher, the equation compiler's
+outputs over it (`f`, `q._f`, `q._sunfold`, `q._unsafe_rec`; Lean shares
+matchers between functions) are carried: they apply the matcher, whose
+typing reads its type only (`isCarriedDependent`). Closed computations (`rfl` value pins,
 `decide`) still reduce: both sides agree by ι on constructors.
 
 ## Canonicity

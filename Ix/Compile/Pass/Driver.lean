@@ -370,6 +370,7 @@ def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
+      addrOf := resolveAddr cenv
       demotion := Opt.demotionIn cenv.p3BlockRefs cenv.p3Heads }
   fun site n us args => (Opt.engineFull env { head := n, us, args, site }).map (·.2)
 

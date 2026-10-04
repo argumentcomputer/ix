@@ -46,6 +46,12 @@ passes implement, the conservative choice the design document leaves open
 > and an image-kind auxiliary of the changed block being rewritten;
 > otherwise keep the faithful image (**demotion**).
 
+Two kinds of dependent are not counted, because Lean builds them so that
+they check against either value (`isCarriedDependent`, as the clique side
+carries equation lemmas): Lean's `T.noConfusion` over `T.noConfusionType`,
+and the equation compiler's outputs over a matcher (`f`, `q._f`,
+`q._sunfold`, `q._unsafe_rec`).
+
 A dependent that unfolds `c` without mentioning the block's auxiliaries
 compares `c` with itself or with other rewritten constants (each side is
 rewritten consistently) or with closed values. The rule only decides
@@ -205,17 +211,33 @@ def singleLevels (env : OptEnv) (s : PackedShape) (us : Array Level) : Option (A
     else none
   return ls.map (substLevel s.levelParams us)
 
-/-- Lean's `T.noConfusion` over `T.noConfusionType`: a dependent the rule
-does not count. Its value (`Eq.ndrec` over `T.casesOn (motive := λ t.
-T.noConfusionType P t t) t ms`) instantiates `T.noConfusionType` generically
-in both motives, where no unfolding happens, and at constructor applications
-in the minors' expected types, where Lean's value and the rewritten one both
-reduce (ι) to the same type; so it checks against either value (as the
-clique side carries equation lemmas). -/
+/-- The last string component of a name. -/
+def lastComponent : Name → String
+  | .str _ s _ => s
+  | _ => ""
+
+/-- Dependents the rule does not count, because Lean builds them in a way that
+type-checks against either value of the constant:
+* Lean's `T.noConfusion` over `T.noConfusionType`: its value (`Eq.ndrec`
+  over `T.casesOn (motive := λ t. T.noConfusionType P t t) t ms`)
+  instantiates `T.noConfusionType` generically in both motives, where no
+  unfolding happens, and at constructor applications in the minors'
+  expected types, where Lean's value and the rewritten one both reduce (ι)
+  to the same type;
+* the equation compiler's outputs over a matcher `p.match_k`: the function
+  `p` itself and any structural handler `q._f`, smart unfolding `q._sunfold`
+  or `q._unsafe_rec` (Lean shares a matcher between functions with the same
+  patterns, so `q` need not be `p`): each applies the matcher to a motive,
+  discriminants and alternatives, whose typing reads the matcher's type,
+  never its value.
+(As the clique side carries the members' equation lemmas.) -/
 def isCarriedDependent (c d : Name) : Bool :=
-  match c, d with
-  | .str p "noConfusionType" _, .str q "noConfusion" _ => p == q
-  | _, _ => false
+  match c with
+  | .str p "noConfusionType" _ => d == Name.mkStr p "noConfusion"
+  | .str p m _ =>
+    m.startsWith "match_" &&
+      (d == p || ["_f", "_sunfold", "_unsafe_rec"].contains (lastComponent d))
+  | _ => false
 
 /-- The dependents rule over the input's block reference graph (`refs`:
 block key ↦ the names its members reference outside the block) and the
