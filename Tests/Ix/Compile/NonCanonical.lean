@@ -2242,3 +2242,245 @@ def expectedRefusals : List ExpectedRefusal := [
 ]
 
 end Tests.Ix.Compile.NonCanonical
+
+namespace Tests.Ix.Compile.NonCanonical
+
+/-- The non-canonical set of the clique families **with the switch on**
+(`IX_PASS3=images`: changed cliques through the clique transport,
+`Ix.Compile.Pass.Cliques`), read by `pass3-cliques` and exact in both
+directions there. The names are Lean names and the `_ix` names of the
+canonical constants, relative to the reference presentation. -/
+def nonCanonicalOn : List NonCanonicalEntry := [
+  e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P1" `od._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "43281966e05730c23b3a58e91c7d538d88266e8eb7f3b7c4fe9ee28bb30f003e" "65e783795028f8e0de56fed91c7f0e72c756296832635fd169f985d3b9193187" "value.λ.body.λ.body.@3.λ.body.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P1" `ev._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "32ac0d0b7ab46893597f46158112832e456669f74427196c7392b187d6da2f1c" "bb08c2c77fa597768efd23f70721372b6a62c794e689d33030e180afec296cc3" "value.λ.body.λ.body.@3.λ.body.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P3" `ev._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "32ac0d0b7ab46893597f46158112832e456669f74427196c7392b187d6da2f1c" "bb08c2c77fa597768efd23f70721372b6a62c794e689d33030e180afec296cc3" "value.λ.body.λ.body.@3.λ.body.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P3" `od._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "43281966e05730c23b3a58e91c7d538d88266e8eb7f3b7c4fe9ee28bb30f003e" "65e783795028f8e0de56fed91c7f0e72c756296832635fd169f985d3b9193187" "value.λ.body.λ.body.@3.λ.body.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P1" `m1._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "b473b69e52a37dafd09fb533128843a07dbcc58d58777409ffab856ef6d29407" "d2e57d36c50cd5775f4c95be7157e608df904c29760f0632f8715f3d8d31477a" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P1" `m0._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "fedaafc7f9367356e16f3202220f6bd36dfebc7c0fd73d316b979b0de7f938c4" "2ca8a8b47168b5ab5934c3da7114471d5bfb37bfadd265f5cf61d457209a9a1b" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P1" `m2._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "9bcdd88d009edbd1f0d37bf051063ad4c1f0530790133cb6a8fadabc96584fcb" "6d92f0bfe7815b036aa2e8aa94555be69ceca2b9ea03b336e21155446a12035a" "value.λ.body.λ.body.@3.λ.body.λ.body.@4.proj0" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P2" `m2._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "9bcdd88d009edbd1f0d37bf051063ad4c1f0530790133cb6a8fadabc96584fcb" "95694ad293b38d37c4a3ce5685b2515611e91594ee8be66d080c374c078df146" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P2" `m1._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "b473b69e52a37dafd09fb533128843a07dbcc58d58777409ffab856ef6d29407" "9b5514479236441cb7b31271e82f528edd1374ef82f3bb7966587f98c1faa76d" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P2" `m0._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "fedaafc7f9367356e16f3202220f6bd36dfebc7c0fd73d316b979b0de7f938c4" "d06c6d35cc3c901f92352c900abf036ce204f29228dec3299fc7791f4efb0a9a" "value.λ.body.λ.body.@3.λ.body.λ.body.@4.proj0" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "52a987639794c1db5e7385fbb563c6a75f665679ea982622300e77922ad501d5" "ae363b9cda9638fa9686d4b381dc9a676f2d52a4ffff51c061021c19a890fb99" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@5" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "d90b3fb84212449b28689dda72a5b33a2441536c0026aef7d0d52ea4a43f3720" "f5485ab3ad53ac26004d88c0f094a13a6e9b46c004027eb6199621f909fee63c" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "14aaa1ec78220ab13ef4eb9134c9260fb940dbabd9fb801f7e39ccd21b6d6be9" "f315630469a6313017fabc85531d5a356ab7e5f810c7b3592d4e66b390a31398" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0c739daac4453efefe97ea2124eddc567c901a609e1a36d0191f7a499dde8307" "848b4d81111d5d993e61fbba20672461261caef265d28eac51ec2bf032089408" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "24ce7b01a7f68ecea1e59627248a615f58ccfd435f8c058016f1f95dfd6191b6" "5fdb169ee5639e5367b7ca20abbab138e3c3b127b490901ade94083a6fed1f68" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa.eq_def "equation lemma" .lazy
+    "119ac4c5c40a57c8e73fabb716af66c2fc17d22ec095a8a8b8108dba87cde3a1" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wb.eq_def "equation lemma" .lazy
+    "d30d73b1646265e5d700dbcb6efea8dff8e117a7410bc38f56f1c191d2104f96" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual.eq_def "encoding equation" .orderStmt
+    "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa._mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "24ce7b01a7f68ecea1e59627248a615f58ccfd435f8c058016f1f95dfd6191b6" "5fdb169ee5639e5367b7ca20abbab138e3c3b127b490901ade94083a6fed1f68" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0c739daac4453efefe97ea2124eddc567c901a609e1a36d0191f7a499dde8307" "848b4d81111d5d993e61fbba20672461261caef265d28eac51ec2bf032089408" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa.eq_def "equation lemma" .lazy
+    "119ac4c5c40a57c8e73fabb716af66c2fc17d22ec095a8a8b8108dba87cde3a1" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa._mutual.eq_def "encoding equation" .orderStmt
+    "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wb.eq_def "equation lemma" .lazy
+    "d30d73b1646265e5d700dbcb6efea8dff8e117a7410bc38f56f1c191d2104f96" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "6d43105b925565d18ef4797b4cd28ef0ecf7d80f7d1c95ca138f121a5f4cf40d" "bceac634d415df450def06d4a22b21a761b5ed1656541840965438fa4762b8a9" "type.∀.body.∀.body.∀.body.@0.@2.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual._proof_4 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ce71876d8dc1a733cf4a015111ba6be5780a8e830183d26f90e2182f961f21cc" "2bd27fb76859701c03ad9a256da78686e99bf9bdf55c62591ec604b81592ac37" "type.∀.body.∀.body.∀.body.@0.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual._proof_3 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "1a6d56af84d790f0f5f694bd7eb082c0a1beafe6aacd11323972d60dd5fb64b8" "b3b9365f8cbdd96920326a32b76e706633c74d36ce659bd9ac7e8371a71c5b3e" "type.∀.body.∀.body.∀.body.@0.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual.eq_def "encoding equation" .orderStmt
+    "205423647ec0cfd85f0923b6927f8ea21ec2aeb2caecd718dd3ee0ef039b3991" "d0f98e93be3e30d814cb45b26997053706c312d701e191eedcdfa0a5b6cf2ff5" "type.∀.body.@2.@4.λ.body.@4.λ.body.λ.body.@3.λ.body" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0e27ba25c79dc7793a8ba162691f785ee152ec1f68d31f4f597d4b09db0a5ef5" "9cc2b3854a5c3cc7cdb261fadd317f19800a7d2a2f1eb5c1bed9d698f9f2cc70" "value.@4.λ.body.λ.body.@4.λ.body.λ.body.@4.λ.body.λ.body.λ.body.@3.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual._proof_3 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "1a6d56af84d790f0f5f694bd7eb082c0a1beafe6aacd11323972d60dd5fb64b8" "fe16646b2b3f46f4d57a175b5b47d4d644c49dc4d12145774993cb86d21f145d" "type.∀.body.∀.body.∀.body.@0.@2.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual._proof_4 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ce71876d8dc1a733cf4a015111ba6be5780a8e830183d26f90e2182f961f21cc" "757d86daa0a585e4986d23619f3b86f704e970c806116b70cd7932d948b6940b" "type.∀.body.∀.body.∀.body.@0.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "6d43105b925565d18ef4797b4cd28ef0ecf7d80f7d1c95ca138f121a5f4cf40d" "776dbac01f0a7c74dd91c8d188c9e34fe6a7cf75c293f611385a8223789eaca2" "type.∀.body.∀.body.∀.body.@0.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0e27ba25c79dc7793a8ba162691f785ee152ec1f68d31f4f597d4b09db0a5ef5" "43efb240d50538091e93d4cdf2ffa2140037e6df0cda820c120ab0c46dc3b447" "value.@4.λ.body.λ.body.@4.λ.body.λ.body.@4.λ.body.λ.body.λ.body.@1.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual.eq_def "encoding equation" .orderStmt
+    "205423647ec0cfd85f0923b6927f8ea21ec2aeb2caecd718dd3ee0ef039b3991" "554d9601db74da49f2f7e6e581f9e461b0cfacf16cb79a7fbb58cf49060aebc3" "type.∀.body.@2.@4.λ.body.@4.λ.body.λ.body.@1.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `gb.eq_def "equation lemma" .lazy
+    "8c620db260db49063de075bc9839f00b2d732c0468bb8b87f896facb9385a128" "76756617005ee9f40088352a058d4b86f4070b4ba99a73b383868e6ac91ed62d" "value.λ.body.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `gb "clique member" .guessLex
+    "978a66e918dbcc26dee988dbbd25fd28f5f613c3482a5c14e1e32951b0bbccd9" "5337df8a3848071b3fa1fe71fb801aa7ea2f63c159b27860d51da14d3ada7232" "value.λ.body.λ.body.@0.fn" "the canonical functional differs: GuessLex picked another measure for the other order (D22 pins Lean's choice)",
+  e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga._mutual.eq_def "encoding equation" .orderStmt
+    "04e8346072b66c68dde386ff5a5a1ce9144a185d226fc9099d8865ad22cc3c9f" "1dffc78b59df95be2ef948f52dd2c2138e3c7c9fe8f05aa4c808f72a2d0c359f" "type.∀.body.@2.@4.λ.body.@4.λ.body.λ.body.@3.λ.body.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga.eq_def "equation lemma" .lazy
+    "725de1dc9e6a16cbe621aefb2d4196d823e049f91cb1bb290f8d48051de49a7e" "1191d1d47fc19100e00b95245b819e129bc79647cab4a7c1c5f40b788087be44" "value.λ.body.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "9505e594f820630cddb3e20b6708419abb613c308ad91953d41372120ec19313" "f1b52679b1aa1207b01b494315252882f78493caaab7a40793cd0837c62a17aa" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@4.λ.body.λ.body.λ.body.@3.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga "clique member" .guessLex
+    "242e5c784fb1c56336cfb8bd9be95aae375a3e029bb6787da7e3802667cd64df" "40ad1a3600d87fbeb7553899424e3cb97d0dde6d38b7b6f30bf8f152ff5ecd71" "value.λ.body.λ.body.@0.fn" "the canonical functional differs: GuessLex picked another measure for the other order (D22 pins Lean's choice)",
+  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta._mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "24ce7b01a7f68ecea1e59627248a615f58ccfd435f8c058016f1f95dfd6191b6" "5fdb169ee5639e5367b7ca20abbab138e3c3b127b490901ade94083a6fed1f68" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0c739daac4453efefe97ea2124eddc567c901a609e1a36d0191f7a499dde8307" "848b4d81111d5d993e61fbba20672461261caef265d28eac51ec2bf032089408" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta.eq_def "equation lemma" .lazy
+    "119ac4c5c40a57c8e73fabb716af66c2fc17d22ec095a8a8b8108dba87cde3a1" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `tb.eq_def "equation lemma" .lazy
+    "d30d73b1646265e5d700dbcb6efea8dff8e117a7410bc38f56f1c191d2104f96" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta._mutual.eq_def "encoding equation" .orderStmt
+    "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0c739daac4453efefe97ea2124eddc567c901a609e1a36d0191f7a499dde8307" "848b4d81111d5d993e61fbba20672461261caef265d28eac51ec2bf032089408" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba._mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "24ce7b01a7f68ecea1e59627248a615f58ccfd435f8c058016f1f95dfd6191b6" "5fdb169ee5639e5367b7ca20abbab138e3c3b127b490901ade94083a6fed1f68" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `bb.eq_def "equation lemma" .lazy
+    "d30d73b1646265e5d700dbcb6efea8dff8e117a7410bc38f56f1c191d2104f96" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba._mutual.eq_def "encoding equation" .orderStmt
+    "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba.eq_def "equation lemma" .lazy
+    "119ac4c5c40a57c8e73fabb716af66c2fc17d22ec095a8a8b8108dba87cde3a1" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.PF "P0" "P1" `pa.mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0ddea573a18b7aac2d20a006f8cda1fcef605fc2f31cd9e8782c5e4d1816b923" "17dad592622f8c1da82e3fab3f43a962e034ddd7f804ff221d35fbd6846c8469" "type.@4.λ.body.@2.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.PF "P0" "P1" `pa.mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "aae0295814cc6f61f77a936266e0a0bdedf33c89f9e37ea54b90ed658af55105" "35e34d7f00e53729f8c161ece500c8b896c38e2fbfadd9a2269617327da253c0" "value.@2.λ.body.@2.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.PF "P0" "P2" `pa.mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0ddea573a18b7aac2d20a006f8cda1fcef605fc2f31cd9e8782c5e4d1816b923" "8043e9fdebd60d01ee161bee0427b12e1ed4b505ac63c2534a24c2ea6c2bea04" "type.@4.λ.body.@2.λ.body.@3.@1.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.PF "P0" "P2" `pa.mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "aae0295814cc6f61f77a936266e0a0bdedf33c89f9e37ea54b90ed658af55105" "026e16e83c5526336e4c936926791e6e0d9159f175139d64eb2654deffe595ae" "value.@2.λ.body.@2.λ.body.@3.@1.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TS "P0" "P1" `evT._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "78a3577514987bc92d9a2729706e613221b268472784a8d1d7e53287ba4814fa" "38b13258377b659e92f44c3b92385ec4029f9fa33836e6f6fb498d9441e0818e" "type.∀.body.@4.λ.body.@1.@0.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TW "P0" "P1" `wa._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "f4215cec1c7e681c3804e51a25357202c2d500c4acc04ffa3f8ddc9c58a9c012" "09a6c8908407175fda86ab1e581780f564eb41fc1fd79ae3ea11581474cfe582" "type.∀.dom.@0.@1.λ.body.@2.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `odM.match_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ad2109b70d8bcfdd495136d20ec3129341fc3e8f7cb40ec3c12f0d9c994101f5" "36eb9a22918e8eb22c991c6c46f9b457b79b2b605a04da5d497cac78941b5b4b" "type.∀.dom.∀.body.∀.dom.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM.match_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "c6811a1fabf7498b43ed04a9215d9bade1a8635f1bf3eff5477ee8e7e905a17e" "bb86122e6c18f5806837f497e2236d93bda8a9d2742582dbac273dbdba1e2fe9" "type.∀.dom.∀.body.∀.dom.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sb._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "2d3cb49f17edbe9962dffe39839decfcef1b848e952b2b0f0eb5a6bcfb0a46e9" "bb0d910606ace0c4f4f2ff9c4fe40706a578a62ae074e0184d55ed0b3758cf43" "type.∀.body.∀.dom.@0.λ.body.@0.@1.@0.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sa._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "fd47ab03aaa9797d850828664dca8a12002076c9a72c4ac8bac3309ffdaab7fd" "dddcbfd408991573a7c2afd6458b448e746deaada99201f81ea52af60cdaf431" "type.∀.body.∀.dom.@0.λ.body.@0.@1.@0.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fb._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "4755dc9f98893af601cf942a679f3239403d4ae45ab03eafd0be03414a48816b" "9c564d42d27f9d5a1b58a4befaa82a883e5c438577317f2931ecf4e43078305c" "type.∀.dom" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fa._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "f1623552388b51d41e965671cfc420cc8024ebffd72bf81675062fee794f180b" "df188f2d008db128174d3049a067aea93c06d7dbcf69ef358032120e773aa144" "type.∀.dom" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "24ce7b01a7f68ecea1e59627248a615f58ccfd435f8c058016f1f95dfd6191b6" "5fdb169ee5639e5367b7ca20abbab138e3c3b127b490901ade94083a6fed1f68" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "0c739daac4453efefe97ea2124eddc567c901a609e1a36d0191f7a499dde8307" "848b4d81111d5d993e61fbba20672461261caef265d28eac51ec2bf032089408" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha.eq_def "equation lemma" .lazy
+    "57a59c6c6683b306cca70ca5a92e04b85385414bff173296c04667216610c387" "4942a1875a4c59792337ce5ffa338eee866de72408e85ef189772ce5daf2ad0c" "value.λ.body.λ.body.λ.body.@1.@0" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `hb.eq_def "equation lemma" .lazy
+    "ba50c991443c66700984e2ebd7e783f68e71b5a574b26685aff7feb82265f671" "f48d91b5497d912fdb93f07f9bb2e49c4fd8cfff97f760aeafadef950ec3a837" "value.λ.body.λ.body.λ.body.@1.@0" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual.eq_def "encoding equation" .orderStmt
+    "304abeedf1bd87f73382bcfc024dedb0aac1a01ea5f7ccb92efa730fb2732633" "89a8772f25d96b69de96009004693da023d46169108c225c9aab72ecc40a9aa7" "type.∀.dom" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "e5b17bdb3751da6746ae4ef84d225c3586b1d87a412334584fed79217c9c33ba" "5a1b5db06609153eba1fec84761e1e7f3a2c91adc473ac9b6322cea011795fd4" "type.∀.dom" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_2 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "266d5a80810da61f2cdb9a05392dd32e8f1f8e19b8a523dcd9980bf9d4f8b7d1" "10331ba20de201615de5919ad83281e9c5fdd020902cf78beff8fdbd62719e6e" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_4 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ebafd6516a002329594de44610e5b29caa9a7b1ec0e96c307e0cc61eaf227425" "9037a9baf5fd0aa1923085d1063c69088bf90196b57d59073019802980a446ba" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_3 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "9a89308b9978c15485d5e24b90d25e240a0b20aa76ca8f8cad49fdaf7d7298a8" "adf61a53598121f7b789c3363512982f6c8f0be8ea7eb2714358053fe36e7a7b" "type.∀.body.∀.body.@4.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "2f26cbff694f6a8bb72246aaa44ff036340467b83cba9f59b64b4e12127053e2" "7d5de2d4739bfa89706b90112b4e6679596ba69c90bd83b447f17585844dec15" "type.∀.body.∀.body.@5.fn" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual.eq_def "encoding equation" .orderStmt
+    "1fe0c2bdbc40ee7e7b51cc3ecc79ab82366db41efd0e90e30c51105e045001c3" "106e35daeb35e4579cc1bfa0610afaf7705543552ea524d2e4d8c483a1fdb629" "type.∀.body.@2.@4.λ.body.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "77072c5e6560d1be6a9bc9685b5e7c79aa56f2065994f84d86c4c2d6b749b28a" "3b0e15526feeeacadb93a1a5eef651ad56ddc066b50212431324a6a92bdb4779" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ad617d6050b9c71451d88c8b0afbbc8593d98af5452ed0dcdef9492090d5e67a" "992a551847a56ae1a88b48b4c37ef9b0ab8311e5dc7836421375b8471321bea4" "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `nb._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "992a551847a56ae1a88b48b4c37ef9b0ab8311e5dc7836421375b8471321bea4" "ad617d6050b9c71451d88c8b0afbbc8593d98af5452ed0dcdef9492090d5e67a" "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `rb._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ce212569e61531f373a9766d9040cab31cf4bedcbd528748232748bc7c78c2d7" "4c5dce85fe8586bb8a1ea4fa76cf70bcfec977748c8418dfd47f8c794b2afa8a" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P1" `ra._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "adb0877becc21251dba32d6f1ccbe6735a0bba7f7b0a6550890f5bf4d9a80d44" "bfc0b1efabc2c32500e3e3fbec6f4d7f7b87e8f00b09522dd2aebc99ffcadeb7" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `rb._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ce212569e61531f373a9766d9040cab31cf4bedcbd528748232748bc7c78c2d7" "4c5dce85fe8586bb8a1ea4fa76cf70bcfec977748c8418dfd47f8c794b2afa8a" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `ra._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "adb0877becc21251dba32d6f1ccbe6735a0bba7f7b0a6550890f5bf4d9a80d44" "bfc0b1efabc2c32500e3e3fbec6f4d7f7b87e8f00b09522dd2aebc99ffcadeb7" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nl._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ed06ae82fa8626f18f62f1bcbbe20cdb0433be69c6df7d582d9805fa5615d49b" "082e23013ad28dd96fbbcdc68320a2d28df5b1ea2385c510f208023421cecfd8" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nl._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ed06ae82fa8626f18f62f1bcbbe20cdb0433be69c6df7d582d9805fa5615d49b" "082e23013ad28dd96fbbcdc68320a2d28df5b1ea2385c510f208023421cecfd8" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `la.mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "23f2fcf243de4f203af437cecae5aa8e456a296211e7f854d84afba79be84183" "c6f2eaa1f32e2bef4c81216442e92f4387ed945253669b02d356188afec72db4" "type.@4.λ.body.@2.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `la.mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "844a3be331e7f7c758450925cb2a90675dcf0b0860acdc05e16d81c61e5df7ed" "0df7605cdc6de89fc8c8e5a82f154ca3474e0411a1701835480f6af2bd4a7682" "value.@2.λ.body.@2.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P2" `la.mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "23f2fcf243de4f203af437cecae5aa8e456a296211e7f854d84afba79be84183" "1142aeb7fe76382e4b955041246185112babeb5fed14dc8cc1a4d65cb0c19b46" "type.@4.λ.body.@2.λ.body.@3" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P2" `la.mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "844a3be331e7f7c758450925cb2a90675dcf0b0860acdc05e16d81c61e5df7ed" "7487e2bca961ef77d3aa8b7eca1691fe462020f9be2b4b99fa6dbab3b52d5e43" "value.@2.λ.body.@2.λ.body.@3" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.LC "P0" "P1" `ca.mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "c0238e623b000ba4cab169e97fa2f5bbe19c1b19257da7c955f568859dcd9e39" "d1986090ac5216fe4f2a0d6667c95969888402b565139e4191d8717f5ba63ad9" "type.@4.λ.body.@2.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.LC "P0" "P1" `ca.mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "ebf6e6b156580df2615158241987a80dad9d4c32fe0b016dcd3067ef5289eddf" "26f0280c765173003d6dbf565073450987c730824676f6bd699c78134addd1c6" "value.@2.λ.body.@2.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ua.mutual._proof_1 "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "b7bc40a157711d751e43e91fc474e33b76c2fb4c878863a4ac3722312b1a8b0b" "326b4257346d42a8eefa6b46b73df65f6862789cadf88ea8baa7fb8435a78296" "type.@4.λ.body.@2.λ.body.@3.@1.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ub "clique member" .shape
+    "95b8e93dbb6bf28a4ac287b7b37ddd209f005d9ce94001abb50af0fec2500de1" "508ee88bd8a929bac5db824e484702dd7bbfbdb9815b598bade6165a6acab3d5" "value" "via ua._ix.mutual: its monotonicity proof took the composition fallback (SHAPE)",
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ua.mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "98442a03f9dfa6b72b5ac7adb902937dfd834e3071aec027601dc2c8c245a95b" "c98c6d8730e61475657d5c36d5642286dc8898eb0cefb389a14982923822f9cf" "value.@2.λ.body.@2.λ.body.@3.@1.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ua "clique member" .shape
+    "c8e4b93e1e28fd1dcf8ef447ff7977c39411c7123d2cfddabbc0da9b7bf601a4" "5c0156271d4c9113e7ef52f4ec9f911d5d9e45c675c7d247e61669b2d85cccb1" "value" "via ua._ix.mutual: its monotonicity proof took the composition fallback (SHAPE)",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `rb "clique member" .recArg
+    "5039de75827b5249a6ccd9fa22db9b94c5684418e8757aa5c8698d4ce8701926" "4d7d61d5cb52ebeeffedf40c55b61a826d4b616de1748d5d518a0c77f36f70c6" "value.λ.body.λ.body.fn" "structural recursion on x under one order and on x_1 under the other: the canonical functionals differ",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `rb._f "structural functional (Lean's)" .recArg
+    "17354ef0aeee92d76a8d286b6d7872b467fd3f60fe44a0a2fa5b0ec653ff1921" "0b4277b06c6b8bc03ead07e16f0edbc44affdb19387289d0680576f912f10a83" "value.λ.body.λ.body.λ.body.@0.λ.body.λ.body.∀.dom.@1" "another recursive argument; the canonical x._ix._f differ too",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra "clique member" .recArg
+    "4407ba2db279f943dfcca9b6ca6d216e87e23c7691826daf145741ab2be59834" "44869f94620473b65548c748c261686be20c85ee676988ea1c39b7da8cc08467" "value.λ.body.λ.body.fn" "structural recursion on x under one order and on x_1 under the other: the canonical functionals differ",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._f "structural functional (Lean's)" .recArg
+    "a4ca7ec36d6d47cba1a964f929947892dcaa354e1cda9c8f43b169ce83a4e220" "bcaa8bdad6fddf93d4d61cb14fed4674b79cc401f7f900fd7a556e715b984a50" "value.λ.body.λ.body.λ.body.@0.λ.body.λ.body.∀.dom.@1" "another recursive argument; the canonical x._ix._f differ too",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._sunfold "user constant" .inherited
+    "d27657c874dc052379d3e5eefb6faab94a630bc0267475b13367719c6ffdb5c0" "1822e19e6cdaf3c41169a3528f76c3d8383851b5227977b60c15ef5dd1da0f82" "" "via [rb]",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `rb._sunfold "user constant" .inherited
+    "2342460fc4d332b83a1dfb99109e12c5cfe497be6a4b383aeda21f43405a2ad1" "6701d39b9914f8650da37d90a02ca3f964d9fda6330a10b6c6664c0bd654121a" "" "via [ra]",
+  e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._sparseCasesOn_1 "sparse casesOn of the recursive argument" .recArg
+    "3a4d0a9cb60745860c348a96bb097d439c3b156a60085eedbf4febb58fc9821d" "-" "" "ONLY-A: the other recursive argument needs no sparse casesOn",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha "clique member" .tacticAsym
+    "81a1116c189347bb57bfeed4fdc7502c5269315582c04aa9815485162ea27be0" "a3d4bf350e02c3df5c332a74663309c3a562cf9785a743ad1b8492818731900e" "value.λ.body.λ.body.λ.body.λ.body.@1" "via the canonical ha._ix._mutual: the decreasing goals of P0 and P1 take the most recent 1 < k of the fixed context (assumption, omega)",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha.eq_def "equation lemma" .lazy
+    "c8a926c0b15ac771de190bb1bb38887a9b14e03df3a51e239cb1954d3bf52183" "5fc89b1e74ba9508fb3e4fe0cd1c195d2e920938dc5d178867fa38163e35837d" "value.λ.body.λ.body.λ.body.λ.body.@1.@1" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `hb.eq_def "equation lemma" .lazy
+    "895d6edfc2e83439b104aeb6f8a2e044351f4dd4a6dc95f9867ed343ae8edc7d" "efd0b35cd60e3ad25403d9681c613e3b927284635ea579caa43df6453cefbc90" "value.λ.body.λ.body.λ.body.λ.body.@1.@1" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha._mutual.eq_def "encoding equation" .orderStmt
+    "713e343c7260eec8f36e0df24ebae7be003ad5f43c0913868cc6f35bccc135aa" "c5647bc6499224213d33344f77cdf7498457ba83c22144acbc3b14dc3c4268a4" "type.∀.body.∀.body.∀.body.∀.body.@2.@4.λ.body.@3.λ.body.@1" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `hb "clique member" .tacticAsym
+    "afc03d9f741d843fe9590666f7f260990cc457cc68a552ed117eff1ae1561f7c" "1a794d1bcf32e34b8b35d62c10c55913dd2c3b995b1e7c2208a769f0c5f65d67" "value.λ.body.λ.body.λ.body.λ.body.@1" "via the canonical ha._ix._mutual: the decreasing goals of P0 and P1 take the most recent 1 < k of the fixed context (assumption, omega)",
+  e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "a7bf3d2955497f278338733e61cc5d3dc811eb0b4f52a132982b9ee267ca1cfa" "533939407aa6db690941e7c604843562fb5b16c7ca42c09118038d78f3bef142" "value.λ.body.λ.body.λ.body.@3.λ.body.λ.body.@4.λ.body.λ.body.@3.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `rb._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "98108fcdcffe277bf9fdce4b8af643b1b785867304c24a149d4b775f5160a4ab" "cb12be024d8ab4425c89facd16419aa4416f8a35a02dc910c309e29fb3d6a16a" "value.λ.body.λ.body.@4.λ.body.λ.body.let.val" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `ra._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "6b6a82b3efe33c928262df29a6e1e52725b2dd8a78d90979b1b57fd8353cbbc7" "68deb3de80fe3694fc0389a033a873e633618467eaa924299bec4b449353613d" "value.λ.body.λ.body.@3.λ.body.λ.body.let.val" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.TQ "P0" "P1" `qa._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "e221ec86aeb3fe776065dda776611fdc22c24a263d0fcf3e070a8d5bd1b4c39c" "71fe3265b59618938cb2faf2c8de64ba2c21e021af3bc308451210711fa2af30" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx._mutual "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
+    "29ade7866807a108f74e5e7af9dd2d16e97e0bc0ec70d8c0348e2f72461a77e2" "ea34c5fded17085a9976c048f5b01246fb7ace26452defea241709934aee40d1" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@3.λ.body" "Lean's own form under its Lean name; the canonical constant is the `_ix` one",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wy.eq_def "equation lemma" .lazy
+    "b3b3766e869f41d5e016f20fd111a3078865b4e678a9fea2271665c911924696" "f9a53f194d6e42939af76f7dd338862ff4c9081d9b15b7ed9a7137a63edf3e2e" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx.eq_def "equation lemma" .lazy
+    "661646809e41f9088fe58c7623c66b6bb19e137df5a4ec2f242ae06e10c821b6" "1369d30019bbd8c870ac4a620feece8eaaf1963ade3dc8a01d756f4370422d97" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
+  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx._mutual.eq_def "encoding equation" .orderStmt
+    "a3574f238552c2f40c8328764184166dd04daa2832607300df5528398e21d223" "d80a2ec1dea3ed3a5569755bacc357727c3092c1b2f37454047f9f1ab969f2c7" "type.∀.body.@2.@4.λ.body.@3.λ.body" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)"
+]
+
+end Tests.Ix.Compile.NonCanonical

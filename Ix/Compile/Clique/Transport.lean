@@ -53,6 +53,10 @@ structure Input where
   newEncName : Name
   /-- the environment (structural recursion reads `below`) -/
   const? : Name → Option ConstantInfo := fun _ => none
+  /-- equation lemmas carried with the clique (A5 proper), each with its
+  output name: the members' own lemmas keep their names; the packed
+  function's `eq_def` is regenerated under the canonical name (`WF.lean`) -/
+  lemmas : Array (Decl × Name) := #[]
 
 structure Output where
   decls : Array Decl
@@ -92,13 +96,13 @@ def transport (inp : Input) : Output :=
     | none => .baselineOf inp "no packed function"
     | some packed =>
       let proofs := inp.aux.filter fun d => d.name != packed.name
-      match (transportWF inp.members packed proofs inp.sigma inp.newEncName).run {} with
+      match (transportWF inp.members packed proofs inp.sigma inp.newEncName inp.lemmas).run {} with
       | .error e => .baselineOf inp e
       | .ok (out, st) =>
         { decls := out.decls.map (·.decl), renames := out.renames, log := st.log
           causes := out.decls.filterMap fun t => t.fallback.map fun why => (t.decl.name, .shape, why) }
   | .structural =>
-    match (transportStructural inp.members inp.aux inp.sigma inp.const?).run {} with
+    match (transportStructural inp.members inp.aux inp.sigma inp.const? inp.lemmas).run {} with
     | .error e => .baselineOf inp e
     | .ok (out, st) =>
       { decls := out.map (·.decl), renames := #[], log := st.log
@@ -108,7 +112,7 @@ def transport (inp : Input) : Output :=
     | none => .baselineOf inp "no packed fixpoint"
     | some packed =>
       let proofs := inp.aux.filter fun d => d.name != packed.name
-      match (transportPF inp.members packed proofs inp.sigma inp.newEncName inp.const?).run {} with
+      match (transportPF inp.members packed proofs inp.sigma inp.newEncName inp.const? inp.lemmas).run {} with
       | .error e => .baselineOf inp e
       | .ok (out, st) =>
         { decls := out.decls.map (·.decl), renames := out.renames, log := st.log

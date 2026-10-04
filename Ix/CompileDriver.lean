@@ -714,9 +714,11 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
+  -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
+  let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
   let p3BlockRefs := if pass3 then blocks.blockRefs else {}
   let cenv0 : CompileEnv :=
-    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs }
+    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
   let mut acc : DriverAcc := { cenv := cenv0 }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
@@ -1105,9 +1107,11 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     | none => pure (Ix.Compile.Pass.switchOn (← IO.getEnv Ix.Compile.Pass.switchVar))
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
+  -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
+  let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
   let p3BlockRefs := if pass3 then blocks.blockRefs else {}
   let cenv0 : CompileEnv :=
-    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs }
+    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
   let mut acc : DriverAcc := { cenv := cenv0 }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e

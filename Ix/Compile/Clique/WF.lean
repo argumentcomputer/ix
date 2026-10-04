@@ -47,7 +47,7 @@ namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr)
 open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata peelForalls)
-open Ix.Compile.Image (Local forallArity)
+open Ix.Compile.Image (Local forallArity instLocals abstractFVars)
 
 /-- What `Φ_σ` needs to know about a well-founded clique. -/
 structure WFLayout where
@@ -65,6 +65,13 @@ structure WFLayout where
   /-- abstracted proof ↦ the permutation of its leading fixed-parameter
   binders (empty when it uses none) -/
   proofPerm : Std.HashMap Name (Array Nat) := {}
+  /-- the packed function's equation lemmas carried with the clique: in the
+  user region, an application of one re-enters the encoding region at its
+  packed argument, as an application of the packed function does -/
+  packedLemmas : Std.HashSet Name := {}
+  /-- per member (Lean's order): the member's parameter (outermost `0`) at
+  each fixed position of its call of the packed function -/
+  memberFixed : Array (Array Nat) := #[]
   deriving Inhabited
 
 def WFLayout.isClique (L : WFLayout) (s : Spine) : Bool :=
@@ -242,7 +249,10 @@ def phiWFStep (L : WFLayout) (go : Bool → Array Bool → Expr → TM Expr) (en
       if let some ρ := L.proofPerm.get? c then
         if args.size < ρ.size then
           throw "grammar: a partial application of a decreasing proof"
-        let args' ← args.mapM goM
+        let reenter := !enc && L.packedLemmas.contains c
+        let mut args' := #[]
+        for j in [0:args.size] do
+          args' := args'.push (← if reenter && j == L.numFixed then goE args[j]! else goM args[j]!)
         return mkAppN h (ρ.map (args'[·]!) ++ args'.extract ρ.size args'.size)
       return mkAppN h (← args.mapM goM)
     | .bvar i _ =>
@@ -343,7 +353,7 @@ def wfLayout (members : Array Decl) (mutDecl : Decl) (σ : Array Nat) (newMutual
   let qg := qss[g]!
   let fixedPerm := (idPerm m).qsort fun a b => qg[a]! < qg[b]!
   return { n, sigma := σ, mutualName := mutDecl.name, newMutualName, numFixed := m,
-           fixedPerm, leaves := s.leaves }
+           fixedPerm, leaves := s.leaves, memberFixed := qss }
 
 /-- For every application of an abstracted proof in the (opened) value of
 `f₀._mutual`: the fixed parameters (by Lean position) among its leading
@@ -387,13 +397,154 @@ structure WFOutput where
   renumbered proofs) -/
   renames : Array (Name × Name)
 
+/-! ## The packed function's equation lemma (A5 proper)
+
+Lean proves `f₀._mutual.eq_def : ∀ fixed x, f₀._mutual fixed x = T x` (the
+case tree `T` of the bodies, recursive calls through `f₀._mutual`) by
+`WellFounded.fix_eq` (or `Nat.fix_eq`) followed by a `simp` chain that
+pushes the recursion argument through the case tree
+(`PSum.casesOn._arg_pusher`, `congrArg PSum.rec`, …). That chain's shape
+follows the packing node by node and is not transported. The canonical lemma
+keeps the transported statement (S), keeps Lean's `fix_eq` step (Φ), and
+replaces the chain by the step it computes, made explicit: a case split on
+the packed argument (`PSum.casesOn` over the canonical packing, then
+`PSigma.casesOn` over each summand's arguments), each leaf the `fix_eq` step
+at the constructor. At a constructor, `f₀._mutual' fixed' (inj'_i ⟨a⃗⟩)` is
+`fix … (inj'_i ⟨a⃗⟩)` by δ, and the functional applied to it reduces to the
+statement's leaf by β and ι (§5.1's conversion steps), so each leaf proves
+its case by conversion. This is regeneration (G) of a proof whose shape
+depends on the packing, by a fixed term recipe; no tactic runs. Equation
+lemmas are outside the canonicity claim (`LAZY`); the lemma exists so that
+the members' own equation lemmas, transported with them, still prove
+Lean's statements. -/
+
+/-- `@id T p ↦ p`. -/
+def stripId (e : Expr) : Expr :=
+  match constApp? e with
+  | some (h, _, args) => if h == leanName ``id && args.size == 2 then args[1]! else e
+  | none => e
+
+/-- The `fix_eq` step of Lean's packed equation lemma (the first argument of
+its `Eq.trans`), opened at `xs` (the fixed parameters in Lean's order, then
+the packed argument). -/
+def eqDefFixStep (eqDef : Decl) (m : Nat) (xs : Array Expr) : Except String Expr := do
+  let (bs, body) := peelLams (m + 1) eqDef.value #[]
+  unless bs.size == m + 1 do throw "eq_def: the proof does not bind the fixed parameters and the argument"
+  let body := instLocals body xs
+  match constApp? (stripId body) with
+  | some (h, _, args) =>
+    if h == leanName ``Eq.trans && args.size == 6 then return args[4]!
+    else throw "eq_def: the proof is not `Eq.trans (fix_eq …) …`"
+  | none => throw "eq_def: the proof is not `Eq.trans (fix_eq …) …`"
+
+/-- Split `major : ty` into its `PSigma` components and prove the motive at
+`mk ⟨a⃗⟩` by `leaf`: `PSigma.casesOn` with motive `λ t. motive (mk t)` at each
+`PSigma` level, `leaf (mk ⟨a⃗⟩)` at the atoms. -/
+def splitPSigma (motive : Expr → Expr) (leaf : Expr → Expr) :
+    Nat → Expr → (Expr → Expr) → Expr → TM Expr
+  | 0, _, _, _ => throw "eq_def: PSigma nesting bound exhausted"
+  | fuel + 1, ty, mk, major => do
+    match constApp? ty with
+    | some (h, us, #[α, β]) =>
+      if h == nPSigma && us.size == 2 then
+        let a ← freshFVar
+        let b ← freshFVar
+        let la : Local := { fvar := a, userName := Ix.Name.mkStr Ix.Name.mkAnon "a", type := α, bi := .default }
+        let bty := (match stripMdata β with
+          | .lam _ _ body _ _ => Ix.Compile.Canon.instantiateRev body #[Expr.mkFVar a]
+          | _ => Expr.mkApp β (Expr.mkFVar a))
+        let lb : Local := { fvar := b, userName := Ix.Name.mkStr Ix.Name.mkAnon "b", type := bty, bi := .default }
+        let pair (t : Expr) : Expr :=
+          mkAppN (Expr.mkConst (leanName ``PSigma.mk) us) #[α, β, Expr.mkFVar a, t]
+        let inner ← splitPSigma motive leaf fuel bty (fun t => mk (pair t)) (Expr.mkFVar b)
+        let t ← freshFVar
+        let lt : Local := { fvar := t, userName := Ix.Name.mkStr Ix.Name.mkAnon "t", type := ty, bi := .default }
+        let mot := Ix.Compile.Image.mkLambda #[lt] (motive (mk (Expr.mkFVar t)))
+        return mkAppN (Expr.mkConst (leanName ``PSigma.casesOn) #[Level.mkZero, us[0]!, us[1]!])
+          #[α, β, mot, major, Ix.Compile.Image.mkLambda #[la, lb] inner]
+      else return leaf (mk major)
+    | _ => return leaf (mk major)
+
+/-- `bvar d` occurs in `e` only as the head of an application (a recursive
+call `a y h`), never passed on whole. -/
+def onlyCalls : Nat → Nat → Expr → Bool
+  | 0, _, _ => false
+  | fuel + 1, d, e@(.app ..) =>
+    let (h, args) := getAppFnArgs e
+    let headOk := match h with
+      | .bvar _ _ => true
+      | h => onlyCalls fuel d h
+    headOk && args.all fun x => (match stripMdata x with
+      | .bvar i _ => i != d
+      | _ => true) && onlyCalls fuel d x
+  | _, d, .bvar i _ => i != d
+  | fuel + 1, d, .lam _ t b _ _ | fuel + 1, d, .forallE _ t b _ _ =>
+    onlyCalls fuel d t && onlyCalls fuel (d + 1) b
+  | fuel + 1, d, .letE _ t v b _ _ =>
+    onlyCalls fuel d t && onlyCalls fuel d v && onlyCalls fuel (d + 1) b
+  | fuel + 1, d, .proj _ _ x _ | fuel + 1, d, .mdata _ x _ => onlyCalls fuel d x
+  | _, _, _ => true
+
+/-- A leaf of the packed function's case tree (`λ v a. E`) whose recursion
+variable reaches the bodies only through `PSigma.casesOn` layers (which the
+regenerated proof splits) and is used there only as recursive calls: the
+functional applied at a constructor then reduces to the statement's leaf by
+β and ι. A body that threads the recursion variable through a `match`
+(`MatcherApp.addArg`) needs Lean's argument pushing, which is not
+regenerated. -/
+def leafReduces : Nat → Expr → Bool
+  | 0, _ => false
+  | fuel + 1, e =>
+    let (bs, body) := peelLams (lamArity e) e #[]
+    if bs.isEmpty then false else
+    match constApp? body with
+    | some (h, _, args) =>
+      if h == leanName ``PSigma.casesOn && args.size == 6 &&
+          (match stripMdata args[5]! with
+            | .bvar 0 _ => true
+            | _ => false) then leafReduces fuel args[4]!
+      else onlyCalls defaultFuel 0 body
+    | none => onlyCalls defaultFuel 0 body
+
+/-- The canonical packed equation lemma (see above): the transported
+statement, and the case split whose leaves are the transported `fix_eq`
+step at each constructor. -/
+def transportEqDef (L : WFLayout) (phi : Expr → TM Expr) (eqDef : Decl) (newName : Name) : TM Decl := do
+  let m := L.numFixed
+  let type ← withReorderedBinders false m L.fixedPerm eqDef.type phi
+  -- open the canonical statement: the fixed parameters (canonical order), `x`
+  let (xs, stmt) ← openBinders false (m + 1) type
+  let some x := xs[m]? | throw "eq_def: no packed argument"
+  let some s' := decodeSpine .psum L.n x.type | throw "eq_def: the argument is not the canonical packing"
+  -- Lean's `fix_eq` step, at the same variables (Lean's fixed order), transported
+  let inv := invPerm L.fixedPerm
+  let leanXs := ((List.range m).toArray.map fun j => xs[inv[j]!]!.expr).push x.expr
+  let step ← phi (← liftE (eqDefFixStep eqDef m leanXs))
+  let atX (t : Expr) (e : Expr) : Expr := instLocals (abstractFVars #[x.fvar] e) #[t]
+  -- the leaves: `λ v. split v`, each atom `step[x := inj'_i ⟨a⃗⟩]`
+  let mut leaves : Array Expr := #[]
+  for i in [0:L.n] do
+    let some d := s'.leaves[i]? | throw "eq_def: no summand"
+    let v ← freshFVar
+    let lv : Local := { fvar := v, userName := Ix.Name.mkStr Ix.Name.mkAnon "v", type := d, bi := .default }
+    let inj (t : Expr) : Expr := mkInj s' i t
+    let body ← splitPSigma (fun t => atX (inj t) stmt) (fun t => atX (inj t) step) 64 d id (Expr.mkFVar v)
+    leaves := leaves.push (Ix.Compile.Image.mkLambda #[lv] body)
+  -- the case tree over the packed argument, motive `λ x. stmt`
+  let t : Tree := { spine := s', w := Level.mkZero, motiveBody := abstractFVars #[x.fvar] stmt,
+                    motiveName := x.userName, major := x.expr, leaves, extras := #[],
+                    altNames := #[] }
+  let some cases := t.build | throw "eq_def: building the case split failed"
+  let value ← liftE (closeBinders true xs cases)
+  return { eqDef with name := newName, type, value }
+
 /-- Transport a well-founded clique. `members` in Lean's clique order,
 `proofs` the abstracted `f₀._mutual._proof_k` (none for theorems). Fails
 (and the caller keeps the baseline) when the packed function, a statement or
 a member is outside the grammar; a proof body outside the grammar is kept
 verbatim under its transported statement. -/
 def transportWF (members : Array Decl) (mutDecl : Decl) (proofs : Array Decl) (σ : Array Nat)
-    (newMutualName : Name) : TM WFOutput := do
+    (newMutualName : Name) (lemmas : Array (Decl × Name) := #[]) : TM WFOutput := do
   let L ← liftE (wfLayout members mutDecl σ newMutualName)
   let m := L.numFixed
   -- the proofs' fixed-parameter prefixes, from their uses in the packed function
@@ -403,7 +554,16 @@ def transportWF (members : Array Decl) (mutDecl : Decl) (proofs : Array Decl) (�
   let inv := invPerm L.fixedPerm
   let proofPerm : Std.HashMap Name (Array Nat) := uses.fold (init := {}) fun acc c js =>
     acc.insert c ((idPerm js.size).qsort fun a b => inv[js[a]!]! < inv[js[b]!]!)
-  let L := { L with proofPerm }
+  -- the packed function's equation lemmas carried with the clique: their
+  -- fixed-parameter arguments follow the canonical order
+  let isPackedLemma (d : Decl) : Bool := match d.name with
+    | .str p _ _ => p == mutDecl.name
+    | _ => false
+  let proofPerm := lemmas.foldl (init := proofPerm) fun acc (d, _) =>
+    if isPackedLemma d then acc.insert d.name L.fixedPerm else acc
+  let packedLemmas : Std.HashSet Name := lemmas.foldl (init := {}) fun acc (d, _) =>
+    if isPackedLemma d then acc.insert d.name else acc
+  let L := { L with proofPerm, packedLemmas }
   -- the encoding region (the decreasing proofs) and the user region (§ Positions)
   let phi := phiWF L true
   let phiU := phiWF L false
@@ -424,6 +584,31 @@ def transportWF (members : Array Decl) (mutDecl : Decl) (proofs : Array Decl) (�
     | .error err =>
       let value ← withReorderedBinders true ρ.size ρ p.value pure
       proofs' := proofs'.push { decl := { p with type, value }, fallback := some err }
+  -- the carried equation lemmas: the packed one regenerated, the others
+  -- transported (a failure leaves the clique in Lean's form)
+  let mut lemmas' : Array Transported := #[]
+  for (d, nn) in lemmas do
+    if d.name == Ix.Name.mkStr mutDecl.name "eq_def" then
+      -- the regenerated proof holds only when each leaf reduces at a constructor
+      let (_, fixApp) := peelLams m mutDecl.value #[]
+      let (_, fargs) := getAppFnArgs (stripMdata fixApp)
+      let some F := fargs.back? | throw "eq_def: no functional in the packed function"
+      let (_, tree) := peelLams 2 F #[]
+      let some t := decodeTree L.n tree | throw "eq_def: the functional is not Lean's case tree"
+      unless t.leaves.all (leafReduces 64) do
+        throw "eq_def: a body threads the recursion through a match (Lean's argument pushing is not regenerated)"
+      lemmas' := lemmas'.push { decl := ← transportEqDef L phi d nn }
+    else
+      if isPackedLemma d then
+        let type ← withReorderedBinders false m L.fixedPerm d.type phi
+        let value ← withReorderedBinders true m L.fixedPerm d.value phi
+        lemmas' := lemmas'.push { decl := { d with name := nn, type, value } }
+      else
+      -- a member's own lemma: its statement is about the members (user
+      -- region); its proof reaches the encoding through the packed lemmas
+      let type ← phiU d.type
+      let value ← phiU d.value
+      lemmas' := lemmas'.push { decl := { d with name := nn, type, value } }
   -- the members
   let mut members' : Array Transported := #[]
   for mem in members do
@@ -434,13 +619,14 @@ def transportWF (members : Array Decl) (mutDecl : Decl) (proofs : Array Decl) (�
   let rest := (proofs.map (·.name)).filter fun p => !order.contains p
   let numbered := (order ++ rest).zipIdx.map fun (p, i) =>
     (p, Ix.Name.mkStr newMutualName s!"_proof_{i + 1}")
-  let rn : Std.HashMap Name Name := numbered.foldl (init := {}) fun m (a, b) => m.insert a b
+  let lemmaRenames := lemmas.filterMap fun (d, nn) => if d.name != nn then some (d.name, nn) else none
+  let rn : Std.HashMap Name Name := (numbered ++ lemmaRenames).foldl (init := {}) fun m (a, b) => m.insert a b
   let ren (t : Transported) : Transported :=
     { t with decl := { t.decl with name := (rn.get? t.decl.name).getD t.decl.name
                                    type := renameConsts rn.get? t.decl.type
                                    value := renameConsts rn.get? t.decl.value } }
-  let all := ((#[({ decl := mutDecl' } : Transported)] ++ proofs') ++ members').map ren
-  return { decls := all, renames := #[(mutDecl.name, newMutualName)] ++ numbered }
+  let all := (((#[({ decl := mutDecl' } : Transported)] ++ proofs') ++ lemmas') ++ members').map ren
+  return { decls := all, renames := #[(mutDecl.name, newMutualName)] ++ numbered ++ lemmaRenames }
 
 end Ix.Compile.Clique
 

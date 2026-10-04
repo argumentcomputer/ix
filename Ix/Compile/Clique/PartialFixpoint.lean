@@ -164,6 +164,9 @@ structure PFLayout where
   proofPerm : Std.HashMap Name (Array Nat) := {}
   /-- `monotone_compose`'s universe parameters (for the fallback) -/
   composeLevels : Array Name := #[]
+  /-- per member (Lean's order): the member's parameter (outermost `0`) at
+  each fixed position of its projection of the fixpoint -/
+  memberFixed : Array (Array Nat) := #[]
   deriving Inhabited
 
 def nImplicationOrder : Name := leanName ``Lean.Order.ImplicationOrder
@@ -608,11 +611,12 @@ def pfLayout (members : Array Decl) (packed : Decl) (σ : Array Nat) (newPackedN
   let qg := qss[(invPerm σ)[0]!]!
   let fixedPerm := (idPerm m).qsort fun a b => qg[a]! < qg[b]!
   return { n, sigma := σ, packedName := packed.name, newPackedName, numFixed := m, fixedPerm,
-           leaves := s.leaves, spine := s }
+           leaves := s.leaves, spine := s, memberFixed := qss }
 
 /-- Transport a `partial_fixpoint` clique. -/
 def transportPF (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ : Array Nat)
-    (newPackedName : Name) (const? : Name → Option ConstantInfo) : TM WFOutput := do
+    (newPackedName : Name) (const? : Name → Option ConstantInfo)
+    (lemmas : Array (Decl × Name) := #[]) : TM WFOutput := do
   let L ← liftE (pfLayout members packed σ newPackedName)
   let composeLevels := match const? nMonoCompose with
     | some ci => ci.getCnst.levelParams
@@ -640,17 +644,21 @@ def transportPF (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ
                       fallback := if fb.isEmpty then none else some ("; ".intercalate fb.toList) }
   for d in members do
     out := out.push { decl := { d with type := ← phi d.type, value := ← phi d.value } }
+  -- the carried equation lemmas (a failure leaves the clique in Lean's form)
+  for (d, nn) in lemmas do
+    out := out.push { decl := { d with name := nn, type := ← phi d.type, value := ← phi d.value } }
   -- (R): the proofs follow the packed fixpoint's name
   let order := constOccurrences proofNames.contains value
   let rest := (proofs.map (·.name)).filter fun p => !order.contains p
   let numbered := (order ++ rest).zipIdx.map fun (p, i) =>
     (p, Ix.Name.mkStr newPackedName s!"_proof_{i + 1}")
-  let rn : Std.HashMap Name Name := numbered.foldl (init := {}) fun m (a, b) => m.insert a b
+  let lemmaRenames := lemmas.filterMap fun (d, nn) => if d.name != nn then some (d.name, nn) else none
+  let rn : Std.HashMap Name Name := (numbered ++ lemmaRenames).foldl (init := {}) fun m (a, b) => m.insert a b
   let out2 := out.map fun t =>
     { t with decl := { t.decl with name := (rn.get? t.decl.name).getD t.decl.name
                                    type := renameConsts rn.get? t.decl.type
                                    value := renameConsts rn.get? t.decl.value } }
-  return { decls := out2, renames := #[(packed.name, newPackedName)] ++ numbered }
+  return { decls := out2, renames := #[(packed.name, newPackedName)] ++ numbered ++ lemmaRenames }
 
 end Ix.Compile.Clique
 
