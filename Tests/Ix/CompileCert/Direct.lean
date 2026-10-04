@@ -142,7 +142,12 @@ def controls : List (String × (Unit → Bool)) := [
     | .ok (.bvar 0), .ok (.bvar 0) => true
     | _, _ => false),
   ("Ix semantic metadata explicitly unsupported", fun _ =>
-    !(ixExpr (.mdata #[] (.bvar 0 (address 1)) (address 1))).isOk) ]
+    !(ixExpr (.mdata #[] (.bvar 0 (address 1)) (address 1))).isOk),
+  ("source capture rejects mismatched lookup identity", fun _ =>
+    !(captureCone (fun _ => some (sourceDef `different (sourceValue true))) [`first] 8).isOk),
+  ("literal support cannot disappear from source closure", fun _ =>
+    (exprRefs (.lit (.natVal 4))).contains `Nat &&
+      (exprRefs (.lit (.strVal "x"))).contains `String.ofList) ]
 
 def run : IO Unit := do
   let mut failed := 0

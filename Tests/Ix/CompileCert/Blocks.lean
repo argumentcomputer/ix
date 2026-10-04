@@ -39,8 +39,11 @@ def run : IO Unit := do
   let some (.recInfo rv) := env.find? `Tests.Ix.CompileCert.BlockDefs.Void.rec
     | throw (IO.userError "missing checked source recursor")
   let valid := input (.inductInfo iv) (.recInfo rv)
+  let captured ← IO.ofExcept (captureCone env.find? [iv.name] 8)
+  let capturedInput := { valid with source := captured.source }
   let cases := [
     ("complete checked Lean block", (checkCompiled valid).isOk),
+    ("exact captured environment cone", (checkCompiled capturedInput).isOk),
     ("same entries but wrong recursive shape", blockDeclined
       (input (.inductInfo { iv with isRec := !iv.isRec }) (.recInfo rv))),
     ("same entries but wrong index count", blockDeclined

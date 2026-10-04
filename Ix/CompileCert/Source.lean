@@ -32,6 +32,8 @@ def exprRefs : Lean.Expr → List Lean.Name
   | .letE _ t v b _ => exprRefs t ++ exprRefs v ++ exprRefs b
   | .mdata _ b => exprRefs b
   | .proj n _ b => n :: exprRefs b
+  | .lit (.natVal _) => [`Nat, `Nat.zero, `Nat.succ]
+  | .lit (.strVal _) => [`String, `String.ofList, `List, `List.nil, `List.cons, `Char, `Char.ofNat]
   | _ => []
 
 /-- Full checking and declaration-unit support. Recursor rules and source
@@ -111,5 +113,50 @@ theorem SelectedSource.original {ambient : Source} {roots : List Lean.Name}
     (h : ci ∈ selected.source.declarations) : ci ∈ ambient.declarations := by
   rw [selected.exact] at h
   exact (List.mem_filter.mp h).1
+
+/-- Exact source capture from a supplied lookup operation. Equality here is
+the dependent match's proof, never a cached hash or a BEq comparison between
+two `ConstantInfo` values. With `find := env.find?` this binds to that supplied
+Lean environment; it does not attest which external module files were loaded. -/
+structure CapturedSource (find : Lean.Name → Option Lean.ConstantInfo) where
+  source : Source
+  faithful : ∀ ci ∈ source.declarations, find ci.name = some ci
+
+def captureNames (find : Lean.Name → Option Lean.ConstantInfo) :
+    List Lean.Name → Except String (CapturedSource find)
+  | [] => .ok ⟨⟨[]⟩, by simp⟩
+  | name :: names =>
+    match hf : find name with
+    | none => .error s!"source declaration is missing: {name}"
+    | some ci =>
+      if hn : ci.name = name then do
+        let tail ← captureNames find names
+        return ⟨⟨ci :: tail.source.declarations⟩, by
+          intro c hc
+          rcases List.mem_cons.mp hc with he | ht
+          · subst c
+            simpa only [hn] using hf
+          · exact tail.faithful c ht⟩
+      else .error s!"source lookup returned a declaration with a different name: {name}"
+
+structure ClosedCapture (find : Lean.Name → Option Lean.ConstantInfo) (roots : List Lean.Name)
+    extends CapturedSource find where
+  complete : CompleteSource source roots
+
+/-- Independent forward discovery from actual source lookups. It never
+enumerates unrelated ambient declarations. The returned proof states both
+closure and exact lookup provenance of every retained complete declaration. -/
+def captureCone (find : Lean.Name → Option Lean.ConstantInfo) (roots : List Lean.Name)
+    (rounds : Nat) : Except String (ClosedCapture find roots) :=
+  loop rounds roots
+where
+  loop : Nat → List Lean.Name → Except String (ClosedCapture find roots)
+    | fuel, names => do
+      let captured ← captureNames find names.eraseDups
+      if h : CompleteSource captured.source roots then return ⟨captured, h⟩
+      match fuel with
+      | 0 => throw "source closure discovery exhausted its explicit round budget"
+      | fuel + 1 =>
+        loop fuel (names ++ captured.source.declarations.flatMap declarationRefs)
 
 end Ix.CompileCert
