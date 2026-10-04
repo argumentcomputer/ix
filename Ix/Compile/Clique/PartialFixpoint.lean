@@ -605,6 +605,8 @@ def pfLayout (members : Array Decl) (packed : Decl) (σ : Array Nat) (newPackedN
       match stripMdata a with
       | .bvar b _ => if b < ps.size then qs := qs.push (ps.size - 1 - b) else throw "pfLayout: fixed argument"
       | _ => throw "pfLayout: a fixed argument is not a parameter"
+    unless qs.toList.eraseDups.length == qs.size do
+      throw "pfLayout: distinct fixed parameters alias the same member binder"
     qss := qss.push qs
   unless qss[0]! == qss[0]!.qsort (· < ·) do
     throw "pfLayout: the fixed parameters are not in the first member's order"
@@ -614,7 +616,7 @@ def pfLayout (members : Array Decl) (packed : Decl) (σ : Array Nat) (newPackedN
            leaves := s.leaves, spine := s, memberFixed := qss }
 
 /-- Transport a `partial_fixpoint` clique. -/
-def transportPF (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ : Array Nat)
+def transportPFShape (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ : Array Nat)
     (newPackedName : Name) (const? : Name → Option ConstantInfo)
     (lemmas : Array (Decl × Name) := #[]) : TM WFOutput := do
   let L ← liftE (pfLayout members packed σ newPackedName)

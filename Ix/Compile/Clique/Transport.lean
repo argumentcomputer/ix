@@ -28,6 +28,7 @@ module
 public import Ix.Compile.Clique.WF
 public import Ix.Compile.Clique.Structural
 public import Ix.Compile.Clique.PartialFixpoint
+public import Ix.Compile.Clique.PFConjugation
 public section
 
 namespace Ix.Compile.Clique

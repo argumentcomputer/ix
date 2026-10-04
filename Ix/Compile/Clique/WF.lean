@@ -331,6 +331,8 @@ def memberFixedArgs (mutualName : Name) (m : Nat) (member : Decl) :
       if b < ps.size then qs := qs.push (ps.size - 1 - b)
       else throw s!"member {member.name}: fixed argument out of scope"
     | _ => throw s!"member {member.name}: a fixed argument is not a parameter"
+  unless qs.toList.eraseDups.length == qs.size do
+    throw s!"member {member.name}: distinct fixed parameters alias the same binder"
   return (qs, args[m]!)
 
 def wfLayout (members : Array Decl) (mutDecl : Decl) (σ : Array Nat) (newMutualName : Name) :

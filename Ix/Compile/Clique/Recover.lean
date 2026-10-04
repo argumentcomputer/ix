@@ -541,11 +541,19 @@ def recoverPF (members : Array Decl) (packed : Decl) : Except String (Array Expr
   let names := members.map (·.name)
   let lvls := (members[0]!).levelParams.map Level.mkParam
   let (_, body) := peelLams L.numFixed packed.value #[]
-  let (_, args) := getAppFnArgs (stripMdata body)
-  let fs := args.filterMap fun a => match stripMdata a with
-    | .lam _ _ b _ _ => decodeTuple n (stripMdata b)
-    | _ => none
-  let #[(_, cs)] := fs | throw "recovery: the packed fixpoint has no unique packed functional"
+  let some (head, _, args) := constApp? (stripMdata body)
+    | throw "recovery: the packed value is not a fixpoint application"
+  unless (head == nOrderFix || head == leanName ``Lean.Order.lfp_monotone) && args.size == 4 do
+    throw "recovery: unsupported partial-fixpoint root"
+  let .lam _ domain functional _ _ := stripMdata args[2]!
+    | throw "recovery: the fixpoint functional has no recursive binder"
+  let some input := decodeSpine .pprod n domain
+    | throw "recovery: the recursive binder is not a packed product"
+  let some (output, cs) := decodeTuple n (stripMdata functional)
+    | throw "recovery: the functional has no encoded output tuple"
+  unless L.isClique input && alphaEq (normOrderAlias domain) (normOrderAlias args[0]!) &&
+      alphaEq (normOrderAlias output.type) (normOrderAlias (liftLoose domain 1)) do
+    throw "recovery: the decoded functional disagrees with the fixpoint packing"
   let mut out := #[]
   for c in cs do
     let spec ← recP L.spine names lvls defaultFuel 0 c

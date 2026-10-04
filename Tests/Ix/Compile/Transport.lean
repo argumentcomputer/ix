@@ -47,6 +47,7 @@ import Ix.Compile.Clique
 import Ix.Compile.Clique.Transport
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.NonCanonical
+import Tests.Ix.Compile.Recognition
 import Lean.Elab.PreDefinition.Structural.Eqns
 import Lean.Elab.PreDefinition.WF.Eqns
 import Lean.Elab.PreDefinition.PartialFixpoint.Eqns
@@ -673,6 +674,8 @@ def a5fFamilies : List String := ["RF", "NS", "LI", "LC", "PU", "RA", "WH", "TR"
 def supported (_ : Encoding) : Bool := true
 
 def run : IO UInt32 := do
+  let recognition ← Tests.Ix.Compile.Recognition.run
+  unless recognition == 0 do return recognition
   let env ← get_env!
   let eqn := eqnCliques env
   let mut failures : Array String := #[]
