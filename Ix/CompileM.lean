@@ -374,6 +374,24 @@ def getBlockEnv : CompileM BlockEnv := do
 def getBlockState : CompileM BlockState := do
   get
 
+/-- A7 (D8): the named error of an out-of-range access in the compiler. It
+    names the block (`BlockEnv.current`) and the site; the drivers record it
+    for every member of the block, like any other block failure. -/
+def internalIndexError (what : String) (i size : Nat) : CompileM α := do
+  throw (.invalidMutualBlock s!"internal error in block '{(← getBlockEnv).current.pretty}': \
+{what}: index {i} out of range (size {size})")
+
+/-- A7 (D8): total array access for the compiler's monads (`CompileM` and
+    the stacks over it, by lifting). Replaces `a[i]!`, which on an
+    out-of-range index printed `PANIC` and continued with `default`, so a
+    construction bug could reach the output as a well-formed but wrong
+    constant; now it is `internalIndexError`. On every index that was in
+    range the value is the same. -/
+@[inline] def arrIdx (a : Array α) (i : Nat) (what : String) : CompileM α :=
+  match a[i]? with
+  | some x => pure x
+  | none => internalIndexError what i a.size
+
 /-- Modify the block state. -/
 def modifyBlockState (f : BlockState → BlockState) : CompileM Unit := do
   modify f
