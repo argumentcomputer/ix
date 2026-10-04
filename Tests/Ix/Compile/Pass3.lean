@@ -701,13 +701,88 @@ def passSameAsOff : List (String × String × Bool) := [
   ("O4BRecOn", "PassO4.Src.Odd.toNat", true), ("O4BRecOn", "PassO4.Src.Even.toNat", true),
   ("O4BRecOn", "PassO4.Src.SB.depth._f", false)]
 
+/-! ## The proof-justified passes' fixtures (A6p, `Tests/Ix/Compile/Pass/`) -/
+
+/-- The per-pass fixtures of O7–O12. -/
+def pjPassFiles : List String :=
+  ["O7Collapse", "O8Cases", "O11bNoConfusion"].map fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
+
+/-- Twins with the switch on (one address): the pass made the presentation's
+term the canonical one's. -/
+def pjPassTwins : List (String × String × String) := [
+  ("O7Collapse", "PassO7.Src.A.viaRec", "PassO7.Can.A.viaRec"),
+  ("O7Collapse", "PassO7.Src.B.viaRecOn", "PassO7.Can.B.viaRecOn"),
+  ("O7Collapse", "PassO7.Src.Z.viaRec", "PassO7.Can.Z.viaRec"),
+  ("O8Cases", "PassO8.Src.A.isNil", "PassO8.Can.A.isNil"),
+  ("O8Cases", "PassO8.Src.B.isNil", "PassO8.Can.B.isNil"),
+  ("O8Cases", "PassO8.Src.B.isNil.match_1", "PassO8.Can.B.isNil.match_1"),
+  ("O8Cases", "PassO8.Src.Z.isE", "PassO8.Can.Z.isE"),
+  ("O8Cases", "PassO8.Src.Z.isE.match_1", "PassO8.Can.Z.isE.match_1"),
+  ("O8Cases", "PassO8.Src.A.noConfusionType", "PassO8.Can.A.noConfusionType"),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType", "PassO11b.Can.B.noConfusionType"),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusion", "PassO11b.Can.B.noConfusion"),
+  ("O11bNoConfusion", "PassO11b.Src.nc", "PassO11b.Can.nc"),
+  ("O11bNoConfusion", "PassO11b.Src.B.val", "PassO11b.Can.B.val")]
+
+/-- Twin pairs that still differ with the switch on: each must have its entry
+in `Tests.Ix.Compile.NonCanonical.nonCanonicalPasses` (fixture
+`Tests.Ix.Compile.Pass.<unit>`, the `Src` constant), with the measured
+addresses, and every entry must name a pair listed here. -/
+def passTwinsNC : List (String × String × String) := [
+  ("O8Cases", "PassO8.Src.A.isNil'", "PassO8.Can.A.isNil'"),
+  ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Can.E.noConfusionType"),
+  ("O11bNoConfusion", "PassO11b.Src.E.noConfusion", "PassO11b.Can.E.noConfusion")]
+
+/-- Pass firing, read off the switch-on output (as `passRefs`). -/
+def pjPassRefs : List (String × String × String × Bool) := [
+  -- O7: the Ix recursor, single motives (no packing); declines on distinct minors
+  ("O7Collapse", "PassO7.Src.A.viaRec", "PProd", false),
+  ("O7Collapse", "PassO7.Src.B.viaRecOn", "PProd", false),
+  ("O7Collapse", "PassO7.Src.Z.viaRec", "PProd", false),
+  ("O7Collapse", "PassO7.Src.A.distinct", "PProd", true),
+  -- O8: the Ix `casesOn` of the class, in matchers too; the demoted constant keeps its image
+  ("O8Cases", "PassO8.Src.A.isNil", "PProd", false),
+  ("O8Cases", "PassO8.Src.B.isNil.match_1", "PProd", false),
+  ("O8Cases", "PassO8.Src.Z.isE.match_1", "PProd", false),
+  ("O8Cases", "PassO8.Src.A.isNil'", "PProd", true),
+  -- O11b: the enumeration form (no `casesOn`); declines on two constructors (O3 still fires)
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType", "PassO11b.Src.B._ix.casesOn", false),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusion", "PassO11b.Src.B._ix.casesOn", false),
+  ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Src.E._ix.casesOn", true)]
+
+/-- The proof-justified passes' non-canonical set, exact in both directions
+for the unit (`passTwinsNC` against `nonCanonicalPasses`). -/
+def passNonCanonicalChecks (u : CUnit) (on : Ix.CompileM.LeanPipelineOut) : Array String × Nat := Id.run do
+  let fixture := Name.mkStr `Tests.Ix.Compile.Pass u.name
+  let entries := Tests.Ix.Compile.NonCanonical.nonCanonicalPasses.filter (·.fixture == fixture)
+  let addr := fun (s : String) => on.env.getAddr? (ixN (parseName s))
+  let mut problems : Array String := #[]
+  let mut n := 0
+  for (unit, a, b) in passTwinsNC do
+    if unit != u.name then continue
+    n := n + 1
+    match addr a, addr b with
+    | some x, some y =>
+      match entries.find? (·.constant == parseName a) with
+      | none => problems := problems.push s!"{u.name}: {a} / {b} differ ({x} / {y}) with no entry in nonCanonicalPasses"
+      | some en =>
+        if x == y then
+          problems := problems.push s!"{u.name}: stale non-canonical entry {a} ({en.cause.tag}): the pair is byte-equal"
+        else if en.evidence.addrA != toString x || en.evidence.addrB != toString y then
+          problems := problems.push s!"{u.name}: evidence moved for {a} ({en.cause.tag}): \"{x}\" \"{y}\""
+    | _, _ => problems := problems.push s!"{u.name}: non-canonical pair missing: {a} / {b}"
+  for en in entries do
+    if !(passTwinsNC.any fun (unit, a, _) => unit == u.name && parseName a == en.constant) then
+      problems := problems.push s!"{u.name}: non-canonical entry {en.constant} names no listed pair"
+  return (problems, n)
+
 /-- The per-pass checks of one fixture unit. -/
 def passChecks (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : Array String × Array String := Id.run do
   let mut problems : Array String := #[]
   let mut lines : Array String := #[]
   let addr := fun (o : Ix.CompileM.LeanPipelineOut) (s : String) => o.env.getAddr? (ixN (parseName s))
   let mut nt := 0
-  for (unit, a, b) in passTwins do
+  for (unit, a, b) in passTwins ++ pjPassTwins do
     -- the debugging unit `names` (`PASS3_NAMES`) takes the twins unit's pairs it contains
     if unit != u.name && !(unit == "twins" && u.name == "names" && (addr on a).isSome) then continue
     nt := nt + 1
@@ -720,7 +795,7 @@ def passChecks (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : Array String
   let names : Std.HashMap Address (Array String) := on.env.named.fold (init := {}) fun m n nd =>
     m.insert nd.addr ((m.getD nd.addr #[]).push n.pretty)
   let mut nr := 0
-  for (unit, c, r, want) in passRefs do
+  for (unit, c, r, want) in passRefs ++ pjPassRefs do
     if unit != u.name then continue
     nr := nr + 1
     let some ad := addr on c | problems := problems.push s!"{u.name}: {c} missing"; continue
@@ -741,7 +816,9 @@ def passChecks (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : Array String
             (xs.zip ys).all fun ((l, x), (_, y)) => (ixonFirstDiff ca cb l x y).isNone
         | _, _ => false
       if !same then problems := problems.push s!"{u.name}: {c}: the term differs from the switch-off output's"
-  lines := lines.push s!"  passes: {nt} twin pairs equal with the switch on, {nr} firing checks, {ns} constants with the switch-off term ({problems.size} problem(s))"
+  let (ncp, nnc) := passNonCanonicalChecks u on
+  problems := problems ++ ncp
+  lines := lines.push s!"  passes: {nt} twin pairs equal with the switch on, {nr} firing checks, {ns} constants with the switch-off term, {nnc} recorded non-canonical pairs ({problems.size} problem(s))"
   return (problems, lines)
 
 /-- `PASS3_FAILURES=<file>`: append every kernel failure of a unit, one
@@ -810,7 +887,7 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
   problems := problems ++ idr.problems.map (s!"{u.name}: " ++ ·)
   if !idr.changedBlocks.isEmpty then
     lines := lines ++ (← surgeryComparison off on ((← IO.getEnv "PASS3_DIFF").isSome))
-  if u.name == "twins" || u.name == "names" || passFiles.any (fun p => (System.FilePath.mk p).fileStem == some u.name) then
+  if u.name == "twins" || u.name == "names" || (passFiles ++ pjPassFiles).any (fun p => (System.FilePath.mk p).fileStem == some u.name) then
     let (pp, pl) := passChecks u off on
     problems := problems ++ pp
     lines := lines ++ pl
@@ -1148,7 +1225,7 @@ def run (env : Environment) : IO UInt32 := do
   let keep? := (← IO.getEnv "PASS3_KEEP").map System.FilePath.mk
   let want := fun (s : String) => only.isEmpty || only.contains s
   let mut units : Array (String × IO CUnit) := #[]
-  for p in auxCertFiles ++ protoFiles ++ passFiles do
+  for p in auxCertFiles ++ protoFiles ++ passFiles ++ pjPassFiles do
     let stem := (System.FilePath.mk p).fileStem.getD p
     if want stem then units := units.push (stem, unitOfFile p)
   if want "twins" then

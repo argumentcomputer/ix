@@ -22,6 +22,8 @@ image (the baseline, Def 3.6). The fixed order:
 | — | O5 | the level rule inside O1-O4 (not a pattern) |
 | 6 | O6 | `rec` whose image is `ρ` applied to its own variables |
 | unit | O13a/b | cliques changed only by order, or by the fixed-parameter telescope: **A5's slot**, run once per clique after the occurrence passes; not implemented here |
+| 6 | O8 | `casesOn` over a collapsed or lifted member: the Ix `casesOn` of the class (**proof-justified**, `pjPasses`) |
+| 7 | O7 | `rec`/`recOn` over a collapsed block with identical motives and minors per class (**proof-justified**, `pjPasses`) |
 
 **The engine is fused with the rewrite.** The design document's engine
 traverses the baseline term and, at each image occurrence `img(a) args`,
@@ -33,11 +35,15 @@ instead would have to recognise `img(a)`'s developed body, which is the same
 information read back from a less structured term.
 
 ## Faithfulness
-Each pass is definitional (its module gives the conversion steps); a
-composition of conversions is a conversion, so the engine's output is
-definitionally equal to the baseline. Arguments are rewritten before the
-head (each by its own fixed point), and every pass copies its arguments
-unchanged.
+O1-O6 are definitional (each module gives the conversion steps); a
+composition of conversions is a conversion, so where only they fire the
+engine's output is definitionally equal to the baseline. The
+proof-justified passes (`pjPasses`: O8, O7; A6) give a term provably equal
+to the occurrence's baseline (each module states the lemma Phase B
+formalises); they fire only in the value of a definition, and the rewritten
+constant equals its baseline by congruence (`funext`, `congrArg`) over the
+rewritten occurrences. Arguments are rewritten before the head (each by its
+own fixed point), and every pass copies its arguments unchanged.
 
 ## Canonicity
 **Termination** [argued]. The measure is the number of image-kind
@@ -75,6 +81,13 @@ bottom-up traversal reaches the fixed point.
 The unit slot (O13) runs after the occurrence passes; O13 belongs to A5
 (cliques are elaborated over the Ix auxiliaries, which the occurrence passes
 restore, design document §1.4 order constraint 1).
+* O8 and O7 come after O1-O6 and are disjoint from them: O8 needs a
+  collapsed class, where O3 declines; O7 needs a collapsed, unsplit block,
+  where O1 (permutation only) and O2 (split) decline and O6 cannot read a
+  selection shape (a packed image's head is a projection). O8 (`casesOn`)
+  and O7 (`rec`/`recOn`) have disjoint heads. Their side conditions compare
+  arguments that are already rewritten (bottom-up), design document §1.4
+  order constraint 3.
 
 ## Side condition and fallback
 Per pass. The engine's own fallback is the baseline (`none`).
@@ -95,6 +108,9 @@ public import Ix.Compile.Pass.Opt.O4
 public import Ix.Compile.Pass.Opt.O5
 public import Ix.Compile.Pass.Opt.O6
 public import Ix.Compile.Pass.Opt.O11a
+public import Ix.Compile.Pass.Opt.O7
+public import Ix.Compile.Pass.Opt.O8
+public import Ix.Compile.Pass.Opt.O11b
 public section
 
 namespace Ix.Compile.Pass.Opt
@@ -106,6 +122,12 @@ occurrences O2 synthesises (its relocated calls). -/
 def passes (recur : Occ → Option Expr) : List (String × (OptEnv → Occ → Option Expr)) :=
   [("O1", O1.apply), ("O11a", O11a.apply), ("O2", O2.apply recur), ("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)]
 
+/-- The proof-justified occurrence passes (A6), after the definitional ones:
+they fire only in the value of a definition that no dependent demotes
+(`Opt.Packed.pjAllowed`). -/
+def pjPasses : List (String × (OptEnv → Occ → Option Expr)) :=
+  [("O8", O8.apply), ("O7", O7.apply)]
+
 /-- The first pass that applies, with its name. The bound is on the nesting of
 O2's relocated calls (one level per component below the major's, in the
 condensation DAG), far below it. -/
@@ -113,7 +135,7 @@ def engineN : Nat → OptEnv → Occ → Option (String × Expr)
   | 0, _, _ => none
   | fuel + 1, env, o =>
     let recur := fun o' => (engineN fuel env o').map (·.2)
-    (passes recur).findSome? fun (nm, p) => (p env o).map (nm, ·)
+    (passes recur ++ pjPasses).findSome? fun (nm, p) => (p env o).map (nm, ·)
 
 /-- The engine at one occurrence. -/
 def engine (env : OptEnv) (o : Occ) : Option (String × Expr) := engineN 64 env o
@@ -132,13 +154,19 @@ def optBlockOf (inp : ViewInput) (v : BlockView) : OptBlock := Id.run do
     | some (.recInfo rv) => some rv
     | _ => none
   let mut shapes : Std.HashMap Name RecShape := {}
+  let mut images : Std.HashMap Name (Array Name × Expr) := {}
   for r in imageKinds inp.const? v.all do
     let some (.recInfo rv) := inp.const? r | continue
     let .ok img := v.image inp r | continue
+    images := images.insert r (img.levelParams, img.value)
     if let some s := readShape r img.levelParams rv.numParams rv.numMotives rv.numMinors
         rv.numIndices img.value ixRecInfo then
       shapes := shapes.insert r s
-  return { all := v.all, change := v.canon.change, classOf, shapes }
+  let ixRecs : Std.HashMap Name RecursorVal := v.canonConsts.fold (init := {}) fun m n c =>
+    match c with
+    | .recInfo rv => m.insert n rv
+    | _ => m
+  return { all := v.all, change := v.canon.change, classOf, shapes, images, ixRecs }
 
 end Ix.Compile.Pass.Opt
 

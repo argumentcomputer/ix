@@ -65,6 +65,9 @@ structure Occ where
   head : Name
   us : Array Level
   args : Array Expr
+  /-- The definition whose value contains the occurrence, when the
+  proof-justified passes (O7, O8) may fire there (`Translate.RwState.site`). -/
+  site : Option Name := none
 
 /-- The kinds of image-kind auxiliaries (design document §4.5). -/
 inductive AuxKind where
@@ -216,6 +219,13 @@ structure OptBlock where
   classOf : Std.HashMap Name (Array Name)
   /-- The shapes of the block's Lean recursors (those that have one). -/
   shapes : Std.HashMap Name RecShape
+  /-- The generated images of the block's Lean recursors (those that built):
+  their universe parameters and values, read by the proof-justified passes
+  over collapsed blocks, whose images are packed (`Opt.Packed`). -/
+  images : Std.HashMap Name (Array Name × Expr) := {}
+  /-- The Ix recursors of the block's canonical components (view names
+  mapped back, as the images name them). -/
+  ixRecs : Std.HashMap Name RecursorVal := {}
   deriving Inhabited
 
 /-- What the passes read of the compiler. -/
@@ -226,6 +236,13 @@ structure OptEnv where
   resolves : Name → Bool
   /-- The block of a Lean image-kind head, when it is a changed block's. -/
   blockOf : Name → Option OptBlock
+  /-- The dependents rule of the proof-justified passes (design document
+  §1.4, order constraint 4, demotion): `demotion c key` names a dependent of
+  the definition `c` (a constant outside `c`'s block that references `c`)
+  which also references an image-kind auxiliary of the changed block `key`,
+  i.e. may rely on `c` unfolding to its Lean shape; `none` when there is no
+  such dependent. -/
+  demotion : Name → Name → Option String := fun _ _ => none
 
 /-- A constant of the input environment. -/
 def OptEnv.const? (env : OptEnv) (n : Name) : Option ConstantInfo := env.ienv.get? n

@@ -91,10 +91,11 @@ structure RwState where
   needed : Array Name := #[]
   /-- Rewritten expansions. -/
   exps : Std.HashMap Name Expansion := {}
-  cache : Std.HashMap (Expr × Bool) Expr := {}
-  /-- The definitional passes (`Ix.Compile.Pass.Opt.engine`), tried at every full
-  application before the image is inlined; `none` keeps the baseline. -/
-  opt? : Name → Array Level → Array Expr → Option Expr := fun _ _ _ => none
+  cache : Std.HashMap (Expr × Bool × Option Name) Expr := {}
+  /-- The optimisation passes (`Ix.Compile.Pass.Opt.engine`), tried at every
+  full application before the image is inlined; `none` keeps the baseline.
+  The first argument is `site`. -/
+  opt? : Option Name → Name → Array Level → Array Expr → Option Expr := fun _ _ _ _ => none
   /-- The recorded declines (design document §6.3, obligation 4): tried at
   every full application next to `opt?`; a cause means a pass declined
   because a reference it needs is absent from the input
@@ -102,8 +103,15 @@ structure RwState where
   decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none
   /-- The causes recorded so far, in rewrite order. -/
   declines : Array String := #[]
-  /-- The declines recorded while rewriting a cached subterm. -/
-  declineCache : Std.HashMap (Expr × Bool) (Array String) := {}
+  /-- The declines recorded while rewriting a cached subterm (same key as
+  `cache`). -/
+  declineCache : Std.HashMap (Expr × Bool × Option Name) (Array String) := {}
+  /-- The definition whose value is being rewritten, where the proof-justified
+  passes (O7, O8) may fire: only in the value of a definition, never in a
+  type, in a theorem's proof or in a shared expansion, where a rewrite that
+  is not a conversion would change a statement or the type a proof is
+  checked against. -/
+  site : Option Name := none
 
 abbrev RwM := StateT RwState (Except String)
 
@@ -125,7 +133,11 @@ def expansionOf : Nat → Name → RwM (Option Expansion)
     | none => return none
     | some x =>
       let x ← if x.needsRewrite then do
+          -- an expansion is shared by every site: no proof-justified pass
+          let site := (← get).site
+          modify fun st => { st with site := none }
           let v ← rw fuel false x.value
+          modify fun st => { st with site }
           pure { x with value := v, needsRewrite := false }
         else pure x
       modify fun st => { st with exps := st.exps.insert n x }
@@ -137,10 +149,11 @@ expansions. -/
 def rw : Nat → Bool → Expr → RwM Expr
   | 0, _, _ => throw "Pass 3 rewrite: recursion bound exhausted"
   | fuel + 1, record, e => do
-    if let some r := (← get).cache.get? (e, record) then
+    let site := (← get).site
+    if let some r := (← get).cache.get? (e, record, site) then
       -- a cached subterm records its declines again (they belong to the
       -- constant being rewritten now)
-      if let some ds := (← get).declineCache.get? (e, record) then
+      if let some ds := (← get).declineCache.get? (e, record, site) then
         modify fun st => { st with declines := st.declines ++ ds }
       return r
     let before := (← get).declines.size
@@ -157,7 +170,7 @@ def rw : Nat → Bool → Expr → RwM Expr
               -- bare or partial: the Lean name denotes the stored image
               -- constant (Q11), so the occurrence stays as written
               return mkAppN (Expr.mkConst n us) args'
-            let body ← match (← get).opt? n us args' with
+            let body ← match (← get).opt? site n us args' with
               | some e => pure e
               | none => liftM (Ix.Compile.Image.instantiate (substLevels x.levelParams us x.value) args')
             if let some cause := (← get).decline? n us args' then
@@ -187,9 +200,9 @@ def rw : Nat → Bool → Expr → RwM Expr
       | .mdata md x _ => do pure (Expr.mkMData md (← rw fuel record x))
       | e => pure e
     modify fun st => { st with
-      cache := st.cache.insert (e, record) r
+      cache := st.cache.insert (e, record, site) r
       declineCache := if st.declines.size == before then st.declineCache
-        else st.declineCache.insert (e, record) (st.declines.extract before st.declines.size) }
+        else st.declineCache.insert (e, record, site) (st.declines.extract before st.declines.size) }
     return r
 end
 
@@ -200,7 +213,14 @@ def rewriteConstM (ci : ConstantInfo) : RwM ConstantInfo := do
     pure { c with type := ← go c.type }
   match ci with
   | .axiomInfo v => pure (.axiomInfo { v with cnst := ← cnst v.cnst })
-  | .defnInfo v => pure (.defnInfo { v with cnst := ← cnst v.cnst, value := ← go v.value })
+  | .defnInfo v => do
+    let cnst' ← cnst v.cnst
+    -- the value of a definition is the one place a proof-justified pass may
+    -- fire (`RwState.site`)
+    modify fun st => { st with site := some v.cnst.name }
+    let value ← go v.value
+    modify fun st => { st with site := none }
+    pure (.defnInfo { v with cnst := cnst', value })
   | .thmInfo v => pure (.thmInfo { v with cnst := ← cnst v.cnst, value := ← go v.value })
   | .opaqueInfo v => pure (.opaqueInfo { v with cnst := ← cnst v.cnst, value := ← go v.value })
   | .quotInfo v => pure (.quotInfo { v with cnst := ← cnst v.cnst })
@@ -234,7 +254,7 @@ structure BlockRewrite where
 indices are block-unique. -/
 def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     (members : Array (Name × ConstantInfo))
-    (opt? : Name → Array Level → Array Expr → Option Expr := fun _ _ _ => none)
+    (opt? : Option Name → Name → Array Level → Array Expr → Option Expr := fun _ _ _ _ => none)
     (decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none) :
     Except String BlockRewrite := do
   let mut st : RwState := { base := 0, opt?, decline? }

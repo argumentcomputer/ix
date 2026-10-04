@@ -363,14 +363,44 @@ block's referenced changed blocks: the hook the rewrite tries at every full
 application before it inlines an image (heads of other blocks keep their
 baseline). -/
 def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
-    Name → Array Ix.Level → Array Expr → Option Expr :=
+    Option Name → Name → Array Ix.Level → Array Expr → Option Expr :=
   let inp := viewInput cenv
   let blocks : Std.HashMap Name Opt.OptBlock :=
     views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
-      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
-  fun n us args => (Opt.engine env { head := n, us, args }).map (·.2)
+      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
+      demotion := Opt.demotionIn cenv.p3BlockRefs cenv.p3Heads }
+  fun site n us args => (Opt.engine env { head := n, us, args, site }).map (·.2)
+
+/-- The unit passes (A6p) over a block's members, after the call-site
+rewrite: O11b gives Lean's `noConfusion` pair of a split-off enumeration
+its enumeration form (`Ix.Compile.Pass.Opt.O11b`), with Lean's value as the
+root's decompile record. `overlay` and `sources` are the rewrite's. -/
+def unitPasses (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
+    (members : Array (Name × ConstantInfo)) (overlay : Std.HashMap Name ConstantInfo)
+    (sources : Std.HashMap Nat Expr) : Std.HashMap Name ConstantInfo × Std.HashMap Nat Expr := Id.run do
+  let classesOf : Name → Option (Array (Array Name)) := fun t => do
+    let key ← cenv.p3Heads.get? (Name.mkStr t "casesOn")
+    let v ← views.get? key
+    let c ← v.canon.components.find? (·.members.contains t)
+    pure c.classes
+  let demoted : Name → Bool := fun c => match Opt.noConfusionOf c with
+    | some (t, _) => match cenv.p3Heads.get? (Name.mkStr t "casesOn") with
+      | some key => (Opt.demotionIn cenv.p3BlockRefs cenv.p3Heads c key).isSome
+      | none => true
+    | none => true
+  let mut overlay := overlay
+  let mut sources := sources
+  let mut k := 0
+  for (n, ci) in members do
+    let some dv := Opt.O11b.rewrite cenv.env.get? classesOf demoted n ci | continue
+    let some leanValue := (match ci with | .defnInfo d => some d.value | _ => none) | continue
+    let idx := Opt.o11bRecordBase + k
+    k := k + 1
+    overlay := overlay.insert n (.defnInfo { dv with value := Expr.mkMData #[(inlineKey, .ofNat idx)] dv.value })
+    sources := sources.insert idx leanValue
+  return (overlay, sources)
 
 /-- The recorded declines of the definitional passes over the same views
 (`Ix.Compile.Pass.Opt.O11a.declineCause?`): the hook the rewrite tries next
@@ -435,6 +465,8 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   -- the recorded declines go to the block state, and from there into the
   -- compile's non-canonical set (`CompileEnv.p3NonCanonical`)
   let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines }
+  -- the unit passes (A6p): O11b
+  let (overlay, sources) := unitPasses cenv views members overlay sources
   return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, init)
 
 /-! ## The Lean names of a changed block's auxiliaries: their images -/
