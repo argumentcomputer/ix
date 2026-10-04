@@ -68,10 +68,16 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
   let natOwned := sourceOwnership ownedEnv `Nat
   check "same-namespace imported declarations are not source owned"
     (natOwned.names.size == 1 && !natOwned.sourceSet.contains (Ix.Name.fromLeanName ``Nat.add))
-  check "generated image retains its original source identity"
-    (ownedOutput owned.sourceSet (Ix.Name.fromLeanName `CorpusOwnership._ix.exposed))
+  check "canonical auxiliary spelling is owned through its exact source owner"
+    (ownedOutput owned.sourceSet (Ix.Name.fromLeanName `CorpusOwnership.exposed._ix.rec_7))
   check "unowned generated-looking name is excluded"
-    (!ownedOutput owned.sourceSet (Ix.Name.fromLeanName `CorpusOwnership._ix.absent))
+    (!ownedOutput owned.sourceSet (Ix.Name.fromLeanName `CorpusOwnership.absent._ix.rec_7))
+  check "imported same-namespace image owner is excluded"
+    (!ownedOutput natOwned.sourceSet (Ix.Name.fromLeanName `Nat.add._ix.rec_7))
+  let privateOwned : Std.HashSet Ix.Name := ({} : Std.HashSet Ix.Name).insert (Ix.Name.fromLeanName privateName)
+  check "canonical nested helper preserves private owner identity"
+    (ownedOutput privateOwned (Ix.Name.fromLeanName (privateName ++ `_ix.rec_7)) &&
+      !ownedOutput privateOwned (Ix.Name.fromLeanName (stringName ++ `_ix.rec_7)))
   check "all3-member permutations" ((permutations [0,1,2]).length == 6)
   let shape : Shape := { id := "x", family := "test", decl := "", members := #["a", "b"] }
   check "duplicate permutation rejected" ((shape.permuted [0,0] #[]).toOption.isNone)

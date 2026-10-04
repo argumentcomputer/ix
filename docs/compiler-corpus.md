@@ -119,7 +119,9 @@ Source ownership is inventoried by elaborating each source serially before
 parallel oracle work. Namespace classification uses the visible form of private
 names, while `source-ownership/*.json` preserves every original string/numeric
 name component. Imported declarations in the same namespace are excluded.
-Generated images are included only when their original auxiliary is source-owned.
+Generated images are included only when the exact original prefix before `_ix`
+is a source-owned declaration. This preserves private identity and includes
+canonical nested helpers whose index/spelling changed from the source auxiliary.
 Each compiled output records public/private source counts, generated-image counts
 and complete original identities in `compile-ownership.json`; omitting an owned
 source declaration is an infrastructure failure.

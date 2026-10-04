@@ -50,16 +50,19 @@ def prepareOwnership (src : System.FilePath) (ns : String) : IO Ownership := do
   if owned.names.isEmpty then throw <| IO.userError s!"no source-owned declarations in {src} namespace {ns}"
   return owned
 
-/-- Generated image names are included only when their original source auxiliary
-is owned. This does not make unrelated imported declarations into owned roots. -/
-def imageSource? (n : Name) : Option Name := do
+/-- Canonical auxiliary indices and representatives may differ from the source
+auxiliary spelling. Ownership comes from the exact source owner before the
+reserved component, preserving all private/numeric prefix components. Source
+declarations using the reserved component are rejected by the compiler. -/
+def imageOwner? (n : Name) : Option Name := do
   let parts := nameParts n
-  unless parts.contains (.str "_ix") do none
-  return nameOfParts (parts.filter (· != .str "_ix"))
+  let index ← parts.findIdx? (· == .str "_ix")
+  unless 0 < index && index + 1 < parts.size do none
+  return nameOfParts (parts.extract 0 index)
 
 def ownedOutput (source : Std.HashSet Ix.Name) (n : Ix.Name) : Bool :=
-  source.contains n || (imageSource? (leanName n)).any fun original =>
-    source.contains (Ix.Name.fromLeanName original)
+  source.contains n || (imageOwner? (leanName n)).any fun owner =>
+    source.contains (Ix.Name.fromLeanName owner)
 
 /-- Legacy CLI selectors use displayed names. Refuse ambiguous spellings instead
 of allowing a string/numeric collision to select a different original identity. -/
