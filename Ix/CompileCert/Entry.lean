@@ -217,6 +217,60 @@ theorem AdmittedArtifact.installed_exact {input : ArtifactInput} (artifact : Adm
       simp only [hf, hk, artifact.decoded, bind, Except.bind, Except.mapError] at hc
       exact ⟨natPins, hn, checkConstantsWith_installed hc⟩
 
+/-- The exact declaration array used by correspondence, behind the actual
+prelude, is the array accepted by the certified fold. This binds member-level
+reader evidence to admission without replacing it by installation skeletons. -/
+theorem AdmittedArtifact.checked_declarations {input : ArtifactInput}
+    (artifact : AdmittedArtifact input) :
+    ∃ natPins, builtinNatOpPins = .ok natPins ∧
+      Kernel.Cached.checkDecls .verified natPins
+        (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations) = .ok artifact.env := by
+  obtain ⟨pins, pre, natPins, hp, hq, hn, hc⟩ := checkBytes_with artifact.admitted
+  have hp' : pins = artifact.pins := Except.ok.inj (hp.symm.trans artifact.pins_valid)
+  have hq' : pre = artifact.prelude := Except.ok.inj (hq.symm.trans artifact.prelude_valid)
+  subst pins
+  subst pre
+  rw [checkBytesWith_eq] at hc
+  cases hf : preflight input.limits input.records input.blobs with
+  | error e => simp [hf, bind, Except.bind, Except.mapError] at hc
+  | ok u =>
+    cases hk : uniqueKeys input.records input.blobs with
+    | error e => simp [hf, hk, bind, Except.bind, Except.mapError] at hc
+    | ok v =>
+      simp only [hf, hk, artifact.decoded, bind, Except.bind, Except.mapError] at hc
+      refine ⟨natPins, hn, ?_⟩
+      simp only [checkConstantsWith, artifact.reading, bind, Except.bind] at hc
+      cases hcheck : Kernel.Cached.checkDecls .verified natPins
+          (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations) with
+      | error e => simp [hcheck, Except.mapError] at hc
+      | ok result => simpa [hcheck, Except.mapError] using hc
+
+/-- Direct correspondence identifies a full member of an actual declaration
+in the accepted fold. Inductive members retain every rule field via
+`readerEntries`; flattened definition-block declarations use the same route.
+This is reader membership, not equality to installed annotated fields. -/
+theorem AcceptedAssociation.direct_member_reading {input : Input}
+    (accepted : AcceptedAssociation input) {ci : Lean.ConstantInfo}
+    (direct : DirectMatch ⟨input.source, input.map, accepted.pins⟩
+      (streamEntries accepted.declarations) ci) :
+    ∃ expected actual decl natPins,
+      directExport ⟨input.source, input.map, accepted.pins⟩ ci = .ok expected ∧
+      EntryCompatible actual expected ∧ actual ∈ readerEntries decl ∧
+      decl ∈ Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations ∧
+      builtinNatOpPins = .ok natPins ∧
+      Kernel.Cached.checkDecls .verified natPins
+        (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations) = .ok accepted.env := by
+  cases he : directExport ⟨input.source, input.map, accepted.pins⟩ ci with
+  | error e => simp [DirectMatch, he] at direct
+  | ok expected =>
+    have hm : expected.withoutHint ∈ compatibleEntries (streamEntries accepted.declarations) := by
+      simpa [DirectMatch, he] using direct
+    obtain ⟨actual, ha, same⟩ := List.mem_map.mp hm
+    obtain ⟨decl, hd, hm⟩ := List.mem_flatMap.mp ha
+    obtain ⟨natPins, hn, hc⟩ := accepted.toAdmittedArtifact.checked_declarations
+    exact ⟨expected, actual, decl, natPins, rfl, same, hm,
+      Kernel.Frontend.mem_preparePrelude (by simpa using hd), hn, hc⟩
+
 /-- A raw-source definition is related to an actual declaration in the
 admitted fold by the reader's proved normalization specification. Its raw
 body remains explicit; no projection denotation theorem is smuggled into W. -/
