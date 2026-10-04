@@ -79,9 +79,27 @@ def mapMismatch (input : Input) : Bool :=
   match checkCompiled input with | .error .mapMismatch => true | _ => false
 
 def malformedKeys (input : Input) : Bool :=
-  match checkCompiled input with | .error (.setup _) => true | _ => false
+  match checkCompiled input with | .error (.malformedInput _) => true | _ => false
 
-def controls : List (String × (Unit → Bool)) := [
+def outcomeClass (input : Input) (root : Lean.Name) : OutcomeClass :=
+  (RootOutcome.mk root (checkRoot input root)).classification
+
+def classificationControls : List (String × (Unit → Bool)) := [
+  ("per-root certified classification", fun _ => outcomeClass choiceInput `first == .certified),
+  ("per-root unsupported source classification", fun _ =>
+    let source := choiceInput.source.declarations.map fun
+      | .defnInfo d => Lean.ConstantInfo.defnInfo { d with safety := .unsafe }
+      | ci => ci
+    outcomeClass { choiceInput with source := ⟨source⟩ } `first == .unsupported),
+  ("per-root missing dependency is blocked", fun _ => outcomeClass choiceInput `missing == .blocked),
+  ("per-root wrong source body is rejected", fun _ => outcomeClass wrongAlias `same == .rejected),
+  ("per-root malformed key is rejected", fun _ => outcomeClass
+    { choiceInput with records := [(⟨ByteArray.empty⟩, Ixon.serConstant choiceRecord)] } `first == .rejected),
+  ("kernel resource and unsupported declines remain distinct", fun _ =>
+    admissionClass (.kernel (.notImplemented "direct sum: positivity walk fuel") 0) == .blocked &&
+    admissionClass (.kernel (.notImplemented "unsupported positive shape") 0) == .unsupported)]
+
+def controls : List (String × (Unit → Bool)) := classificationControls ++ [
   ("empty record key rejected before admission", fun _ => malformedKeys
     { choiceInput with records := [(⟨ByteArray.empty⟩, Ixon.serConstant choiceRecord)] }),
   ("short blob key rejected before admission", fun _ => malformedKeys
@@ -124,7 +142,7 @@ def controls : List (String × (Unit → Bool)) := [
         levelParams := []
         type := .sort .zero
         isUnsafe := true }]⟩ } `first).isOk),
-  ("selected root retains changed dependency", fun _ =>
+  ("selected root retains changed dependency", fun (_ : Unit) =>
     match checkRoot { dependent with source := ⟨[sourceDef `first (sourceValue false),
         sourceDef `root (.const `first [.param `u])]⟩ } `root with
     | .error (.certification .correspondence) => true
@@ -136,10 +154,10 @@ def controls : List (String × (Unit → Bool)) := [
     !(selectSource dependent.source [`root] 0).isOk),
   ("per-root coverage retains unsupported outcome", fun _ =>
     let input := { choiceInput with roots := [`first, `missing] }
-    let outcomes := checkRoots input
+    let outcomes : List (RootOutcome input) := checkRoots input
     outcomes.length == 2 &&
-      (outcomes[0]?.map (fun r => r.result.isOk)).getD false &&
-      !(outcomes[1]?.map (fun r => r.result.isOk)).getD true),
+      (outcomes[0]?.map (fun (r : RootOutcome input) => r.result.isOk)).getD false &&
+      !(outcomes[1]?.map (fun (r : RootOutcome input) => r.result.isOk)).getD true),
   ("allowed definition hint difference", fun _ =>
     accepted { choiceInput with hint := fun _ => some (.regular 7) }),
   ("hint difference cannot hide wrong value", fun _ =>

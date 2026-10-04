@@ -111,6 +111,8 @@ structure AcceptedAssociation (input : Input) extends AdmittedArtifact input.toA
 
 inductive Decline where
   | admission (error : Kernel.Admission.Error)
+  | unsupported (source : Lean.Name) (feature : String)
+  | malformedInput (reason : String)
   | sourceDomain
   | setup (reason : String)
   | decoding (error : ByteError)
@@ -148,11 +150,15 @@ def prepareArtifact (input : ArtifactInput) : Except Decline (AdmittedArtifact i
                   | .error (e, i) => Except.error (Kernel.Admission.Error.read i e)) = .ok decls
                 rw [hr]
               .ok ⟨hk, env, ha, pins, hp, pre, hq, constants, hc, decls, state, hr, hs⟩
-  else .error (.setup "record and blob keys must be exactly 32 bytes")
+  else .error (.malformedInput "record and blob keys must be exactly 32 bytes")
 
 def checkAssociation (input : Input) (artifact : AdmittedArtifact input.toArtifactInput) :
     Except Decline (AcceptedAssociation input) :=
   if hd : DirectDomain input.source input.roots input.map then
+    match input.source.declarations.findSome? (fun ci =>
+        (unsupportedSource ci).map (ci.name, ·)) with
+    | some (source, feature) => .error (.unsupported source feature)
+    | none =>
     let cx : ExportContext := ⟨input.source, input.map, artifact.pins⟩
     let reader := streamContext artifact.pins artifact.prelude artifact.constants input.blobs input.hint
     if hm : MapAgrees cx reader then
@@ -335,6 +341,30 @@ def checkRoot (input : Input) (root : Lean.Name) :
 structure RootOutcome (input : Input) where
   root : Lean.Name
   result : Except RootDecline (RootAssociation input root)
+
+inductive OutcomeClass where
+  | certified | unsupported | blocked | rejected
+  deriving BEq, Repr
+
+/-- Classification never turns a decline into an acceptance. Original
+diagnostics remain in `RootOutcome.result`. Internal/resource failures are
+blocked; only completed malformed/correspondence decisions are rejected. -/
+def admissionClass : Kernel.Admission.Error → OutcomeClass
+  | .limit _ | .prelude _ | .kernel (.internal _) _ => .blocked
+  | .read _ (.declined reason) | .kernel (.notImplemented reason) _ =>
+    if (reason.splitOn "fuel").length > 1 then .blocked else .unsupported
+  | _ => .rejected
+
+def RootOutcome.classification {input : Input} (outcome : RootOutcome input) : OutcomeClass :=
+  match outcome.result with
+  | .ok _ => .certified
+  | .error (.selection _) => .blocked
+  | .error (.certification reason) =>
+    match reason with
+    | .unsupported .. => .unsupported
+    | .admission e | .reading e => admissionClass e
+    | .decoding (.limit _) | .setup _ => .blocked
+    | _ => .rejected
 
 def checkRoots (input : Input) : List (RootOutcome input) :=
   match prepareArtifact input.toArtifactInput with

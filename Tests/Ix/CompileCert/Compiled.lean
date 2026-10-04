@@ -20,6 +20,8 @@ def roots : List Lean.Name :=
 
 def declineLabel : Decline → String
   | .admission e => s!"admission: {e}"
+  | .unsupported n f => s!"unsupported {n}: {f}"
+  | .malformedInput s => s!"malformed input: {s}"
   | .sourceDomain => "source-domain"
   | .setup s => s!"setup: {s}"
   | .decoding _ => "decoding"
@@ -80,7 +82,7 @@ def run : IO Unit := do
       let label := match reason with
         | .selection s => s!"selection: {s}"
         | .certification e => declineLabel e
-      IO.println s!"DECLINED {outcome.root}: {label}"
+      IO.println s!"{repr outcome.classification} {outcome.root}: {label}"
       unexpected := unexpected + 1
   IO.println s!"{accepted}/{outcomes.length} certified; {unexpected} unexpected declines"
   if unexpected != 0 then throw (IO.userError "real compiler C1 probe found unresolved direct cones")
