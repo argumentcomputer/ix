@@ -195,7 +195,8 @@ def tarjan (adj : Array (Array Nat)) : Option (Array (Array Nat)) :=
   (condensation adj).map (·.comps)
 
 /-- Components of the subgraph induced on `names` by `refs`, as name arrays
-(members in the order of `names`). Edges leaving `names` are dropped. -/
+(members in the order of `names`). Edges leaving `names` are dropped. `none` if Tarjan's fuel were wrong or a
+component held an index outside `names` (A7, D8: no `names[·]!`). -/
 def sccsOf (names : Array Name) (refs : Name → Std.HashSet Name) :
     Option (Array (Array Name)) := do
   let idx : Std.HashMap Name Nat :=
@@ -203,7 +204,7 @@ def sccsOf (names : Array Name) (refs : Name → Std.HashSet Name) :
   let adj := names.map fun nm =>
     ((refs nm).toArray.filterMap idx.get?).qsort (· < ·)
   let comps ← tarjan adj
-  return comps.map fun c => c.map (names[·]!)
+  comps.mapM fun c => c.mapM (names[·]?)
 
 end Ix.Compile.Canon
 
