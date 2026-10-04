@@ -1107,19 +1107,23 @@ def buildTypeMinorPremiseFvar (minorDom : Expr)
         paramFvars motiveFvars belowNames recUnivs rtc
       rtc := rtc'
       let (ihFvName, ihFv) := freshFVar "tmih" fi
-      lambdaDecls := lambdaDecls.push
+      let lambdaDecl : LocalDecl :=
         { fvarName := ihFvName, binderName := decl.binderName,
           domain := pprodDom, info := decl.info }
+      lambdaDecls := lambdaDecls.push lambdaDecl
+      rtc ← rtc.pushLocals #[lambdaDecl]
       lambdaFvars := lambdaFvars.push ihFv
       prodEntries := prodEntries.push (ihFv, lambdaDecls.size - 1)
     else
       lambdaDecls := lambdaDecls.push decl
       lambdaFvars := lambdaFvars.push fvar
+      -- Later IH domains can mention this ordinary field. Install the
+      -- telescope prefix before inferring those domains, not after them.
+      rtc ← rtc.pushLocals #[decl]
 
   -- PProdN.mk of prod entries (right-fold of VALUES). Lean's mkPProdMk
   -- (PProdN.lean:44-53) infers universe levels via getLevel — push the
-  -- lambda decls (with replaced IH domains) so FVars resolve.
-  rtc ← rtc.pushLocals lambdaDecls
+  -- lambda decls (with replaced IH domains) are already in scope.
 
   let (b, bType) ←
     if prodEntries.isEmpty then
