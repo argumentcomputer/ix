@@ -807,9 +807,6 @@ pub fn validate_canonical_block_single_pass<M: KernelMode>(
     let so = compare_kconst(w[0].1, w[1].1, &ctx, resolve_ctor)?;
     match so.ordering {
       Ordering::Less if so.strong => {},
-      Ordering::Less => {
-        return validate_by_full_refinement(block_addr, members, resolve_ctor);
-      },
       Ordering::Equal => {
         return Err(TcError::NonCanonicalBlock {
           block: block_addr.clone(),
@@ -831,7 +828,7 @@ pub fn validate_canonical_block_single_pass<M: KernelMode>(
       // references compare weakly `Greater` in *both* stored orders, while
       // `sort_consts` ordered the pair by a later strong difference found in
       // the round where both were one class. Fall back to the full check.
-      Ordering::Greater => {
+      Ordering::Less | Ordering::Greater => {
         return validate_by_full_refinement(block_addr, members, resolve_ctor);
       },
     }
