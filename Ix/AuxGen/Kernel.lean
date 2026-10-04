@@ -137,6 +137,12 @@ partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Level :=
 structure AuxKernelCtx where
   tcState : Ix.Tc.TcState .meta
   ingressCache : Std.HashMap (Address × Address) MKExpr := {}
+  /-- Forward provenance of identifiers referenced by this block's bridge
+  inputs. Keep every source identity: Meta KId equality includes the name,
+  so another alias at the same address cannot satisfy a missing identifier.
+  This map is fresh with the block, never reconstructed from ambient
+  compiled aliases or a whole-environment reverse index. -/
+  sourceNames : Std.HashMap Address (Std.HashSet Name) := {}
   /-- Mirrors Rust `KernelCtx.aux_ingress_seen`: ids whose
       `ingressAuxGenDep` dispatch already ran against this kenv. The
       dispatch is deterministic per constant kind, so a seen id is at
@@ -157,6 +163,18 @@ def AuxKernelCtx.new : AuxKernelCtx :=
 
 /-- Bridge monad: aux kernel state over CompileM. -/
 abbrev KBridgeM := StateT AuxKernelCtx CompileM
+
+/-- Record an explicit bridge input name under the address used at ingress. -/
+def rememberSourceName (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
+  modify fun ctx =>
+    let addr := maps.resolve name
+    let names := (ctx.sourceNames.getD addr {}).insert name
+    { ctx with sourceNames := ctx.sourceNames.insert addr names }
+
+/-- Open terms are converted without the closed-term ingress cache, so
+their referenced source identities are recorded at the scope boundary. -/
+def rememberSourceExpr (expr : Expr) (maps : AddrMaps) : KBridgeM Unit := do
+  for name in collectLeanConstRefs expr {} do rememberSourceName name maps
 
 /-- `Ix.CompileM.timedC` lifted to the bridge monad (`Ix.PhaseTimers`). -/
 @[inline] def timedK (ph : Ix.PhaseTimers.Phase) (act : KBridgeM α) : KBridgeM α :=
@@ -239,6 +257,7 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
     | .sort lvl _ =>
       pure (Ix.Tc.KExpr.mkSort (leanLevelToKuniv lvl paramNames) mdataLayers)
     | .const name us _ =>
+      rememberSourceName name maps
       let zid : MKId := ⟨maps.resolve name, name⟩
       let zus := us.map (leanLevelToKuniv · paramNames)
       pure (Ix.Tc.KExpr.mkConst zid zus mdataLayers)
@@ -263,6 +282,7 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
         (binderNames.push binderName) pnHash maps
       pure (Ix.Tc.KExpr.mkLet binderName tk vk bk nd mdataLayers)
     | .proj pname idx s _ =>
+      rememberSourceName pname maps
       let zid : MKId := ⟨maps.resolve pname, pname⟩
       let sk ← leanExprToKexprCached s paramNames binderNames pnHash maps
       pure (Ix.Tc.KExpr.mkPrj zid (UInt64.ofNat idx) sk mdataLayers)
@@ -358,6 +378,7 @@ def ensurePreludeInKenvOf (maps : AddrMaps) : KBridgeM Unit := do
     Mirrors Rust `ensure_in_kenv_of_inner_env` (expr_utils.rs:1944). -/
 partial def ensureInKenvOfInnerCore (name : Name) (maps : AddrMaps)
     (replaceAxioStub : Bool) (stubProofValues : Bool) : KBridgeM Unit := do
+  rememberSourceName name maps
   let addr := maps.resolve name
   let zid : MKId := ⟨addr, name⟩
 
@@ -701,6 +722,7 @@ def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
   let scope : TcScopeSt :=
     { fvarLevels, baseDepth := outerFvarCtx.size, paramNames, maps }
   for (decl, i) in outerFvarCtx.zipIdx do
+    rememberSourceExpr decl.domain maps
     let kty := toKexprStatic decl.domain fvarLevels i paramNames maps
     discard <| runTc (Ix.Tc.TcM.pushLocal kty)
   return scope
@@ -714,6 +736,7 @@ def pushLocals (scope : TcScopeSt) (decls : Array LocalDecl)
   for (decl, i) in decls.zipIdx do
     scope := { scope with
       fvarLevels := scope.fvarLevels.insert decl.fvarName (depth0 + i) }
+    rememberSourceExpr decl.domain scope.maps
     let kty := toKexprStatic decl.domain scope.fvarLevels (depth0 + i)
       scope.paramNames scope.maps
     discard <| runTc (Ix.Tc.TcM.pushLocal kty)
@@ -734,33 +757,30 @@ def popLocals (scope : TcScopeSt) (decls : Array LocalDecl)
 def faultInName (scope : TcScopeSt) (name : Name) : KBridgeM Bool := timedK .auxIngress do
   ensureFullInKenvOf name scope.maps
   let addr := scope.maps.resolve name
-  return (← get).tcState.env.consts.toList.any fun (id, _) => id.addr == addr
+  return (← kenvGet? ⟨addr, name⟩).isSome
 
-/-- Reverse address lookup (linear over the compile-env views + name
-    hashes; mirrors Rust `name_for_addr`, expr_utils.rs:2317). -/
-def nameForAddr (addr : Address) : KBridgeM (Option Name) := do
-  let cenv ← Ix.CompileM.getCompileEnv
-  for (name, named) in cenv.nameToNamed do
-    if named.addr == addr then
-      return some name
-  -- Streaming driver: `env.consts` is unmaterialized; the input names'
-  -- hashes live in `nameByHash` instead.
-  if let some name := cenv.nameByHash.get? addr then
-    return some name
-  for (name, _) in cenv.env.consts do
-    if name.getHash == addr then
-      return some name
-  return none
-
-/-- Fault in the constant behind an address discovered mid-inference.
-    Mirrors Rust `fault_in_addr` (expr_utils.rs:2303). -/
+/-- Fault the explicitly referenced source identities at an address.
+`unknownConst` carries only the address, while Meta KIds also contain the
+source name; load all missing forward identities in deterministic order.
+Ingress may expose further aliases at this address, so close that set to a
+fixed point. An ambient compiled alias is never a substitute. Rust's old
+address-only/global-reverse retry remains a documented catch-up boundary. -/
 def faultInAddr (scope : TcScopeSt) (addr : Address) : KBridgeM Bool := timedK .auxIngress do
-  if (← get).tcState.env.consts.toList.any (fun (id, _) => id.addr == addr) then
-    return true
-  let some name ← nameForAddr addr | return false
-  if !(← scope.faultInName name) then
-    return false
-  return (← get).tcState.env.consts.toList.any fun (id, _) => id.addr == addr
+  if ((← get).sourceNames.getD addr {}).isEmpty then
+    throw (.unsupportedExpr s!"bridge fault: no forward source provenance for {addr}")
+  let mut visited : Std.HashSet Name := {}
+  let mut loaded := false
+  repeat
+    let pending := (((← get).sourceNames.getD addr {}).toArray.filter (!visited.contains ·))
+      |>.qsort Ix.CompileM.aliasPrecedes
+    if pending.isEmpty then break
+    for name in pending do
+      visited := visited.insert name
+      if (← kenvGet? ⟨addr, name⟩).isSome then continue
+      if scope.maps.resolve name != addr then
+        throw (.unsupportedExpr s!"bridge fault: source address changed for {name.pretty}")
+      if ← scope.faultInName name then loaded := true
+  return loaded
 
 /-- Pre-fault every constant directly referenced by `e` (Rust
     `fault_in_direct_expr_consts`, expr_utils.rs:2282). -/
