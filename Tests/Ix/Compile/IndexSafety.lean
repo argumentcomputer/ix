@@ -27,7 +27,7 @@ def suite : List TestSeq := [
      (wrapTy .single Level.mkZero #[term]).toOption == some term
        && (wrapVal .single Level.mkZero #[(term, term)]).toOption == some term)
   ++ test "sequential compiler reports missing condensation references"
-    (match _root_.Ix.CompileM.compileEnv { consts := {} } missingReferences with
+    (show Bool from match _root_.Ix.CompileM.compileEnv { consts := {} } missingReferences with
       | .error why => why == "compileEnv: block D8.missing has no condensation reference set"
       | .ok _ => false),
   .individualIO "parallel compiler reports missing condensation references" none (do
