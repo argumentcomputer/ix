@@ -156,7 +156,7 @@ inductives occurring strictly inside it, in `usedConstants` order at the
 parameters of their first occurrence, (3) its head. -/
 def findElim (c : LCtx) (t : Nat) : GenM Elim := do
   let some m := c.ms[t]? | throw "image: motive index"
-  let target := c.motiveTys[t]!
+  let target ← GenM.idx c.motiveTys t "findElim: motive type"
   let (xs, _) ← telescope m.type
   let some x := xs.back? | throw "image: motive without a major"
   let T := x.type
@@ -176,7 +176,8 @@ def findElim (c : LCtx) (t : Nat) : GenM Elim := do
       if let some (ps, lv) := occ i iv.numParams then cands := cands.push (i, ps, lv)
   let hInfo ← liftExcept (indOf c.const? H)
   cands := cands.push (H, (getAppArgs T).extract 0 hInfo.numParams, hLvls)
-  if c.opts.naiveElim then cands := #[cands.back!] ++ cands.pop
+  if c.opts.naiveElim then
+    if let some b := cands.back? then cands := #[b] ++ cands.pop
   for (i, ps, lv) in cands do
     let ind ← liftExcept (indOf c.const? i)
     if ps.size != ind.numParams then continue
@@ -224,20 +225,22 @@ def foldr1 {α} (f : α → α → α) (xs : Array α) (d : α) : α :=
 
 /-- The packed motive body of a slot from its class's motive applications
 (all at level `lu`). -/
-def wrapTy (p : Pack) (lu : Level) (tys : Array Expr) : Expr :=
-  match p with
-  | .single => tys[0]!
-  | .lift => mkAppN (Expr.mkConst nPProd #[lu, lvlZero]) #[tys[0]!, Expr.mkConst nTrue #[]]
-  | .tuple _ => (foldr1 mkPProdTy (tys.map (·, lu)) (default, lu)).1
+def wrapTy (p : Pack) (lu : Level) (tys : Array Expr) : Except String Expr :=
+  match p, tys[0]? with
+  | .single, some t => pure t
+  | .lift, some t => pure (mkAppN (Expr.mkConst nPProd #[lu, lvlZero]) #[t, Expr.mkConst nTrue #[]])
+  | .tuple _, _ => pure (foldr1 mkPProdTy (tys.map (·, lu)) (default, lu)).1
+  | _, none => throw "image: wrapTy: empty slot class"
 
 /-- The packed minor body from the class members' values and their types. -/
-def wrapVal (p : Pack) (lu : Level) (vs : Array (Expr × Expr)) : Expr :=
-  match p with
-  | .single => vs[0]!.1
-  | .lift =>
-    mkAppN (Expr.mkConst nPProdMk #[lu, lvlZero])
-      #[vs[0]!.2, Expr.mkConst nTrue #[], vs[0]!.1, Expr.mkConst nTrueIntro #[]]
-  | .tuple _ => (foldr1 mkPProdVal (vs.map fun (v, t) => (v, t, lu)) (default, default, lu)).1
+def wrapVal (p : Pack) (lu : Level) (vs : Array (Expr × Expr)) : Except String Expr :=
+  match p, vs[0]? with
+  | .single, some v => pure v.1
+  | .lift, some v =>
+    pure (mkAppN (Expr.mkConst nPProdMk #[lu, lvlZero])
+      #[v.2, Expr.mkConst nTrue #[], v.1, Expr.mkConst nTrueIntro #[]])
+  | .tuple _, _ => pure (foldr1 mkPProdVal (vs.map fun (v, t) => (v, t, lu)) (default, default, lu)).1
+  | _, none => throw "image: wrapVal: empty slot class"
 
 /-- Component `pos` of a packed slot (`PProdN.proj` with primitive
 projections; `.1` of a lift). -/
@@ -282,7 +285,7 @@ def buildRecApp : Nat → LCtx → Nat → Array Expr → Expr → GenM Expr
     let mts ← elimMotiveTypes c.const? e.ind e.indLevels e.params
     -- step 1: slot classes
     let classes : Array (Array Nat) := mts.map fun mt =>
-      (List.range c.ms.size).toArray.filter fun j => alphaEq c.motiveTys[j]! mt
+      (c.motiveTys.zipIdx.filter fun (ty, _) => alphaEq ty mt).map (·.2)
     for (cl, i) in classes.zipIdx do
       if cl.isEmpty then
         throw s!"image: eliminator {e.recName.pretty}: slot {i} has no Lean motive"
@@ -304,10 +307,11 @@ def buildRecApp : Nat → LCtx → Nat → Array Expr → Expr → GenM Expr
     let minsC := xs.extract rv.numMotives xs.size
     -- step 3: motives
     let mut motives : Array Expr := #[]
-    for i in [0:msC.size] do
-      let (isy, _) ← telescope msC[i]!.type
-      let apps := classes[i]!.map fun j => mkAppN c.ms[j]!.expr (isy.map (·.expr))
-      motives := motives.push (etaReduce (mkLambda isy (wrapTy packs[i]! c.lu apps)))
+    for h : i in [0:msC.size] do
+      let (isy, _) ← telescope msC[i].type
+      let apps ← (← GenM.idx classes i "buildRecApp: slot class").mapM fun j => do
+        pure (mkAppN (← GenM.idx c.ms j "buildRecApp: Lean motive").expr (isy.map (·.expr)))
+      motives := motives.push (etaReduce (mkLambda isy (← liftExcept (wrapTy (← GenM.idx packs i "buildRecApp: slot pack") c.lu apps))))
     -- step 4: minors
     let mut minors : Array Expr := #[]
     for minC in minsC do
@@ -317,10 +321,10 @@ def buildRecApp : Nat → LCtx → Nat → Array Expr → Expr → GenM Expr
       let flds := bs.extract 0 nf
       let ihsC := bs.extract nf bs.size
       let mut comps : Array (Expr × Expr) := #[]
-      for j in classes[mi]! do
+      for j in (← GenM.idx classes mi "buildRecApp: minor slot class") do
         let some lmi := c.minors.findIdx? (fun lm => lm.motive == j && lm.ctor == ctor)
           | throw s!"image: no Lean minor for motive {j} and constructor {ctor.pretty}"
-        let lm := c.mins[lmi]!
+        let lm ← GenM.idx c.mins lmi "buildRecApp: Lean minor"
         let mut lty ← liftExcept (instForall lm.type (flds.map (·.expr)))
         let mut ihVals : Array Expr := #[]
         for _ in [0:forallArity lty] do
@@ -333,11 +337,11 @@ def buildRecApp : Nat → LCtx → Nat → Array Expr → Expr → GenM Expr
             let some f := fvarIdx? flds (getAppFn arg) | throw "image: Lean hypothesis field"
             let v ← match ihFields.findIdx? (·.1 == f) with
               | some q => do
-                let mq := ihFields[q]!.2
-                let some pos := classes[mq]!.idxOf? t'
+                let mq := (← GenM.idx ihFields q "buildRecApp: hypothesis field").2
+                let some pos := (← GenM.idx classes mq "buildRecApp: hypothesis slot class").idxOf? t'
                   | throw s!"image: hypothesis motive {t'} not in its slot's class"
-                pure (mkLambda ys (unwrap packs[mq]! luZero pos
-                  (mkAppN ihsC[q]!.expr (ys.map (·.expr)))))
+                pure (mkLambda ys (unwrap (← GenM.idx packs mq "buildRecApp: hypothesis slot pack") luZero pos
+                  (mkAppN (← GenM.idx ihsC q "buildRecApp: canonical hypothesis").expr (ys.map (·.expr)))))
               | none => do
                 -- a relocated hypothesis: the image construction for the field's type
                 let v ← buildRecApp fuel c t' idx' arg
@@ -346,11 +350,11 @@ def buildRecApp : Nat → LCtx → Nat → Array Expr → Expr → GenM Expr
             lty := instLocals body #[v]
           | _ => throw "image: Lean minor arity"
         comps := comps.push (mkAppN lm.expr (flds.map (·.expr) ++ ihVals), lty)
-      minors := minors.push (etaReduce (mkLambda bs (wrapVal packs[mi]! c.lu comps)))
+      minors := minors.push (etaReduce (mkLambda bs (← liftExcept (wrapVal (← GenM.idx packs mi "buildRecApp: minor slot pack") c.lu comps))))
     -- step 5
     let app := mkAppN recC (e.params ++ motives ++ minors ++ idx ++ #[major])
-    let some pos := classes[e.k]!.idxOf? t | throw "image: eliminated motive not in its class"
-    return unwrap packs[e.k]! luZero pos app
+    let some pos := (← GenM.idx classes e.k "buildRecApp: eliminated slot class").idxOf? t | throw "image: eliminated motive not in its class"
+    return unwrap (← GenM.idx packs e.k "buildRecApp: eliminated slot pack") luZero pos app
 
 /-! ## Images and their computation rules -/
 

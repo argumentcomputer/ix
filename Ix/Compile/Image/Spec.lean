@@ -129,7 +129,7 @@ def componentOrder (const? : Name → Option ConstantInfo) (b : BlockCanon) :
   let mut out : Array Nat := #[]
   for _ in [0:n] do
     match (List.range n).find? fun i =>
-        !out.contains i && (deps[i]!.all fun j => j == i || out.contains j) with
+        !out.contains i && (deps[i]?.all (·.all fun j => j == i || out.contains j)) with
     | some i => out := out.push i
     | none => throw "image spec: the components have no dependency order"
   return out
@@ -147,13 +147,13 @@ def ImageSpec.ofBlock (naming : Naming) (const? : Name → Option ConstantInfo)
   let mut canonInds : Array Name := #[]
   let mut decls : Array CanonDecl := #[]
   for ci in order do
-    let c := b.components[ci]!
+    let some c := b.components[ci]? | throw s!"image spec: component {ci} out of range"
     let mut types : Array CanonType := #[]
     let mut lps : Array Name := #[]
     let mut np := 0
     let mut unsafe_ := false
     for (cls, k) in c.classes.zipIdx do
-      let rep := cls[0]!
+      let some rep := cls[0]? | throw "image spec: empty class"
       let canon := naming.ind ci k rep
       canonInds := canonInds.push canon
       let riv ← indOf const? rep
@@ -166,10 +166,10 @@ def ImageSpec.ofBlock (naming : Naming) (const? : Name → Option ConstantInfo)
         let xv ← indOf const? x
         if xv.ctors.size != canonCtors.size then
           throw s!"image spec: {x.pretty} and {rep.pretty} differ in constructor count"
-        for (cn, j) in xv.ctors.zipIdx do ctorMap := ctorMap.insert cn canonCtors[j]!
-      for (cn, j) in riv.ctors.zipIdx do
+        for (cn, cc) in xv.ctors.zip canonCtors do ctorMap := ctorMap.insert cn cc
+      for (cn, cc) in riv.ctors.zip canonCtors do
         let some (.ctorInfo cv) := const? cn | throw s!"image spec: no constructor {cn.pretty}"
-        ctors := ctors.push { name := canonCtors[j]!, type := replaceConstNames tyMap cv.cnst.type }
+        ctors := ctors.push { name := cc, type := replaceConstNames tyMap cv.cnst.type }
       types := types.push { name := canon, type := riv.cnst.type, ctors }
     decls := decls.push { comp := ci, levelParams := lps, numParams := np, isUnsafe := unsafe_, types }
   return { block := b, tyMap, ctorMap, canonInds, decls, naming }
