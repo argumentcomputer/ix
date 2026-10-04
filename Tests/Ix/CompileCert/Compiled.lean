@@ -101,5 +101,33 @@ def run : IO Unit := do
   | .error (.certification reason) =>
     throw (IO.userError s!"wrong-value control had unexpected result: {declineLabel reason}")
   | .ok _ => throw (IO.userError "normalized projection accepted wrong source value")
+  -- Preserve admitted target bytes and mutate one independently captured
+  -- source field at a time. These cover nonempty rule/member obligations
+  -- absent from the empty-inductive unit fixture.
+  let some (.recInfo pairRec) := env.find? (prefixName ++ `Pair.rec)
+    | throw (IO.userError "missing checked Pair recursor")
+  unless !pairRec.rules.isEmpty do throw (IO.userError "nonempty-rule control became vacuous")
+  let some (.ctorInfo pairCtor) := env.find? (prefixName ++ `Pair.mk)
+    | throw (IO.userError "missing checked Pair constructor")
+  let checks : List (String × Lean.ConstantInfo × Bool) := [
+    ("nonempty recursor rule field count", .recInfo { pairRec with
+      rules := pairRec.rules.map fun r => { r with nfields := r.nfields + 1 } }, false),
+    ("nonempty recursor rule body", .recInfo { pairRec with
+      rules := pairRec.rules.map fun r => { r with rhs := .bvar 999 } }, false),
+    ("omitted nonempty recursor rule", .recInfo { pairRec with rules := [] }, false),
+    ("source constructor member position", .ctorInfo { pairCtor with cidx := pairCtor.cidx + 1 }, true)]
+  for (label, replacement, blockFailure) in checks do
+    let source : Source := ⟨input.source.declarations.map fun ci =>
+      if ci.name == replacement.name then replacement else ci⟩
+    match checkRoot { input with source := source } (prefixName ++ `Pair) with
+    | .error (.certification reason) =>
+      let correct := match reason with
+        | .blockCorrespondence => blockFailure
+        | .correspondence => !blockFailure
+        | _ => false
+      unless correct do throw (IO.userError s!"{label}: unexpected {declineLabel reason}")
+      IO.println s!"PASS: {label}"
+    | .error (.selection reason) => throw (IO.userError s!"{label}: selection failed: {reason}")
+    | .ok _ => throw (IO.userError s!"{label}: incorrect source accepted")
 
 end Tests.Ix.CompileCert.Compiled
