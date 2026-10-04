@@ -133,7 +133,10 @@ An optional `--expected FILE` contains reviewed exact case/mode/phase records:
   "diagnostic":"EXACT_REPRODUCIBLE_DIAGNOSTIC","cause":"DOCUMENTED_FINDING"}]
 ```
 
-Only a failing phase with that diagnostic can become `known-unsupported`.
+Only a failing phase with exactly that complete diagnostic can become
+`known-unsupported`; matching one message cannot hide additional failures in the
+same phase. Timing-bearing or otherwise unstable diagnostics remain failures
+until a stable, complete classification can be reviewed.
 Infrastructure errors cannot be exempted, empty causes are invalid, and an
 unexpected pass fails as a stale expectation. These entries do not erase
 downstream unrun required phases. Without an entry, a new failure remains a

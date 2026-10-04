@@ -31,8 +31,9 @@ structure Verdict where
   log : String := ""
   deriving FromJson, ToJson
 
-/-- Known unsupported cases need a reviewed exact identity and a diagnostic.
-No wildcard shape/family/name matching is permitted. -/
+/-- Known unsupported cases need a reviewed exact identity and complete diagnostic.
+No wildcard shape/family/name or substring matching is permitted: one known
+failure must not hide an additional failure aggregated into the same phase. -/
 structure Expected where
   caseId : String
   mode : String
@@ -49,7 +50,7 @@ def applyExpected (expected : Array Expected) (row : Verdict) (diagnostic : Stri
       { row with status := "fail", detail := "empty expected-failure cause or diagnostic" }
     else if row.status == "pass" then
       { row with status := "fail", detail := s!"stale expected failure: {e.cause}" }
-    else if row.status == "fail" && (diagnostic.splitOn e.diagnostic).length > 1 then
+    else if row.status == "fail" && diagnostic == e.diagnostic then
       { row with status := "known-unsupported", detail := e.cause }
     else row
 

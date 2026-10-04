@@ -71,6 +71,10 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
     ((applyExpected expected infrastructure "known diagnostic").status == "infrastructure-error")
   check "expectation cannot hide unexpected pass"
     ((applyExpected expected { infrastructure with status := "pass" } "").status == "fail")
+  check "exact documented failure classified"
+    ((applyExpected expected { infrastructure with status := "fail" } "known diagnostic").status == "known-unsupported")
+  check "known failure cannot hide an additional failure"
+    ((applyExpected expected { infrastructure with status := "fail" } "known diagnostic\nunexpected failure").status == "fail")
   check "Rust zero-target success rejected"
     ((checkedRustTargets "[check] 0/0 passed\n" 0).toOption.isNone)
   check "Rust missing summary rejected" ((checkedRustTargets "success\n" 0).toOption.isNone)
