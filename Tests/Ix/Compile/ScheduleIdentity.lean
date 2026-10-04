@@ -67,13 +67,20 @@ def waveWorkers : List Nat := [1, 2, 4, 16, 32]
 def pipelineWorkers : List Nat := [1, 4, 16]
 
 /-- Optional diagnostic artifact capture. The ordinary gate is unchanged. -/
-def saveRun (pass3 : Bool) (label : String) (bytes : ByteArray) : IO Unit := do
+def saveRun (pass3 : Bool) (label : String) (bytes : ByteArray)
+    (failures : List (String × String)) : IO Unit := do
   for line in (← Ix.PhaseTimers.report) do IO.eprintln line
   if let some dir ← IO.getEnv "SCHED_OUTPUT_DIR" then
     IO.FS.createDirAll dir
     let path := s!"{dir}/{if pass3 then "on" else "off"}-{label}.ixe"
     IO.FS.writeBinFile path bytes
+    let sorted := failures.toArray.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
+    let lines := sorted.toList.map fun (name, cause) =>
+      (Json.mkObj [("name", toJson name), ("cause", toJson cause)]).compress
+    IO.FS.writeFile s!"{path}.failures.jsonl" (String.intercalate "\n" lines ++ "\n")
     say s!"[schedule] saved {path}: {Address.blake3 bytes}"
+    for (name, cause) in sorted[:5] do
+      say s!"[schedule] {label}: captured refusal {name}: {cause}"
 
 /-- One mode (Pass 3 off or on): every schedule, compared. Returns the
     number of failures. -/
@@ -82,6 +89,8 @@ def runMode (env : Environment) (closure : List (Name × ConstantInfo))
     (pass3 : Bool) : IO Nat := do
   let mode := if pass3 then "IX_PASS3=images" else "switch off"
   let diagnostic := (← IO.getEnv "SCHED_DIAGNOSTIC") == some "1"
+  let singleWave := (← IO.getEnv "SCHED_SINGLE_WAVE") == some "32"
+  if singleWave then say "[schedule] DIAGNOSTIC: wave 32 only; no schedule-identity claim; not a full gate"
   if diagnostic then say "[schedule] DIAGNOSTIC: sequential and wave 1 only; not a full gate"
   say s!"[schedule] {mode}: begin"
   -- (label, bytes, environment, block failures as (name, message))
@@ -89,29 +98,30 @@ def runMode (env : Environment) (closure : List (Name × ConstantInfo))
   let failuresOf (cenv : Ix.CompileM.CompileEnv) : List (String × String) :=
     cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e)
   -- sequential
-  match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash)
-      (pass3 := pass3) with
-  | .error e => throw (IO.userError s!"[schedule] {mode}: sequential driver: {e}")
-  | .ok (ixon, _, cenv) =>
-    let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-    saveRun pass3 "sequential" bytes
-    say s!"[schedule] {mode}: sequential: {bytes.size} bytes, {cenv.ungrounded.size} block failures"
-    runs := runs.push ("sequential", bytes, ixon, failuresOf cenv)
+  if !singleWave then
+    match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash)
+        (pass3 := pass3) with
+    | .error e => throw (IO.userError s!"[schedule] {mode}: sequential driver: {e}")
+    | .ok (ixon, _, cenv) =>
+      let bytes ← IO.ofExcept (Ixon.serEnv ixon)
+      saveRun pass3 "sequential" bytes (failuresOf cenv)
+      say s!"[schedule] {mode}: sequential: {bytes.size} bytes, {cenv.ungrounded.size} block failures"
+      runs := runs.push ("sequential", bytes, ixon, failuresOf cenv)
   -- wave driver
-  for k in (if diagnostic then [1] else waveWorkers) do
+  for k in (if singleWave then [32] else if diagnostic then [1] else waveWorkers) do
     match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
         (nameByHash := nameByHash) (pass3? := some pass3) with
     | .error e => throw (IO.userError s!"[schedule] {mode}: wave driver, {k} workers: {e}")
     | .ok (ixon, _, cenv) =>
       let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-      saveRun pass3 s!"wave-{k}" bytes
+      saveRun pass3 s!"wave-{k}" bytes (failuresOf cenv)
       say s!"[schedule] {mode}: wave --jobs {k}: {bytes.size} bytes, \
 {cenv.ungrounded.size} block failures"
       runs := runs.push (s!"wave --jobs {k}", bytes, ixon, failuresOf cenv)
   -- the whole `ix compile-lean` pipeline
-  for k in (if diagnostic then [] else pipelineWorkers) do
+  for k in (if singleWave || diagnostic then [] else pipelineWorkers) do
     let out ← Tests.Ix.Compile.Twins.leanCompile env closure k (pass3? := some pass3)
-    saveRun pass3 s!"pipeline-{k}" out.bytes
+    saveRun pass3 s!"pipeline-{k}" out.bytes (failuresOf out.cenv)
     say s!"[schedule] {mode}: compile-lean --workers {k}: {out.bytes.size} bytes, \
 {out.cenv.ungrounded.size} block failures"
     runs := runs.push (s!"compile-lean --workers {k}", out.bytes, out.env, failuresOf out.cenv)
