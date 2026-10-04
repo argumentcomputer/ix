@@ -421,7 +421,8 @@ def auxComponents (consts : Array MutConst) : Except String (Array (Array MutCon
   let mut done : Std.HashSet Nat := {}
   let mut out : Array (Array MutConst) := #[]
   for _ in [0:comps.size] do
-    let pos := (pending.findIdx? fun (_, _, d) => d.toList.all done.contains).getD 0
+    let some pos := pending.findIdx? fun (_, _, d) => d.toList.all done.contains
+      | throw "auxComponents: no component has all dependencies ready"
     let some (i, comp, _) := pending[pos]?
       | throw "auxComponents: no pending component left"
     pending := pending.eraseIdxIfInBounds pos
@@ -851,7 +852,8 @@ for {perm.size} permutation entries")
         for (canonI, srcJ) in perm.zipIdx do
           if canonI < nCanon
               && sourceOfCanonical[canonI]? == some PERM_OUT_OF_SCC then
-            sourceOfCanonical := sourceOfCanonical.set! canonI srcJ
+            sourceOfCanonical ← arrSet sourceOfCanonical canonI srcJ
+              "generateAndCompileAuxRecursors: canonical source slot"
         for (sourceJ, canonicalI) in sourceOfCanonical.zipIdx do
           if sourceJ != PERM_OUT_OF_SCC then
             let auxRecName :=

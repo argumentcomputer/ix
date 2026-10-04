@@ -421,9 +421,8 @@ structure FlatInfo where
   /-- Number of indices for this member's inductive. -/
   nIndices : Nat
 
-/-- Manual instance (`InductiveVal`/`ConstructorVal` don't derive
-    `Inhabited`); needed for panicking `classes[i]!` indexing, which
-    mirrors Rust's panicking `classes[i]`. -/
+/-- Explicit inhabited value; production access to a flat member uses a
+    bounds proof or a named construction error. -/
 instance : Inhabited FlatInfo where
   default :=
     { name := default
@@ -445,8 +444,8 @@ instance : Inhabited FlatInfo where
       ownParams := 0
       nIndices := 0 }
 
-/-- Manual instance for panicking `ctors[0]!` indexing in
-    `computeIsLargeAndK` (mirrors Rust's panicking index). -/
+/-- Explicit inhabited constructor value. Auxiliary construction does not
+    use this as a substitute for a missing constructor. -/
 instance : Inhabited ConstructorVal where
   default :=
     { cnst := { name := default, levelParams := #[], type := default }
@@ -1716,7 +1715,11 @@ flat discovered {nAux} auxes (need perm.len() >= n_aux)")
     let canonI := canonI64.toNat
     if canonI != PERM_OUT_OF_SCC && canonI < nAux
         && canonRepr[canonI]? == some PERM_OUT_OF_SCC && sourceJ < nAux then
-      canonRepr := canonRepr.set! canonI sourceJ
+      if h : canonI < canonRepr.size then
+        canonRepr := canonRepr.set canonI sourceJ h
+      else
+        return .error (flat,
+          s!"aux_layout perm: canonical index {canonI} exceeds representative array size {canonRepr.size}")
 
   -- Verify every canonical slot has a source representative.
   for (sj, ci) in canonRepr.zipIdx do
@@ -1842,7 +1845,7 @@ def generateCanonicalRecursorsWithLayout (sortedClasses : Array (Array Name))
         let canonI := canonI64.toNat
         if canonI != PERM_OUT_OF_SCC && canonI < nAux
             && s[canonI]? == some PERM_OUT_OF_SCC then
-          s := s.set! canonI srcJ
+          s ← arrSet s canonI srcJ "generateRecursors: canonical source slot"
       for (slot, ci) in s.zipIdx do
         if slot == PERM_OUT_OF_SCC then
           throw (.invalidMutualBlock

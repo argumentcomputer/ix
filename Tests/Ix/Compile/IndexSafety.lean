@@ -15,6 +15,14 @@ private def missingReferences : _root_.Ix.CondensedBlocks :=
   let members := (blocks.blocks.getD rootName {}).insert rootName
   { blocks with blocks := blocks.blocks.insert rootName members }
 
+private def checkedUpdate (values : Array Nat) (index value : Nat) : Except String (Array Nat) := do
+  let cenv := _root_.Ix.CompileM.CompileEnv.new { consts := {} }
+  let blockEnv : _root_.Ix.CompileM.BlockEnv :=
+    { all := {}, current := rootName, mutCtx := default, univCtx := [] }
+  let (out, _) ← (_root_.Ix.CompileM.CompileM.run cenv blockEnv {}
+    (_root_.Ix.CompileM.arrSet values index value "index-safety update")).mapError toString
+  return out
+
 def suite : List TestSeq := [
   test "image type packing rejects every empty slot class"
     ([Pack.single, .lift, .tuple 2].all fun pack =>
@@ -26,6 +34,12 @@ def suite : List TestSeq := [
     (let term := Expr.mkSort Level.mkZero
      (wrapTy .single Level.mkZero #[term]).toOption == some term
        && (wrapVal .single Level.mkZero #[(term, term)]).toOption == some term)
+  ++ test "checked writes retain all other slots and reject missing slots"
+    ((checkedUpdate #[3, 5] 1 7 == .ok #[3, 7]
+      && checkedUpdate #[3] 1 7 == .error
+        "invalidMutualBlock: internal error in block 'D8.missing': index-safety update: index 1 out of range (size 1)"
+      && checkedUpdate #[] 0 7 == .error
+        "invalidMutualBlock: internal error in block 'D8.missing': index-safety update: index 0 out of range (size 0)" : Bool))
   ++ test "sequential compiler reports missing condensation references"
     (show Bool from match _root_.Ix.CompileM.compileEnv { consts := {} } missingReferences with
       | .error why => why == "compileEnv: block D8.missing has no condensation reference set"

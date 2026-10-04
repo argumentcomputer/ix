@@ -392,6 +392,13 @@ def internalIndexError (what : String) (i size : Nat) : CompileM α := do
   | some x => pure x
   | none => internalIndexError what i a.size
 
+/-- A checked update preserves the array's size and reports the same named
+    construction error as `arrIdx` when the slot does not exist. -/
+@[inline] def arrSet (a : Array α) (i : Nat) (value : α) (what : String)
+    : CompileM (Array α) :=
+  if h : i < a.size then pure (a.set i value h)
+  else internalIndexError what i a.size
+
 /-- Modify the block state. -/
 def modifyBlockState (f : BlockState → BlockState) : CompileM Unit := do
   modify f
@@ -4172,4 +4179,3 @@ def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
 
 end
 end Ix.CompileM
-

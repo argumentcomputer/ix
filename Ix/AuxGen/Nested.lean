@@ -809,7 +809,7 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
       let some oldJ := auxTailNames.findIdx? (· == member)
         | throw (.invalidMutualBlock
             s!"aux sort returned unknown member {member.pretty}")
-      perm := perm.set! oldJ canonicalJ
+      perm ← arrSet perm oldJ canonicalJ "sortAuxByPartitionRefinement: auxiliary permutation"
       if memberJ == 0 then
         sortedOrder := sortedOrder.push oldJ
   if perm.contains PERM_OUT_OF_SCC then

@@ -192,7 +192,7 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
         for (canonI, srcJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
           if canonI != PERM_OUT_OF_SCC && canonI < nCanon
               && canonRepr[canonI]? == some PERM_OUT_OF_SCC then
-            canonRepr := canonRepr.set! canonI srcJ
+            canonRepr ← arrSet canonRepr canonI srcJ "generateAuxPatches: canonical representative"
         for (srcJ, ci) in canonRepr.zipIdx do
           if srcJ == PERM_OUT_OF_SCC then
             throw (.invalidMutualBlock
@@ -564,7 +564,8 @@ families (Lean.auxFamilySiblings)")
             if canonicalI != PERM_OUT_OF_SCC
                 && canonicalI < capturedNCanonicalAux
                 && sourceOfCanonical[canonicalI]? == some PERM_OUT_OF_SCC then
-              sourceOfCanonical := sourceOfCanonical.set! canonicalI sourceJ
+              sourceOfCanonical ← arrSet sourceOfCanonical canonicalI sourceJ
+                "generateAuxPatches: canonical alias source"
 
           for (canonicalI, sourceJ) in perm.zipIdx do
             if canonicalI == PERM_OUT_OF_SCC
@@ -671,7 +672,7 @@ exists")
           (Ix.AuxGen.expandNestedBlock originalAll {} : CompileM _)
         let srcOrder := Ix.AuxGen.sourceAuxOrderFromExpanded sourceExpanded
         let mut sccCtxCache : Std.HashMap Name SccClaimCtx := {}
-        let mut evaporatedFlags := (evaporated.getD #[])
+        let mut evaporatedFlags := Array.replicate perm.size false
         for (canonicalI, sourceJ) in perm.zipIdx do
           if canonicalI != PERM_OUT_OF_SCC then
             continue
@@ -736,7 +737,8 @@ address for the name")
 of the block of '{blockLabel sortedClasses}': its target '{targetName.pretty}' {why}; \
 refusing to compile the original form")
           aliases := aliases.insert sourceName targetName
-          evaporatedFlags := evaporatedFlags.set! sourceJ true
+          evaporatedFlags ← arrSet evaporatedFlags sourceJ true
+            "generateAuxPatches: evaporated source slot"
         evaporated := some evaporatedFlags
 
   return { patches, aliases, perm := capturedPerm, evaporated,

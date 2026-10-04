@@ -141,8 +141,10 @@ def buildView (inp : ViewInput) (all : Array Name) : Except String BlockView := 
   for d in spec.decls do
     compAll := compAll.insert d.comp (d.types.map (·.name))
   for d in spec.decls do
-    let comp := canon.components[d.comp]!
-    let canonAll := compAll.getD d.comp #[]
+    let some comp := canon.components[d.comp]?
+      | throw s!"Pass 3 view: component {d.comp} is absent from canonical block"
+    let some canonAll := compAll[d.comp]?
+      | throw s!"Pass 3 view: component {d.comp} has no canonical member list"
     let numNested := match comp.nested with
       | some n => n.canonClasses.size
       | none => 0

@@ -471,7 +471,10 @@ partial def levelPretty (l : Level) : String :=
       for _ in [0:offset] do
         acc := s!"({acc})+1"
       return acc
-  | .succ .. => unreachable! -- Succ was already peeled.
+  | .succ inner _ =>
+    -- `levelPeelSucc` removes this case; keep diagnostics defined even if
+    -- that helper's representation contract changes.
+    s!"({levelPretty inner})+{offset + 1}"
 
 /-- Mirrors Rust `Level::pretty_atom` (common/src/env.rs:519).
     Parenthesise compound levels (max, imax) so they can appear as
