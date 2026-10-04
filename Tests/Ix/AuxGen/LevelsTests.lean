@@ -113,7 +113,7 @@ def idempotenceTests : TestSeq :=
 
 def prefixBoundsTests : TestSeq :=
   test "subsumption rejects an out-of-range explicit prefix"
-    ((isExplicitSubsumed #[one] 2).isError)
+    (!(isExplicitSubsumed #[one] 2).isOk)
   ++ test "empty and exhausted explicit prefixes are not subsumed"
     ((isExplicitSubsumed #[] 0).toOption == some false
       && (isExplicitSubsumed #[one] 1).toOption == some false)
