@@ -462,13 +462,14 @@ decreasing_by
 `canon`: exact levels first, then any levels (`matchAuxSignature`). -/
 def matchSig (addr? : Name → Option Address) (strict : Std.HashSet Name)
     (canon : Array Sig) (head : Name) (levels : Array Level) (specs : Array Expr) : Option Nat :=
-  let cands := (List.range canon.size).filter fun i => canon[i]!.head == head
-  let eqSpecs := fun (i : Nat) =>
-    canon[i]!.specs.size == specs.size &&
-      (canon[i]!.specs.zip specs).all fun (x, y) => auxSpecEq addr? strict x y
-  match cands.find? (fun i => canon[i]!.levels == levels && eqSpecs i) with
-  | some i => some i
-  | none => cands.find? eqSpecs
+  -- A7 (D8): the candidates carry their signature (no `canon[i]!`).
+  let cands := (canon.zipIdx.filter fun (s, _) => s.head == head).toList
+  let eqSpecs := fun (s : Sig) =>
+    s.specs.size == specs.size &&
+      (s.specs.zip specs).all fun (x, y) => auxSpecEq addr? strict x y
+  match cands.find? (fun (s, _) => s.levels == levels && eqSpecs s) with
+  | some (_, i) => some i
+  | none => (cands.find? fun (s, _) => eqSpecs s).map (·.2)
 
 /-- Some constant (not projection name) of `e` is a block member outside the
 component. -/

@@ -29,7 +29,10 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError)
+-- A7 (D8): out-of-range array accesses are named errors (`arrIdx`).
+
+
+open Ix.CompileM (CompileM CompileError arrIdx)
 
 /-- `belowFamilyLeanExists` over the base compile environment: the Lean
     conditions under which the `.below`/`.brecOn` families of the Lean block
@@ -62,7 +65,7 @@ def populateCanonKenvWithBelow (belowConsts : Array BelowConstant)
   -- Ensure parent inductives (and their constructors) are in the kenv —
   -- the .below types reference these in their motive/major domains.
   for cls in sortedClasses do
-    let rep := cls[0]!
+    let rep ← arrIdx cls 0 "populateCanonKenvWithBelow: class representative"
     ensureInKenvOf rep maps
 
   -- Insert canonical .below definitions/inductives.
@@ -144,10 +147,11 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
   ensurePreludeInKenvOf maps
 
   -- Phase 1: canonical recursors (aux_gen.rs:231-549).
-  let orderedOriginals : Array Name := sortedClasses.map (·[0]!)
+  let orderedOriginals : Array Name ←
+    sortedClasses.mapM (arrIdx · 0 "generateAuxPatches: class representative")
   let mut aliasToRep : Std.HashMap Name Name := {}
   for cls in sortedClasses do
-    let rep := cls[0]!
+    let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
     for aliasName in cls.toList.drop 1 do
       aliasToRep := aliasToRep.insert aliasName rep
   let expandedProbe ← liftM
@@ -170,7 +174,7 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
         -- Lean-source-indexed `_N` suffixes directly (aux_gen.rs:283).
         let mut origToCanonMap : Std.HashMap Name Name := {}
         for cls in sortedClasses do
-          let rep := cls[0]!
+          let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
           for n in cls do
             origToCanonMap := origToCanonMap.insert n rep
         let nCanon := expanded.types.size - expanded.nOriginals
@@ -187,7 +191,7 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
         let mut canonRepr : Array Nat := Array.replicate nCanon PERM_OUT_OF_SCC
         for (canonI, srcJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
           if canonI != PERM_OUT_OF_SCC && canonI < nCanon
-              && canonRepr[canonI]! == PERM_OUT_OF_SCC then
+              && canonRepr[canonI]? == some PERM_OUT_OF_SCC then
             canonRepr := canonRepr.set! canonI srcJ
         for (srcJ, ci) in canonRepr.zipIdx do
           if srcJ == PERM_OUT_OF_SCC then
@@ -203,11 +207,11 @@ refusing to synthesize canonical-indexed _N names")
         -- (aux_gen.rs:381-393; source_all0 is the LEAN source first
         -- inductive, NOT the class rep — below/brecOn hang their `_N`
         -- names off it too).
-        let sourceAll0 := originalAll[0]!
+        let sourceAll0 ← arrIdx originalAll 0 "generateAuxPatches: Lean all0"
         let mut auxRecMap : Std.HashMap Name Name := {}
         for (mem, canonicalI) in
             ((expanded.types.toList.drop expanded.nOriginals).toArray).zipIdx do
-          let sourceJ := sourceOfCanonical[canonicalI]!
+          let sourceJ ← arrIdx sourceOfCanonical canonicalI "generateAuxPatches: source of canonical aux"
           let auxNestedRecName := Name.mkStr mem.name "rec"
           let sourceRecName := Name.mkStr sourceAll0 s!"rec_{sourceJ + 1}"
           auxRecMap := auxRecMap.insert auxNestedRecName sourceRecName
@@ -250,7 +254,7 @@ refusing to synthesize canonical-indexed _N names")
               : CompileM _)
           let mut origToCanonMap : Std.HashMap Name Name := {}
           for cls in sortedClasses do
-            let rep := cls[0]!
+            let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
             for n in cls do
               origToCanonMap := origToCanonMap.insert n rep
           let nCanon :=
@@ -268,7 +272,7 @@ refusing to synthesize canonical-indexed _N names")
       if structuralHasNested || metadataHasNested then do
         let mut origToCanonMap : Std.HashMap Name Name := {}
         for cls in sortedClasses do
-          let rep := cls[0]!
+          let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
           for n in cls do
             origToCanonMap := origToCanonMap.insert n rep
         let nCanon := expandedProbe.types.size - expandedProbe.nOriginals
@@ -429,8 +433,9 @@ refusing to synthesize canonical-indexed _N names")
         let mut present : Array Bool := #[]
         for d in defs do
           present := present.push (← liftM (lookupConst? d.name : CompileM _)).isSome
-        let take := if emitFamily[b]! then defs.map (fun _ => true) else present
-        if emitFamily[b]! && present.any (!·) then
+        let fam ← arrIdx emitFamily b "generateAuxPatches: brecOn batch"
+        let take := if fam then defs.map (fun _ => true) else present
+        if fam && present.any (!·) then
           let batchNames : Std.HashSet Name :=
             defs.foldl (fun acc d => acc.insert d.name) {}
           let mut refs : Array Name := #[]
@@ -468,7 +473,7 @@ families (Lean.auxFamilySiblings)")
   for cls in sortedClasses do
     if cls.size <= 1 then
       continue
-    let rep := cls[0]!
+    let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
     for aliasMem in cls.toList.drop 1 do
       -- For each active suffix that has a representative patch, register
       -- the alias name only when Lean actually exported that name.
@@ -558,7 +563,7 @@ families (Lean.auxFamilySiblings)")
           for (canonicalI, sourceJ) in perm.zipIdx do
             if canonicalI != PERM_OUT_OF_SCC
                 && canonicalI < capturedNCanonicalAux
-                && sourceOfCanonical[canonicalI]! == PERM_OUT_OF_SCC then
+                && sourceOfCanonical[canonicalI]? == some PERM_OUT_OF_SCC then
               sourceOfCanonical := sourceOfCanonical.set! canonicalI sourceJ
 
           for (canonicalI, sourceJ) in perm.zipIdx do

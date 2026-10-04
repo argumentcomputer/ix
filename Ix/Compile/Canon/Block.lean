@@ -118,7 +118,7 @@ def blockComponents (env : Env) (all : Array Name) : Except String (Array (Array
     let ms := all.filter fun n => c.contains n && allSet.contains n
     if ms.isEmpty then none else some ms
   -- deterministic: by first member's position in `all`
-  let pos := fun (c : Array Name) => (all.idxOf? c[0]!).getD 0
+  let pos := fun (c : Array Name) => ((c[0]?).bind all.idxOf?).getD 0
   return comps.qsort (fun a b => pos a < pos b)
 
 /-- `rep ↦ rep`, alias ↦ its representative. -/
@@ -169,7 +169,8 @@ def evaporate (env : Env) (rules : Rules) (all : Array Name)
     Except String NestedCanon := do
   if !n.perm.contains none then return n
   let some all0 := all[0]? | return n
-  let inHere : Std.HashSet Name := (comps[here]!).foldl (fun s c => c.foldl (·.insert ·) s) {}
+  let some hereComp := comps[here]? | throw s!"evaporate: component {here} out of range"
+  let inHere : Std.HashSet Name := hereComp.foldl (fun s c => c.foldl (·.insert ·) s) {}
   let originals : Std.HashSet Name := all.foldl (·.insert ·) {}
   let mut flags := n.evaporated
   for (p, j) in n.perm.zipIdx do

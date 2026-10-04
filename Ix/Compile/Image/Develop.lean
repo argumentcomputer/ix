@@ -234,8 +234,8 @@ def substFVars (xs : Array Name) (vs : Array Expr) (e : Expr) : Except String Ex
   if xs.size != vs.size then throw "substFVars: arity mismatch"
   let go : DevM Expr := do
     let mut acc := abstractFVars xs e
-    for i in (List.range xs.size).reverse do
-      acc := (← hinst defaultFuel vs[i]! 0 acc).1
+    for v in vs.reverse do
+      acc := (← hinst defaultFuel v 0 acc).1
     return acc
   go.run' {}
 

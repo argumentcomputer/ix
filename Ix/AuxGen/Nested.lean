@@ -39,7 +39,11 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError findConst)
+-- A7 (D8): out-of-range array accesses are named errors (`arrIdx`, or an
+-- `Option` access with a named error).
+
+
+open Ix.CompileM (CompileM CompileError findConst arrIdx)
 
 /-! ## Expanded block (expand/restore model) -/
 
@@ -226,7 +230,7 @@ partial def replaceCtorResultHeadWithAux (e : Expr) (originalInd auxName : Name)
 def hasInvalidSpecRef (expr : Expr) (paramFvarNames : Array Name) : Bool := Id.run do
   let mut stack : Array (Expr × Nat) := #[(expr, 0)]
   while !stack.isEmpty do
-    let (e, depth) := stack.back!
+    let some (e, depth) := stack.back? | break
     stack := stack.pop
     match e with
     | .bvar idx _ =>
@@ -710,10 +714,10 @@ def expandNestedBlock (orderedOriginals : Array Name)
     -- cache per constructor (rewrites depend on asFvars/sourceOwner).
     let mut qi := 0
     while qi < (← get).types.size do
-      let nCtors := ((← get).types[qi]!).ctors.size
-      let sourceOwner := ((← get).types[qi]!).sourceOwner
+      let nCtors := (← arrIdx (← get).types qi "expandNestedBlock: queue member").ctors.size
+      let sourceOwner := (← arrIdx (← get).types qi "expandNestedBlock: queue member").sourceOwner
       for ci in [0:nCtors] do
-        let ctorType := (((← get).types[qi]!).ctors[ci]!).typ
+        let ctorType := (← arrIdx (← arrIdx (← get).types qi "expandNestedBlock: queue member").ctors ci "expandNestedBlock: constructor").typ
         let (asFvars, asDecls, peeled) :=
           forallTelescope ctorType nParams "cp" (qi * 100 + ci)
         modify fun s => { s with walkCache := {} }
@@ -817,7 +821,7 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
     return (expanded, perm)
 
   -- `<all0>._nested` prefix from the first aux name.
-  let firstAuxName := (expanded.types[nOriginals]!).name
+  let firstAuxName := (← arrIdx expanded.types nOriginals "sortAuxByPartitionRefinement: first aux").name
   let nestedPrefix ← match firstAuxName with
     | .str prefix_ _ _ => pure prefix_
     | _ => throw (.invalidMutualBlock
@@ -827,8 +831,8 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
   -- stripping the trailing `_<N>` from the OLD suffix).
   let mut newAuxNames : Array Name := #[]
   for newJ in [0:nCanon] do
-    let oldJ := sortedOrder[newJ]!
-    let oldName := (expanded.types[nOriginals + oldJ]!).name
+    let oldJ ← arrIdx sortedOrder newJ "sortAuxByPartitionRefinement: sorted order"
+    let oldName := (← arrIdx expanded.types (nOriginals + oldJ) "sortAuxByPartitionRefinement: aux member").name
     let ext ← match oldName with
       | .str _ suffix _ =>
         let parts := suffix.splitOn "_"
@@ -842,8 +846,8 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
 
   let mut nameRename : Std.HashMap Name Name := {}
   for (canonicalJ, oldJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
-    let oldName := (expanded.types[nOriginals + oldJ]!).name
-    nameRename := nameRename.insert oldName newAuxNames[canonicalJ]!
+    let oldName := (← arrIdx expanded.types (nOriginals + oldJ) "sortAuxByPartitionRefinement: aux member").name
+    nameRename := nameRename.insert oldName (← arrIdx newAuxNames canonicalJ "sortAuxByPartitionRefinement: new aux name")
 
   -- Cascade 1: auxCtorMap (keys are prefix-renamed; first insert wins).
   let mut newAuxCtorMap : Std.HashMap Name (Name × Name) := {}
@@ -885,10 +889,10 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
     (renamedTypes.toList.drop nOriginals).toArray
   let mut reordered : Array ExpandedMember := #[]
   for newJ in [0:nCanon] do
-    let oldJ := sortedOrder[newJ]!
-    let mem := auxTail[oldJ]!
+    let oldJ ← arrIdx sortedOrder newJ "sortAuxByPartitionRefinement: sorted order"
+    let mem ← arrIdx auxTail oldJ "sortAuxByPartitionRefinement: aux tail"
     let oldName := mem.name
-    let newName := newAuxNames[newJ]!
+    let newName ← arrIdx newAuxNames newJ "sortAuxByPartitionRefinement: new aux name"
     let ctors := mem.ctors.map fun ctor =>
       { ctor with name := nameReplacePrefix ctor.name oldName newName }
     reordered := reordered.push { mem with name := newName, ctors }
@@ -967,12 +971,13 @@ def matchAuxSignature (srcHead : Name) (srcLevels : Array Level)
     (sourceToCanonFvar : Std.HashMap Name Name)
     (strictNames : Std.HashSet Name)
     (specEqCache : Std.HashMap (Expr × Expr) Bool)
-    : Option Nat × Std.HashMap (Expr × Expr) Bool := Id.run do
+    : Except String (Option Nat × Std.HashMap (Expr × Expr) Bool) := do
   let candidates := (byHead.get? srcHead).getD #[]
   let mut cache := specEqCache
   -- Pass A: exact universe instantiation + spec equality.
   for i in candidates do
-    let (_, canonLevels, canonSpecs) := signatures[i]!
+    let some (_, canonLevels, canonSpecs) := signatures[i]?
+      | throw s!"matchAuxSignature: candidate {i} out of range ({signatures.size} signatures)"
     if canonLevels == srcLevels && canonSpecs.size == normalized.size then
       let mut allEq := true
       for (canonSp, srcSp) in canonSpecs.zip normalized do
@@ -984,7 +989,8 @@ def matchAuxSignature (srcHead : Name) (srcLevels : Array Level)
       if allEq then return (some i, cache)
   -- Pass B: level-insensitive fallback.
   for i in candidates do
-    let (_, _, canonSpecs) := signatures[i]!
+    let some (_, _, canonSpecs) := signatures[i]?
+      | throw s!"matchAuxSignature: candidate {i} out of range ({signatures.size} signatures)"
     if canonSpecs.size == normalized.size then
       let mut allEq := true
       for (canonSp, srcSp) in canonSpecs.zip normalized do
@@ -1027,18 +1033,18 @@ def buildSccClaimCtx (memberClasses : Array (Array Name))
     let names := cls.filter originalLookup.contains
     if !names.isEmpty then
       filtered := filtered.push names
-  let reps : Array Name := filtered.map (·[0]!)
+  let reps : Array Name ← filtered.mapM (arrIdx · 0 "buildSccClaimCtx: class representative")
   let mut aliasToRep : Std.HashMap Name Name := {}
   for cls in filtered do
     for aliasName in cls.toList.drop 1 do
-      aliasToRep := aliasToRep.insert aliasName cls[0]!
+      aliasToRep := aliasToRep.insert aliasName (← arrIdx cls 0 "buildSccClaimCtx: class representative")
   let expanded ← expandNestedBlock reps aliasToRep (canonicalGroups := true)
   let signatures := auxSignaturesOfExpanded expanded
   let byHead := signaturesByHead signatures
   let mut origToCanon : Std.HashMap Name Name := {}
   for cls in filtered do
     for n in cls do
-      origToCanon := origToCanon.insert n cls[0]!
+      origToCanon := origToCanon.insert n (← arrIdx cls 0 "buildSccClaimCtx: class representative")
   let mut strictNames : Std.HashSet Name := {}
   for n in originalAll do
     if !origToCanon.contains n then
@@ -1112,9 +1118,11 @@ its dependents")
         (replaceConstNamesCached sp ctx.origToCanon).run normalizeCache
       normalizeCache := cache'
       normalized := normalized.push sp'
-    let (matched, specEqCache) := matchAuxSignature srcHead srcLevels
+    let (matched, specEqCache) ← match matchAuxSignature srcHead srcLevels
       normalized ctx.signatures ctx.byHead resolveAddr ctx.fvarMap
-      ctx.strictNames ctx.specEqCache
+      ctx.strictNames ctx.specEqCache with
+      | .ok r => pure r
+      | .error e => throw (.invalidMutualBlock e)
     sccCtxCache := sccCtxCache.insert rep
       { ctx with normalizeCache, specEqCache }
     if matched.isSome then

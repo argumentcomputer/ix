@@ -27,6 +27,7 @@ import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.KernelReportTests
+import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.ValidateLean
 import Tests.Ix.Compile.ValidateLeanNC
 import Tests.Ix.Compile.Pass3Cliques
@@ -126,6 +127,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("exact-sharing-ffi", Tests.SharingExactFFI.suite),
   ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   ("compiler-reports", Tests.Ix.Compile.KernelReportTests.suite),
+  ("compiler-index-safety", Tests.Ix.Compile.IndexSafety.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),

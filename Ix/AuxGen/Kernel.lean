@@ -865,7 +865,9 @@ partial def getLevel (scope : TcScopeSt) (ty : Expr) : KBridgeM Level := do
   let raw := kunivToLevel ku scope.paramNames
   -- Mirror Lean's `inferForallType`: normalize forall-typed levels only.
   if ty matches .forallE .. then
-    return levelNormalize raw
+    match levelNormalize raw with
+    | .ok normalized => return normalized
+    | .error why => throw (.unsupportedExpr s!"TcScope::get_level: {why}")
   return raw
 
 /-- WHNF a `LeanExpr` in the current context, restoring source display

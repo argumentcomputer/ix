@@ -150,22 +150,27 @@ def preorderViolations (rules : Rules) (addr? : Name → Option Address)
   let ctx := MutConst.ctx classes
   let ms := classes.flatten.toArray
   let n := ms.size
+  -- A7 (D8): no `]!`: the loops carry their bounds and the table is read
+  -- through `at2`, a named error out of range.
   let mut tbl : Array (Array Ordering) := #[]
-  for i in [0:n] do
+  for hi : i in [0:ms.size] do
     let mut row : Array Ordering := #[]
-    for j in [0:n] do
-      row := row.push (← compareFresh rules addr? ctx ms[i]! ms[j]!)
+    for hj : j in [0:ms.size] do
+      row := row.push (← compareFresh rules addr? ctx ms[i] ms[j])
     tbl := tbl.push row
   let mut out : Array String := #[]
-  let nm := fun (i : Nat) => namePretty ms[i]!.name
+  let nm := fun (i : Nat) => ((ms[i]?).map (namePretty ·.name)).getD s!"#{i}"
+  let at2 := fun (a b : Nat) => match tbl[a]? >>= (·[b]?) with
+    | some o => (pure o : Except String Ordering)
+    | none => throw s!"preorderViolations: table entry ({a}, {b}) out of range"
   for i in [0:n] do
-    if tbl[i]![i]! != .eq then out := out.push s!"irreflexive: {nm i}"
+    if (← at2 i i) != .eq then out := out.push s!"irreflexive: {nm i}"
     for j in [0:n] do
-      if tbl[i]![j]! != tbl[j]![i]!.swap then
+      if (← at2 i j) != (← at2 j i).swap then
         out := out.push s!"not antisymmetric: {nm i} vs {nm j}"
       for k in [0:n] do
-        let le := fun (a b : Nat) => tbl[a]![b]! != .gt
-        if le i j && le j k && !le i k then
+        let le := fun (a b : Nat) => do return (← at2 a b) != .gt
+        if (← le i j) && (← le j k) && !(← le i k) then
           out := out.push s!"not transitive: {nm i} ≤ {nm j} ≤ {nm k}"
   return out
 

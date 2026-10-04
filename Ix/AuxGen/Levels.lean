@@ -280,11 +280,12 @@ def skipExplicit (lvls : Array Level) (start : Nat) : Nat := Id.run do
     True when the largest explicit numeral in `lvls[..firstNonExplicit]`
     is <= the offset of some non-explicit level (which therefore
     dominates). -/
-def isExplicitSubsumed (lvls : Array Level) (firstNonExplicit : Nat) : Bool :=
-  Id.run do
+def isExplicitSubsumed (lvls : Array Level) (firstNonExplicit : Nat) : Except String Bool := do
     if firstNonExplicit == 0 then
       return false
-    let maxExplicit := getOffset lvls[firstNonExplicit - 1]!
+    let some explicit := lvls[firstNonExplicit - 1]?
+      | throw s!"level normalization: explicit prefix {firstNonExplicit} exceeds {lvls.size} levels"
+    let maxExplicit := getOffset explicit
     let mut i := firstNonExplicit
     repeat
       if h : i < lvls.size then
@@ -380,21 +381,21 @@ mutual
          - if `l2` is never zero, normalize `max l1 l2` and add `k`.
          - else normalize each side separately and rebuild via
            `mkImaxAux`, then add `k`. -/
-partial def levelNormalize (l : Level) : Level :=
+partial def levelNormalize (l : Level) : Except String Level := do
   if isAlreadyNormalizedCheap l then
-    l
+    return l
   else
     let k := getOffset l
     let u := getLevelOffset l
     match u with
-    | .max l1 l2 _ => Id.run do
+    | .max l1 l2 _ => do
       let mut lvls : Array Level := #[]
-      lvls := getMaxArgsAux l1 false lvls
-      lvls := getMaxArgsAux l2 false lvls
+      lvls ← getMaxArgsAux l1 false lvls
+      lvls ← getMaxArgsAux l2 false lvls
       lvls := sortByNormLt lvls
       let firstNonExplicit := skipExplicit lvls 0
       -- Rust `saturating_sub(1)`; Nat subtraction saturates at 0 already.
-      let i := if isExplicitSubsumed lvls firstNonExplicit then
+      let i := if (← isExplicitSubsumed lvls firstNonExplicit) then
           firstNonExplicit
         else
           firstNonExplicit - 1
@@ -402,7 +403,8 @@ partial def levelNormalize (l : Level) : Level :=
       -- `getMaxArgsAux` call pushes at least one), and
       -- `isExplicitSubsumed` returning true forces
       -- `firstNonExplicit < lvls.size`.
-      let lvl1 := lvls[i]!
+      let some lvl1 := lvls[i]?
+        | throw s!"level normalization: starting index {i} exceeds {lvls.size} maximum arguments"
       let prev := getLevelOffset lvl1
       let prevK := getOffset lvl1
       return mkMaxAux lvls k (i + 1) prev prevK Level.mkZero
@@ -410,13 +412,13 @@ partial def levelNormalize (l : Level) : Level :=
       if isNeverZero l2 then
         -- RAW `Max` node (Rust `Level::max`), normalized as a whole.
         let m := Level.mkMax l1 l2
-        addOffset (levelNormalize m) k
+        return addOffset (← levelNormalize m) k
       else
-        let l1n := levelNormalize l1
-        let l2n := levelNormalize l2
-        addOffset (mkImaxAux l1n l2n) k
+        let l1n ← levelNormalize l1
+        let l2n ← levelNormalize l2
+        return addOffset (mkImaxAux l1n l2n) k
     -- Zero / Param: already normalized.
-    | _ => l
+    | _ => return l
 
 /-- Mirrors Rust `get_max_args_aux` (aux_gen/below.rs:1514).
 
@@ -425,16 +427,16 @@ partial def levelNormalize (l : Level) : Level :=
     with `normalize` as the recursive normalizer. The Rust
     `&mut Vec<Level>` out-parameter becomes pass-in/return of `out`. -/
 partial def getMaxArgsAux (l : Level) (alreadyNormalized : Bool)
-    (out : Array Level) : Array Level :=
+    (out : Array Level) : Except String (Array Level) := do
   match l with
   | .max l1 l2 _ =>
-    let out := getMaxArgsAux l1 alreadyNormalized out
+    let out ← getMaxArgsAux l1 alreadyNormalized out
     getMaxArgsAux l2 alreadyNormalized out
   | _ =>
     if alreadyNormalized then
-      out.push l
+      return out.push l
     else
-      getMaxArgsAux (levelNormalize l) true out
+      getMaxArgsAux (← levelNormalize l) true out
 
 end
 

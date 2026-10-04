@@ -3564,9 +3564,8 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   let mut reverseDeps : Std.HashMap Name (Array Name) := {}
 
   for (lo, all) in blocks.blocks do
-    -- A block without a reference set references nothing (as in the
-    -- aux-aware drivers).
-    let deps := (blocks.blockRefs.get? lo).getD {}
+    let some deps := blocks.blockRefs.get? lo
+      | return .error s!"compileEnv: block {lo.pretty} has no condensation reference set"
     blockInfo := blockInfo.insert lo (all, deps.size)
     -- Register reverse dependencies
     for depName in deps do
@@ -3903,9 +3902,9 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
       let some all := blocks.blocks.get? lo
         | discard <| workChan.close
           return .error (.system s!"compileEnvParallel: block {lo.pretty} is not in the condensation")
-      -- A block without a reference set references nothing (as in the
-      -- aux-aware drivers).
-      let deps := (blocks.blockRefs.get? lo).getD {}
+      let some deps := blocks.blockRefs.get? lo
+        | discard <| workChan.close
+          return .error (.system s!"compileEnvParallel: block {lo.pretty} has no condensation reference set")
       if deps.all (nameToNamed.contains ·) then
         ready := ready.push (lo, all)
 
@@ -4173,5 +4172,4 @@ def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
 
 end
 end Ix.CompileM
-
 

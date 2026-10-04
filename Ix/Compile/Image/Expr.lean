@@ -70,6 +70,13 @@ def liftExcept {α} (x : Except String α) : GenM α :=
   | .ok a => pure a
   | .error e => throw e
 
+/-- A7 (D8): total array access in the generator: out of range is a named
+error (the image of the block fails), never `default`. -/
+def GenM.idx {α} (a : Array α) (i : Nat) (what : String) : GenM α :=
+  match a[i]? with
+  | some x => pure x
+  | none => throw s!"image: {what}: index {i} out of range (size {a.size})"
+
 /-- The reserved root of the generator's free variables. Inputs are closed
 terms, so no input mentions it. -/
 def fvarRoot : Name := Ix.Name.mkStr Ix.Name.mkAnon "_img_fvar"
@@ -147,8 +154,7 @@ earlier binders (`mkLambdaFVars`/`mkForallFVars`). -/
 def mkBinders (isLam : Bool) (xs : Array Local) (b : Expr) : Expr := Id.run do
   let names := xs.map (·.fvar)
   let mut acc := abstractFVars names b
-  for i in (List.range xs.size).reverse do
-    let x := xs[i]!
+  for (x, i) in xs.zipIdx.reverse do
     let ty := abstractFVars (names.extract 0 i) x.type
     acc := if isLam then Expr.mkLam x.userName ty acc x.bi
       else Expr.mkForallE x.userName ty acc x.bi
