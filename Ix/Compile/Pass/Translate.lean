@@ -95,7 +95,11 @@ structure RwState where
   /-- The optimisation passes (`Ix.Compile.Pass.Opt.engine`), tried at every
   full application before the image is inlined; `none` keeps the baseline.
   The first argument is `site`. -/
-  opt? : Option Name → Name → Array Level → Array Expr → Option Expr := fun _ _ _ _ => none
+  opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo) :=
+    fun _ _ _ _ => none
+  /-- Canonical constants the passes' rewrites reference (reserved `_ix`
+  names, O9: the re-typed structural handler), to be compiled with the block. -/
+  canon : Array ConstantInfo := #[]
   /-- The recorded declines (design document §6.3, obligation 4): tried at
   every full application next to `opt?`; a cause means a pass declined
   because a reference it needs is absent from the input
@@ -171,7 +175,11 @@ def rw : Nat → Bool → Expr → RwM Expr
               -- constant (Q11), so the occurrence stays as written
               return mkAppN (Expr.mkConst n us) args'
             let body ← match (← get).opt? site n us args' with
-              | some e => pure e
+              | some (e, cs) =>
+                if !cs.isEmpty then
+                  modify fun st => { st with canon := cs.foldl (fun acc c =>
+                    if acc.any (·.getCnst.name == c.getCnst.name) then acc else acc.push c) st.canon }
+                pure e
               | none => liftM (Ix.Compile.Image.instantiate (substLevels x.levelParams us x.value) args')
             if let some cause := (← get).decline? n us args' then
               modify fun st => { st with declines := st.declines.push cause }
@@ -248,13 +256,16 @@ structure BlockRewrite where
   /-- The recorded declines, each with the member whose term had the
   occurrence (`RwState.decline?`). -/
   declines : Array (Name × String) := #[]
+  /-- Canonical constants the passes' rewrites reference (`RwState.canon`). -/
+  canon : Array ConstantInfo := #[]
   deriving Inhabited
 
 /-- Rewrite the members of one block (`base(c)` for each); placeholder
 indices are block-unique. -/
 def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     (members : Array (Name × ConstantInfo))
-    (opt? : Option Name → Name → Array Level → Array Expr → Option Expr := fun _ _ _ _ => none)
+    (opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo) :=
+      fun _ _ _ _ => none)
     (decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none) :
     Except String BlockRewrite := do
   let mut st : RwState := { base := 0, opt?, decline? }
@@ -267,7 +278,7 @@ def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     for c in st.declines.extract before st.declines.size do
       unless declines.contains (n, c) do declines := declines.push (n, c)
     if ci' != ci then overlay := overlay.push (n, ci')
-  return { overlay, sources := st.sources, needed := st.needed, declines }
+  return { overlay, sources := st.sources, needed := st.needed, declines, canon := st.canon }
 
 end Ix.Compile.Pass
 

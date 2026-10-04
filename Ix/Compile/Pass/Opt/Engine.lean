@@ -24,6 +24,7 @@ image (the baseline, Def 3.6). The fixed order:
 | unit | O13a/b | cliques changed only by order, or by the fixed-parameter telescope: **A5's slot**, run once per clique after the occurrence passes; not implemented here |
 | 6 | O8 | `casesOn` over a collapsed or lifted member: the Ix `casesOn` of the class (**proof-justified**, `pjPasses`) |
 | 7 | O7 | `rec`/`recOn` over a collapsed block with identical motives and minors per class (**proof-justified**, `pjPasses`) |
+| 8 | O9 | `brecOn` over the component of a split block with a cross field: the Ix `brecOn` with the handler re-typed and re-pathed, the canonical handler `c._ix._f` emitted (**proof-justified**, `emitPasses`) |
 
 **The engine is fused with the rewrite.** The design document's engine
 traverses the baseline term and, at each image occurrence `img(a) args`,
@@ -111,6 +112,7 @@ public import Ix.Compile.Pass.Opt.O11a
 public import Ix.Compile.Pass.Opt.O7
 public import Ix.Compile.Pass.Opt.O8
 public import Ix.Compile.Pass.Opt.O11b
+public import Ix.Compile.Pass.Opt.O9
 public section
 
 namespace Ix.Compile.Pass.Opt
@@ -139,6 +141,18 @@ def engineN : Nat → OptEnv → Occ → Option (String × Expr)
 
 /-- The engine at one occurrence. -/
 def engine (env : OptEnv) (o : Occ) : Option (String × Expr) := engineN 64 env o
+
+/-- The proof-justified occurrence passes that also emit canonical constants
+(reserved `_ix` names, compiled with the block): O9's re-typed handler. -/
+def emitPasses : List (String × (OptEnv → Occ → Option (Expr × Array ConstantInfo))) :=
+  [("O9", O9.apply)]
+
+/-- The engine at one occurrence, with the canonical constants the rewrite
+references: the occurrence passes, then the emitting ones. -/
+def engineFull (env : OptEnv) (o : Occ) : Option (String × Expr × Array ConstantInfo) :=
+  match engine env o with
+  | some (nm, e) => some (nm, e, #[])
+  | none => emitPasses.findSome? fun (nm, p) => (p env o).map fun (e, cs) => (nm, e, cs)
 
 /-- The data of a changed block for the passes, from its view: Pass 1's
 change kind and classes, and the shape of every Lean recursor's image. An

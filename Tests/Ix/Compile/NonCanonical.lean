@@ -2225,6 +2225,12 @@ def nonCanonicalPasses : List NonCanonicalEntry := [
   , e `Tests.Ix.Compile.Pass.O11bNoConfusion "src" "can" `PassO11b.Src.E.noConfusion "split-off enumeration, two constructors" .pendingNoConfusion
     "55b3bf142fb5a8078ad3b7515f90ab239c32ae0443dfe383b67dae6f4ba17fc5" "d22707b38e0abb7f8254c3b1bf1f583807d6990e42b1f5d71ebd6d83b124b60d" "value"
     "O11b declines with `E.noConfusionType` (the pair is rewritten together)"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.len._f "Lean's structural handler over a split block" .orderStmt
+    "a2efeed435e50d00fb1a10f4a2cc798d17d4cbf88d6ebcec215737533dcf2e3b" "e0b305275f4a5cf30747e12ad76a6cb88db3927a3b03ea20c2eeda6191f1378b" "type"
+    "Lean's `_f` keeps its Lean type over Lean's `A.below` (faithful); the canonical handler is `A.len._ix._f` (O9)"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.sum._f "Lean's structural handler over a split block" .orderStmt
+    "4477494fff8d528aaa2184be891e4ecf17183b355b661e712aef8fcb66ada662" "d54ac8229d28df80a1ce6b07ac8c397fa0f2fac34ce4545f3167591ab968eba3" "type"
+    "Lean's `_f` keeps its Lean type over Lean's `A.below` (faithful); the canonical handler is `A.sum._ix._f` (O9)"
 ]
 
 /-- A constant of a twin presentation that the compilers refuse at this head,

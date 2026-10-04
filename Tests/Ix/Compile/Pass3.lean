@@ -705,7 +705,7 @@ def passSameAsOff : List (String × String × Bool) := [
 
 /-- The per-pass fixtures of O7–O12. -/
 def pjPassFiles : List String :=
-  ["O7Collapse", "O8Cases", "O11bNoConfusion"].map fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
+  ["O7Collapse", "O8Cases", "O9Split", "O11bNoConfusion"].map fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
 
 /-- Twins with the switch on (one address): the pass made the presentation's
 term the canonical one's. -/
@@ -722,7 +722,18 @@ def pjPassTwins : List (String × String × String) := [
   ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType", "PassO11b.Can.B.noConfusionType"),
   ("O11bNoConfusion", "PassO11b.Src.B.noConfusion", "PassO11b.Can.B.noConfusion"),
   ("O11bNoConfusion", "PassO11b.Src.nc", "PassO11b.Can.nc"),
-  ("O11bNoConfusion", "PassO11b.Src.B.val", "PassO11b.Can.B.val")]
+  ("O11bNoConfusion", "PassO11b.Src.B.val", "PassO11b.Can.B.val"),
+  ("O9Split", "PassO9.Src.A.len", "PassO9.Can.A.len"),
+  ("O9Split", "PassO9.Src.A.len._ix._f", "PassO9.Can.A.len._f"),
+  ("O9Split", "PassO9.Src.A.sum", "PassO9.Can.A.sum"),
+  ("O9Split", "PassO9.Src.A.sum._ix._f", "PassO9.Can.A.sum._f"),
+  ("O9Split", "PassO9.Src.B.val", "PassO9.Can.B.val"),
+  ("O9Split", "PassO9.Src.len2", "PassO9.Can.len2"),
+  ("O9Split", "PassO9.Src.len3", "PassO9.Can.len3"),
+  ("O9Split", "PassO9.Src.sum2", "PassO9.Can.sum2"),
+  ("O9Split", "PassO9.Src.len_succ", "PassO9.Can.len_succ"),
+  ("O9Split", "PassO9.Src.A.cnt", "PassO9.Can.A.cnt"),
+  ("O9Split", "PassO9.Src.cnt1", "PassO9.Can.cnt1")]
 
 /-- Twin pairs that still differ with the switch on: each must have its entry
 in `Tests.Ix.Compile.NonCanonical.nonCanonicalPasses` (fixture
@@ -731,7 +742,9 @@ addresses, and every entry must name a pair listed here. -/
 def passTwinsNC : List (String × String × String) := [
   ("O8Cases", "PassO8.Src.A.isNil'", "PassO8.Can.A.isNil'"),
   ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Can.E.noConfusionType"),
-  ("O11bNoConfusion", "PassO11b.Src.E.noConfusion", "PassO11b.Can.E.noConfusion")]
+  ("O11bNoConfusion", "PassO11b.Src.E.noConfusion", "PassO11b.Can.E.noConfusion"),
+  ("O9Split", "PassO9.Src.A.len._f", "PassO9.Can.A.len._f"),
+  ("O9Split", "PassO9.Src.A.sum._f", "PassO9.Can.A.sum._f")]
 
 /-- Pass firing, read off the switch-on output (as `passRefs`). -/
 def pjPassRefs : List (String × String × String × Bool) := [
@@ -748,7 +761,13 @@ def pjPassRefs : List (String × String × String × Bool) := [
   -- O11b: the enumeration form (no `casesOn`); declines on two constructors (O3 still fires)
   ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType", "PassO11b.Src.B._ix.casesOn", false),
   ("O11bNoConfusion", "PassO11b.Src.B.noConfusion", "PassO11b.Src.B._ix.casesOn", false),
-  ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Src.E._ix.casesOn", true)]
+  ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Src.E._ix.casesOn", true),
+  -- O9: the Ix `brecOn` with the canonical handler (also for `A.cnt`: Lean compiles `B.cnt b` as a
+  -- call, `B.cnt` not being recursive through `A`, so the handler reads no cross field)
+  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A._ix.brecOn", true),
+  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._ix._f", true),
+  ("O9Split", "PassO9.Src.A.sum", "PassO9.Src.A._ix.brecOn", true),
+  ("O9Split", "PassO9.Src.A.cnt", "PassO9.Src.A._ix.brecOn", true)]
 
 /-- The proof-justified passes' non-canonical set, exact in both directions
 for the unit (`passTwinsNC` against `nonCanonicalPasses`). -/

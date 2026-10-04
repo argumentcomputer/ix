@@ -363,7 +363,7 @@ block's referenced changed blocks: the hook the rewrite tries at every full
 application before it inlines an image (heads of other blocks keep their
 baseline). -/
 def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
-    Option Name → Name → Array Ix.Level → Array Expr → Option Expr :=
+    Option Name → Name → Array Ix.Level → Array Expr → Option (Expr × Array ConstantInfo) :=
   let inp := viewInput cenv
   let blocks : Std.HashMap Name Opt.OptBlock :=
     views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
@@ -371,7 +371,7 @@ def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
       demotion := Opt.demotionIn cenv.p3BlockRefs cenv.p3Heads }
-  fun site n us args => (Opt.engine env { head := n, us, args, site }).map (·.2)
+  fun site n us args => (Opt.engineFull env { head := n, us, args, site }).map (·.2)
 
 /-- The unit passes (A6p) over a block's members, after the call-site
 rewrite: O11b gives Lean's `noConfusion` pair of a split-off enumeration
@@ -430,6 +430,40 @@ def cliqueRewrite (cenv : CompileEnv) (members : Array (Name × ConstantInfo)) :
         if !views.contains key then views := views.insert key (← viewOf cenv views key)
   rewriteBlock (expansionLookup cenv views) members (optLookup cenv views)
 
+/-- Compile the canonical constants the passes' rewrites reference (A6p: O9's
+re-typed handlers `c._ix._f`) into the block's initial state, the way A5's
+clique hook compiles its canonical constants: each through the call-site
+rewrite, then as an ordinary constant under its reserved name. A constant an
+earlier block already compiled is skipped (the bytes are the same; the
+driver's insert-once merge). -/
+def compileCanon (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
+    (canon : Array ConstantInfo) (init0 : BlockState := {}) : Except String BlockState := do
+  let lookup := expansionLookup cenv views
+  let mut init : BlockState := init0
+  for ci in canon do
+    let c := ci.getCnst.name
+    if (resolveAddr cenv c).isSome || init.blockNameToAddr.contains c then continue
+    let rw ← rewriteBlock lookup #[(c, ci)] (optLookup cenv views)
+    let ci' := match rw.overlay[0]? with
+      | some (_, x) => x
+      | none => ci
+    let srcs : Std.HashMap Nat Expr := rw.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) {}
+    let blockEnv : BlockEnv :=
+      { all := ({} : Ix.Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
+    let st0 : BlockState := { blockNameToAddr := init.blockNameToAddr }
+    match CompileM.run { cenv with p3Sources := srcs } blockEnv st0 (compileConstantInfo ci') with
+    | .error e => throw s!"Pass 3 optimisations: canonical constant {c.pretty}: {e}"
+    | .ok (r, bs) =>
+      init := { init with
+        blockNameToAddr := init.blockNameToAddr.insert c r.blockAddr
+        auxConsts := init.auxConsts.push (r.blockAddr, r.block)
+        auxNamed := init.auxNamed.push (c, { addr := r.blockAddr, constMeta := r.blockMeta })
+        auxNameToAddr := init.auxNameToAddr.insert c r.blockAddr
+        blockBlobs := bs.blockBlobs.fold (fun m k v => m.insert k v) init.blockBlobs
+        blockNames := bs.blockNames.fold (fun m k v => m.insert k v) init.blockNames
+        defHints := bs.defHints.fold (fun m k v => m.insert k v) init.defHints }
+  return init
+
 /-- Rewrite a block before it compiles: the compile environment (overlay,
 decompile sources) and the initial block state (stored image constants).
 Identity when the switch is off or the block references no head. -/
@@ -465,8 +499,9 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   -- the recorded declines go to the block state, and from there into the
   -- compile's non-canonical set (`CompileEnv.p3NonCanonical`)
   let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines }
-  -- the unit passes (A6p): O11b
+  -- the unit passes (A6p): O11b; the canonical constants the passes reference
   let (overlay, sources) := unitPasses cenv views members overlay sources
+  let init ← compileCanon cenv views rwr.canon init
   return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, init)
 
 /-! ## The Lean names of a changed block's auxiliaries: their images -/
