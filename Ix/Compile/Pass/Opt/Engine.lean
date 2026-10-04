@@ -15,12 +15,12 @@ image (the baseline, Def 3.6). The fixed order:
 | slot | pass | pattern |
 |---|---|---|
 | 1 | O1 | `rec`/`recOn`, permuted block |
-| 2 | O2 | `rec`, split block (relocated minors) |
-| 3 | O3 | `casesOn`, permuted or split block |
-| 4 | O4 | `below`/`brecOn`/`.go`/`.eq`, permuted block |
+| 2 | O11a | `rec` of a split block that is Lean's mutual `sizeOf` family (cross fields through the instances); its references `T._sizeOf_inst` are scheduling edges (`O11a.addSizeOfEdges`, A6f) |
+| 3 | O2 | `rec`, split block (relocated minors) |
+| 4 | O3 | `casesOn`, permuted or split block |
+| 5 | O4 | `below`/`brecOn`/`.go`/`.eq`, permuted block |
 | — | O5 | the level rule inside O1-O4 (not a pattern) |
-| 5 | O6 | `rec` whose image is `ρ` applied to its own variables |
-| — | O11a | the `sizeOf` family of a split block: definitional (the `rfl` holds under the three kernels), **not run**: its output references `T._sizeOf_inst`, an edge the input reference graph does not have, so the scheduler may compile the user first (measured: `missingConstant`); see `O11a` |
+| 6 | O6 | `rec` whose image is `ρ` applied to its own variables |
 | unit | O13a/b | cliques changed only by order, or by the fixed-parameter telescope: **A5's slot**, run once per clique after the occurrence passes; not implemented here |
 
 **The engine is fused with the rewrite.** The design document's engine
@@ -53,6 +53,13 @@ bottom-up traversal reaches the fixed point.
   with disjoint change kinds (permutation-only versus split), O3 is
   `casesOn`, O4 is the `below`/`brecOn` family.
 * O5 is not a pattern: it is the level rule O1-O4 and O6 share.
+* O11a's pattern is contained in O2's (a split block's `rec` whose minors
+  are Lean's sizeOf family). On it the two outputs differ only in the minors
+  of constructors with cross fields, where O11a puts `sizeOf f` through the
+  instance and O2 the relocated recursor call: definitionally equal
+  (O11a's faithfulness), not syntactically, so this overlap is ordered, not
+  confluent: O11a runs first, because its output is the canonical one (the
+  separately declared components' term).
 * O6 overlaps O1 (a permutation-only block's `rec`) and O2 (a split
   component without cross fields). On the overlap both give `ρ` applied to
   `img(r)`'s body at the arguments, the same term (O1's `π, π′` and O6's
@@ -97,7 +104,7 @@ open Ix (Name Level Expr ConstantInfo RecursorVal)
 /-- The occurrence passes in their fixed order; `recur` rewrites the
 occurrences O2 synthesises (its relocated calls). -/
 def passes (recur : Occ → Option Expr) : List (String × (OptEnv → Occ → Option Expr)) :=
-  [("O1", O1.apply), ("O2", O2.apply recur), ("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)]
+  [("O1", O1.apply), ("O11a", O11a.apply), ("O2", O2.apply recur), ("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)]
 
 /-- The first pass that applies, with its name. The bound is on the nesting of
 O2's relocated calls (one level per component below the major's, in the

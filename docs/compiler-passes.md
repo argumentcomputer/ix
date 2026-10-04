@@ -370,10 +370,15 @@ engine's `none` is the baseline. The driver builds the blocks' data once per blo
   `brecOn` family of a Prop block whose `below` is Lean's `IndPredBelow` inductive (the Ix `brecOn`
   is over a different inductive; measured on the twins' `Cliques.IP`).
 - **O6** `rec`/`recOn` with a selection image, any change kind.
-- **O11a** definitional (one `rfl` per `Linear.EqCnstr` member, accepted by the three kernels) but
-  **not run**: its output references `T._sizeOf_inst`, which the input `_sizeOf_N` does not, and
-  the fold orders blocks by the input's references (measured `missingConstant`). It needs the
-  edge in P1a's graph.
+- **O11a** definitional (one `rfl` per `Linear.EqCnstr` member, accepted by the three kernels), run
+  before O2 since A6f: its output references `T._sizeOf_inst`, which the input `_sizeOf_N` does not,
+  so the Lean pipeline adds the edges `all₀._sizeOf_N → T._sizeOf_inst` (each cross target `T` of
+  the recursor's component) and `→ SizeOf.sizeOf` to the condensation's block dependencies after
+  `CondenseM.run` (`O11a.addSizeOfEdges`). No cycle: an added path descends strictly through
+  components of one split block; no component or representative moves (Tarjan is not re-run). A
+  first, coarser edge set (every `_sizeOf_N` to every cross target) closed the cycle
+  `T._sizeOf_k → T._sizeOf_inst → T._sizeOf_k` [measured]. With the switch on the library twins'
+  seven `Linear` instances are twin-equal (`pass3`, twins unit) [measured, A6f].
 - **O13a/b**: A5's slot after the occurrence passes.
 
 **Measured (A4, Lean core part of the library, the `pass3` suite's surgery comparison).** Of the
@@ -515,6 +520,21 @@ fixed by sorting under its own indices") can have several solutions: two classes
 mention each other symmetrically can be self-consistent in either order. The refinement picks one of
 them deterministically. **The canonical order is therefore defined as the output of this procedure**,
 and Phase B proves properties of the procedure, not of a declarative characterisation [argued].
+
+**Consequence for the kernels (BELOW-ORDER, A6f).** The symmetric case can also be inconsistent in
+*both* orders: when two members differ first in a mutual cross reference (compared weakly, by class
+index) and only later in a strong position, the cross references compare weakly `Greater` under the
+final classes whichever member comes first, while the refinement ordered the pair by the strong
+difference it met in the round where both were one class. The kernels' single-pass canonicity gate
+(`validateCanonicalBlockSinglePass` in `Ix.Tc`, `validate_canonical_block_single_pass` in
+`crates/kernel`) checks the declarative property: it accepts a strong `Less`, falls back to the full
+refinement on a weak `Less`, and rejects every `Greater`. So it rejects such blocks in every stored
+order, against this section's definition. Reproducer `Tests/Ix/Compile/ValidateLeanSwap.lean`
+(`SA | mk : SB → Nat → SA`, `SB | mk : SA → Bool → SB`): the Rust producer with the switch off emits
+it, and `ix check-rs` and `ix check-lean` reject it in meta mode ("adjacent pair at position 0
+compares Greater"), anonymous mode passes [measured, A6f]. The fix belongs to the kernels (a weak
+`Greater` falls back to the full refinement too, both kernels); not made in A6f, which may not touch
+`crates/kernel` [open].
 
 **Phase A decision: addresses at the first difference (today's comparator).** An external reference
 compares by address wherever two members first differ (`Ix/CompileM.lean:2098-2104`), interleaved
@@ -673,6 +693,35 @@ Evidence:
 - the certified modeller's "largest family first" accepts discovery order unchanged (its comment
   is updated); the certified `BlockOrder` variant checks a recursor block in motive order and never
   encoded the auxiliary order, so it is unchanged and its audit is not re-recorded.
+
+**Lean-generated inductive blocks: the `IndPredBelow` family (A3V-IPB; decided in A6f).** For a
+Prop block, Lean's `IndPredBelow` declares one `below` inductive per motive of the block's recursor
+(`x.below` per member, then `all₀.below_j` per nested auxiliary) as one mutual block, with its own
+recursors and `casesOn`. Pass 2 builds the Ix family over the canonical block in motive order, and
+Pass 1 then orders the family as a block of its own. On nested shapes Pass 1's order differs from
+Lean's even when the parent is unchanged (`Tests/Ix/Compile/ValidateLeanIPB.lean`: Lean
+`[A.below, B.below, A.below_1]`, Ix `[A.below, A.below_1, B.below]`), so the family is a *permuted*
+Lean-generated block, and before A6f Lean's `A.below.rec` named an Ix recursor of another type (the
+validator's oracle leg found it).
+- *Choice.* Keeping Lean's order for Lean-generated families is excluded: the kernels check every
+  all-inductive block against the comparator order (§2.3), so the family stored in Lean's order is
+  rejected exactly where Pass 1 orders it differently. Treating the family as a **changed block** keeps
+  the Ix family canonical (a function of the canonical parent, then of Pass 1) and byte-identical to
+  the switch-off output, and moves only names (Q2). By §0.1 this is the choice.
+- *Rule (under the switch).* Pass 3's changed-block predicate covers the family: when the stored
+  positions of Lean's family names are not Lean's order, the family's inductives and constructors
+  keep Lean's names (as members of any permuted block do), its Ix `.rec`/`.casesOn` are displayed
+  `x.below._ix.rec`/`x.below._ix.casesOn`, and Lean's `.rec`/`.casesOn` denote their images
+  (`Ix.Compile.Pass.editPermutedBelowFamily`). A changed Prop parent was already covered (its
+  canonical family moves to display names and Lean's own family compiles as its own block, which is
+  then a changed block by the same predicate).
+- *Switch off.* Unchanged (Rust is not mirrored for Pass 3): the defect stays recorded as A3V-IPB
+  until the switch flips.
+- [measured, A6f] With the switch on, `ix validate-lean --local` passes every phase on
+  `ValidateLeanIPB` (phase 7: 2 changed blocks, 10 images, 7 rules by `rfl`) and on `Neighbours`
+  (7 changed blocks, 88 images, 30 rules). WB-B6 (`RecAlias.PA.below`) and WB-B9
+  (`UnsafeI.UNestNeg.rec`) are single-member blocks and do not share the cause: WB-B6 is Pass 2's
+  generator form (a recursive field behind a reducible alias), WB-B9 the recursor block's packaging.
 
 ### 2.6 Evaporation
 
@@ -2067,14 +2116,16 @@ came in wave 1:
 consequences, not entries of the twins fixture:
 - **BB-F7 / BB-F1.** These are meta-mode kernel ingress failures on collapsed blocks. The suite
   accepts them only where the certified checker accepts the same constant (orchestrator, A3).
-- **BELOW-ORDER** [measured, A3W §5.3].
+- **BELOW-ORDER** [measured, A3W §5.3; cause A6f].
   - Pass 1 orders Lean's own `IndPredBelow` block of a collapsed Prop pair `[P.below, Q.below]`.
     The first round decides it on a bound variable, but under the final classes the cross
-    references compare the other way.
-  - The kernels' single-pass canonicity gate rejects the block; the certified checker accepts it.
-  - This is §2.3's "not a declarative fixed point", now observed. It belongs to A2 (Pass 1 order)
-    [open].
-  - No library has such a block.
+    references compare, weakly, the other way, in either order.
+  - The kernels' single-pass canonicity gate rejects every `Greater`, weak or not; the certified
+    checker accepts the block.
+  - Cause: the kernels' gate, not Pass 1 (§2.3, "Consequence for the kernels"): user blocks of the
+    same shape are rejected with the switch off, from both compilers (`ValidateLeanSwap`). The fix
+    is in both kernels [open]; until then the class stays, with `ValidateLeanSwap` as its reproducer.
+  - No library has such a `below` block.
 - **REFUSED-SIBLING** [measured, A3M]. A0 refuses some components in both modes: evaporation in
   C4Evap, F3, NestRoseSplit, NestMutExt and NestMutExtA. Under decision 3 a sibling auxiliary *is*
   its image, so its type mentions the refused member and it cannot compile. This costs 2–11
@@ -2234,8 +2285,8 @@ environment writer; no Rust work):
 - **Wave 2** (§0.2, §4.8, §6, §7.3, §9, §10):
   - the twins total (497) and Pass 3 with the switch on, on Mathlib, have not been re-measured on
     `564d03f0` [open];
-  - BELOW-ORDER, the Pass 1 order of Lean's `IndPredBelow` block of a collapsed Prop pair, is with
-    A2 [open];
+  - BELOW-ORDER is the kernels' single-pass canonicity gate rejecting a weak `Greater` (A6f); the fix
+    is in both kernels [open];
   - BB-F7/BB-F1, the meta-mode ingress of collapsed blocks, is with A3v [open];
   - REFUSED-SIBLING follows A0's evaporation refusal and lasts as long as that refusal does;
   - neither the clique transport nor the optimisation passes are wired into the compiler;
