@@ -14,8 +14,9 @@ order is the discovery order, which `buildFlatBlock` produces directly.)
 
 1. `validateCanonicalBlockSinglePass` — treats the stored order as the
    alleged canonical partition and checks adjacent pairs are strictly
-   strong-`lt`. `gt` (wrong order) and `eq` (uncollapsed alpha-equivalence)
-   reject; a weak `lt` falls back to full iterative refinement.
+   strong-`lt`. A strong `gt` (wrong order) and `eq` (uncollapsed
+   alpha-equivalence) reject; a weak `lt` or weak `gt` falls back to full
+   iterative refinement (A6f).
 2. `sortKConsts` / `sortKConstsWithSeedKey` — iterative partition
    refinement (sort → group → re-sort under updated `KMutCtx`) to fixpoint;
    returns canonical equivalence classes.
@@ -449,7 +450,32 @@ def validateByFullRefinement (blockAddr : Address)
     if cls.size != 1 || cls[0]!.1.addr != members[i]!.1.addr then
       throw (.nonCanonicalBlock blockAddr i .gt)
 
-/-- Single-pass primary-block canonicity validation (see module doc). -/
+/-- Primary-block canonicity validation. Mirror of Rust
+`validate_canonical_block_single_pass`.
+
+**The definition is the full check** (`validateByFullRefinement`): re-run
+the iterative refinement from scratch and accept iff it returns the stored
+members, in the stored order, each as a singleton class. The single pass is
+only an optimisation of that check and decides on its own only where its
+verdict cannot differ from it. Under the singleton partition (each stored
+member its own class, at its stored position):
+- strong `lt`: continue. A strong verdict does not read the partition (no
+  block-local reference was compared before the first difference), so every
+  refinement round compares the pair the same way;
+- strong `gt`: reject, for the same reason (the refinement orders the pair
+  the other way);
+- `eq`: reject (equal under a partition finer than the refinement's, hence
+  equal in it: an uncollapsed alpha-equivalent pair);
+- weak `lt` or weak `gt`: the provisional partition supplied the verdict
+  through a block-local reference, which proves nothing about the
+  refinement's history: fall back to the full check. (Before A6f a weak `gt`
+  rejected outright, which rejected canonical blocks whose members differ
+  first in a mutual cross reference: that compares weakly `gt` in every stored
+  order. BELOW-ORDER; reproducer `Tests/Ix/Compile/ValidateLeanSwap.lean`.)
+
+So every acceptance is either the full check's or a run of strong `lt`
+pairs no refinement round can reorder: the gate rejects every non-canonical
+block. -/
 def validateCanonicalBlockSinglePass (blockAddr : Address)
     (resolveCtor : ResolveCtor m) (members : Array (KId m × KConst m)) :
     Except (TcError m) Unit := do
@@ -463,7 +489,9 @@ def validateCanonicalBlockSinglePass (blockAddr : Address)
     | .lt, false =>
       return (← validateByFullRefinement blockAddr resolveCtor members)
     | .eq, _ => throw (.nonCanonicalBlock blockAddr i .eq)
-    | .gt, _ => throw (.nonCanonicalBlock blockAddr i .gt)
+    | .gt, true => throw (.nonCanonicalBlock blockAddr i .gt)
+    | .gt, false =>
+      return (← validateByFullRefinement blockAddr resolveCtor members)
 
 end Ix.Tc
 

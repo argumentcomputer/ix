@@ -22,12 +22,16 @@
      UNMATCHED), and every non-canonical entry that concerns an auxiliary
      appears in the validator's output.
   UNMATCHED rows and missing entries fail the suite.
+  Phase 4 must also match the validator's exact expected verdict table; in
+  particular the former BELOW-ORDER failures are no longer exempt. The
+  validator still checks collapsed blocks anonymously under its BB-F7 policy.
 
   Run with: `lake test -- --ignored validate-lean-nc` (after `lake build ix`).
 -/
 import Lean.Data.Json
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.NonCanonical
+import Tests.Ix.Compile.ValidateLean
 
 open Lean
 
@@ -61,25 +65,46 @@ structure Row where
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
-def runOne (dir : System.FilePath) (file switch : String) : IO (Array Row × String) := do
+structure RunResult where
+  rows : Array Row
+  verdicts : String
+  metaProblem : Option String
+
+def runOne (dir : System.FilePath) (file switch : String) : IO RunResult := do
   let stem := (System.FilePath.mk file).fileStem.getD file
   let tsv := dir / s!"{stem}-{switch}.tsv"
+  let report := dir / s!"{stem}-{switch}.json"
   let exe ← IO.FS.realPath ixExe
   let out ← IO.Process.output {
     cmd := exe.toString
-    args := #["validate-lean", "--local", "--workers", "8", file]
+    args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString, file]
     env := #[("LD_LIBRARY_PATH", none), ("IX_VALIDATE_AUXTABLE", some tsv.toString),
              ("IX_PASS3", if switch == "on" then some "images" else none)] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
   let verdicts := ((out.stdout.splitOn "\n").find? (·.startsWith "[validate-lean] VERDICTS")).getD "no verdicts"
-  if !(← tsv.pathExists) then return (#[], verdicts)
+  let phase4 ← if ← report.pathExists then do
+      let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))
+      let phases ← IO.ofExcept (j.getObjValAs? (Array Json) "phases")
+      pure <| phases.findSome? fun p =>
+        if (p.getObjValAs? String "key").toOption == some "4" then
+          (p.getObjValAs? String "result").toOption
+        else none
+    else pure none
+  -- Use the same narrow, named defect registry as validate-lean. For these
+  -- fixtures only C4Evap/off retains a phase-4 failure (REFUSED-SIBLING).
+  let expectedFail := ValidateLean.expected.any fun e =>
+    e.stem == stem && (e.switch == switch || e.switch == "*") && e.phases.contains "4"
+  let want := if expectedFail then "fail" else "pass"
+  let metaProblem := if phase4 == some want then none
+    else some s!"{stem} {switch}: phase 4 expected {want}, got {phase4.getD "no report"}"
+  if !(← tsv.pathExists) then return ⟨#[], verdicts, metaProblem⟩
   let lines := (← IO.FS.readFile tsv).splitOn "\n" |>.drop 1 |>.filter (!·.isEmpty)
   let rows := lines.toArray.filterMap fun l =>
     match l.splitOn "\t" with
     | [n, st, d, ph, v] => some { file := stem, switch, name := n, status := st,
                                   differs := d == "true", phase := ph, verdict := v }
     | _ => none
-  return (rows, verdicts)
+  return ⟨rows, verdicts, metaProblem⟩
 
 /-- The family and presentation of a name: a twin presentation's namespace,
     else the prototype case and its `Src`/`Can` part. -/
@@ -122,17 +147,18 @@ def run : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   let t0 ← IO.monoMsNow
   let todo := files.flatMap fun f => [(f, "off"), (f, "on")]
-  let mut pending : Array (Task (Except IO.Error (Array Row × String))) := #[]
-  let mut results : Array (Array Row × String) := #[]
+  let mut pending : Array (Task (Except IO.Error RunResult)) := #[]
+  let mut results : Array RunResult := #[]
   for (f, s) in todo do
     if pending.size ≥ 4 then
       results := results.push (← IO.ofExcept pending[0]!.get)
       pending := pending.extract 1 pending.size
     pending := pending.push (← IO.asTask (runOne dir f s))
   for t in pending do results := results.push (← IO.ofExcept (← IO.wait t))
-  for ((f, s), (_, v)) in todo.zip results.toList do
-    IO.println s!"[validate-lean-nc] {(System.FilePath.mk f).fileStem.getD f} {s}: {v}"
-  let rows := results.foldl (fun acc (rs, _) => acc ++ rs) #[]
+  for ((f, s), result) in todo.zip results.toList do
+    IO.println s!"[validate-lean-nc] {(System.FilePath.mk f).fileStem.getD f} {s}: {result.verdicts}"
+  let metaProblems := results.filterMap (·.metaProblem)
+  let rows := results.foldl (fun acc result => acc ++ result.rows) #[]
   -- the non-canonical entries naming each constant
   let entries := Tests.Ix.Compile.NonCanonical.nonCanonical
   let mut ncBy : Std.HashMap String (Array String) := {}
@@ -192,8 +218,10 @@ def run : IO UInt32 := do
 {unmatched.size} UNMATCHED row(s), {missing.size} non-canonical aux entr(ies) missing from the output"
   for u in unmatched do IO.println s!"[validate-lean-nc] UNMATCHED {u}"
   for m in missing do IO.println s!"[validate-lean-nc] MISSING {m}"
+  for p in metaProblems do IO.println s!"[validate-lean-nc] FAIL {p}"
+  IO.println s!"[validate-lean-nc] phase 4: {metaProblems.size} unexpected verdict(s)"
   IO.println s!"[validate-lean-nc] {(← IO.monoMsNow) - t0} ms"
   IO.FS.removeDirAll dir
-  return if unmatched.isEmpty && missing.isEmpty && prop1.isEmpty then 0 else 1
+  return if unmatched.isEmpty && missing.isEmpty && prop1.isEmpty && metaProblems.isEmpty then 0 else 1
 
 end Tests.Ix.Compile.ValidateLeanNC

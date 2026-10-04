@@ -372,17 +372,6 @@ def knownFails : List (String × String × String × String) := [
   -- under its sibling, so it is recorded by name.
   ("twins", "rs", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7",
     "WB-B6, also with the switch off"),
-  -- BELOW-ORDER: Lean's own IndPredBelow block of the collapsed Prop pair
-  -- (`Repro.Orig.PropCollapse`), compiled as its own block under the switch, is
-  -- ordered by Pass 1's refinement on a bound-variable difference found while
-  -- both members were one class; with the final class indices the first
-  -- difference is the cross reference `Q.below`/`P.below`, which compares
-  -- *weakly* the other way in either stored order, and the kernels' single-pass
-  -- canonicity gate rejects a weak Greater instead of falling back to the full
-  -- refinement, so check-lean's whole-environment meta ingress rejects the
-  -- block (the certified checker accepts). A kernel defect, shared by user
-  -- blocks of that shape in both switch states (A6f, `ValidateLeanSwap`).
-  ("twins", "lean", "*", "BELOW-ORDER"),
   -- A0's evaporation refusal of `C4b.Src.A2` (Pass 2) in both modes: B2's
   -- display entry names the refused block.
   ("C4Evap", "rs", "C4b.Src.B2._ix.below", "A0 refusal of C4b.Src.A2, both modes"),
@@ -796,18 +785,12 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
     -- the name or the Lean name an `_ix` name displays (pre-existing, outside
     -- this package); a meta-mode failure (check-rs, check-lean) on a constant
     -- the certified checker accepts, in a unit with a collapsed changed block
-    -- or a moved `IndPredBelow` family (documented classes BB-F7, BB-F1 and
-    -- BELOW-ORDER, see the report); anything else is a problem.
+    -- (documented classes BB-F7 and BB-F1); anything else is a problem.
     let collapsed := idr.changedBlocks.any (fun all => all.any fun m =>
         ((on.cenv.blocks.get? m).getD #[]).any (·.size > 1))
-    let movedBelow := on.env.named.toList.any fun (n, nd) =>
-        Ix.Compile.Pass.hasReserved n && nd.constMeta.info.kindName == "indc"
-    let collapseUnit := collapsed || movedBelow
-    -- the defect ids of the exemption: BB-F7 (check-lean on a collapsed
-    -- block), BB-F1 (check-rs on a collapsed block), BELOW-ORDER (a moved
-    -- IndPredBelow family's block, rejected by the meta canonicity gate)
-    let ids := (if collapsed then ["BB-F7 (lean)", "BB-F1 (rs)"] else []) ++
-      (if movedBelow then ["BELOW-ORDER"] else [])
+    -- BB-F7 (check-lean) and BB-F1 (check-rs) remain restricted to
+    -- collapsed blocks. A moved IndPredBelow family is not an exemption.
+    let ids := if collapsed then ["BB-F7 (lean)", "BB-F1 (rs)"] else []
     let certFail : Std.HashSet String := failed.foldl (fun s (l, n, _) =>
       if l == "cert" then s.insert n else s) {}
     let mut nKnown := 0
@@ -816,7 +799,7 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
     for (leg, n, m) in failed do
       let pre := offSet.contains (leg, n) || offSet.contains (leg, leanOf n)
         || offSet.contains (leg, "*")
-      let metaOnly := (leg == "rs" || leg == "lean") && collapseUnit
+      let metaOnly := (leg == "rs" || leg == "lean") && collapsed
         && (if n == "*" then certFail.isEmpty else !certFail.contains n)
       match isKnown u.name leg n with
       | some _ => nKnown := nKnown + 1

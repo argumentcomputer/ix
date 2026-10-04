@@ -43,14 +43,11 @@ structure Expected where
   (REFUSED-SIBLING).
 - Compile totality defects by id (WB-A2, WB-A3, WB-A7, BB-F6, BB-F8).
 - Decompile and auxiliary defects by id (BB-F5, WB-B6, WB-B9).
-- BELOW-ORDER: the kernels' single-pass canonicity gate rejects an adjacent
-  pair that compares *weakly* `Greater` (a cross reference under the final
-  classes) instead of falling back to the full refinement, so a block whose
-  members differ first in a mutual cross reference is rejected in meta mode
-  in every stored order (A6f): Lean's own `IndPredBelow` block of the
-  collapsed Prop pair (compiled under the switch), and user blocks of the same
-  shape in both switch states (`ValidateLeanSwap`). A kernel defect, not a
-  compiler one.
+- BELOW-ORDER (removed, A6f): the kernels' single-pass canonicity gate used to
+  reject an adjacent pair comparing *weakly* `Greater` (a mutual cross
+  reference under the final classes) instead of falling back to the full
+  refinement; fixed in both kernels, so `ValidateLeanSwap` (user blocks of
+  that shape), `PropCollapse` and the twins' `Repro` pass phase 4.
 - A3V-IPB (found by the oracle leg): for the nested Prop block `F8NoSplit`
   (BB-F8's passing neighbour) the Ix `IndPredBelow` family's
   `.rec`/`.casesOn` (`A.below.rec`, `A.below_1.rec`, `.casesOn`) differ by
@@ -88,14 +85,9 @@ def expected : List Expected := [
   ⟨"UnsafeI", "*", ["5", "6", "8"], "WB-B9 (Ix's UNestNeg.rec ≠ Lean's)"⟩,
   ⟨"Neighbours", "off", ["6", "8"], "A3V-IPB (F8NoSplit's IndPredBelow .rec/.casesOn ≠ Lean's; fixed by Pass 3)"⟩,
   ⟨"ValidateLeanIPB", "off", ["6", "8"], "A3V-IPB (reproducer: IPB.Nested, IPB.MutNested; fixed by Pass 3)"⟩,
-  -- the kernels' single-pass canonicity gate rejects a weak Greater (user blocks too)
-  ⟨"ValidateLeanSwap", "*", ["4"], "BELOW-ORDER (kernel canonicity gate; reproducer: SwapPair.SA, SwapPair.PA)"⟩,
-  -- Lean's IndPredBelow block of a collapsed Prop pair (the same kernel gate)
-  ⟨"PropCollapse", "on", ["4"], "BELOW-ORDER"⟩,
-  -- the twin families: their RecAlias (WB-B6), SurgCollapse (A0) and
-  -- PropCollapse (BELOW-ORDER) members
+  -- the twin families: their RecAlias (WB-B6) and SurgCollapse (A0) members
   ⟨"Repro", "off", ["1", "5", "6", "8"], "A0 refusal of Repro.Orig.SurgCollapse (D13); WB-B6"⟩,
-  ⟨"Repro", "on", ["4", "5", "6", "8"], "BELOW-ORDER; WB-B6"⟩]
+  ⟨"Repro", "on", ["5", "6", "8"], "WB-B6"⟩]
 
 /-- Fixtures Lean itself rejects (the aux-cert record): no report. -/
 def leanRejects : List String := ["PropEvap", "SortU", "SortURec", "SortUOpt"]

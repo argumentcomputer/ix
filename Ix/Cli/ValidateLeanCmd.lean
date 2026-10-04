@@ -12,7 +12,7 @@
     3. Kernel anon roundtrip  — every constant through `Ix.Tc` ingress/egress
     4. Kernel meta roundtrip  — named entries against the Lean source, with
                                 collapsed blocks routed through anonymous
-                                mode (BB-F7) and BELOW-ORDER named
+                                mode (BB-F7)
     5. Decompile              — the full decompiler (inline records and
                                 images included) against the source
     6. Oracle leg             — unchanged blocks: each Ix auxiliary equals
@@ -482,11 +482,8 @@ def showNames (ns : Array Ix.Name) (k : Nat := 8) : String :=
     no Lean counterpart). Blocks the compiler collapsed are routed: the
     meta-mode ingress loses a collapsed member (BB-F7, pre-existing), so
     they are roundtripped in anonymous mode (gated) and their meta-mode
-    verdicts are reported, not gated. An ingress failure is charged to its
-    block; one of an `IndPredBelow` block rejected by the canonicity gate is
-    reported as BELOW-ORDER (the kernels' single-pass gate rejecting a weak
-    `Greater`, A6f; user blocks of that shape show as "other"), and
-    fails the phase. -/
+    verdicts are reported, not gated. Every other ingress failure is
+    charged to its block and fails the phase. -/
 def phaseMeta (leanEnv : Lean.Environment) (parts : Ixon.LazyEnvParts) :
     IO (PhaseResult × Array String) := do
   -- Collapsed blocks: a `Muts` member several names project to, and a class
@@ -530,15 +527,6 @@ def phaseMeta (leanEnv : Lean.Environment) (parts : Ixon.LazyEnvParts) :
         | none => anonOk := anonOk + 1
       | .ok none => anonFail := anonFail.push s!"{b}: no anonymous work item"
       | .error e => anonFail := anonFail.push s!"{b}: {e}"
-    -- BELOW-ORDER: an IndPredBelow block (a `below` member) rejected by
-    -- the canonicity gate of the meta ingress
-    let isBelow (n : Ix.Name) : Bool := (Ix.Compile.Pass.comps n).any fun c => match c with
-      | .s x => x == "below" || x.startsWith "below_"
-      | .n _ => false
-    let canonGate (m : String) : Bool :=
-      (m.splitOn "canonical").length > 1 || (m.splitOn "compares Greater").length > 1
-    let belowOrder := report.errors.filter fun (n, m) => isBelow n && canonGate m
-    let other := report.errors.filter fun (n, m) => !(isBelow n && canonGate m)
     let counts := s!"checked {report.checked}, notFound {report.notFound}, \
 display {report.display}, skippedAux {report.skippedAux}, \
 skippedSurgery {report.skippedSurgery}"
@@ -550,16 +538,11 @@ meta mode on them (reported, not gated): {report.routedChecked} equal, \
     for (n, m) in report.routedErrors.toList.take 4 do
       lines := lines.push s!"BB-F7 (meta, not gated) {n.pretty}: {m.take 160}"
     for f in anonFail.toList.take 4 do lines := lines.push s!"✗ anonymous leg {f}"
-    if !belowOrder.isEmpty then
-      lines := lines.push s!"BELOW-ORDER: {belowOrder.size} row(s) of IndPredBelow block(s) \
-rejected by the canonicity gate: {showNames (belowOrder.map (·.1))}"
-      if let some (_, m) := belowOrder[0]? then lines := lines.push s!"  e.g. {m.take 200}"
-    for (n, m) in other.toList.take 6 do lines := lines.push s!"✗ {n.pretty}: {m.take 200}"
-    let unattributed := report.errorCount - report.errors.size
+    for (n, m) in report.errors.toList.take 6 do
+      lines := lines.push s!"✗ {n.pretty}: {m.take 200}"
     if report.errorCount == 0 && anonFail.isEmpty then
       return (.passed s!"{counts}; {report.routedBlocks.size} collapsed block(s) via anonymous mode", lines)
-    let ids := (if belowOrder.isEmpty then [] else [s!"BELOW-ORDER {belowOrder.size}"])
-      ++ (if other.isEmpty && unattributed == 0 then [] else [s!"other {other.size + unattributed}"])
+    let ids := (if report.errorCount == 0 then [] else [s!"meta {report.errorCount}"])
       ++ (if anonFail.isEmpty then [] else [s!"anonymous leg {anonFail.size}"])
     return (.failed s!"{report.errorCount} comparison error(s) ({", ".intercalate ids}); {counts}", lines)
 
