@@ -1441,6 +1441,9 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let condensed ← match Ix.CondenseM.run groundedOutRefs with
     | .ok c => pure c
     | .error e => return .error e
+  -- O11a's scheduling edges `_sizeOf_N → T._sizeOf_inst` (block
+  -- dependencies only; no cycle, no component moves: `O11a.addSizeOfEdges`)
+  let condensed := Ix.Compile.Pass.Opt.addSizeOfEdges codeConsts.get? groundedOutRefs condensed
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
   -- 5. Aux-aware parallel compile against the HYBRID environment: code
   --    kinds are the materialized (shared) map; proof bodies

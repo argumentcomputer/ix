@@ -613,6 +613,12 @@ def passTwins : List (String × String × String) := [
   ("O4BRecOn", "PassO4.Src.three", "PassO4.Can.three"),
   ("O4BRecOn", "PassO4.Src.SB.depth", "PassO4.Can.SB.depth"),
   ("O4BRecOn", "PassO4.Src.depth_two", "PassO4.Can.depth_two")]
+  -- O11a (A6f): Lean's mutual `_sizeOf_N` of the split Linear block, in the
+  -- instance form, is the separately declared components' `_sizeOf`, so the
+  -- library twins' instances (`SizeOf.mk X X._sizeOf_k`) have one address
+  ++ o11aMembers.map fun m =>
+    ("twins", s!"{`Tests.Ix.Compile.Oracle.Lib.Orig ++ m ++ `_sizeOf_inst}",
+     s!"{`Tests.Ix.Compile.Oracle.Lib.Twin ++ m ++ `_sizeOf_inst}")
 
 /-- Pass firing, read off the switch-on output: the constant references (or
 does not reference) the named constant. `(unit, constant, referenced name,
