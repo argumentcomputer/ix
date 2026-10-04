@@ -146,6 +146,10 @@ jobs:
           - name: Lake ignored tests (compiler scheduling)
             kind: lake
             test_args: --ignored compile-schedule-identity compile-claim-conflict
+          - name: Lake ignored tests (compiler closure and corpus)
+            kind: lake
+            test_args: --ignored compiler-selected-closure-e2e
+            compiler_corpus: true
           - name: Lake ignored tests (compile)
             kind: lake
             test_args: --ignored compile
@@ -224,6 +228,13 @@ jobs:
       - name: Run ignored Lake test partition
         if: ${{ matrix.kind == 'lake' }}
         run: lake test --wfail -- ${{ matrix.test_args }}
+
+      - name: Run compiler corpus and checker-support controls
+        if: matrix.compiler_corpus
+        run: |
+          lake build --wfail aux-shape-sweep checker-support-regression kernel-check-ixe
+          lake exe aux-shape-sweep self-check
+          lake exe checker-support-regression
 
       - name: Run ZK voting prover
         if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}

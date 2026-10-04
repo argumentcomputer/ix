@@ -6,6 +6,12 @@ Lean toolchain and built `ix` and `kernel-check-ixe` executables. There is no Py
 runtime dependency. Generated sources and results belong in a fresh output
 directory; existing manifests are never used as an implicit successful resume.
 
+The merge-test `compiler closure and corpus` partition runs the selected/whole
+closure end-to-end suite, the corpus driver's self-checks, and the exact
+checker-support regression in both rewrite modes. It does not run a broad shape
+sweep. The main test job also runs the strict report, index-safety, provenance,
+and selected-closure unit controls.
+
 ## Coverage
 
 The catalog contains 1,395 base shapes:

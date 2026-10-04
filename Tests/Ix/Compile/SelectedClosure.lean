@@ -30,14 +30,16 @@ def suite : List TestSeq := [
     for seeds in roots.map (fun n => [n]) ++ [roots, roots.reverse] do
       let closed := Ix.EnvScope.collectSelectedDeps env seeds
       let ns := names closed
-      let ordinary := Lean.collectDependenciesMany seeds.toArray env.constants (withCompilerSupport := true)
+      let ordinary := Lean.collectDependenciesMany seeds.toArray env.constants
+        (withCompilerSupport := true) (withCheckerSupport := true)
       unless sameNames closed ordinary do
         errors := errors.push s!"{seeds}: ordinary and scoped selected collectors disagree"
       unless sameNames ordinary (Lean.collectDependenciesMany (ordinary.map (·.1)).toArray
-          env.constants (withCompilerSupport := true)) do
+          env.constants (withCompilerSupport := true) (withCheckerSupport := true)) do
         errors := errors.push s!"{seeds}: ordinary selected closure is not a fixed point"
       if let [seed] := seeds then
-        unless sameNames closed (Lean.collectDependencies seed env.constants (withCompilerSupport := true)) do
+        unless sameNames closed (Lean.collectDependencies seed env.constants
+            (withCompilerSupport := true) (withCheckerSupport := true)) do
           errors := errors.push s!"{seed}: ordinary singleton collector disagrees"
       for n in required do
         unless ns.contains n do errors := errors.push s!"{seeds}: missing support {n}"

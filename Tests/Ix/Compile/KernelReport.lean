@@ -88,7 +88,7 @@ def checkedLeanTargets (content : String) : Except String Nat := do
       (elapsed.toNat?, passed.toNat?, failed.toNat?, targets.toNat?)
     | throw "nonnumeric check-lean work summary"
   if total == 0 then throw "check-lean checked zero targets"
-  if p > total || f > total then throw "inconsistent check-lean work summary"
+  if p + f != total then throw "inconsistent check-lean work summary"
   return total
 
 end Tests.Ix.Compile.KernelReport

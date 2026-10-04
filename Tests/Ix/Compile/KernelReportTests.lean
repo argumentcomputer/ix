@@ -66,6 +66,11 @@ def suite : List TestSeq := [
     (failsWith (checkedLeanTargets "##check-lean## 0 0 0 0\n") "checked zero targets")
   ++ test "successful work has an explicit nonzero target count"
     ((checkedLeanTargets "##check-lean## 10 7 0 7\n").toOption == some 7)
+  ++ test "reported work accounts for every checked target exactly once"
+    (failsWith (checkedLeanTargets "##check-lean## 10 1 0 2\n") "inconsistent"
+      && failsWith (checkedLeanTargets "##check-lean## 10 2 1 2\n") "inconsistent")
+  ++ test "mixed passing and failing targets retain complete coverage"
+    ((checkedLeanTargets "##check-lean## 10 2 1 3\n").toOption == some 3)
   ++ test "partial unmatched selections are preserved as failures"
     (leanUnmatched "[check-lean] warning: --consts name matched nothing: Missing\n##check-lean## 10 1 0 1\n"
       == #["Missing"])
