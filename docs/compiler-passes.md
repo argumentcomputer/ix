@@ -527,14 +527,19 @@ index) and only later in a strong position, the cross references compare weakly 
 final classes whichever member comes first, while the refinement ordered the pair by the strong
 difference it met in the round where both were one class. The kernels' single-pass canonicity gate
 (`validateCanonicalBlockSinglePass` in `Ix.Tc`, `validate_canonical_block_single_pass` in
-`crates/kernel`) checks the declarative property: it accepts a strong `Less`, falls back to the full
-refinement on a weak `Less`, and rejects every `Greater`. So it rejects such blocks in every stored
-order, against this section's definition. Reproducer `Tests/Ix/Compile/ValidateLeanSwap.lean`
+`crates/kernel`) formerly accepted a strong `Less`, fell back to the full refinement on a weak
+`Less`, and rejected every `Greater`. It therefore rejected such blocks in every stored order,
+against this section's definition. Reproducer `Tests/Ix/Compile/ValidateLeanSwap.lean`
 (`SA | mk : SB → Nat → SA`, `SB | mk : SA → Bool → SB`): the Rust producer with the switch off emits
 it, and `ix check-rs` and `ix check-lean` reject it in meta mode ("adjacent pair at position 0
-compares Greater"), anonymous mode passes [measured, A6f]. The fix belongs to the kernels (a weak
-`Greater` falls back to the full refinement too, both kernels); not made in A6f, which may not touch
-`crates/kernel` [open].
+compares Greater"), anonymous mode passes [historical measurement, A6f]. The approved repair makes
+weak `Greater` fall back to full refinement in both executable kernels, just as weak `Less` does.
+The fallback accepts only singleton classes in precisely the stored order; strong `Greater` and
+uncollapsed equal members still reject. Rust and Lean unit tests cover these negative cases and the
+canonical cross-reference pair; `ValidateLeanSwap` and `PropCollapse` pass phase 4 in both switch
+states [measured, Phase A A5R]. `Ix/Kernel/**` has no corresponding fast path and is unchanged.
+The separate `Ix/Ixon/BlockOrder` adapter already uses full refinement for structural primary-block
+order and motive order for all-recursor blocks; nested auxiliary discovery order is unchanged.
 
 **Phase A decision: addresses at the first difference (today's comparator).** An external reference
 compares by address wherever two members first differ (`Ix/CompileM.lean:2098-2104`), interleaved
@@ -1395,8 +1400,9 @@ un-surgered. `decompile-diff` is 0 on every complete unit.
     SurgAlias, SurgIdx, C2Split, PropSplit, Coind, twins 496 of 511.
   - Every A0 collapse refusal compiles faithfully over the paired image [A3W §0].
 
-**The suite's exemption rule** (orchestrator, A3). A meta-mode kernel failure (BB-F7, BB-F1,
-BELOW-ORDER) is accepted only where the certified checker accepts the same constant, and it is named
+**The suite's exemption rule** (orchestrator, A3; BELOW-ORDER removed by A5R). A meta-mode kernel
+failure in a unit with a collapsed block (BB-F7, BB-F1) is accepted only where the certified checker
+accepts the same constant, and it is named
 by defect id in the output. REFUSED-SIBLING consequences are listed per unit (§7.3).
 
 **Rust stays on surgery until A4 lands.** `--rust-check` compares switch-off bytes. Rust's reader
@@ -2116,15 +2122,15 @@ came in wave 1:
 consequences, not entries of the twins fixture:
 - **BB-F7 / BB-F1.** These are meta-mode kernel ingress failures on collapsed blocks. The suite
   accepts them only where the certified checker accepts the same constant (orchestrator, A3).
-- **BELOW-ORDER** [measured, A3W §5.3; cause A6f].
+- **BELOW-ORDER** [historical, A3W §5.3; cause A6f; repaired A5R, no exemption].
   - Pass 1 orders Lean's own `IndPredBelow` block of a collapsed Prop pair `[P.below, Q.below]`.
     The first round decides it on a bound variable, but under the final classes the cross
     references compare, weakly, the other way, in either order.
-  - The kernels' single-pass canonicity gate rejects every `Greater`, weak or not; the certified
-    checker accepts the block.
+  - The old executable single-pass gate rejected every `Greater`, weak or not; the certified
+    checker accepted the block. Both executable kernels now defer weak `Greater` to full refinement.
   - Cause: the kernels' gate, not Pass 1 (§2.3, "Consequence for the kernels"): user blocks of the
-    same shape are rejected with the switch off, from both compilers (`ValidateLeanSwap`). The fix
-    is in both kernels [open]; until then the class stays, with `ValidateLeanSwap` as its reproducer.
+    same shape were rejected with the switch off, from both compilers (`ValidateLeanSwap`). The
+    reproducer now passes in both switch states; the suite class and moved-below exemption are removed.
   - No library has such a `below` block.
 - **REFUSED-SIBLING** [measured, A3M]. A0 refuses some components in both modes: evaporation in
   C4Evap, F3, NestRoseSplit, NestMutExt and NestMutExtA. Under decision 3 a sibling auxiliary *is*
@@ -2199,7 +2205,8 @@ certifier is the validator.
 | PropCollapse | PASS | PASS | PASS | FAIL 492 (BELOW-ORDER) | PASS |
 | `Canonicity`, `Mutual` corpus files | PASS | PASS | PASS | FAIL (BB-F7, plus BELOW-ORDER on PropCollapseA/B) | PASS |
 
-So phases 3 and 5 pass everywhere, and phase 4 fails only on collapsed blocks and on BELOW-ORDER.
+These historical rows predate A5R: BELOW-ORDER is now repaired and has no suite exemption.
+The collapsed-block BB-F7 route remains separately documented.
 
 **What A3v must add to phase 4** [A3W §7.1]:
 - (i) compare a rewritten constant through its `_ix.inline` record, not skip it;
@@ -2285,8 +2292,8 @@ environment writer; no Rust work):
 - **Wave 2** (§0.2, §4.8, §6, §7.3, §9, §10):
   - the twins total (497) and Pass 3 with the switch on, on Mathlib, have not been re-measured on
     `564d03f0` [open];
-  - BELOW-ORDER is the kernels' single-pass canonicity gate rejecting a weak `Greater` (A6f); the fix
-    is in both kernels [open];
+  - BELOW-ORDER was the kernels' single-pass canonicity gate rejecting a weak `Greater` (A6f);
+    repaired in both executable kernels by A5R, with full-refinement and negative regression tests;
   - BB-F7/BB-F1, the meta-mode ingress of collapsed blocks, is with A3v [open];
   - REFUSED-SIBLING follows A0's evaporation refusal and lasts as long as that refusal does;
   - neither the clique transport nor the optimisation passes are wired into the compiler;
@@ -2300,4 +2307,3 @@ environment writer; no Rust work):
   - kernel evidence for A5F's 70 new entries;
   - the composition fallback on a lattice clique with a user proof;
   - recovery of the inductive-predicate route, without which IP stays `NOSPEC`.
-

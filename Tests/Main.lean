@@ -61,6 +61,7 @@ import Tests.Ix.SourceContract.SyntaxCheck
 import Tests.Ix.SourceContract.Driver
 import Tests.Ix.BenchMeasures
 import Tests.Ix.Tc.Unit
+import Tests.Ix.Tc.CanonicalCheck
 import Tests.Ix.Tc.Substrate
 import Tests.Ix.Tc.IxonFixtures
 import Tests.Ix.Tc.WhnfTests
@@ -142,7 +143,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
     ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
-    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests),
+    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests
+    ++ Tests.Tc.CanonicalCheck.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/

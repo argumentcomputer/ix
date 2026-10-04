@@ -5,11 +5,10 @@ strong difference (in the first refinement round both members are one class,
 so the cross references compare equal); under the final classes the cross
 references compare first, *weakly* and the other way round, in either stored
 order. The kernels' single-pass canonicity gate (`validateCanonicalBlockSinglePass`
-in `Ix.Tc`, `validate_canonical_block_single_pass` in `crates/kernel`) rejects a
-weak `Greater` instead of falling back to the full refinement it runs on a weak
-`Less`, so both kernels reject the block in meta mode (anonymous mode passes),
-with the switch off and on, from both compilers. `ix validate-lean --local` on
-this file: phase 4 fails (recorded as BELOW-ORDER). `PropCollapse`'s Lean
+in `Ix.Tc`, `validate_canonical_block_single_pass` in `crates/kernel`) formerly
+rejected a weak `Greater` outright. Both weak orders now fall back to full
+refinement, so both kernels must accept this file in meta mode, with the switch
+off and on. `ix validate-lean --local` must pass phase 4 in both states. `PropCollapse`'s Lean
 `IndPredBelow` block (`P.below`/`Q.below`, compiled under the switch) is the
 same shape: its members differ first in the cross reference `Q.below`/`P.below`
 and then in `motive_2`/`motive_1`. -/
