@@ -232,8 +232,8 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
   let raw ← match cur with
     | .bvar idx _ =>
       let name := Id.run do
-        if idx < binderNames.size then
-          return binderNames[binderNames.size - 1 - idx]!
+        if h : idx < binderNames.size then
+          return binderNames[binderNames.size - 1 - idx]'(by omega)
         return Name.mkAnon
       pure (Ix.Tc.KExpr.mkVar (UInt64.ofNat idx) name mdataLayers)
     | .sort lvl _ =>
@@ -855,7 +855,8 @@ partial def getLevel (scope : TcScopeSt) (ty : Expr) : KBridgeM Level := do
     | .error e =>
       throw (.unsupportedExpr
         s!"TcScope::get_level: tc.infer failed: {e}")
-  let inferred := inferred?.get!
+  let some inferred := inferred?
+    | throw (.unsupportedExpr "TcScope::get_level: tc.infer loop ended without a type")
 
   let ku ← match ← runTc (Ix.Tc.TcM.ensureSort inferred) with
     | .ok u => pure u
