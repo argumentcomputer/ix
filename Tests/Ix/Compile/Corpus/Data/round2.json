@@ -1,0 +1,1303 @@
+[
+   {
+      "axes" : [
+         [
+            "finding",
+            "F1"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Nat → Type where\n  | z : $A 0\n  | s : $C → $A 1\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : $C → $B 1\n\ninductive $C where\n  | n : $A 0 → $B 1 → $C\n  | e\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F1_idx",
+      "members" : [
+         "inductive $A : Nat → Type where\n  | z : $A 0\n  | s : $C → $A 1\n\n",
+         "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : $C → $B 1\n\n",
+         "inductive $C where\n  | n : $A 0 → $B 1 → $C\n  | e\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F1"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | z\n  | s : List $C → $A\n\ninductive $B where\n  | z\n  | s : List $C → $B\n\ninductive $C where\n  | n : $A → $B → $C\n  | e\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F1_nested",
+      "members" : [
+         "inductive $A where\n  | z\n  | s : List $C → $A\n\n",
+         "inductive $B where\n  | z\n  | s : List $C → $B\n\n",
+         "inductive $C where\n  | n : $A → $B → $C\n  | e\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F1"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | z\n  | s : $C → $A\n\ninductive $B where\n  | z\n  | s : $C → $B\n\ninductive $C where\n  | n : $A → $C\n  | e\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F1_onlyA",
+      "members" : [
+         "inductive $A where\n  | z\n  | s : $C → $A\n\n",
+         "inductive $B where\n  | z\n  | s : $C → $B\n\n",
+         "inductive $C where\n  | n : $A → $C\n  | e\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F1"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A (α : Type) where\n  | z : α → $A α\n  | s : $C α → $A α\n\ninductive $B (α : Type) where\n  | z : α → $B α\n  | s : $C α → $B α\n\ninductive $C (α : Type) where\n  | n : $A α → $B α → $C α\n  | e\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F1_param",
+      "members" : [
+         "inductive $A (α : Type) where\n  | z : α → $A α\n  | s : $C α → $A α\n\n",
+         "inductive $B (α : Type) where\n  | z : α → $B α\n  | s : $C α → $B α\n\n",
+         "inductive $C (α : Type) where\n  | n : $A α → $B α → $C α\n  | e\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F1"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | z\n  | s : $A → $C → $A\n\ninductive $B where\n  | z\n  | s : $B → $C → $B\n\ninductive $C where\n  | n : $A → $B → $C\n  | e\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F1_self",
+      "members" : [
+         "inductive $A where\n  | z\n  | s : $A → $C → $A\n\n",
+         "inductive $B where\n  | z\n  | s : $B → $C → $B\n\n",
+         "inductive $C where\n  | n : $A → $B → $C\n  | e\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F1"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\nstructure $A where\n  c : Option $C\n\nstructure $B where\n  c : Option $C\n\ninductive $C where\n  | n : $A → $B → $C\n  | e\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F1_struct",
+      "members" : [
+         "structure $A where\n  c : Option $C\n\n",
+         "structure $B where\n  c : Option $C\n\n",
+         "inductive $C where\n  | n : $A → $B → $C\n  | e\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F1"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | z\n  | s : $C → $A\n\ninductive $B where\n  | z\n  | s : $C → $B\n\ninductive $C where\n  | z\n  | n : $A → $B → $D → $C\n\ninductive $D where\n  | z\n  | n : $A → $B → $C → $D\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F1_two_pairs",
+      "members" : [
+         "inductive $A where\n  | z\n  | s : $C → $A\n\n",
+         "inductive $B where\n  | z\n  | s : $C → $B\n\n",
+         "inductive $C where\n  | z\n  | n : $A → $B → $D → $C\n\n",
+         "inductive $D where\n  | z\n  | n : $A → $B → $C → $D\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : Array $B → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_Array",
+      "members" : [
+         "inductive $A\n  | mk : Array $B → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | z\n  | mk : List $B → $A → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_Aself",
+      "members" : [
+         "inductive $A\n  | z\n  | mk : List $B → $A → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : List $B → $A\n\ninductive $B\n  | leaf\n  | s : $B → $B\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_Brec",
+      "members" : [
+         "inductive $A\n  | mk : List $B → $A\n\n",
+         "inductive $B\n  | leaf\n  | s : $B → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : List (List $B) → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_ListList",
+      "members" : [
+         "inductive $A\n  | mk : List (List $B) → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : Option $B → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_Option",
+      "members" : [
+         "inductive $A\n  | mk : Option $B → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : Nat × $B → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_ProdNat",
+      "members" : [
+         "inductive $A\n  | mk : Nat × $B → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A (α : Type)\n  | mk : List ($B α) → $A α\n\ninductive $B (α : Type)\n  | leaf : α → $B α\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_param",
+      "members" : [
+         "inductive $A (α : Type)\n  | mk : List ($B α) → $A α\n\n",
+         "inductive $B (α : Type)\n  | leaf : α → $B α\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Prop\n  | mk : PBox $B → $A\n\ninductive $B : Prop\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_prop",
+      "members" : [
+         "inductive $A : Prop\n  | mk : PBox $B → $A\n\n",
+         "inductive $B : Prop\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : List $B → $C → $A\n\ninductive $B\n  | leaf\n\ninductive $C\n  | e\n  | s : $C → $C\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_three",
+      "members" : [
+         "inductive $A\n  | mk : List $B → $C → $A\n\n",
+         "inductive $B\n  | leaf\n\n",
+         "inductive $C\n  | e\n  | s : $C → $C\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F2"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : List $B → Option $B → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F2_twoaux",
+      "members" : [
+         "inductive $A\n  | mk : List $B → Option $B → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F3"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | z\n  | mk : Rose $B → $A → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F3_rose_A_rec",
+      "members" : [
+         "inductive $A\n  | z\n  | mk : Rose $B → $A → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F3"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : Rose $B → $A\n  | e\n\ninductive $B\n  | leaf\n  | mk : Rose $A → $B\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F3_rose_both",
+      "members" : [
+         "inductive $A\n  | mk : Rose $B → $A\n  | e\n\n",
+         "inductive $B\n  | leaf\n  | mk : Rose $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F3"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A\n  | mk : Option (Rose $B) → $A\n\ninductive $B\n  | leaf\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F3_rose_option",
+      "members" : [
+         "inductive $A\n  | mk : Option (Rose $B) → $A\n\n",
+         "inductive $B\n  | leaf\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F3"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A (α : Type)\n  | mk : Rose ($B α) → $A α\n\ninductive $B (α : Type)\n  | leaf : α → $B α\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F3_rose_param",
+      "members" : [
+         "inductive $A (α : Type)\n  | mk : Rose ($B α) → $A α\n\n",
+         "inductive $B (α : Type)\n  | leaf : α → $B α\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\nnoncomputable def u := @$A.below\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_below",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.below\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\nnoncomputable def u := @$A.brecOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_brecOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.brecOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\nnoncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) a\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_brecOn_partial",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) a\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\nnoncomputable def u := @$A.casesOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_casesOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.casesOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\ndef u : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_match",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "def u : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\nnoncomputable def u := @$A.rec\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_rec",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.rec\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\nnoncomputable def u := @$A.recOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_recOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.recOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\nnoncomputable def u := @$A.rec (fun _ => Nat)\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_rec_partial",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.rec (fun _ => Nat)\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Array $B → $A\ninductive $B where\n  | leaf\n  | node : Array $A → $B\nend\ndef $A.d : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Array_srec",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Array $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Array $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "def $A.d : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\nnoncomputable def u := @$A.below\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_below",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.below\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\nnoncomputable def u := @$A.brecOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_brecOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.brecOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\nnoncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) a\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_brecOn_partial",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) a\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\nnoncomputable def u := @$A.casesOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_casesOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.casesOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\ndef u : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_match",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "def u : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\nnoncomputable def u := @$A.rec\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_rec",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.rec\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\nnoncomputable def u := @$A.recOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_recOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.recOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\nnoncomputable def u := @$A.rec (fun _ => Nat)\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_rec_partial",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.rec (fun _ => Nat)\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | leaf\n  | node : List $A → $B\nend\ndef $A.d : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_List_srec",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "def $A.d : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\nnoncomputable def u := @$A.below\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_below",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.below\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\nnoncomputable def u := @$A.brecOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_brecOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.brecOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\nnoncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) a\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_brecOn_partial",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) a\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\nnoncomputable def u := @$A.casesOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_casesOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.casesOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\ndef u : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_match",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "def u : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\nnoncomputable def u := @$A.rec\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_rec",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.rec\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\nnoncomputable def u := @$A.recOn\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_recOn",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.recOn\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\nnoncomputable def u := @$A.rec (fun _ => Nat)\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_rec_partial",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.rec (fun _ => Nat)\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : Option $B → $A\ninductive $B where\n  | leaf\n  | node : Option $A → $B\nend\ndef $A.d : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_Option_srec",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : Option $B → $A\n",
+         "inductive $B where\n  | leaf\n  | node : Option $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "def $A.d : $A → Nat\n  | .leaf => 0\n  | .node _ => 1\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A where\n  | leaf\n  | node : List $B → $A\ninductive $B where\n  | node : List $A → $B\nend\nnoncomputable def u := @$A.rec\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_nonalpha_rec",
+      "members" : [
+         "inductive $A where\n  | leaf\n  | node : List $B → $A\n",
+         "inductive $B where\n  | node : List $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := @$A.rec\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Prop where\n  | leaf\n  | node : PBox $B → $A\ninductive $B : Prop where\n  | leaf\n  | node : PBox $A → $B\nend\ntheorem u : $A → True := @$A.rec (fun _ => True) (fun _ => True) (fun _ => True) (fun _ => True) trivial (fun _ _ => trivial) trivial (fun _ _ => trivial) (fun _ _ => trivial) (fun _ _ => trivial)\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_prop_alpha",
+      "members" : [
+         "inductive $A : Prop where\n  | leaf\n  | node : PBox $B → $A\n",
+         "inductive $B : Prop where\n  | leaf\n  | node : PBox $A → $B\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "theorem u : $A → True := @$A.rec (fun _ => True) (fun _ => True) (fun _ => True) (fun _ => True) trivial (fun _ _ => trivial) trivial (fun _ _ => trivial) (fun _ _ => trivial) (fun _ _ => trivial)\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F4"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $A where\n  | leaf\n  | node : List $A → $A\nnoncomputable def u := @$A.rec\ndef $A.size : $A → Nat\n  | .leaf => 1\n  | .node as => sizeL as + 1\nwhere sizeL : List $A → Nat\n  | [] => 0\n  | a :: as => a.size + sizeL as\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F4_single_rec",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : List ((n : Nat) × List $T) → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_list_sig",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive W (f : Nat → Type) where\n  | mk : (n : Nat) → f n → W f\ninductive $T : Type where\n  | leaf : $T\n  | node : W (fun _ => List $T) → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_param_lam",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive W (f : Nat → Type) where\n  | mk : (n : Nat) → f n → W f\ninductive $T : Type where\n  | leaf : $T\n  | node : W (fun _ => $T) → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_param_lam_direct",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive $T : Nat → Prop where\n  | base : $T 0\n  | node : (∃ n, PBox ($T n)) → $T 1\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_prop_exists_nested",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : (_ : Nat) ×' List $T → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_psig_list",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : (b : Bool) × Array $T → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_sig_array",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : (n : Nat) × (Fin n → List $T) → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_sig_dep",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : (n : Nat) × Option $T → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_sig_option",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : (n : Nat) × List ($T) → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_sig_param",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : (n : Nat) × (List $T × Nat) → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_sig_prod",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : (n : Nat) × ((m : Nat) × List $T) → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_sig_sig",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F5"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\ninductive $T : Type where\n  | leaf : $T\n  | node : { l : List $T // True } → $T\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F5_subtype_list",
+      "members" : [],
+      "mutualDefs" : [],
+      "prelude" : "",
+      "suffix" : ""
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F6"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\nmutual\ndef $A.w : $A → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\ndef $B.w : {n : Nat} → $B n → Nat\n  | _, .z => 0\n  | _, .s a b => a.w + b.w\n  termination_by structural _ x => x\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F6_base",
+      "members" : [
+         "inductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\n",
+         "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "mutual\ndef $A.w : $A → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\ndef $B.w : {n : Nat} → $B n → Nat\n  | _, .z => 0\n  | _, .s a b => a.w + b.w\n  termination_by structural _ x => x\nend\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F6"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Nat → Type where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n\ninductive $B : Nat → Bool → Type where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\nend\nmutual\ndef $A.w : {n : Nat} → $A n → Nat\n  | _, .z => 0\n  | _, .mk b => b.w + 1\n  termination_by structural _ x => x\ndef $B.w : {n : Nat} → {b : Bool} → $B n b → Nat\n  | _, _, .z => 0\n  | _, _, .s a => a.w + 1\n  termination_by structural _ _ x => x\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F6_idx12",
+      "members" : [
+         "inductive $A : Nat → Type where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n\n",
+         "inductive $B : Nat → Bool → Type where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "mutual\ndef $A.w : {n : Nat} → $A n → Nat\n  | _, .z => 0\n  | _, .mk b => b.w + 1\n  termination_by structural _ x => x\ndef $B.w : {n : Nat} → {b : Bool} → $B n b → Nat\n  | _, _, .z => 0\n  | _, _, .s a => a.w + 1\n  termination_by structural _ _ x => x\nend\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F6"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\ndef $A.isNil : $A → Bool\n  | .nil => true\n  | _ => false\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F6_match_only",
+      "members" : [
+         "inductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\n",
+         "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "def $A.isNil : $A → Bool\n  | .nil => true\n  | _ => false\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F6"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\nnoncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ _ => Nat) a (fun _ _ => 0) (fun _ _ _ => 0)\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F6_nodefs",
+      "members" : [
+         "inductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\n",
+         "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "noncomputable def u := fun (a : $A) => $A.brecOn (motive_1 := fun _ => Nat) (motive_2 := fun _ _ => Nat) a (fun _ _ => 0) (fun _ _ _ => 0)\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F6"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A (α : Type) : Type where\n  | nil\n  | mk : {n : Nat} → $B α n → $A α\n\ninductive $B (α : Type) : Nat → Type where\n  | z : $B α 0\n  | s : {n : Nat} → α → $A α → $B α n → $B α (n + 1)\nend\nmutual\ndef $A.w {α : Type} : $A α → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\ndef $B.w {α : Type} : {n : Nat} → $B α n → Nat\n  | _, .z => 0\n  | _, .s _ a b => a.w + b.w\n  termination_by structural _ x => x\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F6_param",
+      "members" : [
+         "inductive $A (α : Type) : Type where\n  | nil\n  | mk : {n : Nat} → $B α n → $A α\n\n",
+         "inductive $B (α : Type) : Nat → Type where\n  | z : $B α 0\n  | s : {n : Nat} → α → $A α → $B α n → $B α (n + 1)\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "mutual\ndef $A.w {α : Type} : $A α → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\ndef $B.w {α : Type} : {n : Nat} → $B α n → Nat\n  | _, .z => 0\n  | _, .s _ a b => a.w + b.w\n  termination_by structural _ x => x\nend\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F6"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Prop where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Prop where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\nmutual\ntheorem $A.w : $A → True\n  | .nil => trivial\n  | .mk b => b.w\n  termination_by structural x => x\ntheorem $B.w : {n : Nat} → $B n → True\n  | _, .z => trivial\n  | _, .s a b => let _ := a.w; b.w\n  termination_by structural _ x => x\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F6_prop",
+      "members" : [
+         "inductive $A : Prop where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\n",
+         "inductive $B : Nat → Prop where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "mutual\ntheorem $A.w : $A → True\n  | .nil => trivial\n  | .mk b => b.w\n  termination_by structural x => x\ntheorem $B.w : {n : Nat} → $B n → True\n  | _, .z => trivial\n  | _, .s a b => let _ := a.w; b.w\n  termination_by structural _ x => x\nend\n"
+   },
+   {
+      "axes" : [
+         [
+            "finding",
+            "F6"
+         ]
+      ],
+      "decl" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n\ninductive $C : Nat → Nat → Type where\n  | z : $C 0 0\n  | s : {n m : Nat} → $A → $C n m\nend\nmutual\ndef $A.w : $A → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\ndef $B.w : {n : Nat} → $B n → Nat\n  | _, .z => 0\n  | _, .s a b => a.w + b.w\n  termination_by structural _ x => x\nend\n",
+      "extras" : [],
+      "family" : "round2",
+      "id" : "F6_three",
+      "members" : [
+         "inductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\n",
+         "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n\n",
+         "inductive $C : Nat → Nat → Type where\n  | z : $C 0 0\n  | s : {n m : Nat} → $A → $C n m\n"
+      ],
+      "mutualDefs" : [],
+      "prelude" : "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\n",
+      "suffix" : "mutual\ndef $A.w : $A → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\ndef $B.w : {n : Nat} → $B n → Nat\n  | _, .z => 0\n  | _, .s a b => a.w + b.w\n  termination_by structural _ x => x\nend\n"
+   }
+]

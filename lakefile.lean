@@ -410,6 +410,14 @@ lean_exe «canon-census» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- Deterministic Phase A shape generation and explicit corpus oracle driver.
+`lake exe aux-shape-sweep --help` lists generation, filtering, assembly and run
+commands. Broad sweeps are explicit, never part of the default test runner. -/
+lean_exe «aux-shape-sweep» where
+  root := `Tests.Ix.Compile.Corpus.Main
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /-- The Lean names whose address differs between two compiled environments,
 grouped by block with a one-word cause (packaging, nested order, cascade,
 content); `--originals` lists the regenerated auxiliaries whose

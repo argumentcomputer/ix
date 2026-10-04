@@ -1,0 +1,5998 @@
+[
+  {
+    "id": "M2_T_cyc",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | nil\n  | mk : $B → $A\n\ninductive $B : Type where\n  | mk : $A → $B → $B\n  | leaf\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r1 := @$A.rec\nnoncomputable def r2 := @$B.rec\nnoncomputable def c1 := @$A.casesOn\nnoncomputable def b1 := @$A.brecOn\nnoncomputable def b2 := @$B.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | nil\n  | mk : $B → $A\n",
+      "inductive $B : Type where\n  | mk : $A → $B → $B\n  | leaf\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_idx",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "0/1"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n",
+      "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_idx12",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "1/2"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Type where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n\ninductive $B : Nat → Bool → Type where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Type where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n",
+      "inductive $B : Nat → Bool → Type where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_par",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "params",
+        "α"
+      ]
+    ],
+    "decl": "mutual\ninductive $A (α : Type) : Type where\n  | leaf : α → $A α\n  | mk : $B α → $A α\n\ninductive $B (α : Type) : Type where\n  | nil : $B α\n  | cons : $A α → $B α → $B α\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A (α : Type) : Type where\n  | leaf : α → $A α\n  | mk : $B α → $A α\n",
+      "inductive $B (α : Type) : Type where\n  | nil : $B α\n  | cons : $A α → $B α → $B α\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_alpha",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "alpha"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | z\n  | s : $B → $A\n\ninductive $B : Type where\n  | z\n  | s : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | z\n  | s : $B → $A\n",
+      "inductive $B : Type where\n  | z\n  | s : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_alphaidx",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "alpha"
+      ],
+      [
+        "idx",
+        "1/1"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Type where\n  | z : $A 0\n  | s : {n : Nat} → $B n → $A (n + 1)\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Type where\n  | z : $A 0\n  | s : {n : Nat} → $B n → $A (n + 1)\n",
+      "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_self",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "self+cross"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | nil\n  | mk : $A → $B → $A\n\ninductive $B : Type where\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | nil\n  | mk : $A → $B → $A\n",
+      "inductive $B : Type where\n  | mk : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_T_ring",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "ring"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | a0\n  | a : $B → $A\n\ninductive $B : Type where\n  | b : $C → $B\n\ninductive $C : Type where\n  | c : $A → $C\n  | c2 : $C → $B → $C\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | a0\n  | a : $B → $A\n",
+      "inductive $B : Type where\n  | b : $C → $B\n",
+      "inductive $C : Type where\n  | c : $A → $C\n  | c2 : $C → $B → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_T_alpha3",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "alpha3"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | z\n  | s : $B → $A\n\ninductive $B : Type where\n  | z\n  | s : $C → $B\n\ninductive $C : Type where\n  | z\n  | s : $A → $C\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | z\n  | s : $B → $A\n",
+      "inductive $B : Type where\n  | z\n  | s : $C → $B\n",
+      "inductive $C : Type where\n  | z\n  | s : $A → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_T_alpha2p1",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "alpha2+1"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | z\n  | s : $C → $A\n\ninductive $B : Type where\n  | z\n  | s : $C → $B\n\ninductive $C : Type where\n  | n : $A → $B → $C\n  | e\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | z\n  | s : $C → $A\n",
+      "inductive $B : Type where\n  | z\n  | s : $C → $B\n",
+      "inductive $C : Type where\n  | n : $A → $B → $C\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_T_over",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "overmerge"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | nil\n  | mk : $B → $C → $A\n\ninductive $B : Type where\n  | mk : $A → $B\n  | leaf\n\ninductive $C : Type where\n  | c0\n  | c : $C → $C\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | nil\n  | mk : $B → $C → $A\n",
+      "inductive $B : Type where\n  | mk : $A → $B\n  | leaf\n",
+      "inductive $C : Type where\n  | c0\n  | c : $C → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_refl",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "rec",
+        "refl"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | nil\n  | lim : (Nat → $B) → $A\n\ninductive $B : Type where\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | nil\n  | lim : (Nat → $B) → $A\n",
+      "inductive $B : Type where\n  | mk : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M4_T_mixed",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "4"
+      ],
+      [
+        "refs",
+        "mixed"
+      ],
+      [
+        "idx",
+        "mixed"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | z\n  | mk : $B 0 → $D → $A\n\ninductive $B : Nat → Type where\n  | mk : $C → $B 0\n\ninductive $C : Type where\n  | mk : $A → $C\n  | e\n\ninductive $D : Type where\n  | mk : $A → $D\n  | e\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | z\n  | mk : $B 0 → $D → $A\n",
+      "inductive $B : Nat → Type where\n  | mk : $C → $B 0\n",
+      "inductive $C : Type where\n  | mk : $A → $C\n  | e\n",
+      "inductive $D : Type where\n  | mk : $A → $D\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_cyc",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | nil\n  | mk : $B → $A\n\ninductive $B : Prop where\n  | mk : $A → $B → $B\n  | leaf\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r1 := @$A.rec\nnoncomputable def r2 := @$B.rec\nnoncomputable def c1 := @$A.casesOn\nnoncomputable def b1 := @$A.brecOn\nnoncomputable def b2 := @$B.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | nil\n  | mk : $B → $A\n",
+      "inductive $B : Prop where\n  | mk : $A → $B → $B\n  | leaf\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_idx",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "0/1"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Prop where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n",
+      "inductive $B : Nat → Prop where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_idx12",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "1/2"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Prop where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n\ninductive $B : Nat → Bool → Prop where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Prop where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n",
+      "inductive $B : Nat → Bool → Prop where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_par",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "params",
+        "α"
+      ]
+    ],
+    "decl": "mutual\ninductive $A (α : Type) : Prop where\n  | leaf : α → $A α\n  | mk : $B α → $A α\n\ninductive $B (α : Type) : Prop where\n  | nil : $B α\n  | cons : $A α → $B α → $B α\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A (α : Type) : Prop where\n  | leaf : α → $A α\n  | mk : $B α → $A α\n",
+      "inductive $B (α : Type) : Prop where\n  | nil : $B α\n  | cons : $A α → $B α → $B α\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_alpha",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "alpha"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | z\n  | s : $B → $A\n\ninductive $B : Prop where\n  | z\n  | s : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | z\n  | s : $B → $A\n",
+      "inductive $B : Prop where\n  | z\n  | s : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_alphaidx",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "alpha"
+      ],
+      [
+        "idx",
+        "1/1"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Prop where\n  | z : $A 0\n  | s : {n : Nat} → $B n → $A (n + 1)\n\ninductive $B : Nat → Prop where\n  | z : $B 0\n  | s : {n : Nat} → $A n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Prop where\n  | z : $A 0\n  | s : {n : Nat} → $B n → $A (n + 1)\n",
+      "inductive $B : Nat → Prop where\n  | z : $B 0\n  | s : {n : Nat} → $A n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_self",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "self+cross"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | nil\n  | mk : $A → $B → $A\n\ninductive $B : Prop where\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | nil\n  | mk : $A → $B → $A\n",
+      "inductive $B : Prop where\n  | mk : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_P_ring",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "ring"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | a0\n  | a : $B → $A\n\ninductive $B : Prop where\n  | b : $C → $B\n\ninductive $C : Prop where\n  | c : $A → $C\n  | c2 : $C → $B → $C\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | a0\n  | a : $B → $A\n",
+      "inductive $B : Prop where\n  | b : $C → $B\n",
+      "inductive $C : Prop where\n  | c : $A → $C\n  | c2 : $C → $B → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_P_alpha3",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "alpha3"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | z\n  | s : $B → $A\n\ninductive $B : Prop where\n  | z\n  | s : $C → $B\n\ninductive $C : Prop where\n  | z\n  | s : $A → $C\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | z\n  | s : $B → $A\n",
+      "inductive $B : Prop where\n  | z\n  | s : $C → $B\n",
+      "inductive $C : Prop where\n  | z\n  | s : $A → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_P_alpha2p1",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "alpha2+1"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | z\n  | s : $C → $A\n\ninductive $B : Prop where\n  | z\n  | s : $C → $B\n\ninductive $C : Prop where\n  | n : $A → $B → $C\n  | e\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | z\n  | s : $C → $A\n",
+      "inductive $B : Prop where\n  | z\n  | s : $C → $B\n",
+      "inductive $C : Prop where\n  | n : $A → $B → $C\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_P_over",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "overmerge"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | nil\n  | mk : $B → $C → $A\n\ninductive $B : Prop where\n  | mk : $A → $B\n  | leaf\n\ninductive $C : Prop where\n  | c0\n  | c : $C → $C\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | nil\n  | mk : $B → $C → $A\n",
+      "inductive $B : Prop where\n  | mk : $A → $B\n  | leaf\n",
+      "inductive $C : Prop where\n  | c0\n  | c : $C → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_refl",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "rec",
+        "refl"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | nil\n  | lim : (Nat → $B) → $A\n\ninductive $B : Prop where\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | nil\n  | lim : (Nat → $B) → $A\n",
+      "inductive $B : Prop where\n  | mk : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M4_P_mixed",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "4"
+      ],
+      [
+        "refs",
+        "mixed"
+      ],
+      [
+        "idx",
+        "mixed"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop where\n  | z\n  | mk : $B 0 → $D → $A\n\ninductive $B : Nat → Prop where\n  | mk : $C → $B 0\n\ninductive $C : Prop where\n  | mk : $A → $C\n  | e\n\ninductive $D : Prop where\n  | mk : $A → $D\n  | e\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop where\n  | z\n  | mk : $B 0 → $D → $A\n",
+      "inductive $B : Nat → Prop where\n  | mk : $C → $B 0\n",
+      "inductive $C : Prop where\n  | mk : $A → $C\n  | e\n",
+      "inductive $D : Prop where\n  | mk : $A → $D\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_cyc",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | nil\n  | mk : $B → $A\n\ninductive $B : Type u where\n  | mk : $A → $B → $B\n  | leaf\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r1 := @$A.rec\nnoncomputable def r2 := @$B.rec\nnoncomputable def c1 := @$A.casesOn\nnoncomputable def b1 := @$A.brecOn\nnoncomputable def b2 := @$B.below\n"
+      ]
+    ],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | nil\n  | mk : $B → $A\n",
+      "inductive $B : Type u where\n  | mk : $A → $B → $B\n  | leaf\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_idx",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "0/1"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Type u where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n",
+      "inductive $B : Nat → Type u where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_idx12",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "1/2"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Nat → Type u where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n\ninductive $B : Nat → Bool → Type u where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Nat → Type u where\n  | z : $A 0\n  | mk : {n : Nat} → {b : Bool} → $B n b → $A (n + 1)\n",
+      "inductive $B : Nat → Bool → Type u where\n  | z : $B 0 true\n  | s : {n : Nat} → $A n → $B n false\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_par",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "params",
+        "α"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A (α : Type) : Type u where\n  | leaf : α → $A α\n  | mk : $B α → $A α\n\ninductive $B (α : Type) : Type u where\n  | nil : $B α\n  | cons : $A α → $B α → $B α\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A (α : Type) : Type u where\n  | leaf : α → $A α\n  | mk : $B α → $A α\n",
+      "inductive $B (α : Type) : Type u where\n  | nil : $B α\n  | cons : $A α → $B α → $B α\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_alpha",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "alpha"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | z\n  | s : $B → $A\n\ninductive $B : Type u where\n  | z\n  | s : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | z\n  | s : $B → $A\n",
+      "inductive $B : Type u where\n  | z\n  | s : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_alphaidx",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "alpha"
+      ],
+      [
+        "idx",
+        "1/1"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Nat → Type u where\n  | z : $A 0\n  | s : {n : Nat} → $B n → $A (n + 1)\n\ninductive $B : Nat → Type u where\n  | z : $B 0\n  | s : {n : Nat} → $A n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Nat → Type u where\n  | z : $A 0\n  | s : {n : Nat} → $B n → $A (n + 1)\n",
+      "inductive $B : Nat → Type u where\n  | z : $B 0\n  | s : {n : Nat} → $A n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_self",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "self+cross"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | nil\n  | mk : $A → $B → $A\n\ninductive $B : Type u where\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | nil\n  | mk : $A → $B → $A\n",
+      "inductive $B : Type u where\n  | mk : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_U_ring",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "ring"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | a0\n  | a : $B → $A\n\ninductive $B : Type u where\n  | b : $C → $B\n\ninductive $C : Type u where\n  | c : $A → $C\n  | c2 : $C → $B → $C\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | a0\n  | a : $B → $A\n",
+      "inductive $B : Type u where\n  | b : $C → $B\n",
+      "inductive $C : Type u where\n  | c : $A → $C\n  | c2 : $C → $B → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_U_alpha3",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "alpha3"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | z\n  | s : $B → $A\n\ninductive $B : Type u where\n  | z\n  | s : $C → $B\n\ninductive $C : Type u where\n  | z\n  | s : $A → $C\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | z\n  | s : $B → $A\n",
+      "inductive $B : Type u where\n  | z\n  | s : $C → $B\n",
+      "inductive $C : Type u where\n  | z\n  | s : $A → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_U_alpha2p1",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "alpha2+1"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | z\n  | s : $C → $A\n\ninductive $B : Type u where\n  | z\n  | s : $C → $B\n\ninductive $C : Type u where\n  | n : $A → $B → $C\n  | e\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | z\n  | s : $C → $A\n",
+      "inductive $B : Type u where\n  | z\n  | s : $C → $B\n",
+      "inductive $C : Type u where\n  | n : $A → $B → $C\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M3_U_over",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "overmerge"
+      ],
+      [
+        "idx",
+        "none"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | nil\n  | mk : $B → $C → $A\n\ninductive $B : Type u where\n  | mk : $A → $B\n  | leaf\n\ninductive $C : Type u where\n  | c0\n  | c : $C → $C\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | nil\n  | mk : $B → $C → $A\n",
+      "inductive $B : Type u where\n  | mk : $A → $B\n  | leaf\n",
+      "inductive $C : Type u where\n  | c0\n  | c : $C → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_U_refl",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "rec",
+        "refl"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | nil\n  | lim : (Nat → $B) → $A\n\ninductive $B : Type u where\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | nil\n  | lim : (Nat → $B) → $A\n",
+      "inductive $B : Type u where\n  | mk : $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M4_U_mixed",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "U"
+      ],
+      [
+        "k",
+        "4"
+      ],
+      [
+        "refs",
+        "mixed"
+      ],
+      [
+        "idx",
+        "mixed"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A : Type u where\n  | z\n  | mk : $B 0 → $D → $A\n\ninductive $B : Nat → Type u where\n  | mk : $C → $B 0\n\ninductive $C : Type u where\n  | mk : $A → $C\n  | e\n\ninductive $D : Type u where\n  | mk : $A → $D\n  | e\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A : Type u where\n  | z\n  | mk : $B 0 → $D → $A\n",
+      "inductive $B : Nat → Type u where\n  | mk : $C → $B 0\n",
+      "inductive $C : Type u where\n  | mk : $A → $C\n  | e\n",
+      "inductive $D : Type u where\n  | mk : $A → $D\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_cyc_fun",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "fun",
+        "mutual-structural"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | nil\n  | mk : Nat → $B → $A\n\ninductive $B : Type where\n  | mk : $A → $B → $B\n  | leaf\nend\nmutual\ndef $A.size : $A → Nat\n  | .nil => 0\n  | .mk n b => n + b.size\n  termination_by structural a => a\n\ndef $B.size : $B → Nat\n  | .mk a b => a.size + b.size + 1\n  | .leaf => 1\n  termination_by structural b => b\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | nil\n  | mk : Nat → $B → $A\n",
+      "inductive $B : Type where\n  | mk : $A → $B → $B\n  | leaf\n"
+    ],
+    "mutualDefs": [
+      "def $A.size : $A → Nat\n  | .nil => 0\n  | .mk n b => n + b.size\n  termination_by structural a => a\n",
+      "def $B.size : $B → Nat\n  | .mk a b => a.size + b.size + 1\n  | .leaf => 1\n  termination_by structural b => b\n"
+    ],
+    "suffix": ""
+  },
+  {
+    "id": "M2_P_even_fun",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "P"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "1/1"
+      ],
+      [
+        "fun",
+        "mutual-structural-proof"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Prop where\n  | zero : $A 0\n  | succ : {n : Nat} → $B n → $A (n + 1)\n\ninductive $B : Nat → Prop where\n  | succ : {n : Nat} → $A n → $B (n + 1)\nend\nmutual\ntheorem $A.le : {n : Nat} → $A n → 0 ≤ n\n  | _, .zero => Nat.le_refl 0\n  | _, .succ h => Nat.zero_le _\n\ntheorem $A.two : {n : Nat} → $A n → True\n  | _, .zero => trivial\n  | _, .succ h => $B.two h\n  termination_by structural _ h => h\n\ntheorem $B.two : {n : Nat} → $B n → True\n  | _, .succ h => $A.two h\n  termination_by structural _ h => h\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Prop where\n  | zero : $A 0\n  | succ : {n : Nat} → $B n → $A (n + 1)\n",
+      "inductive $B : Nat → Prop where\n  | succ : {n : Nat} → $A n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [
+      "theorem $A.le : {n : Nat} → $A n → 0 ≤ n\n  | _, .zero => Nat.le_refl 0\n  | _, .succ h => Nat.zero_le _\n",
+      "theorem $A.two : {n : Nat} → $A n → True\n  | _, .zero => trivial\n  | _, .succ h => $B.two h\n  termination_by structural _ h => h\n",
+      "theorem $B.two : {n : Nat} → $B n → True\n  | _, .succ h => $A.two h\n  termination_by structural _ h => h\n"
+    ],
+    "suffix": ""
+  },
+  {
+    "id": "M3_T_ring_fun",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "3"
+      ],
+      [
+        "refs",
+        "ring"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "fun",
+        "mutual-structural"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | a0\n  | a : $B → $A\n\ninductive $B : Type where\n  | b : $C → $B\n\ninductive $C : Type where\n  | c : $A → $C\n  | c2 : $C → $B → $C\nend\nmutual\ndef $A.d : $A → Nat\n  | .a0 => 0\n  | .a b => b.d + 1\n  termination_by structural x => x\n\ndef $B.d : $B → Nat\n  | .b c => c.d + 1\n  termination_by structural x => x\n\ndef $C.d : $C → Nat\n  | .c a => a.d + 1\n  | .c2 c b => c.d + b.d\n  termination_by structural x => x\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | a0\n  | a : $B → $A\n",
+      "inductive $B : Type where\n  | b : $C → $B\n",
+      "inductive $C : Type where\n  | c : $A → $C\n  | c2 : $C → $B → $C\n"
+    ],
+    "mutualDefs": [
+      "def $A.d : $A → Nat\n  | .a0 => 0\n  | .a b => b.d + 1\n  termination_by structural x => x\n",
+      "def $B.d : $B → Nat\n  | .b c => c.d + 1\n  termination_by structural x => x\n",
+      "def $C.d : $C → Nat\n  | .c a => a.d + 1\n  | .c2 c b => c.d + b.d\n  termination_by structural x => x\n"
+    ],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_alpha_fun",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "alpha"
+      ],
+      [
+        "idx",
+        "none"
+      ],
+      [
+        "fun",
+        "mutual-structural"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | z\n  | s : $B → $A\n\ninductive $B : Type where\n  | z\n  | s : $A → $B\nend\nmutual\ndef $A.n : $A → Nat\n  | .z => 0\n  | .s b => b.n + 1\n  termination_by structural x => x\n\ndef $B.n : $B → Nat\n  | .z => 0\n  | .s a => a.n + 1\n  termination_by structural x => x\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | z\n  | s : $B → $A\n",
+      "inductive $B : Type where\n  | z\n  | s : $A → $B\n"
+    ],
+    "mutualDefs": [
+      "def $A.n : $A → Nat\n  | .z => 0\n  | .s b => b.n + 1\n  termination_by structural x => x\n",
+      "def $B.n : $B → Nat\n  | .z => 0\n  | .s a => a.n + 1\n  termination_by structural x => x\n"
+    ],
+    "suffix": ""
+  },
+  {
+    "id": "M2_T_idx_fun",
+    "family": "mutual",
+    "axes": [
+      [
+        "sort",
+        "T"
+      ],
+      [
+        "k",
+        "2"
+      ],
+      [
+        "refs",
+        "cyc"
+      ],
+      [
+        "idx",
+        "0/1"
+      ],
+      [
+        "fun",
+        "mutual-structural"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n\ninductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\nend\nmutual\ndef $A.w : $A → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\n\ndef $B.w : {n : Nat} → $B n → Nat\n  | _, .z => 0\n  | _, .s a b => a.w + b.w\n  termination_by structural _ x => x\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | nil\n  | mk : {n : Nat} → $B n → $A\n",
+      "inductive $B : Nat → Type where\n  | z : $B 0\n  | s : {n : Nat} → $A → $B n → $B (n + 1)\n"
+    ],
+    "mutualDefs": [
+      "def $A.w : $A → Nat\n  | .nil => 0\n  | .mk b => b.w + 1\n  termination_by structural x => x\n",
+      "def $B.w : {n : Nat} → $B n → Nat\n  | _, .z => 0\n  | _, .s a b => a.w + b.w\n  termination_by structural _ x => x\n"
+    ],
+    "suffix": ""
+  },
+  {
+    "id": "MD_nat_struct",
+    "family": "mutualdef",
+    "axes": [
+      [
+        "kind",
+        "structural"
+      ]
+    ],
+    "decl": "mutual\ndef $A : Nat → Bool\n  | 0 => true\n  | n + 1 => $B n\ndef $B : Nat → Bool\n  | 0 => false\n  | n + 1 => $A n\nend\ntheorem $C : $B 1 = true := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "MD_nat_wf",
+    "family": "mutualdef",
+    "axes": [
+      [
+        "kind",
+        "wf"
+      ]
+    ],
+    "decl": "mutual\ndef $A : Nat → Bool\n  | 0 => true\n  | n + 1 => $B n\ntermination_by n => n\ndef $B : Nat → Bool\n  | 0 => false\n  | n + 1 => $A n\ntermination_by n => n\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "MD_nat_partial",
+    "family": "mutualdef",
+    "axes": [
+      [
+        "kind",
+        "partial"
+      ]
+    ],
+    "decl": "mutual\npartial def $A : Nat → Bool\n  | 0 => true\n  | n + 1 => $B n\npartial def $B : Nat → Bool\n  | 0 => false\n  | n + 1 => $A n\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "MD_nat_3",
+    "family": "mutualdef",
+    "axes": [
+      [
+        "kind",
+        "structural3"
+      ]
+    ],
+    "decl": "mutual\ndef $A : Nat → Nat\n  | 0 => 0\n  | n + 1 => $B n\ndef $B : Nat → Nat\n  | 0 => 1\n  | n + 1 => $C n\ndef $C : Nat → Nat\n  | 0 => 2\n  | n + 1 => $A n + 1\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "MD_list_struct",
+    "family": "mutualdef",
+    "axes": [
+      [
+        "kind",
+        "structural-list"
+      ]
+    ],
+    "decl": "mutual\ndef $A : List Nat → Nat\n  | [] => 0\n  | x :: xs => x + $B xs\ndef $B : List Nat → Nat\n  | [] => 1\n  | _ :: xs => $A xs\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "MD_thm",
+    "family": "mutualdef",
+    "axes": [
+      [
+        "kind",
+        "mutual-theorems"
+      ]
+    ],
+    "decl": "mutual\ntheorem $A : ∀ n : Nat, n + 0 = n\n  | 0 => rfl\n  | n + 1 => by have := $B n; omega\ntheorem $B : ∀ n : Nat, 0 + n = n\n  | 0 => rfl\n  | n + 1 => by have := $A n; omega\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_list_opt",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "2"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | leaf\n  | node : List $B → $A\n\ninductive $B : Type where\n  | mk : Option $A → $B\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | leaf\n  | node : List $B → $A\n",
+      "inductive $B : Type where\n  | mk : Option $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_list_list",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "2"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | leaf\n  | node : List $B → $A\n\ninductive $B : Type where\n  | mk : List $A → $B\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | leaf\n  | node : List $B → $A\n",
+      "inductive $B : Type where\n  | mk : List $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_two_aux_shared",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "2"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | leaf\n  | node : List $A → List $B → $A\n\ninductive $B : Type where\n  | mk : List $A → $B\n  | e\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | leaf\n  | node : List $A → List $B → $A\n",
+      "inductive $B : Type where\n  | mk : List $A → $B\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_alpha",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "2"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | leaf\n  | node : List $B → $A\n\ninductive $B : Type where\n  | leaf\n  | node : List $A → $B\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | leaf\n  | node : List $B → $A\n",
+      "inductive $B : Type where\n  | leaf\n  | node : List $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_idx",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "2"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Type where\n  | leaf : $A 0\n  | node : List ($B 0) → $A 1\n\ninductive $B : Nat → Type where\n  | mk : {n : Nat} → $A n → $B n\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Type where\n  | leaf : $A 0\n  | node : List ($B 0) → $A 1\n",
+      "inductive $B : Nat → Type where\n  | mk : {n : Nat} → $A n → $B n\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_prod_arr",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "2"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | leaf\n  | node : Array ($A × $B) → $A\n\ninductive $B : Type where\n  | mk : Option $B → $A → $B\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | leaf\n  | node : Array ($A × $B) → $A\n",
+      "inductive $B : Type where\n  | mk : Option $B → $A → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_three",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "3"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type where\n  | leaf\n  | node : List $B → $A\n\ninductive $B : Type where\n  | mk : Option $C → $B\n\ninductive $C : Type where\n  | mk : $A × $A → $C\n  | e\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type where\n  | leaf\n  | node : List $B → $A\n",
+      "inductive $B : Type where\n  | mk : Option $C → $B\n",
+      "inductive $C : Type where\n  | mk : $A × $A → $C\n  | e\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NM_param",
+    "family": "nested-mutual",
+    "axes": [
+      [
+        "k",
+        "2"
+      ],
+      [
+        "nested",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A (α : Type) : Type where\n  | leaf : α → $A α\n  | node : List ($B α) → $A α\n\ninductive $B (α : Type) : Type where\n  | mk : Option ($A α) → $B α\nend\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$A.rec\nnoncomputable def b := @$A.brecOn\nnoncomputable def bl := @$B.below\nnoncomputable def r1 := @$A.rec_1\nnoncomputable def b1 := @$A.brecOn_1\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A (α : Type) : Type where\n  | leaf : α → $A α\n  | node : List ($B α) → $A α\n",
+      "inductive $B (α : Type) : Type where\n  | mk : Option ($A α) → $B α\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_allp_idx",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "allp_idx"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node {xs : List Nat} : AllP $T xs → $T xs.length\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_forall2",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "forall2"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Nat → Prop\n  | base : $T 0 0\n  | node {xs ys : List Nat} : Forall2 $T xs ys → $T xs.length ys.length\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_pbox_noidx",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "pbox_noidx"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Prop\n  | base : $T\n  | node : PBox $T → $T\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_popt_noidx",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "popt_noidx"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Prop\n  | base : $T\n  | node : POpt $T → $T\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_and",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "and"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node : $T 0 ∧ $T 1 → $T 2\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_or",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "or"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node : $T 0 ∨ $T 1 → $T 2\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_exists",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "exists"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node : (∃ n, $T n) → $T 1\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_iff_nested_twice",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "iff_nested_twice"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node : PBox ($T 0) → PBox ($T 1) → $T 2\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_same_twice",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "same_twice"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node : PBox ($T 0) → PBox ($T 0) → $T 2\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_two_level",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "two_level"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Prop\n  | base : $T\n  | node : PBox (POpt $T) → $T\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_param",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "param"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T (k : Nat) : Nat → Prop\n  | base : $T k 0\n  | node {xs : List Nat} : AllP ($T k) xs → $T k xs.length\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_refl",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "refl"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node : PBox ($T 0) → (∀ n, $T n) → $T 1\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_type_container",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "type_container"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Prop\n  | base : $T 0\n  | node {xs : List Nat} : (∀ x ∈ xs, $T x) → $T xs.length\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def b := @$T.brecOn\nnoncomputable def bl := @$T.below\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_mutual",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "mutual"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\nmutual\ninductive $A : Nat → Prop\n  | base : $A 0\n  | node {xs : List Nat} : AllP $B xs → $A xs.length\ninductive $B : Nat → Prop\n  | mk {n : Nat} : $A n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_mutual_alpha",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "mutual_alpha"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\nmutual\ninductive $A : Prop\n  | base : $A\n  | node : PBox $B → $A\ninductive $B : Prop\n  | base : $B\n  | node : PBox $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "NP_forall2_srec",
+    "family": "nested-prop",
+    "axes": [
+      [
+        "container",
+        "forall2"
+      ],
+      [
+        "fun",
+        "structural-proof"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Nat → Prop\n  | base : $T 0 0\n  | node {xs ys : List Nat} : Forall2 $T xs ys → $T xs.length ys.length\n",
+    "extras": [
+      [
+        "srec",
+        "theorem $T.le : {a b : Nat} → $T a b → True\n  | _, _, .base => trivial\n  | _, _, .node h => trivial\n"
+      ],
+      [
+        "srec2",
+        "mutual\ntheorem $T.triv : {a b : Nat} → $T a b → True\n  | _, _, .base => trivial\n  | _, _, .node h => trivF h\n  termination_by structural _ _ h => h\ntheorem trivF : {xs ys : List Nat} → Forall2 $T xs ys → True\n  | _, _, .nil => trivial\n  | _, _, .cons h t => ($T.triv h).elim (trivF t)\n  termination_by structural _ _ h => h\nend\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_plain",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "plain"
+      ]
+    ],
+    "decl": "structure $T where\n  x : Nat\n  y : Bool\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "STD_plain",
+    "family": "struct-derived",
+    "axes": [
+      [
+        "kind",
+        "plain"
+      ],
+      [
+        "deriving",
+        "BEq,Repr,DecidableEq,Hashable"
+      ]
+    ],
+    "decl": "structure $T where\n  x : Nat\n  y : Bool\nderiving BEq, Repr, Hashable\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_param",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "param"
+      ]
+    ],
+    "decl": "structure $T (α : Type) where\n  x : α\n  y : List α\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "STD_param",
+    "family": "struct-derived",
+    "axes": [
+      [
+        "kind",
+        "param"
+      ],
+      [
+        "deriving",
+        "BEq,Repr,DecidableEq,Hashable"
+      ]
+    ],
+    "decl": "structure $T (α : Type) where\n  x : α\n  y : List α\nderiving BEq, Repr, Hashable\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_univ2",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "univ2"
+      ]
+    ],
+    "decl": "universe u v\nstructure $T (α : Type u) (β : Type v) where\n  x : α\n  y : β\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_propfield",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "propfield"
+      ]
+    ],
+    "decl": "structure $T where\n  x : Nat\n  h : x > 0\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_depfield",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "depfield"
+      ]
+    ],
+    "decl": "structure $T where\n  n : Nat\n  v : Fin (n + 1)\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_prop",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "prop"
+      ]
+    ],
+    "decl": "structure $T : Prop where\n  a : True\n  b : 1 = 1\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_propdata",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "propdata"
+      ]
+    ],
+    "decl": "structure $T (α : Type) : Prop where\n  ne : Nonempty α\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_empty",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "empty"
+      ]
+    ],
+    "decl": "structure $T where\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_recursive",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "recursive"
+      ]
+    ],
+    "decl": "structure $T where\n  val : Nat\n  kids : List $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "STD_recursive",
+    "family": "struct-derived",
+    "axes": [
+      [
+        "kind",
+        "recursive"
+      ],
+      [
+        "deriving",
+        "BEq,Repr,DecidableEq,Hashable"
+      ]
+    ],
+    "decl": "structure $T where\n  val : Nat\n  kids : List $T\nderiving BEq, Repr, Hashable\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_recursive_opt",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "recursive_opt"
+      ]
+    ],
+    "decl": "structure $T where\n  val : Nat\n  next : Option $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_recursive_arr",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "recursive_arr"
+      ]
+    ],
+    "decl": "structure $T where\n  kids : Array $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_extends",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "extends"
+      ]
+    ],
+    "decl": "structure $A where\n  x : Nat\nstructure $T extends $A where\n  y : Nat\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "STD_extends",
+    "family": "struct-derived",
+    "axes": [
+      [
+        "kind",
+        "extends"
+      ],
+      [
+        "deriving",
+        "BEq,Repr,DecidableEq,Hashable"
+      ]
+    ],
+    "decl": "structure $A where\n  x : Nat\nstructure $T extends $A where\n  y : Nat\nderiving BEq, Repr, Hashable\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_extends2",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "extends2"
+      ]
+    ],
+    "decl": "structure $A where\n  x : Nat\nstructure $B where\n  y : Nat\nstructure $T extends $A, $B where\n  z : Nat\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_extends_diamond",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "extends_diamond"
+      ]
+    ],
+    "decl": "structure $A where\n  x : Nat\nstructure $B extends $A where\n  y : Nat\nstructure $C extends $A where\n  z : Nat\nstructure $T extends $B, $C where\n  w : Nat\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_class",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "class"
+      ]
+    ],
+    "decl": "class $T (α : Type) where\n  op : α → α → α\n  unit : α\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_class_ext",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "class_ext"
+      ]
+    ],
+    "decl": "class $A (α : Type) where\n  op : α → α → α\nclass $T (α : Type) extends $A α where\n  unit : α\n  law : ∀ a : α, op a unit = a\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_class_prop",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "class_prop"
+      ]
+    ],
+    "decl": "class $T (α : Type) : Prop where\n  ne : Nonempty α\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_class_outparam",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "class_outparam"
+      ]
+    ],
+    "decl": "class $T (α : Type) (β : outParam Type) where\n  f : α → β\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_sort_u",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "sort_u"
+      ]
+    ],
+    "decl": "universe u\nstructure $T (α : Sort u) : Sort (max 1 u) where\n  x : α\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ST_mutual_struct",
+    "family": "struct",
+    "axes": [
+      [
+        "kind",
+        "mutual_struct"
+      ]
+    ],
+    "decl": "mutual\nstructure $A where\n  b : Option $B\nstructure $B where\n  a : List $A\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_enum1",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "enum1"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ED_enum1",
+    "family": "enum-derived",
+    "axes": [
+      [
+        "kind",
+        "enum1"
+      ],
+      [
+        "deriving",
+        "DecidableEq,Repr,Ord,Hashable,Inhabited"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\nderiving DecidableEq, Repr, Ord, Hashable, Inhabited\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_enum2",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "enum2"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a | b\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ED_enum2",
+    "family": "enum-derived",
+    "axes": [
+      [
+        "kind",
+        "enum2"
+      ],
+      [
+        "deriving",
+        "DecidableEq,Repr,Ord,Hashable,Inhabited"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a | b\nderiving DecidableEq, Repr, Ord, Hashable, Inhabited\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_enum3",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "enum3"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a | b | c\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ED_enum3",
+    "family": "enum-derived",
+    "axes": [
+      [
+        "kind",
+        "enum3"
+      ],
+      [
+        "deriving",
+        "DecidableEq,Repr,Ord,Hashable,Inhabited"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a | b | c\nderiving DecidableEq, Repr, Ord, Hashable, Inhabited\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_enum12",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "enum12"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a | b | c | d | e | f | g | h | i | j | k | l\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ED_enum12",
+    "family": "enum-derived",
+    "axes": [
+      [
+        "kind",
+        "enum12"
+      ],
+      [
+        "deriving",
+        "DecidableEq,Repr,Ord,Hashable,Inhabited"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a | b | c | d | e | f | g | h | i | j | k | l\nderiving DecidableEq, Repr, Ord, Hashable, Inhabited\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_enum300",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "enum300"
+      ]
+    ],
+    "decl": "inductive $T where\n  | c0\n  | c1\n  | c2\n  | c3\n  | c4\n  | c5\n  | c6\n  | c7\n  | c8\n  | c9\n  | c10\n  | c11\n  | c12\n  | c13\n  | c14\n  | c15\n  | c16\n  | c17\n  | c18\n  | c19\n  | c20\n  | c21\n  | c22\n  | c23\n  | c24\n  | c25\n  | c26\n  | c27\n  | c28\n  | c29\n  | c30\n  | c31\n  | c32\n  | c33\n  | c34\n  | c35\n  | c36\n  | c37\n  | c38\n  | c39\n  | c40\n  | c41\n  | c42\n  | c43\n  | c44\n  | c45\n  | c46\n  | c47\n  | c48\n  | c49\n  | c50\n  | c51\n  | c52\n  | c53\n  | c54\n  | c55\n  | c56\n  | c57\n  | c58\n  | c59\n  | c60\n  | c61\n  | c62\n  | c63\n  | c64\n  | c65\n  | c66\n  | c67\n  | c68\n  | c69\n  | c70\n  | c71\n  | c72\n  | c73\n  | c74\n  | c75\n  | c76\n  | c77\n  | c78\n  | c79\n  | c80\n  | c81\n  | c82\n  | c83\n  | c84\n  | c85\n  | c86\n  | c87\n  | c88\n  | c89\n  | c90\n  | c91\n  | c92\n  | c93\n  | c94\n  | c95\n  | c96\n  | c97\n  | c98\n  | c99\n  | c100\n  | c101\n  | c102\n  | c103\n  | c104\n  | c105\n  | c106\n  | c107\n  | c108\n  | c109\n  | c110\n  | c111\n  | c112\n  | c113\n  | c114\n  | c115\n  | c116\n  | c117\n  | c118\n  | c119\n  | c120\n  | c121\n  | c122\n  | c123\n  | c124\n  | c125\n  | c126\n  | c127\n  | c128\n  | c129\n  | c130\n  | c131\n  | c132\n  | c133\n  | c134\n  | c135\n  | c136\n  | c137\n  | c138\n  | c139\n  | c140\n  | c141\n  | c142\n  | c143\n  | c144\n  | c145\n  | c146\n  | c147\n  | c148\n  | c149\n  | c150\n  | c151\n  | c152\n  | c153\n  | c154\n  | c155\n  | c156\n  | c157\n  | c158\n  | c159\n  | c160\n  | c161\n  | c162\n  | c163\n  | c164\n  | c165\n  | c166\n  | c167\n  | c168\n  | c169\n  | c170\n  | c171\n  | c172\n  | c173\n  | c174\n  | c175\n  | c176\n  | c177\n  | c178\n  | c179\n  | c180\n  | c181\n  | c182\n  | c183\n  | c184\n  | c185\n  | c186\n  | c187\n  | c188\n  | c189\n  | c190\n  | c191\n  | c192\n  | c193\n  | c194\n  | c195\n  | c196\n  | c197\n  | c198\n  | c199\n  | c200\n  | c201\n  | c202\n  | c203\n  | c204\n  | c205\n  | c206\n  | c207\n  | c208\n  | c209\n  | c210\n  | c211\n  | c212\n  | c213\n  | c214\n  | c215\n  | c216\n  | c217\n  | c218\n  | c219\n  | c220\n  | c221\n  | c222\n  | c223\n  | c224\n  | c225\n  | c226\n  | c227\n  | c228\n  | c229\n  | c230\n  | c231\n  | c232\n  | c233\n  | c234\n  | c235\n  | c236\n  | c237\n  | c238\n  | c239\n  | c240\n  | c241\n  | c242\n  | c243\n  | c244\n  | c245\n  | c246\n  | c247\n  | c248\n  | c249\n  | c250\n  | c251\n  | c252\n  | c253\n  | c254\n  | c255\n  | c256\n  | c257\n  | c258\n  | c259\n  | c260\n  | c261\n  | c262\n  | c263\n  | c264\n  | c265\n  | c266\n  | c267\n  | c268\n  | c269\n  | c270\n  | c271\n  | c272\n  | c273\n  | c274\n  | c275\n  | c276\n  | c277\n  | c278\n  | c279\n  | c280\n  | c281\n  | c282\n  | c283\n  | c284\n  | c285\n  | c286\n  | c287\n  | c288\n  | c289\n  | c290\n  | c291\n  | c292\n  | c293\n  | c294\n  | c295\n  | c296\n  | c297\n  | c298\n  | c299\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "ED_enum300",
+    "family": "enum-derived",
+    "axes": [
+      [
+        "kind",
+        "enum300"
+      ],
+      [
+        "deriving",
+        "DecidableEq,Repr,Ord,Hashable,Inhabited"
+      ]
+    ],
+    "decl": "inductive $T where\n  | c0\n  | c1\n  | c2\n  | c3\n  | c4\n  | c5\n  | c6\n  | c7\n  | c8\n  | c9\n  | c10\n  | c11\n  | c12\n  | c13\n  | c14\n  | c15\n  | c16\n  | c17\n  | c18\n  | c19\n  | c20\n  | c21\n  | c22\n  | c23\n  | c24\n  | c25\n  | c26\n  | c27\n  | c28\n  | c29\n  | c30\n  | c31\n  | c32\n  | c33\n  | c34\n  | c35\n  | c36\n  | c37\n  | c38\n  | c39\n  | c40\n  | c41\n  | c42\n  | c43\n  | c44\n  | c45\n  | c46\n  | c47\n  | c48\n  | c49\n  | c50\n  | c51\n  | c52\n  | c53\n  | c54\n  | c55\n  | c56\n  | c57\n  | c58\n  | c59\n  | c60\n  | c61\n  | c62\n  | c63\n  | c64\n  | c65\n  | c66\n  | c67\n  | c68\n  | c69\n  | c70\n  | c71\n  | c72\n  | c73\n  | c74\n  | c75\n  | c76\n  | c77\n  | c78\n  | c79\n  | c80\n  | c81\n  | c82\n  | c83\n  | c84\n  | c85\n  | c86\n  | c87\n  | c88\n  | c89\n  | c90\n  | c91\n  | c92\n  | c93\n  | c94\n  | c95\n  | c96\n  | c97\n  | c98\n  | c99\n  | c100\n  | c101\n  | c102\n  | c103\n  | c104\n  | c105\n  | c106\n  | c107\n  | c108\n  | c109\n  | c110\n  | c111\n  | c112\n  | c113\n  | c114\n  | c115\n  | c116\n  | c117\n  | c118\n  | c119\n  | c120\n  | c121\n  | c122\n  | c123\n  | c124\n  | c125\n  | c126\n  | c127\n  | c128\n  | c129\n  | c130\n  | c131\n  | c132\n  | c133\n  | c134\n  | c135\n  | c136\n  | c137\n  | c138\n  | c139\n  | c140\n  | c141\n  | c142\n  | c143\n  | c144\n  | c145\n  | c146\n  | c147\n  | c148\n  | c149\n  | c150\n  | c151\n  | c152\n  | c153\n  | c154\n  | c155\n  | c156\n  | c157\n  | c158\n  | c159\n  | c160\n  | c161\n  | c162\n  | c163\n  | c164\n  | c165\n  | c166\n  | c167\n  | c168\n  | c169\n  | c170\n  | c171\n  | c172\n  | c173\n  | c174\n  | c175\n  | c176\n  | c177\n  | c178\n  | c179\n  | c180\n  | c181\n  | c182\n  | c183\n  | c184\n  | c185\n  | c186\n  | c187\n  | c188\n  | c189\n  | c190\n  | c191\n  | c192\n  | c193\n  | c194\n  | c195\n  | c196\n  | c197\n  | c198\n  | c199\n  | c200\n  | c201\n  | c202\n  | c203\n  | c204\n  | c205\n  | c206\n  | c207\n  | c208\n  | c209\n  | c210\n  | c211\n  | c212\n  | c213\n  | c214\n  | c215\n  | c216\n  | c217\n  | c218\n  | c219\n  | c220\n  | c221\n  | c222\n  | c223\n  | c224\n  | c225\n  | c226\n  | c227\n  | c228\n  | c229\n  | c230\n  | c231\n  | c232\n  | c233\n  | c234\n  | c235\n  | c236\n  | c237\n  | c238\n  | c239\n  | c240\n  | c241\n  | c242\n  | c243\n  | c244\n  | c245\n  | c246\n  | c247\n  | c248\n  | c249\n  | c250\n  | c251\n  | c252\n  | c253\n  | c254\n  | c255\n  | c256\n  | c257\n  | c258\n  | c259\n  | c260\n  | c261\n  | c262\n  | c263\n  | c264\n  | c265\n  | c266\n  | c267\n  | c268\n  | c269\n  | c270\n  | c271\n  | c272\n  | c273\n  | c274\n  | c275\n  | c276\n  | c277\n  | c278\n  | c279\n  | c280\n  | c281\n  | c282\n  | c283\n  | c284\n  | c285\n  | c286\n  | c287\n  | c288\n  | c289\n  | c290\n  | c291\n  | c292\n  | c293\n  | c294\n  | c295\n  | c296\n  | c297\n  | c298\n  | c299\nderiving DecidableEq, Repr, Ord, Hashable, Inhabited\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_empty",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "empty"
+      ]
+    ],
+    "decl": "inductive $T : Type where\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_empty_prop",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "empty_prop"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_empty_sort",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "empty_sort"
+      ]
+    ],
+    "decl": "universe u\ninductive $T : Sort u where\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_unit_sort",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "unit_sort"
+      ]
+    ],
+    "decl": "universe u\ninductive $T : Sort u where\n  | mk\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_unit_prop",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "unit_prop"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | intro\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_eq_like",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "eq_like"
+      ]
+    ],
+    "decl": "universe u\ninductive $T {α : Sort u} (a : α) : α → Prop where\n  | refl : $T a a\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_eq_like_u",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "eq_like_u"
+      ]
+    ],
+    "decl": "universe u\ninductive $T {α : Sort u} (a : α) : α → Prop where\n  | refl : $T a a\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_and_like",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "and_like"
+      ]
+    ],
+    "decl": "inductive $T (a b : Prop) : Prop where\n  | intro : a → b → $T a b\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_or_like",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "or_like"
+      ]
+    ],
+    "decl": "inductive $T (a b : Prop) : Prop where\n  | inl : a → $T a b\n  | inr : b → $T a b\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_exists_like",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "exists_like"
+      ]
+    ],
+    "decl": "inductive $T {α : Type} (p : α → Prop) : Prop where\n  | intro : (w : α) → p w → $T p\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_acc_like",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "acc_like"
+      ]
+    ],
+    "decl": "inductive $T {α : Type} (r : α → α → Prop) : α → Prop where\n  | intro (x : α) (h : (y : α) → r y x → $T r y) : $T r x\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_idx_in_type",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "idx_in_type"
+      ]
+    ],
+    "decl": "inductive $T : Nat → Prop where\n  | mk : (n : Nat) → $T n\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_field_in_index",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "field_in_index"
+      ]
+    ],
+    "decl": "inductive $T : Nat → Prop where\n  | mk : (n : Nat) → n = n → $T n\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_heq_like",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "heq_like"
+      ]
+    ],
+    "decl": "universe u\ninductive $T {α : Sort u} (a : α) : {β : Sort u} → β → Prop where\n  | refl : $T a a\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_subsingleton_rec",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "subsingleton_rec"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | mk : ($T → True) → $T\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_one_ctor_two_props",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "one_ctor_two_props"
+      ]
+    ],
+    "decl": "inductive $T (p q : Prop) : Prop where\n  | mk : p → q → (p → q) → $T p q\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "E_wf_like",
+    "family": "enum-prop",
+    "axes": [
+      [
+        "kind",
+        "wf_like"
+      ]
+    ],
+    "decl": "inductive $T {α : Type} (r : α → α → Prop) : Prop where\n  | intro (h : ∀ a, Acc r a) : $T r\n",
+    "extras": [
+      [
+        "auxref",
+        "noncomputable def r := @$T.rec\nnoncomputable def c := @$T.casesOn\nnoncomputable def ro := @$T.recOn\n"
+      ],
+      [
+        "noconf",
+        "noncomputable def nc := @$T.noConfusionType\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_tree_wf",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "wf-nested"
+      ]
+    ],
+    "decl": "inductive $T where\n  | leaf : Nat → $T\n  | node : List $T → $T\ndef $T.sum : $T → Nat\n  | .leaf n => n\n  | .node ts => (ts.attach.map fun ⟨t, _⟩ => t.sum).foldl (· + ·) 0\nnoncomputable def sumEq := @$T.sum.eq_def\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_tree_struct_nested",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "structural-nested-mapfn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | leaf : Nat → $T\n  | node : List $T → $T\ndef $T.flip : $T → $T\n  | .leaf n => .leaf n\n  | .node ts => .node (ts.map (·.flip)).reverse\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_match_overlap",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "match-overlap"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a | b | c : Nat → $T\ndef $T.f : $T → $T → Nat\n  | .a, _ => 0\n  | _, .a => 1\n  | .c n, .c m => n + m\n  | _, _ => 2\nnoncomputable def fEq := @$T.f.eq_3\nnoncomputable def fSplit := @$T.f.match_1.splitter\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_induct_fun",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "functional-induction"
+      ]
+    ],
+    "decl": "inductive $T where\n  | z | s : $T → $T | d : $T → $T → $T\ndef $T.g : $T → Nat\n  | .z => 0\n  | .s t => t.g + 1\n  | .d a b => a.g + b.g\ntheorem $T.g_nonneg (t : $T) : 0 ≤ t.g := by\n  induction t using $T.g.induct <;> omega\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_nested_induct",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "nested-recursor-proof"
+      ]
+    ],
+    "decl": "inductive $T where\n  | leaf\n  | node : List $T → $T\ntheorem $T.allTrue (t : $T) : True :=\n  $T.rec (motive_1 := fun _ => True) (motive_2 := fun _ => True) trivial (fun _ _ => trivial) trivial (fun _ _ _ _ => trivial) t\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_noconf_inj",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "noconfusion-injection"
+      ]
+    ],
+    "decl": "inductive $T : Nat → Type where\n  | z : $T 0\n  | s : {n : Nat} → Nat → $T n → $T (n + 1)\ntheorem $T.s_inj {n : Nat} {a b : Nat} {x y : $T n} (h : $T.s a x = $T.s b y) : a = b := by\n  injection h\nnoncomputable def injEq := @$T.s.injEq\nnoncomputable def injs := @$T.s.inj\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_mutual_wf",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "mutual-wf-over-inductive"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | nil\n  | mk : Nat → $B → $A\ninductive $B where\n  | mk : $A → $B\nend\nmutual\ndef $A.c : $A → Nat\n  | .nil => 0\n  | .mk n b => n + b.c\ntermination_by a => sizeOf a\ndef $B.c : $B → Nat\n  | .mk a => a.c + 1\ntermination_by b => sizeOf b\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_sizeof_mutual",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "sizeof-mutual"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | nil\n  | mk : Nat → $B → $A\ninductive $B where\n  | mk : $A → List $A → $B\nend\ntheorem szlt (n : Nat) (b : $B) : sizeOf b < sizeOf ($A.mk n b) := by simp; omega\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_struct_eta",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "struct-eta"
+      ]
+    ],
+    "decl": "structure $T where\n  a : Nat\n  b : Nat\ntheorem $T.eta' (t : $T) : t = ⟨t.a, t.b⟩ := rfl\ndef $T.swap (t : $T) : $T := { t with a := t.b, b := t.a }\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_class_inst",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "class-instances"
+      ]
+    ],
+    "decl": "class $T (α : Type) where\n  op : α → α\ninstance : $T Nat := ⟨Nat.succ⟩\ninstance {α} [$T α] : $T (List α) := ⟨List.map $T.op⟩\ndef useT := $T.op [1, 2, 3]\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "F_brecOn_direct",
+    "family": "elab",
+    "axes": [
+      [
+        "kind",
+        "brecOn-direct"
+      ]
+    ],
+    "decl": "inductive $T where\n  | z | s : $T → $T\nnoncomputable def $T.dbl (t : $T) : Nat := $T.brecOn (motive := fun _ => Nat) t (fun t f => match t, f with\n  | .z, _ => 0\n  | .s _, ⟨r, _⟩ => r + 2)\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "G1_List_use",
+    "family": "defect1",
+    "axes": [
+      [
+        "container",
+        "List"
+      ]
+    ],
+    "decl": "inductive $T where\n  | mk : List $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "G1_Array_use",
+    "family": "defect1",
+    "axes": [
+      [
+        "container",
+        "Array"
+      ]
+    ],
+    "decl": "inductive $T where\n  | mk : Array $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "G1_Option_use",
+    "family": "defect1",
+    "axes": [
+      [
+        "container",
+        "Option"
+      ]
+    ],
+    "decl": "inductive $T where\n  | mk : Option $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "G1_List_use_fun",
+    "family": "defect1",
+    "axes": [
+      [
+        "container",
+        "List"
+      ],
+      [
+        "fun",
+        "mutual-structural"
+      ]
+    ],
+    "decl": "inductive $T where\n  | mk : List $T → $T\nmutual\ndef $T.size : $T → Nat\n  | .mk ts => sizeL ts + 1\ndef sizeL : List $T → Nat\n  | [] => 0\n  | t :: ts => t.size + sizeL ts\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "G1_mutual_nested_fun",
+    "family": "defect1",
+    "axes": [
+      [
+        "container",
+        "List"
+      ],
+      [
+        "fun",
+        "mutual-structural"
+      ],
+      [
+        "mutual",
+        "true"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | mk : List $B → $A\ninductive $B where\n  | mk : $A → $B\n  | e\nend\nmutual\ndef $A.size : $A → Nat\n  | .mk bs => sizeL bs + 1\ndef $B.size : $B → Nat\n  | .mk a => a.size + 1\n  | .e => 0\ndef sizeL : List $B → Nat\n  | [] => 0\n  | b :: bs => b.size + sizeL bs\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "G1_two_containers_fun",
+    "family": "defect1",
+    "axes": [
+      [
+        "container",
+        "List+Option"
+      ],
+      [
+        "fun",
+        "mutual-structural"
+      ]
+    ],
+    "decl": "inductive $T where\n  | mk : List $T → Option $T → $T\nmutual\ndef $T.size : $T → Nat\n  | .mk ts o => sizeL ts + sizeO o + 1\ndef sizeL : List $T → Nat\n  | [] => 0\n  | t :: ts => t.size + sizeL ts\ndef sizeO : Option $T → Nat\n  | none => 0\n  | some t => t.size\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "G5_vr",
+    "family": "defect5",
+    "axes": [
+      [
+        "container",
+        "Forall2"
+      ],
+      [
+        "fun",
+        "structural-proof"
+      ]
+    ],
+    "decl": "inductive AllP {α : Type} (R : α → Prop) : List α → Prop\n  | nil : AllP R []\n  | cons {a as} : R a → AllP R as → AllP R (a :: as)\ninductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop\n  | nil : Forall2 R [] []\n  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)\ninductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive POpt (p : Prop) : Prop\n  | none : POpt p\n  | some : p → POpt p\ninductive $T : Nat → Nat → Prop\n  | base : $T 0 0\n  | node {xs ys : List Nat} : Forall2 $T xs ys → $T xs.length ys.length\ntheorem $T.zero : {a b : Nat} → $T a b → a = 0 ∨ True\n  | _, _, .base => Or.inl rfl\n  | _, _, .node _ => Or.inr trivial\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.below (_ : $T) : Type := Nat\ntheorem use_below : $T.below $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.below (_ : $T) : Nat := 7\ntheorem use_below : $T.below $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.below (_ : $T) : Type := Nat\ntheorem use_below (h : $T) : $T.below h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "structure $T where\n  below : Nat → Type\ndef useF (s : $T) : Type := s.below 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "structure $T where\n  below : Prop\ntheorem sp (s : $T) (h : s.below) : s.below := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.below (_ : $B) : Nat := 3\ntheorem use_below : $B.below ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.brecOn (_ : $T) : Type := Nat\ntheorem use_brecOn : $T.brecOn $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.brecOn (_ : $T) : Nat := 7\ntheorem use_brecOn : $T.brecOn $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.brecOn (_ : $T) : Type := Nat\ntheorem use_brecOn (h : $T) : $T.brecOn h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "structure $T where\n  brecOn : Nat → Type\ndef useF (s : $T) : Type := s.brecOn 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "structure $T where\n  brecOn : Prop\ntheorem sp (s : $T) (h : s.brecOn) : s.brecOn := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.brecOn (_ : $B) : Nat := 3\ntheorem use_brecOn : $B.brecOn ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_below_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "below_1"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.below_1 (_ : $T) : Type := Nat\ntheorem use_below_1 : $T.below_1 $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_below_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "below_1"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.below_1 (_ : $T) : Nat := 7\ntheorem use_below_1 : $T.below_1 $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_below_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "below_1"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.below_1 (_ : $T) : Type := Nat\ntheorem use_below_1 (h : $T) : $T.below_1 h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_below_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "below_1"
+      ]
+    ],
+    "decl": "structure $T where\n  below_1 : Nat → Type\ndef useF (s : $T) : Type := s.below_1 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_below_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "below_1"
+      ]
+    ],
+    "decl": "structure $T where\n  below_1 : Prop\ntheorem sp (s : $T) (h : s.below_1) : s.below_1 := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_below_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "below_1"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.below_1 (_ : $B) : Nat := 3\ntheorem use_below_1 : $B.below_1 ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_brecOn_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "brecOn_1"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.brecOn_1 (_ : $T) : Type := Nat\ntheorem use_brecOn_1 : $T.brecOn_1 $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_brecOn_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "brecOn_1"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.brecOn_1 (_ : $T) : Nat := 7\ntheorem use_brecOn_1 : $T.brecOn_1 $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_brecOn_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "brecOn_1"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.brecOn_1 (_ : $T) : Type := Nat\ntheorem use_brecOn_1 (h : $T) : $T.brecOn_1 h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_brecOn_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "brecOn_1"
+      ]
+    ],
+    "decl": "structure $T where\n  brecOn_1 : Nat → Type\ndef useF (s : $T) : Type := s.brecOn_1 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_brecOn_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "brecOn_1"
+      ]
+    ],
+    "decl": "structure $T where\n  brecOn_1 : Prop\ntheorem sp (s : $T) (h : s.brecOn_1) : s.brecOn_1 := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_brecOn_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "brecOn_1"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.brecOn_1 (_ : $B) : Nat := 3\ntheorem use_brecOn_1 : $B.brecOn_1 ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_rec_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "rec_1"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.rec_1 (_ : $T) : Type := Nat\ntheorem use_rec_1 : $T.rec_1 $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_rec_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "rec_1"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.rec_1 (_ : $T) : Nat := 7\ntheorem use_rec_1 : $T.rec_1 $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_rec_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "rec_1"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.rec_1 (_ : $T) : Type := Nat\ntheorem use_rec_1 (h : $T) : $T.rec_1 h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_rec_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "rec_1"
+      ]
+    ],
+    "decl": "structure $T where\n  rec_1 : Nat → Type\ndef useF (s : $T) : Type := s.rec_1 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_rec_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "rec_1"
+      ]
+    ],
+    "decl": "structure $T where\n  rec_1 : Prop\ntheorem sp (s : $T) (h : s.rec_1) : s.rec_1 := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_rec_1",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "rec_1"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.rec_1 (_ : $B) : Nat := 3\ntheorem use_rec_1 : $B.rec_1 ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_binductionOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "binductionOn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.binductionOn (_ : $T) : Type := Nat\ntheorem use_binductionOn : $T.binductionOn $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_binductionOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "binductionOn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.binductionOn (_ : $T) : Nat := 7\ntheorem use_binductionOn : $T.binductionOn $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_binductionOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "binductionOn"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.binductionOn (_ : $T) : Type := Nat\ntheorem use_binductionOn (h : $T) : $T.binductionOn h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_binductionOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "binductionOn"
+      ]
+    ],
+    "decl": "structure $T where\n  binductionOn : Nat → Type\ndef useF (s : $T) : Type := s.binductionOn 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_binductionOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "binductionOn"
+      ]
+    ],
+    "decl": "structure $T where\n  binductionOn : Prop\ntheorem sp (s : $T) (h : s.binductionOn) : s.binductionOn := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_binductionOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "binductionOn"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.binductionOn (_ : $B) : Nat := 3\ntheorem use_binductionOn : $B.binductionOn ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_ibelow",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "ibelow"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.ibelow (_ : $T) : Type := Nat\ntheorem use_ibelow : $T.ibelow $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_ibelow",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "ibelow"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.ibelow (_ : $T) : Nat := 7\ntheorem use_ibelow : $T.ibelow $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_ibelow",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "ibelow"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.ibelow (_ : $T) : Type := Nat\ntheorem use_ibelow (h : $T) : $T.ibelow h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_ibelow",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "ibelow"
+      ]
+    ],
+    "decl": "structure $T where\n  ibelow : Nat → Type\ndef useF (s : $T) : Type := s.ibelow 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_ibelow",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "ibelow"
+      ]
+    ],
+    "decl": "structure $T where\n  ibelow : Prop\ntheorem sp (s : $T) (h : s.ibelow) : s.ibelow := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_ibelow",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "ibelow"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.ibelow (_ : $B) : Nat := 3\ntheorem use_ibelow : $B.ibelow ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_below_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "below_2"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.below_2 (_ : $T) : Type := Nat\ntheorem use_below_2 : $T.below_2 $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_below_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "below_2"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.below_2 (_ : $T) : Nat := 7\ntheorem use_below_2 : $T.below_2 $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_below_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "below_2"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.below_2 (_ : $T) : Type := Nat\ntheorem use_below_2 (h : $T) : $T.below_2 h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_below_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "below_2"
+      ]
+    ],
+    "decl": "structure $T where\n  below_2 : Nat → Type\ndef useF (s : $T) : Type := s.below_2 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_below_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "below_2"
+      ]
+    ],
+    "decl": "structure $T where\n  below_2 : Prop\ntheorem sp (s : $T) (h : s.below_2) : s.below_2 := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_below_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "below_2"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.below_2 (_ : $B) : Nat := 3\ntheorem use_below_2 : $B.below_2 ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_enum_brecOn_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-enum"
+      ],
+      [
+        "name",
+        "brecOn_2"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b\ndef $T.brecOn_2 (_ : $T) : Type := Nat\ntheorem use_brecOn_2 : $T.brecOn_2 $T.a = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_rec_brecOn_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-recursive"
+      ],
+      [
+        "name",
+        "brecOn_2"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | s : $T → $T\ndef $T.brecOn_2 (_ : $T) : Nat := 7\ntheorem use_brecOn_2 : $T.brecOn_2 $T.a = 7 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_def_prop_brecOn_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop"
+      ],
+      [
+        "name",
+        "brecOn_2"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b\ndef $T.brecOn_2 (_ : $T) : Type := Nat\ntheorem use_brecOn_2 (h : $T) : $T.brecOn_2 h = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_field_brecOn_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "structure-field"
+      ],
+      [
+        "name",
+        "brecOn_2"
+      ]
+    ],
+    "decl": "structure $T where\n  brecOn_2 : Nat → Type\ndef useF (s : $T) : Type := s.brecOn_2 0\ndef sNat : $T := ⟨fun _ => Nat⟩\ntheorem useF_nat : useF sNat = Nat := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_pfield_brecOn_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "prop-structure-field"
+      ],
+      [
+        "name",
+        "brecOn_2"
+      ]
+    ],
+    "decl": "structure $T where\n  brecOn_2 : Prop\ntheorem sp (s : $T) (h : s.brecOn_2) : s.brecOn_2 := h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_mut_brecOn_2",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-mutual"
+      ],
+      [
+        "name",
+        "brecOn_2"
+      ]
+    ],
+    "decl": "mutual\ninductive $A where\n  | z\n  | s : $B → $A\ninductive $B where\n  | s : $A → $B\nend\ndef $B.brecOn_2 (_ : $B) : Nat := 3\ntheorem use_brecOn_2 : $B.brecOn_2 ($B.s $A.z) = 3 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_noConfusion",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "noConfusion"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.noConfusion (_ : Nat) : Nat := 5\ntheorem use_noConfusion : $T.noConfusion 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_noConfusion",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "noConfusion"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.noConfusion : Nat := 5\ntheorem use_noConfusion : $T.b.noConfusion = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_noConfusionType",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "noConfusionType"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.noConfusionType (_ : Nat) : Nat := 5\ntheorem use_noConfusionType : $T.noConfusionType 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_noConfusionType",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "noConfusionType"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.noConfusionType : Nat := 5\ntheorem use_noConfusionType : $T.b.noConfusionType = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_ctorIdx",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "ctorIdx"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.ctorIdx (_ : Nat) : Nat := 5\ntheorem use_ctorIdx : $T.ctorIdx 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_ctorIdx",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "ctorIdx"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.ctorIdx : Nat := 5\ntheorem use_ctorIdx : $T.b.ctorIdx = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_recOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "recOn"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.recOn (_ : Nat) : Nat := 5\ntheorem use_recOn : $T.recOn 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_recOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "recOn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.recOn : Nat := 5\ntheorem use_recOn : $T.b.recOn = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_casesOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "casesOn"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.casesOn (_ : Nat) : Nat := 5\ntheorem use_casesOn : $T.casesOn 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_casesOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "casesOn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.casesOn : Nat := 5\ntheorem use_casesOn : $T.b.casesOn = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_rec",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "rec"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.rec (_ : Nat) : Nat := 5\ntheorem use_rec : $T.rec 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_rec",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "rec"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.rec : Nat := 5\ntheorem use_rec : $T.b.rec = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.below (_ : Nat) : Nat := 5\ntheorem use_below : $T.below 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_below",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "below"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.below : Nat := 5\ntheorem use_below : $T.b.below = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.brecOn (_ : Nat) : Nat := 5\ntheorem use_brecOn : $T.brecOn 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_brecOn",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "brecOn"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.brecOn : Nat := 5\ntheorem use_brecOn : $T.b.brecOn = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_sizeOf_spec",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "sizeOf_spec"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.sizeOf_spec (_ : Nat) : Nat := 5\ntheorem use_sizeOf_spec : $T.sizeOf_spec 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_sizeOf_spec",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "sizeOf_spec"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.sizeOf_spec : Nat := 5\ntheorem use_sizeOf_spec : $T.b.sizeOf_spec = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_injEq",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "injEq"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.injEq (_ : Nat) : Nat := 5\ntheorem use_injEq : $T.injEq 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_injEq",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "injEq"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.injEq : Nat := 5\ntheorem use_injEq : $T.b.injEq = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_propfree_inj",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "def-on-prop-free"
+      ],
+      [
+        "name",
+        "inj"
+      ]
+    ],
+    "decl": "inductive $T : Prop where\n  | a\n  | b : $T → $T\ndef $T.inj (_ : Nat) : Nat := 5\ntheorem use_inj : $T.inj 0 = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H1_ctorname_inj",
+    "family": "auxname",
+    "axes": [
+      [
+        "where",
+        "ctor-namespace"
+      ],
+      [
+        "name",
+        "inj"
+      ]
+    ],
+    "decl": "inductive $T where\n  | a\n  | b : $T → $T\ndef $T.b.inj : Nat := 5\ntheorem use_inj : $T.b.inj = 5 := rfl\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_1c_props",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_1c_props"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | mk : True → $A\n\ninductive $B : Prop\n  | mk : True → True → $B\nend\n",
+    "extras": [
+      [
+        "users",
+        "theorem ua (h : $A) : True := by\n  cases h <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop\n  | mk : True → $A\n",
+      "inductive $B : Prop\n  | mk : True → True → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_1c_noflds",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_1c_noflds"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | mk : $A\n\ninductive $B : Prop\n  | mk : True → $B\nend\n",
+    "extras": [
+      [
+        "users",
+        "theorem ua (h : $A) : True := by\n  cases h <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop\n  | mk : $A\n",
+      "inductive $B : Prop\n  | mk : True → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_2c",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_2c"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | x : $A\n  | y : $A\n\ninductive $B : Prop\n  | mk : True → $B\nend\n",
+    "extras": [
+      [
+        "users",
+        "theorem ua (h : $A) : True := by\n  cases h <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop\n  | x : $A\n  | y : $A\n",
+      "inductive $B : Prop\n  | mk : True → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_datafield",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_datafield"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | mk : Nat → $A\n\ninductive $B : Prop\n  | mk : True → $B\nend\n",
+    "extras": [
+      [
+        "users",
+        "theorem ua (h : $A) : True := by\n  cases h <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop\n  | mk : Nat → $A\n",
+      "inductive $B : Prop\n  | mk : True → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_eqlike",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_eqlike"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Prop\n  | refl : $A 0\n\ninductive $B : Nat → Nat → Prop\n  | mk : (n : Nat) → $B n n\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Prop\n  | refl : $A 0\n",
+      "inductive $B : Nat → Nat → Prop\n  | mk : (n : Nat) → $B n n\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_recursive",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_recursive"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Prop\n  | z : $A 0\n  | s {n : Nat} : $A n → $A (n + 1)\n\ninductive $B : Prop\n  | mk : True → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Prop\n  | z : $A 0\n  | s {n : Nat} : $A n → $A (n + 1)\n",
+      "inductive $B : Prop\n  | mk : True → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_ident_1c",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "ident_1c"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | mk : True → $A\n\ninductive $B : Prop\n  | mk : True → $B\nend\n",
+    "extras": [
+      [
+        "users",
+        "theorem ua (h : $A) : True := by\n  cases h <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop\n  | mk : True → $A\n",
+      "inductive $B : Prop\n  | mk : True → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_ident_2c",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "ident_2c"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | x : $A\n  | y : $A\n\ninductive $B : Prop\n  | x : $B\n  | y : $B\nend\n",
+    "extras": [
+      [
+        "users",
+        "theorem ua (h : $A) : True := by\n  cases h <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop\n  | x : $A\n  | y : $A\n",
+      "inductive $B : Prop\n  | x : $B\n  | y : $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_ident_idx",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "ident_idx"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Nat → Prop\n  | z : $A 0\n\ninductive $B : Nat → Prop\n  | z : $B 0\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Nat → Prop\n  | z : $A 0\n",
+      "inductive $B : Nat → Prop\n  | z : $B 0\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_part_split3",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "part_split3"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | mk : $B → $A\n  | e : $A\n\ninductive $B : Prop\n  | mk : $A → $B\n\ninductive $C : Prop\n  | mk : True → $C\nend\n",
+    "extras": [
+      [
+        "users",
+        "theorem ua (h : $A) : True := by\n  cases h <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [
+      "inductive $A : Prop\n  | mk : $B → $A\n  | e : $A\n",
+      "inductive $B : Prop\n  | mk : $A → $B\n",
+      "inductive $C : Prop\n  | mk : True → $C\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_type",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_type"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Type\n  | mk : Nat → $A\n\ninductive $B : Type\n  | mk : Bool → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [
+      "inductive $A : Type\n  | mk : Nat → $A\n",
+      "inductive $B : Type\n  | mk : Bool → $B\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_indep_typeu",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_typeu"
+      ]
+    ],
+    "decl": "universe u\nmutual\ninductive $A (α : Sort u) : Sort (max 1 u)\n  | mk : α → $A α\n\ninductive $B (α : Sort u) : Sort (max 1 u)\n  | mk : $B α\nend\n",
+    "extras": [],
+    "prelude": "universe u\n",
+    "members": [
+      "inductive $A (α : Sort u) : Sort (max 1 u)\n  | mk : α → $A α\n",
+      "inductive $B (α : Sort u) : Sort (max 1 u)\n  | mk : $B α\n"
+    ],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_user_rec_indep",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "indep_1c_props+rec-user"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | mk : True → $A\ninductive $B : Prop\n  | mk : True → True → $B\nend\ntheorem pb (h : $B) : True :=\n  @$B.rec (fun _ => True) (fun _ => True) (fun _ => trivial) (fun _ _ => trivial) h\ntheorem pa (h : $A) : True := @$A.casesOn (fun _ => True) h (fun _ => trivial)\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2_user_rec_ident",
+    "family": "mutual-split",
+    "axes": [
+      [
+        "kind",
+        "ident_1c+rec-user"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | mk : True → $A\ninductive $B : Prop\n  | mk : True → $B\nend\ntheorem qb (h : $B) : True :=\n  @$B.rec (fun _ => True) (fun _ => True) (fun _ => trivial) (fun _ => trivial) h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2c_single",
+    "family": "coinductive",
+    "axes": [
+      [
+        "kind",
+        "single"
+      ]
+    ],
+    "decl": "coinductive $T (r : Nat → Nat → Prop) : Nat → Prop where\n  | step {a b : Nat} : r a b → $T r b → $T r a\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2c_mutual",
+    "family": "coinductive",
+    "axes": [
+      [
+        "kind",
+        "mutual"
+      ]
+    ],
+    "decl": "mutual\ncoinductive $A : Nat → Prop where\n  | s {n : Nat} : $B n → $A (n + 1)\ncoinductive $B : Nat → Prop where\n  | s {n : Nat} : $A n → $B (n + 1)\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2c_mutual_alpha",
+    "family": "coinductive",
+    "axes": [
+      [
+        "kind",
+        "mutual_alpha"
+      ]
+    ],
+    "decl": "mutual\ncoinductive $A : Prop where\n  | mk : $B → $A\ncoinductive $B : Prop where\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2c_mutual_indep",
+    "family": "coinductive",
+    "axes": [
+      [
+        "kind",
+        "mutual_indep"
+      ]
+    ],
+    "decl": "mutual\ncoinductive $A : Prop where\n  | mk : $A → $A\ncoinductive $B : Prop where\n  | mk : True → $B → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H2c_nonrec",
+    "family": "coinductive",
+    "axes": [
+      [
+        "kind",
+        "nonrec"
+      ]
+    ],
+    "decl": "coinductive $T : Nat → Prop where\n  | mk : $T 0\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_mutext",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "mutext"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\ninductive $T\n  | leaf\n  | mk : E1 $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_mutext_2nd",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "mutext_2nd"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\ninductive $T\n  | leaf\n  | mk : E2 $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_mutext_both",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "mutext_both"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\ninductive $T\n  | leaf\n  | mk : E1 $T → E2 $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_rose",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "rose"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\ninductive $T\n  | leaf\n  | mk : Rose $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_tri",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "tri"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\ninductive $T\n  | leaf\n  | mk : Tri $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_mutext_idx",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "mutext_idx"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\ninductive $T\n  | leaf\n  | mk : F1 $T 2 → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_rose_list",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "rose_list"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\ninductive $T\n  | leaf\n  | mk : List (Rose $T) → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_split_mutext",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "split_mutext"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\nmutual\ninductive $A\n  | mk : E1 $B → $A\ninductive $B\n  | leaf\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_split_rose",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "split_rose"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\nmutual\ninductive $A\n  | mk : Rose $B → $A\ninductive $B\n  | leaf\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_split_list",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "split_list"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\nmutual\ninductive $A\n  | mk : List $B → $A\ninductive $B\n  | leaf\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_split_tri",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "split_tri"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\nmutual\ninductive $A\n  | mk : Tri $B → $A\ninductive $B\n  | leaf\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_mut_mutext",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "mut_mutext"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\nmutual\ninductive $A\n  | mk : E1 $B → $A\n  | e\ninductive $B\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H3_mut_rose",
+    "family": "nested-ext",
+    "axes": [
+      [
+        "container",
+        "mut_rose"
+      ]
+    ],
+    "decl": "mutual\ninductive E1 (α : Type)\n  | mk : E2 α → E1 α\ninductive E2 (α : Type)\n  | nil : E2 α\n  | cons : α → E1 α → E2 α\nend\ninductive Rose (α : Type)\n  | node : α → List (Rose α) → Rose α\nmutual\ninductive F1 (α : Type) : Nat → Type\n  | nil : F1 α 0\n  | mk : {n : Nat} → F2 α n → F1 α (n + 1)\ninductive F2 (α : Type) : Nat → Type\n  | cons : {n : Nat} → α → F1 α n → F2 α n\nend\ninductive Tri (α : Type)\n  | node : α → Tri α\n  | br : Tri α → Tri α → Tri α\nmutual\ninductive $A\n  | mk : Rose $B → $A\n  | e\ninductive $B\n  | mk : $A → $B\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H4_dot_type",
+    "family": "dotctor",
+    "axes": [
+      [
+        "kind",
+        "type"
+      ]
+    ],
+    "decl": "inductive $T\n  | leaf\n  | n.o : $T → $T\ndef $T.size : $T → Nat\n  | .leaf => 0\n  | $T.n.o t => t.size + 1\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H4_dot_prop",
+    "family": "dotctor",
+    "axes": [
+      [
+        "kind",
+        "prop"
+      ]
+    ],
+    "decl": "inductive $T : Nat → Prop\n  | z : $T 0\n  | s.t {n : Nat} : $T n → $T (n + 1)\ntheorem $T.triv {n : Nat} : $T n → True\n  | .z => trivial\n  | $T.s.t h => $T.triv h\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H4_dot_mutual_prop",
+    "family": "dotctor",
+    "axes": [
+      [
+        "kind",
+        "mutual-prop"
+      ]
+    ],
+    "decl": "mutual\ninductive $A : Prop\n  | x.y : $B → $A\n  | base : $A\ninductive $B : Prop\n  | x.y : $A → $B\nend\nmutual\ntheorem $A.triv : $A → True\n  | $A.x.y b => $B.triv b\n  | .base => trivial\ntheorem $B.triv : $B → True\n  | $B.x.y a => $A.triv a\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H4_dot_nested",
+    "family": "dotctor",
+    "axes": [
+      [
+        "kind",
+        "nested"
+      ]
+    ],
+    "decl": "inductive $T\n  | leaf\n  | a.b : List $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H4_dot_nested_prop",
+    "family": "dotctor",
+    "axes": [
+      [
+        "kind",
+        "nested-prop"
+      ]
+    ],
+    "decl": "inductive PBox (p : Prop) : Prop\n  | mk : p → PBox p\ninductive $T : Prop\n  | base : $T\n  | x.y : PBox $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H4_dot_deep",
+    "family": "dotctor",
+    "axes": [
+      [
+        "kind",
+        "deep"
+      ]
+    ],
+    "decl": "inductive $T : Nat → Prop\n  | z : $T 0\n  | a.b.c {n : Nat} : $T n → $T n → $T (n + 1)\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_two",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "two"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T : Sort u\n  | a\n  | b\n",
+    "extras": [
+      [
+        "users",
+        "theorem cs.{w} (x : $T.{w}) : True := by\n  cases x <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_datafield",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "datafield"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T : Sort u\n  | mk : Nat → $T\n",
+    "extras": [
+      [
+        "users",
+        "theorem cs.{w} (x : $T.{w}) : True := by\n  cases x <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_one",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "one"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T : Sort u\n  | mk\n",
+    "extras": [
+      [
+        "users",
+        "theorem cs.{w} (x : $T.{w}) : True := by\n  cases x <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_propfield",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "propfield"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T : Sort u\n  | mk : True → $T\n",
+    "extras": [
+      [
+        "users",
+        "theorem cs.{w} (x : $T.{w}) : True := by\n  cases x <;> trivial\n"
+      ]
+    ],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_param",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "param"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T (α : Sort u) : Sort u\n  | mk : α → $T α\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_param2",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "param2"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T (α : Sort u) : Sort u\n  | mk : α → $T α\n  | e : $T α\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_idx",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "idx"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T : Nat → Sort u\n  | z : $T 0\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_maxuv",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "maxuv"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T (α : Sort u) (β : Sort v) : Sort (max u v)\n  | mk : α → β → $T α β\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H5_sortu_imax",
+    "family": "sortu",
+    "axes": [
+      [
+        "kind",
+        "imax"
+      ]
+    ],
+    "decl": "set_option bootstrap.inductiveCheckResultingUniverse false in\ninductive $T (α : Sort u) (β : Sort v) : Sort (imax u v)\n  | mk : (α → β) → $T α β\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H6_unsafe_refl",
+    "family": "unsafe",
+    "axes": [
+      [
+        "kind",
+        "refl"
+      ]
+    ],
+    "decl": "unsafe inductive $T\n  | leaf\n  | mk : ($T → $T) → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H6_unsafe_nested",
+    "family": "unsafe",
+    "axes": [
+      [
+        "kind",
+        "nested"
+      ]
+    ],
+    "decl": "unsafe inductive $T\n  | mk : List $T → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H6_unsafe_neg",
+    "family": "unsafe",
+    "axes": [
+      [
+        "kind",
+        "neg"
+      ]
+    ],
+    "decl": "unsafe inductive $T\n  | mk : ($T → Nat) → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H6_unsafe_nestneg",
+    "family": "unsafe",
+    "axes": [
+      [
+        "kind",
+        "nestneg"
+      ]
+    ],
+    "decl": "unsafe inductive $T\n  | mk : (List $T → Nat) → $T\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  },
+  {
+    "id": "H6_unsafe_mutual",
+    "family": "unsafe",
+    "axes": [
+      [
+        "kind",
+        "mutual"
+      ]
+    ],
+    "decl": "mutual\nunsafe inductive $A\n  | mk : ($B → Nat) → $A\nunsafe inductive $B\n  | mk : $A → $B\n  | e\nend\n",
+    "extras": [],
+    "prelude": "",
+    "members": [],
+    "mutualDefs": [],
+    "suffix": ""
+  }
+]
