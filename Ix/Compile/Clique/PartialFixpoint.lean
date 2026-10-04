@@ -615,7 +615,8 @@ def pfLayout (members : Array Decl) (packed : Decl) (σ : Array Nat) (newPackedN
   return { n, sigma := σ, packedName := packed.name, newPackedName, numFixed := m, fixedPerm,
            leaves := s.leaves, spine := s, memberFixed := qss }
 
-/-- Transport a `partial_fixpoint` clique. -/
+/-- Historical shape-based route, retained for the value-changing audit
+controls. Production uses `PFConjugation.transportPF`. -/
 def transportPFShape (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ : Array Nat)
     (newPackedName : Name) (const? : Name → Option ConstantInfo)
     (lemmas : Array (Decl × Name) := #[]) : TM WFOutput := do

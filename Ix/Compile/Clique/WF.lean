@@ -546,12 +546,14 @@ def transportEqDef (L : WFLayout) (phi : Expr → TM Expr) (eqDef : Decl) (newNa
   let value ← liftE (closeBinders true xs cases)
   return { eqDef with name := newName, type, value }
 
-/-- Transport a well-founded clique. `members` in Lean's clique order,
+/-- Historical shape-based transport, retained for the value-changing
+negative audit controls. Production uses `WFConjugation.transportWF`.
+`members` in Lean's clique order,
 `proofs` the abstracted `f₀._mutual._proof_k` (none for theorems). Fails
 (and the caller keeps the baseline) when the packed function, a statement or
 a member is outside the grammar; a proof body outside the grammar is kept
 verbatim under its transported statement. -/
-def transportWF (members : Array Decl) (mutDecl : Decl) (proofs : Array Decl) (σ : Array Nat)
+def transportWFShape (members : Array Decl) (mutDecl : Decl) (proofs : Array Decl) (σ : Array Nat)
     (newMutualName : Name) (lemmas : Array (Decl × Name) := #[]) : TM WFOutput := do
   let L ← liftE (wfLayout members mutDecl σ newMutualName)
   let m := L.numFixed

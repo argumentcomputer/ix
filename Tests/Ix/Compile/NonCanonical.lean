@@ -2480,7 +2480,29 @@ def nonCanonicalOn : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx.eq_def "equation lemma" .lazy
     "661646809e41f9088fe58c7623c66b6bb19e137df5a4ec2f242ae06e10c821b6" "1369d30019bbd8c870ac4a620feece8eaaf1963ade3dc8a01d756f4370422d97" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: transported over the regenerated canonical eq_def on one side, Lean's own proof on the other",
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx._mutual.eq_def "encoding equation" .orderStmt
-    "a3574f238552c2f40c8328764184166dd04daa2832607300df5528398e21d223" "d80a2ec1dea3ed3a5569755bacc357727c3092c1b2f37454047f9f1ab969f2c7" "type.∀.body.@2.@4.λ.body.@3.λ.body" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)"
+    "a3574f238552c2f40c8328764184166dd04daa2832607300df5528398e21d223" "d80a2ec1dea3ed3a5569755bacc357727c3092c1b2f37454047f9f1ab969f2c7" "type.∀.body.@2.@4.λ.body.@3.λ.body" "Lean's packed equation lemma under its Lean name (statement over Lean's packing)",
+  -- Ownership-based WF transport (FIX-pfwf, 2026-10-05; `WFConjugation`): a member's carried
+  -- equation lemma is transported through the dependent source-domain adapter over the packed
+  -- `eq_def`, which keeps Lean's injections (its form follows Lean's clique order). Under the
+  -- shape-based transport these were transported by the packing re-association and matched.
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `gc.eq_def "equation lemma" .lazy
+    "8e0fbe1b5a5d406f26ff7cf750803c576da84e9386e8612ade88af5c8adcd6b5" "2382710c48945868893b5c14b79bdc5684139f27f99564acb2c72140d172bd5f" "value.λ.body.λ.body.@1.@0.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga.eq_def "equation lemma" .lazy
+    "f35827b4c84b6f70580a8b6912fd4b3da4501c1225357921aacb8a390e8bcf48" "5c2804a821ded475222bcbd1e8a33804e12ce6020fecc37b81cebfba71147408" "value.λ.body.λ.body.@1.@0.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `gb.eq_def "equation lemma" .lazy
+    "663b6353b44257a43edf91bae9c44925f0e4acedf1067f072d5bb02dc3cbf04b" "fc2ee9f81c98e1b6112357b83f5717dee461c1d558e9a440fa4c502f05b01b41" "value.λ.body.λ.body.@1.@0.@2.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `gb.eq_def "equation lemma" .lazy
+    "663b6353b44257a43edf91bae9c44925f0e4acedf1067f072d5bb02dc3cbf04b" "fd9070ea53ccdc65142d822ef5a8d6a137254e55661212ce314a6ec546de63b6" "value.λ.body.λ.body.@1.@0.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `gc.eq_def "equation lemma" .lazy
+    "8e0fbe1b5a5d406f26ff7cf750803c576da84e9386e8612ade88af5c8adcd6b5" "b5f74e9a149a8afab9eef2365af9473a23ac4c0c7e47bc3d2c521b6366cbcea8" "value.λ.body.λ.body.@1.@0.@2.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)",
+  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga.eq_def "equation lemma" .lazy
+    "f35827b4c84b6f70580a8b6912fd4b3da4501c1225357921aacb8a390e8bcf48" "0c4d2f04b89b366281ee0e7e5de8c2ede32a9bfcde6cbba7f38960ea1f4da6b2" "value.λ.body.λ.body.@1.@0.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tb.eq_def "user constant" .inherited
+    "8045fb2714463d5f507803c8f11719736d5d682267259d79a86a90f935f5e534" "d9f2efb0b94dae865d19bbaf6933db69604de6ae0e89d95276c5f94d1fe5b425" "" "via [ta._mutual.eq_def]",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta.eq_def "equation lemma" .lazy
+    "b54c8cd37a0a2fae100d92e29ecc88aa73098d1b6a0831b60a2f084e30c5aaf0" "42d3af4361d9bb629204e234341576b19e79cc86be1aa7c1a55b90d37ec1c80d" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tc.eq_def "equation lemma" .lazy
+    "883d9d49e5f48fd84bd3ff3ee96b7f736be600a4a919cfb10791b88244ec0c15" "97a7ea7346e26e1e2d9a28da11c782d267ed3a990e5732ad10f18be206cb7091" "value.λ.body.@1.@0.fn" "a member's equation lemma, carried: proof through the source-domain adapter over the packed eq_def (Lean's injections)"
 ]
 
 end Tests.Ix.Compile.NonCanonical

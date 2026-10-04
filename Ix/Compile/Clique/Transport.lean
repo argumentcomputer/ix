@@ -26,6 +26,7 @@
 -/
 module
 public import Ix.Compile.Clique.WF
+public import Ix.Compile.Clique.WFConjugation
 public import Ix.Compile.Clique.Structural
 public import Ix.Compile.Clique.PartialFixpoint
 public import Ix.Compile.Clique.PFConjugation
@@ -56,7 +57,8 @@ structure Input where
   const? : Name → Option ConstantInfo := fun _ => none
   /-- equation lemmas carried with the clique (A5 proper), each with its
   output name: the members' own lemmas keep their names; the packed
-  function's `eq_def` is regenerated under the canonical name (`WF.lean`) -/
+  function's `eq_def` is regenerated under the canonical name, retaining its
+  source-domain indexing through the decoded input adapter (`WFConjugation.lean`) -/
   lemmas : Array (Decl × Name) := #[]
 
 structure Output where
@@ -97,7 +99,7 @@ def transport (inp : Input) : Output :=
     | none => .baselineOf inp "no packed function"
     | some packed =>
       let proofs := inp.aux.filter fun d => d.name != packed.name
-      match (transportWF inp.members packed proofs inp.sigma inp.newEncName inp.lemmas).run {} with
+      match (transportWF inp.members packed proofs inp.sigma inp.newEncName inp.lemmas inp.const?).run {} with
       | .error e => .baselineOf inp e
       | .ok (out, st) =>
         { decls := out.decls.map (·.decl), renames := out.renames, log := st.log

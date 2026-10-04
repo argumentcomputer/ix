@@ -20,9 +20,9 @@
   * **(c) GuessLex (`WG`).** Transport reproduces everything except the
     measures: equal once the measure arguments (`invImage`'s function,
     `WellFounded.Nat.fix`'s measure) are masked; recorded as `GUESSLEX`.
-  * **(d) negative controls.** A wrong permutation fails the oracle; a proof
-    with a term outside the grammar takes the fallback (kept verbatim,
-    `SHAPE`) and still type-checks against the transported statement.
+  * **(d) negative controls.** A wrong permutation fails the oracle; a user
+    injection inside a decreasing proof remains exactly unchanged while the
+    decoded obligations move. Unsupported monotonicity takes checked composition.
   * **(e) theorem cliques (Q6).** Each presentation is transported onto the
     order of its statements, or, when statements tie, of its recovered
     specifications (`Ix.Compile.Clique.recoveredOrder`); both must give the
@@ -581,9 +581,10 @@ def carrying (v : IxExpr) (arrowDom arrowCod g : IxExpr) : IxExpr :=
   let ty := _root_.Ix.Expr.mkForallE (ixName `_a) arrowDom (_root_.Ix.Compile.Canon.liftLoose arrowCod 1) .default
   _root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkLam (ixName `_g) ty (_root_.Ix.Compile.Canon.liftLoose v 1) .default) g
 
-/-- (d2) A decreasing proof with a term outside the grammar (a partial
-injection into the packing) keeps Lean's body under the transported
-statement, records `SHAPE`, and is accepted by the kernel. -/
+/-- (d2) A partial user injection grants no encoding ownership. Adding the
+opaque carrier commutes exactly with transport, and the resulting proof is
+accepted by the kernel. This strengthens the former shape-fallback control:
+the user's injection is preserved while the actual obligations move. -/
 def strayProof (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name)) :
     IO (Option String) := do
   let some f := familyNamed "WD" | return some "WD: no family"
@@ -605,19 +606,23 @@ def strayProof (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Na
   let proof' := { proof with value := _root_.Ix.Compile.Clique.mkLams ps body' }
   let aux := inp.aux.map fun d => if d.name == proof.name then proof' else d
   let out := _root_.Ix.Compile.Clique.transport { inp with aux }
+  let clean := _root_.Ix.Compile.Clique.transport inp
   let causes := out.causes.filter fun (_, c, _) => c == .shape
-  let kept := out.decls.find? fun d => causes.any (·.1 == d.name)
-  let verbatim := match kept with
-    | some d => _root_.Ix.Compile.Clique.alphaEq d.value proof'.value
-    | none => false
+  let targetName := ((out.renames.find? (·.1 == proof.name)).map (·.2)).getD proof.name
+  let some kept := out.decls.find? (·.name == targetName) | return some "WD: missing transported carried proof"
+  let some plain := clean.decls.find? (·.name == targetName) | return some "WD: missing clean transported proof"
+  let (targetBinders, targetBody) := _root_.Ix.Compile.Clique.peelLams n plain.value #[]
+  let expected := _root_.Ix.Compile.Clique.mkLams targetBinders (carrying targetBody a α inl)
+  let userPreserved := _root_.Ix.Compile.Clique.alphaEq kept.type plain.type &&
+    _root_.Ix.Compile.Clique.alphaEq kept.value expected
   let ks ← kernelCheck env "WD-stray" p0 pk out.decls
   let accepted := ks.all (·.2.isNone)
   IO.println s!"[clique-transport] (d) stray term in {proof.name.pretty}: causes {causes.map fun (n, c, w) => s!"{n.pretty} {c.tag} ({w})"}, \
-    body kept verbatim: {verbatim}, kernel {(ks.filter (·.2.isNone)).size}/{ks.size}"
+    user carrier commutes exactly: {userPreserved}, kernel {(ks.filter (·.2.isNone)).size}/{ks.size}"
   for (n, r) in ks do
     if let some m := r then IO.println s!"[clique-transport]   KERNEL-REJECT {n}: {(m.take 300).toString}"
-  return if causes.size == 1 && verbatim && accepted && !out.baseline then none
-    else some "WD: the stray proof did not take the verbatim fallback"
+  return if causes.isEmpty && userPreserved && accepted && !out.baseline && !clean.baseline then none
+    else some "WD: transport changed the opaque user carrier or failed to transport its real obligations"
 
 /-- (d3) A `partial_fixpoint` monotonicity proof outside the grammar takes
 the composition fallback `monotone_compose (mono φ) h`, records `SHAPE`, and

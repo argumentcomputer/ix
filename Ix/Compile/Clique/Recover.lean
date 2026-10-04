@@ -21,7 +21,9 @@
     `i` in the packed function (`λ v a. body`). Every application of the
     recursion variable `a (inj_j v) h` becomes `f_j v` (the decreasing proof
     `h` is dropped: it is the encoding's obligation); the recursion
-    variable's type and every relation application are erased.
+    variable's type is erased only at the root-validated leaf entry and
+    explicitly threaded PSigma eliminator positions. User relations and
+    same-typed user binders remain intact.
   * The inductive-predicate route (no `_f`; "below" matchers) is not
     recovered: `NOSPEC`.
 
@@ -48,6 +50,7 @@
 -/
 module
 public import Ix.Compile.Clique.Transport
+public import Ix.Compile.Clique.WFConjugation
 public import Ix.Compile.Canon.Clique
 public section
 
@@ -361,17 +364,35 @@ def recW (L : WFLayout) (names : Array Name) (lvls : Array Level) :
   | 0, _, _ => throw "recovery: recursion bound exhausted"
   | fuel + 1, ctx, e => do
     let go := recW L names lvls fuel
-    if L.isRelApp e then
-      pushHole (.expr e)
-      return Expr.mkConst phRel #[]
-    let binderTy (t : Expr) : RM Expr := do
-      if L.isRecVarType t then
-        pushHole (.expr t)
-        return Expr.mkConst phRecVar #[]
-      go ctx t
     match e with
     | .app .. =>
       let (h, args) := getAppFnArgs e
+      if let .const name levels _ := h then
+        if name == leanName ``PSigma.casesOn && args.size == 6 then
+          if let .bvar identity _ := stripMdata args[5]! then
+            if identity < ctx.size && ctx[ctx.size - 1 - identity]! then
+              -- The eliminator passes this exact recursion argument to its
+              -- minor's third binder. Value flow, not a matching type,
+              -- establishes the copied binder's role.
+              let .lam mn mt (.forallE rn rt result rbi _) mbi _ := stripMdata args[2]!
+                | throw "recovery: threaded PSigma motive has no recursion binder"
+              let .lam an aty (.lam bn bty (.lam cn cty body cbi _) bbi _) abi _ := stripMdata args[4]!
+                | throw "recovery: threaded PSigma minor has no recursion binder"
+              let alpha ← go ctx args[0]!
+              let beta ← go ctx args[1]!
+              let mt ← go ctx mt
+              pushHole (.expr rt)
+              let result ← go ((ctx.push false).push false) result
+              let motive := Expr.mkLam mn mt (Expr.mkForallE rn (Expr.mkConst phRecVar #[]) result rbi) mbi
+              let major ← go ctx args[3]!
+              let aty ← go ctx aty
+              let bty ← go (ctx.push false) bty
+              pushHole (.expr cty)
+              let body ← go (((ctx.push false).push false).push true) body
+              let minor := Expr.mkLam an aty
+                (Expr.mkLam bn bty (Expr.mkLam cn (Expr.mkConst phRecVar #[]) body cbi) bbi) abi
+              pushHole (.expr args[5]!)
+              return mkAppN (Expr.mkConst name levels) #[alpha, beta, motive, major, minor, Expr.mkConst phRecVar #[]]
       match h with
       | .bvar i _ =>
         if i < ctx.size && ctx[ctx.size - 1 - i]! then
@@ -386,11 +407,15 @@ def recW (L : WFLayout) (names : Array Name) (lvls : Array Level) :
         return mkAppN h (← args.mapM (go ctx))
       | _ => return mkAppN (← go ctx h) (← args.mapM (go ctx))
     | .lam nm t b bi _ =>
-      return Expr.mkLam nm (← binderTy t) (← go (ctx.push (L.isRecVarType t)) b) bi
+      return Expr.mkLam nm (← go ctx t) (← go (ctx.push false) b) bi
     | .forallE nm t b bi _ =>
-      return Expr.mkForallE nm (← binderTy t) (← go (ctx.push (L.isRecVarType t)) b) bi
+      return Expr.mkForallE nm (← go ctx t) (← go (ctx.push false) b) bi
     | .letE nm t v b nd _ =>
-      return Expr.mkLetE nm (← binderTy t) (← go ctx v) (← go (ctx.push (L.isRecVarType t)) b) nd
+      return Expr.mkLetE nm (← go ctx t) (← go ctx v) (← go (ctx.push false) b) nd
+    | .bvar i _ =>
+      if i < ctx.size && ctx[ctx.size - 1 - i]! then
+        throw "recovery: exact recursive binder escapes the decoded call region"
+      return e
     | .proj s i x _ => return Expr.mkProj s i (← go ctx x)
     | .mdata d x _ => return Expr.mkMData d (← go ctx x)
     | _ => return e
@@ -424,12 +449,17 @@ def encW (names : Array Name) : Nat → Expr → RM Expr
 
 /-- The recovered specifications of a well-founded theorem clique, each
 checked by re-encoding. -/
-def recoverWF (members : Array Decl) (mutDecl : Decl) : TM (Array Expr) := do
+def recoverWF (members : Array Decl) (mutDecl : Decl)
+    (const? : Name → Option ConstantInfo := fun _ => none) : TM (Array Expr) := do
   let n := members.size
   let L ← liftE (wfLayout members mutDecl (idPerm n) mutDecl.name)
   let names := members.map (·.name)
   let lvls := (members[0]!).levelParams.map Level.mkParam
   let (_, fixApp) := peelLams L.numFixed mutDecl.value #[]
+  -- Validate the actual root, relationship, tree and entry identities before
+  -- assigning a recursion role to any leaf binder. This identity permutation
+  -- is a decoder check; recovery still reads the original source syntax.
+  let _ ← conjugateWFRoot L fixApp const?
   let (_, fargs) := getAppFnArgs (stripMdata fixApp)
   let some F := fargs.back? | throw "recovery: no functional in the packed function"
   let (bs, body) := peelLams 2 F #[]
@@ -438,7 +468,14 @@ def recoverWF (members : Array Decl) (mutDecl : Decl) : TM (Array Expr) := do
   unless L.isClique t.spine do throw "recovery: a case tree over another packing"
   let mut out := #[]
   for leaf in t.leaves do
-    let (spec, (holes, _)) ← (recW L names lvls defaultFuel #[] leaf).run (#[], 0)
+    let .lam payloadName payloadType (.lam recursiveName recursiveType body rbi _) pbi _ := stripMdata leaf
+      | throw "recovery: missing decoded leaf entry binders"
+    let recover : RM Expr := do
+      pushHole (.expr recursiveType)
+      let body ← recW L names lvls defaultFuel #[false, true] body
+      return Expr.mkLam payloadName payloadType
+        (Expr.mkLam recursiveName (Expr.mkConst phRecVar #[]) body rbi) pbi
+    let (spec, (holes, _)) ← recover.run (#[], 0)
     let (back, (_, used)) ← (encW names defaultFuel spec).run (holes, 0)
     unless used == holes.size && alphaEq back leaf do
       throw "recovery: re-encoding a leaf does not give Lean's term back"
@@ -455,7 +492,7 @@ def recoverSpecs (inp : Input) : Except String (Array Expr) :=
     | .wellFounded => do
       let some packed := findPacked? inp.members inp.aux
         | throw "recovery: no packed function"
-      recoverWF inp.members packed
+      recoverWF inp.members packed inp.const?
     | .partialFixpoint => throw "recovery: a theorem clique has no partial_fixpoint route"
   r.run'
 
@@ -594,7 +631,7 @@ def normalisedSpecs (inp : Input) : Except String (Array Expr) := do
   | .wellFounded =>
     let some packed := findPacked? inp.members inp.aux | throw "recovery: no packed function"
     let L ← wfLayout inp.members packed (idPerm n) packed.name
-    let leaves ← TM.run' (recoverWF inp.members packed)
+    let leaves ← TM.run' (recoverWF inp.members packed inp.const?)
     -- a leaf lives under the fixed parameters, then `F`'s `x` and `a`
     return (List.range n).toArray.map fun i =>
       let d := inp.members[i]!
