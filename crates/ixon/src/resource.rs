@@ -2898,7 +2898,13 @@ pub fn dependency_graph(
         .push(i);
     }
   }
-  for (i, expression) in &program.auxiliary {
+  // Effective interfaces must seed relevance even for plain declarations.
+  let overlays = program
+    .interfaces
+    .iter()
+    .map(|(i, e)| (*i as usize, e.clone()))
+    .collect::<Vec<_>>();
+  for (i, expression) in program.auxiliary.iter().chain(overlays.iter()) {
     if *i >= size {
       return Err(Error::BadReference(*i as u64));
     }
@@ -3187,9 +3193,15 @@ pub fn admit_program_crossed(
             ))
           }
         },
-        DeclKind::Constructor => Checker::new(program, limits)
-          .check_constructor_type(limits.depth, &d.typ, false, false)
-          .map(|()| vec![]),
+        DeclKind::Constructor => {
+          let mut checker = Checker::new(program, limits);
+          checker
+            .interface_type(i as u64)
+            .and_then(|typ| {
+              checker.check_constructor_type(limits.depth, &typ, false, false)
+            })
+            .map(|()| vec![])
+        },
         DeclKind::TypeConstructor | DeclKind::Theorem => Ok(vec![]),
       };
       let binders = result
@@ -3630,6 +3642,61 @@ mod tests {
     p.cases = true;
     p.case_definitions = vec![29];
     p
+  }
+
+  #[test]
+  fn effective_interfaces_seed_relevance_and_constructor_checks() {
+    let mut p = Program {
+      declarations: vec![
+        Declaration {
+          typ: Expr::sort(0),
+          body: None,
+          kind: DeclKind::TypeConstructor,
+        },
+        Declaration {
+          typ: unary(BinderContract::default(), ValueContract::shared()),
+          body: None,
+          kind: DeclKind::Assumption,
+        },
+        Declaration {
+          typ: unary(BinderContract::default(), ValueContract::shared()),
+          body: Some(Expr::lam_contract(
+            BinderContract::default(),
+            nat(),
+            Expr::app(Expr::reference(1, vec![]), Expr::var(0)),
+          )),
+          kind: DeclKind::Definition,
+        },
+      ],
+      interfaces: vec![(
+        1,
+        unary(b(Uses::Many, ValueContract::unique()), ValueContract::shared()),
+      )],
+      ..Program::default()
+    };
+    let policy = Policy { assumptions: vec![1], ..Policy::default() };
+    assert_eq!(
+      relevance(&p, Limits::default()).unwrap(),
+      vec![false, true, true]
+    );
+    assert!(admit_program(&p, &policy, Limits::default()).is_err());
+    p.declarations[2].typ =
+      unary(b(Uses::Many, ValueContract::unique()), ValueContract::shared());
+    p.declarations[2].body = Some(Expr::lam_contract(
+      b(Uses::Many, ValueContract::unique()),
+      nat(),
+      Expr::app(Expr::reference(1, vec![]), Expr::var(0)),
+    ));
+    assert!(admit_program(&p, &policy, Limits::default()).is_ok());
+    p.declarations.truncate(2);
+    p.declarations[1].kind = DeclKind::Constructor;
+    assert!(admit_program(&p, &policy, Limits::default()).is_err());
+    p.interfaces[0].1 =
+      unary(b(Uses::Many, ValueContract::unique()), ValueContract::unique());
+    assert!(admit_program(&p, &policy, Limits::default()).is_ok());
+    p.interfaces[0].1 =
+      unary(BinderContract::default(), ValueContract::shared());
+    assert!(admit_program(&p, &policy, Limits::default()).is_ok());
   }
 
   /// Mirrors the R15 part of `Tests.Resource.runAdmission`.

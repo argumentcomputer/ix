@@ -97,7 +97,10 @@ def dependencyGraph (program : Program) (limits : Limits := {}) :
     for dependency in scan.dependencies do
       if dependency >= size then throw (.badReference dependency)
       reverse := reverse.set! dependency (reverse[dependency]!.push i)
-  for (i, expression) in program.auxiliary do
+  -- An admitted interface is the contract callers actually see. It must
+  -- seed relevance even when the original declaration is unannotated.
+  let overlays := program.interfaces.map fun (i, expression) => (i.toNat, expression)
+  for (i, expression) in program.auxiliary ++ overlays do
     if i >= size then throw (.badReference i)
     let scan ← runCheck limits (scanExpr program limits.depth expression)
     if scan.annotated then
@@ -258,7 +261,8 @@ def admitProgramCrossed (program : Program) (policy : Policy := {}) (limits : Li
           if policy.assumptions.contains i then .ok #[]
           else .error (.unsupported "external resource interface is absent from the bound profile")
         | .constructor =>
-          (runCheck limits (checkConstructorType program limits.depth d.type false false)).map fun _ => #[]
+          (runCheck limits (do
+            checkConstructorType program limits.depth (← interfaceType program i.toUInt64) false false)).map fun _ => #[]
         | .typeConstructor | .theorem => .ok #[]
       let binders ← checked.mapError (⟨some i, ·⟩)
       crossed := crossed ++ binders.map (i, ·)

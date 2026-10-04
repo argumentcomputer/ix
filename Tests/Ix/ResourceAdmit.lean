@@ -25,6 +25,25 @@ def withConstructor (type : E) : Program :=
   { program with declarations := program.declarations.push { type, kind := .constructor } }
 
 def runAdmission : IO Unit := do
+  let overlay : Program := {
+    declarations := #[
+      { type := .sort 0, kind := .typeConstructor },
+      { type := arr (b .many), kind := .assumption },
+      { type := arr (b .many), body := some (lam (b .many) (call 1 (v 0))) }]
+    interfaces := #[(1, arr (b .many .unique))] }
+  unless (relevance overlay).toOption == some #[false, true, true] do
+    throw <| IO.userError "effective interface did not mark its plain caller"
+  checkAdmission "interface-only unique input checks plain caller" overlay false { assumptions := #[1] }
+  let uniqueCaller := { overlay with declarations := overlay.declarations.set! 2 {
+    type := arr (b .many .unique), body := some (lam (b .many .unique) (call 1 (v 0))) } }
+  checkAdmission "interface unique input positive" uniqueCaller true { assumptions := #[1] }
+  checkAdmission "default overlay positive" { overlay with interfaces := #[(1, arr (b .many))] }
+    true { assumptions := #[1] }
+  let ctor := { overlay with declarations := #[overlay.declarations[0]!,
+    { type := arr (b .many), kind := .constructor }] }
+  checkAdmission "constructor overlay cannot drop unique capture" ctor false { assumptions := #[1] }
+  checkAdmission "constructor overlay preserves unique capture"
+    { ctor with interfaces := #[(1, arr (b .many .unique) .unique)] } true { assumptions := #[1] }
   checkAdmission "explicit profile" program true
   checkAdmission "unadmitted external contract" program false { policy with assumptions := #[6, 9, 10] }
   checkAdmission "unadmitted selection behavior" program false { policy with choices := #[] }
@@ -141,7 +160,7 @@ def runAdmission : IO Unit := do
     { policy with equations := #[(13, 12)] }
   checkAdmission "an equation that does not use a present axiom" (withAxiom (lam (b .many) zero)) true
     { policy with equations := #[(13, 12)] }
-  IO.println "Resource admission: 37 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
+  IO.println "Resource admission: 42 profile, dependency, constructor, theorem, interface, equation, and DAG checks passed"
 
 end Tests.Resource
 

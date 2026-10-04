@@ -701,7 +701,7 @@ fn fields(
   count: u64,
 ) -> Result<Vec<Field>, Error> {
   let mut checker = Checker::new(program, limits);
-  let mut typ = checker.declaration(ctor)?.typ.clone();
+  let mut typ = checker.interface_type(ctor)?;
   for _ in 0..params {
     typ = checker.whnf(limits.depth, &typ)?;
     let Expr::All(_, _, _, body) = typ.as_ref() else {
@@ -1014,6 +1014,17 @@ pub fn prepare(
   program.prop_sort = Some(PROP_SORT);
   program.choices = choices.clone();
   program.cases = profile.cases;
+  for (address, mask) in &profile.interfaces {
+    let i = index(&indices, address)?;
+    let typ = program.declarations[native_index(i)?].typ.clone();
+    let overlaid =
+      overlay(&program, profile.limits, &typ, mask).map_err(|_error| {
+        format!(
+          "resource profile: interface does not match the arrows of {address:?}"
+        )
+      })?;
+    program.interfaces.push((i, overlaid));
+  }
   if profile.cases {
     for (address, r) in &recursor_specs {
       // Only index-free inductive types: a case on an indexed family needs the
@@ -1054,17 +1065,6 @@ pub fn prepare(
         });
       }
     }
-  }
-  for (address, mask) in &profile.interfaces {
-    let i = index(&indices, address)?;
-    let typ = program.declarations[native_index(i)?].typ.clone();
-    let overlaid =
-      overlay(&program, profile.limits, &typ, mask).map_err(|_error| {
-        format!(
-          "resource profile: interface does not match the arrows of {address:?}"
-        )
-      })?;
-    program.interfaces.push((i, overlaid));
   }
   let mut equations = vec![];
   for (definition, equation) in &profile.equations {
@@ -1658,7 +1658,7 @@ mod tests {
     );
     store(&env, indc_proj_constant(0, block.clone()));
     store(&env, ctor_proj_constant(0, 0, block.clone()));
-    store(&env, ctor_proj_constant(0, 1, block.clone()));
+    let field_ctor = store(&env, ctor_proj_constant(0, 1, block.clone()));
     let rec_address = store(&env, recr_proj_constant(1, block));
     let cases = Profile { cases: true, ..profile(&unit) };
     let resolved = prepare(&env, &cases).unwrap();
@@ -1680,6 +1680,51 @@ mod tests {
       .collect();
     assert_eq!(shapes, vec![(true, 0, 1, 2, 0, vec![0, 1], vec![0, 1])]);
     assert!(resolved.program.cases);
+    let unique =
+      BinderContract { uses: Uses::Many, value: ValueContract::unique() };
+    let overlaid = Profile {
+      assumptions: vec![field_ctor.clone()],
+      interfaces: vec![(
+        field_ctor,
+        vec![crate::contract::pack_all_contract(
+          unique,
+          ValueContract::unique(),
+        )],
+      )],
+      ..cases.clone()
+    };
+    assert!(prepare(&env, &overlaid).unwrap().program.recursors.is_empty());
+    let raw = Program {
+      declarations: vec![
+        Declaration {
+          typ: Expr::sort(0),
+          body: None,
+          kind: DeclKind::TypeConstructor,
+        },
+        Declaration {
+          typ: Expr::all(
+            Expr::reference(0, vec![]),
+            Expr::reference(0, vec![]),
+          ),
+          body: None,
+          kind: DeclKind::Constructor,
+        },
+      ],
+      interfaces: vec![(
+        1,
+        Expr::all_contract(
+          unique,
+          ValueContract::unique(),
+          Expr::reference(0, vec![]),
+          Expr::reference(0, vec![]),
+        ),
+      )],
+      ..Program::default()
+    };
+    assert_eq!(
+      fields(&raw, Limits::default(), 0, 1, 0, 1).unwrap()[0].contract,
+      ValueContract::unique()
+    );
     let ordinary = prepare(&env, &profile(&unit)).unwrap();
     assert!(ordinary.program.recursors.is_empty() && !ordinary.program.cases);
   }

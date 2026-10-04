@@ -410,7 +410,7 @@ fields require a richer elimination rule. Omitting a rule makes every
 attempted resource projection fail closed. -/
 def fields (program : Program) (limits : Limits) (typeId ctorId : UInt64) (params count : Nat) :
     Except Error (Array Field) := runCheck limits do
-  let mut type := (← declaration program ctorId).type
+  let mut type ← interfaceType program ctorId
   for _ in [:params] do
     type ← whnf program limits.depth type
     let .all _ _ _ body := type | throw (.unsupported "constructor parameter telescope")
@@ -601,6 +601,11 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
     shareableTypes := shareable, scalarTypes, choices, propSort := some propSort, cases := profile.cases }
+  for (address, mask) in profile.interfaces do
+    let i ← index indices address
+    let type ← (overlay program profile.limits program.declarations[i.toNat]!.type mask.toList).mapError
+      fun _ => s!"resource profile: interface does not match the arrows of {address}"
+    program := { program with interfaces := program.interfaces.push (i, type) }
   if profile.cases then
     for (address, r) in recursorSpecs do
       -- Only index-free inductive types: a case on an indexed family needs the
@@ -616,11 +621,6 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
           program := { program with recursors := program.recursors.push {
             index := i, params := r.params.toNat, motives := r.motives.toNat
             minors := r.minors.toNat, indices := r.indices.toNat, fields, binders } }
-  for (address, mask) in profile.interfaces do
-    let i ← index indices address
-    let type ← (overlay program profile.limits program.declarations[i.toNat]!.type mask.toList).mapError
-      fun _ => s!"resource profile: interface does not match the arrows of {address}"
-    program := { program with interfaces := program.interfaces.push (i, type) }
   let equations ← profile.equations.mapM fun (definition, equation) => do
     return (← index indices definition, ← index indices equation)
   if let some eq := profile.eqType then

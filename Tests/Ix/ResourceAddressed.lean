@@ -322,7 +322,7 @@ def run : IO Unit := do
   let (caseEnv, caseAddress) := store base caseBlock
   let (caseEnv, _) := store caseEnv (Addressed.wrapper (.iPrj ⟨0, caseAddress⟩))
   let (caseEnv, _) := store caseEnv (Addressed.constructorWrapper caseAddress 0 0)
-  let (caseEnv, _) := store caseEnv (Addressed.constructorWrapper caseAddress 0 1)
+  let (caseEnv, fieldCtor) := store caseEnv (Addressed.constructorWrapper caseAddress 0 1)
   let (caseEnv, recAddress) := store caseEnv (Addressed.wrapper (.rPrj ⟨1, caseAddress⟩))
   let resolved ← get "case recursors" (Addressed.prepare caseEnv { profile with cases := true })
   let shapes := resolved.program.recursors.map fun r =>
@@ -330,6 +330,20 @@ def run : IO Unit := do
       r.fields, r.binders)
   unless shapes == #[(true, 0, 1, 2, 0, #[0, 1], #[0, 1])] && resolved.program.cases do
     throw <| IO.userError "addressed recursor did not give its case-split shape"
+  let overridden ← get "case constructor overlay" (Addressed.prepare caseEnv {
+    profile with cases := true, assumptions := #[fieldCtor], interfaces := #[(fieldCtor, ⟨#[packAllContract ⟨.many, .unique⟩ .unique]⟩)] })
+  unless overridden.program.recursors.isEmpty do
+    throw <| IO.userError "constructor overlay retained a plain-data recursor"
+  let raw : Program := {
+    declarations := #[
+    { type := .sort 0, kind := .typeConstructor },
+    { type := .all .many .shared (.ref 0 #[]) (.ref 0 #[]), kind := .constructor }],
+    interfaces := #[(1, .all ⟨.many, .unique⟩ .unique (.ref 0 #[]) (.ref 0 #[]))] }
+  let fields ← match Addressed.fields raw {} 0 1 0 1 with
+    | .ok fields => pure fields
+    | .error e => throw <| IO.userError s!"effective fields: {repr e}"
+  unless fields.map (·.contract) == #[.unique] do
+    throw <| IO.userError "projection fields ignored the effective constructor interface"
   let ordinary ← get "no case behavior" (Addressed.prepare caseEnv profile)
   unless ordinary.program.recursors.isEmpty && !ordinary.program.cases do
     throw <| IO.userError "case-split shapes without case behavior"
