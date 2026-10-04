@@ -78,7 +78,18 @@ def domainMismatch (input : Input) : Bool :=
 def mapMismatch (input : Input) : Bool :=
   match checkCompiled input with | .error .mapMismatch => true | _ => false
 
+def malformedKeys (input : Input) : Bool :=
+  match checkCompiled input with | .error (.setup _) => true | _ => false
+
 def controls : List (String × (Unit → Bool)) := [
+  ("empty record key rejected before admission", fun _ => malformedKeys
+    { choiceInput with records := [(⟨ByteArray.empty⟩, Ixon.serConstant choiceRecord)] }),
+  ("short blob key rejected before admission", fun _ => malformedKeys
+    { choiceInput with blobs := [(⟨ByteArray.empty⟩, ByteArray.empty)] }),
+  ("short map record key rejected before lookup", fun _ => domainMismatch
+    { choiceInput with map := [⟨`first, ⟨ByteArray.empty⟩, .member (address 71) 0⟩] }),
+  ("short map target key rejected before lookup", fun _ => domainMismatch
+    { choiceInput with map := [⟨`first, address 71, .member ⟨ByteArray.empty⟩ 0⟩] }),
   ("direct independently exported definition", fun _ => accepted choiceInput),
   ("legitimate many-to-one aliases", fun _ => accepted aliases),
   ("same-typed wrong-value alias", fun _ => sourceMismatch wrongAlias),

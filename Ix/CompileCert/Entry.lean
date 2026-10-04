@@ -8,9 +8,9 @@ independent source export against the reader stream. Its result carries
 proofs of the checks actually performed. No producer-supplied proposition,
 Boolean verdict, or `Named.original` field is accepted as correspondence.
 
-This is the strict direct-syntax foundation of C1, not completed W: projection
-normalization, compatible hint merging, source-block shape/order fidelity,
-and complete source/export refinement still require their stated extensions.
+This is a conservative foundation of C1, not completed W. Singleton definitions
+may use the proved raw reader-normalization relation; its semantic pull-back
+and complete source/export refinement remain separate obligations.
 -/
 
 namespace Ix.CompileCert
@@ -28,6 +28,18 @@ structure Input extends ArtifactInput where
   source : Source
   roots : List Lean.Name
   map : SourceMap
+
+/-- Validate host-supplied key widths before admission's hash-table lookups.
+This does not assert that a key hashes its payload; admission treats keys as
+opaque identities. Wire-embedded references are checked by the decoder. -/
+def ArtifactKeysValid (input : ArtifactInput) : Prop :=
+  (∀ row ∈ input.records, row.1.hash.size = 32) ∧
+  (∀ row ∈ input.blobs, row.1.hash.size = 32)
+
+instance (input : ArtifactInput) : Decidable (ArtifactKeysValid input) :=
+  inferInstanceAs (Decidable (
+    (∀ row ∈ input.records, row.1.hash.size = 32) ∧
+    (∀ row ∈ input.blobs, row.1.hash.size = 32)))
 
 /-- Resolve actual record references and names, rather than comparing a
 producer's display label or allowing a fabricated member address. -/
@@ -73,6 +85,7 @@ instance (cx : ExportContext) (reader : Ctx) : Decidable (MapAgrees cx reader) :
 /-- Precise direct-cone relation. Reader declarations are deliberately kept
 separate from the installed `env`: binder annotations/lets may change there. -/
 structure AdmittedArtifact (input : ArtifactInput) where
+  keys_valid : ArtifactKeysValid input
   env : Kernel.Env
   admitted : checkBytes input.limits input.records input.blobs input.hint = .ok env
   pins : Pins
@@ -109,6 +122,7 @@ inductive Decline where
 /-- The runtime checks are the constructors' proof premises, not assumptions
 supplied by the caller. Structural equality decisions are kernel-checked. -/
 def prepareArtifact (input : ArtifactInput) : Except Decline (AdmittedArtifact input) :=
+  if hk : ArtifactKeysValid input then
   match ha : checkBytes input.limits input.records input.blobs input.hint with
   | .error e => .error (.admission e)
   | .ok env =>
@@ -133,7 +147,8 @@ def prepareArtifact (input : ArtifactInput) : Except Decline (AdmittedArtifact i
                   | .ok (_, ds) => Except.ok ds
                   | .error (e, i) => Except.error (Kernel.Admission.Error.read i e)) = .ok decls
                 rw [hr]
-              .ok ⟨env, ha, pins, hp, pre, hq, constants, hc, decls, state, hr, hs⟩
+              .ok ⟨hk, env, ha, pins, hp, pre, hq, constants, hc, decls, state, hr, hs⟩
+  else .error (.setup "record and blob keys must be exactly 32 bytes")
 
 def checkAssociation (input : Input) (artifact : AdmittedArtifact input.toArtifactInput) :
     Except Decline (AcceptedAssociation input) :=

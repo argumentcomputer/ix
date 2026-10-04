@@ -27,12 +27,14 @@ are allowed. Record/member validity is discharged against reader output. -/
 def MapComplete (s : Source) (m : SourceMap) : Prop :=
   (m.map MapEntry.source).Nodup ∧
     (∀ n ∈ s.names, n ∈ m.map MapEntry.source) ∧
-    (∀ e ∈ m, e.source ∈ s.names)
+    (∀ e ∈ m, e.source ∈ s.names) ∧
+    (∀ e ∈ m, e.record.hash.size = 32 ∧ e.target.block.hash.size = 32)
 
 instance (s : Source) (m : SourceMap) : Decidable (MapComplete s m) :=
   inferInstanceAs (Decidable ((m.map MapEntry.source).Nodup ∧
     (∀ n ∈ s.names, n ∈ m.map MapEntry.source) ∧
-    (∀ e ∈ m, e.source ∈ s.names)))
+    (∀ e ∈ m, e.source ∈ s.names) ∧
+    (∀ e ∈ m, e.record.hash.size = 32 ∧ e.target.block.hash.size = 32)))
 
 def checkMap (s : Source) (m : SourceMap) : Bool := decide (MapComplete s m)
 
