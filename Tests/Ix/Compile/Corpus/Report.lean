@@ -58,6 +58,28 @@ def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
     ("jobs", toJson cfg.jobs), ("workersPerCase", toJson cfg.workers),
     ("timeoutSeconds", toJson cfg.timeout), ("cases", toJson (cases.map (·.id))),
     ("closureBackend", toJson "rust --consts"), ("expected", toJson expected)]
+  -- compile-lean always invokes Lake. Build each selected module once before
+  -- parallel off/on cases; their later Lake calls then only verify cached inputs.
+  let modules ← cases.mapM fun case => do
+    unless case.file.endsWith ".lean" do throw <| IO.userError s!"non-Lean case source {case.file}"
+    pure ((case.file.dropEnd 5).toString.replace "/" ".")
+  let prepared ← IO.Process.output
+    { cmd := "lake", args := #["build"] ++ modules, cwd := cfg.dir }
+  IO.FS.writeFile (cfg.dir / "prepare.log") (prepared.stdout ++ prepared.stderr)
+  writeJson (cfg.dir / "preparation.json") <| Json.mkObj [
+    ("modules", toJson modules), ("exitCode", toJson prepared.exitCode.toNat),
+    ("status", toJson (if prepared.exitCode == 0 then "pass" else "fail"))]
+  if prepared.exitCode != 0 then
+    let mut rows : Array Verdict := #[]
+    for case in cases do
+      for mode in modes do
+        for phase in phaseNames do
+          rows := rows.push ⟨case.id, mode, phase,
+            if cfg.phases.contains phase then "not-run" else "not-selected",
+            "shared source preparation failed", "prepare.log"⟩
+    writeJson (cfg.dir / "verdicts.json") rows
+    IO.eprintln "[corpus] source preparation failed; see prepare.log and preparation.json"
+    return 1
   let mut pending : Array (Task (Except IO.Error (Array Verdict))) := #[]
   let mut rows := #[]
   for case in cases do

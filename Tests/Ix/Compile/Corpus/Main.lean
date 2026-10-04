@@ -71,6 +71,16 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
     ((applyExpected expected infrastructure "known diagnostic").status == "infrastructure-error")
   check "expectation cannot hide unexpected pass"
     ((applyExpected expected { infrastructure with status := "pass" } "").status == "fail")
+  check "Rust zero-target success rejected"
+    ((checkedRustTargets "[check] 0/0 passed\n" 0).toOption.isNone)
+  check "Rust missing summary rejected" ((checkedRustTargets "success\n" 0).toOption.isNone)
+  check "Rust inconsistent success rejected"
+    ((checkedRustTargets "[check] 1/2 passed\n" 0).toOption.isNone)
+  check "Rust real work accepted" ((checkedRustTargets "[check] 2/2 passed\n" 0).toOption == some 2)
+  check "Lean zero-target success rejected"
+    ((Tests.Ix.Compile.KernelReport.checkedLeanTargets "##check-lean## 1 0 0 0\n").toOption.isNone)
+  check "Lean unmatched selection retained"
+    (Tests.Ix.Compile.KernelReport.leanUnmatched "[check-lean] warning: --consts name matched nothing: AX.X.T\n" == #["AX.X.T"])
   IO.println s!"[corpus] curated {curated shapes |>.size} cases; smoke4; full{shapes.size}"
   return 0
 

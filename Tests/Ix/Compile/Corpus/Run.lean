@@ -59,6 +59,20 @@ def envFor (cfg : RunConfig) : Array (String × Option String) := #[
   ("RAYON_NUM_THREADS", some (toString cfg.workers)),
   ("IX_VALIDATE_AUXTABLE", none), ("LD_LIBRARY_PATH", none), ("CHECK_IXE_ROOTS", none)]
 
+/-- Rust's stable summary must attest to nonempty work; absence and a successful
+0/0 report are protocol errors, never an expected unsupported source case. -/
+def checkedRustTargets (content : String) (exitCode : UInt32) : Except String Nat := do
+  let summaries := (content.splitOn "\n").filter fun line =>
+    line.startsWith "[check] " && line.endsWith " passed"
+  let [line] := summaries | throw "check-rs did not emit exactly one work summary"
+  let counts := ((line.drop 8).toString.dropEnd 7).toString.splitOn "/"
+  let [passed, total] := counts | throw "malformed check-rs work summary"
+  let (some p, some n) := (passed.toNat?, total.toNat?)
+    | throw "nonnumeric check-rs work summary"
+  if n == 0 || p > n then throw "check-rs reported zero or inconsistent targets"
+  if exitCode == 0 && p != n then throw "check-rs success disagrees with its work summary"
+  return n
+
 def command (cfg : RunConfig) (dir : System.FilePath) (phase : String)
     (exe : String) (args : Array String)
     (extraEnv : Array (String × Option String) := #[]) : IO IO.Process.Output := do
@@ -73,6 +87,14 @@ def command (cfg : RunConfig) (dir : System.FilePath) (phase : String)
   if panic || (out.exitCode != 0 && out.exitCode != 1 && out.exitCode != 3) ||
       (checker && out.exitCode == 1) then
     throw <| IO.userError s!"{phase}: process infrastructure error, exit {out.exitCode}; see {dir}/{phase}.log"
+  if args[0]? == some "check-rs" then
+    discard <| IO.ofExcept (checkedRustTargets diagnostic out.exitCode)
+    if (diagnostic.splitOn "exact name(s) not in env:").length > 1 then
+      throw <| IO.userError s!"{phase}: requested Rust checker names were unmatched"
+  if args[0]? == some "check-lean" then
+    discard <| IO.ofExcept (KernelReport.checkedLeanTargets out.stdout)
+    unless (KernelReport.leanUnmatched diagnostic).isEmpty do
+      throw <| IO.userError s!"{phase}: requested Lean checker names were unmatched"
   return out
 
 def resultRow (cfg : RunConfig) (case : Case) (phase : String) (out : IO.Process.Output) : Verdict :=
