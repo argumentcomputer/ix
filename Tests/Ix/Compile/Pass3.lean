@@ -598,7 +598,8 @@ def runLib (offPath onPath : String) : IO UInt32 := do
   IO.println s!"[pass3-lib] surgery-rewritten constants (switch off): {surgered.size}; \
     byte-identical with the switch on: {same}; baseline (differ): {differ.size}"
   for n in (differ.qsort (· < ·)).toList do IO.println s!"[pass3-lib]   differs: {n}"
-  for p in problems.toList.take 50 do IO.println s!"[pass3-lib] FAIL {p}"
+  let shown := if (← IO.getEnv "PASS3_LIB_ALL").isSome then problems.size else 50
+  for p in problems.toList.take shown do IO.println s!"[pass3-lib] FAIL {p}"
   IO.println s!"[pass3-lib] {problems.size} problem(s) ({(← IO.monoMsNow) - t0} ms)"
   return if problems.isEmpty then 0 else 1
 
