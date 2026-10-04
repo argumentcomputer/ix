@@ -32,6 +32,7 @@
 -/
 import Ix.Meta
 import Ix.EnvScope
+import Ix.Benchmark.Results
 import Ix.CompileM
 import Ix.CompileDriver
 import Ix.DecompileDriver
@@ -39,6 +40,7 @@ import Ix.Compile.Pass
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxCert
+import Tests.Ix.Compile.KernelReport
 import Lean.Data.Json
 import Ix.Tc.Validate
 import Tests.Ix.Compile.Image
@@ -215,47 +217,83 @@ private def failLines (out : String) : List (String × String) :=
 
 /-- `(leg, name, message)` of every failure of the three kernels on `names`
 of the file `path`. Declines of the certified checker in documented classes
-are not failures. -/
+are not failures. Process/report failures throw instead of entering the
+per-name known-failure accounting. -/
 def kernelFailures (dir : System.FilePath) (path : System.FilePath) (names : Array String)
     (anon : Bool := false) : IO (Array (String × String × String)) := do
+  if names.isEmpty then throw (IO.userError "kernel check requested no names")
   let mut failed : Array (String × String × String) := #[]
   let namesFile := dir / "names.txt"
   IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
-  let nameSet : Std.HashSet String := names.foldl (·.insert ·) {}
-  -- certified checker (whole file: its rows name every constant)
+  -- Resolve all requested names from the environment. The certified checker
+  -- reports owning records, with at most three display names per record.
+  let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy (← IO.FS.readBinFile path))
+  let byName : Std.HashMap String String := parts.namedRows.foldl (fun m row =>
+    m.insert row.name.pretty (toString (Tests.Ix.Compile.AuxCert.recordOf parts.env row.addr))) {}
+  let rawAddresses : Std.HashMap String String := parts.namedRows.foldl
+    (fun m row => m.insert row.name.pretty (toString row.addr)) {}
+  let mut expected : Array (String × String) := #[]
+  let mut anonNames : Std.HashMap String (Array String) := {}
+  for n in names do
+    let some address := byName[n]?
+      | throw (IO.userError s!"kernel check requested a name absent from the output: {n}")
+    expected := expected.push (n, address)
+    let some rawAddress := rawAddresses[n]?
+      | throw (IO.userError s!"missing anonymous address for {n}")
+    anonNames := anonNames.insert rawAddress ((anonNames.getD rawAddress #[]).push n)
+  -- certified checker (whole file; acceptance is a row verdict, not exit 0)
   let certPath := dir / "cert.jsonl"
   let cert ← runProc certExe #[path.toString, certPath.toString, "--jobs", "8"]
-  if ← certPath.pathExists then
-    for line in (← IO.FS.readFile certPath).splitOn "\n" do
-      if line.isEmpty then continue
-      let .ok j := Json.parse line | continue
-      let ns := (j.getObjValAs? (Array String) "names").toOption.getD #[]
-      let outcome := (j.getObjValAs? String "outcome").toOption.getD ""
-      let reason := (j.getObjValAs? String "reason").toOption.getD ""
-      let ours := ns.filter nameSet.contains
-      if ours.isEmpty || outcome == "accept" then continue
-      if outcome == "decline" && Tests.Ix.Compile.AuxCert.documentedDecline reason then continue
-      for n in ours do failed := failed.push ("cert", n, s!"{outcome}: {reason}")
-  else
-    failed := failed.push ("cert", "*", s!"kernel-check-ixe wrote no rows (exit {cert.exitCode})")
+  IO.FS.writeFile (dir / "cert.stdout") cert.stdout
+  IO.FS.writeFile (dir / "cert.stderr") cert.stderr
+  unless ← certPath.pathExists do
+    throw (IO.userError s!"kernel-check-ixe wrote no report (exit {cert.exitCode})")
+  let report ← IO.ofExcept (KernelReport.parse (← IO.FS.readFile certPath) cert.exitCode)
+  IO.ofExcept (KernelReport.checkCoverage report expected)
+  for (n, address) in expected do
+    let some verdict := report[address]?
+      | throw (IO.userError s!"missing certified verdict for {n}@{address}")
+    if verdict.outcome == "accept" then continue
+    if verdict.outcome == "decline" && Tests.Ix.Compile.AuxCert.documentedDecline verdict.reason then continue
+    failed := failed.push ("cert", n, s!"{verdict.outcome}: {verdict.reason}")
   -- check-rs, meta mode, the names
   let rs ← runProc ixExe ((#["check-rs", path.toString, "--consts-file", namesFile.toString]
     ++ if anon then #["--anon"] else #[]))
+  IO.FS.writeFile (dir / "rs.stdout") rs.stdout
+  IO.FS.writeFile (dir / "rs.stderr") rs.stderr
+  if rs.exitCode == 0 && ((rs.stdout ++ rs.stderr).splitOn "[check] 0/0 passed").length > 1 then
+    throw (IO.userError "check-rs checked zero targets")
   for (n, m) in failLines (rs.stdout ++ rs.stderr) do failed := failed.push ("rs", n, m)
   if rs.exitCode != 0 && (failLines (rs.stdout ++ rs.stderr)).isEmpty then
     failed := failed.push ("rs", "*", s!"check-rs exit {rs.exitCode}: {((rs.stdout ++ rs.stderr).takeEnd 300).toString}")
-  -- check-lean, meta mode, the names
+  -- Lean anon selectors are addresses, unlike Rust's source-name selectors.
+  -- Write bare hex: the shared names-file grammar treats `#` as a comment.
+  let leanNamesFile := dir / "lean-names.txt"
+  let leanNames := if anon then (anonNames.toArray.map (·.1)).qsort (· < ·) else names
+  IO.FS.writeFile leanNamesFile ("\n".intercalate leanNames.toList ++ "\n")
   let failOut := dir / "lean.fail"
-  let ln ← runProc ixExe (#["check-lean", path.toString, "--consts-file", namesFile.toString,
+  let ln ← runProc ixExe (#["check-lean", path.toString, "--consts-file", leanNamesFile.toString,
     "--fail-out", failOut.toString, "--workers", "8"] ++ if anon then #["--anon"] else #[])
+  IO.FS.writeFile (dir / "lean.stdout") ln.stdout
+  IO.FS.writeFile (dir / "lean.stderr") ln.stderr
+  if ln.exitCode == 0 || ln.exitCode == Ix.Benchmark.Results.exitRejected then
+    discard <| IO.ofExcept (KernelReport.checkedLeanTargets ln.stdout)
   let leanFails ← if ← failOut.pathExists then
-      pure ((← IO.FS.readFile failOut).splitOn "\n" |>.filter fun l => !l.isEmpty && !l.startsWith "#")
-    else pure []
+      pure (KernelReport.leanFailureLabels (← IO.FS.readFile failOut) anon)
+    else pure #[]
   let msgs := (failLines (ln.stdout ++ ln.stderr)).filter fun (n, _) => (n.splitOn "@").length ≤ 1
+  let reportNames := fun label => if anon then
+      let address := (KernelReport.anonymousAddress? label).getD label
+      anonNames.getD address #[label]
+    else #[label]
+  for label in KernelReport.leanUnmatched (ln.stdout ++ ln.stderr) do
+    for n in reportNames label do
+      failed := failed.push ("lean", n, "requested selector matched no checkable work item")
   for n in leanFails do
     let n := n.trimAscii.toString
-    let m := (msgs.find? (·.1 == n)).map (·.2) |>.getD ""
-    failed := failed.push ("lean", n, m)
+    let m := (msgs.find? fun (label, _) =>
+      if anon then KernelReport.anonymousAddress? label == some n else label == n).map (·.2) |>.getD ""
+    for original in reportNames n do failed := failed.push ("lean", original, m)
   if leanFails.isEmpty && ln.exitCode != 0 then
     failed := failed.push ("lean", "*", s!"check-lean exit {ln.exitCode}: {((ln.stdout ++ ln.stderr).takeEnd 300).toString}")
   return failed

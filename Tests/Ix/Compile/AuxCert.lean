@@ -60,6 +60,7 @@
   fixture's wall time.
 -/
 import Lean.Data.Json
+import Tests.Ix.Compile.KernelReport
 import LSpec
 import Ix.Ixon
 
@@ -280,24 +281,6 @@ private def failLines (out : String) : List (String × String) :=
       | [] => none
     else none
 
-/-- Rows of a `kernel-check-ixe` jsonl file: address, names (at most three,
-    for reporting), outcome, reason. -/
-private def certRows (path : System.FilePath) :
-    IO (Array (String × List String × String × String)) := do
-  let content ← IO.FS.readFile path
-  let mut rows := #[]
-  for line in content.splitOn "\n" do
-    if line.isEmpty then continue
-    let .ok j := Lean.Json.parse line | continue
-    let names := match j.getObjValAs? (Array String) "names" with
-      | .ok ns => ns.toList
-      | .error _ => []
-    let outcome := (j.getObjValAs? String "outcome").toOption.getD ""
-    let reason := (j.getObjValAs? String "reason").toOption.getD ""
-    let address := (j.getObjValAs? String "address").toOption.getD ""
-    rows := rows.push (address, names, outcome, reason)
-  return rows
-
 /-- The record the certified checker reports the constant at `addr` under:
     the block of a projection, else the constant itself (mirrors
     `Benchmarks.Kernel.CheckIxeStep.owner`). -/
@@ -413,9 +396,14 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
     -- The certified checker.
     let certPath := dir / "cert.jsonl"
     let cert ← run certExe #[rsOut.toString, certPath.toString, "--jobs", "8"]
-    let rows ← if ← certPath.pathExists then certRows certPath else pure #[]
-    if rows.isEmpty then
-      problems := problems.push s!"kernel-check-ixe wrote no rows (exit {cert.exitCode})"
+    let rsCheck ← IO.ofExcept (← IO.wait rsCheckTask)
+    IO.FS.writeFile (dir / "cert.stdout") cert.stdout
+    IO.FS.writeFile (dir / "cert.stderr") cert.stderr
+    unless ← certPath.pathExists do
+      throw (IO.userError s!"kernel-check-ixe wrote no report (exit {cert.exitCode})")
+    let report ← IO.ofExcept (KernelReport.parse (← IO.FS.readFile certPath) cert.exitCode)
+    let expected := byRecord.toArray.flatMap fun (address, ns) => ns.map (·, address)
+    IO.ofExcept (KernelReport.checkCoverage report expected)
     if whole then
       problems := problems ++ (← scopeBridge src outEnv (dir / "local.ixe") mine)
     for n in f.requireNames do
@@ -424,12 +412,11 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       if allNames.contains n then problems := problems.push s!"output has {n}"
     -- Observed failures per leg.
     let mut failed : Array (String × String × String) := #[]
-    for (address, names, outcome, reason) in rows do
-      if outcome == "accept" then continue
-      if outcome == "decline" && documentedDecline reason then continue
-      let ours := ((byRecord.getD address #[]).toList ++ names.filter (owns f)).eraseDups
-      for n in ours do failed := failed.push ("cert", n, s!"{outcome}: {reason}")
-    let rsCheck ← IO.ofExcept (← IO.wait rsCheckTask)
+    for (address, verdict) in report do
+      if verdict.outcome == "accept" then continue
+      if verdict.outcome == "decline" && documentedDecline verdict.reason then continue
+      for n in byRecord.getD address #[] do
+        failed := failed.push ("cert", n, s!"{verdict.outcome}: {verdict.reason}")
     for (n, m) in failLines (rsCheck.stdout ++ rsCheck.stderr) do
       failed := failed.push ("rs", n, m)
     let namesFile := dir / "names.txt"
@@ -437,10 +424,15 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
     let failOut := dir / "lean.fail"
     let leanCheck ← run ixExe #["check-lean", rsOut.toString, "--consts-file",
       namesFile.toString, "--fail-out", failOut.toString, "--workers", "8"]
+    IO.FS.writeFile (dir / "lean.stdout") leanCheck.stdout
+    IO.FS.writeFile (dir / "lean.stderr") leanCheck.stderr
+    if leanCheck.exitCode == 0 || leanCheck.exitCode == 3 then
+      discard <| IO.ofExcept (KernelReport.checkedLeanTargets leanCheck.stdout)
     let leanFails ← if ← failOut.pathExists then
-        pure ((← IO.FS.readFile failOut).splitOn "\n" |>.filter fun l =>
-          !l.isEmpty && !l.startsWith "#")
-      else pure []
+        pure (KernelReport.leanFailureLabels (← IO.FS.readFile failOut) false)
+      else pure #[]
+    for n in KernelReport.leanUnmatched (leanCheck.stdout ++ leanCheck.stderr) do
+      failed := failed.push ("lean", n, "requested selector matched no checkable work item")
     for n in leanFails do failed := failed.push ("lean", n.trimAscii.toString, "")
     if leanFails.isEmpty && leanCheck.exitCode != 0 then
       failed := failed.push ("lean", "*", s!"check-lean exit {leanCheck.exitCode}")
