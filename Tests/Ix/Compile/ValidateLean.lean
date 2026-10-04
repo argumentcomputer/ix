@@ -43,12 +43,20 @@ structure Expected where
   (REFUSED-SIBLING).
 - Compile totality defects by id (WB-A2, WB-A3, WB-A7, BB-F6, BB-F8).
 - Decompile and auxiliary defects by id (BB-F5, WB-B6, WB-B9).
-- BELOW-ORDER: Pass 1's order of Lean's own `IndPredBelow` block of a
-  collapsed Prop pair, rejected by the meta ingress's canonicity gate.
-- A3V-IPB (new, found by the oracle leg): for the nested Prop block
-  `F8NoSplit` (BB-F8's passing neighbour) the Ix `IndPredBelow` family's
+- BELOW-ORDER: the kernels' single-pass canonicity gate rejects an adjacent
+  pair that compares *weakly* `Greater` (a cross reference under the final
+  classes) instead of falling back to the full refinement, so a block whose
+  members differ first in a mutual cross reference is rejected in meta mode
+  in every stored order (A6f): Lean's own `IndPredBelow` block of the
+  collapsed Prop pair (compiled under the switch), and user blocks of the same
+  shape in both switch states (`ValidateLeanSwap`). A kernel defect, not a
+  compiler one.
+- A3V-IPB (found by the oracle leg): for the nested Prop block `F8NoSplit`
+  (BB-F8's passing neighbour) the Ix `IndPredBelow` family's
   `.rec`/`.casesOn` (`A.below.rec`, `A.below_1.rec`, `.casesOn`) differ by
-  address from Lean's own, in both switch states. -/
+  address from Lean's own: the family is a permuted Lean-generated block.
+  Fixed under the switch (A6f: the family is treated as a changed block,
+  `Ix.Compile.Pass.editPermutedBelowFamily`); recorded with the switch off. -/
 def expected : List Expected := [
   -- A0 collapse refusals on the surgery path
   ⟨"SurgCollapse", "off", ["1", "5"], "A0 refusal (D13: collapse call site drops distinct arguments)"⟩,
@@ -78,9 +86,11 @@ def expected : List Expected := [
   ⟨"F5_SigmaNestedNested", "*", ["5"], "BB-F5 (decompile regenerates T.rec differently)"⟩,
   ⟨"RecAlias", "*", ["5", "6", "8"], "WB-B6 (Ix's PA.below family ≠ Lean's)"⟩,
   ⟨"UnsafeI", "*", ["5", "6", "8"], "WB-B9 (Ix's UNestNeg.rec ≠ Lean's)"⟩,
-  ⟨"Neighbours", "*", ["6", "8"], "A3V-IPB (F8NoSplit's IndPredBelow .rec/.casesOn ≠ Lean's)"⟩,
-  ⟨"ValidateLeanIPB", "*", ["6", "8"], "A3V-IPB (reproducer: IPB.Nested, IPB.MutNested)"⟩,
-  -- Pass 1's IndPredBelow order of a collapsed Prop pair
+  ⟨"Neighbours", "off", ["6", "8"], "A3V-IPB (F8NoSplit's IndPredBelow .rec/.casesOn ≠ Lean's; fixed by Pass 3)"⟩,
+  ⟨"ValidateLeanIPB", "off", ["6", "8"], "A3V-IPB (reproducer: IPB.Nested, IPB.MutNested; fixed by Pass 3)"⟩,
+  -- the kernels' single-pass canonicity gate rejects a weak Greater (user blocks too)
+  ⟨"ValidateLeanSwap", "*", ["4"], "BELOW-ORDER (kernel canonicity gate; reproducer: SwapPair.SA, SwapPair.PA)"⟩,
+  -- Lean's IndPredBelow block of a collapsed Prop pair (the same kernel gate)
   ⟨"PropCollapse", "on", ["4"], "BELOW-ORDER"⟩,
   -- the twin families: their RecAlias (WB-B6), SurgCollapse (A0) and
   -- PropCollapse (BELOW-ORDER) members
@@ -95,7 +105,8 @@ def files : List String :=
   ++ (["C1Perm", "C2Split", "C3PropSplit", "C4Evap", "C5Collapse", "C6NestedCollapse", "C7IndPred",
        "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean")
   ++ (["Cliques", "Proto", "Repro"].map fun s => s!"Tests/Ix/Compile/Twins/{s}.lean")
-  ++ ["Tests/Ix/Compile/Oracle/Lib.lean", "Tests/Ix/Compile/ValidateLeanIPB.lean"]
+  ++ ["Tests/Ix/Compile/Oracle/Lib.lean", "Tests/Ix/Compile/ValidateLeanIPB.lean",
+      "Tests/Ix/Compile/ValidateLeanSwap.lean"]
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 

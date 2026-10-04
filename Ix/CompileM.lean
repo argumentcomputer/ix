@@ -260,6 +260,10 @@ structure BlockState where
   p3AuxRecs : Array (Name × RecursorVal) := #[]
   p3Heads : Array (Name × Name) := #[]
   p3Blocks : Array (Name × Array Name) := #[]
+  /-- Pass 3: the canonical recursors of the block's Prop `IndPredBelow`
+      family (`compileBelowRecursors`), read by the A3V-IPB hook
+      (`Ix.Compile.Pass.editPermutedBelowFamily`); never merged by itself. -/
+  p3BelowRecs : Array (Name × RecursorVal) := #[]
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/

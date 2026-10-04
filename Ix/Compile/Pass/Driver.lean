@@ -91,39 +91,178 @@ def isChanged (cs : Array MutConst) (classNames : Array (Array Name))
     | none => false
   userChanged || auxChanged
 
+/-- The display-name inputs of a block (`ixAuxName`): Lean's `all`, the first
+class representative, the nested source permutation. -/
+def displayInputs (cs : Array MutConst) (classNames : Array (Array Name))
+    (layout? : Option Ixon.AuxLayout) : Option (Array Name × Name × Array (Option Nat)) := do
+  let originalAll := leanAllOf cs
+  let lookup : Std.HashSet Name := originalAll.foldl (init := {}) (·.insert ·)
+  let planClasses := classNames.filterMap fun cls =>
+    let ns := cls.filter lookup.contains
+    if ns.isEmpty then none else some ns
+  let rep0 ← (planClasses[0]?).bind (·[0]?)
+  let perm : Array (Option Nat) := match layout? with
+    | some l => l.perm.map fun p => if p == permOut then none else some p.toNat
+    | none => #[]
+  return (originalAll, rep0, perm)
+
+/-- Move the tail's registrations selected by `sel` to their display names
+(`SideCarEdit` with nothing kept), returning the display map. -/
+def moveToDisplay (originalAll : Array Name) (rep0 : Name) (perm : Array (Option Nat))
+    (sel : Name → Bool) : CompileM (Std.HashMap Name Name) := do
+  let st ← getBlockState
+  let mut display : Std.HashMap Name Name := {}
+  for n in st.auxNamed.map (·.1) ++ st.auxNameToAddr.toArray.map (·.1) do
+    if display.contains n || !sel n then continue
+    if let some d := ixAuxName originalAll rep0 perm n then
+      display := display.insert n d
+  let edit : SideCarEdit := { display, kept := {} }
+  let (named, n2a, extra) := edit.apply st.auxNamed st.auxNameToAddr st.auxGenExtraNames
+  for (_, d) in display do compileName d
+  modifyBlockState fun st => { st with
+    auxNamed := named, auxNameToAddr := n2a, auxGenExtraNames := extra }
+  return display
+
 /-- The side-car edit and the driver records of a changed block, applied to
 the block state. -/
 def editChangedBlock (cs : Array MutConst) (classNames : Array (Array Name))
     (layout? : Option Ixon.AuxLayout) : CompileM Unit := do
   let cenv ← getCompileEnv
-  let originalAll := leanAllOf cs
+  let some (originalAll, rep0, perm) := displayInputs cs classNames layout? | return
   let some all0 := originalAll[0]? | return
-  let lookup : Std.HashSet Name := originalAll.foldl (init := {}) (·.insert ·)
-  let planClasses := classNames.filterMap fun cls =>
-    let ns := cls.filter lookup.contains
-    if ns.isEmpty then none else some ns
-  let some rep0 := (planClasses[0]?).bind (·[0]?) | return
-  let perm : Array (Option Nat) := match layout? with
-    | some l => l.perm.map fun p => if p == permOut then none else some p.toNat
-    | none => #[]
   let heads := imageKinds cenv.env.get? originalAll
   -- every Lean name moves off the Ix auxiliaries: the image kinds denote
   -- their stored images (compiled when their own block comes up,
   -- `compileImageBlock`), the rest are Lean's own blocks
-  let kept : Std.HashSet Name := {}
-  let st ← getBlockState
-  let mut display : Std.HashMap Name Name := {}
-  for n in st.auxNamed.map (·.1) ++ st.auxNameToAddr.toArray.map (·.1) do
-    if display.contains n then continue
-    if let some d := ixAuxName originalAll rep0 perm n then
-      display := display.insert n d
-  let edit : SideCarEdit := { display, kept }
-  let (named, n2a, extra) := edit.apply st.auxNamed st.auxNameToAddr st.auxGenExtraNames
-  for (_, d) in display do compileName d
+  let _ ← moveToDisplay originalAll rep0 perm fun _ => true
   modifyBlockState fun st => { st with
-    auxNamed := named, auxNameToAddr := n2a, auxGenExtraNames := extra
     p3Heads := st.p3Heads ++ heads.map (·, all0)
     p3Blocks := st.p3Blocks.push (all0, originalAll) }
+
+/-! ## Hook 1b: the `IndPredBelow` family of an unchanged block (A3V-IPB)
+
+## Contract
+Input: an *unchanged* Lean block (Def 3.1 does not hold) after its aux tail,
+under the switch. Lean's `IndPredBelow` family of the block (Prop blocks:
+`all₀.below` is an inductive, with Lean's `all` = one `below` per motive of
+the block's recursor: `x.below` per member, then `all₀.below_j` per nested
+auxiliary) is itself a Lean-generated **inductive block**. Pass 2 builds the
+Ix family over the canonical block (`buildPropBelowFamily`) and Pass 1 then
+orders it as a block of its own (`sortConsts` in the aux tail's phase 3), so
+the family can be *permuted* (or collapsed) while its parent is unchanged
+(the nested shapes of `Tests/Ix/Compile/ValidateLeanIPB.lean`: Lean's
+`[A.below, B.below, A.below_1]` against Ix's `[A.below, A.below_1, B.below]`).
+
+Output, when the stored member positions of Lean's family names are not
+Lean's order (a permutation of it): the family is **treated as a changed
+block** whose members are Lean's `below` inductives. As for any permuted
+block, the inductives and constructors keep Lean's names (each denotes the
+same inductive, now a projection at another position); the Ix auxiliaries
+of the family (Pass 2's `.rec`, `.casesOn`) move to their `_ix` display
+names (`A.below._ix.rec`: `ixAuxName` over Lean's family `all`); the family
+records its image-kind heads, its Lean `all` and Pass 2's canonical
+recursors (`p3BelowRecs`), so that Lean's `A.below.rec`, `A.below.casesOn`
+compile to their images (Def 3.4, 3.5) when their own blocks come up
+(`compileImageBlock`), exactly as for a changed user block. Otherwise
+nothing changes.
+
+## Faithfulness
+Before this hook Lean's `A.below.rec` named the Ix recursor of the permuted
+family: a constant whose motives come in another order than Lean's, i.e. of
+a different type (A3V-IPB, found by the validator's oracle leg). After it,
+every Lean name of the family denotes a constant with Lean's type: the
+inductives and constructors are the canonical family's members, which are
+Lean's inductives up to block position (the oracle leg found them equal);
+`.rec`/`.casesOn` denote their images, which compute as Lean's recursors
+(Def 3.4, re-checked by phase 7 of `ix validate-lean`). Every other entry
+changes in metadata only (references to the moved names are renamed to the
+display names, which name the same constants).
+
+## Canonicity
+Two choices were open (design document §2.5): keep Lean's order for
+Lean-generated families, or treat the family as a changed block. The first
+is excluded by the kernels: every all-inductive block is checked against the
+comparator order (`validateCanonicalBlockSinglePass`, Rust and `Ix.Tc`), so a
+family stored in Lean's order would be rejected as non-canonical wherever
+Pass 1 orders it differently, which is exactly the A3V-IPB case. The second
+keeps the Ix family canonical and byte-identical to the switch-off output (it
+is a function of the canonical parent, then of Pass 1) and moves only Lean's
+names (Q2: names are metadata): the governing principle's choice. The
+decision reads stored positions, a function of the canonical form.
+
+## Side condition and fallback
+Decidable: the switch is on, the parent is unchanged, `all₀.below` is an
+inductive of Lean's environment with at least two members, every member of
+Lean's family is registered by the tail at a projection of one stored block,
+at pairwise distinct positions, and the tail recorded the family's canonical
+recursors. Otherwise nothing moves: today's registration (a collapsed family,
+never observed, would stay as it is; the switch-off path keeps the defect,
+recorded by its id A3V-IPB until the switch flips).
+
+## Non-canonical cases and evidence
+None new: Lean's `below` recursors and `casesOn` are image kinds of a changed
+block like any other (bare occurrences: `BARE`). Evidence: `validate-lean` on
+`ValidateLeanIPB` and `Neighbours` (phases 6 and 8 pass with the switch on;
+phase 7 checks the images and their rules), the `pass3` suite.
+-/
+
+/-- Lean's `IndPredBelow` family of a block: the `all` of `all₀.below` when
+that is an inductive of Lean's environment, in Lean's order. -/
+def leanBelowAll (const? : Name → Option ConstantInfo) (originalAll : Array Name) :
+    Array Name :=
+  match originalAll[0]? with
+  | none => #[]
+  | some all0 => match const? (Name.mkStr all0 "below") with
+    | some (.inductInfo v) => v.all
+    | _ => #[]
+
+/-- The stored positions of `names` in the one inductive block the aux tail
+registered them in (`none` when a name is unregistered, not an inductive
+projection, or the names span several blocks). -/
+def storedPositions (st : BlockState) (names : Array Name) : Option (Array Nat) := do
+  let consts : Std.HashMap Address Ixon.Constant :=
+    st.auxConsts.foldl (fun m (a, c) => m.insert a c) {}
+  let mut block? : Option Address := none
+  let mut out : Array Nat := #[]
+  for n in names do
+    let a ← st.auxNameToAddr.get? n
+    let c ← consts.get? a
+    let .iPrj p := c.info | none
+    if let some b := block? then
+      if b != p.block then none
+    block? := some p.block
+    out := out.push p.idx.toNat
+  return out
+
+/-- A3V-IPB: under the switch, treat a permuted `IndPredBelow` family of an
+unchanged block as a changed block (see the section docstring). -/
+def editPermutedBelowFamily (cs : Array MutConst) : CompileM Unit := do
+  let cenv ← getCompileEnv
+  let belowAll := leanBelowAll cenv.env.get? (leanAllOf cs)
+  let some all0 := belowAll[0]? | return
+  if belowAll.size < 2 then return
+  let st ← getBlockState
+  let some pos := storedPositions st belowAll | return
+  if pos == Array.range pos.size then return
+  -- a permutation only (a collapse inside the family is left as it is)
+  if (pos.foldl (init := ({} : Std.HashSet Nat)) (·.insert ·)).size != pos.size then return
+  if st.p3BelowRecs.isEmpty then return
+  -- the family's first member in canonical (stored) order
+  let some k := pos.findIdx? (· == 0) | return
+  let some rep0 := belowAll[k]? | return
+  let ctors : Std.HashSet Name := belowAll.foldl (init := {}) fun s b =>
+    match cenv.env.get? b with
+    | some (.inductInfo v) => v.ctors.foldl (·.insert ·) s
+    | _ => s
+  -- the Ix auxiliaries of the family (not its inductives or constructors)
+  let _ ← moveToDisplay belowAll rep0 #[] fun n =>
+    !belowAll.contains n && !ctors.contains n
+      && belowAll.any fun b => (stripPrefix? b n).isSome
+  let heads := imageKinds cenv.env.get? belowAll
+  modifyBlockState fun st => { st with
+    p3AuxRecs := st.p3AuxRecs ++ st.p3BelowRecs
+    p3Heads := st.p3Heads ++ heads.map (·, all0)
+    p3Blocks := st.p3Blocks.push (all0, belowAll) }
 
 /-! ## Hook 2: before a block compiles -/
 

@@ -131,6 +131,9 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   if cenv.pass3 && Ix.Compile.Pass.isChanged cs blockResult.classNames auxLayout? then
     Ix.Compile.Pass.editChangedBlock cs blockResult.classNames auxLayout?
     return (blockResult, auxLayout?, {}, {}, {})
+  -- A3V-IPB: an unchanged block's permuted `IndPredBelow` family
+  if cenv.pass3 then
+    Ix.Compile.Pass.editPermutedBelowFamily cs
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the

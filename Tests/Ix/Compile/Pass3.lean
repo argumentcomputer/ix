@@ -376,9 +376,12 @@ def knownFails : List (String × String × String × String) := [
   -- (`Repro.Orig.PropCollapse`), compiled as its own block under the switch, is
   -- ordered by Pass 1's refinement on a bound-variable difference found while
   -- both members were one class; with the final class indices the first
-  -- difference is the cross reference `Q.below`/`P.below`, which compares the
-  -- other way, so check-lean's whole-environment meta ingress rejects the block
-  -- (the certified checker accepts). A Pass 1 fixed-point defect (A2).
+  -- difference is the cross reference `Q.below`/`P.below`, which compares
+  -- *weakly* the other way in either stored order, and the kernels' single-pass
+  -- canonicity gate rejects a weak Greater instead of falling back to the full
+  -- refinement, so check-lean's whole-environment meta ingress rejects the
+  -- block (the certified checker accepts). A kernel defect, shared by user
+  -- blocks of that shape in both switch states (A6f, `ValidateLeanSwap`).
   ("twins", "lean", "*", "BELOW-ORDER"),
   -- A0's evaporation refusal of `C4b.Src.A2` (Pass 2) in both modes: B2's
   -- display entry names the refused block.

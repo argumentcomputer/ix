@@ -484,7 +484,8 @@ def showNames (ns : Array Ix.Name) (k : Nat := 8) : String :=
     they are roundtripped in anonymous mode (gated) and their meta-mode
     verdicts are reported, not gated. An ingress failure is charged to its
     block; one of an `IndPredBelow` block rejected by the canonicity gate is
-    reported as BELOW-ORDER (the Pass 1 fixed-point defect A3 found), and
+    reported as BELOW-ORDER (the kernels' single-pass gate rejecting a weak
+    `Greater`, A6f; user blocks of that shape show as "other"), and
     fails the phase. -/
 def phaseMeta (leanEnv : Lean.Environment) (parts : Ixon.LazyEnvParts) :
     IO (PhaseResult × Array String) := do
@@ -661,7 +662,8 @@ unclassified {mismatch.size}; changed blocks skipped: {(if surgeryLine.isEmpty t
     (`imageKinds`, the compiler's rule) is stored under its Lean name as a
     definition carrying `Named.original` (the image, decision 3); (ii) the
     Ix auxiliaries carry `_ix` names (`x._ix.S` exists for every image `x.S`
-    that is not a nested-position kind); (iii) every image and every
+    that is not a nested-position kind, `x` the longest member of the image's
+    block prefixing it); (iii) every image and every
     computation rule of every Lean recursor of the block, stated over the
     stored image (`leanRuleStmts`: `r ps ms mins is (c ps fs) = rhs`, proof
     `Eq.refl`), is accepted by `Ix.Tc` in anonymous mode, in a test-only
@@ -680,6 +682,12 @@ def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharin
   let live := ch.blocks.filter fun all =>
     !(all.any ungrounded.contains) && !((Ix.Compile.Pass.imageKinds view.get? all).any ungrounded.contains)
   let images := live.flatMap (Ix.Compile.Pass.imageKinds view.get?)
+  -- each image's Lean block: its display name hangs off the longest member
+  -- of that block prefixing it (the compiler's rule, `ixAuxName`), so the
+  -- `IndPredBelow` family's `x.below.rec` is displayed `x.below._ix.rec`
+  -- when the family is the changed block (A3V-IPB)
+  let blockOf : Std.HashMap Ix.Name (Array Ix.Name) := live.foldl (init := {}) fun m all =>
+    (Ix.Compile.Pass.imageKinds view.get? all).foldl (init := m) fun m n => m.insert n all
   let refused := ch.blocks.size - live.size
   let mut problems : Array String := #[]
   let mut checkAddrs : Array (Address × String) := #[]
@@ -694,7 +702,16 @@ def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharin
       | none => false
     if !isDefn then problems := problems.push s!"{n.pretty}: stored constant is not a definition"
     -- the display name of the Ix auxiliary
-    if let some (_, root) := Ix.AuxGen.classifyAuxGen n then
+    let root? : Option Ix.Name := (blockOf.get? n).bind fun all =>
+      (all.foldl (init := (none : Option (Ix.Name × Nat))) fun best x =>
+        match Ix.Compile.Pass.stripPrefix? x n with
+        | some rest =>
+          if rest.isEmpty then best
+          else match best with
+            | some (_, k) => if rest.length < k then some (x, rest.length) else best
+            | none => some (x, rest.length)
+        | none => best).map (·.1)
+    if let some root := root? then
       let rest := (Ix.Compile.Pass.stripPrefix? root n).getD []
       let nested := match rest.head? with
         | some c => (Ix.Compile.Pass.nestedComp? c).isSome

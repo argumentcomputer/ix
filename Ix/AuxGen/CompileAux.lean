@@ -621,6 +621,11 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)
+  -- Pass 3 (`IX_PASS3=images`): the family's canonical recursors, the image
+  -- generator's input if the family is permuted (A3V-IPB,
+  -- `Ix.Compile.Pass.editPermutedBelowFamily`).
+  if (← liftM (getCompileEnv : CompileM _)).pass3 then
+    liftM (modifyBlockState fun st => { st with p3BelowRecs := st.p3BelowRecs ++ recs } : CompileM _)
 
   if !belowRecs.isEmpty then
     -- The below-rec block's storage order must align with the below
