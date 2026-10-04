@@ -16,7 +16,8 @@
      through `promoteRemaining`:
      a primary name over an aux claim, an aux claim over a compiled name, over
      an earlier aux claim and over itself within one block, an identical
-     re-claim (accepted), and a conflicting plan of each of the three kinds.
+     re-claim (accepted), a conflicting plan of each of the three kinds, and
+     two differing Pass 3 records of one key inside one block (A7, D1).
      The messages must be Rust's, character for character.
   2. **Both compilers.** A constructed closure that bypasses the B1
      existence rule: it holds a user constant named `T.below` (a plain
@@ -151,6 +152,15 @@ def driverCases : List (String × Option String × Option String) := Id.run do
   cases := cases ++ [("identical compiled name and aux claim", none,
     errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, x)])
       none₀ noneB noneB))]
+  -- A7 (D1): two differing Pass 3 records of one key inside one block
+  let p3Two : BlockState := { (default : BlockState) with
+    p3Heads := #[(n, lo), (n, ixName "Fx.U")] }
+  cases := cases ++ [("two Pass 3 heads in one block",
+    some s!"Pass 3: conflicting image-kind head '{n.pretty}'",
+    errOf (merge emptyAcc lo (loneResult (addr "t")) p3Two none₀ noneB noneB))]
+  let p3Same : BlockState := { (default : BlockState) with p3Heads := #[(n, lo), (n, lo)] }
+  cases := cases ++ [("identical Pass 3 heads in one block", none,
+    errOf (merge emptyAcc lo (loneResult (addr "t")) p3Same none₀ noneB noneB))]
   -- plans (compile.rs:4990-5115)
   let k := ixName "Fx.A.rec"
   let withPlans : DriverAcc := { cenv := { (default : CompileEnv) with

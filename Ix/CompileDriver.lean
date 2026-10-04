@@ -417,18 +417,32 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
     if Ix.Compile.Pass.hasReserved name then
       if let some existing := cenv.auxNameToAddr.get? name then
         if existing != addr then throw (nameClaimConflict name existing addr)
+  -- A7 (D1): each record is checked against the live state AND against the
+  -- block's own earlier records. The block's arrays are merged by a fold
+  -- (`mergeCompiledBlock`), so two records of one key inside one block were
+  -- last-wins: which one survived depended on the order the block's
+  -- components pushed them. Now a differing second record is the same
+  -- conflict as a differing record of another block, and an identical one
+  -- is a no-op, so on valid input (no such pair) the merged maps are the
+  -- same values as before.
+  let mut heads : Std.HashMap Name Name := {}
   for (name, key) in cache.p3Heads do
-    if let some existing := cenv.p3Heads.get? name then
+    if let some existing := (heads.get? name).orElse fun _ => cenv.p3Heads.get? name then
       if existing != key then
         throw (.invalidMutualBlock s!"Pass 3: conflicting image-kind head '{name.pretty}'")
+    heads := heads.insert name key
+  let mut p3Blocks : Std.HashMap Name (Array Name) := {}
   for (key, all) in cache.p3Blocks do
-    if let some existing := cenv.p3Blocks.get? key then
+    if let some existing := (p3Blocks.get? key).orElse fun _ => cenv.p3Blocks.get? key then
       if existing != all then
         throw (.invalidMutualBlock s!"Pass 3: conflicting Lean block '{key.pretty}'")
+    p3Blocks := p3Blocks.insert key all
+  let mut recs : Std.HashMap Name RecursorVal := {}
   for (name, rv) in cache.p3AuxRecs do
-    if let some existing := cenv.p3CanonRecs.get? name then
+    if let some existing := (recs.get? name).orElse fun _ => cenv.p3CanonRecs.get? name then
       if existing != rv then
         throw (.invalidMutualBlock s!"Pass 3: conflicting canonical recursor '{name.pretty}'")
+    recs := recs.insert name rv
 
 /-- Merge one compiled block's outputs into the driver state, mirroring
     the Rust global-mutation order: block constant, member projections
