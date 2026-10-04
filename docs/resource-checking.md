@@ -591,7 +591,7 @@ A canonical profile begins with the UTF-8 bytes
 4. An optional extension, present only when it is not empty: a TagN (`f = 0`)
    behavior flag (bit 0: case splits, bound case definitions and
    beta-redexes; bit 1: unfolding equations; bit 2: case definitions; bit 3:
-   usage crossing on plain data; bit 4: linear types; no
+   usage crossing on plain data; bit 4: linear types; bit 5: explicit scalar types; no
    other bits), then a TagN (`f = 0`) count of admitted interfaces, each a
    32-byte address (strictly increasing), a TagN (`f = 0`) length, and that
    many bytes, one packed input/result contract byte per leading arrow; then,
@@ -600,7 +600,9 @@ A canonical profile begins with the UTF-8 bytes
    definition; then, when bit 2 is set (which requires bit 0), a nonzero TagN
    (`f = 0`) count of case definition addresses, strictly increasing; then,
    when bit 4 is set, a nonzero TagN (`f = 0`) count of linear (opted-out)
-   type addresses, strictly increasing. Bit 3 carries no data.
+   type addresses, strictly increasing; then, when bit 5 is set, a nonzero
+   TagN (`f = 0`) count of explicit scalar type addresses, strictly increasing.
+   Bit 3 carries no data.
 
 Selection primitives and admitted interfaces must also be assumptions. An
 admitted interface replaces the declaration's own arrow contracts for its
