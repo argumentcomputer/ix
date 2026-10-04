@@ -8,8 +8,9 @@ Circuit statistics for Aiur executions.
 
 Given a `CompiledToplevel`, the per-circuit `QueryCount`s returned by
 `execute`, and the per-circuit `CircuitShape`s read off the compiled Rust
-`System`, computes per-circuit committed width, height (the unique-row
-count), cache hits (sum of multiplicities), and the FFT cost for every
+`System`, computes per-circuit stage-1, stage-2, quotient and total committed
+widths, height (the unique-row count), cache hits (sum of multiplicities),
+and the FFT cost for every
 system circuit — constrained functions, memories, and the fixed-height
 `Bytes1`/`Bytes2` byte gadgets.
 
@@ -38,6 +39,11 @@ namespace Aiur
 
 structure CircuitStats where
   name : String
+  stage1Width : Nat
+  stage2Width : Nat
+  /-- Quotient chunk columns, flattened over the base field. -/
+  quotientWidth : Nat
+  /-- Total committed width: stage 1 + stage 2 + quotient chunks. -/
   width : Nat
   height : Nat
   cacheHits : Nat
@@ -92,7 +98,9 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount)
       {t.circuits.size} function circuits + {t.memorySizes.size} memories + 2 gadgets"
   else
   let mkStats (name : String) (shape : CircuitShape) (h hits : Nat) : CircuitStats :=
-    { name, width := shape.committedWidth, height := h, cacheHits := hits,
+    { name, stage1Width := shape.mainWidth, stage2Width := shape.stage2Width,
+      quotientWidth := shape.quotientDegree * G.extensionDegree,
+      width := shape.committedWidth, height := h, cacheHits := hits,
       fftCost := fftCost shape h logBlowup,
       uncachedFftCost := fftCost shape (h + hits) logBlowup }
   -- One row per function circuit: heights and cache hits are summed over
@@ -155,6 +163,9 @@ def formatSci (f : Float) : String :=
 
 def printStats (stats : ExecutionStats) : IO Unit := do
   let wName := stats.circuits.foldl (fun m cs => Nat.max m cs.name.length) 4
+  let wStage1 := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.stage1Width).length) 6
+  let wStage2 := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.stage2Width).length) 6
+  let wQuotient := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.quotientWidth).length) 8
   let wWidth := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.width).length) 5
   let wHeight := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.height).length) 6
   let wHits := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.cacheHits).length) 5
@@ -164,7 +175,11 @@ def printStats (stats : ExecutionStats) : IO Unit := do
   let wFftCost := stats.circuits.foldl (fun m cs => Nat.max m (formatSci cs.fftCost).length) 8
   let wPct := 7
   let wCum := 7
-  let totalW := wName + 1 + wWidth + 1 + wHeight + 1 + wHits + 1 + wFftCost + 1 + wPct + 1 + wCum
+  let totalW := wName + 1 + wStage1 + 1 + wStage2 + 1 + wQuotient + 1 +
+    wWidth + 1 + wHeight + 1 + wHits + 1 + wFftCost + 1 + wPct + 1 + wCum
+  let totalStage1 := stats.circuits.foldl (· + ·.stage1Width) 0
+  let totalStage2 := stats.circuits.foldl (· + ·.stage2Width) 0
+  let totalQuotient := stats.circuits.foldl (· + ·.quotientWidth) 0
   let totalWidth := stats.circuits.foldl (· + ·.width) 0
   let savedPct :=
     if stats.totalUncachedFftCost == 0.0 then "0.00%"
@@ -172,19 +187,23 @@ def printStats (stats : ExecutionStats) : IO Unit := do
   let sep := String.ofList (List.replicate totalW '-')
   IO.println "=== Circuit Statistics ==="
   IO.println s!"Circuits: {stats.circuits.size}"
+  IO.println s!"Total stage 1 width: {totalStage1}"
+  IO.println s!"Total stage 2 width: {totalStage2}"
+  IO.println s!"Total quotient width: {totalQuotient}"
   IO.println s!"Total width: {totalWidth}"
   IO.println s!"Total FFT cost: {formatCost stats.totalFftCost} ({formatSci stats.totalFftCost})"
   IO.println s!"Total cache hits: {stats.totalCacheHits}"
   IO.println s!"Total saved cost: {savedPct}"
   IO.println sep
-  IO.println s!"{padRight "Name" wName} {padLeft "Width" wWidth} {padLeft "Height" wHeight} {padLeft "Hits" wHits} {padLeft "FFT cost" wFftCost} {padLeft "%" wPct} {padLeft "%++" wCum}"
+  IO.println "Widths count base-field columns; Width = Stage1 + Stage2 + Quotient."
+  IO.println s!"{padRight "Name" wName} {padLeft "Stage1" wStage1} {padLeft "Stage2" wStage2} {padLeft "Quotient" wQuotient} {padLeft "Width" wWidth} {padLeft "Height" wHeight} {padLeft "Hits" wHits} {padLeft "FFT cost" wFftCost} {padLeft "%" wPct} {padLeft "%++" wCum}"
   IO.println sep
   let mut cumFftCost : Float := 0.0
   for cs in stats.circuits do
     cumFftCost := cumFftCost + cs.fftCost
     let pct := formatPercent cs.fftCost stats.totalFftCost
     let cum := formatPercent cumFftCost stats.totalFftCost
-    IO.println s!"{padRight cs.name wName} {padLeft (toString cs.width) wWidth} {padLeft (toString cs.height) wHeight} {padLeft (toString cs.cacheHits) wHits} {padLeft (formatSci cs.fftCost) wFftCost} {padLeft pct wPct} {padLeft cum wCum}"
+    IO.println s!"{padRight cs.name wName} {padLeft (toString cs.stage1Width) wStage1} {padLeft (toString cs.stage2Width) wStage2} {padLeft (toString cs.quotientWidth) wQuotient} {padLeft (toString cs.width) wWidth} {padLeft (toString cs.height) wHeight} {padLeft (toString cs.cacheHits) wHits} {padLeft (formatSci cs.fftCost) wFftCost} {padLeft pct wPct} {padLeft cum wCum}"
 
 end Aiur
 
