@@ -1,4 +1,4 @@
-import Tests.Ix.Compile.Corpus.Generate
+import Tests.Ix.Compile.Corpus.Ownership
 import Ix.Ixon
 import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.KernelReport
@@ -106,8 +106,9 @@ def resultRow (cfg : RunConfig) (case : Case) (phase : String) (out : IO.Process
 def loadEnv (path : System.FilePath) : IO Ixon.Env := do
   IO.ofExcept <| Ixon.rsDeEnv (← IO.FS.readBinFile path)
 
-def mine (env : Ixon.Env) (ns : String) : Array (Ix.Name × Ixon.Named) :=
-  (env.named.toArray.filter fun (name, _) => name.pretty.startsWith (ns ++ ".")).qsort
+def mine (env : Ixon.Env) (owned : Ownership) : Array (Ix.Name × Ixon.Named) :=
+  let source := owned.sourceSet
+  (env.named.toArray.filter fun (name, _) => ownedOutput source name).qsort
     (fun a b => a.1.pretty < b.1.pretty)
 
 def namesText (names : Array (Ix.Name × Ixon.Named)) : String :=
@@ -140,12 +141,12 @@ def withCheckedFile (cfg : RunConfig) (dir : System.FilePath) (label : String)
 The Lean CLI lacks a --consts producer; its per-root closure gate belongs to the
 separate in-process schedule/closure suite. Never compare an on-mode Lean image
 against a legacy Rust closure and label the mismatch nondeterminism. -/
-def closureLeg (cfg : RunConfig) (case : Case) (dir : System.FilePath)
-    (src : System.FilePath) (whole : Ixon.Env) : IO (Array String) := do
+def closureLeg (cfg : RunConfig) (dir : System.FilePath)
+    (src : System.FilePath) (whole : Ixon.Env) (owned : Ownership) : IO (Array String) := do
   let mut problems := #[]
   let mut rows : Array Json := #[]
   IO.FS.createDirAll (dir / "closure")
-  for ((name, _), i) in (mine whole case.ns).toList.zipIdx do
+  for ((name, _), i) in (mine whole owned).toList.zipIdx do
     let path := dir / "closure" / s!"{i}.ixe"
     let label := s!"closure/{i}"
     let out ← command { cfg with mode := "off" } dir label cfg.ix.toString
@@ -166,12 +167,12 @@ def closureLeg (cfg : RunConfig) (case : Case) (dir : System.FilePath)
 
 /-- Pack every fixture-owned name, a superset of the legacy auxiliary-only
 selection; keep an explicit record for each root, including failed ones. -/
-def packLeg (cfg : RunConfig) (case : Case) (dir path : System.FilePath)
-    (env : Ixon.Env) : IO (Array String) := do
+def packLeg (cfg : RunConfig) (dir path : System.FilePath)
+    (env : Ixon.Env) (owned : Ownership) : IO (Array String) := do
   let mut problems := #[]
   let mut rows : Array Json := #[]
   IO.FS.createDirAll (dir / "pack")
-  for ((name, _), i) in (mine env case.ns).toList.zipIdx do
+  for ((name, _), i) in (mine env owned).toList.zipIdx do
     let packed := dir / "pack" / s!"{i}.ixe"
     let label := s!"pack/{i}"
     let out ← command cfg dir label cfg.ix.toString #["pack", path.toString, name.pretty, "--out", packed.toString]
@@ -188,11 +189,11 @@ def packLeg (cfg : RunConfig) (case : Case) (dir path : System.FilePath)
 the checker's capped display-name array omitted. Protocol/process errors cannot
 be reclassified by a known-failure entry. -/
 def certifiedLeg (cfg : RunConfig) (case : Case) (dir path : System.FilePath)
-    (env : Ixon.Env) : IO Verdict := do
+    (env : Ixon.Env) (owned : Ownership) : IO Verdict := do
   let reportPath := dir / "certified.jsonl"
   let out ← command cfg dir "certified" cfg.cert.toString
     #[path.toString, reportPath.toString, "--jobs", toString cfg.workers]
-    #[("CHECK_IXE_ROOTS", some (String.intercalate "," ((mine env case.ns).map (·.1.pretty)).toList))]
+    #[("CHECK_IXE_ROOTS", none)]
   let fail (message : String) : Verdict :=
     { caseId := case.id, mode := cfg.mode,
       phase := "certified", status := "infrastructure-error", detail := message,
@@ -201,7 +202,7 @@ def certifiedLeg (cfg : RunConfig) (case : Case) (dir path : System.FilePath)
   let report ← match KernelReport.parse (← IO.FS.readFile reportPath) out.exitCode with
     | .ok report => pure report
     | .error e => return fail e
-  let expected := (mine env case.ns).map fun (n, nd) =>
+  let expected := (mine env owned).map fun (n, nd) =>
     (n.pretty, toString (AuxCert.recordOf env nd.addr))
   if let .error e := KernelReport.checkCoverage report expected then return fail e
   let mut counts : Std.HashMap String Nat := {}
@@ -228,6 +229,7 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
   if ← (dir / "verdicts.json").pathExists then
     throw <| IO.userError s!"results already exist for {case.id}/{cfg.mode}; use a fresh generated directory"
   let src ← IO.FS.realPath (cfg.dir / case.file)
+  let owned : Ownership ← readJson (cfg.dir / "source-ownership" / s!"{case.id}.json")
   let leanPath := dir / "lean.ixe"
   let rustPath := dir / "rust.ixe"
   let scope := if cfg.localScope then #["--local"] else #[]
@@ -261,10 +263,15 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
             if !(← path.pathExists) then row := { row with status := "infrastructure-error", detail := "successful compiler wrote no output" }
             else
               let env ← loadEnv path
-              let names := mine env case.ns
+              let names := mine env owned
+              IO.ofExcept (checkSelectorIdentities (env.named.toArray.map (·.1)) (names.map (·.1)))
+              for original in owned.originalNames do
+                unless env.named.contains (Ix.Name.fromLeanName original) do
+                  throw <| IO.userError s!"compiler omitted source-owned declaration {original}"
               if names.isEmpty then row := { row with status := "infrastructure-error", detail := "compiled output has no fixture-owned names" }
               else
                 writeJson (dir / s!"{phase}-names.json") (namedManifest names)
+                writeJson (dir / s!"{phase}-ownership.json") (ownershipManifest owned names)
                 IO.FS.writeFile (dir / s!"{phase}-names.txt") (namesText names)
                 if isRust then rustEnv := some env else leanEnv := some env
           pure <| applyExpected expected row (out.stdout ++ out.stderr)
@@ -288,13 +295,13 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
             else pure false
           pure { base with status := if equal then "pass" else "fail", detail := "switch-off Rust/Lean byte equality" }
         else if phase == "certified" then
-          let row ← certifiedLeg cfg case dir leanPath env
+          let row ← certifiedLeg cfg case dir leanPath env owned
           pure <| applyExpected expected row row.detail
         else if phase == "closure" || phase == "pack" then
-          let issues ← if phase == "pack" then packLeg cfg case dir leanPath env
+          let issues ← if phase == "pack" then packLeg cfg dir leanPath env owned
             else match rustEnv with
               | none => pure #["Rust whole output missing for closure baseline"]
-              | some whole => closureLeg cfg case dir src whole
+              | some whole => closureLeg cfg dir src whole owned
           let row :=
             { base with
               status := if issues.isEmpty then "pass" else "fail",

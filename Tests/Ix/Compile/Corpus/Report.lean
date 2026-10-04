@@ -105,17 +105,29 @@ def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
   let prepared ← IO.Process.output
     { cmd := "lake", args := #["build"] ++ modules, cwd := cfg.dir }
   IO.FS.writeFile (cfg.dir / "prepare.log") (prepared.stdout ++ prepared.stderr)
+  -- Elaboration/search-path initialization is process-global. Inventory source
+  -- ownership serially before launching parallel oracle tasks, retaining full
+  -- private/numeric Lean.Name identities rather than reparsing displayed names.
+  let mut ownershipError : Option String := none
+  if prepared.exitCode == 0 then
+    try
+      IO.FS.createDirAll (cfg.dir / "source-ownership")
+      for case in cases do
+        let owned ← prepareOwnership (cfg.dir / case.file) case.ns
+        writeJson (cfg.dir / "source-ownership" / s!"{case.id}.json") owned
+    catch e => ownershipError := some e.toString
   writeJson (cfg.dir / "preparation.json") <| Json.mkObj [
     ("modules", toJson modules), ("exitCode", toJson prepared.exitCode.toNat),
-    ("status", toJson (if prepared.exitCode == 0 then "pass" else "fail"))]
-  if prepared.exitCode != 0 then
+    ("ownershipError", toJson ownershipError),
+    ("status", toJson (if prepared.exitCode == 0 && ownershipError.isNone then "pass" else "fail"))]
+  if prepared.exitCode != 0 || ownershipError.isSome then
     let mut rows : Array Verdict := #[]
     for case in cases do
       for mode in modes do
         for phase in phaseNames do
           rows := rows.push ⟨case.id, mode, phase,
             if cfg.phases.contains phase then "not-run" else "not-selected",
-            "shared source preparation failed", "prepare.log"⟩
+            "shared source/ownership preparation failed", "preparation.json"⟩
     writeJson (cfg.dir / "verdicts.json") rows
     IO.eprintln "[corpus] source preparation failed; see prepare.log and preparation.json"
     return 1

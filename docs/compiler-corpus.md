@@ -115,9 +115,20 @@ images must still agree. Source-facing adapters retain each source's own
 semantics, checked by the validation phases; metadata/original and packing
 differences require separate retained artifact comparisons.
 
-Both executable kernels check all fixture-owned names. The certified checker is
-rooted at those names, and the shared strict `KernelReport` parser validates its
-exit status, complete JSON protocol, unique record addresses, and address coverage.
+Source ownership is inventoried by elaborating each source serially before
+parallel oracle work. Namespace classification uses the visible form of private
+names, while `source-ownership/*.json` preserves every original string/numeric
+name component. Imported declarations in the same namespace are excluded.
+Generated images are included only when their original auxiliary is source-owned.
+Each compiled output records public/private source counts, generated-image counts
+and complete original identities in `compile-ownership.json`; omitting an owned
+source declaration is an infrastructure failure.
+
+Both executable kernels check all fixture-owned names. The certified checker
+checks every record of the supplied artifact, and the shared strict
+`KernelReport` parser validates its exit status, complete JSON protocol, unique
+record addresses, and explicit owning-address coverage. Textual CHECK_IXE_ROOTS
+is unset because displayed private names cannot preserve numeric components.
 Coverage uses the environment's name-to-primary-record mapping, not the checker's
 capped display-name list. Per-name accept/decline/reject/blocked outcomes remain
 in `certified-names.json`; documented certified declines are distinct from passes.

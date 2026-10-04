@@ -52,6 +52,26 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
     ((selected.filter (·.family == "mutual")).size == 44 && (selected.filter (·.family == "round2")).size == 70)
   check "token-aware substitution" (substitute "$T $Tree $A.foo" renamedNames == "Zq $Tree Kq.foo")
   check "token-aware inverse names" (unrename "AY.Test.Zq.fooZq" == "AX.Test.T.fooZq")
+  let privateName := (((`_private).str "SourceModule").num 0 ++ `CorpusOwnership.helper)
+  let stringName := (((`_private).str "SourceModule").str "0" ++ `CorpusOwnership.helper)
+  check "private numeric name identity round trips"
+    (nameOfParts (nameParts privateName) == privateName && nameParts privateName != nameParts stringName)
+  check "ambiguous displayed selector identities rejected"
+    ((checkSelectorIdentities #[Ix.Name.fromLeanName privateName, Ix.Name.fromLeanName stringName]
+      #[Ix.Name.fromLeanName privateName]).toOption.isNone)
+  let ownedEnv ← getFileEnv "Tests/Ix/Compile/Corpus/OwnershipFixture.lean"
+  let owned := sourceOwnership ownedEnv `CorpusOwnership
+  let own := owned.originalNames
+  check "actual source private theorem and helper are owned"
+    (own.size == 4 && (own.filter (privateToUserName? · |>.isSome)).size == 2)
+  check "imported declarations are not source owned" (!owned.sourceSet.contains (Ix.Name.fromLeanName ``Nat.add))
+  let natOwned := sourceOwnership ownedEnv `Nat
+  check "same-namespace imported declarations are not source owned"
+    (natOwned.names.size == 1 && !natOwned.sourceSet.contains (Ix.Name.fromLeanName ``Nat.add))
+  check "generated image retains its original source identity"
+    (ownedOutput owned.sourceSet (Ix.Name.fromLeanName `CorpusOwnership._ix.exposed))
+  check "unowned generated-looking name is excluded"
+    (!ownedOutput owned.sourceSet (Ix.Name.fromLeanName `CorpusOwnership._ix.absent))
   check "all3-member permutations" ((permutations [0,1,2]).length == 6)
   let shape : Shape := { id := "x", family := "test", decl := "", members := #["a", "b"] }
   check "duplicate permutation rejected" ((shape.permuted [0,0] #[]).toOption.isNone)
