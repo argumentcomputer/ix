@@ -130,4 +130,40 @@ theorem AcceptedAssociation.installed {input : Input} (accepted : AcceptedAssoci
         Installed pins pre natPins constants input.blobs input.hint accepted.env :=
   checkBytes_reading accepted.admitted
 
+/-- Restrict only source associations. Target bytes remain exact, including
+their support/prelude; selecting a source root does not forge a new artifact. -/
+def selectedInput (input : Input) (root : Lean.Name)
+    (selected : SelectedSource input.source [root]) : Input :=
+  { input with
+    source := selected.source
+    roots := [root]
+    map := input.map.filter (fun e => selected.source.names.contains e.source) }
+
+structure RootAssociation (input : Input) (root : Lean.Name) where
+  selected : SelectedSource input.source [root]
+  association : AcceptedAssociation (selectedInput input root selected)
+
+inductive RootDecline where
+  | selection (reason : String)
+  | certification (reason : Decline)
+
+/-- One supported cone can certify despite unrelated unsupported ambient
+source declarations. Each requested root receives its own explicit outcome. -/
+def checkRoot (input : Input) (root : Lean.Name) :
+    Except RootDecline (RootAssociation input root) := do
+  let selected ← (selectSource input.source [root]).mapError RootDecline.selection
+  let association ← (checkCompiled (selectedInput input root selected)).mapError RootDecline.certification
+  return ⟨selected, association⟩
+
+structure RootOutcome (input : Input) where
+  root : Lean.Name
+  result : Except RootDecline (RootAssociation input root)
+
+def checkRoots (input : Input) : List (RootOutcome input) :=
+  input.roots.map (fun root => ⟨root, checkRoot input root⟩)
+
+theorem checkRoots_coverage (input : Input) :
+    (checkRoots input).map RootOutcome.root = input.roots := by
+  simp [checkRoots, List.map_map, Function.comp_def]
+
 end Ix.CompileCert

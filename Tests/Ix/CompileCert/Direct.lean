@@ -105,7 +105,30 @@ def controls : List (String × (Unit → Bool)) := [
       isUnsafe := false
       all := [`first] }]⟩ }),
   ("missing requested root", fun _ => domainMismatch
-    { choiceInput with roots := [`missing] }) ]
+    { choiceInput with roots := [`missing] }),
+  ("selected root ignores unrelated unsupported source", fun _ =>
+    (checkRoot { choiceInput with source := ⟨choiceInput.source.declarations ++
+      [.axiomInfo {
+        name := `unsupported
+        levelParams := []
+        type := .sort .zero
+        isUnsafe := true }]⟩ } `first).isOk),
+  ("selected root retains changed dependency", fun _ =>
+    match checkRoot { dependent with source := ⟨[sourceDef `first (sourceValue false),
+        sourceDef `root (.const `first [.param `u])]⟩ } `root with
+    | .error (.certification .correspondence) => true
+    | _ => false),
+  ("selection preserves source cycles", fun _ =>
+    (selectSource ⟨[sourceDef `a (.const `b [.param `u]),
+      sourceDef `b (.const `a [.param `u])]⟩ [`a]).isOk),
+  ("selection refuses insufficient rounds", fun _ =>
+    !(selectSource dependent.source [`root] 0).isOk),
+  ("per-root coverage retains unsupported outcome", fun _ =>
+    let input := { choiceInput with roots := [`first, `missing] }
+    let outcomes := checkRoots input
+    outcomes.length == 2 &&
+      (outcomes[0]?.map (fun r => r.result.isOk)).getD false &&
+      !(outcomes[1]?.map (fun r => r.result.isOk)).getD true) ]
 
 def run : IO Unit := do
   let mut failed := 0

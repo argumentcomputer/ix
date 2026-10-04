@@ -64,4 +64,48 @@ theorem checkCompleteSource_sound {s : Source} {roots : List Lean.Name}
     (h : checkCompleteSource s roots = true) : CompleteSource s roots :=
   of_decide_eq_true h
 
+/-- Keep exact source values, in supplied source order. This does not copy
+declarations out of a target environment or reconstruct them from names. -/
+def Source.restrict (ambient : Source) (names : List Lean.Name) : Source :=
+  ⟨ambient.declarations.filter (fun ci => names.contains ci.name)⟩
+
+/-- One monotone closure step. An unrelated unsupported ambient declaration
+is never inspected for dependencies. Missing names remain in the set and
+are subsequently diagnosed by the closed-source check. -/
+def sourceClosureStep (ambient : Source) (names : List Lean.Name) : List Lean.Name :=
+  (names ++ (ambient.restrict names).declarations.flatMap declarationRefs).eraseDups
+
+/-- Finite executable construction; success is checked independently below.
+The explicit round budget bounds execution, not the eventual L4 domain. -/
+def sourceClosure (ambient : Source) : Nat → List Lean.Name → List Lean.Name
+  | 0, names => names
+  | fuel + 1, names =>
+    let next := sourceClosureStep ambient names
+    if next == names then names else sourceClosure ambient fuel next
+
+structure SelectedSource (ambient : Source) (roots : List Lean.Name) where
+  names : List Lean.Name
+  source : Source
+  exact : source = ambient.restrict names
+  complete : CompleteSource source roots
+
+/-- Construct a root-selected closed cone, retaining the exact ambient
+source declarations. Source cycles are permitted. An inadequate explicit
+budget declines rather than claiming completeness. -/
+def selectSource (ambient : Source) (roots : List Lean.Name)
+    (rounds : Nat := ambient.declarations.length + 1) :
+    Except String (SelectedSource ambient roots) :=
+  let names := sourceClosure ambient rounds roots.eraseDups
+  let selected := ambient.restrict names
+  if h : CompleteSource selected roots then .ok ⟨names, selected, rfl, h⟩
+  else .error "source cone is incomplete, has duplicate keys, or exhausted closure rounds"
+
+/-- Successful selection contains original declarations, never synthesized
+or guessed substitutes. This conclusion is independent of source typing. -/
+theorem SelectedSource.original {ambient : Source} {roots : List Lean.Name}
+    (selected : SelectedSource ambient roots) {ci : Lean.ConstantInfo}
+    (h : ci ∈ selected.source.declarations) : ci ∈ ambient.declarations := by
+  rw [selected.exact] at h
+  exact (List.mem_filter.mp h).1
+
 end Ix.CompileCert
