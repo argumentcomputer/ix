@@ -59,10 +59,13 @@ the Rust producer are unchanged). A block's compiled form depends only on its
 dependency closure, so adding recursors moves no address already in the
 closure. `withCompilerSupport` additionally follows `compilerSupportOf` at
 every visited declaration. Selected CLI scopes use `collectSelectedDeps` to
-enable both; a raw caller must opt in explicitly. -/
+enable these and the separate `withCheckerSupport` certificate-ground policy;
+a raw caller must opt in explicitly. Certificate ground is not a compiler
+rewrite or scheduling edge and does not change the frozen checker pins. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
     (withRecursors : Bool := false)
     (withCompilerSupport : Bool := false)
+    (withCheckerSupport : Bool := false)
     : List (Lean.Name × Lean.ConstantInfo) := Id.run do
   let mut needed : Std.HashSet Lean.Name := {}
   let mut worklist := seeds
@@ -80,6 +83,8 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
         -- must be in the closure or the block's address depends on it
         -- (`Lean.auxFamilySiblings`).
         for r in Lean.auxFamilySiblings env.constants n do refs := refs.insert r
+        if withCheckerSupport then
+          for r in Lean.checkerSupportOf env.constants n do refs := refs.insert r
         if withCompilerSupport then
           for r in compilerSupportOf env n do refs := refs.insert r
         match ci with
@@ -119,13 +124,14 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
             worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
-/-- A selected compiler/checker input closes recursors and compiler support
-to the same fixed point as ordinary source references, mutual `all` members,
+/-- A selected compiler/checker input closes recursors, compiler support and
+certificate ground (`Lean.checkerSupportOf`) to the same fixed point as ordinary
+source references, mutual `all` members,
 and auxiliary-family siblings. Raw collection and whole-file/module-default
 selection retain their existing contract through `collectDeps`'s defaults. -/
 def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
     List (Lean.Name × Lean.ConstantInfo) :=
-  collectDeps env seeds (withRecursors := true) (withCompilerSupport := true)
+  collectDeps env seeds (withRecursors := true) (withCompilerSupport := true) (withCheckerSupport := true)
 
 /-- Default (unfiltered) constant list for a file env. Classic files keep the
 historical whole-import-env behavior (byte-identical artifacts). Module-mode

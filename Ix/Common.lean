@@ -4,6 +4,7 @@ public import Lean.Data.Name
 public import Lean.Expr
 public import Lean.Declaration
 public import Lean.Environment
+public import Ix.Common.CheckerSupport
 public import Lean.Elab.Frontend
 
 public section
@@ -427,11 +428,13 @@ def compilerSupportOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name 
 
 private partial def collectDependenciesAux (const : Lean.ConstantInfo)
     (consts : Lean.ConstMap) (acc : ConstList) (withCompilerSupport : Bool := false)
+    (withCheckerSupport : Bool := false)
     : CollectM ConstList := do
   modify (·.insert const.name)
   -- An auxiliary's family is one compiled block: pull its other members.
   let acc ← collectNames (auxFamilySiblings consts const.name) acc
   let acc ← if withCompilerSupport then collectNames (compilerSupportOf consts const.name) acc else pure acc
+  let acc ← if withCheckerSupport then collectNames (checkerSupportOf consts const.name) acc else pure acc
   match const with
   | .ctorInfo val =>
     let acc ← collectNames [val.induct] acc
@@ -491,11 +494,11 @@ where
       -- Selected support can revisit this family through an instance's
       -- own function. Consult the live set after each recursive ingress;
       -- the raw collector retains its historical enumeration behavior.
-      let visited ← if withCompilerSupport then get else pure visited
+      let visited ← if withCompilerSupport || withCheckerSupport then get else pure visited
       if visited.contains name then pure acc
       else
         let const := consts.find! name
-        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport
+        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport withCheckerSupport
   goExpr (consts : Lean.ConstMap) (acc : ConstList) : Lean.Expr → CollectM ConstList
     | .bvar _ | .fvar _ | .mvar _ | .sort _ | .lit _ => pure acc
     | .const name _ => do
@@ -503,7 +506,7 @@ where
       if visited.contains name then pure acc
       else
         let const := consts.find! name
-        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport
+        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport withCheckerSupport
     | .app f a => do
       let acc ← goExpr consts acc f
       goExpr consts acc a
@@ -520,11 +523,12 @@ where
       goExpr consts acc e
 
 /-- Raw dependency closure by default. Selected compiler/checker consumers
-can opt into source-owned compiler support and recursor completion. -/
+can separately opt into source-owned compiler/recursor support and pinned-Nat
+certificate ground. Raw callers retain the historical closure by default. -/
 def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap)
-    (withCompilerSupport : Bool := false) : ConstList :=
+    (withCompilerSupport : Bool := false) (withCheckerSupport : Bool := false) : ConstList :=
   let const := consts.find! name
-  let (constList, _) := collectDependenciesAux const consts [(name, const)] withCompilerSupport default
+  let (constList, _) := collectDependenciesAux const consts [(name, const)] withCompilerSupport withCheckerSupport default
   constList
 
 /-- Bulk closure: `collectDependencies` over many roots SHARING one
@@ -532,13 +536,14 @@ def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap)
     root. For n roots over a common library the per-root variant is
     O(n × closure); this is O(union closure). -/
 def collectDependenciesMany (names : Array Lean.Name)
-    (consts : Lean.ConstMap) (withCompilerSupport : Bool := false) : ConstList := Id.run do
+    (consts : Lean.ConstMap) (withCompilerSupport : Bool := false)
+    (withCheckerSupport : Bool := false) : ConstList := Id.run do
   let mut acc : ConstList := []
   let mut seen : Lean.NameHashSet := default
   for n in names do
     if seen.contains n then continue
     let some const := consts.find? n | continue
-    let (acc', seen') := collectDependenciesAux const consts ((n, const) :: acc) withCompilerSupport seen
+    let (acc', seen') := collectDependenciesAux const consts ((n, const) :: acc) withCompilerSupport withCheckerSupport seen
     acc := acc'
     seen := seen'
   return acc

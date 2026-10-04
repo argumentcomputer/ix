@@ -418,6 +418,13 @@ lean_exe «aux-shape-sweep» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- Selected checker-support closure against whole compilation, with a raw
+negative control and strict certified reports in both rewrite modes. -/
+lean_exe «checker-support-regression» where
+  root := `Tests.Ix.Compile.CheckerSupport.Main
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /-- The Lean names whose address differs between two compiled environments,
 grouped by block with a one-word cause (packaging, nested order, cascade,
 content); `--originals` lists the regenerated auxiliaries whose

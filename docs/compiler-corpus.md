@@ -105,12 +105,31 @@ explicit legacy baseline. Off-mode Lean/Rust outputs must have identical bytes;
 on-mode parity is recorded as not applicable because Rust retains legacy surgery.
 Repeated Lean compilation checks complete serialized byte equality in each mode.
 
+Variant comparison retains complete fixture-owned name/address maps and address
+multisets, with no generated-name exclusions. Rename comparisons undo only whole
+name components. Mutual declaration permutations are a different domain: source
+recursor aliases may acquire different motive/minor telescopes, and their full
+name maps are measured differences, not a universal alpha-renaming assertion.
+Canonical datatype/constructor roots and corresponding canonical auxiliary
+images must still agree. Source-facing adapters retain each source's own
+semantics, checked by the validation phases; metadata/original and packing
+differences require separate retained artifact comparisons.
+
 Both executable kernels check all fixture-owned names. The certified checker is
 rooted at those names, and the shared strict `KernelReport` parser validates its
 exit status, complete JSON protocol, unique record addresses, and address coverage.
 Coverage uses the environment's name-to-primary-record mapping, not the checker's
 capped display-name list. Per-name accept/decline/reject/blocked outcomes remain
 in `certified-names.json`; documented certified declines are distinct from passes.
+
+Selected compilation scopes include explicit checker-support ground in addition
+to ordinary dependencies and compiler support. For example, the pinned Nat.land
+certificate needs Nat.mul even when no source dependency mentions it. The
+untrusted policy in `Ix.Common.CheckerSupport` selects existing source records;
+the certified checker still verifies them and its unchanged pins. Raw dependency
+and default whole-file selection remain unchanged. Run
+`lake exe checker-support-regression` for the exact Single corpus regression,
+whole-output record equality, both switch modes, and raw-closure negative controls.
 
 The closure phase ports the legacy Rust `compile --consts` driver, comparing
 complete `Named` records against Rust whole output and checking each produced
