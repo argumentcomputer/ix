@@ -1,5 +1,6 @@
 import Ix.CompileCert.Map
 import Ix.IxonUniv
+import Ix.Kernel.Verify.Level
 
 /-! # Independent direct export into reader syntax
 
@@ -95,13 +96,219 @@ def importUniv (params : List Kernel.Name) : Ixon.Univ → ExportM Kernel.Level
     let some n := params[i.toNat]? | throw "canonical universe index outside telescope"
     return .param n
 
+/-- Mathematical wire-level evaluation uses unbounded naturals. In
+particular it does not share the canonicalizer's UInt64 offset arithmetic. -/
+def univEval (ρ : UInt64 → Nat) : Ixon.Univ → Nat
+  | .zero => 0
+  | .succ u => univEval ρ u + 1
+  | .max u v => max (univEval ρ u) (univEval ρ v)
+  | .imax u v => if univEval ρ v = 0 then 0 else max (univEval ρ u) (univEval ρ v)
+  | .var i => ρ i
+
+/-- Successful import preserves evaluation under an explicitly aligned
+telescope valuation. Missing indices cannot acquire invented parameter names
+or default values: the hypothesis is success of the bounds-checked importer. -/
+theorem importUniv_eval (params : List Kernel.Name) (ρ : UInt64 → Nat)
+    (φ : Kernel.Name → Nat)
+    (aligned : ∀ i n, params[i.toNat]? = some n → ρ i = φ n)
+    {u : Ixon.Univ} {value : Kernel.Level}
+    (imported : importUniv params u = .ok value) :
+    Kernel.Level.Geran.levelEval φ value = univEval ρ u := by
+  induction u generalizing value with
+  | zero =>
+    simp [importUniv, pure, Except.pure] at imported
+    subst value
+    rfl
+  | succ u ih =>
+    cases hu : importUniv params u with
+    | error reason => simp [importUniv, hu, bind, Except.bind] at imported
+    | ok inner =>
+      simp [importUniv, hu, bind, Except.bind, pure, Except.pure] at imported
+      subst value
+      simp only [Kernel.Level.Geran.levelEval, univEval, ih hu]
+  | max u v ihu ihv =>
+    cases hu : importUniv params u with
+    | error reason => simp [importUniv, hu, bind, Except.bind] at imported
+    | ok left =>
+      cases hv : importUniv params v with
+      | error reason => simp [importUniv, hu, hv, bind, Except.bind] at imported
+      | ok right =>
+        simp [importUniv, hu, hv, bind, Except.bind, pure, Except.pure] at imported
+        subst value
+        simp only [Kernel.Level.Geran.levelEval, univEval, ihu hu, ihv hv]
+  | imax u v ihu ihv =>
+    cases hu : importUniv params u with
+    | error reason => simp [importUniv, hu, bind, Except.bind] at imported
+    | ok left =>
+      cases hv : importUniv params v with
+      | error reason => simp [importUniv, hu, hv, bind, Except.bind] at imported
+      | ok right =>
+        simp [importUniv, hu, hv, bind, Except.bind, pure, Except.pure] at imported
+        subst value
+        simp only [Kernel.Level.Geran.levelEval, univEval, ihu hu, ihv hv]
+  | var i =>
+    cases hn : params[i.toNat]? with
+    | none => simp [importUniv, hn] at imported
+    | some n =>
+      simp [importUniv, hn, pure, Except.pure] at imported
+      subst value
+      exact (aligned i n hn).symm
+
+/-- Source universe semantics is partial only at metavariables, which export
+also rejects. No value is fabricated for an unresolved source universe. -/
+def sourceLevelEval (φ : Lean.Name → Nat) : Lean.Level → Option Nat
+  | .zero => some 0
+  | .succ u => return (← sourceLevelEval φ u) + 1
+  | .max u v => return max (← sourceLevelEval φ u) (← sourceLevelEval φ v)
+  | .imax u v => do
+    let a ← sourceLevelEval φ u
+    let b ← sourceLevelEval φ v
+    return if b = 0 then 0 else max a b
+  | .param n => some (φ n)
+  | .mvar _ => none
+
+theorem exportUniv_eval (params : List Lean.Name) (φ : Lean.Name → Nat)
+    (ρ : UInt64 → Nat)
+    (aligned : ∀ n i, params.idxOf? n = some i → φ n = ρ i.toUInt64)
+    {u : Lean.Level} {wire : Ixon.Univ} (exported : exportUniv params u = .ok wire) :
+    sourceLevelEval φ u = some (univEval ρ wire) := by
+  induction u generalizing wire with
+  | zero =>
+    simp [exportUniv, pure, Except.pure] at exported
+    subst wire
+    rfl
+  | succ u ih =>
+    cases hu : exportUniv params u with
+    | error reason => simp [exportUniv, hu, bind, Except.bind] at exported
+    | ok inner =>
+      simp [exportUniv, hu, bind, Except.bind, pure, Except.pure] at exported
+      subst wire
+      simp [sourceLevelEval, univEval, ih hu]
+  | max u v ihu ihv =>
+    cases hu : exportUniv params u with
+    | error reason => simp [exportUniv, hu, bind, Except.bind] at exported
+    | ok left =>
+      cases hv : exportUniv params v with
+      | error reason => simp [exportUniv, hu, hv, bind, Except.bind] at exported
+      | ok right =>
+        simp [exportUniv, hu, hv, bind, Except.bind, pure, Except.pure] at exported
+        subst wire
+        simp [sourceLevelEval, univEval, ihu hu, ihv hv]
+  | imax u v ihu ihv =>
+    cases hu : exportUniv params u with
+    | error reason => simp [exportUniv, hu, bind, Except.bind] at exported
+    | ok left =>
+      cases hv : exportUniv params v with
+      | error reason => simp [exportUniv, hu, hv, bind, Except.bind] at exported
+      | ok right =>
+        simp [exportUniv, hu, hv, bind, Except.bind, pure, Except.pure] at exported
+        subst wire
+        simp [sourceLevelEval, univEval, ihu hu, ihv hv]
+  | param n =>
+    cases hi : params.idxOf? n with
+    | none => simp [exportUniv, hi] at exported
+    | some i =>
+      by_cases bound : i < 2^64
+      · simp [exportUniv, hi, bound, pure, Except.pure] at exported
+        subst wire
+        simp only [sourceLevelEval, univEval, aligned n i hi]
+      · simp [exportUniv, hi, bound, Functor.map, Except.map] at exported
+  | mvar _ => simp [exportUniv] at exported
+
 structure TermContext where
   context : ExportContext
   sourceLevels : List Lean.Name
   targetLevels : List Kernel.Name
 
+/-- Independently check semantic equality using the certified kernel's total
+Géran comparison, whose offsets are Nat rather than the producer's UInt64.
+This is an acceptance guard, not a proof that canonUniv always passes it. -/
+def checkedLevelImage (original candidate : Kernel.Level) : ExportM Kernel.Level :=
+  if Kernel.Level.Geran.leq original candidate 0 && Kernel.Level.Geran.leq candidate original 0 then
+    .ok candidate
+  else .error "canonical universe failed independent semantic equivalence"
+
+theorem checkedLevelImage_eval {original candidate result : Kernel.Level}
+    (checked : checkedLevelImage original candidate = .ok result) (φ : Kernel.Name → Nat) :
+    Kernel.Level.Geran.levelEval φ result = Kernel.Level.Geran.levelEval φ original := by
+  unfold checkedLevelImage at checked
+  split at checked
+  next valid =>
+    have bounds : Kernel.Level.Geran.leq original candidate 0 = true ∧
+        Kernel.Level.Geran.leq candidate original 0 = true := by
+      simpa only [Bool.and_eq_true] using valid
+    have forward := Kernel.Level.Geran.leq_sound bounds.1 φ
+    have backward := Kernel.Level.Geran.leq_sound bounds.2 φ
+    cases checked
+    omega
+  next => contradiction
+
 def exportLevel (cx : TermContext) (u : Lean.Level) : ExportM Kernel.Level := do
-  importUniv cx.targetLevels (Ixon.canonUniv (← exportUniv cx.sourceLevels u))
+  let raw ← exportUniv cx.sourceLevels u
+  let original ← importUniv cx.targetLevels raw
+  let candidate ← importUniv cx.targetLevels (Ixon.canonUniv raw)
+  checkedLevelImage original candidate
+
+/-- Every accepted exported level preserves the exact independently exported
+raw level under every valuation of the same target telescope. Source-level
+evaluation is connected separately by the export/import valuation lemmas. -/
+theorem exportLevel_preserves_raw {cx : TermContext} {u : Lean.Level} {result : Kernel.Level}
+    (exported : exportLevel cx u = .ok result) :
+    ∃ wire original, exportUniv cx.sourceLevels u = .ok wire ∧
+      importUniv cx.targetLevels wire = .ok original ∧
+      ∀ φ, Kernel.Level.Geran.levelEval φ result = Kernel.Level.Geran.levelEval φ original := by
+  cases hw : exportUniv cx.sourceLevels u with
+  | error reason => simp [exportLevel, hw, bind, Except.bind] at exported
+  | ok wire =>
+    cases ho : importUniv cx.targetLevels wire with
+    | error reason => simp [exportLevel, hw, ho, bind, Except.bind] at exported
+    | ok original =>
+      cases hc : importUniv cx.targetLevels (Ixon.canonUniv wire) with
+      | error reason => simp [exportLevel, hw, ho, hc, bind, Except.bind] at exported
+      | ok candidate =>
+        have checked : checkedLevelImage original candidate = .ok result := by
+          simpa only [exportLevel, hw, ho, hc, bind, Except.bind] using exported
+        exact ⟨wire, original, rfl, ho, checkedLevelImage_eval checked⟩
+
+/-- End-to-end accepted level export preserves the independently stated
+source evaluation under the explicit source/wire/target telescope relation.
+The same wire valuation connects both directions, so inequalities cannot be
+proved under one telescope and then reused under a different one. -/
+theorem exportLevel_eval {cx : TermContext} {u : Lean.Level} {result : Kernel.Level}
+    (exported : exportLevel cx u = .ok result)
+    (φ : Lean.Name → Nat) (ρ : UInt64 → Nat) (ψ : Kernel.Name → Nat)
+    (sourceAligned : ∀ n i, cx.sourceLevels.idxOf? n = some i → φ n = ρ i.toUInt64)
+    (targetAligned : ∀ i n, cx.targetLevels[i.toNat]? = some n → ρ i = ψ n) :
+    sourceLevelEval φ u = some (Kernel.Level.Geran.levelEval ψ result) := by
+  obtain ⟨wire, original, hw, ho, same⟩ := exportLevel_preserves_raw exported
+  rw [same ψ, importUniv_eval cx.targetLevels ρ ψ targetAligned ho]
+  exact exportUniv_eval cx.sourceLevels φ ρ sourceAligned hw
+
+/-- The checked equality survives the kernel's actual parameter substitution,
+using its proved substitution-evaluation law, not syntactic equality of
+canonicalized levels. -/
+theorem checkedLevelImage_subst_eval {original candidate result : Kernel.Level}
+    (checked : checkedLevelImage original candidate = .ok result)
+    (φ : Kernel.Name → Nat) (keys : List Kernel.Name) (values : List Kernel.Level) :
+    Kernel.Level.eval φ (Kernel.Level.subst keys values result) =
+      Kernel.Level.eval φ (Kernel.Level.subst keys values original) := by
+  rw [Kernel.Level.eval_subst, Kernel.Level.eval_subst,
+    Kernel.Level.eval_eq_levelEval, Kernel.Level.eval_eq_levelEval]
+  exact checkedLevelImage_eval checked (Kernel.Level.substFn φ keys values)
+
+/-- Source evaluation after assigning the selected universe arguments agrees
+with actual kernel-level instantiation. The alignment premise explicitly
+uses `substFn`, including its specified behavior for unlisted parameters. -/
+theorem exportLevel_instantiated_eval {cx : TermContext} {u : Lean.Level} {result : Kernel.Level}
+    (exported : exportLevel cx u = .ok result)
+    (φ : Lean.Name → Nat) (ρ : UInt64 → Nat) (ψ : Kernel.Name → Nat)
+    (keys : List Kernel.Name) (values : List Kernel.Level)
+    (sourceAligned : ∀ n i, cx.sourceLevels.idxOf? n = some i → φ n = ρ i.toUInt64)
+    (targetAligned : ∀ i n, cx.targetLevels[i.toNat]? = some n →
+      ρ i = Kernel.Level.substFn ψ keys values n) :
+    sourceLevelEval φ u = some (Kernel.Level.eval ψ (Kernel.Level.subst keys values result)) := by
+  rw [Kernel.Level.eval_subst, Kernel.Level.eval_eq_levelEval]
+  exact exportLevel_eval exported φ ρ (Kernel.Level.substFn ψ keys values) sourceAligned targetAligned
 
 /-- Binder names and binder-info are reader-erased. Metadata is refused
 until its semantic/erasure classification is justified independently. -/
