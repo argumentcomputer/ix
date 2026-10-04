@@ -180,6 +180,12 @@ structure Changed where
   members : Std.HashSet Ix.Name := {}
   images : Array Ix.Name := #[]
   imageSet : Std.HashSet Ix.Name := {}
+  /-- Display members that are definitions, theorems or opaques: members of
+      transported definition cliques, whose canonical constants carry `_ix`
+      names (`f._ix._mutual`, `f._ix._f`, …). They have no images and no
+      recursor rules, so phase 7 only counts them; the constants themselves
+      are checked by the kernel phases and by decompile. -/
+  cliques : Array Ix.Name := #[]
   /-- Display members whose block the view does not know. -/
   unknown : Array Ix.Name := #[]
 
@@ -198,6 +204,8 @@ def changedOf (env : Ixon.Env) (view : View) : Changed := Id.run do
       let imgs := Ix.Compile.Pass.imageKinds view.get? v.all
       ch := { ch with images := ch.images ++ imgs
                       imageSet := imgs.foldl (·.insert ·) ch.imageSet }
+    | some (.defnInfo _) | some (.thmInfo _) | some (.opaqueInfo _) =>
+      ch := { ch with cliques := ch.cliques.push x }
     | _ => ch := { ch with unknown := ch.unknown.push x }
   return ch
 
@@ -673,9 +681,11 @@ unclassified {mismatch.size}; changed blocks skipped: {(if surgeryLine.isEmpty t
 def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharing.Exact.Limits)
     (ungrounded : Std.HashSet Ix.Name := {}) :
     PhaseResult × Array String × Array String := Id.run do
+  let cliqueNote := if ch.cliques.isEmpty then ""
+    else s!"; {ch.cliques.size} clique display member(s), not image-checked here"
   if ch.blocks.isEmpty then
-    return (.skipped (if ch.unknown.isEmpty then "no changed block with `_ix` names (switch off, or no block changed)"
-      else s!"display members without a Lean block: {showNames ch.unknown}"), #[], #[])
+    return (.skipped ((if ch.unknown.isEmpty then "no changed block with `_ix` names (switch off, or no block changed)"
+      else s!"display members without a Lean block: {showNames ch.unknown}") ++ cliqueNote), #[], #[])
   -- a block Pass 2 refused (its compile failed, phase 1) has no images to check
   let live := ch.blocks.filter fun all =>
     !(all.any ungrounded.contains) && !((Ix.Compile.Pass.imageKinds view.get? all).any ungrounded.contains)
@@ -729,7 +739,7 @@ def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharin
       rejected := rejected + 1
       problems := problems.push s!"{label}: Ix.Tc rejects: {e.take 200}"
   let detail := s!"{ch.blocks.size} changed block(s) ({refused} refused by Pass 2, phase 1), {images.size} image(s) ({nRecs} of recursors), \
-{nRules} computation rule(s) by rfl; Ix.Tc (anonymous) accepts {checkAddrs.size - rejected}/{checkAddrs.size}"
+{nRules} computation rule(s) by rfl; Ix.Tc (anonymous) accepts {checkAddrs.size - rejected}/{checkAddrs.size}{cliqueNote}"
   let lines := (problems.extract 0 12).map ("✗ " ++ ·)
   if problems.isEmpty then return (.passed detail, lines, problems)
   return (.failed s!"{problems.size} problem(s); {detail}", lines, problems)

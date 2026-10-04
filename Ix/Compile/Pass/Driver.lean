@@ -233,6 +233,20 @@ def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
   fun n us args => (Opt.engine env { head := n, us, args }).map (·.2)
 
+/-- Pass 3's rewrite of a changed clique's canonical constants (the clique
+hook's `rewrite`): the views of the changed blocks they reference, then the
+call-site rewrite with the definitional passes (`optLookup`), exactly as for
+the constants of any block. Without the views the passes see no block and
+every full application would keep its inlined image. -/
+def cliqueRewrite (cenv : CompileEnv) (members : Array (Name × ConstantInfo)) :
+    Except String BlockRewrite := do
+  let mut views : Std.HashMap Name BlockView := {}
+  for (_, ci) in members do
+    for h in headsIn cenv.p3Heads ci do
+      if let some key := cenv.p3Heads.get? h then
+        if !views.contains key then views := views.insert key (← viewOf cenv views key)
+  rewriteBlock (expansionLookup cenv views) members (optLookup cenv views)
+
 /-- Rewrite a block before it compiles: the compile environment (overlay,
 decompile sources) and the initial block state (stored image constants).
 Identity when the switch is off or the block references no head. -/
@@ -242,7 +256,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   -- changed definition cliques (`Ix.Compile.Pass.Cliques`, the A5 hook): the
   -- members' transported values with their decompile records, and the
   -- canonical constants they reference
-  let (cenv, init) ← prepareCliques cenv all (rewriteBlock (expansionLookup cenv {}))
+  let (cenv, init) ← prepareCliques cenv all (cliqueRewrite cenv)
   if cenv.p3Heads.isEmpty then return (cenv, init)
   if let some refs := cenv.p3BlockRefs.get? lo then
     if !refs.toList.any cenv.p3Heads.contains then return (cenv, init)
