@@ -22,6 +22,17 @@ def repeatedWFPacked (a b : Nat) : PSum Nat Nat → Nat
   | .inr n => b + n
 def repeatedWFFirst (a n : Nat) : Nat := repeatedWFPacked a a (.inl n)
 def repeatedWFSecond (a n : Nat) : Nat := repeatedWFPacked a a (.inr n)
+
+namespace RepeatedStructural
+mutual
+def first (a b : Nat) : Nat → Nat
+  | 0 => a
+  | n + 1 => second a b n
+def second (a b : Nat) : Nat → Nat
+  | 0 => b
+  | n + 1 => first a b n
+end
+end RepeatedStructural
 def sideRank : PSum Nat Nat → Nat
   | .inl _ => 0
   | .inr _ => 1
@@ -318,6 +329,48 @@ def wfMatcherControls (env : Environment) : IO Unit := runMeta (do
   let expected := Ix.Expr.mkLam (ixName `input) (spine.permute #[1, 0]).type spine.type .default
   unless Ix.Compile.Clique.alphaEq moved expected do throwError "same-typed user codomain was permuted"
   IO.println "WF MATCHER OWNERSHIP: exact source dispatch accepted; absent/aliased/private user declarations rejected; user17 retained; constant packing-valued codomain unchanged"
+  ) env
+
+def structuralIdentityControl (env : Environment) : IO Unit := runMeta (do
+  let const? (name : Ix.Name) := (env.find? (leanName name)).map fun info => (Ix.CanonM.canonConst info).run' {}
+  let members ← #[``RepeatedStructural.first, ``RepeatedStructural.second].mapM fun name => do
+    let some declaration := (const? (ixName name)).bind Ix.Compile.Clique.Decl.ofConstantInfo?
+      | throwError "missing structural identity fixture"
+    pure declaration
+  let layout ← match Ix.Compile.Clique.structLayout members #[] #[1, 0] const? with
+    | .ok value => pure value
+    | .error reason => throwError "ordinary structural identity fixture declined: {reason}"
+  unless layout.numFixed == 2 do throwError "structural identity fixture lost its two fixed slots"
+  let rec aliasSecond : Nat → Ix.Expr → Ix.Expr
+    | 0, expression => expression
+    | fuel + 1, expression =>
+      let go := aliasSecond fuel
+      match expression with
+      | .app .. =>
+        let (head, args) := Ix.Compile.Canon.getAppFnArgs expression
+        let args := args.map go
+        let args := match head with
+          | .const name _ _ => if layout.fNames.contains name && args.size ≥ 2 then args.set! 1 args[0]! else args
+          | _ => args
+        Ix.Compile.Canon.mkAppN head args
+      | .lam n t b bi _ => Ix.Expr.mkLam n (go t) (go b) bi
+      | .forallE n t b bi _ => Ix.Expr.mkForallE n (go t) (go b) bi
+      | .letE n t v b nd _ => Ix.Expr.mkLetE n (go t) (go v) (go b) nd
+      | .proj s i x _ => Ix.Expr.mkProj s i (go x)
+      | .mdata d x _ => Ix.Expr.mkMData d (go x)
+      | e => e
+  let altered := members.map fun declaration => { declaration with value := aliasSecond 1000 declaration.value }
+  for (declaration, index) in altered.zipIdx do
+    addDecl (.defnDecl {
+      name := Name.str `RecognitionStructuralAlias s!"member{index}",
+      levelParams := declaration.levelParams.toList.map leanName,
+      type := uncanon declaration.type, value := uncanon declaration.value,
+      hints := .opaque, safety := .safe })
+  IO.println "Structural repeated fixed-slot control: both altered source declarations kernel accepted"
+  match Ix.Compile.Clique.structLayout altered #[] #[1, 0] const? with
+  | .error reason => unless reason.contains "distinct fixed parameters alias" do
+      throwError "structural alias control declined for another reason: {reason}"
+  | .ok layout => throwError "structural layout accepted aliased source binder identities: {repr layout.memberFixed}"
   ) env
 
 def wfPositiveProbes (env : Environment) : IO Unit := runMeta (do
@@ -806,6 +859,20 @@ def run : IO UInt32 := do
     { declaration with value := canon (mkLambda `a .default (mkConst ``Nat)
       (mkProj ``PProd index (mkApp2 (mkConst ``repeatedPFPacked) (mkBVar 0) (mkBVar 0)))) }
   let wfMembers ← #[``repeatedWFFirst, ``repeatedWFSecond].mapM declOf
+  for invalid in #[#[], #[0], #[0, 0], #[0, 2]] do
+    let input : Ix.Compile.Clique.Input := {
+      encoding := .wellFounded, members := wfMembers, aux := #[wfPacked],
+      sigma := invalid, newEncName := wfPacked.name }
+    let rejected := Ix.Compile.Clique.transport input
+    let originals := input.aux ++ input.members
+    unless rejected.baseline && rejected.decls.size == originals.size &&
+        rejected.causes.size == originals.size &&
+        rejected.causes.all (fun (_, cause, reason) => cause == .shape && reason.contains "bad permutation") &&
+        (rejected.decls.zip originals).all (fun (actual, expected) =>
+          actual.name == expected.name && Ix.Compile.Clique.alphaEq actual.type expected.type &&
+          Ix.Compile.Clique.alphaEq actual.value expected.value) do
+      throw (IO.userError s!"public transport accepted or lost source input for invalid permutation {invalid}")
+  IO.println "Public transport rejects empty/truncated/duplicate/out-of-range permutations before identity shortcut"
   match Ix.Compile.Clique.pfLayout pfMembers pfPacked #[1, 0] pfPacked.name with
   | .error reason => unless reason.contains "distinct fixed parameters alias" do
       throw (IO.userError s!"PF repeated-parameter control failed for another reason: {reason}")
@@ -818,6 +885,7 @@ def run : IO UInt32 := do
   actualProbe env
   positiveProbes env
   wfMatcherControls env
+  structuralIdentityControl env
   actualWFProbe env
   wfPositiveProbes env
   return 0

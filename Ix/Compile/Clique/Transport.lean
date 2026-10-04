@@ -89,7 +89,9 @@ def Output.baselineOf (inp : Input) (why : String) : Output :=
 
 /-- Transport a clique (`Φ_σ`), or leave it in Lean's form. -/
 def transport (inp : Input) : Output :=
-  if (List.range inp.sigma.size).all (fun i => inp.sigma[i]! == i) then
+  if inp.sigma.size != inp.members.size || !isPerm inp.sigma then
+    .baselineOf inp "transport: bad permutation (expected one distinct position for every member)"
+  else if (List.range inp.sigma.size).all (fun i => inp.sigma[i]! == i) then
     -- identity: nothing moves
     { decls := inp.aux ++ inp.members, renames := #[], causes := #[] }
   else

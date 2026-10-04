@@ -506,6 +506,10 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
               throw "structLayout: a fixed argument is not a member parameter"
             q := q.push (sh.lams - 1 - (b - depth - sh.lets))
           | _ => throw "structLayout: a fixed argument is not a member parameter"
+        -- A fixed slot is identified by its source binder, not by its type.
+        -- Repeated arguments do not establish an invertible telescope map.
+        unless q.toList.eraseDups.length == q.size do
+          throw "structLayout: distinct fixed parameters alias the same binder"
         match q? with
         | none => q? := some q
         | some q' => unless q == q' do throw "structLayout: inconsistent fixed arguments"
