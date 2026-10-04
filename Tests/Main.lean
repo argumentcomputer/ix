@@ -373,6 +373,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Single ownership of compiled names: the conflicting-claim error in both
   -- compilers and every Lean schedule (Tests.Ix.Compile.ClaimConflict).
   ("compile-claim-conflict", Tests.Ix.Compile.ClaimConflict.run),
+  ("compiler-selected-closure-e2e", Tests.Ix.Compile.SelectedClosure.run),
   -- The clique transport `Φ_σ` (Ix.Compile.Clique) against the measured clique twins: the exact
   -- oracle, the kernel, GuessLex, negative controls (Tests.Ix.Compile.Transport).
   ("clique-transport", Tests.Ix.Compile.Transport.run),
