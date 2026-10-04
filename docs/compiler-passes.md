@@ -389,6 +389,60 @@ tables: the surgery compiled the dropped arguments of the other components into 
 sharing tables (leftover entries, or a different first-occurrence order), Pass 3 derives the tables
 from the final term (§4.7 (e), now measured). The Mathlib measurement is in the A4 report.
 
+### 1.6 The proof-justified passes as implemented (A6p)
+
+Modules `Ix/Compile/Pass/Opt/{Packed,O7,O8,O9,CollapseRec,O10,O12,O11b}.lean`, each with the
+five-part docstring whose Faithfulness part is the lemma Phase B formalises. All behind
+`IX_PASS3=images`; with the switch off nothing runs, and with it on they need a collapsed or split
+block, so Init+Std and Mathlib (no collapsed block, no split block with a cross-field structural
+recursion or an enumeration member) are unchanged [measured on Init+Std, A6p].
+
+- **Where they fire.** Only in the value of a definition (`Translate.RwState.site`): never in a
+  type, a theorem's proof or a shared expansion. The rewritten constant equals its baseline by
+  congruence (`funext`, `congrArg`) over the rewritten occurrences, from the pass's lemma.
+- **The dependents rule** (§1.4 order constraint 4, detection fixed here; conservative, flagged for
+  the owner): a pass rewrites inside `c` only when no constant outside `c`'s block references both
+  `c` and an image-kind auxiliary of the changed block being rewritten; otherwise `c` keeps its
+  faithful image (demotion, recorded `DEMOTED`). Not counted (they check against either value):
+  Lean's `T.noConfusion` over `T.noConfusionType`, and the equation compiler's outputs over a
+  matcher (`f`, `q._f`, `q._sunfold`, `q._unsafe_rec`; Lean shares matchers between functions).
+  Only the heads of the block being rewritten are consulted, so the decision does not depend on the
+  schedule; it does read dependents outside `c`'s closure (as the clique demotion, A7).
+- **Canonical constants.** O9, O10 and O12 reference new constants under reserved names (D14): the
+  re-typed structural handler `p._ix.s` for Lean's `p.s` (`f._ix._f`), and O12's shared helper
+  `f._ix.fg`. They are compiled with the block that first needs them, through the call-site
+  rewrite, as A5's clique hook compiles its canonical constants (`Driver.compileCanon`).
+- **O8** `casesOn` of a collapsed or lifted member (so matchers and Lean's helpers built on
+  `casesOn`): the Ix `casesOn` of the class, same arguments, at Lean's motive universe. Lemma: case
+  analysis, both sides `min_q fs` by ι.
+- **O7** `rec`/`recOn` over a collapsed, unsplit block whose motives and minors agree per class
+  after compilation (α-equal under the collapse renaming): `ρ P⃗ mins t`, duplicates dropped.
+  Lemma: `unwrap_p (ρ.{max 1 u} … t) = ρ.{u} … t` by induction with `ρ`.
+- **O9** `brecOn` over the component `{x}` of a split block with a cross field: the Ix `brecOn`
+  with the component's motive and the major's handler re-typed (`x.below ↦ ρ.below`) and re-pathed
+  (`.2ʲ.1.1 ↦ .2ʲ′.1.1`, Lean's leaves being one per field into the block, right-nested,
+  measured). Lemma: induction with `ρ` and both `brecOn` equation lemmas. On the fixtures it
+  also covers C2's `A.cnt` (Lean compiles `B.cnt b` as a call).
+- **O10** `brecOn` over a collapsed, unsplit block whose motives and re-typed handlers agree per
+  class after compilation (constants by compiled address): the Ix `brecOn` with one motive and one
+  handler per class, the twin's single function. Lemma: simultaneous induction.
+- **O12** `brecOn` over a collapsed pair (one class of two, no parameters or indices) with
+  different arms: `(fg t).p`, `fg := λ t. ρ.brecOn Pair t ⟨F′₀, F′₁⟩`, the pair ordered by content
+  (each handler re-typed with its own component first, compared by a content key), so the permuted
+  presentation gives the same `fg`, `A.f` and `B.g`. Lemma: joint induction. The Lean names stay
+  `COLLAPSE-ARMS` against the collapsed twin; classes of three or more decline.
+- **O11b** Lean's general `noConfusionType`/`noConfusion` of a split-off one-constructor
+  enumeration: the enumeration form (`λ P x y. P → P`, `λ h p. p`), the twin's, with Lean's value as
+  the root's decompile record. Lemma: `funext` and case analysis. Two or more constructors decline
+  (`PENDING-NOCONFUSION`): the enumeration form needs `T.ctorIdx`, `noConfusionTypeEnum` scheduled
+  before the constant, an edge the input graph lacks.
+
+Measured on the fixtures (`Tests/Ix/Compile/Pass/{O7Collapse,O8Cases,O9Split,O10O12Collapse,
+O11bNoConfusion}.lean`, the `pass3` suite): 39 twin pairs byte-equal with the switch on, value pins
+by `rfl`, every fixture constant and every `_ix` name accepted by the certified checker (meta-mode
+exemptions only on collapsed blocks, BB-F7/BB-F1), decompile complete; the switch-on non-canonical
+set of the passes (`nonCanonicalPasses`, exact) holds 1 `DEMOTED`, 2 `PENDING-NOCONFUSION` and 2
+`ORDER-STMT` (Lean's `_f` over Lean's `below`).
 ---
 
 ## 2. Canonical form, defined
