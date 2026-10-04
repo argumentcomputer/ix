@@ -192,10 +192,22 @@ private inductive NoAuxPhase where
 def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     : Except CompileError (BlockResult × BlockState) := Id.run do
   let getConst (n : Name) : Option ConstantInfo := cenv.env.get? n
+  -- A7 (D2c): the members in canonical order (`aliasPrecedes`), not in
+  -- `Set` iteration order, so the first match below (`leanAll`, the phase)
+  -- is a function of the member set. On valid input every member gives the
+  -- same `.all` and the same phase family (the order note above), so the
+  -- value is the one the iteration order gave.
+  --
+  -- The `auxGenExtraNames` reads are closure-determined on valid input: a
+  -- name is in the set iff an aux tail claimed it, and the tail that claims
+  -- a regenerated auxiliary or one of its Lean `.all` siblings is the tail
+  -- of the owning inductive block, which every block of that family
+  -- references and so precedes in every schedule (A7 report, D2c).
+  let members : Array Name := all.toArray.qsort aliasPrecedes
   -- Collect the Lean `.all` names from any constant in the SCC
   -- (compile.rs:3283-3299).
   let mut leanAll : Array Name := #[]
-  for n in all do
+  for n in members do
     match getConst n with
     | some (.inductInfo v) => leanAll := v.all; break
     | some (.recInfo v) => leanAll := v.all; break
@@ -204,7 +216,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     | _ => continue
   -- Determine phase from the first aux_gen constant (compile.rs:3302-3334).
   let mut phase? : Option NoAuxPhase := none
-  for n in all do
+  for n in members do
     if phase?.isSome then break
     if !cenv.auxGenExtraNames.contains n then continue
     match getConst n with
@@ -239,7 +251,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
         if let some (.recInfo _) := getConst n then
           filtered := filtered.insert n
   | .belowIndc =>
-    for n in all do
+    for n in members do
       match getConst n with
       | some (.inductInfo v) =>
         for a in v.all do
