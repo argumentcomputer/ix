@@ -165,6 +165,7 @@ them, at no syntactic position. -/
 
 def nInvImage : Name := leanName ``InvImage
 def nWFRelRel : Name := leanName ``WellFoundedRelation.rel
+def nWFRelation : Name := leanName ``WellFoundedRelation
 
 def WFLayout.isSpine (L : WFLayout) (e : Expr) : Bool :=
   match decodeSpine .psum L.n (stripMdata e) with
@@ -180,8 +181,12 @@ def WFLayout.isRelApp (L : WFLayout) (e : Expr) : Bool :=
       match args[0]? with
       | some a => L.isSpine a
       | none => false
-  | .proj _ _ r _ =>
-    args.size ≥ 2 &&
+  | .proj structureName field r _ =>
+    -- A user record can have the same first type argument and a binary
+    -- function field. Re-entering the encoding there would permute its user
+    -- inputs, possibly changing a Nat result while preserving its type.
+    -- Only the actual relation field is a candidate for this encoding form.
+    structureName == nWFRelation && field == 0 && args.size ≥ 2 &&
       match constApp? r with
       | some (_, _, rargs) => match rargs[0]? with
         | some a => L.isSpine a

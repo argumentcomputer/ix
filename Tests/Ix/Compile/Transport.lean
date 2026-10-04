@@ -467,6 +467,53 @@ def theoremCanonicity (env : Environment) (eqn : Std.HashMap Name (Encoding × A
 def familyNamed (fam : String) : Option Family :=
   cliqueFamilies.find? (·.fixture.getString! == fam)
 
+namespace RelationPositionControl
+
+structure UserFn (α : Type u) where
+  apply : α → α → Nat
+
+def distinguish : PSum Nat Nat → PSum Nat Nat → Nat
+  | .inl _, _ => 17
+  | .inr _, _ => 29
+
+end RelationPositionControl
+
+/-- A user record projection over exactly the clique's packing is not the
+encoding's relation. The old broad projection recognizer changed this term
+from 17 to 29, with both terms still accepted at Nat. Check its value as well
+as its type; kernel acceptance alone cannot detect this mistake. -/
+def userRelationProjection (env : Environment) : IO (Option String) := do
+  try
+    runMeta (do
+      let nat := mkConst ``Nat
+      let sum := mkApp2 (mkConst ``PSum [Level.one, Level.one]) nat nat
+      let left := mkApp3 (mkConst ``PSum.inl [Level.one, Level.one]) nat nat (mkNatLit 0)
+      let right := mkApp3 (mkConst ``PSum.inr [Level.one, Level.one]) nat nat (mkNatLit 0)
+      let record := mkApp2 (mkConst ``RelationPositionControl.UserFn.mk [Level.zero])
+        sum (mkConst ``RelationPositionControl.distinguish)
+      let source := mkApp2 (mkProj ``RelationPositionControl.UserFn 0 record) left right
+      let input := (_root_.Ix.CanonM.canonExpr source).run' {}
+      let natIx := (_root_.Ix.CanonM.canonExpr nat).run' {}
+      let layout : _root_.Ix.Compile.Clique.WFLayout := {
+        n := 2, sigma := #[1, 0], mutualName := ixName `unused,
+        newMutualName := ixName `unused, numFixed := 0, fixedPerm := #[],
+        leaves := #[natIx, natIx] }
+      if layout.isRelApp input then throwError "user projection recognised as the encoding relation"
+      let transformed ← match (_root_.Ix.Compile.Clique.phiWF layout false input).run' with
+        | .ok value => pure (toLeanExpr value)
+        | .error error => throwError "transport failed: {error}"
+      unless ← isDefEq (← inferType source) nat do throwError "source is not Nat"
+      unless ← isDefEq (← inferType transformed) nat do throwError "target is not Nat"
+      unless ← isDefEq source (mkNatLit 17) do throwError "source control does not compute to 17"
+      unless ← isDefEq transformed (mkNatLit 17) do throwError "user projection changed its value"
+      let wrong := mkApp2 (mkProj ``RelationPositionControl.UserFn 0 record) right left
+      unless ← isDefEq (← inferType wrong) nat do throwError "negative control is not Nat"
+      unless ← isDefEq wrong (mkNatLit 29) do throwError "negative control does not compute to 29"
+      if ← isDefEq source wrong then throwError "negative control failed to distinguish swapped values") env
+    IO.println "[clique-transport] (g) user relation-shaped projection: Nat 17 preserved; same-typed Nat 29 distinguished"
+    return none
+  catch e => return some s!"user relation-shaped projection: {e}"
+
 /-- (d1) A wrong permutation must fail the oracle. -/
 def wrongPermutation (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name))
     (fam : String) : IO (Option String) := do
@@ -702,6 +749,7 @@ def run : IO UInt32 := do
     if let some err ← wrongPermutation env eqn fam then failures := failures.push s!"control: {err}"
   if let some err ← strayProof env eqn then failures := failures.push s!"control: {err}"
   if let some err ← strayMonotonicity env eqn then failures := failures.push s!"control: {err}"
+  if let some err ← userRelationProjection env then failures := failures.push s!"control: {err}"
   -- (b) the kernel
   let rejected := kernelRows.filter (·.2.2.isSome)
   IO.println s!"[clique-transport] (b) kernel: {kernelRows.size - rejected.size}/{kernelRows.size} transported constants accepted"
