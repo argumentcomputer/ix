@@ -41,9 +41,13 @@ def declarationRefs (c : Lean.ConstantInfo) : List Lean.Name :=
   | .defnInfo v => v.all ++ exprRefs v.value
   | .thmInfo v => v.all ++ exprRefs v.value
   | .opaqueInfo v => v.all ++ exprRefs v.value
-  | .inductInfo v => v.all ++ v.ctors ++ v.all.map (·.str "rec")
+  | .inductInfo v => v.all ++ v.ctors ++ v.all.map (·.str "rec") ++
+      (List.range v.numNested).filterMap (fun i => v.all.head?.map (·.str s!"rec_{i + 1}"))
   | .ctorInfo v => [v.induct]
-  | .recInfo v => v.all ++ v.rules.flatMap (fun r => r.ctor :: exprRefs r.rhs)
+  | .recInfo v => v.all ++ v.all.map (·.str "rec") ++
+      (List.range (v.numMotives - v.all.length)).filterMap
+        (fun i => v.all.head?.map (·.str s!"rec_{i + 1}")) ++
+      v.rules.flatMap (fun r => r.ctor :: exprRefs r.rhs)
   | _ => []
 
 /-- Closed finite source inventory. Cycles are allowed: this is a finite

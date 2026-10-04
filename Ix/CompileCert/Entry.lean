@@ -40,15 +40,33 @@ instance (cx : ExportContext) (n : Lean.Name) (target : Kernel.Name) :
   | .error _ => by simp only [NameAgrees, h]; infer_instance
   | .ok _ => by simp only [NameAgrees, h]; infer_instance
 
+/-- Recursor K/safety flags are not retained in the reader's installed-rule
+placeholder. Check them against the actual source-associated wire member. -/
+def sourceRecordFlags (cx : ExportContext) (reader : Ctx) (e : MapEntry) : Bool :=
+  match cx.source.find e.source with
+  | some (.recInfo rv) =>
+    match e.target with
+    | .ctor .. => false
+    | .member owner index =>
+      match reader.store owner with
+      | none => false
+      | some record =>
+        match (recursorMembers record).find? (fun entry => entry.1 == index) with
+        | none => false
+        | some (_, r) => r.k == rv.k && r.isUnsafe == rv.isUnsafe &&
+            r.lvls.toNat == rv.levelParams.length
+  | some _ => true
+  | none => false
+
 def MapAgrees (cx : ExportContext) (reader : Ctx) : Prop :=
   ∀ e ∈ cx.map,
     resolve reader.store e.record = some e.target ∧
-    NameAgrees cx e.source (reader.nameOf e.target)
+    NameAgrees cx e.source (reader.nameOf e.target) ∧ sourceRecordFlags cx reader e = true
 
 instance (cx : ExportContext) (reader : Ctx) : Decidable (MapAgrees cx reader) :=
   inferInstanceAs (Decidable (∀ e ∈ cx.map,
     resolve reader.store e.record = some e.target ∧
-    NameAgrees cx e.source (reader.nameOf e.target)))
+    NameAgrees cx e.source (reader.nameOf e.target) ∧ sourceRecordFlags cx reader e = true))
 
 /-- Precise direct-cone relation. Reader declarations are deliberately kept
 separate from the installed `env`: binder annotations/lets may change there. -/
@@ -63,10 +81,14 @@ structure AcceptedAssociation (input : Input) where
   constants : List (Address × Ixon.Constant)
   decoded : decodeRecords input.limits input.records = .ok constants
   declarations : Array Kernel.Declaration
+  readerState : State
+  detailed_reading : readRecords (streamContext pins prelude constants input.blobs input.hint)
+    prelude.state constants.toArray = .ok (readerState, declarations)
   reading : readStream pins prelude constants input.blobs input.hint = .ok declarations
   map_agrees : MapAgrees ⟨input.source, input.map, pins⟩
     (streamContext pins prelude constants input.blobs input.hint)
   correspondence : DirectCorrespondence ⟨input.source, input.map, pins⟩ declarations
+  block_correspondence : BlockCorrespondence ⟨input.source, input.map, pins⟩ readerState
 
 inductive Decline where
   | admission (error : Kernel.Admission.Error)
@@ -76,6 +98,7 @@ inductive Decline where
   | reading (error : Kernel.Admission.Error)
   | mapMismatch
   | correspondence
+  | blockCorrespondence
 
 /-- The runtime checks are the constructors' proof premises, not assumptions
 supplied by the caller. Structural equality decisions are kernel-checked. -/
@@ -93,13 +116,25 @@ def checkCompiled (input : Input) : Except Decline (AcceptedAssociation input) :
           match hc : decodeRecords input.limits input.records with
           | .error e => .error (.decoding e)
           | .ok constants =>
-            match hr : readStream pins pre constants input.blobs input.hint with
-            | .error e => .error (.reading e)
-            | .ok decls =>
+            match hr : readRecords (streamContext pins pre constants input.blobs input.hint)
+                pre.state constants.toArray with
+            | .error (e, position) => .error (.reading (.read position e))
+            | .ok (state, decls) =>
               let cx : ExportContext := ⟨input.source, input.map, pins⟩
               if hm : MapAgrees cx (streamContext pins pre constants input.blobs input.hint) then
                 if hf : DirectCorrespondence cx decls then
-                  .ok ⟨env, ha, hd, pins, hp, pre, hq, constants, hc, decls, hr, hm, hf⟩
+                  if hb : BlockCorrespondence cx state then
+                    have hs : readStream pins pre constants input.blobs input.hint = .ok decls := by
+                      unfold readStream
+                      change (match readRecords
+                        (streamContext pins pre constants input.blobs input.hint)
+                        pre.state constants.toArray with
+                        | .ok (_, ds) => Except.ok ds
+                        | .error (e, i) => Except.error (Kernel.Admission.Error.read i e)) = .ok decls
+                      rw [hr]
+                    .ok ⟨env, ha, hd, pins, hp, pre, hq, constants, hc,
+                      decls, state, hr, hs, hm, hf, hb⟩
+                  else .error .blockCorrespondence
                 else .error .correspondence
               else .error .mapMismatch
     else .error .sourceDomain
@@ -110,8 +145,9 @@ theorem faithful_sound {input : Input} {accepted : AcceptedAssociation input}
     (_h : checkCompiled input = .ok accepted) :
     checkBytes input.limits input.records input.blobs input.hint = .ok accepted.env ∧
     DirectDomain input.source input.roots input.map ∧
-    DirectCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.declarations :=
-  ⟨accepted.admitted, accepted.domain, accepted.correspondence⟩
+    DirectCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.declarations ∧
+    BlockCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.readerState :=
+  ⟨accepted.admitted, accepted.domain, accepted.correspondence, accepted.block_correspondence⟩
 
 /-- The existing target model theorem applies to these exact accepted bytes.
 This is not yet source semantic pull-back (S). -/

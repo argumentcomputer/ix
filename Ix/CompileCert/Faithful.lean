@@ -68,4 +68,81 @@ theorem DirectCorrespondence.member {cx : ExportContext} {decls : Array Kernel.D
   | error e => simp [DirectMatch, he] at hm
   | ok e => exact ⟨e, by simpa [DirectMatch, he] using hm, rfl⟩
 
+/-- Ordered whole-block description. This retains the shape fields that
+entry membership alone omits, and the separate recursor counts whose sums
+occur in `Kernel.ConstantInfo.recInfo`. -/
+structure DirectBlock where
+  entries : List DirectEntry
+  types : List (Nat × Nat × List Kernel.Name × Bool × Bool × Nat)
+  recursors : List (Nat × Nat × Nat × Nat)
+  deriving DecidableEq
+
+def readerBlock (b : Kernel.Frontend.InModel.BlockRec) : DirectBlock :=
+  { entries := b.types.map (fun t => .induct t.cv t.nP) ++
+      b.ctors.map (fun c => .ctor c.cv c.nP c.nF) ++
+      b.recs.map (fun r => .recursor r.cv (r.nP + r.nM + r.nm + r.nI)
+        (r.nP + r.nM + r.nm) r.rules)
+    types := b.types.map (fun t => (t.nP, t.nIdx, t.ctors, t.isRec, t.isReflexive, t.numNested))
+    recursors := b.recs.map (fun r => (r.nP, r.nM, r.nm, r.nI)) }
+
+/-- Independent export of a complete source inductive block. All member
+and constructor ordering comes from the source, not target metadata. -/
+def exportBlock (cx : ExportContext) (owner : Lean.InductiveVal) : ExportM DirectBlock := do
+  unless owner.all.contains owner.name do throw "inductive is absent from its source block"
+  let mut types := []
+  let mut typeEntries := []
+  let mut ctorEntries := []
+  for n in owner.all do
+    let some (.inductInfo iv) := cx.source.find n | throw s!"missing inductive member: {n}"
+    unless iv.all == owner.all && iv.numParams == owner.numParams do
+      throw s!"inconsistent source inductive membership: {n}"
+    typeEntries := typeEntries ++ [← directExport cx (.inductInfo iv)]
+    let ctorNames ← iv.ctors.mapM cx.name
+    types := types ++ [(iv.numParams, iv.numIndices, ctorNames,
+      iv.isRec, iv.isReflexive, iv.numNested)]
+    for (ctor, index) in iv.ctors.zipIdx do
+      let some (.ctorInfo cv) := cx.source.find ctor | throw s!"missing constructor: {ctor}"
+      unless cv.induct == n && cv.cidx == index && cv.numParams == iv.numParams do
+        throw s!"inconsistent constructor owner or position: {ctor}"
+      ctorEntries := ctorEntries ++ [← directExport cx (.ctorInfo cv)]
+  let nested := (List.range owner.numNested).filterMap
+    (fun i => owner.all.head?.map (·.str s!"rec_{i + 1}"))
+  let recNames := owner.all.map (·.str "rec") ++ nested
+  let mut recEntries := []
+  let mut recursors := []
+  for recName in recNames do
+    let some (.recInfo rv) := cx.source.find recName | throw s!"missing recursor: {recName}"
+    unless rv.all == owner.all do throw s!"inconsistent recursor membership: {recName}"
+    recEntries := recEntries ++ [← directExport cx (.recInfo rv)]
+    recursors := recursors ++ [(rv.numParams, rv.numMotives, rv.numMinors, rv.numIndices)]
+  return ⟨typeEntries ++ ctorEntries ++ recEntries, types, recursors⟩
+
+def BlockMatch (cx : ExportContext) (state : Kernel.Reader.State)
+    (ci : Lean.ConstantInfo) : Prop :=
+  match ci with
+  | .inductInfo iv =>
+    match cx.name iv.name, exportBlock cx iv with
+    | .ok name, .ok expected =>
+      match state.indBlocks[name]? with
+      | some actual => readerBlock actual = expected
+      | none => False
+    | _, _ => False
+  | _ => True
+
+instance (cx : ExportContext) (state : Kernel.Reader.State) (ci : Lean.ConstantInfo) :
+    Decidable (BlockMatch cx state ci) := by
+  unfold BlockMatch
+  split
+  · split
+    · split <;> infer_instance
+    · infer_instance
+  · infer_instance
+
+def BlockCorrespondence (cx : ExportContext) (state : Kernel.Reader.State) : Prop :=
+  ∀ ci ∈ cx.source.declarations, BlockMatch cx state ci
+
+instance (cx : ExportContext) (state : Kernel.Reader.State) :
+    Decidable (BlockCorrespondence cx state) :=
+  inferInstanceAs (Decidable (∀ ci ∈ cx.source.declarations, BlockMatch cx state ci))
+
 end Ix.CompileCert
