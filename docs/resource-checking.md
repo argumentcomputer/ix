@@ -412,12 +412,15 @@ on resource admission must establish it.
   fresh: the checker treats every evaluation of it as a new object
   referenced nowhere else, so its result is unique (this is what lets
   `x :: acc` or `.node r k l` be returned as `!`). The consumer must
-  allocate it anew at each evaluation that reaches a unique position: it
+  allocate it anew at every evaluation in the checked body: it
   must not share one object between evaluations (common-subexpression
   elimination of two constructions, float-out or full laziness out of a
   closure or loop, or inlining a local and then extracting the now closed
   term), or else it must keep the run-time exclusivity check before any
-  in-place update of it. The construction must also be a cell of its own:
+  in-place update, reuse or unconditional free justified by that inferred
+  uniqueness. This condition is on allocation sites of the executed checked
+  body; it does not require guessing whether a particular result eventually
+  reaches a unique position. The construction must also be a cell of its own:
   the checker counts a one-run-time-field constructor as unboxed only when
   the program shows no other constructor of its type, so a consumer that
   unboxes a constructor the checker counts as a cell (for example one of a
@@ -436,7 +439,9 @@ on resource admission must establish it.
   the core profile) is copied across call and closure boundaries; a `1` or
   `&` contract on it bounds how often the program names it, not a resource
   the consumer may rely on (no move-only handle, no single-use capability is
-  represented by an immediate). The checker therefore lets a linear immediate
+  represented by an immediate). The consumer must not elide an increment or
+  decrement on the strength of that usage grade; Nat and String can be heap
+  objects even when the profile calls them shareable. The checker therefore lets a linear immediate
   cross into a many callee or a reusable closure. Uniqueness is not covered
   by this assumption: a unique immediate is moved, and a closure that moves
   its captured immediate is one-shot. The standard and Lean core profiles
@@ -454,7 +459,9 @@ on resource admission must establish it.
 - **A field is an owned reference.** A value extracted from an aggregate, by
   a projection or by a case split, is a reference the consumer owns (Lean's
   reference-counted representation takes one when it extracts a field): it
-  stays valid after the aggregate is dropped. The checker ties a field to its
+  stays valid after the aggregate is moved, reused, updated or freed. An RC
+  backend must increment the field reference (or provide an equivalent
+  lifetime guarantee) before any such operation. The checker ties a field to its
   aggregate only until the field is consumed — consuming it shares the
   aggregate's owner, so the aggregate is never updated in place afterwards —
   but lets the field outlive the aggregate. A consumer that represents
@@ -470,7 +477,7 @@ next section states these obligations precisely.
 
 ## Consumer obligations
 
-Resource admission certifies the program it checked under the evaluation
+Resource admission checks the program under the evaluation
 order the profile states. A consumer relying on admission must run exactly
 that program in that order. The obligations are lettered as in the second
 review of the checker; each names the objects it covers and what it
@@ -517,6 +524,22 @@ forbids, so that a compiler's correctness proof can state it as a premise.
   ownership guarantee. `ix compile` binds only Lean's own unfolding theorem
   (above) and refuses annotated recursion that is not checked through it;
   `ix check-equations` re-verifies the listed pairs by address.
+- **(d) No unchecked compiler replacement.** *Covers:* every checked
+  definition and every call of one, including `@[csimp]` redirections.
+  *Requires:* the exact body rule in (c). Ixon resource admission does not
+  authorize Lean's csimp map: the map is not exported in Ixon, and equality
+  of functions does not show that two implementations obey the same
+  ownership or allocation contract. *Forbids:* applying a replacement solely
+  because its source body was admitted or because a csimp theorem proves
+  functional equality. No replacement path is supported by this admission
+  API. A future consumer supporting one must check the replacement against
+  the replaced declaration's full contract under the same effective profile,
+  bind its executed body by address, and preserve the allocation and
+  evaluation-order conditions here. Checking a replacement only against its
+  own weaker interface is insufficient. The CSimp/CSimpReplacement source
+  regression has a registered replacement of the same function type: the
+  original fresh construction is admitted and the aliasing replacement is
+  rejected.
 - **(e) Case definitions are taken from the profile, by address, with
   by-need positions derived from the bound body.** *Covers:* every
   application, in a checked definition, of a constant the effective profile
@@ -536,6 +559,25 @@ forbids, so that a compiler's correctness proof can state it as a premise.
   (below), so a user definition never acquires branch semantics; resource
   safety rests on this obligation, which holds whichever constants are
   listed, since the consumer then evaluates exactly what was checked.
+
+### Evidence and remaining consumer obligations
+
+| Executed-program condition | Evidence or check | Remaining obligation |
+| --- | --- | --- |
+| Fresh allocations are not shared across evaluations; no static cell is treated as a fresh heap cell | Literal/closed/unboxed-constructor resource fixtures | Backend allocation/code-motion audit, or retained exclusivity checks before reuse/update/free |
+| Usage crossing grants no RC or representation optimization | strict/plain shared fixtures and crossed-binder diagnostics | Consumer ignores crossing usage grades; `linear` opts capability types out |
+| Extracted fields retain their own lifetime | field-view and use-after-move shared fixtures | Backend increments/retains the field reference before moving or freeing its aggregate |
+| (a) Eligible alternatives enter only their selected branch; other arguments are strict | order/strict fixtures; N03 variants and controls | Consumer must implement those exact positions, without eager captured closures |
+| (b) Over-application arguments have no evaluation effects | `requireValue`/`require_value`, order fixtures, N04/N15 | Preserve strict-let order and branch-local consumption |
+| (c) The executed body is the authenticated checked body | bound pairs and `ix check-equations`; R2-3/R2-5 regressions | Consumer verifies addresses and runs that body |
+| (d) Admission does not authorize csimp | CSimp source regression, no replacement map in Ixon | Consumer declines unchecked redirects; a supported target needs a new contract check |
+| (e) Case behavior is selected by the effective profile's addresses and derived shape | generated-case checks and N01/N02; order shape regressions | Consumer uses that exact profile/shape, not independent naming or metadata rules |
+
+These checks are regression evidence, not a soundness theorem for the resource
+checker. Compilatr.ix continues to treat its verdict as a diagnostic: its
+separate Own checks and compiler correctness proofs are not discharged by an
+ix acceptance. In particular, its strict argument binding for ordinary
+matcher wrappers is not by itself evidence of (a) or (e).
 
 ## Profiles, claims, and consumers
 
@@ -708,3 +750,25 @@ on plain data with an opted-out type (the plain profile). The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.
+
+### Compilatr.ix source inspection (Phase 1.5)
+
+The consumer evidence is narrower than the conditions above. In Compilatr.ix,
+`Src.Lazify.byNameRanges` grants laziness to pinned lazy primitives and
+recognized cases/recursors; an ordinary matcher wrapper retains strict
+arguments. `Src.Semantics.eval` evaluates a strict application argument before
+applying the function, and `Lam.Erase.Term.bindArgs` introduces strict lets.
+Consequently these paths do not establish branch-local construction of an
+arbitrary matcher alternative, nor profile-selected case semantics: (a) and
+(e) remain unmet for general wrappers. For recognized saturated cases,
+`Lam.Erase.special` saturates the case before applying extra arguments; this
+does not justify reordering effectful over-application arguments of wrappers.
+
+The inspected consumer also has a `Check.checkCsimp` certificate path and a
+`Build` priority for csimp before equation hints, even though its K1 parser
+emits only equation hints. Parser behavior alone therefore does not establish
+(d). Phase 1.5 consumer changes must explicitly refuse unchecked replacements
+in a resource-bound context and validate executed equation selection; until
+those changes are independently validated, the corresponding table entries
+remain obligations. These observations are source inspection, not additional
+resource-safety theorems or permission to rely on an ix verdict.

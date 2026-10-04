@@ -521,4 +521,21 @@ def g (xs ys : List Nat) : List Nat :=
     (fun _ y => y) (fun _ _ y => y) ys
 end N15Control
 
+/- R2-8: functional equality of same-interface functions does not justify
+running the replacement body under the original's resource verdict. -/
+namespace CSimp
+def slow (xs : List Nat) : ! List Nat :=
+  match xs with
+  | [] => []
+  | h :: t => h :: t
+end CSimp
+
+namespace CSimpReplacement
+def shared (xs : List Nat) : List Nat := xs
+def fast (xs : List Nat) : ! List Nat := shared xs
+@[csimp] theorem replaceSlow : @CSimp.slow = @fast := by
+  funext xs
+  cases xs <;> rfl
+end CSimpReplacement
+
 end Tests.Ix.SourceContract.ReviewFixture

@@ -1,6 +1,7 @@
 module
 
 public import LSpec
+public import Lean.Compiler.CSimpAttr
 public import Ix.Meta
 public import Ix.EnvScope
 public import Ix.CompileDriver
@@ -109,6 +110,8 @@ def probes : List Probe := [
   ([probe, strictProbe, plainProbe].flatMap fun mk =>
     (["N03", "N03Beta", "N03Let", "N03Alias", "N04", "N15"].map fun name => mk name false "R2-7") ++
     (["N03Control", "N04Control", "N15Control"].map fun name => mk name true "R2-7")) ++
+  ([probe, strictProbe, plainProbe].flatMap fun mk =>
+    [mk "CSimp" true "R2-8", mk "CSimpReplacement" false "R2-8"]) ++
   -- Review R2-2: an annotated partial (opaque) definition is native: refused
   -- unless assumed; an unannotated one compiles.
   [{ standardProbe "V10" false "R2-2" with reason := nativeReason },
@@ -365,6 +368,20 @@ private def smuggledDirectives : IO (Bool × Nat × Nat × Option String) := do
   finally
     IO.FS.removeDirAll directory
 
+/-- The registered csimp replacement is deliberately not a dependency of
+the body exported for the original. Its separate admission probe above
+checks the replacement against the same written result contract and refuses it. -/
+private def csimpBoundary : IO (Bool × Nat × Nat × Option String) := do
+  let env ← getCompileEnv #[fixtureModule]
+  let original := fixtureModule ++ `CSimp.slow
+  let replacement := fixtureModule ++ `CSimpReplacement.fast
+  let theoremName := fixtureModule ++ `CSimpReplacement.replaceSlow
+  let registered := Lean.Compiler.hasCSimpAttribute env theoremName
+  let names := (Ix.EnvScope.collectDeps env [original]).map (·.1)
+  let boundBody := names.contains original && !names.contains replacement
+  if registered && boundBody then return (true, 2, 0, none)
+  return (false, 0, 1, some s!"csimp registered: {registered}; original body bound: {boundBody}")
+
 def suite : List TestSeq := [
   .individualIO "review probes: violations rejected, controls accepted (standard, core, strict and plain profiles)" none verdicts .done,
   .individualIO "an annotated native implementation must be a profile assumption" none
@@ -377,6 +394,8 @@ def suite : List TestSeq := [
     genuineEquations .done,
   .individualIO "case lines only for generated casesOn and matchers" none
     generatedCaseDefinitions .done,
+  .individualIO "resource admission does not authorize a csimp replacement" none
+    csimpBoundary .done,
   test "a written profile may not contain generated directives"
     ((Ix.Compile.ResourceProfile.checkWritten "cases\ncase List.casesOn\n").toOption.isNone &&
      (Ix.Compile.ResourceProfile.checkWritten "cases\nequation dup dup_eq\n").toOption.isNone &&
