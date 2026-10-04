@@ -892,6 +892,7 @@ def runLib (offPath onPath : String) : IO UInt32 := do
   let mut rippled := 0
   let mut rewritten := 0
   let mut siblings := 0
+  let mut images := 0
   let mut changedSet : Std.HashSet String := {}
   let byPretty : Std.HashMap String _root_.Ix.Name :=
     onParts.namedRows.foldl (fun m r => m.insert r.name.pretty r.name) {}
@@ -910,6 +911,10 @@ def runLib (offPath onPath : String) : IO UInt32 := do
       -- block (and its index in it) moved
       else if d.fields.all (fun f => f == "idx" || f.startsWith "block") then
         siblings := siblings + 1
+      -- A3 decision 3: the Lean name of a changed block's image-kind auxiliary
+      -- denotes its image, a definition with Lean's type, so it moves (no record)
+      else if (n.bind fun x => (Ix.Compile.Pass.Opt.classify x).map (·.1)).isSome then
+        images := images + 1
       else problems := problems.push s!"root without a decompile record: {d.name} ({d.fields})"
     | none => problems := problems.push s!"root not found: {d.name}"
   let mut added := 0
@@ -920,7 +925,7 @@ def runLib (offPath onPath : String) : IO UInt32 := do
     else problems := problems.push s!"new name not reserved: {n}"
   for (n, _) in diff.namedRemoved do
     if !n.startsWith "Ix." then problems := problems.push s!"name removed with the switch on: {n}"
-  IO.println s!"[pass3-lib] moved: {roots} roots ({rewritten} rewritten call-site constants, {siblings} block siblings of one), \
+  IO.println s!"[pass3-lib] moved: {roots} roots ({rewritten} rewritten call-site constants, {siblings} block siblings of one, {images} Lean auxiliaries of changed blocks now denoting their images), \
     {rippled} rippled; added {added} (reserved or synthetic)"
   -- the surgery's rewritten constants
   let mut surgered : Array _root_.Ix.Name := #[]
