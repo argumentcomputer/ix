@@ -81,6 +81,19 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
     ((Tests.Ix.Compile.KernelReport.checkedLeanTargets "##check-lean## 1 0 0 0\n").toOption.isNone)
   check "Lean unmatched selection retained"
     (Tests.Ix.Compile.KernelReport.leanUnmatched "[check-lean] warning: --consts name matched nothing: AX.X.T\n" == #["AX.X.T"])
+  IO.FS.withTempDir fun dir => do
+    let case : Case := ⟨"missing", "missing", "test", "base", "AX.Missing", "missing-source.lean", #[], #[]⟩
+    let progress := dir / "runs" / case.id / "on"
+    IO.FS.createDirAll progress
+    writeJson (progress / "progress.json")
+      (#[⟨case.id, "on", "elaborate", "pass", "completed before injected infrastructure failure", ""⟩] : Array Verdict)
+    let rows ← runCaseSafe { dir, phases := #["elaborate", "compile", "certified"] } #[] case
+    check "infrastructure failure preserves completed phase"
+      (rows.any fun r => r.phase == "elaborate" && r.status == "pass")
+    check "infrastructure failure records every unrun requested phase"
+      ((rows.filter (·.status == "not-run")).size == 2 && rows.size == phaseNames.size + 1)
+    check "infrastructure failure remains a failure"
+      (rows.any fun r => r.phase == "infrastructure" && failure r)
   IO.println s!"[corpus] curated {curated shapes |>.size} cases; smoke4; full{shapes.size}"
   return 0
 

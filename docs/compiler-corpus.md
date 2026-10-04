@@ -87,8 +87,11 @@ lake env .lake/build/bin/aux-shape-sweep matrix --dir out/corpus-curated
 switch modes, phase selection, process limits, scope, and reviewed expectations.
 `--ix PATH` and `--cert PATH` can select already-built binaries from the reviewed
 compiler checkout; both are fingerprinted even when using a smaller phase set.
-The driver stores logs and incremental verdicts while running bounded concurrent
-cases. `--local` is an explicit alternate compilation scope; the default is whole
+The driver prebuilds the selected generated modules once before bounded concurrent
+cases, recording preparation success or failure. Checker summaries must attest to
+nonempty work, and unmatched selections are infrastructure errors. If a case
+stops after an infrastructure failure, its completed phases are retained and every
+remaining requested phase is explicitly not run. `--local` is an explicit alternate compilation scope; the default is whole
 environment compilation. The output environment must contain fixture-owned names.
 
 Default phases are `elaborate,compile,rust,determinism,parity,check-rs,check-rs-anon,

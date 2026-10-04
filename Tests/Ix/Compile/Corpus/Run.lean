@@ -321,11 +321,19 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
 def runCaseSafe (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Array Verdict) := do
   try runCase cfg expected case
   catch e =>
-    let rows := #[
-      { caseId := case.id, mode := cfg.mode, phase := "infrastructure",
-        status := "infrastructure-error", detail := e.toString : Verdict }]
     let dir := cfg.dir / "runs" / case.id / cfg.mode
     IO.FS.createDirAll dir
+    let mut rows : Array Verdict ← if ← (dir / "progress.json").pathExists then
+        readJson (dir / "progress.json")
+      else pure #[]
+    for phase in phaseNames do
+      unless rows.any (·.phase == phase) do
+        rows := rows.push ⟨case.id, cfg.mode, phase,
+          if cfg.phases.contains phase then "not-run" else "not-selected",
+          "case stopped after infrastructure failure", "failure.json"⟩
+    rows := rows.push
+      { caseId := case.id, mode := cfg.mode, phase := "infrastructure",
+        status := "infrastructure-error", detail := e.toString }
     writeJson (dir / "failure.json") rows
     return rows
 
