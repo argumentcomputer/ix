@@ -7670,12 +7670,14 @@ structure RuleTupleRepresentation {V : Type u} [Kernel.SetTheory V]
   typed : RuleTupleTyping strong.public.cval env levels frame universes constructorUniverses valuation argumentValues fieldValues
 
 open Kernel.Semantics in
-theorem RuleTupleTyping.represented {V : Type u} [Kernel.SetTheory V]
+theorem RuleTupleTyping.represented_exact {V : Type u} [Kernel.SetTheory V]
     {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
     {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
     {universes constructorUniverses : List Kernel.Level} {valuation : Nat → V} {arguments fields : List V}
     (typed : RuleTupleTyping strong.public.cval env levels frame universes constructorUniverses valuation arguments fields) :
-    Nonempty (RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields) := by
+    ∃ representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields,
+      representation.depth = (arguments ++ fields).length ∧
+      representation.valuation = pushArguments valuation (arguments ++ fields) := by
   let values := arguments ++ fields
   let fresh := pushArguments valuation values
   have readings := ArgumentAnnotations.variables strong levels values.length fresh (fun _ => .sort .zero)
@@ -7694,7 +7696,16 @@ theorem RuleTupleTyping.represented {V : Type u} [Kernel.SetTheory V]
     fieldValuesEq := by rw [List.map_drop, valueEq]; simp [values],
     argumentClosed := by rw [List.map_take, argumentFVars_closed],
     fieldClosed := by rw [List.map_drop, argumentFVars_closed],
-    typed := typed.rebase strong.internal.base2.wf fresh }⟩
+    typed := typed.rebase strong.internal.base2.wf fresh }, rfl, rfl⟩
+
+theorem RuleTupleTyping.represented {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {valuation : Nat → V} {arguments fields : List V}
+    (typed : RuleTupleTyping strong.public.cval env levels frame universes constructorUniverses valuation arguments fields) :
+    Nonempty (RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields) := by
+  obtain ⟨representation, _, _⟩ := typed.represented_exact
+  exact ⟨representation⟩
 
 theorem RuleTupleRepresentation.constructor_application {V : Type u} [Kernel.SetTheory V]
     {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
@@ -9379,5 +9390,55 @@ theorem SourceProjectionFunction.original_artifact_value {V : Type u} [Kernel.Se
   rw [same]
   exact function.value_eq_pullback target association types model values frame levels ρ
     parameters parameterCount parameterTyping
+
+/-- A source-only public fired-rule law. The fresh argument representation is
+fixed by the source semantic tuple; no target frame, target model, target
+universe check or target annotation object occurs in this proposition.
+Typing, universe selection and ordinary/nested/index guards are the source
+rule's actual firing premises, not restrictions of compiler Dom. -/
+def PublicRecursorLaws {V : Type u} [Kernel.SetTheory V]
+    (values : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env) : Prop :=
+  ∀ name index (frame : InstalledRuleFrame env name index) levels universes constructorUniverses,
+    RuleUniverseSelection frame levels universes constructorUniverses →
+    ∀ valuation arguments fields,
+      RuleTupleTyping values env levels frame universes constructorUniverses valuation arguments fields →
+      let depth := (arguments ++ fields).length
+      let fresh := pushArguments valuation (arguments ++ fields)
+      let argumentExpressions := (argumentVariables depth).take arguments.length
+      let fieldExpressions := (argumentVariables depth).drop arguments.length
+      SourceRuleComparisons values env levels frame universes constructorUniverses fresh
+        argumentExpressions fieldExpressions arguments fields →
+      ∃ value, Kernel.Denotes values env levels fresh
+          (Kernel.Expr.mkAppN (.const name universes)
+            (argumentExpressions ++ [Kernel.Expr.mkAppN (.const frame.rule.ctor constructorUniverses) fieldExpressions])) value ∧
+        Kernel.Denotes values env levels fresh
+          (Kernel.Expr.mkAppN (frame.rule.rhs.instantiateLevelParams frame.header.levelParams universes)
+            (argumentExpressions.take frame.rulePrefix ++ fieldExpressions.drop frame.rule.ctorParams)) value
+
+theorem checked_public_recursors {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    (target : StrongInstalledModel V targetEnv) {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    (constructors : checkInstalledConstructors sourceEnv targetEnv names = true)
+    (levelLinks : checkInstalledRuleLevelLinks sourceEnv targetEnv names = some true) :
+    PublicRecursorLaws ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv := by
+  intro name index sourceFrame levels universes constructorUniverses sourceSelection valuation arguments fields typed
+  dsimp only
+  intro conditions
+  obtain ⟨targetFrame, _, _, _, _, _, images⟩ := sourceFrame.checked_target target association recursors constructors
+  have selection := sourceFrame.transfer_selection target association recursors targetFrame
+    (checkInstalledRuleLevelLinks_frame levelLinks sourceFrame) sourceSelection rfl rfl
+  have targetTyped := sourceFrame.checked_tuple_typing target association types targetFrame (images (fun _ => 0)).header
+    levels levels universes universes constructorUniverses constructorUniverses
+    sourceSelection.recursorArity selection.recursorArity sourceSelection.constructorArity selection.constructorArity
+    rfl rfl typed
+  obtain ⟨representation, depthEq, valuationEq⟩ := targetTyped.represented_exact
+  obtain ⟨_, _, constructorTyped⟩ := typed.constructorTyped
+  have fired := representation.checked_fired sourceWf association types recursors sourceFrame selection levels
+    universes constructorUniverses sourceSelection.recursorArity sourceSelection.constructorArity
+    rfl rfl constructorTyped (by simpa only [depthEq, valuationEq] using conditions)
+  simpa only [depthEq, valuationEq] using fired
 
 end Ix.CompileCert
