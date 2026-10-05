@@ -3,6 +3,7 @@ import Ix.Kernel.Ixon.ReaderSpec
 import Ix.Kernel.Denotes
 import Ix.Kernel.Verify.Subst
 import Ix.Kernel.Verify.InferLeaves
+import Ix.Kernel.Verify.PropWhen
 
 /-! # Direct reader correspondence
 
@@ -519,6 +520,87 @@ structure InstalledRenaming where
   binder : Kernel.BinderMeta → Kernel.BinderMeta
   projection : Kernel.Name → Nat → Kernel.Name × Nat
 
+/-- Independent symbolic universe selection. Each source parameter may map
+to a complete target level, including a selected/constant level; no parameter
+injectivity or equal telescope lengths is assumed by these evaluation laws. -/
+structure UniverseImage where
+  parameter : Kernel.Name → Kernel.Level
+
+def UniverseImage.level (image : UniverseImage) : Kernel.Level → Kernel.Level
+  | .zero => .zero
+  | .succ u => .succ (image.level u)
+  | .max u v => .max (image.level u) (image.level v)
+  | .imax u v => .imax (image.level u) (image.level v)
+  | .param name => image.parameter name
+
+def UniverseImage.valuation (image : UniverseImage) (target : Kernel.Name → Nat) : Kernel.Name → Nat :=
+  fun name => Kernel.Level.eval target (image.parameter name)
+
+def UniverseImage.datum (image : UniverseImage) (datum : Kernel.PropWhen) : Kernel.PropWhen :=
+  datum.bindZ fun name => Kernel.Level.zeronessOf (image.parameter name)
+
+def UniverseImage.binder (image : UniverseImage) (metadata : Kernel.BinderMeta) : Kernel.BinderMeta :=
+  ⟨image.datum metadata.pw⟩
+
+theorem UniverseImage.eval (image : UniverseImage) (target : Kernel.Name → Nat) (level : Kernel.Level) :
+    Kernel.Level.eval target (image.level level) = Kernel.Level.eval (image.valuation target) level := by
+  induction level <;> simp_all [UniverseImage.level, UniverseImage.valuation, Kernel.Level.eval]
+
+/-- PropWhen is transported by zero-ness of the selected levels, not by
+erasing the datum or retaining its old parameter names. -/
+theorem UniverseImage.holds (image : UniverseImage) (target : Kernel.Name → Nat) (datum : Kernel.PropWhen) :
+    (image.datum datum).holds target = datum.holds (image.valuation target) := by
+  cases datum with
+  | never => simp [UniverseImage.datum]
+  | ifAllZero names =>
+    simp only [UniverseImage.datum, Kernel.PropWhen.bindZ_ifAllZero,
+      Kernel.PropWhen.holds_bindZ_go, Kernel.PropWhen.holds_ifAllZero]
+    simp only [Kernel.PropWhen.zeronessOf_sound, UniverseImage.valuation]
+
+theorem UniverseImage.regime (image : UniverseImage) (target : Kernel.Name → Nat) (metadata : Kernel.BinderMeta) :
+    Kernel.regime target (image.binder metadata).pw =
+      Kernel.regime (image.valuation target) metadata.pw := by
+  simp only [UniverseImage.binder, Kernel.regime, image.holds]
+
+/-- Actual output datum agreement with the symbolic selector establishes
+regime agreement at every target assignment. Establishing this output
+agreement from the two real annotation/checking traces is still D11. -/
+theorem UniverseImage.output_regime (image : UniverseImage) (target : Kernel.Name → Nat)
+    (sourceMetadata targetMetadata : Kernel.BinderMeta)
+    (output : targetMetadata = image.binder sourceMetadata) :
+    Kernel.regime target targetMetadata.pw =
+      Kernel.regime (image.valuation target) sourceMetadata.pw := by
+  rw [output]
+  exact image.regime target sourceMetadata
+
+/-- The exact kernel telescope selector, including its specified fallback
+for unlisted parameters. Source-domain completeness and valid telescope
+arity remain separately checked; this function invents no replacement. -/
+def UniverseImage.select (parameters : List Kernel.Name) (arguments : List Kernel.Level) : UniverseImage :=
+  ⟨Kernel.Level.subst.go parameters arguments⟩
+
+theorem UniverseImage.select_level (parameters : List Kernel.Name) (arguments : List Kernel.Level)
+    (level : Kernel.Level) :
+    (UniverseImage.select parameters arguments).level level = Kernel.Level.subst parameters arguments level := by
+  induction level <;> simp_all [UniverseImage.select, UniverseImage.level, Kernel.Level.subst]
+
+theorem UniverseImage.select_datum (parameters : List Kernel.Name) (arguments : List Kernel.Level)
+    (datum : Kernel.PropWhen) :
+    (UniverseImage.select parameters arguments).datum datum = Kernel.Level.substPW parameters arguments datum := rfl
+
+theorem UniverseImage.select_valuation (parameters : List Kernel.Name) (arguments : List Kernel.Level)
+    (target : Kernel.Name → Nat) :
+    (UniverseImage.select parameters arguments).valuation target = Kernel.Level.substFn target parameters arguments := by
+  funext name
+  exact Kernel.Level.eval_subst_go target parameters arguments name
+
+def UniverseImage.asRenaming (image : UniverseImage) : InstalledRenaming where
+  name := id
+  universes := fun _ levels => levels.map image.level
+  level := image.level
+  binder := image.binder
+  projection := fun name field => (name, field)
+
 def InstalledRenaming.expr (rename : InstalledRenaming) : Kernel.Expr → Kernel.Expr
   | .bvar i => .bvar i
   | .fvar i type => .fvar i (rename.expr type)
@@ -531,6 +613,16 @@ def InstalledRenaming.expr (rename : InstalledRenaming) : Kernel.Expr → Kernel
   | .proj name field value =>
       .proj (rename.projection name field).1 (rename.projection name field).2 (rename.expr value)
   | .lit literal => .lit literal
+
+/-- Connection to the actual kernel expression operation, including every
+binder's PropWhen and free-variable annotation. -/
+theorem UniverseImage.select_expr (parameters : List Kernel.Name) (arguments : List Kernel.Level)
+    (expression : Kernel.Expr) :
+    (UniverseImage.select parameters arguments).asRenaming.expr expression =
+      expression.instantiateLevelParams parameters arguments := by
+  induction expression <;> simp_all [InstalledRenaming.expr, UniverseImage.asRenaming,
+    UniverseImage.select_level, UniverseImage.binder, UniverseImage.select_datum,
+    Kernel.Expr.instantiateLevelParams]
 
 theorem InstalledRenaming.lift (rename : InstalledRenaming) (expression : Kernel.Expr)
     (amount cutoff : Nat) :

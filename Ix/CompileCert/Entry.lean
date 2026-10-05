@@ -1044,6 +1044,36 @@ theorem BinderAnnotationTrace.paired_image {kind : AnnotationBinder}
   rw [source.shape, target.shape, domainImage, bodyImage, datumImage, ← rename.abstract1]
   cases kind <;> rfl
 
+/-- Semantic binder reassembly from the actual annotation receipts. The
+domain/body premises are semantic images, not syntactic/canonical equality.
+The exact selected-universe datum image supplies regime agreement; no such
+agreement is inferred merely from both annotation runs succeeding. -/
+theorem BinderAnnotationTrace.semantic_image {V : Type u} [Kernel.SetTheory V]
+    {kind : AnnotationBinder} {sourceMode targetMode : CheckMode}
+    {sourceEnv targetEnv : Env} {depth : Nat}
+    {sourceType sourceBody sourceResult targetType targetBody targetResult : Kernel.Expr}
+    {sourceMetadata targetMetadata : BinderMeta}
+    (source : BinderAnnotationTrace kind sourceMode sourceEnv depth sourceType sourceBody sourceMetadata sourceResult)
+    (target : BinderAnnotationTrace kind targetMode targetEnv depth targetType targetBody targetMetadata targetResult)
+    (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    (sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V)
+    (domainImage : InstalledExprImage sourceValues targetValues sourceEnv targetEnv
+      (image.valuation targetLevels) targetLevels source.annotatedType target.annotatedType)
+    (bodyImage : InstalledExprImage sourceValues targetValues sourceEnv targetEnv
+      (image.valuation targetLevels) targetLevels (source.annotatedBody.abstract1 depth)
+      (target.annotatedBody.abstract1 depth))
+    (datumImage : target.datum = image.datum source.datum) :
+    InstalledExprImage sourceValues targetValues sourceEnv targetEnv
+      (image.valuation targetLevels) targetLevels sourceResult targetResult := by
+  have regimes : Kernel.regime (image.valuation targetLevels) source.datum =
+      Kernel.regime targetLevels target.datum := by
+    rw [datumImage]
+    exact (image.regime targetLevels ⟨source.datum⟩).symm
+  rw [source.shape, target.shape]
+  cases kind with
+  | lam => exact .lam domainImage bodyImage regimes
+  | pi => exact .forallE domainImage bodyImage regimes
+
 /-- The checked let-elimination trace, including all official let checks.
 The reduct substitutes the immutable original value, not the independently
 annotated value. The latter remains the subject of value-type checking. -/
