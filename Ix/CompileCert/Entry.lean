@@ -1450,6 +1450,44 @@ inductive ArgumentAnnotations {V : Type u} [Kernel.SetTheory V] {env : Kernel.En
       ArgumentAnnotations strong levels depth ρ (expression :: expressions) (annotation :: annotations)
 
 open Kernel.Semantics Kernel.Model in
+theorem ArgumentAnnotation.app_inv {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {function argument : Kernel.Expr} {annotation : AnnotTerm}
+    (evidence : ArgumentAnnotation strong levels depth ρ (.app function argument) annotation) :
+    ∃ functionAnnotation argumentAnnotation,
+      ArgumentAnnotation strong levels depth ρ function functionAnnotation ∧
+      ArgumentAnnotation strong levels depth ρ argument argumentAnnotation ∧
+      annotation = .app functionAnnotation argumentAnnotation := by
+  obtain ⟨functionAnnotation, argumentAnnotation, functionRead, argumentRead, rfl⟩ :=
+    denoteMeta_app_inv evidence.reading
+  have scope : Kernel.Expr.WScoped depth function ∧ Kernel.Expr.WScoped depth argument := by
+    simpa only [Kernel.Expr.WScoped] using evidence.scope
+  have bounded : function.looseBVarsBounded 0 = true ∧ argument.looseBVarsBounded 0 = true := by
+    simpa only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] using evidence.bounded
+  exact ⟨functionAnnotation, argumentAnnotation,
+    ⟨functionRead, scope.1, bounded.1, WellDenotedV_app_fn evidence.graded⟩,
+    ⟨argumentRead, scope.2, bounded.2, WellDenotedV_app_arg evidence.graded⟩, rfl⟩
+
+open Kernel.Semantics Kernel.Model in
+/-- Decompose an actual graded residual reading into its actual head and
+argument readings. Grading/scoping is inherited, not supplied per index. -/
+theorem ArgumentAnnotation.spine {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {head : Kernel.Expr} {expressions : List Kernel.Expr} {annotation : AnnotTerm}
+    (evidence : ArgumentAnnotation strong levels depth ρ (Kernel.Expr.mkAppN head expressions) annotation) :
+    ∃ headAnnotation annotations,
+      ArgumentAnnotation strong levels depth ρ head headAnnotation ∧
+      ArgumentAnnotations strong levels depth ρ expressions annotations ∧
+      annotation = AnnotTerm.mkAppN headAnnotation annotations := by
+  induction expressions generalizing head annotation with
+  | nil => exact ⟨annotation, [], evidence, .nil, rfl⟩
+  | cons expression expressions ih =>
+    obtain ⟨applicationAnnotation, annotations, applicationRead, restRead, shape⟩ := ih evidence
+    obtain ⟨headAnnotation, argumentAnnotation, headRead, argumentRead, applicationShape⟩ := applicationRead.app_inv
+    exact ⟨headAnnotation, argumentAnnotation :: annotations, headRead, .cons argumentRead restRead,
+      by simpa only [applicationShape, AnnotTerm.mkAppN] using shape⟩
+
+open Kernel.Semantics Kernel.Model in
 theorem ArgumentAnnotations.denotes {V : Type u} [Kernel.SetTheory V]
     {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
     {depth : Nat} {ρ : Nat → V} {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
@@ -1494,6 +1532,76 @@ theorem ArgumentAnnotations.facts {V : Type u} [Kernel.SetTheory V]
       rcases List.mem_cons.mp member with rfl | member
       · exact head.graded
       · exact ih.2.2 annotation member
+
+open Kernel.Semantics Kernel.Model in
+/-- Build the internal index pin from an actual graded residual reading and
+public meanings of its index spine. The equality premise is a semantic
+comparison of index values, not a guessed equality of syntax or lengths. -/
+theorem ArgumentAnnotation.index_pin {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {head : Kernel.Expr} {expressions : List Kernel.Expr} {annotation : AnnotTerm}
+    (evidence : ArgumentAnnotation strong levels depth ρ (Kernel.Expr.mkAppN head expressions) annotation)
+    (values : List V)
+    (read : DenotesSpine strong.public.cval env levels ρ (expressions.map (Kernel.Expr.closeN depth)) values)
+    (arguments : List AnnotTerm) (constructorParams major rulePrefix : Nat)
+    (argumentCount : arguments.length = major) (ordered : rulePrefix ≤ major)
+    (indices : values.drop constructorParams = (arguments.drop rulePrefix).map (interp V ρ)) :
+    IotaIndexPin ρ annotation constructorParams major rulePrefix arguments := by
+  obtain ⟨headAnnotation, annotations, _, readings, shape⟩ := evidence.spine
+  have meanings := readings.denotes.functional read
+  have compared : (annotations.drop constructorParams).map (interp V ρ) =
+      (arguments.drop rulePrefix).map (interp V ρ) := by
+    rw [List.map_drop, meanings]
+    exact indices
+  have counts := congrArg List.length compared
+  simp only [List.length_map, List.length_drop, argumentCount] at counts
+  have lengthCondition : major = rulePrefix ∨ annotations.length = constructorParams + (major - rulePrefix) := by
+    omega
+  refine ⟨headAnnotation, annotations, shape, lengthCondition, ?_⟩
+  intro index inside
+  have bounded : index < (annotations.drop constructorParams).length := by
+    simp only [List.length_drop]
+    omega
+  have constructorBound : constructorParams + index < annotations.length := by
+    simp only [List.length_drop] at bounded
+    omega
+  have argumentBound : rulePrefix + index < arguments.length := by omega
+  have equal := congrArg (fun values : List V => values[index]?) compared
+  simp only [List.getElem?_map, List.getElem?_drop,
+    List.getElem?_eq_getElem constructorBound, List.getElem?_eq_getElem argumentBound,
+    Option.map_some, Option.some.injEq] at equal
+  simpa only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem constructorBound,
+    List.getElem?_eq_getElem argumentBound, Option.getD_some] using equal
+
+open Kernel.Semantics Kernel.Model in
+/-- Transport the source's public index-value equation into the target's
+actual internal index pin. Target residual and argument annotations are
+real graded readings; component images carry the source meanings into them.
+The source index equation remains the exact reduction premise to discharge. -/
+theorem ArgumentAnnotation.index_pin_image {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} {target : StrongInstalledModel V targetEnv}
+    {targetLevels : Kernel.Name → Nat} {depth : Nat} {ρ : Nat → V}
+    {head : Kernel.Expr} {targetIndices targetArguments : List Kernel.Expr}
+    {annotation : AnnotTerm} {arguments : List AnnotTerm}
+    (evidence : ArgumentAnnotation target targetLevels depth ρ (Kernel.Expr.mkAppN head targetIndices) annotation)
+    (argumentReadings : ArgumentAnnotations target targetLevels depth ρ targetArguments arguments)
+    {sourceValues : Kernel.Name → (Kernel.Name → Nat) → V} {sourceEnv : Kernel.Env}
+    {sourceLevels : Kernel.Name → Nat} {sourceIndices sourceArguments : List Kernel.Expr}
+    {indexValues argumentValues : List V}
+    (indexRead : DenotesSpine sourceValues sourceEnv sourceLevels ρ sourceIndices indexValues)
+    (argumentRead : DenotesSpine sourceValues sourceEnv sourceLevels ρ sourceArguments argumentValues)
+    (indexImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceIndices (targetIndices.map (Kernel.Expr.closeN depth)))
+    (argumentImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceArguments (targetArguments.map (Kernel.Expr.closeN depth)))
+    (constructorParams major rulePrefix : Nat)
+    (argumentCount : arguments.length = major) (ordered : rulePrefix ≤ major)
+    (sourceEquation : indexValues.drop constructorParams = argumentValues.drop rulePrefix) :
+    IotaIndexPin ρ annotation constructorParams major rulePrefix arguments := by
+  have argumentMeanings := (argumentRead.image argumentImages).functional argumentReadings.denotes
+  apply evidence.index_pin indexValues (indexRead.image indexImages) arguments constructorParams major rulePrefix
+    argumentCount ordered
+  rw [sourceEquation, argumentMeanings, List.map_drop]
 
 theorem AnnotatedApplication.argument_annotations {V : Type u} [Kernel.SetTheory V]
     {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
@@ -1850,6 +1958,37 @@ theorem AnnotatedApplication.installed_fit {V : Type u} [Kernel.SetTheory V]
   obtain ⟨result, shape, fit, resultRead, denoted⟩ := application.denotes_residual reading
     (Kernel.Expr.WScoped.of_not_hasFvar noFree) bounded (graded ρ)
   exact ⟨typeAnnotation, result, reading0, fit, resultRead, shape, denoted⟩
+
+open Kernel.Semantics Kernel.Model in
+/-- The actual application residual has its scoped graded reading. This
+supplies index-spine annotation evidence directly from the installed type
+and typed application, without a per-index grading assumption. -/
+theorem AnnotatedApplication.installed_residual {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (constant : Kernel.ConstantInfo)
+    (lookup : env.find? name = some constant) (termEntry : constant.isTowerEntry = false)
+    (universes : List Kernel.Level) (arity : universes.length = constant.toConstantVal.levelParams.length)
+    (application : AnnotatedApplication strong levels depth ρ
+      (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes)
+      expressions annotations residual) :
+    ∃ annotation, ArgumentAnnotation strong levels depth ρ residual annotation := by
+  obtain ⟨typeAnnotation, _, reading, graded⟩ :=
+    strong.instantiated_type levels depth name constant lookup termEntry universes arity
+  have wf := strong.internal.base2.wf constant (Kernel.Semantics.Env.find?_mem lookup)
+  have noFree : (constant.toConstantVal.type.instantiateLevelParams
+      constant.toConstantVal.levelParams universes).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact wf.1
+  have bounded : (constant.toConstantVal.type.instantiateLevelParams
+      constant.toConstantVal.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact wf.2.2.2.1
+  have scope := Kernel.Expr.WScoped.of_not_hasFvar (d := depth) noFree
+  obtain ⟨annotation, _, annotationRead, annotationGrade⟩ := application.internal_fit reading scope bounded (graded ρ)
+  obtain ⟨residualScope, residualBounded⟩ := application.residual_scope scope bounded
+  exact ⟨annotation, ⟨annotationRead, residualScope, residualBounded, annotationGrade⟩⟩
 
 open Kernel.Semantics Kernel.Model in
 /-- The whole applied installed constant has its actual scoped annotation

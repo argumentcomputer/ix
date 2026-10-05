@@ -2011,6 +2011,36 @@ inductive DenotesSpine {V : Type u} [Kernel.SetTheory V]
       (tail : DenotesSpine values env levels ρ expressions arguments) :
       DenotesSpine values env levels ρ (expression :: expressions) (value :: arguments)
 
+theorem DenotesSpine.length {V : Type u} [Kernel.SetTheory V]
+    {values env levels ρ expressions arguments}
+    (spine : DenotesSpine (V := V) values env levels ρ expressions arguments) :
+    expressions.length = arguments.length := by
+  induction spine with
+  | nil => rfl
+  | cons _ _ ih => simp only [List.length_cons, ih]
+
+theorem DenotesSpine.functional {V : Type u} [Kernel.SetTheory V]
+    {values env levels ρ expressions arguments other}
+    (spine : DenotesSpine (V := V) values env levels ρ expressions arguments)
+    (second : DenotesSpine values env levels ρ expressions other) : arguments = other := by
+  induction spine generalizing other with
+  | nil => cases second; rfl
+  | cons head tail ih =>
+    cases second with
+    | cons otherHead otherTail =>
+      simp only [Kernel.Denotes_functional head otherHead, ih otherTail]
+
+theorem DenotesSpine.image {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl ρ sources targets arguments}
+    (spine : DenotesSpine (V := V) sv se sl ρ sources arguments)
+    (images : InstalledSpineImage sv tv se te sl tl sources targets) :
+    DenotesSpine tv te tl ρ targets arguments := by
+  induction spine generalizing targets with
+  | nil => cases images; exact .nil
+  | cons head tail ih =>
+    cases images with
+    | cons image images => exact .cons (image.denotes head) (ih images)
+
 theorem DenotesSpine.of_get {V : Type u} [Kernel.SetTheory V]
     {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
     {levels : Kernel.Name → Nat} {ρ : Nat → V}
