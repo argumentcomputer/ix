@@ -904,6 +904,68 @@ def exportSourceInductive (s : Source) (owner : Lean.InductiveVal) : ExportM Sou
   names := names ++ recNames
   return ⟨names, ← sourceGroupDependencies s names, .indDecl (types ++ ctors ++ recs) owner.numParams⟩
 
+/-- Retain full original block/mutual records alongside the modeller's
+smaller representation. The lookup equations use exact source values, not
+hash equality or target-derived recovery metadata. -/
+structure SourceBlockEvidence (source : Source) where
+  ownerName : Lean.Name
+  owner : Lean.InductiveVal
+  owner_original : source.find ownerName = some (.inductInfo owner)
+  group : SourceDeclGroup
+  original : CapturedSource source.find
+  original_members : original.source.names = group.members
+  shape : Kernel.Frontend.InModel.BlockRec
+  declaration_image : Kernel.Declaration.indDecl
+    (shape.types.map (fun t => .indInfo t.cv {}) ++
+      shape.ctors.map (fun c => .ctorInfo c.cv c.nP c.nF) ++
+      shape.recs.map (fun r => .recInfo r.cv (r.nP + r.nM + r.nm + r.nI)
+        (r.nP + r.nM + r.nm) r.rules)) owner.numParams = group.declaration
+
+theorem SourceBlockEvidence.original_member {source : Source} (block : SourceBlockEvidence source)
+    {ci : Lean.ConstantInfo} (present : ci ∈ block.original.source.declarations) :
+    source.find ci.name = some ci :=
+  block.original.faithful ci present
+
+def exportSourceBlockEvidence (source : Source) (ownerName : Lean.Name) :
+    ExportM (SourceBlockEvidence source) :=
+  match ho : source.find ownerName with
+  | some (.inductInfo owner) => do
+    let group ← exportSourceInductive source owner
+    let original ← captureNames source.find group.members
+    if hm : original.source.names = group.members then
+      let mut types := []
+      let mut ctors := []
+      let mut recs := []
+      for ci in original.source.declarations do
+        match ci with
+        | .inductInfo v =>
+          let .induct cv _ ← exportSourceEntry ci | throw "source shape: expected inductive"
+          let row : Kernel.Frontend.InModel.IndTypeRec := {
+            cv, nP := v.numParams, nIdx := v.numIndices
+            ctors := v.ctors.map sourceName, isRec := v.isRec
+            isReflexive := v.isReflexive, numNested := v.numNested }
+          types := types ++ [row]
+        | .ctorInfo v =>
+          let .ctor cv _ _ ← exportSourceEntry ci | throw "source shape: expected constructor"
+          ctors := ctors ++ [{ cv, nP := v.numParams, nF := v.numFields }]
+        | .recInfo v =>
+          let .recursor cv _ _ rules ← exportSourceEntry ci | throw "source shape: expected recursor"
+          let row : Kernel.Frontend.InModel.IndRecRec := {
+            cv, nP := v.numParams, nM := v.numMotives
+            nm := v.numMinors, nI := v.numIndices, rules }
+          recs := recs ++ [row]
+        | _ => throw "source block contains a non-inductive member"
+      let shape : Kernel.Frontend.InModel.BlockRec := ⟨types, ctors, recs⟩
+      if hd : Kernel.Declaration.indDecl
+          (shape.types.map (fun t => .indInfo t.cv {}) ++
+            shape.ctors.map (fun c => .ctorInfo c.cv c.nP c.nF) ++
+            shape.recs.map (fun r => .recInfo r.cv (r.nP + r.nM + r.nm + r.nI)
+              (r.nP + r.nM + r.nm) r.rules)) owner.numParams = group.declaration then
+        return ⟨ownerName, owner, ho, group, original, hm, shape, hd⟩
+      else throw "source model shape does not describe its original declaration group"
+    else throw "source block capture changed the member inventory"
+  | _ => .error s!"source model owner is not an original inductive: {ownerName}"
+
 def buildSourceGroups (s : Source) : ExportM (List SourceDeclGroup) := do
   let mut groups := []
   for ci in s.declarations do

@@ -67,6 +67,11 @@ def run : IO Unit := do
   let mut unsupported := 0
   for root in Compiled.roots do
     let captured ← IO.ofExcept (captureCone env.find? [root] 128)
+    for ci in captured.source.declarations do
+      if let .inductInfo owner := ci then
+        if owner.all.head? == some owner.name then
+          let block ← IO.ofExcept (exportSourceBlockEvidence captured.source owner.name)
+          IO.println s!"SOURCE-BLOCK {owner.name}: {block.original.source.declarations.length} original members; source all={owner.all}; nested={owner.numNested}"
     match installSource captured.source [root] with
     | .ok installed =>
       if root == Compiled.prefixName ++ `Node.val || root == Compiled.prefixName ++ `Node.kids then
