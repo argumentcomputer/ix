@@ -50,6 +50,52 @@ def PullbackMap.values {V : Type u} (map : PullbackMap)
     (target : Kernel.Name → (Kernel.Name → Nat) → V) : Kernel.Name → (Kernel.Name → Nat) → V :=
   fun name levels => target (map.name name) (map.levels name levels)
 
+/-- The direct C1 telescope association is positional and checks distinct
+formals on both sides. General level selections remain a separate interface;
+this check does not redefine the full compiler domain. -/
+def TelescopeEntry (source target : Kernel.ConstantInfo) : Prop :=
+  source.toConstantVal.levelParams.Nodup ∧ target.toConstantVal.levelParams.Nodup ∧
+    source.toConstantVal.levelParams.length = target.toConstantVal.levelParams.length
+
+instance (source target : Kernel.ConstantInfo) : Decidable (TelescopeEntry source target) :=
+  inferInstanceAs (Decidable (source.toConstantVal.levelParams.Nodup ∧
+    target.toConstantVal.levelParams.Nodup ∧
+    source.toConstantVal.levelParams.length = target.toConstantVal.levelParams.length))
+
+def checkTelescopes (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Bool :=
+  source.consts.all fun entry =>
+    match target.find? (names entry.name) with
+    | none => false
+    | some targetEntry => decide (TelescopeEntry entry targetEntry)
+
+def TelescopeAssociation (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Prop :=
+  ∀ name entry, source.find? name = some entry →
+    ∃ targetEntry, target.find? (names name) = some targetEntry ∧ TelescopeEntry entry targetEntry
+
+theorem checkTelescopes_sound {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkTelescopes source target names = true) : TelescopeAssociation source target names := by
+  intro name entry lookup
+  have checkedEntry := List.all_eq_true.mp checked entry (Kernel.Semantics.Env.find?_mem lookup)
+  have named := Kernel.Semantics.Env.find?_name lookup
+  simp only [named] at checkedEntry
+  cases targetLookup : target.find? (names name) with
+  | none => simp [targetLookup] at checkedEntry
+  | some targetEntry =>
+    simp only [targetLookup] at checkedEntry
+    exact ⟨targetEntry, rfl, of_decide_eq_true checkedEntry⟩
+
+/-- The interpretation's level assignment is derived from actual member
+telescopes. The fallback is a total semantic function only: missing members
+make `checkTelescopes` fail and supply no constant-image theorem. -/
+def PullbackMap.fromEnvs (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : PullbackMap where
+  name := names
+  levels := fun name valuation =>
+    match source.find? name, target.find? (names name) with
+    | some sourceEntry, some targetEntry =>
+      Kernel.Level.substFn valuation targetEntry.toConstantVal.levelParams
+        (sourceEntry.toConstantVal.levelParams.map Kernel.Level.param)
+    | _, _ => valuation
+
 /-- Selected target parameters must depend only on the actual source
 member's universe telescope. Missing/unrelated ambient parameters cannot
 silently affect a pulled-back source constant. -/
@@ -70,6 +116,40 @@ theorem StrongInstalledModel.value_params {V : Type u} [Kernel.SetTheory V]
   change Kernel.Semantics.interp V (fun _ => Kernel.SetTheory.empty) (strong.internal.base2.acval name first) =
     Kernel.Semantics.interp V (fun _ => Kernel.SetTheory.empty) (strong.internal.base2.acval name second)
   rw [strong.internal.base2.acval_params name info lookup first second agree]
+
+theorem PullbackMap.fromEnvs_locality {source target : Kernel.Env}
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation source target names) :
+    (PullbackMap.fromEnvs source target names).LevelLocality source target := by
+  intro name sourceEntry sourceLookup
+  obtain ⟨targetEntry, targetLookup, sourceUnique, targetUnique, sameArity⟩ :=
+    association name sourceEntry sourceLookup
+  refine ⟨targetEntry, targetLookup, ?_⟩
+  intro first second agree parameter present
+  simp only [PullbackMap.fromEnvs, sourceLookup, targetLookup]
+  obtain ⟨index, inside, rfl⟩ := List.mem_iff_getElem.mp present
+  rw [levelSubst_get _ targetUnique (by simp [sameArity]) index inside,
+    levelSubst_get _ targetUnique (by simp [sameArity]) index inside]
+  simp only [List.getElem_map, Kernel.Level.eval]
+  exact agree _ (List.getElem_mem (by omega))
+
+/-- Derive constant-instance value equality from actual telescope lookup and
+the target model's proved parameter locality. No per-occurrence value equality
+or source-name injectivity is assumed, including for compatible alias fibers. -/
+theorem PullbackMap.fromEnvs_constant {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    {name : Kernel.Name} {entry : Kernel.ConstantInfo} (lookup : sourceEnv.find? name = some entry)
+    (arguments : List Kernel.Level) (arity : arguments.length = entry.toConstantVal.levelParams.length) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv (image.valuation targetLevels) targetLevels
+      (.const name arguments) (.const (names name) (arguments.map image.level)) := by
+  obtain ⟨targetEntry, targetLookup, sourceUnique, targetUnique, sameArity⟩ := association name entry lookup
+  apply InstalledExprImage.constant lookup targetLookup arity (by simp [arity, sameArity])
+  apply target.value_params targetLookup
+  intro parameter present
+  simp only [PullbackMap.fromEnvs, lookup, targetLookup]
+  exact image.telescope_instance targetLevels sourceUnique targetUnique sameArity arity parameter present
 
 theorem PullbackMap.values_params {V : Type u} [Kernel.SetTheory V]
     {sourceEnv targetEnv : Kernel.Env} (map : PullbackMap) (target : StrongInstalledModel V targetEnv)

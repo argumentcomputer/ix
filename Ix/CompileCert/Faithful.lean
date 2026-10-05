@@ -698,6 +698,50 @@ theorem UniverseImage.select_valuation (parameters : List Kernel.Name) (argument
   funext name
   exact Kernel.Level.eval_subst_go target parameters arguments name
 
+/-- An actual formal telescope selects the corresponding actual argument.
+Distinct formal names are required explicitly; arity alone is insufficient. -/
+theorem levelSubst_get (valuation : Kernel.Name → Nat) {parameters : List Kernel.Name}
+    {arguments : List Kernel.Level} (unique : parameters.Nodup)
+    (arity : arguments.length = parameters.length) (index : Nat) (inside : index < parameters.length) :
+    Kernel.Level.substFn valuation parameters arguments parameters[index] =
+      Kernel.Level.eval valuation (arguments[index]'(by omega)) := by
+  induction parameters generalizing arguments index with
+  | nil => simp at inside
+  | cons parameter parameters ih =>
+    cases arguments with
+    | nil => simp at arity
+    | cons argument arguments =>
+      have distinct := List.nodup_cons.mp unique
+      cases index with
+      | zero => simp [Kernel.Level.substFn]
+      | succ index =>
+        have bound : index < parameters.length := by simpa using inside
+        have different : parameter ≠ parameters[index] := by
+          intro equal
+          exact distinct.1 (equal ▸ List.getElem_mem bound)
+        simpa only [List.getElem_cons_succ, Kernel.Level.substFn, if_neg different] using
+          ih distinct.2 (by simpa using arity) index bound
+
+/-- Positional telescope renaming commutes with the actual universe instance
+at every target formal. Assignments outside that telescope are irrelevant
+only after the installed model's proved parameter-locality law is applied. -/
+theorem UniverseImage.telescope_instance (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    {sourceParameters targetParameters : List Kernel.Name} {arguments : List Kernel.Level}
+    (sourceUnique : sourceParameters.Nodup) (targetUnique : targetParameters.Nodup)
+    (sameArity : sourceParameters.length = targetParameters.length)
+    (argumentArity : arguments.length = sourceParameters.length)
+    (parameter : Kernel.Name) (present : parameter ∈ targetParameters) :
+    Kernel.Level.substFn
+      (Kernel.Level.substFn (image.valuation targetLevels) sourceParameters arguments)
+      targetParameters (sourceParameters.map Kernel.Level.param) parameter =
+    Kernel.Level.substFn targetLevels targetParameters (arguments.map image.level) parameter := by
+  obtain ⟨index, inside, rfl⟩ := List.mem_iff_getElem.mp present
+  rw [levelSubst_get _ targetUnique (by simp [sameArity]) index inside,
+    levelSubst_get _ targetUnique (by simp [argumentArity, sameArity]) index inside]
+  simp only [List.getElem_map, Kernel.Level.eval]
+  rw [levelSubst_get _ sourceUnique argumentArity index (by omega)]
+  exact (image.eval targetLevels _).symm
+
 def UniverseImage.asRenaming (image : UniverseImage) : InstalledRenaming where
   name := id
   universes := fun _ levels => levels.map image.level
