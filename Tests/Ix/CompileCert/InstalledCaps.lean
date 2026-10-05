@@ -99,7 +99,14 @@ def run : IO Unit := do
   require "missing mapped family helper"
     (checkInstalledFamilyMember familySource ⟨[.axiomInfo ⟨targetOwner, [a, b], .sort .zero⟩]⟩
       familyNames sourceOwner sourceHelper != some true)
-  IO.println "installed capabilities: independent Nat/PUnit folds; 29 lookup/field/alias/level controls passed"
+  require "reserved eta selects pinned branch" (checkInstalledEtaAt targetUnit punitName)
+  require "ordinary eta selects complete stored family"
+    (checkInstalledEtaAt ⟨.indInfo (header family) caps :: env.consts⟩ family)
+  require "ordinary eta cannot skip missing projection"
+    (!checkInstalledEtaAt ⟨[.indInfo (header family) caps, ctor, projection 0]⟩ family)
+  require "eta family must actually be inductive"
+    (!checkInstalledEtaAt ⟨.axiomInfo (header family) :: env.consts⟩ family)
+  IO.println "installed capabilities: independent Nat/PUnit folds; 33 lookup/field/alias/level/eta controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 

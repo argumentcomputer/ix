@@ -6493,4 +6493,197 @@ theorem checkInstalledFamilyMember_sound {V : Type u} [Kernel.SetTheory V]
   exact PullbackMap.fromEnvs_instance association sourceLookup targetLookup sourceLevels targetLevels
     sourceUs targetUs sourceArity targetArity universes parameter (coverage parameter present)
 
+theorem StrongInstalledModel.reserved_eta_name {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    {name : Kernel.Name} {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (lookup : env.find? name = some (.indInfo header caps))
+    (reserved : Kernel.reservedBasisNames.contains name = true)
+    (enabled : caps.eta = true) : name = Kernel.punitName := by
+  have pinned := (strong.internal.base2.basis_pinned name _ lookup reserved).1
+  have table : Kernel.reservedBasisNames.all (fun n => match Kernel.pinnedInfo n with
+      | .indInfo _ c => !c.eta || decide (n = Kernel.punitName)
+      | _ => true) = true := by decide
+  have member : name ∈ Kernel.reservedBasisNames := by simpa using reserved
+  have row := List.all_eq_true.mp table name member
+  rw [← pinned] at row
+  simpa [enabled] using row
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+theorem StrongInstalledModel.punit_unit_value {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (lookup : env.find? Kernel.punitUnitName = some Kernel.punitUnitA)
+    (levels : Kernel.Name → Nat) : strong.public.cval Kernel.punitUnitName levels = (pt : V) := by
+  have pinned : strong.internal.base2.cvalE Kernel.punitUnitName levels =
+      Kernel.Term.punitUnitT (levels Kernel.uN) :=
+    (strong.internal.base2.basis_pinned Kernel.punitUnitName _ lookup (by decide)).2 _ levels rfl
+  have leaf : strong.internal.base2.acval Kernel.punitUnitName levels = .const .punitUnit [levels Kernel.uN] :=
+    erase_eq_const (by rw [strong.internal.base2.acval_erase, pinned]; rfl)
+  change interp V (fun _ => empty) (strong.internal.base2.acval Kernel.punitUnitName levels) = pt
+  rw [leaf, interp_const]
+  rfl
+
+open Kernel.Model Kernel.SetTheory in
+/-- Reserved eta uses the actual pinned family and its stored constructor,
+including zero parameter/field counts; no general non-basis eta premise is
+applied to a reserved family. -/
+theorem StrongInstalledModel.reserved_eta {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    {name : Kernel.Name} {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (lookup : env.find? name = some (.indInfo header caps))
+    (reserved : Kernel.reservedBasisNames.contains name = true)
+    (enabled : caps.eta = true)
+    (constructor : ∃ entry, env.find? caps.etaCtor = some entry)
+    (levels : Kernel.Name → Nat) (values : List V) (count : values.length = caps.etaParams)
+    (x : V) (member : x ∈ˢ values.foldl app (strong.public.cval name levels)) :
+    x = (etaFabArgsV (fun n => strong.public.cval n levels) name values x caps.etaFields).foldl app
+      (strong.public.cval caps.etaCtor levels) := by
+  have named := strong.reserved_eta_name lookup reserved enabled
+  subst name
+  have pinned := (strong.internal.base2.basis_pinned Kernel.punitName _ lookup reserved).1
+  have found : env.find? Kernel.punitName = some Kernel.punitA := by
+    simpa only [pinned, show Kernel.pinnedInfo Kernel.punitName = Kernel.punitA from rfl] using lookup
+  have zeroParams : caps.etaParams = 0 :=
+    congrArg (fun entry => match entry with | .indInfo _ c => c.etaParams | _ => 0) pinned
+  have zeroFields : caps.etaFields = 0 :=
+    congrArg (fun entry => match entry with | .indInfo _ c => c.etaFields | _ => 0) pinned
+  have ctorName : caps.etaCtor = Kernel.punitUnitName :=
+    congrArg (fun entry => match entry with | .indInfo _ c => c.etaCtor | _ => .anonymous) pinned
+  obtain ⟨entry, constructorLookup⟩ := constructor
+  rw [ctorName] at constructorLookup
+  have ctorPinned := (strong.internal.base2.basis_pinned Kernel.punitUnitName _ constructorLookup (by decide)).1
+  have ctorFound : env.find? Kernel.punitUnitName = some Kernel.punitUnitA := by
+    simpa only [ctorPinned, show Kernel.pinnedInfo Kernel.punitUnitName = Kernel.punitUnitA from rfl] using constructorLookup
+  have nil : values = [] := by simpa using count.trans zeroParams
+  rw [nil, List.foldl_nil, strong.punit_value found levels] at member
+  simpa [nil, zeroFields, ctorName, etaFabArgsV, projSpines, strong.punit_unit_value ctorFound levels]
+    using (mem_unitSet member)
+
+open Kernel.Model in
+theorem etaFabArgsV_image {V : Type u} [Kernel.SetTheory V]
+    {source target : Kernel.Name → V} {sourceOwner targetOwner : Kernel.Name}
+    (arguments : List V) (value : V) (fields : Nat)
+    (projections : ∀ index ∈ List.range fields,
+      source (Kernel.projFnName sourceOwner index) = target (Kernel.projFnName targetOwner index)) :
+    etaFabArgsV source sourceOwner arguments value fields = etaFabArgsV target targetOwner arguments value fields := by
+  unfold etaFabArgsV projSpines
+  congr 1
+  apply List.map_congr_left
+  intro index present
+  rw [projections index present]
+
+/-- Select the actual eta-law branch for one installed family. Reserved
+families use their pinned law; ordinary families must have every stored
+constructor/projection entry required by the general eta law. -/
+def checkInstalledEtaAt (env : Kernel.Env) (name : Kernel.Name) : Bool :=
+  match env.find? name with
+  | some (.indInfo _ caps) => Kernel.reservedBasisNames.contains name || checkInstalledEtaFamily env name caps
+  | _ => false
+
+theorem checkInstalledEtaAt_sound {env : Kernel.Env} {name : Kernel.Name}
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (lookup : env.find? name = some (.indInfo header caps))
+    (checked : checkInstalledEtaAt env name = true) :
+    Kernel.reservedBasisNames.contains name = true ∨ Kernel.EtaFamilyStored env name caps := by
+  simp only [checkInstalledEtaAt, lookup, Bool.or_eq_true] at checked
+  exact checked.imp_right checkInstalledEtaFamily_sound
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- The source-side eta reconstruction equation, including the reserved
+basis branch. Every constructor/projection value is related at the actual
+family universe instance by its executable owner-relative comparison. -/
+theorem checked_eta_pullback {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ sourceEnv.consts)
+    (enabled : caps.eta = true)
+    (family : checkInstalledEtaAt targetEnv (names header.name) = true)
+    (constructor : checkInstalledFamilyMember sourceEnv targetEnv names header.name caps.etaCtor = some true)
+    (projections : ∀ index ∈ List.range caps.etaFields,
+      checkInstalledFamilyMember sourceEnv targetEnv names header.name (Kernel.projFnName header.name index) = some true)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = header.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+    {depth : Nat} {ρ : Nat → V} {targetExpressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations target targetLevels depth ρ targetExpressions annotations)
+    {sourceExpressions : List Kernel.Expr} {values : List V} {sourceResidual : Kernel.Expr}
+    (application : DenotedApplication
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels ρ (header.type.instantiateLevelParams header.levelParams sourceUs)
+      sourceExpressions values sourceResidual)
+    (argumentImages : InstalledSpineImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceExpressions (targetExpressions.map (Kernel.Expr.closeN depth)))
+    (count : values.length = caps.etaParams) (x : V)
+    (member : x ∈ˢ values.foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs))) :
+    x = (etaFabArgsV
+      (fun n => (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval n
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs))
+      header.name values x caps.etaFields).foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval caps.etaCtor
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs)) := by
+  obtain ⟨sourceLookup, targetHeader, targetCaps, targetLookup, capHeader, _⟩ :=
+    checkInstalledCapabilities_member capabilities present
+  obtain ⟨associated, associatedLookup, telescope⟩ := association _ _ sourceLookup
+  have same := Option.some.inj (associatedLookup.symm.trans targetLookup)
+  subst associated
+  have targetArity : targetUs.length = targetHeader.levelParams.length := by
+    have equalLengths := congrArg List.length universes
+    simp only [List.length_map] at equalLengths
+    exact equalLengths.symm.trans (sourceArity.trans telescope.2.2)
+  obtain ⟨residual, targetApplication, _⟩ := AnnotatedApplication.from_checked_type target association types
+    present targetLookup sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
+    readings application argumentImages
+  have equalValues := (application.arguments.image argumentImages).functional readings.denotes
+  have equalFamily :
+      (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs) =
+      target.public.cval (names header.name) (Kernel.Level.substFn targetLevels targetHeader.levelParams targetUs) := by
+    apply target.value_params targetLookup
+    exact PullbackMap.fromEnvs_instance association sourceLookup targetLookup sourceLevels targetLevels
+      sourceUs targetUs sourceArity targetArity universes
+  have targetEnabled : targetCaps.eta = true := capHeader.1.symm.trans enabled
+  have targetCount : annotations.length = targetCaps.etaParams := by
+    rw [equalValues, List.length_map] at count
+    exact count.trans capHeader.2.2.2.1
+  have namedHelpers := capHeader.2.2.2.2.2.2 enabled
+  have ctorImage := checkInstalledFamilyMember_sound target association sourceLookup targetLookup
+    constructor sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
+  rw [← namedHelpers.1] at ctorImage
+  simp only [Kernel.ConstantInfo.toConstantVal] at ctorImage
+  have spineImage := etaFabArgsV_image (source := fun n =>
+      (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval n
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs))
+    (target := fun n => target.public.cval n
+      (Kernel.Level.substFn targetLevels targetHeader.levelParams targetUs))
+    (sourceOwner := header.name) (targetOwner := names header.name) values x caps.etaFields
+    (fun index bound => by
+      have image := checkInstalledFamilyMember_sound target association sourceLookup targetLookup
+        (projections index bound) sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
+      rwa [namedHelpers.2 index bound] at image)
+  rw [spineImage, ctorImage, capHeader.2.2.2.2.1, equalValues]
+  rw [equalValues, equalFamily] at member
+  by_cases reserved : Kernel.reservedBasisNames.contains (names header.name) = true
+  · obtain ⟨_, constructorEntry, _, constructorLookup, _⟩ := checkInstalledFamilyMember_lookups targetLookup constructor
+    rw [← namedHelpers.1] at constructorLookup
+    exact target.reserved_eta targetLookup reserved targetEnabled ⟨constructorEntry, constructorLookup⟩
+      (Kernel.Level.substFn targetLevels targetHeader.levelParams targetUs)
+      (annotations.map (interp V ρ)) (by simpa using targetCount) x member
+  · have stored := (checkInstalledEtaAt_sound targetLookup family).resolve_left reserved
+    have nonbasis : Kernel.reservedBasisNames.contains (names header.name) = false := by simpa using reserved
+    have targetMember : x ∈ˢ (annotations.map (interp V ρ)).foldl app
+        (interp V ρ (target.internal.base2.acval (names header.name)
+          (Kernel.Level.substFn targetLevels targetHeader.levelParams targetUs))) := by
+      simpa only [interp_cvalOf target.internal.base2.cval_closedL,
+        StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM] using member
+    have reconstructed := targetApplication.installed_eta (names header.name) targetHeader targetCaps targetLookup
+      targetEnabled nonbasis stored targetUs targetArity targetCount x targetMember
+    simpa only [interp_cvalOf target.internal.base2.cval_closedL,
+      StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM] using reconstructed
+
 end Ix.CompileCert
