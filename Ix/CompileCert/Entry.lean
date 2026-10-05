@@ -1475,6 +1475,106 @@ def DefinitionCheckedPrefix (mode : CheckMode) (header : Kernel.ConstantVal)
     ValueAnnotationCalls mode before header value initial type annotated ∧
     Kernel.ConstantInfo.defnInfo { header with type := type } annotated hint ∈ env.consts
 
+/-- The actual installation boundary of any declaration kind, including
+mutual/inductive blocks. Both prefix states, canonical indices and the full
+extension to the final environment are retained. This is operational
+provenance; kind-specific annotation and semantic laws remain separate. -/
+def CheckedDeclarationPrefix (mode : CheckMode) (pins : List NatOpPinSet)
+    (declaration : Declaration) (env : Env) : Prop :=
+  ∃ index, ∃ before : FEnv, ∃ pending : Array PendingCheck, ∃ initial : CState,
+    ∃ next : FEnv, ∃ nextPending : Array PendingCheck, ∃ after : CState,
+      before = mkFEnv before.env ∧ EnvWF before.env ∧ CSOKF initial ∧
+      annotStepC mode pins index before pending declaration initial = .ok ((next, nextPending), after) ∧
+      next = mkFEnv next.env ∧ EnvWF next.env ∧ CSOKF after ∧
+      PushChain next.env (mkFEnv env)
+
+theorem declaration_prefix_run {V : Type u} [Kernel.SetTheory V]
+    {mode : CheckMode} {pins : List NatOpPinSet}
+    (verified : mode.verifiedChecks = true)
+    {declarations : List Declaration} {declaration : Declaration}
+    (present : declaration ∈ declarations)
+    {start finish : Nat × FEnv × Array PendingCheck} {initial final : CState}
+    (run : InstallRun mode pins declarations start initial finish final)
+    (canonical : start.2.1 = mkFEnv start.2.1.env)
+    (model : Kernel.Model.EnvModelOk V mode start.2.1.env) (state : CSOKF initial)
+    (unique : NodupNames finish.2.1.env)
+    (checked : ∀ pc ∈ finish.2.2.toList, ∃ after, checkPending mode finish.2.1 pc {} = .ok ((), after)) :
+    CheckedDeclarationPrefix mode pins declaration finish.2.1.env := by
+  induction run with
+  | nil => exact absurd present List.not_mem_nil
+  | @cons current rest start middle finish initial afterStep final step restRun ih =>
+    obtain ⟨nextEnv, nextPending, rfl, stepRun⟩ := annotDeclStep_ok step
+    have chain : PushChain start.2.1.env nextEnv :=
+      (annotStepC_push mode start.1 (PushChain.self canonical) start.2.2 current
+        initial (nextEnv, nextPending) afterStep stepRun).1
+    obtain ⟨tailChain, newPending, pending⟩ :=
+      installRun_trace mode restRun (PushChain.self chain.canon)
+    obtain ⟨nextModel, nextState, _⟩ :=
+      annotStepC_model verified canonical chain.canon model state stepRun tailChain pending unique checked
+    rcases List.mem_cons.mp present with rfl | restPresent
+    · have beforeWF : EnvWF start.2.1.env := by
+        obtain ⟨witness⟩ := model.1
+        exact witness.toEnvFacts.wf
+      have nextWF : EnvWF nextEnv.env := by
+        obtain ⟨witness⟩ := nextModel.1
+        exact witness.toEnvFacts.wf
+      refine ⟨start.1, start.2.1, start.2.2, initial, nextEnv, nextPending, afterStep,
+        canonical, beforeWF, state, stepRun, chain.canon, nextWF, nextState, ?_⟩
+      rw [← tailChain.canon]
+      exact tailChain
+    · exact ih restPresent chain.canon nextModel nextState unique checked
+
+/-- Every actual input declaration receives the boundary above from the
+same accepting fold. No restriction to singleton definition/theorem records
+is used in this provenance theorem. -/
+theorem declaration_prefix_checked (V : Type u) [Kernel.SetTheory V]
+    {mode : CheckMode} {pins : List NatOpPinSet}
+    (verified : mode.verifiedChecks = true)
+    {declarations : Array Declaration} {env : Env} {declaration : Declaration}
+    (present : declaration ∈ declarations)
+    (checked : checkDecls mode pins declarations = .ok env) :
+    CheckedDeclarationPrefix mode pins declaration env := by
+  obtain ⟨fullyChecked, rfl⟩ := checkDecls_fullyChecked mode checked
+  obtain ⟨_, _, run⟩ := fullyChecked.1.run
+  have chain := installRun_trace mode run (PushChain.refl Env.empty)
+  exact declaration_prefix_run (V := V) verified (Array.mem_toList_iff.mpr present) run rfl
+    ⟨⟨Kernel.Model.EnvModelM.empty V mode⟩, Kernel.EtaFamiliesClosed.empty⟩
+    CSOKF.empty (chain.1.2.2 List.nodup_nil) fullyChecked.records
+
+theorem CheckedDeclarationPrefix.definition {mode : CheckMode} {pins : List NatOpPinSet}
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {hint : Kernel.ReducibilityHint} {env : Env}
+    (receipt : CheckedDeclarationPrefix mode pins (.defnDecl header value hint) env) :
+    DefinitionCheckedPrefix mode header value hint env := by
+  obtain ⟨_, before, _, initial, _, _, _, canonical, environment, state, step, _, _, _, chain⟩ := receipt
+  obtain ⟨type, annotated, calls, stored⟩ := definition_all_step step
+  refine ⟨before, initial, type, annotated, canonical, environment, state, calls, ?_⟩
+  obtain ⟨new, extension⟩ := chain.2.1
+  change env.consts = _ at extension
+  rw [extension]
+  exact List.mem_append_right _ (stored ▸ List.mem_cons_self)
+
+/-- An opaque body is checked and annotated at its actual prefix, but its
+stored semantic entry is an axiom. This records no equation between the
+opaque value and its checking body. -/
+def OpaqueCheckedPrefix (mode : CheckMode) (header : Kernel.ConstantVal)
+    (value : Kernel.Expr) (env : Env) : Prop :=
+  ∃ before : FEnv, ∃ initial : CState, ∃ type annotated : Kernel.Expr,
+    before = mkFEnv before.env ∧ EnvWF before.env ∧ CSOKF initial ∧
+    ValueAnnotationCalls mode before header value initial type annotated ∧
+    Kernel.ConstantInfo.axiomInfo { header with type := type } ∈ env.consts
+
+theorem CheckedDeclarationPrefix.opaque_value {mode : CheckMode} {pins : List NatOpPinSet}
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {env : Env}
+    (receipt : CheckedDeclarationPrefix mode pins (.opaqueDecl header value) env) :
+    OpaqueCheckedPrefix mode header value env := by
+  obtain ⟨_, before, _, initial, _, _, _, canonical, environment, state, step, _, _, _, chain⟩ := receipt
+  obtain ⟨type, annotated, calls, stored⟩ := opaque_all_step step
+  refine ⟨before, initial, type, annotated, canonical, environment, state, calls, ?_⟩
+  obtain ⟨new, extension⟩ := chain.2.1
+  change env.consts = _ at extension
+  rw [extension]
+  exact List.mem_append_right _ (stored ▸ List.mem_cons_self)
+
 theorem definition_prefix_run {V : Type u} [Kernel.SetTheory V]
     {mode : CheckMode} {pins : List NatOpPinSet}
     (verified : mode.verifiedChecks = true)
