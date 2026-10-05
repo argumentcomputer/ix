@@ -6093,4 +6093,100 @@ theorem checkRoots_coverage (input : Input) :
   unfold checkRoots
   split <;> simp [List.map_map, Function.comp_def]
 
+open Kernel.Semantics Kernel.Model Kernel.Model.Rules in
+/-- The value-level telescope required by installed capability laws follows
+from the actual application and a stored syntactic Pi prefix. An arbitrary
+substitution-created Pi is not treated as evidence of that prefix. -/
+theorem AnnotatedApplication.installed_value_fit {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (constant : Kernel.ConstantInfo)
+    (lookup : env.find? name = some constant) (termEntry : constant.isTowerEntry = false)
+    (universes : List Kernel.Level) (arity : universes.length = constant.toConstantVal.levelParams.length)
+    (application : AnnotatedApplication strong levels depth ρ
+      (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes)
+      expressions annotations residual)
+    (piPrefix : (constant.toConstantVal.type.stripPis annotations.length).isSome = true) :
+    ∃ typeAnnotation result,
+      denoteMeta strong.internal.base2.acval env levels 0
+        (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes) =
+          some typeAnnotation ∧
+      TeleFit V ρ typeAnnotation (annotations.map (interp V ρ)) result := by
+  obtain ⟨typeAnnotation, result, reading, fit, _⟩ :=
+    application.installed_fit name constant lookup termEntry universes arity
+  exact ⟨typeAnnotation, interp V ρ result, reading,
+    teleFit_of_teleFitPA (piChain_of_stripPis annotations.length
+      (Kernel.Expr.stripPis_instantiateLevelParams_isSome
+        constant.toConstantVal.levelParams universes annotations.length piPrefix) reading) fit⟩
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- Fire the actual installed non-basis unit capability using the checked
+application. Both the Pi piPrefix and the capability law come from the same
+installed model; neither a Boolean claim nor a length equality supplies the
+typed telescope. Reserved basis families have separate laws. -/
+theorem AnnotatedApplication.installed_unit {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (header : Kernel.ConstantVal) (caps : Kernel.IndCaps)
+    (lookup : env.find? name = some (.indInfo header caps))
+    (enabled : caps.unitlike = true) (nonbasis : Kernel.reservedBasisNames.contains name = false)
+    (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length)
+    (application : AnnotatedApplication strong levels depth ρ
+      (header.type.instantiateLevelParams header.levelParams universes) expressions annotations residual)
+    (count : annotations.length = caps.unitParams) (x y : V)
+    (left : x ∈ˢ (annotations.map (interp V ρ)).foldl app
+      (interp V ρ (strong.internal.base2.acval name (Kernel.Level.substFn levels header.levelParams universes))))
+    (right : y ∈ˢ (annotations.map (interp V ρ)).foldl app
+      (interp V ρ (strong.internal.base2.acval name (Kernel.Level.substFn levels header.levelParams universes)))) :
+    x = y := by
+  have wf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem lookup)
+  have piPrefix : (header.type.stripPis annotations.length).isSome = true := by
+    rw [count]
+    exact (wf.2.2.2.2.2.2.2 header caps rfl).1 enabled
+  obtain ⟨typeAnnotation, result, reading, fit⟩ :=
+    application.installed_value_fit name (.indInfo header caps) lookup rfl universes arity piPrefix
+  obtain ⟨lawAnnotation, lawReading, _, law⟩ :=
+    strong.internal.caps_ok.2 name header caps lookup enabled nonbasis levels universes arity
+  have same : typeAnnotation = lawAnnotation := Option.some.inj (reading.symm.trans lawReading)
+  subst lawAnnotation
+  exact law ρ (annotations.map (interp V ρ)) result x y (by simpa using count) fit left right
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- The structural eta equation at the same installed family's actual
+parameter application. The stored family/constructor/projection capability
+association remains explicit; target content aliases do not establish it. -/
+theorem AnnotatedApplication.installed_eta {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (header : Kernel.ConstantVal) (caps : Kernel.IndCaps)
+    (lookup : env.find? name = some (.indInfo header caps))
+    (enabled : caps.eta = true) (nonbasis : Kernel.reservedBasisNames.contains name = false)
+    (stored : Kernel.EtaFamilyStored env name caps)
+    (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length)
+    (application : AnnotatedApplication strong levels depth ρ
+      (header.type.instantiateLevelParams header.levelParams universes) expressions annotations residual)
+    (count : annotations.length = caps.etaParams) (x : V)
+    (member : x ∈ˢ (annotations.map (interp V ρ)).foldl app
+      (interp V ρ (strong.internal.base2.acval name (Kernel.Level.substFn levels header.levelParams universes)))) :
+    x = (etaFabArgsV
+      (fun n => interp V ρ (strong.internal.base2.acval n
+        (Kernel.Level.substFn levels header.levelParams universes)))
+      name (annotations.map (interp V ρ)) x caps.etaFields).foldl app
+      (interp V ρ (strong.internal.base2.acval caps.etaCtor
+        (Kernel.Level.substFn levels header.levelParams universes))) := by
+  have wf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem lookup)
+  have piPrefix : (header.type.stripPis annotations.length).isSome = true := by
+    rw [count]
+    exact (wf.2.2.2.2.2.2.2 header caps rfl).2 enabled
+  obtain ⟨typeAnnotation, result, reading, fit⟩ :=
+    application.installed_value_fit name (.indInfo header caps) lookup rfl universes arity piPrefix
+  obtain ⟨lawAnnotation, lawReading, _, law⟩ :=
+    strong.internal.caps_ok.1 name header caps lookup enabled nonbasis stored levels universes arity
+  have same : typeAnnotation = lawAnnotation := Option.some.inj (reading.symm.trans lawReading)
+  subst lawAnnotation
+  exact law ρ (annotations.map (interp V ρ)) result x (by simpa using count) fit member
+
 end Ix.CompileCert
