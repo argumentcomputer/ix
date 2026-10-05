@@ -132,7 +132,13 @@ def run : IO Unit := do
   let shortNested := alterRules unit (List.map fun r => { r with fire := .nested [] [] })
   require "nested level recipe cannot hide missing constructor universe"
     (checkInstalledRuleLevelLink shortNested shortNested id recursor 0 != some true)
-  IO.println "installed rules: actual Nat/PUnit folds; 48 rule/universe/constructor controls passed"
+  require "all actual Nat rule level links" (checkInstalledRuleLevelLinks source target id == some true)
+  require "all actual PUnit rule level links" (checkInstalledRuleLevelLinks unit unit id == some true)
+  require "global wrong formal linkage rejected" (checkInstalledRuleLevelLinks unit relinked id != some true)
+  let shadowedRules : Env := ⟨source.consts ++ (alterRules source List.reverse).consts⟩
+  require "shadowed source rule row cannot borrow a level link"
+    (checkInstalledRuleLevelLinks shadowedRules target id != some true)
+  IO.println "installed rules: actual Nat/PUnit folds; 52 rule/universe/constructor controls passed"
 
 end Tests.Ix.CompileCert.InstalledRules
 

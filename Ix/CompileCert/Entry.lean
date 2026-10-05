@@ -8108,6 +8108,17 @@ theorem InstalledRuleFrame.checked_nested_pins {V : Type u} [Kernel.SetTheory V]
     pinWf.2.1 (fun levels => (pinImages levels).get position bound)
     sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
 
+/-- Exact semantic universe premises of an actual fired frame. These can
+come either from a concrete check or from the proved universal recipe link. -/
+structure RuleUniverseSelection {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
+    (frame : InstalledRuleFrame env name index) (levels : Kernel.Name → Nat)
+    (universes constructorUniverses : List Kernel.Level) : Prop where
+  recursorArity : universes.length = frame.header.levelParams.length
+  constructorArity : constructorUniverses.length = frame.constructor.levelParams.length
+  assignment : Kernel.Level.substFn levels frame.constructor.levelParams constructorUniverses =
+    Kernel.Level.substFn levels frame.constructor.levelParams
+      (Kernel.recFireComparands frame.rule frame.header.levelParams universes frame.constructor.levelParams [] frame.rulePrefix).1
+
 /-- Public source-side firing conditions on value representatives. These
 are semantic reduction premises, not compiler-domain membership conditions.
 Nested comparison is a whole spine judgment, so pin length is derived rather
@@ -8147,7 +8158,7 @@ theorem RuleTupleRepresentation.checked_application {V : Type u} [Kernel.SetTheo
     {targetLevels : Kernel.Name → Nat} {universes constructorUniverses : List Kernel.Level}
     {arguments fields : List V}
     (representation : RuleTupleRepresentation target targetLevels targetFrame universes constructorUniverses arguments fields)
-    (universeCheck : checkInstalledRuleUniverses targetEnv (names name) index universes constructorUniverses = some true)
+    (selectionEvidence : RuleUniverseSelection targetFrame targetLevels universes constructorUniverses)
     (sourceLevels : Kernel.Name → Nat) (sourceUs sourceConstructorUs : List Kernel.Level)
     (sourceArity : sourceUs.length = sourceFrame.header.levelParams.length)
     (sourceConstructorArity : sourceConstructorUs.length = sourceFrame.constructor.levelParams.length)
@@ -8174,7 +8185,7 @@ theorem RuleTupleRepresentation.checked_application {V : Type u} [Kernel.SetTheo
   obtain ⟨majorAgreement, prefixAgreement, images⟩ := sourceFrame.checked_images target association recursors targetFrame
   let image := images (fun _ => 0)
   have header := image.header
-  obtain ⟨arity, constructorArity, selection⟩ := targetFrame.checked_universes universeCheck
+  obtain ⟨arity, constructorArity, selection⟩ := selectionEvidence
   have ordered := (target.recursor_rule targetLevels (names name) targetFrame.header targetFrame.major targetFrame.rulePrefix
     targetFrame.rules targetFrame.recursorLookup targetFrame.rule (List.mem_of_getElem? targetFrame.ruleLookup) targetFrame.fires).1
   have argumentLength : representation.arguments.length = arguments.length := by
@@ -8198,7 +8209,7 @@ theorem RuleTupleRepresentation.checked_application {V : Type u} [Kernel.SetTheo
     argumentReadings := representation.argumentReadings, fieldReadings := representation.fieldReadings,
     argumentCount := argumentLength.trans argumentCount,
     fieldCount := fieldLength.trans fieldCount,
-    universeSelection := selection targetLevels,
+    universeSelection := selection,
     plainParameters := by
       intro blind plain
       have sourcePlain := image.fire.plain_iff.mpr plain
@@ -8253,7 +8264,7 @@ theorem RuleTupleRepresentation.checked_fired {V : Type u} [Kernel.SetTheory V]
     {targetLevels : Kernel.Name → Nat} {universes constructorUniverses : List Kernel.Level}
     {arguments fields : List V}
     (representation : RuleTupleRepresentation target targetLevels targetFrame universes constructorUniverses arguments fields)
-    (universeCheck : checkInstalledRuleUniverses targetEnv (names name) index universes constructorUniverses = some true)
+    (selectionEvidence : RuleUniverseSelection targetFrame targetLevels universes constructorUniverses)
     (sourceLevels : Kernel.Name → Nat) (sourceUs sourceConstructorUs : List Kernel.Level)
     (sourceArity : sourceUs.length = sourceFrame.header.levelParams.length)
     (sourceConstructorArity : sourceConstructorUs.length = sourceFrame.constructor.levelParams.length)
@@ -8282,12 +8293,12 @@ theorem RuleTupleRepresentation.checked_fired {V : Type u} [Kernel.SetTheory V]
           ((((argumentVariables representation.depth).take arguments.length).take sourceFrame.rulePrefix) ++
             (((argumentVariables representation.depth).drop arguments.length).drop sourceFrame.rule.ctorParams))) value := by
   obtain ⟨application, valuationEq, depthEq, argumentsEq, fieldsEq, _, constructorUsEq⟩ :=
-    representation.checked_application sourceWf association types recursors sourceFrame universeCheck
+    representation.checked_application sourceWf association types recursors sourceFrame selectionEvidence
       sourceLevels sourceUs sourceConstructorUs sourceArity sourceConstructorArity universeImage constructorUniverseImage
       sourceTyped conditions
   obtain ⟨_, prefixAgreement, images⟩ := sourceFrame.checked_images target association recursors targetFrame
   have header := (images (fun _ => 0)).header
-  obtain ⟨arity, constructorArity, _⟩ := targetFrame.checked_universes universeCheck
+  obtain ⟨arity, constructorArity, _⟩ := selectionEvidence
   have recursorImage := PullbackMap.fromEnvs_constant_instance target association sourceFrame.recursorLookup
     targetFrame.recursorLookup sourceLevels targetLevels sourceUs universes sourceArity arity universeImage
   have mappedConstructorLookup : targetEnv.find? (names sourceFrame.rule.ctor) =
@@ -8365,7 +8376,7 @@ theorem checked_rules_simulation {V : Type u} [Kernel.SetTheory V]
   refine ⟨targetFrame, reading, ?_⟩
   intro sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs
     sourceArity sourceConstructorArity universeCheck universeImage constructorUniverseImage valuation arguments fields typed
-  obtain ⟨targetArity, targetConstructorArity, _⟩ := targetFrame.checked_universes universeCheck
+  obtain ⟨targetArity, targetConstructorArity, selection⟩ := targetFrame.checked_universes universeCheck
   have targetTyped := sourceFrame.checked_tuple_typing target association types targetFrame (images (fun _ => 0)).header
     sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs
     sourceArity targetArity sourceConstructorArity targetConstructorArity universeImage constructorUniverseImage typed
@@ -8373,7 +8384,8 @@ theorem checked_rules_simulation {V : Type u} [Kernel.SetTheory V]
   refine ⟨representation, ?_⟩
   intro conditions
   obtain ⟨_, _, constructorTyped⟩ := typed.constructorTyped
-  exact representation.checked_fired sourceWf association types recursors sourceFrame universeCheck sourceLevels
+  exact representation.checked_fired sourceWf association types recursors sourceFrame
+    ⟨targetArity, targetConstructorArity, selection targetLevels⟩ sourceLevels
     sourceUs sourceConstructorUs sourceArity sourceConstructorArity universeImage constructorUniverseImage constructorTyped conditions
 
 /-- One admitted target model supplies the checked type/body/pinned-basis,
@@ -8530,5 +8542,174 @@ theorem InstalledRuleFrame.transfer_universe_selection {V : Type u} [Kernel.SetT
   apply levelEvalEqList_of_values
   rw [targetFrame.universeComparands_instance]
   simpa only [Kernel.ConstantInfo.toConstantVal] using constructorUniverses.symm.trans (sourceValues.trans values)
+
+theorem TelescopeAssociation.target_instance_arity {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation source target names) {name : Kernel.Name}
+    {sourceEntry targetEntry : Kernel.ConstantInfo}
+    (sourceLookup : source.find? name = some sourceEntry) (targetLookup : target.find? (names name) = some targetEntry)
+    {sourceLevels targetLevels : Kernel.Name → Nat} {sourceUs targetUs : List Kernel.Level}
+    (sourceArity : sourceUs.length = sourceEntry.toConstantVal.levelParams.length)
+    (values : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    targetUs.length = targetEntry.toConstantVal.levelParams.length := by
+  obtain ⟨found, lookup, _, _, sameArity⟩ := association name sourceEntry sourceLookup
+  have same := Option.some.inj (lookup.symm.trans targetLookup)
+  subst found
+  have length : sourceUs.length = targetUs.length := by simpa only [List.length_map] using congrArg List.length values
+  exact length.symm.trans (sourceArity.trans sameArity)
+
+/-- Accepted finite recipe linkage plus source semantic selection provides
+the complete target selection evidence. Target arities follow from the actual
+source/target telescope map and concrete level-spine correspondence. -/
+theorem InstalledRuleFrame.transfer_selection {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    (targetFrame : InstalledRuleFrame targetEnv (names name) index)
+    (checked : checkInstalledRuleLevelLink sourceEnv targetEnv names name index = some true)
+    {sourceLevels targetLevels : Kernel.Name → Nat}
+    {sourceUs targetUs sourceConstructorUs targetConstructorUs : List Kernel.Level}
+    (sourceSelection : RuleUniverseSelection sourceFrame sourceLevels sourceUs sourceConstructorUs)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+    (constructorUniverses : sourceConstructorUs.map (Kernel.Level.eval sourceLevels) =
+      targetConstructorUs.map (Kernel.Level.eval targetLevels)) :
+    RuleUniverseSelection targetFrame targetLevels targetUs targetConstructorUs := by
+  have header := ((sourceFrame.checked_images target association recursors targetFrame).2.2 (fun _ => 0)).header
+  have mappedLookup : targetEnv.find? (names sourceFrame.rule.ctor) =
+      some (.ctorInfo targetFrame.constructor targetFrame.constructorParams targetFrame.constructorFields) := by
+    rw [header.1]; exact targetFrame.constructorLookup
+  have recursorArity := association.target_instance_arity sourceFrame.recursorLookup targetFrame.recursorLookup
+    sourceSelection.recursorArity universes
+  have constructorArity := association.target_instance_arity sourceFrame.constructorLookup mappedLookup
+    sourceSelection.constructorArity constructorUniverses
+  exact ⟨recursorArity, constructorArity,
+    sourceFrame.transfer_universe_selection target association targetFrame checked _ _ _ _ _ _
+      sourceSelection.recursorArity recursorArity sourceSelection.constructorArity universes constructorUniverses sourceSelection.assignment⟩
+
+def checkInstalledRuleLevelEntry (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (entry : Kernel.ConstantInfo) : Option Bool :=
+  match entry with
+  | .recInfo header _ _ rules =>
+    bothChecks (some (decide (source.find? header.name = some entry)))
+      ((List.range rules.length).foldr (fun index rest => bothChecks
+        (match rules[index]? with
+        | none => some false
+        | some rule => if rule.fire = .inert then some true else
+            checkInstalledRuleLevelLink source target names header.name index) rest) (some true))
+  | _ => some true
+
+/-- Every actual source row and firing-rule position receives a finite
+universe-link check. Inert rules need no firing law; their full record relation
+is still required by the independent rule association check. -/
+def checkInstalledRuleLevelLinks (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Option Bool :=
+  source.consts.foldr (fun entry rest => bothChecks (checkInstalledRuleLevelEntry source target names entry) rest) (some true)
+
+theorem checkInstalledRuleLevelLinks_frame {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledRuleLevelLinks source target names = some true)
+    {name : Kernel.Name} {index : Nat} (frame : InstalledRuleFrame source name index) :
+    checkInstalledRuleLevelLink source target names name index = some true := by
+  have row := bothChecks_fold_true checked _ (Kernel.Semantics.Env.find?_mem frame.recursorLookup)
+  simp only [checkInstalledRuleLevelEntry] at row
+  have rows := (bothChecks_true row).2
+  obtain ⟨inside, _⟩ := List.getElem?_eq_some_iff.mp frame.ruleLookup
+  have selected := bothChecks_fold_true rows index (List.mem_range.mpr inside)
+  have sourceName : frame.header.name = name := Kernel.Semantics.Env.find?_name frame.recursorLookup
+  simpa only [frame.ruleLookup, ite_eq_right frame.fires, sourceName] using selected
+
+/-- Every source firing instance with a well-formed source universe
+selection has a target representation and source equation. The finite global
+recipe check replaces per-instance target checker success; no completeness
+of that checker is part of this statement. -/
+def UniversalRuleSimulation {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    (sourceEnv : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Prop :=
+  ∀ name index (sourceFrame : InstalledRuleFrame sourceEnv name index),
+    ∃ targetFrame : InstalledRuleFrame targetEnv (names name) index,
+      readInstalledRuleFrame targetEnv (names name) index = some targetFrame ∧
+      ∀ sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs,
+        RuleUniverseSelection sourceFrame sourceLevels sourceUs sourceConstructorUs →
+        sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels) →
+        sourceConstructorUs.map (Kernel.Level.eval sourceLevels) = targetConstructorUs.map (Kernel.Level.eval targetLevels) →
+        ∀ valuation arguments fields,
+          RuleTupleTyping ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+            sourceEnv sourceLevels sourceFrame sourceUs sourceConstructorUs valuation arguments fields →
+          ∃ representation : RuleTupleRepresentation target targetLevels targetFrame targetUs targetConstructorUs arguments fields,
+            SourceRuleComparisons ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+              sourceEnv sourceLevels sourceFrame sourceUs sourceConstructorUs representation.valuation
+              ((argumentVariables representation.depth).take arguments.length)
+              ((argumentVariables representation.depth).drop arguments.length) arguments fields →
+            ∃ value : V,
+              Kernel.Denotes ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+                sourceEnv sourceLevels representation.valuation
+                (Kernel.Expr.mkAppN (.const name sourceUs)
+                  (((argumentVariables representation.depth).take arguments.length) ++
+                    [Kernel.Expr.mkAppN (.const sourceFrame.rule.ctor sourceConstructorUs)
+                      ((argumentVariables representation.depth).drop arguments.length)])) value ∧
+              Kernel.Denotes ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+                sourceEnv sourceLevels representation.valuation
+                (Kernel.Expr.mkAppN (sourceFrame.rule.rhs.instantiateLevelParams sourceFrame.header.levelParams sourceUs)
+                  ((((argumentVariables representation.depth).take arguments.length).take sourceFrame.rulePrefix) ++
+                    (((argumentVariables representation.depth).drop arguments.length).drop sourceFrame.rule.ctorParams))) value
+
+theorem checked_universal_rules {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    (target : StrongInstalledModel V targetEnv) {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    (constructors : checkInstalledConstructors sourceEnv targetEnv names = true)
+    (levelLinks : checkInstalledRuleLevelLinks sourceEnv targetEnv names = some true) :
+    UniversalRuleSimulation target sourceEnv names := by
+  intro name index sourceFrame
+  obtain ⟨targetFrame, reading, _, _, _, _, images⟩ := sourceFrame.checked_target target association recursors constructors
+  refine ⟨targetFrame, reading, ?_⟩
+  intro sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs
+    sourceSelection universeImage constructorUniverseImage valuation arguments fields typed
+  have selection := sourceFrame.transfer_selection target association recursors targetFrame
+    (checkInstalledRuleLevelLinks_frame levelLinks sourceFrame) sourceSelection universeImage constructorUniverseImage
+  have targetTyped := sourceFrame.checked_tuple_typing target association types targetFrame (images (fun _ => 0)).header
+    sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs
+    sourceSelection.recursorArity selection.recursorArity sourceSelection.constructorArity selection.constructorArity
+    universeImage constructorUniverseImage typed
+  obtain ⟨representation⟩ := targetTyped.represented
+  refine ⟨representation, ?_⟩
+  intro conditions
+  obtain ⟨_, _, constructorTyped⟩ := typed.constructorTyped
+  exact representation.checked_fired sourceWf association types recursors sourceFrame selection sourceLevels
+    sourceUs sourceConstructorUs sourceSelection.recursorArity sourceSelection.constructorArity
+    universeImage constructorUniverseImage constructorTyped conditions
+
+/-- Independent checked streams yield one public source value model with
+unit/eta laws and universal rule-instance simulation. Concrete target universe
+checker acceptance is no longer a semantic-law premise: the finite all-row
+recipe checks discharge selection from each source firing instance. Full
+original-source annotation/normalization and domain totality remain separate. -/
+theorem checkedStreams_universalRules (V : Type u) [Kernel.SetTheory V]
+    (sourcePins targetPins : List Kernel.NatOpPinSet)
+    (sourceDecls targetDecls : Array Kernel.Declaration)
+    {sourceEnv targetEnv : Kernel.Env} (names : Kernel.Name → Kernel.Name)
+    (sourceChecked : Kernel.Cached.checkDecls .verified sourcePins sourceDecls = .ok sourceEnv)
+    (targetChecked : Kernel.Cached.checkDecls .verified targetPins targetDecls = .ok targetEnv)
+    (telescopes : checkTelescopes sourceEnv targetEnv names = true)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (definitions : checkInstalledDefinitions sourceEnv targetEnv names = true)
+    (falsePin : checkInstalledPin sourceEnv names Kernel.falseName 0 = true)
+    (eqPin : checkInstalledPin sourceEnv names Kernel.eqName 1 = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    (etaAssociations : checkInstalledEtaAssociations sourceEnv targetEnv names = some true)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    (constructors : checkInstalledConstructors sourceEnv targetEnv names = true)
+    (levelLinks : checkInstalledRuleLevelLinks sourceEnv targetEnv names = some true) :
+    Nonempty (StrongInstalledModel V sourceEnv) ∧
+    ∃ (target : StrongInstalledModel V targetEnv) (source : PublicValueModel V sourceEnv),
+      source.model.cval = (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval ∧
+      PublicCapabilityLaws source.model.cval sourceEnv ∧ UniversalRuleSimulation target sourceEnv names := by
+  obtain ⟨sourceExists, target, source, interpretation, laws, _⟩ := checkedStreams_publicRules V
+    sourcePins targetPins sourceDecls targetDecls names sourceChecked targetChecked telescopes types definitions
+    falsePin eqPin capabilities etaAssociations recursors constructors
+  obtain ⟨sourceStrong⟩ := sourceExists
+  exact ⟨⟨sourceStrong⟩, target, source, interpretation, laws,
+    checked_universal_rules sourceStrong.internal.base2.wf target (checkTelescopes_sound telescopes)
+      types recursors constructors levelLinks⟩
 
 end Ix.CompileCert
