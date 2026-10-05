@@ -100,4 +100,57 @@ def run : IO Unit := do
   | _ => throw (IO.userError "conflicting source Eq was not explicitly refused by the fold")
   IO.println "source models: 8/8 original roots covered; 3 nested-block support controls and 3 generated-model tamper controls passed"
 
+def runNormalized : IO Unit := do
+  let env ← getCompileEnv #[Compiled.prefixName]
+  let mut installedCount := 0
+  for root in Compiled.roots do
+    let captured ← IO.ofExcept (captureCone env.find? [root] 128)
+    match installSourceNormalized captured.source [root] with
+    | .error reason => throw (IO.userError s!"source normalization failed {root}: {label reason}")
+    | .ok installed =>
+      installedCount := installedCount + 1
+      let laws := installed.declarations.filter fun
+        | .thmDecl header _ => header.name.toString.endsWith "._source_constructor_equation"
+        | _ => false
+      IO.println s!"SOURCE-NORMALIZED {root}: original={installed.original.size} model={installed.modelProposal.declarations.size} checked={installed.declarations.length} constructorEquations={laws.length}"
+      if root == Compiled.prefixName ++ `Node.val || root == Compiled.prefixName ++ `Node.kids then
+        unless laws.length > 0 do throw (IO.userError "nested projection lacks a checked constructor equation")
+        let tampered := installed.declarations.map fun
+          | .thmDecl header value =>
+            if header.name.toString.endsWith "._source_constructor_equation" then
+              .thmDecl header (.bvar 1000)
+            else .thmDecl header value
+          | declaration => declaration
+        match Ix.Kernel.Cached.checkDecls .verified [] tampered.toArray with
+        | .ok _ => throw (IO.userError "tampered source constructor equation accepted")
+        | .error (error, position) => IO.println s!"PASS: constructor equation tamper refused at {position}: {error}"
+      if root == Compiled.prefixName ++ `Node.val then
+        let wrongValue := installed.declarations.map fun
+          | declaration@(.defnDecl header (.lam domain _ binder) hint) =>
+            if decide (header.name = sourceName root) then
+              .defnDecl header (.lam domain (.const (sourceName `Nat.zero) []) binder) hint
+            else declaration
+          | declaration => declaration
+        let withoutLaws := wrongValue.filter fun
+          | .thmDecl header _ => !header.name.toString.endsWith "._source_constructor_equation"
+          | _ => true
+        match Ix.Kernel.Cached.checkDecls .verified [] withoutLaws.toArray with
+        | .error (error, position) =>
+          throw (IO.userError s!"wrong-value control was not well typed at {position}: {error}")
+        | .ok _ => IO.println "PASS: wrong constant-zero projection is independently well typed without its equation"
+        match Ix.Kernel.Cached.checkDecls .verified [] wrongValue.toArray with
+        | .ok _ => throw (IO.userError "well-typed wrong projection passed its constructor equation")
+        | .error (error, position) => IO.println s!"PASS: constructor equation rejects well-typed wrong projection at {position}: {error}"
+        let collision : Lean.ConstantInfo := .axiomInfo {
+          name := root.str "_source_constructor_equation", levelParams := [],
+          type := .sort (.succ .zero), isUnsafe := false }
+        let conflicting : Source := ⟨captured.source.declarations ++ [collision]⟩
+        match installSourceNormalized conflicting [root] with
+        | .error (.proposalFailure "source projection equation name conflicts with an existing declaration") =>
+          IO.println "PASS: original-source constructor-equation name collision refused"
+        | .error why => throw (IO.userError s!"unexpected name-collision refusal: {label why}")
+        | .ok _ => throw (IO.userError "source projection equation overwrote an original declaration")
+  unless installedCount == 8 do throw (IO.userError "normalized source root coverage changed")
+  IO.println "source normalization: 8/8 original roots installed"
+
 end Tests.Ix.CompileCert.SourceModels

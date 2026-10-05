@@ -19,6 +19,7 @@ def main (args : List String) : IO Unit := do
   | ["expressions"] => Tests.Ix.CompileCert.Expressions.run
   | ["source-install"] => Tests.Ix.CompileCert.SourceInstall.run
   | ["source-models"] => Tests.Ix.CompileCert.SourceModels.run
+  | ["source-normalized"] => Tests.Ix.CompileCert.SourceModels.runNormalized
   | ["compiled"] => Tests.Ix.CompileCert.Compiled.run
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>

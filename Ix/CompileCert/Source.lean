@@ -259,4 +259,14 @@ theorem sourceProjectionCompute_constructor {source : Source} {owner : Lean.Name
   simp [sourceProjectionCompute, metadata, sourceAppSpine_apps, sourceAppSpine,
     bind, Except.bind, pure, Except.pure, computed, selected]
 
+/-- Exact raw source syntax eligible for a projection-function proposal.
+The caller checks the number of leading binders against the original owner.
+Metadata, lets, applications and non-major operands are not erased here. -/
+def sourceProjectionBody : Lean.Expr → Option (Lean.Name × Nat × Nat)
+  | .lam _ _ body _ => do
+    let (owner, field, binders) ← sourceProjectionBody body
+    return (owner, field, binders + 1)
+  | .proj owner field (.bvar 0) => some (owner, field, 0)
+  | _ => none
+
 end Ix.CompileCert

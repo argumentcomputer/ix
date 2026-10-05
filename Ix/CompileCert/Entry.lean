@@ -315,6 +315,214 @@ theorem SourceModelInstallation.original_decl {source : Source} {roots : List Le
     declaration ∈ installed.proposal.declarations.toList :=
   installed.original_preserved.subset present
 
+/-- A checked equation proposal uses the original constructor telescope.
+Every argument is symbolic. In particular the selected field's type is
+lifted from its original prefix into the complete constructor telescope.
+The universe is only a proposal: the independent fold checks this theorem. -/
+def sourceProjectionEquation {source : Source} (site : SourceProjectionSite source)
+    (projection : Kernel.ConstantVal) (level : Kernel.Level) : ExportM Kernel.Declaration := do
+  let .ctor constructor _ _ ← exportSourceEntry (.ctorInfo site.ctor)
+    | throw "source projection equation has no original constructor export"
+  unless decide (constructor.levelParams = projection.levelParams) do
+    throw "source projection and constructor universe telescopes differ"
+  let (binders, _) := Kernel.Frontend.stripPisAll constructor.type
+  let count := site.owner.numParams + site.ctor.numFields
+  unless binders.length == count do
+    throw "source constructor telescope disagrees with original field counts"
+  let some (fieldType, _) := binders[site.owner.numParams + site.field]?
+    | throw "source projection equation field is absent"
+  let arguments := (List.range count).map (fun i => Kernel.Expr.bvar (count - 1 - i))
+  let parameters := arguments.take site.owner.numParams
+  let levels := projection.levelParams.map Kernel.Level.param
+  let constructorValue := Kernel.Expr.mkAppN (.const constructor.name levels) arguments
+  let lhs := Kernel.Expr.mkAppN (.const projection.name levels) (parameters ++ [constructorValue])
+  let rhs := Kernel.Expr.bvar (site.ctor.numFields - 1 - site.field)
+  let type := fieldType.liftLooseBVars (site.ctor.numFields - site.field) 0
+  let equation := Kernel.Expr.mkAppN (.const Kernel.eqName [level]) [type, lhs, rhs]
+  let proof := Kernel.Expr.mkAppN (.const Kernel.eqReflName [level]) [type, rhs]
+  let header : Kernel.ConstantVal :=
+    ⟨projection.name.str "_source_constructor_equation", projection.levelParams,
+      binders.foldr (fun (type, binder) body => .forallE type body binder) equation⟩
+  return .thmDecl header (Kernel.Frontend.mkLams binders proof)
+
+/-- Source-owned lowering proposal. Original source syntax, constructor and
+recursor metadata are authoritative. The generated source model supplies
+only a proposed field universe. Neither target data nor reader projRewrite
+is consulted. Acceptance below must check both the replacement and its
+universal constructor equation; generation itself proves no semantics. -/
+def proposeSourceProjection (source : Source) (state : SourceModelState)
+    (declaration : Kernel.Declaration) : ExportM (Option (Kernel.Declaration × Kernel.Declaration)) := do
+  let .defnDecl header body hint := declaration | return none
+  let some ci := source.declarations.find? (fun ci => decide (sourceName ci.name = header.name))
+    | return none
+  let .defnInfo definition := ci | return none
+  let some (owner, field, binders) := sourceProjectionBody definition.value | return none
+  let site ← sourceProjectionSite source owner field
+  unless binders == site.owner.numParams + 1 do
+    throw "source projection binder count differs from original owner parameters"
+  let original ← exportSourceEntry ci
+  unless decide (original = .defn header body hint) do
+    throw "source projection declaration differs from its immutable original export"
+  let T := sourceName owner
+  let some (_, iotaType) := state.types[Kernel.Frontend.projIotaName T field]?
+    | return none
+  let some level := Kernel.Frontend.projIotaLevel iotaType
+    | throw "source-generated projection equation has no field universe"
+  let some (.recInfo recursor) := source.find (owner.str "rec")
+    | throw "source projection owner has no original recursor"
+  unless recursor.numParams == site.owner.numParams && recursor.numIndices == 0 do
+    throw "source projection recursor parameters or indices differ from original owner"
+  let .recursor recHeader _ _ _ ← exportSourceEntry (.recInfo recursor)
+    | throw "source projection recursor export has the wrong kind"
+  let ownerRecipe : Kernel.Frontend.ProjRecOwner := {
+    T, lps := site.owner.levelParams.map sourceName, nP := site.owner.numParams,
+    ctor := sourceName site.ctorName, nF := site.ctor.numFields,
+    recName := recHeader.name, recLps := recHeader.levelParams, recType := recHeader.type,
+    numMotives := recursor.numMotives, numMinors := recursor.numMinors }
+  let some lowered := Kernel.Frontend.projRecValue ownerRecipe level header.type body field
+    | throw "source projection recursor proposal cannot represent the original projection"
+  let equation ← sourceProjectionEquation site header level
+  return some (.defnDecl header lowered hint, equation)
+
+/-- A structural receipt, deliberately distinct from Sublist preservation.
+Each changed declaration is exactly the source-owned proposal and its
+constructor equation occurs immediately afterwards in the checked stream.
+This relation records normalization, not semantic equality by definition. -/
+inductive SourceProjectionNormalization (source : Source) :
+    SourceModelState → List Kernel.Declaration → List Kernel.Declaration → Prop
+  | nil (state) : SourceProjectionNormalization source state [] []
+  | unchanged {state original rest output}
+      (proposal : proposeSourceProjection source state original = .ok none)
+      (tail : SourceProjectionNormalization source (state.note original) rest output) :
+      SourceProjectionNormalization source state (original :: rest) (original :: output)
+  | lowered {state original rest replacement equation output}
+      (proposal : proposeSourceProjection source state original = .ok (some (replacement, equation)))
+      (fresh : ∀ name ∈ equation.names, state.types[name]? = none ∧
+        ∀ declaration ∈ original :: rest, name ∉ declaration.names)
+      (tail : SourceProjectionNormalization source
+        ((state.note replacement).note equation) rest output) :
+      SourceProjectionNormalization source state (original :: rest)
+        (replacement :: equation :: output)
+
+def normalizeSourceProjections (source : Source) (state : SourceModelState)
+    (input : List Kernel.Declaration) :
+    ExportM { output : List Kernel.Declaration // SourceProjectionNormalization source state input output } :=
+  match input with
+  | [] => .ok ⟨[], .nil state⟩
+  | original :: rest =>
+    match hp : proposeSourceProjection source state original with
+    | .error why => .error why
+    | .ok none => do
+      let output ← normalizeSourceProjections source (state.note original) rest
+      return ⟨original :: output.val, .unchanged hp output.property⟩
+    | .ok (some (replacement, equation)) =>
+      if hf : ∀ name ∈ equation.names, state.types[name]? = none ∧
+          ∀ declaration ∈ original :: rest, name ∉ declaration.names then do
+        let output ← normalizeSourceProjections source
+          ((state.note replacement).note equation) rest
+        return ⟨replacement :: equation :: output.val, .lowered hp hf output.property⟩
+      else .error "source projection equation name conflicts with an existing declaration"
+
+structure SourceNormalizedInstallation (source : Source) (roots : List Lean.Name) where
+  complete : CompleteSource source roots
+  original : Array Kernel.Declaration
+  exported : exportSourceDeclarations source = .ok original
+  modelProposal : SourceModelProposal source
+  proposed : proposeSourceModels source original = .ok modelProposal
+  original_preserved : original.toList.Sublist modelProposal.declarations.toList
+  original_members : SourceEntryCorrespondence source modelProposal.declarations
+  support_checked : ∀ kind ∈ modelProposal.basisSupport,
+    Kernel.Declaration.basisDecl kind ∈ modelProposal.declarations.toList ∧
+      sourceBasisSupportClosed kind = true
+  declarations : List Kernel.Declaration
+  normalization : SourceProjectionNormalization source {} modelProposal.declarations.toList declarations
+  env : Kernel.Env
+  checked : Kernel.Cached.checkDecls .verified [] declarations.toArray = .ok env
+
+def installSourceNormalized (source : Source) (roots : List Lean.Name) :
+    Except SourceModelError (SourceNormalizedInstallation source roots) :=
+  if hc : CompleteSource source roots then
+    match he : exportSourceDeclarations source with
+    | .error why => .error (.exportFailure why)
+    | .ok original =>
+      match hp : proposeSourceModels source original with
+      | .error why => .error (.proposalFailure why)
+      | .ok proposal =>
+        if hs : original.toList.Sublist proposal.declarations.toList then
+          if hm : SourceEntryCorrespondence source proposal.declarations then
+            if hb : ∀ kind ∈ proposal.basisSupport,
+                Kernel.Declaration.basisDecl kind ∈ proposal.declarations.toList ∧
+                  sourceBasisSupportClosed kind = true then
+              match normalizeSourceProjections source {} proposal.declarations.toList with
+              | .error why => .error (.proposalFailure why)
+              | .ok output =>
+                match hk : Kernel.Cached.checkDecls .verified [] output.val.toArray with
+                | .error (error, position) => .error (.checking error position)
+                | .ok env => .ok ⟨hc, original, he, proposal, hp, hs, hm, hb,
+                    output.val, output.property, env, hk⟩
+            else .error .supportMismatch
+          else .error .correspondence
+        else .error .changedOriginal
+  else .error .incomplete
+
+theorem SourceNormalizedInstallation.has_model (V : Type u) [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots) :
+    Nonempty (Kernel.Model V installed.env) :=
+  Kernel.model_exists V [] installed.declarations.toArray installed.env installed.checked
+
+/-- Value denotation for the actually installed normalized definitions.
+Original-source value correspondence is a separate semantic pull-back. -/
+theorem SourceNormalizedInstallation.has_model_values (V : Type u) [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots) :
+    ∃ model : Kernel.Model V installed.env, ∀ header value hint,
+      Kernel.ConstantInfo.defnInfo header value hint ∈ installed.env.consts →
+        ∀ φ ρ, Kernel.Denotes model.cval installed.env φ ρ value (model.cval header.name φ) :=
+  Kernel.Cached.checkDecls_model_defn_values V [] installed.declarations.toArray
+    installed.env installed.checked
+
+theorem SourceProjectionNormalization.member {source : Source} {state input output}
+    (receipt : SourceProjectionNormalization source state input output)
+    {declaration : Kernel.Declaration} (present : declaration ∈ input) :
+    declaration ∈ output ∨ ∃ prior replacement equation,
+      proposeSourceProjection source prior declaration = .ok (some (replacement, equation)) ∧
+      replacement ∈ output ∧ equation ∈ output := by
+  induction receipt with
+  | nil => simp at present
+  | @unchanged state original rest output hp tail ih =>
+    rcases List.mem_cons.mp present with rfl | present
+    · exact .inl (by simp)
+    · rcases ih present with same | ⟨prior, replacement, equation, hp, hr, he⟩
+      · exact .inl (List.mem_cons_of_mem _ same)
+      · exact .inr ⟨prior, replacement, equation, hp,
+          List.mem_cons_of_mem _ hr, List.mem_cons_of_mem _ he⟩
+  | @lowered state original rest replacement equation output hp fresh tail ih =>
+    rcases List.mem_cons.mp present with rfl | present
+    · exact .inr ⟨state, replacement, equation, hp, by simp, by simp⟩
+    · rcases ih present with same | ⟨prior, next, law, hp, hr, he⟩
+      · exact .inl (by simp only [List.mem_cons]; exact .inr (.inr same))
+      · exact .inr ⟨prior, next, law, hp, by simp only [List.mem_cons]; exact .inr (.inr hr),
+          by simp only [List.mem_cons]; exact .inr (.inr he)⟩
+
+/-- Every original source entry is retained with its exact raw export,
+then associated with either an unchanged checked declaration or the exact
+source-owned replacement and checked equation. This does not substitute
+the replacement for the original source expression in a semantic theorem. -/
+theorem SourceNormalizedInstallation.member {source : Source} {roots : List Lean.Name}
+    (installed : SourceNormalizedInstallation source roots) {ci : Lean.ConstantInfo}
+    (present : ci ∈ source.declarations) :
+    ∃ entry declaration, exportSourceEntry ci = .ok entry ∧ entry ∈ readerEntries declaration ∧
+      (declaration ∈ installed.declarations ∨ ∃ prior replacement equation,
+        proposeSourceProjection source prior declaration = .ok (some (replacement, equation)) ∧
+        replacement ∈ installed.declarations ∧ equation ∈ installed.declarations) := by
+  have matched := installed.original_members ci present
+  cases he : exportSourceEntry ci with
+  | error reason => simp [SourceEntryMatches, he] at matched
+  | ok entry =>
+    have hm : entry ∈ installed.modelProposal.declarations.toList.flatMap readerEntries := by
+      simpa only [SourceEntryMatches, he, streamEntries] using matched
+    obtain ⟨declaration, hd, hm⟩ := List.mem_flatMap.mp hm
+    exact ⟨entry, declaration, rfl, hm, installed.normalization.member hd⟩
+
 structure ArtifactInput where
   limits : Limits
   records : Records
