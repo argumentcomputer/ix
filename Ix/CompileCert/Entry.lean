@@ -66,6 +66,16 @@ theorem SourceInstallation.groups {source : Source} {roots : List Lean.Name}
       orderSourceGroups (groups.length + 1) groups [] [] = .ok installed.declarations.toList :=
   exportSourceDeclarations_groups installed.exported
 
+/-- The checked stream is a permutation of the independently exported
+complete declaration groups: scheduling cannot discard or alter a body,
+type, constructor, recursor rule, or any other declaration field. -/
+theorem SourceInstallation.declarations_perm {source : Source} {roots : List Lean.Name}
+    (installed : SourceInstallation source roots) :
+    ∃ groups, SourceGroupsCover source groups ∧
+      installed.declarations.toList.Perm (groups.map SourceDeclGroup.declaration) := by
+  obtain ⟨groups, _, covered, ordered⟩ := installed.groups
+  exact ⟨groups, covered, by simpa using orderSourceGroups_perm ordered⟩
+
 structure ArtifactInput where
   limits : Limits
   records : Records

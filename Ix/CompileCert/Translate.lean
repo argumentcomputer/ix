@@ -784,6 +784,39 @@ def orderSourceGroups : Nat → List SourceDeclGroup → List Lean.Name → List
     orderSourceGroups fuel pending (available ++ ready.flatMap SourceDeclGroup.members)
       (output ++ ready.map SourceDeclGroup.declaration)
 
+/-- Successful scheduling preserves every complete declaration, including
+all type/value/member/rule fields, with multiplicity. It only changes order. -/
+theorem orderSourceGroups_perm {fuel : Nat} {groups : List SourceDeclGroup}
+    {available : List Lean.Name} {output result : List Kernel.Declaration}
+    (ordered : orderSourceGroups fuel groups available output = .ok result) :
+    result.Perm (output ++ groups.map SourceDeclGroup.declaration) := by
+  induction fuel generalizing groups available output result with
+  | zero =>
+    cases groups with
+    | nil =>
+      have same : output = result := by simpa [orderSourceGroups] using ordered
+      subst result
+      simp
+    | cons group groups => simp [orderSourceGroups] at ordered
+  | succ fuel ih =>
+    cases groups with
+    | nil =>
+      have same : output = result := by simpa [orderSourceGroups] using ordered
+      subst result
+      simp
+    | cons group groups =>
+      simp only [orderSourceGroups, bind, Except.bind] at ordered
+      split at ordered
+      next => contradiction
+      next =>
+        have previous := ih ordered
+        have partition := (List.filter_append_perm
+          (fun g : SourceDeclGroup => g.dependencies.all available.contains)
+          (group :: groups)).map SourceDeclGroup.declaration
+        exact previous.trans (by
+          simpa only [List.map_append, List.append_assoc] using
+            (List.Perm.refl output).append partition)
+
 def exportSourceDeclarations (s : Source) : ExportM (Array Kernel.Declaration) := do
   let groups ← exportSourceGroups s
   return (← orderSourceGroups (groups.length + 1) groups [] []).toArray
