@@ -485,6 +485,56 @@ theorem InstalledExprImage.denotes {V : Type u} [Kernel.SetTheory V]
     cases denoted with
     | strLit h => exact .strLit (ih h)
 
+/-- Structural weakening of an installed semantic image. Projection table
+positions and selected universe instances remain exactly the supplied ones. -/
+theorem InstalledExprImage.lift {V : Type u} [Kernel.SetTheory V]
+    {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target}
+    (image : InstalledExprImage (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target)
+    (amount cutoff : Nat) :
+    InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+      (source.liftLooseBVars amount cutoff) (target.liftLooseBVars amount cutoff) := by
+  induction image generalizing cutoff with
+  | bvar index =>
+    simp only [Kernel.Expr.liftLooseBVars]
+    split <;> exact .bvar _
+  | sort levels => exact .sort levels
+  | constant sl tl sa ta values => exact .constant sl tl sa ta values
+  | app _ _ ihf iha => exact .app (ihf cutoff) (iha cutoff)
+  | lam _ _ regimes ihA ihB => exact .lam (ihA cutoff) (ihB (cutoff + 1)) regimes
+  | forallE _ _ regimes ihA ihB => exact .forallE (ihA cutoff) (ihB (cutoff + 1)) regimes
+  | projTable sl tl position _ ih => exact .projTable sl tl position (ih cutoff)
+  | projFst sl tl _ ih => exact .projFst sl tl (ih cutoff)
+  | projSnd sl tl _ ih => exact .projSnd sl tl (ih cutoff)
+  | natLit constructors _ => exact .natLit constructors
+  | strLit constructors _ => exact .strLit constructors
+
+/-- Exact capture-avoiding substitution on both sides of an installed image.
+The replacements themselves must be related under the same environments and
+universe assignments; equal hashes or target-only typing cannot supply it. -/
+theorem InstalledExprImage.instantiate1Lift {V : Type u} [Kernel.SetTheory V]
+    {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target sourceArgument targetArgument}
+    (image : InstalledExprImage (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target)
+    (argumentImage : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+      sourceArgument targetArgument) (depth : Nat) :
+    InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+      (source.instantiate1Lift sourceArgument depth) (target.instantiate1Lift targetArgument depth) := by
+  induction image generalizing depth with
+  | bvar index =>
+    simp only [Kernel.Expr.instantiate1Lift]
+    split
+    · exact argumentImage.lift depth 0
+    · split <;> exact .bvar _
+  | sort levels => exact .sort levels
+  | constant sl tl sa ta values => exact .constant sl tl sa ta values
+  | app _ _ ihf iha => exact .app (ihf depth) (iha depth)
+  | lam _ _ regimes ihA ihB => exact .lam (ihA depth) (ihB (depth + 1)) regimes
+  | forallE _ _ regimes ihA ihB => exact .forallE (ihA depth) (ihB (depth + 1)) regimes
+  | projTable sl tl position _ ih => exact .projTable sl tl position (ih depth)
+  | projFst sl tl _ ih => exact .projFst sl tl (ih depth)
+  | projSnd sl tl _ ih => exact .projSnd sl tl (ih depth)
+  | natLit constructors _ => exact .natLit constructors
+  | strLit constructors _ => exact .strLit constructors
+
 theorem InstalledExprImage.symm {V : Type u} [Kernel.SetTheory V]
     {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target}
     (image : InstalledExprImage (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target) :
@@ -509,6 +559,59 @@ theorem InstalledExprImage.denotes_iff {V : Type u} [Kernel.SetTheory V]
     Kernel.Denotes sourceValues sourceEnv sourceLevels ρ source value ↔
       Kernel.Denotes targetValues targetEnv targetLevels ρ target value :=
   ⟨image.denotes, image.symm.denotes⟩
+
+/-- Position-preserving argument images. Every slot has its own expression
+correspondence even when several constant identities belong to one fiber. -/
+inductive InstalledSpineImage {V : Type u} [Kernel.SetTheory V]
+    (sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat) :
+    List Kernel.Expr → List Kernel.Expr → Prop
+  | nil : InstalledSpineImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels [] []
+  | cons {source target sources targets}
+      (head : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target)
+      (tail : InstalledSpineImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sources targets) :
+      InstalledSpineImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+        (source :: sources) (target :: targets)
+
+theorem InstalledSpineImage.append {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl source target sources targets}
+    (first : InstalledSpineImage (V := V) sv tv se te sl tl source target)
+    (second : InstalledSpineImage sv tv se te sl tl sources targets) :
+    InstalledSpineImage sv tv se te sl tl (source ++ sources) (target ++ targets) := by
+  induction first with
+  | nil => exact second
+  | cons head tail ih => exact .cons head ih
+
+theorem InstalledSpineImage.take {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl sources targets}
+    (image : InstalledSpineImage (V := V) sv tv se te sl tl sources targets) (count : Nat) :
+    InstalledSpineImage sv tv se te sl tl (sources.take count) (targets.take count) := by
+  induction image generalizing count with
+  | nil => simp only [List.take_nil]; exact .nil
+  | cons head tail ih =>
+    cases count with
+    | zero => exact .nil
+    | succ count => exact .cons head (ih count)
+
+theorem InstalledSpineImage.drop {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl sources targets}
+    (image : InstalledSpineImage (V := V) sv tv se te sl tl sources targets) (count : Nat) :
+    InstalledSpineImage sv tv se te sl tl (sources.drop count) (targets.drop count) := by
+  induction image generalizing count with
+  | nil => simp only [List.drop_nil]; exact .nil
+  | cons head tail ih =>
+    cases count with
+    | zero => exact .cons head tail
+    | succ count => exact ih count
+
+theorem InstalledSpineImage.mkAppN {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl sources targets source target}
+    (image : InstalledSpineImage (V := V) sv tv se te sl tl sources targets)
+    (head : InstalledExprImage sv tv se te sl tl source target) :
+    InstalledExprImage sv tv se te sl tl (Kernel.Expr.mkAppN source sources) (Kernel.Expr.mkAppN target targets) := by
+  induction image generalizing source target with
+  | nil => exact head
+  | cons argument tail ih => exact ih (.app head argument)
 
 /-- A structural map of installed expressions. Constant universe arguments
 are selected per source identity, independently of ambient sort/binder level
@@ -1116,6 +1219,26 @@ theorem InstalledTelescope.append {V : Type u} [Kernel.SetTheory V]
   induction firstTuple with
   | nil => exact suffix
   | cons domain typed rest ih => exact .cons domain typed (ih suffix)
+
+/-- Transport the full dependent tuple between the two installed models.
+The target residual is accompanied by its source image; successful isolated
+domain checks or matching telescope lengths would not establish this result. -/
+theorem InstalledTelescope.image {V : Type u} [Kernel.SetTheory V]
+    {sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V}
+    {sourceEnv targetEnv : Kernel.Env} {sourceLevels targetLevels : Kernel.Name → Nat}
+    {ρ finalρ : Nat → V} {source result target : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope sourceValues sourceEnv sourceLevels ρ source arguments finalρ result)
+    (image : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target) :
+    ∃ targetResult,
+      InstalledTelescope targetValues targetEnv targetLevels ρ target arguments finalρ targetResult ∧
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels result targetResult := by
+  induction typed generalizing target with
+  | nil => exact ⟨target, .nil, image⟩
+  | cons domainRead argumentTyped rest ih =>
+    cases image with
+    | forallE domainImage bodyImage regimes =>
+      obtain ⟨targetResult, transported, residualImage⟩ := ih bodyImage
+      exact ⟨targetResult, .cons (domainImage.denotes domainRead) argumentTyped transported, residualImage⟩
 
 open Kernel.SetTheory in
 /-- Apply a member of the actual installed type to a dependent typed tuple.
@@ -1729,6 +1852,34 @@ theorem DenotedApplication.of_telescope {V : Type u} [Kernel.SetTheory V]
       obtain ⟨_, substituted⟩ := rest.instantiate1Lift (depth := 0) rfl argumentRead
       obtain ⟨residual, applied⟩ := ih substituted
       exact ⟨residual, .cons domainRead argumentRead argumentTyped applied⟩
+
+/-- Transport a dependent application through exact type and argument images.
+Each substituted suffix remains related, and the resulting target residual
+has an explicit image of the actual source residual. -/
+theorem DenotedApplication.image {V : Type u} [Kernel.SetTheory V]
+    {sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V}
+    {sourceEnv targetEnv : Kernel.Env} {sourceLevels targetLevels : Kernel.Name → Nat}
+    {ρ : Nat → V} {sourceType sourceResidual targetType : Kernel.Expr}
+    {sources targets : List Kernel.Expr} {arguments : List V}
+    (application : DenotedApplication sourceValues sourceEnv sourceLevels ρ sourceType sources arguments sourceResidual)
+    (typeImage : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sourceType targetType)
+    (argumentsImage : InstalledSpineImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sources targets) :
+    ∃ targetResidual,
+      DenotedApplication targetValues targetEnv targetLevels ρ targetType targets arguments targetResidual ∧
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sourceResidual targetResidual := by
+  induction application generalizing targetType targets with
+  | nil =>
+    cases argumentsImage
+    exact ⟨targetType, .nil, typeImage⟩
+  | cons domainRead argumentRead argumentTyped rest ih =>
+    cases typeImage with
+    | forallE domainImage bodyImage regimes =>
+      cases argumentsImage with
+      | cons argumentImage tailImage =>
+        obtain ⟨targetResidual, transported, residualImage⟩ :=
+          ih (bodyImage.instantiate1Lift argumentImage 0) tailImage
+        exact ⟨targetResidual, .cons (domainImage.denotes domainRead)
+          (argumentImage.denotes argumentRead) argumentTyped transported, residualImage⟩
 
 /-- Fresh de Bruijn variables represent every semantic tuple in the valuation
 extended by exactly that tuple, in its original telescope order. -/
