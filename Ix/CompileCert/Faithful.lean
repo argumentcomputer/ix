@@ -953,6 +953,34 @@ theorem levelSubst_get (valuation : Kernel.Name → Nat) {parameters : List Kern
         simpa only [List.getElem_cons_succ, Kernel.Level.substFn, if_neg different] using
           ih distinct.2 (by simpa using arity) index bound
 
+theorem levelEvalEqList_of_values {valuation : Kernel.Name → Nat} {left right : List Kernel.Level}
+    (same : left.map (Kernel.Level.eval valuation) = right.map (Kernel.Level.eval valuation)) :
+    Kernel.Level.EvalEqList valuation left right := by
+  induction left generalizing right with
+  | nil => cases right <;> simp_all [Kernel.Level.EvalEqList]
+  | cons level levels ih =>
+    cases right with
+    | nil => simp at same
+    | cons other others =>
+      simp only [List.map_cons, List.cons.injEq] at same
+      exact ⟨same.1, ih same.2⟩
+
+/-- Equality of complete assignments on a distinct telescope recovers the
+whole argument-value spine when both instances have that telescope's arity. -/
+theorem levelSubst_values_eq (valuation : Kernel.Name → Nat) {parameters : List Kernel.Name}
+    {left right : List Kernel.Level} (unique : parameters.Nodup)
+    (leftArity : left.length = parameters.length) (rightArity : right.length = parameters.length)
+    (same : Kernel.Level.substFn valuation parameters left = Kernel.Level.substFn valuation parameters right) :
+    left.map (Kernel.Level.eval valuation) = right.map (Kernel.Level.eval valuation) := by
+  apply List.ext_getElem
+  · simp only [List.length_map, leftArity, rightArity]
+  · intro index leftBound rightBound
+    have bound : index < parameters.length := by simpa only [List.length_map, leftArity] using leftBound
+    have atIndex := congrFun same parameters[index]
+    rw [levelSubst_get valuation unique leftArity index bound,
+      levelSubst_get valuation unique rightArity index bound] at atIndex
+    simpa only [List.getElem_map] using atIndex
+
 /-- Positional telescope renaming commutes with the actual universe instance
 at every target formal. Assignments outside that telescope are irrelevant
 only after the installed model's proved parameter-locality law is applied. -/

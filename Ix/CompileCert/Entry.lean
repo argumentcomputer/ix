@@ -8407,4 +8407,128 @@ theorem checkedStreams_publicRules (V : Type u) [Kernel.SetTheory V]
     checked_rules_simulation sourceStrong.internal.base2.wf target (checkTelescopes_sound telescopes)
       types recursors constructors⟩
 
+/-- Compare a complete universe spine in an actual owner's telescope.
+Both sides must stay within that telescope; unknown semantic comparison is
+preserved. This is independent of equality of the constants' model values. -/
+def checkInstalledOwnerLevels (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (owner : Kernel.Name) (sourceLevels targetLevels : List Kernel.Level) : Option Bool :=
+  match target.find? (names owner) with
+  | none => some false
+  | some targetOwner =>
+    if targetLevels.all (fun level => level.allParamsDefined targetOwner.toConstantVal.levelParams) then
+      checkInstalledMemberExprs source target names owner (sourceLevels.map Kernel.Expr.sort) (targetLevels.map Kernel.Expr.sort)
+    else some false
+
+theorem checkInstalledOwnerLevels_instance {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {owner : Kernel.Name} {sourceOwner targetOwner : Kernel.ConstantInfo}
+    (sourceLookup : sourceEnv.find? owner = some sourceOwner)
+    (targetLookup : targetEnv.find? (names owner) = some targetOwner)
+    {sourceLevels targetLevels : List Kernel.Level}
+    (checked : checkInstalledOwnerLevels sourceEnv targetEnv names owner sourceLevels targetLevels = some true)
+    (sourceBase targetBase : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceOwner.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetOwner.toConstantVal.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceBase) = targetUs.map (Kernel.Level.eval targetBase)) :
+    (sourceLevels.map (Kernel.Level.subst sourceOwner.toConstantVal.levelParams sourceUs)).map (Kernel.Level.eval sourceBase) =
+      (targetLevels.map (Kernel.Level.subst targetOwner.toConstantVal.levelParams targetUs)).map (Kernel.Level.eval targetBase) := by
+  simp only [checkInstalledOwnerLevels, targetLookup] at checked
+  split at checked
+  next coverage =>
+    have bounded : ∀ expression ∈ targetLevels.map Kernel.Expr.sort,
+        expression.allLevelParamsDefined targetOwner.toConstantVal.levelParams = true := by
+      intro expression present
+      obtain ⟨level, member, rfl⟩ := List.mem_map.mp present
+      exact List.all_eq_true.mp coverage level member
+    have images := checkInstalledMemberExprs_instance target association sourceLookup targetLookup bounded checked
+      sourceBase targetBase sourceUs targetUs sourceArity targetArity universes
+    have sorted : InstalledSpineImage
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        target.public.cval sourceEnv targetEnv sourceBase targetBase
+        ((sourceLevels.map (Kernel.Level.subst sourceOwner.toConstantVal.levelParams sourceUs)).map Kernel.Expr.sort)
+        ((targetLevels.map (Kernel.Level.subst targetOwner.toConstantVal.levelParams targetUs)).map Kernel.Expr.sort) := by
+      simpa only [List.map_map, Function.comp_def, Kernel.Expr.instantiateLevelParams] using images
+    exact sorted.sorts
+  next => contradiction
+
+def InstalledRuleFrame.universeComparands {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
+    (frame : InstalledRuleFrame env name index) : List Kernel.Level :=
+  match frame.rule.fire with
+  | .nested levels _ => levels
+  | _ => frame.constructor.levelParams.map Kernel.Level.param
+
+theorem InstalledRuleFrame.universeComparands_instance {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
+    (frame : InstalledRuleFrame env name index) (universes : List Kernel.Level) :
+    (Kernel.recFireComparands frame.rule frame.header.levelParams universes frame.constructor.levelParams [] frame.rulePrefix).1 =
+      frame.universeComparands.map (Kernel.Level.subst frame.header.levelParams universes) := by
+  cases shape : frame.rule.fire <;>
+    simp only [Kernel.recFireComparands, InstalledRuleFrame.universeComparands, shape, List.map_map, Function.comp_def]
+
+/-- A finite, universal owner-relative recipe check. Arity is explicit for
+nested level spines; a malformed recipe cannot hide behind `substFn` ignoring
+extra arguments or retaining missing ambient parameters. -/
+def checkInstalledRuleLevelLink (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (name : Kernel.Name) (index : Nat) : Option Bool :=
+  match readInstalledRuleFrame source name index, readInstalledRuleFrame target (names name) index with
+  | some sourceFrame, some targetFrame =>
+    if sourceFrame.universeComparands.length = sourceFrame.constructor.levelParams.length ∧
+        targetFrame.universeComparands.length = targetFrame.constructor.levelParams.length then
+      checkInstalledOwnerLevels source target names name sourceFrame.universeComparands targetFrame.universeComparands
+    else some false
+  | _, _ => some false
+
+theorem InstalledRuleFrame.checked_level_link {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame source name index)
+    (targetFrame : InstalledRuleFrame target (names name) index)
+    (checked : checkInstalledRuleLevelLink source target names name index = some true) :
+    sourceFrame.universeComparands.length = sourceFrame.constructor.levelParams.length ∧
+    targetFrame.universeComparands.length = targetFrame.constructor.levelParams.length ∧
+    checkInstalledOwnerLevels source target names name sourceFrame.universeComparands targetFrame.universeComparands = some true := by
+  simp only [checkInstalledRuleLevelLink, readInstalledRuleFrame_complete sourceFrame,
+    readInstalledRuleFrame_complete targetFrame] at checked
+  split at checked
+  next arities => exact ⟨arities.1, arities.2, checked⟩
+  next => contradiction
+
+/-- Source semantic universe selection transfers to the target for every
+concrete instance of the checked owner-level recipe. No per-instance target
+level-comparison acceptance or checker completeness is assumed. -/
+theorem InstalledRuleFrame.transfer_universe_selection {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    (targetFrame : InstalledRuleFrame targetEnv (names name) index)
+    (checked : checkInstalledRuleLevelLink sourceEnv targetEnv names name index = some true)
+    (sourceLevels targetLevels : Kernel.Name → Nat)
+    (sourceUs targetUs sourceConstructorUs targetConstructorUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceFrame.header.levelParams.length)
+    (targetArity : targetUs.length = targetFrame.header.levelParams.length)
+    (sourceConstructorArity : sourceConstructorUs.length = sourceFrame.constructor.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+    (constructorUniverses : sourceConstructorUs.map (Kernel.Level.eval sourceLevels) =
+      targetConstructorUs.map (Kernel.Level.eval targetLevels))
+    (sourceSelection : Kernel.Level.substFn sourceLevels sourceFrame.constructor.levelParams sourceConstructorUs =
+      Kernel.Level.substFn sourceLevels sourceFrame.constructor.levelParams
+        (Kernel.recFireComparands sourceFrame.rule sourceFrame.header.levelParams sourceUs
+          sourceFrame.constructor.levelParams [] sourceFrame.rulePrefix).1) :
+    Kernel.Level.substFn targetLevels targetFrame.constructor.levelParams targetConstructorUs =
+      Kernel.Level.substFn targetLevels targetFrame.constructor.levelParams
+        (Kernel.recFireComparands targetFrame.rule targetFrame.header.levelParams targetUs
+          targetFrame.constructor.levelParams [] targetFrame.rulePrefix).1 := by
+  obtain ⟨sourceLength, _, compared⟩ := sourceFrame.checked_level_link targetFrame checked
+  have values := checkInstalledOwnerLevels_instance target association sourceFrame.recursorLookup targetFrame.recursorLookup
+    compared sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
+  obtain ⟨_, _, unique, _, _⟩ := association sourceFrame.rule.ctor _ sourceFrame.constructorLookup
+  have compareArity : (Kernel.recFireComparands sourceFrame.rule sourceFrame.header.levelParams sourceUs
+      sourceFrame.constructor.levelParams [] sourceFrame.rulePrefix).1.length = sourceFrame.constructor.levelParams.length := by
+    rw [sourceFrame.universeComparands_instance]
+    simpa only [List.length_map] using sourceLength
+  have sourceValues := levelSubst_values_eq sourceLevels unique sourceConstructorArity compareArity sourceSelection
+  rw [sourceFrame.universeComparands_instance] at sourceValues
+  apply Kernel.Level.substFn_congr
+  apply levelEvalEqList_of_values
+  rw [targetFrame.universeComparands_instance]
+  simpa only [Kernel.ConstantInfo.toConstantVal] using constructorUniverses.symm.trans (sourceValues.trans values)
+
 end Ix.CompileCert

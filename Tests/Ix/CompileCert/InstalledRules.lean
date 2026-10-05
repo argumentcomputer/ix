@@ -108,7 +108,31 @@ def run : IO Unit := do
     (checkInstalledRuleUniverses nested recursor 0 [.zero, .succ .zero] [.succ (.succ .zero)] == some true)
   require "nested universe mismatch"
     (checkInstalledRuleUniverses nested recursor 0 [.zero, .succ .zero] [.succ .zero] != some true)
-  IO.println "installed rules: actual Nat/PUnit folds; 40 rule/universe/constructor controls passed"
+  require "actual Nat universal rule-level link"
+    (checkInstalledRuleLevelLink source target id header.name 0 == some true)
+  require "actual PUnit universal rule-level link"
+    (checkInstalledRuleLevelLink unit unit id recursor 0 == some true)
+  require "missing target level-link owner"
+    (checkInstalledRuleLevelLink unit Env.empty id recursor 0 != some true)
+  let some frame := readInstalledRuleFrame unit recursor 0 | throw (IO.userError "expected PUnit frame")
+  let some otherParameter := frame.header.levelParams.find? (fun p => !frame.constructor.levelParams.contains p)
+    | throw (IO.userError "expected recursor-only universe")
+  let relinked : Env := ⟨unit.consts.map fun entry => match entry with
+    | .ctorInfo cv p f => .ctorInfo { cv with levelParams := [otherParameter] } p f
+    | other => other⟩
+  require "same-arity wrong recursor-to-constructor level link"
+    (checkInstalledRuleLevelLink unit relinked id recursor 0 != some true)
+  require "out-of-owner target level rejected"
+    (checkInstalledOwnerLevels unit unit id recursor [.param uN] [.param (.str .anonymous "outside")] != some true)
+  require "synthetic nested universal level recipe"
+    (checkInstalledRuleLevelLink nested nested id recursor 0 == some true)
+  let nestedAlias := alterRules unit (List.map fun r => { r with fire := .nested [.max .zero (.succ (.param uN))] [] })
+  require "semantic nested level recipe alias"
+    (checkInstalledRuleLevelLink nested nestedAlias id recursor 0 == some true)
+  let shortNested := alterRules unit (List.map fun r => { r with fire := .nested [] [] })
+  require "nested level recipe cannot hide missing constructor universe"
+    (checkInstalledRuleLevelLink shortNested shortNested id recursor 0 != some true)
+  IO.println "installed rules: actual Nat/PUnit folds; 48 rule/universe/constructor controls passed"
 
 end Tests.Ix.CompileCert.InstalledRules
 
