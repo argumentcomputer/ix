@@ -453,6 +453,50 @@ theorem checkInstalledMemberExpr_sound {V : Type u} [Kernel.SetTheory V]
       exact (UniverseImage.telescope_recovery sourceLevels sourceUnique targetUnique sameArity parameter present).symm
   next => contradiction
 
+/-- Check every actual source row, including every member of an alias
+fiber. The source lookup check prevents a shadowed row from borrowing the
+telescope of another row with the same name. Extra target support is allowed.
+This checks type fields only; it neither erases nor certifies other fields. -/
+def checkInstalledTypes (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Bool :=
+  source.consts.all fun entry =>
+    decide (source.find? entry.name = some entry) &&
+    match target.find? (names entry.name) with
+    | none => false
+    | some targetEntry => decide (checkInstalledMemberExpr source target names entry.name
+        entry.toConstantVal.type targetEntry.toConstantVal.type = some true)
+
+theorem checkInstalledTypes_member {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledTypes source target names = true)
+    {entry : Kernel.ConstantInfo} (present : entry ∈ source.consts) :
+    source.find? entry.name = some entry ∧
+    ∃ targetEntry, target.find? (names entry.name) = some targetEntry ∧
+      checkInstalledMemberExpr source target names entry.name
+        entry.toConstantVal.type targetEntry.toConstantVal.type = some true := by
+  have row := List.all_eq_true.mp checked entry present
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at row
+  refine ⟨row.1, ?_⟩
+  cases lookup : target.find? (names entry.name) with
+  | none => simp [lookup] at row
+  | some targetEntry =>
+    exact ⟨targetEntry, rfl, of_decide_eq_true (by simpa only [lookup] using row.2)⟩
+
+theorem checkInstalledTypes_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledTypes sourceEnv targetEnv names = true)
+    (sourceConstant : Kernel.ConstantInfo) (present : sourceConstant ∈ sourceEnv.consts)
+    (sourceLevels : Kernel.Name → Nat) :
+    ∃ targetConstant, targetConstant ∈ targetEnv.consts ∧
+      targetConstant.name = names sourceConstant.name ∧
+      InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        target.public.cval sourceEnv targetEnv sourceLevels
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels sourceConstant.name sourceLevels)
+        sourceConstant.toConstantVal.type targetConstant.toConstantVal.type := by
+  obtain ⟨sourceLookup, targetEntry, targetLookup, comparison⟩ := checkInstalledTypes_member checked present
+  exact ⟨targetEntry, Kernel.Semantics.Env.find?_mem targetLookup,
+    Kernel.Semantics.Env.find?_name targetLookup,
+    checkInstalledMemberExpr_sound target association sourceLookup comparison sourceLevels⟩
+
 /-- Exact semantic premises of the public model pull-back. In particular,
 types are related to actual target members and False/Eq are related to the
 target model's pinned interpretations, not just to similarly spelled names.
@@ -474,6 +518,49 @@ structure PullbackTypeEvidence {V : Type u} [Kernel.SetTheory V]
     Kernel.Level.eval sourceLevels sourceLevel = Kernel.Level.eval targetLevels targetLevel ∧
     InstalledExprImage (map.values target.cval) target.cval sourceEnv targetEnv
       sourceLevels targetLevels (.const Kernel.eqName [sourceLevel]) (.const Kernel.eqName [targetLevel])
+
+/-- Pin checks are source-owned exact-name and arity checks. No reverse
+alias representative is selected and no pinned identity is replaced. -/
+def checkInstalledPin (source : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (name : Kernel.Name) (arity : Nat) : Bool :=
+  match source.find? name with
+  | none => false
+  | some entry => decide (names name = name ∧ entry.toConstantVal.levelParams.length = arity)
+
+theorem checkInstalledPin_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {arity : Nat} (checked : checkInstalledPin sourceEnv names name arity = true)
+    (arguments : List Kernel.Level) (argumentArity : arguments.length = arity)
+    (levels : Kernel.Name → Nat) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels levels (.const name arguments) (.const name arguments) := by
+  cases lookup : sourceEnv.find? name with
+  | none => simp [checkInstalledPin, lookup] at checked
+  | some entry =>
+    have facts : names name = name ∧ entry.toConstantVal.levelParams.length = arity := by
+      simpa [checkInstalledPin, lookup] using checked
+    have image := PullbackMap.fromEnvs_constant target association UniverseImage.identity levels lookup
+      arguments (argumentArity.trans facts.2.symm)
+    have identityLevels : UniverseImage.identity.level = id := funext UniverseImage.identity_level
+    simpa only [UniverseImage.identity_valuation, identityLevels,
+      List.map_id, facts.1] using image
+
+theorem checkedPullbackTypes {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name}
+    (telescopes : checkTelescopes sourceEnv targetEnv names = true)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (falsePin : checkInstalledPin sourceEnv names Kernel.falseName 0 = true)
+    (eqPin : checkInstalledPin sourceEnv names Kernel.eqName 1 = true) :
+    PullbackTypeEvidence target.public sourceEnv (PullbackMap.fromEnvs sourceEnv targetEnv names) := by
+  have association := checkTelescopes_sound telescopes
+  constructor
+  · exact checkInstalledTypes_sound target association types
+  · intro levels
+    exact ⟨levels, checkInstalledPin_sound target association falsePin [] rfl levels⟩
+  · intro level levels
+    exact ⟨level, levels, rfl, checkInstalledPin_sound target association eqPin [level] rfl levels⟩
 
 /-- The public source model, constructed from the target interpretation.
 This generic semantic theorem does not discharge the actual source fold,
@@ -524,6 +611,53 @@ structure PullbackDefinitionEvidence {V : Type u} [Kernel.SetTheory V]
       InstalledExprImage (map.values target.public.cval) target.public.cval sourceEnv targetEnv
         sourceLevels (map.levels header.name sourceLevels) value targetValue
 
+/-- Definition-body checking preserves the target's actual definition kind.
+Theorem records cannot supply definition equations; their checking bodies
+need a separate relation. Reducibility hints are retained by both lookups,
+but no operational equivalence is inferred from their possible difference. -/
+def checkInstalledDefinitions (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Bool :=
+  source.consts.all fun entry =>
+    match entry with
+    | .defnInfo header value _ =>
+      decide (source.find? header.name = some entry) &&
+      match target.find? (names header.name) with
+      | some (.defnInfo _ targetValue _) =>
+        decide (checkInstalledMemberExpr source target names header.name value targetValue = some true)
+      | _ => false
+    | _ => true
+
+theorem checkInstalledDefinitions_member {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledDefinitions source target names = true)
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    (present : Kernel.ConstantInfo.defnInfo header value hint ∈ source.consts) :
+    source.find? header.name = some (.defnInfo header value hint) ∧
+    ∃ targetHeader targetValue targetHint,
+      target.find? (names header.name) = some (.defnInfo targetHeader targetValue targetHint) ∧
+      checkInstalledMemberExpr source target names header.name value targetValue = some true := by
+  have row := List.all_eq_true.mp checked (.defnInfo header value hint) present
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at row
+  refine ⟨row.1, ?_⟩
+  cases lookup : target.find? (names header.name) with
+  | none => simp [lookup] at row
+  | some targetEntry =>
+    cases targetEntry <;> simp only [lookup] at row
+    case defnInfo targetHeader targetValue targetHint =>
+      exact ⟨targetHeader, targetValue, targetHint, rfl, of_decide_eq_true row.2⟩
+    all_goals simp at row
+
+theorem checkInstalledDefinitions_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledDefinitions sourceEnv targetEnv names = true) :
+    PullbackDefinitionEvidence target sourceEnv (PullbackMap.fromEnvs sourceEnv targetEnv names) := by
+  constructor
+  intro header value hint present levels
+  obtain ⟨sourceLookup, targetHeader, targetValue, targetHint, targetLookup, comparison⟩ :=
+    checkInstalledDefinitions_member checked present
+  exact ⟨targetHeader, targetValue, targetHint, Kernel.Semantics.Env.find?_mem targetLookup,
+    Kernel.Semantics.Env.find?_name targetLookup,
+    checkInstalledMemberExpr_sound target association sourceLookup comparison levels⟩
+
 /-- Definition equations are pulled back from actual target definitions.
 Opaque/theorem checking bodies supply no premise of this kind. Source
 admission and full annotation correspondence remain separate obligations. -/
@@ -569,6 +703,32 @@ theorem strongInstalledModel_exists (V : Type u) [Kernel.SetTheory V]
   rw [Kernel.Expr.closeN_of_hasFvar _ 0 0 valid.1,
     Kernel.Model.interp_cvalOf model.base2.cval_closedL] at denoted
   exact denoted
+
+/-- A conditional executable endpoint for the public type and definition
+interpretation of two independently accepted streams. The original source
+installation is witnessed separately; it is never inferred from target
+acceptance. This does not yet provide source recursor/capability laws or a
+relation from either stream to immutable compiler input or reader bytes. -/
+theorem checkedStreams_publicValueModel (V : Type u) [Kernel.SetTheory V]
+    (sourcePins targetPins : List Kernel.NatOpPinSet)
+    (sourceDeclarations targetDeclarations : Array Kernel.Declaration)
+    (sourceEnv targetEnv : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (sourceChecked : Kernel.Cached.checkDecls .verified sourcePins sourceDeclarations = .ok sourceEnv)
+    (targetChecked : Kernel.Cached.checkDecls .verified targetPins targetDeclarations = .ok targetEnv)
+    (telescopes : checkTelescopes sourceEnv targetEnv names = true)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (definitions : checkInstalledDefinitions sourceEnv targetEnv names = true)
+    (falsePin : checkInstalledPin sourceEnv names Kernel.falseName 0 = true)
+    (eqPin : checkInstalledPin sourceEnv names Kernel.eqName 1 = true) :
+    Nonempty (StrongInstalledModel V sourceEnv) ∧
+    ∃ target : StrongInstalledModel V targetEnv, ∃ source : PublicValueModel V sourceEnv,
+      source.model.cval = (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval := by
+  refine ⟨strongInstalledModel_exists V sourcePins sourceDeclarations sourceEnv sourceChecked, ?_⟩
+  obtain ⟨target⟩ := strongInstalledModel_exists V targetPins targetDeclarations targetEnv targetChecked
+  have association := checkTelescopes_sound telescopes
+  let typeEvidence := checkedPullbackTypes target telescopes types falsePin eqPin
+  let definitionEvidence := checkInstalledDefinitions_sound target association definitions
+  exact ⟨target, definitionEvidence.valueModel typeEvidence (PullbackMap.fromEnvs_locality association), rfl⟩
 
 /-- One acyclic definition step at the actual installed bodies. Compatibility
 is needed only for the body's explicitly supported dependencies, excluding

@@ -741,8 +741,16 @@ def UniverseImage.level (image : UniverseImage) : Kernel.Level → Kernel.Level
   | .imax u v => .imax (image.level u) (image.level v)
   | .param name => image.parameter name
 
+def UniverseImage.identity : UniverseImage := ⟨Kernel.Level.param⟩
+
+theorem UniverseImage.identity_level (level : Kernel.Level) : UniverseImage.identity.level level = level := by
+  induction level <;> simp_all [UniverseImage.identity, UniverseImage.level]
+
 def UniverseImage.valuation (image : UniverseImage) (target : Kernel.Name → Nat) : Kernel.Name → Nat :=
   fun name => Kernel.Level.eval target (image.parameter name)
+
+theorem UniverseImage.identity_valuation (levels : Kernel.Name → Nat) :
+    UniverseImage.identity.valuation levels = levels := rfl
 
 def UniverseImage.datum (image : UniverseImage) (datum : Kernel.PropWhen) : Kernel.PropWhen :=
   datum.bindZ fun name => Kernel.Level.zeronessOf (image.parameter name)
