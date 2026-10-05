@@ -664,6 +664,70 @@ theorem InstalledExprImage.source_levels {V : Type u} [Kernel.SetTheory V]
   | natLit _ ih => exact .natLit (ih (naturalConstructor_parameters parameters _))
   | strLit _ ih => exact .strLit (ih (stringConstructor_parameters parameters _))
 
+theorem naturalConstructor_instantiateLevels (parameters : List Kernel.Name)
+    (arguments : List Kernel.Level) (value : Nat) :
+    (Kernel.natLitToConstructor value).instantiateLevelParams parameters arguments =
+      Kernel.natLitToConstructor value := by
+  cases value <;> rfl
+
+theorem stringConstructor_instantiateLevels (parameters : List Kernel.Name)
+    (arguments : List Kernel.Level) (value : String) :
+    (Kernel.strLitToConstructor value).instantiateLevelParams parameters arguments =
+      Kernel.strLitToConstructor value := by
+  unfold Kernel.strLitToConstructor
+  simp only [Kernel.Expr.instantiateLevelParams, List.map_nil]
+  congr 1
+  induction value.toList with
+  | nil => rfl
+  | cons character rest ih => simp [Kernel.Expr.instantiateLevelParams, Kernel.Level.subst, ih]
+
+/-- Actual universe instantiation of both endpoints. Values depend only on
+their looked-up formal telescopes; no global equality of ambient assignments
+or unchecked interchange of substitutions is assumed. -/
+theorem InstalledExprImage.instantiateLevels {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl source target}
+    (sourceParameters targetParameters : List Kernel.Name)
+    (sourceArguments targetArguments : List Kernel.Level)
+    (image : InstalledExprImage (V := V) sv tv se te
+      (Kernel.Level.substFn sl sourceParameters sourceArguments)
+      (Kernel.Level.substFn tl targetParameters targetArguments) source target)
+    (sourceLocality : ∀ name info, se.find? name = some info → ∀ first second,
+      (∀ parameter ∈ info.toConstantVal.levelParams, first parameter = second parameter) →
+      sv name first = sv name second)
+    (targetLocality : ∀ name info, te.find? name = some info → ∀ first second,
+      (∀ parameter ∈ info.toConstantVal.levelParams, first parameter = second parameter) →
+      tv name first = tv name second) :
+    InstalledExprImage sv tv se te sl tl
+      (source.instantiateLevelParams sourceParameters sourceArguments)
+      (target.instantiateLevelParams targetParameters targetArguments) := by
+  induction image with
+  | bvar index => exact .bvar index
+  | sort equal =>
+    apply InstalledExprImage.sort
+    simpa only [Kernel.Level.eval_subst] using equal
+  | constant sourceLookup targetLookup sourceArity targetArity values =>
+    refine .constant sourceLookup targetLookup (by simpa using sourceArity) (by simpa using targetArity) ?_
+    calc
+      _ = _ := sourceLocality _ _ sourceLookup _ _ (fun _ present => Kernel.Level.substFn_map_subst sourceArity present)
+      _ = _ := values
+      _ = _ := (targetLocality _ _ targetLookup _ _ (fun _ present => Kernel.Level.substFn_map_subst targetArity present)).symm
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam _ _ regimes ihd ihb =>
+    apply InstalledExprImage.lam ihd ihb
+    simpa only [Kernel.regime, Kernel.Level.holds_substPW] using regimes
+  | forallE _ _ regimes ihd ihb =>
+    apply InstalledExprImage.forallE ihd ihb
+    simpa only [Kernel.regime, Kernel.Level.holds_substPW] using regimes
+  | projTable hs ht position _ ih => exact .projTable hs ht position ih
+  | projFst hs ht _ ih => exact .projFst hs ht ih
+  | projSnd hs ht _ ih => exact .projSnd hs ht ih
+  | natLit _ ih =>
+    apply InstalledExprImage.natLit
+    simpa only [naturalConstructor_instantiateLevels] using ih
+  | strLit _ ih =>
+    apply InstalledExprImage.strLit
+    simpa only [stringConstructor_instantiateLevels] using ih
+
 /-- Position-preserving argument images. Every slot has its own expression
 correspondence even when several constant identities belong to one fiber. -/
 inductive InstalledSpineImage {V : Type u} [Kernel.SetTheory V]

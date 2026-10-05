@@ -132,6 +132,56 @@ theorem PullbackMap.fromEnvs_locality {source target : Kernel.Env}
   simp only [List.getElem_map, Kernel.Level.eval]
   exact agree _ (List.getElem_mem (by omega))
 
+/-- Equal positional argument meanings induce the same selected target
+instance on its actual formals, even when ambient assignments differ. -/
+theorem PullbackMap.fromEnvs_instance {sourceEnv targetEnv : Kernel.Env}
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry targetEntry : Kernel.ConstantInfo}
+    (sourceLookup : sourceEnv.find? name = some sourceEntry)
+    (targetLookup : targetEnv.find? (names name) = some targetEntry)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceEntry.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetEntry.toConstantVal.levelParams.length)
+    (arguments : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+    (parameter : Kernel.Name) (present : parameter ∈ targetEntry.toConstantVal.levelParams) :
+    (PullbackMap.fromEnvs sourceEnv targetEnv names).levels name
+      (Kernel.Level.substFn sourceLevels sourceEntry.toConstantVal.levelParams sourceUs) parameter =
+      Kernel.Level.substFn targetLevels targetEntry.toConstantVal.levelParams targetUs parameter := by
+  obtain ⟨entry, lookup, sourceUnique, targetUnique, sameArity⟩ := association name sourceEntry sourceLookup
+  have equal := Option.some.inj (lookup.symm.trans targetLookup)
+  subst entry
+  obtain ⟨index, inside, rfl⟩ := List.mem_iff_getElem.mp present
+  simp only [PullbackMap.fromEnvs, sourceLookup, targetLookup]
+  rw [levelSubst_get _ targetUnique (by simp [sameArity]) index inside,
+    levelSubst_get _ targetUnique targetArity index inside]
+  simp only [List.getElem_map, Kernel.Level.eval]
+  rw [levelSubst_get _ sourceUnique sourceArity index (by omega)]
+  have sourceBound : index < sourceUs.length := by omega
+  have targetBound : index < targetUs.length := by omega
+  have atIndex := congrArg (fun values : List Nat => values[index]?) arguments
+  simpa [List.getElem?_map, List.getElem?_eq_getElem sourceBound,
+    List.getElem?_eq_getElem targetBound] using atIndex
+
+/-- Constant occurrences at semantically corresponding concrete universe
+arguments, using only actual lookups and target parameter locality. -/
+theorem PullbackMap.fromEnvs_constant_instance {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry targetEntry : Kernel.ConstantInfo}
+    (sourceLookup : sourceEnv.find? name = some sourceEntry)
+    (targetLookup : targetEnv.find? (names name) = some targetEntry)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceEntry.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetEntry.toConstantVal.levelParams.length)
+    (arguments : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (.const name sourceUs) (.const (names name) targetUs) := by
+  apply InstalledExprImage.constant sourceLookup targetLookup sourceArity targetArity
+  apply target.value_params targetLookup
+  exact PullbackMap.fromEnvs_instance association sourceLookup targetLookup sourceLevels targetLevels
+    sourceUs targetUs sourceArity targetArity arguments
+
 /-- Derive constant-instance value equality from actual telescope lookup and
 the target model's proved parameter locality. No per-occurrence value equality
 or source-name injectivity is assumed, including for compatible alias fibers. -/
@@ -453,6 +503,61 @@ theorem checkInstalledMemberExpr_sound {V : Type u} [Kernel.SetTheory V]
       exact (UniverseImage.telescope_recovery sourceLevels sourceUnique targetUnique sameArity parameter present).symm
   next => contradiction
 
+/-- Instantiate a checked actual member field at arbitrary universe
+arguments with equal meanings. Target parameter coverage comes from the
+actual installed field's well-formedness, not from a raw-source guess. -/
+theorem PullbackMap.fromEnvs_instantiated_image {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (targetModel : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry targetEntry : Kernel.ConstantInfo}
+    (sourceLookup : sourceEnv.find? name = some sourceEntry)
+    (targetLookup : targetEnv.find? (names name) = some targetEntry)
+    {source target : Kernel.Expr}
+    (targetBounded : target.allLevelParamsDefined targetEntry.toConstantVal.levelParams = true)
+    (images : ∀ levels, InstalledExprImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values targetModel.public.cval)
+      targetModel.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels) source target)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceEntry.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetEntry.toConstantVal.levelParams.length)
+    (arguments : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values targetModel.public.cval)
+      targetModel.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (source.instantiateLevelParams sourceEntry.toConstantVal.levelParams sourceUs)
+      (target.instantiateLevelParams targetEntry.toConstantVal.levelParams targetUs) := by
+  have sourceLocality := fun name info lookup first second agree =>
+    PullbackMap.values_params (PullbackMap.fromEnvs sourceEnv targetEnv names) targetModel
+      (PullbackMap.fromEnvs_locality association) (name := name) (info := info) lookup first second agree
+  have targetLocality := fun name info lookup first second agree =>
+    targetModel.value_params (name := name) (info := info) lookup first second agree
+  have image := images (Kernel.Level.substFn sourceLevels sourceEntry.toConstantVal.levelParams sourceUs)
+  have atInstance := image.symm.source_levels targetLocality targetBounded (fun parameter present =>
+    (PullbackMap.fromEnvs_instance association sourceLookup targetLookup sourceLevels targetLevels
+      sourceUs targetUs sourceArity targetArity arguments parameter present).symm)
+  exact atInstance.symm.instantiateLevels _ _ _ _ sourceLocality targetLocality
+
+theorem checkInstalledMemberExpr_instance {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (targetModel : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry targetEntry : Kernel.ConstantInfo}
+    (sourceLookup : sourceEnv.find? name = some sourceEntry)
+    (targetLookup : targetEnv.find? (names name) = some targetEntry)
+    {source target : Kernel.Expr}
+    (targetBounded : target.allLevelParamsDefined targetEntry.toConstantVal.levelParams = true)
+    (checked : checkInstalledMemberExpr sourceEnv targetEnv names name source target = some true)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceEntry.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetEntry.toConstantVal.levelParams.length)
+    (arguments : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values targetModel.public.cval)
+      targetModel.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (source.instantiateLevelParams sourceEntry.toConstantVal.levelParams sourceUs)
+      (target.instantiateLevelParams targetEntry.toConstantVal.levelParams targetUs) :=
+  PullbackMap.fromEnvs_instantiated_image targetModel association sourceLookup targetLookup targetBounded
+    (checkInstalledMemberExpr_sound targetModel association sourceLookup checked)
+    sourceLevels targetLevels sourceUs targetUs sourceArity targetArity arguments
+
 def checkInstalledMemberExprs (source target : Kernel.Env)
     (names : Kernel.Name → Kernel.Name) (name : Kernel.Name) :
     List Kernel.Expr → List Kernel.Expr → Option Bool
@@ -659,6 +764,42 @@ theorem checkInstalledRecursors_sound {V : Type u} [Kernel.SetTheory V]
     checkInstalledRecursors_member checked present
   exact ⟨targetHeader, targetRules, targetLookup,
     fun levels => checkInstalledRules_sound target association sourceLookup comparison levels⟩
+
+/-- The actual rule at a checked ordinal has corresponding instantiated
+RHS semantics. Target RHS parameter coverage is extracted from the strong
+model's installed well-formedness, rather than supplied by the generator. -/
+theorem checkInstalledRecursors_rhs_instance {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {major rulePrefix : Nat} {rules : List Kernel.RecRule}
+    (present : Kernel.ConstantInfo.recInfo header major rulePrefix rules ∈ sourceEnv.consts) :
+    ∃ targetHeader targetRules,
+      targetEnv.find? (names header.name) = some (.recInfo targetHeader major rulePrefix targetRules) ∧
+      ∀ index (inside : index < rules.length), ∃ targetRule,
+        targetRules[index]? = some targetRule ∧
+        ∀ sourceLevels targetLevels sourceUs targetUs,
+          sourceUs.length = header.levelParams.length →
+          targetUs.length = targetHeader.levelParams.length →
+          sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels) →
+          InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+            target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+            (rules[index].rhs.instantiateLevelParams header.levelParams sourceUs)
+            (targetRule.rhs.instantiateLevelParams targetHeader.levelParams targetUs) := by
+  obtain ⟨sourceLookup, targetHeader, targetRules, targetLookup, comparison⟩ :=
+    checkInstalledRecursors_member checked present
+  have images := checkInstalledRules_sound target association sourceLookup comparison
+  refine ⟨targetHeader, targetRules, targetLookup, ?_⟩
+  intro index inside
+  have targetInside : index < targetRules.length := by rw [← (images (fun _ => 0)).length]; exact inside
+  refine ⟨targetRules[index], List.getElem?_eq_getElem targetInside, ?_⟩
+  intro sourceLevels targetLevels sourceUs targetUs sourceArity targetArity arguments
+  have wf := target.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem targetLookup)
+  have rhsWf := wf.2.2.2.2.2.1 targetHeader major rulePrefix targetRules rfl
+    targetRules[index] (List.getElem_mem targetInside)
+  exact PullbackMap.fromEnvs_instantiated_image target association sourceLookup targetLookup rhsWf.2.1
+    (fun levels => ((images levels).at index inside).rhs)
+    sourceLevels targetLevels sourceUs targetUs sourceArity targetArity arguments
 
 /-- Check every actual source row, including every member of an alias
 fiber. The source lookup check prevents a shadowed row from borrowing the
@@ -2069,6 +2210,44 @@ theorem PublicRecursorApplication.denotes {V : Type u} [Kernel.SetTheory V]
     indexPin := fun result reading => application.indexPin constructorResidual result
       constructorApplication.residual_shape reading }
   exact prepared.denotes name rules lookup present fires arity
+
+/-- Pull back the actual target fired equation through its component
+images. The target application still carries its real typed telescopes,
+annotation readings and constructor/index/nested-pin conditions; this lemma
+does not replace any of them with rule-list equality or a length check. -/
+theorem PublicRecursorApplication.pullback {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} {target : StrongInstalledModel V targetEnv}
+    {targetLevels : Kernel.Name → Nat} {header : Kernel.ConstantVal}
+    {major params : Nat} {rule : Kernel.RecRule} {universes : List Kernel.Level}
+    (application : PublicRecursorApplication target targetLevels header major params rule universes)
+    (name : Kernel.Name) (rules : List Kernel.RecRule)
+    (lookup : targetEnv.find? name = some (.recInfo header major params rules))
+    (present : rule ∈ rules) (fires : rule.fire ≠ .inert)
+    (arity : universes.length = header.levelParams.length)
+    (sourceValues : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv : Kernel.Env) (sourceLevels : Kernel.Name → Nat)
+    (sourceName sourceConstructor : Kernel.Name) (sourceUs sourceConstructorUs : List Kernel.Level)
+    (sourceRhs : Kernel.Expr) (sourceArguments sourceFields : List Kernel.Expr)
+    (recursorImage : InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (.const sourceName sourceUs) (.const name universes))
+    (constructorImage : InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (.const sourceConstructor sourceConstructorUs) (.const rule.ctor application.constructorUniverses))
+    (rhsImage : InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceRhs (rule.rhs.instantiateLevelParams header.levelParams universes))
+    (argumentImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceArguments (application.argumentExpressions.map (Kernel.Expr.closeN application.depth)))
+    (fieldImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceFields (application.fieldExpressions.map (Kernel.Expr.closeN application.depth))) :
+    ∃ value : V,
+      Kernel.Denotes sourceValues sourceEnv sourceLevels application.valuation
+        (Kernel.Expr.mkAppN (.const sourceName sourceUs)
+          (sourceArguments ++ [Kernel.Expr.mkAppN (.const sourceConstructor sourceConstructorUs) sourceFields])) value ∧
+      Kernel.Denotes sourceValues sourceEnv sourceLevels application.valuation
+        (Kernel.Expr.mkAppN sourceRhs (sourceArguments.take params ++ sourceFields.drop rule.ctorParams)) value := by
+  have appliedImage := (argumentImages.append (.cons (fieldImages.mkAppN constructorImage) .nil)).mkAppN recursorImage
+  have resultImage := ((argumentImages.take params).append (fieldImages.drop rule.ctorParams)).mkAppN rhsImage
+  obtain ⟨value, left, right⟩ := application.denotes name rules lookup present fires arity
+  exact ⟨value, appliedImage.symm.denotes left, resultImage.symm.denotes right⟩
 
 private theorem closeN_app_inv {opened function argument : Kernel.Expr} {depth : Nat}
     (image : opened.closeN depth = .app function argument) :
