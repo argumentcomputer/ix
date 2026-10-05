@@ -65,4 +65,14 @@ example : checkInstalledProjection Env.empty Env.empty id
 example : checkInstalledProjection Env.empty Env.empty id
     (sourceName `Pair) (sourceName `Pair) 2 2 = false := by decide
 
+def memberCompare := checkInstalledMemberExpr aliases target (fun _ => sourceName `shared) (sourceName `first)
+example : memberCompare (.sort (.param (sourceName `u)))
+    (.sort (.param (sourceName `x))) = some true := by decide
+-- An unrelated ambient parameter cannot be mistaken for an owned formal,
+-- even if its unchanged syntax would otherwise compare successfully.
+example : memberCompare (.sort (.param (sourceName `ambient)))
+    (.sort (.param (sourceName `ambient))) = some false := by decide
+example : memberCompare (.lam (.sort .zero) (.bvar 0) ⟨.ifAllZero [sourceName `ambient]⟩)
+    (.lam (.sort .zero) (.bvar 0) ⟨.ifAllZero [sourceName `ambient]⟩) = some false := by decide
+
 end Tests.Ix.CompileCert.InstalledImage

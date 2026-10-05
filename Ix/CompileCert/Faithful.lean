@@ -611,6 +611,59 @@ theorem InstalledExprImage.string {V : Type u} [Kernel.SetTheory V]
   | cons character rest ih =>
     exact .app (.app (.app cons char) (.app ofNat (natural zero succ character.toNat))) ih
 
+theorem naturalConstructor_parameters (parameters : List Kernel.Name) (value : Nat) :
+    (Kernel.natLitToConstructor value).allLevelParamsDefined parameters = true := by
+  cases value <;> rfl
+
+theorem stringConstructor_parameters (parameters : List Kernel.Name) (value : String) :
+    (Kernel.strLitToConstructor value).allLevelParamsDefined parameters = true := by
+  unfold Kernel.strLitToConstructor
+  simp only [Kernel.Expr.allLevelParamsDefined, List.all_nil, Bool.true_and]
+  induction value.toList with
+  | nil => rfl
+  | cons character rest ih => simpa [Kernel.Expr.allLevelParamsDefined, Kernel.Level.allParamsDefined] using ih
+
+/-- Change the source universe assignment only on parameters absent from
+the actual expression. Constant values must obey their actual declaration's
+parameter-locality law; binder semantic annotations are covered explicitly. -/
+theorem InstalledExprImage.source_levels {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl source target}
+    (image : InstalledExprImage (V := V) sv tv se te sl tl source target)
+    (locality : ∀ name info, se.find? name = some info → ∀ first second,
+      (∀ parameter ∈ info.toConstantVal.levelParams, first parameter = second parameter) →
+      sv name first = sv name second)
+    {parameters : List Kernel.Name} {levels : Kernel.Name → Nat}
+    (bounded : source.allLevelParamsDefined parameters = true)
+    (agree : ∀ parameter ∈ parameters, levels parameter = sl parameter) :
+    InstalledExprImage sv tv se te levels tl source target := by
+  induction image with
+  | bvar index => exact .bvar index
+  | sort equality => exact .sort ((Kernel.Level.eval_ext bounded agree).trans equality)
+  | constant sourceLookup targetLookup sourceArity targetArity values =>
+    refine .constant sourceLookup targetLookup sourceArity targetArity (Eq.trans ?_ values)
+    apply locality _ _ sourceLookup
+    apply Kernel.Level.substFn_ext agree
+    · simpa only [Kernel.Expr.allLevelParamsDefined, List.all_eq_true] using bounded
+    · exact sourceArity
+  | app _ _ ihf iha =>
+    simp only [Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at bounded
+    exact .app (ihf bounded.1) (iha bounded.2)
+  | lam _ _ regimes ihd ihb =>
+    simp only [Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at bounded
+    apply InstalledExprImage.lam (ihd bounded.1.1) (ihb bounded.1.2)
+    rw [Kernel.regime, Kernel.PropWhen.holds_ext bounded.2 agree]
+    exact regimes
+  | forallE _ _ regimes ihd ihb =>
+    simp only [Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at bounded
+    apply InstalledExprImage.forallE (ihd bounded.1.1) (ihb bounded.1.2)
+    rw [Kernel.regime, Kernel.PropWhen.holds_ext bounded.2 agree]
+    exact regimes
+  | projTable hs ht position _ ih => exact .projTable hs ht position (ih bounded)
+  | projFst hs ht _ ih => exact .projFst hs ht (ih bounded)
+  | projSnd hs ht _ ih => exact .projSnd hs ht (ih bounded)
+  | natLit _ ih => exact .natLit (ih (naturalConstructor_parameters parameters _))
+  | strLit _ ih => exact .strLit (ih (stringConstructor_parameters parameters _))
+
 /-- Position-preserving argument images. Every slot has its own expression
 correspondence even when several constant identities belong to one fiber. -/
 inductive InstalledSpineImage {V : Type u} [Kernel.SetTheory V]
@@ -792,6 +845,24 @@ theorem UniverseImage.telescope_instance (image : UniverseImage) (targetLevels :
   simp only [List.getElem_map, Kernel.Level.eval]
   rw [levelSubst_get _ sourceUnique argumentArity index (by omega)]
   exact (image.eval targetLevels _).symm
+
+/-- Selecting the target formal telescope and pulling its valuation from
+the source recovers the original assignment on every source formal. No
+claim is made about unrelated ambient parameter names. -/
+theorem UniverseImage.telescope_recovery (sourceLevels : Kernel.Name → Nat)
+    {sourceParameters targetParameters : List Kernel.Name}
+    (sourceUnique : sourceParameters.Nodup) (targetUnique : targetParameters.Nodup)
+    (sameArity : sourceParameters.length = targetParameters.length)
+    (parameter : Kernel.Name) (present : parameter ∈ sourceParameters) :
+    (UniverseImage.select sourceParameters (targetParameters.map Kernel.Level.param)).valuation
+      (Kernel.Level.substFn sourceLevels targetParameters (sourceParameters.map Kernel.Level.param)) parameter =
+      sourceLevels parameter := by
+  rw [UniverseImage.select_valuation]
+  obtain ⟨index, inside, rfl⟩ := List.mem_iff_getElem.mp present
+  rw [levelSubst_get _ sourceUnique (by simp [sameArity]) index inside]
+  simp only [List.getElem_map, Kernel.Level.eval]
+  rw [levelSubst_get _ targetUnique (by simp [sameArity]) index (by omega)]
+  simp only [List.getElem_map, Kernel.Level.eval]
 
 def UniverseImage.asRenaming (image : UniverseImage) : InstalledRenaming where
   name := id

@@ -409,6 +409,50 @@ theorem PullbackMap.values_params {V : Type u} [Kernel.SetTheory V]
   obtain ⟨targetInfo, targetLookup, selection⟩ := locality name info lookup
   exact target.value_params targetLookup _ _ (selection first second agree)
 
+/-- Compare expressions in an actual source member's universe telescope.
+The caller still identifies whether these are its type, value or rule. -/
+def checkInstalledMemberExpr (sourceEnv targetEnv : Kernel.Env)
+    (names : Kernel.Name → Kernel.Name) (name : Kernel.Name)
+    (source target : Kernel.Expr) : Option Bool :=
+  match sourceEnv.find? name, targetEnv.find? (names name) with
+  | some sourceEntry, some targetEntry =>
+    if source.allLevelParamsDefined sourceEntry.toConstantVal.levelParams then
+      checkInstalledExpr sourceEnv targetEnv names
+        (UniverseImage.select sourceEntry.toConstantVal.levelParams
+          (targetEntry.toConstantVal.levelParams.map Kernel.Level.param)) source target
+    else some false
+  | _, _ => some false
+
+/-- Successful comparison yields an image at every original source universe
+assignment. The executable check establishes parameter coverage,
+including binder metadata; target model locality handles unused ambient
+assignments rather than assuming equality of whole valuation functions. -/
+theorem checkInstalledMemberExpr_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (targetModel : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry : Kernel.ConstantInfo}
+    (lookup : sourceEnv.find? name = some sourceEntry)
+    {source target : Kernel.Expr}
+    (checked : checkInstalledMemberExpr sourceEnv targetEnv names name source target = some true)
+    (sourceLevels : Kernel.Name → Nat) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values targetModel.public.cval)
+      targetModel.public.cval sourceEnv targetEnv sourceLevels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name sourceLevels) source target := by
+  obtain ⟨targetEntry, targetLookup, sourceUnique, targetUnique, sameArity⟩ := association name sourceEntry lookup
+  simp only [checkInstalledMemberExpr, lookup, targetLookup] at checked
+  split at checked
+  next bounded =>
+    have image := checkInstalledExpr_sound targetModel association _
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name sourceLevels) checked
+    refine image.source_levels ?_ bounded ?_
+    · intro constant info present first second agree
+      exact PullbackMap.values_params _ targetModel
+        (PullbackMap.fromEnvs_locality association) present first second agree
+    · intro parameter present
+      simp only [PullbackMap.fromEnvs, lookup, targetLookup]
+      exact (UniverseImage.telescope_recovery sourceLevels sourceUnique targetUnique sameArity parameter present).symm
+  next => contradiction
+
 /-- Exact semantic premises of the public model pull-back. In particular,
 types are related to actual target members and False/Eq are related to the
 target model's pinned interpretations, not just to similarly spelled names.
