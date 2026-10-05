@@ -2,6 +2,8 @@ import Ix.CompileCert.Domain
 import Ix.Kernel.Admission.Theorems
 import Ix.Kernel.Verify.Cached.PushChain
 import Ix.Kernel.Verify.Cached.BridgeCS4
+import Ix.Kernel.Model.IndUnitLaw
+import Ix.Kernel.Model.IOLicense
 
 /-! # Admission-connected direct-cone certification
 
@@ -87,6 +89,65 @@ theorem StrongInstalledModel.eq_sound {V : Type u} [Kernel.SetTheory V]
   have equality := strong.public.eq_equality level φ ρ E A left right eqDenotes universeMember leftTyped rightTyped
   rw [equality] at proved
   exact mem_eqv proved
+
+open Kernel.SetTheory Kernel.Semantics Kernel.SetModel Kernel.Model in
+/-- Recover all three Eq argument domains from the exact internal grading.
+The pinned Eq type has three graph-regime binders; graph-domain uniqueness
+identifies the otherwise existential application domains. -/
+theorem StrongInstalledModel.graded_eq_arguments {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (lookup : env.find? Kernel.eqName = some Kernel.eqA)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (carrier left right : AnnotTerm)
+    (graded : WellDenotedV V ρ
+      (.app (.app (.app (strong.internal.base2.acval Kernel.eqName levels) carrier) left) right)) :
+    interp V ρ carrier ∈ˢ univ (levels Kernel.uN) ∧
+      interp V ρ left ∈ˢ interp V ρ carrier ∧ interp V ρ right ∈ˢ interp V ρ carrier := by
+  have carrierTyped := eqSlot_univ strong.internal lookup levels graded
+  obtain ⟨type, read, _, member⟩ := strong.internal.acval_memType lookup levels
+  rw [denoteMeta_eqA_type_gen] at read
+  obtain rfl : type = eqTy levels := (Option.some.inj read).symm
+  have eqTyped := member ρ
+  rw [eqTy_interp] at eqTyped
+  have firstTyped : interp V ρ (.app (strong.internal.base2.acval Kernel.eqName levels) carrier)
+      ∈ˢ piR 1 (interp V ρ carrier) (fun _ => piR 1 (interp V ρ carrier) (fun _ => univZero)) := by
+    rw [interp_app]
+    exact app_mem_piR_pos Nat.one_ne_zero eqTyped carrierTyped
+  have rightSlot := graded.1
+  rw [WellDenoted_app] at rightSlot
+  have leftSlot := rightSlot.1
+  rw [WellDenoted_app] at leftSlot
+  obtain ⟨_, _, _, _, _, leftFunction, leftArgument, _⟩ := leftSlot
+  have leftTyped := io_domain_transfer Nat.one_ne_zero leftFunction leftArgument firstTyped
+  have secondTyped : interp V ρ
+      (.app (.app (strong.internal.base2.acval Kernel.eqName levels) carrier) left)
+      ∈ˢ piR 1 (interp V ρ carrier) (fun _ => univZero) := by
+    rw [interp_app]
+    exact app_mem_piR_pos Nat.one_ne_zero firstTyped leftTyped
+  obtain ⟨_, _, _, _, _, rightFunction, rightArgument, _⟩ := rightSlot
+  exact ⟨carrierTyped, leftTyped,
+    io_domain_transfer Nat.one_ne_zero rightFunction rightArgument secondTyped⟩
+
+open Kernel.SetTheory Kernel.Semantics Kernel.SetModel Kernel.Model in
+/-- A graded, inhabited exact Eq spine proves equality in the same strong
+model. Grading is indispensable and remains explicit at this interface. -/
+theorem StrongInstalledModel.graded_eq_sound {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (lookup : env.find? Kernel.eqName = some Kernel.eqA)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (carrier left right : AnnotTerm)
+    (graded : WellDenotedV V ρ
+      (.app (.app (.app (strong.internal.base2.acval Kernel.eqName levels) carrier) left) right))
+    {proof : V} (member : proof ∈ˢ interp V ρ
+      (.app (.app (.app (strong.internal.base2.acval Kernel.eqName levels) carrier) left) right)) :
+    interp V ρ left = interp V ρ right := by
+  obtain ⟨carrierTyped, leftTyped, rightTyped⟩ :=
+    strong.graded_eq_arguments lookup levels ρ carrier left right graded
+  have law := (strong.internal.eq_law lookup levels).1 ρ
+    (interp V ρ carrier) (interp V ρ left) (interp V ρ right) carrierTyped leftTyped rightTyped
+  simp only [interp_app] at member
+  rw [law] at member
+  exact mem_eqv member
 
 namespace AnnotationTrace
 
