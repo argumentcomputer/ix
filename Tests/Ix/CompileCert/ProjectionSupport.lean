@@ -50,7 +50,9 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
       | .error error => throw (IO.userError s!"target support {root}: {supportLabel error}")
     let endpoint := readInstalledEquationFrame bundle.env (names receipt.data.equation.name)
       (projection.site.owner.numParams + projection.site.ctor.numFields)
+    let originalIdentity := checkInstalledAssociation accepted.env bundle.env id
     IO.println s!"SUPPORT {root}: source={coverage.env.consts.length}, target={bundle.env.consts.length}, original-preserved={decide (InstalledRowsPreserved accepted.env bundle.env)}, equation-frame={endpoint.isSome}"
+    IO.println s!"ORIGINAL-SEMANTIC-IDENTITY {root}: {repr originalIdentity}"
     IO.println s!"CHECKS names={decide (SemanticNamesAgree accepted names)} telescopes={checkTelescopes coverage.env bundle.env names} types={checkInstalledTypes coverage.env bundle.env names} definitions={checkInstalledDefinitions coverage.env bundle.env names} caps={checkInstalledCapabilities coverage.env bundle.env names} recursors={checkInstalledRecursors coverage.env bundle.env names} constructors={checkInstalledConstructors coverage.env bundle.env names} aggregate={repr (checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names)}"
     for entry in coverage.env.consts do
       let mapped := names entry.name
@@ -64,6 +66,8 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
         unless typeCheck == some true do
           IO.println s!"TYPE source={entry.name} mapped={mapped} result={repr typeCheck} source-type={repr entry.toConstantVal.type} target-type={repr targetEntry.toConstantVal.type}"
     unless endpoint.isSome do throw (IO.userError "target equation endpoint missing")
+    unless originalIdentity == some true do
+      throw (IO.userError "original artifact semantic identity remains unresolved")
     unless checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names == some true do
       throw (IO.userError s!"full installed support association remains unresolved for {root}")
 
