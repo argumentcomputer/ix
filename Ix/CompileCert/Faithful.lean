@@ -1,6 +1,8 @@
 import Ix.CompileCert.Translate
 import Ix.Kernel.Ixon.ReaderSpec
 import Ix.Kernel.Denotes
+import Ix.Kernel.Verify.Subst
+import Ix.Kernel.Verify.InferLeaves
 
 /-! # Direct reader correspondence
 
@@ -630,5 +632,223 @@ theorem original_projection_function_extensional {source : Source} (site : Sourc
   intro subject typed
   exact (original_projection_extensional site values levels parameters valid carrier lowered
     coverage computation subject typed).2 _ (originalReading subject typed)
+
+/-! A field tuple is typed against the actual annotated telescope, including
+all dependencies on earlier fields. The residual expression and valuation are
+outputs, so instantiation cannot silently switch to a different telescope. -/
+
+open Kernel.SetTheory in
+inductive InstalledTelescope {V : Type u} [Kernel.SetTheory V]
+    (values : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env)
+    (levels : Kernel.Name → Nat) :
+    (Nat → V) → Kernel.Expr → List V → (Nat → V) → Kernel.Expr → Prop
+  | nil {ρ expression} : InstalledTelescope values env levels ρ expression [] ρ expression
+  | cons {ρ domain body binder argument A arguments finalρ result}
+      (domainDenoted : Kernel.Denotes values env levels ρ domain A)
+      (argumentTyped : argument ∈ˢ A)
+      (rest : InstalledTelescope values env levels (Kernel.push argument ρ)
+        body arguments finalρ result) :
+      InstalledTelescope values env levels ρ (.forallE domain body binder)
+        (argument :: arguments) finalρ result
+
+open Kernel.SetTheory in
+/-- Apply a member of the actual installed type to a dependent typed tuple.
+No binder regime is guessed, and no unchecked source telescope is substituted. -/
+theorem InstalledTelescope.apply {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ expression arguments finalρ result)
+    {type function : V} (denoted : Kernel.Denotes values env levels ρ expression type)
+    (member : function ∈ˢ type) :
+    ∃ residual, Kernel.Denotes values env levels finalρ result residual ∧
+      arguments.foldl app function ∈ˢ residual := by
+  induction typed generalizing type function with
+  | nil => exact ⟨type, denoted, member⟩
+  | cons domainDenoted argumentTyped rest ih =>
+    obtain ⟨next, readNext, memberNext⟩ :=
+      installed_forall_elim denoted member domainDenoted argumentTyped
+    exact ih readNext memberNext
+
+open Kernel.SetTheory in
+theorem InstalledTelescope.model_apply {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (model : Kernel.Model V env)
+    {constant : Kernel.ConstantInfo} (installed : constant ∈ env.consts)
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope model.cval env levels ρ constant.toConstantVal.type
+      arguments finalρ result) :
+    ∃ residual, Kernel.Denotes model.cval env levels finalρ result residual ∧
+      arguments.foldl app (model.cval constant.name levels) ∈ˢ residual := by
+  obtain ⟨type, denoted, member⟩ := model.mem constant installed levels ρ
+  exact typed.apply denoted member
+
+/-- Valuations related by insertion of `amount` slots below `cutoff`.
+The inserted values are arbitrary and cannot affect the lifted expression. -/
+def ValuationLift {V : Type u} (amount cutoff : Nat) (ρ target : Nat → V) : Prop :=
+  ∀ index, target (if index ≥ cutoff then index + amount else index) = ρ index
+
+theorem ValuationLift.push {V : Type u} {amount cutoff : Nat} {ρ target : Nat → V}
+    (related : ValuationLift amount cutoff ρ target) (value : V) :
+    ValuationLift amount (cutoff + 1) (Kernel.push value ρ) (Kernel.push value target) := by
+  intro index
+  cases index with
+  | zero => simp [Kernel.push]
+  | succ index =>
+    have old := related index
+    by_cases below : index ≥ cutoff
+    · simp only [if_pos below] at old
+      simpa [show index + 1 ≥ cutoff + 1 by omega, Kernel.push,
+        Nat.add_right_comm index 1 amount] using old
+    · simp only [if_neg below] at old
+      simpa [show ¬ index + 1 ≥ cutoff + 1 by omega, Kernel.push] using old
+
+/-- Public installed denotation is preserved by capture-avoiding weakening.
+This transports dependent field domains across the extra subject/Prop binders
+of the independently checked coverage certificate. -/
+theorem denotes_lift {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V} {expression : Kernel.Expr} {value : V}
+    (denoted : Kernel.Denotes values env levels ρ expression value)
+    {amount cutoff : Nat} {target : Nat → V}
+    (related : ValuationLift amount cutoff ρ target) :
+    Kernel.Denotes values env levels target (expression.liftLooseBVars amount cutoff) value := by
+  induction denoted generalizing cutoff target with
+  | bvar =>
+    rename_i old index
+    simp only [Kernel.Expr.liftLooseBVars]
+    split <;> rename_i h
+    · have same := related index
+      rw [if_pos h] at same
+      rw [← same]
+      exact .bvar
+    · have same := related index
+      rw [if_neg h] at same
+      rw [← same]
+      exact .bvar
+  | sort => exact .sort
+  | const hf hlen => exact .const hf hlen
+  | app hf ha ihf iha => exact .app (ihf related) (iha related)
+  | lam hA hF hP ihA ihF =>
+    exact .lam (ihA related) (fun x hx => ihF x hx (related.push x)) hP
+  | pi hA hB hP ihA ihB =>
+    exact .pi (ihA related) (fun x hx => ihB x hx (related.push x)) hP
+  | proj_table lookup he ih => exact .proj_table lookup (ih related)
+  | proj_fst lookup he ih => exact .proj_fst lookup (ih related)
+  | proj_snd lookup he ih => exact .proj_snd lookup (ih related)
+  | natLit h ih =>
+    apply Kernel.Denotes.natLit
+    have lifted := ih related
+    simpa only [Kernel.Expr.liftLooseBVars_eq_self
+      (Kernel.natLitToConstructor_looseBVars _)] using lifted
+  | strLit h ih =>
+    apply Kernel.Denotes.strLit
+    have lifted := ih related
+    simpa only [Kernel.Expr.liftLooseBVars_eq_self
+      (Kernel.strLitToConstructor_looseBVars _ _)] using lifted
+
+def pushArguments {V : Type u} (ρ : Nat → V) : List V → Nat → V
+  | [] => ρ
+  | argument :: rest => pushArguments (Kernel.push argument ρ) rest
+
+/-- The same dependent tuple remains typed after inserting arbitrary slots.
+Both the residual expression's cutoff and its valuation track every consumed
+binder. This is stronger than equality of field counts or isolated domains. -/
+theorem InstalledTelescope.lift {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ expression arguments finalρ result)
+    {amount cutoff : Nat} {target : Nat → V}
+    (related : ValuationLift amount cutoff ρ target) :
+    ValuationLift amount (cutoff + arguments.length) finalρ (pushArguments target arguments) ∧
+      InstalledTelescope values env levels target (expression.liftLooseBVars amount cutoff)
+        arguments (pushArguments target arguments)
+        (result.liftLooseBVars amount (cutoff + arguments.length)) := by
+  induction typed generalizing cutoff target with
+  | nil => exact ⟨related, .nil⟩
+  | cons domainDenoted argumentTyped rest ih =>
+    obtain ⟨finalRelated, lifted⟩ := ih (related.push _)
+    constructor
+    · simpa only [pushArguments, List.length_cons, Nat.add_assoc,
+        Nat.add_comm 1] using finalRelated
+    · simp only [Kernel.Expr.liftLooseBVars, pushArguments, List.length_cons]
+      apply InstalledTelescope.cons (denotes_lift domainDenoted related) argumentTyped
+      simpa only [Nat.add_assoc, Nat.add_comm 1] using lifted
+
+/-- Exactly the binder prefix consumed when reading the checked statement. -/
+inductive InstalledBinderPrefix : Nat → Kernel.Expr → Prop
+  | zero (expression) : InstalledBinderPrefix 0 expression
+  | succ {count domain body binder} (rest : InstalledBinderPrefix count body) :
+      InstalledBinderPrefix (count + 1) (.forallE domain body binder)
+
+open Kernel.SetTheory in
+/-- Introduce a continuation over an actual annotated dependent telescope.
+Every possible typed tuple must leave an inhabited residual statement.
+The constructed member respects the checker's regime, including Prop. -/
+theorem InstalledBinderPrefix.inhabited {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {count : Nat} {expression : Kernel.Expr}
+    (binders : InstalledBinderPrefix count expression)
+    {ρ : Nat → V} {type : V}
+    (denoted : Kernel.Denotes values env levels ρ expression type)
+    (leaves : ∀ (arguments : List V) (finalρ : Nat → V) (result : Kernel.Expr),
+      arguments.length = count →
+      InstalledTelescope values env levels ρ expression arguments finalρ result →
+      ∃ residual, Kernel.Denotes values env levels finalρ result residual ∧
+        ∃ member, member ∈ˢ residual) :
+    ∃ member, member ∈ˢ type := by
+  classical
+  induction binders generalizing ρ type with
+  | zero expression =>
+    obtain ⟨residual, readResidual, member, typed⟩ := leaves [] ρ expression rfl .nil
+    obtain rfl := Kernel.Denotes_functional readResidual denoted
+    exact ⟨member, typed⟩
+  | @succ count domain body binder rest ih =>
+    cases denoted with
+    | @pi _ _ _ _ A B hA hB hP =>
+      have inhabited : ∀ x, x ∈ˢ A → ∃ member, member ∈ˢ B x := by
+        intro x hx
+        apply ih (hB x hx)
+        intro arguments finalρ result length typed
+        exact leaves (x :: arguments) finalρ result (by simp [length])
+          (.cons hA hx typed)
+      let witness (x : V) : V := if hx : x ∈ˢ A then
+        Classical.choose (inhabited x hx) else empty
+      refine ⟨Kernel.SetModel.lamR (Kernel.regime levels binder.pw) A witness,
+        Kernel.SetModel.lamR_mem ?_⟩
+      intro x hx
+      dsimp [witness]
+      rw [dif_pos hx]
+      exact Classical.choose_spec (inhabited x hx)
+
+open Kernel.SetTheory in
+/-- Interpret the final two binders of the checked Church statement.
+The continuation is read under the actual proposition binder; no raw binder
+annotation is asserted to have the same semantics as its installed image. -/
+theorem installed_church_elim {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {continuation : Kernel.Expr} {outer inner : Kernel.BinderMeta} {type proof : V}
+    (denoted : Kernel.Denotes values env levels ρ
+      (.forallE (.sort .zero) (.forallE continuation (.bvar 1) inner) outer) type)
+    (member : proof ∈ˢ type)
+    (proposition : V) (isProp : proposition ∈ˢ univ 0)
+    (continuationInhabited : ∃ continuationType,
+      Kernel.Denotes values env levels (Kernel.push proposition ρ) continuation continuationType ∧
+      ∃ witness, witness ∈ˢ continuationType) :
+    pt ∈ˢ proposition := by
+  obtain ⟨middle, readMiddle, memberMiddle⟩ := installed_forall_elim denoted member
+    (Kernel.Denotes.sort (u := .zero)) isProp
+  obtain ⟨continuationType, readContinuation, witness, witnessTyped⟩ := continuationInhabited
+  obtain ⟨result, readResult, memberResult⟩ :=
+    installed_forall_elim readMiddle memberMiddle readContinuation witnessTyped
+  have same : result = proposition := by
+    cases readResult
+    rfl
+  subst result
+  have point := Kernel.SetTheory.eq_pt_of_mem_univZero
+    (by simpa only [univ_zero] using isProp) memberResult
+  rwa [point] at memberResult
 
 end Ix.CompileCert
