@@ -8,9 +8,23 @@ open _root_.Ix.CompileCert
 def label : SourceInstallError → String
   | .incomplete => "incomplete source closure"
   | .exportFailure reason => s!"export: {reason}"
+  | .correspondence => "source-entry correspondence"
   | .checking error position => s!"checking at {position}: {error}"
 
 def controls : List (String × (Unit → Bool)) := [
+  ("source correspondence rejects an independently checked alternative body", fun _ =>
+    match exportSourceDeclarations Direct.choiceInput.source,
+        exportSourceExpr [`u] (Direct.sourceValue false) with
+    | .ok #[.defnDecl header _ hint], .ok other =>
+      let altered := #[_root_.Ix.Kernel.Declaration.defnDecl header other hint]
+      (_root_.Ix.Kernel.Cached.checkDecls .verified [] altered).isOk &&
+        !decide (SourceEntryCorrespondence Direct.choiceInput.source altered)
+    | _, _ => false),
+  ("source correspondence retains exact original reducibility hints", fun _ =>
+    match exportSourceDeclarations Direct.choiceInput.source with
+    | .ok #[.defnDecl header body _] =>
+      !decide (SourceEntryCorrespondence Direct.choiceInput.source #[.defnDecl header body .abbrev])
+    | _ => false),
   ("source groups cannot omit declarations", fun _ =>
     !(validateSourceGroups Direct.choiceInput.source []).isOk),
   ("source groups cannot duplicate identities", fun _ =>

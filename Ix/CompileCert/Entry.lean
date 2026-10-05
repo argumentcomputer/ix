@@ -18,6 +18,27 @@ namespace Ix.CompileCert
 open Kernel.Reader
 open Kernel.Admission
 
+/-- Every original source entry is compared against the full declaration
+entries actually submitted to the independent source checker. Exact equality
+retains bodies, hints, constructor arities and ordered recursor rules. -/
+def SourceEntryMatches (ci : Lean.ConstantInfo) (declarations : Array Kernel.Declaration) : Prop :=
+  match exportSourceEntry ci with
+  | .error _ => False
+  | .ok expected => expected ∈ streamEntries declarations
+
+instance (ci : Lean.ConstantInfo) (declarations : Array Kernel.Declaration) :
+    Decidable (SourceEntryMatches ci declarations) :=
+  match h : exportSourceEntry ci with
+  | .error _ => by simp only [SourceEntryMatches, h]; infer_instance
+  | .ok _ => by simp only [SourceEntryMatches, h]; infer_instance
+
+def SourceEntryCorrespondence (source : Source) (declarations : Array Kernel.Declaration) : Prop :=
+  ∀ ci ∈ source.declarations, SourceEntryMatches ci declarations
+
+instance (source : Source) (declarations : Array Kernel.Declaration) :
+    Decidable (SourceEntryCorrespondence source declarations) :=
+  inferInstanceAs (Decidable (∀ ci ∈ source.declarations, SourceEntryMatches ci declarations))
+
 /-- An independent source installation attempt has no target map, reader,
 bytes, hint oracle or target normalization state. Empty accelerator pins
 request ordinary verified checking of the actual source definitions. -/
@@ -25,12 +46,14 @@ structure SourceInstallation (source : Source) (roots : List Lean.Name) where
   complete : CompleteSource source roots
   declarations : Array Kernel.Declaration
   exported : exportSourceDeclarations source = .ok declarations
+  members : SourceEntryCorrespondence source declarations
   env : Kernel.Env
   checked : Kernel.Cached.checkDecls .verified [] declarations = .ok env
 
 inductive SourceInstallError where
   | incomplete
   | exportFailure (reason : String)
+  | correspondence
   | checking (error : Kernel.CheckError) (position : Nat)
 
 /-- Success is evidence of this run, not a definition of the intended Dom.
@@ -42,9 +65,11 @@ def installSource (source : Source) (roots : List Lean.Name) :
     match he : exportSourceDeclarations source with
     | .error reason => .error (.exportFailure reason)
     | .ok declarations =>
-      match hk : Kernel.Cached.checkDecls .verified [] declarations with
-      | .error (error, position) => .error (.checking error position)
-      | .ok env => .ok ⟨hc, declarations, he, env, hk⟩
+      if hm : SourceEntryCorrespondence source declarations then
+        match hk : Kernel.Cached.checkDecls .verified [] declarations with
+        | .error (error, position) => .error (.checking error position)
+        | .ok env => .ok ⟨hc, declarations, he, hm, env, hk⟩
+      else .error .correspondence
   else .error .incomplete
 
 theorem SourceInstallation.has_model (V : Type u) [Kernel.SetTheory V]
@@ -75,6 +100,39 @@ theorem SourceInstallation.declarations_perm {source : Source} {roots : List Lea
       installed.declarations.toList.Perm (groups.map SourceDeclGroup.declaration) := by
   obtain ⟨groups, _, covered, ordered⟩ := installed.groups
   exact ⟨groups, covered, by simpa using orderSourceGroups_perm ordered⟩
+
+/-- Each original source member has an exact entry in an actual declaration
+of the accepted source fold. This retains full fields, not just membership
+of an installation skeleton. Annotation pull-back remains a separate proof. -/
+theorem SourceInstallation.member {source : Source} {roots : List Lean.Name}
+    (installed : SourceInstallation source roots) {ci : Lean.ConstantInfo}
+    (present : ci ∈ source.declarations) :
+    ∃ entry declaration, exportSourceEntry ci = .ok entry ∧
+      declaration ∈ installed.declarations.toList ∧ entry ∈ readerEntries declaration ∧
+      Kernel.Cached.checkDecls .verified [] installed.declarations = .ok installed.env := by
+  have matched := installed.members ci present
+  cases he : exportSourceEntry ci with
+  | error reason => simp [SourceEntryMatches, he] at matched
+  | ok entry =>
+    have hm : entry ∈ installed.declarations.toList.flatMap readerEntries := by
+      simpa only [SourceEntryMatches, he, streamEntries] using matched
+    obtain ⟨declaration, hd, hm⟩ := List.mem_flatMap.mp hm
+    exact ⟨entry, declaration, rfl, hd, hm, installed.checked⟩
+
+/-- For declarations with the existing kernel's singleton install receipt,
+the source-entry provenance reaches an actual environment constant. Block
+members still use the full-stream skeleton theorem; this statement does not
+invent a singleton receipt for inductive or quotient declarations. -/
+theorem SourceInstallation.member_installed {source : Source} {roots : List Lean.Name}
+    (installed : SourceInstallation source roots) {ci : Lean.ConstantInfo}
+    (present : ci ∈ source.declarations) :
+    ∃ entry declaration, exportSourceEntry ci = .ok entry ∧
+      declaration ∈ installed.declarations.toList ∧ entry ∈ readerEntries declaration ∧
+      ∀ skeleton, Kernel.Cached.declSkel declaration = some skeleton →
+        ∃ actual ∈ installed.env.consts, Kernel.Cached.ciSkel actual = skeleton := by
+  obtain ⟨entry, declaration, exported, presentDecl, entryMem, checked⟩ := installed.member present
+  exact ⟨entry, declaration, exported, presentDecl, entryMem,
+    fun _ hs => Kernel.Cached.checkDecls_installs checked (by simpa using presentDecl) hs⟩
 
 structure ArtifactInput where
   limits : Limits
