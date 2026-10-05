@@ -6952,4 +6952,75 @@ theorem InstalledSpineImage.get {V : Type u} [Kernel.SetTheory V]
     | zero => exact head
     | succ index => exact ih index (by simpa using bound)
 
+/-- An executable-selected actual fired rule and its constructor. Every
+record is tied to the same environment and ordinal; no default or supplied
+constructor record can stand in for a missing lookup. -/
+structure InstalledRuleFrame (env : Kernel.Env) (name : Kernel.Name) (index : Nat) where
+  header : Kernel.ConstantVal
+  major : Nat
+  rulePrefix : Nat
+  rules : List Kernel.RecRule
+  rule : Kernel.RecRule
+  constructor : Kernel.ConstantVal
+  constructorParams : Nat
+  constructorFields : Nat
+  recursorLookup : env.find? name = some (.recInfo header major rulePrefix rules)
+  ruleLookup : rules[index]? = some rule
+  fires : rule.fire ≠ .inert
+  constructorLookup : env.find? rule.ctor = some (.ctorInfo constructor constructorParams constructorFields)
+
+def readInstalledRuleFrame (env : Kernel.Env) (name : Kernel.Name) (index : Nat) :
+    Option (InstalledRuleFrame env name index) :=
+  match recursorLookup : env.find? name with
+  | some (.recInfo header major rulePrefix rules) =>
+    match ruleLookup : rules[index]? with
+    | some rule =>
+      if fires : rule.fire = .inert then none else
+      match constructorLookup : env.find? rule.ctor with
+      | some (.ctorInfo constructor constructorParams constructorFields) =>
+        some {
+          header := header, major := major, rulePrefix := rulePrefix, rules := rules,
+          rule := rule, constructor := constructor, constructorParams := constructorParams,
+          constructorFields := constructorFields, recursorLookup := recursorLookup,
+          ruleLookup := ruleLookup, fires := fires, constructorLookup := constructorLookup }
+      | _ => none
+    | none => none
+  | _ => none
+
+def checkInstalledRuleUniverses (env : Kernel.Env) (name : Kernel.Name) (index : Nat)
+    (universes constructorUniverses : List Kernel.Level) : Option Bool :=
+  match readInstalledRuleFrame env name index with
+  | none => some false
+  | some frame =>
+    if universes.length = frame.header.levelParams.length ∧
+        constructorUniverses.length = frame.constructor.levelParams.length then
+      Kernel.Level.isEquivList constructorUniverses
+        (Kernel.recFireComparands frame.rule frame.header.levelParams universes
+          frame.constructor.levelParams [] frame.rulePrefix).1
+    else some false
+
+/-- Acceptance establishes the exact full assignment equality required by
+the stored fired-rule law, for every base valuation. Resource-unknown level
+comparison remains `none`; it is not a proof of inequality or a domain cut. -/
+theorem checkInstalledRuleUniverses_sound {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
+    {universes constructorUniverses : List Kernel.Level}
+    (checked : checkInstalledRuleUniverses env name index universes constructorUniverses = some true) :
+    ∃ frame : InstalledRuleFrame env name index,
+      readInstalledRuleFrame env name index = some frame ∧
+      universes.length = frame.header.levelParams.length ∧
+      constructorUniverses.length = frame.constructor.levelParams.length ∧
+      ∀ levels, Kernel.Level.substFn levels frame.constructor.levelParams constructorUniverses =
+        Kernel.Level.substFn levels frame.constructor.levelParams
+          (Kernel.recFireComparands frame.rule frame.header.levelParams universes
+            frame.constructor.levelParams [] frame.rulePrefix).1 := by
+  cases selected : readInstalledRuleFrame env name index with
+  | none => simp [checkInstalledRuleUniverses, selected] at checked
+  | some frame =>
+    simp only [checkInstalledRuleUniverses, selected] at checked
+    split at checked
+    next arities =>
+      exact ⟨frame, rfl, arities.1, arities.2, fun levels =>
+        Kernel.Level.substFn_congr (Kernel.Level.isEquivList_sound checked levels)⟩
+    next => contradiction
+
 end Ix.CompileCert

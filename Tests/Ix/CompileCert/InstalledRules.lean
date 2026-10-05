@@ -59,7 +59,39 @@ def run : IO Unit := do
   require "nested pin omission" (compare (.nested [.zero] [.bvar 0])
     (.nested [.zero] []) == some false)
   require "source actual rules retained" (rules.length == 2)
-  IO.println "installed rules: independent Nat folds; 21 controls passed"
+  require "actual Nat constructor universe selection"
+    (checkInstalledRuleUniverses target header.name 0 [.zero] [] == some true)
+  require "missing rule ordinal" (checkInstalledRuleUniverses target header.name 2 [.zero] [] != some true)
+  require "wrong recursor arity" (checkInstalledRuleUniverses target header.name 0 [] [] != some true)
+  require "wrong constructor arity" (checkInstalledRuleUniverses target header.name 0 [.zero] [.zero] != some true)
+  require "inert rule cannot supply fired frame"
+    (checkInstalledRuleUniverses (alterRules target (List.map fun r => { r with fire := .inert }))
+      header.name 0 [.zero] [] != some true)
+  let unit ← match Cached.checkDecls .verified [] #[.basisDecl .punitK] with
+    | .ok env => pure env
+    | .error _ => throw (IO.userError "actual PUnit fold failed")
+  let recursor := punitName.str "rec"
+  require "actual PUnit constructor universe selection"
+    (checkInstalledRuleUniverses unit recursor 0 [.zero, .succ .zero] [.succ .zero] == some true)
+  require "semantic constructor level alias"
+    (checkInstalledRuleUniverses unit recursor 0 [.zero, .succ .zero] [.max .zero (.succ .zero)] == some true)
+  require "wrong concrete constructor universe"
+    (checkInstalledRuleUniverses unit recursor 0 [.zero, .succ .zero] [.zero] != some true)
+  let withoutConstructor : Env := ⟨unit.consts.filter (fun entry => entry.name != punitUnitName)⟩
+  require "missing actual constructor"
+    (checkInstalledRuleUniverses withoutConstructor recursor 0 [.zero, .succ .zero] [.succ .zero] != some true)
+  let wrongConstructor : Env := ⟨unit.consts.map fun entry =>
+    if entry.name = punitUnitName then .axiomInfo entry.toConstantVal else entry⟩
+  require "wrong constructor kind"
+    (checkInstalledRuleUniverses wrongConstructor recursor 0 [.zero, .succ .zero] [.succ .zero] != some true)
+  -- Synthetic firing-mode mutation exercises nested universe substitution;
+  -- it is not asserted to be an admitted nested block.
+  let nested := alterRules unit (List.map fun r => { r with fire := .nested [.succ (.param uN)] [] })
+  require "nested concrete universe substitution"
+    (checkInstalledRuleUniverses nested recursor 0 [.zero, .succ .zero] [.succ (.succ .zero)] == some true)
+  require "nested universe mismatch"
+    (checkInstalledRuleUniverses nested recursor 0 [.zero, .succ .zero] [.succ .zero] != some true)
+  IO.println "installed rules: actual Nat/PUnit folds; 33 rule/universe controls passed"
 
 end Tests.Ix.CompileCert.InstalledRules
 
