@@ -115,6 +115,35 @@ def runNormalized : IO Unit := do
       IO.println s!"SOURCE-NORMALIZED {root}: original={installed.original.size} model={installed.modelProposal.declarations.size} checked={installed.declarations.length} constructorEquations={laws.length}"
       if root == Compiled.prefixName ++ `Node.val || root == Compiled.prefixName ++ `Node.kids then
         unless laws.length > 0 do throw (IO.userError "nested projection lacks a checked constructor equation")
+        let some original := installed.modelProposal.declarations.toList.find?
+            (fun declaration => decide (declaration.names = [sourceName root]))
+          | throw (IO.userError "original projection missing from model proposal")
+        let some replacement := installed.declarations.find?
+            (fun declaration => decide (declaration.names = [sourceName root]))
+          | throw (IO.userError "replacement projection missing from normalized stream")
+        let some equation := laws.head? | throw (IO.userError "projection equation missing")
+        let receipt ← IO.ofExcept (checkSourceProjectionReceipt captured.source original replacement equation)
+        let wrongHint := if decide (receipt.hint = .opaque) then Ix.Kernel.ReducibilityHint.abbrev else .opaque
+        for (why, input, candidate, law) in
+            [("original body", Ix.Kernel.Declaration.defnDecl receipt.header (.bvar 1000) receipt.hint,
+                replacement, equation),
+             ("replacement type", original,
+                .defnDecl { receipt.header with type := .sort .zero } receipt.value receipt.hint, equation),
+             ("replacement hint", original,
+                .defnDecl receipt.header receipt.value wrongHint, equation),
+             ("equation proof", original, replacement,
+                match equation with
+                | .thmDecl header _ => .thmDecl header (.bvar 1000)
+                | declaration => declaration)] do
+          match checkSourceProjectionReceipt captured.source input candidate law with
+          | .ok _ => throw (IO.userError s!"independent source receipt accepted tampered {why}")
+          | .error _ => IO.println s!"PASS: independent source receipt rejects {why} for {root}"
+        if root == Compiled.prefixName ++ `Node.val then
+          let otherSite ← IO.ofExcept (sourceProjectionSite captured.source receipt.ownerName 1)
+          let otherEquation ← IO.ofExcept (sourceProjectionEquation otherSite receipt.header receipt.level)
+          match checkSourceProjectionReceipt captured.source original replacement otherEquation with
+          | .ok _ => throw (IO.userError "source receipt accepted another original constructor field")
+          | .error _ => IO.println "PASS: independent source receipt rejects another constructor field"
         let tampered := installed.declarations.map fun
           | .thmDecl header value =>
             if header.name.toString.endsWith "._source_constructor_equation" then
