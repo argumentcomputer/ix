@@ -7611,4 +7611,164 @@ theorem InstalledRuleFrame.checked_tuple_typing {V : Type u} [Kernel.SetTheory V
     ⟨recursorFinal, targetRecursorResult, ?_⟩⟩
   simpa only [Kernel.ConstantInfo.toConstantVal, constructorValue] using recursorTyped
 
+theorem ArgumentAnnotations.drop {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {valuation : Nat → V} {expressions : List Kernel.Expr}
+    {annotations : List Kernel.Semantics.AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth valuation expressions annotations) (count : Nat) :
+    ArgumentAnnotations strong levels depth valuation (expressions.drop count) (annotations.drop count) := by
+  induction readings generalizing count with
+  | nil => simp; exact .nil
+  | cons head tail ih =>
+    cases count with
+    | zero => exact .cons head tail
+    | succ count => exact ih count
+
+/-- Installed types are closed, so the two semantic tuples can be realized
+under a common fresh-variable valuation without a representability premise. -/
+theorem RuleTupleTyping.rebase {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    (wf : Kernel.EnvWF env) {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {valuation : Nat → V} {arguments fields : List V}
+    (typed : RuleTupleTyping values env levels frame universes constructorUniverses valuation arguments fields)
+    (fresh : Nat → V) : RuleTupleTyping values env levels frame universes constructorUniverses fresh arguments fields := by
+  have constructorWf := wf _ (Kernel.Semantics.Env.find?_mem frame.constructorLookup)
+  have recursorWf := wf _ (Kernel.Semantics.Env.find?_mem frame.recursorLookup)
+  have constructorBound : (frame.constructor.type.instantiateLevelParams
+      frame.constructor.levelParams constructorUniverses).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact constructorWf.2.2.2.1
+  have recursorBound : (frame.header.type.instantiateLevelParams frame.header.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact recursorWf.2.2.2.1
+  obtain ⟨_, result, constructorTyped⟩ := typed.constructorTyped
+  obtain ⟨_, recursorResult, recursorTyped⟩ := typed.recursorTyped
+  exact ⟨⟨_, result, (constructorTyped.rebase constructorBound (fun _ bound => by omega)).2⟩,
+    ⟨_, recursorResult, (recursorTyped.rebase recursorBound (fun _ bound => by omega)).2⟩⟩
+
+open Kernel.Semantics in
+/-- A common actual annotation representation of arbitrary argument and
+field values. Metadata is used only for scope/read behavior, not as evidence
+of source inference or of semantic annotation correspondence. -/
+structure RuleTupleRepresentation {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    {name : Kernel.Name} {index : Nat} (frame : InstalledRuleFrame env name index)
+    (universes constructorUniverses : List Kernel.Level) (argumentValues fieldValues : List V) where
+  depth : Nat
+  valuation : Nat → V
+  argumentExpressions : List Kernel.Expr
+  fieldExpressions : List Kernel.Expr
+  arguments : List AnnotTerm
+  fields : List AnnotTerm
+  argumentReadings : ArgumentAnnotations strong levels depth valuation argumentExpressions arguments
+  fieldReadings : ArgumentAnnotations strong levels depth valuation fieldExpressions fields
+  argumentValuesEq : arguments.map (interp V valuation) = argumentValues
+  fieldValuesEq : fields.map (interp V valuation) = fieldValues
+  typed : RuleTupleTyping strong.public.cval env levels frame universes constructorUniverses valuation argumentValues fieldValues
+
+open Kernel.Semantics in
+theorem RuleTupleTyping.represented {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {valuation : Nat → V} {arguments fields : List V}
+    (typed : RuleTupleTyping strong.public.cval env levels frame universes constructorUniverses valuation arguments fields) :
+    Nonempty (RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields) := by
+  let values := arguments ++ fields
+  let fresh := pushArguments valuation values
+  have readings := ArgumentAnnotations.variables strong levels values.length fresh (fun _ => .sort .zero)
+    (fun _ _ => by simp [Kernel.Expr.WScoped])
+  have valueEq : (argumentReadings values.length).map (interp V fresh) = values :=
+    argumentReadings_values valuation values
+  exact ⟨{
+    depth := values.length, valuation := fresh,
+    argumentExpressions := (argumentFVars values.length (fun _ => .sort .zero)).take arguments.length,
+    fieldExpressions := (argumentFVars values.length (fun _ => .sort .zero)).drop arguments.length,
+    arguments := (argumentReadings values.length).take arguments.length,
+    fields := (argumentReadings values.length).drop arguments.length,
+    argumentReadings := readings.take arguments.length,
+    fieldReadings := readings.drop arguments.length,
+    argumentValuesEq := by rw [List.map_take, valueEq]; simp [values],
+    fieldValuesEq := by rw [List.map_drop, valueEq]; simp [values],
+    typed := typed.rebase strong.internal.base2.wf fresh }⟩
+
+theorem RuleTupleRepresentation.constructor_application {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields) :
+    ∃ residual, AnnotatedApplication strong levels representation.depth representation.valuation
+      (frame.constructor.type.instantiateLevelParams frame.constructor.levelParams constructorUniverses)
+      representation.fieldExpressions representation.fields residual := by
+  have wf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem frame.constructorLookup)
+  have bounded : (frame.constructor.type.instantiateLevelParams
+      frame.constructor.levelParams constructorUniverses).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]; exact wf.2.2.2.1
+  have noFree : (frame.constructor.type.instantiateLevelParams
+      frame.constructor.levelParams constructorUniverses).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]; exact wf.1
+  obtain ⟨_, _, typed⟩ := representation.typed.constructorTyped
+  exact AnnotatedApplication.represented_arguments typed bounded noFree representation.fieldReadings
+    representation.fieldValuesEq
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- Both real annotated applications are constructed under the common
+valuation. The major premise is the actual constructor application reading;
+no caller provides an annotation or internal fit for it. -/
+theorem RuleTupleRepresentation.recursor_application {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields)
+    (constructorArity : constructorUniverses.length = frame.constructor.levelParams.length) :
+    ∃ residual, AnnotatedApplication strong levels representation.depth representation.valuation
+      (frame.header.type.instantiateLevelParams frame.header.levelParams universes)
+      (representation.argumentExpressions ++ [Kernel.Expr.mkAppN (.const frame.rule.ctor constructorUniverses)
+        representation.fieldExpressions])
+      (representation.arguments ++ [AnnotTerm.mkAppN
+        (strong.internal.base2.acval frame.rule.ctor (Kernel.Level.substFn levels frame.constructor.levelParams constructorUniverses))
+        representation.fields]) residual := by
+  obtain ⟨_, constructorApplication⟩ := representation.constructor_application
+  have majorReading := constructorApplication.applied_argument frame.rule.ctor
+    (.ctorInfo frame.constructor frame.constructorParams frame.constructorFields) frame.constructorLookup rfl
+    constructorUniverses constructorArity
+  have allReadings := representation.argumentReadings.append (.cons majorReading .nil)
+  have wf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem frame.recursorLookup)
+  have bounded : (frame.header.type.instantiateLevelParams frame.header.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]; exact wf.2.2.2.1
+  have noFree : (frame.header.type.instantiateLevelParams frame.header.levelParams universes).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]; exact wf.1
+  obtain ⟨_, _, typed⟩ := representation.typed.recursorTyped
+  apply AnnotatedApplication.represented_arguments typed bounded noFree allReadings
+  simp only [List.map_append, List.map_cons, List.map_nil, interp_mkAppN,
+    Kernel.ConstantInfo.toConstantVal, interp_cvalOf strong.internal.base2.cval_closedL,
+    StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM]
+  rw [representation.argumentValuesEq, ← List.foldl_map, representation.fieldValuesEq]
+
+open Kernel.Semantics in
+/-- The plain-rule comparison is derived from the semantic parameter prefix
+equation on arbitrary values. Every annotation lookup is proved in bounds. -/
+theorem RuleTupleRepresentation.plain_parameters {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields)
+    (params : Nat) (fieldBound : params ≤ fields.length)
+    (sourceEquation : fields.take params = arguments.take params) :
+    ∀ position, position < params → position < representation.arguments.length →
+      interp V representation.valuation (representation.fields.getD position default) =
+        interp V representation.valuation (representation.arguments.getD position default) := by
+  have fieldLength : representation.fields.length = fields.length := by
+    simpa only [List.length_map] using congrArg List.length representation.fieldValuesEq
+  have aligned := (congrArg (List.take params) representation.fieldValuesEq).trans
+    (sourceEquation.trans (congrArg (List.take params) representation.argumentValuesEq).symm)
+  intro position belowParams belowArguments
+  have belowFields : position < representation.fields.length := by omega
+  have selected := congrArg (fun values : List V => values[position]?) aligned
+  simp only [List.getElem?_take, belowParams, ite_true, List.getElem?_map,
+    List.getElem?_eq_getElem belowFields, List.getElem?_eq_getElem belowArguments,
+    Option.map_some, Option.some.injEq] at selected
+  simpa only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem belowFields,
+    List.getElem?_eq_getElem belowArguments, Option.getD_some] using selected
+
 end Ix.CompileCert
