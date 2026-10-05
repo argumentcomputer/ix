@@ -43,6 +43,8 @@ structure AnnotatedModelCore (V : Type u) [Kernel.SetTheory V] (env : Kernel.Env
     denoteMeta base.acval env levels 0 entry.toConstantVal.type = some annotation →
       ∀ ρ : Nat → V, interp V ρ (base.acval entry.name levels) ∈ˢ interp V ρ annotation
   definitions : Kernel.Model.AcvalDefnInst base
+  nat_heads : ∀ levels, Kernel.Model.NatHeads base levels
+  eq_law : Kernel.Model.EqLaw base
 
 noncomputable def AnnotatedAssociation.modelCore {V : Type u} [Kernel.SetTheory V]
     {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
@@ -74,6 +76,10 @@ noncomputable def AnnotatedAssociation.modelCore {V : Type u} [Kernel.SetTheory 
     exact membership ρ
   definitions := checkInstalledDefinitions_annotated_local targetModel
     (checkTelescopes_sound checked.installed.telescopes) checked.definitions checked.installed.definitions
+  nat_heads := pulledAnnotatedBase_natHeads sourceFacts targetModel
+    (checkTelescopes_sound checked.installed.telescopes) checked.reserved
+  eq_law := pulledAnnotatedBase_eqLaw sourceFacts targetModel
+    (checkTelescopes_sound checked.installed.telescopes) checked.reserved
 
 /-- The new finite checker and independently installed source/target witnesses
 yield the actual source annotated core. No source model premise is inferred
@@ -106,5 +112,37 @@ theorem SourceConstructorCoverChecked.annotated_modelCore (V : Type u) [Kernel.S
   obtain ⟨targetModel⟩ := bundle.strong_model V
   exact ⟨of_decide_eq_true (Option.some.inj nameCheck),
     checkedAnnotatedAssociation_core sourceModel targetModel annotated⟩
+
+/-- Expose the exact supplied target witness and its annotation carrier.
+This adds no semantic law or executable guard to the core construction. -/
+theorem checkedAnnotatedAssociation_linked {V : Type u} [Kernel.SetTheory V]
+    {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (sourceModel : StrongInstalledModel V source) (targetModel : StrongInstalledModel V target)
+    (checked : checkAnnotatedAssociation source target names = some true) :
+    ∃ core : AnnotatedModelCore V source,
+      core.base.acval = (PullbackMap.fromEnvs source target names).annotations
+        targetModel.internal.base2.acval := by
+  exact ⟨(checkAnnotatedAssociation_sound checked).modelCore sourceModel.internal.base2 targetModel, rfl⟩
+
+/-- Artifact-connected companion retaining the target model chosen from its
+actual admitted support stream, together with the source core's exact carrier.
+It does not claim that this core already satisfies the remaining EnvModelM laws. -/
+theorem SourceConstructorCoverChecked.annotated_modelCore_linked (V : Type u) [Kernel.SetTheory V]
+    {input : Input} {installed : SourceNormalizedInstallation input.source input.roots}
+    {site : SourceProjectionSite input.source} (coverage : SourceConstructorCoverChecked installed site)
+    (accepted : AcceptedAssociation input) {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport accepted.toAdmittedArtifact support) (names : Kernel.Name → Kernel.Name)
+    (checked : checkSupportedArtifactAnnotatedAssociation accepted bundle coverage.env names = some true) :
+    SemanticNamesAgree accepted names ∧
+      ∃ targetModel : StrongInstalledModel V bundle.env,
+      ∃ core : AnnotatedModelCore V coverage.env,
+        core.base.acval = (PullbackMap.fromEnvs coverage.env bundle.env names).annotations
+          targetModel.internal.base2.acval := by
+  obtain ⟨original, annotated⟩ := bothChecks_true checked
+  obtain ⟨nameCheck, _⟩ := bothChecks_true original
+  obtain ⟨sourceModel⟩ := coverage.strong_model V
+  obtain ⟨targetModel⟩ := bundle.strong_model V
+  exact ⟨of_decide_eq_true (Option.some.inj nameCheck), targetModel,
+    checkedAnnotatedAssociation_linked sourceModel targetModel annotated⟩
 
 end Ix.CompileCert

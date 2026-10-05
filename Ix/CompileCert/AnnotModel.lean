@@ -1,4 +1,5 @@
 import Ix.CompileCert.AnnotLevels
+import Ix.Kernel.Verify.EnvGuards
 
 /-! Assemble the source annotated carrier without identifying independently
 chosen model interpretations. Only source syntactic invariants and exact
@@ -85,5 +86,64 @@ theorem pulledAnnotatedBase_definitions {V : Type u} [Kernel.SetTheory V]
     (checked : checkInstalledDefinitions sourceEnv targetEnv names = true) :
     AcvalDefnInst (pulledAnnotatedBase sourceFacts target association reserved) :=
   checkInstalledDefinitions_annotated target association support checked
+
+/-- Reserved source rows have the same exact pinned declaration in the target.
+This uses the independent source shape evidence, not a content hash or a
+choice of interpretation for the independently installed source model. -/
+theorem pulledAnnotatedBase_reserved {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceFacts : EnvModel V sourceEnv)
+    (target : StrongInstalledModel V targetEnv) {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (reserved : checkReservedNameMap sourceEnv names = true)
+    {name : Kernel.Name} {entry : Kernel.ConstantInfo}
+    (lookup : sourceEnv.find? name = some entry)
+    (isReserved : Kernel.reservedBasisNames.contains name = true) :
+    targetEnv.find? name = some entry ∧
+      ∀ levels, (pulledAnnotatedBase sourceFacts target association reserved).acval name levels =
+        target.internal.base2.acval name levels := by
+  have identity := checkReservedNameMap_sound reserved lookup isReserved
+  obtain ⟨targetEntry, targetLookup, _⟩ := association name entry lookup
+  have targetAtName : targetEnv.find? name = some targetEntry := by
+    simpa only [identity] using targetLookup
+  have sourcePinned := sourceFacts.basis_pinnedL name entry lookup isReserved
+  have targetPinned := target.internal.base2.basis_pinnedL name targetEntry targetAtName isReserved
+  have same : targetEntry = entry := targetPinned.1.trans sourcePinned.1.symm
+  subst targetEntry
+  refine ⟨targetAtName, ?_⟩
+  intro levels
+  simp only [pulledAnnotatedBase, PullbackMap.annotations, PullbackMap.fromEnvs,
+    identity, lookup, targetAtName, Kernel.Level.substFn_param_self]
+
+/-- Transfer the full annotated Eq law, including regime-sensitive grading,
+on the actual pulled carrier. Public erased denotation is not used. -/
+theorem pulledAnnotatedBase_eqLaw {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceFacts : EnvModel V sourceEnv)
+    (target : StrongInstalledModel V targetEnv) {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (reserved : checkReservedNameMap sourceEnv names = true) :
+    EqLaw (pulledAnnotatedBase sourceFacts target association reserved) := by
+  intro lookup levels
+  obtain ⟨targetLookup, leaves⟩ := pulledAnnotatedBase_reserved sourceFacts target association
+    reserved lookup (by decide)
+  simpa only [leaves] using target.internal.eq_law targetLookup levels
+
+/-- Nat head laws require source support only. Extra target literal support
+does not impose global flag equality or restrict a literal-free source cone. -/
+theorem pulledAnnotatedBase_natHeads {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceFacts : EnvModel V sourceEnv)
+    (target : StrongInstalledModel V targetEnv) {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (reserved : checkReservedNameMap sourceEnv names = true) (levels : Kernel.Name → Nat) :
+    NatHeads (pulledAnnotatedBase sourceFacts target association reserved) levels := by
+  intro supported
+  obtain ⟨cv, caps, cv0, i0, j0, cv1, i1, j1, hn, hz, hs, _⟩ :=
+    Kernel.natLitSupported_inv supported
+  obtain ⟨tn, ln⟩ := pulledAnnotatedBase_reserved sourceFacts target association reserved hn (by decide)
+  obtain ⟨tz, lz⟩ := pulledAnnotatedBase_reserved sourceFacts target association reserved hz (by decide)
+  obtain ⟨ts, ls⟩ := pulledAnnotatedBase_reserved sourceFacts target association reserved hs (by decide)
+  have targetSupported : Kernel.natLitSupported targetEnv = true := by
+    rw [← Kernel.natLitSupported_congr (hn.trans tn.symm) (hz.trans tz.symm) (hs.trans ts.symm)]
+    exact supported
+  simpa only [ln, lz, ls] using target.internal.nat_heads levels targetSupported
 
 end Ix.CompileCert
