@@ -7365,4 +7365,130 @@ theorem checkInstalledRecursors_nested_pin_instance {V : Type u} [Kernel.SetTheo
     (fun levels => (pinImages levels).get index bound)
     sourceBase targetBase sourceUs targetUs sourceArity targetArity universeImage
 
+/-- Constructor role and arities are checked on every actual source row.
+Type and value images remain separate checked obligations; a matching header
+alone neither certifies an application nor establishes a constructor law. -/
+def checkInstalledConstructors (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Bool :=
+  source.consts.all fun entry => match entry with
+    | .ctorInfo header params fields =>
+      decide (source.find? header.name = some entry) &&
+      match target.find? (names header.name) with
+      | some (.ctorInfo _ targetParams targetFields) => decide (params = targetParams ∧ fields = targetFields)
+      | _ => false
+    | _ => true
+
+theorem checkInstalledConstructors_member {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledConstructors source target names = true)
+    {header : Kernel.ConstantVal} {params fields : Nat}
+    (present : Kernel.ConstantInfo.ctorInfo header params fields ∈ source.consts) :
+    source.find? header.name = some (.ctorInfo header params fields) ∧
+    ∃ targetHeader, target.find? (names header.name) = some (.ctorInfo targetHeader params fields) := by
+  have row := List.all_eq_true.mp checked (.ctorInfo header params fields) present
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at row
+  refine ⟨row.1, ?_⟩
+  cases lookup : target.find? (names header.name) with
+  | none => simp [lookup] at row
+  | some entry =>
+    cases entry <;> simp only [lookup, decide_eq_true_eq] at row
+    case ctorInfo targetHeader targetParams targetFields =>
+      obtain ⟨_, rfl, rfl⟩ := row
+      exact ⟨targetHeader, rfl⟩
+    all_goals simp at row
+
+/-- The target constructor required by a related fired rule is obtained from
+the source frame's actual constructor lookup and the all-row check. Shared
+addresses do not replace the source name's own forward lookup evidence. -/
+theorem InstalledRuleFrame.target_constructor {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} {name : Kernel.Name} {index : Nat}
+    (frame : InstalledRuleFrame sourceEnv name index)
+    {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledConstructors sourceEnv targetEnv names = true)
+    {sv tv sourceLevels targetLevels targetRule}
+    (image : InstalledRuleImage (V := V) sv tv sourceEnv targetEnv sourceLevels targetLevels names
+      frame.rule targetRule) :
+    ∃ targetHeader, targetEnv.find? targetRule.ctor =
+      some (.ctorInfo targetHeader frame.constructorParams frame.constructorFields) := by
+  obtain ⟨_, targetHeader, lookup⟩ := checkInstalledConstructors_member checked
+    (Kernel.Semantics.Env.find?_mem frame.constructorLookup)
+  have sourceName : frame.constructor.name = frame.rule.ctor :=
+    Kernel.Semantics.Env.find?_name frame.constructorLookup
+  refine ⟨targetHeader, ?_⟩
+  simpa only [sourceName, image.header.1] using lookup
+
+theorem InstalledFireImage.fires {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl source target}
+    (image : InstalledFireImage (V := V) sv tv se te sl tl source target)
+    (fires : source ≠ .inert) : target ≠ .inert := by
+  cases image <;> simp_all
+
+theorem readInstalledRuleFrame_complete {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
+    (frame : InstalledRuleFrame env name index) : readInstalledRuleFrame env name index = some frame := by
+  cases frame with
+  | mk header major rulePrefix rules rule constructor constructorParams constructorFields
+      recursorLookup ruleLookup fires constructorLookup =>
+    unfold readInstalledRuleFrame
+    split
+    next targetHeader targetMajor targetPrefix targetRules lookup =>
+      have same := lookup.symm.trans recursorLookup
+      cases same
+      split
+      next targetRule lookup =>
+        have same := lookup.symm.trans ruleLookup
+        cases same
+        rw [dite_eq_right fires]
+        split
+        next targetConstructor targetParams targetFields lookup =>
+          have same := lookup.symm.trans constructorLookup
+          cases same
+          rfl
+        next => simp_all
+      next => simp_all
+    next =>
+      simp_all
+      rename_i impossible
+      exact impossible header major rulePrefix rules rfl rfl rfl rfl
+
+/-- Both actual frames and the executable target selection follow from the
+all-source rule/constructor checks. Typed applications and semantic comparison
+premises are still supplied separately; frame correspondence is not reduction. -/
+theorem InstalledRuleFrame.checked_target {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    (constructors : checkInstalledConstructors sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (frame : InstalledRuleFrame sourceEnv name index) :
+    ∃ targetFrame : InstalledRuleFrame targetEnv (names name) index,
+      readInstalledRuleFrame targetEnv (names name) index = some targetFrame ∧
+      targetFrame.major = frame.major ∧ targetFrame.rulePrefix = frame.rulePrefix ∧
+      targetFrame.constructorParams = frame.constructorParams ∧
+      targetFrame.constructorFields = frame.constructorFields ∧
+      ∀ levels, InstalledRuleImage
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        target.public.cval sourceEnv targetEnv levels
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels)
+        names frame.rule targetFrame.rule := by
+  have sourceName : frame.header.name = name := Kernel.Semantics.Env.find?_name frame.recursorLookup
+  obtain ⟨targetHeader, targetRules, targetLookup, images⟩ := checkInstalledRecursors_sound target association recursors
+    (Kernel.Semantics.Env.find?_mem frame.recursorLookup)
+  obtain ⟨inside, sourceRule⟩ := List.getElem?_eq_some_iff.mp frame.ruleLookup
+  have targetInside : index < targetRules.length := by
+    rw [← (images (fun _ => 0)).length]; exact inside
+  have ruleImages : ∀ levels, InstalledRuleImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels)
+      names frame.rule targetRules[index] := by
+    intro levels
+    simpa only [sourceRule, sourceName] using (images levels).at index inside
+  obtain ⟨constructor, constructorLookup⟩ := frame.target_constructor constructors (ruleImages (fun _ => 0))
+  let targetFrame : InstalledRuleFrame targetEnv (names name) index := {
+    header := targetHeader, major := frame.major, rulePrefix := frame.rulePrefix,
+    rules := targetRules, rule := targetRules[index], constructor := constructor,
+    constructorParams := frame.constructorParams, constructorFields := frame.constructorFields,
+    recursorLookup := by simpa only [sourceName] using targetLookup,
+    ruleLookup := List.getElem?_eq_getElem targetInside,
+    fires := (ruleImages (fun _ => 0)).fire.fires frame.fires,
+    constructorLookup := constructorLookup }
+  exact ⟨targetFrame, readInstalledRuleFrame_complete targetFrame, rfl, rfl, rfl, rfl, ruleImages⟩
+
 end Ix.CompileCert

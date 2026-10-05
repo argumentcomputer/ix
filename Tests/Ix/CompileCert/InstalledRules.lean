@@ -24,6 +24,22 @@ def run : IO Unit := do
     | _ => false) | throw (IO.userError "expected actual two-rule Nat recursor")
   require "actual telescope association" (checkTelescopes source target id)
   require "actual installed Nat rules" (checkInstalledRecursors source target id)
+  require "actual installed Nat constructors" (checkInstalledConstructors source target id)
+  require "missing actual mapped constructors" (!checkInstalledConstructors source Env.empty id)
+  let alteredConstructors (f : ConstantVal → Nat → Nat → ConstantInfo) : Env :=
+    ⟨target.consts.map fun entry => match entry with
+      | .ctorInfo cv params fields => f cv params fields
+      | other => other⟩
+  require "constructor role mismatch"
+    (!checkInstalledConstructors source (alteredConstructors fun cv _ _ => .axiomInfo cv) id)
+  require "constructor parameter mismatch"
+    (!checkInstalledConstructors source (alteredConstructors fun cv p f => .ctorInfo cv (p + 1) f) id)
+  require "constructor field mismatch"
+    (!checkInstalledConstructors source (alteredConstructors fun cv p f => .ctorInfo cv p (f + 1)) id)
+  let some ctor := source.consts.find? (fun entry => match entry with
+    | .ctorInfo .. => true | _ => false) | throw (IO.userError "expected source constructor")
+  let shadowed : Env := ⟨.axiomInfo ctor.toConstantVal :: source.consts⟩
+  require "shadowed source constructor row" (!checkInstalledConstructors shadowed target id)
   require "missing recursor" (!checkInstalledRecursors source Env.empty id)
   require "missing rule" (!checkInstalledRecursors source (alterRules target (·.drop 1)) id)
   require "extra rule" (!checkInstalledRecursors source (alterRules target (fun rs => rs ++ rs)) id)
@@ -71,6 +87,7 @@ def run : IO Unit := do
     | .ok env => pure env
     | .error _ => throw (IO.userError "actual PUnit fold failed")
   let recursor := punitName.str "rec"
+  require "reserved PUnit constructor role" (checkInstalledConstructors unit unit id)
   require "actual PUnit constructor universe selection"
     (checkInstalledRuleUniverses unit recursor 0 [.zero, .succ .zero] [.succ .zero] == some true)
   require "semantic constructor level alias"
@@ -91,7 +108,7 @@ def run : IO Unit := do
     (checkInstalledRuleUniverses nested recursor 0 [.zero, .succ .zero] [.succ (.succ .zero)] == some true)
   require "nested universe mismatch"
     (checkInstalledRuleUniverses nested recursor 0 [.zero, .succ .zero] [.succ .zero] != some true)
-  IO.println "installed rules: actual Nat/PUnit folds; 33 rule/universe controls passed"
+  IO.println "installed rules: actual Nat/PUnit folds; 40 rule/universe/constructor controls passed"
 
 end Tests.Ix.CompileCert.InstalledRules
 
