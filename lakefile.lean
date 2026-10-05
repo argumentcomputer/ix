@@ -416,12 +416,14 @@ script "check-kernel" (args) := do
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
   IO.eprint codec.stderr
   unless codec.exitCode == 0 do
+    IO.eprint codec.stdout
     throw <| IO.userError "kernel-codec failed; see .lake/build/kernel-codec.log"
   IO.println "Production Ixon codec and Rust differential checks passed."
   let order ← IO.Process.output { cmd := ".lake/build/bin/kernel-order" }
   IO.FS.writeFile ".lake/build/kernel-order.jsonl" order.stdout
   IO.eprint order.stderr
   unless order.exitCode == 0 do
+    IO.eprint order.stdout
     throw <| IO.userError "kernel-order failed; see .lake/build/kernel-order.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
@@ -440,6 +442,7 @@ script "check-kernel" (args) := do
   IO.FS.writeFile ".lake/build/kernel-entry-cases.jsonl" entry.stdout
   IO.eprint entry.stderr
   unless entry.exitCode == 0 do
+    IO.eprint entry.stdout
     throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
   -- The Ixon reader against a direct translation of the Lean constants it was
   -- compiled from, and the kernel's projection output against the compiler's
@@ -453,6 +456,7 @@ script "check-kernel" (args) := do
     IO.FS.writeFile ".lake/build/kernel-reader-fidelity.log" fidelityLog
     IO.eprint out.stderr
     unless out.exitCode == 0 do
+      IO.eprint out.stdout
       throw <| IO.userError s!"kernel-reader-fidelity {mode} failed; see .lake/build/kernel-reader-fidelity.log"
   IO.println "Reader fidelity checks passed."
   IO.println "Certified kernel checks passed."
