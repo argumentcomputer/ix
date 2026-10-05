@@ -299,10 +299,12 @@ def run (env : Environment) : IO UInt32 := do
       let s := n.pretty
       if seedSet.contains s || Ix.Compile.Pass.hasReserved n then some s else none
     let nIx := (names.filter fun s => (s.splitOn "._ix").length > 1).size
-    let failed ← Tests.Ix.Compile.Pass3.kernelFailures dir path names
-    IO.println s!"[pass3-cliques] kernels: {names.size} names ({nIx} `_ix`), {failed.size} failure(s)"
-    for (leg, n, m) in failed do
-      problems := problems.push s!"kernel {leg}: {n}: {m.take 240}"
+    let r ← Tests.Ix.Compile.Pass3.kernelRun dir path names
+    -- no failure is recorded (the empty record), and every leg checks every name
+    let (kprob, ksum) := Tests.Ix.Compile.Pass3Kernels.check [] "cliques" "on" r.failed r.checked
+      names.size
+    IO.println s!"[pass3-cliques] kernels: {names.size} names ({nIx} `_ix`), {ksum}"
+    problems := problems ++ kprob.map (s!"kernel " ++ ·)
   finally
     if keep?.isNone then IO.FS.removeDirAll dir
   -- 5. twins under the switch

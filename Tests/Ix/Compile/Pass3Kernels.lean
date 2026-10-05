@@ -1,0 +1,741 @@
+/-
+  The kernel-failure record of `pass3` (KF triage, 2026-10-05): every failure
+  of the three checkers (`cert`, the certified checker; `rs`, `ix check-rs`;
+  `lean`, `ix check-lean`, both in meta mode) on every unit, with the switch
+  off and on, each tagged with its cause.
+
+  A row covers the failures of one unit, switch state and leg whose message
+  contains `msg`: exactly the names listed, or (a large uniform class)
+  exactly `count` of them. The check runs both ways: a failure no row covers
+  fails the suite, and so does a row whose names do not all fail or whose
+  count is not met exactly (stale). A row of a meta-mode-only cause
+  (`metaOnly`) covers a failure only where the certified checker accepts the
+  same constant. Rows marked `varies` are the cells where the meta kernels'
+  verdicts change from run to run on the same output (check-rs follows its
+  hash order, check-lean its workers' scheduling; measured over six runs):
+  there any failure of the row's class is covered where the certified checker
+  and the anonymous kernels (run on that output for this) accept the same
+  constant, and at least one must occur. Each leg must also check every
+  requested name (`check`).
+
+  The causes:
+  - `BB-F7`: `Ix.Tc`'s meta mode on the aliases of a collapsed block (members
+    alpha-equivalent to each other or to an existing constant, for example
+    `SurgCollapse.A`/`B`, which have `Nat`'s address): the aliases get no
+    entry under their own names, so constants whose metadata names them fail
+    (`unknown constant <address>`, or `app type mismatch` between two
+    aliases), and the requested alias names match no work item. The
+    certified checker and anonymous mode accept every one of them.
+  - `BB-F1`: the Rust kernel's counterpart (`AppTypeMismatch`,
+    `ctor return type: head is not the inductive`); the certified checker
+    and anonymous mode accept them.
+  - `REFUSED-SIBLING (A0 …)`: the compile refused a block on purpose (A0's
+    "not a one-motive recursor"); constants that reach the refused member
+    through metadata cannot be resolved by the meta kernels (its named entry
+    is absent). `Ix.Tc`'s whole-environment meta ingress stops at the first
+    such entry, so the `lean` leg checks nothing in those units (name `*`,
+    checked 0). Anonymous mode accepts them.
+  - `BB-F6 (= WB-A2)`: the same for the dependents of a constant whose
+    compile fails (`F6_OrderIdxBrecOn`, switch off).
+  - `WB-…`, `BB-F5`, `WB §6`: the documented compiler and checker defects of
+    `aux-cert` (`Tests/Ix/Compile/AuxCert.lean`), on the same fixtures and
+    their twins; `WB-B3` also covers the prototype's and the twins' split
+    blocks with the same failures (`C2Split`, `C9Params`, `DQSplit`, `DQMut`).
+  - `KF-O1`, `KF-C7`, `KF-UNIVM`: default-path defects without an earlier id
+    (KF triage): with the switch off, `recOn` of a permuted mutual block
+    (`PassO1.Src.Odd.viaRecOn`) and the `IndPredBelow` case split of a mutual
+    Prop block (`C7b.Src.EvenP.toR.match_2`) are ill-typed for all three
+    checkers; in both switch states, the nested recursors of
+    `IxVMInd.UnivM` (two nested occurrences of one inductive at different
+    universes) are rejected by both executable kernels in both modes
+    (`canonical-order mismatch`), and accepted by the certified checker,
+    which does not check auxiliary order.
+  - `CERT-AXIOM`: the certified checker declines axioms outside its standard
+    set (`Tests.Ix.Compile.LevelSpellings` declares its own).
+-/
+
+import Std.Data.HashSet
+
+namespace Tests.Ix.Compile.Pass3Kernels
+
+/-- Recorded failures of one unit, switch state and leg with a message class. -/
+structure Expect where
+  unit : String
+  switch : String
+  leg : String
+  cause : String
+  /-- a substring of every covered failure's message -/
+  msg : String
+  /-- the names, exactly; empty: `count` names -/
+  names : List String := []
+  count : Nat := 0
+  /-- the failures vary between runs on the same output (the meta kernels'
+  verdicts on collapsed aliases, BB-F1/BB-F7, follow check-rs's hash order
+  and check-lean's scheduling): any failure of the class is covered where the
+  certified checker and the anonymous kernels (run for this) accept the same
+  constant, and at least one must occur -/
+  varies : Bool := false
+
+/-- Causes that are defects of the meta-mode kernels only: a failure is
+covered only where the certified checker accepts the constant. -/
+def metaOnly (cause : String) : Bool :=
+  cause.startsWith "BB-F7" || cause.startsWith "BB-F1"
+
+def hasSub (s pat : String) : Bool := (s.splitOn pat).length > 1
+
+/-- Check the failures of one unit and switch state against `table`.
+`failed` holds `(leg, name, message)`; `checked` each leg's checked count;
+`requested` the number of names requested; `anon?` the `(leg, name)` failures
+of the anonymous kernels on the same output, run where a row `varies`.
+Returns the problems and one
+summary line. -/
+def check (table : List Expect) (unit switch : String)
+    (failed : Array (String × String × String)) (checked : List (String × Nat))
+    (requested : Nat) (anon? : Option (Std.HashSet (String × String)) := none) :
+    Array String × String := Id.run do
+  let rows := (table.filter fun e => e.unit == unit && e.switch == switch).toArray
+  let certFail : Std.HashSet String := failed.foldl (fun s (l, n, _) =>
+    if l == "cert" then s.insert n else s) {}
+  let mut problems : Array String := #[]
+  let mut hits : Array (Array String) := rows.map fun _ => #[]
+  for (leg, n, m) in failed do
+    -- a row naming the constant first, then a counted row
+    let fits := fun (e : Expect) => e.leg == leg && hasSub m e.msg &&
+      !(metaOnly e.cause && certFail.contains n) &&
+      -- a varying row covers only what the anonymous kernels accept
+      (!e.varies || anon?.any fun s => !s.contains (leg, n))
+    let i? := match rows.findIdx? (fun e => fits e && e.names.contains n) with
+      | some i => some i
+      | none => rows.findIdx? fun e => fits e && e.names.isEmpty
+    match i? with
+    | some i => hits := hits.modify i (·.push n)
+    | none =>
+      problems := problems.push s!"{unit} ({switch}): {leg}: {n} fails, not recorded: {m.take 300}"
+  for (e, hs) in rows.zip hits do
+    if e.varies then
+      if hs.isEmpty then
+        problems := problems.push s!"{unit} ({switch}): {e.leg} [{e.cause}] '{e.msg}': \
+          no failure of the class occurs (stale)"
+    else if e.names.isEmpty then
+      if hs.size != e.count then
+        problems := problems.push s!"{unit} ({switch}): {e.leg} [{e.cause}] '{e.msg}': \
+          recorded {e.count} failure(s), {hs.size} occur{if hs.size < e.count then " (stale)" else ""}"
+    else
+      for n in e.names do
+        unless hs.contains n do
+          problems := problems.push s!"{unit} ({switch}): {e.leg}: {n} recorded as failing \
+            ({e.cause}) but does not (stale)"
+  -- each leg checked what was requested: cert and rs every name; lean every
+  -- name but the selectors it reports as matching nothing, or nothing at all
+  -- where a recorded `*` row says its ingress stops
+  for (leg, k) in checked do
+    let aborted := rows.any fun e => e.leg == leg && e.names == ["*"]
+    let unmatched := (failed.filter fun (l, _, m) =>
+      l == leg && m == "requested selector matched no checkable work item").size
+    let want := if aborted then 0 else requested - unmatched
+    if k != want then
+      problems := problems.push s!"{unit} ({switch}): {leg} checked {k} constant(s), expected {want} \
+        ({requested} requested{if unmatched > 0 then s!", {unmatched} unmatched" else ""}{if aborted then ", ingress stops" else ""})"
+  -- failures per leg and cause, for the log
+  let mut byCause : Array (String × Nat) := #[]
+  for (e, hs) in rows.zip hits do
+    if hs.isEmpty then continue
+    let k := s!"{e.leg} {(e.cause.splitOn " (").headD e.cause}"
+    byCause := match byCause.findIdx? (·.1 == k) with
+      | some i => byCause.modify i fun (k, n) => (k, n + hs.size)
+      | none => byCause.push (k, hs.size)
+  let summary := s!"{failed.size} failure(s) in {rows.size} recorded row(s) \
+    {byCause.toList.map fun (k, n) => s!"{k}: {n}"}; \
+    checked {checked.map fun (l, k) => s!"{l} {k}"} of {requested}"
+  return (problems, summary)
+
+/-- The record (generated by `PASS3_EXPECT_EMIT` from a dump, then reviewed). -/
+def table : List Expect := [
+  { unit := "SurgCollapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["SurgCollapse.A", "SurgCollapse.A.a", "SurgCollapse.A.nil"] },
+  { unit := "SurgCollapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 60 },
+  { unit := "SurgCollapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", names := ["SurgCollapse.B.g"] },
+  { unit := "SurgCollapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["SurgCollapse.A", "SurgCollapse.A.a", "SurgCollapse.A.nil"] },
+  { unit := "SurgCollapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 43 },
+  { unit := "SurgCollapseEq", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["SurgCollapseEq.B", "SurgCollapseEq.B.b", "SurgCollapseEq.B.nil"] },
+  { unit := "SurgCollapseEq", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 62 },
+  { unit := "SurgCollapseEq", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["SurgCollapseEq.B", "SurgCollapseEq.B.b", "SurgCollapseEq.B.nil"] },
+  { unit := "SurgCollapseEq", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 51 },
+  { unit := "F4FlatAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["F4FlatAlphaUsers.A", "F4FlatAlphaUsers.A.s", "F4FlatAlphaUsers.A.z"] },
+  { unit := "F4FlatAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 47 },
+  { unit := "F4FlatAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["F4FlatAlphaUsers.A", "F4FlatAlphaUsers.A.s", "F4FlatAlphaUsers.A.z"] },
+  { unit := "F4FlatAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 37 },
+  { unit := "F4_NestedAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["B", "B._ix.rec", "B.leaf", "B.node"] },
+  { unit := "F4_NestedAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 66 },
+  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", names := ["A.size._unsafe_rec", "B.size._unsafe_rec", "sizeL._unsafe_rec", "sizeLA._unsafe_rec"] },
+  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 7 },
+  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 43 },
+  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", names := ["A._sizeOf_4_eq"] },
+  { unit := "F3_SplitRoseRace", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
+    msg := "Named entry for 'A", count := 10 },
+  { unit := "F3_SplitRoseRace", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
+    msg := "Named entry for 'A", names := ["*"] },
+  { unit := "F3_SplitRoseRace", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
+    msg := "Named entry for 'A", count := 12 },
+  { unit := "F3_SplitRoseRace", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
+    msg := "Named entry for 'A", names := ["*"] },
+  { unit := "NestRoseSplit", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestRoseSplit.A", count := 10 },
+  { unit := "NestRoseSplit", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestRoseSplit.A", names := ["*"] },
+  { unit := "NestRoseSplit", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestRoseSplit.A", count := 12 },
+  { unit := "NestRoseSplit", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestRoseSplit.A", names := ["*"] },
+  { unit := "NestMutExt", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExt.A", count := 20 },
+  { unit := "NestMutExt", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExt.A", names := ["*"] },
+  { unit := "NestMutExt", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExt.A", count := 24 },
+  { unit := "NestMutExt", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExt.A", names := ["*"] },
+  { unit := "NestMutExtA", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExtA.A", count := 10 },
+  { unit := "NestMutExtA", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExtA.A", names := ["*"] },
+  { unit := "NestMutExtA", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExtA.A", count := 12 },
+  { unit := "NestMutExtA", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
+    msg := "Named entry for 'NestMutExtA.A", names := ["*"] },
+  { unit := "Neighbours", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 18 },
+  { unit := "Neighbours", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 281 },
+  { unit := "Neighbours", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", varies := true },
+  { unit := "Neighbours", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 18 },
+  { unit := "Neighbours", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 225 },
+  { unit := "NestShapes", switch := "on", leg := "cert", cause := "WB §6",
+    msg := "blocked: ", count := 25 },
+  { unit := "NestShapes", switch := "on", leg := "cert", cause := "WB §6",
+    msg := "decline: reader: in-process model", names := ["NestShapes.R", "NestShapes.R.leaf", "NestShapes.R.mk", "NestShapes.R.rec", "NestShapes.R.rec_1"] },
+  { unit := "NestShapes", switch := "off", leg := "cert", cause := "WB §6",
+    msg := "blocked: ", count := 25 },
+  { unit := "NestShapes", switch := "off", leg := "cert", cause := "WB §6",
+    msg := "decline: reader: in-process model", names := ["NestShapes.R", "NestShapes.R.leaf", "NestShapes.R.mk", "NestShapes.R.rec", "NestShapes.R.rec_1"] },
+  { unit := "Coind", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "blocked: ", names := ["Coind.CA.casesOn", "Coind.CA.functor_unfold", "Coind.CA.mk", "Coind.CB.casesOn", "Coind.CB.functor_unfold", "Coind.CB.mk"] },
+  { unit := "Coind", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "incorrect number of universe levels", names := ["Coind.CA._functor.existential_equiv", "Coind.CB._functor.existential_equiv"] },
+  { unit := "Coind", switch := "off", leg := "rs", cause := "WB-B2",
+    msg := "universe param count", names := ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn", "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] },
+  { unit := "Coind", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "universe param count", names := ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn", "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] },
+  { unit := "PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "incorrect number of universe levels", names := ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
+  { unit := "PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
+    msg := "universe param count", names := ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
+  { unit := "PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "universe param count", names := ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
+  { unit := "PropCollapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["PropCollapse.Q", "PropCollapse.Q._ix.below", "PropCollapse.Q._ix.below.step", "PropCollapse.Q.step"] },
+  { unit := "PropCollapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 29 },
+  { unit := "PropCollapse", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "incorrect number of universe levels", names := ["PropCollapse.p_cases"] },
+  { unit := "PropCollapse", switch := "off", leg := "rs", cause := "WB-B2",
+    msg := "universe param count", names := ["PropCollapse.p_cases"] },
+  { unit := "PropCollapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["PropCollapse.Q", "PropCollapse.Q.below", "PropCollapse.Q.below.step", "PropCollapse.Q.step"] },
+  { unit := "PropCollapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 14 },
+  { unit := "PropCollapse", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "unknown constant ", names := ["PropCollapse.p_cases"] },
+  { unit := "L2_PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "incorrect number of universe levels", names := ["ua"] },
+  { unit := "L2_PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
+    msg := "universe param count", names := ["ua"] },
+  { unit := "L2_PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "universe param count", names := ["ua"] },
+  { unit := "RecAlias", switch := "on", leg := "cert", cause := "WB-B6",
+    msg := "reject: function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
+  { unit := "RecAlias", switch := "on", leg := "cert", cause := "WB-B6",
+    msg := "blocked: ", names := ["RecAlias.PA.triv"] },
+  { unit := "RecAlias", switch := "on", leg := "rs", cause := "WB-B6",
+    msg := "FunExpected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
+  { unit := "RecAlias", switch := "on", leg := "lean", cause := "WB-B6",
+    msg := "function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
+  { unit := "RecAlias", switch := "off", leg := "cert", cause := "WB-B6",
+    msg := "reject: function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
+  { unit := "RecAlias", switch := "off", leg := "cert", cause := "WB-B6",
+    msg := "blocked: ", names := ["RecAlias.PA.triv"] },
+  { unit := "RecAlias", switch := "off", leg := "rs", cause := "WB-B6",
+    msg := "FunExpected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
+  { unit := "RecAlias", switch := "off", leg := "lean", cause := "WB-B6",
+    msg := "function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
+  { unit := "SurgAlias", switch := "on", leg := "cert", cause := "WB-B5",
+    msg := "blocked: ", names := ["SurgAlias.A._sizeOf_inst", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec"] },
+  { unit := "SurgAlias", switch := "on", leg := "cert", cause := "WB-B5",
+    msg := "reject: application type mismatch", names := ["SurgAlias.A._sizeOf_1"] },
+  { unit := "SurgAlias", switch := "on", leg := "rs", cause := "WB-B5",
+    msg := "AppTypeMismatch", names := ["SurgAlias.A._sizeOf_1"] },
+  { unit := "SurgAlias", switch := "on", leg := "rs", cause := "WB-B5",
+    msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec"] },
+  { unit := "SurgAlias", switch := "on", leg := "lean", cause := "WB-B5",
+    msg := "app type mismatch", names := ["SurgAlias.A._sizeOf_1"] },
+  { unit := "SurgAlias", switch := "on", leg := "lean", cause := "WB-B5",
+    msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec"] },
+  { unit := "SurgAlias", switch := "off", leg := "cert", cause := "WB-B5",
+    msg := "blocked: ", names := ["SurgAlias.A._sizeOf_inst", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec", "SurgAlias.f1"] },
+  { unit := "SurgAlias", switch := "off", leg := "cert", cause := "WB-B5",
+    msg := "reject: application type mismatch", names := ["SurgAlias.A._sizeOf_1", "SurgAlias.f"] },
+  { unit := "SurgAlias", switch := "off", leg := "rs", cause := "WB-B5",
+    msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec", "SurgAlias.f1"] },
+  { unit := "SurgAlias", switch := "off", leg := "rs", cause := "WB-B5",
+    msg := "AppTypeMismatch", names := ["SurgAlias.A._sizeOf_1", "SurgAlias.f"] },
+  { unit := "SurgAlias", switch := "off", leg := "lean", cause := "WB-B5",
+    msg := "app type mismatch", names := ["SurgAlias.A._sizeOf_1", "SurgAlias.f"] },
+  { unit := "SurgAlias", switch := "off", leg := "lean", cause := "WB-B5",
+    msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec", "SurgAlias.f1"] },
+  { unit := "SurgSplit", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "blocked: ", names := ["SurgSplit.A.len", "SurgSplit.A.len._sunfold", "SurgSplit.len2"] },
+  { unit := "SurgSplit", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "decline: projection on a non-structure", names := ["SurgSplit.A.len._f"] },
+  { unit := "SurgSplit", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "projection: type mismatch with declared struct", names := ["SurgSplit.A.len._f"] },
+  { unit := "SurgSplit", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["SurgSplit.len2"] },
+  { unit := "SurgSplit", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["SurgSplit.len2"] },
+  { unit := "SurgSplit", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "projection: type mismatch with declared struct", names := ["SurgSplit.A.len._f"] },
+  { unit := "UnsafeI", switch := "on", leg := "rs", cause := "WB-B9",
+    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
+  { unit := "UnsafeI", switch := "on", leg := "lean", cause := "WB-B9",
+    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
+  { unit := "UnsafeI", switch := "off", leg := "rs", cause := "WB-B9",
+    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
+  { unit := "UnsafeI", switch := "off", leg := "lean", cause := "WB-B9",
+    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
+  { unit := "F1_Collapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", count := 59 },
+  { unit := "F1_Collapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "ctor return type: head is not the inductive", count := 9 },
+  { unit := "F1_Collapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["B", "B._ix.rec", "B.s", "B.z"] },
+  { unit := "F1_Collapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 61 },
+  { unit := "F1_Collapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", count := 16 },
+  { unit := "F1_Collapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", count := 38 },
+  { unit := "F1_Collapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "ctor return type: head is not the inductive", count := 9 },
+  { unit := "F1_Collapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["B", "B.rec", "B.s", "B.z"] },
+  { unit := "F1_Collapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 47 },
+  { unit := "F1_Collapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", count := 11 },
+  { unit := "F5_SigmaNestedNested", switch := "on", leg := "rs", cause := "BB-F5",
+    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
+  { unit := "F5_SigmaNestedNested", switch := "on", leg := "lean", cause := "BB-F5",
+    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
+  { unit := "F5_SigmaNestedNested", switch := "off", leg := "rs", cause := "BB-F5",
+    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
+  { unit := "F5_SigmaNestedNested", switch := "off", leg := "lean", cause := "BB-F5",
+    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
+  { unit := "F7_AlphaVLean", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["B", "B.s", "B.z"] },
+  { unit := "F7_AlphaVLean", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 46 },
+  { unit := "F7_AlphaVLean", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["B", "B.s", "B.z"] },
+  { unit := "F7_AlphaVLean", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 37 },
+  { unit := "KernelSpec", switch := "on", leg := "cert", cause := "WB-A7",
+    msg := "blocked: ", count := 20 },
+  { unit := "KernelSpec", switch := "on", leg := "cert", cause := "WB-A7",
+    msg := "decline: reader: in-process model", names := ["KernelSpec.T", "KernelSpec.T.leaf", "KernelSpec.T.mk", "KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
+  { unit := "KernelSpec", switch := "on", leg := "rs", cause := "WB-A7",
+    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
+  { unit := "KernelSpec", switch := "on", leg := "lean", cause := "WB-A7",
+    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
+  { unit := "KernelSpec", switch := "off", leg := "cert", cause := "WB-A7",
+    msg := "blocked: ", count := 20 },
+  { unit := "KernelSpec", switch := "off", leg := "cert", cause := "WB-A7",
+    msg := "decline: reader: in-process model", names := ["KernelSpec.T", "KernelSpec.T.leaf", "KernelSpec.T.mk", "KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
+  { unit := "KernelSpec", switch := "off", leg := "rs", cause := "WB-A7",
+    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
+  { unit := "KernelSpec", switch := "off", leg := "lean", cause := "WB-A7",
+    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
+  { unit := "SurgIdx", switch := "off", leg := "cert", cause := "WB-A2",
+    msg := "blocked: ", names := ["SurgIdx2.B.size._sunfold", "SurgIdx2.bsize"] },
+  { unit := "SurgIdx", switch := "off", leg := "cert", cause := "WB-A2",
+    msg := "reject: application type mismatch", names := ["SurgIdx2.B.size"] },
+  { unit := "SurgIdx", switch := "off", leg := "rs", cause := "WB-A2",
+    msg := "declaration type mismatch", names := ["SurgIdx2.bsize"] },
+  { unit := "SurgIdx", switch := "off", leg := "rs", cause := "WB-A2",
+    msg := "AppTypeMismatch", names := ["SurgIdx2.B.size"] },
+  { unit := "SurgIdx", switch := "off", leg := "lean", cause := "WB-A2",
+    msg := "declaration type mismatch", names := ["SurgIdx2.bsize"] },
+  { unit := "SurgIdx", switch := "off", leg := "lean", cause := "WB-A2",
+    msg := "app type mismatch", names := ["SurgIdx2.B.size"] },
+  { unit := "F6_OrderIdxBrecOn", switch := "off", leg := "rs", cause := "BB-F6 (= WB-A2): A.w fails to compile; its dependents",
+    msg := "Named entry for 'A.w", names := ["A.w._sunfold", "B.w"] },
+  { unit := "F6_OrderIdxBrecOn", switch := "off", leg := "lean", cause := "BB-F6 (= WB-A2): A.w fails to compile; its dependents",
+    msg := "Named entry for 'A.w", names := ["*"] },
+  { unit := "C2Split", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "blocked: ", names := ["C2.Src.A.cnt", "C2.Src.A.cnt._sunfold", "C2.Src.A.len", "C2.Src.A.len._sunfold", "C2.Src.cnt1", "C2.Src.len2"] },
+  { unit := "C2Split", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "decline: projection on a non-structure", names := ["C2.Src.A.cnt._f", "C2.Src.A.len._f"] },
+  { unit := "C2Split", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "projection: type mismatch with declared struct", names := ["C2.Src.A.cnt._f", "C2.Src.A.len._f"] },
+  { unit := "C2Split", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["C2.Src.cnt1", "C2.Src.len2"] },
+  { unit := "C2Split", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["C2.Src.cnt1", "C2.Src.len2"] },
+  { unit := "C2Split", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "projection: type mismatch with declared struct", names := ["C2.Src.A.cnt._f", "C2.Src.A.len._f"] },
+  { unit := "C3PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "incorrect number of universe levels", names := ["C3.Src.p1", "C3.Src.p2", "C3b.Src.q1", "C3b.Src.q2"] },
+  { unit := "C3PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
+    msg := "universe param count", names := ["C3.Src.p1", "C3.Src.p2", "C3b.Src.q1", "C3b.Src.q2"] },
+  { unit := "C3PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "universe param count", names := ["C3.Src.p1", "C3.Src.p2", "C3b.Src.q1", "C3b.Src.q2"] },
+  { unit := "C4Evap", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
+    msg := "Named entry for 'C4b.Src.A", count := 154 },
+  { unit := "C4Evap", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
+    msg := "Named entry for 'C4b.Src.A", names := ["*"] },
+  { unit := "C4Evap", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
+    msg := "Named entry for 'C4b.Src.A", count := 148 },
+  { unit := "C4Evap", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
+    msg := "Named entry for 'C4b.Src.A", names := ["*"] },
+  { unit := "C5Collapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["C5.Src.B", "C5.Src.B.b", "C5.Src.B.nil"] },
+  { unit := "C5Collapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 73 },
+  { unit := "C5Collapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["C5.Src.B", "C5.Src.B.b", "C5.Src.B.nil"] },
+  { unit := "C5Collapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 52 },
+  { unit := "C6NestedCollapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["C6.Src.B", "C6.Src.B._ix.rec", "C6.Src.B.leaf", "C6.Src.B.node"] },
+  { unit := "C6NestedCollapse", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 87 },
+  { unit := "C6NestedCollapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 7 },
+  { unit := "C6NestedCollapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 51 },
+  { unit := "C6NestedCollapse", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", names := ["C6.Src.A._sizeOf_4_eq"] },
+  { unit := "C7IndPred", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["C7.Src.P", "C7.Src.P._ix.below", "C7.Src.P._ix.below.base", "C7.Src.P._ix.below.step", "C7.Src.P.base", "C7.Src.P.step"] },
+  { unit := "C7IndPred", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 38 },
+  { unit := "C7IndPred", switch := "off", leg := "cert", cause := "KF-C7",
+    msg := "blocked: ", names := ["C7b.Src.EvenP.toR", "C7b.Src.OddP.toR"] },
+  { unit := "C7IndPred", switch := "off", leg := "cert", cause := "KF-C7",
+    msg := "reject: function expected", names := ["C7b.Src.EvenP.toR.match_2"] },
+  { unit := "C7IndPred", switch := "off", leg := "rs", cause := "KF-C7",
+    msg := "FunExpected", names := ["C7b.Src.EvenP.toR.match_2"] },
+  { unit := "C7IndPred", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["C7.Src.P", "C7.Src.P.base", "C7.Src.P.below", "C7.Src.P.below.base", "C7.Src.P.below.step", "C7.Src.P.step"] },
+  { unit := "C7IndPred", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 18 },
+  { unit := "C7IndPred", switch := "off", leg := "lean", cause := "KF-C7",
+    msg := "function expected", names := ["C7b.Src.EvenP.toR.match_2"] },
+  { unit := "C8Collapse3", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", varies := true },
+  { unit := "C8Collapse3", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 10 },
+  { unit := "C8Collapse3", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 180 },
+  { unit := "C8Collapse3", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", varies := true },
+  { unit := "C8Collapse3", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", varies := true },
+  { unit := "C8Collapse3", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 11 },
+  { unit := "C8Collapse3", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 127 },
+  { unit := "C8Collapse3", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", varies := true },
+  { unit := "C9Params", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["C9b.Src.B", "C9b.Src.B.b", "C9b.Src.B.nil"] },
+  { unit := "C9Params", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 62 },
+  { unit := "C9Params", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "blocked: ", names := ["C9.Src.A.depth", "C9.Src.A.depth._sunfold", "C9.Src.depth_ex"] },
+  { unit := "C9Params", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "decline: projection on a non-structure", names := ["C9.Src.A.depth._f"] },
+  { unit := "C9Params", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "projection: struct type is not a constant", names := ["C9.Src.A.depth._f"] },
+  { unit := "C9Params", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["C9.Src.depth_ex"] },
+  { unit := "C9Params", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["C9b.Src.B", "C9b.Src.B.b", "C9b.Src.B.nil"] },
+  { unit := "C9Params", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 45 },
+  { unit := "C9Params", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "projection: struct type is not a constant", names := ["C9.Src.A.depth._f"] },
+  { unit := "C9Params", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["C9.Src.depth_ex"] },
+  { unit := "O1Perm", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["PassO1.Col.A", "PassO1.Col.A.a", "PassO1.Col.A.nil"] },
+  { unit := "O1Perm", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 49 },
+  { unit := "O1Perm", switch := "off", leg := "cert", cause := "KF-O1",
+    msg := "blocked: ", names := ["PassO1.Src.viaRecOn_three"] },
+  { unit := "O1Perm", switch := "off", leg := "cert", cause := "KF-O1",
+    msg := "reject: application type mismatch", names := ["PassO1.Src.Odd.viaRecOn"] },
+  { unit := "O1Perm", switch := "off", leg := "rs", cause := "KF-O1",
+    msg := "declaration type mismatch", names := ["PassO1.Src.viaRecOn_three"] },
+  { unit := "O1Perm", switch := "off", leg := "rs", cause := "KF-O1",
+    msg := "AppTypeMismatch", names := ["PassO1.Src.Odd.viaRecOn"] },
+  { unit := "O1Perm", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["PassO1.Col.A", "PassO1.Col.A.a", "PassO1.Col.A.nil"] },
+  { unit := "O1Perm", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 39 },
+  { unit := "O1Perm", switch := "off", leg := "lean", cause := "KF-O1",
+    msg := "declaration type mismatch", names := ["PassO1.Src.viaRecOn_three"] },
+  { unit := "O1Perm", switch := "off", leg := "lean", cause := "KF-O1",
+    msg := "app type mismatch", names := ["PassO1.Src.Odd.viaRecOn"] },
+  { unit := "O3Cases", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["PassO3.Col.A", "PassO3.Col.A.a", "PassO3.Col.A.nil"] },
+  { unit := "O3Cases", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 49 },
+  { unit := "O3Cases", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", names := ["PassO3.Col.A", "PassO3.Col.A.a", "PassO3.Col.A.nil"] },
+  { unit := "O3Cases", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 39 },
+  { unit := "O5PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "incorrect number of universe levels", names := ["PassO5.P.toQ", "PassO5.P.viaRec", "PassO5.Q.elim"] },
+  { unit := "O5PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "blocked: ", names := ["PassO5.toQ_pin"] },
+  { unit := "O5PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
+    msg := "universe param count", names := ["PassO5.P.toQ", "PassO5.P.viaRec", "PassO5.Q.elim"] },
+  { unit := "O5PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "universe param count", names := ["PassO5.P.toQ", "PassO5.P.viaRec", "PassO5.Q.elim"] },
+  { unit := "twins", switch := "on", leg := "cert", cause := "WB-B6",
+    msg := "reject: function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
+  { unit := "twins", switch := "on", leg := "cert", cause := "WB-B6",
+    msg := "blocked: ", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv"] },
+  { unit := "twins", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", varies := true },
+  { unit := "twins", switch := "on", leg := "rs", cause := "WB-B6",
+    msg := "FunExpected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
+  { unit := "twins", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 41 },
+  { unit := "twins", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 570 },
+  { unit := "twins", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", varies := true },
+  { unit := "twins", switch := "on", leg := "lean", cause := "WB-B6",
+    msg := "function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
+  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B2",
+    msg := "incorrect number of universe levels", count := 9 },
+  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "decline: projection on a non-structure", count := 7 },
+  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B3",
+    msg := "blocked: ", count := 19 },
+  { unit := "twins", switch := "off", leg := "cert", cause := "KF-C7",
+    msg := "reject: function expected", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR.match_2"] },
+  { unit := "twins", switch := "off", leg := "cert", cause := "KF-C7",
+    msg := "blocked: ", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR", "Tests.Ix.Compile.Twins.Proto.C7b.Src.OddP.toR"] },
+  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B6",
+    msg := "reject: function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
+  { unit := "twins", switch := "off", leg := "cert", cause := "WB-A2",
+    msg := "reject: application type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size"] },
+  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B6",
+    msg := "blocked: ", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv"] },
+  { unit := "twins", switch := "off", leg := "cert", cause := "WB-A2",
+    msg := "blocked: ", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size._sunfold", "Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.bsize"] },
+  { unit := "twins", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", varies := true },
+  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B2",
+    msg := "universe param count", count := 9 },
+  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "projection: type mismatch with declared struct", names := ["Tests.Ix.Compile.Twins.Proto.C2.Src.A.cnt._f", "Tests.Ix.Compile.Twins.Proto.C2.Src.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQMut.A.size._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.sum._f", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.A.len._f"] },
+  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.DQMut.size2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len_succ", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.sum1", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.len2"] },
+  { unit := "twins", switch := "off", leg := "rs", cause := "KF-C7",
+    msg := "FunExpected", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR.match_2"] },
+  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B6",
+    msg := "FunExpected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
+  { unit := "twins", switch := "off", leg := "rs", cause := "WB-A2",
+    msg := "AppTypeMismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size"] },
+  { unit := "twins", switch := "off", leg := "rs", cause := "WB-A2",
+    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.bsize"] },
+  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B3",
+    msg := "projection: struct type is not a constant", names := ["Tests.Ix.Compile.Twins.Proto.C9.Src.A.depth._f"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 48 },
+  { unit := "twins", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 405 },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "projection: type mismatch with declared struct", names := ["Tests.Ix.Compile.Twins.Proto.C2.Src.A.cnt._f", "Tests.Ix.Compile.Twins.Proto.C2.Src.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQMut.A.size._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.sum._f", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.A.len._f"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "universe param count", count := 8 },
+  { unit := "twins", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", varies := true },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.DQMut.size2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len_succ", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.sum1", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.len2"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B6",
+    msg := "function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-A2",
+    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.bsize"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B2",
+    msg := "unknown constant ", names := ["Tests.Ix.Compile.Twins.Repro.Orig.PropCollapse.p_cases"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "KF-C7",
+    msg := "function expected", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR.match_2"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-A2",
+    msg := "app type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size"] },
+  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B3",
+    msg := "projection: struct type is not a constant", names := ["Tests.Ix.Compile.Twins.Proto.C9.Src.A.depth._f"] },
+  { unit := "corpus", switch := "on", leg := "cert", cause := "CERT-AXIOM",
+    msg := "decline: non-standard axiom", count := 20 },
+  { unit := "corpus", switch := "on", leg := "rs", cause := "KF-UNIVM",
+    msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
+  { unit := "corpus", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 162 },
+  { unit := "corpus", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 2233 },
+  { unit := "corpus", switch := "on", leg := "lean", cause := "KF-UNIVM",
+    msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
+  { unit := "corpus", switch := "off", leg := "cert", cause := "CERT-AXIOM",
+    msg := "decline: non-standard axiom", count := 20 },
+  { unit := "corpus", switch := "off", leg := "rs", cause := "KF-UNIVM",
+    msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
+  { unit := "corpus", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 211 },
+  { unit := "corpus", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 1361 },
+  { unit := "corpus", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", varies := true },
+  { unit := "corpus", switch := "off", leg := "lean", cause := "KF-UNIVM",
+    msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] }
+]
+
+/-! ## Writing the record from a dump (`PASS3_EXPECT_EMIT=<rows.tsv>,<recheck.tsv>`) -/
+
+/-- The message class of a failure: a substring every failure of the class
+carries (addresses and terms vary). -/
+def msgClass (m : String) : String := Id.run do
+  if let some rest := (m.splitOn "Named entry for '")[1]? then
+    if let some x := (rest.splitOn "'")[0]? then
+      -- a refused block's members (`A`, `A2`) are named in hash order: the
+      -- class is the name without its trailing digits
+      let x := String.ofList (x.toList.reverse.dropWhile Char.isDigit).reverse
+      return s!"Named entry for '{x}"
+  for p in ["unknown constant ", "requested selector matched no checkable work item",
+      "app type mismatch", "AppTypeMismatch", "ctor return type: head is not the inductive",
+      "check_recursor: could not resolve inductive block", "universe param count",
+      "incorrect number of universe levels", "blocked: ", "decline: reader: in-process model",
+      "decline: non-standard axiom", "decline: projection on a non-structure",
+      "reject: application type mismatch", "reject: function expected", "FunExpected",
+      "function expected", "declaration type mismatch",
+      "projection: type mismatch with declared struct", "projection: struct type is not a constant",
+      "populate_recursor_rules_from_block: canonical-order mismatch"] do
+    if hasSub m p then return p
+  return (m.take 60).toString
+
+/-- The documented defect a constant's failure in every mode belongs to, by
+its name (the fixture families keep the fixtures' namespaces). -/
+def defectOf (unit name : String) : String := Id.run do
+  for (p, d) in [("RecAlias", "WB-B6"), ("SurgAlias", "WB-B5"), ("SurgSplit", "WB-B3"),
+      ("C2.Src.", "WB-B3"), ("C9.Src.", "WB-B3"), ("DQSplit", "WB-B3"), ("DQMut", "WB-B3"),
+      ("SurgIdx", "WB-A2"), ("UnsafeI", "WB-B9"),
+      ("PropCollapse", "WB-B2"), ("PropSplit", "WB-B2"), ("Coind", "WB-B2"), ("C3.Src.", "WB-B2"),
+      ("C3b.Src.", "WB-B2"), ("PassO5.", "WB-B2"), ("C7b.Src.", "KF-C7"), ("PassO1.Src.", "KF-O1"),
+      ("IxVMInd.UnivM", "KF-UNIVM"), ("NestShapes", "WB §6"), ("KernelSpec", "WB-A7")] do
+    if hasSub name p then return d
+  match unit with
+  | "F5_SigmaNestedNested" => "BB-F5"
+  | "KernelSpec" => "WB-A7"
+  | "NestShapes" => "WB §6"
+  | "L2_PropSplit" => "WB-B2"
+  | _ => "UNCLASSIFIED"
+
+/-- The cause of one failure. `anonFails`: the same leg rejects the name in
+anonymous mode; `certFails`: the certified checker rejects it. -/
+def causeOf (unit leg name msg : String) (anonFails certFails : Bool) : String :=
+  let cls := msgClass msg
+  if cls.startsWith "Named entry for '" then
+    let x := (cls.drop 17).toString
+    if x == "A.w" then "BB-F6 (= WB-A2): A.w fails to compile; its dependents"
+    else s!"REFUSED-SIBLING (A0 refuses the block of {x}: not a one-motive recursor)"
+  else if leg == "cert" then
+    if cls == "decline: non-standard axiom" then "CERT-AXIOM" else defectOf unit name
+  else if !anonFails && !certFails then (if leg == "lean" then "BB-F7" else "BB-F1")
+  else defectOf unit name
+
+/-- Read a dump: `(unit, switch, leg, name, message)` rows. -/
+def readDump (path : String) : IO (Array (String × String × String × String × String)) := do
+  let mut out := #[]
+  for line in (← IO.FS.readFile path).splitOn "\n" do
+    if line.isEmpty || line.startsWith "#" then continue
+    match line.splitOn "\t" with
+    | u :: s :: l :: n :: rest => out := out.push (u, s, l, n, "\t".intercalate rest)
+    | _ => pure ()
+  return out
+
+/-- Print the record (`Expect` rows) from a suite dump (`rows`), its
+anonymous recheck (`recheck`, switches `on-anon`/`off-anon`) and further
+meta rechecks of the same outputs (`more`, switches `on-meta`/`off-meta`):
+one row per unit, switch, leg, cause and message class. A row whose names
+are the same in every run lists them (at most six) or counts them; a row
+whose names differ between runs (check-rs on collapsed aliases) lists the
+union and is marked `varies`. -/
+def emit (rowsPath recheckPath : String) (more : List String) : IO UInt32 := do
+  let rows ← readDump rowsPath
+  let re ← readDump recheckPath
+  let anon : Std.HashSet String := re.foldl (fun s (u, sw, l, n, _) =>
+    if sw.endsWith "-anon" then s.insert s!"{u}|{(sw.dropEnd 5).toString}|{l}|{n}" else s) {}
+  let cert : Std.HashSet String := rows.foldl (fun s (u, sw, l, n, _) =>
+    if l == "cert" then s.insert s!"{u}|{sw}|{n}" else s) {}
+  let mut runs : Array (Array (String × String × String × String × String)) := #[rows]
+  for p in more do
+    let r ← readDump p
+    runs := runs.push (r.filterMap fun (u, sw, l, n, m) =>
+      if sw.endsWith "-meta" then some (u, (sw.dropEnd 5).toString, l, n, m) else none)
+  -- per run, the names of each group
+  let mut groups : Array ((String × String × String × String × String) × Array (Array String)) := #[]
+  for i in [0:runs.size] do
+    for (u, sw, l, n, m) in runs[i]! do
+      let c := causeOf u l n m (anon.contains s!"{u}|{sw}|{l}|{n}") (cert.contains s!"{u}|{sw}|{n}")
+      let key := (u, sw, l, c, msgClass m)
+      let mut idx := groups.size
+      match groups.findIdx? (·.1 == key) with
+      | some j => idx := j
+      | none => groups := groups.push (key, Array.replicate runs.size #[])
+      groups := groups.modify idx fun (k, per) => (k, per.modify i (·.push n))
+  for ((u, sw, l, c, cls), per) in groups do
+    let sorted := per.map fun ns => ns.qsort (· < ·)
+    let stable := sorted.all (· == sorted[0]!)
+    let union := (sorted.foldl (· ++ ·) #[]).qsort (· < ·) |>.toList.eraseDups
+    let who := if !stable then
+        "varies := true"
+      else if union.length ≤ 6 then
+        s!"names := [{", ".intercalate (union.map (·.quote))}]"
+      else s!"count := {sorted[0]!.size}"
+    IO.println s!"  \{ unit := {u.quote}, switch := {sw.quote}, leg := {l.quote}, cause := {c.quote},\n    msg := {cls.quote}, {who} },"
+  return 0
+
+end Tests.Ix.Compile.Pass3Kernels

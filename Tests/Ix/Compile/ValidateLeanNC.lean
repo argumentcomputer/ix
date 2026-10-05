@@ -87,16 +87,24 @@ def runOne (dir : System.FilePath) (file switch : String) : IO RunResult := do
       let phases ← IO.ofExcept (j.getObjValAs? (Array Json) "phases")
       pure <| phases.findSome? fun p =>
         if (p.getObjValAs? String "key").toOption == some "4" then
-          (p.getObjValAs? String "result").toOption
+          (p.getObjValAs? String "result").toOption.map
+            (·, (p.getObjValAs? String "detail").toOption.getD "")
         else none
     else pure none
   -- Use the same narrow, named defect registry as validate-lean. For these
-  -- fixtures only C4Evap/off retains a phase-4 failure (REFUSED-SIBLING).
+  -- fixtures only C4Evap/off retains a phase-4 failure (REFUSED-SIBLING),
+  -- with the counts validate-lean records (`ValidateLean.pins`).
   let expectedFail := ValidateLean.expected.any fun e =>
     e.stem == stem && (e.switch == switch || e.switch == "*") && e.phases.contains "4"
   let want := if expectedFail then "fail" else "pass"
-  let metaProblem := if phase4 == some want then none
-    else some s!"{stem} {switch}: phase 4 expected {want}, got {phase4.getD "no report"}"
+  let metaProblem := match phase4 with
+    | some (r, d) =>
+      if r != want then some s!"{stem} {switch}: phase 4 expected {want}, got {r}"
+      else if r == "fail" && ValidateLean.pinOf stem switch "4" != some (ValidateLean.failSummary "4" d) then
+        some s!"{stem} {switch}: phase 4 fails with '{ValidateLean.failSummary "4" d}', \
+          recorded {(ValidateLean.pinOf stem switch "4").getD "nothing"}"
+      else none
+    | none => some s!"{stem} {switch}: phase 4 expected {want}, got no report"
   if !(← tsv.pathExists) then return ⟨#[], verdicts, metaProblem⟩
   let lines := (← IO.FS.readFile tsv).splitOn "\n" |>.drop 1 |>.filter (!·.isEmpty)
   let rows := lines.toArray.filterMap fun l =>

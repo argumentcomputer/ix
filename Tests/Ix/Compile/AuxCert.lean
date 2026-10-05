@@ -36,7 +36,10 @@
      Every failing constant must be listed as a known failure with its defect
      id, the certified checker may decline only in documented classes and
      must reject nothing unlisted, and every listed failure must still fail
-     (an unexpected pass is reported, so the record stays exact).
+     (an unexpected pass is reported, so the record stays exact); a large
+     uniform class is recorded by its exact count (`knownCounts`). Every leg
+     must check every fixture constant (check-lean: all but the selectors it
+     reports as matching nothing).
   3. Required and forbidden names in the output (`NestMutGroup`: exactly the
      two nested auxiliaries Lean has).
 
@@ -90,9 +93,13 @@ structure Fixture where
   expect : Expect := .compiles
   /-- Constants known to fail a check: `(leg, name, defect)` with leg
       `rs` (`check-rs`), `lean` (`check-lean`) or `cert` (certified checker,
-      reject or undocumented decline); name `*` stands for every constant of
-      the fixture on that leg and `P.*` for every name under `P`. -/
+      reject or undocumented decline), by exact name. -/
   knownFails : List (String × String × String) := []
+  /-- A large uniform class of failures on one leg, beyond `knownFails`:
+      `(leg, defect, count)`; exactly `count` other constants fail on that
+      leg, and for a meta-mode-only defect (BB-F7, BB-F1) the certified
+      checker accepts each of them. -/
+  knownCounts : List (String × String × Nat) := []
   /-- Names that must be in the compiled output. -/
   requireNames : List String := []
   /-- Names that must not be in the compiled output. -/
@@ -121,7 +128,7 @@ def fixtures : List Fixture := [
   { stem := "SurgCollapse", ns := ["SurgCollapse"]
     expect := .refuses "collapse call site drops distinct arguments" },
   { stem := "SurgCollapseEq", ns := ["SurgCollapseEq"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 54)] },
   { stem := "F4FlatAlphaUsers", ns := ["F4FlatAlphaUsers"]
     expect := .refuses "collapse call site is a partial application" },
   { stem := "F4_NestedAlphaUsers", ns := ["A", "B", "r", "t", "sizeL", "sizeLA"]
@@ -153,8 +160,8 @@ def fixtures : List Fixture := [
   { stem := "Neighbours"
     ns := ["F1Pair", "F1Ring", "F1Triple", "F4Flat", "F5PSigma", "F5Prod",
       "F6AFirst", "F8NoSplit", "L2Data", "L2TwoCtors", "RecBelow"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)"
-      ["F1Pair.*", "F1Ring.*", "F1Triple.*", "F4Flat.*"] },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress; F1Pair, F1Ring, \
+      F1Triple, F4Flat)", 243)] },
   -- Reproducers that compile cleanly (the audits' refuted leads).
   { stem := "BetaField", ns := ["BetaField"] },
   { stem := "DotCtor", ns := ["DotCtor"] },
@@ -163,8 +170,8 @@ def fixtures : List Fixture := [
   -- WB §6: the certified checker declines the reflexive nested `R`
   -- (its documented modeller limitation); its dependents are blocked.
   { stem := "NestShapes", ns := ["NestShapes"]
-    knownFails := kf "cert" "WB §6 (certified: reflexive nested decline)"
-      ["NestShapes.R", "NestShapes.R.*"] },
+    knownFails := kf "cert" "WB §6 (certified: reflexive nested decline)" ["NestShapes.R"]
+    knownCounts := [("cert", "WB §6 (blocked by NestShapes.R)", 29)] },
   -- Compiled, with constants a checker rejects: totality defects outside
   -- A0, recorded by id.
   { stem := "Coind", ns := ["Coind"]
@@ -183,7 +190,8 @@ def fixtures : List Fixture := [
   { stem := "PropCollapse", ns := ["PropCollapse"]
     knownFails := kf "rs" "WB-B2" ["PropCollapse.p_cases"] ++
       kf "cert" "WB-B2" ["PropCollapse.p_cases"] ++
-      kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress), WB-B2" ["*"] },
+      kf "lean" "WB-B2" ["PropCollapse.p_cases"]
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 18)] },
   { stem := "L2_PropSplit", ns := ["A", "B", "ua"]
     knownFails := ["rs", "lean", "cert"].flatMap fun leg => kf leg "BB-L2 (= WB-B2)" ["ua"] },
   { stem := "RecAlias", ns := ["RecAlias"]
@@ -208,13 +216,13 @@ def fixtures : List Fixture := [
     knownFails := kf "rs" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] ++
       kf "lean" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
   { stem := "F1_Collapse2p1", ns := ["A", "B", "C"]
-    knownFails := kf "rs" "BB-F1 (metadata of collapsed aliases)" ["*"] ++
-      kf "lean" "BB-F1, BB-F7" ["*"] },
+    knownCounts := [("rs", "BB-F1 (metadata of collapsed aliases)", 47),
+      ("lean", "BB-F1, BB-F7", 62)] },
   { stem := "F5_SigmaNestedNested", ns := ["T"]
     knownFails := ["rs", "lean"].flatMap fun leg =>
       kf leg "BB-F5 (kernel completeness)" ["T.rec", "T.rec_1", "T.rec_2"] },
   { stem := "F7_AlphaVLean", ns := ["A", "B"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 40)] },
   -- Expected compile failures outside A0 (totality defects).
   { stem := "AliasIdx", ns := ["AliasIdx"]
     expect := .xfail "WB-A3" "function expected, got Sort u" },
@@ -259,27 +267,9 @@ private def sha256 (path : System.FilePath) : IO String := do
 private def owns (f : Fixture) (name : String) : Bool :=
   f.ns.any fun p => name == p || name.startsWith (p ++ ".")
 
-/-- A recorded name pattern: an exact name, `*` (every constant of the
-    fixture), or `P.*` (every name under `P`). -/
-private def isPattern (n : String) : Bool := n == "*" || n.endsWith ".*"
-
-private def matchesPat (n name : String) : Bool :=
-  n == name || n == "*" || (n.endsWith ".*" && name.startsWith (n.dropEnd 1).toString)
-
 private def known (f : Fixture) (leg name : String) : Option String :=
   f.knownFails.findSome? fun (l, n, d) =>
-    if l == leg && matchesPat n name then some d else none
-
-/-- `✗ name: message` lines of a checker's output. -/
-private def failLines (out : String) : List (String × String) :=
-  out.splitOn "\n" |>.filterMap fun line =>
-    let l := line.trimAsciiStart.toString
-    if l.startsWith "✗ " then
-      let body := (l.drop 2).toString
-      match body.splitOn ": " with
-      | name :: rest => some (name, ": ".intercalate rest)
-      | [] => none
-    else none
+    if l == leg && n == name then some d else none
 
 /-- The record the certified checker reports the constant at `addr` under:
     the block of a projection, else the constant itself (mirrors
@@ -377,7 +367,8 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       problems := problems.push "two compiles differ: ix compile vs ix compile-lean --rust-check outputs"
     -- `check-rs` needs only the output: run it alongside the certified checker.
     let rsCheckTask ← IO.asTask (prio := .dedicated)
-      (run ixExe #["check-rs", rsOut.toString, "--ns", ",".intercalate f.ns])
+      (run ixExe #["check-rs", rsOut.toString, "--ns", ",".intercalate f.ns,
+        "--fail-out", (dir / "rs.fail").toString])
     -- The output's names come from its own named section, complete: the
     -- certified checker's rows list at most three names per record, chosen
     -- in hash-map order, which depends on the rest of the environment.
@@ -417,8 +408,14 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       if verdict.outcome == "decline" && documentedDecline verdict.reason then continue
       for n in byRecord.getD address #[] do
         failed := failed.push ("cert", n, s!"{verdict.outcome}: {verdict.reason}")
-    for (n, m) in failLines (rsCheck.stdout ++ rsCheck.stderr) do
+    -- every check-rs failure from its fail-out file (stdout shows the first 30)
+    let rsRows ← if ← (dir / "rs.fail").pathExists then
+        pure (KernelReport.failOutRows (← IO.FS.readFile (dir / "rs.fail")))
+      else pure #[]
+    for (n, m) in rsRows do
       failed := failed.push ("rs", n, m)
+    if rsCheck.exitCode != 0 && rsRows.isEmpty then
+      failed := failed.push ("rs", "*", s!"check-rs exit {rsCheck.exitCode}")
     let namesFile := dir / "names.txt"
     IO.FS.writeFile namesFile ("\n".intercalate mine ++ "\n")
     let failOut := dir / "lean.fail"
@@ -433,15 +430,56 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       else pure #[]
     for n in KernelReport.leanUnmatched (leanCheck.stdout ++ leanCheck.stderr) do
       failed := failed.push ("lean", n, "requested selector matched no checkable work item")
-    for n in leanFails do failed := failed.push ("lean", n.trimAscii.toString, "")
+    let leanMsgs ← if ← failOut.pathExists then
+        pure (KernelReport.failOutRows (← IO.FS.readFile failOut))
+      else pure #[]
+    for n in leanFails do
+      let n := n.trimAscii.toString
+      failed := failed.push ("lean", n, ((leanMsgs.find? (·.1 == n)).map (·.2)).getD "")
     if leanFails.isEmpty && leanCheck.exitCode != 0 then
       failed := failed.push ("lean", "*", s!"check-lean exit {leanCheck.exitCode}")
-    for (leg, n, m) in failed do
-      if (known f leg n).isNone then
-        problems := problems.push s!"{leg}: {n} fails, not recorded: {m.take 200}"
+    -- `AUX_CERT_FAILURES=<file>`: every failure, one row `stem leg name message`
+    if let some file := ← IO.getEnv "AUX_CERT_FAILURES" then
+      let leanN := (KernelReport.checkedLeanTargets leanCheck.stdout).toOption.getD 0
+      let rsN := (KernelReport.rsChecked (rsCheck.stdout ++ rsCheck.stderr)).getD 0
+      -- one write per fixture: the fixtures run concurrently
+      let mut out := s!"#checked\t{f.stem}\t{mine.length}\t{expected.size}\t{rsN}\t{leanN}\n"
+      for (leg, n, m) in failed do
+        out := out ++ s!"{f.stem}\t{leg}\t{n}\t{(m.replace "\n" " | ").replace "\t" " "}\n"
+      let h ← IO.FS.Handle.mk file .append
+      h.putStr out
+      h.flush
+    -- every failure is recorded: by name, or within a leg's recorded count
+    -- (a meta-mode-only class only where the certified checker accepts)
+    let certFail := failed.filterMap fun (l, n, _) => if l == "cert" then some n else none
+    for leg in ["cert", "rs", "lean"] do
+      let rest := failed.filter fun (l, n, _) => l == leg && (known f leg n).isNone
+      match f.knownCounts.find? (·.1 == leg) with
+      | some (_, d, count) =>
+        if rest.size != count then
+          problems := problems.push s!"{leg}: {rest.size} failure(s) beyond the named ones, \
+            recorded {count} ({d})"
+        if (hasSub d "BB-F7" || hasSub d "BB-F1") then
+          for (_, n, _) in rest do
+            if certFail.contains n then
+              problems := problems.push s!"{leg}: {n} counted as {d}, but the certified checker rejects it"
+      | none =>
+        for (_, n, m) in rest do
+          problems := problems.push s!"{leg}: {n} fails, not recorded: {m.take 200}"
     for (leg, n, d) in f.knownFails do
-      unless isPattern n || failed.any (fun (l, m, _) => l == leg && m == n) do
+      unless failed.any (fun (l, m, _) => l == leg && m == n) do
         problems := problems.push s!"{leg}: {n} recorded as failing ({d}) but passes"
+    -- every leg checks every fixture constant (check-lean: but the selectors it
+    -- reports as matching nothing; nothing where its ingress stops, a `*` failure)
+    let unmatched := (failed.filter fun (l, _, m) =>
+      l == "lean" && m == "requested selector matched no checkable work item").size
+    let leanStops := failed.any fun (l, n, _) => l == "lean" && n == "*"
+    let leanN := (KernelReport.checkedLeanTargets leanCheck.stdout).toOption.getD 0
+    let rsN := (KernelReport.rsChecked (rsCheck.stdout ++ rsCheck.stderr)).getD 0
+    for (leg, k, want) in [("cert", expected.size, mine.length), ("rs", rsN, mine.length),
+        ("lean", leanN, if leanStops then 0 else mine.length - unmatched)] do
+      if k != want then
+        problems := problems.push s!"{leg} checked {k} constant(s), expected {want}"
     let nKnown := failed.size
     return (problems, s!"compiled, ALIGNED, {mine.length} names, {nKnown} recorded failure(s)")
   finally

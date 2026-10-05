@@ -17,9 +17,12 @@
      (`decompileEnvFullParallel`), equals the source constants (the
      decompile-diff buckets: plain, aux, call-site, coverage, all zero);
   3. **kernels**: `ix check-rs`, `ix check-lean` (meta mode) and the
-     certified checker (`kernel-check-ixe`) on the switch-on output, every
-     fixture constant and every `_ix` name; failures must be recorded
-     (`knownFails`), declines only in documented classes;
+     certified checker (`kernel-check-ixe`) on the switch-on output (every
+     fixture constant and every `_ix` name) and on the switch-off output
+     (every fixture constant); every failure of both, and only those, must
+     be in the record (`Tests.Ix.Compile.Pass3Kernels.table`, by cause), and
+     each leg must check every requested name (declines only in documented
+     classes);
   4. **computation rules**: for each changed block, the images of its
      recursors and their rule statements (`RuleStmt`, proof `Eq.refl`) are
      compiled into a test-only copy of the output (never into `E`) and
@@ -28,7 +31,10 @@
 
   Run with: `lake test -- --ignored pass3` (after `lake build ix
   kernel-check-ixe`). `PASS3_ONLY` restricts the units (comma-separated
-  stems or `twins`, `corpus`); `PASS3_KEEP=<dir>` keeps the outputs.
+  stems or `twins`, `corpus`); `PASS3_KEEP=<dir>` keeps the outputs;
+  `PASS3_FAILURES=<file>` writes every kernel failure; `PASS3_RECHECK` and
+  `PASS3_EXPECT_EMIT` rerun the kernels on kept outputs and write the record
+  from the dumps (see `runRecheck` and `Pass3Kernels.emit`).
 -/
 import Ix.Meta
 import Ix.EnvScope
@@ -41,6 +47,7 @@ import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.KernelReport
+import Tests.Ix.Compile.Pass3Kernels
 import Lean.Data.Json
 import Ix.Tc.Validate
 import Tests.Ix.Compile.Image
@@ -205,22 +212,19 @@ private def runProc (cmd : System.FilePath) (args : Array String) : IO IO.Proces
   let exe ← IO.FS.realPath cmd
   IO.Process.output { cmd := exe.toString, args, env := spawnEnv }
 
-private def failLines (out : String) : List (String × String) :=
-  out.splitOn "\n" |>.filterMap fun line =>
-    let l := line.trimAsciiStart.toString
-    if l.startsWith "✗ " then
-      let body := (l.drop 2).toString
-      match body.splitOn ": " with
-      | name :: rest => some (name, ": ".intercalate rest)
-      | [] => none
-    else none
+/-- The failures of one kernel run, `(leg, name, message)`, and the number of
+constants each leg reports it checked. -/
+structure KernelRun where
+  failed : Array (String × String × String)
+  checked : List (String × Nat)
 
 /-- `(leg, name, message)` of every failure of the three kernels on `names`
-of the file `path`. Declines of the certified checker in documented classes
-are not failures. Process/report failures throw instead of entering the
-per-name known-failure accounting. -/
-def kernelFailures (dir : System.FilePath) (path : System.FilePath) (names : Array String)
-    (anon : Bool := false) : IO (Array (String × String × String)) := do
+of the file `path`, and each leg's checked count. Declines of the certified
+checker in documented classes are not failures. Process/report failures
+throw instead of entering the per-name known-failure accounting. -/
+def kernelRun (dir : System.FilePath) (path : System.FilePath) (names : Array String)
+    (anon : Bool := false) (skipDeps : Bool := false) :
+    IO KernelRun := do
   if names.isEmpty then throw (IO.userError "kernel check requested no names")
   let mut failed : Array (String × String × String) := #[]
   let namesFile := dir / "names.txt"
@@ -257,14 +261,25 @@ def kernelFailures (dir : System.FilePath) (path : System.FilePath) (names : Arr
     if verdict.outcome == "decline" && Tests.Ix.Compile.AuxCert.documentedDecline verdict.reason then continue
     failed := failed.push ("cert", n, s!"{verdict.outcome}: {verdict.reason}")
   -- check-rs, meta mode, the names
-  let rs ← runProc ixExe ((#["check-rs", path.toString, "--consts-file", namesFile.toString]
-    ++ if anon then #["--anon"] else #[]))
+  -- every failure comes from the fail-out file (stdout shows the first 30)
+  let rsFailOut := dir / "rs.fail"
+  if ← rsFailOut.pathExists then IO.FS.removeFile rsFailOut
+  let rs ← runProc ixExe ((#["check-rs", path.toString, "--consts-file", namesFile.toString,
+    "--fail-out", rsFailOut.toString] ++ (if anon then #["--anon"] else #[])
+    ++ (if anon && skipDeps then #["--skip-deps"] else #[])))
   IO.FS.writeFile (dir / "rs.stdout") rs.stdout
   IO.FS.writeFile (dir / "rs.stderr") rs.stderr
   if rs.exitCode == 0 && ((rs.stdout ++ rs.stderr).splitOn "[check] 0/0 passed").length > 1 then
     throw (IO.userError "check-rs checked zero targets")
-  for (n, m) in failLines (rs.stdout ++ rs.stderr) do failed := failed.push ("rs", n, m)
-  if rs.exitCode != 0 && (failLines (rs.stdout ++ rs.stderr)).isEmpty then
+  let rsNames := fun (label : String) => match KernelReport.anonymousAddress? label with
+    | some address => anonNames.getD address #[label]
+    | none => #[label]
+  let rsRows ← if ← rsFailOut.pathExists then pure (KernelReport.failOutRows (← IO.FS.readFile rsFailOut))
+    else pure #[]
+  for (label, m) in rsRows do
+    for n in rsNames label do failed := failed.push ("rs", n, m)
+  let rsN := KernelReport.rsChecked (rs.stdout ++ rs.stderr)
+  if rs.exitCode != 0 && rsRows.isEmpty then
     failed := failed.push ("rs", "*", s!"check-rs exit {rs.exitCode}: {((rs.stdout ++ rs.stderr).takeEnd 300).toString}")
   -- Lean anon selectors are addresses, unlike Rust's source-name selectors.
   -- Write bare hex: the shared names-file grammar treats `#` as a comment.
@@ -273,15 +288,19 @@ def kernelFailures (dir : System.FilePath) (path : System.FilePath) (names : Arr
   IO.FS.writeFile leanNamesFile ("\n".intercalate leanNames.toList ++ "\n")
   let failOut := dir / "lean.fail"
   let ln ← runProc ixExe (#["check-lean", path.toString, "--consts-file", leanNamesFile.toString,
-    "--fail-out", failOut.toString, "--workers", "8"] ++ if anon then #["--anon"] else #[])
+    "--fail-out", failOut.toString, "--workers", "8"]
+    ++ if anon then #["--anon"] else #[])
   IO.FS.writeFile (dir / "lean.stdout") ln.stdout
   IO.FS.writeFile (dir / "lean.stderr") ln.stderr
-  if ln.exitCode == 0 || ln.exitCode == Ix.Benchmark.Results.exitRejected then
-    discard <| IO.ofExcept (KernelReport.checkedLeanTargets ln.stdout)
+  let leanN ← if ln.exitCode == 0 || ln.exitCode == Ix.Benchmark.Results.exitRejected then
+      some <$> IO.ofExcept (KernelReport.checkedLeanTargets ln.stdout)
+    else pure none
   let leanFails ← if ← failOut.pathExists then
       pure (KernelReport.leanFailureLabels (← IO.FS.readFile failOut) anon)
     else pure #[]
-  let msgs := (failLines (ln.stdout ++ ln.stderr)).filter fun (n, _) => (n.splitOn "@").length ≤ 1
+  -- messages from the fail-out file (stdout shows the first 30)
+  let msgs ← if ← failOut.pathExists then pure (KernelReport.failOutRows (← IO.FS.readFile failOut))
+    else pure #[]
   let reportNames := fun label => if anon then
       let address := (KernelReport.anonymousAddress? label).getD label
       anonNames.getD address #[label]
@@ -296,7 +315,13 @@ def kernelFailures (dir : System.FilePath) (path : System.FilePath) (names : Arr
     for original in reportNames n do failed := failed.push ("lean", original, m)
   if leanFails.isEmpty && ln.exitCode != 0 then
     failed := failed.push ("lean", "*", s!"check-lean exit {ln.exitCode}: {((ln.stdout ++ ln.stderr).takeEnd 300).toString}")
-  return failed
+  return { failed, checked := [("cert", expected.size), ("rs", rsN.getD 0), ("lean", leanN.getD 0)] }
+
+/-- `(leg, name, message)` of every failure of the three kernels on `names`
+of the file `path` (`kernelRun` without the checked counts). -/
+def kernelFailures (dir : System.FilePath) (path : System.FilePath) (names : Array String)
+    (anon : Bool := false) : IO (Array (String × String × String)) :=
+  (·.failed) <$> kernelRun dir path names anon
 
 /-! ## 4. Computation rules in a test-only environment -/
 
@@ -406,25 +431,10 @@ def o11aEnv (on : Ix.CompileM.LeanPipelineOut) : Except String (Ixon.Env × Arra
     names := names.push name.pretty
   return (env, names)
 
-/-! ## Expectations -/
+/-! ## Expectations
 
-/-- Recorded kernel failures under the switch: `(unit, leg, name, cause)`;
-name `*` stands for every name of the unit on that leg. -/
-def knownFails : List (String × String × String × String) := [
-  -- WB-B6 (RecAlias): fails with the switch off too; the switch-off run lists it
-  -- under its sibling, so it is recorded by name.
-  ("twins", "rs", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7",
-    "WB-B6, also with the switch off"),
-  -- A0's evaporation refusal of `C4b.Src.A2` (Pass 2) in both modes: B2's
-  -- display entry names the refused block.
-  ("C4Evap", "rs", "C4b.Src.B2._ix.below", "A0 refusal of C4b.Src.A2, both modes"),
-  -- the same: `C4.Src.A.brecOn` (now its image) shares an address with a
-  -- constant whose lazy ingress reaches the refused `C4b.Src.A2`
-  ("C4Evap", "rs", "C4.Src.A.brecOn", "A0 refusal of C4b.Src.A2, both modes")]
-
-def isKnown (unit leg name : String) : Option String :=
-  knownFails.findSome? fun (u, l, n, c) =>
-    if u == unit && l == leg && (n == name || n == "*") then some c else none
+The kernel failures of both switch states are recorded per unit in
+`Tests.Ix.Compile.Pass3Kernels.table` (KF triage, 2026-10-05). -/
 
 /-- The Lean name an `_ix` display name stands for (`x._ix.S ↦ x.S`, an image
 `a._ix ↦ a`). -/
@@ -734,6 +744,52 @@ def passChecks (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : Array String
   lines := lines.push s!"  passes: {nt} twin pairs equal with the switch on, {nr} firing checks, {ns} constants with the switch-off term ({problems.size} problem(s))"
   return (problems, lines)
 
+/-- `PASS3_FAILURES=<file>`: append every kernel failure of a unit, one
+tab-separated row `unit switch leg name message` (the message whole, its
+newlines and tabs replaced by spaces), and one row `#checked unit switch leg
+count` per leg. -/
+def dumpRuns (unit : String) (runs : List (String × KernelRun)) : IO Unit := do
+  let some f := ← IO.getEnv "PASS3_FAILURES" | return
+  let h ← IO.FS.Handle.mk f .append
+  let clean := fun (s : String) => (s.replace "\n" " | ").replace "\t" " "
+  for (sw, r) in runs do
+    for (leg, n) in r.checked do h.putStrLn s!"#checked\t{unit}\t{sw}\t{leg}\t{n}"
+    for (leg, n, m) in r.failed do h.putStrLn s!"{unit}\t{sw}\t{leg}\t{n}\t{clean m}"
+  h.flush
+
+def dumpFailures (unit : String) (onRun offRun : KernelRun) : IO Unit :=
+  dumpRuns unit [("on", onRun), ("off", offRun)]
+
+/-- `PASS3_RECHECK=<dir>` (a `PASS3_KEEP` directory, possibly written by an
+older revision): rerun this revision's kernels on every unit's kept `on.ixe`
+and `off.ixe` with the kept name lists, in meta mode and, with
+`PASS3_RECHECK_ANON`, in anonymous mode (check-rs subject-only), dumping
+the rows (`PASS3_FAILURES`) with switch `on-meta`, `off-meta`, `on-anon`,
+`off-anon`. -/
+def runRecheck (d : System.FilePath) : IO UInt32 := do
+  let anonToo := (← IO.getEnv "PASS3_RECHECK_ANON").isSome
+  -- `PASS3_RECHECK_TAG` keeps the working directories of concurrent rechecks apart
+  let tag := (← IO.getEnv "PASS3_RECHECK_TAG").getD ""
+  let mut n := 0
+  for e in ← d.readDir do
+    let p := e.path
+    unless ← p.isDir do continue
+    for (sw, ixe, nf) in [("on", p / "on.ixe", p / "names.txt"),
+        ("off", p / "off.ixe", p / "off" / "names.txt")] do
+      unless (← ixe.pathExists) && (← nf.pathExists) do continue
+      let names := ((← IO.FS.readFile nf).splitOn "\n").toArray.filter (!·.isEmpty)
+      if names.isEmpty then continue
+      for anon in (if anonToo then [false, true] else [false]) do
+        let mode := if anon then "anon" else "meta"
+        let rdir := p / s!"recheck{tag}-{sw}-{mode}"
+        IO.FS.createDirAll rdir
+        let r ← kernelRun rdir ixe names (anon := anon) (skipDeps := true)
+        dumpRuns e.fileName [(s!"{sw}-{mode}", r)]
+        IO.println s!"[pass3-recheck] {e.fileName} {sw}-{mode}: {r.failed.size} failure(s), checked {r.checked}"
+        n := n + 1
+  IO.println s!"[pass3-recheck] {n} run(s)"
+  return 0
+
 def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × Array String) := do
   let mut problems : Array String := #[]
   let mut lines : Array String := #[]
@@ -814,44 +870,33 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
     let names := on.env.named.toArray.filterMap fun (n, _) =>
       let s := n.pretty
       if seedSet.contains s || Ix.Compile.Pass.hasReserved n then some s else none
-    let failed ← kernelFailures dir path names
-    -- the same kernels on the switch-off output, for the pre-existing failures
+    let onRun ← kernelRun dir path names
+    -- the same kernels on the switch-off output (the default path)
     let offDir := dir / "off"
     IO.FS.createDirAll offDir
     let offNames := off.env.named.toArray.filterMap fun (n, _) =>
       let s := n.pretty
       if seedSet.contains s then some s else none
-    let offFailed ← kernelFailures offDir (dir / "off.ixe") offNames
-    let offSet : Std.HashSet (String × String) := offFailed.foldl (fun s (l, n, _) => s.insert (l, n)) {}
-    let onSet : Std.HashSet (String × String) := failed.foldl (fun s (l, n, _) => s.insert (l, n)) {}
-    -- Acceptance (in this order): a failure the switch-off output has too, for
-    -- the name or the Lean name an `_ix` name displays (pre-existing, outside
-    -- this package); a meta-mode failure (check-rs, check-lean) on a constant
-    -- the certified checker accepts, in a unit with a collapsed changed block
-    -- (documented classes BB-F7 and BB-F1); anything else is a problem.
-    let collapsed := idr.changedBlocks.any (fun all => all.any fun m =>
-        ((on.cenv.blocks.get? m).getD #[]).any (·.size > 1))
-    -- BB-F7 (check-lean) and BB-F1 (check-rs) remain restricted to
-    -- collapsed blocks. A moved IndPredBelow family is not an exemption.
-    let ids := if collapsed then ["BB-F7 (lean)", "BB-F1 (rs)"] else []
-    let certFail : Std.HashSet String := failed.foldl (fun s (l, n, _) =>
-      if l == "cert" then s.insert n else s) {}
-    let mut nKnown := 0
-    let mut nPre := 0
-    let mut nMeta := 0
-    for (leg, n, m) in failed do
-      let pre := offSet.contains (leg, n) || offSet.contains (leg, leanOf n)
-        || offSet.contains (leg, "*")
-      let metaOnly := (leg == "rs" || leg == "lean") && collapsed
-        && (if n == "*" then certFail.isEmpty else !certFail.contains n)
-      match isKnown u.name leg n with
-      | some _ => nKnown := nKnown + 1
-      | none =>
-        if pre then nPre := nPre + 1
-        else if metaOnly then nMeta := nMeta + 1
-        else problems := problems.push s!"{u.name}: {leg}: {n} fails: {m.take 240}"
-    let fixed := offFailed.filter fun (l, n, _) => !onSet.contains (l, n)
-    lines := lines.push s!"  kernels: {names.size} names, {failed.size} failure(s): {nPre} also with the switch off, {nMeta} meta-mode only, exempted as {ids} (certified checker accepts), {nKnown} recorded; switch off: {offFailed.size} failure(s), {fixed.size} of them pass with the switch on"
+    let offRun ← kernelRun offDir (dir / "off.ixe") offNames
+    dumpFailures u.name onRun offRun
+    -- Every failure of both switch states against the record
+    -- (`Tests.Ix.Compile.Pass3Kernels.table`), both ways, and each leg's
+    -- checked count against the names requested.
+    for (sw, r, ixe, ns) in [("on", onRun, path, names), ("off", offRun, dir / "off.ixe", offNames)] do
+      -- where the meta verdicts vary between runs, the anonymous kernels on
+      -- the same output decide which failures are meta-only
+      let anon? : Option (Std.HashSet (String × String)) ←
+        if Pass3Kernels.table.any (fun e => e.unit == u.name && e.switch == sw && e.varies)
+        then do
+          let adir := dir / s!"anon-{sw}"
+          IO.FS.createDirAll adir
+          let a ← kernelRun adir ixe ns (anon := true) (skipDeps := true)
+          pure (some (a.failed.foldl (fun s (l, n, _) => s.insert (l, n)) {}))
+        else pure none
+      let (ps, summary) :=
+        Pass3Kernels.check Pass3Kernels.table u.name sw r.failed r.checked ns.size anon?
+      problems := problems ++ ps
+      lines := lines.push s!"  kernels ({sw}): {summary}"
     if !idr.changedBlocks.isEmpty && on.cenv.ungrounded.isEmpty then
       match ruleEnv on with
       | .error e => problems := problems.push s!"{u.name}: rule environment: {e}"
@@ -1088,6 +1133,13 @@ def run (env : Environment) : IO UInt32 := do
     | p :: pfxs => return ← runFind p pfxs
     | _ => return 2
   if let some p := ← IO.getEnv "PASS3_SURGERED" then return ← runSurgered p
+  if let some d := ← IO.getEnv "PASS3_RECHECK" then return ← runRecheck d
+  if let some spec := ← IO.getEnv "PASS3_EXPECT_EMIT" then
+    match spec.splitOn "," with
+    | rows :: recheck :: more => return ← Pass3Kernels.emit rows recheck more
+    | _ =>
+      IO.println "[pass3] PASS3_EXPECT_EMIT=<rows.tsv>,<recheck.tsv>[,<meta recheck.tsv>…]"
+      return 2
   if let some spec := ← IO.getEnv "PASS3_LIB" then
     match spec.splitOn "," with
     | [a, b] => return ← runLib a b

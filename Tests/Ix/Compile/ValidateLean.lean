@@ -11,7 +11,10 @@
     names (always with the switch off; phase 6 fails a changed block without
     `_ix` names under the switch, so a skip cannot hide a lost image);
   - the recorded pre-existing failures (`expected`), each by defect id; a
-    recorded failure that passes is a problem too, so the table stays exact;
+    recorded failure that passes is a problem too, so the table stays exact,
+    and a recorded failing phase must fail with exactly its recorded counts
+    (`pins`: compile failures, comparison errors, digest mismatches and
+    missing constants, decompile errors, unclassified auxiliaries, violations);
   - the files Lean itself rejects (`leanRejects`), which produce no report.
 
   Run with: `lake test -- --ignored validate-lean` (after `lake build ix`).
@@ -89,6 +92,112 @@ def expected : List Expected := [
   ⟨"Repro", "off", ["1", "5", "6", "8"], "A0 refusal of Repro.Orig.SurgCollapse (D13); WB-B6"⟩,
   ⟨"Repro", "on", ["5", "6", "8"], "WB-B6"⟩]
 
+/-- The counts of a failing phase's detail, which the record pins: phase 6
+its unclassified auxiliaries, phase 8 its violations, any other phase the
+detail's first clause (`49 per-block compile failure(s)`, `7 comparison
+error(s)`, `68 digest mismatch(es), 55 missing`, `3 decompile error(s)`). -/
+def failSummary (key detail : String) : String :=
+  match key with
+  | "6" => match (detail.splitOn "unclassified ")[1]? with
+    | some r => s!"unclassified {(r.splitOn ";").headD r}"
+    | none => detail
+  | "8" => (detail.splitOn "; ").getLastD detail
+  | _ => ((((detail.splitOn " (").headD detail).splitOn ";").headD detail).trimAscii.toString
+
+/-- The counts of each recorded failing phase (`failSummary`), per stem and
+switch state (KF triage, 2026-10-05): a recorded phase that fails with more
+(or fewer) failures than recorded fails the suite. -/
+def pins : List (String × String × String × String) := [
+  ("AliasIdx", "off", "1", "31 per-block compile failure(s)"),
+  ("AliasIdx", "off", "5", "31 digest mismatch(es), 31 missing"),
+  ("AliasIdx", "on", "1", "31 per-block compile failure(s)"),
+  ("AliasIdx", "on", "5", "31 digest mismatch(es), 31 missing"),
+  ("C4Evap", "off", "1", "49 per-block compile failure(s)"),
+  ("C4Evap", "off", "4", "7 comparison error(s)"),
+  ("C4Evap", "off", "5", "68 digest mismatch(es), 55 missing"),
+  ("C4Evap", "on", "1", "58 per-block compile failure(s)"),
+  ("C4Evap", "on", "5", "77 digest mismatch(es), 71 missing"),
+  ("C5Collapse", "off", "1", "8 per-block compile failure(s)"),
+  ("C5Collapse", "off", "5", "8 digest mismatch(es), 8 missing"),
+  ("C6NestedCollapse", "off", "1", "12 per-block compile failure(s)"),
+  ("C6NestedCollapse", "off", "5", "12 digest mismatch(es), 12 missing"),
+  ("C7IndPred", "off", "1", "4 per-block compile failure(s)"),
+  ("C7IndPred", "off", "5", "4 digest mismatch(es), 4 missing"),
+  ("C8Collapse3", "off", "1", "18 per-block compile failure(s)"),
+  ("C8Collapse3", "off", "5", "18 digest mismatch(es), 18 missing"),
+  ("C9Params", "off", "1", "6 per-block compile failure(s)"),
+  ("C9Params", "off", "5", "6 digest mismatch(es), 6 missing"),
+  ("F3_SplitRoseRace", "off", "1", "41 per-block compile failure(s)"),
+  ("F3_SplitRoseRace", "off", "4", "9 comparison error(s)"),
+  ("F3_SplitRoseRace", "off", "5", "50 digest mismatch(es), 39 missing"),
+  ("F3_SplitRoseRace", "on", "1", "43 per-block compile failure(s)"),
+  ("F3_SplitRoseRace", "on", "4", "2 comparison error(s)"),
+  ("F3_SplitRoseRace", "on", "5", "52 digest mismatch(es), 48 missing"),
+  ("F4FlatAlphaUsers", "off", "1", "1 per-block compile failure(s)"),
+  ("F4FlatAlphaUsers", "off", "5", "1 digest mismatch(es), 1 missing"),
+  ("F4_NestedAlphaUsers", "off", "1", "1 per-block compile failure(s)"),
+  ("F4_NestedAlphaUsers", "off", "5", "1 digest mismatch(es), 1 missing"),
+  ("F5_SigmaNestedNested", "off", "5", "11 decompile error(s)"),
+  ("F5_SigmaNestedNested", "on", "5", "11 decompile error(s)"),
+  ("F6_OrderIdxBrecOn", "off", "1", "2 per-block compile failure(s)"),
+  ("F6_OrderIdxBrecOn", "off", "5", "2 digest mismatch(es), 2 missing"),
+  ("F8_PropSplitNested", "off", "1", "3 per-block compile failure(s)"),
+  ("F8_PropSplitNested", "off", "5", "8 digest mismatch(es), 3 missing"),
+  ("KernelSpec", "off", "1", "16 per-block compile failure(s)"),
+  ("KernelSpec", "off", "5", "7 decompile error(s)"),
+  ("KernelSpec", "on", "1", "16 per-block compile failure(s)"),
+  ("KernelSpec", "on", "5", "7 decompile error(s)"),
+  ("Neighbours", "off", "6", "unclassified 6"),
+  ("Neighbours", "off", "8", "6 violation(s)"),
+  ("NestMutExt", "off", "1", "84 per-block compile failure(s)"),
+  ("NestMutExt", "off", "4", "14 comparison error(s)"),
+  ("NestMutExt", "off", "5", "106 digest mismatch(es), 84 missing"),
+  ("NestMutExt", "on", "1", "88 per-block compile failure(s)"),
+  ("NestMutExt", "on", "5", "110 digest mismatch(es), 102 missing"),
+  ("NestMutExtA", "off", "1", "43 per-block compile failure(s)"),
+  ("NestMutExtA", "off", "4", "9 comparison error(s)"),
+  ("NestMutExtA", "off", "5", "55 digest mismatch(es), 44 missing"),
+  ("NestMutExtA", "on", "1", "45 per-block compile failure(s)"),
+  ("NestMutExtA", "on", "4", "2 comparison error(s)"),
+  ("NestMutExtA", "on", "5", "57 digest mismatch(es), 53 missing"),
+  ("NestRoseSplit", "off", "1", "43 per-block compile failure(s)"),
+  ("NestRoseSplit", "off", "4", "9 comparison error(s)"),
+  ("NestRoseSplit", "off", "5", "52 digest mismatch(es), 41 missing"),
+  ("NestRoseSplit", "on", "1", "45 per-block compile failure(s)"),
+  ("NestRoseSplit", "on", "4", "2 comparison error(s)"),
+  ("NestRoseSplit", "on", "5", "54 digest mismatch(es), 50 missing"),
+  ("Proto", "off", "1", "50 per-block compile failure(s)"),
+  ("Proto", "off", "5", "50 digest mismatch(es), 50 missing"),
+  ("RecAlias", "off", "5", "3 decompile error(s)"),
+  ("RecAlias", "off", "6", "unclassified 5"),
+  ("RecAlias", "off", "8", "5 violation(s)"),
+  ("RecAlias", "on", "5", "3 decompile error(s)"),
+  ("RecAlias", "on", "6", "unclassified 5"),
+  ("RecAlias", "on", "8", "5 violation(s)"),
+  ("Repro", "off", "1", "11 per-block compile failure(s)"),
+  ("Repro", "off", "5", "6 decompile error(s)"),
+  ("Repro", "off", "6", "unclassified 10"),
+  ("Repro", "off", "8", "10 violation(s)"),
+  ("Repro", "on", "5", "6 decompile error(s)"),
+  ("Repro", "on", "6", "unclassified 10"),
+  ("Repro", "on", "8", "10 violation(s)"),
+  ("SurgCollapse", "off", "1", "7 per-block compile failure(s)"),
+  ("SurgCollapse", "off", "5", "7 digest mismatch(es), 7 missing"),
+  ("SurgIdx", "off", "1", "3 per-block compile failure(s)"),
+  ("SurgIdx", "off", "5", "3 digest mismatch(es), 3 missing"),
+  ("UnsafeI", "off", "5", "7 decompile error(s)"),
+  ("UnsafeI", "off", "6", "unclassified 2"),
+  ("UnsafeI", "off", "8", "2 violation(s)"),
+  ("UnsafeI", "on", "5", "7 decompile error(s)"),
+  ("UnsafeI", "on", "6", "unclassified 2"),
+  ("UnsafeI", "on", "8", "2 violation(s)"),
+  ("ValidateLeanIPB", "off", "6", "unclassified 10"),
+  ("ValidateLeanIPB", "off", "8", "10 violation(s)")
+]
+
+def pinOf (stem switch key : String) : Option String :=
+  pins.findSome? fun (s, sw, k, p) => if s == stem && sw == switch && k == key then some p else none
+
 /-- Fixtures Lean itself rejects (the aux-cert record): no report. -/
 def leanRejects : List String := ["PropEvap", "SortU", "SortURec", "SortUOpt"]
 
@@ -102,8 +211,8 @@ def files : List String :=
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
-/-- A run's result: stem, switch, phase verdicts (none: no report), exit. -/
-abbrev Row := String × String × Option (List (String × String)) × String
+/-- A run's result: stem, switch, phase verdicts and details (none: no report), exit. -/
+abbrev Row := String × String × Option (List (String × String × String)) × String
 
 /-- One run: the phase verdicts by key (`pass`, `fail`, `skip`), or `none` when
 no report was written. -/
@@ -123,7 +232,7 @@ def runOne (dir : System.FilePath) (file switch : String) :
   let phases ← IO.ofExcept (j.getObjValAs? (Array Json) "phases")
   let rows := phases.toList.filterMap fun p =>
     match p.getObjValAs? String "key", p.getObjValAs? String "result" with
-    | .ok k, .ok r => some (k, r)
+    | .ok k, .ok r => some (k, r, (p.getObjValAs? String "detail").toOption.getD "")
     | _, _ => none
   return (stem, switch, some rows, s!"exit {out.exitCode}")
 
@@ -157,15 +266,30 @@ def run : IO UInt32 := do
         IO.println s!"[validate-lean] {stem} {switch}: Lean rejects the file (aux-cert record; {exit})"
       else problems := problems.push s!"{stem} {switch}: no report ({exit})"
     | some rows =>
-      let line := " ".intercalate (rows.map fun (k, r) => s!"{k}={r}")
+      let line := " ".intercalate (rows.map fun (k, r, _) => s!"{k}={r}")
       IO.println s!"[validate-lean] {stem} {switch}: {line}{if causes.isEmpty then "" else s!"  [{causes}]"}"
       if leanRejects.contains stem then
         problems := problems.push s!"{stem} {switch}: recorded as rejected by Lean, but a report was written"
-      for (k, r) in rows do
+      for (k, r, d) in rows do
         let want := failing.contains k
         if r == "fail" && !want then problems := problems.push s!"{stem} {switch}: phase {k} fails (not recorded)"
         if r != "fail" && want then problems := problems.push s!"{stem} {switch}: phase {k} recorded as failing ({causes}) but {r}"
         if r == "skip" && k != "7" then problems := problems.push s!"{stem} {switch}: phase {k} skipped"
+        -- a recorded failing phase fails exactly as recorded: its counts
+        if r == "fail" && want then
+          let s := failSummary k d
+          IO.println s!"[validate-lean]   {stem} {switch} phase {k}: {s}"
+          match pinOf stem switch k with
+          | some p =>
+            if p != s then
+              problems := problems.push s!"{stem} {switch}: phase {k} fails with '{s}', recorded '{p}'"
+          | none => problems := problems.push s!"{stem} {switch}: phase {k} fails with '{s}', no count recorded"
+  -- every pin belongs to a recorded failing phase of a run
+  for (stem, switch, k, p) in pins do
+    let used := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&
+      (rows?.getD []).any fun (k', r, _) => k' == k && r == "fail"
+    if !used && (only.isEmpty || only.contains stem) then
+      problems := problems.push s!"{stem} {switch}: phase {k} recorded as failing with '{p}' (stale)"
   for p in problems do IO.println s!"[validate-lean] FAIL {p}"
   IO.println s!"[validate-lean] {results.size} runs ({todo.length / 2} files × 2 switch states), \
 {problems.size} problem(s), {(← IO.monoMsNow) - t0} ms"
