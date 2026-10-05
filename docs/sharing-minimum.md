@@ -47,7 +47,7 @@ the corpus-measurement gate P1.5, and §11 (division of the work).
 - Tests: `lake test -- exact-sharing exact-sharing-ffi` runs the construction's suites (the
   plan was written against the heuristic's `sharing` suite, since removed); `lake test --
   ixon` the codec suite; `cargo test -p ixon` the Rust crate; `lake build --wfail IxSharingVerify`
-  the proofs (`IxSharingVerify`; the TagN and codec proofs are in `IxKernel/IxKernel/Ixon/Verify` and build
+  the proofs (`IxSharingVerify`; the TagN and codec proofs are in `IxKernel/Ixon/Verify` and build
   with `lake -d IxKernel build --wfail`).
 - Corpus: `Init`, compiled by the production compiler with
   `lake exe ix compile Benchmarks/CompileInit.lean --out init.ixe` from the repository root
@@ -881,14 +881,14 @@ phase-1 runs instead of one (about 3× the time; still minutes for all of Mathli
 Owner decision: TagN (flag widths 0, 2, 4) replaces Tag0, Tag2 and Tag4 everywhere in the Ixon
 grammar, for uniformity and to simplify the serialization. Measured byte effect is the Share
 savings only (other fields change by ≈0), and no integer gets longer. Consequences: one integer
-code with one proof of roundtrip/bijectivity (now `IxKernel/IxKernel/Ixon/Verify/TagN.lean`); the three
+code with one proof of roundtrip/bijectivity (now `IxKernel/Ixon/Verify/TagN.lean`); the three
 "noncanonical … integer" reader checks are removed; every codec theorem that mentions
 `tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
 sharing + integers together.
 
 ### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
-The theorems below are in `IxSharingVerify` (the TagN theorems in `IxKernel/IxKernel/Ixon/Verify/TagN.lean`)
+The theorems below are in `IxSharingVerify` (the TagN theorems in `IxKernel/Ixon/Verify/TagN.lean`)
 and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (111 roots on Lean
 4.34.0; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
 `sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
@@ -984,7 +984,7 @@ invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung e
 `R1 = 2^(r−1)`, `R2 = R1 + 2^(r−2+8)`, `R3 = R2 + 2^16`, `R4 = R3 + 2^24`, `R5 = R4 + 2^32`,
 `R6 = R5 + 2^64` (r = 8 − f). Reason: without it, f = 0 values in [82,048, 2^24) cost 5 bytes where
 Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
-longer than the old codes on any field measured. Still bijective; `IxKernel/IxKernel/Ixon/Codec.lean`'s TagN docstring is
+longer than the old codes on any field measured. Still bijective; `IxKernel/Ixon/Codec.lean`'s TagN docstring is
 the normative layout.
 
 ### 12.17 Proof-library status after the TagN switch (2026-10-01)

@@ -100,8 +100,8 @@ fixture directory only after validation.
 
 The formal gates are `lake build Ix.Resource.Audit` (the resource-state
 invariants), `lake -d IxKernel build --wfail` (the Ixon codec contracts
-under `IxKernel/IxKernel/Ixon/Verify`, including the TagN laws, with their audit
-`IxKernel/IxKernel/Ixon/Audit.lean`) and `lake build --wfail IxSharingVerify` (the
+under `IxKernel/Ixon/Verify`, including the TagN laws, with their audit
+`IxKernel/Ixon/Audit.lean`) and `lake build --wfail IxSharingVerify` (the
 canonical sharing construction, `IxSharingVerify`, with its audit).
 Resource theorems cover the executed quantitative and state-transition
 invariants. They do not constitute a verified allocation backend or a proof of

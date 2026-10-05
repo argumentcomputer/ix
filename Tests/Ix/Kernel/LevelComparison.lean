@@ -5,8 +5,8 @@ import Ix.IxonUniv
 /-! # The kernel's level comparison against brute-force evaluation
 
 `Ix.Kernel.Level.leq` is nanoda's comparison with Géran's sublevels as the
-fallback of its `(param, max)` case (`IxKernel/IxKernel/Kernel/Level.lean`,
-`IxKernel/IxKernel/Kernel/LevelGeran.lean`). `leqCore_sound` proves a `true` verdict
+fallback of its `(param, max)` case (`IxKernel/Kernel/Level.lean`,
+`IxKernel/Kernel/LevelGeran.lean`). `leqCore_sound` proves a `true` verdict
 pointwise; `Geran.leq_iff` proves the fallback a decision. This host-only
 gate checks that the whole comparison is complete in practice too. For every
 pair below it compares `Level.leq`, `Level.isEquiv` and `Level.Geran.leq`

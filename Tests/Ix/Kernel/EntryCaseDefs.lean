@@ -136,7 +136,7 @@ partial def loop (n : Nat) : Nat := loop (n + 1)
 The `Subtype`'s type `Sort (max (imax (max (u+2) (v+1)) v) 1)` is the
 `Eq`'s domain at every valuation, which nanoda's level comparison (the
 official kernel's) does not establish; the kernel's comparison decides that
-case by Géran's sublevels (`IxKernel/IxKernel/Kernel/LevelGeran.lean`).
+case by Géran's sublevels (`IxKernel/Kernel/LevelGeran.lean`).
 -/
 theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}} (h : a = b) :
     a = b := h

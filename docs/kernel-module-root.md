@@ -1,10 +1,8 @@
 # Design: moving the certified kernel out of the `Ix.` module namespace
 
 Status: implemented on top of the `ix-kernel` dependency restructuring
-(root `lakefile.lean` requires `IxKernel/`). Three details were settled
-during implementation and are not in the plan below: the layering fence
-derives module names relative to the package directory (`KernelLayout.pkgDir`)
-rather than the repository root; the sharing audits in
+(root `lakefile.lean` requires `IxKernel/`). Two details were settled
+during implementation and are not in the plan below: the sharing audits in
 `IxSharingVerify/Audit/` accept the `IxSharingVerify` module prefix alongside
 `Ix.Sharing`, since their scope was defined by module name; and the
 `check-kernel` host step no longer lists the four fixtures, which the
@@ -46,7 +44,7 @@ namespace. Declaration namespaces and import relationships do not change.
 | `Ix.Kernel`, `Ix.Kernel.X` | `IxKernel.Kernel`, `IxKernel.Kernel.X` |
 | `Ix.Address.Core` | `IxKernel.Address.Core` |
 | `Ix.Ixon.Types`, `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.WireCheck`, `Ix.Ixon.Bounded.*`, `Ix.Ixon.Canonical`, `Ix.Ixon.Verify.*`, `Ix.Ixon.Audit` | the same under `IxKernel.Ixon.` |
-| `Tests.Ix.Kernel.{IxonFixtures,Codec,ByteAdmission,ParserWork}` | `IxKernelFixtures.{IxonFixtures,Codec,ByteAdmission,ParserWork}` |
+| `Tests.Ix.Kernel.{IxonFixtures,Codec,ByteAdmission,ParserWork}` | `IxKernel.Fixtures.{IxonFixtures,Codec,ByteAdmission,ParserWork}` |
 
 ### What moves
 
@@ -111,29 +109,29 @@ The con-leche attribution. Only the paths in the NOTICE file change.
 
 ### Layout
 
-Sources move inside the package directory so Lake's default `srcDir`
-applies:
+The package keeps the repository as its source root (`srcDir := ".."`), so
+the package directory is the `IxKernel` module directory, the way `Ix/` is
+for the root package:
 
 ```
 IxKernel/
   lakefile.lean
   lake-manifest.json
   lean-toolchain
-  IxKernel/
-    Kernel.lean                 (was Ix/Kernel.lean)
-    Kernel/
-      Admission.lean            (was Ix/Kernel/Admission.lean)
-      Admission/...
-      Audit/...
-      NOTICE
-      ...
-    Address/Core.lean           (was Ix/Address/Core.lean)
-    Ixon/
-      Types.lean                (was Ix/Ixon/Types.lean)
-      Types/...
-      Codec.lean
-      ...
-  IxKernelFixtures/
+  Kernel.lean                   (was Ix/Kernel.lean)
+  Kernel/
+    Admission.lean              (was Ix/Kernel/Admission.lean)
+    Admission/...
+    Audit/...
+    NOTICE
+    ...
+  Address/Core.lean             (was Ix/Address/Core.lean)
+  Ixon/
+    Types.lean                  (was Ix/Ixon/Types.lean)
+    Types/...
+    Codec.lean
+    ...
+  Fixtures/
     IxonFixtures.lean           (was Tests/Ix/Kernel/IxonFixtures.lean)
     Codec.lean
     ByteAdmission.lean
@@ -149,19 +147,22 @@ ownership never depends on declaration order:
 ```lean
 @[default_target]
 lean_lib IxKernelTree where
+  srcDir := ".."
   roots := #[`IxKernel.Kernel]
   globs := #[.andSubmodules `IxKernel.Kernel]
   leanOptions := #[⟨`linter.deprecated, false⟩]
 
 @[default_target]
 lean_lib IxKernel where
-  roots := #[`IxKernel.Address.Core, `IxKernel.Ixon.Types, ...]
-  globs := #[.one `IxKernel.Address.Core, .andSubmodules `IxKernel.Ixon.Types, ...]
+  srcDir := ".."
+  roots := #[`IxKernel.Address.Core, `IxKernel.Ixon]
+  globs := #[.one `IxKernel.Address.Core, .submodules `IxKernel.Ixon]
 
 @[default_target]
 lean_lib IxKernelFixtures where
-  roots := #[`IxKernelFixtures]
-  globs := #[.andSubmodules `IxKernelFixtures]
+  srcDir := ".."
+  roots := #[`IxKernel.Fixtures]
+  globs := #[.submodules `IxKernel.Fixtures]
 ```
 
 Two points are deliberate:
@@ -182,7 +183,7 @@ Two points are deliberate:
 - `lean_lib Ix` returns to default roots and globs. The `ixRoots` list,
   `IxImports` and `IxCertified` are deleted. A new `Ix/Foo.lean` is owned by
   `Ix` automatically.
-- The root `Tests` library imports the fixtures from `IxKernelFixtures`
+- The root `Tests` library imports the fixtures from `IxKernel.Fixtures`
   instead of owning them, which restores the standalone fence: a fixture that
   gains a host import fails `lake -d IxKernel build --wfail` again.
 - `IxSharingVerify` (`Ix.Sharing.Verify.*`, 33 files) still overlaps a
@@ -200,7 +201,7 @@ Two points are deliberate:
 1. `git mv` the 513 files to the layout above, so history follows.
 2. Rewrite the imports with a script that matches every import form. The
    mapping is one prefix substitution on the dependency-owned module set, and
-   the four fixture modules map to `IxKernelFixtures.*`.
+   the four fixture modules map to `IxKernel.Fixtures.*`.
 3. Edit by hand, against the mapping table, the places that hold module
    names as data rather than imports: the allowlist and denylist arrays and
    `#guard`s in the six audit files, the module and path strings in
@@ -209,7 +210,7 @@ Two points are deliberate:
    text and output paths, and the directory list in `sourceFingerprint` in
    `Benchmarks/Kernel/CheckIxePaired.lean`.
 4. Declare the three libraries above, delete `ixRoots`, `IxImports` and
-   `IxCertified`, and point the root tests at `IxKernelFixtures` (today one
+   `IxCertified`, and point the root tests at `IxKernel.Fixtures` (today one
    root test, `Tests.Ix.Kernel.Projection`, imports a fixture).
 5. In `flake.nix`, set the library derivation's `name` back to `"Ix"`
    (it currently builds `IxImports`). Keep the `buildDir := "../.lake/kernel"`

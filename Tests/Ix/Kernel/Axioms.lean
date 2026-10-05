@@ -19,7 +19,7 @@ message changes and the build fails.
 `#print axioms` is blind to compiler escapes (`@[implemented_by]`,
 `@[computed_field]`); `kernel-trust-surface`
 (`Tests/Ix/Kernel/TrustSurface.lean`, derived from upstream's
-`tests/trust-surface.sh`) scans `IxKernel/IxKernel/Kernel` for those.
+`tests/trust-surface.sh`) scans `IxKernel/Kernel` for those.
 
 Of upstream's twenty roots, three are not here: the NDJSON corollary
 `no_False_declaration` (the NDJSON frontend is not imported), and

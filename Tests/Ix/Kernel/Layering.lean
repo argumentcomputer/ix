@@ -5,20 +5,20 @@ import Tests.Ix.Kernel.KernelLayout
 /-! # The kernel's import-layering fence (`kernel-layering`)
 
 Derived from con-leche's `tests/layering.sh` (Apache-2.0), modified; see
-`IxKernel/IxKernel/Kernel/NOTICE`. Upstream's is a Python program in a shell wrapper.
+`IxKernel/Kernel/NOTICE`. Upstream's is a Python program in a shell wrapper.
 
-It covers the checker and the theory under `IxKernel/IxKernel/Kernel/`, each file
+It covers the checker and the theory under `IxKernel/Kernel/`, each file
 classified by its path (`Tests.Ix.Kernel.KernelLayout`, whose table
-`topLevel` must classify every file under `IxKernel/IxKernel/Kernel/`), and rejects these
+`topLevel` must classify every file under `IxKernel/Kernel/`), and rejects these
 import edges:
 
   1. CHECKER→THEORY: no module of the checker (`KernelLayout.Part.checker`:
      the flattened implementation, `Cached/*`, `Frontend/*`) imports
      `Ix.Kernel.{Verify,SetTheory,Model,SetModel,Semantics,Term}.*`.
   2. BASE→MODEL: no base module (everything outside the model lane
-     `IxKernel/IxKernel/Kernel/Model{,/*}` and the capstone assembly `MainTheorem`,
+     `IxKernel/Kernel/Model{,/*}` and the capstone assembly `MainTheorem`,
      `Verify/Cached{,/*}`) imports the model lane.
-  3. THE RULES FENCE: `IxKernel/IxKernel/Kernel/Rules/*` and `IxKernel/IxKernel/Kernel/Model/Rules/*`
+  3. THE RULES FENCE: `IxKernel/Kernel/Rules/*` and `IxKernel/Kernel/Model/Rules/*`
      (except `Model.Rules.Recompose`) do not directly import
      `Ix.Kernel.{Core,TypeChecker,CoreIO,DeclCheck,Checker*}` or `Cached*`.
   4. THE RULES CLOSURE: the elaboration closure of those modules (direct
@@ -41,7 +41,7 @@ Unicode whitespace). Changes from upstream: the checked files and their
 classes come from the repository's own layout; upstream's dead base→model
 clause (it compared with a lane that never occurs) is repaired, with the
 capstone assembly classified by path as upstream's comment states; the
-boundary clause is added; an empty `IxKernel/IxKernel/Kernel/` passes vacuously, and the
+boundary clause is added; an empty `IxKernel/Kernel/` passes vacuously, and the
 rules-closure clause waits until a rules module exists.
 
 Usage: `lake exe kernel-layering [--list]`, from the repository root
@@ -216,10 +216,9 @@ def run (args : List String) : IO UInt32 := do
   let (tree, unclassified) ← covered
   if ← reportUnclassified "LAYERING" unclassified then return 1
   if tree.isEmpty then
-    IO.println "layering: no kernel modules under IxKernel/IxKernel/Kernel/; nothing to check"
+    IO.println "layering: no kernel modules under IxKernel/Kernel/; nothing to check"
     return 0
   let modName (rel : String) : String :=
-    let rel := dropChars rel pkgDir.length
     (String.ofList (rel.toList.take (rel.length - 5))).replace "/" "."
   let mods : Array String := tree.map modName
   let modSet : Std.HashSet String := Std.HashSet.ofArray mods
@@ -280,14 +279,14 @@ def run (args : List String) : IO UInt32 := do
     IO.println s!"    {hint}"
     return true
   fail := (← report "base module importing the model lane" basev
-    "the checker and IxKernel/IxKernel/Kernel/{Verify,SetTheory,Term,SetModel,Semantics}/* stand BELOW the lane; \
-    nothing there may import IxKernel/IxKernel/Kernel/Model/*.") || fail
+    "the checker and IxKernel/Kernel/{Verify,SetTheory,Term,SetModel,Semantics}/* stand BELOW the lane; \
+    nothing there may import IxKernel/Kernel/Model/*.") || fail
   fail := (← report "implementation importing theory" implv
     "the checker (Tests/Ix/Kernel/KernelLayout.lean) must never import \
-    IxKernel/IxKernel/Kernel/{SetTheory,SetModel,Semantics,Model,Verify,Term}/*.") || fail
+    IxKernel/Kernel/{SetTheory,SetModel,Semantics,Model,Verify,Term}/*.") || fail
   fail := (← report "rules tier importing the pure implementation" rulesv
-    "IxKernel/IxKernel/Kernel/Rules/* and IxKernel/IxKernel/Kernel/Model/Rules/* are stated over IxKernel/IxKernel/Kernel/CoreDefs and may not \
-    import IxKernel/IxKernel/Kernel/{Core,TypeChecker,CoreIO,Checker*,DeclCheck} or Cached/*.") || fail
+    "IxKernel/Kernel/Rules/* and IxKernel/Kernel/Model/Rules/* are stated over IxKernel/Kernel/CoreDefs and may not \
+    import IxKernel/Kernel/{Core,TypeChecker,CoreIO,Checker*,DeclCheck} or Cached/*.") || fail
   fail := (← report "rules tier CLOSURE reaching an unlisted implementation module"
     (newDoors.map (fun (t, m, _) => (m, t)) ++ newDoors.map (fun (_, _, ch) => ("  via", ch)))
     "a new public re-export carries the impl into the rules tier's elaboration environment; \

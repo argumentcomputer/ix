@@ -174,7 +174,7 @@ Ix consists of the following core components:
 
 ### Certified Ixon checker
 
-`IxKernel/IxKernel/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
+`IxKernel/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
 consistency. It is Ix's own kernel, derived from the verified checker of
 [con-leche](https://github.com/leanprover/con-leche). Its entry,
 `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every

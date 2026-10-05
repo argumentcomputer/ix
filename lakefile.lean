@@ -388,7 +388,7 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- Regenerates `IxKernel/IxKernel/Kernel/Ixon/PinData.lean` (pins and prelude) from a
+/-- Regenerates `IxKernel/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
   root := `Benchmarks.Kernel.PinGen

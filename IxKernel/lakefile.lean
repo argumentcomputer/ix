@@ -9,9 +9,11 @@ con-leche, and Ix's boundary beside it: the certified entry
 `Ix.Kernel.Admission` with its theorems, the Ixon reader, pins and prelude,
 record store, projection writer, audits), `IxKernel.Address.Core`, the pure
 Ixon types, codecs and their proofs under `IxKernel.Ixon`, and the certified
-fixtures under `IxKernelFixtures`. Module names live under the `IxKernel` and
-`IxKernelFixtures` roots so the root package's `Ix` library never shadows
-them; declaration namespaces (`Ix.Kernel.*`, `Ixon.*`) are unchanged. Data
+fixtures under `IxKernel.Fixtures`. Module names live under the `IxKernel`
+root so the root package's `Ix` library never shadows them, and the source
+root is the repository (`srcDir := ".."`), so this package directory is the
+`IxKernel` module directory, as `Ix/` is for the root package; declaration
+namespaces (`Ix.Kernel.*`, `Ixon.*`) are unchanged. Data
 import closures use Lean core and the kernel only (`Lean` only at elaboration
 time, in the kernel's ruled generators); proofs additionally use Lean/Std
 proof tooling.
@@ -39,6 +41,7 @@ package «ix-kernel» where
 build cover every kernel module and audit. -/
 @[default_target]
 lean_lib IxKernelTree where
+  srcDir := ".."
   roots := #[`IxKernel.Kernel]
   globs := #[.andSubmodules `IxKernel.Kernel]
   leanOptions := #[⟨`linter.deprecated, false⟩]
@@ -48,6 +51,7 @@ decodes with, and the address key. A separate library so the kernel's
 `linter.deprecated` option does not reach the codec. -/
 @[default_target]
 lean_lib IxKernel where
+  srcDir := ".."
   roots := #[`IxKernel.Address.Core, `IxKernel.Ixon]
   globs := #[.one `IxKernel.Address.Core, .submodules `IxKernel.Ixon]
 
@@ -56,5 +60,6 @@ dependencies: the Ixon record fixtures, the codec, and the certified entry's
 byte admission. The root test library imports them. -/
 @[default_target]
 lean_lib IxKernelFixtures where
-  roots := #[`IxKernelFixtures]
-  globs := #[.submodules `IxKernelFixtures]
+  srcDir := ".."
+  roots := #[`IxKernel.Fixtures]
+  globs := #[.submodules `IxKernel.Fixtures]
