@@ -151,6 +151,254 @@ theorem PullbackMap.fromEnvs_constant {V : Type u} [Kernel.SetTheory V]
   simp only [PullbackMap.fromEnvs, lookup, targetLookup]
   exact image.telescope_instance targetLevels sourceUnique targetUnique sameArity arity parameter present
 
+/-- Compare actual installed constant occurrences. `none` preserves the
+underlying level comparison's unavailable result; it is not inequivalence. -/
+def checkInstalledConstant (source : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (image : UniverseImage) (sourceName targetName : Kernel.Name)
+    (sourceUs targetUs : List Kernel.Level) : Option Bool :=
+  match source.find? sourceName with
+  | none => some false
+  | some entry =>
+    if targetName = names sourceName ∧ sourceUs.length = entry.toConstantVal.levelParams.length then
+      Kernel.Level.isEquivList (sourceUs.map image.level) targetUs
+    else some false
+
+theorem checkInstalledConstant_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    {sourceName targetName : Kernel.Name} {sourceUs targetUs : List Kernel.Level}
+    (checked : checkInstalledConstant sourceEnv names image sourceName targetName sourceUs targetUs = some true) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv (image.valuation targetLevels) targetLevels
+      (.const sourceName sourceUs) (.const targetName targetUs) := by
+  cases lookup : sourceEnv.find? sourceName with
+  | none => simp [checkInstalledConstant, lookup] at checked
+  | some entry =>
+    simp only [checkInstalledConstant, lookup] at checked
+    split at checked
+    · rename_i conditions
+      obtain ⟨rfl, arity⟩ := conditions
+      have base := PullbackMap.fromEnvs_constant target association image targetLevels lookup sourceUs arity
+      exact base.constant_equivalent_levels checked
+    · contradiction
+
+def bothChecks (first second : Option Bool) : Option Bool :=
+  match first with
+  | some true => second
+  | some false => some false
+  | none => none
+
+theorem bothChecks_true {first second : Option Bool} (checked : bothChecks first second = some true) :
+    first = some true ∧ second = some true := by
+  cases first with
+  | none => contradiction
+  | some value => cases value <;> simp_all [bothChecks]
+
+def checkInstalledPins (source : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (image : UniverseImage) : List (Kernel.Name × List Kernel.Level) → Option Bool
+  | [] => some true
+  | (name, levels) :: rest => bothChecks
+      (checkInstalledConstant source names image name name levels levels)
+      (checkInstalledPins source names image rest)
+
+theorem checkInstalledPins_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    {pins : List (Kernel.Name × List Kernel.Level)}
+    (checked : checkInstalledPins sourceEnv names image pins = some true) :
+    ∀ pin ∈ pins, InstalledExprImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv (image.valuation targetLevels) targetLevels
+      (.const pin.1 pin.2) (.const pin.1 pin.2) := by
+  induction pins with
+  | nil => simp
+  | cons pin rest ih =>
+    obtain ⟨first, remaining⟩ := bothChecks_true checked
+    intro selected member
+    rcases List.mem_cons.mp member with rfl | member
+    · exact checkInstalledConstant_sound target association image targetLevels first
+    · exact ih remaining selected member
+
+def naturalImagePins : List (Kernel.Name × List Kernel.Level) :=
+  [(Kernel.natZeroName, []), (Kernel.natSuccName, [])]
+
+def stringImagePins : List (Kernel.Name × List Kernel.Level) := naturalImagePins ++
+  [(Kernel.charName, []), (Kernel.charOfNatName, []), (Kernel.listNilName, [.zero]),
+    (Kernel.listConsName, [.zero]), (Kernel.stringOfListName, [])]
+
+theorem checked_natural_image {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    (checked : checkInstalledPins sourceEnv names image naturalImagePins = some true) (value : Nat) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv (image.valuation targetLevels) targetLevels
+      (.lit (.natVal value)) (.lit (.natVal value)) := by
+  have pins := checkInstalledPins_sound target association image targetLevels checked
+  exact InstalledExprImage.natural (pins (Kernel.natZeroName, []) (by simp [naturalImagePins]))
+    (pins (Kernel.natSuccName, []) (by simp [naturalImagePins])) value
+
+theorem checked_string_image {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    (checked : checkInstalledPins sourceEnv names image stringImagePins = some true) (value : String) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv (image.valuation targetLevels) targetLevels
+      (.lit (.strVal value)) (.lit (.strVal value)) := by
+  have pins := checkInstalledPins_sound target association image targetLevels checked
+  apply InstalledExprImage.string (value := value)
+  · exact pins (Kernel.natZeroName, []) (by simp [stringImagePins, naturalImagePins])
+  · exact pins (Kernel.natSuccName, []) (by simp [stringImagePins, naturalImagePins])
+  · exact pins (Kernel.charName, []) (by simp [stringImagePins, naturalImagePins])
+  · exact pins (Kernel.charOfNatName, []) (by simp [stringImagePins, naturalImagePins])
+  · exact pins (Kernel.listNilName, [.zero]) (by simp [stringImagePins, naturalImagePins])
+  · exact pins (Kernel.listConsName, [.zero]) (by simp [stringImagePins, naturalImagePins])
+  · exact pins (Kernel.stringOfListName, []) (by simp [stringImagePins, naturalImagePins])
+
+/-- Compare actual projection table positions, including the two official
+fallback cases. A missing table at any other index supplies no image proof. -/
+def checkInstalledProjection (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (sourceOwner targetOwner : Kernel.Name) (sourceIndex targetIndex : Nat) : Bool :=
+  decide (targetOwner = names sourceOwner) &&
+    match source.findProj? sourceOwner sourceIndex, target.findProj? targetOwner targetIndex with
+    | some sourceEntry, some targetEntry => decide (sourceIndex + sourceEntry.off = targetIndex + targetEntry.off)
+    | none, none => decide ((sourceIndex = 0 ∧ targetIndex = 0) ∨ (sourceIndex = 1 ∧ targetIndex = 1))
+    | _, _ => false
+
+theorem checkInstalledProjection_sound {V : Type u} [Kernel.SetTheory V]
+    {sv tv sourceEnv targetEnv sl tl} {names : Kernel.Name → Kernel.Name}
+    {sourceOwner targetOwner : Kernel.Name} {sourceIndex targetIndex : Nat} {source target : Kernel.Expr}
+    (checked : checkInstalledProjection sourceEnv targetEnv names sourceOwner targetOwner sourceIndex targetIndex = true)
+    (operand : InstalledExprImage (V := V) sv tv sourceEnv targetEnv sl tl source target) :
+    InstalledExprImage sv tv sourceEnv targetEnv sl tl
+      (.proj sourceOwner sourceIndex source) (.proj targetOwner targetIndex target) := by
+  simp only [checkInstalledProjection, Bool.and_eq_true] at checked
+  have position := checked.2
+  cases sourceTable : sourceEnv.findProj? sourceOwner sourceIndex with
+  | none =>
+    cases targetTable : targetEnv.findProj? targetOwner targetIndex with
+    | some entry => simp [sourceTable, targetTable] at position
+    | none =>
+      simp only [sourceTable, targetTable, decide_eq_true_eq] at position
+      rcases position with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+      · exact .projFst sourceTable targetTable operand
+      · exact .projSnd sourceTable targetTable operand
+  | some sourceEntry =>
+    cases targetTable : targetEnv.findProj? targetOwner targetIndex with
+    | none => simp [sourceTable, targetTable] at position
+    | some targetEntry =>
+      simp only [sourceTable, targetTable, decide_eq_true_eq] at position
+      exact .projTable sourceTable targetTable position operand
+
+/-- A conditional installed-expression image check, separate from raw reader
+fidelity and source/target admission. It compares universe meanings and actual
+binder data. `none` means no certificate (including open/let forms); it is not
+an established negative equality or a new definition of the compiler domain.
+Projection lowering with a different expression shape needs its own proved
+normalization relation and is not silently accepted here. -/
+def checkInstalledExpr (sourceEnv targetEnv : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (image : UniverseImage) : Kernel.Expr → Kernel.Expr → Option Bool
+  | .bvar source, .bvar target => some (decide (source = target))
+  | .sort source, .sort target => Kernel.Level.isEquiv (image.level source) target
+  | .const sourceName sourceUs, .const targetName targetUs =>
+      checkInstalledConstant sourceEnv names image sourceName targetName sourceUs targetUs
+  | .app sf sa, .app tf ta => bothChecks
+      (checkInstalledExpr sourceEnv targetEnv names image sf tf)
+      (checkInstalledExpr sourceEnv targetEnv names image sa ta)
+  | .lam sd sb sm, .lam td tb tm
+  | .forallE sd sb sm, .forallE td tb tm => bothChecks
+      (some (decide (tm.pw = image.datum sm.pw))) (bothChecks
+        (checkInstalledExpr sourceEnv targetEnv names image sd td)
+        (checkInstalledExpr sourceEnv targetEnv names image sb tb))
+  | .proj so si se, .proj to ti te => bothChecks
+      (some (checkInstalledProjection sourceEnv targetEnv names so to si ti))
+      (checkInstalledExpr sourceEnv targetEnv names image se te)
+  | .lit (.natVal source), .lit (.natVal target) => bothChecks (some (decide (source = target)))
+      (checkInstalledPins sourceEnv names image naturalImagePins)
+  | .lit (.strVal source), .lit (.strVal target) => bothChecks (some (decide (source = target)))
+      (checkInstalledPins sourceEnv names image stringImagePins)
+  | .fvar .., _ | .letE .., _ | _, .fvar .. | _, .letE .. => none
+  | _, _ => some false
+
+/-- Every accepted installed-expression comparison yields the semantic image
+for every target universe valuation. Source values are the explicit target
+pull-back. Admission, actual declaration association and projection lowering
+are separate premises/relations and are not supplied by this expression check. -/
+theorem checkInstalledExpr_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (targetModel : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (image : UniverseImage) (targetLevels : Kernel.Name → Nat)
+    {source target : Kernel.Expr}
+    (checked : checkInstalledExpr sourceEnv targetEnv names image source target = some true) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values targetModel.public.cval)
+      targetModel.public.cval sourceEnv targetEnv (image.valuation targetLevels) targetLevels source target := by
+  induction source generalizing target with
+  | bvar index =>
+    cases target <;> simp [checkInstalledExpr] at checked
+    case bvar other => subst other; exact .bvar index
+  | fvar index type ih => cases target <;> simp [checkInstalledExpr] at checked
+  | sort level =>
+    cases target <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+    case sort targetLevel =>
+      exact .sort ((image.eval targetLevels level).symm.trans
+        (Kernel.Level.isEquiv_sound checked targetLevels))
+  | const name levels =>
+    cases target <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+    case const targetName targetUs =>
+      exact checkInstalledConstant_sound targetModel association image targetLevels checked
+  | app function argument ihF ihA =>
+    cases target <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+    case app targetFunction targetArgument =>
+      obtain ⟨functionCheck, argumentCheck⟩ := bothChecks_true checked
+      exact .app (ihF functionCheck) (ihA argumentCheck)
+  | lam domain body metadata ihD ihB =>
+    cases target <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+    case lam targetDomain targetBody targetMetadata =>
+      obtain ⟨datumCheck, rest⟩ := bothChecks_true checked
+      obtain ⟨domainCheck, bodyCheck⟩ := bothChecks_true rest
+      have datum := of_decide_eq_true (Option.some.inj datumCheck)
+      apply InstalledExprImage.lam (ihD domainCheck) (ihB bodyCheck)
+      rw [datum]
+      exact (image.regime targetLevels metadata).symm
+  | forallE domain body metadata ihD ihB =>
+    cases target <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+    case forallE targetDomain targetBody targetMetadata =>
+      obtain ⟨datumCheck, rest⟩ := bothChecks_true checked
+      obtain ⟨domainCheck, bodyCheck⟩ := bothChecks_true rest
+      have datum := of_decide_eq_true (Option.some.inj datumCheck)
+      apply InstalledExprImage.forallE (ihD domainCheck) (ihB bodyCheck)
+      rw [datum]
+      exact (image.regime targetLevels metadata).symm
+  | letE type value body ihT ihV ihB => cases target <;> simp [checkInstalledExpr] at checked
+  | lit literal =>
+    cases literal with
+    | natVal value =>
+      cases target <;> try simp only [checkInstalledExpr] at checked <;> try contradiction
+      case lit targetLiteral =>
+        cases targetLiteral <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+        case natVal other =>
+          obtain ⟨equal, pins⟩ := bothChecks_true checked
+          have same := of_decide_eq_true (Option.some.inj equal)
+          subst other
+          exact checked_natural_image targetModel association image targetLevels pins value
+    | strVal value =>
+      cases target <;> try simp only [checkInstalledExpr] at checked <;> try contradiction
+      case lit targetLiteral =>
+        cases targetLiteral <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+        case strVal other =>
+          obtain ⟨equal, pins⟩ := bothChecks_true checked
+          have same := of_decide_eq_true (Option.some.inj equal)
+          subst other
+          exact checked_string_image targetModel association image targetLevels pins value
+  | proj owner index operand ih =>
+    cases target <;> simp only [checkInstalledExpr] at checked <;> try contradiction
+    case proj targetOwner targetIndex targetOperand =>
+      obtain ⟨projectionCheck, operandCheck⟩ := bothChecks_true checked
+      exact checkInstalledProjection_sound (Option.some.inj projectionCheck) (ih operandCheck)
+
 theorem PullbackMap.values_params {V : Type u} [Kernel.SetTheory V]
     {sourceEnv targetEnv : Kernel.Env} (map : PullbackMap) (target : StrongInstalledModel V targetEnv)
     (locality : map.LevelLocality sourceEnv targetEnv)

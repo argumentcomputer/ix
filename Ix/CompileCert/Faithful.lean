@@ -560,6 +560,57 @@ theorem InstalledExprImage.denotes_iff {V : Type u} [Kernel.SetTheory V]
       Kernel.Denotes targetValues targetEnv targetLevels ρ target value :=
   ⟨image.denotes, image.symm.denotes⟩
 
+/-- A checked semantic level comparison may replace the target constant's
+universe syntax. This uses equality of the actual substitution assignments,
+not canonical syntax or equal serialized hashes. -/
+theorem InstalledExprImage.constant_equivalent_levels {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl sourceName targetName sourceUs targetUs equivalentUs}
+    (image : InstalledExprImage (V := V) sv tv se te sl tl
+      (.const sourceName sourceUs) (.const targetName targetUs))
+    (equivalent : Kernel.Level.isEquivList targetUs equivalentUs = some true) :
+    InstalledExprImage sv tv se te sl tl (.const sourceName sourceUs) (.const targetName equivalentUs) := by
+  cases image with
+  | constant sourceLookup targetLookup sourceArity targetArity values =>
+    refine .constant sourceLookup targetLookup sourceArity ?_ ?_
+    · exact (Kernel.Level.isEquivList_length equivalent).symm.trans targetArity
+    · rw [← Kernel.Level.substFn_congr (Kernel.Level.isEquivList_sound equivalent tl)]
+      exact values
+
+/-- Literal correspondence needs the actual pinned constant images. The
+proof works for every natural value without unfolding its numeral in an
+executable image checker. -/
+theorem InstalledExprImage.natural {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl}
+    (zero : InstalledExprImage (V := V) sv tv se te sl tl
+      (.const Kernel.natZeroName []) (.const Kernel.natZeroName []))
+    (succ : InstalledExprImage sv tv se te sl tl
+      (.const Kernel.natSuccName []) (.const Kernel.natSuccName [])) (value : Nat) :
+    InstalledExprImage sv tv se te sl tl (.lit (.natVal value)) (.lit (.natVal value)) := by
+  induction value with
+  | zero => exact .natLit zero
+  | succ value ih => exact .natLit (.app succ ih)
+
+/-- String correspondence follows the actual constructor encoding and its
+fixed universe instance. All supporting constant images are explicit. -/
+theorem InstalledExprImage.string {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl}
+    (zero : InstalledExprImage (V := V) sv tv se te sl tl (.const Kernel.natZeroName []) (.const Kernel.natZeroName []))
+    (succ : InstalledExprImage sv tv se te sl tl (.const Kernel.natSuccName []) (.const Kernel.natSuccName []))
+    (char : InstalledExprImage sv tv se te sl tl (.const Kernel.charName []) (.const Kernel.charName []))
+    (ofNat : InstalledExprImage sv tv se te sl tl (.const Kernel.charOfNatName []) (.const Kernel.charOfNatName []))
+    (nil : InstalledExprImage sv tv se te sl tl (.const Kernel.listNilName [.zero]) (.const Kernel.listNilName [.zero]))
+    (cons : InstalledExprImage sv tv se te sl tl (.const Kernel.listConsName [.zero]) (.const Kernel.listConsName [.zero]))
+    (ofList : InstalledExprImage sv tv se te sl tl (.const Kernel.stringOfListName []) (.const Kernel.stringOfListName []))
+    (value : String) :
+    InstalledExprImage sv tv se te sl tl (.lit (.strVal value)) (.lit (.strVal value)) := by
+  apply InstalledExprImage.strLit
+  unfold Kernel.strLitToConstructor
+  apply InstalledExprImage.app ofList
+  induction value.toList with
+  | nil => exact .app nil char
+  | cons character rest ih =>
+    exact .app (.app (.app cons char) (.app ofNat (natural zero succ character.toNat))) ih
+
 /-- Position-preserving argument images. Every slot has its own expression
 correspondence even when several constant identities belong to one fiber. -/
 inductive InstalledSpineImage {V : Type u} [Kernel.SetTheory V]
