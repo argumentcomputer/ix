@@ -264,6 +264,11 @@ jobs:
       - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
         if: ${{ matrix.kind == 'kernel' }}
         run: lake run check-kernel --with-model
+      # The compiler-certification lane (Ix/CompileCert): its tracked axiom
+      # audit (frozen roots, standard axioms only) and its fixture checks.
+      - name: Check compiler-certification axiom audit and fixture checks
+        if: ${{ matrix.kind == 'kernel' }}
+        run: lake run check-cert
 
   valgrind:
     name: Valgrind FFI
