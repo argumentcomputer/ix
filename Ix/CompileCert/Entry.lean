@@ -6189,4 +6189,32 @@ theorem AnnotatedApplication.installed_eta {V : Type u} [Kernel.SetTheory V]
   subst lawAnnotation
   exact law ρ (annotations.map (interp V ρ)) result x (by simpa using count) fit member
 
+/-- Check the exact stored constructor/projection presence required by the
+eta law. This does not establish cross-environment semantic correspondence. -/
+def checkInstalledEtaFamily (env : Kernel.Env) (name : Kernel.Name) (caps : Kernel.IndCaps) : Bool :=
+  !Kernel.reservedBasisNames.contains caps.etaCtor &&
+  (match env.find? caps.etaCtor with | some (.ctorInfo ..) => true | _ => false) &&
+  (List.range caps.etaFields).all fun index =>
+    match env.find? (Kernel.projFnName name index) with
+    | some (.recInfo ..) => true
+    | _ => false
+
+theorem checkInstalledEtaFamily_sound {env : Kernel.Env} {name : Kernel.Name} {caps : Kernel.IndCaps}
+    (checked : checkInstalledEtaFamily env name caps = true) : Kernel.EtaFamilyStored env name caps := by
+  simp only [checkInstalledEtaFamily, Bool.and_eq_true] at checked
+  obtain ⟨⟨nonbasis, constructor⟩, projections⟩ := checked
+  refine ⟨by simpa using nonbasis, ?_, ?_⟩
+  · cases found : env.find? caps.etaCtor with
+    | none => simp [found] at constructor
+    | some entry =>
+      cases entry <;> simp [found] at constructor
+      case ctorInfo header params fields => exact ⟨header, params, fields, rfl⟩
+  · intro index bound
+    have row := List.all_eq_true.mp projections index (List.mem_range.mpr bound)
+    cases found : env.find? (Kernel.projFnName name index) with
+    | none => simp [found] at row
+    | some entry =>
+      cases entry <;> simp [found] at row
+      case recInfo header major params rules => exact ⟨header, major, params, rules, rfl⟩
+
 end Ix.CompileCert
