@@ -7901,4 +7901,87 @@ theorem RuleTupleRepresentation.nested_parameter {V : Type u} [Kernel.SetTheory 
     (by omega) nestedLevels pins nested position belowConstructor belowPins fieldReading argumentImages pinImage
     alignedField fieldRead sourceEquation rfl
 
+open Kernel.Semantics Kernel.Model in
+/-- Source constructor application and index equations determine the actual
+target residual's index condition. Its complete residual image and actual
+annotation evidence are constructed from checked installed types, not supplied
+as an independent target shape or per-index reading. -/
+theorem RuleTupleRepresentation.checked_index_pin {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    {target : StrongInstalledModel V targetEnv} {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    {targetFrame : InstalledRuleFrame targetEnv (names name) index}
+    (ruleHeader : InstalledRuleHeader names sourceFrame.rule targetFrame.rule)
+    (prefixAgreement : sourceFrame.rulePrefix = targetFrame.rulePrefix)
+    {targetLevels : Kernel.Name → Nat} {universes constructorUniverses : List Kernel.Level}
+    {arguments fields : List V}
+    (representation : RuleTupleRepresentation target targetLevels targetFrame universes constructorUniverses arguments fields)
+    (argumentCount : arguments.length = targetFrame.major)
+    (ordered : targetFrame.rulePrefix ≤ targetFrame.major)
+    (sourceLevels : Kernel.Name → Nat) (sourceUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceFrame.constructor.levelParams.length)
+    (targetArity : constructorUniverses.length = targetFrame.constructor.levelParams.length)
+    (universeImage : sourceUs.map (Kernel.Level.eval sourceLevels) = constructorUniverses.map (Kernel.Level.eval targetLevels))
+    {valuation finalValuation : Nat → V} {sourceResult : Kernel.Expr}
+    (sourceTyped : InstalledTelescope ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels valuation
+      (sourceFrame.constructor.type.instantiateLevelParams sourceFrame.constructor.levelParams sourceUs)
+      fields finalValuation sourceResult)
+    (sourceIndex : ∀ residual,
+      DenotedApplication ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        sourceEnv sourceLevels representation.valuation
+        (sourceFrame.constructor.type.instantiateLevelParams sourceFrame.constructor.levelParams sourceUs)
+        ((argumentVariables representation.depth).drop arguments.length) fields residual →
+      ∃ head indices values, residual = Kernel.Expr.mkAppN head indices ∧
+        DenotesSpine ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+          sourceEnv sourceLevels representation.valuation indices values ∧
+        values.drop sourceFrame.rule.ctorParams = arguments.drop sourceFrame.rulePrefix) :
+    ∀ residual annotation,
+      Kernel.piResidual (targetFrame.constructor.type.instantiateLevelParams
+        targetFrame.constructor.levelParams constructorUniverses) representation.fieldExpressions = some residual →
+      denoteMeta target.internal.base2.acval targetEnv targetLevels representation.depth residual = some annotation →
+      IotaIndexPin representation.valuation annotation targetFrame.rule.ctorParams targetFrame.major
+        targetFrame.rulePrefix representation.arguments := by
+  have sourceConstructorName : sourceFrame.constructor.name = sourceFrame.rule.ctor :=
+    Kernel.Semantics.Env.find?_name sourceFrame.constructorLookup
+  have mappedLookup : targetEnv.find? (names
+      (Kernel.ConstantInfo.ctorInfo sourceFrame.constructor sourceFrame.constructorParams sourceFrame.constructorFields).name) =
+      some (.ctorInfo targetFrame.constructor targetFrame.constructorParams targetFrame.constructorFields) := by
+    simpa only [Kernel.ConstantInfo.name, Kernel.ConstantInfo.toConstantVal, sourceConstructorName, ruleHeader.1]
+      using targetFrame.constructorLookup
+  have wf := sourceWf _ (Kernel.Semantics.Env.find?_mem sourceFrame.constructorLookup)
+  have bounded : (sourceFrame.constructor.type.instantiateLevelParams
+      sourceFrame.constructor.levelParams sourceUs).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]; exact wf.2.2.2.1
+  have rebased := (sourceTyped.rebase bounded
+    (target := representation.valuation) (fun _ bound => by omega)).2
+  have readings := representation.source_readings
+    ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv sourceLevels
+  obtain ⟨sourceResidual, sourceApplication⟩ := DenotedApplication.of_telescope rebased readings.2
+  obtain ⟨head, indices, indexValues, sourceShape, indexReadings, equation⟩ := sourceIndex sourceResidual sourceApplication
+  obtain ⟨targetResidual, targetApplication, residualImage⟩ := AnnotatedApplication.from_checked_type target association types
+    (Kernel.Semantics.Env.find?_mem sourceFrame.constructorLookup) mappedLookup sourceLevels targetLevels
+    sourceUs constructorUniverses sourceArity targetArity universeImage representation.fieldReadings sourceApplication
+    (representation.field_image ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv sourceLevels)
+  rw [sourceShape] at residualImage
+  obtain ⟨actualAnnotation, evidence⟩ := targetApplication.installed_residual targetFrame.rule.ctor
+    (.ctorInfo targetFrame.constructor targetFrame.constructorParams targetFrame.constructorFields)
+    targetFrame.constructorLookup rfl constructorUniverses targetArity
+  have count : representation.arguments.length = targetFrame.major := by
+    have length := congrArg List.length representation.argumentValuesEq
+    simpa only [List.length_map, argumentCount] using length
+  have alignedEquation : indexValues.drop targetFrame.rule.ctorParams = arguments.drop targetFrame.rulePrefix := by
+    simpa only [ruleHeader.2.2.1, prefixAgreement] using equation
+  have pin := evidence.index_pin_of_residual_image representation.argumentReadings residualImage indexReadings readings.1
+    (representation.argument_image ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv sourceLevels)
+    targetFrame.rule.ctorParams targetFrame.major targetFrame.rulePrefix count ordered alignedEquation
+  intro residual annotation shape reading
+  have sameResidual := Option.some.inj (targetApplication.residual_shape.symm.trans shape)
+  subst residual
+  have sameAnnotation := Option.some.inj (evidence.reading.symm.trans reading)
+  subst annotation
+  exact pin
+
 end Ix.CompileCert
