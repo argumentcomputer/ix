@@ -564,6 +564,14 @@ theorem InstalledRenaming.instantiate1Lift (rename : InstalledRenaming)
   · exact rename.lift replacement depth 0
   · split <;> rfl
 
+theorem InstalledRenaming.abstract1 (rename : InstalledRenaming)
+    (expression : Kernel.Expr) (depth cutoff : Nat) :
+    rename.expr (expression.abstract1 depth cutoff) =
+      (rename.expr expression).abstract1 depth cutoff := by
+  induction expression generalizing cutoff <;>
+    simp_all [InstalledRenaming.expr, Kernel.Expr.abstract1]
+  split <;> rfl
+
 /-- Cross-environment obligations for one actual installed-expression map.
 Every source lookup is checked, including every member of a many-to-one
 fiber; a shared target address alone cannot satisfy the value equation.

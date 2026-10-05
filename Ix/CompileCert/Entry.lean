@@ -941,6 +941,109 @@ theorem application_cached {mode : CheckMode} {env : Env} {fuel depth : Nat}
   obtain ⟨state', resultScope, _, pureRun⟩ := cached_pure verified environment state scope run
   exact ⟨state', resultScope, application_pure pureRun⟩
 
+inductive AnnotationBinder where
+  | lam | pi
+
+def AnnotationBinder.expr : AnnotationBinder → Kernel.Expr → Kernel.Expr → BinderMeta → Kernel.Expr
+  | .lam => .lam
+  | .pi => .forallE
+
+def AnnotationBinder.write (kind : AnnotationBinder) (mode : CheckMode) (env : Env)
+    (fuel depth : Nat) (body : Kernel.Expr) : CheckM PropWhen :=
+  match kind with
+  | .lam => annotPwLam (pureFns mode env fuel) env depth body
+  | .pi => annotPwPi (pureFns mode env fuel) env depth body
+
+/-- Actual binder annotation data, including the write/reuse branch for
+its PropWhen datum. The datum's semantic validity and cross-installation
+regime agreement are not conclusions of this annotation-only receipt. -/
+structure BinderAnnotationTrace (kind : AnnotationBinder) (mode : CheckMode) (env : Env)
+    (depth : Nat) (type body : Kernel.Expr) (metadata : BinderMeta) (result : Kernel.Expr) where
+  fuel : Nat
+  annotatedType : Kernel.Expr
+  annotatedBody : Kernel.Expr
+  datum : PropWhen
+  typeRun : annotateCore mode env fuel depth type = .ok annotatedType
+  bodyRun : annotateCore mode env fuel (depth + 1)
+    (body.instantiate1 (.fvar depth annotatedType)) = .ok annotatedBody
+  datumRun :
+    (pwWritten metadata.pw = false ∧
+      kind.write mode env fuel (depth + 1) annotatedBody = .ok datum) ∨
+    (pwWritten metadata.pw = true ∧ datum = metadata.pw)
+  shape : result = kind.expr annotatedType (annotatedBody.abstract1 depth) ⟨datum⟩
+
+private theorem annotate_binder_succ (kind : AnnotationBinder) (mode : CheckMode) (env : Env)
+    (fuel depth : Nat) (type body : Kernel.Expr) (metadata : BinderMeta) :
+    annotateCore mode env (fuel + 1) depth (kind.expr type body metadata) = (do
+      let annotatedType ← annotateCore mode env fuel depth type
+      let annotatedBody ← annotateCore mode env fuel (depth + 1)
+        (body.instantiate1 (.fvar depth annotatedType))
+      let datum ← if !pwWritten metadata.pw then
+          kind.write mode env fuel (depth + 1) annotatedBody
+        else pure metadata.pw
+      pure (kind.expr annotatedType (annotatedBody.abstract1 depth) ⟨datum⟩)) := by
+  cases kind <;> rw [annotateCore_succ] <;> rfl
+
+theorem binder_pure {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {type body result : Kernel.Expr} {metadata : BinderMeta} (kind : AnnotationBinder)
+    (run : annotateCore mode env fuel depth (kind.expr type body metadata) = .ok result) :
+    Nonempty (BinderAnnotationTrace kind mode env depth type body metadata result) := by
+  cases fuel with
+  | zero => simp [annotateCore_zero, throw, throwThe] at run
+  | succ fuel =>
+    rw [annotate_binder_succ] at run
+    cases typeRun : annotateCore mode env fuel depth type with
+    | error reason => simp [typeRun, bind, Except.bind] at run
+    | ok annotatedType =>
+      simp only [typeRun, bind, Except.bind] at run
+      cases bodyRun : annotateCore mode env fuel (depth + 1)
+          (body.instantiate1 (.fvar depth annotatedType)) with
+      | error reason => simp [bodyRun] at run
+      | ok annotatedBody =>
+        simp only [bodyRun] at run
+        cases written : pwWritten metadata.pw with
+        | false =>
+          simp only [written, Bool.not_false, ↓reduceIte] at run
+          cases datumRun : kind.write mode env fuel (depth + 1) annotatedBody with
+          | error reason => simp [datumRun] at run
+          | ok datum =>
+            simp only [datumRun, pure, Except.pure, Except.ok.injEq] at run
+            exact ⟨⟨fuel, annotatedType, annotatedBody, datum, typeRun, bodyRun,
+              .inl ⟨written, datumRun⟩, run.symm⟩⟩
+        | true =>
+          simp [written, pure, Except.pure] at run
+          exact ⟨⟨fuel, annotatedType, annotatedBody, metadata.pw, typeRun, bodyRun,
+            .inr ⟨written, rfl⟩, run.symm⟩⟩
+
+theorem binder_cached {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {type body result : Kernel.Expr} {metadata : BinderMeta} {initial final : CState}
+    (kind : AnnotationBinder)
+    (verified : mode.verifiedChecks = true) (environment : EnvWF env)
+    (state : CSOK mode env initial) (scope : Kernel.Expr.WScoped depth (kind.expr type body metadata))
+    (run : (coreKnotI mode (mkFEnv env) fuel).annotate depth (kind.expr type body metadata) initial =
+      .ok (result, final)) :
+    CSOK mode env final ∧ Kernel.Expr.WScoped depth result ∧
+      Nonempty (BinderAnnotationTrace kind mode env depth type body metadata result) := by
+  obtain ⟨state', resultScope, _, pureRun⟩ := cached_pure verified environment state scope run
+  exact ⟨state', resultScope, binder_pure kind pureRun⟩
+
+/-- Reassembly uses the actual annotated domain, opened body and datum on
+each side. In particular the datum correspondence remains an explicit
+obligation; raw source normalization cannot supply it. -/
+theorem BinderAnnotationTrace.paired_image {kind : AnnotationBinder}
+    {sourceMode targetMode : CheckMode} {sourceEnv targetEnv : Env} {depth : Nat}
+    {sourceType sourceBody sourceResult targetType targetBody targetResult : Kernel.Expr}
+    {sourceMetadata targetMetadata : BinderMeta}
+    (source : BinderAnnotationTrace kind sourceMode sourceEnv depth sourceType sourceBody sourceMetadata sourceResult)
+    (target : BinderAnnotationTrace kind targetMode targetEnv depth targetType targetBody targetMetadata targetResult)
+    (rename : InstalledRenaming)
+    (domainImage : target.annotatedType = rename.expr source.annotatedType)
+    (bodyImage : target.annotatedBody = rename.expr source.annotatedBody)
+    (datumImage : (⟨target.datum⟩ : BinderMeta) = rename.binder ⟨source.datum⟩) :
+    targetResult = rename.expr sourceResult := by
+  rw [source.shape, target.shape, domainImage, bodyImage, datumImage, ← rename.abstract1]
+  cases kind <;> rfl
+
 /-- The checked let-elimination trace, including all official let checks.
 The reduct substitutes the immutable original value, not the independently
 annotated value. The latter remains the subject of value-type checking. -/
