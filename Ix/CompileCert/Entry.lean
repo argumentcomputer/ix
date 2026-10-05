@@ -4,6 +4,7 @@ import Ix.Kernel.Verify.Cached.PushChain
 import Ix.Kernel.Verify.Cached.BridgeCS4
 import Ix.Kernel.Model.IndUnitLaw
 import Ix.Kernel.Model.IOLicense
+import Ix.Kernel.Model.Rules.RedSoundKit
 
 /-! # Admission-connected direct-cone certification
 
@@ -569,6 +570,62 @@ inductive ArgumentAnnotations {V : Type u} [Kernel.SetTheory V] {env : Kernel.En
       ArgumentAnnotations strong levels depth ρ (expression :: expressions) (annotation :: annotations)
 
 open Kernel.Semantics Kernel.Model in
+theorem ArgumentAnnotations.denotes {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth ρ expressions annotations) :
+    DenotesSpine strong.public.cval env levels ρ (expressions.map (Kernel.Expr.closeN depth))
+      (annotations.map (interp V ρ)) := by
+  induction readings with
+  | nil => exact .nil
+  | cons head tail ih =>
+    exact .cons (Denotes_of_denoteMeta strong.internal.base2.cval_closedL depth _ head.reading
+      head.scope.fvarsBelow head.bounded ρ head.graded) ih
+
+theorem ArgumentAnnotations.append {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {left right : List Kernel.Expr}
+    {leftRead rightRead : List Kernel.Semantics.AnnotTerm}
+    (first : ArgumentAnnotations strong levels depth ρ left leftRead)
+    (second : ArgumentAnnotations strong levels depth ρ right rightRead) :
+    ArgumentAnnotations strong levels depth ρ (left ++ right) (leftRead ++ rightRead) := by
+  induction first with
+  | nil => exact second
+  | cons head tail ih => exact .cons head ih
+
+open Kernel.Semantics Kernel.Model in
+theorem ArgumentAnnotations.facts {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth ρ expressions annotations) :
+    DenoteMetaSpine strong.internal.base2.acval env levels depth expressions annotations ∧
+      (∀ expression ∈ expressions, Kernel.Expr.WScoped depth expression ∧
+        expression.looseBVarsBounded 0 = true) ∧
+      (∀ annotation ∈ annotations, WellDenotedV V ρ annotation) := by
+  induction readings with
+  | nil => exact ⟨.nil, by simp, by simp⟩
+  | cons head tail ih =>
+    refine ⟨.cons head.reading ih.1, ?_, ?_⟩
+    · intro expression member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact ⟨head.scope, head.bounded⟩
+      · exact ih.2.1 expression member
+    · intro annotation member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact head.graded
+      · exact ih.2.2 annotation member
+
+theorem AnnotatedApplication.argument_annotations {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {type residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List Kernel.Semantics.AnnotTerm}
+    (application : AnnotatedApplication strong levels depth ρ type expressions annotations residual) :
+    ArgumentAnnotations strong levels depth ρ expressions annotations := by
+  induction application with
+  | nil => exact .nil
+  | cons _ reading scope bounded graded _ _ ih => exact .cons ⟨reading, scope, bounded, graded⟩ ih
+
+open Kernel.Semantics Kernel.Model in
 /-- Assemble an internal annotated application from the public dependent fit
 and the arguments' actual scoped readings. Closing/substitution correspondence
 preserves the exact residual; no independently chosen type is substituted. -/
@@ -607,6 +664,31 @@ theorem AnnotatedApplication.of_public {V : Type u} [Kernel.SetTheory V]
         exact ⟨residual, .cons domainRead evidence.reading evidence.scope evidence.bounded
           evidence.graded argumentTyped fitted, equal⟩
     | _ => cases application
+
+open Kernel.Semantics in
+/-- Independently typed tuples can use one shared caller valuation. Their
+actual expression readings must represent exactly the original semantic
+arguments; ambient values outside the closed installed type are irrelevant. -/
+theorem AnnotatedApplication.represented_arguments {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {ρ finalρ target : Nat → V} {type result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope strong.public.cval env levels ρ type arguments finalρ result)
+    (bounded : type.looseBVarsBounded 0 = true) (noFvars : type.hasFvar = false)
+    {depth : Nat} {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth target expressions annotations)
+    (represented : annotations.map (interp V target) = arguments) :
+    ∃ residual, AnnotatedApplication strong levels depth target type expressions annotations residual := by
+  obtain ⟨_, rebased⟩ := typed.rebase bounded
+    (target := target) (fun index impossible => False.elim (Nat.not_lt_zero index impossible))
+  have valuesRead := readings.denotes
+  rw [represented] at valuesRead
+  obtain ⟨publicResidual, applied⟩ := DenotedApplication.of_telescope rebased valuesRead
+  have aligned : DenotedApplication strong.public.cval env levels target (type.closeN depth)
+      (expressions.map (Kernel.Expr.closeN depth)) (annotations.map (interp V target)) publicResidual := by
+    rw [Kernel.Expr.closeN_of_hasFvar type _ _ noFvars, represented]
+    exact applied
+  obtain ⟨residual, fitted, _⟩ := AnnotatedApplication.of_public readings aligned bounded
+  exact ⟨residual, fitted⟩
 
 /-- Symbolic arguments, with their metadata supplied explicitly by the caller.
 The semantic representation theorem checks scope only; it does not claim that
@@ -890,6 +972,40 @@ theorem AnnotatedApplication.installed_fit {V : Type u} [Kernel.SetTheory V]
   exact ⟨typeAnnotation, result, reading0, fit, resultRead, shape, denoted⟩
 
 open Kernel.Semantics Kernel.Model in
+/-- The whole applied installed constant has its actual scoped annotation
+and grading. For a constructor this supplies the recursor's exact major
+argument, rather than a fresh variable merely assigned an equal value. -/
+theorem AnnotatedApplication.applied_argument {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (constant : Kernel.ConstantInfo)
+    (lookup : env.find? name = some constant) (termEntry : constant.isTowerEntry = false)
+    (universes : List Kernel.Level) (arity : universes.length = constant.toConstantVal.levelParams.length)
+    (application : AnnotatedApplication strong levels depth ρ
+      (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes)
+      expressions annotations residual) :
+    ArgumentAnnotation strong levels depth ρ (Kernel.Expr.mkAppN (.const name universes) expressions)
+      (AnnotTerm.mkAppN (strong.internal.base2.acval name
+        (Kernel.Level.substFn levels constant.toConstantVal.levelParams universes)) annotations) := by
+  obtain ⟨typeAnnotation, result, typeRead, fit, _⟩ :=
+    application.installed_fit name constant lookup termEntry universes arity
+  obtain ⟨actualType, actualRead, typeGraded, member⟩ :=
+    strong.internal.constType 0 name constant universes lookup termEntry arity
+  have equal := Option.some.inj (actualRead.symm.trans typeRead)
+  subst actualType
+  obtain ⟨spine, frames, grades⟩ := application.argument_annotations.facts
+  constructor
+  · exact denoteMeta_mkAppN spine (by simp [denoteMeta, lookup, arity])
+  · exact Kernel.Expr.WScoped.mkAppN (by simp [Kernel.Expr.WScoped])
+      (fun expression present => (frames expression present).1)
+  · exact Kernel.looseBVarsBounded_mkAppN rfl
+      (fun expression present => (frames expression present).2)
+  · exact (Kernel.Model.Rules.mkAppN_of_fitA annotations (typeGraded ρ)
+      ⟨strong.internal.base2.acval_wellDenoted _ _ ρ, strong.internal.acval_validV _ _ ρ⟩
+      grades (member ρ) fit).1
+
+open Kernel.Semantics Kernel.Model in
 /-- Derive the strong invariant's exact telescope fit for arbitrary public
 values at an actual installed universe instance. Closedness, type reading,
 grading and the symbolic argument readings are all derived. The metadata
@@ -1077,6 +1193,143 @@ theorem FiredRecursorApplication.denotes {V : Type u} [Kernel.SetTheory V]
   rw [expressionTake, count, annotationTake] at argumentRead
   exact strong.recursor_denotes levels name header major params rules lookup rule present fires universes arity
     frame _ _ argumentRead application.constructorApplication.denotes_arguments
+
+open Kernel Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- Public typed inputs to a fired rule. Both telescope premises contain only
+semantic argument values. Actual scoped readings and the original comparison
+conditions remain explicit; no internal `TeleFitPA` is supplied by the caller. -/
+structure PublicRecursorApplication {V : Type u} [Kernel.SetTheory V] {env : Kernel.Env}
+    (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (header : Kernel.ConstantVal) (major params : Nat) (rule : Kernel.RecRule)
+    (universes : List Kernel.Level) where
+  constructor : Kernel.ConstantVal
+  constructorParams : Nat
+  constructorFields : Nat
+  constructorLookup : env.find? rule.ctor = some (.ctorInfo constructor constructorParams constructorFields)
+  constructorUniverses : List Kernel.Level
+  constructorArity : constructorUniverses.length = constructor.levelParams.length
+  depth : Nat
+  valuation : Nat → V
+  argumentExpressions : List Kernel.Expr
+  fieldExpressions : List Kernel.Expr
+  arguments : List AnnotTerm
+  fields : List AnnotTerm
+  argumentReadings : ArgumentAnnotations strong levels depth valuation argumentExpressions arguments
+  fieldReadings : ArgumentAnnotations strong levels depth valuation fieldExpressions fields
+  argumentCount : arguments.length = major
+  fieldCount : fields.length = rule.ctorParams + rule.nfields
+  universeSelection : Level.substFn levels constructor.levelParams constructorUniverses =
+    Level.substFn levels constructor.levelParams
+      (recFireComparands rule header.levelParams universes constructor.levelParams [] params).1
+  plainParameters : rule.paramsBlind = false → rule.fire = .plain →
+    ∀ i, i < rule.ctorParams → i < major →
+      interp V valuation (fields.getD i default) = interp V valuation (arguments.getD i default)
+  nestedParameters : ∀ lvls pins, rule.fire = .nested lvls pins →
+    ∀ i, i < rule.ctorParams → ∀ pin : AnnotTerm,
+      denoteMeta strong.internal.base2.acval env levels params
+        (Kernel.Verify.openRev 0 params ((pins.getD i default).instantiateLevelParams
+          header.levelParams universes)) = some pin →
+      interp V valuation (fields.getD i default) =
+        interp V valuation (Kernel.Model.AnnotTerm.instRevChain (arguments.take params) pin)
+  constructorTyped : ∃ final result,
+    InstalledTelescope strong.public.cval env levels valuation
+      (constructor.type.instantiateLevelParams constructor.levelParams constructorUniverses)
+      (fields.map (interp V valuation)) final result
+  recursorTyped : ∃ final result,
+    InstalledTelescope strong.public.cval env levels valuation
+      (header.type.instantiateLevelParams header.levelParams universes)
+      (arguments.map (interp V valuation) ++
+        [(fields.map (interp V valuation)).foldl app (strong.public.cval rule.ctor
+          (Level.substFn levels constructor.levelParams constructorUniverses))]) final result
+  indexPin : ∀ residual result,
+    Kernel.piResidual (constructor.type.instantiateLevelParams constructor.levelParams constructorUniverses)
+      fieldExpressions = some residual →
+    denoteMeta strong.internal.base2.acval env levels depth residual = some result →
+    IotaIndexPin valuation result rule.ctorParams major params arguments
+
+open Kernel.Semantics Kernel.Model in
+/-- Assemble the exact fired recursor from public typed tuples. Constructor
+application annotation/grading and both internal telescope fits are derived
+inside the same strong model. The rule's index/nested comparison premises are
+retained verbatim, rather than inferred from tuple lengths or fixture success. -/
+theorem PublicRecursorApplication.denotes {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {header : Kernel.ConstantVal} {major params : Nat} {rule : Kernel.RecRule}
+    {universes : List Kernel.Level}
+    (application : PublicRecursorApplication strong levels header major params rule universes)
+    (name : Kernel.Name) (rules : List Kernel.RecRule)
+    (lookup : env.find? name = some (.recInfo header major params rules))
+    (present : rule ∈ rules) (fires : rule.fire ≠ .inert)
+    (arity : universes.length = header.levelParams.length) :
+    ∃ value : V,
+      Kernel.Denotes strong.public.cval env levels application.valuation
+        (Kernel.Expr.mkAppN (.const name universes)
+          (application.argumentExpressions.map (Kernel.Expr.closeN application.depth) ++
+            [Kernel.Expr.mkAppN (.const rule.ctor application.constructorUniverses)
+              (application.fieldExpressions.map (Kernel.Expr.closeN application.depth))])) value ∧
+      Kernel.Denotes strong.public.cval env levels application.valuation
+        (Kernel.Expr.mkAppN (rule.rhs.instantiateLevelParams header.levelParams universes)
+          ((application.argumentExpressions.map (Kernel.Expr.closeN application.depth)).take params ++
+            (application.fieldExpressions.map (Kernel.Expr.closeN application.depth)).drop rule.ctorParams)) value := by
+  have constructorWf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem application.constructorLookup)
+  have recursorWf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem lookup)
+  have constructorBounded : (application.constructor.type.instantiateLevelParams
+      application.constructor.levelParams application.constructorUniverses).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact constructorWf.2.2.2.1
+  have constructorClosed : (application.constructor.type.instantiateLevelParams
+      application.constructor.levelParams application.constructorUniverses).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact constructorWf.1
+  have recursorBounded : (header.type.instantiateLevelParams header.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact recursorWf.2.2.2.1
+  have recursorClosed : (header.type.instantiateLevelParams header.levelParams universes).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact recursorWf.1
+  obtain ⟨_, _, constructorTyped⟩ := application.constructorTyped
+  obtain ⟨constructorResidual, constructorApplication⟩ := AnnotatedApplication.represented_arguments
+    constructorTyped constructorBounded constructorClosed application.fieldReadings rfl
+  have majorReading := constructorApplication.applied_argument rule.ctor
+    (.ctorInfo application.constructor application.constructorParams application.constructorFields)
+    application.constructorLookup rfl application.constructorUniverses application.constructorArity
+  have allReadings := application.argumentReadings.append (.cons majorReading .nil)
+  obtain ⟨_, _, recursorTyped⟩ := application.recursorTyped
+  have represented :
+      (application.arguments ++ [AnnotTerm.mkAppN (strong.internal.base2.acval rule.ctor
+        (Kernel.Level.substFn levels application.constructor.levelParams application.constructorUniverses))
+        application.fields]).map (interp V application.valuation) =
+      application.arguments.map (interp V application.valuation) ++
+        [(application.fields.map (interp V application.valuation)).foldl Kernel.SetTheory.app
+          (strong.public.cval rule.ctor
+            (Kernel.Level.substFn levels application.constructor.levelParams application.constructorUniverses))] := by
+    simp only [List.map_append, List.map_cons, List.map_nil, interp_mkAppN, List.foldl_map,
+      interp_cvalOf strong.internal.base2.cval_closedL, StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM]
+  obtain ⟨recursorResidual, recursorApplication⟩ := AnnotatedApplication.represented_arguments
+    recursorTyped recursorBounded recursorClosed allReadings represented
+  let prepared : FiredRecursorApplication strong levels header major params rule universes := {
+    constructor := application.constructor
+    constructorParams := application.constructorParams
+    constructorFields := application.constructorFields
+    constructorLookup := application.constructorLookup
+    constructorUniverses := application.constructorUniverses
+    depth := application.depth
+    valuation := application.valuation
+    argumentExpressions := application.argumentExpressions
+    fieldExpressions := application.fieldExpressions
+    arguments := application.arguments
+    fields := application.fields
+    recursorResidual, constructorResidual
+    argumentCount := application.argumentCount
+    fieldCount := application.fieldCount
+    constructorArity := application.constructorArity
+    universeSelection := application.universeSelection
+    plainParameters := application.plainParameters
+    nestedParameters := application.nestedParameters
+    recursorApplication, constructorApplication
+    indexPin := fun result reading => application.indexPin constructorResidual result
+      constructorApplication.residual_shape reading }
+  exact prepared.denotes name rules lookup present fires arity
 
 private theorem closeN_app_inv {opened function argument : Kernel.Expr} {depth : Nat}
     (image : opened.closeN depth = .app function argument) :

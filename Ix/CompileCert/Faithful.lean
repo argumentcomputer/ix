@@ -1309,6 +1309,75 @@ def pushArguments {V : Type u} (ρ : Nat → V) : List V → Nat → V
   | [] => ρ
   | argument :: rest => pushArguments (Kernel.push argument ρ) rest
 
+def ValuationAgreement {V : Type u} (bound : Nat) (ρ target : Nat → V) : Prop :=
+  ∀ index, index < bound → target index = ρ index
+
+theorem ValuationAgreement.push {V : Type u} {bound : Nat} {ρ target : Nat → V}
+    (agreement : ValuationAgreement bound ρ target) (value : V) :
+    ValuationAgreement (bound + 1) (Kernel.push value ρ) (Kernel.push value target) := by
+  intro index inside
+  cases index with
+  | zero => rfl
+  | succ index => exact agreement index (by omega)
+
+/-- Public denotation depends only on the bound variables that can occur.
+This allows independently typed tuples to share one caller valuation without
+equating arbitrary ambient valuations or changing their semantic arguments. -/
+theorem denotes_valuation {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V} {expression : Kernel.Expr} {value : V}
+    (denoted : Kernel.Denotes values env levels ρ expression value)
+    {bound : Nat} (bounded : expression.looseBVarsBounded bound = true)
+    {target : Nat → V} (agreement : ValuationAgreement bound ρ target) :
+    Kernel.Denotes values env levels target expression value := by
+  induction denoted generalizing bound target with
+  | bvar =>
+    rename_i old index
+    have inside : index < bound := by simpa only [Kernel.Expr.looseBVarsBounded, decide_eq_true_eq] using bounded
+    rw [← agreement index inside]
+    exact .bvar
+  | sort => exact .sort
+  | const lookup arity => exact .const lookup arity
+  | app _ _ ihf iha =>
+    simp only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
+    exact .app (ihf bounded.1 agreement) (iha bounded.2 agreement)
+  | lam _ _ proof ihA ihF =>
+    simp only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
+    exact .lam (ihA bounded.1 agreement) (fun x hx => ihF x hx bounded.2 (agreement.push x)) proof
+  | pi _ _ proof ihA ihB =>
+    simp only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
+    exact .pi (ihA bounded.1 agreement) (fun x hx => ihB x hx bounded.2 (agreement.push x)) proof
+  | proj_table lookup _ ih => exact .proj_table lookup (ih bounded agreement)
+  | proj_fst lookup _ ih => exact .proj_fst lookup (ih bounded agreement)
+  | proj_snd lookup _ ih => exact .proj_snd lookup (ih bounded agreement)
+  | natLit _ ih =>
+    exact .natLit (ih (Kernel.Expr.looseBVarsBounded_mono (Nat.zero_le bound)
+      (Kernel.natLitToConstructor_looseBVars _)) agreement)
+  | strLit _ ih =>
+    exact .strLit (ih (Kernel.Expr.looseBVarsBounded_mono (Nat.zero_le bound)
+      (Kernel.strLitToConstructor_looseBVars _ _)) agreement)
+
+/-- Rebase the entire dependent tuple into an agreeing ambient valuation.
+At bound zero the ambient valuation is unrestricted; every consumed argument
+is pushed unchanged, so later dependent domains retain their original values. -/
+theorem InstalledTelescope.rebase {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ expression arguments finalρ result)
+    {bound : Nat} (bounded : expression.looseBVarsBounded bound = true)
+    {target : Nat → V} (agreement : ValuationAgreement bound ρ target) :
+    ValuationAgreement (bound + arguments.length) finalρ (pushArguments target arguments) ∧
+      InstalledTelescope values env levels target expression arguments (pushArguments target arguments) result := by
+  induction typed generalizing bound target with
+  | nil => exact ⟨agreement, .nil⟩
+  | cons domainRead argumentTyped rest ih =>
+    simp only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at bounded
+    obtain ⟨finalAgreement, rebased⟩ := ih bounded.2 (agreement.push _)
+    constructor
+    · simpa only [pushArguments, List.length_cons, Nat.add_assoc, Nat.add_comm 1] using finalAgreement
+    · exact .cons (denotes_valuation domainRead bounded.1 agreement) argumentTyped rebased
+
 /-- Closing a locally closed open term under additional binders is the
 actual capture-avoiding lift of its original closure. Free-variable type
 metadata is erased by both sides of `closeN`, not semantically interpreted. -/
