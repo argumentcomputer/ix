@@ -106,7 +106,29 @@ def run : IO Unit := do
     (!checkInstalledEtaAt ⟨[.indInfo (header family) caps, ctor, projection 0]⟩ family)
   require "eta family must actually be inductive"
     (!checkInstalledEtaAt ⟨.axiomInfo (header family) :: env.consts⟩ family)
-  IO.println "installed capabilities: independent Nat/PUnit folds; 33 lookup/field/alias/level/eta controls passed"
+  require "complete actual Nat eta associations" (checkInstalledEtaAssociations source target id == some true)
+  require "complete actual PUnit eta associations" (checkInstalledEtaAssociations sourceUnit targetUnit id == some true)
+  let missingUnitCtor : Env := ⟨targetUnit.consts.filter (fun entry => entry.name != punitUnitName)⟩
+  require "reserved eta still needs actual constructor association"
+    (checkInstalledEtaAssociations sourceUnit missingUnitCtor id != some true)
+  let shadowed : Env := ⟨sourceUnit.consts ++ sourceUnit.consts.map (fun entry => match entry with
+    | .indInfo h c => .indInfo h { c with etaFields := c.etaFields + 1 }
+    | other => other)⟩
+  require "shadowed eta row cannot borrow first source lookup"
+    (checkInstalledEtaAssociations shadowed targetUnit id != some true)
+  let stream := #[Declaration.basisDecl .falseK, .basisDecl .eqK, .basisDecl .natK, .basisDecl .punitK]
+  let combinedSource ← match Cached.checkDecls .verified [] stream with
+    | .ok result => pure result
+    | .error _ => throw (IO.userError "combined source fold failed")
+  let combinedTarget ← match Cached.checkDecls .verified [] stream with
+    | .ok result => pure result
+    | .error _ => throw (IO.userError "combined target fold failed")
+  require "combined stream capability endpoint checks"
+    (checkTelescopes combinedSource combinedTarget id && checkInstalledTypes combinedSource combinedTarget id &&
+      checkInstalledDefinitions combinedSource combinedTarget id && checkInstalledPin combinedSource id falseName 0 &&
+      checkInstalledPin combinedSource id eqName 1 && checkInstalledCapabilities combinedSource combinedTarget id &&
+      checkInstalledEtaAssociations combinedSource combinedTarget id == some true)
+  IO.println "installed capabilities: independent Nat/PUnit/combined folds; 38 association controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 

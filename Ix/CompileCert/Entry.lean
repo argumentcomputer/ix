@@ -7184,4 +7184,118 @@ theorem checked_eta_telescope {V : Type u} [Kernel.SetTheory V]
     levels levels universes universes arity rfl readings application _ count x member
   simpa only [argumentFVars_closed] using images
 
+def checkInstalledEtaEntry (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (entry : Kernel.ConstantInfo) : Option Bool :=
+  match entry with
+  | .indInfo header caps =>
+    if caps.eta then
+      bothChecks (some (decide (source.find? header.name = some entry) && checkInstalledEtaAt target (names header.name)))
+        (bothChecks (checkInstalledFamilyMember source target names header.name caps.etaCtor)
+          ((List.range caps.etaFields).foldr (fun index rest => bothChecks
+            (checkInstalledFamilyMember source target names header.name (Kernel.projFnName header.name index)) rest)
+            (some true)))
+    else some true
+  | _ => some true
+
+/-- Every source eta-capability row and indexed helper is checked. Optional
+comparison failure propagates rather than becoming an established inequality. -/
+def checkInstalledEtaAssociations (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Option Bool :=
+  source.consts.foldr (fun entry rest => bothChecks (checkInstalledEtaEntry source target names entry) rest) (some true)
+
+theorem bothChecks_fold_true {α : Type} {entries : List α} {check : α → Option Bool}
+    (checked : entries.foldr (fun entry rest => bothChecks (check entry) rest) (some true) = some true) :
+    ∀ entry ∈ entries, check entry = some true := by
+  induction entries with
+  | nil => simp
+  | cons head tail ih =>
+    obtain ⟨first, rest⟩ := bothChecks_true checked
+    intro entry present
+    rcases List.mem_cons.mp present with rfl | present
+    · exact first
+    · exact ih rest entry present
+
+theorem checkInstalledEtaAssociations_sound {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledEtaAssociations source target names = some true)
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ source.consts) (enabled : caps.eta = true) :
+    checkInstalledEtaAt target (names header.name) = true ∧
+    checkInstalledFamilyMember source target names header.name caps.etaCtor = some true ∧
+    ∀ index ∈ List.range caps.etaFields,
+      checkInstalledFamilyMember source target names header.name (Kernel.projFnName header.name index) = some true := by
+  have row := bothChecks_fold_true checked _ present
+  simp only [checkInstalledEtaEntry, enabled, ite_true] at row
+  obtain ⟨family, helpers⟩ := bothChecks_true row
+  obtain ⟨constructor, projections⟩ := bothChecks_true helpers
+  have familyCheck := Option.some.inj family
+  simp only [Bool.and_eq_true] at familyCheck
+  exact ⟨familyCheck.2, constructor, bothChecks_fold_true projections⟩
+
+open Kernel.Model Kernel.SetTheory in
+/-- Public value-level capability laws. This is not the full internal strong
+model: recursor, projection, literal and annotation obligations remain separate. -/
+structure PublicCapabilityLaws {V : Type u} [Kernel.SetTheory V]
+    (cval : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env) : Prop where
+  unit : ∀ header caps, Kernel.ConstantInfo.indInfo header caps ∈ env.consts → caps.unitlike = true →
+    ∀ levels universes, universes.length = header.levelParams.length →
+    ∀ (ρ finalρ : Nat → V) (values : List V) (result : Kernel.Expr),
+      InstalledTelescope cval env levels ρ (header.type.instantiateLevelParams header.levelParams universes)
+        values finalρ result → values.length = caps.unitParams →
+      ∀ x y, x ∈ˢ values.foldl app (cval header.name (Kernel.Level.substFn levels header.levelParams universes)) →
+        y ∈ˢ values.foldl app (cval header.name (Kernel.Level.substFn levels header.levelParams universes)) → x = y
+  eta : ∀ header caps, Kernel.ConstantInfo.indInfo header caps ∈ env.consts → caps.eta = true →
+    ∀ levels universes, universes.length = header.levelParams.length →
+    ∀ (ρ finalρ : Nat → V) (values : List V) (result : Kernel.Expr),
+      InstalledTelescope cval env levels ρ (header.type.instantiateLevelParams header.levelParams universes)
+        values finalρ result → values.length = caps.etaParams →
+      ∀ x, x ∈ˢ values.foldl app (cval header.name (Kernel.Level.substFn levels header.levelParams universes)) →
+        x = (etaFabArgsV (fun n => cval n (Kernel.Level.substFn levels header.levelParams universes))
+          header.name values x caps.etaFields).foldl app (cval caps.etaCtor (Kernel.Level.substFn levels header.levelParams universes))
+
+theorem checkedCapabilities_publicLaws {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    (etaAssociations : checkInstalledEtaAssociations sourceEnv targetEnv names = some true) :
+    PublicCapabilityLaws ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv := by
+  constructor
+  · intro header caps present enabled levels universes arity ρ finalρ values result typed count x y left right
+    exact checked_unit_telescope sourceWf target association types capabilities present enabled levels universes
+      arity typed count x y left right
+  · intro header caps present enabled levels universes arity ρ finalρ values result typed count x member
+    obtain ⟨family, constructor, projections⟩ := checkInstalledEtaAssociations_sound etaAssociations present enabled
+    exact checked_eta_telescope sourceWf target association types capabilities present enabled family constructor projections
+      levels universes arity typed count x member
+
+/-- The independently checked source stream supplies its own installation
+and well-formedness. The checked target supplies one interpretation whose
+pull-back has public typing, definition equations and arbitrary-value unit/
+eta laws. This is still not the full internal strong model or end-to-end S. -/
+theorem checkedStreams_publicCapabilities (V : Type u) [Kernel.SetTheory V]
+    (sourcePins targetPins : List Kernel.NatOpPinSet)
+    (sourceDeclarations targetDeclarations : Array Kernel.Declaration)
+    (sourceEnv targetEnv : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (sourceChecked : Kernel.Cached.checkDecls .verified sourcePins sourceDeclarations = .ok sourceEnv)
+    (targetChecked : Kernel.Cached.checkDecls .verified targetPins targetDeclarations = .ok targetEnv)
+    (telescopes : checkTelescopes sourceEnv targetEnv names = true)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (definitions : checkInstalledDefinitions sourceEnv targetEnv names = true)
+    (falsePin : checkInstalledPin sourceEnv names Kernel.falseName 0 = true)
+    (eqPin : checkInstalledPin sourceEnv names Kernel.eqName 1 = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    (etaAssociations : checkInstalledEtaAssociations sourceEnv targetEnv names = some true) :
+    Nonempty (StrongInstalledModel V sourceEnv) ∧
+    ∃ target : StrongInstalledModel V targetEnv, ∃ source : PublicValueModel V sourceEnv,
+      source.model.cval = (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval ∧
+      PublicCapabilityLaws source.model.cval sourceEnv := by
+  obtain ⟨sourceExists, target, source, interpretation⟩ := checkedStreams_publicValueModel V
+    sourcePins targetPins sourceDeclarations targetDeclarations sourceEnv targetEnv names
+    sourceChecked targetChecked telescopes types definitions falsePin eqPin
+  obtain ⟨sourceStrong⟩ := sourceExists
+  refine ⟨⟨sourceStrong⟩, target, source, interpretation, ?_⟩
+  rw [interpretation]
+  exact checkedCapabilities_publicLaws sourceStrong.internal.base2.wf target
+    (checkTelescopes_sound telescopes) types capabilities etaAssociations
+
 end Ix.CompileCert
