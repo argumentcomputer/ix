@@ -23,7 +23,7 @@ use std::time::Instant;
 use super::checked_expr;
 use super::expr_utils::{
   LocalDecl, batch_abstract, decompose_apps, forall_telescope, instantiate1,
-  subst_levels,
+  strip_mdata_ref, subst_levels,
 };
 use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
 use crate::compile::validation::{self, AttemptError, Cancelled, Checkpoint};
@@ -2069,6 +2069,7 @@ pub fn build_compile_flat_block_with_overlay(
       // constructor originally referenced its own params.
       let mut cur = ctor_ty_inst;
       for j in 0..member.own_params {
+        cur = strip_mdata_ref(&cur).clone();
         match cur.as_data() {
           ExprData::ForallE(_, _, body, _, _) => {
             let sp = if j < member.spec_params.len() {
@@ -2174,9 +2175,10 @@ fn try_detect_nested_fvar(
   // use forall_telescope here — the peeled binders introduce BVars in the
   // body, which `has_invalid_spec_ref` will flag if they leak into a
   // spec_param (domain-local dependency).
-  let mut cur = dom.clone();
+  // Metadata on the forall spine is transparent.
+  let mut cur = strip_mdata_ref(dom).clone();
   while let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-    cur = body.clone();
+    cur = strip_mdata_ref(body).clone();
   }
 
   // Decompose into head and args.

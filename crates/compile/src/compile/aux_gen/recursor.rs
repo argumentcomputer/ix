@@ -22,7 +22,7 @@ use ixon::CompileError;
 
 use super::expr_utils::{
   LocalDecl, decompose_apps, fresh_fvar, instantiate_spec_with_fvars,
-  instantiate1, mk_const, mk_forall, mk_lambda, subst_levels,
+  instantiate1, mk_const, mk_forall, mk_lambda, strip_mdata_ref, subst_levels,
 };
 
 // =========================================================================
@@ -725,14 +725,23 @@ pub fn generate_canonical_recursors_with_layout(
   // Creating them once lets `decompose_inductive_type` populate
   // `IndRecInfo::indices` / `major` with domains that reference the same
   // FVars the rec types will use, so the results embed without substitution.
+  //
+  // The telescope must peel exactly `n_params` binders: a short telescope
+  // would silently drop parameters. Binder info comes from the telescope
+  // itself, which (like `collect_binders`) looks through spine metadata.
   let (shared_param_fvars, raw_param_decls, _) =
-    super::expr_utils::forall_telescope(&first_ty, n_params, "param", 0);
+    super::expr_utils::forall_telescope_exact(
+      &first_ty,
+      n_params,
+      "param",
+      0,
+      "generate_canonical_recursors_with_layout",
+      "inductive parameters",
+    )?;
   let shared_param_decls: Vec<LocalDecl> = raw_param_decls
     .into_iter()
-    .zip(param_binders.iter())
-    .map(|(mut d, pb)| {
+    .map(|mut d| {
       d.domain = super::expr_utils::consume_type_annotations(&d.domain);
-      d.info = pb.info.clone();
       d
     })
     .collect();
@@ -899,11 +908,14 @@ struct Binder {
   info: BinderInfo,
 }
 
-/// Collect the first `n` forall binders from an expression.
+/// Collect the first `n` forall binders from an expression. Metadata on the
+/// forall spine is transparent, as it is for `forall_telescope`; domain
+/// metadata remains intact.
 fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
   let mut binders = Vec::with_capacity(n);
   let mut cur = expr.clone();
   for _ in 0..n {
+    cur = strip_mdata_ref(&cur).clone();
     match cur.as_data() {
       ExprData::ForallE(name, dom, body, bi, _) => {
         // Strip outParam/semiOutParam/optParam/autoParam wrappers,
@@ -1118,6 +1130,7 @@ fn build_rec_type(
     let di_sp_fvars =
       instantiate_spec_with_fvars(&di_member.spec_params, param_fvars);
     for p in 0..di_n_ext_params {
+      ity = strip_mdata_ref(&ity).clone();
       if let ExprData::ForallE(_, _, body, _, _) = ity.as_data() {
         if p < di_sp_fvars.len() {
           ity = instantiate1(body, &di_sp_fvars[p]);
@@ -1137,6 +1150,7 @@ fn build_rec_type(
     let n_indices = di_member.n_indices;
     let mut index_decls: Vec<LocalDecl> = Vec::new();
     for fi in 0..n_indices {
+      ity = strip_mdata_ref(&ity).clone();
       match ity.as_data() {
         ExprData::ForallE(name, dom, body, bi, _) => {
           let (fv_name, fv) = fresh_fvar("idx", fi);
@@ -1273,6 +1287,7 @@ fn build_motive_type_aux(
     instantiate_spec_with_fvars(&member.spec_params, param_fvars);
   let mut cur = ty;
   for p in 0..n_ext_params {
+    cur = strip_mdata_ref(&cur).clone();
     if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
       if p < spec_fvars.len() {
         cur = instantiate1(body, &spec_fvars[p]);
@@ -1393,6 +1408,7 @@ fn build_minor_type(
     vec![]
   };
   for p in 0..n_ctor_params {
+    cur = strip_mdata_ref(&cur).clone();
     if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
       if member.is_aux && p < sp_fvars.len() {
         cur = instantiate1(body, &sp_fvars[p]);
@@ -1438,6 +1454,7 @@ fn build_minor_type(
     super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx);
 
   for fi in 0..n_fields {
+    cur = strip_mdata_ref(&cur).clone();
     match cur.as_data() {
       ExprData::ForallE(name, dom, body, bi, _) => {
         // Strip autoParam/optParam/outParam wrappers, matching Lean's
@@ -1680,6 +1697,7 @@ fn build_rec_rules(
       ("rminor", i - n_params - n_motives)
     };
     let (fv_name, fv) = fresh_fvar(kind, local_idx);
+    rec_ty_cur = strip_mdata_ref(&rec_ty_cur).clone();
     let (binder_name, domain, _info) = match rec_ty_cur.as_data() {
       ExprData::ForallE(n, d, b, bi, _) => {
         let result = (n.clone(), d.clone(), bi.clone());
@@ -1756,6 +1774,7 @@ fn build_rec_rules(
         vec![]
       };
       for p in 0..n_ctor_params {
+        ty = strip_mdata_ref(&ty).clone();
         if let ExprData::ForallE(_, _, b, _, _) = ty.as_data() {
           if class.is_aux && p < rule_sp_fvars.len() {
             ty = instantiate1(b, &rule_sp_fvars[p]);
@@ -1783,6 +1802,7 @@ fn build_rec_rules(
       let mut rec_field_data: Vec<(LeanExpr, usize)> = Vec::new(); // (field_fvar, target_ci)
 
       for fi in 0..n_fields {
+        ty = strip_mdata_ref(&ty).clone();
         match ty.as_data() {
           ExprData::ForallE(fname, dom, b, fbi, _) => {
             let clean_dom = super::expr_utils::consume_type_annotations(dom);
@@ -2812,6 +2832,49 @@ mod tests {
   /// Helper: `∀ (name : domain), body` with default binder info.
   fn epi(name: Name, domain: LeanExpr, body: LeanExpr) -> LeanExpr {
     LeanExpr::all(name, domain, body, BinderInfo::Default)
+  }
+
+  /// Mirrors the Lean `RecursorTests` case: metadata on a parameter spine
+  /// keeps the dependent scope and the binder information.
+  #[test]
+  fn metadata_on_parameter_spines_preserves_scope_and_binder_info() {
+    let mark = |e: LeanExpr| LeanExpr::mdata(vec![], e);
+    let prop = LeanExpr::sort(Level::zero());
+    let ty = mark(LeanExpr::all(
+      n("alpha"),
+      mark(prop.clone()),
+      mark(LeanExpr::all(
+        n("x"),
+        mark(LeanExpr::bvar(Nat::from(0u64))),
+        prop.clone(),
+        BinderInfo::InstImplicit,
+      )),
+      BinderInfo::Implicit,
+    ));
+    let binders = collect_binders(&ty, 2);
+    let (fvars, decls, _) =
+      super::super::expr_utils::forall_telescope(&ty, 2, "param", 0);
+    assert_eq!(binders.len(), 2);
+    assert_eq!(decls.len(), 2);
+    assert!(matches!(binders[0].info, BinderInfo::Implicit));
+    assert!(matches!(binders[1].info, BinderInfo::InstImplicit));
+    assert_eq!(binders[0].domain, mark(prop.clone()));
+    assert_eq!(decls[1].domain, mark(fvars[0].clone()));
+    // Valid neighbour: the same spine without metadata.
+    let plain = LeanExpr::all(
+      n("alpha"),
+      prop.clone(),
+      LeanExpr::all(
+        n("x"),
+        LeanExpr::bvar(Nat::from(0u64)),
+        prop,
+        BinderInfo::InstImplicit,
+      ),
+      BinderInfo::Implicit,
+    );
+    let plain_binders = collect_binders(&plain, 2);
+    assert_eq!(plain_binders.len(), 2);
+    assert!(matches!(plain_binders[1].info, BinderInfo::InstImplicit));
   }
 
   /// Build a minimal Prop mutual block: A | a : B → A, B | b : A → B.

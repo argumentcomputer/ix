@@ -1921,7 +1921,7 @@ aux members")
   -- One shared set of param FVars for the whole block (C++ `m_params`).
   let (sharedParamFvars, rawParamDecls, _) ←
     match forallTelescopeExact firstTy nParams "param" 0
-        "generateCanonicalRecursorsWithLayout" "inductive parameters" with
+        "generate_canonical_recursors_with_layout" "inductive parameters" with
     | .ok result => pure result
     | .error (.unsupportedExpr description) =>
       throw (CompileError.unsupportedExpr description)

@@ -2797,7 +2797,7 @@ fn restore_source_names_same_content_inner(
   }
 }
 
-fn strip_mdata_ref(mut expr: &LeanExpr) -> &LeanExpr {
+pub(super) fn strip_mdata_ref(mut expr: &LeanExpr) -> &LeanExpr {
   while let ExprData::Mdata(_, inner, _) = expr.as_data() {
     expr = inner;
   }

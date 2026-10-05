@@ -167,6 +167,9 @@ def fixtures : List Fixture := [
   { stem := "DotCtor", ns := ["DotCtor"] },
   { stem := "EvapClosure", ns := ["EvapClosure"] },
   { stem := "F2_SplitNestedClosure", ns := ["A", "B"] },
+  -- Metadata on the index spine and in constructor field domains (`a98663c0`),
+  -- with elaborated neighbours (`MdataSpine.Plain*`).
+  { stem := "MdataSpine", ns := ["MdataSpine"] },
   -- WB §6: the certified checker declines the reflexive nested `R`
   -- (its documented modeller limitation); its dependents are blocked.
   { stem := "NestShapes", ns := ["NestShapes"]
