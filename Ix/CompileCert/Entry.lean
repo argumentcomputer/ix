@@ -1,5 +1,7 @@
 import Ix.CompileCert.Domain
 import Ix.Kernel.Admission.Theorems
+import Ix.Kernel.Verify.Cached.PushChain
+import Ix.Kernel.Verify.Cached.BridgeCS4
 
 /-! # Admission-connected direct-cone certification
 
@@ -85,6 +87,131 @@ theorem StrongInstalledModel.eq_sound {V : Type u} [Kernel.SetTheory V]
   have equality := strong.public.eq_equality level φ ρ E A left right eqDenotes universeMember leftTyped rightTyped
   rw [equality] at proved
   exact mem_eqv proved
+
+namespace AnnotationTrace
+
+open Kernel Kernel.Cached
+
+/-- Full header provenance for the actual cached annotation call. This is
+not a claim that annotation preserves the raw expression's denotation. -/
+theorem header_fields {mode : CheckMode} {fe : FEnv} {cv cvA : Kernel.ConstantVal}
+    {jty : Kernel.Expr} {initial final : CState}
+    (run : annotConstantValC mode fe cv initial = .ok ((cvA, jty), final)) :
+    cvA = { cv with type := jty } ∧ ∃ afterAnnotation,
+      (coreKnotI mode fe checkFuel).annotate 0 cv.type initial = .ok (jty, afterAnnotation) := by
+  unfold annotConstantValC at run
+  by_cases h1 : (fe.find? cv.name).isSome = true
+  · rw [ite_eq_left h1] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h1] at run
+  by_cases h2 : reservedBasisNames.contains cv.name = true
+  · rw [ite_eq_left h2] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h2] at run
+  by_cases h3 : cv.name.isProjFnShape = true
+  · rw [ite_eq_left h3] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h3] at run
+  by_cases h4 : Kernel.Name.nodup cv.levelParams = true
+  case neg => rw [ite_eq_right h4] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h4] at run
+  by_cases h5 : Kernel.Expr.looseBVarsBounded 0 cv.type = true
+  case neg => rw [ite_eq_right h5] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h5] at run
+  by_cases h6 : Kernel.Expr.hasFvar cv.type = true
+  · rw [ite_eq_left h6] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h6] at run
+  obtain ⟨annotated, afterAnnotation, annotation, run⟩ := bindC_ok run
+  by_cases h7 : Kernel.Expr.allLevelParamsDefinedC cv.levelParams annotated = true
+  case neg => rw [ite_eq_right h7] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h7] at run
+  by_cases h8 : constsResolveFC fe annotated = true
+  case neg => rw [ite_eq_right h8] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h8] at run
+  obtain ⟨result, _⟩ := pureC_ok run
+  have pair := Prod.mk.inj result
+  obtain rfl := pair.2
+  exact ⟨pair.1.symm, afterAnnotation, annotation⟩
+
+theorem theorem_step {mode : CheckMode} {pins : List NatOpPinSet}
+    {index : Nat} {fe fe' : FEnv} {pending pending' : Array PendingCheck}
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {initial final : CState}
+    (run : annotStepC mode pins index fe pending (.thmDecl header value) initial =
+      .ok ((fe', pending'), final)) :
+    ∃ annotated afterAnnotation,
+      (coreKnotI mode fe checkFuel).annotate 0 header.type initial.flushed =
+        .ok (annotated, afterAnnotation) ∧
+      fe'.env.consts = .thmInfo { header with type := annotated } value :: fe.env.consts := by
+  unfold annotStepC at run
+  simp only [] at run
+  obtain ⟨_, afterFlush, flush, run⟩ := bindC_ok run
+  rw [show (flushC : CheckCM Unit) initial = .ok ((), initial.flushed) from rfl] at flush
+  have flushed : initial.flushed = afterFlush := congrArg Prod.snd (Except.ok.inj flush)
+  subst flushed
+  obtain ⟨pair, afterHeader, headerRun, run⟩ := bindC_ok run
+  obtain ⟨headerA, annotated⟩ := pair
+  obtain ⟨rfl, afterAnnotation, annotation⟩ := header_fields headerRun
+  obtain ⟨_, afterRecord, _, run⟩ := bindC_ok run
+  obtain ⟨result, _⟩ := pureC_ok run
+  obtain ⟨rfl, _⟩ := Prod.mk.injEq .. ▸ result
+  exact ⟨annotated, afterAnnotation, annotation, rfl⟩
+
+/-- The full theorem header, not merely its name/kind skeleton, survives
+to the final environment. The prefix and annotation state are from its
+actual installation step; the raw theorem proof remains opaque. -/
+def TheoremInstalled (mode : CheckMode) (header : Kernel.ConstantVal) (value : Kernel.Expr) (env : Env) : Prop :=
+  ∃ before : FEnv, ∃ initial afterAnnotation : CState, ∃ annotated : Kernel.Expr,
+    (coreKnotI mode before checkFuel).annotate 0 header.type initial.flushed =
+      .ok (annotated, afterAnnotation) ∧
+    Kernel.ConstantInfo.thmInfo { header with type := annotated } value ∈ env.consts
+
+theorem theorem_run {mode : CheckMode} {pins : List NatOpPinSet}
+    {declarations : List Declaration} {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    (present : Declaration.thmDecl header value ∈ declarations)
+    {start finish : Nat × FEnv × Array PendingCheck} {initial final : CState}
+    (run : InstallRun mode pins declarations start initial finish final)
+    (canonical : start.2.1 = mkFEnv start.2.1.env) :
+    TheoremInstalled mode header value finish.2.1.env := by
+  induction run with
+  | nil => exact absurd present List.not_mem_nil
+  | @cons declaration rest start middle finish initial afterStep final step restRun ih =>
+    obtain ⟨nextEnv, nextPending, rfl, stepRun⟩ := annotDeclStep_ok step
+    have chain : PushChain start.2.1.env nextEnv :=
+      (annotStepC_push mode start.1 (PushChain.self canonical) start.2.2 declaration
+        initial (nextEnv, nextPending) afterStep stepRun).1
+    rcases List.mem_cons.mp present with rfl | restPresent
+    · obtain ⟨annotated, afterAnnotation, annotation, installed⟩ := theorem_step stepRun
+      obtain ⟨⟨_, ⟨new, extension⟩, _⟩, _⟩ :=
+        installRun_trace mode restRun (PushChain.self chain.canon)
+      refine ⟨start.2.1, initial, afterAnnotation, annotated, annotation, ?_⟩
+      rw [extension]
+      exact List.mem_append_right _ (installed ▸ List.mem_cons_self)
+    · exact ih restPresent chain.canon
+
+theorem theorem_checked {mode : CheckMode} {pins : List NatOpPinSet}
+    {declarations : Array Declaration} {env : Env} {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    (present : Declaration.thmDecl header value ∈ declarations)
+    (checked : checkDecls mode pins declarations = .ok env) :
+    TheoremInstalled mode header value env := by
+  obtain ⟨fullyChecked, rfl⟩ := checkDecls_fullyChecked mode checked
+  obtain ⟨_, _, run⟩ := fullyChecked.1.run
+  exact theorem_run (Array.mem_toList_iff.mpr present) run rfl
+
+open Kernel.SetTheory in
+/-- Read the theorem through its actual installed type, retaining the
+annotation call that produced that type. This does not read the raw input
+type as though its binder regimes and lets had already been repaired. -/
+theorem TheoremInstalled.denotes {V : Type u} [SetTheory V]
+    {mode : CheckMode} {header : Kernel.ConstantVal} {value : Kernel.Expr} {env : Env}
+    (receipt : TheoremInstalled mode header value env) (model : Kernel.Model V env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) :
+    ∃ before : FEnv, ∃ initial afterAnnotation : CState, ∃ annotated : Kernel.Expr, ∃ type : V,
+      (coreKnotI mode before checkFuel).annotate 0 header.type initial.flushed =
+        .ok (annotated, afterAnnotation) ∧
+      Kernel.Denotes model.cval env levels ρ annotated type ∧
+      model.cval header.name levels ∈ˢ type := by
+  obtain ⟨before, initial, afterAnnotation, annotated, annotation, present⟩ := receipt
+  obtain ⟨type, denoted, member⟩ := model.mem _ present levels ρ
+  exact ⟨before, initial, afterAnnotation, annotated, type, annotation, denoted, member⟩
+
+end AnnotationTrace
 
 /-- Every original source entry is compared against the full declaration
 entries actually submitted to the independent source checker. Exact equality
@@ -631,6 +758,15 @@ theorem SourceNormalizedInstallation.strong_model (V : Type u) [Kernel.SetTheory
     {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots) :
     Nonempty (StrongInstalledModel V installed.env) :=
   strongInstalledModel_exists V [] installed.declarations.toArray installed.env installed.checked
+
+/-- In particular, every generated constructor equation is connected to
+the actual full annotated statement of its independently installed theorem. -/
+theorem SourceNormalizedInstallation.theorem_annotation
+    {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots)
+    {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    (present : Kernel.Declaration.thmDecl header value ∈ installed.declarations) :
+    AnnotationTrace.TheoremInstalled .verified header value installed.env :=
+  AnnotationTrace.theorem_checked (by simpa using present) installed.checked
 
 theorem SourceInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
     {source : Source} {roots : List Lean.Name} (installed : SourceInstallation source roots) :

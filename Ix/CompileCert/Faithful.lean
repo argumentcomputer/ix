@@ -506,4 +506,25 @@ theorem InstalledExprImage.denotes_iff {V : Type u} [Kernel.SetTheory V]
       Kernel.Denotes targetValues targetEnv targetLevels ρ target value :=
   ⟨image.denotes, image.symm.denotes⟩
 
+open Kernel.SetTheory in
+/-- Eliminate an actually denoted installed binder at a typed argument.
+The regime-zero side condition comes from Denotes itself, so this works
+for Prop and graph binders without silently treating proofs as functions. -/
+theorem installed_forall_elim {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {domain body : Kernel.Expr} {binder : Kernel.BinderMeta} {type function A argument : V}
+    (denoted : Kernel.Denotes values env levels ρ (.forallE domain body binder) type)
+    (member : function ∈ˢ type)
+    (domainDenoted : Kernel.Denotes values env levels ρ domain A)
+    (argumentTyped : argument ∈ˢ A) :
+    ∃ result, Kernel.Denotes values env levels (Kernel.push argument ρ) body result ∧
+      app function argument ∈ˢ result := by
+  cases denoted with
+  | pi hA hB hP =>
+    obtain rfl := Kernel.Denotes_functional domainDenoted hA
+    exact ⟨_, hB argument argumentTyped,
+      Kernel.SetModel.app_mem_piR member argumentTyped
+        (by simpa only [univ_zero] using hP)⟩
+
 end Ix.CompileCert
