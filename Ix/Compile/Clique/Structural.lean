@@ -95,6 +95,13 @@ structure StructLayout where
   /-- per member (Lean's order): the member's parameter (outermost `0`) at
   each fixed position of its functionals' applications -/
   memberFixed : Array (Array Nat) := #[]
+  /-- per functional `f._f`: the number of its binders after the fixed
+  parameters (indices, major, then the `below` dictionary when the number is
+  the arity plus one) and its group's arity -/
+  fDepth : Std.HashMap Name (Nat × Nat) := {}
+  /-- enforce the ownership of the `below` dictionaries (§ Ownership); off for a
+  theorem clique, whose terms are proofs -/
+  checkOwnership : Bool := true
   deriving Inhabited
 
 /-- new position `p` ↦ Lean position, for the `funType` telescope. -/
@@ -215,38 +222,88 @@ def belowPath (L : StructLayout) (ty : Expr) (steps : Array PStep) :
     | _ => pure ()
   return none
 
+/-! ## Ownership of the `below` dictionaries
+
+A path into a `below` dictionary is re-associated only when the dictionary is
+the recursion's own, decided by where the variable is bound and never by its
+type:
+
+* the dictionary binder of a functional `f._f` (the binder after the indices
+  and the major, `fDepth`), and the dictionary binder of each packed
+  functional handed to the members' `brecOn`;
+* the binders that receive an owned dictionary through a matcher or a
+  `casesOn` (`MatcherApp.addArg`): the arguments past the eliminator's
+  declared arity are passed to the trailing binders of every alternative (a
+  parameter whose type concludes in an earlier parameter, the motive), after
+  that alternative's own fields.
+
+A user's binder whose type is a `below` of the block, a path into a `below`
+value that is not owned, an owned dictionary passed whole anywhere else, and a
+`brecOn` application of the block outside a member's root are outside the
+grammar: the clique stays in Lean's form. Lean's own encoding never produces
+them; user code can (`Tests/Ix/Compile/CliqueOwnership`: a user `Nat.brecOn`
+whose motive has the packing's shape, a user `below` binder read through
+primitive projections). A theorem clique is exempt: its terms are proofs, so a
+wrong path can make the kernel reject but cannot change a value. -/
+
+/-- `ty` is a `below` of the block (by its head constant). -/
+def StructLayout.isBelowTy (L : StructLayout) (ty : Expr) : Bool :=
+  match constApp? (stripMdata ty) with
+  | some (c, _, _) => match L.aux.get? c with
+    | some a => !a.isBrecOn
+    | none => false
+  | none => false
+
+/-- The number of applications of the block's `brecOn` constants in `e`. -/
+def StructLayout.brecOnCount (L : StructLayout) : Expr → Nat
+  | .const c _ _ => match L.aux.get? c with
+    | some a => if a.isBrecOn then 1 else 0
+    | none => 0
+  | .app f a _ => L.brecOnCount f + L.brecOnCount a
+  | .lam _ t b _ _ | .forallE _ t b _ _ => L.brecOnCount t + L.brecOnCount b
+  | .letE _ t v b _ _ => L.brecOnCount t + L.brecOnCount v + L.brecOnCount b
+  | .proj _ _ x _ | .mdata _ x _ => L.brecOnCount x
+  | _ => 0
+
 /-! ## `Φ_σ` -/
 
 /-- One step of `Φ_σ` on a structural clique's term, in a context of binder
-types (Lean's, outermost first); `go ctx` is `Φ_σ` on subterms. -/
-def phiSStep (L : StructLayout) (go : Array Expr → Expr → TM Expr) (ctx : Array Expr)
-    (e : Expr) : TM Expr := do
-  let underBinders (n : Nat) (lam : Bool) (x : Expr) (k : Array Expr → Expr → TM Expr) :
-      TM Expr := do
+types (Lean's, outermost first) each with its ownership (the recursion's own
+`below` dictionary); `go ctx` is `Φ_σ` on subterms. -/
+def phiSStep (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
+    (ctx : Array (Expr × Bool)) (e : Expr) : TM Expr := do
+  let underBinders (n : Nat) (lam : Bool) (x : Expr) (owned : Nat → Bool)
+      (k : Array (Expr × Bool) → Expr → TM Expr) : TM Expr := do
     -- transform `n` leading binders of `x` and the body with `k`
     let (bs, body) := if lam then peelLams n x #[] else
       let (bs, b) := Ix.Compile.Canon.peelForalls n x #[]; (bs, b)
     let mut ctx' := ctx
     let mut bs' := #[]
-    for (nm, t, bi) in bs do
+    for i in [0:bs.size] do
+      let (nm, t, bi) := bs[i]!
       bs' := bs'.push (nm, ← go ctx' t, bi)
-      ctx' := ctx'.push t
+      ctx' := ctx'.push (t, owned i)
     let body' ← k ctx' body
     return if lam then mkLams bs' body' else Ix.Compile.Canon.mkForalls bs' body'
+  let ownedArg (x : Expr) : Bool := match stripMdata x with
+    | .bvar i _ => if h : i < ctx.size then ctx[ctx.size - 1 - i].2 else false
+    | _ => false
   -- the packed motive at motive position `j`
   let motive (j : Nat) (arg : Expr) : TM Expr := do
     let g := L.groups[j]!
     if g.size < 2 then return ← go ctx arg
-    underBinders g.arity true arg fun ctx' body => do
+    underBinders g.arity true arg (fun _ => false) fun ctx' body => do
       let some s := decodeSpine .pprod g.size body
         | throw "grammar: a packed motive that is not Lean's"
       let leaves ← s.leaves.mapM (go ctx')
       return ({ s with leaves }.permute g.perm).type
-  -- the packed functional at functional position `j`
+  -- the packed functional at functional position `j`; its last binder is
+  -- the dictionary `brecOn` builds
   let functional (j : Nat) (arg : Expr) : TM Expr := do
     let g := L.groups[j]!
-    if g.size < 2 then return ← go ctx arg
-    underBinders (g.arity + 1) true arg fun ctx' body => do
+    let dict (i : Nat) : Bool := i == g.arity
+    if g.size < 2 then return ← underBinders (g.arity + 1) true arg dict fun ctx' body => go ctx' body
+    underBinders (g.arity + 1) true arg dict fun ctx' body => do
       let some (s, cs) := decodeTuple g.size body
         | throw "grammar: a packed functional that is not Lean's"
       let leaves ← s.leaves.mapM (go ctx')
@@ -260,9 +317,12 @@ def phiSStep (L : StructLayout) (go : Array Expr → Expr → TM Expr) (ctx : Ar
     let (gsteps, gbase) := pathChain e
     if let .bvar i _ := stripMdata gbase then
       if h : i < ctx.size then
-        let ty := liftLoose ctx[ctx.size - 1 - i] (i + 1)
+        let (t, owned) := ctx[ctx.size - 1 - i]
+        let ty := liftLoose t (i + 1)
         match ← belowPath L ty gsteps with
         | some steps' =>
+          if L.checkOwnership && !owned then
+            throw "grammar: a path into a below dictionary that is not the recursion's own"
           let steps'' ← steps'.mapM fun st => do match st with
             | .app a => return PStep.app (← go ctx a)
             | s => return s
@@ -301,41 +361,86 @@ def phiSStep (L : StructLayout) (go : Array Expr → Expr → TM Expr) (ctx : Ar
         return mkAppN h args'
       if L.fNames.contains c then
         if args.size < L.numFixed then throw "grammar: a partial application of a functional"
-        let args' ← args.mapM (go ctx)
+        let args' ← args.mapM fun x => if ownedArg x then pure x else go ctx x
         return mkAppN h (L.fixedPerm.map (args'[·]!) ++ args'.extract L.numFixed args'.size)
       if L.matchers.contains c then
         let m := L.numFunTypes
         if args.size < m then throw "grammar: a partial application of a below matcher"
-        let args' ← args.mapM (go ctx)
+        let args' ← args.mapM fun x => if ownedArg x then pure x else go ctx x
         return mkAppN h (L.funPerm.map (args'[·]!) ++ args'.extract m args'.size)
+      if L.checkOwnership && args.any ownedArg then
+        -- an owned dictionary passed to an eliminator past its declared
+        -- arity: it reaches the trailing binders of the alternatives
+        let some ci := L.const? c
+          | throw s!"grammar: a below dictionary passed to {c}, which is not in the input"
+        let ty := ci.getCnst.type
+        let ar := Ix.Compile.Image.forallArity ty
+        unless ar ≤ args.size do throw s!"grammar: a below dictionary passed to a partial application of {c}"
+        for k in [0:ar] do
+          if ownedArg args[k]! then throw s!"grammar: a below dictionary passed whole to {c}"
+        let extras := (args.extract ar args.size).map ownedArg
+        let (ps, _) := Ix.Compile.Canon.peelForalls ar ty #[]
+        let mut args' := #[]
+        for k in [0:args.size] do
+          let x := args[k]!
+          if h : k < ps.size then
+            let (_, pt, _) := ps[k]
+            let fc := Ix.Compile.Image.forallArity pt
+            let (_, concl) := Ix.Compile.Canon.peelForalls fc pt #[]
+            let isAlt := match (getAppFnArgs (stripMdata concl)).1 with
+              | .bvar i _ => i ≥ fc && i - fc < k
+              | _ => false
+            if isAlt then
+              unless lamArity x ≥ fc + extras.size do
+                throw s!"grammar: an alternative of {c} that does not bind the dictionary"
+              args' := args'.push (← underBinders (fc + extras.size) true x
+                (fun i => i ≥ fc && extras[i - fc]!) fun ctx' body => go ctx' body)
+            else args' := args'.push (← go ctx x)
+          else args' := args'.push (← if ownedArg x then pure x else go ctx x)
+        return mkAppN h args'
       return mkAppN h (← args.mapM (go ctx))
-    | _ => return mkAppN (← go ctx h) (← args.mapM (go ctx))
+    | _ =>
+      if L.checkOwnership && args.any ownedArg then
+        throw "grammar: a below dictionary passed to a term that is not an eliminator"
+      return mkAppN (← go ctx h) (← args.mapM (go ctx))
   | .const c _ _ =>
     if L.fNames.contains c && L.numFixed > 0 then throw "grammar: a bare functional"
     if L.matchers.contains c && L.numFunTypes > 0 then throw "grammar: a bare below matcher"
     return e
-  | .lam nm t b bi _ => return Expr.mkLam nm (← go ctx t) (← go (ctx.push t) b) bi
-  | .forallE nm t b bi _ => return Expr.mkForallE nm (← go ctx t) (← go (ctx.push t) b) bi
+  | .lam nm t b bi _ =>
+    if L.checkOwnership && L.isBelowTy t then
+      throw s!"grammar: a binder {nm.pretty} of a below type that is not the recursion's dictionary"
+    return Expr.mkLam nm (← go ctx t) (← go (ctx.push (t, false)) b) bi
+  | .forallE nm t b bi _ => return Expr.mkForallE nm (← go ctx t) (← go (ctx.push (t, false)) b) bi
   | .letE nm t v b nd _ =>
-    return Expr.mkLetE nm (← go ctx t) (← go ctx v) (← go (ctx.push t) b) nd
+    if L.checkOwnership && L.isBelowTy t then
+      throw s!"grammar: a let {nm.pretty} of a below type that is not the recursion's dictionary"
+    return Expr.mkLetE nm (← go ctx t) (← go ctx v) (← go (ctx.push (t, false)) b) nd
+  | .bvar _ _ =>
+    if L.checkOwnership && ownedArg e then
+      throw "grammar: a below dictionary used whole outside an eliminator"
+    return e
   | .mdata d x _ => return Expr.mkMData d (← go ctx x)
   | _ => return e
 
 /-- `Φ_σ` with a context, memoised by the term and the context's hash. -/
-def phiSFix (L : StructLayout) : Nat → Array Expr → UInt64 → Expr → TM Expr
+def phiSFix (L : StructLayout) : Nat → Array (Expr × Bool) → UInt64 → Expr → TM Expr
   | 0, _, _, _ => throw "Φ: recursion bound exhausted"
   | fuel + 1, ctx, hctx, e => do
     let key := mixHash (hash e) hctx
-    if let some (e', ctx', r) := (← get).cacheCtx.get? key then
+    if let some (e', ctx', r) := (← get).cacheOwn.get? key then
       if e' == e && ctx' == ctx then return r
-    let go (ctx' : Array Expr) (x : Expr) : TM Expr :=
-      phiSFix L fuel ctx' (ctx'.foldl (fun h t => mixHash h (hash t)) 7) x
+    let go (ctx' : Array (Expr × Bool)) (x : Expr) : TM Expr :=
+      phiSFix L fuel ctx' (ctxHash ctx') x
     let r ← phiSStep L go ctx e
-    modify fun st => { st with cacheCtx := st.cacheCtx.insert key (e, ctx, r) }
+    modify fun st => { st with cacheOwn := st.cacheOwn.insert key (e, ctx, r) }
     return r
+where
+  ctxHash (ctx : Array (Expr × Bool)) : UInt64 :=
+    ctx.foldl (fun h (t, o) => mixHash (mixHash h (hash t)) (if o then 11 else 13)) 7
 
-def phiS (L : StructLayout) (ctx : Array Expr) (e : Expr) : TM Expr :=
-  phiSFix L defaultFuel ctx (ctx.foldl (fun h t => mixHash h (hash t)) 7) e
+def phiS (L : StructLayout) (ctx : Array (Expr × Bool)) (e : Expr) : TM Expr :=
+  phiSFix L defaultFuel ctx (phiSFix.ctxHash ctx) e
 
 /-! ## The layout -/
 
@@ -476,6 +581,7 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
       | none => throw s!"structLayout: member {i} does not project its clique position"
   -- the functionals and the fixed parameters
   let mut fNames : Std.HashSet Name := {}
+  let mut fDepth : Std.HashMap Name (Nat × Nat) := {}
   let mut qss : Array (Array Nat) := #[]
   for i in [0:n] do
     let sh := shapes[i]!
@@ -496,6 +602,7 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
         let some (h, _, args) := constApp? c | throw "structLayout: a functional that is not a constant"
         if matchers.contains h then continue
         fNames := fNames.insert h
+        fDepth := fDepth.insert h (depth, g.arity)
         unless args.size ≥ depth do throw "structLayout: a functional applied to too few arguments"
         let m := args.size - depth
         let mut q := #[]
@@ -524,22 +631,47 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
   unless shapes.all (·.lets == numFunTypes) do throw "structLayout: inconsistent funType lets"
   unless numFunTypes == 0 || numFunTypes == n do throw "structLayout: unexpected lets"
   return { n, sigma := σ, const?, numParams := P, numMotives := K, aux := blockAux, groups,
-           fNames, numFixed := m, fixedPerm, matchers, numFunTypes, memberFixed := qss }
+           fNames, numFixed := m, fixedPerm, matchers, numFunTypes, memberFixed := qss, fDepth }
 
 /-- Transport a structural clique: the functionals (`_f`), the "below"
 matchers, the members. Fails (and the caller keeps the baseline) on anything
-outside the grammar. -/
+outside the grammar, including a `below` dictionary or `brecOn` application
+the recursion does not own (§ Ownership). -/
 def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
     (const? : Name → Option ConstantInfo) (lemmas : Array (Decl × Name) := #[]) :
     TM (Array Transported) := do
   let L ← liftE (structLayout members aux σ const?)
+  let L := { L with checkOwnership := !members.all (·.isThm) }
+  -- `brecOn` of the block: at the members' roots only
+  if L.checkOwnership then
+    for d in aux do
+      unless L.brecOnCount d.type == 0 && L.brecOnCount d.value == 0 do
+        throw s!"grammar: a brecOn application of the block outside a member's root (in {d.name})"
+    for d in members do
+      unless L.brecOnCount d.type == 0 && L.brecOnCount d.value == 1 do
+        throw s!"grammar: a brecOn application of the block outside a member's root (in {d.name})"
   let phi (e : Expr) : TM Expr := phiS L #[] e
+  -- a functional's body after its fixed parameters: the indices, the major
+  -- and (at depth arity + 1) the recursion's own dictionary
+  let phiF (depth arity : Nat) (e : Expr) : TM Expr := do
+    let (bs, body) := peelLams depth e #[]
+    let mut ctx : Array (Expr × Bool) := #[]
+    let mut bs' := #[]
+    for i in [0:bs.size] do
+      let (nm, t, bi) := bs[i]!
+      bs' := bs'.push (nm, ← phiS L ctx t, bi)
+      ctx := ctx.push (t, depth == arity + 1 && i == arity)
+    return mkLams bs' (← phiS L ctx body)
   let mut out : Array Transported := #[]
   for d in aux do
     if L.fNames.contains d.name then
       let m := L.numFixed
+      -- the dictionary is the binder after the group's indices and major, in
+      -- the functional's own telescope (a member may pass it eta-reduced)
+      let (_, arity) := (L.fDepth.get? d.name).getD (0, 0)
+      let depth := arity + 1
       let type ← withReorderedBinders false m L.fixedPerm d.type phi
-      let value ← withReorderedBinders true m L.fixedPerm d.value phi
+      let value ← withReorderedBinders2 true m L.fixedPerm d.value phi (phiF depth arity)
       out := out.push { decl := { d with type, value } }
     else if L.matchers.contains d.name then
       let m := L.numFunTypes
@@ -550,22 +682,28 @@ def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Na
       out := out.push { decl := { d with type := ← phi d.type, value := ← phi d.value } }
   for d in members do
     let (ps, b1) := peelLams (lamArity d.value) d.value #[]
-    let mut ctx := #[]
+    let mut ctx : Array (Expr × Bool) := #[]
     let mut ps' := #[]
     for (nm, t, bi) in ps do
+      if L.checkOwnership && L.isBelowTy t then
+        throw "grammar: a member parameter of a below type"
       ps' := ps'.push (nm, ← phiS L ctx t, bi)
-      ctx := ctx.push t
+      ctx := ctx.push (t, false)
     let (ls, b2) := peelLets L.numFunTypes b1 #[]
     let (ls, b2) ← liftE (reorderLets L.funPerm ls b2)
     let mut ls' := #[]
     for (nm, t, v) in ls do
       ls' := ls'.push (nm, ← phiS L ctx t, ← phiS L ctx v)
-      ctx := ctx.push t
+      ctx := ctx.push (t, false)
     let body ← phiS L ctx b2
     out := out.push { decl := { d with type := ← phi d.type, value := mkLams ps' (mkLets ls' body) } }
-  -- the carried equation lemmas (a failure leaves the clique in Lean's form)
+  -- the carried equation lemmas (a failure leaves the clique in Lean's form);
+  -- they are theorems, so dictionary ownership is not enforced in them (a
+  -- lemma's statement must still be Lean's, `Pass/Cliques.lean`)
+  let Lp := { L with checkOwnership := false }
   for (d, nn) in lemmas do
-    out := out.push { decl := { d with name := nn, type := ← phi d.type, value := ← phi d.value } }
+    out := out.push { decl := { d with name := nn, type := ← phiS Lp #[] d.type,
+                                           value := ← phiS Lp #[] d.value } }
   return out
 
 end Ix.Compile.Clique
