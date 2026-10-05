@@ -197,6 +197,22 @@ def runCoverage : IO Unit := do
     | .error why => throw (IO.userError s!"source constructor coverage {owner}: {label why}")
     | .ok coverage =>
       IO.println s!"COVERAGE-CHECKED {owner}: params={site.owner.numParams} fields={site.ctor.numFields} declarations={installed.declarations.length + 1}"
+      let receipt ← IO.ofExcept (checkSourceCoverInstalledShape coverage)
+      IO.println s!"COVERAGE-SHAPE {owner}: exact installed dependent field domains"
+      let badFields := { receipt.data with coverageFields := [] }
+      if decide (SourceCoverShape site coverage.header badFields) then
+        throw (IO.userError "missing installed coverage fields passed structural relation")
+      let badOwner := { receipt.data with owner := { receipt.data.owner with name := .anonymous } }
+      if decide (SourceCoverShape site coverage.header badOwner) then
+        throw (IO.userError "wrong original owner identity passed structural relation")
+      let badEquation := { receipt.data with equalityType := .bvar 999 }
+      if decide (SourceCoverShape site coverage.header badEquation) then
+        throw (IO.userError "wrong installed constructor equation passed structural relation")
+      if site.owner.numParams > 0 then
+        let unshifted := { receipt.data with coverageFields := receipt.data.fields }
+        if decide (SourceCoverShape site coverage.header unshifted) then
+          throw (IO.userError "unshifted dependent parameter references passed structural relation")
+      IO.println "PASS: missing fields, wrong owner, wrong Eq type and applicable unshifted domains refused"
       let tampered := installed.declarations ++ [Ix.Kernel.Declaration.thmDecl coverage.header (.bvar 1000)]
       match Ix.Kernel.Cached.checkDecls .verified [] tampered.toArray with
       | .ok _ => throw (IO.userError "malformed source coverage proof accepted")

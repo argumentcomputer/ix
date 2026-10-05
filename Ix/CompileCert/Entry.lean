@@ -926,6 +926,270 @@ theorem SourceInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
     Nonempty (StrongInstalledModel V installed.env) :=
   strongInstalledModel_exists V [] installed.declarations installed.env installed.checked
 
+/-- Inserting subject and proposition binders must leave references to earlier
+fields fixed while moving references to original parameters by two slots. -/
+def liftSourceFieldDomains : Nat → List (Kernel.Expr × Kernel.BinderMeta) →
+    List (Kernel.Expr × Kernel.BinderMeta)
+  | _, [] => []
+  | index, (domain, binder) :: rest =>
+    (domain.liftLooseBVars 2 index, binder) :: liftSourceFieldDomains (index + 1) rest
+
+/-- Data extracted from the *installed* headers, independent of the raw
+generator's binder annotations. The checker below binds all three headers to
+their actual environment entries before this relation is used. -/
+structure SourceCoverShapeData where
+  owner : Kernel.ConstantVal
+  constructor : Kernel.ConstantVal
+  theoremHeader : Kernel.ConstantVal
+  parameters : List (Kernel.Expr × Kernel.BinderMeta)
+  constructorParameters : List (Kernel.Expr × Kernel.BinderMeta)
+  coverageParameters : List (Kernel.Expr × Kernel.BinderMeta)
+  fields : List (Kernel.Expr × Kernel.BinderMeta)
+  coverageFields : List (Kernel.Expr × Kernel.BinderMeta)
+  constructorResult : Kernel.Expr
+  subjectType : Kernel.Expr
+  equalityType : Kernel.Expr
+  level : Kernel.Level
+  subjectBinder : Kernel.BinderMeta
+  propositionBinder : Kernel.BinderMeta
+  continuationBinder : Kernel.BinderMeta
+  equalityBinder : Kernel.BinderMeta
+  continuation : Kernel.Expr
+  propositionIndex : Nat
+
+def sourceForalls (binders : List (Kernel.Expr × Kernel.BinderMeta)) (body : Kernel.Expr) : Kernel.Expr :=
+  binders.foldr (fun (domain, binder) rest => .forallE domain rest binder) body
+
+/-- Typed argument tuples depend on binder domains, not the regime of the
+enclosing forall. Each complete telescope is interpreted with its own regime. -/
+theorem sourceForalls_transfer {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {sourceBinders targetBinders : List (Kernel.Expr × Kernel.BinderMeta)}
+    {sourceBody targetBody result : Kernel.Expr} {arguments : List V}
+    (domains : sourceBinders.map Prod.fst = targetBinders.map Prod.fst)
+    (length : arguments.length = sourceBinders.length)
+    (typed : InstalledTelescope values env levels ρ (sourceForalls sourceBinders sourceBody)
+      arguments finalρ result) :
+    result = sourceBody ∧
+      InstalledTelescope values env levels ρ (sourceForalls targetBinders targetBody)
+        arguments finalρ targetBody := by
+  induction sourceBinders generalizing targetBinders arguments ρ with
+  | nil =>
+    have ha : arguments = [] := by simpa using length
+    have ht : targetBinders = [] := by simpa using domains.symm
+    subst arguments
+    subst targetBinders
+    cases typed
+    exact ⟨rfl, .nil⟩
+  | cons sourceBinder rest ih =>
+    cases targetBinders with
+    | nil => simp at domains
+    | cons targetBinder targetRest =>
+      simp only [List.map_cons, List.cons.injEq] at domains
+      cases arguments with
+      | nil => simp at length
+      | cons argument arguments =>
+        simp only [List.length_cons, Nat.add_right_cancel_iff] at length
+        cases typed with
+        | cons domainDenoted argumentTyped remaining =>
+          obtain ⟨resultEq, transferred⟩ := ih domains.2 length remaining
+          refine ⟨resultEq, .cons ?_ argumentTyped transferred⟩
+          simpa only [← domains.1] using domainDenoted
+
+theorem sourceForalls_lift (binders : List (Kernel.Expr × Kernel.BinderMeta))
+    (body : Kernel.Expr) (index : Nat) :
+    (sourceForalls binders body).liftLooseBVars 2 index =
+      sourceForalls (liftSourceFieldDomains index binders)
+        (body.liftLooseBVars 2 (index + binders.length)) := by
+  induction binders generalizing index with
+  | nil => rfl
+  | cons binder rest ih =>
+    simp only [sourceForalls, List.foldr_cons, Kernel.Expr.liftLooseBVars,
+      liftSourceFieldDomains, List.length_cons]
+    congr 1
+    simpa only [sourceForalls, Nat.add_assoc, Nat.add_comm 1] using ih (index + 1)
+
+/-- Reflect a typed coverage tuple back to the original constructor telescope.
+The original telescope's actual denotation supplies domain existence; this
+does not assume raw source annotations denote or infer a source model from a
+target model. Earlier dependent arguments are retained in both valuations. -/
+theorem sourceForalls_reflect_lift {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat}
+    {binders targetBinders : List (Kernel.Expr × Kernel.BinderMeta)}
+    {body targetBody result : Kernel.Expr} {arguments : List V}
+    {index : Nat} {ρ target finalTarget : Nat → V} {type : V}
+    (domains : targetBinders.map Prod.fst = (liftSourceFieldDomains index binders).map Prod.fst)
+    (length : arguments.length = binders.length)
+    (denoted : Kernel.Denotes values env levels ρ (sourceForalls binders body) type)
+    (typed : InstalledTelescope values env levels target (sourceForalls targetBinders targetBody)
+      arguments finalTarget result)
+    (related : ValuationLift 2 index ρ target) :
+    ∃ finalρ, InstalledTelescope values env levels ρ (sourceForalls binders body)
+      arguments finalρ body ∧ ValuationLift 2 (index + arguments.length) finalρ finalTarget := by
+  induction binders generalizing targetBinders arguments index ρ target type with
+  | nil =>
+    have ha : arguments = [] := by simpa using length
+    have ht : targetBinders = [] := by simpa [liftSourceFieldDomains] using domains
+    subst arguments
+    subst targetBinders
+    cases typed
+    exact ⟨ρ, .nil, related⟩
+  | cons binder rest ih =>
+    cases targetBinders with
+    | nil => simp [liftSourceFieldDomains] at domains
+    | cons targetBinder targetRest =>
+      simp only [liftSourceFieldDomains, List.map_cons, List.cons.injEq] at domains
+      cases arguments with
+      | nil => simp at length
+      | cons argument arguments =>
+        simp only [List.length_cons, Nat.add_right_cancel_iff] at length
+        cases denoted with
+        | pi hA hB hP =>
+          cases typed with
+          | cons targetDomain targetTyped targetRemaining =>
+            have shifted := denotes_lift hA related
+            rw [← domains.1] at shifted
+            obtain rfl := Kernel.Denotes_functional targetDomain shifted
+            obtain ⟨finalρ, originalRemaining, finalRelated⟩ :=
+              ih domains.2 length (hB argument targetTyped) targetRemaining (related.push argument)
+            refine ⟨finalρ, .cons hA targetTyped originalRemaining, ?_⟩
+            simpa only [List.length_cons, Nat.add_assoc, Nat.add_comm 1] using finalRelated
+
+/-- Full structural checks, including universe lists, original identities and
+dependent domains. Each enclosing telescope retains its own installed binder
+regimes: a constructor returns a carrier, whereas the continuation returns Prop.
+Only domain expressions are compared across those different telescopes.
+Equality is Lean's structural equality, not hash equality. -/
+def SourceCoverShape {source : Source} (site : SourceProjectionSite source)
+    (coverageHeader : Kernel.ConstantVal) (data : SourceCoverShapeData) : Prop :=
+  let levels := data.owner.levelParams.map Kernel.Level.param
+  let params := sourceParameterVars site.owner.numParams 0
+  let ctorParams := sourceParameterVars site.owner.numParams site.ctor.numFields
+  let coverParams := sourceParameterVars site.owner.numParams (site.ctor.numFields + 2)
+  data.owner.name = sourceName site.ownerName ∧
+  data.constructor.name = sourceName site.ctorName ∧
+  data.theoremHeader.name = coverageHeader.name ∧
+  data.owner.levelParams = data.constructor.levelParams ∧
+  data.owner.levelParams = data.theoremHeader.levelParams ∧
+  data.theoremHeader.levelParams = coverageHeader.levelParams ∧
+  data.parameters.length = site.owner.numParams ∧
+  data.fields.length = site.ctor.numFields ∧
+  data.constructorParameters.map Prod.fst = data.parameters.map Prod.fst ∧
+  data.coverageParameters.map Prod.fst = data.parameters.map Prod.fst ∧
+  data.coverageFields.map Prod.fst = (liftSourceFieldDomains 0 data.fields).map Prod.fst ∧
+  data.owner.type = sourceForalls data.parameters (.sort data.level) ∧
+  data.constructor.type = sourceForalls data.constructorParameters
+    (sourceForalls data.fields data.constructorResult) ∧
+  data.constructorResult = Kernel.Expr.mkAppN (.const data.owner.name levels) ctorParams ∧
+  data.subjectType = Kernel.Expr.mkAppN (.const data.owner.name levels) params ∧
+  data.equalityType = Kernel.Expr.mkAppN (.const Kernel.eqName [data.level])
+    [Kernel.Expr.mkAppN (.const data.owner.name levels) coverParams,
+      .bvar (site.ctor.numFields + 1),
+      Kernel.Expr.mkAppN (.const data.constructor.name levels)
+        (coverParams ++ sourceParameterVars site.ctor.numFields 0)] ∧
+  data.propositionIndex = site.ctor.numFields + 1 ∧
+  data.continuation = sourceForalls data.coverageFields
+    (.forallE data.equalityType (.bvar data.propositionIndex) data.equalityBinder) ∧
+  data.theoremHeader.type = sourceForalls data.coverageParameters
+    (.forallE data.subjectType
+      (.forallE (.sort .zero)
+        (.forallE data.continuation (.bvar 1) data.continuationBinder)
+        data.propositionBinder) data.subjectBinder)
+
+instance {source : Source} (site : SourceProjectionSite source)
+    (header : Kernel.ConstantVal) (data : SourceCoverShapeData) :
+    Decidable (SourceCoverShape site header data) := by
+  unfold SourceCoverShape
+  infer_instance
+
+structure SourceCoverInstalledShape {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    (coverage : SourceConstructorCoverChecked installed site) where
+  data : SourceCoverShapeData
+  ownerCaps : Kernel.IndCaps
+  ownerLookup : coverage.env.find? (sourceName site.ownerName) = some (.indInfo data.owner ownerCaps)
+  constructorLookup : coverage.env.find? (sourceName site.ctorName) =
+    some (.ctorInfo data.constructor site.owner.numParams site.ctor.numFields)
+  theoremLookup : coverage.env.find? coverage.header.name = some (.thmInfo data.theoremHeader coverage.value)
+  shape : SourceCoverShape site coverage.header data
+
+/-- A fail-closed installed annotation/field-domain receipt. Its success for
+every source domain member is a separate obligation, not a new definition of Dom. -/
+def checkSourceCoverInstalledShape {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    (coverage : SourceConstructorCoverChecked installed site) :
+    Except String (SourceCoverInstalledShape coverage) := do
+  let some (.indInfo owner caps) ← pure (coverage.env.find? (sourceName site.ownerName))
+    | throw "installed source coverage owner is missing or has wrong kind"
+  let some (.ctorInfo constructor numParams numFields) ← pure (coverage.env.find? (sourceName site.ctorName))
+    | throw "installed source coverage constructor is missing or has wrong kind"
+  let some (.thmInfo theoremHeader _) ← pure (coverage.env.find? coverage.header.name)
+    | throw "installed source coverage theorem is missing or has wrong kind"
+  let some (parameters, .sort level) := owner.type.stripPis site.owner.numParams
+    | throw "installed source owner telescope is not the original unindexed shape"
+  let some (constructorParameters, constructorBody) := constructor.type.stripPis numParams
+    | throw "installed source constructor parameter telescope is short"
+  let some (fields, constructorResult) := constructorBody.stripPis numFields
+    | throw "installed source constructor field telescope is short"
+  let some (coverageParameters, .forallE subjectType
+      (.forallE (.sort .zero) (.forallE continuation (.bvar 1) continuationBinder)
+        propositionBinder) subjectBinder) := theoremHeader.type.stripPis site.owner.numParams
+    | throw "installed coverage theorem lacks the exact Church statement"
+  let some (coverageFields, .forallE equalityType (.bvar propositionIndex) equalityBinder) :=
+      continuation.stripPis site.ctor.numFields
+    | throw "installed coverage continuation lacks its exact field/equality telescope"
+  let data : SourceCoverShapeData := ⟨owner, constructor, theoremHeader, parameters,
+    constructorParameters, coverageParameters, fields, coverageFields, constructorResult,
+    subjectType, equalityType, level, subjectBinder, propositionBinder, continuationBinder,
+    equalityBinder, continuation, propositionIndex⟩
+  if ho : coverage.env.find? (sourceName site.ownerName) = some (.indInfo data.owner caps) then
+    if hc : coverage.env.find? (sourceName site.ctorName) =
+        some (.ctorInfo data.constructor site.owner.numParams site.ctor.numFields) then
+      if ht : coverage.env.find? coverage.header.name = some (.thmInfo data.theoremHeader coverage.value) then
+        if hs : SourceCoverShape site coverage.header data then
+          return ⟨data, caps, ho, hc, ht, hs⟩
+        else throw s!"installed coverage fields or identities do not match the original constructor; fieldDomains={decide (data.coverageFields.map Prod.fst = (liftSourceFieldDomains 0 data.fields).map Prod.fst)}; constructorParams={decide (data.constructorParameters.map Prod.fst = data.parameters.map Prod.fst)}; coverageParams={decide (data.coverageParameters.map Prod.fst = data.parameters.map Prod.fst)}; constructorFieldBinders={reprStr (data.fields.map Prod.snd)}; coverageFieldBinders={reprStr (data.coverageFields.map Prod.snd)}"
+      else throw "installed coverage theorem body is not its checked original proposal"
+    else throw "installed constructor counts differ from the immutable source"
+  else throw "installed coverage owner lookup changed"
+
+theorem SourceCoverInstalledShape.constructor_member {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) :
+    Kernel.ConstantInfo.ctorInfo receipt.data.constructor site.owner.numParams site.ctor.numFields
+      ∈ coverage.env.consts :=
+  List.mem_of_find?_eq_some receipt.constructorLookup
+
+theorem SourceCoverInstalledShape.theorem_member {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) :
+    Kernel.ConstantInfo.thmInfo receipt.data.theoremHeader coverage.value ∈ coverage.env.consts :=
+  List.mem_of_find?_eq_some receipt.theoremLookup
+
+open Kernel.SetTheory in
+/-- Typed original field tuples construct actual carrier members in the same
+installed model as the coverage theorem. The immutable source constructor name,
+not a reverse content alias or an unrelated model witness, determines the value. -/
+theorem SourceCoverInstalledShape.constructor_apply {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V} {result : Kernel.Expr}
+    (parameters : List V) (fields : SourceFieldValues site V)
+    (typed : InstalledTelescope model.cval coverage.env levels ρ receipt.data.constructor.type
+      (parameters ++ fields.val) finalρ result) :
+    ∃ carrier, Kernel.Denotes model.cval coverage.env levels finalρ result carrier ∧
+      originalConstructorValue site model.cval levels parameters fields ∈ˢ carrier := by
+  have applied := typed.model_apply model receipt.constructor_member
+  have name : receipt.data.constructor.name = sourceName site.ctorName := receipt.shape.2.1
+  simpa only [Kernel.ConstantInfo.toConstantVal, Kernel.ConstantInfo.name,
+    originalConstructorValue, name] using applied
+
 /-- Value denotation for the actually installed normalized definitions.
 Original-source value correspondence is a separate semantic pull-back. -/
 theorem SourceNormalizedInstallation.has_model_values (V : Type u) [Kernel.SetTheory V]

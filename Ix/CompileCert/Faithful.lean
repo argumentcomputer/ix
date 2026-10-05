@@ -851,4 +851,40 @@ theorem installed_church_elim {V : Type u} [Kernel.SetTheory V]
     (by simpa only [univ_zero] using isProp) memberResult
   rwa [point] at memberResult
 
+open Kernel.SetTheory in
+/-- Interpret the equality-to-P leaf of a checked coverage continuation.
+Equality is used only at a typed carrier and typed endpoints, exactly where
+the installed model supplies its law. The conclusion respects the actual
+implication binder's regime. -/
+theorem installed_eq_implication_inhabited {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (model : Kernel.Model V env)
+    {levels : Kernel.Name → Nat} {ρ : Nat → V} {level : Kernel.Level}
+    {equality : Kernel.Expr} {binder : Kernel.BinderMeta} {index : Nat}
+    {E carrier left right proposition type : V}
+    (eqConstant : Kernel.Denotes model.cval env levels ρ (.const Kernel.eqName [level]) E)
+    (carrierTyped : carrier ∈ˢ univ (Kernel.Level.eval levels level))
+    (leftTyped : left ∈ˢ carrier) (rightTyped : right ∈ˢ carrier)
+    (equalityRead : Kernel.Denotes model.cval env levels ρ equality
+      (app (app (app E carrier) left) right))
+    (denoted : Kernel.Denotes model.cval env levels ρ
+      (.forallE equality (.bvar (index + 1)) binder) type)
+    (propositionSlot : ρ index = proposition)
+    (continuation : left = right → pt ∈ˢ proposition) :
+    ∃ member, member ∈ˢ type := by
+  cases denoted with
+  | pi hA hB hP =>
+    obtain rfl := Kernel.Denotes_functional equalityRead hA
+    refine ⟨Kernel.SetModel.lamR (Kernel.regime levels binder.pw) _ (fun _ => pt),
+      Kernel.SetModel.lamR_mem ?_⟩
+    intro witness witnessTyped
+    have read := hB witness witnessTyped
+    have equalLaw := model.eq_equality level levels ρ E carrier left right
+      eqConstant carrierTyped leftTyped rightTyped
+    rw [equalLaw] at witnessTyped
+    have equal : left = right := Kernel.SetTheory.mem_eqv witnessTyped
+    have resultEq := Kernel.Denotes_functional read
+      (Kernel.Denotes.bvar (ρ := Kernel.push witness ρ) (i := index + 1))
+    rw [resultEq]
+    simpa only [Kernel.push, propositionSlot] using continuation equal
+
 end Ix.CompileCert
