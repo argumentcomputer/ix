@@ -9219,4 +9219,115 @@ theorem SourceConstructorCoverChecked.supported_universalRules (V : Type u) [Ker
       (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations ++ support) names
       coverage.checked bundle.checked association⟩
 
+/-- Untrusted proposal generation for certifier-owned term helpers. Full
+constant and projection-owner renaming is explicit; universe telescopes and
+annotation data are retained. Admission and semantic association check the
+result independently. Other declaration kinds need their own generator;
+this partial helper is not a definition of the compiler's source domain. -/
+def proposeRenamedSupport (names : Kernel.Name → Kernel.Name) :
+    Kernel.Declaration → Except String Kernel.Declaration
+  | .defnDecl header value hint => .ok (.defnDecl
+      { header with name := names header.name, type := kernelRenameAll names header.type }
+      (kernelRenameAll names value) hint)
+  | .thmDecl header value => .ok (.thmDecl
+      { header with name := names header.name, type := kernelRenameAll names header.type }
+      (kernelRenameAll names value))
+  | .opaqueDecl header value => .ok (.opaqueDecl
+      { header with name := names header.name, type := kernelRenameAll names header.type }
+      (kernelRenameAll names value))
+  | _ => .error "term-support generator requires a definition, theorem, or opaque witness"
+
+/-- Original-artifact semantics under a separate support model require their
+own checked identity association. Structural row preservation alone is not
+treated as conservation: projection lookup and capability/rule meaning must
+also pass the installed semantic checks. Both actual folds supply their own
+installation premises. -/
+theorem AdmittedSupport.original_universalRules (V : Type u) [Kernel.SetTheory V]
+    {input : ArtifactInput} {artifact : AdmittedArtifact input} {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport artifact support)
+    (identityChecked : checkInstalledAssociation artifact.env bundle.env id = some true) :
+    Nonempty (StrongInstalledModel V artifact.env) ∧
+    ∃ (target : StrongInstalledModel V bundle.env) (original : PublicValueModel V artifact.env),
+      original.model.cval = (PullbackMap.fromEnvs artifact.env bundle.env id).values target.public.cval ∧
+      PublicCapabilityLaws original.model.cval artifact.env ∧ UniversalRuleSimulation target artifact.env id := by
+  obtain ⟨originalPins, _, originalChecked⟩ := artifact.checked_declarations
+  exact checkedAssociation_universalRules V originalPins bundle.pins
+    (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations)
+    (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations ++ support) id
+    originalChecked bundle.checked identityChecked
+
+/-- Exact original-row preservation makes the identity pull-back's universe
+selection literally the original assignment at every existing constant.
+Absent names are deliberately outside this claim. -/
+theorem AdmittedSupport.original_value {V : Type u}
+    {input : ArtifactInput} {artifact : AdmittedArtifact input} {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport artifact support)
+    (values : Kernel.Name → (Kernel.Name → Nat) → V)
+    {name : Kernel.Name} {entry : Kernel.ConstantInfo}
+    (lookup : artifact.env.find? name = some entry) (levels : Kernel.Name → Nat) :
+    (PullbackMap.fromEnvs artifact.env bundle.env id).values values name levels = values name levels := by
+  have named := Kernel.Semantics.Env.find?_name lookup
+  have extended := bundle.original_rows entry (Kernel.Semantics.Env.find?_mem lookup)
+  rw [named] at extended
+  simp only [PullbackMap.values, PullbackMap.fromEnvs, id_eq, lookup, extended,
+    Kernel.Level.substFn_param_self]
+
+/-- Build a source value model from one fixed target model. This interface
+allows multiple associated streams to share the same target witness. -/
+noncomputable def InstalledAssociation.valueModel {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (receipt : InstalledAssociation sourceEnv targetEnv names) (target : StrongInstalledModel V targetEnv) :
+    PublicValueModel V sourceEnv :=
+  (checkInstalledDefinitions_sound target (checkTelescopes_sound receipt.telescopes) receipt.definitions).valueModel
+    (checkedPullbackTypes target receipt.telescopes receipt.types receipt.falsePin receipt.eqPin)
+    (PullbackMap.fromEnvs_locality (checkTelescopes_sound receipt.telescopes))
+
+theorem InstalledAssociation.public_laws {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (receipt : InstalledAssociation sourceEnv targetEnv names) (target : StrongInstalledModel V targetEnv)
+    (sourceWf : Kernel.EnvWF sourceEnv) :
+    PublicCapabilityLaws (receipt.valueModel target).model.cval sourceEnv ∧
+      UniversalRuleSimulation target sourceEnv names :=
+  ⟨checkedCapabilities_publicLaws sourceWf target (checkTelescopes_sound receipt.telescopes)
+      receipt.types receipt.capabilities receipt.etaAssociations,
+    checked_universal_rules sourceWf target (checkTelescopes_sound receipt.telescopes)
+      receipt.types receipt.recursors receipt.constructors receipt.levelLinks⟩
+
+/-- Source coverage and the original compiler artifact share one checked
+support interpretation. Two unrelated existential target models would not
+justify this composition. Original constants retain literally the target
+model's values at the same assignments, while source values use their exact
+checked name/telescope map. Full original annotation/normalization remains
+outside this installed-stream theorem. -/
+theorem SourceConstructorCoverChecked.combined_publicModels (V : Type u) [Kernel.SetTheory V]
+    {input : Input} {installed : SourceNormalizedInstallation input.source input.roots}
+    {site : SourceProjectionSite input.source} (coverage : SourceConstructorCoverChecked installed site)
+    (accepted : AcceptedAssociation input) {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport accepted.toAdmittedArtifact support) (names : Kernel.Name → Kernel.Name)
+    (checked : checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names = some true)
+    (identityChecked : checkInstalledAssociation accepted.env bundle.env id = some true) :
+    SemanticNamesAgree accepted names ∧
+    ∃ (target : StrongInstalledModel V bundle.env) (source : PublicValueModel V coverage.env)
+      (original : PublicValueModel V accepted.env),
+      source.model.cval = (PullbackMap.fromEnvs coverage.env bundle.env names).values target.public.cval ∧
+      (∀ name entry, accepted.env.find? name = some entry → ∀ levels,
+        original.model.cval name levels = target.public.cval name levels) ∧
+      PublicCapabilityLaws source.model.cval coverage.env ∧
+      PublicCapabilityLaws original.model.cval accepted.env ∧
+      UniversalRuleSimulation target coverage.env names ∧ UniversalRuleSimulation target accepted.env id := by
+  obtain ⟨nameCheck, sourceChecked⟩ := bothChecks_true checked
+  have sourceReceipt := checkInstalledAssociation_sound sourceChecked
+  have originalReceipt := checkInstalledAssociation_sound identityChecked
+  obtain ⟨target⟩ := bundle.strong_model V
+  obtain ⟨sourceStrong⟩ := coverage.strong_model V
+  obtain ⟨originalStrong⟩ := accepted.toAdmittedArtifact.strong_model V
+  let source := sourceReceipt.valueModel target
+  let original := originalReceipt.valueModel target
+  have sourceLaws := sourceReceipt.public_laws target sourceStrong.internal.base2.wf
+  have originalLaws := originalReceipt.public_laws target originalStrong.internal.base2.wf
+  refine ⟨of_decide_eq_true (Option.some.inj nameCheck), target, source, original, rfl, ?_,
+    sourceLaws.1, originalLaws.1, sourceLaws.2, originalLaws.2⟩
+  intro name entry lookup levels
+  exact bundle.original_value target.public.cval lookup levels
+
 end Ix.CompileCert

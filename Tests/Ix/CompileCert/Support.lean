@@ -24,6 +24,8 @@ def run : IO Unit := do
     | .error _ => throw (IO.userError "fresh checked support definition failed")
   require "fresh helper actually installed" (support.env.find? helperHeader.name).isSome
   require "all complete original rows preserved" (decide (InstalledRowsPreserved accepted.env support.env))
+  require "original semantic identity association checks separately"
+    (checkInstalledAssociation accepted.env support.env id == some true)
   require "original bytes remain independently admitted" (checkCompiled Direct.choiceInput).isOk
   require "original name collision rejected" (match checkAdmittedSupport accepted.toAdmittedArtifact
       #[.defnDecl header value hint] with | .error .conflictingNames => true | _ => false)
@@ -36,7 +38,7 @@ def run : IO Unit := do
       | .error (.checking ..) => true | _ => false)
   require "empty separate support preserves original admission"
     (checkAdmittedSupport accepted.toAdmittedArtifact #[]).isOk
-  IO.println "separate admitted target support: 8 controls passed"
+  IO.println "separate admitted target support: 9 controls passed"
 
 end Tests.Ix.CompileCert.Support
 
