@@ -2334,4 +2334,51 @@ theorem denotes_church_continuation {V : Type u} [Kernel.SetTheory V]
     cases sortRead
     exact denotes_forall_domain (bodyRead proposition typed)
 
+/-- A complete capture-avoiding argument substitution preserves every
+component image, including pins with dependencies on earlier arguments. -/
+theorem InstalledSpineImage.instSeqLift {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl} {sources targets : List Kernel.Expr}
+    (arguments : InstalledSpineImage (V := V) sv tv se te sl tl sources targets)
+    {source target : Kernel.Expr} (image : InstalledExprImage sv tv se te sl tl source target)
+    (index : Nat) :
+    InstalledExprImage sv tv se te sl tl
+      (Kernel.Expr.instSeqLift sources index source) (Kernel.Expr.instSeqLift targets index target) := by
+  induction arguments generalizing source target index with
+  | nil => exact image
+  | cons head tail ih => exact ih (image.instantiate1Lift head index) (index - 1)
+
+/-- Closing the checker's complete argument substitution gives the public
+capture-avoiding sequence. The changing binder cutoff is tracked throughout,
+so free variables in arguments cannot be captured by a nested pin. -/
+theorem closeN_instSeq (arguments : List Kernel.Expr) (depth : Nat) {expression : Kernel.Expr}
+    (boundedArguments : ∀ argument ∈ arguments, argument.looseBVarsBounded 0 = true)
+    (bounded : expression.looseBVarsBounded arguments.length = true) :
+    (Kernel.Expr.instSeq arguments (arguments.length - 1) expression).closeN depth =
+      Kernel.Expr.instSeqLift (arguments.map (Kernel.Expr.closeN depth)) (arguments.length - 1)
+        (expression.closeN depth arguments.length) := by
+  induction arguments generalizing expression with
+  | nil => rfl
+  | cons argument arguments ih =>
+    have argBound := boundedArguments argument List.mem_cons_self
+    have next := Kernel.Expr.looseBVarsBounded_instantiate1_gen argBound bounded
+    simp only [Kernel.Expr.instSeq, Kernel.Expr.instSeqLift, List.map_cons,
+      List.length_cons, Nat.add_sub_cancel]
+    rw [ih (fun x hx => boundedArguments x (List.mem_cons_of_mem _ hx)) next,
+      closeN_substitution expression argument depth argBound arguments.length bounded]
+
+theorem InstalledSpineImage.closed_instSeq {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl} {sources targets : List Kernel.Expr} {depth : Nat}
+    (arguments : InstalledSpineImage (V := V) sv tv se te sl tl sources
+      (targets.map (Kernel.Expr.closeN depth)))
+    {source target : Kernel.Expr} (image : InstalledExprImage sv tv se te sl tl source target)
+    (noFree : target.hasFvar = false)
+    (boundedArguments : ∀ argument ∈ targets, argument.looseBVarsBounded 0 = true)
+    (bounded : target.looseBVarsBounded targets.length = true) :
+    InstalledExprImage sv tv se te sl tl
+      (Kernel.Expr.instSeqLift sources (targets.length - 1) source)
+      ((Kernel.Expr.instSeq targets (targets.length - 1) target).closeN depth) := by
+  rw [closeN_instSeq targets depth boundedArguments bounded,
+    Kernel.Expr.closeN_of_hasFvar target depth targets.length noFree]
+  exact arguments.instSeqLift image (targets.length - 1)
+
 end Ix.CompileCert

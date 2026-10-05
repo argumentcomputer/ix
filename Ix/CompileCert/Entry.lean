@@ -6907,4 +6907,49 @@ theorem AnnotatedApplication.installed_nested_annotation {V : Type u} [Kernel.Se
     (by simpa only [length] using bounded) (by simpa only [length] using reading) graded
   exact ⟨pin, reading, by simpa only [length] using evidence⟩
 
+/-- Every checked position is instantiated under the actual owner records.
+This is the list form needed for nested pins; target universe coverage is
+charged to each stored expression, not inferred from a list length. -/
+theorem checkInstalledMemberExprs_instance {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (targetModel : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry targetEntry : Kernel.ConstantInfo}
+    (sourceLookup : sourceEnv.find? name = some sourceEntry)
+    (targetLookup : targetEnv.find? (names name) = some targetEntry)
+    {sources targets : List Kernel.Expr}
+    (targetBounded : ∀ expression ∈ targets,
+      expression.allLevelParamsDefined targetEntry.toConstantVal.levelParams = true)
+    (checked : checkInstalledMemberExprs sourceEnv targetEnv names name sources targets = some true)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceEntry.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetEntry.toConstantVal.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    InstalledSpineImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values targetModel.public.cval)
+      targetModel.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (sources.map (Kernel.Expr.instantiateLevelParams sourceEntry.toConstantVal.levelParams sourceUs))
+      (targets.map (Kernel.Expr.instantiateLevelParams targetEntry.toConstantVal.levelParams targetUs)) := by
+  induction sources generalizing targets with
+  | nil => cases targets <;> simp [checkInstalledMemberExprs] at checked; exact .nil
+  | cons source sources ih =>
+    cases targets with
+    | nil => simp [checkInstalledMemberExprs] at checked
+    | cons target targets =>
+      obtain ⟨head, tail⟩ := bothChecks_true checked
+      exact .cons (checkInstalledMemberExpr_instance targetModel association sourceLookup targetLookup
+        (targetBounded target List.mem_cons_self) head sourceLevels targetLevels sourceUs targetUs
+        sourceArity targetArity universes)
+        (ih (fun e he => targetBounded e (List.mem_cons_of_mem _ he)) tail)
+
+theorem InstalledSpineImage.get {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl} {sources targets : List Kernel.Expr}
+    (images : InstalledSpineImage (V := V) sv tv se te sl tl sources targets)
+    (index : Nat) (bound : index < sources.length) :
+    InstalledExprImage sv tv se te sl tl (sources.getD index default) (targets.getD index default) := by
+  induction images generalizing index with
+  | nil => simp at bound
+  | cons head tail ih =>
+    cases index with
+    | zero => exact head
+    | succ index => exact ih index (by simpa using bound)
+
 end Ix.CompileCert
