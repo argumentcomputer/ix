@@ -1308,6 +1308,38 @@ def pushArguments {V : Type u} (ρ : Nat → V) : List V → Nat → V
   | [] => ρ
   | argument :: rest => pushArguments (Kernel.push argument ρ) rest
 
+/-- Substitute an outer argument through the entire dependent telescope.
+The final valuation and residual expression record every consumed binder;
+later domains therefore retain their dependencies on earlier arguments. -/
+theorem InstalledTelescope.instantiate1Lift {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ expression arguments finalρ result)
+    {replacement : Kernel.Expr} {argument : V} {depth : Nat} {target : Nat → V}
+    (related : ρ = insertValuation depth argument target)
+    (replacementRead : Kernel.Denotes values env levels
+      (fun index => target (index + depth)) replacement argument) :
+    finalρ = insertValuation (depth + arguments.length) argument
+        (pushArguments target arguments) ∧
+      InstalledTelescope values env levels target
+        (expression.instantiate1Lift replacement depth) arguments
+        (pushArguments target arguments)
+        (result.instantiate1Lift replacement (depth + arguments.length)) := by
+  induction typed generalizing depth target with
+  | nil => exact ⟨related, .nil⟩
+  | @cons old domain body binder next A arguments finalρ result domainRead argumentTyped rest ih =>
+    have pushed : Kernel.push next old = insertValuation (depth + 1) argument
+        (Kernel.push next target) := by rw [related]; rfl
+    obtain ⟨finalRelated, substituted⟩ := ih pushed replacementRead
+    constructor
+    · simpa only [pushArguments, List.length_cons, Nat.add_assoc,
+        Nat.add_comm 1] using finalRelated
+    · simp only [Kernel.Expr.instantiate1Lift, pushArguments, List.length_cons]
+      apply InstalledTelescope.cons (denotes_instantiate1Lift domainRead related replacementRead)
+        argumentTyped
+      simpa only [Nat.add_assoc, Nat.add_comm 1] using substituted
+
 /-- The same dependent tuple remains typed after inserting arbitrary slots.
 Both the residual expression's cutoff and its valuation track every consumed
 binder. This is stronger than equality of field counts or isolated domains. -/
@@ -1554,6 +1586,98 @@ theorem DenotesSpine.drop {V : Type u} [Kernel.SetTheory V]
     cases count with
     | zero => exact .cons head tail
     | succ count => exact ih count
+
+open Kernel.SetTheory in
+/-- A typed application in a fixed public valuation. Each residual is the
+actual capture-avoiding substitution, rather than a type chosen solely by
+semantic equality. This does not assert an internal annotation reading. -/
+inductive DenotedApplication {V : Type u} [Kernel.SetTheory V]
+    (values : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) :
+    Kernel.Expr → List Kernel.Expr → List V → Kernel.Expr → Prop
+  | nil {type} : DenotedApplication values env levels ρ type [] [] type
+  | cons {domain body binder expression argument A expressions arguments residual}
+      (domainRead : Kernel.Denotes values env levels ρ domain A)
+      (argumentRead : Kernel.Denotes values env levels ρ expression argument)
+      (argumentTyped : argument ∈ˢ A)
+      (rest : DenotedApplication values env levels ρ (body.instantiate1Lift expression)
+        expressions arguments residual) :
+      DenotedApplication values env levels ρ (.forallE domain body binder)
+        (expression :: expressions) (argument :: arguments) residual
+
+/-- Arbitrary typed semantic arguments may be represented by any expression
+spine with the stated public readings. Domain membership for the substituted
+suffix is derived from the original dependent telescope. -/
+theorem DenotedApplication.of_telescope {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {type result : Kernel.Expr} {expressions : List Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ type arguments finalρ result)
+    (readings : DenotesSpine values env levels ρ expressions arguments) :
+    ∃ residual, DenotedApplication values env levels ρ type expressions arguments residual := by
+  induction readings generalizing type finalρ result with
+  | nil => exact ⟨type, .nil⟩
+  | cons argumentRead restRead ih =>
+    cases typed with
+    | cons domainRead argumentTyped rest =>
+      obtain ⟨_, substituted⟩ := rest.instantiate1Lift (depth := 0) rfl argumentRead
+      obtain ⟨residual, applied⟩ := ih substituted
+      exact ⟨residual, .cons domainRead argumentRead argumentTyped applied⟩
+
+/-- Fresh de Bruijn variables represent every semantic tuple in the valuation
+extended by exactly that tuple, in its original telescope order. -/
+def argumentVariables (count : Nat) : List Kernel.Expr :=
+  (List.range count).map fun index => .bvar (count - 1 - index)
+
+theorem DenotesSpine.argumentVariables {V : Type u} [Kernel.SetTheory V]
+    (values : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) (arguments : List V) :
+    DenotesSpine values env levels (pushArguments ρ arguments)
+      (argumentVariables arguments.length) arguments := by
+  apply DenotesSpine.of_get (by simp [CompileCert.argumentVariables])
+  intro index inside
+  have bound : index < arguments.length := by simpa [CompileCert.argumentVariables] using inside
+  simp only [CompileCert.argumentVariables, List.getElem_map, List.getElem_range]
+  rw [← pushArguments_get arguments ρ index bound]
+  exact .bvar
+
+/-- No semantic argument is assumed to have a closed syntactic name.
+For a closed installed type, fresh variables in an extended caller valuation
+give the full typed application and its exact substituted residual. -/
+theorem DenotedApplication.arbitrary_arguments {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {type result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ type arguments finalρ result)
+    (closed : type.looseBVarsBounded 0 = true) :
+    ∃ residual, DenotedApplication values env levels (pushArguments ρ arguments)
+      type (argumentVariables arguments.length) arguments residual := by
+  have related : ValuationLift arguments.length 0 ρ (pushArguments ρ arguments) := by
+    intro index
+    simpa [Nat.add_comm] using pushArguments_above arguments ρ index
+  obtain ⟨_, lifted⟩ := typed.lift related
+  rw [Kernel.Expr.liftLooseBVars_eq_self closed] at lifted
+  exact of_telescope lifted (DenotesSpine.argumentVariables values env levels ρ arguments)
+
+open Kernel.SetTheory in
+/-- The application result inhabits the exact substituted residual under
+the original caller valuation, including for dependent later domains. -/
+theorem DenotedApplication.apply {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {type residual : Kernel.Expr} {expressions : List Kernel.Expr} {arguments : List V}
+    (application : DenotedApplication values env levels ρ type expressions arguments residual)
+    {typeValue function : V} (typeRead : Kernel.Denotes values env levels ρ type typeValue)
+    (member : function ∈ˢ typeValue) :
+    ∃ residualValue, Kernel.Denotes values env levels ρ residual residualValue ∧
+      arguments.foldl app function ∈ˢ residualValue := by
+  induction application generalizing typeValue function with
+  | nil => exact ⟨typeValue, typeRead, member⟩
+  | cons domainRead argumentRead argumentTyped rest ih =>
+    obtain ⟨next, bodyRead, nextMember⟩ :=
+      installed_forall_elim typeRead member domainRead argumentTyped
+    have substituted := denotes_instantiate1Lift bodyRead (depth := 0) rfl argumentRead
+    exact ih substituted nextMember
 
 open Kernel.SetTheory in
 theorem denotes_mkAppN {V : Type u} [Kernel.SetTheory V]
