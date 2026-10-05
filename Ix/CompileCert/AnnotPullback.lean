@@ -9,7 +9,7 @@ an obligation, not a consequence of public `InstalledExprImage`.
 -/
 namespace Ix.CompileCert
 
-open Kernel Kernel.Model Kernel.Semantics Kernel.SetTheory
+open Kernel Kernel.Model Kernel.Semantics Kernel.SetTheory Kernel.Verify
 
 def PullbackMap.annotations (map : PullbackMap)
     (target : Kernel.Name → (Kernel.Name → Nat) → AnnotTerm) : Kernel.Name → (Kernel.Name → Nat) → AnnotTerm :=
@@ -39,6 +39,7 @@ context validity remains a separate strong-model obligation. -/
 inductive AnnotatedImage
     (sa ta : Kernel.Name → (Kernel.Name → Nat) → AnnotTerm)
     (se te : Env) (sl tl : Kernel.Name → Nat) : Nat → Kernel.Expr → Kernel.Expr → Prop
+  | bvar {d i} : AnnotatedImage sa ta se te sl tl d (.bvar i) (.bvar i)
   | sort {d s t} (level : s.eval sl = t.eval tl) :
       AnnotatedImage sa ta se te sl tl d (.sort s) (.sort t)
   | fvar {d i st tt} : AnnotatedImage sa ta se te sl tl d (.fvar i st) (.fvar i tt)
@@ -81,11 +82,21 @@ inductive AnnotatedImage
       (zero : sa natZeroName (Kernel.Level.substFn sl [] []) = ta natZeroName (Kernel.Level.substFn tl [] []))
       (succ : sa natSuccName (Kernel.Level.substFn sl [] []) = ta natSuccName (Kernel.Level.substFn tl [] [])) :
       AnnotatedImage sa ta se te sl tl d (.lit (.natVal n)) (.lit (.natVal n))
+  | strLit {d s}
+      (supported : strLitSupported se = strLitSupported te)
+      (basis : ∀ n ∈ [natZeroName, natSuccName, charName, charOfNatName, stringOfListName],
+        sa n (Kernel.Level.substFn sl [] []) = ta n (Kernel.Level.substFn tl [] []))
+      (nil : sa listNilName (Kernel.Level.substFn sl (levelParamsAt se listNilName) [.zero]) =
+        ta listNilName (Kernel.Level.substFn tl (levelParamsAt te listNilName) [.zero]))
+      (cons : sa listConsName (Kernel.Level.substFn sl (levelParamsAt se listConsName) [.zero]) =
+        ta listConsName (Kernel.Level.substFn tl (levelParamsAt te listConsName) [.zero])) :
+      AnnotatedImage sa ta se te sl tl d (.lit (.strVal s)) (.lit (.strVal s))
 
 theorem AnnotatedImage.reading {sa ta se te sl tl d s t}
     (image : AnnotatedImage sa ta se te sl tl d s t) :
     denoteMeta sa se sl d s = denoteMeta ta te tl d t := by
   induction image with
+  | bvar => simp only [denoteMeta]
   | sort level => simp only [denoteMeta, level]
   | fvar => simp only [denoteMeta]
   | constant sourceLookup targetLookup sourceArity targetArity leaf =>
@@ -98,6 +109,13 @@ theorem AnnotatedImage.reading {sa ta se te sl tl d s t}
   | projPair sourceTable targetTable _ ih =>
     simp only [denoteMeta, ih, sourceTable, targetTable]
   | natLit supported zero succ => simp only [denoteMeta, supported, zero, succ]
+  | strLit supported basis nil cons =>
+    have zero := basis natZeroName (by simp)
+    have succ := basis natSuccName (by simp)
+    have char := basis charName (by simp)
+    have ofNat := basis charOfNatName (by simp)
+    have ofList := basis stringOfListName (by simp)
+    simp only [denoteMeta, supported, zero, succ, char, ofNat, ofList, nil, cons]
 
 /-- Transfer the strong-model currency on the exact target annotation object.
 Neither an independently chosen source model nor equality of public values
