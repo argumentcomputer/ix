@@ -9312,6 +9312,9 @@ theorem SourceConstructorCoverChecked.combined_publicModels (V : Type u) [Kernel
       source.model.cval = (PullbackMap.fromEnvs coverage.env bundle.env names).values target.public.cval ∧
       (∀ name entry, accepted.env.find? name = some entry → ∀ levels,
         original.model.cval name levels = target.public.cval name levels) ∧
+      (∀ name entry, accepted.env.find? (names name) = some entry → ∀ levels,
+        source.model.cval name levels = original.model.cval (names name)
+          ((PullbackMap.fromEnvs coverage.env bundle.env names).levels name levels)) ∧
       PublicCapabilityLaws source.model.cval coverage.env ∧
       PublicCapabilityLaws original.model.cval accepted.env ∧
       UniversalRuleSimulation target coverage.env names ∧ UniversalRuleSimulation target accepted.env id := by
@@ -9325,9 +9328,56 @@ theorem SourceConstructorCoverChecked.combined_publicModels (V : Type u) [Kernel
   let original := originalReceipt.valueModel target
   have sourceLaws := sourceReceipt.public_laws target sourceStrong.internal.base2.wf
   have originalLaws := originalReceipt.public_laws target originalStrong.internal.base2.wf
-  refine ⟨of_decide_eq_true (Option.some.inj nameCheck), target, source, original, rfl, ?_,
+  refine ⟨of_decide_eq_true (Option.some.inj nameCheck), target, source, original, rfl, ?_, ?_,
     sourceLaws.1, originalLaws.1, sourceLaws.2, originalLaws.2⟩
-  intro name entry lookup levels
-  exact bundle.original_value target.public.cval lookup levels
+  · intro name entry lookup levels
+    exact bundle.original_value target.public.cval lookup levels
+  · intro name entry lookup levels
+    exact (bundle.original_value target.public.cval lookup
+      ((PullbackMap.fromEnvs coverage.env bundle.env names).levels name levels)).symm
+
+open Kernel.SetTheory in
+/-- The projection value in the original compiler artifact's interpretation,
+not merely its support extension, equals the source-only field selector.
+Both interpretations are constructed from the same target witness. Exact
+original target lookup is required; a fresh support helper cannot impersonate
+the compiled projection. This is a local value theorem, not full D11 or S. -/
+theorem SourceProjectionFunction.original_artifact_value {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    {receipt : SourceProjectionInstalled projection constructor}
+    (function : SourceProjectionFunction receipt)
+    {input : ArtifactInput} {artifact : AdmittedArtifact input} {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport artifact support) (target : StrongInstalledModel V bundle.env)
+    (originalReceipt : InstalledAssociation artifact.env bundle.env id)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation coverage.env bundle.env names)
+    (types : checkInstalledTypes coverage.env bundle.env names = true)
+    (model : Kernel.Model V coverage.env)
+    (values : model.cval = (PullbackMap.fromEnvs coverage.env bundle.env names).values target.public.cval)
+    {originalTarget : Kernel.ConstantInfo}
+    (originalLookup : artifact.env.find? (names projection.header.name) = some originalTarget)
+    (frame : InstalledEquationFrame bundle.env (names receipt.data.equation.name)
+      (projection.site.owner.numParams + projection.site.ctor.numFields))
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = projection.site.owner.numParams)
+    (parameterTyping : InstalledTelescope model.cval coverage.env levels ρ constructor.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort constructor.data.level)) :
+    parameters.foldl app ((originalReceipt.valueModel target).model.cval (names projection.header.name)
+      ((PullbackMap.fromEnvs coverage.env bundle.env names).levels projection.header.name levels)) =
+      Kernel.SetModel.lamR (Kernel.regime levels function.data.binder.pw)
+        (parameters.foldl app (model.cval (sourceName projection.site.ownerName) levels))
+        (originalProjectionSelection projection.site model.cval levels parameters
+          (SourceCoverValidFields constructor model levels ρ parameters)) := by
+  have same : (originalReceipt.valueModel target).model.cval (names projection.header.name)
+      ((PullbackMap.fromEnvs coverage.env bundle.env names).levels projection.header.name levels) =
+      model.cval projection.header.name levels := by
+    rw [values]
+    exact bundle.original_value target.public.cval originalLookup _
+  rw [same]
+  exact function.value_eq_pullback target association types model values frame levels ρ
+    parameters parameterCount parameterTyping
 
 end Ix.CompileCert
