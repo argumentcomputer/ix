@@ -218,4 +218,45 @@ def runCoverage : IO Unit := do
       | .ok _ => throw (IO.userError "malformed source coverage proof accepted")
       | .error (error, position) => IO.println s!"PASS: source coverage proof tamper refused at {position}: {error}"
 
+def runProjectionSemantics : IO Unit := do
+  let env ← getCompileEnv #[Compiled.prefixName]
+  for root in [Compiled.prefixName ++ `Node.val, Compiled.prefixName ++ `Node.kids] do
+    let captured ← IO.ofExcept (captureCone env.find? [root] 256)
+    let installed ← match installSourceNormalized captured.source [root] with
+      | .ok installed => pure installed
+      | .error why => throw (IO.userError s!"projection source install {root}: {label why}")
+    let some originalCI := captured.source.find root
+      | throw (IO.userError "original projection source record absent")
+    let .defn header body hint ← IO.ofExcept (exportSourceEntry originalCI)
+      | throw (IO.userError "original projection source record has wrong kind")
+    let some replacement := installed.declarations.find? (fun declaration =>
+      match declaration with
+      | .defnDecl h _ _ => decide (h.name = header.name)
+      | _ => false)
+      | throw (IO.userError "raw normalized projection absent")
+    let some equation := installed.declarations.find? (fun declaration =>
+      match declaration with
+      | .thmDecl h _ => decide (h.name = header.name.str "_source_constructor_equation")
+      | _ => false)
+      | throw (IO.userError "raw normalized projection equation absent")
+    let projection ← IO.ofExcept (checkSourceProjectionReceipt captured.source
+      (.defnDecl header body hint) replacement equation)
+    let coverage ← match checkSourceConstructorCover installed projection.site with
+      | .ok coverage => pure coverage
+      | .error why => throw (IO.userError s!"projection coverage {root}: {label why}")
+    let constructor ← IO.ofExcept (checkSourceCoverInstalledShape coverage)
+    let receipt ← IO.ofExcept (checkSourceProjectionInstalled projection constructor)
+    IO.println s!"PROJECTION-SEMANTICS {root}: field={projection.site.field}, originalFields={projection.site.ctor.numFields}, exact admitted annotated equation and source receipt"
+    for (control, bad) in
+        [("wrong selected field", {receipt.data with right := .bvar 999}),
+         ("missing dependent fields", {receipt.data with fields := []}),
+         ("wrong source projection", {receipt.data with projection :=
+           {receipt.data.projection with name := .anonymous}}),
+         ("wrong equation endpoint", {receipt.data with left := .bvar 999}),
+         ("wrong equation universe", {receipt.data with equation :=
+           {receipt.data.equation with levelParams := [.anonymous]}})] do
+      if decide (SourceProjectionInstalledShape projection constructor.data bad) then
+        throw (IO.userError s!"projection semantic receipt accepted {control}")
+      IO.println s!"PASS: {control} refused"
+
 end Tests.Ix.CompileCert.SourceModels

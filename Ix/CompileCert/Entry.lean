@@ -1800,6 +1800,276 @@ theorem SourceCoverInstalledShape.constructor_presentation {V : Type u} [Kernel.
   (semanticConstructorCover_iff _ _ subject).mp
     (receipt.semantic_cover model levels ρ parameters parameterCount parameterTyping subject subjectTyped)
 
+/-- Full installed projection and equation data. Raw source provenance remains
+in `SourceProjectionReceipt`; these fields retain the actual annotated types. -/
+structure SourceProjectionInstalledData where
+  projection : Kernel.ConstantVal
+  value : Kernel.Expr
+  hint : Kernel.ReducibilityHint
+  rawEquation : Kernel.ConstantVal
+  equation : Kernel.ConstantVal
+  proof : Kernel.Expr
+  parameters : List (Kernel.Expr × Kernel.BinderMeta)
+  fields : List (Kernel.Expr × Kernel.BinderMeta)
+  carrier : Kernel.Expr
+  left : Kernel.Expr
+  right : Kernel.Expr
+
+def SourceProjectionInstalledShape {source : Source} {original replacement equation}
+    (projection : SourceProjectionReceipt source original replacement equation)
+    (constructor : SourceCoverShapeData) (data : SourceProjectionInstalledData) : Prop :=
+  equation = .thmDecl data.rawEquation data.proof ∧
+  data.rawEquation.name = projection.header.name.str "_source_constructor_equation" ∧
+  data.equation.name = data.rawEquation.name ∧
+  data.equation.levelParams = data.rawEquation.levelParams ∧
+  data.rawEquation.levelParams = projection.header.levelParams ∧
+  data.projection.name = projection.header.name ∧
+  data.projection.levelParams = projection.header.levelParams ∧
+  data.hint = projection.hint ∧
+  constructor.constructor.levelParams = data.projection.levelParams ∧
+  data.parameters.map Prod.fst = constructor.parameters.map Prod.fst ∧
+  data.fields.map Prod.fst = constructor.fields.map Prod.fst ∧
+  data.equation.type = sourceForalls data.parameters (sourceForalls data.fields
+    (.app (.app (.app (.const Kernel.eqName [projection.level]) data.carrier) data.left) data.right)) ∧
+  data.left = Kernel.Expr.mkAppN
+    (.const data.projection.name (data.projection.levelParams.map Kernel.Level.param))
+    (sourceParameterVars projection.site.owner.numParams projection.site.ctor.numFields ++
+      [Kernel.Expr.mkAppN
+        (.const constructor.constructor.name (data.projection.levelParams.map Kernel.Level.param))
+        (sourceParameterVars projection.site.owner.numParams projection.site.ctor.numFields ++
+          sourceParameterVars projection.site.ctor.numFields 0)]) ∧
+  data.right = .bvar (projection.site.ctor.numFields - 1 - projection.site.field)
+
+instance {source : Source} {original replacement equation}
+    (projection : SourceProjectionReceipt source original replacement equation)
+    (constructor : SourceCoverShapeData) (data : SourceProjectionInstalledData) :
+    Decidable (SourceProjectionInstalledShape projection constructor data) := by
+  unfold SourceProjectionInstalledShape
+  infer_instance
+
+/-- Links an immutable original projection, its submitted equation and the
+actual independently installed annotated entries. No equality between raw and
+annotated bodies is assumed. The full constructor/owner receipt stays attached. -/
+structure SourceProjectionInstalled {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    (projection : SourceProjectionReceipt source original replacement equation)
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    (constructor : SourceCoverInstalledShape coverage) where
+  data : SourceProjectionInstalledData
+  replacement_present : replacement ∈ installed.declarations
+  equation_present : equation ∈ installed.declarations
+  projectionLookup : coverage.env.find? projection.header.name =
+    some (.defnInfo data.projection data.value data.hint)
+  equationLookup : coverage.env.find? data.rawEquation.name =
+    some (.thmInfo data.equation data.proof)
+  shape : SourceProjectionInstalledShape projection constructor.data data
+
+def checkSourceProjectionInstalled {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    (projection : SourceProjectionReceipt source original replacement equation)
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    (constructor : SourceCoverInstalledShape coverage) :
+    Except String (SourceProjectionInstalled projection constructor) := do
+  let .thmDecl rawEquation proof := equation
+    | throw "source projection equation is not a submitted theorem"
+  let some (.defnInfo projectionHeader value hint) ← pure (coverage.env.find? projection.header.name)
+    | throw "installed source projection is missing or has wrong kind"
+  let some (.thmInfo equationHeader _) ← pure (coverage.env.find? rawEquation.name)
+    | throw "installed source projection equation is missing or has wrong kind"
+  let some (parameters, body) := equationHeader.type.stripPis projection.site.owner.numParams
+    | throw "installed source projection equation parameter telescope is short"
+  let some (fields, .app (.app (.app (.const _ _) carrier) left) right) :=
+      body.stripPis projection.site.ctor.numFields
+    | throw "installed source projection equation lacks its exact field/equality telescope"
+  let data : SourceProjectionInstalledData :=
+    ⟨projectionHeader, value, hint, rawEquation, equationHeader, proof, parameters, fields, carrier, left, right⟩
+  if hr : replacement ∈ installed.declarations then
+    if he : equation ∈ installed.declarations then
+      if hp : coverage.env.find? projection.header.name =
+          some (.defnInfo data.projection data.value data.hint) then
+        if hq : coverage.env.find? data.rawEquation.name = some (.thmInfo data.equation data.proof) then
+          if hs : SourceProjectionInstalledShape projection constructor.data data then
+            return ⟨data, hr, he, hp, hq, hs⟩
+          else throw "installed source projection equation differs from its original field/constructor shape"
+        else throw "installed source projection equation proof differs from the submitted proof"
+      else throw "installed source projection lookup changed"
+    else throw "source projection equation is absent from the independently checked stream"
+  else throw "source projection replacement is absent from the independently checked stream"
+
+open Kernel.SetTheory in
+/-- The checked equation uses exactly the original dependent constructor
+domains, while retaining its own actual enclosing binder regimes. -/
+theorem SourceProjectionInstalled.typed_equation {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    (receipt : SourceProjectionInstalled projection constructor) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = projection.site.owner.numParams)
+    (parameterTyping : InstalledTelescope model.cval coverage.env levels ρ constructor.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort constructor.data.level))
+    (fields : SourceFieldValues projection.site V)
+    (valid : SourceCoverValidFields constructor model levels ρ parameters fields) :
+    InstalledTelescope model.cval coverage.env levels ρ receipt.data.equation.type
+      (parameters ++ fields.val) (pushArguments (pushArguments ρ parameters) fields.val)
+      (.app (.app (.app (.const Kernel.eqName [projection.level]) receipt.data.carrier)
+        receipt.data.left) receipt.data.right) := by
+  rcases receipt.shape with ⟨_, _, _, _, _, _, _, _, _, parameterDomains, fieldDomains, equationType, _, _⟩
+  rcases constructor.shape with ⟨_, _, _, _, _, _, parameterLength, fieldLength, _, _, _, ownerType, _⟩
+  rw [ownerType] at parameterTyping
+  have parameterTuple := (sourceForalls_transfer (targetBody := sourceForalls receipt.data.fields
+    (.app (.app (.app (.const Kernel.eqName [projection.level]) receipt.data.carrier)
+      receipt.data.left) receipt.data.right)) parameterDomains.symm
+      (parameterCount.trans parameterLength.symm) parameterTyping).2
+  have fieldTuple := (sourceForalls_transfer (targetBody :=
+    .app (.app (.app (.const Kernel.eqName [projection.level]) receipt.data.carrier)
+      receipt.data.left) receipt.data.right) fieldDomains.symm
+      (fields.property.trans fieldLength.symm) valid).2
+  rw [equationType]
+  exact parameterTuple.append fieldTuple
+
+open Kernel.SetTheory in
+theorem SourceProjectionInstalled.left_denotes {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    (receipt : SourceProjectionInstalled projection constructor) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = projection.site.owner.numParams)
+    (fields : SourceFieldValues projection.site V) :
+    Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments ρ parameters) fields.val) receipt.data.left
+      (app (parameters.foldl app (model.cval projection.header.name levels))
+        (originalConstructorValue projection.site model.cval levels parameters fields)) := by
+  rcases receipt.shape with ⟨_, _, _, _, _, projectionName, _, _, levelNames, _, _, _, leftShape, _⟩
+  let frame := pushArguments (pushArguments ρ parameters) fields.val
+  have parameterSpine : DenotesSpine model.cval coverage.env levels frame
+      (sourceParameterVars projection.site.owner.numParams projection.site.ctor.numFields) parameters := by
+    simpa only [parameterCount, fields.property, frame] using
+      (sourceParameterVars_pushed (values := model.cval) (env := coverage.env)
+        (levels := levels) ρ parameters fields.val)
+  have fieldSpine : DenotesSpine model.cval coverage.env levels frame
+      (sourceParameterVars projection.site.ctor.numFields 0) fields.val := by
+    simpa only [List.length_nil, pushArguments, fields.property, frame] using
+      (sourceParameterVars_pushed (values := model.cval) (env := coverage.env)
+        (levels := levels) (pushArguments ρ parameters) fields.val [])
+  have projectionRead := denotes_self_instance (values := model.cval) (levels := levels)
+    (ρ := frame) receipt.projectionLookup
+  have constructorRead := denotes_self_instance (values := model.cval) (levels := levels)
+    (ρ := frame) constructor.constructorLookup
+  simp only [Kernel.ConstantInfo.toConstantVal] at projectionRead constructorRead
+  rw [← projectionName] at projectionRead
+  have constructorName := constructor.shape.2.1
+  rw [← constructorName, levelNames] at constructorRead
+  have constructorApp := denotes_mkAppN constructorRead (parameterSpine.append fieldSpine)
+  have application := Kernel.Denotes.app (denotes_mkAppN projectionRead parameterSpine) constructorApp
+  rw [leftShape]
+  simpa only [Kernel.Expr.mkAppN_append_one, List.foldl_append, List.foldl_cons, List.foldl_nil,
+    originalConstructorValue, projectionName, constructorName, frame] using application
+
+theorem SourceProjectionInstalled.right_denotes {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    (receipt : SourceProjectionInstalled projection constructor) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) (parameters : List V)
+    (fields : SourceFieldValues projection.site V) :
+    Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments ρ parameters) fields.val) receipt.data.right
+      (originalSelectedField projection.site fields) := by
+  rcases receipt.shape with ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, rightShape⟩
+  rw [rightShape]
+  have inside : projection.site.field < fields.val.length := by
+    rw [fields.property]
+    exact projection.site.shape.2.2.2.2.2
+  have slot := pushArguments_get fields.val (pushArguments ρ parameters) projection.site.field inside
+  rw [fields.property] at slot
+  unfold originalSelectedField
+  rw [← slot]
+  exact .bvar
+
+open Kernel.SetTheory in
+/-- Actual semantic constructor computation, obtained from the independently
+admitted equation and its installed grading. The equality is for all typed
+original dependent fields, not merely closed fixtures or syntactic reduction. -/
+theorem SourceProjectionInstalled.constructor_computation {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    (receipt : SourceProjectionInstalled projection constructor) (strong : StrongInstalledModel V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = projection.site.owner.numParams)
+    (parameterTyping : InstalledTelescope strong.public.cval coverage.env levels ρ constructor.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort constructor.data.level))
+    (fields : SourceFieldValues projection.site V)
+    (valid : SourceCoverValidFields constructor strong.public levels ρ parameters fields) :
+    app (parameters.foldl app (strong.public.cval projection.header.name levels))
+      (originalConstructorValue projection.site strong.public.cval levels parameters fields) =
+        originalSelectedField projection.site fields :=
+  strong.theorem_eq receipt.data.equation receipt.data.proof
+    (List.mem_of_find?_eq_some receipt.equationLookup)
+    (receipt.typed_equation strong.public levels ρ parameters parameterCount parameterTyping fields valid)
+    (receipt.left_denotes strong.public levels ρ parameters parameterCount fields)
+    (receipt.right_denotes strong.public levels ρ parameters fields)
+
+open Kernel.SetTheory in
+/-- Arbitrary original carrier members, with both semantic coverage and
+constructor computation discharged by their actual installed certificates. -/
+theorem SourceProjectionInstalled.arbitrary_value {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    (receipt : SourceProjectionInstalled projection constructor) (strong : StrongInstalledModel V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = projection.site.owner.numParams)
+    (parameterTyping : InstalledTelescope strong.public.cval coverage.env levels ρ constructor.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort constructor.data.level))
+    (subject : V)
+    (subjectTyped : subject ∈ˢ parameters.foldl app
+      (strong.public.cval (sourceName projection.site.ownerName) levels)) :
+    OriginalProjectionValue projection.site strong.public.cval levels parameters
+      (SourceCoverValidFields constructor strong.public levels ρ parameters) subject
+      (app (parameters.foldl app (strong.public.cval projection.header.name levels)) subject) ∧
+    ∀ value, OriginalProjectionValue projection.site strong.public.cval levels parameters
+      (SourceCoverValidFields constructor strong.public levels ρ parameters) subject value →
+      value = app (parameters.foldl app (strong.public.cval projection.header.name levels)) subject :=
+  original_projection_extensional projection.site strong.public.cval levels parameters
+    (SourceCoverValidFields constructor strong.public levels ρ parameters)
+    (parameters.foldl app (strong.public.cval (sourceName projection.site.ownerName) levels))
+    (parameters.foldl app (strong.public.cval projection.header.name levels))
+    (constructor.semantic_cover strong.public levels ρ parameters parameterCount parameterTyping)
+    (receipt.constructor_computation strong levels ρ parameters parameterCount parameterTyping)
+    subject subjectTyped
+
+/-- The semantic value used in `arbitrary_value` is the denotation of the
+actual installed annotated definition body. This is a source-owned lowering
+pull-back, not an equality between the raw nested Kernel projection fallback
+and the normalized term. Original syntax/provenance stays in `projection`. -/
+theorem SourceProjectionInstalled.definition_denotes {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    (receipt : SourceProjectionInstalled projection constructor) (strong : StrongInstalledModel V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) :
+    Kernel.Denotes strong.public.cval coverage.env levels ρ receipt.data.value
+      (strong.public.cval projection.header.name levels) := by
+  have projectionName := receipt.shape.2.2.2.2.2.1
+  have read := strong.definition_values receipt.data.projection receipt.data.value receipt.data.hint
+    (List.mem_of_find?_eq_some receipt.projectionLookup) levels ρ
+  simpa only [StrongInstalledModel.public, projectionName] using read
+
 /-- Value denotation for the actually installed normalized definitions.
 Original-source value correspondence is a separate semantic pull-back. -/
 theorem SourceNormalizedInstallation.has_model_values (V : Type u) [Kernel.SetTheory V]

@@ -651,6 +651,17 @@ inductive InstalledTelescope {V : Type u} [Kernel.SetTheory V]
       InstalledTelescope values env levels ρ (.forallE domain body binder)
         (argument :: arguments) finalρ result
 
+theorem InstalledTelescope.append {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ middleρ finalρ : Nat → V}
+    {expression middle result : Kernel.Expr} {first second : List V}
+    (firstTuple : InstalledTelescope values env levels ρ expression first middleρ middle)
+    (suffix : InstalledTelescope values env levels middleρ middle second finalρ result) :
+    InstalledTelescope values env levels ρ expression (first ++ second) finalρ result := by
+  induction firstTuple with
+  | nil => exact suffix
+  | cons domain typed rest ih => exact .cons domain typed (ih suffix)
+
 open Kernel.SetTheory in
 /-- Apply a member of the actual installed type to a dependent typed tuple.
 No binder regime is guessed, and no unchecked source telescope is substituted. -/

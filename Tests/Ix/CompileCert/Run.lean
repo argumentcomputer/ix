@@ -21,6 +21,7 @@ def main (args : List String) : IO Unit := do
   | ["source-models"] => Tests.Ix.CompileCert.SourceModels.run
   | ["source-normalized"] => Tests.Ix.CompileCert.SourceModels.runNormalized
   | ["source-coverage"] => Tests.Ix.CompileCert.SourceModels.runCoverage
+  | ["source-projection-semantics"] => Tests.Ix.CompileCert.SourceModels.runProjectionSemantics
   | ["compiled"] => Tests.Ix.CompileCert.Compiled.run
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>
