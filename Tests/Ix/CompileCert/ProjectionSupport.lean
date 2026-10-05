@@ -1,6 +1,6 @@
 import Tests.Ix.CompileCert.SourceModels
 import Tests.Ix.CompileCert.Stored
-import Ix.CompileCert.AnnotEntry
+import Tests.Ix.CompileCert.AnnotTowers
 
 namespace Tests.Ix.CompileCert.ProjectionSupport
 
@@ -82,12 +82,23 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
         exact (coverage.annotated_modelCore V accepted bundle names checked).2
       IO.println s!"PASS: actual annotated model-core endpoint {root}"
     | result => throw (IO.userError s!"actual annotated model-core endpoint failed for {root}: {repr result}")
+    IO.println s!"TOWER-CHECKS {root}: source-entries={AnnotTowers.entryCount coverage.env} target-entries={AnnotTowers.entryCount bundle.env} tables={repr (checkInstalledTowers coverage.env bundle.env names)}"
+    match checked : checkSupportedArtifactTowerAssociation accepted bundle coverage.env names with
+    | some true =>
+      have _towerCore : ∀ (V : Type) [inst : _root_.Ix.Kernel.SetTheory V],
+          ∃ core : AnnotatedModelCore V coverage.env, ∀ levels, _root_.Ix.Kernel.Model.TowerOk core.base levels := by
+        intro V inst
+        obtain ⟨_, _, core, _, _, _, towers⟩ := coverage.annotated_modelCore_towers V accepted bundle names checked
+        exact ⟨core, towers⟩
+      IO.println s!"PASS: actual annotated tower/recursor endpoint {root}"
+    | result => throw (IO.userError s!"actual annotated tower endpoint failed for {root}: {repr result}")
 
 def run (path : String) : IO Unit := do
   let bytes ← IO.FS.readBinFile path
   IO.println s!"artifact {path}; bytes={bytes.size}; Blake3={Address.blake3 bytes}"
   let produced ← IO.ofExcept (Ixon.deEnv bytes)
-  let env ← getCompileEnv #[Compiled.prefixName]
+  let env ← getCompileEnv #[Compiled.prefixName, `Tests.Ix.CompileCert.TowerDefs]
+  AnnotTowers.run env
   let mut failures := 0
   for root in [Compiled.prefixName ++ `Node.val, Compiled.prefixName ++ `Node.kids] do
     try
