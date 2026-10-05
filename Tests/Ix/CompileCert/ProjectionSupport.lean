@@ -42,7 +42,7 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
       let targetName ← IO.ofExcept (cx.name ci.name)
       pure (sourceName ci.name, targetName)
     let helperMappings ← IO.ofExcept (proposeSourceHelperBindings installed.modelProposal mappings)
-    let names := sourceAndHelperNames mappings helperMappings
+    let names := sourceAndHelperNames mappings (helperMappings ++ installed.semanticSupport.nameBindings)
     let support ← IO.ofExcept (([equation, .thmDecl coverage.header coverage.value]).mapM
       (proposeRenamedSupport names))
     let bundle ← match checkAdmittedSupport accepted.toAdmittedArtifact support.toArray with
@@ -53,6 +53,7 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
     let originalIdentity := checkInstalledAssociation accepted.env bundle.env id
     IO.println s!"SUPPORT {root}: source={coverage.env.consts.length}, target={bundle.env.consts.length}, original-preserved={decide (InstalledRowsPreserved accepted.env bundle.env)}, equation-frame={endpoint.isSome}"
     IO.println s!"ORIGINAL-SEMANTIC-IDENTITY {root}: {repr originalIdentity}"
+    IO.println s!"REMAINING-CHECKS {root}: False={checkInstalledPin coverage.env names _root_.Ix.Kernel.falseName 0} Eq={checkInstalledPin coverage.env names _root_.Ix.Kernel.eqName 1} availability={repr (checkInstalledComparisonAvailability coverage.env bundle.env names)} eta={repr (checkInstalledEtaAssociations coverage.env bundle.env names)} universe-links={repr (checkInstalledRuleLevelLinks coverage.env bundle.env names)}"
     IO.println s!"CHECKS names={decide (SemanticNamesAgree accepted names)} telescopes={checkTelescopes coverage.env bundle.env names} types={checkInstalledTypes coverage.env bundle.env names} definitions={checkInstalledDefinitions coverage.env bundle.env names} caps={checkInstalledCapabilities coverage.env bundle.env names} recursors={checkInstalledRecursors coverage.env bundle.env names} constructors={checkInstalledConstructors coverage.env bundle.env names} aggregate={repr (checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names)}"
     for entry in coverage.env.consts do
       let mapped := names entry.name

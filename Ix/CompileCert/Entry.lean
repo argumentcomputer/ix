@@ -3961,6 +3961,13 @@ target pin bytes or used to overwrite a source-owned declaration. -/
 def sourceModelBasisSupport : List (Kernel.Name × Kernel.BasisKind) :=
   [(Kernel.eqName, .eqK), (Kernel.punitName, .punitK)]
 
+/-- Fixed source-owned ground required by the public semantic interface even
+when the selected original cone does not mention False or Eq. Unlike modeller
+dependencies, these can be appended after the original stream. A present
+source identity is never replaced; all records still pass the same fold. -/
+def sourceSemanticBasisSupport : List (Kernel.Name × Kernel.BasisKind) :=
+  [(Kernel.falseName, .falseK), (Kernel.eqName, .eqK)]
+
 /-- Reference closure of the finite raw basis terms. Literals and non-basis
 record forms are refused here, so no implicit literal dependency is hidden. -/
 def sourceSupportExprClosed (names : List Kernel.Name) : Kernel.Expr → Bool
@@ -3986,6 +3993,9 @@ def sourceBasisSupportClosed (kind : Kernel.BasisKind) : Bool :=
 
 theorem sourceModelBasisSupport_closed :
     ∀ row ∈ sourceModelBasisSupport, sourceBasisSupportClosed row.2 = true := by decide
+
+theorem sourceSemanticBasisSupport_closed :
+    ∀ row ∈ sourceSemanticBasisSupport, sourceBasisSupportClosed row.2 = true := by decide
 
 /-- Untrusted coverage proposal. The existing modeller has partial helpers;
 this use does not prove termination or correspondence. Original declarations
@@ -4445,6 +4455,64 @@ def normalizeSourceProjections (source : Source) (state : SourceModelState)
         return ⟨replacement :: equation :: output.val, .lowered hp association hf output.property⟩
       else .error "source projection equation name conflicts with an existing declaration"
 
+/-- The finite source-owned basis suffix is selected from the normalized
+stream itself. A present source identity is left intact, even if it will be
+refused by the subsequent verified fold. No target names or data participate. -/
+def sourceDeclaredNames : Kernel.Declaration → List Kernel.Name
+  | .basisDecl kind => kind.decls.map Kernel.ConstantInfo.name
+  | declaration => declaration.names
+
+def missingSourceSemanticBasis (original : List Kernel.Declaration) : List Kernel.BasisKind :=
+  (sourceSemanticBasisSupport.filter fun pair =>
+    !(original.any fun declaration => (sourceDeclaredNames declaration).contains pair.1)).map (·.2)
+
+structure SourceSemanticBasisCompletion (original : List Kernel.Declaration) where
+  basisSupport : List Kernel.BasisKind
+  selected : basisSupport = missingSourceSemanticBasis original
+
+def SourceSemanticBasisCompletion.declarations {original : List Kernel.Declaration}
+    (completion : SourceSemanticBasisCompletion original) : List Kernel.Declaration :=
+  original ++ completion.basisSupport.map Kernel.Declaration.basisDecl
+
+/-- Explicit identity bindings for every added reserved basis member, including
+members hidden by `Declaration.names` on compact basis records. These remain
+subject to original-name priority and the full actual installed checks. -/
+def SourceSemanticBasisCompletion.nameBindings {original : List Kernel.Declaration}
+    (completion : SourceSemanticBasisCompletion original) : List (Kernel.Name × Kernel.Name) :=
+  completion.basisSupport.flatMap fun kind => kind.decls.map fun entry => (entry.name, entry.name)
+
+def completeSourceSemanticBasis (original : List Kernel.Declaration) :
+    SourceSemanticBasisCompletion original := ⟨missingSourceSemanticBasis original, rfl⟩
+
+/-- Exact prefix preservation includes complete records, names and order;
+support never rewrites a normalized declaration. -/
+theorem SourceSemanticBasisCompletion.original_prefix {original : List Kernel.Declaration}
+    (completion : SourceSemanticBasisCompletion original) :
+    original.IsPrefix completion.declarations :=
+  ⟨completion.basisSupport.map Kernel.Declaration.basisDecl, rfl⟩
+
+theorem SourceSemanticBasisCompletion.support_closed {original : List Kernel.Declaration}
+    (completion : SourceSemanticBasisCompletion original) :
+    ∀ kind ∈ completion.basisSupport, sourceBasisSupportClosed kind = true := by
+  intro kind present
+  rw [completion.selected] at present
+  simp only [missingSourceSemanticBasis, List.mem_map, List.mem_filter] at present
+  obtain ⟨pair, ⟨inside, _⟩, rfl⟩ := present
+  exact sourceSemanticBasisSupport_closed pair inside
+
+theorem SourceSemanticBasisCompletion.only_missing {original : List Kernel.Declaration}
+    (completion : SourceSemanticBasisCompletion original) {kind : Kernel.BasisKind}
+    (present : kind ∈ completion.basisSupport) :
+    ∃ name, (name, kind) ∈ sourceSemanticBasisSupport ∧
+      ∀ declaration ∈ original, name ∉ sourceDeclaredNames declaration := by
+  rw [completion.selected] at present
+  simp only [missingSourceSemanticBasis, List.mem_map, List.mem_filter] at present
+  obtain ⟨pair, ⟨inside, absent⟩, rfl⟩ := present
+  refine ⟨pair.1, inside, ?_⟩
+  intro declaration member contradiction
+  simp at absent
+  exact absent declaration member contradiction
+
 structure SourceNormalizedInstallation (source : Source) (roots : List Lean.Name) where
   complete : CompleteSource source roots
   original : Array Kernel.Declaration
@@ -4456,10 +4524,22 @@ structure SourceNormalizedInstallation (source : Source) (roots : List Lean.Name
   support_checked : ∀ kind ∈ modelProposal.basisSupport,
     Kernel.Declaration.basisDecl kind ∈ modelProposal.declarations.toList ∧
       sourceBasisSupportClosed kind = true
+  normalizedDeclarations : List Kernel.Declaration
+  normalization : SourceProjectionNormalization source {} modelProposal.declarations.toList normalizedDeclarations
+  semanticSupport : SourceSemanticBasisCompletion normalizedDeclarations
   declarations : List Kernel.Declaration
-  normalization : SourceProjectionNormalization source {} modelProposal.declarations.toList declarations
+  semantic_append : declarations = semanticSupport.declarations
   env : Kernel.Env
   checked : Kernel.Cached.checkDecls .verified [] declarations.toArray = .ok env
+
+/-- The normalized stream is preserved literally, before the separate source
+semantic support suffix. This does not identify normalization with the
+immutable original source expression. -/
+theorem SourceNormalizedInstallation.normalized_prefix {source : Source} {roots : List Lean.Name}
+    (installed : SourceNormalizedInstallation source roots) :
+    installed.normalizedDeclarations.IsPrefix installed.declarations := by
+  rw [installed.semantic_append]
+  exact installed.semanticSupport.original_prefix
 
 def installSourceNormalized (source : Source) (roots : List Lean.Name) :
     Except SourceModelError (SourceNormalizedInstallation source roots) :=
@@ -4478,10 +4558,11 @@ def installSourceNormalized (source : Source) (roots : List Lean.Name) :
               match normalizeSourceProjections source {} proposal.declarations.toList with
               | .error why => .error (.proposalFailure why)
               | .ok output =>
-                match hk : Kernel.Cached.checkDecls .verified [] output.val.toArray with
+                let completion := completeSourceSemanticBasis output.val
+                match hk : Kernel.Cached.checkDecls .verified [] completion.declarations.toArray with
                 | .error (error, position) => .error (.checking error position)
                 | .ok env => .ok ⟨hc, original, he, proposal, hp, hs, hm, hb,
-                    output.val, output.property, env, hk⟩
+                    output.val, output.property, completion, completion.declarations, rfl, env, hk⟩
             else .error .supportMismatch
           else .error .correspondence
         else .error .changedOriginal
@@ -5722,7 +5803,15 @@ theorem SourceNormalizedInstallation.member {source : Source} {roots : List Lean
     have hm : entry ∈ installed.modelProposal.declarations.toList.flatMap readerEntries := by
       simpa only [SourceEntryMatches, he, streamEntries] using matched
     obtain ⟨declaration, hd, hm⟩ := List.mem_flatMap.mp hm
-    exact ⟨entry, declaration, rfl, hm, installed.normalization.member hd⟩
+    have retained : ∀ declaration ∈ installed.normalizedDeclarations,
+        declaration ∈ installed.declarations := by
+      intro declaration present
+      rw [installed.semantic_append]
+      exact List.mem_append_left _ present
+    refine ⟨entry, declaration, rfl, hm, ?_⟩
+    rcases installed.normalization.member hd with present | ⟨prior, replacement, equation, hp, receipt, hr, he⟩
+    · exact .inl (retained _ present)
+    · exact .inr ⟨prior, replacement, equation, hp, receipt, retained _ hr, retained _ he⟩
 
 structure ArtifactInput where
   limits : Limits
