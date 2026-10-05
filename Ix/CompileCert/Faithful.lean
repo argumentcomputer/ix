@@ -1212,6 +1212,98 @@ theorem denotes_lift {V : Type u} [Kernel.SetTheory V]
     simpa only [Kernel.Expr.liftLooseBVars_eq_self
       (Kernel.strLitToConstructor_looseBVars _ _)] using lifted
 
+/-- Insert a semantic argument below the indicated number of inner binders.
+Unlike a syntactic substitution this carries no expression annotation. -/
+def insertValuation {V : Type u} : Nat → V → (Nat → V) → Nat → V
+  | 0, value, valuation => Kernel.push value valuation
+  | depth + 1, value, valuation =>
+      Kernel.push (valuation 0) (insertValuation depth value (fun index => valuation (index + 1)))
+
+theorem insertValuation_at {V : Type u} (depth : Nat) (value : V) (valuation : Nat → V) :
+    insertValuation depth value valuation depth = value := by
+  induction depth generalizing valuation with
+  | zero => rfl
+  | succ depth ih => exact ih _
+
+theorem insertValuation_below {V : Type u} {depth index : Nat} (value : V) (valuation : Nat → V)
+    (below : index < depth) : insertValuation depth value valuation index = valuation index := by
+  induction depth generalizing index valuation with
+  | zero => omega
+  | succ depth ih =>
+    cases index with
+    | zero => rfl
+    | succ index => exact ih _ (by omega)
+
+theorem insertValuation_above {V : Type u} {depth index : Nat} (value : V) (valuation : Nat → V)
+    (above : depth < index) : insertValuation depth value valuation index = valuation (index - 1) := by
+  induction depth generalizing index valuation with
+  | zero =>
+    cases index with
+    | zero => omega
+    | succ index => rfl
+  | succ depth ih =>
+    cases index with
+    | zero => omega
+    | succ index =>
+      have read := ih (fun index => valuation (index + 1)) (index := index) (by omega)
+      have cancel : index - 1 + 1 = index := by omega
+      simpa only [insertValuation, Kernel.push, Nat.add_sub_cancel, cancel] using read
+
+/-- Public denotation under capture-avoiding substitution. The replacement
+is read in the outer valuation, with the inner `depth` binders removed;
+its occurrence is lifted over those binders by the actual kernel operation.
+All lambda/Pi regime side conditions are preserved by the derivation. -/
+theorem denotes_instantiate1Lift {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V} {expression : Kernel.Expr} {value : V}
+    (denoted : Kernel.Denotes values env levels ρ expression value)
+    {replacement : Kernel.Expr} {argument : V} {depth : Nat} {target : Nat → V}
+    (related : ρ = insertValuation depth argument target)
+    (replacementRead : Kernel.Denotes values env levels (fun index => target (index + depth)) replacement argument) :
+    Kernel.Denotes values env levels target (expression.instantiate1Lift replacement depth) value := by
+  induction denoted generalizing depth target with
+  | bvar =>
+    rename_i old index
+    rw [related]
+    simp only [Kernel.Expr.instantiate1Lift]
+    split
+    · rename_i equal
+      subst index
+      rw [insertValuation_at]
+      exact denotes_lift replacementRead (by intro index; rw [if_pos (Nat.zero_le index)])
+    · rename_i unequal
+      split
+      · rename_i above
+        rw [insertValuation_above argument target above]
+        exact .bvar
+      · rename_i notAbove
+        rw [insertValuation_below argument target (by omega)]
+        exact .bvar
+  | sort => exact .sort
+  | const lookup arity => exact .const lookup arity
+  | app _ _ ihf iha => exact .app (ihf related replacementRead) (iha related replacementRead)
+  | lam _ _ proof ihA ihF =>
+    refine .lam (ihA related replacementRead) (fun x hx => ihF x hx ?_ ?_) proof
+    · rw [related]; rfl
+    · exact replacementRead
+  | pi _ _ proof ihA ihB =>
+    refine .pi (ihA related replacementRead) (fun x hx => ihB x hx ?_ ?_) proof
+    · rw [related]; rfl
+    · exact replacementRead
+  | proj_table lookup _ ih => exact .proj_table lookup (ih related replacementRead)
+  | proj_fst lookup _ ih => exact .proj_fst lookup (ih related replacementRead)
+  | proj_snd lookup _ ih => exact .proj_snd lookup (ih related replacementRead)
+  | natLit _ ih =>
+    apply Kernel.Denotes.natLit
+    have substituted := ih related replacementRead
+    simpa only [Kernel.Expr.instantiate1Lift_eq_self
+      (Kernel.natLitToConstructor_looseBVars _)] using substituted
+  | strLit _ ih =>
+    apply Kernel.Denotes.strLit
+    have substituted := ih related replacementRead
+    simpa only [Kernel.Expr.instantiate1Lift_eq_self
+      (Kernel.strLitToConstructor_looseBVars _ _)] using substituted
+
 def pushArguments {V : Type u} (ρ : Nat → V) : List V → Nat → V
   | [] => ρ
   | argument :: rest => pushArguments (Kernel.push argument ρ) rest
