@@ -797,6 +797,29 @@ theorem InstalledSpineImage.mkAppN {V : Type u} [Kernel.SetTheory V]
   | nil => exact head
   | cons argument tail ih => exact ih (.app head argument)
 
+theorem InstalledExprImage.app_inv {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl function argument target}
+    (image : InstalledExprImage (V := V) sv tv se te sl tl (.app function argument) target) :
+    ∃ targetFunction targetArgument, target = .app targetFunction targetArgument ∧
+      InstalledExprImage sv tv se te sl tl function targetFunction ∧
+      InstalledExprImage sv tv se te sl tl argument targetArgument := by
+  cases image with
+  | app functionImage argumentImage => exact ⟨_, _, rfl, functionImage, argumentImage⟩
+
+theorem InstalledExprImage.spine_inv {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl head sources target}
+    (image : InstalledExprImage (V := V) sv tv se te sl tl (Kernel.Expr.mkAppN head sources) target) :
+    ∃ targetHead targets, target = Kernel.Expr.mkAppN targetHead targets ∧
+      InstalledExprImage sv tv se te sl tl head targetHead ∧
+      InstalledSpineImage sv tv se te sl tl sources targets := by
+  induction sources generalizing head target with
+  | nil => exact ⟨target, [], rfl, image, .nil⟩
+  | cons source sources ih =>
+    obtain ⟨targetApp, targets, shape, appImage, spineImage⟩ := ih image
+    obtain ⟨targetHead, targetArgument, appShape, headImage, argumentImage⟩ := appImage.app_inv
+    exact ⟨targetHead, targetArgument :: targets, by simpa only [appShape, Kernel.Expr.mkAppN] using shape,
+      headImage, .cons argumentImage spineImage⟩
+
 /-- A structural map of installed expressions. Constant universe arguments
 are selected per source identity, independently of ambient sort/binder level
 translation. Neither source names nor universe telescopes must be injective.
@@ -2117,6 +2140,14 @@ inductive DenotedApplication {V : Type u} [Kernel.SetTheory V]
         expressions arguments residual) :
       DenotedApplication values env levels ρ (.forallE domain body binder)
         (expression :: expressions) (argument :: arguments) residual
+
+theorem DenotedApplication.arguments {V : Type u} [Kernel.SetTheory V]
+    {values env levels ρ type expressions arguments residual}
+    (application : DenotedApplication (V := V) values env levels ρ type expressions arguments residual) :
+    DenotesSpine values env levels ρ expressions arguments := by
+  induction application with
+  | nil => exact .nil
+  | cons _ argumentRead _ _ ih => exact .cons argumentRead ih
 
 /-- Arbitrary typed semantic arguments may be represented by any expression
 spine with the stated public readings. Domain membership for the substituted

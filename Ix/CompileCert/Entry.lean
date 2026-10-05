@@ -1820,6 +1820,84 @@ theorem AnnotatedApplication.denotes_arguments {V : Type u} [Kernel.SetTheory V]
     exact .cons (Denotes_of_denoteMeta strong.internal.base2.cval_closedL depth _ argumentRead
       argumentScope.fvarsBelow argumentBounded ρ argumentGraded) ih
 
+open Kernel.Semantics Kernel.Model in
+/-- Construct the target's actual annotated dependent application from the
+source public application and semantic component images. Actual target
+readings determine the argument values; their equality is proved, not assumed.
+The output retains the image of the complete substituted residual. -/
+theorem AnnotatedApplication.from_source {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} {target : StrongInstalledModel V targetEnv}
+    {targetLevels : Kernel.Name → Nat} {depth : Nat} {ρ : Nat → V}
+    {targetType : Kernel.Expr} {targetExpressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations target targetLevels depth ρ targetExpressions annotations)
+    {sourceValues : Kernel.Name → (Kernel.Name → Nat) → V} {sourceEnv : Kernel.Env}
+    {sourceLevels : Kernel.Name → Nat} {sourceType sourceResidual : Kernel.Expr}
+    {sourceExpressions : List Kernel.Expr} {values : List V}
+    (application : DenotedApplication sourceValues sourceEnv sourceLevels ρ
+      sourceType sourceExpressions values sourceResidual)
+    (typeImage : InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceType (targetType.closeN depth))
+    (argumentImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceExpressions (targetExpressions.map (Kernel.Expr.closeN depth)))
+    (bounded : targetType.looseBVarsBounded 0 = true) :
+    ∃ residual, AnnotatedApplication target targetLevels depth ρ targetType targetExpressions annotations residual ∧
+      InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+        sourceResidual (residual.closeN depth) := by
+  have equalValues := (application.arguments.image argumentImages).functional readings.denotes
+  obtain ⟨publicResidual, targetApplication, residualImage⟩ := application.image typeImage argumentImages
+  rw [equalValues] at targetApplication
+  obtain ⟨residual, actual, closed⟩ := AnnotatedApplication.of_public readings targetApplication bounded
+  exact ⟨residual, actual, by simpa only [closed] using residualImage⟩
+
+open Kernel.Semantics Kernel.Model in
+/-- Specialize application transport to the type fields checked in the
+actual installed source/target rows. Target scope/bounds and type-image
+premises are discharged by installation and executable type association. -/
+theorem AnnotatedApplication.from_checked_type {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    {sourceEntry targetEntry : Kernel.ConstantInfo}
+    (sourcePresent : sourceEntry ∈ sourceEnv.consts)
+    (targetLookup : targetEnv.find? (names sourceEntry.name) = some targetEntry)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceEntry.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetEntry.toConstantVal.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+    {depth : Nat} {ρ : Nat → V} {targetExpressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations target targetLevels depth ρ targetExpressions annotations)
+    {sourceExpressions : List Kernel.Expr} {values : List V} {sourceResidual : Kernel.Expr}
+    (application : DenotedApplication
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels ρ
+      (sourceEntry.toConstantVal.type.instantiateLevelParams sourceEntry.toConstantVal.levelParams sourceUs)
+      sourceExpressions values sourceResidual)
+    (argumentImages : InstalledSpineImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceExpressions (targetExpressions.map (Kernel.Expr.closeN depth))) :
+    ∃ residual, AnnotatedApplication target targetLevels depth ρ
+      (targetEntry.toConstantVal.type.instantiateLevelParams targetEntry.toConstantVal.levelParams targetUs)
+      targetExpressions annotations residual ∧
+      InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        target.public.cval sourceEnv targetEnv sourceLevels targetLevels sourceResidual (residual.closeN depth) := by
+  obtain ⟨sourceLookup, found, foundLookup, comparison⟩ := checkInstalledTypes_member types sourcePresent
+  have same := Option.some.inj (foundLookup.symm.trans targetLookup)
+  subst found
+  have wf := target.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem targetLookup)
+  have typeImage := checkInstalledMemberExpr_instance target association sourceLookup targetLookup wf.2.1
+    comparison sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
+  have noFree : (targetEntry.toConstantVal.type.instantiateLevelParams
+      targetEntry.toConstantVal.levelParams targetUs).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact wf.1
+  have bounded : (targetEntry.toConstantVal.type.instantiateLevelParams
+      targetEntry.toConstantVal.levelParams targetUs).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact wf.2.2.2.1
+  apply AnnotatedApplication.from_source readings application _ argumentImages bounded
+  simpa only [Kernel.Expr.closeN_of_hasFvar _ depth 0 noFree] using typeImage
+
 theorem AnnotatedApplication.residual_shape {V : Type u} [Kernel.SetTheory V]
     {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
     {depth : Nat} {ρ : Nat → V} {type residual : Kernel.Expr}
@@ -2394,6 +2472,51 @@ private theorem closeN_app_inv {opened function argument : Kernel.Expr} {depth :
       rawFunction.closeN depth = function ∧ rawArgument.closeN depth = argument := by
   cases opened <;> simp only [Kernel.Expr.closeN, Kernel.Expr.app.injEq, reduceCtorEq] at image
   case app rawFunction rawArgument => exact ⟨rawFunction, rawArgument, rfl, image⟩
+
+/-- Recover the actual open spine from its closed expression image. This
+is purely structural and does not substitute normalization for alignment. -/
+theorem closeN_spine_inv {opened head : Kernel.Expr} {expressions : List Kernel.Expr} {depth : Nat}
+    (image : opened.closeN depth = Kernel.Expr.mkAppN head expressions) :
+    ∃ rawHead rawExpressions, opened = Kernel.Expr.mkAppN rawHead rawExpressions ∧
+      rawHead.closeN depth = head ∧ rawExpressions.map (Kernel.Expr.closeN depth) = expressions := by
+  induction expressions generalizing opened head with
+  | nil => exact ⟨opened, [], rfl, image, rfl⟩
+  | cons expression expressions ih =>
+    obtain ⟨rawApp, rawExpressions, shape, headImage, images⟩ := ih image
+    obtain ⟨rawHead, rawArgument, appShape, headClosed, argumentClosed⟩ := closeN_app_inv headImage
+    exact ⟨rawHead, rawArgument :: rawExpressions, by simpa only [appShape, Kernel.Expr.mkAppN] using shape,
+      headClosed, by simp only [List.map_cons, argumentClosed, images]⟩
+
+open Kernel.Semantics Kernel.Model in
+/-- The target residual's actual index spine is derived from the complete
+residual image. No separately asserted target application shape or per-index
+annotation is needed. Semantic source index equality remains explicit. -/
+theorem ArgumentAnnotation.index_pin_of_residual_image {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} {target : StrongInstalledModel V targetEnv}
+    {targetLevels : Kernel.Name → Nat} {depth : Nat} {ρ : Nat → V}
+    {residual : Kernel.Expr} {annotation : AnnotTerm} {targetArguments : List Kernel.Expr}
+    {arguments : List AnnotTerm}
+    (evidence : ArgumentAnnotation target targetLevels depth ρ residual annotation)
+    (argumentReadings : ArgumentAnnotations target targetLevels depth ρ targetArguments arguments)
+    {sourceValues : Kernel.Name → (Kernel.Name → Nat) → V} {sourceEnv : Kernel.Env}
+    {sourceLevels : Kernel.Name → Nat} {sourceHead : Kernel.Expr} {sourceIndices sourceArguments : List Kernel.Expr}
+    {indexValues argumentValues : List V}
+    (residualImage : InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (Kernel.Expr.mkAppN sourceHead sourceIndices) (residual.closeN depth))
+    (indexRead : DenotesSpine sourceValues sourceEnv sourceLevels ρ sourceIndices indexValues)
+    (argumentRead : DenotesSpine sourceValues sourceEnv sourceLevels ρ sourceArguments argumentValues)
+    (argumentImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceArguments (targetArguments.map (Kernel.Expr.closeN depth)))
+    (constructorParams major rulePrefix : Nat)
+    (argumentCount : arguments.length = major) (ordered : rulePrefix ≤ major)
+    (sourceEquation : indexValues.drop constructorParams = argumentValues.drop rulePrefix) :
+    IotaIndexPin ρ annotation constructorParams major rulePrefix arguments := by
+  obtain ⟨targetHead, targetIndices, closedShape, _, indexImages⟩ := residualImage.spine_inv
+  obtain ⟨rawHead, rawIndices, rawShape, _, indicesClosed⟩ := closeN_spine_inv closedShape
+  rw [rawShape] at evidence
+  apply evidence.index_pin_image argumentReadings indexRead argumentRead _ argumentImages
+    constructorParams major rulePrefix argumentCount ordered sourceEquation
+  simpa only [indicesClosed] using indexImages
 
 private theorem closeN_const_inv {opened : Kernel.Expr} {depth : Nat}
     {name : Kernel.Name} {levels : List Kernel.Level}
