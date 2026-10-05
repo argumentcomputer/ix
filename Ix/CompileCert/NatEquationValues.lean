@@ -60,14 +60,16 @@ theorem CheckedNatEquation.readings {V : Type u} [Kernel.SetTheory V]
       receipt.value.endpoints.rightArity
     simp only [receipt.value.sourceMonomorphic, rightParams, Kernel.Level.substFn] at sourceRead targetRead
     exact ⟨_, _, sourceRead, targetRead, fun ρ => receipt.value.value_eq association sourceModel.internal.base2 targetModel universes ρ⟩
-  | variable index type =>
+  | «variable» index type =>
     exact ⟨_, _, denoteMeta_fvar _ depth index type, denoteMeta_fvar _ depth index type, fun _ => rfl⟩
   | application functionReceipt argumentReceipt functionIH argumentIH =>
     obtain ⟨sourceFunction, targetFunction, sourceFunctionRead, targetFunctionRead, functionEq⟩ := functionIH
     obtain ⟨sourceArgument, targetArgument, sourceArgumentRead, targetArgumentRead, argumentEq⟩ := argumentIH
     refine ⟨.app sourceFunction sourceArgument, .app targetFunction targetArgument, ?_, ?_, ?_⟩
-    · simp only [denoteMeta_app, sourceFunctionRead, sourceArgumentRead, Option.bind_some]
-    · simp only [denoteMeta_app, targetFunctionRead, targetArgumentRead, Option.bind_some]
+    · simp only [denoteMeta_app, sourceFunctionRead, sourceArgumentRead]
+      rfl
+    · simp only [denoteMeta_app, targetFunctionRead, targetArgumentRead]
+      rfl
     · intro ρ
       simp only [interp_app, functionEq ρ, argumentEq ρ]
 

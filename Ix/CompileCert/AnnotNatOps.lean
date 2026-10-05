@@ -61,8 +61,8 @@ theorem CheckedNatOperation.law {V : Type u} [Kernel.SetTheory V]
       ∀ (ρ : Nat → V) (x y : V),
         x ∈ˢ interp V ρ ((association.modelCore sourceModel.internal.base2 targetModel).base.acval Kernel.natName universes) →
         y ∈ˢ interp V ρ ((association.modelCore sourceModel.internal.base2 targetModel).base.acval Kernel.natName universes) →
-        interp V (Kernel.Term.cons y (Kernel.Term.cons x ρ)) left =
-          interp V (Kernel.Term.cons y (Kernel.Term.cons x ρ)) right := by
+        interp V (cons y (cons x ρ)) left =
+          interp V (cons y (cons x ρ)) right := by
   refine ⟨(sourceModel.internal.nat_ops universes operation member header body hint lookup).1, ?_⟩
   intro equation equationMember
   obtain ⟨⟨leftReceipt⟩, ⟨rightReceipt⟩⟩ := checkNatEquationReceipts_entry receipt.equations equationMember
