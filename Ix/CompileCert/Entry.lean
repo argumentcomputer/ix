@@ -853,6 +853,64 @@ namespace AnnotationTrace
 
 open Kernel Kernel.Cached
 
+/-- The checked let-elimination trace, including all official let checks.
+The reduct substitutes the immutable original value, not the independently
+annotated value. The latter remains the subject of value-type checking. -/
+def LetAnnotation (mode : CheckMode) (env : Env) (depth : Nat)
+    (type value body result : Kernel.Expr) : Prop :=
+  ∃ fuel, ∃ annotatedType annotatedValue : Kernel.Expr,
+    annotateCore mode env fuel depth type = .ok annotatedType ∧
+    annotateCore mode env fuel depth value = .ok annotatedValue ∧
+    annotateCore mode env fuel depth (body.instantiate1 value) = .ok result ∧
+    ∃ typeType sortLevel valueType,
+      inferTypeCore mode env fuel depth annotatedType = .ok typeType ∧
+      ensureSortCore mode env fuel depth typeType = .ok sortLevel ∧
+      inferTypeCore mode env fuel depth annotatedValue = .ok valueType ∧
+      isDefEqCore mode env fuel depth valueType annotatedType = .ok true
+
+theorem let_pure {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {type value body result : Kernel.Expr}
+    (run : annotateCore mode env fuel depth (.letE type value body) = .ok result) :
+    LetAnnotation mode env depth type value body result := by
+  cases fuel with
+  | zero => simp [annotateCore_zero, throw, throwThe] at run
+  | succ fuel => exact ⟨fuel, annotateCore_letE_inv run⟩
+
+/-- Actual cached-call attachment using the existing invariant-state
+simulation. Prefix `EnvWF`/`CSOK` remain explicit; neither a cache hit nor a
+successful target installation is used to invent a source-prefix invariant. -/
+theorem let_cached {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {type value body result : Kernel.Expr} {initial final : CState}
+    (verified : mode.verifiedChecks = true) (environment : EnvWF env)
+    (state : CSOK mode env initial) (scope : Kernel.Expr.WScoped depth (.letE type value body))
+    (run : (coreKnotI mode (mkFEnv env) fuel).annotate depth (.letE type value body) initial =
+      .ok (result, final)) :
+    CSOK mode env final ∧ Kernel.Expr.WScoped depth result ∧
+      LetAnnotation mode env depth type value body result := by
+  obtain ⟨state', pureResult, ⟨same, resultScope⟩, pureFuel, pureRun⟩ :=
+    (ssimC verified env environment fuel).annotate state rfl scope result final run
+  cases same
+  exact ⟨state', resultScope, let_pure pureRun⟩
+
+/-- Both successful let annotations reach the exact related raw residuals.
+Their fuels and checking/annotation traces remain independent. This records
+the endpoint square needed by a recursive annotation simulation; it does not
+assert that merely normalizing the source relates the final annotations. -/
+theorem LetAnnotation.paired_residuals {sourceMode targetMode : CheckMode}
+    {sourceEnv targetEnv : Env} {depth : Nat}
+    {type value body sourceResult targetResult : Kernel.Expr}
+    (rename : InstalledRenaming)
+    (source : LetAnnotation sourceMode sourceEnv depth type value body sourceResult)
+    (target : LetAnnotation targetMode targetEnv depth (rename.expr type) (rename.expr value)
+      (rename.expr body) targetResult) :
+    ∃ sourceFuel targetFuel,
+      annotateCore sourceMode sourceEnv sourceFuel depth (body.instantiate1 value) = .ok sourceResult ∧
+      annotateCore targetMode targetEnv targetFuel depth (rename.expr (body.instantiate1 value)) =
+        .ok targetResult := by
+  obtain ⟨sourceFuel, _, _, _, _, sourceRun, _⟩ := source
+  obtain ⟨targetFuel, _, _, _, _, targetRun, _⟩ := target
+  exact ⟨sourceFuel, targetFuel, sourceRun, (rename.instantiate1 body value 0).symm ▸ targetRun⟩
+
 /-- Full header provenance for the actual cached annotation call. This is
 not a claim that annotation preserves the raw expression's denotation. -/
 theorem header_fields {mode : CheckMode} {fe : FEnv} {cv cvA : Kernel.ConstantVal}
