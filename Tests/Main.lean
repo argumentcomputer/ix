@@ -28,6 +28,7 @@ import Tests.Ix.Compile.BridgeProvenance
 import Tests.Ix.Compile.BridgeBoundaries
 import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.Transport
+import Tests.Ix.Compile.CliqueOwnership
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.IndexSafety
@@ -379,6 +380,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- The clique transport `Φ_σ` (Ix.Compile.Clique) against the measured clique twins: the exact
   -- oracle, the kernel, GuessLex, negative controls (Tests.Ix.Compile.Transport).
   ("clique-transport", Tests.Ix.Compile.Transport.run),
+  -- Value-sensitive ownership regressions of the clique transport: user values, binders and
+  -- relations shaped like the encoding keep their meaning (Tests.Ix.Compile.CliqueOwnership).
+  ("clique-ownership", Tests.Ix.Compile.CliqueOwnership.run),
   -- Pass 3, the faithful rewrite (IX_PASS3=images): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
