@@ -337,6 +337,12 @@ def recoverStructural (members aux : Array Decl) (const? : Name → Option Const
   let n := members.size
   let L ← liftE (structLayout members aux (idPerm n) const?)
   if L.numFunTypes > 0 then throw "recovery: the inductive-predicate route is not recovered"
+  -- Every dictionary path `R` reads as a recursive call must be the
+  -- recursion's own (`Structural.lean`, § Ownership): a path out of a user's
+  -- `below` value would be read as an invented call, and two members that
+  -- differ only there would get one specification (and be aliased, O17).
+  -- The identity transport with ownership enforced is that check.
+  let _ ← transportStructural members aux (idPerm n) const? (forceOwnership := true)
   let names := members.map (·.name)
   let lvls := (members[0]!).levelParams.map Level.mkParam
   -- each member's group and position in it

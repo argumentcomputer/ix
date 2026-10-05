@@ -638,10 +638,11 @@ matchers, the members. Fails (and the caller keeps the baseline) on anything
 outside the grammar, including a `below` dictionary or `brecOn` application
 the recursion does not own (§ Ownership). -/
 def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
-    (const? : Name → Option ConstantInfo) (lemmas : Array (Decl × Name) := #[]) :
+    (const? : Name → Option ConstantInfo) (lemmas : Array (Decl × Name) := #[])
+    (forceOwnership : Bool := false) :
     TM (Array Transported) := do
   let L ← liftE (structLayout members aux σ const?)
-  let L := { L with checkOwnership := !members.all (·.isThm) }
+  let L := { L with checkOwnership := forceOwnership || !members.all (·.isThm) }
   -- `brecOn` of the block: at the members' roots only
   if L.checkOwnership then
     for d in aux do
