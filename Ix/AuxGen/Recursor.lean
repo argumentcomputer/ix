@@ -217,6 +217,7 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
   -- `hasInvalidSpecRef` flags if they leak into a spec_param.
   let mut cur := dom
   repeat
+    cur := stripMdataRef cur
     match cur with
     | .forallE _ _ body _ _ => cur := body
     | _ => break
@@ -362,6 +363,7 @@ inductive)")
       -- Peel ownParams foralls, substituting with FVar-form spec_params.
       let mut cur := ctorTyInst
       for j in [0:member.ownParams] do
+        cur := stripMdataRef cur
         match cur with
         | .forallE _ _ body _ _ =>
           if h : j < member.specParams.size then
@@ -522,11 +524,13 @@ structure Binder where
     Collect the first `n` forall binders from an expression, stripping
     outParam/semiOutParam/optParam/autoParam wrappers from domains
     (Lean's `consume_type_annotations` in `mk_local_decl`,
-    inductive.cpp:179). -/
+    inductive.cpp:179). Metadata on the forall spine is transparent, as
+    it is for `forallTelescope`; domain metadata remains intact. -/
 def collectBinders (expr : Expr) (n : Nat) : Array Binder := Id.run do
   let mut binders : Array Binder := #[]
   let mut cur := expr
   for _ in [0:n] do
+    cur := stripMdataRef cur
     match cur with
     | .forallE name dom body bi _ =>
       let cleanDom := consumeTypeAnnotations dom
@@ -763,6 +767,7 @@ def buildMotiveTypeAux (member : FlatInfo) (_nParams : Nat) (elimLevel : Level)
   let specFvars := instantiateSpecWithFVars member.specParams paramFvars
   let mut cur := ty
   for p in [0:nExtParams] do
+    cur := stripMdataRef cur
     if let .forallE _ _ body _ _ := cur then
       if h : p < specFvars.size then
         cur := instantiate1 body specFvars[p]
@@ -897,6 +902,7 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
     if member.isAux then instantiateSpecWithFVars member.specParams paramFvars
     else #[]
   for p in [0:nCtorParams] do
+    cur := stripMdataRef cur
     if let .forallE _ _ body _ _ := cur then
       if h : member.isAux = true ∧ p < spFvars.size then
         cur := instantiate1 body (spFvars[p]'h.2)
@@ -925,6 +931,7 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
   let mut scope ← TcScopeSt.new paramDecls recLevelParams maps
 
   for fi in [0:nFields] do
+    cur := stripMdataRef cur
     match cur with
     | .forallE name dom body bi _ =>
       -- Strip autoParam/optParam/outParam wrappers.
@@ -1104,6 +1111,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     let diNExtParams := diMember.ownParams
     let diSpFvars := instantiateSpecWithFVars diMember.specParams paramFvars
     for p in [0:diNExtParams] do
+      ity := stripMdataRef ity
       if let .forallE _ _ body _ _ := ity then
         if h : p < diSpFvars.size then
           ity := instantiate1 body diSpFvars[p]
@@ -1118,6 +1126,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     let nIndices := diMember.nIndices
     let mut indexDecls : Array LocalDecl := #[]
     for fi in [0:nIndices] do
+      ity := stripMdataRef ity
       match ity with
       | .forallE name dom body bi _ =>
         let (fvName, fv) := freshFVar "idx" fi
@@ -1256,6 +1265,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
     let (fvName, fv) := freshFVar kind localIdx
     let mut binderName := Name.mkAnon
     let mut domain := Expr.mkSort Level.mkZero
+    recTyCur := stripMdataRef recTyCur
     match recTyCur with
     | .forallE n d b _bi _ =>
       binderName := n
@@ -1309,6 +1319,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
         instantiateSpecWithFVars class_.specParams paramFvars
       else #[]
     for p in [0:nCtorParams] do
+      ty := stripMdataRef ty
       if let .forallE _ _ b _ _ := ty then
         if h : class_.isAux = true ∧ p < ruleSpFvars.size then
           ty := instantiate1 b (ruleSpFvars[p]'h.2)
@@ -1331,6 +1342,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
     let mut recFieldData : Array (Expr × Nat) := #[] -- (field_fvar, target_ci)
 
     for fi in [0:nFields] do
+      ty := stripMdataRef ty
       match ty with
       | .forallE fname dom b fbi _ =>
         let cleanDom := consumeTypeAnnotations dom
@@ -1907,11 +1919,15 @@ aux members")
   let paramBinders := collectBinders firstTy nParams
 
   -- One shared set of param FVars for the whole block (C++ `m_params`).
-  let (sharedParamFvars, rawParamDecls, _) :=
-    forallTelescope firstTy nParams "param" 0
+  let (sharedParamFvars, rawParamDecls, _) ←
+    match forallTelescopeExact firstTy nParams "param" 0
+        "generateCanonicalRecursorsWithLayout" "inductive parameters" with
+    | .ok result => pure result
+    | .error (.unsupportedExpr description) =>
+      throw (CompileError.unsupportedExpr description)
   let sharedParamDecls : Array LocalDecl :=
-    (rawParamDecls.zip paramBinders).map fun (d, pb) =>
-      { d with domain := consumeTypeAnnotations d.domain, info := pb.info }
+    rawParamDecls.map fun d =>
+      { d with domain := consumeTypeAnnotations d.domain }
 
   -- WHNF-decompose each ORIGINAL class's stored type (the `mk_rec_infos`
   -- analog; exposes Pis hidden inside reducible aliases).
