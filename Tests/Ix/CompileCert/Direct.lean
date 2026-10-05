@@ -100,6 +100,29 @@ def classificationControls : List (String × (Unit → Bool)) := [
     admissionClass (.kernel (.notImplemented "unsupported positive shape") 0) == .unsupported)]
 
 def controls : List (String × (Unit → Bool)) := classificationControls ++ [
+  ("semantic names cover both members of a legitimate fiber", fun _ =>
+    match checkCompiled aliases with
+    | .error _ => false
+    | .ok receipt =>
+      let cx : ExportContext := ⟨aliases.source, aliases.map, receipt.pins⟩
+      match cx.name `first with
+      | .error _ => false
+      | .ok targetName => decide (SemanticNamesAgree receipt (fun _ => targetName))),
+  ("semantic names cannot borrow the checked representative for a wrong alias", fun _ =>
+    match checkCompiled aliases with
+    | .error _ => false
+    | .ok receipt =>
+      let cx : ExportContext := ⟨aliases.source, aliases.map, receipt.pins⟩
+      match cx.name `first with
+      | .error _ => false
+      | .ok targetName =>
+        !decide (SemanticNamesAgree receipt (fun name =>
+          if name = sourceName `same then sourceName `wrong else targetName))),
+  ("artifact aggregate rejects wrong forward name before installed comparison", fun _ =>
+    match checkCompiled aliases with
+    | .error _ => false
+    | .ok receipt =>
+      checkArtifactInstalledAssociation receipt ⟨[]⟩ (fun _ => sourceName `wrong) == some false),
   ("empty record key rejected before admission", fun _ => malformedKeys
     { choiceInput with records := [(⟨ByteArray.empty⟩, Ixon.serConstant choiceRecord)] }),
   ("short blob key rejected before admission", fun _ => malformedKeys

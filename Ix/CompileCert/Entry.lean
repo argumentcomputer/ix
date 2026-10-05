@@ -8794,4 +8794,70 @@ theorem checkedAssociation_universalRules (V : Type u) [Kernel.SetTheory V]
     sourceChecked targetChecked receipt.telescopes receipt.types receipt.definitions receipt.falsePin
     receipt.eqPin receipt.capabilities receipt.etaAssociations receipt.recursors receipt.constructors receipt.levelLinks
 
+/-- The semantic name map must agree with the accepted reader/export map for
+every immutable source declaration, including every member of an alias fiber.
+Source-only model/support names are not original declarations: their installed
+associations are still checked separately over the complete source environment. -/
+def SemanticNamesAgree {input : Input} (accepted : AcceptedAssociation input)
+    (names : Kernel.Name → Kernel.Name) : Prop :=
+  ∀ entry ∈ input.source.declarations,
+    NameAgrees ⟨input.source, input.map, accepted.pins⟩ entry.name (names (sourceName entry.name))
+
+instance {input : Input} (accepted : AcceptedAssociation input) (names : Kernel.Name → Kernel.Name) :
+    Decidable (SemanticNamesAgree accepted names) :=
+  inferInstanceAs (Decidable (∀ entry ∈ input.source.declarations,
+    NameAgrees ⟨input.source, input.map, accepted.pins⟩ entry.name (names (sourceName entry.name))))
+
+/-- Bind the installed aggregate to the exact admitted bytes' reader map.
+Missing source-only support on the target remains refusal; support rows are
+not removed to make this check succeed. -/
+def checkArtifactInstalledAssociation {input : Input} (accepted : AcceptedAssociation input)
+    (sourceEnv : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Option Bool :=
+  bothChecks (some (decide (SemanticNamesAgree accepted names)))
+    (checkInstalledAssociation sourceEnv accepted.env names)
+
+theorem checkArtifactInstalledAssociation_sound {input : Input} (accepted : AcceptedAssociation input)
+    {sourceEnv : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkArtifactInstalledAssociation accepted sourceEnv names = some true) :
+    SemanticNamesAgree accepted names ∧ InstalledAssociation sourceEnv accepted.env names := by
+  obtain ⟨nameCheck, association⟩ := bothChecks_true checked
+  exact ⟨of_decide_eq_true (Option.some.inj nameCheck), checkInstalledAssociation_sound association⟩
+
+/-- The direct original-stream route uses its own exact checked declarations.
+Target installation is derived from byte admission, including the actual
+prelude and native pin set; callers do not supply a substitute target fold. -/
+theorem SourceInstallation.artifact_universalRules (V : Type u) [Kernel.SetTheory V]
+    {input : Input} (source : SourceInstallation input.source input.roots)
+    (accepted : AcceptedAssociation input) (names : Kernel.Name → Kernel.Name)
+    (checked : checkArtifactInstalledAssociation accepted source.env names = some true) :
+    SemanticNamesAgree accepted names ∧ Nonempty (StrongInstalledModel V source.env) ∧
+    ∃ (target : StrongInstalledModel V accepted.env) (publicSource : PublicValueModel V source.env),
+      publicSource.model.cval = (PullbackMap.fromEnvs source.env accepted.env names).values target.public.cval ∧
+      PublicCapabilityLaws publicSource.model.cval source.env ∧ UniversalRuleSimulation target source.env names := by
+  obtain ⟨nameCheck, association⟩ := bothChecks_true checked
+  obtain ⟨targetPins, _, targetChecked⟩ := accepted.toAdmittedArtifact.checked_declarations
+  exact ⟨of_decide_eq_true (Option.some.inj nameCheck),
+    checkedAssociation_universalRules V [] targetPins source.declarations
+      (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations) names
+      source.checked targetChecked association⟩
+
+/-- The normalized route uses its independently checked normalized array,
+while retaining the original records and source-owned normalization receipt.
+The theorem gives installed laws only: the retained normalization receipt's
+semantic pull-back to the immutable originals is not inferred from admission. -/
+theorem SourceNormalizedInstallation.artifact_universalRules (V : Type u) [Kernel.SetTheory V]
+    {input : Input} (source : SourceNormalizedInstallation input.source input.roots)
+    (accepted : AcceptedAssociation input) (names : Kernel.Name → Kernel.Name)
+    (checked : checkArtifactInstalledAssociation accepted source.env names = some true) :
+    SemanticNamesAgree accepted names ∧ Nonempty (StrongInstalledModel V source.env) ∧
+    ∃ (target : StrongInstalledModel V accepted.env) (publicSource : PublicValueModel V source.env),
+      publicSource.model.cval = (PullbackMap.fromEnvs source.env accepted.env names).values target.public.cval ∧
+      PublicCapabilityLaws publicSource.model.cval source.env ∧ UniversalRuleSimulation target source.env names := by
+  obtain ⟨nameCheck, association⟩ := bothChecks_true checked
+  obtain ⟨targetPins, _, targetChecked⟩ := accepted.toAdmittedArtifact.checked_declarations
+  exact ⟨of_decide_eq_true (Option.some.inj nameCheck),
+    checkedAssociation_universalRules V [] targetPins source.declarations.toArray
+      (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations) names
+      source.checked targetChecked association⟩
+
 end Ix.CompileCert
