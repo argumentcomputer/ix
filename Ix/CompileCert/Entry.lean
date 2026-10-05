@@ -8712,4 +8712,86 @@ theorem checkedStreams_universalRules (V : Type u) [Kernel.SetTheory V]
     checked_universal_rules sourceStrong.internal.base2.wf target (checkTelescopes_sound telescopes)
       types recursors constructors levelLinks⟩
 
+/-- Preserve unavailable expression/rule comparisons before projecting their
+successful results into the older Boolean interfaces. A false result is a
+failed certificate check, not a theorem of semantic inequality. Every source
+row is visited, including all names in a many-to-one fiber. -/
+def checkInstalledComparisonAvailability (source target : Kernel.Env)
+    (names : Kernel.Name → Kernel.Name) : Option Bool :=
+  source.consts.foldr (fun entry rest => bothChecks (do
+    let some targetEntry := target.find? (names entry.name) | return false
+    let typeResult ← checkInstalledMemberExpr source target names entry.name
+      entry.toConstantVal.type targetEntry.toConstantVal.type
+    if !typeResult then return false
+    match entry, targetEntry with
+    | .defnInfo header value _, .defnInfo _ targetValue _ =>
+      checkInstalledMemberExpr source target names header.name value targetValue
+    | .recInfo header _ _ rules, .recInfo _ _ _ targetRules =>
+      checkInstalledRules source target names header.name rules targetRules
+    | .indInfo header caps, .indInfo _ targetCaps =>
+      checkInstalledMemberExpr source target names header.name
+        (capabilityDatumExpr caps) (capabilityDatumExpr targetCaps)
+    | _, _ => return true) rest) (some true)
+
+/-- Finite installed association evidence. The exact environments and forward
+name function are indices, not fields which can be replaced after checking.
+Raw checking bodies, immutable source records, and source normalization are
+separate obligations; this receipt does not assert their correspondence. -/
+structure InstalledAssociation (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Prop where
+  telescopes : checkTelescopes source target names = true
+  types : checkInstalledTypes source target names = true
+  definitions : checkInstalledDefinitions source target names = true
+  falsePin : checkInstalledPin source names Kernel.falseName 0 = true
+  eqPin : checkInstalledPin source names Kernel.eqName 1 = true
+  capabilities : checkInstalledCapabilities source target names = true
+  etaAssociations : checkInstalledEtaAssociations source target names = some true
+  recursors : checkInstalledRecursors source target names = true
+  constructors : checkInstalledConstructors source target names = true
+  levelLinks : checkInstalledRuleLevelLinks source target names = some true
+
+/-- Executable aggregate. `none` retains unavailable comparison; `some false`
+is certificate refusal, never established semantic disequality. A later
+unavailable row need not override an earlier definite certificate failure.
+The existing Boolean checks are retained as the exact proved interfaces. -/
+def checkInstalledAssociation (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Option Bool :=
+  bothChecks (checkInstalledComparisonAvailability source target names)
+    (bothChecks (some (checkTelescopes source target names &&
+      checkInstalledTypes source target names && checkInstalledDefinitions source target names &&
+      checkInstalledPin source names Kernel.falseName 0 && checkInstalledPin source names Kernel.eqName 1 &&
+      checkInstalledCapabilities source target names && checkInstalledRecursors source target names &&
+      checkInstalledConstructors source target names))
+      (bothChecks (checkInstalledEtaAssociations source target names)
+        (checkInstalledRuleLevelLinks source target names)))
+
+theorem checkInstalledAssociation_sound {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledAssociation source target names = some true) :
+    InstalledAssociation source target names := by
+  obtain ⟨_, checked⟩ := bothChecks_true checked
+  obtain ⟨structural, semantic⟩ := bothChecks_true checked
+  have fields := Option.some.inj structural
+  simp only [Bool.and_eq_true] at fields
+  obtain ⟨eta, links⟩ := bothChecks_true semantic
+  exact ⟨fields.1.1.1.1.1.1.1, fields.1.1.1.1.1.1.2, fields.1.1.1.1.1.2,
+    fields.1.1.1.1.2, fields.1.1.1.2, fields.1.1.2, eta, fields.1.2, fields.2, links⟩
+
+/-- One accepted executable aggregate, plus both actual independent verified
+folds, supplies the installed public-value/capability/universal-rule endpoint.
+This does not identify the pull-back values with an independently chosen
+source model, or discharge original-source annotation and normalization. -/
+theorem checkedAssociation_universalRules (V : Type u) [Kernel.SetTheory V]
+    (sourcePins targetPins : List Kernel.NatOpPinSet)
+    (sourceDecls targetDecls : Array Kernel.Declaration)
+    {sourceEnv targetEnv : Kernel.Env} (names : Kernel.Name → Kernel.Name)
+    (sourceChecked : Kernel.Cached.checkDecls .verified sourcePins sourceDecls = .ok sourceEnv)
+    (targetChecked : Kernel.Cached.checkDecls .verified targetPins targetDecls = .ok targetEnv)
+    (checked : checkInstalledAssociation sourceEnv targetEnv names = some true) :
+    Nonempty (StrongInstalledModel V sourceEnv) ∧
+    ∃ (target : StrongInstalledModel V targetEnv) (source : PublicValueModel V sourceEnv),
+      source.model.cval = (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval ∧
+      PublicCapabilityLaws source.model.cval sourceEnv ∧ UniversalRuleSimulation target sourceEnv names := by
+  have receipt := checkInstalledAssociation_sound checked
+  exact checkedStreams_universalRules V sourcePins targetPins sourceDecls targetDecls names
+    sourceChecked targetChecked receipt.telescopes receipt.types receipt.definitions receipt.falsePin
+    receipt.eqPin receipt.capabilities receipt.etaAssociations receipt.recursors receipt.constructors receipt.levelLinks
+
 end Ix.CompileCert

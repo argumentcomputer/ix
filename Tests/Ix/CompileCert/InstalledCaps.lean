@@ -132,7 +132,20 @@ def run : IO Unit := do
     (checkInstalledRecursors combinedSource combinedTarget id && checkInstalledConstructors combinedSource combinedTarget id)
   require "combined independent streams satisfy universal level-link checks"
     (checkInstalledRuleLevelLinks combinedSource combinedTarget id == some true)
-  IO.println "installed capabilities: independent Nat/PUnit/combined folds; 40 association controls passed"
+  require "single aggregate accepts independent combined streams"
+    (checkInstalledAssociation combinedSource combinedTarget id == some true)
+  require "single aggregate rejects missing target constructor"
+    (checkInstalledAssociation combinedSource
+      ⟨combinedTarget.consts.filter (fun entry => entry.name != punitUnitName)⟩ id == some false)
+  let unknownName := sourceName `UnknownComparison
+  let unknownSource : Env := ⟨[.axiomInfo ⟨unknownName, [],
+    .letE (.sort .zero) (.sort .zero) (.bvar 0)⟩]⟩
+  let unknownTarget : Env := ⟨[.axiomInfo ⟨unknownName, [], .sort .zero⟩]⟩
+  require "unavailable comparison survives Boolean projection"
+    (checkInstalledAssociation unknownSource unknownTarget id == none)
+  require "missing association is definite certificate refusal"
+    (checkInstalledAssociation unknownSource ⟨[]⟩ id == some false)
+  IO.println "installed capabilities: independent Nat/PUnit/combined folds; 44 association controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 
