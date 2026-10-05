@@ -37,6 +37,142 @@ noncomputable def StrongInstalledModel.public {V : Type u} [Kernel.SetTheory V]
     {env : Kernel.Env} (strong : StrongInstalledModel V env) : Kernel.Model V env :=
   Kernel.Model.Model.ofEnvModelM strong.internal
 
+/-- Interpretation-level name and universe selection. A many-to-one map
+does not select an arbitrary reverse representative: every source name has
+its own explicit target instance. Its connection to the checked source map
+and actual installation streams is a separate association obligation. -/
+structure PullbackMap where
+  name : Kernel.Name → Kernel.Name
+  levels : Kernel.Name → (Kernel.Name → Nat) → (Kernel.Name → Nat)
+
+def PullbackMap.values {V : Type u} (map : PullbackMap)
+    (target : Kernel.Name → (Kernel.Name → Nat) → V) : Kernel.Name → (Kernel.Name → Nat) → V :=
+  fun name levels => target (map.name name) (map.levels name levels)
+
+/-- Selected target parameters must depend only on the actual source
+member's universe telescope. Missing/unrelated ambient parameters cannot
+silently affect a pulled-back source constant. -/
+def PullbackMap.LevelLocality (map : PullbackMap) (sourceEnv targetEnv : Kernel.Env) : Prop :=
+  ∀ name sourceInfo, sourceEnv.find? name = some sourceInfo →
+    ∃ targetInfo, targetEnv.find? (map.name name) = some targetInfo ∧
+      ∀ first second : Kernel.Name → Nat,
+        (∀ parameter ∈ sourceInfo.toConstantVal.levelParams, first parameter = second parameter) →
+        ∀ parameter ∈ targetInfo.toConstantVal.levelParams,
+          map.levels name first parameter = map.levels name second parameter
+
+theorem StrongInstalledModel.value_params {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    {name : Kernel.Name} {info : Kernel.ConstantInfo} (lookup : env.find? name = some info)
+    (first second : Kernel.Name → Nat)
+    (agree : ∀ parameter ∈ info.toConstantVal.levelParams, first parameter = second parameter) :
+    strong.public.cval name first = strong.public.cval name second := by
+  change Kernel.Semantics.interp V (fun _ => Kernel.SetTheory.empty) (strong.internal.base2.acval name first) =
+    Kernel.Semantics.interp V (fun _ => Kernel.SetTheory.empty) (strong.internal.base2.acval name second)
+  rw [strong.internal.base2.acval_params name info lookup first second agree]
+
+theorem PullbackMap.values_params {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (map : PullbackMap) (target : StrongInstalledModel V targetEnv)
+    (locality : map.LevelLocality sourceEnv targetEnv)
+    {name : Kernel.Name} {info : Kernel.ConstantInfo} (lookup : sourceEnv.find? name = some info)
+    (first second : Kernel.Name → Nat)
+    (agree : ∀ parameter ∈ info.toConstantVal.levelParams, first parameter = second parameter) :
+    map.values target.public.cval name first = map.values target.public.cval name second := by
+  obtain ⟨targetInfo, targetLookup, selection⟩ := locality name info lookup
+  exact target.value_params targetLookup _ _ (selection first second agree)
+
+/-- Exact semantic premises of the public model pull-back. In particular,
+types are related to actual target members and False/Eq are related to the
+target model's pinned interpretations, not just to similarly spelled names.
+The source interpretation is defined from the target, never independently
+chosen and subsequently asserted equal to it. -/
+structure PullbackTypeEvidence {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} (target : Kernel.Model V targetEnv)
+    (sourceEnv : Kernel.Env) (map : PullbackMap) : Prop where
+  member : ∀ sourceConstant ∈ sourceEnv.consts, ∀ sourceLevels,
+    ∃ targetConstant, targetConstant ∈ targetEnv.consts ∧
+      targetConstant.name = map.name sourceConstant.name ∧
+      InstalledExprImage (map.values target.cval) target.cval sourceEnv targetEnv
+        sourceLevels (map.levels sourceConstant.name sourceLevels)
+        sourceConstant.toConstantVal.type targetConstant.toConstantVal.type
+  falseImage : ∀ sourceLevels, ∃ targetLevels,
+    InstalledExprImage (map.values target.cval) target.cval sourceEnv targetEnv
+      sourceLevels targetLevels (.const Kernel.falseName []) (.const Kernel.falseName [])
+  equalityImage : ∀ sourceLevel sourceLevels, ∃ targetLevel targetLevels,
+    Kernel.Level.eval sourceLevels sourceLevel = Kernel.Level.eval targetLevels targetLevel ∧
+    InstalledExprImage (map.values target.cval) target.cval sourceEnv targetEnv
+      sourceLevels targetLevels (.const Kernel.eqName [sourceLevel]) (.const Kernel.eqName [targetLevel])
+
+/-- The public source model, constructed from the target interpretation.
+This generic semantic theorem does not discharge the actual source fold,
+raw-source/installed correspondence, or strong recursor/capability laws. -/
+noncomputable def PullbackTypeEvidence.model {V : Type u} [Kernel.SetTheory V]
+    {targetEnv sourceEnv : Kernel.Env} {target : Kernel.Model V targetEnv} {map : PullbackMap}
+    (evidence : PullbackTypeEvidence target sourceEnv map) : Kernel.Model V sourceEnv where
+  cval := map.values target.cval
+  mem := by
+    intro constant present levels valuation
+    obtain ⟨targetConstant, targetPresent, targetName, image⟩ := evidence.member constant present levels
+    obtain ⟨type, typeRead, member⟩ := target.mem targetConstant targetPresent
+      (map.levels constant.name levels) valuation
+    refine ⟨type, image.symm.denotes typeRead, ?_⟩
+    simpa only [PullbackMap.values, targetName] using member
+  false_empty := by
+    intro levels valuation value read
+    obtain ⟨targetLevels, image⟩ := evidence.falseImage levels
+    exact target.false_empty targetLevels valuation value (image.denotes read)
+  eq_equality := by
+    intro level levels valuation equality type left right read typeMember leftMember rightMember
+    obtain ⟨targetLevel, targetLevels, evaluation, image⟩ := evidence.equalityImage level levels
+    apply target.eq_equality targetLevel targetLevels valuation equality type left right
+      (image.denotes read) _ leftMember rightMember
+    simpa only [← evaluation] using typeMember
+
+/-- Definition values in addition to the public type model. This deliberately
+does not call itself a strong model: fired recursor/capability laws are still
+required for the full source pull-back theorem. -/
+structure PublicValueModel (V : Type u) [Kernel.SetTheory V] (env : Kernel.Env) where
+  model : Kernel.Model V env
+  parameters : ∀ name info, env.find? name = some info → ∀ first second : Kernel.Name → Nat,
+    (∀ parameter ∈ info.toConstantVal.levelParams, first parameter = second parameter) →
+      model.cval name first = model.cval name second
+  definitions : ∀ header value hint,
+    Kernel.ConstantInfo.defnInfo header value hint ∈ env.consts →
+      ∀ levels valuation, Kernel.Denotes model.cval env levels valuation value
+        (model.cval header.name levels)
+
+structure PullbackDefinitionEvidence {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    (sourceEnv : Kernel.Env) (map : PullbackMap) : Prop where
+  definition : ∀ header value hint,
+    Kernel.ConstantInfo.defnInfo header value hint ∈ sourceEnv.consts → ∀ sourceLevels,
+    ∃ targetHeader targetValue targetHint,
+      Kernel.ConstantInfo.defnInfo targetHeader targetValue targetHint ∈ targetEnv.consts ∧
+      targetHeader.name = map.name header.name ∧
+      InstalledExprImage (map.values target.public.cval) target.public.cval sourceEnv targetEnv
+        sourceLevels (map.levels header.name sourceLevels) value targetValue
+
+/-- Definition equations are pulled back from actual target definitions.
+Opaque/theorem checking bodies supply no premise of this kind. Source
+admission and full annotation correspondence remain separate obligations. -/
+noncomputable def PullbackDefinitionEvidence.valueModel {V : Type u} [Kernel.SetTheory V]
+    {targetEnv sourceEnv : Kernel.Env} {target : StrongInstalledModel V targetEnv} {map : PullbackMap}
+    (types : PullbackTypeEvidence target.public sourceEnv map)
+    (values : PullbackDefinitionEvidence target sourceEnv map)
+    (locality : map.LevelLocality sourceEnv targetEnv) : PublicValueModel V sourceEnv where
+  model := types.model
+  parameters := by
+    intro name info lookup first second agree
+    exact map.values_params target locality lookup first second agree
+  definitions := by
+    intro header value hint present levels valuation
+    obtain ⟨targetHeader, targetValue, targetHint, targetPresent, targetName, image⟩ :=
+      values.definition header value hint present levels
+    have read := image.symm.denotes
+      (target.definition_values targetHeader targetValue targetHint targetPresent
+        (map.levels header.name levels) valuation)
+    simpa only [PullbackTypeEvidence.model, PullbackMap.values, targetName,
+      StrongInstalledModel.public] using read
+
 private theorem noFvars_below_zero :
     ∀ {e : Kernel.Expr}, e.hasFvar = false → Kernel.Expr.fvarsBelow 0 e := by
   intro e
@@ -2796,6 +2932,35 @@ theorem SourceInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
     {source : Source} {roots : List Lean.Name} (installed : SourceInstallation source roots) :
     Nonempty (StrongInstalledModel V installed.env) :=
   strongInstalledModel_exists V [] installed.declarations installed.env installed.checked
+
+/-- Pull-back on the independently installed direct source. The exact source
+fold remains visible and the semantic image premises are not inferred from
+it. This result supplies types/definition values, not the remaining strong
+recursor laws or the end-to-end S association. -/
+theorem SourceInstallation.target_value_pullback {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name} (installed : SourceInstallation source roots)
+    {targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv) (map : PullbackMap)
+    (types : PullbackTypeEvidence target.public installed.env map)
+    (values : PullbackDefinitionEvidence target installed.env map)
+    (locality : map.LevelLocality installed.env targetEnv) :
+    Kernel.Cached.checkDecls .verified [] installed.declarations = .ok installed.env ∧
+      ∃ pulled : PublicValueModel V installed.env,
+        pulled.model.cval = map.values target.public.cval :=
+  ⟨installed.checked, values.valueModel types locality, rfl⟩
+
+/-- The normalized source route remains a distinct input receipt, retaining
+its immutable original stream and checked normalization evidence. This does
+not identify that receipt with the direct/Sublist installation route. -/
+theorem SourceNormalizedInstallation.target_value_pullback {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots)
+    {targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv) (map : PullbackMap)
+    (types : PullbackTypeEvidence target.public installed.env map)
+    (values : PullbackDefinitionEvidence target installed.env map)
+    (locality : map.LevelLocality installed.env targetEnv) :
+    Kernel.Cached.checkDecls .verified [] installed.declarations.toArray = .ok installed.env ∧
+      ∃ pulled : PublicValueModel V installed.env,
+        pulled.model.cval = map.values target.public.cval :=
+  ⟨installed.checked, values.valueModel types locality, rfl⟩
 
 /-- Inserting subject and proposition binders must leave references to earlier
 fields fixed while moving references to original parameters by two slots. -/
