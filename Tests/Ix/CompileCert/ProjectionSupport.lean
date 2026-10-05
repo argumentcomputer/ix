@@ -41,10 +41,8 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
     let mappings ← input.source.declarations.mapM fun ci => do
       let targetName ← IO.ofExcept (cx.name ci.name)
       pure (sourceName ci.name, targetName)
-    let names (name : _root_.Ix.Kernel.Name) :=
-      match mappings.find? (fun pair => decide (pair.1 = name)) with
-      | some pair => pair.2
-      | none => name
+    let helperMappings ← IO.ofExcept (proposeSourceHelperBindings installed.modelProposal mappings)
+    let names := sourceAndHelperNames mappings helperMappings
     let support ← IO.ofExcept (([equation, .thmDecl coverage.header coverage.value]).mapM
       (proposeRenamedSupport names))
     let bundle ← match checkAdmittedSupport accepted.toAdmittedArtifact support.toArray with
@@ -54,6 +52,17 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
       (projection.site.owner.numParams + projection.site.ctor.numFields)
     IO.println s!"SUPPORT {root}: source={coverage.env.consts.length}, target={bundle.env.consts.length}, original-preserved={decide (InstalledRowsPreserved accepted.env bundle.env)}, equation-frame={endpoint.isSome}"
     IO.println s!"CHECKS names={decide (SemanticNamesAgree accepted names)} telescopes={checkTelescopes coverage.env bundle.env names} types={checkInstalledTypes coverage.env bundle.env names} definitions={checkInstalledDefinitions coverage.env bundle.env names} caps={checkInstalledCapabilities coverage.env bundle.env names} recursors={checkInstalledRecursors coverage.env bundle.env names} constructors={checkInstalledConstructors coverage.env bundle.env names} aggregate={repr (checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names)}"
+    for entry in coverage.env.consts do
+      let mapped := names entry.name
+      match bundle.env.find? mapped with
+      | none => IO.println s!"MISSING source={entry.name} mapped={mapped}"
+      | some targetEntry =>
+        unless entry.toConstantVal.levelParams.length == targetEntry.toConstantVal.levelParams.length do
+          IO.println s!"ARITY source={entry.name} source-levels={repr entry.toConstantVal.levelParams} target-levels={repr targetEntry.toConstantVal.levelParams}"
+        let typeCheck := checkInstalledMemberExpr coverage.env bundle.env names entry.name
+          entry.toConstantVal.type targetEntry.toConstantVal.type
+        unless typeCheck == some true do
+          IO.println s!"TYPE source={entry.name} mapped={mapped} result={repr typeCheck} source-type={repr entry.toConstantVal.type} target-type={repr targetEntry.toConstantVal.type}"
     unless endpoint.isSome do throw (IO.userError "target equation endpoint missing")
     unless checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names == some true do
       throw (IO.userError s!"full installed support association remains unresolved for {root}")

@@ -9477,4 +9477,85 @@ theorem checkedStreams_publicSemanticModel (V : Type u) [Kernel.SetTheory V]
   exact ⟨⟨sourceStrong⟩, target,
     (checkInstalledAssociation_sound checked).semanticModel target sourceStrong.internal.base2.wf, rfl⟩
 
+/-- Exact original bindings take priority over separately proposed generated
+helpers. This is only a name proposal; the installed association checker still
+checks every source row and every compatible alias fiber. -/
+def sourceAndHelperNames (original helpers : List (Kernel.Name × Kernel.Name))
+    (name : Kernel.Name) : Kernel.Name :=
+  match original.find? (fun pair => decide (pair.1 = name)) with
+  | some pair => pair.2
+  | none => match helpers.find? (fun pair => decide (pair.1 = name)) with
+    | some pair => pair.2
+    | none => name
+
+theorem sourceAndHelperNames_original (original helpers : List (Kernel.Name × Kernel.Name))
+    (name : Kernel.Name) (pair : Kernel.Name × Kernel.Name)
+    (found : original.find? (fun pair => decide (pair.1 = name)) = some pair) :
+    sourceAndHelperNames original helpers name = pair.2 := by
+  simp [sourceAndHelperNames, found]
+
+/-- Apply a known generated-family anchor to its suffix. The caller enumerates
+the finite source-generated records first; this does not authorize arbitrary
+ambient names merely because they have a familiar prefix. -/
+def renameGeneratedSuffix (anchors : List (Kernel.Name × Kernel.Name))
+    (name : Kernel.Name) : Option Kernel.Name :=
+  match anchors.find? (fun pair => decide (pair.1 = name)) with
+  | some pair => some pair.2
+  | none => match name with
+    | .anonymous => none
+    | .str parent component => (renameGeneratedSuffix anchors parent).map (·.str component)
+    | .num parent component => (renameGeneratedSuffix anchors parent).map (·.num component)
+
+/-- Untrusted, finite helper-name proposal from the independently generated
+source model stream and its original block evidence. Auxiliary constructors
+use the modeller's exact owner/member/constructor naming recipe, rather than
+assuming that an address-labelled constructor keeps its source last component.
+No target environment is searched. Installation order, target helper existence,
+kind, telescope, values, capabilities and rules remain checked separately.
+This generator is not a totality or model-correspondence theorem. -/
+def proposeSourceHelperBindings {source : Source} (proposal : SourceModelProposal source)
+    (original : List (Kernel.Name × Kernel.Name)) : ExportM (List (Kernel.Name × Kernel.Name)) := do
+  let mapped := sourceAndHelperNames original []
+  let mut anchors := original.map fun (sourceName, targetName) =>
+    (sourceName.str "_model", targetName.str "_model")
+  let mut projections := []
+  for evidence in proposal.blocks do
+    let block := evidence.shape
+    if !Kernel.Frontend.InModel.wants block then continue
+    let some owner := block.types.head? | throw "source helper recipe has no owner"
+    let some recursor := block.recs.find? (fun r => r.cv.name == owner.cv.name.str "rec")
+      | throw "source helper recipe has no primary recursor"
+    let some (_, afterParams) := recursor.cv.type.stripPis owner.nP
+      | throw "source helper recipe parameter telescope"
+    let some (motives, _) := afterParams.stripPis recursor.nM
+      | throw "source helper recipe motive telescope"
+    let members ← Kernel.Frontend.InModel.readMems owner.cv.levelParams owner.nP
+      block.types (motives.map (·.1))
+    for member in members do
+      let recursorName ← match member.real? with
+        | some index => match block.types[index]? with
+          | some type => pure (type.cv.name.str "rec")
+          | none => throw "source helper recipe member index"
+        | none => pure (owner.cv.name.str s!"rec_{member.j + 1}")
+      let some memberRecursor := block.recs.find? (fun r => r.cv.name == recursorName)
+        | throw "source helper recipe member recursor"
+      for rule in memberRecursor.rules do
+        anchors := (Kernel.Frontend.InModel.auxCtorName owner.cv.name member.tag rule.ctor,
+          Kernel.Frontend.InModel.auxCtorName (mapped owner.cv.name) member.tag (mapped rule.ctor)) :: anchors
+    for type in block.types do
+      for constructorName in type.ctors do
+        let some constructor := block.ctors.find? (fun c => c.cv.name == constructorName)
+          | throw "source helper recipe constructor"
+        for index in List.range constructor.nF do
+          projections := (Kernel.projFnName type.cv.name index,
+            Kernel.projFnName (mapped type.cv.name) index) :: projections
+  -- Reject conflicting source keys; compatible many-to-one target fibers are
+  -- deliberately retained for the full per-row association checks.
+  for pair in anchors do
+    unless anchors.all (fun other => other.1 != pair.1 || other.2 == pair.2) do
+      throw "conflicting source helper recipe bindings"
+  let generated := proposal.declarations.toList.flatMap Kernel.Declaration.names
+  return projections ++ generated.filterMap (fun name =>
+    (renameGeneratedSuffix anchors name).map (name, ·))
+
 end Ix.CompileCert
