@@ -11,6 +11,18 @@ def label : SourceInstallError → String
   | .checking error position => s!"checking at {position}: {error}"
 
 def controls : List (String × (Unit → Bool)) := [
+  ("source groups cannot omit declarations", fun _ =>
+    !(validateSourceGroups Direct.choiceInput.source []).isOk),
+  ("source groups cannot duplicate identities", fun _ =>
+    match buildSourceGroups Direct.choiceInput.source with
+    | .ok groups => !(validateSourceGroups Direct.choiceInput.source (groups ++ groups)).isOk
+    | _ => false),
+  ("source group labels cannot hide a different actual declaration", fun _ =>
+    match buildSourceGroups Direct.choiceInput.source with
+    | .ok [group] =>
+      let altered := { group with declaration := .axiomDecl ⟨sourceName `foreign, [], .sort .zero⟩ }
+      !(validateSourceGroups Direct.choiceInput.source [altered]).isOk
+    | _ => false),
   ("source-only definition installation", fun _ =>
     (installSource Direct.choiceInput.source [`first]).isOk),
   ("source ordering ignores supplied declaration order", fun _ =>

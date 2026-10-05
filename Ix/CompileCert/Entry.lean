@@ -60,6 +60,12 @@ theorem SourceInstallation.skels {source : Source} {roots : List Lean.Name}
       Kernel.Cached.streamSkels installed.declarations.toList :=
   Kernel.Cached.checkDecls_skels installed.checked
 
+theorem SourceInstallation.groups {source : Source} {roots : List Lean.Name}
+    (installed : SourceInstallation source roots) :
+    ∃ groups, exportSourceGroups source = .ok groups ∧ SourceGroupsCover source groups ∧
+      orderSourceGroups (groups.length + 1) groups [] [] = .ok installed.declarations.toList :=
+  exportSourceDeclarations_groups installed.exported
+
 structure ArtifactInput where
   limits : Limits
   records : Records

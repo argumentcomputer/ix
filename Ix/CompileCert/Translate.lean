@@ -715,7 +715,7 @@ def exportSourceInductive (s : Source) (owner : Lean.InductiveVal) : ExportM Sou
   names := names ++ recNames
   return ⟨names, ← sourceGroupDependencies s names, .indDecl (types ++ ctors ++ recs) owner.numParams⟩
 
-def exportSourceGroups (s : Source) : ExportM (List SourceDeclGroup) := do
+def buildSourceGroups (s : Source) : ExportM (List SourceDeclGroup) := do
   let mut groups := []
   for ci in s.declarations do
     match ci with
@@ -732,10 +732,44 @@ def exportSourceGroups (s : Source) : ExportM (List SourceDeclGroup) := do
         | .quot k cv => pure (.quotDecl k cv)
         | _ => throw "source singleton kind mismatch"
       groups := groups ++ [⟨[ci.name], ← sourceGroupDependencies s [ci.name], declaration⟩]
-  let members := groups.flatMap SourceDeclGroup.members
-  unless decide (members.Nodup) && s.names.all members.contains && members.all s.names.contains do
-    throw "source declaration groups do not cover the exact source inventory"
   return groups
+
+/-- Every source name belongs to exactly one exported declaration group.
+This concerns original identities; it imposes no target-address injectivity. -/
+def SourceGroupsCover (s : Source) (groups : List SourceDeclGroup) : Prop :=
+  let members := groups.flatMap SourceDeclGroup.members
+  members.Nodup ∧ (∀ n ∈ s.names, n ∈ members) ∧ (∀ n ∈ members, n ∈ s.names) ∧
+    ∀ group ∈ groups, group.declaration.names = group.members.map sourceName
+
+instance (s : Source) (groups : List SourceDeclGroup) : Decidable (SourceGroupsCover s groups) :=
+  inferInstanceAs (Decidable (
+    (groups.flatMap SourceDeclGroup.members).Nodup ∧
+    (∀ n ∈ s.names, n ∈ groups.flatMap SourceDeclGroup.members) ∧
+    (∀ n ∈ groups.flatMap SourceDeclGroup.members, n ∈ s.names) ∧
+    (∀ group ∈ groups, group.declaration.names = group.members.map sourceName)))
+
+def validateSourceGroups (s : Source) (groups : List SourceDeclGroup) :
+    ExportM (List SourceDeclGroup) :=
+  if SourceGroupsCover s groups then .ok groups
+  else .error "source declaration groups do not cover the exact source inventory"
+
+theorem validateSourceGroups_sound {s : Source} {proposed result : List SourceDeclGroup}
+    (accepted : validateSourceGroups s proposed = .ok result) : SourceGroupsCover s result := by
+  unfold validateSourceGroups at accepted
+  split at accepted
+  next covered => cases accepted; exact covered
+  next => contradiction
+
+def exportSourceGroups (s : Source) : ExportM (List SourceDeclGroup) := do
+  validateSourceGroups s (← buildSourceGroups s)
+
+theorem exportSourceGroups_cover {s : Source} {groups : List SourceDeclGroup}
+    (exported : exportSourceGroups s = .ok groups) : SourceGroupsCover s groups := by
+  cases built : buildSourceGroups s with
+  | error reason => simp [exportSourceGroups, built, bind, Except.bind] at exported
+  | ok proposed =>
+    exact validateSourceGroups_sound (by
+      simpa only [exportSourceGroups, built, bind, Except.bind] using exported)
 
 /-- Deterministic source-only dependency scheduling. An unresolved dependency
 or cycle is reported, never repaired by consulting target order or bodies. -/
@@ -753,6 +787,22 @@ def orderSourceGroups : Nat → List SourceDeclGroup → List Lean.Name → List
 def exportSourceDeclarations (s : Source) : ExportM (Array Kernel.Declaration) := do
   let groups ← exportSourceGroups s
   return (← orderSourceGroups (groups.length + 1) groups [] []).toArray
+
+theorem exportSourceDeclarations_groups {s : Source} {declarations : Array Kernel.Declaration}
+    (exported : exportSourceDeclarations s = .ok declarations) :
+    ∃ groups, exportSourceGroups s = .ok groups ∧ SourceGroupsCover s groups ∧
+      orderSourceGroups (groups.length + 1) groups [] [] = .ok declarations.toList := by
+  cases hg : exportSourceGroups s with
+  | error reason => simp [exportSourceDeclarations, hg, bind, Except.bind] at exported
+  | ok groups =>
+    cases ho : orderSourceGroups (groups.length + 1) groups [] [] with
+    | error reason => simp [exportSourceDeclarations, hg, ho, bind, Except.bind] at exported
+    | ok ordered =>
+      have hd : ordered.toArray = declarations := by
+        simpa only [exportSourceDeclarations, hg, ho, bind, Except.bind, pure,
+          Except.pure, Except.ok.injEq] using exported
+      subst declarations
+      exact ⟨groups, rfl, exportSourceGroups_cover hg, by simpa using ho⟩
 
 /-! ## Representation-bridge spike
 
