@@ -6417,4 +6417,80 @@ theorem checked_unit_pullback {V : Type u} [Kernel.SetTheory V]
         StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM] using right
 
 
+/-- Compare a helper's own universe instance inside its family's telescope.
+Eta evaluates constructor/projection leaves at that family assignment, not
+at an independently chosen helper assignment. Target coverage permits the
+proved family-instance locality step; no ambient valuation equality is used. -/
+def checkInstalledFamilyMember (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (owner member : Kernel.Name) : Option Bool :=
+  match source.find? member, target.find? (names member), target.find? (names owner) with
+  | some sourceMember, some targetMember, some targetOwner =>
+    if targetMember.toConstantVal.levelParams.all
+        (fun parameter => targetOwner.toConstantVal.levelParams.contains parameter) then
+      checkInstalledMemberExpr source target names owner
+        (.const member (sourceMember.toConstantVal.levelParams.map Kernel.Level.param))
+        (.const (names member) (targetMember.toConstantVal.levelParams.map Kernel.Level.param))
+    else some false
+  | _, _, _ => some false
+
+theorem checkInstalledFamilyMember_lookups {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    {owner member : Kernel.Name} {targetOwner : Kernel.ConstantInfo}
+    (ownerLookup : target.find? (names owner) = some targetOwner)
+    (checked : checkInstalledFamilyMember source target names owner member = some true) :
+    ∃ sourceMember targetMember,
+      source.find? member = some sourceMember ∧ target.find? (names member) = some targetMember ∧
+      (∀ parameter ∈ targetMember.toConstantVal.levelParams, parameter ∈ targetOwner.toConstantVal.levelParams) ∧
+      checkInstalledMemberExpr source target names owner
+        (.const member (sourceMember.toConstantVal.levelParams.map Kernel.Level.param))
+        (.const (names member) (targetMember.toConstantVal.levelParams.map Kernel.Level.param)) = some true := by
+  cases sourceLookup : source.find? member with
+  | none => simp [checkInstalledFamilyMember, sourceLookup] at checked
+  | some sourceMember =>
+    cases targetLookup : target.find? (names member) with
+    | none => simp [checkInstalledFamilyMember, sourceLookup, targetLookup] at checked
+    | some targetMember =>
+      simp only [checkInstalledFamilyMember, sourceLookup, targetLookup, ownerLookup] at checked
+      split at checked
+      next coverage =>
+        refine ⟨sourceMember, targetMember, rfl, rfl, ?_, checked⟩
+        intro parameter present
+        have row := List.all_eq_true.mp coverage parameter present
+        simpa using row
+      next => contradiction
+
+/-- Accepted owner-relative helper comparison proves its actual value at
+the concrete family universe instance. Helper aliases keep their own source
+telescope and are never resolved by choosing a reverse representative. -/
+theorem checkInstalledFamilyMember_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {owner member : Kernel.Name} {sourceOwner targetOwner : Kernel.ConstantInfo}
+    (sourceLookup : sourceEnv.find? owner = some sourceOwner)
+    (targetLookup : targetEnv.find? (names owner) = some targetOwner)
+    (checked : checkInstalledFamilyMember sourceEnv targetEnv names owner member = some true)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceOwner.toConstantVal.levelParams.length)
+    (targetArity : targetUs.length = targetOwner.toConstantVal.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval member
+      (Kernel.Level.substFn sourceLevels sourceOwner.toConstantVal.levelParams sourceUs) =
+    target.public.cval (names member)
+      (Kernel.Level.substFn targetLevels targetOwner.toConstantVal.levelParams targetUs) := by
+  obtain ⟨sourceMember, targetMember, sourceMemberLookup, targetMemberLookup, coverage, compared⟩ :=
+    checkInstalledFamilyMember_lookups targetLookup checked
+  let sourceInstance := Kernel.Level.substFn sourceLevels sourceOwner.toConstantVal.levelParams sourceUs
+  have image := checkInstalledMemberExpr_sound target association sourceLookup compared sourceInstance
+  have direct : (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval member sourceInstance =
+      target.public.cval (names member)
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels owner sourceInstance) := by
+    have sourceRead := denotes_self_instance (V := V)
+      (values := (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      (levels := sourceInstance) (ρ := fun _ => Kernel.SetTheory.empty) sourceMemberLookup
+    exact Kernel.Denotes_functional (image.denotes sourceRead) (denotes_self_instance targetMemberLookup)
+  apply direct.trans
+  apply target.value_params targetMemberLookup
+  intro parameter present
+  exact PullbackMap.fromEnvs_instance association sourceLookup targetLookup sourceLevels targetLevels
+    sourceUs targetUs sourceArity targetArity universes parameter (coverage parameter present)
+
 end Ix.CompileCert

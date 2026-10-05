@@ -74,7 +74,32 @@ def run : IO Unit := do
     | .error _ => throw (IO.userError "target PUnit fold failed")
   require "actual PUnit telescope" (checkTelescopes sourceUnit targetUnit id)
   require "actual PUnit capability association" (checkInstalledCapabilities sourceUnit targetUnit id)
-  IO.println "installed capabilities: independent Nat/PUnit folds; 24 lookup/field/alias controls passed"
+  require "actual PUnit constructor at family levels"
+    (checkInstalledFamilyMember sourceUnit targetUnit id punitName punitUnitName == some true)
+  let u := sourceName `u
+  let v := sourceName `v
+  let a := sourceName `a
+  let b := sourceName `b
+  let extra := sourceName `extra
+  let sourceOwner := sourceName `SourceOwner
+  let targetOwner := sourceName `TargetOwner
+  let sourceHelper := sourceName `SourceHelper
+  let targetHelper := sourceName `TargetHelper
+  let familyNames (n : Name) := if n = sourceOwner then targetOwner else if n = sourceHelper then targetHelper else n
+  let familySource : Env := ⟨[.axiomInfo ⟨sourceOwner, [u, v], .sort .zero⟩,
+    .axiomInfo ⟨sourceHelper, [v, u], .sort .zero⟩]⟩
+  let familyTarget (parameters : List Name) : Env := ⟨[.axiomInfo ⟨targetOwner, [a, b], .sort .zero⟩,
+    .axiomInfo ⟨targetHelper, parameters, .sort .zero⟩]⟩
+  require "reordered helper telescope at family levels"
+    (checkInstalledFamilyMember familySource (familyTarget [b, a]) familyNames sourceOwner sourceHelper == some true)
+  require "same arity wrong family-level order"
+    (checkInstalledFamilyMember familySource (familyTarget [a, b]) familyNames sourceOwner sourceHelper != some true)
+  require "out-of-family target parameter"
+    (checkInstalledFamilyMember familySource (familyTarget [b, extra]) familyNames sourceOwner sourceHelper != some true)
+  require "missing mapped family helper"
+    (checkInstalledFamilyMember familySource ⟨[.axiomInfo ⟨targetOwner, [a, b], .sort .zero⟩]⟩
+      familyNames sourceOwner sourceHelper != some true)
+  IO.println "installed capabilities: independent Nat/PUnit folds; 29 lookup/field/alias/level controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 
