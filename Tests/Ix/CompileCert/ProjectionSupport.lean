@@ -1,5 +1,6 @@
 import Tests.Ix.CompileCert.SourceModels
 import Tests.Ix.CompileCert.Stored
+import Ix.CompileCert.AnnotEntry
 
 namespace Tests.Ix.CompileCert.ProjectionSupport
 
@@ -51,8 +52,10 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
     let endpoint := readInstalledEquationFrame bundle.env (names receipt.data.equation.name)
       (projection.site.owner.numParams + projection.site.ctor.numFields)
     let originalIdentity := checkInstalledAssociation accepted.env bundle.env id
+    let annotated := checkSupportedArtifactAnnotatedAssociation accepted bundle coverage.env names
     IO.println s!"SUPPORT {root}: source={coverage.env.consts.length}, target={bundle.env.consts.length}, original-preserved={decide (InstalledRowsPreserved accepted.env bundle.env)}, equation-frame={endpoint.isSome}"
     IO.println s!"ORIGINAL-SEMANTIC-IDENTITY {root}: {repr originalIdentity}"
+    IO.println s!"ANNOTATED-CHECKS {root}: reserved={checkReservedNameMap coverage.env names} type-literals={checkTypeLiteralSupport coverage.env bundle.env} definition-literals={checkDefinitionLiteralSupport coverage.env bundle.env} endpoint={repr annotated}"
     IO.println s!"REMAINING-CHECKS {root}: False={checkInstalledPin coverage.env names _root_.Ix.Kernel.falseName 0} Eq={checkInstalledPin coverage.env names _root_.Ix.Kernel.eqName 1} availability={repr (checkInstalledComparisonAvailability coverage.env bundle.env names)} eta={repr (checkInstalledEtaAssociations coverage.env bundle.env names)} universe-links={repr (checkInstalledRuleLevelLinks coverage.env bundle.env names)}"
     IO.println s!"CHECKS names={decide (SemanticNamesAgree accepted names)} telescopes={checkTelescopes coverage.env bundle.env names} types={checkInstalledTypes coverage.env bundle.env names} definitions={checkInstalledDefinitions coverage.env bundle.env names} caps={checkInstalledCapabilities coverage.env bundle.env names} recursors={checkInstalledRecursors coverage.env bundle.env names} constructors={checkInstalledConstructors coverage.env bundle.env names} aggregate={repr (checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names)}"
     for entry in coverage.env.consts do
@@ -71,6 +74,14 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
       throw (IO.userError "original artifact semantic identity remains unresolved")
     unless checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names == some true do
       throw (IO.userError s!"full installed support association remains unresolved for {root}")
+    match checked : checkSupportedArtifactAnnotatedAssociation accepted bundle coverage.env names with
+    | some true =>
+      have _modelCore : ∀ (V : Type) [inst : _root_.Ix.Kernel.SetTheory V],
+          Nonempty (AnnotatedModelCore V coverage.env) := by
+        intro V inst
+        exact (coverage.annotated_modelCore V accepted bundle names checked).2
+      IO.println s!"PASS: actual annotated model-core endpoint {root}"
+    | result => throw (IO.userError s!"actual annotated model-core endpoint failed for {root}: {repr result}")
 
 def run (path : String) : IO Unit := do
   let bytes ← IO.FS.readBinFile path

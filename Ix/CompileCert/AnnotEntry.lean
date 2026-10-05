@@ -85,4 +85,26 @@ theorem checkedAnnotatedAssociation_core {V : Type u} [Kernel.SetTheory V]
     Nonempty (AnnotatedModelCore V source) :=
   ⟨(checkAnnotatedAssociation_sound checked).modelCore sourceModel.internal.base2 targetModel⟩
 
+/-- Preserve the accepted immutable-source/map association while checking the
+actual independently installed normalized source and admitted support target. -/
+def checkSupportedArtifactAnnotatedAssociation {input : Input} (accepted : AcceptedAssociation input)
+    {support : Array Kernel.Declaration} (bundle : AdmittedSupport accepted.toAdmittedArtifact support)
+    (source : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Option Bool :=
+  bothChecks (checkSupportedArtifactInstalledAssociation accepted bundle source names)
+    (checkAnnotatedAssociation source bundle.env names)
+
+theorem SourceConstructorCoverChecked.annotated_modelCore (V : Type u) [Kernel.SetTheory V]
+    {input : Input} {installed : SourceNormalizedInstallation input.source input.roots}
+    {site : SourceProjectionSite input.source} (coverage : SourceConstructorCoverChecked installed site)
+    (accepted : AcceptedAssociation input) {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport accepted.toAdmittedArtifact support) (names : Kernel.Name → Kernel.Name)
+    (checked : checkSupportedArtifactAnnotatedAssociation accepted bundle coverage.env names = some true) :
+    SemanticNamesAgree accepted names ∧ Nonempty (AnnotatedModelCore V coverage.env) := by
+  obtain ⟨original, annotated⟩ := bothChecks_true checked
+  obtain ⟨nameCheck, _⟩ := bothChecks_true original
+  obtain ⟨sourceModel⟩ := coverage.strong_model V
+  obtain ⟨targetModel⟩ := bundle.strong_model V
+  exact ⟨of_decide_eq_true (Option.some.inj nameCheck),
+    checkedAnnotatedAssociation_core sourceModel targetModel annotated⟩
+
 end Ix.CompileCert
