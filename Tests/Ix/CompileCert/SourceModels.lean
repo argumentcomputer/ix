@@ -220,7 +220,8 @@ def runCoverage : IO Unit := do
 
 def runProjectionSemantics : IO Unit := do
   let env ← getCompileEnv #[Compiled.prefixName]
-  for root in [Compiled.prefixName ++ `Node.val, Compiled.prefixName ++ `Node.kids] do
+  for root in [Compiled.prefixName ++ `Node.val, Compiled.prefixName ++ `Node.kids,
+      Compiled.prefixName ++ `PolyNode.val, Compiled.prefixName ++ `PolyNode.kids] do
     let captured ← IO.ofExcept (captureCone env.find? [root] 256)
     let installed ← match installSourceNormalized captured.source [root] with
       | .ok installed => pure installed
@@ -246,6 +247,7 @@ def runProjectionSemantics : IO Unit := do
       | .error why => throw (IO.userError s!"projection coverage {root}: {label why}")
     let constructor ← IO.ofExcept (checkSourceCoverInstalledShape coverage)
     let receipt ← IO.ofExcept (checkSourceProjectionInstalled projection constructor)
+    let function ← IO.ofExcept (checkSourceProjectionFunction receipt)
     IO.println s!"PROJECTION-SEMANTICS {root}: field={projection.site.field}, originalFields={projection.site.ctor.numFields}, exact admitted annotated equation and source receipt"
     for (control, bad) in
         [("wrong selected field", {receipt.data with right := .bvar 999}),
@@ -257,6 +259,16 @@ def runProjectionSemantics : IO Unit := do
            {receipt.data.equation with levelParams := [.anonymous]}})] do
       if decide (SourceProjectionInstalledShape projection constructor.data bad) then
         throw (IO.userError s!"projection semantic receipt accepted {control}")
+      IO.println s!"PASS: {control} refused"
+    let wrongRegime := if function.data.binder.pw == .never then
+      _root_.Ix.Kernel.PropWhen.ifAllZero [] else .never
+    for (control, bad) in
+        [("changed actual function regime", {function.data with binder := ⟨wrongRegime⟩}),
+         ("changed actual result type", {function.data with result := .bvar 999}),
+         ("extra parameter domain", {function.data with parameters :=
+           (.sort .zero, ⟨.never⟩) :: function.data.parameters})] do
+      if decide (SourceProjectionFunctionShape receipt bad) then
+        throw (IO.userError s!"projection function receipt accepted {control}")
       IO.println s!"PASS: {control} refused"
 
 end Tests.Ix.CompileCert.SourceModels

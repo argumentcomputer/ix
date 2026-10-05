@@ -611,6 +611,33 @@ theorem original_projection_extensional {source : Source} (site : SourceProjecti
     simpa only [sameSubject] using computation other otherTyped
   exact selected.symm.trans otherComputed.symm
 
+/-- A semantic selector defined entirely by the original constructor/field
+relation. It does not inspect or apply a lowered projection. The off-carrier
+fallback is irrelevant to the typed abstraction and is never an export rule. -/
+noncomputable def originalProjectionSelection {source : Source} (site : SourceProjectionSite source)
+    {V : Type u} [Kernel.SetTheory V] (values : Kernel.Name → (Kernel.Name → Nat) → V)
+    (levels : Kernel.Name → Nat) (parameters : List V)
+    (valid : SourceFieldValues site V → Prop) (subject : V) : V := by
+  classical
+  exact if present : ∃ fields, valid fields ∧
+      originalConstructorValue site values levels parameters fields = subject then
+    originalSelectedField site (Classical.choose present)
+  else Kernel.SetTheory.pt
+
+theorem originalProjectionSelection_reading {source : Source} (site : SourceProjectionSite source)
+    {V : Type u} [Kernel.SetTheory V] (values : Kernel.Name → (Kernel.Name → Nat) → V)
+    (levels : Kernel.Name → Nat) (parameters : List V)
+    (valid : SourceFieldValues site V → Prop) (subject : V)
+    (present : ∃ fields, valid fields ∧
+      originalConstructorValue site values levels parameters fields = subject) :
+    OriginalProjectionValue site values levels parameters valid subject
+      (originalProjectionSelection site values levels parameters valid subject) := by
+  classical
+  unfold originalProjectionSelection
+  rw [dif_pos present]
+  exact ⟨Classical.choose present, (Classical.choose_spec present).1,
+    (Classical.choose_spec present).2, rfl⟩
+
 open Kernel.SetTheory in
 /-- Function-value equality follows only with typed product membership.
 The same proof covers graph functions and the proof-point regime. -/

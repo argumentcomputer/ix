@@ -22,4 +22,9 @@ structure Node where
 already checked Node/Nat cone; overloaded numeral elaboration adds OfNat. -/
 def Node.zero (_n : Node) : Nat := Nat.zero
 
+/-- Universe/parameter-sensitive source lowering control. -/
+structure PolyNode (α : Type u) where
+  val : α
+  kids : List (PolyNode α)
+
 end Tests.Ix.CompileCert.BlockDefs
