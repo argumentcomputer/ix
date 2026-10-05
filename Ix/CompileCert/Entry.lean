@@ -8108,4 +8108,211 @@ theorem InstalledRuleFrame.checked_nested_pins {V : Type u} [Kernel.SetTheory V]
     pinWf.2.1 (fun levels => (pinImages levels).get position bound)
     sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
 
+/-- Public source-side firing conditions on value representatives. These
+are semantic reduction premises, not compiler-domain membership conditions.
+Nested comparison is a whole spine judgment, so pin length is derived rather
+than added as an unrelated bound assumption. -/
+structure SourceRuleComparisons {V : Type u} [Kernel.SetTheory V]
+    (values : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env) (levels : Kernel.Name → Nat)
+    {name : Kernel.Name} {index : Nat} (frame : InstalledRuleFrame env name index)
+    (universes constructorUniverses : List Kernel.Level) (valuation : Nat → V)
+    (argumentExpressions fieldExpressions : List Kernel.Expr) (arguments fields : List V) : Prop where
+  argumentCount : arguments.length = frame.major
+  fieldCount : fields.length = frame.rule.ctorParams + frame.rule.nfields
+  plain : frame.rule.paramsBlind = false → frame.rule.fire = .plain →
+    fields.take frame.rule.ctorParams = arguments.take frame.rule.ctorParams
+  nested : ∀ nestedLevels pins, frame.rule.fire = .nested nestedLevels pins →
+    DenotesSpine values env levels valuation
+      (pins.map fun pin => Kernel.Expr.instSeqLift (argumentExpressions.take frame.rulePrefix) (frame.rulePrefix - 1)
+        (pin.instantiateLevelParams frame.header.levelParams universes)) (fields.take frame.rule.ctorParams)
+  indices : ∀ residual, DenotedApplication values env levels valuation
+    (frame.constructor.type.instantiateLevelParams frame.constructor.levelParams constructorUniverses)
+    fieldExpressions fields residual →
+    ∃ head indices indexValues, residual = Kernel.Expr.mkAppN head indices ∧
+      DenotesSpine values env levels valuation indices indexValues ∧
+      indexValues.drop frame.rule.ctorParams = arguments.drop frame.rulePrefix
+
+open Kernel.Semantics Kernel.Model in
+/-- Assemble the actual target fired application from source semantic
+conditions and exact installed checks. All target scope/grading, residual,
+plain/nested/index and typed-application premises are derived in this proof. -/
+theorem RuleTupleRepresentation.checked_application {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    {target : StrongInstalledModel V targetEnv} {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    {targetFrame : InstalledRuleFrame targetEnv (names name) index}
+    {targetLevels : Kernel.Name → Nat} {universes constructorUniverses : List Kernel.Level}
+    {arguments fields : List V}
+    (representation : RuleTupleRepresentation target targetLevels targetFrame universes constructorUniverses arguments fields)
+    (universeCheck : checkInstalledRuleUniverses targetEnv (names name) index universes constructorUniverses = some true)
+    (sourceLevels : Kernel.Name → Nat) (sourceUs sourceConstructorUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceFrame.header.levelParams.length)
+    (sourceConstructorArity : sourceConstructorUs.length = sourceFrame.constructor.levelParams.length)
+    (universeImage : sourceUs.map (Kernel.Level.eval sourceLevels) = universes.map (Kernel.Level.eval targetLevels))
+    (constructorUniverseImage : sourceConstructorUs.map (Kernel.Level.eval sourceLevels) =
+      constructorUniverses.map (Kernel.Level.eval targetLevels))
+    {valuation finalValuation : Nat → V} {sourceResult : Kernel.Expr}
+    (sourceTyped : InstalledTelescope ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels valuation
+      (sourceFrame.constructor.type.instantiateLevelParams sourceFrame.constructor.levelParams sourceConstructorUs)
+      fields finalValuation sourceResult)
+    (conditions : SourceRuleComparisons ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels sourceFrame sourceUs sourceConstructorUs representation.valuation
+      ((argumentVariables representation.depth).take arguments.length)
+      ((argumentVariables representation.depth).drop arguments.length) arguments fields) :
+    ∃ application : PublicRecursorApplication target targetLevels targetFrame.header targetFrame.major
+        targetFrame.rulePrefix targetFrame.rule universes,
+      application.valuation = representation.valuation ∧
+      application.depth = representation.depth ∧
+      application.argumentExpressions = representation.argumentExpressions ∧
+      application.fieldExpressions = representation.fieldExpressions ∧
+      application.constructor = targetFrame.constructor ∧
+      application.constructorUniverses = constructorUniverses := by
+  obtain ⟨majorAgreement, prefixAgreement, images⟩ := sourceFrame.checked_images target association recursors targetFrame
+  let image := images (fun _ => 0)
+  have header := image.header
+  obtain ⟨arity, constructorArity, selection⟩ := targetFrame.checked_universes universeCheck
+  have ordered := (target.recursor_rule targetLevels (names name) targetFrame.header targetFrame.major targetFrame.rulePrefix
+    targetFrame.rules targetFrame.recursorLookup targetFrame.rule (List.mem_of_getElem? targetFrame.ruleLookup) targetFrame.fires).1
+  have argumentLength : representation.arguments.length = arguments.length := by
+    simpa only [List.length_map] using congrArg List.length representation.argumentValuesEq
+  have fieldLength : representation.fields.length = fields.length := by
+    simpa only [List.length_map] using congrArg List.length representation.fieldValuesEq
+  have argumentCount : arguments.length = targetFrame.major := conditions.argumentCount.trans majorAgreement
+  have fieldCount : fields.length = targetFrame.rule.ctorParams + targetFrame.rule.nfields := by
+    simpa only [header.2.1, header.2.2.1] using conditions.fieldCount
+  have indexPin := representation.checked_index_pin sourceWf association types sourceFrame header prefixAgreement
+    argumentCount ordered sourceLevels sourceConstructorUs sourceConstructorArity constructorArity constructorUniverseImage
+    sourceTyped conditions.indices
+  let application : PublicRecursorApplication target targetLevels targetFrame.header targetFrame.major
+      targetFrame.rulePrefix targetFrame.rule universes := {
+    constructor := targetFrame.constructor,
+    constructorParams := targetFrame.constructorParams, constructorFields := targetFrame.constructorFields,
+    constructorLookup := targetFrame.constructorLookup, constructorUniverses := constructorUniverses,
+    constructorArity := constructorArity, depth := representation.depth, valuation := representation.valuation,
+    argumentExpressions := representation.argumentExpressions, fieldExpressions := representation.fieldExpressions,
+    arguments := representation.arguments, fields := representation.fields,
+    argumentReadings := representation.argumentReadings, fieldReadings := representation.fieldReadings,
+    argumentCount := argumentLength.trans argumentCount,
+    fieldCount := fieldLength.trans fieldCount,
+    universeSelection := selection targetLevels,
+    plainParameters := by
+      intro blind plain
+      have sourcePlain := image.fire.plain_iff.mpr plain
+      have sourceBlind : sourceFrame.rule.paramsBlind = false := by rw [header.2.2.2.2.2]; exact blind
+      have equation := conditions.plain sourceBlind sourcePlain
+      rw [header.2.2.1] at equation
+      intro position bound belowMajor
+      exact representation.plain_parameters targetFrame.rule.ctorParams (by omega) equation position bound
+        (by omega),
+    nestedParameters := by
+      intro nestedLevels pins nested position belowConstructor pin reading
+      obtain ⟨sourceNestedLevels, sourcePins, sourceShape⟩ := image.fire.nested_source nested
+      have comparisons := conditions.nested sourceNestedLevels sourcePins sourceShape
+      have sourceFieldBound : sourceFrame.rule.ctorParams ≤ fields.length := by
+        have count := conditions.fieldCount; omega
+      have sourcePinCount : sourcePins.length = sourceFrame.rule.ctorParams := by
+        simpa only [List.length_map, List.length_take, Nat.min_eq_left sourceFieldBound] using comparisons.length
+      have sourceBound : position < sourcePins.length := by rw [sourcePinCount, header.2.2.1]; exact belowConstructor
+      have fieldBound : position < fields.length := by omega
+      obtain ⟨pinLengths, pinImages⟩ := sourceFrame.checked_nested_pins target association recursors targetFrame
+        sourceShape nested sourceLevels targetLevels sourceUs universes sourceArity arity universeImage
+      have selected := comparisons.get position (by simp only [List.length_take]; omega)
+      have sourceEquation : Kernel.Denotes
+          ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv sourceLevels
+          representation.valuation
+          (Kernel.Expr.instSeqLift (((argumentVariables representation.depth).take arguments.length).take targetFrame.rulePrefix)
+            (targetFrame.rulePrefix - 1)
+            ((sourcePins.getD position default).instantiateLevelParams sourceFrame.header.levelParams sourceUs)) fields[position] := by
+        simpa only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem sourceBound,
+          Option.map_some, Option.getD_some, List.getElem_take, prefixAgreement] using selected
+      exact representation.nested_parameter arity constructorArity (by omega) nestedLevels pins nested position
+        belowConstructor (by omega) fieldBound _ sourceEnv sourceLevels _ (pinImages position sourceBound)
+        sourceEquation pin reading,
+    constructorTyped := by simpa only [representation.fieldValuesEq] using representation.typed.constructorTyped,
+    recursorTyped := by simpa only [representation.argumentValuesEq, representation.fieldValuesEq] using representation.typed.recursorTyped,
+    indexPin := indexPin }
+  exact ⟨application, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- The actual admitted target fired equation is pulled back to the source
+recursor, constructor and stored RHS. The only semantic firing conditions
+are source-side; the target application's typing and comparisons are built
+by `checked_application`. This is a conditional rule theorem, not a complete
+immutable-source simulation or a domain/termination claim. -/
+theorem RuleTupleRepresentation.checked_fired {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    {target : StrongInstalledModel V targetEnv} {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    {targetFrame : InstalledRuleFrame targetEnv (names name) index}
+    {targetLevels : Kernel.Name → Nat} {universes constructorUniverses : List Kernel.Level}
+    {arguments fields : List V}
+    (representation : RuleTupleRepresentation target targetLevels targetFrame universes constructorUniverses arguments fields)
+    (universeCheck : checkInstalledRuleUniverses targetEnv (names name) index universes constructorUniverses = some true)
+    (sourceLevels : Kernel.Name → Nat) (sourceUs sourceConstructorUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceFrame.header.levelParams.length)
+    (sourceConstructorArity : sourceConstructorUs.length = sourceFrame.constructor.levelParams.length)
+    (universeImage : sourceUs.map (Kernel.Level.eval sourceLevels) = universes.map (Kernel.Level.eval targetLevels))
+    (constructorUniverseImage : sourceConstructorUs.map (Kernel.Level.eval sourceLevels) =
+      constructorUniverses.map (Kernel.Level.eval targetLevels))
+    {valuation finalValuation : Nat → V} {sourceResult : Kernel.Expr}
+    (sourceTyped : InstalledTelescope ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels valuation
+      (sourceFrame.constructor.type.instantiateLevelParams sourceFrame.constructor.levelParams sourceConstructorUs)
+      fields finalValuation sourceResult)
+    (conditions : SourceRuleComparisons ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels sourceFrame sourceUs sourceConstructorUs representation.valuation
+      ((argumentVariables representation.depth).take arguments.length)
+      ((argumentVariables representation.depth).drop arguments.length) arguments fields) :
+    ∃ value : V,
+      Kernel.Denotes ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        sourceEnv sourceLevels representation.valuation
+        (Kernel.Expr.mkAppN (.const name sourceUs)
+          (((argumentVariables representation.depth).take arguments.length) ++
+            [Kernel.Expr.mkAppN (.const sourceFrame.rule.ctor sourceConstructorUs)
+              ((argumentVariables representation.depth).drop arguments.length)])) value ∧
+      Kernel.Denotes ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        sourceEnv sourceLevels representation.valuation
+        (Kernel.Expr.mkAppN (sourceFrame.rule.rhs.instantiateLevelParams sourceFrame.header.levelParams sourceUs)
+          ((((argumentVariables representation.depth).take arguments.length).take sourceFrame.rulePrefix) ++
+            (((argumentVariables representation.depth).drop arguments.length).drop sourceFrame.rule.ctorParams))) value := by
+  obtain ⟨application, valuationEq, depthEq, argumentsEq, fieldsEq, _, constructorUsEq⟩ :=
+    representation.checked_application sourceWf association types recursors sourceFrame universeCheck
+      sourceLevels sourceUs sourceConstructorUs sourceArity sourceConstructorArity universeImage constructorUniverseImage
+      sourceTyped conditions
+  obtain ⟨_, prefixAgreement, images⟩ := sourceFrame.checked_images target association recursors targetFrame
+  have header := (images (fun _ => 0)).header
+  obtain ⟨arity, constructorArity, _⟩ := targetFrame.checked_universes universeCheck
+  have recursorImage := PullbackMap.fromEnvs_constant_instance target association sourceFrame.recursorLookup
+    targetFrame.recursorLookup sourceLevels targetLevels sourceUs universes sourceArity arity universeImage
+  have mappedConstructorLookup : targetEnv.find? (names sourceFrame.rule.ctor) =
+      some (.ctorInfo targetFrame.constructor targetFrame.constructorParams targetFrame.constructorFields) := by
+    rw [header.1]; exact targetFrame.constructorLookup
+  have constructorImage := PullbackMap.fromEnvs_constant_instance target association sourceFrame.constructorLookup
+    mappedConstructorLookup sourceLevels targetLevels sourceConstructorUs constructorUniverses
+    sourceConstructorArity constructorArity constructorUniverseImage
+  rw [header.1, ← constructorUsEq] at constructorImage
+  have rhsImage := sourceFrame.checked_rhs_instance target association recursors targetFrame
+    sourceLevels targetLevels sourceUs universes sourceArity arity universeImage
+  have argumentImages := representation.argument_image
+    ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv sourceLevels
+  have fieldImages := representation.field_image
+    ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv sourceLevels
+  rw [← argumentsEq, ← depthEq] at argumentImages
+  rw [← fieldsEq, ← depthEq] at fieldImages
+  have fired := application.pullback (names name) targetFrame.rules targetFrame.recursorLookup
+    (List.mem_of_getElem? targetFrame.ruleLookup) targetFrame.fires arity
+    ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval) sourceEnv sourceLevels
+    name sourceFrame.rule.ctor sourceUs sourceConstructorUs
+    (sourceFrame.rule.rhs.instantiateLevelParams sourceFrame.header.levelParams sourceUs)
+    ((argumentVariables application.depth).take arguments.length)
+    ((argumentVariables application.depth).drop arguments.length)
+    recursorImage constructorImage rhsImage argumentImages fieldImages
+  simpa only [valuationEq, depthEq, ← prefixAgreement, ← header.2.2.1] using fired
+
 end Ix.CompileCert
