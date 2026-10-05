@@ -23,7 +23,7 @@ open Ix (DefKind DefinitionSafety QuotKind)
 
 /-! ## The TagN writer, inlined for the host
 
-`putTagN` (`Ix.Ixon.Codec`) is compiled out of line with `f` as a runtime
+`putTagN` (`IxC.Ixon.Codec`) is compiled out of line with `f` as a runtime
 argument, so every integer it writes evaluates its rung ends and header shift
 (`2 ^ (8 - f - 1)`, ...) with `Nat.pow`. Every host caller (metadata, names,
 the environment's sections, claims) passes a literal `f`. `putTagNI` is the
@@ -33,8 +33,8 @@ call site the compiler folds the powers to constants. The `@[csimp]` theorem
 call it; no definition changes.
 
 The codec module keeps the out-of-line writer: its compiled code is what the
-certified checker's runtime-closure audits count (`Ix.Ixon.Audit`,
-`Ix.Kernel.Audit.Roots`), and those modules do not import this one. -/
+certified checker's runtime-closure audits count (`IxC.Ixon.Audit`,
+`IxC.Kernel.Audit.Roots`), and those modules do not import this one. -/
 
 @[inline] def putU8I (x : UInt8) : PutM Unit :=
   StateT.modifyGet (fun s => ((), s.push x))

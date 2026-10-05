@@ -1,6 +1,6 @@
 import Ix.EnvScope
 import Ix.CompileDriver
-import Ix.Kernel.CoreDefs
+import IxC.Kernel.CoreDefs
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.KernelReport
 

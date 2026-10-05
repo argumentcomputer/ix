@@ -13,7 +13,7 @@ namespace Lean
 /-- Ground operations needed to install the pinned Nat recurrence certificate.
 Some are absent from the operation's ordinary declaration dependency cone:
 notably `Nat.land` needs `Nat.mul`. Keep this untrusted selection table aligned
-with `Ix/Kernel/CoreDefs.lean`'s `natOpDeps`, without importing the certified
+with `IxC/Kernel/CoreDefs.lean`'s `natOpDeps`, without importing the certified
 kernel into compiler code. The checker still validates every supplied record
 and all its frozen pins; this table confers no acceptance authority.
 

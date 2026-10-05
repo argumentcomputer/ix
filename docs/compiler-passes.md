@@ -537,7 +537,7 @@ weak `Greater` fall back to full refinement in both executable kernels, just as 
 The fallback accepts only singleton classes in precisely the stored order; strong `Greater` and
 uncollapsed equal members still reject. Rust and Lean unit tests cover these negative cases and the
 canonical cross-reference pair; `ValidateLeanSwap` and `PropCollapse` pass phase 4 in both switch
-states [measured, Phase A A5R]. `Ix/Kernel/**` has no corresponding fast path and is unchanged.
+states [measured, Phase A A5R]. `IxC/Kernel/**` has no corresponding fast path and is unchanged.
 The separate `Ix/Ixon/BlockOrder` adapter already uses full refinement for structural primary-block
 order and motive order for all-recursor blocks; nested auxiliary discovery order is unchanged.
 
