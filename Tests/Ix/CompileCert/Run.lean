@@ -5,6 +5,7 @@ import Tests.Ix.CompileCert.Stored
 import Tests.Ix.CompileCert.Groups
 import Tests.Ix.CompileCert.Universes
 import Tests.Ix.CompileCert.Expressions
+import Tests.Ix.CompileCert.SourceInstall
 
 /-- Standalone remote driver; shared test registration belongs to the
 coordinator. Production/test library modules do not define a global main. -/
@@ -15,6 +16,7 @@ def main (args : List String) : IO Unit := do
   | ["groups"] => Tests.Ix.CompileCert.Groups.run
   | ["universes"] => Tests.Ix.CompileCert.Universes.run
   | ["expressions"] => Tests.Ix.CompileCert.Expressions.run
+  | ["source-install"] => Tests.Ix.CompileCert.SourceInstall.run
   | ["compiled"] => Tests.Ix.CompileCert.Compiled.run
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>

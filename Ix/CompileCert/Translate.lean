@@ -337,6 +337,74 @@ def sourceBvarBound : Lean.Expr → Nat
   | .proj _ _ e | .mdata _ e => sourceBvarBound e
   | _ => 0
 
+/-- Name/level-parametric form of the independent structural exporter. Its
+target instantiation is proved equal to `exportExpr` below; its source
+instantiation uses original source names and no target artifact or map. -/
+def exportExprWith (levelOf : Lean.Level → ExportM Kernel.Level)
+    (nameOf : Lean.Name → ExportM Kernel.Name) : Lean.Expr → ExportM Kernel.Expr
+  | .bvar i => return Kernel.Expr.mkBvar i
+  | .sort u => return .sort (← levelOf u)
+  | .const n us => return .const (← nameOf n) (← us.mapM levelOf)
+  | .app f a => return .app (← exportExprWith levelOf nameOf f) (← exportExprWith levelOf nameOf a)
+  | .lam _ t b _ => return .lam (← exportExprWith levelOf nameOf t) (← exportExprWith levelOf nameOf b) ⟨.never⟩
+  | .forallE _ t b _ => return .forallE (← exportExprWith levelOf nameOf t) (← exportExprWith levelOf nameOf b) ⟨.never⟩
+  | .letE _ t v b _ => do
+    return .letE (← exportExprWith levelOf nameOf t)
+      (← exportExprWith levelOf nameOf v) (← exportExprWith levelOf nameOf b)
+  | .lit (.natVal n) => return .lit (.natVal n)
+  | .lit (.strVal s) => return .lit (.strVal s)
+  | .proj n i e => return .proj (← nameOf n) i (← exportExprWith levelOf nameOf e)
+  | .mdata _ _ => throw "source metadata requires an erasure/semantic contract"
+  | .fvar _ => throw "free source variable"
+  | .mvar _ => throw "source metavariable"
+
+theorem exportExprWith_target (cx : TermContext) (source : Lean.Expr) :
+    exportExprWith (exportLevel cx) cx.context.name source = exportExpr cx source := by
+  induction source
+  case lit literal => cases literal <;> rfl
+  all_goals simp_all [exportExprWith, exportExpr]
+
+theorem exportExprWith_bvarBound {levelOf : Lean.Level → ExportM Kernel.Level}
+    {nameOf : Lean.Name → ExportM Kernel.Name} {source : Lean.Expr} {result : Kernel.Expr}
+    (exported : exportExprWith levelOf nameOf source = .ok result) :
+    result.bvarBound = sourceBvarBound source := by
+  induction source generalizing result
+  case lit literal =>
+    cases literal <;> simp only [exportExprWith, pure, Except.pure, Except.ok.injEq] at exported <;>
+      subst result <;> rfl
+  all_goals try simp only [exportExprWith, bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try simp only [Except.ok.injEq] at exported
+  all_goals try subst result
+  all_goals simp_all [sourceBvarBound, Kernel.Expr.bvarBound]
+
+/-- Original source telescope, with the same independently proved semantic
+guard. This function takes no target pins, name map, or bytes. -/
+def exportSourceLevel (params : List Lean.Name) (u : Lean.Level) : ExportM Kernel.Level := do
+  let wire ← exportUniv params u
+  let original ← importUniv (params.map sourceName) wire
+  let candidate ← importUniv (params.map sourceName) (Ixon.canonUniv wire)
+  checkedLevelImage original candidate
+
+def exportSourceExpr (params : List Lean.Name) : Lean.Expr → ExportM Kernel.Expr :=
+  exportExprWith (exportSourceLevel params) (fun n => .ok (sourceName n))
+
+theorem exportSourceExpr_bvarBound {params : List Lean.Name} {source : Lean.Expr}
+    {result : Kernel.Expr} (exported : exportSourceExpr params source = .ok result) :
+    result.bvarBound = sourceBvarBound source :=
+  exportExprWith_bvarBound exported
+
+/-- Source installation uses the already proved level bridge, instantiated
+with the original source telescope rather than any target map's telescope. -/
+theorem exportSourceLevel_eval {params : List Lean.Name} {u : Lean.Level}
+    {result : Kernel.Level} (exported : exportSourceLevel params u = .ok result)
+    (φ : Lean.Name → Nat) (ρ : UInt64 → Nat) (ψ : Kernel.Name → Nat)
+    (sourceAligned : ∀ n i, params.idxOf? n = some i → φ n = ρ i.toUInt64)
+    (targetAligned : ∀ i n, (params.map sourceName)[i.toNat]? = some n → ρ i = ψ n) :
+    sourceLevelEval φ u = some (Kernel.Level.Geran.levelEval ψ result) := by
+  let cx : TermContext := ⟨⟨⟨[]⟩, [], {}⟩, params, params.map sourceName⟩
+  exact exportLevel_eval (cx := cx) exported φ ρ ψ sourceAligned targetAligned
+
 /-- Accepted export preserves the exact scope bound, including under nested
 binders and lets. Universe normalization cannot alter term-variable scope. -/
 theorem exportExpr_bvarBound {cx : TermContext} {source : Lean.Expr} {result : Kernel.Expr}
@@ -567,6 +635,124 @@ def directExport (cx : ExportContext) (ci : Lean.ConstantInfo) : ExportM DirectE
         (← exportExpr tc r.rhs) false false false
     return .recursor val (v.numParams + v.numMotives + v.numMinors + v.numIndices)
       (v.numParams + v.numMotives + v.numMinors) rules
+
+/-! ## Independent source declaration export
+
+This route has no target map, target records, reader state or target
+projection rewrite. It preserves original source names and telescopes.
+-/
+
+def exportSourceEntry (ci : Lean.ConstantInfo) : ExportM DirectEntry := do
+  unless sourceSupported ci do throw s!"unsupported source safety: {ci.name}"
+  unless ci.levelParams.eraseDups.length == ci.levelParams.length do
+    throw s!"duplicate source universe parameters: {ci.name}"
+  let cv : Kernel.ConstantVal := ⟨sourceName ci.name, ci.levelParams.map sourceName,
+    ← exportSourceExpr ci.levelParams ci.type⟩
+  match ci with
+  | .axiomInfo _ => return .axiom cv
+  | .defnInfo v => return .defn cv (← exportSourceExpr ci.levelParams v.value) (exportHint v.hints)
+  | .thmInfo v => return .thm cv (← exportSourceExpr ci.levelParams v.value)
+  | .opaqueInfo v => return .opaque cv (← exportSourceExpr ci.levelParams v.value)
+  | .quotInfo v => return .quot (exportQuot v.kind) cv
+  | .inductInfo v => return .induct cv v.numParams
+  | .ctorInfo v => return .ctor cv v.numParams v.numFields
+  | .recInfo v =>
+    let rules ← v.rules.mapM fun r => do
+      return Kernel.RecRule.mk (sourceName r.ctor) r.nfields 0 .inert
+        (← exportSourceExpr ci.levelParams r.rhs) false false false
+    return .recursor cv (v.numParams + v.numMotives + v.numMinors + v.numIndices)
+      (v.numParams + v.numMotives + v.numMinors) rules
+
+structure SourceDeclGroup where
+  members : List Lean.Name
+  dependencies : List Lean.Name
+  declaration : Kernel.Declaration
+
+/-- Scheduling uses genuine type/value/rule references. Source `.all` is
+closure/group evidence, not an artificial cycle between acyclic definitions. -/
+def sourceTermRefs (ci : Lean.ConstantInfo) : List Lean.Name :=
+  exprRefs ci.type ++ match ci with
+  | .defnInfo v => exprRefs v.value
+  | .thmInfo v => exprRefs v.value
+  | .opaqueInfo v => exprRefs v.value
+  | .recInfo v => v.rules.flatMap (fun r => r.ctor :: exprRefs r.rhs)
+  | .ctorInfo v => [v.induct]
+  | _ => []
+
+def sourceGroupDependencies (s : Source) (members : List Lean.Name) : ExportM (List Lean.Name) := do
+  let refs ← members.mapM fun n => do
+    let some ci := s.find n | throw s!"source group member is missing: {n}"
+    return sourceTermRefs ci
+  return (refs.flatten.filter fun n => !members.contains n).eraseDups
+
+def exportSourceInductive (s : Source) (owner : Lean.InductiveVal) : ExportM SourceDeclGroup := do
+  unless owner.all.contains owner.name do throw "source inductive is absent from its own group"
+  let mut names := owner.all
+  let mut types := []
+  let mut ctors := []
+  for n in owner.all do
+    let some (.inductInfo iv) := s.find n | throw s!"source inductive member missing: {n}"
+    unless iv.all == owner.all && iv.numParams == owner.numParams do
+      throw s!"inconsistent source inductive group: {n}"
+    let .induct cv _ ← exportSourceEntry (.inductInfo iv) | throw "source inductive kind mismatch"
+    types := types ++ [Kernel.ConstantInfo.indInfo cv {}]
+    names := names ++ iv.ctors
+    for (name, index) in iv.ctors.zipIdx do
+      let some (.ctorInfo ctor) := s.find name | throw s!"source constructor missing: {name}"
+      unless ctor.induct == n && ctor.cidx == index && ctor.numParams == iv.numParams do
+        throw s!"source constructor ownership mismatch: {name}"
+      let .ctor cv np nf ← exportSourceEntry (.ctorInfo ctor) | throw "source constructor kind mismatch"
+      ctors := ctors ++ [Kernel.ConstantInfo.ctorInfo cv np nf]
+  let recNames := owner.all.map (·.str "rec") ++
+    (List.range owner.numNested).filterMap (fun i => owner.all.head?.map (·.str s!"rec_{i + 1}"))
+  let mut recs := []
+  for n in recNames do
+    let some (.recInfo rv) := s.find n | throw s!"source recursor missing: {n}"
+    unless rv.all == owner.all do throw s!"source recursor group mismatch: {n}"
+    let .recursor cv major numArgs rules ← exportSourceEntry (.recInfo rv)
+      | throw "source recursor kind mismatch"
+    recs := recs ++ [Kernel.ConstantInfo.recInfo cv major numArgs rules]
+  names := names ++ recNames
+  return ⟨names, ← sourceGroupDependencies s names, .indDecl (types ++ ctors ++ recs) owner.numParams⟩
+
+def exportSourceGroups (s : Source) : ExportM (List SourceDeclGroup) := do
+  let mut groups := []
+  for ci in s.declarations do
+    match ci with
+    | .inductInfo iv =>
+      if iv.all.head? == some iv.name then groups := groups ++ [← exportSourceInductive s iv]
+    | .ctorInfo _ | .recInfo _ => pure ()
+    | _ =>
+      let entry ← exportSourceEntry ci
+      let declaration ← match entry with
+        | .axiom cv => pure (.axiomDecl cv)
+        | .defn cv value hint => pure (.defnDecl cv value hint)
+        | .thm cv value => pure (.thmDecl cv value)
+        | .opaque cv value => pure (.opaqueDecl cv value)
+        | .quot k cv => pure (.quotDecl k cv)
+        | _ => throw "source singleton kind mismatch"
+      groups := groups ++ [⟨[ci.name], ← sourceGroupDependencies s [ci.name], declaration⟩]
+  let members := groups.flatMap SourceDeclGroup.members
+  unless decide (members.Nodup) && s.names.all members.contains && members.all s.names.contains do
+    throw "source declaration groups do not cover the exact source inventory"
+  return groups
+
+/-- Deterministic source-only dependency scheduling. An unresolved dependency
+or cycle is reported, never repaired by consulting target order or bodies. -/
+def orderSourceGroups : Nat → List SourceDeclGroup → List Lean.Name → List Kernel.Declaration →
+    ExportM (List Kernel.Declaration)
+  | _, [], _, output => .ok output
+  | 0, _ :: _, _, _ => .error "source declaration scheduling budget exhausted"
+  | fuel + 1, groups@(_ :: _), available, output => do
+    let ready := groups.filter fun g => g.dependencies.all available.contains
+    if ready.isEmpty then throw "source declaration dependencies are unresolved or cyclic"
+    let pending := groups.filter fun g => !g.dependencies.all available.contains
+    orderSourceGroups fuel pending (available ++ ready.flatMap SourceDeclGroup.members)
+      (output ++ ready.map SourceDeclGroup.declaration)
+
+def exportSourceDeclarations (s : Source) : ExportM (Array Kernel.Declaration) := do
+  let groups ← exportSourceGroups s
+  return (← orderSourceGroups (groups.length + 1) groups [] []).toArray
 
 /-! ## Representation-bridge spike
 

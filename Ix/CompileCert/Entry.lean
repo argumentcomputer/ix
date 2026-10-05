@@ -18,6 +18,48 @@ namespace Ix.CompileCert
 open Kernel.Reader
 open Kernel.Admission
 
+/-- An independent source installation attempt has no target map, reader,
+bytes, hint oracle or target normalization state. Empty accelerator pins
+request ordinary verified checking of the actual source definitions. -/
+structure SourceInstallation (source : Source) (roots : List Lean.Name) where
+  complete : CompleteSource source roots
+  declarations : Array Kernel.Declaration
+  exported : exportSourceDeclarations source = .ok declarations
+  env : Kernel.Env
+  checked : Kernel.Cached.checkDecls .verified [] declarations = .ok env
+
+inductive SourceInstallError where
+  | incomplete
+  | exportFailure (reason : String)
+  | checking (error : Kernel.CheckError) (position : Nat)
+
+/-- Success is evidence of this run, not a definition of the intended Dom.
+Establishing success over that domain and the source/target annotation
+simulation remain separate obligations. -/
+def installSource (source : Source) (roots : List Lean.Name) :
+    Except SourceInstallError (SourceInstallation source roots) :=
+  if hc : CompleteSource source roots then
+    match he : exportSourceDeclarations source with
+    | .error reason => .error (.exportFailure reason)
+    | .ok declarations =>
+      match hk : Kernel.Cached.checkDecls .verified [] declarations with
+      | .error (error, position) => .error (.checking error position)
+      | .ok env => .ok ⟨hc, declarations, he, env, hk⟩
+  else .error .incomplete
+
+theorem SourceInstallation.has_model (V : Type u) [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name} (installed : SourceInstallation source roots) :
+    Nonempty (Kernel.Model V installed.env) :=
+  Kernel.model_exists V [] installed.declarations installed.env installed.checked
+
+/-- The source witness retains the checker's actual installed skeletons;
+it does not identify raw binder annotations with installed annotations. -/
+theorem SourceInstallation.skels {source : Source} {roots : List Lean.Name}
+    (installed : SourceInstallation source roots) :
+    Kernel.Cached.envSkels installed.env =
+      Kernel.Cached.streamSkels installed.declarations.toList :=
+  Kernel.Cached.checkDecls_skels installed.checked
+
 structure ArtifactInput where
   limits : Limits
   records : Records
