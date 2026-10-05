@@ -25,6 +25,23 @@ def sourceName : Lean.Name → Kernel.Name
   | .str p s => .str (sourceName p) s
   | .num p i => .num (sourceName p) i
 
+/-- Source identity is structural and injective; target address aliases do
+not collapse the independent source installation's namespace. -/
+theorem sourceName_injective : Function.Injective sourceName := by
+  intro a
+  induction a with
+  | anonymous =>
+    intro b same
+    cases b <;> simp_all [sourceName]
+  | str parent text ih =>
+    intro b same
+    cases b <;> simp_all [sourceName]
+    exact ih rfl
+  | num parent index ih =>
+    intro b same
+    cases b <;> simp_all [sourceName]
+    exact ih rfl
+
 def ExportContext.memberName (cx : ExportContext) (n : Lean.Name) : ExportM Kernel.Name := do
   let some r := cx.map.find n | throw s!"missing source map entry: {n}"
   return cx.pins.names.getD r (Kernel.Reader.keyName r)
@@ -642,6 +659,51 @@ This route has no target map, target records, reader state or target
 projection rewrite. It preserves original source names and telescopes.
 -/
 
+def exportSourceRule (params : List Lean.Name) (rule : Lean.RecursorRule) : ExportM Kernel.RecRule := do
+  return Kernel.RecRule.mk (sourceName rule.ctor) rule.nfields 0 .inert
+    (← exportSourceExpr params rule.rhs) false false false
+
+def SourceRuleImage (params : List Lean.Name) (source : Lean.RecursorRule)
+    (target : Kernel.RecRule) : Prop :=
+  target.ctor = sourceName source.ctor ∧ target.nfields = source.nfields ∧
+  exportSourceExpr params source.rhs = .ok target.rhs ∧
+  target.ctorParams = 0 ∧ target.fire = .inert ∧ target.k = false ∧
+  target.eta = false ∧ target.paramsBlind = false
+
+theorem exportSourceRule_sound {params : List Lean.Name} {source : Lean.RecursorRule}
+    {target : Kernel.RecRule} (exported : exportSourceRule params source = .ok target) :
+    SourceRuleImage params source target := by
+  cases body : exportSourceExpr params source.rhs with
+  | error reason => simp [exportSourceRule, body, bind, Except.bind] at exported
+  | ok rhs =>
+    simp only [exportSourceRule, body, bind, Except.bind, pure, Except.pure,
+      Except.ok.injEq] at exported
+    subst target
+    simp [SourceRuleImage, body]
+
+/-- Rules are related in their original positions, not merely as sets. -/
+inductive SourceRulesImage (params : List Lean.Name) :
+    List Lean.RecursorRule → List Kernel.RecRule → Prop
+  | nil : SourceRulesImage params [] []
+  | cons {source target sources targets} : SourceRuleImage params source target →
+      SourceRulesImage params sources targets → SourceRulesImage params (source :: sources) (target :: targets)
+
+theorem exportSourceRules_positions {params : List Lean.Name} {source : List Lean.RecursorRule}
+    {target : List Kernel.RecRule} (exported : source.mapM (exportSourceRule params) = .ok target) :
+    SourceRulesImage params source target := by
+  induction source generalizing target with
+  | nil =>
+    simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at exported
+    subst target
+    exact .nil
+  | cons rule rules ih =>
+    cases hr : exportSourceRule params rule <;> cases hs : rules.mapM (exportSourceRule params)
+    all_goals simp only [List.mapM_cons, hr, hs, bind, Except.bind, pure, Except.pure,
+      Except.ok.injEq] at exported
+    all_goals try contradiction
+    subst target
+    exact .cons (exportSourceRule_sound hr) (ih hs)
+
 def exportSourceEntry (ci : Lean.ConstantInfo) : ExportM DirectEntry := do
   unless sourceSupported ci do throw s!"unsupported source safety: {ci.name}"
   unless ci.levelParams.eraseDups.length == ci.levelParams.length do
@@ -657,11 +719,138 @@ def exportSourceEntry (ci : Lean.ConstantInfo) : ExportM DirectEntry := do
   | .inductInfo v => return .induct cv v.numParams
   | .ctorInfo v => return .ctor cv v.numParams v.numFields
   | .recInfo v =>
-    let rules ← v.rules.mapM fun r => do
-      return Kernel.RecRule.mk (sourceName r.ctor) r.nfields 0 .inert
-        (← exportSourceExpr ci.levelParams r.rhs) false false false
+    let rules ← v.rules.mapM (exportSourceRule ci.levelParams)
     return .recursor cv (v.numParams + v.numMotives + v.numMinors + v.numIndices)
       (v.numParams + v.numMotives + v.numMinors) rules
+
+/-- The source-facing declaration header records original identity and
+telescope plus an independently translated complete type. -/
+def SourceValImage (source : Lean.ConstantVal) (target : Kernel.ConstantVal) : Prop :=
+  target.name = sourceName source.name ∧
+  target.levelParams = source.levelParams.map sourceName ∧
+  exportSourceExpr source.levelParams source.type = .ok target.type
+
+theorem exportSourceEntry_defn {source : Lean.DefinitionVal} {header : Kernel.ConstantVal}
+    {body : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    (exported : exportSourceEntry (.defnInfo source) = .ok (.defn header body hint)) :
+    SourceValImage source.toConstantVal header ∧
+      exportSourceExpr source.levelParams source.value = .ok body ∧ hint = exportHint source.hints := by
+  cases ht : exportSourceExpr source.levelParams source.type <;>
+    cases hb : exportSourceExpr source.levelParams source.value
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht, hb,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals simp_all [SourceValImage]
+  rcases exported with ⟨rfl, _, _⟩
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- A theorem body is checked and related structurally; this does not make
+it a transparent semantic definition in the installed model. -/
+theorem exportSourceEntry_thm {source : Lean.TheoremVal} {header : Kernel.ConstantVal}
+    {body : Kernel.Expr}
+    (exported : exportSourceEntry (.thmInfo source) = .ok (.thm header body)) :
+    SourceValImage source.toConstantVal header ∧
+      exportSourceExpr source.levelParams source.value = .ok body := by
+  cases ht : exportSourceExpr source.levelParams source.type <;>
+    cases hb : exportSourceExpr source.levelParams source.value
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht, hb,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals simp_all [SourceValImage]
+  rcases exported with ⟨rfl, _⟩
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Opaque bodies remain checking evidence, not an unfolding equation. -/
+theorem exportSourceEntry_opaque {source : Lean.OpaqueVal} {header : Kernel.ConstantVal}
+    {body : Kernel.Expr}
+    (exported : exportSourceEntry (.opaqueInfo source) = .ok (.opaque header body)) :
+    SourceValImage source.toConstantVal header ∧
+      exportSourceExpr source.levelParams source.value = .ok body := by
+  cases ht : exportSourceExpr source.levelParams source.type <;>
+    cases hb : exportSourceExpr source.levelParams source.value
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht, hb,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals simp_all [SourceValImage]
+  rcases exported with ⟨rfl, _⟩
+  exact ⟨rfl, rfl, rfl⟩
+
+theorem exportSourceEntry_recursor {source : Lean.RecursorVal} {header : Kernel.ConstantVal}
+    {major rulePrefix : Nat} {rules : List Kernel.RecRule}
+    (exported : exportSourceEntry (.recInfo source) = .ok (.recursor header major rulePrefix rules)) :
+    SourceValImage source.toConstantVal header ∧
+      major = source.numParams + source.numMotives + source.numMinors + source.numIndices ∧
+      rulePrefix = source.numParams + source.numMotives + source.numMinors ∧
+      SourceRulesImage source.levelParams source.rules rules := by
+  cases ht : exportSourceExpr source.levelParams source.type <;>
+    cases hr : source.rules.mapM (exportSourceRule source.levelParams)
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht, hr,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try contradiction
+  all_goals simp at exported
+  rcases exported with ⟨rfl, rfl, rfl, rfl⟩
+  exact ⟨⟨rfl, rfl, ht⟩, rfl, rfl, exportSourceRules_positions hr⟩
+
+theorem exportSourceEntry_axiom {source : Lean.AxiomVal} {header : Kernel.ConstantVal}
+    (exported : exportSourceEntry (.axiomInfo source) = .ok (.axiom header)) :
+    SourceValImage source.toConstantVal header := by
+  cases ht : exportSourceExpr source.levelParams source.type
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try contradiction
+  all_goals simp at exported
+  subst header
+  exact ⟨rfl, rfl, ht⟩
+
+theorem exportSourceEntry_inductive {source : Lean.InductiveVal} {header : Kernel.ConstantVal}
+    {numParams : Nat}
+    (exported : exportSourceEntry (.inductInfo source) = .ok (.induct header numParams)) :
+    SourceValImage source.toConstantVal header ∧ numParams = source.numParams := by
+  cases ht : exportSourceExpr source.levelParams source.type
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try contradiction
+  all_goals simp at exported
+  rcases exported with ⟨rfl, rfl⟩
+  exact ⟨⟨rfl, rfl, ht⟩, rfl⟩
+
+theorem exportSourceEntry_constructor {source : Lean.ConstructorVal} {header : Kernel.ConstantVal}
+    {numParams numFields : Nat}
+    (exported : exportSourceEntry (.ctorInfo source) = .ok (.ctor header numParams numFields)) :
+    SourceValImage source.toConstantVal header ∧
+      numParams = source.numParams ∧ numFields = source.numFields := by
+  cases ht : exportSourceExpr source.levelParams source.type
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try contradiction
+  all_goals simp at exported
+  rcases exported with ⟨rfl, rfl, rfl⟩
+  exact ⟨⟨rfl, rfl, ht⟩, rfl, rfl⟩
+
+theorem exportSourceEntry_quotient {source : Lean.QuotVal} {header : Kernel.ConstantVal}
+    {kind : Kernel.QuotKind}
+    (exported : exportSourceEntry (.quotInfo source) = .ok (.quot kind header)) :
+    SourceValImage source.toConstantVal header ∧ kind = exportQuot source.kind := by
+  cases ht : exportSourceExpr source.levelParams source.type
+  all_goals simp only [exportSourceEntry, Lean.ConstantInfo.levelParams,
+    Lean.ConstantInfo.type, Lean.ConstantInfo.name, Lean.ConstantInfo.toConstantVal, ht,
+    bind, Except.bind, pure, Except.pure] at exported
+  all_goals repeat' split at exported
+  all_goals try contradiction
+  all_goals simp at exported
+  rcases exported with ⟨rfl, rfl⟩
+  exact ⟨⟨rfl, rfl, ht⟩, rfl⟩
 
 structure SourceDeclGroup where
   members : List Lean.Name
