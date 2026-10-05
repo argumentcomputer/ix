@@ -6217,4 +6217,76 @@ theorem checkInstalledEtaFamily_sound {env : Kernel.Env} {name : Kernel.Name} {c
       cases entry <;> simp [found] at row
       case recInfo header major params rules => exact ⟨header, major, params, rules, rfl⟩
 
+/-- All stored capability fields remain visible. The constructor and indexed
+projection-name images are required when eta actually uses them. The sort
+datum is compared semantically in the owner's universe telescope below. -/
+def InstalledCapsHeader (names : Kernel.Name → Kernel.Name) (owner : Kernel.Name)
+    (source target : Kernel.IndCaps) : Prop :=
+  source.eta = target.eta ∧ source.unitlike = target.unitlike ∧ source.ruleK = target.ruleK ∧
+  source.etaParams = target.etaParams ∧ source.etaFields = target.etaFields ∧
+  source.unitParams = target.unitParams ∧
+  (source.eta = true → target.etaCtor = names source.etaCtor ∧
+    ∀ index ∈ List.range source.etaFields,
+      names (Kernel.projFnName owner index) = Kernel.projFnName (names owner) index)
+
+instance (names : Kernel.Name → Kernel.Name) (owner : Kernel.Name)
+    (source target : Kernel.IndCaps) : Decidable (InstalledCapsHeader names owner source target) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _))
+
+/-- Reuse the proved binder-regime comparison for the capability's exact
+sort datum. This carrier expression is not claimed to be a stored type. -/
+def capabilityDatumExpr (caps : Kernel.IndCaps) : Kernel.Expr :=
+  .forallE (.sort .zero) (.sort .zero) ⟨caps.sortZ⟩
+
+def checkInstalledCapabilities (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Bool :=
+  source.consts.all fun entry => match entry with
+    | .indInfo header caps =>
+      decide (source.find? header.name = some entry) &&
+      match target.find? (names header.name) with
+      | some (.indInfo _ targetCaps) =>
+        decide (InstalledCapsHeader names header.name caps targetCaps) &&
+        decide (checkInstalledMemberExpr source target names header.name
+          (capabilityDatumExpr caps) (capabilityDatumExpr targetCaps) = some true)
+      | _ => false
+    | _ => true
+
+theorem checkInstalledCapabilities_member {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledCapabilities source target names = true)
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ source.consts) :
+    source.find? header.name = some (.indInfo header caps) ∧
+    ∃ targetHeader targetCaps,
+      target.find? (names header.name) = some (.indInfo targetHeader targetCaps) ∧
+      InstalledCapsHeader names header.name caps targetCaps ∧
+      checkInstalledMemberExpr source target names header.name
+        (capabilityDatumExpr caps) (capabilityDatumExpr targetCaps) = some true := by
+  have row := List.all_eq_true.mp checked (.indInfo header caps) present
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at row
+  refine ⟨row.1, ?_⟩
+  cases lookup : target.find? (names header.name) with
+  | none => simp [lookup] at row
+  | some entry =>
+    cases entry <;> simp only [lookup, Bool.and_eq_true, decide_eq_true_eq] at row
+    case indInfo targetHeader targetCaps => exact ⟨targetHeader, targetCaps, rfl, row.2⟩
+    all_goals simp at row
+
+theorem checkInstalledCapabilities_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ sourceEnv.consts) :
+    ∃ targetHeader targetCaps,
+      targetEnv.find? (names header.name) = some (.indInfo targetHeader targetCaps) ∧
+      InstalledCapsHeader names header.name caps targetCaps ∧
+      ∀ levels, Kernel.regime levels caps.sortZ = Kernel.regime
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels header.name levels) targetCaps.sortZ := by
+  obtain ⟨sourceLookup, targetHeader, targetCaps, targetLookup, headers, compared⟩ :=
+    checkInstalledCapabilities_member checked present
+  refine ⟨targetHeader, targetCaps, targetLookup, headers, ?_⟩
+  intro levels
+  have image := checkInstalledMemberExpr_sound target association sourceLookup compared levels
+  cases image with
+  | forallE _ _ regimes => exact regimes
+
 end Ix.CompileCert

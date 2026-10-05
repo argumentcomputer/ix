@@ -29,7 +29,44 @@ def run : IO Unit := do
   require "reserved constructor refused" (!checkInstalledEtaFamily
     ⟨[.ctorInfo (header natZeroName) 0 0]⟩ family { caps with etaCtor := natZeroName, etaFields := 0 })
   require "zero fields still checks constructor" (checkInstalledEtaFamily ⟨[ctor]⟩ family { caps with etaFields := 0 })
-  IO.println "installed capability lookup: 8 synthetic boundary controls passed"
+  let source ← match Cached.checkDecls .verified [] #[.basisDecl .natK] with
+    | .ok result => pure result
+    | .error _ => throw (IO.userError "source Nat fold failed")
+  let target ← match Cached.checkDecls .verified [] #[.basisDecl .natK] with
+    | .ok result => pure result
+    | .error _ => throw (IO.userError "target Nat fold failed")
+  require "actual Nat telescope" (checkTelescopes source target id)
+  require "actual Nat capability association" (checkInstalledCapabilities source target id)
+  require "missing installed family" (!checkInstalledCapabilities source Env.empty id)
+  let mutations : List (String × (IndCaps → IndCaps)) := [
+    ("eta flag", fun c => { c with eta := !c.eta }),
+    ("unit flag", fun c => { c with unitlike := !c.unitlike }),
+    ("K flag", fun c => { c with ruleK := !c.ruleK }),
+    ("eta parameters", fun c => { c with etaParams := c.etaParams + 1 }),
+    ("eta fields", fun c => { c with etaFields := c.etaFields + 1 }),
+    ("unit parameters", fun c => { c with unitParams := c.unitParams + 1 }),
+    ("sort regime", fun c => { c with sortZ := if c.sortZ = .never then .ifAllZero [] else .never })]
+  for (label, mutate) in mutations do
+    let changed : Env := ⟨target.consts.map fun entry => match entry with
+      | .indInfo h c => .indInfo h (mutate c)
+      | other => other⟩
+    require label (!checkInstalledCapabilities source changed id)
+  let aliasA := sourceName `AliasA
+  let aliasB := sourceName `AliasB
+  let shared := sourceName `Shared
+  let names (name : Name) := if name = aliasA || name = aliasB then shared else name
+  let plain : IndCaps := {}
+  let aliases : Env := ⟨[.indInfo (header aliasA) plain, .indInfo (header aliasB) plain]⟩
+  let sharedEnv : Env := ⟨[.indInfo (header shared) plain]⟩
+  require "compatible complete alias fiber" (checkInstalledCapabilities aliases sharedEnv names)
+  require "second alias field mismatch" (!checkInstalledCapabilities
+    ⟨[.indInfo (header aliasA) plain, .indInfo (header aliasB) { plain with ruleK := true }]⟩ sharedEnv names)
+  let etaCaps : IndCaps := { caps with etaFields := 1 }
+  require "eta constructor identity" (decide (!InstalledCapsHeader id family etaCaps
+    { etaCaps with etaCtor := sourceName `Wrong }))
+  let badProjection (name : Name) := if name = projFnName family 0 then sourceName `Wrong else name
+  require "eta indexed projection identity" (decide (!InstalledCapsHeader badProjection family etaCaps etaCaps))
+  IO.println "installed capabilities: independent Nat folds; 22 lookup/field/alias controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 
