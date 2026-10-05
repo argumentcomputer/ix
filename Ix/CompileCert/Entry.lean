@@ -438,6 +438,162 @@ theorem prepared_value_fields {mode : CheckMode} {fe : FEnv}
   obtain ⟨afterValue, annotation⟩ := value_fields valueRun
   exact ⟨headerShape, afterType, beforeValue, afterValue, typeRun, headerRun, annotation⟩
 
+/-- Primitive paths use the checking header routine, which performs inference
+after annotation. Its final cache state must not be identified with the
+ordinary install-only header routine's state. -/
+theorem checked_header_fields {mode : CheckMode} {fe : FEnv}
+    {header installedHeader : Kernel.ConstantVal} {type : Kernel.Expr} {initial final : CState}
+    (run : checkConstantValC mode fe header initial = .ok ((installedHeader, type), final)) :
+    installedHeader = { header with type := type } ∧ ∃ afterAnnotation,
+      (coreKnotI mode fe checkFuel).annotate 0 header.type initial = .ok (type, afterAnnotation) := by
+  unfold checkConstantValC at run
+  by_cases h1 : (fe.find? header.name).isSome = true
+  · rw [ite_eq_left h1] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h1] at run
+  by_cases h2 : reservedBasisNames.contains header.name = true
+  · rw [ite_eq_left h2] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h2] at run
+  by_cases h3 : header.name.isProjFnShape = true
+  · rw [ite_eq_left h3] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h3] at run
+  by_cases h4 : Kernel.Name.nodup header.levelParams = true
+  case neg => rw [ite_eq_right h4] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h4] at run
+  by_cases h5 : Kernel.Expr.looseBVarsBounded 0 header.type = true
+  case neg => rw [ite_eq_right h5] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h5] at run
+  by_cases h6 : Kernel.Expr.hasFvar header.type = true
+  · rw [ite_eq_left h6] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right h6] at run
+  obtain ⟨annotated, afterAnnotation, annotation, run⟩ := bindC_ok run
+  by_cases h7 : Kernel.Expr.allLevelParamsDefinedC header.levelParams annotated = true
+  case neg => rw [ite_eq_right h7] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h7] at run
+  by_cases h8 : constsResolveFC fe annotated = true
+  case neg => rw [ite_eq_right h8] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left h8] at run
+  obtain ⟨_, _, _, run⟩ := bindC_ok run
+  obtain ⟨_, _, _, run⟩ := bindC_ok run
+  obtain ⟨result, _⟩ := pureC_ok run
+  have pair := Prod.mk.inj result
+  obtain rfl := pair.2
+  exact ⟨pair.1.symm, afterAnnotation, annotation⟩
+
+theorem checked_definition_fields {mode : CheckMode} {fe finalEnv : FEnv}
+    {header : Kernel.ConstantVal} {type value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    {initial final : CState}
+    (run : checkDefnValC mode fe header type value hint initial = .ok (finalEnv, final)) :
+    ∃ annotated afterAnnotation,
+      (coreKnotI mode fe checkFuel).annotate 0 value initial = .ok (annotated, afterAnnotation) ∧
+      finalEnv = fe.push (.defnInfo header annotated hint) := by
+  unfold checkDefnValC at run
+  by_cases bounded : value.looseBVarsBounded 0 = true
+  case neg => rw [ite_eq_right bounded] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left bounded] at run
+  by_cases free : value.hasFvar = true
+  · rw [ite_eq_left free] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right free] at run
+  obtain ⟨image, afterAnnotation, annotation, run⟩ := bindC_ok run
+  by_cases levels : image.allLevelParamsDefinedC header.levelParams = true
+  case neg => rw [ite_eq_right levels] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left levels] at run
+  by_cases resolved : constsResolveFC fe image = true
+  case neg => rw [ite_eq_right resolved] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left resolved] at run
+  obtain ⟨_, _, _, run⟩ := bindC_ok run
+  obtain ⟨_, _, _, run⟩ := bindC_ok run
+  obtain ⟨equal, _, _, run⟩ := bindC_ok run
+  cases equal with
+  | false => exact absurd run throwC_bind_ok
+  | true =>
+    obtain ⟨result, _⟩ := pureC_ok run
+    exact ⟨image, afterAnnotation, annotation, result.symm⟩
+
+theorem checked_opaque_fields {mode : CheckMode} {fe finalEnv : FEnv}
+    {header : Kernel.ConstantVal} {type value : Kernel.Expr} {initial final : CState}
+    (run : checkOpaqueValC mode fe header type value initial = .ok (finalEnv, final)) :
+    ∃ annotated afterAnnotation,
+      (coreKnotI mode fe checkFuel).annotate 0 value initial = .ok (annotated, afterAnnotation) ∧
+      finalEnv = fe.push (.axiomInfo header) := by
+  unfold checkOpaqueValC at run
+  by_cases bounded : value.looseBVarsBounded 0 = true
+  case neg => rw [ite_eq_right bounded] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left bounded] at run
+  by_cases free : value.hasFvar = true
+  · rw [ite_eq_left free] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_right free] at run
+  obtain ⟨image, afterAnnotation, annotation, run⟩ := bindC_ok run
+  by_cases levels : image.allLevelParamsDefinedC header.levelParams = true
+  case neg => rw [ite_eq_right levels] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left levels] at run
+  by_cases resolved : constsResolveFC fe image = true
+  case neg => rw [ite_eq_right resolved] at run; exact absurd run throwC_bind_ok
+  rw [ite_eq_left resolved] at run
+  obtain ⟨_, _, _, run⟩ := bindC_ok run
+  obtain ⟨_, _, _, run⟩ := bindC_ok run
+  obtain ⟨equal, _, _, run⟩ := bindC_ok run
+  cases equal with
+  | false => exact absurd run throwC_bind_ok
+  | true =>
+    obtain ⟨result, _⟩ := pureC_ok run
+    exact ⟨image, afterAnnotation, annotation, result.symm⟩
+
+private theorem yields_result {α : Type} {action : CheckCM α} {initial final : CState}
+    {result : α} {property : α → Prop}
+    (run : action initial = .ok (result, final)) (guarantee : Yields action property) : property result :=
+  guarantee initial result final run
+
+theorem checked_definition_decl {mode : CheckMode} {pins : List NatOpPinSet} {fe finalEnv : FEnv}
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    {initial final : CState}
+    (run : checkDeclC mode pins fe (.defnDecl header value hint) initial = .ok (finalEnv, final)) :
+    ∃ type annotated afterType beforeValue afterValue,
+      (coreKnotI mode fe checkFuel).annotate 0 header.type initial = .ok (type, afterType) ∧
+      checkConstantValC mode fe header initial =
+        .ok (({ header with type := type }, type), beforeValue) ∧
+      (coreKnotI mode fe checkFuel).annotate 0 value beforeValue = .ok (annotated, afterValue) ∧
+      finalEnv = fe.push (.defnInfo { header with type := type } annotated hint) := by
+  unfold checkDeclC at run
+  obtain ⟨pair, beforeValue, headerRun, run⟩ := bindC_ok run
+  obtain ⟨headerA, type⟩ := pair
+  obtain ⟨rfl, afterType, typeRun⟩ := checked_header_fields headerRun
+  by_cases pinned : (natOpNames.contains header.name || natDivModNames.contains header.name) = true
+  · simp only [pinned, ↓reduceIte] at run
+    obtain ⟨checkedEnv, _, valueRun, run⟩ := bindC_ok run
+    have unchanged : finalEnv = checkedEnv := yields_result (property := fun result => result = checkedEnv) run (by
+      yields
+      all_goals exact Yields.pure rfl)
+    subst finalEnv
+    obtain ⟨annotated, afterValue, annotation, result⟩ := checked_definition_fields valueRun
+    exact ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, annotation, result⟩
+  · simp only [pinned] at run
+    obtain ⟨annotated, afterValue, annotation, result⟩ := checked_definition_fields run
+    exact ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, annotation, result⟩
+
+theorem checked_opaque_decl {mode : CheckMode} {pins : List NatOpPinSet} {fe finalEnv : FEnv}
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {initial final : CState}
+    (run : checkDeclC mode pins fe (.opaqueDecl header value) initial = .ok (finalEnv, final)) :
+    ∃ type annotated afterType beforeValue afterValue,
+      (coreKnotI mode fe checkFuel).annotate 0 header.type initial = .ok (type, afterType) ∧
+      checkConstantValC mode fe header initial =
+        .ok (({ header with type := type }, type), beforeValue) ∧
+      (coreKnotI mode fe checkFuel).annotate 0 value beforeValue = .ok (annotated, afterValue) ∧
+      finalEnv = fe.push (.axiomInfo { header with type := type }) := by
+  unfold checkDeclC at run
+  obtain ⟨pair, beforeValue, headerRun, run⟩ := bindC_ok run
+  obtain ⟨headerA, type⟩ := pair
+  obtain ⟨rfl, afterType, typeRun⟩ := checked_header_fields headerRun
+  by_cases pinned : reduceOpNames.contains header.name = true
+  · simp only [pinned, ↓reduceIte] at run
+    obtain ⟨checkedEnv, _, valueRun, run⟩ := bindC_ok run
+    obtain ⟨_, _, _, run⟩ := bindC_ok run
+    obtain ⟨rfl, _⟩ := pureC_ok run
+    obtain ⟨annotated, afterValue, annotation, result⟩ := checked_opaque_fields valueRun
+    exact ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, annotation, result⟩
+  · simp only [pinned] at run
+    obtain ⟨annotated, afterValue, annotation, result⟩ := checked_opaque_fields run
+    exact ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, annotation, result⟩
+
 /-- Ordinary definitions retain both actual annotation calls and their real
 prefix/cache states. Nat-operation pin routes are separate, not silently
 included in this branch's statement or excluded from the source domain. -/
@@ -604,6 +760,152 @@ theorem opaque_checked {mode : CheckMode} {pins : List NatOpPinSet}
   obtain ⟨_, _, run⟩ := fullyChecked.1.run
   exact opaque_run ordinary (Array.mem_toList_iff.mpr present) run rfl
 
+/-- Both real header routes, with the branch's exact final state retained.
+The disjunction distinguishes install-only annotation from primitive checking;
+it does not assert their caches or operational behavior coincide. -/
+def ValueAnnotationCalls (mode : CheckMode) (before : FEnv) (header : Kernel.ConstantVal)
+    (value : Kernel.Expr) (initial : CState) (type annotated : Kernel.Expr) : Prop :=
+  ∃ afterType beforeValue afterValue : CState,
+    (coreKnotI mode before checkFuel).annotate 0 header.type initial.flushed = .ok (type, afterType) ∧
+    (annotConstantValC mode before header initial.flushed =
+        .ok (({ header with type := type }, type), beforeValue) ∨
+      checkConstantValC mode before header initial.flushed =
+        .ok (({ header with type := type }, type), beforeValue)) ∧
+    (coreKnotI mode before checkFuel).annotate 0 value beforeValue = .ok (annotated, afterValue)
+
+def DefinitionInstalledAll (mode : CheckMode) (header : Kernel.ConstantVal)
+    (value : Kernel.Expr) (hint : Kernel.ReducibilityHint) (env : Env) : Prop :=
+  ∃ before : FEnv, ∃ initial : CState, ∃ type annotated : Kernel.Expr,
+    ValueAnnotationCalls mode before header value initial type annotated ∧
+    Kernel.ConstantInfo.defnInfo { header with type := type } annotated hint ∈ env.consts
+
+def OpaqueInstalledAll (mode : CheckMode) (header : Kernel.ConstantVal)
+    (value : Kernel.Expr) (env : Env) : Prop :=
+  ∃ before : FEnv, ∃ initial : CState, ∃ type annotated : Kernel.Expr,
+    ValueAnnotationCalls mode before header value initial type annotated ∧
+    Kernel.ConstantInfo.axiomInfo { header with type := type } ∈ env.consts
+
+theorem definition_all_step {mode : CheckMode} {pins : List NatOpPinSet}
+    {index : Nat} {fe fe' : FEnv} {pending pending' : Array PendingCheck}
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    {initial final : CState}
+    (run : annotStepC mode pins index fe pending (.defnDecl header value hint) initial =
+      .ok ((fe', pending'), final)) :
+    ∃ type annotated, ValueAnnotationCalls mode fe header value initial type annotated ∧
+      fe'.env.consts = .defnInfo { header with type := type } annotated hint :: fe.env.consts := by
+  by_cases ordinary : (natOpNames.contains header.name || natDivModNames.contains header.name) = false
+  · obtain ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, valueRun, stored⟩ :=
+      definition_step ordinary run
+    exact ⟨type, annotated, ⟨afterType, beforeValue, afterValue, typeRun, .inl headerRun, valueRun⟩, stored⟩
+  · have pinned : (natOpNames.contains header.name || natDivModNames.contains header.name) = true := by
+      cases h : (natOpNames.contains header.name || natDivModNames.contains header.name) <;> simp_all
+    unfold annotStepC at run
+    simp only [pinned, ↓reduceIte] at run
+    obtain ⟨checkedEnv, _, checkedRun, run⟩ := bindC_ok run
+    obtain ⟨result, _⟩ := pureC_ok run
+    obtain ⟨rfl, _⟩ := Prod.mk.injEq .. ▸ result
+    unfold checkDeclStepC at checkedRun
+    obtain ⟨_, afterFlush, flush, checkedRun⟩ := bindC_ok checkedRun
+    rw [show (flushC : CheckCM Unit) initial = .ok ((), initial.flushed) from rfl] at flush
+    have flushed : initial.flushed = afterFlush := congrArg Prod.snd (Except.ok.inj flush)
+    subst flushed
+    obtain ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, valueRun, rfl⟩ :=
+      checked_definition_decl checkedRun
+    exact ⟨type, annotated, ⟨afterType, beforeValue, afterValue, typeRun, .inr headerRun, valueRun⟩, rfl⟩
+
+theorem opaque_all_step {mode : CheckMode} {pins : List NatOpPinSet}
+    {index : Nat} {fe fe' : FEnv} {pending pending' : Array PendingCheck}
+    {header : Kernel.ConstantVal} {value : Kernel.Expr} {initial final : CState}
+    (run : annotStepC mode pins index fe pending (.opaqueDecl header value) initial =
+      .ok ((fe', pending'), final)) :
+    ∃ type annotated, ValueAnnotationCalls mode fe header value initial type annotated ∧
+      fe'.env.consts = .axiomInfo { header with type := type } :: fe.env.consts := by
+  by_cases ordinary : reduceOpNames.contains header.name = false
+  · obtain ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, valueRun, stored⟩ :=
+      opaque_step ordinary run
+    exact ⟨type, annotated, ⟨afterType, beforeValue, afterValue, typeRun, .inl headerRun, valueRun⟩, stored⟩
+  · have pinned : reduceOpNames.contains header.name = true := by
+      cases h : reduceOpNames.contains header.name <;> simp_all
+    unfold annotStepC at run
+    simp only [pinned, ↓reduceIte] at run
+    obtain ⟨checkedEnv, _, checkedRun, run⟩ := bindC_ok run
+    obtain ⟨result, _⟩ := pureC_ok run
+    obtain ⟨rfl, _⟩ := Prod.mk.injEq .. ▸ result
+    unfold checkDeclStepC at checkedRun
+    obtain ⟨_, afterFlush, flush, checkedRun⟩ := bindC_ok checkedRun
+    rw [show (flushC : CheckCM Unit) initial = .ok ((), initial.flushed) from rfl] at flush
+    have flushed : initial.flushed = afterFlush := congrArg Prod.snd (Except.ok.inj flush)
+    subst flushed
+    obtain ⟨type, annotated, afterType, beforeValue, afterValue, typeRun, headerRun, valueRun, rfl⟩ :=
+      checked_opaque_decl checkedRun
+    exact ⟨type, annotated, ⟨afterType, beforeValue, afterValue, typeRun, .inr headerRun, valueRun⟩, rfl⟩
+
+theorem definition_all_run {mode : CheckMode} {pins : List NatOpPinSet}
+    {declarations : List Declaration} {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    {hint : Kernel.ReducibilityHint}
+    (present : Declaration.defnDecl header value hint ∈ declarations)
+    {start finish : Nat × FEnv × Array PendingCheck} {initial final : CState}
+    (run : InstallRun mode pins declarations start initial finish final)
+    (canonical : start.2.1 = mkFEnv start.2.1.env) :
+    DefinitionInstalledAll mode header value hint finish.2.1.env := by
+  induction run with
+  | nil => exact absurd present List.not_mem_nil
+  | @cons declaration rest start middle finish initial afterStep final step restRun ih =>
+    obtain ⟨nextEnv, nextPending, rfl, stepRun⟩ := annotDeclStep_ok step
+    have chain : PushChain start.2.1.env nextEnv :=
+      (annotStepC_push mode start.1 (PushChain.self canonical) start.2.2 declaration
+        initial (nextEnv, nextPending) afterStep stepRun).1
+    rcases List.mem_cons.mp present with rfl | restPresent
+    · obtain ⟨type, annotated, calls, installed⟩ := definition_all_step stepRun
+      obtain ⟨⟨_, ⟨new, extension⟩, _⟩, _⟩ :=
+        installRun_trace mode restRun (PushChain.self chain.canon)
+      refine ⟨start.2.1, initial, type, annotated, calls, ?_⟩
+      rw [extension]
+      exact List.mem_append_right _ (installed ▸ List.mem_cons_self)
+    · exact ih restPresent chain.canon
+
+theorem opaque_all_run {mode : CheckMode} {pins : List NatOpPinSet}
+    {declarations : List Declaration} {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    (present : Declaration.opaqueDecl header value ∈ declarations)
+    {start finish : Nat × FEnv × Array PendingCheck} {initial final : CState}
+    (run : InstallRun mode pins declarations start initial finish final)
+    (canonical : start.2.1 = mkFEnv start.2.1.env) :
+    OpaqueInstalledAll mode header value finish.2.1.env := by
+  induction run with
+  | nil => exact absurd present List.not_mem_nil
+  | @cons declaration rest start middle finish initial afterStep final step restRun ih =>
+    obtain ⟨nextEnv, nextPending, rfl, stepRun⟩ := annotDeclStep_ok step
+    have chain : PushChain start.2.1.env nextEnv :=
+      (annotStepC_push mode start.1 (PushChain.self canonical) start.2.2 declaration
+        initial (nextEnv, nextPending) afterStep stepRun).1
+    rcases List.mem_cons.mp present with rfl | restPresent
+    · obtain ⟨type, annotated, calls, installed⟩ := opaque_all_step stepRun
+      obtain ⟨⟨_, ⟨new, extension⟩, _⟩, _⟩ :=
+        installRun_trace mode restRun (PushChain.self chain.canon)
+      refine ⟨start.2.1, initial, type, annotated, calls, ?_⟩
+      rw [extension]
+      exact List.mem_append_right _ (installed ▸ List.mem_cons_self)
+    · exact ih restPresent chain.canon
+
+theorem definition_all_checked {mode : CheckMode} {pins : List NatOpPinSet}
+    {declarations : Array Declaration} {env : Env} {header : Kernel.ConstantVal}
+    {value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    (present : Declaration.defnDecl header value hint ∈ declarations)
+    (checked : checkDecls mode pins declarations = .ok env) :
+    DefinitionInstalledAll mode header value hint env := by
+  obtain ⟨fullyChecked, rfl⟩ := checkDecls_fullyChecked mode checked
+  obtain ⟨_, _, run⟩ := fullyChecked.1.run
+  exact definition_all_run (Array.mem_toList_iff.mpr present) run rfl
+
+theorem opaque_all_checked {mode : CheckMode} {pins : List NatOpPinSet}
+    {declarations : Array Declaration} {env : Env} {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    (present : Declaration.opaqueDecl header value ∈ declarations)
+    (checked : checkDecls mode pins declarations = .ok env) :
+    OpaqueInstalledAll mode header value env := by
+  obtain ⟨fullyChecked, rfl⟩ := checkDecls_fullyChecked mode checked
+  obtain ⟨_, _, run⟩ := fullyChecked.1.run
+  exact opaque_all_run (Array.mem_toList_iff.mpr present) run rfl
+
 /-- Actual checked folds have unique stored names, including the complete
 ordinary, primitive and block installation paths. -/
 theorem checked_unique_names {mode : CheckMode} {pins : List NatOpPinSet}
@@ -649,6 +951,49 @@ theorem DefinitionInstalled.exact {mode : CheckMode} {header installedHeader : K
       (Kernel.Semantics.Env.find?_name lookup).symm)
   cases same
   exact ⟨rfl, rfl, before, initial, afterType, beforeValue, afterValue, typeRun, headerRun, valueRun⟩
+
+theorem DefinitionInstalledAll.exact {mode : CheckMode} {header installedHeader : Kernel.ConstantVal}
+    {value installedValue : Kernel.Expr} {hint installedHint : Kernel.ReducibilityHint} {env : Env}
+    (receipt : DefinitionInstalledAll mode header value hint env) (unique : NodupNames env)
+    (lookup : env.find? header.name = some (.defnInfo installedHeader installedValue installedHint)) :
+    installedHeader = { header with type := installedHeader.type } ∧ installedHint = hint ∧
+    ∃ before : FEnv, ∃ initial : CState,
+      ValueAnnotationCalls mode before header value initial installedHeader.type installedValue := by
+  obtain ⟨before, initial, type, annotated, calls, present⟩ := receipt
+  have same := unique_member unique present (Kernel.Semantics.Env.find?_mem lookup)
+    (by simpa only [Kernel.ConstantInfo.name, Kernel.ConstantInfo.toConstantVal] using
+      (Kernel.Semantics.Env.find?_name lookup).symm)
+  cases same
+  exact ⟨rfl, rfl, before, initial, calls⟩
+
+open Kernel.SetTheory in
+theorem DefinitionInstalledAll.denotes {V : Type u} [SetTheory V]
+    {mode : CheckMode} {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    {hint : Kernel.ReducibilityHint} {env : Env}
+    (receipt : DefinitionInstalledAll mode header value hint env)
+    (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat) (ρ : Nat → V) :
+    ∃ before : FEnv, ∃ initial : CState, ∃ type annotated : Kernel.Expr, ∃ semanticType : V,
+      ValueAnnotationCalls mode before header value initial type annotated ∧
+      Kernel.Denotes strong.public.cval env levels ρ type semanticType ∧
+      strong.public.cval header.name levels ∈ˢ semanticType ∧
+      Kernel.Denotes strong.public.cval env levels ρ annotated (strong.public.cval header.name levels) := by
+  obtain ⟨before, initial, type, annotated, calls, present⟩ := receipt
+  obtain ⟨semanticType, typeRead, member⟩ := strong.public.mem _ present levels ρ
+  exact ⟨before, initial, type, annotated, semanticType, calls, typeRead, member,
+    strong.definition_values _ _ _ present levels ρ⟩
+
+open Kernel.SetTheory in
+theorem OpaqueInstalledAll.denotes {V : Type u} [SetTheory V]
+    {mode : CheckMode} {header : Kernel.ConstantVal} {value : Kernel.Expr} {env : Env}
+    (receipt : OpaqueInstalledAll mode header value env)
+    (model : Kernel.Model V env) (levels : Kernel.Name → Nat) (ρ : Nat → V) :
+    ∃ before : FEnv, ∃ initial : CState, ∃ type annotated : Kernel.Expr, ∃ semanticType : V,
+      ValueAnnotationCalls mode before header value initial type annotated ∧
+      Kernel.Denotes model.cval env levels ρ type semanticType ∧
+      model.cval header.name levels ∈ˢ semanticType := by
+  obtain ⟨before, initial, type, annotated, calls, present⟩ := receipt
+  obtain ⟨semanticType, typeRead, member⟩ := model.mem _ present levels ρ
+  exact ⟨before, initial, type, annotated, semanticType, calls, typeRead, member⟩
 
 /-- The full theorem header, not merely its name/kind skeleton, survives
 to the final environment. The prefix and annotation state are from its
@@ -2357,6 +2702,28 @@ theorem SourceProjectionInstalled.annotation
       (installed.declarations ++ [Kernel.Declaration.thmDecl coverage.header coverage.value]).toArray := by
     simpa using List.mem_append_left [Kernel.Declaration.thmDecl coverage.header coverage.value] present
   exact (AnnotationTrace.definition_checked ordinary inExtended coverage.checked).exact
+    (AnnotationTrace.checked_unique_names coverage.checked) receipt.projectionLookup
+
+/-- The unconditional version also records primitive checking paths should
+an original source identity select one. No domain exclusion is needed. -/
+theorem SourceProjectionInstalled.annotation_all
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {original replacement equation}
+    {projection : SourceProjectionReceipt source original replacement equation}
+    {coverage : SourceConstructorCoverChecked installed projection.site}
+    {constructor : SourceCoverInstalledShape coverage}
+    (receipt : SourceProjectionInstalled projection constructor) :
+    receipt.data.projection = { projection.header with type := receipt.data.projection.type } ∧
+    receipt.data.hint = projection.hint ∧
+    ∃ before : Kernel.FEnv, ∃ initial : Kernel.Cached.CState,
+      AnnotationTrace.ValueAnnotationCalls .verified before projection.header projection.value initial
+        receipt.data.projection.type receipt.data.value := by
+  have present := receipt.replacement_present
+  rw [projection.replacement_decl] at present
+  have inExtended : Kernel.Declaration.defnDecl projection.header projection.value projection.hint ∈
+      (installed.declarations ++ [Kernel.Declaration.thmDecl coverage.header coverage.value]).toArray := by
+    simpa using List.mem_append_left [Kernel.Declaration.thmDecl coverage.header coverage.value] present
+  exact (AnnotationTrace.definition_all_checked inExtended coverage.checked).exact
     (AnnotationTrace.checked_unique_names coverage.checked) receipt.projectionLookup
 
 /-- Actual projection function telescope. Its regime is read from the
