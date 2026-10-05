@@ -508,6 +508,154 @@ theorem InstalledExprImage.denotes_iff {V : Type u} [Kernel.SetTheory V]
       Kernel.Denotes targetValues targetEnv targetLevels ρ target value :=
   ⟨image.denotes, image.symm.denotes⟩
 
+/-- A structural map of installed expressions. Constant universe arguments
+are selected per source identity, independently of ambient sort/binder level
+translation. Neither source names nor universe telescopes must be injective.
+This does not purport to be the output of the annotation checker. -/
+structure InstalledRenaming where
+  name : Kernel.Name → Kernel.Name
+  universes : Kernel.Name → List Kernel.Level → List Kernel.Level
+  level : Kernel.Level → Kernel.Level
+  binder : Kernel.BinderMeta → Kernel.BinderMeta
+  projection : Kernel.Name → Nat → Kernel.Name × Nat
+
+def InstalledRenaming.expr (rename : InstalledRenaming) : Kernel.Expr → Kernel.Expr
+  | .bvar i => .bvar i
+  | .fvar i type => .fvar i (rename.expr type)
+  | .sort u => .sort (rename.level u)
+  | .const name levels => .const (rename.name name) (rename.universes name levels)
+  | .app f a => .app (rename.expr f) (rename.expr a)
+  | .lam type body metadata => .lam (rename.expr type) (rename.expr body) (rename.binder metadata)
+  | .forallE type body metadata => .forallE (rename.expr type) (rename.expr body) (rename.binder metadata)
+  | .letE type value body => .letE (rename.expr type) (rename.expr value) (rename.expr body)
+  | .proj name field value =>
+      .proj (rename.projection name field).1 (rename.projection name field).2 (rename.expr value)
+  | .lit literal => .lit literal
+
+theorem InstalledRenaming.lift (rename : InstalledRenaming) (expression : Kernel.Expr)
+    (amount cutoff : Nat) :
+    rename.expr (Kernel.Expr.liftLooseBVars amount cutoff expression) =
+      Kernel.Expr.liftLooseBVars amount cutoff (rename.expr expression) := by
+  induction expression generalizing cutoff <;>
+    simp_all [InstalledRenaming.expr, Kernel.Expr.liftLooseBVars]
+  split <;> rfl
+
+/-- Open-variable instantiation: exactly the kernel operation, which leaves
+free-variable annotations intact and does not shift its replacement. -/
+theorem InstalledRenaming.instantiate1 (rename : InstalledRenaming)
+    (expression replacement : Kernel.Expr) (depth : Nat) :
+    rename.expr (expression.instantiate1 replacement depth) =
+      (rename.expr expression).instantiate1 (rename.expr replacement) depth := by
+  induction expression generalizing depth <;>
+    simp_all [InstalledRenaming.expr, Kernel.Expr.instantiate1]
+  split
+  · rfl
+  · split <;> rfl
+
+/-- Capture-avoiding substitution also commutes, with the replacement lift
+proved explicitly rather than borrowing the open-variable operation's law. -/
+theorem InstalledRenaming.instantiate1Lift (rename : InstalledRenaming)
+    (expression replacement : Kernel.Expr) (depth : Nat) :
+    rename.expr (expression.instantiate1Lift replacement depth) =
+      (rename.expr expression).instantiate1Lift (rename.expr replacement) depth := by
+  induction expression generalizing depth <;>
+    simp_all [InstalledRenaming.expr, Kernel.Expr.instantiate1Lift]
+  split
+  · exact rename.lift replacement depth 0
+  · split <;> rfl
+
+/-- Cross-environment obligations for one actual installed-expression map.
+Every source lookup is checked, including every member of a many-to-one
+fiber; a shared target address alone cannot satisfy the value equation.
+Projection entries use semantic positions, not just matching owner names.
+The primitive literal squares concern their complete constructor syntax.
+The two successful installation runs alone do not establish these laws. -/
+structure InstalledRenaming.Laws {V : Type u} [Kernel.SetTheory V]
+    (rename : InstalledRenaming)
+    (sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat) : Prop where
+  sort : ∀ level, Kernel.Level.eval sourceLevels level = Kernel.Level.eval targetLevels (rename.level level)
+  regime : ∀ metadata, Kernel.regime sourceLevels metadata.pw = Kernel.regime targetLevels (rename.binder metadata).pw
+  constant : ∀ name levels sourceInfo,
+    sourceEnv.find? name = some sourceInfo →
+    levels.length = sourceInfo.toConstantVal.levelParams.length →
+    ∃ targetInfo, targetEnv.find? (rename.name name) = some targetInfo ∧
+      (rename.universes name levels).length = targetInfo.toConstantVal.levelParams.length ∧
+      sourceValues name (Kernel.Level.substFn sourceLevels sourceInfo.toConstantVal.levelParams levels) =
+        targetValues (rename.name name)
+          (Kernel.Level.substFn targetLevels targetInfo.toConstantVal.levelParams (rename.universes name levels))
+  projectionTable : ∀ name field entry, sourceEnv.findProj? name field = some entry →
+    ∃ targetEntry,
+      targetEnv.findProj? (rename.projection name field).1 (rename.projection name field).2 = some targetEntry ∧
+      field + entry.off = (rename.projection name field).2 + targetEntry.off
+  projectionFirst : ∀ name, sourceEnv.findProj? name 0 = none →
+    (rename.projection name 0).2 = 0 ∧ targetEnv.findProj? (rename.projection name 0).1 0 = none
+  projectionSecond : ∀ name, sourceEnv.findProj? name 1 = none →
+    (rename.projection name 1).2 = 1 ∧ targetEnv.findProj? (rename.projection name 1).1 1 = none
+  natLiteral : ∀ n, rename.expr (Kernel.natLitToConstructor n) = Kernel.natLitToConstructor n
+  stringLiteral : ∀ s, rename.expr (Kernel.strLitToConstructor s) = Kernel.strLitToConstructor s
+
+/-- Compatible fibers identify values only at the same selected target
+instance. This does not assume source-key injectivity or search for a reverse
+alias; both original source identities and lookups remain in the statement. -/
+theorem InstalledRenaming.Laws.fiber {V : Type u} [Kernel.SetTheory V]
+    {rename : InstalledRenaming} {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels}
+    (laws : rename.Laws (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels)
+    {left right : Kernel.Name} {leftLevels rightLevels : List Kernel.Level}
+    {leftInfo rightInfo : Kernel.ConstantInfo}
+    (leftLookup : sourceEnv.find? left = some leftInfo)
+    (rightLookup : sourceEnv.find? right = some rightInfo)
+    (leftArity : leftLevels.length = leftInfo.toConstantVal.levelParams.length)
+    (rightArity : rightLevels.length = rightInfo.toConstantVal.levelParams.length)
+    (sameName : rename.name left = rename.name right)
+    (sameSelection : rename.universes left leftLevels = rename.universes right rightLevels) :
+    sourceValues left (Kernel.Level.substFn sourceLevels leftInfo.toConstantVal.levelParams leftLevels) =
+      sourceValues right (Kernel.Level.substFn sourceLevels rightInfo.toConstantVal.levelParams rightLevels) := by
+  obtain ⟨leftTarget, leftTargetLookup, _, leftValue⟩ := laws.constant _ _ _ leftLookup leftArity
+  obtain ⟨rightTarget, rightTargetLookup, _, rightValue⟩ := laws.constant _ _ _ rightLookup rightArity
+  rw [sameName, rightTargetLookup] at leftTargetLookup
+  obtain rfl := Option.some.inj leftTargetLookup
+  rw [leftValue, rightValue, sameName, sameSelection]
+
+/-- Many-to-one, level-selecting semantic renaming of the actual expression.
+This is a forward law under explicit installation compatibility, not a proof
+that independent annotation runs establish that compatibility. In particular
+no equation between arbitrary independently chosen models is inferred. -/
+theorem InstalledRenaming.denotes {V : Type u} [Kernel.SetTheory V]
+    {rename : InstalledRenaming} {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels}
+    (laws : rename.Laws (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels)
+    {ρ : Nat → V} {expression : Kernel.Expr} {value : V}
+    (denoted : Kernel.Denotes sourceValues sourceEnv sourceLevels ρ expression value) :
+    Kernel.Denotes targetValues targetEnv targetLevels ρ (rename.expr expression) value := by
+  induction denoted with
+  | bvar => exact .bvar
+  | sort => rw [laws.sort]; exact .sort
+  | const lookup arity =>
+    obtain ⟨info, lookup', arity', values⟩ := laws.constant _ _ _ lookup arity
+    rw [values]
+    exact .const lookup' arity'
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam _ _ proof ihA ihF =>
+    rw [laws.regime]
+    exact .lam ihA ihF (fun h => proof ((laws.regime _).trans h))
+  | pi _ _ proof ihA ihB =>
+    rw [laws.regime]
+    exact .pi ihA ihB (fun h => proof ((laws.regime _).trans h))
+  | proj_table lookup _ ih =>
+    obtain ⟨entry, lookup', position⟩ := laws.projectionTable _ _ _ lookup
+    rw [position]
+    exact .proj_table lookup' ih
+  | proj_fst lookup _ ih =>
+    obtain ⟨position, lookup'⟩ := laws.projectionFirst _ lookup
+    simp only [InstalledRenaming.expr, position]
+    exact .proj_fst lookup' ih
+  | proj_snd lookup _ ih =>
+    obtain ⟨position, lookup'⟩ := laws.projectionSecond _ lookup
+    simp only [InstalledRenaming.expr, position]
+    exact .proj_snd lookup' ih
+  | natLit _ ih => exact .natLit (laws.natLiteral _ ▸ ih)
+  | strLit _ ih => exact .strLit (laws.stringLiteral _ ▸ ih)
+
 open Kernel.SetTheory in
 /-- Eliminate an actually denoted installed binder at a typed argument.
 The regime-zero side condition comes from Denotes itself, so this works
