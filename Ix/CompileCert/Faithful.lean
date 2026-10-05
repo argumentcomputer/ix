@@ -677,6 +677,22 @@ inductive InstalledSpineImage {V : Type u} [Kernel.SetTheory V]
       InstalledSpineImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
         (source :: sources) (target :: targets)
 
+theorem InstalledSpineImage.sorts {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl} {sources targets : List Kernel.Level}
+    (image : InstalledSpineImage (V := V) sv tv se te sl tl
+      (sources.map Kernel.Expr.sort) (targets.map Kernel.Expr.sort)) :
+    sources.map (Kernel.Level.eval sl) = targets.map (Kernel.Level.eval tl) := by
+  induction sources generalizing targets with
+  | nil => cases targets <;> cases image; rfl
+  | cons source sources ih =>
+    cases targets with
+    | nil => cases image
+    | cons target targets =>
+      cases image with
+      | cons head tail =>
+        cases head with
+        | sort equality => simp only [List.map_cons, equality, ih tail]
+
 theorem InstalledSpineImage.append {V : Type u} [Kernel.SetTheory V]
     {sv tv se te sl tl source target sources targets}
     (first : InstalledSpineImage (V := V) sv tv se te sl tl source target)

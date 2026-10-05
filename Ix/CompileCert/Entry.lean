@@ -453,6 +453,213 @@ theorem checkInstalledMemberExpr_sound {V : Type u} [Kernel.SetTheory V]
       exact (UniverseImage.telescope_recovery sourceLevels sourceUnique targetUnique sameArity parameter present).symm
   next => contradiction
 
+def checkInstalledMemberExprs (source target : Kernel.Env)
+    (names : Kernel.Name → Kernel.Name) (name : Kernel.Name) :
+    List Kernel.Expr → List Kernel.Expr → Option Bool
+  | [], [] => some true
+  | sourceExpr :: sources, targetExpr :: targets => bothChecks
+      (checkInstalledMemberExpr source target names name sourceExpr targetExpr)
+      (checkInstalledMemberExprs source target names name sources targets)
+  | _, _ => some false
+
+theorem checkInstalledMemberExprs_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry : Kernel.ConstantInfo}
+    (lookup : sourceEnv.find? name = some sourceEntry)
+    {sources targets : List Kernel.Expr}
+    (checked : checkInstalledMemberExprs sourceEnv targetEnv names name sources targets = some true)
+    (levels : Kernel.Name → Nat) :
+    InstalledSpineImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels) sources targets := by
+  induction sources generalizing targets with
+  | nil => cases targets <;> simp [checkInstalledMemberExprs] at checked; exact .nil
+  | cons source sources ih =>
+    cases targets with
+    | nil => simp [checkInstalledMemberExprs] at checked
+    | cons targetExpr targets =>
+      obtain ⟨head, tail⟩ := bothChecks_true checked
+      exact .cons (checkInstalledMemberExpr_sound target association lookup head levels) (ih tail)
+
+/-- Installed firing correspondence, including every nested level and pin
+position. This relation does not itself prove application admissibility or
+transfer a strong recursor law; those use the actual typed spines. -/
+inductive InstalledFireImage {V : Type u} [Kernel.SetTheory V]
+    (sv tv : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat) :
+    Kernel.RecRuleFire → Kernel.RecRuleFire → Prop
+  | inert : InstalledFireImage sv tv sourceEnv targetEnv sourceLevels targetLevels .inert .inert
+  | plain : InstalledFireImage sv tv sourceEnv targetEnv sourceLevels targetLevels .plain .plain
+  | nested {sourceUs targetUs sourcePins targetPins}
+      (levels : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+      (pins : InstalledSpineImage sv tv sourceEnv targetEnv sourceLevels targetLevels sourcePins targetPins) :
+      InstalledFireImage sv tv sourceEnv targetEnv sourceLevels targetLevels
+        (.nested sourceUs sourcePins) (.nested targetUs targetPins)
+
+def checkInstalledFire (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (name : Kernel.Name) : Kernel.RecRuleFire → Kernel.RecRuleFire → Option Bool
+  | .inert, .inert | .plain, .plain => some true
+  | .nested sourceUs sourcePins, .nested targetUs targetPins => bothChecks
+      (checkInstalledMemberExprs source target names name
+        (sourceUs.map Kernel.Expr.sort) (targetUs.map Kernel.Expr.sort))
+      (checkInstalledMemberExprs source target names name sourcePins targetPins)
+  | _, _ => some false
+
+theorem checkInstalledFire_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry : Kernel.ConstantInfo}
+    (lookup : sourceEnv.find? name = some sourceEntry)
+    {sourceFire targetFire : Kernel.RecRuleFire}
+    (checked : checkInstalledFire sourceEnv targetEnv names name sourceFire targetFire = some true)
+    (levels : Kernel.Name → Nat) :
+    InstalledFireImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels) sourceFire targetFire := by
+  cases sourceFire <;> cases targetFire <;> simp only [checkInstalledFire] at checked
+  all_goals try contradiction
+  · exact .inert
+  · exact .plain
+  · obtain ⟨universeCheck, pinCheck⟩ := bothChecks_true checked
+    exact .nested (checkInstalledMemberExprs_sound target association lookup universeCheck levels).sorts
+      (checkInstalledMemberExprs_sound target association lookup pinCheck levels)
+
+def InstalledRuleHeader (names : Kernel.Name → Kernel.Name) (source target : Kernel.RecRule) : Prop :=
+  names source.ctor = target.ctor ∧ source.nfields = target.nfields ∧
+    source.ctorParams = target.ctorParams ∧ source.k = target.k ∧ source.eta = target.eta ∧
+    source.paramsBlind = target.paramsBlind
+
+instance (names : Kernel.Name → Kernel.Name) (source target : Kernel.RecRule) :
+    Decidable (InstalledRuleHeader names source target) :=
+  inferInstanceAs (Decidable (names source.ctor = target.ctor ∧ source.nfields = target.nfields ∧
+    source.ctorParams = target.ctorParams ∧ source.k = target.k ∧ source.eta = target.eta ∧
+    source.paramsBlind = target.paramsBlind))
+
+structure InstalledRuleImage {V : Type u} [Kernel.SetTheory V]
+    (sv tv : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat)
+    (names : Kernel.Name → Kernel.Name) (source target : Kernel.RecRule) : Prop where
+  header : InstalledRuleHeader names source target
+  fire : InstalledFireImage sv tv sourceEnv targetEnv sourceLevels targetLevels source.fire target.fire
+  rhs : InstalledExprImage sv tv sourceEnv targetEnv sourceLevels targetLevels source.rhs target.rhs
+
+inductive InstalledRulesImage {V : Type u} [Kernel.SetTheory V]
+    (sv tv : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat)
+    (names : Kernel.Name → Kernel.Name) : List Kernel.RecRule → List Kernel.RecRule → Prop
+  | nil : InstalledRulesImage sv tv sourceEnv targetEnv sourceLevels targetLevels names [] []
+  | cons {source target sources targets}
+      (head : InstalledRuleImage sv tv sourceEnv targetEnv sourceLevels targetLevels names source target)
+      (tail : InstalledRulesImage sv tv sourceEnv targetEnv sourceLevels targetLevels names sources targets) :
+      InstalledRulesImage sv tv sourceEnv targetEnv sourceLevels targetLevels names (source :: sources) (target :: targets)
+
+theorem InstalledRulesImage.length {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl names sources targets}
+    (image : InstalledRulesImage (V := V) sv tv se te sl tl names sources targets) :
+    sources.length = targets.length := by
+  induction image with
+  | nil => rfl
+  | cons _ _ ih => simp only [List.length_cons, ih]
+
+theorem InstalledRulesImage.at {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl names sources targets}
+    (image : InstalledRulesImage (V := V) sv tv se te sl tl names sources targets)
+    (index : Nat) (inside : index < sources.length) :
+    InstalledRuleImage sv tv se te sl tl names sources[index]
+      (targets[index]'(by rw [← image.length]; exact inside)) := by
+  induction image generalizing index with
+  | nil => simp at inside
+  | cons head tail ih =>
+    cases index with
+    | zero => exact head
+    | succ index => exact ih index (by simpa using inside)
+
+def checkInstalledRules (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+    (name : Kernel.Name) : List Kernel.RecRule → List Kernel.RecRule → Option Bool
+  | [], [] => some true
+  | sourceRule :: sources, targetRule :: targets => bothChecks
+      (some (decide (InstalledRuleHeader names sourceRule targetRule))) (bothChecks
+        (checkInstalledFire source target names name sourceRule.fire targetRule.fire) (bothChecks
+          (checkInstalledMemberExpr source target names name sourceRule.rhs targetRule.rhs)
+          (checkInstalledRules source target names name sources targets)))
+  | _, _ => some false
+
+theorem checkInstalledRules_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    {name : Kernel.Name} {sourceEntry : Kernel.ConstantInfo}
+    (lookup : sourceEnv.find? name = some sourceEntry)
+    {sources targets : List Kernel.RecRule}
+    (checked : checkInstalledRules sourceEnv targetEnv names name sources targets = some true)
+    (levels : Kernel.Name → Nat) :
+    InstalledRulesImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels) names sources targets := by
+  induction sources generalizing targets with
+  | nil => cases targets <;> simp [checkInstalledRules] at checked; exact .nil
+  | cons source sources ih =>
+    cases targets with
+    | nil => simp [checkInstalledRules] at checked
+    | cons targetRule targets =>
+      obtain ⟨header, rest⟩ := bothChecks_true checked
+      obtain ⟨fire, rest⟩ := bothChecks_true rest
+      obtain ⟨rhs, tail⟩ := bothChecks_true rest
+      exact .cons ⟨of_decide_eq_true (Option.some.inj header),
+        checkInstalledFire_sound target association lookup fire levels,
+        checkInstalledMemberExpr_sound target association lookup rhs levels⟩ (ih tail)
+
+/-- Recursor rows are checked in their actual installed form, after the
+fold computed their firing modes and rescue bits. Original raw rule/block
+records and their installation association remain separate evidence. -/
+def checkInstalledRecursors (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Bool :=
+  source.consts.all fun entry => match entry with
+    | .recInfo header major rulePrefix rules =>
+      decide (source.find? header.name = some entry) &&
+      match target.find? (names header.name) with
+      | some (.recInfo _ targetMajor targetPrefix targetRules) =>
+        decide (major = targetMajor ∧ rulePrefix = targetPrefix) &&
+          decide (checkInstalledRules source target names header.name rules targetRules = some true)
+      | _ => false
+    | _ => true
+
+theorem checkInstalledRecursors_member {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (checked : checkInstalledRecursors source target names = true)
+    {header : Kernel.ConstantVal} {major rulePrefix : Nat} {rules : List Kernel.RecRule}
+    (present : Kernel.ConstantInfo.recInfo header major rulePrefix rules ∈ source.consts) :
+    source.find? header.name = some (.recInfo header major rulePrefix rules) ∧
+    ∃ targetHeader targetRules,
+      target.find? (names header.name) = some (.recInfo targetHeader major rulePrefix targetRules) ∧
+      checkInstalledRules source target names header.name rules targetRules = some true := by
+  have row := List.all_eq_true.mp checked (.recInfo header major rulePrefix rules) present
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at row
+  refine ⟨row.1, ?_⟩
+  cases lookup : target.find? (names header.name) with
+  | none => simp [lookup] at row
+  | some entry =>
+    cases entry <;> simp only [lookup, Bool.and_eq_true, decide_eq_true_eq] at row
+    case recInfo targetHeader targetMajor targetPrefix targetRules =>
+      obtain ⟨_, ⟨rfl, rfl⟩, comparison⟩ := row
+      exact ⟨targetHeader, targetRules, rfl, comparison⟩
+    all_goals simp at row
+
+theorem checkInstalledRecursors_sound {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {major rulePrefix : Nat} {rules : List Kernel.RecRule}
+    (present : Kernel.ConstantInfo.recInfo header major rulePrefix rules ∈ sourceEnv.consts) :
+    ∃ targetHeader targetRules,
+      targetEnv.find? (names header.name) = some (.recInfo targetHeader major rulePrefix targetRules) ∧
+      ∀ levels, InstalledRulesImage
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        target.public.cval sourceEnv targetEnv levels
+        ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels header.name levels) names rules targetRules := by
+  obtain ⟨sourceLookup, targetHeader, targetRules, targetLookup, comparison⟩ :=
+    checkInstalledRecursors_member checked present
+  exact ⟨targetHeader, targetRules, targetLookup,
+    fun levels => checkInstalledRules_sound target association sourceLookup comparison levels⟩
+
 /-- Check every actual source row, including every member of an alias
 fiber. The source lookup check prevents a shadowed row from borrowing the
 telescope of another row with the same name. Extra target support is allowed.
