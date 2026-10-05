@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotStrong
+import Ix.CompileCert.StrongEntry
 
 namespace Tests.Ix.CompileCert.AnnotNatOps
 open _root_.Ix.CompileCert _root_.Ix.Kernel
@@ -14,10 +14,10 @@ private def theoremName := sourceName `NatReceipt.predEqual
 private def missingName := sourceName `NatReceipt.missing
 private def request : ValueEquationRequest :=
   ⟨theoremName, [], .succ .zero, functionType, aliasName, [], natPredName, []⟩
-private def sourceDecls : Array Declaration := #[.basisDecl .eqK, .basisDecl .natK,
+private def sourceDecls : Array Declaration := #[.basisDecl .falseK, .basisDecl .eqK, .basisDecl .natK,
   .defnDecl ⟨natPredName, [], functionType⟩ predBody (.regular 0)]
 private def targetDecls : Array Declaration := sourceDecls ++ #[
-  .defnDecl ⟨aliasName, [], functionType⟩ (.const natPredName []) (.regular 1),
+  .defnDecl ⟨aliasName, [], functionType⟩ predBody (.regular 1),
   .thmDecl ⟨theoremName, [], request.type⟩
     (Expr.mkAppN (.const eqReflName [.succ .zero]) [functionType, .const natPredName []])]
 private def require (label : String) (condition : Bool) : IO Unit := do
@@ -52,7 +52,10 @@ def run : IO Unit := do
     (.const natPredName [.zero])).isSome)
   require "unrelated binder grammar refuses" (!(readCheckedNatEquation source target names certificates levels predBody).isSome)
   require "DivMod canonical definition required" (!(readCheckedDivModOperation source target id missing levels natDivName).isSome)
-  IO.println "Nat receipts: 10/10 controls passed"
+  IO.println s!"diagnostic annotation={checkAnnotatedAssociation source source id}, installed={checkInstalledAssociation source source id}, tables={checkInstalledTowers source source id}, reduce={checkReduceOperationReceipts source source id missing missing}"
+  require "full same-carrier identity association" (checkStrongAssociation source source id missing missing missing levels == some true)
+  require "full same-carrier admitted alias association" (checkStrongAssociation source target names certificates missing missing levels == some true)
+  IO.println "Nat receipts: 12/12 controls passed"
 
 #eval run
 end Tests.Ix.CompileCert.AnnotNatOps
