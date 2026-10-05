@@ -56,7 +56,6 @@ namespace. Declaration namespaces and import relationships do not change.
 | Import lines to rewrite, in every form (`import`, `public import`, `import all`, `public meta import`), including kernel-internal ones | 1,298 in 526 files |
 | Module-name `Name` literals in the audit allowlists and denylists (`Ix/Kernel/Audit/Roots.lean`, `Ix/Kernel/Admission/Audit.lean`, `Ix/Ixon/Audit.lean`, `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean`, `Ix/Resource/Audit.lean`) and the `#guard` lines that exercise them | about 130 lines |
 | Module-name and path strings in the fences (`Tests/Ix/Kernel/{Layering,KernelLayout,TrustSurface}.lean`) | 19 module strings, 13 path strings |
-| `.gitattributes` rules for `Ix/Kernel/**` (linguist markers) | 13 |
 | Module targets in the `check-kernel` script | 13 |
 | Documentation: `docs/kernel.md` (about 110), `Models/SetTheory/README.md`, `Benchmarks/Kernel/README.md`, `docs/Ixon.md`, `docs/sharing-minimum*.md`, `README.md`, the pin-gen usage text | about 135 |
 | Rust comments | 8 lines in 5 files |
@@ -209,19 +208,18 @@ Two points are deliberate:
    the 13 module targets in the `check-kernel` script, the pin-gen usage
    text and output paths, and the directory list in `sourceFingerprint` in
    `Benchmarks/Kernel/CheckIxePaired.lean`.
-4. Rewrite the 13 `.gitattributes` rules to the new paths.
-5. Declare the three libraries above, delete `ixRoots`, `IxImports` and
+4. Declare the three libraries above, delete `ixRoots`, `IxImports` and
    `IxCertified`, and point the root tests at `IxKernelFixtures` (today one
    root test, `Tests.Ix.Kernel.Projection`, imports a fixture).
-6. In `flake.nix`, set the library derivation's `name` back to `"Ix"`
+5. In `flake.nix`, set the library derivation's `name` back to `"Ix"`
    (it currently builds `IxImports`). Keep the `buildDir := "../.lake/kernel"`
    override and the `LEAN_PATH` entries until the packaging replacement
    described below exists.
-7. Update `docs/kernel.md` (including the `LICENSE-CON-LECHE` path),
+6. Update `docs/kernel.md` (including the `LICENSE-CON-LECHE` path),
    `README.md`, `Models/SetTheory/README.md`, `Benchmarks/Kernel/README.md`,
    the Ixon and sharing docs, the NOTICE file, and the eight Rust comment
    lines.
-8. Rebuild and validate every consumer, since every kernel olean changes
+7. Rebuild and validate every consumer, since every kernel olean changes
    name:
    - `lake run check-kernel --with-model` (standalone gate, host tests,
      model);
