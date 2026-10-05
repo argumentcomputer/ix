@@ -36,7 +36,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target
+            custom,path=.lake,path=target,path=Models/SetTheory/.lake
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -72,28 +72,17 @@ jobs:
         run: |
           lake exe ixon-v4-primitives
           lake exe ixon-v4-tests --primitives
-
-  # A fresh package build keeps host dependencies out of the certified import
-  # closure. Mathlib is confined to its separate model package; its cache only
-  # supplies pinned dependency objects, not this checkout's kernel or fixtures.
-  # No sticky disk and no Cargo cache: the job builds from an empty tree.
-  certified-kernel:
-    name: Certified Lean kernel
-    runs-on: runs-on=${{ github.run_id }}-certified-kernel-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
-    steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: $/.github/actions/setup-rust-toolchain
-        with:
-          codegen: portable
-          use-github-cache: "false"
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
-        with:
-          auto-config: false
-          use-github-cache: false
+      # The certified gate: the standalone kernel package build with its
+      # audits (its own workspace, so host dependencies cannot enter the
+      # certified import closure even on a warm disk), the host-side tests,
+      # the codec and block-order differentials, the set-theory model, the
+      # fences, the entry cases and the reader fidelity. The kernel artifacts
+      # in .lake/kernel are shared with the build above and persist on the
+      # sticky disk. The model workspace holds Mathlib, whose cache supplies
+      # pinned dependency objects only, never this checkout's kernel or
+      # fixtures.
       - name: Fetch pinned set-theory dependencies
+        if: github.event_name != 'push'
         run: |
           MATHLIB_NO_CACHE_ON_UPDATE=1 lake -d Models/SetTheory update
           lake -d Models/SetTheory exe cache get \
@@ -101,9 +90,10 @@ jobs:
             Mathlib.SetTheory.ZFC.VonNeumann \
             Mathlib.SetTheory.ZFC.Cardinal
       - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
+        if: github.event_name != 'push'
         run: lake run check-kernel --with-model
       - name: Retain codec, block-order, entry-case and reader-fidelity results
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name != 'push' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: certified-kernel-differential
@@ -232,7 +222,7 @@ jobs:
 
   ci-gate:
     if: ${{ always() }}
-    needs: [lean-test, certified-kernel, rust-test, cuda-compile, lints]
+    needs: [lean-test, rust-test, cuda-compile, lints]
     permissions:
       actions: read
       checks: read
