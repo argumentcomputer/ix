@@ -548,6 +548,145 @@ inductive AnnotatedApplication {V : Type u} [Kernel.SetTheory V] {env : Kernel.E
       AnnotatedApplication strong levels depth ρ (.forallE domain body binder)
         (expression :: expressions) (annotation :: annotations) residual
 
+open Kernel.Semantics Kernel.Model in
+/-- The actual internal reading of one argument. Semantic domain membership
+is supplied separately by the public dependent application, not assumed here. -/
+structure ArgumentAnnotation {V : Type u} [Kernel.SetTheory V] {env : Kernel.Env}
+    (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (depth : Nat) (ρ : Nat → V) (expression : Kernel.Expr) (annotation : AnnotTerm) : Prop where
+  reading : denoteMeta strong.internal.base2.acval env levels depth expression = some annotation
+  scope : Kernel.Expr.WScoped depth expression
+  bounded : expression.looseBVarsBounded 0 = true
+  graded : WellDenotedV V ρ annotation
+
+inductive ArgumentAnnotations {V : Type u} [Kernel.SetTheory V] {env : Kernel.Env}
+    (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (depth : Nat) (ρ : Nat → V) : List Kernel.Expr → List Kernel.Semantics.AnnotTerm → Prop
+  | nil : ArgumentAnnotations strong levels depth ρ [] []
+  | cons {expression annotation expressions annotations}
+      (head : ArgumentAnnotation strong levels depth ρ expression annotation)
+      (tail : ArgumentAnnotations strong levels depth ρ expressions annotations) :
+      ArgumentAnnotations strong levels depth ρ (expression :: expressions) (annotation :: annotations)
+
+open Kernel.Semantics Kernel.Model in
+/-- Assemble an internal annotated application from the public dependent fit
+and the arguments' actual scoped readings. Closing/substitution correspondence
+preserves the exact residual; no independently chosen type is substituted. -/
+theorem AnnotatedApplication.of_public {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {type publicResidual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth ρ expressions annotations)
+    (application : DenotedApplication strong.public.cval env levels ρ (type.closeN depth)
+      (expressions.map (Kernel.Expr.closeN depth)) (annotations.map (interp V ρ)) publicResidual)
+    (bounded : type.looseBVarsBounded 0 = true) :
+    ∃ residual, AnnotatedApplication strong levels depth ρ type expressions annotations residual ∧
+      residual.closeN depth = publicResidual := by
+  induction readings generalizing type publicResidual with
+  | nil =>
+    have equal : publicResidual = type.closeN depth := by
+      generalize type.closeN depth = closedType at application ⊢
+      cases application
+      rfl
+    exact ⟨type, .nil, equal.symm⟩
+  | @cons expression annotation expressions annotations evidence tail ih =>
+    cases type with
+    | forallE domain body binder =>
+      cases application with
+      | cons domainRead argumentRead argumentTyped rest =>
+        have bounds : domain.looseBVarsBounded 0 = true ∧ body.looseBVarsBounded 1 = true := by
+          simpa only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] using bounded
+        have converted : DenotedApplication strong.public.cval env levels ρ
+            ((body.instantiate1 expression).closeN depth)
+            (expressions.map (Kernel.Expr.closeN depth))
+            (annotations.map (interp V ρ)) publicResidual := by
+          rw [closeN_substitution body expression depth evidence.bounded 0 bounds.2]
+          exact rest
+        obtain ⟨residual, fitted, equal⟩ := ih converted
+          (Kernel.Expr.looseBVarsBounded_instantiate1_gen evidence.bounded bounds.2)
+        exact ⟨residual, .cons domainRead evidence.reading evidence.scope evidence.bounded
+          evidence.graded argumentTyped fitted, equal⟩
+    | _ => cases application
+
+/-- Symbolic arguments, with their metadata supplied explicitly by the caller.
+The semantic representation theorem checks scope only; it does not claim that
+the supplied metadata has passed inference or is the argument's source type. -/
+def argumentFVars (count : Nat) (metadata : Nat → Kernel.Expr) : List Kernel.Expr :=
+  (List.range count).map fun index => .fvar index (metadata index)
+
+def argumentReadings (count : Nat) : List Kernel.Semantics.AnnotTerm :=
+  (List.range count).map fun index => .bvar (count - 1 - index)
+
+open Kernel.Semantics Kernel.Model in
+theorem ArgumentAnnotation.variable {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (depth : Nat) (ρ : Nat → V) (index : Nat) (metadata : Kernel.Expr)
+    (inside : index < depth) (scope : Kernel.Expr.WScoped index metadata) :
+    ArgumentAnnotation strong levels depth ρ (.fvar index metadata)
+      (.bvar (depth - 1 - index)) := by
+  constructor
+  · simp [denoteMeta]
+  · simpa only [Kernel.Expr.WScoped] using And.intro inside scope
+  · rfl
+  · simp [WellDenotedV]
+
+theorem ArgumentAnnotations.variables {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (depth : Nat) (ρ : Nat → V) (metadata : Nat → Kernel.Expr)
+    (scope : ∀ index, index < depth → Kernel.Expr.WScoped index (metadata index)) :
+    ArgumentAnnotations strong levels depth ρ (argumentFVars depth metadata) (argumentReadings depth) := by
+  have all : ∀ indices : List Nat, (∀ index ∈ indices, index < depth) →
+      ArgumentAnnotations strong levels depth ρ
+        (indices.map fun index => .fvar index (metadata index))
+        (indices.map fun index => .bvar (depth - 1 - index)) := by
+    intro indices
+    induction indices with
+    | nil => intro _; exact .nil
+    | cons index rest ih =>
+      intro inside
+      have bound := inside index (by simp)
+      exact .cons (ArgumentAnnotation.variable strong levels depth ρ index (metadata index)
+        bound (scope index bound)) (ih fun i hi => inside i (by simp [hi]))
+  exact all (List.range depth) (by intro index inside; exact List.mem_range.mp inside)
+
+theorem argumentFVars_closed (count : Nat) (metadata : Nat → Kernel.Expr) :
+    (argumentFVars count metadata).map (Kernel.Expr.closeN count) = argumentVariables count := by
+  simp [argumentFVars, argumentVariables, List.map_map, Kernel.Expr.closeN]
+
+open Kernel.Semantics in
+theorem argumentReadings_values {V : Type u} [Kernel.SetTheory V]
+    (ρ : Nat → V) (arguments : List V) :
+    (argumentReadings arguments.length).map (interp V (pushArguments ρ arguments)) = arguments := by
+  apply List.ext_getElem
+  · simp [argumentReadings]
+  · intro index first second
+    simpa [argumentReadings] using pushArguments_get arguments ρ index second
+
+open Kernel.Semantics in
+/-- An arbitrary tuple against a closed installed type yields the exact
+internal annotated application. The argument annotations are derived from
+actual `denoteMeta` variable readings, not assumed as arbitrary witnesses. -/
+theorem AnnotatedApplication.arbitrary_arguments {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {ρ finalρ : Nat → V} {type result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope strong.public.cval env levels ρ type arguments finalρ result)
+    (bounded : type.looseBVarsBounded 0 = true) (noFvars : type.hasFvar = false)
+    (metadata : Nat → Kernel.Expr)
+    (scope : ∀ index, index < arguments.length → Kernel.Expr.WScoped index (metadata index)) :
+    ∃ residual, AnnotatedApplication strong levels arguments.length (pushArguments ρ arguments)
+      type (argumentFVars arguments.length metadata) (argumentReadings arguments.length) residual := by
+  obtain ⟨publicResidual, applied⟩ := DenotedApplication.arbitrary_arguments typed bounded
+  have aligned : DenotedApplication strong.public.cval env levels (pushArguments ρ arguments)
+      (type.closeN arguments.length)
+      ((argumentFVars arguments.length metadata).map (Kernel.Expr.closeN arguments.length))
+      ((argumentReadings arguments.length).map (interp V (pushArguments ρ arguments))) publicResidual := by
+    rw [Kernel.Expr.closeN_of_hasFvar type _ _ noFvars, argumentFVars_closed, argumentReadings_values]
+    exact applied
+  obtain ⟨residual, fitted, _⟩ := AnnotatedApplication.of_public
+    (ArgumentAnnotations.variables strong levels arguments.length (pushArguments ρ arguments) metadata scope)
+    aligned bounded
+  exact ⟨residual, fitted⟩
+
 open Kernel.Semantics Kernel.Model Kernel.SetTheory in
 /-- Construct the recursor law's exact substitution-peeling fit from the
 public domain typings. The residual reading is proved for the actual
@@ -749,6 +888,52 @@ theorem AnnotatedApplication.installed_fit {V : Type u} [Kernel.SetTheory V]
   obtain ⟨result, shape, fit, resultRead, denoted⟩ := application.denotes_residual reading
     (Kernel.Expr.WScoped.of_not_hasFvar noFree) bounded (graded ρ)
   exact ⟨typeAnnotation, result, reading0, fit, resultRead, shape, denoted⟩
+
+open Kernel.Semantics Kernel.Model in
+/-- Derive the strong invariant's exact telescope fit for arbitrary public
+values at an actual installed universe instance. Closedness, type reading,
+grading and the symbolic argument readings are all derived. The metadata
+scope premise is not a claim of successful inference on a generated context. -/
+theorem StrongInstalledModel.arbitrary_installed_fit {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (name : Kernel.Name) (constant : Kernel.ConstantInfo)
+    (lookup : env.find? name = some constant) (termEntry : constant.isTowerEntry = false)
+    (universes : List Kernel.Level) (arity : universes.length = constant.toConstantVal.levelParams.length)
+    {ρ finalρ : Nat → V} {arguments : List V} {result : Kernel.Expr}
+    (typed : InstalledTelescope strong.public.cval env levels ρ
+      (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes)
+      arguments finalρ result)
+    (metadata : Nat → Kernel.Expr)
+    (scope : ∀ index, index < arguments.length → Kernel.Expr.WScoped index (metadata index)) :
+    ∃ residual typeAnnotation residualAnnotation,
+      AnnotatedApplication strong levels arguments.length (pushArguments ρ arguments)
+        (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes)
+        (argumentFVars arguments.length metadata) (argumentReadings arguments.length) residual ∧
+      denoteMeta strong.internal.base2.acval env levels 0
+        (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes) =
+          some typeAnnotation ∧
+      TeleFitPA V (pushArguments ρ arguments) typeAnnotation
+        (argumentReadings arguments.length) residualAnnotation ∧
+      denoteMeta strong.internal.base2.acval env levels arguments.length residual = some residualAnnotation ∧
+      Kernel.piResidual
+        (constant.toConstantVal.type.instantiateLevelParams constant.toConstantVal.levelParams universes)
+        (argumentFVars arguments.length metadata) = some residual ∧
+      Kernel.Denotes strong.public.cval env levels (pushArguments ρ arguments)
+        (residual.closeN arguments.length) (interp V (pushArguments ρ arguments) residualAnnotation) := by
+  have wf := strong.internal.base2.wf constant (Kernel.Semantics.Env.find?_mem lookup)
+  have noFree : (constant.toConstantVal.type.instantiateLevelParams
+      constant.toConstantVal.levelParams universes).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact wf.1
+  have bounded : (constant.toConstantVal.type.instantiateLevelParams
+      constant.toConstantVal.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact wf.2.2.2.1
+  obtain ⟨residual, application⟩ :=
+    AnnotatedApplication.arbitrary_arguments typed bounded noFree metadata scope
+  obtain ⟨typeAnnotation, residualAnnotation, proof⟩ :=
+    application.installed_fit name constant lookup termEntry universes arity
+  exact ⟨residual, typeAnnotation, residualAnnotation, application, proof⟩
 
 open Kernel.Semantics Kernel.Model in
 /-- The exact residual of an actually installed type is graded after any

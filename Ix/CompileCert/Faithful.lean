@@ -2,6 +2,7 @@ import Ix.CompileCert.Translate
 import Ix.Kernel.Ixon.ReaderSpec
 import Ix.Kernel.Denotes
 import Ix.Kernel.Verify.Subst
+import Ix.Kernel.Verify.Close
 import Ix.Kernel.Verify.InferLeaves
 import Ix.Kernel.Verify.PropWhen
 
@@ -1307,6 +1308,42 @@ theorem denotes_instantiate1Lift {V : Type u} [Kernel.SetTheory V]
 def pushArguments {V : Type u} (ρ : Nat → V) : List V → Nat → V
   | [] => ρ
   | argument :: rest => pushArguments (Kernel.push argument ρ) rest
+
+/-- Closing a locally closed open term under additional binders is the
+actual capture-avoiding lift of its original closure. Free-variable type
+metadata is erased by both sides of `closeN`, not semantically interpreted. -/
+theorem closeN_under_binders (expression : Kernel.Expr) (depth amount : Nat) :
+    ∀ cutoff, expression.looseBVarsBounded cutoff = true →
+      expression.closeN depth (amount + cutoff) =
+        (expression.closeN depth cutoff).liftLooseBVars amount cutoff := by
+  induction expression <;> intro cutoff bounded <;>
+    simp_all [Kernel.Expr.closeN, Kernel.Expr.looseBVarsBounded,
+      Kernel.Expr.liftLooseBVars, Nat.add_assoc]
+  case bvar index => omega
+  case fvar index type ih => omega
+
+/-- Close the exact checker substitution as a public capture-avoiding
+substitution. Both the body and replacement bounds are explicit; no source
+normalization or annotation-image premise is inferred by this structural law. -/
+theorem closeN_substitution (expression replacement : Kernel.Expr) (depth : Nat)
+    (replacementBounded : replacement.looseBVarsBounded 0 = true) :
+    ∀ cutoff, expression.looseBVarsBounded (cutoff + 1) = true →
+      (expression.instantiate1 replacement cutoff).closeN depth cutoff =
+        (expression.closeN depth (cutoff + 1)).instantiate1Lift
+          (replacement.closeN depth) cutoff := by
+  induction expression <;> intro cutoff bounded <;>
+    simp_all [Kernel.Expr.closeN, Kernel.Expr.instantiate1,
+      Kernel.Expr.instantiate1Lift, Kernel.Expr.looseBVarsBounded]
+  case bvar index =>
+    by_cases same : index = cutoff
+    · subst index
+      simpa using closeN_under_binders replacement depth cutoff 0 replacementBounded
+    · have below : ¬index > cutoff := by omega
+      simp [same, below, Kernel.Expr.closeN]
+  case fvar index type ih =>
+    have unequal : cutoff + 1 + (depth - 1 - index) ≠ cutoff := by omega
+    have above : cutoff + 1 + (depth - 1 - index) > cutoff := by omega
+    simp [unequal, above]
 
 /-- Substitute an outer argument through the entire dependent telescope.
 The final valuation and residual expression record every consumed binder;
