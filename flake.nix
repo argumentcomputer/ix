@@ -213,18 +213,38 @@
               ./lakefile.lean
               ./lake-manifest.json
               ./lean-toolchain
+              ./IxC/lake-manifest.json
+              ./IxC/lean-toolchain
               ./Cargo.toml
               ./Cargo.lock
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./crates)
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
             ];
           };
-          lakeDeps = lake2nix.buildDeps {
+          lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);
+          # Local packages build in the workspace; buildDeps only supports Git sources.
+          lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanSrc;
             depOverrideDeriv = {
               Blake3 = blake3-lean.packages.${system}.rust;
             };
-          };
+          }) (map (p: p.name) (builtins.filter (p: p.type == "path") lakeManifest.packages));
+          lakePackageOverrides = pkgs.writers.writeJSON "lake-package-overrides.json" (
+            lakeManifest
+            // {
+              packages = map (
+                p:
+                if p.type == "path" then
+                  p
+                else
+                  {
+                    inherit (p) name inherited;
+                    type = "path";
+                    dir = ".lake/packages/${p.name}";
+                  }
+              ) lakeManifest.packages;
+            }
+          );
           # Shared Lake build args: patches out the Cargo build (Crane handles it)
           mkLakeBuildArgs = rustLib: {
             inherit lakeDeps;
@@ -232,6 +252,11 @@
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
               substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
+            '';
+            # Preserve workspace-relative paths instead of shadowing local packages.
+            preConfigure = ''
+              mkdir -p .lake
+              ln -sf ${lakePackageOverrides} .lake/package-overrides.json
             '';
             # Symlink the Crane-built static lib to where Lake expects it
             postConfigure = ''
@@ -256,7 +281,10 @@
             lakeBuildArgs
             // {
               name = "Ix";
-              buildLibrary = true;
+              # `Ix:shared` would fetch the kernel package's shared facets, which
+              # import each other and cover the whole theory; executables compile
+              # the native objects of their own import closures instead.
+              buildLibrary = false;
             }
           );
           lakeBinArgs = lakeBuildArgs // {
@@ -265,7 +293,8 @@
             installArtifacts = true;
           };
           leanPath = pkgs.lib.concatStringsSep ":" (
-            map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
+            [ "${ixLib}/.lake/kernel/lib/lean" ]
+            ++ map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
           );
           wrapBin =
             drv:
@@ -275,7 +304,7 @@
                 [ -x "$f" ] || continue
                 makeWrapper "$f" "$out/bin/$(basename "$f")" \
                   --set LEAN_SYSROOT "${lean}" \
-                  --set LEAN_PATH "${drv}/.lake/build/lib/lean:${leanPath}"
+                  --set LEAN_PATH "${drv}/.lake/build/lib/lean:${drv}/.lake/kernel/lib/lean:${leanPath}"
               done
             '';
           # The CLI links rustPkgNet (lakefile: `ix` uses `ix_rs_net`), reusing

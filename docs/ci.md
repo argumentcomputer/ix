@@ -46,9 +46,10 @@ Do not require the gates' `interrupted` or `Detect Spot interruption` checks.
 Independent GitHub-hosted or security requirements can remain, provided they
 also report the checks the merge queue expects.
 
-CI Jobs and Nix CI run on both `pull_request` and `merge_group`. Ignored merge
-tests run against the merge group's synthetic commit, or on an authorized
-`!merge-tests` comment. The pull-request-only stub publishes
+CI Jobs and Nix CI run on both `pull_request` and `merge_group`. The ignored
+tests and the certified kernel gate (`lake run check-kernel --with-model`, a
+merge-tests partition) run against the merge group's synthetic commit, or on
+an authorized `!merge-tests` comment. The pull-request-only stub publishes
 `merge-gate / pass` so a PR can enter the queue before the ignored suites run.
 It never runs on `merge_group`, and merge-tests.yml never runs on
 `pull_request`, so each commit shows one `merge-gate / pass` check under the

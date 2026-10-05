@@ -2593,7 +2593,7 @@ is known to be partial.
   [`docs/sharing-minimum.md`](./sharing-minimum.md) §12 — the canonical sharing
   construction (§6.7): `Ix/Sharing/Exact/Tiered.lean`,
   `crates/ixon/src/sharing_exact/tiered.rs`, proofs in
-  `Ix/Sharing/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
+  `IxSharingVerify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
 - `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
 - `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
   port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,

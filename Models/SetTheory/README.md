@@ -31,7 +31,7 @@ constructor fields of each of the three theorems above and permits exactly
 remain an explicit theorem hypothesis.
 
 The package imports the actual interfaces by a path dependency on the
-`IxKernel` package, which builds `Ix.Kernel`, the `Ix.Kernel` subtree and the
+`IxC` package, which builds `Ix.Kernel`, the `Ix.Kernel` subtree and the
 certified Ixon entry from the repository sources with no other dependencies. Mathlib is confined to this package; ordinary Ix and
 `Ix.Kernel` builds do not depend on it. This construction supplies the
 set-theoretic assumption of the certified kernel's theorems
@@ -52,7 +52,7 @@ Lean is the release in `lean-toolchain` (the same as the repository root's), and
 Mathlib the tag in `lakefile.toml`; `lake-manifest.json` pins all resolved
 dependencies. The cache command retrieves the three imported Mathlib modules
 and their dependencies. The build checks the axiom guard. CI's
-`certified-kernel` job (`.github/workflows/ci.yml`) runs these commands
+`Certified kernel` merge-test partition (`.github/workflows/merge-tests.yml`) runs these commands
 through `lake run check-kernel --with-model`.
 
 From the repository root, `lake run check-kernel --with-model` includes this

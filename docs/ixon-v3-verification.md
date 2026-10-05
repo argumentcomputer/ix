@@ -40,7 +40,7 @@ Commands run from the repository root at the v3 change:
 
 | Gate | Result |
 | --- | --- |
-| `lake build IxCompileVerify IxTcVerify Ix.Resource.Audit` | Passed; exact trust manifests and local sorry-frontier audits. The `IxCompileVerify` and `IxTcVerify` libraries have since been removed ([kernel.md](kernel.md), "Removal ledger"); the codec contracts are audited by `lake -d IxKernel build --wfail`, and the resource manifest is `lake build Ix.Resource.Audit` |
+| `lake build IxCompileVerify IxTcVerify Ix.Resource.Audit` | Passed; exact trust manifests and local sorry-frontier audits. The `IxCompileVerify` and `IxTcVerify` libraries have since been removed ([kernel.md](kernel.md), "Removal ledger"); the codec contracts are audited by `lake -d IxC build --wfail`, and the resource manifest is `lake build Ix.Resource.Audit` |
 | `lake build IxTests ixon-v3-tests ix` | Passed |
 | `lake lint -- --wfail` | Passed for every target included by the CI lint driver |
 | `lake env .lake/build/bin/IxTests` | Entire primary suite passed, including recursive proof and aggregate consumers |
@@ -80,7 +80,7 @@ production-driver and fidelity gates require zero mismatches.
 At the v3 change the compiler manifest audited 143 roots. (For v4 the
 manifest had 250 roots at the head of the v4 change, including the TagN and
 sharing-construction theorems; those theorems are now audited by
-`Ix/Sharing/Verify/Audit/Statements.lean`, 111 roots, and the rest of that
+`IxSharingVerify/Audit/Statements.lean`, 111 roots, and the rest of that
 manifest is retired with `IxCompileVerify`.) The typechecker manifests audited 2,034
 completed roots, one conditional root, and seven statement roots. Their
 existing transitive assumptions remain explicit in the manifests. Both local

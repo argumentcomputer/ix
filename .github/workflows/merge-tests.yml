@@ -151,6 +151,8 @@ jobs:
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff
+          - name: Certified kernel
+            kind: kernel
     # On-demand rather than Spot: a reclaimed partition restarts from scratch
     # only after the whole attempt finishes, and the longest partitions
     # already run close to the merge queue's status-check timeout, so one
@@ -167,7 +169,7 @@ jobs:
           TEST_KIND: ${{ matrix.kind }}
         run: |
           case "$TEST_KIND" in
-            lake|tc) ;;
+            lake|tc|kernel) ;;
             *) echo "::error::Unknown merge-test variant: $TEST_KIND"; exit 1 ;;
           esac
 
@@ -194,7 +196,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target
+            custom,path=.lake,path=target,path=Models/SetTheory/.lake
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -218,6 +220,25 @@ jobs:
         run: |
           lake test --wfail -- tc-unit
           lake test --wfail -- --ignored ${{ matrix.test_args }}
+
+      # The certified kernel gate (docs/kernel.md): the standalone IxC
+      # package build, which has no dependencies and so proves the kernel needs
+      # only the toolchain, then the host tests, the Rust differentials, the
+      # set-theory model, the fences, the entry cases and the reader fidelity.
+      # The kernel artifacts come from .lake/kernel on the sticky disk. The
+      # model lives in its own workspace so Mathlib stays out of the root
+      # package; its objects come from Mathlib's cache and persist on the
+      # sticky disk, so a later run fetches nothing.
+      - name: Fetch pinned set-theory dependencies
+        if: ${{ matrix.kind == 'kernel' }}
+        run: |
+          lake -d Models/SetTheory exe cache get \
+            Mathlib.SetTheory.Cardinal.Regular \
+            Mathlib.SetTheory.ZFC.VonNeumann \
+            Mathlib.SetTheory.ZFC.Cardinal
+      - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
+        if: ${{ matrix.kind == 'kernel' }}
+        run: lake run check-kernel --with-model
 
   valgrind:
     name: Valgrind FFI
@@ -310,7 +331,7 @@ jobs:
         run: |
           if [ "$GATE_RESULT" = success ] && [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ]; then
             heading="## ✅ Merge tests passed"
-            summary="All ignored test partitions and Valgrind passed"
+            summary="All test partitions and Valgrind passed"
           elif [ "$GATE_RESULT" = success ]; then
             heading="## ⏳ Merge tests awaiting Spot retry"
             summary="RunsOn will retry the failed jobs"

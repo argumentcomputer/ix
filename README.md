@@ -174,7 +174,7 @@ Ix consists of the following core components:
 
 ### Certified Ixon checker
 
-`Ix/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
+`IxC/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
 consistency. It is Ix's own kernel, derived from the verified checker of
 [con-leche](https://github.com/leanprover/con-leche). Its entry,
 `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
@@ -236,7 +236,7 @@ not this stable overview.
     - `kernel-reader-roundtrip` checks the certified checker's Ixon reader against a direct translation of the compiled Lean constants; `kernel-read-cache` checks the environment check's persistent read cache
     - Primary runners run with the primary suites and can be selected by name in the same way: `aiur-rust-syntax`, `ixvm-tagn`, `aiur-prove`, `aiur-hashes`, `rbtree-map`, `multi-stark`, `recursive-verifier`, `ix-aggr`, `ixes-manifest`; `ixvm-tagn` holds the IxVM circuit's TagN codec to the Lean codec
 - `lake exe ixon-v4-tests` runs the Ixon v4 format suite (golden bytes, FFI, VM, text grammar, resource admission, claims, and the fixtures in `Tests/Fixtures/ixon-v4/`); `lake exe ixon-v4-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_V4_DIR` (default `/tmp`)
-- `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`Ix/Sharing/Verify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxKernel build --wfail`
+- `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxC build --wfail`
 - `lake test -- --ignored` runs all expensive test suites and runners
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM

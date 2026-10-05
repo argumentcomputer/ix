@@ -11,7 +11,7 @@ public import Ix.Address
 public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
-public import Ix.Ixon.Codec
+public import IxC.Ixon.Codec
 public import Ix.Merkle
 
 public section

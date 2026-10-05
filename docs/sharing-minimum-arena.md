@@ -164,7 +164,7 @@ so none of these change:
 - the decompilers (`Ix/DecompileM.lean`, `crates/compile/src/decompile.rs`);
 - kernel meta ingress (`Ix/Tc/IngressMeta.lean`, `crates/kernel/src/ingress.rs`);
 - the FFI marshalling (`crates/ffi/src/lean_ixon/meta.rs`);
-- the proofs (none is about the serialized arena; the sharing proofs in `Ix/Sharing/Verify`
+- the proofs (none is about the serialized arena; the sharing proofs in `IxSharingVerify`
   do not touch metadata);
 - IxVM, which does not read metadata.
 

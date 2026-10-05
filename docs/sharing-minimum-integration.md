@@ -62,7 +62,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
    the shorter encoding. That the price of the tiered output is its serialized length is a
    theorem (`canonicalSharingTiered_serialized`); Rust also serializes the returned candidate
    and compares the lengths at run time (`tiered.rs`, check 9).
-4. **There are three codecs.** Besides Lean (`Ix/Ixon/Codec.lean`, with the metadata and
+4. **There are three codecs.** Besides Lean (`IxC/Ixon/Codec.lean`, with the metadata and
    environment codecs in `Ix/Ixon.lean`) and Rust (`crates/ixon`), the IxVM
    circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`, `Ix/IxVM/IxonSerialize.lean`),
    generated into `crates/ixvm-codegen/src/aiur_ixvm.rs` by `lake exe ix codegen`. CI runs
@@ -106,7 +106,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
 
 ### 3.1 The integer code: writers and readers
 
-**Lean** (`Ix/Ixon/Codec.lean`; metadata, names and environments in `Ix/Ixon.lean`): `putTagN f flag value` / `getTagN f` (a `TagN` is `{flag, value}`;
+**Lean** (`IxC/Ixon/Codec.lean`; metadata, names and environments in `Ix/Ixon.lean`): `putTagN f flag value` / `getTagN f` (a `TagN` is `{flag, value}`;
 `getTagN0Values` reads a run of `f = 0` values). Every site uses them: expressions (`putExpr`,
 `getExprFuel`, `getExprFromTag`), universes (`putUniv`, `getUnivFromTag`), constants and
 projections, metadata (`ConstantMeta`, `ExprMeta` arenas), names, environments (`putEnv`,
@@ -198,18 +198,18 @@ table logically.
 ## 4. Verification theorems
 
 Everything below builds in `lake build --wfail IxSharingVerify` (the proofs under
-`Ix/Sharing/Verify`), except the TagN and codec theorems, which are in `Ix/Ixon/Verify` and build
-with the certified checker's byte stage (`lake -d IxKernel build --wfail`). Its trust audit
-(`Ix/Sharing/Verify/Audit/Statements.lean`, 111 roots on Lean 4.34.0, among them the TagN roots)
+`IxSharingVerify`), except the TagN and codec theorems, which are in `IxC/Ixon/Verify` and build
+with the certified checker's byte stage (`lake -d IxC build --wfail`). Its trust audit
+(`IxSharingVerify/Audit/Statements.lean`, 111 roots on Lean 4.34.0, among them the TagN roots)
 fixes each root's axioms exactly; `Audit/SorryFrontier.lean` checks that no declaration of an
 `Ix.Sharing` module uses `sorry`; and `Audit/CompiledCode.lean` checks the compiled code (below).
 `lake lint` builds it as well.
 
-- **TagN** (`Ix/Ixon/Verify/Basic.lean` and `TagN.lean`): the byte specification `tagNBytes`, the writer and
+- **TagN** (`IxC/Ixon/Verify/Basic.lean` and `TagN.lean`): the byte specification `tagNBytes`, the writer and
   reader laws `putTagN_writes` and `getTagN_reads`, canonicity and injectivity
   (`runGetExact_getTagN_eq`, `runGetExact_getTagN_iff`, `runGetExact_getTagN_inj`,
   `putTagN_inj`) and the two rejection laws (`getTagN_rejects_code`,
-  `getTagN_rejects_overflow`). The codec theorems of `Ix/Ixon/Verify/` `Basic.lean`, `Expr.lean`,
+  `getTagN_rejects_overflow`). The codec theorems of `IxC/Ixon/Verify/` `Basic.lean`, `Expr.lean`,
   `ExprSpine.lean` and the constant codecs (`Constant.lean`, `ConstantTables.lean`,
   `NonrecursiveConstant.lean`, `RecursorConstant.lean`, `MutualConstant.lean`) are stated over
   these facts; TagN is bijective, so no

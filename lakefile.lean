@@ -18,20 +18,26 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
+require «ix-kernel» from "IxC" with
+  if (get_config? profile).isSome then
+    ({} : Lean.NameMap String).insert `profile ""
+  else {}
+
 /-! ## FFI
 
 The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` because different Lean executables need different Cargo features:
 
 - `ix` uses `ix_rs_net` (`parallel,net`) for networking support (iroh).
 - `IxTests` uses `ix_rs_test` (`parallel,test-ffi`) for test-only FFI code.
-- Everything else inherits `ix_rs` (`parallel`, plus opt-in `cuda`) from the
-  `Ix` `lean_lib`.
+- Other application targets inherit `ix_rs` (`parallel`, plus opt-in `cuda`)
+  from the `Ix` `lean_lib`.
 
 The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
 before Cargo overwrites its release archive, then snapshot distinct Lake artifacts.
 The second Cargo build is incremental — only feature-affected crates recompile.
 
-`extern_lib` only runs at link time, so `lake build` on a `lean_lib` alone wouldn't trigger the Cargo build. With `target` + `moreLinkObjs`, the Rust static lib is built during module compilation on the default `Ix` lib, allowing Lake to conditional compile the Rust lib per build target.
+The archives are built when native targets need them. Keeping Rust linkage on
+`Ix` keeps `ix_rs` out of the certified kernel's build.
 -/
 section FFI
 
@@ -107,12 +113,16 @@ end FFI
 lean_lib MultiStark where
   moreLinkObjs := #[ix_rs]
 
-/-- `lake build -K profile` compiles with frame pointers, so `perf` can unwind
+/-- `lake -R -Kprofile build` compiles with frame pointers, so `perf` can unwind
 call graphs through generated C (LBR and DWARF unwinding are unavailable on
 the benchmark machines). The default build is unaffected. -/
 def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
+/-- The main library, with Lake's default roots: every `Ix.*` module. Nothing the
+`ix-kernel` dependency or `IxSharingVerify` owns is under the `Ix.` module root
+(their declaration namespaces are, their module names are not), so this
+library never shadows them. Keep new modules of theirs under their roots. -/
 @[default_target]
 lean_lib Ix where
   moreLinkObjs := #[ix_rs]
@@ -301,44 +311,24 @@ script "build-all" (args) := do
 
 end Scripts
 
-section IxKernelTree
-
-/- `Ix.Kernel` and every module under `Ix/Kernel/`, as a library of its own for
-one option: `linter.deprecated` is off, so the con-leche-derived sources,
-written for Lean 4.33.0, build under `--wfail` on 4.34.1 without renaming the
-deprecated `if_pos`/`if_neg`/`dif_pos`/`dif_neg` lemmas they use (Lake options
-are per library). Lake gives a module to the last-declared library that can
-build it, and `Ix` (above) can build every `Ix.*` module, so this library stays
-below `Ix`. Not a default target; `IxKernel/lakefile.lean` declares the same
-library. -/
-lean_lib IxKernelTree where
-  roots := #[`Ix.Kernel]
-  globs := #[.andSubmodules `Ix.Kernel]
-  leanOptions := #[⟨`linter.deprecated, false⟩]
-
-end IxKernelTree
-
 section IxSharingVerify
 
 /- Proofs of the canonical sharing construction (`Ix.Sharing.Exact`) and their
-audits: `Ix.Sharing.Verify` and every module under `Ix/Sharing/Verify/`. Not a
-default target; `lake lint` builds it. Declared below `Ix` for the reason given
-at `IxKernelTree`: `Ix` can build every `Ix.*` module, and the last-declared
-library that can build a module owns it. -/
+audits: `IxSharingVerify` and every module under `IxSharingVerify/`, declaring
+the `Ix.Sharing.Verify` namespace. Not a default target; `lake lint` builds
+it. The module root is outside `Ix.` so that `Ix` never owns these modules.
+The runtime modules under `Ix.Sharing.Exact` belong to `Ix`. -/
 lean_lib IxSharingVerify where
-  roots := #[`Ix.Sharing.Verify]
-  globs := #[.andSubmodules `Ix.Sharing.Verify]
+  roots := #[`IxSharingVerify]
+  globs := #[.andSubmodules `IxSharingVerify]
 
 end IxSharingVerify
 
-section IxKernel
+section IxC
 
-/- The certified kernel, `Ix.Kernel`, lives in this repository's `Ix/` tree but
-is built for certification by the separate `IxKernel/` package, which reads the
-same sources with no dependencies beyond the Lean toolchain:
-`lake -d IxKernel build --wfail` is the strict gate. The root package builds the
-same modules for its host consumers through the `Ix` library. See
-`docs/kernel.md`. -/
+/- The `ix-kernel` dependency owns the certified modules and their artifacts.
+`lake -d IxC build --wfail` checks them without host dependencies;
+the host tests below consume that same package. See `docs/kernel.md`. -/
 
 /-- The kernel's fences, derived from con-leche's (`Tests/Ix/Kernel/{Layering,
 TrustSurface}.lean`, over the layout of `Tests/Ix/Kernel/KernelLayout.lean`):
@@ -382,11 +372,9 @@ lean_exe «kernel-reader-fidelity» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
-/-- The verified checker through the Ixon reader: the `checkBytes`-shaped
-entry and its per-constant check (untrusted). -/
+/-- The certified checker's benchmark drivers and reporting helpers. -/
 lean_lib KernelEntry where
-  roots := #[`Ix.Kernel.Admission, `Ix.Kernel.Admission.Theorems,
-    `Benchmarks.Kernel.CheckIxeStep,
+  roots := #[`Benchmarks.Kernel.CheckIxeStep,
     `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxeStream, `Benchmarks.Kernel.CheckIxePool,
     `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold,
     `Benchmarks.Kernel.CheckIxeGuarded, `Benchmarks.Kernel.CheckIxeRows,
@@ -400,7 +388,7 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- Regenerates `Ix/Kernel/Ixon/PinData.lean` (pins and prelude) from a
+/-- Regenerates `IxC/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
   root := `Benchmarks.Kernel.PinGen
@@ -421,19 +409,21 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
+  run "lake" #["-d", "IxC", "build", "--wfail"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
   IO.eprint codec.stderr
   unless codec.exitCode == 0 do
+    IO.eprint codec.stdout
     throw <| IO.userError "kernel-codec failed; see .lake/build/kernel-codec.log"
   IO.println "Production Ixon codec and Rust differential checks passed."
   let order ← IO.Process.output { cmd := ".lake/build/bin/kernel-order" }
   IO.FS.writeFile ".lake/build/kernel-order.jsonl" order.stdout
   IO.eprint order.stderr
   unless order.exitCode == 0 do
+    IO.eprint order.stdout
     throw <| IO.userError "kernel-order failed; see .lake/build/kernel-order.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
@@ -452,6 +442,7 @@ script "check-kernel" (args) := do
   IO.FS.writeFile ".lake/build/kernel-entry-cases.jsonl" entry.stdout
   IO.eprint entry.stderr
   unless entry.exitCode == 0 do
+    IO.eprint entry.stdout
     throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
   -- The Ixon reader against a direct translation of the Lean constants it was
   -- compiled from, and the kernel's projection output against the compiler's
@@ -465,9 +456,10 @@ script "check-kernel" (args) := do
     IO.FS.writeFile ".lake/build/kernel-reader-fidelity.log" fidelityLog
     IO.eprint out.stderr
     unless out.exitCode == 0 do
+      IO.eprint out.stdout
       throw <| IO.userError s!"kernel-reader-fidelity {mode} failed; see .lake/build/kernel-reader-fidelity.log"
   IO.println "Reader fidelity checks passed."
   IO.println "Certified kernel checks passed."
   return 0
 
-end IxKernel
+end IxC

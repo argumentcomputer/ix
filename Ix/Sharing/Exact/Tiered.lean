@@ -20,7 +20,7 @@
   overestimates the widths: the optimum stores far fewer terms than there
   are candidates.) `tieredAtWidth` is the candidate at one width.
 
-  Proved (`Ix/Sharing/Verify/Tiered*.lean` and, for phase 1,
+  Proved (`IxSharingVerify/Tiered*.lean` and, for phase 1,
   `UniformOptimality.lean`; no `sorry`): the width selection
   (`canonicalTieredCore_select`), phase 1 (`optimizeUniform_least`, for the
   default branch-and-bound search), the first tier, backwardness and the

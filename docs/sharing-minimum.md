@@ -47,8 +47,8 @@ the corpus-measurement gate P1.5, and §11 (division of the work).
 - Tests: `lake test -- exact-sharing exact-sharing-ffi` runs the construction's suites (the
   plan was written against the heuristic's `sharing` suite, since removed); `lake test --
   ixon` the codec suite; `cargo test -p ixon` the Rust crate; `lake build --wfail IxSharingVerify`
-  the proofs (`Ix/Sharing/Verify`; the TagN and codec proofs are in `Ix/Ixon/Verify` and build
-  with `lake -d IxKernel build --wfail`).
+  the proofs (`IxSharingVerify`; the TagN and codec proofs are in `IxC/Ixon/Verify` and build
+  with `lake -d IxC build --wfail`).
 - Corpus: `Init`, compiled by the production compiler with
   `lake exe ix compile Benchmarks/CompileInit.lean --out init.ixe` from the repository root
   (NOT `Benchmarks/Compile/CompileInit.lean`, which is a separate Lake project that pulls
@@ -881,15 +881,15 @@ phase-1 runs instead of one (about 3× the time; still minutes for all of Mathli
 Owner decision: TagN (flag widths 0, 2, 4) replaces Tag0, Tag2 and Tag4 everywhere in the Ixon
 grammar, for uniformity and to simplify the serialization. Measured byte effect is the Share
 savings only (other fields change by ≈0), and no integer gets longer. Consequences: one integer
-code with one proof of roundtrip/bijectivity (now `Ix/Ixon/Verify/TagN.lean`); the three
+code with one proof of roundtrip/bijectivity (now `IxC/Ixon/Verify/TagN.lean`); the three
 "noncanonical … integer" reader checks are removed; every codec theorem that mentions
 `tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
 sharing + integers together.
 
 ### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
-The theorems below are in `Ix/Sharing/Verify` (the TagN theorems in `Ix/Ixon/Verify/TagN.lean`)
-and are roots of the audit manifest `Ix/Sharing/Verify/Audit/Statements.lean` (111 roots on Lean
+The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
+and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (111 roots on Lean
 4.34.0; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
 `sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
@@ -920,7 +920,7 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
 - **Format.** `canonicalSharingTiered_format` (`TieredWire.lean`) gives every output entry and
   root `wireWF`, a table count below 2^64, and backward Shares (entry `k` references only
   entries below `k`, roots only table entries). The theorems about the compiler's sharing
-  builder (`Ix/Sharing/Verify/Builder.lean`: `buildConstantWithSharing_wireWF`, and
+  builder (`IxSharingVerify/Builder.lean`: `buildConstantWithSharing_wireWF`, and
   `finishConstantInfoWithSharing_run_codecWF` for the singleton-driver tail) are stated over it;
   the tail concludes `SharingRunOK`: it returns an exactly decodable block, or fails with an
   error that the sharing builder returns on some payload (the payload is existentially
@@ -928,7 +928,7 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
   `BlockResult.mk'` hashes with Blake3, whose package carries a `native_decide` axiom; the
   per-declaration compiler endpoints are retired with the compiler-correctness proofs.
 - **Compiled code.** The compiler runs fast twins attached to the specifications by
-  unconditional `@[csimp]` equalities; `Ix/Sharing/Verify/Audit/CompiledCode.lean` fails the
+  unconditional `@[csimp]` equalities; `IxSharingVerify/Audit/CompiledCode.lean` fails the
   build unless every csimp theorem on the compiler's import path is an audit root (19) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
   declaration besides the pointer-cache key `exprPtr`.
 
@@ -984,7 +984,7 @@ invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung e
 `R1 = 2^(r−1)`, `R2 = R1 + 2^(r−2+8)`, `R3 = R2 + 2^16`, `R4 = R3 + 2^24`, `R5 = R4 + 2^32`,
 `R6 = R5 + 2^64` (r = 8 − f). Reason: without it, f = 0 values in [82,048, 2^24) cost 5 bytes where
 Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
-longer than the old codes on any field measured. Still bijective; `Ix/Ixon/Codec.lean`'s TagN docstring is
+longer than the old codes on any field measured. Still bijective; `IxC/Ixon/Codec.lean`'s TagN docstring is
 the normative layout.
 
 ### 12.17 Proof-library status after the TagN switch (2026-10-01)
@@ -1031,7 +1031,7 @@ nodes ending in a stored term (7,105 bytes, the same as Lean's) is a fixture in 
 `Exact.UniformSearchLocal`, `Exact.TierFast`, `Exact.PinnedDeps`, `Exact.PinnedFast`,
 `Exact.KnapsackFast`, `Exact.TieredFast`; the module map of `Ix/Sharing/Exact.lean`) are attached
 to the specifications by unconditional `@[csimp]` equalities, which are audit roots;
-`Ix/Sharing/Verify/Audit/CompiledCode.lean` fails the build if a csimp theorem on the compiler's
+`IxSharingVerify/Audit/CompiledCode.lean` fails the build if a csimp theorem on the compiler's
 import path is not a root, and the sorry frontier covers `Ix.Sharing`. Phase 3 also runs in one
 pass (`materializeTableOnePass`, equal to `materializeTable` on every input,
 `materializeTableOnePass_eq`, with the same `materializeWork`), and the three widths run as

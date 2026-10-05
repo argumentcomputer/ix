@@ -1,6 +1,6 @@
 import Ix.Ixon.Projection.Theorems
 import Ix.Address
-import Tests.Ix.Kernel.ByteAdmission
+import IxC.Fixtures.ByteAdmission
 
 /-! Projection reconstruction (pure BLAKE3 keys, exact records, the request
 bound and conflicts) and the certified entry with projection omission,
