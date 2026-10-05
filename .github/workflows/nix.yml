@@ -17,33 +17,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Sandboxed builds: every derivation compiles inside Nix, which sees neither
+  # the sticky disk nor sccache, so Cachix is the only cache here. The dev
+  # shell job below rebuilds the same tree in the checkout and shares nothing
+  # with these derivations, which is why it runs on its own runner.
   nix-test:
     name: Nix Tests
-    env:
-      # The dev shell builds with cargo directly, where `.cargo/config.toml`
-      # would select native code generation; the sticky cache is shared
-      # across instance families, so pin the same baseline CI uses.
-      RUSTFLAGS: -Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni
-    # Sticky disks retain Lake/Cargo files; /nix uses the larger root volume
-    # and Cachix provides its binary cache.
-    # https://runs-on.com/docs/runners/capabilities/sticky-disks/
-    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/sticky=nix-x86-64-v4:100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # sccache serves only the `nix develop` build below: `nix build` and
-      # `nix flake check` compile inside Nix's sandbox, which sees neither
-      # the wrapper nor the network, and rely on Cachix instead. The dev
-      # shell inherits RUSTC_WRAPPER and keeps the outer PATH, so the
-      # binary the sccache action installs resolves there (see ci.yml).
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
-        with:
-          sccache: s3
-          sticky_cache: |
-            rust
-            custom,path=.lake,path=target
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           nix_path: nixpkgs=channel:nixos-unstable
@@ -62,12 +46,47 @@ jobs:
       - run: nix run .#ix -- --help
       # A single invocation lets Nix schedule independent checks concurrently.
       - run: nix flake check --print-build-logs --accept-flake-config
-      # Run the real build and test commands inside the development environment.
+
+  # Builds and tests with the real `lake` and `cargo` inside the development
+  # environment, as a contributor would.
+  nix-devshell:
+    name: Nix devShell Tests
+    env:
+      # The dev shell builds with cargo directly, where `.cargo/config.toml`
+      # would select native code generation; the sticky cache is shared
+      # across instance families, so pin the same baseline CI uses.
+      RUSTFLAGS: -Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni
+    # Sticky disks retain Lake/Cargo files; /nix uses the root volume and only
+    # holds the dev shell closure, which Cachix provides.
+    # https://runs-on.com/docs/runners/capabilities/sticky-disks/
+    runs-on: runs-on=${{ github.run_id }}-nix-devshell-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=nix-x86-64-v4:100gb/extras=s3-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The dev shell inherits RUSTC_WRAPPER and keeps the outer PATH, so the
+      # binary the sccache action installs resolves there (see ci.yml).
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+        with:
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ github.token }}
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: argumentcomputer
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: $/.github/actions/authenticate-github-fetches
       - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"
 
   nix-gate:
     if: ${{ always() }}
-    needs: [nix-test]
+    needs: [nix-test, nix-devshell]
     permissions:
       actions: read
       checks: read
