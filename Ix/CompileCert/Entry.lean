@@ -9128,4 +9128,95 @@ theorem SourceProjectionFunction.body_application_denotes_pullback {V : Type u} 
     parameters parameterCount parameterTyping] at read
   exact read
 
+/-- Every original installed row keeps its complete identity and contents in
+a certifier-owned extension. This compares structure, not cached hashes. -/
+def InstalledRowsPreserved (original extended : Kernel.Env) : Prop :=
+  ∀ entry ∈ original.consts, extended.find? entry.name = some entry
+
+instance (original extended : Kernel.Env) : Decidable (InstalledRowsPreserved original extended) :=
+  inferInstanceAs (Decidable (∀ entry ∈ original.consts, extended.find? entry.name = some entry))
+
+def SupportFresh (original : Kernel.Env) (support : Array Kernel.Declaration) : Prop :=
+  (support.toList.flatMap Kernel.Declaration.names).Nodup ∧
+    ∀ name ∈ support.toList.flatMap Kernel.Declaration.names, original.find? name = none
+
+instance (original : Kernel.Env) (support : Array Kernel.Declaration) :
+    Decidable (SupportFresh original support) :=
+  inferInstanceAs (Decidable ((support.toList.flatMap Kernel.Declaration.names).Nodup ∧
+    ∀ name ∈ support.toList.flatMap Kernel.Declaration.names, original.find? name = none))
+
+/-- Separate, checked target support; the original compiler bytes, reader
+stream, hint function and admission receipt are retained unchanged. This
+receipt does not assert semantic correspondence of proposed helper contents:
+the installed association checks must establish that independently. -/
+structure AdmittedSupport {input : ArtifactInput} (artifact : AdmittedArtifact input)
+    (support : Array Kernel.Declaration) where
+  fresh : SupportFresh artifact.env support
+  pins : List Kernel.NatOpPinSet
+  pins_checked : builtinNatOpPins = .ok pins
+  env : Kernel.Env
+  checked : Kernel.Cached.checkDecls .verified pins
+    (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations ++ support) = .ok env
+  original_rows : InstalledRowsPreserved artifact.env env
+
+inductive SupportError where
+  | conflictingNames
+  | setup (reason : String)
+  | checking (error : Kernel.CheckError) (position : Nat)
+  | changedOriginal
+
+def checkAdmittedSupport {input : ArtifactInput} (artifact : AdmittedArtifact input)
+    (support : Array Kernel.Declaration) : Except SupportError (AdmittedSupport artifact support) :=
+  if fresh : SupportFresh artifact.env support then
+    match pinsChecked : builtinNatOpPins with
+    | .error reason => .error (.setup reason)
+    | .ok pins =>
+      match checked : Kernel.Cached.checkDecls .verified pins
+          (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations ++ support) with
+      | .error (error, position) => .error (.checking error position)
+      | .ok env =>
+        if originalRows : InstalledRowsPreserved artifact.env env then
+          .ok ⟨fresh, pins, pinsChecked, env, checked, originalRows⟩
+        else .error .changedOriginal
+  else .error .conflictingNames
+
+theorem AdmittedSupport.strong_model (V : Type u) [Kernel.SetTheory V]
+    {input : ArtifactInput} {artifact : AdmittedArtifact input} {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport artifact support) : Nonempty (StrongInstalledModel V bundle.env) :=
+  strongInstalledModel_exists V bundle.pins _ bundle.env bundle.checked
+
+theorem AdmittedSupport.original_member {input : ArtifactInput} {artifact : AdmittedArtifact input}
+    {support : Array Kernel.Declaration} (bundle : AdmittedSupport artifact support)
+    {entry : Kernel.ConstantInfo} (present : entry ∈ artifact.env.consts) :
+    bundle.env.find? entry.name = some entry ∧ entry ∈ bundle.env.consts := by
+  have lookup := bundle.original_rows entry present
+  exact ⟨lookup, Kernel.Semantics.Env.find?_mem lookup⟩
+
+def checkSupportedArtifactInstalledAssociation {input : Input} (accepted : AcceptedAssociation input)
+    {support : Array Kernel.Declaration} (bundle : AdmittedSupport accepted.toAdmittedArtifact support)
+    (sourceEnv : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Option Bool :=
+  bothChecks (some (decide (SemanticNamesAgree accepted names)))
+    (checkInstalledAssociation sourceEnv bundle.env names)
+
+/-- Actual source coverage stream versus a separate actual admitted target
+support stream. The original bytes/map receipt and all original installed rows
+are retained. This supplies the public model used by projection pull-back;
+successful support generation and original D11 are still separate obligations. -/
+theorem SourceConstructorCoverChecked.supported_universalRules (V : Type u) [Kernel.SetTheory V]
+    {input : Input} {installed : SourceNormalizedInstallation input.source input.roots}
+    {site : SourceProjectionSite input.source} (coverage : SourceConstructorCoverChecked installed site)
+    (accepted : AcceptedAssociation input) {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport accepted.toAdmittedArtifact support) (names : Kernel.Name → Kernel.Name)
+    (checked : checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names = some true) :
+    SemanticNamesAgree accepted names ∧ Nonempty (StrongInstalledModel V coverage.env) ∧
+    ∃ (target : StrongInstalledModel V bundle.env) (publicSource : PublicValueModel V coverage.env),
+      publicSource.model.cval = (PullbackMap.fromEnvs coverage.env bundle.env names).values target.public.cval ∧
+      PublicCapabilityLaws publicSource.model.cval coverage.env ∧ UniversalRuleSimulation target coverage.env names := by
+  obtain ⟨nameCheck, association⟩ := bothChecks_true checked
+  exact ⟨of_decide_eq_true (Option.some.inj nameCheck),
+    checkedAssociation_universalRules V [] bundle.pins
+      (installed.declarations ++ [Kernel.Declaration.thmDecl coverage.header coverage.value]).toArray
+      (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations ++ support) names
+      coverage.checked bundle.checked association⟩
+
 end Ix.CompileCert
