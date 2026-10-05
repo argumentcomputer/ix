@@ -7491,4 +7491,38 @@ theorem InstalledRuleFrame.checked_target {V : Type u} [Kernel.SetTheory V]
     constructorLookup := constructorLookup }
   exact ⟨targetFrame, readInstalledRuleFrame_complete targetFrame, rfl, rfl, rfl, rfl, ruleImages⟩
 
+/-- Accepted type associations transport arbitrary semantic argument tuples
+to the actual target declaration's instantiated telescope. The remaining
+type is related as well; no separately proposed target header or residual is
+accepted as a substitute for its installed record. -/
+theorem checkInstalledTypes_telescope {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledTypes sourceEnv targetEnv names = true)
+    {entry : Kernel.ConstantInfo} (present : entry ∈ sourceEnv.consts) :
+    ∃ targetEntry, targetEnv.find? (names entry.name) = some targetEntry ∧
+      ∀ sourceLevels targetLevels sourceUs targetUs,
+        sourceUs.length = entry.toConstantVal.levelParams.length →
+        targetUs.length = targetEntry.toConstantVal.levelParams.length →
+        sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels) →
+        ∀ (valuation finalValuation : Nat → V) (arguments : List V) result,
+          InstalledTelescope ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+            sourceEnv sourceLevels valuation
+            (entry.toConstantVal.type.instantiateLevelParams entry.toConstantVal.levelParams sourceUs)
+            arguments finalValuation result →
+          ∃ targetResult,
+            InstalledTelescope target.public.cval targetEnv targetLevels valuation
+              (targetEntry.toConstantVal.type.instantiateLevelParams targetEntry.toConstantVal.levelParams targetUs)
+              arguments finalValuation targetResult ∧
+            InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+              target.public.cval sourceEnv targetEnv sourceLevels targetLevels result targetResult := by
+  obtain ⟨sourceLookup, targetEntry, targetLookup, comparison⟩ := checkInstalledTypes_member checked present
+  refine ⟨targetEntry, targetLookup, ?_⟩
+  intro sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universeImage
+    valuation finalValuation arguments result typed
+  have wf := target.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem targetLookup)
+  have image := checkInstalledMemberExpr_instance target association sourceLookup targetLookup wf.2.1 comparison
+    sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universeImage
+  exact typed.image image
+
 end Ix.CompileCert
