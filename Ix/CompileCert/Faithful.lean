@@ -1010,6 +1010,32 @@ theorem DenotesSpine.append {V : Type u} [Kernel.SetTheory V]
   | nil => exact second
   | cons head tail ih => exact .cons head ih
 
+theorem DenotesSpine.take {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {expressions : List Kernel.Expr} {arguments : List V}
+    (spine : DenotesSpine values env levels ρ expressions arguments) (count : Nat) :
+    DenotesSpine values env levels ρ (expressions.take count) (arguments.take count) := by
+  induction spine generalizing count with
+  | nil => simp only [List.take_nil]; exact .nil
+  | cons head tail ih =>
+    cases count with
+    | zero => exact .nil
+    | succ count => exact .cons head (ih count)
+
+theorem DenotesSpine.drop {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {expressions : List Kernel.Expr} {arguments : List V}
+    (spine : DenotesSpine values env levels ρ expressions arguments) (count : Nat) :
+    DenotesSpine values env levels ρ (expressions.drop count) (arguments.drop count) := by
+  induction spine generalizing count with
+  | nil => simp only [List.drop_nil]; exact .nil
+  | cons head tail ih =>
+    cases count with
+    | zero => exact .cons head tail
+    | succ count => exact ih count
+
 open Kernel.SetTheory in
 theorem denotes_mkAppN {V : Type u} [Kernel.SetTheory V]
     {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}

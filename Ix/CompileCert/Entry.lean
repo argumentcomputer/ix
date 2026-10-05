@@ -74,6 +74,162 @@ theorem StrongInstalledModel.recursor_rule {V : Type u} [Kernel.SetTheory V]
     Kernel.Model.RecRuleLaw strong.internal.base2 φ name header major params rule :=
   strong.internal.rec_rules φ name header major params rules lookup rule present fires
 
+/-- Public reading of the exact instantiated RHS of a fired stored rule.
+The internal witness is retained for the rule's typed/index/nested-pin law;
+inert rules provide no such contract. No arbitrary RHS is substituted. -/
+theorem StrongInstalledModel.recursor_rhs {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (levels : Kernel.Name → Nat) (name : Kernel.Name) (header : Kernel.ConstantVal)
+    (major params : Nat) (rules : List Kernel.RecRule)
+    (lookup : env.find? name = some (.recInfo header major params rules))
+    (rule : Kernel.RecRule) (present : rule ∈ rules) (fires : rule.fire ≠ .inert)
+    (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length) :
+    ∃ annotation : Kernel.Semantics.AnnotTerm,
+      Kernel.Model.denoteMeta strong.internal.base2.acval env levels 0
+        (rule.rhs.instantiateLevelParams header.levelParams universes) = some annotation ∧
+      (∀ ρ, Kernel.Model.WellDenotedV V ρ annotation) ∧
+      ∀ ρ, Kernel.Denotes strong.public.cval env levels ρ
+        (rule.rhs.instantiateLevelParams header.levelParams universes)
+        (Kernel.Semantics.interp V ρ annotation) := by
+  obtain ⟨annotation, reading, graded, _, _⟩ :=
+    (strong.recursor_rule levels name header major params rules lookup rule present fires).2 universes arity
+  have wf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem lookup)
+  have ruleWf := wf.2.2.2.2.2.1 header major params rules rfl rule present
+  have noFree : (rule.rhs.instantiateLevelParams header.levelParams universes).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact ruleWf.1
+  have bounded : (rule.rhs.instantiateLevelParams header.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact ruleWf.2.2.2.1
+  refine ⟨annotation, reading, graded, ?_⟩
+  intro ρ
+  have read := Kernel.Model.Denotes_of_denoteMeta strong.internal.base2.cval_closedL
+    0 _ reading (noFvars_below_zero noFree) bounded ρ (graded ρ)
+  rw [Kernel.Expr.closeN_of_hasFvar _ 0 0 noFree] at read
+  exact read
+
+open Kernel Kernel.Model Kernel.Semantics in
+/-- The actual fired-rule frame. Every original law premise is retained,
+including universe selection, constructor parameter/index positions, both
+typed telescopes, and nested pin interpretation. Establishing these internal
+frame witnesses from public caller checking remains a separate bridge. -/
+structure FiredRecursorFrame {V : Type u} [Kernel.SetTheory V] {env : Kernel.Env}
+    (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (header : Kernel.ConstantVal) (major params : Nat) (rule : Kernel.RecRule) (universes : List Kernel.Level) where
+  constructor : Kernel.ConstantVal
+  constructorParams : Nat
+  constructorFields : Nat
+  constructorLookup : env.find? rule.ctor =
+    some (.ctorInfo constructor constructorParams constructorFields)
+  constructorUniverses : List Kernel.Level
+  valuation : Nat → V
+  arguments : List AnnotTerm
+  fields : List AnnotTerm
+  recursorType : AnnotTerm
+  constructorType : AnnotTerm
+  recursorResult : AnnotTerm
+  constructorResult : AnnotTerm
+  argumentCount : arguments.length = major
+  fieldCount : fields.length = rule.ctorParams + rule.nfields
+  constructorArity : constructorUniverses.length = constructor.levelParams.length
+  universeSelection : Level.substFn levels constructor.levelParams constructorUniverses =
+    Level.substFn levels constructor.levelParams
+      (recFireComparands rule header.levelParams universes constructor.levelParams [] params).1
+  plainParameters : rule.paramsBlind = false → rule.fire = .plain →
+    ∀ i, i < rule.ctorParams → i < major →
+      interp V valuation (fields.getD i default) = interp V valuation (arguments.getD i default)
+  nestedParameters : ∀ lvls pins, rule.fire = .nested lvls pins →
+    ∀ i, i < rule.ctorParams → ∀ pin : AnnotTerm,
+      denoteMeta strong.internal.base2.acval env levels params
+        (Kernel.Verify.openRev 0 params ((pins.getD i default).instantiateLevelParams
+          header.levelParams universes)) = some pin →
+      interp V valuation (fields.getD i default) =
+        interp V valuation (Kernel.Model.AnnotTerm.instRevChain (arguments.take params) pin)
+  indexPin : IotaIndexPin valuation constructorResult rule.ctorParams major params arguments
+  recursorTypeRead : denoteMeta strong.internal.base2.acval env levels 0
+    (header.type.instantiateLevelParams header.levelParams universes) = some recursorType
+  constructorTypeRead : denoteMeta strong.internal.base2.acval env levels 0
+    (constructor.type.instantiateLevelParams constructor.levelParams constructorUniverses) = some constructorType
+  recursorTyped : TeleFitPA V valuation recursorType
+    (arguments ++ [AnnotTerm.mkAppN (strong.internal.base2.acval rule.ctor
+      (Level.substFn levels constructor.levelParams constructorUniverses)) fields]) recursorResult
+  constructorTyped : TeleFitPA V valuation constructorType fields constructorResult
+
+open Kernel Kernel.Model Kernel.Semantics Kernel.SetTheory in
+/-- The stored fired law at public semantic values. The RHS reading and
+equality share the same internal witness. The frame hypotheses are precisely
+the original non-inert rule's hypotheses, not a caller-supplied equality. -/
+theorem StrongInstalledModel.recursor_computation {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (levels : Kernel.Name → Nat) (name : Kernel.Name) (header : Kernel.ConstantVal) (major params : Nat)
+    (rules : List Kernel.RecRule) (lookup : env.find? name = some (.recInfo header major params rules))
+    (rule : Kernel.RecRule) (present : rule ∈ rules) (fires : rule.fire ≠ .inert)
+    (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length)
+    (frame : FiredRecursorFrame strong levels header major params rule universes) :
+    ∃ rhsValue : V,
+      Denotes strong.public.cval env levels frame.valuation
+        (rule.rhs.instantiateLevelParams header.levelParams universes) rhsValue ∧
+      app (frame.arguments.foldl (fun value argument => app value (interp V frame.valuation argument))
+        (strong.public.cval name (Level.substFn levels header.levelParams universes)))
+        (frame.fields.foldl (fun value field => app value (interp V frame.valuation field))
+          (strong.public.cval rule.ctor
+            (Level.substFn levels frame.constructor.levelParams frame.constructorUniverses))) =
+        (frame.arguments.take params ++ frame.fields.drop rule.ctorParams).foldl
+          (fun value argument => app value (interp V frame.valuation argument)) rhsValue := by
+  obtain ⟨annotation, reading, _, _, law⟩ :=
+    (strong.recursor_rule levels name header major params rules lookup rule present fires).2 universes arity
+  obtain ⟨publicAnnotation, publicReading, _, publicRead⟩ :=
+    strong.recursor_rhs levels name header major params rules lookup rule present fires universes arity
+  have same := Option.some.inj (reading.symm.trans publicReading)
+  subst publicAnnotation
+  have equality := (law frame.constructor frame.constructorParams frame.constructorFields frame.constructorLookup
+    frame.constructorUniverses frame.valuation frame.arguments frame.fields frame.recursorType
+    frame.constructorType frame.recursorResult frame.constructorResult frame.argumentCount frame.fieldCount
+    frame.constructorArity frame.universeSelection frame.plainParameters frame.nestedParameters frame.indexPin
+    frame.recursorTypeRead frame.constructorTypeRead frame.recursorTyped frame.constructorTyped).1
+  refine ⟨interp V frame.valuation annotation, publicRead frame.valuation, ?_⟩
+  simpa only [interp_mkAppN, List.foldl_append, List.foldl_cons, List.foldl_nil,
+    interp_cvalOf strong.internal.base2.cval_closedL, StrongInstalledModel.public,
+    Kernel.Model.Model.ofEnvModelM] using equality
+
+open Kernel.SetTheory in
+/-- Public expression-level reading of both sides of the fired recursor rule.
+The argument spines are aligned to the exact internal frame values; the frame
+still records the original law's typing/index/nested-pin premises explicitly. -/
+theorem StrongInstalledModel.recursor_denotes {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (levels : Kernel.Name → Nat) (name : Kernel.Name) (header : Kernel.ConstantVal) (major params : Nat)
+    (rules : List Kernel.RecRule) (lookup : env.find? name = some (.recInfo header major params rules))
+    (rule : Kernel.RecRule) (present : rule ∈ rules) (fires : rule.fire ≠ .inert)
+    (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length)
+    (frame : FiredRecursorFrame strong levels header major params rule universes)
+    (arguments fields : List Kernel.Expr)
+    (argumentRead : DenotesSpine strong.public.cval env levels frame.valuation arguments
+      (frame.arguments.map (Kernel.Semantics.interp V frame.valuation)))
+    (fieldRead : DenotesSpine strong.public.cval env levels frame.valuation fields
+      (frame.fields.map (Kernel.Semantics.interp V frame.valuation))) :
+    ∃ value : V,
+      Kernel.Denotes strong.public.cval env levels frame.valuation
+        (Kernel.Expr.mkAppN (.const name universes)
+          (arguments ++ [Kernel.Expr.mkAppN (.const rule.ctor frame.constructorUniverses) fields])) value ∧
+      Kernel.Denotes strong.public.cval env levels frame.valuation
+        (Kernel.Expr.mkAppN (rule.rhs.instantiateLevelParams header.levelParams universes)
+          (arguments.take params ++ fields.drop rule.ctorParams)) value := by
+  obtain ⟨rhsValue, rhsRead, computation⟩ := strong.recursor_computation levels name header major params
+    rules lookup rule present fires universes arity frame
+  have recursorRead := Kernel.Denotes.const (cval := strong.public.cval) (φ := levels)
+    (ρ := frame.valuation) (us := universes) lookup arity
+  have constructorRead := Kernel.Denotes.const (cval := strong.public.cval) (φ := levels)
+    (ρ := frame.valuation) (us := frame.constructorUniverses) frame.constructorLookup frame.constructorArity
+  have leftRead := denotes_mkAppN recursorRead
+    (argumentRead.append (.cons (denotes_mkAppN constructorRead fieldRead) .nil))
+  have rightRead := denotes_mkAppN rhsRead ((argumentRead.take params).append (fieldRead.drop rule.ctorParams))
+  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, List.foldl_map,
+    Kernel.ConstantInfo.toConstantVal] at leftRead
+  simp only [← List.map_take, ← List.map_drop, ← List.map_append, List.foldl_map] at rightRead
+  rw [computation] at leftRead
+  exact ⟨_, leftRead, rightRead⟩
+
 open Kernel.SetTheory in
 /-- Equality soundness at the very same strong interpretation. Membership
 in the equality's universe and both endpoint types is indispensable: the
