@@ -5,6 +5,7 @@ import Ix.Kernel.Verify.Cached.BridgeCS4
 import Ix.Kernel.Model.IndUnitLaw
 import Ix.Kernel.Model.IOLicense
 import Ix.Kernel.Model.Rules.RedSoundKit
+import Ix.Kernel.Model.Rules.IotaSoundKit
 
 /-! # Admission-connected direct-cone certification
 
@@ -6685,5 +6686,225 @@ theorem checked_eta_pullback {V : Type u} [Kernel.SetTheory V]
       targetEnabled nonbasis stored targetUs targetArity targetCount x targetMember
     simpa only [interp_cvalOf target.internal.base2.cval_closedL,
       StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM] using reconstructed
+
+open Kernel.Semantics Kernel.Model in
+/-- Derive the plain-rule parameter comparisons from source semantic
+prefix equality and the actual target argument/field readings. Bounds come
+from the constructor field count, not a fabricated default value. -/
+theorem ArgumentAnnotations.parameters_image {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} {target : StrongInstalledModel V targetEnv}
+    {targetLevels : Kernel.Name → Nat} {depth : Nat} {ρ : Nat → V}
+    {targetFields targetArguments : List Kernel.Expr} {fields arguments : List AnnotTerm}
+    (fieldReadings : ArgumentAnnotations target targetLevels depth ρ targetFields fields)
+    (argumentReadings : ArgumentAnnotations target targetLevels depth ρ targetArguments arguments)
+    {sourceValues : Kernel.Name → (Kernel.Name → Nat) → V} {sourceEnv : Kernel.Env}
+    {sourceLevels : Kernel.Name → Nat} {sourceFields sourceArguments : List Kernel.Expr}
+    {fieldValues argumentValues : List V}
+    (fieldRead : DenotesSpine sourceValues sourceEnv sourceLevels ρ sourceFields fieldValues)
+    (argumentRead : DenotesSpine sourceValues sourceEnv sourceLevels ρ sourceArguments argumentValues)
+    (fieldImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceFields (targetFields.map (Kernel.Expr.closeN depth)))
+    (argumentImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceArguments (targetArguments.map (Kernel.Expr.closeN depth)))
+    (params : Nat) (fieldBound : params ≤ fields.length)
+    (sourceEquation : fieldValues.take params = argumentValues.take params) :
+    ∀ index, index < params → index < arguments.length →
+      interp V ρ (fields.getD index default) = interp V ρ (arguments.getD index default) := by
+  have fieldValuesImage := (fieldRead.image fieldImages).functional fieldReadings.denotes
+  have argumentValuesImage := (argumentRead.image argumentImages).functional argumentReadings.denotes
+  rw [fieldValuesImage, argumentValuesImage] at sourceEquation
+  intro index belowParams belowArguments
+  have belowFields : index < fields.length := by omega
+  have selected := congrArg (fun values : List V => values[index]?) sourceEquation
+  simp only [List.getElem?_take, belowParams, ite_true, List.getElem?_map,
+    List.getElem?_eq_getElem belowFields, List.getElem?_eq_getElem belowArguments,
+    Option.map_some, Option.some.injEq] at selected
+  simpa only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem belowFields,
+    List.getElem?_eq_getElem belowArguments, Option.getD_some] using selected
+
+theorem ArgumentAnnotations.take {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {expressions : List Kernel.Expr} {annotations : List Kernel.Semantics.AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth ρ expressions annotations) (count : Nat) :
+    ArgumentAnnotations strong levels depth ρ (expressions.take count) (annotations.take count) := by
+  induction readings generalizing count with
+  | nil => simp only [List.take_nil]; exact .nil
+  | cons head tail ih =>
+    cases count with
+    | zero => exact .nil
+    | succ count => exact .cons head (ih count)
+
+/-- Prefix application evidence preserves the actual substitution sequence;
+it is not a telescope invented from matching lengths. -/
+theorem AnnotatedApplication.take {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {type residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List Kernel.Semantics.AnnotTerm}
+    (application : AnnotatedApplication strong levels depth ρ type expressions annotations residual) (count : Nat) :
+    ∃ prefixResidual, AnnotatedApplication strong levels depth ρ type
+      (expressions.take count) (annotations.take count) prefixResidual := by
+  induction application generalizing count with
+  | nil => simp only [List.take_nil]; exact ⟨_, .nil⟩
+  | cons domainRead argumentRead argumentScope argumentBounded argumentGraded argumentTyped rest ih =>
+    cases count with
+    | zero => exact ⟨_, .nil⟩
+    | succ count =>
+      obtain ⟨prefixResidual, prefixApplication⟩ := ih count
+      exact ⟨prefixResidual, .cons domainRead argumentRead argumentScope argumentBounded argumentGraded argumentTyped prefixApplication⟩
+
+theorem AnnotatedApplication.readings {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {type residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List Kernel.Semantics.AnnotTerm}
+    (application : AnnotatedApplication strong levels depth ρ type expressions annotations residual) :
+    ArgumentAnnotations strong levels depth ρ expressions annotations := by
+  induction application with
+  | nil => exact .nil
+  | cons _ argumentRead scope bounded graded _ _ ih => exact .cons ⟨argumentRead, scope, bounded, graded⟩ ih
+
+open Kernel.Semantics Kernel.Model in
+/-- The nested pin's chain grading is supplied by the actual installed rule
+and the prefix of the actual typed recursor application. Its open reading is
+not assumed uniformly graded outside that fitting context. -/
+theorem AnnotatedApplication.installed_nested_pin {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (header : Kernel.ConstantVal) (major params : Nat)
+    (rules : List Kernel.RecRule) (rule : Kernel.RecRule)
+    (lookup : env.find? name = some (.recInfo header major params rules))
+    (present : rule ∈ rules) (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length)
+    (application : AnnotatedApplication strong levels depth ρ
+      (header.type.instantiateLevelParams header.levelParams universes) expressions annotations residual)
+    (prefixBound : params ≤ annotations.length)
+    (nestedLevels : List Kernel.Level) (pins : List Kernel.Expr) (nested : rule.fire = .nested nestedLevels pins)
+    (index : Nat) (below : index < rule.ctorParams) :
+    ∃ pin : AnnotTerm,
+      denoteMeta strong.internal.base2.acval env levels params
+        (Kernel.Verify.openRev 0 params ((pins.getD index default).instantiateLevelParams header.levelParams universes)) =
+          some pin ∧
+      WellDenotedV V ρ (Kernel.Model.AnnotTerm.instRevChain (annotations.take params) pin) := by
+  have fires : rule.fire ≠ .inert := by rw [nested]; intro h; cases h
+  obtain ⟨_, _, _, pinsLaw, _⟩ :=
+    (strong.recursor_rule levels name header major params rules lookup rule present fires).2 universes arity
+  obtain ⟨pin, reading, grade⟩ := pinsLaw nestedLevels pins nested index below
+  obtain ⟨prefixResidual, prefixApplication⟩ := application.take params
+  obtain ⟨typeAnnotation, result, typeReading, fit, _⟩ := prefixApplication.installed_fit
+    name (.recInfo header major params rules) lookup rfl universes arity
+  exact ⟨pin, reading, grade ρ (annotations.take params) typeAnnotation result
+    (by simp only [List.length_take, Nat.min_eq_left prefixBound])
+    prefixApplication.readings.facts.2.2 typeReading fit⟩
+
+theorem ArgumentAnnotations.length {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {expressions : List Kernel.Expr} {annotations : List Kernel.Semantics.AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth ρ expressions annotations) :
+    expressions.length = annotations.length := by
+  induction readings with
+  | nil => rfl
+  | cons _ _ ih => exact congrArg Nat.succ ih
+
+theorem instSeq_closed_bound (arguments : List Kernel.Expr) {expression : Kernel.Expr}
+    (boundedArguments : ∀ argument ∈ arguments, argument.looseBVarsBounded 0 = true)
+    (bounded : expression.looseBVarsBounded arguments.length = true) :
+    (Kernel.Expr.instSeq arguments (arguments.length - 1) expression).looseBVarsBounded 0 = true := by
+  induction arguments generalizing expression with
+  | nil => exact bounded
+  | cons argument arguments ih =>
+    have next := Kernel.Expr.looseBVarsBounded_instantiate1_gen
+      (boundedArguments argument List.mem_cons_self) bounded
+    simpa only [Kernel.Expr.instSeq, List.length_cons, Nat.add_sub_cancel] using
+      ih (fun x hx => boundedArguments x (List.mem_cons_of_mem _ hx)) next
+
+theorem instSeq_scoped (arguments : List Kernel.Expr) (index : Nat) {expression : Kernel.Expr} {depth : Nat}
+    (scopedArguments : ∀ argument ∈ arguments, Kernel.Expr.WScoped depth argument)
+    (scopeProof : Kernel.Expr.WScoped depth expression) :
+    Kernel.Expr.WScoped depth (Kernel.Expr.instSeq arguments index expression) := by
+  induction arguments generalizing expression index with
+  | nil => exact scopeProof
+  | cons argument arguments ih =>
+    exact ih (index - 1) (fun x hx => scopedArguments x (List.mem_cons_of_mem _ hx))
+      (Kernel.Expr.WScoped.instantiate1_gen (scopedArguments argument List.mem_cons_self) index scopeProof)
+
+open Kernel.Semantics Kernel.Model Kernel.Model.Rules in
+/-- Relate the actual reverse-opened pin annotation to substitution by the
+actual argument expressions. Both scope and capture bounds are retained. -/
+theorem ArgumentAnnotations.instSeq_annotation {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth ρ expressions annotations)
+    {expression : Kernel.Expr} (noFree : expression.hasFvar = false)
+    (bounded : expression.looseBVarsBounded expressions.length = true)
+    {pin : AnnotTerm}
+    (reading : denoteMeta strong.internal.base2.acval env levels expressions.length
+      (Kernel.Verify.openRev 0 expressions.length expression) = some pin)
+    (graded : WellDenotedV V ρ (Kernel.Model.AnnotTerm.instRevChain annotations pin)) :
+    ArgumentAnnotation strong levels depth ρ
+      (Kernel.Expr.instSeq expressions (expressions.length - 1) expression)
+      (Kernel.Model.AnnotTerm.instRevChain annotations pin) := by
+  have facts := readings.facts
+  refine ⟨?_, instSeq_scoped expressions _ (fun x hx => (facts.2.1 x hx).1)
+    (Kernel.Expr.WScoped.of_not_hasFvar noFree),
+    instSeq_closed_bound expressions (fun x hx => (facts.2.1 x hx).2) bounded, graded⟩
+  rw [denoteMeta_openRev strong.internal.base2.acval_closed (acval_inst_self strong.internal.base2)
+    expressions facts.2.1 (Kernel.Expr.WScoped.of_not_hasFvar noFree).fvarsBelow bounded facts.1]
+  rw [denoteMeta_openRev_base strong.internal.base2.acval_closed strong.internal.base2.acval_erase
+    strong.internal.base2.cval_closed noFree bounded depth, reading]
+  rfl
+
+open Kernel.Semantics Kernel.Model in
+theorem ArgumentAnnotation.denotes {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {expression : Kernel.Expr} {annotation : AnnotTerm}
+    (evidence : ArgumentAnnotation strong levels depth ρ expression annotation) :
+    Kernel.Denotes strong.public.cval env levels ρ (expression.closeN depth) (interp V ρ annotation) :=
+  Denotes_of_denoteMeta strong.internal.base2.cval_closedL depth expression evidence.reading
+    evidence.scope.fvarsBelow evidence.bounded ρ evidence.graded
+
+open Kernel.Semantics Kernel.Model in
+/-- The actual nested pin after concrete universe substitution and argument
+substitution has its actual graded annotation. All scope/bound/grading facts
+come from the installed rule and typed application; index validity remains
+explicit so a default lookup cannot stand in for a stored pin. -/
+theorem AnnotatedApplication.installed_nested_annotation {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (header : Kernel.ConstantVal) (major params : Nat)
+    (rules : List Kernel.RecRule) (rule : Kernel.RecRule)
+    (lookup : env.find? name = some (.recInfo header major params rules))
+    (present : rule ∈ rules) (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length)
+    (application : AnnotatedApplication strong levels depth ρ
+      (header.type.instantiateLevelParams header.levelParams universes) expressions annotations residual)
+    (prefixBound : params ≤ annotations.length)
+    (nestedLevels : List Kernel.Level) (pins : List Kernel.Expr) (nested : rule.fire = .nested nestedLevels pins)
+    (index : Nat) (belowConstructor : index < rule.ctorParams) (belowPins : index < pins.length) :
+    ∃ pin : AnnotTerm,
+      denoteMeta strong.internal.base2.acval env levels params
+        (Kernel.Verify.openRev 0 params ((pins.getD index default).instantiateLevelParams header.levelParams universes)) =
+          some pin ∧
+      ArgumentAnnotation strong levels depth ρ
+        (Kernel.Expr.instSeq (expressions.take params) (params - 1)
+          ((pins.getD index default).instantiateLevelParams header.levelParams universes))
+        (Kernel.Model.AnnotTerm.instRevChain (annotations.take params) pin) := by
+  obtain ⟨pin, reading, graded⟩ := application.installed_nested_pin name header major params rules rule
+    lookup present universes arity prefixBound nestedLevels pins nested index belowConstructor
+  have wf := strong.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem lookup)
+  have ruleWf := wf.2.2.2.2.2.1 header major params rules rfl rule present
+  have pinMember : pins.getD index default ∈ pins := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem belowPins, Option.getD_some]
+    exact List.getElem_mem belowPins
+  have pinWf := (ruleWf.2.2.2.2 nestedLevels pins nested).2.2.1 _ pinMember
+  have noFree : ((pins.getD index default).instantiateLevelParams header.levelParams universes).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]
+    exact pinWf.1
+  have bounded : ((pins.getD index default).instantiateLevelParams header.levelParams universes).looseBVarsBounded params = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact pinWf.2.2.2
+  have length : (expressions.take params).length = params := by
+    rw [List.length_take, application.length, Nat.min_eq_left prefixBound]
+  have evidence := (application.readings.take params).instSeq_annotation noFree
+    (by simpa only [length] using bounded) (by simpa only [length] using reading) graded
+  exact ⟨pin, reading, by simpa only [length] using evidence⟩
 
 end Ix.CompileCert
