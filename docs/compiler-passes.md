@@ -1964,8 +1964,9 @@ gave 14,835,441 B and the same 12 refusals.
   - `input(B)` is the prepared Lean data of `B`'s members. For an inductive block this includes its
     Lean auxiliaries, whose images are compiled with the block.
   - `closure(B)` is the set of constants `B` references, transitively through types, values and
-    rules (Def 1.3). The closure carries resolved addresses and, for changed blocks, the plans
-    (images, `N`, `σ`).
+    rules (Def 1.3), **together with the auxiliaries of every block reached and of `B` itself**
+    (the logical units of §6.3). The closure carries resolved addresses and, for changed blocks, the
+    plans (images, `N`, `σ`).
 - `∪` is a disjoint union of per-name maps. A name assigned twice is an **error** unless both
   assignments are equal. Content-keyed tables (blobs, shared subterms) are unioned by content.
 
@@ -2003,6 +2004,132 @@ Three conditions together suffice [argued]:
 
 A speculative driver that compiles `B` before its closure is complete must discard the result unless
 the closure it read equals the final closure.
+
+### 6.3 The block rule: what a block may read
+
+§6.2 says the compiler is a fold over blocks and that each step reads only its input and its closure.
+This section fixes what "input" and "closure" contain. It is the owner's rule, in the owner's words
+(2026-10-04 and 2026-10-05):
+
+> We should never use caller information to determine how we compile constants. Doing that would break
+> the DAG and impact our ability to parallelize. We should be able to make local compilation choices
+> using only the constant and its dependencies. This may require further changes to callers though,
+> and that's fine.
+>
+> The rule about compilation only with the constant or its dependencies includes anything in the
+> constant's block.
+>
+> Dependency is block by block, not constant by constant.
+>
+> Auxiliaries for a block can depend on other auxiliaries for the block, even if not in the same block
+> per se, they're still in the same logical unit.
+>
+> Furthermore, a constant can look at the auxiliaries for any block it depends on.
+
+**Terms.**
+
+- A constant *references* another when its type, value or rules mention it.
+- A **block** is a strongly connected component of the reference graph: a group of mutually recursive
+  inductive types with their constructors, a clique of mutually recursive definitions or theorems, or a
+  single constant. After Pass 1 "block" means the canonical component, so one Lean `mutual` declaration
+  can become several blocks (§2.1).
+- The **auxiliaries** of a block are the constants Lean generates mechanically from it.
+  - For an inductive block: the recursors, `casesOn`, `recOn`, `below`, `brecOn`, `noConfusionType`,
+    `noConfusion`, the size functions `_sizeOf_N`, the instances `_sizeOf_inst`, and their own helpers.
+  - For a definition clique: Lean's encoding constants (`_unary`, `_mutual`, `_f`, the `_proof_k`),
+    matchers, and the equation and unfolding lemmas.
+  - Some are generated **eagerly**, with the declaration. Others are generated **on demand**, when a
+    later declaration first asks for them (equation lemmas, `_arg_pusher` lemmas, splitters).
+- The **logical unit** of a block is the block together with all of its auxiliaries. Whether the
+  compiler schedules an auxiliary with its block (the auxiliary tail of an inductive block) or as a
+  block of its own (a size function, an equation lemma) does not matter to the rule.
+- Block `B` **depends on** block `C` when some constant of `B` references some constant of `C`, directly
+  or through other blocks. Dependency is between blocks; a block depends on all of a block or none of
+  it.
+
+**The rule.** Everything about how a block compiles (each byte of its output, its records, and whether
+it is refused) is a function of:
+
+1. the block itself;
+2. the rest of its own logical unit;
+3. every block it depends on, each with its whole logical unit.
+
+Nothing else may be read. In particular:
+
+- not a block that depends on it (a **caller**), nor whether any caller exists;
+- not a constant outside 1–3, nor any table over the whole environment (which names exist, which names
+  share an address, what some other block claimed);
+- not the schedule: what has been compiled so far, in what order, by how many workers.
+
+**Callers adapt.** A block is compiled after its dependencies and sees how they were compiled: their
+addresses and their records (a block was permuted, split or collapsed; its Lean auxiliaries denote
+images; a clique was transported with a given permutation). When a dependency's compiled form is not
+what Lean's term expects, the dependent block changes its own term. The dependency is never changed for
+the sake of a dependent. If a dependent cannot be made to fit, that is reported against the dependent.
+
+**Two graphs, kept apart.** The rule is about *visibility*. Scheduling is finer.
+
+- The scheduling graph is over blocks, and it must be acyclic. Its edges are Lean's references plus
+  every reference a pass's *output* has that Lean's term did not.
+- Logical units are not scheduling nodes, because units can be mutually visible while their blocks are
+  not mutually dependent. Measured on Lean 4.34.1: `Nat.below` mentions `PProd`, and `PProd._sizeOf_1`
+  mentions `Nat`. Each unit has an auxiliary that uses the other's block, and the block graph is still
+  acyclic.
+- Reading the Lean *source* of a visible constant needs no edge. Using its *compiled form* (its
+  address, its records) does: it must have been compiled first.
+
+**Obligations of a pass whose output adds a reference.** All four, argued in the pass's docstring:
+
+1. the target is visible by the rule (the pass's own unit, or the unit of a block it depends on);
+2. the reference is declared, so that the scheduler has the edge and every closure producer
+   (`collectDeps`, `--consts`, `--local`) carries the target;
+3. the graph with the new edge is still acyclic (the scheduler fails closed on a cycle, so a wrong
+   argument shows as a refusal, never as a wrong output);
+4. if the target is absent from the input, the pass declines with a recorded cause; it never silently
+   takes another form.
+
+**On-demand auxiliaries.** They are ordinary members of the unit. Whether Lean generated one was
+decided at elaboration time, so by the time the compiler runs it is a fixed part of the input; reading
+it breaks neither the DAG nor parallel compilation (owner, 2026-10-05). A block may therefore read
+whichever of its unit's on-demand auxiliaries exist, and may take a different form when one exists
+than when it does not. Two things follow, and both are accepted:
+- the address of a block can differ between two environments that differ only in whether some later
+  declaration made Lean generate one of its on-demand auxiliaries;
+- a closure producer must carry a block's on-demand auxiliaries with it, like its eager ones.
+
+What stays forbidden is reading a dependent that is *not* an auxiliary of the unit.
+
+**Allowed, with the reason.**
+
+| Case | Why it is inside the rule |
+|---|---|
+| `brecOn` refers to `below`; a recursor image refers to the Ix recursor | auxiliaries of one unit |
+| O11a: the size function of a split member refers to `T._sizeOf_inst`, the size instance of a lower component of the same declaration | an auxiliary referring to another auxiliary of the same Lean declaration; the edge is declared, acyclic, and the instance is carried by closures |
+| A definition over a changed inductive block has its `rec`, `casesOn`, `below`, `brecOn` call sites rewritten (images, O1–O6) | a block reading the auxiliaries of a block it depends on |
+| An equation lemma of a transported clique is regenerated over the canonical clique | the lemma is compiled after the clique and reads the clique's record |
+| A clique reads its own equation and unfolding lemmas when planning its transport, and stays in Lean's form if one of them cannot be carried (`Pass/Cliques.lean:486–491`, `:529–538`; `:457–464` for classes that own one) | on-demand auxiliaries of the clique's own unit |
+
+**Not allowed.** Entries marked ✗ exist in the code at `340f67b2` and are to be removed.
+
+| Case | Why it breaks the rule |
+|---|---|
+| ✗ A clique is demoted because some later declaration that is not an equation lemma depends on it (`Ix/Compile/Pass/Cliques.lean:297–305`, `scheduleCliques`: `blocking`, `reason`) | reads a caller |
+| ✗ A proof-justified pass declines because a dependent mentions both the definition and a recursor-family auxiliary (branch `jcb/ix-cc-a6p`, `Opt/Packed.lean`) | reads a caller; replaced by the decision of 2026-10-05 that the Lean name keeps the faithful form and the canonical form is stored under an `_ix` name |
+| Choosing among names that share an address by hash-map order (D4) | reads a whole-environment table |
+| A form that depends on whether another block has been compiled yet | reads the schedule |
+
+**Why the rule.** The fold stays a fold over a DAG, so blocks compile in parallel. A constant's address
+is a function of its own closure, which is what content addressing means. A closure compile agrees with
+a whole compile. Certification can state one obligation per block.
+
+**How it is checked.**
+
+- Schedule identity (§6.1): byte-equal output across every driver and worker count, switch off and on.
+- Closure against whole: every constant of a closure compile has the address the whole compile gives it.
+- **Caller independence** (to add): compile an environment, then the same environment with extra
+  dependents and extra unrelated constants appended; every constant of the first must keep its bytes and
+  its records. The appended dependents must not be auxiliaries of an existing unit: making Lean
+  generate an on-demand auxiliary changes that unit, and the unit may then compile differently.
 
 ---
 
