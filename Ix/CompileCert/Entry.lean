@@ -7023,4 +7023,81 @@ theorem checkInstalledRuleUniverses_sound {env : Kernel.Env} {name : Kernel.Name
         Kernel.Level.substFn_congr (Kernel.Level.isEquivList_sound checked levels)⟩
     next => contradiction
 
+theorem ArgumentAnnotations.get {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {expressions : List Kernel.Expr} {annotations : List Kernel.Semantics.AnnotTerm}
+    (readings : ArgumentAnnotations strong levels depth ρ expressions annotations)
+    (index : Nat) (bound : index < annotations.length) :
+    ArgumentAnnotation strong levels depth ρ (expressions.getD index default) (annotations.getD index default) := by
+  induction readings generalizing index with
+  | nil => simp at bound
+  | cons head tail ih =>
+    cases index with
+    | zero => exact head
+    | succ index => exact ih index (by simpa using bound)
+
+open Kernel.Semantics Kernel.Model in
+/-- Transport one source nested-parameter equation into the exact comparison
+quantified by the actual target fired-rule law. The substituted pin image and
+its grading/reading are derived inside the proof. The source equation is the
+semantic reduction premise, not inferred from matching shapes or counts. -/
+theorem AnnotatedApplication.nested_parameter_image {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} {target : StrongInstalledModel V targetEnv} {targetLevels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (name : Kernel.Name) (header : Kernel.ConstantVal) (major params : Nat)
+    (rules : List Kernel.RecRule) (rule : Kernel.RecRule)
+    (lookup : targetEnv.find? name = some (.recInfo header major params rules))
+    (present : rule ∈ rules) (universes : List Kernel.Level) (arity : universes.length = header.levelParams.length)
+    (application : AnnotatedApplication target targetLevels depth ρ
+      (header.type.instantiateLevelParams header.levelParams universes) expressions annotations residual)
+    (prefixBound : params ≤ annotations.length)
+    (nestedLevels : List Kernel.Level) (pins : List Kernel.Expr) (nested : rule.fire = .nested nestedLevels pins)
+    (index : Nat) (belowConstructor : index < rule.ctorParams) (belowPins : index < pins.length)
+    {targetField : Kernel.Expr} {fieldAnnotation : AnnotTerm}
+    (fieldReading : ArgumentAnnotation target targetLevels depth ρ targetField fieldAnnotation)
+    {sourceValues : Kernel.Name → (Kernel.Name → Nat) → V} {sourceEnv : Kernel.Env}
+    {sourceLevels : Kernel.Name → Nat} {sourceArguments : List Kernel.Expr} {sourcePin sourceField : Kernel.Expr}
+    (argumentImages : InstalledSpineImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceArguments ((expressions.take params).map (Kernel.Expr.closeN depth)))
+    (pinImage : InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourcePin ((pins.getD index default).instantiateLevelParams header.levelParams universes))
+    (fieldImage : InstalledExprImage sourceValues target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceField (targetField.closeN depth))
+    {fieldValue pinValue : V}
+    (fieldRead : Kernel.Denotes sourceValues sourceEnv sourceLevels ρ sourceField fieldValue)
+    (pinRead : Kernel.Denotes sourceValues sourceEnv sourceLevels ρ
+      (Kernel.Expr.instSeqLift sourceArguments (params - 1) sourcePin) pinValue)
+    (sourceEquation : fieldValue = pinValue) :
+    ∀ pin : AnnotTerm,
+      denoteMeta target.internal.base2.acval targetEnv targetLevels params
+        (Kernel.Verify.openRev 0 params ((pins.getD index default).instantiateLevelParams header.levelParams universes)) =
+          some pin →
+      interp V ρ fieldAnnotation = interp V ρ (Kernel.Model.AnnotTerm.instRevChain (annotations.take params) pin) := by
+  obtain ⟨actualPin, actualRead, evidence⟩ := application.installed_nested_annotation name header major params rules rule
+    lookup present universes arity prefixBound nestedLevels pins nested index belowConstructor belowPins
+  have wf := target.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem lookup)
+  have ruleWf := wf.2.2.2.2.2.1 header major params rules rfl rule present
+  have pinMember : pins.getD index default ∈ pins := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem belowPins, Option.getD_some]
+    exact List.getElem_mem belowPins
+  have pinWf := (ruleWf.2.2.2.2 nestedLevels pins nested).2.2.1 _ pinMember
+  have noFree : ((pins.getD index default).instantiateLevelParams header.levelParams universes).hasFvar = false := by
+    rw [Kernel.Expr.hasFvar_instantiateLevelParams]; exact pinWf.1
+  have length : (expressions.take params).length = params := by
+    rw [List.length_take, application.length, Nat.min_eq_left prefixBound]
+  have bounded : ((pins.getD index default).instantiateLevelParams header.levelParams universes).looseBVarsBounded
+      (expressions.take params).length = true := by
+    rw [length, Kernel.Expr.looseBVarsBounded_instantiateLevelParams]; exact pinWf.2.2.2
+  have argumentFacts := (application.readings.take params).facts
+  have instantiatedImage := argumentImages.closed_instSeq pinImage noFree
+    (fun expression member => (argumentFacts.2.1 expression member).2) bounded
+  rw [length] at instantiatedImage
+  have pinValueImage := Kernel.Denotes_functional (instantiatedImage.denotes pinRead) evidence.denotes
+  have fieldValueImage := Kernel.Denotes_functional (fieldImage.denotes fieldRead) fieldReading.denotes
+  intro pin reading
+  have same : actualPin = pin := Option.some.inj (actualRead.symm.trans reading)
+  subst pin
+  exact fieldValueImage.symm.trans (sourceEquation.trans pinValueImage)
+
 end Ix.CompileCert
