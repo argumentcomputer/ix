@@ -540,6 +540,118 @@ def sourceProjectionEquation {source : Source} (site : SourceProjectionSite sour
       binders.foldr (fun (type, binder) body => .forallE type body binder) equation⟩
   return .thmDecl header (Kernel.Frontend.mkLams binders proof)
 
+/-- Parameters in an open frame containing `extra` more recent binders. -/
+def sourceParameterVars (count extra : Nat) : List Kernel.Expr :=
+  (List.range count).map (fun i => .bvar (extra + count - 1 - i))
+
+/-- Church-encoded constructor presentation at an arbitrary subject:
+`∀ P : Prop, (∀ fields, subject = C params fields → P) → P`.
+The field domains are the original constructor's dependent telescope.
+This avoids importing an unchecked existential-support declaration. -/
+def sourceConstructorCoverBody {source : Source} (site : SourceProjectionSite source)
+    (owner constructor : Kernel.ConstantVal) (level : Kernel.Level)
+    (extra : Nat) (subject : Kernel.Expr) : ExportM Kernel.Expr := do
+  let binder : Kernel.BinderMeta := ⟨.never⟩
+  let parameters := sourceParameterVars site.owner.numParams (extra + 1)
+  let some remaining := Kernel.Frontend.instPisOpen constructor.type parameters
+    | throw "source constructor coverage cannot instantiate original parameters"
+  let some (fields, _) := remaining.stripPis site.ctor.numFields
+    | throw "source constructor coverage cannot read the original field telescope"
+  let levels := owner.levelParams.map Kernel.Level.param
+  let liftedParams := parameters.map (fun p => p.liftLooseBVars site.ctor.numFields 0)
+  let fieldVars := sourceParameterVars site.ctor.numFields 0
+  let carrier := Kernel.Expr.mkAppN (.const owner.name levels) liftedParams
+  let constructed := Kernel.Expr.mkAppN (.const constructor.name levels) (liftedParams ++ fieldVars)
+  let equality := Kernel.Expr.mkAppN (.const Kernel.eqName [level])
+    [carrier, subject.liftLooseBVars (site.ctor.numFields + 1) 0, constructed]
+  let continuation := fields.foldr
+    (fun (type, binder) body => Kernel.Expr.forallE type body binder)
+    (.forallE equality (.bvar (site.ctor.numFields + 1)) binder)
+  return .forallE (.sort .zero) (.forallE continuation (.bvar 1) binder) binder
+
+/-- Untrusted proposal of a theorem covering arbitrary source carrier
+values, not merely constructor applications. The proof eliminates through
+the original recursor. Every other motive is the closed true proposition
+`∀ P : Prop, P → P`; recursive hypotheses are not assumed as coverage.
+Admission plus a semantic reading of this statement is still required. -/
+def proposeSourceConstructorCover {source : Source} (site : SourceProjectionSite source) :
+    ExportM Kernel.Declaration := do
+  let binder : Kernel.BinderMeta := ⟨.never⟩
+  let .induct owner _ ← exportSourceEntry (.inductInfo site.owner)
+    | throw "source coverage owner export has the wrong kind"
+  let .ctor constructor _ _ ← exportSourceEntry (.ctorInfo site.ctor)
+    | throw "source coverage constructor export has the wrong kind"
+  unless decide (owner.levelParams = constructor.levelParams) do
+    throw "source coverage constructor universe telescope differs from its owner"
+  let some (parameterBinders, .sort level) := owner.type.stripPis site.owner.numParams
+    | throw "source coverage owner is not a zero-index parameter telescope"
+  let levels := owner.levelParams.map Kernel.Level.param
+  let carrier := Kernel.Expr.mkAppN (.const owner.name levels) (sourceParameterVars site.owner.numParams 0)
+  let statementBody ← sourceConstructorCoverBody site owner constructor level 1 (.bvar 0)
+  let type := parameterBinders.foldr
+    (fun (type, binder) body => Kernel.Expr.forallE type body binder)
+    (.forallE carrier statementBody binder)
+  let some (.recInfo recursor) := source.find (site.ownerName.str "rec")
+    | throw "source coverage has no original recursor"
+  unless recursor.numParams == site.owner.numParams && recursor.numIndices == 0 do
+    throw "source coverage recursor owner parameters or indices disagree"
+  let .recursor recHeader _ _ _ ← exportSourceEntry (.recInfo recursor)
+    | throw "source coverage recursor export has the wrong kind"
+  unless owner.levelParams.all (fun p => recHeader.levelParams.contains p) &&
+      (recHeader.levelParams.filter (fun p => !owner.levelParams.contains p)).length ≤ 1 do
+    throw "source coverage recursor universe selection is unsupported"
+  let recLevels := recHeader.levelParams.map fun p =>
+    if owner.levelParams.contains p then Kernel.Level.param p else .zero
+  let recType := recHeader.type.instantiateLevelParams recHeader.levelParams recLevels
+  let parameters := sourceParameterVars site.owner.numParams 1
+  let some recType := Kernel.Frontend.instPisOpen recType parameters
+    | throw "source coverage recursor parameters cannot be instantiated"
+  let truth : Kernel.Expr := .forallE (.sort .zero)
+    (.forallE (.bvar 0) (.bvar 1) binder) binder
+  let truthProof : Kernel.Expr := .lam (.sort .zero)
+    (.lam (.bvar 0) (.bvar 0) binder) binder
+  let makeMotive := fun domain => do
+    let (binders, _) := Kernel.Frontend.stripPisAll domain
+    match binders with
+    | [(major, _)] =>
+      if Kernel.Frontend.headIs owner.name major then
+        let body ← (sourceConstructorCoverBody site owner constructor level 2 (.bvar 0)).toOption
+        return Kernel.Frontend.mkLams binders body
+      else return Kernel.Frontend.mkLams binders truth
+    | _ => return Kernel.Frontend.mkLams binders truth
+  let some (motives, recType) := Kernel.Frontend.buildBinders makeMotive recursor.numMotives recType
+    | throw "source coverage motive construction failed"
+  let makeMinor := fun domain => do
+    let (binders, result) := Kernel.Frontend.stripPisAll domain
+    let some major := result.getAppArgs.getLast? | none
+    if Kernel.Frontend.headIs constructor.name major then
+      if site.ctor.numFields > binders.length then none else do
+        let expected := Kernel.Expr.mkAppN (.const constructor.name levels)
+          (sourceParameterVars site.owner.numParams (1 + binders.length) ++
+            (List.range site.ctor.numFields).map (fun i => .bvar (binders.length - 1 - i)))
+        if !decide (major = expected) then none else do
+          let coverage ← (sourceConstructorCoverBody site owner constructor level
+            (1 + binders.length) major).toOption
+          let some (arguments, _) := coverage.stripPis 2 | none
+          let carrier := Kernel.Expr.mkAppN (.const owner.name levels)
+            (sourceParameterVars site.owner.numParams (3 + binders.length))
+          let reflexive := Kernel.Expr.mkAppN (.const Kernel.eqReflName [level])
+            [carrier, major.liftLooseBVars 2 0]
+          let fields := (List.range site.ctor.numFields).map
+            (fun i => Kernel.Expr.bvar (binders.length + 1 - i))
+          return Kernel.Frontend.mkLams binders (Kernel.Frontend.mkLams arguments
+            (Kernel.Expr.mkAppN (.bvar 0) (fields ++ [reflexive])))
+    else return Kernel.Frontend.mkLams binders truthProof
+  let some (minors, recType) := Kernel.Frontend.buildBinders makeMinor recursor.numMinors recType
+    | throw "source coverage minor construction failed"
+  let .forallE majorDomain _ _ := recType | throw "source coverage recursor has no major premise"
+  unless Kernel.Frontend.headIs owner.name majorDomain do
+    throw "source coverage recursor major premise has another owner"
+  let application := Kernel.Expr.mkAppN (.const recHeader.name recLevels)
+    (parameters ++ motives ++ minors ++ [.bvar 0])
+  let value := Kernel.Frontend.mkLams parameterBinders (.lam carrier application binder)
+  return .thmDecl ⟨owner.name.str "_source_constructor_cover", owner.levelParams, type⟩ value
+
 /-- Source-owned lowering proposal. Original source syntax, constructor and
 recursor metadata are authoritative. The generated source model supplies
 only a proposed field universe. Neither target data nor reader projRewrite
@@ -767,6 +879,47 @@ theorem SourceNormalizedInstallation.theorem_annotation
     (present : Kernel.Declaration.thmDecl header value ∈ installed.declarations) :
     AnnotationTrace.TheoremInstalled .verified header value installed.env :=
   AnnotationTrace.theorem_checked (by simpa using present) installed.checked
+
+/-- A separate certifier-owned extension of an independently installed
+source bundle. The new theorem quantifies every carrier member. This
+receipt records its exact proposal and admission, not yet its semantic
+constructor-surjectivity interpretation. The original routes are unchanged. -/
+structure SourceConstructorCoverChecked {source : Source} {roots : List Lean.Name}
+    (installed : SourceNormalizedInstallation source roots) (site : SourceProjectionSite source) where
+  header : Kernel.ConstantVal
+  value : Kernel.Expr
+  proposed : proposeSourceConstructorCover site = .ok (.thmDecl header value)
+  fresh : ∀ declaration ∈ installed.declarations, header.name ∉ declaration.names
+  env : Kernel.Env
+  checked : Kernel.Cached.checkDecls .verified []
+    (installed.declarations ++ [Kernel.Declaration.thmDecl header value]).toArray = .ok env
+
+def checkSourceConstructorCover {source : Source} {roots : List Lean.Name}
+    (installed : SourceNormalizedInstallation source roots) (site : SourceProjectionSite source) :
+    Except SourceModelError (SourceConstructorCoverChecked installed site) :=
+  match hp : proposeSourceConstructorCover site with
+  | .error why => .error (.proposalFailure why)
+  | .ok (.thmDecl header value) =>
+    if hf : ∀ declaration ∈ installed.declarations, header.name ∉ declaration.names then
+      match hk : Kernel.Cached.checkDecls .verified []
+          (installed.declarations ++ [Kernel.Declaration.thmDecl header value]).toArray with
+      | .error (error, position) => .error (.checking error position)
+      | .ok env => .ok ⟨header, value, hp, hf, env, hk⟩
+    else .error (.proposalFailure "source constructor coverage name is not fresh")
+  | .ok _ => .error (.proposalFailure "source constructor coverage proposal is not a theorem")
+
+theorem SourceConstructorCoverChecked.annotation {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    (coverage : SourceConstructorCoverChecked installed site) :
+    AnnotationTrace.TheoremInstalled .verified coverage.header coverage.value coverage.env :=
+  AnnotationTrace.theorem_checked (by simp) coverage.checked
+
+theorem SourceConstructorCoverChecked.strong_model (V : Type u) [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    (coverage : SourceConstructorCoverChecked installed site) :
+    Nonempty (StrongInstalledModel V coverage.env) :=
+  strongInstalledModel_exists V [] _ coverage.env coverage.checked
 
 theorem SourceInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
     {source : Source} {roots : List Lean.Name} (installed : SourceInstallation source roots) :

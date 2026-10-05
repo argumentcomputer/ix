@@ -527,4 +527,108 @@ theorem installed_forall_elim {V : Type u} [Kernel.SetTheory V]
       Kernel.SetModel.app_mem_piR member argumentTyped
         (by simpa only [univ_zero] using hP)⟩
 
+/-- Exactly as many semantic fields as the immutable original constructor
+declares. No default element is manufactured for a missing field. -/
+abbrev SourceFieldValues {source : Source} (site : SourceProjectionSite source) (V : Type u) :=
+  { fields : List V // fields.length = site.ctor.numFields }
+
+def originalSelectedField {source : Source} (site : SourceProjectionSite source)
+    {V : Type u} (fields : SourceFieldValues site V) : V :=
+  fields.val[site.field]'(by rw [fields.property]; exact site.shape.2.2.2.2.2)
+
+noncomputable def originalConstructorValue {source : Source} (site : SourceProjectionSite source)
+    {V : Type u} [Kernel.SetTheory V] (values : Kernel.Name → (Kernel.Name → Nat) → V)
+    (levels : Kernel.Name → Nat) (parameters : List V) (fields : SourceFieldValues site V) : V :=
+  (parameters ++ fields.val).foldl Kernel.SetTheory.app (values (sourceName site.ctorName) levels)
+
+/-- Original-source projection meaning, independent of a lowered term:
+choose the specified original field from a typed constructor presentation.
+`valid` is the original dependent field telescope's satisfaction predicate;
+establishing it from actual source/coverage annotations is an open premise. -/
+def OriginalProjectionValue {source : Source} (site : SourceProjectionSite source)
+    {V : Type u} [Kernel.SetTheory V] (values : Kernel.Name → (Kernel.Name → Nat) → V)
+    (levels : Kernel.Name → Nat) (parameters : List V)
+    (valid : SourceFieldValues site V → Prop) (subject value : V) : Prop :=
+  ∃ fields, valid fields ∧ originalConstructorValue site values levels parameters fields = subject ∧
+    originalSelectedField site fields = value
+
+open Kernel.SetTheory in
+/-- The semantic proposition encoded by the arbitrary-subject certificate.
+Connecting the checked syntax's actual annotated telescope to this predicate
+is required; the definition does not assume that connection. -/
+def SemanticConstructorCover {V : Type u} [Kernel.SetTheory V] {Fields : Type v}
+    (valid : Fields → Prop) (constructor : Fields → V) (subject : V) : Prop :=
+  ∀ proposition : V, proposition ∈ˢ univ 0 →
+    (∀ fields, valid fields → constructor fields = subject → pt ∈ˢ proposition) →
+    pt ∈ˢ proposition
+
+open Kernel.SetTheory in
+theorem semanticConstructorCover_iff {V : Type u} [Kernel.SetTheory V] {Fields : Type v}
+    (valid : Fields → Prop) (constructor : Fields → V) (subject : V) :
+    SemanticConstructorCover valid constructor subject ↔
+      ∃ fields, valid fields ∧ constructor fields = subject := by
+  constructor
+  · intro cover
+    let proposition : Prop := ∃ fields, valid fields ∧ constructor fields = subject
+    have inUniverse : (truthVal proposition : V) ∈ˢ univ 0 := by
+      rw [univ_zero]
+      exact truthVal_mem_univZero proposition
+    have inhabited := cover (truthVal proposition) inUniverse
+      (fun fields typed equal => pt_mem_truthVal ⟨fields, typed, equal⟩)
+    exact of_mem_truthVal inhabited
+  · rintro ⟨fields, typed, equal⟩ proposition _ continuation
+    exact continuation fields typed equal
+
+open Kernel.SetTheory in
+/-- Arbitrary-value projection correspondence, with its two substantive
+premises visible: constructor coverage for every carrier member and the
+checked equation's semantic interpretation on every typed field tuple.
+Neither premise is inferred from the fixture census or from the generator. -/
+theorem original_projection_extensional {source : Source} (site : SourceProjectionSite source)
+    {V : Type u} [Kernel.SetTheory V] (values : Kernel.Name → (Kernel.Name → Nat) → V)
+    (levels : Kernel.Name → Nat) (parameters : List V)
+    (valid : SourceFieldValues site V → Prop) (carrier projection : V)
+    (coverage : ∀ subject, subject ∈ˢ carrier → SemanticConstructorCover valid
+      (originalConstructorValue site values levels parameters) subject)
+    (computation : ∀ fields, valid fields →
+      app projection (originalConstructorValue site values levels parameters fields) =
+        originalSelectedField site fields) :
+    ∀ subject, subject ∈ˢ carrier →
+      OriginalProjectionValue site values levels parameters valid subject (app projection subject) ∧
+      ∀ value, OriginalProjectionValue site values levels parameters valid subject value →
+        value = app projection subject := by
+  intro subject typed
+  obtain ⟨fields, fieldsTyped, presents⟩ :=
+    (semanticConstructorCover_iff _ _ _).mp (coverage subject typed)
+  have computed : app projection subject = originalSelectedField site fields := by
+    simpa only [presents] using computation fields fieldsTyped
+  refine ⟨⟨fields, fieldsTyped, presents, computed.symm⟩, ?_⟩
+  intro value reading
+  obtain ⟨other, otherTyped, sameSubject, selected⟩ := reading
+  have otherComputed : app projection subject = originalSelectedField site other := by
+    simpa only [sameSubject] using computation other otherTyped
+  exact selected.symm.trans otherComputed.symm
+
+open Kernel.SetTheory in
+/-- Function-value equality follows only with typed product membership.
+The same proof covers graph functions and the proof-point regime. -/
+theorem original_projection_function_extensional {source : Source} (site : SourceProjectionSite source)
+    {V : Type u} [Kernel.SetTheory V] (values : Kernel.Name → (Kernel.Name → Nat) → V)
+    (levels : Kernel.Name → Nat) (parameters : List V)
+    (valid : SourceFieldValues site V → Prop) (carrier original lowered : V)
+    {regime : Nat} {originalCodomain loweredCodomain : V → V}
+    (originalTyped : original ∈ˢ Kernel.SetModel.piR regime carrier originalCodomain)
+    (loweredTyped : lowered ∈ˢ Kernel.SetModel.piR regime carrier loweredCodomain)
+    (originalReading : ∀ subject, subject ∈ˢ carrier →
+      OriginalProjectionValue site values levels parameters valid subject (app original subject))
+    (coverage : ∀ subject, subject ∈ˢ carrier → SemanticConstructorCover valid
+      (originalConstructorValue site values levels parameters) subject)
+    (computation : ∀ fields, valid fields →
+      app lowered (originalConstructorValue site values levels parameters fields) =
+        originalSelectedField site fields) : original = lowered := by
+  apply Kernel.SetModel.eq_of_mem_piR_app_eq originalTyped loweredTyped
+  intro subject typed
+  exact (original_projection_extensional site values levels parameters valid carrier lowered
+    coverage computation subject typed).2 _ (originalReading subject typed)
+
 end Ix.CompileCert

@@ -182,4 +182,24 @@ def runNormalized : IO Unit := do
   unless installedCount == 8 do throw (IO.userError "normalized source root coverage changed")
   IO.println "source normalization: 8/8 original roots installed"
 
+def runCoverage : IO Unit := do
+  let env ← getCompileEnv #[Compiled.prefixName]
+  for (root, owner, support) in
+      [(Compiled.prefixName ++ `Node.val, Compiled.prefixName ++ `Node, []),
+       (Compiled.prefixName ++ `Pair, Compiled.prefixName ++ `Pair, [`Eq]),
+       (`Subtype, `Subtype, [`Eq])] do
+    let captured ← IO.ofExcept (captureCone env.find? (root :: support) 256)
+    let installed ← match installSourceNormalized captured.source (root :: support) with
+      | .ok installed => pure installed
+      | .error why => throw (IO.userError s!"coverage source install {owner}: {label why}")
+    let site ← IO.ofExcept (sourceProjectionSite captured.source owner 0)
+    match checkSourceConstructorCover installed site with
+    | .error why => throw (IO.userError s!"source constructor coverage {owner}: {label why}")
+    | .ok coverage =>
+      IO.println s!"COVERAGE-CHECKED {owner}: params={site.owner.numParams} fields={site.ctor.numFields} declarations={installed.declarations.length + 1}"
+      let tampered := installed.declarations ++ [Ix.Kernel.Declaration.thmDecl coverage.header (.bvar 1000)]
+      match Ix.Kernel.Cached.checkDecls .verified [] tampered.toArray with
+      | .ok _ => throw (IO.userError "malformed source coverage proof accepted")
+      | .error (error, position) => IO.println s!"PASS: source coverage proof tamper refused at {position}: {error}"
+
 end Tests.Ix.CompileCert.SourceModels
