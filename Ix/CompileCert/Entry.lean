@@ -7525,4 +7525,90 @@ theorem checkInstalledTypes_telescope {V : Type u} [Kernel.SetTheory V]
     sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universeImage
   exact typed.image image
 
+open Kernel.SetTheory in
+/-- The two semantic typing premises of a fired application, tied to actual
+installed records. Parameter/index comparisons are deliberately separate. -/
+structure RuleTupleTyping {V : Type u} [Kernel.SetTheory V]
+    (values : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env)
+    (levels : Kernel.Name → Nat) {name : Kernel.Name} {index : Nat}
+    (frame : InstalledRuleFrame env name index) (universes constructorUniverses : List Kernel.Level)
+    (valuation : Nat → V) (arguments fields : List V) : Prop where
+  constructorTyped : ∃ final result, InstalledTelescope values env levels valuation
+    (frame.constructor.type.instantiateLevelParams frame.constructor.levelParams constructorUniverses)
+    fields final result
+  recursorTyped : ∃ final result, InstalledTelescope values env levels valuation
+    (frame.header.type.instantiateLevelParams frame.header.levelParams universes)
+    (arguments ++ [fields.foldl app (values frame.rule.ctor
+      (Kernel.Level.substFn levels frame.constructor.levelParams constructorUniverses))]) final result
+
+/-- Actual checked type associations provide both target typing premises,
+including the constructor-major value. The constant-instance equality comes
+from the exact constructor lookups and telescope map, not a reverse alias or
+an assumed equality between independently chosen models. -/
+theorem InstalledRuleFrame.checked_tuple_typing {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (frame : InstalledRuleFrame sourceEnv name index)
+    (targetFrame : InstalledRuleFrame targetEnv (names name) index)
+    (ruleHeader : InstalledRuleHeader names frame.rule targetFrame.rule)
+    (sourceLevels targetLevels : Kernel.Name → Nat)
+    (sourceUs targetUs sourceConstructorUs targetConstructorUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = frame.header.levelParams.length)
+    (targetArity : targetUs.length = targetFrame.header.levelParams.length)
+    (sourceConstructorArity : sourceConstructorUs.length = frame.constructor.levelParams.length)
+    (targetConstructorArity : targetConstructorUs.length = targetFrame.constructor.levelParams.length)
+    (universeImage : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+    (constructorUniverseImage : sourceConstructorUs.map (Kernel.Level.eval sourceLevels) =
+      targetConstructorUs.map (Kernel.Level.eval targetLevels))
+    {valuation : Nat → V} {arguments fields : List V}
+    (typed : RuleTupleTyping ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels frame sourceUs sourceConstructorUs valuation arguments fields) :
+    RuleTupleTyping target.public.cval targetEnv targetLevels targetFrame targetUs targetConstructorUs
+      valuation arguments fields := by
+  have sourceName : frame.header.name = name := Kernel.Semantics.Env.find?_name frame.recursorLookup
+  have sourceConstructorName : frame.constructor.name = frame.rule.ctor :=
+    Kernel.Semantics.Env.find?_name frame.constructorLookup
+  have mappedConstructorLookup : targetEnv.find? (names frame.rule.ctor) =
+      some (.ctorInfo targetFrame.constructor targetFrame.constructorParams targetFrame.constructorFields) := by
+    rw [ruleHeader.1]
+    exact targetFrame.constructorLookup
+  obtain ⟨selectedConstructor, constructorLookup, constructorTransport⟩ :=
+    checkInstalledTypes_telescope target association types (Kernel.Semantics.Env.find?_mem frame.constructorLookup)
+  have expectedConstructorLookup : targetEnv.find? (names
+      (Kernel.ConstantInfo.ctorInfo frame.constructor frame.constructorParams frame.constructorFields).name) =
+      some (.ctorInfo targetFrame.constructor targetFrame.constructorParams targetFrame.constructorFields) := by
+    simpa only [Kernel.ConstantInfo.name, Kernel.ConstantInfo.toConstantVal, sourceConstructorName] using mappedConstructorLookup
+  have constructorEqual := Option.some.inj (constructorLookup.symm.trans expectedConstructorLookup)
+  subst selectedConstructor
+  obtain ⟨constructorFinal, constructorResult, constructorTyped⟩ := typed.constructorTyped
+  obtain ⟨targetConstructorResult, constructorTyped, _⟩ := constructorTransport sourceLevels targetLevels
+    sourceConstructorUs targetConstructorUs sourceConstructorArity targetConstructorArity constructorUniverseImage
+    valuation constructorFinal fields constructorResult constructorTyped
+  have constructorValue :
+      (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval frame.rule.ctor
+        (Kernel.Level.substFn sourceLevels frame.constructor.levelParams sourceConstructorUs) =
+      target.public.cval targetFrame.rule.ctor
+        (Kernel.Level.substFn targetLevels targetFrame.constructor.levelParams targetConstructorUs) := by
+    change target.public.cval (names frame.rule.ctor) _ = _
+    rw [← ruleHeader.1]
+    exact target.value_params mappedConstructorLookup _ _
+      (PullbackMap.fromEnvs_instance association frame.constructorLookup mappedConstructorLookup
+        sourceLevels targetLevels sourceConstructorUs targetConstructorUs
+        sourceConstructorArity targetConstructorArity constructorUniverseImage)
+  obtain ⟨selectedRecursor, recursorLookup, recursorTransport⟩ :=
+    checkInstalledTypes_telescope target association types (Kernel.Semantics.Env.find?_mem frame.recursorLookup)
+  have expectedRecursorLookup : targetEnv.find? (names
+      (Kernel.ConstantInfo.recInfo frame.header frame.major frame.rulePrefix frame.rules).name) =
+      some (.recInfo targetFrame.header targetFrame.major targetFrame.rulePrefix targetFrame.rules) := by
+    simpa only [Kernel.ConstantInfo.name, Kernel.ConstantInfo.toConstantVal, sourceName] using targetFrame.recursorLookup
+  have recursorEqual := Option.some.inj (recursorLookup.symm.trans expectedRecursorLookup)
+  subst selectedRecursor
+  obtain ⟨recursorFinal, recursorResult, recursorTyped⟩ := typed.recursorTyped
+  obtain ⟨targetRecursorResult, recursorTyped, _⟩ := recursorTransport sourceLevels targetLevels
+    sourceUs targetUs sourceArity targetArity universeImage valuation recursorFinal _ recursorResult recursorTyped
+  refine ⟨⟨constructorFinal, targetConstructorResult, constructorTyped⟩,
+    ⟨recursorFinal, targetRecursorResult, ?_⟩⟩
+  simpa only [Kernel.ConstantInfo.toConstantVal, constructorValue] using recursorTyped
+
 end Ix.CompileCert
