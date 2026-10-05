@@ -6289,4 +6289,132 @@ theorem checkInstalledCapabilities_sound {V : Type u} [Kernel.SetTheory V]
   cases image with
   | forallE _ _ regimes => exact regimes
 
+/-- The reserved unit-capable family is determined by the actual pinned
+declaration table, not by an arbitrary name or capability assertion. -/
+theorem StrongInstalledModel.reserved_unit_name {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    {name : Kernel.Name} {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (lookup : env.find? name = some (.indInfo header caps))
+    (reserved : Kernel.reservedBasisNames.contains name = true)
+    (enabled : caps.unitlike = true) : name = Kernel.punitName := by
+  have pinned := (strong.internal.base2.basis_pinned name _ lookup reserved).1
+  have table : Kernel.reservedBasisNames.all (fun n => match Kernel.pinnedInfo n with
+      | .indInfo _ c => !c.unitlike || decide (n = Kernel.punitName)
+      | _ => true) = true := by decide
+  have member : name ∈ Kernel.reservedBasisNames := by simpa using reserved
+  have row := List.all_eq_true.mp table name member
+  rw [← pinned] at row
+  simpa [enabled] using row
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+theorem StrongInstalledModel.punit_value {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (lookup : env.find? Kernel.punitName = some Kernel.punitA)
+    (levels : Kernel.Name → Nat) : strong.public.cval Kernel.punitName levels = (unitSet : V) := by
+  have pinned : strong.internal.base2.cvalE Kernel.punitName levels =
+      Kernel.Term.punitT (levels Kernel.uN) :=
+    (strong.internal.base2.basis_pinned Kernel.punitName _ lookup (by decide)).2 _ levels rfl
+  have leaf : strong.internal.base2.acval Kernel.punitName levels = .const .punit [levels Kernel.uN] :=
+    erase_eq_const (by rw [strong.internal.base2.acval_erase, pinned]; rfl)
+  change interp V (fun _ => empty) (strong.internal.base2.acval Kernel.punitName levels) = unitSet
+  rw [leaf, interp_const]
+  rfl
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- The reserved branch of the unit law, with its zero parameter count
+derived from the pinned installed record. -/
+theorem StrongInstalledModel.reserved_unit {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    {name : Kernel.Name} {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (lookup : env.find? name = some (.indInfo header caps))
+    (reserved : Kernel.reservedBasisNames.contains name = true)
+    (enabled : caps.unitlike = true) (levels : Kernel.Name → Nat)
+    (values : List V) (count : values.length = caps.unitParams) (x y : V)
+    (left : x ∈ˢ values.foldl app (strong.public.cval name levels))
+    (right : y ∈ˢ values.foldl app (strong.public.cval name levels)) : x = y := by
+  have named := strong.reserved_unit_name lookup reserved enabled
+  subst name
+  have pinned := (strong.internal.base2.basis_pinned Kernel.punitName _ lookup reserved).1
+  have found : env.find? Kernel.punitName = some Kernel.punitA := by
+    simpa only [pinned, show Kernel.pinnedInfo Kernel.punitName = Kernel.punitA from rfl] using lookup
+  have zero : caps.unitParams = 0 := by
+    have h := congrArg (fun entry => match entry with | .indInfo _ c => c.unitParams | _ => 0) pinned
+    exact h
+  have nil : values = [] := by simpa using count.trans zero
+  rw [nil, List.foldl_nil, strong.punit_value found levels] at left right
+  exact (mem_unitSet left).trans (mem_unitSet right).symm
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- Source-side unit law for the target-derived interpretation. Installed
+type/capability checks and the source typed application assemble the actual
+target application; no target telescope or member equality is assumed.
+Reserved families use the pinned PUnit law; other families use their stored
+unit capability. No reserved-family exclusion is imposed. -/
+theorem checked_unit_pullback {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ sourceEnv.consts)
+    (enabled : caps.unitlike = true)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = header.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels))
+    {depth : Nat} {ρ : Nat → V} {targetExpressions : List Kernel.Expr} {annotations : List AnnotTerm}
+    (readings : ArgumentAnnotations target targetLevels depth ρ targetExpressions annotations)
+    {sourceExpressions : List Kernel.Expr} {values : List V} {sourceResidual : Kernel.Expr}
+    (application : DenotedApplication
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv sourceLevels ρ (header.type.instantiateLevelParams header.levelParams sourceUs)
+      sourceExpressions values sourceResidual)
+    (argumentImages : InstalledSpineImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      sourceExpressions (targetExpressions.map (Kernel.Expr.closeN depth)))
+    (count : values.length = caps.unitParams) (x y : V)
+    (left : x ∈ˢ values.foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs)))
+    (right : y ∈ˢ values.foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs))) : x = y := by
+  obtain ⟨sourceLookup, targetHeader, targetCaps, targetLookup, capHeader, _⟩ :=
+    checkInstalledCapabilities_member capabilities present
+  obtain ⟨associated, associatedLookup, telescope⟩ := association _ _ sourceLookup
+  have same := Option.some.inj (associatedLookup.symm.trans targetLookup)
+  subst associated
+  have targetArity : targetUs.length = targetHeader.levelParams.length := by
+    have equalLengths := congrArg List.length universes
+    simp only [List.length_map] at equalLengths
+    exact equalLengths.symm.trans (sourceArity.trans telescope.2.2)
+  obtain ⟨residual, targetApplication, _⟩ := AnnotatedApplication.from_checked_type target association types
+    present targetLookup sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
+    readings application argumentImages
+  have equalValues := (application.arguments.image argumentImages).functional readings.denotes
+  have equalFamily :
+      (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn sourceLevels header.levelParams sourceUs) =
+      target.public.cval (names header.name) (Kernel.Level.substFn targetLevels targetHeader.levelParams targetUs) := by
+    apply target.value_params targetLookup
+    exact PullbackMap.fromEnvs_instance association sourceLookup targetLookup sourceLevels targetLevels
+      sourceUs targetUs sourceArity targetArity universes
+  have targetEnabled : targetCaps.unitlike = true := capHeader.2.1.symm.trans enabled
+  have targetCount : annotations.length = targetCaps.unitParams := by
+    rw [equalValues, List.length_map] at count
+    exact count.trans capHeader.2.2.2.2.2.1
+  rw [equalValues, equalFamily] at left right
+  by_cases reserved : Kernel.reservedBasisNames.contains (names header.name) = true
+  · exact target.reserved_unit targetLookup reserved targetEnabled
+      (Kernel.Level.substFn targetLevels targetHeader.levelParams targetUs)
+      (annotations.map (interp V ρ)) (by simpa using targetCount) x y left right
+  · have nonbasis : Kernel.reservedBasisNames.contains (names header.name) = false := by
+      simpa using reserved
+    apply targetApplication.installed_unit (names header.name) targetHeader targetCaps targetLookup
+      targetEnabled nonbasis targetUs targetArity targetCount x y
+    · simpa only [interp_cvalOf target.internal.base2.cval_closedL,
+        StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM] using left
+    · simpa only [interp_cvalOf target.internal.base2.cval_closedL,
+        StrongInstalledModel.public, Kernel.Model.Model.ofEnvModelM] using right
+
+
 end Ix.CompileCert

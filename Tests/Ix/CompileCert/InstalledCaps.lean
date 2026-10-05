@@ -66,7 +66,15 @@ def run : IO Unit := do
     { etaCaps with etaCtor := sourceName `Wrong }))
   let badProjection (name : Name) := if name = projFnName family 0 then sourceName `Wrong else name
   require "eta indexed projection identity" (decide (!InstalledCapsHeader badProjection family etaCaps etaCaps))
-  IO.println "installed capabilities: independent Nat folds; 22 lookup/field/alias controls passed"
+  let sourceUnit ← match Cached.checkDecls .verified [] #[.basisDecl .punitK] with
+    | .ok result => pure result
+    | .error _ => throw (IO.userError "source PUnit fold failed")
+  let targetUnit ← match Cached.checkDecls .verified [] #[.basisDecl .punitK] with
+    | .ok result => pure result
+    | .error _ => throw (IO.userError "target PUnit fold failed")
+  require "actual PUnit telescope" (checkTelescopes sourceUnit targetUnit id)
+  require "actual PUnit capability association" (checkInstalledCapabilities sourceUnit targetUnit id)
+  IO.println "installed capabilities: independent Nat/PUnit folds; 24 lookup/field/alias controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 
