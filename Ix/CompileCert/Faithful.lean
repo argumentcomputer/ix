@@ -887,4 +887,128 @@ theorem installed_eq_implication_inhabited {V : Type u} [Kernel.SetTheory V]
     rw [resultEq]
     simpa only [Kernel.push, propositionSlot] using continuation equal
 
+theorem InstalledTelescope.final_valuation {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ expression arguments finalρ result) :
+    finalρ = pushArguments ρ arguments := by
+  induction typed with
+  | nil => rfl
+  | cons _ _ _ ih => exact ih
+
+theorem pushArguments_above {V : Type u} (arguments : List V) (ρ : Nat → V) (index : Nat) :
+    pushArguments ρ arguments (arguments.length + index) = ρ index := by
+  induction arguments generalizing ρ index with
+  | nil => simp [pushArguments]
+  | cons argument rest ih =>
+    simpa only [pushArguments, List.length_cons, Nat.add_assoc, Nat.add_comm 1,
+      Kernel.push] using ih (Kernel.push argument ρ) (index + 1)
+
+theorem pushArguments_append {V : Type u} (ρ : Nat → V) (first second : List V) :
+    pushArguments ρ (first ++ second) = pushArguments (pushArguments ρ first) second := by
+  induction first generalizing ρ with
+  | nil => rfl
+  | cons argument rest ih => exact ih (Kernel.push argument ρ)
+
+theorem pushArguments_get {V : Type u} (arguments : List V) (ρ : Nat → V)
+    (index : Nat) (inside : index < arguments.length) :
+    pushArguments ρ arguments (arguments.length - 1 - index) = arguments[index] := by
+  induction arguments generalizing ρ index with
+  | nil => simp at inside
+  | cons argument rest ih =>
+    cases index with
+    | zero =>
+      simpa only [pushArguments, List.length_cons, Nat.add_sub_cancel,
+        Nat.sub_zero, List.getElem_cons_zero, Nat.add_zero, Kernel.push]
+        using pushArguments_above rest (Kernel.push argument ρ) 0
+    | succ index =>
+      have inRest : index < rest.length := by simpa using inside
+      have position : (argument :: rest).length - 1 - (index + 1) = rest.length - 1 - index := by
+        simp only [List.length_cons]
+        omega
+      simpa only [position, pushArguments, List.getElem_cons_succ] using
+        ih (Kernel.push argument ρ) index inRest
+
+inductive DenotesSpine {V : Type u} [Kernel.SetTheory V]
+    (values : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) : List Kernel.Expr → List V → Prop
+  | nil : DenotesSpine values env levels ρ [] []
+  | cons {expression value expressions arguments}
+      (head : Kernel.Denotes values env levels ρ expression value)
+      (tail : DenotesSpine values env levels ρ expressions arguments) :
+      DenotesSpine values env levels ρ (expression :: expressions) (value :: arguments)
+
+theorem DenotesSpine.of_get {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {expressions : List Kernel.Expr} {arguments : List V}
+    (length : expressions.length = arguments.length)
+    (elements : ∀ index (inside : index < expressions.length),
+      Kernel.Denotes values env levels ρ expressions[index]
+        (arguments[index]'(by omega))) :
+    DenotesSpine values env levels ρ expressions arguments := by
+  induction expressions generalizing arguments with
+  | nil =>
+    have empty : arguments = [] := by simpa using length.symm
+    subst arguments
+    exact .nil
+  | cons expression rest ih =>
+    cases arguments with
+    | nil => simp at length
+    | cons argument arguments =>
+      refine .cons (elements 0 (by simp)) (ih (by simpa using length) ?_)
+      intro index inside
+      exact elements (index + 1) (by simpa using inside)
+
+theorem DenotesSpine.append {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {left right : List Kernel.Expr} {leftValues rightValues : List V}
+    (first : DenotesSpine values env levels ρ left leftValues)
+    (second : DenotesSpine values env levels ρ right rightValues) :
+    DenotesSpine values env levels ρ (left ++ right) (leftValues ++ rightValues) := by
+  induction first with
+  | nil => exact second
+  | cons head tail ih => exact .cons head ih
+
+open Kernel.SetTheory in
+theorem denotes_mkAppN {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {function : Kernel.Expr} {value : V} {expressions : List Kernel.Expr} {arguments : List V}
+    (head : Kernel.Denotes values env levels ρ function value)
+    (spine : DenotesSpine values env levels ρ expressions arguments) :
+    Kernel.Denotes values env levels ρ (Kernel.Expr.mkAppN function expressions)
+      (arguments.foldl app value) := by
+  induction spine generalizing function value with
+  | nil => exact head
+  | cons argument _ ih => exact ih (.app head argument)
+
+/-- A constant at its own parameter instance denotes its value under the
+unchanged level assignment, including the values of other universe names. -/
+theorem denotes_self_instance {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {name : Kernel.Name} {constant : Kernel.ConstantInfo}
+    (lookup : env.find? name = some constant) :
+    Kernel.Denotes values env levels ρ
+      (.const name (constant.toConstantVal.levelParams.map Kernel.Level.param)) (values name levels) := by
+  have denoted := Kernel.Denotes.const (cval := values) (φ := levels) (ρ := ρ)
+    (us := constant.toConstantVal.levelParams.map Kernel.Level.param) lookup (by simp)
+  simpa only [Kernel.Level.substFn_param_self] using denoted
+
+theorem denotes_mkAppN_head {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    (arguments : List Kernel.Expr) {function : Kernel.Expr} {value : V}
+    (read : Kernel.Denotes values env levels ρ (Kernel.Expr.mkAppN function arguments) value) :
+    ∃ headValue, Kernel.Denotes values env levels ρ function headValue := by
+  induction arguments generalizing function value with
+  | nil => exact ⟨value, read⟩
+  | cons argument rest ih =>
+    obtain ⟨_, readHead⟩ := ih read
+    cases readHead with
+    | app head _ => exact ⟨_, head⟩
+
 end Ix.CompileCert

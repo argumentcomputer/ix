@@ -544,6 +544,32 @@ def sourceProjectionEquation {source : Source} (site : SourceProjectionSite sour
 def sourceParameterVars (count extra : Nat) : List Kernel.Expr :=
   (List.range count).map (fun i => .bvar (extra + count - 1 - i))
 
+theorem sourceParameterVars_denotes {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V} (arguments : List V) (extra : Nat)
+    (frame : ∀ index (inside : index < arguments.length),
+      ρ (extra + arguments.length - 1 - index) = arguments[index]) :
+    DenotesSpine values env levels ρ (sourceParameterVars arguments.length extra) arguments := by
+  apply DenotesSpine.of_get (by simp [sourceParameterVars])
+  intro index inside
+  have inArgs : index < arguments.length := by simpa [sourceParameterVars] using inside
+  simp only [sourceParameterVars, List.getElem_map, List.getElem_range]
+  rw [← frame index inArgs]
+  exact .bvar
+
+/-- Read parameters below an arbitrary list of more recent binders. This
+matches the exact source-owned de Bruijn spine, not a guessed display order. -/
+theorem sourceParameterVars_pushed {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} (ρ : Nat → V) (parameters extras : List V) :
+    DenotesSpine values env levels (pushArguments (pushArguments ρ parameters) extras)
+      (sourceParameterVars parameters.length extras.length) parameters := by
+  apply sourceParameterVars_denotes
+  intro index inside
+  have position : extras.length + parameters.length - 1 - index =
+      extras.length + (parameters.length - 1 - index) := by omega
+  rw [position, pushArguments_above, pushArguments_get parameters ρ index inside]
+
 /-- Church-encoded constructor presentation at an arbitrary subject:
 `∀ P : Prop, (∀ fields, subject = C params fields → P) → P`.
 The field domains are the original constructor's dependent telescope.
@@ -1155,6 +1181,37 @@ def checkSourceCoverInstalledShape {source : Source} {roots : List Lean.Name}
     else throw "installed constructor counts differ from the immutable source"
   else throw "installed coverage owner lookup changed"
 
+theorem SourceCoverInstalledShape.owner_member {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) :
+    Kernel.ConstantInfo.indInfo receipt.data.owner receipt.ownerCaps ∈ coverage.env.consts :=
+  List.mem_of_find?_eq_some receipt.ownerLookup
+
+open Kernel.SetTheory in
+/-- The source carrier's universe membership comes from the actual installed
+owner and its typed parameter tuple, not from an assumed shape of arbitrary
+set-theoretic application. -/
+theorem SourceCoverInstalledShape.owner_apply {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V} {result : Kernel.Expr}
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (typed : InstalledTelescope model.cval coverage.env levels ρ receipt.data.owner.type
+      parameters finalρ result) :
+    parameters.foldl app (model.cval (sourceName site.ownerName) levels) ∈ˢ
+      univ (Kernel.Level.eval levels receipt.data.level) := by
+  rcases receipt.shape with ⟨ownerName, _, _, _, _, _, count, _, _, _, _, ownerType, _⟩
+  obtain ⟨type, read, member⟩ := typed.model_apply model receipt.owner_member
+  rw [ownerType] at typed
+  have ⟨resultType, _⟩ := sourceForalls_transfer (targetBinders := receipt.data.parameters)
+    (targetBody := Kernel.Expr.sort receipt.data.level) rfl (parameterCount.trans count.symm) typed
+  rw [resultType] at read
+  cases read
+  simpa only [Kernel.ConstantInfo.name, Kernel.ConstantInfo.toConstantVal, ownerName] using member
+
 theorem SourceCoverInstalledShape.constructor_member {source : Source} {roots : List Lean.Name}
     {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
     {coverage : SourceConstructorCoverChecked installed site}
@@ -1189,6 +1246,92 @@ theorem SourceCoverInstalledShape.constructor_apply {V : Type u} [Kernel.SetTheo
   have name : receipt.data.constructor.name = sourceName site.ctorName := receipt.shape.2.1
   simpa only [Kernel.ConstantInfo.toConstantVal, Kernel.ConstantInfo.name,
     originalConstructorValue, name] using applied
+
+open Kernel.SetTheory in
+/-- Read the receipt's exact Eq syntax at its exact argument frame. This
+connects the independently checked syntax to semantic constructor values;
+the Eq constant's own denotation remains explicit until extracted from the
+actually denoted continuation leaf. -/
+theorem SourceCoverInstalledShape.equality_denotes {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (fields : SourceFieldValues site V) (subject proposition E : V)
+    (eqRead : Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments (pushArguments ρ parameters) [subject, proposition]) fields.val)
+      (.const Kernel.eqName [receipt.data.level]) E) :
+    Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments (pushArguments ρ parameters) [subject, proposition]) fields.val)
+      receipt.data.equalityType
+      (app (app (app E (parameters.foldl app (model.cval (sourceName site.ownerName) levels))) subject)
+        (originalConstructorValue site model.cval levels parameters fields)) := by
+  rcases receipt.shape with ⟨ownerName, constructorName, _, levelNames, _, _, _, _, _, _, _,
+    _, _, _, _, equation, _, _, _⟩
+  let base := pushArguments ρ parameters
+  let frame := pushArguments (pushArguments base [subject, proposition]) fields.val
+  have parameterSpine : DenotesSpine model.cval coverage.env levels frame
+      (sourceParameterVars site.owner.numParams (site.ctor.numFields + 2)) parameters := by
+    have read := sourceParameterVars_pushed (values := model.cval) (env := coverage.env)
+      (levels := levels) ρ parameters ([subject, proposition] ++ fields.val)
+    simpa only [pushArguments_append, List.length_append, List.length_cons,
+      List.length_nil, parameterCount, fields.property, Nat.add_comm 2, Nat.zero_add,
+      Nat.reduceAdd, base, frame] using read
+  have fieldSpine : DenotesSpine model.cval coverage.env levels frame
+      (sourceParameterVars site.ctor.numFields 0) fields.val := by
+    have read := sourceParameterVars_pushed (values := model.cval) (env := coverage.env)
+      (levels := levels) (pushArguments base [subject, proposition]) fields.val []
+    simpa only [List.length_nil, pushArguments, fields.property, frame] using read
+  have ownerRead := denotes_self_instance (values := model.cval) (levels := levels)
+    (ρ := frame) receipt.ownerLookup
+  have constructorRead := denotes_self_instance (values := model.cval) (levels := levels)
+    (ρ := frame) receipt.constructorLookup
+  simp only [Kernel.ConstantInfo.toConstantVal] at ownerRead constructorRead
+  rw [← ownerName] at ownerRead
+  rw [← constructorName, ← levelNames] at constructorRead
+  have ownerApp := denotes_mkAppN ownerRead parameterSpine
+  have constructorApp := denotes_mkAppN constructorRead (parameterSpine.append fieldSpine)
+  have subjectRead : Kernel.Denotes model.cval coverage.env levels frame
+      (.bvar (site.ctor.numFields + 1)) subject := by
+    have slot : frame (site.ctor.numFields + 1) = subject := by
+      have above := pushArguments_above fields.val (pushArguments base [subject, proposition]) 1
+      simpa only [frame, fields.property, pushArguments, Kernel.push] using above
+    rw [← slot]
+    exact .bvar
+  rw [equation]
+  have read := Kernel.Denotes.app (Kernel.Denotes.app (Kernel.Denotes.app eqRead ownerApp)
+    subjectRead) constructorApp
+  simpa only [Kernel.Expr.mkAppN, originalConstructorValue, ownerName, constructorName,
+    base, frame] using read
+
+open Kernel.SetTheory in
+/-- Extract the Eq instance from the actual leaf denotation and identify its
+value with the original carrier/subject/constructor equation. No separate
+assumption that Eq resolves in the source environment is needed. -/
+theorem SourceCoverInstalledShape.equality_value {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (fields : SourceFieldValues site V) (subject proposition value : V)
+    (read : Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments (pushArguments ρ parameters) [subject, proposition]) fields.val)
+      receipt.data.equalityType value) :
+    ∃ E, Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments (pushArguments ρ parameters) [subject, proposition]) fields.val)
+      (.const Kernel.eqName [receipt.data.level]) E ∧
+      value = app (app (app E (parameters.foldl app (model.cval (sourceName site.ownerName) levels))) subject)
+        (originalConstructorValue site model.cval levels parameters fields) := by
+  rcases receipt.shape with ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, equation, _, _, _⟩
+  have expanded := read
+  rw [equation] at expanded
+  obtain ⟨E, eqRead⟩ := denotes_mkAppN_head _ expanded
+  exact ⟨E, eqRead, Kernel.Denotes_functional read
+    (receipt.equality_denotes model levels ρ parameters parameterCount fields subject proposition E eqRead)⟩
 
 /-- Value denotation for the actually installed normalized definitions.
 Original-source value correspondence is a separate semantic pull-back. -/
