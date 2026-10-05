@@ -853,6 +853,94 @@ namespace AnnotationTrace
 
 open Kernel Kernel.Cached
 
+/-- The exact pure trace of an actual cached annotation, including memo
+hits. The fuel belongs to the proved specification trace; it is not asserted
+equal to the cached knot's fuel or to another installation's fuel. -/
+theorem cached_pure {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {expression result : Kernel.Expr} {initial final : CState}
+    (verified : mode.verifiedChecks = true) (environment : EnvWF env)
+    (state : CSOK mode env initial) (scope : Kernel.Expr.WScoped depth expression)
+    (run : (coreKnotI mode (mkFEnv env) fuel).annotate depth expression initial = .ok (result, final)) :
+    CSOK mode env final ∧ Kernel.Expr.WScoped depth result ∧
+      ∃ pureFuel, annotateCore mode env pureFuel depth expression = .ok result := by
+  obtain ⟨state', pureResult, ⟨same, resultScope⟩, pureFuel, pureRun⟩ :=
+    (ssimC verified env environment fuel).annotate state rfl scope result final run
+  cases same
+  exact ⟨state', resultScope, pureFuel, pureRun⟩
+
+theorem constant_pure {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {name : Kernel.Name} {levels : List Kernel.Level} {result : Kernel.Expr}
+    (run : annotateCore mode env fuel depth (.const name levels) = .ok result) :
+    result = .const name levels := by
+  cases fuel with
+  | zero => simp [annotateCore_zero, throw, throwThe] at run
+  | succ fuel =>
+    rw [annotateCore_succ] at run
+    simpa only [annotateBody, pure, Except.pure, Except.ok.injEq] using run.symm
+
+/-- Actual constant annotation keeps the exact name/levels on a cache hit
+as well as a miss. This is a syntax statement, not proof that the constant
+resolves or that two models assign its instance the same value. -/
+theorem constant_cached {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {name : Kernel.Name} {levels : List Kernel.Level} {result : Kernel.Expr}
+    {initial final : CState}
+    (verified : mode.verifiedChecks = true) (environment : EnvWF env)
+    (state : CSOK mode env initial)
+    (run : (coreKnotI mode (mkFEnv env) fuel).annotate depth (.const name levels) initial =
+      .ok (result, final)) : result = .const name levels := by
+  obtain ⟨_, _, _, pureRun⟩ := cached_pure verified environment state
+    (Kernel.Expr.WScoped.of_not_hasFvar rfl) run
+  exact constant_pure pureRun
+
+/-- Two independently successful constant annotations retain the supplied
+name/universe image without equating the installations or their cache states. -/
+theorem paired_constant_cached {sourceMode targetMode : CheckMode}
+    {sourceEnv targetEnv : Env} {sourceFuel targetFuel depth : Nat}
+    {sourceInitial sourceFinal targetInitial targetFinal : CState}
+    {name : Kernel.Name} {levels : List Kernel.Level} {sourceResult targetResult : Kernel.Expr}
+    (rename : InstalledRenaming)
+    (sourceVerified : sourceMode.verifiedChecks = true) (targetVerified : targetMode.verifiedChecks = true)
+    (sourceEnvironment : EnvWF sourceEnv) (targetEnvironment : EnvWF targetEnv)
+    (sourceState : CSOK sourceMode sourceEnv sourceInitial) (targetState : CSOK targetMode targetEnv targetInitial)
+    (sourceRun : (coreKnotI sourceMode (mkFEnv sourceEnv) sourceFuel).annotate depth (.const name levels)
+      sourceInitial = .ok (sourceResult, sourceFinal))
+    (targetRun : (coreKnotI targetMode (mkFEnv targetEnv) targetFuel).annotate depth
+      (.const (rename.name name) (rename.universes name levels)) targetInitial = .ok (targetResult, targetFinal)) :
+    targetResult = rename.expr sourceResult := by
+  rw [constant_cached sourceVerified sourceEnvironment sourceState sourceRun,
+    constant_cached targetVerified targetEnvironment targetState targetRun]
+  rfl
+
+/-- The pure specification's actual application subtraces. This does not
+claim that a cached hit reruns either subexpression. -/
+def ApplicationAnnotation (mode : CheckMode) (env : Env) (depth : Nat)
+    (function argument result : Kernel.Expr) : Prop :=
+  ∃ fuel, ∃ annotatedFunction annotatedArgument,
+    annotateCore mode env fuel depth function = .ok annotatedFunction ∧
+    annotateCore mode env fuel depth argument = .ok annotatedArgument ∧
+    result = .app annotatedFunction annotatedArgument
+
+theorem application_pure {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {function argument result : Kernel.Expr}
+    (run : annotateCore mode env fuel depth (.app function argument) = .ok result) :
+    ApplicationAnnotation mode env depth function argument result := by
+  cases fuel with
+  | zero => simp [annotateCore_zero, throw, throwThe] at run
+  | succ fuel =>
+    obtain ⟨annotatedFunction, annotatedArgument, functionRun, argumentRun, shape⟩ := annotateCore_app_inv run
+    exact ⟨fuel, annotatedFunction, annotatedArgument, functionRun, argumentRun, shape⟩
+
+theorem application_cached {mode : CheckMode} {env : Env} {fuel depth : Nat}
+    {function argument result : Kernel.Expr} {initial final : CState}
+    (verified : mode.verifiedChecks = true) (environment : EnvWF env)
+    (state : CSOK mode env initial) (scope : Kernel.Expr.WScoped depth (.app function argument))
+    (run : (coreKnotI mode (mkFEnv env) fuel).annotate depth (.app function argument) initial =
+      .ok (result, final)) :
+    CSOK mode env final ∧ Kernel.Expr.WScoped depth result ∧
+      ApplicationAnnotation mode env depth function argument result := by
+  obtain ⟨state', resultScope, _, pureRun⟩ := cached_pure verified environment state scope run
+  exact ⟨state', resultScope, application_pure pureRun⟩
+
 /-- The checked let-elimination trace, including all official let checks.
 The reduct substitutes the immutable original value, not the independently
 annotated value. The latter remains the subject of value-type checking. -/
