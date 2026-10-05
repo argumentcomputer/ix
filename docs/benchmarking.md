@@ -88,11 +88,6 @@ ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
 ix bench compare --backend aiur --env InitStd --mode prove \
   --base main.json --pr .lake/benches/aiur-InitStd-prove.json
 
-# The lean4lean reference kernel over InitStd — whole-library replay plus
-# per-constant closure rows, from oleans (no .ixe needed). Read next to the
-# ooc cell's rows for the Rust-vs-reference-kernel gap on the same library:
-ix bench run --backend lean4lean --env InitStd
-ix bench compare --backend lean4lean --env InitStd
 ```
 
 `--repo <dir>` points the run at another checkout: the *measured* tools
@@ -114,9 +109,13 @@ measurements and marks the unfinished pair `OOM`.
 |---|---|---|
 | `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
-| `lean4lean` | the reference Lean4-in-Lean4 kernel ([digama0/lean4lean](https://github.com/digama0/lean4lean), required by the lakefile at a pinned rev) — the external yardstick for the Ix kernels on the same libraries. Olean-driven (no `.ixe`): the whole-library row replays every module in the env's import closure through lean4lean, module-parallel (check-time, constants, throughput, peak-rss; tune parallelism with `LEAN_NUM_THREADS`), plus one full-closure row per constant (the name's transitive closure into a fresh kernel env), mirroring ooc's row shape. Registry-disabled for CI (no bencher testbed yet); `ix bench run --backend lean4lean` works locally regardless | `bench-lean4lean` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
+
+The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
+reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
+and [kernel.md](kernel.md). It is separate from the Rust benchmarks above;
+the former Lean4Lean replay backend has been retired.
 
 ### Aggregate W0 baselines
 

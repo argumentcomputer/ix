@@ -36,12 +36,20 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
       if let some ci := env.constants.find? n then
         let mut refs : Lean.NameSet := ci.type.getUsedConstantsAsSet
         match ci with
+        -- A definition's `all` (its `mutual` siblings) is metadata the
+        -- compiled entry names, and meta kernel ingress resolves each name
+        -- through `named`: the sibling must be in the closure even when the
+        -- value does not mention it (structural, well-founded and `partial`
+        -- mutual definitions go through auxiliaries).
         | .defnInfo v =>
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+          for mutName in v.all do refs := refs.insert mutName
         | .thmInfo v =>
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+          for mutName in v.all do refs := refs.insert mutName
         | .opaqueInfo v =>
           for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+          for mutName in v.all do refs := refs.insert mutName
         | .inductInfo v =>
           for ctorName in v.ctors do
             refs := refs.insert ctorName

@@ -1135,4 +1135,117 @@ public theorem tm2_eq_self (t : Tm2) : t = t := by
 
 end NestedMutualRecMotives
 
+
+-- Prop-valued inductives nested through Prop-valued inductives. Lean's
+-- `IndPredBelow` declares one `.below` inductive per motive of the block's
+-- recursor, all in one mutual declaration (`V.below`, and `V.below_1` for
+-- the `Forall2 V` auxiliary), and one `.brecOn` theorem per motive
+-- (`V.brecOn`, `V.brecOn_1`), each taking one `F` per motive. The
+-- structural-recursion theorems go through `.brecOn` and match on the
+-- `.below` constructors.
+namespace NestedPredicate
+
+public inductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop
+  | nil : Forall2 R [] []
+  | cons {a b as bs} : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)
+
+-- Nested through a Prop-valued family with two indices.
+public inductive V : Nat → Nat → Prop
+  | base : V 0 0
+  | node {xs ys : List Nat} : Forall2 V xs ys → V xs.length ys.length
+
+mutual
+public theorem V.ok {a b : Nat} : V a b → a = b ∨ True
+  | .base => .inl rfl
+  | .node h => .inr (forall2V_ok h)
+public theorem forall2V_ok {xs ys : List Nat} : Forall2 V xs ys → True
+  | .nil => trivial
+  | .cons h hs => (V.ok h).elim (fun _ => forall2V_ok hs) (fun _ => forall2V_ok hs)
+end
+
+-- Two auxiliaries (`Forall2 W`, `W 0 1 ∧ W 1 0`) in an order other than
+-- the canonical one, the second with no indices.
+public inductive W : Nat → Nat → Prop
+  | base : W 0 0
+  | node {xs ys : List Nat} : Forall2 W xs ys → W 0 1 ∧ W 1 0 → W xs.length ys.length
+
+mutual
+public theorem W.ok {a b : Nat} : W a b → True
+  | .base => trivial
+  | .node h p => (fun _ _ => trivial) (forall2W_ok h) (andW_ok p)
+public theorem forall2W_ok {xs ys : List Nat} : Forall2 W xs ys → True
+  | .nil => trivial
+  | .cons h hs => (fun _ _ => trivial) (W.ok h) (forall2W_ok hs)
+public theorem andW_ok : W 0 1 ∧ W 1 0 → True
+  | ⟨h1, h2⟩ => (fun _ _ => trivial) (W.ok h1) (W.ok h2)
+end
+
+-- Through `Exists`: the auxiliary's minor has `h : (fun n => E n) w`, which
+-- Lean's `.below` constructor and `.brecOn` bind as `h : E w`.
+public inductive E : Nat → Prop
+  | base : E 0
+  | node : (∃ n, E n) → E 1
+
+public inductive AllP (R : Nat → Prop) : List Nat → Prop
+  | nil : AllP R []
+  | cons {a as} : R a → AllP R as → AllP R (a :: as)
+
+-- Mutual and nested.
+mutual
+public inductive MA : Nat → Prop
+  | base : MA 0
+  | node {xs : List Nat} : AllP MB xs → MA xs.length
+public inductive MB : Nat → Prop
+  | mk {n : Nat} : MA n → MB (n + 1)
+end
+
+-- An alpha-collapsing nested pair: one class, the two source auxiliaries
+-- (`Forall2 CB`, `Forall2 CA`) one canonical auxiliary.
+mutual
+public inductive CA : Nat → Nat → Prop
+  | base : CA 0 0
+  | node {xs ys : List Nat} : Forall2 CB xs ys → CA xs.length ys.length
+public inductive CB : Nat → Nat → Prop
+  | base : CB 0 0
+  | node {xs ys : List Nat} : Forall2 CA xs ys → CB xs.length ys.length
+end
+
+-- The shape of a downstream value relation: a parameterised relation
+-- between two nested value types, nested through `Forall2` between
+-- non-recursive hypotheses.
+public structure CtorKey where
+  ind : Nat
+  idx : Nat
+
+public structure CtorInfo where
+  key : CtorKey
+  tag : Nat
+  arity : Nat
+
+public structure Program where
+  ctors : List CtorInfo
+
+public def CtorInfo.ofKey (t : List CtorInfo) (c : CtorKey) : Option CtorInfo :=
+  t.find? fun r => r.key.ind == c.ind && r.key.idx == c.idx
+
+public inductive AVal where
+  | clos (ρ : List AVal) (n : Nat) (got : List AVal)
+  | con (c : CtorKey) (fs : List AVal)
+  | lit (n : Nat)
+  | box
+
+public inductive FVal where
+  | lit (n : Nat)
+  | ctor (c : CtorInfo) (fields : List FVal)
+  | erased
+
+public inductive VR (A : Program) : AVal → FVal → Prop
+  | lit (n : Nat) : VR A (.lit n) (.lit n)
+  | box : VR A .box .erased
+  | con {c : CtorKey} {info : CtorInfo} {vs : List AVal} {ws : List FVal} :
+      CtorInfo.ofKey A.ctors c = some info → Forall2 (VR A) vs ws →
+      ws.length = info.arity → VR A (.con c vs) (.ctor info ws)
+
+end NestedPredicate
+
 end Tests.Ix.Compile.Mutual

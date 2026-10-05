@@ -17,6 +17,9 @@
 //! canonical content.
 //!
 //! Property set (tested here; Verify-layer proofs are the D7 follow-up):
+//! - P0 value preservation: `canon_univ u` and `u` agree at every
+//!   valuation of the params (the compiler must not change the universe
+//!   a declaration states);
 //! - P1 idempotence: `canon_univ (canon_univ u) = canon_univ u`;
 //! - P2 roundtrip-fixpoint: `normalize (linearize L) = L` for reachable
 //!   `L` — exact on non-empty entries; `subsumption` can leave EMPTY
@@ -402,6 +405,58 @@ fn succs(mut u: Arc<Univ>, n: u64) -> Arc<Univ> {
   u
 }
 
+/// Is a `u_i = 0` fallout of `k` dominated under `ctx`? Some entry at a
+/// subset path must guarantee ≥ k whenever `ctx` is active: a constant
+/// ≥ k, or a var atom `(q, off)` with `off + 1 ≥ k` (its `u_q` is ≥ 1
+/// under the context). This is `subsumption`'s own domination logic,
+/// read back. Exact: at `u_i = 0`, with the context's params at 1 and
+/// every other param at 0, the map's value is the best such guarantee.
+fn covered(norm: &NormLevel, k: u64, ctx: &[u64]) -> bool {
+  if k == 0 {
+    return true;
+  }
+  norm.iter().any(|(q, n)| {
+    q.iter().all(|x| ctx.contains(x))
+      && (n.constant >= k || n.vars.iter().any(|(_, off)| off + 1 >= k))
+  })
+}
+
+/// Gate-nesting order for a context (outermost first), and whether it
+/// is leak-free. The greedy pick is the smallest remaining gate `g` with
+/// a `(g, ·)` atom at some non-empty map path inside `chosen ∪ {g}`: its
+/// creation site, the absorber of its leak. The binary `imax` chain
+/// leaks each gate's own value under weaker conditions than the full
+/// context (`imax(t, u_g) ≥ u_g` wherever the outer gates are active),
+/// and an absorber atom is exactly what dominates that leak.
+/// Absorbability only grows with `chosen`, so the greedy finds a full
+/// order whenever one exists. Every path of a normalizer-reachable map
+/// has one (its gating chain starts at a singleton, and subsumption only
+/// removes an atom in favor of a dominator at a sub-path); a
+/// self-stripped context `P∖{i}` need not, which the second component
+/// reports. When no remaining gate is absorbable, the smallest is taken
+/// for totality and the order is reported as leaking (`false`).
+fn gate_order(norm: &NormLevel, ctx: &[u64]) -> (Vec<u64>, bool) {
+  let mut order: Vec<u64> = Vec::new();
+  let mut leak_free = true;
+  let mut remaining: Vec<u64> = ctx.to_vec();
+  while !remaining.is_empty() {
+    let found = remaining.iter().copied().find(|g| {
+      norm.iter().any(|(p, n)| {
+        !p.is_empty()
+          && p.iter().all(|x| *x == *g || order.contains(x))
+          && n.vars.iter().any(|(i, _)| i == g)
+      })
+    });
+    let pick = found.unwrap_or_else(|| {
+      leak_free = false;
+      remaining[0]
+    });
+    order.push(pick);
+    remaining.retain(|x| *x != pick);
+  }
+  (order, leak_free)
+}
+
 /// The canonical representative of a canonical form, by per-atom gate
 /// inversion.
 ///
@@ -415,40 +470,36 @@ fn succs(mut u: Arc<Univ>, n: u64) -> Arc<Univ> {
 ///
 /// Inversion:
 /// 1. explode entries into per-atom items; self-strip each atom
-///    `(i, k)@P` to context `P∖{i}` when its `u_i = 0` fallout `k` is
-///    covered there (`k = 0`; `k = 1` in a non-empty context; `k ≤` the
-///    map's constant at the context) — else it stays fully gated at `P`;
-/// 2. group items by context; a context group `P = [p1 < … < pk]` emits
-///    `imax(…imax(body, u_p1)…, u_pk)` — gates wrap ascending, LARGEST
-///    param outermost, matching the normalizer's own marker placement so
-///    re-normalization reproduces the map — with body = atoms ascending
-///    by idx, then the gated constant; each `(p_j, 0)` marker item at
-///    the sorted-suffix context `{p_(j+1)..pk}` is consumed (the gate
-///    re-supplies it);
+///    `(i, k)@P` to context `P∖{i}` when BOTH
+///    - its `u_i = 0` fallout `k` is covered there ([`covered`]: some
+///      entry at a sub-path of the context guarantees `≥ k`), and
+///    - the context's own gates are leak-free ([`gate_order`] finds an
+///      absorber for every gate of `P∖{i}`): the emitted chain
+///      `imax(…, u_g)` is `≥ u_g` wherever its outer gates are active,
+///      so a gate without an absorber at a path inside its prefix would
+///      raise the value. With the first condition alone,
+///      `imax (imax (imax u w + 1) u) v` would canonicalize to a level
+///      that is `2` at `u = 0, v = 1, w = 2` where it is `1`;
+///
+///    otherwise it stays fully gated at `P` (every map path is
+///    leak-free: its creation chain is a gate order);
+/// 2. group items by context; a context group emits
+///    `imax(…imax(body, u_o(m-1))…, u_o0)` along the recovered gate order
+///    `o` (outermost first), with body = atoms ascending by idx, then the
+///    gated constant; each `(o_j, 0)` marker item at the context
+///    `{o_0..o_(j-1)}` is consumed (gate `o_j` re-supplies it);
 /// 3. unconsumed markers emit as bare vars; the root constant emits
 ///    last, unless absorbed by a top-level atom with `k ≥ c`.
 ///
 /// Output shape: a right-nested `max` chain — root atoms (ascending
 /// idx), then gate groups in lexicographic context order, then the root
 /// constant. Everything is inherited from the map's own ordering — no
-/// fresh choices — and the result is a `mk*` fixpoint (P3).
+/// fresh choices — and the result is a `mk*` fixpoint (P3). Every emitted
+/// term is at most the map's value, and every map contribution is at most
+/// some emitted term, so the value is preserved (P0).
 pub fn linearize(norm: &NormLevel) -> Arc<Univ> {
   let const_at = |p: &[u64]| -> u64 { norm.get(p).map_or(0, |n| n.constant) };
   let c_root = const_at(&[]);
-  // Is a `u_i = 0` fallout of `k` dominated under `ctx`? Some entry at a
-  // subset path must guarantee ≥ k whenever `ctx` is active: a constant
-  // ≥ k, or a var atom `(q, off)` with `off + 1 ≥ k` (its `u_q` is ≥ 1
-  // under the context). This is `subsumption`'s own domination logic,
-  // read back.
-  let covered = |k: u64, ctx: &[u64]| -> bool {
-    if k == 0 {
-      return true;
-    }
-    norm.iter().any(|(q, n)| {
-      q.iter().all(|x| ctx.contains(x))
-        && (n.constant >= k || n.vars.iter().any(|(_, off)| off + 1 >= k))
-    })
-  };
   // Context groups: constant + atoms (max-merged per idx).
   #[derive(Default)]
   struct Group {
@@ -463,42 +514,16 @@ pub fn linearize(norm: &NormLevel) -> Arc<Univ> {
     }
     for (i, k) in &node.vars {
       let ctx: Path = path.iter().copied().filter(|p| p != i).collect();
-      let home = if covered(*k, &ctx) { ctx } else { path.clone() };
+      let home = if covered(norm, *k, &ctx) && gate_order(norm, &ctx).1 {
+        ctx
+      } else {
+        path.clone()
+      };
       let g = groups.entry(home).or_default();
       let slot = g.atoms.entry(*i).or_insert(0);
       *slot = (*slot).max(*k);
     }
   }
-  // Gate-nesting order per context (outermost first): the greedy pick is
-  // the smallest remaining gate `g` with a `(g, ·)` atom at some map
-  // path inside `chosen ∪ {g}` — its creation site / leak absorber. The
-  // binary `imax` chain leaks each gate's own value under weaker
-  // conditions than the full context; the absorber atom is what
-  // dominates that leak, and it exists for every gate of a
-  // normalizer-reachable map (gating chains start at singletons, and
-  // subsumption only removes an atom in favor of a dominator at a
-  // sub-path). Fall back to the smallest remaining for totality on
-  // unreachable inputs.
-  let gate_order = |ctx: &Path| -> Vec<u64> {
-    let mut order: Vec<u64> = Vec::new();
-    let mut remaining: Vec<u64> = ctx.clone();
-    while !remaining.is_empty() {
-      let pick = remaining
-        .iter()
-        .copied()
-        .find(|g| {
-          norm.iter().any(|(p, n)| {
-            !p.is_empty()
-              && p.iter().all(|x| *x == *g || order.contains(x))
-              && n.vars.iter().any(|(i, _)| i == g)
-          })
-        })
-        .unwrap_or(remaining[0]);
-      order.push(pick);
-      remaining.retain(|x| *x != pick);
-    }
-    order
-  };
   // Marker consumption: re-normalizing the emitted chain recreates gate
   // `order[j]`'s `(order[j], 0)` marker at the path `{order[0..=j]}`,
   // which self-strips to the item context `{order[0..j]}` — so a marker
@@ -508,7 +533,7 @@ pub fn linearize(norm: &NormLevel) -> Arc<Univ> {
     if ctx.is_empty() || (g.constant == 0 && g.atoms.is_empty()) {
       continue;
     }
-    let order = gate_order(ctx);
+    let (order, _) = gate_order(norm, ctx);
     for (j, p) in order.iter().enumerate() {
       let mut mctx: Path = order[..j].to_vec();
       mctx.sort_unstable();
@@ -552,7 +577,7 @@ pub fn linearize(norm: &NormLevel) -> Arc<Univ> {
       continue;
     };
     // Wrap gates innermost-to-outermost following the recovered order.
-    let order = gate_order(ctx);
+    let (order, _) = gate_order(norm, ctx);
     let term =
       order.iter().rev().fold(body, |acc, p| Univ::imax(acc, Univ::var(*p)));
     terms.push(term);
@@ -718,9 +743,268 @@ mod tests {
     norm_eq_semantic(&normalize(&canon_univ(&u.0)), &normalize(&u.0))
   }
 
+  // ---- P0: value preservation ----
+
+  /// The value of a level at a valuation of its params (`u_i ↦ vals[i]`).
+  fn eval(u: &Univ, vals: &[u64]) -> u64 {
+    match u {
+      Univ::Zero => 0,
+      Univ::Succ(i) => eval(i, vals) + 1,
+      Univ::Max(a, b) => eval(a, vals).max(eval(b, vals)),
+      Univ::IMax(a, b) => {
+        let vb = eval(b, vals);
+        if vb == 0 { 0 } else { eval(a, vals).max(vb) }
+      },
+      Univ::Var(i) => vals[usize::try_from(*i).unwrap()],
+    }
+  }
+
+  /// The largest `succ` nesting.
+  fn max_offset(u: &Univ) -> u64 {
+    match u {
+      Univ::Zero | Univ::Var(_) => 0,
+      Univ::Succ(i) => max_offset(i) + 1,
+      Univ::Max(a, b) | Univ::IMax(a, b) => max_offset(a).max(max_offset(b)),
+    }
+  }
+
+  /// The first valuation of params `0..params` at which `a` and `b`
+  /// differ, over values `{0, 1, 2, M-1, M}` with `M` four above the
+  /// largest offset. Exact: by Géran's decomposition, a sublevel of one
+  /// side not dominated by a single sublevel of the other is exposed by
+  /// setting its condition params to 1, its variable to `M` and every
+  /// other param to 0, so two levels that differ anywhere differ here.
+  fn differ_at(a: &Univ, b: &Univ, params: usize) -> Option<Vec<u64>> {
+    let m = max_offset(a).max(max_offset(b)) + 4;
+    let values = [0, 1, 2, m - 1, m];
+    let mut vals = vec![0u64; params];
+    let total = values.len().pow(u32::try_from(params).unwrap());
+    for code in 0..total {
+      let mut c = code;
+      for x in &mut vals {
+        *x = values[c % values.len()];
+        c /= values.len();
+      }
+      if eval(a, &vals) != eval(b, &vals) {
+        return Some(vals);
+      }
+    }
+    None
+  }
+
+  /// Does `subsumption` leave a sublevel that a single other sublevel
+  /// dominates? A constant `c@P` is dominated by a constant `≥ c` at a
+  /// strict sub-path, or by an atom `(y, k)` with `k + 1 ≥ c` at a
+  /// sub-path; an atom `(x, k)@P` by an atom `(x, ≥ k)` at a strict
+  /// sub-path. `subsumption` mirrors the kernels' normalizers, which
+  /// test a constant against the vars of its own node instead of the
+  /// dominator's (for example `max (v+1) (imax (imax 2 u) v)`
+  /// keeps the constant `2` at `[u, v]`, dominated by `v + 1`). Only
+  /// such leftovers make two equal levels' normal forms differ, so a
+  /// slip-free normal form is the unique one of its class.
+  fn has_slip(n: &NormLevel) -> bool {
+    n.iter().any(|(p, node)| {
+      let c = node.constant;
+      let const_dominated = c > 0
+        && n.iter().any(|(q, m)| {
+          is_subset(q, p)
+            && ((q.len() < p.len() && m.constant >= c)
+              || m.vars.iter().any(|(_, k)| k + 1 >= c))
+        });
+      let var_dominated = node.vars.iter().any(|(x, k)| {
+        n.iter().any(|(q, m)| {
+          q.len() < p.len()
+            && is_subset(q, p)
+            && m.vars.iter().any(|(y, k2)| y == x && k2 >= k)
+        })
+      });
+      const_dominated || var_dominated
+    })
+  }
+
+  /// P0–P3, P6 and class stability of one level over params
+  /// `0..params`; failures are appended to `out`. P0 and P3 are checked
+  /// unconditionally. With `strict`, so are the rest; otherwise P1, P2
+  /// and class stability are checked when neither `u`'s nor its
+  /// canonical form's normal form has a subsumption leftover
+  /// ([`has_slip`]), and P6 when neither `u`'s nor `reduce_univ u`'s
+  /// has; the skipped draws are counted in `slips`.
+  fn check_canon(
+    u: &Arc<Univ>,
+    params: usize,
+    strict: bool,
+    out: &mut Vec<String>,
+    slips: &mut usize,
+  ) {
+    let n = normalize(u);
+    let c = canon_univ(u);
+    if let Some(vals) = differ_at(u, &c, params) {
+      out.push(format!(
+        "P0 {u:?} → {c:?}: {} vs {} at {vals:?}",
+        eval(u, &vals),
+        eval(&c, &vals)
+      ));
+    }
+    if reduce_univ(&c) != c {
+      out.push(format!("P3 {u:?} → {c:?} (reduces to {:?})", reduce_univ(&c)));
+    }
+    let nc = normalize(&c);
+    if strict || !(has_slip(&n) || has_slip(&nc)) {
+      if canon_univ(&c) != c {
+        out.push(format!("P1 {u:?} → {c:?} → {:?}", canon_univ(&c)));
+      }
+      if !norm_eq_semantic(&normalize(&linearize(&n)), &n) {
+        out.push(format!("P2 {u:?} → {c:?}"));
+      }
+      if !norm_eq_semantic(&nc, &n) {
+        out.push(format!("CLASS {u:?} → {c:?}"));
+      }
+    } else {
+      *slips += 1;
+    }
+    let r = reduce_univ(u);
+    if (strict || !(has_slip(&n) || has_slip(&normalize(&r))))
+      && canon_univ(&r) != c
+    {
+      out.push(format!("P6 {u:?} → {c:?}"));
+    }
+  }
+
+  /// The smallest level found whose canonical form changes its value
+  /// without the leak-free proviso (`imax (imax (imax u w + 1) u) v`):
+  /// the self-strip of `u + 1` from `[u, v, w]` to `[v, w]` would leave
+  /// gate `w` without an absorber, leaking `w` at `u = 0`.
+  #[test]
+  fn p0_witness() {
+    let (u, vv, w) = (v(0), v(1), v(2));
+    let l = im(im(s(im(u.clone(), w.clone())), u.clone()), vv.clone());
+    let c = canon_univ(&l);
+    assert_eq!(eval(&l, &[0, 1, 2]), 1);
+    assert_eq!(eval(&c, &[0, 1, 2]), 1, "canon {c:?}");
+    // The representative itself, pinned (the Lean mirror pins the same).
+    assert_eq!(
+      c,
+      m(
+        im(im(s(w.clone()), u.clone()), vv.clone()),
+        im(im(im(s(u.clone()), w.clone()), u.clone()), vv.clone())
+      )
+    );
+    let (mut failures, mut slips) = (Vec::new(), 0);
+    for x in witness_family() {
+      check_canon(&x, 4, true, &mut failures, &mut slips);
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+  }
+
+  /// The witness under every renaming of its params (and a fourth),
+  /// with deeper offsets, under `max 1`, `succ` and a further gate,
+  /// plus one other shrunk counterexample of that linearization.
+  fn witness_family() -> Vec<Arc<Univ>> {
+    let mut out = Vec::new();
+    let perms: [[u64; 3]; 8] = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+      [3, 1, 0],
+      [0, 3, 2],
+    ];
+    for [a, b, c] in perms {
+      let (u, vv, w) = (v(a), v(b), v(c));
+      for k in 1..=3 {
+        let inner = succs(im(u.clone(), w.clone()), k);
+        let l = im(im(inner, u.clone()), vv.clone());
+        out.push(l.clone());
+        out.push(m(s(z()), l.clone()));
+        out.push(s(l.clone()));
+        out.push(im(l.clone(), w.clone()));
+        out.push(m(l.clone(), im(vv.clone(), u.clone())));
+      }
+    }
+    // `imax(imax(imax(imax(0,u0),u2)+1,u0),u1)+1` (canon-shrink kind 0).
+    out.push(s(im(im(s(im(im(z(), v(0)), v(2))), v(0)), v(1))));
+    out
+  }
+
+  /// The pseudo-random generator of the kernel level comparison
+  /// (`Tests.Ix.Kernel.LevelComparison.biasedLevel`): levels biased towards `imax` by a parameter,
+  /// offsets and `max`. Mirrored by `Tests.Gen.Ixon.biasedUniv`.
+  fn lcg_next(seed: u64) -> u64 {
+    seed
+      .wrapping_mul(6_364_136_223_846_793_005)
+      .wrapping_add(1_442_695_040_888_963_407)
+  }
+
+  fn biased(params: u64, size: usize, seed: u64) -> (Arc<Univ>, u64) {
+    let seed = lcg_next(seed);
+    let pick = (seed >> 33) % 10;
+    let p = v((seed >> 40) % params);
+    if size <= 1 || pick < 2 {
+      (if pick == 0 { z() } else { p }, seed)
+    } else if pick < 4 {
+      let (a, seed) = biased(params, size - 1, seed);
+      (s(a), seed)
+    } else if pick < 6 {
+      let (a, seed) = biased(params, size / 2, seed);
+      let (b, seed) = biased(params, size / 2, seed);
+      (m(a, b), seed)
+    } else if pick < 9 {
+      let (a, seed) = biased(params, size - 1, seed);
+      (im(a, p), seed)
+    } else {
+      let (a, seed) = biased(params, size / 2, seed);
+      let (b, seed) = biased(params, size / 2, seed);
+      (im(a, b), seed)
+    }
+  }
+
+  /// P0–P3/P6/class over biased random levels and the levels type
+  /// inference builds from them (`max 1 a`, `max a b`, `imax a b`,
+  /// `succ a`): 20,000 draws over three params at size 10 (the
+  /// differential's family; before the gate check, 109 of its levels and
+  /// 2,128 of all 125,000 changed value) and 5,000 over four at size 12.
+  /// P1/P2/class/P6 are conditional on slip-free normal forms
+  /// ([`check_canon`]): 239 of the 125,000 draws have a normal form
+  /// with a subsumption leftover, and 173 of those are not idempotent.
+  #[test]
+  fn p0_biased_random() {
+    let (mut failures, mut slips) = (Vec::new(), 0);
+    let mut total = 0;
+    for (params, size, count, mut seed) in
+      [(3u64, 10usize, 20_000usize, 41u64), (4, 12, 5_000, 43)]
+    {
+      let count = if cfg!(debug_assertions) { count / 10 } else { count };
+      let ps = usize::try_from(params).unwrap();
+      for _ in 0..count {
+        let (a, s1) = biased(params, size, seed);
+        let (b, s2) = biased(params, size, s1);
+        seed = s2;
+        for x in [
+          a.clone(),
+          m(s(z()), a.clone()),
+          m(a.clone(), b.clone()),
+          im(a.clone(), b.clone()),
+          s(a.clone()),
+        ] {
+          total += 1;
+          check_canon(&x, ps, false, &mut failures, &mut slips);
+        }
+      }
+    }
+    assert!(
+      failures.is_empty(),
+      "{}",
+      failures[..failures.len().min(12)].join("\n")
+    );
+    // The slip is rare; a jump here means the normal forms changed.
+    assert!(slips * 200 < total, "{slips} of {total} draws hit the slip");
+  }
+
   /// Exhaustive enumeration of every level term up to `size` constructor
-  /// nodes over two params — deterministic minimal counterexamples where
-  /// quickcheck only reports failure.
+  /// nodes over three params — deterministic minimal counterexamples
+  /// where quickcheck only reports failure.
   fn enumerate(size: usize) -> Vec<Arc<Univ>> {
     let mut by_size: Vec<Vec<Arc<Univ>>> = vec![Vec::new(); size + 1];
     if size >= 1 {
@@ -744,25 +1028,13 @@ mod tests {
     by_size.into_iter().flatten().collect()
   }
 
+  /// Every term of up to 8 nodes in release (112,000 terms; the witness
+  /// has 8), 6 in debug.
   #[test]
   fn exhaustive_small_terms() {
-    let mut failures: Vec<String> = Vec::new();
-    for u in enumerate(if cfg!(debug_assertions) { 6 } else { 7 }) {
-      let n = normalize(&u);
-      let c = canon_univ(&u);
-      if !norm_eq_semantic(&normalize(&linearize(&n)), &n) {
-        failures.push(format!("P2 {u:?} → {c:?}"));
-      }
-      if reduce_univ(&c) != c {
-        failures
-          .push(format!("P3 {u:?} → {c:?} (reduces to {:?})", reduce_univ(&c)));
-      }
-      if canon_univ(&c) != c {
-        failures.push(format!("P1 {u:?} → {c:?} → {:?}", canon_univ(&c)));
-      }
-      if !norm_eq_semantic(&normalize(&c), &n) {
-        failures.push(format!("CLASS {u:?} → {c:?}"));
-      }
+    let (mut failures, mut slips) = (Vec::new(), 0);
+    for u in enumerate(if cfg!(debug_assertions) { 6 } else { 8 }) {
+      check_canon(&u, 3, true, &mut failures, &mut slips);
       if failures.len() >= 12 {
         break;
       }

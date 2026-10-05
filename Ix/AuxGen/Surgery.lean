@@ -157,8 +157,24 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
       | some (.recInfo r) =>
         pure (some (r.numParams, r.numIndices, r.numMotives, r.numMinors))
       | _ => pure none
+  -- A closure-only environment can hold the block's auxiliaries (a
+  -- matcher on a Prop-level `.below` reaches `.below.casesOn`) without its
+  -- recursors. The inductive carries the same counts: Lean's recursor has
+  -- `all.size + numNested` motives and one minor per constructor of the
+  -- block and of its nested auxiliaries (surgery.rs, same place).
+  let indStructural : Option (Nat × Nat × Nat × Nat) ←
+    originalAll.findSomeM? fun n => do
+      match ← lookupConst? n with
+      | some (.inductInfo v) =>
+        let auxMinors : Nat := match auxLayout with
+          | some l => l.sourceCtorCounts.foldl (fun acc c => acc + c.toNat) 0
+          | none => 0
+        pure (some (v.numParams, v.numIndices, nSource + v.numNested,
+          ctorCounts.foldl (· + ·) 0 + auxMinors))
+      | _ => pure none
   let (nParams, nIndices, leanNumMotives, leanNumMinors) :=
-    recStructural.getD (0, 0, nSource, ctorCounts.foldl (· + ·) 0)
+    (recStructural <|> indStructural).getD
+      (0, 0, nSource, ctorCounts.foldl (· + ·) 0)
 
   -- User vs aux split (surgery.rs:330-338). The user-visible portion has
   -- one motive per `originalAll` entry; anything beyond is a nested-aux
@@ -418,9 +434,11 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
     let plan := buildPlan xPos
     if plan.isIdentity then
       continue
+    -- Keyed whether or not the environment holds the recursor: the plans
+    -- derived from it (`.below` family, `.brecOn`) are what a closure
+    -- without it needs (surgery.rs, same loop).
     let recName := Name.mkStr xName "rec"
-    if (← lookupConst? recName).isSome then
-      plans := plans.insert recName plan
+    plans := plans.insert recName plan
 
   -- Register plans for each nested-auxiliary recursor `all[0].rec_N`
   -- (xPos ∈ [nUser, nSourceMotives); surgery.rs:695).
@@ -452,11 +470,11 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
         else
           pure #[]
 
+      let mut auxHeads : Option (Array Name) := none
       for auxIdx in [0:nSourceMotives - nUserMotives] do
         let xPos := nUserMotives + auxIdx
         let recName := Name.mkStr headName s!"rec_{auxIdx + 1}"
-        if (← lookupConst? recName).isNone then
-          continue
+        let recPresent := (← lookupConst? recName).isSome
         let evaporatedHere : Bool :=
           match auxLayout with
           | some l => match l.evaporated[auxIdx]? with
@@ -464,6 +482,10 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
             | none => false
           | none => false
         if evaporatedHere then
+          -- The head rewrite goes with the name's alias, which exists only
+          -- for a Lean-exported name.
+          if !recPresent then
+            continue
           let some extHead := srcHeads[auxIdx]?
             -- The alias for this position was registered from the same
             -- source-order walk — a missing entry here would ship a
@@ -496,6 +518,20 @@ has no source-order entry for its head-rewrite target")
         let plan := buildPlan xPos
         if plan.isIdentity then
           continue
+        -- The auxiliary's own index count (the external inductive's), not
+        -- the block's: the `.brecOn_N` / `.below_N` plans derived from
+        -- this one slice their call sites' fixed tail (indices + major) by
+        -- it (surgery.rs, same loop).
+        -- Without the recursor (a closure), the external inductive's.
+        let mut plan := plan
+        match ← lookupConst? recName with
+        | some (.recInfo r) => plan := { plan with nIndices := r.numIndices }
+        | _ =>
+          if auxHeads.isNone then
+            auxHeads := some ((← sourceAuxOrder originalAll).map (·.1))
+          if let some head := auxHeads.bind (·[auxIdx]?) then
+            if let some (.inductInfo v) ← lookupConst? head then
+              plan := { plan with nIndices := v.numIndices }
         plans := plans.insert recName plan
 
   return plans

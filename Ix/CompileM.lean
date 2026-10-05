@@ -3006,8 +3006,7 @@ def compileMutConstClasses :
 /-- Compile sorted equivalence classes of mutual constants.
     Returns compiled constants, all root expressions, and metadata for each constant.
     No caller uses the roots (`buildBlockConstant` derives them from the payload
-    with `constantInfoRootExprs`); they remain because the theorems of
-    `Ix.Compile.Verify.CompileMutualCodec` state their wire safety. -/
+    with `constantInfoRootExprs`). -/
 def compileMutConsts (classes : List (List MutConst))
     : CompileM (Array Ixon.MutConst × Array Ixon.Expr × Array (Name × Ixon.ConstantMeta)) := do
   let state ← compileMutConstClasses classes {}

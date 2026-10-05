@@ -70,6 +70,17 @@ fn primary_addresses_collapse(
   false
 }
 
+/// The constructors of a Prop-level `.below` inductive (`IndPredBelow`),
+/// empty for a Type-level `.below` definition. They take the block's
+/// motives after its parameters, so the aux congruence comparators permute
+/// their application spines like the `.below` itself.
+fn prop_below_ctors(env: &Env, below_name: &Name) -> Vec<Name> {
+  match env.get(below_name).as_deref() {
+    Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
+    _ => vec![],
+  }
+}
+
 fn build_aux_perm_ctx(
   all: &[Name],
   env: &Env,
@@ -132,6 +143,9 @@ fn build_aux_perm_ctx(
     let ni = n_indices_for(&rec_name);
     rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
     let below_name = Name::str(member.clone(), "below".to_string());
+    for ctor in prop_below_ctors(env, &below_name) {
+      rec_heads.insert(ctor, mk_info(RecHeadKind::BelowCtor, 0));
+    }
     rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
     let brecon_name = Name::str(member.clone(), "brecOn".to_string());
     rec_heads.insert(brecon_name.clone(), mk_info(RecHeadKind::BRecOn, ni));
@@ -150,6 +164,9 @@ fn build_aux_perm_ctx(
     let ni = n_indices_for(&rec_name);
     rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
     let below_name = Name::str(first.clone(), format!("below_{idx}"));
+    for ctor in prop_below_ctors(env, &below_name) {
+      rec_heads.insert(ctor, mk_info(RecHeadKind::BelowCtor, 0));
+    }
     rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
     let brecon_name = Name::str(first.clone(), format!("brecOn_{idx}"));
     rec_heads.insert(brecon_name.clone(), mk_info(RecHeadKind::BRecOn, ni));
@@ -1372,6 +1389,9 @@ extern "C" fn rs_tmp_decode_const_map(
         let ni = n_indices_for(&rec_name);
         rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
         let below_name = Name::str(member.clone(), "below".to_string());
+        for ctor in prop_below_ctors(env, &below_name) {
+          rec_heads.insert(ctor, mk_info(RecHeadKind::BelowCtor, 0));
+        }
         rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
         let brecon_name = Name::str(member.clone(), "brecOn".to_string());
         rec_heads.insert(brecon_name.clone(), mk_info(RecHeadKind::BRecOn, ni));
@@ -1390,6 +1410,9 @@ extern "C" fn rs_tmp_decode_const_map(
         let ni = n_indices_for(&rec_name);
         rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
         let below_name = Name::str(first.clone(), format!("below_{idx}"));
+        for ctor in prop_below_ctors(env, &below_name) {
+          rec_heads.insert(ctor, mk_info(RecHeadKind::BelowCtor, 0));
+        }
         rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
         let brecon_name = Name::str(first.clone(), format!("brecOn_{idx}"));
         rec_heads.insert(brecon_name.clone(), mk_info(RecHeadKind::BRecOn, ni));
@@ -2255,6 +2278,9 @@ extern "C" fn rs_compile_validate_aux(
         rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
 
         let below_name = Name::str(member.clone(), "below".to_string());
+        for ctor in prop_below_ctors(env, &below_name) {
+          rec_heads.insert(ctor, mk_info(RecHeadKind::BelowCtor, 0));
+        }
         rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
 
         let brecon_name = Name::str(member.clone(), "brecOn".to_string());
@@ -2277,6 +2303,9 @@ extern "C" fn rs_compile_validate_aux(
         rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
 
         let below_name = Name::str(first.clone(), format!("below_{idx}"));
+        for ctor in prop_below_ctors(env, &below_name) {
+          rec_heads.insert(ctor, mk_info(RecHeadKind::BelowCtor, 0));
+        }
         rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
 
         let brecon_name = Name::str(first.clone(), format!("brecOn_{idx}"));

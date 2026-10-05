@@ -256,7 +256,7 @@ previous one ends, so the code is bijective. Values below 128, 32 or 8 (for
 `f` = 0, 2 or 4) encode to the same single byte as v3's Tag0, Tag2 or Tag4.
 Larger values encode differently: for example, `Share(8)` is `B8 00`, and the
 Resource claim tag is `E8 01`. The Lean proofs of injectivity, canonicity
-and rejection are in `Ix/Compile/Verify/TagN.lean`.
+and rejection are in `IxC/Ixon/Verify/TagN.lean`.
 
 **Canonical sharing.** A constant's sharing table, and every `Share`
 occurrence, is determined by its expanded anonymous expressions. It is the
@@ -281,8 +281,9 @@ The construction keeps two properties:
 **Scope of the guarantees.** [Ixon](Ixon.md#what-is-proved-and-what-is-not)
 gives the exact statements.
 
-- **Machine-checked (Lean),** for a successful run on the canonical DAG of the
-  input:
+- **Machine-checked (Lean),** in `IxSharingVerify` (`lake build --wfail
+  IxSharingVerify`, with its audit), for a successful run on the canonical
+  DAG of the input:
   - Phase 1 returns the `setPrec`-least minimum of the uniform model over
     tables of in-degree ≥ 2 terms (`optimizeUniform_minimum`,
     `optimizeUniform_least`).
@@ -294,9 +295,10 @@ gives the exact statements.
     length of its output (`canonicalSharingTiered_serialized`).
   - Every output entry and root is in the codec's wire domain, the table
     count is below `2^64` and Shares point backward
-    (`canonicalSharingTiered_format`). The compiler endpoint theorems are
-    stated over it: a compiler run returns an exactly decodable block or
-    fails with an error of the sharing builder.
+    (`canonicalSharingTiered_format`). The theorems about the compiler's
+    sharing builder are stated over it: the builder returns a wire-valid
+    block, and the singleton-driver tail returns an exactly decodable block
+    or fails with an error of the builder.
   - The compiler runs fast twins of the specifications, each tied to its
     specification by an audited `@[csimp]` equality.
 - **Not claimed.**

@@ -20,7 +20,7 @@
   overestimates the widths: the optimum stores far fewer terms than there
   are candidates.) `tieredAtWidth` is the candidate at one width.
 
-  Proved (`Ix/Compile/Verify/Tiered*.lean` and, for phase 1,
+  Proved (`IxSharingVerify/Tiered*.lean` and, for phase 1,
   `UniformOptimality.lean`; no `sorry`): the width selection
   (`canonicalTieredCore_select`), phase 1 (`optimizeUniform_least`, for the
   default branch-and-bound search), the first tier, backwardness and the
@@ -70,7 +70,7 @@
   (`phase3_le_phase1`). This is also checked at run time, the output is
   re-expanded, and every output expression is checked to be in the wire
   domain, where its layout length is its serialized length (proved:
-  `Ix.Compile.Verify.Tiered.canonicalSharingTiered_serialized`).
+  `Ix.Sharing.Verify.Tiered.canonicalSharingTiered_serialized`).
 
   The construction is a function of the expanded AST and the layout, so
   normalizing its output reproduces it.
@@ -427,21 +427,21 @@ structure Rematerialized where
   bytes : Nat
   work : Nat
   /-- The layout length of the output (`bytes`). For the wire layout it is the
-  serialized length (`Ix.Compile.Verify.Tiered.canonicalSharingTiered_serialized`). -/
+  serialized length (`Ix.Sharing.Verify.Tiered.canonicalSharingTiered_serialized`). -/
   measured : Nat
   deriving Inhabited
 
 /-- Phase 3: re-materialize the table `order` and the roots under the real
 widths, and check the output. The table is materialized from one evaluation
 of the whole dictionary when its order allows it (`materializeTableOnePass`,
-equal to `materializeTable`: `Ix.Compile.Verify.Tiered.materializeTableOnePass_eq`).
+equal to `materializeTable`: `Ix.Sharing.Verify.Tiered.materializeTableOnePass_eq`).
 The run-time checks, each failing closed with an internal error: the layout
 length of the output is the evaluated length, it is at most the phase-1
 layout length, the output re-expands to the stored terms and the input
 roots, and every output expression is in the wire domain. On the wire domain
 the TagN layout length is the length the wire codec writes, so the length
 recorded (`bytes`, `measured`) is the serialized length for the wire layout
-(`Ix.Compile.Verify.Tiered.canonicalSharingTiered_serialized`). -/
+(`Ix.Sharing.Verify.Tiered.canonicalSharingTiered_serialized`). -/
 def rematerialize (layout : ShareLayout) (limits : Limits) (ex : Expanded) (order : Array Nat)
     (phase1Layout : Nat) : Except SharingError Rematerialized := do
   let (entries, roots, predicted, work) ←

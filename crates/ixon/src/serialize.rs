@@ -2714,6 +2714,9 @@ impl Env {
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
+    // §5 name → constant address, from the index (no metadata parse).
+    let named_addrs: FxHashMap<&Name, &Address> =
+      index.named.iter().map(|n| (&n.name, &n.addr)).collect();
     loop {
       self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
 
@@ -2722,6 +2725,7 @@ impl Env {
       // constant was carried this round materialize into `out`.
       let mut cursor = NamedMetaCursor::open(data, index)?;
       let mut i = 0usize;
+      let mut named_refs: Vec<Name> = Vec::new();
       while let Some((_, named)) = cursor.next_entry()? {
         let name = &index.named[i].name;
         i += 1;
@@ -2735,10 +2739,18 @@ impl Env {
           &named,
           &|na| names.get(na).cloned(),
           &|ba| self.get_blob(ba),
+          &|a| self.holds_or_assumed(a, assumed),
           &mut visited,
           &mut pending,
+          &mut named_refs,
         )?;
       }
+      Self::enqueue_named_refs(
+        named_refs,
+        &|nm| named_addrs.get(nm).map(|a| (*a).clone()),
+        &mut visited,
+        &mut pending,
+      );
 
       if pending.is_empty() {
         break;

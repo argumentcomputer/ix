@@ -21,31 +21,14 @@ know about the state of Lean's reference counting mechanism.
 
 By convention, names of external Rust functions start with `rs_`.
 
-## Elaboration-time FFI
+## Certified execution boundary
 
-Most Ix FFI is linked statically into final Lean executables. Proofs using
-`native_decide`, however, execute compiled Lean code while modules are still
-being elaborated, before any executable is linked. The native evaluator needs
-two symbol layers for each opaque `@[extern]` it reaches: the raw Rust symbol
-(e.g. `rs_blake3_init`, `c_u64_to_le_bytes`) and the boxed entry point Lean
-calls into it (e.g. `lp_Blake3_Blake3_Rust_hasherInit___boxed`).
-
-The `ix_native_decide_dynlib` Lake target assembles both layers from artifacts
-that already exist, so no ABI is mirrored by hand:
-
-- The boxed entry points are Lean's own generated objects for the declaring
-  modules (`Blake3`, `Blake3.Rust`, `Ix.Unsigned`) — the same code linked into
-  normal executables — fetched via each module's `oExport` facet.
-- The raw symbols come from `cdylib` outputs recorded as load-time
-  dependencies by absolute path (so no `LD_LIBRARY_PATH` is needed): Blake3's
-  `blake3_rs`, and the minimal `ix-ffi-dyn` crate for Ix's own externs. That
-  crate shares its source with `ix-ffi` but is kept separate so a
-  proof only loads the handful of symbols it needs, not `ix-ffi`'s whole
-  dependency graph.
-
-When an opaque external operation becomes reachable from a new
-elaboration-time computation, add its declaring module's object to the target
-(the raw symbol is already present if it lives in a linked cdylib).
+Ix's runtime FFI is linked into host executables. The retired checker proof
+loader and its separate dynamic-library crate have been removed. Certified
+kernel and codec operations use pure Lean implementations; their runtime
+audits reject project FFI and native-evaluation replacements. The Blake3
+package supplies both the separately audited pure hash and host accelerators.
+See [the kernel contract](kernel.md) for the precise boundaries.
 
 ## Linear API
 

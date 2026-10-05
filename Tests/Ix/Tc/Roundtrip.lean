@@ -231,6 +231,7 @@ def seedSets : List (String × List Lean.Name) :=
        `Tests.Ix.Compile.LevelSpellings.orderMaxVU,
        `Tests.Ix.Compile.LevelSpellings.orderAssocL,
        `Tests.Ix.Compile.LevelSpellings.orderAssocR,
+       `Tests.Ix.Compile.LevelSpellings.canonValueWitness,
        `Tests.Ix.Compile.LevelSpellings.wfTwo,
        `Tests.Ix.Compile.LevelSpellings.wfTwoEqDef]) ]
 

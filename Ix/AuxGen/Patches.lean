@@ -291,10 +291,41 @@ refusing to synthesize canonical-indexed _N names")
         capturedNSourceAux := perm.size
       generateCanonicalRecursorsWithOverlay sortedClasses none none maps
 
-  -- Only emit `.rec` if the original Lean env has it (aux_gen.rs:552-558).
+  -- Block membership is decided per FAMILY, never per name (aux_gen.rs
+  -- `family_exported`). Each auxiliary kind (`.rec`, `.casesOn`, `.recOn`,
+  -- `.below`, `.brecOn.go`, `.brecOn`, `.brecOn.eq`) is ONE Ixon block
+  -- holding every class's member and every nested auxiliary's `_N` member;
+  -- a closure-only environment holds only the members its seeds reach, and
+  -- emitting only the names present made the block (so every member's
+  -- address) depend on the compile set. If Lean exported any member of a
+  -- family (some class's name, or a nested auxiliary's
+  -- `<all0>.<suffix>_N`), emit the whole family. A whole environment
+  -- exports every family all-or-nothing, so nothing changes there.
+  -- `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`);
+  -- `checkShape` applies the `.below` name-collision guard (a structure
+  -- field accessor named `below`, e.g. `IndPredBelow.NewDecl.below`; a
+  -- genuine `.below` type ends in `Sort _` after peeling foralls).
+  let familyExported (suffix : String) (sub : Option String)
+      (checkShape : Bool) : KBridgeM Bool := do
+    let withSub (n : Name) : Name := match sub with
+      | some s => Name.mkStr n s
+      | none => n
+    for cls in sortedClasses do
+      for n in cls do
+        match ← liftM (lookupConst? (withSub (Name.mkStr n suffix)) : CompileM _) with
+        | some ci =>
+          if !checkShape || isBelowShaped ci.getCnst.type then return true
+        | none => pure ()
+    if let some all0 := originalAll[0]? then
+      for (recName, _) in canonicalRecs.toList.drop nClasses do
+        if let some idx := auxRecSuffixIdx recName then
+          let n := withSub (Name.mkStr all0 s!"{suffix}_{idx}")
+          if (← liftM (lookupConst? n : CompileM _)).isSome then return true
+    return false
+
   let mut patches := patches
-  for (recName, recVal) in canonicalRecs do
-    if (← liftM (lookupConst? recName : CompileM _)).isSome then
+  if ← familyExported "rec" none false then
+    for (recName, recVal) in canonicalRecs do
       patches := patches.insert recName (.recr recVal)
 
   -- Phase 1b: Generate `.casesOn` definitions (aux_gen.rs:560-583).
@@ -307,6 +338,11 @@ refusing to synthesize canonical-indexed _N names")
   -- `canonicalRecs`), not auxiliary `rec_N`. This is intentional: Lean
   -- does NOT generate `casesOn_N` for nested auxiliary types (unlike
   -- `below_N`/`brecOn_N` which ARE generated via BRecOn.lean).
+  -- `.brecOn.eq` is proved by cases on the block's own inductives; emitting
+  -- the `.eq` family whole (Phase 3) needs the `.casesOn` family
+  -- (aux_gen.rs Phase 1b).
+  let emitCasesOn ← pure (← familyExported "casesOn" none false)
+    <||> familyExported "brecOn" (some "eq") false
   for (recName, recVal) in canonicalRecs.toList.take nClasses do
     -- Build casesOn name: recName is "I.rec", casesOn name is "I.casesOn"
     -- (Rust matches `NameData::Str(parent, _, _)` — the suffix itself is
@@ -314,10 +350,10 @@ refusing to synthesize canonical-indexed _N names")
     match recName with
     | .str indName _ _ =>
       let casesOnName := Name.mkStr indName "casesOn"
-      -- Only generate if the original env has this constant. Nested ifs:
-      -- the generator must only run when the env lookup succeeds
-      -- (mirrors Rust's short-circuiting `&&` let-chain).
-      if (← liftM (lookupConst? casesOnName : CompileM _)).isSome then
+      -- Only generate if Lean exported the block's `.casesOn` family
+      -- (`familyExported` above: per family, not per name). Nested ifs
+      -- mirror Rust's short-circuiting `&&` let-chain.
+      if emitCasesOn then
         match ← liftM (generateCasesOn casesOnName recVal : CompileM _) with
         | some auxDef =>
           patches := patches.insert casesOnName (.casesOnDef auxDef)
@@ -329,11 +365,12 @@ refusing to synthesize canonical-indexed _N names")
   --
   -- Only generate for original recursors (first `nClasses`), not
   -- auxiliary `rec_N` — same intentional restriction as Phase 1b.
+  let emitRecOn ← familyExported "recOn" none false
   for (recName, recVal) in canonicalRecs.toList.take nClasses do
     match recName with
     | .str indName _ _ =>
       let recOnName := Name.mkStr indName "recOn"
-      if (← liftM (lookupConst? recOnName : CompileM _)).isSome then
+      if emitRecOn then
         match generateRecOn recOnName recVal with
         | some auxDef =>
           patches := patches.insert recOnName (.recOnDef auxDef)
@@ -342,19 +379,11 @@ refusing to synthesize canonical-indexed _N names")
 
   -- Phase 2: Generate `.below` constants (if originals exist)
   -- (aux_gen.rs:603-660).
-  let firstClassName := sortedClasses[0]![0]!
-  let belowName := Name.mkStr firstClassName "below"
-  -- Guard: the existing constant must actually be a `.below` auxiliary,
-  -- not a coincidental name collision (e.g., a structure field accessor
-  -- like `IndPredBelow.NewDecl.below : NewDecl → LocalDecl`). A genuine
-  -- `.below` type always ends in `Sort _` after peeling foralls.
-  let belowShaped ←
-    match ← liftM (lookupConst? belowName : CompileM _) with
-    | some ci => pure (isBelowShaped ci.getCnst.type)
-    | none => pure false
-  if belowShaped then
+  -- `familyExported` (above) also counts a nested auxiliary's
+  -- `<all0>.below_N`: a closure can hold one without any class's `.below`.
+  if ← familyExported "below" none true then
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
-      isProp maps
+      isProp maps (allAux := true)
     -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
     -- references from already-source-indexed rec names (see
     -- `generateBelowConstants` → `auxRecSuffixIdx`), so there is no
@@ -373,17 +402,52 @@ refusing to synthesize canonical-indexed _N names")
 
     -- Phase 3: Generate .brecOn constants (if originals exist)
     -- (aux_gen.rs:659-702).
-    let brecOnName := Name.mkStr firstClassName "brecOn"
-    if (← liftM (lookupConst? brecOnName : CompileM _)).isSome then
+    -- `.brecOn.go`, `.brecOn` and `.brecOn.eq` are three blocks (three
+    -- families): a closure can hold `X.brecOn.go` without any `.brecOn`,
+    -- or `.brecOn` without `.brecOn.eq` (aux_gen.rs Phase 3).
+    let emitGo ← familyExported "brecOn" (some "go") false
+    let emitMain ← familyExported "brecOn" none false
+    let emitEq ← familyExported "brecOn" (some "eq") false
+    if emitGo || emitMain || emitEq then
       let breconConsts ← generateBreconConstants sortedClasses
-        canonicalRecs belowConsts isProp maps
-      for d in breconConsts do
-        -- Only emit if the original Lean env has this constant (e.g.
-        -- .brecOn.eq may not be in the exported env subset). `BRecOn`
-        -- emits `.below_N` / sibling `.rec_N` references in
-        -- source-indexed form directly — no post-generation rewrite.
-        if (← liftM (lookupConst? d.name : CompileM _)).isSome then
-          patches := patches.insert d.name (.brecOnDef d)
+        canonicalRecs belowConsts isProp maps (allAux := true)
+      -- Emit per family (the `.go` / main / `.eq` batch the name falls
+      -- in, as CompileAux's `breconBatch` splits them), not per name, in
+      -- batch order so each batch can resolve the ones before it. `BRecOn`
+      -- emits `.below_N` / sibling `.rec_N` references in source-indexed
+      -- form directly — no post-generation rewrite. A whole family can
+      -- need constants a closure lacks (a nested block's
+      -- `<all0>.brecOn_N.eq` is proved by cases on the external inductive,
+      -- `List.casesOn`): that batch then falls back to the members present
+      -- (aux_gen.rs Phase 3).
+      let batchOf (n : Name) : Nat := match n with
+        | .str _ "go" _ => 0
+        | .str _ "eq" _ => 2
+        | _ => 1
+      let emitFamily := #[emitGo, emitMain, emitEq]
+      for b in [0, 1, 2] do
+        let defs := breconConsts.filter (batchOf ·.name == b)
+        let mut present : Array Bool := #[]
+        for d in defs do
+          present := present.push (← liftM (lookupConst? d.name : CompileM _)).isSome
+        let mut take := if emitFamily[b]! then defs.map (fun _ => true) else present
+        if emitFamily[b]! && present.any (!·) then
+          let batchNames : Std.HashSet Name :=
+            defs.foldl (fun acc d => acc.insert d.name) {}
+          let mut refs : Array Name := #[]
+          for d in defs do
+            refs := collectConstRefs d.typ refs
+            refs := collectConstRefs d.value refs
+          let mut resolvable := true
+          for n in refs do
+            if resolvable && !patches.contains n && !batchNames.contains n then
+              if (← liftM (lookupConst? n : CompileM _)).isNone then
+                resolvable := false
+          if !resolvable then
+            take := present
+        for (d, t) in defs.zip take do
+          if t then
+            patches := patches.insert d.name (.brecOnDef d)
 
   -- Register Lean-exported names for non-representative alpha-collapsed
   -- members as aliases of the representative's canonical aux patches
@@ -453,12 +517,17 @@ refusing to synthesize canonical-indexed _N names")
       -- without this alias the member's Lean-exported name never
       -- resolves (regression fixture: Canonicity PropCollapseA/B).
       -- Mirrors the aux_gen.rs `.below.rec` alias block.
+      -- And `.below.casesOn`, regenerated from the canonical below-recs
+      -- beside them: the member's Lean-authored wrapper applies its
+      -- `.below.rec` with Lean's motives, which the collapsed canonical
+      -- recursor does not take.
       let repBelow := Name.mkStr rep "below"
       if let some (.belowIndc _) := patches.get? repBelow then
-        let repName := Name.mkStr repBelow "rec"
-        let aliasName := Name.mkStr (Name.mkStr aliasMem "below") "rec"
-        if (← liftM (lookupConst? aliasName : CompileM _)).isSome then
-          aliases := aliases.insert aliasName repName
+        for sub in #["rec", "casesOn"] do
+          let repName := Name.mkStr repBelow sub
+          let aliasName := Name.mkStr (Name.mkStr aliasMem "below") sub
+          if (← liftM (lookupConst? aliasName : CompileM _)).isSome then
+            aliases := aliases.insert aliasName repName
 
       -- Note: _N suffixed names (rec_1, below_1, brecOn_1, etc.) are NOT
       -- aliased here. They always hang off all[0], not
@@ -509,6 +578,26 @@ maps to canonical aux #{canonicalI} but no generated {suffix} patch \
 exists")
               | some targetName =>
                 if targetName != sourceName then
+                  -- A Prop-level `.below_N` is an inductive: its
+                  -- constructors, its recursor and its `.casesOn` are
+                  -- Lean-exported names too. Both auxiliaries nest the
+                  -- same external inductive, so the constructors pair
+                  -- positionally (aux_gen.rs, same pass).
+                  if suffix == "below" then
+                    if let some (.belowIndc targetBi) := patches.get? targetName then
+                      if let some (.inductInfo sourceV) ←
+                          liftM (lookupConst? sourceName : CompileM _) then
+                        for (sourceCtor, targetCtor) in
+                            sourceV.ctors.zip targetBi.ctors do
+                          if (← liftM
+                              (lookupConst? sourceCtor : CompileM _)).isSome then
+                            aliases := aliases.insert sourceCtor targetCtor.name
+                        for sub in #["rec", "casesOn"] do
+                          let sourceSub := Name.mkStr sourceName sub
+                          if (← liftM
+                              (lookupConst? sourceSub : CompileM _)).isSome then
+                            aliases := aliases.insert sourceSub
+                              (Name.mkStr targetName sub)
                   aliases := aliases.insert sourceName targetName
 
             for sub in #["go", "eq"] do

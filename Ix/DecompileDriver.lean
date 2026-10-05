@@ -350,6 +350,14 @@ def installDecompileCallSitePlans
           block.auxLayout) with
       | .ok (plans, _) => pure plans
       | .error e => throw s!"decompile aux plan compute_call_site_plans: {e}"
+    -- A nested auxiliary's `<all0>.below_N` has the auxiliary's
+    -- constructors: those of its external inductive (decompile.rs, same
+    -- place).
+    let auxHeads : Array Ix.Name :=
+      match Ix.CompileM.CompileM.run cenv blockEnv {}
+          (Ix.AuxGen.sourceAuxOrder originalAll) with
+      | .ok (order, _) => order.map (·.1)
+      | .error _ => #[]
     -- First-wins per name, but a DIFFERING later plan means two stored
     -- blocks claim one source-indexed aux name — the same collision
     -- class the compile side rejects; surface it rather than
@@ -396,9 +404,11 @@ def installDecompileCallSitePlans
           -- is a definition and has no recursor).
           let isPropBelow :=
             auxMemberNames.contains (Ix.Name.mkStr belowName "rec")
-          let parentName? : Option Ix.Name := match belowName with
-            | .str p _ _ => some p
-            | _ => none
+          let parentName? : Option Ix.Name :=
+            match Ix.AuxGen.auxRecSuffixIdx name, belowName with
+            | some n, _ => if n == 0 then none else auxHeads[n - 1]?
+            | none, .str p _ _ => some p
+            | none, _ => none
           let familyNames : Array Ix.Name := Id.run do
             let some parentName := parentName? | return #[]
             let some (.inductInfo pv) := decompiledView.get? parentName

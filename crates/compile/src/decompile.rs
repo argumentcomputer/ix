@@ -4500,6 +4500,7 @@ fn install_decompile_call_site_plans(
     .map_err(|e| DecompileError::BadConstantFormat {
       msg: format!("decompile aux plan compute_call_site_plans: {e}"),
     })?;
+    let mut aux_heads: Option<Vec<Name>> = None;
 
     for (name, plan) in plans {
       // First-wins per name, but a DIFFERING later plan means two stored
@@ -4565,8 +4566,24 @@ fn install_decompile_call_site_plans(
             && matches!(n.as_data(),
               ix_common::env::NameData::Str(p, _, _) if *p == below_name)
         });
-        let parent_name = match below_name.as_data() {
-          ix_common::env::NameData::Str(p, _, _) => Some(p.clone()),
+        // A nested auxiliary's `<all0>.below_N` has the auxiliary's
+        // constructors: those of its external inductive.
+        let parent_name = match (name.as_data(), below_name.as_data()) {
+          (ix_common::env::NameData::Str(_, s, _), _)
+            if s.starts_with("rec_") =>
+          {
+            let heads = aux_heads.get_or_insert_with(|| {
+              aux_gen::nested::source_aux_order(&original_all, env)
+                .map(|order| order.into_iter().map(|(head, _)| head).collect())
+                .unwrap_or_default()
+            });
+            s[4..]
+              .parse::<usize>()
+              .ok()
+              .and_then(|n| n.checked_sub(1))
+              .and_then(|j| heads.get(j).cloned())
+          },
+          (_, ix_common::env::NameData::Str(p, _, _)) => Some(p.clone()),
           _ => None,
         };
         if is_prop_below

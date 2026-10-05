@@ -659,7 +659,7 @@ public def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (Ix.Claim.reveal comm revealInfo) {}
   pure (asTestCase "Claim Reveal Defn (typ Expr addr)" witness)
 
-/-- Reveal the type hash of a hand-built v3 expression carrying every
+/-- Reveal the type hash of a hand-built expression carrying every
     non-conservative binder feature that ordinary Lean compilation cannot yet
     produce. This is the positive end-to-end guard that the circuit preserves
     mode bytes while parsing and reproduces them in `expr_addr`; conversion may

@@ -1,3 +1,7 @@
+> Historical audit of the retired Ix.Tc verification system. Its proof-library
+> commands no longer exist. Current certified contracts and checks are in
+> [kernel.md](kernel.md).
+
 # Ix.Tc K0 recursion and back-edge audit
 
 Snapshot: 2026-07-27. This is the named K0 tick/measure artifact required by

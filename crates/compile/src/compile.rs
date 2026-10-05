@@ -4678,8 +4678,18 @@ fn compile_mutual(
         // loudly instead of shipping schedule-dependent rewrites
         // (plans/aux-recursor-alias-collision.md §2.4).
         if plan.head_rewrite.is_none() {
+          // Keyed per name present, not gated on `.brecOn` itself: a
+          // closure-only environment can hold `X.brecOn.go` (an equation
+          // lemma's dependency) without `X.brecOn`, and aux_gen regenerates
+          // the `.go` family all the same.
           if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
-            && lean_env.get(&brecon_name).is_some()
+            && std::iter::once(brecon_name.clone())
+              .chain(
+                ["go", "eq"]
+                  .iter()
+                  .map(|sub| Name::str(brecon_name.clone(), sub.to_string())),
+              )
+              .any(|n| lean_env.get(&n).is_some())
           {
             let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
             // Type-level brecOn splits into `.go` (the PProd-packed
@@ -4693,7 +4703,10 @@ fn compile_mutual(
             // regenerated `.go`/`.eq` (the torchlean
             // `NN.GraphSpec.DAG.*.eq_def` AppTypeMismatch family; fixture
             // `Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDef`).
-            let mut plan_keys = vec![brecon_name.clone()];
+            let mut plan_keys = Vec::new();
+            if lean_env.get(&brecon_name).is_some() {
+              plan_keys.push(brecon_name.clone());
+            }
             for sub in ["go", "eq"] {
               let sub_name = Name::str(brecon_name.clone(), sub.to_string());
               if lean_env.get(&sub_name).is_some() {

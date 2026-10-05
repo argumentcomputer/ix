@@ -69,7 +69,7 @@ name = "TauCeti"
 git = "https://github.com/TauCetiProject/TauCeti"
 rev = "afb1aacb3632d3236eee756ea1683290c07270a3"
 
-# Keep the workspace's Lean 4.33 dependency closure authoritative over
+# Keep the workspace's Lean 4.34 dependency closure authoritative over
 # older or moving transitive Mathlib pins.
 [[require]]
 name = "mathlib"

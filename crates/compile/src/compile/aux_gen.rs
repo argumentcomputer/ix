@@ -561,10 +561,93 @@ pub fn generate_aux_patches(
   };
   let _p1_elapsed = _p1_start.elapsed();
 
-  for (rec_name, rec_val) in &canonical_recs {
-    // Only emit .rec if the original Lean env has it (some inductives,
-    // e.g. structures, may not have .rec in the exported env subset).
-    if lean_env.get(rec_name).is_some() {
+  // Block membership is decided per FAMILY, never per name.
+  //
+  // Each auxiliary kind (`.rec`, `.casesOn`, `.recOn`, `.below`,
+  // `.brecOn.go`, `.brecOn`, `.brecOn.eq`) is compiled as ONE Ixon block
+  // holding every class's member (and every nested auxiliary's `_N`
+  // member), and each name is a projection into it (docs/ix_canonicity.md
+  // §6.0). A closure-only environment (`ix compile --consts`, any claim
+  // built from a dependency closure) holds only the members the seeds
+  // reach: `A.brecOn` without `B.brecOn`, `T.brecOn` without `T.brecOn_1`.
+  // Emitting only the names present made the block, and so the address of
+  // every member, depend on the compile set: a standalone `A.brecOn` in the
+  // closure, a projection into `{A.brecOn, B.brecOn}` in the whole env.
+  // So: if Lean exported any member of a family (some class's name, or a
+  // nested auxiliary's `<all0>.<suffix>_N`), emit the whole family. In a
+  // whole environment Lean exports every family all-or-nothing, so this
+  // changes nothing there.
+  //
+  // `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`);
+  // `check_shape` applies the `.below` name-collision guard (a structure
+  // field accessor named `below`, e.g. `IndPredBelow.NewDecl.below`; a
+  // genuine `.below` type ends in `Sort _` after peeling foralls).
+  let family_exported =
+    |suffix: &str, sub: Option<&str>, check_shape: bool| -> bool {
+      let with_sub = |n: Name| match sub {
+        Some(s) => Name::str(n, s.to_string()),
+        None => n,
+      };
+      let primary = sorted_classes.iter().flatten().any(|n| {
+        lean_env
+          .get(&with_sub(Name::str(n.clone(), suffix.to_string())))
+          .is_some_and(|ci| !check_shape || is_below_shaped(ci.get_type()))
+      });
+      primary
+        || original_all.first().is_some_and(|all0| {
+          canonical_recs.iter().skip(n_classes).any(|(rec_name, _)| {
+            below::aux_rec_suffix_idx(rec_name).is_some_and(|idx| {
+              let n =
+                with_sub(Name::str(all0.clone(), format!("{suffix}_{idx}")));
+              lean_env.get(&n).is_some()
+            })
+          })
+        })
+    };
+  if *crate::compile::IX_LOG_AUX_NAMES {
+    // Diagnostic for the whole-environment invariant above: a family
+    // exported in part. In a whole environment this never prints; in a
+    // closure it lists the members the closure lacks (emitted anyway).
+    let mut partial: Vec<String> = Vec::new();
+    let mut note = |fam: &str, names: Vec<Name>| {
+      let missing: Vec<String> = names
+        .iter()
+        .filter(|n| lean_env.get(n).is_none())
+        .map(|n| n.pretty())
+        .collect();
+      if !missing.is_empty() && missing.len() < names.len() {
+        partial.push(format!("{fam}: missing {}", missing.join(",")));
+      }
+    };
+    let class_names = |suffix: &str| -> Vec<Name> {
+      canonical_recs
+        .iter()
+        .take(n_classes)
+        .filter_map(|(r, _)| match r.as_data() {
+          ix_common::env::NameData::Str(p, _, _) => {
+            Some(Name::str(p.clone(), suffix.to_string()))
+          },
+          _ => None,
+        })
+        .collect()
+    };
+    note("rec", canonical_recs.iter().map(|(n, _)| n.clone()).collect());
+    note("casesOn", class_names("casesOn"));
+    note("recOn", class_names("recOn"));
+    if !partial.is_empty() {
+      eprintln!(
+        "[aux-names] partial-family scc={} {}",
+        sorted_classes
+          .first()
+          .and_then(|c| c.first())
+          .map_or_else(String::new, |n| n.pretty()),
+        partial.join("; "),
+      );
+    }
+  }
+
+  if family_exported("rec", None, false) {
+    for (rec_name, rec_val) in &canonical_recs {
       patches.insert(rec_name.clone(), PatchedConstant::Rec(rec_val.clone()));
     }
   }
@@ -577,6 +660,13 @@ pub fn generate_aux_patches(
   // Only generate for original recursors (first n_classes), not auxiliary rec_N.
   // This is intentional: Lean does NOT generate casesOn_N for nested auxiliary
   // types (unlike below_N/brecOn_N which ARE generated via BRecOn.lean).
+  // `.brecOn.eq` (and `<all0>.brecOn_N.eq`) is proved by cases on the
+  // block's own inductives: a closure holding only `.brecOn_N.eq` reaches
+  // the external's `.casesOn` but not the classes'. Emitting the `.eq`
+  // family whole (Phase 3) needs the `.casesOn` family, which is always
+  // generatable from the recursors.
+  let emit_cases_on = family_exported("casesOn", None, false)
+    || family_exported("brecOn", Some("eq"), false);
   for (rec_name, rec_val) in canonical_recs.iter().take(n_classes) {
     // Build casesOn name: rec_name is "I.rec", casesOn name is "I.casesOn"
     let ind_name = match rec_name.as_data() {
@@ -584,8 +674,9 @@ pub fn generate_aux_patches(
       _ => continue,
     };
     let cases_on_name = Name::str(ind_name, "casesOn".to_string());
-    // Only generate if the original env has this constant.
-    if lean_env.get(&cases_on_name).is_some()
+    // Only generate if Lean exported the block's `.casesOn` family (see
+    // `family_exported` above: per family, not per name).
+    if emit_cases_on
       && let Some(aux_def) =
         cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
     {
@@ -598,13 +689,14 @@ pub fn generate_aux_patches(
   // Only generate for original recursors (first n_classes), not auxiliary rec_N.
   // This is intentional: Lean does NOT generate recOn_N for nested auxiliary
   // types (unlike below_N/brecOn_N which ARE generated via BRecOn.lean).
+  let emit_rec_on = family_exported("recOn", None, false);
   for (rec_name, rec_val) in canonical_recs.iter().take(n_classes) {
     let ind_name = match rec_name.as_data() {
       ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
       _ => continue,
     };
     let rec_on_name = Name::str(ind_name, "recOn".to_string());
-    if lean_env.get(&rec_on_name).is_some()
+    if emit_rec_on
       && let Some(aux_def) = rec_on::generate_rec_on(&rec_on_name, rec_val)
     {
       patches.insert(rec_on_name, PatchedConstant::RecOn(aux_def));
@@ -614,22 +706,20 @@ pub fn generate_aux_patches(
   // Phase 2: Generate .below constants (if originals exist).
   let _p2_start = std::time::Instant::now();
   {
-    let first_class_name = &sorted_classes[0][0];
-    let below_name = Name::str(first_class_name.clone(), "below".to_string());
-    // Guard: the existing constant must actually be a `.below` auxiliary,
+    // Guard: an existing `.below` must actually be a `.below` auxiliary,
     // not a coincidental name collision (e.g., a structure field accessor
     // like `IndPredBelow.NewDecl.below : NewDecl → LocalDecl`).
     // A genuine `.below` type always ends in `Sort _` after peeling foralls.
-    if lean_env
-      .get(&below_name)
-      .is_some_and(|ci| is_below_shaped(ci.get_type()))
-    {
+    // `family_exported` (above) also counts a nested auxiliary's
+    // `<all0>.below_N`: a closure can hold one without any class's `.below`.
+    if family_exported("below", None, true) {
       let _bt = std::time::Instant::now();
-      let raw_below_consts = below::generate_below_constants(
+      let raw_below_consts = below::generate_below_constants_with(
         sorted_classes,
         &canonical_recs,
         lean_env,
         is_prop,
+        true,
         stt,
         kctx,
       )?;
@@ -669,30 +759,109 @@ pub fn generate_aux_patches(
       );
 
       // Phase 3: Generate .brecOn constants (if originals exist).
-      let brecon_name =
-        Name::str(first_class_name.clone(), "brecOn".to_string());
-      if lean_env.get(&brecon_name).is_some() {
+      // `.brecOn.go`, `.brecOn` and `.brecOn.eq` are three blocks (three
+      // families): a closure can hold `X.brecOn.go` (an equation lemma
+      // references it directly) without any `.brecOn`, or `.brecOn`
+      // without `.brecOn.eq`.
+      let emit_go = family_exported("brecOn", Some("go"), false);
+      let emit_main = family_exported("brecOn", None, false);
+      let emit_eq = family_exported("brecOn", Some("eq"), false);
+      if emit_go || emit_main || emit_eq {
         let _brt = std::time::Instant::now();
-        let brecon_consts = brecon::generate_brecon_constants(
+        let brecon_consts = brecon::generate_brecon_constants_with(
           sorted_classes,
           &canonical_recs,
           &below_consts,
           lean_env,
           is_prop,
+          true,
           stt,
           kctx,
         )?;
         let _brecon_elapsed = _brt.elapsed();
+        // Emit per family (the `.go` / main / `.eq` batch the name falls
+        // in, as `mutual.rs` `brecon_batch` splits them), not per name,
+        // in batch order so each batch can resolve the ones before it.
+        // `brecon.rs` emits `.below_N` / sibling `.rec_N` references
+        // in source-indexed form directly (the `below_consts` vec's
+        // stored names are source-indexed by `below.rs` / aux_rec
+        // naming, and intra-brecOn sibling refs use those names).
+        // No post-generation rewrite is needed.
+        //
+        // A whole family can need constants a closure lacks: a nested
+        // block's `<all0>.brecOn_N.eq` is proved by cases on the external
+        // inductive (`List.casesOn`), which `X.brecOn.eq`'s closure does
+        // not reach. The block cannot be built from such a slice, so that
+        // batch falls back to the members present (its pre-family
+        // behaviour: compiles, but the block differs from the whole-env
+        // one) with a warning. The slice producers (`Ix.EnvScope.collectDeps`,
+        // `Lean.collectDependencies`) close slices over aux families
+        // (`Lean.auxFamilySiblings`), so this fires only for a slice built
+        // some other way.
+        let batch_of = |n: &Name| match n.last_str() {
+          Some("go") => 0usize,
+          Some("eq") => 2,
+          _ => 1,
+        };
+        let emit_family = [emit_go, emit_main, emit_eq];
+        let mut by_batch: [Vec<brecon::BRecOnDef>; 3] = Default::default();
         for d in brecon_consts {
-          // Only emit if the original Lean env has this constant
-          // (e.g. .brecOn.eq may not be in the exported env subset).
-          // `brecon.rs` now emits `.below_N` / sibling `.rec_N` references
-          // in source-indexed form directly (the `below_consts` vec's
-          // stored names are source-indexed by `below.rs` / aux_rec
-          // naming, and intra-brecOn sibling refs use those names).
-          // No post-generation rewrite is needed.
-          if lean_env.get(&d.name).is_some() {
-            patches.insert(d.name.clone(), PatchedConstant::BRecOn(d));
+          by_batch[batch_of(&d.name)].push(d);
+        }
+        for (b, defs) in by_batch.into_iter().enumerate() {
+          let present: Vec<bool> =
+            defs.iter().map(|d| lean_env.get(&d.name).is_some()).collect();
+          let mut take: Vec<bool> = if emit_family[b] {
+            vec![true; defs.len()]
+          } else {
+            present.clone()
+          };
+          if emit_family[b] && take.iter().zip(&present).any(|(t, p)| *t && !p)
+          {
+            let batch_names: FxHashSet<&Name> =
+              defs.iter().map(|d| &d.name).collect();
+            let mut refs: Vec<Name> = Vec::new();
+            for d in &defs {
+              recursor::collect_const_refs(&d.typ, &mut refs);
+              recursor::collect_const_refs(&d.value, &mut refs);
+            }
+            let missing = refs.iter().find(|n| {
+              lean_env.get(n).is_none()
+                && !patches.contains_key(*n)
+                && !batch_names.contains(n)
+            });
+            if let Some(m) = missing {
+              // Loud: the members present get a different address than in
+              // a whole-environment compile.
+              let absent: Vec<String> = defs
+                .iter()
+                .zip(&present)
+                .filter(|(_, p)| !**p)
+                .map(|(d, _)| d.name.pretty())
+                .collect();
+              eprintln!(
+                "[aux_gen] warning: the environment lacks {}, which the \
+                 canonical block of {} needs; compiling the members present \
+                 without {} — their addresses differ from a whole-environment \
+                 compile (close the slice over aux families: \
+                 Lean.auxFamilySiblings)",
+                m.pretty(),
+                defs
+                  .iter()
+                  .zip(&present)
+                  .filter(|(_, p)| **p)
+                  .map(|(d, _)| d.name.pretty())
+                  .collect::<Vec<_>>()
+                  .join(", "),
+                absent.join(", "),
+              );
+              take = present;
+            }
+          }
+          for (d, t) in defs.into_iter().zip(take) {
+            if t {
+              patches.insert(d.name.clone(), PatchedConstant::BRecOn(d));
+            }
           }
         }
 
@@ -831,13 +1000,19 @@ pub fn generate_aux_patches(
           patches.get(&rep_below),
           Some(PatchedConstant::BelowIndc(_))
         ) {
-          let rep_name = Name::str(rep_below, "rec".to_string());
-          let alias_name = Name::str(
-            Name::str(alias.clone(), "below".to_string()),
-            "rec".to_string(),
-          );
-          if lean_env.get(&alias_name).is_some() {
-            aliases.insert(alias_name, rep_name);
+          // And `.below.casesOn`, regenerated from the canonical
+          // below-recs beside them: the member's Lean-authored wrapper
+          // applies its `.below.rec` with Lean's motives, which the
+          // collapsed canonical recursor does not take.
+          for sub in ["rec", "casesOn"] {
+            let rep_name = Name::str(rep_below.clone(), sub.to_string());
+            let alias_name = Name::str(
+              Name::str(alias.clone(), "below".to_string()),
+              sub.to_string(),
+            );
+            if lean_env.get(&alias_name).is_some() {
+              aliases.insert(alias_name, rep_name);
+            }
           }
         }
       }
@@ -933,6 +1108,33 @@ pub fn generate_aux_patches(
               source_name.pretty(),
               target_name.pretty(),
             );
+          }
+          // A Prop-level `.below_N` is an inductive: its constructors, its
+          // recursor and its `.casesOn` are Lean-exported names too. Both
+          // auxiliaries nest the same external inductive, so the
+          // constructors pair positionally.
+          if *suffix == "below"
+            && let Some(PatchedConstant::BelowIndc(target_bi)) =
+              patches.get(&target_name)
+            && let Some(ix_common::env::ConstantInfo::InductInfo(source_v)) =
+              lean_env.get(&source_name).as_deref()
+          {
+            for (source_ctor, target_ctor) in
+              source_v.ctors.iter().zip(&target_bi.ctors)
+            {
+              if lean_env.get(source_ctor).is_some() {
+                aliases.insert(source_ctor.clone(), target_ctor.name.clone());
+              }
+            }
+            for sub in ["rec", "casesOn"] {
+              let source_sub = Name::str(source_name.clone(), sub.to_string());
+              if lean_env.get(&source_sub).is_some() {
+                aliases.insert(
+                  source_sub,
+                  Name::str(target_name.clone(), sub.to_string()),
+                );
+              }
+            }
           }
           aliases.insert(source_name, target_name);
         }

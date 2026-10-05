@@ -15,6 +15,8 @@ import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.DecompileDiff
+import Tests.Ix.Compile.AuxGenClosure
+import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -33,6 +35,8 @@ import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.PrimAddrs
+import Tests.Ix.Kernel.ReaderRoundtrip
+import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.SharingExact
@@ -71,7 +75,6 @@ import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
-import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
 import Tests.Ix.CatalogDedup
@@ -116,6 +119,10 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
+  -- the Ixon reader against a direct translation of compiled Lean constants
+  ("kernel-reader-roundtrip", Tests.Ix.Kernel.ReaderRoundtrip.suite),
+  -- the environment check's persistent read cache: a run from the mapped plan gives the live rows
+  ("kernel-read-cache", Tests.Ix.Kernel.ReadCache.suite),
   ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   ("decompile-unit", Tests.Decompile.unitSuite),
@@ -166,6 +173,10 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-tutorial", Tests.Tc.TutorialTc.suite),
   ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
   ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
+  -- aux_gen on closure-only environments (`ix compile --consts`)
+  ("aux-gen-closure", Tests.Ix.Compile.AuxGenClosure.suite),
+  -- aux addresses do not depend on the compile set (closure vs whole env)
+  ("canon-closure-aux", Tests.Ix.Compile.AuxGenClosureCanon.suite),
 ]
 
 /-- Primary test runners — quick suites run by default alongside
@@ -311,9 +322,6 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
-  -- lean4lean dependency smoke: accept a real closure, reject an
-  -- ill-typed decl (see Tests.Ix.Lean4Lean).
-  ("lean4lean", Tests.Ix.Lean4Lean.run env),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
   ("tc-pins", Tests.Tc.Pins.run),
