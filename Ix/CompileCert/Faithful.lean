@@ -570,20 +570,11 @@ fiber; a shared target address alone cannot satisfy the value equation.
 Projection entries use semantic positions, not just matching owner names.
 The primitive literal squares concern their complete constructor syntax.
 The two successful installation runs alone do not establish these laws. -/
-structure InstalledRenaming.Laws {V : Type u} [Kernel.SetTheory V]
+structure InstalledRenaming.ShapeLaws
     (rename : InstalledRenaming)
-    (sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V)
     (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat) : Prop where
   sort : ∀ level, Kernel.Level.eval sourceLevels level = Kernel.Level.eval targetLevels (rename.level level)
   regime : ∀ metadata, Kernel.regime sourceLevels metadata.pw = Kernel.regime targetLevels (rename.binder metadata).pw
-  constant : ∀ name levels sourceInfo,
-    sourceEnv.find? name = some sourceInfo →
-    levels.length = sourceInfo.toConstantVal.levelParams.length →
-    ∃ targetInfo, targetEnv.find? (rename.name name) = some targetInfo ∧
-      (rename.universes name levels).length = targetInfo.toConstantVal.levelParams.length ∧
-      sourceValues name (Kernel.Level.substFn sourceLevels sourceInfo.toConstantVal.levelParams levels) =
-        targetValues (rename.name name)
-          (Kernel.Level.substFn targetLevels targetInfo.toConstantVal.levelParams (rename.universes name levels))
   projectionTable : ∀ name field entry, sourceEnv.findProj? name field = some entry →
     ∃ targetEntry,
       targetEnv.findProj? (rename.projection name field).1 (rename.projection name field).2 = some targetEntry ∧
@@ -594,6 +585,194 @@ structure InstalledRenaming.Laws {V : Type u} [Kernel.SetTheory V]
     (rename.projection name 1).2 = 1 ∧ targetEnv.findProj? (rename.projection name 1).1 1 = none
   natLiteral : ∀ n, rename.expr (Kernel.natLitToConstructor n) = Kernel.natLitToConstructor n
   stringLiteral : ∀ s, rename.expr (Kernel.strLitToConstructor s) = Kernel.strLitToConstructor s
+
+structure InstalledRenaming.Laws {V : Type u} [Kernel.SetTheory V]
+    (rename : InstalledRenaming)
+    (sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat) : Prop
+    extends rename.ShapeLaws sourceEnv targetEnv sourceLevels targetLevels where
+  constant : ∀ name levels sourceInfo,
+    sourceEnv.find? name = some sourceInfo →
+    levels.length = sourceInfo.toConstantVal.levelParams.length →
+    ∃ targetInfo, targetEnv.find? (rename.name name) = some targetInfo ∧
+      (rename.universes name levels).length = targetInfo.toConstantVal.levelParams.length ∧
+      sourceValues name (Kernel.Level.substFn sourceLevels sourceInfo.toConstantVal.levelParams levels) =
+        targetValues (rename.name name)
+          (Kernel.Level.substFn targetLevels targetInfo.toConstantVal.levelParams (rename.universes name levels))
+
+/-- Syntactic dependency evidence for semantic transport. Literals expose
+their complete constructor dependency trees; projections retain their source
+owner. This predicate does not assert source typing or semantic correctness. -/
+inductive ConstantSupport (allowed : Kernel.Name → Prop) : Kernel.Expr → Prop
+  | bvar (index) : ConstantSupport allowed (.bvar index)
+  | sort (level) : ConstantSupport allowed (.sort level)
+  | constant (name levels) (present : allowed name) : ConstantSupport allowed (.const name levels)
+  | fvar (index) {type} (annotation : ConstantSupport allowed type) : ConstantSupport allowed (.fvar index type)
+  | app {function argument} (left : ConstantSupport allowed function) (right : ConstantSupport allowed argument) :
+      ConstantSupport allowed (.app function argument)
+  | lam {type body} (metadata) (domain : ConstantSupport allowed type) (value : ConstantSupport allowed body) :
+      ConstantSupport allowed (.lam type body metadata)
+  | forallE {type body} (metadata) (domain : ConstantSupport allowed type) (value : ConstantSupport allowed body) :
+      ConstantSupport allowed (.forallE type body metadata)
+  | letE {type value body} (domain : ConstantSupport allowed type)
+      (valueSupport : ConstantSupport allowed value) (bodySupport : ConstantSupport allowed body) :
+      ConstantSupport allowed (.letE type value body)
+  | proj (name field) {value} (owner : allowed name) (operand : ConstantSupport allowed value) :
+      ConstantSupport allowed (.proj name field value)
+  | natLiteral (n) (constructors : ConstantSupport allowed (Kernel.natLitToConstructor n)) :
+      ConstantSupport allowed (.lit (.natVal n))
+  | stringLiteral (s) (constructors : ConstantSupport allowed (Kernel.strLitToConstructor s)) :
+      ConstantSupport allowed (.lit (.strVal s))
+
+theorem ConstantSupport.mono {allowed larger : Kernel.Name → Prop}
+    (extend : ∀ name, allowed name → larger name) {expression : Kernel.Expr}
+    (supported : ConstantSupport allowed expression) : ConstantSupport larger expression := by
+  induction supported with
+  | bvar index => exact .bvar index
+  | sort level => exact .sort level
+  | constant name levels present => exact .constant name levels (extend name present)
+  | fvar index _ ih => exact .fvar index ih
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam metadata _ _ iht ihb => exact .lam metadata iht ihb
+  | forallE metadata _ _ iht ihb => exact .forallE metadata iht ihb
+  | letE _ _ _ iht ihv ihb => exact .letE iht ihv ihb
+  | proj name field owner _ ih => exact .proj name field (extend name owner) ih
+  | natLiteral n _ ih => exact .natLiteral n ih
+  | stringLiteral s _ ih => exact .stringLiteral s ih
+
+theorem ConstantSupport.lift {allowed : Kernel.Name → Prop} {expression : Kernel.Expr}
+    (supported : ConstantSupport allowed expression) (amount cutoff : Nat) :
+    ConstantSupport allowed (Kernel.Expr.liftLooseBVars amount cutoff expression) := by
+  induction supported generalizing cutoff with
+  | bvar index =>
+    simp only [Kernel.Expr.liftLooseBVars]
+    split <;> exact .bvar _
+  | sort level => exact .sort level
+  | constant name levels present => exact .constant name levels present
+  | fvar index annotation _ => exact .fvar index annotation
+  | app _ _ ihf iha => exact .app (ihf cutoff) (iha cutoff)
+  | lam metadata _ _ iht ihb => exact .lam metadata (iht cutoff) (ihb (cutoff + 1))
+  | forallE metadata _ _ iht ihb => exact .forallE metadata (iht cutoff) (ihb (cutoff + 1))
+  | letE _ _ _ iht ihv ihb => exact .letE (iht cutoff) (ihv cutoff) (ihb (cutoff + 1))
+  | proj name field owner _ ih => exact .proj name field owner (ih cutoff)
+  | natLiteral n constructors _ => exact .natLiteral n constructors
+  | stringLiteral s constructors _ => exact .stringLiteral s constructors
+
+theorem ConstantSupport.instantiate1 {allowed : Kernel.Name → Prop}
+    {expression replacement : Kernel.Expr}
+    (supported : ConstantSupport allowed expression)
+    (replacementSupport : ConstantSupport allowed replacement) (depth : Nat) :
+    ConstantSupport allowed (expression.instantiate1 replacement depth) := by
+  induction supported generalizing depth with
+  | bvar index =>
+    simp only [Kernel.Expr.instantiate1]
+    split
+    · exact replacementSupport
+    · split <;> exact .bvar _
+  | sort level => exact .sort level
+  | constant name levels present => exact .constant name levels present
+  | fvar index annotation _ => exact .fvar index annotation
+  | app _ _ ihf iha => exact .app (ihf depth) (iha depth)
+  | lam metadata _ _ iht ihb => exact .lam metadata (iht depth) (ihb (depth + 1))
+  | forallE metadata _ _ iht ihb => exact .forallE metadata (iht depth) (ihb (depth + 1))
+  | letE _ _ _ iht ihv ihb => exact .letE (iht depth) (ihv depth) (ihb (depth + 1))
+  | proj name field owner _ ih => exact .proj name field owner (ih depth)
+  | natLiteral n constructors _ => exact .natLiteral n constructors
+  | stringLiteral s constructors _ => exact .stringLiteral s constructors
+
+theorem ConstantSupport.instantiate1Lift {allowed : Kernel.Name → Prop}
+    {expression replacement : Kernel.Expr}
+    (supported : ConstantSupport allowed expression)
+    (replacementSupport : ConstantSupport allowed replacement) (depth : Nat) :
+    ConstantSupport allowed (expression.instantiate1Lift replacement depth) := by
+  induction supported generalizing depth with
+  | bvar index =>
+    simp only [Kernel.Expr.instantiate1Lift]
+    split
+    · exact replacementSupport.lift depth 0
+    · split <;> exact .bvar _
+  | sort level => exact .sort level
+  | constant name levels present => exact .constant name levels present
+  | fvar index annotation _ => exact .fvar index annotation
+  | app _ _ ihf iha => exact .app (ihf depth) (iha depth)
+  | lam metadata _ _ iht ihb => exact .lam metadata (iht depth) (ihb (depth + 1))
+  | forallE metadata _ _ iht ihb => exact .forallE metadata (iht depth) (ihb (depth + 1))
+  | letE _ _ _ iht ihv ihb => exact .letE (iht depth) (ihv depth) (ihb (depth + 1))
+  | proj name field owner _ ih => exact .proj name field owner (ih depth)
+  | natLiteral n constructors _ => exact .natLiteral n constructors
+  | stringLiteral s constructors _ => exact .stringLiteral s constructors
+
+/-- Prefix-local compatibility. In particular, a definition whose value
+only refers to earlier names does not need its own constant-value equation
+as a hypothesis of semantic body transport. -/
+structure InstalledRenaming.ScopedLaws {V : Type u} [Kernel.SetTheory V]
+    (rename : InstalledRenaming) (allowed : Kernel.Name → Prop)
+    (sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat) : Prop
+    extends rename.ShapeLaws sourceEnv targetEnv sourceLevels targetLevels where
+  constant : ∀ name, allowed name → ∀ levels sourceInfo,
+    sourceEnv.find? name = some sourceInfo →
+    levels.length = sourceInfo.toConstantVal.levelParams.length →
+    ∃ targetInfo, targetEnv.find? (rename.name name) = some targetInfo ∧
+      (rename.universes name levels).length = targetInfo.toConstantVal.levelParams.length ∧
+      sourceValues name (Kernel.Level.substFn sourceLevels sourceInfo.toConstantVal.levelParams levels) =
+        targetValues (rename.name name)
+          (Kernel.Level.substFn targetLevels targetInfo.toConstantVal.levelParams (rename.universes name levels))
+
+theorem InstalledRenaming.denotes_on {V : Type u} [Kernel.SetTheory V]
+    {rename : InstalledRenaming} {allowed : Kernel.Name → Prop}
+    {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels}
+    (laws : rename.ScopedLaws (V := V) allowed sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels)
+    {ρ : Nat → V} {expression : Kernel.Expr} {value : V}
+    (supported : ConstantSupport allowed expression)
+    (denoted : Kernel.Denotes sourceValues sourceEnv sourceLevels ρ expression value) :
+    Kernel.Denotes targetValues targetEnv targetLevels ρ (rename.expr expression) value := by
+  induction denoted with
+  | bvar => exact .bvar
+  | sort => rw [laws.sort]; exact .sort
+  | const lookup arity =>
+    cases supported with
+    | constant _ _ present =>
+      obtain ⟨info, lookup', arity', values⟩ := laws.constant _ present _ _ lookup arity
+      rw [values]
+      exact .const lookup' arity'
+  | app _ _ ihf iha =>
+    cases supported with
+    | app sf sa => exact .app (ihf sf) (iha sa)
+  | lam _ _ proof ihA ihF =>
+    cases supported with
+    | lam metadata st sb =>
+      rw [laws.regime]
+      exact .lam (ihA st) (fun x hx => ihF x hx sb) (fun h => proof ((laws.regime _).trans h))
+  | pi _ _ proof ihA ihB =>
+    cases supported with
+    | forallE metadata st sb =>
+      rw [laws.regime]
+      exact .pi (ihA st) (fun x hx => ihB x hx sb) (fun h => proof ((laws.regime _).trans h))
+  | proj_table lookup _ ih =>
+    cases supported with
+    | proj _ _ _ operand =>
+      obtain ⟨entry, lookup', position⟩ := laws.projectionTable _ _ _ lookup
+      rw [position]
+      exact .proj_table lookup' (ih operand)
+  | proj_fst lookup _ ih =>
+    cases supported with
+    | proj _ _ _ operand =>
+      obtain ⟨position, lookup'⟩ := laws.projectionFirst _ lookup
+      simp only [InstalledRenaming.expr, position]
+      exact .proj_fst lookup' (ih operand)
+  | proj_snd lookup _ ih =>
+    cases supported with
+    | proj _ _ _ operand =>
+      obtain ⟨position, lookup'⟩ := laws.projectionSecond _ lookup
+      simp only [InstalledRenaming.expr, position]
+      exact .proj_snd lookup' (ih operand)
+  | natLit _ ih =>
+    cases supported with
+    | natLiteral _ constructors => exact .natLit (laws.natLiteral _ ▸ ih constructors)
+  | strLit _ ih =>
+    cases supported with
+    | stringLiteral _ constructors => exact .strLit (laws.stringLiteral _ ▸ ih constructors)
 
 /-- Compatible fibers identify values only at the same selected target
 instance. This does not assume source-key injectivity or search for a reverse

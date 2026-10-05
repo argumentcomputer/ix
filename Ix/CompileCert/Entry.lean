@@ -61,6 +61,33 @@ theorem strongInstalledModel_exists (V : Type u) [Kernel.SetTheory V]
     Kernel.Model.interp_cvalOf model.base2.cval_closedL] at denoted
   exact denoted
 
+/-- One acyclic definition step at the actual installed bodies. Compatibility
+is needed only for the body's explicitly supported dependencies, excluding
+the source owner itself. Thus the conclusion is not assumed as a constant
+case of the renaming law. Recursive/mutual definitions need their separate
+simultaneous block argument; theorem/opaque entries supply no such equation.
+The exact correspondence of the two annotation outputs remains a premise. -/
+theorem StrongInstalledModel.acyclic_definition_value {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env}
+    (source : StrongInstalledModel V sourceEnv) (target : StrongInstalledModel V targetEnv)
+    {sourceHeader targetHeader : Kernel.ConstantVal} {sourceBody targetBody : Kernel.Expr}
+    {sourceHint targetHint : Kernel.ReducibilityHint}
+    (sourcePresent : Kernel.ConstantInfo.defnInfo sourceHeader sourceBody sourceHint ∈ sourceEnv.consts)
+    (targetPresent : Kernel.ConstantInfo.defnInfo targetHeader targetBody targetHint ∈ targetEnv.consts)
+    (rename : InstalledRenaming) (earlier : Kernel.Name → Prop)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (ρ : Nat → V)
+    (supported : ConstantSupport (fun name => name ≠ sourceHeader.name ∧ earlier name) sourceBody)
+    (laws : rename.ScopedLaws (fun name => name ≠ sourceHeader.name ∧ earlier name)
+      source.public.cval target.public.cval sourceEnv targetEnv sourceLevels targetLevels)
+    (bodyImage : targetBody = rename.expr sourceBody) :
+    source.public.cval sourceHeader.name sourceLevels =
+      target.public.cval targetHeader.name targetLevels := by
+  have sourceRead := source.definition_values _ _ _ sourcePresent sourceLevels ρ
+  have transported := InstalledRenaming.denotes_on laws supported sourceRead
+  rw [← bodyImage] at transported
+  exact Kernel.Denotes_functional transported
+    (target.definition_values _ _ _ targetPresent targetLevels ρ)
+
 /-- This exposes the actual fired rule interface, including its universe,
 typing, constructor and nested-pin premises. An inert rule supplies no law.
 Its currency is still internal AnnotTerm; the public rule bridge remains
