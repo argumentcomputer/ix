@@ -741,6 +741,14 @@ inductive InstalledSpineImage {V : Type u} [Kernel.SetTheory V]
       InstalledSpineImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
         (source :: sources) (target :: targets)
 
+theorem InstalledSpineImage.symm {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl sources targets}
+    (image : InstalledSpineImage (V := V) sv tv se te sl tl sources targets) :
+    InstalledSpineImage tv sv te se tl sl targets sources := by
+  induction image with
+  | nil => exact .nil
+  | cons head _ ih => exact .cons head.symm ih
+
 theorem InstalledSpineImage.length {V : Type u} [Kernel.SetTheory V]
     {sv tv se te sl tl sources targets}
     (image : InstalledSpineImage (V := V) sv tv se te sl tl sources targets) :
@@ -2071,6 +2079,18 @@ theorem DenotesSpine.image {V : Type u} [Kernel.SetTheory V]
   | cons head tail ih =>
     cases images with
     | cons image images => exact .cons (image.denotes head) (ih images)
+
+theorem DenotesSpine.get {V : Type u} [Kernel.SetTheory V]
+    {cv env levels valuation expressions values}
+    (reading : DenotesSpine (V := V) cv env levels valuation expressions values)
+    (index : Nat) (bound : index < values.length) :
+    Kernel.Denotes cv env levels valuation (expressions.getD index default) values[index] := by
+  induction reading generalizing index with
+  | nil => simp at bound
+  | cons head tail ih =>
+    cases index with
+    | zero => exact head
+    | succ index => exact ih index (by simpa using bound)
 
 theorem DenotesSpine.of_get {V : Type u} [Kernel.SetTheory V]
     {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}

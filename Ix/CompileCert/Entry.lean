@@ -7665,6 +7665,8 @@ structure RuleTupleRepresentation {V : Type u} [Kernel.SetTheory V]
   fieldReadings : ArgumentAnnotations strong levels depth valuation fieldExpressions fields
   argumentValuesEq : arguments.map (interp V valuation) = argumentValues
   fieldValuesEq : fields.map (interp V valuation) = fieldValues
+  argumentClosed : argumentExpressions.map (Kernel.Expr.closeN depth) = (argumentVariables depth).take argumentValues.length
+  fieldClosed : fieldExpressions.map (Kernel.Expr.closeN depth) = (argumentVariables depth).drop argumentValues.length
   typed : RuleTupleTyping strong.public.cval env levels frame universes constructorUniverses valuation argumentValues fieldValues
 
 open Kernel.Semantics in
@@ -7690,6 +7692,8 @@ theorem RuleTupleTyping.represented {V : Type u} [Kernel.SetTheory V]
     fieldReadings := readings.drop arguments.length,
     argumentValuesEq := by rw [List.map_take, valueEq]; simp [values],
     fieldValuesEq := by rw [List.map_drop, valueEq]; simp [values],
+    argumentClosed := by rw [List.map_take, argumentFVars_closed],
+    fieldClosed := by rw [List.map_drop, argumentFVars_closed],
     typed := typed.rebase strong.internal.base2.wf fresh }⟩
 
 theorem RuleTupleRepresentation.constructor_application {V : Type u} [Kernel.SetTheory V]
@@ -7770,5 +7774,131 @@ theorem RuleTupleRepresentation.plain_parameters {V : Type u} [Kernel.SetTheory 
     Option.map_some, Option.some.injEq] at selected
   simpa only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem belowFields,
     List.getElem?_eq_getElem belowArguments, Option.getD_some] using selected
+
+/-- Fresh representative variables have an image independently of either
+constant interpretation. This does not assert an image for an immutable
+source term; it supplies common variables for the value-level rule law. -/
+theorem RuleTupleRepresentation.argument_image {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields)
+    (sourceValues : Kernel.Name → (Kernel.Name → Nat) → V) (sourceEnv : Kernel.Env) (sourceLevels : Kernel.Name → Nat) :
+    InstalledSpineImage sourceValues strong.public.cval sourceEnv env sourceLevels levels
+      ((argumentVariables representation.depth).take arguments.length)
+      (representation.argumentExpressions.map (Kernel.Expr.closeN representation.depth)) := by
+  rw [representation.argumentClosed]
+  exact (InstalledSpineImage.argumentVariables sourceValues strong.public.cval sourceEnv env sourceLevels levels
+    representation.depth).take arguments.length
+
+theorem RuleTupleRepresentation.field_image {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields)
+    (sourceValues : Kernel.Name → (Kernel.Name → Nat) → V) (sourceEnv : Kernel.Env) (sourceLevels : Kernel.Name → Nat) :
+    InstalledSpineImage sourceValues strong.public.cval sourceEnv env sourceLevels levels
+      ((argumentVariables representation.depth).drop arguments.length)
+      (representation.fieldExpressions.map (Kernel.Expr.closeN representation.depth)) := by
+  rw [representation.fieldClosed]
+  exact (InstalledSpineImage.argumentVariables sourceValues strong.public.cval sourceEnv env sourceLevels levels
+    representation.depth).drop arguments.length
+
+theorem RuleTupleRepresentation.source_readings {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields)
+    (sourceValues : Kernel.Name → (Kernel.Name → Nat) → V) (sourceEnv : Kernel.Env) (sourceLevels : Kernel.Name → Nat) :
+    DenotesSpine sourceValues sourceEnv sourceLevels representation.valuation
+      ((argumentVariables representation.depth).take arguments.length) arguments ∧
+    DenotesSpine sourceValues sourceEnv sourceLevels representation.valuation
+      ((argumentVariables representation.depth).drop arguments.length) fields := by
+  constructor
+  · have reading := representation.argumentReadings.denotes.image
+      (representation.argument_image sourceValues sourceEnv sourceLevels).symm
+    simpa only [representation.argumentValuesEq] using reading
+  · have reading := representation.fieldReadings.denotes.image
+      (representation.field_image sourceValues sourceEnv sourceLevels).symm
+    simpa only [representation.fieldValuesEq] using reading
+
+theorem RuleTupleRepresentation.prefix_application {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields)
+    (constructorArity : constructorUniverses.length = frame.constructor.levelParams.length) :
+    ∃ residual, AnnotatedApplication strong levels representation.depth representation.valuation
+      (frame.header.type.instantiateLevelParams frame.header.levelParams universes)
+      representation.argumentExpressions representation.arguments residual := by
+  obtain ⟨_, application⟩ := representation.recursor_application constructorArity
+  obtain ⟨residual, prefixApplication⟩ := application.take representation.argumentExpressions.length
+  refine ⟨residual, ?_⟩
+  have expressions : (representation.argumentExpressions ++
+      [Kernel.Expr.mkAppN (.const frame.rule.ctor constructorUniverses) representation.fieldExpressions]).take
+      representation.argumentExpressions.length = representation.argumentExpressions := List.take_left
+  have annotations : (representation.arguments ++ [Kernel.Semantics.AnnotTerm.mkAppN
+      (strong.internal.base2.acval frame.rule.ctor
+        (Kernel.Level.substFn levels frame.constructor.levelParams constructorUniverses)) representation.fields]).take
+      representation.argumentExpressions.length = representation.arguments := by
+    rw [representation.argumentReadings.length]
+    exact List.take_left
+  simpa only [expressions, annotations] using prefixApplication
+
+open Kernel.Semantics Kernel.Model in
+/-- Source nested-pin denotation supplies the exact target comparison at a
+bounded field position. Common variable images/readings, the target prefix
+application, and installed pin annotation/grading are all derived internally.
+The source pin's actual rule association and semantic equation remain visible. -/
+theorem RuleTupleRepresentation.nested_parameter {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {name : Kernel.Name} {index : Nat} {frame : InstalledRuleFrame env name index}
+    {universes constructorUniverses : List Kernel.Level} {arguments fields : List V}
+    (representation : RuleTupleRepresentation strong levels frame universes constructorUniverses arguments fields)
+    (arity : universes.length = frame.header.levelParams.length)
+    (constructorArity : constructorUniverses.length = frame.constructor.levelParams.length)
+    (prefixBound : frame.rulePrefix ≤ arguments.length)
+    (nestedLevels : List Kernel.Level) (pins : List Kernel.Expr) (nested : frame.rule.fire = .nested nestedLevels pins)
+    (position : Nat) (belowConstructor : position < frame.rule.ctorParams)
+    (belowPins : position < pins.length) (belowFields : position < fields.length)
+    (sourceValues : Kernel.Name → (Kernel.Name → Nat) → V) (sourceEnv : Kernel.Env) (sourceLevels : Kernel.Name → Nat)
+    (sourcePin : Kernel.Expr)
+    (pinImage : InstalledExprImage sourceValues strong.public.cval sourceEnv env sourceLevels levels sourcePin
+      ((pins.getD position default).instantiateLevelParams frame.header.levelParams universes))
+    (sourceEquation : Kernel.Denotes sourceValues sourceEnv sourceLevels representation.valuation
+      (Kernel.Expr.instSeqLift (((argumentVariables representation.depth).take arguments.length).take frame.rulePrefix)
+        (frame.rulePrefix - 1) sourcePin) fields[position]) :
+    ∀ pin : AnnotTerm,
+      denoteMeta strong.internal.base2.acval env levels frame.rulePrefix
+        (Kernel.Verify.openRev 0 frame.rulePrefix
+          ((pins.getD position default).instantiateLevelParams frame.header.levelParams universes)) = some pin →
+      interp V representation.valuation (representation.fields.getD position default) =
+        interp V representation.valuation (Kernel.Model.AnnotTerm.instRevChain
+          (representation.arguments.take frame.rulePrefix) pin) := by
+  obtain ⟨_, application⟩ := representation.prefix_application constructorArity
+  have argumentLength : representation.arguments.length = arguments.length := by
+    simpa only [List.length_map] using congrArg List.length representation.argumentValuesEq
+  have fieldLength : representation.fields.length = fields.length := by
+    simpa only [List.length_map] using congrArg List.length representation.fieldValuesEq
+  have fieldReading := representation.fieldReadings.get position (by omega)
+  have sourceReadings := representation.source_readings sourceValues sourceEnv sourceLevels
+  have fieldRead := sourceReadings.2.get position belowFields
+  have images := representation.field_image sourceValues sourceEnv sourceLevels
+  have sourceBound : position < ((argumentVariables representation.depth).drop arguments.length).length := by
+    rw [sourceReadings.2.length]; exact belowFields
+  have targetBound : position < representation.fieldExpressions.length := by
+    rw [representation.fieldReadings.length, fieldLength]; exact belowFields
+  have fieldImage := images.get position sourceBound
+  have alignedField : InstalledExprImage sourceValues strong.public.cval sourceEnv env sourceLevels levels
+      (((argumentVariables representation.depth).drop arguments.length).getD position default)
+      ((representation.fieldExpressions.getD position default).closeN representation.depth) := by
+    simpa only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem targetBound,
+      Option.map_some, Option.getD_some] using fieldImage
+  have argumentImages := (representation.argument_image sourceValues sourceEnv sourceLevels).take frame.rulePrefix
+  rw [← List.map_take] at argumentImages
+  exact application.nested_parameter_image name frame.header frame.major frame.rulePrefix frame.rules frame.rule
+    frame.recursorLookup (List.mem_of_getElem? frame.ruleLookup) universes arity
+    (by omega) nestedLevels pins nested position belowConstructor belowPins fieldReading argumentImages pinImage
+    alignedField fieldRead sourceEquation rfl
 
 end Ix.CompileCert
