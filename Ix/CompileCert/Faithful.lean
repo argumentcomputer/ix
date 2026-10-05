@@ -741,6 +741,14 @@ inductive InstalledSpineImage {V : Type u} [Kernel.SetTheory V]
       InstalledSpineImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
         (source :: sources) (target :: targets)
 
+theorem InstalledSpineImage.length {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl sources targets}
+    (image : InstalledSpineImage (V := V) sv tv se te sl tl sources targets) :
+    sources.length = targets.length := by
+  induction image with
+  | nil => rfl
+  | cons _ _ ih => simp only [List.length_cons, ih]
+
 theorem InstalledSpineImage.sorts {V : Type u} [Kernel.SetTheory V]
     {sv tv se te sl tl} {sources targets : List Kernel.Level}
     (image : InstalledSpineImage (V := V) sv tv se te sl tl

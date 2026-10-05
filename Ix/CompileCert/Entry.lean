@@ -7298,4 +7298,71 @@ theorem checkedStreams_publicCapabilities (V : Type u) [Kernel.SetTheory V]
   exact checkedCapabilities_publicLaws sourceStrong.internal.base2.wf target
     (checkTelescopes_sound telescopes) types capabilities etaAssociations
 
+/-- A checked nested rule supplies each actual stored pin image at the same
+ordinal. Universe instantiation uses the installed owner's telescope and its
+proved pin coverage, not an independently asserted target pin expression. -/
+theorem checkInstalledRecursors_nested_pin_instance {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {major rulePrefix : Nat} {rules : List Kernel.RecRule}
+    (present : Kernel.ConstantInfo.recInfo header major rulePrefix rules ∈ sourceEnv.consts) :
+    ∃ targetHeader targetRules,
+      targetEnv.find? (names header.name) = some (.recInfo targetHeader major rulePrefix targetRules) ∧
+      ∀ ruleIndex (inside : ruleIndex < rules.length) sourceLevels sourcePins,
+        rules[ruleIndex].fire = .nested sourceLevels sourcePins →
+        ∃ targetRule targetLevels targetPins,
+          targetRules[ruleIndex]? = some targetRule ∧
+          targetRule.fire = .nested targetLevels targetPins ∧
+          InstalledRuleHeader names rules[ruleIndex] targetRule ∧
+          sourcePins.length = targetPins.length ∧
+          ∀ index, index < sourcePins.length →
+          ∀ sourceBase targetBase sourceUs targetUs,
+            sourceUs.length = header.levelParams.length →
+            targetUs.length = targetHeader.levelParams.length →
+            sourceUs.map (Kernel.Level.eval sourceBase) = targetUs.map (Kernel.Level.eval targetBase) →
+            InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+              target.public.cval sourceEnv targetEnv sourceBase targetBase
+              ((sourcePins.getD index default).instantiateLevelParams header.levelParams sourceUs)
+              ((targetPins.getD index default).instantiateLevelParams targetHeader.levelParams targetUs) := by
+  obtain ⟨sourceLookup, targetHeader, targetRules, targetLookup, comparison⟩ :=
+    checkInstalledRecursors_member checked present
+  have images := checkInstalledRules_sound target association sourceLookup comparison
+  refine ⟨targetHeader, targetRules, targetLookup, ?_⟩
+  intro ruleIndex inside sourceLevels sourcePins sourceShape
+  have targetInside : ruleIndex < targetRules.length := by
+    rw [← (images (fun _ => 0)).length]; exact inside
+  have fire := ((images (fun _ => 0)).at ruleIndex inside).fire
+  rw [sourceShape] at fire
+  obtain ⟨targetLevels, targetPins, targetShape⟩ :
+      ∃ targetLevels targetPins, targetRules[ruleIndex].fire = .nested targetLevels targetPins := by
+    generalize targetRules[ruleIndex].fire = targetFire at fire ⊢
+    cases fire with
+    | nested _ _ => exact ⟨_, _, rfl⟩
+  have pinImages : ∀ levels, InstalledSpineImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels header.name levels) sourcePins targetPins := by
+    intro levels
+    have image := ((images levels).at ruleIndex inside).fire
+    rw [sourceShape, targetShape] at image
+    cases image with
+    | nested _ pins => exact pins
+  refine ⟨targetRules[ruleIndex], targetLevels, targetPins,
+    List.getElem?_eq_getElem targetInside, targetShape,
+    ((images (fun _ => 0)).at ruleIndex inside).header, (pinImages (fun _ => 0)).length, ?_⟩
+  intro index bound sourceBase targetBase sourceUs targetUs sourceArity targetArity universeImage
+  have targetBound : index < targetPins.length := by
+    rw [← (pinImages (fun _ => 0)).length]; exact bound
+  have pinMember : targetPins.getD index default ∈ targetPins := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem targetBound, Option.getD_some]
+    exact List.getElem_mem targetBound
+  have wf := target.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem targetLookup)
+  have ruleWf := wf.2.2.2.2.2.1 targetHeader major rulePrefix targetRules rfl
+    targetRules[ruleIndex] (List.getElem_mem targetInside)
+  have pinWf := (ruleWf.2.2.2.2 targetLevels targetPins targetShape).2.2.1 _ pinMember
+  exact PullbackMap.fromEnvs_instantiated_image target association sourceLookup targetLookup pinWf.2.1
+    (fun levels => (pinImages levels).get index bound)
+    sourceBase targetBase sourceUs targetUs sourceArity targetArity universeImage
+
 end Ix.CompileCert
