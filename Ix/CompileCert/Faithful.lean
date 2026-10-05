@@ -1561,6 +1561,20 @@ theorem InstalledTelescope.image {V : Type u} [Kernel.SetTheory V]
       obtain ⟨targetResult, transported, residualImage⟩ := ih bodyImage
       exact ⟨targetResult, .cons (domainImage.denotes domainRead) argumentTyped transported, residualImage⟩
 
+theorem InstalledTelescope.result_of_stripPis {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result target : Kernel.Expr} {arguments : List V}
+    {binders : List (Kernel.Expr × Kernel.BinderMeta)}
+    (typed : InstalledTelescope values env levels ρ expression arguments finalρ result)
+    (shape : expression.stripPis arguments.length = some (binders, target)) : result = target := by
+  induction typed generalizing binders with
+  | nil => exact congrArg Prod.snd (Option.some.inj shape)
+  | cons domain member rest ih =>
+    simp [Kernel.Expr.stripPis] at shape
+    obtain ⟨binders, stripped, _⟩ := shape
+    exact ih stripped
+
 open Kernel.SetTheory in
 /-- Apply a member of the actual installed type to a dependent typed tuple.
 No binder regime is guessed, and no unchecked source telescope is substituted. -/

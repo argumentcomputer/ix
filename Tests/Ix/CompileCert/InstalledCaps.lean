@@ -145,7 +145,20 @@ def run : IO Unit := do
     (checkInstalledAssociation unknownSource unknownTarget id == none)
   require "missing association is definite certificate refusal"
     (checkInstalledAssociation unknownSource ⟨[]⟩ id == some false)
-  IO.println "installed capabilities: independent Nat/PUnit/combined folds; 44 association controls passed"
+  require "actual checked Eq.refl supplies exact installed equation frame"
+    (readInstalledEquationFrame combinedTarget eqReflName 2).isSome
+  require "equation frame rejects short argument telescope"
+    (readInstalledEquationFrame combinedTarget eqReflName 1).isNone
+  require "equation frame rejects excess argument telescope"
+    (readInstalledEquationFrame combinedTarget eqReflName 3).isNone
+  require "equation frame rejects missing exact identity"
+    (readInstalledEquationFrame combinedTarget (sourceName `missingEquation) 2).isNone
+  let forgedName := sourceName `forgedEquation
+  let forgedType : Expr := .app (.app (.app (.const (sourceName `fakeEq) [.zero])
+    (.sort .zero)) (.sort .zero)) (.sort .zero)
+  require "equation frame rejects unpinned equality head"
+    (readInstalledEquationFrame ⟨[.axiomInfo ⟨forgedName, [], forgedType⟩]⟩ forgedName 0).isNone
+  IO.println "installed capabilities: independent Nat/PUnit/combined folds; 49 association controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 
