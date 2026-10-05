@@ -81,10 +81,13 @@ jobs:
       # sticky disk. The model workspace holds Mathlib, whose cache supplies
       # pinned dependency objects only, never this checkout's kernel or
       # fixtures.
+      # Mathlib's objects come from its cache, not from the build above, which
+      # never enters the model workspace. They persist on the sticky disk, so a
+      # warm run fetches nothing. Lake clones the pinned packages on the first
+      # command that loads the workspace.
       - name: Fetch pinned set-theory dependencies
         if: github.event_name != 'push'
         run: |
-          MATHLIB_NO_CACHE_ON_UPDATE=1 lake -d Models/SetTheory update
           lake -d Models/SetTheory exe cache get \
             Mathlib.SetTheory.Cardinal.Regular \
             Mathlib.SetTheory.ZFC.VonNeumann \
