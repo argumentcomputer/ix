@@ -1,5 +1,5 @@
 import Ix.CompileCert.Entry
-import Tests.Ix.Kernel.IxonFixtures
+import IxC.Fixtures.IxonFixtures
 
 /-! Adversarial controls for direct source/reader association. Target
 admission is deliberately unchanged in the source-tamper controls: they

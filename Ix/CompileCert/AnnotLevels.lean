@@ -1,5 +1,5 @@
 import Ix.CompileCert.AnnotLiterals
-import Ix.Kernel.Model.Levels
+import IxC.Kernel.Model.Levels
 
 /-! Reading parameter locality without a source EnvModel. The proof follows
 Kernel.Model.denoteMeta_params_ext, using the already proved bare

@@ -1,11 +1,11 @@
 import Ix.CompileCert.Domain
-import Ix.Kernel.Admission.Theorems
-import Ix.Kernel.Verify.Cached.PushChain
-import Ix.Kernel.Verify.Cached.BridgeCS4
-import Ix.Kernel.Model.IndUnitLaw
-import Ix.Kernel.Model.IOLicense
-import Ix.Kernel.Model.Rules.RedSoundKit
-import Ix.Kernel.Model.Rules.IotaSoundKit
+import IxC.Kernel.Admission.Theorems
+import IxC.Kernel.Verify.Cached.PushChain
+import IxC.Kernel.Verify.Cached.BridgeCS4
+import IxC.Kernel.Model.IndUnitLaw
+import IxC.Kernel.Model.IOLicense
+import IxC.Kernel.Model.Rules.RedSoundKit
+import IxC.Kernel.Model.Rules.IotaSoundKit
 
 /-! # Admission-connected direct-cone certification
 

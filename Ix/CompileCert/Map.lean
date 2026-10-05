@@ -1,5 +1,5 @@
 import Ix.CompileCert.Source
-import Ix.Kernel.Ixon.Reader
+import IxC.Kernel.Ixon.Reader
 
 /-! # Explicit proposed source maps
 

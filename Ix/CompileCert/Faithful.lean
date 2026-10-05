@@ -1,10 +1,10 @@
 import Ix.CompileCert.Translate
-import Ix.Kernel.Ixon.ReaderSpec
-import Ix.Kernel.Denotes
-import Ix.Kernel.Verify.Subst
-import Ix.Kernel.Verify.Close
-import Ix.Kernel.Verify.InferLeaves
-import Ix.Kernel.Verify.PropWhen
+import IxC.Kernel.Ixon.ReaderSpec
+import IxC.Kernel.Denotes
+import IxC.Kernel.Verify.Subst
+import IxC.Kernel.Verify.Close
+import IxC.Kernel.Verify.InferLeaves
+import IxC.Kernel.Verify.PropWhen
 
 /-! # Direct reader correspondence
 
@@ -950,7 +950,7 @@ theorem levelSubst_get (valuation : Kernel.Name → Nat) {parameters : List Kern
         have different : parameter ≠ parameters[index] := by
           intro equal
           exact distinct.1 (equal ▸ List.getElem_mem bound)
-        simpa only [List.getElem_cons_succ, Kernel.Level.substFn, if_neg different] using
+        simpa only [List.getElem_cons_succ, Kernel.Level.substFn, ite_eq_right different] using
           ih distinct.2 (by simpa using arity) index bound
 
 theorem levelEvalEqList_of_values {valuation : Kernel.Name → Nat} {left right : List Kernel.Level}
@@ -1486,7 +1486,7 @@ theorem originalProjectionSelection_reading {source : Source} (site : SourceProj
       (originalProjectionSelection site values levels parameters valid subject) := by
   classical
   unfold originalProjectionSelection
-  rw [dif_pos present]
+  rw [dite_eq_left present]
   exact ⟨Classical.choose present, (Classical.choose_spec present).1,
     (Classical.choose_spec present).2, rfl⟩
 
@@ -1621,10 +1621,10 @@ theorem ValuationLift.push {V : Type u} {amount cutoff : Nat} {ρ target : Nat �
   | succ index =>
     have old := related index
     by_cases below : index ≥ cutoff
-    · simp only [if_pos below] at old
+    · simp only [ite_eq_left below] at old
       simpa [show index + 1 ≥ cutoff + 1 by omega, Kernel.push,
         Nat.add_right_comm index 1 amount] using old
-    · simp only [if_neg below] at old
+    · simp only [ite_eq_right below] at old
       simpa [show ¬ index + 1 ≥ cutoff + 1 by omega, Kernel.push] using old
 
 /-- Public installed denotation is preserved by capture-avoiding weakening.
@@ -1643,11 +1643,11 @@ theorem denotes_lift {V : Type u} [Kernel.SetTheory V]
     simp only [Kernel.Expr.liftLooseBVars]
     split <;> rename_i h
     · have same := related index
-      rw [if_pos h] at same
+      rw [ite_eq_left h] at same
       rw [← same]
       exact .bvar
     · have same := related index
-      rw [if_neg h] at same
+      rw [ite_eq_right h] at same
       rw [← same]
       exact .bvar
   | sort => exact .sort
@@ -1729,7 +1729,7 @@ theorem denotes_instantiate1Lift {V : Type u} [Kernel.SetTheory V]
     · rename_i equal
       subst index
       rw [insertValuation_at]
-      exact denotes_lift replacementRead (by intro index; rw [if_pos (Nat.zero_le index)])
+      exact denotes_lift replacementRead (by intro index; rw [ite_eq_left (Nat.zero_le index)])
     · rename_i unequal
       split
       · rename_i above
@@ -1972,7 +1972,7 @@ theorem InstalledBinderPrefix.inhabited {V : Type u} [Kernel.SetTheory V]
         Kernel.SetModel.lamR_mem ?_⟩
       intro x hx
       dsimp [witness]
-      rw [dif_pos hx]
+      rw [dite_eq_left hx]
       exact Classical.choose_spec (inhabited x hx)
 
 open Kernel.SetTheory in

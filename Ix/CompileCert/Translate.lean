@@ -1,6 +1,6 @@
 import Ix.CompileCert.Map
 import Ix.IxonUniv
-import Ix.Kernel.Verify.Level
+import IxC.Kernel.Verify.Level
 
 /-! # Independent direct export into reader syntax
 

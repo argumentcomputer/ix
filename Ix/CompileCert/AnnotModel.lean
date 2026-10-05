@@ -1,5 +1,5 @@
 import Ix.CompileCert.AnnotLevels
-import Ix.Kernel.Verify.EnvGuards
+import IxC.Kernel.Verify.EnvGuards
 
 /-! Assemble the source annotated carrier without identifying independently
 chosen model interpretations. Only source syntactic invariants and exact

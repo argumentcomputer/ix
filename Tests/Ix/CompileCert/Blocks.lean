@@ -1,5 +1,5 @@
 import Ix.CompileCert.Entry
-import Tests.Ix.Kernel.IxonFixtures
+import IxC.Fixtures.IxonFixtures
 import Tests.Ix.CompileCert.BlockDefs
 
 namespace Tests.Ix.CompileCert.Blocks
