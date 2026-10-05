@@ -72,19 +72,14 @@ jobs:
         run: |
           lake exe ixon-v4-primitives
           lake exe ixon-v4-tests --primitives
-      # The certified gate: the standalone kernel package build with its
-      # audits (its own workspace, so host dependencies cannot enter the
-      # certified import closure even on a warm disk), the host-side tests,
-      # the codec and block-order differentials, the set-theory model, the
-      # fences, the entry cases and the reader fidelity. The kernel artifacts
-      # in .lake/kernel are shared with the build above and persist on the
-      # sticky disk. The model workspace holds Mathlib, whose cache supplies
-      # pinned dependency objects only, never this checkout's kernel or
-      # fixtures.
-      # Mathlib's objects come from its cache, not from the build above, which
-      # never enters the model workspace. They persist on the sticky disk, so a
-      # warm run fetches nothing. Lake clones the pinned packages on the first
-      # command that loads the workspace.
+      # The certified kernel gate (docs/kernel.md): the standalone IxKernel
+      # package build, which has no dependencies and so proves the kernel needs
+      # only the toolchain, then the host tests, the Rust differentials, the
+      # set-theory model, the fences, the entry cases and the reader fidelity.
+      # The kernel artifacts are the ones the build above already produced in
+      # .lake/kernel. The model lives in its own workspace so Mathlib stays
+      # out of the root package; its objects come from Mathlib's cache and
+      # persist on the sticky disk, so a later run fetches nothing.
       - name: Fetch pinned set-theory dependencies
         if: github.event_name != 'push'
         run: |
