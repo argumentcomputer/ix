@@ -281,8 +281,9 @@
             lakeBuildArgs
             // {
               name = "Ix";
-              # Shared facets traverse whole dependency libraries, including proofs.
-              # Executables compile native objects for their actual import closures.
+              # `Ix:shared` would fetch the kernel package's shared facets, which
+              # import each other and cover the whole theory; executables compile
+              # the native objects of their own import closures instead.
               buildLibrary = false;
             }
           );
