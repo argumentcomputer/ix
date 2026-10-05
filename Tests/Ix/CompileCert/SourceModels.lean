@@ -17,6 +17,34 @@ def label : SourceModelError → String
 strict outcomes until this source-only preparation is independently gated. -/
 def run : IO Unit := do
   let env ← getCompileEnv #[Compiled.prefixName]
+  -- Original constructor metadata, including the parameter/field offset.
+  -- These exercise the source computation relation, not target reduction.
+  for (owner, params, fields) in
+      [(Compiled.prefixName ++ `Pair, [Lean.Expr.sort .zero],
+          [Lean.Expr.bvar 7, Lean.Expr.bvar 11]),
+       (Compiled.prefixName ++ `Node, [], [Lean.Expr.bvar 13, Lean.Expr.bvar 17])] do
+    let captured ← IO.ofExcept (captureCone env.find? [owner] 128)
+    for field in [:2] do
+      let site ← IO.ofExcept (sourceProjectionSite captured.source owner field)
+      let operand := sourceApps (.const site.ctorName []) (params ++ fields)
+      let actual ← IO.ofExcept (sourceProjectionCompute captured.source (.proj owner field operand))
+      unless some actual == fields[field]? do
+        throw (IO.userError "source projection selected the wrong constructor field")
+      IO.println s!"PASS: original constructor projection {owner}.{field} with {params.length} parameters"
+    for expression in
+        [Lean.Expr.proj owner 2 (.bvar 0),
+         .proj owner 0 (sourceApps (.const `Unrelated.constructor []) (params ++ fields)),
+         .proj owner 0 (.bvar 0)] do
+      match sourceProjectionCompute captured.source expression with
+      | .error _ => pure ()
+      | .ok _ => throw (IO.userError "malformed source projection was accepted")
+    let site ← IO.ofExcept (sourceProjectionSite captured.source owner 0)
+    for arguments in [params, params ++ fields ++ [.bvar 19]] do
+      match sourceProjectionCompute captured.source
+          (.proj owner 0 (sourceApps (.const site.ctorName []) arguments)) with
+      | .error _ => pure ()
+      | .ok _ => throw (IO.userError "wrong-arity source constructor projection was accepted")
+  IO.println "source constructor computation: 4 positive and 10 malformed controls passed"
   let mut installedCount := 0
   let mut unsupportedCount := 0
   for root in Compiled.roots do

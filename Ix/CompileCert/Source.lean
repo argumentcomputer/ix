@@ -159,4 +159,104 @@ where
       | fuel + 1 =>
         loop fuel (names ++ captured.source.declarations.flatMap declarationRefs)
 
+/-- Original structure-like projection metadata. Mutual/nested membership
+is retained in `owner`; this predicate does not require non-recursion or
+non-nesting, and it never consults a target declaration. -/
+def SourceProjectionShape (owner : Lean.InductiveVal) (ctor : Lean.ConstructorVal)
+    (field : Nat) : Prop :=
+  owner.ctors = [ctor.name] ∧ owner.numIndices = 0 ∧ ctor.induct = owner.name ∧
+    ctor.cidx = 0 ∧ ctor.numParams = owner.numParams ∧ field < ctor.numFields
+
+instance (owner : Lean.InductiveVal) (ctor : Lean.ConstructorVal) (field : Nat) :
+    Decidable (SourceProjectionShape owner ctor field) :=
+  inferInstanceAs (Decidable (owner.ctors = [ctor.name] ∧ owner.numIndices = 0 ∧
+    ctor.induct = owner.name ∧ ctor.cidx = 0 ∧ ctor.numParams = owner.numParams ∧ field < ctor.numFields))
+
+structure SourceProjectionSite (source : Source) where
+  ownerName : Lean.Name
+  ctorName : Lean.Name
+  owner : Lean.InductiveVal
+  ctor : Lean.ConstructorVal
+  field : Nat
+  owner_original : source.find ownerName = some (.inductInfo owner)
+  ctor_original : source.find ctorName = some (.ctorInfo ctor)
+  shape : SourceProjectionShape owner ctor field
+
+def sourceProjectionSite (source : Source) (ownerName : Lean.Name) (field : Nat) :
+    Except String (SourceProjectionSite source) :=
+  match ho : source.find ownerName with
+  | some (.inductInfo owner) =>
+    match owner.ctors with
+    | [ctorName] =>
+      match hc : source.find ctorName with
+      | some (.ctorInfo ctor) =>
+        if shape : SourceProjectionShape owner ctor field then
+          .ok ⟨ownerName, ctorName, owner, ctor, field, ho, hc, shape⟩
+        else .error "source projection constructor ownership, arity or field position is invalid"
+      | _ => .error "source projection constructor is missing"
+    | _ => .error "source projection owner does not have exactly one constructor"
+  | _ => .error "source projection owner is not an original inductive"
+
+/-- The constructor computation specified by the original source metadata:
+parameters precede fields, and a projection selects field `i`, not argument
+`i` of the full constructor spine. An incomplete/overapplied spine declines.
+This is the source computation interface; it is not the target checker's
+`.proj` capability test or a theorem about arbitrary raw `Denotes`. -/
+def sourceProjectionField {source : Source} (site : SourceProjectionSite source)
+    (arguments : List Lean.Expr) : Option Lean.Expr :=
+  if arguments.length = site.owner.numParams + site.ctor.numFields then
+    arguments[site.owner.numParams + site.field]?
+  else none
+
+theorem sourceProjectionField_constructor {source : Source} (site : SourceProjectionSite source)
+    (params fields : List Lean.Expr) (parameterCount : params.length = site.owner.numParams)
+    (fieldCount : fields.length = site.ctor.numFields) :
+    sourceProjectionField site (params ++ fields) = fields[site.field]? := by
+  simp only [sourceProjectionField, List.length_append, parameterCount, fieldCount, ↓reduceIte]
+  rw [List.getElem?_append_right (by omega)]
+  simp [parameterCount]
+
+def sourceApps : Lean.Expr → List Lean.Expr → Lean.Expr
+  | head, [] => head
+  | head, arg :: args => sourceApps (.app head arg) args
+
+def sourceAppSpine : Lean.Expr → Lean.Expr × List Lean.Expr
+  | .app f a =>
+    let (head, args) := sourceAppSpine f
+    (head, args ++ [a])
+  | e => (e, [])
+
+theorem sourceAppSpine_apps (head : Lean.Expr) (args : List Lean.Expr) :
+    sourceAppSpine (sourceApps head args) =
+      ((sourceAppSpine head).1, (sourceAppSpine head).2 ++ args) := by
+  induction args generalizing head with
+  | nil => simp [sourceApps]
+  | cons arg args ih => simp [sourceApps, ih, sourceAppSpine, List.append_assoc]
+
+/-- The source projection computation is checked against original owner
+and constructor records. Structural expression traversal ignores cached
+hashes and does not ask either compiler or target checker to reduce it. -/
+def sourceProjectionCompute (source : Source) (expression : Lean.Expr) : Except String Lean.Expr := do
+  let .proj owner field operand := expression | throw "not a source projection"
+  let site ← sourceProjectionSite source owner field
+  let (.const ctor _, arguments) := sourceAppSpine operand
+    | throw "source projection operand is not a constructor application"
+  unless ctor == site.ctorName do throw "source projection uses a different constructor"
+  let some value := sourceProjectionField site arguments
+    | throw "source projection constructor spine has the wrong arity"
+  return value
+
+theorem sourceProjectionCompute_constructor {source : Source} {owner : Lean.Name} {field : Nat}
+    {site : SourceProjectionSite source}
+    (metadata : sourceProjectionSite source owner field = .ok site)
+    (levels : List Lean.Level) (params fields : List Lean.Expr)
+    (parameterCount : params.length = site.owner.numParams)
+    (fieldCount : fields.length = site.ctor.numFields) {value : Lean.Expr}
+    (selected : fields[site.field]? = some value) :
+    sourceProjectionCompute source
+      (.proj owner field (sourceApps (.const site.ctorName levels) (params ++ fields))) = .ok value := by
+  have computed := sourceProjectionField_constructor site params fields parameterCount fieldCount
+  simp [sourceProjectionCompute, metadata, sourceAppSpine_apps, sourceAppSpine,
+    bind, Except.bind, pure, Except.pure, computed, selected]
+
 end Ix.CompileCert
