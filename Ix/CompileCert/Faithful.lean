@@ -1011,4 +1011,48 @@ theorem denotes_mkAppN_head {V : Type u} [Kernel.SetTheory V]
     cases readHead with
     | app head _ => exact ⟨_, head⟩
 
+theorem InstalledTelescope.read {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope values env levels ρ expression arguments finalρ result)
+    {type : V} (denoted : Kernel.Denotes values env levels ρ expression type) :
+    ∃ residual, Kernel.Denotes values env levels finalρ result residual := by
+  induction typed generalizing type with
+  | nil => exact ⟨type, denoted⟩
+  | cons domainDenoted argumentTyped rest ih =>
+    cases denoted with
+    | pi hA hB hP =>
+      obtain rfl := Kernel.Denotes_functional domainDenoted hA
+      exact ih (hB _ argumentTyped)
+
+theorem valuationLift_two {V : Type u} (ρ : Nat → V) (subject proposition : V) :
+    ValuationLift 2 0 ρ (Kernel.push proposition (Kernel.push subject ρ)) := by
+  intro index
+  simp [Kernel.push]
+
+theorem denotes_forall_domain {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {domain body : Kernel.Expr} {binder : Kernel.BinderMeta} {type : V}
+    (read : Kernel.Denotes values env levels ρ (.forallE domain body binder) type) :
+    ∃ value, Kernel.Denotes values env levels ρ domain value := by
+  cases read with
+  | pi domainRead _ _ => exact ⟨_, domainRead⟩
+
+open Kernel.SetTheory in
+theorem denotes_church_continuation {V : Type u} [Kernel.SetTheory V]
+    {values : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
+    {levels : Kernel.Name → Nat} {ρ : Nat → V}
+    {continuation : Kernel.Expr} {outer inner : Kernel.BinderMeta} {type proposition : V}
+    (read : Kernel.Denotes values env levels ρ
+      (.forallE (.sort .zero) (.forallE continuation (.bvar 1) inner) outer) type)
+    (typed : proposition ∈ˢ univ 0) :
+    ∃ continuationType, Kernel.Denotes values env levels (Kernel.push proposition ρ)
+      continuation continuationType := by
+  cases read with
+  | pi sortRead bodyRead _ =>
+    cases sortRead
+    exact denotes_forall_domain (bodyRead proposition typed)
+
 end Ix.CompileCert

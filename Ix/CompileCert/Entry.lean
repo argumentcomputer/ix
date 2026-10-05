@@ -960,6 +960,12 @@ def liftSourceFieldDomains : Nat → List (Kernel.Expr × Kernel.BinderMeta) →
   | index, (domain, binder) :: rest =>
     (domain.liftLooseBVars 2 index, binder) :: liftSourceFieldDomains (index + 1) rest
 
+theorem liftSourceFieldDomains_length (index : Nat) (fields : List (Kernel.Expr × Kernel.BinderMeta)) :
+    (liftSourceFieldDomains index fields).length = fields.length := by
+  induction fields generalizing index with
+  | nil => rfl
+  | cons field rest ih => simp only [liftSourceFieldDomains, List.length_cons, ih]
+
 /-- Data extracted from the *installed* headers, independent of the raw
 generator's binder annotations. The checker below binds all three headers to
 their actual environment entries before this relation is used. -/
@@ -985,6 +991,12 @@ structure SourceCoverShapeData where
 
 def sourceForalls (binders : List (Kernel.Expr × Kernel.BinderMeta)) (body : Kernel.Expr) : Kernel.Expr :=
   binders.foldr (fun (domain, binder) rest => .forallE domain rest binder) body
+
+theorem sourceForalls_binders (binders : List (Kernel.Expr × Kernel.BinderMeta))
+    (body : Kernel.Expr) : InstalledBinderPrefix binders.length (sourceForalls binders body) := by
+  induction binders with
+  | nil => exact .zero body
+  | cons binder rest ih => exact .succ ih
 
 /-- Typed argument tuples depend on binder domains, not the regime of the
 enclosing forall. Each complete telescope is interpreted with its own regime. -/
@@ -1332,6 +1344,224 @@ theorem SourceCoverInstalledShape.equality_value {V : Type u} [Kernel.SetTheory 
   obtain ⟨E, eqRead⟩ := denotes_mkAppN_head _ expanded
   exact ⟨E, eqRead, Kernel.Denotes_functional read
     (receipt.equality_denotes model levels ρ parameters parameterCount fields subject proposition E eqRead)⟩
+
+open Kernel.SetTheory in
+theorem SourceCoverInstalledShape.carrier_denotes {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams) (extras : List V) :
+    Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments ρ parameters) extras)
+      (Kernel.Expr.mkAppN (.const receipt.data.owner.name
+        (receipt.data.owner.levelParams.map Kernel.Level.param))
+        (sourceParameterVars site.owner.numParams extras.length))
+      (parameters.foldl app (model.cval (sourceName site.ownerName) levels)) := by
+  have head := denotes_self_instance (values := model.cval) (levels := levels)
+    (ρ := pushArguments (pushArguments ρ parameters) extras) receipt.ownerLookup
+  have spine := sourceParameterVars_pushed (values := model.cval) (env := coverage.env)
+    (levels := levels) ρ parameters extras
+  rw [parameterCount] at spine
+  have result := denotes_mkAppN head spine
+  have ownerName := receipt.shape.1
+  simpa only [Kernel.ConstantInfo.toConstantVal, ownerName] using result
+
+open Kernel.SetTheory in
+theorem SourceCoverInstalledShape.constructor_result_denotes {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (fields : SourceFieldValues site V) :
+    Kernel.Denotes model.cval coverage.env levels
+      (pushArguments (pushArguments ρ parameters) fields.val) receipt.data.constructorResult
+      (parameters.foldl app (model.cval (sourceName site.ownerName) levels)) := by
+  rcases receipt.shape with ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, resultType, _⟩
+  rw [resultType]
+  simpa only [fields.property] using
+    receipt.carrier_denotes model levels ρ parameters parameterCount fields.val
+
+/-- Original constructor field typing, read from the independently installed
+source constructor. This predicate does not mention the lowered projection. -/
+def SourceCoverValidFields {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) (parameters : List V)
+    (fields : SourceFieldValues site V) : Prop :=
+    InstalledTelescope model.cval coverage.env levels (pushArguments ρ parameters)
+      (sourceForalls receipt.data.fields receipt.data.constructorResult) fields.val
+      (pushArguments (pushArguments ρ parameters) fields.val) receipt.data.constructorResult
+
+open Kernel.SetTheory in
+theorem SourceCoverInstalledShape.constructor_fields {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (parameterTyping : InstalledTelescope model.cval coverage.env levels ρ receipt.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort receipt.data.level)) :
+    ∃ type, Kernel.Denotes model.cval coverage.env levels (pushArguments ρ parameters)
+      (sourceForalls receipt.data.fields receipt.data.constructorResult) type ∧
+      parameters.foldl app (model.cval (sourceName site.ctorName) levels) ∈ˢ type := by
+  rcases receipt.shape with ⟨_, constructorName, _, _, _, _, count, _, domains, _, _,
+    ownerType, constructorType, _⟩
+  rw [ownerType] at parameterTyping
+  have transferred := (sourceForalls_transfer (targetBody := sourceForalls receipt.data.fields
+    receipt.data.constructorResult) domains.symm (parameterCount.trans count.symm) parameterTyping).2
+  rw [← constructorType] at transferred
+  have result := transferred.model_apply model receipt.constructor_member
+  simpa only [Kernel.ConstantInfo.toConstantVal, Kernel.ConstantInfo.name, constructorName] using result
+
+open Kernel.SetTheory in
+theorem SourceCoverInstalledShape.constructor_typed {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (parameterTyping : InstalledTelescope model.cval coverage.env levels ρ receipt.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort receipt.data.level))
+    (fields : SourceFieldValues site V)
+    (valid : SourceCoverValidFields receipt model levels ρ parameters fields) :
+    originalConstructorValue site model.cval levels parameters fields ∈ˢ
+      parameters.foldl app (model.cval (sourceName site.ownerName) levels) := by
+  obtain ⟨type, read, member⟩ := receipt.constructor_fields model levels ρ parameters parameterCount parameterTyping
+  obtain ⟨result, readResult, memberResult⟩ := valid.apply read member
+  obtain rfl := Kernel.Denotes_functional readResult
+    (receipt.constructor_result_denotes model levels ρ parameters parameterCount fields)
+  simpa only [originalConstructorValue, List.foldl_append] using memberResult
+
+open Kernel.SetTheory in
+/-- Specialize the actually admitted coverage theorem to typed original
+parameters and an arbitrary member of the original carrier. -/
+theorem SourceCoverInstalledShape.church {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (parameterTyping : InstalledTelescope model.cval coverage.env levels ρ receipt.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort receipt.data.level))
+    (subject : V)
+    (subjectTyped : subject ∈ˢ parameters.foldl app (model.cval (sourceName site.ownerName) levels)) :
+    ∃ type, Kernel.Denotes model.cval coverage.env levels
+      (Kernel.push subject (pushArguments ρ parameters))
+      (.forallE (.sort .zero) (.forallE receipt.data.continuation (.bvar 1)
+        receipt.data.continuationBinder) receipt.data.propositionBinder) type ∧
+      app (parameters.foldl app (model.cval coverage.header.name levels)) subject ∈ˢ type := by
+  rcases receipt.shape with ⟨_, _, theoremName, _, _, _, count, _, _, domains, _,
+    ownerType, _, _, subjectType, _, _, _, theoremType⟩
+  rw [ownerType] at parameterTyping
+  have transferred := (sourceForalls_transfer
+    (targetBody := .forallE receipt.data.subjectType
+      (.forallE (.sort .zero) (.forallE receipt.data.continuation (.bvar 1)
+        receipt.data.continuationBinder) receipt.data.propositionBinder) receipt.data.subjectBinder)
+    domains.symm (parameterCount.trans count.symm) parameterTyping).2
+  rw [← theoremType] at transferred
+  obtain ⟨type, read, member⟩ := transferred.model_apply model receipt.theorem_member
+  have subjectRead := receipt.carrier_denotes model levels ρ parameters parameterCount []
+  simp only [List.length_nil, pushArguments] at subjectRead
+  rw [← subjectType] at subjectRead
+  have specialized := installed_forall_elim read member subjectRead subjectTyped
+  simpa only [Kernel.ConstantInfo.toConstantVal, Kernel.ConstantInfo.name, theoremName] using specialized
+
+open Kernel.SetTheory in
+/-- The independently admitted coverage theorem covers every member of the
+original source carrier, with fields typed by its actual original constructor.
+This discharges the semantic coverage premise for a checked installed receipt;
+it does not assert full-domain receipt production or projection computation. -/
+theorem SourceCoverInstalledShape.semantic_cover {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (parameterTyping : InstalledTelescope model.cval coverage.env levels ρ receipt.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort receipt.data.level))
+    (subject : V)
+    (subjectTyped : subject ∈ˢ parameters.foldl app (model.cval (sourceName site.ownerName) levels)) :
+    SemanticConstructorCover (SourceCoverValidFields receipt model levels ρ parameters)
+      (originalConstructorValue site model.cval levels parameters) subject := by
+  intro proposition propositionTyped continuation
+  obtain ⟨churchType, churchRead, churchMember⟩ :=
+    receipt.church model levels ρ parameters parameterCount parameterTyping subject subjectTyped
+  apply installed_church_elim churchRead churchMember proposition propositionTyped
+  obtain ⟨continuationType, continuationRead⟩ := denotes_church_continuation churchRead propositionTyped
+  refine ⟨continuationType, continuationRead, ?_⟩
+  rcases receipt.shape with ⟨_, _, _, _, _, _, _, fieldCount, _, _, domains,
+    _, _, _, _, _, propositionIndex, continuationShape, _⟩
+  have coverageCount : receipt.data.coverageFields.length = site.ctor.numFields := by
+    have lengths := congrArg List.length domains
+    simpa only [List.length_map, liftSourceFieldDomains_length, fieldCount] using lengths
+  have fieldsRead := continuationRead
+  rw [continuationShape] at fieldsRead
+  apply (sourceForalls_binders receipt.data.coverageFields _).inhabited fieldsRead
+  intro arguments finalρ result length typed
+  let fields : SourceFieldValues site V := ⟨arguments, length.trans coverageCount⟩
+  obtain ⟨constructorType, constructorRead, _⟩ :=
+    receipt.constructor_fields model levels ρ parameters parameterCount parameterTyping
+  have originalLength : arguments.length = receipt.data.fields.length :=
+    (length.trans coverageCount).trans fieldCount.symm
+  obtain ⟨originalFinal, originalTyped, _⟩ := sourceForalls_reflect_lift domains originalLength
+    constructorRead typed (valuationLift_two (pushArguments ρ parameters) subject proposition)
+  have originalFinalEq := originalTyped.final_valuation
+  have valid : SourceCoverValidFields receipt model levels ρ parameters fields := by
+    rw [originalFinalEq] at originalTyped
+    exact originalTyped
+  have resultEq := (sourceForalls_transfer (targetBinders := receipt.data.coverageFields)
+    (targetBody := Kernel.Expr.forallE receipt.data.equalityType (.bvar receipt.data.propositionIndex)
+      receipt.data.equalityBinder) rfl length typed).1
+  have finalEq := typed.final_valuation
+  obtain ⟨leafType, leafRead⟩ := typed.read fieldsRead
+  rw [resultEq, finalEq, propositionIndex] at leafRead
+  obtain ⟨equalityType, equalityRead⟩ := denotes_forall_domain leafRead
+  obtain ⟨E, eqRead, equalityValue⟩ := receipt.equality_value model levels ρ parameters
+    parameterCount fields subject proposition equalityType equalityRead
+  rw [equalityValue] at equalityRead
+  have carrierTyped := receipt.owner_apply model parameters parameterCount parameterTyping
+  have constructorTyped := receipt.constructor_typed model levels ρ parameters parameterCount
+    parameterTyping fields valid
+  have slot : (pushArguments (Kernel.push proposition (Kernel.push subject (pushArguments ρ parameters)))
+      arguments) site.ctor.numFields = proposition := by
+    have above := pushArguments_above arguments
+      (Kernel.push proposition (Kernel.push subject (pushArguments ρ parameters))) 0
+    simpa only [length.trans coverageCount, Nat.add_zero, Kernel.push] using above
+  have inhabited := installed_eq_implication_inhabited model eqRead carrierTyped subjectTyped
+    constructorTyped equalityRead leafRead slot (fun equal => continuation fields valid equal.symm)
+  refine ⟨leafType, ?_, inhabited⟩
+  simpa only [resultEq, finalEq, propositionIndex] using leafRead
+
+open Kernel.SetTheory in
+/-- Arbitrary carrier values have original-constructor presentations, with
+the exact dependent field typing derived above. This is the set-level
+coverage conclusion of the admitted Church certificate. -/
+theorem SourceCoverInstalledShape.constructor_presentation {V : Type u} [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name}
+    {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
+    {coverage : SourceConstructorCoverChecked installed site}
+    (receipt : SourceCoverInstalledShape coverage) (model : Kernel.Model V coverage.env)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (parameters : List V) (parameterCount : parameters.length = site.owner.numParams)
+    (parameterTyping : InstalledTelescope model.cval coverage.env levels ρ receipt.data.owner.type
+      parameters (pushArguments ρ parameters) (.sort receipt.data.level))
+    (subject : V)
+    (subjectTyped : subject ∈ˢ parameters.foldl app (model.cval (sourceName site.ownerName) levels)) :
+    ∃ fields : SourceFieldValues site V,
+      SourceCoverValidFields receipt model levels ρ parameters fields ∧
+      originalConstructorValue site model.cval levels parameters fields = subject :=
+  (semanticConstructorCover_iff _ _ subject).mp
+    (receipt.semantic_cover model levels ρ parameters parameterCount parameterTyping subject subjectTyped)
 
 /-- Value denotation for the actually installed normalized definitions.
 Original-source value correspondence is a separate semantic pull-back. -/
