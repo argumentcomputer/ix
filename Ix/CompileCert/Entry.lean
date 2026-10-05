@@ -7984,4 +7984,128 @@ theorem RuleTupleRepresentation.checked_index_pin {V : Type u} [Kernel.SetTheory
   subst annotation
   exact pin
 
+/-- A successful universe check refers to this exact executable-selected
+frame, including its constructor telescope. -/
+theorem InstalledRuleFrame.checked_universes {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
+    (frame : InstalledRuleFrame env name index) {universes constructorUniverses : List Kernel.Level}
+    (checked : checkInstalledRuleUniverses env name index universes constructorUniverses = some true) :
+    universes.length = frame.header.levelParams.length ∧
+    constructorUniverses.length = frame.constructor.levelParams.length ∧
+    ∀ levels, Kernel.Level.substFn levels frame.constructor.levelParams constructorUniverses =
+      Kernel.Level.substFn levels frame.constructor.levelParams
+        (Kernel.recFireComparands frame.rule frame.header.levelParams universes frame.constructor.levelParams [] frame.rulePrefix).1 := by
+  obtain ⟨found, reading, arity, constructorArity, selection⟩ := checkInstalledRuleUniverses_sound checked
+  have same := Option.some.inj (reading.symm.trans (readInstalledRuleFrame_complete frame))
+  subst found
+  exact ⟨arity, constructorArity, selection⟩
+
+/-- Checked all-row rule associations apply to any two actual frames at the
+same mapped owner and ordinal; no caller-chosen rule can substitute for them. -/
+theorem InstalledRuleFrame.checked_images {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    (targetFrame : InstalledRuleFrame targetEnv (names name) index) :
+    sourceFrame.major = targetFrame.major ∧ sourceFrame.rulePrefix = targetFrame.rulePrefix ∧
+    ∀ levels, InstalledRuleImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels) names sourceFrame.rule targetFrame.rule := by
+  have sourceName : sourceFrame.header.name = name := Kernel.Semantics.Env.find?_name sourceFrame.recursorLookup
+  obtain ⟨header, rules, lookup, images⟩ := checkInstalledRecursors_sound target association checked
+    (Kernel.Semantics.Env.find?_mem sourceFrame.recursorLookup)
+  have expected : targetEnv.find? (names sourceFrame.header.name) =
+      some (.recInfo targetFrame.header targetFrame.major targetFrame.rulePrefix targetFrame.rules) := by
+    simpa only [sourceName] using targetFrame.recursorLookup
+  have equal := Kernel.ConstantInfo.recInfo.inj (Option.some.inj (lookup.symm.trans expected))
+  refine ⟨equal.2.1, equal.2.2.1, ?_⟩
+  rw [equal.2.2.2] at images
+  obtain ⟨inside, sourceRule⟩ := List.getElem?_eq_some_iff.mp sourceFrame.ruleLookup
+  obtain ⟨targetInside, targetRule⟩ := List.getElem?_eq_some_iff.mp targetFrame.ruleLookup
+  intro levels
+  simpa only [sourceRule, targetRule, sourceName] using (images levels).at index inside
+
+theorem InstalledRuleFrame.checked_rhs_instance {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    (targetFrame : InstalledRuleFrame targetEnv (names name) index)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceFrame.header.levelParams.length)
+    (targetArity : targetUs.length = targetFrame.header.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+      (sourceFrame.rule.rhs.instantiateLevelParams sourceFrame.header.levelParams sourceUs)
+      (targetFrame.rule.rhs.instantiateLevelParams targetFrame.header.levelParams targetUs) := by
+  have images := (sourceFrame.checked_images target association checked targetFrame).2.2
+  have wf := target.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem targetFrame.recursorLookup)
+  have ruleWf := wf.2.2.2.2.2.1 targetFrame.header targetFrame.major targetFrame.rulePrefix targetFrame.rules rfl
+    targetFrame.rule (List.mem_of_getElem? targetFrame.ruleLookup)
+  exact PullbackMap.fromEnvs_instantiated_image target association sourceFrame.recursorLookup targetFrame.recursorLookup
+    ruleWf.2.1 (fun levels => (images levels).rhs) sourceLevels targetLevels sourceUs targetUs
+    sourceArity targetArity universes
+
+theorem InstalledFireImage.plain_iff {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl source target}
+    (image : InstalledFireImage (V := V) sv tv se te sl tl source target) :
+    source = .plain ↔ target = .plain := by
+  cases image <;> simp
+
+theorem InstalledFireImage.nested_source {V : Type u} [Kernel.SetTheory V]
+    {sv tv se te sl tl source target} {targetLevels : List Kernel.Level} {targetPins : List Kernel.Expr}
+    (image : InstalledFireImage (V := V) sv tv se te sl tl source target)
+    (shape : target = .nested targetLevels targetPins) :
+    ∃ sourceLevels sourcePins, source = .nested sourceLevels sourcePins := by
+  cases shape
+  cases image with
+  | nested _ _ => exact ⟨_, _, rfl⟩
+
+/-- Every nested pin used by the final application is the actual pin from
+the two selected records and the same owner universe instance. -/
+theorem InstalledRuleFrame.checked_nested_pins {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (checked : checkInstalledRecursors sourceEnv targetEnv names = true)
+    {name : Kernel.Name} {index : Nat} (sourceFrame : InstalledRuleFrame sourceEnv name index)
+    (targetFrame : InstalledRuleFrame targetEnv (names name) index)
+    {sourceNestedLevels targetNestedLevels : List Kernel.Level} {sourcePins targetPins : List Kernel.Expr}
+    (sourceShape : sourceFrame.rule.fire = .nested sourceNestedLevels sourcePins)
+    (targetShape : targetFrame.rule.fire = .nested targetNestedLevels targetPins)
+    (sourceLevels targetLevels : Kernel.Name → Nat) (sourceUs targetUs : List Kernel.Level)
+    (sourceArity : sourceUs.length = sourceFrame.header.levelParams.length)
+    (targetArity : targetUs.length = targetFrame.header.levelParams.length)
+    (universes : sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels)) :
+    sourcePins.length = targetPins.length ∧
+    ∀ position, position < sourcePins.length →
+      InstalledExprImage ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+        target.public.cval sourceEnv targetEnv sourceLevels targetLevels
+        ((sourcePins.getD position default).instantiateLevelParams sourceFrame.header.levelParams sourceUs)
+        ((targetPins.getD position default).instantiateLevelParams targetFrame.header.levelParams targetUs) := by
+  have images := (sourceFrame.checked_images target association checked targetFrame).2.2
+  have pinImages : ∀ levels, InstalledSpineImage
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      target.public.cval sourceEnv targetEnv levels
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels name levels) sourcePins targetPins := by
+    intro levels
+    have fire := (images levels).fire
+    rw [sourceShape, targetShape] at fire
+    cases fire with
+    | nested _ pins => exact pins
+  have lengths := (pinImages (fun _ => 0)).length
+  refine ⟨lengths, ?_⟩
+  intro position bound
+  have targetBound : position < targetPins.length := by omega
+  have member : targetPins.getD position default ∈ targetPins := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem targetBound, Option.getD_some]
+    exact List.getElem_mem targetBound
+  have wf := target.internal.base2.wf _ (Kernel.Semantics.Env.find?_mem targetFrame.recursorLookup)
+  have ruleWf := wf.2.2.2.2.2.1 targetFrame.header targetFrame.major targetFrame.rulePrefix targetFrame.rules rfl
+    targetFrame.rule (List.mem_of_getElem? targetFrame.ruleLookup)
+  have pinWf := (ruleWf.2.2.2.2 targetNestedLevels targetPins targetShape).2.2.1 _ member
+  exact PullbackMap.fromEnvs_instantiated_image target association sourceFrame.recursorLookup targetFrame.recursorLookup
+    pinWf.2.1 (fun levels => (pinImages levels).get position bound)
+    sourceLevels targetLevels sourceUs targetUs sourceArity targetArity universes
+
 end Ix.CompileCert
