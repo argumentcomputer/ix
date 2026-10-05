@@ -9477,6 +9477,45 @@ theorem checkedStreams_publicSemanticModel (V : Type u) [Kernel.SetTheory V]
   exact ⟨⟨sourceStrong⟩, target,
     (checkInstalledAssociation_sound checked).semanticModel target sourceStrong.internal.base2.wf, rfl⟩
 
+/-- Public semantic interpretations of the independently installed normalized
+source and the original admitted artifact, both pulled back from one actual
+support interpretation. Each contains its own source-only capability and
+recursor laws. The two checked associations remain explicit executable
+premises; structural row preservation alone is not semantic conservativity.
+This does not identify either interpretation with an independently chosen
+source model or discharge immutable-original normalization/annotation D11. -/
+theorem SourceConstructorCoverChecked.combined_publicSemanticModels
+    (V : Type u) [Kernel.SetTheory V]
+    {input : Input} {installed : SourceNormalizedInstallation input.source input.roots}
+    {site : SourceProjectionSite input.source} (coverage : SourceConstructorCoverChecked installed site)
+    (accepted : AcceptedAssociation input) {support : Array Kernel.Declaration}
+    (bundle : AdmittedSupport accepted.toAdmittedArtifact support) (names : Kernel.Name → Kernel.Name)
+    (checked : checkSupportedArtifactInstalledAssociation accepted bundle coverage.env names = some true)
+    (identityChecked : checkInstalledAssociation accepted.env bundle.env id = some true) :
+    SemanticNamesAgree accepted names ∧
+    ∃ (target : StrongInstalledModel V bundle.env) (source : PublicSemanticModel V coverage.env)
+      (original : PublicSemanticModel V accepted.env),
+      source.model.cval = (PullbackMap.fromEnvs coverage.env bundle.env names).values target.public.cval ∧
+      (∀ name entry, accepted.env.find? name = some entry → ∀ levels,
+        original.model.cval name levels = target.public.cval name levels) ∧
+      (∀ name entry, accepted.env.find? (names name) = some entry → ∀ levels,
+        source.model.cval name levels = original.model.cval (names name)
+          ((PullbackMap.fromEnvs coverage.env bundle.env names).levels name levels)) := by
+  obtain ⟨nameCheck, sourceChecked⟩ := bothChecks_true checked
+  have sourceReceipt := checkInstalledAssociation_sound sourceChecked
+  have originalReceipt := checkInstalledAssociation_sound identityChecked
+  obtain ⟨target⟩ := bundle.strong_model V
+  obtain ⟨sourceStrong⟩ := coverage.strong_model V
+  obtain ⟨originalStrong⟩ := accepted.toAdmittedArtifact.strong_model V
+  let source := sourceReceipt.semanticModel target sourceStrong.internal.base2.wf
+  let original := originalReceipt.semanticModel target originalStrong.internal.base2.wf
+  refine ⟨of_decide_eq_true (Option.some.inj nameCheck), target, source, original, rfl, ?_, ?_⟩
+  · intro name entry lookup levels
+    exact bundle.original_value target.public.cval lookup levels
+  · intro name entry lookup levels
+    exact (bundle.original_value target.public.cval lookup
+      ((PullbackMap.fromEnvs coverage.env bundle.env names).levels name levels)).symm
+
 /-- Exact original bindings take priority over separately proposed generated
 helpers. This is only a name proposal; the installed association checker still
 checks every source row and every compatible alias fiber. -/
