@@ -1581,7 +1581,7 @@ def canonicalAuxOrder (aux : Array (FlatBlockMember m))
     let seedSuffix := s!"{extSeed}_{sourceIdx + 1}"
     let seedName := match nestedPrefix with
       | some prefix' => prefix'.mkStr seedSuffix
-      | none => (Ix.Name.mkAnon.mkStr "IxKernelAux").mkStr seedSuffix
+      | none => (Ix.Name.mkAnon.mkStr "IxCAux").mkStr seedSuffix
     let mut h := Blake3.Rust.Hasher.init ()
     h := h.update "AUX_INDC_VIEW".toUTF8
     h := h.update sourceIdx.toUInt64.toLEBytes

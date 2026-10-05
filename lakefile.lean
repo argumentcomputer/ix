@@ -18,7 +18,7 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
-require «ix-kernel» from "IxKernel" with
+require «ix-kernel» from "IxC" with
   if (get_config? profile).isSome then
     ({} : Lean.NameMap String).insert `profile ""
   else {}
@@ -324,10 +324,10 @@ lean_lib IxSharingVerify where
 
 end IxSharingVerify
 
-section IxKernel
+section IxC
 
 /- The `ix-kernel` dependency owns the certified modules and their artifacts.
-`lake -d IxKernel build --wfail` checks them without host dependencies;
+`lake -d IxC build --wfail` checks them without host dependencies;
 the host tests below consume that same package. See `docs/kernel.md`. -/
 
 /-- The kernel's fences, derived from con-leche's (`Tests/Ix/Kernel/{Layering,
@@ -388,7 +388,7 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- Regenerates `IxKernel/Kernel/Ixon/PinData.lean` (pins and prelude) from a
+/-- Regenerates `IxC/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
   root := `Benchmarks.Kernel.PinGen
@@ -409,7 +409,7 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  run "lake" #["-d", "IxKernel", "build", "--wfail"]
+  run "lake" #["-d", "IxC", "build", "--wfail"]
   run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
@@ -462,4 +462,4 @@ script "check-kernel" (args) := do
   IO.println "Certified kernel checks passed."
   return 0
 
-end IxKernel
+end IxC

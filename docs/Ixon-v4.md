@@ -256,7 +256,7 @@ previous one ends, so the code is bijective. Values below 128, 32 or 8 (for
 `f` = 0, 2 or 4) encode to the same single byte as v3's Tag0, Tag2 or Tag4.
 Larger values encode differently: for example, `Share(8)` is `B8 00`, and the
 Resource claim tag is `E8 01`. The Lean proofs of injectivity, canonicity
-and rejection are in `IxKernel/Ixon/Verify/TagN.lean`.
+and rejection are in `IxC/Ixon/Verify/TagN.lean`.
 
 **Canonical sharing.** A constant's sharing table, and every `Share`
 occurrence, is determined by its expanded anonymous expressions. It is the

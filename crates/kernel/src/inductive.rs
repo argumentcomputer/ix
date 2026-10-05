@@ -1335,7 +1335,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let seed_name = nested_prefix.as_ref().map_or_else(
         || {
           Name::str(
-            Name::str(Name::anon(), "IxKernelAux".to_string()),
+            Name::str(Name::anon(), "IxCAux".to_string()),
             seed_suffix.clone(),
           )
         },

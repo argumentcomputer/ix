@@ -1,7 +1,7 @@
 import Mathlib.SetTheory.Cardinal.Regular
 import Mathlib.SetTheory.ZFC.VonNeumann
 import Mathlib.SetTheory.ZFC.Cardinal
-import IxKernel.Kernel.SetTheory.Core
+import IxC.Kernel.SetTheory.Core
 
 /-!
 # A concrete model of the set-theory interface

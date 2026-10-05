@@ -213,8 +213,8 @@
               ./lakefile.lean
               ./lake-manifest.json
               ./lean-toolchain
-              ./IxKernel/lake-manifest.json
-              ./IxKernel/lean-toolchain
+              ./IxC/lake-manifest.json
+              ./IxC/lean-toolchain
               ./Cargo.toml
               ./Cargo.lock
               (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./crates)

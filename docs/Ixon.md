@@ -78,7 +78,7 @@ and Tag0, which had the same flag widths (4, 2 and 0 bits). For values below
 byte. Larger values are encoded differently.
 
 The implementation is Lean `Ixon.putTagN f flag value` / `Ixon.getTagN f`
-(`IxKernel/Ixon/Codec.lean`, which documents the bit layout) and Rust
+(`IxC/Ixon/Codec.lean`, which documents the bit layout) and Rust
 `ixon::tag::TagN::put` / `TagN::get`.
 
 ### Layout
@@ -122,8 +122,8 @@ to reject. A reader rejects only three things:
 - an 8-byte rung whose value would reach `2^64`;
 - truncated input.
 
-The Lean proofs are in `IxKernel/Ixon/Verify/TagN.lean` (namespace
-`Ixon.Verify.TagN`, built with the codec proofs by `lake -d IxKernel build`):
+The Lean proofs are in `IxC/Ixon/Verify/TagN.lean` (namespace
+`Ixon.Verify.TagN`, built with the codec proofs by `lake -d IxC build`):
 
 - `runGetExact_getTagN_eq`: accepted encodings are canonical;
 - `putTagN_inj`: distinct values or flags have distinct encodings;
@@ -788,7 +788,7 @@ construction, and a partial or best-so-far table is never emitted.
 
 The following theorems are machine-checked in Lean, in `IxSharingVerify`
 (the `IxSharingVerify` library; the TagN theorems are in
-`IxKernel/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
+`IxC/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
 `IxSharingVerify/Audit/Statements.lean` (111 roots), which
 `lake build --wfail IxSharingVerify` checks: every root uses exactly its
 listed axioms, which are among `propext`, `Classical.choice` and

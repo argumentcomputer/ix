@@ -1,5 +1,5 @@
 import Ix.Ixon.Projection.Theorems
-import IxKernel.Kernel.Admission.Audit
+import IxC.Kernel.Admission.Audit
 
 /-! Projection hashing has an explicit boundary outside the dependency-free
 kernel and codec. Only the shared Blake3 types and pure implementation are
@@ -22,8 +22,8 @@ def allowedData (name : Lean.Name) : Bool :=
   name == `Blake3 || name == `Blake3.Pure || Ix.Kernel.Audit.allowed dataPrefixes name dataDenied
 
 def allowedProof (name : Lean.Name) : Bool :=
-  allowedData name || Ix.Kernel.Audit.allowed #[`Lean, `IxKernel.Ixon.Verify, `Ix.Ixon.Projection.Theorems,
-    `IxKernel.Kernel.Admission.Theorems, `IxKernel.Kernel.Admission.Bytes.Theorems] name
+  allowedData name || Ix.Kernel.Audit.allowed #[`Lean, `IxC.Ixon.Verify, `Ix.Ixon.Projection.Theorems,
+    `IxC.Kernel.Admission.Theorems, `IxC.Kernel.Admission.Bytes.Theorems] name
 
 /-- The import closure of `roots` stays inside `allowed`, below the kernel's
 ruled elaboration-time imports inside `Kernel.Audit.elaborationImports`
@@ -52,7 +52,7 @@ run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection] Ixon.Projectio
 run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ixon.Projection.Audit.allowedProof
 
 #guard !Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Theorems
-#guard !Ixon.Projection.Audit.allowedData `IxKernel.Kernel.Admission.Bytes.Theorems
+#guard !Ixon.Projection.Audit.allowedData `IxC.Kernel.Admission.Bytes.Theorems
 #guard !Ixon.Projection.Audit.allowedData `Blake3.Rust
 #guard !Ixon.Projection.Audit.allowedData `Blake3.C
 #guard !Ixon.Projection.Audit.allowedData `Blake3.Pure.Proofs
@@ -62,7 +62,7 @@ run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ixon.
 #guard !Ix.Kernel.Audit.allowed Ixon.Audit.dataImports `Ix.Ixon.Projection
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Admission.Audit.dataImports `Ix.Ixon.Projection Ix.Kernel.Audit.importDenylist
 #guard !Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Audit
-#guard !Ixon.Projection.Audit.allowedData `IxKernel.Kernel.Admission.Theorems
+#guard !Ixon.Projection.Audit.allowedData `IxC.Kernel.Admission.Theorems
 #guard Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection
 
 /- Measured independently before freezing. The certified entry adds

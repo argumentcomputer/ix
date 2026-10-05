@@ -1,7 +1,7 @@
 import Ix.Address.Pure
-import IxKernel.Ixon.Codec
-import IxKernel.Kernel.Admission
-import IxKernel.Kernel.Egress.Projection
+import IxC.Ixon.Codec
+import IxC.Kernel.Admission
+import IxC.Kernel.Egress.Projection
 
 /-! Pure projection reconstruction outside the hash-free kernel.
 

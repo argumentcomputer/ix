@@ -2,10 +2,10 @@ import Benchmarks.Kernel.CheckIxeStep
 
 /-! # The pin table, the Ixon prelude and the Nat-operation pins, from Ixon (untrusted)
 
-Generates `IxKernel/Kernel/Ixon/PinData.lean` (the pin table and the prelude)
-and `IxKernel/Kernel/Ixon/NatOpPinData.lean` (the pin variant of the eight
+Generates `IxC/Kernel/Ixon/PinData.lean` (the pin table and the prelude)
+and `IxC/Kernel/Ixon/NatOpPinData.lean` (the pin variant of the eight
 pin-certified `Nat` operations) from two compiled `.ixe` files: the compiled
-Init (`.lake/envs/initstd.ixe`) and `IxKernel/Kernel/PinGen/Certs.lean` compiled
+Init (`.lake/envs/initstd.ixe`) and `IxC/Kernel/PinGen/Certs.lean` compiled
 by the Ix compiler (`regenerate` below gives the commands). No JSON is read,
 and none is generated: the optional closure rows are the environment check's JSONL
 report rows.
@@ -29,7 +29,7 @@ report rows.
      unfolding, which keeps a pin stable when an export renames a helper,
      has nothing to do here;
    - **the certificate proofs** are the values of the theorems of
-     `IxKernel/Kernel/PinGen/Certs.lean` (`certSpecs`), compiled by the Ix compiler
+     `IxC/Kernel/PinGen/Certs.lean` (`certSpecs`), compiled by the Ix compiler
      and read by the same reader, closed by upstream's rule
      (`inlineCertClosure`): every constant outside the operation's dependency
      cone (the declarations of the records its record reaches), its
@@ -56,7 +56,7 @@ report rows.
    and the prelude's records (the twelve declarations of the checker's
    prelude, with their projection and recursor records) as canonical bytes.
    `NatOpPinData.lean`: the pin variant as a share table (the format is in
-   `IxKernel/Kernel/Ixon/Prelude.lean`), decoded by the committed decoder and
+   `IxC/Kernel/Ixon/Prelude.lean`), decoded by the committed decoder and
    compared with the generated variant before it is written.
 
 Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <PinData.lean> <NatOpPinData.lean> [closure.jsonl]`. -/
@@ -94,7 +94,7 @@ def preludeGroups : List (List CName) :=
    [Ix.Kernel.boolName, Ix.Kernel.boolFalseName, Ix.Kernel.boolTrueName, Ix.Kernel.boolName.str "rec"]]
 
 /-- Per pin-certified operation, in `NatOpPinSet` field order, the theorems
-of `IxKernel/Kernel/PinGen/Certs.lean` that certify it, in the order of its pinned
+of `IxC/Kernel/PinGen/Certs.lean` that certify it, in the order of its pinned
 statements (`Ix.Kernel.divModCertStmts`), as in upstream's `opSpecs`. -/
 def certSpecs : List (CName × List Lean.Name) :=
   [(Ix.Kernel.natDivName, [`Ix.Kernel.PinGen.divRecCert, `Ix.Kernel.PinGen.divBaseGtCert,
@@ -120,10 +120,10 @@ def stmtNames : List CName :=
 /-- The commands that regenerate both files, written into their headers. -/
 def regenerate : List String :=
   ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe",
-   s!"lake exe ix compile IxKernel/Kernel/PinGen/Certs.lean --out .lake/envs/certs.ixe --consts \\\n      \
+   s!"lake exe ix compile IxC/Kernel/PinGen/Certs.lean --out .lake/envs/certs.ixe --consts \\\n      \
     {",".intercalate (certSpecs.flatMap (·.2) |>.map toString)}",
    "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
-    IxKernel/Kernel/Ixon/PinData.lean IxKernel/Kernel/Ixon/NatOpPinData.lean"]
+    IxC/Kernel/Ixon/PinData.lean IxC/Kernel/Ixon/NatOpPinData.lean"]
 
 def toLeanName : CName → Lean.Name
   | .anonymous => .anonymous
@@ -387,7 +387,7 @@ def inlineCertClosure (u : Universe) (allowed : CName → Bool) (e : CExpr) :
       (name, has a value): {bad.map fun n => (n, (u.values[n]?).isSome)}"
   return e
 
-/-! ## The share table (the format of `IxKernel/Kernel/Ixon/Prelude.lean`) -/
+/-! ## The share table (the format of `IxC/Kernel/Ixon/Prelude.lean`) -/
 
 def hexByte (b : UInt8) : String :=
   let d := "0123456789ABCDEF".toList.toArray
@@ -734,7 +734,7 @@ together with `NatOpPinData.lean`; do not edit. To regenerate:
 
 Every pinned constant's record, and the literal capabilities, were checked by
 the verified fold through the Ixon reader when this file was
-generated; see `IxKernel/Kernel/Ixon/Reader.lean` for what the table may affect
+generated; see `IxC/Kernel/Ixon/Reader.lean` for what the table may affect
 (coverage, never soundness). Source: sha256 {digest}.
 
 `pins`: (name components, block address, member, constructor + 1 or 0).
@@ -774,7 +774,7 @@ operations, from Ixon records only:
 
 * the pins are the operations' stored values in the compiled Init (sha256
   {digest}), as the Ixon reader reads them;
-* the certificate proofs are the theorems of `IxKernel/Kernel/PinGen/Certs.lean`,
+* the certificate proofs are the theorems of `IxC/Kernel/PinGen/Certs.lean`,
   compiled by the Ix compiler (sha256 {certDigest}) and read by the same
   reader, with every constant outside the operation's dependency cone, its
   certificate ground and the statements' machinery inlined, and beta, `let`
@@ -785,7 +785,7 @@ reader, with this variant, when this file was generated. The fold takes its
 pin list as a parameter and `Ix.Kernel.model_exists` holds at every list, so
 the data carries no trust. `table` is a share table and `ops` its roots per
 operation, in `NatOpPinSet` field order; the format and the decoder are in
-`IxKernel/Kernel/Ixon/Prelude.lean`. -/
+`IxC/Kernel/Ixon/Prelude.lean`. -/
 
 namespace Ix.Kernel.Reader.NatOpPinData
 

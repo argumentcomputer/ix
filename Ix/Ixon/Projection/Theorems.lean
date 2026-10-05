@@ -1,6 +1,6 @@
 import Ix.Ixon.Projection
-import IxKernel.Kernel.Admission.Bytes.Theorems
-import IxKernel.Kernel.Admission.Theorems
+import IxC.Kernel.Admission.Bytes.Theorems
+import IxC.Kernel.Admission.Theorems
 
 namespace Ixon.Projection
 

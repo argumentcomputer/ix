@@ -1,4 +1,4 @@
-import IxKernel.Kernel.Audit.Axioms
+import IxC.Kernel.Audit.Axioms
 import IxSharingVerify
 import IxSharingVerify.Builder
 

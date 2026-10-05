@@ -38,7 +38,7 @@ jobs:
           # version tag and moves with the toolchain. The pin tables and
           # frozen audit counts are not regenerated here: see "On a
           # toolchain bump" in docs/kernel.md.
-          lake_package_directory: ". Benchmarks/** IxKernel Models/SetTheory"
+          lake_package_directory: ". Benchmarks/** IxC Models/SetTheory"
           bump_mode: pinned-tags
           pr: true
           update_lean4_nix: true

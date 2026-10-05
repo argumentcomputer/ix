@@ -62,7 +62,7 @@ jobs:
         if: github.event_name != 'push'
         run: |
           diff lean-toolchain Benchmarks/Compile/lean-toolchain
-          diff lean-toolchain IxKernel/lean-toolchain
+          diff lean-toolchain IxC/lean-toolchain
           diff lean-toolchain Models/SetTheory/lean-toolchain
       - name: Test Ix CLI
         if: github.event_name != 'push'

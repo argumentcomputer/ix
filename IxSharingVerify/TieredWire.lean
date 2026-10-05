@@ -1,5 +1,5 @@
 import IxSharingVerify.TieredIdem
-import IxKernel.Ixon.Wire
+import IxC.Ixon.Wire
 
 /-!
 # Tiered construction: the output is in the wire domain

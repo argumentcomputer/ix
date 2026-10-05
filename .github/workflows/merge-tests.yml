@@ -221,7 +221,7 @@ jobs:
           lake test --wfail -- tc-unit
           lake test --wfail -- --ignored ${{ matrix.test_args }}
 
-      # The certified kernel gate (docs/kernel.md): the standalone IxKernel
+      # The certified kernel gate (docs/kernel.md): the standalone IxC
       # package build, which has no dependencies and so proves the kernel needs
       # only the toolchain, then the host tests, the Rust differentials, the
       # set-theory model, the fences, the entry cases and the reader fidelity.

@@ -176,9 +176,9 @@ def leanFiles (root : System.FilePath) (dir : String) : IO (Array String) := do
 def sourceFingerprint (root : System.FilePath) : IO String := do
   let mut paths : Array String :=
     #["Ix.lean", "lakefile.lean", "lake-manifest.json", "lean-toolchain",
-      "IxKernel/lake-manifest.json", "IxKernel/lean-toolchain"].map
+      "IxC/lake-manifest.json", "IxC/lean-toolchain"].map
       fun (n : String) => (root / n).toString
-  for dir in ["Ix", "IxKernel", "Benchmarks/Kernel"] do paths := paths ++ (← leanFiles root dir)
+  for dir in ["Ix", "IxC", "Benchmarks/Kernel"] do paths := paths ++ (← leanFiles root dir)
   let prefix_ := root.toString ++ "/"
   IO.FS.withTempFile fun h tmp => do
     for p in paths.qsort pathLt do

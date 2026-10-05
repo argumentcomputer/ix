@@ -1,7 +1,7 @@
-import IxKernel.Ixon.Verify.ExprSpine
-import IxKernel.Ixon.Verify.TagN
-import IxKernel.Ixon.Wire
-import IxKernel.Ixon.Verify.MutualConstant
+import IxC.Ixon.Verify.ExprSpine
+import IxC.Ixon.Verify.TagN
+import IxC.Ixon.Wire
+import IxC.Ixon.Verify.MutualConstant
 import Ix.Sharing.Exact
 import Batteries.Data.List.Basic
 

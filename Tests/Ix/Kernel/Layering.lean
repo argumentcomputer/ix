@@ -5,20 +5,20 @@ import Tests.Ix.Kernel.KernelLayout
 /-! # The kernel's import-layering fence (`kernel-layering`)
 
 Derived from con-leche's `tests/layering.sh` (Apache-2.0), modified; see
-`IxKernel/Kernel/NOTICE`. Upstream's is a Python program in a shell wrapper.
+`IxC/Kernel/NOTICE`. Upstream's is a Python program in a shell wrapper.
 
-It covers the checker and the theory under `IxKernel/Kernel/`, each file
+It covers the checker and the theory under `IxC/Kernel/`, each file
 classified by its path (`Tests.Ix.Kernel.KernelLayout`, whose table
-`topLevel` must classify every file under `IxKernel/Kernel/`), and rejects these
+`topLevel` must classify every file under `IxC/Kernel/`), and rejects these
 import edges:
 
   1. CHECKER→THEORY: no module of the checker (`KernelLayout.Part.checker`:
      the flattened implementation, `Cached/*`, `Frontend/*`) imports
      `Ix.Kernel.{Verify,SetTheory,Model,SetModel,Semantics,Term}.*`.
   2. BASE→MODEL: no base module (everything outside the model lane
-     `IxKernel/Kernel/Model{,/*}` and the capstone assembly `MainTheorem`,
+     `IxC/Kernel/Model{,/*}` and the capstone assembly `MainTheorem`,
      `Verify/Cached{,/*}`) imports the model lane.
-  3. THE RULES FENCE: `IxKernel/Kernel/Rules/*` and `IxKernel/Kernel/Model/Rules/*`
+  3. THE RULES FENCE: `IxC/Kernel/Rules/*` and `IxC/Kernel/Model/Rules/*`
      (except `Model.Rules.Recompose`) do not directly import
      `Ix.Kernel.{Core,TypeChecker,CoreIO,DeclCheck,Checker*}` or `Cached*`.
   4. THE RULES CLOSURE: the elaboration closure of those modules (direct
@@ -41,7 +41,7 @@ Unicode whitespace). Changes from upstream: the checked files and their
 classes come from the repository's own layout; upstream's dead base→model
 clause (it compared with a lane that never occurs) is repaired, with the
 capstone assembly classified by path as upstream's comment states; the
-boundary clause is added; an empty `IxKernel/Kernel/` passes vacuously, and the
+boundary clause is added; an empty `IxC/Kernel/` passes vacuously, and the
 rules-closure clause waits until a rules module exists.
 
 Usage: `lake exe kernel-layering [--list]`, from the repository root
@@ -145,8 +145,8 @@ def findImports (src : Array Char) (keywords : List String) (atLeastOne : Bool) 
 /-! ## The classification -/
 
 def theoryPrefixes : List String :=
-  ["IxKernel.Kernel.Verify.", "IxKernel.Kernel.SetTheory.", "IxKernel.Kernel.Model.", "IxKernel.Kernel.SetModel.",
-   "IxKernel.Kernel.Semantics.", "IxKernel.Kernel.Term."]
+  ["IxC.Kernel.Verify.", "IxC.Kernel.SetTheory.", "IxC.Kernel.Model.", "IxC.Kernel.SetModel.",
+   "IxC.Kernel.Semantics.", "IxC.Kernel.Term."]
 
 /-- The lanes, by path: the model lane, the capstone assembly, and the base
 (the rest). -/
@@ -156,20 +156,20 @@ def lane (path : String) : String :=
 /-- The kernel imports only itself and the toolchain. -/
 def boundary : List String := ["Init", "Std", "Lean"]
 
-def rulesExempt : List String := ["IxKernel.Kernel.Model.Rules.Recompose"]
+def rulesExempt : List String := ["IxC.Kernel.Model.Rules.Recompose"]
 
 /-- The pure implementation the rules tier may not import. -/
 def implMod (b : String) : Bool :=
-  ["IxKernel.Kernel.Core", "IxKernel.Kernel.TypeChecker", "IxKernel.Kernel.CoreIO", "IxKernel.Kernel.DeclCheck",
-   "IxKernel.Kernel.Cached"].contains b ||
-  b.startsWith "IxKernel.Kernel.Checker" || b.startsWith "IxKernel.Kernel.Cached."
+  ["IxC.Kernel.Core", "IxC.Kernel.TypeChecker", "IxC.Kernel.CoreIO", "IxC.Kernel.DeclCheck",
+   "IxC.Kernel.Cached"].contains b ||
+  b.startsWith "IxC.Kernel.Checker" || b.startsWith "IxC.Kernel.Cached."
 
 /-- The implementation modules the rules tier's elaboration closure reaches
 today. A new door is a regression; a door no longer reached is progress:
 delete it here and say so in the evidence note. -/
 def rulesClosureDoors : List String :=
-  ["IxKernel.Kernel.Core", "IxKernel.Kernel.TypeChecker", "IxKernel.Kernel.CoreIO", "IxKernel.Kernel.Checker",
-   "IxKernel.Kernel.CheckerBase"]
+  ["IxC.Kernel.Core", "IxC.Kernel.TypeChecker", "IxC.Kernel.CoreIO", "IxC.Kernel.Checker",
+   "IxC.Kernel.CheckerBase"]
 
 /-- An insertion-ordered map, for the closure's first-entry parents (the
 witnessing chains are those Python's dict order gives). -/
@@ -216,7 +216,7 @@ def run (args : List String) : IO UInt32 := do
   let (tree, unclassified) ← covered
   if ← reportUnclassified "LAYERING" unclassified then return 1
   if tree.isEmpty then
-    IO.println "layering: no kernel modules under IxKernel/Kernel/; nothing to check"
+    IO.println "layering: no kernel modules under IxC/Kernel/; nothing to check"
     return 0
   let modName (rel : String) : String :=
     (String.ofList (rel.toList.take (rel.length - 5))).replace "/" "."
@@ -279,14 +279,14 @@ def run (args : List String) : IO UInt32 := do
     IO.println s!"    {hint}"
     return true
   fail := (← report "base module importing the model lane" basev
-    "the checker and IxKernel/Kernel/{Verify,SetTheory,Term,SetModel,Semantics}/* stand BELOW the lane; \
-    nothing there may import IxKernel/Kernel/Model/*.") || fail
+    "the checker and IxC/Kernel/{Verify,SetTheory,Term,SetModel,Semantics}/* stand BELOW the lane; \
+    nothing there may import IxC/Kernel/Model/*.") || fail
   fail := (← report "implementation importing theory" implv
     "the checker (Tests/Ix/Kernel/KernelLayout.lean) must never import \
-    IxKernel/Kernel/{SetTheory,SetModel,Semantics,Model,Verify,Term}/*.") || fail
+    IxC/Kernel/{SetTheory,SetModel,Semantics,Model,Verify,Term}/*.") || fail
   fail := (← report "rules tier importing the pure implementation" rulesv
-    "IxKernel/Kernel/Rules/* and IxKernel/Kernel/Model/Rules/* are stated over IxKernel/Kernel/CoreDefs and may not \
-    import IxKernel/Kernel/{Core,TypeChecker,CoreIO,Checker*,DeclCheck} or Cached/*.") || fail
+    "IxC/Kernel/Rules/* and IxC/Kernel/Model/Rules/* are stated over IxC/Kernel/CoreDefs and may not \
+    import IxC/Kernel/{Core,TypeChecker,CoreIO,Checker*,DeclCheck} or Cached/*.") || fail
   fail := (← report "rules tier CLOSURE reaching an unlisted implementation module"
     (newDoors.map (fun (t, m, _) => (m, t)) ++ newDoors.map (fun (_, _, ch) => ("  via", ch)))
     "a new public re-export carries the impl into the rules tier's elaboration environment; \

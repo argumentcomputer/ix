@@ -1,7 +1,7 @@
 import Ix.Ixon
-import IxKernel.Kernel.Ixon.Prelude
-import IxKernel.Kernel.Cached.Installed
-import IxKernel.Kernel.NatOpPinSet
+import IxC.Kernel.Ixon.Prelude
+import IxC.Kernel.Cached.Installed
+import IxC.Kernel.NatOpPinSet
 
 /-! # The verified fold one record at a time (untrusted harness)
 

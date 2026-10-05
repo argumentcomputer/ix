@@ -6,7 +6,7 @@
    "name": "«ix-kernel»",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "IxKernel",
+   "dir": "IxC",
    "configFile": "lakefile.lean"},
   {"url": "https://github.com/leanprover-community/batteries",
    "type": "git",

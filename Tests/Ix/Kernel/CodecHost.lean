@@ -1,6 +1,6 @@
 import Tests.Ix.Ixon
-import IxKernel.Ixon.Canonical
-import IxKernel.Ixon.Bounded.Size
+import IxC.Ixon.Canonical
+import IxC.Ixon.Bounded.Size
 
 /-! Host-only production codec regressions, including generated values and
 Rust serialization comparisons. This runner is outside the certified closure. -/

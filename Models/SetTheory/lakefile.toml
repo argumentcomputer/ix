@@ -10,7 +10,7 @@ rev = "v4.34.1"
 
 [[require]]
 name = "ix-kernel"
-path = "../../IxKernel"
+path = "../../IxC"
 
 [[lean_lib]]
 name = "IxSetTheoryModel"

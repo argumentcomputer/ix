@@ -1,5 +1,5 @@
 module
-public import IxKernel.Ixon.Types.Kinds
+public import IxC.Ixon.Types.Kinds
 public import Lean.Data.Name
 public import Lean.Expr
 public import Lean.Declaration
