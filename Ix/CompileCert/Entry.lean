@@ -9441,4 +9441,40 @@ theorem checked_public_recursors {V : Type u} [Kernel.SetTheory V]
     rfl rfl constructorTyped (by simpa only [depthEq, valuationEq] using conditions)
   simpa only [depthEq, valuationEq] using fired
 
+/-- Public source interpretation with definition values and actual source
+capability/recursor laws. This is not the internal `EnvModelM`: annotation
+validity and original-source D11 are not hidden fields or inferred facts. -/
+structure PublicSemanticModel (V : Type u) [Kernel.SetTheory V] (env : Kernel.Env)
+    extends PublicValueModel V env where
+  capabilities : PublicCapabilityLaws model.cval env
+  recursors : PublicRecursorLaws model.cval env
+
+noncomputable def InstalledAssociation.semanticModel {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} {names : Kernel.Name → Kernel.Name}
+    (receipt : InstalledAssociation sourceEnv targetEnv names) (target : StrongInstalledModel V targetEnv)
+    (sourceWf : Kernel.EnvWF sourceEnv) : PublicSemanticModel V sourceEnv where
+  toPublicValueModel := receipt.valueModel target
+  capabilities := (receipt.public_laws target sourceWf).1
+  recursors := checked_public_recursors sourceWf target (checkTelescopes_sound receipt.telescopes)
+    receipt.types receipt.recursors receipt.constructors receipt.levelLinks
+
+/-- Both verified folds supply their own installation premises. The returned
+source public model contains source-only recursor laws, not an existential
+target representation interface. Full source/reader/domain composition is
+still outside this theorem. -/
+theorem checkedStreams_publicSemanticModel (V : Type u) [Kernel.SetTheory V]
+    (sourcePins targetPins : List Kernel.NatOpPinSet)
+    (sourceDecls targetDecls : Array Kernel.Declaration)
+    {sourceEnv targetEnv : Kernel.Env} (names : Kernel.Name → Kernel.Name)
+    (sourceChecked : Kernel.Cached.checkDecls .verified sourcePins sourceDecls = .ok sourceEnv)
+    (targetChecked : Kernel.Cached.checkDecls .verified targetPins targetDecls = .ok targetEnv)
+    (checked : checkInstalledAssociation sourceEnv targetEnv names = some true) :
+    Nonempty (StrongInstalledModel V sourceEnv) ∧
+    ∃ (target : StrongInstalledModel V targetEnv) (source : PublicSemanticModel V sourceEnv),
+      source.model.cval = (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval := by
+  obtain ⟨sourceStrong⟩ := strongInstalledModel_exists V sourcePins sourceDecls sourceEnv sourceChecked
+  obtain ⟨target⟩ := strongInstalledModel_exists V targetPins targetDecls targetEnv targetChecked
+  exact ⟨⟨sourceStrong⟩, target,
+    (checkInstalledAssociation_sound checked).semanticModel target sourceStrong.internal.base2.wf, rfl⟩
+
 end Ix.CompileCert
