@@ -52,7 +52,7 @@ Lean is the release in `lean-toolchain` (the same as the repository root's), and
 Mathlib the tag in `lakefile.toml`; `lake-manifest.json` pins all resolved
 dependencies. The cache command retrieves the three imported Mathlib modules
 and their dependencies. The build checks the axiom guard. CI's
-`lean-test` job (`.github/workflows/ci.yml`) runs these commands
+`Certified kernel` merge-test partition (`.github/workflows/merge-tests.yml`) runs these commands
 through `lake run check-kernel --with-model`.
 
 From the repository root, `lake run check-kernel --with-model` includes this

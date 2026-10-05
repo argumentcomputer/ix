@@ -730,7 +730,7 @@ is unchanged.
 | `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Removed package/member at the generator source | Done; generator checks pass |
 | `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Regenerated configuration without the independent upstream dependency; deleted the generated driver | Done; 78 retained package entries |
 | `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Removed inherited package entries and generated member; retained unrelated pins | Done; 24 and 80 retained package entries |
-| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the `lean-test` job runs `check-kernel --with-model` on its sticky disk for PRs and merge groups; runtime parity jobs remain | Done |
+| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the `Certified kernel` partition of merge-tests runs `check-kernel --with-model` on the lean-test sticky-disk lineage in the merge queue; runtime parity jobs remain | Done |
 | `flake.nix` | Removed dependency override | Done |
 | `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Obsolete active commands retired; historical audit labeled explicitly; replacement guarantees stated below | Done |
 | Explanatory attribution in Rust, IxVM, tests and historical documentation | Retained | Preserved |
