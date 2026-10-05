@@ -1,5 +1,6 @@
 import Ix.CompileCert.Translate
 import Ix.Kernel.Ixon.ReaderSpec
+import Ix.Kernel.Denotes
 
 /-! # Direct reader correspondence
 
@@ -357,5 +358,152 @@ theorem RawDefinitionAgrees.reader_decl {reader : Kernel.Reader.Ctx} {state : Ke
     simpa only [hkind] using hk
   | axio hi _ _ => cases info.symm.trans hi
   | quot hi _ => cases info.symm.trans hi
+
+/-! ### Semantic transport of installed expressions
+
+This relation records the obligations after both installations. In particular
+regime agreement is explicit; well-formed annotations alone do not imply it.
+Constant instances may identify names, and their universe lists need not be
+syntactically identical. Establishing this relation from the two annotation
+runs, including eliminated lets and lowered source projections, is D11. -/
+
+inductive InstalledExprImage {V : Type u} [Kernel.SetTheory V]
+    (sourceValues targetValues : Kernel.Name → (Kernel.Name → Nat) → V)
+    (sourceEnv targetEnv : Kernel.Env) (sourceLevels targetLevels : Kernel.Name → Nat) :
+    Kernel.Expr → Kernel.Expr → Prop
+  | bvar (index) : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+      (.bvar index) (.bvar index)
+  | sort {source target} (levels : Kernel.Level.eval sourceLevels source = Kernel.Level.eval targetLevels target) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+        (.sort source) (.sort target)
+  | constant {sourceName targetName sourceUs targetUs sourceInfo targetInfo}
+      (sourceLookup : sourceEnv.find? sourceName = some sourceInfo)
+      (targetLookup : targetEnv.find? targetName = some targetInfo)
+      (sourceArity : sourceUs.length = sourceInfo.toConstantVal.levelParams.length)
+      (targetArity : targetUs.length = targetInfo.toConstantVal.levelParams.length)
+      (values : sourceValues sourceName (Kernel.Level.substFn sourceLevels sourceInfo.toConstantVal.levelParams sourceUs) =
+        targetValues targetName (Kernel.Level.substFn targetLevels targetInfo.toConstantVal.levelParams targetUs)) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+        (.const sourceName sourceUs) (.const targetName targetUs)
+  | app {sf sa tf ta}
+      (function : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sf tf)
+      (argument : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sa ta) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels (.app sf sa) (.app tf ta)
+  | lam {st sb sm tt tb tm}
+      (domain : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels st tt)
+      (body : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sb tb)
+      (regimes : Kernel.regime sourceLevels sm.pw = Kernel.regime targetLevels tm.pw) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels (.lam st sb sm) (.lam tt tb tm)
+  | forallE {st sb sm tt tb tm}
+      (domain : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels st tt)
+      (body : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels sb tb)
+      (regimes : Kernel.regime sourceLevels sm.pw = Kernel.regime targetLevels tm.pw) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels (.forallE st sb sm) (.forallE tt tb tm)
+  | projTable {sn si se tn ti te sourceEntry targetEntry}
+      (sourceTable : sourceEnv.findProj? sn si = some sourceEntry)
+      (targetTable : targetEnv.findProj? tn ti = some targetEntry)
+      (position : si + sourceEntry.off = ti + targetEntry.off)
+      (operand : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels se te) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels (.proj sn si se) (.proj tn ti te)
+  | projFst {sn se tn te}
+      (sourceTable : sourceEnv.findProj? sn 0 = none)
+      (targetTable : targetEnv.findProj? tn 0 = none)
+      (operand : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels se te) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels (.proj sn 0 se) (.proj tn 0 te)
+  | projSnd {sn se tn te}
+      (sourceTable : sourceEnv.findProj? sn 1 = none)
+      (targetTable : targetEnv.findProj? tn 1 = none)
+      (operand : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels se te) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels (.proj sn 1 se) (.proj tn 1 te)
+  | natLit {source target}
+      (constructors : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+        (Kernel.natLitToConstructor source) (Kernel.natLitToConstructor target)) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+        (.lit (.natVal source)) (.lit (.natVal target))
+  | strLit {source target}
+      (constructors : InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+        (Kernel.strLitToConstructor source) (Kernel.strLitToConstructor target)) :
+      InstalledExprImage sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels
+        (.lit (.strVal source)) (.lit (.strVal target))
+
+theorem InstalledExprImage.denotes {V : Type u} [Kernel.SetTheory V]
+    {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target}
+    (image : InstalledExprImage (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target)
+    {ρ : Nat → V} {value : V}
+    (denoted : Kernel.Denotes sourceValues sourceEnv sourceLevels ρ source value) :
+    Kernel.Denotes targetValues targetEnv targetLevels ρ target value := by
+  induction image generalizing ρ value with
+  | bvar => cases denoted; exact .bvar
+  | sort levels => cases denoted; rw [levels]; exact .sort
+  | constant sourceLookup targetLookup sourceArity targetArity values =>
+    cases denoted with
+    | const lookup arity =>
+      have same := Option.some.inj (lookup.symm.trans sourceLookup)
+      cases same
+      rw [values]
+      exact .const targetLookup targetArity
+  | app function argument ihf iha =>
+    cases denoted with
+    | app hf ha => exact .app (ihf hf) (iha ha)
+  | lam domain body regimes ihd ihb =>
+    cases denoted with
+    | lam hA hF hP =>
+      rw [regimes]
+      exact .lam (ihd hA) (fun x hx => ihb (hF x hx))
+        (fun h x hx => hP (regimes.trans h) x hx)
+  | forallE domain body regimes ihd ihb =>
+    cases denoted with
+    | pi hA hB hP =>
+      rw [regimes]
+      exact .pi (ihd hA) (fun x hx => ihb (hB x hx))
+        (fun h x hx => hP (regimes.trans h) x hx)
+  | projTable sourceTable targetTable position operand ih =>
+    cases denoted with
+    | proj_table lookup he =>
+      have same := Option.some.inj (lookup.symm.trans sourceTable)
+      cases same
+      rw [position]
+      exact .proj_table targetTable (ih he)
+    | proj_fst lookup _ => rw [sourceTable] at lookup; cases lookup
+    | proj_snd lookup _ => rw [sourceTable] at lookup; cases lookup
+  | projFst sourceTable targetTable operand ih =>
+    cases denoted with
+    | proj_table lookup _ => rw [sourceTable] at lookup; cases lookup
+    | proj_fst _ he => exact .proj_fst targetTable (ih he)
+  | projSnd sourceTable targetTable operand ih =>
+    cases denoted with
+    | proj_table lookup _ => rw [sourceTable] at lookup; cases lookup
+    | proj_snd _ he => exact .proj_snd targetTable (ih he)
+  | natLit constructors ih =>
+    cases denoted with
+    | natLit h => exact .natLit (ih h)
+  | strLit constructors ih =>
+    cases denoted with
+    | strLit h => exact .strLit (ih h)
+
+theorem InstalledExprImage.symm {V : Type u} [Kernel.SetTheory V]
+    {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target}
+    (image : InstalledExprImage (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target) :
+    InstalledExprImage targetValues sourceValues targetEnv sourceEnv targetLevels sourceLevels target source := by
+  induction image with
+  | bvar i => exact .bvar i
+  | sort levels => exact .sort levels.symm
+  | constant hs ht ha hb values => exact .constant ht hs hb ha values.symm
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam _ _ regimes ihd ihb => exact .lam ihd ihb regimes.symm
+  | forallE _ _ regimes ihd ihb => exact .forallE ihd ihb regimes.symm
+  | projTable hs ht position _ ih => exact .projTable ht hs position.symm ih
+  | projFst hs ht _ ih => exact .projFst ht hs ih
+  | projSnd hs ht _ ih => exact .projSnd ht hs ih
+  | natLit _ ih => exact .natLit ih
+  | strLit _ ih => exact .strLit ih
+
+theorem InstalledExprImage.denotes_iff {V : Type u} [Kernel.SetTheory V]
+    {sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target}
+    (image : InstalledExprImage (V := V) sourceValues targetValues sourceEnv targetEnv sourceLevels targetLevels source target)
+    (ρ : Nat → V) (value : V) :
+    Kernel.Denotes sourceValues sourceEnv sourceLevels ρ source value ↔
+      Kernel.Denotes targetValues targetEnv targetLevels ρ target value :=
+  ⟨image.denotes, image.symm.denotes⟩
 
 end Ix.CompileCert

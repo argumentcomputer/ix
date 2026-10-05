@@ -18,6 +18,74 @@ namespace Ix.CompileCert
 open Kernel.Reader
 open Kernel.Admission
 
+/-! The semantic tier must keep one strong witness throughout: separately
+choosing a public model and a model with value equations would not establish
+that the recursor rules and those values describe the same interpretation. -/
+
+structure StrongInstalledModel (V : Type u) [Kernel.SetTheory V] (env : Kernel.Env) where
+  internal : Kernel.Model.EnvModelM V .verified env
+  definition_values : ∀ header value hint,
+    Kernel.ConstantInfo.defnInfo header value hint ∈ env.consts →
+      ∀ φ ρ, Kernel.Denotes (Kernel.Model.Model.ofEnvModelM internal).cval env φ ρ value
+        ((Kernel.Model.Model.ofEnvModelM internal).cval header.name φ)
+
+noncomputable def StrongInstalledModel.public {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env) : Kernel.Model V env :=
+  Kernel.Model.Model.ofEnvModelM strong.internal
+
+private theorem noFvars_below_zero :
+    ∀ {e : Kernel.Expr}, e.hasFvar = false → Kernel.Expr.fvarsBelow 0 e := by
+  intro e
+  induction e <;> simp_all [Kernel.Expr.fvarsBelow, Kernel.Expr.hasFvar]
+
+/-- Public value equations and the internal recursor laws come from the
+same accepting fold, not two independently selected model witnesses.
+Theorem/opaque body checking does not become a transparent value equation. -/
+theorem strongInstalledModel_exists (V : Type u) [Kernel.SetTheory V]
+    (pins : List Kernel.NatOpPinSet) (declarations : Array Kernel.Declaration) (env : Kernel.Env)
+    (checked : Kernel.Cached.checkDecls .verified pins declarations = .ok env) :
+    Nonempty (StrongInstalledModel V env) := by
+  obtain ⟨model⟩ := Kernel.Cached.checkDecls_sound (V := V) rfl checked
+  refine ⟨⟨model, ?_⟩⟩
+  intro header value hint present φ ρ
+  have read := model.defn_reads φ header value ⟨hint, present⟩
+  have valid := (model.base2.wf _ present).2.2.2.2.1 header value hint rfl
+  have denoted := Kernel.Model.Denotes_of_denoteMeta (V := V) model.base2.cval_closedL
+    0 value read (noFvars_below_zero valid.1) valid.2.2.2 ρ
+    ⟨model.base2.acval_wellDenoted _ φ ρ, model.acval_validV _ φ ρ⟩
+  rw [Kernel.Expr.closeN_of_hasFvar _ 0 0 valid.1,
+    Kernel.Model.interp_cvalOf model.base2.cval_closedL] at denoted
+  exact denoted
+
+/-- This exposes the actual fired rule interface, including its universe,
+typing, constructor and nested-pin premises. An inert rule supplies no law.
+Its currency is still internal AnnotTerm; the public rule bridge remains
+an explicit obligation rather than a stronger claim attached to this API. -/
+theorem StrongInstalledModel.recursor_rule {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (φ : Kernel.Name → Nat) (name : Kernel.Name) (header : Kernel.ConstantVal)
+    (major params : Nat) (rules : List Kernel.RecRule)
+    (lookup : env.find? name = some (.recInfo header major params rules))
+    (rule : Kernel.RecRule) (present : rule ∈ rules) (fires : rule.fire ≠ .inert) :
+    Kernel.Model.RecRuleLaw strong.internal.base2 φ name header major params rule :=
+  strong.internal.rec_rules φ name header major params rules lookup rule present fires
+
+open Kernel.SetTheory in
+/-- Equality soundness at the very same strong interpretation. Membership
+in the equality's universe and both endpoint types is indispensable: the
+set-theoretic application operation has unspecified behaviour off-domain. -/
+theorem StrongInstalledModel.eq_sound {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (level : Kernel.Level) (φ : Kernel.Name → Nat) (ρ : Nat → V)
+    (E A left right proof : V)
+    (eqDenotes : Kernel.Denotes strong.public.cval env φ ρ (.const Kernel.eqName [level]) E)
+    (universeMember : A ∈ˢ univ (Kernel.Level.eval φ level))
+    (leftTyped : left ∈ˢ A) (rightTyped : right ∈ˢ A)
+    (proved : proof ∈ˢ app (app (app E A) left) right) : left = right := by
+  have equality := strong.public.eq_equality level φ ρ E A left right eqDenotes universeMember leftTyped rightTyped
+  rw [equality] at proved
+  exact mem_eqv proved
+
 /-- Every original source entry is compared against the full declaration
 entries actually submitted to the independent source checker. Exact equality
 retains bodies, hints, constructor arities and ordered recursor rules. -/
@@ -559,6 +627,16 @@ theorem SourceNormalizedInstallation.has_model (V : Type u) [Kernel.SetTheory V]
     Nonempty (Kernel.Model V installed.env) :=
   Kernel.model_exists V [] installed.declarations.toArray installed.env installed.checked
 
+theorem SourceNormalizedInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots) :
+    Nonempty (StrongInstalledModel V installed.env) :=
+  strongInstalledModel_exists V [] installed.declarations.toArray installed.env installed.checked
+
+theorem SourceInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
+    {source : Source} {roots : List Lean.Name} (installed : SourceInstallation source roots) :
+    Nonempty (StrongInstalledModel V installed.env) :=
+  strongInstalledModel_exists V [] installed.declarations installed.env installed.checked
+
 /-- Value denotation for the actually installed normalized definitions.
 Original-source value correspondence is a separate semantic pull-back. -/
 theorem SourceNormalizedInstallation.has_model_values (V : Type u) [Kernel.SetTheory V]
@@ -852,6 +930,12 @@ theorem AdmittedArtifact.checked_declarations {input : ArtifactInput}
           (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations) with
       | error e => simp [hcheck, Except.mapError] at hc
       | ok result => simpa [hcheck, Except.mapError] using hc
+
+theorem AdmittedArtifact.strong_model (V : Type u) [Kernel.SetTheory V]
+    {input : ArtifactInput} (artifact : AdmittedArtifact input) :
+    Nonempty (StrongInstalledModel V artifact.env) := by
+  obtain ⟨natPins, _, checked⟩ := artifact.checked_declarations
+  exact strongInstalledModel_exists V natPins _ artifact.env checked
 
 /-- Direct correspondence identifies a full member of an actual declaration
 in the accepted fold. Inductive members retain every rule field via
