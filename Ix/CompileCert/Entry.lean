@@ -7100,4 +7100,88 @@ theorem AnnotatedApplication.nested_parameter_image {V : Type u} [Kernel.SetTheo
   subst pin
   exact fieldValueImage.symm.trans (sourceEquation.trans pinValueImage)
 
+open Kernel.SetTheory in
+/-- Unit capability for arbitrary typed source semantic arguments. Fresh
+variables derive the target readings and component images, so no syntactic
+representability premise is imposed on the arguments. Source well-formedness
+comes from its own installed stream, not target acceptance. -/
+theorem checked_unit_telescope {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ sourceEnv.consts)
+    (enabled : caps.unitlike = true) (levels : Kernel.Name → Nat) (universes : List Kernel.Level)
+    (arity : universes.length = header.levelParams.length)
+    {ρ finalρ : Nat → V} {values : List V} {result : Kernel.Expr}
+    (typed : InstalledTelescope ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv levels ρ (header.type.instantiateLevelParams header.levelParams universes) values finalρ result)
+    (count : values.length = caps.unitParams) (x y : V)
+    (left : x ∈ˢ values.foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn levels header.levelParams universes)))
+    (right : y ∈ˢ values.foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn levels header.levelParams universes))) : x = y := by
+  have bounded : (header.type.instantiateLevelParams header.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact (sourceWf _ present).2.2.2.1
+  obtain ⟨residual, application⟩ := DenotedApplication.arbitrary_arguments typed bounded
+  have readings := ArgumentAnnotations.variables target levels values.length (pushArguments ρ values)
+    (fun _ => Kernel.Expr.sort .zero) (by intro index _; simp [Kernel.Expr.WScoped])
+  have images := InstalledSpineImage.argumentVariables
+    ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+    target.public.cval sourceEnv targetEnv levels levels values.length
+  apply checked_unit_pullback target association types capabilities present enabled
+    levels levels universes universes arity rfl readings application _ count x y left right
+  simpa only [argumentFVars_closed] using images
+
+open Kernel.Model Kernel.SetTheory in
+/-- Eta capability for arbitrary typed source semantic arguments. The
+actual target argument readings/images are constructed, while executable
+family/helper checks retain all constructor/projection identity obligations.
+Both ordinary and reserved pinned families are covered. -/
+theorem checked_eta_telescope {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    (target : StrongInstalledModel V targetEnv)
+    {names : Kernel.Name → Kernel.Name} (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ sourceEnv.consts)
+    (enabled : caps.eta = true)
+    (family : checkInstalledEtaAt targetEnv (names header.name) = true)
+    (constructor : checkInstalledFamilyMember sourceEnv targetEnv names header.name caps.etaCtor = some true)
+    (projections : ∀ index ∈ List.range caps.etaFields,
+      checkInstalledFamilyMember sourceEnv targetEnv names header.name (Kernel.projFnName header.name index) = some true)
+    (levels : Kernel.Name → Nat) (universes : List Kernel.Level)
+    (arity : universes.length = header.levelParams.length)
+    {ρ finalρ : Nat → V} {values : List V} {result : Kernel.Expr}
+    (typed : InstalledTelescope ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+      sourceEnv levels ρ (header.type.instantiateLevelParams header.levelParams universes) values finalρ result)
+    (count : values.length = caps.etaParams) (x : V)
+    (member : x ∈ˢ values.foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval header.name
+        (Kernel.Level.substFn levels header.levelParams universes))) :
+    x = (etaFabArgsV
+      (fun n => (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval n
+        (Kernel.Level.substFn levels header.levelParams universes))
+      header.name values x caps.etaFields).foldl app
+      ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval caps.etaCtor
+        (Kernel.Level.substFn levels header.levelParams universes)) := by
+  have bounded : (header.type.instantiateLevelParams header.levelParams universes).looseBVarsBounded 0 = true := by
+    rw [Kernel.Expr.looseBVarsBounded_instantiateLevelParams]
+    exact (sourceWf _ present).2.2.2.1
+  obtain ⟨residual, application⟩ := DenotedApplication.arbitrary_arguments typed bounded
+  have readings := ArgumentAnnotations.variables target levels values.length (pushArguments ρ values)
+    (fun _ => Kernel.Expr.sort .zero) (by intro index _; simp [Kernel.Expr.WScoped])
+  have images := InstalledSpineImage.argumentVariables
+    ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+    target.public.cval sourceEnv targetEnv levels levels values.length
+  apply checked_eta_pullback target association types capabilities present enabled family constructor projections
+    levels levels universes universes arity rfl readings application _ count x member
+  simpa only [argumentFVars_closed] using images
+
 end Ix.CompileCert

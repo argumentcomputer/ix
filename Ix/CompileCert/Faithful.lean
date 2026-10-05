@@ -2381,4 +2381,21 @@ theorem InstalledSpineImage.closed_instSeq {V : Type u} [Kernel.SetTheory V]
     Kernel.Expr.closeN_of_hasFvar target depth targets.length noFree]
   exact arguments.instSeqLift image (targets.length - 1)
 
+/-- Fresh variables have identical component images across environments;
+their values come from the shared extended caller valuation, not constants
+or a source/target model identity assumption. -/
+theorem InstalledSpineImage.argumentVariables {V : Type u} [Kernel.SetTheory V]
+    (sv tv : Kernel.Name → (Kernel.Name → Nat) → V) (se te : Kernel.Env)
+    (sl tl : Kernel.Name → Nat) (count : Nat) :
+    InstalledSpineImage sv tv se te sl tl (argumentVariables count) (argumentVariables count) := by
+  have variables : ∀ indices : List Nat,
+      InstalledSpineImage sv tv se te sl tl
+        (indices.map fun index => Kernel.Expr.bvar (count - 1 - index))
+        (indices.map fun index => Kernel.Expr.bvar (count - 1 - index)) := by
+    intro indices
+    induction indices with
+    | nil => exact .nil
+    | cons index indices ih => exact .cons (.bvar _) ih
+  exact variables (List.range count)
+
 end Ix.CompileCert
