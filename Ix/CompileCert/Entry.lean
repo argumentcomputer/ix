@@ -601,6 +601,135 @@ theorem StrongInstalledModel.graded_telescope {V : Type u} [Kernel.SetTheory V]
     GradedReading strong.internal.base2.acval env levels finalρ result :=
   typed.graded_reading strong.internal.base2.cval_closedL (strong.graded_type constant present levels ρ)
 
+theorem AnnotatedApplication.length {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {depth : Nat} {ρ : Nat → V} {type residual : Kernel.Expr}
+    {expressions : List Kernel.Expr} {annotations : List Kernel.Semantics.AnnotTerm}
+    (application : AnnotatedApplication strong levels depth ρ type expressions annotations residual) :
+    expressions.length = annotations.length := by
+  induction application with
+  | nil => rfl
+  | cons _ _ _ _ _ _ _ ih => exact congrArg Nat.succ ih
+
+open Kernel Kernel.Semantics Kernel.Model in
+/-- Caller-side data for a fired rule, with both telescope fits derived from
+public typed applications. Comparison certificates remain explicit: nested
+and indexed families must not inherit a plain unindexed shortcut. -/
+structure FiredRecursorApplication {V : Type u} [Kernel.SetTheory V] {env : Kernel.Env}
+    (strong : StrongInstalledModel V env) (levels : Kernel.Name → Nat)
+    (header : Kernel.ConstantVal) (major params : Nat) (rule : Kernel.RecRule)
+    (universes : List Kernel.Level) where
+  constructor : Kernel.ConstantVal
+  constructorParams : Nat
+  constructorFields : Nat
+  constructorLookup : env.find? rule.ctor =
+    some (.ctorInfo constructor constructorParams constructorFields)
+  constructorUniverses : List Kernel.Level
+  depth : Nat
+  valuation : Nat → V
+  argumentExpressions : List Kernel.Expr
+  fieldExpressions : List Kernel.Expr
+  arguments : List AnnotTerm
+  fields : List AnnotTerm
+  recursorResidual : Kernel.Expr
+  constructorResidual : Kernel.Expr
+  argumentCount : arguments.length = major
+  fieldCount : fields.length = rule.ctorParams + rule.nfields
+  constructorArity : constructorUniverses.length = constructor.levelParams.length
+  universeSelection : Kernel.Level.substFn levels constructor.levelParams constructorUniverses =
+    Kernel.Level.substFn levels constructor.levelParams
+      (recFireComparands rule header.levelParams universes constructor.levelParams [] params).1
+  plainParameters : rule.paramsBlind = false → rule.fire = .plain →
+    ∀ i, i < rule.ctorParams → i < major →
+      interp V valuation (fields.getD i default) = interp V valuation (arguments.getD i default)
+  nestedParameters : ∀ lvls pins, rule.fire = .nested lvls pins →
+    ∀ i, i < rule.ctorParams → ∀ pin : AnnotTerm,
+      denoteMeta strong.internal.base2.acval env levels params
+        (Kernel.Verify.openRev 0 params ((pins.getD i default).instantiateLevelParams
+          header.levelParams universes)) = some pin →
+      interp V valuation (fields.getD i default) =
+        interp V valuation (Kernel.Model.AnnotTerm.instRevChain (arguments.take params) pin)
+  recursorApplication : AnnotatedApplication strong levels depth valuation
+    (header.type.instantiateLevelParams header.levelParams universes)
+    (argumentExpressions ++ [Kernel.Expr.mkAppN (.const rule.ctor constructorUniverses) fieldExpressions])
+    (arguments ++ [AnnotTerm.mkAppN (strong.internal.base2.acval rule.ctor
+      (Kernel.Level.substFn levels constructor.levelParams constructorUniverses)) fields]) recursorResidual
+  constructorApplication : AnnotatedApplication strong levels depth valuation
+    (constructor.type.instantiateLevelParams constructor.levelParams constructorUniverses)
+    fieldExpressions fields constructorResidual
+  indexPin : ∀ result : AnnotTerm,
+    denoteMeta strong.internal.base2.acval env levels depth constructorResidual = some result →
+    IotaIndexPin valuation result rule.ctorParams major params arguments
+
+open Kernel.Semantics Kernel.Model in
+/-- Public fired-rule denotation with the two internal telescope fits
+constructed, not supplied. The checked argument readings and comparison
+certificates remain visible in `FiredRecursorApplication`. -/
+theorem FiredRecursorApplication.denotes {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} {strong : StrongInstalledModel V env} {levels : Kernel.Name → Nat}
+    {header : Kernel.ConstantVal} {major params : Nat} {rule : Kernel.RecRule}
+    {universes : List Kernel.Level}
+    (application : FiredRecursorApplication strong levels header major params rule universes)
+    (name : Kernel.Name) (rules : List Kernel.RecRule)
+    (lookup : env.find? name = some (.recInfo header major params rules))
+    (present : rule ∈ rules) (fires : rule.fire ≠ .inert)
+    (arity : universes.length = header.levelParams.length) :
+    ∃ value : V,
+      Kernel.Denotes strong.public.cval env levels application.valuation
+        (Kernel.Expr.mkAppN (.const name universes)
+          (application.argumentExpressions.map (Kernel.Expr.closeN application.depth) ++
+            [Kernel.Expr.mkAppN (.const rule.ctor application.constructorUniverses)
+              (application.fieldExpressions.map (Kernel.Expr.closeN application.depth))])) value ∧
+      Kernel.Denotes strong.public.cval env levels application.valuation
+        (Kernel.Expr.mkAppN (rule.rhs.instantiateLevelParams header.levelParams universes)
+          ((application.argumentExpressions.map (Kernel.Expr.closeN application.depth)).take params ++
+            (application.fieldExpressions.map (Kernel.Expr.closeN application.depth)).drop rule.ctorParams)) value := by
+  obtain ⟨recursorType, recursorResult, recursorRead, recursorFit, _, _, _⟩ :=
+    application.recursorApplication.installed_fit name (.recInfo header major params rules)
+      lookup rfl universes arity
+  obtain ⟨constructorType, constructorResult, constructorRead, constructorFit, constructorResidualRead, _, _⟩ :=
+    application.constructorApplication.installed_fit rule.ctor
+      (.ctorInfo application.constructor application.constructorParams application.constructorFields)
+      application.constructorLookup rfl application.constructorUniverses application.constructorArity
+  let frame : FiredRecursorFrame strong levels header major params rule universes := {
+    constructor := application.constructor
+    constructorParams := application.constructorParams
+    constructorFields := application.constructorFields
+    constructorLookup := application.constructorLookup
+    constructorUniverses := application.constructorUniverses
+    valuation := application.valuation
+    arguments := application.arguments
+    fields := application.fields
+    recursorType, constructorType, recursorResult, constructorResult
+    argumentCount := application.argumentCount
+    fieldCount := application.fieldCount
+    constructorArity := application.constructorArity
+    universeSelection := application.universeSelection
+    plainParameters := application.plainParameters
+    nestedParameters := application.nestedParameters
+    indexPin := application.indexPin constructorResult constructorResidualRead
+    recursorTypeRead := recursorRead
+    constructorTypeRead := constructorRead
+    recursorTyped := recursorFit
+    constructorTyped := constructorFit }
+  have count : application.argumentExpressions.length = application.arguments.length := by
+    have length := application.recursorApplication.length
+    simpa only [List.length_append, List.length_cons, List.length_nil, Nat.add_right_cancel_iff] using length
+  have argumentRead := application.recursorApplication.denotes_arguments.take application.argumentExpressions.length
+  simp only [List.map_append, List.map_cons, List.map_nil] at argumentRead
+  have expressionTake := List.take_left
+    (l₁ := application.argumentExpressions.map (Kernel.Expr.closeN application.depth))
+    (l₂ := [(Kernel.Expr.mkAppN (.const rule.ctor application.constructorUniverses)
+      application.fieldExpressions).closeN application.depth])
+  have annotationTake := List.take_left
+    (l₁ := application.arguments.map (interp V application.valuation))
+    (l₂ := [interp V application.valuation (AnnotTerm.mkAppN (strong.internal.base2.acval rule.ctor
+      (Kernel.Level.substFn levels application.constructor.levelParams application.constructorUniverses)) application.fields)])
+  simp only [List.length_map] at expressionTake annotationTake
+  rw [expressionTake, count, annotationTake] at argumentRead
+  exact strong.recursor_denotes levels name header major params rules lookup rule present fires universes arity
+    frame _ _ argumentRead application.constructorApplication.denotes_arguments
+
 private theorem closeN_app_inv {opened function argument : Kernel.Expr} {depth : Nat}
     (image : opened.closeN depth = .app function argument) :
     ∃ rawFunction rawArgument, opened = .app rawFunction rawArgument ∧
