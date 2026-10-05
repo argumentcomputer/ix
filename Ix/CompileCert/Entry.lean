@@ -8315,4 +8315,96 @@ theorem RuleTupleRepresentation.checked_fired {V : Type u} [Kernel.SetTheory V]
     recursorImage constructorImage rhsImage argumentImages fieldImages
   simpa only [valuationEq, depthEq, ← prefixAgreement, ← header.2.2.1] using fired
 
+/-- Conditional public simulation of every actual source fired-rule frame.
+The target frame and common representation are produced, not premises.
+Source typing/firing semantics and checked concrete universe selection remain
+visible. This is not a claim that every promised source cone passes the checks. -/
+def CheckedRuleSimulation {V : Type u} [Kernel.SetTheory V]
+    {targetEnv : Kernel.Env} (target : StrongInstalledModel V targetEnv)
+    (sourceEnv : Kernel.Env) (names : Kernel.Name → Kernel.Name) : Prop :=
+  ∀ name index (sourceFrame : InstalledRuleFrame sourceEnv name index),
+    ∃ targetFrame : InstalledRuleFrame targetEnv (names name) index,
+      readInstalledRuleFrame targetEnv (names name) index = some targetFrame ∧
+      ∀ sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs,
+        sourceUs.length = sourceFrame.header.levelParams.length →
+        sourceConstructorUs.length = sourceFrame.constructor.levelParams.length →
+        checkInstalledRuleUniverses targetEnv (names name) index targetUs targetConstructorUs = some true →
+        sourceUs.map (Kernel.Level.eval sourceLevels) = targetUs.map (Kernel.Level.eval targetLevels) →
+        sourceConstructorUs.map (Kernel.Level.eval sourceLevels) = targetConstructorUs.map (Kernel.Level.eval targetLevels) →
+        ∀ valuation arguments fields,
+          RuleTupleTyping ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+            sourceEnv sourceLevels sourceFrame sourceUs sourceConstructorUs valuation arguments fields →
+          ∃ representation : RuleTupleRepresentation target targetLevels targetFrame targetUs targetConstructorUs arguments fields,
+            SourceRuleComparisons ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+              sourceEnv sourceLevels sourceFrame sourceUs sourceConstructorUs representation.valuation
+              ((argumentVariables representation.depth).take arguments.length)
+              ((argumentVariables representation.depth).drop arguments.length) arguments fields →
+            ∃ value : V,
+              Kernel.Denotes ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+                sourceEnv sourceLevels representation.valuation
+                (Kernel.Expr.mkAppN (.const name sourceUs)
+                  (((argumentVariables representation.depth).take arguments.length) ++
+                    [Kernel.Expr.mkAppN (.const sourceFrame.rule.ctor sourceConstructorUs)
+                      ((argumentVariables representation.depth).drop arguments.length)])) value ∧
+              Kernel.Denotes ((PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval)
+                sourceEnv sourceLevels representation.valuation
+                (Kernel.Expr.mkAppN (sourceFrame.rule.rhs.instantiateLevelParams sourceFrame.header.levelParams sourceUs)
+                  ((((argumentVariables representation.depth).take arguments.length).take sourceFrame.rulePrefix) ++
+                    (((argumentVariables representation.depth).drop arguments.length).drop sourceFrame.rule.ctorParams))) value
+
+theorem checked_rules_simulation {V : Type u} [Kernel.SetTheory V]
+    {sourceEnv targetEnv : Kernel.Env} (sourceWf : Kernel.EnvWF sourceEnv)
+    (target : StrongInstalledModel V targetEnv) {names : Kernel.Name → Kernel.Name}
+    (association : TelescopeAssociation sourceEnv targetEnv names)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    (constructors : checkInstalledConstructors sourceEnv targetEnv names = true) :
+    CheckedRuleSimulation target sourceEnv names := by
+  intro name index sourceFrame
+  obtain ⟨targetFrame, reading, _, _, _, _, images⟩ := sourceFrame.checked_target target association recursors constructors
+  refine ⟨targetFrame, reading, ?_⟩
+  intro sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs
+    sourceArity sourceConstructorArity universeCheck universeImage constructorUniverseImage valuation arguments fields typed
+  obtain ⟨targetArity, targetConstructorArity, _⟩ := targetFrame.checked_universes universeCheck
+  have targetTyped := sourceFrame.checked_tuple_typing target association types targetFrame (images (fun _ => 0)).header
+    sourceLevels targetLevels sourceUs targetUs sourceConstructorUs targetConstructorUs
+    sourceArity targetArity sourceConstructorArity targetConstructorArity universeImage constructorUniverseImage typed
+  obtain ⟨representation⟩ := targetTyped.represented
+  refine ⟨representation, ?_⟩
+  intro conditions
+  obtain ⟨_, _, constructorTyped⟩ := typed.constructorTyped
+  exact representation.checked_fired sourceWf association types recursors sourceFrame universeCheck sourceLevels
+    sourceUs sourceConstructorUs sourceArity sourceConstructorArity universeImage constructorUniverseImage constructorTyped conditions
+
+/-- One admitted target model supplies the checked type/body/pinned-basis,
+unit/eta and conditional fired-rule pull-backs. Source well-formedness comes
+from its own independent verified fold; its separately selected interpretation
+is never equated to the target-derived public source model. -/
+theorem checkedStreams_publicRules (V : Type u) [Kernel.SetTheory V]
+    (sourcePins targetPins : List Kernel.NatOpPinSet)
+    (sourceDecls targetDecls : Array Kernel.Declaration)
+    {sourceEnv targetEnv : Kernel.Env} (names : Kernel.Name → Kernel.Name)
+    (sourceChecked : Kernel.Cached.checkDecls .verified sourcePins sourceDecls = .ok sourceEnv)
+    (targetChecked : Kernel.Cached.checkDecls .verified targetPins targetDecls = .ok targetEnv)
+    (telescopes : checkTelescopes sourceEnv targetEnv names = true)
+    (types : checkInstalledTypes sourceEnv targetEnv names = true)
+    (definitions : checkInstalledDefinitions sourceEnv targetEnv names = true)
+    (falsePin : checkInstalledPin sourceEnv names Kernel.falseName 0 = true)
+    (eqPin : checkInstalledPin sourceEnv names Kernel.eqName 1 = true)
+    (capabilities : checkInstalledCapabilities sourceEnv targetEnv names = true)
+    (etaAssociations : checkInstalledEtaAssociations sourceEnv targetEnv names = some true)
+    (recursors : checkInstalledRecursors sourceEnv targetEnv names = true)
+    (constructors : checkInstalledConstructors sourceEnv targetEnv names = true) :
+    Nonempty (StrongInstalledModel V sourceEnv) ∧
+    ∃ (target : StrongInstalledModel V targetEnv) (source : PublicValueModel V sourceEnv),
+      source.model.cval = (PullbackMap.fromEnvs sourceEnv targetEnv names).values target.public.cval ∧
+      PublicCapabilityLaws source.model.cval sourceEnv ∧ CheckedRuleSimulation target sourceEnv names := by
+  obtain ⟨sourceExists, target, source, interpretation, laws⟩ := checkedStreams_publicCapabilities V
+    sourcePins targetPins sourceDecls targetDecls sourceEnv targetEnv names sourceChecked targetChecked telescopes types definitions
+    falsePin eqPin capabilities etaAssociations
+  obtain ⟨sourceStrong⟩ := sourceExists
+  exact ⟨⟨sourceStrong⟩, target, source, interpretation, laws,
+    checked_rules_simulation sourceStrong.internal.base2.wf target (checkTelescopes_sound telescopes)
+      types recursors constructors⟩
+
 end Ix.CompileCert

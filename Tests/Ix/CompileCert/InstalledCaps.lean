@@ -128,7 +128,9 @@ def run : IO Unit := do
       checkInstalledDefinitions combinedSource combinedTarget id && checkInstalledPin combinedSource id falseName 0 &&
       checkInstalledPin combinedSource id eqName 1 && checkInstalledCapabilities combinedSource combinedTarget id &&
       checkInstalledEtaAssociations combinedSource combinedTarget id == some true)
-  IO.println "installed capabilities: independent Nat/PUnit/combined folds; 38 association controls passed"
+  require "combined independent streams also satisfy fired-rule endpoint checks"
+    (checkInstalledRecursors combinedSource combinedTarget id && checkInstalledConstructors combinedSource combinedTarget id)
+  IO.println "installed capabilities: independent Nat/PUnit/combined folds; 39 association controls passed"
 
 end Tests.Ix.CompileCert.InstalledCaps
 
