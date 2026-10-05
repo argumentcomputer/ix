@@ -1355,6 +1355,25 @@ def ValueAnnotationCalls (mode : CheckMode) (before : FEnv) (header : Kernel.Con
         .ok (({ header with type := type }, type), beforeValue)) ∧
     (coreKnotI mode before checkFuel).annotate 0 value beforeValue = .ok (annotated, afterValue)
 
+/-- Let checking at the actual value-annotation state. Both the ordinary
+header-annotation branch and the primitive header-check branch preserve the
+required invariant; their states are not identified with each other. -/
+theorem ValueAnnotationCalls.let_trace {mode : CheckMode} {env : Env}
+    {header : Kernel.ConstantVal} {type value body annotatedType annotatedValue : Kernel.Expr}
+    {initial : CState}
+    (verified : mode.verifiedChecks = true) (environment : EnvWF env) (state : CSOKF initial)
+    (scope : Kernel.Expr.WScoped 0 (.letE type value body))
+    (calls : ValueAnnotationCalls mode (mkFEnv env) header (.letE type value body)
+      initial annotatedType annotatedValue) :
+    LetAnnotation mode env 0 type value body annotatedValue := by
+  obtain ⟨afterType, beforeValue, afterValue, _, headerRun, valueRun⟩ := calls
+  have valueState : CSOK mode env beforeValue := by
+    rcases headerRun with install | check
+    · exact (annotConstantValC_run verified environment (flushC_csok state) install).1
+    · exact (checkConstantValC_sim verified environment (flushC_csok state) rfl
+        _ beforeValue check).1
+  exact (let_cached verified environment valueState scope valueRun).2.2
+
 def DefinitionInstalledAll (mode : CheckMode) (header : Kernel.ConstantVal)
     (value : Kernel.Expr) (hint : Kernel.ReducibilityHint) (env : Env) : Prop :=
   ∃ before : FEnv, ∃ initial : CState, ∃ type annotated : Kernel.Expr,
@@ -1445,6 +1464,87 @@ theorem definition_all_run {mode : CheckMode} {pins : List NatOpPinSet}
       rw [extension]
       exact List.mem_append_right _ (installed ▸ List.mem_cons_self)
     · exact ih restPresent chain.canon
+
+/-- Full definition provenance with the actual prefix's environment and
+fresh-state invariants. These come from the accepting fold's model walk,
+including its pending checks, rather than from the final target environment. -/
+def DefinitionCheckedPrefix (mode : CheckMode) (header : Kernel.ConstantVal)
+    (value : Kernel.Expr) (hint : Kernel.ReducibilityHint) (env : Env) : Prop :=
+  ∃ before : FEnv, ∃ initial : CState, ∃ type annotated : Kernel.Expr,
+    before = mkFEnv before.env ∧ EnvWF before.env ∧ CSOKF initial ∧
+    ValueAnnotationCalls mode before header value initial type annotated ∧
+    Kernel.ConstantInfo.defnInfo { header with type := type } annotated hint ∈ env.consts
+
+theorem definition_prefix_run {V : Type u} [Kernel.SetTheory V]
+    {mode : CheckMode} {pins : List NatOpPinSet}
+    (verified : mode.verifiedChecks = true)
+    {declarations : List Declaration} {header : Kernel.ConstantVal} {value : Kernel.Expr}
+    {hint : Kernel.ReducibilityHint}
+    (present : Declaration.defnDecl header value hint ∈ declarations)
+    {start finish : Nat × FEnv × Array PendingCheck} {initial final : CState}
+    (run : InstallRun mode pins declarations start initial finish final)
+    (canonical : start.2.1 = mkFEnv start.2.1.env)
+    (model : Kernel.Model.EnvModelOk V mode start.2.1.env) (state : CSOKF initial)
+    (unique : NodupNames finish.2.1.env)
+    (checked : ∀ pc ∈ finish.2.2.toList, ∃ after, checkPending mode finish.2.1 pc {} = .ok ((), after)) :
+    DefinitionCheckedPrefix mode header value hint finish.2.1.env := by
+  induction run with
+  | nil => exact absurd present List.not_mem_nil
+  | @cons declaration rest start middle finish initial afterStep final step restRun ih =>
+    obtain ⟨nextEnv, nextPending, rfl, stepRun⟩ := annotDeclStep_ok step
+    have chain : PushChain start.2.1.env nextEnv :=
+      (annotStepC_push mode start.1 (PushChain.self canonical) start.2.2 declaration
+        initial (nextEnv, nextPending) afterStep stepRun).1
+    obtain ⟨tailChain, newPending, pending⟩ :=
+      installRun_trace mode restRun (PushChain.self chain.canon)
+    rcases List.mem_cons.mp present with rfl | restPresent
+    · obtain ⟨type, annotated, calls, installed⟩ := definition_all_step stepRun
+      have beforeWF : EnvWF start.2.1.env := by
+        obtain ⟨witness⟩ := model.1
+        exact witness.toEnvFacts.wf
+      refine ⟨start.2.1, initial, type, annotated, canonical, beforeWF, state, calls, ?_⟩
+      obtain ⟨_, ⟨new, extension⟩, _⟩ := tailChain
+      rw [extension]
+      exact List.mem_append_right _ (installed ▸ List.mem_cons_self)
+    · obtain ⟨nextModel, nextState, _⟩ :=
+        annotStepC_model verified canonical chain.canon model state stepRun tailChain pending unique checked
+      exact ih restPresent chain.canon nextModel nextState unique checked
+
+theorem definition_prefix_checked (V : Type u) [Kernel.SetTheory V]
+    {mode : CheckMode} {pins : List NatOpPinSet}
+    (verified : mode.verifiedChecks = true)
+    {declarations : Array Declaration} {env : Env} {header : Kernel.ConstantVal}
+    {value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
+    (present : Declaration.defnDecl header value hint ∈ declarations)
+    (checked : checkDecls mode pins declarations = .ok env) :
+    DefinitionCheckedPrefix mode header value hint env := by
+  obtain ⟨fullyChecked, rfl⟩ := checkDecls_fullyChecked mode checked
+  obtain ⟨_, _, run⟩ := fullyChecked.1.run
+  have chain := installRun_trace mode run (PushChain.refl Env.empty)
+  exact definition_prefix_run (V := V) verified (Array.mem_toList_iff.mpr present) run rfl
+    ⟨⟨Kernel.Model.EnvModelM.empty V mode⟩, Kernel.EtaFamiliesClosed.empty⟩
+    CSOKF.empty (chain.1.2.2 List.nodup_nil) fullyChecked.records
+
+/-- An admitted let-bodied definition supplies the actual prefix and
+annotation-state evidence needed by the let bridge. Only raw input scope
+remains a separate source-export obligation here. -/
+theorem DefinitionCheckedPrefix.let_trace {mode : CheckMode}
+    {header : Kernel.ConstantVal} {type value body : Kernel.Expr}
+    {hint : Kernel.ReducibilityHint} {env : Env}
+    (verified : mode.verifiedChecks = true)
+    (receipt : DefinitionCheckedPrefix mode header (.letE type value body) hint env)
+    (scope : Kernel.Expr.WScoped 0 (.letE type value body)) :
+    ∃ priorEnv : Env, ∃ initial : CState, ∃ annotatedType annotatedValue : Kernel.Expr,
+      EnvWF priorEnv ∧ CSOKF initial ∧
+      ValueAnnotationCalls mode (mkFEnv priorEnv) header (.letE type value body)
+        initial annotatedType annotatedValue ∧
+      LetAnnotation mode priorEnv 0 type value body annotatedValue ∧
+      Kernel.ConstantInfo.defnInfo { header with type := annotatedType } annotatedValue hint ∈ env.consts := by
+  obtain ⟨before, initial, annotatedType, annotatedValue, canonical, environment, state, calls, present⟩ := receipt
+  have actual : ValueAnnotationCalls mode (mkFEnv before.env) header (.letE type value body)
+      initial annotatedType annotatedValue := canonical ▸ calls
+  exact ⟨before.env, initial, annotatedType, annotatedValue, environment, state, actual,
+    actual.let_trace verified environment state scope, present⟩
 
 theorem opaque_all_run {mode : CheckMode} {pins : List NatOpPinSet}
     {declarations : List Declaration} {header : Kernel.ConstantVal} {value : Kernel.Expr}
