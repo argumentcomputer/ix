@@ -149,6 +149,182 @@ theorem StrongInstalledModel.graded_eq_sound {V : Type u} [Kernel.SetTheory V]
   rw [law] at member
   exact mem_eqv member
 
+open Kernel.Semantics Kernel.Model in
+/-- A public installed expression with its exact scoped internal reading.
+The closure equation retains the actual annotation, including all binder bits. -/
+def GradedReading {V : Type u} [Kernel.SetTheory V]
+    (acval : Kernel.Name → (Kernel.Name → Nat) → AnnotTerm)
+    (env : Kernel.Env) (levels : Kernel.Name → Nat) (ρ : Nat → V)
+    (expression : Kernel.Expr) : Prop :=
+  ∃ depth opened annotation,
+    denoteMeta acval env levels depth opened = some annotation ∧
+    Kernel.Expr.fvarsBelow depth opened ∧ opened.looseBVarsBounded 0 = true ∧
+    opened.closeN depth = expression ∧ WellDenotedV V ρ annotation
+
+open Kernel.Semantics Kernel.Model in
+/-- Public typed telescope application preserves the actual internal grading.
+Every binder is opened and closed through the existing proved closure law;
+public denotation alone is not substituted for the stronger invariant. -/
+theorem InstalledTelescope.graded_reading {V : Type u} [Kernel.SetTheory V]
+    {acval : Kernel.Name → (Kernel.Name → Nat) → AnnotTerm}
+    (closed : ∀ name levels, Kernel.Term.Term.Closed (acval name levels).erase)
+    {env : Kernel.Env} {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {expression result : Kernel.Expr} {arguments : List V}
+    (typed : InstalledTelescope (cvalOf acval) env levels ρ expression arguments finalρ result)
+    (read : GradedReading acval env levels ρ expression) :
+    GradedReading acval env levels finalρ result := by
+  revert read
+  induction typed with
+  | nil => exact fun read => read
+  | cons domainDenoted argumentTyped rest ih =>
+    intro read
+    obtain ⟨depth, opened, annotation, reading, scope, bounded, image, graded⟩ := read
+    cases opened <;> simp only [Kernel.Expr.closeN] at image
+    all_goals try cases image
+    case cons.forallE.refl =>
+      rename_i rawDomain rawBody
+      obtain ⟨domainAnnotation, bodyAnnotation, domainRead, bodyRead, rfl⟩ :=
+        denoteMeta_forallE_inv reading
+      have scopedParts : Kernel.Expr.fvarsBelow depth rawDomain ∧
+          Kernel.Expr.fvarsBelow depth rawBody := scope
+      have boundedParts : rawDomain.looseBVarsBounded 0 = true ∧
+          rawBody.looseBVarsBounded 1 = true := by
+        simpa only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] using bounded
+      have domainGrade := graded.1
+      have domainBits := graded.2
+      rw [WellDenoted_pi] at domainGrade
+      rw [AnnotValid_pi] at domainBits
+      have publicDomain := Denotes_of_denoteMeta closed depth rawDomain domainRead
+        scopedParts.1 boundedParts.1 _ ⟨domainGrade.1, domainBits.1⟩
+      have same := Kernel.Denotes_functional domainDenoted publicDomain
+      rw [same] at argumentTyped
+      apply ih
+      refine ⟨depth + 1, rawBody.instantiate1 (.fvar depth rawDomain), bodyAnnotation,
+        bodyRead, Kernel.Expr.fvarsBelow_instantiate1 0 scopedParts.2,
+        Kernel.looseBVarsBounded_instantiate1 rawBody 0 boundedParts.2,
+        Kernel.Expr.closeN_instantiate1 rawBody 0 boundedParts.2 scopedParts.2, ?_⟩
+      rw [push_eq_cons]
+      exact ⟨domainGrade.2 _ argumentTyped, domainBits.2.1 _ argumentTyped⟩
+
+open Kernel.Semantics Kernel.Model in
+theorem StrongInstalledModel.graded_type {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (constant : Kernel.ConstantInfo) (present : constant ∈ env.consts)
+    (levels : Kernel.Name → Nat) (ρ : Nat → V) :
+    GradedReading strong.internal.base2.acval env levels ρ constant.toConstantVal.type := by
+  obtain ⟨annotation, read⟩ := strong.internal.type_reads constant present levels
+  have wellFormed := strong.internal.base2.wf constant present
+  exact ⟨0, constant.toConstantVal.type, annotation, read,
+    noFvars_below_zero wellFormed.1, wellFormed.2.2.2.1,
+    Kernel.Expr.closeN_of_hasFvar _ 0 0 wellFormed.1,
+    strong.internal.type_wellDenotedV constant present levels annotation read ρ⟩
+
+open Kernel.Semantics Kernel.Model in
+/-- The exact residual of an actually installed type is graded after any
+publicly typed argument tuple. This derives, rather than assumes, the
+grading premise needed at a checked theorem's Eq leaf. -/
+theorem StrongInstalledModel.graded_telescope {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (constant : Kernel.ConstantInfo) (present : constant ∈ env.consts)
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V}
+    {arguments : List V} {result : Kernel.Expr}
+    (typed : InstalledTelescope strong.public.cval env levels ρ constant.toConstantVal.type
+      arguments finalρ result) :
+    GradedReading strong.internal.base2.acval env levels finalρ result :=
+  typed.graded_reading strong.internal.base2.cval_closedL (strong.graded_type constant present levels ρ)
+
+private theorem closeN_app_inv {opened function argument : Kernel.Expr} {depth : Nat}
+    (image : opened.closeN depth = .app function argument) :
+    ∃ rawFunction rawArgument, opened = .app rawFunction rawArgument ∧
+      rawFunction.closeN depth = function ∧ rawArgument.closeN depth = argument := by
+  cases opened <;> simp only [Kernel.Expr.closeN, Kernel.Expr.app.injEq, reduceCtorEq] at image
+  case app rawFunction rawArgument => exact ⟨rawFunction, rawArgument, rfl, image⟩
+
+private theorem closeN_const_inv {opened : Kernel.Expr} {depth : Nat}
+    {name : Kernel.Name} {levels : List Kernel.Level}
+    (image : opened.closeN depth = .const name levels) : opened = .const name levels := by
+  cases opened <;> simp_all only [Kernel.Expr.closeN, Kernel.Expr.const.injEq, reduceCtorEq]
+
+open Kernel.Semantics Kernel.Model Kernel.SetTheory in
+/-- Public equality from the exact graded installed Eq expression. All Eq
+typing premises are recovered from that grading in the same strong model. -/
+theorem StrongInstalledModel.graded_public_eq_sound {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    {levels : Kernel.Name → Nat} {ρ : Nat → V} {level : Kernel.Level}
+    {carrier left right : Kernel.Expr} {type proof leftValue rightValue : V}
+    (gradedRead : GradedReading strong.internal.base2.acval env levels ρ
+      (.app (.app (.app (.const Kernel.eqName [level]) carrier) left) right))
+    (read : Kernel.Denotes strong.public.cval env levels ρ
+      (.app (.app (.app (.const Kernel.eqName [level]) carrier) left) right) type)
+    (member : proof ∈ˢ type)
+    (leftRead : Kernel.Denotes strong.public.cval env levels ρ left leftValue)
+    (rightRead : Kernel.Denotes strong.public.cval env levels ρ right rightValue) :
+    leftValue = rightValue := by
+  obtain ⟨_, headRead⟩ := denotes_mkAppN_head [carrier, left, right]
+    (function := .const Kernel.eqName [level]) read
+  have ⟨constant, lookup, arity⟩ : ∃ constant,
+      env.find? Kernel.eqName = some constant ∧
+      [level].length = constant.toConstantVal.levelParams.length := by
+    cases headRead with
+    | const lookup arity => exact ⟨_, lookup, arity⟩
+  have pinned := (strong.internal.base2.basis_pinned _ _ lookup (by decide)).1
+  change constant = Kernel.eqA at pinned
+  subst constant
+  obtain ⟨depth, opened, annotation, reading, scope, bounded, image, graded⟩ := gradedRead
+  have publicRead := Denotes_of_denoteMeta strong.internal.base2.cval_closedL depth opened reading
+    scope bounded ρ graded
+  rw [image] at publicRead
+  have sameType := Kernel.Denotes_functional read publicRead
+  rw [sameType] at member
+  obtain ⟨rawFunction, rawRight, rfl, functionImage, rightImage⟩ := closeN_app_inv image
+  obtain ⟨rawPrefix, rawLeft, rfl, prefixImage, leftImage⟩ := closeN_app_inv functionImage
+  obtain ⟨rawHead, rawCarrier, rfl, headImage, carrierImage⟩ := closeN_app_inv prefixImage
+  have headEq := closeN_const_inv headImage
+  subst rawHead
+  obtain ⟨functionAnnotation, rightAnnotation, functionRead, rightReading, rfl⟩ :=
+    denoteMeta_app_inv reading
+  obtain ⟨prefixAnnotation, leftAnnotation, prefixRead, leftReading, rfl⟩ :=
+    denoteMeta_app_inv functionRead
+  obtain ⟨headAnnotation, carrierAnnotation, headReading, _, rfl⟩ :=
+    denoteMeta_app_inv prefixRead
+  rw [denoteMeta_const lookup arity] at headReading
+  obtain rfl := (Option.some.inj headReading).symm
+  have leftGrade := WellDenotedV_app_arg (WellDenotedV_app_fn graded)
+  have rightGrade := WellDenotedV_app_arg graded
+  have bounds := bounded
+  simp only [Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at bounds
+  have leftBound : rawLeft.looseBVarsBounded 0 = true := bounds.1.2
+  have rightBound : rawRight.looseBVarsBounded 0 = true := bounds.2
+  have publicLeft := Denotes_of_denoteMeta strong.internal.base2.cval_closedL depth rawLeft
+    leftReading scope.1.2 leftBound ρ leftGrade
+  have publicRight := Denotes_of_denoteMeta strong.internal.base2.cval_closedL depth rawRight
+    rightReading scope.2 rightBound ρ rightGrade
+  rw [leftImage] at publicLeft
+  rw [rightImage] at publicRight
+  have leftEq := Kernel.Denotes_functional leftRead publicLeft
+  have rightEq := Kernel.Denotes_functional rightRead publicRight
+  exact leftEq.trans ((strong.graded_eq_sound lookup _ ρ carrierAnnotation leftAnnotation
+    rightAnnotation graded member).trans rightEq.symm)
+
+open Kernel.SetTheory in
+/-- A checked installed theorem, specialized at an actually typed tuple to
+an exact Eq expression, proves equality of its public endpoint values.
+The source of grading is the installed theorem, not an extra hypothesis. -/
+theorem StrongInstalledModel.theorem_eq {V : Type u} [Kernel.SetTheory V]
+    {env : Kernel.Env} (strong : StrongInstalledModel V env)
+    (header : Kernel.ConstantVal) (value : Kernel.Expr)
+    (present : Kernel.ConstantInfo.thmInfo header value ∈ env.consts)
+    {levels : Kernel.Name → Nat} {ρ finalρ : Nat → V} {arguments : List V}
+    {level : Kernel.Level} {carrier left right : Kernel.Expr} {leftValue rightValue : V}
+    (typed : InstalledTelescope strong.public.cval env levels ρ header.type arguments finalρ
+      (.app (.app (.app (.const Kernel.eqName [level]) carrier) left) right))
+    (leftRead : Kernel.Denotes strong.public.cval env levels finalρ left leftValue)
+    (rightRead : Kernel.Denotes strong.public.cval env levels finalρ right rightValue) :
+    leftValue = rightValue := by
+  have graded := strong.graded_telescope (.thmInfo header value) present typed
+  obtain ⟨type, read, member⟩ := typed.model_apply strong.public present
+  exact strong.graded_public_eq_sound graded read member leftRead rightRead
+
 namespace AnnotationTrace
 
 open Kernel Kernel.Cached
