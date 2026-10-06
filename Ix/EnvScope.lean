@@ -9,6 +9,8 @@
 -/
 module
 public import Ix.Meta
+public import Ix.Compile.Image.Expr
+public import Ix.Compile.Pass.Cliques
 
 public section
 
@@ -132,14 +134,33 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
             worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
+/-- The library constants the compiler's output may reference although the
+selected declarations' Lean terms do not (design document §6.3, obligation 2
+of a pass whose output adds a reference: every closure producer carries the
+target): the Pass 3 images' packing and rule constants
+(`Ix.Compile.Image.imageSupport`) and the clique transport's
+(`Ix.Compile.Pass.transportPrereqs`: `monotone_compose`, `Eq.trans`, `id`,
+the `PSigma`/`PSum` case splits). Read from the compiler's own declarations,
+so a constant a pass starts to introduce is carried once it is declared
+there. Only the ones the environment has. -/
+def introducedSupport (env : Lean.Environment) : List Lean.Name :=
+  let rec toLean : Ix.Name → Lean.Name
+    | .anonymous _ => .anonymous
+    | .str p s _ => .str (toLean p) s
+    | .num p i _ => .num (toLean p) i
+  ((Ix.Compile.Image.imageSupport ++ Ix.Compile.Pass.transportPrereqs).toList.map toLean).eraseDups.filter
+    env.contains
+
 /-- A selected compiler/checker input closes recursors, compiler support and
-certificate ground (`Lean.checkerSupportOf`) to the same fixed point as ordinary
+certificate ground (`Lean.checkerSupportOf`), together with the compiler's introduced
+references (`introducedSupport`), to the same fixed point as ordinary
 source references, mutual `all` members,
 and auxiliary-family siblings. Raw collection and whole-file/module-default
 selection retain their existing contract through `collectDeps`'s defaults. -/
 def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
     List (Lean.Name × Lean.ConstantInfo) :=
-  collectDeps env seeds (withRecursors := true) (withCompilerSupport := true) (withCheckerSupport := true)
+  collectDeps env (seeds ++ introducedSupport env) (withRecursors := true) (withCompilerSupport := true)
+    (withCheckerSupport := true)
 
 /-- Default (unfiltered) constant list for a file env. Classic files keep the
 historical whole-import-env behavior (byte-identical artifacts). Module-mode

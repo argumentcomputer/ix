@@ -76,7 +76,8 @@ def run : IO UInt32 := do
   require (!(names raw).contains ``Nat.mul) "raw negative control unexpectedly contains Nat.mul"
   require ((names raw).contains ``Nat.land && (names selected).contains ``Nat.mul)
     "selected closure failed to add required Nat pin ground"
-  require (sameNames selected (Lean.collectDependenciesMany seeds.toArray env.constants
+  require (sameNames selected (Lean.collectDependenciesMany
+    (seeds ++ Ix.EnvScope.introducedSupport env).toArray env.constants
     (withCompilerSupport := true) (withCheckerSupport := true))) "collectors disagree"
   require (sameNames selected (Ix.EnvScope.collectSelectedDeps env (selected.map (·.1))))
     "checker support closure is not a fixed point"

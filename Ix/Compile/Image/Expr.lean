@@ -44,6 +44,19 @@ def nAnd : Name := leanName ``And
 def nAndIntro : Name := leanName ``And.intro
 def nTrue : Name := leanName ``True
 def nTrueIntro : Name := leanName ``True.intro
+
+/-- The library constants Pass 3's images (and the rule statements checked
+over them) are built from although Lean's own terms of the block need not
+mention them: the `And`/`True` packing of a Prop block's `below` family, the
+`PProd`/`PUnit` packing of a Type block's, and `Eq` for the computation
+rules. With the clique transport's `Ix.Compile.Pass.transportPrereqs` this is
+the compiler's own declaration of the references its output may introduce;
+the selected closure producers carry these constants (and their units) from
+it (`Ix.EnvScope.introducedSupport`), never from a separate hand list. -/
+def imageSupport : Array Name :=
+  #[nAnd, nAndIntro, nTrue, nTrueIntro, leanName ``PProd, leanName ``PProd.mk,
+    leanName ``PProd.fst, leanName ``PProd.snd, leanName ``PUnit, leanName ``PUnit.unit,
+    leanName ``Eq, leanName ``Eq.refl]
 def nEq : Name := leanName ``Eq
 def nEqRefl : Name := leanName ``Eq.refl
 

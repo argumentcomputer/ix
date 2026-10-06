@@ -107,11 +107,6 @@ def pushPhase (phases : Array PhaseRow) (row : PhaseRow) (extra : Array String :
   (← IO.getStdout).flush
   return phases.push row
 
-/-- The constants images pack with and rule statements are stated with: a
-    closure scope (`--local`) must contain them, as a library does. -/
-def packingNames : List Lean.Name :=
-  [``PProd, ``PProd.mk, ``And, ``And.intro, ``True, ``True.intro, ``Eq, ``Eq.refl]
-
 /-! ## Shared context of phases 6–8 -/
 
 /-- Lean's forms (canonicalized), the oracle of phases 6–8: from the Lean
@@ -914,7 +909,7 @@ phases 6–8 read Lean's forms from the decompiler)"
           -- and rule statements (a library has them; a closure must too)
           let own := leanEnv.constants.toList.filterMap fun (n, _) =>
             if (leanEnv.getModuleIdxFor? n).isNone then some n else none
-          let closed := collectSelectedDeps leanEnv (own ++ packingNames.filter leanEnv.contains)
+          let closed := collectSelectedDeps leanEnv own
           IO.println s!"[validate-lean] local: {own.length} own constants, {closed.length} with their closure"
           pure closed
         else defaultConstList fe pathStr
