@@ -1,15 +1,20 @@
-import Ix.CompileCert.Certifier
+import Ix.CompileCert.StrongCertifier
 
-/-! The `compile-certify` command (`Ix.CompileCert.Certifier.run`). -/
+/-! The `compile-certify` command (`Ix.CompileCert.Certifier.runW`, then with
+`--strong` the S path `Ix.CompileCert.Strong.runStrong`). -/
 
 open Ix.CompileCert.Certifier
 
 def usage : String :=
   "usage: compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
-  [--budget <nodes>] [--workers <n>] [--explain <name>]* [--receipts-only]\n  writes <out-prefix>.tsv (one row per constant), \
+  [--budget <nodes>] [--workers <n>] [--explain <name>]* [--receipts-only] \
+  [--strong | --strong-only [--strong-roots <A,B,...>] [--strong-every <k>] [--strong-max-cone <n>] [--strong-tasks <n>]]\n  writes <out-prefix>.tsv (one row per constant), \
   <out-prefix>.classes.tsv, <out-prefix>.proj.tsv, <out-prefix>.receipts.tsv (projection lowering receipts), \
   <out-prefix>.receipts.statements and <out-prefix>.json; exit 0 iff something is \
-  certified, nothing is rejected and every raw projection on a non-direct structure-like has a receipt;\n  --receipts-only: the projection measurement and receipts without the W check (exit 0 iff no refusal)"
+  certified, nothing is rejected and every raw projection on a non-direct structure-like has a receipt;\n  --receipts-only: the projection measurement and receipts without the W check (exit 0 iff no refusal);\n  \
+  --strong: after W, the strong-model endpoint S per cone (every W-certified constant, or the given roots, or every k-th \
+  plus the projection functions); writes <out-prefix>.strong.tsv, .strong.cones.tsv, .strong.classes.tsv, .strong.json; \
+  exit 0 iff additionally something is S-certified and nothing is S-rejected"
 
 def parse : List String → Option Config
   | "--file" :: path :: ixe :: out :: rest => options { lean := .file path, ixe, out } rest
@@ -23,9 +28,23 @@ where
     | "--workers" :: n :: rest => n.toNat?.bind fun w => options { cfg with workers := w } rest
     | "--explain" :: n :: rest => options { cfg with explain := cfg.explain.push n.toName } rest
     | "--receipts-only" :: rest => options { cfg with receiptsOnly := true } rest
+    | "--strong" :: rest => options { cfg with strong := true } rest
+    | "--strong-only" :: rest => options { cfg with strong := true, strongOnly := true } rest
+    | "--strong-roots" :: rs :: rest =>
+      options { cfg with strongRoots := (rs.splitOn ",").toArray.map String.toName } rest
+    | "--strong-every" :: n :: rest => n.toNat?.bind fun k => options { cfg with strongEvery := k } rest
+    | "--strong-max-cone" :: n :: rest => n.toNat?.bind fun k => options { cfg with strongMaxCone := k } rest
+    | "--strong-tasks" :: n :: rest => n.toNat?.bind fun k => options { cfg with strongTasks := k } rest
     | _ => none
 
 def main (args : List String) : IO UInt32 := do
   match parse args with
-  | some cfg => run cfg
   | none => IO.eprintln usage; return 2
+  | some cfg =>
+    let (code, state) ← runW cfg
+    if !cfg.strong then return code
+    match state with
+    | none => return code
+    | some w =>
+      let strongCode ← Ix.CompileCert.Strong.runStrong cfg w
+      return max code strongCode

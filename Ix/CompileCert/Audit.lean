@@ -1,6 +1,7 @@
 import IxC.Kernel.Audit.Axioms
 import Ix.CompileCert.Entry
 import Ix.CompileCert.StrongEntry
+import Ix.CompileCert.StrongCone
 import Ix.CompileCert.Indexed
 
 /-! # The compiler-certification lane's axiom audit
@@ -751,6 +752,25 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.kbRoots Ix.CompileCert.Audit.allowedAxioms
 
+/-! The roots added by M4 (d): S restated for every target model, the certifier's
+per-cone decision and what an S-Certified verdict implies (`StrongCone.lean`),
+and the stored-family gate of the eta associations (`RuleLaws.lean`). Checked
+the same way, against the same allowed set. -/
+
+namespace Ix.CompileCert.Audit
+
+def m4dRoots : Array Lean.Name :=
+  #[`SourceNormalizedInstallation.artifact_strong_model_all, `admittedSupportEmpty, `admitSupport,
+    `installSourceNormalizedWith, `installSourceNormalizedComplete, `StrongCone, `StrongProposal, `decideStrongCone, `StrongCone.sound,
+    `decideStrongCone_sound,
+    `checkInstalledEtaFamily_complete, `checkInstalledEtaAssociations_sound,
+    `checkedCapabilities_publicLaws, `AnnotatedAssociation.eta_law,
+    `AnnotatedAssociation.caps_ok].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m4dRoots Ix.CompileCert.Audit.allowedAxioms
+
 namespace Ix.CompileCert.Audit
 
 /-! ## No decision trusts a cached hash as equality
@@ -785,7 +805,10 @@ def decisionRoots : Array Lean.Name :=
     ``Ix.CompileCert.checkSourceProjectionLowering, ``Ix.CompileCert.SourceProjectionLowering.faithful,
     ``Ix.CompileCert.installSourceNormalized,
     ``Ix.CompileCert.checkNormalizedArtifactStrongAssociation,
-    ``Ix.CompileCert.SourceNormalizedInstallation.artifact_strong_model]
+    ``Ix.CompileCert.SourceNormalizedInstallation.artifact_strong_model,
+    ``Ix.CompileCert.SourceNormalizedInstallation.artifact_strong_model_all,
+    ``Ix.CompileCert.decideStrongCone, ``Ix.CompileCert.StrongCone.sound,
+    ``Ix.CompileCert.installSourceNormalizedWith]
 
 def constClosure (env : Lean.Environment) (roots : Array Lean.Name) : Lean.NameSet := Id.run do
   let mut seen : Lean.NameSet := {}

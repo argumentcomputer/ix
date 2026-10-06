@@ -10,6 +10,7 @@ import Tests.Ix.CompileCert.SourceModels
 import Tests.Ix.CompileCert.ProjectionSupport
 import Tests.Ix.CompileCert.Indexed
 import Tests.Ix.CompileCert.ProjectionLowering
+import Tests.Ix.CompileCert.Strong
 
 /-- Standalone remote driver; shared test registration belongs to the
 coordinator. Production/test library modules do not define a global main. -/
@@ -29,6 +30,7 @@ def main (args : List String) : IO Unit := do
   | ["compiled"] => Tests.Ix.CompileCert.Compiled.run
   | ["indexed"] => Tests.Ix.CompileCert.Indexed.run
   | ["projection-lowering"] => Tests.Ix.CompileCert.ProjectionLowering.run
+  | ["strong"] => Tests.Ix.CompileCert.Strong.run
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>
     Tests.Ix.CompileCert.Direct.run

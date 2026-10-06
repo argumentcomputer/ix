@@ -540,6 +540,32 @@ structure Config where
   explain : Array Lean.Name := #[]
   /-- Only the raw-projection measurement and the receipt census (no W check). -/
   receiptsOnly : Bool := false
+  /-- After W, decide the strong-model endpoint S per cone (`Ix/CompileCert/StrongCertifier.lean`). -/
+  strong : Bool := false
+  /-- S only on the cones of these roots (in this order), not on every constant. -/
+  strongRoots : Array Lean.Name := #[]
+  /-- S on a deterministic sample: every `strongEvery`-th W-certified constant
+  in name order, plus the constants with a raw projection on a non-direct
+  structure-like (0: every constant). -/
+  strongEvery : Nat := 0
+  /-- Cones with more source declarations than this are S-Unsupported (over budget). -/
+  strongMaxCone : Nat := 20000
+  /-- Cones decided at once (one task each). -/
+  strongTasks : Nat := 32
+  /-- Skip the global W check (probing): every constant the reader keeps is offered to S. -/
+  strongOnly : Bool := false
+
+/-- What the S path reuses from the W run. -/
+structure WState where
+  env : Lean.Environment
+  produced : Ixon.Env
+  store : RecordStore
+  names : Array Lean.Name
+  namedAddr : Std.HashMap Lean.Name Address
+  refs : Std.HashMap Lean.Name (Array Lean.Name)
+  verdicts : Std.HashMap Lean.Name Verdict
+  /-- Whether the global W check ran (`--strong-only` skips it). -/
+  wRun : Bool := true
 
 /-- Propagate blocking: every candidate referring (`declarationRefs`) to a
 name that is not a candidate is blocked by it, until nothing changes. -/
@@ -620,8 +646,8 @@ def runReceiptsOnly (cfg : Config) : IO UInt32 := do
     return 1
   return 0
 
-def run (cfg : Config) : IO UInt32 := do
-  if cfg.receiptsOnly then return (← runReceiptsOnly cfg)
+def runW (cfg : Config) : IO (UInt32 × Option WState) := do
+  if cfg.receiptsOnly then return ((← runReceiptsOnly cfg), none)
   let t0 ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile cfg.ixe
   say s!"[certify] ixe {cfg.ixe}: {bytes.size} bytes, Blake3 {Address.blake3 bytes}"
@@ -652,6 +678,23 @@ def run (cfg : Config) : IO UInt32 := do
   let t2 ← IO.monoMsNow
   say s!"[certify] Lean environment: {names.size} constants named in the artifact, \
     {notInArtifact} not; {t2 - t1} ms"
+  if cfg.strongOnly then
+    -- no global W: every constant whose record the reader keeps is offered to S, whose
+    -- cones run their own W association (`Strong.runCone`)
+    let mut refs : Std.HashMap Lean.Name (Array Lean.Name) := {}
+    let mut verdicts : Std.HashMap Lean.Name Verdict := {}
+    for n in names do
+      let some ci := env.find? n | continue
+      refs := refs.insert n (refsOf ci)
+      let some addr := namedAddr[n]? | continue
+      let some ownerRecord := store[addr]? | continue
+      match recordFailures[owner addr ownerRecord]? with
+      | some (own, reason) => verdicts := verdicts.insert n (if own then .unsupported reason
+          else .unsupported s!"target record blocked by the reader ({reason})")
+      | none => verdicts := verdicts.insert n (if kept.contains addr then .certified
+          else .unsupported "target record not selected")
+    say s!"[certify] strong only: no global W check"
+    return (0, some { env, produced, store, names, namedAddr, refs, verdicts, wRun := false })
   -- triage: unsupported source, records not admitted, size budget
   let mut verdicts : Std.HashMap Lean.Name Verdict := {}
   let mut refs : Std.HashMap Lean.Name (Array Lean.Name) := {}
@@ -718,7 +761,7 @@ def run (cfg : Config) : IO UInt32 := do
         | .malformedInput r => s!"malformed input: {r}"
         | _ => "other"
       IO.eprintln s!"[certify] admission of the selected records failed: {msg}"
-      return 1
+      return (1, none)
   let t4 ← IO.monoMsNow
   say s!"[certify] admission (checkBytes) of {recordBytes.length} records: \
     {artifact.declarations.size} declarations; {t4 - t3} ms"
@@ -795,7 +838,7 @@ def run (cfg : Config) : IO UInt32 := do
   | some e =>
     IO.eprintln s!"[certify] the certified check refused the final input ({finalNames.size} \
       declarations): {decline e}"
-    return 1
+    return (1, none)
   | none =>
     -- `checkIndexed` returned an `AcceptedAssociation` for `input`; by `checkIndexed_sound`
     -- every member of `input.source` is certified.
@@ -868,15 +911,19 @@ def run (cfg : Config) : IO UInt32 := do
   let counts := " ".intercalate (words.toList.map fun w => s!"{w}={byWord.getD w 0}")
   let addrCounts := " ".intercalate (words.toList.map fun w => s!"{w}={byAddr.getD w 0}")
   say s!"[certify] per name: {counts}; per address: {addrCounts}; total {(← IO.monoMsNow) - t0} ms"
+  let w : WState := { env, produced, store, names, namedAddr, refs, verdicts }
   if byWord.getD "certified" 0 == 0 then
     IO.eprintln "[certify] FAIL: nothing certified"
-    return 1
+    return (1, some w)
   if byWord.getD "rejected" 0 != 0 then
     IO.eprintln s!"[certify] FAIL: {byWord.getD "rejected" 0} rejected"
-    return 1
+    return (1, some w)
   if receiptRefused != 0 then
     IO.eprintln s!"[certify] FAIL: {receiptRefused} constants with a raw projection on a non-direct structure-like have no accepted receipt"
-    return 1
-  return 0
+    return (1, some w)
+  return (0, some w)
+
+def run (cfg : Config) : IO UInt32 := do
+  return (← runW cfg).1
 
 end Ix.CompileCert.Certifier

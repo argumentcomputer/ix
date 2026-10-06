@@ -119,7 +119,8 @@ theorem AnnotatedAssociation.eta_law {V : Type u} [Kernel.SetTheory V]
     (sourceFacts : EnvModel V source) (targetModel : StrongInstalledModel V target)
     {name : Kernel.Name} {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
     (lookup : source.find? name = some (.indInfo header caps))
-    (enabled : caps.eta = true) (levels : Kernel.Name → Nat) :
+    (enabled : caps.eta = true) (stored : Kernel.EtaFamilyStored source name caps)
+    (levels : Kernel.Name → Nat) :
     EtaLaw (checked.modelCore sourceFacts targetModel).base levels name header caps := by
   have named := Kernel.Semantics.Env.find?_name lookup
   change header.name = name at named
@@ -128,7 +129,7 @@ theorem AnnotatedAssociation.eta_law {V : Type u} [Kernel.SetTheory V]
   obtain ⟨_, targetHeader, targetCaps, targetLookup, headers, _⟩ :=
     checkInstalledCapabilities_member checked.installed.capabilities present
   obtain ⟨family, constructor, projections⟩ :=
-    checkInstalledEtaAssociations_sound checked.installed.etaAssociations present enabled
+    checkInstalledEtaAssociations_sound checked.installed.etaAssociations present enabled stored
   intro universes arity
   obtain ⟨targetEntry, entryLookup, annotation, sourceRead, targetRead, graded⟩ :=
     checked.instantiated_type sourceFacts targetModel (.indInfo header caps) present levels universes
@@ -195,8 +196,8 @@ theorem AnnotatedAssociation.caps_ok {V : Type u} [Kernel.SetTheory V]
     (sourceFacts : EnvModel V source) (targetModel : StrongInstalledModel V target) :
     CapsOk (checked.modelCore sourceFacts targetModel).base := by
   constructor
-  · intro name header caps lookup enabled _ _ levels
-    exact checked.eta_law sourceFacts targetModel lookup enabled levels
+  · intro name header caps lookup enabled _ stored levels
+    exact checked.eta_law sourceFacts targetModel lookup enabled stored levels
   · intro name header caps lookup enabled _ levels
     exact checked.unit_law sourceFacts targetModel lookup enabled levels
 

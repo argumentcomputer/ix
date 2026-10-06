@@ -1109,7 +1109,7 @@ theorem SourceNormalizedInstallation.has_model_values (V : Type u) [Kernel.SetTh
     ∃ model : Kernel.Model V installed.env, ∀ header value hint,
       Kernel.ConstantInfo.defnInfo header value hint ∈ installed.env.consts →
         ∀ φ ρ, Kernel.Denotes model.cval installed.env φ ρ value (model.cval header.name φ) :=
-  Kernel.Cached.checkDecls_model_defn_values V [] installed.declarations.toArray
+  Kernel.Cached.checkDecls_model_defn_values V installed.pins installed.declarations.toArray
     installed.env installed.checked
 
 theorem SourceProjectionNormalization.member {source : Source} {witnesses : LoweringWitnesses}

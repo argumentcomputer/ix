@@ -95,7 +95,7 @@ theorem SourceNormalizedInstallation.artifact_strong_model (V : Type u) [Kernel.
     (checked : checkNormalizedArtifactStrongAssociation accepted bundle installed names certificates
       operationCertificates elementCertificates levels = some true) :
     SemanticNamesAgree accepted names ∧
-      Kernel.Cached.checkDecls .verified [] installed.declarations.toArray = .ok installed.env ∧
+      Kernel.Cached.checkDecls .verified installed.pins installed.declarations.toArray = .ok installed.env ∧
       (∃ targetModel : StrongInstalledModel V bundle.env,
        ∃ sourceModel : StrongInstalledModel V installed.env,
         sourceModel.internal.base2.acval = (PullbackMap.fromEnvs installed.env bundle.env names).annotations

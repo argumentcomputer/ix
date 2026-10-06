@@ -1108,7 +1108,8 @@ def checkInstalledEtaEntry (source target : Kernel.Env) (names : Kernel.Name →
     (entry : Kernel.ConstantInfo) : Option Bool :=
   match entry with
   | .indInfo header caps =>
-    if caps.eta then
+    if caps.eta && (checkInstalledEtaFamily source header.name caps ||
+        Kernel.reservedBasisNames.contains header.name) then
       bothChecks (some (decide (source.find? header.name = some entry) && checkInstalledEtaAt target (names header.name)))
         (bothChecks (checkInstalledFamilyMember source target names header.name caps.etaCtor)
           ((List.range caps.etaFields).foldr (fun index rest => bothChecks
@@ -1134,16 +1135,40 @@ theorem bothChecks_fold_true {α : Type} {entries : List α} {check : α → Opt
     · exact first
     · exact ih rest entry present
 
+/-- The stored-family check is complete for `EtaFamilyStored`. -/
+theorem checkInstalledEtaFamily_complete {env : Kernel.Env} {name : Kernel.Name} {caps : Kernel.IndCaps}
+    (stored : Kernel.EtaFamilyStored env name caps) : checkInstalledEtaFamily env name caps = true := by
+  unfold Kernel.EtaFamilyStored at stored
+  obtain ⟨nonbasis, ⟨cv, params, fields, ctor⟩, projections⟩ := stored
+  have rows : ((List.range caps.etaFields).all fun index =>
+      match env.find? (Kernel.projFnName name index) with
+      | some (.recInfo ..) => true
+      | _ => false) = true := by
+    apply List.all_eq_true.mpr
+    intro index member
+    obtain ⟨cv', major, rulePrefix, rules, found⟩ := projections index (List.mem_range.mp member)
+    rw [found]
+  unfold checkInstalledEtaFamily
+  rw [nonbasis, ctor, rows]
+  rfl
+
+/-- Eta associations are required for the source families whose eta law the
+strong model states, those with stored projection functions (`EtaFamilyStored`,
+the premise of the kernel's `CapsOk` eta half), and, as before, for the reserved
+basis families. A direct structure's family is tower-backed (`StructInstall`: no
+projection functions, its eta discharged by the projection table) and needs none. -/
 theorem checkInstalledEtaAssociations_sound {source target : Kernel.Env} {names : Kernel.Name → Kernel.Name}
     (checked : checkInstalledEtaAssociations source target names = some true)
     {header : Kernel.ConstantVal} {caps : Kernel.IndCaps}
-    (present : Kernel.ConstantInfo.indInfo header caps ∈ source.consts) (enabled : caps.eta = true) :
+    (present : Kernel.ConstantInfo.indInfo header caps ∈ source.consts) (enabled : caps.eta = true)
+    (stored : Kernel.EtaFamilyStored source header.name caps) :
     checkInstalledEtaAt target (names header.name) = true ∧
     checkInstalledFamilyMember source target names header.name caps.etaCtor = some true ∧
     ∀ index ∈ List.range caps.etaFields,
       checkInstalledFamilyMember source target names header.name (Kernel.projFnName header.name index) = some true := by
   have row := bothChecks_fold_true checked _ present
-  simp only [checkInstalledEtaEntry, enabled, ite_true] at row
+  simp only [checkInstalledEtaEntry, enabled, checkInstalledEtaFamily_complete stored, Bool.true_or, Bool.and_self,
+    ite_true] at row
   obtain ⟨family, helpers⟩ := bothChecks_true row
   obtain ⟨constructor, projections⟩ := bothChecks_true helpers
   have familyCheck := Option.some.inj family
@@ -1163,6 +1188,7 @@ structure PublicCapabilityLaws {V : Type u} [Kernel.SetTheory V]
       ∀ x y, x ∈ˢ values.foldl app (cval header.name (Kernel.Level.substFn levels header.levelParams universes)) →
         y ∈ˢ values.foldl app (cval header.name (Kernel.Level.substFn levels header.levelParams universes)) → x = y
   eta : ∀ header caps, Kernel.ConstantInfo.indInfo header caps ∈ env.consts → caps.eta = true →
+    Kernel.EtaFamilyStored env header.name caps →
     ∀ levels universes, universes.length = header.levelParams.length →
     ∀ (ρ finalρ : Nat → V) (values : List V) (result : Kernel.Expr),
       InstalledTelescope cval env levels ρ (header.type.instantiateLevelParams header.levelParams universes)
@@ -1183,8 +1209,9 @@ theorem checkedCapabilities_publicLaws {V : Type u} [Kernel.SetTheory V]
   · intro header caps present enabled levels universes arity ρ finalρ values result typed count x y left right
     exact checked_unit_telescope sourceWf target association types capabilities present enabled levels universes
       arity typed count x y left right
-  · intro header caps present enabled levels universes arity ρ finalρ values result typed count x member
-    obtain ⟨family, constructor, projections⟩ := checkInstalledEtaAssociations_sound etaAssociations present enabled
+  · intro header caps present enabled stored levels universes arity ρ finalρ values result typed count x member
+    obtain ⟨family, constructor, projections⟩ :=
+      checkInstalledEtaAssociations_sound etaAssociations present enabled stored
     exact checked_eta_telescope sourceWf target association types capabilities present enabled family constructor projections
       levels universes arity typed count x member
 

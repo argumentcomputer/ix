@@ -460,8 +460,14 @@ structure SourceNormalizedInstallation (source : Source) (roots : List Lean.Name
   semanticSupport : SourceSemanticBasisCompletion normalizedDeclarations
   declarations : List Kernel.Declaration
   semantic_append : declarations = semanticSupport.declarations
+  /-- The Nat-operation pin sets the source fold runs with. The fold is sound for
+  every pin list (its certificates are checked by the fold), so the pins are an
+  untrusted proposal: the certifier passes the builtin pins with their constants
+  renamed into the source's names, so that Lean's own `Nat.div`/`Nat.mod` spellings
+  are accepted (with no pins the fold declines them). -/
+  pins : List Kernel.NatOpPinSet
   env : Kernel.Env
-  checked : Kernel.Cached.checkDecls .verified [] declarations.toArray = .ok env
+  checked : Kernel.Cached.checkDecls .verified pins declarations.toArray = .ok env
 
 /-- The normalized stream is preserved literally, before the separate source
 semantic support suffix. This does not identify normalization with the
@@ -472,9 +478,12 @@ theorem SourceNormalizedInstallation.normalized_prefix {source : Source} {roots 
   rw [installed.semantic_append]
   exact installed.semanticSupport.original_prefix
 
-def installSourceNormalized (source : Source) (roots : List Lean.Name) (witnesses : LoweringWitnesses) :
-    Except SourceModelError (SourceNormalizedInstallation source roots) :=
-  if hc : CompleteSource source roots then
+/-- The installation given the source's completeness (e.g. from an accepted W
+association's `DirectDomain`, decided there with hash sets), so it is not decided
+again by list membership. -/
+def installSourceNormalizedComplete {source : Source} {roots : List Lean.Name}
+    (hc : CompleteSource source roots) (pins : List Kernel.NatOpPinSet)
+    (witnesses : LoweringWitnesses) : Except SourceModelError (SourceNormalizedInstallation source roots) :=
     match he : exportSourceDeclarations source with
     | .error why => .error (.exportFailure why)
     | .ok original =>
@@ -490,24 +499,34 @@ def installSourceNormalized (source : Source) (roots : List Lean.Name) (witnesse
               | .error why => .error (.proposalFailure why)
               | .ok output =>
                 let completion := completeSourceSemanticBasis output.val
-                match hk : Kernel.Cached.checkDecls .verified [] completion.declarations.toArray with
+                match hk : Kernel.Cached.checkDecls .verified pins completion.declarations.toArray with
                 | .error (error, position) => .error (.checking error position)
                 | .ok env => .ok ⟨hc, original, he, proposal, hp, hs, hm, hb,
-                    witnesses, output.val, output.property, completion, completion.declarations, rfl, env, hk⟩
+                    witnesses, output.val, output.property, completion, completion.declarations, rfl,
+                    pins, env, hk⟩
             else .error .supportMismatch
           else .error .correspondence
         else .error .changedOriginal
+
+def installSourceNormalizedWith (pins : List Kernel.NatOpPinSet) (source : Source) (roots : List Lean.Name)
+    (witnesses : LoweringWitnesses) : Except SourceModelError (SourceNormalizedInstallation source roots) :=
+  if hc : CompleteSource source roots then installSourceNormalizedComplete hc pins witnesses
   else .error .incomplete
+
+/-- The installation with no Nat-operation pins (the route's original form). -/
+def installSourceNormalized (source : Source) (roots : List Lean.Name) (witnesses : LoweringWitnesses) :
+    Except SourceModelError (SourceNormalizedInstallation source roots) :=
+  installSourceNormalizedWith [] source roots witnesses
 
 theorem SourceNormalizedInstallation.has_model (V : Type u) [Kernel.SetTheory V]
     {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots) :
     Nonempty (Kernel.Model V installed.env) :=
-  Kernel.model_exists V [] installed.declarations.toArray installed.env installed.checked
+  Kernel.model_exists V installed.pins installed.declarations.toArray installed.env installed.checked
 
 theorem SourceNormalizedInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
     {source : Source} {roots : List Lean.Name} (installed : SourceNormalizedInstallation source roots) :
     Nonempty (StrongInstalledModel V installed.env) :=
-  strongInstalledModel_exists V [] installed.declarations.toArray installed.env installed.checked
+  strongInstalledModel_exists V installed.pins installed.declarations.toArray installed.env installed.checked
 
 /-- In particular, every generated constructor equation is connected to
 the actual full annotated statement of its independently installed theorem. -/
@@ -529,7 +548,7 @@ structure SourceConstructorCoverChecked {source : Source} {roots : List Lean.Nam
   proposed : proposeSourceConstructorCover site = .ok (.thmDecl header value)
   fresh : ∀ declaration ∈ installed.declarations, header.name ∉ declaration.names
   env : Kernel.Env
-  checked : Kernel.Cached.checkDecls .verified []
+  checked : Kernel.Cached.checkDecls .verified installed.pins
     (installed.declarations ++ [Kernel.Declaration.thmDecl header value]).toArray = .ok env
 
 def checkSourceConstructorCover {source : Source} {roots : List Lean.Name}
@@ -539,7 +558,7 @@ def checkSourceConstructorCover {source : Source} {roots : List Lean.Name}
   | .error why => .error (.proposalFailure why)
   | .ok (.thmDecl header value) =>
     if hf : ∀ declaration ∈ installed.declarations, header.name ∉ declaration.names then
-      match hk : Kernel.Cached.checkDecls .verified []
+      match hk : Kernel.Cached.checkDecls .verified installed.pins
           (installed.declarations ++ [Kernel.Declaration.thmDecl header value]).toArray with
       | .error (error, position) => .error (.checking error position)
       | .ok env => .ok ⟨header, value, hp, hf, env, hk⟩
@@ -557,7 +576,7 @@ theorem SourceConstructorCoverChecked.strong_model (V : Type u) [Kernel.SetTheor
     {installed : SourceNormalizedInstallation source roots} {site : SourceProjectionSite source}
     (coverage : SourceConstructorCoverChecked installed site) :
     Nonempty (StrongInstalledModel V coverage.env) :=
-  strongInstalledModel_exists V [] _ coverage.env coverage.checked
+  strongInstalledModel_exists V installed.pins _ coverage.env coverage.checked
 
 theorem SourceInstallation.strong_model (V : Type u) [Kernel.SetTheory V]
     {source : Source} {roots : List Lean.Name} (installed : SourceInstallation source roots) :
@@ -588,7 +607,7 @@ theorem SourceNormalizedInstallation.target_value_pullback {V : Type u} [Kernel.
     (types : PullbackTypeEvidence target.public installed.env map)
     (values : PullbackDefinitionEvidence target installed.env map)
     (locality : map.LevelLocality installed.env targetEnv) :
-    Kernel.Cached.checkDecls .verified [] installed.declarations.toArray = .ok installed.env ∧
+    Kernel.Cached.checkDecls .verified installed.pins installed.declarations.toArray = .ok installed.env ∧
       ∃ pulled : PublicValueModel V installed.env,
         pulled.model.cval = map.values target.public.cval :=
   ⟨installed.checked, values.valueModel types locality, rfl⟩

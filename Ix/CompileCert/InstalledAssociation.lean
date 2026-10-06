@@ -137,7 +137,7 @@ theorem SourceNormalizedInstallation.artifact_universalRules (V : Type u) [Kerne
   obtain ⟨nameCheck, association⟩ := bothChecks_true checked
   obtain ⟨targetPins, _, targetChecked⟩ := accepted.toAdmittedArtifact.checked_declarations
   exact ⟨of_decide_eq_true (Option.some.inj nameCheck),
-    checkedAssociation_universalRules V [] targetPins source.declarations.toArray
+    checkedAssociation_universalRules V source.pins targetPins source.declarations.toArray
       (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations) names
       source.checked targetChecked association⟩
 

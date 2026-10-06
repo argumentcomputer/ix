@@ -100,7 +100,7 @@ theorem SourceConstructorCoverChecked.supported_universalRules (V : Type u) [Ker
       PublicCapabilityLaws publicSource.model.cval coverage.env ∧ UniversalRuleSimulation target coverage.env names := by
   obtain ⟨nameCheck, association⟩ := bothChecks_true checked
   exact ⟨of_decide_eq_true (Option.some.inj nameCheck),
-    checkedAssociation_universalRules V [] bundle.pins
+    checkedAssociation_universalRules V installed.pins bundle.pins
       (installed.declarations ++ [Kernel.Declaration.thmDecl coverage.header coverage.value]).toArray
       (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations ++ support) names
       coverage.checked bundle.checked association⟩
