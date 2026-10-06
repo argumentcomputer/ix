@@ -2167,8 +2167,13 @@ extern "C" fn rs_compile_validate_aux(
       }
       drop(p2_ingressed);
 
+      // An ingress error (an ill-formed level or free variable in a
+      // constant) is reported here; the blocks that need the constant then
+      // fail in Pass 3 with an unknown constant, recorded per block.
       for name in &p2_names {
-        expr_utils::ensure_in_kenv_of(name, &env, &stt, &mut p2_kctx);
+        if let Err(e) = expr_utils::ensure_in_kenv_of(name, &env, &stt, &mut p2_kctx) {
+          eprintln!("[validate-aux] pass 2 pre-ingress of {}: {e}", name.pretty());
+        }
       }
     }
 

@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::compile::CompileState;
+use ix_common::env::ConstantInfo;
 use crate::compile::aux_gen::kernel_bridge_reference as reference;
 use ix_common::env::{BinderInfo, DataValue, Literal};
 use ix_kernel::expr::{ExprData as KED, KExpr};
@@ -685,4 +686,141 @@ fn reduced_inductive_alias_retains_source_name_at_primitive_pin() {
     &scope.whnf_lean(&LeanExpr::app(identity, member.clone())).unwrap(),
     &member,
   );
+}
+
+// =========================================================================
+// The aux_gen loaders return the kernel crate's Lean-ingress errors (M1-h)
+// =========================================================================
+
+fn loader_def(n: &str, lps: &[Name], typ: LeanExpr, value: LeanExpr) -> (Name, ConstantInfo) {
+  use ix_common::env::{ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints};
+  let nm = name(n);
+  (
+    nm.clone(),
+    ConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal { name: nm, level_params: lps.to_vec(), typ },
+      value,
+      hints: ReducibilityHints::Abbrev,
+      safety: DefinitionSafety::Safe,
+      all: vec![],
+    }),
+  )
+}
+
+fn assert_ingress_refused<T: std::fmt::Debug>(
+  result: Result<T, ixon::CompileError>,
+  constant: &str,
+  kernel_text: &str,
+) {
+  match result {
+    Err(ixon::CompileError::UnsupportedExpr { desc }) => {
+      let prefix = format!("aux kernel ingress of {constant}: ");
+      assert!(desc.starts_with(&prefix), "{desc:?} does not start with {prefix:?}");
+      assert!(desc.contains(kernel_text), "{desc:?} lacks {kernel_text:?}");
+    },
+    other => panic!("expected an ingress refusal of {constant}, got {other:?}"),
+  }
+}
+
+fn kenv_has(kctx: &crate::compile::KernelCtx, stt: &CompileState, n: &Name) -> bool {
+  let addr = ix_kernel::ingress::resolve_lean_name_addr(
+    n,
+    Some(&stt.name_to_addr),
+    Some(&stt.aux_name_to_addr),
+  );
+  kctx.kenv.get(&KId::new(addr, n.clone())).is_some()
+}
+
+/// A constant whose type names a universe parameter it does not declare, or
+/// whose value has a free variable, is refused by every loader with an error
+/// (before M1-h: a panic with the kernel's text); the valid neighbour (the
+/// parameter declared, a closed value) loads.
+#[test]
+fn loaders_refuse_ill_formed_constants() {
+  let stt = CompileState::new_empty();
+  let u = name("u");
+  let sort_u = LeanExpr::sort(Level::param(u.clone()));
+  let type0 = LeanExpr::sort(Level::succ(Level::zero()));
+  let mut env = ix_common::env::Env::default();
+  for (n, ci) in [
+    loader_def("BadLevel", &[], sort_u.clone(), LeanExpr::sort(Level::zero())),
+    loader_def("GoodLevel", std::slice::from_ref(&u), sort_u.clone(), LeanExpr::sort(Level::zero())),
+    loader_def("BadFvar", &[], type0.clone(), LeanExpr::fvar(name("x"))),
+    loader_def("GoodValue", &[], type0.clone(), LeanExpr::sort(Level::zero())),
+  ] {
+    env.insert(n, ci);
+  }
+  type Loader = fn(
+    &Name,
+    &ix_common::env::Env,
+    &CompileState,
+    &mut crate::compile::KernelCtx,
+  ) -> Result<(), ixon::CompileError>;
+  let loaders: [(&str, Loader); 4] = [
+    ("ensure_in_kenv_of", ensure_in_kenv_of),
+    ("ensure_full_in_kenv_of", ensure_full_in_kenv_of),
+    ("ensure_in_kenv_of_prewarm", ensure_in_kenv_of_prewarm),
+    ("ensure_in_kenv", ensure_in_kenv),
+  ];
+  for (label, load) in loaders {
+    let mut kctx = crate::compile::KernelCtx::new();
+    assert_ingress_refused(
+      load(&name("BadLevel"), &env, &stt, &mut kctx),
+      "BadLevel",
+      "unknown level param `u`",
+    );
+    assert!(!kenv_has(&kctx, &stt, &name("BadLevel")), "{label}: BadLevel inserted");
+    // The prewarm loader stubs only theorem/opaque values; a definition's
+    // value is ingressed by all four.
+    assert_ingress_refused(
+      load(&name("BadFvar"), &env, &stt, &mut kctx),
+      "BadFvar",
+      "unexpected FVar(x)",
+    );
+    assert!(!kenv_has(&kctx, &stt, &name("BadFvar")), "{label}: BadFvar inserted");
+    // Valid neighbours.
+    load(&name("GoodLevel"), &env, &stt, &mut kctx).unwrap();
+    load(&name("GoodValue"), &env, &stt, &mut kctx).unwrap();
+    assert!(kenv_has(&kctx, &stt, &name("GoodLevel")), "{label}: GoodLevel missing");
+    assert!(kenv_has(&kctx, &stt, &name("GoodValue")), "{label}: GoodValue missing");
+  }
+}
+
+/// `populate_canon_kenv_with_below` returns the error of a `.below`
+/// definition it cannot ingress; the valid neighbour loads.
+#[test]
+fn populate_canon_kenv_with_below_refuses_ill_formed_below() {
+  use crate::compile::aux_gen::below::{BelowConstant, BelowDef};
+  let stt = CompileState::new_empty();
+  let env = ix_common::env::Env::default();
+  let below = |n: &str, lps: Vec<Name>| {
+    BelowConstant::Def(BelowDef {
+      name: name(n),
+      level_params: lps,
+      typ: LeanExpr::sort(Level::param(name("u"))),
+      value: LeanExpr::sort(Level::zero()),
+      is_unsafe: false,
+    })
+  };
+  let mut kctx = crate::compile::KernelCtx::new();
+  assert_ingress_refused(
+    crate::compile::aux_gen::populate_canon_kenv_with_below(
+      &[below("T.below", vec![])],
+      &[],
+      &env,
+      &stt,
+      &mut kctx,
+    ),
+    "T.below",
+    "unknown level param `u`",
+  );
+  crate::compile::aux_gen::populate_canon_kenv_with_below(
+    &[below("T.below", vec![name("u")])],
+    &[],
+    &env,
+    &stt,
+    &mut kctx,
+  )
+  .unwrap();
+  assert!(kenv_has(&kctx, &stt, &name("T.below")));
 }
