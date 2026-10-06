@@ -218,7 +218,7 @@ jobs:
         with:
           use-github-cache: "false"
       # A persistent hit still needs the matching toolchain for libleanshared.
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           build: ${{ steps.bins.outputs.cache-hit != 'true' }}
@@ -424,7 +424,7 @@ jobs:
       # cache fetch has to run from that directory.
       - name: Provision Lean toolchain
         if: steps.compile-source.outputs.rebuild == 'true'
-        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           lake-package-directory: Benchmarks/Compile
           auto-config: false
@@ -558,7 +558,7 @@ jobs:
       # compiles an env — the `.ixe` and compile row come from the compile
       # job's run-scoped artifact.
       - name: Provision Lean toolchain
-        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           lake-package-directory: .
           auto-config: false
@@ -780,7 +780,7 @@ jobs:
           label: Base benchmark binary build CPU
       - name: Build base (ix, bench-typecheck)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
-        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           lake-package-directory: base
           auto-config: false
@@ -949,7 +949,7 @@ jobs:
           tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Provision the toolchain so `ix` finds libleanshared (no package build).
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           build: false
