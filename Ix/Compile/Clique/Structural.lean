@@ -265,7 +265,83 @@ def StructLayout.brecOnCount (L : StructLayout) : Expr → Nat
   | .proj _ _ x _ | .mdata _ x _ => L.brecOnCount x
   | _ => 0
 
+/-- The shape of an eliminator (a matcher or a `casesOn`) that receives an
+owned dictionary past its declared arity (`MatcherApp.addArg`), read off its
+declaration: the declared arity, for each declared parameter its number of
+fields when it is an alternative (a parameter whose type concludes in an
+earlier parameter), and the motives (the parameters the alternatives conclude
+in) with their own arities. `none` when the constant is not in the input. -/
+structure ElimShape where
+  arity : Nat
+  alts : Array (Option Nat)
+  motives : Array (Nat × Nat)
+
+def StructLayout.elimShape? (L : StructLayout) (c : Name) : Option ElimShape := do
+  let ci ← L.const? c
+  let ty := ci.getCnst.type
+  let ar := Ix.Compile.Image.forallArity ty
+  let (ps, _) := Ix.Compile.Canon.peelForalls ar ty #[]
+  let mut alts : Array (Option Nat) := #[]
+  let mut motives : Array (Nat × Nat) := #[]
+  for k in [0:ps.size] do
+    let (_, pt, _) := ps[k]!
+    let fc := Ix.Compile.Image.forallArity pt
+    let (_, concl) := Ix.Compile.Canon.peelForalls fc pt #[]
+    match (getAppFnArgs (stripMdata concl)).1 with
+    | .bvar i _ =>
+      if i ≥ fc && i - fc < k then
+        alts := alts.push (some fc)
+        let mk := k - 1 - (i - fc)
+        unless motives.any (·.1 == mk) do
+          let (_, mt, _) := ps[mk]!
+          motives := motives.push (mk, Ix.Compile.Image.forallArity mt)
+      else alts := alts.push none
+    | _ => alts := alts.push none
+  return { arity := ar, alts, motives }
+
 /-! ## `Φ_σ` -/
+
+/-- The packed motive at motive position `j` of a `below`/`brecOn`
+application of the block, in canonical order (its leaves transported by
+`go`). -/
+def phiSMotive (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
+    (ctx : Array (Expr × Bool)) (j : Nat) (arg : Expr) : TM Expr := do
+  let g := L.groups[j]!
+  if g.size < 2 then return ← go ctx arg
+  let (bs, body) := peelLams g.arity arg #[]
+  let mut ctx' := ctx
+  let mut bs' := #[]
+  for (nm, t, bi) in bs do
+    bs' := bs'.push (nm, ← go ctx' t, bi)
+    ctx' := ctx'.push (t, false)
+  let some s := decodeSpine .pprod g.size body
+    | throw "grammar: a packed motive that is not Lean's"
+  let leaves ← s.leaves.mapM (go ctx')
+  return mkLams bs' ({ s with leaves }.permute g.perm).type
+
+/-- The type of an owned dictionary binder (or of a matcher motive's binder
+built from one, `MatcherApp.addArg`): a `below` application of the block has
+its motives permuted. These are the only places where Lean's encoding writes
+a `below` application in a definition clique, so with ownership enforced no
+other `below` application is touched (a user's `below` application keeps its
+motive: FIX-pfwf O2). Anything else is `go`. -/
+def phiSDictType (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
+    (ctx : Array (Expr × Bool)) (t : Expr) : TM Expr := do
+  let (h, args) := getAppFnArgs t
+  match h with
+  | .const c _ _ =>
+    match L.aux.get? c with
+    | some a =>
+      if a.isBrecOn then return ← go ctx t
+      let P := L.numParams
+      let K := L.numMotives
+      let mut args' := #[]
+      for i in [0:args.size] do
+        if P ≤ i && i < P + K then args' := args'.push (← phiSMotive L go ctx (i - P) args[i]!)
+        else args' := args'.push (← go ctx args[i]!)
+      return mkAppN h args'
+    | none => go ctx t
+  | _ => go ctx t
 
 /-- One step of `Φ_σ` on a structural clique's term, in a context of binder
 types (Lean's, outermost first) each with its ownership (the recursion's own
@@ -281,22 +357,13 @@ def phiSStep (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
     let mut bs' := #[]
     for i in [0:bs.size] do
       let (nm, t, bi) := bs[i]!
-      bs' := bs'.push (nm, ← go ctx' t, bi)
+      bs' := bs'.push (nm, ← (if owned i then phiSDictType L go ctx' t else go ctx' t), bi)
       ctx' := ctx'.push (t, owned i)
     let body' ← k ctx' body
     return if lam then mkLams bs' body' else Ix.Compile.Canon.mkForalls bs' body'
   let ownedArg (x : Expr) : Bool := match stripMdata x with
     | .bvar i _ => if h : i < ctx.size then ctx[ctx.size - 1 - i].2 else false
     | _ => false
-  -- the packed motive at motive position `j`
-  let motive (j : Nat) (arg : Expr) : TM Expr := do
-    let g := L.groups[j]!
-    if g.size < 2 then return ← go ctx arg
-    underBinders g.arity true arg (fun _ => false) fun ctx' body => do
-      let some s := decodeSpine .pprod g.size body
-        | throw "grammar: a packed motive that is not Lean's"
-      let leaves ← s.leaves.mapM (go ctx')
-      return ({ s with leaves }.permute g.perm).type
   -- the packed functional at functional position `j`; its last binder is
   -- the dictionary `brecOn` builds
   let functional (j : Nat) (arg : Expr) : TM Expr := do
@@ -347,6 +414,10 @@ def phiSStep (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
     match h with
     | .const c _ _ =>
       if let some a := L.aux.get? c then
+        -- with ownership enforced, a `below` application here is not in an
+        -- owned dictionary's binder type (those go through `phiSDictType`):
+        -- it is the user's, and keeps its motive
+        if !a.isBrecOn && L.checkOwnership then return mkAppN h (← args.mapM (go ctx))
         let P := L.numParams
         let K := L.numMotives
         let g := L.groups[a.pos]!
@@ -354,7 +425,7 @@ def phiSStep (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
         let mut args' := #[]
         for i in [0:args.size] do
           let x := args[i]!
-          if P ≤ i && i < P + K then args' := args'.push (← motive (i - P) x)
+          if P ≤ i && i < P + K then args' := args'.push (← phiSMotive L go ctx (i - P) x)
           else if a.isBrecOn && fStart ≤ i && i < fStart + K then
             args' := args'.push (← functional (i - fStart) x)
           else args' := args'.push (← go ctx x)
@@ -380,10 +451,26 @@ def phiSStep (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
           if ownedArg args[k]! then throw s!"grammar: a below dictionary passed whole to {c}"
         let extras := (args.extract ar args.size).map ownedArg
         let (ps, _) := Ix.Compile.Canon.peelForalls ar ty #[]
+        let motives := ((L.elimShape? c).map (·.motives)).getD #[]
         let mut args' := #[]
         for k in [0:args.size] do
           let x := args[k]!
-          if h : k < ps.size then
+          if let some (_, ma) := motives.find? (·.1 == k) then
+            -- the motive: its leading binders after its own are the
+            -- extras' types, an owned dictionary's a `below` of the block
+            unless lamArity x ≥ ma do throw s!"grammar: a motive of {c} that is not a function of its discriminants"
+            args' := args'.push (← underBinders ma true x (fun _ => false) fun ctx' body => do
+              let (fs, rest) := Ix.Compile.Canon.peelForalls extras.size body #[]
+              unless fs.size == extras.size do
+                throw s!"grammar: a motive of {c} that does not bind the dictionary"
+              let mut c' := ctx'
+              let mut fs' := #[]
+              for j in [0:fs.size] do
+                let (nm, t, bi) := fs[j]!
+                fs' := fs'.push (nm, ← (if extras[j]! then phiSDictType L go c' t else go c' t), bi)
+                c' := c'.push (t, false)
+              return Ix.Compile.Canon.mkForalls fs' (← go c' rest))
+          else if h : k < ps.size then
             let (_, pt, _) := ps[k]
             let fc := Ix.Compile.Image.forallArity pt
             let (_, concl) := Ix.Compile.Canon.peelForalls fc pt #[]
@@ -660,9 +747,21 @@ def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Na
     let mut bs' := #[]
     for i in [0:bs.size] do
       let (nm, t, bi) := bs[i]!
-      bs' := bs'.push (nm, ← phiS L ctx t, bi)
-      ctx := ctx.push (t, depth == arity + 1 && i == arity)
+      let dict := depth == arity + 1 && i == arity
+      bs' := bs'.push (nm, ← (if dict then phiSDictType L (phiS L) ctx t else phiS L ctx t), bi)
+      ctx := ctx.push (t, dict)
     return mkLams bs' (← phiS L ctx body)
+  -- the same telescope in the functional's type
+  let phiFTy (depth arity : Nat) (e : Expr) : TM Expr := do
+    let (bs, body) := Ix.Compile.Canon.peelForalls depth e #[]
+    let mut ctx : Array (Expr × Bool) := #[]
+    let mut bs' := #[]
+    for i in [0:bs.size] do
+      let (nm, t, bi) := bs[i]!
+      let dict := depth == arity + 1 && i == arity
+      bs' := bs'.push (nm, ← (if dict then phiSDictType L (phiS L) ctx t else phiS L ctx t), bi)
+      ctx := ctx.push (t, false)
+    return Ix.Compile.Canon.mkForalls bs' (← phiS L ctx body)
   let mut out : Array Transported := #[]
   for d in aux do
     if L.fNames.contains d.name then
@@ -671,7 +770,7 @@ def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Na
       -- the functional's own telescope (a member may pass it eta-reduced)
       let (_, arity) := (L.fDepth.get? d.name).getD (0, 0)
       let depth := arity + 1
-      let type ← withReorderedBinders false m L.fixedPerm d.type phi
+      let type ← withReorderedBinders2 false m L.fixedPerm d.type phi (phiFTy depth arity)
       let value ← withReorderedBinders2 true m L.fixedPerm d.value phi (phiF depth arity)
       out := out.push { decl := { d with type, value } }
     else if L.matchers.contains d.name then

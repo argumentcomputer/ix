@@ -147,12 +147,41 @@ def isConstNamed (e : Expr) (n : Name) : Bool :=
   | .const c _ _ => c == n
   | _ => false
 
-/-- `R` on a structural functional, in a context of Lean's binder types. -/
+/-- `R` on a structural functional, in a context of Lean's binder types.
+The motives of the block's `brecOn` applications (a member's root) and of the
+`below` applications in the binder types of owned dictionaries (a λ binder of
+a `below` type: after the ownership check every such binder is the
+recursion's own; and the binders a matcher motive gets for an owned
+dictionary, `MatcherApp.addArg`) are erased to a placeholder, since they are
+the packing's; a `below` application anywhere else is the user's and keeps
+its motive (FIX-pfwf O2: two members that differ only there keep different
+specifications). -/
 def recS (L : StructLayout) (names : Array Name) (lvls : Array Level) :
     Nat → Array Expr → Expr → RM Expr
   | 0, _, _ => throw "recovery: recursion bound exhausted"
   | fuel + 1, ctx, e => do
     let go := recS L names lvls fuel
+    -- an owned dictionary's binder type: its motives erased
+    let dictTy (ctx : Array Expr) (t : Expr) : RM Expr := do
+      let (h, args) := getAppFnArgs t
+      match h with
+      | .const c _ _ =>
+        if let some a := L.aux.get? c then
+          if !a.isBrecOn then
+            let P := L.numParams
+            let K := L.numMotives
+            let mut args' := #[]
+            for k in [0:args.size] do
+              if P ≤ k && k < P + K then
+                pushHole (.expr args[k]!)
+                args' := args'.push (Expr.mkConst phMotive #[])
+              else args' := args'.push (← go ctx args[k]!)
+            return mkAppN h args'
+        go ctx t
+      | _ => go ctx t
+    let ownedVar (x : Expr) : Bool := match stripMdata x with
+      | .bvar i _ => if h : i < ctx.size then L.isBelowTy (liftLoose ctx[ctx.size - 1 - i] (i + 1)) else false
+      | _ => false
     -- a path into a dictionary
     match e with
     | .proj .. | .app .. =>
@@ -185,7 +214,10 @@ def recS (L : StructLayout) (names : Array Name) (lvls : Array Level) :
       let (h, args) := getAppFnArgs e
       match h with
       | .const c _ _ =>
-        if (L.aux.get? c).isSome then
+        if let some a := L.aux.get? c then
+          -- a `brecOn` application (a member's root): its motives erased; a
+          -- `below` application outside a dictionary's binder type: the user's
+          if !a.isBrecOn then return mkAppN h (← args.mapM (go ctx))
           let P := L.numParams
           let K := L.numMotives
           let mut args' := #[]
@@ -195,9 +227,36 @@ def recS (L : StructLayout) (names : Array Name) (lvls : Array Level) :
               args' := args'.push (Expr.mkConst phMotive #[])
             else args' := args'.push (← go ctx args[k]!)
           return mkAppN h args'
+        -- an eliminator that receives an owned dictionary past its arity:
+        -- its motive's binders for the extras are dictionary types
+        if let some sh := L.elimShape? c then
+          if sh.arity < args.size && (args.extract sh.arity args.size).any ownedVar then
+            let extras := (args.extract sh.arity args.size).map ownedVar
+            let mut args' := #[]
+            for k in [0:args.size] do
+              let x := args[k]!
+              match sh.motives.find? (·.1 == k) with
+              | some (_, ma) =>
+                let (bs, body) := peelLams ma x #[]
+                let mut c' := ctx
+                let mut bs' := #[]
+                for (nm, t, bi) in bs do
+                  bs' := bs'.push (nm, ← go c' t, bi)
+                  c' := c'.push t
+                let (fs, rest) := Ix.Compile.Canon.peelForalls extras.size body #[]
+                let mut fs' := #[]
+                for j in [0:fs.size] do
+                  let (nm, t, bi) := fs[j]!
+                  fs' := fs'.push (nm, ← (if extras[j]?.getD false then dictTy c' t else go c' t), bi)
+                  c' := c'.push t
+                args' := args'.push (mkLams bs' (Ix.Compile.Canon.mkForalls fs' (← go c' rest)))
+              | none => args' := args'.push (← go ctx x)
+            return mkAppN h args'
         return mkAppN h (← args.mapM (go ctx))
       | _ => return mkAppN (← go ctx h) (← args.mapM (go ctx))
-    | .lam nm t b bi _ => return Expr.mkLam nm (← go ctx t) (← go (ctx.push t) b) bi
+    | .lam nm t b bi _ =>
+      let t' ← if L.isBelowTy t then dictTy ctx t else go ctx t
+      return Expr.mkLam nm t' (← go (ctx.push t) b) bi
     | .forallE nm t b bi _ => return Expr.mkForallE nm (← go ctx t) (← go (ctx.push t) b) bi
     | .letE nm t v b nd _ =>
       return Expr.mkLetE nm (← go ctx t) (← go ctx v) (← go (ctx.push t) b) nd
@@ -314,8 +373,9 @@ def encS (L : StructLayout) (names : Array Name) (memberGroup : Array (Nat × Na
           let K := L.numMotives
           let mut args' := #[]
           for k in [0:args.size] do
-            if P ≤ k && k < P + K then
-              unless isConstNamed args[k]! phMotive do throw "recovery: a motive placeholder was expected"
+            -- a placeholder where `recS` erased the motive; a user's `below`
+            -- application keeps its own
+            if P ≤ k && k < P + K && isConstNamed args[k]! phMotive then
               args' := args'.push (← popExpr)
             else args' := args'.push (← go ctx args[k]!)
           return mkAppN h args'

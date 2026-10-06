@@ -344,7 +344,8 @@ def runPlanCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
           else pure v
         let same ← isDefEq v w
         values := values.push s!"{p.member} {p.args.map toString}: Lean {← ppExpr v}, planned {← ppExpr w}{if same then "" else "  <-- DIFFERENT"}"
-        unless ← isDefEq v p.expected do failures := failures.push s!"{c.name}: Lean's {p.member} is not {← ppExpr p.expected}"
+        if p.checkExpected then
+          unless ← isDefEq v p.expected do failures := failures.push s!"{c.name}: Lean's {p.member} is not {← ppExpr p.expected}"
         unless same do failures := failures.push s!"{c.name}: WRONG MEANING: {p.member} {p.args.map toString} is {← ppExpr v} in Lean, {← ppExpr w} as planned"
       let aliases := plan.aliases.map fun (a, b) => s!"{(toLeanName a).replacePrefix ns .anonymous} = {(toLeanName b).replacePrefix ns .anonymous}"
       return { name := c.name, outcome := s!"planned: sigma {plan.sigma}, aliases (O17) {aliases}, order by {plan.source.tag}",
@@ -636,6 +637,30 @@ def cases : Array Case :=
       probes := #[{ member := `first, args := #[natLit 1], expected := natLit 5 },
                   { member := `second, args := #[natLit 1], expected := natLit 29 },
                   { member := `second, args := #[natLit 0], expected := natLit 5 }] },
+    -- FIX-pfwf O2: a user's `below` application decided classically. Lean's
+    -- value is a stuck classical decision, so the probes compare the two
+    -- terms definitionally (`checkExpected := false`)
+    st "S5A" "user below application with heterogeneous components, decided classically (O2)" #[
+      { member := `first, args := #[natLit 0], expected := natLit 17, checkExpected := false },
+      { member := `second, args := #[natLit 1], expected := natLit 17, checkExpected := false },
+      { member := `second, args := #[natLit 0], expected := natLit 31 }],
+    st "S5B" "S5, other member order (O2)" #[
+      { member := `first, args := #[natLit 0], expected := natLit 17, checkExpected := false },
+      { member := `second, args := #[natLit 1], expected := natLit 17, checkExpected := false }],
+    st "S6A" "S5 with homogeneous components (valid neighbour of S5)" #[
+      { member := `first, args := #[natLit 0], expected := natLit 17, checkExpected := false },
+      { member := `second, args := #[natLit 0], expected := natLit 31 }] (must := true),
+    st "S6B" "S6, other member order (valid neighbour)" #[
+      { member := `first, args := #[natLit 0], expected := natLit 17, checkExpected := false }] (must := true),
+    { name := "R2A", plan := true,
+      what := "recovery: two members that differ only in a user below motive, whole plan with O17 (O2)",
+      probes := #[{ member := `first, args := #[natLit 0], expected := natLit 17, checkExpected := false },
+                  { member := `second, args := #[natLit 0], expected := natLit 17, checkExpected := false },
+                  { member := `second, args := #[natLit 1], expected := natLit 17, checkExpected := false }] },
+    { name := "R2B", plan := true, what := "R2, other member order (O2)",
+      probes := #[{ member := `first, args := #[natLit 0], expected := natLit 17, checkExpected := false },
+                  { member := `second, args := #[natLit 0], expected := natLit 17, checkExpected := false },
+                  { member := `second, args := #[natLit 1], expected := natLit 17, checkExpected := false }] },
     st "S3A" "ordinary structural recursion (control)" #[
       { member := `first, args := #[natLit 0], expected := natLit 5 },
       { member := `first, args := #[natLit 3], expected := natLit 11 },

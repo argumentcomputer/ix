@@ -634,6 +634,96 @@ def first : Nat → Nat
 end
 end R1B
 
+/-! ## A user's `below` application decided classically (FIX-pfwf O2)
+
+The type `Nat.below (motive := fun _ => PProd A B) 1` has the shape of a
+dictionary type of a two-member structural clique over `Nat`. A transport
+that permutes the motive of every `below` application turns `PProd A B` into
+`PProd B A`; with heterogeneous components the proposition
+`Nat.below … 1 = UserBelowT` becomes another proposition, and a classical
+decision on it another term: Lean proves `first 0 = 17` (the equation holds by
+`rfl`), and the permuted constant is not definitionally Lean's. Contrived on
+purpose; no realistic source is known (FIX-pfwf §4, A11/A14). -/
+def UserBelowT : Type := Nat.below (motive := fun _ => PProd Nat Bool) 1
+
+/-! S5: the transport (heterogeneous components). -/
+namespace S5A
+mutual
+noncomputable def first : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Nat Bool) 1 = UserBelowT)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => second n
+noncomputable def second : Nat → Nat
+  | 0 => 31
+  | n + 1 => first n
+end
+end S5A
+namespace S5B
+mutual
+noncomputable def second : Nat → Nat
+  | 0 => 31
+  | n + 1 => first n
+noncomputable def first : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Nat Bool) 1 = UserBelowT)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => second n
+end
+end S5B
+
+/-! S6, the valid neighbour of S5: homogeneous components, so the permuted
+type is the same type and the term is unchanged either way. -/
+def UserBelowH : Type := Nat.below (motive := fun _ => PProd Nat Nat) 1
+namespace S6A
+mutual
+noncomputable def first : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Nat Nat) 1 = UserBelowH)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => second n
+noncomputable def second : Nat → Nat
+  | 0 => 31
+  | n + 1 => first n
+end
+end S6A
+namespace S6B
+mutual
+noncomputable def second : Nat → Nat
+  | 0 => 31
+  | n + 1 => first n
+noncomputable def first : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Nat Nat) 1 = UserBelowH)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => second n
+end
+end S6B
+
+/-! R2: recovery. Two members that differ only in the motive of a user's
+`below` application; a recovery that erases every `below` motive gives them
+one specification, and O17 aliases one to the other. -/
+namespace R2A
+mutual
+noncomputable def first : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Nat Bool) 1 = UserBelowT)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => second n
+noncomputable def second : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Bool Nat) 1 = UserBelowT)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => first n
+end
+end R2A
+namespace R2B
+mutual
+noncomputable def second : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Bool Nat) 1 = UserBelowT)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => first n
+noncomputable def first : Nat → Nat
+  | 0 => @ite Nat (Nat.below (motive := fun _ => PProd Nat Bool) 1 = UserBelowT)
+      (Classical.propDecidable _) 17 29
+  | n + 1 => second n
+end
+end R2B
+
 /-! ## Callers (the block rule, design document §6.3)
 
 WF8: an ordinary well-founded clique, with a **caller** outside its unit that
