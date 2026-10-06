@@ -1,4 +1,4 @@
-import Ix.CompileCert.Entry
+import Ix.CompileCert.Installed
 
 /-! Annotated reading transport, before constructing a source strong model.
 

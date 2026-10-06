@@ -1,4 +1,5 @@
 import Ix.CompileCert.AnnotReduceOps
+import Ix.CompileCert.AnnotTowerEntry
 
 namespace Ix.CompileCert
 open Kernel.Model Kernel.Semantics

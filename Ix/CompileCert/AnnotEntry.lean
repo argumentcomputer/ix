@@ -1,3 +1,5 @@
+import Ix.CompileCert.Support
+import Ix.CompileCert.AnnotModel
 import Ix.CompileCert.AnnotSupport
 
 /-! Executable installed annotation association. This is the checked core

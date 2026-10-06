@@ -1,4 +1,7 @@
 import Ix.CompileCert.AnnotTowerLevels
+import Ix.CompileCert.AnnotTowers
+import Ix.CompileCert.AnnotInstances
+import Ix.CompileCert.AnnotNested
 
 namespace Ix.CompileCert
 open Kernel.Model Kernel.Semantics

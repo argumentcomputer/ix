@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotRecRules
+import Ix.CompileCert.RuleLaws
 
 namespace Ix.CompileCert
 open Kernel.Model Kernel.Semantics

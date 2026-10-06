@@ -1,4 +1,5 @@
 import IxC.Kernel.Audit.Axioms
+import Ix.CompileCert.Entry
 import Ix.CompileCert.StrongEntry
 
 /-! # The compiler-certification lane's axiom audit

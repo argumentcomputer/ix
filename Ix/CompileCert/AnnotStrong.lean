@@ -1,3 +1,5 @@
+import Ix.CompileCert.AnnotReduceEntry
+import Ix.CompileCert.AnnotDivMod
 import Ix.CompileCert.AnnotNatOps
 
 namespace Ix.CompileCert

@@ -1,3 +1,4 @@
+import Ix.CompileCert.AnnotRuleFit
 import Ix.CompileCert.AnnotRulePins
 
 namespace Ix.CompileCert

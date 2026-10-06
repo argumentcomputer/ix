@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotNested
+import Ix.CompileCert.AnnotRules
 
 namespace Ix.CompileCert
 open Kernel.Model Kernel.Semantics

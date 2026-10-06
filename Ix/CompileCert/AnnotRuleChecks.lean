@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotRuleFit
+import Ix.CompileCert.AnnotInstances
 
 namespace Ix.CompileCert
 open Kernel.Model Kernel.Semantics

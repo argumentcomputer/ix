@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotReduceEntry
+import Ix.CompileCert.ValueReceipt
 
 namespace Ix.CompileCert
 open Kernel Kernel.Model Kernel.Semantics Kernel.SetTheory

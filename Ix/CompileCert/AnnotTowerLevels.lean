@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotTowers
+import Ix.CompileCert.Installed
 
 namespace Ix.CompileCert
 open Kernel.Model Kernel.Semantics

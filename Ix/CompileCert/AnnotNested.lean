@@ -1,3 +1,4 @@
+import Ix.CompileCert.AnnotLaws
 import Ix.CompileCert.AnnotRules
 
 namespace Ix.CompileCert

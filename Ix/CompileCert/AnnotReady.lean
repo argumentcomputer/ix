@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotLaws
+import Ix.CompileCert.AnnotEntry
 
 /-! Literal support follows from actual successful annotation readings.
 This lets rule transport discharge its literal premises from the independent

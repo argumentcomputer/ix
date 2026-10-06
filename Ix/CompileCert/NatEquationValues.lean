@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotDivMod
+import Ix.CompileCert.DivModValues
 
 namespace Ix.CompileCert
 open Kernel.Model Kernel.Semantics

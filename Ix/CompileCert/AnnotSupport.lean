@@ -1,4 +1,4 @@
-import Ix.CompileCert.AnnotModel
+import Ix.CompileCert.AnnotLevels
 
 /-! Literal-support checks follow occurrences in the expression being related.
 An unrelated target capability cannot reject a literal-free source field.
