@@ -372,6 +372,20 @@ def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
   fun n us args => (Opt.engine env { head := n, us, args }).map (·.2)
 
+/-- The recorded declines of the definitional passes over the same views
+(`Ix.Compile.Pass.Opt.O11a.declineCause?`): the hook the rewrite tries next
+to `optLookup`, giving the cause when O11a declined because an instance its
+output needs is absent from the input. -/
+def declineLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+    Name → Array Ix.Level → Array Expr → Option String :=
+  let inp := viewInput cenv
+  let blocks : Std.HashMap Name Opt.OptBlock :=
+    views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
+  let env : Opt.OptEnv :=
+    { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
+      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
+  fun n us args => Opt.O11a.declineCause? env { head := n, us, args }
+
 /-- Pass 3's rewrite of a changed clique's canonical constants (the clique
 hook's `rewrite`): the views of the changed blocks they reference, then the
 call-site rewrite with the definitional passes (`optLookup`), exactly as for
@@ -413,11 +427,14 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
       if !views.contains key then
         views := views.insert key (← viewOf cenv views key)
   let lookup := expansionLookup cenv views
-  let rwr ← rewriteBlock lookup members (optLookup cenv views)
+  let rwr ← rewriteBlock lookup members (optLookup cenv views) (declineLookup cenv views)
   let overlay : Std.HashMap Name ConstantInfo :=
     rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) cenv.env.overlay
   let sources : Std.HashMap Nat Expr :=
     rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) cenv.p3Sources
+  -- the recorded declines go to the block state, and from there into the
+  -- compile's non-canonical set (`CompileEnv.p3NonCanonical`)
+  let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines }
   return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, init)
 
 /-! ## The Lean names of a changed block's auxiliaries: their images -/

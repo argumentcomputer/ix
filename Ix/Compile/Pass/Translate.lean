@@ -95,6 +95,15 @@ structure RwState where
   /-- The definitional passes (`Ix.Compile.Pass.Opt.engine`), tried at every full
   application before the image is inlined; `none` keeps the baseline. -/
   opt? : Name → Array Level → Array Expr → Option Expr := fun _ _ _ => none
+  /-- The recorded declines (design document §6.3, obligation 4): tried at
+  every full application next to `opt?`; a cause means a pass declined
+  because a reference it needs is absent from the input
+  (`Ix.Compile.Pass.Opt.O11a.declineCause?`). -/
+  decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none
+  /-- The causes recorded so far, in rewrite order. -/
+  declines : Array String := #[]
+  /-- The declines recorded while rewriting a cached subterm. -/
+  declineCache : Std.HashMap (Expr × Bool) (Array String) := {}
 
 abbrev RwM := StateT RwState (Except String)
 
@@ -128,7 +137,13 @@ expansions. -/
 def rw : Nat → Bool → Expr → RwM Expr
   | 0, _, _ => throw "Pass 3 rewrite: recursion bound exhausted"
   | fuel + 1, record, e => do
-    if let some r := (← get).cache.get? (e, record) then return r
+    if let some r := (← get).cache.get? (e, record) then
+      -- a cached subterm records its declines again (they belong to the
+      -- constant being rewritten now)
+      if let some ds := (← get).declineCache.get? (e, record) then
+        modify fun st => { st with declines := st.declines ++ ds }
+      return r
+    let before := (← get).declines.size
     let r ← match e with
       | .app .. | .const .. => do
         let (h, args) := getAppFnArgs e
@@ -145,6 +160,8 @@ def rw : Nat → Bool → Expr → RwM Expr
             let body ← match (← get).opt? n us args' with
               | some e => pure e
               | none => liftM (Ix.Compile.Image.instantiate (substLevels x.levelParams us x.value) args')
+            if let some cause := (← get).decline? n us args' then
+              modify fun st => { st with declines := st.declines.push cause }
             if record then
               let st ← get
               let k := st.base + st.sources.size
@@ -169,7 +186,10 @@ def rw : Nat → Bool → Expr → RwM Expr
       | .proj s i x _ => do pure (Expr.mkProj s i (← rw fuel record x))
       | .mdata md x _ => do pure (Expr.mkMData md (← rw fuel record x))
       | e => pure e
-    modify fun st => { st with cache := st.cache.insert (e, record) r }
+    modify fun st => { st with
+      cache := st.cache.insert (e, record) r
+      declineCache := if st.declines.size == before then st.declineCache
+        else st.declineCache.insert (e, record) (st.declines.extract before st.declines.size) }
     return r
 end
 
@@ -205,21 +225,29 @@ structure BlockRewrite where
   sources : Array Expr := #[]
   /-- Heads whose image constants are needed (bare or partial occurrences). -/
   needed : Array Name := #[]
+  /-- The recorded declines, each with the member whose term had the
+  occurrence (`RwState.decline?`). -/
+  declines : Array (Name × String) := #[]
   deriving Inhabited
 
 /-- Rewrite the members of one block (`base(c)` for each); placeholder
 indices are block-unique. -/
 def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     (members : Array (Name × ConstantInfo))
-    (opt? : Name → Array Level → Array Expr → Option Expr := fun _ _ _ => none) :
+    (opt? : Name → Array Level → Array Expr → Option Expr := fun _ _ _ => none)
+    (decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none) :
     Except String BlockRewrite := do
-  let mut st : RwState := { base := 0, opt? }
+  let mut st : RwState := { base := 0, opt?, decline? }
   let mut overlay : Array (Name × ConstantInfo) := #[]
+  let mut declines : Array (Name × String) := #[]
   for (n, ci) in members do
+    let before := st.declines.size
     let (ci', st') ← (rewriteConstM expansion? ci).run st
     st := st'
+    for c in st.declines.extract before st.declines.size do
+      unless declines.contains (n, c) do declines := declines.push (n, c)
     if ci' != ci then overlay := overlay.push (n, ci')
-  return { overlay, sources := st.sources, needed := st.needed }
+  return { overlay, sources := st.sources, needed := st.needed, declines }
 
 end Ix.Compile.Pass
 

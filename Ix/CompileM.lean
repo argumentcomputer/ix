@@ -151,6 +151,14 @@ structure CompileEnv where
       `all₀.mutual`, `m._f` ↦ the clique), for the callers' check
       (`Ix.Compile.Pass.cliqueCallers`). -/
   p3CliqueRoots : Std.HashMap Name (Array Name) := {}
+  /-- Pass 3: the compile's non-canonical set, as far as the passes record
+      it (design document §6.3, obligation 4; §7): constant ↦ cause. A
+      constant is here when a pass declined on it because a reference its
+      output needs is absent from the input (O11a without
+      `T._sizeOf_inst`), so it keeps a faithful but non-canonical form.
+      Merged from the blocks (`BlockState.p3NonCanonical`); empty with the
+      switch off. -/
+  p3NonCanonical : Std.HashMap Name String := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -295,6 +303,9 @@ structure BlockState where
       family (`compileBelowRecursors`), read by the A3V-IPB hook
       (`Ix.Compile.Pass.editPermutedBelowFamily`); never merged by itself. -/
   p3BelowRecs : Array (Name × RecursorVal) := #[]
+  /-- Pass 3: the recorded declines of this block's rewrite (constant,
+      cause), merged into `CompileEnv.p3NonCanonical`. -/
+  p3NonCanonical : Array (Name × String) := #[]
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/

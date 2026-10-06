@@ -64,8 +64,32 @@ with no parameters and no indices, not reflexive; its instance and its
 (α-equality); every adapted minor is a syntactic λ over its fields and IHs.
 Otherwise O11a declines and O2 runs (the relocated form, faithful).
 
+**A reference the input does not have** (design document §6.3, the four
+obligations of a pass whose output adds a reference):
+1. *visible*: `T._sizeOf_inst` is an auxiliary of the same Lean declaration
+   as `all₀._sizeOf_N` (one logical unit, §6.3's table of allowed cases);
+2. *declared*: `sizeOfEdges` gives the scheduler the edge
+   `all₀._sizeOf_N → T._sizeOf_inst` when the instance is in the input, and
+   every closure producer carries it: the selected producers carry the whole
+   unit of every block they reach (`Lean.unitMembers`, M1-d) and, before
+   that, the family's instances (`Lean.compilerSupportOf`);
+3. *acyclic*: argued in the section on the scheduling edges below;
+4. *absent*: when the instance is absent from the input (a hand-built input,
+   or a closure that did not carry the unit), O11a declines, O2 gives the
+   relocated-recursor form, and the decline is **recorded**:
+   `O11a.declineCause?` names the missing instances and the driver puts the
+   constant in the compile's non-canonical set
+   (`CompileEnv.p3NonCanonical`). It never guesses an address and never
+   keeps the relocated form without a record. (Before M1-c the decline was
+   silent: `sizeOfInstance?` failed, O11a returned `none`, O2 fired, and
+   nothing recorded that the canonical form was not reached.)
+
 ## Non-canonical set and evidence
-None. Library load: the 7 `Linear.EqCnstr._sizeOf_N`. Evidence: the twins
+None on a closure that carries the unit. On an input without
+`T._sizeOf_inst`: the `_sizeOf_N` with the cause above
+(`Tests/Ix/Compile/O11aDecline.lean`: the withheld instance declines with
+the record, the valid neighbour with the instance rewrites).
+Library load: the 7 `Linear.EqCnstr._sizeOf_N`. Evidence: the twins
 unit's `o11a` line (the `rfl`), the library twins `Oracle.Lib` Linear family
 (Orig's `_sizeOf` instances equal Twin's with the switch on), the
 `O2Split` fixture's `_sizeOf`.
@@ -121,7 +145,8 @@ def sizeOfInstance? (env : OptEnv) (T : Name) (telescope : Array Expr) : Option 
 
 /-- The instance-form minor of Lean minor `j` (`some none` when no field of
 its constructor is recursive into another component). -/
-def sizeOfMinor (env : OptEnv) (rv : RecursorVal) (inBlock : Array Bool) (us : Array Level)
+def sizeOfMinorWith (env : OptEnv) (inst? : Name → Array Expr → Option (Name × Level))
+    (rv : RecursorVal) (inBlock : Array Bool) (us : Array Level)
     (ps ms mins : Array Expr) (j : Nat) : Option (Option Expr) := do
   let ienv := env.ienv
   let auxSigs := Ix.AuxGen.auxMotiveSigs rv us ps ms ienv
@@ -157,14 +182,15 @@ def sizeOfMinor (env : OptEnv) (rv : RecursorVal) (inBlock : Array Bool) (us : A
       else
         if !target.xsFvars.isEmpty || !target.idxArgs.isEmpty then none
         let T ← rv.all[target.sourcePos]?
-        let (inst, l) ← sizeOfInstance? env T telescope
+        let (inst, l) ← inst? T telescope
         let field ← fvars[fieldIdx]?
         let sz := mkAppN (Expr.mkConst nSizeOf #[l])
           #[Expr.mkConst T #[], Expr.mkConst inst #[], field]
         cur := Ix.AuxGen.instantiate1 b sz
   return some (Ix.AuxGen.mkLambda cur decls)
 
-def O11a.apply (env : OptEnv) (o : Occ) : Option Expr := do
+def O11a.applyWith (env : OptEnv) (inst? : Name → Array Expr → Option (Name × Level))
+    (o : Occ) : Option Expr := do
   let (k, r) ← classify o.head
   if k != .kRec then none
   let b ← env.blockOf o.head
@@ -187,7 +213,7 @@ def O11a.apply (env : OptEnv) (o : Occ) : Option Expr := do
     let j ← match src? with
       | some j => pure j
       | none => wrappedMinorSrc s.arity s.np s.nm s.nmin t
-    match ← sizeOfMinor env rv inBlock o.us ps ms mins j with
+    match ← sizeOfMinorWith env inst? rv inBlock o.us ps ms mins j with
     | some w =>
       if src?.isSome then none
       any := true
@@ -195,6 +221,51 @@ def O11a.apply (env : OptEnv) (o : Occ) : Option Expr := do
     | none => mins' := mins'.push (← mins[j]?)
   if !any then none
   return mkAppN (Expr.mkConst s.ixRec ls) (ps ++ ms' ++ mins' ++ tail ++ a.extract n a.size)
+
+/-- O11a at an occurrence: the instances are read from the input
+(`sizeOfInstance?`). -/
+def O11a.apply (env : OptEnv) (o : Occ) : Option Expr :=
+  O11a.applyWith env (sizeOfInstance? env) o
+
+/-- The instance lookup of `declineCause?`: as `sizeOfInstance?`, except that
+an instance `T._sizeOf_inst` **absent from the input** (for a cross target
+`T` of the shape O11a needs: a member with no parameters, indices or
+universe parameters) is assumed, under its own name. Used only to decide
+whether the absence is what made O11a decline; its output is never used. -/
+def sizeOfInstanceAssumingAbsent? (env : OptEnv) (T : Name) (telescope : Array Expr) :
+    Option (Name × Level) := do
+  let some (.inductInfo tv) := env.const? T | none
+  if tv.numParams != 0 || tv.numIndices != 0 || !tv.cnst.levelParams.isEmpty then none
+  let inst := Name.mkStr T "_sizeOf_inst"
+  match env.const? inst with
+  | none => some (inst, Level.mkZero)
+  | some _ => sizeOfInstance? env T telescope
+
+/-- **The recorded decline** (design document §6.3, obligation 4 of a pass
+whose output adds a reference): O11a's output references `T._sizeOf_inst`
+for every cross field into a lower component `T`. When one of those
+instances is absent from the input (a closure that did not carry the unit,
+or a hand-built input), O11a declines and O2 gives the relocated-recursor
+form (faithful, not the separately declared components' term). The decline
+is never silent: this returns the cause, naming the missing instances, and
+the driver records the constant in the compile's non-canonical set
+(`CompileEnv.p3NonCanonical`).
+
+Exactly the declines caused by absence: `none` when O11a fires, and `none`
+when it would still decline with every absent instance assumed (another
+side condition fails; that decline is not about a missing reference). The
+missing instances are the assumed ones the would-be output references. -/
+def O11a.declineCause? (env : OptEnv) (o : Occ) : Option String := do
+  if (O11a.apply env o).isSome then none
+  let e ← O11a.applyWith env (sizeOfInstanceAssumingAbsent? env) o
+  let missing := (Ix.Compile.Image.usedConstants e).filter fun n =>
+    (match n with
+      | .str _ "_sizeOf_inst" _ => true
+      | _ => false) && (env.const? n).isNone
+  if missing.isEmpty then none
+  let names := ", ".intercalate (missing.toList.map (·.pretty))
+  return s!"O11a declined: the size instance {names} of a lower component is absent from \
+    the input; the occurrence of {o.head.pretty} keeps O2's relocated-recursor form"
 
 /-! ## The scheduling edges O11a's rewrite needs
 

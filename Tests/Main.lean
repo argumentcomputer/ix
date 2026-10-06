@@ -38,6 +38,7 @@ import Tests.Ix.Compile.ValidateLean
 import Tests.Ix.Compile.ValidateLeanNC
 import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.MathlibMeasure
+import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -404,6 +405,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- The switch-on library measurement of plan M1 (M1G_PHASE=compile|classify|kernels;
   -- Tests.Ix.Compile.MathlibMeasure). Measurement only.
   ("mathlib-measure", Tests.Ix.Compile.MathlibMeasure.run),
+  -- O11a declines with a recorded cause when the size instance is absent from the
+  -- input; the valid neighbour with the instance rewrites (Tests.Ix.Compile.O11aDecline).
+  ("o11a-decline", Tests.Ix.Compile.O11aDecline.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

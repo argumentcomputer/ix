@@ -571,7 +571,8 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     cenv := { cenv with
       p3CanonRecs := cache.p3AuxRecs.foldl (fun m (k, v) => m.insert k v) cenv.p3CanonRecs
       p3Heads := cache.p3Heads.foldl (fun m (k, v) => m.insert k v) cenv.p3Heads
-      p3Blocks := cache.p3Blocks.foldl (fun m (k, v) => m.insert k v) cenv.p3Blocks }
+      p3Blocks := cache.p3Blocks.foldl (fun m (k, v) => m.insert k v) cenv.p3Blocks
+      p3NonCanonical := cache.p3NonCanonical.foldl (fun m (k, v) => m.insert k v) cenv.p3NonCanonical }
   -- Class-ordering registry (Rust `stt.blocks`, compile.rs:4048-4057):
   -- one entry per member, all pointing at the block's full ordering.
   if !result.classNames.isEmpty then
