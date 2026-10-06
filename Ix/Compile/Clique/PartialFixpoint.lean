@@ -24,28 +24,19 @@
     itself also occurs in application form (`PProd.fst (PProd.snd x)`);
   * the members `f_i := λ ps. (f₀.mutual fixed).2.1 varying`.
 
-  `Φ_σ` re-associates every packing-shaped construct (the packed type, the
-  instance trees, the tuples, the paths in both forms, the `monotone_mk`
-  tree) with Lean's own construction in canonical order, and **regenerates**
-  (G) every `monotone_fst`/`monotone_snd` chain for the canonical path:
-  the chain's length changes with the path (`.2.1` against `.1`), so it is
-  rebuilt by `solveMonoCall`'s recipe, deterministically and at the term level
-  (the node's leaf, rest and instances are read off the packing; no search).
-  Everything else in the proofs (`monotone_const`, `monotone_ite`,
-  `monotone_bind`, `monotone_apply`, `monotone_of_monotone_apply`) mentions the
-  packing only through the constructs above.
-
-  A per-function proof outside the grammar (a user-supplied monotonicity
-  term, or anything the recognisers do not cover) takes the composition
-  fallback of §5.2: `monotone_compose (mono φ) h`, with `φ : γ' → γ` the
-  re-association `y ↦ ⟨y.π_{σ 0}, …⟩` and `mono φ` a `monotone_mk` tree over
-  regenerated path proofs; it is recorded as `SHAPE`. A per-function proof is
-  outside the grammar when it binds a variable whose type mentions the
-  packing other than as the packed type (a user's `intro f g h` unfolds the
-  order: `h : f ⊑ g` is an `And` over the packing, and `h.2` selects a factor
-  by position), or when it contains a `monotone_fst`/`monotone_snd`/
-  `monotone_id` over the packing that is not `solveMonoCall`'s chain (a
-  user's lemma chain, with the instances its own unification found).
+  This file holds the layout (`pfLayout`), the decoding of packed paths and
+  of `solveMonoCall`'s chains, and their regeneration for a canonical path.
+  The transport itself (`PFConjugation.lean`) conjugates the decoded root
+  functional at its own binder: applications of the packed constant become
+  the inverse tuple, each recursive path is re-associated only when its base
+  is the recursion's own binder, and the monotonicity proofs' `monotone_fst`/
+  `monotone_snd` chains are regenerated for the canonical path (G), with the
+  composition fallback of §5.2 (`monotone_compose (mono φ) h`, recorded as
+  `SHAPE`) for a per-function proof it cannot follow. The earlier route that
+  re-associated every packing-shaped construct anywhere in a term
+  (`phiPF`, `transportPFShape`) changed user values of the packed type and is
+  deleted; its miscompilation is kept as frozen data in
+  `Tests/Ix/Compile/Recognition.lean`.
 
   The lattice-theoretic fixpoints (`inductive_fixpoint`,
   `coinductive_fixpoint`) spell a component `∀ x, ImplicationOrder` (or
@@ -404,182 +395,6 @@ def decodeMonoTree (L : PFLayout) (e : Expr) : Option (OrderData × Array Expr �
   unless fs.size == L.n do none
   if alphaEq (mkMonoTree d fs hs) e then some (d, fs, hs) else none
 
-/-! ## User-written monotonicity proofs
-
-`solveMono`'s proofs (`Elab/Tactic/Monotonicity.lean`) are compositions of
-the `monotone_*` lemmas whose only binders are the functionals' packed
-variable (`λ x : γ. …`) and the functions' own arguments: the order on the
-packing is never unfolded. A per-function proof that binds a variable whose
-type mentions the packing in any other way (`h : f ⊑ g` after `intro f g h`,
-an `And` over the packing, whose projections `h.1`, `h.2` select factors by
-position) was written against Lean's packing in a way the grammar cannot see;
-it takes the composition fallback (§5.2). -/
-
-/-- Some subterm of `e` is the clique's packed type (any spelling of its
-leaves). -/
-def mentionsPacking (L : PFLayout) (e : Expr) : Bool := (go e).run' {}
-where
-  go (e : Expr) : StateM (Std.HashSet Expr) Bool := do
-    if (← get).contains e then return false
-    modify (·.insert e)
-    let here : Bool := match decodeSpine .pprod L.n e with
-      | some s => L.isClique s
-      | none => false
-    if here then return true
-    match e with
-    | .app f a _ => return (← go f) || (← go a)
-    | .lam _ t b _ _ | .forallE _ t b _ _ => return (← go t) || (← go b)
-    | .letE _ t v b _ _ => return (← go t) || (← go v) || (← go b)
-    | .proj _ _ x _ | .mdata _ x _ => go x
-    | _ => return false
-
-/-- `some why` when a per-function monotonicity proof binds a variable whose
-type mentions the packing other than as the packed type itself. -/
-def userProofCheck (L : PFLayout) (e : Expr) : Option String := (go e).run' {}
-where
-  isPacked (t : Expr) : Bool := match decodeSpine .pprod L.n (stripMdata t) with
-    | some s => L.isClique s
-    | none => false
-  bad (t : Expr) : Bool := !isPacked t && mentionsPacking L t
-  go (e : Expr) : StateM (Std.HashSet Expr) (Option String) := do
-    if (← get).contains e then return none
-    modify (·.insert e)
-    match e with
-    | .lam _ t b _ _ | .forallE _ t b _ _ =>
-      if bad t then return some "grammar: a binder whose type mentions the packing (a user-written monotonicity proof)"
-      match ← go t with
-      | some w => return some w
-      | none => go b
-    | .letE _ t v b _ _ =>
-      if bad t then return some "grammar: a let whose type mentions the packing (a user-written monotonicity proof)"
-      match ← go t with
-      | some w => return some w
-      | none => match ← go v with
-        | some w => return some w
-        | none => go b
-    | .app f a _ =>
-      match ← go f with
-      | some w => return some w
-      | none => go a
-    | .proj _ _ x _ | .mdata _ x _ => go x
-    | _ => return none
-
-/-! ## `Φ_σ` -/
-
-def phiPFStep (L : PFLayout) (go : Array Expr → Expr → TM Expr) (ctx : Array Expr) (e : Expr) :
-    TM Expr := do
-  let goD (d : OrderData) : TM OrderData := do
-    let leaves ← d.spine.leaves.mapM (go ctx)
-    let tleaves ← d.tspine.leaves.mapM (go ctx)
-    let insts ← d.insts.mapM (go ctx)
-    return ({ d with spine := { d.spine with leaves }, insts,
-                     tspine := { d.tspine with leaves := tleaves } }).permute L.sigma
-  let isPackedTy (ty : Expr) : Bool := match decodeSpine .pprod L.n ty with
-    | some s => L.isClique s
-    | none => false
-  -- the recognised constructs
-  if let some (d, j) := decodePathProof L e then
-    let d' ← goD d
-    return (mkPathProof d' L.sigma[j]!).1
-  if let some (d, fs, hs) := decodeMonoTree L e then
-    let d' ← goD d
-    let fs' ← fs.mapM (go ctx)
-    let mut hs' := #[]
-    for k in [0:L.n] do
-      let st ← get
-      let attempt : TM Expr := do
-        if let some why := userProofCheck L hs[k]! then throw why
-        go ctx hs[k]!
-      match attempt.run st with
-      | .ok (h, st') => set st'; hs' := hs'.push h
-      | .error err =>
-        -- outside the grammar: the composition fallback (§5.2)
-        let h ← liftE (mkComposeFallback L.sigma d d' k fs[k]! hs[k]! L.composeLevels)
-        modify fun st => { st with fallbacks := st.fallbacks.push s!"monotonicity proof {k}: {err}" }
-        hs' := hs'.push h
-    return mkMonoTree d' (permute L.sigma fs') (permute L.sigma hs')
-  -- a path proof over the packing that is not `solveMonoCall`'s (a user's
-  -- lemma chain, with other instances): outside the grammar
-  if let some (c, _, args) := constApp? e then
-    if (c == nMonoFst || c == nMonoSnd) && args.size ≥ 8 && isPackedTy args[2]! then
-      throw "grammar: a monotone_fst/monotone_snd chain over the packing that is not solveMonoCall's"
-    if c == nMonoId && args.size ≥ 2 && isPackedTy args[0]! then
-      throw "grammar: monotone_id over the packing outside a path proof"
-  if let some (h, s, insts) := decodeInstTree L.n e then
-    if L.isClique s then
-      let leaves ← s.leaves.mapM (go ctx)
-      let insts ← insts.mapM (go ctx)
-      return mkInstTree h ({ s with leaves }.permute L.sigma) (permute L.sigma insts)
-  if let some (s, j, base) := decodePathApp L.n e then
-    if L.isClique s then
-      let leaves ← s.leaves.mapM (go ctx)
-      return mkPathApp ({ s with leaves }.permute L.sigma) L.sigma[j]! (← go ctx base)
-  if let some (s, cs) := decodeTuple L.n e then
-    if L.isClique s then
-      let leaves ← s.leaves.mapM (go ctx)
-      let cs ← cs.mapM (go ctx)
-      return mkTuple ({ s with leaves }.permute L.sigma) (permute L.sigma cs)
-  if let some s := decodeSpine .pprod L.n e then
-    if L.isClique s then
-      let leaves ← s.leaves.mapM (go ctx)
-      return ({ s with leaves }.permute L.sigma).type
-  match e with
-  | .proj .. =>
-    let (steps, base) := projChain e
-    let packedBase : Bool := match stripMdata base with
-      | .bvar i _ => if h : i < ctx.size then isPackedTy (liftLoose ctx[ctx.size - 1 - i] (i + 1))
-          else false
-      | b => match constApp? b with
-        | some (c, _, _) => c == L.packedName
-        | none => false
-    let b ← go ctx base
-    if packedBase then
-      let some (idx, len) := pathPrefix L.n steps | throw "grammar: a projection of the packed value that is not a path"
-      let canon := L.spine.permute L.sigma
-      unless stepsFit L.spine idx (steps.extract 0 len) do
-        throw "grammar: a path whose projections are not the packing's"
-      return applyProjs (canon.projSteps L.sigma[idx]! ++ steps.extract len steps.size) b
-    return applyProjs steps b
-  | .app .. =>
-    let (h, args) := getAppFnArgs e
-    if let .const c us _ := h then
-      if c == L.packedName then
-        if args.size < L.numFixed then throw "grammar: a partial application of the packed fixpoint"
-        let args' ← args.mapM (go ctx)
-        return mkAppN (Expr.mkConst L.newPackedName us)
-          (L.fixedPerm.map (args'[·]!) ++ args'.extract L.numFixed args'.size)
-      if let some ρ := L.proofPerm.get? c then
-        if args.size < ρ.size then throw "grammar: a partial application of the monotonicity proof"
-        let args' ← args.mapM (go ctx)
-        return mkAppN h (ρ.map (args'[·]!) ++ args'.extract ρ.size args'.size)
-      return mkAppN h (← args.mapM (go ctx))
-    return mkAppN (← go ctx h) (← args.mapM (go ctx))
-  | .const c us _ =>
-    if c == L.packedName then
-      if L.numFixed == 0 then return Expr.mkConst L.newPackedName us
-      throw "grammar: a bare occurrence of the packed fixpoint"
-    return e
-  | .lam nm t b bi _ => return Expr.mkLam nm (← go ctx t) (← go (ctx.push t) b) bi
-  | .forallE nm t b bi _ => return Expr.mkForallE nm (← go ctx t) (← go (ctx.push t) b) bi
-  | .letE nm t v b nd _ => return Expr.mkLetE nm (← go ctx t) (← go ctx v) (← go (ctx.push t) b) nd
-  | .mdata d x _ => return Expr.mkMData d (← go ctx x)
-  | _ => return e
-
-def phiPFFix (L : PFLayout) : Nat → Array Expr → UInt64 → Expr → TM Expr
-  | 0, _, _, _ => throw "Φ: recursion bound exhausted"
-  | fuel + 1, ctx, hctx, e => do
-    let key := mixHash (hash e) hctx
-    if let some (e', ctx', r) := (← get).cacheCtx.get? key then
-      if e' == e && ctx' == ctx then return r
-    let go (ctx' : Array Expr) (x : Expr) : TM Expr :=
-      phiPFFix L fuel ctx' (ctx'.foldl (fun h t => mixHash h (hash t)) 7) x
-    let r ← phiPFStep L go ctx e
-    modify fun st => { st with cacheCtx := st.cacheCtx.insert key (e, ctx, r) }
-    return r
-
-def phiPF (L : PFLayout) (ctx : Array Expr) (e : Expr) : TM Expr :=
-  phiPFFix L defaultFuel ctx (ctx.foldl (fun h t => mixHash h (hash t)) 7) e
-
 /-- The layout from the members (Lean's order) and the packed fixpoint. -/
 def pfLayout (members : Array Decl) (packed : Decl) (σ : Array Nat) (newPackedName : Name) :
     Except String PFLayout := do
@@ -614,54 +429,6 @@ def pfLayout (members : Array Decl) (packed : Decl) (σ : Array Nat) (newPackedN
   let fixedPerm := (idPerm m).qsort fun a b => qg[a]! < qg[b]!
   return { n, sigma := σ, packedName := packed.name, newPackedName, numFixed := m, fixedPerm,
            leaves := s.leaves, spine := s, memberFixed := qss }
-
-/-- Historical shape-based route, retained for the value-changing audit
-controls. Production uses `PFConjugation.transportPF`. -/
-def transportPFShape (members : Array Decl) (packed : Decl) (proofs : Array Decl) (σ : Array Nat)
-    (newPackedName : Name) (const? : Name → Option ConstantInfo)
-    (lemmas : Array (Decl × Name) := #[]) : TM WFOutput := do
-  let L ← liftE (pfLayout members packed σ newPackedName)
-  let composeLevels := match const? nMonoCompose with
-    | some ci => ci.getCnst.levelParams
-    | none => #[]
-  let L := { L with composeLevels }
-  let m := L.numFixed
-  let proofNames : Std.HashSet Name := proofs.foldl (init := {}) fun s p => s.insert p.name
-  let (xs, body) ← openBinders true m packed.value
-  let uses := scanProofs proofNames (xs.map (·.fvar)) body {}
-  let inv := invPerm L.fixedPerm
-  let proofPerm : Std.HashMap Name (Array Nat) := uses.fold (init := {}) fun acc c js =>
-    acc.insert c ((idPerm js.size).qsort fun a b => inv[js[a]!]! < inv[js[b]!]!)
-  let L := { L with proofPerm }
-  let phi (e : Expr) : TM Expr := phiPF L #[] e
-  let value ← withReorderedBinders true m L.fixedPerm packed.value phi
-  let type ← withReorderedBinders false m L.fixedPerm packed.type phi
-  let mut out : Array Transported := #[{ decl := { packed with name := newPackedName, type, value } }]
-  for p in proofs do
-    let ρ := (proofPerm.get? p.name).getD #[]
-    let type ← withReorderedBinders false ρ.size ρ p.type phi
-    let before := (← get).fallbacks.size
-    let value ← withReorderedBinders true ρ.size ρ p.value phi
-    let fb := (← get).fallbacks.extract before (← get).fallbacks.size
-    out := out.push { decl := { p with type, value },
-                      fallback := if fb.isEmpty then none else some ("; ".intercalate fb.toList) }
-  for d in members do
-    out := out.push { decl := { d with type := ← phi d.type, value := ← phi d.value } }
-  -- the carried equation lemmas (a failure leaves the clique in Lean's form)
-  for (d, nn) in lemmas do
-    out := out.push { decl := { d with name := nn, type := ← phi d.type, value := ← phi d.value } }
-  -- (R): the proofs follow the packed fixpoint's name
-  let order := constOccurrences proofNames.contains value
-  let rest := (proofs.map (·.name)).filter fun p => !order.contains p
-  let numbered := (order ++ rest).zipIdx.map fun (p, i) =>
-    (p, Ix.Name.mkStr newPackedName s!"_proof_{i + 1}")
-  let lemmaRenames := lemmas.filterMap fun (d, nn) => if d.name != nn then some (d.name, nn) else none
-  let rn : Std.HashMap Name Name := (numbered ++ lemmaRenames).foldl (init := {}) fun m (a, b) => m.insert a b
-  let out2 := out.map fun t =>
-    { t with decl := { t.decl with name := (rn.get? t.decl.name).getD t.decl.name
-                                   type := renameConsts rn.get? t.decl.type
-                                   value := renameConsts rn.get? t.decl.value } }
-  return { decls := out2, renames := #[(packed.name, newPackedName)] ++ numbered ++ lemmaRenames }
 
 end Ix.Compile.Clique
 

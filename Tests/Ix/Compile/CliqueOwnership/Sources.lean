@@ -43,6 +43,17 @@ structure RelBox where
 
 def userRelBox : RelBox := ⟨userWF (PSum Nat Nat) sideRank⟩
 
+/-- A user record with a binary function field over the packing type (the
+shape of `WellFoundedRelation.rel`, but not a relation). -/
+structure UserFn (α : Type) where
+  apply : α → α → Nat
+
+def distinguish : PSum Nat Nat → PSum Nat Nat → Nat
+  | .inl _, _ => 17
+  | .inr _, _ => 29
+
+def userFn : UserFn (PSum Nat Nat) := ⟨distinguish⟩
+
 /-! Oracles: what a recursive call returns in the one-step evaluation of a
 fixpoint's functional (member `j` of a clique answers with `oracleJ`). -/
 def pfOracle0 : Nat → Option Nat := fun n => some (1000 + n)
@@ -445,6 +456,31 @@ def first (n : Nat) : Nat :=
 termination_by n
 end
 end WF6B
+
+/-! WF7: a user record's function field applied to injections of the
+packing type, the shape of the relation (ported from the deleted
+`clique-transport` control (g) of the shape route, which once changed this
+value from 17 to 29). `first 0 = 17`. -/
+namespace WF7A
+mutual
+def first (n : Nat) : Nat :=
+  if n = 0 then userFn.apply (PSum.inl 0) (PSum.inr 0) else second (n - 1) + 1
+termination_by n
+def second (n : Nat) : Nat :=
+  if n = 0 then 31 else first (n - 1) + 2
+termination_by n
+end
+end WF7A
+namespace WF7B
+mutual
+def second (n : Nat) : Nat :=
+  if n = 0 then 31 else first (n - 1) + 2
+termination_by n
+def first (n : Nat) : Nat :=
+  if n = 0 then userFn.apply (PSum.inl 0) (PSum.inr 0) else second (n - 1) + 1
+termination_by n
+end
+end WF7B
 
 /-! ## Structural -/
 

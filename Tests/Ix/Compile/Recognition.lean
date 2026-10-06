@@ -126,6 +126,24 @@ def actualWFSecond (n : Nat) : Prop :=
 termination_by n
 end
 
+/-! Frozen outputs of the deleted shape routes (`transportWFShape`,
+`transportPFShape`, deleted by the commit that introduced these definitions;
+recorded by running them on `4907a048`, design document §5 and
+`plans/review2/FIX-pfwf.md` §1.2–1.3). Each is the user-facing part of the old
+route's output on the clique above with `σ = [1, 0]`, kept so that the
+negative controls still show what the shape-based recognition did, without
+keeping the code that did it:
+
+* WF (`actualWFFirst`/`actualWFSecond`): the user's predicate
+  `(userWF (PSum Nat Nat) sideRank).rel (PSum.inl 0) (PSum.inr 0)` (`0 < 1`)
+  came out with its injections swapped (`1 < 0`);
+* PF (`actualFirst`/`actualSecond`): the user's selector `fun p => p.fst`
+  passed to `applyUserProjection` came out as `fun p => p.snd` (`some 17`
+  became `some 29`). -/
+def frozenOldWFPredicate : Prop := (userWF (PSum Nat Nat) sideRank).rel (PSum.inr 0) (PSum.inl 0)
+def frozenOldPFSelector : PProd (Nat → Option Nat) (Nat → Option Nat) → (Nat → Option Nat) :=
+  fun p => p.snd
+
 example : actualWFFirst 0 := by
   rw [actualWFFirst]
   exact (show (0 : Nat) < 1 by decide)
@@ -163,10 +181,6 @@ def actualWFProbe (env : Environment) : IO Unit := runMeta (do
   let proofs ← proofNames.mapM fun name => do
     let some d := declOf name | throwError "missing WF proof"
     pure d
-  let out ← match (Ix.Compile.Clique.transportWFShape #[first, second] packed proofs #[1, 0]
-      (ixName `RecognitionWFScratch.packed)).run' with
-    | .ok value => pure value
-    | .error why => throwError "actual WF transport declined: {why}"
   let userPredicate (value : Expr) := value.find? fun candidate =>
     match candidate.getAppFn with
     | .proj ``WellFoundedRelation 0 record =>
@@ -176,14 +190,17 @@ def actualWFProbe (env : Environment) : IO Unit := runMeta (do
       args.size == 4 && args[1]!.getAppFn.constName? == some ``userWF
     | _ => false
   let some source := userPredicate (uncanon packed.value) | throwError "missing actual WF user predicate"
-  let some target := userPredicate (uncanon out.decls[0]!.decl.value) | throwError "missing target WF user predicate"
+  -- the deleted shape route's output on this clique (frozen data, see
+  -- `frozenOldWFPredicate`)
+  let some target := (env.find? ``frozenOldWFPredicate).bind ConstantInfo.value?
+    | throwError "missing frozen WF predicate"
   let expected := mkApp2 (mkConst ``Nat.lt) (mkNatLit 0) (mkNatLit 1)
   let wrong := mkApp2 (mkConst ``Nat.lt) (mkNatLit 1) (mkNatLit 0)
   unless ← isDefEq source expected do throwError "actual WF source predicate differs"
   let same ← isDefEq target expected
   let reversed ← isDefEq target wrong
-  IO.println s!"ACTUAL WF: source=0<1, target01={same}, target10={reversed}; source actualWFFirst 0 is proved in Lean"
-  unless !same && reversed do throwError "preserved actual WF negative stopped reproducing"
+  IO.println s!"FROZEN OLD WF ROUTE: source=0<1, old target01={same}, old target10={reversed}; source actualWFFirst 0 is proved in Lean"
+  unless !same && reversed do throwError "the frozen old-route WF output no longer means 1<0"
   let layout ← match Ix.Compile.Clique.wfLayout #[first, second] packed #[1, 0]
       (ixName `RecognitionWFScratch.owned) with
     | .ok value => pure value
@@ -673,25 +690,24 @@ def actualProbe (env : Environment) : IO Unit := runMeta (do
     | .error e => throwError "actual layout: {e}"
   IO.println s!"ACTUAL layout fixed={layout.numFixed}, leaves={layout.leaves.size}"
   IO.println s!"ACTUAL source packed: {← ppExpr (uncanon packed.value)}"
-  let target ← match (Ix.Compile.Clique.transportPFShape #[first, second] packed #[] #[1, 0]
-      packed.name (fun n => (env.find? (leanName n)).map fun c => (Ix.CanonM.canonConst c).run' {})).run' with
-    | .ok out => pure out.decls[0]!.decl
-    | .error e => throwError "actual transport: {e}"
-  IO.println s!"ACTUAL target packed: {← ppExpr (uncanon target.value)}"
   let evaluate (value : Ix.Expr) (component : Nat) : MetaM Expr := do
     let body := (mkApp (uncanon value) (mkConst ``userFns)).headBeta
     let some functional := body.getAppArgs.find? Expr.isLambda
       | throwError "actual packed body has no functional lambda"
     return mkApp (mkProj ``PProd component (mkApp functional (mkConst ``userFns))) (mkNatLit 0)
   let source ← evaluate packed.value 0
-  let changed ← evaluate target.value 1
+  -- the deleted shape route's output on this clique: the user's selector
+  -- became `fun p => p.snd` (frozen data, see `frozenOldPFSelector`)
+  let some frozenSel := (env.find? ``frozenOldPFSelector).bind ConstantInfo.value?
+    | throwError "missing frozen PF selector"
+  let changed := mkApp3 (mkConst ``applyUserProjection) (mkConst ``userFns) frozenSel (mkNatLit 0)
   let expected := mkApp (mkConst ``Option.some [Level.zero]) (mkConst ``Nat)
   let expected := mkApp expected (mkNatLit 17)
   let wrong := mkApp (mkApp (mkConst ``Option.some [Level.zero]) (mkConst ``Nat)) (mkNatLit 29)
   unless ← isDefEq source expected do throwError "actual source functional does not return some 17"
   let same ← isDefEq changed expected
   let swapped ← isDefEq changed wrong
-  IO.println s!"ACTUAL functional at n=0: source=some17, target17={same}, target29={swapped}"
+  IO.println s!"FROZEN OLD PF ROUTE: functional at n=0: source=some17, old target17={same}, old target29={swapped}"
   let body := (mkApp (uncanon packed.value) (mkConst ``userFns)).headBeta
   IO.println s!"FIX HEAD {body.getAppFn.constName?} ARITY {body.getAppArgs.size}"
   for arg in body.getAppArgs do IO.println s!"FIX ARG {← ppExpr arg}"
@@ -793,54 +809,7 @@ def actualProbe (env : Environment) : IO Unit := runMeta (do
   | .error _ => pure ()
   | .ok _ => throwError "PF recovery accepted a functional under an unowned root"
   IO.println "PF recovery: decoded root accepted; unowned root rejected"
-  unless !same && swapped do throwError "preserved baseline negative stopped reproducing"
-  ) env
-
-/-- Baseline audit probe: both source and transformed values are checked by
-Lean; equality of their types alone must not establish transport correctness. -/
-def probe (env : Environment) : IO Unit := runMeta (do
-  let nat := mkConst ``Nat
-  let natIx := canon nat
-  let spine : Ix.Compile.Clique.Spine :=
-    { kind := .pprod, leaves := #[natIx, natIx], lvls := #[Ix.Level.mkSucc Ix.Level.mkZero, Ix.Level.mkSucc Ix.Level.mkZero] }
-  let pf : Ix.Compile.Clique.PFLayout := {
-    n := 2, sigma := #[1, 0], packedName := ixName `encodingOnly,
-    newPackedName := ixName `encodingOnly, numFixed := 0, fixedPerm := #[],
-    leaves := #[natIx, natIx], spine }
-  let some first := (env.find? ``userFirst).bind ConstantInfo.value?
-    | throwError "missing userFirst body"
-  let source := mkApp first (mkConst ``userPair)
-  let transported ← match (Ix.Compile.Clique.phiPF pf #[] (canon source)).run' with
-    | .ok value => pure (uncanon value)
-    | .error error => throwError "PF transport declined: {error}"
-  unless ← isDefEq (← inferType source) nat do throwError "PF source is not Nat"
-  unless ← isDefEq (← inferType transported) nat do throwError "PF target is not Nat"
-  unless ← isDefEq source (mkNatLit 17) do throwError "PF source does not compute to 17"
-  let unchanged ← isDefEq transported (mkNatLit 17)
-  let swapped ← isDefEq transported (mkNatLit 29)
-  IO.println s!"PF user binder: source=17, target17={unchanged}, target29={swapped}; target={← ppExpr transported}"
-
-  let sum := mkApp2 (mkConst ``PSum [Level.one, Level.one]) nat nat
-  let left := mkApp3 (mkConst ``PSum.inl [Level.one, Level.one]) nat nat (mkNatLit 0)
-  let right := mkApp3 (mkConst ``PSum.inr [Level.one, Level.one]) nat nat (mkNatLit 0)
-  let relation := mkApp2 (mkConst ``userWF) sum (mkConst ``sideRank)
-  let predicate := mkApp2 (mkProj ``WellFoundedRelation 0 relation) left right
-  let wf : Ix.Compile.Clique.WFLayout := {
-    n := 2, sigma := #[1, 0], mutualName := ixName `encodingOnly,
-    newMutualName := ixName `encodingOnly, numFixed := 0, fixedPerm := #[],
-    leaves := #[natIx, natIx] }
-  let changed ← match (Ix.Compile.Clique.phiWF wf false (canon predicate)).run' with
-    | .ok value => pure (uncanon value)
-    | .error error => throwError "WF transport declined: {error}"
-  unless ← isProp predicate do throwError "WF source is not Prop"
-  unless ← isProp changed do throwError "WF target is not Prop"
-  let expected := mkApp2 (mkConst ``Nat.lt) (mkNatLit 0) (mkNatLit 1)
-  let wrong := mkApp2 (mkConst ``Nat.lt) (mkNatLit 1) (mkNatLit 0)
-  unless ← isDefEq predicate expected do throwError "WF source is not 0 < 1"
-  let same ← isDefEq changed expected
-  let reversed ← isDefEq changed wrong
-  IO.println s!"WF unrelated relation: recognised={wf.isRelApp (canon predicate)}, source=0<1, target01={same}, target10={reversed}; target={← ppExpr changed}"
-  if !unchanged || !same then throwError "recognition changed a user's value or predicate"
+  unless !same && swapped do throwError "the frozen old-route PF output no longer means some 29"
   ) env
 
 def run : IO UInt32 := do

@@ -451,6 +451,14 @@ def cases : Array Case :=
       { member := `first, args := #[natLit 0], expected := natLit 1 },
       { member := `first, args := #[natLit 5], expected := natLit 2005 },
       { member := `second, args := #[natLit 5], expected := natLit 1006 }] (must := true),
+    wfN "WF7A" "user record function field applied to injections of the packing type" #[
+      { member := `first, args := #[natLit 0], expected := natLit 17 },
+      { member := `first, args := #[natLit 5], expected := natLit 2005 },
+      { member := `second, args := #[natLit 5], expected := natLit 1006 }],
+    wfN "WF7B" "WF7, other member order" #[
+      { member := `first, args := #[natLit 0], expected := natLit 17 },
+      { member := `first, args := #[natLit 5], expected := natLit 2005 },
+      { member := `second, args := #[natLit 5], expected := natLit 1006 }],
     st "S1A" "user Nat.brecOn with a packed-shaped motive, field notation" #[
       { member := `first, args := #[natLit 0], expected := natLit 17 },
       { member := `first, args := #[natLit 2], expected := natLit 17 },
