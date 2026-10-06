@@ -329,7 +329,7 @@ a changed block): the images under the Lean names, each with
 provenance decompile verifies against). -/
 def runImageBlock (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError (BlockResult × BlockState) := do
-  let imgs ← match Ix.PhaseTimers.withPhase .p3Image cenv
+  let (imgs, memoViews, memoExps) ← match Ix.PhaseTimers.withPhase .p3Image cenv
       (Ix.Compile.Pass.compileImageBlock · all) with
     | .ok r => pure r
     | .error e => throw (.invalidMutualBlock e)
@@ -339,7 +339,8 @@ def runImageBlock (cenv : CompileEnv) (all : Set Name) (lo : Name)
     if origRes.projections.isEmpty then ({} : Std.HashMap Name _).insert lo (origRes.blockAddr, origRes.blockMeta)
     else origRes.projections.foldl (init := {}) fun m (n, proj, cm) =>
       m.insert n (Address.blake3 (Ixon.ser proj), cm)
-  let mut cache : BlockState := { blockBlobs := origCache.blockBlobs, blockNames := origCache.blockNames }
+  let mut cache : BlockState := { blockBlobs := origCache.blockBlobs, blockNames := origCache.blockNames,
+                                  p3MemoViews := memoViews, p3MemoExps := memoExps }
   let mut result? : Option BlockResult := none
   for (a, r, bs) in imgs do
     cache := { cache with
@@ -581,7 +582,14 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       -- compute a plan, and the first entry of a key is kept (both are equal)
       p3CliquePlans := cache.p3CliquePlans.foldl
         (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3CliquePlans
-      p3PlanReuses := cenv.p3PlanReuses + cache.p3PlanReused }
+      p3PlanReuses := cenv.p3PlanReuses + cache.p3PlanReused
+      -- the view and image-expansion memos (`Ix.Compile.Pass.viewOf`,
+      -- `compileImageBlock`): functions of the changed block, so two blocks
+      -- that both computed an entry computed the same one; the first is kept
+      p3Views := cache.p3MemoViews.foldl
+        (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3Views
+      p3ImageExps := cache.p3MemoExps.foldl
+        (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3ImageExps }
   -- Class-ordering registry (Rust `stt.blocks`, compile.rs:4048-4057):
   -- one entry per member, all pointing at the block's full ordering.
   if !result.classNames.isEmpty then

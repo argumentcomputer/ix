@@ -305,12 +305,31 @@ def headsIn (heads : Std.HashMap Name Name) (ci : ConstantInfo) : Std.HashSet Na
 def viewInput (cenv : CompileEnv) : ViewInput :=
   { const? := cenv.env.get?, addr? := resolveAddr cenv, canonRec? := cenv.p3CanonRecs.get? }
 
-/-- The view of the changed Lean block `key`. -/
+/-- A view of the changed block `key` built now may enter the view table
+(`CompileEnv.p3Views`): every member of the block is compiled. The view reads
+the input constants, the canonical recursors of the block (registered when it
+compiled) and the addresses of compiled constants (insert-once); with every
+member compiled it computes the canonical form of every component, so a block
+whose snapshot contains this one's merges builds the same view. -/
+def viewMemoable (cenv : CompileEnv) (key : Name) : Bool :=
+  ((cenv.p3Blocks.get? key).getD #[key]).all fun n => (resolveAddr cenv n).isSome
+
+/-- The view of the changed Lean block `key`: from the block's own views,
+then the view table, else built. -/
 def viewOf (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (key : Name) :
     Except String BlockView :=
   match views.get? key with
   | some v => pure v
-  | none => buildView (viewInput cenv) ((cenv.p3Blocks.get? key).getD #[key])
+  | none =>
+    match cenv.p3Views.get? key with
+    | some v => pure v
+    | none => buildView (viewInput cenv) ((cenv.p3Blocks.get? key).getD #[key])
+
+/-- The views among `views` a block built itself that may enter the view table. -/
+def newMemoViews (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+    Array (Name × BlockView) :=
+  views.fold (init := #[]) fun acc k v =>
+    if !cenv.p3Views.contains k && viewMemoable cenv k then acc.push (k, v) else acc
 
 /-- The expansion lookup of a block, with the views of the given Lean blocks
 precomputed (others are built on demand). -/
@@ -339,7 +358,11 @@ same values as `expansionLookup`; built by the caller, once per rewrite. -/
 def expansionTable (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
     Std.HashMap Name (Thunk (Except String (Option Expansion))) :=
   cenv.p3Heads.fold (init := {}) fun m n _ =>
-    m.insert n (Thunk.mk fun _ => expansionLookup cenv views n)
+    -- a recursor's expansion is its image, the same in every rewrite
+    -- context: taken from the image-expansion memo when there
+    match cenv.p3ImageExps.get? n, cenv.env.get? n with
+    | some x, some (.recInfo _) => m.insert n (Thunk.pure (.ok (some x)))
+    | _, _ => m.insert n (Thunk.mk fun _ => expansionLookup cenv views n)
 
 /-- The lookup of an `expansionTable` (a head outside it: `expansionLookup`). -/
 def expansionLookupIn (table : Std.HashMap Name (Thunk (Except String (Option Expansion))))
@@ -363,7 +386,11 @@ def imageDeclWith (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : 
   let lookup := expansionLookupIn table cenv views
   -- the value (and the type) with every head rewritten, no records
   let rwM : RwM (Expr × Expr) := do
-    let x' ← if x.needsRewrite then rw lookup rewriteFuel false x.value else pure x.value
+    -- the head's own rewritten expansion, when the state already holds it
+    -- (`expansionOf` computes exactly this value)
+    let x' ← match st0.exps.get? a with
+      | some e => pure e.value
+      | none => if x.needsRewrite then rw lookup rewriteFuel false x.value else pure x.value
     let ty' ← rw lookup rewriteFuel false ty
     pure (x', ty')
   let ((value, type), st) ← rwM.run st0
@@ -610,7 +637,8 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
     rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) cenv.p3Sources
   -- the recorded declines go to the block state, and from there into the
   -- compile's non-canonical set (`CompileEnv.p3NonCanonical`)
-  let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines }
+  let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines,
+                           p3MemoViews := init.p3MemoViews ++ newMemoViews cenv views }
   -- the canonical constants (D1): the `_ix` forms where a proof-justified
   -- pass fires, the unit passes' (O11b), the helpers the rewrites reference
   let init ← compileCanon cenv views (rwr.canon ++ unitPasses cenv views members) init
@@ -629,7 +657,8 @@ the Lean name (the name map sends a changed block's auxiliary to its image,
 the constant with Lean's type). Members are compiled in an order in which
 each resolves the ones before it (`known`). -/
 def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
-    Except String (Array (Name × BlockResult × BlockState)) := do
+    Except String (Array (Name × BlockResult × BlockState)
+      × Array (Name × BlockView) × Array (Name × Expansion)) := do
   let mut views : Std.HashMap Name BlockView := {}
   for a in all do
     if let some key := cenv.p3Heads.get? a then
@@ -640,8 +669,9 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
   let mut lastErr := ""
   let mut decls : Std.HashMap Name Ix.DefinitionVal := {}
   let table := expansionTable cenv views
-  -- one rewrite state for the block's members: its caches carry over
-  let mut rwSt : RwState := { base := 0 }
+  -- one rewrite state for the block's members: its caches carry over, and it
+  -- starts from the image-expansion memo (`CompileEnv.p3ImageExps`)
+  let mut rwSt : RwState := { base := 0, exps := cenv.p3ImageExps }
   let mut rounds := pending.size + 1
   while !pending.isEmpty && rounds > 0 do
     rounds := rounds - 1
@@ -665,7 +695,16 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
         rest := rest.push a
     pending := rest
   if !pending.isEmpty then throw lastErr
-  return out
+  -- memo entries: the views built here, and the expansions computed here when
+  -- every changed block they read has a memoable view
+  let memoViews := newMemoViews cenv views
+  let newExps := rwSt.exps.fold (init := #[]) fun acc n x =>
+    if cenv.p3ImageExps.contains n then acc else acc.push (n, x)
+  let expsOk := views.keys.all (viewMemoable cenv) &&
+    newExps.all fun (n, _) => match cenv.p3Heads.get? n with
+      | some key => viewMemoable cenv key
+      | none => false
+  return (out, memoViews, if expsOk then newExps else #[])
 
 
 

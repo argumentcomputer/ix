@@ -2227,6 +2227,14 @@ the sake of a dependent. If a dependent cannot be made to fit, that is reported 
 - Reading the Lean *source* of a visible constant needs no edge. Using its *compiled form* (its
   address, its records) does: it must have been compiled first.
 
+**Memo tables are not reads.** A table the driver carries from one block to later ones is allowed when
+its entries are values of a function of a unit and the unit's compiled dependencies, every block that
+reads an entry would compute the same value, and an entry is entered only under a condition that makes
+that so. Pass 3 has two (`CompileEnv.p3Views`, `CompileEnv.p3ImageExps`): a changed block's view, entered
+only when built with every member of the block compiled, and the image blocks' rewritten expansions of
+its heads, entered only from image blocks whose views all were. Which block filled an entry changes no
+byte, only the time.
+
 **Obligations of a pass whose output adds a reference.** All four, argued in the pass's docstring:
 
 1. the target is visible by the rule (the pass's own unit, or the unit of a block it depends on);

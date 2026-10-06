@@ -32,6 +32,7 @@ public import Ix.CallSiteSurgery
 public import Ix.CanonM
 public import Ix.Compile.Pass.Names
 public import Ix.Compile.Clique.Plan
+public import Ix.Compile.Pass.ImageView
 
 namespace Ix.CompileM
 public section
@@ -179,6 +180,21 @@ structure CompileEnv where
       A count of work saved, never part of the output; it depends on the
       schedule (blocks of one wave do not see each other's plans). -/
   p3PlanReuses : Nat := 0
+  /-- Pass 3: the view table, a changed block's key ↦ its view
+      (`Ix.Compile.Pass.viewOf`). A memo of a function of the changed block
+      and its compiled dependencies: only views built when every member of
+      the changed block was compiled are entered (`viewMemoable`), and a
+      later block, whose snapshot then has those members compiled at the
+      same addresses, would build the same view. Filled from
+      `BlockState.p3MemoViews`, the first entry of a key kept; empty with
+      the switch off. -/
+  p3Views : Std.HashMap Name Ix.Compile.Pass.BlockView := {}
+  /-- Pass 3: the rewritten expansions of image-kind heads in the image
+      blocks' rewrite context (no definitional passes, no records): head ↦
+      expansion, as `Ix.Compile.Pass.expansionOf` leaves it in
+      `RwState.exps`. A memo like `p3Views`, entered only from image blocks
+      whose views were all memoable (`BlockState.p3MemoExps`). -/
+  p3ImageExps : Std.HashMap Name Ix.Compile.Pass.Expansion := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -331,6 +347,10 @@ structure BlockState where
       that table (merged into `CompileEnv.p3PlanReuses`). -/
   p3CliquePlans : Array (Name × Ix.Compile.Pass.CliqueOutcome) := #[]
   p3PlanReused : Nat := 0
+  /-- Pass 3: views and image-context expansions this block computed, merged
+      into `CompileEnv.p3Views` and `CompileEnv.p3ImageExps`. -/
+  p3MemoViews : Array (Name × Ix.Compile.Pass.BlockView) := #[]
+  p3MemoExps : Array (Name × Ix.Compile.Pass.Expansion) := #[]
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/
