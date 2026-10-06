@@ -140,7 +140,7 @@ jobs:
             test_args: >-
               --ignored
               canon-pass1 twins clique-transport aux-oracle pass3 pass3-cliques
-              o11a-decline
+              o11a-decline compile-caller-independence
           - name: Lake ignored tests (compiler validation)
             kind: lake
             test_args: --ignored validate-lean validate-lean-nc

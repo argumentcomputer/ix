@@ -40,6 +40,7 @@ import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.MathlibMeasure
 import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.Compile.ClosureWhole
+import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -412,6 +413,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Closure against whole on Init+Std, both switch states, and whole logical units in every
   -- selected closure (Tests.Ix.Compile.ClosureWhole).
   ("compile-closure-whole", Tests.Ix.Compile.ClosureWhole.run),
+  -- A block compiles the same with and without its dependents, both switch states
+  -- (Tests.Ix.Compile.CallerIndependence).
+  ("compile-caller-independence", Tests.Ix.Compile.CallerIndependence.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
