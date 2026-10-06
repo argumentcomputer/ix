@@ -723,7 +723,7 @@ mod tests {
     for workers in [1, 4] {
       let compiled = compile_env_with_options(
         &source,
-        CompileOptions { max_workers: Some(workers) },
+        CompileOptions { max_workers: Some(workers), ..Default::default() },
       )
       .unwrap();
       assert!(compiled.ungrounded.is_empty());

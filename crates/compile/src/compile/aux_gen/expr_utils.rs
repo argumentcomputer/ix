@@ -1744,16 +1744,19 @@ fn ensure_in_kenv_of_inner_env(
    -> Result<ix_kernel::expr::KExpr<Meta>, ixon::CompileError> {
     let pn_h = param_names_hash(lp);
     let mut binder_names: Vec<Name> = Vec::new();
-    kernel_ingress(name, lean_expr_to_zexpr_cached(
-      expr,
-      lp,
-      &mut binder_names,
-      &mut kenv.intern,
-      n2a,
-      aux_n2a,
-      Some(&mut kenv.ingress_cache),
-      Some(&pn_h),
-    ))
+    kernel_ingress(
+      name,
+      lean_expr_to_zexpr_cached(
+        expr,
+        lp,
+        &mut binder_names,
+        &mut kenv.intern,
+        n2a,
+        aux_n2a,
+        Some(&mut kenv.ingress_cache),
+        Some(&pn_h),
+      ),
+    )
   };
 
   match &ci {
@@ -2051,7 +2054,7 @@ impl<'a> TcScope<'a> {
     let mut seen_params = FxHashSet::default();
     for name in param_names {
       if !seen_params.insert(name) {
-        return Err(bridge_refusal(format!(
+        return Err(bridge_refusal(&format!(
           "duplicate universe parameter '{}'",
           name.pretty()
         )));
@@ -2060,7 +2063,7 @@ impl<'a> TcScope<'a> {
     let mut fvar_levels: FxHashMap<Name, usize> = FxHashMap::default();
     for (i, decl) in outer_fvar_ctx.iter().enumerate() {
       if fvar_levels.insert(decl.fvar_name.clone(), i).is_some() {
-        return Err(bridge_refusal(format!(
+        return Err(bridge_refusal(&format!(
           "duplicate outer free variable '{}'",
           decl.fvar_name.pretty()
         )));
@@ -2094,7 +2097,7 @@ impl<'a> TcScope<'a> {
   /// The type checker's context must be exactly this scope's locals.
   fn check_depth(&self, operation: &str) -> Result<(), ixon::CompileError> {
     if self.tc.ctx.len() != self.depth() {
-      return Err(bridge_refusal(format!(
+      return Err(bridge_refusal(&format!(
         "stale scope depth before {operation}"
       )));
     }
@@ -2114,7 +2117,7 @@ impl<'a> TcScope<'a> {
     let depth = self.depth();
     for (i, decl) in decls.iter().enumerate() {
       let refusal = if self.fvar_levels.contains_key(&decl.fvar_name) {
-        Err(bridge_refusal(format!(
+        Err(bridge_refusal(&format!(
           "duplicate pushed free variable '{}'",
           decl.fvar_name.pretty()
         )))
@@ -2155,14 +2158,12 @@ impl<'a> TcScope<'a> {
   ) -> Result<(), ixon::CompileError> {
     self.check_depth("pop_locals")?;
     if decls.len() > self.extra_locals {
-      return Err(bridge_refusal(
-        "pop_locals exceeds pushed local count".into(),
-      ));
+      return Err(bridge_refusal("pop_locals exceeds pushed local count"));
     }
     let first = self.depth() - decls.len();
     for (i, decl) in decls.iter().enumerate() {
       if self.fvar_levels.get(&decl.fvar_name) != Some(&(first + i)) {
-        return Err(bridge_refusal(format!(
+        return Err(bridge_refusal(&format!(
           "pop_locals is not LIFO at '{}'",
           decl.fvar_name.pretty()
         )));
@@ -2201,7 +2202,10 @@ impl<'a> TcScope<'a> {
     Ok(self.addr_present(&addr))
   }
 
-  fn fault_in_addr(&mut self, addr: &Address) -> Result<bool, ixon::CompileError> {
+  fn fault_in_addr(
+    &mut self,
+    addr: &Address,
+  ) -> Result<bool, ixon::CompileError> {
     if self.addr_present(addr) {
       return Ok(true);
     }
@@ -2480,7 +2484,7 @@ impl<'a> TcScope<'a> {
       // (`kunivToLevelWithConstLevels`), never given a scope or invented name.
       UnivData::Param(idx, _, _) => {
         const_levels.get(*idx as usize).cloned().ok_or_else(|| {
-          bridge_refusal(format!(
+          bridge_refusal(&format!(
             "kuniv_to_level_with_const_levels: constant universe argument index {idx} out of range"
           ))
         })?
@@ -2635,7 +2639,7 @@ pub(super) fn kexpr_to_lean(
   )
 }
 
-pub(super) fn bridge_refusal(message: String) -> ixon::CompileError {
+pub(super) fn bridge_refusal(message: &str) -> ixon::CompileError {
   ixon::CompileError::UnsupportedExpr {
     desc: format!("aux kernel bridge: {message}"),
   }
@@ -2667,10 +2671,10 @@ fn kexpr_to_lean_cached(
       .filter_map(|(name, &lvl)| (lvl == level).then_some(name));
     match (found.next(), found.next()) {
       (Some(name), None) => Ok(name.clone()),
-      (None, _) => Err(bridge_refusal(format!(
+      (None, _) => Err(bridge_refusal(&format!(
         "kexpr_to_lean: missing free variable at outer level {level}"
       ))),
-      (Some(_), Some(_)) => Err(bridge_refusal(format!(
+      (Some(_), Some(_)) => Err(bridge_refusal(&format!(
         "kexpr_to_lean: duplicate free variable identities at outer level {level}"
       ))),
     }
@@ -2691,7 +2695,7 @@ fn kexpr_to_lean_cached(
         let level =
           outer_depth.checked_sub(fvar_idx_from_top + 1).ok_or_else(|| {
             bridge_refusal(
-              "kexpr_to_lean: Var index out of range of outer context".into(),
+              "kexpr_to_lean: Var index out of range of outer context",
             )
           })?;
         LeanExpr::fvar(lookup_fvar(level)?)
@@ -2701,7 +2705,7 @@ fn kexpr_to_lean_cached(
     // checking) never belong in the inputs of `kexpr_to_lean`: one here
     // means a path leaked an open expression past its abstraction step.
     KED::FVar(id, _, _) => {
-      return Err(bridge_refusal(format!(
+      return Err(bridge_refusal(&format!(
         "kexpr_to_lean: leaked kernel free variable {}",
         id.0
       )));
@@ -2948,7 +2952,7 @@ fn bridge_level_to_kuniv(
         param_names.iter().position(|n| n == name).ok_or_else(|| {
           let names: Vec<String> =
             param_names.iter().map(|n| n.pretty()).collect();
-          bridge_refusal(format!(
+          bridge_refusal(&format!(
             "unknown level param `{}` not found in param_names [{}]",
             name.pretty(),
             names.join(", ")
@@ -2957,9 +2961,7 @@ fn bridge_level_to_kuniv(
       KUniv::param(idx as u64, name.clone())
     },
     LevelData::Mvar(..) => {
-      return Err(bridge_refusal(
-        "lean_level_to_kuniv: level metavariable".into(),
-      ));
+      return Err(bridge_refusal("lean_level_to_kuniv: level metavariable"));
     },
   })
 }
@@ -2997,13 +2999,13 @@ fn to_kexpr_cached(
         KExpr::var((ctx_depth - level - 1) as u64, Name::anon())
       },
       Some(_) => {
-        return Err(bridge_refusal(format!(
+        return Err(bridge_refusal(&format!(
           "to_kexpr_static: free variable {} outside context depth {ctx_depth}",
           fname.pretty()
         )));
       },
       None => {
-        return Err(bridge_refusal(format!(
+        return Err(bridge_refusal(&format!(
           "to_kexpr_static: unknown free variable {}",
           fname.pretty()
         )));
@@ -3064,9 +3066,7 @@ fn to_kexpr_cached(
     },
     ExprData::Mdata(_, inner, _) => go(inner, ctx_depth, cache)?,
     ExprData::Mvar(..) => {
-      return Err(bridge_refusal(
-        "to_kexpr_static: expression metavariable".into(),
-      ));
+      return Err(bridge_refusal("to_kexpr_static: expression metavariable"));
     },
   };
   cache.insert(key, result.clone());

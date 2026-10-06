@@ -77,6 +77,11 @@ pub struct CompileOptions {
   /// Override the scheduler worker ceiling. `None` uses available parallelism
   /// or `IX_COMPILE_WORKERS`; adaptive admission may run fewer active blocks.
   pub max_workers: Option<usize>,
+  /// Pass 3, the faithful rewrite: `Some(true)` for `IX_PASS3=images`,
+  /// `Some(false)` for the legacy surgery; `None` reads `IX_PASS3`
+  /// (`pass3::names::switch_from_env`: unset is the surgery until M6R slice
+  /// 6, an unrecognised value is refused).
+  pub pass3: Option<bool>,
 }
 
 /// Worker-local kernel context for aux_gen sort-level inference.
@@ -205,6 +210,11 @@ pub struct CompileState {
   /// deserialized environment sets them with [`compiler_sharing_limits`].
   /// The default is [`ExactSharingLimits::default`].
   pub sharing_limits: ExactSharingLimits,
+  /// Pass 3, the faithful rewrite (`IX_PASS3=images`): selected for this
+  /// compile (`CompileOptions::pass3`, else the environment variable).
+  pub pass3: bool,
+  /// Pass 3's records carried from block to block.
+  pub p3: pass3::Pass3State,
 }
 
 /// Cached compiled expression with arena root index.
@@ -276,6 +286,20 @@ pub struct BlockCache {
   /// metadata, so the collapse-drop check (A0) does not apply there. Every
   /// stored constant is compiled with this flag unset.
   pub provenance_only: bool,
+  /// Pass 3: the block's members rewritten by the call-site rewrite
+  /// (`Ix.Compile.Pass.prepareBlock`'s overlay), read instead of the input.
+  pub p3_overlay: FxHashMap<Name, LeanConstantInfo>,
+  /// Pass 3: the source occurrence of each rewritten call site, by
+  /// placeholder index.
+  pub p3_sources: FxHashMap<usize, LeanExpr>,
+  /// Pass 3: placeholder index to (`meta_sharing` index, arena root) of the
+  /// current constant's compiled decompile records.
+  pub p3_records: FxHashMap<usize, (u64, u64)>,
+  /// Pass 3: compiling a decompile record; references and universes outside
+  /// the primary tables go to the extension tables.
+  pub p3_meta_mode: bool,
+  /// Pass 3: the current constant's extension refs (`meta_refs`).
+  pub p3_meta_refs: indexmap::IndexSet<Address>,
 }
 
 #[derive(Debug)]
@@ -303,6 +327,8 @@ impl Default for CompileState {
       aux_perms: Default::default(),
       def_hints: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
+      pass3: false,
+      p3: Default::default(),
     }
   }
 }
@@ -349,6 +375,7 @@ impl CompileState {
       },
     }
     self.aux_gen_extra_names.insert(name.clone());
+    pass3::journal_claim(name);
     Ok(())
   }
 
@@ -622,6 +649,17 @@ fn compile_univ_idx(
 ) -> Result<(u64, Option<u64>), CompileError> {
   let univ = compile_univ(level, univ_params, cache)?;
   let canon = canon_univ_cached(&univ, cache);
+  // Pass 3 decompile record: a universe outside the primary table goes to
+  // the extension (virtual index), never into the primary table.
+  if cache.p3_meta_mode && !cache.univs.contains(&canon) {
+    let (slot, _) = cache.meta_univs.insert_full(canon.clone());
+    let cidx = (cache.univs.len() + slot) as u64;
+    if canon == univ {
+      return Ok((cidx, None));
+    }
+    let (slot2, _) = cache.meta_univs.insert_full(univ);
+    return Ok((cidx, Some((cache.univs.len() + slot2) as u64)));
+  }
   let (idx, fresh) = cache.univs.insert_full(canon.clone());
   debug_assert!(
     !(fresh && cache.univs_final),
@@ -951,6 +989,103 @@ fn synthesize_eta_call_site(
   Ok((body, n_synth))
 }
 
+/// Intern an address into the block's refs table, returning its index. While
+/// compiling a Pass 3 decompile record, an address outside the primary table
+/// goes to the constant's extension table (`meta_refs`, virtual index
+/// `refs.len() + j`) instead (Lean `internRefMeta`).
+fn intern_ref(cache: &mut BlockCache, addr: Address) -> usize {
+  if cache.p3_meta_mode {
+    if let Some(i) = cache.refs.get_index_of(&addr) {
+      return i;
+    }
+    let (j, _) = cache.p3_meta_refs.insert_full(addr);
+    return cache.refs.len() + j;
+  }
+  cache.refs.insert_full(addr).0
+}
+
+/// Pass 3: the placeholder indices of the rewritten call sites in `e`, in
+/// first-occurrence order, each once (Lean `pass3Placeholders`).
+fn pass3_placeholders(e: &LeanExpr) -> Vec<usize> {
+  let key = pass3::names::inline_key();
+  let mut seen: FxHashSet<Address> = FxHashSet::default();
+  let mut out: Vec<usize> = Vec::new();
+  let mut stack = vec![e.clone()];
+  while let Some(x) = stack.pop() {
+    if !seen.insert(Address::from_blake3_hash(*x.get_hash())) {
+      continue;
+    }
+    match x.as_data() {
+      ExprData::Mdata(kvs, inner, _) => {
+        if let [(k, LeanDataValue::OfNat(n))] = kvs.as_slice()
+          && *k == key
+        {
+          let n = pass3::expr::nat_usize(n);
+          if !out.contains(&n) {
+            out.push(n);
+          }
+        }
+        stack.push(inner.clone());
+      },
+      ExprData::App(f, a, _) => {
+        stack.push(a.clone());
+        stack.push(f.clone());
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(t.clone());
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(v.clone());
+        stack.push(t.clone());
+      },
+      ExprData::Proj(_, _, s, _) => stack.push(s.clone()),
+      _ => {},
+    }
+  }
+  out
+}
+
+/// Pass 3: compile the decompile record of every rewritten call site of `e`
+/// the current constant has not compiled yet: its source occurrence, into
+/// `meta_sharing`, in meta mode; the expression cache is saved and restored
+/// around it (Lean `pass3CompileRecords`).
+fn pass3_compile_records(
+  e: &LeanExpr,
+  univ_params: &[Name],
+  mut_ctx: &MutCtx,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Result<(), CompileError> {
+  for n in pass3_placeholders(e) {
+    if cache.p3_records.contains_key(&n) {
+      continue;
+    }
+    let src = cache.p3_sources.get(&n).cloned().ok_or_else(|| {
+      CompileError::InvalidMutualBlock {
+        reason: format!(
+          "Pass 3: no source occurrence for call-site record {n}"
+        ),
+      }
+    })?;
+    let saved = cache.exprs.clone();
+    cache.p3_meta_mode = true;
+    let res = compile_expr(&src, univ_params, mut_ctx, cache, stt);
+    cache.p3_meta_mode = false;
+    cache.exprs = saved;
+    let ix = res?;
+    let root = cache.arena_roots.pop().ok_or_else(|| {
+      CompileError::InvalidMutualBlock {
+        reason: "Pass 3: call-site record without an arena root".into(),
+      }
+    })?;
+    cache.p3_records.insert(n, (cache.surgery_sharing.len() as u64, root));
+    cache.surgery_sharing.push(ix);
+  }
+  Ok(())
+}
+
 fn compile_const_expr_raw(
   name: &Name,
   levels: &[Level],
@@ -980,7 +1115,7 @@ fn compile_const_expr_raw(
         caller: format!("{who} @ compile_expr(Const)"),
       }
     })?;
-    let (ref_idx, _) = cache.refs.insert_full(const_addr.clone());
+    let ref_idx = intern_ref(cache, const_addr.clone());
     Expr::reference(ref_idx as u64, univ_indices)
   };
   let root = cache.arena.alloc(ExprMetaData::Ref { name: name_addr });
@@ -1040,6 +1175,12 @@ pub fn compile_expr(
       n_synth: usize,
       n_applied: usize,
     },
+  }
+
+  // Pass 3: the decompile records of the rewritten call sites in `expr`
+  // first (Lean `compileExpr` runs `pass3CompileRecords` before the term).
+  if stt.pass3 && !cache.p3_meta_mode && !cache.p3_sources.is_empty() {
+    pass3_compile_records(expr, univ_params, mut_ctx, cache, stt)?;
   }
 
   // Top-level cache check (O(1) with arena)
@@ -1947,14 +2088,14 @@ pub fn compile_expr(
 
           ExprData::Lit(Literal::NatVal(n), _) => {
             let addr = store_nat(n, stt);
-            let (ref_idx, _) = cache.refs.insert_full(addr);
+            let ref_idx = intern_ref(cache, addr);
             results.push(Expr::nat(ref_idx as u64));
             cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
 
           ExprData::Lit(Literal::StrVal(s), _) => {
             let addr = store_string(s, stt);
-            let (ref_idx, _) = cache.refs.insert_full(addr);
+            let ref_idx = intern_ref(cache, addr);
             results.push(Expr::str(ref_idx as u64));
             cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
@@ -1973,7 +2114,7 @@ pub fn compile_expr(
               }
             })?;
 
-            let (ref_idx, _) = cache.refs.insert_full(type_addr.clone());
+            let ref_idx = intern_ref(cache, type_addr.clone());
             let name_addr = compile_name(type_name, stt);
 
             stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
@@ -1987,7 +2128,35 @@ pub fn compile_expr(
               stack.push(Frame::Compile(inner.clone()));
               continue;
             }
-            // Compile KV map
+            // Compile KV map. Pass 3: the placeholder `[(_ix.inline, n)]`
+            // becomes the decompile record `[(_ix.inline, s),
+            // (_ix.inline_meta, m)]` (Lean `compileKVMap`).
+            let mut kv_owned: Option<Vec<(Name, LeanDataValue)>> = None;
+            if stt.pass3
+              && let [(k, LeanDataValue::OfNat(n))] = kv.as_slice()
+              && *k == pass3::names::inline_key()
+            {
+              let n = pass3::expr::nat_usize(n);
+              let (s, m) =
+                cache.p3_records.get(&n).copied().ok_or_else(|| {
+                  CompileError::InvalidMutualBlock {
+                    reason: format!(
+                      "Pass 3: call-site record {n} was not compiled"
+                    ),
+                  }
+                })?;
+              kv_owned = Some(vec![
+                (
+                  pass3::names::inline_key(),
+                  LeanDataValue::OfNat(Nat::from(s)),
+                ),
+                (
+                  pass3::names::inline_meta_key(),
+                  LeanDataValue::OfNat(Nat::from(m)),
+                ),
+              ]);
+            }
+            let kv = kv_owned.as_ref().unwrap_or(kv);
             let mut pairs = Vec::new();
             for (k, v) in kv {
               let k_addr = compile_name(k, stt);
@@ -3022,6 +3191,9 @@ pub fn compile_definition(
   // §10.6), clear for next constant
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let p3_meta_refs: Vec<Address> =
+    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
+  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -3053,6 +3225,7 @@ pub fn compile_definition(
     value_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
   stt.def_hints.insert(def.name.clone(), def.hints);
@@ -3113,6 +3286,9 @@ pub fn compile_recursor(
   // §10.6) drain on the same boundary for the same reason.
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let p3_meta_refs: Vec<Address> =
+    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
+  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -3150,6 +3326,7 @@ pub fn compile_recursor(
     rule_roots,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -3180,6 +3357,9 @@ fn compile_constructor(
   // constructor.
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let p3_meta_refs: Vec<Address> =
+    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
+  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -3208,6 +3388,7 @@ fn compile_constructor(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -3241,6 +3422,9 @@ pub fn compile_inductive(
   // §10.6) split on the same boundary.
   let indc_arena = std::mem::take(&mut cache.arena);
   let indc_surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let p3_meta_refs: Vec<Address> =
+    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
+  cache.p3_records.clear();
   let indc_meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let indc_univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -3288,6 +3472,7 @@ pub fn compile_inductive(
     type_root,
   });
   meta.meta_sharing = indc_surgery_sharing;
+  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = indc_meta_univs;
   meta.univ_patches = indc_univ_patches;
 
@@ -3314,6 +3499,9 @@ fn compile_axiom(
   // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let p3_meta_refs: Vec<Address> =
+    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
+  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -3334,6 +3522,7 @@ fn compile_axiom(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -3360,6 +3549,9 @@ fn compile_quotient(
   // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let p3_meta_refs: Vec<Address> =
+    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
+  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -3379,6 +3571,7 @@ fn compile_quotient(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -4376,6 +4569,86 @@ fn compile_const_inner(
   res
 }
 
+/// Compile a single definition/theorem/opaque (non-mutual case). When `aux`
+/// is false (ephemeral compilation for metadata capture), skip storing the
+/// Ixon blob and Named entry.
+pub(crate) fn compile_single_def(
+  name: &Name,
+  def: &Def,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+  aux: bool,
+) -> Result<(Address, ConstantMeta), CompileError> {
+  let _t0 = std::time::Instant::now();
+  let _name_str_entry = name.pretty();
+  let mut_ctx = MutConst::single_ctx(def.name.clone());
+  preseed_expr_tables(
+    &[
+      (&def.typ, def.level_params.as_slice()),
+      (&def.value, def.level_params.as_slice()),
+    ],
+    &mut_ctx,
+    cache,
+    stt,
+    "compile_single_def",
+  )?;
+  let ctx_addrs: Vec<Address> =
+    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let (data, meta) = compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
+  let _t_compile = _t0.elapsed();
+  let n_unique_exprs = cache.exprs.len();
+  let refs: Vec<Address> = cache.refs.iter().cloned().collect();
+  let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
+  let _t1 = std::time::Instant::now();
+  let constant = apply_sharing_to_definition_with_limits(
+    &stt.sharing_limits,
+    data,
+    refs,
+    univs,
+  )?;
+  let _t_sharing = _t1.elapsed();
+  let _t2 = std::time::Instant::now();
+  let mut bytes = Vec::new();
+  constant.put(&mut bytes);
+  let serialized_size = bytes.len();
+  let addr = Address::hash(&bytes);
+  let _t_serial = _t2.elapsed();
+  if *IX_TIMING && _t0.elapsed().as_secs_f32() > 1.0 {
+    eprintln!(
+      "[slow_single] {:?} compile={:.2}s sharing={:.2}s serial={:.2}s unique_exprs={} refs={} bytes={}",
+      name.pretty(),
+      _t_compile.as_secs_f32(),
+      _t_sharing.as_secs_f32(),
+      _t_serial.as_secs_f32(),
+      n_unique_exprs,
+      cache.refs.len(),
+      serialized_size,
+    );
+  }
+  if aux {
+    stt.env.store_const(addr.clone(), constant);
+    stt.env.register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
+  } else {
+    // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
+    // original (addr, meta) in Named.original for decompilation metadata.
+    // Do NOT store the constant blob — it's ephemeral and would pollute
+    // the Ixon env with unreferenced constants.
+    stt.promote_aux(name, addr.clone(), meta.clone())?;
+  }
+  Ok((addr, meta))
+}
+
+/// Compile a definition-like constant standalone under `name` and register
+/// it (Pass 3 image constants).
+pub fn compile_single_definition(
+  name: &Name,
+  def: &Def,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Result<(Address, ConstantMeta), CompileError> {
+  compile_single_def(name, def, cache, stt, true)
+}
+
 fn compile_const_inner_body(
   name: &Name,
   all: &NameSet,
@@ -4394,13 +4667,17 @@ fn compile_const_inner_body(
   // `FxHashMap` (see `Env` alias in env.rs) — there's no guard to
   // release, so we clone the value and let the borrow expire on the
   // next line through NLL.
-  let cnst = lean_env
-    .get(name)
-    .ok_or_else(|| CompileError::MissingConstant {
-      name: name.pretty(),
-      caller: "compile_const".into(),
-    })?
-    .clone();
+  // Pass 3: a member the call-site rewrite changed is read from the overlay.
+  let cnst: LeanConstantInfo = match cache.p3_overlay.get(name) {
+    Some(c) => c.clone(),
+    None => lean_env
+      .get(name)
+      .ok_or_else(|| CompileError::MissingConstant {
+        name: name.pretty(),
+        caller: "compile_const".into(),
+      })?
+      .cloned(),
+  };
   audit_constant_info_plan_heads(&cnst, stt)?;
   let _cnst_kind = match &cnst {
     LeanConstantInfo::DefnInfo(_) => "defn",
@@ -4412,78 +4689,6 @@ fn compile_const_inner_body(
     LeanConstantInfo::OpaqueInfo(_) => "opaq",
     LeanConstantInfo::QuotInfo(_) => "quot",
   };
-
-  // Helper: compile a single definition/theorem/opaque (non-mutual case).
-  // When `aux` is false (ephemeral compilation for metadata capture),
-  // skip storing the Ixon blob, Named entry, and block stats.
-  fn compile_single_def(
-    name: &Name,
-    def: &Def,
-    cache: &mut BlockCache,
-    stt: &CompileState,
-    aux: bool,
-  ) -> Result<(Address, ConstantMeta), CompileError> {
-    let _t0 = std::time::Instant::now();
-    let _name_str_entry = name.pretty();
-    let mut_ctx = MutConst::single_ctx(def.name.clone());
-    preseed_expr_tables(
-      &[
-        (&def.typ, def.level_params.as_slice()),
-        (&def.value, def.level_params.as_slice()),
-      ],
-      &mut_ctx,
-      cache,
-      stt,
-      "compile_single_def",
-    )?;
-    let ctx_addrs: Vec<Address> =
-      ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
-    let (data, meta) =
-      compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
-    let _t_compile = _t0.elapsed();
-    let n_unique_exprs = cache.exprs.len();
-    let refs: Vec<Address> = cache.refs.iter().cloned().collect();
-    let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-    let _t1 = std::time::Instant::now();
-    let constant = apply_sharing_to_definition_with_limits(
-      &stt.sharing_limits,
-      data,
-      refs,
-      univs,
-    )?;
-    let _t_sharing = _t1.elapsed();
-    let _t2 = std::time::Instant::now();
-    let mut bytes = Vec::new();
-    constant.put(&mut bytes);
-    let serialized_size = bytes.len();
-    let addr = Address::hash(&bytes);
-    let _t_serial = _t2.elapsed();
-    if *IX_TIMING && _t0.elapsed().as_secs_f32() > 1.0 {
-      eprintln!(
-        "[slow_single] {:?} compile={:.2}s sharing={:.2}s serial={:.2}s unique_exprs={} refs={} bytes={}",
-        name.pretty(),
-        _t_compile.as_secs_f32(),
-        _t_sharing.as_secs_f32(),
-        _t_serial.as_secs_f32(),
-        n_unique_exprs,
-        cache.refs.len(),
-        serialized_size,
-      );
-    }
-    if aux {
-      stt.env.store_const(addr.clone(), constant);
-      stt
-        .env
-        .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
-    } else {
-      // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
-      // original (addr, meta) in Named.original for decompilation metadata.
-      // Do NOT store the constant blob — it's ephemeral and would pollute
-      // the Ixon env with unreferenced constants.
-      stt.promote_aux(name, addr.clone(), meta.clone())?;
-    }
-    Ok((addr, meta))
-  }
 
   // Handle each constant type
   let addr = match &cnst {
@@ -4655,11 +4860,18 @@ fn compile_mutual(
   for n in all {
     // Clone out of the `EnvEntry` guard so the block owns its constants
     // and no env borrow is held across the compile below.
-    let Some(const_info) = lean_env.get(n).map(|e| e.cloned()) else {
-      return Err(CompileError::MissingConstant {
-        name: n.pretty(),
-        caller: "compile_mutual".into(),
-      });
+    // Pass 3: a member the call-site rewrite changed is read from the overlay.
+    let const_info = match cache.p3_overlay.get(n) {
+      Some(c) => c.clone(),
+      None => match lean_env.get(n).map(|e| e.cloned()) {
+        Some(c) => c,
+        None => {
+          return Err(CompileError::MissingConstant {
+            name: n.pretty(),
+            caller: "compile_mutual".into(),
+          });
+        },
+      },
     };
     audit_constant_info_plan_heads(&const_info, stt)?;
     let mut_const = match &const_info {
@@ -4673,7 +4885,15 @@ fn compile_mutual(
           })?;
           audit_constant_info_plan_heads(&ctor, stt)?;
         }
-        MutConst::Indc(mk_indc(val, lean_env)?)
+        let mut ind = mk_indc(val, lean_env)?;
+        for c in &mut ind.ctors {
+          if let Some(LeanConstantInfo::CtorInfo(o)) =
+            cache.p3_overlay.get(&c.cnst.name)
+          {
+            *c = o.clone();
+          }
+        }
+        MutConst::Indc(ind)
       },
       LeanConstantInfo::DefnInfo(val) => MutConst::Defn(Def::mk_defn(val)),
       LeanConstantInfo::OpaqueInfo(val) => MutConst::Defn(Def::mk_opaq(val)),
@@ -4959,13 +5179,21 @@ fn compile_mutual(
       .iter()
       .map(|class| class.iter().map(|c| c.name()).collect())
       .collect();
-    let aux_layout_stored = mutual::generate_and_compile_aux_recursors(
+    // Pass 3: the tail's registrations are journaled (and their release to
+    // the scheduler deferred) so that a changed block's Ix auxiliaries can
+    // move to their `_ix` display names before any dependent sees them.
+    if stt.pass3 {
+      pass3::journal_start();
+    }
+    let tail = mutual::generate_and_compile_aux_recursors(
       &cs,
       &class_names,
       lean_env,
       stt,
       kctx,
-    )?;
+    );
+    let journal = if stt.pass3 { pass3::journal_take() } else { None };
+    let aux_layout_stored = tail?;
 
     // Compute call-site surgery plans for reordered/collapsed blocks.
     // Extract the original inductive `all` list from any InductiveVal in the block.
@@ -5053,7 +5281,32 @@ fn compile_mutual(
         })
     });
 
-    if user_layout_changed || aux_layout_changed {
+    // Pass 3 (`IX_PASS3=images`): a changed block registers no surgery
+    // plan; its Ix auxiliaries move to their `_ix` display names and the
+    // block records its image-kind heads (`Driver.editChangedBlock`).
+    if let Some(journal) = journal {
+      let release = if user_layout_changed || aux_layout_changed {
+        pass3::driver::edit_changed_block(
+          stt,
+          lean_env,
+          &original_all,
+          &class_names,
+          aux_layout_stored.as_ref(),
+          journal,
+        )?
+      } else {
+        // A3V-IPB: an unchanged block's permuted `IndPredBelow` family
+        pass3::driver::edit_permuted_below_family(
+          stt,
+          lean_env,
+          &original_all,
+          journal,
+        )?
+      };
+      if !release.is_empty() {
+        stt.aux_gen_pending.lock().unwrap().extend(release);
+      }
+    } else if user_layout_changed || aux_layout_changed {
       let plans = surgery::compute_call_site_plans(
         &plan_class_names,
         &original_all,
@@ -5239,6 +5492,7 @@ mod env;
 mod memory;
 pub mod mutual;
 pub mod nat_conv;
+pub mod pass3;
 pub mod surgery;
 pub(crate) mod validation;
 pub use env::{
@@ -6077,7 +6331,7 @@ mod tests {
     for max_workers in [1, 4] {
       let compiled = compile_env_with_options(
         &source,
-        CompileOptions { max_workers: Some(max_workers) },
+        CompileOptions { max_workers: Some(max_workers), ..Default::default() },
       )
       .unwrap();
       assert!(compiled.ungrounded.is_empty());

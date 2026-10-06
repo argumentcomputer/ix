@@ -2656,7 +2656,8 @@ fn drain_ingress_queue(
       continue;
     }
     if let Some(ci) = lean_env.get(&name)
-      && let Err(e) = ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, queue)
+      && let Err(e) =
+        ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, queue)
     {
       kctx.aux_ingress_seen = seen;
       return Err(e);
@@ -2742,14 +2743,16 @@ fn ingress_type_stub(
     return Ok(());
   }
 
-  let ty_z =
-    super::expr_utils::kernel_ingress(name, lean_expr_to_zexpr_with_kenv(
+  let ty_z = super::expr_utils::kernel_ingress(
+    name,
+    lean_expr_to_zexpr_with_kenv(
       typ,
       level_params,
       &mut kctx.kenv,
       n2a,
       aux_n2a,
-    ))?;
+    ),
+  )?;
   let n_lvls = level_params.len() as u64;
   kctx.kenv.insert(
     zid,
@@ -4471,7 +4474,7 @@ mod tests {
     for max_workers in [1, 4] {
       let stt = compile_env_with_options(
         &lean_env,
-        CompileOptions { max_workers: Some(max_workers) },
+        CompileOptions { max_workers: Some(max_workers), ..Default::default() },
       )
       .expect("compile_env should succeed for alpha-collapse inductives");
       assert!(

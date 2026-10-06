@@ -4854,8 +4854,10 @@ fn decompile_block_aux_gen(
   // Ingress parent inductives into the ephemeral kenv.
   for ind_name in all_names {
     if let Err(e) = expr_utils::ensure_in_kenv_of(ind_name, env, stt, kctx) {
-      aux_gen_errors
-        .push((ind_name.clone(), AuxGenError::recompile(ind_name, "kernel ingress", e)));
+      aux_gen_errors.push((
+        ind_name.clone(),
+        AuxGenError::recompile(ind_name, "kernel ingress", e),
+      ));
       return aux_gen_errors;
     }
   }
@@ -4866,7 +4868,9 @@ fn decompile_block_aux_gen(
     for ind_name in all_names {
       if let Some(ci) = env.get(ind_name) {
         for ref_name in get_constant_info_references(&ci) {
-          if let Err(e) = expr_utils::ensure_in_kenv_of(&ref_name, env, stt, kctx) {
+          if let Err(e) =
+            expr_utils::ensure_in_kenv_of(&ref_name, env, stt, kctx)
+          {
             aux_gen_errors.push((
               ind_name.clone(),
               AuxGenError::recompile(&ref_name, "kernel ingress", e),
@@ -5512,16 +5516,15 @@ fn decompile_block_aux_gen(
 
   // Populate the ephemeral kenv with .below types so brecOn's TcScope
   // can infer PProd(motive, I.below ...) during sort level inference.
-  if !below_consts.is_empty() {
-    if let Err(e) =
+  if !below_consts.is_empty()
+    && let Err(e) =
       populate_canon_kenv_with_below(&below_consts, &classes, env, stt, kctx)
-    {
-      aux_gen_errors.push((
-        all_names[0].clone(),
-        AuxGenError::recompile(&all_names[0], "kernel ingress of .below", e),
-      ));
-      return aux_gen_errors;
-    }
+  {
+    aux_gen_errors.push((
+      all_names[0].clone(),
+      AuxGenError::recompile(&all_names[0], "kernel ingress of .below", e),
+    ));
+    return aux_gen_errors;
   }
 
   // Phase 4: Generate .brecOn / .brecOn.go / .brecOn.eq.
@@ -5911,8 +5914,8 @@ pub fn decompile_env(
       }
       expr_utils::ensure_in_kenv_of_prewarm(&name, &work_env, stt, &mut kctx)
         .map_err(|e| DecompileError::BadConstantFormat {
-          msg: format!("aux regeneration pre-warm: {e}"),
-        })?;
+        msg: format!("aux regeneration pre-warm: {e}"),
+      })?;
       if let Some(refs) = refs_memo.get(&name) {
         for ref_name in refs {
           if !ingressed.contains(ref_name) {

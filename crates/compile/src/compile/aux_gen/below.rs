@@ -2004,7 +2004,7 @@ pub(super) fn kuniv_to_level(
     ),
     UnivData::Param(idx, _, _) => {
       let name = param_names.get(*idx as usize).cloned().ok_or_else(|| {
-        super::expr_utils::bridge_refusal(format!(
+        super::expr_utils::bridge_refusal(&format!(
           "kuniv_to_level: universe parameter index {idx} out of range"
         ))
       })?;

@@ -162,6 +162,13 @@ pub fn compile_env_with_profile(
   // scheduled (Lean `compileEnvParallelAux` does the same).
   let sharing_limits = crate::compile::compiler_sharing_limits()
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
+  // The mode (Pass 3 or the legacy surgery), read once; an unrecognised
+  // `IX_PASS3` value fails the compile with the Lean side's text.
+  let pass3 = match options.pass3 {
+    Some(b) => b,
+    None => crate::compile::pass3::names::switch_from_env()
+      .map_err(|desc| CompileError::UnsupportedExpr { desc })?,
+  };
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
   // groups in one decode per constant — the env decodes lazily, so
@@ -283,10 +290,20 @@ pub fn compile_env_with_profile(
     );
   }
 
+  // Pass 3 (D14): an input name with a reserved `_ix` component is refused.
+  if pass3
+    && let Some(msg) = crate::compile::pass3::driver::reserved_input_in(
+      condensed.blocks.values().flat_map(|b| b.iter()),
+    )
+  {
+    return Err(CompileError::UnsupportedExpr { desc: msg });
+  }
+
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
+    pass3,
     ..Default::default()
   };
 
@@ -790,7 +807,7 @@ pub fn compile_env_with_profile(
                   &lo,
                   "compile_const",
                   || {
-                    compile_const(
+                    crate::compile::pass3::driver::compile_block(
                       &lo,
                       &all,
                       lean_env,
@@ -1152,7 +1169,13 @@ fn precompile_aux_gen_prereqs(
 ) -> Result<(), CompileError> {
   // Resolve seeds to their SCC reps. Silently skip seeds not in the env
   // (unit-test fixtures, minimal test envs).
-  let seed_reps: Vec<Name> = aux_gen_seed_names()
+  // Pass 3: images pack with `And` at Prop motives (`PProd` and `True` are
+  // seeds already), so `And` is a seed too (Lean `auxGenSeeds`).
+  let mut seeds = aux_gen_seed_names();
+  if stt.pass3 {
+    seeds.push(Name::str(Name::anon(), "And".into()));
+  }
+  let seed_reps: Vec<Name> = seeds
     .into_iter()
     .filter_map(|n| condensed.low_links.get(&n).cloned())
     .collect();

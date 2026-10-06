@@ -1473,22 +1473,26 @@ pub fn populate_canon_kenv_with_below(
       below::BelowConstant::Def(d) => {
         let addr = resolve_lean_name_addr(&d.name, n2a, aux_n2a);
         let zid = KId::new(addr, d.name.clone());
-        let ty_z =
-          expr_utils::kernel_ingress(&d.name, lean_expr_to_zexpr_with_kenv(
+        let ty_z = expr_utils::kernel_ingress(
+          &d.name,
+          lean_expr_to_zexpr_with_kenv(
             &d.typ,
             &d.level_params,
             &mut kctx.kenv,
             n2a,
             aux_n2a,
-          ))?;
-        let val_z =
-          expr_utils::kernel_ingress(&d.name, lean_expr_to_zexpr_with_kenv(
+          ),
+        )?;
+        let val_z = expr_utils::kernel_ingress(
+          &d.name,
+          lean_expr_to_zexpr_with_kenv(
             &d.value,
             &d.level_params,
             &mut kctx.kenv,
             n2a,
             aux_n2a,
-          ))?;
+          ),
+        )?;
         kctx.kenv.insert(
           zid.clone(),
           KConst::Defn {
@@ -1508,26 +1512,30 @@ pub fn populate_canon_kenv_with_below(
       below::BelowConstant::Indc(i) => {
         let addr = resolve_lean_name_addr(&i.name, n2a, aux_n2a);
         let zid = KId::new(addr, i.name.clone());
-        let ty_z =
-          expr_utils::kernel_ingress(&i.name, lean_expr_to_zexpr_with_kenv(
+        let ty_z = expr_utils::kernel_ingress(
+          &i.name,
+          lean_expr_to_zexpr_with_kenv(
             &i.typ,
             &i.level_params,
             &mut kctx.kenv,
             n2a,
             aux_n2a,
-          ))?;
+          ),
+        )?;
         let mut ctor_zids = Vec::new();
         for ctor in &i.ctors {
           let ctor_addr = resolve_lean_name_addr(&ctor.name, n2a, aux_n2a);
           let ctor_zid = KId::new(ctor_addr, ctor.name.clone());
-          let ctor_ty_z =
-            expr_utils::kernel_ingress(&ctor.name, lean_expr_to_zexpr_with_kenv(
+          let ctor_ty_z = expr_utils::kernel_ingress(
+            &ctor.name,
+            lean_expr_to_zexpr_with_kenv(
               &ctor.typ,
               &i.level_params,
               &mut kctx.kenv,
               n2a,
               aux_n2a,
-            ))?;
+            ),
+          )?;
           kctx.kenv.insert(
             ctor_zid.clone(),
             KConst::Ctor {
