@@ -371,26 +371,28 @@ got {actual.getD "accepted"}"
         out.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
   -- Root refusals (every failure that is not a missing-dependency cascade)
   -- must be Rust's in every schedule, name for name and message for message.
-  -- The cascades differ by exactly `T.rec`: Rust registers the primary
-  -- names of `T`'s block (`claim_compiled_name`, compile.rs:4740-4800)
-  -- before its aux tail raises the conflict (compile.rs:4855), so `T.rec`,
-  -- a block of its own, compiles in Rust against a block that failed. The
-  -- Lean drivers merge nothing of a refused block (`checkBlockClaims` runs
-  -- first), so `T.rec` cascades. Pinned so that a change on either side
-  -- shows up here.
-  let leanOnlyCascades : List String := [(Ix.Name.fromLeanName (tName ++ `rec)).pretty]
+  -- The cascades are exactly `T.rec` on both sides: a refused block merges
+  -- nothing (the Lean drivers: `checkBlockClaims` runs first; the Rust
+  -- compiler since M6R slice 2: `block_txn` removes what the block published
+  -- before its aux tail raised the conflict), so `T.rec`, a block of its own,
+  -- finds `T` missing. Until slice 2 Rust compiled `T.rec` against the
+  -- refused block's primary names (this suite pinned that difference).
+  -- Compared by name (the two compilers spell a missing constant
+  -- differently). Pinned so that a change on either side shows up here.
+  let cascadeNames : List String := [(Ix.Name.fromLeanName (tName ++ `rec)).pretty]
   let rustRoots := rust.filter (!isCascade ·.2)
-  if rust.any (isCascade ·.2) then
+  let rustCascades := (rust.filter (isCascade ·.2)).map (·.1)
+  if rustCascades != cascadeNames then
     failures := failures + 1
-    IO.println s!"[claim-conflict] FAIL: Rust now reports cascades: {rust.filter (isCascade ·.2)}"
+    IO.println s!"[claim-conflict] FAIL: Rust cascades {rustCascades}, expected {cascadeNames}"
   let mut reference : Option (List (String × String)) := none
   for (label, refusals) in runs do
     let lean := sorted refusals
     let roots := lean.filter (!isCascade ·.2)
     let cascades := (lean.filter (isCascade ·.2)).map (·.1)
-    if roots == rustRoots && cascades == leanOnlyCascades then
+    if roots == rustRoots && cascades == cascadeNames && cascades == rustCascades then
       IO.println s!"[claim-conflict] {label}: {roots.length} refusals identical to Rust's; \
-cascade {cascades} (Rust compiles it)"
+cascade {cascades} identical to Rust's"
     else
       failures := failures + 1
       IO.println s!"[claim-conflict] {label}: FAIL: refusals differ from Rust"
