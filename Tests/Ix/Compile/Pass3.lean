@@ -1330,6 +1330,11 @@ def run (env : Environment) : IO UInt32 := do
       let closure := closureOf env ((validateAuxClosure env).map (·.1))
       pure { name := "corpus", env, seeds := (closure.map (·.1)).toArray, closure })
   let mut problems : Array String := #[]
+  -- the record's `mayBeEmpty` rows (`Pass3Kernels.mayBeEmptyControl`)
+  let (mbe, mbeLine) := Pass3Kernels.mayBeEmptyControl
+  IO.println s!"[pass3] {mbeLine}"
+  for p in mbe do IO.println s!"[pass3] FAIL {p}"
+  problems := problems ++ mbe
   -- negative control: an input name with the reserved component `_ix`
   if want "ReservedIx" then
     let u ← unitOfFile "Tests/Ix/Compile/AuxCert/ReservedIx.lean"
