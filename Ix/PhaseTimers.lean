@@ -67,18 +67,27 @@ inductive Phase where
   | noAux
   /-- The driver's merge of a block outcome (driving thread). -/
   | merge
+  /-- Pass 3: `Ix.Compile.Pass.prepareBlock` outside the clique hook (the
+      block's views, call-site rewrite and overlay; M1-h). -/
+  | p3Prepare
+  /-- Pass 3: the changed-clique hook (`prepareCliques`, with its rewrite). -/
+  | p3Cliques
+  /-- Pass 3: `compileImageBlock` (the images of a changed block's Lean
+      auxiliaries, compiled under their Lean names). -/
+  | p3Image
   deriving Inhabited, BEq, Repr
 
 def Phase.idx : Phase → Nat
   | .blockOther => 0 | .classes => 1 | .exprCompile => 2 | .sharing => 3
   | .auxTail => 4 | .auxIngress => 5 | .auxTc => 6 | .auxCompile => 7
   | .callSitePlans => 8 | .noAux => 9 | .merge => 10
+  | .p3Prepare => 11 | .p3Cliques => 12 | .p3Image => 13
 
-def phaseCount : Nat := 11
+def phaseCount : Nat := 14
 
 def Phase.all : Array Phase :=
   #[.blockOther, .classes, .exprCompile, .sharing, .auxTail, .auxIngress, .auxTc,
-    .auxCompile, .callSitePlans, .noAux, .merge]
+    .auxCompile, .callSitePlans, .noAux, .merge, .p3Prepare, .p3Cliques, .p3Image]
 
 def Phase.label : Phase → String
   | .blockOther => "block glue (outside the phases below)"
@@ -92,6 +101,9 @@ def Phase.label : Phase → String
   | .callSitePlans => "call-site plans"
   | .noAux => "no-aux compile of original forms (promote_aux)"
   | .merge => "driver merge of block outcomes (driving thread)"
+  | .p3Prepare => "Pass 3 prepareBlock (views, rewrite; outside the clique hook)"
+  | .p3Cliques => "Pass 3 clique hook (prepareCliques)"
+  | .p3Image => "Pass 3 compileImageBlock"
 
 /-- One thread's accumulators. -/
 structure ThreadAcc where

@@ -192,7 +192,8 @@ def runBlockWithAuxCore (cenv : CompileEnv) (all : Set Name) (lo : Name)
     { all, current := lo, mutCtx := default, univCtx := [] }
   -- Pass 3: the block's members rewritten (Def 3.6) and its image constants
   -- compiled; identity when the switch is off.
-  let (cenv, init) ← match Ix.Compile.Pass.prepareBlock cenv all lo with
+  let (cenv, init) ← match Ix.PhaseTimers.withPhase .p3Prepare cenv
+      (Ix.Compile.Pass.prepareBlock · all lo) with
     | .ok r => pure r
     | .error e => throw (.invalidMutualBlock e)
   let ((result, layout?, plans, brecPlans, belowPlans), cache) ←
@@ -328,10 +329,12 @@ a changed block): the images under the Lean names, each with
 provenance decompile verifies against). -/
 def runImageBlock (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError (BlockResult × BlockState) := do
-  let imgs ← match Ix.Compile.Pass.compileImageBlock cenv all with
+  let imgs ← match Ix.PhaseTimers.withPhase .p3Image cenv
+      (Ix.Compile.Pass.compileImageBlock · all) with
     | .ok r => pure r
     | .error e => throw (.invalidMutualBlock e)
-  let (origRes, origCache) ← compileConstNoAuxPure cenv lo all
+  let (origRes, origCache) ←
+    Ix.PhaseTimers.withPhase .noAux cenv (compileConstNoAuxPure · lo all)
   let origs : Std.HashMap Name (Address × Ixon.ConstantMeta) :=
     if origRes.projections.isEmpty then ({} : Std.HashMap Name _).insert lo (origRes.blockAddr, origRes.blockMeta)
     else origRes.projections.foldl (init := {}) fun m (n, proj, cm) =>
