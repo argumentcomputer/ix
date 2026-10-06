@@ -173,7 +173,9 @@ structure CompileEnv where
   p3CliquePlans : Std.HashMap Name Ix.Compile.Pass.CliqueOutcome := {}
   /-- Pass 3: recompute every plan the table would supply and fail the
       block on any difference (`IX_PASS3_CHECK_PLANS=1`; the check mode of
-      the plan table). -/
+      the plan table, and of the view and image-expansion tables
+      `p3Views`/`p3ImageExps`, whose supplied entries are recomputed and
+      compared the same way). -/
   p3CheckPlans : Bool := false
   /-- Pass 3: how many times a block took a clique's plan from the table
       (with `p3CheckPlans`: how many plans were recomputed and found equal).

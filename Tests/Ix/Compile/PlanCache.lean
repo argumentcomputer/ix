@@ -22,6 +22,13 @@
      by the plan with another permutation) fails it with
      `planCheckPrefix`; without the check the replaced entry is returned
      as is (the check, not the lookup, is what detects it).
+  5. the same for the view table and the image-expansion table
+     (`CompileEnv.p3Views`, `CompileEnv.p3ImageExps`, the same check mode):
+     coverage asserted (both non-empty, a recursor in the expansion table),
+     the table's own entry passes `viewOf`/`checkedImageExp` with the check,
+     a replaced entry fails it with `planCheckPrefix`, and without the check
+     the replaced view is returned as is. The check runs of 2 recompute every
+     entry these tables supply.
 
   Run with: `lake test -- --ignored pass3-plan-cache`.
 -/
@@ -123,6 +130,45 @@ def run : IO UInt32 := do
       | .ok (o, true) =>
         unless o.same bad do problems := problems.push s!"negative ({what}): without the check, not the table's entry"
       | _ => problems := problems.push s!"negative ({what}): without the check, the lookup did not use the table"
+  -- 5. the view table and the image-expansion table (`CompileEnv.p3Views`,
+  -- `CompileEnv.p3ImageExps`): coverage, then a negative control with its
+  -- valid neighbour for each, as for the plan table
+  let on := { cenv with p3CheckPlans := true }
+  let viewKeys := cenv.p3Views.toArray.map (·.1) |>.qsort fun a b => a.pretty < b.pretty
+  say s!"view table: {cenv.p3Views.size} views; image-expansion table: {cenv.p3ImageExps.size} expansions"
+  match viewKeys[0]? with
+  | none => problems := problems.push "coverage: the view table is empty (checked nothing)"
+  | some key =>
+    let some v := cenv.p3Views.get? key | problems := problems.push "view table: lost entry"
+    match Ix.Compile.Pass.viewOf on {} key with
+    | .ok v' =>
+      if v'.same v then say s!"view neighbour: the table's view of {key.pretty} passes the check"
+      else problems := problems.push "view neighbour: the lookup returned another view"
+    | .error e => problems := problems.push s!"view neighbour: the table's own view fails the check: {e}"
+    let bad := { v with all := v.all ++ v.all }
+    let table := cenv.p3Views.insert key bad
+    match Ix.Compile.Pass.viewOf { on with p3Views := table } {} key with
+    | .error e =>
+      if (e.splitOn Ix.Compile.Pass.planCheckPrefix).length > 1 then say s!"view negative: rejected: {e.take 160}"
+      else problems := problems.push s!"view negative: failed without the check's prefix: {e}"
+    | .ok _ => problems := problems.push "view negative: a replaced entry passed the check"
+    match Ix.Compile.Pass.viewOf { cenv with p3CheckPlans := false, p3Views := table } {} key with
+    | .ok v' => unless v'.same bad do problems := problems.push "view negative: without the check, not the table's entry"
+    | .error e => problems := problems.push s!"view negative: without the check, the lookup failed: {e}"
+  let recExps := (cenv.p3ImageExps.toArray.filter fun (n, _) =>
+      match cenv.env.get? n with | some (.recInfo _) => true | _ => false).qsort
+    fun a b => a.1.pretty < b.1.pretty
+  match recExps[0]? with
+  | none => problems := problems.push "coverage: no recursor in the image-expansion table (checked nothing)"
+  | some (n, x) =>
+    match Ix.Compile.Pass.checkedImageExp on {} n x with
+    | .ok _ => say s!"expansion neighbour: the table's expansion of {n.pretty} passes the check"
+    | .error e => problems := problems.push s!"expansion neighbour: the table's own expansion fails the check: {e}"
+    match Ix.Compile.Pass.checkedImageExp on {} n { x with arity := x.arity + 1 } with
+    | .error e =>
+      if (e.splitOn Ix.Compile.Pass.planCheckPrefix).length > 1 then say s!"expansion negative: rejected: {e.take 160}"
+      else problems := problems.push s!"expansion negative: failed without the check's prefix: {e}"
+    | .ok _ => problems := problems.push "expansion negative: a replaced entry passed the check"
   if problems.isEmpty then
     say "PASS"
     return 0

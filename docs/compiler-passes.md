@@ -2233,7 +2233,11 @@ reads an entry would compute the same value, and an entry is entered only under 
 that so. Pass 3 has two (`CompileEnv.p3Views`, `CompileEnv.p3ImageExps`): a changed block's view, entered
 only when built with every member of the block compiled, and the image blocks' rewritten expansions of
 its heads, entered only from image blocks whose views all were. Which block filled an entry changes no
-byte, only the time.
+byte, only the time. With the plan table (§5.4) that makes three; all three share the check mode
+`IX_PASS3_CHECK_PLANS=1`, which recomputes every entry a table supplies and fails the compile on a
+difference (`BlockView.same`, `Expansion.same`, `CliqueOutcome.same`): a view taken from the table is built
+again, a recursor's expansion taken from the table is looked up again, and an image block starts its
+rewrite without the expansion table and compares every expansion it computes with the table's entry.
 
 **Obligations of a pass whose output adds a reference.** All four, argued in the pass's docstring:
 

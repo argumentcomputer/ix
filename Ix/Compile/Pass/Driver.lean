@@ -305,6 +305,64 @@ def headsIn (heads : Std.HashMap Name Name) (ci : ConstantInfo) : Std.HashSet Na
 def viewInput (cenv : CompileEnv) : ViewInput :=
   { const? := cenv.env.get?, addr? := resolveAddr cenv, canonRec? := cenv.p3CanonRecs.get? }
 
+/-! ### The check mode of the view and image-expansion tables
+
+Exact equality of views and expansions, for `IX_PASS3_CHECK_PLANS=1`
+(`CompileEnv.p3CheckPlans`): an entry the tables supply is recomputed and
+compared, and a difference fails the block with `planCheckPrefix`, as for the
+clique plan table. Expressions compare by content hash (`Ix.Expr`'s `BEq`,
+binder names and `mdata` included); hash maps by their sets of entries. -/
+
+def ViewEq.hmSame {α : Type} [BEq α] (a b : Std.HashMap Name α) : Bool :=
+  a.size == b.size && a.fold (fun ok k v => ok && b.get? k == some v) true
+
+def ViewEq.sigSame (a b : Ix.Compile.Canon.Sig) : Bool :=
+  a.owner == b.owner && a.head == b.head && a.levels == b.levels && a.specs == b.specs
+
+def ViewEq.arraySame {α : Type} (eq : α → α → Bool) (a b : Array α) : Bool :=
+  a.size == b.size && (a.zip b).all fun (x, y) => eq x y
+
+def ViewEq.nestedSame (a b : Ix.Compile.Canon.NestedCanon) : Bool :=
+  ViewEq.arraySame ViewEq.sigSame a.source b.source && a.canonClasses == b.canonClasses &&
+    ViewEq.arraySame ViewEq.sigSame a.canon b.canon && a.perm == b.perm &&
+    a.evaporated == b.evaporated && a.addrDecided == b.addrDecided
+
+def ViewEq.componentSame (a b : Ix.Compile.Canon.ComponentCanon) : Bool :=
+  a.members == b.members && a.classes == b.classes && a.blindClasses == b.blindClasses &&
+    a.stats.rounds == b.stats.rounds && a.stats.addrDecided == b.stats.addrDecided &&
+    a.stats.hazards == b.stats.hazards &&
+    (match a.nested, b.nested with
+     | none, none => true
+     | some x, some y => ViewEq.nestedSame x y
+     | _, _ => false)
+
+def ViewEq.blockSame (a b : Ix.Compile.Canon.BlockCanon) : Bool :=
+  a.all == b.all && ViewEq.arraySame ViewEq.componentSame a.components b.components
+
+def ViewEq.declSame (a b : Ix.Compile.Image.CanonDecl) : Bool :=
+  a.comp == b.comp && a.levelParams == b.levelParams && a.numParams == b.numParams &&
+    a.isUnsafe == b.isUnsafe &&
+    ViewEq.arraySame (fun (s t : Ix.Compile.Image.CanonType) =>
+      s.name == t.name && s.type == t.type &&
+        ViewEq.arraySame (fun (c d : Ix.Compile.Image.CanonCtor) => c.name == d.name && c.type == d.type)
+          s.ctors t.ctors) a.types b.types
+
+/-- Exact equality of two views. The spec's `naming` (functions) is not
+compared: every view is built with the same constant `viewNaming`
+(`buildView`), and the names it produced are compared through `tyMap`,
+`ctorMap`, `canonInds` and the declarations. -/
+def BlockView.same (a b : BlockView) : Bool :=
+  a.all == b.all && ViewEq.blockSame a.canon b.canon &&
+    ViewEq.blockSame a.spec.block b.spec.block && ViewEq.hmSame a.spec.tyMap b.spec.tyMap &&
+    ViewEq.hmSame a.spec.ctorMap b.spec.ctorMap && a.spec.canonInds == b.spec.canonInds &&
+    ViewEq.arraySame ViewEq.declSame a.spec.decls b.spec.decls &&
+    ViewEq.hmSame a.canonConsts b.canonConsts && ViewEq.hmSame a.back b.back
+
+/-- Exact equality of two expansions. -/
+def Expansion.same (a b : Expansion) : Bool :=
+  a.levelParams == b.levelParams && a.value == b.value && a.arity == b.arity &&
+    a.needsRewrite == b.needsRewrite
+
 /-- A view of the changed block `key` built now may enter the view table
 (`CompileEnv.p3Views`): every member of the block is compiled. The view reads
 the input constants, the canonical recursors of the block (registered when it
@@ -315,15 +373,23 @@ def viewMemoable (cenv : CompileEnv) (key : Name) : Bool :=
   ((cenv.p3Blocks.get? key).getD #[key]).all fun n => (resolveAddr cenv n).isSome
 
 /-- The view of the changed Lean block `key`: from the block's own views,
-then the view table, else built. -/
+then the view table, else built. With `p3CheckPlans` a view the table
+supplies is built again and compared (`BlockView.same`). -/
 def viewOf (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (key : Name) :
     Except String BlockView :=
   match views.get? key with
   | some v => pure v
   | none =>
+    let build := fun (_ : Unit) => buildView (viewInput cenv) ((cenv.p3Blocks.get? key).getD #[key])
     match cenv.p3Views.get? key with
-    | some v => pure v
-    | none => buildView (viewInput cenv) ((cenv.p3Blocks.get? key).getD #[key])
+    | some v =>
+      if cenv.p3CheckPlans then do
+        let v' ← build ()
+        unless v.same v' do
+          throw s!"{planCheckPrefix} the view of the changed block {key.pretty} differs from the view table's"
+        pure v
+      else pure v
+    | none => build ()
 
 /-- The views among `views` a block built itself that may enter the view table. -/
 def newMemoViews (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
@@ -351,6 +417,17 @@ def optBlocks (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
   let inp := viewInput cenv
   views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
 
+/-- The image-expansion table's entry `x` of the head `n`, checked when
+`p3CheckPlans` is on: the expansion computed again from the views
+(`expansionLookup`) must be `x` (`Expansion.same`). -/
+def checkedImageExp (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (n : Name)
+    (x : Expansion) : Except String (Option Expansion) := do
+  if cenv.p3CheckPlans then
+    let y ← expansionLookup cenv views n
+    unless (y.map x.same).getD false do
+      throw s!"{planCheckPrefix} the expansion of {n.pretty} differs from the image-expansion table's"
+  return some x
+
 /-- `expansionLookup` with one lazily evaluated, cached entry per head
 (`Thunk`): a head's expansion (for a recursor, its whole image) is computed
 at its first occurrence in the rewrite and reused at every later one. The
@@ -359,9 +436,12 @@ def expansionTable (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
     Std.HashMap Name (Thunk (Except String (Option Expansion))) :=
   cenv.p3Heads.fold (init := {}) fun m n _ =>
     -- a recursor's expansion is its image, the same in every rewrite
-    -- context: taken from the image-expansion memo when there
+    -- context: taken from the image-expansion memo when there (checked
+    -- against a recomputation with `p3CheckPlans`)
     match cenv.p3ImageExps.get? n, cenv.env.get? n with
-    | some x, some (.recInfo _) => m.insert n (Thunk.pure (.ok (some x)))
+    | some x, some (.recInfo _) =>
+      if cenv.p3CheckPlans then m.insert n (Thunk.mk fun _ => checkedImageExp cenv views n x)
+      else m.insert n (Thunk.pure (.ok (some x)))
     | _, _ => m.insert n (Thunk.mk fun _ => expansionLookup cenv views n)
 
 /-- The lookup of an `expansionTable` (a head outside it: `expansionLookup`). -/
@@ -670,8 +750,10 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
   let mut decls : Std.HashMap Name Ix.DefinitionVal := {}
   let table := expansionTable cenv views
   -- one rewrite state for the block's members: its caches carry over, and it
-  -- starts from the image-expansion memo (`CompileEnv.p3ImageExps`)
-  let mut rwSt : RwState := { base := 0, exps := cenv.p3ImageExps }
+  -- starts from the image-expansion memo (`CompileEnv.p3ImageExps`); with
+  -- `p3CheckPlans` it starts empty, and every expansion it computes that the
+  -- memo holds is compared with the memo's entry below
+  let mut rwSt : RwState := { base := 0, exps := if cenv.p3CheckPlans then {} else cenv.p3ImageExps }
   let mut rounds := pending.size + 1
   while !pending.isEmpty && rounds > 0 do
     rounds := rounds - 1
@@ -695,6 +777,11 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
         rest := rest.push a
     pending := rest
   if !pending.isEmpty then throw lastErr
+  if cenv.p3CheckPlans then
+    for (n, x) in rwSt.exps do
+      if let some y := cenv.p3ImageExps.get? n then
+        unless x.same y do
+          throw s!"{planCheckPrefix} the image-context expansion of {n.pretty} differs from the image-expansion table's"
   -- memo entries: the views built here, and the expansions computed here when
   -- every changed block they read has a memoable view
   let memoViews := newMemoViews cenv views
