@@ -37,6 +37,7 @@ import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.ValidateLean
 import Tests.Ix.Compile.ValidateLeanNC
 import Tests.Ix.Compile.Pass3Cliques
+import Tests.Ix.Compile.MathlibMeasure
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -400,6 +401,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- decompile, kernels and the twins against the switch-on non-canonical set
   -- (Tests.Ix.Compile.Pass3Cliques).
   ("pass3-cliques", Tests.Ix.Compile.Pass3Cliques.run env),
+  -- The switch-on library measurement of plan M1 (M1G_PHASE=compile|classify|kernels;
+  -- Tests.Ix.Compile.MathlibMeasure). Measurement only.
+  ("mathlib-measure", Tests.Ix.Compile.MathlibMeasure.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
