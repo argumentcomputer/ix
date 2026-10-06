@@ -1851,6 +1851,21 @@ adapt"; `Pass/Cliques.lean`, `cliqueCallers`); the clique is never demoted for a
 equations are realised lazily (MUT §1.2), so which of them exist varies between builds (A Δ13). The
 canonicity claim excludes them (§7.1).
 
+**The plan is computed once** (M6 precondition, `Pass/Cliques.lean`, `cliquePlanFor`). A clique's plan
+(its order, ownership, transport, carried lemmas and record: `planClique`) is needed by every block of
+its unit that the hook visits: each member's block, each carried lemma's block (each its own block), and
+each caller's block for the refusal check. It is a function of the clique, its own logical unit and its
+dependencies only: the input constants it reads are the members, their encoding constants, carried
+lemmas, matchers and `below` definitions, and the addresses it reads are those of the members'
+references, which `scheduleCliques`' edges compile before any block that plans the clique. So every such
+block computes the same plan, and the compiler computes it once: the first block that needs it puts it in
+the block state, the driver merges it into a table keyed by the clique (`all₀`;
+`CompileEnv.p3CliquePlans`, merged like the other Pass 3 tables, the first entry of a key kept), and later
+blocks read it from there. The table is a memo of that function, not a new input: it reads no caller and
+no schedule (which block filled an entry, or whether a block of the same wave had to compute the plan
+again, changes no byte and no record, only the time). `IX_PASS3_CHECK_PLANS=1` recomputes every plan the
+table supplies and fails the compile on any difference (suite `pass3-plan-cache`).
+
 ### 5.5 The non-canonical set: where two presentations can still give different transported terms
 
 These are the causes that the non-canonical set must be able to record (§7.2).

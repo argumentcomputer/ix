@@ -31,6 +31,7 @@ public import Ix.CallSitePlan
 public import Ix.CallSiteSurgery
 public import Ix.CanonM
 public import Ix.Compile.Pass.Names
+public import Ix.Compile.Clique.Plan
 
 namespace Ix.CompileM
 public section
@@ -159,6 +160,25 @@ structure CompileEnv where
       Merged from the blocks (`BlockState.p3NonCanonical`); empty with the
       switch off. -/
   p3NonCanonical : Std.HashMap Name String := {}
+  /-- Pass 3: the clique plan table, Lean's first member of a changed
+      clique (`all₀`) ↦ the clique's plan (`Ix.Compile.Pass.planClique`).
+      A memo, not a decision: the plan is a function of the clique, its own
+      logical unit and its dependencies (design document §5.4, §6.3), so
+      every block of the unit computes the same one; the first block that
+      needs it computes it and the driver merges it here
+      (`BlockState.p3CliquePlans`), keeping the first entry of a key. Never
+      read for anything but the plan of that clique; empty with the switch
+      off. -/
+  p3CliquePlans : Std.HashMap Name Ix.Compile.Pass.CliqueOutcome := {}
+  /-- Pass 3: recompute every plan the table would supply and fail the
+      block on any difference (`IX_PASS3_CHECK_PLANS=1`; the check mode of
+      the plan table). -/
+  p3CheckPlans : Bool := false
+  /-- Pass 3: how many times a block took a clique's plan from the table
+      (with `p3CheckPlans`: how many plans were recomputed and found equal).
+      A count of work saved, never part of the output; it depends on the
+      schedule (blocks of one wave do not see each other's plans). -/
+  p3PlanReuses : Nat := 0
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -306,6 +326,11 @@ structure BlockState where
   /-- Pass 3: the recorded declines of this block's rewrite (constant,
       cause), merged into `CompileEnv.p3NonCanonical`. -/
   p3NonCanonical : Array (Name × String) := #[]
+  /-- Pass 3: the clique plans this block computed (`all₀`, plan), merged
+      into `CompileEnv.p3CliquePlans`, and the number of plans it took from
+      that table (merged into `CompileEnv.p3PlanReuses`). -/
+  p3CliquePlans : Array (Name × Ix.Compile.Pass.CliqueOutcome) := #[]
+  p3PlanReused : Nat := 0
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/

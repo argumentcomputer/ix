@@ -410,49 +410,6 @@ def encodingOf (const? : Name → Option ConstantInfo) (all : Array Name) (membe
     return (.structural, ms)
   none
 
-def _root_.Ix.Compile.Clique.Encoding.tag : Encoding → String
-  | .wellFounded => "well-founded"
-  | .structural => "structural"
-  | .partialFixpoint => "partial_fixpoint"
-
-/-- A changed clique's transport, ready for the members' blocks. -/
-structure CliquePlan where
-  /-- Lean's order (`all`) -/
-  all : Array Name
-  encoding : Encoding
-  sigma : Array Nat
-  classes : Array (Array Name)
-  source : OrderSource
-  /-- the transported members, by Lean name -/
-  members : Std.HashMap Name Decl
-  /-- the canonical constants, each with the Lean constant it transports -/
-  canon : Array (Decl × Name)
-  /-- the canonical functional(s): the side-car record goes on these -/
-  functionals : Array Name
-  causes : Array (Name × Cause × String)
-  /-- O17: a member ↦ the representative of its class, whose constant it is -/
-  aliases : Array (Name × Name) := #[]
-  deriving Inhabited
-
-/-- What the hook does with a clique. -/
-inductive CliqueOutcome where
-  /-- not an encoded clique (compiled as today) -/
-  | notEncoded (why : String)
-  /-- the canonical order is Lean's (compiled as today) -/
-  | unchanged (enc : Encoding) (source : OrderSource)
-  /-- the order is undetermined (`NOSPEC`) or the transport kept Lean's form
-  (`SHAPE`): compiled as today -/
-  | baseline (enc : Encoding) (cause : String) (why : String)
-  | transported (plan : CliquePlan)
-  deriving Inhabited
-
-/-- The side-car record of a plan. -/
-def CliquePlan.record (p : CliquePlan) : String :=
-  let causes := p.causes.map fun (n, c, why) => s!"{n.pretty} {c.tag}: {why}"
-  s!"{p.encoding.tag}; lean order {p.all.map (·.pretty)}; sigma {p.sigma}; \
-    order by {p.source.tag}; classes {p.classes.map (·.map (·.pretty))}; \
-    aliases (O17) {p.aliases.map fun (m, r) => s!"{m.pretty} = {r.pretty}"}; causes {causes}"
-
 /-- The equation lemmas of the packed constant `p` that the carried lemmas
 reach (`p.eq_def`, `p.eq_unfold`, `p.eq_<k>`), transitively. -/
 def packedLemmas (const? : Name → Option ConstantInfo) (p : Name) (carried : Array Decl) :
@@ -632,22 +589,63 @@ def canonConst (const? : Name → Option ConstantInfo) (d : Decl) (src : Name) (
       | _ => .opaque
     .defnInfo { cnst, value, hints, safety := .safe, all := #[d.name] }
 
+/-! ## The plan table (a memo of `planClique`) -/
+
+/-- The prefix of the plan-table check's error (`IX_PASS3_CHECK_PLANS=1`);
+the drivers turn a block failure with this prefix into a failed compile. -/
+def planCheckPrefix : String := "Pass 3 plan cache check:"
+
+/-- The plan of a clique for the current block, and whether it came from the
+plan table (`CompileEnv.p3CliquePlans`).
+
+**Why a table is allowed (design document §5.4, §6.3).** `planClique` is a
+function of the clique (`all`), its carried lemmas (read from the clique's
+own unit by `scheduleCliques`), the input constants of its unit and its
+dependencies (`const?`), and the addresses of those dependencies
+(`cliqueAddr`). Every block that plans the clique (a member's block, a
+carried lemma's block, a caller's block) is scheduled after all of the
+members' references (`scheduleCliques`' edges), so each computes the same
+plan: the table is a memo of that function, keyed by the clique (`all₀`),
+filled by the first block that needs a plan and merged by the driver like
+the other Pass 3 tables. It reads nothing outside the block rule: not a
+caller, not the schedule (which block filled the entry, or whether one did,
+changes no byte and no record, only the time). With `p3CheckPlans`
+(`IX_PASS3_CHECK_PLANS=1`) every plan the table supplies is recomputed and a
+difference fails the block with `planCheckPrefix`. -/
+def cliquePlanFor (cenv : CompileEnv) (cl carried : Array Name) : Except String (CliqueOutcome × Bool) := do
+  let compute (_ : Unit) : CliqueOutcome := planClique cenv.env.get? (cliqueAddr cenv) cl carried
+  let some key := cl[0]? | return (compute (), false)
+  match cenv.p3CliquePlans.get? key with
+  | none => return (compute (), false)
+  | some o =>
+    if cenv.p3CheckPlans then
+      let o' := compute ()
+      unless o.same o' do
+        throw s!"{planCheckPrefix} the plan of the clique {cl.map (·.pretty)} differs from the table's: \
+          table {o.tag}; recomputed {o'.tag}"
+    return (o, true)
+
 /-- The callers' side of the block rule (design document §6.3, "callers
 adapt"; decision 5 of the plan). A block outside a clique's unit (no member,
 no carried lemma, no encoding constant of the clique) that references a
 member and one of Lean's encoding constants of the clique may rely on the
 member unfolding to Lean's encoding. When the clique is transported (its
-plan, recomputed from the clique, its unit and its dependencies, all
-compiled before this block), that encoding is no longer what the member
+plan, a function of the clique, its unit and its dependencies, all
+compiled before this block: `cliquePlanFor`), that encoding is no longer what the member
 unfolds to: the block is refused with a named error, recorded as a block
 failure by the driver. The clique is never changed for a caller, and the
 caller is never silently compiled against Lean's form.
 
-Returns the refusal, or `none` when the block may compile. Reads only the
-block (`all`, its references `refs`) and the cliques it depends on. -/
-def cliqueCallers (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name) : Option String := Id.run do
-  if cenv.p3CliqueRoots.isEmpty then return none
+Returns the refusal, or `none` when the block may compile, with the plans it
+computed (for the plan table) and the number it took from the table
+(`cliquePlanFor`). Reads only the block (`all`, its references `refs`) and
+the cliques it depends on. -/
+def cliqueCallers (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name) :
+    Except String (Option String × Array (Name × CliqueOutcome) × Nat) := do
+  if cenv.p3CliqueRoots.isEmpty then return (none, #[], 0)
   let mut seen : Std.HashSet Name := {}
+  let mut fresh : Array (Name × CliqueOutcome) := #[]
+  let mut reused := 0
   for r in refs do
     let some cl := encodingOwner? cenv.p3CliqueRoots r | continue
     let some key := cl[0]? | continue
@@ -657,15 +655,17 @@ def cliqueCallers (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name) : Op
     -- a block of the clique's own unit is not a caller
     if all.toList.any fun n => cl.contains n || carried.contains n || isEncodingName cl n then continue
     let some m := refs.toList.find? cl.contains | continue
-    match planClique cenv.env.get? (cliqueAddr cenv) cl carried with
+    let (outcome, hit) ← cliquePlanFor cenv cl carried
+    if hit then reused := reused + 1 else fresh := fresh.push (key, outcome)
+    match outcome with
     | .transported plan =>
       let callers := all.toList.map (·.pretty)
-      return some s!"Pass 3 cliques: caller refused (block rule, callers adapt): {callers} \
+      return (some s!"Pass 3 cliques: caller refused (block rule, callers adapt): {callers} \
         reference{if callers.length == 1 then "s" else ""} {m.pretty} and Lean's encoding constant \
         {r.pretty} of the transported clique {cl.map (·.pretty)} (sigma {plan.sigma}); a caller may \
-        not unfold Lean's encoding of a transported clique"
+        not unfold Lean's encoding of a transported clique", fresh, reused)
     | _ => continue
-  return none
+  return (none, fresh, reused)
 
 /-- Before a block compiles (hook of `Ix.Compile.Pass.prepareBlock`): for
 every member of a changed clique in the block, and every equation lemma
@@ -675,25 +675,37 @@ into the block. `rewrite` is Pass 3's call-site rewrite (for canonical
 constants over a changed block). A block outside a transported clique's unit
 that unfolds its encoding is refused (`cliqueCallers`; `refs` are the
 block's references). Identity when no constant of the block is in the clique
-table (`CompileEnv.p3Cliques`) and the block is not such a caller. -/
+table (`CompileEnv.p3Cliques`) and the block is not such a caller. A
+clique's plan is taken from the plan table when an earlier block computed
+it (`cliquePlanFor`, a memo of `planClique`); the plans computed here go
+back to the driver in the block state (`BlockState.p3CliquePlans`). -/
 def prepareCliques (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name)
     (rewrite : Array (Name × ConstantInfo) → Except String BlockRewrite) :
     Except String (CompileEnv × BlockState) := do
   if !cenv.pass3 || cenv.p3Cliques.isEmpty then return (cenv, {})
-  if let some refusal := cliqueCallers cenv all refs then throw refusal
+  let (refusal?, fresh0, reused0) ← cliqueCallers cenv all refs
+  if let some refusal := refusal? then throw refusal
   let const? := cenv.env.get?
   let mut overlay := cenv.env.overlay
   let mut sources := cenv.p3Sources
   let mut k := 0
   let mut canon : Std.HashMap Name ConstantInfo := {}
   let mut wanted : Array Name := #[]
-  let mut plans : Std.HashMap Name CliqueOutcome := {}
+  -- the plans of this block: from the plan table, or computed here and
+  -- handed to the driver for the table (`cliquePlanFor`)
+  let mut fresh := fresh0
+  let mut reused := reused0
+  let mut plans : Std.HashMap Name CliqueOutcome := fresh0.foldl (fun m (k, o) => m.insert k o) {}
   for n in all do
     let some (cl, carried) := cenv.p3Cliques.get? n | continue
     let some key := cl[0]? | continue
-    let outcome := match plans.get? key with
-      | some o => o
-      | none => planClique const? (cliqueAddr cenv) cl carried
+    let mut outcome : CliqueOutcome := default
+    match plans.get? key with
+    | some o => outcome := o
+    | none =>
+      let (o, hit) ← cliquePlanFor cenv cl carried
+      if hit then reused := reused + 1 else fresh := fresh.push (key, o)
+      outcome := o
     plans := plans.insert key outcome
     let .transported plan := outcome | continue
     let some md := plan.members.get? n | continue
@@ -718,12 +730,13 @@ def prepareCliques (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name)
       if let some cc := canon.get? c then
         todo := todo ++ constsWhere canonNames.contains cc.getCnst.type
         if let some v := valueOf? cc then todo := todo ++ constsWhere canonNames.contains v
-  if k == 0 then return (cenv, {})
+  let tableOut : BlockState := { p3CliquePlans := fresh, p3PlanReused := reused }
+  if k == 0 then return (cenv, tableOut)
   -- compile the wanted canonical constants, each once its canonical
   -- references are compiled (here, or by an earlier block of the clique)
   let known (init : BlockState) (r : Name) : Bool :=
     init.blockNameToAddr.contains r || (cliqueAddr cenv r).isSome
-  let mut init : BlockState := {}
+  let mut init : BlockState := tableOut
   let mut pending := (wanted.filter fun c => (cliqueAddr cenv c).isNone).qsort fun a b => a.pretty < b.pretty
   let mut rounds := pending.size + 1
   while !pending.isEmpty && rounds > 0 do

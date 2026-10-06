@@ -30,18 +30,13 @@ public import Ix.Compile.Clique.WFConjugation
 public import Ix.Compile.Clique.Structural
 public import Ix.Compile.Clique.PartialFixpoint
 public import Ix.Compile.Clique.PFConjugation
+public import Ix.Compile.Clique.Plan
 public section
 
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr ConstantInfo)
 open Ix.Compile.Canon (getAppFnArgs stripMdata)
-
-inductive Encoding where
-  | wellFounded
-  | structural
-  | partialFixpoint
-  deriving BEq, Repr, Inhabited
 
 structure Input where
   encoding : Encoding

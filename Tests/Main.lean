@@ -41,6 +41,7 @@ import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.MathlibMeasure
 import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.Compile.PackUnits
+import Tests.Ix.Compile.PlanCache
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.AuxGen.ExprUtilsTests
@@ -425,6 +426,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- `ix pack` carries whole logical units; bundle members keep the whole compile's bytes
   -- (Tests.Ix.Compile.PackUnits).
   ("pack-units", Tests.Ix.Compile.PackUnits.run),
+  -- The Pass 3 clique plan table is a memo: the check mode (IX_PASS3_CHECK_PLANS) under
+  -- every driver, coverage, a negative control (Tests.Ix.Compile.PlanCache).
+  ("pass3-plan-cache", Tests.Ix.Compile.PlanCache.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

@@ -722,19 +722,6 @@ def normalisedSpecs (inp : Input) : Except String (Array Expr) := do
       let fixed := (fixedArgsOf ps.size (L.memberFixed[i]!)).reverse
       mkLams ps (instantiateRev cs[i]! (#[phEnc] ++ fixed))
 
-/-- Where a clique's canonical order came from. -/
-inductive OrderSource where
-  /-- Pass 1's classes over (type, normalised specification) -/
-  | specification
-  /-- the specification could not be recovered; the statements decide (Q6,
-  first source) -/
-  | statements (why : String)
-  deriving Inhabited
-
-def OrderSource.tag : OrderSource → String
-  | .specification => "specification"
-  | .statements why => s!"statements ({why})"
-
 /-- The canonical order of a clique (M.3; Q6 for theorem cliques): Pass 1's
 classes over each member's type and normalised specification, statements
 compared first; members still in one class follow Pass 1's seed order (Q2).

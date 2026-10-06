@@ -575,7 +575,13 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       p3CanonRecs := cache.p3AuxRecs.foldl (fun m (k, v) => m.insert k v) cenv.p3CanonRecs
       p3Heads := cache.p3Heads.foldl (fun m (k, v) => m.insert k v) cenv.p3Heads
       p3Blocks := cache.p3Blocks.foldl (fun m (k, v) => m.insert k v) cenv.p3Blocks
-      p3NonCanonical := cache.p3NonCanonical.foldl (fun m (k, v) => m.insert k v) cenv.p3NonCanonical }
+      p3NonCanonical := cache.p3NonCanonical.foldl (fun m (k, v) => m.insert k v) cenv.p3NonCanonical
+      -- the clique plan table: a memo of a function of the clique's unit
+      -- (`Ix.Compile.Pass.cliquePlanFor`); two blocks of one wave may both
+      -- compute a plan, and the first entry of a key is kept (both are equal)
+      p3CliquePlans := cache.p3CliquePlans.foldl
+        (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3CliquePlans
+      p3PlanReuses := cenv.p3PlanReuses + cache.p3PlanReused }
   -- Class-ordering registry (Rust `stt.blocks`, compile.rs:4048-4057):
   -- one entry per member, all pointing at the block's full ordering.
   if !result.classNames.isEmpty then
@@ -740,6 +746,17 @@ def scheduleDeps (blocks : Ix.CondensedBlocks) (pass3 : Bool) : Std.HashMap Name
       (if inClosure.contains lo then refs else seeds.foldl (·.insert ·) refs)
   return out
 
+/-- The plan-table check (`IX_PASS3_CHECK_PLANS=1`, `CompileEnv.p3CheckPlans`)
+fails the compile, not only the block: the first (by name) block failure
+that carries `Ix.Compile.Pass.planCheckPrefix`, when the check is on. -/
+def planCheckFailure? (cenv : CompileEnv) : Option String :=
+  if !cenv.p3CheckPlans then none else
+  let hits := cenv.ungrounded.toArray.filter fun (_, msg) =>
+    (msg.splitOn Ix.Compile.Pass.planCheckPrefix).length > 1
+  match (hits.qsort fun a b => a.1.pretty < b.1.pretty)[0]? with
+  | some (n, msg) => some s!"{n.pretty}: {msg}"
+  | none => none
+
 /-- Assemble the final `Ixon.Env` from the accumulated driver state
     (shared tail of both aux drivers, identical to the plain drivers'
     assembly: names index, name blobs, finalize_hints — the exact
@@ -805,6 +822,7 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     (pass3 : Bool := false)
     (schedulingSource? : Option SchedulingSource := none)
+    (checkPlans : Bool := false)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
@@ -814,7 +832,9 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let blocks := if pass3 then prepareSizeOfScheduling env blocks schedulingSource? else blocks
   let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
-    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques, p3CliqueRoots }
+    let base : CompileEnv :=
+      { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques, p3CliqueRoots }
+    { base with p3CheckPlans := pass3 && checkPlans }
   let mut acc : DriverAcc := { cenv := cenv0 }
   -- A7 (D2b): the aux-gen seeds are scheduling dependencies, not a pre-pass.
   let schedDeps := scheduleDeps blocks pass3
@@ -999,7 +1019,9 @@ missing canonical aliases: {missing}"
     return .error s!"Only compiled {blocksCompleted}/{totalBlocks} blocks \
 - circular dependency?"
 
-  return .ok (assembleEnv acc)
+  let out := assembleEnv acc
+  if let some msg := planCheckFailure? out.2.2 then return .error msg
+  return .ok out
 
 /-! ## The aux-aware parallel driver
 
@@ -1200,6 +1222,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (nameByHash : Std.HashMap Address Name := {})
     (pass3? : Option Bool := none)
     (schedulingSource? : Option SchedulingSource := none)
+    (checkPlans? : Option Bool := none)
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
   let totalBlocks := blocks.blocks.size
   -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
@@ -1212,6 +1235,10 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let pass3 ← match pass3? with
     | some b => pure b
     | none => pure (Ix.Compile.Pass.switchOn (← IO.getEnv Ix.Compile.Pass.switchVar))
+  -- the plan-table check (`IX_PASS3_CHECK_PLANS=1`; `Ix.Compile.Pass.cliquePlanFor`)
+  let checkPlans ← match checkPlans? with
+    | some b => pure b
+    | none => pure ((← IO.getEnv "IX_PASS3_CHECK_PLANS") == some "1")
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
@@ -1220,7 +1247,9 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let blocks := if pass3 then prepareSizeOfScheduling env blocks schedulingSource? else blocks
   let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
-    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques, p3CliqueRoots }
+    let base : CompileEnv :=
+      { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques, p3CliqueRoots }
+    { base with p3CheckPlans := pass3 && checkPlans }
   let mut acc : DriverAcc := { cenv := cenv0 }
   -- A7 (D2b): the aux-gen seeds are scheduling dependencies, not a pre-pass.
   let schedDeps := scheduleDeps blocks pass3
@@ -1374,6 +1403,11 @@ circular dependency?"
   match out with
   | (env, n, cenv) =>
     Ix.PhaseTimers.wall " (compile) assemble" ((← IO.monoMsNow) - tAsm)
+    if let some msg := planCheckFailure? cenv then return .error msg
+    if pass3 && (checkPlans || (← Ix.PhaseTimers.isEnabled)) then
+      IO.eprintln s!"[pass3] clique plan table: {cenv.p3CliquePlans.size} plans, \
+        {cenv.p3PlanReuses} taken from the table\
+        {if checkPlans then " (each recomputed and equal: IX_PASS3_CHECK_PLANS)" else ""}"
     return .ok (env, n, cenv)
 
 /-! ## The full pure-Lean pipeline
