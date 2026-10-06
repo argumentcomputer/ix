@@ -120,10 +120,16 @@ structure CompileEnv where
       (`compilerSharingLimitsFromEnv`). Limits decide only whether a block
       compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
-  /-- Pass 3, the faithful rewrite (`IX_PASS3=images`; design document
-      §4.5, `Ix.Compile.Pass.Translate`), replaces call-site surgery. Off by
-      default: with it off no field below is ever written and the compiler
-      is byte-identical to the surgery pipeline. -/
+  /-- Pass 3, the faithful rewrite (design document §4.5,
+      `Ix.Compile.Pass.Translate`), replaces call-site surgery. The
+      compiler's default mode since the flip (M6): the drivers
+      (`compileEnvAux`, `compileEnvParallelAux`, so `ix compile-lean`) set
+      it unless `IX_PASS3=off` (or `pass3 := false`) selects the legacy
+      surgery. The field itself stays `false` in a hand-built environment:
+      it marks an environment whose Pass 3 state a driver prepared
+      (`p3BlockRefs`, the clique schedule); with it off no field below is
+      ever written and the compiler is byte-identical to the surgery
+      pipeline. -/
   pass3 : Bool := false
   /-- Pass 3: each image-kind auxiliary name of a changed Lean block (its
       recursors, `casesOn`, `recOn` and the Type-level `below`/`brecOn`

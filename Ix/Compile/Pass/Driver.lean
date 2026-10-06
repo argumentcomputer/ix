@@ -1,4 +1,4 @@
-/- # Pass 3 in the compile fold (the switch `IX_PASS3=images`)
+/- # Pass 3 in the compile fold (the default; `IX_PASS3=off` selects the surgery)
 
 ## Contract
 Two hooks of the block compile (`Ix.CompileDriver`), both inert unless
@@ -206,7 +206,7 @@ Lean's family is registered by the tail at a projection of one stored block,
 at pairwise distinct positions, and the tail recorded the family's canonical
 recursors. Otherwise nothing moves: today's registration (a collapsed family,
 never observed, would stay as it is; the switch-off path keeps the defect,
-recorded by its id A3V-IPB until the switch flips).
+recorded by its id A3V-IPB until the surgery is deleted, M6R).
 
 ## Non-canonical cases and evidence
 None new: Lean's `below` recursors and `casesOn` are image kinds of a changed
@@ -490,6 +490,16 @@ def imageDecl (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : Name
   let (dv, st) ← imageDeclWith cenv views a (expansionTable cenv views) { base := 0 }
   return (dv, st.needed.filter (· != a))
 
+/-- The image constant with Lean's kind: the image of a Lean theorem (a Prop
+family's `brecOn`, every `brecOn.eq`) is a theorem, the image of anything else
+a definition. The kind is part of what the Lean name denotes (faithfulness;
+the adversarial matrix refuses a forged kind), so it is Lean's, decided from
+the head alone. -/
+def imageInfo (cenv : CompileEnv) (dv : Ix.DefinitionVal) : Ix.ConstantInfo :=
+  match cenv.env.get? dv.cnst.name with
+  | some (.thmInfo _) => .thmInfo { cnst := dv.cnst, value := dv.value, all := dv.all }
+  | _ => .defnInfo dv
+
 /-- Compile an image constant; `known` resolves the block's earlier images. -/
 def compileImage (cenv : CompileEnv) (known : Std.HashMap Name Address)
     (dv : Ix.DefinitionVal) : Except String (BlockResult × BlockState) := do
@@ -497,7 +507,7 @@ def compileImage (cenv : CompileEnv) (known : Std.HashMap Name Address)
   let blockEnv : BlockEnv := { all := ({} : Ix.Set Name).insert name, current := name,
                                mutCtx := default, univCtx := [] }
   let init : BlockState := { blockNameToAddr := known }
-  match CompileM.run cenv blockEnv init (compileConstantInfo (.defnInfo dv)) with
+  match CompileM.run cenv blockEnv init (compileConstantInfo (imageInfo cenv dv)) with
   | .ok (r, bs) => return (r, bs)
   | .error e => throw s!"Pass 3: image constant {name.pretty}: {e}"
 
@@ -732,7 +742,7 @@ to their images. -/
 def isImageBlock (cenv : CompileEnv) (all : Set Name) : Bool :=
   cenv.pass3 && !all.isEmpty && all.toList.all cenv.p3Heads.contains
 
-/-- Compile the images of an image block, each an ordinary definition under
+/-- Compile the images of an image block, each a constant of Lean's kind under
 the Lean name (the name map sends a changed block's auxiliary to its image,
 the constant with Lean's type). Members are compiled in an order in which
 each resolves the ones before it (`known`). -/

@@ -1,7 +1,8 @@
 /-
   `ix validate-lean <file.lean>`: the validator of record for Phase A
   (design `PLAN-A` §6 A3v). Pure Lean, over the Lean compiler's output, in
-  both states of the Pass 3 switch (`IX_PASS3=images`).
+  both states of the Pass 3 switch (Pass 3 by default; `IX_PASS3=off` for
+  the legacy surgery).
 
   Phases (each a function below with a paragraph saying what it
   establishes and what it does not; the old numbers are kept where their
@@ -913,7 +914,11 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if ixe?.isNone && path?.isNone then
     p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
     return 1
-  let switchOn := Ix.Compile.Pass.switchOn (← IO.getEnv Ix.Compile.Pass.switchVar)
+  let switchOn ← match ← Ix.Compile.Pass.switchFromEnv with
+    | .ok b => pure b
+    | .error e =>
+      p.printError s!"error: {e}"
+      return 2
   let skipPhases := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
   let fullOracle := p.hasFlag "full-oracle"
   let mut phases : Array PhaseRow := #[]

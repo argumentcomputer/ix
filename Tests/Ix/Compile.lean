@@ -153,7 +153,8 @@ def testCrossImpl : TestSeq :=
     IO.println s!"[Step 2] Running Lean parallel compilation (aux-aware)..."
     let leanStart ← IO.monoMsNow
 
-    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (dbg := true) with
+    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (dbg := true)
+        (pass3? := some false) with
     | .error err =>
       let leanTime := (← IO.monoMsNow) - leanStart
       IO.println s!"[Step 2] Compilation failed after {leanTime}ms"

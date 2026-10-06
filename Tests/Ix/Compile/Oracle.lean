@@ -201,7 +201,10 @@ def run : IO UInt32 := do
   let (seeds, closure) := familyClosure env families
   IO.println s!"[aux-oracle] {families.length} families, {seeds.size} fixture constants, \
 {closure.length} in the closure"
-  let out ← leanCompile env closure
+  -- The legacy surgery, explicitly (`IX_PASS3=off`): the oracle and its exception classes
+  -- describe Ix auxiliaries under their Lean names; under Pass 3 (the default since M6)
+  -- those names hold images, checked by the `pass3` suite (rules by `rfl`).
+  let out ← leanCompile env closure (pass3? := some false)
   let mut failures ← refusalCheck "aux-oracle" (closure.foldl (init := {}) fun s (x, _) => s.insert x)
     (out.cenv.ungrounded.toList.map fun (x, e) => (x.pretty, e))
   let mut total := 0

@@ -491,7 +491,7 @@ structure Pass2Ctx where
       original-form compile did. -/
   pass3 : Bool := false
 
-/-- Was this environment compiled by Pass 3 (`IX_PASS3=images`)? Its
+/-- Was this environment compiled by Pass 3 (the default; not `IX_PASS3=off`)? Its
     changed blocks' Ix auxiliaries carry reserved `_ix` display names (D14);
     an environment with no changed block is the switch-off output. -/
 def pass3Env (ixonEnv : Ixon.Env) : Bool :=

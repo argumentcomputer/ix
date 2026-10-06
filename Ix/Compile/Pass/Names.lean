@@ -22,7 +22,11 @@ faithful rewrite and the predicates on them.
   `_ix.inline` (index of the source occurrence in `metaSharing`) and
   `_ix.inline_meta` (its arena root); the rewrite leaves the placeholder
   `[(_ix.inline, n)]` that the compiler replaces (`Ix.CompileM.compileKVMap`).
-* The switch: `IX_PASS3=images` selects Pass 3 (`switchVar`, `switchOn`).
+* The switch: Pass 3 is the default (the flip, M6, 2026-10-06); `IX_PASS3=off`
+  selects the legacy call-site surgery, kept as the comparison mode for the
+  gates against the Rust compiler until it implements Pass 3 (M6R);
+  `IX_PASS3=images`, or the variable unset, selects Pass 3; any other value
+  is refused (`switchVar`, `switchMode?`, `switchOn`, `switchFromEnv`).
 
 ## Faithfulness
 Names are metadata: no definition here changes a term or an address.
@@ -48,14 +52,51 @@ namespace Ix.Compile.Pass
 
 open Ix (Name)
 
-/-- The environment variable that selects Pass 3. -/
+/-- The environment variable that selects the mode (Pass 3 or the legacy surgery). -/
 def switchVar : String := "IX_PASS3"
 
-/-- The value of `IX_PASS3` that selects Pass 3. -/
+/-- The value of `IX_PASS3` that selects Pass 3 explicitly (the default). -/
 def switchValue : String := "images"
 
-/-- Is Pass 3 selected by this value of `IX_PASS3`? -/
-def switchOn (v : Option String) : Bool := v == some switchValue
+/-- The value of `IX_PASS3` that selects the legacy call-site surgery (the
+    Rust-aligned comparison mode until M6R). -/
+def switchOffValue : String := "off"
+
+/-- The mode when `IX_PASS3` is unset: Pass 3 (the flip, M6). -/
+def switchDefault : Bool := true
+
+/-- The mode a value of `IX_PASS3` selects: `some true` for Pass 3 (unset,
+    or `images`), `some false` for the surgery (`off`), `none` for any other
+    value (refused by `switchFromEnv`: a mistyped value must not silently
+    select either mode). -/
+def switchMode? : Option String → Option Bool
+  | none => some switchDefault
+  | some v =>
+    if v == switchValue then some true
+    else if v == switchOffValue then some false
+    else none
+
+/-- Is Pass 3 selected by this value of `IX_PASS3`? An unrecognised value
+    selects neither mode; the drivers refuse it first (`switchFromEnv`). -/
+def switchOn (v : Option String) : Bool := switchMode? v == some true
+
+/-- The refusal of an unrecognised `IX_PASS3` value. -/
+def switchRefusal (v : String) : String :=
+  s!"{switchVar}={v} is not a mode: use {switchValue} (Pass 3, the default) or \
+{switchOffValue} (the legacy surgery, the comparison mode against the Rust compiler)"
+
+/-- The mode `IX_PASS3` selects in this process, or the refusal of an
+    unrecognised value. -/
+def switchFromEnv : IO (Except String Bool) := do
+  let v ← IO.getEnv switchVar
+  return match switchMode? v with
+    | some b => .ok b
+    | none => .error (switchRefusal (v.getD ""))
+
+/-- The mode, for logs. -/
+def switchLabel (on : Bool) : String :=
+  if on then s!"on (Pass 3, the default; {switchVar}={switchValue} or unset)"
+  else s!"off (legacy surgery, {switchVar}={switchOffValue})"
 
 /-- The reserved component (D14). -/
 def ixComponent : String := "_ix"

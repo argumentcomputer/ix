@@ -55,7 +55,7 @@ def applyExpected (expected : Array Expected) (row : Verdict) (diagnostic : Stri
     else row
 
 def envFor (cfg : RunConfig) : Array (String × Option String) := #[
-  ("IX_PASS3", if cfg.mode == "on" then some "images" else none),
+  ("IX_PASS3", some (if cfg.mode == "on" then "images" else "off")),
   ("LEAN_NUM_THREADS", some (toString cfg.workers)),
   ("RAYON_NUM_THREADS", some (toString cfg.workers)),
   ("IX_VALIDATE_AUXTABLE", none), ("LD_LIBRARY_PATH", none), ("CHECK_IXE_ROOTS", none)]

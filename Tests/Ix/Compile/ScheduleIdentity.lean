@@ -6,7 +6,8 @@
   aux fixture corpus (`validateAuxClosure`: `Tests.Ix.Compile.Mutual`,
   `Canonicity`, `LevelSpellings`, the IxVM and `Test.Ix.Fixtures`
   families), compile, once with the Pass 3 switch off and once with it on
-  (`IX_PASS3=images`, passed explicitly to every driver so the environment
+  (Pass 3, the default; switch off is the legacy surgery, `IX_PASS3=off`; the
+  mode is passed explicitly to every driver so the environment
   variable does not matter), with
 
   - the sequential driver `Ix.CompileM.compileEnvAux` (the fold that §6.2

@@ -268,7 +268,8 @@ private def certExe : System.FilePath := ".lake" / "build" / "bin" / "kernel-che
 
 /-- Nested `lake` builds (compile-lean builds the fixture module) must not see
     the toolchain's `LD_LIBRARY_PATH` (see `Tests.Cli.spawnEnv`). -/
-private def spawnEnv : Array (String × Option String) := #[("LD_LIBRARY_PATH", none)]
+private def spawnEnv : Array (String × Option String) :=
+  #[("LD_LIBRARY_PATH", none), ("IX_PASS3", some "off")]
 
 private def run (cmd : System.FilePath) (args : Array String) : IO IO.Process.Output := do
   let exe ← IO.FS.realPath cmd

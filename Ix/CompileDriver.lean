@@ -169,7 +169,7 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     ((Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
       maps).run kctx₀)
   let auxLayout? := Ix.PhaseTimers.tailEnd kctx.tcState.env.consts.size auxLayout?
-  -- Pass 3 (`IX_PASS3=images`): a changed block registers no surgery plan;
+  -- Pass 3 (the default; not under `IX_PASS3=off`): a changed block registers no surgery plan;
   -- its Ix auxiliaries get their `_ix` display names and the block records
   -- its image-kind heads (`Ix.Compile.Pass.Driver.editChangedBlock`).
   if cenv.pass3 && Ix.Compile.Pass.isChanged cs blockResult.classNames auxLayout? then
@@ -570,7 +570,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv.brecOnCallSitePlans
     belowCallSitePlans := belowPlans.fold (fun m k v => m.insert k v)
       cenv.belowCallSitePlans }
-  -- Pass 3 records of a changed block (empty unless the switch is on).
+  -- Pass 3 records of a changed block (empty under `IX_PASS3=off`).
   if cenv.pass3 then
     cenv := { cenv with
       p3CanonRecs := cache.p3AuxRecs.foldl (fun m (k, v) => m.insert k v) cenv.p3CanonRecs
@@ -823,12 +823,17 @@ def pass3ReservedInput? (blocks : Ix.CondensedBlocks) : Option String := Id.run 
 
     Per-block failures are recorded in `ungrounded` per member and the
     scheduler continues (dependents cascade into `MissingConstant`
-    failures recorded the same way) — mirroring env.rs:727-737. -/
+    failures recorded the same way) — mirroring env.rs:727-737.
+
+    `pass3` defaults to the compiler's default mode (Pass 3,
+    `Ix.Compile.Pass.switchDefault`); this driver is pure and does not read
+    `IX_PASS3`, so a caller that means the legacy surgery passes
+    `pass3 := false`. -/
 def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
-    (pass3 : Bool := false)
+    (pass3 : Bool := Ix.Compile.Pass.switchDefault)
     (schedulingSource? : Option SchedulingSource := none)
     (checkPlans : Bool := false)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
@@ -1243,10 +1248,14 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     | .error e => return .error e
 
   let tPre ← IO.monoMsNow
-  -- Pass 3, the faithful rewrite (`IX_PASS3=images`); off by default.
+  -- Pass 3, the faithful rewrite, is the default; `IX_PASS3=off` selects the
+  -- legacy surgery (the comparison mode against Rust until M6R); any other
+  -- value than `images`/`off` is refused.
   let pass3 ← match pass3? with
     | some b => pure b
-    | none => pure (Ix.Compile.Pass.switchOn (← IO.getEnv Ix.Compile.Pass.switchVar))
+    | none => match ← Ix.Compile.Pass.switchFromEnv with
+      | .ok b => pure b
+      | .error e => return .error e
   -- the plan-table check (`IX_PASS3_CHECK_PLANS=1`; `Ix.Compile.Pass.cliquePlanFor`)
   let checkPlans ← match checkPlans? with
     | some b => pure b

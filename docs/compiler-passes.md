@@ -133,8 +133,10 @@ plan's "residual image". "Image" keeps its meaning: the extra constants of Def 3
 - **D2 and D6** (discovery order; one constant per auxiliary) landed in one migration, with every
   moved address accounted for (§2.8) [measured, A2M].
 - **Pass 2** is today's generators with D6 packaging.
-- **Pass 3 (images, the faithful rewrite)** exists behind `IX_PASS3=images`, off by default (§4.8).
-  With the switch off, no byte moves [measured, A3W/A3M].
+- **Pass 3 (images, the faithful rewrite)** is the default since the flip (M6, 2026-10-06; §4.8, §7.4);
+  `IX_PASS3=off` selects the legacy call-site surgery, kept as the comparison mode against the Rust
+  compiler until it implements Pass 3 (M6R).
+  With the switch off (`IX_PASS3=off`), no byte moves against the pre-Pass 3 compiler [measured, A3W/A3M].
 - **Not yet wired into the compiler:**
   - the clique transport (`Ix/Compile/Clique/**`, §5.7–5.8), which nothing outside
     `Ix/Compile/` imports at this head;
@@ -392,8 +394,8 @@ from the final term (§4.7 (e), now measured). The Mathlib measurement is in the
 ### 1.6 The proof-justified passes as implemented (A6p, reworked to D1 in M1-b)
 
 Modules `Ix/Compile/Pass/Opt/{Packed,O7,O8,O9,CollapseRec,O10,O12,O11b}.lean`, each with the
-five-part docstring whose Faithfulness part is the lemma Phase B formalises. All behind
-`IX_PASS3=images`; with the switch off nothing runs, and with it on they need a collapsed or split
+five-part docstring whose Faithfulness part is the lemma Phase B formalises. All run under
+Pass 3 (the default; not under `IX_PASS3=off`); with the switch off nothing runs, and with it on they need a collapsed or split
 block, so Init+Std is unchanged by them (§1.6.3).
 
 **The rule (decision 5, D1, owner 2026-10-05).** Each of these passes produces a term that is
@@ -1459,7 +1461,21 @@ Two neighbouring findings:
 Everything here is [measured, A3W/A3M] unless marked. The figures come from the gates of `ca90424b`
 (A3M) and of the A3W chain.
 
-**Switch.** `IX_PASS3=images`, or the `pass3?` argument of the drivers; it is **off by default**.
+**Switch.** Pass 3 is **the default** since the flip (M6, 2026-10-06; the migration is §7.4). The
+mode is read from `IX_PASS3` by the drivers that read the environment (`compileEnvParallelAux`,
+so `ix compile-lean`, `ix validate-lean` and `compileLeanInput`), or given by their `pass3?`
+argument; the pure sequential driver `compileEnvAux` takes `pass3`, defaulting to Pass 3
+(`Ix.Compile.Pass.switchDefault`). The values:
+- unset or `IX_PASS3=images`: Pass 3;
+- `IX_PASS3=off`: the legacy call-site surgery, kept as the comparison mode for the gates against
+  the Rust compiler, which implements only the surgery until M6R (`ix compile-lean --rust-check`
+  is the ALIGNED gate under `IX_PASS3=off`);
+- any other value: refused (`switchFromEnv`), so a mistyped value never selects a mode silently.
+
+The surgery and its default-path defects (WB-B2, WB-B3, KF-O1, KF-C7, KF-O1C, the CORPUS-IPB
+refusal) stay in the compiler, and in the records under the `off` switch state, until M6R deletes
+the surgery from both compilers.
+
 Under the switch no call-site surgery plan is registered. Pass 3 then works as follows:
 - a full application of a changed block's `rec`, `rec_N`, `casesOn`, `recOn`, `below*`, `brecOn*`,
   `.go` or `.eq` is inlined from its image by hereditary substitution (§4.3, Q10);
@@ -2439,6 +2455,67 @@ consequences, not entries of the twins fixture:
 
 Units: 53, with 0 problems; 535 images and 885 rule statements hold by `rfl`, with 0 kernel
 failures [measured, A3M].
+
+### 7.4 The flip: Pass 3 by default (M6, 2026-10-06)
+
+**What changed.** Pass 3 is the compiler's default mode (§4.8, "Switch"); `IX_PASS3=off` selects the
+legacy surgery, which stays as the comparison mode against the Rust compiler until M6R (owner,
+2026-10-06). The flip changes the default only: the two modes compile exactly as before, each
+byte-identical to its pre-flip output (Init+Std, switch on: sha256 `a2e22ee7…ba676`; switch off:
+the `-a2` references). The owner accepted that the flip moves bytes, with stated causes, on the
+condition that no address pinned by the certified checker moves (decision log, 2026-10-04); the
+condition is checked on Init+Std (`plans/review2/M6-flip.md`, the pin check).
+
+**What moved, by class** (the switch-on output against the switch-off reference; classes as in the
+M1-g measurement, every moved name resolving to an input name, 0 unexplained):
+
+| class | why it moves | Init+Std | Mathlib |
+|---|---|---|---|
+| image head | a Lean auxiliary name (`rec`, `below`, `brecOn` with `.go`/`.eq`, `recOn`) of a changed inductive block denotes its image (Def 3.4, decision 3), not the surgered Ix auxiliary; `casesOn` heads whose image equals the canonical constant keep their address | 0 | 297 |
+| image unit, other | O11a/`sizeOf` of the changed blocks (`_sizeOf_inst`, `sizeOf_spec`, `_sizeOf_N`): their terms reference the faithful images instead of the surgery's canonical calls | 0 | 46 |
+| cone of the images | dependents of the changed blocks' `sizeOf` | 0 | 6 |
+| transported clique member | members of the transported well-founded cliques (§5, the clique transport) | 12 | 16 |
+| carried lemma | the transported String cliques' `eq_def`s, regenerated with the clique | 4 | 4 |
+| clique unit, other | Lean's encoding constants of transported theorem cliques (`._mutual`) | 1 | 2 |
+| cone of the transported cliques | dependents of moved members (mostly the docstring path through `String.removeNumLeadingSpaces`/`findLeadingSpacesSize`) | 24 | 412 |
+| **moved, total** | | **41** | **783** |
+| added: `_ix` canonical forms of image heads | Lean's name keeps the image, the canonical constant is stored under `_ix` (D14) | 0 | 329 |
+| added: canonical constants of transported cliques | `…._ix._mutual` with its `_proof_N`/`eq_def`, `…._ix._f` | 19 | 27 |
+| removed | — | 0 | 0 |
+
+Sources: Init+Std, the M1-g trial (`ixe-diff` against `initstd-a2.ixe`: 41 changed, 19 added, 0
+removed); Mathlib, M1-g §3 (783 changed, 356 added, 0 removed; one synthetic block name re-addressed).
+The certified checker over the switch-on Mathlib output: 669,942 accept, 4,030 decline, 0 reject; the
+68 extra declines are the image heads of the unsafe Aesop block (unsafe definitions, a documented
+decline class) and 1 is a re-addressed `_unsafe_rec` block (M1-g §4b). 7 of the 21 Mathlib definition
+cliques and 5 of the 7 Init+Std ones are transported; the rest stay in Lean's form with their causes
+(M1-g §2).
+
+**References.** The switch-on outputs replace the default-path references under new names (`-a3`); the
+`-a2` (switch-off) references stay for the gates that run the legacy mode against Rust.
+At the flip: `initstd-a3.ixe` 256,128,289 B, sha256 `a2e22ee7…ba676` (certified checker 97,041 accept, 902
+decline, 0 reject); `mathlib-a3.ixe` 2,376,572,399 B, sha256 `d0427adf…f6db` (669,942 accept, 4,030 decline,
+0 reject, the counts of M1-g; `ixe-diff` against `mathlib-a2.ixe`: 783 changed, 356 added, 0 removed, the
+classes above). `IX_PASS3=off` on Init+Std stays byte-identical to Rust and to `initstd-a2.ixe`.
+
+**Images keep Lean's kind (owner, 2026-10-06).** The image of a Lean theorem is stored as a theorem
+(`Ix.Compile.Pass.imageInfo`): every `brecOn.eq` and the `brecOn` of a Prop family. The Lean kind is
+part of what the name denotes, and the adversarial matrix refuses a forged kind. This moves no Init+Std
+byte (Init+Std has no changed inductive block) and no pin; on Mathlib it changes the bytes of the 53
+`brecOn.eq` image heads and of their dependents, all in the image class above.
+
+**Records.** Records kept per switch state (`Pass3Kernels`, `validate-lean`'s pins, the corpus harness's
+modes, `nonCanonicalOn`, `nonCanonicalPasses`) keep both states: `off` is now `IX_PASS3=off`, the same
+compile as the former unset switch. The twins' non-canonical set is kept in two records: the legacy one
+(`NonCanonical.nonCanonicalOff`, the 497 differences of the surgery, checked against the twins'
+`IX_PASS3=off` compile, read by `clique-transport` and by `validate-lean-nc`'s switch-off runs) and the
+default's (`NonCanonicalDefault.nonCanonical`, 959 differences of the Pass 3 compile, each with its cause:
+`IMAGE` 493 (the Lean name of an image-kind head, a new cause), `INHERITED` 155, `ORDER-STMT` 86, the
+remaining 225 under the §7.1 causes, the legacy `pending*` causes where Pass 3 has not removed the
+difference either, by role, or by hand). Suites that compare the Lean compiler with the Rust compiler
+(`twins`' Lean/Rust leg, `aux-cert`, `aux-gen-diff`, `compile`, the contract pipeline, the corpus
+harness's Rust and parity phases) run the legacy mode explicitly until M6R; `aux-oracle` too (its classes
+describe Ix auxiliaries under Lean names; M6R slice 6).
 
 ---
 

@@ -4,7 +4,7 @@
 Input: one block about to compile, the compile environment (Lean's
 constants, the addresses of everything compiled so far) and, from the
 scheduler, the clique edges (`scheduleCliques`). Output, under the switch
-(`IX_PASS3=images`) and only for a member of a **changed** clique:
+(Pass 3, the default; not under `IX_PASS3=off`) and only for a member of a **changed** clique:
 
 * the member's value replaced, in the block's overlay, by its transported
   value `Φ_σ(f_i)` (the clique transport `Ix.Compile.Clique.transport`), whose

@@ -1,6 +1,8 @@
 /-
   Ix.Compile.Pass: Pass 3, the faithful rewrite (design document §4.5-4.6,
-  decisions Q10, Q11), selected by `IX_PASS3=images` and off by default.
+  decisions Q10, Q11), the default since the flip (M6, 2026-10-06);
+  `IX_PASS3=off` selects the legacy call-site surgery instead (the comparison
+  mode against the Rust compiler until M6R).
 
   * `Names`: the reserved `_ix` names (D14), the decompile-record keys and
     the switch;

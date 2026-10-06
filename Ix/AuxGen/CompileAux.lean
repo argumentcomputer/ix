@@ -688,7 +688,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)
-  -- Pass 3 (`IX_PASS3=images`): the family's canonical recursors, the image
+  -- Pass 3 (the default; not under `IX_PASS3=off`): the family's canonical recursors, the image
   -- generator's input if the family is permuted (A3V-IPB,
   -- `Ix.Compile.Pass.editPermutedBelowFamily`).
   if (← liftM (getCompileEnv : CompileM _)).pass3 then
@@ -820,7 +820,7 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
   let patches := auxOut.patches
   if patches.isEmpty then
     return none
-  -- Pass 3 (`IX_PASS3=images`): the canonical recursors are the image
+  -- Pass 3 (the default; not under `IX_PASS3=off`): the canonical recursors are the image
   -- generator's input (`Ix.Compile.Pass.ImageView`).
   if (← liftM (getCompileEnv : CompileM _)).pass3 then
     let recs := patches.fold (init := #[]) fun acc n p =>

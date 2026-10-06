@@ -46,31 +46,35 @@ def run : IO UInt32 := do
     unless result.toOption == some expected do
       failures := failures + 1
       IO.println s!"[claim-order] FAIL source-family provenance {name.pretty}: {result}"
-  let mut reference : Option (List (String × String)) := none
-  for ownerFirst in [false, true] do
-    let before := if ownerFirst then ownerIx else fakeIx
-    let after := if ownerFirst then fakeIx else ownerIx
-    let some afterLo := phases.condensed.lowLinks.get? after
-      | throw (IO.userError s!"claim-order fixture has no block for {after.pretty}")
-    let blockRefs := phases.condensed.blockRefs.insert afterLo
-      ((phases.condensed.blockRefs.getD afterLo {}).insert before)
-    let blocks := { phases.condensed with blockRefs := blockRefs }
-    let .ok (_, _, cenv) := Ix.CompileM.compileEnvAux phases.rawEnv blocks
-      | throw (IO.userError "claim-order scheduler failed")
-    let refused := ClaimConflict.sorted (cenv.ungrounded.toList.map fun (n, why) => (n.pretty, why))
-    let label := if ownerFirst then "owner-first" else "user-first"
-    IO.println s!"[claim-order] {label}: {refused}"
-    unless cenv.ungrounded.contains ownerIx do
-      failures := failures + 1
-      IO.println s!"[claim-order] FAIL {label}: owner silently claimed an unrelated source name"
-    if cenv.ungrounded.contains fakeIx then
-      failures := failures + 1
-      IO.println s!"[claim-order] FAIL {label}: unrelated source declaration was refused"
-    match reference with
-    | none => reference := some refused
-    | some prior => unless refused == prior do
-      failures := failures + 1
-      IO.println "[claim-order] FAIL changing only ready order changed refusals"
+  -- Both modes, explicitly: the legacy surgery (`IX_PASS3=off`) and Pass 3
+  -- (the default). The refusals must not depend on the ready order in either.
+  for pass3 in [false, true] do
+    let mode := if pass3 then "pass3" else "off"
+    let mut reference : Option (List (String × String)) := none
+    for ownerFirst in [false, true] do
+      let before := if ownerFirst then ownerIx else fakeIx
+      let after := if ownerFirst then fakeIx else ownerIx
+      let some afterLo := phases.condensed.lowLinks.get? after
+        | throw (IO.userError s!"claim-order fixture has no block for {after.pretty}")
+      let blockRefs := phases.condensed.blockRefs.insert afterLo
+        ((phases.condensed.blockRefs.getD afterLo {}).insert before)
+      let blocks := { phases.condensed with blockRefs := blockRefs }
+      let .ok (_, _, cenv) := Ix.CompileM.compileEnvAux phases.rawEnv blocks (pass3 := pass3)
+        | throw (IO.userError s!"claim-order scheduler failed ({mode})")
+      let refused := ClaimConflict.sorted (cenv.ungrounded.toList.map fun (n, why) => (n.pretty, why))
+      let label := s!"{if ownerFirst then "owner-first" else "user-first"} ({mode})"
+      IO.println s!"[claim-order] {label}: {refused.length} refusals, roots {(refused.filter fun (_, m) => !(m.startsWith "missing")).map (·.1)}"
+      unless cenv.ungrounded.contains ownerIx do
+        failures := failures + 1
+        IO.println s!"[claim-order] FAIL {label}: owner silently claimed an unrelated source name"
+      if cenv.ungrounded.contains fakeIx then
+        failures := failures + 1
+        IO.println s!"[claim-order] FAIL {label}: unrelated source declaration was refused"
+      match reference with
+      | none => reference := some refused
+      | some prior => unless refused == prior do
+        failures := failures + 1
+        IO.println s!"[claim-order] FAIL changing only ready order changed refusals ({mode})"
   -- Real split/nested aliases, including a source-owned helper whose
   -- compiled content equals an unrelated external container recursor.
   let fixturePrefixes := [`Tests.Ix.Compile.Mutual.AuxOwnership.Evap,
@@ -79,20 +83,36 @@ def run : IO UInt32 := do
     if fixturePrefixes.any (·.isPrefixOf name) then some name else none
   if seeds.isEmpty then throw (IO.userError "claim-order positive fixture set is empty")
   let positive ← Ix.CompileM.rsCompilePhasesOf (Ix.EnvScope.collectSelectedDeps env seeds)
-  let .ok (output, _, positiveEnv) := Ix.CompileM.compileEnvAux positive.rawEnv positive.condensed
-    | throw (IO.userError "claim-order positive scheduler failed")
-  for (name, why) in positiveEnv.ungrounded.toList do
-    failures := failures + 1
-    IO.println s!"[claim-order] FAIL legitimate source claim {name.pretty}: {why}"
-  let sourceAlias := Ix.Name.fromLeanName `Tests.Ix.Compile.Mutual.AuxOwnership.Evap.M.rec_2
   let externalRec := Ix.Name.fromLeanName `List.rec
-  match output.named[sourceAlias]?, output.named[externalRec]? with
-  | some source, some target => unless source.addr == target.addr do
+  let sourceAlias := Ix.Name.fromLeanName `Tests.Ix.Compile.Mutual.AuxOwnership.Evap.M.rec_2
+  let evapPrefix := "Tests.Ix.Compile.Mutual.AuxOwnership.Evap."
+  for pass3 in [false, true] do
+    let mode := if pass3 then "pass3" else "off"
+    let .ok (output, _, positiveEnv) := Ix.CompileM.compileEnvAux positive.rawEnv positive.condensed
+        (pass3 := pass3)
+      | throw (IO.userError s!"claim-order positive scheduler failed ({mode})")
+    for (name, why) in positiveEnv.ungrounded.toList do
       failures := failures + 1
-      IO.println "[claim-order] FAIL evaporation control no longer shares List.rec content"
-  | _, _ =>
-    failures := failures + 1
-    IO.println "[claim-order] FAIL evaporation control source or target missing"
+      IO.println s!"[claim-order] FAIL legitimate source claim {name.pretty} ({mode}): {why}"
+    match output.named[externalRec]? with
+    | none =>
+      failures := failures + 1
+      IO.println s!"[claim-order] FAIL evaporation control: List.rec missing ({mode})"
+    | some target =>
+      -- the source-owned names of the fixture that share `List.rec`'s content
+      let sharing := output.named.fold (init := #[]) fun acc n e =>
+        if n != externalRec && n.pretty.startsWith evapPrefix && e.addr == target.addr then
+          acc.push n.pretty else acc
+      IO.println s!"[claim-order] evaporation control ({mode}): {sharing.size} source-owned \
+name(s) at List.rec's address: {sharing}"
+      -- the surgery keeps the evaporated nested recursor under its Lean name; Pass 3
+      -- stores it under its `_ix` display name (D14) and the Lean name holds its image
+      let ixAlias := Ix.Name.fromLeanName `Tests.Ix.Compile.Mutual.AuxOwnership.Evap.M._ix.rec_2
+      let exact := sharing.size == 1 && (output.named[if pass3 then ixAlias else sourceAlias]?.map
+          (·.addr == target.addr)).getD false
+      unless exact do
+        failures := failures + 1
+        IO.println s!"[claim-order] FAIL evaporation control no longer shares List.rec content ({mode})"
   return if failures == 0 then 0 else 1
 
 end Tests.Ix.Compile.ClaimOrder

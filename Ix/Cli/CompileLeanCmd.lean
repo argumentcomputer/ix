@@ -15,8 +15,15 @@
   identical environments — so byte equality here certifies the full
   pipeline, not just the compiler core.
 
+  Mode: Pass 3 (the faithful rewrite) is the default since the flip (M6);
+  `IX_PASS3=off` selects the legacy call-site surgery. The Rust compiler
+  implements the surgery only until M6R, so `--rust-check` is the ALIGNED
+  gate under `IX_PASS3=off`; with the default mode it reports the
+  divergence of Pass 3's output from Rust's (expected wherever a block or
+  clique changes, until M6R). The mode is printed first.
+
   Exit codes: 0 success (and aligned, when checked); 1 pipeline error or
-  divergence; 2 usage.
+  divergence; 2 usage (including an unrecognised `IX_PASS3` value).
 -/
 module
 public import Cli
@@ -64,6 +71,12 @@ def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let constList ← Ix.PhaseTimers.timeWall "constant list" do
     if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
+  let pass3 ← match ← Ix.Compile.Pass.switchFromEnv with
+    | .ok b => pure b
+    | .error e =>
+      IO.eprintln s!"[compile-lean] error: {e}"
+      return 2
+  IO.println s!"[compile-lean] mode: {Ix.Compile.Pass.switchLabel pass3}"
 
   let t0 ← IO.monoMsNow
   let input ← Ix.PhaseTimers.timeWall "source-contract preparation (compileInputFromEnv)" do
@@ -84,7 +97,7 @@ def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let rustTask? ← if p.hasFlag "rust-check" && !rustSerial then
       some <$> IO.asTask (prio := .dedicated) rustCompile
     else pure none
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (pass3? := some pass3)
       (dbg := true) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
@@ -127,6 +140,10 @@ serialize the grounded subset)"
             firstDiff := i
         IO.println s!"[compile-lean] DIVERGED: lean {out.bytes.size}B vs \
 rust {rustBytes.size}B, first difference at byte {firstDiff}"
+        if pass3 then
+          IO.println s!"[compile-lean] note: the mode is Pass 3; the Rust compiler implements \
+the legacy surgery until M6R, so the ALIGNED gate runs under {Ix.Compile.Pass.switchVar}=\
+{Ix.Compile.Pass.switchOffValue}"
         return 1
     return 0
 
@@ -149,7 +166,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies, instead of the whole import env (as `ix compile --local`); applies to --rust-check too."
-    "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
+    "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate; until M6R run it with IX_PASS3=off, the legacy surgery Rust implements); exit 1 on divergence"
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
 

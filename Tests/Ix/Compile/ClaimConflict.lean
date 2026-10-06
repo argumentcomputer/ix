@@ -28,7 +28,8 @@
      Lean input cannot contain this: Lean's own `mkBelow` would have failed
      on the name. The Rust compiler (`ix compile`'s FFI), the sequential and
      wave drivers (1, 4, 16 workers) and the `ix compile-lean` pipeline (1,
-     4, 16 workers) must all refuse exactly `T`'s block, with the same
+     4, 16 workers), each in both modes (`IX_PASS3=off` and Pass 3, the
+     default), must all refuse exactly `T`'s block, with the same
      conflict message (same name, same two addresses); the user `T.below`
      itself compiles.
 
@@ -348,20 +349,26 @@ got {actual.getD "accepted"}"
   for (ln, _) in closure do
     let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
     nameByHash := nameByHash.insert ixn.getHash ixn
-  match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash) with
-  | .error e => throw (IO.userError s!"[claim-conflict] sequential driver: {e}")
-  | .ok (_, _, cenv) =>
-    runs := runs.push ("sequential", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
-  for k in [1, 4, 16] do
-    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
-        (nameByHash := nameByHash) with
-    | .error e => throw (IO.userError s!"[claim-conflict] wave driver, {k} workers: {e}")
+  -- Both modes, explicitly: the legacy surgery (`IX_PASS3=off`, the mode the
+  -- Rust compiler implements until M6R) and Pass 3 (the default). `T`'s block
+  -- is not changed, so both must refuse it exactly as Rust does.
+  for pass3 in [false, true] do
+    let mode := if pass3 then "pass3" else "off"
+    match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash)
+        (pass3 := pass3) with
+    | .error e => throw (IO.userError s!"[claim-conflict] sequential driver ({mode}): {e}")
     | .ok (_, _, cenv) =>
-      runs := runs.push (s!"wave --jobs {k}", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
-  for k in [1, 4, 16] do
-    let out ← Tests.Ix.Compile.Twins.leanCompile env closure k
-    runs := runs.push (s!"compile-lean --workers {k}",
-      out.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+      runs := runs.push (s!"sequential ({mode})", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+    for k in [1, 4, 16] do
+      match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
+          (nameByHash := nameByHash) (pass3? := some pass3) with
+      | .error e => throw (IO.userError s!"[claim-conflict] wave driver, {k} workers ({mode}): {e}")
+      | .ok (_, _, cenv) =>
+        runs := runs.push (s!"wave --jobs {k} ({mode})", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+    for k in [1, 4, 16] do
+      let out ← Tests.Ix.Compile.Twins.leanCompile env closure k (pass3? := some pass3)
+      runs := runs.push (s!"compile-lean --workers {k} ({mode})",
+        out.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
   -- Root refusals (every failure that is not a missing-dependency cascade)
   -- must be Rust's in every schedule, name for name and message for message.
   -- The cascades differ by exactly `T.rec`: Rust registers the primary

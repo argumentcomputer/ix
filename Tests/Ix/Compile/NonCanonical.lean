@@ -102,6 +102,13 @@ inductive NonCanonicalCause where
       the proof-justified pass named here (O7–O12) stored the canonical form
       under `c._ix` (`Ix.Compile.Pass.ixFormName`; switch-on fixtures only). -/
   | pjForm (pass : String)
+  /-- Pass 3 (the default since M6): the Lean name of an image-kind head of a
+      changed block (`rec`, `casesOn`, `recOn`, `below*`, `brecOn*`, `.go`, `.eq`)
+      denotes its image, Lean's own form over the canonical constants (Def 3.4,
+      decision 3); the canonical constant is its `_ix` display name (D14), which
+      the twins compare where both presentations have it. Faithful only, by
+      design (design document §7.1). -/
+  | image
   /-- The constant's own term is identical under the name map; it differs
       only because it references a differing constant (named in `note`). -/
   | inherited
@@ -114,7 +121,8 @@ def NonCanonicalCause.tag : NonCanonicalCause → String
   | .noSpec => "NOSPEC" | .lazy => "LAZY" | .o11aPending => "O11A-PENDING"
   | .pendingTransport => "PENDING-TRANSPORT" | .pendingSplitAux => "PENDING-SPLIT-AUX"
   | .pendingNoConfusion => "PENDING-NOCONFUSION" | .pendingSurgery => "PENDING-SURGERY"
-  | .pendingCollapse => "PENDING-COLLAPSE" | .pjForm p => s!"PJ-FORM-{p}" | .inherited => "INHERITED"
+  | .pendingCollapse => "PENDING-COLLAPSE" | .pjForm p => s!"PJ-FORM-{p}" | .image => "IMAGE"
+  | .inherited => "INHERITED"
 
 structure NonCanonicalEvidence where
   /-- hex address under presentation A (Lean compiler, at measurement) -/
@@ -157,8 +165,14 @@ def e (fixture : Lean.Name) (presA presB : String) (constant : Lean.Name)
   { fixture, presA, presB, constant, canonical, cause,
     evidence := { addrA, addrB, firstDiff, kernelsA, kernelsB, note } }
 
-/-- The measured non-canonical set. -/
-def nonCanonical : List NonCanonicalEntry := [
+/-- The legacy-mode non-canonical set: the twins' differences with the call-site
+    surgery (`IX_PASS3=off`, the comparison mode against the Rust compiler until
+    M6R), as measured before the flip (M6). The twins gate checks it against its
+    `IX_PASS3=off` compile; `validate-lean-nc` reads it for its switch-off runs and
+    `clique-transport` for its packing-order oracle (`pendingTransport`, a
+    surgery-path notion). The record for the default (Pass 3) is
+    `Tests.Ix.Compile.NonCanonicalDefault.nonCanonical`. -/
+def nonCanonicalOff : List NonCanonicalEntry := [
   -- Cliques.SA P0 P1
   e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P1" `ev4 "user constant" .inherited
     "b945850c13f8e15f4cfbf8b69962546a45ef1408548f478b3f62a327d4b5005d"

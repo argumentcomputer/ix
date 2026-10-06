@@ -639,7 +639,7 @@ def run : IO UInt32 := do
   let mut failures : Array String := #[]
   let mut rows : Array Row := #[]
   let mut kernelRows : Array (String × Name × Option String) := #[]
-  let entries := Tests.Ix.Compile.NonCanonical.nonCanonical
+  let entries := Tests.Ix.Compile.NonCanonical.nonCanonicalOff
   for fam in cliqueFamilies do
     let famName := fam.fixture.getString!
     let some p0 := fam.pres.head? | continue

@@ -221,7 +221,8 @@ def evaluateEgress (inp : Input) : IO (Array String × Array String) := do
   -- the two recursor blocks that are in motive order but not in structural
   -- order are among those the order check accepts
   let accepted := proj.motiveOrdered.toList.map fun a =>
-    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "." |>.reverse |>.take 2 |>.reverse
+    -- a changed block's Ix recursors are displayed `T._ix.rec` under Pass 3 (D14)
+    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "." |>.filter (· != "_ix") |>.reverse |>.take 2 |>.reverse
       |> ".".intercalate)
   for block in [["Rose.rec", "Rose.rec_1"], ["Args.rec", "Tm.rec"]] do
     unless accepted.contains block do

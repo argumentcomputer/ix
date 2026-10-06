@@ -883,7 +883,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   -- hints).
   IO.println "[aux-gen-diff] aux-aware driver (compileEnvAux)..."
   let driverOk ← do
-    match Ix.CompileM.compileEnvAux rawEnv condensed with
+    match Ix.CompileM.compileEnvAux rawEnv condensed (pass3 := false) with
     | .error e =>
       IO.println s!"[aux-gen-diff] driver ERROR: {e}"
       pure false
@@ -976,7 +976,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
     rustEnv.named.fold (init := {}) fun m n named => m.insert n named.addr
   let parOk ← do
     match ← Ix.CompileM.compileEnvParallelAux rawEnv condensed
-        (rustRef := some rustNameToAddr) with
+        (rustRef := some rustNameToAddr) (pass3? := some false) with
     | .error e =>
       IO.println s!"[aux-gen-diff]   parallel driver ERROR: {e}"
       pure false

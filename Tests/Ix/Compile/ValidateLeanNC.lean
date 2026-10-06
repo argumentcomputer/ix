@@ -31,6 +31,7 @@
 import Lean.Data.Json
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.NonCanonical
+import Tests.Ix.Compile.NonCanonicalDefault
 import Tests.Ix.Compile.ValidateLean
 
 open Lean
@@ -81,7 +82,7 @@ def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := fal
     args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
       ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
     env := #[("LD_LIBRARY_PATH", none), ("IX_VALIDATE_AUXTABLE", some tsv.toString),
-             ("IX_PASS3", if switch == "on" then some "images" else none)] }
+             ("IX_PASS3", some (if switch == "on" then "images" else "off"))] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
   let verdicts := ((out.stdout.splitOn "\n").find? (·.startsWith "[validate-lean] VERDICTS")).getD "no verdicts"
   let phase4 ← if ← report.pathExists then do
@@ -179,12 +180,18 @@ def run : IO UInt32 := do
     else if (r.verdicts.splitOn " 9=").length == 1 then some s!"{stem} {s}: no phase 9 verdict"
     else none
   let rows := results.foldl (fun acc result => acc ++ result.rows) #[]
-  -- the non-canonical entries naming each constant
-  let entries := Tests.Ix.Compile.NonCanonical.nonCanonical
+  -- the non-canonical entries naming each constant, per switch state: the
+  -- legacy-mode record for the switch-off runs, the default's for the switch-on
+  -- runs (M6)
+  let entriesOf (s : String) : List Tests.Ix.Compile.NonCanonical.NonCanonicalEntry :=
+    if s == "on" then Tests.Ix.Compile.NonCanonicalDefault.nonCanonical
+    else Tests.Ix.Compile.NonCanonical.nonCanonicalOff
   let mut ncBy : Std.HashMap String (Array String) := {}
-  for e in entries do
-    for n in ncNames e do
-      ncBy := ncBy.insert n ((ncBy.getD n #[]).push s!"{e.cause.tag} ({e.presA}/{e.presB})")
+  for s in ["off", "on"] do
+    for e in entriesOf s do
+      for n in ncNames e do
+        let k := s!"{s}|{n}"
+        ncBy := ncBy.insert k ((ncBy.getD k #[]).push s!"{e.cause.tag} ({e.presA}/{e.presB})")
   let mut unmatched : Array String := #[]
   let mut nDiff := 0
   let mut nEqual := 0
@@ -197,7 +204,7 @@ def run : IO UInt32 := do
       continue
     nDiff := nDiff + 1
     let (fam, pres) := familyOf r.name
-    let nc := ", ".intercalate (ncBy.getD r.name #[]).toList
+    let nc := ", ".intercalate (ncBy.getD s!"{r.switch}|{r.name}" #[]).toList
     let cls : String :=
       if r.phase.startsWith "7" then
         if r.verdict == "pass" then "image of a changed block (Def 3.4/3.5)" else "UNMATCHED (image fails phase 7)"
@@ -215,20 +222,24 @@ def run : IO UInt32 := do
     if cls.startsWith "UNMATCHED" then unmatched := unmatched.push s!"{r.file} {r.switch} {r.name}: {cls}"
     let short := (r.name.splitOn ".").drop ((r.name.splitOn ".").length - 3) |> ".".intercalate
     IO.println s!"| {fam} | {pres} | {short} | {r.switch} | {r.status} | {r.phase} | {r.verdict} | {cls}{if nc.isEmpty then "" else s!"; NC: {nc}"} |"
-  -- every non-canonical entry about an auxiliary appears in the output
+  -- every non-canonical entry about an auxiliary appears in the output: the
+  -- legacy-mode record's and the default's, each in the rows of either state (as
+  -- before the flip: Lean's IndPredBelow family of a changed Prop block has no
+  -- validator row under Pass 3, where it is Lean's own block, §4.6)
   let rowNames : Std.HashMap String (Array Row) := rows.foldl (fun m r =>
     m.insert r.name ((m.getD r.name #[]).push r)) {}
-  let auxEntries := entries.filter ncAux
+  let auxEntries := ((entriesOf "off").filter ncAux).map (("off", ·)) ++
+    ((entriesOf "on").filter ncAux).map (("on", ·))
   let mut missing : Array String := #[]
   IO.println ""
-  IO.println "| non-canonical entry (aux) | cause | presentations | validator rows (switch: phase verdict) |"
-  IO.println "|---|---|---|---|"
-  for e in auxEntries do
+  IO.println "| non-canonical entry (aux) | record | cause | presentations | validator rows (switch: phase verdict) |"
+  IO.println "|---|---|---|---|---|"
+  for (s, e) in auxEntries do
     let ns := ncNames e
     let hits := ns.flatMap fun n => ((rowNames.getD n #[]).toList.map fun r =>
       s!"{r.switch}: {(r.name.splitOn ".").getLast!}@{familyOf r.name |>.2} {r.phase.take 14} {r.verdict}{if r.differs then " (≠Lean)" else ""}")
-    if hits.isEmpty then missing := missing.push s!"{e.fixture} {e.presA}/{e.presB} {e.constant}"
-    IO.println s!"| {(e.fixture.toString.splitOn ".").getLast!}.{e.constant} | {e.cause.tag} | {e.presA}/{e.presB} | {if hits.isEmpty then "MISSING" else "; ".intercalate hits} |"
+    if hits.isEmpty then missing := missing.push s!"{s} {e.fixture} {e.presA}/{e.presB} {e.constant}"
+    IO.println s!"| {(e.fixture.toString.splitOn ".").getLast!}.{e.constant} | {s} | {e.cause.tag} | {e.presA}/{e.presB} | {if hits.isEmpty then "MISSING" else "; ".intercalate hits} |"
   IO.println ""
   IO.println s!"[validate-lean-nc] {rows.size} rows, {nDiff} differing from Lean's form, {nEqual} equal; \
 {auxEntries.length} non-canonical entries concern an auxiliary"

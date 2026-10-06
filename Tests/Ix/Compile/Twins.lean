@@ -9,18 +9,24 @@
   presentation `B` carries a name map into `A` (namespace replacement, then
   the longest matching prefix rename).
 
-  The suite compiles the union of every presentation's closure once with
-  the Lean compiler (`Ix.CompileM.compileLeanInput`, the `ix compile-lean`
-  pipeline) and once with the Rust compiler (`rsCompileEnvBytesFFI`, the
-  `ix compile` path), and requires:
+  The suite compiles the union of every presentation's closure with the
+  Lean compiler (`Ix.CompileM.compileLeanInput`, the `ix compile-lean`
+  pipeline) in both modes, the legacy surgery (`IX_PASS3=off`) and Pass 3
+  (the default since the flip, M6), and once with the Rust compiler
+  (`rsCompileEnvBytesFFI`, the `ix compile` path), and requires:
 
-  1. the two compilers give every fixture constant the same address;
-  2. for every pair `(A, B)`, every constant of `B` that maps to a constant
-     of `A` has `A`'s address, except the entries of the non-canonical set
-     (`Tests.Ix.Compile.NonCanonical.nonCanonical`), and the set is exact:
-     a difference without an entry and an entry without a difference both
-     fail. Constants on one side only are differences too, after
-     generated-number names (`match_N`, `proof_N`, `_sizeOf_N`, `eq_N`, …)
+  1. the Rust compiler and the Lean compiler's legacy mode (the surgery,
+     which Rust implements until M6R) give every fixture constant the same
+     address, and refuse exactly `NonCanonical.expectedRefusals`; the Pass 3
+     compile refuses nothing;
+  2. in each mode, for every pair `(A, B)`, every constant of `B` that maps
+     to a constant of `A` has `A`'s address, except the entries of that
+     mode's non-canonical set (legacy:
+     `Tests.Ix.Compile.NonCanonical.nonCanonicalOff`; default:
+     `Tests.Ix.Compile.NonCanonicalDefault.nonCanonical`), and the set is
+     exact: a difference without an entry and an entry without a
+     difference both fail. Constants on one side only are differences too,
+     after generated-number names (`match_N`, `proof_N`, `_sizeOf_N`, `eq_N`, …)
      are matched by address (their numbering is metadata, §5.5).
 
   Every difference is classified mechanically as `INHERITED` (the two Lean
@@ -32,8 +38,9 @@
 
   Diagnostics: `IX_TWINS_DUMP=<dir>` writes, per difference, both Lean
   constants pretty-printed and the first differing subterms;
-  `IX_TWINS_IXE=<path>` writes the Lean compiler's output for the kernel
-  checks of the evidence; `IX_TWINS_KERNELS=<dir>` reads the three
+  `IX_TWINS_IXE=<path>` (`IX_TWINS_IXE_ON` for the Pass 3 compile) writes the
+  Lean compiler's output for the kernel
+  checks of the evidence; `IX_TWINS_KERNELS=<dir>` (`IX_TWINS_KERNELS_ON`) reads the three
   kernels' verdicts on that output (`KernelVerdicts`) into the suggested
   entries; `IX_TWINS_ONLY=<substring>` restricts the
   families.
@@ -45,6 +52,7 @@ import Ix.EnvScope
 import Ix.CompileM
 import Ix.CompileDriver
 import Tests.Ix.Compile.NonCanonical
+import Tests.Ix.Compile.NonCanonicalDefault
 
 import Tests.Ix.Compile.Twins.Cliques
 import Tests.Ix.Compile.CliqueOwnership.Sources
@@ -412,8 +420,9 @@ structure DiffRec where
 structure Compiled where
   addr : Name → Option String
 
-def nonCanonicalFor (f : Family) (a b : Pres) : List NonCanonicalEntry :=
-  Tests.Ix.Compile.NonCanonical.nonCanonical.filter fun e =>
+def nonCanonicalFor (record : List NonCanonicalEntry) (f : Family) (a b : Pres) :
+    List NonCanonicalEntry :=
+  record.filter fun e =>
     e.fixture == f.fixture && e.presA == a.id && e.presB == b.id
 
 def presConsts (env : Environment) (p : Pres) : Array (Name × ConstantInfo) :=
@@ -468,7 +477,8 @@ def lastStr : Name → String
 /-- A suggested entry for an unrecorded difference: the cause and role
     are guessed from the name and class and must be reviewed against the
     dumped terms before the entry is recorded. -/
-def entrySyntax (k : KernelVerdicts) (f : Family) (a b : Pres) (d : DiffRec) : String :=
+def entrySyntax (k : KernelVerdicts) (f : Family) (a b : Pres) (d : DiffRec)
+    (decided : Option (String × String) := none) : String :=
   let s := lastStr d.constant
   let parent := lastStr d.constant.getPrefix
   let isEq := s == "eq_def" || s == "eq_unfold" || s.startsWith "eq_"
@@ -477,7 +487,7 @@ def entrySyntax (k : KernelVerdicts) (f : Family) (a b : Pres) (d : DiffRec) : S
   let isAux := auxNames.contains s || s.startsWith "rec_" || s.startsWith "below_"
     || s.startsWith "brecOn_"
   let isSizeOf := s.startsWith "_sizeOf_" || s == "sizeOf_spec"
-  let (cause, role) :=
+  let (cause, role) := if let some cr := decided then cr else
     if d.cls == "INHERITED" then (".inherited", "user constant") else
     match f.kind with
     | .clique =>
@@ -534,12 +544,13 @@ def refusalCheck (label : String) (scope : Std.HashSet Name)
 
 /-- Compare one pair; returns the differences. -/
 def comparePair (env : Environment) (lean : Compiled) (f : Family) (a b : Pres)
-    (dumpDir : Option System.FilePath) : IO (Array DiffRec) := do
+    (dumpDir : Option System.FilePath) (refused : Std.HashSet Name := refusedSet) :
+    IO (Array DiffRec) := do
   -- refused constants (and the constants of A they map to) are not compared
-  let cb := (presConsts env b).filter (!refusedSet.contains ·.1)
-  let refusedA : Std.HashSet Name := refusedSet.fold (init := {}) fun s r =>
+  let cb := (presConsts env b).filter (!refused.contains ·.1)
+  let refusedA : Std.HashSet Name := refused.fold (init := {}) fun s r =>
     if b.ns.isPrefixOf r then s.insert (mapInto a b r) else s
-  let ca := (presConsts env a).filter fun (n, _) => !refusedSet.contains n && !refusedA.contains n
+  let ca := (presConsts env a).filter fun (n, _) => !refused.contains n && !refusedA.contains n
   let aSet : Std.HashMap Name ConstantInfo := ca.foldl (init := {}) fun m (n, ci) => m.insert n ci
   let mapB := mapInto a b
   -- pair B's constants into A. Numbered generated names (`_proof_N`,
@@ -710,6 +721,99 @@ def leanCompile (env : Environment) (closure : List (Name × ConstantInfo))
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")
 
+/-- The cause of a difference of the default (Pass 3) compile, for the suggested
+    entry (`entrySyntax`), decided mechanically and reviewed before recording:
+    `INHERITED` by the classification; `IMAGE` when the constant (in A) or its
+    counterpart (in B) is an image-kind head of a changed block in the compile
+    (`p3Heads`: its Lean name denotes the image, decision 3); the cause the
+    switch-on clique record (`nonCanonicalOn`) or pass record
+    (`nonCanonicalPasses`) gives the same constant; a permanent cause of the
+    legacy record (§7.1: not a `pending*` one, which named surgery-path
+    differences). `none`: no rule applies, the entry is marked for review. -/
+def defaultCause (env : Environment) (heads : Std.HashSet Ix.Name) (f : Family) (a b : Pres)
+    (d : DiffRec) : Option (String × String) := Id.run do
+  if d.cls == "INHERITED" then return some (".inherited", "user constant")
+  let isHead (n : Name) : Bool := heads.contains (Ix.Name.fromLeanName n)
+  let bHead := (presConsts env b).any fun (n, _) => mapInto a b n == a.ns ++ d.constant && isHead n
+  if isHead (a.ns ++ d.constant) || bHead then
+    return some (".image", "image-kind head of a changed block (Lean's name denotes the image)")
+  let key (e : NonCanonicalEntry) : Bool :=
+    e.fixture == f.fixture && e.presA == a.id && e.presB == b.id && e.constant == d.constant
+  if let some e := (nonCanonicalOn ++ nonCanonicalPasses).find? key then
+    return some ((reprPrec e.cause 1024).pretty, e.canonical)
+  if let some e := nonCanonicalOff.find? key then
+    match e.cause with
+    | .inherited => pure ()
+    -- a difference the legacy record gave a `pending*` cause that the default
+    -- compile still shows: the package that cause names has not removed it
+    -- under Pass 3 either, so the cause stands
+    | c => return some ((reprPrec c 1024).pretty, e.canonical)
+  -- the A0 refusals of the surgery (different minors or arms over a collapsed
+  -- pair), which Pass 3 compiles faithfully
+  if refusedSet.contains (a.ns ++ d.constant) || (presConsts env b).any fun (n, _) =>
+      mapInto a b n == a.ns ++ d.constant && refusedSet.contains n then
+    return some (".collapseArms", "over a collapsed pair with different arms (an A0 refusal of the surgery)")
+  -- the classes the default compile keeps by design, by the constant's role
+  let s := lastStr d.constant
+  let parent := lastStr d.constant.getPrefix
+  let auxLike (x : String) : Bool :=
+    ["rec", "below", "brecOn", "casesOn", "recOn"].contains x || x.startsWith "rec_"
+      || x.startsWith "below_" || x.startsWith "brecOn_"
+  if (d.cls == "ONLY-A" || d.cls == "ONLY-B") && (auxLike s || ((s == "go" || s == "eq") && auxLike parent)) then
+    return some (".pendingSplitAux", "Lean auxiliary named and generated by its Lean block (one presentation only)")
+  -- Lean's `IndPredBelow` family of a changed Prop block (its own block, §4.6;
+  -- the Type-level `below` is an image-kind head, caught above)
+  if s == "below" || parent == "below" then
+    return some (".indPredBelow", "Lean's IndPredBelow family of a changed Prop block")
+  if s == "noConfusion" || s == "noConfusionType" then
+    return some (".pendingNoConfusion", "noConfusion of Lean's block (its general form; O11b)")
+  if s.startsWith "_sizeOf_" || s == "sizeOf_spec" then
+    return some (".o11aPending", "sizeOf family")
+  return none
+
+/-- The pairs of every family in one compile, against one record, exact in both
+    directions; returns the number of unrecorded and stale entries. -/
+def pairsGate (env : Environment) (families : List Family) (label : String) (lean : Compiled)
+    (record : List NonCanonicalEntry) (refused : Std.HashSet Name)
+    (dumpDir : Option System.FilePath) (suggest : Family → Pres → Pres → DiffRec → String) :
+    IO Nat := do
+  let mut totalDiffs := 0
+  let mut unexpected : Array String := #[]
+  let mut stale : Array String := #[]
+  for f in families do
+    let some a := f.pres.head? | continue
+    for b in f.pres.tail do
+      let ds ← comparePair env lean f a b dumpDir refused
+      -- one record per constant of A (several of B may map onto it)
+      let ds := ds.foldl (init := #[]) fun acc d =>
+        if acc.any (·.constant == d.constant) then acc else acc.push d
+      totalDiffs := totalDiffs + ds.size
+      let es := nonCanonicalFor record f a b
+      let mut nRoot := 0
+      let mut nInh := 0
+      for d in ds do
+        if d.cls == "INHERITED" then nInh := nInh + 1 else nRoot := nRoot + 1
+        unless es.any (·.constant == d.constant) do
+          unexpected := unexpected.push (suggest f a b d)
+        -- evidence drift: the entry still matches, but an address moved since
+        -- the measurement (informational; the gate keys entries by constant)
+        if let some e := es.find? (·.constant == d.constant) then
+          if e.evidence.addrA != d.addrA || e.evidence.addrB != d.addrB then
+            IO.println s!"[twins] ({label}) DRIFT {f.fixture.getString!} {a.id}/{b.id} {d.constant} ({e.cause.tag}): \
+{e.evidence.addrA}/{e.evidence.addrB} -> {d.addrA}/{d.addrB}"
+      for e in es do
+        unless ds.any (·.constant == e.constant) do
+          stale := stale.push s!"{f.fixture} {a.id}/{b.id} {e.constant} ({e.cause.tag})"
+      IO.println s!"[twins] ({label}) {f.fixture.getString!} {a.id}/{b.id}: {ds.size} differ \
+({nRoot} root or one-sided, {nInh} inherited), {es.length} recorded"
+      for d in ds do
+        if d.cls != "INHERITED" then
+          IO.println s!"[twins]   {d.cls} {d.constant} {d.firstDiff}"
+  IO.println s!"[twins] ({label}) {totalDiffs} differences; {unexpected.size} unrecorded, {stale.size} stale entries"
+  for s in unexpected do IO.println s
+  for s in stale do IO.println s!"[twins] ({label}) STALE {s}"
+  return unexpected.size + stale.size
+
 /-- The gate. -/
 def run : IO UInt32 := do
   let env ← get_env!
@@ -727,7 +831,7 @@ def run : IO UInt32 := do
   IO.println s!"[twins] {families.length} families, {seeds.size} fixture constants, \
 {closure.length} in the closure"
   let t0 ← IO.monoMsNow
-  let leanOut ← leanCompile env closure
+  let leanOut ← leanCompile env closure (pass3? := some false)
   let t1 ← IO.monoMsNow
   IO.println s!"[twins] Lean compile: {leanOut.bytes.size} bytes, \
 {leanOut.cenv.ungrounded.size} block failures, {t1 - t0} ms"
@@ -766,44 +870,32 @@ def run : IO UInt32 := do
         IO.println s!"[twins] Lean/Rust differ: {n}: lean {leanAddr n} rust {rsAddr n}"
   IO.println s!"[twins] Lean/Rust: {seeds.size - lr}/{seeds.size} fixture constants agree"
   failures := failures + lr
-  -- 2. pairs
-  let lean : Compiled := { addr := leanAddr }
-  let mut totalDiffs := 0
-  let mut unexpected : Array String := #[]
-  let mut stale : Array String := #[]
-  for f in families do
-    let some a := f.pres.head? | continue
-    for b in f.pres.tail do
-      let ds ← comparePair env lean f a b dumpDir
-      -- one record per constant of A (several of B may map onto it)
-      let ds := ds.foldl (init := #[]) fun acc d =>
-        if acc.any (·.constant == d.constant) then acc else acc.push d
-      totalDiffs := totalDiffs + ds.size
-      let es := nonCanonicalFor f a b
-      let mut nRoot := 0
-      let mut nInh := 0
-      for d in ds do
-        if d.cls == "INHERITED" then nInh := nInh + 1 else nRoot := nRoot + 1
-        unless es.any (·.constant == d.constant) do
-          unexpected := unexpected.push (entrySyntax kernels f a b d)
-        -- evidence drift: the entry still matches, but an address moved since
-        -- the measurement (informational; the gate keys entries by constant)
-        if let some e := es.find? (·.constant == d.constant) then
-          if e.evidence.addrA != d.addrA || e.evidence.addrB != d.addrB then
-            IO.println s!"[twins] DRIFT {f.fixture.getString!} {a.id}/{b.id} {d.constant} ({e.cause.tag}): \
-{e.evidence.addrA}/{e.evidence.addrB} -> {d.addrA}/{d.addrB}"
-      for e in es do
-        unless ds.any (·.constant == e.constant) do
-          stale := stale.push s!"{f.fixture} {a.id}/{b.id} {e.constant} ({e.cause.tag})"
-      IO.println s!"[twins] {f.fixture.getString!} {a.id}/{b.id}: {ds.size} differ \
-({nRoot} root or one-sided, {nInh} inherited), {es.length} recorded"
-      for d in ds do
-        if d.cls != "INHERITED" then
-          IO.println s!"[twins]   {d.cls} {d.constant} {d.firstDiff}"
-  IO.println s!"[twins] {totalDiffs} differences; {unexpected.size} unrecorded, {stale.size} stale entries"
-  for s in unexpected do IO.println s
-  for s in stale do IO.println s!"[twins] STALE {s}"
-  failures := failures + unexpected.size + stale.size
+  -- 2. pairs, in both modes: the legacy surgery against its record (the compile
+  -- above), the default (Pass 3) against the default's record
+  failures := failures + (← pairsGate env families "off" { addr := leanAddr }
+    Tests.Ix.Compile.NonCanonical.nonCanonicalOff refusedSet dumpDir
+    (fun f a b d => entrySyntax kernels f a b d))
+  let t2 ← IO.monoMsNow
+  let onOut ← leanCompile env closure (pass3? := some true)
+  IO.println s!"[twins] Lean compile (Pass 3, the default): {onOut.bytes.size} bytes, \
+{onOut.cenv.ungrounded.size} block failures, {(← IO.monoMsNow) - t2} ms"
+  if let some path := (← IO.getEnv "IX_TWINS_IXE_ON") then
+    IO.FS.writeBinFile path onOut.bytes
+    IO.println s!"[twins] wrote {path}"
+  -- Pass 3 refuses none of the A0 refusals of the surgery: every block failure fails
+  for (n, e) in onOut.cenv.ungrounded.toList do
+    IO.println s!"[twins] (default) block failure: {n.pretty}: {(e.replace "\n" " ").take 200}"
+  failures := failures + onOut.cenv.ungrounded.size
+  let onAddr (n : Name) : Option String :=
+    (onOut.env.getAddr? (Ix.Name.fromLeanName n)).map toString
+  let heads : Std.HashSet Ix.Name := onOut.cenv.p3Heads.fold (init := {}) fun s k _ => s.insert k
+  let kernelsOn ← match ← IO.getEnv "IX_TWINS_KERNELS_ON" with
+    | some d => loadKernels d
+    | none => pure {}
+  failures := failures + (← pairsGate env families "default" { addr := onAddr }
+    Tests.Ix.Compile.NonCanonicalDefault.nonCanonical {} dumpDir
+    (fun f a b d => entrySyntax kernelsOn f a b d
+      ((defaultCause env heads f a b d).getD ("REVIEW", "REVIEW"))))
   IO.println s!"[twins] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"
   return if failures == 0 then 0 else 1
 

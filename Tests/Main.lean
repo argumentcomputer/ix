@@ -394,7 +394,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Value-sensitive ownership regressions of the clique transport: user values, binders and
   -- relations shaped like the encoding keep their meaning (Tests.Ix.Compile.CliqueOwnership).
   ("clique-ownership", Tests.Ix.Compile.CliqueOwnership.run),
-  -- Pass 3, the faithful rewrite (IX_PASS3=images): identity, cones, decompile,
+  -- Pass 3, the faithful rewrite (the default; IX_PASS3=off is the surgery): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
   -- `ix validate-lean --local`, the Phase A validator of record, on every fixture
@@ -407,7 +407,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- valid neighbour accepted by the same checker, or a recorded reason it does not
   -- apply (Tests.Ix.Compile.AdversarialMatrix).
   ("adversarial-matrix", Tests.Ix.Compile.AdversarialMatrix.run),
-  -- Changed definition cliques under the switch (IX_PASS3=images): plans, cones,
+  -- Changed definition cliques under Pass 3 (the default): plans, cones,
   -- decompile, kernels and the twins against the switch-on non-canonical set
   -- (Tests.Ix.Compile.Pass3Cliques).
   ("pass3-cliques", Tests.Ix.Compile.Pass3Cliques.run env),

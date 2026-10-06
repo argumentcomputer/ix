@@ -358,7 +358,7 @@ def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := fal
     args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
       ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
     env := #[("LD_LIBRARY_PATH", none),
-             ("IX_PASS3", if switch == "on" then some "images" else none)] }
+             ("IX_PASS3", some (if switch == "on" then "images" else "off"))] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
   if !(← report.pathExists) then return (stem, switch, none, s!"exit {out.exitCode}")
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))
