@@ -32,6 +32,7 @@ import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.CliqueOwnership
 import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.Pass3RustParity
 import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.ValidateLean
@@ -397,6 +398,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Pass 3, the faithful rewrite (the default; IX_PASS3=off is the surgery): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
+  -- M6R: per-address parity of the Rust Pass 3 against the Lean one, the
+  -- differences owned by later slices (Tests.Ix.Compile.Pass3RustParity).
+  ("pass3-rust-parity", Tests.Ix.Compile.Pass3RustParity.run env),
   -- `ix validate-lean --local`, the Phase A validator of record, on every fixture
   -- family with the switch off and on, against its verdict table (Tests.Ix.Compile.ValidateLean).
   ("validate-lean", Tests.Ix.Compile.ValidateLean.run),
