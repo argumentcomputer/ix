@@ -70,14 +70,16 @@ structure RunResult where
   verdicts : String
   metaProblem : Option String
 
-def runOne (dir : System.FilePath) (file switch : String) : IO RunResult := do
+def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := false) :
+    IO RunResult := do
   let stem := (System.FilePath.mk file).fileStem.getD file
   let tsv := dir / s!"{stem}-{switch}.tsv"
   let report := dir / s!"{stem}-{switch}.json"
   let exe ← IO.FS.realPath ixExe
   let out ← IO.Process.output {
     cmd := exe.toString
-    args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString, file]
+    args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
+      ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
     env := #[("LD_LIBRARY_PATH", none), ("IX_VALIDATE_AUXTABLE", some tsv.toString),
              ("IX_PASS3", if switch == "on" then some "images" else none)] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
@@ -155,14 +157,16 @@ def run : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   let t0 ← IO.monoMsNow
   let todo := files.flatMap fun f => [(f, "off"), (f, "on")]
-  let mut pending : Array (Task (Except IO.Error RunResult)) := #[]
-  let mut results : Array RunResult := #[]
-  for (f, s) in todo do
-    if pending.size ≥ 4 then
-      results := results.push (← IO.ofExcept pending[0]!.get)
-      pending := pending.extract 1 pending.size
-    pending := pending.push (← IO.asTask (runOne dir f s))
-  for t in pending do results := results.push (← IO.ofExcept (← IO.wait t))
+  let noBuild ← Tests.Ix.Compile.ValidateLean.prebuild files []
+  -- a pool of `VALIDATE_LEAN_JOBS` runs at a time (default 12; the longest
+  -- first; results in `todo` order)
+  let jobs := max 1 (((← IO.getEnv "VALIDATE_LEAN_JOBS").bind String.toNat?).getD 12)
+  let todoA := todo.toArray
+  let results : Array RunResult ←
+    Tests.Ix.Compile.ValidateLean.poolRun todoA.size jobs
+      (fun i => Tests.Ix.Compile.ValidateLean.heavyFile todoA[i]!.1) fun i =>
+        let (f, s) := todoA[i]!
+        runOne dir f s (noBuild.contains f)
   for ((f, s), result) in todo.zip results.toList do
     IO.println s!"[validate-lean-nc] {(System.FilePath.mk f).fileStem.getD f} {s}: {result.verdicts}"
   let metaProblems := results.filterMap (·.metaProblem)

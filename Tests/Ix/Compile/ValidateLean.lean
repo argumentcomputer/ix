@@ -305,19 +305,58 @@ def files : List String :=
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
+/-- Run `act i` for every `i < n`, at most `jobs` at a time, starting the indices
+    with `heavy i` first (the long runs bound the wall time); the results come back
+    in index order. A free slot is taken as soon as any run finishes. -/
+def poolRun {α : Type} (n jobs : Nat) (heavy : Nat → Bool) (act : Nat → IO α) :
+    IO (Array α) := do
+  let order := (List.range n).filter heavy ++ (List.range n).filter (!heavy ·)
+  let mut tasks : Array (Option (Task (Except IO.Error α))) := Array.replicate n none
+  let mut live : Array (Task (Except IO.Error α)) := #[]
+  for i in order do
+    while live.size ≥ max 1 jobs do
+      live ← live.filterM fun t => return !(← IO.hasFinished t)
+      if live.size ≥ max 1 jobs then IO.sleep 50
+    let t ← IO.asTask (act i)
+    tasks := tasks.set! i (some t)
+    live := live.push t
+  let mut out : Array α := #[]
+  for t? in tasks do
+    let some t := t? | throw (IO.userError "poolRun: a run was not started")
+    out := out.push (← IO.ofExcept (← IO.wait t))
+  return out
+
+/-- The fixtures whose validation takes longest (started first). -/
+def heavyFile (f : String) : Bool :=
+  (f.splitOn "/Twins/").length > 1 || (f.splitOn "Oracle/Lib").length > 1
+
+/-- Build the fixture modules of `files` (all but Lean's rejects) in one `lake build`.
+    Each `ix validate-lean` run otherwise runs its own `lake build` of its file, and
+    Lake's workspace build lock makes those wait for each other, so the runs
+    would be serial whatever the pool size. Returns the files that may run with
+    `--no-build`: every file but the rejects when the build succeeded, none
+    otherwise (then every run builds its file itself, as before). -/
+def prebuild (files : List String) (rejects : List String) : IO (List String) := do
+  let stem := fun (f : String) => (System.FilePath.mk f).fileStem.getD f
+  let built := files.filter fun f => !rejects.contains (stem f)
+  let mods := built.map fun f => (f.dropEnd ".lean".length).toString.replace "/" "."
+  let out ← IO.Process.output { cmd := "lake", args := #["build"] ++ mods.toArray }
+  return if out.exitCode == 0 then built else []
+
 /-- A run's result: stem, switch, phase verdicts and details (none: no report), exit. -/
 abbrev Row := String × String × Option (List (String × String × String)) × String
 
 /-- One run: the phase verdicts by key (`pass`, `fail`, `skip`), or `none` when
 no report was written. -/
-def runOne (dir : System.FilePath) (file switch : String) :
+def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := false) :
     IO Row := do
   let stem := (System.FilePath.mk file).fileStem.getD file
   let report := dir / s!"{stem}-{switch}.json"
   let exe ← IO.FS.realPath ixExe
   let out ← IO.Process.output {
     cmd := exe.toString
-    args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString, file]
+    args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
+      ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
     env := #[("LD_LIBRARY_PATH", none),
              ("IX_PASS3", if switch == "on" then some "images" else none)] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
@@ -340,15 +379,14 @@ def run : IO UInt32 := do
       only.isEmpty || only.contains ((System.FilePath.mk f).fileStem.getD f)).flatMap fun f =>
     [(f, "off"), (f, "on")]
   let t0 ← IO.monoMsNow
-  -- a pool of four runs at a time
-  let mut results : Array Row := #[]
-  let mut pending : Array (Task (Except IO.Error Row)) := #[]
-  for (f, s) in todo do
-    if pending.size ≥ 4 then
-      results := results.push (← IO.ofExcept pending[0]!.get)
-      pending := pending.extract 1 pending.size
-    pending := pending.push (← IO.asTask (runOne dir f s))
-  for t in pending do results := results.push (← IO.ofExcept (← IO.wait t))
+  let noBuild ← prebuild (todo.map (·.1)).eraseDups leanRejects
+  -- a pool of `VALIDATE_LEAN_JOBS` runs at a time (default 12; the longest
+  -- first; results in `todo` order)
+  let jobs := max 1 (((← IO.getEnv "VALIDATE_LEAN_JOBS").bind String.toNat?).getD 12)
+  let todoA := todo.toArray
+  let results : Array Row ← poolRun todoA.size jobs (fun i => heavyFile todoA[i]!.1) fun i =>
+    let (f, s) := todoA[i]!
+    runOne dir f s (noBuild.contains f)
   let mut problems : Array String := #[]
   for (stem, switch, rows?, exit) in results do
     let exp := expected.filter fun e => e.stem == stem && (e.switch == switch || e.switch == "*")

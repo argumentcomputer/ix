@@ -947,7 +947,7 @@ phases 6–8 read Lean's forms from the decompiler)"
                                 result := .skipped "pre-compiled .ixe input — no Lean source to compile" }
   | none, some pathStr =>
     IO.println s!"Running pure-Lean Ix validator on {pathStr}"
-    buildFile pathStr
+    unless p.hasFlag "no-build" do buildFile pathStr
     let fe ← getFileEnvCore pathStr
     let leanEnv := fe.env
     leanEnv? := some leanEnv
@@ -1293,6 +1293,7 @@ def validateLeanCmd : Cli.Cmd := `[Cli|
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps (with the recursors of every inductive) are pulled in automatically."
     "local"; "Validate only the constants the file itself declares, with their closure and the constants images and rule statements are built from (PProd, And, True, Eq), as `aux-cert` does."
+    "no-build"; "Skip the Lake build of the input module (the caller has built it and its imports, e.g. a suite that builds every fixture in one `lake build`). The file is still elaborated."
     ixe : String; "Validate a pre-compiled .ixe instead of a Lean file (no Lean source: phases 1 and 4 skipped, phases 6-8 read Lean's forms from the decompiler)"
     report : String; "Write a machine-readable JSON report (phase table + pass/fail) to this path."
     workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale: memory scales with workers."

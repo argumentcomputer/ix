@@ -32,6 +32,15 @@
   coverage, before introducing this mode-specific expectation. Any
   difference in (name, message) failures between schedules still fails.
 
+  The legs of both modes run concurrently (each is an independent compile of
+  the same read-only input; `SCHED_JOBS=<n>` runs at most n at a time), and
+  are reported and compared in the order above once all have finished.
+
+  Tiers: the default (`SCHED_LEGS=full`) is the integration gate, all nine
+  legs per mode. `SCHED_LEGS=quick` is the per-iteration tier: per mode
+  `wave --jobs 4` (the reference), `wave --jobs 32` and `compile-lean
+  --workers 16`, with every check below; it is never the integration gate.
+
   Run with: `lake test -- --ignored compile-schedule-identity`.
 -/
 import Tests.Ix.Compile.Twins
@@ -82,49 +91,117 @@ def saveRun (pass3 : Bool) (label : String) (bytes : ByteArray)
     for (name, cause) in sorted[:5] do
       say s!"[schedule] {label}: captured refusal {name}: {cause}"
 
-/-- One mode (Pass 3 off or on): every schedule, compared. Returns the
-    number of failures. -/
-def runMode (env : Environment) (closure : List (Name × ConstantInfo))
+/-- One leg's result: (label, bytes, environment, block failures as (name, message)). -/
+abbrev LegResult := String × ByteArray × Ixon.Env × List (String × String)
+
+/-- A leg: its label in the log, its file label for `saveRun`, and the compile. -/
+structure Leg where
+  label : String
+  saveLabel : String
+  act : IO (ByteArray × Ixon.Env × List (String × String))
+
+/-- The leg tier. `SCHED_LEGS=quick` is the documented per-iteration tier (three
+    legs per mode: `wave --jobs 4`, `wave --jobs 32`, `compile-lean --workers 16`,
+    so two drivers, two condensations and a low and a high worker count); the
+    default, `full`, is the integration tier: every leg below (nine per mode).
+    The plan's gate tiers allow a lighter per-iteration tier, never a lighter
+    integration tier. -/
+def quickTier : IO Bool := do
+  match ← IO.getEnv "SCHED_LEGS" with
+  | none | some "full" => pure false
+  | some "quick" => pure true
+  | some other => throw (IO.userError s!"SCHED_LEGS={other}: expected full or quick")
+
+/-- The legs of one mode (Pass 3 off or on), in the order the log reports them;
+    the first is the reference. -/
+def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
     (phases : Ix.CompileM.CompilePhases) (nameByHash : Std.HashMap Address Ix.Name)
-    (pass3 : Bool) : IO Nat := do
+    (pass3 : Bool) : IO (Array Leg) := do
+  let mode := if pass3 then "IX_PASS3=images" else "switch off"
+  let diagnostic := (← IO.getEnv "SCHED_DIAGNOSTIC") == some "1"
+  let singleWave := (← IO.getEnv "SCHED_SINGLE_WAVE") == some "32"
+  let quick ← quickTier
+  let failuresOf (cenv : Ix.CompileM.CompileEnv) : List (String × String) :=
+    cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e)
+  let mut legs : Array Leg := #[]
+  -- sequential
+  if !singleWave && !quick then
+    legs := legs.push { label := "sequential", saveLabel := "sequential", act := do
+      -- the pure driver runs on a task of its own: inside the action the
+      -- compiler may evaluate a pure term before the action runs
+      let seq := Task.spawn fun _ =>
+        Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash)
+          (pass3 := pass3)
+      match ← IO.wait seq with
+      | .error e => throw (IO.userError s!"[schedule] {mode}: sequential driver: {e}")
+      | .ok (ixon, _, cenv) =>
+        let bytes ← IO.ofExcept (Ixon.serEnv ixon)
+        pure (bytes, ixon, failuresOf cenv) }
+  -- wave driver
+  let waves := if singleWave then [32] else if diagnostic then [1] else if quick then [4, 32]
+    else waveWorkers
+  for k in waves do
+    legs := legs.push { label := s!"wave --jobs {k}", saveLabel := s!"wave-{k}",
+                        act := do
+      match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
+          (nameByHash := nameByHash) (pass3? := some pass3) with
+      | .error e => throw (IO.userError s!"[schedule] {mode}: wave driver, {k} workers: {e}")
+      | .ok (ixon, _, cenv) =>
+        let bytes ← IO.ofExcept (Ixon.serEnv ixon)
+        pure (bytes, ixon, failuresOf cenv) }
+  -- the whole `ix compile-lean` pipeline
+  let pipes := if singleWave || diagnostic then [] else if quick then [16] else pipelineWorkers
+  for k in pipes do
+    legs := legs.push { label := s!"compile-lean --workers {k}", saveLabel := s!"pipeline-{k}",
+                        act := do
+      let out ← Tests.Ix.Compile.Twins.leanCompile env closure k (pass3? := some pass3)
+      pure (out.bytes, out.env, failuresOf out.cenv) }
+  return legs
+
+/-- Run the legs of both modes, at most `SCHED_JOBS` at a time (default: all at
+    once; each leg is an independent compile of the same read-only input), and
+    return each mode's results in leg order. -/
+def runLegs (modes : List (Bool × Array Leg)) : IO (Array (Array LegResult)) := do
+  let jobs := ((← IO.getEnv "SCHED_JOBS").bind String.toNat?).getD 0
+  let all := modes.toArray.flatMap fun (_, legs) => legs
+  let jobs := if jobs == 0 then all.size else jobs
+  let mut done : Array (ByteArray × Ixon.Env × List (String × String)) := #[]
+  let mut pending : Array (Task (Except IO.Error (ByteArray × Ixon.Env × List (String × String)))) := #[]
+  for leg in all do
+    if pending.size ≥ jobs then
+      done := done.push (← IO.ofExcept (← IO.wait pending[0]!))
+      pending := pending.extract 1 pending.size
+    pending := pending.push (← IO.asTask (prio := .dedicated) leg.act)
+  for t in pending do done := done.push (← IO.ofExcept (← IO.wait t))
+  let mut out := #[]
+  let mut i := 0
+  for (_, legs) in modes do
+    let mut rs : Array LegResult := #[]
+    for leg in legs do
+      let (bytes, ixon, fails) := done[i]!
+      rs := rs.push (leg.label, bytes, ixon, fails)
+      i := i + 1
+    out := out.push rs
+  return out
+
+/-- One mode (Pass 3 off or on): every schedule's result, compared. Returns the
+    number of failures. -/
+def runMode (closure : List (Name × ConstantInfo)) (pass3 : Bool) (legs : Array Leg)
+    (results : Array LegResult) : IO Nat := do
   let mode := if pass3 then "IX_PASS3=images" else "switch off"
   let diagnostic := (← IO.getEnv "SCHED_DIAGNOSTIC") == some "1"
   let singleWave := (← IO.getEnv "SCHED_SINGLE_WAVE") == some "32"
   if singleWave then say "[schedule] DIAGNOSTIC: wave 32 only; no schedule-identity claim; not a full gate"
   if diagnostic then say "[schedule] DIAGNOSTIC: sequential and wave 1 only; not a full gate"
+  if ← quickTier then
+    say "[schedule] SCHED_LEGS=quick: the per-iteration tier (3 legs per mode); not the integration gate"
   say s!"[schedule] {mode}: begin"
-  -- (label, bytes, environment, block failures as (name, message))
-  let mut runs : Array (String × ByteArray × Ixon.Env × List (String × String)) := #[]
-  let failuresOf (cenv : Ix.CompileM.CompileEnv) : List (String × String) :=
-    cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e)
-  -- sequential
-  if !singleWave then
-    match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash)
-        (pass3 := pass3) with
-    | .error e => throw (IO.userError s!"[schedule] {mode}: sequential driver: {e}")
-    | .ok (ixon, _, cenv) =>
-      let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-      saveRun pass3 "sequential" bytes (failuresOf cenv)
-      say s!"[schedule] {mode}: sequential: {bytes.size} bytes, {cenv.ungrounded.size} block failures"
-      runs := runs.push ("sequential", bytes, ixon, failuresOf cenv)
-  -- wave driver
-  for k in (if singleWave then [32] else if diagnostic then [1] else waveWorkers) do
-    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
-        (nameByHash := nameByHash) (pass3? := some pass3) with
-    | .error e => throw (IO.userError s!"[schedule] {mode}: wave driver, {k} workers: {e}")
-    | .ok (ixon, _, cenv) =>
-      let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-      saveRun pass3 s!"wave-{k}" bytes (failuresOf cenv)
-      say s!"[schedule] {mode}: wave --jobs {k}: {bytes.size} bytes, \
-{cenv.ungrounded.size} block failures"
-      runs := runs.push (s!"wave --jobs {k}", bytes, ixon, failuresOf cenv)
-  -- the whole `ix compile-lean` pipeline
-  for k in (if singleWave || diagnostic then [] else pipelineWorkers) do
-    let out ← Tests.Ix.Compile.Twins.leanCompile env closure k (pass3? := some pass3)
-    saveRun pass3 s!"pipeline-{k}" out.bytes (failuresOf out.cenv)
-    say s!"[schedule] {mode}: compile-lean --workers {k}: {out.bytes.size} bytes, \
-{out.cenv.ungrounded.size} block failures"
-    runs := runs.push (s!"compile-lean --workers {k}", out.bytes, out.env, failuresOf out.cenv)
+  let mut runs : Array LegResult := #[]
+  for (leg, r) in legs.zip results do
+    let (_, bytes, _, fails) := r
+    saveRun pass3 leg.saveLabel bytes fails
+    say s!"[schedule] {mode}: {leg.label}: {bytes.size} bytes, {fails.length} block failures"
+    runs := runs.push r
   let some (refLabel, refBytes, refEnv, refFails) := runs[0]? | return 1
   let mut failures := 0
   -- Refusals: under every schedule the block failures are exactly the
@@ -246,8 +323,14 @@ def run : IO UInt32 := do
     | some "off" => [false]
     | some "on" => [true]
     | _ => [false, true]
+  -- Every leg of every mode is an independent compile of the same input: run
+  -- them concurrently (`SCHED_JOBS` bounds it), then compare in leg order.
+  let mut plan : List (Bool × Array Leg) := []
   for pass3 in modes do
-    failures := failures + (← runMode env closure phases nameByHash pass3)
+    plan := plan ++ [(pass3, ← legsOf env closure phases nameByHash pass3)]
+  let results ← runLegs plan
+  for ((pass3, legs), rs) in plan.zip results.toList do
+    failures := failures + (← runMode closure pass3 legs rs)
   say s!"[schedule] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"
   return if failures == 0 then 0 else 1
 

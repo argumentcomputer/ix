@@ -1343,26 +1343,52 @@ def run (env : Environment) : IO UInt32 := do
     let rejected : Bool := decide ((msg.splitOn "reserved component").length > 1)
     IO.println s!"[pass3] ReservedIx: switch off compiles {offOk}; switch on rejects {rejected}: {msg.take 200}"
     if !offOk || !rejected then problems := problems.push "ReservedIx: the reserved `_ix` name is not handled"
-  for (stem, mk) in units do
+  -- Units load one after the other (each elaborates its file in this process),
+  -- and each loaded unit's checks start at once in a task of their own, at most
+  -- `PASS3_JOBS` (default 8) at a time: the units are independent (own closure,
+  -- own temporary directory, own kernel subprocesses). Every unit's lines are
+  -- printed, and its problems collected, in unit order.
+  let jobs := max 1 (((← IO.getEnv "PASS3_JOBS").bind String.toNat?).getD 8)
+  -- per unit: the lines of a load failure, or the task of its checks
+  let mut slots : Array (Option (Array String × Array String ⊕ Task (Except IO.Error (Array String × Array String)))) :=
+    Array.replicate units.size none
+  let mut live : Array (Task (Except IO.Error (Array String × Array String))) := #[]
+  -- the longest units start first (their order in the log is unchanged)
+  let heavy := ["twins", "corpus", "MdataSpine"]
+  let order := (List.range units.size).filter (heavy.contains units[·]!.1) ++
+    (List.range units.size).filter (!heavy.contains units[·]!.1)
+  for i in order do
+    let (stem, mk) := units[i]!
     let u? ← (some <$> mk).toBaseIO
     let u ← match u? with
       | .ok (some u) => pure u
       | .ok none => continue
       | .error e =>
         if leanRejects.contains stem then
-          IO.println s!"[pass3] {stem}: Lean itself rejects the file (aux-cert record)"
+          slots := slots.set! i (some <| .inl (#[s!"[pass3] {stem}: Lean itself rejects the file (aux-cert record)"], #[]))
         else
-          IO.println s!"[pass3] FAIL {stem}: {e}"
-          problems := problems.push s!"{stem}: {e}"
+          slots := slots.set! i (some <| .inl (#[s!"[pass3] FAIL {stem}: {e}"], #[s!"{stem}: {e}"]))
         continue
-    try
-      let (ps, lines) ← runUnit u keep?
-      for l in lines do IO.println s!"[pass3] {l}"
-      for p in ps do IO.println s!"[pass3] FAIL {p}"
-      problems := problems ++ ps
-    catch e =>
-      IO.println s!"[pass3] FAIL {e}"
-      problems := problems.push (toString e)
+    -- a free slot as soon as any unit finishes (not only the oldest: the
+    -- long units start first)
+    while live.size ≥ jobs do
+      live ← live.filterM fun t => return !(← IO.hasFinished t)
+      if live.size ≥ jobs then IO.sleep 50
+    let t ← IO.asTask (prio := .dedicated) do
+      try
+        let (ps, lines) ← runUnit u keep?
+        pure (lines.map (s!"[pass3] " ++ ·) ++ ps.map (s!"[pass3] FAIL " ++ ·), ps)
+      catch e =>
+        pure (#[s!"[pass3] FAIL {e}"], #[toString e])
+    live := live.push t
+    slots := slots.set! i (some (.inr t))
+  for slot? in slots do
+    let some slot := slot? | continue
+    let (out, ps) ← match slot with
+      | .inl r => pure r
+      | .inr t => IO.ofExcept (← IO.wait t)
+    for l in out do IO.println l
+    problems := problems ++ ps
   IO.println s!"[pass3] {units.size} units, {problems.size} problem(s)"
   return if problems.isEmpty then 0 else 1
 
