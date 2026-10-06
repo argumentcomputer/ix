@@ -15,7 +15,7 @@ use ix_common::address::Address;
 use ix_common::env::{
   BinderInfo, Expr as LeanExpr, ExprData, Level, LevelData, Name,
 };
-use ix_kernel::ingress::{lean_level_to_kuniv, resolve_lean_name_addr};
+use ix_kernel::ingress::resolve_lean_name_addr;
 use ix_kernel::mode::Meta;
 
 #[path = "source_name_hints.rs"]
@@ -142,7 +142,7 @@ pub(super) fn decompose_inductive_type(
   // see them as locals (required for correctness when index domains
   // reference earlier indices, or when WHNF needs to look through a
   // `Var` bound to a `let` binding — rare but possible in principle).
-  let mut scope = TcScope::new(param_fvars, &ind.cnst.level_params, stt, kctx);
+  let mut scope = TcScope::new(param_fvars, &ind.cnst.level_params, stt, kctx)?;
 
   // **Syntactic-first peeling.** The stored inductive type for a
   // Lean-generated `inductive` declaration is already a forall telescope
@@ -161,7 +161,7 @@ pub(super) fn decompose_inductive_type(
   // `Set σ := σ → Prop` (kernel/inductive.cpp's `mk_rec_infos` parity).
   let mut cur = ty;
   if !matches!(cur.as_data(), ExprData::ForallE(..)) {
-    cur = scope.whnf_lean(&cur);
+    cur = scope.whnf_lean(&cur)?;
   }
 
   // Instantiate `n_params` leading Pi's with the caller's param FVars.
@@ -176,7 +176,7 @@ pub(super) fn decompose_inductive_type(
         if !matches!(cur.as_data(), ExprData::ForallE(..)) {
           // Post-substitution head isn't a forall — try delta-unfolding
           // a reducible alias to expose any remaining params.
-          cur = scope.whnf_lean(&cur);
+          cur = scope.whnf_lean(&cur)?;
         }
       },
       _ => {
@@ -202,7 +202,7 @@ pub(super) fn decompose_inductive_type(
   loop {
     if !matches!(cur.as_data(), ExprData::ForallE(..)) {
       // Try delta-unfolding once to expose hidden foralls.
-      let after = scope.whnf_lean(&cur);
+      let after = scope.whnf_lean(&cur)?;
       if !matches!(after.as_data(), ExprData::ForallE(..)) {
         cur = after;
         break;
@@ -219,7 +219,7 @@ pub(super) fn decompose_inductive_type(
       domain: dom.clone(),
       info: bi.clone(),
     };
-    scope.push_locals(std::slice::from_ref(&decl));
+    scope.push_locals(std::slice::from_ref(&decl))?;
     indices.push(decl);
     cur = instantiate1(body, &fv);
     idx_i += 1;
@@ -2020,13 +2020,15 @@ pub(super) struct TcScope<'a> {
 }
 
 impl<'a> TcScope<'a> {
-  /// Lock the TC (`kctx.tc`) and push the outer FVar context.
+  /// Lock the TC (`kctx.tc`) and push the outer FVar context. Refuses (as
+  /// the Lean bridge's `TcScopeSt.new` does) when an outer domain cannot be
+  /// converted.
   pub(super) fn new(
     outer_fvar_ctx: &[LocalDecl],
     param_names: &'a [Name],
     stt: &'a crate::compile::CompileState,
     kctx: &'a mut crate::compile::KernelCtx,
-  ) -> Self {
+  ) -> Result<Self, ixon::CompileError> {
     let fvar_levels: FxHashMap<Name, usize> = outer_fvar_ctx
       .iter()
       .enumerate()
@@ -2039,36 +2041,51 @@ impl<'a> TcScope<'a> {
     // Push outer FVar types once.
     for (i, decl) in outer_fvar_ctx.iter().enumerate() {
       let kty =
-        to_kexpr_static(&decl.domain, &fvar_levels, i, param_names, stt);
+        to_kexpr_static(&decl.domain, &fvar_levels, i, param_names, stt)?;
       tc.push_local(kty);
     }
 
-    TcScope {
+    Ok(TcScope {
       fvar_levels,
       base_depth: outer_fvar_ctx.len(),
       param_names,
       stt,
       tc,
       extra_locals: 0,
-    }
+    })
   }
 
   /// Push additional locals (e.g. minor premise lambda binders).
-  /// Must be balanced by a later `pop_locals` call.
-  pub(super) fn push_locals(&mut self, decls: &[LocalDecl]) {
+  /// Must be balanced by a later `pop_locals` call. On a refusal nothing
+  /// stays pushed (the Lean bridge's state rolls back the same way).
+  pub(super) fn push_locals(
+    &mut self,
+    decls: &[LocalDecl],
+  ) -> Result<(), ixon::CompileError> {
     let depth = self.base_depth + self.extra_locals;
     for (i, decl) in decls.iter().enumerate() {
       self.fvar_levels.insert(decl.fvar_name.clone(), depth + i);
-      let kty = to_kexpr_static(
+      let kty = match to_kexpr_static(
         &decl.domain,
         &self.fvar_levels,
         depth + i,
         self.param_names,
         self.stt,
-      );
+      ) {
+        Ok(kty) => kty,
+        Err(e) => {
+          self.fvar_levels.remove(&decl.fvar_name);
+          for pushed in decls[..i].iter().rev() {
+            self.tc.pop_local();
+            self.fvar_levels.remove(&pushed.fvar_name);
+          }
+          return Err(e);
+        },
+      };
       self.tc.push_local(kty);
     }
     self.extra_locals += decls.len();
+    Ok(())
   }
 
   /// Pop locals pushed by `push_locals`.
@@ -2206,13 +2223,18 @@ impl<'a> TcScope<'a> {
     // inferAppType which peels foralls without substituting term args).
     // Sort levels use level params, not BVars, so the level is correct
     // without term substitution.
-    if let Some(lvl) = self.try_infer_app_sort_level(ty) {
+    if let Some(lvl) = self.try_infer_app_sort_level(ty)? {
       return Ok(lvl);
     }
 
     let depth = self.base_depth + self.extra_locals;
-    let kexpr =
-      to_kexpr_static(ty, &self.fvar_levels, depth, self.param_names, self.stt);
+    let kexpr = to_kexpr_static(
+      ty,
+      &self.fvar_levels,
+      depth,
+      self.param_names,
+      self.stt,
+    )?;
 
     // Lazy on-demand ingress: load only constants demanded by this specific
     // aux_gen inference, then retry one missing upstream constant at a time.
@@ -2232,7 +2254,7 @@ impl<'a> TcScope<'a> {
         desc: format!("TcScope::get_level: ensure_sort failed: {e}"),
       }
     })?;
-    let raw = super::below::kuniv_to_level(&ku, self.param_names);
+    let raw = super::below::kuniv_to_level(&ku, self.param_names)?;
     // When `ty` is a forall, mirror Lean's `inferForallType`
     // (`refs/lean4/src/Lean/Meta/InferType.lean:160`): apply
     // `Level.normalize` before returning. Without this, the imax chain
@@ -2272,7 +2294,10 @@ impl<'a> TcScope<'a> {
   /// Returns `None` if the fast path doesn't apply (not a constant
   /// application, not enough foralls, result isn't Sort, or the constant
   /// isn't found in the kernel env).
-  fn try_infer_app_sort_level(&self, ty: &LeanExpr) -> Option<Level> {
+  fn try_infer_app_sort_level(
+    &self,
+    ty: &LeanExpr,
+  ) -> Result<Option<Level>, ixon::CompileError> {
     use ix_common::env::ExprData;
     use ix_kernel::expr::ExprData as ZED;
 
@@ -2280,7 +2305,7 @@ impl<'a> TcScope<'a> {
     let (head, args) = decompose_apps(ty);
     let (name, levels) = match head.as_data() {
       ExprData::Const(name, levels, _) => (name, levels),
-      _ => return None,
+      _ => return Ok(None),
     };
 
     // Look up the constant in the kernel env to get its stored type.
@@ -2288,7 +2313,9 @@ impl<'a> TcScope<'a> {
     let aux_n2a = Some(&self.stt.aux_name_to_addr);
     let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
     let kid = ix_kernel::id::KId::new(addr, name.clone());
-    let kconst = self.tc.env.get(&kid)?;
+    let Some(kconst) = self.tc.env.get(&kid) else {
+      return Ok(None);
+    };
     let kty = kconst.ty();
 
     // Peel foralls from the stored type — one per applied arg.
@@ -2297,7 +2324,7 @@ impl<'a> TcScope<'a> {
     for _ in 0..args.len() {
       match cur.data() {
         ZED::All(_, _, _, body, _) => cur = body.clone(),
-        _ => return None,
+        _ => return Ok(None),
       }
     }
 
@@ -2307,7 +2334,7 @@ impl<'a> TcScope<'a> {
       _ => {
         // Not a Sort — the type might have dependent binders where
         // term args matter. Fall through to kernel TC.
-        return None;
+        return Ok(None);
       },
     };
 
@@ -2317,7 +2344,7 @@ impl<'a> TcScope<'a> {
     //
     // Convert the KUniv to a Level, substituting level params with the
     // concrete level args from the Const node.
-    Some(self.kuniv_to_level_with_const_levels(ku, levels))
+    Ok(Some(self.kuniv_to_level_with_const_levels(ku, levels)?))
   }
 
   /// Convert a `KUniv` to `Level`, substituting level param indices with
@@ -2326,24 +2353,24 @@ impl<'a> TcScope<'a> {
     &self,
     u: &ix_kernel::level::KUniv<Meta>,
     const_levels: &[Level],
-  ) -> Level {
+  ) -> Result<Level, ixon::CompileError> {
     use ix_kernel::level::UnivData;
-    match u.data() {
+    Ok(match u.data() {
       UnivData::Zero(_) => Level::zero(),
       UnivData::Succ(inner, _) => {
-        Level::succ(self.kuniv_to_level_with_const_levels(inner, const_levels))
+        Level::succ(self.kuniv_to_level_with_const_levels(inner, const_levels)?)
       },
       UnivData::Max(a, b, _) => {
         // Use level_max (matching Lean's mk_max: zero/equality/subsumption
         // checks) to simplify after substitution.
         super::below::level_max(
-          &self.kuniv_to_level_with_const_levels(a, const_levels),
-          &self.kuniv_to_level_with_const_levels(b, const_levels),
+          &self.kuniv_to_level_with_const_levels(a, const_levels)?,
+          &self.kuniv_to_level_with_const_levels(b, const_levels)?,
         )
       },
       UnivData::IMax(a, b, _) => {
-        let la = self.kuniv_to_level_with_const_levels(a, const_levels);
-        let lb = self.kuniv_to_level_with_const_levels(b, const_levels);
+        let la = self.kuniv_to_level_with_const_levels(a, const_levels)?;
+        let lb = self.kuniv_to_level_with_const_levels(b, const_levels)?;
         // Match Lean's mk_imax: simplify when the second argument's
         // zero/nonzero status is known.
         if Self::is_not_zero_level(&lb) {
@@ -2360,19 +2387,17 @@ impl<'a> TcScope<'a> {
           Level::imax(la, lb)
         }
       },
+      // Substitute with the concrete level from the Const's level args. An
+      // index outside them is refused with the Lean bridge's text
+      // (`kunivToLevelWithConstLevels`), never given a scope or invented name.
       UnivData::Param(idx, _, _) => {
-        // Substitute with the concrete level from the Const's level args.
-        const_levels.get(*idx as usize).cloned().unwrap_or_else(|| {
-          // Fallback: use the TcScope's param names.
-          let name = self
-            .param_names
-            .get(*idx as usize)
-            .cloned()
-            .unwrap_or_else(|| Name::str(Name::anon(), format!("u_{idx}")));
-          Level::param(name)
-        })
+        const_levels.get(*idx as usize).cloned().ok_or_else(|| {
+          bridge_refusal(format!(
+            "kuniv_to_level_with_const_levels: constant universe argument index {idx} out of range"
+          ))
+        })?
       },
-    }
+    })
   }
 }
 
@@ -2387,16 +2412,24 @@ impl<'a> TcScope<'a> {
   /// `Pi (a : α), Prop` hiding inside `Set α := α → Prop`. Without this
   /// step, a syntactic match on `Set α` (an `App(Const, FVar)`) fails
   /// to find the index binder.
-  pub(super) fn whnf_lean(&mut self, ty: &LeanExpr) -> LeanExpr {
+  pub(super) fn whnf_lean(
+    &mut self,
+    ty: &LeanExpr,
+  ) -> Result<LeanExpr, ixon::CompileError> {
     let depth = self.base_depth + self.extra_locals;
-    let kexpr =
-      to_kexpr_static(ty, &self.fvar_levels, depth, self.param_names, self.stt);
+    let kexpr = to_kexpr_static(
+      ty,
+      &self.fvar_levels,
+      depth,
+      self.param_names,
+      self.stt,
+    )?;
     let whnfed = match self.tc.whnf(&kexpr) {
       Ok(k) => k,
-      Err(_) => return ty.clone(),
+      Err(_) => return Ok(ty.clone()),
     };
     let out =
-      kexpr_to_lean(&whnfed, depth, &self.fvar_levels, 0, self.param_names);
+      kexpr_to_lean(&whnfed, depth, &self.fvar_levels, 0, self.param_names)?;
     // The kernel hashes `Const` nodes by content address, not display name.
     // A WHNF cache hit can therefore return an expression with the right
     // address but the wrong source name (`Paths` vs `Symmetrify`). When WHNF
@@ -2409,7 +2442,7 @@ impl<'a> TcScope<'a> {
     // equality: a reduct rebuilt content-equal without interning carries a
     // fresh uid, and the Lean mirror's test (`Ix/AuxGen/Kernel.lean`,
     // `whnfLean`) compares content addresses.
-    if whnfed == kexpr {
+    Ok(if whnfed == kexpr {
       restore_source_names_same_content(&out, ty, self.stt)
     } else {
       source_name_hints::restore(
@@ -2420,7 +2453,7 @@ impl<'a> TcScope<'a> {
         self.param_names,
         self.stt,
       )
-    }
+    })
   }
 
   /// Check whether two `LeanExpr` types are definitionally equal in the
@@ -2429,14 +2462,20 @@ impl<'a> TcScope<'a> {
   /// e.g. `mkEqAndProof` in `refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`
   /// uses `isDefEq lhsType rhsType` to decide between `Eq` and `HEq`.
   ///
-  /// Returns `false` on kernel errors (conservative: treat as not defEq).
-  pub(super) fn is_def_eq(&mut self, a: &LeanExpr, b: &LeanExpr) -> bool {
+  /// Returns `false` on kernel errors (conservative: treat as not defEq);
+  /// refuses when an input cannot be converted (unknown free variable, out
+  /// of range universe), as the Lean bridge's `isDefEq` does.
+  pub(super) fn is_def_eq(
+    &mut self,
+    a: &LeanExpr,
+    b: &LeanExpr,
+  ) -> Result<bool, ixon::CompileError> {
     let depth = self.base_depth + self.extra_locals;
     let ka =
-      to_kexpr_static(a, &self.fvar_levels, depth, self.param_names, self.stt);
+      to_kexpr_static(a, &self.fvar_levels, depth, self.param_names, self.stt)?;
     let kb =
-      to_kexpr_static(b, &self.fvar_levels, depth, self.param_names, self.stt);
-    self.tc.is_def_eq(&ka, &kb).unwrap_or(false)
+      to_kexpr_static(b, &self.fvar_levels, depth, self.param_names, self.stt)?;
+    Ok(self.tc.is_def_eq(&ka, &kb).unwrap_or(false))
   }
 
   /// Infer the type of a `LeanExpr` in the current FVar context via the
@@ -2447,12 +2486,17 @@ impl<'a> TcScope<'a> {
   ///
   /// Returns `None` on kernel errors (conservative: callers treat an
   /// uninferrable side as "not unit-like").
-  pub(super) fn infer_lean(&mut self, e: &LeanExpr) -> Option<LeanExpr> {
+  pub(super) fn infer_lean(
+    &mut self,
+    e: &LeanExpr,
+  ) -> Result<Option<LeanExpr>, ixon::CompileError> {
     let depth = self.base_depth + self.extra_locals;
     let ke =
-      to_kexpr_static(e, &self.fvar_levels, depth, self.param_names, self.stt);
-    let ty = self.tc.infer(&ke).ok()?;
-    Some(kexpr_to_lean(&ty, depth, &self.fvar_levels, 0, self.param_names))
+      to_kexpr_static(e, &self.fvar_levels, depth, self.param_names, self.stt)?;
+    let Ok(ty) = self.tc.infer(&ke) else {
+      return Ok(None);
+    };
+    Ok(Some(kexpr_to_lean(&ty, depth, &self.fvar_levels, 0, self.param_names)?))
   }
 }
 
@@ -2483,13 +2527,16 @@ impl<'a> TcScope<'a> {
 /// the result in original order — matching `egress_expr`.
 /// Memoization preserves shared subexpressions at each binder depth instead
 /// of expanding the input DAG into a tree. The cache lives for one call only.
+/// Refusals carry the Lean bridge's texts (`kexprToLean`): a `Var` above the
+/// outer context, a level with no (or more than one) registered free
+/// variable, a leaked kernel free variable, or an out-of-range universe.
 pub(super) fn kexpr_to_lean(
   expr: &ix_kernel::expr::KExpr<Meta>,
   outer_depth: usize,
   fvar_levels: &FxHashMap<Name, usize>,
   local_depth: usize,
   param_names: &[Name],
-) -> LeanExpr {
+) -> Result<LeanExpr, ixon::CompileError> {
   kexpr_to_lean_cached(
     expr,
     outer_depth,
@@ -2500,6 +2547,12 @@ pub(super) fn kexpr_to_lean(
   )
 }
 
+pub(super) fn bridge_refusal(message: String) -> ixon::CompileError {
+  ixon::CompileError::UnsupportedExpr {
+    desc: format!("aux kernel bridge: {message}"),
+  }
+}
+
 fn kexpr_to_lean_cached(
   expr: &ix_kernel::expr::KExpr<Meta>,
   outer_depth: usize,
@@ -2507,24 +2560,37 @@ fn kexpr_to_lean_cached(
   local_depth: usize,
   param_names: &[Name],
   cache: &mut FxHashMap<(usize, usize), LeanExpr>,
-) -> LeanExpr {
+) -> Result<LeanExpr, ixon::CompileError> {
   use ix_kernel::expr::ExprData as KED;
 
   // Input nodes stay alive for this call. Intern uids are NOT sufficient:
   // distinct metadata-bearing nodes can have the same name-erased identity.
   let key = (std::ptr::from_ref(expr.data()).addr(), local_depth);
   if let Some(result) = cache.get(&key) {
-    return result.clone();
+    return Ok(result.clone());
   }
 
   // Reverse `fvar_levels` lazily via linear search — the FVar context is
-  // small in practice (a handful of param/motive/minor/index binders),
-  // so an O(n) scan per Var hit is cheaper than maintaining an inverse
-  // map alongside `TcScope`.
-  let lookup_fvar = |level: usize| -> Option<Name> {
-    fvar_levels.iter().find_map(|(name, &lvl)| {
-      if lvl == level { Some(name.clone()) } else { None }
-    })
+  // small in practice (a handful of param/motive/minor/index binders).
+  // Exactly one registered free variable must sit at the level.
+  let lookup_fvar = |level: usize| -> Result<Name, ixon::CompileError> {
+    let mut found = fvar_levels
+      .iter()
+      .filter_map(|(name, &lvl)| (lvl == level).then_some(name));
+    match (found.next(), found.next()) {
+      (Some(name), None) => Ok(name.clone()),
+      (None, _) => Err(bridge_refusal(format!(
+        "kexpr_to_lean: missing free variable at outer level {level}"
+      ))),
+      (Some(_), Some(_)) => Err(bridge_refusal(format!(
+        "kexpr_to_lean: duplicate free variable identities at outer level {level}"
+      ))),
+    }
+  };
+  let go = |e: &ix_kernel::expr::KExpr<Meta>,
+            depth: usize,
+            cache: &mut FxHashMap<(usize, usize), LeanExpr>| {
+    kexpr_to_lean_cached(e, outer_depth, fvar_levels, depth, param_names, cache)
   };
 
   let inner = match expr.data() {
@@ -2534,134 +2600,60 @@ fn kexpr_to_lean_cached(
         LeanExpr::bvar(Nat::from(i as u64))
       } else {
         let fvar_idx_from_top = i - local_depth;
-        let level = outer_depth
-          .checked_sub(fvar_idx_from_top + 1)
-          .expect("kexpr_to_lean: Var index out of range of outer context");
-        let name = lookup_fvar(level).unwrap_or_else(|| {
-          // Unregistered FVar — indicates mismatched `fvar_levels` vs.
-          // the expression's Var indices. Use a synthetic placeholder
-          // rather than panic so diagnostics can surface the issue.
-          Name::str(Name::anon(), format!("_dangling_fvar_{level}"))
-        });
-        LeanExpr::fvar(name)
+        let level =
+          outer_depth.checked_sub(fvar_idx_from_top + 1).ok_or_else(|| {
+            bridge_refusal(
+              "kexpr_to_lean: Var index out of range of outer context".into(),
+            )
+          })?;
+        LeanExpr::fvar(lookup_fvar(level)?)
       }
     },
     // Kernel-side FVar nodes (introduced by binder opening during type
-    // checking) should never appear in the inputs of `kexpr_to_lean`,
-    // which converts ingressed/compile-time expressions back to Lean
-    // syntax. If one does appear, it indicates a path leaked an open
-    // expression past its abstraction step — treat it as a synthetic
-    // free variable named after its id so diagnostics can surface it.
+    // checking) never belong in the inputs of `kexpr_to_lean`: one here
+    // means a path leaked an open expression past its abstraction step.
     KED::FVar(id, _, _) => {
-      LeanExpr::fvar(Name::str(Name::anon(), format!("_kernel_fvar_{}", id.0)))
+      return Err(bridge_refusal(format!(
+        "kexpr_to_lean: leaked kernel free variable {}",
+        id.0
+      )));
     },
     KED::Sort(u, _) => {
-      LeanExpr::sort(super::below::kuniv_to_level(u, param_names))
+      LeanExpr::sort(super::below::kuniv_to_level(u, param_names)?)
     },
     KED::Const(kid, us, _) => {
       let levels: Vec<Level> = us
         .iter()
         .map(|u| super::below::kuniv_to_level(u, param_names))
-        .collect();
+        .collect::<Result<_, _>>()?;
       LeanExpr::cnst(kid.name.clone(), levels)
     },
-    KED::App(f, a, _) => LeanExpr::app(
-      kexpr_to_lean_cached(
-        f,
-        outer_depth,
-        fvar_levels,
-        local_depth,
-        param_names,
-        cache,
-      ),
-      kexpr_to_lean_cached(
-        a,
-        outer_depth,
-        fvar_levels,
-        local_depth,
-        param_names,
-        cache,
-      ),
-    ),
+    KED::App(f, a, _) => {
+      LeanExpr::app(go(f, local_depth, cache)?, go(a, local_depth, cache)?)
+    },
     KED::All(name, bi, d, b, _) => LeanExpr::all(
       name.clone(),
-      kexpr_to_lean_cached(
-        d,
-        outer_depth,
-        fvar_levels,
-        local_depth,
-        param_names,
-        cache,
-      ),
-      kexpr_to_lean_cached(
-        b,
-        outer_depth,
-        fvar_levels,
-        local_depth + 1,
-        param_names,
-        cache,
-      ),
+      go(d, local_depth, cache)?,
+      go(b, local_depth + 1, cache)?,
       bi.clone(),
     ),
     KED::Lam(name, bi, d, b, _) => LeanExpr::lam(
       name.clone(),
-      kexpr_to_lean_cached(
-        d,
-        outer_depth,
-        fvar_levels,
-        local_depth,
-        param_names,
-        cache,
-      ),
-      kexpr_to_lean_cached(
-        b,
-        outer_depth,
-        fvar_levels,
-        local_depth + 1,
-        param_names,
-        cache,
-      ),
+      go(d, local_depth, cache)?,
+      go(b, local_depth + 1, cache)?,
       bi.clone(),
     ),
     KED::Let(name, ty, val, body, nd, _) => LeanExpr::letE(
       name.clone(),
-      kexpr_to_lean_cached(
-        ty,
-        outer_depth,
-        fvar_levels,
-        local_depth,
-        param_names,
-        cache,
-      ),
-      kexpr_to_lean_cached(
-        val,
-        outer_depth,
-        fvar_levels,
-        local_depth,
-        param_names,
-        cache,
-      ),
-      kexpr_to_lean_cached(
-        body,
-        outer_depth,
-        fvar_levels,
-        local_depth + 1,
-        param_names,
-        cache,
-      ),
+      go(ty, local_depth, cache)?,
+      go(val, local_depth, cache)?,
+      go(body, local_depth + 1, cache)?,
       *nd,
     ),
     KED::Prj(kid, field, val, _) => LeanExpr::proj(
       kid.name.clone(),
       Nat::from(*field),
-      kexpr_to_lean_cached(
-        val,
-        outer_depth,
-        fvar_levels,
-        local_depth,
-        param_names,
-        cache,
-      ),
+      go(val, local_depth, cache)?,
     ),
     KED::Nat(n, _, _) => {
       use ix_common::env::Literal;
@@ -2680,7 +2672,7 @@ fn kexpr_to_lean_cached(
     .rev()
     .fold(inner, |acc, kvs| LeanExpr::mdata(kvs.clone(), acc));
   cache.insert(key, result.clone());
-  result
+  Ok(result)
 }
 
 /// Restore source-side display names after a WHNF roundtrip that did not
@@ -2822,13 +2814,16 @@ fn same_resolved_name_addr(
 /// Memoize by full Lean identity and binder depth to preserve the input DAG.
 /// The cache is scoped to this call: FVar/universe bindings and resolved
 /// constant addresses can change between calls, even within one block.
+/// Refusals carry the Lean bridge's texts (`toKexprStatic`,
+/// `leanLevelToKuniv`): an unknown free variable, a free variable outside
+/// the context depth, an unknown universe parameter, or a metavariable.
 fn to_kexpr_static(
   expr: &LeanExpr,
   fvar_levels: &FxHashMap<Name, usize>,
   ctx_depth: usize,
   param_names: &[Name],
   stt: &crate::compile::CompileState,
-) -> ix_kernel::expr::KExpr<Meta> {
+) -> Result<ix_kernel::expr::KExpr<Meta>, ixon::CompileError> {
   to_kexpr_cached(
     expr,
     fvar_levels,
@@ -2839,6 +2834,48 @@ fn to_kexpr_static(
   )
 }
 
+/// `ix_kernel::ingress::lean_level_to_kuniv` with refusals in place of its
+/// panics; the same constructors, so the same universes.
+fn bridge_level_to_kuniv(
+  lvl: &Level,
+  param_names: &[Name],
+) -> Result<ix_kernel::level::KUniv<Meta>, ixon::CompileError> {
+  use ix_common::env::LevelData;
+  use ix_kernel::level::KUniv;
+  Ok(match lvl.as_data() {
+    LevelData::Zero(_) => KUniv::zero(),
+    LevelData::Succ(l, _) => {
+      KUniv::succ(bridge_level_to_kuniv(l, param_names)?)
+    },
+    LevelData::Max(a, b, _) => KUniv::max(
+      bridge_level_to_kuniv(a, param_names)?,
+      bridge_level_to_kuniv(b, param_names)?,
+    ),
+    LevelData::Imax(a, b, _) => KUniv::imax(
+      bridge_level_to_kuniv(a, param_names)?,
+      bridge_level_to_kuniv(b, param_names)?,
+    ),
+    LevelData::Param(name, _) => {
+      let idx =
+        param_names.iter().position(|n| n == name).ok_or_else(|| {
+          let names: Vec<String> =
+            param_names.iter().map(|n| n.pretty()).collect();
+          bridge_refusal(format!(
+            "unknown level param `{}` not found in param_names [{}]",
+            name.pretty(),
+            names.join(", ")
+          ))
+        })?;
+      KUniv::param(idx as u64, name.clone())
+    },
+    LevelData::Mvar(..) => {
+      return Err(bridge_refusal(
+        "lean_level_to_kuniv: level metavariable".into(),
+      ));
+    },
+  })
+}
+
 fn to_kexpr_cached(
   expr: &LeanExpr,
   fvar_levels: &FxHashMap<Name, usize>,
@@ -2846,7 +2883,7 @@ fn to_kexpr_cached(
   param_names: &[Name],
   stt: &crate::compile::CompileState,
   cache: &mut FxHashMap<(blake3::Hash, usize), ix_kernel::expr::KExpr<Meta>>,
-) -> ix_kernel::expr::KExpr<Meta> {
+) -> Result<ix_kernel::expr::KExpr<Meta>, ixon::CompileError> {
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
   use ix_kernel::expr::KExpr;
@@ -2858,80 +2895,70 @@ fn to_kexpr_cached(
   // additionally needed because FVars map to different de Bruijn indices.
   let key = (*expr.get_hash(), ctx_depth);
   if let Some(result) = cache.get(&key) {
-    return result.clone();
+    return Ok(result.clone());
   }
+  let go =
+    |e: &LeanExpr,
+     depth: usize,
+     cache: &mut FxHashMap<(blake3::Hash, usize), KExpr<Meta>>| {
+      to_kexpr_cached(e, fvar_levels, depth, param_names, stt, cache)
+    };
   let result = match expr.as_data() {
-    ExprData::Fvar(fname, _) => {
-      if let Some(&level) = fvar_levels.get(fname) {
+    ExprData::Fvar(fname, _) => match fvar_levels.get(fname) {
+      Some(&level) if level < ctx_depth => {
         KExpr::var((ctx_depth - level - 1) as u64, Name::anon())
-      } else {
-        KExpr::sort(KUniv::zero())
-      }
+      },
+      Some(_) => {
+        return Err(bridge_refusal(format!(
+          "to_kexpr_static: free variable {} outside context depth {ctx_depth}",
+          fname.pretty()
+        )));
+      },
+      None => {
+        return Err(bridge_refusal(format!(
+          "to_kexpr_static: unknown free variable {}",
+          fname.pretty()
+        )));
+      },
     },
     ExprData::Bvar(idx, _) => KExpr::var(nat_to_u64(idx), Name::anon()),
     ExprData::Sort(lvl, _) => {
-      KExpr::sort(lean_level_to_kuniv(lvl, param_names))
+      KExpr::sort(bridge_level_to_kuniv(lvl, param_names)?)
     },
     ExprData::Const(cname, us, _) => {
       let addr = resolve_lean_name_addr(cname, n2a, aux_n2a);
       let zid = KId::new(addr, cname.clone());
-      let zus: Box<[KUniv<Meta>]> =
-        us.iter().map(|u| lean_level_to_kuniv(u, param_names)).collect();
+      let zus: Box<[KUniv<Meta>]> = us
+        .iter()
+        .map(|u| bridge_level_to_kuniv(u, param_names))
+        .collect::<Result<_, _>>()?;
       KExpr::cnst(zid, zus)
     },
     ExprData::App(f, a, _) => {
-      let kf =
-        to_kexpr_cached(f, fvar_levels, ctx_depth, param_names, stt, cache);
-      let ka =
-        to_kexpr_cached(a, fvar_levels, ctx_depth, param_names, stt, cache);
+      let kf = go(f, ctx_depth, cache)?;
+      let ka = go(a, ctx_depth, cache)?;
       KExpr::app(kf, ka)
     },
     ExprData::ForallE(binder_name, dom, body, bi, _) => {
-      let kd =
-        to_kexpr_cached(dom, fvar_levels, ctx_depth, param_names, stt, cache);
-      let kb = to_kexpr_cached(
-        body,
-        fvar_levels,
-        ctx_depth + 1,
-        param_names,
-        stt,
-        cache,
-      );
+      let kd = go(dom, ctx_depth, cache)?;
+      let kb = go(body, ctx_depth + 1, cache)?;
       KExpr::all(binder_name.clone(), bi.clone(), kd, kb)
     },
     ExprData::Lam(binder_name, dom, body, bi, _) => {
-      let kd =
-        to_kexpr_cached(dom, fvar_levels, ctx_depth, param_names, stt, cache);
-      let kb = to_kexpr_cached(
-        body,
-        fvar_levels,
-        ctx_depth + 1,
-        param_names,
-        stt,
-        cache,
-      );
+      let kd = go(dom, ctx_depth, cache)?;
+      let kb = go(body, ctx_depth + 1, cache)?;
       KExpr::lam(binder_name.clone(), bi.clone(), kd, kb)
     },
     ExprData::LetE(binder_name, ty, val, body, nd, _) => {
-      let kt =
-        to_kexpr_cached(ty, fvar_levels, ctx_depth, param_names, stt, cache);
-      let kv =
-        to_kexpr_cached(val, fvar_levels, ctx_depth, param_names, stt, cache);
-      let kb = to_kexpr_cached(
-        body,
-        fvar_levels,
-        ctx_depth + 1,
-        param_names,
-        stt,
-        cache,
-      );
+      let kt = go(ty, ctx_depth, cache)?;
+      let kv = go(val, ctx_depth, cache)?;
+      let kb = go(body, ctx_depth + 1, cache)?;
       KExpr::let_(binder_name.clone(), kt, kv, kb, *nd)
     },
     ExprData::Proj(pname, idx, e, _) => {
       let addr = resolve_lean_name_addr(pname, n2a, aux_n2a);
       let zid = KId::new(addr, pname.clone());
-      let ke =
-        to_kexpr_cached(e, fvar_levels, ctx_depth, param_names, stt, cache);
+      let ke = go(e, ctx_depth, cache)?;
       KExpr::prj(zid, nat_to_u64(idx), ke)
     },
     ExprData::Lit(lit, _) => {
@@ -2947,13 +2974,15 @@ fn to_kexpr_cached(
         },
       }
     },
-    ExprData::Mdata(_, inner, _) => {
-      to_kexpr_cached(inner, fvar_levels, ctx_depth, param_names, stt, cache)
+    ExprData::Mdata(_, inner, _) => go(inner, ctx_depth, cache)?,
+    ExprData::Mvar(..) => {
+      return Err(bridge_refusal(
+        "to_kexpr_static: expression metavariable".into(),
+      ));
     },
-    _ => KExpr::sort(KUniv::zero()),
   };
   cache.insert(key, result.clone());
-  result
+  Ok(result)
 }
 
 fn collect_lean_const_refs(expr: &LeanExpr, out: &mut FxHashSet<Name>) {

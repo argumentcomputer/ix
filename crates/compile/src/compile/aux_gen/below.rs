@@ -374,7 +374,7 @@ fn build_below_def(
 
     let ctx_decls: Vec<LocalDecl> = decls[..total - 1].to_vec();
     let mut tc =
-      super::expr_utils::TcScope::new(&ctx_decls, rec_level_params, stt, kctx);
+      super::expr_utils::TcScope::new(&ctx_decls, rec_level_params, stt, kctx)?;
     tc.get_level(major_domain)?
   };
 
@@ -593,7 +593,7 @@ fn build_below_value(
   let outer_ctx: Vec<LocalDecl> =
     param_decls.iter().chain(motive_decls.iter()).cloned().collect();
   let mut tc_scope =
-    super::expr_utils::TcScope::new(&outer_ctx, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(&outer_ctx, rec_level_params, stt, kctx)?;
 
   for minor_dom in &minor_doms {
     let minor_arg =
@@ -1551,7 +1551,7 @@ fn build_below_minor(
 
   // Push field decls (with replaced IH domains) into TcScope so that
   // get_level can resolve the FVars in PProd operands.
-  tc_scope.push_locals(&lam_decls);
+  tc_scope.push_locals(&lam_decls)?;
 
   // Build PProd entries from IH fields. Infer each PProd operand's
   // level via TC — matches Lean's `mkPProd` (PProdN.lean:37-38), which
@@ -1572,7 +1572,7 @@ fn build_below_minor(
         ih_entries.push(mk_pprod(&lvl1, &lvl2, leaf, &field.fvar));
       } else {
         // Higher-order IH: ∀ (a₁..aₙ), PProd(leaf, ih_fvar a₁..aₙ).
-        tc_scope.push_locals(&field.inner_decls);
+        tc_scope.push_locals(&field.inner_decls)?;
         let ih_applied = mk_app_n(field.fvar.clone(), &field.inner_fvars);
         let lvl1 = tc_scope.get_level(leaf)?;
         let lvl2 = tc_scope.get_level(&ih_applied)?;
@@ -1982,29 +1982,35 @@ fn mk_imax_aux(l1: &Level, l2: &Level) -> Level {
 ///
 /// Uses raw `Level::succ` / `Level::max` to faithfully preserve the kernel's
 /// level structure — no distribution of Succ over Max, no subsumption.
+/// A parameter index outside `param_names` is refused with the Lean
+/// bridge's text (`kunivToLevel`), never given an invented name.
 pub(super) fn kuniv_to_level(
   u: &ix_kernel::level::KUniv<ix_kernel::mode::Meta>,
   param_names: &[Name],
-) -> Level {
+) -> Result<Level, CompileError> {
   use ix_kernel::level::UnivData;
-  match u.data() {
+  Ok(match u.data() {
     UnivData::Zero(_) => Level::zero(),
-    UnivData::Succ(inner, _) => Level::succ(kuniv_to_level(inner, param_names)),
-    UnivData::Max(a, b, _) => {
-      Level::max(kuniv_to_level(a, param_names), kuniv_to_level(b, param_names))
+    UnivData::Succ(inner, _) => {
+      Level::succ(kuniv_to_level(inner, param_names)?)
     },
+    UnivData::Max(a, b, _) => Level::max(
+      kuniv_to_level(a, param_names)?,
+      kuniv_to_level(b, param_names)?,
+    ),
     UnivData::IMax(a, b, _) => Level::imax(
-      kuniv_to_level(a, param_names),
-      kuniv_to_level(b, param_names),
+      kuniv_to_level(a, param_names)?,
+      kuniv_to_level(b, param_names)?,
     ),
     UnivData::Param(idx, _, _) => {
-      let name = param_names
-        .get(*idx as usize)
-        .cloned()
-        .unwrap_or_else(|| Name::str(Name::anon(), format!("u_{idx}")));
+      let name = param_names.get(*idx as usize).cloned().ok_or_else(|| {
+        super::expr_utils::bridge_refusal(format!(
+          "kuniv_to_level: universe parameter index {idx} out of range"
+        ))
+      })?;
       Level::param(name)
     },
-  }
+  })
 }
 
 /// Build `PProd.{u, v} a b` with separate universe levels for each component.

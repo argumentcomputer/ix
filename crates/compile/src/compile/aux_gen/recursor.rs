@@ -833,7 +833,7 @@ pub fn generate_canonical_recursors_with_layout(
       stt,
       kctx,
       block_nested_rewrite.as_mut(),
-    );
+    )?;
 
     // Build rules
     let rules = build_rec_rules(
@@ -972,7 +972,7 @@ fn build_rec_type(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
   nested_rewrite: Option<&mut NestedRewriteCtx>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   let env_get = |name: &Name| -> Option<ConstantInfo> {
     overlay
       .and_then(|o| o.get(name).map(|e| e.cloned()))
@@ -1060,7 +1060,7 @@ fn build_rec_type(
         stt,
         kctx,
         nested_rewrite.as_deref_mut(),
-      );
+      )?;
       // Domain stays in FVar form — contains param + motive FVars.
       let minor_name = ctor.cnst.name.strip_prefix(ind_name).map_or_else(
         || ctor.cnst.name.clone(),
@@ -1211,7 +1211,7 @@ fn build_rec_type(
   // Apply infer_implicit: Lean calls inferImplicit(ty, 1000, false)
   // which processes ALL binders, marking them implicit if their BVar
   // appears in an explicit domain downstream.
-  infer_implicit(&rec_type, 1000)
+  Ok(infer_implicit(&rec_type, 1000))
 }
 
 /// Build motive type for a class from its pre-computed [`IndRecInfo`]:
@@ -1379,7 +1379,7 @@ fn build_minor_type(
   // Shared scratch for nested-aux level rewrites across every ctor in
   // the block. `None` when the block doesn't need any rewriting.
   nested_rewrite: Option<&mut NestedRewriteCtx>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   // `n_classes` is no longer read inside this function since the
   // nested-aux lookup moved to the caller-owned `nested_rewrite`; keep
   // the parameter so the call-site signature stays self-describing and
@@ -1451,7 +1451,7 @@ fn build_minor_type(
   let mut rec_fields: Vec<(usize, usize)> = Vec::new(); // (field_idx, target_class)
 
   let mut scope =
-    super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx)?;
 
   for fi in 0..n_fields {
     cur = strip_mdata_ref(&cur).clone();
@@ -1474,11 +1474,11 @@ fn build_minor_type(
           n_params,
           &mut scope,
           stt,
-        );
+        )?;
         if let Some(ci) = rec_ci {
           rec_fields.push((fi, ci));
         }
-        scope.push_locals(std::slice::from_ref(&decl));
+        scope.push_locals(std::slice::from_ref(&decl))?;
         field_decls.push(decl);
         field_fvars.push(fv.clone());
         cur = instantiate1(body, &fv);
@@ -1500,7 +1500,7 @@ fn build_minor_type(
       motive_fvars,
       classes,
       &mut scope,
-    );
+    )?;
     // Lean C++ uses appendAfter("_ih") which appends "_ih" to the
     // innermost string component of the Name structure.
     let ih_name = name_append_after(&field_decls[fi].binder_name, "_ih");
@@ -1556,7 +1556,7 @@ fn build_minor_type(
   let mut all_binders: Vec<LocalDecl> = Vec::new();
   all_binders.extend(field_decls);
   all_binders.extend(ih_decls);
-  mk_forall(conclusion, &all_binders)
+  Ok(mk_forall(conclusion, &all_binders))
 }
 
 /// Build IH type for a recursive field using FVars, with kernel WHNF.
@@ -1582,10 +1582,10 @@ fn build_ih_type_fvar(
   motive_fvars: &[LeanExpr],
   classes: &[FlatInfo],
   scope: &mut super::expr_utils::TcScope<'_>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = scope.whnf_lean(field_dom);
+  let mut cur = scope.whnf_lean(field_dom)?;
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     // Check if the expression head is an inductive in the block — stop if so.
@@ -1602,10 +1602,10 @@ fn build_ih_type_fvar(
       domain: dom.clone(),
       info: bi.clone(),
     };
-    scope.push_locals(std::slice::from_ref(&decl));
+    scope.push_locals(std::slice::from_ref(&decl))?;
     xs_decls.push(decl);
     xs_fvars.push(fv.clone());
-    cur = scope.whnf_lean(&instantiate1(body, &fv));
+    cur = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
 
   // Pop the xs decls we pushed during peeling so the scope stays balanced
@@ -1631,7 +1631,7 @@ fn build_ih_type_fvar(
   ih_body = LeanExpr::app(ih_body, field_app);
 
   // Abstract xs FVars back into foralls, preserving original binder names
-  mk_forall(ih_body, &xs_decls)
+  Ok(mk_forall(ih_body, &xs_decls))
 }
 
 // =========================================================================
@@ -1736,7 +1736,7 @@ fn build_rec_rules(
   // delta-unfolding reducible-alias heads matters for recognizing recursive
   // fields hidden under a definition (`reduceCtorParam` family).
   let mut scope =
-    super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx)?;
 
   let mut rules = Vec::new();
 
@@ -1820,10 +1820,10 @@ fn build_rec_rules(
               n_params,
               &mut scope,
               stt,
-            ) {
+            )? {
               rec_field_data.push((fv.clone(), target_ci));
             }
-            scope.push_locals(std::slice::from_ref(&decl));
+            scope.push_locals(std::slice::from_ref(&decl))?;
             field_decls.push(decl);
             field_fvars.push(fv.clone());
             ty = instantiate1(b, &fv);
@@ -1892,7 +1892,7 @@ fn build_rec_rules(
             &minor_fvars,
             classes,
             &mut scope,
-          )
+          )?
         } else {
           field_fv.clone() // fallback — shouldn't happen
         };
@@ -1944,12 +1944,12 @@ fn build_rule_ih_fvar(
   minor_fvars: &[LeanExpr],
   classes: &[FlatInfo],
   scope: &mut super::expr_utils::TcScope<'_>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   let target_n_params = nat_to_usize(&classes[target_ci].ind.num_params);
 
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = scope.whnf_lean(field_dom);
+  let mut cur = scope.whnf_lean(field_dom)?;
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     let (h, _) = decompose_apps(&cur);
@@ -1965,10 +1965,10 @@ fn build_rule_ih_fvar(
       domain: dom.clone(),
       info: bi.clone(),
     };
-    scope.push_locals(std::slice::from_ref(&decl));
+    scope.push_locals(std::slice::from_ref(&decl))?;
     xs_decls.push(decl);
     xs_fvars.push(fv.clone());
-    cur = scope.whnf_lean(&instantiate1(body, &fv));
+    cur = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
   scope.pop_locals(&xs_decls);
 
@@ -1995,7 +1995,7 @@ fn build_rule_ih_fvar(
   }
   ih = LeanExpr::app(ih, field_app);
 
-  mk_lambda(ih, &xs_decls)
+  Ok(mk_lambda(ih, &xs_decls))
 }
 
 // =========================================================================
@@ -2126,7 +2126,7 @@ fn find_rec_target(
   n_params: usize,
   scope: &mut super::expr_utils::TcScope<'_>,
   _stt: &crate::compile::CompileState,
-) -> Option<usize> {
+) -> Result<Option<usize>, CompileError> {
   // Phase 1: syntactic peel + match.
   let mut ty = dom.clone();
   let mut phase1_match: Option<usize> = None;
@@ -2151,17 +2151,17 @@ fn find_rec_target(
   // `field_dom`; without this warming pass, every recursive field's
   // downstream WHNF is cold. Discard the result — class matching above
   // already used the source-shape head.
-  let _ = scope.whnf_lean(dom);
+  let _ = scope.whnf_lean(dom)?;
 
   if let Some(ci) = phase1_match {
-    return Some(ci);
+    return Ok(Some(ci));
   }
 
   // Phase 2: WHNF fallback for reducible-alias heads. Phase 1 didn't
   // find a class-member head at any peeling depth, so the head is
   // either not a class member at all, or is a reducible alias that
   // delta-unfolds to one.
-  let mut ty = scope.whnf_lean(dom);
+  let mut ty = scope.whnf_lean(dom)?;
   let mut pushed: Vec<LocalDecl> = Vec::new();
   while let ExprData::ForallE(name, d, body, bi, _) = ty.as_data() {
     let (fv_name, fv) = fresh_fvar("frt", pushed.len());
@@ -2171,12 +2171,12 @@ fn find_rec_target(
       domain: d.clone(),
       info: bi.clone(),
     };
-    scope.push_locals(std::slice::from_ref(&decl));
+    scope.push_locals(std::slice::from_ref(&decl))?;
     pushed.push(decl);
-    ty = scope.whnf_lean(&instantiate1(body, &fv));
+    ty = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
   scope.pop_locals(&pushed);
-  match_classes_against_app(&ty, classes, param_fvars, n_params)
+  Ok(match_classes_against_app(&ty, classes, param_fvars, n_params))
 }
 
 /// Helper for [`find_rec_target`]: match an `App`-spine against the
