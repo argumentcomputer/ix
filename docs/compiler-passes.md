@@ -466,14 +466,18 @@ On this line the A5 clique hook runs before the occurrence passes (`Driver.prepa
 transports a structural clique over a changed block under its Lean names (D2). A transported
 member's value contains no image occurrence, so O9, O10 and O12 never fire on it: they fire only on
 a structural function whose clique the hook leaves in Lean's form, and on explicit `brecOn` uses
-that are no clique. Measured on the fixtures: `O10O12Collapse`'s cliques (C5 `A.h`/`B.k`, `A.f`/`B.g`,
-C8) are transported (their collapsed twins' single functions need the deferred O17, recorded
-`PENDING-COLLAPSE`); `O9Split`'s `A.len`/`A.sum`/`A.cnt` are not transported at this base, so O9
-fires there. An explicit `brecOn` with hand-written handlers does not reach O10 either: the
+that are no clique. Measured on the fixtures with the clique hook deciding from the clique's own unit
+(M1-a, no demotion): all six cliques of `O10O12Collapse` (C5 `A.h`/`B.k`, `A.f`/`B.g`, the permuted
+`Perm.A.f`/`Perm.B.g`, C8's `A.f`/`B.f`/`C.f` and `A.h`/`B.h`/`C.h`, and the canonical presentation's
+`C8.Can.X.h`/`C.h`) are transported, so O10 and O12 do not fire there (their collapsed twins' single
+functions need the deferred O17, recorded `PENDING-COLLAPSE`); `O9Split` has no clique of two or more
+members (`A.len`, `A.sum` are single functions, and Lean compiles `B.cnt b` inside `A.cnt` as a call,
+so `A.cnt` is no clique with `B.cnt`), so the hook has nothing to transport there and O9 fires on
+`A.len`, `A.sum`, `A.cnt`: removing the demotion did not change that. An explicit `brecOn` with hand-written handlers does not reach O10 either: the
 elaborator writes a `below` projection as `PProd.fst` over the unfolded `below` (a raw Lean
 recursor), which the re-typing does not follow (measured, then dropped from the fixture). So **O10 and
-O12 have no firing fixture on this line**, and once clique demotion is removed (M1-a) O9's fixture
-cliques may be transported too. Whether O9, O10 and O12 are still wanted next to the transport and
+O12 have no firing fixture on this line**; O9 fires on single structural functions over a split block
+(no clique). Whether O9, O10 and O12 are still wanted next to the transport and
 O17 is an open question for the orchestrator.
 
 #### 1.6.3 Measured
