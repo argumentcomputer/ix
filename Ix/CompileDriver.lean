@@ -1025,12 +1025,15 @@ missing canonical aliases: {missing}"
 
 /-! ## The aux-aware parallel driver
 
-Wave-based parallel version of `compileEnvAux`, mirroring the plain
-`compileEnvParallel` architecture: each wave snapshots the accumulated
-`CompileEnv`, workers compute a pure per-block outcome against the
-snapshot, and the main thread applies the same merges as the sequential
-driver. Blocks within a wave are dependency-independent, and every merge
-is per-name-disjoint or content-keyed: two blocks of one wave that claim
+Parallel version of `compileEnvAux`: a block is dispatched as soon as its
+scheduling dependencies are merged (no wave barrier), with the accumulated
+`CompileEnv` of that moment as its snapshot; workers compute a pure
+per-block outcome against the snapshot, and the main thread applies the
+same merges as the sequential driver. A block reads only its dependencies
+(the block rule), which every snapshot it can receive contains, as the
+sequential driver's live state does. Blocks in flight together are
+dependency-independent, and every merge
+is per-name-disjoint or content-keyed: two blocks in flight that claim
 one name at different addresses (or one plan key with different plans)
 are refused by the merge-time check (`checkBlockClaims`) against the live
 state, as Rust's insert-once claims refuse them. Which of the two blocks
@@ -1209,9 +1212,10 @@ instance : Inhabited AuxBlockOutcome where
   default := .failed "uninitialized"
 
 /-- Parallel aux-aware environment compile. Same output as
-    `compileEnvAux` (see the module docstring for the intra-wave
-    order-independence argument); wave-based workers mirror the plain
-    `compileEnvParallel`.
+    `compileEnvAux` (see the section docstring for the order-independence
+    argument); dependency-driven dispatch to `numWorkers` dedicated
+    workers. `compile-schedule-identity` compares its output with the
+    sequential driver's at several worker counts.
 
     `rustRef` enables fail-fast address comparison: after each block's
     merge, every name it registered is checked against the reference
@@ -1300,6 +1304,7 @@ rss{(rssKb.getD "?").trimAscii}"
     let task ← IO.asTask (prio := .dedicated) (worker i)
     workerTasks := workerTasks.push task
 
+  -- Blocks not yet dispatched, keyed by the condensation's representative.
   let mut remaining : Set Name := {}
   for (lo, _) in blocks.blocks do
     remaining := remaining.insert lo
@@ -1307,89 +1312,147 @@ rss{(rssKb.getD "?").trimAscii}"
   -- (and fail with MissingConstant, recorded per member) — mirroring the
   -- Rust scheduler's release-on-failure cascade.
   let mut failedNames : Set Name := {}
+  -- Dependency-driven dispatch (no wave barrier): a block is sent to the
+  -- workers as soon as every scheduling dependency resolves in the merged
+  -- state (or names a failed block), against the state current at that
+  -- moment. `pending` counts a block's unmet dependencies, `waiting` lists
+  -- the blocks waiting on a name; a merge wakes the waiters of the names it
+  -- registered and of its block's members, and every wake-up re-checks the
+  -- dependency against the merged state. Should a dependency resolve without
+  -- being reported (no such case is known), the driver falls back to a full
+  -- rescan of the undispatched blocks when nothing is in flight, which is
+  -- exactly the wave driver's readiness test.
+  let depOk (cenv : CompileEnv) (failed : Set Name) (d : Name) : Bool :=
+    (resolveAddrPure cenv d).isSome || failed.contains d
+  let mut waiting : Std.HashMap Name (Array Name) := {}
+  let mut pending : Std.HashMap Name Nat := {}
+  let mut ready : Array Name := #[]
+  for (lo, _) in blocks.blocks do
+    let mut unmet := 0
+    for d in (schedDeps.get? lo).getD {} do
+      if !depOk acc.cenv failedNames d then
+        unmet := unmet + 1
+        -- take the array out of the map before pushing, so it is not copied
+        let ws := waiting.getD d #[]
+        waiting := waiting.erase d
+        waiting := waiting.insert d (ws.push lo)
+    if unmet == 0 then ready := ready.push lo else pending := pending.insert lo unmet
 
   if dbg then
-    IO.println s!"  [Lean CompileAux] {totalBlocks} blocks, {numWorkers} workers"
+    IO.println s!"  [Lean CompileAux] {totalBlocks} blocks, {numWorkers} workers, \
+{ready.size} ready at the start (dependency-driven dispatch)"
 
-  let mut waveNum := 0
+  let mut inFlight := 0
   let mut compiled := 0
+  let mut rescans := 0
+  -- A dispatch hands the workers the merged state as their snapshot; the next
+  -- merge then copies the state's tables (they are shared with the snapshot).
+  -- Both costs grow with the tables (marking the snapshot for sharing across
+  -- threads at the first send, then the copy), so ready blocks are sent in
+  -- batches: when nothing is in flight, or once the interval since the last
+  -- dispatch has passed. The interval is `IX_DISPATCH_MS` (default 20) or 30
+  -- times the last dispatch's own duration, whichever is longer, which keeps
+  -- the driver's share of that cost bounded on a large environment.
+  let dispatchMs := ((← IO.getEnv "IX_DISPATCH_MS").bind String.toNat?).getD 20
+  let mut interval := dispatchMs
+  let mut lastDispatch := 0
+  let mut dispatches := 0
 
-  while !remaining.isEmpty do
-    waveNum := waveNum + 1
-    let snapshot := acc.cenv
-    let mut ready : Array (Name × Set Name) := #[]
-    for lo in remaining do
-      let some all := blocks.blocks.get? lo
-        | discard <| workChan.close
-          return .error s!"wave driver: block {lo.pretty} is not in the condensation"
-      let deps := (schedDeps.get? lo).getD {}
-      let depsOk := Id.run do
-        for d in deps do
-          if (resolveAddrPure snapshot d).isNone && !failedNames.contains d then
-            return false
-        return true
-      if depsOk then
-        ready := ready.push (lo, all)
-
-    if ready.isEmpty then
-      discard <| workChan.close
-      return .error s!"Circular dependency detected: {remaining.size} \
-blocks remaining but none ready"
-
-    if dbg then
-      let pct := (compiled * 100) / totalBlocks
-      IO.println s!"  [Lean CompileAux] Wave {waveNum}: {ready.size} blocks ready, {pct}% ({compiled}/{totalBlocks})"
-
+  while compiled < totalBlocks do
     -- A7 (D9): a worker compiles the block under its canonical key, never
     -- under the condensation's representative (which stays the key of
     -- `remaining` only).
-    for (lo, all) in ready do
-      discard <| workChan.send { lo := blockKey lo all, all, cenv := snapshot }
-
-    for _ in [:ready.size] do
-      match ← resultChan.recv with
-      | none =>
+    if !ready.isEmpty && (inFlight == 0 || (← IO.monoMsNow) - lastDispatch ≥ interval) then
+      lastDispatch ← IO.monoMsNow
+      dispatches := dispatches + 1
+      let snapshot := acc.cenv
+      for lo in ready do
+        if !remaining.contains lo then continue
+        let some all := blocks.blocks.get? lo
+          | discard <| workChan.close
+            return .error s!"wave driver: block {lo.pretty} is not in the condensation"
+        remaining := remaining.erase lo
+        pending := pending.erase lo
+        discard <| workChan.send { lo := blockKey lo all, all, cenv := snapshot }
+        inFlight := inFlight + 1
+      ready := #[]
+      interval := max dispatchMs (30 * ((← IO.monoMsNow) - lastDispatch))
+    if inFlight == 0 then
+      -- Fallback: the wave driver's readiness test over every undispatched block.
+      rescans := rescans + 1
+      for lo in remaining do
+        let deps := (schedDeps.get? lo).getD {}
+        if deps.toList.all (depOk acc.cenv failedNames) then
+          ready := ready.push lo
+      if ready.isEmpty then
         discard <| workChan.close
-        return .error "Result channel closed unexpectedly"
-      | some (lo, all, outcome) =>
-        if let .failed _ := outcome then
-          for n in all do
-            failedNames := failedNames.insert n
-        if let .promoted _ _ (some _) _ _ := outcome then
-          for n in all do
-            failedNames := failedNames.insert n
-        let (acc', newNames, mergeFailed) := Ix.PhaseTimers.withPhase .merge acc
-          (applyAuxBlockOutcome · lo all outcome)
-        if mergeFailed then
-          for n in all do
-            failedNames := failedNames.insert n
-        acc := acc'
-        if let some rust := rustRef then
-          for name in newNames do
-            if let some rustAddr := rust.get? name then
-              if let some named := acc.cenv.nameToNamed.get? name then
-                if named.addr != rustAddr then
-                  discard <| workChan.close
-                  return .error s!"rustRef mismatch at {name.pretty}: \
+        return .error s!"Circular dependency detected: {remaining.size} \
+blocks remaining but none ready"
+      continue
+
+    -- With a deferred batch waiting, poll (a long block in flight must not hold
+    -- ready blocks back past the dispatch interval); otherwise block.
+    let msg? ← if ready.isEmpty then some <$> resultChan.recv else do
+      match ← resultChan.tryRecv with
+      | some m => pure (some (some m))
+      | none => IO.sleep 1; pure none
+    match msg? with
+    | none => continue
+    | some none =>
+      discard <| workChan.close
+      return .error "Result channel closed unexpectedly"
+    | some (some (lo, all, outcome)) =>
+      inFlight := inFlight - 1
+      if let .failed _ := outcome then
+        for n in all do
+          failedNames := failedNames.insert n
+      if let .promoted _ _ (some _) _ _ := outcome then
+        for n in all do
+          failedNames := failedNames.insert n
+      let (acc', newNames, mergeFailed) := Ix.PhaseTimers.withPhase .merge acc
+        (applyAuxBlockOutcome · lo all outcome)
+      if mergeFailed then
+        for n in all do
+          failedNames := failedNames.insert n
+      acc := acc'
+      if let some rust := rustRef then
+        for name in newNames do
+          if let some rustAddr := rust.get? name then
+            if let some named := acc.cenv.nameToNamed.get? name then
+              if named.addr != rustAddr then
+                discard <| workChan.close
+                return .error s!"rustRef mismatch at {name.pretty}: \
 lean={named.addr} rust={rustAddr} (block {lo.pretty})"
-        compiled := compiled + 1
-        -- Memory attribution trace: which driver-retained structure is
-        -- growing. Enable with `dbg` or IX_COMPILE_DBG=1.
-        if dbg && compiled % 20000 == 0 then
-          let rssKb ← do
-            let st ← IO.FS.readFile "/proc/self/status"
-            pure <| (st.splitOn "\n").findSome? fun l =>
-              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
-          IO.println s!"  [compile-lean] {compiled}/{totalBlocks} blocks · \
+      compiled := compiled + 1
+      -- wake the blocks waiting on a name this merge settled
+      for d in newNames ++ all.toArray do
+        let some ws := waiting.get? d | continue
+        if !depOk acc.cenv failedNames d then continue
+        waiting := waiting.erase d
+        for w in ws do
+          match pending.get? w with
+          | none => pure ()
+          | some 1 =>
+            pending := pending.erase w
+            ready := ready.push w
+          | some k => pending := pending.insert w (k - 1)
+      -- Memory attribution trace: which driver-retained structure is
+      -- growing. Enable with `dbg` or IX_COMPILE_DBG=1.
+      if dbg && compiled % 20000 == 0 then
+        let rssKb ← do
+          let st ← IO.FS.readFile "/proc/self/status"
+          pure <| (st.splitOn "\n").findSome? fun l =>
+            if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
+        IO.println s!"  [compile-lean] {compiled}/{totalBlocks} blocks · \
 rss{(rssKb.getD "?").trimAscii} · consts {acc.cenv.constants.size} \
 ({acc.cenv.totalBytes} B ser) · named {acc.cenv.nameToNamed.size} · \
 blobs {acc.cenv.blobs.size} · plans {acc.cenv.callSitePlans.size}\
 /{acc.cenv.brecOnCallSitePlans.size}/{acc.cenv.belowCallSitePlans.size} · \
 auxNames {acc.cenv.auxNameToAddr.size}"
-          (← IO.getStdout).flush
+        (← IO.getStdout).flush
 
-    for (lo, _) in ready do
-      remaining := remaining.erase lo
+  if dbg then
+    IO.println s!"  [Lean CompileAux] {compiled} blocks compiled in {dispatches} dispatches, {rescans} fallback rescan(s)"
 
   discard <| workChan.close
 
