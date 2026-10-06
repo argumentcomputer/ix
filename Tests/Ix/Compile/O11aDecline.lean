@@ -29,6 +29,8 @@
   With the switch off nothing is recorded in either input. Every compile
   must have no refusals.
 
+  M1-h adds one input per other side condition (`runSide`, below).
+
   Run with: `lake test -- --ignored o11a-decline`.
 -/
 import Ix.EnvScope
@@ -71,6 +73,101 @@ def references (env : Ixon.Env) (c r : Name) : Except String Bool := do
   let names : Std.HashMap Address (Array IxName) := env.named.fold (init := {}) fun m n nd =>
     m.insert nd.addr ((m.getD nd.addr #[]).push n)
   return k.refs.any fun x => (names.getD x #[]).contains (ixN r)
+
+/-! ## The other side conditions (M1-h)
+
+Fixture `Tests/Ix/Compile/Pass/O11aSide.lean`. Every decline of O11a at the
+recursion of Lean's `sizeOf` family is recorded with its cause, not only the
+absent instance. One input per side condition, each the selected closure of
+the upper member's `_sizeOf_1`, and the valid neighbour `N` (O11a fires, no
+record). The telescope and shape conditions are hand-built from `N`'s
+closure: `NB._sizeOf_inst`'s size function is replaced by `NB.sizeOfAlt` (a
+recursion of `NB.rec` with another telescope) or by `NB.sizeOfWrapped` (not
+`λ t. NB.rec … t`). The users' functions `NA.viaRec`/`PA.viaRec` (the same
+recursors, not the `sizeOf` recursion) are in the closures and must not be
+recorded: with the switch on, each declining input records exactly its root,
+with a cause naming the condition; with the switch off nothing is recorded.
+-/
+
+/-- One side-condition input. -/
+structure SideCase where
+  label : String
+  root : Name
+  inst : Name
+  extra : List Name := []
+  /-- The replacement for the instance's size function (hand-built cases). -/
+  sizeFn? : Option Name := none
+  /-- `none`: the valid neighbour (O11a fires); `some s`: the cause names `s`. -/
+  cause? : Option String
+
+def sideCases : Array SideCase := #[
+  { label := "neighbour N", root := `O11aSide.NA._sizeOf_1, inst := `O11aSide.NB._sizeOf_inst,
+    extra := [`O11aSide.NA.viaRec], cause? := none },
+  { label := "parameters P", root := `O11aSide.PA._sizeOf_1, inst := `O11aSide.PB._sizeOf_inst,
+    extra := [`O11aSide.PA.viaRec], cause? := some "has 1 parameter(s)" },
+  { label := "indices I", root := `O11aSide.IA._sizeOf_1, inst := `O11aSide.IB._sizeOf_inst,
+    cause? := some "index" },
+  { label := "reflexive R", root := `O11aSide.RA._sizeOf_1, inst := `O11aSide.RB._sizeOf_inst,
+    cause? := some "is reflexive" },
+  { label := "telescope N/alt", root := `O11aSide.NA._sizeOf_1, inst := `O11aSide.NB._sizeOf_inst,
+    extra := [`O11aSide.NA.viaRec], sizeFn? := some `O11aSide.NB.sizeOfAlt,
+    cause? := some "recursor telescope" },
+  { label := "shape N/wrapped", root := `O11aSide.NA._sizeOf_1, inst := `O11aSide.NB._sizeOf_inst,
+    sizeFn? := some `O11aSide.NB.sizeOfWrapped, cause? := some "is not `λ t." }]
+
+/-- `inst := @SizeOf.mk T k` with `k` replaced by `k'`. -/
+def replaceSizeFn (cs : List (Name × ConstantInfo)) (inst k' : Name) :
+    Except String (List (Name × ConstantInfo)) := do
+  unless cs.any (·.1 == inst) do throw s!"{inst} not in the closure"
+  unless cs.any (·.1 == k') do throw s!"{k'} not in the closure"
+  cs.mapM fun (n, ci) => do
+    if n != inst then return (n, ci)
+    let .defnInfo v := ci | throw s!"{inst} is not a definition"
+    unless v.value.getAppNumArgs == 2 do throw s!"{inst} is not `SizeOf.mk T k`"
+    return (n, .defnInfo { v with value := mkApp v.value.appFn! (mkConst k') })
+
+def runSide : IO (Array String) := do
+  let env ← getFileEnv "Tests/Ix/Compile/Pass/O11aSide.lean"
+  let mut errors : Array String := #[]
+  for c in sideCases do
+    let seeds := c.root :: c.extra ++ c.sizeFn?.toList
+    let mut cs := Ix.EnvScope.collectSelectedDeps env seeds
+    if let some k' := c.sizeFn? then
+      match replaceSizeFn cs c.inst k' with
+      | .ok cs' => cs := cs'
+      | .error e =>
+        errors := errors.push s!"{c.label}: {e}"
+        continue
+    unless cs.any (·.1 == c.inst) do errors := errors.push s!"{c.label}: the closure lacks {c.inst}"
+    for mode in [false, true] do
+      let unit : Tests.Ix.Compile.Pass3.CUnit :=
+        { name := s!"o11a-{c.label}", env, seeds := seeds.toArray, closure := cs }
+      let out ← Tests.Ix.Compile.Pass3.compileUnit unit mode
+      unless out.cenv.ungrounded.isEmpty do
+        errors := errors.push s!"{c.label} mode={mode}: {out.cenv.ungrounded.size} refusals"
+      let nc := out.cenv.p3NonCanonical.toList
+      let toInst ← IO.ofExcept (references out.env c.root c.inst)
+      IO.println s!"[o11a-decline] side {c.label} mode={mode} ({cs.length} constants): \
+        {c.root} references {c.inst}: {toInst}; non-canonical set \
+        {nc.map fun (n, x) => s!"{n.pretty}: {x}"}"
+      if !mode then
+        unless nc.isEmpty do errors := errors.push s!"{c.label} mode=off: records {nc.length} entries"
+        if toInst then errors := errors.push s!"{c.label} mode=off: {c.root} references {c.inst}"
+        continue
+      match c.cause? with
+      | none =>
+        unless nc.isEmpty do errors := errors.push s!"{c.label}: unexpected records {nc.map (·.1.pretty)}"
+        unless toInst do errors := errors.push s!"{c.label}: O11a did not fire ({c.root} lacks {c.inst})"
+      | some want =>
+        match nc with
+        | [(n, cause)] =>
+          if n != ixN c.root then errors := errors.push s!"{c.label}: recorded {n.pretty}, expected {c.root}"
+          unless (cause.splitOn want).length > 1 && (cause.splitOn "O11a declined").length > 1 do
+            errors := errors.push s!"{c.label}: the cause does not name `{want}`: {cause}"
+        | _ => errors := errors.push s!"{c.label}: expected exactly one record ({c.root}), got \
+            {nc.map (·.1.pretty)}"
+        if toInst then errors := errors.push s!"{c.label}: {c.root} references {c.inst} although O11a declined"
+  return errors
 
 def root : Name := `PassO2.SA._sizeOf_1
 def inst : Name := `PassO2.SB._sizeOf_inst
@@ -126,9 +223,11 @@ def run : IO UInt32 := do
         | _ => errors := errors.push s!"withheld: expected exactly one record ({root}), got {nc.length}"
         if toInst then errors := errors.push s!"withheld: {root} references the absent {inst}"
         unless toLower do errors := errors.push s!"withheld: {root} lacks O2's relocated {lowerRec}"
+  let sideErrors ← runSide
+  errors := errors ++ sideErrors
   for e in errors do IO.println s!"[o11a-decline] FAIL {e}"
   IO.println s!"[o11a-decline] {if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}: \
-    2 inputs × 2 switch states"
+    {2 + sideCases.size} inputs × 2 switch states"
   return if errors.isEmpty then 0 else 1
 
 end Tests.Ix.Compile.O11aDecline

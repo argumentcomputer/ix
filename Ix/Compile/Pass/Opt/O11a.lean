@@ -62,7 +62,17 @@ Decidable: O2's side condition; every cross field's type is a block member
 with no parameters and no indices, not reflexive; its instance and its
 `_sizeOf` function have the shapes above, with the occurrence's telescope
 (α-equality); every adapted minor is a syntactic λ over its fields and IHs.
-Otherwise O11a declines and O2 runs (the relocated form, faithful).
+Otherwise O11a declines and O2 runs (the relocated form, faithful). When the
+occurrence is the recursion of Lean's `sizeOf` family of its block (its
+telescope is that of an `all₀._sizeOf_N` of the input) and has a cross
+field, every such decline is recorded with the failing condition as its
+cause (`O11a.declineCause?`, M1-h): a parametric, indexed or
+universe-polymorphic cross target, a reflexive or indexed cross field, an
+instance or size function not of Lean's shape, a recursor telescope that is
+not the occurrence's, a minor that is not a λ over its fields and IHs, and
+(below) an absent instance. An occurrence of a split block's recursor that
+is not that recursion (a user's function) is O2's and canonical: nothing is
+recorded.
 
 **A reference the input does not have** (design document §6.3, the four
 obligations of a pass whose output adds a reference):
@@ -110,49 +120,94 @@ open Ix.Compile.Canon (mkAppN getAppFnArgs)
 def nSizeOfMk : Name := Ix.Compile.Image.leanName ``SizeOf.mk
 def nSizeOf : Name := Ix.Compile.Image.leanName ``SizeOf.sizeOf
 
+/-- The body under at most `k` leading λs. -/
+def lamBody : Expr → Nat → Expr
+  | .lam _ _ b _ _, k + 1 => lamBody b k
+  | e, _ => e
+
+/-- O11a's verdict while it reads an occurrence (M1-h): `.error none` when the
+occurrence is not O11a's pattern (nothing to record), `.error (some c)` when
+O11a declines because side condition `c` fails. `O11a.apply` keeps only the
+success; `O11a.declineCause?` reads the cause. -/
+abbrev O11aM := Except (Option String)
+
+/-- Not O11a's pattern: decline with nothing to record. -/
+def O11aM.pattern (x : Option α) : O11aM α :=
+  match x with
+  | some a => pure a
+  | none => throw none
+
+/-- A side condition: decline with `cause` when it fails. -/
+def O11aM.side (x : Option α) (cause : String) : O11aM α :=
+  match x with
+  | some a => pure a
+  | none => throw (some cause)
+
+/-- A Boolean side condition. -/
+def O11aM.need (b : Bool) (cause : String) : O11aM Unit :=
+  if b then pure () else throw (some cause)
+
+open O11aM in
+/-- The checks on the cross target `T` itself (a block member with no
+parameters, indices or universe parameters). -/
+def sizeOfTargetE (env : OptEnv) (T : Name) : O11aM Unit := do
+  let tv ← side (match env.const? T with | some (.inductInfo tv) => some tv | _ => none)
+    s!"the cross target {T.pretty} is not an inductive type of the input"
+  need (tv.numParams == 0) s!"the cross target {T.pretty} has {tv.numParams} parameter(s)"
+  need (tv.numIndices == 0) s!"the cross target {T.pretty} has {tv.numIndices} index(es)"
+  need tv.cnst.levelParams.isEmpty s!"the cross target {T.pretty} has universe parameters"
+
+open O11aM in
 /-- `T`'s `sizeOf` instance when it is `@SizeOf.mk.{l} T T._sizeOf_k` with
 `T._sizeOf_k := λ t. T.rec tel t` and `tel` α-equal to `telescope`: the
-instance's name and level. -/
-def sizeOfInstance? (env : OptEnv) (T : Name) (telescope : Array Expr) : Option (Name × Level) := do
-  let some (.inductInfo tv) := env.const? T | none
-  if tv.numParams != 0 || tv.numIndices != 0 || !tv.cnst.levelParams.isEmpty then none
+instance's name and level; otherwise the failing side condition. -/
+def sizeOfInstanceE (env : OptEnv) (T : Name) (telescope : Array Expr) : O11aM (Name × Level) := do
+  sizeOfTargetE env T
   let inst := Name.mkStr T "_sizeOf_inst"
-  let some (.defnInfo iv) := env.const? inst | none
-  if !iv.cnst.levelParams.isEmpty then none
+  let ici ← side (env.const? inst)
+    s!"the size instance {inst.pretty} of a lower component is absent from the input"
+  let iv ← side (match ici with | .defnInfo iv => some iv | _ => none)
+    s!"the size instance {inst.pretty} is not a definition"
+  need iv.cnst.levelParams.isEmpty s!"the size instance {inst.pretty} has universe parameters"
+  let shape := s!"the size instance {inst.pretty} is not `@SizeOf.mk {T.pretty} k`"
   let (h, args) := getAppFnArgs iv.value
-  let .const mk ls _ := h | none
-  if mk != nSizeOfMk || args.size != 2 then none
-  let l ← ls[0]?
-  let .const ty _ _ := args[0]! | none
-  if ty != T then none
+  let (mk, ls) ← side (match h with | .const mk ls _ => some (mk, ls) | _ => none) shape
+  need (mk == nSizeOfMk && args.size == 2) shape
+  let l ← side ls[0]? shape
+  need (match args[0]! with | .const ty _ _ => ty == T | _ => false) shape
   -- `T._sizeOf_k` or its η-expansion `fun t => T._sizeOf_k t`
-  let k ← match args[1]! with
+  let k ← side (match args[1]! with
     | .const k _ _ => some k
     | .lam _ _ (.app (.const k _ _) (.bvar 0 _) _) _ _ => some k
-    | _ => none
-  let some (.defnInfo kv) := env.const? k | none
-  let .lam _ _ body _ _ := kv.value | none
+    | _ => none) shape
+  let kshape := s!"the size function {k.pretty} of {inst.pretty} is not `λ t. {T.pretty}.rec … t`"
+  let kv ← side (match env.const? k with | some (.defnInfo kv) => some kv | _ => none) kshape
+  let body ← side (match kv.value with | .lam _ _ body _ _ => some body | _ => none) kshape
   let (rh, rargs) := getAppFnArgs body
-  let .const rn _ _ := rh | none
-  if rn != Name.mkStr T "rec" then none
-  if rargs.size != telescope.size + 1 then none
-  match rargs.back? with
-  | some (.bvar 0 _) => pure ()
-  | _ => none
+  need (match rh with | .const rn _ _ => rn == Name.mkStr T "rec" | _ => false) kshape
+  need (match rargs.back? with | some (.bvar 0 _) => true | _ => false) kshape
+  let tel := s!"the recursor telescope of {k.pretty} is not the occurrence's (one mutual size family)"
+  need (rargs.size == telescope.size + 1) tel
   for (x, y) in (rargs.extract 0 telescope.size).zip telescope do
-    if !Ix.Compile.Image.alphaEq x y then none
+    need (Ix.Compile.Image.alphaEq x y) tel
   return (inst, l)
 
+/-- `T`'s `sizeOf` instance (`sizeOfInstanceE`, the success only). -/
+def sizeOfInstance? (env : OptEnv) (T : Name) (telescope : Array Expr) : Option (Name × Level) :=
+  (sizeOfInstanceE env T telescope).toOption
+
+open O11aM in
 /-- The instance-form minor of Lean minor `j` (`some none` when no field of
 its constructor is recursive into another component). -/
-def sizeOfMinorWith (env : OptEnv) (inst? : Name → Array Expr → Option (Name × Level))
+def sizeOfMinorWith (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name × Level))
     (rv : RecursorVal) (inBlock : Array Bool) (us : Array Level)
-    (ps ms mins : Array Expr) (j : Nat) : Option (Option Expr) := do
+    (ps ms mins : Array Expr) (j : Nat) : O11aM (Option Expr) := do
   let ienv := env.ienv
   let auxSigs := Ix.AuxGen.auxMotiveSigs rv us ps ms ienv
-  let (_, ctor) ← Ix.AuxGen.sourceCtorForMinor j rv ienv auxSigs
-  let minorTy ← Ix.AuxGen.sourceMinorType rv us ps ms mins j
-  let (fieldDecls, _, _) ← Ix.AuxGen.peelBinders minorTy ctor.numFields "split_field" 0
+  let unread := s!"the constructor and minor type of minor {j} cannot be read"
+  let (_, ctor) ← side (Ix.AuxGen.sourceCtorForMinor j rv ienv auxSigs) unread
+  let minorTy ← side (Ix.AuxGen.sourceMinorType rv us ps ms mins j) unread
+  let (fieldDecls, _, _) ← side (Ix.AuxGen.peelBinders minorTy ctor.numFields "split_field" 0) unread
   let mut recFields : Array (Nat × Ix.AuxGen.SourceRecTarget) := #[]
   for (decl, fieldIdx) in fieldDecls.zipIdx do
     if let some target := Ix.AuxGen.findSourceRecTarget decl.domain rv.all
@@ -161,14 +216,17 @@ def sizeOfMinorWith (env : OptEnv) (inst? : Name → Array Expr → Option (Name
   if !recFields.any (fun (_, t) => !(inBlock.getD t.sourcePos false)) then
     return none
   -- the user's minor, opened over its fields and IHs
-  let m ← mins[j]?
+  let m ← side mins[j]? unread
   let nb := ctor.numFields + recFields.size
   let telescope := ps ++ ms ++ mins
   let mut cur := m
   let mut decls : Array Ix.AuxGen.LocalDecl := #[]
   let mut fvars : Array Expr := #[]
   for i in [0:nb] do
-    let .lam bn dom b bi _ := cur | none
+    let (bn, dom, b, bi) ← side (match cur with
+      | .lam bn dom b bi _ => some (bn, dom, b, bi)
+      | _ => none) s!"minor {j} is not a λ over its {ctor.numFields} field(s) and \
+        {recFields.size} induction hypothesis(es)"
     let (fvName, fv) := Ix.AuxGen.freshFVar "o11a" i
     if i < ctor.numFields then
       decls := decls.push { fvarName := fvName, binderName := bn, domain := dom, info := bi }
@@ -180,92 +238,144 @@ def sizeOfMinorWith (env : OptEnv) (inst? : Name → Array Expr → Option (Name
         decls := decls.push { fvarName := fvName, binderName := bn, domain := dom, info := bi }
         cur := Ix.AuxGen.instantiate1 b fv
       else
-        if !target.xsFvars.isEmpty || !target.idxArgs.isEmpty then none
-        let T ← rv.all[target.sourcePos]?
+        let T ← side rv.all[target.sourcePos]? unread
+        need target.xsFvars.isEmpty s!"field {fieldIdx} of minor {j} is reflexive (a function \
+          into the cross target {T.pretty})"
+        need target.idxArgs.isEmpty s!"field {fieldIdx} of minor {j} has index arguments \
+          (its cross target {T.pretty} is indexed)"
         let (inst, l) ← inst? T telescope
-        let field ← fvars[fieldIdx]?
+        let field ← side fvars[fieldIdx]? unread
         let sz := mkAppN (Expr.mkConst nSizeOf #[l])
           #[Expr.mkConst T #[], Expr.mkConst inst #[], field]
         cur := Ix.AuxGen.instantiate1 b sz
   return some (Ix.AuxGen.mkLambda cur decls)
 
-def O11a.applyWith (env : OptEnv) (inst? : Name → Array Expr → Option (Name × Level))
-    (o : Occ) : Option Expr := do
-  let (k, r) ← classify o.head
-  if k != .kRec then none
-  let b ← env.blockOf o.head
-  if !b.change.split || b.change.collapse then none
-  let s ← b.shapes.get? r
-  let some (.recInfo rv) := env.const? r | none
-  let n ← standardTelescope env s .kRec o.head
-  if o.args.size < n then none
-  let ls ← O5.levels s o.us
+open O11aM in
+/-- O11a at an occurrence with the instance lookup `inst?`: the rewrite, or
+why not (`O11aM`). O2's pattern failing is `.error none`. -/
+def O11a.applyWithE (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name × Level))
+    (o : Occ) : O11aM Expr := do
+  let (k, r) ← pattern (classify o.head)
+  if k != .kRec then throw none
+  let b ← pattern (env.blockOf o.head)
+  if !b.change.split || b.change.collapse then throw none
+  let s ← pattern (b.shapes.get? r)
+  let rv ← pattern (match env.const? r with | some (.recInfo rv) => some rv | _ => none)
+  let n ← pattern (standardTelescope env s .kRec o.head)
+  if o.args.size < n then throw none
+  let ls ← pattern (O5.levels s o.us)
   let a := o.args
   let ps := a.extract 0 s.np
   let ms := a.extract s.np (s.np + s.nm)
   let mins := a.extract (s.np + s.nm) (s.np + s.nm + s.nmin)
   let tail := a.extract (s.np + s.nm + s.nmin) n
   let inBlock : Array Bool := (Array.range s.nm).map s.motiveSrc.contains
-  let ms' ← pick ms s.motiveSrc
+  let ms' ← pattern (pick ms s.motiveSrc)
   let mut mins' : Array Expr := #[]
   let mut any := false
   for (src?, t) in s.minorSrc.zip s.minorTerms do
     let j ← match src? with
       | some j => pure j
-      | none => wrappedMinorSrc s.arity s.np s.nm s.nmin t
+      | none => pattern (wrappedMinorSrc s.arity s.np s.nm s.nmin t)
     match ← sizeOfMinorWith env inst? rv inBlock o.us ps ms mins j with
     | some w =>
-      if src?.isSome then none
+      need src?.isNone s!"minor {j} has a cross field but O2 passes it unadapted"
       any := true
       mins' := mins'.push w
-    | none => mins' := mins'.push (← mins[j]?)
-  if !any then none
+    | none => mins' := mins'.push (← pattern mins[j]?)
+  -- no cross field into another component: O2's output is already the
+  -- separately declared component's term
+  if !any then throw none
   return mkAppN (Expr.mkConst s.ixRec ls) (ps ++ ms' ++ mins' ++ tail ++ a.extract n a.size)
 
-/-- O11a at an occurrence: the instances are read from the input
-(`sizeOfInstance?`). -/
-def O11a.apply (env : OptEnv) (o : Occ) : Option Expr :=
-  O11a.applyWith env (sizeOfInstance? env) o
+def O11a.applyWith (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name × Level))
+    (o : Occ) : Option Expr :=
+  (O11a.applyWithE env inst? o).toOption
 
-/-- The instance lookup of `declineCause?`: as `sizeOfInstance?`, except that
+/-- O11a at an occurrence: the instances are read from the input
+(`sizeOfInstanceE`). -/
+def O11a.apply (env : OptEnv) (o : Occ) : Option Expr :=
+  O11a.applyWith env (sizeOfInstanceE env) o
+
+/-- The instance lookup of `declineCause?`: as `sizeOfInstanceE`, except that
 an instance `T._sizeOf_inst` **absent from the input** (for a cross target
 `T` of the shape O11a needs: a member with no parameters, indices or
 universe parameters) is assumed, under its own name. Used only to decide
 whether the absence is what made O11a decline; its output is never used. -/
-def sizeOfInstanceAssumingAbsent? (env : OptEnv) (T : Name) (telescope : Array Expr) :
-    Option (Name × Level) := do
-  let some (.inductInfo tv) := env.const? T | none
-  if tv.numParams != 0 || tv.numIndices != 0 || !tv.cnst.levelParams.isEmpty then none
+def sizeOfInstanceAssumingAbsent (env : OptEnv) (T : Name) (telescope : Array Expr) :
+    O11aM (Name × Level) := do
+  sizeOfTargetE env T
   let inst := Name.mkStr T "_sizeOf_inst"
   match env.const? inst with
-  | none => some (inst, Level.mkZero)
-  | some _ => sizeOfInstance? env T telescope
+  | none => pure (inst, Level.mkZero)
+  | some _ => sizeOfInstanceE env T telescope
 
-/-- **The recorded decline** (design document §6.3, obligation 4 of a pass
-whose output adds a reference): O11a's output references `T._sizeOf_inst`
-for every cross field into a lower component `T`. When one of those
-instances is absent from the input (a closure that did not carry the unit,
-or a hand-built input), O11a declines and O2 gives the relocated-recursor
-form (faithful, not the separately declared components' term). The decline
-is never silent: this returns the cause, naming the missing instances, and
-the driver records the constant in the compile's non-canonical set
-(`CompileEnv.p3NonCanonical`).
+/-- The occurrence is **the recursion of Lean's `sizeOf` family** of its
+block: its telescope (parameters, motives, minors: the first `k` arguments)
+is α-equal to the one the value of some `all₀._sizeOf_N` of the input
+applies its recursor to (Lean's `mkSizeOfFns` passes one telescope to every
+member's recursor). This is what makes a decline of O11a a non-canonical
+outcome: any other occurrence of a split block's recursor (a user's
+function) is O2's, whose output is already canonical. Read from the input's
+own `_sizeOf_N` constants only (the block's unit, §6.3). -/
+def isSizeOfOccurrence (env : OptEnv) (rv : RecursorVal) (o : Occ) (k : Nat) : Bool := Id.run do
+  let some all₀ := rv.all[0]? | return false
+  let some (.inductInfo v) := env.const? all₀ | return false
+  if o.args.size < k then return false
+  for i in [1:v.all.size + v.numNested + 1] do
+    let some (.defnInfo dv) := env.const? (Name.mkStr all₀ s!"_sizeOf_{i}") | continue
+    let (h, args) := getAppFnArgs (lamBody dv.value 64)
+    let .const _ _ _ := h | continue
+    if args.size < k then continue
+    if (List.range k).all fun j => Ix.Compile.Image.alphaEq args[j]! o.args[j]! then
+      return true
+  return false
 
-Exactly the declines caused by absence: `none` when O11a fires, and `none`
-when it would still decline with every absent instance assumed (another
-side condition fails; that decline is not about a missing reference). The
-missing instances are the assumed ones the would-be output references. -/
+/-- **The recorded decline** (design document §6.3; plan decision 1:
+non-canonical cases are emitted and recorded with a cause). At an occurrence
+that is the recursion of Lean's `sizeOf` family of a split block
+(`isSizeOfOccurrence`) and has a cross field into a lower component, O11a
+either fires or declines; when it declines, O2 gives the relocated-recursor
+form (faithful, not the separately declared components' term), and this
+returns the cause, which the driver records with the constant in the
+compile's non-canonical set (`CompileEnv.p3NonCanonical`). Never silent.
+
+The causes: one or more size instances `T._sizeOf_inst` its output would
+reference are absent from the input (obligation 4 of a pass whose output
+adds a reference: a closure that did not carry the unit, or a hand-built
+input; the cause names every missing instance); otherwise the side condition
+that failed (the cross target has parameters, indices or universe
+parameters; the field is reflexive or has index arguments; the instance or
+its size function does not have Lean's shape; their recursor telescope is
+not the occurrence's; a minor is not a λ over its fields and IHs). A failing
+side condition takes precedence over absence (O11a would decline with the
+instances present too).
+
+`none` when O11a fires, when the occurrence is not O2's pattern, when no
+minor has a cross field (O2's output is already canonical), and when the
+occurrence is not the `sizeOf` recursion. -/
 def O11a.declineCause? (env : OptEnv) (o : Occ) : Option String := do
-  if (O11a.apply env o).isSome then none
-  let e ← O11a.applyWith env (sizeOfInstanceAssumingAbsent? env) o
-  let missing := (Ix.Compile.Image.usedConstants e).filter fun n =>
-    (match n with
-      | .str _ "_sizeOf_inst" _ => true
-      | _ => false) && (env.const? n).isNone
-  if missing.isEmpty then none
-  let names := ", ".intercalate (missing.toList.map (·.pretty))
-  return s!"O11a declined: the size instance {names} of a lower component is absent from \
-    the input; the occurrence of {o.head.pretty} keeps O2's relocated-recursor form"
+  let cause ← match O11a.applyWithE env (sizeOfInstanceE env) o with
+    | .ok _ | .error none => none
+    | .error (some c) => some c
+  let (_, r) ← classify o.head
+  let b ← env.blockOf o.head
+  let s ← b.shapes.get? r
+  let some (.recInfo rv) := env.const? r | none
+  if !isSizeOfOccurrence env rv o (s.np + s.nm + s.nmin) then none
+  let tail := s!"the occurrence of {o.head.pretty} keeps O2's relocated-recursor form"
+  match O11a.applyWithE env (sizeOfInstanceAssumingAbsent env) o with
+  | .ok e =>
+    let missing := (Ix.Compile.Image.usedConstants e).filter fun n =>
+      (match n with
+        | .str _ "_sizeOf_inst" _ => true
+        | _ => false) && (env.const? n).isNone
+    if missing.isEmpty then return s!"O11a declined: {cause}; {tail}"
+    let names := ", ".intercalate (missing.toList.map (·.pretty))
+    return s!"O11a declined: the size instance {names} of a lower component is absent from \
+      the input; {tail}"
+  | .error (some c) => return s!"O11a declined: {c}; {tail}"
+  | .error none => return s!"O11a declined: {cause}; {tail}"
 
 /-! ## The scheduling edges O11a's rewrite needs
 
@@ -313,11 +423,6 @@ untouched). Were the argument wrong, the fold would stop with its
 `lowLinks` changes; only the ready order of the fold, which the schedule-
 identity gate requires to be immaterial. With the switch off nothing
 reads the new references; the edge is added in both switch states. -/
-
-/-- The body under at most `k` leading λs. -/
-def lamBody : Expr → Nat → Expr
-  | .lam _ _ b _ _, k + 1 => lamBody b k
-  | e, _ => e
 
 /-- The scheduling edges `(source, target)` of O11a (see the section
 docstring); `refs` is the reference graph the condensation was built from. -/
