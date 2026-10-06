@@ -1112,42 +1112,68 @@ theorem SourceNormalizedInstallation.has_model_values (V : Type u) [Kernel.SetTh
   Kernel.Cached.checkDecls_model_defn_values V [] installed.declarations.toArray
     installed.env installed.checked
 
-theorem SourceProjectionNormalization.member {source : Source} {state input output}
-    (receipt : SourceProjectionNormalization source state input output)
+theorem SourceProjectionNormalization.member {source : Source} {witnesses : LoweringWitnesses}
+    {state input output}
+    (receipt : SourceProjectionNormalization source witnesses state input output)
     {declaration : Kernel.Declaration} (present : declaration ∈ input) :
-    declaration ∈ output ∨ ∃ prior replacement equation,
-      proposeSourceProjection source prior declaration = .ok (some (replacement, equation)) ∧
+    declaration ∈ output ∨ (∃ replacement equation,
+      proposeSourceProjection source witnesses declaration = .ok (some (replacement, equation)) ∧
       Nonempty (SourceProjectionReceipt source declaration replacement equation) ∧
-      replacement ∈ output ∧ equation ∈ output := by
+      Nonempty (SourceProjectionLowering source witnesses declaration replacement) ∧
+      replacement ∈ output ∧ equation ∈ output) ∨ (∃ replacement,
+      proposeSourceProof source witnesses declaration = .ok (some replacement) ∧
+      Nonempty (SourceProjectionLowering source witnesses declaration replacement) ∧
+      replacement ∈ output) := by
   induction receipt with
   | nil => simp at present
-  | @unchanged state original rest output hp tail ih =>
+  | @unchanged state original rest output hp hq tail ih =>
     rcases List.mem_cons.mp present with rfl | present
     · exact .inl (by simp)
-    · rcases ih present with same | ⟨prior, replacement, equation, hp, association, hr, he⟩
+    · rcases ih present with same | ⟨replacement, equation, hp, association, lowering, hr, he⟩ |
+          ⟨replacement, hq, lowering, hr⟩
       · exact .inl (List.mem_cons_of_mem _ same)
-      · exact .inr ⟨prior, replacement, equation, hp, association,
-          List.mem_cons_of_mem _ hr, List.mem_cons_of_mem _ he⟩
-  | @lowered state original rest replacement equation output hp association fresh tail ih =>
+      · exact .inr (.inl ⟨replacement, equation, hp, association, lowering,
+          List.mem_cons_of_mem _ hr, List.mem_cons_of_mem _ he⟩)
+      · exact .inr (.inr ⟨replacement, hq, lowering, List.mem_cons_of_mem _ hr⟩)
+  | @lowered state original rest replacement equation output hp association lowering fresh tail ih =>
     rcases List.mem_cons.mp present with rfl | present
-    · exact .inr ⟨state, replacement, equation, hp, ⟨association⟩, by simp, by simp⟩
-    · rcases ih present with same | ⟨prior, next, law, hp, association, hr, he⟩
+    · exact .inr (.inl ⟨replacement, equation, hp, ⟨association⟩, ⟨lowering⟩, by simp, by simp⟩)
+    · rcases ih present with same | ⟨next, law, hp, association, lowering, hr, he⟩ |
+          ⟨next, hq, lowering, hr⟩
       · exact .inl (by simp only [List.mem_cons]; exact .inr (.inr same))
-      · exact .inr ⟨prior, next, law, hp, association, by simp only [List.mem_cons]; exact .inr (.inr hr),
-          by simp only [List.mem_cons]; exact .inr (.inr he)⟩
+      · exact .inr (.inl ⟨next, law, hp, association, lowering,
+          by simp only [List.mem_cons]; exact .inr (.inr hr),
+          by simp only [List.mem_cons]; exact .inr (.inr he)⟩)
+      · exact .inr (.inr ⟨next, hq, lowering, by simp only [List.mem_cons]; exact .inr (.inr hr)⟩)
+  | @loweredProof state original rest replacement output hp hq lowering tail ih =>
+    rcases List.mem_cons.mp present with rfl | present
+    · exact .inr (.inr ⟨replacement, hq, ⟨lowering⟩, by simp⟩)
+    · rcases ih present with same | ⟨next, law, hp, association, lowering, hr, he⟩ |
+          ⟨next, hq, lowering, hr⟩
+      · exact .inl (List.mem_cons_of_mem _ same)
+      · exact .inr (.inl ⟨next, law, hp, association, lowering,
+          List.mem_cons_of_mem _ hr, List.mem_cons_of_mem _ he⟩)
+      · exact .inr (.inr ⟨next, hq, lowering, List.mem_cons_of_mem _ hr⟩)
 
 /-- Every original source entry is retained with its exact raw export,
-then associated with either an unchanged checked declaration or the exact
-source-owned replacement and checked equation. This does not substitute
-the replacement for the original source expression in a semantic theorem. -/
+then associated with either an unchanged checked declaration, or the exact
+source-owned replacement of a projection definition with its checked
+constructor equation and its lowering receipt, or the replacement of a
+projection theorem (a proof field) with its lowering receipt
+(`SourceProjectionLowering`: the replacement is related to the original by a
+Lean-kernel-checked equation and the syntactic checks). -/
 theorem SourceNormalizedInstallation.member {source : Source} {roots : List Lean.Name}
     (installed : SourceNormalizedInstallation source roots) {ci : Lean.ConstantInfo}
     (present : ci ∈ source.declarations) :
     ∃ entry declaration, exportSourceEntry ci = .ok entry ∧ entry ∈ readerEntries declaration ∧
-      (declaration ∈ installed.declarations ∨ ∃ prior replacement equation,
-        proposeSourceProjection source prior declaration = .ok (some (replacement, equation)) ∧
+      (declaration ∈ installed.declarations ∨ (∃ replacement equation,
+        proposeSourceProjection source installed.witnesses declaration = .ok (some (replacement, equation)) ∧
         Nonempty (SourceProjectionReceipt source declaration replacement equation) ∧
-        replacement ∈ installed.declarations ∧ equation ∈ installed.declarations) := by
+        Nonempty (SourceProjectionLowering source installed.witnesses declaration replacement) ∧
+        replacement ∈ installed.declarations ∧ equation ∈ installed.declarations) ∨ (∃ replacement,
+        proposeSourceProof source installed.witnesses declaration = .ok (some replacement) ∧
+        Nonempty (SourceProjectionLowering source installed.witnesses declaration replacement) ∧
+        replacement ∈ installed.declarations)) := by
   have matched := installed.original_members ci present
   cases he : exportSourceEntry ci with
   | error reason => simp [SourceEntryMatches, he] at matched
@@ -1161,8 +1187,10 @@ theorem SourceNormalizedInstallation.member {source : Source} {roots : List Lean
       rw [installed.semantic_append]
       exact List.mem_append_left _ present
     refine ⟨entry, declaration, rfl, hm, ?_⟩
-    rcases installed.normalization.member hd with present | ⟨prior, replacement, equation, hp, receipt, hr, he⟩
+    rcases installed.normalization.member hd with
+      present | ⟨replacement, equation, hp, receipt, lowering, hr, he⟩ | ⟨replacement, hq, lowering, hr⟩
     · exact .inl (retained _ present)
-    · exact .inr ⟨prior, replacement, equation, hp, receipt, retained _ hr, retained _ he⟩
+    · exact .inr (.inl ⟨replacement, equation, hp, receipt, lowering, retained _ hr, retained _ he⟩)
+    · exact .inr (.inr ⟨replacement, hq, lowering, retained _ hr⟩)
 
 end Ix.CompileCert

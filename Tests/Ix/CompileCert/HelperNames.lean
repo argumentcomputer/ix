@@ -12,7 +12,8 @@ def run : IO Unit := do
   for ownerLeaf in [`Node, `PolyNode] do
     let owner := Compiled.prefixName ++ ownerLeaf
     let captured ← IO.ofExcept (captureCone env.find? [owner ++ `val] 256)
-    let installed ← match installSourceNormalized captured.source [owner ++ `val] with
+    let installed ← match installSourceNormalized captured.source [owner ++ `val]
+        (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env captured.source) with
       | .ok receipt => pure receipt
       | .error error => throw (IO.userError (SourceModels.label error))
     let sourceOwner := sourceName owner

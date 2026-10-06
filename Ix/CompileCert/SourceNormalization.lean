@@ -1,5 +1,5 @@
 import Ix.CompileCert.AnnotationTrace
-import Ix.CompileCert.SourceInstallation
+import Ix.CompileCert.SourceProjectionLowering
 
 /-! # Source projection normalization
 
@@ -183,44 +183,60 @@ def proposeSourceConstructorCover {source : Source} (site : SourceProjectionSite
   let value := Kernel.Frontend.mkLams parameterBinders (.lam carrier application binder)
   return .thmDecl ⟨owner.name.str "_source_constructor_cover", owner.levelParams, type⟩ value
 
-/-- Source-owned lowering proposal. Original source syntax, constructor and
-recursor metadata are authoritative. The generated source model supplies
-only a proposed field universe. Neither target data nor reader projRewrite
-is consulted. Acceptance below must check both the replacement and its
-universal constructor equation; generation itself proves no semantics. -/
-def proposeSourceProjection (source : Source) (state : SourceModelState)
+/-- Source-owned lowering proposal. Original source syntax and constructor
+metadata are authoritative; the replacement value is read from the Lean
+lowering equation that the certifier had Lean's kernel check
+(`loweringEquationName`). Neither target data, the reader's `projRewrite`
+nor the source modeller's `proj_i.iota` artifact is consulted. Without such an
+equation the declaration is left unchanged. Acceptance below checks the
+replacement against the original (`SourceProjectionLowering`) and its
+constructor equation (`SourceProjectionReceipt`); generation proves nothing. -/
+def proposeSourceProjection (source : Source) (witnesses : LoweringWitnesses)
     (declaration : Kernel.Declaration) : ExportM (Option (Kernel.Declaration × Kernel.Declaration)) := do
   let .defnDecl header body hint := declaration | return none
   let some ci := source.declarations.find? (fun ci => decide (sourceName ci.name = header.name))
     | return none
   let .defnInfo definition := ci | return none
   let some (owner, field, binders) := sourceProjectionBody definition.value | return none
+  let some witness := witnesses.find? (fun w => decide (w.name = loweringEquationName definition.name))
+    | return none
   let site ← sourceProjectionSite source owner field
   unless binders == site.owner.numParams + 1 do
     throw "source projection binder count differs from original owner parameters"
   let original ← exportSourceEntry ci
   unless decide (original = .defn header body hint) do
     throw "source projection declaration differs from its immutable original export"
-  let T := sourceName owner
-  let some (_, iotaType) := state.types[Kernel.Frontend.projIotaName T field]?
-    | return none
-  let some level := Kernel.Frontend.projIotaLevel iotaType
-    | throw "source-generated projection equation has no field universe"
-  let some (.recInfo recursor) := source.find (owner.str "rec")
-    | throw "source projection owner has no original recursor"
-  unless recursor.numParams == site.owner.numParams && recursor.numIndices == 0 do
-    throw "source projection recursor parameters or indices differ from original owner"
-  let .recursor recHeader _ _ _ ← exportSourceEntry (.recInfo recursor)
-    | throw "source projection recursor export has the wrong kind"
-  let ownerRecipe : Kernel.Frontend.ProjRecOwner := {
-    T, lps := site.owner.levelParams.map sourceName, nP := site.owner.numParams,
-    ctor := sourceName site.ctorName, nF := site.ctor.numFields,
-    recName := recHeader.name, recLps := recHeader.levelParams, recType := recHeader.type,
-    numMotives := recursor.numMotives, numMinors := recursor.numMinors }
-  let some lowered := Kernel.Frontend.projRecValue ownerRecipe level header.type body field
-    | throw "source projection recursor proposal cannot represent the original projection"
+  let statement ← exportSourceExpr definition.levelParams witness.type
+  let some value := loweringValueOf (site.owner.numParams + 1) statement
+    | throw "source projection lowering equation has no right-hand side"
+  let some level := loweredLevel (site.owner.numParams + 1) value
+    | throw "source projection lowering equation's right-hand side has no recursor level"
   let equation ← sourceProjectionEquation site header level
-  return some (.defnDecl header lowered hint, equation)
+  return some (.defnDecl header value hint, equation)
+
+/-- The same proposal for a projection onto a proof field, which Lean makes a
+theorem: the replacement is the theorem with the lowered proof (same header).
+No constructor equation is added: a proof's value is irrelevant to the
+statement, which is all the fold and the S endpoint compare for a theorem. -/
+def proposeSourceProof (source : Source) (witnesses : LoweringWitnesses)
+    (declaration : Kernel.Declaration) : ExportM (Option Kernel.Declaration) := do
+  let .thmDecl header body := declaration | return none
+  let some ci := source.declarations.find? (fun ci => decide (sourceName ci.name = header.name))
+    | return none
+  let .thmInfo proof := ci | return none
+  let some (owner, field, binders) := sourceProjectionBody proof.value | return none
+  let some witness := witnesses.find? (fun w => decide (w.name = loweringEquationName proof.name))
+    | return none
+  let site ← sourceProjectionSite source owner field
+  unless binders == site.owner.numParams + 1 do
+    throw "source proof projection binder count differs from original owner parameters"
+  let original ← exportSourceEntry ci
+  unless decide (original = .thm header body) do
+    throw "source proof projection differs from its immutable original export"
+  let statement ← exportSourceExpr proof.levelParams witness.type
+  let some value := loweringValueOf (site.owner.numParams + 1) statement
+    | throw "source proof projection lowering equation has no right-hand side"
+  return some (.thmDecl header value)
 
 /-- Independent correspondence check for a proposed source projection.
 The replacement may be generated by any algorithm: this receipt binds its
@@ -313,41 +329,59 @@ theorem SourceProjectionReceipt.original_fields {source : Source} {original repl
 Each changed declaration is exactly the source-owned proposal and its
 constructor equation occurs immediately afterwards in the checked stream.
 This relation records normalization, not semantic equality by definition. -/
-inductive SourceProjectionNormalization (source : Source) :
+inductive SourceProjectionNormalization (source : Source) (witnesses : LoweringWitnesses) :
     SourceModelState → List Kernel.Declaration → List Kernel.Declaration → Prop
-  | nil (state) : SourceProjectionNormalization source state [] []
+  | nil (state) : SourceProjectionNormalization source witnesses state [] []
   | unchanged {state original rest output}
-      (proposal : proposeSourceProjection source state original = .ok none)
-      (tail : SourceProjectionNormalization source (state.note original) rest output) :
-      SourceProjectionNormalization source state (original :: rest) (original :: output)
+      (proposal : proposeSourceProjection source witnesses original = .ok none)
+      (proofProposal : proposeSourceProof source witnesses original = .ok none)
+      (tail : SourceProjectionNormalization source witnesses (state.note original) rest output) :
+      SourceProjectionNormalization source witnesses state (original :: rest) (original :: output)
   | lowered {state original rest replacement equation output}
-      (proposal : proposeSourceProjection source state original = .ok (some (replacement, equation)))
+      (proposal : proposeSourceProjection source witnesses original = .ok (some (replacement, equation)))
       (association : SourceProjectionReceipt source original replacement equation)
+      (lowering : SourceProjectionLowering source witnesses original replacement)
       (fresh : ∀ name ∈ equation.names, state.types[name]? = none ∧
         ∀ declaration ∈ original :: rest, name ∉ declaration.names)
-      (tail : SourceProjectionNormalization source
+      (tail : SourceProjectionNormalization source witnesses
         ((state.note replacement).note equation) rest output) :
-      SourceProjectionNormalization source state (original :: rest)
+      SourceProjectionNormalization source witnesses state (original :: rest)
         (replacement :: equation :: output)
+  | loweredProof {state original rest replacement output}
+      (proposal : proposeSourceProjection source witnesses original = .ok none)
+      (proofProposal : proposeSourceProof source witnesses original = .ok (some replacement))
+      (lowering : SourceProjectionLowering source witnesses original replacement)
+      (tail : SourceProjectionNormalization source witnesses (state.note replacement) rest output) :
+      SourceProjectionNormalization source witnesses state (original :: rest) (replacement :: output)
 
-def normalizeSourceProjections (source : Source) (state : SourceModelState)
+def normalizeSourceProjections (source : Source) (witnesses : LoweringWitnesses) (state : SourceModelState)
     (input : List Kernel.Declaration) :
-    ExportM { output : List Kernel.Declaration // SourceProjectionNormalization source state input output } :=
+    ExportM { output : List Kernel.Declaration //
+      SourceProjectionNormalization source witnesses state input output } :=
   match input with
   | [] => .ok ⟨[], .nil state⟩
   | original :: rest =>
-    match hp : proposeSourceProjection source state original with
+    match hp : proposeSourceProjection source witnesses original with
     | .error why => .error why
-    | .ok none => do
-      let output ← normalizeSourceProjections source (state.note original) rest
-      return ⟨original :: output.val, .unchanged hp output.property⟩
+    | .ok none =>
+      match hq : proposeSourceProof source witnesses original with
+      | .error why => .error why
+      | .ok none => do
+        let output ← normalizeSourceProjections source witnesses (state.note original) rest
+        return ⟨original :: output.val, .unchanged hp hq output.property⟩
+      | .ok (some replacement) => do
+        let lowering ← checkSourceProjectionLowering source witnesses original replacement
+        let output ← normalizeSourceProjections source witnesses (state.note replacement) rest
+        return ⟨replacement :: output.val, .loweredProof hp hq lowering output.property⟩
     | .ok (some (replacement, equation)) =>
       if hf : ∀ name ∈ equation.names, state.types[name]? = none ∧
           ∀ declaration ∈ original :: rest, name ∉ declaration.names then do
         let association ← checkSourceProjectionReceipt source original replacement equation
-        let output ← normalizeSourceProjections source
+        let lowering ← checkSourceProjectionLowering source witnesses original replacement
+        let output ← normalizeSourceProjections source witnesses
           ((state.note replacement).note equation) rest
-        return ⟨replacement :: equation :: output.val, .lowered hp association hf output.property⟩
+        return ⟨replacement :: equation :: output.val,
+          .lowered hp association lowering hf output.property⟩
       else .error "source projection equation name conflicts with an existing declaration"
 
 /-- The finite source-owned basis suffix is selected from the normalized
@@ -419,8 +453,10 @@ structure SourceNormalizedInstallation (source : Source) (roots : List Lean.Name
   support_checked : ∀ kind ∈ modelProposal.basisSupport,
     Kernel.Declaration.basisDecl kind ∈ modelProposal.declarations.toList ∧
       sourceBasisSupportClosed kind = true
+  witnesses : LoweringWitnesses
   normalizedDeclarations : List Kernel.Declaration
-  normalization : SourceProjectionNormalization source {} modelProposal.declarations.toList normalizedDeclarations
+  normalization : SourceProjectionNormalization source witnesses {} modelProposal.declarations.toList
+    normalizedDeclarations
   semanticSupport : SourceSemanticBasisCompletion normalizedDeclarations
   declarations : List Kernel.Declaration
   semantic_append : declarations = semanticSupport.declarations
@@ -436,7 +472,7 @@ theorem SourceNormalizedInstallation.normalized_prefix {source : Source} {roots 
   rw [installed.semantic_append]
   exact installed.semanticSupport.original_prefix
 
-def installSourceNormalized (source : Source) (roots : List Lean.Name) :
+def installSourceNormalized (source : Source) (roots : List Lean.Name) (witnesses : LoweringWitnesses) :
     Except SourceModelError (SourceNormalizedInstallation source roots) :=
   if hc : CompleteSource source roots then
     match he : exportSourceDeclarations source with
@@ -450,14 +486,14 @@ def installSourceNormalized (source : Source) (roots : List Lean.Name) :
             if hb : ∀ kind ∈ proposal.basisSupport,
                 Kernel.Declaration.basisDecl kind ∈ proposal.declarations.toList ∧
                   sourceBasisSupportClosed kind = true then
-              match normalizeSourceProjections source {} proposal.declarations.toList with
+              match normalizeSourceProjections source witnesses {} proposal.declarations.toList with
               | .error why => .error (.proposalFailure why)
               | .ok output =>
                 let completion := completeSourceSemanticBasis output.val
                 match hk : Kernel.Cached.checkDecls .verified [] completion.declarations.toArray with
                 | .error (error, position) => .error (.checking error position)
                 | .ok env => .ok ⟨hc, original, he, proposal, hp, hs, hm, hb,
-                    output.val, output.property, completion, completion.declarations, rfl, env, hk⟩
+                    witnesses, output.val, output.property, completion, completion.declarations, rfl, env, hk⟩
             else .error .supportMismatch
           else .error .correspondence
         else .error .changedOriginal

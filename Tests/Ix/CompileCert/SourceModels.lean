@@ -1,4 +1,5 @@
 import Tests.Ix.CompileCert.SourceInstall
+import Ix.CompileCert.ProjectionLoweringLean
 
 namespace Tests.Ix.CompileCert.SourceModels
 
@@ -105,7 +106,8 @@ def runNormalized : IO Unit := do
   let mut installedCount := 0
   for root in Compiled.roots do
     let captured ← IO.ofExcept (captureCone env.find? [root] 128)
-    match installSourceNormalized captured.source [root] with
+    match installSourceNormalized captured.source [root]
+        (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env captured.source) with
     | .error reason => throw (IO.userError s!"source normalization failed {root}: {label reason}")
     | .ok installed =>
       installedCount := installedCount + 1
@@ -174,7 +176,8 @@ def runNormalized : IO Unit := do
           name := root.str "_source_constructor_equation", levelParams := [],
           type := .sort (.succ .zero), isUnsafe := false }
         let conflicting : Source := ⟨captured.source.declarations ++ [collision]⟩
-        match installSourceNormalized conflicting [root] with
+        match installSourceNormalized conflicting [root]
+            (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env conflicting) with
         | .error (.proposalFailure "source projection equation name conflicts with an existing declaration") =>
           IO.println "PASS: original-source constructor-equation name collision refused"
         | .error why => throw (IO.userError s!"unexpected name-collision refusal: {label why}")
@@ -189,7 +192,8 @@ def runCoverage : IO Unit := do
        (Compiled.prefixName ++ `Pair, Compiled.prefixName ++ `Pair, [`Eq]),
        (`Subtype, `Subtype, [`Eq])] do
     let captured ← IO.ofExcept (captureCone env.find? (root :: support) 256)
-    let installed ← match installSourceNormalized captured.source (root :: support) with
+    let installed ← match installSourceNormalized captured.source (root :: support)
+        (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env captured.source) with
       | .ok installed => pure installed
       | .error why => throw (IO.userError s!"coverage source install {owner}: {label why}")
     let site ← IO.ofExcept (sourceProjectionSite captured.source owner 0)
@@ -223,7 +227,8 @@ def runProjectionSemantics : IO Unit := do
   for root in [Compiled.prefixName ++ `Node.val, Compiled.prefixName ++ `Node.kids,
       Compiled.prefixName ++ `PolyNode.val, Compiled.prefixName ++ `PolyNode.kids] do
     let captured ← IO.ofExcept (captureCone env.find? [root] 256)
-    let installed ← match installSourceNormalized captured.source [root] with
+    let installed ← match installSourceNormalized captured.source [root]
+        (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env captured.source) with
       | .ok installed => pure installed
       | .error why => throw (IO.userError s!"projection source install {root}: {label why}")
     let some originalCI := captured.source.find root

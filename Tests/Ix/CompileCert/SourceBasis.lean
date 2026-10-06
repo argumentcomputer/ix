@@ -14,7 +14,8 @@ def run : IO Unit := do
        ([root, `False, `Eq], []),
        ([`True], [.falseK, .eqK])] do
     let captured ← IO.ofExcept (captureCone env.find? selected 256)
-    let installed ← match installSourceNormalized captured.source selected with
+    let installed ← match installSourceNormalized captured.source selected
+        (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env captured.source) with
       | .ok receipt => pure receipt
       | .error error => throw (IO.userError (SourceModels.label error))
     require "only missing fixed bases appended" (decide (installed.semanticSupport.basisSupport = expected))
@@ -30,7 +31,8 @@ def run : IO Unit := do
     let conflict : Lean.ConstantInfo := .axiomInfo {
       name, levelParams := [], type := .sort (.succ .zero), isUnsafe := false }
     let source : Source := ⟨raw.source.declarations ++ [conflict]⟩
-    match installSourceNormalized source [root] with
+    match installSourceNormalized source [root]
+        (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env source) with
     | .error (.checking error position) =>
       IO.println s!"PASS: conflicting original {name} retained and refused by fold at {position}: {error}"
     | .error error => throw (IO.userError s!"conflicting original did not reach verified fold: {SourceModels.label error}")

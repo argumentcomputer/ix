@@ -730,6 +730,27 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m3Roots Ix.CompileCert.Audit.allowedAxioms
 
+/-! The roots added by KB: the projection lowering receipt
+(`Ix/CompileCert/SourceProjectionLowering.lean`), the normalised route that
+requires it, and the S endpoint over the original declarations through it
+(`StrongEntry.lean`). Checked the same way, against the same allowed set. -/
+
+namespace Ix.CompileCert.Audit
+
+def kbRoots : Array Lean.Name :=
+  #[`loweringStatement, `loweredLevel, `lambdaDomains, `piDomains, `sourceProjectionRecipe,
+    `projectionSourceValue, `entryDeclaration, `declarationParts, `replaceValue,
+    `SourceProjectionLowering, `checkSourceProjectionLowering, `declarationParts_replaceValue,
+    `SourceProjectionLowering.faithful, `proposeSourceProjection, `proposeSourceProof,
+    `SourceProjectionNormalization, `normalizeSourceProjections, `installSourceNormalized,
+    `SourceProjectionNormalization.member, `SourceNormalizedInstallation.member,
+    `checkNormalizedArtifactStrongAssociation,
+    `SourceNormalizedInstallation.artifact_strong_model].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.kbRoots Ix.CompileCert.Audit.allowedAxioms
+
 namespace Ix.CompileCert.Audit
 
 /-! ## No decision trusts a cached hash as equality
@@ -760,7 +781,11 @@ def decisionRoots : Array Lean.Name :=
   #[``Ix.CompileCert.checkCompiled, ``Ix.CompileCert.checkRoots, ``Ix.CompileCert.checkIndexed,
     ``Ix.CompileCert.checkIndexed_sound, ``Ix.CompileCert.faithful_sound,
     ``Ix.CompileCert.checkSourceArtifactStrongAssociation,
-    ``Ix.CompileCert.SourceInstallation.artifact_strong_model]
+    ``Ix.CompileCert.SourceInstallation.artifact_strong_model,
+    ``Ix.CompileCert.checkSourceProjectionLowering, ``Ix.CompileCert.SourceProjectionLowering.faithful,
+    ``Ix.CompileCert.installSourceNormalized,
+    ``Ix.CompileCert.checkNormalizedArtifactStrongAssociation,
+    ``Ix.CompileCert.SourceNormalizedInstallation.artifact_strong_model]
 
 def constClosure (env : Lean.Environment) (roots : Array Lean.Name) : Lean.NameSet := Id.run do
   let mut seen : Lean.NameSet := {}

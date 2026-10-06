@@ -17,7 +17,8 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
     let accepted ← match checkCompiled input with
       | .ok receipt => pure receipt
       | .error error => throw (IO.userError s!"original association {root}: {Compiled.declineLabel error}")
-    let installed ← match installSourceNormalized input.source input.roots with
+    let installed ← match installSourceNormalized input.source input.roots
+        (← _root_.Ix.CompileCert.LoweringLean.sourceWitnesses env input.source) with
       | .ok receipt => pure receipt
       | .error error => throw (IO.userError s!"source normalization {root}: {SourceModels.label error}")
     let some originalCI := input.source.find root | throw (IO.userError "missing original root")
