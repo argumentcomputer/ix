@@ -13,7 +13,10 @@ use lean_ffi::object::{
   LeanOwned, LeanProd,
 };
 
-use super::{RunConfig, expected_from_manifest, panic_text, run};
+use super::{
+  PlanOp, RunConfig, build_statement_specs, expected_from_manifest, panic_text,
+  prepare_run, run, subtree_plan,
+};
 use crate::lean::LeanAiurAggregateExpected;
 use aiur::execute::IOBuffer;
 use ix_kernel::shard::ShardManifest;
@@ -53,6 +56,86 @@ extern "C" fn rs_aiur_aggregate_expected(
     Ok(Err(error)) => LeanExcept::error_string(&error),
     Err(payload) => LeanExcept::error_string(&format!(
       "native aggregate verification setup panicked: {}",
+      panic_text(&payload)
+    )),
+  }
+}
+
+/// `AiurSystem.aggregateSubtreePlan`: the plan cut into `subtrees` for
+/// `ix prove --lanes`. Rows in post-order: `[0, slot, ids…]` for a subtree
+/// (its root slot, then the manifest ids of the shards under it, sorted;
+/// one id when the subtree is a raw leaf) and `[1, slot, left, right]` for
+/// each join above the frontier, the root last. A tree too small to cut
+/// into `subtrees` simply yields fewer.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_aggregate_subtree_plan(
+  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  structural_above: LeanNat<LeanBorrowed<'_>>,
+  subtree_size: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let subtree_size = lean_unbox_nat_as_usize(subtree_size.inner());
+    if subtree_size == 0 {
+      return Err("the subtree size must be at least one leaf".to_string());
+    }
+    let manifest_bytes =
+      fs::read(Path::new(manifest_path.as_str())).map_err(|error| {
+        format!("read manifest {}: {error}", manifest_path.as_str())
+      })?;
+    let manifest = ShardManifest::from_bytes(&manifest_bytes)
+      .map_err(|error| format!("manifest parse failed: {error}"))?;
+    let prepared = prepare_run(&env_handle.get().env, &manifest)?;
+    let specs = build_statement_specs(
+      &prepared,
+      lean_unbox_nat_as_usize(structural_above.inner()),
+    )?;
+    let ops: Vec<PlanOp> = specs.iter().map(|spec| spec.op).collect();
+    let (frontier, upper) = subtree_plan(&ops, subtree_size);
+    let mut rows: Vec<Vec<usize>> =
+      Vec::with_capacity(frontier.len() + upper.len());
+    for &slot in &frontier {
+      let mut ids = Vec::new();
+      let mut stack = vec![slot];
+      while let Some(index) = stack.pop() {
+        match ops[index] {
+          PlanOp::Leaf(shard) => {
+            ids.push(prepared.shards[shard].original_id as usize);
+          },
+          PlanOp::Join(left, right) => {
+            stack.push(left);
+            stack.push(right);
+          },
+        }
+      }
+      ids.sort_unstable();
+      let mut row = vec![0, slot];
+      row.extend(ids);
+      rows.push(row);
+    }
+    for &slot in &upper {
+      let PlanOp::Join(left, right) = ops[slot] else {
+        unreachable!("upper nodes are joins")
+      };
+      rows.push(vec![1, slot, left, right]);
+    }
+    Ok(rows)
+  }));
+  match result {
+    Ok(Ok(rows)) => {
+      let outer = LeanArray::alloc(rows.len());
+      for (at, row) in rows.iter().enumerate() {
+        let inner = LeanArray::alloc(row.len());
+        for (index, value) in row.iter().enumerate() {
+          inner.set(index, LeanOwned::box_usize(*value));
+        }
+        outer.set(at, inner);
+      }
+      LeanExcept::ok(outer)
+    },
+    Ok(Err(error)) => LeanExcept::error_string(&error),
+    Err(payload) => LeanExcept::error_string(&format!(
+      "native subtree planning panicked: {}",
       panic_text(&payload)
     )),
   }
