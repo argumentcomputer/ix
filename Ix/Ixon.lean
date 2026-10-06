@@ -1655,6 +1655,40 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
     visit name visited result
   result
 
+/-- §5 entries `named[lo:hi]`, exactly as `putEnv` writes them one after the
+    other: the entry's §4 name index, its §2 constant rank, its exact hint,
+    and its length-prefixed metadata blob. -/
+def putNamedEntries (named : Array (Ix.Name × Named)) (lo hi : Nat)
+    (nameIdx : NameIndex) (constIdx : Std.HashMap Address UInt64) :
+    ExceptT String PutM Unit := do
+  for (name, namedEntry) in named[lo:hi] do
+    -- The name's stored hash is bytewise its §4 component address.
+    match nameIdx.get? name.getHash with
+    | none => throw s!"putEnv: named key {reprStr (toString name.getHash)} \
+                       not present in the name table"
+    | some i => putTagN 0 0 i
+    match constIdx.get? namedEntry.addr with
+    | none => throw s!"putEnv: named entry constant \
+                       {reprStr (toString namedEntry.addr)} not present in \
+                       consts — named entries must reference stored constants"
+    | some rank => putTagN 0 0 rank
+    putFusedOptHint namedEntry.hints
+    -- Metadata blob: ConstantMeta + original as Option (0 = none,
+    -- 1 = some(addr, meta)), length-prefixed.
+    let blob := runPut do
+      putConstantMetaIndexed namedEntry.constMeta nameIdx
+      match namedEntry.original with
+      | none => putU8 0
+      | some (origAddr, origMeta) =>
+        putU8 1
+        Serialize.put origAddr
+        putConstantMetaIndexed origMeta nameIdx
+    putTagN 0 0 blob.size.toUInt64
+    putBytes blob
+
+/-- Entries per task when §5 is written in parallel (`putEnv`). -/
+def namedChunk : Nat := 2048
+
 /-- Serialize an Env to bytes.
 
     Runs in `ExceptT String PutM`: the §3/§5 sections key their entries
@@ -1755,30 +1789,20 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- assumed constant that is NOT stored in §2 (prune cut bundles).
   let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
   putTagN 0 0 named.size.toUInt64
-  for (name, namedEntry) in named do
-    -- The name's stored hash is bytewise its §4 component address.
-    match nameIdx.get? name.getHash with
-    | none => throw s!"putEnv: named key {reprStr (toString name.getHash)} \
-                       not present in the name table"
-    | some i => putTagN 0 0 i
-    match constIdx.get? namedEntry.addr with
-    | none => throw s!"putEnv: named entry constant \
-                       {reprStr (toString namedEntry.addr)} not present in \
-                       consts — named entries must reference stored constants"
-    | some rank => putTagN 0 0 rank
-    putFusedOptHint namedEntry.hints
-    -- Metadata blob: ConstantMeta + original as Option (0 = none,
-    -- 1 = some(addr, meta)), length-prefixed.
-    let blob := runPut do
-      putConstantMetaIndexed namedEntry.constMeta nameIdx
-      match namedEntry.original with
-      | none => putU8 0
-      | some (origAddr, origMeta) =>
-        putU8 1
-        Serialize.put origAddr
-        putConstantMetaIndexed origMeta nameIdx
-    putTagN 0 0 blob.size.toUInt64
-    putBytes blob
+  -- The entries are independent given the two indices: they are written in
+  -- chunks of `namedChunk` on parallel tasks and concatenated in order, which
+  -- is the sequential loop's output (`putNamedEntries` is its body); the first
+  -- failing entry in order reports, as in the loop.
+  let chunks := (named.size + namedChunk - 1) / namedChunk
+  let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
+    match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
+      constIdx).run).run ByteArray.empty with
+    | (.ok _, bytes) => Except.ok bytes
+    | (.error e, _) => Except.error e
+  for t in tasks do
+    match t.get with
+    | .ok bytes => putBytes bytes
+    | .error e => throw e
 
   -- Section 6: Comms (Address -> Comm)
   let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
