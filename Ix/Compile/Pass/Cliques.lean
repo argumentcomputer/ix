@@ -324,7 +324,11 @@ dependencies only (design document §6.3): no caller is read.
   other members' matchers and proofs, the constants their statements
   mention), so that each such block can plan the clique alone: the
   specifications' external references and the canonical constants'
-  dependencies are compiled before it. -/
+  dependencies are compiled before it. The clique's other blocks also wait
+  for the block of its first member (`all₀`), which plans the clique first:
+  they take its plan from the plan table (`cliquePlanFor`). These edges only
+  order blocks; they change no byte (the sequential driver already compiles
+  the blocks one after another). -/
 def scheduleCliques (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Ix.CondensedBlocks × Std.HashMap Name (Array Name × Array Name) × Std.HashMap Name (Array Name) :=
     Id.run do
@@ -357,11 +361,18 @@ def scheduleCliques (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     for lo in los do
       for r in blocks.blockRefs.getD lo {} do
         if !members.contains r then union := union.insert r
+    -- one block plans the clique first (the block of `all₀`); the clique's
+    -- other blocks also wait for it, so that they take the plan from the
+    -- plan table (`cliquePlanFor`) instead of planning it again in its wave
+    let all0? := all[0]?
+    let plannerLo? := all0?.bind blocks.lowLinks.get?
     for lo in los ++ carried.filterMap blocks.lowLinks.get? do
       let own := blocks.blocks.getD lo {}
       let mut rs := blockRefs.getD lo {}
       for r in union do
         if !own.contains r then rs := rs.insert r
+      if let some all0 := all0? then
+        if plannerLo? != some lo && !own.contains all0 then rs := rs.insert all0
       blockRefs := blockRefs.insert lo rs
   return ({ blocks with blockRefs }, table, roots)
 
