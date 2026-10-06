@@ -4180,6 +4180,15 @@ opaque rsCompileEnvBytesAnonFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
   → IO CompileEnvStatus
 
+/-- `rsCompileEnvBytesFFI` with the Pass 3 mode given by the caller (`true`:
+    Pass 3, `false`: the legacy surgery) instead of read from `IX_PASS3` by the
+    Rust side, whose unset default is still the surgery (M6R slice 6). The
+    parity suite resolves the mode as the Lean compiler does and passes it. -/
+@[extern "rs_compile_env_pass3"]
+opaque rsCompileEnvBytesPass3FFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool → Bool
+  → IO CompileEnvStatus
+
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
     decompile + roundtrip + alpha-equivalence + nested-detect checks).
     Returns total failure count across all phases. The second argument

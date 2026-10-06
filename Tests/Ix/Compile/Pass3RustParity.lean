@@ -7,8 +7,8 @@
   (`PARITY_FILE=<path>`, e.g. `Benchmarks/Compile/CompileInitStd.lean`):
 
   1. the Lean compiler with Pass 3 (`compileLeanInput … (pass3? := some true)`)
-     and the Rust compiler through the FFI (`rsCompileEnvBytesFFI`, which reads
-     `IX_PASS3`; the run requires `IX_PASS3=images`) compile the same prepared
+     and the Rust compiler through the FFI (`rsCompileEnvBytesPass3FFI`, given the
+     mode the Lean side reads: `IX_PASS3=images` or unset is Pass 3) compile the same prepared
      constants;
   2. the two `Named` tables are joined by name and every name is classified:
      (a) identical (address, metadata, original, hints), (b) different,
@@ -43,7 +43,7 @@
   withheld instance and the M1-h side conditions, hand-built closures) are
   compared, so every recorded decline cause is exercised on both sides.
 
-  Run: `IX_PASS3=images lake test -- --ignored pass3-rust-parity` (`IX_PASS3=off` runs
+  Run: `lake test -- --ignored pass3-rust-parity` (Pass 3; `IX_PASS3=off` runs
   the same comparison with the legacy surgery on both sides, as a control)
   (`PARITY_ONLY=<stems>` restricts the units; `PARITY_FILE=<path>` runs one
   file's whole environment instead; `PARITY_SHOW=<n>` lists up to n names per
@@ -258,18 +258,20 @@ def o11aUnits : IO (Array (String × Environment × List (Name × ConstantInfo))
   return out
 
 /-- Compile one unit both ways and report; returns the defects. -/
-def runOne (name : String) (env : Environment) (closure : List (Name × ConstantInfo)) :
+def runOne (on : Bool) (name : String) (env : Environment) (closure : List (Name × ConstantInfo)) :
     IO (Array String) := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
   let t0 ← IO.monoMsNow
-  let out ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) (pass3? := some ((← IO.getEnv "IX_PASS3") == some "images")) with
+  let out ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) (pass3? := some on) with
     | .ok o => pure o
     | .error e => throw (IO.userError s!"{name}: Lean compile failed: {e}")
   let t1 ← IO.monoMsNow
   let dir ← IO.FS.createTempDir
   let path := dir / "rust.ixe"
   let constants ← IO.ofExcept input.prepare
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString true
+  -- the Rust side gets the mode explicitly: its own unset default is still
+  -- the surgery (until M6R slice 6), the Lean compiler's is Pass 3
+  let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants path.toString true on
   let t2 ← IO.monoMsNow
   let rustBytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
@@ -340,21 +342,23 @@ change, {s2same.size} identical"
   return defects.map (fun (n, _) => s!"{name}: {n.pretty}") ++ extra
 
 def run (env : Environment) : IO UInt32 := do
-  -- the mode of both compiles: `IX_PASS3=images` (the gate) or `IX_PASS3=off`
-  -- (the control: the legacy surgery on both sides, which must show no
-  -- difference but those of the default path)
-  let mode ← IO.getEnv "IX_PASS3"
-  if mode != some "images" && mode != some "off" then
-    IO.println "[parity] requires IX_PASS3=images (or IX_PASS3=off for the control)"
-    return 2
-  IO.println s!"[parity] mode IX_PASS3={mode.getD ""}"
+  -- the mode of both compiles, read as the Lean compiler reads it
+  -- (`switchFromEnv`): Pass 3 (`IX_PASS3=images` or unset, the gate) or the
+  -- legacy surgery (`IX_PASS3=off`, the control: no difference but those of
+  -- the default path); any other value is refused
+  let on ← match ← Ix.Compile.Pass.switchFromEnv with
+    | .ok b => pure b
+    | .error msg =>
+      IO.println s!"[parity] {msg}"
+      return 2
+  IO.println s!"[parity] mode {Ix.Compile.Pass.switchLabel on}"
   let k ← showN
   let mut defects : Array String := #[]
   let mut failures : Array String := #[]
   if let some p := ← IO.getEnv "PARITY_FILE" then
     let fe ← getFileEnv p
     let closure := fe.constants.toList
-    defects := defects ++ (← runOne p fe closure)
+    defects := defects ++ (← runOne on p fe closure)
   else
     let only := ((← IO.getEnv "PARITY_ONLY").map (·.splitOn ",")).getD []
     let want := fun (s : String) => only.isEmpty || only.contains s
@@ -363,14 +367,14 @@ def run (env : Environment) : IO UInt32 := do
       if !want stem || leanRejects.contains stem || stem == "ReservedIx" then continue
       try
         let u ← unitOfFile p
-        defects := defects ++ (← runOne stem u.env u.closure)
+        defects := defects ++ (← runOne on stem u.env u.closure)
       catch e =>
         IO.println s!"[parity] FAIL {stem}: {e}"
         failures := failures.push s!"{stem}: {e}"
     if want "twins" then
       try
         let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
-        defects := defects ++ (← runOne "twins" env (closureOf env seeds.toList))
+        defects := defects ++ (← runOne on "twins" env (closureOf env seeds.toList))
       catch e =>
         IO.println s!"[parity] FAIL twins: {e}"
         failures := failures.push s!"twins: {e}"
@@ -380,7 +384,7 @@ def run (env : Environment) : IO UInt32 := do
       try
         let units ← o11aUnits
         for (label, uenv, cs) in units do
-          defects := defects ++ (← runOne s!"o11a-{label}" uenv cs)
+          defects := defects ++ (← runOne on s!"o11a-{label}" uenv cs)
       catch e =>
         IO.println s!"[parity] FAIL o11a: {e}"
         failures := failures.push s!"o11a: {e}"

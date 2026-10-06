@@ -313,7 +313,7 @@ pub extern "C" fn rs_compile_env(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, false)
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, false, None)
 }
 
 /// `rs_compile_env` with strict-anon output (`ix compile --anon`):
@@ -333,7 +333,35 @@ pub extern "C" fn rs_compile_env_anon(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, true)
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, true, None)
+}
+
+/// `rs_compile_env` with the Pass 3 mode given by the caller instead of read
+/// from `IX_PASS3` (`pass3 != 0`: Pass 3; `0`: the legacy surgery). The
+/// parity suite resolves the mode as the Lean compiler does (unset is Pass 3
+/// there, the surgery in Rust until M6R slice 6) and passes it here.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_compile_env_pass3"]
+/// opaque rsCompileEnvBytesPass3FFI
+///   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool → Bool
+///   → IO CompileEnvStatus
+/// ```
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_compile_env_pass3(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  allow_partial: u8,
+  pass3: u8,
+) -> LeanIOResult<LeanOwned> {
+  compile_env_inner(
+    env_consts_ptr,
+    out_path,
+    allow_partial,
+    false,
+    Some(pass3 != 0),
+  )
 }
 
 fn compile_env_inner(
@@ -341,18 +369,21 @@ fn compile_env_inner(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
   strict_anon: bool,
+  pass3: Option<bool>,
 ) -> LeanIOResult<LeanOwned> {
   let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
 
-  let compile_stt =
-    match compile_env_with_options(&rust_env, CompileOptions::default()) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+  let compile_stt = match compile_env_with_options(
+    &rust_env,
+    CompileOptions { pass3, ..CompileOptions::default() },
+  ) {
+    Ok(stt) => stt,
+    Err(e) => {
+      let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+      return LeanIOResult::error_string(&msg);
+    },
+  };
 
   // Deterministically ordered (pretty name, reason) pairs — DashMap
   // iteration order is shard-dependent.
