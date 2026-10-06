@@ -36,6 +36,7 @@ import Ix.CanonM
 import Ix.Compile.Clique.Transport
 import Ix.Compile.Pass
 import Tests.Ix.Compile.Transport
+import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.CliqueOwnership.Sources
 
 open Lean Meta
@@ -354,6 +355,142 @@ def runPlanCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
   let (r, _) ← (body.run' {} : CoreM Outcome).toIO ctx { env }
   return r
 
+/-! ## Compile units (the compiler, not the transport alone)
+
+A fixture clique compiled by the Lean pipeline with the switch on, as a
+compile unit made of its members (and, for some cases, constants of the
+fixture namespace that use them) with their closure
+(`Tests.Ix.Compile.Pass3.closureOf`):
+
+* the members' equation lemmas are not in the unit (the closure of the
+  members does not reach them), so no carried lemma's statement check
+  (`Pass/Cliques.lean`, `planClique`: "does not have Lean's type") can be
+  what stops a wrong transport (FIX-pfwf O4);
+* the plan is the compiler's (`Ix.Compile.Pass.planClique` on the compile
+  state, the clique table's carried lemmas), and when it transports, every
+  member it replaces is evaluated one fixpoint unfolding deep against Lean's
+  (`evalMember`), and the three kernels check the compiled members and
+  canonical constants;
+* **callers** (the block rule, design document §6.3, "callers adapt"): a
+  constant outside the clique's unit that references a member and one of
+  Lean's encoding constants must be refused by name when the clique is
+  transported (a block failure naming the caller and the clique), and must
+  compile when it is not; a **neighbour** that references only a member
+  always compiles; and the clique compiles to the same addresses with and
+  without its callers in the unit (the clique is never changed for a
+  caller). -/
+
+open Tests.Ix.Compile.Pass3 (CUnit closureOf compileUnit kernelFailures) in
+/-- Compile `c`'s clique as a unit (members, plus `callers` and
+`neighbours`, relative to the fixture namespace) and check it. -/
+def runUnitCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.Clique.Encoding × Array Name))
+    (c : Case) (callers neighbours : Array Name := #[]) : IO Outcome := do
+  let ns := srcNs ++ c.name.toName
+  let some (enc, ms) := eqn.get? (ns ++ `first) |
+    return { name := c.name, outcome := "MISSING", failures := #[s!"{c.name}: no clique recorded for first"] }
+  let extra := (callers ++ neighbours).map (ns ++ ·)
+  let mkUnit (seeds : Array Name) : CUnit :=
+    { name := s!"clique-ownership-{c.name}", env, seeds, closure := closureOf env seeds.toList }
+  let u := mkUnit (ms ++ extra)
+  let mut failures : Array String := #[]
+  -- the unit carries no equation lemma of a member
+  let eqLemmas := u.closure.filterMap fun (n, _) =>
+    if ms.contains n.getPrefix && (match n with | .str _ s => s.startsWith "eq_" | _ => false) then some n else none
+  unless eqLemmas.isEmpty do failures := failures.push s!"{c.name}: the unit carries equation lemmas {eqLemmas}"
+  let on ← compileUnit u true
+  let off ← compileUnit u false
+  unless off.cenv.ungrounded.isEmpty do
+    failures := failures.push s!"{c.name}: switch off: block failures {off.cenv.ungrounded.toList.map (·.1.pretty)}"
+  let key := ixName ms[0]!
+  let some (all, carried) := on.cenv.p3Cliques.get? key |
+    return { name := c.name, outcome := "not in the clique table", failures := failures.push s!"{c.name}: not in the clique table" }
+  unless carried.isEmpty do failures := failures.push s!"{c.name}: carried lemmas {carried.map (·.pretty)} in a unit without them"
+  let outcome := Ix.Compile.Pass.planClique on.cenv.env.get? (Ix.Compile.Pass.cliqueAddr on.cenv) all carried
+  let refused := on.cenv.ungrounded.toList.filter fun (_, e) => (e.splitOn "caller refused").length > 1
+  let refusedNames : Array Name := refused.toArray.map (toLeanName ·.1)
+  let isTransported := match outcome with | .transported _ => true | _ => false
+  -- callers and neighbours
+  for k in callers do
+    let n := ns ++ k
+    if isTransported then
+      match refused.find? (toLeanName ·.1 == n) with
+      | none => failures := failures.push s!"{c.name}: caller {k} of a transported clique was not refused"
+      | some (_, e) =>
+        unless (e.splitOn n.toString).length > 1 && (e.splitOn ms[0]!.toString).length > 1 do
+          failures := failures.push s!"{c.name}: the refusal of {k} does not name the caller and the clique: {e}"
+    else if on.cenv.ungrounded.contains (ixName n) then
+      failures := failures.push s!"{c.name}: caller {k} of a clique in Lean's form failed: {on.cenv.ungrounded.get? (ixName n)}"
+  for k in neighbours do
+    if on.cenv.ungrounded.contains (ixName (ns ++ k)) then
+      failures := failures.push s!"{c.name}: neighbour {k} failed: {on.cenv.ungrounded.get? (ixName (ns ++ k))}"
+  for (n, e) in on.cenv.ungrounded.toList do
+    unless refusedNames.contains (toLeanName n) do
+      failures := failures.push s!"{c.name}: unexpected block failure {n.pretty}: {e.take 300}"
+  -- the clique does not depend on its callers
+  if !extra.isEmpty then
+    let alone ← compileUnit (mkUnit ms) true
+    for m in ms do
+      let a := (on.env.named.get? (ixName m)).map (·.addr)
+      let b := (alone.env.named.get? (ixName m)).map (·.addr)
+      unless a.isSome && a == b do
+        failures := failures.push s!"{c.name}: {m} compiles to {a} with its callers and {b} without"
+  let ctx : Core.Context := { fileName := "<clique-ownership>", fileMap := default, maxHeartbeats := 0 }
+  let srcComps (π : Array Nat) : MetaM (Array Expr) := do
+    let inv := _root_.Ix.Compile.Clique.invPerm π
+    (List.range ms.size).toArray.mapM fun p => do
+      let m := ms[inv[p]!]!
+      let rel := m.replacePrefix ns .anonymous
+      let some (_, o) := c.oracles.find? (·.1 == rel) | throwError "no oracle for {rel}"
+      pure (mkConst o)
+  let isFixpoint := enc != .structural
+  let tag := s!"unit: {refused.length} caller(s) refused"
+  let refusalLines := refused.toArray.map fun (n, e) => s!"refused {n.pretty}: {e}"
+  match outcome with
+  | .transported plan =>
+    let decls := plan.members.toArray.map (·.2) ++ plan.canon.map (·.1)
+    let body : MetaM Outcome := do
+      let mut failures := failures
+      let scratch := checkedNs ++ (c.name ++ "Unit").toName
+      let ks ← checkDecls scratch ns decls
+      for (n, m?) in ks do
+        if let some m := m? then failures := failures.push s!"{c.name}: Lean kernel rejects the planned {n}: {m.take 300}"
+      let outNames : NameSet := decls.foldl (fun s d => s.insert (toLeanName d.name)) {}
+      let rn (n : Name) : Name := if outNames.contains n then scratch ++ n.replacePrefix ns .anonymous else n
+      let tgtNames : NameSet := outNames.foldl (fun s n => s.insert (rn n)) {}
+      let srcNames : NameSet := (ms ++ auxOf env enc ms).foldl (·.insert ·) {}
+      let mut values := #[]
+      for p in c.probes do
+        let m := ns ++ p.member
+        let v ← evalMember srcNames m p.args (← if isFixpoint then some <$> srcComps (_root_.Ix.Compile.Clique.idPerm ms.size) else pure none)
+        let w ← if outNames.contains m then
+            evalMember tgtNames (rn m) p.args (← if isFixpoint then some <$> srcComps plan.sigma else pure none)
+          else pure v
+        let same ← isDefEq v w
+        values := values.push s!"{p.member} {p.args.map toString}: Lean {← ppExpr v}, compiled {← ppExpr w}{if same then "" else "  <-- DIFFERENT"}"
+        if p.checkExpected then
+          unless ← isDefEq v p.expected do failures := failures.push s!"{c.name}: Lean's {p.member} is not {← ppExpr p.expected}"
+        unless same do
+          failures := failures.push s!"{c.name}: WRONG MEANING (compile unit): {p.member} {p.args.map toString} is {← ppExpr v} in Lean, {← ppExpr w} compiled"
+      return { name := c.name, outcome := s!"{tag}; compiled: sigma {plan.sigma}, aliases (O17) {plan.aliases.size}",
+               kernel := s!"{ks.size - (ks.filter (·.2.isSome)).size}/{ks.size}", values := refusalLines ++ values, failures }
+    let (r, _) ← (body.run' {} : CoreM Outcome).toIO ctx { env }
+    -- the three kernels on the compiled members and canonical constants
+    let names := (ms.map (·.toString)) ++ (on.env.named.toArray.filterMap fun (n, _) =>
+      if Ix.Compile.Pass.hasReserved n then some n.pretty else none) ++
+      neighbours.map (fun k => (ns ++ k).toString)
+    let dir ← IO.FS.createTempDir
+    let kf ← try
+        let p := dir / "on.ixe"
+        IO.FS.writeBinFile p on.bytes
+        kernelFailures dir p names
+      finally IO.FS.removeDirAll dir
+    let kfails := kf.toList.map fun (leg, n, m) => s!"{c.name}: compiled {n} rejected by {leg}: {m.take 200}"
+    return { r with kernel := s!"{r.kernel} planned (Lean), {names.size} compiled names, {kf.size} kernel failure(s)",
+                    failures := r.failures ++ kfails.toArray }
+  | .baseline _ cause why => return { name := c.name, outcome := s!"{tag}; baseline {cause}: {why}", failures }
+  | .unchanged _ src => return { name := c.name, outcome := s!"{tag}; unchanged (order by {src.tag})", failures }
+  | .notEncoded why => return { name := c.name, outcome := s!"{tag}; not encoded: {why}", failures := failures.push s!"{c.name}: not encoded: {why}" }
+
 /-! ## The cases -/
 
 def natLit (n : Nat) : Expr := mkNatLit n
@@ -459,6 +596,14 @@ def cases : Array Case :=
       { member := `first, args := #[natLit 0], expected := natLit 17 },
       { member := `first, args := #[natLit 5], expected := natLit 2005 },
       { member := `second, args := #[natLit 5], expected := natLit 1006 }],
+    wfN "WF8A" "ordinary clique with a caller that unfolds Lean's encoding (control)" #[
+      { member := `first, args := #[natLit 0], expected := natLit 1 },
+      { member := `first, args := #[natLit 5], expected := natLit 2005 },
+      { member := `second, args := #[natLit 5], expected := natLit 1006 }] (must := true),
+    wfN "WF8B" "WF8, other member order (control)" #[
+      { member := `first, args := #[natLit 0], expected := natLit 1 },
+      { member := `first, args := #[natLit 5], expected := natLit 2005 },
+      { member := `second, args := #[natLit 5], expected := natLit 1006 }] (must := true),
     st "S1A" "user Nat.brecOn with a packed-shaped motive, field notation" #[
       { member := `first, args := #[natLit 0], expected := natLit 17 },
       { member := `first, args := #[natLit 2], expected := natLit 17 },
@@ -512,6 +657,28 @@ def run : IO UInt32 := do
     for f in o.failures do IO.println s!"[clique-ownership]   FAIL {f}"
     if o.outcome == "transported" then transported := transported + 1 else kept := kept + 1
     failures := failures ++ o.failures
+  -- the compile units: every well-founded case without its equation
+  -- lemmas (FIX-pfwf O4), and the callers of WF8
+  let mut units := 0
+  let mut refusals := 0
+  let mut compiledCallers := 0
+  for c in cases do
+    unless c.name.startsWith "WF" && c.alter.isNone do continue
+    let (callers, neighbours) := if c.name.startsWith "WF8" then (#[`caller], #[`neighbour]) else (#[], #[])
+    let o ← try runUnitCase env eqn c callers neighbours
+      catch e => pure { name := c.name, outcome := "ERROR", failures := #[s!"{c.name} (unit): {e}"] }
+    units := units + 1
+    IO.println s!"[clique-ownership] {c.name} (compile unit): {o.outcome}, kernel {o.kernel}"
+    for v in o.values do IO.println s!"[clique-ownership]   {v}"
+    for f in o.failures do IO.println s!"[clique-ownership]   FAIL {f}"
+    if !callers.isEmpty && o.failures.isEmpty then
+      if (o.outcome.splitOn "unit: 1 caller(s) refused").length > 1 then refusals := refusals + 1
+      else compiledCallers := compiledCallers + 1
+    failures := failures ++ o.failures
+  -- the caller check must have been exercised both ways
+  unless refusals ≥ 1 && compiledCallers ≥ 1 do
+    failures := failures.push s!"callers: {refusals} refused and {compiledCallers} compiled; the block-rule check needs a transported and a kept WF8 order"
+  IO.println s!"[clique-ownership] compile units: {units}, WF8 callers refused {refusals}, compiled {compiledCallers}"
   IO.println s!"[clique-ownership] {cases.size} cases: {transported} transported, {kept} kept in Lean's form, {failures.size} failure(s)"
   return if failures.isEmpty then 0 else 1
 

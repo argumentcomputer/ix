@@ -634,4 +634,35 @@ def first : Nat → Nat
 end
 end R1B
 
+/-! ## Callers (the block rule, design document §6.3)
+
+WF8: an ordinary well-founded clique, with a **caller** outside its unit that
+unfolds a member to Lean's encoding (its statement names `_mutual`), and a
+**neighbour** that uses a member only. When the compiler transports the clique,
+the caller must be refused by name and the clique must not change. -/
+namespace WF8A
+mutual
+def first (n : Nat) : Nat :=
+  if n = 0 then 1 else second (n - 1) + 1
+termination_by n
+def second (n : Nat) : Nat :=
+  if n = 0 then 31 else first (n - 1) + 2
+termination_by n
+end
+theorem caller (n : Nat) : first n = first._mutual (PSum.inl n) := by delta first; rfl
+theorem neighbour : first 0 = first 0 := rfl
+end WF8A
+namespace WF8B
+mutual
+def second (n : Nat) : Nat :=
+  if n = 0 then 31 else first (n - 1) + 2
+termination_by n
+def first (n : Nat) : Nat :=
+  if n = 0 then 1 else second (n - 1) + 1
+termination_by n
+end
+theorem caller (n : Nat) : first n = second._mutual (PSum.inr n) := by delta first; rfl
+theorem neighbour : first 0 = first 0 := rfl
+end WF8B
+
 end Tests.Ix.Compile.CliqueOwnership.Src
