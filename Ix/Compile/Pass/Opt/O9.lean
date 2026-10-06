@@ -62,10 +62,18 @@ the below values Lean's and the Ix `brecOn.go` build. Case `t = k fs`:
 constant: it is `g` re-typed, and the lemma's `F′` is `g′` by δ; `g` itself
 keeps its Lean name, type and value (faithful).
 
-**Dependents.** The dependents rule (`Opt.Packed`, `pjAllowed`). An open
-unfolding of `c` at a constructor (`len_succ : (A.a b x).len = x.len + 1
-:= rfl`) still checks: both sides unfold to the same rewritten `c`. Closed
-values reduce (both `brecOn`s compute by ι).
+**Where the output goes (decision 5, D1).** The output is written into the
+canonical form `c._ix` (Lean's `c` renamed, with `c`'s type), which then
+reads `ρ.brecOn … c._ix._f`, Lean's own shape over the canonical component;
+the Lean name `c` keeps its baseline (the image's `brecOn` over Lean's
+handler `c._f`, convertible to Lean's term) and is recorded non-canonical
+with the cause O9. The proof term of `c._ix = c` is the Corollary
+(`funext`, `congrArg` with Lemma O9, an induction with `ρ` that uses both
+`brecOn` equation lemmas); the forms are not convertible at an open major
+(the below values have different layouts), only at closed values (both
+`brecOn`s compute by ι). No caller is read: an open unfolding of `c` at a
+constructor (`len_succ : (A.a b x).len = x.len + 1 := rfl`) checks against
+`c`'s unchanged form.
 
 ## Canonicity
 For the canonical twin (the component declared alone, the block's universes
@@ -87,7 +95,8 @@ is either not about the block, or a member of the block (no nested or
 reflexive occurrence); the major's handler is a λ or a definition `g`, and
 re-typing succeeds (every below path re-pathable, no other occurrence of a
 below value at a constructor, no Lean `below`/`brecOn` of the block left);
-`pjAllowed`. Otherwise the baseline (the image's `brecOn`, faithful).
+`pjAllowed` (the value of a definition). Otherwise no `c._ix` is emitted
+for the occurrence (the image's `brecOn`, faithful).
 
 ## Non-canonical set and evidence
 Lean's `c._f` keeps its Lean type (over Lean's `below`): faithful, and not
@@ -96,8 +105,8 @@ its canonical counterpart is `c._ix._f`. A handler that reads a cross
 field's recursive value (a clique over the split block, C2's `A.cnt` with
 `B.cnt`) declines: that is O14's repacking over a split block (A5).
 Evidence: `Tests/Ix/Compile/Pass/O9Split.lean` (twin pairs byte-equal with
-the switch on, value pins and an open unfolding by `rfl`, checked by the
-three kernels). Library load 0.
+the switch on for the `_ix` forms, the Lean names unchanged and recorded,
+value pins and an open unfolding by `rfl`, checked by the three kernels). Library load 0.
 -/
 module
 public import Ix.Compile.Pass.Opt.Core
@@ -317,7 +326,7 @@ def O9.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := d
         { gv with cnst := { gv.cnst with name := g', type := ty' }, value := v', all := #[g'] }
       pure (Expr.mkConst g' gus, #[ConstantInfo.defnInfo dv])
     | _ => do pure (← rt.go retypeFuel [] h, #[])
-  if !pjAllowed env b o then none
+  if !pjAllowed o then none
   return (mkAppN (Expr.mkConst ixBRecOn ls) (ps ++ ms ++ tail ++ #[h'] ++ rest), canon)
 
 end Ix.Compile.Pass.Opt

@@ -66,7 +66,8 @@ structure Occ where
   us : Array Level
   args : Array Expr
   /-- The definition whose value contains the occurrence, when the
-  proof-justified passes (O7, O8) may fire there (`Translate.RwState.site`). -/
+  proof-justified passes (O7–O12) may fire there (`Translate.RwState.site`);
+  their output goes to the definition's canonical `_ix` form only (D1). -/
   site : Option Name := none
 
 /-- The kinds of image-kind auxiliaries (design document §4.5). -/
@@ -239,16 +240,19 @@ structure OptEnv where
   addrOf : Name → Option Address := fun _ => none
   /-- The block of a Lean image-kind head, when it is a changed block's. -/
   blockOf : Name → Option OptBlock
-  /-- The dependents rule of the proof-justified passes (design document
-  §1.4, order constraint 4, demotion): `demotion c key` names a dependent of
-  the definition `c` (a constant outside `c`'s block that references `c`)
-  which also references an image-kind auxiliary of the changed block `key`,
-  i.e. may rely on `c` unfolding to its Lean shape; `none` when there is no
-  such dependent. -/
-  demotion : Name → Name → Option String := fun _ _ => none
+  /-- The canonical `_ix` form of a compiled dependency, when it has one
+  (`d ↦ d._ix`, D1): the passes compare compiled references through it
+  (`Opt.CollapseRec.agreeAddr`, `O12.canonKey`), as the canonical constants
+  refer to it (`Driver.compileCanon`). -/
+  ixForm? : Name → Option Name := fun _ => none
 
 /-- A constant of the input environment. -/
 def OptEnv.const? (env : OptEnv) (n : Name) : Option ConstantInfo := env.ienv.get? n
+
+/-- The compiled address of a name's canonical form: its `_ix` form when it
+has one (D1), the name itself otherwise. -/
+def OptEnv.canonAddrOf (env : OptEnv) (n : Name) : Option Address :=
+  env.addrOf ((env.ixForm? n).getD n)
 
 /-- The universe arguments of the Ix auxiliary at an occurrence: the image's
 `ℓs` with the occurrence's levels for Lean's parameters. -/

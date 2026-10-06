@@ -21,7 +21,9 @@ renaming), and for every constructor position `q` so do the user's minors
 
 (`recOn`: the Ix `recOn` of the class, `ps (m_{rep_k})_k is t
 (min_{rep_k,q})_{k,q} e`), at Lean's motive universe `u`
-(`singleLevels`). The duplicates are dropped: `X.rec P mins x`.
+(`singleLevels`). The duplicates are dropped: `X.rec P mins x`. The output is written into
+the canonical form `c._ix` of the definition; `c` keeps the baseline
+(decision 5, D1, below).
 
 ## Faithfulness (proof-justified; the statement Phase B formalises)
 Fix the occurrence's arguments and write `P_k := m_{rep_k}`, `N′` for the
@@ -59,9 +61,17 @@ Lemma O7 at `x`'s slot, `img(r) a⃗ = S t e` (congruence for `e`). For
 and `ρ.recOn ≡δβ ρ` likewise. **Corollary** (the rewritten constant): `c =
 base(c)` by `funext` and `congrArg`, as for O8.
 
-**Dependents.** As O8: the dependents rule (`pjAllowed`). Closed values
-still compute (`D` and `S` agree by ι on constructors, which is what the
-value pins check).
+**Where the output goes (decision 5, D1).** The Lean name `c` keeps its
+baseline, the faithful image term (convertible to Lean's by δβ, Def 3.4).
+The output is written into the canonical constant `c._ix` (Lean's `c`
+renamed, with `c`'s type; `Translate.RwState.inPlace`), and `c` is recorded
+non-canonical with the cause O7. The proof term of `c._ix = c` is the
+Corollary: `funext` over the binders above each occurrence, `congrArg` with
+Lemma O7 at it (the induction on `t` with `ρ` above). The two are not
+convertible at open terms (`D` packs, `S` does not), only at closed
+constructor-headed ones (both reduce by ι, which the value pins check). No
+caller of `c` is read: a caller of `c` keeps working because `c` keeps its
+form; a caller that wants the canonical form refers to `c._ix`.
 
 ## Canonicity
 For the canonical twin (one member per class) the user writes `X.rec P mins
@@ -79,16 +89,19 @@ motives; Lean's auxiliary has the recursor's universe parameters and the
 standard telescope; the member constructor counts give Lean's minor count
 and the Ix minor count; `m ≥ n`; the motives and minors agree per class
 after compilation; `singleLevels` accepts the levels; for `recOn` the Ix
-`recOn` resolves; `pjAllowed`. Otherwise the baseline (the faithful paired
-image).
+`recOn` resolves; `pjAllowed` (the value of a definition). Otherwise no
+`c._ix` is emitted for the occurrence, which keeps its baseline (the faithful
+paired image).
 
 ## Non-canonical set and evidence
-Distinct motives or minors in a class (the user distinguishes members a
+The Lean name of a definition with an O7 rewrite: cause O7 (its canonical
+form is `c._ix`). Distinct motives or minors in a class (the user distinguishes members a
 collapse identifies, `SurgCollapse.f`): the baseline, faithful only; the
 pair-valued form is O12's. Evidence: `Tests/Ix/Compile/Pass/O7Collapse.lean`
 (identical arguments over a collapsed pair, over a collapsed class next to
-a lifted member, `recOn`; distinct arguments decline; twin pairs byte-equal
-with the switch on; value pins by `rfl`). Library load 0.
+a lifted member, `recOn`; distinct arguments decline; with the switch on the
+`_ix` forms byte-equal to the twins, the Lean names unchanged from the
+baseline and recorded; value pins by `rfl`). Library load 0.
 -/
 module
 public import Ix.Compile.Pass.Opt.Core
@@ -150,7 +163,7 @@ def O7.apply (env : OptEnv) (o : Occ) : Option Expr := do
     ms' := ms'.push mr
   if mins'.size != s.ixMinors then none
   let ls ← singleLevels env s o.us
-  if !pjAllowed env b o then none
+  if !pjAllowed o then none
   if k == .kRec then
     return mkAppN (Expr.mkConst s.ixRec ls) (ps ++ ms' ++ mins' ++ tail ++ extra)
   else

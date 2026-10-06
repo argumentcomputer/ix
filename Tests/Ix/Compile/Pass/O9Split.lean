@@ -4,9 +4,10 @@ O9, structural recursion over a split block with a cross field. In `Src`, `B` do
 fields). Lean's `A.below` has a leaf for each `B` field, the Ix `below` of `{A}` does not, so the
 handlers' paths shift (`x_1.2.1 ↦ x_1.1`, `x_1.2.2.1 ↦ x_1.2.1`). O9 rewrites `A.len`, `A.sum` (the
 `DQSplit`/`SurgSplit`/C2 `len`) onto the Ix `brecOn` with the canonical handler `A.len._ix._f`
-re-typed and re-pathed: they compile to the bytes of `Can`, where `B` and `A` are declared
-separately. `len_succ` is an open unfolding of `A.len` by `rfl` (the dependents rule does not
-fire: it mentions no auxiliary of the block). `A.cnt` with `B.cnt` (C2's `cnt`): Lean compiles `B.cnt b` as a call (`B.cnt` does not recurse
+re-typed and re-pathed. Decision 5 (D1): the rewrites go to the canonical forms `A.len._ix`,
+`A.sum._ix`, `A.cnt._ix`, which are the bytes of `Can`, where `B` and `A` are declared separately;
+the Lean names keep their baselines (recorded `PJ-FORM-O9`, their callers `INHERITED`).
+`len_succ` is an open unfolding of `A.len` by `rfl` against the unchanged Lean name. `A.cnt` with `B.cnt` (C2's `cnt`): Lean compiles `B.cnt b` as a call (`B.cnt` does not recurse
 through `A`), so `A.cnt`'s handler reads no cross field and O9 fires too. Value pins by `rfl`. -/
 set_option Elab.async false
 

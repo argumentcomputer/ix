@@ -45,8 +45,16 @@ output is `B′_{slot x} t e`. **Corollary**: the rewritten `c` equals
 `base(c)` by `funext` and `congrArg`. The canonical handler is `F_{rep}`
 re-typed (a new constant); Lean's `fᵢ._f` keep their Lean names and types.
 
-**Dependents.** The dependents rule (`Opt.Packed`, `pjAllowed`); closed
-values still reduce.
+**Where the output goes (decision 5, D1).** The output is written into the
+canonical form `fᵢ._ix` of each member function (Lean's `fᵢ` renamed, with
+its type): every member function of a slot gets the same `_ix` term; the
+Lean names `fᵢ` keep their baselines (the image's `brecOn`, convertible to
+Lean's term) and are recorded non-canonical with the cause O10. The proof
+term of `fᵢ._ix = fᵢ` is the Corollary (`funext`, `congrArg` with Lemma O10,
+the simultaneous induction with `ρ` and both `brecOn` equation lemmas); not
+convertible at open terms, equal by ι at closed ones. The handlers'
+comparison reads the canonical forms of the handlers' references (a
+matcher's `_ix` form, `OptEnv.canonAddrOf`), never a caller.
 
 ## Canonicity
 For the canonical twin (one member per class) Lean elaborates the single
@@ -61,15 +69,16 @@ standard telescope, `m ≥ n`); for every slot the motives agree
 (`agreeAfterCompile`) and the re-typed handlers agree (`agreeAddr`); every
 constructor field is a member or does not mention the block; the Ix
 `brecOn` and `below`s resolve; `singleLevels` accepts the levels;
-`pjAllowed`. Otherwise the baseline (O12 handles one slot with different
-arms).
+`pjAllowed` (the value of a definition). Otherwise no `_ix` form is
+emitted for the occurrence (O12 handles one slot with different arms).
 
 ## Non-canonical set and evidence
-Lean's `fᵢ._f` keep their Lean types over Lean's `below` (faithful; their
-canonical counterpart is `rep._ix._f`). Evidence:
+The Lean names `fᵢ` (cause O10; canonical form `fᵢ._ix`). Lean's `fᵢ._f`
+keep their Lean types over Lean's `below` (faithful; their canonical
+counterpart is `rep._ix._f`). Evidence:
 `Tests/Ix/Compile/Pass/O10O12Collapse.lean` (C5's `A.h`/`B.k`, C8's
-`A.h`/`B.h`/`C.h` with a lifted member: twin pairs byte-equal with the switch
-on; value pins). Library load 0.
+`A.h`/`B.h`/`C.h` with a lifted member: the `_ix` forms byte-equal to the
+twins with the switch on, the Lean names recorded; value pins). Library load 0.
 -/
 module
 public import Ix.Compile.Pass.Opt.CollapseRec
@@ -84,7 +93,7 @@ def O10.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := 
   let cr ← readCollapseRec env o
   let s := cr.s
   let ren := collapseRenaming env cr.b
-  let addr? := env.addrOf
+  let addr? := env.canonAddrOf
   -- the motives agree per slot
   let mut ps' : Array Expr := #[]
   for cls in s.slots do
@@ -111,7 +120,7 @@ def O10.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := 
     canon := canon ++ cr'
   let ixBRecOn ← ixAuxOf s.ixRec .kBRecOn
   if !env.resolves ixBRecOn then none
-  if !pjAllowed env cr.b o then none
+  if !pjAllowed o then none
   return (mkAppN (Expr.mkConst ixBRecOn ls) (cr.ps ++ ps' ++ cr.tail ++ hs' ++ cr.rest), canon)
 
 end Ix.Compile.Pass.Opt

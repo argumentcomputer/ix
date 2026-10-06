@@ -2,7 +2,9 @@
 O7, `rec`/`recOn` over a collapsed block with identical motives and minors per class. `Src.A`,
 `Src.B` are alpha-equivalent (one class). `Src.A.viaRec` and `Src.B.viaRecOn` give both members
 the same motive and the same minors (up to the collapse renaming): O7 drops the duplicates and
-they compile to the bytes of `Can`, where the class is declared once (`X.rec P mins x`).
+their canonical forms `Src.A.viaRec._ix`, `Src.B.viaRecOn._ix` (decision 5, D1) are the bytes of
+`Can`, where the class is declared once (`X.rec P mins x`); the Lean names keep their baselines
+(recorded `PJ-FORM-O7`).
 `Src.A.distinct` gives the two members different minors (`SurgCollapse.f`'s shape): O7 declines
 and the paired image stays (the pair-valued form is O12's). `Src.Z.viaRec` eliminates a lifted
 member (`Z`, a singleton class next to the collapsed `X`, `Y`) with identical arguments for `X`

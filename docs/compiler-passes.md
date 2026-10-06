@@ -334,11 +334,11 @@ Evidence:
    already be in normal form. The bottom-up traversal guarantees that.
    - O7 is disjoint from O1 (collapsed versus permuted-only block).
    - O8 is disjoint from O3 (collapsed or lifted member versus permuted or split block).
-4. **Demotion** (old plan §3.5, requirement 2): a proof-justified rewrite whose dependent Lean proofs
-   need the old shape to unfold is reverted to the baseline. Demotion only removes rewrites and the
-   set is finite, so the iteration reaches a fixed point. A demoted constant changes its own bytes
-   and the addresses of its users, but no pass decision of a user: users reference it by address
-   [argued].
+4. **No demotion** (decision 5, D1, owner 2026-10-05, replacing the old plan's §3.5 requirement 2):
+   a proof-justified rewrite (O7–O12) never changes the Lean name. The Lean name keeps its faithful,
+   convertible form (the baseline), the rewrite goes into the canonical constant `c._ix`, and the
+   Lean name is recorded non-canonical with the pass as its cause (§1.6). So no dependent can be
+   broken by a pass, and no pass reads a dependent (§6.3): there is nothing to demote.
 
 ---
 
@@ -389,60 +389,108 @@ tables: the surgery compiled the dropped arguments of the other components into 
 sharing tables (leftover entries, or a different first-occurrence order), Pass 3 derives the tables
 from the final term (§4.7 (e), now measured). The Mathlib measurement is in the A4 report.
 
-### 1.6 The proof-justified passes as implemented (A6p)
+### 1.6 The proof-justified passes as implemented (A6p, reworked to D1 in M1-b)
 
 Modules `Ix/Compile/Pass/Opt/{Packed,O7,O8,O9,CollapseRec,O10,O12,O11b}.lean`, each with the
 five-part docstring whose Faithfulness part is the lemma Phase B formalises. All behind
 `IX_PASS3=images`; with the switch off nothing runs, and with it on they need a collapsed or split
-block, so Init+Std and Mathlib (no collapsed block, no split block with a cross-field structural
-recursion or an enumeration member) are unchanged [measured on Init+Std, A6p].
+block, so Init+Std is unchanged by them (§1.6.3).
 
-- **Where they fire.** Only in the value of a definition (`Translate.RwState.site`): never in a
-  type, a theorem's proof or a shared expansion. The rewritten constant equals its baseline by
-  congruence (`funext`, `congrArg`) over the rewritten occurrences, from the pass's lemma.
-- **The dependents rule** (§1.4 order constraint 4, detection fixed here; conservative, flagged for
-  the owner): a pass rewrites inside `c` only when no constant outside `c`'s block references both
-  `c` and an image-kind auxiliary of the changed block being rewritten; otherwise `c` keeps its
-  faithful image (demotion, recorded `DEMOTED`). Not counted (they check against either value):
-  Lean's `T.noConfusion` over `T.noConfusionType`, and the equation compiler's outputs over a
-  matcher (`f`, `q._f`, `q._sunfold`, `q._unsafe_rec`; Lean shares matchers between functions).
-  Only the heads of the block being rewritten are consulted, so the decision does not depend on the
-  schedule; it does read dependents outside `c`'s closure (as the clique demotion, A7).
-- **Canonical constants.** O9, O10 and O12 reference new constants under reserved names (D14): the
-  re-typed structural handler `p._ix.s` for Lean's `p.s` (`f._ix._f`), and O12's shared helper
-  `f._ix.fg`. They are compiled with the block that first needs them, through the call-site
-  rewrite, as A5's clique hook compiles its canonical constants (`Driver.compileCanon`).
-- **O8** `casesOn` of a collapsed or lifted member (so matchers and Lean's helpers built on
-  `casesOn`): the Ix `casesOn` of the class, same arguments, at Lean's motive universe. Lemma: case
-  analysis, both sides `min_q fs` by ι.
-- **O7** `rec`/`recOn` over a collapsed, unsplit block whose motives and minors agree per class
-  after compilation (α-equal under the collapse renaming): `ρ P⃗ mins t`, duplicates dropped.
-  Lemma: `unwrap_p (ρ.{max 1 u} … t) = ρ.{u} … t` by induction with `ρ`.
-- **O9** `brecOn` over the component `{x}` of a split block with a cross field: the Ix `brecOn`
-  with the component's motive and the major's handler re-typed (`x.below ↦ ρ.below`) and re-pathed
-  (`.2ʲ.1.1 ↦ .2ʲ′.1.1`, Lean's leaves being one per field into the block, right-nested,
-  measured). Lemma: induction with `ρ` and both `brecOn` equation lemmas. On the fixtures it
-  also covers C2's `A.cnt` (Lean compiles `B.cnt b` as a call).
-- **O10** `brecOn` over a collapsed, unsplit block whose motives and re-typed handlers agree per
-  class after compilation (constants by compiled address): the Ix `brecOn` with one motive and one
-  handler per class, the twin's single function. Lemma: simultaneous induction.
-- **O12** `brecOn` over a collapsed pair (one class of two, no parameters or indices) with
-  different arms: `(fg t).p`, `fg := λ t. ρ.brecOn Pair t ⟨F′₀, F′₁⟩`, the pair ordered by content
-  (each handler re-typed with its own component first, compared by a content key), so the permuted
-  presentation gives the same `fg`, `A.f` and `B.g`. Lemma: joint induction. The Lean names stay
-  `COLLAPSE-ARMS` against the collapsed twin; classes of three or more decline.
-- **O11b** Lean's general `noConfusionType`/`noConfusion` of a split-off one-constructor
-  enumeration: the enumeration form (`λ P x y. P → P`, `λ h p. p`), the twin's, with Lean's value as
-  the root's decompile record. Lemma: `funext` and case analysis. Two or more constructors decline
-  (`PENDING-NOCONFUSION`): the enumeration form needs `T.ctorIdx`, `noConfusionTypeEnum` scheduled
-  before the constant, an edge the input graph lacks.
+**The rule (decision 5, D1, owner 2026-10-05).** Each of these passes produces a term that is
+provably equal to the baseline but not convertible to it. So:
 
-Measured on the fixtures (`Tests/Ix/Compile/Pass/{O7Collapse,O8Cases,O9Split,O10O12Collapse,
-O11bNoConfusion}.lean`, the `pass3` suite): 39 twin pairs byte-equal with the switch on, value pins
-by `rfl`, every fixture constant and every `_ix` name accepted by the certified checker (meta-mode
-exemptions only on collapsed blocks, BB-F7/BB-F1), decompile complete; the switch-on non-canonical
-set of the passes (`nonCanonicalPasses`, exact) holds 1 `DEMOTED`, 2 `PENDING-NOCONFUSION` and 2
-`ORDER-STMT` (Lean's `_f` over Lean's `below`).
+- the **Lean name keeps the faithful, convertible form**: the baseline, Lean's term over the images
+  (Def 3.6; δβ-convertible to Lean's own term, Def 3.4–3.5), byte for byte what the image path
+  gives without the passes;
+- the **canonical form is stored under `c._ix`** (`Ix.Compile.Pass.ixFormName`): Lean's constant `c`
+  renamed, with `c`'s type, whose value the passes rewrite in place;
+- the Lean name is **recorded** in the switch-on non-canonical set with the cause `PJ-FORM-<pass>`
+  (`Tests/Ix/Compile/NonCanonical.lean`, `nonCanonicalPasses`);
+- **no pass reads a dependent**: the dependents rule of the A6p branch (`Opt/Packed.lean`
+  `demotionIn`, `isCarriedDependent`, the `demotion` field of `OptEnv`, `pjAllowed`'s caller scan,
+  O11b's `demoted` argument, the cause `DEMOTED`) is removed. A caller of the Lean name keeps working
+  because the Lean name keeps its form; a caller that wants the canonical form refers to the `_ix`
+  name (callers adapt, never the callee, §6.3). A matcher's equation-compiler companions (`f`,
+  `q._f`, `q._sunfold`, the equation lemmas) are ordinary callers of a matcher whose form did not
+  change.
+
+**How it runs** (`Ix/Compile/Pass/{Translate,Driver}.lean`).
+
+- The passes fire only in the value of a definition (`RwState.site`), never in a type, a theorem's
+  proof or a shared expansion.
+- A Lean constant is rewritten with `inPlace := false`: at an occurrence where a proof-justified
+  pass applies, the rewrite keeps the baseline (the engine's answer without the site, i.e. the
+  definitional passes only) and notes that a pass fired; the definition's canonical form `c._ix` is
+  then returned with the block (`BlockRewrite.canon`).
+- `Driver.compileCanon` rewrites each canonical constant **in place** (`inPlace := true`), adds the
+  helpers its rewrite references (O9/O10: the re-typed handler `p._ix.s` for Lean's `p.s`; O12:
+  `f._ix.fg`). **No reference is renamed**: a canonical constant refers to its dependencies by
+  their Lean names, so it is well typed whatever forms they have. A first version redirected every
+  reference `d` with a compiled `d._ix` to it; the certified checker rejected the resulting
+  `noConfusionType._ix` of several corpus types (`application type mismatch`: a constant whose type
+  mentions `ctorIdx` applied to a term built with `ctorIdx._ix`; a raw renaming is not
+  conversion-preserving, R2 F7). A caller that wants a canonical form refers to it itself: O9's
+  `c._ix` to its handler, O12's to `fg`, O11b's `noConfusion._ix` (typed over
+  `noConfusionType._ix`, one decision). O10 and O12 compare handlers through their references'
+  canonical forms (`OptEnv.canonAddrOf`, `Driver.ixFormOf`). A reserved name that is already bound must be bound to the
+  same bytes (O12's `fg`, emitted by both functions' blocks); a different binding fails the compile.
+- The clique hook's canonical constants (`Driver.cliqueRewrite`) are rewritten with
+  `inPlace := false`, so no proof-justified pass fires inside a transported clique.
+
+#### 1.6.1 The passes, their canonical forms and their proofs
+
+Every pass below is **proof-justified**, not definitional: `c._ix = c` is a theorem, and the two
+values are convertible only at closed constructor-headed arguments (both sides reduce by ι, which is
+what the value pins check). The proof term in each case is the corollary of the pass's lemma: `funext`
+over the binders above each rewritten occurrence, then `congrArg` with the lemma at the occurrence
+(the occurrences are disjoint subterms and the arguments are copied).
+
+| Pass | Lean name `c` keeps | `c._ix` | Lemma (the proof term's core) | Why not convertible |
+|---|---|---|---|---|
+| O7 `rec`/`recOn` over a collapsed, unsplit block, motives and minors agreeing per class (α-equal under the collapse renaming) | `unwrap_p (ρ.{max 1 u} ps M⃗ N⃗ is t)`, the packed image | `ρ.{u} ps P⃗ N⃗′ is t`, duplicates dropped | `unwrap_p (D t) = S t`: induction on `t` with `ρ` at the Prop motive `∀ p, unwrap_p (D t) = S t`; each case ι on both sides, then `congrArg (min fs)` over the hypotheses | `D` and `S` are stuck at an open major; they agree only after ι |
+| O8 `casesOn` (so matchers and Lean's helpers built on it) of a collapsed or lifted member | Lean's `casesOn` value over the packed image | the class's Ix `casesOn`, same arguments | `L … t mins = R … t mins`: case analysis with `ρ` at a Prop motive; each case `Eq.refl` (both sides `min_q fs` by δβι) | the packed side is stuck on `unwrap_p` at an open major |
+| O9 `brecOn` over the component `{x}` of a split block with a cross field | the image's `brecOn` with Lean's handler `c._f` | `ρ.brecOn ps msel is t c._ix._f`, the handler re-typed over the Ix `below` and re-pathed (`.2ʲ.1.1 ↦ .2ʲ′.1.1`) | `B is t = B′ is t`: induction with `ρ`, both `brecOn` equation lemmas (Lean's `x.brecOn.eq`, Pass 2's), `congrArg` over the component's fields | the two `below` values have different layouts (Lean's has the cross leaves) |
+| O10 `brecOn` over a collapsed, unsplit block, motives and re-typed handlers agreeing per class | the image's `brecOn` | `ρ_x.brecOn ps P⃗ is t F⃗′`, one motive and one handler per class (the twin's single function) | `B_i t = B′_k t`: simultaneous induction with `ρ` and both equation lemmas | as O7, through the packed `below` |
+| O12 `brecOn` over a collapsed pair (one class of two) with different arms | the image's `brecOn` | `(fg t).(pos x)`, `fg := λ t. ρ.brecOn Pair t ⟨F′₀, F′₁⟩`, the pair ordered by content | `(fg t).1 = B₀ t ∧ (fg t).2 = B₁ t`: joint induction with `ρ` | `fg` builds a pair Lean's term never builds |
+| O11b `noConfusionType`/`noConfusion` of a split-off one-constructor enumeration (unit pass) | Lean's general form | the enumeration form `λ P x y. P → P`, `λ h p. p` (the latter typed over `T.noConfusionType._ix`) | `G = E` by `funext` and case analysis (`Eq.refl` per constructor); `g` and `ε` agree along it (`subst`, case analysis) | `G` and `E` differ at variables (`T.casesOn` is stuck) |
+
+Side conditions and fallbacks are in the modules. When a side condition fails, no `_ix` form is
+emitted for that occurrence (the faithful baseline stays everywhere). O11b with two or more
+constructors declines (`PENDING-NOCONFUSION`: the enumeration form needs `T.ctorIdx`,
+`noConfusionTypeEnum` scheduled before the constant, an edge the input graph lacks). O12 declines
+for classes of three or more.
+
+#### 1.6.2 Interaction with the clique hook (found in M1-b)
+
+On this line the A5 clique hook runs before the occurrence passes (`Driver.prepareBlock`) and
+transports a structural clique over a changed block under its Lean names (D2). A transported
+member's value contains no image occurrence, so O9, O10 and O12 never fire on it: they fire only on
+a structural function whose clique the hook leaves in Lean's form, and on explicit `brecOn` uses
+that are no clique. Measured on the fixtures: `O10O12Collapse`'s cliques (C5 `A.h`/`B.k`, `A.f`/`B.g`,
+C8) are transported (their collapsed twins' single functions need the deferred O17, recorded
+`PENDING-COLLAPSE`); `O9Split`'s `A.len`/`A.sum`/`A.cnt` are not transported at this base, so O9
+fires there. An explicit `brecOn` with hand-written handlers does not reach O10 either: the
+elaborator writes a `below` projection as `PProd.fst` over the unfolded `below` (a raw Lean
+recursor), which the re-typing does not follow (measured, then dropped from the fixture). So **O10 and
+O12 have no firing fixture on this line**, and once clique demotion is removed (M1-a) O9's fixture
+cliques may be transported too. Whether O9, O10 and O12 are still wanted next to the transport and
+O17 is an open question for the orchestrator.
+
+#### 1.6.3 Measured
+Library (the `jcb/ix-cc-m1b` gate run, Lean 4.34.1): Init+Std with the switch on is **byte-identical to
+the base line's switch-on output** (sha256 `a2e22ee7…`, 256,128,289 bytes, 115,942 blocks), so these
+passes touch **0** Init+Std names and add **0** `_ix` constants there (no collapsed block, no split
+block with a cross-field structural recursion or a one-constructor enumeration member); with the
+switch off both compilers give `468ad7ae…` (ALIGNED).
+
+Fixtures (`Tests/Ix/Compile/Pass/{O7Collapse,O8Cases,O9Split,O10O12Collapse,O11bNoConfusion}.lean`,
+the `pass3` suite): 17 `_ix` twin pairs byte-equal with the switch on (O7 3, O8 5, O9 5, O11b 2, plus
+two untouched constants); every Lean name keeps the pre-pass baseline (by construction; cross-check:
+`PassO8.Src.A.isNil'` has the address the A6p branch recorded for its demoted, i.e. baseline, form);
+value pins by `rfl`; with the switch on the certified checker accepts every constant, `_ix` included;
+decompile complete. The switch-on non-canonical set of the passes (`nonCanonicalPasses`, exact): 13
+`PJ-FORM-<pass>`, 12 `INHERITED`, 7 `PENDING-COLLAPSE` (O10/O12 under the clique hook), 2
+`PENDING-NOCONFUSION`, 2 `ORDER-STMT` (Lean's `_f` over Lean's `below`).
 ---
 
 ## 2. Canonical form, defined
@@ -2166,13 +2214,17 @@ What stays forbidden is reading a dependent that is *not* an auxiliary of the un
 | An equation lemma of a transported clique is regenerated over the canonical clique | the lemma is compiled after the clique and reads the clique's record |
 | A clique reads its own equation and unfolding lemmas when planning its transport, and stays in Lean's form if one of them cannot be carried (`Pass/Cliques.lean`: `memberEqLemmas` and `scheduleCliques` find them by name; `planClique` carries them, and keeps the members of an O17 class that owns one apart) | on-demand auxiliaries of the clique's own unit |
 | A block that references a member and one of Lean's encoding constants of a clique it depends on is refused by name when that clique is transported (`Pass/Cliques.lean`, `cliqueCallers`) | a block reading the record of a block it depends on; the dependency is not changed |
+| O7, O8, O10, O12 (§1.6): the canonical form `c._ix` of a definition `c` over a collapsed block refers to the Ix recursor, `casesOn`, `recOn` or `brecOn`/`below` of the class (`Opt/O7.lean`, `O8.lean`, `O10.lean`, `O12.lean`) | a block reading the auxiliaries of a block it depends on (as the images, O1–O6); the decision reads the occurrence, the block's Pass 1 record and the images only |
+| O9 (§1.6): `c._ix` refers to the Ix `brecOn`/`below` of the component and to the re-typed handler `c._ix._f`, emitted with `c` (`Opt/O9.lean`) | the Ix auxiliaries of a dependency; the handler is a member of `c`'s own unit (generated from `c`'s own `_f`) |
+| O11b (§1.6): `T.noConfusionType._ix`, `T.noConfusion._ix` in enumeration form, the latter typed over the former (`Opt/O11b.lean`, `Driver.unitPasses`) | auxiliaries of one unit (`T`'s `noConfusion` family); decided from `T` and its Pass 1 classes |
+| O10/O12 (D1) compare re-typed handlers through the canonical forms `d._ix` of the constants they reference (`OptEnv.canonAddrOf`, `Driver.ixFormOf`) | reads the compiled form of a dependency (`d` is referenced, so its block, which emits `d._ix`, compiled first); never a caller |
 
-**Not allowed.** Entries marked ✗ exist in the code at `340f67b2` and are to be removed.
+**Not allowed.** No entry of this table exists in the code; the rows marked "Removed" record what was taken out and by which milestone.
 
 | Case | Why it breaks the rule |
 |---|---|
 | Removed (M1-a): a clique was demoted because some later declaration that is not an equation lemma depended on it (`scheduleCliques`: `blocking`, `reason`, at `340f67b2`). Such a declaration is now refused by name instead (above) | read a caller |
-| ✗ A proof-justified pass declines because a dependent mentions both the definition and a recursor-family auxiliary (branch `jcb/ix-cc-a6p`, `Opt/Packed.lean`) | reads a caller; replaced by the decision of 2026-10-05 that the Lean name keeps the faithful form and the canonical form is stored under an `_ix` name |
+| Removed (M1-b): a proof-justified pass declined because a dependent mentioned both the definition and a recursor-family auxiliary (the dependents rule of branch `jcb/ix-cc-a6p`, `Opt/Packed.lean`). The Lean name now keeps the faithful form and the canonical form is stored under `c._ix` (D1), so no pass reads a dependent | read a caller |
 | Choosing among names that share an address by hash-map order (D4) | reads a whole-environment table |
 | A form that depends on whether another block has been compiled yet | reads the schedule |
 
@@ -2207,12 +2259,12 @@ a whole compile. Certification can state one obligation per block.
 | Anything over an unchanged block or clique | identity translation | **yes** | — |
 | `rec`/`recOn`/`casesOn`/`below`/`brecOn` users over a permuted block | O1–O6 | **yes** [measured, ORA DQReord 53/53] | — |
 | The same over a split block, including relocated calls | O2, O3 | **yes** [argued; PRO B1/B2 `rfl` for `rec` and `casesOn` users] | — |
-| Structural recursion over a split block with a cross field | O9 | **yes** once the reference tables are derived from the final term (§4.7 (e)) [argued] | — |
-| `noConfusion` in enumeration form; mutual `_sizeOf` over a split block | O11b; O11a | **yes** | O11a: the `rfl` holds under the three kernels (A4), but the pass is not run for want of a scheduling edge (§1.5); until then `pendingSurgery` |
-| `rec` users of a collapsed block that do not distinguish members | O7 | **yes** | — |
-| `casesOn` and matchers over a collapsed or lifted member | O8 | **yes** | — |
-| Two functions over a collapsed pair, equal arms | O10 | **yes** (the twin's single function) | — |
-| Two functions over a collapsed pair, different arms | O12 | the shared helper `fg` only | `COLLAPSE-ARMS` (the Lean names `A.f`, `B.g`) |
+| Structural recursion over a split block with a cross field | O9 | the `_ix` form: **yes** once the reference tables are derived from the final term (§4.7 (e)) [argued] | the Lean name: `PJ-FORM-O9` (D1, §1.6) |
+| `noConfusion` in enumeration form; mutual `_sizeOf` over a split block | O11b; O11a | O11b: the `_ix` forms **yes**, the Lean names `PJ-FORM-O11b` (D1); O11a: **yes** | O11a: the `rfl` holds under the three kernels (A4), but the pass is not run for want of a scheduling edge (§1.5); until then `pendingSurgery` |
+| `rec` users of a collapsed block that do not distinguish members | O7 | the `_ix` form: **yes** | the Lean name: `PJ-FORM-O7` (D1) |
+| `casesOn` and matchers over a collapsed or lifted member | O8 | the `_ix` form: **yes** | the Lean name: `PJ-FORM-O8` (D1); its callers that no pass rewrote: `INHERITED` |
+| Two functions over a collapsed pair, equal arms | O10 | the `_ix` form: **yes** (the twin's single function) | the Lean names: `PJ-FORM-O10` (D1); a transported clique: `PENDING-COLLAPSE` (§1.6.2) |
+| Two functions over a collapsed pair, different arms | O12 | the shared helper `fg` and the `_ix` forms only | `COLLAPSE-ARMS` (the Lean names `A.f`, `B.g`; `PJ-FORM-O12` against the permuted presentation, D1) |
 | A changed structural clique | O13, O14 | **yes** | `RECARG` (an ambiguous recursive argument) |
 | A changed well-founded clique | O15 + §5.1 | functional: **yes**. Proofs: yes when transported | `GUESSLEX`, `TACTIC-ASYM`, `SHAPE` |
 | A changed `partial_fixpoint` clique | O16 + §5.2 (O16's lemma [proved], §5.2) | as above | `TACTIC-ASYM`, `SHAPE` |
@@ -2284,6 +2336,10 @@ Entries change only in a commit that states the cause.
   When that package lands, its entries must disappear; the exactness rule above enforces this.
 - **`inherited`** marks a constant whose Lean terms are equal under the name map, but which
   references a constant that is itself in the set. It disappears when its dependency does.
+- **`pjForm <pass>`** (`PJ-FORM-<pass>`, decision 5, D1) marks the Lean name of a constant that a
+  proof-justified pass (O7–O12) rewrote: the Lean name keeps the faithful form, the canonical form
+  is `c._ix` and is what the twins compare. It is permanent, not a pending marker (switch-on
+  fixtures, `nonCanonicalPasses`).
 
 **Policy.** Recording is the Phase A policy (Q-A5), following the principle of §0.1. A
 `TACTIC-ASYM` or `SHAPE` entry on library code is reported in the migration's PR text.

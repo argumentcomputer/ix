@@ -12,7 +12,9 @@ such occurrences, so O8 makes them single-member too.
 
 Output: `ρ.casesOn.{u,us} ps motive is t mins e`, the Ix `casesOn` of
 `x`'s class (the display name next to `ρ`, D14), with the **same
-arguments**, at Lean's motive universe `u` (`singleLevels`).
+arguments**, at Lean's motive universe `u` (`singleLevels`). The output is
+written into the canonical form `c._ix` of the definition; `c` keeps the
+baseline (decision 5, D1, below).
 
 ## Faithfulness (proof-justified; the statement Phase B formalises)
 Write `L := img(x.casesOn)` (Def 3.5: Lean's `casesOn` value over
@@ -44,14 +46,19 @@ Lemma O8 at each `oⱼ` (the occurrences are disjoint subterms; the
 arguments are copied). Phase B states this per constant as
 `N(c) = base(c)` and derives it from Lemma O8 by congruence.
 
-**Dependents.** `c` is only propositionally equal to `base(c)`. The
-dependents rule (`Opt.Packed`, `pjAllowed`): no constant outside `c`'s
-block references both `c` and an image-kind auxiliary of `b`, otherwise
-O8 declines for `c` (demotion). For a matcher, the equation compiler's
-outputs over it (`f`, `q._f`, `q._sunfold`, `q._unsafe_rec`; Lean shares
-matchers between functions) are carried: they apply the matcher, whose
-typing reads its type only (`isCarriedDependent`). Closed computations (`rfl` value pins,
-`decide`) still reduce: both sides agree by ι on constructors.
+**Where the output goes (decision 5, D1).** `c._ix` (Lean's `c` renamed,
+with `c`'s type) is only propositionally equal to `base(c)`, so the output
+is written there and the Lean name `c` keeps its baseline (the faithful
+image, convertible to Lean's term by δβ); `c` is recorded non-canonical
+with the cause O8. The proof term of `c._ix = c` is the Corollary (`funext`,
+`congrArg` with Lemma O8, a case analysis with `ρ` whose cases close by
+`Eq.refl`). The forms are not convertible at an open major (the packed
+`casesOn` is stuck on `unwrap_p`), only at constructors (ι on both sides,
+which the value pins check). No caller is read. A matcher keeps its Lean
+form, so the equation compiler's outputs over it (`f`, `q._f`,
+`q._sunfold`, `q._unsafe_rec`, the equation lemmas) are ordinary callers of a
+name whose form did not change; the canonical `f._ix`, where one exists,
+refers to the matcher's `_ix` form (`Driver.compileCanon`).
 
 ## Canonicity
 For the canonical twin (one member per class, `b`'s universes and
@@ -65,16 +72,18 @@ Decidable: `classify` gives `casesOn`; `b` has a collapsed class; the image
 of `x.rec` reads as packed (`readPacked`); Lean's `casesOn` has the
 recursor's universe parameters and `np + 1 + ni + 1 + |ctors x|` binders;
 `m ≥ n`; `ρ.casesOn` resolves in `E`; `singleLevels` accepts the levels;
-`pjAllowed` (the value of a definition, not demoted). Otherwise the
-baseline, the faithful image.
+`pjAllowed` (the value of a definition). Otherwise no `c._ix` is emitted
+for the occurrence, which keeps the baseline, the faithful image.
 
 ## Non-canonical set and evidence
-A demoted constant: cause `DEMOTED`, e.g. `noConfusionType` of a collapsed
-member, whose `noConfusion` references both it and `casesOn` (measured on
-`Tests/Ix/Compile/Pass/O8Cases.lean`). Evidence: `O8Cases` (an explicit
-`casesOn` and matcher-based functions over a collapsed pair, and over a
-lifted member next to a collapsed class; twin pairs byte-equal with the
-switch on; value pins by `rfl`, checked by the three kernels). Library load
+The Lean name of every definition with an O8 rewrite (an explicit `casesOn`
+user, a matcher, Lean's `noConfusionType` of a collapsed member): cause O8;
+its callers that are not rewritten themselves (a function over its matcher):
+`INHERITED`. Evidence: `O8Cases` (an explicit `casesOn` and matcher-based
+functions over a collapsed pair, and over a lifted member next to a
+collapsed class; a definition with an open unfolding against Lean's
+`casesOn`, which keeps checking; with the switch on the `_ix` forms
+byte-equal to the twins; value pins by `rfl`, checked by the three kernels). Library load
 0 (no collapsed block in Init+Std or Mathlib).
 -/
 module
@@ -104,7 +113,7 @@ def O8.apply (env : OptEnv) (o : Occ) : Option Expr := do
   let ixCases ← ixAuxOf s.ixRec .kCasesOn
   if !env.resolves ixCases then none
   let ls ← singleLevels env s o.us
-  if !pjAllowed env b o then none
+  if !pjAllowed o then none
   return mkAppN (Expr.mkConst ixCases ls) o.args
 
 end Ix.Compile.Pass.Opt

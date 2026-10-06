@@ -1,4 +1,4 @@
-/- # The proof-justified passes: shared data (packed images, the collapse renaming, the dependents rule)
+/- # The proof-justified passes: shared data (packed images, the collapse renaming, the site guard)
 
 ## Contract
 Input: a changed block with a collapsed class (Pass 1: some class of two or
@@ -9,7 +9,7 @@ Lean motives of slot `k`'s class (`m_i` single, `λ ys. m_i ys ×' True`
 lifted, `λ ys. m_{i₁} ys ×' … ×' m_{i_n} ys` a tuple, Lean order inside the
 class) and `ℓ = max 1 u` when some slot is a tuple (`u` otherwise).
 
-Output, for the passes O7 and O8 (no term is rewritten here):
+Output, for the passes O7–O12 (no term is rewritten here):
 * `readPacked`: `ρ`, its universe arguments and the **slot classes** (which
   Lean motives Ix slot `k` packs), read off the image, so the
   correspondence is the image generator's (by motive type, §4.2 step 1);
@@ -22,66 +22,43 @@ Output, for the passes O7 and O8 (no term is rewritten here):
   ("identical after compilation", the side condition of O7);
 * `singleLevels`: the universe arguments of `ρ` (and of its `casesOn`,
   `recOn`) at Lean's motive universe `u` instead of the packing's `ℓ`;
-* `pjAllowed`: the guard every proof-justified pass applies last (below).
+* `pjAllowed`: the site guard every proof-justified pass applies last.
 
 ## Faithfulness
 Nothing is rewritten here. The facts the passes use: the image computes as
 Lean's recursor (its rules hold by `rfl`, `pass3` suite); `unwrap_p` is a
 primitive projection of a `PProd`/`And` (§4.2 step 3).
 
-**The dependents rule (design document §1.4, order constraint 4).** A
-proof-justified rewrite replaces a subterm `e` of a definition `c` by a term
-`e′` with `e = e′` provable but not convertible. `c`'s own value keeps its
-type (`e` and `e′` have the same type, the Lean motive at the major), and
-closed computations with `c` still reduce (both sides agree by ι on every
-constructor-headed argument), so `rfl` and `decide` on closed values still
-hold. What can fail is a *dependent* `d` whose type-check unfolds `c` at an
-open argument and compares the result with Lean's shape of `e`: such a `d`
-mentions that shape, i.e. one of the changed block's image-kind auxiliaries
-(`rec`, `recOn`, `casesOn`, `below`, `brecOn`, `.go`, `.eq`). The rule the
-passes implement, the conservative choice the design document leaves open
-(flagged for the owner in the A6p report):
-
-> rewrite `c` only when no constant outside `c`'s block references both `c`
-> and an image-kind auxiliary of the changed block being rewritten;
-> otherwise keep the faithful image (**demotion**).
-
-Two kinds of dependent are not counted, because Lean builds them so that
-they check against either value (`isCarriedDependent`, as the clique side
-carries equation lemmas): Lean's `T.noConfusion` over `T.noConfusionType`,
-and the equation compiler's outputs over a matcher (`f`, `q._f`,
-`q._sunfold`, `q._unsafe_rec`).
-
-A dependent that unfolds `c` without mentioning the block's auxiliaries
-compares `c` with itself or with other rewritten constants (each side is
-rewritten consistently) or with closed values. The rule only decides
-totality, never soundness: a missed dependent fails the kernels on its own
-constant (a compile-time or check-time rejection, never an unsound
-acceptance; old plan §3.5 requirement 2), and the `pass3` suite checks every
-fixture constant, every dependent included, with the three kernels.
-
-The rule is also why the passes fire only in the value of a definition
-(`Translate.RwState.site`): a type, or a theorem's proof, is checked against
-statements that may unfold `e`, and opaque constants and theorems are never
-unfolded, so nothing is gained there.
+**Where a proof-justified rewrite goes (decision 5, D1).** A
+proof-justified pass replaces a subterm `e` of a definition `c` by a term
+`e′` with `e = e′` provable but not convertible. The Lean name `c` keeps
+its faithful, convertible form (the baseline: the image path's term), so
+every caller of `c`, including one whose type-check unfolds `c` to Lean's
+shape, checks as before. The rewritten value is stored under the reserved
+name `c._ix` (`ixFormName`, with `c`'s type), and `c` is recorded in the
+switch-on non-canonical set with the pass as its cause. A caller that wants
+the canonical form refers to `c._ix` itself (callers adapt, never the
+callee). Nothing renames references automatically: a canonical constant
+refers to its dependencies by their Lean names, so it stays well typed (a
+raw renaming `d ↦ d._ix` is not conversion-preserving). No pass reads a constant's dependents, the
+environment beyond the closure, or the schedule.
 
 ## Canonicity
 The renaming, the slot classes and `ρ` depend on Pass 1's classes and the
-image (canonical data); the guard depends on the input's reference graph
-(`CompileEnv.p3BlockRefs`): a constant outside `c`'s closure can demote `c`,
-which a closure compile of `c` alone does not see (the same dependence as the
-clique side's demotion; A7, determinism, open).
+image (canonical data); the guard depends on the occurrence's position
+only.
 
 ## Side condition and fallback
 A reading that fails (no `ρ` at the head under the projections, a variable
 out of place, a level count that is neither Lean's nor Lean's plus one at
-`0`) makes the pass decline; the occurrence keeps its baseline, the faithful
-image (§0.1).
+`0`) makes the pass decline; no `_ix` form is emitted for that occurrence,
+which keeps its baseline (§0.1).
 
 ## Non-canonical set and evidence
-A demoted constant keeps its baseline and is recorded with the cause
-`DEMOTED` (`Tests/Ix/Compile/NonCanonical.lean`, `nonCanonicalPasses`).
-Evidence: the per-pass fixtures `O7Collapse`, `O8Cases`.
+The Lean name of every constant with an `_ix` form is non-canonical with the
+pass as its cause (`Tests/Ix/Compile/NonCanonical.lean`,
+`nonCanonicalPasses`). Evidence: the per-pass fixtures `O7Collapse`,
+`O8Cases`, `O9Split`, `O10O12Collapse`, `O11bNoConfusion`.
 -/
 module
 public import Ix.Compile.Pass.Opt.Core
@@ -211,61 +188,12 @@ def singleLevels (env : OptEnv) (s : PackedShape) (us : Array Level) : Option (A
     else none
   return ls.map (substLevel s.levelParams us)
 
-/-- The last string component of a name. -/
-def lastComponent : Name → String
-  | .str _ s _ => s
-  | _ => ""
-
-/-- Dependents the rule does not count, because Lean builds them in a way that
-type-checks against either value of the constant:
-* Lean's `T.noConfusion` over `T.noConfusionType`: its value (`Eq.ndrec`
-  over `T.casesOn (motive := λ t. T.noConfusionType P t t) t ms`)
-  instantiates `T.noConfusionType` generically in both motives, where no
-  unfolding happens, and at constructor applications in the minors'
-  expected types, where Lean's value and the rewritten one both reduce (ι)
-  to the same type;
-* the equation compiler's outputs over a matcher `p.match_k`: the function
-  `p` itself and any structural handler `q._f`, smart unfolding `q._sunfold`
-  or `q._unsafe_rec` (Lean shares a matcher between functions with the same
-  patterns, so `q` need not be `p`): each applies the matcher to a motive,
-  discriminants and alternatives, whose typing reads the matcher's type,
-  never its value.
-(As the clique side carries the members' equation lemmas.) -/
-def isCarriedDependent (c d : Name) : Bool :=
-  match c with
-  | .str p "noConfusionType" _ => d == Name.mkStr p "noConfusion"
-  | .str p m _ =>
-    m.startsWith "match_" &&
-      (d == p || ["_f", "_sunfold", "_unsafe_rec"].contains (lastComponent d))
-  | _ => false
-
-/-- The dependents rule over the input's block reference graph (`refs`:
-block key ↦ the names its members reference outside the block) and the
-image-kind heads of the changed blocks (`heads`: head ↦ block key): the first
-block (by key) that references the definition `c` and a head of the changed
-block `key`. Only `key`'s heads are consulted: they are registered before
-`c`'s block compiles (`c` references one of them), so the answer does not
-depend on the schedule. Evaluated only when a proof-justified pass's own
-side condition holds (`pjAllowed` is its last check). -/
-def demotionIn (refs : Std.HashMap Name (Std.HashSet Name)) (heads : Std.HashMap Name Name)
-    (c key : Name) : Option String := Id.run do
-  let mut found : Option Name := none
-  for (lo, rs) in refs do
-    if !rs.contains c then continue
-    if isCarriedDependent c lo then continue
-    if !rs.toList.any fun h => heads.get? h == some key then continue
-    found := match found with
-      | some f => if lo.pretty < f.pretty then some lo else some f
-      | none => some lo
-  return found.map fun d => s!"dependent {d.pretty} references {c.pretty} and an auxiliary of the block of {key.pretty}"
-
-/-- The guard of every proof-justified pass, applied last: the occurrence is
-in the value of a definition (`Occ.site`) that no dependent demotes (the
-dependents rule, module docstring). -/
-def pjAllowed (env : OptEnv) (b : OptBlock) (o : Occ) : Bool :=
-  match o.site, b.all[0]? with
-  | some c, some key => (env.demotion c key).isNone
-  | _, _ => false
+/-- The site guard of every proof-justified pass, applied last: the
+occurrence is in the value of a canonical `_ix` constant (`Occ.site`,
+`Translate.RwState.site`), never under a Lean name (decision 5, D1: the Lean
+name keeps the faithful form). Nothing about the constant's dependents, the
+environment or the schedule is read. -/
+def pjAllowed (o : Occ) : Bool := o.site.isSome
 
 end Ix.Compile.Pass.Opt
 

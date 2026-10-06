@@ -1,10 +1,17 @@
 /- A6p per-pass fixture (`pass3` suite), elaborated at run time and in no Lake library.
 O10 and O12, structural recursion over a collapsed block (the prototype's C5 and C8).
+Decision 5 (D1): a rewrite of O10 or O12 goes to the canonical form `c._ix` of the function `c`;
+the Lean name keeps its baseline. Since the rebase onto the A5 clique hook, the structural cliques
+below (`A.h`/`B.k`, `A.f`/`B.g`, C8) are transported by the hook before the occurrence passes run,
+so O10 and O12 do not fire on them (recorded `PENDING-COLLAPSE`: the collapsed twin's single
+function needs the deferred encoding shrink O17). (An explicit `brecOn` with hand-written handlers does not reach O10
+either: the elaborator writes a `below` projection as `PProd.fst` over the unfolded `below`, which
+the re-typing does not follow.) The original intent, kept for when a clique stays in Lean's form:
 `Src.A`, `Src.B` are alpha-equivalent (one class). `A.h`/`B.k` have equal arms: O10 compiles both to
 the twin's single function (`Can.X.h`, `Can` declaring the class once). `A.f`/`B.g` have different
 arms: O12 compiles both through the shared pair-valued helper `fg` (`A.f := λ t. (fg t).1`);
-`Perm` declares the same block and functions in the other order, and `fg`, `A.f`, `B.g` are
-byte-equal between `Src` and `Perm` (the pair's order is by content). `C8.Src` is a collapsed pair
+`Perm` declares the same block and functions in the other order, and `fg`, `A.f._ix`, `B.g._ix`
+are byte-equal between `Src` and `Perm` (the pair's order is by content). `C8.Src` is a collapsed pair
 `A`, `B` next to a lifted member `C`: `A.h`/`B.h`/`C.h` have equal arms per class, O10 compiles
 them to `C8.Can`'s `X.h`/`C.h`; `A.f`/`B.f`/`C.f` (different arms over two slots) decline. Value pins
 by `rfl`. -/

@@ -98,10 +98,10 @@ inductive NonCanonicalCause where
   | pendingSurgery
   /-- Today only: collapse passes O7–O12 and O17 are not implemented (A6). -/
   | pendingCollapse
-  /-- A proof-justified rewrite (O7–O12) reverted to the baseline because a
-      dependent may unfold the constant to its Lean shape (the dependents
-      rule, `Ix.Compile.Pass.Opt.Packed`; switch-on fixtures only). -/
-  | demoted
+  /-- Decision 5 (D1): the Lean name keeps its faithful, convertible form and
+      the proof-justified pass named here (O7–O12) stored the canonical form
+      under `c._ix` (`Ix.Compile.Pass.ixFormName`; switch-on fixtures only). -/
+  | pjForm (pass : String)
   /-- The constant's own term is identical under the name map; it differs
       only because it references a differing constant (named in `note`). -/
   | inherited
@@ -114,7 +114,7 @@ def NonCanonicalCause.tag : NonCanonicalCause → String
   | .noSpec => "NOSPEC" | .lazy => "LAZY" | .o11aPending => "O11A-PENDING"
   | .pendingTransport => "PENDING-TRANSPORT" | .pendingSplitAux => "PENDING-SPLIT-AUX"
   | .pendingNoConfusion => "PENDING-NOCONFUSION" | .pendingSurgery => "PENDING-SURGERY"
-  | .pendingCollapse => "PENDING-COLLAPSE" | .demoted => "DEMOTED" | .inherited => "INHERITED"
+  | .pendingCollapse => "PENDING-COLLAPSE" | .pjForm p => s!"PJ-FORM-{p}" | .inherited => "INHERITED"
 
 structure NonCanonicalEvidence where
   /-- hex address under presentation A (Lean compiler, at measurement) -/
@@ -2214,12 +2214,14 @@ namespace Tests.Ix.Compile.NonCanonical
     both directions there (a pair that differs without an entry, an entry
     whose pair is byte-equal, or evidence addresses that moved, fail the
     suite). `presA` is the fixture's `Src` presentation, `presB` its `Can`
-    presentation; the constant is the full name in `Src`. -/
+    presentation (`Perm` for O12's permuted pair); the constant is the full
+    name in `Src`. Decision 5 (D1, M1-b): the Lean name of every constant a
+    proof-justified pass rewrote keeps its faithful form and is recorded
+    `PJ-FORM-<pass>` (the canonical form is `<constant>._ix`, compared with
+    the twin in `pjPassTwins`); constants over such a name that no pass
+    rewrote are `INHERITED`. -/
 def nonCanonicalPasses : List NonCanonicalEntry := [
-  e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.A.isNil' "collapsed class, casesOn user" .demoted
-    "040ef29f138ee786eb0f82a655ee3fd9b27baec3b85033549f837e8b66e47f2c" "3170b105367d9998bcffb237e7e9e2be3c0dab4f80aad79bb99c63c581b87b4c" "value"
-    "O8 demoted: `isNil'_unfold` states the open unfolding of `A.isNil'` against Lean's `casesOn` (dependents rule)"
-  , e `Tests.Ix.Compile.Pass.O11bNoConfusion "src" "can" `PassO11b.Src.E.noConfusionType "split-off enumeration, two constructors" .pendingNoConfusion
+  e `Tests.Ix.Compile.Pass.O11bNoConfusion "src" "can" `PassO11b.Src.E.noConfusionType "split-off enumeration, two constructors" .pendingNoConfusion
     "55cdd0e212e6163b0be130360f15b61776d90cbaa59106ab55e511a5a76a13fb" "3904c4a2443198b28b9640aa48ac1f65f15d3ecf838890f0bb6c5e25bbed07b6" "value"
     "O11b declines: the enumeration form needs `E.ctorIdx`, `noConfusionTypeEnum` scheduled first (no edge yet)"
   , e `Tests.Ix.Compile.Pass.O11bNoConfusion "src" "can" `PassO11b.Src.E.noConfusion "split-off enumeration, two constructors" .pendingNoConfusion

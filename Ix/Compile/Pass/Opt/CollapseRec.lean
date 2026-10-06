@@ -23,8 +23,9 @@ structural recursion needs:
   same order (§4.2: members of a class are structurally equal);
 * `agreeAddr`: equality after compilation of two re-typed handlers, where
   two constants agree when the collapse renaming makes them one name, or
-  when both are already compiled to one address (matchers of the two
-  functions, for instance, which O8 made the class's single-member form).
+  when their canonical forms are compiled to one address (matchers of the
+  two functions, for instance, whose `_ix` forms O8 made the class's
+  single-member form; `OptEnv.canonAddrOf`, D1).
 
 ## Faithfulness
 Nothing is rewritten here; see O10 and O12.

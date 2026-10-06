@@ -86,6 +86,12 @@ def inlineMetaKey : Name := Name.mkStr (Name.mkStr Name.mkAnon ixComponent) "inl
 /-- The display name of a stored image of the Lean auxiliary `a`: `a._ix`. -/
 def imageName (a : Name) : Name := Name.mkStr a ixComponent
 
+/-- The canonical form of the Lean constant `c` written by a proof-justified
+pass (O7–O12, decision 5, D1): `c._ix`, the same shape as `imageName` (images
+are stored under their Lean names, so the two never meet: a pass writes the
+canonical form of a definition that is not an image-kind auxiliary). -/
+def ixFormName (c : Name) : Name := Name.mkStr c ixComponent
+
 /-- A name component. -/
 inductive Comp where
   | s (x : String)

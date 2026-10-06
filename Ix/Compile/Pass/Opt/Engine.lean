@@ -41,11 +41,13 @@ information read back from a less structured term.
 O1-O6 are definitional (each module gives the conversion steps); a
 composition of conversions is a conversion, so where only they fire the
 engine's output is definitionally equal to the baseline. The
-proof-justified passes (`pjPasses`: O8, O7; A6) give a term provably equal
-to the occurrence's baseline (each module states the lemma Phase B
-formalises); they fire only in the value of a definition, and the rewritten
-constant equals its baseline by congruence (`funext`, `congrArg`) over the
-rewritten occurrences. Arguments are rewritten before the head (each by its
+proof-justified passes (`pjPasses`: O8, O7; `emitPasses`: O9, O10, O12; A6)
+give a term provably equal to the occurrence's baseline (each module states
+the lemma Phase B formalises); they fire only in the value of a definition,
+and their output goes only to the definition's canonical form `c._ix`, never
+to the Lean name `c`, which keeps the baseline (decision 5, D1;
+`Translate.RwState.site`). `c._ix` equals `c` by congruence (`funext`,
+`congrArg`) over the rewritten occurrences. Arguments are rewritten before the head (each by its
 own fixed point), and every pass copies its arguments unchanged.
 
 ## Canonicity
@@ -129,8 +131,8 @@ def passes (recur : Occ → Option Expr) : List (String × (OptEnv → Occ → O
   [("O1", O1.apply), ("O11a", O11a.apply), ("O2", O2.apply recur), ("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)]
 
 /-- The proof-justified occurrence passes (A6), after the definitional ones:
-they fire only in the value of a definition that no dependent demotes
-(`Opt.Packed.pjAllowed`). -/
+they fire only in the value of a definition (`Opt.Packed.pjAllowed`), for its
+canonical `_ix` form (D1). -/
 def pjPasses : List (String × (OptEnv → Occ → Option Expr)) :=
   [("O8", O8.apply), ("O7", O7.apply)]
 
@@ -158,6 +160,11 @@ def engineFull (env : OptEnv) (o : Occ) : Option (String × Expr × Array Consta
   match engine env o with
   | some (nm, e) => some (nm, e, #[])
   | none => emitPasses.findSome? fun (nm, p) => (p env o).map fun (e, cs) => (nm, e, cs)
+
+/-- A pass whose output is not a conversion of the baseline (O7–O12): its
+result goes to the canonical `_ix` form of the site only (D1). -/
+def isProofJustified (nm : String) : Bool :=
+  pjPasses.any (·.1 == nm) || emitPasses.any (·.1 == nm)
 
 /-- The data of a changed block for the passes, from its view: Pass 1's
 change kind and classes, and the shape of every Lean recursor's image. An

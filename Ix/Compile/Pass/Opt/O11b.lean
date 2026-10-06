@@ -13,16 +13,18 @@ Lean gives such a `T` the enumeration form (§4.7 (c)); inside the mutual
 block it gives it the general form
 `λ P t t'. T.casesOn t (T.casesOn t' (P → P) P …) …`.
 
-Output: the two constants keep their Lean names and Lean's types; their
-values become the enumeration form, which is the twin's (measured on Lean
+Output (decision 5, D1): the two Lean names keep Lean's general form (the
+baseline, faithful and convertible); the canonical constants
+`T.noConfusionType._ix` and `T.noConfusion._ix` (`ixFormName`), with Lean's
+types, get the enumeration form, which is the twin's (measured on Lean
 4.34.1 with `pp.all`; `v` the motive universe, `l` the universe of `T`'s
 sort):
 * one constructor: `T.noConfusionType := λ (P : Sort v) (x y : T). P → P`,
   `T.noConfusion := λ {P} {x y} (h : @Eq.{l} T x y) (p : P). p`;
 * two or more constructors (`noConfusionTypeEnum T.ctorIdx`): **declined**
   at this head (below).
-Each value's root carries the decompile record `_ix.inline` with Lean's
-value as its source (placeholder indices from `o11bRecordBase`).
+The Lean names are recorded non-canonical with the cause O11b; a caller that
+wants the canonical form refers to the `_ix` names itself (callers adapt).
 
 ## Faithfulness (proof-justified; the statement Phase B formalises)
 Write `G` and `E` for Lean's (general) and the enumeration
@@ -41,20 +43,17 @@ So the environment with `(E, ε)` and the one with `(G, g)` agree on every
 closed instance (Lemma O11b.1 at constructors is `rfl`), and every term
 typed against `T.noConfusionType` is transported along `G = E`.
 
-**Typing of the output.** `ε` has Lean's type `x = y → T.noConfusionType P
-x y` only when `T.noConfusionType` unfolds to `E` at variables: `ε` is
-rewritten only together with `E` (both decisions are the same function of
-the input, `rewriteMembers`). Lean's own `g` checks against either value
-(it instantiates `T.noConfusionType` generically in its motives and at
-constructors in its minors), so a demoted `T.noConfusion` next to a
-rewritten `T.noConfusionType` is well typed.
-
-**Dependents.** The dependents rule (`Opt.Packed`): a constant outside the
-pair that references `T.noConfusionType` (or `T.noConfusion`) and an
-image-kind auxiliary of `T`'s block demotes it (`T.noConfusion` is not
-counted for `T.noConfusionType`, `isCarriedDependent`). Users of
-`T.noConfusion` apply it at constructors (`nomatch`, injectivity), where
-both forms reduce alike.
+**Typing of the output.** `ε` has the type `x = y → T.noConfusionType._ix P
+x y` (Lean's type with `T.noConfusionType` replaced by the canonical one, by
+the pass itself: `Driver.unitPasses`), which unfolds to `E` at variables,
+so `ε : x = y → E P x y` checks by δ. Both `_ix` constants are emitted
+together (the same decision, `pairApplies`, a function of `T` and its
+classes). The Lean names `G`, `g` are untouched, so every caller of them,
+including one that unfolds `G` to Lean's general form, checks as before;
+nothing about a caller is read (no dependents rule). The two forms are not
+convertible (`G` and `E` differ at variables), so the canonical constants are
+proof-justified: Lemmas O11b.1–2 are the proof terms that `G = E` and that
+`g` and `ε` agree along it.
 
 ## Canonicity
 The output depends on `T` (canonical: the Ix inductive of the class), the
@@ -67,7 +66,7 @@ Decidable: the names are `T.noConfusionType`/`T.noConfusion` of a member
 `T` of a changed block (`T.casesOn` is an image-kind head); `T`'s Ix
 component is one class; `T` is an enumeration as above, with exactly one
 constructor; Lean's constants have the standard shape (a definition whose
-type has three, resp. four, binders, the first a sort); not demoted.
+type has three, resp. four, binders, the first a sort).
 Otherwise Lean's value, the baseline, faithful (§0.1).
 **Two or more constructors** need `T.ctorIdx`, `noConfusionTypeEnum`,
 `noConfusionEnum` and `instDecidableEqNat` compiled before `T`'s
@@ -78,9 +77,11 @@ edge would make the output depend on the schedule. Declined (cause
 is the vehicle).
 
 ## Non-canonical set and evidence
-Several constructors: `PENDING-NOCONFUSION` (above). Evidence:
+The Lean names `T.noConfusionType`, `T.noConfusion` of a rewritten pair: cause
+O11b (D1: their canonical forms are the `_ix` constants). Several
+constructors: `PENDING-NOCONFUSION` (above). Evidence:
 `Tests/Ix/Compile/Pass/O11bNoConfusion.lean` (a split-off one-constructor
-enumeration: twin pairs byte-equal with the switch on; a two-constructor one
+enumeration: the `_ix` constants byte-equal to the twin's with the switch on; a two-constructor one
 declines; value pins by `rfl` and a `noConfusion` user, checked by the three
 kernels). Library load 0 (no split block with an enumeration member).
 -/
@@ -93,10 +94,6 @@ public section
 namespace Ix.Compile.Pass.Opt
 
 open Ix (Name Level Expr ConstantInfo DefinitionVal InductiveVal)
-
-/-- Placeholder indices of O11b's decompile records (disjoint from the
-call-site rewrite's, which start at 0, and the clique hook's, `2^40`). -/
-def o11bRecordBase : Nat := 1 <<< 41
 
 /-- The sort level of an inductive's type (`Sort l` after its binders). -/
 def sortOfType : Expr → Option Level
@@ -144,9 +141,9 @@ def enumForm (iv : InductiveVal) (v : Level) (us : Array Level) (isType : Bool) 
         .default) .implicit) .implicit) .implicit)
 
 /-- Whether O11b rewrites the pair of `T` (the same decision at both
-constants): the side condition, and no demotion of `T.noConfusionType`. -/
+constants): the side condition. -/
 def O11b.pairApplies (const? : Name → Option ConstantInfo)
-    (classesOf : Name → Option (Array (Array Name))) (demoted : Name → Bool) (t : Name) : Bool :=
+    (classesOf : Name → Option (Array (Array Name))) (t : Name) : Bool :=
   Option.isSome do
     let iv0 ← (match const? t with | some (.inductInfo iv) => some iv | _ => none)
     if iv0.all.size < 2 then none
@@ -154,17 +151,15 @@ def O11b.pairApplies (const? : Name → Option ConstantInfo)
     if classes.size != 1 then none
     let (_, n) ← enumCtors const? t
     if n != 1 then none
-    if demoted (Name.mkStr t "noConfusionType") then none
     pure ()
 
 /-- The rewritten value of one of the pair, when O11b applies to it. -/
 def O11b.rewrite (const? : Name → Option ConstantInfo)
-    (classesOf : Name → Option (Array (Array Name))) (demoted : Name → Bool)
+    (classesOf : Name → Option (Array (Array Name)))
     (n : Name) (ci : ConstantInfo) : Option DefinitionVal := do
   let (t, isType) ← noConfusionOf n
   let .defnInfo dv := ci | none
-  if !O11b.pairApplies const? classesOf demoted t then none
-  if !isType && demoted n then none
+  if !O11b.pairApplies const? classesOf t then none
   let v ← dv.cnst.levelParams[0]?
   if forallArity dv.cnst.type != (if isType then 3 else 4) then none
   let (iv, _) ← enumCtors const? t

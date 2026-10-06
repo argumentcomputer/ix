@@ -707,36 +707,68 @@ def passSameAsOff : List (String × String × Bool) := [
 def pjPassFiles : List String :=
   ["O7Collapse", "O8Cases", "O9Split", "O10O12Collapse", "O11bNoConfusion"].map fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
 
-/-- Twins with the switch on (one address): the pass made the presentation's
-term the canonical one's. -/
+/-- Twins with the switch on (one address). Decision 5 (D1): a
+proof-justified pass writes its canonical form under `c._ix`, so the pairs
+compare the `_ix` constants (and the helpers `p._ix.s`, `fg`) with the
+canonical presentation's constants; constants no pass touches are compared
+under their own names. -/
 def pjPassTwins : List (String × String × String) := [
+  ("O7Collapse", "PassO7.Src.A.viaRec._ix", "PassO7.Can.A.viaRec"),
+  ("O7Collapse", "PassO7.Src.B.viaRecOn._ix", "PassO7.Can.B.viaRecOn"),
+  ("O7Collapse", "PassO7.Src.Z.viaRec._ix", "PassO7.Can.Z.viaRec"),
+  ("O8Cases", "PassO8.Src.A.isNil._ix", "PassO8.Can.A.isNil"),
+  ("O8Cases", "PassO8.Src.B.isNil.match_1._ix", "PassO8.Can.B.isNil.match_1"),
+  ("O8Cases", "PassO8.Src.Z.isE.match_1._ix", "PassO8.Can.Z.isE.match_1"),
+  ("O8Cases", "PassO8.Src.A.noConfusionType._ix", "PassO8.Can.A.noConfusionType"),
+  ("O8Cases", "PassO8.Src.A.isNil'._ix", "PassO8.Can.A.isNil'"),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType._ix", "PassO11b.Can.B.noConfusionType"),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusion._ix", "PassO11b.Can.B.noConfusion"),
+  ("O11bNoConfusion", "PassO11b.Src.B.val", "PassO11b.Can.B.val"),
+  ("O9Split", "PassO9.Src.A.len._ix", "PassO9.Can.A.len"),
+  ("O9Split", "PassO9.Src.A.len._ix._f", "PassO9.Can.A.len._f"),
+  ("O9Split", "PassO9.Src.A.sum._ix", "PassO9.Can.A.sum"),
+  ("O9Split", "PassO9.Src.A.sum._ix._f", "PassO9.Can.A.sum._f"),
+  ("O9Split", "PassO9.Src.A.cnt._ix", "PassO9.Can.A.cnt"),
+  ("O9Split", "PassO9.Src.B.val", "PassO9.Can.B.val")]
+  -- `O10O12Collapse`: its structural cliques are transported by the clique hook (A5), so O10
+  -- and O12 do not fire there (design document §1.6.2): no `_ix` pair, see `passTwinsNC`
+
+/-- Twin pairs that still differ with the switch on: each must have its entry
+in `Tests.Ix.Compile.NonCanonical.nonCanonicalPasses` (fixture
+`Tests.Ix.Compile.Pass.<unit>`, the `Src` constant), with the measured
+addresses, and every entry must name a pair listed here. Decision 5 (D1):
+the Lean name of every constant a proof-justified pass rewrote (cause
+`PJ-FORM-<pass>`), and the constants over such a Lean name that no pass
+rewrote (`INHERITED`: they refer to the Lean name, whose form did not change;
+a caller that wants the canonical form refers to the `_ix` name). -/
+def passTwinsNC : List (String × String × String) := [
   ("O7Collapse", "PassO7.Src.A.viaRec", "PassO7.Can.A.viaRec"),
   ("O7Collapse", "PassO7.Src.B.viaRecOn", "PassO7.Can.B.viaRecOn"),
   ("O7Collapse", "PassO7.Src.Z.viaRec", "PassO7.Can.Z.viaRec"),
   ("O8Cases", "PassO8.Src.A.isNil", "PassO8.Can.A.isNil"),
-  ("O8Cases", "PassO8.Src.B.isNil", "PassO8.Can.B.isNil"),
   ("O8Cases", "PassO8.Src.B.isNil.match_1", "PassO8.Can.B.isNil.match_1"),
-  ("O8Cases", "PassO8.Src.Z.isE", "PassO8.Can.Z.isE"),
+  ("O8Cases", "PassO8.Src.B.isNil", "PassO8.Can.B.isNil"),
   ("O8Cases", "PassO8.Src.Z.isE.match_1", "PassO8.Can.Z.isE.match_1"),
+  ("O8Cases", "PassO8.Src.Z.isE", "PassO8.Can.Z.isE"),
   ("O8Cases", "PassO8.Src.A.noConfusionType", "PassO8.Can.A.noConfusionType"),
+  ("O8Cases", "PassO8.Src.A.isNil'", "PassO8.Can.A.isNil'"),
   ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType", "PassO11b.Can.B.noConfusionType"),
   ("O11bNoConfusion", "PassO11b.Src.B.noConfusion", "PassO11b.Can.B.noConfusion"),
   ("O11bNoConfusion", "PassO11b.Src.nc", "PassO11b.Can.nc"),
-  ("O11bNoConfusion", "PassO11b.Src.B.val", "PassO11b.Can.B.val"),
+  ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Can.E.noConfusionType"),
+  ("O11bNoConfusion", "PassO11b.Src.E.noConfusion", "PassO11b.Can.E.noConfusion"),
   ("O9Split", "PassO9.Src.A.len", "PassO9.Can.A.len"),
-  ("O9Split", "PassO9.Src.A.len._ix._f", "PassO9.Can.A.len._f"),
   ("O9Split", "PassO9.Src.A.sum", "PassO9.Can.A.sum"),
-  ("O9Split", "PassO9.Src.A.sum._ix._f", "PassO9.Can.A.sum._f"),
-  ("O9Split", "PassO9.Src.B.val", "PassO9.Can.B.val"),
+  ("O9Split", "PassO9.Src.A.cnt", "PassO9.Can.A.cnt"),
   ("O9Split", "PassO9.Src.len2", "PassO9.Can.len2"),
   ("O9Split", "PassO9.Src.len3", "PassO9.Can.len3"),
   ("O9Split", "PassO9.Src.sum2", "PassO9.Can.sum2"),
   ("O9Split", "PassO9.Src.len_succ", "PassO9.Can.len_succ"),
-  ("O9Split", "PassO9.Src.A.cnt", "PassO9.Can.A.cnt"),
   ("O9Split", "PassO9.Src.cnt1", "PassO9.Can.cnt1"),
+  ("O9Split", "PassO9.Src.A.len._f", "PassO9.Can.A.len._f"),
+  ("O9Split", "PassO9.Src.A.sum._f", "PassO9.Can.A.sum._f"),
   ("O10O12Collapse", "PassO10.Src.A.h", "PassO10.Can.X.h"),
   ("O10O12Collapse", "PassO10.Src.B.k", "PassO10.Can.X.h"),
-  ("O10O12Collapse", "PassO10.Src.A.h._ix._f", "PassO10.Can.X.h._f"),
   ("O10O12Collapse", "PassO10.Src.h_two", "PassO10.Can.h_two"),
   ("O10O12Collapse", "PassO10.Src.A.f", "PassO10.Perm.A.f"),
   ("O10O12Collapse", "PassO10.Src.B.g", "PassO10.Perm.B.g"),
@@ -745,52 +777,47 @@ def pjPassTwins : List (String × String × String) := [
   ("O10O12Collapse", "PassO10.C8.Src.A.h", "PassO10.C8.Can.X.h"),
   ("O10O12Collapse", "PassO10.C8.Src.B.h", "PassO10.C8.Can.X.h"),
   ("O10O12Collapse", "PassO10.C8.Src.C.h", "PassO10.C8.Can.C.h"),
-  ("O10O12Collapse", "PassO10.C8.Src.h_ex", "PassO10.C8.Can.h_ex"),
-  ("O10O12Collapse", "PassO10.Src.A.f._ix.fg", "PassO10.Perm.A.f._ix.fg"),
-  ("O10O12Collapse", "PassO10.Src.A.f._ix._f", "PassO10.Perm.A.f._ix._f"),
-  ("O10O12Collapse", "PassO10.Src.B.g._ix._f", "PassO10.Perm.B.g._ix._f")]
+  ("O10O12Collapse", "PassO10.C8.Src.h_ex", "PassO10.C8.Can.h_ex")]
 
-/-- Twin pairs that still differ with the switch on: each must have its entry
-in `Tests.Ix.Compile.NonCanonical.nonCanonicalPasses` (fixture
-`Tests.Ix.Compile.Pass.<unit>`, the `Src` constant), with the measured
-addresses, and every entry must name a pair listed here. -/
-def passTwinsNC : List (String × String × String) := [
-  ("O8Cases", "PassO8.Src.A.isNil'", "PassO8.Can.A.isNil'"),
-  ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Can.E.noConfusionType"),
-  ("O11bNoConfusion", "PassO11b.Src.E.noConfusion", "PassO11b.Can.E.noConfusion"),
-  ("O9Split", "PassO9.Src.A.len._f", "PassO9.Can.A.len._f"),
-  ("O9Split", "PassO9.Src.A.sum._f", "PassO9.Can.A.sum._f")]
-
-/-- Pass firing, read off the switch-on output (as `passRefs`). -/
+/-- Pass firing, read off the switch-on output (as `passRefs`). Decision 5
+(D1): the `_ix` form carries the pass's output, the Lean name keeps the
+baseline (the packed image: `PProd` for a collapsed block, Lean's handler
+for a split one). -/
 def pjPassRefs : List (String × String × String × Bool) := [
   -- O7: the Ix recursor, single motives (no packing); declines on distinct minors
-  ("O7Collapse", "PassO7.Src.A.viaRec", "PProd", false),
-  ("O7Collapse", "PassO7.Src.B.viaRecOn", "PProd", false),
-  ("O7Collapse", "PassO7.Src.Z.viaRec", "PProd", false),
+  ("O7Collapse", "PassO7.Src.A.viaRec._ix", "PProd", false),
+  ("O7Collapse", "PassO7.Src.B.viaRecOn._ix", "PProd", false),
+  ("O7Collapse", "PassO7.Src.Z.viaRec._ix", "PProd", false),
+  ("O7Collapse", "PassO7.Src.A.viaRec", "PProd", true),
   ("O7Collapse", "PassO7.Src.A.distinct", "PProd", true),
-  -- O8: the Ix `casesOn` of the class, in matchers too; the demoted constant keeps its image
-  ("O8Cases", "PassO8.Src.A.isNil", "PProd", false),
-  ("O8Cases", "PassO8.Src.B.isNil.match_1", "PProd", false),
-  ("O8Cases", "PassO8.Src.Z.isE.match_1", "PProd", false),
+  -- O8: the Ix `casesOn` of the class, in matchers too; the Lean names keep their images
+  ("O8Cases", "PassO8.Src.A.isNil._ix", "PProd", false),
+  ("O8Cases", "PassO8.Src.B.isNil.match_1._ix", "PProd", false),
+  ("O8Cases", "PassO8.Src.Z.isE.match_1._ix", "PProd", false),
+  ("O8Cases", "PassO8.Src.A.isNil'._ix", "PProd", false),
+  ("O8Cases", "PassO8.Src.A.isNil", "PProd", true),
+  ("O8Cases", "PassO8.Src.B.isNil.match_1", "PProd", true),
   ("O8Cases", "PassO8.Src.A.isNil'", "PProd", true),
-  -- O11b: the enumeration form (no `casesOn`); declines on two constructors (O3 still fires)
-  ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType", "PassO11b.Src.B._ix.casesOn", false),
-  ("O11bNoConfusion", "PassO11b.Src.B.noConfusion", "PassO11b.Src.B._ix.casesOn", false),
+  -- O11b: the enumeration form (no `casesOn`) in the `_ix` forms, whose `noConfusion`
+  -- is typed over the canonical `noConfusionType`; declines on two constructors (O3 still fires)
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType._ix", "PassO11b.Src.B._ix.casesOn", false),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusion._ix", "PassO11b.Src.B._ix.casesOn", false),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusion._ix", "PassO11b.Src.B.noConfusionType._ix", true),
+  ("O11bNoConfusion", "PassO11b.Src.B.noConfusionType", "PassO11b.Src.B._ix.casesOn", true),
   ("O11bNoConfusion", "PassO11b.Src.E.noConfusionType", "PassO11b.Src.E._ix.casesOn", true),
   -- O9: the Ix `brecOn` with the canonical handler (also for `A.cnt`: Lean compiles `B.cnt b` as a
   -- call, `B.cnt` not being recursive through `A`, so the handler reads no cross field)
-  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A._ix.brecOn", true),
-  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._ix._f", true),
-  ("O9Split", "PassO9.Src.A.sum", "PassO9.Src.A._ix.brecOn", true),
-  ("O9Split", "PassO9.Src.A.cnt", "PassO9.Src.A._ix.brecOn", true),
-  -- O10: the Ix `brecOn`, single motives; O12: the shared helper; C8's different arms decline
-  ("O10O12Collapse", "PassO10.Src.A.h", "PProd", false),
-  ("O10O12Collapse", "PassO10.C8.Src.A.h", "PProd", false),
+  ("O9Split", "PassO9.Src.A.len._ix", "PassO9.Src.A._ix.brecOn", true),
+  ("O9Split", "PassO9.Src.A.len._ix", "PassO9.Src.A.len._ix._f", true),
+  ("O9Split", "PassO9.Src.A.sum._ix", "PassO9.Src.A._ix.brecOn", true),
+  ("O9Split", "PassO9.Src.A.cnt._ix", "PassO9.Src.A._ix.brecOn", true),
+  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._ix._f", false),
+  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._f", true),
+  -- O10/O12 do not fire on the transported cliques: no image of the paired recursor is
+  -- rewritten for them, and O12's helper is not emitted
+  ("O10O12Collapse", "PassO10.Src.A.h", "PProd", true),
   ("O10O12Collapse", "PassO10.C8.Src.A.f", "PProd", true),
-  ("O10O12Collapse", "PassO10.Src.A.f", "PassO10.Src.A.f._ix.fg", true),
-  ("O10O12Collapse", "PassO10.Src.B.g", "PassO10.Src.A.f._ix.fg", true),
-  ("O10O12Collapse", "PassO10.Src.A.h", "PassO10.Src.A.h._ix._f", true),
-  ("O10O12Collapse", "PassO10.Src.B.k", "PassO10.Src.A.h._ix._f", true)]
+  ("O10O12Collapse", "PassO10.Src.A.f", "PassO10.Src.A.f._ix.fg", false)]
 
 /-- The proof-justified passes' non-canonical set, exact in both directions
 for the unit (`passTwinsNC` against `nonCanonicalPasses`). -/

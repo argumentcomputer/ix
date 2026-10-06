@@ -27,6 +27,14 @@ decompile record (`Ix.CompileM.compileKVMap`). Occurrences inside the
 arguments of a rewritten occurrence, and inside expansions, carry no record:
 the outer record restores them.
 
+At a full application the optimisation passes are tried first
+(`RwState.opt?`). A definitional pass's term replaces the inline form. A
+proof-justified pass's term (O7–O12) never replaces it under a Lean name
+(decision 5, D1): the Lean name keeps the baseline and the definition's
+canonical form `c._ix` (Lean's constant renamed) is returned in
+`BlockRewrite.canon`, to be rewritten in place (`RwState.inPlace`) by the
+driver (`Driver.compileCanon`).
+
 ## Faithfulness
 Definitional. Inlining is δ of `img(a)` followed by β (hereditary), and the
 projection-of-constructor and η steps at substituted positions, so the
@@ -92,13 +100,18 @@ structure RwState where
   /-- Rewritten expansions. -/
   exps : Std.HashMap Name Expansion := {}
   cache : Std.HashMap (Expr × Bool × Option Name) Expr := {}
-  /-- The optimisation passes (`Ix.Compile.Pass.Opt.engine`), tried at every
-  full application before the image is inlined; `none` keeps the baseline.
-  The first argument is `site`. -/
-  opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo) :=
+  /-- The optimisation passes (`Ix.Compile.Pass.Opt.engineFull`), tried at
+  every full application before the image is inlined; `none` keeps the
+  baseline. The first argument is `site`; the result carries the canonical
+  constants the rewrite references and whether the pass is proof-justified
+  (O7–O12, `Opt.isProofJustified`). -/
+  opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Bool) :=
     fun _ _ _ _ => none
-  /-- Canonical constants the passes' rewrites reference (reserved `_ix`
-  names, O9: the re-typed structural handler), to be compiled with the block. -/
+  /-- Canonical constants to compile with the block (reserved `_ix` names):
+  the canonical form `c._ix` of a definition `c` where a proof-justified pass
+  fires (Lean's constant renamed, rewritten in place by `Driver.compileCanon`),
+  and the helpers the passes' rewrites reference (O9/O10: re-typed
+  structural handlers, O12: the shared pair-valued helper). -/
   canon : Array ConstantInfo := #[]
   /-- The recorded declines (design document §6.3, obligation 4): tried at
   every full application next to `opt?`; a cause means a pass declined
@@ -111,11 +124,19 @@ structure RwState where
   `cache`). -/
   declineCache : Std.HashMap (Expr × Bool × Option Name) (Array String) := {}
   /-- The definition whose value is being rewritten, where the proof-justified
-  passes (O7, O8) may fire: only in the value of a definition, never in a
+  passes (O7–O12) may fire: only in the value of a definition, never in a
   type, in a theorem's proof or in a shared expansion, where a rewrite that
   is not a conversion would change a statement or the type a proof is
   checked against. -/
   site : Option Name := none
+  /-- Decision 5 (D1): `false` for a Lean constant, whose name keeps the
+  faithful form: at a proof-justified rewrite the baseline is kept and
+  `pjFired` is set, so that the definition's canonical form `c._ix` is
+  emitted; `true` for a canonical constant (an `_ix` name), which takes the
+  proof-justified rewrites in place. -/
+  inPlace : Bool := false
+  /-- A proof-justified pass fired in the value being rewritten (`site`). -/
+  pjFired : Bool := false
 
 abbrev RwM := StateT RwState (Except String)
 
@@ -174,7 +195,18 @@ def rw : Nat → Bool → Expr → RwM Expr
               -- bare or partial: the Lean name denotes the stored image
               -- constant (Q11), so the occurrence stays as written
               return mkAppN (Expr.mkConst n us) args'
-            let body ← match (← get).opt? site n us args' with
+            let st ← get
+            let res ← match st.opt? site n us args' with
+              | some (e, cs, false) => pure (some (e, cs))
+              | some (e, cs, true) =>
+                if st.inPlace then pure (some (e, cs))
+                else do
+                  -- a Lean name keeps the faithful form (D1): the baseline
+                  -- here, the rewrite in the canonical form `c._ix`
+                  modify fun st => { st with pjFired := true }
+                  pure ((st.opt? none n us args').map fun (e, cs, _) => (e, cs))
+              | none => pure none
+            let body ← match res with
               | some (e, cs) =>
                 if !cs.isEmpty then
                   modify fun st => { st with canon := cs.foldl (fun acc c =>
@@ -225,9 +257,20 @@ def rewriteConstM (ci : ConstantInfo) : RwM ConstantInfo := do
     let cnst' ← cnst v.cnst
     -- the value of a definition is the one place a proof-justified pass may
     -- fire (`RwState.site`)
-    modify fun st => { st with site := some v.cnst.name }
+    modify fun st => { st with site := some v.cnst.name, pjFired := false }
     let value ← go v.value
-    modify fun st => { st with site := none }
+    let fired := (← get).pjFired
+    let inPlace := (← get).inPlace
+    modify fun st => { st with site := none, pjFired := false }
+    if fired && !inPlace then
+      -- decision 5 (D1): the canonical form under `c._ix`, Lean's constant
+      -- renamed, rewritten in place when the block's canonical constants
+      -- compile (`Driver.compileCanon`)
+      let c := ixFormName v.cnst.name
+      let cv : Ix.DefinitionVal := { v with cnst := { v.cnst with name := c }, all := #[c] }
+      let present := (← get).canon.any fun x => x.getCnst.name == c
+      if !present then
+        modify fun st => { st with canon := st.canon.push (.defnInfo cv) }
     pure (.defnInfo { v with cnst := cnst', value })
   | .thmInfo v => pure (.thmInfo { v with cnst := ← cnst v.cnst, value := ← go v.value })
   | .opaqueInfo v => pure (.opaqueInfo { v with cnst := ← cnst v.cnst, value := ← go v.value })
@@ -261,14 +304,18 @@ structure BlockRewrite where
   deriving Inhabited
 
 /-- Rewrite the members of one block (`base(c)` for each); placeholder
-indices are block-unique. -/
+indices are block-unique. `inPlace` (D1): the members are canonical constants
+(`_ix` names), which take the proof-justified rewrites in place; otherwise
+they are Lean constants, which keep the faithful form, and the canonical form
+of each one a proof-justified pass fires in is returned in `canon`. -/
 def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     (members : Array (Name × ConstantInfo))
-    (opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo) :=
+    (opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Bool) :=
       fun _ _ _ _ => none)
-    (decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none) :
+    (decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none)
+    (inPlace : Bool := false) :
     Except String BlockRewrite := do
-  let mut st : RwState := { base := 0, opt?, decline? }
+  let mut st : RwState := { base := 0, opt?, decline?, inPlace }
   let mut overlay : Array (Name × ConstantInfo) := #[]
   let mut declines : Array (Name × String) := #[]
   for (n, ci) in members do

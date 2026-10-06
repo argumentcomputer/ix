@@ -358,12 +358,31 @@ def compileImage (cenv : CompileEnv) (known : Std.HashMap Name Address)
   | .ok (r, bs) => return (r, bs)
   | .error e => throw s!"Pass 3: image constant {name.pretty}: {e}"
 
-/-- The definitional passes (`Ix.Compile.Pass.Opt.engine`) over the views of a
-block's referenced changed blocks: the hook the rewrite tries at every full
-application before it inlines an image (heads of other blocks keep their
-baseline). -/
+/-- The canonical `_ix` form of a compiled dependency (decision 5, D1): `d ↦
+d._ix` when `d` is a definition of the input (never an image-kind head) and
+`d._ix` is compiled. `d` is referenced by the constant being compiled, so it
+is a dependency and its block, which emits `d._ix` with it, compiled first:
+the answer is a function of the dependency's compiled form, never of a
+caller or of the schedule. Read only by O10 and O12, which compare handlers
+through their references' canonical forms (`OptEnv.canonAddrOf`); no
+reference is renamed to it (`compileCanon`). -/
+def ixFormOf (cenv : CompileEnv) (d : Name) : Option Name :=
+  match cenv.env.get? d with
+  | some (.defnInfo _) =>
+    if cenv.p3Heads.contains d then none
+    else
+      let c := ixFormName d
+      if (resolveAddr cenv c).isSome then some c else none
+  | _ => none
+
+/-- The optimisation passes (`Ix.Compile.Pass.Opt.engineFull`) over the views
+of a block's referenced changed blocks: the hook the rewrite tries at every
+full application before it inlines an image (heads of other blocks keep
+their baseline). The result says whether the pass is proof-justified
+(`Opt.isProofJustified`), whose output goes to the canonical `_ix` form only
+(D1, `Translate.RwState.inPlace`). -/
 def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
-    Option Name → Name → Array Ix.Level → Array Expr → Option (Expr × Array ConstantInfo) :=
+    Option Name → Name → Array Ix.Level → Array Expr → Option (Expr × Array ConstantInfo × Bool) :=
   let inp := viewInput cenv
   let blocks : Std.HashMap Name Opt.OptBlock :=
     views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
@@ -371,37 +390,37 @@ def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
       addrOf := resolveAddr cenv
-      demotion := Opt.demotionIn cenv.p3BlockRefs cenv.p3Heads }
-  fun site n us args => (Opt.engineFull env { head := n, us, args, site }).map (·.2)
+      ixForm? := ixFormOf cenv }
+  fun site n us args => (Opt.engineFull env { head := n, us, args, site }).map fun (nm, e, cs) =>
+    (e, cs, Opt.isProofJustified nm)
 
-/-- The unit passes (A6p) over a block's members, after the call-site
-rewrite: O11b gives Lean's `noConfusion` pair of a split-off enumeration
-its enumeration form (`Ix.Compile.Pass.Opt.O11b`), with Lean's value as the
-root's decompile record. `overlay` and `sources` are the rewrite's. -/
+/-- The unit passes (A6p) over a block's members: O11b gives Lean's
+`noConfusion` pair of a split-off enumeration its enumeration form
+(`Ix.Compile.Pass.Opt.O11b`). Decision 5 (D1): the Lean names keep Lean's
+general form; the enumeration form is returned as the canonical constants
+`T.noConfusionType._ix`, `T.noConfusion._ix` (compiled with the block by
+`compileCanon`); the type of `T.noConfusion._ix` refers to
+`T.noConfusionType._ix` (the pair is one decision, Lemma O11b.2). -/
 def unitPasses (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
-    (members : Array (Name × ConstantInfo)) (overlay : Std.HashMap Name ConstantInfo)
-    (sources : Std.HashMap Nat Expr) : Std.HashMap Name ConstantInfo × Std.HashMap Nat Expr := Id.run do
+    (members : Array (Name × ConstantInfo)) : Array ConstantInfo := Id.run do
   let classesOf : Name → Option (Array (Array Name)) := fun t => do
     let key ← cenv.p3Heads.get? (Name.mkStr t "casesOn")
     let v ← views.get? key
     let c ← v.canon.components.find? (·.members.contains t)
     pure c.classes
-  let demoted : Name → Bool := fun c => match Opt.noConfusionOf c with
-    | some (t, _) => match cenv.p3Heads.get? (Name.mkStr t "casesOn") with
-      | some key => (Opt.demotionIn cenv.p3BlockRefs cenv.p3Heads c key).isSome
-      | none => true
-    | none => true
-  let mut overlay := overlay
-  let mut sources := sources
-  let mut k := 0
+  let mut canon : Array ConstantInfo := #[]
   for (n, ci) in members do
-    let some dv := Opt.O11b.rewrite cenv.env.get? classesOf demoted n ci | continue
-    let some leanValue := (match ci with | .defnInfo d => some d.value | _ => none) | continue
-    let idx := Opt.o11bRecordBase + k
-    k := k + 1
-    overlay := overlay.insert n (.defnInfo { dv with value := Expr.mkMData #[(inlineKey, .ofNat idx)] dv.value })
-    sources := sources.insert idx leanValue
-  return (overlay, sources)
+    let some dv := Opt.O11b.rewrite cenv.env.get? classesOf n ci | continue
+    let c := ixFormName n
+    -- the pair is decided together (`O11b.pairApplies`): the canonical
+    -- `noConfusion` is typed over the canonical `noConfusionType` (Lemma O11b.2)
+    let ty := match Opt.noConfusionOf n with
+      | some (t, false) =>
+        let nct := Name.mkStr t "noConfusionType"
+        Ix.Compile.Canon.canonicalizeConstNames (({} : Std.HashMap Name Name).insert nct (ixFormName nct)) dv.cnst.type
+      | _ => dv.cnst.type
+    canon := canon.push (.defnInfo { dv with cnst := { dv.cnst with name := c, type := ty }, all := #[c] })
+  return canon
 
 /-- The recorded declines of the definitional passes over the same views
 (`Ix.Compile.Pass.Opt.O11a.declineCause?`): the hook the rewrite tries next
@@ -431,38 +450,94 @@ def cliqueRewrite (cenv : CompileEnv) (members : Array (Name × ConstantInfo)) :
         if !views.contains key then views := views.insert key (← viewOf cenv views key)
   rewriteBlock (expansionLookup cenv views) members (optLookup cenv views)
 
-/-- Compile the canonical constants the passes' rewrites reference (A6p: O9's
-re-typed handlers `c._ix._f`) into the block's initial state, the way A5's
-clique hook compiles its canonical constants: each through the call-site
-rewrite, then as an ordinary constant under its reserved name. A constant an
-earlier block already compiled is skipped (the bytes are the same; the
-driver's insert-once merge). -/
+/-- Compile the block's canonical constants (reserved `_ix` names) into its
+initial state, the way A5's clique hook compiles its canonical constants:
+* the canonical forms `c._ix` of the block's definitions where a
+  proof-justified pass fires (decision 5, D1; `Translate.RwState.canon`) and
+  O11b's (`unitPasses`), and the helpers the passes' rewrites reference
+  (O9/O10's re-typed handlers `p._ix.s`, O12's `fg`);
+* each through the call-site rewrite **in place** (`rewriteBlock` with
+  `inPlace`: the proof-justified passes rewrite a canonical constant itself),
+  whose own helpers join the work list;
+* no reference is renamed afterwards: a canonical constant refers to its
+  dependencies by their Lean names, so it is well typed whatever forms they
+  have (a raw renaming `d ↦ d._ix` is not conversion-preserving); a caller
+  that wants a canonical form refers to it itself (callers adapt, §6.3);
+* then compiled as ordinary constants, each once the canonical constants it
+  references are. A reserved name already bound (O12's `fg`, emitted by the
+  blocks of both functions of a pair; a canonical constant of the clique hook)
+  must be bound to the same bytes, which are then not stored again (the
+  driver's insert-once merge); a different binding fails the compile (a
+  reserved-name clash is refused, never resolved silently). -/
 def compileCanon (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
     (canon : Array ConstantInfo) (init0 : BlockState := {}) : Except String BlockState := do
   let lookup := expansionLookup cenv views
-  let mut init : BlockState := init0
-  for ci in canon do
+  -- rewrite in place, collecting the helpers the rewrites reference
+  let mut queue := canon
+  let mut i := 0
+  let mut seen : Std.HashSet Name := {}
+  let mut done : Array (ConstantInfo × Std.HashMap Nat Expr) := #[]
+  while h : i < queue.size do
+    let ci := queue[i]
+    i := i + 1
     let c := ci.getCnst.name
-    if (resolveAddr cenv c).isSome || init.blockNameToAddr.contains c then continue
-    let rw ← rewriteBlock lookup #[(c, ci)] (optLookup cenv views)
+    if seen.contains c then continue
+    seen := seen.insert c
+    let rw ← rewriteBlock lookup #[(c, ci)] (optLookup cenv views) (inPlace := true)
     let ci' := match rw.overlay[0]? with
       | some (_, x) => x
       | none => ci
+    queue := queue ++ rw.canon
     let srcs : Std.HashMap Nat Expr := rw.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) {}
-    let blockEnv : BlockEnv :=
-      { all := ({} : Ix.Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
-    let st0 : BlockState := { blockNameToAddr := init.blockNameToAddr }
-    match CompileM.run { cenv with p3Sources := srcs } blockEnv st0 (compileConstantInfo ci') with
-    | .error e => throw s!"Pass 3 optimisations: canonical constant {c.pretty}: {e}"
-    | .ok (r, bs) =>
-      init := { init with
-        blockNameToAddr := init.blockNameToAddr.insert c r.blockAddr
-        auxConsts := init.auxConsts.push (r.blockAddr, r.block)
-        auxNamed := init.auxNamed.push (c, { addr := r.blockAddr, constMeta := r.blockMeta })
-        auxNameToAddr := init.auxNameToAddr.insert c r.blockAddr
-        blockBlobs := bs.blockBlobs.fold (fun m k v => m.insert k v) init.blockBlobs
-        blockNames := bs.blockNames.fold (fun m k v => m.insert k v) init.blockNames
-        defHints := bs.defHints.fold (fun m k v => m.insert k v) init.defHints }
+    done := done.push (ci', srcs)
+  -- no reference is renamed here: a canonical constant refers to its
+  -- dependencies by their Lean names (a raw renaming d ↦ d._ix is not
+  -- conversion-preserving: a constant whose type mentions d would then be
+  -- applied to a term built with d._ix; measured, the certified checker
+  -- rejects such `noConfusionType._ix`). A caller that wants a canonical form
+  -- refers to it itself (O9/O12: their helpers; O11b: its pair).
+  let compiled := done
+  -- compile, each once its canonical references are compiled
+  let names : Std.HashSet Name := compiled.foldl (fun s (ci, _) => s.insert ci.getCnst.name) {}
+  let mut init : BlockState := init0
+  let mut pending := compiled
+  let mut rounds := pending.size + 1
+  while !pending.isEmpty && rounds > 0 do
+    rounds := rounds - 1
+    let mut rest := #[]
+    for (ci, srcs) in pending do
+      let c := ci.getCnst.name
+      let refs := constsWhere (fun r => names.contains r && r != c) ci.getCnst.type ++
+        (match ci with | .defnInfo d => constsWhere (fun r => names.contains r && r != c) d.value | _ => #[])
+      if refs.any (!init.blockNameToAddr.contains ·) then
+        rest := rest.push (ci, srcs)
+        continue
+      let blockEnv : BlockEnv :=
+        { all := ({} : Ix.Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
+      let st0 : BlockState := { blockNameToAddr := init.blockNameToAddr }
+      match CompileM.run { cenv with p3Sources := srcs } blockEnv st0 (compileConstantInfo ci) with
+      | .error e => throw s!"Pass 3 optimisations: canonical constant {c.pretty}: {e}"
+      | .ok (r, bs) =>
+        -- a reserved name already bound (O12's `fg`, emitted by both functions'
+        -- blocks; the clique hook's canonical constants): the same bytes, or a
+        -- clash, which fails closed rather than binding another constant
+        match (resolveAddr cenv c).orElse fun _ => init.blockNameToAddr.get? c with
+        | some a =>
+          if a != r.blockAddr then
+            throw s!"Pass 3 optimisations: reserved name {c.pretty} is already bound to {a}, not to the canonical constant {r.blockAddr}"
+          init := { init with blockNameToAddr := init.blockNameToAddr.insert c a }
+        | none =>
+          init := { init with
+            blockNameToAddr := init.blockNameToAddr.insert c r.blockAddr
+            auxConsts := init.auxConsts.push (r.blockAddr, r.block)
+            auxNamed := init.auxNamed.push (c, { addr := r.blockAddr, constMeta := r.blockMeta })
+            auxNameToAddr := init.auxNameToAddr.insert c r.blockAddr
+            blockBlobs := bs.blockBlobs.fold (fun m k v => m.insert k v) init.blockBlobs
+            blockNames := bs.blockNames.fold (fun m k v => m.insert k v) init.blockNames
+            defHints := bs.defHints.fold (fun m k v => m.insert k v) init.defHints }
+    pending := rest
+  if !pending.isEmpty then
+    throw s!"Pass 3 optimisations: canonical constants with cyclic references: {pending.map (·.1.getCnst.name.pretty)}"
   return init
 
 /-- Rewrite a block before it compiles: the compile environment (overlay,
@@ -500,9 +575,9 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   -- the recorded declines go to the block state, and from there into the
   -- compile's non-canonical set (`CompileEnv.p3NonCanonical`)
   let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines }
-  -- the unit passes (A6p): O11b; the canonical constants the passes reference
-  let (overlay, sources) := unitPasses cenv views members overlay sources
-  let init ← compileCanon cenv views rwr.canon init
+  -- the canonical constants (D1): the `_ix` forms where a proof-justified
+  -- pass fires, the unit passes' (O11b), the helpers the rewrites reference
+  let init ← compileCanon cenv views (rwr.canon ++ unitPasses cenv views members) init
   return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, init)
 
 /-! ## The Lean names of a changed block's auxiliaries: their images -/

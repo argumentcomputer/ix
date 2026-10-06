@@ -2,8 +2,9 @@
 O11b, `noConfusion` of a split-off member in enumeration form. In `Src`, `B` (one constructor,
 no fields) does not mention `A`, so Pass 1 splits it off; inside the mutual block Lean gave it the
 general `noConfusionType`/`noConfusion`, while `Can`, which declares `B` alone, has Lean's
-enumeration form. O11b gives `Src.B.noConfusionType` and `Src.B.noConfusion` the enumeration form:
-the twin pairs are byte-equal with the switch on. `Src.E` has two constructors (enumeration form
+enumeration form. O11b gives `Src.B.noConfusionType._ix` and `Src.B.noConfusion._ix` the enumeration form (decision
+5, D1: the Lean names keep the general form, recorded `PJ-FORM-O11b`): the `_ix` constants are
+byte-equal to `Can`'s with the switch on. `Src.E` has two constructors (enumeration form
 `noConfusionTypeEnum E.ctorIdx`): O11b declines (`PENDING-NOCONFUSION`, the scheduling edge).
 Value pins by `rfl`, and a `noConfusion` user. -/
 set_option Elab.async false

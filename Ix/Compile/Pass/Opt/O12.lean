@@ -47,14 +47,23 @@ The baseline occurrence is `img(x.brecOn) a⃗ ≡δβ B_x t e`; the output is
 `(fg t).(pos x) e` (congruence). **Corollary**: the rewritten `c` equals
 `base(c)` by `funext` and `congrArg`.
 
-**Dependents.** The dependents rule (`Opt.Packed`, `pjAllowed`); closed
-values reduce (`fg` unfolds, `ρ.brecOn` computes by ι).
+**Where the output goes (decision 5, D1).** The output `(fg t).(pos x)` is
+written into the canonical forms `A.f._ix`, `B.g._ix` (Lean's functions
+renamed, with their types); the Lean names `A.f`, `B.g` keep their baselines
+(the image's `brecOn`, convertible to Lean's term) and are recorded
+non-canonical (cause O12; against the collapsed twin they have no
+counterpart at all, `COLLAPSE-ARMS`). The proof term of `A.f._ix = A.f` is
+the Corollary (`funext`, `congrArg` with the conjunct of Lemma O12, the
+joint induction with `ρ`); not convertible at open terms, equal by ι at
+closed ones (`fg` unfolds, `ρ.brecOn` computes). No caller is read; the
+content order reads the canonical forms of the handlers' references
+(`OptEnv.canonAddrOf`).
 
 ## Canonicity
 `fg` depends on the class (canonical), the image's `ρ`, the motives and the
 handlers' bodies only, and the pair order is a function of the content, so
 the permuted presentation (the members and functions declared in the other
-order) gives the same `fg`, and the same `A.f`, `B.g`. The Lean names
+order) gives the same `fg`, and the same `A.f._ix`, `B.g._ix`. The Lean names
 `A.f`, `B.g` have no counterpart in the collapsed twin (one inductive, one
 pair-valued function), so they are faithful only (`COLLAPSE-ARMS`); `fg` is
 the canonical constant.
@@ -64,7 +73,8 @@ Decidable: `readCollapseRec`; one slot of two members; no parameters or
 indices; motives and handlers closed; the motive universe not `0`, no level
 parameters; both handlers definitions; re-typing succeeds (every below
 value at a constructor used through a leaf-value path); `ρ.brecOn`, `ρ.below`
-resolve; `pjAllowed`. Otherwise the baseline (the faithful paired image).
+resolve; `pjAllowed` (the value of a definition). Otherwise no `_ix` form
+is emitted for the occurrence (the faithful paired image).
 Classes of three or more members (C8b) are declined: the content order of
 the other members would need a canonical order of the remaining
 components (recorded `COLLAPSE-ARMS`).
@@ -165,7 +175,7 @@ def O12.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := 
     let rt ← retypeFor #[i, other]
     let (h, cs) ← retypeHandler env rt (← cr.hs[i]?)
     let v := (cs[0]?.bind fun c => match c with | .defnInfo d => some d.value | _ => none).getD h
-    pure (canonKey env.addrOf v)
+    pure (canonKey env.canonAddrOf v)
   let k0 ← keyOf i0 i1
   let k1 ← keyOf i1 i0
   let ord : Array Nat := if k1 < k0 then #[i1, i0] else #[i0, i1]
@@ -196,7 +206,7 @@ def O12.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := 
       hints := .abbrev, safety := .safe, all := #[fgName] }
   let xi ← cr.b.all.idxOf? cr.x
   let pos := if xi == ord[0]! then 0 else 1
-  if !pjAllowed env cr.b o then none
+  if !pjAllowed o then none
   let out := mkAppN (Expr.mkProj nPProd pos (Expr.mkApp (Expr.mkConst fgName #[]) (← cr.tail[0]?))) cr.rest
   return (out, c0 ++ c1 ++ #[.defnInfo fg])
 
