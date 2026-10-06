@@ -549,7 +549,8 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   -- changed definition cliques (`Ix.Compile.Pass.Cliques`, the A5 hook): the
   -- members' transported values with their decompile records, and the
   -- canonical constants they reference
-  let (cenv, init) ← prepareCliques cenv all (cenv.p3BlockRefs.getD lo {}) (cliqueRewrite cenv)
+  let (cenv, init) ← Ix.PhaseTimers.withPhase .p3Cliques cenv fun cenv =>
+    prepareCliques cenv all (cenv.p3BlockRefs.getD lo {}) (cliqueRewrite cenv)
   if cenv.p3Heads.isEmpty then return (cenv, init)
   if let some refs := cenv.p3BlockRefs.get? lo then
     if !refs.toList.any cenv.p3Heads.contains then return (cenv, init)
