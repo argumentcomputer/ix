@@ -2428,7 +2428,8 @@ fn compute_is_large_and_k(
       &mut kctx.kenv,
       n2a,
       aux_n2a,
-    );
+    )
+    .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
 
     // Convert constructors
     let mut cls_ctor_zids: Vec<KId<Meta>> = Vec::new();
@@ -2441,7 +2442,8 @@ fn compute_is_large_and_k(
         &mut kctx.kenv,
         n2a,
         aux_n2a,
-      );
+      )
+      .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
       let ctor_fields = nat_to_u64(&ctor.num_fields);
       let ctor_params = nat_to_u64(&ctor.num_params);
 
@@ -2735,13 +2737,14 @@ fn ingress_type_stub(
     return;
   }
 
-  let ty_z = lean_expr_to_zexpr_with_kenv(
-    typ,
-    level_params,
-    &mut kctx.kenv,
-    n2a,
-    aux_n2a,
-  );
+  let ty_z =
+    super::expr_utils::kernel_ingress_or_panic(lean_expr_to_zexpr_with_kenv(
+      typ,
+      level_params,
+      &mut kctx.kenv,
+      n2a,
+      aux_n2a,
+    ));
   let n_lvls = level_params.len() as u64;
   kctx.kenv.insert(
     zid,
@@ -4287,7 +4290,7 @@ mod tests {
       for (name, ci) in &entries {
         source.insert(name.clone(), ci.clone());
       }
-      let mut kenv = lean_ingress(&source);
+      let mut kenv = lean_ingress(&source).unwrap();
       let (block, _) =
         kenv.consts.iter().find(|(id, _)| &id.name == head).unwrap();
       let peers: Vec<_> = kenv.blocks[block]
@@ -4392,7 +4395,7 @@ mod tests {
     }
     source.insert(a_rec.clone(), right);
     source.insert(b_rec, left);
-    let mut kenv = lean_ingress(&source);
+    let mut kenv = lean_ingress(&source).unwrap();
     let id = kenv.consts.keys().find(|id| id.name == a_rec).unwrap().clone();
     let error = TypeChecker::new(&mut kenv).check_const(&id).unwrap_err();
     assert!(error.to_string().contains("canonical-order mismatch"), "{error}");
@@ -4409,7 +4412,7 @@ mod tests {
     let ConstantInfo::RecInfo(rec) = &mut extra else { unreachable!() };
     rec.cnst.name = extra_name.clone();
     source.insert(extra_name.clone(), extra);
-    let mut kenv = lean_ingress(&source);
+    let mut kenv = lean_ingress(&source).unwrap();
     let id = kenv.consts.keys().find(|id| id.name == a_rec).unwrap().clone();
     let KConst::Recr { block, .. } = &kenv.consts[&id] else { unreachable!() };
     assert!(kenv.blocks[block].iter().any(|id| id.name == extra_name));

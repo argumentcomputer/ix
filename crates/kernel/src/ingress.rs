@@ -2328,36 +2328,42 @@ use ix_common::env::{
 };
 
 /// Convert a Lean Level to KUniv<Meta>, mapping named params to positional indices.
-pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Meta> {
-  match lvl.as_data() {
-    LevelData::Succ(l, _) => KUniv::succ(lean_level_to_kuniv(l, param_names)),
+///
+/// An unknown universe parameter or a level metavariable is an error naming
+/// it, never a panic (the Lean bridge's `leanLevelToKuniv` refuses the same
+/// inputs with the same texts).
+pub fn lean_level_to_kuniv(
+  lvl: &Level,
+  param_names: &[Name],
+) -> Result<KUniv<Meta>, String> {
+  Ok(match lvl.as_data() {
+    LevelData::Succ(l, _) => KUniv::succ(lean_level_to_kuniv(l, param_names)?),
     LevelData::Max(a, b, _) => KUniv::max(
-      lean_level_to_kuniv(a, param_names),
-      lean_level_to_kuniv(b, param_names),
+      lean_level_to_kuniv(a, param_names)?,
+      lean_level_to_kuniv(b, param_names)?,
     ),
     LevelData::Imax(a, b, _) => KUniv::imax(
-      lean_level_to_kuniv(a, param_names),
-      lean_level_to_kuniv(b, param_names),
+      lean_level_to_kuniv(a, param_names)?,
+      lean_level_to_kuniv(b, param_names)?,
     ),
     LevelData::Param(name, _) => {
-      let idx =
-        param_names.iter().position(|n| n == name).unwrap_or_else(|| {
-          panic!(
-            "unknown level param `{}` not found in param_names {:?}",
-            name.pretty(),
-            param_names.iter().map(|n| n.pretty()).collect::<Vec<_>>()
-          )
-        }) as u64;
+      let idx = param_names.iter().position(|n| n == name).ok_or_else(|| {
+        format!(
+          "unknown level param `{}` not found in param_names {:?}",
+          name.pretty(),
+          param_names.iter().map(|n| n.pretty()).collect::<Vec<_>>()
+        )
+      })? as u64;
       KUniv::param(idx, name.clone())
     },
     LevelData::Zero(_) => KUniv::zero(),
     LevelData::Mvar(name, _) => {
-      panic!(
+      return Err(format!(
         "unexpected level metavariable `{}` in elaborated kernel term",
         name.pretty()
-      );
+      ));
     },
-  }
+  })
 }
 
 /// Resolve a Lean Name to an Address, using real Ixon address if available.
@@ -2405,7 +2411,7 @@ pub fn lean_expr_to_zexpr(
   intern: &mut InternTable<Meta>,
   name_to_ixon_addr: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-) -> KExpr<Meta> {
+) -> Result<KExpr<Meta>, String> {
   // Uncached path — only for callers without KEnv access. Top-level
   // expressions start with an empty binder stack.
   let mut binder_names: Vec<Name> = Vec::new();
@@ -2418,8 +2424,8 @@ pub fn lean_expr_to_zexpr(
     aux_n2a,
     None,
     None,
-  );
-  intern.intern_expr(e)
+  )?;
+  Ok(intern.intern_expr(e))
 }
 
 /// Cached variant that takes a full `KEnv` reference instead of just `InternTable`.
@@ -2430,7 +2436,7 @@ pub fn lean_expr_to_zexpr_with_kenv(
   kenv: &mut KEnv<Meta>,
   n2a: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-) -> KExpr<Meta> {
+) -> Result<KExpr<Meta>, String> {
   let pn_h = param_names_hash(param_names);
   let mut binder_names: Vec<Name> = Vec::new();
   lean_expr_to_zexpr_cached(
@@ -2472,13 +2478,13 @@ pub fn lean_expr_to_zexpr_cached(
   aux_n2a: Option<&DashMap<Name, Address>>,
   mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
   pn_hash: Option<&CtxAddr>,
-) -> KExpr<Meta> {
+) -> Result<KExpr<Meta>, String> {
   // Check cache
   if let (Some(cache), Some(pn_hash)) = (cache.as_ref(), pn_hash) {
     let expr_key = *expr.get_hash();
     let key = (expr_key, *pn_hash);
     if let Some(hit) = cache.get(&key) {
-      return hit.clone();
+      return Ok(hit.clone());
     }
   }
 
@@ -2491,7 +2497,7 @@ pub fn lean_expr_to_zexpr_cached(
     aux_n2a,
     cache.as_deref_mut(),
     pn_hash,
-  );
+  )?;
   let result = intern.intern_expr(e);
 
   // Store in cache
@@ -2500,7 +2506,7 @@ pub fn lean_expr_to_zexpr_cached(
     cache.insert((expr_key, *pn_hash), result.clone());
   }
 
-  result
+  Ok(result)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2513,7 +2519,7 @@ fn lean_expr_to_zexpr_raw(
   aux_n2a: Option<&DashMap<Name, Address>>,
   mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
   pn_hash: Option<&CtxAddr>,
-) -> KExpr<Meta> {
+) -> Result<KExpr<Meta>, String> {
   // Walk through any consecutive `Mdata` wrappers first, accumulating them
   // as kernel-side `MData` layers. Lean represents `Mdata(a, Mdata(b, e))`
   // as two separate AST nodes; the kernel stores the layers in a single
@@ -2539,7 +2545,7 @@ fn lean_expr_to_zexpr_raw(
   // For subtree recursion into a fresh binder context, we push the binder
   // name onto `binder_names`, recurse, then pop — mirroring the Ixon side
   // of ingress.
-  match cur.as_data() {
+  Ok(match cur.as_data() {
     LeanExprData::Bvar(idx, _) => {
       let idx_u64 = idx.to_u64().unwrap_or(0);
       // Resolve the bound variable's display name by de Bruijn lookup
@@ -2556,13 +2562,15 @@ fn lean_expr_to_zexpr_raw(
       KExpr::var_mdata(idx_u64, name, mdata_layers)
     },
     LeanExprData::Sort(lvl, _) => {
-      KExpr::sort_mdata(lean_level_to_kuniv(lvl, pn), mdata_layers)
+      KExpr::sort_mdata(lean_level_to_kuniv(lvl, pn)?, mdata_layers)
     },
     LeanExprData::Const(name, us, _) => {
       let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
       let zid = KId::new(addr, name.clone());
-      let zus: Box<[KUniv<Meta>]> =
-        us.iter().map(|u| lean_level_to_kuniv(u, pn)).collect();
+      let zus: Box<[KUniv<Meta>]> = us
+        .iter()
+        .map(|u| lean_level_to_kuniv(u, pn))
+        .collect::<Result<_, _>>()?;
       KExpr::cnst_mdata(zid, zus, mdata_layers)
     },
     LeanExprData::App(f, a, _) => {
@@ -2575,7 +2583,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       let a_k = lean_expr_to_zexpr_cached(
         a,
         pn,
@@ -2585,7 +2593,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       KExpr::app_mdata(f_k, a_k, mdata_layers)
     },
     LeanExprData::ForallE(binder_name, dom, body, bi, _) => {
@@ -2598,7 +2606,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       binder_names.push(binder_name.clone());
       let body_k = lean_expr_to_zexpr_cached(
         body,
@@ -2609,7 +2617,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       binder_names.pop();
       KExpr::all_mdata(
         binder_name.clone(),
@@ -2629,7 +2637,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       binder_names.push(binder_name.clone());
       let body_k = lean_expr_to_zexpr_cached(
         body,
@@ -2640,7 +2648,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       binder_names.pop();
       KExpr::lam_mdata(
         binder_name.clone(),
@@ -2660,7 +2668,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       let val_k = lean_expr_to_zexpr_cached(
         val,
         pn,
@@ -2670,7 +2678,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       binder_names.push(binder_name.clone());
       let body_k = lean_expr_to_zexpr_cached(
         body,
@@ -2681,7 +2689,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache.as_deref_mut(),
         pn_hash,
-      );
+      )?;
       binder_names.pop();
       KExpr::let_mdata(
         binder_name.clone(),
@@ -2704,7 +2712,7 @@ fn lean_expr_to_zexpr_raw(
         aux_n2a,
         cache,
         pn_hash,
-      );
+      )?;
       KExpr::prj_mdata(zid, idx.to_u64().unwrap_or(0), e_k, mdata_layers)
     },
     LeanExprData::Lit(lit, _) => {
@@ -2730,18 +2738,18 @@ fn lean_expr_to_zexpr_raw(
       unreachable!("Mdata should have been peeled off into mdata_layers");
     },
     LeanExprData::Fvar(name, _) => {
-      panic!(
+      return Err(format!(
         "unexpected FVar({}) in elaborated kernel term during ingress",
         name.pretty()
-      );
+      ));
     },
     LeanExprData::Mvar(name, _) => {
-      panic!(
+      return Err(format!(
         "unexpected MVar({}) in elaborated kernel term during ingress",
         name.pretty()
-      );
+      ));
     },
-  }
+  })
 }
 
 /// Name → Address for KId construction from Lean Names.
@@ -2982,16 +2990,17 @@ fn lean_const_to_kconst(
   ci: &LeanCI,
   kenv: &mut KEnv<Meta>,
   n2a: &DashMap<Name, Address>,
-) -> KConst<Meta> {
+) -> Result<KConst<Meta>, String> {
   // Helper: shorthand for expression ingress. `n2a` carries the env-wide
   // LEON addressing so `Const` refs inside expressions resolve to the same
   // addresses we're using for KId keys — any KId we construct here and any
   // Const-ref we ingress agree on where they point.
-  let mut expr_to_k = |e: &ix_common::env::Expr, pn: &[Name]| -> KExpr<Meta> {
-    lean_expr_to_zexpr_with_kenv(e, pn, kenv, Some(n2a), None)
-  };
+  let mut expr_to_k =
+    |e: &ix_common::env::Expr, pn: &[Name]| -> Result<KExpr<Meta>, String> {
+      lean_expr_to_zexpr_with_kenv(e, pn, kenv, Some(n2a), None)
+    };
 
-  match ci {
+  Ok(match ci {
     LeanCI::AxiomInfo(v) => {
       let pn = &v.cnst.level_params;
       KConst::Axio {
@@ -2999,7 +3008,7 @@ fn lean_const_to_kconst(
         level_params: pn.clone(),
         is_unsafe: v.is_unsafe,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
       }
     },
     LeanCI::DefnInfo(v) => {
@@ -3012,8 +3021,8 @@ fn lean_const_to_kconst(
         safety: v.safety,
         hints: v.hints,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
+        val: expr_to_k(&v.value, pn)?,
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -3028,8 +3037,8 @@ fn lean_const_to_kconst(
         safety: DefinitionSafety::Safe,
         hints: ReducibilityHints::Opaque,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
+        val: expr_to_k(&v.value, pn)?,
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -3048,8 +3057,8 @@ fn lean_const_to_kconst(
         },
         hints: ReducibilityHints::Opaque,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
+        val: expr_to_k(&v.value, pn)?,
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -3061,7 +3070,7 @@ fn lean_const_to_kconst(
         level_params: pn.clone(),
         kind: v.kind,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
       }
     },
     LeanCI::InductInfo(v) => {
@@ -3081,7 +3090,7 @@ fn lean_const_to_kconst(
         is_unsafe: v.is_unsafe,
         block: lean_block_id(self_name, all, n2a),
         member_idx: lean_member_idx(self_name, all),
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
         ctors,
         lean_all: lean_all_ids(&v.all, n2a),
       }
@@ -3097,7 +3106,7 @@ fn lean_const_to_kconst(
         cidx: v.cidx.to_u64().unwrap_or(0),
         params: v.num_params.to_u64().unwrap_or(0),
         fields: v.num_fields.to_u64().unwrap_or(0),
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
       }
     },
     LeanCI::RecInfo(v) => {
@@ -3106,12 +3115,14 @@ fn lean_const_to_kconst(
       let rules = v
         .rules
         .iter()
-        .map(|r| RecRule {
-          ctor: r.ctor.clone(),
-          fields: r.n_fields.to_u64().unwrap_or(0),
-          rhs: expr_to_k(&r.rhs, pn),
+        .map(|r| -> Result<RecRule<Meta>, String> {
+          Ok(RecRule {
+            ctor: r.ctor.clone(),
+            fields: r.n_fields.to_u64().unwrap_or(0),
+            rhs: expr_to_k(&r.rhs, pn)?,
+          })
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
       KConst::Recr {
         name: self_name.clone(),
         level_params: pn.clone(),
@@ -3124,12 +3135,12 @@ fn lean_const_to_kconst(
         minors: v.num_minors.to_u64().unwrap_or(0),
         block: lean_block_id(self_name, all, n2a),
         member_idx: lean_member_idx(self_name, all),
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
         rules,
         lean_all: lean_all_ids(&v.all, n2a),
       }
     },
-  }
+  })
 }
 
 /// Lean emits original recursors in `.all` declaration order, followed by
@@ -3209,7 +3220,7 @@ fn lean_recursor_order(
 /// only, so this helper is Meta-mode only by extension. Generalizing to
 /// `Anon` would require generalizing `lean_expr_to_zexpr_raw` too.
 #[cfg(not(target_arch = "riscv64"))]
-pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
+pub fn lean_ingress(lean_env: &LeanEnv) -> Result<KEnv<Meta>, String> {
   use std::time::Instant;
   let quiet = crate::env_var("IX_VERBOSE").is_err();
   let mut kenv = KEnv::<Meta>::new_with_recursor_aux_order(
@@ -3235,7 +3246,8 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   let t = Instant::now();
   for (name, ci) in lean_env.iter() {
     let kid = KId::new(leon_addr_of(name, &n2a), name.clone());
-    let kc = lean_const_to_kconst(name, &ci, &mut kenv, &n2a);
+    let kc = lean_const_to_kconst(name, &ci, &mut kenv, &n2a)
+      .map_err(|e| format!("{}: {e}", name.pretty()))?;
     kenv.insert(kid, kc);
   }
   if !quiet {
@@ -3386,7 +3398,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // so we ignore the Result.
   let _ = kenv.set_prims(crate::primitive::Primitives::from_env_orig(&kenv));
 
-  kenv
+  Ok(kenv)
 }
 
 // ============================================================================
@@ -5039,13 +5051,13 @@ mod tests {
 
   #[test]
   fn lean_level_zero_to_kuniv() {
-    let u = lean_level_to_kuniv(&Level::zero(), &[]);
+    let u = lean_level_to_kuniv(&Level::zero(), &[]).unwrap();
     assert!(matches!(u.data(), UnivData::Zero(_)));
   }
 
   #[test]
   fn lean_level_succ_to_kuniv() {
-    let u = lean_level_to_kuniv(&Level::succ(Level::zero()), &[]);
+    let u = lean_level_to_kuniv(&Level::succ(Level::zero()), &[]).unwrap();
     match u.data() {
       UnivData::Succ(inner, _) => {
         assert!(matches!(inner.data(), UnivData::Zero(_)))
@@ -5059,7 +5071,7 @@ mod tests {
     let u_name = mk_name("u");
     let v_name = mk_name("v");
     let params = vec![u_name.clone(), v_name.clone()];
-    let u = lean_level_to_kuniv(&Level::param(v_name), &params);
+    let u = lean_level_to_kuniv(&Level::param(v_name), &params).unwrap();
     match u.data() {
       UnivData::Param(i, _, _) => assert_eq!(*i, 1),
       other => panic!("expected Param, got {other:?}"),
@@ -5072,20 +5084,30 @@ mod tests {
     let v_name = mk_name("v");
     let params = vec![u_name.clone(), v_name.clone()];
     let ll = Level::max(Level::param(u_name), Level::param(v_name));
-    let u = lean_level_to_kuniv(&ll, &params);
+    let u = lean_level_to_kuniv(&ll, &params).unwrap();
     assert!(matches!(u.data(), UnivData::Max(..)));
   }
 
   #[test]
-  #[should_panic(expected = "unknown level param")]
-  fn lean_level_param_unknown_panics() {
-    let _ = lean_level_to_kuniv(&Level::param(mk_name("zzz")), &[mk_name("u")]);
+  fn lean_level_param_unknown_is_an_error() {
+    let err =
+      lean_level_to_kuniv(&Level::param(mk_name("zzz")), &[mk_name("u")])
+        .unwrap_err();
+    assert!(err.contains("unknown level param `zzz`"), "{err}");
+    // Valid neighbour: the declared parameter converts.
+    assert!(
+      lean_level_to_kuniv(&Level::param(mk_name("u")), &[mk_name("u")]).is_ok()
+    );
+    // Nested under succ/max the refusal still propagates.
+    let nested =
+      Level::max(Level::zero(), Level::succ(Level::param(mk_name("zzz"))));
+    assert!(lean_level_to_kuniv(&nested, &[mk_name("u")]).is_err());
   }
 
   #[test]
-  #[should_panic(expected = "unexpected level metavariable")]
-  fn lean_level_mvar_panics() {
-    let _ = lean_level_to_kuniv(&Level::mvar(mk_name("m")), &[]);
+  fn lean_level_mvar_is_an_error() {
+    let err = lean_level_to_kuniv(&Level::mvar(mk_name("m")), &[]).unwrap_err();
+    assert!(err.contains("unexpected level metavariable `m`"), "{err}");
   }
 
   // ---- lean_name_to_addr ----
@@ -5297,7 +5319,7 @@ mod tests {
 
   fn do_ingress(e: &LeanExpr, pn: &[Name]) -> KExpr<Meta> {
     let mut intern = InternTable::<Meta>::new();
-    lean_expr_to_zexpr(e, pn, &mut intern, None, None)
+    lean_expr_to_zexpr(e, pn, &mut intern, None, None).unwrap()
   }
 
   #[test]
@@ -5495,23 +5517,42 @@ mod tests {
     for _ in 0..300 {
       l = Level::max(l, Level::zero());
     }
-    let _u = lean_level_to_kuniv(&l, &[]);
+    let _u = lean_level_to_kuniv(&l, &[]).unwrap();
   }
 
-  // ---- Panic-on-invalid-input regression guards ----
+  // ---- Invalid-input refusals (errors, not panics) ----
+
+  fn try_ingress(e: &LeanExpr, pn: &[Name]) -> Result<KExpr<Meta>, String> {
+    let mut intern = InternTable::<Meta>::new();
+    lean_expr_to_zexpr(e, pn, &mut intern, None, None)
+  }
 
   #[test]
-  #[should_panic(expected = "FVar")]
-  fn ingress_fvar_panics() {
+  fn ingress_fvar_is_an_error() {
     let e = LeanExpr::fvar(mk_name("x"));
-    let _ = do_ingress(&e, &[]);
+    let err = try_ingress(&e, &[]).unwrap_err();
+    assert!(err.contains("unexpected FVar(x)"), "{err}");
   }
 
   #[test]
-  #[should_panic(expected = "MVar")]
-  fn ingress_mvar_panics() {
+  fn ingress_mvar_is_an_error() {
     let e = LeanExpr::mvar(mk_name("m"));
-    let _ = do_ingress(&e, &[]);
+    let err = try_ingress(&e, &[]).unwrap_err();
+    assert!(err.contains("unexpected MVar(m)"), "{err}");
+  }
+
+  #[test]
+  fn ingress_unknown_level_param_under_app_is_an_error() {
+    // The refusal propagates from a level nested inside an application;
+    // the valid neighbour with the parameter declared ingresses.
+    let u = mk_name("u");
+    let e = LeanExpr::app(
+      LeanExpr::cnst(mk_name("f"), vec![Level::param(u.clone())]),
+      LeanExpr::sort(Level::succ(Level::param(u.clone()))),
+    );
+    let err = try_ingress(&e, &[mk_name("v")]).unwrap_err();
+    assert!(err.contains("unknown level param `u`"), "{err}");
+    assert!(try_ingress(&e, std::slice::from_ref(&u)).is_ok());
   }
 
   // ---- Caching ----
@@ -5523,8 +5564,10 @@ mod tests {
       LeanExpr::sort(Level::zero()),
       LeanExpr::sort(Level::zero()),
     );
-    let k1 = lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None);
-    let k2 = lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None);
+    let k1 =
+      lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None).unwrap();
+    let k2 =
+      lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None).unwrap();
     // Cache hit → same interned result.
     assert!(k1.ptr_eq(&k2));
   }
@@ -5816,14 +5859,16 @@ mod tests {
       &mut env,
       None,
       None,
-    );
+    )
+    .unwrap();
     let k2 = lean_expr_to_zexpr_with_kenv(
       &e,
       &[v_name, u_name.clone()],
       &mut env,
       None,
       None,
-    );
+    )
+    .unwrap();
     // In the first, Param(u) has index 0; in the second, Param(u) has index 1.
     let i1 = match k1.data() {
       ExprData::Sort(u, _) => match u.data() {

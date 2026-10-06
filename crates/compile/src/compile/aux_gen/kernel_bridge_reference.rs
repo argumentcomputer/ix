@@ -8,6 +8,17 @@ use ix_kernel::ingress::{lean_level_to_kuniv, resolve_lean_name_addr};
 use ix_kernel::mode::Meta;
 use rustc_hash::FxHashMap;
 
+/// The kernel crate's level conversion as it was when this reference was
+/// frozen: it panicked on an unknown parameter or a level metavariable. The
+/// function now returns the same text as an error; the frozen reference
+/// keeps the panic.
+fn frozen_level(
+  lvl: &Level,
+  param_names: &[Name],
+) -> ix_kernel::level::KUniv<Meta> {
+  lean_level_to_kuniv(lvl, param_names).unwrap_or_else(|e| panic!("{e}"))
+}
+
 pub(super) fn kexpr_to_lean(
   expr: &ix_kernel::expr::KExpr<Meta>,
   outer_depth: usize,
@@ -239,14 +250,12 @@ pub(super) fn to_kexpr_static(
       }
     },
     ExprData::Bvar(idx, _) => KExpr::var(nat_to_u64(idx), Name::anon()),
-    ExprData::Sort(lvl, _) => {
-      KExpr::sort(lean_level_to_kuniv(lvl, param_names))
-    },
+    ExprData::Sort(lvl, _) => KExpr::sort(frozen_level(lvl, param_names)),
     ExprData::Const(cname, us, _) => {
       let addr = resolve_lean_name_addr(cname, n2a, aux_n2a);
       let zid = KId::new(addr, cname.clone());
       let zus: Box<[KUniv<Meta>]> =
-        us.iter().map(|u| lean_level_to_kuniv(u, param_names)).collect();
+        us.iter().map(|u| frozen_level(u, param_names)).collect();
       KExpr::cnst(zid, zus)
     },
     ExprData::App(f, a, _) => {

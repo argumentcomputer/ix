@@ -1651,6 +1651,17 @@ pub fn ensure_prelude_in_kenv_of(
   }
 }
 
+/// The kernel crate's Lean ingress (`lean_expr_to_zexpr_*`) now returns an
+/// error where it used to panic (an unknown universe parameter, a level or
+/// expression metavariable, a free variable). The aux_gen loaders that call
+/// it return `()` (`ensure_in_kenv_of*`, `populate_canon_kenv_with_below`,
+/// `ingress_type_stub`), so they keep the panic they had, with the same text;
+/// threading `Result` through them and their callers is left for the Rust
+/// catch-up. No input that compiled before reaches this panic.
+pub(crate) fn kernel_ingress_or_panic<T>(r: Result<T, String>) -> T {
+  r.unwrap_or_else(|e| panic!("{e}"))
+}
+
 /// Ingress a **single** Lean constant into the given kenv so the kernel
 /// type checker can resolve it during inference. Handles all constant
 /// types: inductives (with their constructors, via the parent→ctor
@@ -1728,7 +1739,7 @@ fn ensure_in_kenv_of_inner_env(
    -> ix_kernel::expr::KExpr<Meta> {
     let pn_h = param_names_hash(lp);
     let mut binder_names: Vec<Name> = Vec::new();
-    lean_expr_to_zexpr_cached(
+    kernel_ingress_or_panic(lean_expr_to_zexpr_cached(
       expr,
       lp,
       &mut binder_names,
@@ -1737,7 +1748,7 @@ fn ensure_in_kenv_of_inner_env(
       aux_n2a,
       Some(&mut kenv.ingress_cache),
       Some(&pn_h),
-    )
+    ))
   };
 
   match &ci {

@@ -221,7 +221,7 @@ fn kernel_bridge_caches_do_not_outlive_their_context() {
     assert_eq!(id.addr, address);
     assert_eq!(
       levels[0],
-      lean_level_to_kuniv(&Level::param(name("u")), params)
+      lean_level_to_kuniv(&Level::param(name("u")), params).unwrap()
     );
     assert!(matches!(x.data(), KED::Var(idx, ..) if *idx == (1 - i) as u64));
     assert_same_lean(
@@ -444,7 +444,9 @@ fn to_kexpr_static_refuses_unknown_universe_parameter() {
   .unwrap();
   assert_eq!(
     kernel,
-    KExpr::sort(lean_level_to_kuniv(&Level::param(name("u")), &params))
+    KExpr::sort(
+      lean_level_to_kuniv(&Level::param(name("u")), &params).unwrap()
+    )
   );
 }
 
