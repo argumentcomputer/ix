@@ -46,8 +46,30 @@ private def caughtFailureRestoresScope : Bool :=
       -- rejected telescope; the partially pushed local cannot leak.
       return (← get).tcState.ctx.isEmpty).toOption == some true
 
+private def natName := nm "Nat"
+private def aliasName := nm "SourceInductiveAlias"
+private def pin := Ix.Tc.PrimAddrs.canonical.nat
+
+/-- From `2188b10d`: a real reduction exposing a bare source inductive that
+shares a primitive's address keeps its own source name. This line's egress
+never renames to a primitive's name, so the property holds without the
+codex fix; the test guards it. -/
+private def primitiveAliasReduction : Bool :=
+  (execute do
+    let maps : AddrMaps := {
+      nameToAddr := fun n => if n == natName || n == aliasName then some pin else none }
+    kenvInsert ⟨pin, aliasName⟩
+      (.axio aliasName #[] false 0 (Ix.Tc.KExpr.mkSort (Ix.Tc.KUniv.mkSucc Ix.Tc.KUniv.mkZero)))
+    let scope ← TcScopeSt.new #[] #[] maps
+    let member := Expr.mkConst aliasName #[]
+    let identity := Expr.mkLam .mkAnon (Expr.mkSort (Level.mkSucc Level.mkZero))
+      (Expr.mkBVar 0) .default
+    return (← scope.whnfLean (Expr.mkApp identity member)) == member).toOption == some true
+
 def suite : List TestSeq := [
-  test "duplicate outer identities fail explicitly"
+  test "a reduced bare inductive keeps its source name at a primitive pin"
+    primitiveAliasReduction
+  ++ test "duplicate outer identities fail explicitly"
     (refuses (TcScopeSt.new #[decl "x", decl "x"] #[] maps) "duplicate outer")
   ++ test "duplicate universe parameters fail explicitly"
     (refuses (TcScopeSt.new #[] #[nm "u", nm "u"] maps) "duplicate universe")

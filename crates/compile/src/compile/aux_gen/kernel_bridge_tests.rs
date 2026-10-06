@@ -648,3 +648,39 @@ fn tc_scope_balanced_dependent_telescope() {
   assert_eq!(scope.fvar_levels.get(&name("A")), Some(&0));
   assert!(!scope.fvar_levels.contains_key(&name("x")));
 }
+
+/// From `2188b10d`: a real reduction exposing a bare source inductive that
+/// shares a primitive's address keeps its own source name. This line's
+/// egress never renames to a primitive's name, so the property holds without
+/// the codex fix; the test guards it.
+#[test]
+fn reduced_inductive_alias_retains_source_name_at_primitive_pin() {
+  let stt = CompileState::new_empty();
+  let pin = ix_common::prim_addrs::PrimAddrs::new().nat;
+  let alias = name("SourceInductiveAlias");
+  stt.name_to_addr.insert(name("Nat"), pin.clone());
+  stt.name_to_addr.insert(alias.clone(), pin.clone());
+  let mut kctx = crate::compile::KernelCtx::new();
+  kctx.kenv.insert(
+    KId::new(pin, alias.clone()),
+    ix_kernel::constant::KConst::Axio {
+      name: alias.clone(),
+      level_params: vec![],
+      is_unsafe: false,
+      lvls: 0,
+      ty: KExpr::sort(KUniv::succ(KUniv::zero())),
+    },
+  );
+  let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+  let member = LeanExpr::cnst(alias, vec![]);
+  let identity = LeanExpr::lam(
+    Name::anon(),
+    LeanExpr::sort(Level::succ(Level::zero())),
+    LeanExpr::bvar(Nat::from(0u64)),
+    BinderInfo::Default,
+  );
+  assert_same_lean(
+    &scope.whnf_lean(&LeanExpr::app(identity, member.clone())).unwrap(),
+    &member,
+  );
+}
