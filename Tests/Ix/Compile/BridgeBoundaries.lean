@@ -94,6 +94,30 @@ private def constantUniverseBoundary : Bool :=
       && (scope.kunivToLevelWithConstLevels parameter #[level]).toOption == some level
   (execute action).toOption == some true
 
+
+/-- Kernel metadata on every node survives egress, as in Rust
+`kexpr_to_lean` (which re-wraps the node's `mdata` after every case). The
+`let inner ← match` alternatives used `return`, which left the whole
+function, so only `var`/`nat`/`str` kept their metadata. Here an `mdata`
+layer sits on an application, on its head constant and on a λ, each with
+two layers in a fixed order (outermost first). -/
+private def mdataEverywhere : Bool :=
+  let md (s : String) : Ix.Tc.MData := #[(nm "k", .ofString s)]
+  let kx : MKExpr := Ix.Tc.KExpr.mkConst ⟨x.getHash, x⟩ #[] (mdata := #[md "c1", md "c2"])
+  let ky : MKExpr := Ix.Tc.KExpr.mkConst ⟨y.getHash, y⟩ #[]
+  let kapp := Ix.Tc.KExpr.mkApp kx ky (mdata := #[md "a1", md "a2"])
+  let klam : MKExpr := Ix.Tc.KExpr.mkLam x Lean.BinderInfo.default (Ix.Tc.KExpr.mkSort Ix.Tc.KUniv.mkZero) kapp
+    (mdata := #[md "l"])
+  let wrap (ks : List String) (e : Expr) : Expr :=
+    ks.foldr (fun s acc => Expr.mkMData (md s) acc) e
+  let lx := wrap ["c1", "c2"] (Expr.mkConst x #[])
+  let lapp := wrap ["a1", "a2"] (Expr.mkApp lx (Expr.mkConst y #[]))
+  let llam := wrap ["l"] (Expr.mkLam x (Expr.mkSort Level.mkZero) lapp .default)
+  (kexprToLean kapp 0 {} 0 #[]).toOption == some lapp
+    && (kexprToLean klam 0 {} 0 #[]).toOption == some llam
+    -- valid neighbour: no metadata gives the bare term
+    && (kexprToLean (Ix.Tc.KExpr.mkApp (Ix.Tc.KExpr.mkConst ⟨x.getHash, x⟩ #[]) ky) 0 {} 0 #[]).toOption
+      == some (Expr.mkApp (Expr.mkConst x #[]) (Expr.mkConst y #[]))
 def suite : List TestSeq := [
   test "unknown universe parameters are explicit errors"
     (failsWith (leanLevelToKuniv (Level.mkParam u) #[]) "unknown level param")
@@ -132,6 +156,8 @@ def suite : List TestSeq := [
   ++ test "egressed provisional IDs compile through the actual source address" (provisionalCompilation true)
   ++ test "unresolved egressed IDs are refused instead of emitted" (provisionalCompilation false)
   ++ test "alias ingress order preserves source names" (aliasHistory false && aliasHistory true)
+  ++ test "egress re-wraps kernel metadata on every node"
+    mdataEverywhere
   ++ test "semantic WHNF cache history preserves the requested source alias"
     (whnfHistory false && whnfHistory true)
 ]

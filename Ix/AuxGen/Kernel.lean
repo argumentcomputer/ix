@@ -553,27 +553,27 @@ partial def kexprToLean (e : MKExpr) (outerDepth : Nat)
           pure (Expr.mkFVar name)
     | .fvar id _ _ =>
       throw s!"kexprToLean: leaked kernel free variable {id.id.toNat}"
-    | .sort u _ => return Expr.mkSort (← kunivToLevel u paramNames)
+    | .sort u _ => pure <| Expr.mkSort (← kunivToLevel u paramNames)
     | .const kid us _ =>
-      return Expr.mkConst kid.name (← us.mapM (kunivToLevel · paramNames))
+      pure <| Expr.mkConst kid.name (← us.mapM (kunivToLevel · paramNames))
     | .app f a _ =>
-      return Expr.mkApp (← kexprToLean f outerDepth fvarLevels localDepth paramNames)
+      pure <| Expr.mkApp (← kexprToLean f outerDepth fvarLevels localDepth paramNames)
         (← kexprToLean a outerDepth fvarLevels localDepth paramNames)
     | .all name bi d b _ =>
-      return Expr.mkForallE name
+      pure <| Expr.mkForallE name
         (← kexprToLean d outerDepth fvarLevels localDepth paramNames)
         (← kexprToLean b outerDepth fvarLevels (localDepth + 1) paramNames) bi
     | .lam name bi d b _ =>
-      return Expr.mkLam name
+      pure <| Expr.mkLam name
         (← kexprToLean d outerDepth fvarLevels localDepth paramNames)
         (← kexprToLean b outerDepth fvarLevels (localDepth + 1) paramNames) bi
     | .letE name ty val body nd _ =>
-      return Expr.mkLetE name
+      pure <| Expr.mkLetE name
         (← kexprToLean ty outerDepth fvarLevels localDepth paramNames)
         (← kexprToLean val outerDepth fvarLevels localDepth paramNames)
         (← kexprToLean body outerDepth fvarLevels (localDepth + 1) paramNames) nd
     | .prj kid field val _ =>
-      return Expr.mkProj kid.name field.toNat
+      pure <| Expr.mkProj kid.name field.toNat
         (← kexprToLean val outerDepth fvarLevels localDepth paramNames)
     | .nat n _ _ => pure (Expr.mkLit (.natVal n))
     | .str s _ _ => pure (Expr.mkLit (.strVal s))
