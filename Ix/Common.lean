@@ -413,8 +413,8 @@ def sourceRecursorsOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name 
 and `SizeOf.sizeOf` after splitting. This is finite source-set completion,
 not scheduler edges: source membership can cycle through an instance's own
 function; O11a adds only precise cross-component scheduling dependencies.
-Argument pushers remain ordinary references of carried equation proofs;
-never discover them or equation lemmas by scanning callers. -/
+The rest of the logical unit (equation lemmas, argument pushers, splitters)
+is carried by `unitMembers` (§6.3); nothing is discovered from callers. -/
 def compilerSupportOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name := Id.run do
   let .str owner suffix := n | return []
   let digits := suffix.toList.drop "_sizeOf_".length
@@ -426,14 +426,151 @@ def compilerSupportOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name 
   let support := `SizeOf.sizeOf :: ind.all.map (·.str "_sizeOf_inst")
   return support.filter consts.contains
 
+/-! ## Logical units (design document §6.2-§6.3)
+
+The **logical unit** of a block is the block with all of its auxiliaries:
+the constants Lean generates mechanically from it, eagerly (with the
+declaration) or on demand (when a later declaration first asks for them).
+A closure producer must carry, for every block in the closure, the whole
+unit, on-demand auxiliaries included (§6.3, "On-demand auxiliaries"), so
+that a block that reads its own unit (a clique its equation lemmas, O11a
+its sibling's size instance) compiles in a closure as in the whole
+environment.
+
+Auxiliaries are recognised by name, under the declaration they belong to
+(the **owner**): `X.s…` where `X` is a constant and the component `s` is one
+Lean's generators use for `X`'s kind (`unitAuxComponent`), with anything
+below it (`T.brecOn.go`, `f.match_1.splitter`, `f.match_1.eq_2`). Private
+auxiliaries (`_private.M.0.f.match_1.eq_1`, `_private.M.0.T.casesOn._arg_pusher`)
+are matched through their user name. The kinds are those Lean 4.34.1
+generates: the inductive constructions (recursors, `casesOn`, `recOn`,
+`below*`, `brecOn*`, `noConfusion*`, `ctorIdx`, `ctorElim*`, the size
+functions and instances, `_sparseCasesOn_N`), the constructor theorems
+(`inj`, `injEq`, `hinj`, `sizeOf_spec`, `elim`, `noConfusion`), the
+encoding and equation constants of a definition (`_unary`, `_mutual`,
+`_f`, `_sunfold`, `_unsafe_rec`, `_proof_N`/`proof_N`, `match_N`, `eq_N`,
+`eq_def`, `eq_unfold`, the functional induction and fixpoint principles)
+and the reserved names Lean realises on demand for any constant
+(`congr_simp`, `hcongr_N`) or for a matcher (`splitter`, `congr_eq_N`,
+`_arg_pusher`; the enum `BitVec` lemmas). The set is a name convention, so
+a user declaration that happens to use one of these names under a
+constant of the matching kind is carried too: a superset of the unit,
+which only enlarges a closure. -/
+
+/-- The kind of declaration an auxiliary can hang under. -/
+inductive UnitOwnerKind where
+  | induct | ctor | defn
+  deriving BEq
+
+/-- `s` is `pre` followed by a non-empty run of digits. -/
+private def numberedComponent (s pre : String) : Bool :=
+  let r := s.toList.drop pre.length
+  s.startsWith pre && !r.isEmpty && r.all Char.isDigit
+
+/-- Is `s`, directly under a constant of kind `k`, the first component of a
+Lean-generated auxiliary of it? -/
+def unitAuxComponent (k : UnitOwnerKind) (s : String) : Bool :=
+  match k with
+  | .induct =>
+    ["rec", "casesOn", "recOn", "below", "brecOn", "binductionOn", "ibelow",
+      "noConfusionType", "noConfusion", "_sizeOf_inst", "ctorIdx", "toCtorIdx", "ctorElim",
+      "ctorElimType", "congr_simp", "enumToBitVec", "eq_iff_enumToBitVec_eq",
+      "enumToBitVec_le"].contains s ||
+    ["rec_", "below_", "brecOn_", "_sizeOf_", "_sparseCasesOn_", "hcongr_"].any
+      (numberedComponent s ·)
+  | .ctor =>
+    ["elim", "inj", "injEq", "hinj", "sizeOf_spec", "noConfusion", "congr_simp"].contains s ||
+    numberedComponent s "hcongr_"
+  | .defn =>
+    ["eq_def", "eq_unfold", "_unary", "_binary", "_mutual", "mutual", "_f", "_sunfold",
+      "_unsafe_rec", "induct", "mutual_induct", "fun_cases", "induct_unfolding",
+      "fixpoint_induct", "partial_correctness", "congr_simp", "_arg_pusher", "splitter",
+      "match_eq_cond"].contains s ||
+    ["eq_", "match_", "_proof_", "proof_", "hcongr_", "congr_eq_"].any (numberedComponent s ·)
+
+/-- The kind of a constant as an owner of auxiliaries. -/
+def unitOwnerKind? : Lean.ConstantInfo → Option UnitOwnerKind
+  | .inductInfo _ => some .induct
+  | .ctorInfo _ => some .ctor
+  | .defnInfo _ | .thmInfo _ | .opaqueInfo _ => some .defn
+  | _ => none
+
+/-- The owner of `n` when `n` is an auxiliary by name: the shortest proper
+prefix `X` of `n` that is a constant and whose next component is an
+auxiliary component for `X`'s kind. A private name is tried as itself and
+then through its user name. -/
+def unitAuxOwner? (consts : Lean.ConstMap) (n : Lean.Name) : Option Lean.Name :=
+  let walk (m : Lean.Name) : Option Lean.Name := Id.run do
+    let comps := m.components
+    let mut pre : Lean.Name := .anonymous
+    for c in comps do
+      if !pre.isAnonymous then
+        if let .str .anonymous s := c then
+          if let some ci := consts.find? pre then
+            if let some k := unitOwnerKind? ci then
+              if unitAuxComponent k s then return some pre
+      -- component by component (`Name.append` would interpret macro scopes)
+      pre := match c with
+        | .str _ s => pre.str s
+        | .num _ i => pre.num i
+        | .anonymous => pre
+    return none
+  match walk n with
+  | some o => some o
+  | none => (Lean.privateToUserName? n).bind walk
+
+/-- The roots of the unit of a declaration `o`: an inductive's mutual block
+with its constructors (a constructor stands for its inductive's block), a
+definition clique's members, or `o` itself. -/
+def unitRoots (consts : Lean.ConstMap) (o : Lean.Name) : List Lean.Name :=
+  let ofInduct (all : List Lean.Name) : List Lean.Name :=
+    all ++ all.flatMap fun m => match consts.find? m with
+      | some (.inductInfo v) => v.ctors
+      | _ => []
+  match consts.find? o with
+  | some (.inductInfo v) => ofInduct v.all
+  | some (.ctorInfo v) => match consts.find? v.induct with
+    | some (.inductInfo iv) => ofInduct iv.all
+    | _ => [o]
+  | some (.defnInfo v) => v.all
+  | some (.thmInfo v) => v.all
+  | some (.opaqueInfo v) => v.all
+  | _ => [o]
+
+/-- The key of the unit of a declaration `o` (the first root). -/
+def unitKey (consts : Lean.ConstMap) (o : Lean.Name) : Lean.Name :=
+  (unitRoots consts o).head?.getD o
+
+/-- Every auxiliary of the environment by the key of its owner's unit. Built
+once per closure walk (a pass over the constants). -/
+abbrev UnitIndex := Std.HashMap Lean.Name (Array Lean.Name)
+
+def unitIndex (consts : Lean.ConstMap) : UnitIndex := Id.run do
+  let mut idx : UnitIndex := {}
+  for (n, _) in consts.toList do
+    if let some o := unitAuxOwner? consts n then
+      let k := unitKey consts o
+      idx := idx.insert k ((idx.getD k #[]).push n)
+  return idx
+
+/-- The logical unit of `n`'s declaration: its roots and every auxiliary of
+them, eager or on demand, that exists in `consts` (an auxiliary stands for
+its owner's unit). -/
+def unitMembers (consts : Lean.ConstMap) (idx : UnitIndex) (n : Lean.Name) : List Lean.Name :=
+  let o := (unitAuxOwner? consts n).getD n
+  (unitRoots consts o ++ (idx.getD (unitKey consts o) #[]).toList).filter consts.contains
+
 private partial def collectDependenciesAux (const : Lean.ConstantInfo)
     (consts : Lean.ConstMap) (acc : ConstList) (withCompilerSupport : Bool := false)
-    (withCheckerSupport : Bool := false)
+    (withCheckerSupport : Bool := false) (units : UnitIndex := {})
     : CollectM ConstList := do
   modify (·.insert const.name)
   -- An auxiliary's family is one compiled block: pull its other members.
   let acc ← collectNames (auxFamilySiblings consts const.name) acc
   let acc ← if withCompilerSupport then collectNames (compilerSupportOf consts const.name) acc else pure acc
+  -- The whole logical unit of the declaration (§6.3): every block the
+  -- closure reaches carries its eager and on-demand auxiliaries.
+  let acc ← if withCompilerSupport then collectNames (unitMembers consts units const.name) acc else pure acc
   let acc ← if withCheckerSupport then collectNames (checkerSupportOf consts const.name) acc else pure acc
   match const with
   | .ctorInfo val =>
@@ -498,7 +635,7 @@ where
       if visited.contains name then pure acc
       else
         let const := consts.find! name
-        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport withCheckerSupport
+        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport withCheckerSupport units
   goExpr (consts : Lean.ConstMap) (acc : ConstList) : Lean.Expr → CollectM ConstList
     | .bvar _ | .fvar _ | .mvar _ | .sort _ | .lit _ => pure acc
     | .const name _ => do
@@ -506,7 +643,7 @@ where
       if visited.contains name then pure acc
       else
         let const := consts.find! name
-        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport withCheckerSupport
+        collectDependenciesAux const consts ((name, const) :: acc) withCompilerSupport withCheckerSupport units
     | .app f a => do
       let acc ← goExpr consts acc f
       goExpr consts acc a
@@ -528,7 +665,8 @@ certificate ground. Raw callers retain the historical closure by default. -/
 def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap)
     (withCompilerSupport : Bool := false) (withCheckerSupport : Bool := false) : ConstList :=
   let const := consts.find! name
-  let (constList, _) := collectDependenciesAux const consts [(name, const)] withCompilerSupport withCheckerSupport default
+  let units := if withCompilerSupport then unitIndex consts else {}
+  let (constList, _) := collectDependenciesAux const consts [(name, const)] withCompilerSupport withCheckerSupport units default
   constList
 
 /-- Bulk closure: `collectDependencies` over many roots SHARING one
@@ -540,10 +678,11 @@ def collectDependenciesMany (names : Array Lean.Name)
     (withCheckerSupport : Bool := false) : ConstList := Id.run do
   let mut acc : ConstList := []
   let mut seen : Lean.NameHashSet := default
+  let units := if withCompilerSupport then unitIndex consts else {}
   for n in names do
     if seen.contains n then continue
     let some const := consts.find? n | continue
-    let (acc', seen') := collectDependenciesAux const consts ((n, const) :: acc) withCompilerSupport withCheckerSupport seen
+    let (acc', seen') := collectDependenciesAux const consts ((n, const) :: acc) withCompilerSupport withCheckerSupport units seen
     acc := acc'
     seen := seen'
   return acc

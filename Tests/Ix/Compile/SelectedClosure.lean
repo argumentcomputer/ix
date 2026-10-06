@@ -64,8 +64,15 @@ def suite : List TestSeq := [
     let carried := names (Ix.EnvScope.collectSelectedDeps env [``carriedProof])
     unless carried.contains ``matcher._arg_pusher do
       errors := errors.push "carried proof lost its explicit pusher dependency"
-    if bare.contains ``matcher._arg_pusher then
-      errors := errors.push "bare matcher pulled an unrelated ambient pusher"
+    -- M1-d (design document §6.3, owner rule of 2026-10-05): an on-demand
+    -- auxiliary belongs to its declaration's logical unit and a closure
+    -- producer carries it with the block. Before M1-d this asserted the
+    -- opposite (an "unrelated ambient pusher" must not be pulled).
+    unless bare.contains ``matcher._arg_pusher do
+      errors := errors.push "bare matcher lost the pusher of its logical unit"
+    -- negative control: a constant outside the unit is not pulled
+    if bare.contains ``carriedProof then
+      errors := errors.push "bare matcher pulled its caller carriedProof"
     for (root, sibling) in Tests.Ix.Compile.AuxGenClosure.mutualSeeds do
       let closed := Ix.EnvScope.collectSelectedDeps env [root]
       checked := checked + 1

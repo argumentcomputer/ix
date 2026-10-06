@@ -149,7 +149,7 @@ jobs:
             test_args: --ignored compile-schedule-identity compile-claim-conflict
           - name: Lake ignored tests (compiler closure and corpus)
             kind: lake
-            test_args: --ignored compiler-selected-closure-e2e
+            test_args: --ignored compiler-selected-closure-e2e compile-closure-whole
             compiler_corpus: true
           - name: Lake ignored tests (compile)
             kind: lake

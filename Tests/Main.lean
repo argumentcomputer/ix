@@ -39,6 +39,7 @@ import Tests.Ix.Compile.ValidateLeanNC
 import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.MathlibMeasure
 import Tests.Ix.Compile.O11aDecline
+import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -408,6 +409,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- O11a declines with a recorded cause when the size instance is absent from the
   -- input; the valid neighbour with the instance rewrites (Tests.Ix.Compile.O11aDecline).
   ("o11a-decline", Tests.Ix.Compile.O11aDecline.run),
+  -- Closure against whole on Init+Std, both switch states, and whole logical units in every
+  -- selected closure (Tests.Ix.Compile.ClosureWhole).
+  ("compile-closure-whole", Tests.Ix.Compile.ClosureWhole.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
