@@ -163,7 +163,7 @@ def localCollapse : IO (Array String) := do
   let (de, summary) ← Tests.Ix.Compile.Pass3.decompileCheck u out
   errors := errors ++ de.map (s!"local collapse: {·}")
   let baseNames : Std.HashSet Name := (Ix.EnvScope.collectDeps env own (withRecursors := true)
-    (withCompilerSupport := true) (withCheckerSupport := true)).foldl (fun s (n, _) => s.insert n) {}
+    (withCompilerSupport := true) (withCheckerSupport := true) (withUnits := true)).foldl (fun s (n, _) => s.insert n) {}
   let fullNames : Std.HashSet Name := full.foldl (fun s (n, _) => s.insert n) {}
   let (intro, bad) := introducedRefs out baseNames fullNames
   errors := errors ++ bad.map (s!"local collapse: {·}")
@@ -215,7 +215,7 @@ def run : IO UInt32 := do
     for s in support do
       unless cn.contains s do errors := errors.push s!"{r}: the introduced reference {s} is not carried"
     let base := (Ix.EnvScope.collectDeps env [r] (withRecursors := true) (withCompilerSupport := true)
-      (withCheckerSupport := true)).foldl (fun (s : Std.HashSet Name) (n, _) => s.insert n) {}
+      (withCheckerSupport := true) (withUnits := true)).foldl (fun (s : Std.HashSet Name) (n, _) => s.insert n) {}
     closures := closures.push (r, c, base)
   say s!"introduced references carried by every closure: {support}"
   say s!"closures: {closures.map (·.2.1.length) |>.foldl (· + ·) 0} constants over {roots.length} \

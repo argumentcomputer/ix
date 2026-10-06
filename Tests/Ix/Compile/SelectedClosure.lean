@@ -33,15 +33,15 @@ def suite : List TestSeq := [
       -- the selected scope also seeds the compiler's introduced references
       let support := Ix.EnvScope.introducedSupport env
       let ordinary := Lean.collectDependenciesMany (seeds ++ support).toArray env.constants
-        (withCompilerSupport := true) (withCheckerSupport := true)
+        (withCompilerSupport := true) (withCheckerSupport := true) (withUnits := true)
       unless sameNames closed ordinary do
         errors := errors.push s!"{seeds}: ordinary and scoped selected collectors disagree"
       unless sameNames ordinary (Lean.collectDependenciesMany (ordinary.map (·.1)).toArray
-          env.constants (withCompilerSupport := true) (withCheckerSupport := true)) do
+          env.constants (withCompilerSupport := true) (withCheckerSupport := true) (withUnits := true)) do
         errors := errors.push s!"{seeds}: ordinary selected closure is not a fixed point"
       if let [seed] := seeds then
         unless sameNames closed (Lean.collectDependenciesMany (seed :: support).toArray env.constants
-            (withCompilerSupport := true) (withCheckerSupport := true)) do
+            (withCompilerSupport := true) (withCheckerSupport := true) (withUnits := true)) do
           errors := errors.push s!"{seed}: ordinary singleton collector disagrees"
       for n in required do
         unless ns.contains n do errors := errors.push s!"{seeds}: missing support {n}"

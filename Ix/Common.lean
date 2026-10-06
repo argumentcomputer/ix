@@ -562,15 +562,19 @@ def unitMembers (consts : Lean.ConstMap) (idx : UnitIndex) (n : Lean.Name) : Lis
 
 private partial def collectDependenciesAux (const : Lean.ConstantInfo)
     (consts : Lean.ConstMap) (acc : ConstList) (withCompilerSupport : Bool := false)
-    (withCheckerSupport : Bool := false) (units : UnitIndex := {})
+    (withCheckerSupport : Bool := false) (units : Option UnitIndex := none)
     : CollectM ConstList := do
   modify (·.insert const.name)
   -- An auxiliary's family is one compiled block: pull its other members.
   let acc ← collectNames (auxFamilySiblings consts const.name) acc
   let acc ← if withCompilerSupport then collectNames (compilerSupportOf consts const.name) acc else pure acc
   -- The whole logical unit of the declaration (§6.3): every block the
-  -- closure reaches carries its eager and on-demand auxiliaries.
-  let acc ← if withCompilerSupport then collectNames (unitMembers consts units const.name) acc else pure acc
+  -- closure reaches carries its eager and on-demand auxiliaries. Only for a
+  -- selected scope (`withUnits`); raw collection, with or without compiler
+  -- support, keeps its historical closure.
+  let acc ← match units with
+    | some idx => collectNames (unitMembers consts idx const.name) acc
+    | none => pure acc
   let acc ← if withCheckerSupport then collectNames (checkerSupportOf consts const.name) acc else pure acc
   match const with
   | .ctorInfo val =>
@@ -631,7 +635,7 @@ where
       -- Selected support can revisit this family through an instance's
       -- own function. Consult the live set after each recursive ingress;
       -- the raw collector retains its historical enumeration behavior.
-      let visited ← if withCompilerSupport || withCheckerSupport then get else pure visited
+      let visited ← if withCompilerSupport || withCheckerSupport || units.isSome then get else pure visited
       if visited.contains name then pure acc
       else
         let const := consts.find! name
@@ -661,11 +665,14 @@ where
 
 /-- Raw dependency closure by default. Selected compiler/checker consumers
 can separately opt into source-owned compiler/recursor support and pinned-Nat
-certificate ground. Raw callers retain the historical closure by default. -/
+certificate ground, and `withUnits` into whole logical units (`unitMembers`,
+§6.3; the selected scopes set all three). Raw callers retain the historical
+closure by default. -/
 def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap)
-    (withCompilerSupport : Bool := false) (withCheckerSupport : Bool := false) : ConstList :=
+    (withCompilerSupport : Bool := false) (withCheckerSupport : Bool := false)
+    (withUnits : Bool := false) : ConstList :=
   let const := consts.find! name
-  let units := if withCompilerSupport then unitIndex consts else {}
+  let units := if withUnits then some (unitIndex consts) else none
   let (constList, _) := collectDependenciesAux const consts [(name, const)] withCompilerSupport withCheckerSupport units default
   constList
 
@@ -675,10 +682,10 @@ def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap)
     O(n × closure); this is O(union closure). -/
 def collectDependenciesMany (names : Array Lean.Name)
     (consts : Lean.ConstMap) (withCompilerSupport : Bool := false)
-    (withCheckerSupport : Bool := false) : ConstList := Id.run do
+    (withCheckerSupport : Bool := false) (withUnits : Bool := false) : ConstList := Id.run do
   let mut acc : ConstList := []
   let mut seen : Lean.NameHashSet := default
-  let units := if withCompilerSupport then unitIndex consts else {}
+  let units := if withUnits then some (unitIndex consts) else none
   for n in names do
     if seen.contains n then continue
     let some const := consts.find? n | continue

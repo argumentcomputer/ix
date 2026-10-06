@@ -63,18 +63,21 @@ environment always has both. It is off by default so that a whole-file compile
 include exactly what they did before (A3v follow-up: the fixtures' bytes and
 the Rust producer are unchanged). A block's compiled form depends only on its
 dependency closure, so adding recursors moves no address already in the
-closure. `withCompilerSupport` additionally follows `compilerSupportOf` and the
-whole logical unit (`Lean.unitMembers`, §6.3) at
-every visited declaration. Selected CLI scopes use `collectSelectedDeps` to
-enable these and the separate `withCheckerSupport` certificate-ground policy;
-a raw caller must opt in explicitly. Certificate ground is not a compiler
-rewrite or scheduling edge and does not change the frozen checker pins. -/
+closure. `withCompilerSupport` additionally follows `compilerSupportOf`, and
+`withUnits` the whole logical unit (`Lean.unitMembers`, §6.3), at every
+visited declaration. Selected CLI scopes use `collectSelectedDeps` to enable
+these and the separate `withCheckerSupport` certificate-ground policy; a raw
+caller must opt in explicitly (raw collection with compiler support only, as
+the `checker-support-regression` negative control uses it, carries no whole
+units). Certificate ground is not a compiler rewrite or scheduling edge and
+does not change the frozen checker pins. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
     (withRecursors : Bool := false)
     (withCompilerSupport : Bool := false)
     (withCheckerSupport : Bool := false)
+    (withUnits : Bool := false)
     : List (Lean.Name × Lean.ConstantInfo) := Id.run do
-  let units : Lean.UnitIndex := if withCompilerSupport then Lean.unitIndex env.constants else {}
+  let units : Lean.UnitIndex := if withUnits then Lean.unitIndex env.constants else {}
   let mut needed : Std.HashSet Lean.Name := {}
   let mut worklist := seeds
   while !worklist.isEmpty do
@@ -95,6 +98,7 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
           for r in Lean.checkerSupportOf env.constants n do refs := refs.insert r
         if withCompilerSupport then
           for r in compilerSupportOf env n do refs := refs.insert r
+        if withUnits then
           -- the whole logical unit of the declaration (§6.3)
           for r in Lean.unitMembers env.constants units n do refs := refs.insert r
         match ci with
@@ -152,7 +156,7 @@ def introducedSupport (env : Lean.Environment) : List Lean.Name :=
     env.contains
 
 /-- A selected compiler/checker input closes recursors, compiler support and
-certificate ground (`Lean.checkerSupportOf`), together with the compiler's introduced
+certificate ground (`Lean.checkerSupportOf`) and whole logical units (`Lean.unitMembers`, §6.3), together with the compiler's introduced
 references (`introducedSupport`), to the same fixed point as ordinary
 source references, mutual `all` members,
 and auxiliary-family siblings. Raw collection and whole-file/module-default
@@ -160,7 +164,7 @@ selection retain their existing contract through `collectDeps`'s defaults. -/
 def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
     List (Lean.Name × Lean.ConstantInfo) :=
   collectDeps env (seeds ++ introducedSupport env) (withRecursors := true) (withCompilerSupport := true)
-    (withCheckerSupport := true)
+    (withCheckerSupport := true) (withUnits := true)
 
 /-- Default (unfiltered) constant list for a file env. Classic files keep the
 historical whole-import-env behavior (byte-identical artifacts). Module-mode

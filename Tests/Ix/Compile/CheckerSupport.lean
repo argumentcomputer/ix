@@ -78,7 +78,7 @@ def run : IO UInt32 := do
     "selected closure failed to add required Nat pin ground"
   require (sameNames selected (Lean.collectDependenciesMany
     (seeds ++ Ix.EnvScope.introducedSupport env).toArray env.constants
-    (withCompilerSupport := true) (withCheckerSupport := true))) "collectors disagree"
+    (withCompilerSupport := true) (withCheckerSupport := true) (withUnits := true))) "collectors disagree"
   require (sameNames selected (Ix.EnvScope.collectSelectedDeps env (selected.map (·.1))))
     "checker support closure is not a fixed point"
   require (sameNames selected (Ix.EnvScope.collectSelectedDeps env seeds.reverse))
