@@ -729,3 +729,97 @@ def m3Roots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m3Roots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-! ## No decision trusts a cached hash as equality
+
+R4 (discovery 6): an `Ix.Expr`, `Ix.Level` or `Ix.Name` compares by its cached
+hash (`Ix.Expr.instBEq` and siblings are `a.getHash == b.getHash`), and
+`Lean.Expr`'s `BEq` (`Lean.Expr.instBEq`) is the opaque runtime `Lean.Expr.eqv`. No certified
+decision may use either as equality. The instances are listed by name: under
+the module system an importer does not see a core instance's body, so the
+closure stops at the instance. This check computes the transitive
+constant closure (types, and bodies of definitions, theorems and opaques) of
+the lane's decision procedures and fails if it reaches one of them. The
+equalities the decisions do use are `Kernel.Expr`'s derived `DecidableEq`
+(and `Kernel.Expr.beq`, proved equal to it by `Kernel.Expr.beqMemo_eq`),
+`Lean.Name`'s lawful `BEq`, and `DecidableEq` on addresses and references. The
+structural `BEq` instances `Ix.Common` derives for Lean's syntax
+(`instBEqExpr_ix` and siblings, not proved lawful) are listed too: no decision
+may rest on an unproved equality either. -/
+
+def hashEqualities : Array Lean.Name :=
+  #[``Ix.Expr.instBEq, ``Ix.Level.instBEq, ``Ix.Name.instBEq, ``Ix.Expr.getHash,
+    ``Ix.Level.getHash, ``Ix.Name.getHash, ``Lean.Expr.instBEq, ``Lean.Expr.instHashable,
+    ``Lean.Expr.eqv, ``Lean.Expr.equal,
+    ``Lean.Expr.quickLt, ``Lean.Expr.hash, ``instBEqExpr_ix, ``instBEqLevel_ix,
+    ``instBEqConstantInfo_ix]
+
+def decisionRoots : Array Lean.Name :=
+  #[``Ix.CompileCert.checkCompiled, ``Ix.CompileCert.checkRoots, ``Ix.CompileCert.checkIndexed,
+    ``Ix.CompileCert.checkIndexed_sound, ``Ix.CompileCert.faithful_sound,
+    ``Ix.CompileCert.checkSourceArtifactStrongAssociation,
+    ``Ix.CompileCert.SourceInstallation.artifact_strong_model]
+
+def constClosure (env : Lean.Environment) (roots : Array Lean.Name) : Lean.NameSet := Id.run do
+  let mut seen : Lean.NameSet := {}
+  let mut todo := roots
+  while h : todo.size > 0 do
+    let n := todo[todo.size - 1]
+    todo := todo.pop
+    if seen.contains n then continue
+    seen := seen.insert n
+    let some ci := env.find? n | continue
+    let exprs : Array Lean.Expr := #[ci.type] ++ match ci with
+      | .defnInfo v => #[v.value]
+      | .thmInfo v => #[v.value]
+      | .opaqueInfo v => #[v.value]
+      | .recInfo v => v.rules.toArray.map (·.rhs)
+      | _ => #[]
+    let more : Array Lean.Name := match ci with
+      | .inductInfo v => v.ctors.toArray ++ v.all.toArray
+      | .ctorInfo v => #[v.induct]
+      | .recInfo v => v.all.toArray
+      | _ => #[]
+    for e in exprs do
+      for c in e.getUsedConstants do
+        unless seen.contains c do todo := todo.push c
+    for c in more do
+      unless seen.contains c do todo := todo.push c
+  return seen
+
+def checkNoHashEquality (roots forbidden : Array Lean.Name) : CommandElabM Unit := do
+  let env ← getEnv
+  let missing := roots.filter (!env.contains ·)
+  unless missing.isEmpty do throwError m!"decision roots are missing: {missing}"
+  let closure := constClosure env roots
+  let hits := forbidden.filter closure.contains
+  unless hits.isEmpty do
+    throwError m!"decisions reach hash-cached equality: {hits}"
+  logInfo m!"[cert-audit] {roots.size} decisions, {closure.size} constants: no hash-cached equality"
+
+/-- A decision that uses `Lean.Expr`'s core `BEq` (the runtime `Lean.Expr.eqv`). -/
+def hashDecisionControl (a b : Lean.Expr) : Bool := @BEq.beq Lean.Expr Lean.Expr.instBEq a b
+
+/-- A decision that uses `Ix.Expr`'s cached-hash `BEq`. -/
+def ixHashDecisionControl (a b : Ix.Expr) : Bool := a == b
+
+/-- A decision that compares by structure (`Kernel.Expr`'s `DecidableEq`). -/
+def structuralDecisionControl (a b : Ix.Kernel.Expr) : Bool := decide (a = b)
+
+end Ix.CompileCert.Audit
+
+/-- error: decisions reach hash-cached equality: [Lean.Expr.instBEq, Lean.Expr.eqv] -/
+#guard_msgs in
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality #[``Ix.CompileCert.Audit.hashDecisionControl] Ix.CompileCert.Audit.hashEqualities
+
+/-- error: decisions reach hash-cached equality: [Ix.Expr.instBEq, Ix.Expr.getHash] -/
+#guard_msgs in
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality #[``Ix.CompileCert.Audit.ixHashDecisionControl] Ix.CompileCert.Audit.hashEqualities
+
+#guard_msgs(drop info) in
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality #[``Ix.CompileCert.Audit.structuralDecisionControl] Ix.CompileCert.Audit.hashEqualities
+
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.decisionRoots Ix.CompileCert.Audit.hashEqualities
