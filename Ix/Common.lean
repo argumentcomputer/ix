@@ -508,9 +508,19 @@ structure UnitView where
   /-- Every name, in the order the index is built in. -/
   names : Unit → List Lean.Name
 
+/-- Is `s` a reserved component of Pass 3 (`_ix`, `_ix_retyped`, `_ix_rule`, …)?
+A name with one is a compiler-generated auxiliary of the declaration it hangs
+under (`c._ix`, `f._ix.fg`, `p._ix_retyped._f`, `x._ix._f`, `g._ix._mutual`) and
+belongs to that declaration's logical unit (orchestrator's ruling, INT-fix,
+2026-10-06). A Lean environment has no such name (the compiler refuses an
+input with one), so only a compiled environment's view meets it. -/
+def unitReservedComponent (s : String) : Bool :=
+  s == "_ix" || s.startsWith "_ix_"
+
 /-- The owner of `n` when `n` is an auxiliary by name: the shortest proper
 prefix `X` of `n` that is a declaration and whose next component is an
-auxiliary component for `X`'s kind. A private name is tried as itself and
+auxiliary component for `X`'s kind, or a reserved component of Pass 3
+(`unitReservedComponent`, any kind). A private name is tried as itself and
 then through its user name. -/
 def UnitView.auxOwner? (v : UnitView) (n : Lean.Name) : Option Lean.Name :=
   let walk (m : Lean.Name) : Option Lean.Name := Id.run do
@@ -520,7 +530,7 @@ def UnitView.auxOwner? (v : UnitView) (n : Lean.Name) : Option Lean.Name :=
       if !pre.isAnonymous then
         if let .str .anonymous s := c then
           if let some k := v.kind? pre then
-            if unitAuxComponent k s then return some pre
+            if unitAuxComponent k s || unitReservedComponent s then return some pre
       -- component by component (`Name.append` would interpret macro scopes)
       pre := match c with
         | .str _ s => pre.str s

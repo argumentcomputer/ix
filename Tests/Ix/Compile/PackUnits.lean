@@ -11,7 +11,9 @@
      environment's names and metadata
      (`ixonUnitView`) gives, for every name of the source, the members that
      `Lean.unitMembers` gives over the Lean environment (restricted to the
-     source's names);
+     source's names), plus Pass 3's `_ix` names, which the view places in the
+     unit of the Lean declaration they hang under (`Lean.unitReservedComponent`;
+     each `_ix` name's own unit is checked the same way);
   2. for each root, the bundle's units are whole: every member of the unit of
      every carried name (`Lean.unitMembers`, the Lean environment) that the
      source has is carried;
@@ -76,23 +78,55 @@ def run : IO UInt32 := do
     -- 1. the compiled unit view agrees with the Lean one
     let view := ixonUnitView src
     let vidx := view.index
-    -- names the compiler introduces (synthetic `Ix.<hash>.…` block names, Pass 3's `_ix`
-    -- canonical constants) have no Lean declaration and no Lean unit: counted, not compared
+    -- Pass 3's `_ix` constants (canonical forms `c._ix`, helpers `p._ix_retyped.s`, `f._ix.fg`,
+    -- `T.noConfusionType._ix`, images and clique encodings) are compiler-generated auxiliaries
+    -- of the declaration they hang under and belong to its unit (orchestrator's ruling,
+    -- INT-fix 2026-10-06; `Lean.unitReservedComponent`): in a compiled unit they are extras
+    -- (no Lean declaration), placed by the view in the unit of the Lean name they derive
+    -- from, and every such name's own compiled unit is that Lean unit plus its extras. Any
+    -- other compiled member Lean's unit lacks is a difference, and so is a Lean member the
+    -- compiled unit lacks. Synthetic names with no Lean prefix (`Ix.<hash>.…` block names)
+    -- have no Lean unit: counted, not compared.
+    let isExtra (m : Name) : Bool := !env.contains m &&
+      m.components.any fun c => match c with
+        | .str .anonymous s => Lean.unitReservedComponent s
+        | _ => false
     let mut viewDiffs := 0
     let mut compilerNames := 0
+    let mut extraPlaced := 0
+    let mut extras : Std.HashSet Name := {}
     for (n, _) in src.named.toList do
       let ln := ixToLeanName n
-      unless env.contains ln do
-        compilerNames := compilerNames + 1
+      -- the Lean declaration whose unit `ln` belongs to
+      let owner? : Option Name := if env.contains ln then some ln
+        else if isExtra ln then view.auxOwner? ln else none
+      if owner?.isNone then
+        if isExtra ln then
+          viewDiffs := viewDiffs + 1
+          if viewDiffs ≤ 5 then errors := errors.push s!"{tag}: {ln}: a Pass 3 name with no owner in the unit view"
+        else compilerNames := compilerNames + 1
         continue
-      let lean := (Lean.unitMembers env.constants idx ln).filter view.contains
-      let ixon := view.members vidx ln
+      let o := owner?.getD ln
+      unless env.contains o do
+        viewDiffs := viewDiffs + 1
+        if viewDiffs ≤ 5 then errors := errors.push s!"{tag}: {ln}: owner {o} is not a Lean declaration"
+        continue
+      if !env.contains ln then extraPlaced := extraPlaced + 1
+      let lean := (Lean.unitMembers env.constants idx o).filter view.contains
+      let ixonAll := view.members vidx ln
+      for m in ixonAll do if isExtra m then extras := extras.insert m
+      let ixon := ixonAll.filter (!isExtra ·)
       unless lean.eraseDups.toArray.qsort Name.lt == ixon.eraseDups.toArray.qsort Name.lt do
         viewDiffs := viewDiffs + 1
         if viewDiffs ≤ 5 then
           errors := errors.push s!"{tag}: unit of {ln}: Lean {lean.eraseDups} / compiled {ixon.eraseDups}"
     IO.println s!"[pack-units] {tag}: source {src.named.size} names, {src.consts.size} constants; \
-      unit view differences {viewDiffs} over the names Lean declares ({compilerNames} compiler-introduced names not compared)"
+      unit view differences {viewDiffs} over the names Lean declares and Pass 3's `_ix` names \
+      ({extraPlaced} `_ix` name(s) placed in their Lean unit, {extras.size} as unit extras; \
+      {compilerNames} synthetic names not compared)"
+    -- with the switch on the fixture has Pass 3 names: the placement check is not vacuous
+    if mode && extraPlaced == 0 then
+      errors := errors.push s!"{tag}: no Pass 3 `_ix` name placed in a unit (the check is vacuous)"
     -- 2, 3: whole units and the whole compile's bytes
     for r in roots do
       let outPath := dir / s!"{r}-{tag}.ixe"
