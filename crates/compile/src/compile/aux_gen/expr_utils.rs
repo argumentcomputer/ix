@@ -2029,11 +2029,26 @@ impl<'a> TcScope<'a> {
     stt: &'a crate::compile::CompileState,
     kctx: &'a mut crate::compile::KernelCtx,
   ) -> Result<Self, ixon::CompileError> {
-    let fvar_levels: FxHashMap<Name, usize> = outer_fvar_ctx
-      .iter()
-      .enumerate()
-      .map(|(i, decl)| (decl.fvar_name.clone(), i))
-      .collect();
+    // Scope discipline, as the Lean bridge's `TcScopeSt.new` checks it:
+    // universe parameters and outer free variables are distinct.
+    let mut seen_params = FxHashSet::default();
+    for name in param_names {
+      if !seen_params.insert(name) {
+        return Err(bridge_refusal(format!(
+          "duplicate universe parameter '{}'",
+          name.pretty()
+        )));
+      }
+    }
+    let mut fvar_levels: FxHashMap<Name, usize> = FxHashMap::default();
+    for (i, decl) in outer_fvar_ctx.iter().enumerate() {
+      if fvar_levels.insert(decl.fvar_name.clone(), i).is_some() {
+        return Err(bridge_refusal(format!(
+          "duplicate outer free variable '{}'",
+          decl.fvar_name.pretty()
+        )));
+      }
+    }
 
     let mut tc = ix_kernel::tc::TypeChecker::new(&mut kctx.kenv);
     tc.infer_only = true;
@@ -2055,46 +2070,93 @@ impl<'a> TcScope<'a> {
     })
   }
 
+  fn depth(&self) -> usize {
+    self.base_depth + self.extra_locals
+  }
+
+  /// The type checker's context must be exactly this scope's locals.
+  fn check_depth(&self, operation: &str) -> Result<(), ixon::CompileError> {
+    if self.tc.ctx.len() != self.depth() {
+      return Err(bridge_refusal(format!(
+        "stale scope depth before {operation}"
+      )));
+    }
+    Ok(())
+  }
+
   /// Push additional locals (e.g. minor premise lambda binders).
-  /// Must be balanced by a later `pop_locals` call. On a refusal nothing
-  /// stays pushed (the Lean bridge's state rolls back the same way).
+  /// Must be balanced by a later `pop_locals` call. A pushed free variable
+  /// must be new to the scope (the Lean bridge's `pushLocals` check). On a
+  /// refusal nothing stays pushed (the Lean bridge's state rolls back the
+  /// same way).
   pub(super) fn push_locals(
     &mut self,
     decls: &[LocalDecl],
   ) -> Result<(), ixon::CompileError> {
-    let depth = self.base_depth + self.extra_locals;
+    self.check_depth("push_locals")?;
+    let depth = self.depth();
     for (i, decl) in decls.iter().enumerate() {
-      self.fvar_levels.insert(decl.fvar_name.clone(), depth + i);
-      let kty = match to_kexpr_static(
-        &decl.domain,
-        &self.fvar_levels,
-        depth + i,
-        self.param_names,
-        self.stt,
-      ) {
-        Ok(kty) => kty,
-        Err(e) => {
+      let refusal = if self.fvar_levels.contains_key(&decl.fvar_name) {
+        Err(bridge_refusal(format!(
+          "duplicate pushed free variable '{}'",
+          decl.fvar_name.pretty()
+        )))
+      } else {
+        self.fvar_levels.insert(decl.fvar_name.clone(), depth + i);
+        to_kexpr_static(
+          &decl.domain,
+          &self.fvar_levels,
+          depth + i,
+          self.param_names,
+          self.stt,
+        )
+        .inspect_err(|_| {
           self.fvar_levels.remove(&decl.fvar_name);
+        })
+      };
+      match refusal {
+        Ok(kty) => self.tc.push_local(kty),
+        Err(e) => {
           for pushed in decls[..i].iter().rev() {
             self.tc.pop_local();
             self.fvar_levels.remove(&pushed.fvar_name);
           }
           return Err(e);
         },
-      };
-      self.tc.push_local(kty);
+      }
     }
     self.extra_locals += decls.len();
     Ok(())
   }
 
-  /// Pop locals pushed by `push_locals`.
-  pub(super) fn pop_locals(&mut self, decls: &[LocalDecl]) {
+  /// Pop locals pushed by `push_locals`: only pushed locals, and only the
+  /// most recently pushed ones in order (the Lean bridge's `popLocals`
+  /// checks).
+  pub(super) fn pop_locals(
+    &mut self,
+    decls: &[LocalDecl],
+  ) -> Result<(), ixon::CompileError> {
+    self.check_depth("pop_locals")?;
+    if decls.len() > self.extra_locals {
+      return Err(bridge_refusal(
+        "pop_locals exceeds pushed local count".into(),
+      ));
+    }
+    let first = self.depth() - decls.len();
+    for (i, decl) in decls.iter().enumerate() {
+      if self.fvar_levels.get(&decl.fvar_name) != Some(&(first + i)) {
+        return Err(bridge_refusal(format!(
+          "pop_locals is not LIFO at '{}'",
+          decl.fvar_name.pretty()
+        )));
+      }
+    }
     for decl in decls.iter().rev() {
       self.tc.pop_local();
       self.fvar_levels.remove(&decl.fvar_name);
     }
     self.extra_locals -= decls.len();
+    Ok(())
   }
 
   fn fault_in_direct_expr_consts(&mut self, expr: &LeanExpr) {

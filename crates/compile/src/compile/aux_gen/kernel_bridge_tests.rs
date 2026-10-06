@@ -547,3 +547,104 @@ fn tc_scope_refuses_unknown_free_variable() {
     &a_ref,
   );
 }
+
+fn sort_decl(s: &str) -> LocalDecl {
+  LocalDecl {
+    fvar_name: name(s),
+    binder_name: name(s),
+    domain: LeanExpr::sort(Level::zero()),
+    info: BinderInfo::Default,
+  }
+}
+
+/// Scope discipline, mirroring `Tests/Ix/Compile/BridgeScopes.lean`: each
+/// violation is refused with the Lean bridge's text.
+#[test]
+fn tc_scope_refuses_scope_discipline_violations() {
+  let stt = CompileState::new_empty();
+  let mut kctx = crate::compile::KernelCtx::new();
+  let x = sort_decl("x");
+  let y = sort_decl("y");
+  assert_refused(
+    TcScope::new(&[x.clone(), x.clone()], &[], &stt, &mut kctx).map(|_| ()),
+    "aux kernel bridge: duplicate outer free variable 'x'",
+  );
+  let uu = [name("u"), name("u")];
+  assert_refused(
+    TcScope::new(&[], &uu, &stt, &mut kctx).map(|_| ()),
+    "aux kernel bridge: duplicate universe parameter 'u'",
+  );
+  {
+    let mut scope =
+      TcScope::new(std::slice::from_ref(&x), &[], &stt, &mut kctx).unwrap();
+    assert_refused(
+      scope.push_locals(std::slice::from_ref(&x)),
+      "aux kernel bridge: duplicate pushed free variable 'x'",
+    );
+    assert_refused(
+      scope.pop_locals(std::slice::from_ref(&x)),
+      "aux kernel bridge: pop_locals exceeds pushed local count",
+    );
+  }
+  let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+  assert_refused(
+    scope.push_locals(&[x.clone(), x.clone()]),
+    "aux kernel bridge: duplicate pushed free variable 'x'",
+  );
+  // The refused telescope left nothing behind.
+  assert_eq!(scope.tc.ctx.len(), 0);
+  assert_eq!(scope.extra_locals, 0);
+  assert!(!scope.fvar_levels.contains_key(&name("x")));
+  scope.push_locals(&[x.clone(), y.clone()]).unwrap();
+  assert_refused(
+    scope.pop_locals(std::slice::from_ref(&x)),
+    "aux kernel bridge: pop_locals is not LIFO at 'x'",
+  );
+  // A type checker context out of step with the scope is refused.
+  scope.tc.push_local(KExpr::sort(KUniv::zero()));
+  assert_refused(
+    scope.push_locals(&[sort_decl("z")]),
+    "aux kernel bridge: stale scope depth before push_locals",
+  );
+  assert_refused(
+    scope.pop_locals(&[]),
+    "aux kernel bridge: stale scope depth before pop_locals",
+  );
+  scope.tc.pop_local();
+  // Valid neighbour: the actual LIFO telescope pops and leaves the scope
+  // balanced; a dependent telescope infers through its outer variable.
+  scope.pop_locals(&[x.clone(), y.clone()]).unwrap();
+  assert_eq!(scope.tc.ctx.len(), 0);
+  assert_eq!(scope.extra_locals, 0);
+  assert!(scope.fvar_levels.is_empty());
+}
+
+#[test]
+fn tc_scope_balanced_dependent_telescope() {
+  let stt = CompileState::new_empty();
+  let mut kctx = crate::compile::KernelCtx::new();
+  let a = LocalDecl {
+    fvar_name: name("A"),
+    binder_name: name("A"),
+    domain: LeanExpr::sort(Level::succ(Level::zero())),
+    info: BinderInfo::Default,
+  };
+  let x = LocalDecl {
+    fvar_name: name("x"),
+    binder_name: name("x"),
+    domain: LeanExpr::fvar(name("A")),
+    info: BinderInfo::Default,
+  };
+  let mut scope =
+    TcScope::new(std::slice::from_ref(&a), &[], &stt, &mut kctx).unwrap();
+  scope.push_locals(std::slice::from_ref(&x)).unwrap();
+  assert_same_lean(
+    &scope.infer_lean(&LeanExpr::fvar(name("x"))).unwrap().unwrap(),
+    &LeanExpr::fvar(name("A")),
+  );
+  scope.pop_locals(std::slice::from_ref(&x)).unwrap();
+  assert_eq!(scope.depth(), 1);
+  assert_eq!(scope.tc.ctx.len(), 1);
+  assert_eq!(scope.fvar_levels.get(&name("A")), Some(&0));
+  assert!(!scope.fvar_levels.contains_key(&name("x")));
+}

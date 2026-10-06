@@ -1576,7 +1576,7 @@ fn build_below_minor(
         let ih_applied = mk_app_n(field.fvar.clone(), &field.inner_fvars);
         let lvl1 = tc_scope.get_level(leaf)?;
         let lvl2 = tc_scope.get_level(&ih_applied)?;
-        tc_scope.pop_locals(&field.inner_decls);
+        tc_scope.pop_locals(&field.inner_decls)?;
         let pprod = mk_pprod(&lvl1, &lvl2, leaf, &ih_applied);
         ih_entries.push(mk_forall(pprod, &field.inner_decls));
       }
@@ -1599,7 +1599,7 @@ fn build_below_minor(
   };
 
   // Pop field decls from TcScope.
-  tc_scope.pop_locals(&lam_decls);
+  tc_scope.pop_locals(&lam_decls)?;
 
   Ok(mk_lambda(body, &lam_decls))
 }

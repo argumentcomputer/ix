@@ -1611,7 +1611,7 @@ fn build_ih_type_fvar(
   // Pop the xs decls we pushed during peeling so the scope stays balanced
   // for the next field / constructor. The IH body construction below does
   // not need them in the TC context.
-  scope.pop_locals(&xs_decls);
+  scope.pop_locals(&xs_decls)?;
 
   // `cur` is now the fully FVar-instantiated inner expression: I params idx_args
   let (_, inner_args) = decompose_apps(&cur);
@@ -1900,7 +1900,7 @@ fn build_rec_rules(
       }
 
       // Pop this ctor's field decls so the scope is clean for the next ctor.
-      scope.pop_locals(&field_decls);
+      scope.pop_locals(&field_decls)?;
 
       // Abstract and wrap: fields (innermost), then PMM (outermost).
       let mut all_decls: Vec<LocalDecl> = Vec::new();
@@ -1970,7 +1970,7 @@ fn build_rule_ih_fvar(
     xs_fvars.push(fv.clone());
     cur = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
-  scope.pop_locals(&xs_decls);
+  scope.pop_locals(&xs_decls)?;
 
   let (_, inner_args) = decompose_apps(&cur);
   let idx_args: Vec<LeanExpr> =
@@ -2175,7 +2175,7 @@ fn find_rec_target(
     pushed.push(decl);
     ty = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
-  scope.pop_locals(&pushed);
+  scope.pop_locals(&pushed)?;
   Ok(match_classes_against_app(&ty, classes, param_fvars, n_params))
 }
 
