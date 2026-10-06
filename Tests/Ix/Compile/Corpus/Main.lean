@@ -4,11 +4,11 @@ open Lean
 open Tests.Ix.Compile.Corpus
 
 private def usage : String :=
-  "aux-shape-sweep <inventory|generate|filter|assemble|aggregate|run|compare|matrix|self-check|verify-legacy|verify-round2>\n" ++
+  "aux-shape-sweep <inventory|generate|filter|assemble|aggregate|run|compare|matrix|records|self-check|verify-legacy|verify-round2>\n" ++
   "  --dir PATH --select all|curated|smoke|id,... --data PATH\n" ++
   "  --jobs N --workers N --timeout SECONDS --mode off|on|both\n" ++
   "  --phases comma,list --revision COMMIT --expected FILE --cases FILE\n" ++
-  "  --local --keep-envs --legacy FILE --size N --ix PATH --cert PATH\n" ++
+  "  --local --keep-envs --legacy FILE --size N --ix PATH --cert PATH --env FILE --ns PREFIX\n" ++
   "Run requires --revision. Outputs are immutable per run directory; no silent resume.\n"
 
 private def options (args : List String) : Except String (Std.HashMap String String) := do
@@ -21,7 +21,7 @@ private def options (args : List String) : Except String (Std.HashMap String Str
       pending := none
     else
       unless #["--dir", "--select", "--data", "--jobs", "--workers", "--timeout", "--mode",
-        "--phases", "--revision", "--expected", "--cases", "--local", "--keep-envs", "--legacy", "--size", "--ix", "--cert"].contains arg do
+        "--phases", "--revision", "--expected", "--cases", "--local", "--keep-envs", "--legacy", "--size", "--ix", "--cert", "--env", "--ns"].contains arg do
         throw s!"unknown option {arg}"
       if result.contains arg then throw s!"duplicate option {arg}"
       if #["--local", "--keep-envs"].contains arg then result := result.insert arg "true"
@@ -35,6 +35,10 @@ private def natOption (opts : Std.HashMap String String) (key : String) (default
   | some value => match value.toNat? with
     | some n => pure n
     | none => throw <| IO.userError s!"invalid natural number for {key}: {value}"
+
+private def record (name address kind : String) (original : Option String := none)
+    (block : Option String := none) : NamedRecord :=
+  { name, address, kind, original, block }
 
 private def selfCheck (data : System.FilePath) : IO UInt32 := do
   let shapes ← loadCatalog data
@@ -91,6 +95,67 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
   check "wrong variant address detected" (!differences.isEmpty && !same)
   let (differences, onlyBase, onlyVariant, same) := compareNamed #[("AX.C.T", "aaa")] #[("AY.C.Zq", "aaa")] true
   check "renamed matching address accepted" (differences.isEmpty && onlyBase.isEmpty && onlyVariant.isEmpty && same)
+  -- Permutation controls, shaped like the measured two-member block with nested
+  -- auxiliaries (F2_twoaux): A first in the base, B first in the variant.
+  let roots := #[record "AX.P.A" "ta" "iprj" none (some "blk"), record "AX.P.A.mk" "ca" "cprj" none (some "blk"),
+    record "AX.P.B" "tb" "iprj" none (some "blk"), record "AX.P.B.leaf" "cb" "cprj" none (some "blk")]
+  let offBase := roots ++ #[record "AX.P.A.rec" "ra" "recr" (some "leanA1"),
+    record "AX.P.B.rec" "rb" "recr" (some "leanB1"), record "AX.P.A.rec_1" "n1" "recr" (some "leanN1"),
+    record "AX.P.A.below_1" "lb1" "defn", record "AX.P.auxRec" "alias1" "defn"]
+  let offPerm := roots ++ #[record "AX.P.A.rec" "ra" "recr" (some "leanA2"),
+    record "AX.P.B.rec" "rb" "recr" (some "leanB2"), record "AX.P.B.rec_1" "n1" "recr" (some "leanN2"),
+    record "AX.P.B.below_1" "lb2" "defn", record "AX.P.auxRec" "alias2" "defn"]
+  let (rootsN, auxN, canonical, _) := comparePermutation offBase offPerm false
+  let (nameDiff, onlyB, onlyV, _) := compareNamed (offBase.map fun r => (r.name, r.address))
+    (offPerm.map fun r => (r.name, r.address)) false
+  check "permutation with equal canonical roots/auxiliaries accepted despite measured alias differences"
+    (canonical.isEmpty && rootsN == 4 && auxN == 3 && nameDiff == #["AX.P.auxRec"] && !onlyB.isEmpty && !onlyV.isEmpty)
+  let (_, _, canonical, _) := comparePermutation offBase
+    (offPerm.map fun r => if r.name == "AX.P.B.leaf" then { r with address := "other" } else r) false
+  check "permutation with a different constructor root rejected" (canonical == #["root AX.P.B.leaf: cb vs other"])
+  let (_, _, canonical, _) := comparePermutation offBase
+    (offPerm.map fun r => if r.name == "AX.P.B.rec_1" then { r with address := "other" } else r) false
+  check "permutation with a different canonical nested recursor rejected"
+    (canonical == #["nested family AX.P.A~AX.P.B/rec_*: #[n1] vs #[other]"])
+  -- Lean numbers nested auxiliaries in the source's discovery order: with Pass 3
+  -- off the regenerated family is a multiset; `_ix` images are per position.
+  let nestedOff (owner : String) (first second : String) : Array NamedRecord :=
+    #[record s!"AX.P.{owner}.rec_1" first "recr" (some "lean1"), record s!"AX.P.{owner}.rec_2" second "recr" (some "lean2")]
+  check "Lean-numbered nested auxiliaries in another order accepted with Pass 3 off"
+    ((comparePermutation (roots ++ nestedOff "A" "n1" "n2") (roots ++ nestedOff "B" "n2" "n1") false).2.2.1.isEmpty)
+  check "Lean-numbered nested auxiliary family with another member rejected with Pass 3 off"
+    (!(comparePermutation (roots ++ nestedOff "A" "n1" "n2") (roots ++ nestedOff "B" "n2" "n3") false).2.2.1.isEmpty)
+  let nestedOn (owner : String) (first second : String) : Array NamedRecord :=
+    #[record s!"AX.P.{owner}._ix.rec_1" first "recr", record s!"AX.P.{owner}._ix.rec_2" second "recr"]
+  check "canonical nested images at the same positions accepted with Pass 3 on"
+    ((comparePermutation (roots ++ nestedOn "A" "n1" "n2") (roots ++ nestedOn "B" "n1" "n2") true).2.2.1.isEmpty)
+  check "canonical nested images at swapped positions rejected with Pass 3 on"
+    ((comparePermutation (roots ++ nestedOn "A" "n1" "n2") (roots ++ nestedOn "B" "n2" "n1") true).2.2.1.size == 2)
+  let rootsD := roots.push (record "AX.P.D" "td" "iprj" none (some "blkD"))
+  check "nested auxiliary owners without a correspondence rejected"
+    ((comparePermutation (rootsD ++ nestedOff "A" "n1" "n2") (rootsD ++ nestedOff "B" "n1" "n2" ++ nestedOff "D" "n1" "n2")
+      false).2.2.1 == #["nested auxiliary owners do not correspond: base #[AX.P.A] variant #[AX.P.B, AX.P.D]"])
+  let (_, _, canonical, _) := comparePermutation offBase (offPerm.filter (·.name != "AX.P.B.rec")) false
+  check "permutation missing a canonical auxiliary rejected"
+    (canonical == #["auxiliary AX.P.B/rec: missing in variant"])
+  -- Pass 3 on: the canonical auxiliaries are the `_ix` records; Lean names hold images.
+  -- An unchanged block keeps canonical auxiliaries under Lean names (original = address).
+  let onBase := roots ++ #[record "AX.P.A.rec" "ra" "recr" (some "ra") none, record "AX.P.A.rec_1" "n1" "recr" (some "n1") none]
+  let onPerm := roots ++ #[record "AX.P.A._ix.rec" "ra" "recr" none none,
+    record "AX.P.A.rec" "imageA" "defn" (some "leanA2") none, record "AX.P.B._ix.rec_1" "n1" "recr" none none,
+    record "AX.P.B.rec_1" "imageN" "defn" (some "leanN2") none, record "AX.P.f._ix._mutual" "m" "defn" none none]
+  let (_, auxN, canonical, outOfScope) := comparePermutation onBase onPerm true
+  check "Pass 3 canonical images matched with the base's canonical auxiliaries"
+    (canonical.isEmpty && auxN == 2 && outOfScope == #["variant: AX.P.f._ix._mutual"])
+  let (_, _, canonical, _) := comparePermutation onBase
+    (onPerm.map fun r => if r.name == "AX.P.A._ix.rec" then { r with address := "imageA" } else r) true
+  check "Pass 3 Lean-named image without its canonical record rejected"
+    ((comparePermutation onBase (onPerm.filter (·.name != "AX.P.A._ix.rec")) true).2.2.1 ==
+      #["auxiliary AX.P.A/rec: ra vs imageA"])
+  check "Pass 3 canonical image at another address rejected"
+    (canonical == #["auxiliary AX.P.A/rec: ra vs imageA"])
+  check "permutation without roots rejected"
+    (!(comparePermutation (offBase.filter fun r => r.kind != "iprj" && r.kind != "cprj") offPerm false).2.2.1.isEmpty)
   let expected : Array Expected := #[⟨"x", "on", "compile", "known diagnostic", "documented defect"⟩]
   let infrastructure : Verdict := ⟨"x", "on", "compile", "infrastructure-error", "known diagnostic", ""⟩
   check "expectation cannot suppress infrastructure error"
@@ -234,6 +299,16 @@ def main (args : List String) : IO UInt32 := do
         cases expected modes (opts.getD "--revision" "")
     | "compare" => compareVariants dir modes
     | "matrix" => matrix dir
+    | "records" =>
+      -- Investigation aid: every Named record whose displayed name starts with --ns.
+      let some path := opts["--env"]? | throw <| IO.userError "records requires --env"
+      let some ns := opts["--ns"]? | throw <| IO.userError "records requires --ns"
+      let env ← loadEnv ⟨path⟩
+      let names := (env.named.toArray.filter fun (n, _) => n.pretty.startsWith ns).qsort
+        (fun a b => a.1.pretty < b.1.pretty)
+      if names.isEmpty then throw <| IO.userError s!"no records under {ns}"
+      IO.println (toJson (namedRecords env names)).pretty
+      return 0
     | "self-check" => selfCheck data
     | "verify-legacy" =>
       let some path := opts["--legacy"]? | throw <| IO.userError "verify-legacy requires --legacy"

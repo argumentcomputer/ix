@@ -117,6 +117,34 @@ def namesText (names : Array (Ix.Name × Ixon.Named)) : String :=
 def namedManifest (names : Array (Ix.Name × Ixon.Named)) : Json :=
   toJson (names.map fun (name, value) => (name.pretty, toString value.addr))
 
+/-- The compiler's own classification of the constant a name points at:
+`iprj`/`cprj` are datatype/constructor projections into a stored block. -/
+def constKind (env : Ixon.Env) (addr : Address) : String × Option Address :=
+  match (env.consts.get? addr).bind (·.get?) with
+  | some c => match c.info with
+    | .defn _ => ("defn", none) | .recr _ => ("recr", none) | .axio _ => ("axio", none)
+    | .quot _ => ("quot", none) | .muts _ => ("muts", none)
+    | .dPrj p => ("dprj", some p.block) | .rPrj p => ("rprj", some p.block)
+    | .iPrj p => ("iprj", some p.block) | .cPrj p => ("cprj", some p.block)
+  | none => ("missing", none)
+
+/-- One fixture-owned `Named` record: its address, the kind of the constant
+there (with the stored block of a projection), and `Named.original` (Lean's own
+form of a regenerated auxiliary). -/
+structure NamedRecord where
+  name : String
+  address : String
+  kind : String
+  block : Option String := none
+  original : Option String := none
+  deriving ToJson, FromJson, Inhabited, BEq
+
+def namedRecords (env : Ixon.Env) (names : Array (Ix.Name × Ixon.Named)) : Array NamedRecord :=
+  names.map fun (name, value) =>
+    let (kind, block) := constKind env value.addr
+    { name := name.pretty, address := toString value.addr, kind, block := block.map toString,
+      original := value.original.map (toString ·.1) }
+
 /-- Compare complete Named records, including metadata/original/hints; missing
 roots and closure-only invented names are failures, not absent comparisons. -/
 def closureDifferences (whole closed : Ixon.Env) (root : String) : Array String := Id.run do
@@ -271,6 +299,7 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
               if names.isEmpty then row := { row with status := "infrastructure-error", detail := "compiled output has no fixture-owned names" }
               else
                 writeJson (dir / s!"{phase}-names.json") (namedManifest names)
+                writeJson (dir / s!"{phase}-records.json") (namedRecords env names)
                 writeJson (dir / s!"{phase}-ownership.json") (ownershipManifest owned names)
                 IO.FS.writeFile (dir / s!"{phase}-names.txt") (namesText names)
                 if isRust then rustEnv := some env else leanEnv := some env

@@ -116,10 +116,64 @@ multisets, with no generated-name exclusions. Rename comparisons undo only whole
 name components. Mutual declaration permutations are a different domain: source
 recursor aliases may acquire different motive/minor telescopes, and their full
 name maps are measured differences, not a universal alpha-renaming assertion.
-Canonical datatype/constructor roots and corresponding canonical auxiliary
-images must still agree. Source-facing adapters retain each source's own
-semantics, checked by the validation phases; metadata/original and packing
-differences require separate retained artifact comparisons.
+The verdict of a permutation is canonical agreement, defined below. Source-facing
+adapters retain each source's own semantics, checked by the validation phases;
+metadata/original and packing differences require separate retained artifact
+comparisons.
+
+### Permutation comparison
+
+Each compile phase writes `compile-records.json`: for every fixture-owned name,
+its address, the kind of the constant at that address (`iprj`/`cprj`/`rprj`/
+`dprj` projections with their stored block, or `defn`/`recr`/...), and the
+address of `Named.original` when present. `compare` reads the base's and the
+permutation's records in the same switch mode and requires:
+
+1. **Roots.** The records whose constant is a datatype or constructor projection
+   (`iprj`/`cprj`) have the same names on both sides and equal addresses. A base
+   with no roots fails.
+2. **Canonical auxiliaries.** A record's *key* is owner plus suffix: `X._ix.S`
+   has key `X/S`; a record `X.S` whose longest datatype-root prefix is `X` has
+   the same key. The *canonical record* of a key is `X._ix.S` when present, else
+   `X.S`. A side *nominates* a key when it has the `_ix` record (Pass 3 on: the
+   compiler's canonical auxiliaries of a changed block, D14 in
+   `compiler-passes.md` §4.8), or when `X.S` is canonical under Lean's name:
+   with Pass 3 off, `X.S` carries `Named.original` (an auxiliary regenerated
+   from the canonical block, with Lean's own form as its original); with Pass 3
+   on, `X.S` has `Named.original` equal to its own address (an unchanged block,
+   whose Lean form is canonical). A Lean-named record of a changed block with
+   Pass 3 on is an image (original differs from address) and nominates nothing.
+   Every key nominated by either side must have a canonical record on both
+   sides, at one address. Two different addresses under one key on one side fail.
+3. **Nested auxiliaries.** Suffixes beginning with a numbered nested auxiliary
+   (`rec_N`, `below_N`, `brecOn_N`, and their `.go`/`.eq`) are spelled by Lean
+   under the source block's first member. The `_ix` spelling is meant to be
+   `rep₀._ix.rec_N` (`compiler-passes.md` §4.8) and is for `NM_three`
+   (`B._ix.rec_N` whichever member comes first), but it can still move with the
+   source order (measured: the base of `F2_twoaux` has `A._ix.rec_1`, its
+   permutation `B._ix.rec_1`, at one address), so owners are matched, not
+   compared by name. Owners with a nominated nested record take part; they
+   correspond by name, and the one owner left on each side corresponds to the
+   other; any other leftover fails. For corresponding owners: with Pass 3 on,
+   every nominated nested record is compared per canonical position (the
+   canonical record of `rec_N` on each side, `_ix` first); with Pass 3 off, the
+   regenerated Lean-named records of each family (`rec_*`, `below_*`,
+   `brecOn_*.eq`, ...) must have equal address multisets, because Lean numbers
+   them in the source's own discovery order (measured: `NM_three`'s
+   permutations carry the same three `below_N` addresses under other indices).
+4. Everything else is measured, not asserted: the full name map, Lean-named
+   images with Pass 3 on (Lean's telescope), Lean's own non-regenerated
+   auxiliaries (with Pass 3 off: `below_N`/`brecOn_N`, `_sizeOf_N`,
+   `noConfusion`, user aliases), and `Named.original` itself. `_ix` records
+   whose owner is not a datatype root (definition-clique encodings,
+   `compiler-passes.md` §5) are listed per row as `outOfScope`.
+
+A row passes when the roots and canonical auxiliaries agree; its name-map
+differences are still recorded. `compare` prints how many permutations agree,
+how many of those differ in their name maps, and how many roots and canonical
+auxiliaries it compared. `self-check` has a valid and an invalid control for
+each requirement, with Pass 3 off and on. `records --env FILE --ns PREFIX`
+prints the same records for any environment, for investigation.
 
 Source ownership is inventoried by elaborating each source serially before
 parallel oracle work. Namespace classification uses the visible form of private
