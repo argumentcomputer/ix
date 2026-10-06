@@ -61,6 +61,14 @@
     Milestone M6 (the flip retires the surgery), with `KF-O1`.
   - `CERT-AXIOM`: the certified checker declines axioms outside its standard
     set (`Tests.Ix.Compile.LevelSpellings` declares its own).
+  - CORPUS-IPB (M1-j), units `IPBCollapse2p1` and `IPBMixed` (the corpus
+    shapes `M3_P_alpha2p1`, `M4_P_mixed`): with the switch off the compile
+    refuses Lean's `IndPredBelow` block (`REFUSED-IPB-COLLAPSE`), with the
+    switch on Pass 3 refuses the family's images (`switchOnRefusals`). Their
+    kernel failures are all meta-mode only, on the collapsed aliases
+    (`BB-F1`, `BB-F7`; the same names in four runs): the certified checker
+    and anonymous mode accept every checked constant. Their valid neighbour
+    `IPBCollapseNone` has no failure.
 -/
 
 import Std.Data.HashSet
@@ -618,6 +626,43 @@ def table : List Expect := [
     msg := "app type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size"] },
   { unit := "twins", switch := "off", leg := "lean", cause := "WB-B3",
     msg := "projection: struct type is not a constant", names := ["Tests.Ix.Compile.Twins.Proto.C9.Src.A.depth._f"] },
+  -- CORPUS-IPB (M1-j): the refused units' meta-mode failures on collapsed aliases (four runs, stable)
+  { unit := "IPBCollapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", count := 51 },
+  { unit := "IPBCollapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "ctor return type: head is not the inductive", count := 9 },
+  { unit := "IPBCollapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 12 },
+  { unit := "IPBCollapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 47 },
+  { unit := "IPBCollapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", names := ["IPBCollapse2p1.A.casesOn", "IPBCollapse2p1.A.rec", "IPBCollapse2p1.B.rec", "IPBCollapse2p1.C.rec"] },
+  { unit := "IPBCollapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", count := 24 },
+  { unit := "IPBCollapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "ctor return type: head is not the inductive", count := 9 },
+  { unit := "IPBCollapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 8 },
+  { unit := "IPBCollapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 28 },
+  { unit := "IPBMixed", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", count := 58 },
+  { unit := "IPBMixed", switch := "on", leg := "rs", cause := "BB-F1",
+    msg := "FunExpected", count := 11 },
+  { unit := "IPBMixed", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 12 },
+  { unit := "IPBMixed", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 63 },
+  { unit := "IPBMixed", switch := "on", leg := "lean", cause := "BB-F7",
+    msg := "app type mismatch", names := ["IPBMixed.A.rec", "IPBMixed.B.casesOn", "IPBMixed.B.rec", "IPBMixed.C.rec", "IPBMixed.D.rec"] },
+  { unit := "IPBMixed", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "FunExpected", count := 11 },
+  { unit := "IPBMixed", switch := "off", leg := "rs", cause := "BB-F1",
+    msg := "AppTypeMismatch", count := 27 },
+  { unit := "IPBMixed", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "requested selector matched no checkable work item", count := 8 },
+  { unit := "IPBMixed", switch := "off", leg := "lean", cause := "BB-F7",
+    msg := "unknown constant ", count := 38 },
   { unit := "corpus", switch := "on", leg := "cert", cause := "CERT-AXIOM",
     msg := "decline: non-standard axiom", count := 20 },
   { unit := "corpus", switch := "on", leg := "rs", cause := "KF-UNIVM",
@@ -720,6 +765,35 @@ def table : List Expect := [
     msg := "unknown constant ", count := 157 },
   { unit := "O10O12Collapse", switch := "off", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", varies := true }
+]
+
+/-- Compile failures with the switch on only, by unit and exact name, that are
+not consequences of a block refused in both modes: Pass 3's own refusals,
+recorded with their cause and a substring of their message. `pass3` checks
+them both ways (an unrecorded switch-on-only failure and a recorded name that
+does not fail so are both problems). -/
+structure OnRefusal where
+  unit : String
+  cause : String
+  msg : String
+  names : List String
+
+/-- CORPUS-IPB (M1-j): in `IPBCollapse2p1` (corpus `M3_P_alpha2p1`) and
+`IPBMixed` (`M4_P_mixed`) the switch-off compile refuses Lean's `IndPredBelow`
+block (`REFUSED-IPB-COLLAPSE`: the `.below` inductives and their constructors),
+and with the switch on Pass 3 refuses the images of the same family's
+`.below.rec`/`.below.casesOn` (a partially collapsed Prop block; a Pass 3 item
+of M1). The two sets are disjoint, so neither is a consequence of the other. -/
+def switchOnRefusals : List OnRefusal := [
+  { unit := "IPBCollapse2p1", msg := "image: ",
+    cause := "CORPUS-IPB, switch on: Pass 3 images of a partially collapsed Prop block's IndPredBelow family",
+    names := ["IPBCollapse2p1.A.below.rec", "IPBCollapse2p1.B.below.rec", "IPBCollapse2p1.C.below.rec",
+      "IPBCollapse2p1.A.below.casesOn", "IPBCollapse2p1.B.below.casesOn", "IPBCollapse2p1.C.below.casesOn"] },
+  { unit := "IPBMixed", msg := "image: ",
+    cause := "CORPUS-IPB, switch on: Pass 3 images of a partially collapsed Prop block's IndPredBelow family",
+    names := ["IPBMixed.A.below.rec", "IPBMixed.B.below.rec", "IPBMixed.C.below.rec", "IPBMixed.D.below.rec",
+      "IPBMixed.A.below.casesOn", "IPBMixed.B.below.casesOn", "IPBMixed.C.below.casesOn",
+      "IPBMixed.D.below.casesOn"] }
 ]
 
 /-! ## Writing the record from a dump (`PASS3_EXPECT_EMIT=<rows.tsv>,<recheck.tsv>`) -/

@@ -351,6 +351,13 @@ structure BlockEnv where
       constant) and its call sites keep every dropped argument in
       `collapsed` metadata, so the collapse-drop checks (A0) do not apply. -/
   provenanceOnly : Bool := false
+  /-- Set only by `compileConstNoAuxPure` (Rust: `compile_mutual` under
+      `BlockCache::provenance_only`, which only `compile_const_no_aux`
+      reaches): an equivalence class of inductives whose members compile to
+      different data is refused (`Ix.AuxGen.ipbCollapseError`, CORPUS-IPB).
+      The decompiler's roundtrip compiles also run provenance-only but leave
+      this unset, as Rust's `roundtrip_block` has its own member loop. -/
+  noAuxOriginal : Bool := false
 
 /-! ## Compilation Error -/
 
@@ -3078,13 +3085,32 @@ def MutConstCompileState.addEquivalent
     MutConstCompileState :=
   { state with metas := state.metas ++ member.metas }
 
+/-- CORPUS-IPB (M1-j): in Lean's original form of a regenerated block
+(`BlockEnv.noAuxOriginal`), an inductive member of an equivalence class must
+compile to its representative's data, since the class stores only the
+representative's payload. Members alpha-equivalent before surgery can differ
+after it (each `.below` head keeps its own member's motive), and the stored
+`Named.original` would then give the member the representative's motives:
+refused. Mirrors Rust `compile_mutual` (`IPB_COLLAPSE_ERROR`). -/
+def refuseIpbCollapse (rep source : MutConst) (repPayload payload : Ixon.MutConst) :
+    CompileM Unit := do
+  if !(← getBlockEnv).noAuxOriginal then return
+  match repPayload, payload with
+  | .indc r, .indc p =>
+    if r != p then
+      throw (.invalidMutualBlock s!"{Ix.AuxGen.ipbCollapseError}: '{source.name.pretty}' \
+and its class representative '{rep.name.pretty}' compile to different data in Lean's \
+original form of the block")
+  | _, _ => pure ()
+
 /-- Compile the non-representative tail of one equivalence class. -/
-def compileEquivalentMutConsts :
+def compileEquivalentMutConsts (rep : MutConst) (repPayload : Ixon.MutConst) :
     List MutConst → MutConstCompileState → CompileM MutConstCompileState
   | [], state => pure state
   | source :: rest, state => do
     let member ← compileMutConstMember source
-    compileEquivalentMutConsts rest (state.addEquivalent member)
+    refuseIpbCollapse rep source repPayload member.payload
+    compileEquivalentMutConsts rep repPayload rest (state.addEquivalent member)
 
 /-- Compile one equivalence class, retaining the first member as its payload
 representative while still retaining metadata from every later member. -/
@@ -3093,7 +3119,8 @@ def compileMutConstClass :
   | [], state => pure state
   | representative :: equivalents, state => do
     let member ← compileMutConstMember representative
-    compileEquivalentMutConsts equivalents (state.addRepresentative member)
+    compileEquivalentMutConsts representative member.payload equivalents
+      (state.addRepresentative member)
 
 /-- Compile equivalence classes in their sorted source order. -/
 def compileMutConstClasses :

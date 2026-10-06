@@ -4726,6 +4726,26 @@ fn compile_mutual(
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Indc(data));
             representative_pushed = true;
+          } else if cache.provenance_only
+            && let Some(IxonMutConst::Indc(rep)) = ixon_mutuals.last()
+            && *rep != data
+          {
+            // CORPUS-IPB (M1-j): in Lean's original form of a regenerated
+            // block (`compile_const_no_aux`, the only caller reaching here
+            // with `provenance_only`), a class stores only its
+            // representative's data, so a member that compiles differently
+            // (each `.below` head keeps its own member's motive) would read
+            // back with the representative's motives. Mirrors Lean
+            // `refuseIpbCollapse`.
+            return Err(CompileError::InvalidMutualBlock {
+              reason: format!(
+                "{}: '{}' and its class representative '{}' compile to \
+                 different data in Lean's original form of the block",
+                surgery::IPB_COLLAPSE_ERROR,
+                ind.ind.cnst.name.pretty(),
+                class[0].name().pretty(),
+              ),
+            });
           }
           // Register per-constructor ConstantMeta::Ctor entries
           for (ctor, ctor_meta) in ind.ctors.iter().zip(ctor_metas_vec) {

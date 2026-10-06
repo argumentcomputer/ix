@@ -834,6 +834,31 @@ validator's oracle leg found it).
   (`UnsafeI.UNestNeg.rec`) are single-member blocks and do not share the cause: WB-B6 is Pass 2's
   generator form (a recursive field behind a reducible alias), WB-B9 the recursor block's packaging.
 
+**Default path: the CORPUS-IPB refusal (`REFUSED-IPB-COLLAPSE`; owner, 2026-10-06, option 1; M1-j).**
+With the switch off, the stored meaning of a Lean `IndPredBelow` name is its `Named.original`: the
+promotion compile of Lean's own `.below` block (`compileConstNoAuxPure`, Rust `compile_const_no_aux`,
+provenance only) with each `.below` head's call-site plan applied, and each plan keeps the motive of
+its own member. When a collapse merges members whose `.below` inductives are alpha-equivalent before
+surgery (`M3_P_alpha2p1`: `A`, `B` = `z | s : C → _`, so `A.below` ≅ `B.below`; `M4_P_mixed`), the
+promotion compile puts those `.below` inductives in one class, whose payload is the representative's
+data: the other member's constructors then read back with the representative's motive
+(`A.below.z : A.below motive_2 motive_2 motive_3 A.z`, Lean's `A.below motive_1 motive_2 motive_3
+A.z`). All kernels accept that type, and no call site exists for D13 to check.
+- *Rule (switch off, both compilers).* In the promotion compile, an inductive member of an
+  equivalence class must compile to its representative's data; otherwise the block is refused with
+  `REFUSED-IPB-COLLAPSE: collapsed Prop members' IndPredBelow family would be stored with one
+  member's motives: '<member>' and its class representative '<rep>' compile to different data in
+  Lean's original form of the block` (`Ix.CompileM.refuseIpbCollapse`; Rust `compile_mutual`), a block
+  failure of the `.below` block, as D13's refusals are.
+- *Scope.* A collapsed Prop pair whose `.below` members stay distinct (`PropCollapse`: `P.step : Q →
+  P`, `Q.step : P → Q`; the all-alpha ring) and the `Type` version of the shape (`F1_Collapse2p1`,
+  whose `.below` are definitions) compile as before; a Prop block that collapses nothing never has a
+  multi-member class there. Fixtures: `aux-cert` `IPBCollapse2p1`, `IPBMixed` (refused) and
+  `IPBCollapseNone` (valid neighbour).
+- *Switch on.* Unchanged: a changed block registers no surgery plan, so the check cannot fire; Pass 3's
+  images refuse both corpus shapes (`image: hypothesis motive N not in its slot's class`), which is
+  a Pass 3 item of M1. The shape does not occur in Init+Std or Mathlib (byte-identical outputs).
+
 ### 2.6 Evaporation
 
 After a split, Lean's auxiliary for `I As` **evaporates** from component `K` when `As` mentions no
@@ -2381,6 +2406,9 @@ consequences, not entries of the twins fixture:
   C4Evap, F3, NestRoseSplit, NestMutExt and NestMutExtA. Under decision 3 a sibling auxiliary *is*
   its image, so its type mentions the refused member and it cannot compile. This costs 2–11
   constants per unit, listed per unit as consequences.
+- **REFUSED-IPB-COLLAPSE** (M1-j, §2.5 "Default path"). The default path refuses Lean's
+  `IndPredBelow` block of a collapse that merges alpha-equivalent `.below` members (`IPBCollapse2p1`,
+  `IPBMixed`); the switch-on path refuses the same units in Pass 3's images.
 
 Units: 53, with 0 problems; 535 images and 885 rule statements hold by `rfl`, with 0 kernel
 failures [measured, A3M].

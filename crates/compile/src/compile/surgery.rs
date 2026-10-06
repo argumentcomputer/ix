@@ -196,6 +196,18 @@ pub const COLLAPSE_DROP_ERROR: &str =
 pub const COLLAPSE_ETA_ERROR: &str =
   "collapse call site is a partial application";
 
+/// The message of the CORPUS-IPB refusal (both compilers; M1-j). In a Prop
+/// block whose collapse merges members, Lean's own `IndPredBelow` block is
+/// compiled for provenance (`compile_const_no_aux`, `Named.original`) with
+/// each `.below` head's call-site plan keeping its own member's motive. When
+/// two of those `.below` inductives are alpha-equivalent before surgery they
+/// share one class, and the class stores the representative's data under
+/// every member's metadata: the other member's constructors then read back
+/// with the representative's motive (`A.below.z : A.below motive_2 motive_2
+/// motive_3 A.z` where Lean has `motive_1 motive_2 motive_3`). The block is
+/// refused instead (`compile_mutual`). Mirrors Lean `ipbCollapseError`.
+pub const IPB_COLLAPSE_ERROR: &str = "REFUSED-IPB-COLLAPSE: collapsed Prop members' IndPredBelow family would be stored with one member's motives";
+
 /// The kept source argument whose canonical slot a dropped one shares.
 ///
 /// `Ok(None)`: argument `i` is kept, or it is dropped without being a

@@ -44,6 +44,11 @@ structure Expected where
 - A0 evaporation refusal ("not a one-motive recursor", both modes): phase 1;
   the partial output's siblings of the refused component fail phases 4–5
   (REFUSED-SIBLING).
+- REFUSED-IPB-COLLAPSE (CORPUS-IPB, M1-j; switch off): the compile refuses
+  Lean's `IndPredBelow` block of a collapse that merges alpha-equivalent
+  `.below` members (phase 1); the partial output's refused names have no
+  `Named.original`, so they decompile to the canonical form (phase 5). With
+  the switch on, Pass 3's images refuse the same family (phases 1, 5).
 - Compile totality defects by id (WB-A2, WB-A3, WB-A7, BB-F6, BB-F8).
 - Decompile and auxiliary defects by id (BB-F5, WB-B6, WB-B9).
 - BELOW-ORDER (removed, A6f): the kernels' single-pass canonicity gate used to
@@ -68,6 +73,15 @@ def expected : List Expected := [
   ⟨"C8Collapse3", "off", ["1", "5"], "A0 refusal (D13)"⟩,
   ⟨"C9Params", "off", ["1", "5"], "A0 refusal (D13)"⟩,
   ⟨"Proto", "off", ["1", "5"], "A0 refusals (D13, partial applications) of the prototype twins"⟩,
+  -- CORPUS-IPB (M1-j): the default path refuses the Lean `IndPredBelow`
+  -- block of a collapse that merges alpha-equivalent `.below` members; with
+  -- the switch on Pass 3's images refuse the same shapes (`image: hypothesis
+  -- motive N not in its slot's class`, a Pass 3 item of M1)
+  ⟨"IPBCollapse2p1", "off", ["1", "5"], "REFUSED-IPB-COLLAPSE (CORPUS-IPB)"⟩,
+  ⟨"IPBCollapse2p1", "on", ["1", "5"], "Pass 3 images refusal (hypothesis motive not in its slot's class)"⟩,
+  ⟨"IPBMixed", "off", ["1", "5"], "REFUSED-IPB-COLLAPSE (CORPUS-IPB)"⟩,
+  ⟨"IPBMixed", "on", ["1", "5"], "Pass 3 images refusal (hypothesis motive not in its slot's class)"⟩,
+  ⟨"IPBCollapseNone", "off", ["6", "8"], "A3V-IPB (its IndPredBelow .rec/.casesOn ≠ Lean's; fixed by Pass 3)"⟩,
   -- A0 evaporation refusal, both modes
   ⟨"C4Evap", "off", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
   ⟨"C4Evap", "on", ["1", "5"], "A0 refusal (not a one-motive recursor)"⟩,
@@ -158,6 +172,16 @@ def pins : List (String × String × String × String) := [
   ("F6_OrderIdxBrecOn", "off", "5", "2 digest mismatch(es), 2 missing"),
   ("F8_PropSplitNested", "off", "1", "3 per-block compile failure(s)"),
   ("F8_PropSplitNested", "off", "5", "12 digest mismatch(es), 6 missing"), -- M1-d re-record, was 8/3
+  ("IPBCollapse2p1", "off", "1", "9 per-block compile failure(s)"),
+  ("IPBCollapse2p1", "off", "5", "7 digest mismatch(es), 0 missing"),
+  ("IPBCollapse2p1", "on", "1", "6 per-block compile failure(s)"),
+  ("IPBCollapse2p1", "on", "5", "6 digest mismatch(es), 6 missing"),
+  ("IPBCollapseNone", "off", "6", "unclassified 6"),
+  ("IPBCollapseNone", "off", "8", "6 violation(s)"),
+  ("IPBMixed", "off", "1", "11 per-block compile failure(s)"),
+  ("IPBMixed", "off", "5", "9 digest mismatch(es), 0 missing"),
+  ("IPBMixed", "on", "1", "8 per-block compile failure(s)"),
+  ("IPBMixed", "on", "5", "8 digest mismatch(es), 8 missing"),
   ("KernelSpec", "off", "1", "16 per-block compile failure(s)"),
   ("KernelSpec", "off", "5", "7 decompile error(s)"),
   ("KernelSpec", "on", "1", "16 per-block compile failure(s)"),

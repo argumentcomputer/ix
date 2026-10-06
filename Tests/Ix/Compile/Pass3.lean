@@ -972,17 +972,34 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
   -- auxiliary of a changed block is its image, whose type mentions every
   -- member of the Lean block, the refused component included (REFUSED-SIBLING)
   let consequence := refusalClosure off on
+  -- or a recorded switch-on refusal of Pass 3's images (by exact name, with
+  -- its message class; `Pass3Kernels.switchOnRefusals`), checked both ways
+  let recordedOn := Pass3Kernels.switchOnRefusals.filter (·.unit == u.name)
+  let recordedOnly (n : _root_.Ix.Name) (e : String) : Bool :=
+    recordedOn.any fun r => r.names.contains n.pretty && (e.splitOn r.msg).length > 1
   let mut nRefused := 0
+  let mut nRecordedOn := 0
   for (n, e) in on.cenv.ungrounded do
     if !off.cenv.ungrounded.contains n then
       if consequence.contains n then nRefused := nRefused + 1
+      else if recordedOnly n e then nRecordedOn := nRecordedOn + 1
       else problems := problems.push s!"{u.name}: {n.pretty} fails only with the switch on: {e.take 240}"
   if nRefused > 0 then
     lines := lines.push s!"  {nRefused} constant(s) fail only with the switch on as consequences of a block Pass 2 refuses in both modes (REFUSED-SIBLING)"
+  if nRecordedOn > 0 then
+    lines := lines.push s!"  {nRecordedOn} constant(s) fail only with the switch on as recorded ({", ".intercalate (recordedOn.map (·.cause))})"
+  for r in recordedOn do
+    for nm in r.names do
+      let ok := on.cenv.ungrounded.toList.any fun (n, e) =>
+        n.pretty == nm && !off.cenv.ungrounded.contains n && (e.splitOn r.msg).length > 1
+      if !ok then
+        problems := problems.push s!"{u.name}: {nm} is recorded as failing only with the switch on ({r.msg}) but does not (stale)"
   -- a name the switch-off output registers although its compile failed there
-  -- too (the regenerated auxiliary of a refused block) is not missing
-  let refusedBoth : Array _root_.Ix.Name := on.cenv.ungrounded.toArray.filterMap fun (n, _) =>
-    if off.cenv.ungrounded.contains n || consequence.contains n then some n else none
+  -- too (the regenerated auxiliary of a refused block), or a recorded
+  -- switch-on refusal, is not missing
+  let refusedBoth : Array _root_.Ix.Name := on.cenv.ungrounded.toArray.filterMap fun (n, e) =>
+    if off.cenv.ungrounded.contains n || consequence.contains n || recordedOnly n e then some n
+    else none
   problems := problems.filter fun p =>
     !(refusedBoth.any fun n => p == s!"{u.name}: {n.pretty} missing with the switch on")
   for (n, e) in off.cenv.ungrounded.toList.take 3 do

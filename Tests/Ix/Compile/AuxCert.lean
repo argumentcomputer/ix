@@ -221,6 +221,17 @@ def fixtures : List Fixture := [
   { stem := "F1_Collapse2p1", ns := ["A", "B", "C"]
     knownCounts := [("rs", "BB-F1 (metadata of collapsed aliases)", 47),
       ("lean", "BB-F1, BB-F7", 62)] },
+  -- CORPUS-IPB (M1-j, owner 2026-10-06): a Prop block whose collapse merges
+  -- members with alpha-equivalent Lean `.below` inductives is refused in both
+  -- compilers (the corpus shapes `M3_P_alpha2p1`, `M4_P_mixed`). Valid
+  -- neighbours: `IPBCollapseNone` (the same block without the pair),
+  -- `F1_Collapse2p1` (the `Type` version, above) and `PropCollapse` (a full
+  -- Prop collapse whose `.below` members stay distinct).
+  { stem := "IPBCollapse2p1", ns := ["IPBCollapse2p1"]
+    expect := .refuses "REFUSED-IPB-COLLAPSE: collapsed Prop members' IndPredBelow family would be stored with one member's motives: 'IPBCollapse2p1.A.below' and its class representative" },
+  { stem := "IPBMixed", ns := ["IPBMixed"]
+    expect := .refuses "REFUSED-IPB-COLLAPSE: collapsed Prop members' IndPredBelow family would be stored with one member's motives: 'IPBMixed.C.below' and its class representative" },
+  { stem := "IPBCollapseNone", ns := ["IPBCollapseNone"] },
   { stem := "F5_SigmaNestedNested", ns := ["T"]
     knownFails := ["rs", "lean"].flatMap fun leg =>
       kf leg "BB-F5 (kernel completeness)" ["T.rec", "T.rec_1", "T.rec_2"] },

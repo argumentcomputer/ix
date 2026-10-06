@@ -220,6 +220,20 @@ def collapseDropError : String := "collapse call site drops distinct arguments"
     construction. -/
 def collapseEtaError : String := "collapse call site is a partial application"
 
+/-- The message of the CORPUS-IPB refusal (both compilers; M1-j). In a Prop
+    block whose collapse merges members, Lean's own `IndPredBelow` block is
+    compiled for provenance (`compileConstNoAuxPure`, `Named.original`) with
+    each `.below` head's call-site plan keeping its own member's motive.
+    When two of those `.below` inductives are alpha-equivalent before
+    surgery they share one class, and the class stores the representative's
+    data under every member's metadata: the other member's constructors then
+    read back with the representative's motive (`A.below.z : A.below
+    motive_2 motive_2 motive_3 A.z` where Lean has `motive_1 motive_2
+    motive_3`). The block is refused instead. Mirrors Rust
+    `IPB_COLLAPSE_ERROR`. -/
+def ipbCollapseError : String :=
+  "REFUSED-IPB-COLLAPSE: collapsed Prop members' IndPredBelow family would be stored with one member's motives"
+
 /-- Whether the plan drops a motive of a collapsed member of this SCC (its
     minors follow the motive). Mirrors Rust `CallSitePlan::drops_collapsed`. -/
 def CallSitePlan.dropsCollapsed (plan : CallSitePlan) : Bool :=
