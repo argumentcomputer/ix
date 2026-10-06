@@ -68,6 +68,22 @@ def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let t0 ← IO.monoMsNow
   let input ← Ix.PhaseTimers.timeWall "source-contract preparation (compileInputFromEnv)" do
     IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
+  -- `--rust-check`: the Rust compile is independent of the Lean one, so it runs
+  -- alongside it on a thread of its own (`IX_RUST_CHECK_SERIAL=1`: after it, for
+  -- timings of the Lean compile alone); its bytes are compared below.
+  let rustSerial := (← IO.getEnv "IX_RUST_CHECK_SERIAL").any (· != "0")
+  let rustCompile : IO (ByteArray × Nat) := do
+    let tR ← IO.monoMsNow
+    let dir ← IO.FS.createTempDir
+    let rustOut := dir / "rust-check.ixe"
+    let constants ← IO.ofExcept input.prepare
+    let _ ← Ix.CompileM.rsCompileEnvBytesFFI constants rustOut.toString true
+    let rustBytes ← IO.FS.readBinFile rustOut
+    IO.FS.removeDirAll dir
+    return (rustBytes, (← IO.monoMsNow) - tR)
+  let rustTask? ← if p.hasFlag "rust-check" && !rustSerial then
+      some <$> IO.asTask (prio := .dedicated) rustCompile
+    else pure none
   match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
       (dbg := true) with
   | .error e =>
@@ -96,15 +112,10 @@ serialize the grounded subset)"
         IO.println s!"  {n.pretty}: {e.take 200}"
 
     if p.hasFlag "rust-check" then
-      IO.println "[compile-lean] --rust-check: compiling via Rust FFI..."
-      let tR ← IO.monoMsNow
-      let dir ← IO.FS.createTempDir
-      let rustOut := dir / "rust-check.ixe"
-      let constants ← IO.ofExcept input.prepare
-      let _ ← Ix.CompileM.rsCompileEnvBytesFFI constants rustOut.toString true
-      let rustBytes ← IO.FS.readBinFile rustOut
-      IO.FS.removeDirAll dir
-      let tRe := (← IO.monoMsNow) - tR
+      IO.println s!"[compile-lean] --rust-check: compiling via Rust FFI{if rustTask?.isSome then " (ran alongside the Lean compile)" else ""}..."
+      let (rustBytes, tRe) ← match rustTask? with
+        | some t => IO.ofExcept (← IO.wait t)
+        | none => rustCompile
       Ix.PhaseTimers.wall " (not the Lean compiler) --rust-check: Rust compile" tRe
       if rustBytes == out.bytes then
         IO.println s!"[compile-lean] ALIGNED: {out.bytes.size} bytes byte-identical with Rust ({tRe}ms)"
