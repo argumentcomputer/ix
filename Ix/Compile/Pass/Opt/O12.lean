@@ -15,7 +15,7 @@ the block, reserved names, D14):
 * `fg := λ (t : X). ρ.brecOn.{max 1 u} Pair t G : (t : X) → PProd (m₀ t)
   (m₁ t)`, the **shared pair-valued helper**, where `Pair := λ t. PProd (m₀
   t) (m₁ t)` and `G := λ t f. ⟨F′₀ t f, F′₁ t f⟩`;
-* `F′ᵢ`: the handlers re-typed over the Ix below at `Pair` (`p._ix.s` for
+* `F′ᵢ`: the handlers re-typed over the Ix below at `Pair` (`p._ix_retyped.s` for
   Lean's `p.s`), a leaf value of member `j` read as `.1` then the pair's
   component of `j` (`.1`/`.2`).
 The pair's order `(m₀, m₁)` is **by content**: each member's handler is

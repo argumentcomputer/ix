@@ -92,6 +92,22 @@ are stored under their Lean names, so the two never meet: a pass writes the
 canonical form of a definition that is not an image-kind auxiliary). -/
 def ixFormName (c : Name) : Name := Name.mkStr c ixComponent
 
+/-- The reserved component of a structural handler re-typed by a
+proof-justified pass (O9, O10, O12): `_ix_retyped`. It starts with `_ix`, so
+no Lean input name carries it (`reservedInput?`), and it differs from
+`ixComponent`, so the re-typed handler of Lean's `p.s` never has the
+spelling `p._ix.s` that the clique hook gives the canonical counterpart of
+Lean's encoding constant `p.s` (`Cliques.cliqueIxName`: `A.len._ix._f`). The
+compile's check that a reserved name already bound is bound to the same
+bytes (`Driver.compileCanon`) stays as the guard. -/
+def retypedComponent : String := "_ix_retyped"
+
+/-- The reserved name of the re-typed handler of the Lean constant `p.s`:
+`p._ix_retyped.s` (`retypedComponent`). -/
+def retypedName : Name → Option Name
+  | .str p s _ => some (Name.mkStr (Name.mkStr p retypedComponent) s)
+  | _ => none
+
 /-- A name component. -/
 inductive Comp where
   | s (x : String)

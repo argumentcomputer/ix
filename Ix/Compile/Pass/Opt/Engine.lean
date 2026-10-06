@@ -24,7 +24,7 @@ image (the baseline, Def 3.6). The fixed order:
 | unit | O13a/b | cliques changed only by order, or by the fixed-parameter telescope: **A5's slot**, run once per clique after the occurrence passes; not implemented here |
 | 6 | O8 | `casesOn` over a collapsed or lifted member: the Ix `casesOn` of the class (**proof-justified**, `pjPasses`) |
 | 7 | O7 | `rec`/`recOn` over a collapsed block with identical motives and minors per class (**proof-justified**, `pjPasses`) |
-| 8 | O9 | `brecOn` over the component of a split block with a cross field: the Ix `brecOn` with the handler re-typed and re-pathed, the canonical handler `c._ix._f` emitted (**proof-justified**, `emitPasses`) |
+| 8 | O9 | `brecOn` over the component of a split block with a cross field: the Ix `brecOn` with the handler re-typed and re-pathed, the canonical handler `c._ix_retyped._f` emitted (**proof-justified**, `emitPasses`) |
 | 9 | O10 | `brecOn` over a collapsed block, equal arms per class: the Ix `brecOn` with one motive and one re-typed handler per class (**proof-justified**, `emitPasses`) |
 | 10 | O12 | `brecOn` over a collapsed pair, different arms: the projection of the shared pair-valued helper `fg` (**proof-justified**, `emitPasses`) |
 

@@ -268,7 +268,7 @@ def CollapseRec.retype (env : OptEnv) (cr : CollapseRec) (motives : Array Expr)
            ixBelow, slotOf := cr.slotOf, motives, levels, leaves, extra, forbidden }
 
 /-- Re-type a handler: a constant `g` (Lean's `f._f`) becomes the canonical
-constant `p._ix.s` (`g = p.s`) with re-typed type and value; another term
+constant `p._ix_retyped.s` (`g = p.s`) with re-typed type and value; another term
 is re-typed in place. -/
 def retypeHandler (env : OptEnv) (rt : CRetype) (h : Expr) : Option (Expr × Array ConstantInfo) := do
   let (hd, args) := getAppFnArgs h

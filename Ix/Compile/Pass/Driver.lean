@@ -455,7 +455,7 @@ initial state, the way A5's clique hook compiles its canonical constants:
 * the canonical forms `c._ix` of the block's definitions where a
   proof-justified pass fires (decision 5, D1; `Translate.RwState.canon`) and
   O11b's (`unitPasses`), and the helpers the passes' rewrites reference
-  (O9/O10's re-typed handlers `p._ix.s`, O12's `fg`);
+  (O9/O10's re-typed handlers `p._ix_retyped.s`, O12's `fg`);
 * each through the call-site rewrite **in place** (`rewriteBlock` with
   `inPlace`: the proof-justified passes rewrite a canonical constant itself),
   whose own helpers join the work list;

@@ -3,7 +3,7 @@ O9, structural recursion over a split block with a cross field. In `Src`, `B` do
 `A`, so Pass 1 splits the block into `{B}` and `{A}`; `A.a` and `A.t` have fields of type `B` (cross
 fields). Lean's `A.below` has a leaf for each `B` field, the Ix `below` of `{A}` does not, so the
 handlers' paths shift (`x_1.2.1 ↦ x_1.1`, `x_1.2.2.1 ↦ x_1.2.1`). O9 rewrites `A.len`, `A.sum` (the
-`DQSplit`/`SurgSplit`/C2 `len`) onto the Ix `brecOn` with the canonical handler `A.len._ix._f`
+`DQSplit`/`SurgSplit`/C2 `len`) onto the Ix `brecOn` with the canonical handler `A.len._ix_retyped._f`
 re-typed and re-pathed. Decision 5 (D1): the rewrites go to the canonical forms `A.len._ix`,
 `A.sum._ix`, `A.cnt._ix`, which are the bytes of `Can`, where `B` and `A` are declared separately;
 the Lean names keep their baselines (recorded `PJ-FORM-O9`, their callers `INHERITED`).

@@ -28,7 +28,7 @@ name) and `F′` the major's handler **re-typed**: every `x.below ps ms is s`
 replaced by `ρ.below ps msel is s`, and every path into a below value at a
 constructor re-pathed `.2ʲ.1.1 ↦ .2ʲ′.1.1`. When Lean's handler is a
 constant `g` (`c._f`), `F′` is the canonical constant `g′` (reserved name
-`p._ix.s` for `g = p.s`, D14) with the re-typed type and value and `g`'s
+`p._ix_retyped.s` for `g = p.s`, D14) with the re-typed type and value and `g`'s
 hints, emitted with the block (`Translate.RwState.canon`); a λ handler is
 re-typed in place. The handlers of the other components are dropped.
 
@@ -64,7 +64,7 @@ keeps its Lean name, type and value (faithful).
 
 **Where the output goes (decision 5, D1).** The output is written into the
 canonical form `c._ix` (Lean's `c` renamed, with `c`'s type), which then
-reads `ρ.brecOn … c._ix._f`, Lean's own shape over the canonical component;
+reads `ρ.brecOn … c._ix_retyped._f`, Lean's own shape over the canonical component;
 the Lean name `c` keeps its baseline (the image's `brecOn` over Lean's
 handler `c._f`, convertible to Lean's term) and is recorded non-canonical
 with the cause O9. The proof term of `c._ix = c` is the Corollary
@@ -101,7 +101,7 @@ for the occurrence (the image's `brecOn`, faithful).
 ## Non-canonical set and evidence
 Lean's `c._f` keeps its Lean type (over Lean's `below`): faithful, and not
 the twin's (`ORDER-STMT`-like: a statement that follows the grouping);
-its canonical counterpart is `c._ix._f`. A handler that reads a cross
+its canonical counterpart is `c._ix_retyped._f`. A handler that reads a cross
 field's recursive value (a clique over the split block, C2's `A.cnt` with
 `B.cnt`) declines: that is O14's repacking over a split block (A5).
 Evidence: `Tests/Ix/Compile/Pass/O9Split.lean` (twin pairs byte-equal with
@@ -276,11 +276,10 @@ def Retype.go (rt : Retype) : Nat → List (Option LeafMap) → Expr → Option 
 /-- The recursion bound of a re-typing: far above any handler's depth. -/
 def retypeFuel : Nat := 1 <<< 16
 
-/-- The reserved name of a canonical constant for the Lean constant `p.s`:
-`p._ix.s` (D14). -/
-def reservedOf : Name → Option Name
-  | .str p s _ => some (Name.mkStr (Name.mkStr p ixComponent) s)
-  | _ => none
+/-- The reserved name of the re-typed handler for the Lean constant `p.s`:
+`p._ix_retyped.s` (D14, `Names.retypedName`; distinct from the clique
+hook's `p._ix.s`). -/
+def reservedOf : Name → Option Name := retypedName
 
 def O9.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := do
   let (k, r) ← classify o.head

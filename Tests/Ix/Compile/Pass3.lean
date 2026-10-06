@@ -436,11 +436,11 @@ def o11aEnv (on : Ix.CompileM.LeanPipelineOut) : Except String (Ixon.Env × Arra
 The kernel failures of both switch states are recorded per unit in
 `Tests.Ix.Compile.Pass3Kernels.table` (KF triage, 2026-10-05). -/
 
-/-- The Lean name an `_ix` display name stands for (`x._ix.S ↦ x.S`, an image
-`a._ix ↦ a`). -/
+/-- The Lean name an `_ix` display name stands for (`x._ix.S ↦ x.S`, a
+re-typed handler `p._ix_retyped.s ↦ p.s`, an image `a._ix ↦ a`). -/
 def leanOf (s : String) : String :=
   let s := if s.endsWith "._ix" then (s.dropEnd 4).toString else s
-  String.intercalate "." ((s.splitOn ".").filter (· != "_ix"))
+  String.intercalate "." ((s.splitOn ".").filter (fun c => c != "_ix" && c != "_ix_retyped"))
 
 /-- The switch-on failures that follow from failures of both modes: a failure
 whose message names (a member of) a constant failing in both modes or an
@@ -709,7 +709,7 @@ def pjPassFiles : List String :=
 
 /-- Twins with the switch on (one address). Decision 5 (D1): a
 proof-justified pass writes its canonical form under `c._ix`, so the pairs
-compare the `_ix` constants (and the helpers `p._ix.s`, `fg`) with the
+compare the `_ix` constants (and the helpers `p._ix_retyped.s`, `fg`) with the
 canonical presentation's constants; constants no pass touches are compared
 under their own names. -/
 def pjPassTwins : List (String × String × String) := [
@@ -725,9 +725,9 @@ def pjPassTwins : List (String × String × String) := [
   ("O11bNoConfusion", "PassO11b.Src.B.noConfusion._ix", "PassO11b.Can.B.noConfusion"),
   ("O11bNoConfusion", "PassO11b.Src.B.val", "PassO11b.Can.B.val"),
   ("O9Split", "PassO9.Src.A.len._ix", "PassO9.Can.A.len"),
-  ("O9Split", "PassO9.Src.A.len._ix._f", "PassO9.Can.A.len._f"),
+  ("O9Split", "PassO9.Src.A.len._ix_retyped._f", "PassO9.Can.A.len._f"),
   ("O9Split", "PassO9.Src.A.sum._ix", "PassO9.Can.A.sum"),
-  ("O9Split", "PassO9.Src.A.sum._ix._f", "PassO9.Can.A.sum._f"),
+  ("O9Split", "PassO9.Src.A.sum._ix_retyped._f", "PassO9.Can.A.sum._f"),
   ("O9Split", "PassO9.Src.A.cnt._ix", "PassO9.Can.A.cnt"),
   ("O9Split", "PassO9.Src.B.val", "PassO9.Can.B.val")]
   -- `O10O12Collapse`: its structural cliques are transported by the clique hook (A5), so O10
@@ -808,10 +808,10 @@ def pjPassRefs : List (String × String × String × Bool) := [
   -- O9: the Ix `brecOn` with the canonical handler (also for `A.cnt`: Lean compiles `B.cnt b` as a
   -- call, `B.cnt` not being recursive through `A`, so the handler reads no cross field)
   ("O9Split", "PassO9.Src.A.len._ix", "PassO9.Src.A._ix.brecOn", true),
-  ("O9Split", "PassO9.Src.A.len._ix", "PassO9.Src.A.len._ix._f", true),
+  ("O9Split", "PassO9.Src.A.len._ix", "PassO9.Src.A.len._ix_retyped._f", true),
   ("O9Split", "PassO9.Src.A.sum._ix", "PassO9.Src.A._ix.brecOn", true),
   ("O9Split", "PassO9.Src.A.cnt._ix", "PassO9.Src.A._ix.brecOn", true),
-  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._ix._f", false),
+  ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._ix_retyped._f", false),
   ("O9Split", "PassO9.Src.A.len", "PassO9.Src.A.len._f", true),
   -- O10/O12 do not fire on the transported cliques: no image of the paired recursor is
   -- rewritten for them, and O12's helper is not emitted

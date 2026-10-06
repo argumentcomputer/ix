@@ -16,7 +16,7 @@ compilation and the handlers `F_i` (`i ∈ C_k`), **re-typed** (every Lean
     ρ_x.brecOn.{u,us} ps P⃗ is t F⃗′ e
 
 with `ρ_x.brecOn` the Ix `brecOn` of `x`'s slot and `F′_k` the re-typed
-handler of `rep_k`: the canonical constant `p._ix.s` for a constant
+handler of `rep_k`: the canonical constant `p._ix_retyped.s` for a constant
 handler `p.s` (emitted with the block), the re-typed term otherwise. Every
 member function of a slot (`A.h`, `B.k`) becomes the same term: the twin's
 single function `X.h := λ t. X.brecOn P t X.h._f`. A collapse keeps every
@@ -75,7 +75,7 @@ emitted for the occurrence (O12 handles one slot with different arms).
 ## Non-canonical set and evidence
 The Lean names `fᵢ` (cause O10; canonical form `fᵢ._ix`). Lean's `fᵢ._f`
 keep their Lean types over Lean's `below` (faithful; their canonical
-counterpart is `rep._ix._f`). Evidence:
+counterpart is `rep._ix_retyped._f`). Evidence:
 `Tests/Ix/Compile/Pass/O10O12Collapse.lean` (C5's `A.h`/`B.k`, C8's
 `A.h`/`B.h`/`C.h` with a lifted member: the `_ix` forms byte-equal to the
 twins with the switch on, the Lean names recorded; value pins). Library load 0.

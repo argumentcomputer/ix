@@ -2229,10 +2229,10 @@ def nonCanonicalPasses : List NonCanonicalEntry := [
     "O11b declines with `E.noConfusionType` (the pair is rewritten together)"
   , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.len._f "Lean's structural handler over a split block" .orderStmt
     "a2efeed435e50d00fb1a10f4a2cc798d17d4cbf88d6ebcec215737533dcf2e3b" "e0b305275f4a5cf30747e12ad76a6cb88db3927a3b03ea20c2eeda6191f1378b" "type"
-    "Lean's `_f` keeps its Lean type over Lean's `A.below` (faithful); the canonical handler is `A.len._ix._f` (O9)"
+    "Lean's `_f` keeps its Lean type over Lean's `A.below` (faithful); the canonical handler is `A.len._ix_retyped._f` (O9)"
   , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.sum._f "Lean's structural handler over a split block" .orderStmt
     "4477494fff8d528aaa2184be891e4ecf17183b355b661e712aef8fcb66ada662" "d54ac8229d28df80a1ce6b07ac8c397fa0f2fac34ce4545f3167591ab968eba3" "type"
-    "Lean's `_f` keeps its Lean type over Lean's `A.below` (faithful); the canonical handler is `A.sum._ix._f` (O9)"
+    "Lean's `_f` keeps its Lean type over Lean's `A.below` (faithful); the canonical handler is `A.sum._ix_retyped._f` (O9)"
   , e `Tests.Ix.Compile.Pass.O7Collapse "src" "can" `PassO7.Src.A.viaRec "collapsed class, rec/recOn user" (.pjForm "O7")
     "bc5317547248abcb639c2d7f9d9cf174342e3548378c0dcfa9cae1b0c734fd55" "f983d1c96ed723925281ee26f10aeddd6c43e69da83834c209989bd399fbee12" "value"
     "O7 wrote the canonical form under `PassO7.Src.A.viaRec._ix` (decision 5, D1); the Lean name keeps the paired image"
