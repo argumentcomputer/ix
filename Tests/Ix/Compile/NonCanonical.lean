@@ -2233,6 +2233,102 @@ def nonCanonicalPasses : List NonCanonicalEntry := [
   , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.sum._f "Lean's structural handler over a split block" .orderStmt
     "4477494fff8d528aaa2184be891e4ecf17183b355b661e712aef8fcb66ada662" "d54ac8229d28df80a1ce6b07ac8c397fa0f2fac34ce4545f3167591ab968eba3" "type"
     "Lean's `_f` keeps its Lean type over Lean's `A.below` (faithful); the canonical handler is `A.sum._ix._f` (O9)"
+  , e `Tests.Ix.Compile.Pass.O7Collapse "src" "can" `PassO7.Src.A.viaRec "collapsed class, rec/recOn user" (.pjForm "O7")
+    "bc5317547248abcb639c2d7f9d9cf174342e3548378c0dcfa9cae1b0c734fd55" "f983d1c96ed723925281ee26f10aeddd6c43e69da83834c209989bd399fbee12" "value"
+    "O7 wrote the canonical form under `PassO7.Src.A.viaRec._ix` (decision 5, D1); the Lean name keeps the paired image"
+  , e `Tests.Ix.Compile.Pass.O7Collapse "src" "can" `PassO7.Src.B.viaRecOn "collapsed class, rec/recOn user" (.pjForm "O7")
+    "14b32160449534866ae3d02470e8ee1e6411fee3b2b70013cfa35e9a292e8761" "6bbb5d8c5e7cc62b456a6f86573a8a9025c9fcf32e4368b20e500953d767ce2c" "value"
+    "O7 wrote the canonical form under `PassO7.Src.B.viaRecOn._ix` (decision 5, D1); the Lean name keeps the paired image"
+  , e `Tests.Ix.Compile.Pass.O7Collapse "src" "can" `PassO7.Src.Z.viaRec "collapsed class, rec/recOn user" (.pjForm "O7")
+    "5ea52960a8aaad04fb5390c5fe22263f3f954685da093c32276067eaeffc9327" "885af19cf6aa9f4124b065f1d468171ca2f87f803a47bb1d68c84343bb2c91c3" "value"
+    "O7 wrote the canonical form under `PassO7.Src.Z.viaRec._ix` (decision 5, D1); the Lean name keeps the paired image"
+  , e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.A.isNil "collapsed class, casesOn user" (.pjForm "O8")
+    "040ef29f138ee786eb0f82a655ee3fd9b27baec3b85033549f837e8b66e47f2c" "3170b105367d9998bcffb237e7e9e2be3c0dab4f80aad79bb99c63c581b87b4c" "value"
+    "O8 wrote the canonical form under `PassO8.Src.A.isNil._ix` (decision 5, D1); the Lean name keeps the packed `casesOn` image"
+  , e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.B.isNil.match_1 "collapsed class, casesOn user" (.pjForm "O8")
+    "c30016faa606a224ce3dd9f0b96efd961e8832739fb43a1f4716835fa9fa5e9a" "8456b93a61151feea7878938feb7e719ffbef279f28f05c3e798f036ff56fa5c" "value"
+    "O8 wrote the canonical form under `PassO8.Src.B.isNil.match_1._ix` (decision 5, D1); the Lean name keeps the packed `casesOn` image"
+  , e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.B.isNil "collapsed class, casesOn user" .inherited
+    "3114fdf07ff2fa91fb6b0b374f027bf30f2c937f4aa3d272724c76ac630658cd" "05cf888a8c9082b817f58d65e3cc02030d9a691139c71d7bae8c2b9897527410" "value"
+    "refers to its matcher, whose Lean name keeps its form (PJ-FORM-O8); an ordinary caller, not rewritten"
+  , e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.Z.isE.match_1 "collapsed class, casesOn user" (.pjForm "O8")
+    "f3aebd55c3c54527074935415cdaa1fb192248d096e4903ded32e7c3e7ff5d33" "110cb189c805dee312f3ebb2fdc3c3386c4141e6e73a7ae4467221cfd0e7a9f5" "value"
+    "O8 wrote the canonical form under `PassO8.Src.Z.isE.match_1._ix` (decision 5, D1); the Lean name keeps the packed `casesOn` image"
+  , e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.Z.isE "collapsed class, casesOn user" .inherited
+    "d0a14bd41fd76cd0f9f99176e08e1376389cbfb4c0a77a97a598a8c7779f58b2" "db7b2a61071fa02d66467b8552979308c5605f22c69f64215a9a2ab335263d9b" "value"
+    "refers to its matcher, whose Lean name keeps its form (PJ-FORM-O8); an ordinary caller, not rewritten"
+  , e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.A.noConfusionType "collapsed class, casesOn user" (.pjForm "O8")
+    "5d8cc79549e7987db34159f9e5b36c853b531ad363fa70440bef847652f624e5" "2028e58d86f9a54b9e53c4f4201b53ccac824e2a3733a06ff4c6a43d5d859b51" "value"
+    "O8 wrote the canonical form under `PassO8.Src.A.noConfusionType._ix` (decision 5, D1); the Lean name keeps the packed `casesOn` image"
+  , e `Tests.Ix.Compile.Pass.O8Cases "src" "can" `PassO8.Src.A.isNil' "collapsed class, casesOn user" (.pjForm "O8")
+    "040ef29f138ee786eb0f82a655ee3fd9b27baec3b85033549f837e8b66e47f2c" "3170b105367d9998bcffb237e7e9e2be3c0dab4f80aad79bb99c63c581b87b4c" "value"
+    "O8 wrote the canonical form under `PassO8.Src.A.isNil'._ix` (decision 5, D1); the Lean name keeps the packed `casesOn` image"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.len "split block, structural recursion with a cross field" (.pjForm "O9")
+    "393be87e63da9492c3c2c314667cd0671551dfd2781f6046eacc847bc05e7f20" "1aa7daac74258befc2805df37237e18b32c8b8509d589aed29315bcec40d55f3" "value"
+    "O9 wrote the canonical form under `PassO9.Src.A.len._ix` over the canonical handler (decision 5, D1); the Lean name keeps the image's `brecOn`"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.sum "split block, structural recursion with a cross field" (.pjForm "O9")
+    "50962dc02b18ee4837a6691ed4dd341c606c7321425ab74a189e7f2b07c390c2" "b47d9a8f07600cda70ede611f0c39135ef2cec92a791d46cacb3ba8dcde8b530" "value"
+    "O9 wrote the canonical form under `PassO9.Src.A.sum._ix` over the canonical handler (decision 5, D1); the Lean name keeps the image's `brecOn`"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.A.cnt "split block, structural recursion with a cross field" (.pjForm "O9")
+    "d584e3dd173b05f57ffdf8f2e3d87becf09afb72cea2ccdb43c470fdffbfd437" "25099c659c347d4f2f80859c95e288c51387342c0a9f927450c2af8feb2a473b" "value"
+    "O9 wrote the canonical form under `PassO9.Src.A.cnt._ix` over the canonical handler (decision 5, D1); the Lean name keeps the image's `brecOn`"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.len2 "split block, structural recursion with a cross field" .inherited
+    "3beb161273d4c7c71c938c8e490bd5774079e75ede7fd1278ebd0e3d67014eb1" "73297a7529e110573fbbcfd2bb04ce0c432f9a836d6465cb6dbd4fd1b9917083" "type"
+    "refers to `A.len`, `A.sum` or `A.cnt` by the Lean name (PJ-FORM-O9)"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.len3 "split block, structural recursion with a cross field" .inherited
+    "7c3b8d3b9be7e51e6e806e073ecea3b02d20f78ea3ca5e73be3030c0c5b858ca" "5f0fdce39667fe3272aa5efe3021896ce9ce36b06dc1b4d406d72bcf4566f749" "type"
+    "refers to `A.len`, `A.sum` or `A.cnt` by the Lean name (PJ-FORM-O9)"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.sum2 "split block, structural recursion with a cross field" .inherited
+    "4c1349cda643321e8c72538b516ac5965fd4303f20989f5f6c35548e53fe4400" "4d81ea2117782916a5267e86a799fea7c7d1f4da624dbddf23a3ee7ae640253a" "type"
+    "refers to `A.len`, `A.sum` or `A.cnt` by the Lean name (PJ-FORM-O9)"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.len_succ "split block, structural recursion with a cross field" .inherited
+    "cc42c984cd18ec7a990aa5d03b52512c6f9c96e4239b3aca15f7ade5ef59c09e" "01ca0eeb5924a077160af363ba31686a01fa5b86e071303118df9fd42be7ce7c" "type"
+    "refers to `A.len`, `A.sum` or `A.cnt` by the Lean name (PJ-FORM-O9)"
+  , e `Tests.Ix.Compile.Pass.O9Split "src" "can" `PassO9.Src.cnt1 "split block, structural recursion with a cross field" .inherited
+    "9b62339a2168b8414d140704cae7d20b75726a8185e774f3c23ff106333a96c6" "ad104b62da324e6ad04dfe28016416d0ddd031758e6ce3c47031b981eb936bd6" "type"
+    "refers to `A.len`, `A.sum` or `A.cnt` by the Lean name (PJ-FORM-O9)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "can" `PassO10.Src.A.h "collapsed pair, structural recursion" .pendingCollapse
+    "49ebbf31bb4bd9aeb4d8c196ef434a29c09f703b71a83e12dea8f24a3dda9cec" "7ab66120eb546a328d7a77dc24057c2590921b439880bd534377f46929624447" "value"
+    "the structural clique is transported by the clique hook (A5), so O10/O12 do not fire; the collapsed twin's single function needs the encoding shrink O17 (deferred, D3)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "can" `PassO10.Src.B.k "collapsed pair, structural recursion" .pendingCollapse
+    "5f8f9915ab817345b7f7525dc996931160260c3694dad3be8f7351b992715355" "7ab66120eb546a328d7a77dc24057c2590921b439880bd534377f46929624447" "value"
+    "the structural clique is transported by the clique hook (A5), so O10/O12 do not fire; the collapsed twin's single function needs the encoding shrink O17 (deferred, D3)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "can" `PassO10.Src.h_two "collapsed pair, structural recursion" .inherited
+    "5fe2de1c5f94270f6bd8b7ffb9890c6a66cd4207c695ac54a17e6f2d04cc796d" "0daa95225c9ab546c3425d0b38c3fe2c8614bd46e0546617e825241715991f3c" "type"
+    "refers to a transported clique member of a collapsed block (PENDING-COLLAPSE)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "perm" `PassO10.Src.A.f "collapsed pair, structural recursion" .pendingCollapse
+    "a858010777fc36ad93c67367919660ea534599d50e50a171afc95e3b1b179dfd" "f1ef79f377ea3f1e1d26b9a6f754a0756841901cae205cf57b164d80568d1067" "value"
+    "the structural clique is transported by the clique hook (A5), so O10/O12 do not fire; the collapsed twin's single function needs the encoding shrink O17 (deferred, D3)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "perm" `PassO10.Src.B.g "collapsed pair, structural recursion" .pendingCollapse
+    "267441cde0a9b0ffa99c9726d6c3e25469b5b5b6cad01642e8db84ad47c4d57f" "82c10943463dd3f9e7eddf4fe9a99202f766682efcf57d60b9837b578f59fc17" "value"
+    "the structural clique is transported by the clique hook (A5), so O10/O12 do not fire; the collapsed twin's single function needs the encoding shrink O17 (deferred, D3)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "perm" `PassO10.Src.fg_ab "collapsed pair, structural recursion" .inherited
+    "492c491c844bebb7aeea604686c91540ab5ada6ad62e68fa95ccb7968295fd79" "2c40997cd6a2807e308345d78072f4e98adaa58c2c0ec818912d6c01d6c1ef3b" "type"
+    "refers to a transported clique member of a collapsed block (PENDING-COLLAPSE)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "perm" `PassO10.Src.fg_bab "collapsed pair, structural recursion" .inherited
+    "3a249dbaf3ef05e1478ec304af56a3d5b549bfb653b347a73b17b4f7917fd609" "eacdd6a9280086294f07b6ff06804204d8ac79f173ae1b88076d2047dee99aac" "type"
+    "refers to a transported clique member of a collapsed block (PENDING-COLLAPSE)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "can" `PassO10.C8.Src.A.h "collapsed pair, structural recursion" .pendingCollapse
+    "eebfe1edb3a39dcf09f2cce5ab68a19a51829df928dc9794cba1a8bf748836c5" "1b61c85dcf983bfcc24851e64f90f5f7462be26d7ec34faa618bc0760a80703c" "value"
+    "the structural clique is transported by the clique hook (A5), so O10/O12 do not fire; the collapsed twin's single function needs the encoding shrink O17 (deferred, D3)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "can" `PassO10.C8.Src.B.h "collapsed pair, structural recursion" .pendingCollapse
+    "1dea93ebdf9d8cf1707a90cbe52a301859bcfec668c796738b944101670c0408" "1b61c85dcf983bfcc24851e64f90f5f7462be26d7ec34faa618bc0760a80703c" "value"
+    "the structural clique is transported by the clique hook (A5), so O10/O12 do not fire; the collapsed twin's single function needs the encoding shrink O17 (deferred, D3)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "can" `PassO10.C8.Src.C.h "collapsed pair, structural recursion" .pendingCollapse
+    "0954f9483357e095ca2c420677b3c94c8973f6c49ea9c0561f36aa750e34cf6c" "ef3f42aa4933f91d1e97c7871161819cd186d33a88eb130ff1f1ce4420658793" "value"
+    "the structural clique is transported by the clique hook (A5), so O10/O12 do not fire; the collapsed twin's single function needs the encoding shrink O17 (deferred, D3)"
+  , e `Tests.Ix.Compile.Pass.O10O12Collapse "src" "can" `PassO10.C8.Src.h_ex "collapsed pair, structural recursion" .inherited
+    "bedb456632b39ee62433bed090384665beb53b7a99defb19effc221aca49e199" "28ff1cd19af89d18fee40c0d22c383c9ef9c315b413bee83da4cb88a750e6f73" "type"
+    "refers to a transported clique member of a collapsed block (PENDING-COLLAPSE)"
+  , e `Tests.Ix.Compile.Pass.O11bNoConfusion "src" "can" `PassO11b.Src.B.noConfusionType "split-off enumeration, one constructor" (.pjForm "O11b")
+    "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "value"
+    "O11b wrote the enumeration form under `PassO11b.Src.B.noConfusionType._ix` (decision 5, D1); the Lean name keeps the general form"
+  , e `Tests.Ix.Compile.Pass.O11bNoConfusion "src" "can" `PassO11b.Src.B.noConfusion "split-off enumeration, one constructor" (.pjForm "O11b")
+    "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "value"
+    "O11b wrote the enumeration form under `PassO11b.Src.B.noConfusion._ix` (decision 5, D1); the Lean name keeps the general form"
+  , e `Tests.Ix.Compile.Pass.O11bNoConfusion "src" "can" `PassO11b.Src.nc "split-off enumeration, one constructor" .inherited
+    "16e6a0d52dd035cb1572f709b59ed78cf653cf5f4fcf590425618669126864b6" "98cc3a136fd1ee9b5d82b6473a0a8107fbeef1fb6a109e67118092a8bf4b66c4" "type"
+    "states `B.noConfusion` by its Lean name (PJ-FORM-O11b)"
 ]
 
 /-- A constant of a twin presentation that the compilers refuse at this head,
