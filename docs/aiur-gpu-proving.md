@@ -62,8 +62,8 @@ ix shard mathlib.ixe --max-ram 230 --exec-jobs 3 --out mathlib.ixes
 
 # 1 + 2. Stage 1 and Stage 2 on four devices. Every claim's proof is
 #    persisted as it lands; joins run as soon as their children exist;
-#    the root is wrapped until it is a single trace shard, verified,
-#    and its address printed on stdout.
+#    the root is wrapped while its trace-shard count decreases, verified,
+#    and its address printed on stdout. Check K=1 separately (see §7).
 export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24
 export AIUR_TRACE_SHARD_MAX_CELLS=1500000000
 export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$PWD/cache
@@ -267,3 +267,170 @@ predicts record size well enough to order by (bytes plus `nat_arith`
 count, correlation 0.8 over the 572 leaves), and reordering the manifest
 by predicted size is a few lines over `.ixes`; it is not part of `ix shard`
 yet.
+
+## 7. Single L40S measurements and handoff (2026-10-06)
+
+Init and ISLB (Init + Std + Lean + Batteries) both completed with a single
+trace shard in the final proof, K=1, and native aggregate verification of
+every included constant with zero undischarged assumptions. The source was
+`6e2d1ae0bb60e51a87f7a8d61710ec48983382bf`; no prover changes were needed.
+
+| Quantity | Init | ISLB |
+|---|---:|---:|
+| Unique environment constants | 56,810 | 184,450 |
+| Environment shards | 8 | 24 |
+| Input `.ixe` bytes | 143,891,360 | 426,164,672 |
+| Owned block bytes in manifest | 66,709,356 | 183,237,200 |
+| Generated-trace proving, through K=3 | 686.18 s | 2,033.36 s |
+| Terminal K=3 → K=1 invocation | 35.33 s | 35.65 s |
+| **Combined successful proving** | **12m01.51s** | **34m29.01s** |
+| Final proof payload bytes | 5,603,962 | 5,602,266 |
+| Peak process RSS | 124.42 GiB | 190.86 GiB |
+| Peak sampled GPU memory | 38.55 GiB | 38.83 GiB |
+| Input compilation, separately timed | 13.26 s | 28.00 s |
+| Final native verification, external wall | 2.25 s | 2.64 s |
+
+Combined proving is the sum of two separately timed invocations. It excludes
+builds, input compilation, sharding, external verification, failed attempts,
+and idle gaps. GPU measurements are one-second samples; RSS is GNU time's
+process high-water mark. These are single successful runs, without a variance
+estimate or matched Blackwell run. Worker intervals include host work and
+persistence; overlapping phase totals are not additive wall time.
+
+The [portable summary](benchmarks/l40s-2026-10-06/summary.json) includes
+hardware, protocol parameters, input sizes, final proof addresses and hashes,
+and the Mathlib extrapolation. Detailed evidence is preserved byte-for-byte:
+
+- [Init generated-trace phase](benchmarks/l40s-2026-10-06/init-generated.json)
+  ends at K=3; [Init terminal compression](benchmarks/l40s-2026-10-06/init-k1.json)
+  supplies the K=1 result and combined total.
+- [ISLB results](benchmarks/l40s-2026-10-06/islb.json) include the failed first
+  attempt, successful retry, terminal compression, and native verification.
+- [Init verification](benchmarks/l40s-2026-10-06/init-k1-verify.txt) and
+  [ISLB verification](benchmarks/l40s-2026-10-06/islb-k1-verify.txt) record full
+  coverage. The [artifact index](benchmarks/l40s-2026-10-06/artifact-index.json)
+  records the original paths and SHA256 hashes of the copied evidence.
+
+Absolute paths inside these historical JSON files identify the original
+machine. Proof objects, compiled environments, caches, and build artifacts
+are not included in this handoff.
+
+### Native toolchain and measured settings
+
+The host had one NVIDIA L40S, compute capability 8.9, 46,068 MiB visible
+VRAM, driver 595.91.07, 32 logical CPUs (AMD EPYC 7R13), and 248 GiB host
+RAM. The native build used CUDA 13.3.73, Lean 4.34.1, and Rust 1.99.0 via
+`RUSTUP_TOOLCHAIN=stable`, outside a Nix dev shell. `stable` is a moving
+selector; record the actual Rust version on the receiving machine.
+The multi-stark pin was `acfc370a2e74affcb7e8ee218fbbaf80b9da1eef` and the
+Batteries pin was `f2effa3d803fda822b1f97b806c47cf2adfbcbc2`.
+
+From the repository root, with native Lean 4.34.1 on `PATH`:
+
+```sh
+export CUDA_HOME=/usr/local/cuda-13.3 CUDA_PATH=/usr/local/cuda-13.3
+export PATH="$CUDA_HOME/bin:$PATH"
+export NVCC="$CUDA_HOME/bin/nvcc" CFLAGS=-std=gnu17
+export RUSTUP_TOOLCHAIN=stable
+export IX_CUDA_TRACE_CODEGEN=1 MULTI_STARK_CUDA_ARCHS=89
+lake build ix
+```
+
+The measured native build took 438.84 seconds; cold dependency work on another
+machine is additional. Leave build and CPU execution parallelism at their
+defaults. Compile the supplied [Init](benchmarks/l40s-2026-10-06/Init.lean) or
+[ISLB](benchmarks/l40s-2026-10-06/ISLB.lean) driver with `ix compile --no-build`
+after its imports' oleans are available. ISLB needs Batteries built. Keeping
+these drivers under the root project avoids resolving the unrelated FLT
+dependencies of `Benchmarks/Compile`.
+
+Both measured runs used `CUDA_VISIBLE_DEVICES=0`, `--trace-shards --lanes 1`,
+32 default CPU execution threads, `MemoryMax=220G`, `MemorySwapMax=0`, and:
+
+```sh
+export AIUR_GPU_TRACE=generated AIUR_TRACE_ONLY_LOOKUPS=1
+export AIUR_TRACE_SHARD_MAX_CELLS=600000000 AIUR_MAX_PIECE_LOG_HEIGHT=24
+export AIUR_GPU_SEED_CACHE_BYTES=4294967296
+export MULTI_STARK_CUDA_MEMORY_LOG=1
+```
+
+Use a fresh `AIUR_LANES_CACHE_DIR` for a timed cold proof. Init was explicitly
+partitioned with `ix shard --shards 8` and proved with `--max-ram 180`; ISLB
+used `--shards 24` and `--max-ram 100`. Always preserve `--out-ixes` and verify
+against that final partition. Transparent huge pages were `always`, with
+`defer+madvise` defragmentation. Both leaf and recursion proofs used
+`logBlowup=2`, `capHeight=0`, and FRI parameters `logFinalPolyLen=0`,
+`maxLogArity=1`, `numQueries=100`, `commitProofOfWorkBits=0`,
+`queryProofOfWorkBits=20`. Older results with different query counts are not
+matched baselines.
+
+### Host memory and terminal compression
+
+ISLB's first attempt used `--max-ram 180` and hit the 220 GiB host cgroup
+limit after 44.746 seconds, before any completed claim proof. The successful
+retry reduced only that budget to 100 GiB, retaining default CPU concurrency.
+Its observed cgroup memory peak was 191.03 GiB. `--max-ram` governs scheduler
+reservations; it is not a bound on actual process RSS. Execution arenas and
+dependency byte buffers add memory outside logical record accounting.
+
+At the 600-million-cell cap, both generated-trace runs stopped improving at
+K=3. The current wrap loops accept a verified non-shrinking batch, so command
+success alone does not establish K=1. The measured terminal fallback reused
+the verified K=3 root with these settings:
+
+```sh
+export AIUR_GPU_TRACE=cpu AIUR_TRACE_ONLY_LOOKUPS=0
+unset AIUR_TRACE_SHARD_MAX_CELLS AIUR_MAX_PIECE_LOG_HEIGHT
+# Aggregate flags: --direct-joins --structural-above 0 --trace-shards
+#                  --max-ram 180 --wrap-root --texray
+```
+
+This retains the CUDA backend, with large matrices placed on the host.
+Materialized lookups (`AIUR_TRACE_ONLY_LOOKUPS=0`) are necessary for that
+fallback. Simply raising the generated-trace cell cap does not make the
+terminal matrix fit the L40S.
+
+To resume through `ix aggregate`, the measured procedure used a separate
+`AIUR_AGGREGATE_CACHE_DIR` containing the original root-slot cache key, with
+its value set to the verified K=3 proof address. The original lanes cache
+points to the unwrapped root. Supply the active leaf proof addresses and
+the exact `.ixe` and final `-proven.ixes`; preserve the existing cache.
+This requires the corresponding leaf proof objects and K=3 root in the
+local Ix store: cache indexes contain addresses only. `--reprove-slot`
+returns before root wrapping on this revision and is unsuitable here.
+
+After compression, check that the batch preamble has exactly one header
+and run `ix verify --aggregate --structural-above 0` against the final
+manifest. Native verification establishes header/body count agreement,
+cryptographic validity, full coverage, and absence of undischarged
+assumptions. The terminal wrap took 32.8 seconds internally for each corpus;
+the external invocation times above also include setup and persistence.
+
+### Mathlib estimate and next-machine comparison
+
+The predicted Mathlib proving time on this same L40S and host is **3.5–4
+hours**, with a **3–5 hour planning range**, including aggregation and K=1
+compression. No Mathlib proving run was performed for this estimate.
+
+The documented canonical Mathlib corpus has 1,121,703,681 stored constant
+bytes, versus ISLB's 183,237,200 owned block bytes: approximately 6.12 times
+the data, giving `2069.01 s × 6.12 ≈ 3h31m`. Init independently scales to
+about 3h22m. Stored constant bytes and manifest block bytes are closely
+related but not identical because projection constants belong to their
+home blocks; the documented Mathlib corpus also predates these runs.
+The inputs and exact arithmetic are in `summary.json`.
+
+This range assumes execution stays within host RAM. Mathlib's heavier
+execution and dependency frontiers can increase work, and its larger
+partition can occupy all 32 executors in the initial wave. Successful ISLB
+admission does not establish that Mathlib fits. Review memory admission and
+shard sizing before a full Mathlib run; smaller shards also increase join
+work. Peak RAM should not be multiplied by the corpus-size ratio.
+
+For a single RTX PRO 6000 Blackwell comparison, build for `sm_120` and first
+match the source, inputs, protocol, partition, one-lane setting, and
+600-million-cell cap. Record host hardware and use cold caches. A separate
+96 GB configuration can then measure the benefit of larger trace shards.
+The historical four-GPU Mathlib run in §6 has different corpus/settings and
+host resources. The Blackwell arithmetic retained in the Init JSON is an
+unmeasured sensitivity scenario, not an established per-GPU slowdown.

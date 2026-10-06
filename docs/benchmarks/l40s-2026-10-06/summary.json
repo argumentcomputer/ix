@@ -1,0 +1,165 @@
+{
+  "hardware": {
+    "compute_capability": "8.9",
+    "cuda_toolkit_version": "13.3.73",
+    "driver_version": "595.91.07",
+    "gpu_count": 1,
+    "gpu_name": "NVIDIA L40S",
+    "gpu_pcie_max_generation": 4,
+    "gpu_pcie_max_width": 16,
+    "gpu_power_limit_w": 350,
+    "host_cpu": "AMD EPYC 7R13 Processor",
+    "host_ram_reported_gib": 248,
+    "logical_cpus": 32,
+    "physical_cores_visible": 16,
+    "visible_vram_mib": 46068
+  },
+  "ix_source_revision": "6e2d1ae0bb60e51a87f7a8d61710ec48983382bf",
+  "mathlib_extrapolation": {
+    "central_estimate_hours": [
+      3.5,
+      4.0
+    ],
+    "device": "Same single L40S and host",
+    "documented_mathlib_stored_constant_bytes": 1121703681,
+    "documented_mathlib_unique_constants": 679499,
+    "documented_mathlib_v4_file_bytes": 2318833546,
+    "excludes": "Builds, input compilation, sharding, failed attempts and external verification",
+    "includes": "Leaf proving, aggregation and compression to K=1",
+    "init_owned_bytes_scaled_seconds": 12132.037714144773,
+    "islb_file_bytes_scaled_seconds": 11257.830857949344,
+    "islb_owned_bytes_ratio": 6.121593655655074,
+    "islb_owned_bytes_scaled_seconds": 12665.638489486906,
+    "limitations": [
+      "Mathlib proof execution and dependency-frontier costs need not scale linearly with serialized size.",
+      "ISLB already peaked around 191 GiB host memory; Mathlib may require changes to memory admission or shard sizing.",
+      "The historical 78-shard Mathlib Blackwell run used an older corpus/encoding and different trace settings; it is not a matched comparison.",
+      "No matched single-GPU Blackwell run establishes an L40S slowdown factor."
+    ],
+    "planning_range_hours": [
+      3.0,
+      5.0
+    ],
+    "range_interpretation": "Engineering planning range, not a measured confidence interval or bound; assumes execution stays within host RAM.",
+    "size_basis_note": "Mathlib stored constant bytes and current manifest owned block bytes are closely related but not identical: projected constants are assigned to their home block in manifests. The documented Mathlib corpus also predates these Init/ISLB runs.",
+    "sources": [
+      "../../sharing-minimum-performance.md",
+      "../../sharing-minimum-arena.md",
+      "../../sharing-minimum-measurements-mathlib.md"
+    ],
+    "status": "estimate_only_no_mathlib_proving_run"
+  },
+  "measured_date_utc": "2026-10-06",
+  "measurement_notes": [
+    "Each successful total sums a fresh generated-trace proving invocation and a separate terminal K=1 invocation reusing its verified K=3 root.",
+    "Totals exclude builds, compilation, unmeasured sharding, external verification, failed attempts and idle gaps.",
+    "GPU peaks are one-second samples; host process peaks are GNU time maximum RSS.",
+    "Both final roots passed native aggregate verification, cover all included constants exactly once, and have no undischarged assumptions.",
+    "Absolute paths in the unmodified detailed results identify artifacts on the source machine; they are not portable commands."
+  ],
+  "protocol": {
+    "cap_height": 0,
+    "field": "Goldilocks",
+    "fri_commit_proof_of_work_bits": 0,
+    "fri_log_final_poly_len": 0,
+    "fri_max_log_arity": 1,
+    "fri_num_queries": 100,
+    "fri_query_proof_of_work_bits": 20,
+    "hash": "BLAKE3",
+    "log_blowup": 2,
+    "recursion_uses_same_parameters": true
+  },
+  "runs": {
+    "ISLB": {
+      "cgroup_memory_max_gib": 220,
+      "claim_root": "24881f2ba3e1b45379964891b0e160c0fd6f761518de6d62784b031f37da97a4",
+      "compile_wall_seconds": 28.0,
+      "compiled_environment_bytes": 426164672,
+      "default_cpu_execution_threads": 32,
+      "detailed_results": [
+        "islb.json"
+      ],
+      "environment_shards": 24,
+      "failed_attempt": {
+        "cgroup_memory_max_gib": 220,
+        "included_in_successful_proving_wall_seconds": false,
+        "reason": "Host cgroup OOM before any completed claim proof",
+        "record_budget_gib": 180,
+        "scope_wall_seconds": 44.746
+      },
+      "final_output_trace_shards": 1,
+      "final_root_address": "0b9ab3ec99b43332134db8956d7c779afae301a804b31155b7ac3a2a0c4d633b",
+      "frontier_block_bytes": 47250223,
+      "imports": [
+        "Init",
+        "Std",
+        "Lean",
+        "Batteries"
+      ],
+      "main_output_trace_shards": 3,
+      "main_proving_wall_seconds": 2033.36,
+      "main_record_budget_gib": 100,
+      "owned_block_bytes": 183237200,
+      "owned_blocks": 176204,
+      "peak_process_rss_gib": 190.85795211791992,
+      "peak_sampled_gpu_memory_mib": 39767.0,
+      "proof_payload_bytes": 5602266,
+      "proof_wrapper_bytes": 5602306,
+      "proof_wrapper_sha256": "f5f3e23201b5b8e2c91225658236a237b715ae9bd0e4a1c589142bed89bb77d3",
+      "successful_proving_wall_seconds": 2069.01,
+      "terminal_k1_wall_seconds": 35.65,
+      "terminal_record_budget_gib": 180,
+      "undischarged_assumptions": 0,
+      "unique_environment_constants": 184450,
+      "verification_wall_seconds": 2.64,
+      "verified_constants": 184450
+    },
+    "Init": {
+      "cgroup_memory_max_gib": 220,
+      "claim_root": "d4942763788556be33bc2cfff77da11da6127f22bc0eda9f72921d0d359d296c",
+      "compile_wall_seconds": 13.26,
+      "compiled_environment_bytes": 143891360,
+      "default_cpu_execution_threads": 32,
+      "detailed_results": [
+        "init-generated.json",
+        "init-k1.json"
+      ],
+      "environment_shards": 8,
+      "final_output_trace_shards": 1,
+      "final_root_address": "fef36bba34deb03728f8f5ff0262997fb5bb4ab741665bf65316be3d57341e0a",
+      "frontier_block_bytes": 13925020,
+      "imports": [
+        "Init"
+      ],
+      "main_output_trace_shards": 3,
+      "main_proving_wall_seconds": 686.18,
+      "main_record_budget_gib": 180,
+      "owned_block_bytes": 66709356,
+      "owned_blocks": 55574,
+      "peak_process_rss_gib": 124.41986083984375,
+      "peak_sampled_gpu_memory_mib": 39477.0,
+      "proof_payload_bytes": 5603962,
+      "proof_wrapper_bytes": 5604002,
+      "proof_wrapper_sha256": "090939c43ea19cb04e5fe4a26804740e2d40d32366b2821a5333452932db8425",
+      "successful_proving_wall_seconds": 721.51,
+      "terminal_k1_wall_seconds": 35.33,
+      "terminal_record_budget_gib": 180,
+      "undischarged_assumptions": 0,
+      "unique_environment_constants": 56810,
+      "verification_wall_seconds": 2.25,
+      "verified_constants": 56810
+    }
+  },
+  "schema_version": 1,
+  "software": {
+    "batteries_revision": "f2effa3d803fda822b1f97b806c47cf2adfbcbc2",
+    "binary_sha256": "625af8be5c41b9810122e2fa0853f4f60e15b72d40a14e2e1588490e9ed7ba7e",
+    "cargo_lock_sha256": "fd255cd51e745b6821b8c5bcdfe1613189d0ac1976a492cf4a60d4c473cffd9a",
+    "cuda": "13.3.73",
+    "lean": "4.34.1",
+    "multi_stark_revision": "acfc370a2e74affcb7e8ee218fbbaf80b9da1eef",
+    "nix_dev_shell_used": false,
+    "rust": "1.99.0 (b940084d7 2026-09-28)",
+    "rustup_toolchain_selector": "stable"
+  }
+}

@@ -1,0 +1,6 @@
+[verify] native manifest audit: 184450 constants in 571ms
+[verify] aggregate backend setup: 422ms
+[verify] aggregate Aiur proof: 36ms
+ok: aggregate proof 0b9ab3ec99b43332134db8956d7c779afae301a804b31155b7ac3a2a0c4d633b verifies CheckEnv(24881f2ba3e1b45379964891b0e160c0fd6f761518de6d62784b031f37da97a4, none)
+[verify] aggregate coverage: 184450/184450 environment constants committed exactly once
+[verify] all 184450 included constants certified well-typed; 0 undischarged assumptions

@@ -1,0 +1,41 @@
+{
+  "description": "Byte-for-byte copies from the measured runs; source paths refer to the original machine.",
+  "files": {
+    "ISLB.lean": {
+      "bytes": 52,
+      "original_path": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/ISLB.lean",
+      "sha256": "302f563ab9461ac3fb2c153b4ad0fa4348d647c28b097b93c59b4863947baeed"
+    },
+    "Init.lean": {
+      "bytes": 12,
+      "original_path": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/Init.lean",
+      "sha256": "427dc53408284f1fba1f4b2baeeca933ff16b22a3a22d3e0162dce59d67ac1db"
+    },
+    "init-generated.json": {
+      "bytes": 20943,
+      "original_path": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/results.json",
+      "sha256": "33e193868b80e005592f146853bd31f160a29d66f1ab90a1438b4a2d846169dc"
+    },
+    "init-k1-verify.txt": {
+      "bytes": 481,
+      "original_path": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/compress-k1.FQBWIFT9/verify.out",
+      "sha256": "3de08d750a09a47aecd707456f8f0d0edd3d1cd72c9d5ae0893198c70ab3f03c"
+    },
+    "init-k1.json": {
+      "bytes": 9330,
+      "original_path": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/compress-k1.FQBWIFT9/results.json",
+      "sha256": "a897b5e48cce269d8e0cc01fedb8367275c5118a6c38010ba3929163de02570d"
+    },
+    "islb-k1-verify.txt": {
+      "bytes": 485,
+      "original_path": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/compress-k1.jybKYa01/verify.out",
+      "sha256": "9071ee774070a55366498a81a26c9129547f914b486cb228497a995a1d6ef611"
+    },
+    "islb.json": {
+      "bytes": 64179,
+      "original_path": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/results.json",
+      "sha256": "f8f7b58b124778f0ce355ab4cf44787ae0d36c6455800fbf8b3ccbe8facf7e21"
+    }
+  },
+  "schema_version": 1
+}

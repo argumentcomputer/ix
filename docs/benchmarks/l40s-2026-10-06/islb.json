@@ -1,0 +1,2093 @@
+{
+  "combined_cost": {
+    "compile_plus_successful_proving_seconds": 2097.01,
+    "failed_attempt_scope_seconds_separate": 44.746,
+    "interpretation": "Successful proving excludes the OOM attempt, compilation, unmeasured sharding, builds, idle gaps and verification.",
+    "max_process_peak_rss_gib": 190.85795211791992,
+    "max_sampled_gpu_memory_mib": 39767.0,
+    "successful_proving_and_both_verifications_seconds": 2074.34,
+    "successful_proving_plus_final_verification_seconds": 2071.65,
+    "successful_proving_wall_seconds": 2069.01
+  },
+  "compiler": {
+    "count_meanings": {
+      "named": "named constants",
+      "requested": "compiler requested constants",
+      "uniqueAnon": "unique anonymous constants covered by verification"
+    },
+    "external_timing": {
+      "exit_status": 0,
+      "peak_rss_gib": 5.601692199707031,
+      "peak_rss_kib": 5873800,
+      "swaps": 0,
+      "system_cpu_seconds": 5.79,
+      "user_cpu_seconds": 273.85,
+      "wall_seconds": 28.0
+    },
+    "report": {
+      "allowPartial": false,
+      "bytes": 426164672,
+      "elapsedMs": 24998,
+      "input": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/ISLB.lean",
+      "ixVersion": "4.34.1|0.0.1",
+      "ixeFormatVersion": 4,
+      "leanToolchain": "4.34.1",
+      "named": 221647,
+      "output": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/islb.ixe",
+      "requested": 218198,
+      "root": "c184a903c58c6130da2a7f90454fb76a17952c058db7a13783fe2278075712eb",
+      "schemaVersion": 1,
+      "seeds": {
+        "consts": null,
+        "constsFile": null,
+        "exclude": null,
+        "excludeFile": null,
+        "module": null
+      },
+      "ungrounded": [],
+      "ungroundedCount": 0,
+      "uniqueAnon": 184450,
+      "written": true
+    }
+  },
+  "configuration": {
+    "cgroup_memory_max_gib": 220,
+    "cgroup_swap_max_bytes": 0,
+    "default_cpu_execution_threads": 32,
+    "lanes": 1,
+    "main_environment": {
+      "AIUR_GPU_SEED_CACHE_BYTES": "4294967296",
+      "AIUR_GPU_TRACE": "generated",
+      "AIUR_LANES_CACHE_DIR": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/cache",
+      "AIUR_MAX_PIECE_LOG_HEIGHT": "24",
+      "AIUR_TRACE_ONLY_LOOKUPS": "1",
+      "AIUR_TRACE_SHARD_MAX_CELLS": "600000000",
+      "CUDA_HOME": "/usr/local/cuda-13.3",
+      "CUDA_PATH": "/usr/local/cuda-13.3",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "IX_CUDA_TRACE_CODEGEN": "1",
+      "MULTI_STARK_CUDA_ARCHS": "89",
+      "MULTI_STARK_CUDA_MEMORY_LOG": "1"
+    },
+    "main_max_ram_gib": 100.0,
+    "manual_cpu_parallelism_cap": false
+  },
+  "failed_first_attempt": {
+    "evidence_path": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/attempt-1-oom/failure.json",
+    "failure": {
+      "cgroup_peak_memory_gib": 220,
+      "completed_claim_proofs": 0,
+      "default_cpu_execution_threads": 32,
+      "initial_environment_shards": 24,
+      "prove_exit": 143,
+      "record_pool_gib_rounded": 152.1,
+      "requested_max_ram_gib": 180,
+      "status": "oom_killed",
+      "systemd_oom_utc": "2026-10-06T20:11:32Z",
+      "systemd_scope_wall_seconds": 44.746,
+      "systemd_start_utc": "2026-10-06T20:10:49Z",
+      "unit": "run-p196078-i133691.scope"
+    },
+    "gpu_sampling": {
+      "first_timestamp": "2026/10/06 20:10:49.260",
+      "gpu_indices": [
+        0
+      ],
+      "last_timestamp": "2026/10/06 20:11:32.276",
+      "max_sampled_gpu_utilization_percent": 0.0,
+      "max_sampled_power_w": 66.7,
+      "mean_sampled_gpu_utilization_percent": 0.0,
+      "mean_sampled_power_w": 63.29113636363636,
+      "memory_clock_mhz_values": [
+        9001.0
+      ],
+      "nonzero_utilization_sample_count": 0,
+      "peak_memory_sample_timestamps": [
+        "2026/10/06 20:10:52.265",
+        "2026/10/06 20:10:53.266",
+        "2026/10/06 20:10:54.266",
+        "2026/10/06 20:10:55.266",
+        "2026/10/06 20:10:56.266",
+        "2026/10/06 20:10:57.267",
+        "2026/10/06 20:10:58.267",
+        "2026/10/06 20:10:59.267",
+        "2026/10/06 20:11:00.267",
+        "2026/10/06 20:11:01.268",
+        "2026/10/06 20:11:02.268",
+        "2026/10/06 20:11:03.268",
+        "2026/10/06 20:11:04.268",
+        "2026/10/06 20:11:05.269",
+        "2026/10/06 20:11:06.269",
+        "2026/10/06 20:11:07.269",
+        "2026/10/06 20:11:08.269",
+        "2026/10/06 20:11:09.270",
+        "2026/10/06 20:11:10.270",
+        "2026/10/06 20:11:11.270",
+        "2026/10/06 20:11:12.270",
+        "2026/10/06 20:11:13.271",
+        "2026/10/06 20:11:14.271",
+        "2026/10/06 20:11:15.271",
+        "2026/10/06 20:11:16.271",
+        "2026/10/06 20:11:17.272",
+        "2026/10/06 20:11:18.272",
+        "2026/10/06 20:11:19.272",
+        "2026/10/06 20:11:20.272",
+        "2026/10/06 20:11:21.273",
+        "2026/10/06 20:11:22.273",
+        "2026/10/06 20:11:23.273",
+        "2026/10/06 20:11:24.273",
+        "2026/10/06 20:11:25.274",
+        "2026/10/06 20:11:26.274",
+        "2026/10/06 20:11:27.274",
+        "2026/10/06 20:11:28.274",
+        "2026/10/06 20:11:29.275",
+        "2026/10/06 20:11:30.275",
+        "2026/10/06 20:11:31.275",
+        "2026/10/06 20:11:32.276"
+      ],
+      "peak_sampled_memory_used_bytes": 764411904,
+      "peak_sampled_memory_used_gib": 0.7119140625,
+      "peak_sampled_memory_used_mib": 729.0,
+      "sample_count": 44,
+      "sampling_period_ms": 1000,
+      "sm_clock_mhz_values": [
+        2040.0
+      ]
+    },
+    "interpretation": "Host cgroup OOM before any completed claim proof; this is not a VRAM OOM. The retry reduced max-ram from 180 to 100 GiB while preserving 32 default CPU executions."
+  },
+  "generated_utc": "2026-10-06T20:49:20.407363+00:00",
+  "input": {
+    "final_environment_shards": 24,
+    "imports": [
+      "import Init",
+      "import Std",
+      "import Lean",
+      "import Batteries"
+    ],
+    "initial_environment_shards": 24,
+    "ixe_bytes": 426164672,
+    "sharding_logs": [
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/shard.out",
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/shard.err"
+    ]
+  },
+  "limits": [
+    "Single successful retry and final compression; no repeated-run distribution or matched Blackwell measurement.",
+    "Main proof and terminal compression are separate timed invocations using different trace settings; combined time is their sum.",
+    "The first attempt failed at the 220 GiB cgroup limit; its cost is preserved separately and excluded from successful proving time.",
+    "GPU observations are one-second samples, not allocation high-water marks or CUDA kernel time.",
+    "GNU time peak RSS and cgroup memory.peak describe different memory accounting domains.",
+    "Lane timestamps and root-wrap times are rounded; parallel CPU execution times include memory waiting and cannot be summed as wall time.",
+    "No texray spans were emitted on the lanes path; worker intervals include host work and serialization.",
+    "CPU-built terminal traces retain the CUDA backend; terminal compression may place large LDE matrices on the CPU.",
+    "Native verification establishes the batch header/body count agreement; the independent inspector only decodes the preamble count.",
+    "Sharding has logged component times but no external total wall timer; compile/prove/verify sums are not full elapsed session time."
+  ],
+  "provenance": {
+    "command_script": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/prove.sh",
+    "finalizer_recorded_artifact_sha256": {
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/compress-k1.jybKYa01/root.proof": "f5f3e23201b5b8e2c91225658236a237b715ae9bd0e4a1c589142bed89bb77d3",
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/inspect-proof.py": "fcb18a2e71d7c0f3c3d34146a8db492e6d7ae56d9133ccbbb9bfc516f2d558d0",
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/islb-proven.ixes": "9df9409061cb5ba474be1a7ead3a447fa16d588545baaf9eeeb788a84f49717e",
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/islb.ixe": "13e9574de8a68a9cc0bb68f461cf7f91760cafba5fe2faa0dff56c9a528330d6",
+      "/home/sam/repos/ix/.lake/build/bin/ix": "625af8be5c41b9810122e2fa0853f4f60e15b72d40a14e2e1588490e9ed7ba7e"
+    },
+    "ix_revision": "6e2d1ae0bb60e51a87f7a8d61710ec48983382bf",
+    "meta_path": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/meta.txt",
+    "native_build_reused": true,
+    "parser_sha256": "73bbdd94917ea352f32e7daf32387050b23f5d0d3efddde2234ac61641d61895",
+    "recorded_artifact_sha256": {
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/ISLB.lean": "302f563ab9461ac3fb2c153b4ad0fa4348d647c28b097b93c59b4863947baeed",
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/islb-proven.ixes": "9df9409061cb5ba474be1a7ead3a447fa16d588545baaf9eeeb788a84f49717e",
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/islb.ixe": "13e9574de8a68a9cc0bb68f461cf7f91760cafba5fe2faa0dff56c9a528330d6",
+      "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/islb.ixes": "9df9409061cb5ba474be1a7ead3a447fa16d588545baaf9eeeb788a84f49717e",
+      "/home/sam/repos/ix/.lake/build/bin/ix": "625af8be5c41b9810122e2fa0853f4f60e15b72d40a14e2e1588490e9ed7ba7e",
+      "Cargo.lock": "fd255cd51e745b6821b8c5bcdfe1613189d0ac1976a492cf4a60d4c473cffd9a"
+    },
+    "same_binary_for_lanes_and_compression": true,
+    "source_changed_for_benchmark": false
+  },
+  "run_directory": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3",
+  "schema_version": 1,
+  "status": "completed_single_shard_root_and_externally_verified",
+  "successful_retry": {
+    "external_timing": {
+      "exit_status": 0,
+      "peak_rss_gib": 190.85795211791992,
+      "peak_rss_kib": 200129068,
+      "swaps": 0,
+      "system_cpu_seconds": 400.09,
+      "user_cpu_seconds": 10573.3,
+      "wall_seconds": 2033.36
+    },
+    "external_verification": {
+      "backend_setup_ms": 435,
+      "claim_assumptions": "none",
+      "claim_root": "24881f2ba3e1b45379964891b0e160c0fd6f761518de6d62784b031f37da97a4",
+      "coverage_constants": 184450,
+      "environment_constants": 184450,
+      "exit_status": 0,
+      "manifest_audit_ms": 574,
+      "native_aiur_proof_ms": 57,
+      "peak_rss_gib": 0.9585189819335938,
+      "peak_rss_kib": 1005080,
+      "swaps": 0,
+      "system_cpu_seconds": 0.74,
+      "undischarged_assumptions": 0,
+      "user_cpu_seconds": 7.52,
+      "verified_address": "0d752dd69add1595b37cc9caa7fba203b7e89140c6042640cca5797eae7a273c",
+      "wall_seconds": 2.69
+    },
+    "gpu_sampling": {
+      "first_timestamp": "2026/10/06 20:14:16.759",
+      "gpu_indices": [
+        0
+      ],
+      "last_timestamp": "2026/10/06 20:48:09.331",
+      "max_sampled_gpu_utilization_percent": 100.0,
+      "max_sampled_power_w": 234.72,
+      "mean_sampled_gpu_utilization_percent": 68.97983275946876,
+      "mean_sampled_power_w": 160.03819970486964,
+      "memory_clock_mhz_values": [
+        9000.0,
+        9001.0
+      ],
+      "nonzero_utilization_sample_count": 1527,
+      "peak_memory_sample_timestamps": [
+        "2026/10/06 20:20:23.854"
+      ],
+      "peak_sampled_memory_used_bytes": 41698721792,
+      "peak_sampled_memory_used_gib": 38.8349609375,
+      "peak_sampled_memory_used_mib": 39767.0,
+      "sample_count": 2033,
+      "sampling_period_ms": 1000,
+      "sm_clock_mhz_values": [
+        2040.0
+      ]
+    },
+    "host_memory_sampling": {
+      "first_timestamp": "2026-10-06T20:14:32.427033+00:00",
+      "interpretation": "rss and cgroup_current are samples; rss_high_water and cgroup_peak are kernel high-water counters read at those sample times. The final gap after the last sample is not covered by these counters.",
+      "last_timestamp": "2026-10-06T20:48:08.992520+00:00",
+      "max_observed_cgroup_current_bytes": 201514196992,
+      "max_observed_cgroup_current_gib": 187.67472076416016,
+      "max_observed_cgroup_peak_bytes": 205120237568,
+      "max_observed_cgroup_peak_gib": 191.03310775756836,
+      "max_observed_rss_bytes": 201334546432,
+      "max_observed_rss_gib": 187.50740814208984,
+      "max_observed_rss_high_water_bytes": 204932165632,
+      "max_observed_rss_high_water_gib": 190.85795211791992,
+      "pids": [
+        197766
+      ],
+      "sample_count": 1009,
+      "sampling_period_seconds": 2
+    },
+    "lanes": {
+      "budget": {
+        "cpu_execution_threads": 32,
+        "headroom_gib_rounded": 10.0,
+        "host_budget_gib": 100.0,
+        "initial_reservation_gib_rounded": 2.3,
+        "prepared_queue_slots": 1,
+        "shared_records_gib_rounded": 80.1,
+        "trace_cells": 600000000,
+        "workspace_per_gpu_gib_rounded": 9.8
+      },
+      "completed_claim_proofs": 24,
+      "completed_intervals": [
+        {
+          "duration_seconds": 26,
+          "end_seconds": 93,
+          "id": 21,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 67,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 26,
+          "end_seconds": 139,
+          "id": 11,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 113,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 28,
+          "end_seconds": 180,
+          "id": 7,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 152,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 28,
+          "end_seconds": 220,
+          "id": 18,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 192,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 20,
+          "end_seconds": 240,
+          "id": 2,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 220,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 18,
+          "end_seconds": 258,
+          "id": 0,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 240,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 21,
+          "end_seconds": 283,
+          "id": 3,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 262,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 22,
+          "end_seconds": 312,
+          "id": 1,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 290,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 24,
+          "end_seconds": 345,
+          "id": 12,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 321,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 27,
+          "end_seconds": 383,
+          "id": 6,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 356,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 33,
+          "end_seconds": 443,
+          "id": 19,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 410,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 22,
+          "end_seconds": 465,
+          "id": 14,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 443,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 25,
+          "end_seconds": 507,
+          "id": 17,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 482,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 26,
+          "end_seconds": 541,
+          "id": 13,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 515,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 24,
+          "end_seconds": 575,
+          "id": 5,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 551,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 27,
+          "end_seconds": 619,
+          "id": 9,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 592,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 27,
+          "end_seconds": 660,
+          "id": 10,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 633,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 26,
+          "end_seconds": 698,
+          "id": 8,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 672,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 25,
+          "end_seconds": 730,
+          "id": 16,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 705,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 20,
+          "end_seconds": 753,
+          "id": 15,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 733,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 22,
+          "end_seconds": 780,
+          "id": 4,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 758,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 27,
+          "end_seconds": 848,
+          "id": 23,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 821,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 34,
+          "end_seconds": 886,
+          "id": 15,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 852,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 32,
+          "end_seconds": 918,
+          "id": 5,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 886,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 34,
+          "end_seconds": 952,
+          "id": 32,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 918,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 31,
+          "end_seconds": 983,
+          "id": 2,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 952,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 34,
+          "end_seconds": 1017,
+          "id": 25,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 983,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 33,
+          "end_seconds": 1050,
+          "id": 9,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1017,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 30,
+          "end_seconds": 1080,
+          "id": 28,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1050,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 35,
+          "end_seconds": 1115,
+          "id": 20,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1080,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 36,
+          "end_seconds": 1151,
+          "id": 17,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1115,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 23,
+          "end_seconds": 1174,
+          "id": 20,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 1151,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 23,
+          "end_seconds": 1197,
+          "id": 22,
+          "kind": "claim",
+          "pass": 1,
+          "start_seconds": 1174,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 38,
+          "end_seconds": 1235,
+          "id": 6,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1197,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 37,
+          "end_seconds": 1272,
+          "id": 34,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1235,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 38,
+          "end_seconds": 1310,
+          "id": 11,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1272,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 37,
+          "end_seconds": 1347,
+          "id": 29,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1310,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 40,
+          "end_seconds": 1387,
+          "id": 21,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1347,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 35,
+          "end_seconds": 1422,
+          "id": 38,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1387,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 33,
+          "end_seconds": 1455,
+          "id": 41,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1422,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 42,
+          "end_seconds": 1497,
+          "id": 35,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1455,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 45,
+          "end_seconds": 1542,
+          "id": 12,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1497,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 37,
+          "end_seconds": 1579,
+          "id": 43,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1542,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 52,
+          "end_seconds": 1638,
+          "id": 22,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1586,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 41,
+          "end_seconds": 1679,
+          "id": 44,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1638,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 51,
+          "end_seconds": 1770,
+          "id": 45,
+          "kind": "join",
+          "pass": 1,
+          "start_seconds": 1719,
+          "worker": 0
+        },
+        {
+          "duration_seconds": 208,
+          "end_seconds": 2030,
+          "id": null,
+          "kind": "root",
+          "pass": 1,
+          "start_seconds": 1822,
+          "worker": 0
+        }
+      ],
+      "completed_non_root_joins": 22,
+      "completed_root_proofs": 1,
+      "contention_requeue_events": [
+        {
+          "executor": 17,
+          "id": 23,
+          "kind": "claim",
+          "pass": 1
+        },
+        {
+          "executor": 24,
+          "id": 22,
+          "kind": "claim",
+          "pass": 1
+        },
+        {
+          "executor": 6,
+          "id": 20,
+          "kind": "claim",
+          "pass": 1
+        },
+        {
+          "executor": 3,
+          "id": 9,
+          "kind": "join",
+          "pass": 1
+        },
+        {
+          "executor": 17,
+          "id": 20,
+          "kind": "claim",
+          "pass": 1
+        },
+        {
+          "executor": 20,
+          "id": 22,
+          "kind": "claim",
+          "pass": 1
+        }
+      ],
+      "executions": [
+        {
+          "elapsed_seconds": 67.0,
+          "end_seconds": 67,
+          "executor": 15,
+          "id": 21,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10316524087,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10316524087,
+            "trace_shards": 12,
+            "workspace_bytes": 7484964317,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 113.1,
+          "end_seconds": 113,
+          "executor": 30,
+          "id": 11,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10416727157,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10416727157,
+            "trace_shards": 12,
+            "workspace_bytes": 7485853901,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 152.2,
+          "end_seconds": 152,
+          "executor": 9,
+          "id": 7,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10571521205,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10571521205,
+            "trace_shards": 13,
+            "workspace_bytes": 7486266701,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 191.8,
+          "end_seconds": 192,
+          "executor": 16,
+          "id": 18,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 11262804617,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 11262804617,
+            "trace_shards": 13,
+            "workspace_bytes": 7895305818,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 217.0,
+          "end_seconds": 217,
+          "executor": 28,
+          "id": 2,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 8337574243,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 8337574243,
+            "trace_shards": 9,
+            "workspace_bytes": 7861401178,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 236.1,
+          "end_seconds": 236,
+          "executor": 27,
+          "id": 0,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 7598541394,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 7598541394,
+            "trace_shards": 8,
+            "workspace_bytes": 7799048908,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 261.6,
+          "end_seconds": 262,
+          "executor": 5,
+          "id": 3,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 9269072910,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 9269072910,
+            "trace_shards": 10,
+            "workspace_bytes": 7505143013,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 289.7,
+          "end_seconds": 290,
+          "executor": 2,
+          "id": 1,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 9535677837,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 9535677837,
+            "trace_shards": 10,
+            "workspace_bytes": 7845854029,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 321.1,
+          "end_seconds": 321,
+          "executor": 26,
+          "id": 12,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 9697008709,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 9697008709,
+            "trace_shards": 12,
+            "workspace_bytes": 7260267508,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 356.0,
+          "end_seconds": 356,
+          "executor": 10,
+          "id": 6,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 11254184929,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 11254184929,
+            "trace_shards": 12,
+            "workspace_bytes": 7902072986,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 410.2,
+          "end_seconds": 410,
+          "executor": 8,
+          "id": 19,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 13089453313,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 13089453313,
+            "trace_shards": 15,
+            "workspace_bytes": 7115775949,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 441.5,
+          "end_seconds": 441,
+          "executor": 3,
+          "id": 14,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 8843606621,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 8843606621,
+            "trace_shards": 10,
+            "workspace_bytes": 7259573316,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 482.0,
+          "end_seconds": 482,
+          "executor": 21,
+          "id": 17,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10616563727,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10616563727,
+            "trace_shards": 12,
+            "workspace_bytes": 7486112589,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 515.5,
+          "end_seconds": 515,
+          "executor": 31,
+          "id": 13,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10397287367,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10397287367,
+            "trace_shards": 12,
+            "workspace_bytes": 7485032704,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 550.7,
+          "end_seconds": 551,
+          "executor": 11,
+          "id": 5,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 9985363358,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 9985363358,
+            "trace_shards": 12,
+            "workspace_bytes": 7339991847,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 592.0,
+          "end_seconds": 592,
+          "executor": 4,
+          "id": 9,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10809620558,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10809620558,
+            "trace_shards": 12,
+            "workspace_bytes": 7486269453,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 633.1,
+          "end_seconds": 633,
+          "executor": 25,
+          "id": 10,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10803643189,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10803643189,
+            "trace_shards": 13,
+            "workspace_bytes": 7424547047,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 671.9,
+          "end_seconds": 672,
+          "executor": 14,
+          "id": 8,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 10417819677,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 10417819677,
+            "trace_shards": 12,
+            "workspace_bytes": 7485860420,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 705.0,
+          "end_seconds": 705,
+          "executor": 1,
+          "id": 16,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 9988440898,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 9988440898,
+            "trace_shards": 12,
+            "workspace_bytes": 7485051968,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 733.1,
+          "end_seconds": 733,
+          "executor": 0,
+          "id": 15,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 8091980085,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 8091980085,
+            "trace_shards": 9,
+            "workspace_bytes": 7340116512,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 758.4,
+          "end_seconds": 758,
+          "executor": 29,
+          "id": 4,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 8688373256,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 8688373256,
+            "trace_shards": 9,
+            "workspace_bytes": 7805537092,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 62.4,
+          "end_seconds": 821,
+          "executor": 12,
+          "id": 23,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 11345632002,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 11345632002,
+            "trace_shards": 13,
+            "workspace_bytes": 7902049044,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 93.4,
+          "end_seconds": 852,
+          "executor": 0,
+          "id": 15,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 15219722845,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 15219722845,
+            "trace_shards": 17,
+            "workspace_bytes": 8142745052,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 102.2,
+          "end_seconds": 860,
+          "executor": 14,
+          "id": 5,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 14149715323,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 14149715323,
+            "trace_shards": 16,
+            "workspace_bytes": 8404729862,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 111.5,
+          "end_seconds": 870,
+          "executor": 22,
+          "id": 32,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 14973009566,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 14973009566,
+            "trace_shards": 17,
+            "workspace_bytes": 8142744949,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 135.1,
+          "end_seconds": 893,
+          "executor": 29,
+          "id": 2,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 13917876123,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 13917876123,
+            "trace_shards": 16,
+            "workspace_bytes": 8374858554,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 144.6,
+          "end_seconds": 903,
+          "executor": 1,
+          "id": 20,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 15336592910,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 15336592910,
+            "trace_shards": 18,
+            "workspace_bytes": 8167083740,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 153.0,
+          "end_seconds": 911,
+          "executor": 19,
+          "id": 25,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 14882061052,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 14882061052,
+            "trace_shards": 17,
+            "workspace_bytes": 8142744949,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 161.0,
+          "end_seconds": 919,
+          "executor": 23,
+          "id": 28,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 13165156154,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 13165156154,
+            "trace_shards": 15,
+            "workspace_bytes": 8402579518,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 53.4,
+          "end_seconds": 973,
+          "executor": 20,
+          "id": 9,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 14894490601,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 14894490601,
+            "trace_shards": 17,
+            "workspace_bytes": 8142745052,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 79.9,
+          "end_seconds": 999,
+          "executor": 22,
+          "id": 17,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 16665795072,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 16665795072,
+            "trace_shards": 19,
+            "workspace_bytes": 8142780278,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 115.8,
+          "end_seconds": 1035,
+          "executor": 25,
+          "id": 20,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 9509883933,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 9509883933,
+            "trace_shards": 10,
+            "workspace_bytes": 7340122292,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 154.3,
+          "end_seconds": 1074,
+          "executor": 15,
+          "id": 22,
+          "kind": "claim",
+          "pass": 1,
+          "record_bytes": 9763328531,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 9763328531,
+            "trace_shards": 11,
+            "workspace_bytes": 7485852250,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 56.6,
+          "end_seconds": 1130,
+          "executor": 10,
+          "id": 6,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 17137572016,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 17137572016,
+            "trace_shards": 20,
+            "workspace_bytes": 8139433192,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 71.1,
+          "end_seconds": 1145,
+          "executor": 2,
+          "id": 34,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 17254983622,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 17254983622,
+            "trace_shards": 20,
+            "workspace_bytes": 8142780278,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 93.8,
+          "end_seconds": 1167,
+          "executor": 19,
+          "id": 11,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 17422951538,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 17422951538,
+            "trace_shards": 20,
+            "workspace_bytes": 8142780278,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 108.7,
+          "end_seconds": 1188,
+          "executor": 6,
+          "id": 29,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 16762541938,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 16762541938,
+            "trace_shards": 19,
+            "workspace_bytes": 8139433536,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 56.9,
+          "end_seconds": 1245,
+          "executor": 15,
+          "id": 21,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 18786871588,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 18786871588,
+            "trace_shards": 22,
+            "workspace_bytes": 8139434568,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 84.3,
+          "end_seconds": 1273,
+          "executor": 21,
+          "id": 38,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 15927252433,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 15927252433,
+            "trace_shards": 18,
+            "workspace_bytes": 8142745052,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 26.7,
+          "end_seconds": 1299,
+          "executor": 10,
+          "id": 41,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 14545272465,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 14545272465,
+            "trace_shards": 17,
+            "workspace_bytes": 8142745052,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 40.4,
+          "end_seconds": 1351,
+          "executor": 23,
+          "id": 12,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 20849811861,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 20849811861,
+            "trace_shards": 25,
+            "workspace_bytes": 8139434568,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 48.6,
+          "end_seconds": 1395,
+          "executor": 19,
+          "id": 35,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 19905263160,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 19905263160,
+            "trace_shards": 23,
+            "workspace_bytes": 8139434568,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 32.9,
+          "end_seconds": 1488,
+          "executor": 4,
+          "id": 43,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 17187145933,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 17187145933,
+            "trace_shards": 20,
+            "workspace_bytes": 8142780278,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 44.7,
+          "end_seconds": 1586,
+          "executor": 3,
+          "id": 22,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 23079967302,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 23079967302,
+            "trace_shards": 29,
+            "workspace_bytes": 8156199271,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 36.9,
+          "end_seconds": 1616,
+          "executor": 5,
+          "id": 44,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 19397517622,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 19397517622,
+            "trace_shards": 22,
+            "workspace_bytes": 8139434568,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 40.5,
+          "end_seconds": 1719,
+          "executor": 13,
+          "id": 45,
+          "kind": "join",
+          "pass": 1,
+          "record_bytes": 23089365010,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 23089365010,
+            "trace_shards": 28,
+            "workspace_bytes": 8139434568,
+            "workspace_reserved_bytes": 10608568116
+          }
+        },
+        {
+          "elapsed_seconds": 52.6,
+          "end_seconds": 1822,
+          "executor": 1,
+          "id": null,
+          "kind": "root",
+          "pass": 1,
+          "record_bytes": 28408543923,
+          "trace_plan": {
+            "committed_cells_cap": 600000000,
+            "record_bytes": 28408543923,
+            "trace_shards": 36,
+            "workspace_bytes": 8751371008,
+            "workspace_reserved_bytes": 10608568116
+          }
+        }
+      ],
+      "interpretation": "Integer lane timestamps are rounded. Worker intervals include host work, transfers, proving and publication; execution elapsed time can include memory waits. Parallel execution durations and lane intervals are not additive wall time.",
+      "passes": [
+        {
+          "claims": 24,
+          "claims_retired": 0,
+          "claims_reused": 0,
+          "joins": 23,
+          "joins_cached": 0
+        }
+      ],
+      "prepared_worker_interval_totals_seconds": {
+        "claim": 590,
+        "join": 825,
+        "root": 208
+      },
+      "record_pool": {
+        "contention_retries": 6,
+        "growth_wait_count": 58,
+        "growth_wait_summed_seconds": 8633.6,
+        "peak_granted_gib_rounded": 80.1
+      },
+      "root_wraps": [
+        {
+          "input_shards": 36,
+          "output_shards": 18,
+          "peak_description": "query-record peak 49.1 GiB",
+          "seconds": 58.1,
+          "shrunk": true
+        },
+        {
+          "input_shards": 18,
+          "output_shards": 10,
+          "peak_description": "query-record peak 37.6 GiB",
+          "seconds": 31.9,
+          "shrunk": true
+        },
+        {
+          "input_shards": 10,
+          "output_shards": 6,
+          "peak_description": "query-record peak 33.3 GiB",
+          "seconds": 20.9,
+          "shrunk": true
+        },
+        {
+          "input_shards": 6,
+          "output_shards": 4,
+          "peak_description": "query-record peak 31.0 GiB",
+          "seconds": 14.2,
+          "shrunk": true
+        },
+        {
+          "input_shards": 4,
+          "output_shards": 3,
+          "peak_description": "query-record peak 30.2 GiB",
+          "seconds": 10.7,
+          "shrunk": true
+        },
+        {
+          "input_shards": 3,
+          "output_shards": 3,
+          "peak_description": "query-record peak 29.8 GiB",
+          "seconds": 9.5,
+          "shrunk": false
+        }
+      ],
+      "root_wraps_total_seconds": 145.3,
+      "scheduler_end_to_end_seconds": 2030,
+      "texray_span_lines": 0,
+      "total_trace_shards_in_logged_plans": 788,
+      "trace_plans": [
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10316524087,
+          "trace_shards": 12,
+          "workspace_bytes": 7484964317,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10416727157,
+          "trace_shards": 12,
+          "workspace_bytes": 7485853901,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10571521205,
+          "trace_shards": 13,
+          "workspace_bytes": 7486266701,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 11262804617,
+          "trace_shards": 13,
+          "workspace_bytes": 7895305818,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 8337574243,
+          "trace_shards": 9,
+          "workspace_bytes": 7861401178,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 7598541394,
+          "trace_shards": 8,
+          "workspace_bytes": 7799048908,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 9269072910,
+          "trace_shards": 10,
+          "workspace_bytes": 7505143013,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 9535677837,
+          "trace_shards": 10,
+          "workspace_bytes": 7845854029,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 9697008709,
+          "trace_shards": 12,
+          "workspace_bytes": 7260267508,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 11254184929,
+          "trace_shards": 12,
+          "workspace_bytes": 7902072986,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 13089453313,
+          "trace_shards": 15,
+          "workspace_bytes": 7115775949,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 8843606621,
+          "trace_shards": 10,
+          "workspace_bytes": 7259573316,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10616563727,
+          "trace_shards": 12,
+          "workspace_bytes": 7486112589,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10397287367,
+          "trace_shards": 12,
+          "workspace_bytes": 7485032704,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 9985363358,
+          "trace_shards": 12,
+          "workspace_bytes": 7339991847,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10809620558,
+          "trace_shards": 12,
+          "workspace_bytes": 7486269453,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10803643189,
+          "trace_shards": 13,
+          "workspace_bytes": 7424547047,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 10417819677,
+          "trace_shards": 12,
+          "workspace_bytes": 7485860420,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 9988440898,
+          "trace_shards": 12,
+          "workspace_bytes": 7485051968,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 8091980085,
+          "trace_shards": 9,
+          "workspace_bytes": 7340116512,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 8688373256,
+          "trace_shards": 9,
+          "workspace_bytes": 7805537092,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 11345632002,
+          "trace_shards": 13,
+          "workspace_bytes": 7902049044,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 15219722845,
+          "trace_shards": 17,
+          "workspace_bytes": 8142745052,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 14149715323,
+          "trace_shards": 16,
+          "workspace_bytes": 8404729862,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 14973009566,
+          "trace_shards": 17,
+          "workspace_bytes": 8142744949,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 13917876123,
+          "trace_shards": 16,
+          "workspace_bytes": 8374858554,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 15336592910,
+          "trace_shards": 18,
+          "workspace_bytes": 8167083740,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 14882061052,
+          "trace_shards": 17,
+          "workspace_bytes": 8142744949,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 13165156154,
+          "trace_shards": 15,
+          "workspace_bytes": 8402579518,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 14894490601,
+          "trace_shards": 17,
+          "workspace_bytes": 8142745052,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 16665795072,
+          "trace_shards": 19,
+          "workspace_bytes": 8142780278,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 9509883933,
+          "trace_shards": 10,
+          "workspace_bytes": 7340122292,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 9763328531,
+          "trace_shards": 11,
+          "workspace_bytes": 7485852250,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 17137572016,
+          "trace_shards": 20,
+          "workspace_bytes": 8139433192,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 17254983622,
+          "trace_shards": 20,
+          "workspace_bytes": 8142780278,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 17422951538,
+          "trace_shards": 20,
+          "workspace_bytes": 8142780278,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 16762541938,
+          "trace_shards": 19,
+          "workspace_bytes": 8139433536,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 18786871588,
+          "trace_shards": 22,
+          "workspace_bytes": 8139434568,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 15927252433,
+          "trace_shards": 18,
+          "workspace_bytes": 8142745052,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 14545272465,
+          "trace_shards": 17,
+          "workspace_bytes": 8142745052,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 20849811861,
+          "trace_shards": 25,
+          "workspace_bytes": 8139434568,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 19905263160,
+          "trace_shards": 23,
+          "workspace_bytes": 8139434568,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 17187145933,
+          "trace_shards": 20,
+          "workspace_bytes": 8142780278,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 23079967302,
+          "trace_shards": 29,
+          "workspace_bytes": 8156199271,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 19397517622,
+          "trace_shards": 22,
+          "workspace_bytes": 8139434568,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 23089365010,
+          "trace_shards": 28,
+          "workspace_bytes": 8139434568,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 28408543923,
+          "trace_shards": 36,
+          "workspace_bytes": 8751371008,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 15074871387,
+          "trace_shards": 18,
+          "workspace_bytes": 8139462054,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 8644931015,
+          "trace_shards": 10,
+          "workspace_bytes": 8144927079,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 5344563499,
+          "trace_shards": 6,
+          "workspace_bytes": 7917157489,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 3685324510,
+          "trace_shards": 4,
+          "workspace_bytes": 7818878770,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 2781228362,
+          "trace_shards": 3,
+          "workspace_bytes": 7830347954,
+          "workspace_reserved_bytes": 10608568116
+        },
+        {
+          "committed_cells_cap": 600000000,
+          "record_bytes": 2388013771,
+          "trace_shards": 3,
+          "workspace_bytes": 7830347954,
+          "workspace_reserved_bytes": 10608568116
+        }
+      ],
+      "unclosed_interval_count": 0
+    },
+    "root_inspection": {
+      "assumptions_address": null,
+      "claim_root": "24881f2ba3e1b45379964891b0e160c0fd6f761518de6d62784b031f37da97a4",
+      "claim_type": "CheckEnv",
+      "content_address_verified": false,
+      "has_assumptions": false,
+      "object_bytes": 8027884,
+      "object_format": 4,
+      "object_sha256": "93cdac6614968ce11800e892800d7742b99cd712e68d60e99106dbffd820f6d7",
+      "path": "/home/sam/.ix/store/0d/75/2d/d69add1595b37cc9caa7fba203b7e89140c6042640cca5797eae7a273c",
+      "preamble_header_count": 3,
+      "proof_body_count": null,
+      "proof_bytes": 8027844,
+      "proof_mib": 7.655948638916016,
+      "proof_verified": false,
+      "store_address_input": "0d752dd69add1595b37cc9caa7fba203b7e89140c6042640cca5797eae7a273c",
+      "trace_shards": 3,
+      "validator_identity": 1,
+      "wrapper_overhead_bytes": 40
+    }
+  },
+  "terminal_k1": {
+    "configuration": {
+      "AIUR_GPU_TRACE": "cpu",
+      "AIUR_TRACE_ONLY_LOOKUPS": "0",
+      "max_ram_gib": 180,
+      "proving_backend": "CUDA with CPU/GPU placement",
+      "unset": [
+        "AIUR_TRACE_SHARD_MAX_CELLS",
+        "AIUR_MAX_PIECE_LOG_HEIGHT"
+      ]
+    },
+    "directory": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/compress-k1.jybKYa01",
+    "external_timing": {
+      "exit_status": 0,
+      "peak_rss_gib": 55.296531677246094,
+      "peak_rss_kib": 57982616,
+      "swaps": 0,
+      "system_cpu_seconds": 23.43,
+      "user_cpu_seconds": 394.77,
+      "wall_seconds": 35.65
+    },
+    "external_verification": {
+      "backend_setup_ms": 422,
+      "claim_assumptions": "none",
+      "claim_root": "24881f2ba3e1b45379964891b0e160c0fd6f761518de6d62784b031f37da97a4",
+      "coverage_constants": 184450,
+      "environment_constants": 184450,
+      "exit_status": 0,
+      "manifest_audit_ms": 571,
+      "native_aiur_proof_ms": 36,
+      "peak_rss_gib": 0.9525833129882812,
+      "peak_rss_kib": 998856,
+      "swaps": 0,
+      "system_cpu_seconds": 0.8,
+      "undischarged_assumptions": 0,
+      "user_cpu_seconds": 7.44,
+      "verified_address": "0b9ab3ec99b43332134db8956d7c779afae301a804b31155b7ac3a2a0c4d633b",
+      "wall_seconds": 2.64
+    },
+    "final_root": {
+      "assumptions_address": null,
+      "claim_root": "24881f2ba3e1b45379964891b0e160c0fd6f761518de6d62784b031f37da97a4",
+      "claim_type": "CheckEnv",
+      "content_address_verified": false,
+      "has_assumptions": false,
+      "independent_inspector_verified_proof": false,
+      "native_verification_succeeded": true,
+      "native_verified_proof_body_count": 1,
+      "object_bytes": 5602306,
+      "object_format": 4,
+      "object_sha256": "f5f3e23201b5b8e2c91225658236a237b715ae9bd0e4a1c589142bed89bb77d3",
+      "path": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/compress-k1.jybKYa01/root.proof",
+      "preamble_header_count": 1,
+      "proof_body_count": null,
+      "proof_bytes": 5602266,
+      "proof_mib": 5.342737197875977,
+      "proof_verified": true,
+      "store_address_input": "0b9ab3ec99b43332134db8956d7c779afae301a804b31155b7ac3a2a0c4d633b",
+      "trace_shards": 1,
+      "validator_identity": 1,
+      "verification_evidence_path": "/home/sam/repos/ix/.lake/benches/islb-l40s.uuodErZ3/compress-k1.jybKYa01/verify.out",
+      "wrapper_overhead_bytes": 40
+    },
+    "gpu_sampling": {
+      "first_timestamp": "2026/10/06 20:48:27.226",
+      "gpu_indices": [
+        0
+      ],
+      "last_timestamp": "2026/10/06 20:49:02.587",
+      "max_sampled_gpu_utilization_percent": 100.0,
+      "max_sampled_power_w": 179.13,
+      "mean_sampled_gpu_utilization_percent": 26.02777777777778,
+      "mean_sampled_power_w": 79.11250000000001,
+      "memory_clock_mhz_values": [
+        9001.0
+      ],
+      "nonzero_utilization_sample_count": 12,
+      "peak_memory_sample_timestamps": [
+        "2026/10/06 20:48:57.585",
+        "2026/10/06 20:48:58.585",
+        "2026/10/06 20:48:59.586"
+      ],
+      "peak_sampled_memory_used_bytes": 35107373056,
+      "peak_sampled_memory_used_gib": 32.6962890625,
+      "peak_sampled_memory_used_mib": 33481.0,
+      "sample_count": 36,
+      "sampling_period_ms": 1000,
+      "sm_clock_mhz_values": [
+        2040.0
+      ]
+    },
+    "logged_phase_interpretation": "Phase measurements may overlap and are not additive.",
+    "logged_stage1_phase_seconds": {
+      "stage1 CPU LDE": 19.716,
+      "stage1 durable GPU LDE": 0.315,
+      "stage1 hybrid tree": 0.159,
+      "stage1 partitioned host digests": 0.0,
+      "stage1 transient GPU LDE": 0.309,
+      "stage1 transient group hash": 4.627
+    },
+    "root_wraps": [
+      {
+        "input_shards": 3,
+        "output_shards": 1,
+        "peak_description": "query-record peak 94.4 GiB",
+        "seconds": 32.8,
+        "shrunk": true
+      }
+    ]
+  }
+}

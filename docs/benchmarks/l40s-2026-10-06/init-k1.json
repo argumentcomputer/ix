@@ -1,0 +1,206 @@
+{
+  "blackwell_scenario_not_measured": {
+    "additional_compression_held_fixed_seconds": 35.33,
+    "interpretation": "Apply the previous bandwidth sensitivity only to its original 472.6-second prepared component and hold this hybrid compression entirely fixed. This is unmeasured arithmetic, not a prediction, confidence interval, GPU kernel throughput measurement or bound. Host work, changed overlap and 96 GB residency gains remain unquantified.",
+    "original_exact_bandwidth_ratio": 1.8483796296296295,
+    "original_model_path": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/results.json",
+    "original_prepared_component_seconds": 472.6,
+    "scenario_blackwell_combined_proving_seconds": 504.5934063869756,
+    "scenario_l40s_to_blackwell_combined_wall_ratio": 1.4298839241008032
+  },
+  "combined_two_invocation_cost": {
+    "additional_k1_compression_wall_seconds": 35.33,
+    "combined_proving_plus_final_verification_wall_seconds": 723.76,
+    "combined_proving_wall_seconds": 721.51,
+    "interpretation": "Sum of two separately timed proving invocations with different terminal trace settings, excluding builds, compilation, review time and idle time; not a newly measured fresh single-command end-to-end benchmark.",
+    "max_of_measured_process_peak_rss_gib": 124.41986083984375,
+    "max_sampled_gpu_memory_mib": 39477.0,
+    "original_k3_proving_wall_seconds": 686.18,
+    "sum_proving_and_both_external_verification_invocations_seconds": 726.05
+  },
+  "compression": {
+    "exit_status": 0,
+    "input_trace_shards": 3,
+    "output_trace_shards": 1,
+    "peak_rss_bytes": 58971598848,
+    "peak_rss_gib": 54.92158126831055,
+    "peak_rss_kib": 57589452,
+    "projected_prover_peak_gib": 94.4,
+    "root_cache_hit": true,
+    "root_wrap_wall_seconds": 32.8,
+    "subtree_not_reproved": true,
+    "system_cpu_seconds": 25.25,
+    "user_cpu_seconds": 390.61,
+    "wall_seconds": 35.33
+  },
+  "configuration": {
+    "cgroup_memory_max_gib": 220,
+    "cgroup_swap_max_bytes": 0,
+    "cpu_parallelism": "defaults, no manual caps",
+    "direct_joins": true,
+    "environment": {
+      "AIUR_AGGREGATE_CACHE_DIR": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/compress-k1.FQBWIFT9/cache",
+      "AIUR_GPU_TRACE": "cpu",
+      "AIUR_TRACE_ONLY_LOOKUPS": "0",
+      "CUDA_HOME": "/usr/local/cuda-13.3",
+      "CUDA_PATH": "/usr/local/cuda-13.3",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "MULTI_STARK_CUDA_MEMORY_LOG": "1"
+    },
+    "main_trace_provider": "CPU",
+    "max_ram_gib": 180,
+    "proving_backend": "CUDA with hybrid CPU/GPU placement",
+    "structural_above": 0,
+    "trace_shards": true,
+    "unset_environment": [
+      "AIUR_TRACE_SHARD_MAX_CELLS",
+      "AIUR_MAX_PIECE_LOG_HEIGHT"
+    ],
+    "wrap_root": true
+  },
+  "external_verification": {
+    "backend_setup_ms": 422,
+    "coverage_constants": 56810,
+    "environment_constants": 56810,
+    "exit_status": 0,
+    "header_body_count_agreement": "Native batch verifier enforces nonempty preamble.headers and headers.len() == proofs.len(); independently decoded header count is one.",
+    "native_aiur_proof_verification_ms": 36,
+    "native_manifest_audit_ms": 199,
+    "peak_rss_bytes": 585035776,
+    "peak_rss_gib": 0.5448570251464844,
+    "peak_rss_kib": 571324,
+    "system_cpu_seconds": 0.54,
+    "undischarged_assumptions": 0,
+    "user_cpu_seconds": 3.92,
+    "wall_seconds": 2.25
+  },
+  "gpu_sampling": {
+    "first_timestamp": "2026/10/06 20:05:57.494",
+    "last_timestamp": "2026/10/06 20:06:32.536",
+    "max_sampled_gpu_utilization_percent": 100.0,
+    "max_sampled_power_w": 166.97,
+    "mean_sampled_gpu_utilization_percent": 27.805555555555557,
+    "mean_sampled_power_w": 78.90777777777778,
+    "memory_clock_mhz_values": [
+      9001.0
+    ],
+    "nonzero_utilization_sample_count": 13,
+    "peak_sampled_memory_used_bytes": 35107373056,
+    "peak_sampled_memory_used_gib": 32.6962890625,
+    "peak_sampled_memory_used_mib": 33481.0,
+    "sample_count": 36,
+    "sampling_period_ms": 1000,
+    "sm_clock_mhz_values": [
+      2040.0
+    ]
+  },
+  "hybrid_backend_evidence": {
+    "interpretation": "The terminal proof is CUDA-backed, with CPU-built traces and a large host LDE. Placement work is an estimator, not measured GPU utilization. Logged stage-1 phase times may overlap and are not additive.",
+    "logged_host_matrix_uploads": 0,
+    "logged_matrix_evictions": 0,
+    "logged_phase_seconds": {
+      "stage1 CPU LDE": 19.75,
+      "stage1 durable GPU LDE": 0.314,
+      "stage1 hybrid tree": 0.159,
+      "stage1 partitioned host digests": 0.0,
+      "stage1 transient GPU LDE": 0.247,
+      "stage1 transient group hash": 4.624
+    },
+    "stage1_host_matrices": [
+      {
+        "height": 2097152,
+        "lde_bytes": 35769024512,
+        "matrix_index": 20,
+        "width": 533,
+        "work_estimate": 107307073536
+      },
+      {
+        "height": 2097152,
+        "lde_bytes": 2483027968,
+        "matrix_index": 32,
+        "width": 37,
+        "work_estimate": 7449083904
+      },
+      {
+        "height": 2097152,
+        "lde_bytes": 402653184,
+        "matrix_index": 72,
+        "width": 6,
+        "work_estimate": 1207959552
+      }
+    ],
+    "stage1_placement": {
+      "device_budget_bytes": 30030163968,
+      "durable_budget_bytes": 15015081984,
+      "durable_bytes": 8358710208,
+      "durable_gpu_work_estimate": 22074952336,
+      "durable_gpu_work_percent_rounded": 15,
+      "durable_heights": 18,
+      "durable_matrices": 82,
+      "total_heights": 19,
+      "total_matrices": 85,
+      "total_work_estimate": 138039069328
+    },
+    "texray_span_lines": 0
+  },
+  "limits": [
+    "One additional compression run, no repeated measurements or matched Blackwell run.",
+    "GPU memory and utilization are one-second samples, not allocation high-water marks.",
+    "Process peak RSS is GNU time maximum RSS, not cgroup memory.peak.",
+    "The 32.8-second wrap log is rounded to 0.1 seconds and includes CPU execution, witness construction and hybrid proving.",
+    "No texray span lines were emitted, so GPU kernel time is not available.",
+    "CPU trace generation and CPU LDE work are intentional in this terminal fallback; AIUR_GPU_TRACE=cpu does not disable the CUDA prover."
+  ],
+  "provenance": {
+    "artifact_sha256": {
+      "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/compress-k1.FQBWIFT9/root.proof": "090939c43ea19cb04e5fe4a26804740e2d40d32366b2821a5333452932db8425",
+      "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/init-proven.ixes": "d60bb462c19d9e758790a71ef1b667312f52efb6b847af299bbac648acd3140e",
+      "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/init.ixe": "7f517b1a313587e21a13044ac485d844452c6a9895054ce9a82baa24ecfaee49",
+      "/home/sam/repos/ix/.lake/build/bin/ix": "625af8be5c41b9810122e2fa0853f4f60e15b72d40a14e2e1588490e9ed7ba7e"
+    },
+    "command_script": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/compress-k1.FQBWIFT9/benchmark.sh",
+    "execution_strategy": "Reuse the verified K3 root through aggregate slot-14 cache; skip its subtree; perform one terminal wrap.",
+    "ix_revision": "6e2d1ae0bb60e51a87f7a8d61710ec48983382bf",
+    "original_logs_unchanged": true,
+    "original_results_path": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/results.json",
+    "original_results_sha256": "33e193868b80e005592f146853bd31f160a29d66f1ab90a1438b4a2d846169dc",
+    "same_binary_as_original_run": true,
+    "starting_root": {
+      "address": "7078a2df6cae0cd9f5c9e7ceb205b7c4767b65a88b9289b8c33301a1033e7c79",
+      "claim_root": "d4942763788556be33bc2cfff77da11da6127f22bc0eda9f72921d0d359d296c",
+      "has_assumptions": false,
+      "object_bytes": 8029164,
+      "proof_bytes": 8029124,
+      "proof_mib": 7.657169342041016,
+      "store_path": "/home/sam/.ix/store/70/78/a2/df6cae0cd9f5c9e7ceb205b7c4767b65a88b9289b8c33301a1033e7c79",
+      "trace_shards": 3,
+      "wrapper_overhead_bytes": 40
+    }
+  },
+  "root": {
+    "address": "fef36bba34deb03728f8f5ff0262997fb5bb4ab741665bf65316be3d57341e0a",
+    "claim_root": "d4942763788556be33bc2cfff77da11da6127f22bc0eda9f72921d0d359d296c",
+    "has_assumptions": false,
+    "object_bytes": 5604002,
+    "object_sha256": "090939c43ea19cb04e5fe4a26804740e2d40d32366b2821a5333452932db8425",
+    "preamble_header_count": 1,
+    "proof_bytes": 5603962,
+    "proof_mib": 5.344354629516602,
+    "store_path": "/home/sam/.ix/store/fe/f3/6b/ba34deb03728f8f5ff0262997fb5bb4ab741665bf65316be3d57341e0a",
+    "trace_shards": 1,
+    "workspace_artifact_path": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/compress-k1.FQBWIFT9/root.proof",
+    "wrapper_overhead_bytes": 40
+  },
+  "run_directory": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/compress-k1.FQBWIFT9",
+  "schema_version": 1,
+  "status": "completed_single_shard_root_and_externally_verified",
+  "wire_format_assertion": {
+    "asserted_header_count": 1,
+    "length_codec": "Flag-free TagN; exact payload length checked against file size.",
+    "meaning": "Ixon v4 CheckEnv proof under validator identity 1",
+    "payload_count_codec": "First eight proof payload bytes encode BatchPreamble.headers.len() as a fixed little-endian u64.",
+    "proof_body_count_validated_by_native_verifier": 1,
+    "shape_is_not_assumed_from_command_success": true,
+    "wrapper_prefix_hex": "f20401"
+  }
+}

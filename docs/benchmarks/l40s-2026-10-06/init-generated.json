@@ -1,0 +1,600 @@
+{
+  "blackwell_scenario_not_measured": {
+    "assumptions": [
+      "Same input, source revision, protocol, 600 million committed-cell cap, partition, and host behavior.",
+      "All measured root-wrap time and all remaining wall time held fixed.",
+      "The prepared component includes host witness generation, transfers, persistence and rounding residue; treating it all as accelerating by the device factor is optimistic.",
+      "Holding all root wrapping fixed omits its potential GPU speedup. These offsetting assumptions are not a rigorous bound.",
+      "Faster proving can change CPU/GPU overlap and queue waits; this arithmetic does not simulate that change.",
+      "A 96 GB device may permit larger trace shards and less recursive work, but this run does not quantify that benefit."
+    ],
+    "comparison_gpu": "RTX PRO 6000 Blackwell, one GPU",
+    "device_phase_working_estimate_range": [
+      1.5,
+      2.5
+    ],
+    "exact_bandwidth_scenario": {
+      "assumed_prepared_prover_speedup": 1.8483796296296295,
+      "scenario_blackwell_wall_seconds": 469.2634063869756,
+      "scenario_l40s_to_blackwell_wall_ratio": 1.462249113526967
+    },
+    "formula": "L40S wall - prepared component + prepared component / assumed speedup",
+    "measured_blackwell_run": false,
+    "peak_bandwidth_ratio": 1.8483796296296295,
+    "prepared_prover_component_seconds": 472.6,
+    "range_note": "Engineering assumption for device-dominated portions, not measured throughput, a confidence interval, or a bound. Integer kernels, launch overhead, CPU work and residency can change it.",
+    "reported_peak_memory_bandwidth_gb_s": {
+      "blackwell": 1597,
+      "l40s": 864
+    },
+    "rounded_bandwidth_ratio_for_scenario": 1.85,
+    "scenarios": [
+      {
+        "assumed_prepared_prover_speedup": 1.5,
+        "scenario_blackwell_wall_seconds": 528.646667,
+        "scenario_l40s_to_blackwell_wall_ratio": 1.297994
+      },
+      {
+        "assumed_prepared_prover_speedup": 1.85,
+        "scenario_blackwell_wall_seconds": 469.039459,
+        "scenario_l40s_to_blackwell_wall_ratio": 1.462947
+      },
+      {
+        "assumed_prepared_prover_speedup": 2.5,
+        "scenario_blackwell_wall_seconds": 402.62,
+        "scenario_l40s_to_blackwell_wall_ratio": 1.704287
+      }
+    ],
+    "unscaled_component_seconds": 213.58
+  },
+  "build": {
+    "exit_status": 0,
+    "peak_rss_bytes": 3562065920,
+    "peak_rss_gib": 3.317432403564453,
+    "peak_rss_kib": 3478580,
+    "system_cpu_seconds": 178.29,
+    "user_cpu_seconds": 3008.32,
+    "wall_seconds": 438.84
+  },
+  "compile": {
+    "compiler_elapsed_seconds": 10.989,
+    "compiler_report": {
+      "allowPartial": false,
+      "bytes": 143891360,
+      "elapsedMs": 10989,
+      "input": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/Init.lean",
+      "ixVersion": "4.34.1|0.0.1",
+      "ixeFormatVersion": 4,
+      "leanToolchain": "4.34.1",
+      "named": 66813,
+      "output": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/init.ixe",
+      "requested": 66187,
+      "root": "3a3b14ba432d397260d10436147314fe1de01614e7c3906dea2fa5b0623744dd",
+      "schemaVersion": 1,
+      "seeds": {
+        "consts": null,
+        "constsFile": null,
+        "exclude": null,
+        "excludeFile": null,
+        "module": null
+      },
+      "ungrounded": [],
+      "ungroundedCount": 0,
+      "uniqueAnon": 56810,
+      "written": true
+    },
+    "count_note": "requested, named, and uniqueAnon are distinct compiler report fields. Verification certifies the 56,810 unique environment constants.",
+    "external": {
+      "exit_status": 0,
+      "peak_rss_bytes": 3330723840,
+      "peak_rss_gib": 3.101978302001953,
+      "peak_rss_kib": 3252660,
+      "system_cpu_seconds": 2.27,
+      "user_cpu_seconds": 78.94,
+      "wall_seconds": 13.26
+    }
+  },
+  "configuration": {
+    "cgroup_memory_max_gib": 220,
+    "cgroup_swap_max_bytes": 0,
+    "cpu_execution_threads": 32,
+    "cpu_parallelism": "defaults, no manual thread caps",
+    "environment": {
+      "AIUR_GPU_SEED_CACHE_BYTES": "4294967296",
+      "AIUR_GPU_TRACE": "generated",
+      "AIUR_LANES_CACHE_DIR": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/cache",
+      "AIUR_MAX_PIECE_LOG_HEIGHT": "24",
+      "AIUR_TRACE_ONLY_LOOKUPS": "1",
+      "AIUR_TRACE_SHARD_MAX_CELLS": "600000000",
+      "CFLAGS": "-std=gnu17",
+      "CUDA_HOME": "/usr/local/cuda-13.3",
+      "CUDA_PATH": "/usr/local/cuda-13.3",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "IX_CUDA_TRACE_CODEGEN": "1",
+      "MULTI_STARK_CUDA_ARCHS": "89",
+      "MULTI_STARK_CUDA_MEMORY_LOG": "1",
+      "NVCC": "/usr/local/cuda-13.3/bin/nvcc"
+    },
+    "initial_cached_claims": 0,
+    "initial_cached_joins": 0,
+    "lanes": 1,
+    "manifest_claims": 8,
+    "max_ram_gib": 180,
+    "output_partition_unchanged": true,
+    "transparent_hugepage_defrag": "defer+madvise",
+    "transparent_hugepages": "always"
+  },
+  "diagnostics": {
+    "logged_generator_cache_release_admissions": 0,
+    "logged_host_matrix_uploads": 0,
+    "logged_matrix_evictions": 0,
+    "spill_conclusion": "No logged matrix eviction or host-matrix upload. Some generated-commit spills only use tracing debug events, so these logs cannot establish zero spills. The streamed FRI path is expected for Hybrid commitments even when their matrices remain resident.",
+    "texray_span_lines": 0
+  },
+  "external_verification": {
+    "backend_setup_ms": 438,
+    "coverage_constants": 56810,
+    "environment_constants": 56810,
+    "exit_status": 0,
+    "manifest_audit_ms": 201,
+    "native_aiur_proof_verification_ms": 58,
+    "peak_rss_bytes": 583544832,
+    "peak_rss_gib": 0.5434684753417969,
+    "peak_rss_kib": 569868,
+    "system_cpu_seconds": 0.55,
+    "undischarged_assumptions": 0,
+    "user_cpu_seconds": 3.95,
+    "wall_seconds": 2.29
+  },
+  "gpu_sampling": {
+    "first_sample_timestamp": "2026/10/06 19:39:50.034",
+    "last_sample_timestamp": "2026/10/06 19:51:15.278",
+    "max_sampled_power_w": 231.08,
+    "max_sampled_utilization_percent": 100.0,
+    "mean_sampled_power_w": 161.47413994169096,
+    "mean_sampled_utilization_percent": 70.78425655976676,
+    "nonzero_utilization_sample_count": 528,
+    "peak_memory_sample_timestamps": [
+      "2026/10/06 19:41:23.061"
+    ],
+    "peak_sampled_memory_used_bytes": 41394634752,
+    "peak_sampled_memory_used_gib": 38.5517578125,
+    "peak_sampled_memory_used_mib": 39477.0,
+    "reported_memory_clocks_mhz": [
+      9001.0
+    ],
+    "reported_sm_clocks_mhz": [
+      2040.0
+    ],
+    "sample_count": 686,
+    "sampling_period_ms": 1000
+  },
+  "hardware": {
+    "compute_capability": "8.9",
+    "cuda_toolkit_version": "13.3.73",
+    "driver_version": "595.91.07",
+    "gpu_count": 1,
+    "gpu_name": "NVIDIA L40S",
+    "gpu_pcie_max_generation": 4,
+    "gpu_pcie_max_width": 16,
+    "gpu_power_limit_w": 350,
+    "host_cpu": "AMD EPYC 7R13 Processor",
+    "host_ram_reported_gib": 248,
+    "logical_cpus": 32,
+    "physical_cores_visible": 16,
+    "visible_vram_mib": 46068
+  },
+  "limits": [
+    "One measured L40S proof; no repetitions, variance estimate, or matched current-branch Blackwell measurement.",
+    "GPU measurements are one-second samples, not an exact allocation high-water mark; nvidia-smi memory includes context and retained allocations.",
+    "Lane event timestamps have one-second resolution; derived intervals contain host work and persistence and are not GPU kernel timings.",
+    "Root wrap durations have 0.1-second precision and include CPU execution and GPU proving.",
+    "Although --texray was passed, no texray span lines were emitted. The lanes path bypasses the prove entry point that calls tracing_texray::examine_current().",
+    "Overlapping execution and proving totals must not be added as wall time.",
+    "Maximum RSS is the GNU time process metric, not cgroup memory.peak.",
+    "The final valid root remains a batch of three trace shards; the last non-improving 3-to-3 wrap was computed and discarded."
+  ],
+  "proof": {
+    "claim_proving_interval_mean_seconds": 26.625,
+    "claim_proving_interval_sum_seconds": 213,
+    "claim_trace_shards": 100,
+    "claims": [
+      {
+        "execution_finish_seconds": 58,
+        "execution_seconds": 58.5,
+        "execution_start_seconds": 0,
+        "executor": 28,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7486255968,
+          "record_bytes": 10147655295,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 11
+        },
+        "prove_finish_seconds": 83,
+        "prove_interval_seconds": 25,
+        "prove_start_seconds": 58,
+        "record_bytes": 10147655295,
+        "work": "claim 0",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 59,
+        "execution_seconds": 59.5,
+        "execution_start_seconds": 0,
+        "executor": 30,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7484828231,
+          "record_bytes": 10559347943,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 12
+        },
+        "prove_finish_seconds": 108,
+        "prove_interval_seconds": 25,
+        "prove_start_seconds": 83,
+        "record_bytes": 10559347943,
+        "work": "claim 1",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 64,
+        "execution_seconds": 64.6,
+        "execution_start_seconds": 0,
+        "executor": 5,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7486102820,
+          "record_bytes": 10831184778,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 12
+        },
+        "prove_finish_seconds": 217,
+        "prove_interval_seconds": 26,
+        "prove_start_seconds": 191,
+        "record_bytes": 10831184778,
+        "work": "claim 2",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 68,
+        "execution_seconds": 68.3,
+        "execution_start_seconds": 0,
+        "executor": 27,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7522712590,
+          "record_bytes": 11184847830,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 13
+        },
+        "prove_finish_seconds": 191,
+        "prove_interval_seconds": 28,
+        "prove_start_seconds": 163,
+        "record_bytes": 11184847830,
+        "work": "claim 3",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 62,
+        "execution_seconds": 62.4,
+        "execution_start_seconds": 0,
+        "executor": 1,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7484973949,
+          "record_bytes": 10407381177,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 12
+        },
+        "prove_finish_seconds": 341,
+        "prove_interval_seconds": 25,
+        "prove_start_seconds": 316,
+        "record_bytes": 10407381177,
+        "work": "claim 4",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 69,
+        "execution_seconds": 69.4,
+        "execution_start_seconds": 0,
+        "executor": 2,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7364981864,
+          "record_bytes": 11140519759,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 14
+        },
+        "prove_finish_seconds": 246,
+        "prove_interval_seconds": 29,
+        "prove_start_seconds": 217,
+        "record_bytes": 11140519759,
+        "work": "claim 5",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 66,
+        "execution_seconds": 66.6,
+        "execution_start_seconds": 0,
+        "executor": 4,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7486090367,
+          "record_bytes": 10883679565,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 13
+        },
+        "prove_finish_seconds": 136,
+        "prove_interval_seconds": 28,
+        "prove_start_seconds": 108,
+        "record_bytes": 10883679565,
+        "work": "claim 6",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 67,
+        "execution_seconds": 67.1,
+        "execution_start_seconds": 0,
+        "executor": 7,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 7485896282,
+          "record_bytes": 11136886006,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 13
+        },
+        "prove_finish_seconds": 163,
+        "prove_interval_seconds": 27,
+        "prove_start_seconds": 136,
+        "record_bytes": 11136886006,
+        "work": "claim 7",
+        "worker": 0
+      }
+    ],
+    "exit_status": 0,
+    "nonroot_join_proving_interval_sum_seconds": 215,
+    "nonroot_joins": [
+      {
+        "execution_finish_seconds": 194,
+        "execution_seconds": 30.3,
+        "execution_start_seconds": 163,
+        "executor": 23,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 8142744949,
+          "record_bytes": 15545689155,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 18
+        },
+        "prove_finish_seconds": 281,
+        "prove_interval_seconds": 35,
+        "prove_start_seconds": 246,
+        "record_bytes": 15545689155,
+        "work": "join 12",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 138,
+        "execution_seconds": 29.1,
+        "execution_start_seconds": 108,
+        "executor": 28,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 8167083740,
+          "record_bytes": 14995794382,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 17
+        },
+        "prove_finish_seconds": 316,
+        "prove_interval_seconds": 35,
+        "prove_start_seconds": 281,
+        "record_bytes": 14995794382,
+        "work": "join 2",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 247,
+        "execution_seconds": 30.1,
+        "execution_start_seconds": 217,
+        "executor": 15,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 8167083740,
+          "record_bytes": 15308329979,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 18
+        },
+        "prove_finish_seconds": 376,
+        "prove_interval_seconds": 35,
+        "prove_start_seconds": 341,
+        "record_bytes": 15308329979,
+        "work": "join 5",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 369,
+        "execution_seconds": 28.5,
+        "execution_start_seconds": 341,
+        "executor": 1,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 8167083740,
+          "record_bytes": 15142334819,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 17
+        },
+        "prove_finish_seconds": 410,
+        "prove_interval_seconds": 34,
+        "prove_start_seconds": 376,
+        "record_bytes": 15142334819,
+        "work": "join 9",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 408,
+        "execution_seconds": 32.7,
+        "execution_start_seconds": 376,
+        "executor": 22,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 8139434568,
+          "record_bytes": 17854276009,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 20
+        },
+        "prove_finish_seconds": 448,
+        "prove_interval_seconds": 38,
+        "prove_start_seconds": 410,
+        "record_bytes": 17854276009,
+        "work": "join 6",
+        "worker": 0
+      },
+      {
+        "execution_finish_seconds": 443,
+        "execution_seconds": 33.2,
+        "execution_start_seconds": 410,
+        "executor": 4,
+        "plan": {
+          "cell_cap": 600000000,
+          "host_workspace_bytes": 8139434568,
+          "record_bytes": 17912930211,
+          "reserved_workspace_bytes": 10608568116,
+          "trace_shards": 21
+        },
+        "prove_finish_seconds": 486,
+        "prove_interval_seconds": 38,
+        "prove_start_seconds": 448,
+        "record_bytes": 17912930211,
+        "work": "join 13",
+        "worker": 0
+      }
+    ],
+    "peak_rss_bytes": 133594808320,
+    "peak_rss_gib": 124.41986083984375,
+    "peak_rss_kib": 130463680,
+    "prepared_prover_intervals_excluding_root_wraps_seconds": 472.6,
+    "record_pool": {
+      "contention_retries": 0,
+      "growth_waits": 0,
+      "peak_granted_gib_rounded": 80.3,
+      "summed_growth_wait_seconds": 0.0
+    },
+    "root_worker": {
+      "execution_finish_seconds": 522,
+      "execution_seconds": 36.1,
+      "execution_start_seconds": 486,
+      "executor": 16,
+      "plan": {
+        "cell_cap": 600000000,
+        "host_workspace_bytes": 8139434568,
+        "record_bytes": 20846867830,
+        "reserved_workspace_bytes": 10608568116,
+        "trace_shards": 24
+      },
+      "prove_finish_seconds": 683,
+      "prove_interval_seconds": 161,
+      "prove_start_seconds": 522,
+      "record_bytes": 20846867830,
+      "work": "root",
+      "worker": 0
+    },
+    "root_worker_interval_seconds": 161,
+    "root_wrap_wall_sum_seconds": 116.4,
+    "root_wraps": [
+      {
+        "input_trace_shards": 24,
+        "output_trace_shards": 13,
+        "projected_query_record_peak_gib": 45.0,
+        "retained": true,
+        "wall_seconds": 43.1
+      },
+      {
+        "input_trace_shards": 13,
+        "output_trace_shards": 7,
+        "projected_query_record_peak_gib": 35.5,
+        "retained": true,
+        "wall_seconds": 25.2
+      },
+      {
+        "input_trace_shards": 7,
+        "output_trace_shards": 5,
+        "projected_query_record_peak_gib": 32.2,
+        "retained": true,
+        "wall_seconds": 15.8
+      },
+      {
+        "input_trace_shards": 5,
+        "output_trace_shards": 4,
+        "projected_query_record_peak_gib": 30.6,
+        "retained": true,
+        "wall_seconds": 12.0
+      },
+      {
+        "input_trace_shards": 4,
+        "output_trace_shards": 3,
+        "projected_query_record_peak_gib": 30.2,
+        "retained": true,
+        "wall_seconds": 10.7
+      },
+      {
+        "input_trace_shards": 3,
+        "output_trace_shards": 3,
+        "projected_query_record_peak_gib": 29.8,
+        "retained": false,
+        "wall_seconds": 9.6
+      }
+    ],
+    "scheduler_end_to_end_seconds": 683,
+    "system_cpu_seconds": 139.12,
+    "total_trace_shards_proven_including_discarded_wrap": 270,
+    "user_cpu_seconds": 3608.37,
+    "wall_seconds": 686.18
+  },
+  "raw_cuda_phase_timings": {
+    "fri_streamed_paths": {
+      "count": 270,
+      "max_seconds": 0.57,
+      "summed_seconds": 51.866
+    },
+    "interpretation": "Partial backend wall timings, rounded to milliseconds. Excludes unlogged phases; not GPU kernel time and not additive with enclosing prover wall intervals.",
+    "lookup_jobs": {
+      "count": 3368,
+      "max_seconds": 0.414,
+      "summed_seconds": 77.276
+    },
+    "quotient_jobs": {
+      "count": 3368,
+      "max_seconds": 0.547,
+      "summed_seconds": 84.657
+    }
+  },
+  "root": {
+    "address": "7078a2df6cae0cd9f5c9e7ceb205b7c4767b65a88b9289b8c33301a1033e7c79",
+    "claim_root": "d4942763788556be33bc2cfff77da11da6127f22bc0eda9f72921d0d359d296c",
+    "has_assumptions": false,
+    "object_bytes": 8029164,
+    "proof_bytes": 8029124,
+    "proof_mib": 7.657169342041016,
+    "store_path": "/home/sam/.ix/store/70/78/a2/df6cae0cd9f5c9e7ceb205b7c4767b65a88b9289b8c33301a1033e7c79",
+    "trace_shards": 3,
+    "wrapper_overhead_bytes": 40
+  },
+  "run_directory": "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M",
+  "schema_version": 1,
+  "source": {
+    "artifact_hashes": {
+      "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/Init.lean": "427dc53408284f1fba1f4b2baeeca933ff16b22a3a22d3e0162dce59d67ac1db",
+      "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/init-proven.ixes": "d60bb462c19d9e758790a71ef1b667312f52efb6b847af299bbac648acd3140e",
+      "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/init.ixe": "7f517b1a313587e21a13044ac485d844452c6a9895054ce9a82baa24ecfaee49",
+      "/home/sam/repos/ix/.lake/benches/init-l40s.n3g0T67M/init.ixes": "d60bb462c19d9e758790a71ef1b667312f52efb6b847af299bbac648acd3140e",
+      "/home/sam/repos/ix/.lake/build/bin/ix": "625af8be5c41b9810122e2fa0853f4f60e15b72d40a14e2e1588490e9ed7ba7e",
+      "Cargo.lock": "fd255cd51e745b6821b8c5bcdfe1613189d0ac1976a492cf4a60d4c473cffd9a"
+    },
+    "hash_algorithm": "sha256",
+    "ix_revision": "6e2d1ae0bb60e51a87f7a8d61710ec48983382bf",
+    "multi_stark_source": "git+https://github.com/argumentcomputer/multi-stark.git?rev=acfc370a2e74affcb7e8ee218fbbaf80b9da1eef#acfc370a2e74affcb7e8ee218fbbaf80b9da1eef",
+    "working_tree_changes_before_run": []
+  },
+  "status": "completed_and_externally_verified"
+}
