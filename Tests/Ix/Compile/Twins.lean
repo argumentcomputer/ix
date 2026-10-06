@@ -47,6 +47,7 @@ import Ix.CompileDriver
 import Tests.Ix.Compile.NonCanonical
 
 import Tests.Ix.Compile.Twins.Cliques
+import Tests.Ix.Compile.CliqueOwnership.Sources
 import Tests.Ix.Compile.Twins.Repro
 import Tests.Ix.Compile.Twins.Proto
 import Tests.Ix.Compile.Oracle.Lib
@@ -202,6 +203,34 @@ def libraryFamilies : List Family := [
   lib "Cutsat" `Lean.Meta.Grind.Arith.Cutsat,
   lib "Linear" `Lean.Meta.Grind.Arith.Linear
 ]
+
+
+private def own (s : String) : Name := `Tests.Ix.Compile.CliqueOwnership.Src ++ s.toName
+
+/-- A clique-ownership source pair (`Tests/Ix/Compile/CliqueOwnership/
+    Sources.lean`): the same clique with its members declared in the other
+    order (`…A`, `…B`). Lean names the encoding after the first declared
+    member, so `B`'s `second._mutual`/`second.mutual` is `A`'s
+    `first._mutual`/`first.mutual`. `skip`: constants of the fixture that are
+    not compared (the block-rule callers, which the compiler refuses when the
+    clique is transported). -/
+private def ownPair (fam : String) (enc : Name) (skip : List Name := []) : Family :=
+  { fixture := own fam, kind := .clique
+    pres := [{ id := "A", ns := own (fam ++ "A"), skip },
+             { id := "B", ns := own (fam ++ "B"), skip,
+               rename := if enc.isAnonymous then [] else [(`second ++ enc, `first ++ enc)] }] }
+
+/-- The clique-ownership sources as twin families (FIX-pfwf O3), compared
+    with the switch on by `pass3-cliques` against `nonCanonicalOn`: the
+    cliques the transport keeps in Lean's form there (`SHAPE`, `NOSPEC`) and
+    Lean's encoding constants of the transported ones are recorded like every
+    other clique family's. They are not in `allFamilies` (the switch-off
+    twins): there both orders are Lean's form by construction. -/
+def ownershipFamilies : List Family :=
+  (["PF1", "PF2", "PF3", "PF4", "PF2C", "PF3C", "PF4C", "PF5", "PF6", "PF7"].map (ownPair · `mutual)) ++
+  (["WF1", "WF2", "WF3", "WF4", "WF5", "WF6", "WF7"].map (ownPair · `_mutual)) ++
+  [ownPair "WF8" `_mutual [`caller]] ++
+  (["S1", "S2", "S3", "S4", "S5", "S6", "R1", "R2"].map (ownPair · .anonymous))
 
 def allFamilies : List Family :=
   cliqueFamilies ++ reproFamilies ++ protoFamilies ++ libraryFamilies

@@ -249,7 +249,7 @@ def run (env : Environment) : IO UInt32 := do
   let keep? := (← IO.getEnv "PASS3_KEEP").map System.FilePath.mk
   let dumpDir := (← IO.getEnv "IX_TWINS_DUMP").map System.FilePath.mk
   if let some d := dumpDir then IO.FS.createDirAll d
-  let families := Tests.Ix.Compile.Twins.cliqueFamilies.filter fun f =>
+  let families := (Tests.Ix.Compile.Twins.cliqueFamilies ++ Tests.Ix.Compile.Twins.ownershipFamilies).filter fun f =>
     match only with
     | some s => (f.fixture.toString.splitOn s).length > 1
     | none => true
