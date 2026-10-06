@@ -67,7 +67,6 @@ use std::ops::Range;
 use multi_stark::{
   batch::{BatchMessage, BatchPreamble, BatchProof, Retention},
   p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
-  p3_matrix::Matrix,
   system::SystemWitness,
 };
 use rayon::iter::{
@@ -344,6 +343,50 @@ impl AiurSystem {
     index: &RowIndex,
     shard: usize,
   ) -> SystemWitness<G> {
+    let witness =
+      self.prepare_shard_witness(record, io_buffer, plan, index, shard, None);
+    SystemWitness {
+      traces: witness
+        .traces
+        .into_iter()
+        .map(|source| source.materialize())
+        .collect(),
+      lookups: witness.lookups,
+    }
+  }
+
+  /// Prepares host traces and compact accelerator sources without allocating
+  /// on the GPU, for the batch round the witness feeds.
+  pub fn prepared_shard_witness(
+    &self,
+    record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    plan: &ShardPlan,
+    index: &RowIndex,
+    shard: usize,
+    round: BatchRound,
+  ) -> multi_stark::witness::PreparedWitness<G> {
+    self.prepare_shard_witness(
+      record,
+      io_buffer,
+      plan,
+      index,
+      shard,
+      Some(round),
+    )
+  }
+
+  /// `generated` is the round a witness with device sources feeds; `None`
+  /// builds every circuit on the host.
+  fn prepare_shard_witness(
+    &self,
+    record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    plan: &ShardPlan,
+    index: &RowIndex,
+    shard: usize,
+    _generated: Option<BatchRound>,
+  ) -> multi_stark::witness::PreparedWitness<G> {
     let circuit_types = self.circuit_types();
     let ranges = &plan.shards[shard].rows;
     assert_eq!(ranges.len(), circuit_types.len(), "plan/system circuit count");
@@ -357,6 +400,38 @@ impl AiurSystem {
         let _witness = witness_span.enter();
         let slot_arg_widths = self.slot_arg_widths(circuit_idx);
         let range = ranges[circuit_idx].clone();
+        #[cfg(feature = "cuda")]
+        if let Some(round) = _generated {
+          match circuit_type {
+            CircuitType::Function { idx } => {
+              let (start, end) = index.queries(circuit_idx, &range);
+              if let Some(prepared) = self.trace_provider.prepare(
+                self.toplevel(),
+                idx,
+                record,
+                io_buffer,
+                &slot_arg_widths,
+                start,
+                end,
+                range.len(),
+                round == BatchRound::Two,
+              ) {
+                return prepared;
+              }
+            },
+            CircuitType::Memory { width } if !range.is_empty() => {
+              if let Some(prepared) = self.trace_provider.prepare_memory(
+                record,
+                width,
+                &slot_arg_widths,
+                range.clone(),
+              ) {
+                return prepared;
+              }
+            },
+            _ => {},
+          }
+        }
         let kind = match circuit_type {
           CircuitType::Function { .. } => "function",
           CircuitType::Memory { .. } => "memory",
@@ -370,7 +445,6 @@ impl AiurSystem {
           rows = range.len()
         )
         .entered();
-        let real_rows = range.len();
         let (trace, lookups) = match circuit_type {
           CircuitType::Function { idx } => {
             let (start, end) = index.queries(circuit_idx, &range);
@@ -399,15 +473,11 @@ impl AiurSystem {
             Bytes2.witness_data(source, &slot_arg_widths)
           },
         };
-        tracing::info!(target: "prover_metrics", metric = "trace",
-          circuit = circuit_idx, provider = "cpu", kind,
-          rows = real_rows, height = trace.height(), width = trace.width(),
-          padded_cells = trace.height().saturating_mul(trace.width()));
-        (trace, lookups)
+        (multi_stark::witness::TraceSource::Host(trace), lookups)
       })
       .collect::<Vec<_>>();
     let (traces, lookups) = witness_data.into_iter().unzip();
-    SystemWitness { traces, lookups }
+    multi_stark::witness::PreparedWitness { traces, lookups }
   }
 
   /// The projected prover peak of shard `shard` of `plan` with the record

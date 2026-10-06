@@ -118,6 +118,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ground-unit", Tests.Ground.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
+  ("aiur-trace-plan", [AiurTests.TracePlan.tests]),
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
   -- the Ixon reader against a direct translation of compiled Lean constants
   ("kernel-reader-roundtrip", Tests.Ix.Kernel.ReaderRoundtrip.suite),
