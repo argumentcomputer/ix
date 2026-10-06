@@ -1,6 +1,7 @@
 import IxC.Kernel.Audit.Axioms
 import Ix.CompileCert.Entry
 import Ix.CompileCert.StrongEntry
+import Ix.CompileCert.Indexed
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -699,3 +700,32 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots #[``propext, ``propext] Ix.CompileC
 /-! ## The audit -/
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.roots Ix.CompileCert.Audit.allowedAxioms
+
+/-! ## M3: the indexed check
+
+The roots added by M3 (the metadata erasure lemmas and the indexed W check
+behind the certifier), audited separately so the frozen line above is
+unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def m3Roots : Array Lean.Name :=
+  #[`exportExpr_mdata, `exportExprWith_mdata,
+    `nodup_map_inj, `find?_of_sub, `mem_of_hinted, `nodupBy, `nodupBy_sound, `nodup_of_nodupBy,
+    `strideOf, `mem_strideOf, `allPar, `allPar_true,
+    `mem_of_set, `set_contains_iff, `Refines, `throw_ne_ok, `Refines.rfl', `Refines.bind,
+    `Refines.mapM, `Extends, `Extends.mapFind, `memberName_refines, `Refines.of_throw,
+    `Refines.of_throw_bind, `Refines.forIn, `Refines.ite, `name_refines, `plainLevels_refines,
+    `levels_refines, `exportLevel_context, `exportExpr_refines, `directExport_refines,
+    `exportBlock_refines, `blockMatch_transfer, `optionMapM_transfer, `groupImage_transfer,
+    `nameAgrees_transfer, `sourceRecordFlags_transfer, `smallContext, `smallContext_extends,
+    `directAt, `directAt_sound, `rawAt, `rawAt_sound, `refsIn, `refsIn_sound, `declRefsIn,
+    `declRefsIn_sound, `domainFast, `domainFast_sound, `AddressSet, `addressSet, `addressIn,
+    `addressIn_set, `addressesNodup, `addressesNodup_sound, `coveredFast, `coveredFast_eq,
+    `Hints, `Shared, `Shared.small, `Shared.declCheck, `Shared.entryCheck, `Shared.ofArtifact,
+    `Shared.small_extends, `checkIndexed, `AcceptedAssociation.faithful,
+    `checkIndexed_sound].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m3Roots Ix.CompileCert.Audit.allowedAxioms

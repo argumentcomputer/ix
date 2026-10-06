@@ -159,6 +159,14 @@ lean_exe «compile-cert-c1» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
+/-- The compiler certifier: a Lean environment and an `.ixe`, one verdict per
+constant (certified, unsupported, blocked, rejected), through the certified
+association check `Ix.CompileCert.checkIndexed` (`Ix/CompileCert/Certifier.lean`). -/
+lean_exe «compile-certify» where
+  root := `Ix.CompileCert.CertifierMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
@@ -526,10 +534,10 @@ the test modules outside its closure, whose `#eval` and `#guard` controls run
 at elaboration; then the fixture checks, under `lake env` (some import the
 test modules' oleans): the self-contained `compile-cert-c1` modes and the test
 modules with their own `main`. Each fails on a wrong verdict and prints its
-own summary. `compiled` writes its producer output, which
-`projection-support` then reads. The check over the stored Init+Std
-environment (`stored .lake/envs/initstd.ixe`) needs that artifact and is run
-by hand. -/
+own summary. `compiled` writes its producer output, which `projection-support`
+and the certifier (`compile-certify` over the producer's cone, Lean side from
+`Tests.Ix.CompileCert.BlockDefs`) then read. The runs over the stored Init+Std
+and Mathlib environments need those artifacts and run by hand. -/
 script "check-cert" (args) := do
   unless args.isEmpty do
     IO.eprintln "usage: lake run check-cert"
@@ -544,16 +552,18 @@ script "check-cert" (args) := do
   let elabTests := #["AnnotEntry", "AnnotNatOps", "AnnotReduceOps", "AnnotSupport",
     "InstalledImage", "Telescope", "ValueReceipt"]
   run "lake" #["build", "--wfail", "Ix.CompileCert.Audit"]
-  run "lake" (#["build", "--wfail", "compile-cert-c1"] ++
+  run "lake" (#["build", "--wfail", "compile-cert-c1", "compile-certify"] ++
     (mainTests ++ elabTests).map (s!"+Tests.Ix.CompileCert.{·}"))
   let outDir := ".lake/build/compile-cert"
   IO.FS.createDirAll outDir
   let exe := ".lake/build/bin/compile-cert-c1"
   let checks : Array (String × Array String) :=
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
-      "source-models", "source-normalized", "source-coverage", "source-projection-semantics",
+      "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
       "compiled"].map (fun mode => (mode, #[exe, mode])) ++
-    #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"])] ++
+    #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
+      ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
+        s!"{outDir}/compiled.ixe", s!"{outDir}/certify"])] ++
     mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
   for (name, checkArgs) in checks do
     let out ← IO.Process.output {
