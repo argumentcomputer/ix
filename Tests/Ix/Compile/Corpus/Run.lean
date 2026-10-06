@@ -94,8 +94,9 @@ def command (cfg : RunConfig) (dir : System.FilePath) (phase : String)
       throw <| IO.userError s!"{phase}: requested Rust checker names were unmatched"
   if args[0]? == some "check-lean" then
     discard <| IO.ofExcept (KernelReport.checkedLeanTargets out.stdout)
-    unless (KernelReport.leanUnmatched diagnostic).isEmpty do
-      throw <| IO.userError s!"{phase}: requested Lean checker names were unmatched"
+    -- Unmatched selectors are judged by the caller: whole-file checks request
+    -- nothing, and the fixture leg asserts coverage per address
+    -- (`leanAddressCoverage`).
   return out
 
 def resultRow (cfg : RunConfig) (case : Case) (phase : String) (out : IO.Process.Output) : Verdict :=
@@ -145,6 +146,43 @@ def namedRecords (env : Ixon.Env) (names : Array (Ix.Name × Ixon.Named)) : Arra
     { name := name.pretty, address := toString value.addr, kind, block := block.map toString,
       original := value.original.map (toString ·.1) }
 
+/-- The `check-lean` selection: for every address of a fixture-owned name,
+every name of the output at that address, sorted. `Ix.Tc`'s meta ingress keeps
+one name per address of a collapsed class (BB-F7), and which one depends on the
+block's metadata, possibly a name outside the fixture (a member alpha-equal to
+`Nat`), so the harness requests all of them and asserts coverage per address. -/
+def leanSelection (env : Ixon.Env) (owned : Ownership) : Array (String × Array String) := Id.run do
+  let mut byAddress : Std.HashMap String (Array String) := {}
+  for (n, nd) in env.named do
+    let a := toString nd.addr
+    byAddress := byAddress.insert a ((byAddress.getD a #[]).push n.pretty)
+  let mut seen : Std.HashSet String := {}
+  let mut out := #[]
+  for (_, nd) in mine env owned do
+    let a := toString nd.addr
+    if seen.contains a then continue
+    seen := seen.insert a
+    out := out.push (a, (byAddress.getD a #[]).qsort (· < ·))
+  return out.qsort (fun x y => x.1 < y.1)
+
+/-- Coverage per address (the evidence standard): every selected address must
+have at least one requested name that the checker matched; an unmatched alias
+whose address is covered counts as covered. Returns the covered unmatched
+aliases. An empty selection, an unmatched name that was never requested, or an
+address none of whose names matched is an error. -/
+def leanAddressCoverage (selection : Array (String × Array String)) (unmatched : Array String) :
+    Except String (Array String) := do
+  if selection.isEmpty then throw "check-lean: empty per-address selection"
+  let requested : Std.HashSet String := selection.foldl (fun s (_, ns) => ns.foldl (·.insert ·) s) {}
+  for n in unmatched do
+    unless requested.contains n do throw s!"check-lean: unmatched name was not requested: {n}"
+  let missed : Std.HashSet String := unmatched.foldl (·.insert ·) {}
+  let uncovered := selection.filter fun (_, ns) => ns.isEmpty || ns.all missed.contains
+  unless uncovered.isEmpty do
+    throw s!"check-lean: {uncovered.size} address(es) with no matched name: \
+      {String.intercalate ", " (uncovered.toList.map fun (a, ns) => s!"{a} {ns}")}"
+  return unmatched.qsort (· < ·)
+
 /-- Compare complete Named records, including metadata/original/hints; missing
 roots and closure-only invented names are failures, not absent comparisons. -/
 def closureDifferences (whole closed : Ixon.Env) (root : String) : Array String := Id.run do
@@ -162,6 +200,8 @@ def withCheckedFile (cfg : RunConfig) (dir : System.FilePath) (label : String)
       ("rs", #["check-rs", path.toString]),
       ("lean", #["check-lean", path.toString, "--workers", toString cfg.workers])] do
     let out ← command cfg dir s!"{label}-{leg}" cfg.ix.toString args
+    unless (KernelReport.leanUnmatched (out.stdout ++ out.stderr)).isEmpty do
+      throw <| IO.userError s!"{label}-{leg}: requested Lean checker names were unmatched"
     if out.exitCode != 0 then problems := problems.push s!"{label}/{leg}: exit {out.exitCode}"
   return problems
 
@@ -344,15 +384,33 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
               detail := String.intercalate "\n" issues.toList }
           pure <| applyExpected expected row row.detail
         else
-          let namesFile := dir / "compile-names.txt"
-          let args := match phase with
-            | "check-rs" => #["check-rs", leanPath.toString, "--consts-file", namesFile.toString]
-            | "check-rs-anon" => #["check-rs", leanPath.toString, "--anon", "--consts-file", namesFile.toString]
-            | "check-lean" => #["check-lean", leanPath.toString, "--consts-file", namesFile.toString, "--workers", toString cfg.workers]
-            | "validate" => #["validate", src.toString, "--no-build", "--ns", case.ns, "--report", (dir / "validate.json").toString]
-            | _ => #["validate-lean", src.toString, "--ns", case.ns, "--workers", toString cfg.workers, "--report", (dir / "validate-lean.json").toString]
-          let out ← command cfg dir phase cfg.ix.toString args
-          pure <| applyExpected expected (resultRow cfg case phase out) (out.stdout ++ out.stderr)
+          if phase == "check-lean" then
+            -- One selection per address, coverage asserted per address (BB-F7).
+            let selection := leanSelection env owned
+            let selFile := dir / "check-lean-names.txt"
+            IO.FS.writeFile selFile (String.join ((selection.flatMap (·.2)).toList.map (· ++ "\n")))
+            let out ← command cfg dir phase cfg.ix.toString
+              #["check-lean", leanPath.toString, "--consts-file", selFile.toString, "--workers", toString cfg.workers]
+            let unmatched := KernelReport.leanUnmatched (out.stdout ++ out.stderr)
+            let aliases ← match leanAddressCoverage selection unmatched with
+              | .ok aliases => pure aliases
+              | .error e => throw <| IO.userError s!"{phase}: {e}"
+            writeJson (dir / "check-lean-coverage.json") <| selection.map fun (a, ns) =>
+              Json.mkObj [("address", toJson a), ("names", toJson ns),
+                ("unmatched", toJson (ns.filter aliases.contains))]
+            let row := resultRow cfg case phase out
+            let row := { row with detail := s!"{row.detail}; {selection.size} addresses covered; \
+              {aliases.size} unmatched alias(es) covered by their address" }
+            pure <| applyExpected expected row (out.stdout ++ out.stderr)
+          else
+            let namesFile := dir / "compile-names.txt"
+            let args := match phase with
+              | "check-rs" => #["check-rs", leanPath.toString, "--consts-file", namesFile.toString]
+              | "check-rs-anon" => #["check-rs", leanPath.toString, "--anon", "--consts-file", namesFile.toString]
+              | "validate" => #["validate", src.toString, "--no-build", "--ns", case.ns, "--report", (dir / "validate.json").toString]
+              | _ => #["validate-lean", src.toString, "--ns", case.ns, "--workers", toString cfg.workers, "--report", (dir / "validate-lean.json").toString]
+            let out ← command cfg dir phase cfg.ix.toString args
+            pure <| applyExpected expected (resultRow cfg case phase out) (out.stdout ++ out.stderr)
     rows := rows.push row
     -- Incremental, explicit evidence survives a later oracle/process failure.
     writeJson (dir / "progress.json") rows

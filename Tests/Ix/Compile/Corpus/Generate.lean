@@ -97,6 +97,15 @@ def numberedAux (text : String) : Bool :=
   [".rec_", ".below_", ".brecOn_"].any fun marker =>
     ((text.splitOn marker).drop 1).any fun rest => rest.toList.head?.any Char.isDigit
 
+/-- A source that names a recursor motive by its position (`motive_N :=`)
+follows the mutual member order: under a permutation `motive_1` is the new
+first member's motive, and the positional minor premises that accompany it
+change type with it. A faithful rewrite needs the recursor's telescope (nested
+motives are numbered in discovery order, which itself follows the source), so
+permuted sources omit such a part and record the omission per case. -/
+def positionalMotive (text : String) : Bool :=
+  ((text.splitOn "motive_").drop 1).any fun rest => rest.toList.head?.any Char.isDigit
+
 def checkedElaborations (candidates : Array Candidate) (rows : Array Elaboration) :
     Except String (Std.HashMap String Elaboration) := do
   let mut out := {}
@@ -148,13 +157,18 @@ def assemble (dir : System.FilePath) : IO Unit := do
           file, includedExtras := parts.map (·.1), excludedExtras := excluded }
     if !shape.members.isEmpty then
       let orders := (permutations (List.range shape.members.size)).mergeSort (fun a b => compare a b != .gt)
-      let permParts := parts.filter fun (_, text) => !numberedAux text
-      let permExcluded := excluded ++ ((parts.filter fun (_, text) => numberedAux text).map fun (name, _) =>
-        (name, "source-numbered nested auxiliary follows the first mutual member"))
+      let permParts := parts.filter fun (_, text) => !numberedAux text && !positionalMotive text
+      let positionalSuffix := positionalMotive shape.suffix
+      let permShape := if positionalSuffix then { shape with suffix := "" } else shape
+      let permExcluded := excluded ++ (parts.filterMap fun (name, text) =>
+          if numberedAux text then some (name, "source-numbered nested auxiliary follows the first mutual member")
+          else if positionalMotive text then some (name, "names a recursor motive by member position (motive_N)")
+          else none) ++
+        (if positionalSuffix then #[("suffix", "names a recursor motive by member position (motive_N)")] else #[])
       for (order, k) in orders.drop 1 |>.zipIdx do
         let id := s!"{shape.id}__p{k+1}"
         let file := s!"sources/{id}.lean"
-        IO.FS.writeFile (dir / file) (← IO.ofExcept <| shape.permuted order (permParts.map (·.2)))
+        IO.FS.writeFile (dir / file) (← IO.ofExcept <| permShape.permuted order (permParts.map (·.2)))
         cases := cases.push
           { id, shape := shape.id, family := shape.family,
             kind := "permutation:" ++ String.intercalate "," (order.map toString), ns := s!"AX.{shape.id}",

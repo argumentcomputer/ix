@@ -4,11 +4,11 @@ open Lean
 open Tests.Ix.Compile.Corpus
 
 private def usage : String :=
-  "aux-shape-sweep <inventory|generate|filter|assemble|aggregate|run|compare|matrix|records|self-check|verify-legacy|verify-round2>\n" ++
+  "aux-shape-sweep <inventory|generate|filter|assemble|aggregate|run|ownership|compare|matrix|records|self-check|verify-legacy|verify-round2>\n" ++
   "  --dir PATH --select all|curated|smoke|id,... --data PATH\n" ++
   "  --jobs N --workers N --timeout SECONDS --mode off|on|both\n" ++
   "  --phases comma,list --revision COMMIT --expected FILE --cases FILE\n" ++
-  "  --local --keep-envs --legacy FILE --size N --ix PATH --cert PATH --env FILE --ns PREFIX\n" ++
+  "  --local --keep-envs --legacy FILE --size N --ix PATH --cert PATH --env FILE --ns PREFIX --file SRC --out FILE\n" ++
   "Run requires --revision. Outputs are immutable per run directory; no silent resume.\n"
 
 private def options (args : List String) : Except String (Std.HashMap String String) := do
@@ -21,7 +21,7 @@ private def options (args : List String) : Except String (Std.HashMap String Str
       pending := none
     else
       unless #["--dir", "--select", "--data", "--jobs", "--workers", "--timeout", "--mode",
-        "--phases", "--revision", "--expected", "--cases", "--local", "--keep-envs", "--legacy", "--size", "--ix", "--cert", "--env", "--ns"].contains arg do
+        "--phases", "--revision", "--expected", "--cases", "--local", "--keep-envs", "--legacy", "--size", "--ix", "--cert", "--env", "--ns", "--file", "--out"].contains arg do
         throw s!"unknown option {arg}"
       if result.contains arg then throw s!"duplicate option {arg}"
       if #["--local", "--keep-envs"].contains arg then result := result.insert arg "true"
@@ -82,6 +82,36 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
   check "canonical nested helper preserves private owner identity"
     (ownedOutput privateOwned (Ix.Name.fromLeanName (privateName ++ `_ix.rec_7)) &&
       !ownedOutput privateOwned (Ix.Name.fromLeanName (stringName ++ `_ix.rec_7)))
+  -- The ownership inventory runs in a child process per case (the imported
+  -- environment dies with the child); it must equal the in-process inventory.
+  IO.FS.withTempDir fun tmp => do
+    let self ← IO.appPath
+    let child ← ownershipChild self "Tests/Ix/Compile/Corpus/OwnershipFixture.lean" "CorpusOwnership"
+      (tmp / "owned.json") (tmp / "owned.log")
+    let childOwned : Option Ownership ← if child.isNone then some <$> readJson (tmp / "owned.json") else pure none
+    check "child-process ownership inventory equals the in-process inventory"
+      (childOwned.any fun o => o.names.size == owned.names.size &&
+        o.originalNames.all (owned.originalNames.contains ·))
+    let missing ← ownershipChild self "Tests/Ix/Compile/Corpus/absent-source.lean" "CorpusOwnership"
+      (tmp / "absent.json") (tmp / "absent.log")
+    check "child-process ownership inventory of an absent source fails" missing.isSome
+    let foreign ← ownershipChild self "Tests/Ix/Compile/Corpus/OwnershipFixture.lean" "NoSuchNamespace"
+      (tmp / "foreign.json") (tmp / "foreign.log")
+    check "child-process ownership inventory without owned declarations fails" foreign.isSome
+  -- check-lean coverage per address (BB-F7: one name kept per collapsed address).
+  let selection := #[("aa", #["AX.C.A", "AX.C.B"]), ("bb", #["AX.C.A.mk", "AX.C.B.mk"]), ("cc", #["AX.C.f"])]
+  check "check-lean alias of a covered address counts as covered"
+    ((leanAddressCoverage selection #["AX.C.B", "AX.C.B.mk"]).toOption == some #["AX.C.B", "AX.C.B.mk"])
+  check "check-lean address with no matched name rejected"
+    ((leanAddressCoverage selection #["AX.C.A", "AX.C.B"]).toOption.isNone)
+  check "check-lean unrequested unmatched name rejected"
+    ((leanAddressCoverage selection #["AX.C.g"]).toOption.isNone)
+  check "check-lean empty per-address selection rejected" ((leanAddressCoverage #[] #[]).toOption.isNone)
+  check "check-lean full match accepted" ((leanAddressCoverage selection #[]).toOption == some #[])
+  -- Permuted sources omit parts that name recursor motives by member position.
+  check "positional motive argument detected"
+    (positionalMotive "u := A.brecOn (motive_1 := fun _ => Nat) a" && !positionalMotive "A.rec (motive := fun _ => Nat)" &&
+      !positionalMotive "def motive_x := 1")
   check "all3-member permutations" ((permutations [0,1,2]).length == 6)
   let shape : Shape := { id := "x", family := "test", decl := "", members := #["a", "b"] }
   check "duplicate permutation rejected" ((shape.permuted [0,0] #[]).toOption.isNone)
@@ -297,6 +327,14 @@ def main (args : List String) : IO UInt32 := do
           localScope := opts.contains "--local", keepEnvs := opts.contains "--keep-envs",
           phases := ((opts.getD "--phases" (String.intercalate "," phaseNames.toList)).splitOn ",").toArray }
         cases expected modes (opts.getD "--revision" "")
+    | "ownership" =>
+      -- One source's ownership inventory, run by `run` as a child process per
+      -- case so that the imported environment is released with the process.
+      let some file := opts["--file"]? | throw <| IO.userError "ownership requires --file"
+      let some ns := opts["--ns"]? | throw <| IO.userError "ownership requires --ns"
+      let some out := opts["--out"]? | throw <| IO.userError "ownership requires --out"
+      writeJson ⟨out⟩ (← prepareOwnership ⟨file⟩ ns)
+      return 0
     | "compare" => compareVariants dir modes
     | "matrix" => matrix dir
     | "records" =>

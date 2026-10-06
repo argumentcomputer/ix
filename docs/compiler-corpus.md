@@ -64,6 +64,12 @@ uses whole placeholder tokens, never arbitrary substring replacement. Permuted
 sources explicitly omit extra probes that refer to position-numbered nested
 auxiliaries, because those source names follow a different first member. That
 omission is recorded per case; it does not suppress an address comparison.
+Likewise, a part that names a recursor motive by member position
+(`motive_N :=`, with the positional minor premises that accompany it) follows
+the member order; a faithful rewrite would need the recursor's telescope, so
+permuted sources omit that part (the shape's `suffix` or an extra) and record
+the omission per case. The permutation comparison concerns the block's roots
+and canonical auxiliaries, which do not depend on such a user definition.
 
 Each generated directory is a dependency-free Lake project pinned to the
 checkout's `lean-toolchain`. `compile-lean` can therefore build its generated
@@ -100,7 +106,13 @@ switch modes, phase selection, process limits, scope, and reviewed expectations.
 compiler checkout; both are fingerprinted even when using a smaller phase set.
 The driver prebuilds the selected generated modules once before bounded concurrent
 cases, recording preparation success or failure. Checker summaries must attest to
-nonempty work, and unmatched selections are infrastructure errors. If a case
+nonempty work, and unmatched selections are infrastructure errors, except that
+`check-lean` is judged per address: `Ix.Tc`'s meta ingress keeps one name per
+address of a collapsed class (BB-F7), so the leg requests every output name at
+each fixture-owned address (`check-lean-names.txt`) and requires at least one
+matched name per address; an unmatched alias whose address is covered counts
+as covered (`check-lean-coverage.json`), an address with no matched name is an
+infrastructure error. If a case
 stops after an infrastructure failure, its completed phases are retained and every
 remaining requested phase is explicitly not run. `--local` is an explicit alternate compilation scope; the default is whole
 environment compilation. The output environment must contain fixture-owned names.
@@ -180,8 +192,11 @@ auxiliaries it compared. `self-check` has a valid and an invalid control for
 each requirement, with Pass 3 off and on. `records --env FILE --ns PREFIX`
 prints the same records for any environment, for investigation.
 
-Source ownership is inventoried by elaborating each source serially before
-parallel oracle work. Namespace classification uses the visible form of private
+Source ownership is inventoried before parallel oracle work by elaborating each
+source in its own child process (`aux-shape-sweep ownership --file SRC --ns NS
+--out FILE`, `--jobs` at a time): an imported environment is never released
+inside a process, so an in-process inventory would grow the driver by one
+Init import per case. Namespace classification uses the visible form of private
 names, while `source-ownership/*.json` preserves every original string/numeric
 name component. Imported declarations in the same namespace are excluded.
 Generated images are included only when the exact original prefix before `_ix`

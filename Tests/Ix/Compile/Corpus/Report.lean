@@ -55,6 +55,20 @@ def validateExpected (cases : Array Case) (expected : Array Expected) : Except S
       throw s!"invalid expected mode/phase {e.mode}/{e.phase}"
     if e.diagnostic.isEmpty || e.cause.isEmpty then throw "expected unsupported case lacks diagnostic or cause"
 
+/-- One case's ownership inventory in a child process (`aux-shape-sweep
+ownership`), so the imported environment dies with the child. `none` when the
+child wrote the inventory; otherwise the problem, with the log kept under
+`prepare/`. -/
+def ownershipChild (self src : System.FilePath) (ns : String) (out log : System.FilePath) :
+    IO (Option String) := do
+  let r ← IO.Process.output {
+    cmd := self.toString
+    args := #["ownership", "--file", src.toString, "--ns", ns, "--out", out.toString] }
+  if r.exitCode == 0 && (← out.pathExists) then return none
+  if let some parent := log.parent then IO.FS.createDirAll parent
+  IO.FS.writeFile log (r.stdout ++ r.stderr)
+  return some s!"{src}: exit {r.exitCode}{if r.exitCode == 0 then ", no inventory written" else ""}"
+
 def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
     (modes : Array String) (revision : String) : IO UInt32 := do
   if cfg.jobs == 0 || cfg.workers == 0 || cfg.timeout == 0 then
@@ -121,17 +135,32 @@ def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
         IO.FS.writeFile (cfg.dir / "prepare" / s!"{m}.log") (one.stdout ++ one.stderr)
   let rejectedSet : Std.HashSet String := rejectedModules.foldl (·.insert ·) {}
   let usable := prepared.exitCode == 0 || (rejectedModules.size < modules.size && !rejectedModules.isEmpty)
-  -- Elaboration/search-path initialization is process-global. Inventory source
-  -- ownership serially before launching parallel oracle tasks, retaining full
-  -- private/numeric Lean.Name identities rather than reparsing displayed names.
+  -- Ownership inventory, retaining full private/numeric Lean.Name identities
+  -- rather than reparsing displayed names. Each case's source is elaborated in
+  -- its own child process (`aux-shape-sweep ownership`): an imported
+  -- environment is never released inside one process, so an in-process
+  -- inventory grows the driver by one Init import per case (~380 MB each,
+  -- ~292 GB measured over the curated set). Children run `cfg.jobs` at a time.
   let mut ownershipError : Option String := none
   if usable then
     try
       IO.FS.createDirAll (cfg.dir / "source-ownership")
-      for (case, m) in cases.zip modules do
-        if rejectedSet.contains m then continue
-        let owned ← prepareOwnership (cfg.dir / case.file) case.ns
-        writeJson (cfg.dir / "source-ownership" / s!"{case.id}.json") owned
+      let self ← IO.appPath
+      let todo := (cases.zip modules).filter fun (_, m) => !rejectedSet.contains m
+      let mut pending : Array (Task (Except IO.Error (Option String))) := #[]
+      let mut problems : Array String := #[]
+      for (case, _) in todo do
+        if pending.size ≥ cfg.jobs then
+          if let some task := pending[0]? then
+            if let some p ← IO.ofExcept (← IO.wait task) then problems := problems.push p
+          pending := pending.extract 1 pending.size
+        pending := pending.push (← IO.asTask (prio := .dedicated) (ownershipChild self (cfg.dir / case.file) case.ns
+          (cfg.dir / "source-ownership" / s!"{case.id}.json") (cfg.dir / "prepare" / s!"ownership-{case.id}.log")))
+      for task in pending do
+        if let some p ← IO.ofExcept (← IO.wait task) then problems := problems.push p
+      unless problems.isEmpty do
+        throw <| IO.userError s!"{problems.size} ownership inventories failed: \
+          {String.intercalate "; " (problems.toList.take 10)}"
     catch e => ownershipError := some e.toString
   let ready := usable && ownershipError.isNone
   writeJson (cfg.dir / "preparation.json") <| Json.mkObj [
