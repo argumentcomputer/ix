@@ -228,6 +228,15 @@ applied). -/
 def instantiate (f : Expr) (args : Array Expr) : Except String Expr :=
   (happ defaultFuel f args.toList).run' {}
 
+/-- `instantiate` with the fuel-free tables of an earlier development carried
+over (`range`, `lifted`, `lowered`, `occurs`: values of total functions of
+their keys, so a carried entry is the entry this call would compute) and the
+`hinst` table fresh (its entries are computed under a fuel bound). Same result
+as `instantiate`; returns the tables for the next call. -/
+def instantiateWith (st : DevState) (f : Expr) (args : Array Expr) :
+    Except String (Expr × DevState) :=
+  (happ defaultFuel f args.toList).run { st with insts := {} }
+
 /-- `e[xs := vs]` for free variables, developed. The values are locally
 closed and do not mention `xs`. -/
 def substFVars (xs : Array Name) (vs : Array Expr) (e : Expr) : Except String Expr := do

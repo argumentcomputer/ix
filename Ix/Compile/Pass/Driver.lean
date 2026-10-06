@@ -323,29 +323,65 @@ def expansionLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
     let (x, _) ← v.expansion (viewInput cenv) n
     return some x
 
-/-- The image constant `a._ix` of a needed head (a bare or partial
-occurrence) as an ordinary definition, with the heads its rewritten value
-needs in turn. -/
-def imageDecl (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : Name) :
-    Except String (Ix.DefinitionVal × Array Name) := do
+/-- The definitional passes' blocks (`Opt.optBlockOf`) of the given views.
+Computed once per rewrite by the caller and passed to `optLookup` and
+`declineLookup`: a table computed inside those definitions would be computed
+again at every call, since the compiler takes all their arguments at once. -/
+def optBlocks (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+    Std.HashMap Name Opt.OptBlock :=
+  let inp := viewInput cenv
+  views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
+
+/-- `expansionLookup` with one lazily evaluated, cached entry per head
+(`Thunk`): a head's expansion (for a recursor, its whole image) is computed
+at its first occurrence in the rewrite and reused at every later one. The
+same values as `expansionLookup`; built by the caller, once per rewrite. -/
+def expansionTable (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+    Std.HashMap Name (Thunk (Except String (Option Expansion))) :=
+  cenv.p3Heads.fold (init := {}) fun m n _ =>
+    m.insert n (Thunk.mk fun _ => expansionLookup cenv views n)
+
+/-- The lookup of an `expansionTable` (a head outside it: `expansionLookup`). -/
+def expansionLookupIn (table : Std.HashMap Name (Thunk (Except String (Option Expansion))))
+    (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+    Name → Except String (Option Expansion) := fun n =>
+  match table.get? n with
+  | some t => t.get
+  | none => expansionLookup cenv views n
+
+/-- `imageDecl` from a given rewrite state (its caches: rewritten
+expansions, level-substituted values, rewritten subterms, all without
+records), returning the final state. With a state carried over from an
+earlier run, `needed` lists only what this run met first. -/
+def imageDeclWith (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : Name)
+    (table : Std.HashMap Name (Thunk (Except String (Option Expansion))))
+    (st0 : RwState) : Except String (Ix.DefinitionVal × RwState) := do
   let some key := cenv.p3Heads.get? a | throw s!"Pass 3: {a.pretty} is not an image-kind head"
   let inp := viewInput cenv
   let v ← viewOf cenv views key
   let (x, ty) ← v.expansion inp a
-  let lookup := expansionLookup cenv views
+  let lookup := expansionLookupIn table cenv views
   -- the value (and the type) with every head rewritten, no records
   let rwM : RwM (Expr × Expr) := do
     let x' ← if x.needsRewrite then rw lookup rewriteFuel false x.value else pure x.value
     let ty' ← rw lookup rewriteFuel false ty
     pure (x', ty')
-  let ((value, type), st) ← rwM.run { base := 0 }
+  let ((value, type), st) ← rwM.run st0
   let safety : Lean.DefinitionSafety := match inp.const? a with
     | some (.defnInfo d) => d.safety
     | some (.recInfo r) => if r.isUnsafe then .unsafe else .safe
     | _ => .safe
   let name := a
   return ({ cnst := { name, levelParams := x.levelParams, type }
-            value, hints := .abbrev, safety, all := #[name] }, st.needed.filter (· != a))
+            value, hints := .abbrev, safety, all := #[name] }, st)
+
+/-- The image constant `a._ix` of a needed head (a bare or partial
+occurrence) as an ordinary definition, with the heads its rewritten value
+needs in turn (a fresh rewrite state). -/
+def imageDecl (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : Name) :
+    Except String (Ix.DefinitionVal × Array Name) := do
+  let (dv, st) ← imageDeclWith cenv views a (expansionTable cenv views) { base := 0 }
+  return (dv, st.needed.filter (· != a))
 
 /-- Compile an image constant; `known` resolves the block's earlier images. -/
 def compileImage (cenv : CompileEnv) (known : Std.HashMap Name Address)
@@ -375,17 +411,15 @@ def ixFormOf (cenv : CompileEnv) (d : Name) : Option Name :=
       if (resolveAddr cenv c).isSome then some c else none
   | _ => none
 
-/-- The optimisation passes (`Ix.Compile.Pass.Opt.engineFull`) over the views
-of a block's referenced changed blocks: the hook the rewrite tries at every
-full application before it inlines an image (heads of other blocks keep
-their baseline). The result says whether the pass is proof-justified
+/-- The optimisation passes (`Ix.Compile.Pass.Opt.engineFull`) over the
+definitional passes' blocks of a block's referenced changed blocks
+(`optBlocks`, computed once by the caller): the hook the rewrite tries at
+every full application before it inlines an image (heads of other blocks
+keep their baseline). The result says whether the pass is proof-justified
 (`Opt.isProofJustified`), whose output goes to the canonical `_ix` form only
 (D1, `Translate.RwState.inPlace`). -/
-def optLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+def optLookup (cenv : CompileEnv) (blocks : Std.HashMap Name Opt.OptBlock) :
     Option Name → Name → Array Ix.Level → Array Expr → Option (Expr × Array ConstantInfo × Bool) :=
-  let inp := viewInput cenv
-  let blocks : Std.HashMap Name Opt.OptBlock :=
-    views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
@@ -426,11 +460,8 @@ def unitPasses (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
 (`Ix.Compile.Pass.Opt.O11a.declineCause?`): the hook the rewrite tries next
 to `optLookup`, giving the cause when O11a declined because an instance its
 output needs is absent from the input. -/
-def declineLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
+def declineLookup (cenv : CompileEnv) (blocks : Std.HashMap Name Opt.OptBlock) :
     Name → Array Ix.Level → Array Expr → Option String :=
-  let inp := viewInput cenv
-  let blocks : Std.HashMap Name Opt.OptBlock :=
-    views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
@@ -448,7 +479,8 @@ def cliqueRewrite (cenv : CompileEnv) (members : Array (Name × ConstantInfo)) :
     for h in headsIn cenv.p3Heads ci do
       if let some key := cenv.p3Heads.get? h then
         if !views.contains key then views := views.insert key (← viewOf cenv views key)
-  rewriteBlock (expansionLookup cenv views) members (optLookup cenv views)
+  let table := expansionTable cenv views
+  rewriteBlock (expansionLookupIn table cenv views) members (optLookup cenv (optBlocks cenv views))
 
 /-- Compile the block's canonical constants (reserved `_ix` names) into its
 initial state, the way A5's clique hook compiles its canonical constants:
@@ -471,7 +503,8 @@ initial state, the way A5's clique hook compiles its canonical constants:
   reserved-name clash is refused, never resolved silently). -/
 def compileCanon (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
     (canon : Array ConstantInfo) (init0 : BlockState := {}) : Except String BlockState := do
-  let lookup := expansionLookup cenv views
+  let lookup := expansionLookupIn (expansionTable cenv views) cenv views
+  let opt := optLookup cenv (optBlocks cenv views)
   -- rewrite in place, collecting the helpers the rewrites reference
   let mut queue := canon
   let mut i := 0
@@ -483,7 +516,7 @@ def compileCanon (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
     let c := ci.getCnst.name
     if seen.contains c then continue
     seen := seen.insert c
-    let rw ← rewriteBlock lookup #[(c, ci)] (optLookup cenv views) (inPlace := true)
+    let rw ← rewriteBlock lookup #[(c, ci)] opt (inPlace := true)
     let ci' := match rw.overlay[0]? with
       | some (_, x) => x
       | none => ci
@@ -567,8 +600,10 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
     if let some key := cenv.p3Heads.get? h then
       if !views.contains key then
         views := views.insert key (← viewOf cenv views key)
-  let lookup := expansionLookup cenv views
-  let rwr ← rewriteBlock lookup members (optLookup cenv views) (declineLookup cenv views)
+  let table := expansionTable cenv views
+  let blocks := optBlocks cenv views
+  let rwr ← rewriteBlock (expansionLookupIn table cenv views) members (optLookup cenv blocks)
+    (declineLookup cenv blocks)
   let overlay : Std.HashMap Name ConstantInfo :=
     rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) cenv.env.overlay
   let sources : Std.HashMap Nat Expr :=
@@ -603,12 +638,24 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
   let mut known : Std.HashMap Name Address := {}
   let mut out : Array (Name × BlockResult × BlockState) := #[]
   let mut lastErr := ""
+  let mut decls : Std.HashMap Name Ix.DefinitionVal := {}
+  let table := expansionTable cenv views
+  -- one rewrite state for the block's members: its caches carry over
+  let mut rwSt : RwState := { base := 0 }
   let mut rounds := pending.size + 1
   while !pending.isEmpty && rounds > 0 do
     rounds := rounds - 1
     let mut rest : Array Name := #[]
     for a in pending do
-      let (dv, _) ← imageDecl cenv views a
+      -- `imageDecl` does not read `known`: a member retried in a later round
+      -- reuses its declaration
+      if !decls.contains a then
+        let st0 := { rwSt with sources := #[], needed := #[], declines := #[] }
+        rwSt := { base := 0 }  -- released, so the run updates the caches in place
+        let (dv, st) ← imageDeclWith cenv views a table st0
+        rwSt := st
+        decls := decls.insert a dv
+      let some dv := decls.get? a | throw s!"Pass 3: no image declaration for {a.pretty}"
       match compileImage cenv known dv with
       | .ok (r, bs) =>
         known := known.insert a r.blockAddr

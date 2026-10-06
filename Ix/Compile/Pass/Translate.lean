@@ -137,6 +137,14 @@ structure RwState where
   inPlace : Bool := false
   /-- A proof-justified pass fired in the value being rewritten (`site`). -/
   pjFired : Bool := false
+  /-- An expansion's value at the universe levels of an occurrence
+  (`substLevels`), per head and levels: the same value at every full
+  application with those levels (independent of `site`, `record` and
+  `inPlace`: the expansion is rewritten once, with no site). -/
+  levelCache : Std.HashMap (Name × Array Level) Expr := {}
+  /-- The fuel-free tables of the developments so far
+  (`Ix.Compile.Image.instantiateWith`). -/
+  dev : Ix.Compile.Image.DevState := {}
 
 abbrev RwM := StateT RwState (Except String)
 
@@ -212,7 +220,19 @@ def rw : Nat → Bool → Expr → RwM Expr
                   modify fun st => { st with canon := cs.foldl (fun acc c =>
                     if acc.any (·.getCnst.name == c.getCnst.name) then acc else acc.push c) st.canon }
                 pure e
-              | none => liftM (Ix.Compile.Image.instantiate (substLevels x.levelParams us x.value) args')
+              | none => do
+                let f ← match (← get).levelCache.get? (n, us) with
+                  | some f => pure f
+                  | none => do
+                    let f := substLevels x.levelParams us x.value
+                    modify fun st => { st with levelCache := st.levelCache.insert (n, us) f }
+                    pure f
+                -- take the tables out of the state, so they are updated in place
+                let dev0 := (← get).dev
+                modify fun st => { st with dev := {} }
+                let (body, dev) ← liftM (Ix.Compile.Image.instantiateWith dev0 f args')
+                modify fun st => { st with dev }
+                pure body
             if let some cause := (← get).decline? n us args' then
               modify fun st => { st with declines := st.declines.push cause }
             if record then
