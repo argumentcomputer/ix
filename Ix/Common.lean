@@ -495,20 +495,32 @@ def unitOwnerKind? : Lean.ConstantInfo → Option UnitOwnerKind
   | .defnInfo _ | .thmInfo _ | .opaqueInfo _ => some .defn
   | _ => none
 
+/-- What a logical unit is read from (M1-h): the kind of a declaration as an
+owner of auxiliaries, the roots of its unit, and the names of the
+environment. Two sources: a Lean environment (`leanUnitView`) and a compiled
+environment's names and metadata (`ix pack`, `Ix.Cli.PackCmd`), so that every
+closure producer reads units by one definition. -/
+structure UnitView where
+  kind? : Lean.Name → Option UnitOwnerKind
+  /-- The roots of the unit of a declaration (see `unitRoots`). -/
+  roots : Lean.Name → List Lean.Name
+  contains : Lean.Name → Bool
+  /-- Every name, in the order the index is built in. -/
+  names : Unit → List Lean.Name
+
 /-- The owner of `n` when `n` is an auxiliary by name: the shortest proper
-prefix `X` of `n` that is a constant and whose next component is an
+prefix `X` of `n` that is a declaration and whose next component is an
 auxiliary component for `X`'s kind. A private name is tried as itself and
 then through its user name. -/
-def unitAuxOwner? (consts : Lean.ConstMap) (n : Lean.Name) : Option Lean.Name :=
+def UnitView.auxOwner? (v : UnitView) (n : Lean.Name) : Option Lean.Name :=
   let walk (m : Lean.Name) : Option Lean.Name := Id.run do
     let comps := m.components
     let mut pre : Lean.Name := .anonymous
     for c in comps do
       if !pre.isAnonymous then
         if let .str .anonymous s := c then
-          if let some ci := consts.find? pre then
-            if let some k := unitOwnerKind? ci then
-              if unitAuxComponent k s then return some pre
+          if let some k := v.kind? pre then
+            if unitAuxComponent k s then return some pre
       -- component by component (`Name.append` would interpret macro scopes)
       pre := match c with
         | .str _ s => pre.str s
@@ -518,6 +530,29 @@ def unitAuxOwner? (consts : Lean.ConstMap) (n : Lean.Name) : Option Lean.Name :=
   match walk n with
   | some o => some o
   | none => (Lean.privateToUserName? n).bind walk
+
+/-- The key of the unit of a declaration `o` (the first root). -/
+def UnitView.key (v : UnitView) (o : Lean.Name) : Lean.Name :=
+  (v.roots o).head?.getD o
+
+/-- Every auxiliary of the environment by the key of its owner's unit. Built
+once per closure walk (a pass over the constants). -/
+abbrev UnitIndex := Std.HashMap Lean.Name (Array Lean.Name)
+
+def UnitView.index (v : UnitView) : UnitIndex := Id.run do
+  let mut idx : UnitIndex := {}
+  for n in v.names () do
+    if let some o := v.auxOwner? n then
+      let k := v.key o
+      idx := idx.insert k ((idx.getD k #[]).push n)
+  return idx
+
+/-- The logical unit of `n`'s declaration: its roots and every auxiliary of
+them, eager or on demand, that exists (an auxiliary stands for its owner's
+unit). -/
+def UnitView.members (v : UnitView) (idx : UnitIndex) (n : Lean.Name) : List Lean.Name :=
+  let o := (v.auxOwner? n).getD n
+  (v.roots o ++ (idx.getD (v.key o) #[]).toList).filter v.contains
 
 /-- The roots of the unit of a declaration `o`: an inductive's mutual block
 with its constructors (a constructor stands for its inductive's block), a
@@ -537,28 +572,26 @@ def unitRoots (consts : Lean.ConstMap) (o : Lean.Name) : List Lean.Name :=
   | some (.opaqueInfo v) => v.all
   | _ => [o]
 
-/-- The key of the unit of a declaration `o` (the first root). -/
+/-- The units of a Lean environment. -/
+def leanUnitView (consts : Lean.ConstMap) : UnitView where
+  kind? n := (consts.find? n).bind unitOwnerKind?
+  roots := unitRoots consts
+  contains := consts.contains
+  names _ := consts.toList.map (·.1)
+
+def unitAuxOwner? (consts : Lean.ConstMap) (n : Lean.Name) : Option Lean.Name :=
+  (leanUnitView consts).auxOwner? n
+
 def unitKey (consts : Lean.ConstMap) (o : Lean.Name) : Lean.Name :=
-  (unitRoots consts o).head?.getD o
+  (leanUnitView consts).key o
 
-/-- Every auxiliary of the environment by the key of its owner's unit. Built
-once per closure walk (a pass over the constants). -/
-abbrev UnitIndex := Std.HashMap Lean.Name (Array Lean.Name)
+def unitIndex (consts : Lean.ConstMap) : UnitIndex :=
+  (leanUnitView consts).index
 
-def unitIndex (consts : Lean.ConstMap) : UnitIndex := Id.run do
-  let mut idx : UnitIndex := {}
-  for (n, _) in consts.toList do
-    if let some o := unitAuxOwner? consts n then
-      let k := unitKey consts o
-      idx := idx.insert k ((idx.getD k #[]).push n)
-  return idx
-
-/-- The logical unit of `n`'s declaration: its roots and every auxiliary of
-them, eager or on demand, that exists in `consts` (an auxiliary stands for
-its owner's unit). -/
+/-- The logical unit of `n`'s declaration in a Lean environment
+(`UnitView.members`). -/
 def unitMembers (consts : Lean.ConstMap) (idx : UnitIndex) (n : Lean.Name) : List Lean.Name :=
-  let o := (unitAuxOwner? consts n).getD n
-  (unitRoots consts o ++ (idx.getD (unitKey consts o) #[]).toList).filter consts.contains
+  (leanUnitView consts).members idx n
 
 private partial def collectDependenciesAux (const : Lean.ConstantInfo)
     (consts : Lean.ConstMap) (acc : ConstList) (withCompilerSupport : Bool := false)

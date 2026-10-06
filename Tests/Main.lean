@@ -39,6 +39,7 @@ import Tests.Ix.Compile.ValidateLeanNC
 import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.MathlibMeasure
 import Tests.Ix.Compile.O11aDecline
+import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.AuxGen.ExprUtilsTests
@@ -416,6 +417,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- A block compiles the same with and without its dependents, both switch states
   -- (Tests.Ix.Compile.CallerIndependence).
   ("compile-caller-independence", Tests.Ix.Compile.CallerIndependence.run),
+  -- `ix pack` carries whole logical units; bundle members keep the whole compile's bytes
+  -- (Tests.Ix.Compile.PackUnits).
+  ("pack-units", Tests.Ix.Compile.PackUnits.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
