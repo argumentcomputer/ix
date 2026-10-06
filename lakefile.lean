@@ -521,12 +521,15 @@ section CompileCert
 /-- Run the compiler-certification lane's gate (`Ix/CompileCert`): the strict
 build of its axiom audit `Ix.CompileCert.Audit` (the frozen root list, each
 root within `propext`, `Classical.choice`, `Quot.sound`; the build prints the
-audit's own `[cert-audit]` line), then the strict build of `compile-cert-c1`
-and its self-contained fixture checks under `lake env` (some import the test
-modules' oleans), each of which fails on a wrong verdict and prints its own
-summary. `compiled` writes its producer output, which `projection-support`
-then reads. The check over the stored Init+Std environment
-(`stored .lake/envs/initstd.ixe`) needs that artifact and is run by hand. -/
+audit's own `[cert-audit]` line); the strict build of `compile-cert-c1` and of
+the test modules outside its closure, whose `#eval` and `#guard` controls run
+at elaboration; then the fixture checks, under `lake env` (some import the
+test modules' oleans): the self-contained `compile-cert-c1` modes and the test
+modules with their own `main`. Each fails on a wrong verdict and prints its
+own summary. `compiled` writes its producer output, which
+`projection-support` then reads. The check over the stored Init+Std
+environment (`stored .lake/envs/initstd.ixe`) needs that artifact and is run
+by hand. -/
 script "check-cert" (args) := do
   unless args.isEmpty do
     IO.eprintln "usage: lake run check-cert"
@@ -536,27 +539,34 @@ script "check-cert" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+  let mainTests := #["HelperNames", "InstalledCaps", "InstalledFields", "InstalledRules",
+    "SourceBasis", "Support"]
+  let elabTests := #["AnnotEntry", "AnnotNatOps", "AnnotReduceOps", "AnnotSupport",
+    "InstalledImage", "Telescope", "ValueReceipt"]
   run "lake" #["build", "--wfail", "Ix.CompileCert.Audit"]
-  run "lake" #["build", "--wfail", "compile-cert-c1"]
+  run "lake" (#["build", "--wfail", "compile-cert-c1"] ++
+    (mainTests ++ elabTests).map (s!"+Tests.Ix.CompileCert.{·}"))
   let outDir := ".lake/build/compile-cert"
   IO.FS.createDirAll outDir
+  let exe := ".lake/build/bin/compile-cert-c1"
   let checks : Array (String × Array String) :=
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
       "source-models", "source-normalized", "source-coverage", "source-projection-semantics",
-      "compiled"].map (fun mode => (mode, #[mode])) ++
-    #[("projection-support", #["projection-support", s!"{outDir}/compiled.ixe"])]
-  for (name, modeArgs) in checks do
+      "compiled"].map (fun mode => (mode, #[exe, mode])) ++
+    #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"])] ++
+    mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
+  for (name, checkArgs) in checks do
     let out ← IO.Process.output {
-      cmd := "lake", args := #["env", ".lake/build/bin/compile-cert-c1"] ++ modeArgs
+      cmd := "lake", args := #["env"] ++ checkArgs
       env := #[("C1_OUTPUT_DIR", some outDir)] }
     IO.FS.writeFile s!"{outDir}/{name}.log" (out.stdout ++ out.stderr)
     IO.eprint out.stderr
     unless out.exitCode == 0 do
       IO.eprint out.stdout
-      throw <| IO.userError s!"compile-cert-c1 {name} failed; see {outDir}/{name}.log"
+      throw <| IO.userError s!"compile-cert check {name} failed; see {outDir}/{name}.log"
     let lines := (out.stdout.splitOn "\n").filter (· ≠ "")
     let some summary := lines.getLast?
-      | throw <| IO.userError s!"compile-cert-c1 {name} printed nothing"
+      | throw <| IO.userError s!"compile-cert check {name} printed nothing"
     IO.println s!"[check-cert] {name}: {summary}"
   IO.println "Compiler-certification checks passed."
   return 0
