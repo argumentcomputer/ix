@@ -105,22 +105,43 @@ def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
   let prepared ← IO.Process.output
     { cmd := "lake", args := #["build"] ++ modules, cwd := cfg.dir }
   IO.FS.writeFile (cfg.dir / "prepare.log") (prepared.stdout ++ prepared.stderr)
+  -- One assembled source that Lean rejects must not hide every other case. After
+  -- a failed shared build, each module without an olean is built alone, and the
+  -- ones that fail are recorded; their cases still run, and their own elaborate
+  -- phase records the rejection. Every module failing is a preparation failure.
+  let mut rejectedModules : Array String := #[]
+  if prepared.exitCode != 0 then
+    IO.FS.createDirAll (cfg.dir / "prepare")
+    for m in modules do
+      let olean := cfg.dir / ".lake" / "build" / "lib" / "lean" / s!"{m.replace "." "/"}.olean"
+      if ← olean.pathExists then continue
+      let one ← IO.Process.output { cmd := "lake", args := #["build", m], cwd := cfg.dir }
+      if one.exitCode != 0 then
+        rejectedModules := rejectedModules.push m
+        IO.FS.writeFile (cfg.dir / "prepare" / s!"{m}.log") (one.stdout ++ one.stderr)
+  let rejectedSet : Std.HashSet String := rejectedModules.foldl (·.insert ·) {}
+  let usable := prepared.exitCode == 0 || (rejectedModules.size < modules.size && !rejectedModules.isEmpty)
   -- Elaboration/search-path initialization is process-global. Inventory source
   -- ownership serially before launching parallel oracle tasks, retaining full
   -- private/numeric Lean.Name identities rather than reparsing displayed names.
   let mut ownershipError : Option String := none
-  if prepared.exitCode == 0 then
+  if usable then
     try
       IO.FS.createDirAll (cfg.dir / "source-ownership")
-      for case in cases do
+      for (case, m) in cases.zip modules do
+        if rejectedSet.contains m then continue
         let owned ← prepareOwnership (cfg.dir / case.file) case.ns
         writeJson (cfg.dir / "source-ownership" / s!"{case.id}.json") owned
     catch e => ownershipError := some e.toString
+  let ready := usable && ownershipError.isNone
   writeJson (cfg.dir / "preparation.json") <| Json.mkObj [
     ("modules", toJson modules), ("exitCode", toJson prepared.exitCode.toNat),
+    ("rejectedModules", toJson rejectedModules),
     ("ownershipError", toJson ownershipError),
-    ("status", toJson (if prepared.exitCode == 0 && ownershipError.isNone then "pass" else "fail"))]
-  if prepared.exitCode != 0 || ownershipError.isSome then
+    ("status", toJson (if !ready then "fail" else if rejectedModules.isEmpty then "pass" else "partial"))]
+  if !rejectedModules.isEmpty then
+    IO.eprintln s!"[corpus] {rejectedModules.size} assembled source(s) rejected by Lean; their cases run and fail at elaborate: {rejectedModules}"
+  if !ready then
     let mut rows : Array Verdict := #[]
     for case in cases do
       for mode in modes do

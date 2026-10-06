@@ -69,7 +69,12 @@ Each generated directory is a dependency-free Lake project pinned to the
 checkout's `lean-toolchain`. `compile-lean` can therefore build its generated
 input without modifying the compiler checkout's modules. Assembly does not assume
 that individually accepted extras also compose: the runner elaborates every
-assembled source again, and a failure remains visible.
+assembled source again, and a failure remains visible. The run prebuilds all
+assembled modules once; when that shared build fails, each module without an
+olean is built alone, the ones Lean rejects are listed in `preparation.json`
+(`rejectedModules`, logs under `prepare/`), and their cases still run and fail
+at `elaborate`. Every module failing, or an ownership inventory failing, stops
+the run as a preparation failure.
 
 For development parity with the historical read-only catalog:
 

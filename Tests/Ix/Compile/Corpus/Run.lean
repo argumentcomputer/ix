@@ -257,7 +257,12 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
   if ← (dir / "verdicts.json").pathExists then
     throw <| IO.userError s!"results already exist for {case.id}/{cfg.mode}; use a fresh generated directory"
   let src ← IO.FS.realPath (cfg.dir / case.file)
-  let owned : Ownership ← readJson (cfg.dir / "source-ownership" / s!"{case.id}.json")
+  -- A source Lean rejected at preparation has no ownership inventory; its own
+  -- elaborate phase fails and nothing downstream runs. Compiling without the
+  -- inventory is an infrastructure error.
+  let ownershipPath := cfg.dir / "source-ownership" / s!"{case.id}.json"
+  let hasOwnership ← ownershipPath.pathExists
+  let owned : Ownership ← if hasOwnership then readJson ownershipPath else pure { names := #[] }
   let leanPath := dir / "lean.ixe"
   let rustPath := dir / "rust.ixe"
   let scope := if cfg.localScope then #["--local"] else #[]
@@ -281,6 +286,8 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
       | "compile" | "rust" => do
         if !sourceOk then pure { base with status := "not-run", detail := "source elaboration did not pass" }
         else
+          unless hasOwnership do
+            throw <| IO.userError "source ownership inventory missing although the source elaborated"
           let isRust := phase == "rust"
           let path := if isRust then rustPath else leanPath
           let args := if isRust then #["compile", src.toString, "--no-build", "--out", path.toString] ++ scope
