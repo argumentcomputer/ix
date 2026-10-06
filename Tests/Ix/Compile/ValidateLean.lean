@@ -106,7 +106,18 @@ def failSummary (key detail : String) : String :=
 
 /-- The counts of each recorded failing phase (`failSummary`), per stem and
 switch state (KF triage, 2026-10-05): a recorded phase that fails with more
-(or fewer) failures than recorded fails the suite. -/
+(or fewer) failures than recorded fails the suite.
+
+Re-record M1-d (commit "Selected closures carry whole logical units"; the
+11 entries marked `M1-d re-record`): `--local` now carries the whole logical
+unit of every block it reaches (design document §6.3), so the closures of
+these files are larger. Every one of them already fails phase 1 (the A0
+refusals and BB-F8, recorded above with unchanged counts); the phase-5
+digest mismatches and missing names grow by the same number (1, 2 or 4)
+except `F8_PropSplitNested` off (+4 mismatches, +3 missing: one decompiled
+constant differs, and `Nat` is among the listed names; `Nat` decompiles
+digest-identical in a closure without the failing blocks,
+`ix validate-lean --ns Nat.succ,Nat.rec` on the same file: 173/173). -/
 def pins : List (String × String × String × String) := [
   ("AliasIdx", "off", "1", "31 per-block compile failure(s)"),
   ("AliasIdx", "off", "5", "31 digest mismatch(es), 31 missing"),
@@ -114,9 +125,9 @@ def pins : List (String × String × String × String) := [
   ("AliasIdx", "on", "5", "31 digest mismatch(es), 31 missing"),
   ("C4Evap", "off", "1", "49 per-block compile failure(s)"),
   ("C4Evap", "off", "4", "7 comparison error(s)"),
-  ("C4Evap", "off", "5", "68 digest mismatch(es), 55 missing"),
+  ("C4Evap", "off", "5", "70 digest mismatch(es), 57 missing"), -- M1-d re-record, was 68/55
   ("C4Evap", "on", "1", "58 per-block compile failure(s)"),
-  ("C4Evap", "on", "5", "77 digest mismatch(es), 71 missing"),
+  ("C4Evap", "on", "5", "79 digest mismatch(es), 73 missing"), -- M1-d re-record, was 77/71
   ("C5Collapse", "off", "1", "8 per-block compile failure(s)"),
   ("C5Collapse", "off", "5", "8 digest mismatch(es), 8 missing"),
   ("C6NestedCollapse", "off", "1", "12 per-block compile failure(s)"),
@@ -129,10 +140,10 @@ def pins : List (String × String × String × String) := [
   ("C9Params", "off", "5", "6 digest mismatch(es), 6 missing"),
   ("F3_SplitRoseRace", "off", "1", "41 per-block compile failure(s)"),
   ("F3_SplitRoseRace", "off", "4", "9 comparison error(s)"),
-  ("F3_SplitRoseRace", "off", "5", "50 digest mismatch(es), 39 missing"),
+  ("F3_SplitRoseRace", "off", "5", "54 digest mismatch(es), 43 missing"), -- M1-d re-record, was 50/39
   ("F3_SplitRoseRace", "on", "1", "43 per-block compile failure(s)"),
   ("F3_SplitRoseRace", "on", "4", "2 comparison error(s)"),
-  ("F3_SplitRoseRace", "on", "5", "52 digest mismatch(es), 48 missing"),
+  ("F3_SplitRoseRace", "on", "5", "56 digest mismatch(es), 52 missing"), -- M1-d re-record, was 52/48
   ("F4FlatAlphaUsers", "off", "1", "1 per-block compile failure(s)"),
   ("F4FlatAlphaUsers", "off", "5", "1 digest mismatch(es), 1 missing"),
   ("F4_NestedAlphaUsers", "off", "1", "1 per-block compile failure(s)"),
@@ -142,7 +153,7 @@ def pins : List (String × String × String × String) := [
   ("F6_OrderIdxBrecOn", "off", "1", "2 per-block compile failure(s)"),
   ("F6_OrderIdxBrecOn", "off", "5", "2 digest mismatch(es), 2 missing"),
   ("F8_PropSplitNested", "off", "1", "3 per-block compile failure(s)"),
-  ("F8_PropSplitNested", "off", "5", "8 digest mismatch(es), 3 missing"),
+  ("F8_PropSplitNested", "off", "5", "12 digest mismatch(es), 6 missing"), -- M1-d re-record, was 8/3
   ("KernelSpec", "off", "1", "16 per-block compile failure(s)"),
   ("KernelSpec", "off", "5", "7 decompile error(s)"),
   ("KernelSpec", "on", "1", "16 per-block compile failure(s)"),
@@ -151,21 +162,21 @@ def pins : List (String × String × String × String) := [
   ("Neighbours", "off", "8", "6 violation(s)"),
   ("NestMutExt", "off", "1", "84 per-block compile failure(s)"),
   ("NestMutExt", "off", "4", "14 comparison error(s)"),
-  ("NestMutExt", "off", "5", "106 digest mismatch(es), 84 missing"),
+  ("NestMutExt", "off", "5", "110 digest mismatch(es), 88 missing"), -- M1-d re-record, was 106/84
   ("NestMutExt", "on", "1", "88 per-block compile failure(s)"),
-  ("NestMutExt", "on", "5", "110 digest mismatch(es), 102 missing"),
+  ("NestMutExt", "on", "5", "114 digest mismatch(es), 106 missing"), -- M1-d re-record, was 110/102
   ("NestMutExtA", "off", "1", "43 per-block compile failure(s)"),
   ("NestMutExtA", "off", "4", "9 comparison error(s)"),
-  ("NestMutExtA", "off", "5", "55 digest mismatch(es), 44 missing"),
+  ("NestMutExtA", "off", "5", "56 digest mismatch(es), 45 missing"), -- M1-d re-record, was 55/44
   ("NestMutExtA", "on", "1", "45 per-block compile failure(s)"),
   ("NestMutExtA", "on", "4", "2 comparison error(s)"),
-  ("NestMutExtA", "on", "5", "57 digest mismatch(es), 53 missing"),
+  ("NestMutExtA", "on", "5", "58 digest mismatch(es), 54 missing"), -- M1-d re-record, was 57/53
   ("NestRoseSplit", "off", "1", "43 per-block compile failure(s)"),
   ("NestRoseSplit", "off", "4", "9 comparison error(s)"),
-  ("NestRoseSplit", "off", "5", "52 digest mismatch(es), 41 missing"),
+  ("NestRoseSplit", "off", "5", "56 digest mismatch(es), 45 missing"), -- M1-d re-record, was 52/41
   ("NestRoseSplit", "on", "1", "45 per-block compile failure(s)"),
   ("NestRoseSplit", "on", "4", "2 comparison error(s)"),
-  ("NestRoseSplit", "on", "5", "54 digest mismatch(es), 50 missing"),
+  ("NestRoseSplit", "on", "5", "58 digest mismatch(es), 54 missing"), -- M1-d re-record, was 54/50
   ("Proto", "off", "1", "50 per-block compile failure(s)"),
   ("Proto", "off", "5", "50 digest mismatch(es), 50 missing"),
   ("RecAlias", "off", "5", "3 decompile error(s)"),
