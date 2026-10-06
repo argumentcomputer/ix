@@ -1,4 +1,5 @@
 import Ix.CompileCert.Indexed
+import Ix.CompileCert.ProjectionLoweringLean
 import Ix.Meta
 import Benchmarks.Kernel.CheckIxeStep
 
@@ -29,7 +30,17 @@ the reader, the expression-size budget, the per-declaration pre-pass) only
 decides what is *offered* to the certified check; a wrong triage can only make
 a constant uncertified, never certified. The source capture trusts the host's
 `Lean.Environment` (as `captureCone` does) and the Lean runtime that executes
-the check (as every certified entry does). -/
+the check (as every certified entry does).
+
+**Projection lowering receipts (for S, not W).** For every constant with a raw
+`.proj` on a structure-like the checker's direct route does not take, the
+certifier builds the Lean lowering equation of a projection function, submits
+it to Lean's kernel (`addDeclCore`, checking on) and decides the lane's receipt
+(`checkSourceProjectionLowering`); the census is `<prefix>.receipts.tsv`, the
+statements `<prefix>.receipts.statements`. A constant without an accepted
+receipt stays blocked for the S endpoint's normalised route
+(`SourceNormalizedInstallation.artifact_strong_model`) and fails the run. W's
+verdicts do not depend on it. `--receipts-only` runs the census without W. -/
 
 namespace Ix.CompileCert.Certifier
 
@@ -281,6 +292,112 @@ def measureProjections (env : Lean.Environment) (names : Array Lean.Name)
       (s!"{k} / {w}", Lean.toJson v)))]
   return (rows, json)
 
+/-! ## Projection lowering receipts (for the S endpoint's normalised route)
+
+For every constant with a raw `.proj` on a non-direct structure-like: if it is
+a projection function, build its Lean lowering equation, have Lean's kernel
+check it (`addDeclCore`, checking on), and decide the lane's receipt
+(`checkSourceProjectionLowering`, `Ix/CompileCert/SourceProjectionLowering.lean`)
+on the four source entries it reads; otherwise it stays blocked for S. The
+executable census is untrusted; what a receipt means is
+`SourceProjectionLowering.faithful`. -/
+
+/-- The constants whose closure under users reaches `seeds` (the seeds excluded). -/
+def dependentsOf (names : Array Lean.Name) (refs : Std.HashMap Lean.Name (Array Lean.Name))
+    (seeds : Array Lean.Name) : Nat := Id.run do
+  let mut users : Std.HashMap Lean.Name (Array Lean.Name) := {}
+  for n in names do
+    for r in refs.getD n #[] do users := pushUser users r n
+  let mut reached : Std.HashSet Lean.Name := seeds.foldl (·.insert ·) {}
+  let mut todo := seeds
+  while h : todo.size > 0 do
+    let n := todo[todo.size - 1]
+    todo := todo.pop
+    for u in users.getD n #[] do
+      unless reached.contains u do
+        reached := reached.insert u
+        todo := todo.push u
+  return reached.size - seeds.size
+
+def oneLine (s : String) : String := (s.replace "\n" " ").replace "\t" " "
+
+/-- The receipt census; returns the number of refusals. Writes
+`<out>.receipts.tsv` and `<out>.receipts.statements` (each lowering equation's
+name, universe telescope and statement). -/
+def projectionReceipts (env : Lean.Environment) (names : Array Lean.Name)
+    (refs : Std.HashMap Lean.Name (Array Lean.Name)) (out : String) : IO (Nat × Lean.Json) := do
+  let mut affected : Array Lean.Name := #[]
+  for n in names do
+    let some ci := env.find? n | continue
+    let exprs : Array Lean.Expr := #[ci.type] ++ match ci with
+      | .defnInfo v => #[v.value]
+      | .thmInfo v => #[v.value]
+      | .opaqueInfo v => #[v.value]
+      | .recInfo v => v.rules.toArray.map (·.rhs)
+      | _ => #[]
+    if (projOwners exprs).toArray.any (structureClass env · != "direct") then
+      affected := affected.push n
+  let mut rows := "name\tkind\tclass\tlowering equation\telimination level\tLean kernel\treceipt\tcause\n"
+  let mut statements := ""
+  let mut accepted := 0
+  let mut kernelRefused := 0
+  let mut receiptRefused := 0
+  let mut witnessFailed := 0
+  let mut notFunction := 0
+  let mut stillBlocked : Array Lean.Name := #[]
+  let mut byClass : Std.HashMap String Nat := {}
+  for n in affected do
+    let some ci := env.find? n | continue
+    let kind := projKind ci
+    let cls := match (projectionSourceValue ci).bind sourceProjectionBody with
+      | some (owner, _, _) => structureClass env owner
+      | none => "-"
+    if kind != "projection function" then
+      notFunction := notFunction + 1
+      stillBlocked := stillBlocked.push n
+      rows := rows ++ s!"{n}\t{kind}\t{cls}\t-\t-\t-\t-\tnot a projection function: no lowering\n"
+      continue
+    byClass := byClass.insert cls (byClass.getD cls 0 + 1)
+    match ← LoweringLean.lowerProjection env n with
+    | .error why =>
+      witnessFailed := witnessFailed + 1
+      stillBlocked := stillBlocked.push n
+      rows := rows ++ s!"{n}\t{kind}\t{cls}\t-\t-\t-\t-\t{oneLine why}\n"
+    | .ok o =>
+      statements := statements ++
+        s!"{o.witness.name}\t{o.witness.levelParams}\t{oneLine (toString o.witness.type)}\n"
+      let (kernel, receipt, cause) := match o.kernel, o.receipt with
+        | .ok (), .ok () => ("accepted", "accepted", "")
+        | .error why, .ok () => ("refused", "accepted", why)
+        | .ok (), .error why => ("accepted", "refused", why)
+        | .error k, .error r => ("refused", "refused", s!"{k}; {r}")
+      if kernel == "accepted" && receipt == "accepted" then accepted := accepted + 1
+      else
+        stillBlocked := stillBlocked.push n
+        if kernel != "accepted" then kernelRefused := kernelRefused + 1
+        else receiptRefused := receiptRefused + 1
+      rows := rows ++ s!"{n}\t{kind}\t{cls}\t{o.witness.name}\t{o.level}\t{kernel}\t{receipt}\t{oneLine cause}\n"
+  IO.FS.writeFile s!"{out}.receipts.tsv" rows
+  IO.FS.writeFile s!"{out}.receipts.statements" statements
+  let functions := affected.size - notFunction
+  let before := dependentsOf names refs affected
+  let after := dependentsOf names refs stillBlocked
+  let refused := kernelRefused + receiptRefused + witnessFailed
+  IO.println s!"[certify] projection receipts: functions={functions} accepted={accepted} refused={refused} \
+    (Lean kernel refused {kernelRefused}, receipt refused {receiptRefused}, no witness {witnessFailed}); \
+    other constants with a raw projection on a non-direct structure-like: {notFunction}; \
+    blocked for S by a raw projection: {stillBlocked.size} constants, {after} dependents \
+    (without receipts: {affected.size} constants, {before} dependents)"
+  (← IO.getStdout).flush
+  let json := Lean.Json.mkObj [
+    ("functions", Lean.toJson functions), ("accepted", Lean.toJson accepted),
+    ("kernelRefused", Lean.toJson kernelRefused), ("receiptRefused", Lean.toJson receiptRefused),
+    ("witnessFailed", Lean.toJson witnessFailed), ("otherConstants", Lean.toJson notFunction),
+    ("byClass", Lean.Json.mkObj (byClass.toList.map fun (k, v) => (k, Lean.toJson v))),
+    ("blockedForS", Lean.toJson stillBlocked.size), ("blockedDependents", Lean.toJson after),
+    ("withoutReceipts", Lean.toJson affected.size), ("withoutReceiptsDependents", Lean.toJson before)]
+  return (refused + notFunction, json)
+
 /-! ## Records the reader accepts (untrusted triage) -/
 
 /-- The records in check order, with the recursor and projection records of
@@ -421,6 +538,8 @@ structure Config where
   workers : Nat := 16
   /-- Names whose export and reader entries to print in full (diagnostics). -/
   explain : Array Lean.Name := #[]
+  /-- Only the raw-projection measurement and the receipt census (no W check). -/
+  receiptsOnly : Bool := false
 
 /-- Propagate blocking: every candidate referring (`declarationRefs`) to a
 name that is not a candidate is blocked by it, until nothing changes. -/
@@ -461,7 +580,48 @@ def say (s : String) : IO Unit := do
 
 def jsonEscape (s : String) : String := (Lean.Json.str s).compress
 
+/-- The Lean constants named in the artifact, sorted, with their addresses. -/
+def namedConstants (env : Lean.Environment) (produced : Ixon.Env) :
+    Array Lean.Name × Nat × Std.HashMap Lean.Name Address := Id.run do
+  let mut names : Array Lean.Name := #[]
+  let mut notInArtifact := 0
+  let mut namedAddr : Std.HashMap Lean.Name Address := {}
+  for (n, _) in env.constants.toList do
+    if let some named := produced.named[Ix.Name.fromLeanName n]? then
+      names := names.push n
+      namedAddr := namedAddr.insert n named.addr
+    else notInArtifact := notInArtifact + 1
+  return (names.qsort (fun a b => toString a < toString b), notInArtifact, namedAddr)
+
+/-- `--receipts-only`: the raw-projection measurement and the receipt census,
+without the W check (no record store, no admission, no association). -/
+def runReceiptsOnly (cfg : Config) : IO UInt32 := do
+  let t0 ← IO.monoMsNow
+  let bytes ← IO.FS.readBinFile cfg.ixe
+  say s!"[certify] ixe {cfg.ixe}: {bytes.size} bytes, Blake3 {Address.blake3 bytes}; receipts only (no W check)"
+  let produced ← IO.ofExcept (Ixon.deEnv bytes)
+  let env ← loadLean cfg.lean
+  let (names, notInArtifact, _) := namedConstants env produced
+  say s!"[certify] Lean environment: {names.size} constants named in the artifact, {notInArtifact} not; \
+    {(← IO.monoMsNow) - t0} ms"
+  let mut refs : Std.HashMap Lean.Name (Array Lean.Name) := {}
+  for n in names do
+    if let some ci := env.find? n then refs := refs.insert n (refsOf ci)
+  let (projRows, projJson) := measureProjections env names refs {}
+  IO.FS.writeFile s!"{cfg.out}.proj.tsv" projRows
+  say s!"[certify] raw projections: {projJson.compress}"
+  let (refused, receiptJson) ← projectionReceipts env names refs cfg.out
+  IO.FS.writeFile s!"{cfg.out}.json" (Lean.Json.mkObj [
+    ("ixe", Lean.toJson cfg.ixe), ("names", Lean.toJson names.size),
+    ("rawProjections", projJson), ("projectionReceipts", receiptJson)]).pretty
+  say s!"[certify] receipts only: total {(← IO.monoMsNow) - t0} ms"
+  if refused != 0 then
+    IO.eprintln s!"[certify] FAIL: {refused} constants with a raw projection on a non-direct structure-like have no accepted receipt"
+    return 1
+  return 0
+
 def run (cfg : Config) : IO UInt32 := do
+  if cfg.receiptsOnly then return (← runReceiptsOnly cfg)
   let t0 ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile cfg.ixe
   say s!"[certify] ixe {cfg.ixe}: {bytes.size} bytes, Blake3 {Address.blake3 bytes}"
@@ -695,6 +855,7 @@ def run (cfg : Config) : IO UInt32 := do
   let (projRows, projJson) := measureProjections env names refs verdicts
   IO.FS.writeFile s!"{cfg.out}.proj.tsv" projRows
   say s!"[certify] raw projections: {projJson.compress}"
+  let (receiptRefused, receiptJson) ← projectionReceipts env names refs cfg.out
   let json := Lean.Json.mkObj [
     ("ixe", Lean.toJson cfg.ixe), ("names", Lean.toJson names.size),
     ("notInArtifact", Lean.toJson notInArtifact),
@@ -702,7 +863,7 @@ def run (cfg : Config) : IO UInt32 := do
     ("perAddress", Lean.Json.mkObj (words.toList.map fun w => (w, Lean.toJson (byAddr.getD w 0)))),
     ("classes", Lean.Json.arr (classes.map fun ((w, c), k) => Lean.Json.mkObj
       [("verdict", Lean.toJson w), ("class", Lean.toJson c), ("count", Lean.toJson k)])),
-    ("rawProjections", projJson)]
+    ("rawProjections", projJson), ("projectionReceipts", receiptJson)]
   IO.FS.writeFile s!"{cfg.out}.json" json.pretty
   let counts := " ".intercalate (words.toList.map fun w => s!"{w}={byWord.getD w 0}")
   let addrCounts := " ".intercalate (words.toList.map fun w => s!"{w}={byAddr.getD w 0}")
@@ -712,6 +873,9 @@ def run (cfg : Config) : IO UInt32 := do
     return 1
   if byWord.getD "rejected" 0 != 0 then
     IO.eprintln s!"[certify] FAIL: {byWord.getD "rejected" 0} rejected"
+    return 1
+  if receiptRefused != 0 then
+    IO.eprintln s!"[certify] FAIL: {receiptRefused} constants with a raw projection on a non-direct structure-like have no accepted receipt"
     return 1
   return 0
 

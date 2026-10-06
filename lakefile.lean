@@ -560,6 +560,7 @@ script "check-cert" (args) := do
   let checks : Array (String × Array String) :=
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
       "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
+      "projection-lowering",
       "compiled"].map (fun mode => (mode, #[exe, mode])) ++
     #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
       ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
