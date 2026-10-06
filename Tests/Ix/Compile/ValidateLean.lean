@@ -255,7 +255,13 @@ def phase9Pins : List (String × String × String) := [
   ("C6NestedCollapse", "on", "2 transported clique(s) (0 value-checked, 2 with no value-checkable member, each with a reason, 0 failing), 8 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 8 not value-checkable; 0 failure(s)"),
   ("C8Collapse3", "on", "4 transported clique(s) (1 value-checked, 3 with no value-checkable member, each with a reason, 0 failing), 11 member(s): 2 value-checked on 4 input tuple(s) (4 closed, 0 symbolic), 9 not value-checkable; 0 failure(s)"),
   ("C9Params", "on", "1 transported clique(s) (0 value-checked, 1 with no value-checkable member, each with a reason, 0 failing), 2 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 2 not value-checkable; 0 failure(s)"),
-  ("Cliques", "on", "42 transported clique(s) (29 value-checked, 13 with no value-checkable member, each with a reason, 0 failing), 101 member(s): 72 value-checked on 755 input tuple(s) (707 closed, 48 symbolic), 29 not value-checkable; 0 failure(s)"),
+  -- re-recorded INT-fix (discovery by record): +1 `TN.P0` (na, nb; theorems, no value-checkable
+  -- member), transported per the record but invisible to the `_ix`-name discovery (its canonical
+  -- constants are TN.P1's by address, stored under TN.P1's `_ix` names); +1 value-checked clique of
+  -- two members that the old discovery also counted on the integrated line (43) but not at M4: the
+  -- clique code and the fixture are identical between `jcb/ix-cc-m4` and `jcb/ix-cc-int`, the
+  -- difference is the integrated closure (`Ix/Common.lean`, `Ix/EnvScope.lean`: whole logical units)
+  ("Cliques", "on", "44 transported clique(s) (30 value-checked, 14 with no value-checkable member, each with a reason, 0 failing), 105 member(s): 74 value-checked on 767 input tuple(s) (719 closed, 48 symbolic), 31 not value-checkable; 0 failure(s)"),
   ("Proto", "on", "9 transported clique(s) (1 value-checked, 8 with no value-checkable member, each with a reason, 0 failing), 25 member(s): 2 value-checked on 4 input tuple(s) (4 closed, 0 symbolic), 23 not value-checkable; 0 failure(s)"),
   ("Repro", "on", "3 transported clique(s) (0 value-checked, 3 with no value-checkable member, each with a reason, 0 failing), 8 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 8 not value-checkable; 0 failure(s)"),
   ("Sources", "on", "23 transported clique(s) (23 value-checked, 0 with no value-checkable member, each with a reason, 0 failing), 46 member(s): 46 value-checked on 276 input tuple(s) (180 closed, 96 symbolic), 0 not value-checkable; 0 failure(s)")
@@ -263,6 +269,23 @@ def phase9Pins : List (String × String × String) := [
 
 def phase9PinOf (stem switch : String) : Option String :=
   phase9Pins.findSome? fun (s, sw, p) => if s == stem && sw == switch then some p else none
+
+/-- Phase 9's controls (INT-fix, 2026-10-06): runs whose output carries O7–O12
+canonical forms under `_ix` names (definition display members, recorded
+`PJ-FORM-<pass>` in the non-canonical set) and transports no definition
+clique. Phase 9 discovers cliques from the compiler's clique record, so it
+must skip with 0 transported cliques while reporting at least one `_ix`
+definition display member (the forms are there; they are not cliques). Before
+the discovery by record, phase 9 counted each such form as a clique. -/
+def phase9Controls : List (String × String × String) := [
+  ("O9Split", "on", "O9: `A.len._ix`, `A.sum._ix`, `A.cnt._ix` and the helper `A.len._ix_retyped._f`; no clique")
+]
+
+/-- The skip detail of phase 9 when the record has no transported clique, and
+the number of `_ix` definition display members it reports. -/
+def phase9SkipCount? (detail : String) : Option Nat := do
+  let rest ← (detail.splitOn "no transported definition clique in the compiler's clique record (")[1]?
+  ((rest.splitOn " ").headD "").toNat?
 
 /-- Fixtures Lean itself rejects (the aux-cert record): no report. -/
 def leanRejects : List String := ["PropEvap", "SortU", "SortURec", "SortUOpt"]
@@ -276,7 +299,9 @@ def files : List String :=
       "Tests/Ix/Compile/ValidateLeanSwap.lean",
       -- the clique-ownership sources: phase 9 on the compiler's own transports of
       -- user values, binders and relations of the packing type (plan M4 (b))
-      "Tests/Ix/Compile/CliqueOwnership/Sources.lean"]
+      "Tests/Ix/Compile/CliqueOwnership/Sources.lean",
+      -- phase 9's control (`phase9Controls`): O9 canonical forms, no clique
+      "Tests/Ix/Compile/Pass/O9Split.lean"]
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
@@ -357,6 +382,13 @@ def run : IO UInt32 := do
             | none => problems := problems.push s!"{stem} {switch}: phase 9 passes with '{d}', no count recorded"
           else if (phase9PinOf stem switch).isSome then
             problems := problems.push s!"{stem} {switch}: phase 9 recorded as value-checking but {r}"
+          if phase9Controls.any (fun (s, sw, _) => s == stem && sw == switch) then
+            match r, phase9SkipCount? d with
+            | "skip", some n =>
+              IO.println s!"[validate-lean]   {stem} {switch} phase 9 control: 0 transported clique(s), {n} `_ix` definition display member(s)"
+              if n == 0 then
+                problems := problems.push s!"{stem} {switch}: phase 9 control has no `_ix` definition display member (vacuous): '{d}'"
+            | _, _ => problems := problems.push s!"{stem} {switch}: phase 9 control must skip with 0 transported cliques, got {r} '{d}'"
         -- a recorded failing phase fails exactly as recorded: its counts
         if r == "fail" && want then
           let s := failSummary k d
@@ -372,6 +404,12 @@ def run : IO UInt32 := do
       (rows?.getD []).any fun (k', r, _) => k' == "9" && r == "pass"
     if !used && (only.isEmpty || only.contains stem) then
       problems := problems.push s!"{stem} {switch}: phase 9 recorded as '{p}' (stale)"
+  -- every phase-9 control ran
+  for (stem, switch, _) in phase9Controls do
+    let ran := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&
+      (rows?.getD []).any fun (k', _, _) => k' == "9"
+    if !ran && (only.isEmpty || only.contains stem) then
+      problems := problems.push s!"{stem} {switch}: phase 9 control did not run"
   -- every pin belongs to a recorded failing phase of a run
   for (stem, switch, k, p) in pins do
     let used := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&

@@ -245,9 +245,10 @@ def phase4Case (env : Environment) (row : Nat) (kind : Kind) (name what : String
     return { row, kind, name, what, checker := "validate-lean phase 4 (meta roundtrip vs Lean's source)", ok,
              log := #[s!"phase 4: {summary}"] }
 
-/-- Phase 9 over a compiled unit against Lean's `env`. -/
-def phase9 (env : Environment) (ixon : Ixon.Env) : IO (Ix.Cli.ValidateLeanCmd.PhaseResult × Array String) :=
-  Ix.Cli.ValidateLeanCmd.phaseCliqueValues env ixon (Ix.Cli.ValidateLeanCmd.leanViewOf env ixon)
+/-- Phase 9 over a compiled unit against Lean's `env`, its cliques read from the compile's clique record (`transportedCliques`), as `validate-lean` reads them. -/
+def phase9 (env : Environment) (out : Ix.CompileM.LeanPipelineOut) : IO (Ix.Cli.ValidateLeanCmd.PhaseResult × Array String) :=
+  Ix.Cli.ValidateLeanCmd.phaseCliqueValues env out.env (Ix.Cli.ValidateLeanCmd.transportedCliques out.cenv)
+    (Ix.Cli.ValidateLeanCmd.changedOf out.env (Ix.Cli.ValidateLeanCmd.leanViewOf env out.env)).cliques.size
 
 def srcNs : Name := `Tests.Ix.Compile.CliqueOwnership.Src
 
@@ -293,7 +294,7 @@ def phase9Cases (env : Environment) (row : Nat) (family : String) (forgeWhat : S
     -- the neighbour: the honest compile
     if nbr.isNone then
       let out ← compileForged env ms true
-      let (r, lines) ← phase9 env out.env
+      let (r, lines) ← phase9 env out
       match r with
       | .skipped d => log := log.push s!"{fx} honest: not transported ({d})"
       | .passed d =>
@@ -308,7 +309,7 @@ def phase9Cases (env : Environment) (row : Nat) (family : String) (forgeWhat : S
     -- the negative: the forged compile
     if neg.isNone then
       let out ← compileForged env ms true (forge := forgeClique ms f)
-      let (r, lines) ← phase9 env out.env
+      let (r, lines) ← phase9 env out
       match r with
       | .skipped d => log := log.push s!"{fx} forged: not transported ({d})"
       | .failed d =>

@@ -808,10 +808,32 @@ def phaseProvenance (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompil
   if violations.isEmpty then return (.passed detail, lines)
   return (.failed detail, lines)
 
+/-- The transported definition cliques of a compile, read from the
+    compiler's clique record (the reference reader is the `pass3-cliques`
+    suite, `Tests/Ix/Compile/Pass3Cliques.lean`): every clique of the
+    switch-on clique table (`CompileEnv.p3Cliques`, member ↦ (the clique in
+    Lean's order, its carried lemmas), each clique once under its first
+    member) whose plan, recomputed by the compiler's own planner
+    (`Ix.Compile.Pass.planClique`, as the clique hook and the callers' check
+    compute it), is `transported`. Not from `_ix` names: the passes O7–O12
+    store canonical forms under `c._ix` and helper names (`p._ix_retyped.s`,
+    `T.noConfusionType._ix`, …), which are recorded in the non-canonical set
+    (`PJ-FORM-<pass>`, `INHERITED`) and never in the clique table, so they are
+    excluded by construction. Empty with the switch off (no table). Sorted by
+    first member, so the phase's order is the same on every run. -/
+def transportedCliques (cenv : Ix.CompileM.CompileEnv) : Array (Array Lean.Name) := Id.run do
+  let mut out : Array (Array Ix.Name) := #[]
+  for (n, (cl, carried)) in cenv.p3Cliques.toList do
+    unless cl[0]? == some n do continue
+    match Ix.Compile.Pass.planClique cenv.env.get? (Ix.Compile.Pass.cliqueAddr cenv) cl carried with
+    | .transported _ => out := out.push cl
+    | _ => pure ()
+  let sorted := out.qsort fun a b => (a[0]?.map (·.pretty)).getD "" < (b[0]?.map (·.pretty)).getD ""
+  return sorted.map (·.map IxCliqueValues.toLeanName)
+
 /-- **Phase 9, clique values** (`Ix.Cli.CliqueValues`, plan M4 (b)).
-    Establishes, for every transported definition clique of the output (a
-    definition, theorem or opaque display member of an `_ix` name: the
-    clique's canonical constants hang off it) and every member, that the
+    Establishes, for every transported definition clique of the output (the
+    compiler's clique record, `transportedCliques`) and every member, that the
     COMPILED member (decompiled from the output's bytes without replaying
     its `_ix.inline` record, i.e. the stored transported term, with the
     canonical constants it reaches, all added to Lean's environment through
@@ -820,28 +842,21 @@ def phaseProvenance (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompil
     free-variable oracle per member placed by the side-car `σ`). Members
     that cannot be evaluated (theorems, propositions, opaque, structural
     without closed data, resource limits) are reported with the reason and
-    counted; every member has a verdict. It does not check equation lemmas
-    carried with a clique, Lean's encoding constants (kept in Lean's form),
-    or values deeper than one fixpoint unfolding; it needs the Lean source
-    (path mode). -/
-def phaseCliqueValues (leanEnv : Lean.Environment) (ixonEnv : Ixon.Env) (view : View) :
-    IO (PhaseResult × Array String) := do
-  let ch := changedOf ixonEnv view
-  let mut seen : Std.HashSet Lean.Name := {}
-  let mut cliques : Array (Array Lean.Name) := #[]
-  for x in ch.cliques do
-    let ln := IxCliqueValues.toLeanName x
-    let all : List Lean.Name := match leanEnv.find? ln with
-      | some (.defnInfo v) => v.all
-      | some (.thmInfo v) => v.all
-      | some (.opaqueInfo v) => v.all
-      | _ => [ln]
-    let some a0 := all.head? | continue
-    if seen.contains a0 then continue
-    seen := seen.insert a0
-    cliques := cliques.push all.toArray
+    counted; every member has a verdict. A clique the record calls
+    transported whose compiled constants carry no side-car record
+    `_ix.clique` fails. It does not check equation lemmas carried with a
+    clique, Lean's encoding constants (kept in Lean's form), the O7–O12
+    canonical forms (`c._ix`: not cliques), or values deeper than one
+    fixpoint unfolding; it needs the Lean source and the compile (path
+    mode). `ixDefs` counts the definition, theorem and opaque display members
+    of `_ix` names (`Changed.cliques`: transported members and the O7–O12
+    forms alike); a skip reports it, so a run whose output has `_ix` forms and
+    no transported clique shows both (the suite's control). -/
+def phaseCliqueValues (leanEnv : Lean.Environment) (ixonEnv : Ixon.Env) (cliques : Array (Array Lean.Name))
+    (ixDefs : Nat) : IO (PhaseResult × Array String) := do
   if cliques.isEmpty then
-    return (.skipped "no transported definition clique (no definition, theorem or opaque display member)", #[])
+    return (.skipped s!"no transported definition clique in the compiler's clique record \
+      ({ixDefs} definition display member(s) of `_ix` names, none of a transported clique)", #[])
   let rep ← IxCliqueValues.run leanEnv ixonEnv cliques
   let (failed, detail, lines) := IxCliqueValues.summarize rep
   return (if failed then .failed detail else .passed detail, lines)
@@ -918,6 +933,9 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- debug a digest mismatch on a filtered (`--ns`) closure.
   let mut canonView? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none
   let mut canonDigests? : Option (Std.HashMap Ix.Name UInt64) := none
+  -- Phase 9's cliques: the transported cliques of the compiler's clique
+  -- record, read off the compile state at phase 1 (path mode).
+  let mut cliques9? : Option (Array (Array Lean.Name)) := none
   IO.println s!"[validate-lean] switch {Ix.Compile.Pass.switchVar}: {if switchOn then "on" else "off"}"
 
   match ixe?, path? with
@@ -971,6 +989,7 @@ phases 6–8 read Lean's forms from the decompiler)"
                                   result := .failed s!"pure-Lean pipeline: {e}", ms := (← IO.monoMsNow) - t0 }
     | .ok out =>
       bytes := out.bytes
+      cliques9? := some (transportedCliques out.cenv)
       ungrounded := out.cenv.ungrounded.fold (init := {}) fun s n _ => s.insert n
       if fullOracle then
         let constArr := constList.toArray
@@ -1070,14 +1089,26 @@ phases 6–8 read Lean's forms from the decompiler)"
   let t9 ← IO.monoMsNow
   let (phase9, phase9Lines) : PhaseResult × Array String ← do
     if skipPhases.contains "9" then pure (.skipped "IX_SKIP_PHASES", #[])
-    else match leanEnv?, ixonEnv?, leanView? with
-      | some leanEnv, some (.ok ixonEnv), some v =>
-        IO.println "[validate-lean] phase 9: clique values..."
+    else match leanEnv?, ixonEnv?, leanView?, cliques9? with
+      | some leanEnv, some (.ok ixonEnv), some v, some cliques =>
+        IO.println s!"[validate-lean] phase 9: clique values ({cliques.size} transported clique(s) in the compiler's clique record)..."
         (← IO.getStdout).flush
-        phaseCliqueValues leanEnv ixonEnv v
-      | none, _, _ =>
+        let ixDefs := (changedOf ixonEnv v).cliques.map IxCliqueValues.toLeanName
+        -- the record against the `_ix` display members (log only): record cliques
+        -- with no `_ix` definition display member, and display members of no
+        -- record clique (the O7–O12 forms)
+        let inRecord : Std.HashSet Lean.Name := cliques.foldl (fun s c => c.foldl (·.insert ·) s) {}
+        let ixSet : Std.HashSet Lean.Name := ixDefs.foldl (·.insert ·) {}
+        let bare := cliques.filter fun c => !c.any ixSet.contains
+        let outside := ixDefs.filter (!inRecord.contains ·)
+        IO.println s!"[validate-lean] phase 9: record vs `_ix` display members: {bare.size} record clique(s) \
+          without one {(bare.toList.take 8).map (·.toList)}; {outside.size} display member(s) of no record clique \
+          {(outside.toList.take 8)}"
+        phaseCliqueValues leanEnv ixonEnv cliques ixDefs.size
+      | none, _, _, _ =>
         pure (.skipped "no Lean source environment (--ixe mode): phase 9 evaluates Lean's constants", #[])
-      | _, _, _ => pure (.skipped "no materialized environment", #[])
+      | _, _, _, none => pure (.skipped "no compile state (phase 1 failed): no clique record", #[])
+      | _, _, _, _ => pure (.skipped "no materialized environment", #[])
   let ms9 := (← IO.monoMsNow) - t9
   leanEnv? := none
 
