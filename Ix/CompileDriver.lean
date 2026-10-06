@@ -805,11 +805,12 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
-  let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
+  let (blocks, p3Cliques, p3CliqueRoots) :=
+    if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {}, {})
   let blocks := if pass3 then prepareSizeOfScheduling env blocks schedulingSource? else blocks
   let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
-    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
+    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques, p3CliqueRoots }
   let mut acc : DriverAcc := { cenv := cenv0 }
   -- A7 (D2b): the aux-gen seeds are scheduling dependencies, not a pre-pass.
   let schedDeps := scheduleDeps blocks pass3
@@ -1210,11 +1211,12 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if pass3 then
     if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
-  let (blocks, p3Cliques) := if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {})
+  let (blocks, p3Cliques, p3CliqueRoots) :=
+    if pass3 then Ix.Compile.Pass.scheduleCliques env blocks else (blocks, {}, {})
   let blocks := if pass3 then prepareSizeOfScheduling env blocks schedulingSource? else blocks
   let p3BlockRefs := if pass3 then canonicalBlockRefs blocks else {}
   let cenv0 : CompileEnv :=
-    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques }
+    { CompileEnv.new env with nameByHash, sharingLimits, pass3, p3BlockRefs, p3Cliques, p3CliqueRoots }
   let mut acc : DriverAcc := { cenv := cenv0 }
   -- A7 (D2b): the aux-gen seeds are scheduling dependencies, not a pre-pass.
   let schedDeps := scheduleDeps blocks pass3

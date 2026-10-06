@@ -1712,8 +1712,11 @@ Results:
 `NOSPEC` therefore remains only where recovery fails.
 
 **Equation lemmas of definitions** (`eq_N`, `eq_def`, `_mutual.eq_unfold`) have proofs that unfold
-Lean's encoding. When a member maps to the canonical form, the old plan's §3.5 requirement 2 applies:
-cast along the correspondence, else demote the clique, else a compile error naming the constant. The
+Lean's encoding. When a member maps to the canonical form, a member's own equation lemma is carried
+with the clique (it is in the clique's unit) and regenerated over the canonical form; the clique stays
+in Lean's form only if one of its own lemmas cannot be carried. Any other constant that unfolds Lean's
+encoding of a transported clique is refused with a named error naming it and the clique (§6.3, "callers
+adapt"; `Pass/Cliques.lean`, `cliqueCallers`); the clique is never demoted for a caller. The
 equations are realised lazily (MUT §1.2), so which of them exist varies between builds (A Δ13). The
 canonicity claim excludes them (§7.1).
 
@@ -2107,13 +2110,14 @@ What stays forbidden is reading a dependent that is *not* an auxiliary of the un
 | O11a: the size function of a split member refers to `T._sizeOf_inst`, the size instance of a lower component of the same declaration | an auxiliary referring to another auxiliary of the same Lean declaration; the edge is declared, acyclic, and the instance is carried by closures |
 | A definition over a changed inductive block has its `rec`, `casesOn`, `below`, `brecOn` call sites rewritten (images, O1–O6) | a block reading the auxiliaries of a block it depends on |
 | An equation lemma of a transported clique is regenerated over the canonical clique | the lemma is compiled after the clique and reads the clique's record |
-| A clique reads its own equation and unfolding lemmas when planning its transport, and stays in Lean's form if one of them cannot be carried (`Pass/Cliques.lean:486–491`, `:529–538`; `:457–464` for classes that own one) | on-demand auxiliaries of the clique's own unit |
+| A clique reads its own equation and unfolding lemmas when planning its transport, and stays in Lean's form if one of them cannot be carried (`Pass/Cliques.lean`: `memberEqLemmas` and `scheduleCliques` find them by name; `planClique` carries them, and keeps the members of an O17 class that owns one apart) | on-demand auxiliaries of the clique's own unit |
+| A block that references a member and one of Lean's encoding constants of a clique it depends on is refused by name when that clique is transported (`Pass/Cliques.lean`, `cliqueCallers`) | a block reading the record of a block it depends on; the dependency is not changed |
 
 **Not allowed.** Entries marked ✗ exist in the code at `340f67b2` and are to be removed.
 
 | Case | Why it breaks the rule |
 |---|---|
-| ✗ A clique is demoted because some later declaration that is not an equation lemma depends on it (`Ix/Compile/Pass/Cliques.lean:297–305`, `scheduleCliques`: `blocking`, `reason`) | reads a caller |
+| Removed (M1-a): a clique was demoted because some later declaration that is not an equation lemma depended on it (`scheduleCliques`: `blocking`, `reason`, at `340f67b2`). Such a declaration is now refused by name instead (above) | read a caller |
 | ✗ A proof-justified pass declines because a dependent mentions both the definition and a recursor-family auxiliary (branch `jcb/ix-cc-a6p`, `Opt/Packed.lean`) | reads a caller; replaced by the decision of 2026-10-05 that the Lean name keeps the faithful form and the canonical form is stored under an `_ix` name |
 | Choosing among names that share an address by hash-map order (D4) | reads a whole-environment table |
 | A form that depends on whether another block has been compiled yet | reads the schedule |
@@ -2164,7 +2168,7 @@ a whole compile. Certification can state one obligation per block.
 | Statements following the order (`mutual_induct`, `induct`, `_mutual.eq_unfold`) | baseline | faithful only | `ORDER-STMT` |
 | Bare or partial auxiliary occurrences (`def r := @A.rec`, `@f._mutual`) | residual image | faithful only: the type is Lean's | `BARE` |
 | Lean `IndPredBelow` families of a changed Prop block | own block (§4.6) | faithful only | `INDPRED-BELOW` |
-| Lazily realised equation lemmas (`eq_N`, `eq_def`, `eq_unfold`) | baseline, or demoted | existence varies with the build (A Δ13) | excluded from the claim; `LAZY` if listed |
+| Lazily realised equation lemmas (`eq_N`, `eq_def`, `eq_unfold`) | baseline, or carried with the clique | existence varies with the build (A Δ13) | excluded from the claim; `LAZY` if listed |
 | A split member against the member declared alone with fewer universes, parameters or a smaller sort | — | not a presentation under Def 4.3 | not recorded |
 | Theorem proofs in general | any | not promised (M7) | not recorded unless the theorem is in a clique fixture |
 

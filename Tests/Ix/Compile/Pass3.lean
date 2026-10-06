@@ -156,7 +156,7 @@ def identityCheck (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : IdentityR
   -- switch may transport (`Ix.Compile.Pass.Cliques`: the clique table's
   -- members and carried lemmas)
   let cliques : Array (Array _root_.Ix.Name) := on.cenv.p3Cliques.toArray.filterMap
-    fun (n, (all, carried, demoted)) => if all[0]? == some n && demoted.isEmpty then some (all ++ carried) else none
+    fun (n, (all, carried)) => if all[0]? == some n then some (all ++ carried) else none
   let c := cone u (blocks ++ cliques)
   for (n, nd) in off.env.named do
     if isSyntheticMuts n then continue

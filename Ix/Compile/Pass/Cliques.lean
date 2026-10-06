@@ -215,14 +215,6 @@ def inputCliques (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Array (A
       out := out.push all
   return out
 
-/-- An equation lemma of a member (`m.eq_def`, `m.eq_unfold`, `m.eq_<k>`). -/
-def isEqLemmaOf (all : Array Name) (n : Name) : Bool :=
-  match n with
-  | .str p s _ =>
-    all.contains p && (s == "eq_def" || s == "eq_unfold" ||
-      (s.startsWith "eq_" && (s.drop 3).all Char.isDigit && !(s.drop 3).isEmpty))
-  | _ => false
-
 /-- A Lean encoding constant of a clique, by name: `all₀._mutual` and
 `all₀.mutual` with everything under them (proofs, equation lemmas), `m._f`. -/
 def isEncodingName (all : Array Name) (n : Name) : Bool :=
@@ -241,17 +233,92 @@ def transportPrereqs : Array Name :=
   #[``Lean.Order.monotone_compose, ``PSigma.casesOn, ``PSigma.mk, ``PSum.casesOn, ``PSum.inl,
     ``PSum.inr, ``Eq, ``Eq.trans, ``id].map Ix.Name.fromLeanName
 
+/-- `_private.<module>.0.<n>` ↦ `n` (Lean's `privateToUserName?`): the
+module system realises an on-demand lemma of a public definition under a
+private name when a private declaration asks for it. -/
+def privateUserName? (n : Name) : Option Name :=
+  match comps n [] with
+  | .inl "_private" :: rest => do
+    -- the marker is the number 0 (Lean) or, in names that went through a
+    -- string form, the component "0"
+    let i ← rest.findIdx? fun c => c == .inr 0 || c == .inl "0"
+    some ((rest.drop (i + 1)).foldl (init := Name.mkAnon) fun acc c => match c with
+      | .inl s => Name.mkStr acc s
+      | .inr k => Name.mkNat acc k)
+  | _ => none
+where
+  comps : Name → List (String ⊕ Nat) → List (String ⊕ Nat)
+    | .anonymous _, acc => acc
+    | .str p s _, acc => comps p (.inl s :: acc)
+    | .num p k _, acc => comps p (.inr k :: acc)
+
+/-- An equation lemma's last component: `eq_def`, `eq_unfold`, `eq_<k>`. -/
+def isEqSuffix (s : String) : Bool :=
+  s == "eq_def" || s == "eq_unfold" ||
+    (s.startsWith "eq_" && (s.drop 3).all Char.isDigit && !(s.drop 3).isEmpty)
+
+/-- The equation lemmas the input has under a private name, by their user
+name (`privateUserName?`). An index of names only: a clique reads the
+entries of its own members' lemma names. -/
+def privateEqLemmas (blocks : Ix.CondensedBlocks) : Std.HashMap Name (Array Name) := Id.run do
+  let mut out : Std.HashMap Name (Array Name) := {}
+  for (_, mems) in blocks.blocks do
+    for n in mems do
+      let some u := privateUserName? n | continue
+      let .str _ s _ := u | continue
+      if isEqSuffix s then out := out.insert u ((out.getD u #[]).push n)
+  return out
+
+/-- The equation lemmas of a member that the input has, by name: `m.eq_def`,
+`m.eq_unfold` and `m.eq_1`, `m.eq_2`, … (numbered from 1 without gaps, as
+Lean realises them), under that name or under a private name whose user name
+it is (`priv`, `privateEqLemmas`). They are on-demand auxiliaries of the
+clique's own unit (design document §6.3): reading them is reading the unit. -/
+def memberEqLemmas (const? : Name → Option ConstantInfo) (priv : Std.HashMap Name (Array Name))
+    (m : Name) : Array Name := Id.run do
+  let mut out : Array Name := #[]
+  let present (n : Name) : Array Name :=
+    (if (const? n).isSome then #[n] else #[]) ++
+      ((priv.getD n #[]).qsort fun a b => a.pretty < b.pretty)
+  for s in ["eq_def", "eq_unfold"] do
+    out := out ++ present (nameStr m s)
+  for k in [1:1000000] do
+    let found := present (nameStr m s!"eq_{k}")
+    if found.isEmpty then break
+    out := out ++ found
+  return out
+
+/-- The clique whose Lean encoding constant `n` is (`isEncodingName`), from a
+map of the encoding roots (`all₀._mutual`, `all₀.mutual`, `m._f`) to the
+cliques: `n` or one of its prefixes is a root. -/
+def encodingOwner? (roots : Std.HashMap Name (Array Name)) (n : Name) : Option (Array Name) := Id.run do
+  let mut cur := n
+  for _ in [0:64] do
+    if let some all := roots.get? cur then
+      if isEncodingName all n then return some all
+    match cur with
+    | .str p _ _ | .num p _ _ => cur := p
+    | .anonymous _ => return none
+  return none
+
 /-- The changed-clique table and the scheduling edges (called once per
-compile under the switch, before the schedule; identity otherwise).
+compile under the switch, before the schedule; identity otherwise). The
+form of a clique is decided from the clique, its own logical unit and its
+dependencies only (design document §6.3): no caller is read.
 
 * **The table.** Every member of an input clique (`inputCliques`) ↦ (Lean's
-  `all`, the carried lemmas, the demotion reason). A **dependent** of the
-  clique is a constant outside it that references both a member and one of
-  Lean's encoding constants (`isEncodingName`): its proof may rely on the
-  member unfolding to Lean's encoding, which the transport replaces. The
-  members' equation lemmas (`isEqLemmaOf`) are *carried*: transported with
-  the clique (each carried lemma is in the table too). Any other dependent
-  demotes the clique (it compiles as today; the reason names the dependent).
+  `all`, the carried lemmas). The **carried lemmas** are the members' own
+  equation lemmas (`memberEqLemmas`, read by name: the clique's unit) that
+  reference a member and one of Lean's encoding constants of the clique
+  (`isEncodingName`): their proofs unfold the members to Lean's encoding, so
+  they are transported with the clique (each carried lemma is in the table
+  too), or the clique stays in Lean's form when one cannot be carried
+  (`planClique`).
+* **The encoding roots.** `all₀._mutual`, `all₀.mutual` and every `m._f` ↦
+  the clique, so that a block can tell that it references a clique's
+  encoding (`encodingOwner?`). A block outside the unit that references a
+  member and an encoding constant of a transported clique is refused when it
+  compiles (`cliqueCallers`); the clique is never changed for it.
 * **The edges.** Every member block, and every carried lemma's block, also
   waits for everything any member references (the encoding constants, the
   other members' matchers and proofs, the constants their statements
@@ -259,50 +326,28 @@ compile under the switch, before the schedule; identity otherwise).
   specifications' external references and the canonical constants'
   dependencies are compiled before it. -/
 def scheduleCliques (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
-    Ix.CondensedBlocks × Std.HashMap Name (Array Name × Array Name × String) := Id.run do
+    Ix.CondensedBlocks × Std.HashMap Name (Array Name × Array Name) × Std.HashMap Name (Array Name) :=
+    Id.run do
   let cliques := inputCliques env blocks
-  -- the dependents of each clique: the encoding names by their roots
-  let mut encRoot : Std.HashMap Name Nat := {}
-  for i in [0:cliques.size] do
-    let all := cliques[i]!
-    if let some all0 := all[0]? then
-      encRoot := encRoot.insert (nameStr all0 "_mutual") i |>.insert (nameStr all0 "mutual") i
-    for m in all do encRoot := encRoot.insert (nameStr m "_f") i
-  let encOwner (n : Name) : Option Nat := Id.run do
-    let mut cur := n
-    for _ in [0:64] do
-      if let some i := encRoot.get? cur then
-        if isEncodingName cliques[i]! n then return some i
-      match cur with
-      | .str p _ _ | .num p _ _ => cur := p
-      | .anonymous _ => return none
-    return none
-  let mut dependents : Array (Array Name) := cliques.map fun _ => #[]
-  for (lo, mems) in blocks.blocks do
-    let refs := blocks.blockRefs.getD lo {}
-    let hits := refs.toList.filterMap encOwner
-    if hits.isEmpty then continue
-    for i in hits.eraseDups do
-      let all := cliques[i]!
-      if mems.toList.any fun m => all.contains m || isEncodingName all m then continue
-      if refs.toList.any all.contains then
-        for m in mems do
-          unless dependents[i]!.contains m do dependents := dependents.modify i (·.push m)
-  -- the table
-  let mut table : Std.HashMap Name (Array Name × Array Name × String) := {}
+  let priv := if cliques.isEmpty then {} else privateEqLemmas blocks
+  let mut roots : Std.HashMap Name (Array Name) := {}
+  let mut table : Std.HashMap Name (Array Name × Array Name) := {}
   let mut blockRefs := blocks.blockRefs
-  for i in [0:cliques.size] do
-    let all := cliques[i]!
-    let deps := dependents[i]!.qsort fun a b => a.pretty < b.pretty
-    let carried := deps.filter (isEqLemmaOf all)
-    let blocking := deps.filter (!isEqLemmaOf all ·)
-    let reason := match blocking[0]? with
-      | some u => s!"a dependent unfolds the encoding: {u.pretty}" ++
-          (if blocking.size > 1 then s!" (and {blocking.size - 1} more)" else "")
-      | none => ""
-    for m in all do table := table.insert m (all, carried, reason)
-    if !reason.isEmpty then continue
-    for c in carried do table := table.insert c (all, carried, reason)
+  for all in cliques do
+    if let some all0 := all[0]? then
+      roots := roots.insert (nameStr all0 "_mutual") all |>.insert (nameStr all0 "mutual") all
+    for m in all do roots := roots.insert (nameStr m "_f") all
+    -- the carried lemmas: the members' equation lemmas over Lean's encoding
+    let mut found : Array Name := #[]
+    for m in all do
+      for c in memberEqLemmas env.get? priv m do
+        let some lo := blocks.lowLinks.get? c | continue
+        let refs := blocks.blockRefs.getD lo {}
+        if refs.toList.any (isEncodingName all ·) && refs.toList.any all.contains then
+          found := found.push c
+    let carried := found.qsort fun a b => a.pretty < b.pretty
+    for m in all do table := table.insert m (all, carried)
+    for c in carried do table := table.insert c (all, carried)
     -- the edges
     let members : Std.HashSet Name := all.foldl (·.insert ·) {}
     let los := all.filterMap blocks.lowLinks.get?
@@ -318,7 +363,7 @@ def scheduleCliques (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
       for r in union do
         if !own.contains r then rs := rs.insert r
       blockRefs := blockRefs.insert lo rs
-  return ({ blocks with blockRefs }, table)
+  return ({ blocks with blockRefs }, table, roots)
 
 /-! ## The plan of a clique -/
 
@@ -454,7 +499,7 @@ def planClique (const? : Name → Option ConstantInfo) (addr? : Name → Option 
   -- one constant, the representative's (the first of the class in the
   -- canonical order); not when one of them carries an equation lemma, whose
   -- proof unfolds that member
-  let carriedOwners : Std.HashSet Name := carried.foldl (init := {}) fun s c => match c with
+  let carriedOwners : Std.HashSet Name := carried.foldl (init := {}) fun s c => match (privateUserName? c).getD c with
     | .str p _ _ => s.insert p
     | _ => s
   let mut aliases : Array (Name × Name) := #[]
@@ -587,17 +632,55 @@ def canonConst (const? : Name → Option ConstantInfo) (d : Decl) (src : Name) (
       | _ => .opaque
     .defnInfo { cnst, value, hints, safety := .safe, all := #[d.name] }
 
+/-- The callers' side of the block rule (design document §6.3, "callers
+adapt"; decision 5 of the plan). A block outside a clique's unit (no member,
+no carried lemma, no encoding constant of the clique) that references a
+member and one of Lean's encoding constants of the clique may rely on the
+member unfolding to Lean's encoding. When the clique is transported (its
+plan, recomputed from the clique, its unit and its dependencies, all
+compiled before this block), that encoding is no longer what the member
+unfolds to: the block is refused with a named error, recorded as a block
+failure by the driver. The clique is never changed for a caller, and the
+caller is never silently compiled against Lean's form.
+
+Returns the refusal, or `none` when the block may compile. Reads only the
+block (`all`, its references `refs`) and the cliques it depends on. -/
+def cliqueCallers (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name) : Option String := Id.run do
+  if cenv.p3CliqueRoots.isEmpty then return none
+  let mut seen : Std.HashSet Name := {}
+  for r in refs do
+    let some cl := encodingOwner? cenv.p3CliqueRoots r | continue
+    let some key := cl[0]? | continue
+    if seen.contains key then continue
+    seen := seen.insert key
+    let carried := ((cenv.p3Cliques.get? key).map (·.2)).getD #[]
+    -- a block of the clique's own unit is not a caller
+    if all.toList.any fun n => cl.contains n || carried.contains n || isEncodingName cl n then continue
+    let some m := refs.toList.find? cl.contains | continue
+    match planClique cenv.env.get? (cliqueAddr cenv) cl carried with
+    | .transported plan =>
+      let callers := all.toList.map (·.pretty)
+      return some s!"Pass 3 cliques: caller refused (block rule, callers adapt): {callers} \
+        reference{if callers.length == 1 then "s" else ""} {m.pretty} and Lean's encoding constant \
+        {r.pretty} of the transported clique {cl.map (·.pretty)} (sigma {plan.sigma}); a caller may \
+        not unfold Lean's encoding of a transported clique"
+    | _ => continue
+  return none
+
 /-- Before a block compiles (hook of `Ix.Compile.Pass.prepareBlock`): for
 every member of a changed clique in the block, and every equation lemma
 carried with one, its transported value in the overlay with Lean's value as
 the decompile record, and the canonical constants it references compiled
 into the block. `rewrite` is Pass 3's call-site rewrite (for canonical
-constants over a changed block). Identity when no constant of the block is
-in the clique table (`CompileEnv.p3Cliques`). -/
-def prepareCliques (cenv : CompileEnv) (all : Set Name)
+constants over a changed block). A block outside a transported clique's unit
+that unfolds its encoding is refused (`cliqueCallers`; `refs` are the
+block's references). Identity when no constant of the block is in the clique
+table (`CompileEnv.p3Cliques`) and the block is not such a caller. -/
+def prepareCliques (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name)
     (rewrite : Array (Name × ConstantInfo) → Except String BlockRewrite) :
     Except String (CompileEnv × BlockState) := do
   if !cenv.pass3 || cenv.p3Cliques.isEmpty then return (cenv, {})
+  if let some refusal := cliqueCallers cenv all refs then throw refusal
   let const? := cenv.env.get?
   let mut overlay := cenv.env.overlay
   let mut sources := cenv.p3Sources
@@ -606,8 +689,7 @@ def prepareCliques (cenv : CompileEnv) (all : Set Name)
   let mut wanted : Array Name := #[]
   let mut plans : Std.HashMap Name CliqueOutcome := {}
   for n in all do
-    let some (cl, carried, demoted) := cenv.p3Cliques.get? n | continue
-    if !demoted.isEmpty then continue
+    let some (cl, carried) := cenv.p3Cliques.get? n | continue
     let some key := cl[0]? | continue
     let outcome := match plans.get? key with
       | some o => o

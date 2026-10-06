@@ -144,10 +144,13 @@ structure CompileEnv where
   p3BlockRefs : Std.HashMap Name (Ix.Set Name) := {}
   /-- Pass 3: the changed-clique table (`Ix.Compile.Pass.scheduleCliques`):
       every member of an encoded definition clique, and every equation lemma
-      carried with it, ↦ (the clique in Lean's order, the carried lemmas,
-      the demotion reason: empty unless a dependent unfolds the encoding and
-      cannot be carried, in which case the clique compiles as today). -/
-  p3Cliques : Std.HashMap Name (Array Name × Array Name × String) := {}
+      carried with it, ↦ (the clique in Lean's order, the carried lemmas).
+      Decided from the clique and its own unit only (design document §6.3). -/
+  p3Cliques : Std.HashMap Name (Array Name × Array Name) := {}
+  /-- Pass 3: the encoding roots of the clique table (`all₀._mutual`,
+      `all₀.mutual`, `m._f` ↦ the clique), for the callers' check
+      (`Ix.Compile.Pass.cliqueCallers`). -/
+  p3CliqueRoots : Std.HashMap Name (Array Name) := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=

@@ -78,9 +78,7 @@ def plans (on : Ix.CompileM.LeanPipelineOut) (cliques : Array (Array Name)) : Ar
     let some n := all[0]? | continue
     let row : PlanRow := match cenv.p3Cliques.get? n with
       | none => { all, outcome := "not in the clique table (no encoding marker, or members in one block)", transported := false }
-      | some (_, _, demoted) =>
-      if !demoted.isEmpty then { all, outcome := s!"DEMOTED: {demoted}", transported := false } else
-      let carried := (cenv.p3Cliques.get? n).map (·.2.1) |>.getD #[]
+      | some (_, carried) =>
       match Ix.Compile.Pass.planClique const? (Ix.Compile.Pass.cliqueAddr cenv) all carried with
       | .notEncoded why => { all, outcome := s!"not encoded ({why})", transported := false }
       | .unchanged enc src =>
@@ -203,7 +201,14 @@ def runFile (path : String) : IO UInt32 := do
     | .error e => throw (IO.userError s!"compile failed: {e}")
   IO.println s!"[pass3-cliques-file] switch on: {on.bytes.size} B, {on.cenv.ungrounded.size} block failures, \
     {(← IO.monoMsNow) - t0} ms"
-  for (n, e) in on.cenv.ungrounded.toList.take 20 do
+  -- every caller refused by the block rule (`Ix.Compile.Pass.cliqueCallers`),
+  -- then the first other failures
+  let (refused, other) := on.cenv.ungrounded.toList.partition fun (_, e) =>
+    (e.splitOn "caller refused").length > 1
+  IO.println s!"[pass3-cliques-file] callers refused (block rule): {refused.length}"
+  for (n, e) in refused.toArray.qsort (fun a b => a.1.pretty < b.1.pretty) do
+    IO.println s!"[pass3-cliques-file]   refused: {n.pretty}: {e}"
+  for (n, e) in other.take 20 do
     IO.println s!"[pass3-cliques-file]   failed: {n.pretty}: {e.take 300}"
   if let some out := ← IO.getEnv "PASS3_CLIQUES_OUT" then
     IO.FS.writeBinFile out on.bytes
@@ -217,16 +222,15 @@ def runFile (path : String) : IO UInt32 := do
     tally := tally.insert key (tally.getD key 0 + 1)
     if r.transported then members := members ++ r.all.map (·.pretty)
   IO.println s!"[pass3-cliques-file] {rows.size} cliques of two or more members: {tally.toList}"
-  let table := on.cenv.p3Cliques.toList.filter fun (n, (all, _, _)) => all[0]? == some n
+  let table := on.cenv.p3Cliques.toList.filter fun (n, (all, _)) => all[0]? == some n
   IO.println s!"[pass3-cliques-file] clique table: {table.length} cliques, \
-    {(table.filter fun (_, (_, _, d)) => !d.isEmpty).length} demoted, \
-    {(table.foldl (fun acc (_, (_, c, _)) => acc + c.size) 0)} carried lemmas"
+    {(table.foldl (fun acc (_, (_, c)) => acc + c.size) 0)} carried lemmas"
   if (← IO.getEnv "PASS3_CLIQUES_KERNELS") == some "1" then
     let dir ← IO.FS.createTempDir
     try
       let p := dir / "on.ixe"
       IO.FS.writeBinFile p on.bytes
-      let carried := table.foldl (fun acc (_, (_, c, _)) => acc ++ c.map (·.pretty)) #[]
+      let carried := table.foldl (fun acc (_, (_, c)) => acc ++ c.map (·.pretty)) #[]
       let names := (on.env.named.toArray.filterMap fun (n, _) =>
         if Ix.Compile.Pass.hasReserved n then some n.pretty else none) ++ members ++ carried
       let failed ← Tests.Ix.Compile.Pass3.kernelFailures dir p names
