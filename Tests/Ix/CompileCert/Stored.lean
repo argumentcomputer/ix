@@ -93,7 +93,8 @@ def run (path : String) : IO Unit := do
         | .error (.certification e) => Compiled.declineLabel e
       IO.println s!"{repr outcome.classification} {root}: {reason}; source={input.source.declarations.length}; records={input.records.length}; ms={(← IO.monoMsNow) - began}"
       if outcome.classification == .rejected then explainCorrespondence input
-      let expected := if root == `Nat.add then OutcomeClass.unsupported else .certified
+      -- `Nat.add` carries `mdata` in Lean; certified under the erasure contract (M3).
+      let expected := OutcomeClass.certified
       if outcome.classification != expected then unexpected := unexpected + 1
     count := count + 1
   unless count == roots.length do throw (IO.userError "incomplete root census")

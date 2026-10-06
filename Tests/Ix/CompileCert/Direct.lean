@@ -201,12 +201,38 @@ def controls : List (String × (Unit → Bool)) := classificationControls ++ [
     (exprRefs (.lit (.natVal 4))).contains `Nat &&
       (exprRefs (.lit (.strVal "x"))).contains `String.ofList) ]
 
+/-- M3 metadata erasure contract: a Lean constant with `mdata` is associated
+with the Ix constant without it, and metadata hides nothing. -/
+def metadataControls : List (String × (Unit → Bool)) := [
+  ("source metadata in value is erased", fun _ =>
+    accepted { choiceInput with
+      source := ⟨[sourceDef `first (.mdata (Lean.KVMap.empty.insert `note (.ofBool true))
+        (sourceValue true))]⟩ }),
+  ("nested source metadata in type and value is erased", fun _ =>
+    accepted { choiceInput with
+      source := ⟨[.defnInfo {
+        name := `first
+        levelParams := [`u]
+        type := .mdata Lean.KVMap.empty sourceType
+        value := .lam `α (.sort (.param `u)) (.mdata Lean.KVMap.empty (.lam `a (.bvar 0)
+          (.lam `b (.bvar 1) (.mdata Lean.KVMap.empty (.bvar 1)) .default) .default)) .default
+        hints := .opaque
+        safety := .safe
+        all := [`first] }]⟩ }),
+  ("metadata cannot hide a wrong value", fun _ =>
+    sourceMismatch { choiceInput with
+      source := ⟨[sourceDef `first (.mdata Lean.KVMap.empty (sourceValue false))]⟩ }),
+  ("erasure keeps the closure of metadata-wrapped references", fun _ =>
+    (exprRefs (.mdata Lean.KVMap.empty (.const `inner []))).contains `inner) ]
+
 def run : IO Unit := do
   let mut failed := 0
-  for (label, control) in controls do
+  let all := controls ++ metadataControls
+  for (label, control) in all do
     let ok := control ()
     IO.println s!"{if ok then "PASS" else "FAIL"}: {label}"
     unless ok do failed := failed + 1
-  if failed != 0 then throw (IO.userError s!"{failed}/{controls.length} C1 controls failed")
+  if failed != 0 then throw (IO.userError s!"{failed}/{all.length} C1 controls failed")
+  IO.println s!"direct: {all.length}/{all.length} controls passed"
 
 end Tests.Ix.CompileCert.Direct

@@ -327,8 +327,17 @@ theorem exportLevel_instantiated_eval {cx : TermContext} {u : Lean.Level} {resul
   rw [Kernel.Level.eval_subst, Kernel.Level.eval_eq_levelEval]
   exact exportLevel_eval exported φ ρ (Kernel.Level.substFn ψ keys values) sourceAligned targetAligned
 
-/-- Binder names and binder-info are reader-erased. Metadata is refused
-until its semantic/erasure classification is justified independently. -/
+/-- Binder names and binder-info are reader-erased.
+
+**Metadata erasure contract** (M3): `.mdata m e` exports as `e`. The
+compiler strips metadata, and Lean's own kernel gives `mdata` no meaning
+(type inference, weak-head normalisation and definitional equality all look
+through it; it is an annotation for the elaborator), so the certified
+association relates a Lean constant with metadata to the Ix constant without
+it. That Lean's kernel ignores metadata is a fact about Lean, outside the
+certified boundary, in the same trust class as "`directExport` is the
+intended reading of a Lean declaration"; what is proved here is the
+syntactic erasure (`exportExpr_mdata`, `exportExprWith_mdata`). -/
 def exportExpr (cx : TermContext) : Lean.Expr → ExportM Kernel.Expr
   | .bvar i => return Kernel.Expr.mkBvar i
   | .sort u => return .sort (← exportLevel cx u)
@@ -340,9 +349,14 @@ def exportExpr (cx : TermContext) : Lean.Expr → ExportM Kernel.Expr
   | .lit (.natVal n) => return .lit (.natVal n)
   | .lit (.strVal s) => return .lit (.strVal s)
   | .proj n i e => return .proj (← cx.context.name n) i (← exportExpr cx e)
-  | .mdata _ _ => throw "source metadata requires an erasure/semantic contract"
+  | .mdata _ e => exportExpr cx e
   | .fvar _ => throw "free source variable"
   | .mvar _ => throw "source metavariable"
+
+/-- Metadata is erased: the export of `.mdata m e` is the export of `e`. -/
+theorem exportExpr_mdata (cx : TermContext) (m : Lean.MData) (e : Lean.Expr) :
+    exportExpr cx (.mdata m e) = exportExpr cx e := by
+  simp only [exportExpr]
 
 /-- Exact structural loose-variable bound, independent of cached Lean/Ix
 metadata and without the packed-field saturation used by fast operations. -/
@@ -371,9 +385,15 @@ def exportExprWith (levelOf : Lean.Level → ExportM Kernel.Level)
   | .lit (.natVal n) => return .lit (.natVal n)
   | .lit (.strVal s) => return .lit (.strVal s)
   | .proj n i e => return .proj (← nameOf n) i (← exportExprWith levelOf nameOf e)
-  | .mdata _ _ => throw "source metadata requires an erasure/semantic contract"
+  | .mdata _ e => exportExprWith levelOf nameOf e
   | .fvar _ => throw "free source variable"
   | .mvar _ => throw "source metavariable"
+
+/-- The source installation erases metadata exactly as the target export does. -/
+theorem exportExprWith_mdata (levelOf : Lean.Level → ExportM Kernel.Level)
+    (nameOf : Lean.Name → ExportM Kernel.Name) (m : Lean.MData) (e : Lean.Expr) :
+    exportExprWith levelOf nameOf (.mdata m e) = exportExprWith levelOf nameOf e := by
+  simp only [exportExprWith]
 
 theorem exportExprWith_target (cx : TermContext) (source : Lean.Expr) :
     exportExprWith (exportLevel cx) cx.context.name source = exportExpr cx source := by

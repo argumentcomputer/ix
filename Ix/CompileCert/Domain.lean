@@ -15,7 +15,7 @@ coverage reporting, not a claim that these expressions are invalid Lean. -/
 def unsupportedExpr : Lean.Expr → Option String
   | .fvar _ => some "free variable in closed source"
   | .mvar _ => some "expression metavariable"
-  | .mdata .. => some "source metadata (erasure not yet proved)"
+  | .mdata _ e => unsupportedExpr e
   | .sort u => if u.hasMVar then some "universe metavariable" else none
   | .const _ us => if us.any Lean.Level.hasMVar then some "universe metavariable" else none
   | .app f a => (unsupportedExpr f).orElse fun _ => unsupportedExpr a

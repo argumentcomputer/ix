@@ -24,7 +24,7 @@ def Source.find (s : Source) (n : Lean.Name) : Option Lean.ConstantInfo :=
 
 /-- Syntactic references, including projection structure names. Metadata
 payloads are deliberately not interpreted here: translation separately
-declines metadata until an explicit erasure/semantic contract is checked. -/
+erases metadata (`exportExpr`'s erasure contract), so its references count. -/
 def exprRefs : Lean.Expr → List Lean.Name
   | .const n _ => [n]
   | .app f a => exprRefs f ++ exprRefs a
