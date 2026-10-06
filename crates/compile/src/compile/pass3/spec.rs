@@ -22,6 +22,8 @@ pub struct NestedCanon {
   pub perm: Vec<Option<usize>>,
   /// The number of canonical auxiliary classes.
   pub num_canon: usize,
+  /// Source positions this block evaporated (the aux layout's flags).
+  pub evaporated: Vec<bool>,
 }
 
 /// One component of a block.
@@ -45,6 +47,31 @@ impl ComponentCanon {
 pub struct BlockCanon {
   pub all: Vec<Name>,
   pub components: Vec<ComponentCanon>,
+}
+
+/// How a block differs from its Lean presentation: the fields the
+/// definitional passes read (`Canon.BlockChange`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockChange {
+  pub split: bool,
+  pub collapse: bool,
+  pub evaporation: bool,
+}
+
+impl BlockCanon {
+  /// `BlockCanon.change` (its split, collapse and evaporation fields).
+  pub fn change(&self) -> BlockChange {
+    BlockChange {
+      split: self.components.len() > 1,
+      collapse: self
+        .components
+        .iter()
+        .any(|c| c.classes.iter().any(|k| k.len() > 1)),
+      evaporation: self.components.iter().any(|c| {
+        c.nested.as_ref().is_some_and(|n| n.evaporated.iter().any(|b| *b))
+      }),
+    }
+  }
 }
 
 #[derive(Clone, Debug)]

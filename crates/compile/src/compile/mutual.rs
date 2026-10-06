@@ -413,9 +413,7 @@ pub fn compile_aux_block_with_rename(
       let canon_n = cnst.name();
       let n = resolve_name(&canon_n);
       let meta = all_metas.remove(&canon_n).unwrap_or_default();
-      stt
-        .env
-        .register_name(n.clone(), Named::new(standalone_addr.clone(), meta));
+      stt.register_named(n.clone(), Named::new(standalone_addr.clone(), meta));
       stt.claim_aux_name(&n, &standalone_addr)?;
       pending_names.push(n);
     }
@@ -471,9 +469,7 @@ pub fn compile_aux_block_with_rename(
             let indc_proj = indc_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&indc_proj);
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
 
@@ -489,7 +485,7 @@ pub fn compile_aux_block_with_rename(
                 ctor_proj_constant(idx, cidx as u64, block_addr.clone());
               let ctor_addr = content_address(&ctor_proj);
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
-              stt.env.register_name(
+              stt.register_named(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
@@ -501,9 +497,7 @@ pub fn compile_aux_block_with_rename(
             let proj = recr_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
           },
@@ -511,9 +505,7 @@ pub fn compile_aux_block_with_rename(
             let proj = defn_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
           },
@@ -565,7 +557,7 @@ pub fn compile_aux_block_with_rename(
   // block, and decompile resolves layout via the primary inductive's Muts
   // meta (see `compile.rs:3254` for the primary-block registration and
   // `decompile_block_aux_gen` for the lookup).
-  stt.env.register_name(
+  stt.register_named(
     muts_name,
     Named::new(
       block_addr.clone(),
@@ -670,7 +662,7 @@ fn register_aux_aliases(
     alias_named.clear_original();
 
     compile_name(&source, stt);
-    stt.env.register_name(source.clone(), alias_named);
+    stt.register_named(source.clone(), alias_named);
     stt.claim_aux_name(&source, &target_addr)?;
     pending_names.push(source);
   }

@@ -1,5 +1,5 @@
 //! Pass 3, the faithful rewrite (`IX_PASS3=images`), in the Rust compiler
-//! (M6R slice 1). The specification is `docs/compiler-passes.md` §4; the
+//! (M6R slices 1 and 2). The specification is `docs/compiler-passes.md` §4; the
 //! reference is the Lean compiler's switch-on output (`Ix/Compile/Pass/*`,
 //! `Ix/Compile/Image/*`).
 //!
@@ -17,15 +17,17 @@
 //! | `Pass/SideCar.lean` | [`sidecar`] |
 //! | `Pass/Driver.lean` | [`driver`] |
 //!
-//! Not in this slice: the definitional passes O1-O6/O11a (slice 2), the
-//! clique transport (slice 3), the proof-justified passes O7-O12 (slice 4),
-//! the closure producers and pack (slice 5).
+//! `Pass/Opt/{Core,Engine,O1..O6,O11a}.lean` are [`opt`] (slice 2). Not yet
+//! ported: the clique transport (slice 3), the proof-justified passes
+//! O7-O12 and the unit pass O11b (slice 4), the closure producers and pack
+//! (slice 5).
 
 pub mod build;
 pub mod develop;
 pub mod driver;
 pub mod expr;
 pub mod names;
+pub mod opt;
 pub mod sidecar;
 pub mod spec;
 pub mod translate;
@@ -52,6 +54,11 @@ pub struct Pass3State {
   /// The classes and nested permutation of each compiled component of a
   /// changed block, by member (what the view reads of Pass 1).
   pub components: DashMap<Name, ComponentRecord>,
+  /// The compile's non-canonical set (`CompileEnv.p3NonCanonical`): the
+  /// recorded declines of the definitional passes, by constant, merged from
+  /// the blocks that compiled (a later cause of one constant replaces an
+  /// earlier one, as the Lean map insert does).
+  pub non_canonical: DashMap<Name, String>,
 }
 
 /// A record the aux tail made, journaled for the side-car edit.
@@ -148,7 +155,11 @@ pub fn release_pending(stt: &crate::compile::CompileState, names: Vec<Name>) {
   if names.is_empty() {
     return;
   }
-  if let Some(names) = journal_defer_pending(names) {
+  // the Pass 3 journal first (the side-car edit), then the block log (the
+  // release waits for the block to compile, `block_txn`)
+  if let Some(names) = journal_defer_pending(names)
+    && let Some(names) = crate::compile::block_txn::defer_pending(names)
+  {
     stt.aux_gen_pending.lock().unwrap().extend(names);
   }
 }

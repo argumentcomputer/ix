@@ -13,9 +13,11 @@
 //!    member an image-kind head) compiles to the images under the Lean names,
 //!    each of Lean's kind (F1), with `Named.original` from Lean's form.
 //!
-//! Slice 1 runs no optimisation pass and no clique hook: a full application
-//! keeps its inlined image (the baseline), which is the Lean driver's output
-//! with those passes absent.
+//! The definitional passes O1-O6 and O11a run at every full application of
+//! a head (`opt::engine`, slice 2) and record their declines in the
+//! non-canonical set; the clique hook (slice 3) and the proof-justified
+//! passes O7-O12 (slice 4) are not run: where only they would fire, a full
+//! application keeps its baseline, the Lean name's form.
 
 use std::sync::Arc;
 
@@ -24,7 +26,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use ix_common::address::Address;
 use ix_common::env::{
   ConstantInfo, ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
-  Expr, ExprData, Name, ReducibilityHints, TheoremVal,
+  Expr, ExprData, Level, Name, ReducibilityHints, TheoremVal,
 };
 use ixon::CompileError;
 use ixon::env::{AuxLayout, Named};
@@ -38,6 +40,9 @@ use crate::mutual::{Def, MutConst};
 
 use super::Journal;
 use super::names::{image_kinds, ix_aux_name, reserved_input};
+use super::opt::{
+  Occ, OptBlock, OptEnv, engine, o11a_decline_cause, opt_block_of,
+};
 use super::sidecar::{hash_map_of, rename_named};
 use super::spec::NestedCanon;
 use super::translate::{RwState, image_decl_with, rewrite_block};
@@ -119,7 +124,7 @@ fn move_to_display(
     stt.aux_name_to_addr.remove(n);
     stt.aux_gen_extra_names.remove(n);
     if let Some(named) = named {
-      stt.env.register_name(d.clone(), rename_named(&full, &named));
+      stt.register_named(d.clone(), rename_named(&full, &named));
     }
     if let Some(a) = addr {
       match stt.aux_name_to_addr.entry(d.clone()) {
@@ -130,6 +135,7 @@ fn move_to_display(
         },
         dashmap::mapref::entry::Entry::Vacant(e) => {
           e.insert(a);
+          crate::compile::block_txn::log_aux(d);
         },
       }
     }
@@ -142,7 +148,7 @@ fn move_to_display(
       .extend(journal.claimed.iter().filter(|n| !moved.contains(*n)).cloned());
     for n in keep {
       if let Some(named) = stt.env.named.get(&n).map(|r| r.clone()) {
-        stt.env.register_name(n, rename_named(&full, &named));
+        stt.register_named(n, rename_named(&full, &named));
       }
     }
   }
@@ -190,13 +196,26 @@ pub fn edit_changed_block(
   let moved =
     move_to_display(stt, original_all, &rep0, &perm, &journal, &|_| true)?;
   for h in heads {
-    insert_once(&stt.p3.heads, &h, all0.clone(), "image-kind head")?;
+    insert_once(
+      &stt.p3.heads,
+      &h,
+      all0.clone(),
+      "image-kind head",
+      crate::compile::block_txn::log_p3_head,
+    )?;
   }
-  insert_once(&stt.p3.blocks, &all0, original_all.to_vec(), "Lean block")?;
+  insert_once(
+    &stt.p3.blocks,
+    &all0,
+    original_all.to_vec(),
+    "Lean block",
+    crate::compile::block_txn::log_p3_block,
+  )?;
   insert_recs(stt, &journal.recs)?;
-  let nested = layout.map(|_| NestedCanon {
+  let nested = layout.map(|l| NestedCanon {
     perm: perm.clone(),
     num_canon: journal.n_canonical_aux,
+    evaporated: l.evaporated.clone(),
   });
   let record = ComponentRecord { classes: planc.clone(), nested };
   for c in &planc {
@@ -278,9 +297,21 @@ pub fn edit_permuted_below_family(
   let heads = image_kinds(&const_of, &below_all);
   insert_recs(stt, &journal.below_recs)?;
   for h in heads {
-    insert_once(&stt.p3.heads, &h, all0.clone(), "image-kind head")?;
+    insert_once(
+      &stt.p3.heads,
+      &h,
+      all0.clone(),
+      "image-kind head",
+      crate::compile::block_txn::log_p3_head,
+    )?;
   }
-  insert_once(&stt.p3.blocks, &all0, below_all.clone(), "Lean block")?;
+  insert_once(
+    &stt.p3.blocks,
+    &all0,
+    below_all.clone(),
+    "Lean block",
+    crate::compile::block_txn::log_p3_block,
+  )?;
   // the view reads the family's canonical classes: its stored order
   let mut order: Vec<(usize, Name)> =
     pos.iter().copied().zip(below_all.iter().cloned()).collect();
@@ -293,11 +324,15 @@ pub fn edit_permuted_below_family(
   }
   Ok(journal.pending.into_iter().filter(|n| !moved.contains(n)).collect())
 }
+
+/// Insert-once into a Pass 3 record; a new entry is logged for the
+/// failed-block rollback (`log`).
 fn insert_once<V: PartialEq + Clone>(
   m: &dashmap::DashMap<Name, V>,
   k: &Name,
   v: V,
   what: &str,
+  log: fn(&Name),
 ) -> Result<(), CompileError> {
   match m.entry(k.clone()) {
     dashmap::mapref::entry::Entry::Occupied(e) => {
@@ -310,6 +345,7 @@ fn insert_once<V: PartialEq + Clone>(
     },
     dashmap::mapref::entry::Entry::Vacant(e) => {
       e.insert(v);
+      log(k);
     },
   }
   Ok(())
@@ -465,12 +501,18 @@ fn with_big_stack<R: Send>(f: impl FnOnce() -> R + Send) -> R {
   })
 }
 
-/// The overlay and decompile sources of a block (`prepareBlock`), `None`
-/// when the block references no head.
+/// What `prepare_block` gives a block: the rewritten members, the decompile
+/// sources and the recorded declines.
+type Prepared = (FxHashMap<Name, ConstantInfo>, Vec<Expr>, Vec<(Name, String)>);
+
+/// The overlay, decompile sources and recorded declines of a block
+/// (`prepareBlock`, with the definitional passes `optLookup` and the
+/// decline records `declineLookup`), `None` when the block references no
+/// head.
 fn prepare_block(
   ctx: &Ctx<'_>,
   all: &NameSet,
-) -> Result<Option<(FxHashMap<Name, ConstantInfo>, Vec<Expr>)>, String> {
+) -> Result<Option<Prepared>, String> {
   if ctx.stt.p3.heads.is_empty() {
     return Ok(None);
   }
@@ -495,9 +537,32 @@ fn prepare_block(
   // indices follow it. Its order is the order of `all` as the scheduler's
   // set holds it; see the report's documentation gap on this point.
   let mut views = views_of(ctx, used.into_iter())?;
+  // the definitional passes' blocks of the referenced changed blocks
+  // (`optBlocks`, once per rewrite); heads of other blocks keep their
+  // baseline
+  let blocks: FxHashMap<Name, OptBlock> = views
+    .iter()
+    .map(|(k, v)| (k.clone(), ctx.with_input(|inp| opt_block_of(v, inp))))
+    .collect();
+  let resolves = |n: &Name| ctx.stt.resolve_addr(n).is_some();
+  let block_of = |h: &Name| -> Option<&OptBlock> {
+    let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
+    blocks.get(&key)
+  };
+  let env = OptEnv {
+    ienv: ctx.lean_env.as_ref(),
+    resolves: &resolves,
+    block_of: &block_of,
+  };
+  let opt = |n: &Name, us: &[Level], args: &[Expr]| {
+    engine(&env, &Occ { head: n, us, args })
+  };
+  let decline = |n: &Name, us: &[Level], args: &[Expr]| {
+    o11a_decline_cause(&env, &Occ { head: n, us, args })
+  };
   let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
-  let rw = rewrite_block(&mut lookup, &members)?;
-  Ok(Some((rw.overlay.into_iter().collect(), rw.sources)))
+  let rw = rewrite_block(&mut lookup, &members, Some(&opt), Some(&decline))?;
+  Ok(Some((rw.overlay.into_iter().collect(), rw.sources, rw.declines)))
 }
 
 /// Every member of the block is an image-kind head (`isImageBlock`).
@@ -584,7 +649,9 @@ fn compile_image_block(
       let mut cache = BlockCache::default();
       match compile_single_definition(&a, &d, &mut cache, stt) {
         Ok((addr, _)) => {
-          stt.aux_name_to_addr.insert(a.clone(), addr);
+          if stt.aux_name_to_addr.insert(a.clone(), addr).is_none() {
+            crate::compile::block_txn::log_aux(&a);
+          }
           hints.push((a.clone(), d.hints));
           compiled.push(a);
         },
@@ -641,11 +708,19 @@ pub fn compile_block(
   }
   let prepared =
     with_big_stack(|| prepare_block(&ctx, all)).map_err(invalid)?;
-  if let Some((overlay, sources)) = prepared {
+  if let Some((overlay, sources, declines)) = prepared {
     cache.p3_overlay = overlay;
     cache.p3_sources = sources.into_iter().enumerate().collect();
+    cache.p3_declines = declines;
   }
   let res = compile_const(lo, all, lean_env, cache, stt, kctx);
+  // the recorded declines join the compile's non-canonical set when the
+  // block compiles (the Lean driver merges a block's state only then)
+  if res.is_ok() {
+    for (n, c) in std::mem::take(&mut cache.p3_declines) {
+      stt.p3.non_canonical.insert(n, c);
+    }
+  }
   let _ = Named::with_addr;
   res
 }

@@ -4132,8 +4132,8 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
 /-- Structured result of `rs_compile_env`. Field kinds/order must match
     the `LeanIxCompileEnvStatus` FFI layout in `crates/ffi/src/lean.rs`:
-    boxed fields first (`root`, `ungrounded`), then the UInt64 scalars
-    (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
+    boxed fields first (`root`, `ungrounded`, `nonCanonical`), then the
+    UInt64 scalars (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
 structure CompileEnvStatus where
   /-- 64-hex canonical consts merkle root. Equals the `.ixe` header root
       when a file was written; still computed on a fail-closed abort. -/
@@ -4141,6 +4141,10 @@ structure CompileEnvStatus where
   /-- `(pretty name, reason)` for every requested constant whose block
       failed to compile, sorted by name. Empty ⇔ complete environment. -/
   ungrounded : Array (String × String)
+  /-- `(pretty name, cause)` of the Rust compiler's Pass 3 non-canonical
+      set (the recorded declines, `CompileEnv.p3NonCanonical` on the Lean
+      side), sorted by name; empty with the switch off. -/
+  nonCanonical : Array (String × String)
   /-- Bytes written to `outPath` (0 when nothing was written). -/
   bytes : UInt64
   /-- Named constants in the compiled env. -/

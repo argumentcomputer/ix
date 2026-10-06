@@ -259,7 +259,23 @@ pub fn compile_env_with_profile(
   };
 
   let phase_start = Instant::now();
-  let condensed = compute_sccs(&grounded_out_refs);
+  let mut condensed = compute_sccs(&grounded_out_refs);
+  // Pass 3: O11a's scheduling edges `all0._sizeOf_N -> T._sizeOf_inst`
+  // (and `-> SizeOf.sizeOf`), references its output adds that the input does
+  // not have (`O11a.addSizeOfEdges`, design document §6.3 obligation 2):
+  // the instance compiles first. Block dependencies only; the components
+  // and representatives do not change.
+  if pass3 {
+    let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+    // the candidates are the inductive families' first members (the
+    // setup scan's groups), the only names the edges start from
+    crate::compile::pass3::opt::add_size_of_edges(
+      scan.ind_groups.keys(),
+      &const_of,
+      &grounded_out_refs,
+      &mut condensed,
+    );
+  }
   if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
@@ -803,6 +819,10 @@ pub fn compile_env_with_profile(
               } else {
                 // Compile this block
                 let mut cache = BlockCache::default();
+                // a failed block publishes nothing (`block_txn`): its
+                // entries are logged and removed on failure, and the names
+                // it releases early wait for its end
+                crate::compile::block_txn::start();
                 let res = run_compile_catching_panic(
                   &lo,
                   "compile_const",
@@ -817,6 +837,17 @@ pub fn compile_env_with_profile(
                     )
                   },
                 );
+                // a panic inside the aux tail can leave the Pass 3 journal
+                // open on this thread
+                let _ = crate::compile::pass3::journal_take();
+                if let Some(txn) = crate::compile::block_txn::take() {
+                  if res.is_err() {
+                    crate::compile::block_txn::rollback(stt_ref, &txn);
+                  }
+                  if !txn.pending.is_empty() {
+                    stt_ref.aux_gen_pending.lock().unwrap().extend(txn.pending);
+                  }
+                }
                 if let Err(e) = res {
                   // Record the failure per-member and fall through. The
                   // scheduler keeps running so other constants can still

@@ -303,7 +303,9 @@ pub extern "C" fn rs_compile_env_full(
 /// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle
 /// root — matches the serialized header, computed even when nothing is
 /// written), ungrounded (`Array (String × String)` of pretty-name /
-/// reason, sorted by name), bytes (0 when not written), named count,
+/// reason, sorted by name), nonCanonical (Pass 3's recorded declines,
+/// `Array (String × String)` of pretty-name / cause, sorted by name;
+/// empty with the switch off), bytes (0 when not written), named count,
 /// unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
@@ -360,6 +362,14 @@ fn compile_env_inner(
     .map(|e| (e.key().pretty(), e.value().clone()))
     .collect();
   ungrounded.sort_by(|a, b| a.0.cmp(&b.0));
+  // Pass 3's non-canonical set (the recorded declines), same order.
+  let mut non_canonical: Vec<(String, String)> = compile_stt
+    .p3
+    .non_canonical
+    .iter()
+    .map(|e| (e.key().pretty(), e.value().clone()))
+    .collect();
+  non_canonical.sort();
 
   // Canonical consts merkle root — equals the serialized header root
   // when a file is written; still reported on a fail-closed abort so
@@ -426,9 +436,14 @@ fn compile_env_inner(
     ungrounded_arr
       .set(i, LeanProd::new(LeanString::new(name), LeanString::new(reason)));
   }
+  let nc_arr = LeanArray::alloc(non_canonical.len());
+  for (i, (name, cause)) in non_canonical.iter().enumerate() {
+    nc_arr.set(i, LeanProd::new(LeanString::new(name), LeanString::new(cause)));
+  }
   let status = LeanIxCompileEnvStatus::alloc(0);
   status.set_obj(0, LeanString::new(&root.hex()));
   status.set_obj(1, ungrounded_arr);
+  status.set_obj(2, nc_arr);
   status.set_num_64(0, written);
   status.set_num_64(1, named_count);
   status.set_num_64(2, unique_anon);

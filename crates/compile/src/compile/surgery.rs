@@ -1185,7 +1185,7 @@ pub fn adapt_split_minor(
   Some(wrapper)
 }
 
-fn source_ctor_for_minor(
+pub(crate) fn source_ctor_for_minor(
   src_minor_idx: usize,
   rec: &RecursorVal,
   lean_env: &LeanEnv,
@@ -1235,7 +1235,7 @@ fn source_ctor_for_minor(
 /// motive `source_pos` targets `ext_name specs… idx…`. Spec args are
 /// concrete (the recursor type is instantiated with call-site params
 /// before extraction), so field types can be matched against them by hash.
-struct AuxMotiveSig {
+pub(crate) struct AuxMotiveSig {
   source_pos: usize,
   ext_name: Name,
   ext_n_params: usize,
@@ -1245,7 +1245,7 @@ struct AuxMotiveSig {
 /// Extract [`AuxMotiveSig`]s for every aux motive position (`>= all.len()`)
 /// of `rec`, by walking its type instantiated with the call site's levels,
 /// params, and motives.
-fn aux_motive_sigs(
+pub(crate) fn aux_motive_sigs(
   rec: &RecursorVal,
   rec_levels: &[Level],
   params: &[LeanExpr],
@@ -1411,7 +1411,7 @@ pub fn derive_head_rewrite_app(
   Ok((target_levels, sig.specs.clone()))
 }
 
-fn source_minor_type(
+pub(crate) fn source_minor_type(
   rec: &RecursorVal,
   rec_levels: &[Level],
   params: &[LeanExpr],
@@ -1440,7 +1440,7 @@ fn source_minor_type(
   }
 }
 
-fn peel_binders(
+pub(crate) fn peel_binders(
   mut cur: LeanExpr,
   n: usize,
   prefix: &str,
@@ -1469,14 +1469,14 @@ fn peel_binders(
 }
 
 #[derive(Clone)]
-struct SourceRecTarget {
-  source_pos: usize,
-  idx_args: Vec<LeanExpr>,
-  xs_decls: Vec<LocalDecl>,
-  xs_fvars: Vec<LeanExpr>,
+pub(crate) struct SourceRecTarget {
+  pub(crate) source_pos: usize,
+  pub(crate) idx_args: Vec<LeanExpr>,
+  pub(crate) xs_decls: Vec<LocalDecl>,
+  pub(crate) xs_fvars: Vec<LeanExpr>,
 }
 
-fn find_source_rec_target(
+pub(crate) fn find_source_rec_target(
   dom: &LeanExpr,
   original_all: &[Name],
   params: &[LeanExpr],

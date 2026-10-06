@@ -1,10 +1,9 @@
 //! Pass 3b: the call-site rewrite (design document §4.5, Def 3.5, Def 3.6).
-//! A port of `Ix/Compile/Pass/Translate.lean` for slice 1 of M6R: the
-//! optimisation hook (`RwState.opt?`, the definitional passes O1-O6/O11a and
-//! the proof-justified passes O7-O12) and the decline hook are absent, so
-//! every full application of an image-kind head is inlined from its image
-//! (the baseline, Def 3.6), which is exactly the form the Lean driver gives
-//! with those passes absent.
+//! A port of `Ix/Compile/Pass/Translate.lean`. At every full application of
+//! an image-kind head the optimisation hook is tried first (`RwState.opt?`:
+//! the definitional passes O1-O6/O11a, `opt::engine`; the proof-justified
+//! passes O7-O12 are slice 4), then the image is inlined (the baseline,
+//! Def 3.6); the decline hook (`RwState.decline?`) records O11a's declines.
 //!
 //! Every outermost rewritten occurrence is wrapped in the placeholder
 //! `[(_ix.inline, n)]` and the source occurrence is returned as source `n`;
@@ -28,21 +27,49 @@ pub type ExpansionLookup<'a> =
 /// A recursion bound for one rewrite.
 pub const REWRITE_FUEL: usize = 1 << 20;
 
+/// The optimisation hook (`RwState.opt?`, the definitional passes): the
+/// rewrite of a full application `n.{us} args`, or `None` (the baseline).
+pub type OptHook<'h> = dyn Fn(&Name, &[Level], &[Expr]) -> Option<Expr> + 'h;
+
+/// The decline hook (`RwState.decline?`): the cause of a recorded decline at
+/// a full application.
+pub type DeclineHook<'h> =
+  dyn Fn(&Name, &[Level], &[Expr]) -> Option<String> + 'h;
+
+type CacheKey = (Hash, bool, Option<Name>);
+
 #[derive(Default)]
-pub struct RwState {
+pub struct RwState<'h> {
   /// The source occurrences, placeholder `i` for entry `i`.
   pub sources: Vec<Expr>,
   /// Rewritten expansions.
   pub exps: FxHashMap<Name, Expansion>,
-  cache: FxHashMap<(Hash, bool, Option<Name>), Expr>,
+  cache: FxHashMap<CacheKey, Expr>,
   /// The definition whose value is rewritten (`RwState.site`; read only by
   /// the passes, kept in the cache key as on the Lean side).
   site: Option<Name>,
   level_cache: FxHashMap<(Name, Vec<Hash>), Expr>,
   dev: DevState,
+  /// The definitional passes, tried at every full application before the
+  /// image is inlined (`RwState.opt?`).
+  opt: Option<&'h OptHook<'h>>,
+  /// The recorded declines, tried next to `opt` (`RwState.decline?`).
+  decline: Option<&'h DeclineHook<'h>>,
+  /// The causes recorded so far, in rewrite order (`RwState.declines`).
+  pub declines: Vec<String>,
+  /// The declines recorded while rewriting a cached subterm
+  /// (`RwState.declineCache`, same key as `cache`).
+  decline_cache: FxHashMap<CacheKey, Vec<String>>,
 }
 
-impl RwState {
+impl<'h> RwState<'h> {
+  /// A rewrite state with the passes' hooks.
+  pub fn with_hooks(
+    opt: Option<&'h OptHook<'h>>,
+    decline: Option<&'h DeclineHook<'h>>,
+  ) -> Self {
+    RwState { opt, decline, ..Default::default() }
+  }
   fn expansion_of(
     &mut self,
     lookup: &mut ExpansionLookup<'_>,
@@ -86,8 +113,14 @@ impl RwState {
     let fuel = fuel - 1;
     let ck = (key(e), record, self.site.clone());
     if let Some(r) = self.cache.get(&ck) {
+      // a cached subterm records its declines again (they belong to the
+      // constant being rewritten now)
+      if let Some(ds) = self.decline_cache.get(&ck) {
+        self.declines.extend(ds.iter().cloned());
+      }
       return Ok(r.clone());
     }
+    let before = self.declines.len();
     let r = match e.as_data() {
       ExprData::App(..) | ExprData::Const(..) => {
         let (h, args) = get_app_fn_args(e);
@@ -103,17 +136,30 @@ impl RwState {
                   // bare or partial: the Lean name denotes the stored image
                   mk_app_n(Expr::cnst(n.clone(), us.clone()), &args2)
                 } else {
-                  let lk =
-                    (n.clone(), us.iter().map(|u| *u.get_hash()).collect());
-                  let f = match self.level_cache.get(&lk) {
-                    Some(f) => f.clone(),
+                  // the definitional passes first; the inline image is the
+                  // baseline when none applies
+                  let opt = self.opt.and_then(|p| p(n, us, &args2));
+                  let body = match opt {
+                    Some(b) => b,
                     None => {
-                      let f = subst_levels(&x.level_params, us, &x.value);
-                      self.level_cache.insert(lk, f.clone());
-                      f
+                      let lk =
+                        (n.clone(), us.iter().map(|u| *u.get_hash()).collect());
+                      let f = match self.level_cache.get(&lk) {
+                        Some(f) => f.clone(),
+                        None => {
+                          let f = subst_levels(&x.level_params, us, &x.value);
+                          self.level_cache.insert(lk, f.clone());
+                          f
+                        },
+                      };
+                      instantiate_with(&mut self.dev, &f, &args2)?
                     },
                   };
-                  let body = instantiate_with(&mut self.dev, &f, &args2)?;
+                  if let Some(cause) =
+                    self.decline.and_then(|d| d(n, us, &args2))
+                  {
+                    self.declines.push(cause);
+                  }
                   if record {
                     let k = self.sources.len();
                     self.sources.push(e.clone());
@@ -174,6 +220,9 @@ impl RwState {
       },
       _ => e.clone(),
     };
+    if self.declines.len() != before {
+      self.decline_cache.insert(ck.clone(), self.declines[before..].to_vec());
+    }
     self.cache.insert(ck, r.clone());
     Ok(r)
   }
@@ -185,7 +234,7 @@ impl RwState {
     ci: &ConstantInfo,
   ) -> Result<ConstantInfo, String> {
     let mut go =
-      |st: &mut RwState, e: &Expr| st.rw(lookup, REWRITE_FUEL, true, e);
+      |st: &mut RwState<'_>, e: &Expr| st.rw(lookup, REWRITE_FUEL, true, e);
     Ok(match ci {
       ConstantInfo::AxiomInfo(v) => {
         let mut v = v.clone();
@@ -251,30 +300,44 @@ pub struct BlockRewrite {
   pub overlay: Vec<(Name, ConstantInfo)>,
   /// The source occurrences, placeholder `i` for entry `i`.
   pub sources: Vec<Expr>,
+  /// The recorded declines, each with the member whose term had the
+  /// occurrence, in rewrite order without repeats (`BlockRewrite.declines`).
+  pub declines: Vec<(Name, String)>,
 }
 
 /// Rewrite the members of one block; placeholder indices are block-unique
-/// (`rewriteBlock`, no passes).
-pub fn rewrite_block(
+/// (`rewriteBlock`), with the definitional passes and the decline records
+/// when the hooks are given.
+pub fn rewrite_block<'h>(
   lookup: &mut ExpansionLookup<'_>,
   members: &[(Name, ConstantInfo)],
+  opt: Option<&'h OptHook<'h>>,
+  decline: Option<&'h DeclineHook<'h>>,
 ) -> Result<BlockRewrite, String> {
-  let mut st = RwState::default();
+  let mut st = RwState::with_hooks(opt, decline);
   let mut overlay = Vec::new();
+  let mut declines: Vec<(Name, String)> = Vec::new();
   for (n, ci) in members {
+    let before = st.declines.len();
     let ci2 = st.rewrite_const(lookup, ci)?;
+    for c in &st.declines[before..] {
+      let d = (n.clone(), c.clone());
+      if !declines.contains(&d) {
+        declines.push(d);
+      }
+    }
     if ci2.get_hash() != ci.get_hash() {
       overlay.push((n.clone(), ci2));
     }
   }
-  Ok(BlockRewrite { overlay, sources: st.sources })
+  Ok(BlockRewrite { overlay, sources: st.sources, declines })
 }
 
 /// The value and type of an image constant `a` with every head rewritten,
 /// no records (`imageDeclWith`), from a rewrite state carried across the
 /// members of an image block.
 pub fn image_decl_with(
-  st: &mut RwState,
+  st: &mut RwState<'_>,
   lookup: &mut ExpansionLookup<'_>,
   a: &Name,
   x: &Expansion,

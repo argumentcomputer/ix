@@ -67,6 +67,9 @@ pub struct ComponentRecord {
 /// The view of one changed Lean block.
 pub struct BlockView {
   pub all: Vec<Name>,
+  /// Pass 1's canonical form of the block (its compiled components), read
+  /// by the definitional passes (`Opt.optBlockOf`).
+  pub canon: BlockCanon,
   pub spec: ImageSpec,
   /// The canonical inductives, constructors and recursors under view names.
   pub canon_consts: FxHashMap<Name, ConstantInfo>,
@@ -260,7 +263,7 @@ pub fn build_view(
       }
     }
   }
-  Ok(BlockView { all: all.to_vec(), spec, canon_consts: consts, back })
+  Ok(BlockView { all: all.to_vec(), canon, spec, canon_consts: consts, back })
 }
 
 impl BlockView {

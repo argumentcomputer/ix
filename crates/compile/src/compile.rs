@@ -300,6 +300,9 @@ pub struct BlockCache {
   pub p3_meta_mode: bool,
   /// Pass 3: the current constant's extension refs (`meta_refs`).
   pub p3_meta_refs: indexmap::IndexSet<Address>,
+  /// Pass 3: the recorded declines of the block's rewrite, merged into the
+  /// non-canonical set when the block compiles (`BlockState.p3NonCanonical`).
+  pub p3_declines: Vec<(Name, String)>,
 }
 
 #[derive(Debug)]
@@ -372,6 +375,7 @@ impl CompileState {
       },
       dashmap::mapref::entry::Entry::Vacant(e) => {
         e.insert(addr.clone());
+        block_txn::log_aux(name);
       },
     }
     self.aux_gen_extra_names.insert(name.clone());
@@ -405,9 +409,20 @@ impl CompileState {
       },
       dashmap::mapref::entry::Entry::Vacant(e) => {
         e.insert(addr.clone());
+        block_txn::log_compiled(name);
       },
     }
     Ok(())
+  }
+
+  /// Register `name`'s `Named` entry, logging it for the failed-block
+  /// rollback when the entry is new (`block_txn`).
+  pub fn register_named(&self, name: Name, named: Named) {
+    let fresh = !self.env.named.contains_key(&name);
+    if fresh {
+      block_txn::log_named(&name);
+    }
+    self.env.register_name(name, named);
   }
 
   /// Look up a compiled constant's address by name.
@@ -493,8 +508,10 @@ impl CompileState {
       }
     }
 
-    if let Some(aux_addr) = self.aux_name_to_addr.get(name) {
-      self.name_to_addr.insert(name.clone(), aux_addr.clone());
+    if let Some(aux_addr) = self.aux_name_to_addr.get(name)
+      && self.name_to_addr.insert(name.clone(), aux_addr.clone()).is_none()
+    {
+      block_txn::log_compiled(name);
     }
     if let Some(mut entry) = self.env.named.get_mut(name) {
       entry.value_mut().set_original(orig_addr, orig_meta);
@@ -4627,7 +4644,7 @@ pub(crate) fn compile_single_def(
   }
   if aux {
     stt.env.store_const(addr.clone(), constant);
-    stt.env.register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
+    stt.register_named(name.clone(), Named::new(addr.clone(), meta.clone()));
   } else {
     // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
     // original (addr, meta) in Named.original for decompilation metadata.
@@ -4738,7 +4755,7 @@ fn compile_const_inner_body(
       let addr = Address::hash(&bytes);
       if aux {
         stt.env.store_const(addr.clone(), constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
     },
@@ -4765,7 +4782,7 @@ fn compile_const_inner_body(
       let addr = Address::hash(&bytes);
       if aux {
         stt.env.store_const(addr.clone(), constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
     },
@@ -4799,7 +4816,7 @@ fn compile_const_inner_body(
         let addr = Address::hash(&bytes);
         if aux {
           stt.env.store_const(addr.clone(), constant);
-          stt.env.register_name(
+          stt.register_named(
             name.clone(),
             Named::new(addr.clone(), meta.clone()),
           );
@@ -5026,7 +5043,7 @@ fn compile_mutual(
           // `remove`, not `get().cloned()`: each name is consumed exactly
           // once, and ConstantMeta is an arena-sized deep clone.
           let meta = all_metas.remove(&n).unwrap_or_default();
-          stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
+          stt.register_named(n.clone(), Named::new(addr.clone(), meta));
           stt.claim_compiled_name(&n, &addr)?;
         }
       }
@@ -5082,9 +5099,7 @@ fn compile_mutual(
           let proj_addr = Address::hash(&proj_bytes);
           if aux {
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_compiled_name(&n, &proj_addr)?;
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
@@ -5101,7 +5116,7 @@ fn compile_mutual(
             let ctor_addr = Address::hash(&ctor_bytes);
             if aux {
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
-              stt.env.register_name(
+              stt.register_named(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
@@ -5121,7 +5136,7 @@ fn compile_mutual(
       let proj_addr = Address::hash(&proj_bytes);
       if aux {
         stt.env.store_const(proj_addr.clone(), proj);
-        stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+        stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.claim_compiled_name(&n, &proj_addr)?;
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
@@ -5159,7 +5174,7 @@ fn compile_mutual(
       .collect();
     let muts_name = block_addr.muts_name(&first_name);
     compile_name(&muts_name, stt);
-    stt.env.register_name(
+    stt.register_named(
       muts_name,
       Named::new(
         block_addr.clone(),
@@ -5248,7 +5263,7 @@ fn compile_mutual(
             .collect()
         })
         .collect();
-      stt.env.register_name(
+      stt.register_named(
         muts_name,
         Named::new(
           block_addr.clone(),
@@ -5304,7 +5319,7 @@ fn compile_mutual(
         )?
       };
       if !release.is_empty() {
-        stt.aux_gen_pending.lock().unwrap().extend(release);
+        pass3::release_pending(stt, release);
       }
     } else if user_layout_changed || aux_layout_changed {
       let plans = surgery::compute_call_site_plans(
@@ -5488,6 +5503,7 @@ fn compile_mutual(
 
 mod admission;
 pub mod aux_gen;
+pub mod block_txn;
 mod env;
 mod memory;
 pub mod mutual;
