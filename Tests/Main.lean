@@ -36,6 +36,7 @@ import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.ValidateLean
 import Tests.Ix.Compile.ValidateLeanNC
+import Tests.Ix.Compile.AdversarialMatrix
 import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.MathlibMeasure
 import Tests.Ix.Compile.O11aDecline
@@ -401,6 +402,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- validate-lean on the non-canonical fixtures: every auxiliary that differs from
   -- Lean's form, the phase that covers it, its match (Tests.Ix.Compile.ValidateLeanNC).
   ("validate-lean-nc", Tests.Ix.Compile.ValidateLeanNC.run),
+  -- The adversarial matrix (codex plan §9.2): per row a forged artifact refused and a
+  -- valid neighbour accepted by the same checker, or a recorded reason it does not
+  -- apply (Tests.Ix.Compile.AdversarialMatrix).
+  ("adversarial-matrix", Tests.Ix.Compile.AdversarialMatrix.run),
   -- Changed definition cliques under the switch (IX_PASS3=images): plans, cones,
   -- decompile, kernels and the twins against the switch-on non-canonical set
   -- (Tests.Ix.Compile.Pass3Cliques).

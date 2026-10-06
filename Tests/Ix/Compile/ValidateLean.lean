@@ -90,7 +90,11 @@ def expected : List Expected := [
   ⟨"ValidateLeanIPB", "off", ["6", "8"], "A3V-IPB (reproducer: IPB.Nested, IPB.MutNested; fixed by Pass 3)"⟩,
   -- the twin families: their RecAlias (WB-B6) and SurgCollapse (A0) members
   ⟨"Repro", "off", ["1", "5", "6", "8"], "A0 refusal of Repro.Orig.SurgCollapse (D13); WB-B6"⟩,
-  ⟨"Repro", "on", ["5", "6", "8"], "WB-B6"⟩]
+  ⟨"Repro", "on", ["5", "6", "8"], "WB-B6"⟩,
+  -- the clique-ownership sources (added with phase 9, M4): the block rule refuses
+  -- `WF8B.caller`, a caller outside the clique's unit that unfolds the transported
+  -- clique's encoding (by design, M1-a: a named block failure, so phase 5 misses it)
+  ⟨"Sources", "on", ["1", "5"], "block-rule caller refusal by design (WF8B.caller; M1-a)"⟩]
 
 /-- The counts of a failing phase's detail, which the record pins: phase 6
 its unclassified auxiliaries, phase 8 its violations, any other phase the
@@ -203,11 +207,38 @@ def pins : List (String × String × String × String) := [
   ("UnsafeI", "on", "6", "unclassified 2"),
   ("UnsafeI", "on", "8", "2 violation(s)"),
   ("ValidateLeanIPB", "off", "6", "unclassified 10"),
-  ("ValidateLeanIPB", "off", "8", "10 violation(s)")
+  ("ValidateLeanIPB", "off", "8", "10 violation(s)"),
+  ("Sources", "on", "1", "1 per-block compile failure(s)"),
+  ("Sources", "on", "5", "1 digest mismatch(es), 1 missing")
 ]
 
 def pinOf (stem switch key : String) : Option String :=
   pins.findSome? fun (s, sw, k, p) => if s == stem && sw == switch && k == key then some p else none
+
+/-- Phase 9 (clique values, plan M4 (b)): the exact detail of every run
+whose phase 9 passes, i.e. every switch-on run that transports a definition
+clique (2026-10-06, first recording; cause: the phase is new). A run that
+transports none skips phase 9; a recorded run that does not pass, or passes
+with other counts, fails the suite. -/
+def phase9Pins : List (String × String × String) := [
+  ("SurgCollapse", "on", "1 transported clique(s) (0 value-checked, 1 with no value-checkable member, each with a reason, 0 failing), 2 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 2 not value-checkable; 0 failure(s)"),
+  ("SurgCollapseEq", "on", "1 transported clique(s) (0 value-checked, 1 with no value-checkable member, each with a reason, 0 failing), 2 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 2 not value-checkable; 0 failure(s)"),
+  ("F4_NestedAlphaUsers", "on", "1 transported clique(s) (0 value-checked, 1 with no value-checkable member, each with a reason, 0 failing), 4 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 4 not value-checkable; 0 failure(s)"),
+  ("Neighbours", "on", "4 transported clique(s) (1 value-checked, 3 with no value-checkable member, each with a reason, 0 failing), 9 member(s): 1 value-checked on 1 input tuple(s) (1 closed, 0 symbolic), 8 not value-checkable; 0 failure(s)"),
+  ("DotCtor", "on", "1 transported clique(s) (0 value-checked, 1 with no value-checkable member, each with a reason, 0 failing), 2 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 2 not value-checkable; 0 failure(s)"),
+  ("F6_OrderIdxBrecOn", "on", "1 transported clique(s) (0 value-checked, 1 with no value-checkable member, each with a reason, 0 failing), 2 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 2 not value-checkable; 0 failure(s)"),
+  ("C5Collapse", "on", "2 transported clique(s) (0 value-checked, 2 with no value-checkable member, each with a reason, 0 failing), 4 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 4 not value-checkable; 0 failure(s)"),
+  ("C6NestedCollapse", "on", "2 transported clique(s) (0 value-checked, 2 with no value-checkable member, each with a reason, 0 failing), 8 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 8 not value-checkable; 0 failure(s)"),
+  ("C8Collapse3", "on", "4 transported clique(s) (1 value-checked, 3 with no value-checkable member, each with a reason, 0 failing), 11 member(s): 2 value-checked on 4 input tuple(s) (4 closed, 0 symbolic), 9 not value-checkable; 0 failure(s)"),
+  ("C9Params", "on", "1 transported clique(s) (0 value-checked, 1 with no value-checkable member, each with a reason, 0 failing), 2 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 2 not value-checkable; 0 failure(s)"),
+  ("Cliques", "on", "42 transported clique(s) (29 value-checked, 13 with no value-checkable member, each with a reason, 0 failing), 101 member(s): 72 value-checked on 755 input tuple(s) (707 closed, 48 symbolic), 29 not value-checkable; 0 failure(s)"),
+  ("Proto", "on", "9 transported clique(s) (1 value-checked, 8 with no value-checkable member, each with a reason, 0 failing), 25 member(s): 2 value-checked on 4 input tuple(s) (4 closed, 0 symbolic), 23 not value-checkable; 0 failure(s)"),
+  ("Repro", "on", "3 transported clique(s) (0 value-checked, 3 with no value-checkable member, each with a reason, 0 failing), 8 member(s): 0 value-checked on 0 input tuple(s) (0 closed, 0 symbolic), 8 not value-checkable; 0 failure(s)"),
+  ("Sources", "on", "23 transported clique(s) (23 value-checked, 0 with no value-checkable member, each with a reason, 0 failing), 46 member(s): 46 value-checked on 276 input tuple(s) (180 closed, 96 symbolic), 0 not value-checkable; 0 failure(s)")
+]
+
+def phase9PinOf (stem switch : String) : Option String :=
+  phase9Pins.findSome? fun (s, sw, p) => if s == stem && sw == switch then some p else none
 
 /-- Fixtures Lean itself rejects (the aux-cert record): no report. -/
 def leanRejects : List String := ["PropEvap", "SortU", "SortURec", "SortUOpt"]
@@ -218,7 +249,10 @@ def files : List String :=
        "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean")
   ++ (["Cliques", "Proto", "Repro"].map fun s => s!"Tests/Ix/Compile/Twins/{s}.lean")
   ++ ["Tests/Ix/Compile/Oracle/Lib.lean", "Tests/Ix/Compile/ValidateLeanIPB.lean",
-      "Tests/Ix/Compile/ValidateLeanSwap.lean"]
+      "Tests/Ix/Compile/ValidateLeanSwap.lean",
+      -- the clique-ownership sources: phase 9 on the compiler's own transports of
+      -- user values, binders and relations of the packing type (plan M4 (b))
+      "Tests/Ix/Compile/CliqueOwnership/Sources.lean"]
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
@@ -285,7 +319,20 @@ def run : IO UInt32 := do
         let want := failing.contains k
         if r == "fail" && !want then problems := problems.push s!"{stem} {switch}: phase {k} fails (not recorded)"
         if r != "fail" && want then problems := problems.push s!"{stem} {switch}: phase {k} recorded as failing ({causes}) but {r}"
-        if r == "skip" && k != "7" then problems := problems.push s!"{stem} {switch}: phase {k} skipped"
+        -- phase 9 skips exactly when no definition clique is transported
+        -- (always with the switch off); a switch-on run that transports one
+        -- must value-check it with exactly its recorded counts
+        if r == "skip" && k != "7" && k != "9" then problems := problems.push s!"{stem} {switch}: phase {k} skipped"
+        if k == "9" then
+          if switch == "off" && r != "skip" then
+            problems := problems.push s!"{stem} {switch}: phase 9 {r} with the switch off (no clique can be transported)"
+          if r == "pass" then
+            IO.println s!"[validate-lean]   {stem} {switch} phase 9: {d}"
+            match phase9PinOf stem switch with
+            | some p => if p != d then problems := problems.push s!"{stem} {switch}: phase 9 passes with '{d}', recorded '{p}'"
+            | none => problems := problems.push s!"{stem} {switch}: phase 9 passes with '{d}', no count recorded"
+          else if (phase9PinOf stem switch).isSome then
+            problems := problems.push s!"{stem} {switch}: phase 9 recorded as value-checking but {r}"
         -- a recorded failing phase fails exactly as recorded: its counts
         if r == "fail" && want then
           let s := failSummary k d
@@ -295,6 +342,12 @@ def run : IO UInt32 := do
             if p != s then
               problems := problems.push s!"{stem} {switch}: phase {k} fails with '{s}', recorded '{p}'"
           | none => problems := problems.push s!"{stem} {switch}: phase {k} fails with '{s}', no count recorded"
+  -- every phase-9 pin belongs to a run whose phase 9 passed
+  for (stem, switch, p) in phase9Pins do
+    let used := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&
+      (rows?.getD []).any fun (k', r, _) => k' == "9" && r == "pass"
+    if !used && (only.isEmpty || only.contains stem) then
+      problems := problems.push s!"{stem} {switch}: phase 9 recorded as '{p}' (stale)"
   -- every pin belongs to a recorded failing phase of a run
   for (stem, switch, k, p) in pins do
     let used := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&

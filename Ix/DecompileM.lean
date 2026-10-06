@@ -89,6 +89,11 @@ instance : ToString DecompileError := ⟨DecompileError.toString⟩
 /-- Global decompilation environment (reader, immutable). -/
 structure DecompileEnv where
   ixonEnv : Ixon.Env
+  /-- Read the compiled term under a Pass 3 decompile record (`_ix.inline`)
+      instead of replaying the recorded source occurrence. Off everywhere
+      but `ix validate-lean`'s clique value phase, which evaluates the
+      compiled (transported) value of a clique member against Lean's. -/
+  compiledTerms : Bool := false
   deriving Inhabited
 
 /-- Per-block context for decompiling a single constant (reader, immutable per-block). -/
@@ -526,7 +531,8 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
     | _ => done := true
 
   -- Pass 3 replay: the decompiled term is the recorded source occurrence;
-  -- the compiled (rewritten) term is not read.
+  -- the compiled (rewritten) term is not read (unless `compiledTerms`).
+  if (← getEnv).compiledTerms then inlineRecord := none
   if let some (s, m) := inlineRecord then
     let ctx ← getCtx
     let some shared := ctx.metaSharing[s]?

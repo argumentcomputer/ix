@@ -143,7 +143,7 @@ jobs:
               o11a-decline compile-caller-independence
           - name: Lake ignored tests (compiler validation)
             kind: lake
-            test_args: --ignored validate-lean validate-lean-nc
+            test_args: --ignored validate-lean validate-lean-nc adversarial-matrix
           - name: Lake ignored tests (compiler scheduling)
             kind: lake
             test_args: --ignored compile-schedule-identity compile-claim-conflict

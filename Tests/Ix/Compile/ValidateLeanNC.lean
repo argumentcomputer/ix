@@ -166,6 +166,14 @@ def run : IO UInt32 := do
   for ((f, s), result) in todo.zip results.toList do
     IO.println s!"[validate-lean-nc] {(System.FilePath.mk f).fileStem.getD f} {s}: {result.verdicts}"
   let metaProblems := results.filterMap (·.metaProblem)
+  -- phase 9 (clique values) never fails on these fixtures; with the switch off it
+  -- skips (no clique is transported)
+  let p9Problems := (todo.zip results.toList).filterMap fun ((file, s), r) =>
+    let stem := (System.FilePath.mk file).fileStem.getD file
+    if (r.verdicts.splitOn "9=FAIL").length > 1 then some s!"{stem} {s}: phase 9 fails"
+    else if s == "off" && (r.verdicts.splitOn "9=SKIP").length == 1 then some s!"{stem} {s}: phase 9 does not skip with the switch off"
+    else if (r.verdicts.splitOn " 9=").length == 1 then some s!"{stem} {s}: no phase 9 verdict"
+    else none
   let rows := results.foldl (fun acc result => acc ++ result.rows) #[]
   -- the non-canonical entries naming each constant
   let entries := Tests.Ix.Compile.NonCanonical.nonCanonical
@@ -228,8 +236,10 @@ def run : IO UInt32 := do
   for m in missing do IO.println s!"[validate-lean-nc] MISSING {m}"
   for p in metaProblems do IO.println s!"[validate-lean-nc] FAIL {p}"
   IO.println s!"[validate-lean-nc] phase 4: {metaProblems.size} unexpected verdict(s)"
+  for p in p9Problems do IO.println s!"[validate-lean-nc] FAIL {p}"
+  IO.println s!"[validate-lean-nc] phase 9: {p9Problems.length} unexpected verdict(s)"
   IO.println s!"[validate-lean-nc] {(← IO.monoMsNow) - t0} ms"
   IO.FS.removeDirAll dir
-  return if unmatched.isEmpty && missing.isEmpty && prop1.isEmpty && metaProblems.isEmpty then 0 else 1
+  return if unmatched.isEmpty && missing.isEmpty && prop1.isEmpty && metaProblems.isEmpty && p9Problems.isEmpty then 0 else 1
 
 end Tests.Ix.Compile.ValidateLeanNC

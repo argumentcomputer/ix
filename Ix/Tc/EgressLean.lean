@@ -331,7 +331,8 @@ def findDiff (a b : Ix.Expr) : String := Id.run do
 
 /-- Compare the canonicalized original against the kernel-egressed
     constant with `compare_envs` semantics: type hash always; value hash
-    for defn/thm/opaque; per-rule RHS hashes for recursors. `none` = match. -/
+    for defn/thm/opaque, and their kind; per-rule RHS hashes for recursors.
+    `none` = match. -/
 def compareLeanCI (original egressed : Ix.ConstantInfo) : Option String := Id.run do
   let oc := original.getCnst
   let ec := egressed.getCnst
@@ -362,8 +363,20 @@ def compareLeanCI (original egressed : Ix.ConstantInfo) : Option String := Id.ru
                        {findDiff orr.rhs err.rhs}"
   | .recInfo _, other =>
     return some s!"kind mismatch: recursor vs {reprStr other |>.take 30}"
+  -- A definition, theorem or opaque must keep its kind: equal type and
+  -- value do not make a theorem stored as a definition faithful (it would
+  -- gain a body equation and unfold), and the value comparison above cannot
+  -- see the difference (adversarial matrix row 12).
+  | .defnInfo _, .defnInfo _ | .thmInfo _, .thmInfo _ | .opaqueInfo _, .opaqueInfo _ => pure ()
+  | .defnInfo _, _ | .thmInfo _, _ | .opaqueInfo _, _ =>
+    return some s!"kind mismatch: {kindTag original} vs {kindTag egressed}"
   | _, _ => pure ()
   return none
+where
+  kindTag : Ix.ConstantInfo → String
+    | .defnInfo _ => "definition" | .thmInfo _ => "theorem" | .opaqueInfo _ => "opaque"
+    | .axiomInfo _ => "axiom" | .quotInfo _ => "quotient" | .inductInfo _ => "inductive"
+    | .ctorInfo _ => "constructor" | .recInfo _ => "recursor"
 
 end Ix.Tc
 

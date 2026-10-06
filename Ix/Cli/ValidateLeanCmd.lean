@@ -23,11 +23,16 @@
                                 Ix auxiliaries carry `_ix` names
     8. Provenance             — `Named.original` is Lean's form; nothing
                                 un-surgered is stored but images
+    9. Clique values          — every member of every transported
+                                definition clique, as compiled, evaluates to
+                                Lean's value on distinguishing inputs
+                                (`Ix.Cli.CliqueValues`)
 
-  Starting from a Lean FILE makes the Lean source the oracle of phases 4–8.
-  With `--ixe <file>` (no Lean source) phases 1 and 4 are skipped and phases
+  Starting from a Lean FILE makes the Lean source the oracle of phases 4–9.
+  With `--ixe <file>` (no Lean source) phases 1 and 4 are skipped, phases
   6–8 take Lean's forms from the decompiler's output (phase 5), which is a
-  weaker oracle (the decompiler regenerates Lean's auxiliaries itself).
+  weaker oracle (the decompiler regenerates Lean's auxiliaries itself), and
+  phase 9 is skipped (it evaluates Lean's own constants).
 
   `--local` validates the file's own constants with their closure (and the
   constants images and rule statements are built from: `PProd`, `And`,
@@ -53,6 +58,7 @@ public import Ix.Tc
 public import Ix.Compile.Pass
 public import Ix.Compile.Image
 public import Ix.Cli.ValidateCmd
+public import Ix.Cli.CliqueValues
 
 public section
 
@@ -802,6 +808,44 @@ def phaseProvenance (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompil
   if violations.isEmpty then return (.passed detail, lines)
   return (.failed detail, lines)
 
+/-- **Phase 9, clique values** (`Ix.Cli.CliqueValues`, plan M4 (b)).
+    Establishes, for every transported definition clique of the output (a
+    definition, theorem or opaque display member of an `_ix` name: the
+    clique's canonical constants hang off it) and every member, that the
+    COMPILED member (decompiled from the output's bytes without replaying
+    its `_ix.inline` record, i.e. the stored transported term, with the
+    canonical constants it reaches, all added to Lean's environment through
+    Lean's kernel) evaluates to Lean's value on distinguishing inputs
+    derived from the member's type (fixpoints one unfolding deep, with a
+    free-variable oracle per member placed by the side-car `σ`). Members
+    that cannot be evaluated (theorems, propositions, opaque, structural
+    without closed data, resource limits) are reported with the reason and
+    counted; every member has a verdict. It does not check equation lemmas
+    carried with a clique, Lean's encoding constants (kept in Lean's form),
+    or values deeper than one fixpoint unfolding; it needs the Lean source
+    (path mode). -/
+def phaseCliqueValues (leanEnv : Lean.Environment) (ixonEnv : Ixon.Env) (view : View) :
+    IO (PhaseResult × Array String) := do
+  let ch := changedOf ixonEnv view
+  let mut seen : Std.HashSet Lean.Name := {}
+  let mut cliques : Array (Array Lean.Name) := #[]
+  for x in ch.cliques do
+    let ln := IxCliqueValues.toLeanName x
+    let all : List Lean.Name := match leanEnv.find? ln with
+      | some (.defnInfo v) => v.all
+      | some (.thmInfo v) => v.all
+      | some (.opaqueInfo v) => v.all
+      | _ => [ln]
+    let some a0 := all.head? | continue
+    if seen.contains a0 then continue
+    seen := seen.insert a0
+    cliques := cliques.push all.toArray
+  if cliques.isEmpty then
+    return (.skipped "no transported definition clique (no definition, theorem or opaque display member)", #[])
+  let rep ← IxCliqueValues.run leanEnv ixonEnv cliques
+  let (failed, detail, lines) := IxCliqueValues.summarize rep
+  return (if failed then .failed detail else .passed detail, lines)
+
 /-! ## The auxiliary table (`IX_VALIDATE_AUXTABLE=<path>`) -/
 
 /-- One TSV row per regenerated auxiliary and image of `env`: its name, the
@@ -1021,6 +1065,20 @@ phases 6–8 read Lean's forms from the decompiler)"
     let v := leanViewOf leanEnv ixonEnv
     IO.println s!"[validate-lean] Lean oracle for phases 6–8: {v.size} constants ({(← IO.monoMsNow) - t0} ms)"
     leanView? := some v
+  -- Phase 9 needs Lean's environment: it runs here, while it is live, and
+  -- is reported after phase 8.
+  let t9 ← IO.monoMsNow
+  let (phase9, phase9Lines) : PhaseResult × Array String ← do
+    if skipPhases.contains "9" then pure (.skipped "IX_SKIP_PHASES", #[])
+    else match leanEnv?, ixonEnv?, leanView? with
+      | some leanEnv, some (.ok ixonEnv), some v =>
+        IO.println "[validate-lean] phase 9: clique values..."
+        (← IO.getStdout).flush
+        phaseCliqueValues leanEnv ixonEnv v
+      | none, _, _ =>
+        pure (.skipped "no Lean source environment (--ixe mode): phase 9 evaluates Lean's constants", #[])
+      | _, _, _ => pure (.skipped "no materialized environment", #[])
+  let ms9 := (← IO.monoMsNow) - t9
   leanEnv? := none
 
   -- Phase 5: decompile through the full pure-Lean driver.
@@ -1145,6 +1203,7 @@ phases 6–8 read Lean's forms from the decompiler)"
   | _ =>
     for (k, n) in names678 do
       phases ← pushPhase phases { key := k, name := n, result := .skipped "no materialized environment" }
+  phases ← pushPhase phases { key := "9", name := "Clique values", result := phase9, ms := ms9 } phase9Lines
 
   -- The summary table, then a `RESULT:` line matching `ix validate`'s.
   IO.println ""
@@ -1198,7 +1257,7 @@ end Ix.Cli.ValidateLeanCmd
 open Ix.Cli.ValidateLeanCmd in
 def validateLeanCmd : Cli.Cmd := `[Cli|
   "validate-lean" VIA runValidateLeanCmd;
-  "Validate a Lean file through the pure-Lean Ix pipeline: compile, serde, kernel roundtrips (anon, meta), decompile, oracle leg, image rules, provenance (the Phase A validator of record)"
+  "Validate a Lean file through the pure-Lean Ix pipeline: compile, serde, kernel roundtrips (anon, meta), decompile, oracle leg, image rules, provenance, clique values (the Phase A validator of record)"
 
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps (with the recursors of every inductive) are pulled in automatically."
