@@ -10,6 +10,10 @@ at `f829b760` (Lean 4.34.1). No compiler file changed between `e9cb732e` (where 
 cite lines) and `f829b760`, so every `file:line` below is valid at both. Nothing was built or run to
 write this document.
 
+What the certification lane (`Ix/CompileCert/**`) establishes about the compiler's output, the
+theorems W and S, their receipts and trust, and how to run the certifier `compile-certify`, is in
+`docs/compiler-certification.md`.
+
 Lean's elaborator is cited from a Lean **4.34.0** source tree (`src/lean/Lean/...`), the only one
 readable when this was written; whether 4.34.1 changed any cited line is **[open]**.
 
