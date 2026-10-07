@@ -141,9 +141,9 @@ plan's "residual image". "Image" keeps its meaning: the extra constants of Def 3
   `IX_PASS3=off` selects the legacy call-site surgery, kept as the comparison mode against the Rust
   compiler until it implements Pass 3 (M6R).
   With the switch off (`IX_PASS3=off`), no byte moves against the pre-Pass 3 compiler [measured, A3W/A3M].
-- **Not yet wired into the compiler:**
-  - the clique transport (`Ix/Compile/Clique/**`, §5.7–5.8), which nothing outside
-    `Ix/Compile/` imports at this head;
+- **Not yet wired into the compiler** at `564d03f0` (since wired, under Pass 3: the clique transport
+  through `Ix/Compile/Pass/Cliques.lean`, §5.7, and the optimisation passes O1–O12, §1.5–§1.6):
+  - the clique transport (`Ix/Compile/Clique/**`, §5.7–5.8);
   - the optimisation passes (A4).
 - **The Lean drivers' claims are insert-once with Rust's error (§6).** The Lean environment writer
   and the area search were ported (§10).
@@ -504,6 +504,9 @@ decompile complete. The switch-on non-canonical set of the passes (`nonCanonical
 ---
 
 ## 2. Canonical form, defined
+
+What a compiled name denotes, case by case, and what a checker may rely on is §11 (the output contract);
+this section defines the canonical form those cases refer to.
 
 ### 2.1 Components (Def 2.1)
 
@@ -1556,8 +1559,16 @@ failure in a unit with a collapsed block (BB-F7, BB-F1) is accepted only where t
 accepts the same constant, and it is named
 by defect id in the output. REFUSED-SIBLING consequences are listed per unit (§7.3).
 
-**Rust stays on surgery until A4 lands.** `--rust-check` compares switch-off bytes. Rust's reader
-already accepts Pass 3's output.
+**The surgery is the legacy mode until M6R slice 6.** Since the flip (§7.4) the surgery is not the
+compiler's form of anything in the default output: it runs only under `IX_PASS3=off`, as the comparison
+mode against the Rust compiler, whose default is still the surgery. The Rust compiler implements Pass 3
+slice by slice (M6R: the driver and images, then O1–O6/O11a, on the main line; the clique transport, the
+proof-justified passes and closures follow); slice 6 deletes the surgery from both compilers and flips
+Rust's default, keeping the split-minor helpers O2 and O11a share with it (`Ix/CallSiteSurgery.lean`'s
+`sourceCtorForMinor`, `sourceMinorType`, `peelBinders`, `findSourceRecTarget`, `auxMotiveSigs`). Until
+then `--rust-check` is the ALIGNED gate under `IX_PASS3=off`, and text in this document that describes
+the surgery as what the compiler does (the measured counts of §4.8 and §9 taken with the switch off, A3W,
+A3M) describes that legacy mode. Rust's reader accepts Pass 3's output.
 
 ## 5. Transport of proof terms
 
@@ -2321,6 +2332,10 @@ a whole compile. Certification can state one obligation per block.
 
 ## 7. What is canonical and what is only faithful; the non-canonical set
 
+§11 states the same classes as the output contract: what each Lean name denotes in the default mode
+(§11.2), the records the output carries, including the compile-time decline map and the changed-set record
+(§11.3, §11.5), and the identity requirements (§11.4).
+
 ### 7.1 The table (Phase A §3.4.5, made precise)
 
 "Canonical" means invariant, in bytes, under the presentations of Def 4.3:
@@ -2336,7 +2351,7 @@ a whole compile. Certification can state one obligation per block.
 | `rec`/`recOn`/`casesOn`/`below`/`brecOn` users over a permuted block | O1–O6 | **yes** [measured, ORA DQReord 53/53] | — |
 | The same over a split block, including relocated calls | O2, O3 | **yes** [argued; PRO B1/B2 `rfl` for `rec` and `casesOn` users] | — |
 | Structural recursion over a split block with a cross field | O9 | the `_ix` form: **yes** once the reference tables are derived from the final term (§4.7 (e)) [argued] | the Lean name: `PJ-FORM-O9` (D1, §1.6) |
-| `noConfusion` in enumeration form; mutual `_sizeOf` over a split block | O11b; O11a | O11b: the `_ix` forms **yes**, the Lean names `PJ-FORM-O11b` (D1); O11a: **yes** | O11a: the `rfl` holds under the three kernels (A4), but the pass is not run for want of a scheduling edge (§1.5); until then `pendingSurgery` |
+| `noConfusion` in enumeration form; mutual `_sizeOf` over a split block | O11b; O11a | O11b: the `_ix` forms **yes**, the Lean names `PJ-FORM-O11b` (D1); O11a: **yes** | O11a: run since A6f with its scheduling edges (§1.5); where it declines, the decline is recorded (`O11A-PENDING`, `CompileEnv.p3NonCanonical`, §11.3) |
 | `rec` users of a collapsed block that do not distinguish members | O7 | the `_ix` form: **yes** | the Lean name: `PJ-FORM-O7` (D1) |
 | `casesOn` and matchers over a collapsed or lifted member | O8 | the `_ix` form: **yes** | the Lean name: `PJ-FORM-O8` (D1); its callers that no pass rewrote: `INHERITED` |
 | Two functions over a collapsed pair, equal arms | O10 | the `_ix` form: **yes** (the twin's single function) | the Lean names: `PJ-FORM-O10` (D1); a transported clique: `PENDING-COLLAPSE` (§1.6.2) |
@@ -2647,6 +2662,220 @@ environment writer; no Rust work):
     worker thread time [CI §7, light load].
 - Mathlib was not re-profiled after the ports [open].
 
+## 11. The output contract
+
+This section states what a compiled artifact means, for the reader that checks it (the certifier,
+`docs/compiler-certification.md`; the validators of §9). It replaces the interim contract of the proof
+session's handoff. It describes the compiler's **default mode**, Pass 3 (§4.8, §7.4); with `IX_PASS3=off`
+(the legacy surgery, kept until the Rust compiler drops it in M6R slice 6) none of §11.2's Pass 3 cases
+applies and no changed-set record is written. Every statement cites the code that makes it true at
+`jcb/ix-certify-compile` = `36778059` plus this section's commit; where the code is not uniform the
+inconsistency is listed in §11.6, not smoothed over.
+
+Vocabulary (§2, §6.3): a *block* is a component of the reference graph after Pass 1; a block is
+*changed* when its canonical classes differ from Lean's `all` or a nested auxiliary moved or evaporated
+(Def 3.1, `Ix.Compile.Pass.isChanged`); the *logical unit* of a block is the block with all its
+auxiliaries. "The independent export of `c`" is Lean's declaration of `c` compiled alone, with every
+reference resolved by name in the same artifact.
+
+### 11.1 Names, addresses and kinds
+
+The artifact is an `Ixon.Env`: anonymous constants by address (`consts`) and a name table (`named`:
+name ↦ `Named`, §11.3). A Lean constant `c` that compiled is a name of the table; its `Named.addr` is the
+address of its Ix constant. Several names can share one address (alpha-equal constants, a collapsed
+class); the reverse index names an address by its canonical alias (`insertCanonicalAlias`, earliest in
+seed order). A name never denotes two constants: name claims are insert-once (`checkBlockClaims`; a
+second claim at another address fails the block).
+
+### 11.2 What the Ix constant under a Lean name denotes, by case
+
+| # | Case (how the compiler decides it) | The Ix constant under `c`'s name | Code |
+|---|---|---|---|
+| 1 | **Unchanged block, no reference to a changed block's auxiliary, not a clique member.** | Lean's declaration of `c`: its kind, universe parameters, type and value (rules for a recursor), with binder names, binder infos, `mdata` and level spellings moved to the metadata (`ConstantMeta`), member order and nested-auxiliary order of its block canonical (Pass 1, §2.3–§2.5), sharing canonical (`Ix/Sharing`). This is the independent export. | `Driver.prepareBlock` returns the input unchanged when the block references no head; `Cliques.prepareCliques` when no member is in the clique table |
+| 1b | **Lean auxiliary of an unchanged inductive block** (`rec`, `rec_N`, `casesOn`, `recOn`, `below*`, `brecOn*` with `.go`/`.eq`). | The constant Pass 2 generates for it (one constant per auxiliary, D6), registered under the Lean name by the block's aux tail; `Named.original` records Lean's own form, compiled by the promotion pass. On Init+Std W accepts these as the independent export (M4-d §6). | `compileMutualAuxTail`; `promoteAuxDriver`, `compileConstNoAuxPure` in the drivers |
+| 2 | **Inductive type or constructor of a changed block.** | The canonical Ix inductive or constructor of its class: a projection of the canonical block (Pass 1's classes in canonical order). The members of one collapsed class share one address. | `compileBlockWithAux`, Pass 1 (`Ix/Compile/Canon/**`) |
+| 3 | **Image-kind auxiliary of a changed block** (`x.rec`, `x.casesOn`, `x.recOn`, `x.below`, `x.brecOn`, `x.brecOn.go`, `x.brecOn.eq`, and `all₀.rec_j`, `all₀.below_j`, `all₀.brecOn_j` with `.go`/`.eq`, restricted to the names Lean has; the `below`/`brecOn` family only for a recursive block). | Its **image**: for a recursor the generated image (Def 3.4), for the others Lean's own value with every head rewritten (Def 3.5); a λ over Lean's telescope with Lean's universe parameters and Lean's type, computing as Lean's auxiliary (its rules hold by `rfl`, `pass3` suite). **Kind (F1):** a theorem if Lean's `c` is a theorem (every `brecOn.eq`, the `brecOn` of a Prop family), otherwise a definition (so the image of a Lean recursor is a definition, `hints := abbrev`, Lean's safety). `Named.original` is Lean's form compiled without any rewrite. Not the independent export. | `Names.imageKinds`; `Driver.editChangedBlock` (records the heads); `Driver.isImageBlock`, `compileImageBlock`, `imageDeclWith`, `imageInfo`; `CompileDriver.runImageBlock` (the originals) |
+| 3b | **Lean's other auxiliaries of a changed block** (`noConfusionType`/`noConfusion`, the `sizeOf` family, matchers, `inj`, `ctorIdx`, …, and Lean's `IndPredBelow` inductive family of a Prop block). | Case 5: Lean's declaration with its call sites rewritten (§4.6). Lean's `IndPredBelow` family is an ordinary block of its own (the canonical family moved to `_ix` display names). | `Driver.editChangedBlock`, `editPermutedBelowFamily`; §4.6 |
+| 4 | **Canonical constants** (reserved names, D14): a changed block's Pass 2 auxiliaries under display names (`x._ix.rec`, `x._ix.casesOn`, …; nested ones by canonical position `rep₀._ix.rec_i`); the canonical `IndPredBelow` family; a transported clique's `g._ix._mutual` (and `_proof_k`, regenerated `eq_*`), `g._ix.mutual`, `x._ix._f`, `x._ix.match_N`; a proof-justified pass's `c._ix` and its helpers (`p._ix_retyped.s`, O12's helper); O11b's `T.noConfusionType._ix`, `T.noConfusion._ix`. | Ix constants with **no Lean counterpart**. The image terms (case 3) reference Pass 2's recursors by these display names. A canonical constant refers to its dependencies by their Lean names. A reserved name already bound must be bound to the same bytes. | `Names.ixAuxName`, `Driver.moveToDisplay`; `Cliques.planClique`, `prepareCliques`, `canonConst`; `Driver.compileCanon`, `unitPasses`; `CompileDriver.checkBlockClaims` (reserved names insert-once) |
+| 5 | **A constant whose block references an image-kind head** (call-site rewrite, Def 3.6). | Lean's declaration with every **full application** of a head inlined from its image (hereditary substitution, no ι) unless a definitional pass (O1–O6, O11a; §1.5) gives the term first; a **bare or partial** occurrence is left as written, the Lean name denoting the image (no `a._ix` constant exists). Definitionally equal to Lean's term with each head replaced by its image; every outermost rewritten occurrence carries an `_ix.inline` record holding the source occurrence. Kind, universe parameters and Lean's statement up to the same rewrite. Not the independent export. | `Driver.prepareBlock`, `Translate.rewriteBlock`/`rw`, `Driver.optLookup`, `Opt/Engine.lean`; recorded in `CompileEnv.p3Rewritten` |
+| 5b | **O11a declines** at the recursion of Lean's `sizeOf` family of a split block. | O2's relocated-recursor form (faithful, not canonical), with the cause recorded (§11.3, the decline map). | `Opt.O11a.declineCause?`, `Driver.declineLookup`; `CompileEnv.p3NonCanonical` |
+| 6 | **O7–O12 and O11b** (proof-justified passes, decision 5, D1). | The Lean name keeps the faithful form (case 5's baseline); the canonical form is stored under `c._ix` (case 4), cause `PJ-FORM-<pass>`. Callers that reference `c` keep referencing `c` (cause `INHERITED` in the twins' vocabulary): no reference is renamed to `c._ix`. A proof-justified pass fires only in the value of a definition. None fires on Init+Std or Mathlib today (M1-b, M1-g). | `Translate.RwState.site`/`inPlace`/`pjFired`; `Driver.compileCanon`, `unitPasses`, `ixFormOf`; recorded in `CompileEnv.p3PjForms` |
+| 7 | **Member of a transported definition clique** (an input clique, `Cliques.inputCliques`: Lean's `all` of two or more safe definitions or theorems, each its own block, referencing an encoding marker; its plan `.transported`: `σ` not the identity, or O17 classes merge). | **Lean's kind, universe parameters and type** (checked, α-equal up to `mdata`) with the transported value `Φ_σ` (§5; WF, `partial_fixpoint`, structural), whose root carries an `_ix.inline` record holding Lean's value. An O17 alias member is the representative's transported constant under its own name. Not the independent export. | `Cliques.planClique` (type check, aliases), `prepareCliques` (`withValue`, the record), `Clique.transport` |
+| 7b | **Equation lemma carried with a transported clique** (a member's own `eq_def`/`eq_unfold`/`eq_N` whose block references a member and one of Lean's encoding constants). | A theorem with Lean's statement and a transported proof (the same as case 7). The packed constant's lemmas it reaches are regenerated under canonical names (case 4). | `Cliques.scheduleCliques` (the carried set), `memberEqLemmas`, `packedLemmas`, `planClique` |
+| 7c | **Lean's encoding constants of a transported clique** (`all₀._mutual`, `all₀.mutual` with everything under them, `m._f`). | Lean's form under Lean's names (case 1; their statements follow Lean's order: `ORDER-STMT`); Lean's equation lemmas that are not carried refer to them. | `Cliques.isEncodingName`, `encodingOwner?` |
+| 7d | **A clique kept in Lean's form**: plan `.baseline` (`NOSPEC`: the order is undetermined; `SHAPE`: the transport left Lean's form), `.unchanged` (`σ` the identity, no alias), `.notEncoded` (one member, an unsafe or partial or kernel mutual block, no encoding recognised). | Case 1 (or 5). Faithful; for `.baseline` non-canonical with the cause. | `Cliques.planClique`; `Clique/Plan.lean` (`CliqueOutcome`) |
+| 8 | **A caller refused**: a block outside a transported clique's unit that references a member and one of Lean's encoding constants. | **Nothing**: the block fails with the named error `Pass 3 cliques: caller refused (block rule, callers adapt): …`; the clique is never changed for it. On Init+Std and Mathlib no such caller exists (M1-a, M1-g). | `Cliques.cliqueCallers`, `callerRefusalPrefix` |
+| 9 | **A failed block** (any compile error of the block, a conflicting claim, a refused caller, a missing dependency). | **Nothing**: its members are recorded in `CompileEnv.ungrounded` with the message and no name of the block, no constant and no record of it (declines, plans, views, heads) is merged; dependents fail with a missing constant. In the promotion path (case 1b) a failure of the original-form compile marks the members failed although their names were already bound by the inductive's aux tail. `ix compile-lean` is fail-closed: with any failure it writes no `.ixe` unless `--allow-partial`. | `mergeCompiledBlock` is called only on success (every driver); the `fail` paths of `compileEnvAux`/`compileEnvParallelAux`; `CompileLeanCmd` |
+| 10 | **An input name with a reserved component** (`_ix`, or any component starting with `_ix`). | Under Pass 3 the whole compile is refused, the message naming one such name (D14). Scope: the names of the condensation the driver is given (§11.6 item 3). | `Names.reservedInput?`, `CompileDriver.pass3ReservedInput?` |
+
+### 11.3 The records the output carries
+
+**In the artifact.**
+- **`Named`** (per name): `addr`; `constMeta` (the metadata of §11.2 case 1: names, binder infos, `mdata`,
+  level spellings, the `_ix.inline` records, the `Muts` member lists and aux layout); `original` (an image,
+  case 3, and a regenerated auxiliary promoted from its original-form compile, case 1b: Lean's form
+  compiled without rewrite, address and metadata); `hints` (exact per-name reducibility hints).
+- **`_ix.inline`, `_ix.inline_meta`** (§4.8, "Side-car record"): an `mdata` node in a constant's metadata
+  arena wrapping a rewritten occurrence; `_ix.inline` is the index of the source occurrence in the
+  constant's `metaSharing`, `_ix.inline_meta` its arena root. On every rewritten constant (case 5) and on
+  the root of every transported member and carried lemma (cases 7, 7b: the source is Lean's value).
+  Decompile replays them (`decompile-diff` 0 on every unit); the kernels see an ordinary `mdata`.
+- **`_ix.clique`**: an `mdata` string on the value of a transported clique's canonical functional(s)
+  (`CliquePlan.functionals`), `CliquePlan.record`: `<encoding>; lean order [..]; sigma [..]; order by
+  <source>; classes [[..]]; aliases (O17) [..]; causes [..]`.
+
+**Beside the artifact.**
+- **The decline map** `CompileEnv.p3NonCanonical` (compile-time, not serialised in the `.ixe`; written to
+  the changed-set record): constant ↦ cause, today O11a's declines only. **Rule for a constant with two
+  causes: the last wins** — a block's declines are `(member, cause)` pairs in rewrite order, each pair
+  once (`Translate.rewriteBlock`), folded into the map by `insert` (`mergeCompiledBlock`), so the cause the
+  member's rewrite met last is kept. The Rust compiler mirrors it. No fixture has two.
+- **The changed-set record** `<stem>.changed.json` (§11.5).
+- **The measured non-canonical records** (tests, not compiler output; §7.2): the default's
+  `Tests.Ix.Compile.NonCanonicalDefault.nonCanonical` (959 twin differences, one cause each, exact in
+  both directions), using **16 causes**: `IMAGE` 493, `INHERITED` 155, `ORDER-STMT` 86,
+  `PENDING-SPLIT-AUX` 55, `O11A-PENDING` 42, `PENDING-COLLAPSE` 30, `LAZY` 24, `INDPRED-BELOW` 21,
+  `PENDING-SURGERY` 16, `PENDING-NOCONFUSION` 14, `COLLAPSE-ARMS` 11, `RECARG` 5, `GUESSLEX` 2, `SHAPE` 2,
+  `TACTIC-ASYM` 2, `BARE` 1; the legacy `nonCanonicalOff` (497) and the switch-on fixture records
+  `nonCanonicalOn`/`nonCanonicalPasses` (where `PJ-FORM-<pass>` appears). The vocabulary is
+  `NonCanonicalCause.tag` (19 tags). A measured record holds one cause per (fixture, presentation pair,
+  constant), the key its exactness check matches on.
+
+### 11.4 Identity requirements a checker may rely on
+
+1. **The full `ConstantInfo`, kind included.** Every Lean name's Ix constant has Lean's kind, universe
+   parameters and type (up to case 5's rewrite of the statement), with exactly two kinds of exception,
+   both recorded: the image of a Lean recursor is a definition (case 3; a theorem stays a theorem, F1), and
+   a name that failed has no constant (cases 8–9). A transported member keeps Lean's `ConstantInfo` except
+   its value (`withValue`: hints, safety, `all` are Lean's). A checker may therefore refuse any other kind
+   change, and does (the adversarial matrix's kind-forgery row).
+2. **Binder ownership by source identity, never by type or position.** The clique transport touches only
+   what Lean's encoding introduced: the decoded recursion binder of the root functional and its
+   eliminator-threaded copies (WF), the root functional's exact binder (`partial_fixpoint`), `brecOn` at a
+   member's root and paths read off owned dictionaries (structural), and recovery reads recursive calls
+   only from owned dictionaries (`plans/review2/FIX-pfwf.md`). A user binder, relation or value shaped like
+   the encoding keeps its meaning (`clique-ownership`, 43 value-checked cases; `validate-lean` phase 9).
+   A checker may rely on: a transported member's value is a function of Lean's encoding of *that*
+   clique, and its `_ix.inline` record is Lean's value.
+3. **What is canonical, what is faithful only, and why** (§7.1, with the causes of §7.2): canonical are
+   the Ix blocks and every Ix auxiliary (cases 2, 4), everything over unchanged blocks (case 1), the
+   definitional passes' output (case 5 where O1–O6/O11a fire), a transported clique (case 7, outside
+   `GUESSLEX`/`RECARG`/`TACTIC-ASYM`/`SHAPE`/`NOSPEC`), the `_ix` forms of O7–O12/O11b. Faithful only:
+   the images under Lean's names (`IMAGE`: Lean's names denote Lean's grouping, by decision 3), the
+   baseline where no pass fires, the Lean names of a proof-justified pass's constants (`PJ-FORM-<pass>`)
+   and their callers (`INHERITED`), Lean's encoding constants (`ORDER-STMT`), O11a's declines
+   (`O11A-PENDING`), cliques kept in Lean's form (`NOSPEC`, `SHAPE`), bare occurrences (`BARE`), Lean's
+   `IndPredBelow` family (`INDPRED-BELOW`), lazily realised lemmas (`LAZY`).
+4. **Not promised:** theorem proofs in general (M7); a canonical address for a constant whose presentation
+   is outside Def 4.3; the address of a block whose unit gains an on-demand auxiliary (§6.3).
+
+### 11.5 The changed-set record
+
+`ix compile-lean` (Pass 3) writes, next to the `.ixe`, `<stem>.changed.json` (`foo.ixe` ↦
+`foo.changed.json`; `Ix.Compile.ChangedSet.pathFor`): every name whose Ix constant the compiler made
+intentionally other than the independent export, and the faithful non-canonical names it knows about, each
+with the compiler's reason. It is a pure function of the final driver state
+(`Ix.Compile.ChangedSet.ofCompile`, available to every driver: `compileEnvAux`, `compileEnvParallelAux` and
+`compileLeanInput` all return the `CompileEnv`), read from the compiler's own tables, never from a symptom
+of the output. No byte of the `.ixe` depends on it. Under `IX_PASS3=off` none is written.
+
+**Format** (`ix-changed-set/1`; JSON, one element per line, every array sorted by name, then name hash,
+change, cause, ref):
+
+```
+{"format":"ix-changed-set/1",
+"mode":"pass3",
+"counts":{"image":…,"rewritten":…,"decline":…,"transported":…,"carried":…,"canonical":…,"pj-form":…,"inherited":…,"lean-form":…,"refused":…,"failed":…},
+"blocks":[ {"key":…,"all":[{"name":…,"hash":…,"addr":…}…],"heads":[…]} … ],
+"cliques":[ {"key":…,"all":[…],"outcome":"transported|baseline|unchanged|not-encoded|unplanned","encoding":…,"cause":…,"why":…,
+             "sigma":[…],"carried":[…],"aliases":[[m,rep]…],"record":…,"canonical":[{"name":…,"hash":…,"addr":…,"transports":…}…]} … ],
+"entries":[ {"name":…,"hash":…,"change":…,"differs":true|false,"cause":…|null,"addr":…|null,"original":…|null,"ref":…|null,"detail":…} … ]}
+```
+
+- `name` is the name's pretty form, `hash` its Ix name hash (the identity: pretty forms can collide);
+  `addr`/`original` are hex addresses (`Named.addr`, `Named.original`).
+- `blocks`: the changed inductive blocks (`p3Blocks`), Lean's `all` with their Ix addresses, and their
+  image-kind heads (`p3Heads`). `cliques`: every input clique of the clique table (`p3Cliques`) with the
+  plan its blocks used (`p3CliquePlans`); `record` is the `_ix.clique` string the functionals carry;
+  `canonical` the clique's canonical constants that were stored (only those a member or a carried lemma
+  reaches).
+- `entries`, one claim per (name, change, cause): `change` and its source table, `differs` (the claim that
+  the constant is **not** the independent export), `cause` (§7.1/§7.2 vocabulary):
+
+| change | differs | cause | source | `ref` |
+|---|---|---|---|---|
+| `image` | yes | `IMAGE` | `p3Heads` | block key |
+| `rewritten` | yes | — | `p3Rewritten` | — |
+| `decline` | yes | `O11A-PENDING` (cause text in `detail`) | `p3NonCanonical` (last cause wins) | — |
+| `transported` | yes | the transport's cause for the constant, if any | plan `.transported` | clique key |
+| `carried` | yes | as above | `p3Cliques` (carried lemmas) | clique key |
+| `canonical` | yes (no Lean declaration) | — | plan `.canon`; the artifact's reserved names | clique key, block key, or the `c` of `c._ix` |
+| `pj-form` | no | `PJ-FORM-<pass>` | `p3PjForms` | `c._ix` |
+| `inherited` | no | `INHERITED` | Lean constants whose input references a `pj-form` name (computed only when `p3PjForms` is non-empty) | the first such name |
+| `lean-form` | no | `NOSPEC`/`SHAPE` (plan `.baseline`), `ORDER-STMT` (Lean's encoding constants of a transported clique) | `p3CliquePlans`, `p3CliqueRoots` | clique key |
+| `refused` | — | — | `ungrounded` with `callerRefusalPrefix` | — |
+| `failed` | — | — | `ungrounded` | — |
+
+A name failed or refused appears only under that change (no address). Pre-compile grounding rejections are
+not block failures and are not recorded (the CLI reports their count).
+
+**Sample** (Init+Std, the default compile: the `cliques` row of the transported theorem clique
+`bitblast.goCache_decl_eq`/`go_decl_eq` and three of its `entries`; Init+Std's record has 58 entries: 12
+`transported`, 4 `carried`, 19 `canonical`, 23 `lean-form`, matching §7.4's measured classes):
+
+```
+{"key":"Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq","all":["Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq","Std.Tactic.BVDecide.BVExpr.bitblast.go_decl_eq"],"outcome":"transported","encoding":"well-founded","cause":null,"why":"","sigma":[1,0],"carried":[],"aliases":[],"record":"well-founded; lean order #[Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq, Std.Tactic.BVDecide.BVExpr.bitblast.go_decl_eq]; sigma #[1, 0]; order by statements (WF ownership: leaf recursive binder differs from root telescope); classes #[#[Std.Tactic.BVDecide.BVExpr.bitblast.go_decl_eq], #[Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq]]; aliases (O17) #[]; causes #[]","canonical":[{"name":"Std.Tactic.BVDecide.BVExpr.bitblast.go_decl_eq._ix._mutual","hash":"93a4abba071de3d85db24018e89f30e037d70818e37c8055760b314c42456d49","addr":"c67e8fbee5fc40a22dc2336754f1e76ba6b4068f531ba6035e83f25a42e76c19","transports":"Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq._mutual"}]},
+{"name":"Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq._mutual","hash":"a273aaead978cb71f16442c58d197fa66c3ab8d2ede7492125cfb20409e9338c","change":"lean-form","differs":false,"cause":"ORDER-STMT","addr":"f86bda02b570721115105946a0bcc0feae6bf9e36ccefa29687fc8dbe029f203","original":null,"ref":"Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq","detail":"Lean's encoding constant of a transported clique (Lean's form)"},
+{"name":"Std.Tactic.BVDecide.BVExpr.bitblast.go_decl_eq","hash":"c1a416a9d5782fe5c3a8b600cec90bc5b39f79f743a8de140c38266187908262","change":"transported","differs":true,"cause":null,"addr":"c91a6bc085704963b303bbc02361b212e5c5026fc0d7aaa59fab3e65352585e9","original":null,"ref":"Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq","detail":"well-founded; sigma #[1, 0]"},
+{"name":"Std.Tactic.BVDecide.BVExpr.bitblast.go_decl_eq._ix._mutual","hash":"93a4abba071de3d85db24018e89f30e037d70818e37c8055760b314c42456d49","change":"canonical","differs":true,"cause":null,"addr":"c67e8fbee5fc40a22dc2336754f1e76ba6b4068f531ba6035e83f25a42e76c19","original":null,"ref":"Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq","detail":"canonical constant of the clique, transports Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq._mutual; carries the `_ix.clique` record"},
+```
+
+**What a checker verifies and what it trusts.** Listing a name never makes it Certified: the record only
+lets a checker turn "value differs" on a name the compiler claims (`differs: true`) into
+Unsupported(changed), for M5 to certify; on any other name "value differs" stays Rejected. A checker can
+verify, from the artifact and Lean's environment alone:
+- every `addr` is the `Named.addr` of the name and a constant of the artifact (the `changed-set` suite
+  asserts it); `refused`/`failed` names are absent;
+- `image`: the name is in `imageKinds` of Lean's block `ref` (a function of Lean's constants), the
+  constant has Lean's type and Lean's kind or, for a recursor, a definition, and `original` is the export
+  of Lean's declaration;
+- `rewritten`, `transported`, `carried`: the metadata carries `_ix.inline` records whose replay
+  (decompile) is Lean's term; `transported`/`carried` names are the `all`/`carried` of the clique row,
+  which is Lean's `all` and Lean's lemma names; the type is Lean's;
+- `canonical`: the name has a reserved component, so no Lean declaration is affected; for a clique, the
+  functional's `_ix.clique` string equals the row's `record`;
+- completeness against the artifact: every name with an `_ix.inline` record has a `differs` claim, every
+  reserved name a `canonical` one (both asserted by the suite).
+
+It trusts: that a block is *changed* (Def 3.1, Pass 1's classes) and a clique *transported* (the plan);
+that a `differs` claim's value is the intended one (that is what M5 certifies: images by their rules,
+transported members by the transport's correspondence, rewritten constants by conversion); the cause texts
+of declines and plans. `differs: false` entries are information only: a checker keeps comparing them with
+the independent export.
+
+### 11.6 Inconsistencies found while writing this section (reported, not changed)
+
+1. **O11a's scheduling edges** are added under Pass 3 only by `compileEnvAux` and `compileEnvParallelAux`,
+   and in both modes by `compileDecoratedConsts` (`compileLeanInput`, `ix compile-lean`), which then calls
+   `compileEnvParallelAux` (adding them again under Pass 3, idempotently). Edges only order blocks, so no
+   byte depends on it; the O11a docstring now says what the code does (it said "both switch states").
+2. **O11a's decline cause "the constructor and minor type of minor `j` cannot be read"** is the split-minor
+   helpers (`sourceCtorForMinor`, `sourceMinorType`, `peelBinders`, shared with the surgery) failing to place
+   the minor, measured on split blocks with an evaporated nested auxiliary; the minor itself can be read.
+   Documented with its exact wording; the wording is unchanged (the Rust compiler mirrors the text).
+3. **D14's check** runs over the condensation the driver is given: in `ix compile-lean` the grounded one,
+   so an ungrounded input name with an `_ix` component is not checked (it is not compiled either). With
+   several reserved names, the Lean message names the first in `CondensedBlocks.blocks`' iteration order,
+   the Rust message the least by pretty name: the two compilers can name different constants.
+4. **Failed blocks in the promotion path** (case 9): the members' names stay bound (by the inductive's tail)
+   while the block is recorded as failed. `ix compile-lean` is fail-closed, so no artifact carries it.
+5. Stale docstrings fixed with this section (no code change): `ImageView` (the image terms reference
+   Pass 2's recursors by their `_ix` display names, not by Lean's names), `Translate`/`Driver`/`Names` (no
+   `a._ix` image constant exists for bare or partial occurrences), the decline map's docstring (the last
+   cause wins; all O11a declines, not only absent instances).
+
+---
+
 ## Appendix: what is still not established
 
 **Settled since the first draft** by A1C's measurements:
@@ -2677,8 +2906,11 @@ environment writer; no Rust work):
     repaired in both executable kernels by A5R, with full-refinement and negative regression tests;
   - BB-F7/BB-F1, the meta-mode ingress of collapsed blocks, is with A3v [open];
   - REFUSED-SIBLING follows A0's evaporation refusal and lasts as long as that refusal does;
-  - neither the clique transport nor the optimisation passes are wired into the compiler;
-  - Rust stays on surgery until A4, and C6 remains in Rust until the catch-up PR;
+  - [superseded] neither the clique transport nor the optimisation passes were wired into the compiler
+    (both are, under Pass 3, the default since the flip, §7.4);
+  - [superseded] Rust stays on surgery: it implements Pass 3 slice by slice (M6R) and keeps the surgery as
+    its default until slice 6 (§4.8, "The surgery is the legacy mode");
+  - C6 remains in Rust until the catch-up PR;
   - A7's items D2a–D16 are open, and D2a may move side-car bytes;
   - the `exprCompileDepth` fix has not been rerun on Mathlib;
   - the `--consts` closure producers omit recursors;
