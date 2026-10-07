@@ -590,6 +590,10 @@ script "check-cert" (args) := do
       -- one global S cone (M7 WP-F) on both fixtures, beside the cover; the fast decisions
       -- against their list and tree references; a forged route refuses the global cone
       ("strong-global", #[exe, "strong-global", s!"{outDir}/compiled.ixe", s!"{outDir}/changed.ixe", outDir]),
+      -- S at the value level for changed constants (M7 S+a): a transported theorem clique and its
+      -- users S-certified by a value cone, the W+ fixture's remaining classes (S+b, package V), a
+      -- forged route and a forged row refused, the value check on a cone's real environments
+      ("strong-changed-values", #[exe, "strong-changed-values", s!"{outDir}/changed.ixe", outDir]),
       -- package C: the W+ support folded with the artifact again (the previous fold) gives the
       -- same verdicts as the default, the fold continued from the admission
       ("certify-changed-refold", #[".lake/build/bin/compile-certify", "--modules",

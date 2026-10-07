@@ -18,6 +18,7 @@ import Tests.Ix.CompileCert.StrongPlan
 import Tests.Ix.CompileCert.StrongChanged
 import Tests.Ix.CompileCert.StrongIndexed
 import Tests.Ix.CompileCert.StrongGlobal
+import Tests.Ix.CompileCert.StrongChangedValues
 import Tests.Ix.CompileCert.WPlusCost
 import Tests.Ix.CompileCert.ChangedValues
 
@@ -48,6 +49,7 @@ def main (args : List String) : IO Unit := do
   | ["strong-changed", ixe, dir] => Tests.Ix.CompileCert.StrongChanged.run ixe dir
   | ["strong-indexed"] => Tests.Ix.CompileCert.StrongIndexed.run
   | ["strong-global", compiled, changed, dir] => Tests.Ix.CompileCert.StrongGlobal.run compiled changed dir
+  | ["strong-changed-values", ixe, dir] => Tests.Ix.CompileCert.StrongChangedValues.run ixe dir
   | ["wplus-cost"] => Tests.Ix.CompileCert.WPlusCost.run
   | ["changed-values"] => Tests.Ix.CompileCert.ChangedValues.run
   | "wplus-cost-measure" :: args => Tests.Ix.CompileCert.WPlusCost.measure args
