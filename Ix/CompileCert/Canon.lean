@@ -8,6 +8,9 @@ import Ix.CompileCert.Canon.Cache
 import Ix.CompileCert.Canon.QSort
 import Ix.CompileCert.Canon.SccMain
 import Ix.CompileCert.Canon.SccNames
+import Ix.CompileCert.Canon.Sort
+import Ix.CompileCert.Canon.Group
+import Ix.CompileCert.Canon.Ctx
 
 /-!
 # M7 L1: Pass 1 proved
