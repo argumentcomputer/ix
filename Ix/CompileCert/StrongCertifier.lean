@@ -515,6 +515,26 @@ def supportLabel : SupportError → String
   | .checking e _ => s!"support fold: {(toString e).take 120}"
   | .changedOriginal => "support: original rows changed"
 
+/-- The position-hint queries of a cone's W association (`buildHints`): a name, and for an
+inductive its block's members, recursors, nested recursors and constructors, with the
+references of all of them and their prefixes. -/
+def hintQueries (env : Lean.Environment) (n : Lean.Name) : Array Lean.Name := Id.run do
+  let some ci := env.find? n | return #[n]
+  let mut out : Array Lean.Name := #[n]
+  match ci with
+  | .inductInfo v =>
+    for m in v.all do
+      out := out.push m |>.push (m.str "rec")
+      if let some (.inductInfo iv) := env.find? m then out := out ++ iv.ctors.toArray
+    for i in [0:v.numNested] do
+      if let some h := v.all.head? then out := out.push (h.str s!"rec_{i + 1}")
+  | _ => pure ()
+  let mut all := out
+  for d in out do
+    if let some dci := env.find? d then
+      for r in refsOf dci do all := all.push r |>.push r.getPrefix
+  return all
+
 /-- Decide S on one cone. `witnesses` is the cone's list of Lean-kernel-checked
 lowering theorems (computed in `IO` by the caller). -/
 def runCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordStore)
@@ -538,24 +558,8 @@ def runCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordStore)
   let artifact ← match artifact? with
     | .ok a => pure a
     | .error _ => return (.failed "cone admission refused" (some root) false, stats)
-  let queries : Lean.Name → Array Lean.Name := fun n => Id.run do
-    let some ci := env.find? n | return #[n]
-    let mut out : Array Lean.Name := #[n]
-    match ci with
-    | .inductInfo v =>
-      for m in v.all do
-        out := out.push m |>.push (m.str "rec")
-        if let some (.inductInfo iv) := env.find? m then out := out ++ iv.ctors.toArray
-      for i in [0:v.numNested] do
-        if let some h := v.all.head? then out := out.push (h.str s!"rec_{i + 1}")
-    | _ => pure ()
-    let mut all := out
-    for d in out do
-      if let some dci := env.find? d then
-        for r in refsOf dci do all := all.push r |>.push r.getPrefix
-    return all
   let (accepted?, ms) ← stage fun _ =>
-    checkIndexed input artifact (buildHints input (Shared.ofArtifact input artifact) queries workers)
+    checkIndexed input artifact (buildHints input (Shared.ofArtifact input artifact) (hintQueries env) workers)
   stats := { stats with msW := ms }
   let accepted ← match accepted? with
     | .ok a => pure a
@@ -590,6 +594,91 @@ def runCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordStore)
       | .error _ => accepted.env
     let (family, row, unavailable) := diagnoseStrong accepted installed target proposal.names
     return (.failed s!"strong check: {family}" (row.map leanNameOf) unavailable, stats)
+
+/-- The stages of one cone's decision, each forced and timed on its own (diagnostics,
+`--explain`): the cone's input, its admission, the W association's hints and check, the source
+installation (export, model proposal, the two decided preservation facts, normalisation, the
+whole installation, the fold alone), the proposal, the support, and every family of the strong
+check, with a baseline of the strong check's list lookups (one `Kernel.Env.find?` per source
+row). Nothing here decides a verdict. -/
+def explainCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordStore)
+    (namedAddr : Std.HashMap Lean.Name Address) (root : Lean.Name) (members : Array Lean.Name)
+    (witnesses : LoweringWitnesses) : IO Unit := do
+  let time {α : Type} (label : String) (f : Unit → α) (show_ : α → String) : IO α := do
+    let t ← IO.monoMsNow
+    let a ← IO.lazyPure f
+    say s!"[explain-S] {root}: stage {label}: {show_ a}; {(← IO.monoMsNow) - t} ms"
+    return a
+  let flag : Bool → String := fun b => if b then "true" else "false"
+  let opt : Option Bool → String := fun | some b => flag b | none => "unavailable"
+  let input? ← time "cone input" (fun _ => coneInput env produced store namedAddr [root] members)
+    (fun | .ok i => s!"{i.source.declarations.length} declarations, {i.records.length} records" | .error e => e)
+  let .ok input := input? | return
+  let artifact? ← time "admission" (fun _ => prepareArtifact input.toArtifactInput)
+    (fun | .ok a => s!"{a.declarations.size} declarations" | .error _ => "refused")
+  let .ok artifact := artifact? | return
+  let hints ← time "W hints" (fun _ => buildHints input (Shared.ofArtifact input artifact) (hintQueries env) 1)
+    (fun _ => "built")
+  let accepted? ← time "W association" (fun _ => checkIndexed input artifact hints)
+    (fun | .ok _ => "accepted" | .error _ => "refused")
+  let .ok accepted := accepted? | return
+  let original? ← time "source export" (fun _ => exportSourceDeclarations input.source)
+    (fun | .ok o => s!"{o.size} declarations" | .error e => e)
+  let .ok original := original? | return
+  let proposal? ← time "model proposal" (fun _ => proposeSourceModels input.source original)
+    (fun | .ok p => s!"{p.declarations.size} declarations" | .error e => e)
+  let .ok modelProposal := proposal? | return
+  let _ ← time "original preserved (sublist)"
+    (fun _ => decide (original.toList.Sublist modelProposal.declarations.toList)) flag
+  let _ ← time "entry correspondence"
+    (fun _ => decide (SourceEntryCorrespondence input.source modelProposal.declarations)) flag
+  let _ ← time "projection normalisation"
+    (fun _ => normalizeSourceProjections input.source witnesses {} modelProposal.declarations.toList)
+    (fun | .ok o => s!"{o.val.length} declarations" | .error e => e)
+  let installed? ← time "installation (all of it)"
+    (fun _ => installSourceNormalizedComplete accepted.domain.1 (sourcePins input accepted.pins) witnesses)
+    (fun | .ok i => s!"{i.declarations.length} declarations" | .error e => (sourceErrorLabel e).1)
+  let .ok installed := installed? | return
+  let _ ← time "source fold alone"
+    (fun _ => (Kernel.Cached.checkDecls .verified installed.pins installed.declarations.toArray).toOption.isSome)
+    flag
+  let proposal? ← time "proposal" (fun _ => propose accepted installed)
+    (fun | .ok p => s!"{p.support.size} support declarations" | .error e => e)
+  let .ok proposal := proposal? | return
+  let bundle? ← time "support" (fun _ => admitSupport accepted.toAdmittedArtifact proposal.support)
+    (fun | .ok _ => "admitted" | .error e => supportLabel e)
+  let .ok bundle := bundle? | return
+  let source := installed.env
+  let target := bundle.env
+  let names := proposal.names
+  say s!"[explain-S] {root}: strong check over {source.consts.length} source rows and {target.consts.length} target rows"
+  let _ ← time "lookups only (one target find? per source row)"
+    (fun _ => source.consts.all fun e => (target.find? (names e.name)).isSome) flag
+  let _ ← time "names (SemanticNamesAgree)" (fun _ => decide (SemanticNamesAgree accepted names)) flag
+  let _ ← time "comparison availability" (fun _ => checkInstalledComparisonAvailability source target names) opt
+  let _ ← time "telescopes" (fun _ => checkTelescopes source target names) flag
+  let _ ← time "types" (fun _ => checkInstalledTypes source target names) flag
+  let _ ← time "definitions" (fun _ => checkInstalledDefinitions source target names) flag
+  let _ ← time "False and Eq pins" (fun _ => checkInstalledPin source names Kernel.falseName 0 &&
+    checkInstalledPin source names Kernel.eqName 1) flag
+  let _ ← time "capabilities" (fun _ => checkInstalledCapabilities source target names) flag
+  let _ ← time "recursors" (fun _ => checkInstalledRecursors source target names) flag
+  let _ ← time "constructors" (fun _ => checkInstalledConstructors source target names) flag
+  let _ ← time "eta associations" (fun _ => checkInstalledEtaAssociations source target names) opt
+  let _ ← time "rule level links" (fun _ => checkInstalledRuleLevelLinks source target names) opt
+  let _ ← time "reserved names and literal support" (fun _ => checkReservedNameMap source names &&
+    checkTypeLiteralSupport source target && checkDefinitionLiteralSupport source target) flag
+  let _ ← time "projection towers" (fun _ => checkInstalledTowers source target names) opt
+  let _ ← time "reduce receipts" (fun _ => checkReduceOperationReceipts source target names
+    proposal.operationCertificates proposal.elementCertificates) opt
+  let _ ← time "Nat receipts" (fun _ => checkNatOperationReceipts source target names
+    proposal.certificates proposal.levels) opt
+  let _ ← time "Nat.div/mod receipts" (fun _ => checkDivModReceipts source target names
+    proposal.certificates proposal.levels) opt
+  let _ ← time "strong check (all of it)" (fun _ => checkNormalizedArtifactStrongAssociation accepted bundle
+    installed names proposal.certificates proposal.operationCertificates proposal.elementCertificates
+    proposal.levels) opt
+  return
 
 
 /-! ## The run (untrusted orchestration) -/
@@ -633,6 +722,12 @@ structure ConeRecord where
 
 def coneHeader : String :=
   "root\troots\tmembers\trecords\tsupport\twitnesses\tms\tms input\tms admission\tms W\tms installation\tms strong\toutcome\tclass\tculprit"
+
+/-- The plan's rows (`--strong-plan`): the cone's position in the cover, its root (the batch
+leader), the roots it was built from, its members, the W-certified constants it is the first
+cone to contain, and the running total of those. -/
+def planHeader : String :=
+  "cone\troot\troots\tmembers\tnew\tcovered"
 
 def coneRow (c : ConeRecord) : String :=
   let (o, cls, cul) := match c.outcome with
@@ -763,6 +858,14 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   let pinGround := natOpPinGround w.env w.store w.namedAddr readerPins w.names wCertified.contains
   say s!"[certify-S] source pins: {(SourcePinGen.sourceNatOpPinSets).map (·.toolchain)}"
   say s!"[certify-S] pin ground of the Nat operations: {natOpLeanNames.map (fun op => (pinGround.getD op #[]).size)} constants"
+  -- diagnostics: the explained roots' cones (with their certificate ground), stage by stage
+  for n in cfg.explain do
+    if wCertified.contains n then
+      let (members, missing) := coneMembers w.refs wCertified.contains pinGround n
+      if missing.isEmpty then
+        explainCone w.env w.produced w.store w.namedAddr n members (members.toList.filterMap witnessOf.get?)
+      else
+        say s!"[explain-S] {n}: the cone reaches constants that are not W-certified: {missing.toList.take 5}"
   say s!"[certify-S] {roots.size} roots ({if !cfg.strongRoots.isEmpty then "given" else if cfg.strongEvery > 0 then s!"sample: every {cfg.strongEvery}th W-certified constant and {functions.length} projection functions" else "cover of every W-certified constant"}); \
     {cfg.strongTasks} cones at once; cone budget {cfg.strongMaxCone} declarations"
   -- a cover decides overlapping roots nothing uses together (`coverBatches`); a batch that
@@ -778,8 +881,13 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   let mut cones : Array ConeRecord := #[]
   let mut queue : Array Lean.Name := roots.reverse  -- a stack: the next root is `back`
   let mut attempted : Std.HashSet Lean.Name := {}
-  let live ← IO.FS.Handle.mk s!"{cfg.out}.strong.live.tsv" .write
-  live.putStrLn coneHeader
+  -- a plan (`--strong-plan`) runs no cone: each is recorded as if accepted, in the cover's order,
+  -- with the constants it adds; it writes `<out>.strong.plan.tsv` and no verdict
+  let live ← IO.FS.Handle.mk
+    (if cfg.strongPlan then s!"{cfg.out}.strong.plan.tsv" else s!"{cfg.out}.strong.live.tsv") .write
+  live.putStrLn (if cfg.strongPlan then planHeader else coneHeader)
+  let mut covered := 0
+  let mut firstCone : Std.HashMap Lean.Name Nat := {}
   let mut lastReport := t0
   while queue.size > 0 do
     -- one wave: up to `strongTasks` roots that still need a cone
@@ -852,10 +960,14 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
         let (root, members) := wave[next]!
         let witnesses := members.toList.filterMap witnessOf.get?
         let nRoots := 1 + ((batchOf[root]?).map (·.size)).getD 0
-        let task ← IO.asTask (prio := .dedicated) do
-          let began ← IO.monoMsNow
-          let (outcome, stats) ← runCone w.env w.produced w.store w.namedAddr 1 root members witnesses
-          return { root, outcome, stats, ms := (← IO.monoMsNow) - began, roots := nRoots : ConeRecord }
+        -- a plan runs nothing: the cone is recorded as if accepted
+        let planned : ConeRecord :=
+          { root, outcome := .certified members, stats := { members := members.size }, ms := 0, roots := nRoots }
+        let task : Task (Except IO.Error ConeRecord) ← if cfg.strongPlan then pure (Task.pure (.ok planned))
+          else IO.asTask (prio := .dedicated) do
+            let began ← IO.monoMsNow
+            let (outcome, stats) ← runCone w.env w.produced w.store w.namedAddr 1 root members witnesses
+            return { root, outcome, stats, ms := (← IO.monoMsNow) - began, roots := nRoots : ConeRecord }
         running := running.push (next, task)
         next := next + 1
       let tasks := running.toList.map (·.2)
@@ -865,20 +977,29 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       for (i, t) in running do
         if ← IO.hasFinished t then
           let record ← IO.ofExcept t.get
-          live.putStrLn (coneRow record)
-          live.flush
+          unless cfg.strongPlan do
+            live.putStrLn (coneRow record)
+            live.flush
           finished := finished.push (i, record)
         else still := still.push (i, t)
       running := still
       let now ← IO.monoMsNow
-      if now - lastReport > 60000 then
+      if now - lastReport > 60000 && !cfg.strongPlan then
         lastReport := now
         say s!"[certify-S] progress: {cones.size + finished.size} cones decided, {running.size} running, {queue.size + wave.size - next} roots queued; {now - t0} ms"
     for (_, record) in finished.qsort (fun a b => a.1 < b.1) do
       cones := cones.push record
       match record.outcome with
       | .certified members =>
-        for m in members do sv := sv.insert m (.certified record.root)
+        let mut fresh := 0
+        for m in members do
+          unless (match sv[m]? with | some (.certified _) => true | _ => false) do
+            fresh := fresh + 1
+            if cfg.strongPlan then firstCone := firstCone.insert m cones.size
+          sv := sv.insert m (.certified record.root)
+        covered := covered + fresh
+        if cfg.strongPlan then
+          live.putStrLn s!"{cones.size}\t{record.root}\t{record.roots}\t{record.stats.members}\t{fresh}\t{covered}"
       | .failed cls culprit unsupported =>
         if record.roots > 1 then
           -- a batch that fails is dissolved: its leader is decided again on its own cone next,
@@ -900,10 +1021,36 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
           sv := sv.insert record.root (.blocked culprit cls)
           if cover then unless attempted.contains culprit do queue := queue.push culprit
     let now ← IO.monoMsNow
-    if now - lastReport > 60000 then
+    if now - lastReport > 60000 && !cfg.strongPlan then
       lastReport := now
       let done := sv.fold (fun n _ v => match v with | .certified _ => n + 1 | _ => n) 0
       say s!"[certify-S] progress: {cones.size} cones, {done} S-certified, {queue.size} roots queued; {now - t0} ms"
+  if cfg.strongPlan then
+    live.flush
+    -- per W-certified constant: the first cone of the plan that contains it, or why none does
+    let mut rows := "name\tcone\tcause\n"
+    let mut without : Std.HashMap String Nat := {}
+    for n in w.names do
+      unless wCertified.contains n do continue
+      match firstCone[n]? with
+      | some i => rows := rows ++ s!"{n}\t{i}\t\n"
+      | none =>
+        let cls := match sv[n]? with
+          | some v => s!"{v.word}: {v.cls}"
+          | none => "no cone"
+        rows := rows ++ s!"{n}\t-\t{oneLine cls}\n"
+        without := without.insert cls (without.getD cls 0 + 1)
+    IO.FS.writeFile s!"{cfg.out}.strong.plan.names.tsv" rows
+    let sizes := cones.map (·.stats.members)
+    let band (lo hi : Nat) : Nat := (sizes.filter (fun s => lo ≤ s && s < hi)).size
+    let batched := (cones.filter (·.roots > 1)).size
+    let classes := without.toArray.qsort (fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1))
+    say s!"[certify-S] plan (no cone run; each counted as accepted): {cones.size} cones ({batched} batches), \
+      {sizes.foldl (· + ·) 0} members in all; cone sizes <1k {band 0 1000}, 1k–2k {band 1000 2000}, \
+      2k–5k {band 2000 5000}, 5k–10k {band 5000 10000}, ≥10k {band 10000 (1 <<< 62)}; \
+      {covered} of {wCertified.size} W-certified constants in a cone, {wCertified.size - covered} in none\
+      {String.join (classes.toList.map fun (c, k) => s!"; {k} {c}")}"
+    return 0
   -- every W-certified constant without an S verdict was not reached (sample or roots mode)
   let sampled := !cfg.strongRoots.isEmpty || cfg.strongEvery > 0
   let mut tsv := "name\tW verdict\tS verdict\tcause\n"

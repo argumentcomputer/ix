@@ -8,7 +8,8 @@ open Ix.CompileCert.Certifier
 def usage : String :=
   "usage: compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
   [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--explain <name>]* [--receipts-only] \
-  [--strong | --strong-only [--strong-roots <A,B,...>] [--strong-every <k>] [--strong-max-cone <n>] [--strong-tasks <n>]]\n  writes <out-prefix>.tsv (one row per constant), \
+  [--strong | --strong-only [--strong-roots <A,B,...>] [--strong-every <k>] [--strong-max-cone <n>] [--strong-tasks <n>] \
+  [--strong-plan]]\n  writes <out-prefix>.tsv (one row per constant), \
   <out-prefix>.classes.tsv, <out-prefix>.proj.tsv, <out-prefix>.receipts.tsv (projection lowering receipts), \
   <out-prefix>.receipts.statements, <out-prefix>.json, <out-prefix>.ixonly.tsv (artifact names with no Lean \
   constant), <out-prefix>.sizes.tsv (distinct Expr objects and tree size of every declaration with at least 4096 \
@@ -18,7 +19,9 @@ def usage : String :=
   certified, nothing is rejected and every raw projection on a non-direct structure-like has a receipt;\n  --receipts-only: the projection measurement and receipts without the W check (exit 0 iff no refusal);\n  \
   --strong: after W, the strong-model endpoint S per cone (every W-certified constant, or the given roots, or every k-th \
   plus the projection functions); writes <out-prefix>.strong.tsv, .strong.cones.tsv, .strong.classes.tsv, .strong.json; \
-  exit 0 iff additionally something is S-certified and nothing is S-rejected"
+  exit 0 iff additionally something is S-certified and nothing is S-rejected;\n  \
+  --strong-plan: the cones S would run (the same order, batches and budget), none run, each counted as accepted; \
+  writes <out-prefix>.strong.plan.tsv and .strong.plan.names.tsv and no S verdict"
 
 def parse : List String → Option Config
   | "--file" :: path :: ixe :: out :: rest => options { lean := .file path, ixe, out } rest
@@ -35,6 +38,7 @@ where
     | "--receipts-only" :: rest => options { cfg with receiptsOnly := true } rest
     | "--strong" :: rest => options { cfg with strong := true } rest
     | "--strong-only" :: rest => options { cfg with strong := true, strongOnly := true } rest
+    | "--strong-plan" :: rest => options { cfg with strong := true, strongPlan := true } rest
     | "--strong-roots" :: rs :: rest =>
       options { cfg with strongRoots := (rs.splitOn ",").toArray.map String.toName } rest
     | "--strong-every" :: n :: rest => n.toNat?.bind fun k => options { cfg with strongEvery := k } rest

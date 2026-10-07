@@ -1337,6 +1337,9 @@ structure Config where
   strongTasks : Nat := 32
   /-- Skip the global W check (probing): every constant the reader keeps is offered to S. -/
   strongOnly : Bool := false
+  /-- Plan the S cones without running any (`Strong.runStrong`): the cover's cones as if each
+  were accepted, written to `<out>.strong.plan.tsv`; no S verdict is written. -/
+  strongPlan : Bool := false
 
 /-- What the S path reuses from the W run. -/
 structure WState where
