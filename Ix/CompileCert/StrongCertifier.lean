@@ -403,15 +403,15 @@ def eqFirst (members : Array Lean.Name) : Array Lean.Name :=
   let basis := #[`Eq, `Eq.refl, `Eq.rec].filter members.contains
   if basis.isEmpty then members else basis ++ members.filter (!basis.contains ·)
 
-/-- A root's cone (untrusted): its closure under `refs` within `known`, closed under two
+/-- A cone (untrusted): the closure of `roots` under `refs` within `known`, closed under two
 additions, to a fixpoint: the certificate ground of every pin-certified Nat operation it
 contains (`ground`: the records its pins need on the target side and the declarations its
 source pins name), and `Eq` when it contains `Quot`; members in `eqFirst` order. Returns
 the members and the references outside `known`. -/
-def coneMembers (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.Name → Bool)
-    (ground : Std.HashMap Lean.Name (Array Lean.Name)) (root : Lean.Name) :
+def coneMembersOf (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.Name → Bool)
+    (ground : Std.HashMap Lean.Name (Array Lean.Name)) (roots : Array Lean.Name) :
     Array Lean.Name × Array Lean.Name := Id.run do
-  let mut seeds : Array Lean.Name := #[root]
+  let mut seeds : Array Lean.Name := roots
   let mut result := coneOf refs known seeds
   for _ in [0:8] do
     let present : Std.HashSet Lean.Name := result.1.foldl (·.insert ·) {}
@@ -426,6 +426,59 @@ def coneMembers (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.N
     seeds := seeds ++ extra
     result := coneOf refs known seeds
   return (eqFirst result.1, result.2)
+
+/-- A root's cone (`coneMembersOf` of the root alone). -/
+def coneMembers (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.Name → Bool)
+    (ground : Std.HashMap Lean.Name (Array Lean.Name)) (root : Lean.Name) :
+    Array Lean.Name × Array Lean.Name :=
+  coneMembersOf refs known ground #[root]
+
+/-- Batches of a cover's roots (untrusted orchestration). Each root nothing uses needs a
+cone of its own, and the cost of a cone grows faster than its size (the strong check about
+as size^2.5 on Init+Std), so roots whose cones overlap are decided as **one cone whose
+source is the union of theirs**: the decision then S-certifies every member at once (the
+S conclusion holds for any closed source; nothing about the verdict's meaning changes).
+`order` are the roots nothing uses in the cover's order (largest cone first); they are
+grouped by namespace (`Name.getPrefix`); in each group a leader takes, from the next
+`window` roots of its group not yet taken, those whose cones keep the union within 5/4 of
+the leader's cone (plus 16), at most `maxRoots` roots per batch. Returns, per leader, the
+other roots of its batch. -/
+def coverBatches (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.Name → Bool)
+    (order : Array Lean.Name) (window maxRoots : Nat) : Std.HashMap Lean.Name (Array Lean.Name) := Id.run do
+  let mut groups : Std.HashMap Lean.Name (Array Lean.Name) := {}
+  let mut prefixes : Array Lean.Name := #[]
+  for n in order do
+    let p := n.getPrefix
+    match groups[p]? with
+    | some g => groups := groups.insert p (g.push n)
+    | none =>
+      groups := groups.insert p #[n]
+      prefixes := prefixes.push p
+  let mut out : Std.HashMap Lean.Name (Array Lean.Name) := {}
+  for p in prefixes do
+    let group := groups.getD p #[]
+    if group.size < 2 then continue
+    let cones : Array (Array Lean.Name) := group.map fun n => (coneOf refs known #[n]).1
+    let mut taken : Array Bool := Array.replicate group.size false
+    for i in [0:group.size] do
+      if taken[i]! then continue
+      let lead := cones[i]!
+      let limit := lead.size * 5 / 4 + 16
+      let mut union : Std.HashSet Lean.Name := lead.foldl (·.insert ·) {}
+      let mut batch : Array Lean.Name := #[]
+      let mut looked := 0
+      let mut j := i + 1
+      while j < group.size && looked < window && batch.size + 1 < maxRoots do
+        if !taken[j]! then
+          looked := looked + 1
+          let extra := cones[j]!.filter (!union.contains ·)
+          if union.size + extra.size ≤ limit then
+            union := extra.foldl (·.insert ·) union
+            batch := batch.push group[j]!
+            taken := taken.set! j true
+        j := j + 1
+      if !batch.isEmpty then out := out.insert group[i]! batch
+  return out
 
 /-- The longest prefix of a name that is a source declaration. -/
 def knownPrefix (source : Source) : Lean.Name → Option Lean.Name
@@ -575,15 +628,17 @@ structure ConeRecord where
   outcome : ConeOutcome
   stats : ConeStats
   ms : Nat
+  /-- The roots the cone was built from (more than one: a batch, `coverBatches`). -/
+  roots : Nat := 1
 
 def coneHeader : String :=
-  "root\tmembers\trecords\tsupport\twitnesses\tms\tms input\tms admission\tms W\tms installation\tms strong\toutcome\tclass\tculprit"
+  "root\troots\tmembers\trecords\tsupport\twitnesses\tms\tms input\tms admission\tms W\tms installation\tms strong\toutcome\tclass\tculprit"
 
 def coneRow (c : ConeRecord) : String :=
   let (o, cls, cul) := match c.outcome with
     | .certified _ => ("certified", "", "")
     | .failed cls culprit _ => ("failed", cls, toString (culprit.getD c.root))
-  s!"{c.root}\t{c.stats.members}\t{c.stats.records}\t{c.stats.support}\t{c.stats.witnesses}\t{c.ms}\t\
+  s!"{c.root}\t{c.roots}\t{c.stats.members}\t{c.stats.records}\t{c.stats.support}\t{c.stats.witnesses}\t{c.ms}\t\
     {c.stats.msInput}\t{c.stats.msAdmit}\t{c.stats.msW}\t{c.stats.msInstall}\t{c.stats.msStrong}\t{o}\t\
     {oneLine cls}\t{cul}"
 
@@ -710,6 +765,15 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   say s!"[certify-S] pin ground of the Nat operations: {natOpLeanNames.map (fun op => (pinGround.getD op #[]).size)} constants"
   say s!"[certify-S] {roots.size} roots ({if !cfg.strongRoots.isEmpty then "given" else if cfg.strongEvery > 0 then s!"sample: every {cfg.strongEvery}th W-certified constant and {functions.length} projection functions" else "cover of every W-certified constant"}); \
     {cfg.strongTasks} cones at once; cone budget {cfg.strongMaxCone} declarations"
+  -- a cover decides overlapping roots nothing uses together (`coverBatches`); a batch that
+  -- cannot run or fails as one cone is dissolved and its roots get cones of their own
+  let mut batchOf : Std.HashMap Lean.Name (Array Lean.Name) :=
+    if cover then coverBatches w.refs wCertified.contains
+      (roots.filter fun n => wCertified.contains n && userCount.getD n 0 == 0) 32 64
+    else {}
+  if cover then
+    let merged := batchOf.fold (fun k _ b => k + b.size) 0
+    say s!"[certify-S] cover batches: {batchOf.size} batches take {merged} further roots nothing uses"
   let mut sv : Std.HashMap Lean.Name SVerdict := {}
   let mut cones : Array ConeRecord := #[]
   let mut queue : Array Lean.Name := roots.reverse  -- a stack: the next root is `back`
@@ -744,8 +808,19 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
           | none => .unsupported "not in the artifact or the environment")
         continue
       -- a cone with a pin-certified Nat operation carries the records its pins need; a cone
-      -- with `Quot` carries `Eq`, listed first (`coneMembers`)
-      let (members, missing) := coneMembers w.refs wCertified.contains pinGround root
+      -- with `Quot` carries `Eq`, listed first (`coneMembers`); a batch leader's cone is the
+      -- union with its batch's roots when that can run as one cone, else it is dissolved
+      let batch := (batchOf[root]?).getD #[]
+      let batchCone : Option (Array Lean.Name) :=
+        if batch.isEmpty then none else
+          let (bm, bmissing) := coneMembersOf w.refs wCertified.contains pinGround (#[root] ++ batch)
+          if bmissing.isEmpty && bm.size ≤ cfg.strongMaxCone &&
+              !bm.any (fun m => (sv[m]?.map SVerdict.isFinalFailure).getD false) &&
+              (bm.findSome? witnessRefused.get?).isNone then some bm else none
+      if batchCone.isNone && !batch.isEmpty then batchOf := batchOf.erase root
+      let (members, missing) := match batchCone with
+        | some bm => (bm, #[])
+        | none => coneMembers w.refs wCertified.contains pinGround root
       if let some m := missing[0]? then
         sv := sv.insert root (.blocked m s!"W: {(ofW (w.verdicts.getD m (.unsupported "outside the artifact"))).cls}")
         continue
@@ -776,10 +851,11 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       while next < wave.size && running.size < cfg.strongTasks do
         let (root, members) := wave[next]!
         let witnesses := members.toList.filterMap witnessOf.get?
+        let nRoots := 1 + ((batchOf[root]?).map (·.size)).getD 0
         let task ← IO.asTask (prio := .dedicated) do
           let began ← IO.monoMsNow
           let (outcome, stats) ← runCone w.env w.produced w.store w.namedAddr 1 root members witnesses
-          return { root, outcome, stats, ms := (← IO.monoMsNow) - began : ConeRecord }
+          return { root, outcome, stats, ms := (← IO.monoMsNow) - began, roots := nRoots : ConeRecord }
         running := running.push (next, task)
         next := next + 1
       let tasks := running.toList.map (·.2)
@@ -804,6 +880,13 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       | .certified members =>
         for m in members do sv := sv.insert m (.certified record.root)
       | .failed cls culprit unsupported =>
+        if record.roots > 1 then
+          -- a batch that fails is dissolved: its leader is decided again on its own cone next,
+          -- and its other roots on theirs when the cover reaches them
+          batchOf := batchOf.erase record.root
+          attempted := attempted.erase record.root
+          queue := queue.push record.root
+          continue
         let culprit := culprit.getD record.root
         let own : SVerdict := if unsupported then .unsupported cls else .rejected cls
         let (_, inCone) := (wave.find? (·.1 == record.root)).getD (record.root, #[])
