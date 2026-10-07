@@ -7,6 +7,7 @@ import Ix.CompileCert.Canon
 import Ix.CompileCert.Changed
 import Ix.CompileCert.Conv
 import Ix.CompileCert.Bridge
+import Ix.CompileCert.StrongChanged
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -1437,3 +1438,35 @@ def x2Roots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.x2Roots Ix.CompileCert.Audit.allowedAxioms
+
+/-! ## M7 S+a: S at the value level for cones that reach changed constants
+
+The roots added by package S+a (`StrongChanged.lean`): the definitions check with the row
+alternative and its soundness, the value-level association decided on the index and the DAG,
+the value-level pull-back for every strong model of the target, the name map against W+'s
+association, the cone, its decision and `StrongCone'.sound` (beside the unchanged
+`StrongCone.sound`, whose line above is unchanged). Audited on their own line, against the same
+allowed set; the decisions are also checked for hash-cached equality, by definition and as
+executed. -/
+
+namespace Ix.CompileCert.Audit
+
+def saRoots : Array Lean.Name :=
+  #[`definitionRowF, `definitionRowF_spec, `checkInstalledDefinitionsRowsF, `checkInstalledDefinitionsRows,
+    `checkInstalledDefinitionsRows_member, `checkInstalledDefinitionsRows_sound, `checkChangedAssociation,
+    `checkChangedAssociationF, `checkChangedAssociationF_eq, `checkedChangedAssociation_values,
+    `SemanticNamesAgree', `semanticNamesFast', `semanticNamesFast'_iff, `StrongCone', `StrongProposal',
+    `StrongDecline', `decideStrongCone', `StrongCone'.sound, `StrongCone'.row_equations,
+    `decideStrongCone'_sound].map (`Ix.CompileCert ++ ·)
+
+/-- The decisions package S+a adds. -/
+def saDecisionRoots : Array Lean.Name :=
+  #[`decideStrongCone', `checkChangedAssociationF, `semanticNamesFast'].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.saRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.saDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.saDecisionRoots Ix.CompileCert.Audit.hashEqualities
