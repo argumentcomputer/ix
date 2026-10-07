@@ -25,7 +25,15 @@ compiled cone, with the certifier's own functions (`imageClaims`,
   (the type row is refused), a kind forgery (a recursor's image record stored
   as a theorem), lying image claims (an unchanged recursor claimed, an image
   unclaimed), and a changed block whose Ix block holds a member foreign to
-  the Lean block (containment). -/
+  the Lean block (containment);
+* **the certifier's rows (M5 §5):** the rows of an alias fiber (two Lean
+  constants, one Ix constant) are proposed under one name: as they are, the
+  certified fold refuses the duplicate, named apart they are accepted (and the
+  certifier names its support rows apart); a row's universe is a small level
+  equal to Lean's, and the same row at the successor level is refused; at a
+  zero pre-screen time budget no row is checked and every changed constant that
+  needs one is Unsupported, never Rejected or certified, while a definite
+  refusal beside a row over the budget stays Rejected. -/
 
 namespace Tests.Ix.CompileCert.Changed
 
@@ -37,7 +45,7 @@ def prefixName : Lean.Name := `Tests.Ix.CompileCert.ChangedDefs
 def roots : List Lean.Name :=
   [`Reord.three, `Reord.Even.isZero, `Reord.viaRec_zero,
    `ReordProp.even_two, `ReordProp.even_true,
-   `Split.len2, `Split.viaRec_nil,
+   `Split.len2, `Split.lenCopy2, `Split.viaRec_nil,
    `Collapse.f_ab, `Collapse.A.isNil,
    `Evap.useRec_ex, `Evap.A.isMk,
    `WF0.wa_unfold, `WF0.wb_unfold, `WF0.wa_zero,
@@ -58,6 +66,8 @@ def expectedRoutes : List (Lean.Name × String) :=
    (`ReordProp.even_true, "theorem"),
    (`Split.A, "direct, changed-block"), (`Split.B, "direct, changed-block"),
    (`Split.A.rec, "equations:rfl"), (`Split.A.len._f, "equations:rfl, type-row"),
+   (`Split.A.len, "equations:rfl"), (`Split.A.lenCopy, "equations:rfl"),
+   (`Split.A.lenCopy._f, "equations:rfl, type-row"),
    (`Collapse.A, "direct, changed-block"), (`Collapse.B, "direct, changed-block"),
    (`Collapse.A.rec, "equations:rfl"), (`Collapse.B.rec, "equations:rfl"),
    (`Evap.A, "direct, changed-block"), (`Evap.A.rec_1, "equations:rfl"),
@@ -131,10 +141,11 @@ def inputOf (b : Built) (source : Source) : Input :=
 /-- The W+ decision on an input as the certifier makes it (pre-pass, support,
 `checkIndexed'`), with the pre-pass's routes and diagnoses. -/
 def decideW (env : Lean.Environment) (b : Built) (input : Input) (images : Std.HashSet Lean.Name)
-    (artifact : AdmittedArtifact input.toArtifactInput) (extraSupport : Array _root_.Ix.Kernel.Declaration := #[]) :
+    (artifact : AdmittedArtifact input.toArtifactInput) (extraSupport : Array _root_.Ix.Kernel.Declaration := #[])
+    (rowBudget : Lean.Name → String → Nat := fun _ _ => defaultRowBudget) :
     IO (PrePass × Except Decline' Unit) := do
   let quiet : String → IO Unit := fun _ => pure ()
-  let pre ← wPrePass env b.entries input images artifact (queriesFor env b.refs) 4 quiet
+  let pre ← wPrePass env b.entries input images artifact (queriesFor env b.refs) 4 quiet (rowBudget := rowBudget)
   let names := input.source.names.toArray
   let (sup, _, rowsFinal) := finalSupport names pre
   let support := sup ++ extraSupport
@@ -176,6 +187,11 @@ def isBase (d : Decline) : Decline' → Bool
 
 def replace (source : Source) (ci : Lean.ConstantInfo) : Source :=
   ⟨source.declarations.map fun c => if c.name == ci.name then ci else c⟩
+
+/-- `λ xs, k` for a type `∀ xs, B` (a forged value of the type's arity). -/
+def constLambda : Lean.Expr → Lean.Expr → Lean.Expr
+  | .forallE n d b bi, k => .lam n d (constLambda b k) bi
+  | _, k => k
 
 
 /-- M4-d §8 item 5: a projection onto a proof field of a mutual structure-like
@@ -322,9 +338,122 @@ def run : IO Unit := do
     valid neighbour matches"
   let (_, resultForeign) ← decideW env b foreign b.images artifact
   expectRefused "changed block with a foreign member (containment)" resultForeign (isBase .correspondence)
+  -- the certifier's own rows, proposed against the valid cone (no support yet)
+  let sh0 := SharedW.ofArtifact input (fun n => b.images.contains n) artifact #[]
+  let hints0 := buildHintsW input sh0 (entryPositions sh0.entries) (queriesFor env b.refs) 4 (fun _ => [])
+  let rowNames (rs : Array _root_.Ix.Kernel.Declaration) : List _root_.Ix.Kernel.Name :=
+    rs.toList.filterMap fun d => match d with
+      | .thmDecl cv _ => some cv.name
+      | _ => none
+  -- F1: an alias fiber of changed constants (`Split.A.len._f`, `Split.A.lenCopy._f`: one Ix
+  -- constant, one reader name). As proposed, their rows share their names; the certifier names
+  -- the support rows apart (`renameRow`). Valid neighbour: the decision above (both certified,
+  -- their support rows under four names) and the proposed rows named apart; negative: the
+  -- proposed rows as they are (the certified fold refuses the duplicate declaration).
+  let lenF := prefixName ++ `Split.A.len._f
+  let copyF := prefixName ++ `Split.A.lenCopy._f
+  unless (b.namedAddr[lenF]?).isSome && b.namedAddr[lenF]? == b.namedAddr[copyF]? do
+    throw (IO.userError "fixture: Split.A.len._f and Split.A.lenCopy._f are not one Ix constant")
+  let some (.defnInfo lenD) := env.find? lenF | throw (IO.userError "missing Split.A.len._f")
+  let some copyCi := env.find? copyF | throw (IO.userError "missing Split.A.lenCopy._f")
+  let rowsLen := (← proposeRows env sh0 hints0 (.defnInfo lenD)).rows.map (·.2)
+  let rowsCopy := (← proposeRows env sh0 hints0 copyCi).rows.map (·.2)
+  unless rowsLen.size == 2 && rowNames rowsLen == rowNames rowsCopy do
+    throw (IO.userError s!"alias fiber: proposed rows {rowNames rowsLen} and {rowNames rowsCopy}, \
+      expected two each under the same names")
+  let supportNames (n : Lean.Name) : List _root_.Ix.Kernel.Name :=
+    rowNames ((pre.rowsOf.getD n #[]).filterMap (pre.support[·]?))
+  let (lenNames, copyNames) := (supportNames lenF, supportNames copyF)
+  unless lenNames.length == 2 && copyNames.length == 2 && lenNames.all (!copyNames.contains ·) do
+    throw (IO.userError s!"alias fiber: support rows {lenNames} and {copyNames} are not named apart")
+  let (_, resultDup) ← decideW env b input b.images artifact (rowsLen ++ rowsCopy)
+  expectRefused "alias fiber rows under the one name they are proposed with" resultDup isFold
+  let (_, resultApart) ← decideW env b input b.images artifact
+    (rowsLen.map (renameRow 100000) ++ rowsCopy.map (renameRow 100001))
+  match resultApart with
+  | .ok () => IO.println s!"PASS: alias fiber {lenF} = {copyF} (one Ix constant): both certified, their \
+      support rows named apart; the same proposed rows named apart are accepted (valid neighbour)"
+  | .error e => throw (IO.userError s!"alias fiber: the rows named apart were refused: {declineLabel e}")
+  -- F2: the universe of a row, a small level equal to Lean's (untrusted: the fold validates it)
+  let u : Lean.Name := `u
+  let pu := Lean.Level.param u
+  let chain := (List.range 40).foldl (fun acc _ => Lean.Level.imax (.max (.succ .zero) pu) acc) pu
+  unless smallEquivalentLevel [u] chain == some pu do
+    throw (IO.userError s!"small level: a 40-fold imax chain gave {smallEquivalentLevel [u] chain}, expected u")
+  unless smallEquivalentLevel [u] (.imax (.succ pu) pu) == some (.imax (.succ pu) pu) do
+    throw (IO.userError "small level: imax (u+1) u (a casesOn's type) not found")
+  unless smallEquivalentLevel [u] (.succ (.succ (.succ (.succ (.succ pu))))) == none do
+    throw (IO.userError "small level: u+5 matched a small candidate")
+  let casesOn := prefixName ++ `Reord.Even.casesOn
+  let some casesCi := env.find? casesOn | throw (IO.userError "missing Reord.Even.casesOn")
+  let pc ← proposeRows env sh0 hints0 casesCi
+  let some (_, rflRow) := pc.rows.find? (·.1 == "rfl")
+    | throw (IO.userError s!"Reord.Even.casesOn: no rfl row ({pc.failure})")
+  let .thmDecl cv _ := rflRow | throw (IO.userError "Reord.Even.casesOn: the rfl row is not a theorem")
+  let some (level, carrier, left, right) := eqParts cv.type
+    | throw (IO.userError "Reord.Even.casesOn: the rfl row is not an equation")
+  let some wrong := supportRow cv.name cv.levelParams (kernelEq (.succ level) carrier left right)
+    | throw (IO.userError "Reord.Even.casesOn: no row at the successor level")
+  let (_, resultWrong) ← decideW env b input b.images artifact #[wrong]
+  expectRefused "the rfl row of Reord.Even.casesOn at the successor of its universe" resultWrong isFold
+  let (_, resultRight) ← decideW env b input b.images artifact #[rflRow]
+  match resultRight with
+  | .ok () => IO.println "PASS: small levels: a 40-fold imax chain is u, imax (u+1) u is found, u+5 is not; \
+      the rfl row of Reord.Even.casesOn at the proposed universe accepted (valid neighbour)"
+  | .error e => throw (IO.userError s!"Reord.Even.casesOn: the rfl row at its universe was refused: {declineLabel e}")
+  -- F3: the pre-screen time budget. At a zero budget no row is checked (not decided): every
+  -- changed constant that needs a row is Unsupported (`overBudgetClass`), none is Rejected or
+  -- certified; the others keep their routes. Valid neighbour: the default budget (above).
+  let (pre0, _) ← decideW env b input b.images artifact (rowBudget := fun _ _ => 0)
+  unless pre0.proposedRows > 0 && pre0.overBudgetRows == pre0.proposedRows && pre0.support.isEmpty do
+    throw (IO.userError s!"zero budget: {pre0.overBudgetRows} of {pre0.proposedRows} rows over the budget, \
+      {pre0.support.size} folded")
+  let needsRows (r : String) : Bool :=
+    (r.splitOn "equations:rfl").length > 1 || (r.splitOn "type-row").length > 1
+  let mut asserted := 0
+  for (n, r) in expectedRoutes do
+    if needsRows r then
+      match pre0.failed[n]? with
+      | some (.unsupported c) =>
+        unless c == overBudgetClass do throw (IO.userError s!"zero budget: {n}: unsupported with class {c}")
+        asserted := asserted + 1
+      | some v => throw (IO.userError s!"zero budget: {n}: {v.word} {v.cause}")
+      | none => throw (IO.userError s!"zero budget: {n} passed by route {pre0.routes[n]?} with no row checked")
+    else unless pre0.routes[n]? == some r do
+      throw (IO.userError s!"zero budget: {n}: route {pre0.routes[n]?}, expected {r}")
+  for (n, v) in pre0.failed.toList do
+    match v with
+    | .unsupported c => unless c == overBudgetClass do throw (IO.userError s!"zero budget: {n}: unsupported {c}")
+    | _ => throw (IO.userError s!"zero budget: {n}: {v.word} {v.cause}")
+  IO.println s!"PASS: zero row budget: {pre0.proposedRows} rows not checked; {pre0.failed.size} changed \
+    constants Unsupported ({overBudgetClass}), {asserted} of them asserted per name, none rejected; the \
+    other routes unchanged"
+  -- a row over the budget never hides a refused one: `Split.A.len._f` with its type row not
+  -- checked (budget 0) and its `rfl` row checked. Valid neighbour (Lean's value): Unsupported,
+  -- the type row is all it lacks; negative (a forged value, the `rfl` row refused): Rejected.
+  let typeRowOnly : Lean.Name → String → Nat := fun n what =>
+    if n == lenF && what == "type" then 0 else defaultRowBudget
+  let (preM, _) ← decideW env b input b.images artifact (rowBudget := typeRowOnly)
+  match preM.failed[lenF]? with
+  | some (.unsupported c) =>
+    unless c == overBudgetClass do throw (IO.userError s!"type row over the budget: {lenF}: unsupported {c}")
+  | some v => throw (IO.userError s!"type row over the budget: {lenF}: {v.word} {v.cause}")
+  | none => throw (IO.userError s!"type row over the budget: {lenF} passed by route {preM.routes[lenF]?}")
+  let forgedLen := { input with
+    source := replace source (.defnInfo { lenD with value := constLambda lenD.type (.lit (.natVal 0)) }) }
+  let (preMF, _) ← decideW env b forgedLen b.images artifact (rowBudget := typeRowOnly)
+  match preMF.failed[lenF]? with
+  | some (.rejected c) =>
+    unless ((preMF.refusals.getD lenF "").splitOn "rfl row refused by the checker").length > 1 do
+      throw (IO.userError s!"forged value beside a row over the budget: refusal {preMF.refusals[lenF]?}")
+    IO.println s!"PASS: a refused rfl row beside a type row over the budget: {lenF} rejected ({c.take 140}); \
+      valid neighbour (Lean's value): unsupported ({overBudgetClass})"
+  | some v => throw (IO.userError s!"forged value beside a row over the budget: {v.word} {v.cause}")
+  | none => throw (IO.userError "forged value beside a row over the budget: passed the pre-pass")
   runSized
   IO.println s!"changed constants: {roots.length}/{roots.length} roots certified with their routes; \
-    {expectedUnsupported.length} expected unsupported; 6 forgeries refused beside their valid neighbour; \
-    Sized.ok certified by its statement"
+    {expectedUnsupported.length} expected unsupported; 9 forgeries refused beside their valid neighbour; \
+    alias-fiber rows named apart; {pre0.failed.size} changed constants unsupported at a zero row budget, none \
+    rejected; Sized.ok certified by its statement"
 
 end Tests.Ix.CompileCert.Changed

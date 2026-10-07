@@ -555,10 +555,55 @@ def rflProof : Kernel.Expr → Option Kernel.Expr
   | e => (eqParts e).map fun (level, carrier, left, _) =>
     .app (.app (.const Kernel.eqReflName [level]) carrier) left
 
+/-- Append `i` to a support row's name (rows of the constants of one alias
+fiber would otherwise share a name, and the fold refuses a duplicate). -/
+def renameRow (i : Nat) : Kernel.Declaration → Kernel.Declaration
+  | .thmDecl cv v => .thmDecl { cv with name := cv.name.num i } v
+  | d => d
+
 /-- A support row `name : statement := rflProof statement`. -/
 def supportRow (name : Kernel.Name) (levels : List Kernel.Name) (statement : Kernel.Expr) :
     Option Kernel.Declaration :=
   (rflProof statement).map fun proof => .thmDecl ⟨name, levels, statement⟩ proof
+
+/-- A Lean level evaluated at a valuation of its parameters (metavariables at 0). -/
+def evalSourceLevel (val : Lean.Name → Nat) : Lean.Level → Nat
+  | .zero => 0
+  | .succ u => evalSourceLevel val u + 1
+  | .max u v => max (evalSourceLevel val u) (evalSourceLevel val v)
+  | .imax u v => if evalSourceLevel val v == 0 then 0 else max (evalSourceLevel val u) (evalSourceLevel val v)
+  | .param p => val p
+  | .mvar _ => 0
+
+/-- The largest `succ` offset in a level. -/
+def levelOffset : Lean.Level → Nat
+  | .succ u => levelOffset u + 1
+  | .max u v | .imax u v => max (levelOffset u) (levelOffset v)
+  | _ => 0
+
+/-- A small level equal to `l` at every valuation of `params` in `0 … offset + 2`
+(untrusted: the fold validates the row it goes into), or `none`. `Meta.getLevel`
+returns long `imax` chains (one per binder) that `Level.normalize` keeps and
+that the export (`Ixon.canonUniv` under `exportLevel`) does not finish on. -/
+def smallEquivalentLevel (params : List Lean.Name) (l : Lean.Level) : Option Lean.Level := Id.run do
+  let bound := levelOffset l + 3
+  if params.length > 4 || bound ^ params.length > 4096 then return none
+  let rec valuations : List Lean.Name → List (List (Lean.Name × Nat))
+    | [] => [[]]
+    | p :: ps => (valuations ps).flatMap fun v => (List.range bound).map fun k => (p, k) :: v
+  let points := valuations params
+  let agrees (c : Lean.Level) : Bool := points.all fun v =>
+    let val := fun n => (v.lookup n).getD 0
+    evalSourceLevel val c == evalSourceLevel val l
+  let ps := params.map Lean.Level.param
+  let base : List Lean.Level :=
+    [.zero, .succ .zero] ++ ps ++ ps.map .succ ++ ps.map (Lean.Level.max (.succ .zero)) ++
+      (match ps with
+        | [] => []
+        | p :: rest => [rest.foldl Lean.Level.max p, Lean.Level.max (.succ .zero) (rest.foldl Lean.Level.max p)])
+  -- a Π-type's sort is `imax` of its binders' and its body's: `imax c p` vanishes with `p`
+  let candidates := base ++ base.flatMap fun c => ps.map fun p => Lean.Level.imax c p
+  return candidates.find? agrees
 
 /-- The rows proposed for one changed constant (each with what it states:
 `type`, `rule <k>` or `rfl`), or why none could be formed. -/
@@ -574,10 +619,15 @@ name and universes but another (convertible) type, and the **equation rows**
 of a recursor (one per rule) or a definition (`rfl`). -/
 def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) :
     IO RowProposal := do
+  let trace := (← IO.getEnv "IX_CERTIFY_TRACE").isSome
+  let t0 ← IO.monoMsNow
+  let step (what : String) : IO Unit := do
+    if trace then IO.println s!"[certify]   {ci.name}: {what} at {(← IO.monoMsNow) - t0} ms"; (← IO.getStdout).flush
   let cy := sh.small hints.toHints ci.name
   match directHeader cy ci with
   | .error e => return { owner := ci.name, failure := some s!"header export: {e}" }
   | .ok header =>
+    step "header exported"
     let actualType : Option Kernel.Expr := match ci, sh.entries[hints.entryAt ci.name]? with
       | .thmInfo _, some (.thm cv _) | .defnInfo _, some (.defn cv _ _) | .recInfo _, some (.defn cv _ _) =>
         if cv.name == header.name && cv.levelParams == header.levelParams then some cv.type else none
@@ -585,13 +635,22 @@ def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : L
     let some ixType := actualType
       | return { owner := ci.name, failure := some "no reader entry of the required kind under the exported name and universes" }
     let typeDiffers := ixType != header.type
+    step s!"types compared (differ: {typeDiffers})"
     let tc : TermContext := ⟨cy, ci.levelParams, header.levelParams⟩
     -- the universe of Lean's type, for a type row and for a definition's `rfl` row
     let level? ← if typeDiffers || (match ci with | .defnInfo _ => true | _ => false) then
         match ← LoweringLean.runMeta env (Lean.Meta.getLevel ci.type) with
         | .error e => pure (Except.error s!"universe of the type: {oneLine e}")
-        | .ok level => pure (exportLevel tc level)
+        -- a small equivalent level: `getLevel`'s long `imax` chains are kept by `normalize`
+        -- and the export (`Ixon.canonUniv`) does not finish on them
+        | .ok level =>
+          match smallEquivalentLevel ci.levelParams level.normalize with
+          | some small => pure (exportLevel tc small)
+          | none =>
+            if levelOffset level < 16 && level.normalize.depth < 24 then pure (exportLevel tc level.normalize)
+            else pure (.error "universe of the type: no small equivalent level")
       else pure (.error "not needed")
+    step "universe computed"
     let mut rows : Array (String × Kernel.Declaration) := #[]
     if typeDiffers then
       match level? with
@@ -599,7 +658,7 @@ def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : L
       | .ok ℓ =>
         match supportRow (header.name.str "_ix_type") header.levelParams
             (kernelEq (.succ ℓ) (.sort ℓ) ixType header.type) with
-        | some row => rows := rows.push ("type", row)
+        | some row => rows := rows.push ("type", row); step "type row built"
         | none => return { owner := ci.name, failure := some "type row shape" }
     let base := header.name.str "_ix_eq"
     match ci with
@@ -633,6 +692,93 @@ def prescreen (pins : List Ix.Kernel.NatOpPinSet) (base : Benchmarks.Kernel.Chec
     | none => none
     | some e => let (w, m) := checkOutcome e; some s!"{w}: {m}"
   tasks.map Task.get
+
+/-- A row's pre-screen outcome: accepted, refused by the stepping checker (its
+message), or over its time budget (**not decided**: it was not run, or it was
+still running when its budget ran out). -/
+inductive Screened where
+  | accepted
+  | refused (message : String)
+  | overBudget (budgetMs : Nat)
+  deriving Inhabited
+
+def Screened.text : Screened → String
+  | .accepted => "accepted"
+  | .refused m => m
+  | .overBudget b => s!"over the pre-screen time budget ({b} ms)"
+
+/-- The class of a changed constant that would pass if its rows over the
+pre-screen time budget were accepted (a resource limit, like the tree budget). -/
+def overBudgetClass : String := "changed constant: a type or equation row over the pre-screen time budget"
+
+/-- What `prescreenTimed` returns: each row's outcome and time (ms), and how
+many rows were left running past their budget. -/
+structure Prescreened where
+  results : Array (Screened × Nat)
+  abandoned : Nat
+
+/-- `prescreen` on at most `workers` active dedicated threads, with each row's
+time (diagnostics) and a time budget per row (`budgetOf j`, ms): a row still
+running after its budget is reported `overBudget` and no longer waited for (the
+checker's pure code cannot be cancelled: its thread runs on in the background
+until it finishes or the process exits, which `compile-certify` does at once
+after its report); a row whose budget is `0` is not run. -/
+def prescreenTimed (pins : List Ix.Kernel.NatOpPinSet) (base : Benchmarks.Kernel.CheckIxeStep.Checker)
+    (rows : Array Kernel.Declaration) (workers : Nat) (budgetOf : Nat → Nat)
+    (labels : Array String := #[]) (log : String → IO Unit := fun _ => pure ()) (trace : Bool := false) :
+    IO Prescreened := do
+  let w := max workers 1
+  let label (j : Nat) : String := labels.getD j s!"row {j}"
+  let mut results : Array (Screened × Nat) := Array.replicate rows.size (.refused "pre-screen: not run", 0)
+  let mut next := 0
+  let mut active : Array (Nat × Nat × Task (Except IO.Error (Screened × Nat))) := #[]
+  let mut abandoned := 0
+  while next < rows.size || !active.isEmpty do
+    while active.size < w && next < rows.size do
+      let j := next
+      next := next + 1
+      if budgetOf j == 0 then
+        -- a zero budget admits no checking time: the row is not run (not decided)
+        results := results.set! j (.overBudget 0, 0)
+        continue
+      let row := rows[j]!
+      if trace then log s!"[certify] W+ pre-screen start {label j}"
+      let started ← IO.monoMsNow
+      let task ← IO.asTask (prio := .dedicated) do
+        let t0 ← IO.monoMsNow
+        let outcome : Screened := match (base.step pins row).2 with
+          | none => .accepted
+          | some e => let (word, m) := checkOutcome e; .refused s!"{word}: {m}"
+        -- the match forces the outcome before the clock is read again
+        match outcome with
+        | .accepted => return (.accepted, (← IO.monoMsNow) - t0)
+        | o => return (o, (← IO.monoMsNow) - t0)
+      active := active.push (j, started, task)
+    if active.isEmpty then continue
+    -- wait until a row finishes, at most a second (the budgets are polled)
+    let waited ← IO.monoMsNow
+    repeat
+      if ← active.anyM (fun (_, _, t) => do return (← IO.hasFinished t)) then break
+      if (← IO.monoMsNow) - waited ≥ 1000 then break
+      IO.sleep 5
+    let now ← IO.monoMsNow
+    let mut still : Array (Nat × Nat × Task (Except IO.Error (Screened × Nat))) := #[]
+    for (j, started, task) in active do
+      if ← IO.hasFinished task then
+        match ← IO.wait task with
+        | .ok (verdict, ms) =>
+          if trace || ms > 10000 then
+            log s!"[certify] W+ pre-screen {label j}: {ms} ms, {verdict.text.take 120}"
+          results := results.set! j (verdict, ms)
+        | .error e => results := results.set! j (.refused s!"pre-screen task failed: {e}", now - started)
+      else if now - started > budgetOf j then
+        abandoned := abandoned + 1
+        log s!"[certify] W+ pre-screen {label j}: {(Screened.overBudget (budgetOf j)).text}; left running"
+        results := results.set! j (.overBudget (budgetOf j), now - started)
+      else still := still.push (j, started, task)
+    active := still
+  if abandoned > 0 then log s!"[certify] W+ pre-screen: {abandoned} rows left running over their time budget"
+  return { results, abandoned }
 
 /-- The route a declaration passes by (the decision's own Boolean checks,
 recomputed to label the report), or `none`. `, type-row` marks a header whose
@@ -774,7 +920,7 @@ def diagnoseW (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) (entry : 
         | some r => s!"; equation row: {r}"
         | none => ""
       match ci with
-      | .thmInfo _ => .rejected s!"correspondence: theorem: reader entry {headerDetail}"
+      | .thmInfo _ => .rejected s!"correspondence: theorem: reader entry {headerDetail}{refusal}"
       | .recInfo _ =>
         if headerDetail == "definition" then .rejected s!"correspondence: recursor image: equations fail{refusal}"
         else .rejected s!"correspondence: recursor: reader entry {headerDetail}{refusal}"
@@ -785,7 +931,7 @@ def diagnoseW (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) (entry : 
           if clique && eqDef.isNone then
             .unsupported "changed definition: transported clique member without eq_def"
           else .rejected s!"correspondence: definition: value differs, no equation row accepted{refusal}"
-        else .rejected s!"correspondence: definition: reader entry {headerDetail}"
+        else .rejected s!"correspondence: definition: reader entry {headerDetail}{refusal}"
       | _ => .rejected s!"correspondence: reader entry {headerDetail}"
     else if !(decide (BlockMatch cy sh.state ci) || decide (ChangedBlockMatch cy sh.state ci)) then
       .rejected "inductive block differs (whole and changed)"
@@ -816,20 +962,36 @@ structure PrePass where
   failed : Std.HashMap Lean.Name Verdict := {}
   support : Array Kernel.Declaration := #[]
   rowsOf : Std.HashMap Lean.Name (Array Nat) := {}
+  /-- Per constant, the first definite refusal of one of its rows (by the
+  stepping checker) or why its rows could not be formed. -/
   refusals : Std.HashMap Lean.Name String := {}
   entryPos : Std.HashMap Kernel.Name Nat := {}
   passOneFailures : Nat := 0
   proposedRows : Nat := 0
   proposedFor : Nat := 0
   refusedRows : Nat := 0
+  /-- Rows over their pre-screen time budget (not decided; never folded). -/
+  overBudgetRows : Nat := 0
+  /-- Of those, rows left running in the background. -/
+  abandonedRows : Nat := 0
+
+/-- The default time budget of one row in the pre-screen (ms). -/
+def defaultRowBudget : Nat := 60000
 
 /-- The W+ pre-pass: every declaration's own checks (pass 1), rows for the
 failing theorems, definitions and recursors claimed images, the row-by-row
-pre-screen, and the failing declarations again with their rows and Lean's
-`eq_def` (pass 2), diagnosing what still fails. -/
+pre-screen (each row within its time budget `rowBudget owner what`, ms), and
+the failing declarations again with their rows and Lean's `eq_def` (pass 2),
+diagnosing what still fails. A row over its budget is not decided: it is never
+folded, and a constant that fails is classified `overBudgetClass` (Unsupported)
+only if it passes with its rows over the budget taken as accepted, that is, if
+those rows are all it lacks; otherwise it keeps its diagnosis (a definite
+refusal of another row stays Rejected). -/
 def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry) (input : Input)
     (images : Std.HashSet Lean.Name) (artifact : AdmittedArtifact input.toArtifactInput)
-    (queries : Lean.Name → Array Lean.Name) (workers : Nat) (log : String → IO Unit) : IO PrePass := do
+    (queries : Lean.Name → Array Lean.Name) (workers : Nat) (log : String → IO Unit)
+    (rowsLog : String → IO Unit := fun _ => pure ())
+    (rowBudget : Lean.Name → String → Nat := fun _ _ => defaultRowBudget) : IO PrePass := do
   let imagesFn : Lean.Name → Bool := fun n => images.contains n
   let w := max workers 1
   let pass (sh : SharedW) (hints : HintsW) (decls : List Lean.ConstantInfo) :
@@ -862,54 +1024,99 @@ def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry)
     | .defnInfo _ | .thmInfo _ => true
     | _ => false
   let mut proposals : Array RowProposal := #[]
-  for ci in proposable do proposals := proposals.push (← proposeRows env sh1 hints1 ci)
+  let tp ← IO.monoMsNow
+  let trace := (← IO.getEnv "IX_CERTIFY_TRACE").isSome
+  for ci in proposable do
+    let t0 ← IO.monoMsNow
+    if trace then log s!"[certify] W+ rows of {ci.name}: …"
+    let p ← proposeRows env sh1 hints1 ci
+    let t1 ← IO.monoMsNow
+    if trace || t1 - t0 > 5000 then log s!"[certify] W+ rows of {ci.name}: {t1 - t0} ms ({p.rows.size} rows)"
+    proposals := proposals.push p
   let natPins ← IO.ofExcept Ix.Kernel.Reader.builtinNatOpPins
   let base : Benchmarks.Kernel.CheckIxeStep.Checker := { fe := Ix.Kernel.mkFEnv artifact.env }
   let allRows := proposals.flatMap fun p => p.rows.map (·.2)
-  let screened := prescreen natPins base allRows
+  let tq ← IO.monoMsNow
+  log s!"[certify] W+ rows: {allRows.size} proposed for {proposals.size} constants; {tq - tp} ms"
+  let rowLabels := proposals.flatMap fun p => p.rows.map fun (what, _) => (p.owner, what)
+  let labels := rowLabels.map fun (owner, what) => s!"{owner} {what}"
+  let budgets := rowLabels.map fun (owner, what) => rowBudget owner what
+  let screened ← prescreenTimed natPins base allRows workers (budgets.getD · defaultRowBudget) labels log trace
+  -- per row: owner, what, time, verdict (diagnostics)
+  let mut rowText := "owner\trow\tms\tverdict\n"
+  for ((owner, what), (verdict, ms)) in rowLabels.zip screened.results do
+    rowText := rowText ++ s!"{owner}\t{what}\t{ms}\t{oneLine verdict.text}\n"
+  rowsLog rowText
   let mut k := 0
   let mut support : Array Kernel.Declaration := #[]
   let mut rowsOf : Std.HashMap Lean.Name (Array Nat) := {}
   let mut refusals : Std.HashMap Lean.Name String := {}
   let mut refusedRows := 0
+  -- the rows over their budget, kept apart (never folded), by owner
+  let mut overRows : Array Kernel.Declaration := #[]
+  let mut overOf : Std.HashMap Lean.Name (Array Nat) := {}
   for p in proposals do
     -- every row the pre-screen accepts is kept; a refusal is recorded for the diagnosis
     let mut idx : Array Nat := #[]
+    let mut overIdx : Array Nat := #[]
     for (what, row) in p.rows do
-      match screened[k]? with
-      | some none =>
+      match screened.results[k]? with
+      | some (Screened.accepted, _) =>
         idx := idx.push support.size
-        support := support.push row
-      | some (some refusal) =>
+        -- the index makes the name unique: an alias fiber shares one reader name
+        support := support.push (renameRow support.size row)
+      | some (Screened.refused refusal, _) =>
         refusedRows := refusedRows + 1
         unless refusals.contains p.owner do
           refusals := refusals.insert p.owner s!"{what} row refused by the checker: {oneLine refusal}"
+      | some (Screened.overBudget _, _) =>
+        overIdx := overIdx.push overRows.size
+        overRows := overRows.push row
       | none => pure ()
       k := k + 1
     if let some f := p.failure then
       unless refusals.contains p.owner do refusals := refusals.insert p.owner f
     unless idx.isEmpty do rowsOf := rowsOf.insert p.owner idx
+    unless overIdx.isEmpty do overOf := overOf.insert p.owner overIdx
   out := { out with support, rowsOf, refusals, refusedRows, proposedRows := allRows.size,
-                    proposedFor := proposals.size }
+                    proposedFor := proposals.size, overBudgetRows := overRows.size,
+                    abandonedRows := screened.abandoned }
   let t7 ← IO.monoMsNow
   log s!"[certify] W+ support: {allRows.size} rows proposed for {proposals.size} constants; \
-    {support.size} accepted by the pre-screen, {refusedRows} refused; {t7 - t6} ms"
+    {support.size} accepted by the pre-screen, {refusedRows} refused, {overRows.size} over the time budget; \
+    {t7 - t6} ms"
   -- pass 2: the failing declarations again, with their rows and Lean's `eq_def` as the fallback
   let sh2 := SharedW.ofArtifact input imagesFn artifact support
   let hints2 := buildHintsW input sh2 entryPos queries workers
     (rowsAtWith entries entryPos sh2.reader rowsOf sh2.entries.size)
   let r2 := pass sh2 hints2 failing.toList
-  let mut failures := 0
+  let mut stillFailing : Array Lean.ConstantInfo := #[]
   for (ci, route) in r2 do
     match route with
     | some r => out := { out with routes := out.routes.insert ci.name r }
-    | none =>
-      failures := failures + 1
-      let verdict := diagnoseW sh2 hints2 ci entries[ci.name]? refusals[ci.name]?
-      out := { out with failed := out.failed.insert ci.name verdict }
+    | none => stillFailing := stillFailing.push ci
+  -- the constants with rows over the budget, again, with those rows taken as accepted
+  -- (a hypothesis for the classification only: these rows are never folded)
+  let mut undecided : Std.HashSet Lean.Name := {}
+  let withOver := stillFailing.filter fun ci => overOf.contains ci.name
+  unless withOver.isEmpty do
+    let mut supportH := support
+    for row in overRows do supportH := supportH.push (renameRow supportH.size row)
+    let mut rowsOfH := rowsOf
+    for (n, idxs) in overOf.toList do
+      rowsOfH := rowsOfH.insert n (rowsOf.getD n #[] ++ idxs.map (support.size + ·))
+    let shH := SharedW.ofArtifact input imagesFn artifact supportH
+    let hintsH := buildHintsW input shH entryPos queries workers
+      (rowsAtWith entries entryPos shH.reader rowsOfH shH.entries.size)
+    for (ci, route) in pass shH hintsH withOver.toList do
+      if route.isSome then undecided := undecided.insert ci.name
+  for ci in stillFailing do
+    let verdict : Verdict := if undecided.contains ci.name then .unsupported overBudgetClass
+      else diagnoseW sh2 hints2 ci entries[ci.name]? refusals[ci.name]?
+    out := { out with failed := out.failed.insert ci.name verdict }
   let t8 ← IO.monoMsNow
-  log s!"[certify] W+ pass 2: {failing.size - failures} of {failing.size} pass by theorem statement or \
-    equations, {failures} fail; {t8 - t7} ms"
+  log s!"[certify] W+ pass 2: {failing.size - stillFailing.size} of {failing.size} pass by theorem statement or \
+    equations, {stillFailing.size} fail ({undecided.size} of them only for rows over the time budget); {t8 - t7} ms"
   return out
 
 /-- The support rows of the final members, in their order, with each row's
@@ -975,6 +1182,9 @@ structure Config where
   workers : Nat := 16
   /-- Names whose export and reader entries to print in full (diagnostics). -/
   explain : Array Lean.Name := #[]
+  /-- W+: the time budget of one type or equation row in the pre-screen (ms; `0`: no row is
+  checked, so no changed constant that needs a row is certified). -/
+  rowBudget : Nat := defaultRowBudget
   /-- Only the raw-projection measurement and the receipt census (no W check). -/
   receiptsOnly : Bool := false
   /-- After W, decide the strong-model endpoint S per cone (`Ix/CompileCert/StrongCertifier.lean`). -/
@@ -1225,6 +1435,8 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   let mut rowsOf : Std.HashMap Lean.Name (Array Nat) := {}
   let mut proposedRows := 0
   let mut proposedFor := 0
+  let mut overBudgetRows := 0
+  let mut abandonedRows := 0
   let mut accepted := false
   let mut entryPos : Std.HashMap Kernel.Name Nat := {}
   let mut usedSupport := 0
@@ -1243,6 +1455,7 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
         {(← IO.monoMsNow) - t4} ms; W+ pre-pass"
   if !accepted then
     let pre ← wPrePass env entries (makeInput candidates) images artifact queriesOf cfg.workers say
+      (fun text => IO.FS.writeFile s!"{cfg.out}.rows.tsv" text) (fun _ _ => cfg.rowBudget)
     for (n, r) in pre.routes.toList do routes := routes.insert n r
     for (n, v) in pre.failed.toList do verdicts := verdicts.insert n v
     support := pre.support
@@ -1250,6 +1463,8 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
     entryPos := pre.entryPos
     proposedRows := pre.proposedRows
     proposedFor := pre.proposedFor
+    overBudgetRows := pre.overBudgetRows
+    abandonedRows := pre.abandonedRows
     let survivors := candidates.filter (fun n => !verdicts.contains n)
     let (v2, closed2) := closeCandidates refs verdicts survivors
     verdicts := v2
@@ -1422,7 +1637,7 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   IO.FS.writeFile s!"{cfg.out}.ixonly.tsv"
     ("name\taddress\tkind\n" ++ String.join ((ixOnlyRows.qsort (· < ·)).toList.map (· ++ "\n")))
   say s!"[certify] W+: image claims {images.size}; equation rows proposed {proposedRows} for {proposedFor} \
-    constants, folded {usedSupport}; routes {String.intercalate ", " (routeList.toList.map fun (r, k) => s!"{r}={k}")}; \
+    constants, folded {usedSupport}, over the pre-screen time budget {overBudgetRows} ({abandonedRows} left running); routes {String.intercalate ", " (routeList.toList.map fun (r, k) => s!"{r}={k}")}; \
     artifact names with no Lean constant {ixOnly} ({ixOnlyIx} with an `_ix` component)"
   let (projRows, projJson) := measureProjections env names refs verdicts
   IO.FS.writeFile s!"{cfg.out}.proj.tsv" projRows
@@ -1438,7 +1653,9 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
     ("routes", Lean.Json.mkObj (routeList.toList.map fun (r, k) => (r, Lean.toJson k))),
     ("imageClaims", Lean.toJson images.size),
     ("equationRows", Lean.Json.mkObj [("proposed", Lean.toJson proposedRows),
-      ("proposedFor", Lean.toJson proposedFor), ("folded", Lean.toJson usedSupport)]),
+      ("proposedFor", Lean.toJson proposedFor), ("folded", Lean.toJson usedSupport),
+      ("overBudget", Lean.toJson overBudgetRows), ("leftRunning", Lean.toJson abandonedRows),
+      ("rowBudgetMs", Lean.toJson cfg.rowBudget)]),
     ("ixOnly", Lean.Json.mkObj [("total", Lean.toJson ixOnly), ("withIxComponent", Lean.toJson ixOnlyIx)]),
     ("rawProjections", projJson), ("projectionReceipts", receiptJson)]
   IO.FS.writeFile s!"{cfg.out}.json" json.pretty

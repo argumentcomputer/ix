@@ -75,6 +75,15 @@ def A.len : A → Nat
 
 theorem len2 : A.len (.a .nil (.a .nil .nil)) = 2 := rfl
 
+/-- `A.len` again under another name: the two (and their auxiliaries) compile to one Ix
+constant each (an alias fiber, one reader name), and each changed member of the fiber has
+its own rows, which the certifier names apart. -/
+def A.lenCopy : A → Nat
+  | .nil => 0
+  | .a _ x => x.lenCopy + 1
+
+theorem lenCopy2 : A.lenCopy (.a .nil (.a .nil .nil)) = 2 := rfl
+
 noncomputable def A.viaRec : A → Nat :=
   @A.rec (fun _ => Nat) (fun _ => Nat) 0 (fun _ _ ihb iha => ihb + iha + 1) 7
 

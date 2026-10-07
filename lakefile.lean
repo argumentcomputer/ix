@@ -568,7 +568,11 @@ script "check-cert" (args) := do
       ("certify-strong", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
         s!"{outDir}/compiled.ixe", s!"{outDir}/certify-strong", "--strong"]),
       ("certify-changed", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.ChangedDefs",
-        s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed"])] ++
+        s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed"]),
+      -- W+ with no row checked: the changed constants that need a row are Unsupported, none Rejected
+      ("certify-changed-row-budget-0", #[".lake/build/bin/compile-certify", "--modules",
+        "Tests.Ix.CompileCert.ChangedDefs", s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed-b0",
+        "--row-budget", "0"])] ++
     mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
   for (name, checkArgs) in checks do
     let out ← IO.Process.output {

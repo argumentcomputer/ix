@@ -142,15 +142,20 @@ route: `direct`, `raw`, `theorem`, `equations:rfl`, `equations:eq_def` (W+), wit
 declared type matched through a type row and `, changed-block` for an inductive of a changed block;
 `direct/raw` when the old W decision accepted the input at once. A changed definition whose equation
 rows the checker refuses is rejected, except a transported clique member without `eq_def` in Lean's
-environment (unsupported, `changed definition: transported clique member without eq_def`). S for
-changed constants is not decided yet (M7): their cones keep W's old decision and are refused.
+environment (unsupported, `changed definition: transported clique member without eq_def`). The
+rows are pre-screened one by one with the stepping checker under a time budget per row
+(`--row-budget`, 60 s): a row over its budget is not decided and never folded, and a changed
+constant that would pass with its rows over the budget taken as accepted (those rows are all it
+lacks) is unsupported (`changed constant: a type or equation row over the pre-screen time budget`, a
+resource limit like the tree budget); a definite refusal of another of its rows keeps it rejected.
+S for changed constants is not decided yet (M7): their cones keep W's old decision and are refused.
 
 ## 4. Running it
 
 ```
 lake build compile-certify
 compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
-  [--budget <nodes>] [--workers <n>] [--explain <name>]* [--receipts-only] \
+  [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--explain <name>]* [--receipts-only] \
   [--strong | --strong-only] [--strong-roots <A,B,...>] [--strong-every <k>] \
   [--strong-max-cone <n>] [--strong-tasks <n>]
 ```
@@ -161,8 +166,12 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
   `<prefix>.classes.tsv`, `<prefix>.json`, the raw-projection measurement `<prefix>.proj.tsv` and
   the lowering receipts `<prefix>.receipts.tsv`/`.receipts.statements`; the JSON records the routes,
   the image claims, the W+ rows proposed and folded and the artifact names with no Lean constant
-  (`ixOnly`, the canonical `_ix` constants among them); `--explain <name>` also prints the rows of a
-  changed constant, the checker's verdict on each and the first difference of type and value.
+  (`ixOnly`, the canonical `_ix` constants among them; listed in `<prefix>.ixonly.tsv`) and the rows
+  over the pre-screen time budget; `<prefix>.rows.tsv` gives each W+ row's pre-screen time and
+  verdict; `--explain <name>` also prints the rows of a changed constant, the checker's verdict on
+  each and the first difference of type and value. The command exits as soon as its report is
+  written, without waiting for a row left running past its budget (the checker cannot be
+  interrupted).
 - `--strong` then decides S: on every W-certified constant (a cover by cones, roots nothing uses
   first), on `--strong-roots`, or on a sample (`--strong-every k`: every k-th W-certified constant
   in name order plus the projection functions of non-direct structure-likes). It writes
