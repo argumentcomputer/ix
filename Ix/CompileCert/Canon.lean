@@ -17,6 +17,7 @@ import Ix.CompileCert.Canon.Coarsest
 import Ix.CompileCert.Canon.Seed
 import Ix.CompileCert.Canon.SortOk
 import Ix.CompileCert.Canon.SeedFree
+import Ix.CompileCert.Canon.BlockComp
 
 /-!
 # M7 L1: Pass 1 proved
@@ -44,5 +45,8 @@ stated against the code as it is. The modules:
 * `Seed`: under the compiler's name-hash seed, the refinement does not depend on the order of
   its input (§3.3 (c));
 * `SortOk`, `SeedFree`: for any seed, the classes and their order do not depend on the seed or
-  the input order, only the order inside a class does (§3.3 (c)).
+  the input order, only the order inside a class does (§3.3 (c));
+* `BlockComp`: `blockComponents` returns the strongly connected components of the block's
+  reference graph restricted to the members; a permuted block has the same components and the
+  same classes; a component declared on its own is one component (Def 4.3).
 -/

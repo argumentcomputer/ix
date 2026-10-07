@@ -812,7 +812,12 @@ def l1Roots : Array Lean.Name :=
     `BothOk, `mergeM_ok, `runs_ok, `mergePairs_ok, `mergeAll_ok, `sortByM_ok, `groupAdjP_ok,
     `SetEq, `ctx_setEq, `okRel, `constOrd_lookup, `constOrd_lookup_iff, `OrdPart, `ordPart_unique,
     `refineClassP_setEq, `refineClassesP_setEq, `sortLoopP_setEq, `sortClassesP_setEq,
-    `sortClasses_setEq].map (`Ix.CompileCert.Canon ++ ·)
+    `sortClasses_setEq,
+    `nodesOf, `refsOf, `compMembers, `blockComponents_eq, `NReach, `NodeEdge, `sccsOf_nscc,
+    `mem_nodesOf, `blockComponents_sccs, `blockComponents_sub, `blockComponents_cover,
+    `blockComponents_unique, `blockComponents_scc, `nodupB_iff, `sccsOf_index_unique,
+    `blockComponents_perm, `ciName, `EnvWF, `ctor_edges, `reach_restrict, `blockComponents_separate,
+    `mapM_perm, `keysOf_mutConstOf, `classesOf, `canon_member_order].map (`Ix.CompileCert.Canon ++ ·)
 
 end Ix.CompileCert.Audit
 
