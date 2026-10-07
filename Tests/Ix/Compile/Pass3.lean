@@ -287,9 +287,15 @@ def kernelRun (dir : System.FilePath) (path : System.FilePath) (names : Array St
   let leanNames := if anon then (anonNames.toArray.map (·.1)).qsort (· < ·) else names
   IO.FS.writeFile leanNamesFile ("\n".intercalate leanNames.toList ++ "\n")
   let failOut := dir / "lean.fail"
+  -- meta mode: every work item from a fresh worker state (`--clear-every 1`).
+  -- The kernel's caches are keyed by name-insensitive expression addresses,
+  -- so with warm caches a reference to an alias without its own entry
+  -- (BB-F7) resolves through a type another item of the same worker cached,
+  -- and whether it fails would depend on the work-stealing order (FU item
+  -- 13: one run in many counted one `unknown constant` more).
   let ln ← runProc ixExe (#["check-lean", path.toString, "--consts-file", leanNamesFile.toString,
     "--fail-out", failOut.toString, "--workers", "8"]
-    ++ if anon then #["--anon"] else #[])
+    ++ if anon then #["--anon"] else #["--clear-every", "1"])
   IO.FS.writeFile (dir / "lean.stdout") ln.stdout
   IO.FS.writeFile (dir / "lean.stderr") ln.stderr
   let leanN ← if ln.exitCode == 0 || ln.exitCode == Ix.Benchmark.Results.exitRejected then

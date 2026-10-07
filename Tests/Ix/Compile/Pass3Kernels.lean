@@ -32,7 +32,12 @@
     entry under their own names, so constants whose metadata names them fail
     (`unknown constant <address>`, or `app type mismatch` between two
     aliases), and the requested alias names match no work item. The
-    certified checker and anonymous mode accept every one of them.
+    certified checker and anonymous mode accept every one of them. The lean
+    leg checks every item from a fresh worker state (`--clear-every 1`): the
+    kernel's caches are keyed by name-insensitive expression addresses, so a
+    warm cache can resolve an alias reference through another item's
+    inference, and the count would depend on the work-stealing order (FU
+    item 13).
   - `BB-F1`: the Rust kernel's counterpart (`AppTypeMismatch`,
     `ctor return type: head is not the inductive`); the certified checker
     and anonymous mode accept them.
@@ -689,8 +694,14 @@ def table : List Expect := [
     msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
   { unit := "corpus", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", count := 162 },
+  -- re-recorded (FU item 13): 2457 → 2461. The lean leg now checks every item
+  -- from a fresh worker state (`--clear-every 1`); warm caches let 4 BB-F7
+  -- references resolve through another item's cached inference, depending on
+  -- the work-stealing order (`…Canonicity.ProdNestedTwin1.A._sizeOf_6`,
+  -- `…ProdNestedTwin2.X._sizeOf_4`, `…Mutual.NestedAuxOrderingProd.A._sizeOf_5`,
+  -- `…NestedAuxOrderingProd.C2._sizeOf_5`; one gate run missed one rescue: 2458)
   { unit := "corpus", switch := "on", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 2457 },
+    msg := "unknown constant ", count := 2461 },
   { unit := "corpus", switch := "on", leg := "lean", cause := "KF-UNIVM",
     msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
   { unit := "corpus", switch := "off", leg := "cert", cause := "CERT-AXIOM",
