@@ -793,7 +793,12 @@ def l1Roots : Array Lean.Name :=
     `Ent, `ents, `NameInj, `entP, `Run, `Coh, `Sim, `cacheGet_spec, `cachePut_coh,
     `compareCtor_sim, `compareInd_sim, `compareConstBody_sim, `compareConstIn_sim, `constOrd,
     `compareConst_sim, `compareFresh_eq, `liftOrd, `constOrd_total, `compareFresh_total,
-    `cacheGet_today_reversed].map (`Ix.CompileCert.Canon ++ ·)
+    `cacheGet_today_reversed,
+    `qsort_perm, `mem_qsort, `Reach, `Edge, `Inv, `inv_init, `inv_root, `inv_new, `inv_on,
+    `inv_done, `inv_pop, `inv_lift, `inv_finish, `tarjanLoop_spec, `fold_spec, `filt,
+    `condensation_eq, `condensation_state, `condensation_cover, `condensation_range,
+    `condensation_unique, `condensation_topo, `condensation_reach, `condensation_scc,
+    `condensation_acyclic].map (`Ix.CompileCert.Canon ++ ·)
 
 end Ix.CompileCert.Audit
 
