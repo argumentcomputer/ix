@@ -1526,7 +1526,16 @@ def l3dRoots : Array Lean.Name :=
     -- the rewrite
     `Hook, `hookRes, `spineP, `expansionOfP, `rwP, `HeadLaws, `LevelClosed, `conv_substLevels,
     `HookUntagged, `hook_untagged, `hookRes_faithful, `hookRes_lean_name, `except_bind_ok,
-    `except_pure_ok', `forall2_of_mapM_conv, `spineP_faithful, `rwP_faithful, `rwP_lean_name].map (`Ix.CompileCert.Opt ++ ·)
+    `except_pure_ok', `forall2_of_mapM_conv, `spineP_faithful, `rwP_faithful, `rwP_lean_name,
+    -- totality and fuel of the rewrite; a constant
+    `except_bind_error, `mapM_error, `RwFailure, `spineP_error, `rwP_error, `except_bind_of_ok,
+    `mapM_mono, `spineP_mono, `rwP_mono, `rewriteConstP, `cnst_type, `rewriteConstP_faithful,
+    -- canonicity
+    `bool_guard2, `bool_guard3, `O2_pattern, `O8_pattern, `O7_pattern, `ebind, `eguard, `epattern,
+    `toOption_some, `O11a_O2_pattern, `O1_O3_disjoint, `O1_O4_disjoint, `O3_O4_disjoint,
+    `O3_O6_disjoint, `O4_O6_disjoint, `O1_O2_disjoint, `O3_O8_disjoint, `O1_O7_disjoint,
+    `O2_O7_disjoint, `O1_O6_agree, `engine_of_O1, `engine_of_O3, `engine_of_O4, `O1_out,
+    `argT_congr].map (`Ix.CompileCert.Opt ++ ·)
 
 end Ix.CompileCert.Audit
 
