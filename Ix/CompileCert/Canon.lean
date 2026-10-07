@@ -25,6 +25,7 @@ import Ix.CompileCert.Canon.CliqueMap
 import Ix.CompileCert.Canon.SccFuel
 import Ix.CompileCert.Canon.Total
 import Ix.CompileCert.Canon.Refs
+import Ix.CompileCert.Canon.Terminate
 
 /-!
 # M7 L1: Pass 1 proved
@@ -64,5 +65,6 @@ stated against the code as it is. The modules:
 * `SccFuel`, `Total`: Tarjan's fuel suffices, so `condensation`, `sccsOf` and `blockComponents` always
   return;
 * `Refs`: `refsExpr`/`refsConst` return the names a constant references (sound always, complete on
-  collision-free cached hashes), so the reference graph is the graph of occurrence.
+  collision-free cached hashes), so the reference graph is the graph of occurrence;
+* `Terminate`: the refinement returns when no comparison of distinct members fails (§3.5 (ii)).
 -/
