@@ -1,5 +1,6 @@
 import Ix.CompileCert.Certifier
 import Ix.CompileCert.StrongCone
+import Ix.CompileCert.SourcePinGen
 
 /-! # The certifier's S path: the strong-model endpoint per cone
 
@@ -14,7 +15,11 @@ names reach, admitted on their own. For each cone the certifier builds, itself:
 * the Lean-kernel-checked projection-lowering witnesses
   (`LoweringLean.sourceWitnesses`: `addDeclCore` with checking on) and the
   normalised source installation (`installSourceNormalized`, the verified fold
-  over the exported cone);
+  over the exported cone), with the source-named Nat-operation pins
+  (`sourcePins`: `SourcePinGen`'s committed variant, the operations' Lean values
+  and the certificate theorems exported under Lean's names), over a cone that
+  carries its operations' certificate ground and, with `Quot`, Lean's `Eq`
+  first (`coneMembers`);
 * the name map: every source declaration to its target name under the accepted
   pins (`ExportContext.name`), the generated-helper bindings
   (`proposeSourceHelperBindings`) and the basis bindings, with the priority of
@@ -148,11 +153,22 @@ def leanNameOf : Kernel.Name → Lean.Name
   | .str p s => .str (leanNameOf p) s
   | .num p i => .num (leanNameOf p) i
 
+/-- The Nat-operation pin sets of the source fold (`installSourceNormalizedWith`):
+the committed source-named variant (`SourcePinGen.sourceNatOpPinSets`,
+`SourceNatOpPinData.lean`: the operations' Lean values and the certificate
+theorems of `IxC/Kernel/PinGen/Certs.lean` exported under Lean's names, closed
+over each operation's Lean cone). The same for every cone: an operation's Lean
+cone is in every closed cone that contains it. Untrusted: the fold checks every
+pin and certificate it uses, and is sound for any pins. -/
+def sourcePins (_input : Input) (_pins : Kernel.Reader.Pins) : List Kernel.NatOpPinSet :=
+  SourcePinGen.sourceNatOpPinSets
+
 /-- The builtin Nat-operation pin sets with their constants renamed from the
 target's names (the pins name ground constants by Ix address) into the cone's
-source names, for the source fold (`installSourceNormalizedWith`). Untrusted:
-the fold checks every pin and certificate it uses, and is sound for any pins. -/
-def sourcePins (input : Input) (pins : Kernel.Reader.Pins) : List Kernel.NatOpPinSet :=
+source names: M4-d's first attempt at the source pins, kept for the `--explain`
+diagnostic only (the target merges alias fibers the source keeps apart, so the
+renamed certificates do not type-check in the source, M4-d §2.4). -/
+def renamedBuiltinPins (input : Input) (pins : Kernel.Reader.Pins) : List Kernel.NatOpPinSet :=
   let cx : ExportContext := ⟨input.source, input.map, pins, noImages⟩
   let inverse : Std.HashMap Kernel.Name Kernel.Name := input.source.declarations.foldl (fun m ci =>
     match cx.name ci.name with
@@ -336,6 +352,73 @@ def findTarget (m : Std.HashMap Kernel.Name Lean.Name) : Nat → Kernel.Name →
 /-- The eight pin-certified Nat operations, by their Lean names. -/
 def natOpLeanNames : Array Lean.Name :=
   #[`Nat.div, `Nat.mod, `Nat.gcd, `Nat.land, `Nat.lor, `Nat.xor, `Nat.shiftLeft, `Nat.shiftRight]
+
+/-- Per pin-certified Nat operation (by Lean name), what a cone containing it also takes
+(untrusted, `coneMembers`): the Lean names of the target names its builtin pins and
+certificates mention (the records the target fold needs; any member of an alias fiber:
+the members share a record), and the Lean declarations its source-named pins and
+certificates name (`SourcePinGen.groundOf`: the declarations the source fold needs
+installed when it meets the operation). `names` are the candidates, `certified` those a
+cone may contain. -/
+def natOpPinGround (env : Lean.Environment) (store : RecordStore)
+    (namedAddr : Std.HashMap Lean.Name Address) (readerPins : Kernel.Reader.Pins)
+    (names : Array Lean.Name) (certified : Lean.Name → Bool) :
+    Std.HashMap Lean.Name (Array Lean.Name) := Id.run do
+  let targetToLean : Std.HashMap Kernel.Name Lean.Name := names.foldl (fun m n =>
+    if !certified n then m else
+    match namedAddr[n]? with
+    | some a => match Kernel.Reader.resolve (store[·]?) a with
+      | some r =>
+        let k := readerPins.names.getD r (Kernel.Reader.keyName r)
+        if m.contains k then m else m.insert k n
+      | none => m
+    | none => m) {}
+  let mut out : Std.HashMap Lean.Name (Array Lean.Name) := {}
+  for (op, opK, _) in SourcePinGen.certSpecs do
+    let mut ground : Std.HashSet Lean.Name := {}
+    for ps in Kernel.Reader.builtinNatOpPins.toOption.getD [] do
+      for e in Kernel.divModDeclPin ps opK :: Kernel.divModCertProofs ps opK do
+        for (_, c) in exprConsts e do
+          if let some n := findTarget targetToLean 8 c then ground := ground.insert n
+    for ps in SourcePinGen.sourceNatOpPinSets do
+      for n in SourcePinGen.groundOf env.find? ps opK do
+        ground := ground.insert n
+    out := out.insert op ((ground.erase op).toArray.qsort (fun a b => toString a < toString b))
+  return out
+
+/-- A cone's members with `Eq`'s block first. The checker installs the quotient block
+only over the pinned `Eq` basis (`checkBasisDecl .quotK`, `IxC/Kernel/Checker.lean`), and
+the source fold installs Lean's `Eq` as that basis (`basisPinHit`) where it meets it. `Eq`
+and `Quot` are both declaration groups without dependencies, which the source order
+(`orderSourceGroups`) keeps in the cone's order, so `Eq` listed first is installed before
+`Quot`. Untrusted: the order of the cone's source, nothing else. -/
+def eqFirst (members : Array Lean.Name) : Array Lean.Name :=
+  let basis := #[`Eq, `Eq.refl, `Eq.rec].filter members.contains
+  if basis.isEmpty then members else basis ++ members.filter (!basis.contains ·)
+
+/-- A root's cone (untrusted): its closure under `refs` within `known`, closed under two
+additions, to a fixpoint: the certificate ground of every pin-certified Nat operation it
+contains (`ground`: the records its pins need on the target side and the declarations its
+source pins name), and `Eq` when it contains `Quot`; members in `eqFirst` order. Returns
+the members and the references outside `known`. -/
+def coneMembers (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.Name → Bool)
+    (ground : Std.HashMap Lean.Name (Array Lean.Name)) (root : Lean.Name) :
+    Array Lean.Name × Array Lean.Name := Id.run do
+  let mut seeds : Array Lean.Name := #[root]
+  let mut result := coneOf refs known seeds
+  for _ in [0:8] do
+    let present : Std.HashSet Lean.Name := result.1.foldl (·.insert ·) {}
+    let mut extra : Array Lean.Name := #[]
+    for op in natOpLeanNames do
+      if present.contains op then
+        for g in ground.getD op #[] do
+          unless present.contains g || extra.contains g do extra := extra.push g
+    if present.contains `Quot && !present.contains `Eq && !extra.contains `Eq then
+      extra := extra.push `Eq
+    if extra.isEmpty then break
+    seeds := seeds ++ extra
+    result := coneOf refs known seeds
+  return (eqFirst result.1, result.2)
 
 /-- The longest prefix of a name that is a source declaration. -/
 def knownPrefix (source : Source) : Lean.Name → Option Lean.Name
@@ -525,11 +608,17 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
     let (members, _) := coneOf w.refs wCertified.contains #[n]
     match coneInput w.env w.produced w.store w.namedAddr [n] members, Kernel.Reader.defaultPins with
     | .ok input, .ok pins =>
-      for p in sourcePins input pins do
+      for p in renamedBuiltinPins input pins do
         let all := (p.modPin :: p.divPin :: p.gcdPin :: p.modProofs ++ p.divProofs ++ p.gcdProofs).flatMap exprConsts
         let left := (all.filter (fun (_, c) => (toString c).startsWith "ix.")).eraseDups
-        say s!"[explain-S] {n}: cone {members.size}; pins {p.toolchain}: {all.length} references, not in the cone: \
-          {left.map (fun (k, c) => s!"{k}:{c}")}"
+        say s!"[explain-S] {n}: cone {members.size}; renamed builtin pins {p.toolchain}: {all.length} references, \
+          not in the cone: {left.map (fun (k, c) => s!"{k}:{c}")}"
+      -- the source-named pins: per operation of the cone, its certificate ground absent from the cone
+      for p in sourcePins input pins do
+        for (op, opK, _) in SourcePinGen.certSpecs do
+          if members.contains op then
+            let left := (SourcePinGen.groundOf w.env.find? p opK).filter (!members.contains ·)
+            say s!"[explain-S] {n}: source pins {p.toolchain}: {op}: certificate ground not in the cone: {left}"
       -- the installation's stages, timed one by one
       let time {α : Type} (label : String) (f : Unit → α) (show_ : α → String) : IO Unit := do
         let t ← IO.monoMsNow
@@ -572,9 +661,10 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       for r in w.refs.getD n #[] do
         if r != n then userCount := userCount.insert r (userCount.getD r 0 + 1)
   let certifiedSorted := w.names.filter wCertified.contains
-  -- decided first (a sample or a cover): the constants whose own source fold is known to be
-  -- refused (the pin-certified Nat operations, `Quot`); every later cone that contains one with
-  -- a final failure is S-blocked by it without running
+  -- decided first (a sample or a cover): the constants whose own source fold decides every cone
+  -- that contains them (the pin-certified Nat operations, through the source-named pins; `Quot`,
+  -- over the pinned `Eq`); every later cone that contains one with a final failure is S-blocked
+  -- by it without running
   let firstRoots : Array Lean.Name := natOpLeanNames.push `Quot
   let roots : Array Lean.Name :=
     if !cfg.strongRoots.isEmpty then cfg.strongRoots
@@ -598,33 +688,10 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       let ops := natOpLeanNames.filter wCertified.contains
       ops ++ (top ++ rest).filter (fun n => !ops.contains n)
   let cover := cfg.strongRoots.isEmpty && cfg.strongEvery == 0
-  -- the records a pin-certified Nat operation's pin and certificates need: the Lean names of
-  -- the target names they mention (any member of an alias fiber: the members share a record)
+  -- what a cone containing a pin-certified Nat operation also takes (`coneMembers`)
   let readerPins ← IO.ofExcept Kernel.Reader.defaultPins
-  let targetToLean : Std.HashMap Kernel.Name Lean.Name := w.names.foldl (fun m n =>
-    if !wCertified.contains n then m else
-    match w.namedAddr[n]? with
-    | some a => match Kernel.Reader.resolve (w.store[·]?) a with
-      | some r =>
-        let k := readerPins.names.getD r (Kernel.Reader.keyName r)
-        if m.contains k then m else m.insert k n
-      | none => m
-    | none => m) {}
-  -- per operation: the constants its pin and certificates mention, over every variant
-  let pinGround : Std.HashMap Lean.Name (Array Lean.Name) := match Kernel.Reader.builtinNatOpPins with
-    | .error _ => {}
-    | .ok sets => Id.run do
-      let mut out : Std.HashMap Lean.Name (Array Lean.Name) := {}
-      for (op, opK) in natOpLeanNames.zip #[Kernel.natDivName, Kernel.natModName, Kernel.natGcdName,
-          Kernel.natLandName, Kernel.natLorName, Kernel.natXorName, Kernel.natShiftLeftName,
-          Kernel.natShiftRightName] do
-        let mut ground : Std.HashSet Lean.Name := {}
-        for ps in sets do
-          for e in Kernel.divModDeclPin ps opK :: Kernel.divModCertProofs ps opK do
-            for (_, c) in exprConsts e do
-              if let some n := findTarget targetToLean 8 c then ground := ground.insert n
-        out := out.insert op (ground.toArray.qsort (fun a b => toString a < toString b))
-      return out
+  let pinGround := natOpPinGround w.env w.store w.namedAddr readerPins w.names wCertified.contains
+  say s!"[certify-S] source pins: {(SourcePinGen.sourceNatOpPinSets).map (·.toolchain)}"
   say s!"[certify-S] pin ground of the Nat operations: {natOpLeanNames.map (fun op => (pinGround.getD op #[]).size)} constants"
   say s!"[certify-S] {roots.size} roots ({if !cfg.strongRoots.isEmpty then "given" else if cfg.strongEvery > 0 then s!"sample: every {cfg.strongEvery}th W-certified constant and {functions.length} projection functions" else "cover of every W-certified constant"}); \
     {cfg.strongTasks} cones at once; cone budget {cfg.strongMaxCone} declarations"
@@ -661,11 +728,9 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
           | some v => ofW v
           | none => .unsupported "not in the artifact or the environment")
         continue
-      let (members0, _) := coneOf w.refs wCertified.contains #[root]
-      -- a cone with a pin-certified Nat operation carries the records its pins need
-      let ground := (natOpLeanNames.filter members0.contains).foldl (fun acc op => acc ++ pinGround.getD op #[]) #[]
-      let (members, missing) := if ground.isEmpty then coneOf w.refs wCertified.contains #[root]
-        else coneOf w.refs wCertified.contains (#[root] ++ ground)
+      -- a cone with a pin-certified Nat operation carries the records its pins need; a cone
+      -- with `Quot` carries `Eq`, listed first (`coneMembers`)
+      let (members, missing) := coneMembers w.refs wCertified.contains pinGround root
       if let some m := missing[0]? then
         sv := sv.insert root (.blocked m s!"W: {(ofW (w.verdicts.getD m (.unsupported "outside the artifact"))).cls}")
         continue

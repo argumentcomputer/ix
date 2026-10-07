@@ -167,6 +167,15 @@ lean_exe «compile-certify» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- Regenerates `Ix/CompileCert/SourceNatOpPinData.lean`: the pin-certified Nat
+operations' pins and certificate proofs under Lean's own names, for the source
+installation of the strong-model endpoint S (`Ix/CompileCert/SourcePinGen.lean`),
+verified by the verified fold through the normalised source installation. -/
+lean_exe «source-pin-gen» where
+  root := `Ix.CompileCert.SourcePinGenMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
@@ -560,7 +569,7 @@ script "check-cert" (args) := do
   let checks : Array (String × Array String) :=
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
       "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
-      "projection-lowering", "strong", "sharing",
+      "projection-lowering", "strong", "sharing", "strong-pins",
       "compiled", "changed"].map (fun mode => (mode, #[exe, mode])) ++
     #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
       ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",

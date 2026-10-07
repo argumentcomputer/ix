@@ -13,6 +13,7 @@ import Tests.Ix.CompileCert.ProjectionLowering
 import Tests.Ix.CompileCert.Strong
 import Tests.Ix.CompileCert.Changed
 import Tests.Ix.CompileCert.Sharing
+import Tests.Ix.CompileCert.StrongPins
 
 /-- Standalone remote driver; shared test registration belongs to the
 coordinator. Production/test library modules do not define a global main. -/
@@ -36,6 +37,7 @@ def main (args : List String) : IO Unit := do
   | ["changed"] => Tests.Ix.CompileCert.Changed.run
   | "changed-probe" :: args => Tests.Ix.CompileCert.Changed.probe args
   | ["sharing"] => Tests.Ix.CompileCert.Sharing.run
+  | ["strong-pins"] => Tests.Ix.CompileCert.StrongPins.run
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>
     Tests.Ix.CompileCert.Direct.run
