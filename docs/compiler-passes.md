@@ -375,6 +375,10 @@ engine's `none` is the baseline. The driver builds the blocks' data once per blo
   another component adapted: `λ fs ihsᶜ. mⱼ fs ih⃗`, domains from Lean's minor type, the relocated
   hypothesis the engine's rewrite of `r_T ps ms mins idx (f ys)`, `mⱼ` applied (β-redex left).
   This is the term the old surgery emitted; the image's developed form differs from it only by β.
+  The minor's constructor, its type and its field and IH binders are read with the surgery's
+  split-minor helpers (`Ix/CallSiteSurgery.lean`: `auxMotiveSigs`, `sourceCtorForMinor`,
+  `sourceMinorType`, `peelBinders`, `findSourceRecTarget`; the Rust compiler's `surgery.rs`
+  counterparts), which O11a uses too: deleting the surgery (M6R slice 6) must keep them.
 - **O3** `casesOn`, no collapsed class (permuted or split): the Ix `casesOn`, same arguments.
 - **O4** `below`/`brecOn`/`.go`/`.eq` when the recursor's image is a *selection* (every minor a
   bare variable): permuted blocks and the cross-field-free components of split blocks; motives and
@@ -384,13 +388,28 @@ engine's `none` is the baseline. The driver builds the blocks' data once per blo
 - **O6** `rec`/`recOn` with a selection image, any change kind.
 - **O11a** definitional (one `rfl` per `Linear.EqCnstr` member, accepted by the three kernels), run
   before O2 since A6f: its output references `T._sizeOf_inst`, which the input `_sizeOf_N` does not,
-  so the Lean pipeline adds the edges `all₀._sizeOf_N → T._sizeOf_inst` (each cross target `T` of
-  the recursor's component) and `→ SizeOf.sizeOf` to the condensation's block dependencies after
-  `CondenseM.run` (`O11a.addSizeOfEdges`). No cycle: an added path descends strictly through
-  components of one split block; no component or representative moves (Tarjan is not re-run). A
-  first, coarser edge set (every `_sizeOf_N` to every cross target) closed the cycle
-  `T._sizeOf_k → T._sizeOf_inst → T._sizeOf_k` [measured]. With the switch on the library twins'
-  seven `Linear` instances are twin-equal (`pass3`, twins unit) [measured, A6f].
+  so the edges `all₀._sizeOf_N → T._sizeOf_inst` (each cross target `T` of the recursor's
+  component) and `→ SizeOf.sizeOf` are added to the condensation's block dependencies
+  (`O11a.addSizeOfEdges`). Where (the drivers differ, harmlessly, since an edge only orders blocks):
+  `compileEnvAux` (sequential, waves) and `compileEnvParallelAux` add them under Pass 3 only
+  (`CompileDriver.prepareSizeOfScheduling`); `compileDecoratedConsts` (`compileLeanInput`,
+  `ix compile-lean`) adds them in both modes after `CondenseM.run`, and again under Pass 3 through
+  `compileEnvParallelAux` (`addSizeOfEdges` is idempotent); the Rust compiler under Pass 3 only. No
+  cycle: an added path descends strictly through components of one split block; no component or
+  representative moves (Tarjan is not re-run). A first, coarser edge set (every `_sizeOf_N` to every
+  cross target) closed the cycle `T._sizeOf_k → T._sizeOf_inst → T._sizeOf_k` [measured]. With the
+  switch on the library twins' seven `Linear` instances are twin-equal (`pass3`, twins unit)
+  [measured, A6f]; those instances are Lean's (`Lean.Meta.Tactic.Grind.Arith.Linear`, in the
+  toolchain's `Lean` package), so on the libraries O11a fires in Mathlib's environment, not on
+  Init+Std (no changed inductive block). Where O11a's side condition fails on the recursion of
+  Lean's `sizeOf` family, it declines to O2's form and records the cause
+  (`O11a.declineCause?`, `CompileEnv.p3NonCanonical`): a parametric, indexed or
+  universe-polymorphic cross target, a reflexive or indexed cross field, an instance or size
+  function not of Lean's shape or not over the occurrence's telescope, a minor that is not a λ over
+  its fields and IHs, an absent instance, and "the constructor and minor type of minor `j` cannot be
+  read": the split-minor helpers O2 uses cannot place minor `j` (measured on split blocks with an
+  evaporated nested auxiliary: EvapClosure, F2, C4 and their twins); the minor itself exists, the
+  wording is the code's (the Rust compiler mirrors it).
 - **O13a/b**: A5's slot after the occurrence passes.
 
 **Measured (A4, Lean core part of the library, the `pass3` suite's surgery comparison).** Of the

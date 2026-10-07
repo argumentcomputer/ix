@@ -49,9 +49,18 @@ and on the arguments. Under a member reorder of the Lean block the same
 component, the same constructors and the same user terms give the same term.
 Against a *separate declaration* of the components the term differs where
 Lean's separate `_sizeOf_N` goes through the instance (`sizeOf h`) and the
-mutual one through the relocated recursor: that is O11a's question (see
-`O11a`: definitional, but not run, for want of a scheduling edge), so the
-separate form is not reached here (cause `pendingSurgery`).
+mutual one through the relocated recursor: that is O11a's question. O11a
+runs before O2 (`Engine.passes`, with its scheduling edges, `O11a.lean`) and
+gives the instance form when its side condition holds; where it declines on
+the recursion of Lean's `sizeOf` family, O2's relocated form stays and O11a
+records the decline with its cause (`O11a.declineCause?`, cause
+`O11A-PENDING` in the twins' records).
+
+The minor's constructor, type and binders are read with the surgery's
+split-minor helpers (`Ix/CallSiteSurgery.lean`: `auxMotiveSigs`,
+`sourceCtorForMinor`, `sourceMinorType`, `peelBinders`,
+`findSourceRecTarget`), shared with O11a: deleting the surgery (M6R slice 6)
+must keep them, in both compilers.
 
 ## Side condition and fallback
 Decidable: `classify` gives `rec`; the block is split and has no collapsed
@@ -63,7 +72,8 @@ the levels; at least the full telescope is applied. Otherwise the baseline
 (the inline image, developed), which is faithful.
 
 ## Non-canonical set and evidence
-Against the separately declared components: `pendingSurgery` (O11a).
+Against the separately declared components, where O11a declines:
+`O11A-PENDING` (O11a's record).
 Evidence: `Tests/Ix/Compile/Pass/O2Split.lean` (fires: a split block with a
 cross field; declines: a bare occurrence); the library: the 7
 `Linear.EqCnstr._sizeOf_N` (byte-identical with the switch-off output when

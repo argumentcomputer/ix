@@ -92,7 +92,10 @@ structure SchedulingSource where
 /-- Add source-determined sizeOf producer edges at the common driver
 boundary, including direct sequential/wave callers. A pipeline that already
 has the source graph supplies it, so streaming proof bodies are not decoded
-again. These are scheduling edges, not changes to the source SCC partition. -/
+again. These are scheduling edges, not changes to the source SCC partition.
+`compileEnvAux` and `compileEnvParallelAux` call it under Pass 3 only;
+`compileDecoratedConsts` adds the same edges in both modes, after
+`CondenseM.run` (`O11a.lean`, "Where the edges are added"). -/
 def prepareSizeOfScheduling (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (source? : Option SchedulingSource := none) : Ix.CondensedBlocks :=
   let source := match source? with
