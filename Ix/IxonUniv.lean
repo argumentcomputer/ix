@@ -93,6 +93,29 @@ def orderedInsert (a : UInt64) : CPath → Option CPath
     else if a == x then none
     else (x :: ·) <$> orderedInsert a xs
 
+/-- The normalizer's state: the canonical form being built, and the calls
+    already made. Every contribution of `normalizeAux` and
+    `normalizeImaxDispatch` is a max-merge into one entry of the form
+    (`addConst`, `addVar`), so a call adds the same contributions whatever
+    the form it starts from, and a call made a second time adds nothing: the
+    sets skip repeated calls, and the result is the form the calls without
+    the sets build. The `imax` distributions (`normalizeImaxMax`,
+    `normalizeImaxImax`) repeat calls: on a chain `imax a (imax a (… (imax a
+    u)))`, one `imax` per binder as `Meta.getLevel` returns for a long `∀`,
+    the calls without the sets are `2ⁿ` (FU item 10:
+    `Lean.Meta.Grind.Arith.Cutsat.EqCnstr.brecOn`'s type did not finish in
+    300 s), with them `O(n²)`. -/
+structure NState where
+  acc : CNorm
+  seenAux : Std.HashSet (Univ × CPath × Nat) := {}
+  seenDispatch : Std.HashSet (Univ × Univ × CPath × Nat) := {}
+
+def NState.addConst (st : NState) (k : Nat) (path : CPath) : NState :=
+  { st with acc := st.acc.addConst k path }
+
+def NState.addVar (st : NState) (idx : UInt64) (k : Nat) (path : CPath) : NState :=
+  { st with acc := st.acc.addVar idx k path }
+
 /-!
 Termination mirrors `Ix/Tc/Level.lean:289-296`: the measure is
 `3·Σ Univ.size + {0,1,2}` ordering the equal-size hops between the
@@ -102,39 +125,27 @@ mutual
 
 /-- Flatten a level into canonical form (`Ix.Tc.Level.normalizeAux` on
     `Ixon.Univ`). `path` is the imax-conditioning chain, `k` the
-    accumulated succ offset. -/
-def normalizeAux (l : Univ) (path : CPath) (k : Nat) (acc : CNorm) :
-    CNorm :=
+    accumulated succ offset; a call already made is skipped (`NState`). -/
+def normalizeAux (l : Univ) (path : CPath) (k : Nat) (st : NState) :
+    NState :=
+  if st.seenAux.contains (l, path, k) then st else
+  let st := { st with seenAux := st.seenAux.insert (l, path, k) }
   match l with
-  | .zero => acc.addConst k path
-  | .succ inner => normalizeAux inner path (k + 1) acc
-  | .max a b => normalizeAux b path k (normalizeAux a path k acc)
-  | .imax u b =>
-    match b with
-    | .zero => acc.addConst k path
-    | .succ v => normalizeAux v path (k + 1) (normalizeAux u path k acc)
-    | .max v w => normalizeImaxMax u v w path k acc
-    | .imax v w => normalizeImaxImax u v w path k acc
-    | .var idx =>
-      match orderedInsert idx path with
-      | some newPath =>
-        let acc := acc.addConst k path
-        let acc := acc.addVar idx k newPath
-        normalizeAux u newPath k acc
-      | none =>
-        let acc := if k != 0 then acc.addVar idx k path else acc
-        normalizeAux u path k acc
+  | .zero => st.addConst k path
+  | .succ inner => normalizeAux inner path (k + 1) st
+  | .max a b => normalizeAux b path k (normalizeAux a path k st)
+  | .imax u b => normalizeImaxDispatch u b path k st
   | .var idx =>
     match orderedInsert idx path with
-    | some newPath => ((acc.addConst k path).addVar idx k newPath)
-    | none => if k != 0 then acc.addVar idx k path else acc
+    | some newPath => ((st.addConst k path).addVar idx k newPath)
+    | none => if k != 0 then st.addVar idx k path else st
 termination_by 3 * l.size
 decreasing_by all_goals simp [Univ.size] <;> omega
 
 /-- `imax(u, max(v, w)) = max(imax(u, v), imax(u, w))`. -/
 def normalizeImaxMax (u v w : Univ) (path : CPath) (k : Nat)
-    (acc : CNorm) : CNorm :=
-  normalizeImaxDispatch u w path k (normalizeImaxDispatch u v path k acc)
+    (st : NState) : NState :=
+  normalizeImaxDispatch u w path k (normalizeImaxDispatch u v path k st)
 termination_by 3 * (u.size + v.size + w.size) + 1
 decreasing_by
   all_goals have hv := Univ.size_pos v
@@ -143,31 +154,34 @@ decreasing_by
 
 /-- `imax(u, imax(v, w)) = max(imax(u, w), imax(v, w))`. -/
 def normalizeImaxImax (u v w : Univ) (path : CPath) (k : Nat)
-    (acc : CNorm) : CNorm :=
-  normalizeImaxDispatch v w path k (normalizeImaxDispatch u w path k acc)
+    (st : NState) : NState :=
+  normalizeImaxDispatch v w path k (normalizeImaxDispatch u w path k st)
 termination_by 3 * (u.size + v.size + w.size) + 1
 decreasing_by
   all_goals have hu := Univ.size_pos u
   all_goals have hv := Univ.size_pos v
   all_goals omega
 
-/-- Dispatch `imax(a, b)` on `b`'s shape. -/
+/-- Dispatch `imax(a, b)` on `b`'s shape; a call already made is skipped
+    (`NState`). -/
 def normalizeImaxDispatch (a b : Univ) (path : CPath) (k : Nat)
-    (acc : CNorm) : CNorm :=
+    (st : NState) : NState :=
+  if st.seenDispatch.contains (a, b, path, k) then st else
+  let st := { st with seenDispatch := st.seenDispatch.insert (a, b, path, k) }
   match b with
-  | .zero => acc.addConst k path
-  | .succ v => normalizeAux v path (k + 1) (normalizeAux a path k acc)
-  | .max v w => normalizeImaxMax a v w path k acc
-  | .imax v w => normalizeImaxImax a v w path k acc
+  | .zero => st.addConst k path
+  | .succ v => normalizeAux v path (k + 1) (normalizeAux a path k st)
+  | .max v w => normalizeImaxMax a v w path k st
+  | .imax v w => normalizeImaxImax a v w path k st
   | .var idx =>
     match orderedInsert idx path with
     | some newPath =>
-      let acc := acc.addConst k path
-      let acc := acc.addVar idx k newPath
-      normalizeAux a newPath k acc
+      let st := st.addConst k path
+      let st := st.addVar idx k newPath
+      normalizeAux a newPath k st
     | none =>
-      let acc := if k != 0 then acc.addVar idx k path else acc
-      normalizeAux a path k acc
+      let st := if k != 0 then st.addVar idx k path else st
+      normalizeAux a path k st
 termination_by 3 * (a.size + b.size) + 2
 decreasing_by all_goals simp [Univ.size]; omega
 
@@ -232,7 +246,7 @@ def subsumption (acc : CNorm) : CNorm := Id.run do
 
 /-- Normalize a stored level to Géran's canonical form. -/
 def normalize (u : Univ) : CNorm :=
-  subsumption (normalizeAux u [] 0 ((∅ : CNorm).insert [] {}))
+  subsumption (normalizeAux u [] 0 { acc := (∅ : CNorm).insert [] {} }).acc
 
 /-- Canonical-form equality modulo EMPTY entries (value-free subsumption
     artifacts; the kernels' `normLevelLe` is already empty-insensitive,

@@ -39,10 +39,10 @@ Offsets are now `Nat`. The overflowing input, and ordinary inputs whose
 canonical form must not change. -/
 def offsetControls : List (String × (Unit → Bool)) := [
   ("canonUniv offset past 2^64 is kept, not wrapped", fun _ =>
-    ((normalizeAux (.succ .zero) [] (2 ^ 64 - 1) ((∅ : CNorm).insert [] {})).findD [] {}).constant
+    ((normalizeAux (.succ .zero) [] (2 ^ 64 - 1) { acc := (∅ : CNorm).insert [] {} }).acc.findD [] {}).constant
       == 2 ^ 64),
   ("canonUniv offset past 2^64 on a variable is kept", fun _ =>
-    ((normalizeAux (.succ (.var 0)) [] (2 ^ 64 - 1) ((∅ : CNorm).insert [] {})).findD [0] {}).vars
+    ((normalizeAux (.succ (.var 0)) [] (2 ^ 64 - 1) { acc := (∅ : CNorm).insert [] {} }).acc.findD [0] {}).vars
       == #[(0, 2 ^ 64)]),
   ("canonUniv of ordinary levels is unchanged", fun _ =>
     Ixon.canonUniv (.succ (.succ .zero)) == .succ (.succ .zero) &&
