@@ -18,6 +18,8 @@ import Ix.CompileCert.Canon.Seed
 import Ix.CompileCert.Canon.SortOk
 import Ix.CompileCert.Canon.SeedFree
 import Ix.CompileCert.Canon.BlockComp
+import Ix.CompileCert.Canon.Simulate
+import Ix.CompileCert.Canon.Rename
 
 /-!
 # M7 L1: Pass 1 proved
@@ -48,5 +50,7 @@ stated against the code as it is. The modules:
   the input order, only the order inside a class does (§3.3 (c));
 * `BlockComp`: `blockComponents` returns the strongly connected components of the block's
   reference graph restricted to the members; a permuted block has the same components and the
-  same classes; a component declared on its own is one component (Def 4.3).
+  same classes; a component declared on its own is one component (Def 4.3);
+* `Simulate`, `Rename`: the refinement under a change of presentation (a restriction and a map of
+  the members); renamed members have the same classes in the same order (Def 4.3, renaming).
 -/
