@@ -194,8 +194,8 @@ mod tests {
 
   fn invariant(misses: &HotMisses, exact: &FxHashMap<u64, u64>) {
     assert_eq!(misses.heap.len(), misses.positions.len());
-    assert_eq!(misses.events, exact.values().sum());
-    assert_eq!(misses.events, misses.heap.iter().map(|e| e.count).sum());
+    assert_eq!(misses.events, exact.values().sum::<u64>());
+    assert_eq!(misses.events, misses.heap.iter().map(|e| e.count).sum::<u64>());
     for (i, e) in misses.heap.iter().enumerate() {
       assert_eq!(misses.positions[&e.key], i);
       assert!(e.count - e.error <= exact[&e.key.a]);

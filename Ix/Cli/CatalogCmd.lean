@@ -1,6 +1,6 @@
 /-
-  `ix catalog`: assemble, verify, and inspect `.ixc` catalog manifests
-  over anonymous `.ixe` pieces — pure artifact algebra.
+  `ix catalog`: assemble, inspect, verify and certify `.ixc` catalogs
+  over anonymous `.ixe` pieces.
 
   A catalog is semantically ONE anonymous env (the union of its
   members' constant sets), committed by two roots: `members_root`
@@ -8,14 +8,15 @@
   (canonical root over the union's constant addresses — the env root
   of the virtual union env). Anonymous Ixon is conflict-free, so no
   qualification, relocation, or union import exists anywhere behind
-  these verbs: the Rust core (`crates/ixon/src/catalog.rs`, via
+  artifact assembly: the Rust core (`crates/ixon/src/catalog.rs`, via
   `crates/ffi/src/catalog.rs`) reads piece HEADERS and sorted §2
   address lists, hashes files, and writes the manifest — O(pieces)
   resident, never a materialized union, and never a Lean frontend.
 
   Compilation orchestration deliberately does NOT live here (no
   `ix catalog build`): drivers like `truthmines` own the per-member
-  `ix compile` loop; these verbs stay reusable by any project.
+  `ix compile` loop. `prove` consumes already compiled catalog pieces
+  and carries checking evidence forward across revisions.
 
   On disk a `.ixc` is a self-contained DIRECTORY — manifest and piece
   files together, no separate pieces dir:
@@ -26,14 +27,15 @@
                       validated filename-safe by the Rust core)
 
   `assemble` ingests external pieces by hard link (copy fallback), so
-  assembling from same-filesystem pieces moves no bytes. No JSON (or
-  other) report artifacts are written anywhere in this flow: the
-  manifest IS the machine-readable record (`ix catalog info` dumps
-  it), and the FFI's JSON strings are an in-memory carrier only.
+  assembling from same-filesystem pieces moves no bytes. The manifest
+  is the assembly record (`ix catalog info` dumps it). `prove` adds a
+  separate `proving.json` attachment and retained corpus/partition;
+  `verify-proof` checks those artifacts and their certificate.
 -/
 module
 public import Cli
-public import Ix.Common
+public import Lean.Data.Json
+public import Ix.Cli.CatalogProveCmd
 
 public section
 
@@ -214,15 +216,17 @@ def runCatalog (p : Cli.Parsed) : IO UInt32 := do
 
 end Ix.Cli.CatalogCmd
 
-open Ix.Cli.CatalogCmd in
+open Ix.Cli.CatalogCmd Ix.Cli.CatalogProveCmd in
 def catalogCmd : Cli.Cmd := `[Cli|
   catalog VIA runCatalog;
-  "Assemble, verify, and inspect .ixc catalog manifests over anonymous .ixe pieces"
+  "Assemble, inspect, verify and incrementally certify .ixc catalogs over anonymous .ixe pieces"
 
   SUBCOMMANDS:
     catalogAssembleCmd;
     catalogVerifyCmd;
-    catalogInfoCmd
+    catalogInfoCmd;
+    catalogProveCmd;
+    catalogVerifyProofCmd
 ]
 
 end

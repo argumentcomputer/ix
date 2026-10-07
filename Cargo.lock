@@ -1872,6 +1872,7 @@ dependencies = [
  "quickcheck_macros",
  "rayon",
  "rustc-hash",
+ "serde_json",
  "smallvec",
 ]
 

@@ -132,6 +132,8 @@ impl std::ops::Deref for EnvOptU64 {
 pub mod anon_env;
 pub mod anon_work;
 pub mod canonical_check;
+#[cfg(not(target_arch = "riscv64"))]
+pub mod catalog_prove;
 pub mod check;
 pub mod claim;
 pub mod congruence;

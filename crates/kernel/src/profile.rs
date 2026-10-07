@@ -588,7 +588,7 @@ mod tests {
     // block 0 (addr 1) unfolds blocks 1 and 2.
     assert_eq!(p.producers(0), &[1, 2]);
     // block 1 (addr 2): self-edge dropped → no producers.
-    assert_eq!(p.producers(1), &[]);
+    assert!(p.producers(1).is_empty());
     // block 2 (addr 3) unfolds block 1.
     assert_eq!(p.producers(2), &[1]);
     assert_eq!(p.num_edges(), 3);
