@@ -21,6 +21,7 @@ import Ix.CompileCert.Canon.BlockComp
 import Ix.CompileCert.Canon.Simulate
 import Ix.CompileCert.Canon.Rename
 import Ix.CompileCert.Canon.Collapse
+import Ix.CompileCert.Canon.CliqueMap
 
 /-!
 # M7 L1: Pass 1 proved
@@ -55,5 +56,6 @@ stated against the code as it is. The modules:
 * `Simulate`, `Rename`: the refinement under a change of presentation (a restriction and a map of
   the members); renamed members have the same classes in the same order (Def 4.3, renaming);
 * `Collapse`: the quotient block (one member per class, references redirected) has the same classes
-  restricted to the kept members, each a singleton (Def 4.3, collapse and equal members).
+  restricted to the kept members, each a singleton (Def 4.3, collapse and equal members);
+* `CliqueMap`: the clique name map sends each member to its class position.
 -/
