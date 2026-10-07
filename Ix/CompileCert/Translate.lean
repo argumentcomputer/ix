@@ -15,10 +15,23 @@ namespace Ix.CompileCert
 
 abbrev ExportM := Except String
 
+/-- No source recursor is read as an image: the naming of every input without
+a changed block (W as before M5). -/
+def noImages : Lean.Name → Bool := fun _ => false
+
 structure ExportContext where
   source : Source
   map : SourceMap
   pins : Kernel.Reader.Pins
+  /-- (M5, W+) The source recursors claimed to be *images*: a recursor of a
+  changed block whose map target is a definition record built over the
+  canonical constants (`docs/compiler-passes.md` Def 3.4). The claim is
+  untrusted: it only changes how such a recursor is named and how its
+  universe telescope is spelled (`name`, `levels`), and the map check
+  (`sourceRecordFlags`) refuses it unless the target is such a definition
+  record; an unclaimed recursor's target must be a recursor member. With
+  `noImages` every function below is the pre-M5 one. -/
+  images : Lean.Name → Bool := noImages
 
 def sourceName : Lean.Name → Kernel.Name
   | .anonymous => .anonymous
@@ -46,10 +59,14 @@ def ExportContext.memberName (cx : ExportContext) (n : Lean.Name) : ExportM Kern
   let some r := cx.map.find n | throw s!"missing source map entry: {n}"
   return cx.pins.names.getD r (Kernel.Reader.keyName r)
 
+/-- A recursor is named after its owner's member (`memberName(p).rec`), unless
+it is claimed an image (M5): then it is named by its own map target, the image
+definition record. -/
 def ExportContext.name (cx : ExportContext) (n : Lean.Name) : ExportM Kernel.Name := do
   let some ci := cx.source.find n | throw s!"missing source declaration: {n}"
   match ci with
   | .recInfo v =>
+    if cx.images n then cx.memberName n else
     match n with
     | .str p "rec" =>
       unless v.all.contains p do throw s!"recursor owner mismatch: {n}"
@@ -80,6 +97,8 @@ def ExportContext.levels (cx : ExportContext) (ci : Lean.ConstantInfo) :
     unless levels.length == ci.levelParams.length do throw "constructor level arity mismatch"
     return levels
   | .recInfo v =>
+    -- an image is a definition over Lean's universe parameters in Lean's order (M5)
+    if cx.images ci.name then return ← cx.plainLevels ci
     let some r := cx.map.find ci.name | throw s!"missing recursor map entry: {ci.name}"
     if cx.pins.levels[r]?.isSome then return ← cx.plainLevels ci
     let some first := v.all.head? | throw "empty recursor owner block"
@@ -439,7 +458,7 @@ theorem exportSourceLevel_eval {params : List Lean.Name} {u : Lean.Level}
     (sourceAligned : ∀ n i, params.idxOf? n = some i → φ n = ρ i.toUInt64)
     (targetAligned : ∀ i n, (params.map sourceName)[i.toNat]? = some n → ρ i = ψ n) :
     sourceLevelEval φ u = some (Kernel.Level.Geran.levelEval ψ result) := by
-  let cx : TermContext := ⟨⟨⟨[]⟩, [], {}⟩, params, params.map sourceName⟩
+  let cx : TermContext := ⟨⟨⟨[]⟩, [], {}, noImages⟩, params, params.map sourceName⟩
   exact exportLevel_eval (cx := cx) exported φ ρ ψ sourceAligned targetAligned
 
 /-- Accepted export preserves the exact scope bound, including under nested

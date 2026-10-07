@@ -24,7 +24,7 @@ def controls : List (String × (Unit → Bool)) := [
     | .error _ => false
     | .ok pins =>
       let name := _root_.Ix.Kernel.Name.str .anonymous "target"
-      let cx : TermContext := ⟨⟨⟨[]⟩, [], pins⟩, [`u], [name]⟩
+      let cx : TermContext := ⟨⟨⟨[]⟩, [], pins, noImages⟩, [`u], [name]⟩
       match exportLevel cx (.imax (.succ (.param `u)) (.param `u)) with
       | .error _ => false
       | .ok level =>

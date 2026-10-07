@@ -104,7 +104,7 @@ def controls : List (String × (Unit → Bool)) := classificationControls ++ [
     match checkCompiled aliases with
     | .error _ => false
     | .ok receipt =>
-      let cx : ExportContext := ⟨aliases.source, aliases.map, receipt.pins⟩
+      let cx : ExportContext := ⟨aliases.source, aliases.map, receipt.pins, noImages⟩
       match cx.name `first with
       | .error _ => false
       | .ok targetName => decide (SemanticNamesAgree receipt (fun _ => targetName))),
@@ -112,7 +112,7 @@ def controls : List (String × (Unit → Bool)) := classificationControls ++ [
     match checkCompiled aliases with
     | .error _ => false
     | .ok receipt =>
-      let cx : ExportContext := ⟨aliases.source, aliases.map, receipt.pins⟩
+      let cx : ExportContext := ⟨aliases.source, aliases.map, receipt.pins, noImages⟩
       match cx.name `first with
       | .error _ => false
       | .ok targetName =>

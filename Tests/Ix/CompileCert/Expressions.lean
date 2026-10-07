@@ -8,7 +8,7 @@ open Tests.Ix.Kernel.IxonFixtures (address)
 def withContext (test : TermContext → Bool) : Bool :=
   match _root_.Ix.Kernel.Reader.defaultPins with
   | .error _ => false
-  | .ok pins => test ⟨⟨⟨[]⟩, [], pins⟩, [], []⟩
+  | .ok pins => test ⟨⟨⟨[]⟩, [], pins, noImages⟩, [], []⟩
 
 def controls : List (String × (Unit → Bool)) := [
   ("Ix scope bridge exceeds packed bound saturation", fun _ => withContext fun cx =>

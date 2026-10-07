@@ -41,7 +41,7 @@ def controls : List (String × (Unit → Bool)) := [
     match checkCompiled grouped with
     | .error _ => false
     | .ok a =>
-      let cx : ExportContext := ⟨grouped.source, grouped.map, a.pins⟩
+      let cx : ExportContext := ⟨grouped.source, grouped.map, a.pins, noImages⟩
       (definitionGroupImage cx (groupedSource `first (sourceValue true))).map List.length == some 3),
   ("unmapped touched wire member is not hidden by source success", fun _ =>
     let input := { grouped with

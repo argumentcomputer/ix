@@ -34,7 +34,7 @@ def explainCorrespondence (input : Input) : IO Unit := do
   match prepareArtifact input.toArtifactInput with
   | .error _ => pure ()
   | .ok artifact =>
-    let cx : ExportContext := ⟨input.source, input.map, artifact.pins⟩
+    let cx : ExportContext := ⟨input.source, input.map, artifact.pins, noImages⟩
     let reader := _root_.Ix.Kernel.Admission.streamContext artifact.pins artifact.prelude
       artifact.constants input.blobs input.hint
     for ci in input.source.declarations do

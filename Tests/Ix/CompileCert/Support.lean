@@ -11,7 +11,7 @@ def run : IO Unit := do
   let accepted ← match checkCompiled Direct.choiceInput with
     | .ok receipt => pure receipt
     | .error _ => throw (IO.userError "original compiler artifact did not admit")
-  let cx : ExportContext := ⟨Direct.choiceInput.source, Direct.choiceInput.map, accepted.pins⟩
+  let cx : ExportContext := ⟨Direct.choiceInput.source, Direct.choiceInput.map, accepted.pins, noImages⟩
   let originalName ← match cx.name `first with
     | .ok name => pure name
     | .error reason => throw (IO.userError reason)

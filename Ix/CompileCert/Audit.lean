@@ -4,6 +4,7 @@ import Ix.CompileCert.StrongEntry
 import Ix.CompileCert.StrongCone
 import Ix.CompileCert.Indexed
 import Ix.CompileCert.Canon
+import Ix.CompileCert.Changed
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -836,6 +837,44 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l1Roots Ix.CompileCert.Audit.allowedAxioms
 
+/-! The roots added by M5 (WP-A, W+): changed constants certified by theorem
+and equation rows checked by the certified checker, changed inductive blocks
+by containment (`Ix/CompileCert/Changed.lean`), the image claims of the export
+context (`noImages`, `imageRecordAgrees`). Checked the same way, against the
+same allowed set. -/
+
+namespace Ix.CompileCert.Audit
+
+def m5Roots : Array Lean.Name :=
+  #[`noImages, `imageRecordAgrees,
+    `sourceLevelSubst, `sourceInstLevels, `sourceDropMData, `sourcePiPrefix, `sourceMkForalls,
+    `sourceInstForalls, `sourceSpine, `sourceResultSort, `sourceIndexPlaceholder, `leanRuleStatement,
+    `directHeader, `ruleStatements, `definitionSides, `except_mapM_length, `ruleStatements_length,
+    `kernelEq, `eqParts, `eqParts_kernelEq, `eqParts_sound, `endsInEq, `eqLeftHead,
+    `HasTheoremRow, `isTheoremRow, `isTheoremRow_iff, `hasTheoremRow_iff,
+    `HasRflRow, `isRflRow, `isRflRow_iff, `hasRflRow_iff,
+    `HasDefinitionHeader, `isDefinitionHeader, `hasDefinitionHeader_iff,
+    `HasTheoremHeader, `isTheoremHeader, `hasTheoremHeader_iff,
+    `isThmInfo, `ThmStatementMatch, `RflEquation, `EqDefEquation, `EquationMatch,
+    `ChangedMember, `exportChangedBlock, `ChangedMemberMatch, `ChangedBlockMatch,
+    `SourceCorrespondence', `BlockCorrespondence',
+    `directHeader_refines, `ruleStatements_refines, `definitionSides_refines,
+    `exportChangedBlock_refines, `changedBlockMatch_transfer,
+    `mem_of_compatible_thm, `mem_of_compatible_defn, `streamEntries_append, `mem_rows_thm,
+    `thmHeaderIs, `thmHeaderIs_sound, `defnHeaderIs, `defnHeaderIs_sound, `defnHeaderAt_sound,
+    `thmAt, `thmAt_sound, `rowAt, `rowAt_sound, `rflAt, `rflAt_sound, `eqDefAt, `eqDefAt_sound,
+    `equationsAt, `equationsAt_sound,
+    `FoldedSupport, `FoldError, `foldSupport, `AcceptedAssociation', `Decline',
+    `SharedW, `SharedW.ofArtifact, `SharedW.small_extends, `SharedW.rows_toList, `HintsW,
+    `SharedW.declCheck', `checkIndexed', `checkIndexed'_sound,
+    `AcceptedAssociation'.toAccepted, `AcceptedAssociation'.unchanged_faithful,
+    `thm_mem_folded, `EquationHolds, `equationHolds_of_installed,
+    `AcceptedAssociation'.model_equations].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m5Roots Ix.CompileCert.Audit.allowedAxioms
+
 namespace Ix.CompileCert.Audit
 
 /-! ## No decision trusts a cached hash as equality
@@ -873,6 +912,8 @@ def decisionRoots : Array Lean.Name :=
     ``Ix.CompileCert.SourceNormalizedInstallation.artifact_strong_model,
     ``Ix.CompileCert.SourceNormalizedInstallation.artifact_strong_model_all,
     ``Ix.CompileCert.decideStrongCone, ``Ix.CompileCert.StrongCone.sound,
+    ``Ix.CompileCert.checkIndexed', ``Ix.CompileCert.checkIndexed'_sound,
+    ``Ix.CompileCert.AcceptedAssociation'.model_equations, ``Ix.CompileCert.leanRuleStatement,
     ``Ix.CompileCert.installSourceNormalizedWith]
 
 def constClosure (env : Lean.Environment) (roots : Array Lean.Name) : Lean.NameSet := Id.run do

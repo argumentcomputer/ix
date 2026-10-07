@@ -49,8 +49,19 @@ instance (cx : ExportContext) (n : Lean.Name) (target : Kernel.Name) :
   | .error _ => by simp only [NameAgrees, h]; infer_instance
   | .ok _ => by simp only [NameAgrees, h]; infer_instance
 
+/-- The target of a recursor claimed an image (M5, `ExportContext.images`): member 0 of a singleton,
+safe definition record of kind `defn`, with the recursor's universe count. -/
+def imageRecordAgrees (rv : Lean.RecursorVal) (index : Nat) (record : Ixon.Constant) : Bool :=
+  index == 0 && !rv.isUnsafe &&
+    match record.info with
+    | .defn d => d.kind == .defn && d.safety == .safe && d.lvls.toNat == rv.levelParams.length
+    | _ => false
+
 /-- Recursor K/safety flags are not retained in the reader's installed-rule
-placeholder. Check them against the actual source-associated wire member. -/
+placeholder. Check them against the actual source-associated wire member.
+An image claim (M5, `cx.images`) must describe the target: it is allowed on a recursor
+source only, whose target is then a definition record (`imageRecordAgrees`);
+an unclaimed recursor's target must be a recursor member, as before. -/
 def sourceRecordFlags (cx : ExportContext) (reader : Ctx) (e : MapEntry) : Bool :=
   match cx.source.find e.source with
   | some (.recInfo rv) =>
@@ -60,11 +71,12 @@ def sourceRecordFlags (cx : ExportContext) (reader : Ctx) (e : MapEntry) : Bool 
       match reader.store owner with
       | none => false
       | some record =>
+        if cx.images e.source then imageRecordAgrees rv index record else
         match (recursorMembers record).find? (fun entry => entry.1 == index) with
         | none => false
         | some (_, r) => r.k == rv.k && r.isUnsafe == rv.isUnsafe &&
             r.lvls.toNat == rv.levelParams.length
-  | some _ => true
+  | some _ => !cx.images e.source
   | none => false
 
 def MapAgrees (cx : ExportContext) (reader : Ctx) : Prop :=
@@ -98,12 +110,12 @@ structure AdmittedArtifact (input : ArtifactInput) where
 /-- Source correspondence extends one reusable admitted artifact. -/
 structure AcceptedAssociation (input : Input) extends AdmittedArtifact input.toArtifactInput where
   domain : DirectDomain input.source input.roots input.map
-  map_agrees : MapAgrees ⟨input.source, input.map, pins⟩
+  map_agrees : MapAgrees ⟨input.source, input.map, pins, noImages⟩
     (streamContext pins prelude constants input.blobs input.hint)
-  correspondence : SourceCorrespondence ⟨input.source, input.map, pins⟩
+  correspondence : SourceCorrespondence ⟨input.source, input.map, pins, noImages⟩
     (streamContext pins prelude constants input.blobs input.hint) constants declarations
-  block_correspondence : BlockCorrespondence ⟨input.source, input.map, pins⟩ readerState
-  definition_groups : DefinitionGroupsCovered ⟨input.source, input.map, pins⟩ constants
+  block_correspondence : BlockCorrespondence ⟨input.source, input.map, pins, noImages⟩ readerState
+  definition_groups : DefinitionGroupsCovered ⟨input.source, input.map, pins, noImages⟩ constants
 
 inductive Decline where
   | admission (error : Kernel.Admission.Error)
@@ -156,7 +168,7 @@ def checkAssociation (input : Input) (artifact : AdmittedArtifact input.toArtifa
         (unsupportedSource ci).map (ci.name, ·)) with
     | some (source, feature) => .error (.unsupported source feature)
     | none =>
-    let cx : ExportContext := ⟨input.source, input.map, artifact.pins⟩
+    let cx : ExportContext := ⟨input.source, input.map, artifact.pins, noImages⟩
     let reader := streamContext artifact.pins artifact.prelude artifact.constants input.blobs input.hint
     if hm : MapAgrees cx reader then
       if hf : SourceCorrespondence cx reader artifact.constants artifact.declarations then
@@ -178,11 +190,11 @@ theorem faithful_sound {input : Input} {accepted : AcceptedAssociation input}
     (_h : checkCompiled input = .ok accepted) :
     checkBytes input.limits input.records input.blobs input.hint = .ok accepted.env ∧
     DirectDomain input.source input.roots input.map ∧
-    SourceCorrespondence ⟨input.source, input.map, accepted.pins⟩
+    SourceCorrespondence ⟨input.source, input.map, accepted.pins, noImages⟩
       (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
       accepted.constants accepted.declarations ∧
-    BlockCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.readerState ∧
-    DefinitionGroupsCovered ⟨input.source, input.map, accepted.pins⟩ accepted.constants :=
+    BlockCorrespondence ⟨input.source, input.map, accepted.pins, noImages⟩ accepted.readerState ∧
+    DefinitionGroupsCovered ⟨input.source, input.map, accepted.pins, noImages⟩ accepted.constants :=
   ⟨accepted.admitted, accepted.domain, accepted.correspondence,
     accepted.block_correspondence, accepted.definition_groups⟩
 
@@ -264,16 +276,16 @@ in the accepted fold. Inductive members retain every rule field via
 This is reader membership, not equality to installed annotated fields. -/
 theorem AcceptedAssociation.direct_member_reading {input : Input}
     (accepted : AcceptedAssociation input) {ci : Lean.ConstantInfo}
-    (direct : DirectMatch ⟨input.source, input.map, accepted.pins⟩
+    (direct : DirectMatch ⟨input.source, input.map, accepted.pins, noImages⟩
       (streamEntries accepted.declarations) ci) :
     ∃ expected actual decl natPins,
-      directExport ⟨input.source, input.map, accepted.pins⟩ ci = .ok expected ∧
+      directExport ⟨input.source, input.map, accepted.pins, noImages⟩ ci = .ok expected ∧
       EntryCompatible actual expected ∧ actual ∈ readerEntries decl ∧
       decl ∈ Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations ∧
       builtinNatOpPins = .ok natPins ∧
       Kernel.Cached.checkDecls .verified natPins
         (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations) = .ok accepted.env := by
-  cases he : directExport ⟨input.source, input.map, accepted.pins⟩ ci with
+  cases he : directExport ⟨input.source, input.map, accepted.pins, noImages⟩ ci with
   | error e => simp [DirectMatch, he] at direct
   | ok expected =>
     have hm : expected.withoutHint ∈ compatibleEntries (streamEntries accepted.declarations) := by
@@ -291,10 +303,10 @@ theorem AcceptedAssociation.raw_definition_reading {input : Input}
     (accepted : AcceptedAssociation input) {ci : Lean.ConstantInfo}
     {owner : Address} {record : Ixon.Constant} {cv : Kernel.ConstantVal}
     {value : Kernel.Expr} {hint : Kernel.ReducibilityHint}
-    (record_found : rawSourceRecord ⟨input.source, input.map, accepted.pins⟩
+    (record_found : rawSourceRecord ⟨input.source, input.map, accepted.pins, noImages⟩
       accepted.constants ci = some (owner, record))
-    (exported : directExport ⟨input.source, input.map, accepted.pins⟩ ci = .ok (.defn cv value hint))
-    (raw : RawSourceMatch ⟨input.source, input.map, accepted.pins⟩
+    (exported : directExport ⟨input.source, input.map, accepted.pins, noImages⟩ ci = .ok (.defn cv value hint))
+    (raw : RawSourceMatch ⟨input.source, input.map, accepted.pins, noImages⟩
       (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
       accepted.constants ci) :
     ∃ natPins state decl ds, builtinNatOpPins = .ok natPins ∧

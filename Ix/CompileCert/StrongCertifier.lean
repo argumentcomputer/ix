@@ -153,7 +153,7 @@ target's names (the pins name ground constants by Ix address) into the cone's
 source names, for the source fold (`installSourceNormalizedWith`). Untrusted:
 the fold checks every pin and certificate it uses, and is sound for any pins. -/
 def sourcePins (input : Input) (pins : Kernel.Reader.Pins) : List Kernel.NatOpPinSet :=
-  let cx : ExportContext := ⟨input.source, input.map, pins⟩
+  let cx : ExportContext := ⟨input.source, input.map, pins, noImages⟩
   let inverse : Std.HashMap Kernel.Name Kernel.Name := input.source.declarations.foldl (fun m ci =>
     match cx.name ci.name with
     | .ok t => if m.contains t then m else m.insert t (sourceName ci.name)
@@ -185,7 +185,7 @@ def sourcePins (input : Input) (pins : Kernel.Reader.Pins) : List Kernel.NatOpPi
 def propose {input : Input} (accepted : AcceptedAssociation input)
     (installed : SourceNormalizedInstallation input.source input.roots) :
     Except String StrongProposal := do
-  let cx : ExportContext := ⟨input.source, input.map, accepted.pins⟩
+  let cx : ExportContext := ⟨input.source, input.map, accepted.pins, noImages⟩
   let mappings ← input.source.declarations.mapM fun ci => do
     return (sourceName ci.name, ← cx.name ci.name)
   let helpers ← proposeSourceHelperBindings installed.modelProposal mappings
@@ -538,7 +538,7 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       -- the builtin pin renamed into the cone versus the cone's own value
       match Kernel.Reader.builtinNatOpPins with
       | .ok (ps :: _) =>
-        let cx : ExportContext := ⟨input.source, input.map, pins⟩
+        let cx : ExportContext := ⟨input.source, input.map, pins, noImages⟩
         let inverse : Std.HashMap Kernel.Name Kernel.Name := input.source.declarations.foldl (fun m ci =>
           match cx.name ci.name with
           | .ok t => if m.contains t then m else m.insert t (sourceName ci.name)

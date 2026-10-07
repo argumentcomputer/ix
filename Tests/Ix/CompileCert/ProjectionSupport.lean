@@ -39,7 +39,7 @@ def runRoot (env : Lean.Environment) (produced : Ixon.Env) (root : Lean.Name) : 
       | .error error => throw (IO.userError s!"source coverage: {SourceModels.label error}")
     let constructor ← IO.ofExcept (checkSourceCoverInstalledShape coverage)
     let receipt ← IO.ofExcept (checkSourceProjectionInstalled projection constructor)
-    let cx : ExportContext := ⟨input.source, input.map, accepted.pins⟩
+    let cx : ExportContext := ⟨input.source, input.map, accepted.pins, noImages⟩
     let mappings ← input.source.declarations.mapM fun ci => do
       let targetName ← IO.ofExcept (cx.name ci.name)
       pure (sourceName ci.name, targetName)

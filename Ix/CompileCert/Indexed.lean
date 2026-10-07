@@ -181,6 +181,8 @@ structure Extends (cx cy : ExportContext) : Prop where
   map : ∀ n e, cy.map.find? (fun e => e.source == n) = some e →
     cx.map.find? (fun e => e.source == n) = some e
   pins : cy.pins = cx.pins
+  /-- The image claims (M5) are the same function in both contexts. -/
+  images : cy.images = cx.images
 
 theorem Extends.mapFind {cx cy : ExportContext} (h : Extends cx cy) {n : Lean.Name}
     {r : Kernel.ConstRef Address} (hr : cy.map.find n = some r) : cx.map.find n = some r := by
@@ -233,6 +235,8 @@ theorem name_refines {cx cy : ExportContext} (h : Extends cx cy) (n : Lean.Name)
     rw [h.source n ci hc]
     cases ci <;> dsimp only
     case recInfo v =>
+      rw [← h.images]
+      refine Refines.ite (fun _ => memberName_refines h n) (fun _ => ?_)
       split
       all_goals first
         | exact Refines.of_throw _ _
@@ -283,19 +287,22 @@ theorem levels_refines {cx cy : ExportContext} (h : Extends cx cy) (ci : Lean.Co
     | none => exact Refines.of_throw _ _
     | some ind => rw [h.source _ _ hi]; dsimp only; refines
   case recInfo v =>
-    cases hr : cy.map.find (Lean.ConstantInfo.recInfo v).name with
-    | none => exact Refines.of_throw _ _
-    | some r =>
-      rw [h.mapFind hr, ← h.pins]
-      dsimp only
-      split
-      · refines
-      · split
-        · rename_i first _
-          cases hi : cy.source.find first with
-          | none => exact Refines.of_throw _ _
-          | some ind => rw [h.source _ _ hi]; dsimp only; refines
-        · exact Refines.of_throw _ _
+    rw [← h.images]
+    split
+    · refines
+    · cases hr : cy.map.find (Lean.ConstantInfo.recInfo v).name with
+      | none => exact Refines.of_throw _ _
+      | some r =>
+        rw [h.mapFind hr, ← h.pins]
+        dsimp only
+        split
+        · refines
+        · split
+          · rename_i first _
+            cases hi : cy.source.find first with
+            | none => exact Refines.of_throw _ _
+            | some ind => rw [h.source _ _ hi]; dsimp only; refines
+          · exact Refines.of_throw _ _
   all_goals exact plainLevels_refines h _
 
 theorem exportLevel_context (cx cy : ExportContext) (s : List Lean.Name) (t : List Kernel.Name) :
@@ -418,21 +425,21 @@ theorem sourceRecordFlags_transfer {cx cy : ExportContext} (h : Extends cx cy) {
   unfold sourceRecordFlags at hf ⊢
   cases hs : cy.source.find e.source with
   | none => simp [hs] at hf
-  | some c => rw [h.source _ _ hs]; simpa [hs] using hf
+  | some c => rw [h.source _ _ hs, ← h.images]; simpa [hs] using hf
 
 /-! ## Small contexts from position hints -/
 
 /-- The source declarations and map entries at the given positions. The
 positions are untrusted: they only decide which lookups can succeed. -/
 def smallContext (srcArr : Array Lean.ConstantInfo) (mapArr : Array MapEntry) (pins : Pins)
-    (sourceAt mapAt : List Nat) : ExportContext :=
-  ⟨⟨sourceAt.filterMap (srcArr[·]?)⟩, mapAt.filterMap (mapArr[·]?), pins⟩
+    (sourceAt mapAt : List Nat) (images : Lean.Name → Bool := noImages) : ExportContext :=
+  ⟨⟨sourceAt.filterMap (srcArr[·]?)⟩, mapAt.filterMap (mapArr[·]?), pins, images⟩
 
 theorem smallContext_extends {cx : ExportContext} {srcArr : Array Lean.ConstantInfo}
     {mapArr : Array MapEntry} (hs : srcArr.toList = cx.source.declarations)
     (hm : mapArr.toList = cx.map) (nd : cx.source.names.Nodup)
     (ndm : (cx.map.map MapEntry.source).Nodup) (sourceAt mapAt : List Nat) :
-    Extends cx (smallContext srcArr mapArr cx.pins sourceAt mapAt) where
+    Extends cx (smallContext srcArr mapArr cx.pins sourceAt mapAt cx.images) where
   source n c found := by
     unfold Source.find at found ⊢
     refine find?_of_sub Lean.ConstantInfo.name nd (fun x hx => ?_) (fun x => beq_iff_eq) found
@@ -445,6 +452,7 @@ theorem smallContext_extends {cx : ExportContext} {srcArr : Array Lean.ConstantI
     rw [← hm]
     exact Array.mem_def.mp (Array.mem_of_getElem? hi)
   pins := rfl
+  images := rfl
 
 /-! ## Stream membership and raw records by position -/
 
@@ -704,7 +712,7 @@ structure Shared where
   constants : Array (Address × Ixon.Constant)
 
 def Shared.small (sh : Shared) (hints : Hints) (n : Lean.Name) : ExportContext :=
-  smallContext sh.srcArr sh.mapArr sh.cx.pins (hints.sourceAt n) (hints.mapAt n)
+  smallContext sh.srcArr sh.mapArr sh.cx.pins (hints.sourceAt n) (hints.mapAt n) sh.cx.images
 
 /-- One source declaration: correspondence (direct or raw), its inductive
 block, and its definition group's map coverage, all in its small context. -/
@@ -722,7 +730,7 @@ def Shared.entryCheck (sh : Shared) (hints : Hints) (e : MapEntry) : Bool :=
     decide (NameAgrees cy e.source (sh.reader.nameOf e.target)) && sourceRecordFlags cy sh.reader e
 
 def Shared.ofArtifact (input : Input) (artifact : AdmittedArtifact input.toArtifactInput) : Shared :=
-  { cx := ⟨input.source, input.map, artifact.pins⟩
+  { cx := ⟨input.source, input.map, artifact.pins, noImages⟩
     reader := streamContext artifact.pins artifact.prelude artifact.constants input.blobs input.hint
     state := artifact.readerState
     srcArr := input.source.declarations.toArray
@@ -787,11 +795,11 @@ definition-group coverage. -/
 theorem AcceptedAssociation.faithful {input : Input} (accepted : AcceptedAssociation input) :
     checkBytes input.limits input.records input.blobs input.hint = .ok accepted.env ∧
     DirectDomain input.source input.roots input.map ∧
-    SourceCorrespondence ⟨input.source, input.map, accepted.pins⟩
+    SourceCorrespondence ⟨input.source, input.map, accepted.pins, noImages⟩
       (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
       accepted.constants accepted.declarations ∧
-    BlockCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.readerState ∧
-    DefinitionGroupsCovered ⟨input.source, input.map, accepted.pins⟩ accepted.constants :=
+    BlockCorrespondence ⟨input.source, input.map, accepted.pins, noImages⟩ accepted.readerState ∧
+    DefinitionGroupsCovered ⟨input.source, input.map, accepted.pins, noImages⟩ accepted.constants :=
   ⟨accepted.admitted, accepted.domain, accepted.correspondence,
     accepted.block_correspondence, accepted.definition_groups⟩
 
@@ -803,11 +811,11 @@ theorem checkIndexed_sound {input : Input} {artifact : AdmittedArtifact input.to
     (_h : checkIndexed input artifact hints = .ok accepted) :
     checkBytes input.limits input.records input.blobs input.hint = .ok accepted.env ∧
     DirectDomain input.source input.roots input.map ∧
-    SourceCorrespondence ⟨input.source, input.map, accepted.pins⟩
+    SourceCorrespondence ⟨input.source, input.map, accepted.pins, noImages⟩
       (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
       accepted.constants accepted.declarations ∧
-    BlockCorrespondence ⟨input.source, input.map, accepted.pins⟩ accepted.readerState ∧
-    DefinitionGroupsCovered ⟨input.source, input.map, accepted.pins⟩ accepted.constants :=
+    BlockCorrespondence ⟨input.source, input.map, accepted.pins, noImages⟩ accepted.readerState ∧
+    DefinitionGroupsCovered ⟨input.source, input.map, accepted.pins, noImages⟩ accepted.constants :=
   accepted.faithful
 
 end Ix.CompileCert

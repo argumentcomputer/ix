@@ -157,11 +157,11 @@ conclusion of `faithful_sound`/`checkIndexed_sound`) and S's conclusion
 theorem StrongCone.sound (V : Type u) [Kernel.SetTheory V] {input : Input} (cone : StrongCone input) :
     (checkBytes input.limits input.records input.blobs input.hint = .ok cone.accepted.env ∧
       DirectDomain input.source input.roots input.map ∧
-      SourceCorrespondence ⟨input.source, input.map, cone.accepted.pins⟩
+      SourceCorrespondence ⟨input.source, input.map, cone.accepted.pins, noImages⟩
         (Kernel.Admission.streamContext cone.accepted.pins cone.accepted.prelude cone.accepted.constants
           input.blobs input.hint) cone.accepted.constants cone.accepted.declarations ∧
-      BlockCorrespondence ⟨input.source, input.map, cone.accepted.pins⟩ cone.accepted.readerState ∧
-      DefinitionGroupsCovered ⟨input.source, input.map, cone.accepted.pins⟩ cone.accepted.constants) ∧
+      BlockCorrespondence ⟨input.source, input.map, cone.accepted.pins, noImages⟩ cone.accepted.readerState ∧
+      DefinitionGroupsCovered ⟨input.source, input.map, cone.accepted.pins, noImages⟩ cone.accepted.constants) ∧
     SemanticNamesAgree cone.accepted cone.names ∧
       Kernel.Cached.checkDecls .verified cone.installed.pins cone.installed.declarations.toArray = .ok cone.installed.env ∧
       Nonempty (StrongInstalledModel V cone.bundle.env) ∧

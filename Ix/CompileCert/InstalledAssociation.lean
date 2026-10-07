@@ -82,12 +82,12 @@ associations are still checked separately over the complete source environment. 
 def SemanticNamesAgree {input : Input} (accepted : AcceptedAssociation input)
     (names : Kernel.Name → Kernel.Name) : Prop :=
   ∀ entry ∈ input.source.declarations,
-    NameAgrees ⟨input.source, input.map, accepted.pins⟩ entry.name (names (sourceName entry.name))
+    NameAgrees ⟨input.source, input.map, accepted.pins, noImages⟩ entry.name (names (sourceName entry.name))
 
 instance {input : Input} (accepted : AcceptedAssociation input) (names : Kernel.Name → Kernel.Name) :
     Decidable (SemanticNamesAgree accepted names) :=
   inferInstanceAs (Decidable (∀ entry ∈ input.source.declarations,
-    NameAgrees ⟨input.source, input.map, accepted.pins⟩ entry.name (names (sourceName entry.name))))
+    NameAgrees ⟨input.source, input.map, accepted.pins, noImages⟩ entry.name (names (sourceName entry.name))))
 
 /-- Bind the installed aggregate to the exact admitted bytes' reader map.
 Missing source-only support on the target remains refusal; support rows are
