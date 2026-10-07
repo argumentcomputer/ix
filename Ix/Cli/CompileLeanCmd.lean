@@ -16,11 +16,19 @@
   pipeline, not just the compiler core.
 
   Mode: Pass 3 (the faithful rewrite) is the default since the flip (M6);
-  `IX_PASS3=off` selects the legacy call-site surgery. The Rust compiler
-  implements the surgery only until M6R, so `--rust-check` is the ALIGNED
-  gate under `IX_PASS3=off`; with the default mode it reports the
-  divergence of Pass 3's output from Rust's (expected wherever a block or
-  clique changes, until M6R). The mode is printed first.
+  `IX_PASS3=off` selects the legacy call-site surgery. The Rust compile of
+  `--rust-check` reads the same variable in this process
+  (`compile_env_with_profile`, `crates/compile/src/compile/env.rs`) and
+  implements both modes (Pass 3 since M6R slices 1–4), but until M6R
+  slice 6 its default is the surgery (`SWITCH_DEFAULT = false`,
+  `crates/compile/src/compile/pass3/names.rs`). So with `IX_PASS3` unset
+  Lean compiles Pass 3 and Rust the surgery, and `--rust-check` reports a
+  divergence wherever a block or clique changes (Init+Std included). Set
+  the mode for both: `IX_PASS3=off` (the surgery in both: ALIGNED on
+  Init+Std in the landing gates) or `IX_PASS3=images` (Pass 3 in both:
+  the two outputs are byte-identical on Init+Std and Mathlib; design
+  document `docs/compiler-passes.md` §4.8, "Switch"). The mode is printed
+  first.
 
   With Pass 3 the command also writes the changed-set record next to the
   output, `<stem>.changed.json` (`Ix.Compile.ChangedSet`; design document,
@@ -159,9 +167,10 @@ serialize the grounded subset)"
         IO.println s!"[compile-lean] DIVERGED: lean {out.bytes.size}B vs \
 rust {rustBytes.size}B, first difference at byte {firstDiff}"
         if pass3 then
-          IO.println s!"[compile-lean] note: the mode is Pass 3; the Rust compiler implements \
-the legacy surgery until M6R, so the ALIGNED gate runs under {Ix.Compile.Pass.switchVar}=\
-{Ix.Compile.Pass.switchOffValue}"
+          IO.println s!"[compile-lean] note: the mode is Pass 3; with {Ix.Compile.Pass.switchVar} \
+unset the Rust compiler runs its default, the legacy surgery (until M6R slice 6): set \
+{Ix.Compile.Pass.switchVar}={Ix.Compile.Pass.switchValue} (Pass 3 in both compilers) or \
+{Ix.Compile.Pass.switchVar}={Ix.Compile.Pass.switchOffValue} (the surgery in both) to compare one mode"
         return 1
     return 0
 
@@ -184,7 +193,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies, instead of the whole import env (as `ix compile --local`); applies to --rust-check too."
-    "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate; until M6R run it with IX_PASS3=off, the legacy surgery Rust implements); exit 1 on divergence"
+    "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate). The Rust compile reads IX_PASS3 too, but until M6R slice 6 its default (unset) is the legacy surgery while Lean's is Pass 3: set IX_PASS3=images or IX_PASS3=off to compare one mode; exit 1 on divergence"
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
 

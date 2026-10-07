@@ -59,9 +59,13 @@ Every definition used here is restated, so this document does not depend on thos
 ## 0. Findings in brief
 
 1. **The comparator is a total preorder at every fixed context, on every input Lean can produce**
-   [argued, §3]. The fixed point of the refinement does not depend on the seed order: neither the
-   partition nor the order of the classes does. Only the order of members inside a class does, and
-   that is metadata [argued].
+   [proved for the Lean compiler's comparison under its rules, given distinct member names and an
+   address map that answers alike for `==` names: `compareFresh_total`,
+   `Ix/CompileCert/Canon/Cache.lean`; §3.2]. The fixed point of the refinement does not depend on the
+   seed order: neither the partition nor the order of the classes does [proved: `sortClasses_setEq`,
+   `Ix/CompileCert/Canon/SeedFree.lean`; §3.3]. Only the order of members inside a class does (the
+   same theorem), and that is metadata [argued]. The Rust port is not proved; its agreement with the
+   Lean compiler is tested by byte identity (§4.8).
    - The Lean port has two latent defects that the Rust original does not have. **C1:** comparing
      members of different kinds always returns `lt`. **C2:** the comparison cache is not normalised
      for argument order.
@@ -139,7 +143,9 @@ plan's "residual image". "Image" keeps its meaning: the extra constants of Def 3
 - **Pass 2** is today's generators with D6 packaging.
 - **Pass 3 (images, the faithful rewrite)** is the default since the flip (M6, 2026-10-06; §4.8, §7.4);
   `IX_PASS3=off` selects the legacy call-site surgery, kept as the comparison mode against the Rust
-  compiler until it implements Pass 3 (M6R).
+  compiler's default until M6R slice 6. The Rust compiler implements Pass 3 under `IX_PASS3=images`
+  (M6R slices 1–4), byte-identical to Lean's default on Init+Std and Mathlib; with `IX_PASS3` unset it
+  still runs the surgery (§4.8, "Switch").
   With the switch off (`IX_PASS3=off`), no byte moves against the pre-Pass 3 compiler [measured, A3W/A3M].
 - **Not yet wired into the compiler** at `564d03f0` (since wired, under Pass 3: the clique transport
   through `Ix/Compile/Pass/Cliques.lean`, §5.7, and the optimisation passes O1–O12, §1.5–§1.6):
@@ -994,7 +1000,17 @@ Init+Std.
 Context: `MutConst.ctx` (`Ix/Mutual.lean:109-121`), rebuilt at every round from that round's classes
 (`CompileM.lean:2320`; `compile.rs:3744`).
 
-### 3.2 At a fixed context, the key is a total preorder [argued]
+### 3.2 At a fixed context, the key is a total preorder [proved: `compareFresh_total`]
+
+[proved] for the Lean compiler (M7 L1, `plans/review2/M7-L1-pass1.md` §2–§2.1): `compareFresh_total`
+(`Ix/CompileCert/Canon/Cache.lean`) states that the comparison the code runs, Pass 1's cached
+`compareFresh` (equal to the uncached `constOrd`, `compareFresh_eq`), is a total preorder on a
+component's members at a fixed context, for every tie-break and both level rules, given
+`portFixes = true` (the compiler's rules), `AddrCongr` (the address map answers alike for `==` names)
+and distinct member names (`NameInj`). The Lean compiler sorts with it: `Ix/CompileM.lean`'s
+`sortConsts` calls `Ix.Compile.Canon.sortClasses Rules.compiler`. The theorems are roots of
+`l1Roots` in the tracked audit `Ix/CompileCert/Audit.lean`, on the three standard axioms. What
+follows is the paper argument; the Rust port (`compile.rs`) is not proved.
 
 Fix a round's context `ctx`. Then `cmp_ctx` is a lexicographic comparison of finite trees, and each
 leaf is compared by a total preorder.
@@ -1033,11 +1049,21 @@ not (C1).
 - `cmp ⟨false, eq⟩ y = ⟨false, y.ord⟩`;
 - a first non-equal component is returned with its own strength (`Ix/SOrder.lean:12-25`).
 
-So a strong result is the same under every context of the same block [argued]: the in-block versus
+So a strong result is the same under every context of the same block [proved: `constP_strong`,
+`Ix/CompileCert/Canon/Rel.lean`]: the in-block versus
 external split is fixed, and only the class indices vary. Caching strong results across rounds is
 therefore sound, **provided the cached value is read back in the orientation it was stored in** (C2).
 
-### 3.3 The refinement computes the coarsest consistent partition, and its class order does not depend on the seed [argued]
+### 3.3 The refinement computes the coarsest consistent partition, and its class order does not depend on the seed [proved: `sortClasses_coarsest`, `sortClasses_setEq`]
+
+[proved] for the Lean compiler's refinement, `Ix.Compile.Canon.sortClasses` (M7 L1, report §6–§7;
+roots of `l1Roots`, three standard axioms): the classes it returns are the coarsest consistent
+partition (`sortClasses_coarsest`, `Ix/CompileCert/Canon/Coarsest.lean`); the classes and their
+order do not depend on the seed, the representative rule or the input order, and only the order
+inside a class can change (`sortClasses_setEq`, `SeedFree.lean`); under the compiler's name-hash seed
+the whole output is the same for every input order (`sortClasses_perm`, `Seed.lean`). Hypotheses:
+`portFixes = true`, `AddrCongr`, member and constructor names distinct under `==` (`KeysDistinct`).
+What follows is the paper argument; the Rust port is not proved.
 
 **(a) Every round splits correctly.** At round `n` the context is fixed, so `cmp_n` is a total
 preorder (§3.2). A correct merge sort followed by grouping of adjacent equals then yields exactly the
@@ -1078,7 +1104,7 @@ about a "name-dependent canonical order" does not arise. Inside a class the orde
 representative, which is metadata (§2.4).
 
 Hence the partition and the class order are seed-independent, and the representative is the only
-seed-dependent output [argued].
+seed-dependent output [proved: `sortClasses_setEq`].
 
 ### 3.4 Where transitivity or antisymmetry could fail
 
@@ -1475,9 +1501,32 @@ argument; the pure sequential driver `compileEnvAux` takes `pass3`, defaulting t
 (`Ix.Compile.Pass.switchDefault`). The values:
 - unset or `IX_PASS3=images`: Pass 3;
 - `IX_PASS3=off`: the legacy call-site surgery, kept as the comparison mode for the gates against
-  the Rust compiler, which implements only the surgery until M6R (`ix compile-lean --rust-check`
-  is the ALIGNED gate under `IX_PASS3=off`);
+  the Rust compiler's default until M6R slice 6;
 - any other value: refused (`switchFromEnv`), so a mistyped value never selects a mode silently.
+
+**The Rust compiler** reads the same variable with the same values and the same refusal
+(`switch_from_env`, `crates/compile/src/compile/pass3/names.rs`, read once per compile in
+`compile_env_with_profile`, `crates/compile/src/compile/env.rs`, which `ix compile`, `ix validate`
+and the Rust compile of `ix compile-lean --rust-check` all reach). It implements Pass 3: on the main
+line, M6R slices 1–4 (the driver and images; O1–O6/O11a; the clique transport; O7–O12/O11b in the D1
+form). Only its default differs, until M6R slice 6: unset is the surgery (`SWITCH_DEFAULT = false`).
+In each mode its output equals Lean's byte for byte where measured:
+- `IX_PASS3=images`: Init+Std `a2e22ee7…ba676` from both compilers (landing gate of `5d0e493a`,
+  `ix-cc-proof/out/land-m6r.log`: Rust `IX_PASS3=images ix compile` and Lean's default
+  `ix compile-lean` both hash to `initstd-a3.ixe`; `pass3-rust-parity`: 0 defects on the fixtures and
+  on Init+Std, "BYTE-IDENTICAL"); Mathlib `d0427adf…f6db` (Rust `IX_PASS3=images` equal to
+  `mathlib-a3.ixe`, `cmp` identical, and the per-name parity run 0 defects:
+  `plans/review2/M6R-4-rust-pj.md`, log 10:31 UTC, on the slice-4 tree, whose Rust code the main line
+  carries unchanged);
+- `IX_PASS3=off`: `ix compile-lean --rust-check` ALIGNED on Init+Std, `468ad7ae…` = `initstd-a2.ixe`
+  (`[compile-lean] ALIGNED: 254684853 bytes byte-identical with Rust` in every landing gate, e.g.
+  `ix-cc-proof2/out/land-wpe.log` at `6634c58f`); Mathlib: Rust's default output `0758ba05…` =
+  `mathlib-a2.ixe`, the legacy reference (the same M6R-4 run).
+
+So `--rust-check` compares one mode only when `IX_PASS3` is set. Unset, Lean compiles Pass 3 and Rust
+the surgery, and the outputs differ wherever a block or clique changes (Init+Std: `a2e22ee7…` against
+`468ad7ae…`). The images-mode identity above was measured by hash and by `pass3-rust-parity`; no
+`--rust-check` run in that mode is recorded.
 
 The surgery and its default-path defects (WB-B2, WB-B3, KF-O1, KF-C7, KF-O1C, the CORPUS-IPB
 refusal) stay in the compiler, and in the records under the `off` switch state, until M6R deletes
@@ -1538,8 +1587,13 @@ un-surgered. `decompile-diff` is 0 on every complete unit.
 **Counts.**
 - **Switch off:** no byte moved. Init+Std and Mathlib are identical to the references in both
   compilers, and all fixtures are `ALIGNED`.
-- **Switch on, Init+Std:** identical to the reference, since no block is changed (`468ad7ae…` on the
-  migrated head) [A3M].
+- **Switch on, Init+Std:** at A3M, before the clique transport and O1–O12 were wired, identical to
+  the reference (`468ad7ae…` on the migrated head) [A3M]. Today it is not: Init+Std has no changed
+  inductive block, but 5 of its 7 definition cliques are transported, so the default output is
+  `initstd-a3.ixe`, 256,128,289 B, sha256 `a2e22ee7…ba676`, 115,942 blocks, 0 block failures, and
+  against `initstd-a2.ixe` (the legacy mode) 41 names move and 19 are added (§7.4) [measured: landing
+  gate of `6634c58f`, `ix-cc-proof2/out/land-wpe.log`, "initstd-a3 IDENTICAL", and its changed-set
+  record, "0 changed blocks, 7 cliques", 5 of them `transported` and 2 `baseline`].
 - **Switch on, Mathlib**, on the pre-migration base [A3W §4]:
   - it compiles completely (772,896 blocks, 29 min);
   - 4,467 names move: 278 roots and 4,189 ripples, all in the cones of the 20 changed blocks;
@@ -1547,9 +1601,12 @@ un-surgered. `decompile-diff` is 0 on every complete unit.
     permutations, nested-order moves) and **133** differ: they are the baseline, which A4's O1–O6
     bring back. That covers `_sparseCasesOn_N` (O3), `Linear.EqCnstr._sizeOf_1..7` (O2/O11a), and
     the `Ring` structural functions and their `_f` (O4).
-  - Mathlib with the switch on was **not** re-measured on `564d03f0` [open].
-- **Fixtures:** the `pass3` suite has 53 units and 0 problems; 535 images and 885 rule statements
-  hold by `rfl` in Ix.Tc, the Rust kernel and the certified checker [A3M].
+  - Today (the default since the flip): `mathlib-a3.ixe`, 2,376,572,399 B, sha256 `d0427adf…f6db`,
+    772,896 blocks, 0 block failures; against `mathlib-a2.ixe` 783 names move, 356 are added, 0 are
+    removed, 0 unexplained (§7.4) [measured, `plans/review2/M6-flip.md` §9, on the flip's commit].
+- **Fixtures:** the `pass3` suite has 67 units and 0 problems on the main line (`[pass3] 67 units, 0
+  problem(s)`, `ix-cc-proof2/out/land-wpe.log`). At A3M it had 53 units, whose 535 images and 885
+  rule statements held by `rfl` in Ix.Tc, the Rust kernel and the certified checker [A3M].
   - Every switch-off kernel failure caused by surgery passes with the switch on: SurgSplit,
     SurgAlias, SurgIdx, C2Split, PropSplit, Coind, twins 496 of 511.
   - Every A0 collapse refusal compiles faithfully over the paired image [A3W §0].
@@ -1562,13 +1619,14 @@ by defect id in the output. REFUSED-SIBLING consequences are listed per unit (§
 **The surgery is the legacy mode until M6R slice 6.** Since the flip (§7.4) the surgery is not the
 compiler's form of anything in the default output: it runs only under `IX_PASS3=off`, as the comparison
 mode against the Rust compiler, whose default is still the surgery. The Rust compiler implements Pass 3
-slice by slice (M6R: the driver and images, then O1–O6/O11a, on the main line; the clique transport, the
-proof-justified passes and closures follow); slice 6 deletes the surgery from both compilers and flips
+under `IX_PASS3=images` (M6R slices 1–4 on the main line: the driver and images, O1–O6/O11a, the clique
+transport, O7–O12/O11b; "Switch" above); slice 6 deletes the surgery from both compilers and flips
 Rust's default, keeping the split-minor helpers O2 and O11a share with it (`Ix/CallSiteSurgery.lean`'s
 `sourceCtorForMinor`, `sourceMinorType`, `peelBinders`, `findSourceRecTarget`, `auxMotiveSigs`). Until
-then `--rust-check` is the ALIGNED gate under `IX_PASS3=off`, and text in this document that describes
-the surgery as what the compiler does (the measured counts of §4.8 and §9 taken with the switch off, A3W,
-A3M) describes that legacy mode. Rust's reader accepts Pass 3's output.
+then `--rust-check` compares one mode only with `IX_PASS3` set (the landing gates use `off`), and text
+in this document that describes the surgery as what the compiler does (the measured counts of §4.8 and
+§9 taken with the switch off, A3W, A3M) describes that legacy mode. Rust's reader accepts Pass 3's
+output.
 
 ## 5. Transport of proof terms
 
@@ -1924,8 +1982,16 @@ are names only. They are metadata, not members of the non-canonical set.
   it.
 - 51 twin families, 58 presentation pairs, 422 differences. Every difference is recorded, with cause
   and evidence, in `Tests/Ix/Compile/NonCanonical.lean` [measured].
-- **Today's compiler does nothing to definition cliques.** Every difference between presentations is
-  a difference in Lean's own output.
+- **When A1G measured, the compiler did nothing to definition cliques**, so every difference between
+  presentations was a difference in Lean's own output. That is no longer so: since the flip the clique
+  hook (`Ix/Compile/Pass/Cliques.lean`, §5.7, §1.6.2) transports definition cliques by default.
+  Init+Std: 5 of its 7 definition cliques are transported (the changed-set record of the landing gate
+  of `6634c58f`, `ix-cc-proof2/out/land-initstd-on.changed.json`: 5 `transported`, 2 `baseline`).
+  Mathlib: 9 of 21, of which the 7 well-founded ones move bytes and the 2 structural `Ring` cliques
+  compile to the same addresses as under `IX_PASS3=off` [measured, M1-g §2–§3,
+  `plans/review2/M1-g-mathlib-measurement.md`]. The twins' differences under the default are the 959
+  of `Tests/Ix/Compile/NonCanonicalDefault.lean` (`[twins] (default) 959 differences; 0 unrecorded, 0
+  stale entries`, same gate; §7.4).
 
 **Already canonical** [measured, A1G]:
 - structural recursion with one function per type former;
@@ -2513,9 +2579,13 @@ Sources: Init+Std, the M1-g trial (`ixe-diff` against `initstd-a2.ixe`: 41 chang
 removed); Mathlib, M1-g §3 (783 changed, 356 added, 0 removed; one synthetic block name re-addressed).
 The certified checker over the switch-on Mathlib output: 669,942 accept, 4,030 decline, 0 reject; the
 68 extra declines are the image heads of the unsafe Aesop block (unsafe definitions, a documented
-decline class) and 1 is a re-addressed `_unsafe_rec` block (M1-g §4b). 7 of the 21 Mathlib definition
+decline class) and 1 is a re-addressed `_unsafe_rec` block (M1-g §4b). 9 of the 21 Mathlib definition
 cliques and 5 of the 7 Init+Std ones are transported; the rest stay in Lean's form with their causes
-(M1-g §2).
+(M1-g §2). Of Mathlib's 9, the 7 well-founded ones move bytes (their 16 members are the "transported
+clique member" row); the 6 members of the 2 structural `Ring` cliques
+(`{ExBase,ExSum,ExProd}.{evalIntCast,cast}`, over the changed block `Ring.Common.ExBase`) compile to the
+same addresses as under `IX_PASS3=off`, so they are not among the moved names, while their canonical
+`…._ix._f` constants are among the 27 added (M1-g §3).
 
 **References.** The switch-on outputs replace the default-path references under new names (`-a3`); the
 `-a2` (switch-off) references stay for the gates that run the legacy mode against Rust.
@@ -2617,13 +2687,17 @@ The collapsed-block BB-F7 route remains separately documented.
 - (iii) treat `_ix` entries as aliases of the Ix auxiliaries;
 - (iv) check an image's `Named.original` against Lean's form.
 
-**Rust's `ix validate` cannot validate Pass 3 output without changes.** It compiles the input
-itself, and Rust has no Pass 3. By its phase definitions, on Lean's Pass 3 output:
+**Whether Rust's `ix validate` holds on Pass 3 output is unmeasured.** It compiles the input itself
+through the Rust compiler (`rs_compile_validate_aux`, `crates/ffi/src/lean_env.rs`, with
+`CompileOptions::default()`), so it runs in the mode `IX_PASS3` selects: unset, Rust's default, the
+legacy surgery until M6R slice 6; `images`, Rust's Pass 3 (M6R slices 1–4, byte-identical to Lean's
+default output on Init+Std and Mathlib, §4.8). No run of it under `IX_PASS3=images` is recorded in the
+M6R reports. By its phase definitions, on Pass 3 output [argued, not run]:
 - phase 3 ("an original's bytes are never stored") would fail on every stored image;
 - phases 2 and 6 would see the `_ix` entries as unknown auxiliaries;
 - phases 5, 7 and 7b need the inline-record replay.
 
-These are the catch-up PR's rules.
+These are what a Pass 3 `ix validate` must handle.
 
 **`aux-cert`** [measured, CI]:
 - It now compiles each fixture's local closure (`ix compile --local`). That takes 19 s at 4-way,

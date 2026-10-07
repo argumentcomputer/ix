@@ -14,14 +14,42 @@ inventory, the name map, the admitted records, the reader-stream index and the
 position hints. Nothing it builds is trusted.
 
 **What a certified verdict means.** Every certified constant is a member of the
-source of one `Input` for which `checkIndexed` returned an
-`AcceptedAssociation`; by `checkIndexed_sound` that is the conclusion of
-`faithful_sound` for that input: the exact record bytes are admitted by
-`checkBytes`, the source is closed and uniquely named, and every source
-declaration's independent export equals an entry of the certified reader's
-output (definition hints quotiented; projection definitions through the raw
-record), whole inductive blocks match, and touched definition blocks are
-covered.
+source of one `Input` that one of two certified decisions accepted, and the
+verdict is that decision's theorem:
+
+* **W** (`checkIndexed`, `Ix/CompileCert/Indexed.lean`), when the artifact
+  claims no image, no support row is used and every route is `direct` or `raw`
+  (the TSV says `direct/raw` when W accepted the candidates at once): by
+  `checkIndexed_sound` the conclusion of `faithful_sound` for that input: the
+  exact record bytes are admitted by `checkBytes`, the source is closed and
+  uniquely named, and every source declaration's independent export equals an
+  entry of the certified reader's output (definition hints quotiented;
+  projection definitions through the raw record), whole inductive blocks
+  match, and touched definition blocks are covered.
+* **W+** (`checkIndexed'`, `Ix/CompileCert/Changed.lean`), otherwise: by
+  `checkIndexed'_sound` the exact record bytes are admitted, the support rows
+  the certifier proposed (`Eq.refl` theorems) are checked by the certified
+  fold on top of them, the source is closed and the map (image claims
+  included) agrees with the reader, every source declaration matches
+  directly, through its raw record, as a theorem by its statement, or by its
+  equations (rows of the artifact or of the folded support), every
+  inductive's block matches whole or as a changed block, and touched
+  definition groups are covered. A constant on the `direct` or `raw` route
+  matched as in W (its independent export equals a reader entry). On the
+  `theorem`, `equations:rfl` and `equations:eq_def` routes (with `, type-row`
+  when its type matched through a type row) the meaning is Lean's kind and
+  type with Lean's statement or defining equations holding in every strong
+  model of the folded environment (`AcceptedAssociation'.model_statement`,
+  `AcceptedAssociation'.model_equations`), not that its export equals a
+  reader entry; on `, changed-block`, that the block transformation preserves
+  the meaning of the types is trusted, not proved (`ChangedBlockMatch`). With
+  no image claim and only the old routes, W+ gives `faithful_sound`'s
+  conclusion (`AcceptedAssociation'.unchanged_faithful`).
+
+A certified row's route (the cause column of `<prefix>.tsv`, `routes` in the
+JSON) is a label recomputed by untrusted code with the decision's own Boolean
+checks (`routeOf`); the theorems are about the accepted input as a whole.
+`docs/compiler-certification.md` §1.3 states W+.
 
 **What is executable-only (no proof).** The classification of the
 constants that are *not* certified: which class, which blocking dependency,

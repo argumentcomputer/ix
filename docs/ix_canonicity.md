@@ -9,6 +9,24 @@
 >
 > Companion document: [`docs/Ixon.md`](./Ixon.md) (binary format
 > reference).
+>
+> **Status note (2026-10-07).** This document predates the A2 migration
+> (2026-10-03) and the kernels' weak-`Greater` repair. Three of its
+> statements were wrong against the code and are corrected in §4.4, §5.1,
+> §6 (intro, §6.0, §6.0.1, §6.1, §6.2, §6.4, §6.6), §7, §11.2, §15 and
+> §18: (1) the nested-aux section is in **discovery order** over the
+> canonical block, not structurally sorted (decision D2,
+> `docs/compiler-passes.md` §2.5); (2) every auxiliary other than the
+> recursor family and the Prop-level `.below` family is **its own
+> constant**, not a member of a per-kind `Muts` block (decision D6,
+> `docs/compiler-passes.md` §2.8); (3) the kernels' single-pass
+> canonicity check falls back to full refinement on a weak `Greater` as
+> on a weak `Less`, and the kernels order rediscovered nested auxiliaries
+> by the same discovery walk, with no sort (§4.4). Elsewhere (§9, §10,
+> §14, §16, §17, §19) "structurally sorted" auxes,
+> `sort_aux_by_content_hash` and `sort_kconsts` over rediscovered auxes
+> describe the design before the migration; read them with (1)–(3).
+> Paths under `src/ix/…` are now under `crates/…`.
 
 ---
 
@@ -164,44 +182,55 @@ continue to resolve their references consistently.
 ### 4.4 Kernel-side canonicity validation
 
 The kernel must not trust compile-side metadata for canonicity. It
-runs an independent `sort_consts` port (`src/ix/kernel/canonical_check.rs`)
-and validates against it in two modes:
+runs an independent `sort_consts` port
+(`crates/kernel/src/canonical_check.rs`; the Lean kernel `Ix.Tc` has
+the same in `Ix/Tc/CanonicalCheck.lean`) and checks canonical order in
+two places:
 
 1. **Primary validation with refinement fallback.** When a
    `Muts(Indc, …)` block
    is ingested, the stored member list is taken as the alleged
    canonical partition (each member at its own class index) and
    adjacent pairs are required to satisfy **strong** strict `Less`
-   under the ported comparator. `Greater` rejects ordering violations;
-   `Equal` rejects uncollapsed alpha-equivalent pairs (the compiler
-   should have collapsed them to one canonical address). A weak
-   `Less` means the singleton partition itself supplied the ordering
-   for a block-local recursive reference, so the validator falls back
-   to full `sort_kconsts` refinement and accepts only if refinement
-   returns the same ordered list of singleton classes. Returns
-   `TcError::NonCanonicalBlock` on failure. Implemented as
+   under the ported comparator. A strong `Greater` rejects an ordering
+   violation; `Equal` rejects uncollapsed alpha-equivalent pairs (the
+   compiler should have collapsed them to one canonical address). A
+   weak `Less` **or a weak `Greater`** means the singleton partition
+   itself supplied the ordering through a block-local reference, which
+   proves nothing either way, so the validator falls back to full
+   `sort_kconsts` refinement and accepts only if refinement returns the
+   same ordered list of singleton classes. (A weak `Greater` used to
+   reject, which rejected canonical blocks whose members differ first
+   in a mutual cross reference: BELOW-ORDER, repaired in both
+   executable kernels; `docs/compiler-passes.md` §2.3, "Consequence for
+   the kernels"; reproducer `Tests/Ix/Compile/ValidateLeanSwap.lean`.)
+   Returns `TcError::NonCanonicalBlock` on failure. Implemented as
    `validate_canonical_block_single_pass` in `canonical_check.rs`,
-   wired into `ingress_muts_block` (`src/ix/kernel/ingress.rs`).
+   wired into `ingress_muts_block` (`crates/kernel/src/ingress.rs`);
+   in `Ix.Tc`, `validateCanonicalBlockSinglePass`, called from
+   `Ix/Tc/IngressMeta.lean`.
 
-2. **Iterative aux-discovery sort.** When the kernel rediscovers
-   nested auxiliaries during recursor generation
-   (`build_flat_block` in `src/ix/kernel/inductive.rs`), the
-   resulting aux set is unsorted: discovery order depends on the
-   primary ctor walk. The kernel synthesizes `KConst::Indc` views
-   of each aux (instantiating ext type with `spec_params`,
-   replacing the ctor result head with the synthetic aux KId) and
-   runs `sort_kconsts` — the iterative partition-refinement port —
-   to compute the canonical aux order. Stored aux recursors are
-   then validated by position against the kernel-canonical aux:
-   the stored `.rec_N` at rec-block position `n_originals + k`
-   must validate against `generated[n_originals + k]` via
-   `is_def_eq` on the recursor type.
+2. **Nested auxiliaries in discovery order, with no sort.** When
+   the kernel rediscovers nested auxiliaries during recursor
+   generation (`build_flat_block` in
+   `crates/kernel/src/inductive.rs`; `buildFlatBlock` in
+   `Ix/Tc/Inductive.lean`), it walks the stored canonical members
+   and opens each external group as its stored block, as the
+   compilers' canonical expansion does, so the flat block comes out
+   in **discovery order**, which is the canonical order of the
+   nested section since the A2 migration (§6.2;
+   `docs/compiler-passes.md` §2.5). No `sort_kconsts` runs over the
+   auxiliaries. Stored aux recursors are then validated by position
+   against the kernel's flat block: the stored `.rec_N` at
+   rec-block position `n_originals + k` must validate against
+   `generated[n_originals + k]` via `is_def_eq` on the recursor
+   type.
 
 The primary validator is cheap (O(n) comparator calls, no fixpoint
 iteration) when every adjacent proof is strong. If any adjacent proof
-is weak, it runs the full iterative algorithm for that block. The
-iterative mode is also used when the kernel must derive canonical
-order from scratch (rediscovered aux). Both share the same comparator:
+is weak, it runs the full iterative algorithm for that block.
+Rediscovered auxiliaries need no ordering pass (item 2). Both modes of
+item 1 share the same comparator:
 `compare_kconst` / `compare_kexpr` / `compare_kuniv`.
 
 **Trust boundary.** The kernel never reads `AuxLayout.perm` or any
@@ -231,7 +260,7 @@ Everything that depends on source choices is stripped before hashing:
 | Free variable identity             | FVar and MVar are rejected — `compile.rs:848-857`    |
 | De Bruijn depth artifacts          | indices are **the** identifier; no names survive     |
 | Lean `InductiveVal.all` order      | replaced by `sort_consts` canonical class order; kernel enforces via `validate_canonical_block_single_pass` at ingress (§4.4) |
-| Nested-aux discovery order         | replaced by structural aux sort; kernel enforces via `sort_kconsts` on rediscovered aux + position-by-position recursor match (§4.4) |
+| Nested-aux discovery order over Lean's source block | replaced by the discovery order over the canonical block (§6.2); the kernel rediscovers in that order + position-by-position recursor match (§4.4) |
 | `_N` suffixes on aux names         | internal `_nested.Ext_N` uses canonical `N`          |
 | Hygiene info on `Name`             | stripped by `compile_name`                           |
 | Non-canonical universe-level spellings (§10.6) | `canonUniv` at the compile univ-intern boundary (`CompileM.compileAndInternUnivCanon` / `compile.rs compile_univ_idx`) |
@@ -267,11 +296,21 @@ proof-carrying use cases.
 
 ## 6. The Canonical Block Layout
 
-A mutual inductive declaration in Lean generates **many** Ixon blocks,
-not one monolithic block. Each kind of auxiliary lives in its own
-canonical `Muts` block, compiled in a specific downstream order, and
-the blocks link to each other via content-address projections.
-This section is the structural reference for what's in each block.
+A mutual inductive declaration in Lean generates **many** Ixon
+constants, not one monolithic block. Since the A2 migration (decision
+D6, one constant per auxiliary; `docs/compiler-passes.md` §2.8) the
+user inductives form one `Muts` block, the recursor family (`rec`,
+`rec_N`) one block in its flat order, the Prop-level `.below`
+inductives one block and their `.below.rec` recursors one block; every
+other auxiliary (`casesOn`, `recOn`, a Type-level `.below`, `brecOn`,
+`.brecOn.go`, `.brecOn.eq`) is compiled one strongly connected
+component at a time, a singleton as a standalone constant, and only a
+genuine cycle is packed into a block (`aux_components` /
+`compile_aux_components`, `crates/compile/src/compile/mutual.rs`;
+`auxComponents`, `Ix/AuxGen/CompileAux.lean`). They are compiled in a
+specific downstream order and refer to each other by content address
+and by projections into blocks. This section is the structural
+reference for what each holds.
 
 ### 6.0 What lives in each Ixon block
 
@@ -303,7 +342,7 @@ pub struct Recursor {
 
 For one user-written `mutual { … }` block of `n` user inductives that
 exposes `m` distinct nested-aux signatures, compile produces these
-canonical blocks (each block has its own content address):
+canonical blocks and constants (each has its own content address):
 
 #### Inductive block — `Muts([ Indc, Indc, … ])`
 
@@ -329,8 +368,8 @@ downstream auxiliary blocks (`.below_N`, `.brecOn_N`).
 
 The kernel rediscovers aux inductives from the primary ctors during
 recursor regeneration (`build_flat_block` in
-`src/ix/kernel/inductive.rs`) and computes the canonical aux order
-itself via `sort_kconsts` (§4.4). There is no stored aux ordering
+`crates/kernel/src/inductive.rs`), in discovery order, which is the
+canonical aux order (§4.4, §6.2). There is no stored aux ordering
 to validate against in the inductive block.
 
 #### Recursor block — `Muts([ Recr, Recr, … ])`
@@ -338,7 +377,7 @@ to validate against in the inductive block.
 ```
 Muts([
   Recr(rep₀.rec), Recr(rep₁.rec), … Recr(rep_{n−1}.rec),     // user-class recursors
-  Recr(rep₀._nested.Ext_1.rec), …   Recr(rep₀._nested.Ext_m.rec),  // aux recursors
+  Recr(rep₀._nested.Ext_1.rec), …   Recr(rep₀._nested.Ext_m.rec),  // aux recursors, discovery order
 ])
 ```
 
@@ -349,45 +388,42 @@ order. For aux recursors, the rules cover the aux inductive's ctors.
 The motive/minor split inside each recursor's `typ` follows §6.3:
 `∀ params, [user-motives] [aux-motives] [user-minors] [aux-minors] indices major, target`.
 
-#### `casesOn` block — `Muts([ Defn, Defn, … ])`
+#### `casesOn` — one standalone `Defn` each
 
 ```
-Muts([
-  Defn(rep₀.casesOn), Defn(rep₁.casesOn), … Defn(rep_{n−1}.casesOn),
-])
+Defn(rep₀.casesOn)   Defn(rep₁.casesOn)   …   Defn(rep_{n−1}.casesOn)
 ```
 
-One `Defn` per user representative. Auxiliary inductives don't get
-their own `.casesOn` (Lean only emits them for user types). Each
+One `Defn` per user representative, each compiled as its own
+constant (D6: a singleton component), not as a member of a shared
+block. Auxiliary inductives don't get their own `.casesOn` (Lean only
+emits them for user types). Each
 `.casesOn` body is `λ params motive indices major, rep.rec p₀ … (λ … PUnit) …`
 — the `.rec` with non-target motives stubbed to `PUnit`.
 
-#### `recOn` block — `Muts([ Defn, Defn, … ])`
+#### `recOn` — one standalone `Defn` each
 
 ```
-Muts([
-  Defn(rep₀.recOn), Defn(rep₁.recOn), … Defn(rep_{n−1}.recOn),
-])
+Defn(rep₀.recOn)   Defn(rep₁.recOn)   …   Defn(rep_{n−1}.recOn)
 ```
 
-Same shape as `.casesOn` but preserves all motives and reorders the
-binder chain `(major after minors)` to `(major before minors)` —
+Each its own constant, as `.casesOn`. Same shape as `.casesOn` but
+preserves all motives and reorders the binder chain
+`(major after minors)` to `(major before minors)` —
 matching Lean's `Iff.rec` / `Eq.rec` style.
 
-#### `below` blocks — two of them
+#### `below` — one block in the Prop case, one constant each in the Type case
 
 ```
 Muts([                               // BELOW INDC BLOCK (Prop case)
   Indc(rep₀.below), Indc(rep₁.below), …,
 ])
 
-Muts([                               // BELOW DEF BLOCK (Type case + nested aux)
-  Defn(rep₀.below), Defn(rep₁.below), …,
-  Defn(rep₀.below_1), … Defn(rep₀.below_m),    // nested aux .below_N
-])
+Defn(rep₀.below)   Defn(rep₁.below)   …        // Type case: each its own constant (D6)
+Defn(rep₀.below_1) … Defn(rep₀.below_m)        // nested aux .below_N, likewise
 ```
 
-`.below` lives in different blocks depending on the inductive's universe:
+`.below` is packaged differently depending on the inductive's universe:
 inductives in `Prop` get an `Inductive` payload (no value, just a
 type-level predicate); inductives in `Type` get a `Definition`
 payload (value-level, returning `PProd` of motives).
@@ -432,17 +468,17 @@ below patch) upstream; the `PropCollapseA/B` fixtures pin that
 collapsed path, including the `.below.rec` alias for non-representative
 members.
 
-#### `brecOn` blocks — three of them
+#### `brecOn` — one standalone `Defn` each, in three batches
 
 ```
-Muts([ Defn(rep₀.brecOn.go), … ])    // BRECON.GO BLOCK (sub-defs)
-Muts([ Defn(rep₀.brecOn),    … ])    // BRECON BLOCK (main entry)
-Muts([ Defn(rep₀.brecOn.eq), … ])    // BRECON.EQ BLOCK (unfolding lemmas)
+Defn(rep₀.brecOn.go)   …    // batch 0 (sub-defs)
+Defn(rep₀.brecOn)      …    // batch 1 (main entry)
+Defn(rep₀.brecOn.eq)   …    // batch 2 (unfolding lemmas)
 ```
 
 Three batches because of dependency order: `.go` is the inner worker,
 `.brecOn` calls into `.go`, and `.eq` proves the unfolding equation
-for `.brecOn`.
+for `.brecOn`. Within a batch each member is its own constant (D6).
 
 #### Inter-block references — projections
 
@@ -511,18 +547,18 @@ A few key consequences:
 
 - **Aux recursors sit in the same block as user recursors.** Same
   layout: user recursors first (in `sort_consts` order), then aux
-  recursors (in canonical aux order computed by `sort_consts` on
-  rediscovered aux signatures). `A.rec` and `A.rec_1` differ only
-  in `idx`. The kernel revalidates aux ordering by independently
-  re-running `sort_kconsts` on its own discovery output and
-  position-matching against the stored rec-block (§4.4).
+  recursors in the canonical aux order, the discovery order over the
+  canonical block (§6.2). `A.rec` and `A.rec_1` differ only in
+  `idx`. The kernel revalidates aux ordering by rediscovering the
+  auxiliaries in the same order and position-matching against the
+  stored rec-block (§4.4).
 
-- **Aux `.below_N` definitions sit inside the existing below-def
-  block.** They're appended after the user-class `.below` defs.
+- **Aux `.below_N` definitions (Type case) are standalone
+  constants**, like the user-class `.below` definitions (D6); there
+  is no shared below-def block.
 
 - **`.casesOn` and `.recOn` have no aux variants.** Lean only emits
-  them for user-declared inductives. The blocks contain exactly
-  `n` entries.
+  them for user-declared inductives: there are exactly `n` of each.
 
 - **Block membership is per family, not per name.** A closure-only
   compile (`ix compile --consts`, a claim's dependency closure) may hold
@@ -531,8 +567,8 @@ A few key consequences:
   exported any of its members, so each block (and every projection into
   it) has the same address as in a whole-environment compile. Building a
   whole block can need constants none of the slice's own members reach
-  (a nested block's `.brecOn.eq` block holds `<all0>.brecOn_N.eq`, which
-  cases on the external inductive, `List.casesOn`), so the closure
+  (a nested family's `<all0>.brecOn_N.eq` cases on the external
+  inductive, `List.casesOn`), so the closure
   producers close slices under "block of" as well as "references":
   `Lean.auxFamilySiblings` (`Ix/Common.lean`) names a member's family, and
   `Ix.EnvScope.collectDeps` and `Lean.collectDependencies` pull it and its
@@ -551,33 +587,32 @@ The compile-time ordering (per `src/ix/compile/mutual.rs`) is:
 
 ```
 compile_mutual_block                    // Primary inductives
-  → Muts([ Indc(U₀), Indc(U₁), …,       // User classes in sort_consts order
-           Indc(A₀), Indc(A₁), … ])     // Nested auxes, structurally sorted, dedup'd
+  → Muts([ Indc(U₀), Indc(U₁), … ])     // User classes in sort_consts order
+                                        // (nested aux inductives are not stored, §6.0)
 
 compile_aux_block(rec_consts)           // Primary + aux recursors
   → Muts([ Recr(U₀.rec), Recr(U₁.rec), …,
-           Recr(A₀.rec), Recr(A₁.rec), … ])
+           Recr(A₀.rec), Recr(A₁.rec), … ])   // aux in discovery order (§6.2)
 
-compile_aux_block(cases_on_defs)        // CasesOn definitions
-  → Muts([ Defn(U₀.casesOn), Defn(U₁.casesOn), … ])
+compile_aux_components(cases_on_defs)   // CasesOn definitions, one constant each (D6)
+  → Defn(U₀.casesOn), Defn(U₁.casesOn), …
 
-compile_aux_block(rec_on_defs)          // RecOn definitions
-  → Muts([ Defn(U₀.recOn), Defn(U₁.recOn), … ])
+compile_aux_components(rec_on_defs)     // RecOn definitions, one constant each
+  → Defn(U₀.recOn), Defn(U₁.recOn), …
 
 compile_aux_block(below_indcs)          // Prop-level .below inductives
   → Muts([ Indc(U₀.below), Indc(U₁.below), … ])
 
-compile_aux_block(below_defs)           // Type-level .below definitions
-  → Muts([ Defn(U₀.below), Defn(U₁.below), …,
-           Defn(U₀.below_1), Defn(U₀.below_2), … ])
+compile_aux_components(below_defs)      // Type-level .below definitions, one constant each
+  → Defn(U₀.below), Defn(U₁.below), …, Defn(U₀.below_1), Defn(U₀.below_2), …
 
 compile_below_recursors(below_indcs)    // .below's own recursors (Prop case)
   → Muts([ Recr(U₀.below.rec), … ])
 
-compile_aux_block(brecon_defs) × 3      // BRecOn, split into 3 batches
-  → Muts([ Defn(U₀.brecOn.go), … ])     //   batch 0: .go sub-definitions
-  → Muts([ Defn(U₀.brecOn), … ])        //   batch 1: main .brecOn
-  → Muts([ Defn(U₀.brecOn.eq), … ])     //   batch 2: .eq sub-definitions
+compile_aux_components(brecon_defs) × 3 // BRecOn, 3 batches, one constant each
+  → Defn(U₀.brecOn.go), …               //   batch 0: .go sub-definitions
+  → Defn(U₀.brecOn), …                  //   batch 1: main .brecOn
+  → Defn(U₀.brecOn.eq), …               //   batch 2: .eq sub-definitions
 ```
 
 Ixon references between these blocks are **content-address projections**
@@ -585,7 +620,9 @@ Ixon references between these blocks are **content-address projections**
 carries a block address and an index within that block's member list.
 So the primary recursor `A₀.rec` lives at
 `RecursorProj { block: <rec-block-addr>, idx: 0 }`, independent of
-where the primary inductive `A₀` lives in the inductive block.
+where the primary inductive `A₀` lives in the inductive block; a
+standalone auxiliary (`A₀.casesOn`, …) is referenced by its own
+address.
 
 ### 6.1 User-class ordering (applies to every block kind)
 
@@ -603,9 +640,10 @@ which is a structural sort:
   *synthesized* occurrences of a collapsed address inherit the
   spelling of the source occurrence each derives from (§10.5).
 
-Every downstream block (rec, casesOn, recOn, below, brecOn) inherits
-this user-class ordering by construction — each block enumerates the
-primary members in the same order.
+Every downstream block (the recursor block; in the Prop case the
+`.below` and `.below.rec` blocks) inherits this user-class ordering by
+construction — each block enumerates the primary members in the same
+order. The other auxiliaries are one constant each (D6, §6.0).
 
 ### 6.2 Nested-aux section ordering
 
@@ -615,51 +653,66 @@ in the **recursor block** (and below / brecOn derivatives), but never
 in the inductive block — aux inductives are not stored on disk
 (§6.0).
 
-- `expand_nested_block` walks user-class ctors, replacing each nested
-  occurrence `ExtInd (args containing block params)` with a synthetic
+- The nested expansion (`expand_nested_block_canonical`,
+  `crates/compile/src/compile/aux_gen/nested.rs`) walks the class
+  representatives' ctors in canonical order, with alias references
+  rewritten to their representatives and each external group opened
+  as its compiled canonical classes, replacing each nested occurrence
+  `ExtInd (args containing block params)` with a synthetic
   `_nested.ExtInd_N α` aux inductive (compile time).
-- `sort_aux_by_content_hash` is a legacy name. The implementation
-  builds temporary aux `Indc` values and runs `sort_consts` on the
-  aux slice, so ordering and alpha-collapse use the same structural
-  relation as normal mutual blocks.
-- References to already-compiled originals/external constants
-  compare by compiled content address. If a referenced name cannot
-  be resolved, the comparator errors instead of falling back to a
-  namespace-sensitive name hash.
-- Alpha-equivalent auxes collapse into one aux class; source auxes
-  that share that class all point at the same canonical
-  representative aux inductive.
+- **The canonical aux order is the order of discovery** of that
+  expansion: a FIFO queue over the block's types, each constructor
+  walked pre-order (decision D2, the A2 migration of 2026-10-03;
+  `docs/compiler-passes.md` §2.5). No sort runs:
+  `sort_aux_by_partition_refinement` keeps its name for its callers
+  and returns the identity permutation (`nested.rs`, "Canonical order
+  of the aux section: discovery order"); in Lean,
+  `Ix.Compile.Canon.canonicalAuxOrder` under `Rules.compiler` is the
+  identity on the canonical expansion (`Ix/Compile/Canon/Nested.lean`,
+  called from `Ix/AuxGen/Nested.lean`). The structural sort this
+  section described before (temporary aux `Indc` values ordered by
+  `sort_consts`) is run by neither compiler; Pass 1 keeps it only as
+  the `Rules.today` alternative for the census.
+- Equal nested occurrences reuse one aux during the expansion (the
+  canonical expansion deduplicates them up to compiled addresses;
+  `replace_if_nested`'s `aux_seen` table, §7 invariant 3); source
+  auxes related to one canonical aux all point at it (`perm`, §6.4).
 
-This gives a **source-order-independent** canonical layout: any
-permutation of user source declaration produces the same ordered
-aux section, because the sort key is structural content plus
-resolved addresses.
+This gives a **source-order-independent** canonical layout: the
+expansion starts from the canonical class order (§6.1), which no
+permutation of the source declarations changes. Proved at Pass 1's
+level (M7 L1; roots of `l1Roots` in `Ix/CompileCert/Audit.lean`, on
+the three standard axioms): `expand_spec` and
+`componentNested_discovery` (`Ix/CompileCert/Canon/Expand.lean`: the
+`k`-th aux is discovered by an earlier queue entry, in non-decreasing
+order) and `canonBlock_member_order_nested`
+(`Ix/CompileCert/Canon/NestedCanon.lean`: the same canonical aux
+section for every member order). The compiler's own expansion port
+agrees with Pass 1's `expand` by test (`canon-pass1`), not by proof.
 
 The recursor block's aux positions (`<addr>.rec_1`, `.rec_2`, …) are
 the **only stored manifestation** of this canonical ordering. The
 kernel revalidates by:
 
-1. Rediscovering aux from primary ctor walks
-   (`build_flat_block` in `src/ix/kernel/inductive.rs`).
-2. Synthesizing comparable `KConst::Indc` views (instantiating ext
-   types with `spec_params`, replacing aux ctor result heads with
-   the synthetic aux KId).
-3. Running `sort_kconsts` (§4.4) to compute the kernel-canonical
-   aux order.
-4. Position-by-position validating each stored aux recursor against
-   the kernel-canonical aux at the same offset
-   (`is_def_eq` on the recursor type).
+1. Rediscovering aux from the stored members' ctor walks in the same
+   discovery order (`build_flat_block` in
+   `crates/kernel/src/inductive.rs`; `buildFlatBlock` in
+   `Ix/Tc/Inductive.lean`), opening each external group as its
+   stored block, as the compilers do. No sort runs (§4.4).
+2. Position-by-position validating each stored aux recursor against
+   the kernel's aux at the same offset (`is_def_eq` on the recursor
+   type).
 
-Compile-side and kernel-side use the same comparator
-(`sort_consts` ↔ `sort_kconsts`), so they produce the same canonical
-order on the same input. A divergence is a kernel correctness bug,
-immediately observable as a `kernel-check-const` regression.
+Compile side and kernel side use the same walk, so they produce the
+same canonical order on the same input. A divergence is a kernel
+correctness bug, immediately observable as a `kernel-check-const`
+regression.
 
-All downstream blocks (recursors, below, brecOn) number their
-aux-derived members in this same canonical order, so an aux at
-canonical position `i` has its recursor at `i`-aligned position in
-the recursor block, its `.below` at `i`-aligned position in the
-below block, and so on.
+The recursor block numbers its aux recursors in this same canonical
+order, so an aux at canonical position `i` has its recursor at the
+`i`-aligned position after the user recursors. Its other aux-derived
+constants (`.below_N`, `.brecOn_N`, …) are standalone constants since
+D6 (§6.0), named through the `rec_N` mapping of §6.4.
 
 ### 6.3 Recursor binder layout
 
@@ -707,9 +760,7 @@ share the canonical aux-section numbering.
 
 Because of alpha-collapse in the aux section, multiple source `_N`
 names can point at the same canonical aux; all such names resolve to
-the same projection address (in the inductive block for the aux
-inductive itself, and in the corresponding derived blocks for its
-`.rec`, `.below`, `.brecOn`, etc.).
+the same address.
 
 ### 6.5 Evaporated auxiliaries (over-merge splits)
 
@@ -784,9 +835,9 @@ name mapping are metadata on the `Named` entries (see §10) — they do
 not enter any block's content hash.
 
 Because each block's canonical layout is deterministic from the set
-of user-class inductives (after alpha-collapse) and the set of
-nested-aux signatures (structurally sorted), two Lean mutual declarations
-that agree on those two sets produce identical block content hashes
+of user-class inductives (after alpha-collapse) and the nested-aux
+section discovered from them in a fixed order (§6.2), two Lean
+mutual declarations that agree on those produce identical block content hashes
 **and** identical projection addresses for every aux constant —
 regardless of source declaration order.
 
@@ -873,22 +924,25 @@ sort_consts → sorted_classes: Vec<Vec<Name>>                  [compile.rs]
   │
   ▼
 compile_mutual_block(primary_inductives)                      [compile.rs]
-  → Muts([ Indc(U₀), Indc(U₁), …, Indc(A₀), Indc(A₁), … ])    // INDUCTIVE BLOCK
+  → Muts([ Indc(U₀), Indc(U₁), … ])                           // INDUCTIVE BLOCK
   // Constructors are embedded in each Indc's `ctors` field.
   //
-  // Nested-aux inductives live in this SAME block, after the user
-  // classes. They're the `_nested.ExtInd_N` synthetic inductives
-  // built by expand_nested_block and structurally sorted.
+  // Nested-aux inductives are not stored (§6.0): the
+  // `_nested.ExtInd_N` synthetic inductives built by the nested
+  // expansion are inputs to aux generation only, in discovery
+  // order (§6.2).
   │
   │
   ▼
 generate_aux_patches(sorted_classes, original_all, …)         [aux_gen.rs]
   │
-  ├─ expand_nested_block(ordered_originals, alias_to_rep)     [nested.rs]
+  ├─ expand_nested_block_canonical(reps, alias_to_rep, stt)   [nested.rs]
   │    → ExpandedBlock { types, aux_to_nested, aux_ctor_map, … }
+  │      (auxes in discovery order, §6.2)
   │
-  ├─ sort_aux_by_content_hash(&mut expanded, stt)             [nested.rs]
-  │    → perm[old_j] = new_j  (mutates expanded.types in place)
+  ├─ sort_aux_by_partition_refinement(&mut expanded, stt)     [nested.rs]
+  │    → the identity: the canonical aux order is the
+  │      expansion's discovery order (§6.2, §11.2)
   │
   ├─ compute_aux_perm(expanded, original_all, …)              [nested.rs]
   │    → perm[source_j] = canonical_i
@@ -909,21 +963,22 @@ generate_aux_patches(sorted_classes, original_all, …)         [aux_gen.rs]
   ▼
 AuxPatchesOutput { patches, perm, … }
   │
-  │  (per aux kind, each compiled into its OWN downstream Muts block:)
+  │  (per aux kind; D6: one constant per auxiliary, only the recursor
+  │   family and the Prop-level .below family stay blocks:)
   ▼
-compile_aux_block(rec_consts)     → Muts([ Recr(…), … ])      // REC BLOCK
-compile_aux_block(cases_on_defs)  → Muts([ Defn(…), … ])      // CASES_ON BLOCK
-compile_aux_block(rec_on_defs)    → Muts([ Defn(…), … ])      // REC_ON BLOCK
-compile_aux_block(below_indcs)    → Muts([ Indc(…), … ])      // BELOW INDC BLOCK (Prop)
-compile_aux_block(below_defs)     → Muts([ Defn(…), … ])      // BELOW DEF BLOCK (Type)
-compile_below_recursors(…)        → Muts([ Recr(…), … ])      // BELOW.REC BLOCK (Prop)
-compile_aux_block(brecon_go)      → Muts([ Defn(…), … ])      // BRECON.GO BLOCK
-compile_aux_block(brecon_main)    → Muts([ Defn(…), … ])      // BRECON BLOCK
-compile_aux_block(brecon_eq)      → Muts([ Defn(…), … ])      // BRECON.EQ BLOCK
+compile_aux_block(rec_consts)         → Muts([ Recr(…), … ])  // REC BLOCK
+compile_aux_components(cases_on_defs) → Defn(…), Defn(…), …   // one constant each
+compile_aux_components(rec_on_defs)   → Defn(…), Defn(…), …   // one constant each
+compile_aux_block(below_indcs)        → Muts([ Indc(…), … ])  // BELOW INDC BLOCK (Prop)
+compile_aux_components(below_defs)    → Defn(…), Defn(…), …   // one constant each (Type)
+compile_below_recursors(…)            → Muts([ Recr(…), … ])  // BELOW.REC BLOCK (Prop)
+compile_aux_components(brecon_go)     → Defn(…), Defn(…), …   // one constant each
+compile_aux_components(brecon_main)   → Defn(…), Defn(…), …   // one constant each
+compile_aux_components(brecon_eq)     → Defn(…), Defn(…), …   // one constant each
   │
-  │  Each block's member order is [user-classes (sort_consts) | aux (structural sort)].
-  │  Blocks reference each other via content-address projections
-  │  (IndcProj / RecrProj / DefnProj), NOT by embedding.
+  │  The REC BLOCK's member order is [user-classes (sort_consts) | aux (discovery order)].
+  │  Constants reference each other by content address and by projections
+  │  into blocks (IndcProj / RecrProj / DefnProj), NOT by embedding.
   │
   ▼
 stt.aux_perms.insert(
@@ -949,10 +1004,13 @@ Five invariants hold at the pipeline seams:
 3. **Nested-aux discovery is de-duped by bundle-hash.**
    `replace_if_nested` in `nested.rs` keeps an `aux_seen: Vec<(Hash, Name)>`
    table so alpha-equivalent nested occurrences reuse the same aux name.
-4. **Nested-aux section is structurally sorted.** `sort_aux_by_content_hash`
-   renames `_nested.Ext_<new_idx>` after `sort_consts`-style structural
-   sorting, so two semantically equal blocks declared in different source
-   orders produce byte-equal aux sections.
+4. **Nested-aux section is in discovery order over the canonical block.**
+   The expansion starts from the canonical classes (invariant 2) and
+   lists its auxes in discovery order, the canonical order; no sort
+   runs (`sort_aux_by_partition_refinement` is the identity, §6.2,
+   §11.2), so two semantically equal blocks declared in different source
+   orders produce byte-equal aux sections (proved at Pass 1's level:
+   `canonBlock_member_order_nested`, M7 L1).
 5. **Binder names exit the bytes, into the arena.** `put_expr` omits
    names on `Lam`/`All`/`Let`; the arena records them as
    `ExprMetaData::Binder` entries that never contribute to
@@ -1865,31 +1923,45 @@ structurally-distinct constants end up separated. The refinement loop
 terminates because the partition can only get finer, and there are
 finitely many constants.
 
-### 11.2 Nested-aux `sort_aux_by_content_hash`
+### 11.2 Nested-aux order: discovery order (formerly `sort_aux_by_content_hash`)
 
-The name is historical; this is now a structural sort, not a direct
-Blake3 bundle sort.
+Since the A2 migration (2026-10-03, decision D2;
+`docs/compiler-passes.md` §2.5) the nested-aux section is **not
+sorted**. Its canonical order is the **discovery order** of the
+expansion of the canonical block:
 
 ```
-expanded auxes → temporary MutConst::Indc values
-sort_consts(aux slice, cache, stt)
-  where compare_expr resolves non-mutual Const/Proj names by content address
-  and errors if a name is unresolved
-
-after sort, rebuild aux names as `<all0>._nested.<Ext>_<new_j+1>`,
-where `<Ext>` is recovered from the pre-sort name's suffix (e.g.
-`Array`, `Option`, `List`).
-
-cascade rename:
-  - aux_ctor_map keys and values
-  - aux_to_nested keys
-  - every member.typ and ctor.typ (auxes can reference other auxes)
+class representatives in canonical order (sort_consts, §11.1),
+  alias references rewritten to them,
+  each external group opened as its compiled canonical classes
+→ expand_nested_block_canonical: a FIFO queue over the block's types,
+  each constructor walked pre-order; each new nested occurrence becomes
+  `<all0>._nested.<Ext>_<k+1>` in the order it is discovered
+→ sort_aux_by_partition_refinement: the identity permutation
+  (the name is kept for its callers)
 ```
 
-This gives content-addressed canonical ordering without using source names as
-a tie-breaker. Alpha-equivalent auxes collapse through `sort_consts`, and
-source-walk aux positions are related back to canonical positions by
-`compute_aux_perm`.
+Code: `crates/compile/src/compile/aux_gen/nested.rs` ("Canonical order
+of the aux section: discovery order"); in Lean,
+`Ix.Compile.Canon.canonicalAuxOrder` under `Rules.compiler`
+(`Ix/Compile/Canon/Nested.lean`), which `Ix/AuxGen/Nested.lean`
+calls. The kernels rediscover the same order by the same walk over
+the stored members (§4.4). Source-walk aux positions are related to
+canonical positions by `compute_aux_perm` (Lean: `computePerm`).
+
+Proved at Pass 1's level (M7 L1; roots of `l1Roots` in
+`Ix/CompileCert/Audit.lean`, three standard axioms): `expand_spec`
+and `componentNested_discovery` (`Ix/CompileCert/Canon/Expand.lean`),
+`canonicalAuxOrder_discovery` (`NestedCanon.lean`: under the
+compiler's rules the canonical order is the expansion's own),
+`computePerm_spec` (`Perm.lean`). The compiler's own expansion port
+(`Ix.AuxGen.expandNestedBlock`) agrees with Pass 1's `expand` by test
+(`canon-pass1`), not by proof.
+
+The structural sort this section used to describe (temporary
+`MutConst::Indc` values ordered by `sort_consts`, then renamed to
+canonical `_N`) is run by neither compiler; Pass 1 keeps it only as
+the `Rules.today` alternative for the census (`structuralAuxClasses`).
 
 ## 12. Worked Examples — Single Constants
 
@@ -2192,13 +2264,13 @@ that enforces it:
 | Hash is Blake3 over serializer output                      | `Constant::commit` at `serialize.rs:861` → `Address::hash`      |
 | `sort_consts` is deterministic and refinement-stable       | `src/ix/compile.rs:2526-2564` (iterative refinement)            |
 | Nested-aux dedup across aliases                            | `replace_if_nested` `aux_seen` table, `nested.rs:191-362`       |
-| Nested-aux section is structurally sorted                  | `sort_aux_by_content_hash`, `nested.rs`                         |
+| Nested-aux section is in discovery order (no sort)         | `expand_nested_block_canonical`; `sort_aux_by_partition_refinement` is the identity, `nested.rs` |
 | Source-walk → canonical permutation is reversible          | `compute_aux_perm`, `nested.rs:797-907`                         |
 | Call sites are surgically rewritten to canonical order     | `compute_call_site_plans`, `surgery.rs:166-570`                 |
 | CallSite metadata keeps source and canonical views separate | `ExprMetaData::CallSite { entries, canon_meta }`; `compile_expr::BuildCallSite`; `kernel/ingress.rs` |
 | Optional original-kernel check isolates adversarial raw constants | `CompileOptions::check_originals`, `mutual.rs::check_originals`, `orig_kenv` in `compile/env.rs` |
 | Stored primary order matches `sort_consts` (kernel-side)   | `validate_canonical_block_single_pass`, `src/ix/kernel/canonical_check.rs` (called from `ingress_muts_block`) |
-| Aux ordering matches `sort_consts` on rediscovered aux     | `sort_kconsts`, `src/ix/kernel/canonical_check.rs` (called from `canonical_aux_order` in `inductive.rs`); position-by-position recursor validation in `check_recursor` |
+| Rediscovered aux follow the same discovery order           | `build_flat_block`, `crates/kernel/src/inductive.rs` (no sort); position-by-position recursor validation |
 
 ## 16. Testing Plan
 
@@ -2562,8 +2634,9 @@ Anonymous canonicity in Ix reduces to six operational commitments:
 2. Mutual blocks are **structurally sorted** by an iterative-refinement
    equivalence-class algorithm (`sort_consts`); source order and name
    choices don't leak into the block address.
-3. Nested-inductive auxes are **structurally sorted** and **de-duped**
-   independent of Lean's source-walk discovery.
+3. Nested-inductive auxes are **discovered in a fixed order over the
+   canonical block** (no sort) and **de-duped**, independent of Lean's
+   source-walk discovery (§6.2).
 4. Call sites are **surgically rewritten** so source-order aux
    references resolve to canonical-order auxes.
 5. A **metadata sidecar** — binder names, mdata, Lean-order `all`,
@@ -2573,12 +2646,12 @@ Anonymous canonicity in Ix reduces to six operational commitments:
    `canonical + metadata` isomorphic to source Lean.
 6. The **kernel independently re-runs `sort_consts`** on every
    stored mutual block when the primary validator needs refinement
-   (fast strong-adjacent validation at ingress)
-   and on every set of rediscovered auxes (full iterative sort
-   during recursor regeneration). The kernel never trusts the
-   compiler's claim that an input is canonical; it verifies the
-   claim by recomputing it. See §4.4 and
-   `src/ix/kernel/canonical_check.rs`.
+   (a weak `Less` or a weak `Greater`; fast strong-adjacent
+   validation at ingress otherwise), and rediscovers the auxes in the
+   same discovery order during recursor regeneration. The kernel
+   never trusts the compiler's claim that an input is canonical; it
+   verifies the claim by recomputing it. See §4.4 and
+   `crates/kernel/src/canonical_check.rs`.
 
 The failure of any one commitment breaks the zk-PCC story. The test
 harness in §16 makes each commitment observable as an address-equality
