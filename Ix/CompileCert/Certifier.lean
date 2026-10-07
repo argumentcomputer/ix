@@ -662,8 +662,9 @@ image, Def 3.4); the map check refuses a wrong claim. **Support rows**: for a
 recursor claimed an image whose correspondence fails, one theorem per
 computation rule (`ruleStatements`), proof `Eq.refl` under the rule's
 telescope; for a definition with a definition header whose value differs, the
-row `@Eq.{ℓ} T c value`, `ℓ` computed by `Meta.getLevel` (the fold validates
-it). Rows are named `<target name>._ix_eq.<k>` (D14 keeps `_ix` components out
+row `@Eq.{ℓ} T c value`, `ℓ` the universe the certified checker infers for `T`
+(`proposeRows`; the fold validates it). Rows are named `<target name>._ix_eq.<k>`
+(D14 keeps `_ix` components out
 of Lean names, the fold checks freshness), **pre-screened** one by one with the
 stepping checker over the admitted environment, and folded by the certified
 checker once (`foldSupport`, inside `checkIndexed'`). A definition whose `rfl`
@@ -740,6 +741,26 @@ def smallEquivalentLevel (params : List Lean.Name) (l : Lean.Level) : Option Lea
   let candidates := base ++ base.flatMap fun c => ps.map fun p => Lean.Level.imax c p
   return candidates.find? agrees
 
+/-- The universe of the sort the certified checker infers for a closed type: its
+own annotation, inference and sort view (`coreKnotI`, `opSIxC`, as phase B runs
+them) at the admitted environment, from a fresh memo state (untrusted: the fold
+validates any row stated at it). -/
+def checkerSortLevel (fe : Ix.Kernel.FEnv) (ty : Kernel.Expr) : Except String Kernel.Level :=
+  let run : Ix.Kernel.Cached.CheckCM Kernel.Level := do
+    let core := Ix.Kernel.Cached.coreKnotI .verified fe Ix.Kernel.checkFuel
+    let jty ← core.annotate 0 ty
+    let s ← core.infer 0 jty
+    Ix.Kernel.Cached.opSIxC .verified fe 0 s
+  match run {} with
+  | .ok (u, _) => .ok u
+  | .error e => .error (checkOutcome e).2
+
+/-- Nodes of a level (diagnostics). -/
+def kernelLevelNodes : Kernel.Level → Nat
+  | .zero | .param _ => 1
+  | .succ u => kernelLevelNodes u + 1
+  | .max u v | .imax u v => kernelLevelNodes u + kernelLevelNodes v + 1
+
 /-- The rows proposed for one changed constant (each with what it states:
 `type`, `rule <k>` or `rfl`), or why none could be formed. -/
 structure RowProposal where
@@ -751,9 +772,22 @@ structure RowProposal where
 /-- Propose the rows of a failing theorem, definition or recursor claimed an
 image: a **type row** when the reader entry of the right kind has the exported
 name and universes but another (convertible) type, and the **equation rows**
-of a recursor (one per rule) or a definition (`rfl`). -/
-def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) :
-    IO RowProposal := do
+of a recursor (one per rule) or a definition (`rfl`).
+
+**The universe of a type or `rfl` row** (untrusted; the fold validates it, and
+the relations quantify it away). With the admitted environment's index `fe?`,
+the row is stated at the universe the certified checker itself infers for
+Lean's exported type (`checkerSortLevel`): typing the row then compares that
+sort with the row's by syntactic equality, the first test of `Level.isEquiv`.
+A smaller equivalent level (the fallback, and the only choice without `fe?`)
+leaves the checker to decide the two equal by `Level.leq`, exponential in the
+nesting of the `imax` chain it infers for a long telescope (package C: the
+Cutsat `brecOn(_k).go`, 366 nodes, did not finish in 60 s; at the checker's
+level, 38 ms). A type row takes the checker's level only when the checker infers
+the same level for the compiled type (otherwise one of the two comparisons is
+not syntactic either way). -/
+def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo)
+    (fe? : Option Ix.Kernel.FEnv := none) : IO RowProposal := do
   let trace := (← IO.getEnv "IX_CERTIFY_TRACE").isSome
   let t0 ← IO.monoMsNow
   let step (what : String) : IO Unit := do
@@ -772,12 +806,19 @@ def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : L
     let typeDiffers := ixType != header.type
     step s!"types compared (differ: {typeDiffers})"
     let tc : TermContext := ⟨cy, ci.levelParams, header.levelParams⟩
-    -- the universe of Lean's type, for a type row and for a definition's `rfl` row
-    let level? ← if typeDiffers || (match ci with | .defnInfo _ => true | _ => false) then
+    let needed := typeDiffers || (match ci with | .defnInfo _ => true | _ => false)
+    -- the universe the checker infers for Lean's exported type (and, for a type row, the compiled one)
+    let checkerLevel (t : Kernel.Expr) : Option Kernel.Level := fe?.bind fun fe => (checkerSortLevel fe t).toOption
+    let leanLevel? := if needed then checkerLevel header.type else none
+    let typeRowLevel? := if typeDiffers then
+        leanLevel?.bind fun l => if checkerLevel ixType == some l then some l else none
+      else none
+    step "checker universe computed"
+    -- otherwise a small level equal to Lean's: `getLevel`'s long `imax` chains are kept by
+    -- `normalize` and their export (`Ixon.canonUniv`) does not finish
+    let small? ← if needed && (leanLevel?.isNone || (typeDiffers && typeRowLevel?.isNone)) then
         match ← LoweringLean.runMeta env (Lean.Meta.getLevel ci.type) with
         | .error e => pure (Except.error s!"universe of the type: {oneLine e}")
-        -- a small equivalent level: `getLevel`'s long `imax` chains are kept by `normalize`
-        -- and the export (`Ixon.canonUniv`) does not finish on them
         | .ok level =>
           match smallEquivalentLevel ci.levelParams level.normalize with
           | some small => pure (exportLevel tc small)
@@ -786,9 +827,12 @@ def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : L
             else pure (.error "universe of the type: no small equivalent level")
       else pure (.error "not needed")
     step "universe computed"
+    let pick : Option Kernel.Level → Except String Kernel.Level
+      | some l => .ok l
+      | none => small?
     let mut rows : Array (String × Kernel.Declaration) := #[]
     if typeDiffers then
-      match level? with
+      match pick (typeRowLevel? <|> (if small?.toOption.isNone then leanLevel? else none)) with
       | .error e => return { owner := ci.name, failure := some s!"type row: {e}" }
       | .ok ℓ =>
         match supportRow (header.name.str "_ix_type") header.levelParams
@@ -807,7 +851,7 @@ def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : L
           | none => return { owner := ci.name, rows, failure := some "rule statement is not an Eq telescope" }
         return { owner := ci.name, rows }
     | .defnInfo d =>
-      match level?, definitionSides cy d header.levelParams with
+      match pick leanLevel?, definitionSides cy d header.levelParams with
       | .ok ℓ, .ok (left, right) =>
         match supportRow (base.num 0) header.levelParams (kernelEq ℓ header.type left right) with
         | some row => return { owner := ci.name, rows := rows.push ("rfl", row) }
@@ -1161,15 +1205,16 @@ def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry)
   let mut proposals : Array RowProposal := #[]
   let tp ← IO.monoMsNow
   let trace := (← IO.getEnv "IX_CERTIFY_TRACE").isSome
+  -- the admitted environment's index: the pre-screen's base, and the rows' universes
+  let base : Benchmarks.Kernel.CheckIxeStep.Checker := { fe := Ix.Kernel.mkFEnv artifact.env }
   for ci in proposable do
     let t0 ← IO.monoMsNow
     if trace then log s!"[certify] W+ rows of {ci.name}: …"
-    let p ← proposeRows env sh1 hints1 ci
+    let p ← proposeRows env sh1 hints1 ci (some base.fe)
     let t1 ← IO.monoMsNow
     if trace || t1 - t0 > 5000 then log s!"[certify] W+ rows of {ci.name}: {t1 - t0} ms ({p.rows.size} rows)"
     proposals := proposals.push p
   let natPins ← IO.ofExcept Ix.Kernel.Reader.builtinNatOpPins
-  let base : Benchmarks.Kernel.CheckIxeStep.Checker := { fe := Ix.Kernel.mkFEnv artifact.env }
   let allRows := proposals.flatMap fun p => p.rows.map (·.2)
   let tq ← IO.monoMsNow
   log s!"[certify] W+ rows: {allRows.size} proposed for {proposals.size} constants; {tq - tp} ms"
@@ -1702,10 +1747,10 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
       match directExport cy ci with
       | .error e => say s!"[explain]   export error: {e}"
       | .ok e =>
-        say s!"[explain]   export: {repr e.withoutHint}"
+        say s!"[explain]   export: {(toString (repr e.withoutHint)).take 4000}"
         for a in shE.entries do
           if entryName a == entryName e then
-            say s!"[explain]   reader: {repr a}"
+            say s!"[explain]   reader: {(toString (repr a)).take 4000}"
             let parts : DirectEntry → Option (Kernel.ConstantVal × Option Kernel.Expr)
               | .defn cv v _ | .thm cv v | .opaque cv v => some (cv, some v)
               | .axiom cv | .quot _ cv | .induct cv _ | .ctor cv .. | .recursor cv .. => some (cv, none)
@@ -1719,23 +1764,28 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
       if let .inductInfo iv := ci then
         match exportBlock cy iv, cy.name iv.name with
         | .ok b, .ok k =>
-          say s!"[explain]   export block: {repr b}"
+          say s!"[explain]   export block: {(toString (repr b)).take 4000}"
           match shE.state.indBlocks[k]? with
-          | some actual => say s!"[explain]   reader block: {repr (readerBlock actual)}"
+          | some actual => say s!"[explain]   reader block: {(toString (repr (readerBlock actual))).take 4000}"
           | none => say "[explain]   no reader block"
         | .error e, _ | _, .error e => say s!"[explain]   block export error: {e}"
       -- W+: the type and equation rows and the checker's verdict on each
       match ci with
       | .recInfo _ | .defnInfo _ | .thmInfo _ =>
-        let p ← proposeRows env shE hintsE ci
-        if let some f := p.failure then say s!"[explain]   rows: {f}"
         let natPins ← IO.ofExcept Ix.Kernel.Reader.builtinNatOpPins
         let base : Benchmarks.Kernel.CheckIxeStep.Checker := { fe := Ix.Kernel.mkFEnv artifact.env }
-        let screened := prescreen natPins base (p.rows.map (·.2))
-        for ((what, row), verdict) in p.rows.zip screened do
+        let p ← proposeRows env shE hintsE ci (some base.fe)
+        if let some f := p.failure then say s!"[explain]   rows: {f}"
+        -- timed, like the pre-screen (an untimed row can hang)
+        let explainBudget := if cfg.rowBudget == 0 then defaultRowBudget else cfg.rowBudget
+        let screened ← prescreenTimed natPins base (p.rows.map (·.2)) cfg.workers (fun _ => explainBudget)
+          (p.rows.map fun (what, _) => s!"{n} {what}") say
+        for ((what, row), (verdict, ms)) in p.rows.zip screened.results do
           if let .thmDecl cv _ := row then
-            say s!"[explain]   {what} row {kernelNameStr cv.name}: {repr cv.type}"
-          say s!"[explain]     checker: {verdict.getD "accepted"}"
+            say s!"[explain]   {what} row {kernelNameStr cv.name}: {(toString (repr cv.type)).take 4000}"
+            if let some (level, _, _, _) := eqParts cv.type then
+              say s!"[explain]     universe: {kernelLevelNodes level} nodes"
+          say s!"[explain]     checker: {verdict.text} ({ms} ms)"
         if let .defnInfo d := ci then
           say s!"[explain]   Lean eq_def: {(env.find? (d.name.str "eq_def")).isSome}"
       | _ => pure ()

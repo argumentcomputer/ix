@@ -76,7 +76,11 @@ with theorem rows checked by the certified checker and no new trust:
   and exported as everything else; for a definition, `@Eq T c value` (proof `Eq.refl`), or Lean's
   own `c.eq_def`;
 - a declared type that is convertible to Lean's but not equal (Pass 3 inlines images in types too)
-  is matched through a **type row** `@Eq (Sort ℓ) T_ix T_lean` (proof `Eq.refl`);
+  is matched through a **type row** `@Eq (Sort ℓ) T_ix T_lean` (proof `Eq.refl`). A type row and a
+  definition's `rfl` row are stated at the universe ℓ the certified checker itself infers for Lean's
+  type (and for the compiled one), so that typing the row compares the two sorts by syntactic
+  equality: at a smaller equivalent level the checker's `Level.leq` decides, exponential on the
+  nested `imax` chain it infers for a long telescope (the Cutsat `brecOn(_k).go` of Lean's core);
 - **changed blocks** (`ChangedBlockMatch`): every member and constructor of the Lean block is
   exported to the reader block holding it, which holds nothing else; every recursor of the Lean
   block is claimed an image (`ExportContext.images`, checked by the map). That the block

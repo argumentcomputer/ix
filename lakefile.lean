@@ -570,7 +570,7 @@ script "check-cert" (args) := do
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
       "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
       "projection-lowering", "strong", "sharing", "strong-pins", "strong-indexed",
-      "compiled", "changed"].map (fun mode => (mode, #[exe, mode])) ++
+      "compiled", "changed", "wplus-cost"].map (fun mode => (mode, #[exe, mode])) ++
     #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
       ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
         s!"{outDir}/compiled.ixe", s!"{outDir}/certify"]),
