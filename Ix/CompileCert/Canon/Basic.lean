@@ -29,9 +29,10 @@ namespace Ix.CompileCert.Canon
 /-! ## Values built without hashing
 
 Where a function needs a stand-in value, it is built from raw constructors: no hash is
-computed, so no hashing code (`Address.blake3`, `Ix.Name.mkStr`, whose definitions carry
-`native_decide` auxiliaries) enters a statement. `default : Ix.Name` is `Name.mkAnon`, a Blake3
-hash, and must not be used here. -/
+computed. (The hashing code, `Address.blake3`, `Ix.Name.mkStr`, `Name.mkAnon` behind
+`default : Ix.Name`, carried two `native_decide` auxiliaries until every digest was finalized with
+the length bound passed explicitly, `Address.ofHasher`; the statements written before that avoid
+it.) -/
 
 def rawAddr : Address := ⟨ByteArray.empty⟩
 def rawName : Ix.Name := .anonymous rawAddr

@@ -774,8 +774,10 @@ end Ix.CompileCert.Audit
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m4dRoots Ix.CompileCert.Audit.allowedAxioms
 
 /-! The roots added by M7 L1 (WP-D, `plans/PLAN-proofs.md`): Pass 1 proved
-(`Ix/CompileCert/Canon/**`, theorems about `Ix/Compile/Canon/**` as it is). Checked the same
-way, against the same allowed set; the frozen line above is unchanged. -/
+(`Ix/CompileCert/Canon/**`, theorems about `Ix/Compile/Canon/**` as it is). WP-E (2026-10-07)
+adds the block driver, the nested auxiliaries' discovery order, evaporation, the block name map
+and the clique statements, over the functions the hashing change cleared. Checked the same way,
+against the same allowed set; the frozen line above is unchanged. -/
 
 namespace Ix.CompileCert.Audit
 
@@ -831,7 +833,41 @@ def l1Roots : Array Lean.Name :=
     `blockComponents_acyclic,
     `Occ, `Sub, `HashCons, `refsExpr_sound, `go_spec, `refsExpr_complete, `RefOcc, `ConstHashCons,
     `refsConst_sound, `refsConst_complete,
-    `refineClassP_ok, `refineClassesP_ok, `sortLoopP_ok, `sortClassesP_ok, `sortClasses_ok].map (`Ix.CompileCert.Canon ++ ·)
+    `refineClassP_ok, `refineClassesP_ok, `sortLoopP_ok, `sortClassesP_ok, `sortClasses_ok,
+    -- WP-E (after the hashing functions were cleared of `native_decide`)
+    `forIn_id_list, `forIn_id_array, `except_pure_ok, `forIn_except_list, `forIn_except_array,
+    `Pointwise, `Pointwise.nil, `Pointwise.snoc, `forIn_push_array, `Pointwise.length, `Pointwise.get,
+    `Pointwise.get', `forIn_except_list_mem, `forIn_except_array_mem,
+    `FirstSpec, `ComponentSpec, `canonBlock_spec, `canonBlock_comps, `canonBlock_scc, `canonBlock_acyclic,
+    `canonBlock_members_sub, `canonBlock_mem_spec, `canonBlock_coarsest, `sortClassesBlind_perm,
+    `component_keys, `canonBlock_member_order, `canonBlock_separate,
+    `repsOf, `canonExpand, `canonAux, `canonicalAuxOrder_discovery, `aux_eq_empty, `componentNested_some,
+    `componentNested_none, `sigsInOrder_empty, `componentNested_reps_empty, `auxOf,
+    `componentNested_auxOf, `componentNested_canonAux, `evaporate_fields, `canonAux_evaporate,
+    `canonBlock_nested_discovery, `canonBlock_canonAux, `canonBlock_member_order_nested,
+    `canonBlock_separate_nested,
+    `inCompOf, `strictOf, `originalsOf, `PermEntry, `option_orElse_some, `option_orElse_none,
+    `except_throw_bind_ne, `computePerm_spec, `matchSig_spec, `computePerm_onto, `computePerm_entry,
+    `computePerm_size, `computePerm_some,
+    `compMembersOf, `strictFor, `refsOfSig, `keyAddrOf, `Claims, `ClaimedElsewhere, `TargetOk,
+    `Evaporates, `bfalse, `targetOk_iff, `FlagsInv, `setBang_getElem?, `evaporate_spec,
+    `evaporates_congr, `canonBlock_evaporated, `canonBlock_evaporated_perm,
+    `flatMap_congr', `forIn_id_flat, `forIn_id_flat_array, `id_bind_eq, `insStep, `nestedStep,
+    `namePairs, `memberPairs, `nposOf, `nestedSuffixes, `nestedName, `nestedEvents, `blockNameMap_eq,
+    `stepVal, `nestedFold_getElem?, `foldl_stepVal_none_iff, `foldl_stepVal_mem, `foldl_stepVal_outside,
+    `nestedVals, `nestedVal, `NameMapKeys, `nposOf_ne_outside, `mem_nestedEvents, `nested_preserves,
+    `nestedName_lt, `blockNameMap_memberPairs, `nestedVals_filter, `blockNameMap_nested,
+    `blockNameMap_other, `mem_memberPairs_member, `blockNameMap_member, `blockNameMap_suffix,
+    `blockNameMap_ctor, `mem_nestedVals, `nposOf_mem_nestedVals, `nestedVal_aux, `nestedVal_evaporated,
+    `nestedVal_outside, `nestedVal_none,
+    `skel, `auxNameOf, `Grow, `Grow.refl, `Grow.trans, `Grow.push, `forIn_id_inv, `forIn_id_inv_array,
+    `list_foldl_inv, `array_foldl_inv, `replaceIfNested_grow, `replaceAll_grow, `skel_modify,
+    `walkCtor_grow, `walkCtor_none, `skel_getElem?, `skel_length, `QInv, `qinv_step, `walkQueue_qinv,
+    `aux_getElem?_eq, `expand_spec, `expand_owner, `componentNested_discovery,
+    `cliqueSpecs, `CliqueNamesDistinct, `cliqueClasses_eq, `cliqueClasses_ok_iff, `keysOf_toMutConst,
+    `cliqueSpecs_keys, `cliqueKeys, `cliqueClasses_coarsest, `cliqueClasses_ok, `cliqueClasses_perm,
+    `cliqueClasses_setEq, `statementClique, `flatten_singletons, `classNames_singletons,
+    `pairwise_nbeq_index, `findIdx_singletons, `statementOrder_spec].map (`Ix.CompileCert.Canon ++ ·)
 
 end Ix.CompileCert.Audit
 

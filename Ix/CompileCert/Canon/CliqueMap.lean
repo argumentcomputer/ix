@@ -8,8 +8,8 @@ import Ix.Compile.Canon.NameMap
 `cliqueNameMap_spec`: when the names are pairwise distinct under `==`, a name is mapped to
 `.clique k` exactly when it is (`==`) a name of the `k`-th class, and to nothing else.
 
-(`blockNameMap` builds the names `T.rec`, `all₀.rec_j`, … with `Ix.Name.mkStr`, which carries the
-two `native_decide` auxiliaries of the report's §3; statements about it wait on that decision.)
+(`blockNameMap`, which builds the names `T.rec`, `all₀.rec_j`, … with `Ix.Name.mkStr`, is
+`BlockMap.lean`.)
 -/
 
 namespace Ix.CompileCert.Canon

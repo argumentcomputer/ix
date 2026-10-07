@@ -26,6 +26,14 @@ import Ix.CompileCert.Canon.SccFuel
 import Ix.CompileCert.Canon.Total
 import Ix.CompileCert.Canon.Refs
 import Ix.CompileCert.Canon.Terminate
+import Ix.CompileCert.Canon.Loop
+import Ix.CompileCert.Canon.CanonBlock
+import Ix.CompileCert.Canon.NestedCanon
+import Ix.CompileCert.Canon.Perm
+import Ix.CompileCert.Canon.Evaporate
+import Ix.CompileCert.Canon.BlockMap
+import Ix.CompileCert.Canon.Expand
+import Ix.CompileCert.Canon.CliqueClasses
 
 /-!
 # M7 L1: Pass 1 proved
@@ -66,7 +74,24 @@ stated against the code as it is. The modules:
   return;
 * `Refs`: `refsExpr`/`refsConst` return the names a constant references (sound always, complete on
   collision-free cached hashes), so the reference graph is the graph of occurrence;
-* `Terminate`: the refinement returns when no comparison of distinct members fails (§3.5 (ii)).
+* `Terminate`: the refinement returns when no comparison of distinct members fails (§3.5 (ii));
+* `Loop`: the `for` loops of Pass 1 as folds (in `Id`) and as properties every step extends (in
+  `Except`);
+* `CanonBlock`: `canonBlock`, component by component (`canonBlock_spec`), and the block theorems
+  restated over it (SCCs, acyclic condensation, coarsest classes, member order, separate
+  declaration);
+* `NestedCanon`: under the discovery rule a component's canonical nested auxiliaries are its
+  canonical expansion's, and they depend on its classes only, so member order and separate
+  declaration keep them (`componentNested_canonAux`);
+* `Perm`: `computePerm` maps Lean's positions to matching canonical signatures and is onto;
+* `Evaporate`: the evaporation flags are exactly the positions satisfying the five conditions of
+  §2.6;
+* `BlockMap`: `blockNameMap` maps each member, suffix name, constructor and nested name as
+  specified and nothing else;
+* `Expand`: the nested expansion's discovery order (Def 2.5): members first, auxiliaries numbered
+  in discovery order, breadth-first over the queue, owned by members;
+* `CliqueClasses`: `cliqueClasses` is `sortClasses` over the specifications; the statement order of
+  a theorem clique is a permutation.
 
 ## Theorem 4.2 (L1), clause by clause
 
@@ -79,12 +104,25 @@ stated against the code as it is. The modules:
   `sortClasses_ok`;
 * the class order does not depend on the seed: `sortClasses_setEq` (any seed), `sortClasses_perm`
   (the name-hash seed: the whole output);
-* the name map is well defined: `cliqueNameMap_spec` (cliques); `blockNameMap` is open (it carries the
-  `native_decide` auxiliaries of `Ix.Name.mkStr`);
+* the name map is well defined: `cliqueNameMap_spec` (cliques); `blockNameMap_member`,
+  `blockNameMap_suffix`, `blockNameMap_ctor`, `blockNameMap_nested` with `nestedVal_aux`,
+  `nestedVal_evaporated`, `nestedVal_outside`, `nestedVal_none`, and `blockNameMap_other` (blocks);
 * collapse decisions are theorems: `sortClasses_collapse_single`;
 * canonicity under Def 4.3: member order (`canon_member_order_total`, `sortClasses_perm`,
   `sortClasses_setEq`), separate declaration (`blockComponents_separate_total`), renaming
   (`sortClasses_rename`), collapse and equal members (`sortClasses_collapse`);
-* clique order: `sortClasses` over the specifications, so the statements above apply to it; the nested
-  auxiliaries' discovery order is open (`expand` carries the same auxiliaries).
+* over the block driver: `canonBlock_spec`, `canonBlock_scc`, `canonBlock_acyclic`,
+  `canonBlock_coarsest`, `canonBlock_member_order`, `canonBlock_separate`, and for the nested part
+  `canonBlock_member_order_nested`, `canonBlock_separate_nested`;
+* clique order: `cliqueClasses_coarsest`, `cliqueClasses_ok`, `cliqueClasses_perm`,
+  `cliqueClasses_setEq` (`sortClasses` over the specifications); theorem cliques by their statements:
+  `statementOrder_spec`;
+* nested auxiliaries in discovery order (Def 2.5): `expand_spec`, `expand_owner`, and over the
+  canonical block `componentNested_discovery`, `componentNested_some`, `canonBlock_nested_discovery`;
+  Lean's positions against them: `computePerm_spec`, `computePerm_onto`, `computePerm_some`;
+  evaporation (§2.6): `evaporate_spec`, `canonBlock_evaporated`, `canonBlock_evaporated_perm`.
+
+Not stated here: §3.5 (iv), the canonical declaration's invariance under the choice of
+representative, beyond Pass 1 (classes are consistent, `sortClasses_coarsest`; the representative
+rule moves no class, `sortClasses_setEq`): the declarations are Pass 2's.
 -/
