@@ -75,6 +75,15 @@ inductive Phase where
   /-- Pass 3: `compileImageBlock` (the images of a changed block's Lean
       auxiliaries, compiled under their Lean names). -/
   | p3Image
+  /-- Pass 3, inside `prepareBlock`: the views of the referenced changed
+      blocks and the block's expansion and optimisation tables (FU item 7). -/
+  | p3Views
+  /-- Pass 3, inside `prepareBlock`: the call-site rewrite of the block's
+      members (`rewriteBlock`, the expansions it forces included). -/
+  | p3Rewrite
+  /-- Pass 3, inside `prepareBlock`: the unit passes and the canonical `_ix`
+      constants (`unitPasses`, `compileCanon`, D1). -/
+  | p3Canon
   deriving Inhabited, BEq, Repr
 
 def Phase.idx : Phase → Nat
@@ -82,12 +91,13 @@ def Phase.idx : Phase → Nat
   | .auxTail => 4 | .auxIngress => 5 | .auxTc => 6 | .auxCompile => 7
   | .callSitePlans => 8 | .noAux => 9 | .merge => 10
   | .p3Prepare => 11 | .p3Cliques => 12 | .p3Image => 13
+  | .p3Views => 14 | .p3Rewrite => 15 | .p3Canon => 16
 
-def phaseCount : Nat := 14
+def phaseCount : Nat := 17
 
 def Phase.all : Array Phase :=
   #[.blockOther, .classes, .exprCompile, .sharing, .auxTail, .auxIngress, .auxTc,
-    .auxCompile, .callSitePlans, .noAux, .merge, .p3Prepare, .p3Cliques, .p3Image]
+    .auxCompile, .callSitePlans, .noAux, .merge, .p3Prepare, .p3Cliques, .p3Image, .p3Views, .p3Rewrite, .p3Canon]
 
 def Phase.label : Phase → String
   | .blockOther => "block glue (outside the phases below)"
@@ -101,9 +111,12 @@ def Phase.label : Phase → String
   | .callSitePlans => "call-site plans"
   | .noAux => "no-aux compile of original forms (promote_aux)"
   | .merge => "driver merge of block outcomes (driving thread)"
-  | .p3Prepare => "Pass 3 prepareBlock (views, rewrite; outside the clique hook)"
+  | .p3Prepare => "Pass 3 prepareBlock (outside the clique hook and the three below)"
   | .p3Cliques => "Pass 3 clique hook (prepareCliques)"
   | .p3Image => "Pass 3 compileImageBlock"
+  | .p3Views => "Pass 3 prepareBlock: views and tables"
+  | .p3Rewrite => "Pass 3 prepareBlock: call-site rewrite"
+  | .p3Canon => "Pass 3 prepareBlock: unit passes and canonical constants"
 
 /-- One thread's accumulators. -/
 structure ThreadAcc where

@@ -714,16 +714,18 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
       members := members.push (n, ci)
       used := (headsIn cenv.p3Heads ci).fold (·.insert ·) used
   if used.isEmpty then return (cenv, init)
-  -- the views of the referenced changed blocks
-  let mut views : Std.HashMap Name BlockView := {}
-  for h in used do
-    if let some key := cenv.p3Heads.get? h then
-      if !views.contains key then
-        views := views.insert key (← viewOf cenv views key)
-  let table := expansionTable cenv views
-  let blocks := optBlocks cenv views
-  let rwr ← rewriteBlock (expansionLookupIn table cenv views) members (optLookup cenv blocks)
-    (declineLookup cenv blocks)
+  -- the views of the referenced changed blocks (the three sub-phases below
+  -- are timers only, `IX_PHASE_TIMERS`: each `withPhase` is the identity)
+  let (views, table, blocks) ← Ix.PhaseTimers.withPhase .p3Views cenv fun cenv => do
+    let mut views : Std.HashMap Name BlockView := {}
+    for h in used do
+      if let some key := cenv.p3Heads.get? h then
+        if !views.contains key then
+          views := views.insert key (← viewOf cenv views key)
+    pure (views, expansionTable cenv views, optBlocks cenv views)
+  let rwr ← Ix.PhaseTimers.withPhase .p3Rewrite cenv fun cenv =>
+    rewriteBlock (expansionLookupIn table cenv views) members (optLookup cenv blocks)
+      (declineLookup cenv blocks)
   let overlay : Std.HashMap Name ConstantInfo :=
     rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) cenv.env.overlay
   let sources : Std.HashMap Nat Expr :=
@@ -734,20 +736,21 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   -- `CompileEnv.p3NonCanonical`); the rewritten members and the members whose
   -- canonical form a proof-justified pass wrote are records too (the
   -- changed-set record, `Ix.Compile.ChangedSet`); none of them changes a byte
-  let unit := unitPasses cenv views members
-  -- O11b's pair: the Lean names `T.noConfusionType`, `T.noConfusion` keep
-  -- Lean's form, the canonical ones are `…._ix` (the `PJ-FORM-O11b` record)
-  let unitForms : Array (Name × Array String) := unit.filterMap fun ci =>
-    match ci.getCnst.name with
-    | .str p s _ => if s == ixComponent then some (p, #["O11b"]) else none
-    | _ => none
-  let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines,
-                           p3Rewritten := init.p3Rewritten ++ rwr.overlay.map (·.1),
-                           p3PjForms := init.p3PjForms ++ rwr.pjForms ++ unitForms,
-                           p3MemoViews := init.p3MemoViews ++ newMemoViews cenv views }
-  -- the canonical constants (D1): the `_ix` forms where a proof-justified
-  -- pass fires, the unit passes' (O11b), the helpers the rewrites reference
-  let init ← compileCanon cenv views (rwr.canon ++ unit) init
+  let init ← Ix.PhaseTimers.withPhase .p3Canon cenv fun cenv => do
+    let unit := unitPasses cenv views members
+    -- O11b's pair: the Lean names `T.noConfusionType`, `T.noConfusion` keep
+    -- Lean's form, the canonical ones are `…._ix` (the `PJ-FORM-O11b` record)
+    let unitForms : Array (Name × Array String) := unit.filterMap fun ci =>
+      match ci.getCnst.name with
+      | .str p s _ => if s == ixComponent then some (p, #["O11b"]) else none
+      | _ => none
+    let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines,
+                             p3Rewritten := init.p3Rewritten ++ rwr.overlay.map (·.1),
+                             p3PjForms := init.p3PjForms ++ rwr.pjForms ++ unitForms,
+                             p3MemoViews := init.p3MemoViews ++ newMemoViews cenv views }
+    -- the canonical constants (D1): the `_ix` forms where a proof-justified
+    -- pass fires, the unit passes' (O11b), the helpers the rewrites reference
+    compileCanon cenv views (rwr.canon ++ unit) init
   return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, init)
 
 /-! ## The Lean names of a changed block's auxiliaries: their images -/
