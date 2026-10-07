@@ -837,6 +837,35 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l1Roots Ix.CompileCert.Audit.allowedAxioms
 
+/-! The hashing functions (WP-E, the owner's option A, 2026-10-07): every BLAKE3 digest of `Ix` is
+finalized by `Address.ofHasher`, which passes the package's length bound explicitly
+(`Address.digestLen_lt_wordBound`, by cases on the word size) instead of its default
+`by native_decide`. The constructors that hash, and the Pass 1 functions built on them (the
+functions that carried the two `native_decide` auxiliaries, `plans/review2/M7-L1-pass1.md` §3),
+are checked the same way, against the same allowed set; the frozen line above is unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def hashRoots : Array Lean.Name :=
+  #[``Address.digestLen_lt_wordBound, ``Address.ofHasher, ``Address.blake3,
+    ``Ix.Name.mkAnon, ``Ix.Name.mkStr, ``Ix.Name.mkNat, ``Ix.Name.fromLeanName,
+    ``Ix.Level.mkZero, ``Ix.Level.mkSucc, ``Ix.Level.mkMax, ``Ix.Level.mkIMax,
+    ``Ix.Level.mkParam, ``Ix.Level.mkMvar,
+    ``Ix.Expr.mkBVar, ``Ix.Expr.mkFVar, ``Ix.Expr.mkMVar, ``Ix.Expr.mkSort, ``Ix.Expr.mkConst,
+    ``Ix.Expr.mkApp, ``Ix.Expr.mkLam, ``Ix.Expr.mkForallE, ``Ix.Expr.mkLetE, ``Ix.Expr.mkLit,
+    ``Ix.Expr.mkProj, ``Ix.Expr.mkMData,
+    ``Ix.Compile.Canon.addrKey, ``Ix.Compile.Canon.replaceIfNested, ``Ix.Compile.Canon.walkQueue,
+    ``Ix.Compile.Canon.expand, ``Ix.Compile.Canon.canonicalAuxOrder, ``Ix.Compile.Canon.sigsInOrder,
+    ``Ix.Compile.Canon.computePerm, ``Ix.Compile.Canon.componentNested,
+    ``Ix.Compile.Canon.evaporate, ``Ix.Compile.Canon.canonBlock, ``Ix.Compile.Canon.blockNameMap,
+    ``Ix.Compile.Canon.CliqueMember.toMutConst, ``Ix.Compile.Canon.cliqueClasses,
+    ``Ix.Compile.Canon.statementOrder, ``Ix.Compile.Canon.recMajorSignatures,
+    ``Ix.Compile.Canon.unsafeRecToMembers]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.hashRoots Ix.CompileCert.Audit.allowedAxioms
+
 /-! The roots added by M5 (WP-A, W+): changed constants certified by theorem
 and equation rows checked by the certified checker, changed inductive blocks
 by containment (`Ix/CompileCert/Changed.lean`), the image claims of the export

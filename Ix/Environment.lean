@@ -91,7 +91,7 @@ def mkStr (pre: Name) (s: String): Name := Id.run <| do
   h := h.update (ByteArray.mk #[TAG_NSTR])
   h := h.update pre.getHash.hash
   h := h.update s.toUTF8
-  .str pre s ⟨(h.finalizeWithLength 32).val⟩
+  .str pre s (Address.ofHasher h)
 
 /-- Construct a numeric name component, hashing the tag, parent hash, and little-endian nat bytes. -/
 def mkNat (pre: Name) (i: Nat): Name := Id.run <| do
@@ -99,7 +99,7 @@ def mkNat (pre: Name) (i: Nat): Name := Id.run <| do
   h := h.update (ByteArray.mk #[TAG_NNUM])
   h := h.update pre.getHash.hash
   h := h.update ⟨i.toBytesLE⟩
-  .num pre i ⟨(h.finalizeWithLength 32).val⟩
+  .num pre i (Address.ofHasher h)
 
 partial def toStringAux : Name → String
   | .anonymous _ => ""
@@ -181,33 +181,33 @@ def mkSucc (x: Level) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_USUCC])
   h := h.update x.getHash.hash
-  .succ x ⟨(h.finalizeWithLength 32).val⟩
+  .succ x (Address.ofHasher h)
 
 def mkMax (x y : Level) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UMAX])
   h := h.update x.getHash.hash
   h := h.update y.getHash.hash
-  .max x y ⟨(h.finalizeWithLength 32).val⟩
+  .max x y (Address.ofHasher h)
 
 def mkIMax (x y : Level) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UIMAX])
   h := h.update x.getHash.hash
   h := h.update y.getHash.hash
-  .imax x y ⟨(h.finalizeWithLength 32).val⟩
+  .imax x y (Address.ofHasher h)
 
 def mkParam (n: Name) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UPARAM])
   h := h.update n.getHash.hash
-  .param n ⟨(h.finalizeWithLength 32).val⟩
+  .param n (Address.ofHasher h)
 
 def mkMvar (n: Name) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UMVAR])
   h := h.update n.getHash.hash
-  .mvar n ⟨(h.finalizeWithLength 32).val⟩
+  .mvar n (Address.ofHasher h)
 
 instance : BEq Level where
   beq a b := a.getHash == b.getHash
@@ -316,25 +316,25 @@ def mkBVar (x: Nat) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EVAR])
   h := h.update ⟨x.toBytesLE⟩
-  .bvar x ⟨(h.finalizeWithLength 32).val⟩
+  .bvar x (Address.ofHasher h)
 
 def mkFVar (x: Name) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EFVAR])
   h := h.update x.getHash.hash
-  .fvar x ⟨(h.finalizeWithLength 32).val⟩
+  .fvar x (Address.ofHasher h)
 
 def mkMVar (x: Name) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EMVAR])
   h := h.update x.getHash.hash
-  .mvar x ⟨(h.finalizeWithLength 32).val⟩
+  .mvar x (Address.ofHasher h)
 
 def mkSort (x: Level) : Expr := Id.run <| do
   let h := Hasher.init ()
   let h := h.update (ByteArray.mk #[TAG_ESORT])
   let h := h.update x.getHash.hash
-  .sort x ⟨(h.finalizeWithLength 32).val⟩
+  .sort x (Address.ofHasher h)
 
 def mkConst (x: Name) (us: Array Level): Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -342,14 +342,14 @@ def mkConst (x: Name) (us: Array Level): Expr := Id.run <| do
   h := h.update x.getHash.hash
   for u in us do
     h := h.update u.getHash.hash
-  .const x us ⟨(h.finalizeWithLength 32).val⟩
+  .const x us (Address.ofHasher h)
 
 def mkApp (f a : Expr) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EAPP])
   h := h.update f.getHash.hash
   h := h.update a.getHash.hash
-  .app f a ⟨(h.finalizeWithLength 32).val⟩
+  .app f a (Address.ofHasher h)
 
 def mkLam (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -358,7 +358,7 @@ def mkLam (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
   h := h.update t.getHash.hash
   h := h.update b.getHash.hash
   h := h.update (ByteArray.mk #[binderInfoTag bi])
-  .lam n t b bi ⟨(h.finalizeWithLength 32).val⟩
+  .lam n t b bi (Address.ofHasher h)
 
 def mkForallE (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -367,7 +367,7 @@ def mkForallE (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <|
   h := h.update t.getHash.hash
   h := h.update b.getHash.hash
   h := h.update (ByteArray.mk #[binderInfoTag bi])
-  .forallE n t b bi ⟨(h.finalizeWithLength 32).val⟩
+  .forallE n t b bi (Address.ofHasher h)
 
 def mkLetE (n : Name) (t v b : Expr) (nd : Bool) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -377,7 +377,7 @@ def mkLetE (n : Name) (t v b : Expr) (nd : Bool) : Expr := Id.run <| do
   h := h.update v.getHash.hash
   h := h.update b.getHash.hash
   h := h.update (ByteArray.mk #[if nd then 1 else 0])
-  .letE n t v b nd ⟨(h.finalizeWithLength 32).val⟩
+  .letE n t v b nd (Address.ofHasher h)
 
 def mkLit (l : Lean.Literal) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -388,7 +388,7 @@ def mkLit (l : Lean.Literal) : Expr := Id.run <| do
   | .strVal s =>
     h := h.update (ByteArray.mk #[TAG_ESTR])
     h := h.update s.toUTF8
-  .lit l ⟨(h.finalizeWithLength 32).val⟩
+  .lit l (Address.ofHasher h)
 
 def mkProj (n : Name) (i : Nat) (e : Expr) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -396,7 +396,7 @@ def mkProj (n : Name) (i : Nat) (e : Expr) : Expr := Id.run <| do
   h := h.update n.getHash.hash
   h := h.update ⟨i.toBytesLE⟩
   h := h.update e.getHash.hash
-  .proj n i e ⟨(h.finalizeWithLength 32).val⟩
+  .proj n i e (Address.ofHasher h)
 
 def hashInt (h : Hasher) (i : Int) : Hasher := Id.run do
   let mut h := h.update (ByteArray.mk #[TAG_MINT])
@@ -510,7 +510,7 @@ def mkMData (data : Array (Name × DataValue)) (e : Expr) : Expr := Id.run do
     h := h.update name.getHash.hash
     h := hashDataValue h dv
   h := h.update e.getHash.hash
-  .mdata data e ⟨(h.finalizeWithLength 32).val⟩
+  .mdata data e (Address.ofHasher h)
 
 instance : Inhabited Expr where
   default := mkBVar 0
