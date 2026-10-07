@@ -69,8 +69,14 @@ field, every such decline is recorded with the failing condition as its
 cause (`O11a.declineCause?`, M1-h): a parametric, indexed or
 universe-polymorphic cross target, a reflexive or indexed cross field, an
 instance or size function not of Lean's shape, a recursor telescope that is
-not the occurrence's, a minor that is not a λ over its fields and IHs, and
-(below) an absent instance. An occurrence of a split block's recursor that
+not the occurrence's, a minor that is not a λ over its fields and IHs,
+"the constructor and minor type of minor `j` cannot be read" (the split-minor
+helpers O2 shares with the surgery, `Ix.AuxGen.sourceCtorForMinor`,
+`sourceMinorType`, `peelBinders`, cannot place minor `j`; measured on split
+blocks with an evaporated nested auxiliary, EvapClosure, F2, C4 and their
+twins, where the minor exists but the helpers do not place it: the wording
+says "cannot be read", the cause is the helpers), and (below) an absent
+instance. An occurrence of a split block's recursor that
 is not that recursion (a user's function) is O2's and canonical: nothing is
 recorded.
 
@@ -99,7 +105,10 @@ None on a closure that carries the unit. On an input without
 `T._sizeOf_inst`: the `_sizeOf_N` with the cause above
 (`Tests/Ix/Compile/O11aDecline.lean`: the withheld instance declines with
 the record, the valid neighbour with the instance rewrites).
-Library load: the 7 `Linear.EqCnstr._sizeOf_N`. Evidence: the twins
+Library load: the 7 `Linear.EqCnstr._sizeOf_N` (Lean's
+`Lean.Meta.Tactic.Grind.Arith.Linear`, in the toolchain's `Lean` package: so
+in the Mathlib environment, not in Init+Std, which has no changed inductive
+block). Evidence: the twins
 unit's `o11a` line (the `rfl`), the library twins `Oracle.Lib` Linear family
 (Orig's `_sizeOf` instances equal Twin's with the switch on), the
 `O2Split` fixture's `_sizeOf`.
@@ -347,7 +356,13 @@ input; the cause names every missing instance); otherwise the side condition
 that failed (the cross target has parameters, indices or universe
 parameters; the field is reflexive or has index arguments; the instance or
 its size function does not have Lean's shape; their recursor telescope is
-not the occurrence's; a minor is not a λ over its fields and IHs). A failing
+not the occurrence's; a minor is not a λ over its fields and IHs; "the
+constructor and minor type of minor `j` cannot be read", which is the
+split-minor helpers `sourceCtorForMinor`/`sourceMinorType`/`peelBinders`
+failing to place minor `j`, as on a split block with an evaporated nested
+auxiliary). One occurrence gives one cause; a constant with several
+recorded occurrences keeps the last in the compile's map
+(`CompileEnv.p3NonCanonical`). A failing
 side condition takes precedence over absence (O11a would decline with the
 instances present too).
 
@@ -422,7 +437,15 @@ untouched). Were the argument wrong, the fold would stop with its
 **Bytes.** No component, representative or iteration order of `blocks` or
 `lowLinks` changes; only the ready order of the fold, which the schedule-
 identity gate requires to be immaterial. With the switch off nothing
-reads the new references; the edge is added in both switch states. -/
+reads the new references. **Where the edges are added** (the drivers are not
+uniform, harmlessly, since an edge only orders blocks):
+`Ix.CompileM.compileEnvAux` (sequential, wave) and
+`Ix.CompileM.compileEnvParallelAux` add them under Pass 3 only
+(`prepareSizeOfScheduling`); `Ix.CompileM.compileDecoratedConsts` (so
+`compileLeanInput` and `ix compile-lean`) adds them in both modes, after
+`CondenseM.run`, and then `compileEnvParallelAux` adds them again under
+Pass 3 (the same edges: `addSizeOfEdges` is idempotent). The Rust compiler
+adds them under Pass 3 only. -/
 
 /-- The scheduling edges `(source, target)` of O11a (see the section
 docstring); `refs` is the reference graph the condensation was built from. -/

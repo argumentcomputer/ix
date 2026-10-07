@@ -15,9 +15,18 @@ faithful rewrite and the predicates on them.
   is displayed by its canonical position `i` in its component:
   `rep₀._ix.rec_i`, where `rep₀` is the component's first class
   representative (`ixAuxName`).
-* The image of a Lean auxiliary `a` (Def 3.4, Def 3.5), when it is stored as
-  a constant (a bare or partial occurrence, Q11), is displayed as `a._ix`
-  (`imageName`).
+* The image of a Lean auxiliary `a` (Def 3.4, Def 3.5) is stored under the
+  Lean name `a` itself (decision 3, design document §4.5), so a bare or
+  partial occurrence needs no other name. `imageName` (`a._ix`) is the
+  spelling of the retired "residual image"; no compile emits it (the same
+  spelling is `ixFormName`'s, for a definition that is never an image-kind
+  head).
+* The check of input names runs over the condensation the driver is given
+  (`Ix.CompileM.pass3ReservedInput?`): in `ix compile-lean` that is the
+  grounded condensation, so an ungrounded input name (which is not compiled)
+  is not checked. When several input names are reserved, the message names
+  the first met in the iteration order of `CondensedBlocks.blocks`, not a
+  canonical choice (the Rust compiler names the least by pretty name).
 * The decompile record of a rewritten call site is the metadata key pair
   `_ix.inline` (index of the source occurrence in `metaSharing`) and
   `_ix.inline_meta` (its arena root); the rewrite leaves the placeholder
@@ -124,7 +133,9 @@ def inlineKey : Name := Name.mkStr (Name.mkStr Name.mkAnon ixComponent) "inline"
 /-- `_ix.inline_meta`: the decompile record's arena root. -/
 def inlineMetaKey : Name := Name.mkStr (Name.mkStr Name.mkAnon ixComponent) "inline_meta"
 
-/-- The display name of a stored image of the Lean auxiliary `a`: `a._ix`. -/
+/-- `a._ix`: the retired display name of a separately stored image of the
+Lean auxiliary `a` (images are stored under `a` itself; unused by the
+compile). -/
 def imageName (a : Name) : Name := Name.mkStr a ixComponent
 
 /-- The canonical form of the Lean constant `c` written by a proof-justified

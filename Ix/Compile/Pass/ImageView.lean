@@ -24,17 +24,16 @@ names (`Naming.default`: the canonical inductive of a class is `rep._ix`, its
 constructors `rep._ix.c`, its recursor `rep._ix.rec`, the component's nested
 recursors `rep₀._ix.rec_i` by canonical position). The canonical inductives
 and constructors are Lean's representatives renamed (`ImageSpec.ofBlock`);
-the recursors are Pass 2's, renamed. After generation every view name is
-mapped back to the name that resolves to the same constant in `E`:
-`rep._ix ↦ rep` and `rep._ix.c ↦ rep.c` (the canonical inductive of a class
-is the representative's projection), `rep._ix.rec ↦ rep.rec` and
-`rep₀._ix.rec_i ↦ all₀.rec_j` (the Lean name the name map assigns to the
-class's Ix recursor, `j` the least source index of canonical position `i`).
-The terms therefore name Pass 2's recursors exactly as the switch-off output
-does; the `_ix` display names (D14, `Ix.Compile.Pass.Names.ixAuxName`) are
-side-car entries for the same constants. (Referencing the display names in
-terms would need them in the aux blocks' `Muts` member lists, which the
-kernels' meta ingress materialises names from.)
+the recursors are Pass 2's, renamed. After generation the inductives and
+constructors are mapped back to the names that resolve to the same constants
+in `E` (`back`): `rep._ix ↦ rep` and `rep._ix.c ↦ rep.c` (the canonical
+inductive of a class is the representative's projection). The recursors are
+**not** mapped back: `rep._ix.rec` and `rep₀._ix.rec_i` are exactly the `_ix`
+display names under which a changed block's Pass 2 recursors are registered
+(D14, `Ix.Compile.Pass.Names.ixAuxName`, design document §4.8, A3M decision
+3; the aux blocks' `Muts` member lists carry the same display names), so the
+image terms reference Pass 2's recursors by their `_ix` display names, never
+by Lean's recursor names (which denote the images themselves).
 
 ## Faithfulness
 `img(r)` has Lean's type `tr_N(type r)` and its computation rules hold by
@@ -69,8 +68,9 @@ open Ix (Name Level Expr ConstantInfo InductiveVal ConstructorVal RecursorVal)
 open Ix.Compile.Canon (BlockCanon ComponentCanon canonicalizeConstNames)
 open Ix.Compile.Image (ImageSpec Naming Image)
 
-/-- Placeholder names of the view (Naming.default for the canonical
-inductives, `a._ix` for images). -/
+/-- Placeholder names of the view (`rep._ix` for the canonical inductives, as
+`Naming.default`; an image keeps the Lean name of its auxiliary, which
+denotes it, decision 3). -/
 def viewNaming : Naming where
   ind _ _ rep := Name.mkStr rep ixComponent
   img r := r
@@ -88,7 +88,9 @@ structure BlockView where
   spec : ImageSpec
   /-- The canonical inductives, constructors and recursors under view names. -/
   canonConsts : Std.HashMap Name ConstantInfo
-  /-- View name ↦ `E` name (`rep._ix ↦ rep`, `rep._ix.c ↦ rep.c`). -/
+  /-- View name ↦ `E` name, for the inductives and constructors only
+  (`rep._ix ↦ rep`, `rep._ix.c ↦ rep.c`); recursor view names are the `_ix`
+  display names and stay. -/
   back : Std.HashMap Name Name
 
 def BlockView.const? (inp : ViewInput) (v : BlockView) (n : Name) : Option ConstantInfo :=
