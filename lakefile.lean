@@ -589,7 +589,12 @@ script "check-cert" (args) := do
       ("strong-changed", #[exe, "strong-changed", s!"{outDir}/changed.ixe", outDir]),
       -- one global S cone (M7 WP-F) on both fixtures, beside the cover; the fast decisions
       -- against their list and tree references; a forged route refuses the global cone
-      ("strong-global", #[exe, "strong-global", s!"{outDir}/compiled.ixe", s!"{outDir}/changed.ixe", outDir])] ++
+      ("strong-global", #[exe, "strong-global", s!"{outDir}/compiled.ixe", s!"{outDir}/changed.ixe", outDir]),
+      -- package C: the W+ support folded with the artifact again (the previous fold) gives the
+      -- same verdicts as the default, the fold continued from the admission
+      ("certify-changed-refold", #[".lake/build/bin/compile-certify", "--modules",
+        "Tests.Ix.CompileCert.ChangedDefs", s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed-refold",
+        "--refold"])] ++
     mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
   for (name, checkArgs) in checks do
     let out ← IO.Process.output {

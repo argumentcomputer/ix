@@ -142,7 +142,8 @@ def inputOf (b : Built) (source : Source) : Input :=
 `checkIndexed'`), with the pre-pass's routes and diagnoses. -/
 def decideW (env : Lean.Environment) (b : Built) (input : Input) (images : Std.HashSet Lean.Name)
     (artifact : AdmittedArtifact input.toArtifactInput) (extraSupport : Array _root_.Ix.Kernel.Declaration := #[])
-    (rowBudget : Lean.Name → String → Nat := fun _ _ => defaultRowBudget) :
+    (rowBudget : Lean.Name → String → Nat := fun _ _ => defaultRowBudget)
+    (staged : Option (StagedAdmission artifact) := none) :
     IO (PrePass × Except Decline' Unit) := do
   let quiet : String → IO Unit := fun _ => pure ()
   let pre ← wPrePass env b.entries input images artifact (queriesFor env b.refs) 4 quiet (rowBudget := rowBudget)
@@ -156,7 +157,7 @@ def decideW (env : Lean.Environment) (b : Built) (input : Input) (images : Std.H
   let hints := buildHintsW input sh entryPos (queriesFor env b.refs) 4
     (fun n => rowsAtWith b.entries entryPos sh.reader extraRows sh.entries.size n ++
       ((List.range extraSupport.size).map (sh.entries.size + sup.size + ·)))
-  return (pre, (checkIndexed' input imagesFn artifact support hints).map fun _ => ())
+  return (pre, (checkIndexed' input imagesFn artifact support hints staged).map fun _ => ())
 
 def declineLabel : Decline' → String
   | .fold (.checking e position) => s!"certified fold refused at {position}: {(Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2.take 120}"

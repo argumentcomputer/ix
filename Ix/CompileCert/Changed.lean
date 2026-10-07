@@ -1,5 +1,6 @@
 import Ix.CompileCert.Indexed
 import Ix.CompileCert.AnnotationTrace
+import Ix.CompileCert.FoldCompose
 
 /-! # W+: changed constants (M5)
 
@@ -1061,6 +1062,28 @@ def foldSupport {input : ArtifactInput} (artifact : AdmittedArtifact input) (sup
       | .error (error, position) => .error (.checking error position)
       | .ok env => .ok ⟨pins, hp, env, hc⟩
 
+/-- `foldSupport` **continuing the admission's fold** (package C, C-fold): phase A
+over the support from the admission's accumulator and memo state, phase B over
+the support's own records; the artifact is not installed or checked again. The
+same `FoldedSupport`: its `checked` field is the fold over `base ++ support`, by
+`checkDecls_append_of_phases` (`Ix/CompileCert/FoldCompose.lean`). A refusal has
+the position the fold over `base ++ support` gives it; the empty support is
+`foldSupport`'s. -/
+def foldSupportStaged {input : ArtifactInput} (artifact : AdmittedArtifact input)
+    (staged : StagedAdmission artifact) (support : Array Kernel.Declaration) :
+    Except FoldError
+      (FoldedSupport (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations) support) :=
+  if support.isEmpty then foldSupport artifact support else
+  match hb : (support.toList.foldlM (Kernel.Cached.annotDeclStep .verified staged.pins)
+      staged.installed) staged.state with
+  | .error (error, position) => .error (.checking error position)
+  | .ok (pb, _) =>
+    match hc : Kernel.Cached.checkPendingList .verified pb.2.1
+        (pb.2.2.toList.drop staged.installed.2.2.size) with
+    | .error (error, position) => .error (.checking error position)
+    | .ok () => .ok ⟨staged.pins, staged.pins_checked, pb.2.1.env,
+        checkDecls_append_of_phases staged.run staged.checked staged.bounded hb hc⟩
+
 /-! ## The association -/
 
 /-- W+ for one input: the admitted artifact, the support folded on top of it,
@@ -1128,10 +1151,13 @@ def SharedW.declCheck' (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) 
   (definitionGroupImage cy ci).isSome
 
 /-- W+ decided by the indexed procedures; the support is folded last, once,
-only after every other check passed. -/
+only after every other check passed: on top of the admitted artifact
+(`foldSupport`), or, given the admission's staged fold, continuing it
+(`foldSupportStaged`, package C); the association is the same either way. -/
 def checkIndexed' (input : Input) (images : Lean.Name → Bool)
     (artifact : AdmittedArtifact input.toArtifactInput) (support : Array Kernel.Declaration)
-    (hints : HintsW) : Except Decline' (AcceptedAssociation' input images support) :=
+    (hints : HintsW) (staged : Option (StagedAdmission artifact) := none) :
+    Except Decline' (AcceptedAssociation' input images support) :=
   if hd : domainFast hints.workers input.source input.roots input.map = true then
     let sh := SharedW.ofArtifact input images artifact support
     if hm : allPar (sh.entryCheck hints.toHints) hints.workers input.map = true then
@@ -1140,7 +1166,10 @@ def checkIndexed' (input : Input) (images : Lean.Name → Bool)
           let blocks := addressSet (input.map.map (·.target.block))
           let targets := Std.HashSet.ofList (input.map.map MapEntry.target)
           if hg : artifact.constants.all (fun row => coveredFast blocks targets row.1 row.2) = true then
-            match foldSupport artifact support with
+            let folding := match staged with
+              | some st => foldSupportStaged artifact st support
+              | none => foldSupport artifact support
+            match folding with
             | .error e => .error (.fold e)
             | .ok folded =>
               have domain := domainFast_sound hd
@@ -1189,7 +1218,8 @@ def checkIndexed' (input : Input) (images : Lean.Name → Bool)
     else .error (.base .mapMismatch)
   else .error (.base .sourceDomain)
 
-/-- **What a W+ Certified verdict means.** Success of `checkIndexed'` gives:
+/-- **What a W+ Certified verdict means.** Success of `checkIndexed'` (with or without the
+admission's staged fold) gives:
 the exact record bytes are admitted, the support is checked by the certified
 fold on top of them, the source is closed and the map covers it and agrees with
 the reader (image claims included), every source declaration matches directly,
@@ -1198,8 +1228,9 @@ inductive's block matches whole or as a changed block, and the touched
 definition groups are covered. -/
 theorem checkIndexed'_sound {input : Input} {images : Lean.Name → Bool}
     {artifact : AdmittedArtifact input.toArtifactInput} {support : Array Kernel.Declaration}
-    {hints : HintsW} {accepted : AcceptedAssociation' input images support}
-    (_h : checkIndexed' input images artifact support hints = .ok accepted) :
+    {hints : HintsW} {staged : Option (StagedAdmission artifact)}
+    {accepted : AcceptedAssociation' input images support}
+    (_h : checkIndexed' input images artifact support hints staged = .ok accepted) :
     checkBytes input.limits input.records input.blobs input.hint = .ok accepted.env ∧
     Kernel.Cached.checkDecls .verified accepted.folded.pins
       (Kernel.Frontend.preparePrelude accepted.prelude.ix accepted.declarations ++ support) =

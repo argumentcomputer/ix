@@ -7,7 +7,7 @@ open Ix.CompileCert.Certifier
 
 def usage : String :=
   "usage: compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
-  [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--explain <name>]* [--receipts-only] \
+  [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--refold] [--explain <name>]* [--receipts-only] \
   [--strong | --strong-only [--strong-roots <A,B,...>] [--strong-every <k>] [--strong-max-cone <n>] [--strong-tasks <n>] \
   [--strong-plan] [--strong-global] [--explain-global]]\n  writes <out-prefix>.tsv (one row per constant), \
   <out-prefix>.classes.tsv, <out-prefix>.proj.tsv, <out-prefix>.receipts.tsv (projection lowering receipts), \
@@ -15,7 +15,8 @@ def usage : String :=
   constant), <out-prefix>.sizes.tsv (distinct Expr objects and tree size of every declaration with at least 4096 \
   objects) and, when W+ proposes rows, <out-prefix>.rows.tsv (each row's pre-screen time and verdict); \
   --budget: the size budget of one declaration (distinct Expr objects of its type, value and rules, default 2^28); \
-  --row-budget: the pre-screen time budget of one W+ row (ms, default 60000; 0 checks no row); exit 0 iff something is \
+  --row-budget: the pre-screen time budget of one W+ row (ms, default 60000; 0 checks no row); --refold: fold the W+ \
+  support with the artifact again instead of continuing the admission's fold (measurement); exit 0 iff something is \
   certified, nothing is rejected and every raw projection on a non-direct structure-like has a receipt;\n  --receipts-only: the projection measurement and receipts without the W check (exit 0 iff no refusal);\n  \
   --strong: after W, the strong-model endpoint S per cone (every W-certified constant, or the given roots, or every k-th \
   plus the projection functions); writes <out-prefix>.strong.tsv, .strong.cones.tsv, .strong.classes.tsv, .strong.json; \
@@ -39,6 +40,7 @@ where
     | "--row-budget" :: n :: rest => n.toNat?.bind fun b => options { cfg with rowBudget := b } rest
     | "--explain" :: n :: rest => options { cfg with explain := cfg.explain.push n.toName } rest
     | "--receipts-only" :: rest => options { cfg with receiptsOnly := true } rest
+    | "--refold" :: rest => options { cfg with refold := true } rest
     | "--strong" :: rest => options { cfg with strong := true } rest
     | "--strong-only" :: rest => options { cfg with strong := true, strongOnly := true } rest
     | "--strong-plan" :: rest => options { cfg with strong := true, strongPlan := true } rest

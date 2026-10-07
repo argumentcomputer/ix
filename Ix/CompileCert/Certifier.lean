@@ -667,7 +667,8 @@ row `@Eq.{ℓ} T c value`, `ℓ` the universe the certified checker infers for `
 (D14 keeps `_ix` components out
 of Lean names, the fold checks freshness), **pre-screened** one by one with the
 stepping checker over the admitted environment, and folded by the certified
-checker once (`foldSupport`, inside `checkIndexed'`). A definition whose `rfl`
+checker once, inside `checkIndexed'` (`foldSupportStaged`: the admission's fold continued,
+package C; `foldSupport` with `--refold`). A definition whose `rfl`
 row the checker refuses falls back to Lean's `c.eq_def` (a row of the artifact
 under the map). Routes (`direct`, `raw`, `theorem`, `equations:rfl`,
 `equations:eq_def`, `changed-block`) recompute the same Boolean checks the
@@ -1380,6 +1381,9 @@ structure Config where
   strongMaxCone : Nat := 20000
   /-- Cones decided at once (one task each). -/
   strongTasks : Nat := 32
+  /-- Fold the W+ support with the artifact again (`foldSupport`) instead of continuing the
+  admission's fold (`foldSupportStaged`, package C); for measurement and the control. -/
+  refold : Bool := false
   /-- Skip the global W check (probing): every constant the reader keeps is offered to S. -/
   strongOnly : Bool := false
   /-- Plan the S cones without running any (`Strong.runStrong`): the cover's cones as if each
@@ -1593,8 +1597,15 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   let ai : ArtifactInput := { limits, records := recordBytes, blobs, hint := readerHints.lookup }
   -- on a dedicated thread: a fresh allocator heap, as the environment check runs its fold
   -- (`CheckIxeFold`); the main heap is fragmented by the Lean environment and the store
-  let admitted := (Task.spawn (prio := .dedicated) fun _ => prepareArtifact ai).get
-  let artifact ← match admitted with
+  -- package C (C-fold): the admission keeps its fold's phase A (`prepareArtifactStaged`), so
+  -- the final W+ call folds the support on top of it (`foldSupportStaged`) instead of folding
+  -- the artifact again; `--refold` keeps the previous fold (measurement, control)
+  let refold := cfg.refold
+  let admitted := (Task.spawn (prio := .dedicated) fun _ =>
+    if refold then
+      (prepareArtifact ai).map fun a => (⟨a, none⟩ : (a : AdmittedArtifact ai) × Option (StagedAdmission a))
+    else prepareArtifactStaged ai).get
+  let ⟨artifact, staged⟩ ← match admitted with
     | .ok a => pure a
     | .error e =>
       let msg := match e with
@@ -1607,7 +1618,7 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
       IO.eprintln s!"[certify] admission of the selected records failed: {msg}"
       return (1, none)
   let t4 ← IO.monoMsNow
-  say s!"[certify] admission (checkBytes) of {recordBytes.length} records: \
+  say s!"[certify] admission (checkBytes{if staged.isSome then ", staged" else ""}) of {recordBytes.length} records: \
     {artifact.declarations.size} declarations; {t4 - t3} ms"
   let queriesOf := queriesFor env refs
   let makeInput (members : Array Lean.Name) : Input :=
@@ -1690,7 +1701,7 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
         let hintsF := buildHintsW input shF entryPos queriesOf cfg.workers
           (rowsAtWith entries entryPos shF.reader rowsFinal shF.entries.size)
         let decision := (Task.spawn (prio := .dedicated) fun _ =>
-          checkIndexed' input imagesFn artifact sup hintsF).get
+          checkIndexed' input imagesFn artifact sup hintsF staged).get
         match decision with
         | .ok _ =>
           -- `checkIndexed'_sound`: every member of `input.source` is certified with W+'s meaning

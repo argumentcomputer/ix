@@ -48,6 +48,7 @@ def main (args : List String) : IO Unit := do
   | ["strong-indexed"] => Tests.Ix.CompileCert.StrongIndexed.run
   | ["strong-global", compiled, changed, dir] => Tests.Ix.CompileCert.StrongGlobal.run compiled changed dir
   | ["wplus-cost"] => Tests.Ix.CompileCert.WPlusCost.run
+  | "wplus-cost-measure" :: args => Tests.Ix.CompileCert.WPlusCost.measure args
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>
     Tests.Ix.CompileCert.Direct.run

@@ -88,7 +88,12 @@ with theorem rows checked by the certified checker and no new trust:
 
 The rows are either the artifact's own (a carried `eq_def`) or **support** declarations the
 certifier builds (`<name>._ix_eq.<k>`, `<name>._ix_type`), pre-screened one by one and folded once
-by the certified checker on top of the admitted declarations (`FoldedSupport`). `checkIndexed'`
+by the certified checker on top of the admitted declarations (`FoldedSupport`). The admission keeps
+its fold's install phase (`prepareArtifactStaged`) and the support is installed and checked by
+continuing it (`foldSupportStaged`): `checkDecls_append_of_phases` (`Ix/CompileCert/FoldCompose.lean`,
+from `IxC`'s own lemmas on its fold) proves that this is the certified fold over the admitted
+declarations and the support, so the artifact is not checked a second time (`--refold` folds both
+again, the earlier behaviour). `checkIndexed'`
 decides `AcceptedAssociation'` (four-way correspondence: direct ∨ raw ∨ theorem ∨ equations; whole
 or changed blocks) and `checkIndexed'_sound` states it; `AcceptedAssociation'.model_equations` and
 `model_statement` give the semantic reading: every row used is installed by the fold and, in every
@@ -189,6 +194,9 @@ rows are pre-screened one by one with the stepping checker under a time budget p
 constant that would pass with its rows over the budget taken as accepted (those rows are all it
 lacks) is unsupported (`changed constant: a type or equation row over the pre-screen time budget`, a
 resource limit like the size budget); a definite refusal of another of its rows keeps it rejected.
+The checker's pure code cannot be interrupted: a row over its budget keeps its core until the
+command exits, right after its report.
+
 S for changed constants is not decided yet (M7): S decides only the constants W certifies by the
 `direct`/`raw` routes. A constant certified by a W+ route (a theorem or equation row, a type row, a
 changed block) is **S-unsupported** (`certified by a W+ route; S for changed constants is M7`), is
@@ -200,7 +208,7 @@ S-rejected for it.
 ```
 lake build compile-certify
 compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
-  [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--explain <name>]* [--receipts-only] \
+  [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--refold] [--explain <name>]* [--receipts-only] \
   [--strong | --strong-only] [--strong-roots <A,B,...>] [--strong-every <k>] \
   [--strong-max-cone <n>] [--strong-tasks <n>] [--strong-plan] [--strong-global] [--explain-global]
 ```

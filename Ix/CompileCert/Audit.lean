@@ -1256,3 +1256,31 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m7fRoots Ix.Co
 run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.m7fDecisionRoots Ix.CompileCert.Audit.hashEqualities
 
 run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.m7fDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+/-! ## Package C (PLAN-L2a, the costs of W+): the certified fold continued
+
+The roots added by package C (`FoldCompose.lean`, `Changed.lean`): the fold over
+artifact + support composed from the admission's two phases and the support's
+(`checkDecls_append_of_phases`, from `IxC`'s `InstallRun`, `installRun_trace`,
+`mkFEnv_find?_visibleBelow` and the congruence lemmas of `KnotCongr`), the staged
+admission and the staged support fold. Audited on their own line, against the same
+allowed set, so every line above is unchanged; the two new decisions are also checked
+for hash-cached equality, as executed. -/
+
+namespace Ix.CompileCert.Audit
+
+def cRoots : Array Lean.Name :=
+  #[`InstallRun.append, `annotValC_congr', `checkPending_congr, `prefixTo_of_append,
+    `restrictTo_find?_of_chain, `checkDecls_append_of_phases, `checkPendingList_drop_size,
+    `StagedAdmission, `StagedAdmission.env_eq, `prepareArtifactStaged,
+    `foldSupportStaged].map (`Ix.CompileCert ++ ·)
+
+/-- The decisions package C adds. -/
+def cDecisionRoots : Array Lean.Name :=
+  #[``Ix.CompileCert.prepareArtifactStaged, ``Ix.CompileCert.foldSupportStaged]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.cRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.cDecisionRoots Ix.CompileCert.Audit.hashEqualities
