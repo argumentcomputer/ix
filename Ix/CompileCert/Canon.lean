@@ -14,6 +14,7 @@ import Ix.CompileCert.Canon.Ctx
 import Ix.CompileCert.Canon.Refine
 import Ix.CompileCert.Canon.Round
 import Ix.CompileCert.Canon.Coarsest
+import Ix.CompileCert.Canon.Seed
 
 /-!
 # M7 L1: Pass 1 proved
@@ -33,5 +34,11 @@ stated against the code as it is. The modules:
   preorder;
 * `QSort`, `SccState`, `Scc`, `SccStep`, `SccMain`: `condensation` (Tarjan with an explicit
   call stack) returns the strongly connected components, each node once, in reverse
-  topological order (§2.1, Def 2.1); `SccNames`: `sccsOf` over names.
+  topological order (§2.1, Def 2.1); `SccNames`: `sccsOf` over names;
+* `Sort`, `Group`: the natural merge sort and the adjacent grouping the refinement runs;
+* `Ctx`: the context a partition induces (`MutConst.ctx`);
+* `Refine`, `Round`, `Coarsest`: the refinement is a pure function of its input and returns the
+  coarsest consistent partition (Def 2.2, §3.3 (b));
+* `Seed`: under the compiler's name-hash seed, the refinement does not depend on the order of
+  its input (§3.3 (c)).
 -/
