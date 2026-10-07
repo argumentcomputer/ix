@@ -30,9 +30,15 @@
   **M.3 Classes and order.** `Classes.sortClasses` over the specifications
   as definitions, with clique members as the in-block names, so recursive
   calls compare by class index. The recursion method is the same for every
-  member of a clique; the pinned position enters as a header key: the value
-  compared is `(recArgPos) value`, a literal applied to the body, so the
-  position is compared first and strongly.
+  member of a clique; the pinned choice compares **last** (owner, Q8,
+  2026-10-03; design document §2.7): the value compared is `value
+  (recArgPos)`, the body applied to the literal, so the position is compared
+  after the type and the whole value, and a pinned choice that differs between
+  presentations changes the order only when everything else ties. (Before
+  2026-10-07 the literal was the function, `(recArgPos) value`, so the
+  position was compared before the value, against Q8. Only the census sets
+  `recArgPos`; the compiler's clique order, `Clique.cliqueOrder`, builds its
+  members with `recArgPos := none`, so no compiled byte depended on it.)
 -/
 module
 public import Ix.Environment
@@ -81,10 +87,12 @@ structure Clique where
 
 def Clique.names (c : Clique) : Array Name := c.members.map (·.name)
 
-/-- The specification as the definition the comparator sorts. -/
+/-- The specification as the definition the comparator sorts: the value
+applied to the pinned choice, which the comparator reaches after the value
+(Q8, pinned choices compare last). -/
 def CliqueMember.toMutConst (m : CliqueMember) : MutConst :=
   let value := match m.recArgPos with
-    | some p => Expr.mkApp (Expr.mkLit (.natVal p)) m.value
+    | some p => Expr.mkApp m.value (Expr.mkLit (.natVal p))
     | none => m.value
   .defn { name := m.name, levelParams := m.levelParams, type := m.type, kind := .defn,
           value, hints := .opaque, safety := .safe, all := #[] }

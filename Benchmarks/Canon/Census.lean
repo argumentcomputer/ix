@@ -29,6 +29,7 @@ import Ix.Meta
 import Ix.CanonM
 import Ix.Ixon
 import Ix.Compile.Canon
+import Ix.Compile.Clique.Basic
 import Lean.Elab.PreDefinition.Structural.Eqns
 import Lean.Elab.PreDefinition.WF.Eqns
 import Lean.Elab.PreDefinition.PartialFixpoint.Eqns
@@ -485,6 +486,9 @@ def main (args : List String) : IO UInt32 := do
   let mut cliqueMovesK := 0
   let mut cliqueMovesU := 0
   let mut cliqueSweepFail : Array String := #[]
+  let mut pinnedCould := 0
+  let mut pinnedChecked := 0
+  let mut pinnedMoves : Array String := #[]
   for cl in cliques do
     let cs := cl.members.toList.map (·.toMutConst)
     let setsOf := fun (r : Rules) => match sortClasses r env.addr? cs with
@@ -515,6 +519,30 @@ def main (args : List String) : IO UInt32 := do
     let (a, b, c, d, e) := cliqueRows.getD cl.kind.name (0, 0, 0, 0, 0)
     cliqueRows := cliqueRows.insert cl.kind.name
       (a + 1, if several then b + 1 else b, if chT then c + 1 else c, if chA then d + 1 else d, e)
+    -- Q8 (pinned choices compare last): where the pinned position could
+    -- decide (two members of α-equal types with different `recArgPos`), and
+    -- whether the classes and order differ from comparing it first (the rule
+    -- before 2026-10-07)
+    if cl.members.any (·.recArgPos.isSome) then
+      let ms := cl.members.toList
+      let could := ms.any fun m => ms.any fun m' =>
+        m.name != m'.name && m.recArgPos != m'.recArgPos &&
+          Ix.Compile.Clique.alphaEq (Ix.Compile.Clique.stripAllMdata m.type)
+            (Ix.Compile.Clique.stripAllMdata m'.type)
+      if could then pinnedCould := pinnedCould + 1
+      let first : List Ix.MutConst := ms.map fun m =>
+        let value := match m.recArgPos with
+          | some p => Ix.Expr.mkApp (Ix.Expr.mkLit (.natVal p)) m.value
+          | none => m.value
+        .defn { name := m.name, levelParams := m.levelParams, type := m.type, kind := .defn,
+                value, hints := .opaque, safety := .safe, all := #[] }
+      match cliqueClasses Rules.phaseA env.addr? cl, sortClasses Rules.phaseA env.addr? first with
+      | .ok (last, _), .ok (fst, _) =>
+        pinnedChecked := pinnedChecked + 1
+        if classNames fst != last then
+          pinnedMoves := pinnedMoves.push s!"{cl.names.map namePretty}: pinned first \
+            {(classNames fst).map (·.map namePretty)}, last {last.map (·.map namePretty)}"
+      | _, _ => pure ()
 
   -- output
   let p := fun (s : String) => IO.println s
@@ -585,6 +613,11 @@ def main (args : List String) : IO UInt32 := do
   p s!"Clique order moves against today: `(k₀, k₁)` alone {cliqueMovesK}, `canonUniv` alone {cliqueMovesU}; \
     seed sweep differences {cliqueSweepFail.size} (of {cliques.size} specified cliques)."
   for l in cliqueSweepFail.toList.take 20 do p s!"- clique seed sweep: {l}"
+  p ""
+  p s!"Q8 (pinned choices compare last, phaseA): {pinnedChecked} cliques with a pinned choice; \
+    {pinnedCould} where it could decide (two members of α-equal types, different `recArgPos`); \
+    {pinnedMoves.size} whose classes or order differ from comparing it first."
+  for l in pinnedMoves.toList.take 20 do p s!"- Q8 moves: {l}"
   p ""
   for l in cliqueLines do p s!"- {l}"
   if let some path := tsv? then

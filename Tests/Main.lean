@@ -108,6 +108,7 @@ import Tests.Ix.EnvBody
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
 import Tests.Ix.CliFlags
+import Tests.Ix.Compile.CanonClique
 import Tests.Ix.CatalogDedup
 import Tests.Ix.CompileDeterminism
 import Tests.Ix.CompileFidelity
@@ -140,6 +141,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("canon", [Tests.CanonM.suite]),
   -- long flags parse under the names their commands read (`Tests/Ix/CliFlags.lean`)
   ("cli-flags", Tests.Ix.CliFlags.suite),
+  -- the clique order's pinned choice compares last, Q8 (`Tests/Ix/Compile/CanonClique.lean`)
+  ("canon-clique", Tests.Ix.Compile.CanonClique.suite),
   ("keccak", Tests.Keccak.suite),
   ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
   ("exact-sharing-ffi", Tests.SharingExactFFI.suite),
