@@ -6,6 +6,7 @@ import Ix.CompileCert.Indexed
 import Ix.CompileCert.Canon
 import Ix.CompileCert.Changed
 import Ix.CompileCert.Conv
+import Ix.CompileCert.Bridge
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -1363,3 +1364,49 @@ def vRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.vRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! The roots added by M7 X2 (`Ix/CompileCert/Bridge/**`): the bridge from the compiler's erased
+terms to the reader's `Kernel.Expr` (totality, injectivity on erased content, commutation with the
+de Bruijn operations, the skeleton relation of annotated terms), the translation lemma to the
+lane's export, the per-compile emission check, the public reading under lifting, substitution,
+lowering and universe instantiation, and conversion soundness rule by rule (semantic equality and
+its congruences, β, η, δ, installed theorems, justified conversions). Audited separately, against
+the same allowed set, so every line above is unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def x2Roots : Array Lean.Name :=
+  #[-- the bridge
+    `never, `optMap, `optMap_nil, `optMap_cons_some, `optMap_cons_inv, `optMap_isSome_iff,
+    `optMap_length, `optMap_inj, `bridgeLit, `app2, `app3, `app2_inv, `app3_inv, `bridgeT,
+    `bridge, `Supported, `bridgeT_isSome_iff, `bridgeT_bvar_inv, `bridgeT_sort_inv,
+    `bridgeT_const_inv, `bridgeT_app_inv, `bridgeT_lam_inv, `bridgeT_pi_inv, `bridgeT_letE_inv,
+    `bridgeT_proj_inv, `Agree, `bridgeLit_injective, `tTag, `kTag, `bridgeT_tag,
+    `bridgeT_mismatch, `bridgeT_agree, `NameInj, `agree_eq, `bridgeT_injective, `bridgeT_lift,
+    `bridgeT_lower, `bridgeT_inst, `bridgeT_appN, `bridgeT_erasePw, `Skel, `skel_of_bridgeT,
+    `erasePw_liftLooseBVars, `erasePw_lowerBVars, `erasePw_instantiate1Lift, `Skel.lift,
+    `Skel.lower, `Skel.inst, `skel_app, `skel_lam, `skel_pi, `skel_proj, `skel_const, `skel_bvar,
+    -- the lane's export, emission
+    `laneN, `laneL, `ixExprE, `NoMData, `ixExprE_eq, `toOption_bind, `optMap_toOption,
+    `ixToKernelE, `bridge_eq_lane, `bridge_eq_ixToKernel, `Emitted, `checkEmitted,
+    `checkEmitted_sound,
+    -- the public reading under the operations
+    `liftEnv, `instEnv, `dropEnv, `lowerEnv, `push_liftEnv, `push_instEnv, `dropEnv_push,
+    `liftEnv_zero_cut, `liftEnv_one_push, `push_lowerEnv, `NoVarIn, `natLit_closed_lift,
+    `natLit_closed_inst, `natLit_closed_lower, `natLit_closed_levels, `strLit_noVarIn,
+    `strLit_closed_lift, `strLit_closed_inst, `strLit_closed_lower, `strLit_closed_levels,
+    `denotes_lift, `denotes_lift_push, `denotes_inst, `denotes_inst0, `denotes_lower, `CvalLocal,
+    `cvalLocal_of_strong, `substFn_map_subst, `regime_substPW, `denotes_levels,
+    -- conversion soundness, rule by rule
+    `SemEq, `SemEq.refl, `SemEq.symm, `SemEq.trans, `SemEq.left, `SemEq.right, `SemEq.value,
+    `SemEq.app, `KForall2, `SemEq.appN, `SemEq.proj, `SemEq.lam, `SemEq.pi, `app_lam_value,
+    `semEq_beta, `lam_dom_of_mem, `semEq_beta_graph, `semEq_eta, `semEq_delta, `semEq_theorem,
+    -- justified conversions
+    `Justified, `Justified.refl, `Justified.symm, `Justified.trans, `Justified.app,
+    `Justified.proj, `Justified.lam, `Justified.pi, `Justified.beta, `Justified.beta_graph,
+    `Justified.eta, `Justified.delta, `Justified.ax, `justified_sound].map
+      (`Ix.CompileCert.Bridge ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.x2Roots Ix.CompileCert.Audit.allowedAxioms
