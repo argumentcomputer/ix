@@ -638,6 +638,12 @@ fn rewrite_canon<'h>(
 /// (`prepareBlock`, with the optimisation passes `optLookup` and the
 /// decline records `declineLookup`), and its canonical constants rewritten
 /// in place (`compileCanon`); `None` when the block references no head.
+///
+/// The early exits (no head in the compile; no head among the members'
+/// constants, found by the iterative `heads_in`) run on the calling thread:
+/// only the rewrite, which recurses on the terms, runs on a thread with a
+/// large stack ([`with_big_stack`]), so a block that references no head
+/// spawns no thread.
 fn prepare_block(
   ctx: &Ctx<'_>,
   all: &NameSet,
@@ -649,7 +655,7 @@ fn prepare_block(
   let mut members: Vec<(Name, ConstantInfo)> = Vec::new();
   let mut used: Vec<Name> = Vec::new();
   let mut sorted: Vec<&Name> = all.iter().collect();
-  sorted.sort_by_key(|n| n.pretty());
+  sorted.sort_by_cached_key(|n| n.pretty());
   for n in sorted {
     // a transported clique member is read from the clique hook's overlay
     // (Lean reads `cenv.env`, which carries it)
@@ -669,6 +675,15 @@ fn prepare_block(
   if used.is_empty() {
     return Ok(None);
   }
+  with_big_stack(|| prepare_block_rewrite(ctx, &members, used)).map(Some)
+}
+
+/// The rewrite of [`prepare_block`], for a block that references a head.
+fn prepare_block_rewrite(
+  ctx: &Ctx<'_>,
+  members: &[(Name, ConstantInfo)],
+  used: Vec<Name>,
+) -> Result<Prepared, String> {
   // Lean rewrites the members in `Set` iteration order; the placeholder
   // indices follow it. Its order is the order of `all` as the scheduler's
   // set holds it; see the report's documentation gap on this point.
@@ -711,22 +726,22 @@ fn prepare_block(
   };
   let rw = {
     let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
-    rewrite_block(&mut lookup, &members, Some(&opt), Some(&decline), false)?
+    rewrite_block(&mut lookup, members, Some(&opt), Some(&decline), false)?
   };
   // the canonical constants (D1): the `_ix` forms where a proof-justified
   // pass fires, the unit passes' (O11b), the helpers the rewrites reference
   let mut queue = rw.canon;
-  queue.extend(unit_passes(ctx, &views, &initial, &members));
+  queue.extend(unit_passes(ctx, &views, &initial, members));
   let canon = {
     let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
     rewrite_canon(&mut lookup, &opt, queue)?
   };
-  Ok(Some(Prepared {
+  Ok(Prepared {
     overlay: rw.overlay.into_iter().collect(),
     sources: rw.sources,
     declines: rw.declines,
     canon,
-  }))
+  })
 }
 
 /// Every member of the block is an image-kind head (`isImageBlock`).
@@ -1107,13 +1122,19 @@ pub fn compile_block(
     return compile_image_block(&ctx, lo, all, kctx);
   }
   // the changed-clique hook (`prepareCliques`): the callers' refusal, the
-  // transported members and the canonical constants they reach
-  let prep = if stt.p3.cliques.is_empty() {
+  // transported members and the canonical constants they reach. The hook
+  // acts only on a block with a member in the clique table or with
+  // references to a clique's encoding (`clique_refs`, the callers' side);
+  // any other block gets the empty preparation on this thread, without the
+  // large-stack thread the planning needs.
+  let refs: Vec<Name> = stt.p3.clique_refs.get(lo).cloned().unwrap_or_default();
+  let prep = if stt.p3.cliques.is_empty()
+    || (refs.is_empty() && !all.iter().any(|n| stt.p3.cliques.contains_key(n)))
+  {
     CliquePrep::default()
   } else {
-    let mut refs: Vec<Name> =
-      stt.p3.clique_refs.get(lo).cloned().unwrap_or_default();
-    refs.sort_by_key(|n| n.pretty());
+    let mut refs = refs;
+    refs.sort_by_cached_key(|n| n.pretty());
     with_big_stack(|| with_hook_env(&ctx, |h| h.prepare(all, &refs)))
       .map_err(invalid)?
   };
@@ -1122,8 +1143,7 @@ pub fn compile_block(
   if !prep.overlay.is_empty() {
     bound.extend(compile_clique_canon(&ctx, &prep)?);
   }
-  let prepared = with_big_stack(|| prepare_block(&ctx, all, &prep.overlay))
-    .map_err(invalid)?;
+  let prepared = prepare_block(&ctx, all, &prep.overlay).map_err(invalid)?;
   cache.p3_overlay = prep.overlay.clone();
   cache.p3_sources = prep.sources.iter().cloned().collect();
   if let Some(p) = prepared {
