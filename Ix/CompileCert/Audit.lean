@@ -1162,3 +1162,95 @@ run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted #[``Ix.CompileCert.Audi
 run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.m5bDecisionRoots Ix.CompileCert.Audit.hashEqualities
 
 run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.executedDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+/-! ## M7 WP-F: the S decisions on indices and the DAG
+
+The roots added by WP-F (`SourceExportFast.lean`, `SourceInstallFast.lean`, the indexed
+normalisation in `SourceNormalization.lean`, `StrongFast.lean`): the indexed and sharing-aware
+decisions of the S path, their equations with the list and tree functions they replace, and the
+`@[csimp]` substitutions that make compiled code run them. Audited separately, against the same
+allowed set, so the frozen line and every earlier root line are unchanged; then the hash-equality
+checks, by definition and as executed, on the substitutes. -/
+
+namespace Ix.CompileCert.Audit
+
+def m7fRoots : Array Lean.Name :=
+  #[-- the source export
+    `sourceIndex, `sourceIndex_get, `sourceIndex_find, `keepNew, `eraseDups_filter_eq_keepNew,
+    `keepNew_append, `keepNew_suffix, `keepNew_covers, `keepNew_absorb, `DepEntry, `DepState, `DepRes,
+    `DepState.init, `depStep, `depSteps, `DepRes.seq, `DepRes.record, `depProbe, `depGo, `depItems,
+    `itemRefs, `sourceTermRefs_items, `depItemsGo, `depsWalkVal, `depsWalk, `depsWalk_eq,
+    `sourceGroupDependenciesP, `sourceGroupDependenciesP_find, `findMember, `sourceGroupDependenciesF,
+    `mapM_map_except, `sourceGroupDependenciesF_eq, `exportSourceInductiveP, `exportSourceInductiveP_find,
+    `buildSourceGroupsP, `buildSourceGroupsP_find, `singletonDeclaration, `buildStepA, `buildSourceGroupsA,
+    `forIn_rep, `buildSourceGroupsA_eq, `buildSourceGroupsF, `buildSourceGroupsF_eq, `coverFast,
+    `coverFast_sound, `validateSourceGroupsF, `validateSourceGroupsF_eq, `exportSourceGroupsF,
+    `exportSourceGroupsF_eq, `exportSourceGroups_eq_fast, `orderF, `foldl_insert_contains,
+    `foldl_groups_contains, `orderF_eq, `orderF_empty, `exportSourceDeclarationsF,
+    `exportSourceDeclarationsF_eq, `exportSourceDeclarations_eq_fast,
+    -- constants and declarations compared on the DAG
+    `exprsBeq, `exprsBeq_iff, `projTableBeq, `projTableBeq_iff, `ciBeq, `ciBeq_iff, `cisBeq, `cisBeq_iff,
+    `ciDecEqShared, `instDecidableEqConstantInfo_eq_shared, `declBeq, `declBeq_iff, `declDecEqShared,
+    `instDecidableEqDeclaration_eq_shared,
+    -- the model proposal, the entry correspondence, the normalisation
+    `exportSourceBlockEvidenceP, `exportSourceBlockEvidenceP_find, `exportSourceBlockEvidenceP_subst,
+    `exportSourceBlockEvidenceF, `exportSourceInductiveP_index, `exportSourceBlockEvidenceF_eq,
+    `proposeSourceModelsP, `proposeSourceModelsP_find, `proposeSourceModelsF, `proposeSourceModelsF_eq,
+    `proposeSourceModels_eq_fast, `directEntryName, `entryIndex, `entryIndex_mem, `entriesFast,
+    `entriesFast_sound, `entriesFastDecidable, `instDecidableSourceEntryCorrespondence_eq_fast,
+    `sourceKernelFind, `sourceKernelIndex, `sourceKernelIndex_find, `proposeSourceProjectionP,
+    `proposeSourceProjectionP_find, `proposeSourceProofP, `proposeSourceProofP_find,
+    `proposeSourceProjectionP_conv, `proposeSourceProofP_conv, `normalizeSourceProjectionsP,
+    `normalizeSourceProjectionsP_find, `normalizeSourceProjectionsP_subst, `normalizeSourceProjectionsF,
+    `normalizeSourceProjectionsF_eq, `normalizeSourceProjections_eq_fast,
+    -- the strong check
+    `envFind, `envFind_eq, `lookupProj, `lookupProj_env, `checkInstalledConstantL, `checkInstalledConstantL_env,
+    `checkInstalledPinsL, `checkInstalledPinsL_env, `checkInstalledProjectionL, `checkInstalledProjectionL_env,
+    `checkInstalledExprL, `checkInstalledExprL_env, `PairEntry, `PairRes, `pairKey, `pairProbe,
+    `pairRecursive, `pairGo, `checkInstalledExprSharedVal, `checkInstalledExprShared,
+    `checkInstalledExprShared_eq, `checkInstalledMemberExprL, `checkInstalledMemberExprL_env,
+    `checkInstalledMemberExprF, `checkInstalledMemberExprF_eq, `checkInstalledMemberExprF_env,
+    `checkInstalledMemberExprsF_env, `checkInstalledFireF_env, `checkInstalledRulesF_env,
+    `checkTelescopesF_env, `checkInstalledTypesF_env, `checkInstalledDefinitionsF_env,
+    `checkInstalledCapabilitiesF_env, `checkInstalledRecursorsF_env, `checkInstalledConstructorsF_env,
+    `checkInstalledEtaAssociationsF_env, `readFrameL, `readFrameL_env, `checkInstalledRuleLevelLinkF_env,
+    `checkInstalledRuleLevelLinksF_env, `checkInstalledTowersF_env,
+    `checkInstalledComparisonAvailabilityF_env, `availability_row, `bothChecks_foldr_true,
+    `availability_of_checks, `checkInstalledAssociationF, `checkInstalledAssociationF_eq,
+    `checkExprLiteralSupport_both, `checkLiteralSupportsF, `checkLiteralSupportsF_eq,
+    `checkAnnotatedAssociationF, `checkAnnotatedAssociationF_eq, `checkInstalledTowersFast,
+    `checkInstalledTowersFast_eq, `checkStrongAssociationF, `checkStrongAssociationF_eq,
+    `mapIndex, `mapIndex_get, `memberNameL, `contextNameL, `contextNameL_find, `semanticNamesFast,
+    `semanticNamesFast_iff, `semanticNamesDecidable, `rowsPreservedFast, `rowsPreservedFast_iff,
+    `rowsPreservedDecidable, `instDecidableInstalledRowsPreserved_eq_fast, `supportFreshFast,
+    `supportFreshFast_sound, `supportFreshDecidable, `instDecidableSupportFresh_eq_fast,
+    `checkAdmittedSupportC, `checkAdmittedSupport_eq_copy, `checkNormalizedArtifactStrongAssociationF,
+    `checkNormalizedArtifactStrongAssociationF_eq, `checkNormalizedArtifactStrongAssociation_eq_fast,
+    `checkInstalledTypes_eq_fast, `checkInstalledDefinitions_eq_fast,
+    `checkInstalledComparisonAvailability_eq_fast, `checkInstalledTowers_eq_fast,
+    `checkInstalledAssociation_eq_fast, `checkTelescopes_eq_fast, `checkInstalledCapabilities_eq_fast,
+    `checkInstalledRecursors_eq_fast, `checkInstalledConstructors_eq_fast,
+    `checkInstalledEtaAssociations_eq_fast, `checkInstalledRuleLevelLinks_eq_fast,
+    `checkTypeLiteralSupport_eq_fast, `checkDefinitionLiteralSupport_eq_fast,
+    `instDecidableSemanticNamesAgree_eq_fast].map (`Ix.CompileCert ++ ·)
+
+/-- The decisions WP-F's substitutions run, named as roots of their own. -/
+def m7fDecisionRoots : Array Lean.Name :=
+  #[`exportSourceDeclarationsF, `exportSourceGroupsF, `proposeSourceModelsF, `entriesFastDecidable,
+    `normalizeSourceProjectionsF, `ciDecEqShared, `declDecEqShared, `checkInstalledAssociationF,
+    `checkStrongAssociationF, `checkNormalizedArtifactStrongAssociationF, `semanticNamesDecidable,
+    `rowsPreservedDecidable, `supportFreshDecidable, `checkAdmittedSupportC,
+    `exportSourceDeclarations_eq_fast, `exportSourceGroups_eq_fast, `proposeSourceModels_eq_fast,
+    `instDecidableSourceEntryCorrespondence_eq_fast, `normalizeSourceProjections_eq_fast,
+    `instDecidableEqConstantInfo_eq_shared, `instDecidableEqDeclaration_eq_shared,
+    `checkNormalizedArtifactStrongAssociation_eq_fast, `checkAdmittedSupport_eq_copy,
+    `instDecidableInstalledRowsPreserved_eq_fast, `instDecidableSupportFresh_eq_fast,
+    `instDecidableSemanticNamesAgree_eq_fast].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m7fRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.m7fDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.m7fDecisionRoots Ix.CompileCert.Audit.hashEqualities

@@ -569,7 +569,7 @@ script "check-cert" (args) := do
   let checks : Array (String × Array String) :=
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
       "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
-      "projection-lowering", "strong", "sharing", "strong-pins",
+      "projection-lowering", "strong", "sharing", "strong-pins", "strong-indexed",
       "compiled", "changed"].map (fun mode => (mode, #[exe, mode])) ++
     #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
       ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
@@ -586,7 +586,10 @@ script "check-cert" (args) := do
         s!"{outDir}/compiled.ixe", s!"{outDir}/certify-strong-plan", "--strong-plan"]),
       ("strong-plan", #[exe, "strong-plan", outDir]),
       -- S over W+: the changed constants S-unsupported, their users S-blocked, a forged route refused
-      ("strong-changed", #[exe, "strong-changed", s!"{outDir}/changed.ixe", outDir])] ++
+      ("strong-changed", #[exe, "strong-changed", s!"{outDir}/changed.ixe", outDir]),
+      -- one global S cone (M7 WP-F) on both fixtures, beside the cover; the fast decisions
+      -- against their list and tree references; a forged route refuses the global cone
+      ("strong-global", #[exe, "strong-global", s!"{outDir}/compiled.ixe", s!"{outDir}/changed.ixe", outDir])] ++
     mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
   for (name, checkArgs) in checks do
     let out ← IO.Process.output {

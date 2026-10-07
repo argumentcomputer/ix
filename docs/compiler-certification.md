@@ -96,10 +96,12 @@ claimed. When nothing is changed the certifier decides the old `checkIndexed`, a
 ### 1.4 Unit of certification
 
 W is decided once over every candidate of a library. S is decided **per cone**: a root, its
-closed dependency cone as the source, and the records that cone reaches, admitted on their own.
-The S checks compare environments whose lookups are lists, so one global S over a library would
-be quadratic in it; per cone the cost is bounded by the cone. A constant is **S-Certified** when
-some accepted cone contains it; the conclusion then holds for every member of that cone.
+closed dependency cone as the source, and the records that cone reaches, admitted on their own. A
+constant is **S-Certified** when some accepted cone contains it; the conclusion then holds for every
+member of that cone. Since M7 WP-F the S decisions run on name indices and on the DAG (§2), so one
+cone may be a whole library: `--strong-global` decides first one **global cone**, every constant W
+certifies by the direct or raw route whose closure stays among them, and leaves to the cover only
+what it did not certify (everything, if it is refused).
 
 The source of a cone may be any closed set of declarations. A cover (S on every W-certified
 constant) decides roots nothing uses whose cones overlap as **one cone whose source is the union
@@ -142,6 +144,19 @@ the lane uses only `propext`, `Classical.choice` and `Quot.sound`, and that no d
 hash-cached equality, both in the decisions' definitions and as executed (following every
 registered `@[csimp]`).
 
+Since M7 WP-F the S decisions run the same way (`Ix/CompileCert/SourceExportFast.lean`,
+`SourceInstallFast.lean`, `StrongFast.lean`, the indexed normalisation in `SourceNormalization.lean`):
+every lookup of the source export, the model proposal, the entry correspondence, the normalisation,
+the name check, the support admission and the strong check goes through a name index (IxC's
+`mkFEnv`, or a hash map built from the list with the first entry of a name winning, as `List.find?`
+does: an equation, no uniqueness assumed); the dependency lists of the export and the strong
+check's expression comparison walk the DAG with memos of the WP-B kind (keyed by addresses,
+confirmed by identity, self-proving entries); `Kernel.ConstantInfo` and `Kernel.Declaration` are
+compared field by field through `Kernel.Expr.beq` after a pointer test; the availability pass is
+skipped when the Boolean checks accept (it is then implied, `availability_of_checks`). Each
+substitute is proved equal to the function it replaces and installed by `@[csimp]`; `StrongCone.sound`
+and every other statement read the original definitions. The trust is the same as WP-B's.
+
 **Executable only (no proof):** which constants are offered to the decisions (record selection,
 the expression-size budget — distinct `Expr` objects per declaration, the work of the DAG walks —,
 the cone choice and budget), the classification of what is not
@@ -180,7 +195,7 @@ lake build compile-certify
 compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
   [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--explain <name>]* [--receipts-only] \
   [--strong | --strong-only] [--strong-roots <A,B,...>] [--strong-every <k>] \
-  [--strong-max-cone <n>] [--strong-tasks <n>] [--strong-plan]
+  [--strong-max-cone <n>] [--strong-tasks <n>] [--strong-plan] [--strong-global] [--explain-global]
 ```
 
 - `--file` elaborates the file as `ix compile` does (`Benchmarks/Compile/CompileInitStd.lean`,
@@ -213,6 +228,11 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
   it writes no S verdict. With `--explain <name>`, the stages of that root's cone are timed one by
   one (input, admission, W, each step of the source installation, the proposal, the support and
   every family of the strong check).
+- `--strong-global` decides one global cone before the cover (§1.4): its members are S-certified by
+  that cone's `StrongCone.sound`; the cover then decides only what it did not certify, and everything
+  if it is refused. Run it with a large stack (`ulimit -s unlimited`): the source normalisation recurses
+  once per declaration. `--explain-global` times the global cone's stages (with `--strong-plan`, no
+  verdict).
 - Exit 0 iff something is certified, nothing is rejected, every raw projection on a non-direct
   structure-like has a receipt, and, with S, something is S-certified and nothing is S-rejected.
 
