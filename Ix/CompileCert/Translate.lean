@@ -420,6 +420,239 @@ theorem exportExprWith_target (cx : TermContext) (source : Lean.Expr) :
   case lit literal => cases literal <;> rfl
   all_goals simp_all [exportExprWith, exportExpr]
 
+/-! ## The sharing-aware export (M5 WP-B)
+
+`exportExprWith` and `exportExpr` walk a `Lean.Expr` as a tree, so a proof that
+is small as a DAG (its subterms shared by pointer) and huge as a tree costs its
+tree size. `exportExprWithShared` computes the same function on the DAG: before
+a node is descended, a memo from node addresses to finished exports is
+consulted. The memo is *verified*, not trusted, in the arrangement of the
+certified kernel's `Kernel.Expr.beqMemo` (`IxC/Kernel/Expr.lean`):
+
+* an entry (`ExportEntry`) is a node, its export, and the proof
+  `exportExprWith levelOf nameOf node = .ok value`, so there is no invariant
+  about the map and no lemma about it;
+* a probe finds a candidate under the node's address (`withPtrAddr`) and
+  confirms it by identity (`withPtrEq`): at runtime the pointer test (the memo
+  holds the stored node, so a stored node at the probed address *is* the probed
+  node); in the pure model, where every address is `0`, the fallback
+  `exportIs`, which decides that the stored value is the export of the probed
+  node, the fact the proof reads. No hash is consulted, neither `Lean.Expr`'s
+  cached hash nor any other: the key is the address and the confirmation is
+  identity;
+* the memo travels behind `Squash`, and every result carries its proof
+  `val = exportExprWith levelOf nameOf e`, so a result is a subsingleton (the
+  side condition of `withPtrAddr`) and `exportExprWithShared_eq` is a
+  projection of the proof.
+
+`@[csimp]` (`exportExprWith_eq_shared`, `exportExpr_eq_shared`) substitutes the
+shared functions for the tree ones in compiled code, as `Kernel.Expr.beq` is
+substituted by `beqMemo`: every compiled caller below (`exportSourceExpr`,
+`directExport`, and through it `checkIndexed`) runs the DAG walk, while every
+statement and proof keeps reading the tree definitions. The compiler's
+substitution on a kernel-checked equation and the runtime's `withPtrAddr`/
+`withPtrEq` are the trust, as for the certified kernel's own `beqMemo`. -/
+
+section SharedExport
+
+variable (levelOf : Lean.Level → ExportM Kernel.Level) (nameOf : Lean.Name → ExportM Kernel.Name)
+
+/-- Is `value` the export of `e`? The fallback of a memo probe (pure model only). -/
+def exportIs (e : Lean.Expr) (value : Kernel.Expr) : Bool :=
+  match exportExprWith levelOf nameOf e with
+  | .ok v => decide (v = value)
+  | .error _ => false
+
+theorem exportIs_iff {e : Lean.Expr} {value : Kernel.Expr} :
+    exportIs levelOf nameOf e value = true ↔ exportExprWith levelOf nameOf e = .ok value := by
+  unfold exportIs
+  split <;> simp_all
+
+/-- A memo entry: a visited node, its export, and the proof. -/
+structure ExportEntry where
+  node : Lean.Expr
+  value : Kernel.Expr
+  ok : exportExprWith levelOf nameOf node = .ok value
+
+/-- The memo: entries under the address of their node. -/
+abbrev ExportMemo := Std.HashMap Nat (ExportEntry levelOf nameOf)
+
+/-- One node's result: its export, proved to be the tree export, and the memo after it. -/
+structure ExportRes (e : Lean.Expr) where
+  val : ExportM Kernel.Expr
+  eq : val = exportExprWith levelOf nameOf e
+  memo : ExportMemo levelOf nameOf
+
+/-- The result behind `Squash`: a subsingleton, so it may depend on addresses. -/
+abbrev ExportOut (e : Lean.Expr) := Squash (ExportRes levelOf nameOf e)
+
+/-- The entry under `key`, if it is `e`'s: confirmed by identity (`withPtrEq`),
+whose pure meaning is `exportIs`. -/
+@[inline] def exportProbe (memo : ExportMemo levelOf nameOf) (key : Nat) (e : Lean.Expr) :
+    Option { v : Kernel.Expr // exportExprWith levelOf nameOf e = .ok v } :=
+  match memo.get? key with
+  | none => none
+  | some p =>
+    if h : withPtrEq p.node e (fun _ => exportIs levelOf nameOf e p.value)
+        (fun same => (exportIs_iff levelOf nameOf).mpr (same ▸ p.ok)) = true then
+      some ⟨p.value, (exportIs_iff levelOf nameOf).mp h⟩
+    else none
+
+theorem exportWith_app (f a : Lean.Expr) : exportExprWith levelOf nameOf (.app f a) =
+    (exportExprWith levelOf nameOf f >>= fun x =>
+      exportExprWith levelOf nameOf a >>= fun y => pure (.app x y)) := rfl
+
+theorem exportWith_lam (n : Lean.Name) (t b : Lean.Expr) (bi : Lean.BinderInfo) :
+    exportExprWith levelOf nameOf (.lam n t b bi) =
+    (exportExprWith levelOf nameOf t >>= fun x =>
+      exportExprWith levelOf nameOf b >>= fun y => pure (.lam x y ⟨.never⟩)) := rfl
+
+theorem exportWith_forallE (n : Lean.Name) (t b : Lean.Expr) (bi : Lean.BinderInfo) :
+    exportExprWith levelOf nameOf (.forallE n t b bi) =
+    (exportExprWith levelOf nameOf t >>= fun x =>
+      exportExprWith levelOf nameOf b >>= fun y => pure (.forallE x y ⟨.never⟩)) := rfl
+
+theorem exportWith_letE (n : Lean.Name) (t v b : Lean.Expr) (nd : Bool) :
+    exportExprWith levelOf nameOf (.letE n t v b nd) =
+    (exportExprWith levelOf nameOf t >>= fun x =>
+      exportExprWith levelOf nameOf v >>= fun y =>
+        exportExprWith levelOf nameOf b >>= fun z => pure (.letE x y z)) := rfl
+
+theorem exportWith_proj (n : Lean.Name) (i : Nat) (b : Lean.Expr) :
+    exportExprWith levelOf nameOf (.proj n i b) =
+    (nameOf n >>= fun k => exportExprWith levelOf nameOf b >>= fun y => pure (.proj k i y)) := rfl
+
+/-- The DAG walk. A node is probed under its address; on a miss it is exported
+from its children's results (each child through the walk, so a shared child is
+exported once) and, on success, recorded. A failure is not recorded: it ends
+the export. -/
+def exportGo (memo : ExportMemo levelOf nameOf) (e : @& Lean.Expr) : ExportOut levelOf nameOf e :=
+  withPtrAddr e (fun pa =>
+    match exportProbe levelOf nameOf memo pa.toNat e with
+    | some hit => Squash.mk ⟨.ok hit.1, hit.2.symm, memo⟩
+    | none =>
+      let node : ExportOut levelOf nameOf e := match e with
+        | .bvar i => Squash.mk ⟨.ok (Kernel.Expr.mkBvar i), rfl, memo⟩
+        | .sort u => Squash.mk ⟨(do return .sort (← levelOf u)), rfl, memo⟩
+        | .const n us => Squash.mk ⟨(do return .const (← nameOf n) (← us.mapM levelOf)), rfl, memo⟩
+        | .lit (.natVal n) => Squash.mk ⟨.ok (.lit (.natVal n)), rfl, memo⟩
+        | .lit (.strVal s) => Squash.mk ⟨.ok (.lit (.strVal s)), rfl, memo⟩
+        | .fvar _ => Squash.mk ⟨throw "free source variable", rfl, memo⟩
+        | .mvar _ => Squash.mk ⟨throw "source metavariable", rfl, memo⟩
+        | .mdata m b =>
+          Squash.lift (exportGo memo b) fun r =>
+            Squash.mk ⟨r.val, r.eq.trans (exportExprWith_mdata levelOf nameOf m b).symm, r.memo⟩
+        | .app f a =>
+          Squash.lift (exportGo memo f) fun r₁ =>
+            match h₁ : r₁.val with
+            | .error err => Squash.mk ⟨.error err, by rw [exportWith_app, ← r₁.eq, h₁]; rfl, r₁.memo⟩
+            | .ok x => Squash.lift (exportGo r₁.memo a) fun r₂ =>
+              match h₂ : r₂.val with
+              | .error err =>
+                Squash.mk ⟨.error err, by rw [exportWith_app, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl, r₂.memo⟩
+              | .ok y =>
+                Squash.mk ⟨.ok (.app x y), by rw [exportWith_app, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl,
+                  r₂.memo⟩
+        | .lam _ t b _ =>
+          Squash.lift (exportGo memo t) fun r₁ =>
+            match h₁ : r₁.val with
+            | .error err =>
+              Squash.mk ⟨.error err, by rw [exportWith_lam, ← r₁.eq, h₁]; rfl, r₁.memo⟩
+            | .ok x => Squash.lift (exportGo r₁.memo b) fun r₂ =>
+              match h₂ : r₂.val with
+              | .error err =>
+                Squash.mk ⟨.error err, by rw [exportWith_lam, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl, r₂.memo⟩
+              | .ok y =>
+                Squash.mk ⟨.ok (.lam x y ⟨.never⟩),
+                  by rw [exportWith_lam, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl, r₂.memo⟩
+        | .forallE _ t b _ =>
+          Squash.lift (exportGo memo t) fun r₁ =>
+            match h₁ : r₁.val with
+            | .error err =>
+              Squash.mk ⟨.error err, by rw [exportWith_forallE, ← r₁.eq, h₁]; rfl, r₁.memo⟩
+            | .ok x => Squash.lift (exportGo r₁.memo b) fun r₂ =>
+              match h₂ : r₂.val with
+              | .error err =>
+                Squash.mk ⟨.error err, by rw [exportWith_forallE, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl,
+                  r₂.memo⟩
+              | .ok y =>
+                Squash.mk ⟨.ok (.forallE x y ⟨.never⟩),
+                  by rw [exportWith_forallE, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl, r₂.memo⟩
+        | .letE _ t v b _ =>
+          Squash.lift (exportGo memo t) fun r₁ =>
+            match h₁ : r₁.val with
+            | .error err =>
+              Squash.mk ⟨.error err, by rw [exportWith_letE, ← r₁.eq, h₁]; rfl, r₁.memo⟩
+            | .ok x => Squash.lift (exportGo r₁.memo v) fun r₂ =>
+              match h₂ : r₂.val with
+              | .error err =>
+                Squash.mk ⟨.error err, by rw [exportWith_letE, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl,
+                  r₂.memo⟩
+              | .ok y => Squash.lift (exportGo r₂.memo b) fun r₃ =>
+                match h₃ : r₃.val with
+                | .error err =>
+                  Squash.mk ⟨.error err,
+                    by rw [exportWith_letE, ← r₁.eq, h₁, ← r₂.eq, h₂, ← r₃.eq, h₃]; rfl, r₃.memo⟩
+                | .ok z =>
+                  Squash.mk ⟨.ok (.letE x y z),
+                    by rw [exportWith_letE, ← r₁.eq, h₁, ← r₂.eq, h₂, ← r₃.eq, h₃]; rfl, r₃.memo⟩
+        | .proj n i b =>
+          match hn : nameOf n with
+          | .error err => Squash.mk ⟨.error err, by rw [exportWith_proj, hn]; rfl, memo⟩
+          | .ok k => Squash.lift (exportGo memo b) fun r =>
+            match hr : r.val with
+            | .error err =>
+              Squash.mk ⟨.error err, by rw [exportWith_proj, hn, ← r.eq, hr]; rfl, r.memo⟩
+            | .ok y =>
+              Squash.mk ⟨.ok (.proj k i y), by rw [exportWith_proj, hn, ← r.eq, hr]; rfl, r.memo⟩
+      Squash.lift node fun r =>
+        match hv : r.val with
+        | .ok v => Squash.mk ⟨r.val, r.eq, r.memo.insert pa.toNat ⟨e, v, r.eq.symm.trans hv⟩⟩
+        | .error _ => Squash.mk r)
+    (fun _ _ => Subsingleton.elim _ _)
+
+/-- The export with its proof: a subsingleton. -/
+structure ExportVal (e : Lean.Expr) where
+  val : ExportM Kernel.Expr
+  eq : val = exportExprWith levelOf nameOf e
+
+instance (e : Lean.Expr) : Subsingleton (ExportVal levelOf nameOf e) :=
+  ⟨fun ⟨a, ha⟩ ⟨b, hb⟩ => by subst ha; subst hb; rfl⟩
+
+/-- The DAG walk from an empty memo, its memo dropped. -/
+def exportExprWithSharedVal (e : Lean.Expr) : ExportVal levelOf nameOf e :=
+  Squash.lift (exportGo levelOf nameOf {} e) fun r => ⟨r.val, r.eq⟩
+
+/-- **The sharing-aware export.** -/
+def exportExprWithShared (e : Lean.Expr) : ExportM Kernel.Expr :=
+  (exportExprWithSharedVal levelOf nameOf e).val
+
+/-- The sharing-aware export is the tree export, for every expression. -/
+theorem exportExprWithShared_eq (e : Lean.Expr) :
+    exportExprWithShared levelOf nameOf e = exportExprWith levelOf nameOf e :=
+  (exportExprWithSharedVal levelOf nameOf e).eq
+
+end SharedExport
+
+/-- Compiled code runs the DAG walk wherever it calls `exportExprWith`. -/
+@[csimp] theorem exportExprWith_eq_shared : @exportExprWith = @exportExprWithShared := by
+  funext levelOf nameOf e
+  exact (exportExprWithShared_eq levelOf nameOf e).symm
+
+/-- The sharing-aware `exportExpr`. -/
+def exportExprShared (cx : TermContext) (e : Lean.Expr) : ExportM Kernel.Expr :=
+  exportExprWithShared (exportLevel cx) cx.context.name e
+
+/-- The sharing-aware `exportExpr` is the tree export, for every expression. -/
+theorem exportExprShared_eq (cx : TermContext) (e : Lean.Expr) :
+    exportExprShared cx e = exportExpr cx e := by
+  rw [exportExprShared, exportExprWithShared_eq, exportExprWith_target]
+
+/-- Compiled code runs the DAG walk wherever it calls `exportExpr`. -/
+@[csimp] theorem exportExpr_eq_shared : @exportExpr = @exportExprShared := by
+  funext cx e
+  exact (exportExprShared_eq cx e).symm
+
 theorem exportExprWith_bvarBound {levelOf : Lean.Level → ExportM Kernel.Level}
     {nameOf : Lean.Name → ExportM Kernel.Name} {source : Lean.Expr} {result : Kernel.Expr}
     (exported : exportExprWith levelOf nameOf source = .ok result) :
@@ -652,6 +885,74 @@ inductive DirectEntry where
   | ctor (val : Kernel.ConstantVal) (numParams numFields : Nat)
   | recursor (val : Kernel.ConstantVal) (majorIdx rulePrefix : Nat) (rules : List Kernel.RecRule)
   deriving DecidableEq
+
+/-! ### Entry comparison through the kernel's memoised equality (M5 WP-B)
+
+The derived `DecidableEq` above compares the `Kernel.Expr` fields of two entries
+by the derived structural decision, which walks both sides as trees.
+`DirectEntry.beqShared` compares them by `Kernel.Expr.beq`, which *is*
+`decide (a = b)` (so every proof reads structural equality) and is executed as
+the certified kernel's `beqMemo` (`@[csimp] Kernel.Expr.beq_eq_beqMemo`,
+`Kernel.Expr.beqMemo_eq`): pointer identity, the computed-word filter (a word
+mismatch is an inequality), then a descent memoised on the DAG whose entries
+carry their own proofs. `@[csimp]` (`instDecidableEqDirectEntry_eq_shared`)
+substitutes the resulting decision for the derived one in compiled code;
+`Decidable (a = b)` is a subsingleton, so the equation is `Subsingleton.elim`.
+Every field is compared, in declaration order. -/
+
+/-- `ConstantVal`s by their fields, the type through `Kernel.Expr.beq`. -/
+def constantValBeq (a b : Kernel.ConstantVal) : Bool :=
+  decide (a.name = b.name) && decide (a.levelParams = b.levelParams) && Kernel.Expr.beq a.type b.type
+
+theorem constantValBeq_iff {a b : Kernel.ConstantVal} : constantValBeq a b = true ↔ a = b := by
+  cases a; cases b; simp [constantValBeq, Kernel.Expr.beq, and_assoc]
+
+/-- `RecRule`s by their fields, the right-hand side through `Kernel.Expr.beq`. -/
+def recRuleBeq (a b : Kernel.RecRule) : Bool :=
+  decide (a.ctor = b.ctor) && decide (a.nfields = b.nfields) && decide (a.ctorParams = b.ctorParams) &&
+    decide (a.fire = b.fire) && Kernel.Expr.beq a.rhs b.rhs && decide (a.k = b.k) &&
+    decide (a.eta = b.eta) && decide (a.paramsBlind = b.paramsBlind)
+
+theorem recRuleBeq_iff {a b : Kernel.RecRule} : recRuleBeq a b = true ↔ a = b := by
+  cases a; cases b; simp [recRuleBeq, Kernel.Expr.beq, and_assoc]
+
+def recRulesBeq : List Kernel.RecRule → List Kernel.RecRule → Bool
+  | [], [] => true
+  | a :: as, b :: bs => recRuleBeq a b && recRulesBeq as bs
+  | _, _ => false
+
+theorem recRulesBeq_iff : ∀ {as bs : List Kernel.RecRule}, recRulesBeq as bs = true ↔ as = bs
+  | [], [] => by simp [recRulesBeq]
+  | [], _ :: _ => by simp [recRulesBeq]
+  | _ :: _, [] => by simp [recRulesBeq]
+  | a :: as, b :: bs => by simp [recRulesBeq, recRuleBeq_iff, recRulesBeq_iff]
+
+/-- Entries by their fields, every expression through `Kernel.Expr.beq`. -/
+def DirectEntry.beqShared : DirectEntry → DirectEntry → Bool
+  | .axiom a, .axiom b => constantValBeq a b
+  | .defn a v h, .defn b w k => constantValBeq a b && Kernel.Expr.beq v w && decide (h = k)
+  | .thm a v, .thm b w => constantValBeq a b && Kernel.Expr.beq v w
+  | .opaque a v, .opaque b w => constantValBeq a b && Kernel.Expr.beq v w
+  | .quot k a, .quot l b => decide (k = l) && constantValBeq a b
+  | .induct a n, .induct b m => constantValBeq a b && decide (n = m)
+  | .ctor a p f, .ctor b q g => constantValBeq a b && decide (p = q) && decide (f = g)
+  | .recursor a m p rs, .recursor b n q ss =>
+    constantValBeq a b && decide (m = n) && decide (p = q) && recRulesBeq rs ss
+  | _, _ => false
+
+theorem DirectEntry.beqShared_iff {a b : DirectEntry} : a.beqShared b = true ↔ a = b := by
+  cases a <;> cases b <;>
+    simp [DirectEntry.beqShared, constantValBeq_iff, recRulesBeq_iff, Kernel.Expr.beq, and_assoc]
+
+/-- `DirectEntry` equality decided through `beqShared`. -/
+def DirectEntry.decEqShared (a b : DirectEntry) : Decidable (a = b) :=
+  decidable_of_iff _ DirectEntry.beqShared_iff
+
+/-- Compiled code decides entry equality through `beqShared` (hence `beqMemo`). -/
+@[csimp] theorem instDecidableEqDirectEntry_eq_shared :
+    @instDecidableEqDirectEntry = @DirectEntry.decEqShared := by
+  funext a b
+  exact Subsingleton.elim _ _
 
 def exportHint : Lean.ReducibilityHints → Kernel.ReducibilityHint
   | .opaque => .opaque

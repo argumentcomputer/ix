@@ -573,6 +573,148 @@ theorem refsIn_sound {p : Lean.Name → Bool} :
   | .bvar _, _, n, hn | .fvar _, _, n, hn | .mvar _, _, n, hn | .sort _, _, n, hn => by
     simp [exprRefs] at hn
 
+/-! ### The reference walk on the DAG (M5 WP-B)
+
+`refsIn` walks a `Lean.Expr` as a tree. `refsInShared` is the same function on
+the DAG, in the arrangement of `exportExprWithShared` (`Translate.lean`): a memo
+from node addresses to entries carrying `refsIn p node = true`, a probe
+confirmed by identity (`withPtrEq`, whose pure meaning is `refsIn p e` itself,
+so a hit is a proof), the memo behind `Squash`, every result carrying
+`val = refsIn p e`. No hash is consulted. `@[csimp] refsIn_eq_shared`
+substitutes it in compiled code (`declRefsIn`, hence `domainFast`); every
+statement keeps reading `refsIn`. -/
+
+section SharedRefs
+
+variable (p : Lean.Name → Bool)
+
+/-- A memo entry: a visited node whose references all satisfy `p`. -/
+structure RefsEntry where
+  node : Lean.Expr
+  ok : refsIn p node = true
+
+/-- The memo: entries under the address of their node. -/
+abbrev RefsMemo := Std.HashMap Nat (RefsEntry p)
+
+/-- One node's result, proved to be `refsIn p e`, and the memo after it. -/
+structure RefsRes (e : Lean.Expr) where
+  val : Bool
+  eq : val = refsIn p e
+  memo : RefsMemo p
+
+abbrev RefsOut (e : Lean.Expr) := Squash (RefsRes p e)
+
+/-- Is the entry under `key` the node `e`? Confirmed by identity (`withPtrEq`),
+whose pure meaning is `refsIn p e`. -/
+@[inline] def refsProbe (memo : RefsMemo p) (key : Nat) (e : Lean.Expr) :
+    { b : Bool // b = true → refsIn p e = true } :=
+  match memo.get? key with
+  | none => ⟨false, fun h => Bool.noConfusion h⟩
+  | some q => ⟨withPtrEq q.node e (fun _ => refsIn p e) (fun same => same ▸ q.ok), fun h => h⟩
+
+/-- The DAG walk: probe under the node's address; on a miss, conjoin the
+children's results (each through the walk) and record a `true`. -/
+def refsGo (memo : RefsMemo p) (e : @& Lean.Expr) : RefsOut p e :=
+  withPtrAddr e (fun pa =>
+    let hit := refsProbe p memo pa.toNat e
+    if hh : hit.1 = true then Squash.mk ⟨true, (hit.2 hh).symm, memo⟩
+    else
+      let node : RefsOut p e := match e with
+        | .const n _ => Squash.mk ⟨p n, rfl, memo⟩
+        | .app f a =>
+          Squash.lift (refsGo memo f) fun r₁ =>
+            if h₁ : r₁.val = true then
+              Squash.lift (refsGo r₁.memo a) fun r₂ =>
+                Squash.mk ⟨r₂.val, by show _ = (refsIn p f && refsIn p a); rw [← r₁.eq, h₁, ← r₂.eq]; rfl,
+                  r₂.memo⟩
+            else
+              Squash.mk ⟨false, by
+                show _ = (refsIn p f && refsIn p a)
+                rw [← r₁.eq, Bool.eq_false_iff.mpr h₁]; rfl, r₁.memo⟩
+        | .lam _ t b _ =>
+          Squash.lift (refsGo memo t) fun r₁ =>
+            if h₁ : r₁.val = true then
+              Squash.lift (refsGo r₁.memo b) fun r₂ =>
+                Squash.mk ⟨r₂.val, by show _ = (refsIn p t && refsIn p b); rw [← r₁.eq, h₁, ← r₂.eq]; rfl,
+                  r₂.memo⟩
+            else
+              Squash.mk ⟨false, by
+                show _ = (refsIn p t && refsIn p b)
+                rw [← r₁.eq, Bool.eq_false_iff.mpr h₁]; rfl, r₁.memo⟩
+        | .forallE _ t b _ =>
+          Squash.lift (refsGo memo t) fun r₁ =>
+            if h₁ : r₁.val = true then
+              Squash.lift (refsGo r₁.memo b) fun r₂ =>
+                Squash.mk ⟨r₂.val, by show _ = (refsIn p t && refsIn p b); rw [← r₁.eq, h₁, ← r₂.eq]; rfl,
+                  r₂.memo⟩
+            else
+              Squash.mk ⟨false, by
+                show _ = (refsIn p t && refsIn p b)
+                rw [← r₁.eq, Bool.eq_false_iff.mpr h₁]; rfl, r₁.memo⟩
+        | .letE _ t v b _ =>
+          Squash.lift (refsGo memo t) fun r₁ =>
+            if h₁ : r₁.val = true then
+              Squash.lift (refsGo r₁.memo v) fun r₂ =>
+                if h₂ : r₂.val = true then
+                  Squash.lift (refsGo r₂.memo b) fun r₃ =>
+                    Squash.mk ⟨r₃.val, by
+                      show _ = (refsIn p t && refsIn p v && refsIn p b)
+                      rw [← r₁.eq, h₁, ← r₂.eq, h₂, ← r₃.eq]; rfl, r₃.memo⟩
+                else
+                  Squash.mk ⟨false, by
+                    show _ = (refsIn p t && refsIn p v && refsIn p b)
+                    rw [← r₁.eq, h₁, ← r₂.eq, Bool.eq_false_iff.mpr h₂]; rfl, r₂.memo⟩
+            else
+              Squash.mk ⟨false, by
+                show _ = (refsIn p t && refsIn p v && refsIn p b)
+                rw [← r₁.eq, Bool.eq_false_iff.mpr h₁]; rfl, r₁.memo⟩
+        | .mdata _ b =>
+          Squash.lift (refsGo memo b) fun r => Squash.mk ⟨r.val, r.eq, r.memo⟩
+        | .proj n _ b =>
+          if hn : p n = true then
+            Squash.lift (refsGo memo b) fun r =>
+              Squash.mk ⟨r.val, by show _ = (p n && refsIn p b); rw [hn, ← r.eq]; rfl, r.memo⟩
+          else
+            Squash.mk ⟨false, by show _ = (p n && refsIn p b); rw [Bool.eq_false_iff.mpr hn]; rfl, memo⟩
+        | .lit (.natVal _) => Squash.mk ⟨p `Nat && p `Nat.zero && p `Nat.succ, rfl, memo⟩
+        | .lit (.strVal _) =>
+          Squash.mk ⟨p `String && p `String.ofList && p `List && p `List.nil &&
+            p `List.cons && p `Char && p `Char.ofNat, rfl, memo⟩
+        | .bvar _ => Squash.mk ⟨true, rfl, memo⟩
+        | .fvar _ => Squash.mk ⟨true, rfl, memo⟩
+        | .mvar _ => Squash.mk ⟨true, rfl, memo⟩
+        | .sort _ => Squash.mk ⟨true, rfl, memo⟩
+      Squash.lift node fun r =>
+        if hv : r.val = true then
+          Squash.mk ⟨r.val, r.eq, r.memo.insert pa.toNat ⟨e, r.eq.symm.trans hv⟩⟩
+        else Squash.mk r)
+    (fun _ _ => Subsingleton.elim _ _)
+
+/-- The walk's answer with its proof: a subsingleton. -/
+structure RefsVal (e : Lean.Expr) where
+  val : Bool
+  eq : val = refsIn p e
+
+instance (e : Lean.Expr) : Subsingleton (RefsVal p e) :=
+  ⟨fun ⟨a, ha⟩ ⟨b, hb⟩ => by subst ha; subst hb; rfl⟩
+
+def refsInSharedVal (e : Lean.Expr) : RefsVal p e :=
+  Squash.lift (refsGo p {} e) fun r => ⟨r.val, r.eq⟩
+
+/-- **The sharing-aware reference walk.** -/
+def refsInShared (e : Lean.Expr) : Bool := (refsInSharedVal p e).val
+
+/-- The sharing-aware walk is `refsIn`, for every expression. -/
+theorem refsInShared_eq (e : Lean.Expr) : refsInShared p e = refsIn p e :=
+  (refsInSharedVal p e).eq
+
+end SharedRefs
+
+/-- Compiled code runs the DAG walk wherever it calls `refsIn`. -/
+@[csimp] theorem refsIn_eq_shared : @refsIn = @refsInShared := by
+  funext p e
+  exact (refsInShared_eq p e).symm
+
 /-- Every name of `declarationRefs c` satisfies `p`, without building it. -/
 def declRefsIn (p : Lean.Name → Bool) (c : Lean.ConstantInfo) : Bool :=
   refsIn p c.type && match c with

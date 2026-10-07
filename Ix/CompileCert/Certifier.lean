@@ -120,6 +120,113 @@ def ExprSet.has (s : ExprSet) (e : Lean.Expr) : Bool :=
 def ExprSet.add (s : ExprSet) (e : Lean.Expr) : ExprSet :=
   @Std.HashSet.insert Lean.Expr ⟨Lean.Expr.eqv⟩ _ s e
 
+/-! ## Expression size and source features on the DAG (M5 WP-B; untrusted triage)
+
+Since M5 WP-B the certified check walks expressions on the DAG: the export
+(`exportExprWithShared`, through `@[csimp]`), the reference walk
+(`refsInShared`) and the entry comparison (`DirectEntry.decEqShared`, through
+`Kernel.Expr.beqMemo`) visit a node shared by pointer once per expression. The
+budget therefore bounds the number of distinct `Expr` objects
+(`Lean.Expr.numObjs`, core's pointer-set count), summed over the declaration's
+expressions; the tree size (`treeSizeShared`, exact, computed on the DAG) is
+reported for the large ones (`<prefix>.sizes.tsv`), not budgeted. -/
+
+/-- Distinct `Expr` objects of a declaration's type, value and rule right-hand
+sides, each expression counted separately (a bound on the shared walks). -/
+def declDagSize (ci : Lean.ConstantInfo) : IO Nat := do
+  let exprs : Array Lean.Expr := #[ci.type] ++ match ci with
+    | .defnInfo v => #[v.value]
+    | .thmInfo v => #[v.value]
+    | .opaqueInfo v => #[v.value]
+    | .recInfo v => v.rules.toArray.map (·.rhs)
+    | _ => #[]
+  exprs.foldlM (fun acc e => return acc + (← e.numObjs)) 0
+
+/-- A map from expressions under core's pointer-first equality, as `ExprSet`. -/
+abbrev ExprNatMap := @Std.HashMap Lean.Expr Nat ⟨Lean.Expr.eqv⟩ _
+
+/-- The exact tree size (the measure of `treeSize`, uncapped), computed on the
+DAG: each distinct subterm once. -/
+def treeSizeShared (memo : ExprNatMap) (e : Lean.Expr) : Nat × ExprNatMap :=
+  match @Std.HashMap.get? Lean.Expr Nat ⟨Lean.Expr.eqv⟩ _ memo e with
+  | some n => (n, memo)
+  | none =>
+    let (n, memo) : Nat × ExprNatMap := match e with
+      | .app f a =>
+        let (x, m) := treeSizeShared memo f
+        let (y, m) := treeSizeShared m a
+        (x + y + 1, m)
+      | .lam _ t b _ | .forallE _ t b _ =>
+        let (x, m) := treeSizeShared memo t
+        let (y, m) := treeSizeShared m b
+        (x + y + 1, m)
+      | .letE _ t v b _ =>
+        let (x, m) := treeSizeShared memo t
+        let (y, m) := treeSizeShared m v
+        let (z, m) := treeSizeShared m b
+        (x + y + z + 1, m)
+      | .mdata _ b | .proj _ _ b =>
+        let (x, m) := treeSizeShared memo b
+        (x + 1, m)
+      | _ => (1, memo)
+    (n, @Std.HashMap.insert Lean.Expr Nat ⟨Lean.Expr.eqv⟩ _ memo e n)
+
+/-- `declTreeSize` without the cap, computed on the DAG. -/
+def declTreeSizeShared (ci : Lean.ConstantInfo) : Nat :=
+  let exprs : List Lean.Expr := ci.type :: match ci with
+    | .defnInfo v => [v.value]
+    | .thmInfo v => [v.value]
+    | .opaqueInfo v => [v.value]
+    | .recInfo v => v.rules.map (·.rhs)
+    | _ => []
+  (exprs.foldl (fun (acc, m) e => let (n, m) := treeSizeShared m e; (acc + n, m))
+    (0, (@Std.HashMap.emptyWithCapacity Lean.Expr Nat ⟨Lean.Expr.eqv⟩ _ 1024))).1
+
+/-- `unsupportedExpr` on the DAG: the same first feature of the same
+left-to-right pre-order traversal, each distinct subterm visited once. A
+revisited subterm was explored completely without a feature (in a DAG it is
+not an ancestor, and a feature ends the walk), so skipping it changes nothing. -/
+def unsupportedExprShared (seen : ExprSet) (e : Lean.Expr) : Option String × ExprSet :=
+  if seen.has e then (none, seen) else
+  let seen := seen.add e
+  match e with
+  | .fvar _ => (some "free variable in closed source", seen)
+  | .mvar _ => (some "expression metavariable", seen)
+  | .mdata _ b => unsupportedExprShared seen b
+  | .sort u => (if u.hasMVar then some "universe metavariable" else none, seen)
+  | .const _ us => (if us.any Lean.Level.hasMVar then some "universe metavariable" else none, seen)
+  | .app f a =>
+    match unsupportedExprShared seen f with
+    | (some x, s) => (some x, s)
+    | (none, s) => unsupportedExprShared s a
+  | .lam _ t b _ | .forallE _ t b _ =>
+    match unsupportedExprShared seen t with
+    | (some x, s) => (some x, s)
+    | (none, s) => unsupportedExprShared s b
+  | .letE _ t v b _ =>
+    match unsupportedExprShared seen t with
+    | (some x, s) => (some x, s)
+    | (none, s) =>
+      match unsupportedExprShared s v with
+      | (some x, s) => (some x, s)
+      | (none, s) => unsupportedExprShared s b
+  | .proj _ _ b => unsupportedExprShared seen b
+  | _ => (none, seen)
+
+/-- `unsupportedSource` on the DAG (same result, same order). -/
+def unsupportedSourceShared (ci : Lean.ConstantInfo) : Option String :=
+  if !sourceSupported ci then some "unsafe or partial source declaration"
+  else
+    let exprs : List Lean.Expr := ci.type :: match ci with
+      | .defnInfo v => [v.value]
+      | .thmInfo v => [v.value]
+      | .opaqueInfo v => [v.value]
+      | .recInfo v => v.rules.map (·.rhs)
+      | _ => []
+    (exprs.foldl (fun (found, seen) e => match found with
+      | some x => (some x, seen)
+      | none => unsupportedExprShared seen e) (none, ExprSet.empty)).1
+
 /-- `exprRefs` of several expressions as a set, visiting each distinct subterm
 once (a worklist over a hash set of visited terms). -/
 def collectRefs (roots : Array Lean.Expr) : Std.HashSet Lean.Name := Id.run do
@@ -1353,6 +1460,7 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   let mut big4M := 0
   let mut big16M := 0
   let mut sizeTotal := 0
+  let mut sizeRows := "name\tdagNodes\ttreeNodes\n"
   for n in names do
     let some ci := env.find? n | continue
     refs := refs.insert n (refsOf ci)
@@ -1367,16 +1475,19 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
     unless kept.contains addr do
       verdicts := verdicts.insert n (.unsupported "target record not selected")
       continue
-    -- the size budget first: every later step (including `unsupportedSource`) walks trees
-    let size := declTreeSize cfg.budget ci
+    -- the size budget first, on the DAG (M5 WP-B): the certified walks visit a shared
+    -- subterm once; the tree size is measured (on the DAG) and reported, not budgeted
+    let size ← declDagSize ci
+    if size ≥ 4096 then
+      sizeRows := sizeRows ++ s!"{n}\t{size}\t{declTreeSizeShared ci}\n"
     if size ≥ 1000000 then big1M := big1M + 1
     if size ≥ 4000000 then big4M := big4M + 1
     if size ≥ 16000000 then big16M := big16M + 1
     sizeTotal := sizeTotal + size
     if size ≥ cfg.budget then
-      verdicts := verdicts.insert n (.unsupported s!"expression tree over budget ({cfg.budget} nodes)")
+      verdicts := verdicts.insert n (.unsupported s!"expression DAG over budget ({cfg.budget} nodes)")
       continue
-    if let some feature := unsupportedSource ci then
+    if let some feature := unsupportedSourceShared ci then
       verdicts := verdicts.insert n (.unsupported s!"source: {feature}")
       continue
     let some target := Kernel.Reader.resolve s.cx.store addr | do
@@ -1387,8 +1498,9 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   candidates := closed
   verdicts := v1
   let t3 ← IO.monoMsNow
-  say s!"[certify] triage: {candidates.size} candidates; {t3 - t2} ms; tree sizes (capped at the budget): \
+  say s!"[certify] triage: {candidates.size} candidates; {t3 - t2} ms; sizes (distinct Expr objects): \
     total {sizeTotal}, ≥1M {big1M}, ≥4M {big4M}, ≥16M {big16M}"
+  IO.FS.writeFile s!"{cfg.out}.sizes.tsv" sizeRows
   -- admission of the selected records (once; the source does not enter it)
   let recordBytes := records.toList.map fun (a, c) => (a, Ixon.serConstant c)
   let blobs := produced.blobs.toList

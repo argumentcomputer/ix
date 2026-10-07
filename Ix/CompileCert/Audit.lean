@@ -981,3 +981,117 @@ run_cmd Ix.CompileCert.Audit.checkNoHashEquality #[``Ix.CompileCert.Audit.struct
 
 
 run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.decisionRoots Ix.CompileCert.Audit.hashEqualities
+
+/-! ## M5 WP-B: the walks on the DAG
+
+The roots added by WP-B (`Translate.lean`, `Indexed.lean`): the sharing-aware
+export, reference walk and entry comparison, their equations with the tree
+functions, and the `@[csimp]` substitutions that make compiled code run them.
+Audited separately, against the same allowed set, so the frozen line above is
+unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def m5bRoots : Array Lean.Name :=
+  #[`exportIs, `exportIs_iff, `ExportEntry, `ExportMemo, `ExportRes, `ExportOut, `exportProbe,
+    `exportWith_app, `exportWith_lam, `exportWith_forallE, `exportWith_letE, `exportWith_proj,
+    `exportGo, `ExportVal, `exportExprWithSharedVal, `exportExprWithShared,
+    `exportExprWithShared_eq, `exportExprWith_eq_shared, `exportExprShared, `exportExprShared_eq,
+    `exportExpr_eq_shared,
+    `constantValBeq, `constantValBeq_iff, `recRuleBeq, `recRuleBeq_iff, `recRulesBeq,
+    `recRulesBeq_iff, `DirectEntry.beqShared, `DirectEntry.beqShared_iff, `DirectEntry.decEqShared,
+    `instDecidableEqDirectEntry_eq_shared,
+    `RefsEntry, `RefsMemo, `RefsRes, `RefsOut, `refsProbe, `refsGo, `RefsVal, `refsInSharedVal,
+    `refsInShared, `refsInShared_eq, `refsIn_eq_shared].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m5bRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! ### No decision trusts a cached hash as equality, as executed
+
+`@[csimp]` replaces a constant by another in compiled code only: the constant
+closure above is the closure of what the decisions' *definitions* read, not of
+what their compiled code runs. `executedClosure` also follows every `@[csimp]`
+substitution registered in the environment (the certified kernel's
+`Kernel.Expr.beq ↦ beqMemo` and siblings, WP-B's `exportExprWith ↦
+exportExprWithShared`, `exportExpr ↦ exportExprShared`, `refsIn ↦ refsInShared`,
+`instDecidableEqDirectEntry ↦ DirectEntry.decEqShared`, core's), so the check
+below covers the code that runs. The control: a decision whose substitute reads
+`Lean.Expr.hash` passes the definitional check and is refused by this one. -/
+
+namespace Ix.CompileCert.Audit
+
+/-- The constant closure of `constClosure`, also following `@[csimp]` substitutions. -/
+def executedClosure (env : Lean.Environment) (roots : Array Lean.Name) : Lean.NameSet := Id.run do
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  let mut seen : Lean.NameSet := {}
+  let mut todo := roots
+  while h : todo.size > 0 do
+    let n := todo[todo.size - 1]
+    todo := todo.pop
+    if seen.contains n then continue
+    seen := seen.insert n
+    if let some entry := substitutions.find? n then
+      unless seen.contains entry.toDeclName do todo := todo.push entry.toDeclName
+    let some ci := env.find? n | continue
+    let exprs : Array Lean.Expr := #[ci.type] ++ match ci with
+      | .defnInfo v => #[v.value]
+      | .thmInfo v => #[v.value]
+      | .opaqueInfo v => #[v.value]
+      | .recInfo v => v.rules.toArray.map (·.rhs)
+      | _ => #[]
+    let more : Array Lean.Name := match ci with
+      | .inductInfo v => v.ctors.toArray ++ v.all.toArray
+      | .ctorInfo v => #[v.induct]
+      | .recInfo v => v.all.toArray
+      | _ => #[]
+    for e in exprs do
+      for c in e.getUsedConstants do
+        unless seen.contains c do todo := todo.push c
+    for c in more do
+      unless seen.contains c do todo := todo.push c
+  return seen
+
+def checkNoHashEqualityExecuted (roots forbidden : Array Lean.Name) : CommandElabM Unit := do
+  let env ← getEnv
+  let missing := roots.filter (!env.contains ·)
+  unless missing.isEmpty do throwError m!"decision roots are missing: {missing}"
+  let closure := executedClosure env roots
+  let hits := forbidden.filter closure.contains
+  unless hits.isEmpty do
+    throwError m!"decisions as executed reach hash-cached equality: {hits}"
+  logInfo m!"[cert-audit] {roots.size} decisions as executed (with @[csimp] substitutions), \
+    {closure.size} constants: no hash-cached equality"
+
+/-- The decisions WP-B's substitutions run, named as roots of their own. -/
+def m5bDecisionRoots : Array Lean.Name :=
+  #[``Ix.CompileCert.exportExprWithShared, ``Ix.CompileCert.exportExprShared,
+    ``Ix.CompileCert.refsInShared, ``Ix.CompileCert.DirectEntry.decEqShared,
+    ``Ix.CompileCert.exportExprWith_eq_shared, ``Ix.CompileCert.exportExpr_eq_shared,
+    ``Ix.CompileCert.refsIn_eq_shared, ``Ix.CompileCert.instDecidableEqDirectEntry_eq_shared]
+
+/-- A control decision: `true`, whose compiled substitute reads `Lean.Expr.hash`. -/
+def executedHashControl (_a : Lean.Expr) : Bool := true
+
+def executedHashControlImpl (a : Lean.Expr) : Bool := a.hash == a.hash || true
+
+@[csimp] theorem executedHashControl_eq : @executedHashControl = @executedHashControlImpl := by
+  funext a
+  simp [executedHashControl, executedHashControlImpl]
+
+/-- Every decision of the lane, for the check as executed. -/
+def executedDecisionRoots : Array Lean.Name := decisionRoots ++ m5bDecisionRoots
+
+end Ix.CompileCert.Audit
+
+#guard_msgs(drop info) in
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality #[``Ix.CompileCert.Audit.executedHashControl] Ix.CompileCert.Audit.hashEqualities
+
+/-- error: decisions as executed reach hash-cached equality: [Lean.Expr.hash] -/
+#guard_msgs in
+run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted #[``Ix.CompileCert.Audit.executedHashControl] Ix.CompileCert.Audit.hashEqualities
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.m5bDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.executedDecisionRoots Ix.CompileCert.Audit.hashEqualities
