@@ -1340,6 +1340,12 @@ structure Config where
   /-- Plan the S cones without running any (`Strong.runStrong`): the cover's cones as if each
   were accepted, written to `<out>.strong.plan.tsv`; no S verdict is written. -/
   strongPlan : Bool := false
+  /-- Before the cover, decide S on one **global cone**: every constant W certifies by the direct
+  or raw route whose closure stays among them, as one closed source (M7 WP-F). The cover then
+  decides only what the global cone did not certify (its fallback). -/
+  strongGlobal : Bool := false
+  /-- Time the stages of the global cone (`--explain`'s stages, diagnostics only; no verdict). -/
+  explainGlobal : Bool := false
 
 /-- What the S path reuses from the W run. -/
 structure WState where

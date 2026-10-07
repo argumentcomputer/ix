@@ -196,15 +196,82 @@ def renamedBuiltinPins (input : Input) (pins : Kernel.Reader.Pins) : List Kernel
       xorProofs := ps.xorProofs.map r, shiftLeftProofs := ps.shiftLeftProofs.map r,
       shiftRightProofs := ps.shiftRightProofs.map r }
 
+/-- A list of pairs under their keys, the first pair of a key winning (as `List.find?`). -/
+def firstIndex (pairs : List (Kernel.Name × Kernel.Name)) : Std.HashMap Kernel.Name Kernel.Name :=
+  pairs.foldr (fun (k, v) m => m.insert k v) {}
+
+/-- `renameGeneratedSuffix` through an index of the anchors (the first anchor of a name wins,
+as `List.find?` takes it). -/
+def renameGeneratedSuffixIdx (anchors : Std.HashMap Kernel.Name Kernel.Name) :
+    Kernel.Name → Option Kernel.Name
+  | .anonymous => anchors[Kernel.Name.anonymous]?
+  | name@(.str parent component) => match anchors[name]? with
+    | some target => some target
+    | none => (renameGeneratedSuffixIdx anchors parent).map (·.str component)
+  | name@(.num parent component) => match anchors[name]? with
+    | some target => some target
+    | none => (renameGeneratedSuffixIdx anchors parent).map (·.num component)
+
+/-- `proposeSourceHelperBindings` with its list scans through hash maps (M7 WP-F; untrusted,
+like the original: the same bindings in the same order, computed without the scans of the
+original name list per helper and the quadratic conflict check of the anchors). -/
+def proposeSourceHelperBindingsIdx {source : Source} (proposal : SourceModelProposal source)
+    (original : List (Kernel.Name × Kernel.Name)) : ExportM (List (Kernel.Name × Kernel.Name)) := do
+  let originalIdx := firstIndex original
+  let mapped (name : Kernel.Name) : Kernel.Name := originalIdx.getD name name
+  let mut anchors := original.map fun (sourceName, targetName) =>
+    (sourceName.str "_model", targetName.str "_model")
+  let mut projections := []
+  for evidence in proposal.blocks do
+    let block := evidence.shape
+    if !Kernel.Frontend.InModel.wants block then continue
+    let some owner := block.types.head? | throw "source helper recipe has no owner"
+    let some recursor := block.recs.find? (fun r => r.cv.name == owner.cv.name.str "rec")
+      | throw "source helper recipe has no primary recursor"
+    let some (_, afterParams) := recursor.cv.type.stripPis owner.nP
+      | throw "source helper recipe parameter telescope"
+    let some (motives, _) := afterParams.stripPis recursor.nM
+      | throw "source helper recipe motive telescope"
+    let members ← Kernel.Frontend.InModel.readMems owner.cv.levelParams owner.nP
+      block.types (motives.map (·.1))
+    for member in members do
+      let recursorName ← match member.real? with
+        | some index => match block.types[index]? with
+          | some type => pure (type.cv.name.str "rec")
+          | none => throw "source helper recipe member index"
+        | none => pure (owner.cv.name.str s!"rec_{member.j + 1}")
+      let some memberRecursor := block.recs.find? (fun r => r.cv.name == recursorName)
+        | throw "source helper recipe member recursor"
+      for rule in memberRecursor.rules do
+        anchors := (Kernel.Frontend.InModel.auxCtorName owner.cv.name member.tag rule.ctor,
+          Kernel.Frontend.InModel.auxCtorName (mapped owner.cv.name) member.tag (mapped rule.ctor)) :: anchors
+    for type in block.types do
+      for constructorName in type.ctors do
+        let some constructor := block.ctors.find? (fun c => c.cv.name == constructorName)
+          | throw "source helper recipe constructor"
+        for index in List.range constructor.nF do
+          projections := (Kernel.projFnName type.cv.name index,
+            Kernel.projFnName (mapped type.cv.name) index) :: projections
+  -- conflicting source keys: every pair agrees with the first pair of its key
+  let anchorIdx := firstIndex anchors
+  unless anchors.all (fun (k, v) => anchorIdx.getD k v == v) do
+    throw "conflicting source helper recipe bindings"
+  let generated := proposal.declarations.toList.flatMap Kernel.Declaration.names
+  return projections ++ generated.filterMap (fun name =>
+    (renameGeneratedSuffixIdx anchorIdx name).map (name, ·))
+
 /-- Names, support and receipt names for one cone. Nothing here is trusted:
 `decideStrongCone` checks every part. -/
 def propose {input : Input} (accepted : AcceptedAssociation input)
     (installed : SourceNormalizedInstallation input.source input.roots) :
     Except String StrongProposal := do
-  let cx : ExportContext := ⟨input.source, input.map, accepted.pins, noImages⟩
+  -- the export names through the source and map indices (`contextNameL`: `ExportContext.name`
+  -- with its lookups given), not the list scans of `cx.name`
+  let sIdx := sourceIndex input.source
+  let mIdx := mapIndex input.map
   let mappings ← input.source.declarations.mapM fun ci => do
-    return (sourceName ci.name, ← cx.name ci.name)
-  let helpers ← proposeSourceHelperBindings installed.modelProposal mappings
+    return (sourceName ci.name, ← contextNameL (fun n => sIdx[n]?) (fun n => mIdx[n]?) accepted.pins noImages ci.name)
+  let helpers ← proposeSourceHelperBindingsIdx installed.modelProposal mappings
   let direct : Std.HashMap Kernel.Name Kernel.Name := mappings.foldl (fun m (k, v) => m.insert k v) {}
   -- the projection tables of the installed direct structures, under their owner's image
   let tables := installed.env.consts.filterMap fun entry => match entry with
@@ -248,19 +315,19 @@ def propose {input : Input} (accepted : AcceptedAssociation input)
 /-- The per-row comparison of `checkInstalledComparisonAvailability`, evaluated
 row by row to name the first row it does not accept (`none`: no comparison,
 `some false`: refused). -/
-def availabilityRow (source target : Kernel.Env) (names : Kernel.Name → Kernel.Name)
+def availabilityRow (fS fT : Lookup) (names : Kernel.Name → Kernel.Name)
     (entry : Kernel.ConstantInfo) : Option Bool := do
-  let some targetEntry := target.find? (names entry.name) | return false
-  let typeResult ← checkInstalledMemberExpr source target names entry.name
+  let some targetEntry := fT (names entry.name) | return false
+  let typeResult ← checkInstalledMemberExprF fS fT names entry.name
     entry.toConstantVal.type targetEntry.toConstantVal.type
   if !typeResult then return false
   match entry, targetEntry with
   | .defnInfo header value _, .defnInfo _ targetValue _ =>
-    checkInstalledMemberExpr source target names header.name value targetValue
+    checkInstalledMemberExprF fS fT names header.name value targetValue
   | .recInfo header _ _ rules, .recInfo _ _ _ targetRules =>
-    checkInstalledRules source target names header.name rules targetRules
+    checkInstalledRulesF fS fT names header.name rules targetRules
   | .indInfo header caps, .indInfo _ targetCaps =>
-    checkInstalledMemberExpr source target names header.name
+    checkInstalledMemberExprF fS fT names header.name
       (capabilityDatumExpr caps) (capabilityDatumExpr targetCaps)
   | _, _ => return true
 
@@ -275,12 +342,14 @@ def diagnoseStrong {input : Input} (accepted : AcceptedAssociation input)
     (installed : SourceNormalizedInstallation input.source input.roots) (target : Kernel.Env)
     (names : Kernel.Name → Kernel.Name) : String × Option Kernel.Name × Bool := Id.run do
   let source := installed.env
+  let fS := envFind source
+  let fT := envFind target
   if !decide (SemanticNamesAgree accepted names) then return ("names: semantic name map", none, false)
   for entry in source.consts do
-    match availabilityRow source target names entry with
+    match availabilityRow fS fT names entry with
     | some true => pure ()
     | some false =>
-      let why := if (target.find? (names entry.name)).isNone then "no target row" else "refused"
+      let why := if (fT (names entry.name)).isNone then "no target row" else "refused"
       return (s!"comparison ({kindOf entry}): {why}", some entry.name, false)
     | none => return (s!"comparison ({kindOf entry}): unavailable (let, free variable or level)",
         some entry.name, true)
@@ -504,6 +573,32 @@ def coverBatches (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.
       if !batch.isEmpty then out := out.insert group[i]! batch
   return out
 
+/-- The **global cone** (M7 WP-F, untrusted orchestration): every constant of `names` in
+`known` whose closure under `refs` stays in `known`, in `names` order with `Eq`'s block first
+(`eqFirst`). The constants of `known` left out are those that reach, through constants of
+`known`, a reference outside it; each is returned with that reference (its blocking constant).
+The global cone is closed, so it is one cone's source; nothing about the meaning of a verdict
+depends on this choice. -/
+def globalConeMembers (names : Array Lean.Name) (refs : Std.HashMap Lean.Name (Array Lean.Name))
+    (known : Lean.Name → Bool) : Array Lean.Name × Std.HashMap Lean.Name Lean.Name := Id.run do
+  let mut users : Std.HashMap Lean.Name (Array Lean.Name) := {}
+  let mut todo : Array (Lean.Name × Lean.Name) := #[]
+  for n in names do
+    if known n then
+      for r in refs.getD n #[] do
+        if r != n then users := pushUser users r n
+        if !known r then todo := todo.push (n, r)
+  let mut blocked : Std.HashMap Lean.Name Lean.Name := {}
+  while h : todo.size > 0 do
+    let (n, cause) := todo[todo.size - 1]
+    todo := todo.pop
+    if blocked.contains n then continue
+    blocked := blocked.insert n cause
+    for u in users.getD n #[] do
+      unless blocked.contains u do todo := todo.push (u, cause)
+  let members := names.filter fun n => known n && !blocked.contains n
+  return (eqFirst members, blocked)
+
 /-- The longest prefix of a name that is a source declaration. -/
 def knownPrefix (source : Source) : Lean.Name → Option Lean.Name
   | .anonymous => none
@@ -619,6 +714,21 @@ def runCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordStore)
     let (family, row, unavailable) := diagnoseStrong accepted installed target proposal.names
     return (.failed s!"strong check: {family}" (row.map leanNameOf) unavailable, stats)
 
+/-- The number of rounds `orderSourceGroups` takes on `groups` (diagnostics only: the depth of
+the source's dependency order, computed with a hash set of the available names). -/
+def orderRounds (groups : List SourceDeclGroup) : Nat := Id.run do
+  let mut available : Std.HashSet Lean.Name := {}
+  let mut pending := groups
+  let mut rounds := 0
+  for _ in [0:groups.length + 1] do
+    if pending.isEmpty then break
+    let ready := pending.filter fun g => g.dependencies.all available.contains
+    if ready.isEmpty then break
+    pending := pending.filter fun g => !g.dependencies.all available.contains
+    available := ready.foldl (fun s g => g.members.foldl (·.insert ·) s) available
+    rounds := rounds + 1
+  return rounds
+
 /-- The stages of one cone's decision, each forced and timed on its own (diagnostics,
 `--explain`): the cone's input, its admission, the W association's hints and check, the source
 installation (export, model proposal, the two decided preservation facts, normalisation, the
@@ -646,6 +756,18 @@ def explainCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordSt
   let accepted? ← time "W association" (fun _ => checkIndexed input artifact hints)
     (fun | .ok _ => "accepted" | .error _ => "refused")
   let .ok accepted := accepted? | return
+  -- the export's parts, each timed on its own (diagnostics only)
+  let built? ← time "source export: groups built" (fun _ => buildSourceGroupsF input.source)
+    (fun | .ok g => s!"{g.length} groups, {(g.map (·.dependencies.length)).foldl (· + ·) 0} dependencies" | .error e => e)
+  if let .ok built := built? then
+    let _ ← time "source export: groups validated" (fun _ => validateSourceGroupsF input.source built)
+      (fun | .ok _ => "covered" | .error e => e)
+    let _ ← time "source export: groups ordered" (fun _ => orderF (built.length + 1) built {} [])
+      (fun | .ok o => s!"{o.length} declarations" | .error e => e)
+    let _ ← time "source export: rounds of the order (hash set)" (fun _ => orderRounds built) toString
+    let _ ← time "source export: entries alone (exportSourceEntry, all members)"
+      (fun _ => input.source.declarations.foldl (fun n ci => if (exportSourceEntry ci).toOption.isSome then n + 1 else n) 0)
+      toString
   let original? ← time "source export" (fun _ => exportSourceDeclarations input.source)
     (fun | .ok o => s!"{o.size} declarations" | .error e => e)
   let .ok original := original? | return
@@ -676,8 +798,8 @@ def explainCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordSt
   let target := bundle.env
   let names := proposal.names
   say s!"[explain-S] {root}: strong check over {source.consts.length} source rows and {target.consts.length} target rows"
-  let _ ← time "lookups only (one target find? per source row)"
-    (fun _ => source.consts.all fun e => (target.find? (names e.name)).isSome) flag
+  let _ ← time "lookups only (one indexed target lookup per source row, index built)"
+    (fun _ => let fT := envFind target; source.consts.all fun e => (fT (names e.name)).isSome) flag
   let _ ← time "names (SemanticNamesAgree)" (fun _ => decide (SemanticNamesAgree accepted names)) flag
   let _ ← time "comparison availability" (fun _ => checkInstalledComparisonAvailability source target names) opt
   let _ ← time "telescopes" (fun _ => checkTelescopes source target names) flag
@@ -937,6 +1059,35 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   let mut covered := 0
   let mut firstCone : Std.HashMap Lean.Name Nat := {}
   let mut lastReport := t0
+  -- the global cone (M7 WP-F): one cone over every W-certified (direct or raw) constant whose
+  -- closure stays among them, decided before the cover; the cover then decides only what it
+  -- did not certify (everything, if it is refused)
+  if cfg.strongGlobal || cfg.explainGlobal then
+    let (members, outside) := globalConeMembers w.names w.refs wCertified.contains
+    let missingGround := natOpLeanNames.foldl (fun acc op =>
+      if members.contains op then acc ++ (pinGround.getD op #[]).filter (!members.contains ·) else acc) #[]
+    say s!"[certify-S] global cone: {members.size} members; {outside.size} W-certified constants outside it \
+      (each reaches a constant outside S's domain); Nat pin ground not in it: {missingGround.toList.take 5}"
+    if let some root := members[0]? then
+      let witnesses := members.toList.filterMap witnessOf.get?
+      if cfg.explainGlobal then
+        explainCone w.env w.produced w.store w.namedAddr root members witnesses
+      if cfg.strongGlobal && !cfg.strongPlan then
+        let began ← IO.monoMsNow
+        let (outcome, stats) ← runCone w.env w.produced w.store w.namedAddr cfg.workers root members witnesses
+        let record : ConeRecord := { root, outcome, stats, ms := (← IO.monoMsNow) - began, roots := members.size }
+        live.putStrLn (coneRow record)
+        live.flush
+        cones := cones.push record
+        match outcome with
+        | .certified certified =>
+          for m in certified do sv := sv.insert m (.certified root)
+          covered := covered + certified.size
+          say s!"[certify-S] global cone: accepted, {certified.size} S-certified; {record.ms} ms \
+            (input {stats.msInput}, admission {stats.msAdmit}, W {stats.msW}, installation {stats.msInstall}, \
+            strong {stats.msStrong})"
+        | .failed cls culprit _ =>
+          say s!"[certify-S] global cone: refused ({cls}; {culprit}); {record.ms} ms; the cover decides every root"
   while queue.size > 0 do
     -- one wave: up to `strongTasks` roots that still need a cone
     let mut wave : Array (Lean.Name × Array Lean.Name) := #[]

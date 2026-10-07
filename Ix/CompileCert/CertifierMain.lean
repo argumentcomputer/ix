@@ -9,7 +9,7 @@ def usage : String :=
   "usage: compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
   [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--explain <name>]* [--receipts-only] \
   [--strong | --strong-only [--strong-roots <A,B,...>] [--strong-every <k>] [--strong-max-cone <n>] [--strong-tasks <n>] \
-  [--strong-plan]]\n  writes <out-prefix>.tsv (one row per constant), \
+  [--strong-plan] [--strong-global] [--explain-global]]\n  writes <out-prefix>.tsv (one row per constant), \
   <out-prefix>.classes.tsv, <out-prefix>.proj.tsv, <out-prefix>.receipts.tsv (projection lowering receipts), \
   <out-prefix>.receipts.statements, <out-prefix>.json, <out-prefix>.ixonly.tsv (artifact names with no Lean \
   constant), <out-prefix>.sizes.tsv (distinct Expr objects and tree size of every declaration with at least 4096 \
@@ -21,7 +21,10 @@ def usage : String :=
   plus the projection functions); writes <out-prefix>.strong.tsv, .strong.cones.tsv, .strong.classes.tsv, .strong.json; \
   exit 0 iff additionally something is S-certified and nothing is S-rejected;\n  \
   --strong-plan: the cones S would run (the same order, batches and budget), none run, each counted as accepted; \
-  writes <out-prefix>.strong.plan.tsv and .strong.plan.names.tsv and no S verdict"
+  writes <out-prefix>.strong.plan.tsv and .strong.plan.names.tsv and no S verdict;\n  \
+  --strong-global: before the cover, one cone over every W-certified (direct or raw) constant whose closure stays among \
+  them; the cover decides the rest (and everything, if the global cone is refused);\n  \
+  --explain-global: the stages of the global cone, timed (diagnostics, no verdict)"
 
 def parse : List String → Option Config
   | "--file" :: path :: ixe :: out :: rest => options { lean := .file path, ixe, out } rest
@@ -39,6 +42,8 @@ where
     | "--strong" :: rest => options { cfg with strong := true } rest
     | "--strong-only" :: rest => options { cfg with strong := true, strongOnly := true } rest
     | "--strong-plan" :: rest => options { cfg with strong := true, strongPlan := true } rest
+    | "--strong-global" :: rest => options { cfg with strong := true, strongGlobal := true } rest
+    | "--explain-global" :: rest => options { cfg with strong := true, explainGlobal := true } rest
     | "--strong-roots" :: rs :: rest =>
       options { cfg with strongRoots := (rs.splitOn ",").toArray.map String.toName } rest
     | "--strong-every" :: n :: rest => n.toNat?.bind fun k => options { cfg with strongEvery := k } rest
