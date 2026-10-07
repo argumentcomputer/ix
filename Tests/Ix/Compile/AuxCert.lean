@@ -124,15 +124,23 @@ def kf (leg defect : String) (names : List String) : List (String × String × S
 -- `audit-whitebox-5.md` and `audit-blackbox-final.md`).
 def fixtures : List Fixture := [
   -- A0 item 1 (WB-B4): the collapse refusal, its equal-arms neighbour, and
-  -- the eta-wrapped partial applications of collapsed recursors.
+  -- the eta-wrapped partial applications of collapsed recursors. Until M6R
+  -- slice 6 the legacy surgery refused `SurgCollapse` ("collapse call site
+  -- drops distinct arguments") and the eta-wrapped two ("collapse call site is
+  -- a partial application"); Pass 3 uses source-telescope images and
+  -- the faithful rewrite instead of that argument adaptation.
+  -- Rechecked against e020a72e in Pass 3: identical artifact and all kernel
+  -- verdicts. BB-F7: 71 unknown constants, B.g app mismatch, three unmatched aliases.
   { stem := "SurgCollapse", ns := ["SurgCollapse"]
-    expect := .refuses "collapse call site drops distinct arguments" },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 75)] },
   { stem := "SurgCollapseEq", ns := ["SurgCollapseEq"]
-    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 54)] },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 77)] },
+  -- Same base comparison: 56 unknown constants and three unmatched aliases.
   { stem := "F4FlatAlphaUsers", ns := ["F4FlatAlphaUsers"]
-    expect := .refuses "collapse call site is a partial application" },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 59)] },
+  -- Same base comparison: 76 unknown constants and four unmatched aliases.
   { stem := "F4_NestedAlphaUsers", ns := ["A", "B", "r", "t", "sizeL", "sizeLA"]
-    expect := .refuses "collapse call site is a partial application" },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 80)] },
   -- A0 item 2 (WB-B1, A5/C3, C1): the user's names stay the user's.
   { stem := "FieldBelow", ns := ["FieldBelow"] },
   { stem := "FieldBelowRace", ns := ["FieldBelowRace"] },
@@ -161,7 +169,7 @@ def fixtures : List Fixture := [
     ns := ["F1Pair", "F1Ring", "F1Triple", "F4Flat", "F5PSigma", "F5Prod",
       "F6AFirst", "F8NoSplit", "L2Data", "L2TwoCtors", "RecBelow"]
     knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress; F1Pair, F1Ring, \
-      F1Triple, F4Flat)", 243)] },
+      F1Triple, F4Flat)", 357)] },
   -- Reproducers that compile cleanly (the audits' refuted leads).
   { stem := "BetaField", ns := ["BetaField"] },
   { stem := "DotCtor", ns := ["DotCtor"] },
@@ -176,27 +184,16 @@ def fixtures : List Fixture := [
     knownFails := kf "cert" "WB §6 (certified: reflexive nested decline)" ["NestShapes.R"]
     knownCounts := [("cert", "WB §6 (blocked by NestShapes.R)", 29)] },
   -- Compiled, with constants a checker rejects: totality defects outside
-  -- A0, recorded by id.
-  { stem := "Coind", ns := ["Coind"]
-    knownFails :=
-      kf "rs" "WB-B2" ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn",
-        "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] ++
-      kf "lean" "WB-B2" ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn",
-        "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] ++
-      kf "cert" "WB-B2" ["Coind.CA._functor.existential_equiv",
-        "Coind.CB._functor.existential_equiv", "Coind.CA.functor_unfold",
-        "Coind.CB.functor_unfold", "Coind.CA.mk", "Coind.CB.mk", "Coind.CA.casesOn",
-        "Coind.CB.casesOn"] },
-  { stem := "PropSplit", ns := ["PropSplit"]
-    knownFails := ["rs", "lean", "cert"].flatMap fun leg =>
-      kf leg "WB-B2" ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
+  -- A0, recorded by id. The legacy surgery's defects (WB-B2 on `Coind`,
+  -- `PropSplit`, `L2_PropSplit` and `PropCollapse.p_cases` for `rs` and
+  -- `cert`; WB-B3 on `SurgSplit`; WB-B5's `SurgAlias.f`, `f1`) went with it
+  -- at M6R slice 6: Pass 3's output passes every checker there.
+  { stem := "Coind", ns := ["Coind"] },
+  { stem := "PropSplit", ns := ["PropSplit"] },
   { stem := "PropCollapse", ns := ["PropCollapse"]
-    knownFails := kf "rs" "WB-B2" ["PropCollapse.p_cases"] ++
-      kf "cert" "WB-B2" ["PropCollapse.p_cases"] ++
-      kf "lean" "WB-B2" ["PropCollapse.p_cases"]
-    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 18)] },
-  { stem := "L2_PropSplit", ns := ["A", "B", "ua"]
-    knownFails := ["rs", "lean", "cert"].flatMap fun leg => kf leg "BB-L2 (= WB-B2)" ["ua"] },
+    knownFails := kf "lean" "WB-B2" ["PropCollapse.p_cases"]
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 32)] },
+  { stem := "L2_PropSplit", ns := ["A", "B", "ua"] },
   { stem := "RecAlias", ns := ["RecAlias"]
     knownFails := kf "rs" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] ++
       kf "lean" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] ++
@@ -204,50 +201,48 @@ def fixtures : List Fixture := [
         "RecAlias.PA.triv"] },
   { stem := "SurgAlias", ns := ["SurgAlias"]
     knownFails :=
-      kf "rs" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.f",
-        "SurgAlias.f1"] ++
-      kf "lean" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.f",
-        "SurgAlias.f1"] ++
-      kf "cert" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.f", "SurgAlias.f1",
-        "SurgAlias.A._sizeOf_inst", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec"] },
-  { stem := "SurgSplit", ns := ["SurgSplit"]
-    knownFails := kf "rs" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.len2"] ++
-      kf "lean" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.len2"] ++
-      kf "cert" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.A.len", "SurgSplit.len2",
-        "SurgSplit.A.len._sunfold"] },
+      kf "rs" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec"] ++
+      kf "lean" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec"] ++
+      kf "cert" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A._sizeOf_inst",
+        "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec"] },
+  { stem := "SurgSplit", ns := ["SurgSplit"] },
   { stem := "UnsafeI", ns := ["UnsafeI"]
     knownFails := kf "rs" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] ++
       kf "lean" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
   { stem := "F1_Collapse2p1", ns := ["A", "B", "C"]
-    knownCounts := [("rs", "BB-F1 (metadata of collapsed aliases)", 47),
-      ("lean", "BB-F1, BB-F7", 62)] },
+    knownCounts := [("rs", "BB-F1 (metadata of collapsed aliases)", 71),
+      ("lean", "BB-F1, BB-F7", 93)] },
   -- CORPUS-IPB (M1-j, owner 2026-10-06): a Prop block whose collapse merges
   -- members with alpha-equivalent Lean `.below` inductives is refused in both
-  -- compilers (the corpus shapes `M3_P_alpha2p1`, `M4_P_mixed`). Valid
+  -- compilers (the corpus shapes `M3_P_alpha2p1`, `M4_P_mixed`): by Pass 3's
+  -- images ("image: hypothesis motive N not in its slot's class", "image: no
+  -- eliminator for Lean motive N"; until M6R slice 6 the legacy surgery's
+  -- `REFUSED-IPB-COLLAPSE`). Valid
   -- neighbours: `IPBCollapseNone` (the same block without the pair),
   -- `F1_Collapse2p1` (the `Type` version, above) and `PropCollapse` (a full
   -- Prop collapse whose `.below` members stay distinct).
   { stem := "IPBCollapse2p1", ns := ["IPBCollapse2p1"]
-    expect := .refuses "REFUSED-IPB-COLLAPSE: collapsed Prop members' IndPredBelow family would be stored with one member's motives: 'IPBCollapse2p1.A.below' and its class representative" },
+    expect := .refuses "image: " },
   { stem := "IPBMixed", ns := ["IPBMixed"]
-    expect := .refuses "REFUSED-IPB-COLLAPSE: collapsed Prop members' IndPredBelow family would be stored with one member's motives: 'IPBMixed.C.below' and its class representative" },
+    expect := .refuses "image: " },
   { stem := "IPBCollapseNone", ns := ["IPBCollapseNone"] },
   { stem := "F5_SigmaNestedNested", ns := ["T"]
     knownFails := ["rs", "lean"].flatMap fun leg =>
       kf leg "BB-F5 (kernel completeness)" ["T.rec", "T.rec_1", "T.rec_2"] },
   { stem := "F7_AlphaVLean", ns := ["A", "B"]
-    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 40)] },
+    knownCounts := [("lean", "BB-F7 (collapsed block in Ix.Tc meta ingress)", 59)] },
   -- Expected compile failures outside A0 (totality defects).
   { stem := "AliasIdx", ns := ["AliasIdx"]
     expect := .xfail "WB-A3" "function expected, got Sort u" },
   { stem := "KernelSpec", ns := ["KernelSpec"]
     expect := .xfail "WB-A7" "is_large_eliminator failed" },
-  { stem := "SurgIdx", ns := ["SurgIdx", "SurgIdx2"]
-    expect := .xfail "WB-A2" "found no residual Pi binders" },
-  { stem := "F6_OrderIdxBrecOn", ns := ["A", "B"]
-    expect := .xfail "BB-F6 (= WB-A2)" "found no residual Pi binders" },
-  { stem := "F8_PropSplitNested", ns := ["A", "B", "PBox"]
-    expect := .xfail "BB-F8" "source recursor has no elimination level" },
+  -- The legacy surgery's totality defects (WB-A2 "found no residual Pi
+  -- binders" on `SurgIdx`, `F6_OrderIdxBrecOn`; BB-F8 "source recursor has no
+  -- elimination level" on `F8_PropSplitNested`) went with it at M6R slice 6:
+  -- Pass 3 compiles the three.
+  { stem := "SurgIdx", ns := ["SurgIdx", "SurgIdx2"] },
+  { stem := "F6_OrderIdxBrecOn", ns := ["A", "B"] },
+  { stem := "F8_PropSplitNested", ns := ["A", "B", "PBox"] },
   -- Reproducers Lean itself rejects (audit notes; kept so the record is
   -- complete): nothing reaches either compiler.
   { stem := "PropEvap", ns := ["PropEvap"]
@@ -270,7 +265,7 @@ private def certExe : System.FilePath := ".lake" / "build" / "bin" / "kernel-che
     the toolchain's `LD_LIBRARY_PATH` (see `Tests.Cli.spawnEnv`); `IX_PASS3` is
     unset, so both compilers run Pass 3, their only mode since M6R slice 6 (the
     record above was measured with the legacy surgery, `IX_PASS3=off`, until
-    then; to be re-measured under Pass 3). -/
+    then, and re-measured under Pass 3 at slice 6). -/
 private def spawnEnv : Array (String × Option String) :=
   #[("LD_LIBRARY_PATH", none), ("IX_PASS3", none)]
 

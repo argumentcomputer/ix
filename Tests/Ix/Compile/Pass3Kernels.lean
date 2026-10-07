@@ -436,6 +436,24 @@ structure CompileFailure where
   names : List String
 
 def compileFailures : List CompileFailure := [
+  -- A0's evaporation refusal (Pass 2; aux-cert `.refuses "is not a one-motive recursor"`):
+  -- every failing member of the refused block and the constructors' block entry
+  { unit := "F3_SplitRoseRace", cause := "A0 (not a one-motive recursor)",
+    msg := "is not a one-motive recursor", names := ["A", "A.mk"] },
+  { unit := "NestRoseSplit", cause := "A0 (not a one-motive recursor)",
+    msg := "is not a one-motive recursor", names := ["NestRoseSplit.A2", "NestRoseSplit.A2.mk"] },
+  { unit := "NestMutExt", cause := "A0 (not a one-motive recursor)",
+    msg := "is not a one-motive recursor",
+    names := ["NestMutExt.A", "NestMutExt.A.mk", "NestMutExt.A2", "NestMutExt.A2.mk"] },
+  { unit := "NestMutExtA", cause := "A0 (not a one-motive recursor)",
+    msg := "is not a one-motive recursor", names := ["NestMutExtA.A", "NestMutExtA.A.mk"] },
+  { unit := "C4Evap", cause := "A0 (not a one-motive recursor)",
+    msg := "is not a one-motive recursor", names := ["C4b.Src.A2", "C4b.Src.A2.mk"] },
+  -- compile totality defects (aux-cert `.xfail`)
+  { unit := "AliasIdx", cause := "WB-A3", msg := "function expected, got Sort u",
+    names := ["AliasIdx.T", "AliasIdx.T.mk", "AliasIdx.T.leaf"] },
+  { unit := "KernelSpec", cause := "WB-A7", msg := "is_large_eliminator failed",
+    names := ["KernelSpec.P", "KernelSpec.P.mk"] }
 ]
 
 /-- Step 2's decompile problems that are documented defects of the decompile
@@ -453,6 +471,28 @@ structure DecompileKnown where
   names : List String
 
 def decompileKnown : List DecompileKnown := [
+  { unit := "RecAlias", cause := "WB-B6 (the Prop `below` over a reducible alias)",
+    names := ["RecAlias.PA.below", "RecAlias.PA.below.casesOn", "RecAlias.PA.below.rec",
+      "RecAlias.PA.below.step"] },
+  { unit := "twins", cause := "WB-B6 (RecAlias's family in the twins)",
+    names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.below",
+      "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.below.casesOn",
+      "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.below.rec",
+      "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.below.step",
+      "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.below",
+      "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.below.casesOn",
+      "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.below.rec",
+      "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.below.step"] },
+  { unit := "UnsafeI", cause := "WB-B9 (`UnsafeI.UNestNeg`'s nested recursor block)",
+    names := ["UnsafeI.UNestNeg", "UnsafeI.UNestNeg.below", "UnsafeI.UNestNeg.below_1",
+      "UnsafeI.UNestNeg.brecOn", "UnsafeI.UNestNeg.brecOn.eq", "UnsafeI.UNestNeg.brecOn.go",
+      "UnsafeI.UNestNeg.brecOn_1", "UnsafeI.UNestNeg.brecOn_1.eq", "UnsafeI.UNestNeg.brecOn_1.go",
+      "UnsafeI.UNestNeg.casesOn", "UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.recOn",
+      "UnsafeI.UNestNeg.rec_1"] },
+  { unit := "F5_SigmaNestedNested", cause := "BB-F5",
+    names := ["T", "T.below", "T.below_1", "T.below_2", "T.brecOn", "T.brecOn.eq", "T.brecOn.go",
+      "T.brecOn_1", "T.brecOn_1.eq", "T.brecOn_1.go", "T.brecOn_2", "T.brecOn_2.eq",
+      "T.brecOn_2.go", "T.casesOn", "T.rec", "T.recOn", "T.rec_1", "T.rec_2"] }
 ]
 
 

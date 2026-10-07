@@ -662,13 +662,20 @@ with its plan maps, always empty under Pass 3, removed), so for a `true` row
 the pin is the surgery's own address, the switch-off comparison having passed
 at `e020a72e`. An empty pin is reported with the measured address. -/
 def passSameAsSurgery : List (String × String × Bool × String) := [
-  ("O1Perm", "PassO1.Src.Even.viaRec", true, ""),
-  ("O1Perm", "PassO1.Src.viaRec_two", true, ""),
-  ("O2Split", "PassO2.SA.viaRec", false, ""),
-  ("O2Split", "PassO2.SB.viaRec", false, ""),
-  ("O4BRecOn", "PassO4.Src.Odd.toNat", true, ""),
-  ("O4BRecOn", "PassO4.Src.Even.toNat", true, ""),
-  ("O4BRecOn", "PassO4.Src.SB.depth._f", false, "")]
+  ("O1Perm", "PassO1.Src.Even.viaRec", true,
+    "731dbdffd73112be86ffd51ad4eb6993b56e022ea481b704b31548673bec5f82"),
+  ("O1Perm", "PassO1.Src.viaRec_two", true,
+    "cc21e7c9769b490c0da5c447276f3aa971a1ed774938d5b88e049174a1399d8f"),
+  ("O2Split", "PassO2.SA.viaRec", false,
+    "85873af53f80035607f52d83fa7b653ccfa54821664c97379495b39e3a812f40"),
+  ("O2Split", "PassO2.SB.viaRec", false,
+    "f983d1c96ed723925281ee26f10aeddd6c43e69da83834c209989bd399fbee12"),
+  ("O4BRecOn", "PassO4.Src.Odd.toNat", true,
+    "6083ccc0c89479a3a3a552495d925a46473543f579d241c324e4c78d73d2c2ec"),
+  ("O4BRecOn", "PassO4.Src.Even.toNat", true,
+    "14c008d747384a6b658c0c1e481a978ba8dc0aeaf43f66382603291dea591706"),
+  ("O4BRecOn", "PassO4.Src.SB.depth._f", false,
+    "5faf01a1f51923207be4bf3d6bcdb467bc2d75b722ae39ff68f1b065a34193f9")]
 
 /-! ## The proof-justified passes' fixtures (A6p, `Tests/Ix/Compile/Pass/`) -/
 
