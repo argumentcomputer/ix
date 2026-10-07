@@ -1,4 +1,5 @@
 import Ix.CompileCert.StrongEntry
+import Ix.CompileCert.StrongFast
 
 /-! # S per cone: the strong-model endpoint as the certifier decides it
 
