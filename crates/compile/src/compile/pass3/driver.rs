@@ -57,7 +57,8 @@ use super::pj::{no_confusion_of, o11b_rewrite};
 use super::sidecar::{hash_map_of, rename_named};
 use super::spec::NestedCanon;
 use super::translate::{
-  ExpansionLookup, OptHook, RwState, image_decl_with, rewrite_block,
+  ExpansionLookup, OptHook, RwState, image_decl_with,
+  rewrite_block_ordered as rewrite_block,
 };
 use super::view::{
   BlockView, ComponentRecord, Expansion, ViewInput, build_view,
@@ -461,13 +462,17 @@ fn heads_in(stt: &CompileState, ci: &ConstantInfo) -> FxHashSet<Name> {
 fn views_of(
   ctx: &Ctx<'_>,
   heads: impl Iterator<Item = Name>,
-) -> Result<FxHashMap<Name, BlockView>, String> {
-  let mut views: FxHashMap<Name, BlockView> = FxHashMap::default();
+) -> Result<FxHashMap<Name, Arc<BlockView>>, String> {
+  let mut views: FxHashMap<Name, Arc<BlockView>> = FxHashMap::default();
   for h in heads {
     let Some(key) = ctx.stt.p3.heads.get(&h).map(|r| r.clone()) else {
       continue;
     };
     if views.contains_key(&key) {
+      continue;
+    }
+    if let Some(view) = ctx.stt.p3.views.get(&key) {
+      views.insert(key, view.clone());
       continue;
     }
     let all = ctx
@@ -476,17 +481,56 @@ fn views_of(
       .blocks
       .get(&key)
       .map_or_else(|| vec![key.clone()], |r| r.clone());
-    let v = ctx.with_input(|inp| build_view(inp, &all))?;
-    views.insert(key, v);
+    // Test before building: observing later completion must not make an
+    // earlier partial view eligible for the shared table.
+    let memoable = all.iter().all(|n| ctx.stt.resolve_addr(n).is_some());
+    let built = Arc::new(ctx.with_input(|inp| build_view(inp, &all))?);
+    let view = if memoable {
+      ctx.stt.p3.views.entry(key.clone()).or_insert(built).clone()
+    } else {
+      built
+    };
+    views.insert(key, view);
   }
   Ok(views)
+}
+
+/// A local view may use the cross-block tables only when it is the same
+/// stable view admitted by `views_of`. A view built before compilation
+/// finished is never promoted merely because time has passed.
+fn stable_view(ctx: &Ctx<'_>, key: &Name, view: &Arc<BlockView>) -> bool {
+  ctx.stt.p3.views.get(key).is_some_and(|saved| Arc::ptr_eq(&saved, view))
+}
+
+/// A recursor image is determined by its stable view and the immutable input.
+/// Other auxiliary expansions keep their per-rewrite cache and context.
+fn image_expansion(
+  ctx: &Ctx<'_>,
+  key: &Name,
+  view: &Arc<BlockView>,
+  name: &Name,
+) -> Result<(Expansion, Expr), String> {
+  let memoable = stable_view(ctx, key, view)
+    && ctx
+      .lean_env
+      .get(name)
+      .is_some_and(|c| matches!(&*c, ConstantInfo::RecInfo(_)));
+  if memoable && let Some(image) = ctx.stt.p3.image_exps.get(name) {
+    return Ok(image.clone());
+  }
+  let image = ctx.with_input(|inp| view.expansion(inp, name))?;
+  if memoable {
+    Ok(ctx.stt.p3.image_exps.entry(name.clone()).or_insert(image).clone())
+  } else {
+    Ok(image)
+  }
 }
 
 /// The expansion lookup over the views (`expansionLookup`), building a view
 /// on demand for a head of a block not yet viewed.
 fn expansion_lookup(
   ctx: &Ctx<'_>,
-  views: &mut FxHashMap<Name, BlockView>,
+  views: &mut FxHashMap<Name, Arc<BlockView>>,
   n: &Name,
 ) -> Result<Option<Expansion>, String> {
   let Some(key) = ctx.stt.p3.heads.get(n).map(|r| r.clone()) else {
@@ -497,7 +541,7 @@ fn expansion_lookup(
     views.extend(more);
   }
   let v = views.get(&key).ok_or("Pass 3: view missing")?;
-  let (x, _) = ctx.with_input(|inp| v.expansion(inp, n))?;
+  let (x, _) = image_expansion(ctx, &key, v, n)?;
   Ok(Some(x))
 }
 
@@ -548,11 +592,23 @@ fn ix_form_of(ctx: &Ctx<'_>, d: &Name) -> Option<Name> {
 /// The definitional passes' blocks (`optBlocks`) of the given views.
 fn opt_blocks(
   ctx: &Ctx<'_>,
-  views: &FxHashMap<Name, BlockView>,
-) -> FxHashMap<Name, OptBlock> {
+  views: &FxHashMap<Name, Arc<BlockView>>,
+) -> FxHashMap<Name, Arc<OptBlock>> {
   views
     .iter()
-    .map(|(k, v)| (k.clone(), ctx.with_input(|inp| opt_block_of(v, inp))))
+    .map(|(key, view)| {
+      let memoable = stable_view(ctx, key, view);
+      if memoable && let Some(block) = ctx.stt.p3.opt_blocks.get(key) {
+        return (key.clone(), block.clone());
+      }
+      let block = Arc::new(ctx.with_input(|inp| opt_block_of(view, inp)));
+      let block = if memoable {
+        ctx.stt.p3.opt_blocks.entry(key.clone()).or_insert(block).clone()
+      } else {
+        block
+      };
+      (key.clone(), block)
+    })
     .collect()
 }
 
@@ -565,7 +621,7 @@ fn opt_blocks(
 /// changed blocks only (`initial`, Lean's `views` of `prepareBlock`).
 fn unit_passes(
   ctx: &Ctx<'_>,
-  views: &FxHashMap<Name, BlockView>,
+  views: &FxHashMap<Name, Arc<BlockView>>,
   initial: &FxHashSet<Name>,
   members: &[(Name, ConstantInfo)],
 ) -> Vec<ConstantInfo> {
@@ -646,10 +702,17 @@ fn rewrite_canon<'h>(
 /// spawns no thread.
 fn prepare_block(
   ctx: &Ctx<'_>,
+  lo: &Name,
   all: &NameSet,
   clq_overlay: &FxHashMap<Name, ConstantInfo>,
 ) -> Result<Option<Prepared>, String> {
   if ctx.stt.p3.heads.is_empty() {
+    return Ok(None);
+  }
+  // Match Lean's p3BlockRefs prefilter before walking every member's DAG.
+  if let Some(refs) = ctx.stt.p3.block_refs.get(lo)
+    && !refs.iter().any(|name| ctx.stt.p3.heads.contains_key(name))
+  {
     return Ok(None);
   }
   let mut members: Vec<(Name, ConstantInfo)> = Vec::new();
@@ -699,7 +762,7 @@ fn prepare_block_rewrite(
   let ix_form = |d: &Name| ix_form_of(ctx, d);
   let block_of = |h: &Name| -> Option<&OptBlock> {
     let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
-    blocks.get(&key)
+    blocks.get(&key).map(AsRef::as_ref)
   };
   // `optLookup`'s environment, and `declineLookup`'s (Lean's defaults for
   // the addresses and canonical forms, which O11a does not read)
@@ -806,7 +869,7 @@ fn compile_image_block(
           stt.p3.heads.get(a).map(|r| r.clone()).ok_or("Pass 3: not a head")?;
         let (x, ty) = {
           let v = views.get(&key).ok_or("Pass 3: view missing")?;
-          ctx.with_input(|inp| v.expansion(inp, a))?
+          image_expansion(ctx, &key, v, a)?
         };
         let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
         let (value, typ) = image_decl_with(&mut st, &mut lookup, a, &x, &ty)?;
@@ -902,7 +965,7 @@ fn clique_rewrite(
   let ix_form = |d: &Name| ix_form_of(ctx, d);
   let block_of = |h: &Name| -> Option<&OptBlock> {
     let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
-    blocks.get(&key)
+    blocks.get(&key).map(AsRef::as_ref)
   };
   let env = OptEnv {
     ienv: ctx.lean_env.as_ref(),
@@ -1143,7 +1206,8 @@ pub fn compile_block(
   if !prep.overlay.is_empty() {
     bound.extend(compile_clique_canon(&ctx, &prep)?);
   }
-  let prepared = prepare_block(&ctx, all, &prep.overlay).map_err(invalid)?;
+  let prepared =
+    prepare_block(&ctx, lo, all, &prep.overlay).map_err(invalid)?;
   cache.p3_overlay = prep.overlay.clone();
   cache.p3_sources = prep.sources.iter().cloned().collect();
   if let Some(p) = prepared {

@@ -142,6 +142,7 @@ def applyMotive (m t : Expr) : Option Expr :=
   | .error _ => none
 
 def O12.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := do
+  if !pjAllowed o then none
   let cr ← readCollapseRec env o
   let s := cr.s
   if s.slots.size != 1 || s.np != 0 || s.ni != 0 then none
@@ -206,10 +207,10 @@ def O12.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := 
       hints := .abbrev, safety := .safe, all := #[fgName] }
   let xi ← cr.b.all.idxOf? cr.x
   let pos := if xi == ord[0]! then 0 else 1
-  if !pjAllowed o then none
   let out := mkAppN (Expr.mkProj nPProd pos (Expr.mkApp (Expr.mkConst fgName #[]) (← cr.tail[0]?))) cr.rest
   return (out, c0 ++ c1 ++ #[.defnInfo fg])
 
 end Ix.Compile.Pass.Opt
 
 end
+

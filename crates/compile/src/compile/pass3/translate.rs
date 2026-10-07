@@ -91,6 +91,8 @@ pub struct RwState<'h> {
   /// A proof-justified pass fired in the value being rewritten
   /// (`RwState.pjFired`).
   pj_fired: bool,
+  /// Only the production, definitional-first engine may skip the no-site retry.
+  skip_pj_retry: bool,
 }
 
 impl<'h> RwState<'h> {
@@ -194,10 +196,14 @@ impl<'h> RwState<'h> {
                         // baseline here, the rewrite in the canonical form
                         // `c._ix`
                         self.pj_fired = true;
-                        self
-                          .opt
-                          .and_then(|p| p(None, n, us, &args2))
-                          .map(|(e3, cs3, _)| (e3, cs3))
+                        if self.skip_pj_retry {
+                          None
+                        } else {
+                          self
+                            .opt
+                            .and_then(|p| p(None, n, us, &args2))
+                            .map(|(e3, cs3, _)| (e3, cs3))
+                        }
                       }
                     },
                     None => None,
@@ -408,7 +414,32 @@ pub fn rewrite_block<'h>(
   decline: Option<&'h DeclineHook<'h>>,
   in_place: bool,
 ) -> Result<BlockRewrite, String> {
+  rewrite_block_with_retry(lookup, members, opt, decline, in_place, false)
+}
+
+/// Production engine only: every definitional pass precedes every PJ pass,
+/// and only PJ passes read the site. A PJ hit thus implies the no-site retry
+/// returns None. Generic `rewrite_block` callbacks retain that retry.
+pub(crate) fn rewrite_block_ordered<'h>(
+  lookup: &mut ExpansionLookup<'_>,
+  members: &[(Name, ConstantInfo)],
+  opt: Option<&'h OptHook<'h>>,
+  decline: Option<&'h DeclineHook<'h>>,
+  in_place: bool,
+) -> Result<BlockRewrite, String> {
+  rewrite_block_with_retry(lookup, members, opt, decline, in_place, true)
+}
+
+fn rewrite_block_with_retry<'h>(
+  lookup: &mut ExpansionLookup<'_>,
+  members: &[(Name, ConstantInfo)],
+  opt: Option<&'h OptHook<'h>>,
+  decline: Option<&'h DeclineHook<'h>>,
+  in_place: bool,
+  skip_pj_retry: bool,
+) -> Result<BlockRewrite, String> {
   let mut st = RwState::with_hooks(opt, decline, in_place);
+  st.skip_pj_retry = skip_pj_retry;
   let mut overlay = Vec::new();
   let mut declines: Vec<(Name, String)> = Vec::new();
   for (n, ci) in members {
@@ -455,4 +486,69 @@ pub fn image_decl_with(
 /// Unused-level helper kept for symmetry with the Lean API.
 pub fn levels_key(us: &[Level]) -> Vec<Hash> {
   us.iter().map(|u| *u.get_hash()).collect()
+}
+
+#[cfg(test)]
+mod retry_tests {
+  use super::*;
+  use crate::compile::pass3::expr::root_name;
+  use std::cell::Cell;
+
+  fn term(s: &str) -> Expr {
+    Expr::cnst(root_name(s), vec![])
+  }
+
+  fn lookup(n: &Name) -> Option<Expansion> {
+    (n == &root_name("head")).then(|| Expansion {
+      level_params: vec![],
+      value: term("baseline"),
+      arity: 0,
+      needs_rewrite: false,
+    })
+  }
+
+  #[test]
+  fn generic_callback_keeps_no_site_retry() {
+    let retries = Cell::new(0);
+    let hook = |site: Option<&Name>, _: &Name, _: &[Level], _: &[Expr]| {
+      if site.is_some() {
+        Some((term("pj"), vec![], true))
+      } else {
+        retries.set(retries.get() + 1);
+        Some((term("generic-no-site"), vec![], false))
+      }
+    };
+    let mut state = RwState::with_hooks(Some(&hook), None, false);
+    state.site = Some(root_name("caller"));
+    let result =
+      state.rw(&mut |n| Ok(lookup(n)), 8, false, &term("head")).unwrap();
+    assert_eq!(result, term("generic-no-site"));
+    assert_eq!(retries.get(), 1);
+    assert!(state.pj_fired);
+  }
+
+  #[test]
+  fn ordered_callback_preserves_faithful_and_in_place_neighbours() {
+    for in_place in [false, true] {
+      for skip in [false, true] {
+        let retries = Cell::new(0);
+        let hook = |site: Option<&Name>, _: &Name, _: &[Level], _: &[Expr]| {
+          if site.is_some() {
+            Some((term("pj"), vec![], true))
+          } else {
+            retries.set(retries.get() + 1);
+            None
+          }
+        };
+        let mut state = RwState::with_hooks(Some(&hook), None, in_place);
+        state.site = Some(root_name("caller"));
+        state.skip_pj_retry = skip;
+        let result =
+          state.rw(&mut |n| Ok(lookup(n)), 8, false, &term("head")).unwrap();
+        assert_eq!(result, term(if in_place { "pj" } else { "baseline" }));
+        assert_eq!(state.pj_fired, !in_place);
+        assert_eq!(retries.get(), usize::from(!in_place && !skip));
+      }
+    }
+  }
 }

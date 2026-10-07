@@ -76,6 +76,14 @@ pub struct Pass3State {
   /// The references of the blocks that reference a clique's encoding
   /// constant (what `cliqueCallers` reads of `p3BlockRefs`).
   pub clique_refs: rustc_hash::FxHashMap<Name, Vec<Name>>,
+  /// Original block references, used before scanning all member expressions.
+  pub block_refs: crate::graph::RefMap,
+  /// Stable views: entered only after every original member is compiled.
+  pub views: DashMap<Name, std::sync::Arc<view::BlockView>>,
+  /// Optimization shapes built from those same stable views.
+  pub opt_blocks: DashMap<Name, std::sync::Arc<opt::OptBlock>>,
+  /// Raw recursor images and their types, built from a stable view.
+  pub image_exps: DashMap<Name, (view::Expansion, ix_common::env::Expr)>,
   /// The plan table (`CompileEnv.p3CliquePlans`), a memo of `planClique`
   /// keyed by the clique's first member, first entry kept.
   pub clique_plans: DashMap<Name, clique::transport::CliqueOutcome>,

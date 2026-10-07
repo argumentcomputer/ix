@@ -282,6 +282,7 @@ hook's `p._ix.s`). -/
 def reservedOf : Name → Option Name := retypedName
 
 def O9.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := do
+  if !pjAllowed o then none
   let (k, r) ← classify o.head
   if k != .kBRecOn then none
   let b ← env.blockOf o.head
@@ -325,9 +326,9 @@ def O9.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := d
         { gv with cnst := { gv.cnst with name := g', type := ty' }, value := v', all := #[g'] }
       pure (Expr.mkConst g' gus, #[ConstantInfo.defnInfo dv])
     | _ => do pure (← rt.go retypeFuel [] h, #[])
-  if !pjAllowed o then none
   return (mkAppN (Expr.mkConst ixBRecOn ls) (ps ++ ms ++ tail ++ #[h'] ++ rest), canon)
 
 end Ix.Compile.Pass.Opt
 
 end
+

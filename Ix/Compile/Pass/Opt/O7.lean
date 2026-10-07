@@ -114,6 +114,7 @@ open Ix (Name Level Expr ConstantInfo)
 open Ix.Compile.Canon (mkAppN)
 
 def O7.apply (env : OptEnv) (o : Occ) : Option Expr := do
+  if !pjAllowed o then none
   let (k, r) ← classify o.head
   if k != .kRec && k != .kRecOn then none
   let b ← env.blockOf o.head
@@ -163,7 +164,6 @@ def O7.apply (env : OptEnv) (o : Occ) : Option Expr := do
     ms' := ms'.push mr
   if mins'.size != s.ixMinors then none
   let ls ← singleLevels env s o.us
-  if !pjAllowed o then none
   if k == .kRec then
     return mkAppN (Expr.mkConst s.ixRec ls) (ps ++ ms' ++ mins' ++ tail ++ extra)
   else
@@ -174,3 +174,4 @@ def O7.apply (env : OptEnv) (o : Occ) : Option Expr := do
 end Ix.Compile.Pass.Opt
 
 end
+

@@ -350,6 +350,11 @@ pub fn compile_env_with_profile(
       cliques: p3_cliques,
       clique_roots: p3_clique_roots,
       clique_refs: p3_clique_refs,
+      block_refs: if pass3 {
+        condensed.block_refs.clone()
+      } else {
+        Default::default()
+      },
       ..Default::default()
     },
     ..Default::default()

@@ -98,6 +98,7 @@ open Ix (Name Level Expr ConstantInfo)
 open Ix.Compile.Canon (mkAppN)
 
 def O8.apply (env : OptEnv) (o : Occ) : Option Expr := do
+  if !pjAllowed o then none
   let (k, r) ← classify o.head
   if k != .kCasesOn then none
   let x ← casesOnMember o.head
@@ -113,9 +114,9 @@ def O8.apply (env : OptEnv) (o : Occ) : Option Expr := do
   let ixCases ← ixAuxOf s.ixRec .kCasesOn
   if !env.resolves ixCases then none
   let ls ← singleLevels env s o.us
-  if !pjAllowed o then none
   return mkAppN (Expr.mkConst ixCases ls) o.args
 
 end Ix.Compile.Pass.Opt
 
 end
+

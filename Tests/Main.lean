@@ -32,6 +32,7 @@ import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.CliqueOwnership
 import Tests.Ix.Compile.CliqueDag
+import Tests.Ix.Compile.RewriteRetry
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.Pass3RustParity
 import Tests.Ix.Compile.KernelReportTests
@@ -150,6 +151,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   -- D14 names the least reserved input name (`Tests/Ix/Compile/ReservedInput.lean`)
   ("reserved-input", Tests.Ix.Compile.ReservedInput.suite),
   ("clique-dag", Tests.Ix.Compile.CliqueDag.suite),
+  ("rewrite-retry", Tests.Ix.Compile.RewriteRetry.suite),
   ("keccak", Tests.Keccak.suite),
   ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
   ("exact-sharing-ffi", Tests.SharingExactFFI.suite),
@@ -566,3 +568,4 @@ def main (args : List String) : IO UInt32 := do
     return result
   else
     return 0
+

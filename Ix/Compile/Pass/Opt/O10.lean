@@ -90,6 +90,7 @@ open Ix (Name Level Expr ConstantInfo)
 open Ix.Compile.Canon (mkAppN)
 
 def O10.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := do
+  if !pjAllowed o then none
   let cr ← readCollapseRec env o
   let s := cr.s
   let ren := collapseRenaming env cr.b
@@ -120,9 +121,9 @@ def O10.apply (env : OptEnv) (o : Occ) : Option (Expr × Array ConstantInfo) := 
     canon := canon ++ cr'
   let ixBRecOn ← ixAuxOf s.ixRec .kBRecOn
   if !env.resolves ixBRecOn then none
-  if !pjAllowed o then none
   return (mkAppN (Expr.mkConst ixBRecOn ls) (cr.ps ++ ps' ++ cr.tail ++ hs' ++ cr.rest), canon)
 
 end Ix.Compile.Pass.Opt
 
 end
+

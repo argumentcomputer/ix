@@ -347,7 +347,7 @@ fn single_levels(
   Some(ls.iter().map(|l| subst_level(&s.level_params, us, l)).collect())
 }
 
-/// The site guard of every proof-justified pass, applied last: the
+/// The site guard of every proof-justified pass, tested before reading or retyping: the
 /// occurrence is in the value of a definition (`Packed.pjAllowed`).
 fn pj_allowed(o: &Occ<'_>) -> bool {
   o.site.is_some()
@@ -360,6 +360,9 @@ fn pj_allowed(o: &Occ<'_>) -> bool {
 
 /// `O7.apply`.
 pub(super) fn o7(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
+  if !pj_allowed(o) {
+    return None;
+  }
   let (k, r) = classify(o.head)?;
   if k != AuxKind::Rec && k != AuxKind::RecOn {
     return None;
@@ -446,9 +449,6 @@ pub(super) fn o7(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
     return None;
   }
   let ls = single_levels(env, &s, o.us)?;
-  if !pj_allowed(o) {
-    return None;
-  }
   if k == AuxKind::Rec {
     Some(mk_app_n(
       mk_const(&s.ix_rec, ls),
@@ -480,6 +480,9 @@ fn cases_on_member(n: &Name) -> Option<Name> {
 
 /// `O8.apply`.
 pub(super) fn o8(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
+  if !pj_allowed(o) {
+    return None;
+  }
   let (k, r) = classify(o.head)?;
   if k != AuxKind::CasesOn {
     return None;
@@ -509,9 +512,6 @@ pub(super) fn o8(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
     return None;
   }
   let ls = single_levels(env, &s, o.us)?;
-  if !pj_allowed(o) {
-    return None;
-  }
   Some(mk_app_n(mk_const(&ix_cases, ls), o.args))
 }
 
@@ -832,6 +832,9 @@ pub(super) fn o9(
   env: &OptEnv<'_>,
   o: &Occ<'_>,
 ) -> Option<(Expr, Vec<ConstantInfo>)> {
+  if !pj_allowed(o) {
+    return None;
+  }
   let (k, r) = classify(o.head)?;
   if k != AuxKind::BRecOn {
     return None;
@@ -908,9 +911,6 @@ pub(super) fn o9(
     },
     _ => (rt.go(RETYPE_FUEL, &mut Vec::new(), h)?, Vec::new()),
   };
-  if !pj_allowed(o) {
-    return None;
-  }
   Some((
     mk_app_n(
       mk_const(&ix_brec_on, ls),
@@ -1375,6 +1375,9 @@ pub(super) fn o10(
   env: &OptEnv<'_>,
   o: &Occ<'_>,
 ) -> Option<(Expr, Vec<ConstantInfo>)> {
+  if !pj_allowed(o) {
+    return None;
+  }
   let cr = read_collapse_rec(env, o)?;
   let s = &cr.s;
   let ren = collapse_renaming(env, cr.b);
@@ -1420,9 +1423,6 @@ pub(super) fn o10(
   }
   let ix_brec_on = ix_aux_of(&s.ix_rec, AuxKind::BRecOn)?;
   if !(env.resolves)(&ix_brec_on) {
-    return None;
-  }
-  if !pj_allowed(o) {
     return None;
   }
   Some((
@@ -1564,6 +1564,9 @@ pub(super) fn o12(
   env: &OptEnv<'_>,
   o: &Occ<'_>,
 ) -> Option<(Expr, Vec<ConstantInfo>)> {
+  if !pj_allowed(o) {
+    return None;
+  }
   let cr = read_collapse_rec(env, o)?;
   let s = &cr.s;
   if s.slots.len() != 1 || s.np != 0 || s.ni != 0 {
@@ -1667,9 +1670,6 @@ pub(super) fn o12(
   };
   let xi = cr.b.all.iter().position(|m| *m == cr.x)?;
   let pos = if xi == ord[0] { 0 } else { 1 };
-  if !pj_allowed(o) {
-    return None;
-  }
   let out = mk_app_n(
     Expr::proj(
       n_pprod(),

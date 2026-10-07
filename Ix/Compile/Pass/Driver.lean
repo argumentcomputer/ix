@@ -726,7 +726,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
     pure (views, expansionTable cenv views, optBlocks cenv views)
   let rwr ← Ix.PhaseTimers.withPhase .p3Rewrite cenv fun cenv =>
     rewriteBlock (expansionLookupIn table cenv views) members (optLookup cenv blocks)
-      (declineLookup cenv blocks)
+      (declineLookup cenv blocks) (skipPjRetry := true)
   let overlay : Std.HashMap Name ConstantInfo :=
     rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) cenv.env.overlay
   let sources : Std.HashMap Nat Expr :=
@@ -828,3 +828,4 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
 end Ix.Compile.Pass
 
 end
+

@@ -111,6 +111,10 @@ structure RwState where
   pass). -/
   opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Option String) :=
     fun _ _ _ _ => none
+  /-- The production engine tries all site-independent definitional passes
+  before any proof-justified one. After a proof-justified hit its no-site
+  retry is therefore known to be empty. Generic callbacks keep the retry. -/
+  skipPjRetry : Bool := false
   /-- Canonical constants to compile with the block (reserved `_ix` names):
   the canonical form `c._ix` of a definition `c` where a proof-justified pass
   fires (Lean's constant renamed, rewritten in place by `Driver.compileCanon`),
@@ -225,7 +229,8 @@ def rw : Nat → Bool → Expr → RwM Expr
                   modify fun st => { st with
                     pjFired := true
                     pjPasses := if st.pjPasses.contains pass then st.pjPasses else st.pjPasses.push pass }
-                  pure ((st.opt? none n us args').map fun (e, cs, _) => (e, cs))
+                  pure (if st.skipPjRetry then none else
+                    (st.opt? none n us args').map fun (e, cs, _) => (e, cs))
               | none => pure none
             let body ← match res with
               | some (e, cs) =>
@@ -351,9 +356,9 @@ def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     (opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Option String) :=
       fun _ _ _ _ => none)
     (decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none)
-    (inPlace : Bool := false) :
+    (inPlace : Bool := false) (skipPjRetry : Bool := false) :
     Except String BlockRewrite := do
-  let mut st : RwState := { base := 0, opt?, decline?, inPlace }
+  let mut st : RwState := { base := 0, opt?, decline?, inPlace, skipPjRetry }
   let mut overlay : Array (Name × ConstantInfo) := #[]
   let mut declines : Array (Name × String) := #[]
   for (n, ci) in members do
@@ -369,3 +374,4 @@ def rewriteBlock (expansion? : Name → Except String (Option Expansion))
 end Ix.Compile.Pass
 
 end
+
