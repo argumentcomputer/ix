@@ -71,7 +71,7 @@ jobs:
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           build: true
@@ -111,7 +111,7 @@ jobs:
           fail-on-cache-miss: true
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no package build).
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           build: false
@@ -187,7 +187,7 @@ jobs:
       # for envs that import Mathlib (Mathlib, FLT) — the shared
       # Benchmarks/Compile package depends on mathlib, so without this
       # guard InitStd/Lean would download it for nothing.
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           lake-package-directory: ${{ env.COMPILE_DIR }}
           auto-config: false
@@ -311,7 +311,7 @@ jobs:
       # Provision the toolchain so the staged binaries find libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and
       # parallel matrix jobs share a key and would race the cache save.
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           build: false
