@@ -461,8 +461,9 @@ nothing uses in the cover's order (largest cone first); they are grouped by the 
 the declaration they belong to (`batchGroup`); in each group a leader takes, from the next
 `window` roots of its group not yet taken, those whose cones keep the union within 3/2 of
 the leader's cone (plus 16), at most `maxRoots` roots per batch (the cover passes 128 and
-256: on Init+Std-a3 that plans 3,939 cones where namespace groups with 32 and 64 and 5/4
-planned 11,905). Returns, per leader, the other roots of its batch. -/
+256). On Init+Std-a3 before W+ (every constant W-certified by the direct route) this planned
+3,939 cones where namespace groups with 32 and 64 and 5/4 planned 11,905; with W+ (12 constants
+outside S, 15 blocked by them) it plans 3,952. Returns, per leader, the other roots of its batch. -/
 def coverBatches (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.Name → Bool)
     (order : Array Lean.Name) (window maxRoots : Nat) : Std.HashMap Lean.Name (Array Lean.Name) := Id.run do
   let mut groups : Std.HashMap Lean.Name (Array Lean.Name) := {}

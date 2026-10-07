@@ -248,6 +248,7 @@ pins), and writes the file only if every step passed.
   source export, model proposal and fold, and the strong checks, whose comparison walks look constants
   up in list environments at every node. On Init+Std-a3 (one run, 12 cones at once) a cone of 3,000
   declarations takes about half a minute, and one of 4,000 that reaches the `String`/`TreeMap` lemma
-  core 3–5 minutes; the cover plans 3,939 cones (a constant lies in 30 of them on average). Two runs
+  core 3–5 minutes; with W+ the cover plans 3,952 cones (3,559,461 members for 116,720 constants: a
+  constant lies in about 30 of them). Two runs
   at once halve each cone's speed. `--strong-max-cone` bounds the cone size; larger cones are
   S-unsupported (`cone over budget`) and their users S-blocked, never rejected.
