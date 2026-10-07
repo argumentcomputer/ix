@@ -146,7 +146,20 @@ jobs:
             test_args: --ignored validate-lean validate-lean-nc adversarial-matrix
           - name: Lake ignored tests (compiler scheduling)
             kind: lake
-            test_args: --ignored compile-schedule-identity compile-claim-conflict
+            test_args: --ignored compile-schedule-identity compile-claim-conflict compile-claim-order
+          # Added by M6R slice 6 (Pass 3 the only mode of both compilers): the
+          # output contract's changed-set record, the per-address Lean/Rust
+          # parity (fixtures; its pack step at the gate-safe default of 10 roots
+          # per unit), `ix pack` against its Lean oracle, the clique ownership
+          # regressions, and the Pass 3 plan-table memo check (its own
+          # partition: it compiles the twins and the fixture corpus under every
+          # driver).
+          - name: Lake ignored tests (compiler records, parity and pack)
+            kind: lake
+            test_args: --ignored changed-set pass3-rust-parity pack-units clique-ownership
+          - name: Lake ignored tests (compiler plan cache)
+            kind: lake
+            test_args: --ignored pass3-plan-cache
           - name: Lake ignored tests (compiler closure and corpus)
             kind: lake
             test_args: --ignored compiler-selected-closure-e2e compile-closure-whole
