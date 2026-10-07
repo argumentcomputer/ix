@@ -210,7 +210,7 @@ structure Fixture where
 /-- The fixture's roots, the eight operations and their certificate ground, compiled here. -/
 def fixture (env : Lean.Environment) (committed : PinSet) : IO Fixture := do
   let ops := SourcePinGen.certSpecs.map (·.1)
-  let roots := fixtureRoots ++ groundRoots env committed ops ++ [`Nat.pred, `Eq]
+  let roots := fixtureRoots ++ groundRoots env committed ops ++ [`Nat.pred, `Eq, `sorryAx]
   let names ← IO.ofExcept (SourcePinGen.leanCone env.find? roots)
   let declarations := names.toList.filterMap env.find?
   let compiled ← match ← _root_.Ix.CompileM.compileLeanConsts
@@ -245,7 +245,7 @@ def strongChecks (env : Lean.Environment) (committed : PinSet) : IO (Nat × Nat 
   let fx ← fixture env committed
   let readerPins ← IO.ofExcept _root_.Ix.Kernel.Reader.defaultPins
   let ground := natOpPinGround fx.env fx.store fx.namedAddr readerPins fx.names (fun _ => true)
-  let roots := fixtureRoots ++ SourcePinGen.certSpecs.map (·.1)
+  let roots := fixtureRoots ++ SourcePinGen.certSpecs.map (·.1) ++ [`sorryAx]
   let mut certified := 0
   for root in roots do
     let (members, missing) := coneMembers fx.refs fx.namedAddr.contains ground root
@@ -286,7 +286,38 @@ def strongChecks (env : Lean.Environment) (committed : PinSet) : IO (Nat × Nat 
   let proposal ← IO.ofExcept (propose accepted installed)
   require s!"{half}: valid neighbour, the decision with the committed source pins accepts"
     (match decideStrongCone accepted installed proposal with | .ok _ => true | .error _ => false)
-  return (certified, roots.length, 2)
+  -- `sorryAx`: the checker skips its record on both sides, so the source has no row to pull
+  -- back and the proposal adds no support (certified above); beside it, (i) a support axiom
+  -- row is refused by the support fold, (ii) a `sorryAx` of another shape is refused by W
+  let sorry_ := `sorryAx
+  let (sMembers, _) := coneMembers fx.refs fx.namedAddr.contains ground sorry_
+  let sInput ← IO.ofExcept (coneInput fx.env fx.produced fx.store fx.namedAddr [sorry_] sMembers)
+  let sAccepted ← match checkCompiled sInput with
+    | .ok a => pure a
+    | .error e => throw (IO.userError s!"W on sorryAx: {Compiled.declineLabel e}")
+  let sInstalled ← match installSourceNormalizedWith (sourcePins sInput sAccepted.pins) sInput.source sInput.roots [] with
+    | .ok i => pure i
+    | .error e => throw (IO.userError s!"installation of sorryAx's cone: {(sourceErrorLabel e).1}")
+  require "sorryAx: the source fold installs no row for it, the target fold none either"
+    ((sInstalled.env.find? (sourceName sorry_)).isNone &&
+      (sAccepted.env.find? (sourceName sorry_)).isNone)
+  let sProposal ← IO.ofExcept (propose sAccepted sInstalled)
+  require "sorryAx: no support proposed; valid neighbour, the decision accepts"
+    (sProposal.support.isEmpty &&
+      match decideStrongCone sAccepted sInstalled sProposal with | .ok _ => true | .error _ => false)
+  let axiomRow : _root_.Ix.Kernel.Declaration :=
+    .axiomDecl ⟨(sourceName sorry_).str "_ix_support", [], .sort .zero⟩
+  match decideStrongCone sAccepted sInstalled { sProposal with support := #[axiomRow] } with
+  | .error (.support e) => require s!"sorryAx: a support axiom row refused by the support fold ({supportLabel e})" true
+  | .error (.strong _) => throw (IO.userError "sorryAx: the support axiom row was admitted")
+  | .ok _ => throw (IO.userError "sorryAx: the decision accepted a support axiom row")
+  let tampered : Source := ⟨sInput.source.declarations.map fun ci => match ci with
+    | .axiomInfo v => if v.name == sorry_ then .axiomInfo { v with type := .sort .zero } else ci
+    | _ => ci⟩
+  match checkCompiled { sInput with source := tampered } with
+  | .error e => require s!"sorryAx stated as `Prop`: refused by W ({Compiled.declineLabel e |>.take 160})" true
+  | .ok _ => throw (IO.userError "sorryAx of another shape accepted by W")
+  return (certified, roots.length, 4)
 
 def run : IO Unit := do
   let env ← getCompileEnv #[fixturePrefix, `IxC.Kernel.PinGen.Certs]

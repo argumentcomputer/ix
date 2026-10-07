@@ -228,6 +228,13 @@ def propose {input : Input} (accepted : AcceptedAssociation input)
   for declaration in installed.declarations do
     let declared := declaration.names
     if declared.all (fun n => targetNames.contains (names n)) then continue
+    -- an axiom the source fold installs no row for has no source row to pull back, so it
+    -- needs no support: `sorryAx`, whose record the checker skips on both sides (any use of
+    -- it declines). Every other axiom the fold accepts is pinned and installed under its
+    -- pinned name on both sides; a support axiom row would be refused by the support fold
+    -- (non-standard axiom). Untrusted: the decision checks every installed source row.
+    if let .axiomDecl cv := declaration then
+      if (installed.env.find? cv.name).isNone then continue
     match declaration with
     | .basisDecl _ => throw s!"basis declaration {declared} has no target row"
     | _ => support := support.push (← (proposeRenamedSupport names declaration).mapError
@@ -688,6 +695,14 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       let ops := natOpLeanNames.filter wCertified.contains
       ops ++ (top ++ rest).filter (fun n => !ops.contains n)
   let cover := cfg.strongRoots.isEmpty && cfg.strongEvery == 0
+  -- the cover's profile (diagnostic): each root nothing uses needs its own cone
+  if cover then
+    let sizes := (certifiedSorted.filter (fun n => userCount.getD n 0 == 0)).map fun n =>
+      (coneOf w.refs wCertified.contains #[n]).1.size
+    let band (lo hi : Nat) : Nat := (sizes.filter (fun s => lo ≤ s && s < hi)).size
+    say s!"[certify-S] cover: {sizes.size} roots nothing uses; their cones: <1k {band 0 1000}, \
+      1k–5k {band 1000 5000}, 5k–10k {band 5000 10000}, 10k–20k {band 10000 20000}, \
+      ≥20k {band 20000 (1 <<< 62)}; {sizes.foldl (· + ·) 0} members in all"
   -- what a cone containing a pin-certified Nat operation also takes (`coneMembers`)
   let readerPins ← IO.ofExcept Kernel.Reader.defaultPins
   let pinGround := natOpPinGround w.env w.store w.namedAddr readerPins w.names wCertified.contains
