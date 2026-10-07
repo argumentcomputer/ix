@@ -1522,7 +1522,11 @@ def l3dRoots : Array Lean.Name :=
     `isProofJustified_defs, `isProofJustified_pj, `engineN_cases, `engineN_site_none,
     `engineN_faithful, `defs_site_irrel, `engineN_split, `pjPart_none, `pjPart_pj, `engineN_site_iff,
     `engineN_site_irrel, `hookOf, `HookFaithful, `HookSiteStable, `engineFull_cases, `hook_faithful,
-    `hook_siteStable, `optLookup_eq].map (`Ix.CompileCert.Opt ++ ·)
+    `hook_siteStable, `optLookup_eq,
+    -- the rewrite
+    `Hook, `hookRes, `spineP, `expansionOfP, `rwP, `HeadLaws, `LevelClosed, `conv_substLevels,
+    `HookUntagged, `hook_untagged, `hookRes_faithful, `hookRes_lean_name, `except_bind_ok,
+    `except_pure_ok', `forall2_of_mapM_conv, `spineP_faithful, `rwP_faithful, `rwP_lean_name].map (`Ix.CompileCert.Opt ++ ·)
 
 end Ix.CompileCert.Audit
 
