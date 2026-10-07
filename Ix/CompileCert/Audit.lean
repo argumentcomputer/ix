@@ -1419,7 +1419,12 @@ def x2Roots : Array Lean.Name :=
     `TRedB, `TRedB.conv, `TRedB.appN, `TRedB.forall2_refl, `TRedB.beta_appN, `hinstB, `happB,
     `instantiateB, `hinstB_zero, `happB_zero, `happB_succ, `forall2_red_of_mapM, `developB_red,
     `hinstB_red, `instantiateB_red, `TRedB.bridge, `developB_sem, `instantiateB_sem, `inlineB_sem,
-    `inlineB_justified].map
+    `inlineB_justified,
+    -- pair projections, ι, the round trip's proved half
+    `PairLaw, `semEq_proj0, `semEq_proj1, `skel_pair, `Justified.proj0, `Justified.proj1,
+    `semEq_iota, `bridgeLane, `bridgeLane_eq, `bridgeExport, `bridgeSource, `bridgeSource_eq,
+    `bridge_eq_with].map
+
 
 
       (`Ix.CompileCert.Bridge ++ ·)

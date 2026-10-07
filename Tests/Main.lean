@@ -47,6 +47,7 @@ import Tests.Ix.Compile.ChangedSet
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.Compile.DevCensus
+import Tests.Ix.CompileCert.BridgeRoundTrip
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -453,6 +454,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- fixtures and Init+Std: depths, levels, value kinds, the core against the executable
   -- (Tests.Ix.Compile.DevCensus).
   ("dev-census", Tests.Ix.Compile.DevCensus.run env),
+  -- M7 X2: the bridge round trip: the compiler's terms through the bridge against the lane's
+  -- export and the certified reader's entries on the fixtures, against the lane's source export
+  -- on Init+Std, with a moved name map and shifted levels refused (Tests.Ix.CompileCert.BridgeRoundTrip).
+  ("bridge-roundtrip", Tests.Ix.CompileCert.BridgeRoundTrip.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

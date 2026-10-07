@@ -212,6 +212,99 @@ theorem bridge_eq_ixToKernel {e : Ix.Expr} (h : NoMData e) :
 
 end Translation
 
+section TranslationWith
+
+variable (levelOf : Lean.Level → ExportM Kernel.Level) (nameOf : Lean.Name → ExportM Kernel.Name)
+
+private theorem with_bin {x y : Except String Lean.Expr} {X Y : Option Kernel.Expr}
+    (hx : X = (x >>= exportExprWith levelOf nameOf).toOption)
+    (hy : Y = (y >>= exportExprWith levelOf nameOf).toOption)
+    (mk : Lean.Expr → Lean.Expr → Lean.Expr) (mk' : Kernel.Expr → Kernel.Expr → Kernel.Expr)
+    (hmk : ∀ a b, exportExprWith levelOf nameOf (mk a b) =
+      (do return mk' (← exportExprWith levelOf nameOf a) (← exportExprWith levelOf nameOf b))) :
+    app2 mk' X Y = ((do return mk (← x) (← y)) >>= exportExprWith levelOf nameOf).toOption := by
+  subst hx hy
+  cases x with
+  | error => simp [bind, Except.bind, Except.toOption]
+  | ok a =>
+    cases y with
+    | error => simp [bind, Except.bind, Except.toOption]
+    | ok b =>
+      simp only [bind, Except.bind, pure, Except.pure, hmk]
+      cases exportExprWith levelOf nameOf a <;> cases exportExprWith levelOf nameOf b <;>
+        simp [Except.toOption]
+
+/-- **The translation lemma, for any naming**: the bridge at the naming `nameOf ∘ ixName` and the
+levels `ixLevel >=> levelOf` is the lane's structural export `exportExprWith levelOf nameOf` of the
+decompiled term (in particular at the source naming, `exportSourceExpr`). -/
+theorem bridge_eq_with : ∀ (e : Ix.Expr),
+    bridge (fun n => (nameOf (ixName n)).toOption) (fun u => (ixLevel u >>= levelOf).toOption) e =
+      (ixExprE e >>= exportExprWith levelOf nameOf).toOption := by
+  intro e
+  unfold bridge
+  induction e with
+  | bvar i _ => simp [er, bridgeT, ixExprE, exportExprWith, bind, Except.bind, pure, Except.pure,
+      Except.toOption]
+  | fvar => simp [er, bridgeT, ixExprE, bind, Except.bind, throw, throwThe, MonadExceptOf.throw,
+      Except.toOption]
+  | mvar => simp [er, bridgeT, ixExprE, bind, Except.bind, throw, throwThe, MonadExceptOf.throw,
+      Except.toOption]
+  | sort u _ =>
+    simp only [er, bridgeT, ixExprE]
+    cases h : ixLevel u with
+    | error => simp [bind, Except.bind, Except.toOption]
+    | ok l =>
+      simp only [bind, Except.bind, pure, Except.pure, exportExprWith]
+      cases levelOf l <;> simp [Except.toOption]
+  | const n us _ =>
+    simp only [er, bridgeT, ixExprE]
+    rw [optMap_toOption ixLevel levelOf]
+    cases h : us.toList.mapM ixLevel with
+    | error => simp [bind, Except.bind, Except.toOption]
+    | ok ls =>
+      simp only [bind, Except.bind, pure, Except.pure, exportExprWith]
+      cases nameOf (ixName n) <;> cases ls.mapM levelOf <;> simp [Except.toOption]
+  | app f a _ ihf iha =>
+    simp only [er, bridgeT, ixExprE]
+    exact with_bin levelOf nameOf ihf iha (fun x y => .app x y) (fun x y => .app x y) (fun _ _ => rfl)
+  | lam n t b i _ iht ihb =>
+    simp only [er, bridgeT, ixExprE]
+    exact with_bin levelOf nameOf iht ihb (fun x y => .lam (ixName n) x y i)
+      (fun x y => .lam x y never) (fun _ _ => rfl)
+  | forallE n t b i _ iht ihb =>
+    simp only [er, bridgeT, ixExprE]
+    exact with_bin levelOf nameOf iht ihb (fun x y => .forallE (ixName n) x y i)
+      (fun x y => .forallE x y never) (fun _ _ => rfl)
+  | letE n t v b nd _ iht ihv ihb =>
+    simp only [er, bridgeT, ixExprE]
+    rw [iht, ihv, ihb]
+    cases ixExprE t with
+    | error => simp [bind, Except.bind, Except.toOption]
+    | ok t' =>
+      cases ixExprE v with
+      | error => simp [bind, Except.bind, Except.toOption]
+      | ok v' =>
+        cases ixExprE b with
+        | error => simp [bind, Except.bind, Except.toOption]
+        | ok b' =>
+          simp only [bind, Except.bind, pure, Except.pure, exportExprWith]
+          cases exportExprWith levelOf nameOf t' <;> cases exportExprWith levelOf nameOf v' <;>
+            cases exportExprWith levelOf nameOf b' <;> simp [Except.toOption]
+  | lit l _ =>
+    cases l <;> simp [er, bridgeT, bridgeLit, ixExprE, exportExprWith, bind, Except.bind, pure,
+      Except.pure, Except.toOption]
+  | mdata _ e _ ih => simpa only [er, ixExprE] using ih
+  | proj n i e _ ih =>
+    simp only [er, bridgeT, ixExprE]
+    rw [ih]
+    cases ixExprE e with
+    | error => simp [bind, Except.bind, Except.toOption]
+    | ok e' =>
+      simp only [bind, Except.bind, pure, Except.pure, exportExprWith]
+      cases nameOf (ixName n) <;> cases exportExprWith levelOf nameOf e' <;> simp [Except.toOption]
+
+end TranslationWith
+
 /-! ## Emission into the artifact (per-compile hypothesis, L4's theorem) -/
 
 section Emitted
