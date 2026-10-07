@@ -82,7 +82,7 @@ does not certify it):
 | `.limit` | decline | a coverage bound, not evidence about the input |
 | `.duplicate`, `.decode` | reject | the bytes are malformed |
 | `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
-| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
+| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an unsafe opaque (`reader: unsafe opaque declaration`), an unsafe inductive block, constructor or recursor (`reader: unsafe inductive declaration`), an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines (`IxC/Kernel/Ixon/Reader.lean`: `safetyDecline`, the inductive reader) |
 | `.prelude` | decline | a corrupted committed table |
 | `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
 

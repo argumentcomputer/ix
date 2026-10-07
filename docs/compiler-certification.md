@@ -167,7 +167,10 @@ decision.
 ## 3. Verdicts
 
 W: **certified**, **unsupported** (a named class, e.g. `partial`/`unsafe` definitions the
-checker's reader declines, a declaration over the size budget), **blocked** (by a dependency that
+checker's reader declines; `target record not selected`, a name whose record goes with a block the
+reader declined without being the cause, as the recursors of unsafe inductive blocks
+(`Ix/CompileCert/Certifier.lean`; Mathlib: 6, e.g. `Lean.Expr.FoldConstsImpl.State.rec`); a declaration
+over the size budget), **blocked** (by a dependency that
 is not certified) or **rejected** (a diagnostic: the compiled constant is not the Lean
 declaration). S, beside it: **S-certified**, **S-unsupported** (class), **S-blocked** (by a cone
 member that fails, or by W), **S-rejected** (diagnostic). A W verdict other than certified carries

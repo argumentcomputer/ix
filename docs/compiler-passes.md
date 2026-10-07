@@ -2812,7 +2812,7 @@ second claim at another address fails the block).
 | 1 | **Unchanged block, no reference to a changed block's auxiliary, not a clique member.** | Lean's declaration of `c`: its kind, universe parameters, type and value (rules for a recursor), with binder names, binder infos, `mdata` and level spellings moved to the metadata (`ConstantMeta`), member order and nested-auxiliary order of its block canonical (Pass 1, §2.3–§2.5), sharing canonical (`Ix/Sharing`). This is the independent export. | `Driver.prepareBlock` returns the input unchanged when the block references no head; `Cliques.prepareCliques` when no member is in the clique table |
 | 1b | **Lean auxiliary of an unchanged inductive block** (`rec`, `rec_N`, `casesOn`, `recOn`, `below*`, `brecOn*` with `.go`/`.eq`). | The constant Pass 2 generates for it (one constant per auxiliary, D6), registered under the Lean name by the block's aux tail; `Named.original` records Lean's own form, compiled by the promotion pass. On Init+Std W accepts these as the independent export (M4-d §6). | `compileMutualAuxTail`; `promoteAuxDriver`, `compileConstNoAuxPure` in the drivers |
 | 2 | **Inductive type or constructor of a changed block.** | The canonical Ix inductive or constructor of its class: a projection of the canonical block (Pass 1's classes in canonical order). The members of one collapsed class share one address. | `compileBlockWithAux`, Pass 1 (`Ix/Compile/Canon/**`) |
-| 3 | **Image-kind auxiliary of a changed block** (`x.rec`, `x.casesOn`, `x.recOn`, `x.below`, `x.brecOn`, `x.brecOn.go`, `x.brecOn.eq`, and `all₀.rec_j`, `all₀.below_j`, `all₀.brecOn_j` with `.go`/`.eq`, restricted to the names Lean has; the `below`/`brecOn` family only for a recursive block). | Its **image**: for a recursor the generated image (Def 3.4), for the others Lean's own value with every head rewritten (Def 3.5); a λ over Lean's telescope with Lean's universe parameters and Lean's type, computing as Lean's auxiliary (its rules hold by `rfl`, `pass3` suite). **Kind (F1):** a theorem if Lean's `c` is a theorem (every `brecOn.eq`, the `brecOn` of a Prop family), otherwise a definition (so the image of a Lean recursor is a definition, `hints := abbrev`, Lean's safety). `Named.original` is Lean's form compiled without any rewrite. Not the independent export. | `Names.imageKinds`; `Driver.editChangedBlock` (records the heads); `Driver.isImageBlock`, `compileImageBlock`, `imageDeclWith`, `imageInfo`; `CompileDriver.runImageBlock` (the originals) |
+| 3 | **Image-kind auxiliary of a changed block** (`x.rec`, `x.casesOn`, `x.recOn`, `x.below`, `x.brecOn`, `x.brecOn.go`, `x.brecOn.eq`, and `all₀.rec_j`, `all₀.below_j`, `all₀.brecOn_j` with `.go`/`.eq`, restricted to the names Lean has; the `below`/`brecOn` family only for a recursive block). | Its **image**: for a recursor the generated image (Def 3.4), for the others Lean's own value with every head rewritten (Def 3.5); a λ over Lean's telescope with Lean's universe parameters, computing as Lean's auxiliary (its rules hold by `rfl`, `pass3` suite). **Type:** Lean's type with every head occurrence in it rewritten as in values (`imageDeclWith` rewrites the type with `rw`, the hereditary substitution of case 5), so where Lean's type mentions a head the stored type has that head's image inlined: the `brecOn` family's types mention `below` (`x.brecOn`, `.go`, `.eq`), and their stored types are convertible to Lean's, not equal (W+ accepts them through type rows, `docs/compiler-certification.md` §1.3); a type that mentions no head is Lean's. **Kind (F1):** a theorem if Lean's `c` is a theorem (every `brecOn.eq`, the `brecOn` of a Prop family), otherwise a definition (so the image of a Lean recursor is a definition, `hints := abbrev`, Lean's safety). `Named.original` is Lean's form compiled without any rewrite. Not the independent export. | `Names.imageKinds`; `Driver.editChangedBlock` (records the heads); `Driver.isImageBlock`, `compileImageBlock`, `imageDeclWith`, `imageInfo`; `CompileDriver.runImageBlock` (the originals) |
 | 3b | **Lean's other auxiliaries of a changed block** (`noConfusionType`/`noConfusion`, the `sizeOf` family, matchers, `inj`, `ctorIdx`, …, and Lean's `IndPredBelow` inductive family of a Prop block). | Case 5: Lean's declaration with its call sites rewritten (§4.6). Lean's `IndPredBelow` family is an ordinary block of its own (the canonical family moved to `_ix` display names). | `Driver.editChangedBlock`, `editPermutedBelowFamily`; §4.6 |
 | 4 | **Canonical constants** (reserved names, D14): a changed block's Pass 2 auxiliaries under display names (`x._ix.rec`, `x._ix.casesOn`, …; nested ones by canonical position `rep₀._ix.rec_i`); the canonical `IndPredBelow` family; a transported clique's `g._ix._mutual` (and `_proof_k`, regenerated `eq_*`), `g._ix.mutual`, `x._ix._f`, `x._ix.match_N`; a proof-justified pass's `c._ix` and its helpers (`p._ix_retyped.s`, O12's helper); O11b's `T.noConfusionType._ix`, `T.noConfusion._ix`. | Ix constants with **no Lean counterpart**. The image terms (case 3) reference Pass 2's recursors by these display names. A canonical constant refers to its dependencies by their Lean names. A reserved name already bound must be bound to the same bytes. | `Names.ixAuxName`, `Driver.moveToDisplay`; `Cliques.planClique`, `prepareCliques`, `canonConst`; `Driver.compileCanon`, `unitPasses`; `CompileDriver.checkBlockClaims` (reserved names insert-once) |
 | 5 | **A constant whose block references an image-kind head** (call-site rewrite, Def 3.6). | Lean's declaration with every **full application** of a head inlined from its image (hereditary substitution, no ι) unless a definitional pass (O1–O6, O11a; §1.5) gives the term first; a **bare or partial** occurrence is left as written, the Lean name denoting the image (no `a._ix` constant exists). Definitionally equal to Lean's term with each head replaced by its image; every outermost rewritten occurrence carries an `_ix.inline` record holding the source occurrence. Kind, universe parameters and Lean's statement up to the same rewrite. Not the independent export. | `Driver.prepareBlock`, `Translate.rewriteBlock`/`rw`, `Driver.optLookup`, `Opt/Engine.lean`; recorded in `CompileEnv.p3Rewritten` |
@@ -2862,7 +2862,7 @@ second claim at another address fails the block).
 ### 11.4 Identity requirements a checker may rely on
 
 1. **The full `ConstantInfo`, kind included.** Every Lean name's Ix constant has Lean's kind, universe
-   parameters and type (up to case 5's rewrite of the statement), with exactly two kinds of exception,
+   parameters and type (up to the rewrite of heads in the statement, cases 3 and 5: convertible, not equal, where the type mentions a head), with exactly two kinds of exception,
    both recorded: the image of a Lean recursor is a definition (case 3; a theorem stays a theorem, F1), and
    a name that failed has no constant (cases 8–9). A transported member keeps Lean's `ConstantInfo` except
    its value (`withValue`: hints, safety, `all` are Lean's). A checker may therefore refuse any other kind
@@ -2953,28 +2953,32 @@ constant without a record (only a count); the adversarial matrix's row 11 is the
 {"name":"Std.Tactic.BVDecide.BVExpr.bitblast.go_decl_eq._ix._mutual","hash":"93a4abba071de3d85db24018e89f30e037d70818e37c8055760b314c42456d49","change":"canonical","differs":true,"cause":null,"addr":"c67e8fbee5fc40a22dc2336754f1e76ba6b4068f531ba6035e83f25a42e76c19","original":null,"ref":"Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq","detail":"canonical constant of the clique, transports Std.Tactic.BVDecide.BVExpr.bitblast.goCache_decl_eq._mutual; carries the `_ix.clique` record"},
 ```
 
-**What a checker verifies and what it trusts.** Listing a name never makes it Certified: the record only
-lets a checker turn "value differs" on a name the compiler claims (`differs: true`) into
-Unsupported(changed), for M5 to certify; on any other name "value differs" stays Rejected. A checker can
+**What the record is for, what a checker can verify from it and what it trusts.** The record is a
+diagnostic side file. The certifier does not read it: W+ (`docs/compiler-certification.md` §1.3)
+decides every changed constant directly, by the equation and type rows the certified checker accepts
+(a constant passes by `direct`/`raw` or by a W+ route, or is Rejected or Unsupported with its
+diagnosis), so listing a name never makes it Certified, and an unlisted changed constant is not
+Rejected for being unlisted. (Before W+ the record was planned as a certifier input that would turn
+"value differs" on a `differs: true` name into Unsupported(changed); M5 superseded that.) A reader can
 verify, from the artifact and Lean's environment alone:
 - every `addr` is the `Named.addr` of the name and a constant of the artifact (the `changed-set` suite
   asserts it); `refused`/`failed` names are absent;
 - `image`: the name is in `imageKinds` of Lean's block `ref` (a function of Lean's constants), the
-  constant has Lean's type and Lean's kind or, for a recursor, a definition, and `original` is the export
-  of Lean's declaration;
+  constant has Lean's type up to the rewrite of heads in it (case 3) and Lean's kind or, for a recursor,
+  a definition, and `original` is the export of Lean's declaration;
 - `rewritten`, `transported`, `carried`: the metadata carries `_ix.inline` records whose replay
   (decompile) is Lean's term; `transported`/`carried` names are the `all`/`carried` of the clique row,
-  which is Lean's `all` and Lean's lemma names; the type is Lean's;
+  which is Lean's `all` and Lean's lemma names; the type is Lean's (for `rewritten`, up to the rewrite
+  of heads in it, case 5);
 - `canonical`: the name has a reserved component, so no Lean declaration is affected; for a clique, the
   functional's `_ix.clique` string equals the row's `record`;
 - completeness against the artifact: every name with an `_ix.inline` record has a `differs` claim, every
   reserved name a `canonical` one (both asserted by the suite).
 
-It trusts: that a block is *changed* (Def 3.1, Pass 1's classes) and a clique *transported* (the plan);
-that a `differs` claim's value is the intended one (that is what M5 certifies: images by their rules,
-transported members by the transport's correspondence, rewritten constants by conversion); the cause texts
-of declines and plans. `differs: false` entries are information only: a checker keeps comparing them with
-the independent export.
+A reader of the record trusts: that a block is *changed* (Def 3.1, Pass 1's classes) and a clique
+*transported* (the plan); that a `differs` claim's value is the intended one (which W+ establishes for
+the certifier independently of the record, by rows); the cause texts of declines and plans.
+`differs: false` entries are information only.
 
 ### 11.6 Inconsistencies found while writing this section (reported, not changed)
 
