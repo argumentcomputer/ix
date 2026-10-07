@@ -1404,7 +1404,14 @@ def x2Roots : Array Lean.Name :=
     -- justified conversions
     `Justified, `Justified.refl, `Justified.symm, `Justified.trans, `Justified.app,
     `Justified.proj, `Justified.lam, `Justified.pi, `Justified.beta, `Justified.beta_graph,
-    `Justified.eta, `Justified.delta, `Justified.ax, `justified_sound].map
+    `Justified.eta, `Justified.delta, `Justified.ax, `justified_sound,
+    -- model-level induction
+    `predMotive, `predMotive_mem, `app_predMotive, `piR_inhabited, `inhabited_of_mem_piR,
+    `denotes_bvar_inv, `denotes_sort_inv, `denotes_const_inv, `denotes_app_inv, `denotes_pi_inv,
+    `denotes_lam_inv, `model_telescope_inhabited, `natRecA_type, `natZeroA_type, `natSuccA_type,
+    `pinned_natRec, `pinned_natZero, `pinned_natSucc, `cval_const_nil, `regime_never,
+    `regime_ifAllZero_u, `nat_induction].map
+
       (`Ix.CompileCert.Bridge ++ ·)
 
 end Ix.CompileCert.Audit

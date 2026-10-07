@@ -3,6 +3,7 @@ import Ix.CompileCert.Bridge.Lane
 import Ix.CompileCert.Bridge.Denote
 import Ix.CompileCert.Bridge.Rules
 import Ix.CompileCert.Bridge.Justified
+import Ix.CompileCert.Bridge.Induction
 
 /-!
 # M7 X2: the bridge from the compiler's terms to the checker's, and conversion soundness
@@ -33,7 +34,11 @@ This package connects the two (PLAN-L2a §1.4 obligation O-B, §2.0 B1/B2):
   own domain and regime), `semEq_delta` (installed definitions), `semEq_theorem` (installed
   theorems are model facts);
 * **justified conversions** (`Bridge/Justified.lean`): X1's `Conv` and its semantics at once,
-  every rule with its premise; `justified_sound`.
+  every rule with its premise; `justified_sound`;
+* **model-level induction** (`Bridge/Induction.lean`): a recursor's typing law at a `Prop` motive
+  gives induction over the model's reading of the type for any meta-level predicate (`predMotive`,
+  `piR_inhabited`, the inversions of the public reading, `model_telescope_inhabited`), and the
+  `Nat` instance `nat_induction`, read off the checker's pinned `Nat.rec`.
 
 Not claimed: `Conv a b → ⟦a⟧ = ⟦b⟧` for an arbitrary derivation (false for untyped β and η in the
 set model, `M7-X2-bridge.md` §1.3), and the emission of compiler terms into bytes (L4).
