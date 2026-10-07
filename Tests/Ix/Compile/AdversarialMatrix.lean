@@ -371,25 +371,55 @@ def provenanceCases (env : Environment) : IO (Array Result) := do
 
 /-! ## The compiler's refusal of an omitted dependency -/
 
+/-- The Rust compiler's failures `(pretty name, reason)` on the same input as
+`compileForged` (Pass 3). -/
+def rustFailures (env : Environment) (seeds : Array Name) (drop : Name → Bool := fun _ => false) :
+    IO (Array (String × String)) := do
+  let closure := (closureOf env seeds.toList).filter fun (n, _) => !drop n
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
+  let constants ← IO.ofExcept input.prepare
+  let dir ← IO.FS.createTempDir
+  try
+    let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants (dir / "rust.ixe").toString true true
+    return status.ungrounded
+  finally IO.FS.removeDirAll dir
+
+/-- Row 11: a constant whose value dependency is left out of the input is
+refused by name in both compilers (the named refusal `UNGROUNDED-INPUT`,
+`Ix.GroundError.refusal` / Rust `ground::refusal`), never dropped silently;
+the closed input compiles with no failure. -/
 def omittedDependencyCases (env : Environment) : IO (Array Result) := do
   let target := `Tests.Ix.Compile.AdversarialMatrix.Src.double
   let honest ← compileForged env #[target] false
   let stored0 := honest.env.named.contains (ixN target)
+  let rust0 ← rustFailures env #[target]
   let nbr := R 11 .neighbour "R11-compile-closed" "`double` with its whole closure"
-    "the compiler (block grounding)" (stored0 && honest.cenv.ungrounded.isEmpty)
-    #[s!"ungrounded {honest.cenv.ungrounded.size}; `double` stored: {stored0}"]
+    "the compiler (block grounding), Lean and Rust"
+    (stored0 && honest.cenv.ungrounded.isEmpty && rust0.isEmpty)
+    #[s!"ungrounded {honest.cenv.ungrounded.size} (Rust {rust0.size}); `double` stored: {stored0}"]
   let what := "`double`'s closure without `Nat.add` (an omitted value dependency)"
+  -- `instAddNat` references the omitted `Nat.add` (an immediate refusal,
+  -- naming it); `double` references `instAddNat` (a transitive one)
+  let expected : Array (Name × String) :=
+    #[(``instAddNat, "UNGROUNDED-INPUT: references Nat.add, which is not in the input"),
+      (target, "UNGROUNDED-INPUT: references a constant that is itself ungrounded")]
   let neg ← try
-      let forged ← compileForged env #[target] false (drop := (· == ``Nat.add))
+      let drop := (· == ``Nat.add)
+      let forged ← compileForged env #[target] false (drop := drop)
       let stored := forged.env.named.contains (ixN target)
+      let rust ← rustFailures env #[target] drop
+      let named := expected.all fun (n, msg) =>
+        forged.cenv.ungrounded.get? (ixN n) == some msg &&
+          (rust.find? (·.1 == (ixN n).pretty)).map (·.2) == some msg
       let refused := forged.cenv.ungrounded.toList
       let shown := (refused.take 4).map fun (n, m) => s!"{n.pretty}: {m.take 120}"
-      pure (R 11 .negative "R11-compile-omitted-Nat.add" what "the compiler (block grounding)"
-        (!stored || forged.cenv.ungrounded.contains (ixN target))
-        #[s!"`double` stored: {stored}; block failures {refused.length}: {shown}; pre-compile ungrounded {forged.ungroundedCount}"])
+      pure (R 11 .negative "R11-compile-omitted-Nat.add" what "the compiler (block grounding), Lean and Rust"
+        (!stored && named && refused.length == expected.size && rust.size == expected.size)
+        #[s!"`double` stored: {stored}; Lean failures {refused.length}: {shown}; pre-compile ungrounded \
+{forged.ungroundedCount}; Rust failures {rust.size}: {rust.toList.take 4}"])
     catch e =>
-      pure (R 11 .negative "R11-compile-omitted-Nat.add" what "the compiler (input resolution)" true
-        #[s!"refused: {(toString e).take 300}"])
+      pure (R 11 .negative "R11-compile-omitted-Nat.add" what "the compiler (input resolution)" false
+        #[s!"the input was not built: {(toString e).take 300}"])
   return #[neg, nbr]
 
 /-! ## The suite -/

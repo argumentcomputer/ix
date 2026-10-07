@@ -75,6 +75,24 @@ def GroundError.kind : GroundError → GroundErrorKind
   | .indc .. => .indc
   | .idx .. => .idx
 
+/-- The named refusal of a constant the pre-compile groundedness scan
+    rejects, as both compilers record it among the compile's failures
+    (`CompileEnv.ungrounded`; Rust `ground::refusal`, same text): the
+    constant is never dropped silently. An immediate error names its cause;
+    a transitive `ref` (to a constant that is itself ungrounded, `isUngrounded`)
+    does not name the dependency, whose choice depends on the propagation
+    order (`proliferateUngrounded`). -/
+def GroundError.refusal (e : GroundError) (isUngrounded : Name → Bool) : String :=
+  match e with
+  | .ref n =>
+    if isUngrounded n then "UNGROUNDED-INPUT: references a constant that is itself ungrounded"
+    else s!"UNGROUNDED-INPUT: references {n.pretty}, which is not in the input"
+  | .level .. => "UNGROUNDED-INPUT: a universe level outside the constant's universe parameters"
+  | .mvar .. => "UNGROUNDED-INPUT: an expression metavariable"
+  | .var .. => "UNGROUNDED-INPUT: a free or out-of-scope bound variable"
+  | .indc .. => "UNGROUNDED-INPUT: an inductive type whose constructor is missing or not a constructor"
+  | .idx .. => "UNGROUNDED-INPUT: an invalid de Bruijn index"
+
 /-- Per-constant traversal caches. Mirrors Rust `GroundState`
     (ground.rs:110, `#[derive(Default)]`).
 

@@ -72,6 +72,44 @@ pub fn ground_const_check(
   ground_const(constant, env, univs, 0, &mut stt)
 }
 
+/// The named refusal of a constant the groundedness scan rejects, as the
+/// compile records it (`stt.ungrounded`; Lean's `GroundError.refusal`, the
+/// same text). An immediate error names its cause; a transitive `Ref` (to a
+/// constant that is itself ungrounded) does not name the dependency, whose
+/// choice depends on the propagation order (`proliferate_ungrounded`).
+pub fn refusal(
+  e: &GroundError,
+  ungrounded: &FxHashMap<Name, GroundError>,
+) -> String {
+  match e {
+    GroundError::Ref(n) if ungrounded.contains_key(n) => {
+      "UNGROUNDED-INPUT: references a constant that is itself ungrounded"
+        .to_string()
+    },
+    GroundError::Ref(n) => format!(
+      "UNGROUNDED-INPUT: references {}, which is not in the input",
+      n.pretty()
+    ),
+    GroundError::Level(..) => {
+      "UNGROUNDED-INPUT: a universe level outside the constant's universe parameters"
+        .to_string()
+    },
+    GroundError::MVar(..) => {
+      "UNGROUNDED-INPUT: an expression metavariable".to_string()
+    },
+    GroundError::Var(..) => {
+      "UNGROUNDED-INPUT: a free or out-of-scope bound variable".to_string()
+    },
+    GroundError::Indc(..) => {
+      "UNGROUNDED-INPUT: an inductive type whose constructor is missing or not a constructor"
+        .to_string()
+    },
+    GroundError::Idx(..) => {
+      "UNGROUNDED-INPUT: an invalid de Bruijn index".to_string()
+    },
+  }
+}
+
 /// Spread ungroundedness from the immediately-ungrounded set through
 /// the reverse-reference graph: anything referencing an ungrounded
 /// constant is itself ungrounded.

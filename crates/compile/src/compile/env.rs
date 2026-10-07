@@ -224,8 +224,11 @@ pub fn compile_env_with_profile(
     lean_env.pin(by_deg[..k].iter().map(|(n, _)| (*n).clone()));
   }
 
-  let ungrounded_map: DashMap<Name, String> =
-    ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
+  // each with its named refusal (Lean's `GroundError.refusal`, same text)
+  let ungrounded_map: DashMap<Name, String> = ungrounded
+    .iter()
+    .map(|(n, e)| (n.clone(), crate::ground::refusal(e, &ungrounded)))
+    .collect();
   if !ungrounded.is_empty() && *IX_VERBOSE {
     eprintln!(
       "[compile_env] {} ungrounded constants filtered from graph",

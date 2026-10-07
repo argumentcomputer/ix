@@ -2934,8 +2934,13 @@ change, cause, ref):
 | `refused` | — | — | `ungrounded` with `callerRefusalPrefix` | — |
 | `failed` | — | — | `ungrounded` | — |
 
-A name failed or refused appears only under that change (no address). Pre-compile grounding rejections are
-not block failures and are not recorded (the CLI reports their count).
+A name failed or refused appears only under that change (no address). A constant the pre-compile
+groundedness scan rejects (a reference missing from the input, or to a constant that is itself rejected;
+an out-of-scope level or variable; a metavariable) is a failure of the compile with its named refusal
+`UNGROUNDED-INPUT: …` (`Ix.GroundError.refusal`, recorded in `CompileEnv.ungrounded` by
+`compileDecoratedConsts`; the Rust compiler records the same text, `ground::refusal`), so it is a `failed`
+entry and `ix compile-lean` is fail-closed on it. Before 2026-10-07 the Lean compiler dropped such a
+constant without a record (only a count); the adversarial matrix's row 11 is the control.
 
 **Sample** (Init+Std, the default compile: the `cliques` row of the transported theorem clique
 `bitblast.goCache_decl_eq`/`go_decl_eq` and three of its `entries`; Init+Std's record has 58 entries: 12

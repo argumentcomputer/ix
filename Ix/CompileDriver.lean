@@ -1691,6 +1691,13 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
     let t ← tick "compile" t
+    -- The constants the groundedness scan rejected are failures of the
+    -- compile, each with its named refusal (`GroundError.refusal`), as the
+    -- Rust compiler records them: an input constant is never dropped
+    -- without a record (`ix compile-lean` is fail-closed on them).
+    let cenv := ungrounded.fold (init := cenv) fun c n e =>
+      if c.ungrounded.contains n then c
+      else { c with ungrounded := c.ungrounded.insert n (e.refusal ungrounded.contains) }
     if dbg && cenv.ungrounded.size > 0 then
       IO.println s!"  [compile-lean] {cenv.ungrounded.size} per-block compile failures"
       for (n, e) in cenv.ungrounded.toList.take 5 do
