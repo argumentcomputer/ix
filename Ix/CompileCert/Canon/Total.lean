@@ -71,4 +71,19 @@ theorem blockComponents_separate_total {env : Env} {all : Array Name} {comps : A
   obtain ⟨comps_c, h'⟩ := blockComponents_ok env c
   rw [h', blockComponents_separate hnd hwf h hc h']
 
+/-- **The condensation of a block is acyclic**: members of two different components never reach
+each other both ways, so reachability between components is antisymmetric. -/
+theorem blockComponents_acyclic {env : Env} {all : Array Name} {comps : Array (Array Name)}
+    (hnd : NodupB (nodesOf env all)) (h : blockComponents env all = .ok comps)
+    {c c' : Array Name} (hc : c ∈ comps) (hc' : c' ∈ comps) {m m' : Name} (hm : m ∈ c) (hm' : m' ∈ c')
+    (r1 : NReach (NodeEdge (nodesOf env all) (refsOf env)) m m')
+    (r2 : NReach (NodeEdge (nodesOf env all) (refsOf env)) m' m) : c = c' := by
+  have hmA : m ∈ all :=
+    Array.mem_toList_iff.1 ((blockComponents_sub h c hc).2.subset (Array.mem_toList_iff.2 hm))
+  have hmA' : m' ∈ all :=
+    Array.mem_toList_iff.1 ((blockComponents_sub h c' hc').2.subset (Array.mem_toList_iff.2 hm'))
+  obtain ⟨c'', hc'', h1, h2⟩ := (blockComponents_scc hnd h hmA hmA').2 ⟨r1, r2⟩
+  rw [blockComponents_unique hnd h c'' hc'' c hc m h1 hm] at h2
+  exact blockComponents_unique hnd h c hc c' hc' m' h2 hm'
+
 end Ix.CompileCert.Canon

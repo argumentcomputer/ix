@@ -67,4 +67,24 @@ stated against the code as it is. The modules:
 * `Refs`: `refsExpr`/`refsConst` return the names a constant references (sound always, complete on
   collision-free cached hashes), so the reference graph is the graph of occurrence;
 * `Terminate`: the refinement returns when no comparison of distinct members fails (§3.5 (ii)).
+
+## Theorem 4.2 (L1), clause by clause
+
+* the components are the strongly connected components, with acyclic condensation:
+  `condensation_scc`, `condensation_acyclic` (graph), `sccsOf_scc` (names), `blockComponents_scc`,
+  `blockComponents_acyclic` (block); they always return (`condensation_isSome`, `blockComponents_ok`);
+  the graph is the occurrence graph on collision-free input (`refsConst_sound`, `refsConst_complete`);
+* the comparison is a total preorder at a fixed context: `compareFresh_total`, `constOrd_total`;
+* the classes are the coarsest consistent partition: `sortClasses_coarsest`; the refinement terminates:
+  `sortClasses_ok`;
+* the class order does not depend on the seed: `sortClasses_setEq` (any seed), `sortClasses_perm`
+  (the name-hash seed: the whole output);
+* the name map is well defined: `cliqueNameMap_spec` (cliques); `blockNameMap` is open (it carries the
+  `native_decide` auxiliaries of `Ix.Name.mkStr`);
+* collapse decisions are theorems: `sortClasses_collapse_single`;
+* canonicity under Def 4.3: member order (`canon_member_order_total`, `sortClasses_perm`,
+  `sortClasses_setEq`), separate declaration (`blockComponents_separate_total`), renaming
+  (`sortClasses_rename`), collapse and equal members (`sortClasses_collapse`);
+* clique order: `sortClasses` over the specifications, so the statements above apply to it; the nested
+  auxiliaries' discovery order is open (`expand` carries the same auxiliaries).
 -/
