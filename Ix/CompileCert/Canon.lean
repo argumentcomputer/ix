@@ -11,6 +11,9 @@ import Ix.CompileCert.Canon.SccNames
 import Ix.CompileCert.Canon.Sort
 import Ix.CompileCert.Canon.Group
 import Ix.CompileCert.Canon.Ctx
+import Ix.CompileCert.Canon.Refine
+import Ix.CompileCert.Canon.Round
+import Ix.CompileCert.Canon.Coarsest
 
 /-!
 # M7 L1: Pass 1 proved
