@@ -1887,6 +1887,24 @@ the restriction of `σ` to group `k`.
 `below` dictionary to a helper other than a transformed matcher), the whole clique keeps its baseline.
 That is faithful.
 
+**Carried equation lemmas of a repacked group (D-M5-1, 2026-10-07).** A member's `eq_def` unfolds the
+member through the encoding. Lean's proof (`Structural.mkUnfoldEq`) carries the group's packed values
+through `brecOn.go` and `brecOn.eq`, the β-reduced packed functional and tuple, a λ over a packed value
+(`congrArg`'s motive) and the `below` dictionary unfolded by `whnf` in the splitter's motive. (A)
+re-associates none of these: transported as members are, the lemma does not type-check (the certified
+checker rejected such `eq_def`s with "application type mismatch"). So when some group of two or more
+functions is repacked (`σ_k` not the identity), a carried lemma that mentions an encoding constant (a
+functional `_f`, a "below" matcher, a `below`/`brecOn` constant of the block or a constant under one) is
+outside the grammar and the clique keeps its baseline, cause `SHAPE`
+(`Clique.transportStructural`, `StructLayout.repacks`). Every carried lemma of a structural clique
+mentions a functional (that is what makes it carried, `Pass.scheduleCliques`), so a repacked structural
+clique whose members' equation lemmas are realised (by `eq_def`, `unfold`, `simp [f]` or an `eq_N`)
+stays in Lean's form. When no group is repacked (groups of one function, or a group already in the
+canonical order) no packed value moves and the lemmas are transported with the members (fixture
+`Tests/Ix/Compile/CliqueOwnership/Lemmas.lean`, suite `clique-ownership`). Carrying a repacked group's
+unfolding proof (an extension of (A) to the shapes above, or regenerating the proof, decision 3) is not
+done.
+
 **The correspondence is not definitional.** The canonical and Lean members are stuck `brecOn`
 applications at a variable. It is O14: joint induction with the block's recursor, where the repacking
 map on the `below` dictionaries closes each case [argued, old plan §3.5].
@@ -2782,7 +2800,7 @@ second claim at another address fails the block).
 | 5b | **O11a declines** at the recursion of Lean's `sizeOf` family of a split block. | O2's relocated-recursor form (faithful, not canonical), with the cause recorded (§11.3, the decline map). | `Opt.O11a.declineCause?`, `Driver.declineLookup`; `CompileEnv.p3NonCanonical` |
 | 6 | **O7–O12 and O11b** (proof-justified passes, decision 5, D1). | The Lean name keeps the faithful form (case 5's baseline); the canonical form is stored under `c._ix` (case 4), cause `PJ-FORM-<pass>`. Callers that reference `c` keep referencing `c` (cause `INHERITED` in the twins' vocabulary): no reference is renamed to `c._ix`. A proof-justified pass fires only in the value of a definition. None fires on Init+Std or Mathlib today (M1-b, M1-g). | `Translate.RwState.site`/`inPlace`/`pjFired`; `Driver.compileCanon`, `unitPasses`, `ixFormOf`; recorded in `CompileEnv.p3PjForms` |
 | 7 | **Member of a transported definition clique** (an input clique, `Cliques.inputCliques`: Lean's `all` of two or more safe definitions or theorems, each its own block, referencing an encoding marker; its plan `.transported`: `σ` not the identity, or O17 classes merge). | **Lean's kind, universe parameters and type** (checked, α-equal up to `mdata`) with the transported value `Φ_σ` (§5; WF, `partial_fixpoint`, structural), whose root carries an `_ix.inline` record holding Lean's value. An O17 alias member is the representative's transported constant under its own name. Not the independent export. | `Cliques.planClique` (type check, aliases), `prepareCliques` (`withValue`, the record), `Clique.transport` |
-| 7b | **Equation lemma carried with a transported clique** (a member's own `eq_def`/`eq_unfold`/`eq_N` whose block references a member and one of Lean's encoding constants). | A theorem with Lean's statement and a transported proof (the same as case 7). The packed constant's lemmas it reaches are regenerated under canonical names (case 4). | `Cliques.scheduleCliques` (the carried set), `memberEqLemmas`, `packedLemmas`, `planClique` |
+| 7b | **Equation lemma carried with a transported clique** (a member's own `eq_def`/`eq_unfold`/`eq_N` whose block references a member and one of Lean's encoding constants). | A theorem with Lean's statement and a transported proof (the same as case 7). The packed constant's lemmas it reaches are regenerated under canonical names (case 4). A structural clique with a repacked group carries none: it keeps Lean's form (case 7d, `SHAPE`; §5.3, D-M5-1). | `Cliques.scheduleCliques` (the carried set), `memberEqLemmas`, `packedLemmas`, `planClique`; `Clique.transportStructural` (`StructLayout.repacks`) |
 | 7c | **Lean's encoding constants of a transported clique** (`all₀._mutual`, `all₀.mutual` with everything under them, `m._f`). | Lean's form under Lean's names (case 1; their statements follow Lean's order: `ORDER-STMT`); Lean's equation lemmas that are not carried refer to them. | `Cliques.isEncodingName`, `encodingOwner?` |
 | 7d | **A clique kept in Lean's form**: plan `.baseline` (`NOSPEC`: the order is undetermined; `SHAPE`: the transport left Lean's form), `.unchanged` (`σ` the identity, no alias), `.notEncoded` (one member, an unsafe or partial or kernel mutual block, no encoding recognised). | Case 1 (or 5). Faithful; for `.baseline` non-canonical with the cause. | `Cliques.planClique`; `Clique/Plan.lean` (`CliqueOutcome`) |
 | 8 | **A caller refused**: a block outside a transported clique's unit that references a member and one of Lean's encoding constants. | **Nothing**: the block fails with the named error `Pass 3 cliques: caller refused (block rule, callers adapt): …`; the clique is never changed for it. On Init+Std and Mathlib no such caller exists (M1-a, M1-g). | `Cliques.cliqueCallers`, `callerRefusalPrefix` |

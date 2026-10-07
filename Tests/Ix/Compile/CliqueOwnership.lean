@@ -38,6 +38,7 @@ import Ix.Compile.Pass
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.CliqueOwnership.Sources
+import Tests.Ix.Compile.CliqueOwnership.Lemmas
 
 open Lean Meta
 open Tests.Ix.Compile.Transport (ixName toLeanName toIxConst toLeanExpr declOf eqnCliques checkDecls)
@@ -541,6 +542,158 @@ def runUnitCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
   | .unchanged _ src => return { name := c.name, outcome := s!"{tag}; unchanged (order by {src.tag})", failures }
   | .notEncoded why => return { name := c.name, outcome := s!"{tag}; not encoded: {why}", failures := failures.push s!"{c.name}: not encoded: {why}" }
 
+/-! ## Carried-lemma units (D-M5-1)
+
+A structural clique of `Tests/Ix/Compile/CliqueOwnership/Lemmas.lean` with its
+`eq_def`s realised (`unfold_used`) compiled by the Lean pipeline with the
+switch on, as a unit seeded by the members and `unfold_used` (the closure
+carries the `eq_def`s):
+
+* the clique table carries every member's `eq_def` (`scheduleCliques`);
+* the plan is the expected one: transported (no group repacked: the lemmas
+  transport with the members), unchanged (Lean's order is canonical), or
+  Lean's form with the transport's refusal of a carried lemma that reaches the
+  encoding of a repacked group (`transportStructural`, cause `SHAPE`);
+* the three kernels (`check-rs`, `check-lean`, the certified checker) accept
+  every compiled name of the case's namespace, the `eq_def`s and
+  `unfold_used` included (before the refusal, the certified checker rejected
+  the transported `eq_def`s of the repacked cliques: "application type
+  mismatch");
+* the Rust compiler gives the same entries for the members, the carried
+  lemmas, `unfold_used` and the canonical constants (`rustLeg`);
+* **control**: the carried lemmas transported by `Φ_σ` as before the refusal
+  (`phiS` with ownership off, beside the members' and functionals'
+  transport) are rejected by Lean's kernel exactly where the clique repacks
+  a group, and accepted where it does not. -/
+
+def lemNs : Name := `Tests.Ix.Compile.CliqueOwnership.Lem
+
+/-- One carried-lemma unit: the namespace under `Lem`, a member, the expected
+plan (`transported`, `unchanged`, `refused`), and whether a group is repacked
+(the control's expectation). -/
+structure LemmaCase where
+  name : String
+  member : Name
+  expect : String
+  repacks : Bool
+  what : String
+
+def lemmaCases : Array LemmaCase := #[
+  { name := "SC1", member := `od, expect := "refused", repacks := true,
+    what := "one group of two in a non-canonical order (D-M5-1's source)" },
+  { name := "SC0", member := `od, expect := "unchanged", repacks := false,
+    what := "the same clique in the canonical order (neighbour)" },
+  { name := "MA", member := `sa, expect := "transported", repacks := false,
+    what := "groups of one, non-canonical order (neighbour)" },
+  { name := "MB", member := `sa, expect := "transported", repacks := false,
+    what := "groups of one, fixed parameters reordered (neighbour)" },
+  { name := "MC", member := `f, expect := "refused", repacks := true,
+    what := "a group of two repacked beside a group of one" },
+  { name := "MD", member := `f, expect := "transported", repacks := false,
+    what := "a group of two in the canonical order, the clique's order not (neighbour)" }]
+
+open _root_.Ix.Compile.Clique in
+/-- The control: the members, functionals and carried lemmas of the clique
+transported as before the refusal (the lemmas by `phiS` with ownership off),
+added to Lean's kernel under `scratch`; the verdict of each carried lemma, and
+the rejections among the other constants. -/
+def lemmaControl (cenv : Ix.CompileM.CompileEnv) (all carried : Array IxName) (scratch ns : Name) :
+    CoreM (Except String (Array (Name × Option String) × Array String)) := do
+  let const? := cenv.env.get?
+  let some members := all.mapM fun m => (const? m).bind Ix.Compile.Pass.cliqueDecl?
+    | return .error "a member is not a definition"
+  let some (enc, aux) := Ix.Compile.Pass.encodingOf const? all members | return .error "no encoding"
+  unless enc == .structural do return .error "not structural"
+  let some lemmas := carried.mapM fun c => (const? c).bind _root_.Ix.Compile.Clique.Decl.ofConstantInfo?
+    | return .error "a carried lemma is not a theorem"
+  let inp0 : Input := { encoding := enc, members, aux, sigma := idPerm all.size, newEncName := all[0]!, const? }
+  let .ok (σ, _, _) := cliqueOrder Ix.Compile.Canon.Rules.phaseA (Ix.Compile.Pass.cliqueAddr cenv) inp0
+    | return .error "no order"
+  let r : Except String (Array Decl × Array Decl) := TM.run' do
+    let ts ← transportStructural members aux σ const? #[]
+    let L ← liftE (structLayout members aux σ const?)
+    let Lp := { L with checkOwnership := false }
+    let ls ← lemmas.mapM fun d => do
+      pure { d with type := ← phiS Lp #[] d.type, value := ← phiS Lp #[] d.value }
+    pure (ts.map (·.decl), ls)
+  match r with
+  | .error e => return .error e
+  | .ok (ts, ls) =>
+    let ks ← checkDecls scratch ns (ts ++ ls)
+    let lemmaNames : NameSet := carried.foldl (fun s c => s.insert (toLeanName c)) {}
+    let other := ks.filterMap fun (n, m?) =>
+      if lemmaNames.contains n then none else m?.map fun m => s!"{n}: {m.take 200}"
+    return .ok (ks.filter (lemmaNames.contains ·.1), other)
+
+open Tests.Ix.Compile.Pass3 (CUnit closureOf compileUnit kernelFailures) in
+/-- Compile one carried-lemma unit and check it (see the section's text). -/
+def runLemmaUnit (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.Clique.Encoding × Array Name))
+    (c : LemmaCase) : IO Outcome := do
+  let ns := lemNs ++ c.name.toName
+  let some (enc, ms) := eqn.get? (ns ++ c.member) |
+    return { name := c.name, outcome := "MISSING", failures := #[s!"{c.name}: no clique recorded for {c.member}"] }
+  let mut failures : Array String := #[]
+  unless enc == .structural do failures := failures.push s!"{c.name}: not a structural clique"
+  let used := ns ++ `unfold_used
+  let u : CUnit := { name := s!"clique-lemmas-{c.name}", env, seeds := ms.push used,
+                     closure := closureOf env (ms.push used).toList }
+  let on ← compileUnit u true
+  for (n, e) in on.cenv.ungrounded.toList do
+    failures := failures.push s!"{c.name}: block failure {n.pretty}: {e.take 300}"
+  -- the carried lemmas: every member's `eq_def`
+  let key := ixName ms[0]!
+  let some (all, carried) := on.cenv.p3Cliques.get? key |
+    return { name := c.name, outcome := "not in the clique table", failures := failures.push s!"{c.name}: not in the clique table" }
+  let expectCarried := (ms.map fun m => ixName (m ++ `eq_def)).qsort (·.pretty < ·.pretty)
+  unless carried.map (·.pretty) == expectCarried.map (·.pretty) do
+    failures := failures.push s!"{c.name}: carried {carried.map (·.pretty)}, expected {expectCarried.map (·.pretty)}"
+  -- the plan
+  let outcome := Ix.Compile.Pass.planClique on.cenv.env.get? (Ix.Compile.Pass.cliqueAddr on.cenv) all carried
+  let got := match outcome with
+    | .transported p =>
+      if carried.all p.members.contains then "transported" else "transported without its lemmas"
+    | .unchanged _ _ => "unchanged"
+    | .baseline _ cause why =>
+      if cause == "SHAPE" && (why.splitOn "carried equation lemma").length > 1 &&
+          (why.splitOn "repacked group").length > 1 then "refused" else s!"baseline {cause}: {why}"
+    | .notEncoded why => s!"not encoded: {why}"
+  unless got == c.expect do failures := failures.push s!"{c.name}: plan {got}, expected {c.expect}"
+  -- the kernels on every compiled name of the case
+  let names := on.env.named.toArray.filterMap fun (n, _) =>
+    if ns.isPrefixOf (toLeanName n) then some n.pretty else none
+  let dir ← IO.FS.createTempDir
+  let kf ← try
+      let p := dir / "on.ixe"
+      IO.FS.writeBinFile p on.bytes
+      kernelFailures dir p names
+    finally IO.FS.removeDirAll dir
+  for (leg, n, m) in kf do failures := failures.push s!"{c.name}: compiled {n} rejected by {leg}: {m.take 200}"
+  unless names.any (· == (ixName used).pretty) && carried.all (fun l => names.contains l.pretty) do
+    failures := failures.push s!"{c.name}: the kernels did not check unfold_used and every carried lemma"
+  -- the Rust leg: members, carried lemmas, `unfold_used`, canonical constants
+  let (rustFailures, rustSummary) ← rustLeg u on (ms ++ carried.map toLeanName |>.push used) #[]
+  failures := failures ++ rustFailures
+  -- the control
+  let ctx : Core.Context := { fileName := "<clique-ownership>", fileMap := default, maxHeartbeats := 0 }
+  let scratch := checkedNs ++ (c.name ++ "Lem").toName
+  let (ctl, _) ← ((lemmaControl on.cenv all carried scratch ns) : CoreM _).toIO ctx { env }
+  let (ctlLine, ctlFails) : String × Array String := match ctl with
+    | .error e => (s!"control: {e}", #[s!"{c.name}: control: {e}"])
+    | .ok (ks, other) =>
+      let rejected := ks.filter (·.2.isSome)
+      let fs := other.map (s!"{c.name}: control: Lean's kernel rejects " ++ ·)
+      let fs := if c.repacks then
+          (if rejected.size == ks.size && !ks.isEmpty then fs
+           else fs.push s!"{c.name}: control: the lemmas transported as before are not all rejected ({rejected.size}/{ks.size})")
+        else fs ++ rejected.map fun (n, m?) =>
+          s!"{c.name}: control: {n} rejected without a repacked group: {(m?.getD "").take 200}"
+      let first := (rejected[0]?.bind (·.2)).map (fun m => s!" ({m.take 120})") |>.getD ""
+      (s!"control: {rejected.size}/{ks.size} lemma(s) transported as before rejected by Lean's kernel{first}", fs)
+  failures := failures ++ ctlFails
+  return { name := c.name, outcome := s!"plan {got}; carried {carried.size}; {rustSummary}",
+           kernel := s!"{names.size} compiled names, {kf.size} kernel failure(s)",
+           values := #[ctlLine], failures }
+
 /-! ## The cases -/
 
 def natLit (n : Nat) : Expr := mkNatLit n
@@ -753,6 +906,19 @@ def run : IO UInt32 := do
   unless refusals ≥ 1 && compiledCallers ≥ 1 do
     failures := failures.push s!"callers: {refusals} refused and {compiledCallers} compiled; the block-rule check needs a transported and a kept WF8 order"
   IO.println s!"[clique-ownership] compile units: {units}, WF8 callers refused {refusals}, compiled {compiledCallers}"
+  -- the carried-lemma units (D-M5-1): both expectations must be exercised
+  let mut lemmaPlans : Std.HashMap String Nat := {}
+  for c in lemmaCases do
+    let o ← try runLemmaUnit env eqn c
+      catch e => pure { name := c.name, outcome := "ERROR", failures := #[s!"{c.name} (carried lemmas): {e}"] }
+    IO.println s!"[clique-ownership] {c.name} (carried lemmas: {c.what}): {o.outcome}, kernel {o.kernel}"
+    for v in o.values do IO.println s!"[clique-ownership]   {v}"
+    for f in o.failures do IO.println s!"[clique-ownership]   FAIL {f}"
+    if o.failures.isEmpty then lemmaPlans := lemmaPlans.insert c.expect (lemmaPlans.getD c.expect 0 + 1)
+    failures := failures ++ o.failures
+  unless lemmaPlans.getD "refused" 0 ≥ 1 && lemmaPlans.getD "transported" 0 ≥ 1 do
+    failures := failures.push s!"carried lemmas: refused and transported must both pass ({lemmaPlans.toList})"
+  IO.println s!"[clique-ownership] carried-lemma units: {lemmaCases.size}, passing by plan {lemmaPlans.toList.mergeSort (fun a b => a.1 < b.1)}"
   IO.println s!"[clique-ownership] {cases.size} cases: {transported} transported, {kept} kept in Lean's form, {failures.size} failure(s)"
   return if failures.isEmpty then 0 else 1
 

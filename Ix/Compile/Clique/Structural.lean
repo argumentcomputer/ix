@@ -40,7 +40,9 @@
   Unsupported shapes are outside the grammar and leave the clique in Lean's
   form (§5.3: the fallback is the baseline): a dictionary passed whole to a
   helper other than a matcher, a path the walk cannot follow, a projection
-  of a `brecOn` result that is not a full path.
+  of a `brecOn` result that is not a full path, a carried equation lemma
+  that reaches the encoding when a group is repacked (D-M5-1: Lean's
+  unfolding proof carries packed values the walk does not see).
 -/
 module
 public import Ix.Compile.Clique.Packing
@@ -106,6 +108,43 @@ structure StructLayout where
 
 /-- new position `p` ↦ Lean position, for the `funType` telescope. -/
 def StructLayout.funPerm (L : StructLayout) : Array Nat := invPerm L.sigma
+
+/-- Some type former's group packs two or more functions in an order the
+transport changes (`perm` is not the identity): only then does the clique
+have packed motives, tuples and paths to re-associate. -/
+def StructLayout.repacks (L : StructLayout) : Bool :=
+  L.groups.any fun g => g.size ≥ 2 && g.perm != idPerm g.size
+
+/-- `c` is a constant of the recursion's encoding: a functional `f._f`, a
+"below" matcher, or a `below`/`brecOn` constant of the block or a constant
+under one (`T.brecOn.go`, `T.brecOn.eq`). -/
+def StructLayout.isEncodingConst (L : StructLayout) (c : Name) : Bool :=
+  L.fNames.contains c || L.matchers.contains c || underAux c 64
+where
+  underAux : Name → Nat → Bool
+    | _, 0 => false
+    | n, fuel + 1 => L.aux.contains n || match n with
+      | .str p _ _ | .num p _ _ => underAux p fuel
+      | .anonymous _ => false
+
+/-- `e` mentions a constant satisfying `p` (a walk over distinct nodes:
+proofs are shared DAGs). -/
+def mentionsWhere (p : Name → Bool) (e : Expr) : Bool := Id.run do
+  let mut seen : Std.HashSet Expr := {}
+  let mut stack : Array Expr := #[e]
+  while !stack.isEmpty do
+    let x := stack.back!
+    stack := stack.pop
+    if seen.contains x then continue
+    seen := seen.insert x
+    match x with
+    | .const n _ _ => if p n then return true
+    | .app f a _ => stack := stack.push a |>.push f
+    | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
+    | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
+    | .proj _ _ s _ | .mdata _ s _ => stack := stack.push s
+    | _ => pure ()
+  return false
 
 /-! ## Paths -/
 
@@ -799,7 +838,21 @@ def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Na
     out := out.push { decl := { d with type := ← phi d.type, value := mkLams ps' (mkLets ls' body) } }
   -- the carried equation lemmas (a failure leaves the clique in Lean's form);
   -- they are theorems, so dictionary ownership is not enforced in them (a
-  -- lemma's statement must still be Lean's, `Pass/Cliques.lean`)
+  -- lemma's statement must still be Lean's, `Pass/Cliques.lean`).
+  -- A lemma that reaches the recursion's encoding is outside the grammar when
+  -- the clique repacks a group (D-M5-1): Lean's unfolding proof (`eq_def`,
+  -- `Structural.mkUnfoldEq`) carries the packed values through `brecOn.go`
+  -- and `brecOn.eq`, the β-reduced packed functional and tuple, a λ over a
+  -- packed value (`congrArg`'s motive) and the `below` dictionary unfolded by
+  -- `whnf` in the splitter's motive, none of which `Φ_σ` re-associates; the
+  -- transported proof would not type-check (the certified checker rejects it).
+  -- Without a repacked group no packed value moves, and the lemma transports
+  -- as the members do.
+  if L.repacks then
+    for (d, _) in lemmas do
+      if mentionsWhere L.isEncodingConst d.type || mentionsWhere L.isEncodingConst d.value then
+        throw s!"grammar: the carried equation lemma {d.name} unfolds a member through the encoding \
+          of a repacked group (brecOn.go/brecOn.eq and packed values the transport does not re-associate)"
   let Lp := { L with checkOwnership := false }
   for (d, nn) in lemmas do
     out := out.push { decl := { d with name := nn, type := ← phiS Lp #[] d.type,

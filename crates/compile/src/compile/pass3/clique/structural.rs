@@ -60,6 +60,32 @@ impl StructLayout<'_> {
     inv_perm(&self.sigma)
   }
 
+  /// `repacks`: some type former's group packs two or more functions in an
+  /// order the transport changes (`perm` is not the identity).
+  pub fn repacks(&self) -> bool {
+    self.groups.iter().any(|g| g.size() >= 2 && g.perm != id_perm(g.size()))
+  }
+
+  /// `isEncodingConst`: a functional `f._f`, a "below" matcher, or a
+  /// `below`/`brecOn` constant of the block or a constant under one
+  /// (`T.brecOn.go`, `T.brecOn.eq`).
+  pub fn is_encoding_const(&self, c: &Name) -> bool {
+    if self.f_names.contains(c) || self.matchers.contains(c) {
+      return true;
+    }
+    let mut n = c.clone();
+    for _ in 0..64 {
+      if self.aux.contains_key(&n) {
+        return true;
+      }
+      n = match n.as_data() {
+        NameData::Str(p, _, _) | NameData::Num(p, _, _) => p.clone(),
+        NameData::Anonymous(_) => return false,
+      };
+    }
+    false
+  }
+
   /// `isBelowTy`.
   pub fn is_below_ty(&self, ty: &Expr) -> bool {
     match const_app(&strip_mdata(ty)) {
@@ -314,6 +340,43 @@ pub fn below_path(
 // ---------------------------------------------------------------------------
 
 pub type Ctx = Vec<(Expr, bool)>;
+
+/// `mentionsWhere`: `e` mentions a constant satisfying `p` (a walk over
+/// distinct nodes: proofs are shared DAGs).
+pub fn mentions_where(p: &dyn Fn(&Name) -> bool, e: &Expr) -> bool {
+  let mut seen: FxHashSet<Hash> = FxHashSet::default();
+  let mut stack = vec![e.clone()];
+  while let Some(x) = stack.pop() {
+    if !seen.insert(*x.get_hash()) {
+      continue;
+    }
+    match x.as_data() {
+      ExprData::Const(n, _, _) => {
+        if p(n) {
+          return true;
+        }
+      },
+      ExprData::App(f, a, _) => {
+        stack.push(a.clone());
+        stack.push(f.clone());
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(t.clone());
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(v.clone());
+        stack.push(t.clone());
+      },
+      ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => {
+        stack.push(s.clone())
+      },
+      _ => {},
+    }
+  }
+  false
+}
 
 fn ctx_hash(ctx: &Ctx) -> Hash {
   let mut h = blake3::Hasher::new();
@@ -1315,6 +1378,21 @@ pub fn transport_structural(
       value: mk_lams(&ps2, mk_lets(&ls2, body)),
       ..d.clone()
     }));
+  }
+  // the carried lemmas (D-M5-1, `transportStructural`): with a repacked
+  // group, a lemma that reaches the recursion's encoding (Lean's unfolding
+  // proof through `brecOn.go`/`brecOn.eq` and packed values) is outside the
+  // grammar
+  if l.repacks() {
+    let enc = |c: &Name| l.is_encoding_const(c);
+    for (d, _) in lemmas {
+      if mentions_where(&enc, &d.typ) || mentions_where(&enc, &d.value) {
+        return Err(format!(
+          "grammar: the carried equation lemma {} unfolds a member through the encoding of a repacked group (brecOn.go/brecOn.eq and packed values the transport does not re-associate)",
+          name_to_string(&d.name)
+        ));
+      }
+    }
   }
   l.check_ownership = false;
   for (d, nn) in lemmas {
