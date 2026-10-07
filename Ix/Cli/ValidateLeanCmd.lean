@@ -1302,7 +1302,7 @@ def validateLeanCmd : Cli.Cmd := `[Cli|
     ixe : String; "Validate a pre-compiled .ixe instead of a Lean file (no Lean source: phases 1 and 4 skipped, phases 6-8 read Lean's forms from the decompiler)"
     report : String; "Write a machine-readable JSON report (phase table + pass/fail) to this path."
     workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale: memory scales with workers."
-    «full-oracle»; "Phase 5 comparison via the full canonicalized env (structural BEq per constant + the decompiler's per-recovery debug track) instead of the default per-name digests. Use on --ns-filtered closures to debug a digest mismatch."
+    "full-oracle"; "Phase 5 comparison via the full canonicalized env (structural BEq per constant + the decompiler's per-recovery debug track) instead of the default per-name digests. Use on --ns-filtered closures to debug a digest mismatch."
 
   ARGS:
     ...path : String; "Path to the Lean source file whose env should be validated (omit with --ixe)."

@@ -107,6 +107,7 @@ import Tests.ShardMap
 import Tests.Ix.EnvBody
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
+import Tests.Ix.CliFlags
 import Tests.Ix.CatalogDedup
 import Tests.Ix.CompileDeterminism
 import Tests.Ix.CompileFidelity
@@ -137,6 +138,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("assumption-tree", Tests.AssumptionTree.suite),
   ("commit", Tests.Commit.suite),
   ("canon", [Tests.CanonM.suite]),
+  -- long flags parse under the names their commands read (`Tests/Ix/CliFlags.lean`)
+  ("cli-flags", Tests.Ix.CliFlags.suite),
   ("keccak", Tests.Keccak.suite),
   ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
   ("exact-sharing-ffi", Tests.SharingExactFFI.suite),

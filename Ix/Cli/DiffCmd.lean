@@ -202,7 +202,7 @@ def diffCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     anon; "Compare only anonymous structure (the default; accepted for explicitness)."
-    «meta»; "Additionally compare named metadata (binder names, originals, kv-maps)."
+    "meta"; "Additionally compare named metadata (binder names, originals, kv-maps)."
     verbose; "Print full addresses, uncapped lists, synthetic mutual-block names, and rippled changed rows."
 
   ARGS:
