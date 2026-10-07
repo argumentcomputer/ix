@@ -7,6 +7,7 @@ import Ix.CompileCert.Canon.Rel
 import Ix.CompileCert.Canon.Cache
 import Ix.CompileCert.Canon.QSort
 import Ix.CompileCert.Canon.SccMain
+import Ix.CompileCert.Canon.SccNames
 
 /-!
 # M7 L1: Pass 1 proved
@@ -26,5 +27,5 @@ stated against the code as it is. The modules:
   preorder;
 * `QSort`, `SccState`, `Scc`, `SccStep`, `SccMain`: `condensation` (Tarjan with an explicit
   call stack) returns the strongly connected components, each node once, in reverse
-  topological order (§2.1, Def 2.1).
+  topological order (§2.1, Def 2.1); `SccNames`: `sccsOf` over names.
 -/

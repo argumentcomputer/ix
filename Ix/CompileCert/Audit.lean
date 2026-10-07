@@ -798,7 +798,8 @@ def l1Roots : Array Lean.Name :=
     `inv_done, `inv_pop, `inv_lift, `inv_finish, `tarjanLoop_spec, `fold_spec, `filt,
     `condensation_eq, `condensation_state, `condensation_cover, `condensation_range,
     `condensation_unique, `condensation_topo, `condensation_reach, `condensation_scc,
-    `condensation_acyclic].map (`Ix.CompileCert.Canon ++ ·)
+    `condensation_acyclic, `RelReach, `NodupB, `nameIdx_spec, `adjOf, `NEdge, `edge_adjOf,
+    `sccsOf_eq, `sccsOf_condensation, `sccsOf_cover, `sccsOf_range, `sccsOf_unique, `sccsOf_scc].map (`Ix.CompileCert.Canon ++ ·)
 
 end Ix.CompileCert.Audit
 
