@@ -439,8 +439,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- A block compiles the same with and without its dependents
   -- (Tests.Ix.Compile.CallerIndependence).
   ("compile-caller-independence", Tests.Ix.Compile.CallerIndependence.run),
-  -- `ix pack` carries whole logical units; bundle members keep the whole compile's bytes
-  -- (Tests.Ix.Compile.PackUnits).
+  -- `ix pack` carries the root's reference closure, never its unit, byte-identical to the
+  -- Lean oracle; bundle members keep the whole compile's bytes (Tests.Ix.Compile.PackUnits).
   ("pack-units", Tests.Ix.Compile.PackUnits.run),
   -- The Pass 3 clique plan table is a memo: the check mode (IX_PASS3_CHECK_PLANS) under
   -- every driver, coverage, a negative control (Tests.Ix.Compile.PlanCache).

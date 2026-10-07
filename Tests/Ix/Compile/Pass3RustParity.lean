@@ -28,18 +28,23 @@
      their non-canonical sets (Lean `CompileEnv.p3NonCanonical`, Rust
      `CompileEnvStatus.nonCanonical`: the recorded declines with their
      causes) must be equal; a difference is a defect.
-  5. **pack** (M6R slice 5, `Tests.Ix.Compile.PackParity`): on the Lean
-     compile's artifact, the Rust unit view has the Lean view's tables (every
-     name's unit, Pass 3's `_ix` names placed under their declaration); the
-     Rust whole-unit bundle of one root per unit holding an `_ix` name is
-     whole under the Lean view, and, for up to `PARITY_PACK_MAX` (default 10)
-     of those roots per compile unit covering the reserved-name shapes,
-     byte-identical to `ix pack`'s (`packWholeUnits`); a difference is a
-     defect. `PARITY_PACK_ROOTS=<a>,<b>,…` adds roots, always compared (with
-     `PARITY_FILE`: on Init+Std the whole-unit bundle of most roots, the
-     clique hook's `_ix` units among them, gathers about 10,700 unit members,
-     which the Lean completion packs one at a time from the 256 MB source, so
-     the gate compares small roots there, with `PARITY_PACK_MAX=0`).
+  5. **pack** (`Tests.Ix.Compile.PackParity`): on the Lean compile's
+     artifact, `ix pack`'s Rust bundle (the root's reference closure,
+     `Ixon.rsPackEnv`) is byte-identical to Lean's implementation of the
+     closure (`packOracle`), with metadata, and the first root's also
+     anonymously; a difference is a defect. The roots: `PARITY_PACK_ROOTS`
+     (always compared), then a cover of the Pass 3 reserved-name shapes
+     (`PackParity.defaultRoots`), then ordinary names to fill the budget,
+     up to `PARITY_PACK_MAX` roots per compile unit (default 10). A unit
+     without reserved names still exercises the oracle. The defaults are
+     gate-safe: with `PARITY_FILE` on
+     Init+Std the leg reads the 256 MB artifact once and packs 10 roots in
+     a few minutes with no variable set; `PARITY_PACK_MAX=<n>` is the
+     explicit opt-in for a wider root set (each root costs one Rust pack of
+     the source, seconds). Until M6R slice 6 this step compared whole-unit
+     bundles (slice 5's `rsPackEnvUnits` against M1-h's `packWholeUnits`,
+     which packed one Lean root for hours on Init+Std's `_ix` units); the
+     owner's decision of 2026-10-07 removed the whole-unit pack.
 
   Besides the `pass3` units, the `changed-set` suite's clique unit (the clique
   and ownership families together), the O11a decline inputs of `o11a-decline` (the
@@ -294,15 +299,16 @@ canonical constant(s) under reserved names, {(s4canon.filter same).size} identic
       if !rustNC.contains e then extra := extra.push s!"{name}: non-canonical entry on the Lean side only: {e.1}: {e.2}"
     for e in rustNC do
       if !leanNC.contains e then extra := extra.push s!"{name}: non-canonical entry on the Rust side only: {e.1}: {e.2}"
-  -- 5. the whole-unit pack of the Lean artifact, Rust against Lean
-  let packMax := (← IO.getEnv "PARITY_PACK_MAX").bind String.toNat?
+  -- 5. `ix pack` (Rust) against the Lean oracle, on the Lean artifact; bounded
+  -- by default (`PARITY_PACK_MAX`, 10 roots), so the Init+Std leg stays gate-safe
+  let packMax := ((← IO.getEnv "PARITY_PACK_MAX").bind String.toNat?).getD 10
   let packRoots : Array Name := ((((← IO.getEnv "PARITY_PACK_ROOTS").map (·.splitOn ",")).getD []).filter
     (!·.isEmpty)).toArray.map String.toName
   let packDir ← IO.FS.createTempDir
   let packPath := packDir / "lean.ixe"
   IO.FS.writeBinFile packPath out.bytes
-  extra := extra ++ (← Tests.Ix.Compile.PackParity.run s!"{name}" packPath.toString
-    (extra := packRoots) (maxLean := packMax.getD 10))
+  let packList := Tests.Ix.Compile.PackParity.defaultRoots lean packRoots packMax
+  extra := extra ++ (← Tests.Ix.Compile.PackParity.run s!"{name}" packPath.toString packList)
   IO.FS.removeDirAll packDir
   for (n, c) in leanNC.toList.take k do
     IO.println s!"[parity] {name}:   non-canonical {n}: {c}"

@@ -497,9 +497,11 @@ def unitOwnerKind? : Lean.ConstantInfo → Option UnitOwnerKind
 
 /-- What a logical unit is read from (M1-h): the kind of a declaration as an
 owner of auxiliaries, the roots of its unit, and the names of the
-environment. Two sources: a Lean environment (`leanUnitView`) and a compiled
-environment's names and metadata (`ix pack`, `Ix.Cli.PackCmd`), so that every
-closure producer reads units by one definition. -/
+environment. The source is a Lean environment (`leanUnitView`), so that every
+closure producer reads units by one definition. Units are for compilation only:
+until M6R slice 6 `ix pack` also read them from a compiled environment's names
+and metadata (`ixonUnitView`) to carry whole units, which it no longer does
+(owner, 2026-10-07: a bundle is the root's reference closure). -/
 structure UnitView where
   kind? : Lean.Name → Option UnitOwnerKind
   /-- The roots of the unit of a declaration (see `unitRoots`). -/

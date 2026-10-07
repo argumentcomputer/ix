@@ -2419,13 +2419,16 @@ a whole compile. Certification can state one obligation per block.
 - Schedule identity (§6.1): byte-equal output across every driver and worker count (in both switch states
   until M6R slice 6, Pass 3 alone since).
 - Closure against whole: every constant of a closure compile has the address the whole compile gives it.
-- Whole units in every closure producer (M1-d, M1-h, M6R slice 5): the selected closures of the input
+- Whole units in every closure producer of the compiler's input (M1-d, M1-h): the selected closures of the input
   (`Ix.EnvScope.collectSelectedDeps`, `withUnits`) carry the unit of every declaration they reach, and the
   Rust compiler's output on such a closure is the Lean compiler's, byte for byte (`compile-closure-whole`,
-  `compiler-selected-closure-e2e`); `ix pack` completes the units of a compiled environment read from its names
-  and metadata (`Ix.Cli.PackCmd.packWholeUnits` over `ixonUnitView`), Pass 3's reserved names (`_ix`, `_ix_*`)
-  belonging to the declaration they hang under (§11.2 case 4), and the Rust completion (`ix pack --rust-units`,
-  `ixon::unit`) gives the same bundle byte for byte (`pack-units`, `pass3-rust-parity` step 5).
+  `compiler-selected-closure-e2e`); `ix pack` is not a
+  closure producer of units: it carries a root's transitive reference closure, with the compiler-introduced
+  constants (`_ix`, `_ix_*`) it references and never the compilation unit (owner, 2026-10-07), computed in Rust
+  by address (`Env::prune_to_closure`) and compared byte for byte with Lean's implementation as the test oracle
+  (`pack-units`, `pass3-rust-parity` step 5). From M1-h to M6R slice 6 it completed the units of a compiled
+  environment (`Ix.Cli.PackCmd.packWholeUnits` over `ixonUnitView`; Rust `ix pack --rust-units`, `ixon::unit`),
+  removed with the owner's decision.
 - **Caller independence** (to add): compile an environment, then the same environment with extra
   dependents and extra unrelated constants appended; every constant of the first must keep its bytes and
   its records. The appended dependents must not be auxiliaries of an existing unit: making Lean
@@ -2789,7 +2792,7 @@ session's handoff. It describes Pass 3 (§4.8, §7.4), both compilers' only mode
 `IX_PASS3=off` selected the legacy surgery, under which none of §11.2's Pass 3 cases applied and no
 changed-set record was written). Every statement cites the code that makes it true at
 `jcb/ix-certify-compile` = `36778059` plus this section's commit, and the slice-6 edits (the retired
-switch) the slice-6 tree; where the code is not uniform the
+switch, the pack's definition) the slice-6 tree; where the code is not uniform the
 inconsistency is listed in §11.6, not smoothed over.
 
 Vocabulary (§2, §6.3): a *block* is a component of the reference graph after Pass 1; a block is

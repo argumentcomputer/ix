@@ -2731,54 +2731,6 @@ impl Env {
     Ok(out)
   }
 
-  /// [`Env::prune_to_closure_units`] over a lazily-loaded env (the
-  /// streaming-metadata pack path of [`Self::prune_to_closure_streaming`],
-  /// with whole logical units; `view` is the source's unit view,
-  /// [`crate::unit::IxonUnitView::of_lazy`]).
-  #[cfg(not(target_arch = "riscv64"))]
-  #[allow(clippy::too_many_arguments)]
-  pub fn prune_to_closure_streaming_units(
-    &self,
-    index: &LazyIndex,
-    data: &[u8],
-    names: &FxHashMap<Address, Name>,
-    main: &Address,
-    assumed: &FxHashSet<Address>,
-    view: &crate::unit::IxonUnitView,
-  ) -> Result<(Env, crate::unit::UnitStats), String> {
-    use crate::unit::UnitView;
-    let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
-    let mut named_done: FxHashSet<Name> = FxHashSet::default();
-    let named_addrs: FxHashMap<&Name, &Address> =
-      index.named.iter().map(|n| (&n.name, &n.addr)).collect();
-    let idx = view.index();
-    let mut stats = crate::unit::UnitStats::default();
-    loop {
-      self.prune_fixpoint_streaming(
-        index,
-        data,
-        names,
-        &named_addrs,
-        &mut out,
-        &mut visited,
-        &mut pending,
-        &mut named_done,
-        assumed,
-      )?;
-      if !Self::enqueue_unit_members(
-        view,
-        &idx,
-        &out,
-        assumed,
-        &mut visited,
-        &mut pending,
-        &mut stats,
-      )? {
-        return Ok((out, stats));
-      }
-    }
-  }
-
   /// The value and streamed named passes of
   /// [`Self::prune_to_closure_streaming`], run until the named pass finds no
   /// new DAG work.

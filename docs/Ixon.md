@@ -1497,7 +1497,19 @@ It resolves `<name>` (displayed form) against the env's `named` table,
 runs the prune, re-validates with `validate_closed`, and writes the
 bundle (default `<name>.ixe`). `--assume` entries — names or 64-hex
 constant addresses — declare trust-boundary cut points; the ones
-actually reached become the bundle's `assumptions` (thin bundle).
+actually reached become the bundle's `assumptions` (thin bundle), the
+others are skipped.
+
+The bundle is the root's transitive reference closure, including the
+compiler-introduced constants it references (Pass 3's `_ix` constants,
+`PProd`, …), never its compilation unit: units exist for compilation
+parallelism over the DAG, and a bundle carries only what checking or
+evaluating the root needs (owner, 2026-10-07). From M1-h to M6R slice 6
+`ix pack` completed every reached block's logical unit (`packWholeUnits`;
+`--rust-units`, `--no-units`); slice 6 removed the completion and its
+flags. The closure is computed in Rust by address; Lean's implementation
+of it (`Tests.Ix.Compile.PackParity.packOracle`) is the test oracle, byte
+for byte (`pack-units`, `pass3-rust-parity`).
 
 The source env is memory-mapped and lazily loaded; display metadata is
 carried by **re-streaming §5 per prune fixpoint round**

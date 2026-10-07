@@ -586,33 +586,17 @@ def envPackTests : TestSeq :=
   packErrTest "EnvPack: main cannot be assumed"
     (packFixture src "bar" #["bar"])
 
-/-- Write `env`, pack `mainName` carrying whole logical units in Rust
-    (`rsPackEnvUnits`, M6R slice 5), and return the bundle with the
-    completion's rounds and members. (The comparison with the Lean completion,
-    `Ix.Cli.PackCmd.packWholeUnits`, is the `pack-units` suite's.) -/
-private def packUnitsFixture (env : Env) (mainName : String)
-    (assume : Array String) (anon : Bool := false) :
-    IO (Except String (Env × Nat × Nat)) := do
-  let dir ← IO.FS.createTempDir
-  let src := dir / "src.ixe"
-  let out := dir / "bundle.ixe"
-  let result ← try
-    IO.FS.writeBinFile src (serEnv! env)
-    let (rounds, members) ← Ixon.rsPackEnvUnits src.toString mainName assume out.toString anon false
-    pure ((Ixon.rsDeEnv (← IO.FS.readBinFile out)).map (·, rounds, members))
-  catch e =>
-    pure (.error e.toString)
-  IO.FS.removeDirAll dir
-  return result
-
-/-- `rs_pack_env_units` (M6R slice 5): `f`'s value closure reaches neither its
-    equation lemma `f.eq_1` nor Pass 3's canonical constant `f._ix` (which
-    references `g`); both are members of `f`'s logical unit (a definition's
-    auxiliary component, a reserved component), so the whole-unit bundle
-    carries them and `g`, never `h`, also anonymously and from `f._ix`; a
-    missing member that is a declared cut point fails (as the Lean completion
-    does, packing it as a root). -/
-def envPackUnitsTests : TestSeq :=
+/-- `ix pack` writes the root's reference closure, never its compilation unit
+    (owner, 2026-10-07; M6R slice 6 removed the whole-unit completion, M1-h's
+    `packWholeUnits` and slice 5's `rsPackEnvUnits`): `f`'s equation lemma
+    `f.eq_1` and Pass 3's canonical constant `f._ix` are members of `f`'s
+    logical unit that `f` does not reference, so `f`'s bundle carries neither;
+    `f._ix`'s bundle carries the constant it references (`g`), never `h`, also
+    anonymously; a declared cut point the walk does not reach is skipped, one
+    it reaches is recorded. (The comparison with Lean's implementation of the
+    closure, `Tests.Ix.Compile.PackParity.packOracle`, is the `pack-units`
+    suite's.) -/
+def envPackClosureTests : TestSeq :=
   let mk (cs : List String) : Ix.Name := cs.foldl Ix.Name.mkStr Ix.Name.mkAnon
   let leaf (v : UInt64) (refs : Array Address) : Constant :=
     { info := .defn { kind := .defn, safety := .safe, lvls := 0,
@@ -639,36 +623,29 @@ def envPackUnitsTests : TestSeq :=
   let carries (b : Env) (cs : List String) : Bool := match addrOf cs with
     | some a => b.consts.contains a
     | none => false
-  let unitTest (descr : String) (main : String) (anon : Bool) : TestSeq :=
+  let closureTest (descr main : String) (anon : Bool) (want : List (List String)) : TestSeq :=
     .individualIO descr none (do
-      match ← packUnitsFixture src main #[] anon with
+      match ← packFixture src main #[] anon with
       | .error e => pure (false, 0, 0, some e)
-      | .ok (b, rounds, members) =>
-        let whole := [["f"], ["f", "eq_1"], ["f", "_ix"], ["g"]].all (carries b ·)
-          && !carries b ["h"]
-        let named := anon || [["f", "eq_1"], ["f", "_ix"]].all fun cs => (b.getAddr? (mk cs)).isSome
-        let ok := whole && named && rounds == 1 && members == 2
+      | .ok b =>
+        let all := [["f"], ["f", "eq_1"], ["f", "_ix"], ["g"], ["h"]]
+        let ok := all.all fun cs => carries b cs == want.contains cs
         pure (ok, 0, 0, if ok then none else
-          some s!"whole={whole} named={named} rounds={rounds} members={members}")) .done
-  unitTest "EnvPackUnits: the unit's lemma, _ix constant and its reference" "f" false ++
-  unitTest "EnvPackUnits: anonymous" "f" true ++
-  unitTest "EnvPackUnits: from the _ix constant" "f._ix" false ++
-  (TestSeq.individualIO "EnvPackUnits: without units the value closure lacks the unit" none (do
-    match ← packFixture src "f" #[] with
+          some s!"carried {all.filter (carries b ·)}, expected {want}")) .done
+  closureTest "EnvPack: f's bundle is its reference closure, not its unit" "f" false [["f"]] ++
+  closureTest "EnvPack: a compiler-introduced constant carries its references" "f._ix" false
+    [["f", "_ix"], ["g"]] ++
+  closureTest "EnvPack: the same closure anonymously" "f._ix" true [["f", "_ix"], ["g"]] ++
+  (TestSeq.individualIO "EnvPack: an unreached declared cut point is skipped" none (do
+    match ← packFixture src "f" #["f.eq_1"] with
     | .error e => pure (false, 0, 0, some e)
     | .ok b =>
-      let ok := carries b ["f"] && !carries b ["f", "eq_1"] && !carries b ["f", "_ix"]
-      pure (ok, 0, 0, if ok then none else some "value closure carries unit members")) .done) ++
-  (TestSeq.individualIO "EnvPackUnits: a missing member declared as a cut point fails" none (do
-    match ← packUnitsFixture src "f" #["f.eq_1"] with
-    | .error e =>
-      let ok := (e.splitOn "rs_pack_env: prune_to_closure: main cannot be assumed").length > 1
-      pure (ok, 0, 0, if ok then none else some s!"unexpected error: {e}")
-    | .ok _ => pure (false, 0, 0, some "expected the pack to fail")) .done) ++
-  (TestSeq.individualIO "EnvPackUnits: a reached cut point is recorded (valid neighbour)" none (do
-    match ← packUnitsFixture src "f" #["g"] with
+      let ok := carries b ["f"] && b.assumptions.isEmpty && b.consts.size == 1
+      pure (ok, 0, 0, if ok then none else some "unreached cut point recorded or carried")) .done) ++
+  (TestSeq.individualIO "EnvPack: a reached cut point is recorded" none (do
+    match ← packFixture src "f._ix" #["g"] with
     | .error e => pure (false, 0, 0, some e)
-    | .ok (b, _, _) =>
+    | .ok b =>
       let ok := !carries b ["g"] && carries b ["f", "_ix"] && b.assumptions.size == 1
       pure (ok, 0, 0, if ok then none else some "cut point not recorded")) .done)
 
@@ -721,7 +698,7 @@ def suite : List TestSeq := [
     (∀ env : RawEnv, selfDiffEmpty true env),
   ---- Env pack
   envPackTests,
-  envPackUnitsTests,
+  envPackClosureTests,
   ---- Universe canonicalization mirror parity (canonicity §10.6, P5).
   -- Exhaustive over all ≤6-node terms (3 params): the property-relevant
   -- shapes — nested imax at depth ≥ 3 — sit outside `genUniv`'s

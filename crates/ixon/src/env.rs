@@ -1012,129 +1012,6 @@ impl Env {
     }
   }
 
-  /// [`Self::prune_to_closure`] carrying whole logical units (M6R slice 5;
-  /// the Rust form of `Ix.Cli.PackCmd.packWholeUnits`, design document
-  /// §6.3): the bundle carries, for every name of the source whose constant
-  /// it carries, the members of that name's unit ([`crate::unit`], read from
-  /// the source's names and metadata by `view`). To a fixpoint: the value
-  /// and named passes close the bundle, then every member of the unit of
-  /// every carried name that the bundle neither carries nor has reached as a
-  /// cut point joins the walk as a further root, and the walk closes again.
-  /// The result is the union of the closed bundles of the main constant and
-  /// of every member added, which is what `packWholeUnits` merges from one
-  /// Rust pack per member; every constant keeps the source's bytes.
-  ///
-  /// A missing member that is a declared cut point fails, as the Lean
-  /// completion does when it packs that member as a bundle root
-  /// (`prune_to_closure: main cannot be assumed`).
-  #[cfg(not(target_arch = "riscv64"))]
-  pub fn prune_to_closure_units(
-    &self,
-    main: &Address,
-    assumed: &FxHashSet<Address>,
-    view: &crate::unit::IxonUnitView,
-  ) -> Result<(Env, crate::unit::UnitStats), String> {
-    use crate::unit::UnitView;
-    let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
-    let mut named_done: FxHashSet<Name> = FxHashSet::default();
-    let idx = view.index();
-    let mut stats = crate::unit::UnitStats::default();
-    loop {
-      self.prune_fixpoint(
-        &mut out,
-        &mut visited,
-        &mut pending,
-        &mut named_done,
-        assumed,
-      )?;
-      if !Self::enqueue_unit_members(
-        view,
-        &idx,
-        &out,
-        assumed,
-        &mut visited,
-        &mut pending,
-        &mut stats,
-      )? {
-        return Ok((out, stats));
-      }
-    }
-  }
-
-  /// [`Self::prune_to_closure_anon`] carrying whole logical units (see
-  /// [`Self::prune_to_closure_units`]): the units are read from the
-  /// source's metadata by `view`; the bundle carries no metadata.
-  #[cfg(not(target_arch = "riscv64"))]
-  pub fn prune_to_closure_anon_units(
-    &self,
-    main: &Address,
-    assumed: &FxHashSet<Address>,
-    view: &crate::unit::IxonUnitView,
-  ) -> Result<(Env, crate::unit::UnitStats), String> {
-    use crate::unit::UnitView;
-    let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
-    let idx = view.index();
-    let mut stats = crate::unit::UnitStats::default();
-    loop {
-      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
-      if !Self::enqueue_unit_members(
-        view,
-        &idx,
-        &out,
-        assumed,
-        &mut visited,
-        &mut pending,
-        &mut stats,
-      )? {
-        return Ok((out, stats));
-      }
-    }
-  }
-
-  /// One round of the whole-unit completion (the loop body of
-  /// `packWholeUnits`): the missing unit members
-  /// ([`crate::unit::missing_unit_members`]) join the walk as roots.
-  /// `false` when none is missing (the fixpoint).
-  #[cfg(not(target_arch = "riscv64"))]
-  pub(crate) fn enqueue_unit_members(
-    view: &crate::unit::IxonUnitView,
-    idx: &crate::unit::UnitIndex,
-    out: &Env,
-    assumed: &FxHashSet<Address>,
-    visited: &mut FxHashSet<Address>,
-    pending: &mut VecDeque<Address>,
-    stats: &mut crate::unit::UnitStats,
-  ) -> Result<bool, String> {
-    let missing = crate::unit::missing_unit_members(view, idx, out);
-    if missing.is_empty() {
-      return Ok(false);
-    }
-    stats.rounds += 1;
-    // The Lean completion packs each member not yet held as the root of a
-    // bundle: an alias of a member added this round is held by then; an
-    // assumed root is refused; a root the walk reached without carrying it
-    // as a constant fails the bundle's closedness check.
-    let mut round: FxHashSet<Address> = FxHashSet::default();
-    for (_, a) in missing {
-      if round.contains(&a) {
-        continue;
-      }
-      if assumed.contains(&a) {
-        return Err("prune_to_closure: main cannot be assumed".to_string());
-      }
-      if !visited.insert(a.clone()) {
-        return Err(format!(
-          "validate_closed: main {} not present in consts",
-          a.hex()
-        ));
-      }
-      round.insert(a.clone());
-      pending.push_back(a);
-      stats.members += 1;
-    }
-    Ok(true)
-  }
-
   /// Value-only bundle: the 3-edge closure of `main` cut at `assumed` —
   /// constants (genuine bytes), value blobs, per-constant hints,
   /// `main`, and reached assumptions. No display metadata at all:
@@ -2091,18 +1968,17 @@ mod tests {
     assert!(!anon.consts.contains_key(&even_c), "anon: value closure only");
   }
 
-  /// Whole logical units (M6R slice 5, `packWholeUnits`): `f`'s value
-  /// closure reaches neither its on-demand equation lemma `f.eq_1` nor
-  /// Pass 3's canonical constant `f._ix` (a caller keeps referencing `f`),
-  /// but both are members of `f`'s unit, and the reference `f._ix`
-  /// introduces (`g`) travels with it; `h` is outside the unit. The unit
-  /// bundle is the union of the plain bundles of `f` and of each member
-  /// added, on both prune paths and from either end of the unit; a missing
-  /// member that is a declared cut point fails as the Lean completion does.
+  /// The bundle is the root's reference closure, never its compilation
+  /// unit (owner, 2026-10-07; M6R slice 6 removed the whole-unit
+  /// completion of slice 5): `f`'s on-demand equation lemma `f.eq_1` and
+  /// Pass 3's canonical constant `f._ix` are members of `f`'s unit that
+  /// `f` does not reference, so `f`'s bundle carries neither; packing
+  /// `f._ix` carries the constant it references (`g`), compiler-introduced
+  /// or not. A declared cut point the walk does not reach is skipped (not
+  /// recorded); one it reaches is recorded and not carried.
   #[test]
-  fn prune_to_closure_units_carries_whole_units() {
+  fn prune_to_closure_is_the_reference_closure_not_the_unit() {
     use crate::metadata::{ConstantMetaInfo, ExprMeta};
-    use crate::unit::{IxonUnitView, UnitStats};
     let path = |parts: &[&str]| {
       parts.iter().fold(Name::anon(), |p, s| Name::str(p, s.to_string()))
     };
@@ -2114,18 +1990,10 @@ mod tests {
       &env,
       const_with_refs_discriminator(vec![g_c.clone()], 4),
     );
-    let h_c = store_canonical(&env, const_with_refs_discriminator(vec![], 5));
-    // `f.eq_def` shares `f.eq_1`'s constant (alpha-equal names, one address)
-    let (f, eq1, eqd, fix, g, h) = (
-      path(&["f"]),
-      path(&["f", "eq_1"]),
-      path(&["f", "eq_def"]),
-      path(&["f", "_ix"]),
-      path(&["g"]),
-      path(&["h"]),
-    );
+    let (f, eq1, fix, g) =
+      (path(&["f"]), path(&["f", "eq_1"]), path(&["f", "_ix"]), path(&["g"]));
     let addr_of = |x: &Name| Address::from_blake3_hash(*x.get_hash());
-    for x in [&f, &eq1, &eqd, &fix, &g, &h] {
+    for x in [&f, &eq1, &fix, &g] {
       env.store_name(addr_of(x), x.clone());
     }
     let def_meta = |x: &Name| {
@@ -2139,14 +2007,7 @@ mod tests {
         value_root: 0,
       })
     };
-    for (x, c) in [
-      (&f, &f_c),
-      (&eq1, &eq_c),
-      (&eqd, &eq_c),
-      (&fix, &ix_c),
-      (&g, &g_c),
-      (&h, &h_c),
-    ] {
+    for (x, c) in [(&f, &f_c), (&eq1, &eq_c), (&fix, &ix_c), (&g, &g_c)] {
       env.register_name(x.clone(), Named::new(c.clone(), def_meta(x)));
     }
     let ser = |e: &Env| {
@@ -2154,73 +2015,40 @@ mod tests {
       e.put(&mut v).unwrap();
       v
     };
+    let consts = |e: &Env| -> FxHashSet<Address> {
+      e.consts.iter().map(|x| x.key().clone()).collect()
+    };
     let none = FxHashSet::default();
-    let view = IxonUnitView::of_env(&env);
 
-    let plain = env.prune_to_closure(&f_c, &none).unwrap();
-    assert!(
-      !plain.consts.contains_key(&eq_c) && !plain.consts.contains_key(&ix_c)
-    );
-    let (whole, stats) =
-      env.prune_to_closure_units(&f_c, &none, &view).unwrap();
-    for c in [&f_c, &eq_c, &ix_c, &g_c] {
-      assert!(
-        whole.consts.contains_key(c),
-        "unit member or its reference carried"
-      );
-    }
-    assert!(!whole.consts.contains_key(&h_c), "outside the unit");
-    assert!(whole.named.get(&fix).is_some() && whole.named.get(&eq1).is_some());
-    assert!(whole.named.get(&eqd).is_some(), "the alias is carried");
-    assert_eq!(stats, UnitStats { rounds: 1, members: 2 });
-    assert_eq!(whole.main, Some(f_c.clone()));
-    whole.validate_closed().unwrap();
+    let fb = env.prune_to_closure(&f_c, &none).unwrap();
+    assert_eq!(consts(&fb), [f_c.clone()].into_iter().collect());
+    assert!(fb.named.get(&eq1).is_none() && fb.named.get(&fix).is_none());
+    fb.validate_closed().unwrap();
 
-    // the union of the plain bundles (the Lean completion's merge)
-    let mut union: FxHashSet<Address> = FxHashSet::default();
-    for root in [&f_c, &eq_c, &ix_c] {
-      let b = env.prune_to_closure(root, &none).unwrap();
-      union.extend(b.consts.iter().map(|e| e.key().clone()));
-    }
-    let carried: FxHashSet<Address> =
-      whole.consts.iter().map(|e| e.key().clone()).collect();
-    assert_eq!(carried, union);
+    let ib = env.prune_to_closure(&ix_c, &none).unwrap();
+    assert_eq!(consts(&ib), [ix_c.clone(), g_c.clone()].into_iter().collect());
+    assert!(ib.named.get(&g).is_some(), "the reference's Named entry");
 
-    // from the other end of the unit: the same constants, another main
-    let (from_ix, _) = env.prune_to_closure_units(&ix_c, &none, &view).unwrap();
-    let carried_ix: FxHashSet<Address> =
-      from_ix.consts.iter().map(|e| e.key().clone()).collect();
-    assert_eq!(carried_ix, carried);
-
-    // the streaming path, its view read from the file
+    // streaming and anonymous paths: the same constants
     let mut bytes = Vec::new();
     env.put(&mut bytes).unwrap();
     let (index, names) = Env::parse_lazy_index_with_names(&bytes).unwrap();
     let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
-    let lazy_view = IxonUnitView::of_lazy(&index, &bytes, &names).unwrap();
-    let (streamed, sstats) = lazy
-      .prune_to_closure_streaming_units(
-        &index, &bytes, &names, &f_c, &none, &lazy_view,
-      )
+    let streamed = lazy
+      .prune_to_closure_streaming(&index, &bytes, &names, &ix_c, &none)
       .unwrap();
-    assert_eq!(ser(&whole), ser(&streamed), "streaming parity");
-    assert_eq!(sstats, stats);
-
-    // anonymous: the same constants, no metadata
-    let (anon, _) =
-      env.prune_to_closure_anon_units(&f_c, &none, &view).unwrap();
-    let carried_anon: FxHashSet<Address> =
-      anon.consts.iter().map(|e| e.key().clone()).collect();
-    assert_eq!(carried_anon, carried);
+    assert_eq!(ser(&ib), ser(&streamed), "streaming parity");
+    let anon = env.prune_to_closure_anon(&ix_c, &none).unwrap();
+    assert_eq!(consts(&anon), consts(&ib));
     assert!(anon.named.is_empty());
 
-    // a missing member declared as a cut point
-    let cut: FxHashSet<Address> = [eq_c.clone()].into_iter().collect();
-    let err = env.prune_to_closure_units(&f_c, &cut, &view).unwrap_err();
-    assert_eq!(err, "prune_to_closure: main cannot be assumed");
-    // its valid neighbour: a cut point the walk reaches is recorded
+    // cut points: an unreached one is skipped, a reached one recorded
+    let cut_eq: FxHashSet<Address> = [eq_c.clone()].into_iter().collect();
+    let skipped = env.prune_to_closure(&f_c, &cut_eq).unwrap();
+    assert!(skipped.assumptions.is_empty());
+    assert_eq!(ser(&skipped), ser(&fb));
     let cut_g: FxHashSet<Address> = [g_c.clone()].into_iter().collect();
-    let (thin, _) = env.prune_to_closure_units(&f_c, &cut_g, &view).unwrap();
+    let thin = env.prune_to_closure(&ix_c, &cut_g).unwrap();
     assert!(thin.assumptions.contains(&g_c) && !thin.consts.contains_key(&g_c));
   }
 

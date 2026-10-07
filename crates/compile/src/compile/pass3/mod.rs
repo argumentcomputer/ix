@@ -20,13 +20,14 @@
 //!
 //! `Pass/Opt/{Core,Engine,O1..O6,O11a}.lean` are [`opt`] (slice 2). `Clique/**` and `Pass/Cliques.lean` are [`clique`] (slice 3).
 //! `Pass/Opt/{Packed,O7,O8,O9,CollapseRec,O10,O12,O11b}.lean` are [`pj`] (slice 4).
-//! The logical units of the closure producers and `ix pack` (slice 5) are
-//! `ixon::unit` (the unit view, ported from `Ix/Common.lean` and
-//! `Ix/Cli/PackCmd.lean`) and `ixon::env::Env::prune_to_closure_units`: the
-//! selected closures of the input are Lean's (`Ix.EnvScope.collectSelectedDeps`)
+//! Closures: the selected closures of the input are Lean's
+//! (`Ix.EnvScope.collectSelectedDeps`, whole logical units, for compilation)
 //! and reach this compiler as its input, so the canonical constants Pass 3
-//! stores (`_ix` names) need no closure code here; a pack of the output
-//! carries them with their declaration's unit.
+//! stores (`_ix` names) need no closure code here. `ix pack` of the output
+//! carries a root's reference closure (`ixon::env::Env::prune_to_closure`),
+//! with the `_ix` constants it references and never the unit (owner,
+//! 2026-10-07; slice 5's whole-unit pack, `ixon::unit` and
+//! `prune_to_closure_units`, was removed by slice 6).
 
 pub mod build;
 pub mod clique;

@@ -28,7 +28,6 @@ pub mod shard_claim;
 pub mod sharing_exact;
 pub mod syntax;
 pub mod tag;
-pub mod unit;
 pub mod univ;
 
 /// Stable identifier for the Ixon wire format, version 4
