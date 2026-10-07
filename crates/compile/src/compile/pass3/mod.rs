@@ -17,12 +17,13 @@
 //! | `Pass/SideCar.lean` | [`sidecar`] |
 //! | `Pass/Driver.lean` | [`driver`] |
 //!
-//! `Pass/Opt/{Core,Engine,O1..O6,O11a}.lean` are [`opt`] (slice 2). Not yet
-//! ported: the clique transport (slice 3), the proof-justified passes
+//! `Pass/Opt/{Core,Engine,O1..O6,O11a}.lean` are [`opt`] (slice 2). `Clique/**` and `Pass/Cliques.lean` are [`clique`] (slice 3). Not yet
+//! ported: the proof-justified passes
 //! O7-O12 and the unit pass O11b (slice 4), the closure producers and pack
 //! (slice 5).
 
 pub mod build;
+pub mod clique;
 pub mod develop;
 pub mod driver;
 pub mod expr;
@@ -59,6 +60,17 @@ pub struct Pass3State {
   /// the blocks that compiled (a later cause of one constant replaces an
   /// earlier one, as the Lean map insert does).
   pub non_canonical: DashMap<Name, String>,
+  /// The changed-clique table (`CompileEnv.p3Cliques`, `scheduleCliques`):
+  /// member or carried lemma to (Lean's `all`, the carried lemmas).
+  pub cliques: clique::hook::CliqueTable,
+  /// The encoding roots (`CompileEnv.p3CliqueRoots`).
+  pub clique_roots: rustc_hash::FxHashMap<Name, Vec<Name>>,
+  /// The references of the blocks that reference a clique's encoding
+  /// constant (what `cliqueCallers` reads of `p3BlockRefs`).
+  pub clique_refs: rustc_hash::FxHashMap<Name, Vec<Name>>,
+  /// The plan table (`CompileEnv.p3CliquePlans`), a memo of `planClique`
+  /// keyed by the clique's first member, first entry kept.
+  pub clique_plans: DashMap<Name, clique::transport::CliqueOutcome>,
 }
 
 /// A record the aux tail made, journaled for the side-car edit.

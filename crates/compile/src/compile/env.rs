@@ -260,6 +260,20 @@ pub fn compile_env_with_profile(
 
   let phase_start = Instant::now();
   let mut condensed = compute_sccs(&grounded_out_refs);
+  // Pass 3: the changed-clique table and its scheduling edges
+  // (`Ix.Compile.Pass.scheduleCliques`, before O11a's edges as in the Lean
+  // driver): every member block of a clique waits for everything any member
+  // references, and the clique's other blocks for its first member's block
+  // (which plans the clique first). Block dependencies only.
+  let (p3_cliques, p3_clique_roots) = if pass3 {
+    let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+    crate::compile::pass3::clique::hook::schedule_cliques(
+      &const_of,
+      &mut condensed,
+    )
+  } else {
+    Default::default()
+  };
   // Pass 3: O11a's scheduling edges `all0._sizeOf_N -> T._sizeOf_inst`
   // (and `-> SizeOf.sizeOf`), references its output adds that the input does
   // not have (`O11a.addSizeOfEdges`, design document §6.3 obligation 2):
@@ -275,6 +289,20 @@ pub fn compile_env_with_profile(
       &grounded_out_refs,
       &mut condensed,
     );
+  }
+  // the references `cliqueCallers` reads: those of the blocks that
+  // reference an encoding constant of a clique (`p3BlockRefs`)
+  let mut p3_clique_refs: rustc_hash::FxHashMap<Name, Vec<Name>> =
+    rustc_hash::FxHashMap::default();
+  if !p3_clique_roots.is_empty() {
+    for (lo, refs) in &condensed.block_refs {
+      if refs.iter().any(|r| {
+        crate::compile::pass3::clique::hook::encoding_owner(&p3_clique_roots, r)
+          .is_some()
+      }) {
+        p3_clique_refs.insert(lo.clone(), refs.iter().cloned().collect());
+      }
+    }
   }
   if *IX_VERBOSE {
     eprintln!(
@@ -320,6 +348,12 @@ pub fn compile_env_with_profile(
     ungrounded: ungrounded_map,
     sharing_limits,
     pass3,
+    p3: crate::compile::pass3::Pass3State {
+      cliques: p3_cliques,
+      clique_roots: p3_clique_roots,
+      clique_refs: p3_clique_refs,
+      ..Default::default()
+    },
     ..Default::default()
   };
 

@@ -15,7 +15,10 @@
 //!
 //! The definitional passes O1-O6 and O11a run at every full application of
 //! a head (`opt::engine`, slice 2) and record their declines in the
-//! non-canonical set; the clique hook (slice 3) and the proof-justified
+//! non-canonical set. Before the rewrite, the changed-clique hook (slice 3,
+//! [`super::clique::hook`]) refuses a caller that unfolds a transported
+//! clique's encoding, puts the transported members in the block's overlay
+//! and compiles the canonical constants they reach. The proof-justified
 //! passes O7-O12 (slice 4) are not run: where only they would fire, a full
 //! application keeps its baseline, the Lean name's form.
 
@@ -39,6 +42,7 @@ use crate::graph::NameSet;
 use crate::mutual::{Def, MutConst};
 
 use super::Journal;
+use super::clique::hook::{CliquePrep, HookEnv, consts_where, value_of};
 use super::names::{image_kinds, ix_aux_name, reserved_input};
 use super::opt::{
   Occ, OptBlock, OptEnv, engine, o11a_decline_cause, opt_block_of,
@@ -512,6 +516,7 @@ type Prepared = (FxHashMap<Name, ConstantInfo>, Vec<Expr>, Vec<(Name, String)>);
 fn prepare_block(
   ctx: &Ctx<'_>,
   all: &NameSet,
+  clq_overlay: &FxHashMap<Name, ConstantInfo>,
 ) -> Result<Option<Prepared>, String> {
   if ctx.stt.p3.heads.is_empty() {
     return Ok(None);
@@ -521,7 +526,13 @@ fn prepare_block(
   let mut sorted: Vec<&Name> = all.iter().collect();
   sorted.sort_by_key(|n| n.pretty());
   for n in sorted {
-    if let Some(ci) = ctx.lean_env.get(n).map(|e| e.cloned()) {
+    // a transported clique member is read from the clique hook's overlay
+    // (Lean reads `cenv.env`, which carries it)
+    let ci = clq_overlay
+      .get(n)
+      .cloned()
+      .or_else(|| ctx.lean_env.get(n).map(|e| e.cloned()));
+    if let Some(ci) = ci {
       for h in heads_in(ctx.stt, &ci) {
         if !used.contains(&h) {
           used.push(h);
@@ -689,6 +700,130 @@ fn compile_image_block(
     .ok_or_else(|| invalid(format!("Pass 3: no image for {}", lo.pretty())))
 }
 
+/// The clique hook's environment over the compile state.
+fn with_hook_env<R>(ctx: &Ctx<'_>, f: impl FnOnce(&HookEnv<'_>) -> R) -> R {
+  let const_of = |n: &Name| ctx.lean_env.get(n).map(|e| e.cloned());
+  let addr = |n: &Name| ctx.stt.resolve_addr(n);
+  let env = HookEnv {
+    const_of: &const_of,
+    addr: &addr,
+    table: &ctx.stt.p3.cliques,
+    roots: &ctx.stt.p3.clique_roots,
+    plans: &ctx.stt.p3.clique_plans,
+  };
+  f(&env)
+}
+
+/// The call-site rewrite of one canonical constant (`cliqueRewrite`: the
+/// definitional passes, no decline records): the rewritten constant and its
+/// decompile sources.
+fn clique_rewrite(
+  ctx: &Ctx<'_>,
+  c: &Name,
+  ci: &ConstantInfo,
+) -> Result<(ConstantInfo, Vec<Expr>), String> {
+  let heads = heads_in(ctx.stt, ci);
+  if heads.is_empty() {
+    return Ok((ci.clone(), Vec::new()));
+  }
+  let mut views = views_of(ctx, heads.into_iter())?;
+  let blocks: FxHashMap<Name, OptBlock> = views
+    .iter()
+    .map(|(k, v)| (k.clone(), ctx.with_input(|inp| opt_block_of(v, inp))))
+    .collect();
+  let resolves = |n: &Name| ctx.stt.resolve_addr(n).is_some();
+  let block_of = |h: &Name| -> Option<&OptBlock> {
+    let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
+    blocks.get(&key)
+  };
+  let env = OptEnv {
+    ienv: ctx.lean_env.as_ref(),
+    resolves: &resolves,
+    block_of: &block_of,
+  };
+  let opt = |n: &Name, us: &[Level], args: &[Expr]| {
+    engine(&env, &Occ { head: n, us, args })
+  };
+  let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
+  let members = vec![(c.clone(), ci.clone())];
+  let rw = rewrite_block(&mut lookup, &members, Some(&opt), None)?;
+  let ci2 = rw.overlay.into_iter().next().map_or_else(|| ci.clone(), |x| x.1);
+  Ok((ci2, rw.sources))
+}
+
+/// Compile the canonical constants a block's transported members reach
+/// (`prepareCliques`' rounds), each once its canonical references are.
+fn compile_clique_canon(
+  ctx: &Ctx<'_>,
+  prep: &CliquePrep,
+) -> Result<(), CompileError> {
+  let stt = ctx.stt;
+  let mut pending: Vec<Name> = prep
+    .wanted
+    .iter()
+    .filter(|c| stt.resolve_addr(c).is_none())
+    .cloned()
+    .collect();
+  pending.sort_by_key(|n| n.pretty());
+  let mut rounds = pending.len() + 1;
+  while !pending.is_empty() && rounds > 0 {
+    rounds -= 1;
+    let mut rest = Vec::new();
+    for c in pending {
+      let Some(ci) = prep.canon.get(&c) else {
+        return Err(invalid(format!(
+          "Pass 3 cliques: no canonical constant {}",
+          c.pretty()
+        )));
+      };
+      let p = |r: &Name| prep.canon.contains_key(r) && *r != c;
+      let mut refs = consts_where(&p, ci.get_type());
+      if let Some(v) = value_of(ci) {
+        refs.extend(consts_where(&p, &v));
+      }
+      if refs.iter().any(|r| stt.resolve_addr(r).is_none()) {
+        rest.push(c);
+        continue;
+      }
+      let (ci2, sources) =
+        with_big_stack(|| clique_rewrite(ctx, &c, ci)).map_err(invalid)?;
+      let def = match &ci2 {
+        ConstantInfo::DefnInfo(v) => Def::mk_defn(v),
+        ConstantInfo::ThmInfo(v) => Def::mk_theo(v),
+        _ => {
+          return Err(invalid(format!(
+            "Pass 3 cliques: canonical constant {}: not a definition",
+            c.pretty()
+          )));
+        },
+      };
+      let mut cache = BlockCache {
+        p3_sources: sources.into_iter().enumerate().collect(),
+        ..Default::default()
+      };
+      let (addr, _) = compile_single_definition(&c, &def, &mut cache, stt)
+        .map_err(|e| {
+          invalid(format!(
+            "Pass 3 cliques: canonical constant {}: {e}",
+            c.pretty()
+          ))
+        })?;
+      if stt.aux_name_to_addr.insert(c.clone(), addr).is_none() {
+        crate::compile::block_txn::log_aux(&c);
+      }
+    }
+    pending = rest;
+  }
+  if !pending.is_empty() {
+    let ns: Vec<String> = pending.iter().map(|n| n.pretty()).collect();
+    return Err(invalid(format!(
+      "Pass 3 cliques: canonical constants with cyclic references: {}",
+      crate::compile::pass3::clique::basic::arr_str(&ns)
+    )));
+  }
+  Ok(())
+}
+
 /// Compile one scheduled block under Pass 3 (hook 2 and image blocks); the
 /// ordinary `compile_const` when the switch is off.
 pub fn compile_block(
@@ -706,11 +841,27 @@ pub fn compile_block(
   if is_image_block(stt, all) {
     return compile_image_block(&ctx, lo, all, kctx);
   }
-  let prepared =
-    with_big_stack(|| prepare_block(&ctx, all)).map_err(invalid)?;
+  // the changed-clique hook (`prepareCliques`): the callers' refusal, the
+  // transported members and the canonical constants they reach
+  let prep = if stt.p3.cliques.is_empty() {
+    CliquePrep::default()
+  } else {
+    let mut refs: Vec<Name> =
+      stt.p3.clique_refs.get(lo).cloned().unwrap_or_default();
+    refs.sort_by_key(|n| n.pretty());
+    with_big_stack(|| with_hook_env(&ctx, |h| h.prepare(all, &refs)))
+      .map_err(invalid)?
+  };
+  if !prep.overlay.is_empty() {
+    compile_clique_canon(&ctx, &prep)?;
+  }
+  let prepared = with_big_stack(|| prepare_block(&ctx, all, &prep.overlay))
+    .map_err(invalid)?;
+  cache.p3_overlay = prep.overlay.clone();
+  cache.p3_sources = prep.sources.iter().cloned().collect();
   if let Some((overlay, sources, declines)) = prepared {
-    cache.p3_overlay = overlay;
-    cache.p3_sources = sources.into_iter().enumerate().collect();
+    cache.p3_overlay.extend(overlay);
+    cache.p3_sources.extend(sources.into_iter().enumerate());
     cache.p3_declines = declines;
   }
   let res = compile_const(lo, all, lean_env, cache, stt, kctx);
