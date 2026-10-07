@@ -1,5 +1,5 @@
 //! Pass 3, the faithful rewrite (`IX_PASS3=images`), in the Rust compiler
-//! (M6R slices 1 and 2). The specification is `docs/compiler-passes.md` §4; the
+//! (M6R slices 1-4). The specification is `docs/compiler-passes.md` §4; the
 //! reference is the Lean compiler's switch-on output (`Ix/Compile/Pass/*`,
 //! `Ix/Compile/Image/*`).
 //!
@@ -17,10 +17,9 @@
 //! | `Pass/SideCar.lean` | [`sidecar`] |
 //! | `Pass/Driver.lean` | [`driver`] |
 //!
-//! `Pass/Opt/{Core,Engine,O1..O6,O11a}.lean` are [`opt`] (slice 2). `Clique/**` and `Pass/Cliques.lean` are [`clique`] (slice 3). Not yet
-//! ported: the proof-justified passes
-//! O7-O12 and the unit pass O11b (slice 4), the closure producers and pack
-//! (slice 5).
+//! `Pass/Opt/{Core,Engine,O1..O6,O11a}.lean` are [`opt`] (slice 2). `Clique/**` and `Pass/Cliques.lean` are [`clique`] (slice 3).
+//! `Pass/Opt/{Packed,O7,O8,O9,CollapseRec,O10,O12,O11b}.lean` are [`pj`] (slice 4).
+//! Not yet ported: the closure producers and pack (slice 5).
 
 pub mod build;
 pub mod clique;
@@ -29,6 +28,7 @@ pub mod driver;
 pub mod expr;
 pub mod names;
 pub mod opt;
+pub mod pj;
 pub mod sidecar;
 pub mod spec;
 pub mod translate;

@@ -19,8 +19,12 @@
 //! [`super::clique::hook`]) refuses a caller that unfolds a transported
 //! clique's encoding, puts the transported members in the block's overlay
 //! and compiles the canonical constants they reach. The proof-justified
-//! passes O7-O12 (slice 4) are not run: where only they would fire, a full
-//! application keeps its baseline, the Lean name's form.
+//! passes O7-O12 (slice 4, [`super::pj`]) run after the definitional ones;
+//! decision 5 (D1): a Lean name keeps its baseline, and the canonical form
+//! `c._ix` of a definition where one fires, O11b's `noConfusion` pair
+//! (`unitPasses`) and the helpers the rewrites reference are rewritten in
+//! place and compiled with the block (`compileCanon`, [`compile_canon`]),
+//! a reserved name bound once to the same bytes.
 
 use std::sync::Arc;
 
@@ -36,20 +40,25 @@ use ixon::env::{AuxLayout, Named};
 
 use crate::compile::{
   BlockCache, CompileState, KernelCtx, compile_const, compile_const_no_aux,
-  compile_name, compile_single_definition,
+  compile_name, compile_single_def_parts, compile_single_definition,
 };
 use crate::graph::NameSet;
 use crate::mutual::{Def, MutConst};
 
 use super::Journal;
 use super::clique::hook::{CliquePrep, HookEnv, consts_where, value_of};
-use super::names::{image_kinds, ix_aux_name, reserved_input};
+use super::expr::{canonicalize_const_names, mk_str};
+use super::names::{image_kinds, ix_aux_name, ix_form_name, reserved_input};
 use super::opt::{
-  Occ, OptBlock, OptEnv, engine, o11a_decline_cause, opt_block_of,
+  Occ, OptBlock, OptEnv, engine_full, is_proof_justified, o11a_decline_cause,
+  opt_block_of,
 };
+use super::pj::{no_confusion_of, o11b_rewrite};
 use super::sidecar::{hash_map_of, rename_named};
 use super::spec::NestedCanon;
-use super::translate::{RwState, image_decl_with, rewrite_block};
+use super::translate::{
+  ExpansionLookup, OptHook, RwState, image_decl_with, rewrite_block,
+};
 use super::view::{
   BlockView, ComponentRecord, Expansion, ViewInput, build_view,
 };
@@ -242,7 +251,7 @@ pub fn edit_permuted_below_family(
 ) -> Result<Vec<Name>, CompileError> {
   let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
   let below_all: Vec<Name> = match original_all.first() {
-    Some(a0) => match const_of(&super::expr::mk_str(a0, "below")) {
+    Some(a0) => match const_of(&mk_str(a0, "below")) {
       Some(ConstantInfo::InductInfo(v)) => v.all.clone(),
       _ => Vec::new(),
     },
@@ -506,13 +515,129 @@ fn with_big_stack<R: Send>(f: impl FnOnce() -> R + Send) -> R {
 }
 
 /// What `prepare_block` gives a block: the rewritten members, the decompile
-/// sources and the recorded declines.
-type Prepared = (FxHashMap<Name, ConstantInfo>, Vec<Expr>, Vec<(Name, String)>);
+/// sources, the recorded declines, and the block's canonical constants (D1)
+/// rewritten in place, each with its decompile sources (`compileCanon`'s
+/// first loop; compiled by [`compile_canon`] on the block's thread).
+struct Prepared {
+  overlay: FxHashMap<Name, ConstantInfo>,
+  sources: Vec<Expr>,
+  declines: Vec<(Name, String)>,
+  canon: Vec<(ConstantInfo, Vec<Expr>)>,
+}
+
+/// The canonical `_ix` form of a compiled dependency (decision 5, D1,
+/// `Driver.ixFormOf`): `d ↦ d._ix` when `d` is a definition of the input
+/// (never an image-kind head) and `d._ix` is compiled. Read only by O10 and
+/// O12, which compare handlers through their references' canonical forms
+/// (`OptEnv.canonAddrOf`); no reference is renamed to it.
+fn ix_form_of(ctx: &Ctx<'_>, d: &Name) -> Option<Name> {
+  if !ctx
+    .lean_env
+    .get(d)
+    .is_some_and(|e| matches!(&*e, ConstantInfo::DefnInfo(_)))
+  {
+    return None;
+  }
+  if ctx.stt.p3.heads.contains_key(d) {
+    return None;
+  }
+  let c = ix_form_name(d);
+  ctx.stt.resolve_addr(&c).map(|_| c)
+}
+
+/// The definitional passes' blocks (`optBlocks`) of the given views.
+fn opt_blocks(
+  ctx: &Ctx<'_>,
+  views: &FxHashMap<Name, BlockView>,
+) -> FxHashMap<Name, OptBlock> {
+  views
+    .iter()
+    .map(|(k, v)| (k.clone(), ctx.with_input(|inp| opt_block_of(v, inp))))
+    .collect()
+}
+
+/// The unit passes over a block's members (`Driver.unitPasses`): O11b gives
+/// Lean's `noConfusion` pair of a split-off enumeration its enumeration form
+/// as the canonical constants `T.noConfusionType._ix`, `T.noConfusion._ix`
+/// (D1: the Lean names keep Lean's general form); the type of
+/// `T.noConfusion._ix` refers to `T.noConfusionType._ix` (one decision,
+/// Lemma O11b.2). `classesOf` reads the views of the block's referenced
+/// changed blocks only (`initial`, Lean's `views` of `prepareBlock`).
+fn unit_passes(
+  ctx: &Ctx<'_>,
+  views: &FxHashMap<Name, BlockView>,
+  initial: &FxHashSet<Name>,
+  members: &[(Name, ConstantInfo)],
+) -> Vec<ConstantInfo> {
+  let const_of = |n: &Name| ctx.lean_env.get(n).map(|e| e.cloned());
+  let classes_of = |t: &Name| -> Option<Vec<Vec<Name>>> {
+    let key = ctx.stt.p3.heads.get(&mk_str(t, "casesOn")).map(|r| r.clone())?;
+    if !initial.contains(&key) {
+      return None;
+    }
+    let v = views.get(&key)?;
+    let c = v.canon.components.iter().find(|c| c.members.contains(t))?;
+    Some(c.classes.clone())
+  };
+  let mut canon = Vec::new();
+  for (n, ci) in members {
+    let Some(dv) = o11b_rewrite(&const_of, &classes_of, n, ci) else {
+      continue;
+    };
+    let c = ix_form_name(n);
+    // the pair is decided together (`O11b.pairApplies`): the canonical
+    // `noConfusion` is typed over the canonical `noConfusionType`
+    let typ = match no_confusion_of(n) {
+      Some((t, false)) => {
+        let nct = mk_str(&t, "noConfusionType");
+        let mut m: FxHashMap<Name, Name> = FxHashMap::default();
+        m.insert(nct.clone(), ix_form_name(&nct));
+        canonicalize_const_names(&m, &dv.cnst.typ)
+      },
+      _ => dv.cnst.typ.clone(),
+    };
+    canon.push(ConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal { name: c.clone(), typ, ..dv.cnst.clone() },
+      all: vec![c],
+      ..dv
+    }));
+  }
+  canon
+}
+
+/// `compileCanon`'s first loop: each canonical constant rewritten **in
+/// place** (`rewriteBlock` with `inPlace`: the proof-justified passes rewrite
+/// a canonical constant itself), whose own helpers join the work list; each
+/// name once. No reference is renamed: a canonical constant refers to its
+/// dependencies by their Lean names.
+fn rewrite_canon<'h>(
+  lookup: &mut ExpansionLookup<'_>,
+  opt: &'h OptHook<'h>,
+  canon: Vec<ConstantInfo>,
+) -> Result<Vec<(ConstantInfo, Vec<Expr>)>, String> {
+  let mut queue = canon;
+  let mut i = 0;
+  let mut seen: FxHashSet<Name> = FxHashSet::default();
+  let mut done = Vec::new();
+  while i < queue.len() {
+    let ci = queue[i].clone();
+    i += 1;
+    let c = ci.get_name().clone();
+    if !seen.insert(c.clone()) {
+      continue;
+    }
+    let rw = rewrite_block(lookup, &[(c, ci.clone())], Some(opt), None, true)?;
+    let ci2 = rw.overlay.into_iter().next().map_or(ci, |x| x.1);
+    queue.extend(rw.canon);
+    done.push((ci2, rw.sources));
+  }
+  Ok(done)
+}
 
 /// The overlay, decompile sources and recorded declines of a block
-/// (`prepareBlock`, with the definitional passes `optLookup` and the
-/// decline records `declineLookup`), `None` when the block references no
-/// head.
+/// (`prepareBlock`, with the optimisation passes `optLookup` and the
+/// decline records `declineLookup`), and its canonical constants rewritten
+/// in place (`compileCanon`); `None` when the block references no head.
 fn prepare_block(
   ctx: &Ctx<'_>,
   all: &NameSet,
@@ -548,32 +673,60 @@ fn prepare_block(
   // indices follow it. Its order is the order of `all` as the scheduler's
   // set holds it; see the report's documentation gap on this point.
   let mut views = views_of(ctx, used.into_iter())?;
-  // the definitional passes' blocks of the referenced changed blocks
-  // (`optBlocks`, once per rewrite); heads of other blocks keep their
-  // baseline
-  let blocks: FxHashMap<Name, OptBlock> = views
-    .iter()
-    .map(|(k, v)| (k.clone(), ctx.with_input(|inp| opt_block_of(v, inp))))
-    .collect();
+  // the views of the referenced changed blocks (Lean's `views`; the lookup
+  // below adds others on demand, which the passes and O11b do not see)
+  let initial: FxHashSet<Name> = views.keys().cloned().collect();
+  // the passes' blocks of the referenced changed blocks (`optBlocks`, once
+  // per rewrite); heads of other blocks keep their baseline
+  let blocks = opt_blocks(ctx, &views);
   let resolves = |n: &Name| ctx.stt.resolve_addr(n).is_some();
+  let addr_of = |n: &Name| ctx.stt.resolve_addr(n);
+  let ix_form = |d: &Name| ix_form_of(ctx, d);
   let block_of = |h: &Name| -> Option<&OptBlock> {
     let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
     blocks.get(&key)
   };
+  // `optLookup`'s environment, and `declineLookup`'s (Lean's defaults for
+  // the addresses and canonical forms, which O11a does not read)
   let env = OptEnv {
     ienv: ctx.lean_env.as_ref(),
     resolves: &resolves,
     block_of: &block_of,
+    addr_of: Some(&addr_of),
+    ix_form: Some(&ix_form),
   };
-  let opt = |n: &Name, us: &[Level], args: &[Expr]| {
-    engine(&env, &Occ { head: n, us, args })
+  let denv = OptEnv {
+    ienv: ctx.lean_env.as_ref(),
+    resolves: &resolves,
+    block_of: &block_of,
+    addr_of: None,
+    ix_form: None,
+  };
+  let opt = |site: Option<&Name>, n: &Name, us: &[Level], args: &[Expr]| {
+    engine_full(&env, &Occ { head: n, us, args, site })
+      .map(|(nm, e, cs)| (e, cs, is_proof_justified(nm)))
   };
   let decline = |n: &Name, us: &[Level], args: &[Expr]| {
-    o11a_decline_cause(&env, &Occ { head: n, us, args })
+    o11a_decline_cause(&denv, &Occ { head: n, us, args, site: None })
   };
-  let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
-  let rw = rewrite_block(&mut lookup, &members, Some(&opt), Some(&decline))?;
-  Ok(Some((rw.overlay.into_iter().collect(), rw.sources, rw.declines)))
+  let rw = {
+    let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
+    rewrite_block(&mut lookup, &members, Some(&opt), Some(&decline), false)?
+  };
+  // the canonical constants (D1): the `_ix` forms where a proof-justified
+  // pass fires, the unit passes' (O11b), the helpers the rewrites reference
+  let mut queue = rw.canon;
+  queue.extend(unit_passes(ctx, &views, &initial, &members));
+  let canon = {
+    let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
+    rewrite_canon(&mut lookup, &opt, queue)?
+  };
+  Ok(Some(Prepared {
+    overlay: rw.overlay.into_iter().collect(),
+    sources: rw.sources,
+    declines: rw.declines,
+    canon,
+  }))
 }
 
 /// Every member of the block is an image-kind head (`isImageBlock`).
@@ -714,9 +867,10 @@ fn with_hook_env<R>(ctx: &Ctx<'_>, f: impl FnOnce(&HookEnv<'_>) -> R) -> R {
   f(&env)
 }
 
-/// The call-site rewrite of one canonical constant (`cliqueRewrite`: the
-/// definitional passes, no decline records): the rewritten constant and its
-/// decompile sources.
+/// The call-site rewrite of one canonical constant of the clique hook
+/// (`cliqueRewrite`: `optLookup`, no decline records, not in place, so no
+/// proof-justified pass fires inside a transported clique): the rewritten
+/// constant and its decompile sources.
 fn clique_rewrite(
   ctx: &Ctx<'_>,
   c: &Name,
@@ -727,11 +881,10 @@ fn clique_rewrite(
     return Ok((ci.clone(), Vec::new()));
   }
   let mut views = views_of(ctx, heads.into_iter())?;
-  let blocks: FxHashMap<Name, OptBlock> = views
-    .iter()
-    .map(|(k, v)| (k.clone(), ctx.with_input(|inp| opt_block_of(v, inp))))
-    .collect();
+  let blocks = opt_blocks(ctx, &views);
   let resolves = |n: &Name| ctx.stt.resolve_addr(n).is_some();
+  let addr_of = |n: &Name| ctx.stt.resolve_addr(n);
+  let ix_form = |d: &Name| ix_form_of(ctx, d);
   let block_of = |h: &Name| -> Option<&OptBlock> {
     let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
     blocks.get(&key)
@@ -740,24 +893,29 @@ fn clique_rewrite(
     ienv: ctx.lean_env.as_ref(),
     resolves: &resolves,
     block_of: &block_of,
+    addr_of: Some(&addr_of),
+    ix_form: Some(&ix_form),
   };
-  let opt = |n: &Name, us: &[Level], args: &[Expr]| {
-    engine(&env, &Occ { head: n, us, args })
+  let opt = |site: Option<&Name>, n: &Name, us: &[Level], args: &[Expr]| {
+    engine_full(&env, &Occ { head: n, us, args, site })
+      .map(|(nm, e, cs)| (e, cs, is_proof_justified(nm)))
   };
   let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
   let members = vec![(c.clone(), ci.clone())];
-  let rw = rewrite_block(&mut lookup, &members, Some(&opt), None)?;
+  let rw = rewrite_block(&mut lookup, &members, Some(&opt), None, false)?;
   let ci2 = rw.overlay.into_iter().next().map_or_else(|| ci.clone(), |x| x.1);
   Ok((ci2, rw.sources))
 }
 
 /// Compile the canonical constants a block's transported members reach
-/// (`prepareCliques`' rounds), each once its canonical references are.
+/// (`prepareCliques`' rounds), each once its canonical references are;
+/// returns the names this block compiled (Lean's `init.blockNameToAddr`).
 fn compile_clique_canon(
   ctx: &Ctx<'_>,
   prep: &CliquePrep,
-) -> Result<(), CompileError> {
+) -> Result<Vec<Name>, CompileError> {
   let stt = ctx.stt;
+  let mut compiled: Vec<Name> = Vec::new();
   let mut pending: Vec<Name> = prep
     .wanted
     .iter()
@@ -811,6 +969,7 @@ fn compile_clique_canon(
       if stt.aux_name_to_addr.insert(c.clone(), addr).is_none() {
         crate::compile::block_txn::log_aux(&c);
       }
+      compiled.push(c);
     }
     pending = rest;
   }
@@ -818,6 +977,114 @@ fn compile_clique_canon(
     let ns: Vec<String> = pending.iter().map(|n| n.pretty()).collect();
     return Err(invalid(format!(
       "Pass 3 cliques: canonical constants with cyclic references: {}",
+      crate::compile::pass3::clique::basic::arr_str(&ns)
+    )));
+  }
+  Ok(compiled)
+}
+
+/// Compile the block's canonical constants (reserved `_ix` names,
+/// `compileCanon`'s compile rounds), rewritten in place by [`prepare_block`]:
+/// each as an ordinary constant once the canonical constants it references
+/// are (`bound`: the names this block bound, its clique hook's first). A
+/// reserved name already bound (O12's `fg`, emitted by both functions'
+/// blocks; a canonical constant of the clique hook) must be bound to the
+/// same bytes, which are then not stored again; a different binding fails
+/// the compile (a reserved-name clash is refused, never resolved silently).
+fn compile_canon(
+  stt: &CompileState,
+  done: Vec<(ConstantInfo, Vec<Expr>)>,
+  bound: &mut FxHashSet<Name>,
+) -> Result<(), CompileError> {
+  let names: FxHashSet<Name> =
+    done.iter().map(|(ci, _)| ci.get_name().clone()).collect();
+  let mut pending = done;
+  let mut rounds = pending.len() + 1;
+  while !pending.is_empty() && rounds > 0 {
+    rounds -= 1;
+    let mut rest = Vec::new();
+    for (ci, srcs) in pending {
+      let c = ci.get_name().clone();
+      let p = |r: &Name| names.contains(r) && *r != c;
+      let mut refs = consts_where(&p, ci.get_type());
+      if let Some(v) = value_of(&ci) {
+        refs.extend(consts_where(&p, &v));
+      }
+      if refs.iter().any(|r| !bound.contains(r)) {
+        rest.push((ci, srcs));
+        continue;
+      }
+      let def = match &ci {
+        ConstantInfo::DefnInfo(v) => Def::mk_defn(v),
+        ConstantInfo::ThmInfo(v) => Def::mk_theo(v),
+        _ => {
+          return Err(invalid(format!(
+            "Pass 3 optimisations: canonical constant {}: not a definition",
+            c.pretty()
+          )));
+        },
+      };
+      let mut cache = BlockCache {
+        p3_sources: srcs.into_iter().enumerate().collect(),
+        ..Default::default()
+      };
+      let prev_hints = stt.def_hints.get(&c).map(|r| *r);
+      let (addr, meta, constant) =
+        compile_single_def_parts(&c, &def, &mut cache, stt).map_err(|e| {
+          invalid(format!(
+            "Pass 3 optimisations: canonical constant {}: {e}",
+            c.pretty()
+          ))
+        })?;
+      let clash = |a: &Address| {
+        // the hints this compile recorded belong to no binding
+        match prev_hints {
+          Some(h) => {
+            stt.def_hints.insert(c.clone(), h);
+          },
+          None => {
+            stt.def_hints.remove(&c);
+          },
+        }
+        invalid(format!(
+          "Pass 3 optimisations: reserved name {} is already bound to {}, not \
+to the canonical constant {}",
+          c.pretty(),
+          a.hex(),
+          addr.hex()
+        ))
+      };
+      match stt.name_to_addr.get(&c).map(|r| r.clone()) {
+        Some(a) => {
+          if a != addr {
+            return Err(clash(&a));
+          }
+        },
+        None => match stt.aux_name_to_addr.entry(c.clone()) {
+          dashmap::mapref::entry::Entry::Occupied(e) => {
+            if *e.get() != addr {
+              let a = e.get().clone();
+              drop(e);
+              return Err(clash(&a));
+            }
+          },
+          dashmap::mapref::entry::Entry::Vacant(e) => {
+            e.insert(addr.clone());
+            crate::compile::block_txn::log_aux(&c);
+            stt.env.store_const(addr.clone(), constant);
+            stt.register_named(c.clone(), Named::new(addr, meta));
+          },
+        },
+      }
+      bound.insert(c);
+    }
+    pending = rest;
+  }
+  if !pending.is_empty() {
+    let ns: Vec<String> =
+      pending.iter().map(|(ci, _)| ci.get_name().pretty()).collect();
+    return Err(invalid(format!(
+      "Pass 3 optimisations: canonical constants with cyclic references: {}",
       crate::compile::pass3::clique::basic::arr_str(&ns)
     )));
   }
@@ -852,17 +1119,22 @@ pub fn compile_block(
     with_big_stack(|| with_hook_env(&ctx, |h| h.prepare(all, &refs)))
       .map_err(invalid)?
   };
+  // the reserved names this block binds (Lean's `init.blockNameToAddr`)
+  let mut bound: FxHashSet<Name> = FxHashSet::default();
   if !prep.overlay.is_empty() {
-    compile_clique_canon(&ctx, &prep)?;
+    bound.extend(compile_clique_canon(&ctx, &prep)?);
   }
   let prepared = with_big_stack(|| prepare_block(&ctx, all, &prep.overlay))
     .map_err(invalid)?;
   cache.p3_overlay = prep.overlay.clone();
   cache.p3_sources = prep.sources.iter().cloned().collect();
-  if let Some((overlay, sources, declines)) = prepared {
-    cache.p3_overlay.extend(overlay);
-    cache.p3_sources.extend(sources.into_iter().enumerate());
-    cache.p3_declines = declines;
+  if let Some(p) = prepared {
+    cache.p3_overlay.extend(p.overlay);
+    cache.p3_sources.extend(p.sources.into_iter().enumerate());
+    cache.p3_declines = p.declines;
+    // the canonical constants (D1), compiled before the members, as Lean's
+    // `prepareBlock` compiles them into the block's initial state
+    compile_canon(stt, p.canon, &mut bound)?;
   }
   let res = compile_const(lo, all, lean_env, cache, stt, kctx);
   // the recorded declines join the compile's non-canonical set when the
@@ -893,3 +1165,76 @@ pub fn patch_recs(
 
 #[allow(dead_code)]
 fn _unused(_: MutConst) {}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::compile::pass3::expr::dotted;
+
+  fn sort(n: u32) -> Expr {
+    let mut l = Level::zero();
+    for _ in 0..n {
+      l = Level::succ(l);
+    }
+    Expr::sort(l)
+  }
+
+  /// A canonical constant `name : typ := value`.
+  fn canon(name: &str, typ: Expr, value: Expr) -> ConstantInfo {
+    let n = dotted(name);
+    ConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal { name: n.clone(), level_params: vec![], typ },
+      value,
+      hints: ReducibilityHints::Abbrev,
+      safety: DefinitionSafety::Safe,
+      all: vec![n],
+    })
+  }
+
+  #[test]
+  fn reserved_name_bound_once_to_the_same_bytes() {
+    let stt = CompileState::new_empty();
+    let c = dotted("T.f._ix");
+    let first = canon("T.f._ix", sort(1), sort(0));
+    let mut bound = FxHashSet::default();
+    compile_canon(&stt, vec![(first.clone(), vec![])], &mut bound).unwrap();
+    let a = stt.resolve_addr(&c).expect("bound");
+    assert!(stt.env.named.contains_key(&c));
+    assert!(bound.contains(&c));
+    // valid neighbour: another block binds the same name to the same bytes
+    let mut bound2 = FxHashSet::default();
+    compile_canon(&stt, vec![(first, vec![])], &mut bound2).unwrap();
+    assert_eq!(stt.resolve_addr(&c), Some(a.clone()));
+    assert!(bound2.contains(&c));
+    // a different constant under the same reserved name is refused
+    let other = canon("T.f._ix", sort(2), sort(1));
+    let err =
+      compile_canon(&stt, vec![(other, vec![])], &mut FxHashSet::default())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("reserved name T.f._ix is already bound to"), "{err}");
+    assert_eq!(stt.resolve_addr(&c), Some(a));
+  }
+
+  #[test]
+  fn canonical_constants_compile_after_their_references() {
+    let stt = CompileState::new_empty();
+    // `A._ix` refers to `B._ix`, listed first: compiled in the second round
+    let a = canon("A._ix", sort(2), Expr::cnst(dotted("B._ix"), vec![]));
+    let b = canon("B._ix", sort(2), sort(1));
+    let mut bound = FxHashSet::default();
+    compile_canon(&stt, vec![(a, vec![]), (b, vec![])], &mut bound).unwrap();
+    assert!(stt.resolve_addr(&dotted("A._ix")).is_some());
+    assert!(stt.resolve_addr(&dotted("B._ix")).is_some());
+    // two that refer to each other are refused by name
+    let c = canon("C._ix", sort(2), Expr::cnst(dotted("D._ix"), vec![]));
+    let d = canon("D._ix", sort(2), Expr::cnst(dotted("C._ix"), vec![]));
+    let err = compile_canon(&stt, vec![(c, vec![]), (d, vec![])], &mut bound)
+      .unwrap_err()
+      .to_string();
+    assert!(
+      err.contains("canonical constants with cyclic references"),
+      "{err}"
+    );
+  }
+}

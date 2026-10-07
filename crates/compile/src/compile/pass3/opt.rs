@@ -3,9 +3,10 @@
 //! the image (`Translate.RwState.opt?`). A port of
 //! `Ix/Compile/Pass/Opt/{Core,Engine,O1,O2,O3,O4,O5,O6,O11a}.lean`; the
 //! Lean modules are the specification of each pass (contract, faithfulness,
-//! side condition), cited per function. The proof-justified passes O7-O12
-//! (`pjPasses`, `emitPasses`) are slice 4: where only they would fire, the
-//! occurrence keeps its baseline, which is the Lean name's form (D1).
+//! side condition), cited per function. The engine runs the proof-justified
+//! passes after them (`pjPasses`: O8, O7; `emitPasses`: O9, O10, O12; slice
+//! 4, [`super::pj`]), whose output goes to the canonical `_ix` form of the
+//! site only (D1, `Translate.RwState.inPlace`).
 //!
 //! The scheduling edges O11a's output needs (`O11a.sizeOfEdges`) are
 //! [`size_of_edges`]; the recorded declines (`O11a.declineCause?`) are
@@ -13,6 +14,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use ix_common::address::Address;
 use ix_common::env::{
   ConstantInfo, Env as LeanEnv, Expr, ExprData, Level, LevelData, Name,
   NameData, RecursorVal,
@@ -37,12 +39,16 @@ use super::spec::BlockChange;
 // ---------------------------------------------------------------------------
 
 /// An occurrence of an image-kind auxiliary: `head.{us} args`, the arguments
-/// already in normal form (`Opt.Occ`; the `site` field is read only by the
-/// proof-justified passes, slice 4).
+/// already in normal form (`Opt.Occ`).
 pub struct Occ<'a> {
   pub head: &'a Name,
   pub us: &'a [Level],
   pub args: &'a [Expr],
+  /// The definition whose value contains the occurrence, when the
+  /// proof-justified passes (O7-O12) may fire there
+  /// (`Translate.RwState.site`); their output goes to the definition's
+  /// canonical `_ix` form only (D1).
+  pub site: Option<&'a Name>,
 }
 
 /// The kinds of image-kind auxiliaries (`Opt.AuxKind`).
@@ -60,7 +66,7 @@ pub enum AuxKind {
 /// `s` is `kind` or `kind_j` (`j >= 1`) (`Opt.suffixIdx?`).
 // the Lean original's `Option (Option Nat)`: not a suffix, the bare kind, `_j`
 #[allow(clippy::option_option)]
-fn suffix_idx(kind: &str, s: &str) -> Option<Option<usize>> {
+pub(super) fn suffix_idx(kind: &str, s: &str) -> Option<Option<usize>> {
   if s == kind {
     return Some(None);
   }
@@ -73,14 +79,14 @@ fn suffix_idx(kind: &str, s: &str) -> Option<Option<usize>> {
 }
 
 /// `x.rec` or `x.rec_j` (`Opt.recNameOf`).
-fn rec_name_of(x: &Name, j: Option<usize>) -> Name {
+pub(super) fn rec_name_of(x: &Name, j: Option<usize>) -> Name {
   match j {
     None => mk_str(x, "rec"),
     Some(j) => mk_str(x, &format!("rec_{j}")),
   }
 }
 
-fn as_str(n: &Name) -> Option<(&Name, &str)> {
+pub(super) fn as_str(n: &Name) -> Option<(&Name, &str)> {
   match n.as_data() {
     NameData::Str(p, s, _) => Some((p, s.as_str())),
     _ => None,
@@ -154,7 +160,7 @@ pub struct RecShape {
 }
 
 impl RecShape {
-  fn arity(&self) -> usize {
+  pub(super) fn arity(&self) -> usize {
     self.np + self.nm + self.nmin + self.ni + 1
   }
 
@@ -168,7 +174,7 @@ impl RecShape {
   }
 
   /// `RecShape.isSelection`.
-  fn is_selection(&self) -> bool {
+  pub(super) fn is_selection(&self) -> bool {
     self.minor_src.iter().all(Option::is_some)
   }
 
@@ -187,7 +193,7 @@ impl RecShape {
 }
 
 /// Strip `n` leading lambdas (`Opt.stripLams`).
-fn strip_lams(n: usize, e: &Expr) -> Option<Expr> {
+pub(super) fn strip_lams(n: usize, e: &Expr) -> Option<Expr> {
   let mut cur = e.clone();
   for _ in 0..n {
     let next = match cur.as_data() {
@@ -279,12 +285,19 @@ pub fn read_shape(
   })
 }
 
-/// The data of one changed Lean block the passes read (`Opt.OptBlock`; the
-/// `images`/`ixRecs` fields serve the proof-justified passes only).
+/// The data of one changed Lean block the passes read (`Opt.OptBlock`).
 pub struct OptBlock {
+  pub all: Vec<Name>,
   pub change: BlockChange,
   pub class_of: FxHashMap<Name, Vec<Name>>,
   pub shapes: FxHashMap<Name, RecShape>,
+  /// The generated images of the block's Lean recursors (those that built):
+  /// their universe parameters and values, read by the proof-justified
+  /// passes over collapsed blocks, whose images are packed (`Opt.Packed`).
+  pub images: FxHashMap<Name, (Vec<Name>, Expr)>,
+  /// The Ix recursors of the block's canonical components (view names, as
+  /// the images name them).
+  pub ix_recs: FxHashMap<Name, RecursorVal>,
 }
 
 /// What the passes read of the compiler (`Opt.OptEnv`).
@@ -295,21 +308,40 @@ pub struct OptEnv<'a> {
   pub resolves: &'a dyn Fn(&Name) -> bool,
   /// The block of a Lean image-kind head, when it is a changed block's.
   pub block_of: &'a dyn Fn(&Name) -> Option<&'a OptBlock>,
+  /// The address of a name of `E`, when it resolves (the proof-justified
+  /// passes compare compiled references, `Opt.CollapseRec.agreeAddr`);
+  /// `None` gives Lean's default (`fun _ => none`).
+  pub addr_of: Option<&'a dyn Fn(&Name) -> Option<Address>>,
+  /// The canonical `_ix` form of a compiled dependency, when it has one
+  /// (`OptEnv.ixForm?`, `Driver.ixFormOf`); `None` gives Lean's default.
+  pub ix_form: Option<&'a dyn Fn(&Name) -> Option<Name>>,
 }
 
 impl OptEnv<'_> {
-  fn const_of(&self, n: &Name) -> Option<ConstantInfo> {
+  pub(super) fn const_of(&self, n: &Name) -> Option<ConstantInfo> {
     self.ienv.get(n).map(|e| e.cloned())
+  }
+
+  /// `OptEnv.addrOf`.
+  pub(super) fn addr_of(&self, n: &Name) -> Option<Address> {
+    self.addr_of.and_then(|f| f(n))
+  }
+
+  /// The compiled address of a name's canonical form: its `_ix` form when
+  /// it has one (D1), the name itself otherwise (`OptEnv.canonAddrOf`).
+  pub(super) fn canon_addr_of(&self, n: &Name) -> Option<Address> {
+    let m = self.ix_form.and_then(|f| f(n)).unwrap_or_else(|| n.clone());
+    self.addr_of(&m)
   }
 }
 
 /// `Opt.pick`.
-fn pick(xs: &[Expr], src: &[usize]) -> Option<Vec<Expr>> {
+pub(super) fn pick(xs: &[Expr], src: &[usize]) -> Option<Vec<Expr>> {
   src.iter().map(|i| xs.get(*i).cloned()).collect()
 }
 
 /// `Opt.forallArity`.
-fn forall_arity(e: &Expr) -> usize {
+pub(super) fn forall_arity(e: &Expr) -> usize {
   match e.as_data() {
     ExprData::ForallE(_, _, b, _, _) => forall_arity(b) + 1,
     ExprData::Mdata(_, b, _) => forall_arity(b),
@@ -318,7 +350,7 @@ fn forall_arity(e: &Expr) -> usize {
 }
 
 /// `Opt.standardTelescope`.
-fn standard_telescope(
+pub(super) fn standard_telescope(
   env: &OptEnv<'_>,
   s: &RecShape,
   k: AuxKind,
@@ -343,11 +375,11 @@ fn standard_telescope(
   Some(n)
 }
 
-fn mk_const(n: &Name, ls: Vec<Level>) -> Expr {
+pub(super) fn mk_const(n: &Name, ls: Vec<Level>) -> Expr {
   Expr::cnst(n.clone(), ls)
 }
 
-fn cat(parts: &[&[Expr]]) -> Vec<Expr> {
+pub(super) fn cat(parts: &[&[Expr]]) -> Vec<Expr> {
   parts.iter().flat_map(|p| p.iter().cloned()).collect()
 }
 
@@ -356,7 +388,7 @@ fn cat(parts: &[&[Expr]]) -> Vec<Expr> {
 // ---------------------------------------------------------------------------
 
 /// `O5.levels`.
-fn o5_levels(s: &RecShape, us: &[Level]) -> Option<Vec<Level>> {
+pub(super) fn o5_levels(s: &RecShape, us: &[Level]) -> Option<Vec<Level>> {
   if s.ix_levels.len() == s.level_params.len() {
     Some(s.levels_at(us))
   } else if s.ix_levels.len() == s.level_params.len() + 1 {
@@ -493,7 +525,7 @@ fn relocated_ih(
     target.xs_fvars.iter().fold(field.clone(), |f, x| Expr::app(f, x.clone()));
   let mut args = cat(&[ps, ms, mins, &target.idx_args]);
   args.push(field_app);
-  let inner = recur(&Occ { head: &target_rec, us, args: &args })?;
+  let inner = recur(&Occ { head: &target_rec, us, args: &args, site: None })?;
   Some(mk_lambda(inner, &target.xs_decls))
 }
 
@@ -666,7 +698,7 @@ fn o3(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
 // ---------------------------------------------------------------------------
 
 /// `x.rec ↦ x.below`, `all0.rec_j ↦ all0.below_j` (`Opt.belowNameOf`).
-fn below_name_of(n: &Name) -> Name {
+pub(super) fn below_name_of(n: &Name) -> Name {
   match as_str(n) {
     Some((p, s)) => {
       mk_str(p, &format!("below{}", s.get(3..).unwrap_or_default()))
@@ -1195,24 +1227,57 @@ pub fn o11a_decline_cause(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<String> {
 // The engine (`Opt/Engine.lean`)
 // ---------------------------------------------------------------------------
 
-/// `Engine.engineN` over the definitional passes in their fixed order
-/// (O1, O11a, O2, O3, O4, O6); the proof-justified passes are slice 4.
-fn engine_n(fuel: usize, env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
+/// `Engine.engineN`: the first pass that applies, with its name, over the
+/// definitional passes in their fixed order (`passes`: O1, O11a, O2, O3,
+/// O4, O6), then the proof-justified occurrence passes (`pjPasses`: O8,
+/// O7), which fire only at a site (`Packed.pjAllowed`). The bound is on the
+/// nesting of O2's relocated calls.
+fn engine_n(
+  fuel: usize,
+  env: &OptEnv<'_>,
+  o: &Occ<'_>,
+) -> Option<(&'static str, Expr)> {
   if fuel == 0 {
     return None;
   }
-  let recur = |o2: &Occ<'_>| engine_n(fuel - 1, env, o2);
+  let recur = |o2: &Occ<'_>| engine_n(fuel - 1, env, o2).map(|(_, e)| e);
   o1(env, o)
-    .or_else(|| o11a(env, o))
-    .or_else(|| o2(&recur, env, o))
-    .or_else(|| o3(env, o))
-    .or_else(|| o4(env, o))
-    .or_else(|| o6(env, o))
+    .map(|e| ("O1", e))
+    .or_else(|| o11a(env, o).map(|e| ("O11a", e)))
+    .or_else(|| o2(&recur, env, o).map(|e| ("O2", e)))
+    .or_else(|| o3(env, o).map(|e| ("O3", e)))
+    .or_else(|| o4(env, o).map(|e| ("O4", e)))
+    .or_else(|| o6(env, o).map(|e| ("O6", e)))
+    .or_else(|| super::pj::o8(env, o).map(|e| ("O8", e)))
+    .or_else(|| super::pj::o7(env, o).map(|e| ("O7", e)))
 }
 
 /// The engine at one occurrence (`Engine.engine`, bound 64).
-pub fn engine(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
+pub fn engine(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<(&'static str, Expr)> {
   engine_n(64, env, o)
+}
+
+/// The engine at one occurrence, with the canonical constants the rewrite
+/// references (`Engine.engineFull`): the occurrence passes, then the
+/// emitting ones (`emitPasses`: O9, O10, O12; O10 before O12).
+pub fn engine_full(
+  env: &OptEnv<'_>,
+  o: &Occ<'_>,
+) -> Option<(&'static str, Expr, Vec<ConstantInfo>)> {
+  if let Some((nm, e)) = engine(env, o) {
+    return Some((nm, e, Vec::new()));
+  }
+  super::pj::o9(env, o)
+    .map(|(e, cs)| ("O9", e, cs))
+    .or_else(|| super::pj::o10(env, o).map(|(e, cs)| ("O10", e, cs)))
+    .or_else(|| super::pj::o12(env, o).map(|(e, cs)| ("O12", e, cs)))
+}
+
+/// A pass whose output is not a conversion of the baseline (O7-O12): its
+/// result goes to the canonical `_ix` form of the site only (D1,
+/// `Engine.isProofJustified`).
+pub fn is_proof_justified(nm: &str) -> bool {
+  matches!(nm, "O8" | "O7" | "O9" | "O10" | "O12")
 }
 
 /// The data of a changed block for the passes, from its view
@@ -1235,9 +1300,11 @@ pub fn opt_block_of(
     _ => None,
   };
   let mut shapes = FxHashMap::default();
+  let mut images = FxHashMap::default();
   for r in super::names::image_kinds(inp.const_of, &view.all) {
     let Some(ConstantInfo::RecInfo(rv)) = (inp.const_of)(&r) else { continue };
     let Ok((x, _)) = view.expansion(inp, &r) else { continue };
+    images.insert(r.clone(), (x.level_params.clone(), x.value.clone()));
     if let Some(s) = read_shape(
       &x.level_params,
       nat_usize(&rv.num_params),
@@ -1250,7 +1317,22 @@ pub fn opt_block_of(
       shapes.insert(r, s);
     }
   }
-  OptBlock { change: view.canon.change(), class_of, shapes }
+  let ix_recs: FxHashMap<Name, RecursorVal> = view
+    .canon_consts
+    .iter()
+    .filter_map(|(n, c)| match c {
+      ConstantInfo::RecInfo(rv) => Some((n.clone(), rv.clone())),
+      _ => None,
+    })
+    .collect();
+  OptBlock {
+    all: view.all.clone(),
+    change: view.canon.change(),
+    class_of,
+    shapes,
+    images,
+    ix_recs,
+  }
 }
 
 // ---------------------------------------------------------------------------

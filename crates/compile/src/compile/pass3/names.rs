@@ -116,6 +116,16 @@ pub fn ix_form_name(c: &Name) -> Name {
   mk_str(c, IX_COMPONENT)
 }
 
+/// The reserved name of the re-typed handler of the Lean constant `p.s`:
+/// `p._ix_retyped.s` (`Names.retypedName`; distinct from the clique hook's
+/// `p._ix.s`).
+pub fn retyped_name(n: &Name) -> Option<Name> {
+  match n.as_data() {
+    NameData::Str(p, s, _) => Some(mk_str(&mk_str(p, RETYPED_COMPONENT), s)),
+    _ => None,
+  }
+}
+
 /// A nested-index suffix component `kind_j` (`kind` one of `rec`, `below`,
 /// `brecOn`, `j >= 1`).
 fn nested_comp(c: &Comp) -> Option<(String, usize)> {

@@ -4596,6 +4596,29 @@ pub(crate) fn compile_single_def(
   stt: &CompileState,
   aux: bool,
 ) -> Result<(Address, ConstantMeta), CompileError> {
+  let (addr, meta, constant) = compile_single_def_parts(name, def, cache, stt)?;
+  if aux {
+    stt.env.store_const(addr.clone(), constant);
+    stt.register_named(name.clone(), Named::new(addr.clone(), meta.clone()));
+  } else {
+    // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
+    // original (addr, meta) in Named.original for decompilation metadata.
+    // Do NOT store the constant blob — it's ephemeral and would pollute
+    // the Ixon env with unreferenced constants.
+    stt.promote_aux(name, addr.clone(), meta.clone())?;
+  }
+  Ok((addr, meta))
+}
+
+/// Compile a single definition standalone without storing anything: its
+/// address, metadata and constant (the caller stores them; Pass 3's
+/// canonical constants check a reserved name's binding first).
+pub fn compile_single_def_parts(
+  name: &Name,
+  def: &Def,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Result<(Address, ConstantMeta, Constant), CompileError> {
   let _t0 = std::time::Instant::now();
   let _name_str_entry = name.pretty();
   let mut_ctx = MutConst::single_ctx(def.name.clone());
@@ -4642,17 +4665,7 @@ pub(crate) fn compile_single_def(
       serialized_size,
     );
   }
-  if aux {
-    stt.env.store_const(addr.clone(), constant);
-    stt.register_named(name.clone(), Named::new(addr.clone(), meta.clone()));
-  } else {
-    // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
-    // original (addr, meta) in Named.original for decompilation metadata.
-    // Do NOT store the constant blob — it's ephemeral and would pollute
-    // the Ixon env with unreferenced constants.
-    stt.promote_aux(name, addr.clone(), meta.clone())?;
-  }
-  Ok((addr, meta))
+  Ok((addr, meta, constant))
 }
 
 /// Compile a definition-like constant standalone under `name` and register
