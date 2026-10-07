@@ -1195,7 +1195,9 @@ def m7fRoots : Array Lean.Name :=
     -- the model proposal, the entry correspondence, the normalisation
     `exportSourceBlockEvidenceP, `exportSourceBlockEvidenceP_find, `exportSourceBlockEvidenceP_subst,
     `exportSourceBlockEvidenceF, `exportSourceInductiveP_index, `exportSourceBlockEvidenceF_eq,
-    `proposeSourceModelsP, `proposeSourceModelsP_find, `proposeSourceModelsF, `proposeSourceModelsF_eq,
+    `proposeSourceModelsP, `proposeSourceModelsP_find, `proposeSourceModelsQ, `proposeSourceModelsQ_list,
+    `proposeSourceModelsQ_spec, `declKey, `groupBuckets, `groupBuckets_getD, `find?_filter_of_imp, `queryBuckets,
+    `queryBuckets_eq, `proposeSourceModelsF, `proposeSourceModelsF_eq,
     `proposeSourceModels_eq_fast, `directEntryName, `entryIndex, `entryIndex_mem, `entriesFast,
     `entriesFast_sound, `entriesFastDecidable, `instDecidableSourceEntryCorrespondence_eq_fast,
     `sourceKernelFind, `sourceKernelIndex, `sourceKernelIndex_find, `proposeSourceProjectionP,

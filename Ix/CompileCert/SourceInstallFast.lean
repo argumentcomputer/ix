@@ -147,16 +147,138 @@ theorem proposeSourceModelsP_find (source : Source) (original : Array Kernel.Dec
     proposeSourceModelsP source (exportSourceBlockEvidence source) original =
       proposeSourceModels source original := rfl
 
+/-- `proposeSourceModelsP` with the search for an inductive declaration's group given as an
+index built once from the groups and a query: at the list itself and `List.find?` it is
+`proposeSourceModelsP` by `rfl`. -/
+def proposeSourceModelsQ (source : Source) (blockEvidence : Lean.Name → ExportM (SourceBlockEvidence source))
+    {α : Type} (build : List SourceDeclGroup → α) (query : α → Kernel.Declaration → Option SourceDeclGroup)
+    (original : Array Kernel.Declaration) : ExportM (SourceModelProposal source) := do
+  let groups ← exportSourceGroups source
+  let index := build groups
+  let mut state : SourceModelState := {}
+  let mut declarations := #[]
+  let mut evidence := []
+  let mut basisSupport := []
+  for declaration in original do
+    if let .indDecl _ _ := declaration then
+      let some group := query index declaration
+        | throw "source model preparation could not associate an original group"
+      let some owner := group.members.head? | throw "source model group has no owner"
+      let block ← blockEvidence owner
+      unless decide (block.group.declaration = declaration) do
+        throw "source model block evidence differs from the original declaration"
+      evidence := evidence ++ [block]
+      for type in block.shape.types do
+        state := { state with blocks := state.blocks.insert type.cv.name block.shape }
+      if Kernel.Frontend.InModel.wants block.shape then
+        for (name, kind) in sourceModelBasisSupport do
+          if (state.types[name]?).isNone then
+            if original.any (fun d => d.names.contains name) then
+              throw s!"source-owned support {repr name} is scheduled after a model that requires it"
+            let support := Kernel.Declaration.basisDecl kind
+            declarations := declarations.push support
+            basisSupport := basisSupport ++ [kind]
+            state := state.note support
+        let context : Kernel.Frontend.InModel.Ctx :=
+          ⟨fun n => state.types[n]?, fun n => state.heights.getD n 0, fun n => state.blocks[n]?⟩
+        let proposed ← Kernel.Frontend.InModel.generate context block.shape
+        for auxiliary in proposed do
+          declarations := declarations.push auxiliary
+          state := state.note auxiliary
+    declarations := declarations.push declaration
+    state := state.note declaration
+  return ⟨declarations, evidence, basisSupport⟩
+
+theorem proposeSourceModelsQ_list (source : Source) (blockEvidence : Lean.Name → ExportM (SourceBlockEvidence source))
+    (original : Array Kernel.Declaration) :
+    proposeSourceModelsQ source blockEvidence (α := List SourceDeclGroup) id
+        (fun groups declaration => groups.find? (fun group => decide (group.declaration = declaration))) original =
+      proposeSourceModelsP source blockEvidence original := rfl
+
+/-- `proposeSourceModelsQ` is `proposeSourceModelsP` for any index whose query is the list search. -/
+theorem proposeSourceModelsQ_spec (source : Source) (blockEvidence : Lean.Name → ExportM (SourceBlockEvidence source))
+    {α : Type} (build : List SourceDeclGroup → α) (query : α → Kernel.Declaration → Option SourceDeclGroup)
+    (h : ∀ groups declaration, query (build groups) declaration =
+      groups.find? (fun group => decide (group.declaration = declaration)))
+    (original : Array Kernel.Declaration) :
+    proposeSourceModelsQ source blockEvidence build query original = proposeSourceModelsP source blockEvidence original := by
+  unfold proposeSourceModelsQ proposeSourceModelsP
+  simp only [h]
+
+/-- The key a declaration's group is found under: its first declared name. -/
+def declKey (declaration : Kernel.Declaration) : Option Kernel.Name := declaration.names.head?
+
+/-- The groups under the key of their declaration, in their order. -/
+def groupBuckets (groups : List SourceDeclGroup) : Std.HashMap Kernel.Name (List SourceDeclGroup) :=
+  groups.foldr (fun g m => match declKey g.declaration with
+    | some k => m.insert k (g :: m.getD k [])
+    | none => m) {}
+
+theorem groupBuckets_getD (k : Kernel.Name) : ∀ groups : List SourceDeclGroup,
+    (groupBuckets groups).getD k [] = groups.filter (fun g => declKey g.declaration == some k)
+  | [] => by simp [groupBuckets]
+  | g :: gs => by
+    have ih := groupBuckets_getD k gs
+    simp only [groupBuckets] at ih ⊢
+    rw [List.foldr_cons, List.filter_cons]
+    split
+    · rename_i k' hk
+      rw [Std.HashMap.getD_insert, ih]
+      by_cases same : k' = k
+      · subst same; simp [hk, ih]
+      · have : (k' == k) = false := beq_eq_false_iff_ne.mpr same
+        simp only [this, Bool.false_eq_true, ↓reduceIte, hk]
+        have : (some k' == some k) = false := by simp [same]
+        simp [this]
+    · rename_i hk
+      rw [ih]
+      simp [hk]
+
+theorem find?_filter_of_imp {β : Type} (p q : β → Bool) (h : ∀ x, p x = true → q x = true) :
+    ∀ l : List β, (l.filter q).find? p = l.find? p
+  | [] => rfl
+  | x :: xs => by
+    rw [List.filter_cons, List.find?_cons]
+    by_cases hp : p x = true
+    · simp [hp, h x hp]
+    · have hp' : p x = false := Bool.eq_false_iff.mpr hp
+      split
+      · simp [hp', find?_filter_of_imp p q h xs]
+      · simp [hp', find?_filter_of_imp p q h xs]
+
+/-- The group search through the buckets: only the groups under the declaration's key are
+searched (a group whose declaration equals it has its key). -/
+def queryBuckets (index : Std.HashMap Kernel.Name (List SourceDeclGroup) × List SourceDeclGroup)
+    (declaration : Kernel.Declaration) : Option SourceDeclGroup :=
+  match declKey declaration with
+  | some k => (index.1.getD k []).find? (fun group => decide (group.declaration = declaration))
+  | none => index.2.find? (fun group => decide (group.declaration = declaration))
+
+theorem queryBuckets_eq (groups : List SourceDeclGroup) (declaration : Kernel.Declaration) :
+    queryBuckets (groupBuckets groups, groups) declaration =
+      groups.find? (fun group => decide (group.declaration = declaration)) := by
+  unfold queryBuckets
+  split
+  · rename_i k hk
+    rw [groupBuckets_getD]
+    apply find?_filter_of_imp
+    intro g hg
+    have same : g.declaration = declaration := of_decide_eq_true hg
+    simp [same, hk]
+  · rfl
+
 /-- **The model proposal through the source index.** -/
 def proposeSourceModelsF (source : Source) (original : Array Kernel.Declaration) :
     ExportM (SourceModelProposal source) :=
   let idx := sourceIndex source
-  proposeSourceModelsP source (exportSourceBlockEvidenceF source idx rfl) original
+  proposeSourceModelsQ source (exportSourceBlockEvidenceF source idx rfl)
+    (fun groups => (groupBuckets groups, groups)) queryBuckets original
 
 theorem proposeSourceModelsF_eq (source : Source) (original : Array Kernel.Declaration) :
     proposeSourceModelsF source original = proposeSourceModels source original := by
   unfold proposeSourceModelsF
   dsimp only
+  rw [proposeSourceModelsQ_spec source _ _ queryBuckets (fun groups declaration => queryBuckets_eq groups declaration)]
   rw [show exportSourceBlockEvidenceF source (sourceIndex source) rfl = exportSourceBlockEvidence source from
     funext (exportSourceBlockEvidenceF_eq source)]
   rfl
