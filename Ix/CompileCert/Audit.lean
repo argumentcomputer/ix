@@ -1410,7 +1410,17 @@ def x2Roots : Array Lean.Name :=
     `denotes_bvar_inv, `denotes_sort_inv, `denotes_const_inv, `denotes_app_inv, `denotes_pi_inv,
     `denotes_lam_inv, `model_telescope_inhabited, `natRecA_type, `natZeroA_type, `natSuccA_type,
     `pinned_natRec, `pinned_natZero, `pinned_natSucc, `cval_const_nil, `regime_never,
-    `regime_ifAllZero_u, `nat_induction].map
+    `regime_ifAllZero_u, `nat_induction,
+    -- graded readings, graph-regime β, the annotation lemmas
+    `Graded, `Graded.denotes, `Graded.lift, `Graded.inst, `Graded.inst0, `Graded.beta, `RedB,
+    `RedB.sound, `PosAt, `regime_ne_zero_iff, `denotes_of_erasePw_pos, `bridgeT_posAt,
+    `bridge_reading_pos, `squash_pt, `squash_pi_pt,
+    -- the worked instance: the development on the checker's side
+    `TRedB, `TRedB.conv, `TRedB.appN, `TRedB.forall2_refl, `TRedB.beta_appN, `hinstB, `happB,
+    `instantiateB, `hinstB_zero, `happB_zero, `happB_succ, `forall2_red_of_mapM, `developB_red,
+    `hinstB_red, `instantiateB_red, `TRedB.bridge, `developB_sem, `instantiateB_sem, `inlineB_sem,
+    `inlineB_justified].map
+
 
       (`Ix.CompileCert.Bridge ++ ·)
 

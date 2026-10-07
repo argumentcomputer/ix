@@ -4,6 +4,8 @@ import Ix.CompileCert.Bridge.Denote
 import Ix.CompileCert.Bridge.Rules
 import Ix.CompileCert.Bridge.Justified
 import Ix.CompileCert.Bridge.Induction
+import Ix.CompileCert.Bridge.Graded
+import Ix.CompileCert.Bridge.Develop
 
 /-!
 # M7 X2: the bridge from the compiler's terms to the checker's, and conversion soundness
@@ -38,7 +40,18 @@ This package connects the two (PLAN-L2a §1.4 obligation O-B, §2.0 B1/B2):
 * **model-level induction** (`Bridge/Induction.lean`): a recursor's typing law at a `Prop` motive
   gives induction over the model's reading of the type for any meta-level predicate (`predMotive`,
   `piR_inhabited`, the inversions of the public reading, `model_telescope_inhabited`), and the
-  `Nat` instance `nat_induction`, read off the checker's pinned `Nat.rec`.
+  `Nat` instance `nat_induction`, read off the checker's pinned `Nat.rec`;
+* **graded readings and graph-regime β** (`Bridge/Graded.lean`): `Graded` (the public reading's
+  `WellDenoted`), stable under lifting and substitution; `RedB` (β at graph-regime binders in every
+  context) sound on graded terms with the reduct graded (`RedB.sound`); the annotation lemmas
+  (`denotes_of_erasePw_pos`, `bridge_reading_pos`: the bridge's reading is the installed reading in
+  the graph regime; `squash_pt`);
+* **the worked instance** (`Bridge/Develop.lean`): the β-only development reduces the plain
+  substitution (`developB_red`, `instantiateB_red`, X1's `develop_conv` in directed form); on the
+  bridges that reduction is the checker's graph-regime β (`TRedB.bridge`), so a graded occurrence and
+  its development denote the same (`developB_sem`, `instantiateB_sem`), and an inlined image
+  occurrence denotes what the unfolded constant does (`inlineB_sem`), with X1's `inline_conv` on the
+  compiler side (`inlineB_justified`).
 
 Not claimed: `Conv a b → ⟦a⟧ = ⟦b⟧` for an arbitrary derivation (false for untyped β and η in the
 set model, `M7-X2-bridge.md` §1.3), and the emission of compiler terms into bytes (L4).
