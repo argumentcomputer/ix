@@ -434,3 +434,323 @@ match the source, inputs, protocol, partition, one-lane setting, and
 The historical four-GPU Mathlib run in §6 has different corpus/settings and
 host resources. The Blackwell arithmetic retained in the Init JSON is an
 unmeasured sensitivity scenario, not an established per-GPU slowdown.
+
+## 8. CSLib benchmark handoff (2026-10-07)
+
+The run must certify CSLib at the v4.34.1 release, then certify two actual
+later upstream main snapshots using the preceding catalog as `--base`.
+Each export contains the Mathlib declarations CSLib imports; a separate
+proof of all Mathlib is not a prerequisite. Completion requires verified
+catalog certificates for all three snapshots and measured incremental reuse.
+A cold proof followed only by an identical-snapshot repeat is insufficient.
+
+The release input was built and exported locally. The later snapshots were
+pinned and inspected, but their builds, exports and cross-toolchain proving
+compatibility remain prerequisites. No CSLib proof has been generated.
+
+### Pinned inputs and measured scope
+
+| Input | Identity |
+|---|---|
+| CSLib `v4.34.1` | `7c8f6c0f67015df29b152fdcffaf7850db2e9185` |
+| Mathlib dependency | `d13f23b723b8a846827a245b89c10fc7d3f11612` |
+| Lean toolchain | `leanprover/lean4:v4.34.1` |
+| CSLib Lake manifest SHA256 | `c514c3beaef90c5dc4d58ceed377a17d93e6e926f6213ed48a5a288e5c9e7be8` |
+| Ixon format | 4 |
+| CSLib constants root | `f80bbc527eed7892206d4e6cf552dd21a33b723c569f43a698915aee39be2d30` |
+| Original full CSLib `.ixe` SHA256 | `f8261c4521eb3b1e514474697d3e4153720ac28bc9975f3a51e8a39cc24015bc` |
+
+The [revision manifest](benchmarks/cslib-2026-10-07/revisions.json) pins
+the full commit IDs, timestamps, toolchains and complete Lake manifests:
+
+| Stage | Upstream commit | Purpose | Lean / Mathlib |
+|---|---|---|---|
+| A | [`7c8f6c0`](https://github.com/leanprover/cslib/commit/7c8f6c0f67015df29b152fdcffaf7850db2e9185), Sep 24 | Cold v4.34.1 release catalog | 4.34.1 / `d13f23b` |
+| B | [`3f4ec26`](https://github.com/leanprover/cslib/commit/3f4ec2623bd8c7c554167da2dc9e80fa75fcbd6b), Sep 25 | First main commit after the release, using A | 4.35.0-rc2 / `1cae91f` |
+| C | [`255a404`](https://github.com/leanprover/cslib/commit/255a404cd12bab901c5c3e87fa2dbf7655196d8e), Sep 25 | Circuit output tuple refactor, using B | 4.35.0-rc2 / `1cae91f` |
+
+A was released from a side branch and is not an ancestor of B. Main had
+already moved to 4.35.0-rc2 before the release. Although B's own commit only
+changes CODEOWNERS, A → B includes earlier main changes and different Lean
+and Mathlib versions; it is not a no-change control. B → C is a direct parent
+transition with identical dependency manifests and a real library refactor.
+Report these transitions separately. Do not cherry-pick the changes onto A
+or edit their toolchain pins: that would benchmark different snapshots.
+
+Use the supplied [CompileCslib.lean](benchmarks/cslib-2026-10-07/CompileCslib.lean).
+It uses a classic `import Cslib`, without a `module` header or seed filter,
+so the export includes private declarations and the entire imported
+environment. Compiling CSLib's own root module can select a different scope.
+The separate `CslibTests` modules are outside this import scope.
+
+| Measured quantity | CSLib import | Full Mathlib import |
+|---|---:|---:|
+| Requested Lean constants | 441,356 | 783,115 |
+| Named Ixon entries | 445,875 | 790,417 |
+| Unique anonymous constants | 385,304 | 689,374 |
+| Ungrounded constants | 0 | 0 |
+| Full environment bytes | 1,037,346,098 | 2,360,309,573 |
+| Anonymous environment bytes | 519,496,338 | 1,194,407,419 |
+| Export command wall time | 60.47 s | 146.83 s |
+| Export peak process-tree RSS | 9.36 GiB | 17.83 GiB |
+
+The verified union contains 704,001 unique constants: 370,677 shared,
+14,627 present only in CSLib, and 318,697 present only in Mathlib. This
+overlap establishes possible content reuse, not measured saved proving
+time. The first CSLib proof must cover all 385,304 of its constants.
+
+The [measurement summary](benchmarks/cslib-2026-10-07/summary.json),
+[compile report](benchmarks/cslib-2026-10-07/cslib.report.json),
+[dependency manifest](benchmarks/cslib-2026-10-07/cslib-lake-manifest.json),
+and [artifact index](benchmarks/cslib-2026-10-07/artifact-index.json) are
+portable evidence. Absolute paths inside reports identify the local machine.
+Large environments and proof objects are not checked into Git.
+
+### Exporter compatibility and input preparation
+
+Use an immutable Ix checkout containing this handoff. The implementation
+baseline is `5a5ef1cd84b3fac5444620f87734d8c0ac298370`; record the receiving
+checkout's actual commit and build a fresh GPU binary using §7. Use SM 89
+for L40S or SM 120 for the Blackwell machines. This binary, `IX_BIN` below,
+must contain `catalog prove` and remain unchanged for all proving and
+verification. Record its SHA256, toolchain versions and hardware.
+
+The release exporter needs Lean 4.34.1; B and C need a separate Ix frontend
+compatible with Lean 4.35.0-rc2, called `IX_EXPORT_RC2` below. Merely installing
+that Lean toolchain does not make a 4.34.1-linked Ix frontend compatible with
+its oleans. Build or port that exporter in a separate checkout and validate
+it before the full GPU run. Changing the proving binary between A and B
+invalidates the current catalog profile; use the frontend only to export B
+and C, and keep `IX_BIN` for the serialized Ixon and proofs. Matching Ixon
+format numbers alone does not establish compatibility with the prover's
+primitive definitions and checking semantics.
+
+The existing local export binary is recorded in `provenance.json`; it does
+not contain the newly committed catalog driver. Neither a fully linked build
+of that driver nor a 4.35.0-rc2 exporter has been validated locally.
+
+The following Bash commands start in the Ix checkout after that GPU build.
+They require Git, jq, GNU time and Lean/Lake 4.34.1 on `PATH`.
+Keep this isolated checkout out of the larger `Benchmarks/Compile` project.
+
+```bash
+set -euo pipefail
+IX_REPO=$PWD
+IX_BIN="$IX_REPO/.lake/build/bin/ix"
+mkdir -p "$IX_REPO/.lake/benches"
+RUN_DIR=$(mktemp -d "$IX_REPO/.lake/benches/cslib-gpu.XXXXXXXX")
+git rev-parse HEAD > "$RUN_DIR/ix.commit"
+sha256sum "$IX_BIN" > "$RUN_DIR/ix-binary.sha256"
+
+git init "$RUN_DIR/src"
+git -C "$RUN_DIR/src" remote add origin https://github.com/leanprover/cslib
+git -C "$RUN_DIR/src" fetch --depth 1 origin 7c8f6c0f67015df29b152fdcffaf7850db2e9185
+git -C "$RUN_DIR/src" checkout --detach FETCH_HEAD
+cd "$RUN_DIR/src"
+test "$(git rev-parse HEAD)" = 7c8f6c0f67015df29b152fdcffaf7850db2e9185
+test "$(cat lean-toolchain)" = leanprover/lean4:v4.34.1
+cmp lake-manifest.json "$IX_REPO/docs/benchmarks/cslib-2026-10-07/cslib-lake-manifest.json"
+lake exe cache get
+lake build Cslib
+test "$(git -C .lake/packages/mathlib rev-parse HEAD)" = d13f23b723b8a846827a245b89c10fc7d3f11612
+
+mkdir -p .lake/ix-benchmark
+cp "$IX_REPO/docs/benchmarks/cslib-2026-10-07/CompileCslib.lean" .lake/ix-benchmark/
+/usr/bin/time -v -o "$RUN_DIR/compile.time" \
+  "$IX_BIN" compile .lake/ix-benchmark/CompileCslib.lean --no-build \
+  --out "$RUN_DIR/cslib.ixe" --report "$RUN_DIR/cslib.report.json" \
+  > "$RUN_DIR/compile.out" 2> "$RUN_DIR/compile.err"
+jq -e '.written == true and .allowPartial == false and
+  .ixeFormatVersion == 4 and .ungroundedCount == 0 and
+  .uniqueAnon == 385304 and
+  .root == "f80bbc527eed7892206d4e6cf552dd21a33b723c569f43a698915aee39be2d30"' \
+  "$RUN_DIR/cslib.report.json"
+sha256sum "$RUN_DIR/cslib.ixe" > "$RUN_DIR/cslib.sha256"
+
+cd "$RUN_DIR"
+"$IX_BIN" catalog assemble A.ixc cslib.ixe --labels Cslib \
+  --toolchains leanprover/lean4:v4.34.1 \
+  --pins git:https://github.com/leanprover/cslib@7c8f6c0f67015df29b152fdcffaf7850db2e9185
+"$IX_BIN" catalog verify A.ixc --deep > A.catalog-verify.out
+"$IX_BIN" catalog info A.ixc > A.catalog.json
+```
+
+After the compatible rc2 exporter is available, build and export the exact
+B and C commits. The commands below use elan's toolchain selection, not a
+fixed-version Nix `lake`. `IX_EXPORT_RC2` must be an absolute executable path.
+
+```bash
+: "${IX_EXPORT_RC2:?Set the absolute path to a validated Lean 4.35.0-rc2 Ix exporter}"
+test -x "$IX_EXPORT_RC2"
+PINS="$IX_REPO/docs/benchmarks/cslib-2026-10-07/revisions.json"
+sha256sum "$IX_EXPORT_RC2" > "$RUN_DIR/ix-export-rc2.sha256"
+for ID in B C; do
+  REV=$(jq -r --arg id "$ID" '.revisions[] | select(.id == $id) | .commit' "$PINS")
+  TOOLCHAIN=$(jq -r --arg id "$ID" '.revisions[] | select(.id == $id) | .toolchain' "$PINS")
+  git init "$RUN_DIR/src-$ID"
+  git -C "$RUN_DIR/src-$ID" remote add origin https://github.com/leanprover/cslib
+  git -C "$RUN_DIR/src-$ID" fetch --depth 1 origin "$REV"
+  git -C "$RUN_DIR/src-$ID" checkout --detach FETCH_HEAD
+  (
+    cd "$RUN_DIR/src-$ID"
+    test "$(git rev-parse HEAD)" = "$REV"
+    test "$(cat lean-toolchain)" = "$TOOLCHAIN"
+    cmp lake-manifest.json "$IX_REPO/docs/benchmarks/cslib-2026-10-07/main-lake-manifest.json"
+    elan run "$TOOLCHAIN" lake exe cache get
+    elan run "$TOOLCHAIN" lake build Cslib
+    test "$(git -C .lake/packages/mathlib rev-parse HEAD)" = 1cae91f0957ccf8847f22a6239fa0c032a9e28c6
+    mkdir -p .lake/ix-benchmark
+    cp "$IX_REPO/docs/benchmarks/cslib-2026-10-07/CompileCslib.lean" .lake/ix-benchmark/
+    /usr/bin/time -v -o "$RUN_DIR/$ID.compile.time" \
+      elan run "$TOOLCHAIN" "$IX_EXPORT_RC2" compile .lake/ix-benchmark/CompileCslib.lean \
+      --no-build --out "$RUN_DIR/$ID.ixe" --report "$RUN_DIR/$ID.report.json" \
+      > "$RUN_DIR/$ID.compile.out" 2> "$RUN_DIR/$ID.compile.err"
+  )
+  jq -e '.written == true and .allowPartial == false and
+    .ixeFormatVersion == 4 and .ungroundedCount == 0 and
+    .leanToolchain == "4.35.0-rc2" and .uniqueAnon > 0' "$RUN_DIR/$ID.report.json"
+  sha256sum "$RUN_DIR/$ID.ixe" > "$RUN_DIR/$ID.sha256"
+  "$IX_BIN" catalog assemble "$RUN_DIR/$ID.ixc" "$RUN_DIR/$ID.ixe" \
+    --labels Cslib --toolchains "$TOOLCHAIN" \
+    --pins "git:https://github.com/leanprover/cslib@$REV"
+  "$IX_BIN" catalog verify "$RUN_DIR/$ID.ixc" --deep > "$RUN_DIR/$ID.catalog-verify.out"
+done
+```
+
+Each single-member catalog records one snapshot and its dependency closure.
+The two-member Mathlib/CSLib comparison catalog is unnecessary. Catalog
+verification checks artifact integrity, not a typing proof. Stop on a root
+mismatch for A, an ungrounded export, or a format mismatch. Record B and C's
+roots and counts from their own reports; A's measurements do not predict them.
+
+Review the axiom declarations in all three exports and freeze one address
+allowlist, `$RUN_DIR/axioms.txt`, covering the accepted declarations before
+proving A. Changing the policy afterwards changes the proof profile. Do not
+automatically approve the addresses printed by an unapproved-axiom error.
+With a full import environment, declarations unrelated to a particular
+theorem are also present; reviewing its axiom inventory is distinct from
+showing which axioms that theorem uses.
+
+Before the expensive baseline, exercise a small real A → B → C catalog
+chain with the same prover and policy: use `ix shard extract` on each
+export with `--consts Cslib.Circuits.Circuit.id`, assemble separate smoke
+catalogs, and run the prove/base/verify sequence below. This declaration
+exists in all three snapshots and is changed by C's wiring refactor. Check
+that the C smoke plan has new subjects. Preserve smoke artifacts separately
+and record their cache contribution; use a fresh worker account or isolated
+worker filesystem for the timed cold baseline without deleting shared caches.
+
+### Catalog baseline and real incremental revisions
+
+Use `ix catalog prove` from A onward so the baseline has a `proving.json`,
+cumulative corpus, partition and leaf inventory. The current driver invokes
+the GPU-enabled ordinary leaf prover and aggregator, with trace sharding,
+on one visible device. It does not invoke the lane scheduler. Multi-GPU
+lane integration is a separate optimization, not required for this first
+single-GPU catalog chain. A naked lane root cannot be supplied as `--base`.
+
+For a single L40S on a host comparable to the 248 GiB machine in §7, begin
+with the trace settings and host budget below. These settings derive from
+the ISLB lane run, not a validated CSLib catalog run; the ordinary leaf
+pipeline has different memory admission and retry behavior. Leave CPU
+execution and build parallelism at their defaults. The 64 initial shards
+are a starting partition, not a measured memory bound.
+
+```bash
+export CUDA_VISIBLE_DEVICES=0
+export AIUR_GPU_TRACE=generated AIUR_TRACE_ONLY_LOOKUPS=1
+export AIUR_TRACE_SHARD_MAX_CELLS=600000000 AIUR_MAX_PIECE_LOG_HEIGHT=24
+export AIUR_GPU_SEED_CACHE_BYTES=4294967296 MULTI_STARK_CUDA_MEMORY_LOG=1
+test -f "$RUN_DIR/axioms.txt"
+PREVIOUS=
+for ID in A B C; do
+  BASE_ARGS=()
+  SHARD_ARGS=()
+  if [[ -n "$PREVIOUS" ]]; then
+    BASE_ARGS=(--base "$RUN_DIR/$PREVIOUS.ixc")
+  else
+    SHARD_ARGS=(--shards 64)
+  fi
+  COMMON_ARGS=("$RUN_DIR/$ID.ixc" "${BASE_ARGS[@]}" "${SHARD_ARGS[@]}"
+    --allow-axioms "$RUN_DIR/axioms.txt" --structural-above 0
+    --trace-shards --max-ram 100 --json)
+  "$IX_BIN" catalog prove "${COMMON_ARGS[@]}" --plan-only \
+    > "$RUN_DIR/$ID.plan.json" 2> "$RUN_DIR/$ID.plan.log"
+  systemd-run --user --scope -q -p MemoryMax=220G -p MemorySwapMax=0 -- \
+    /usr/bin/time -v -o "$RUN_DIR/$ID.prove.time" \
+    "$IX_BIN" catalog prove "${COMMON_ARGS[@]}" \
+    > "$RUN_DIR/$ID.result.json" 2> "$RUN_DIR/$ID.prove.log"
+  /usr/bin/time -v -o "$RUN_DIR/$ID.verify.time" \
+    "$IX_BIN" catalog verify-proof "$RUN_DIR/$ID.ixc" \
+    --allow-axioms "$RUN_DIR/axioms.txt" --structural-above 0 --json \
+    > "$RUN_DIR/$ID.verify.json" 2> "$RUN_DIR/$ID.verify.log"
+  "$IX_BIN" catalog prove "${COMMON_ARGS[@]}" \
+    > "$RUN_DIR/$ID.repeat.json" 2> "$RUN_DIR/$ID.repeat.log"
+  jq -e '.status == "verified"' "$RUN_DIR/$ID.verify.json"
+  jq -e '.status == "reused" and .newProofs == 0' "$RUN_DIR/$ID.repeat.json"
+  PREVIOUS=$ID
+done
+```
+
+On a runner without a user systemd manager, apply equivalent memory and
+swap limits through the container or job runtime. `--max-ram` is a backend
+budget, not an RSS cap. This driver does not accept `--lanes`. Its
+trace-sharded leaf pipeline can fail if one execution record exceeds the
+whole record budget; it does not inherit the lane scheduler's automatic
+leaf bisection. Retain the completed evidence and resolve shard sizing or
+memory admission if that happens. Repeating `--shards` with a different
+value does not replan an existing pending catalog.
+
+For a 32 GiB RTX 5090, a 300-million-cell cap and 2 GiB seed cache are
+experimental starting settings. Qualify device fit on a small input first;
+terminal compression needs separate qualification, even with host traces.
+
+Accept A only after catalog proof verification covers all 385,304 snapshot
+constants and native aggregate verification reports full corpus coverage
+with zero undischarged dependency assumptions. B and C must each verify
+against their own catalogs and cumulative corpora; their corpus counts can
+exceed current snapshot counts because historical declarations are retained.
+This is typechecking relative to the accepted axiom declarations, not a
+claim that those axioms were proved. See
+[incremental-catalog-proving.md](incremental-catalog-proving.md).
+Neither result by itself proves that the pinned source generated this Ixon
+snapshot; the build/export provenance must be authenticated separately.
+
+Report final trace-shard count K alongside the proof address and size.
+K=1 is a separate compression result, not a requirement for catalog reuse.
+The catalog driver does not request terminal wrapping. If compressing a
+root separately, keep the original certified record and caches intact;
+do not overwrite `rootProof` by hand. Verify the compressed proof against
+that catalog's recorded corpus and partition and record it as an additional
+artifact. Measure compression separately from incremental proving.
+
+### Resume, evidence and completion
+
+Retain all three catalog directories, their `proving.json`, cumulative
+`corpus.ixe`, pending state, original/final partitions, all reports/logs,
+and the worker's `~/.ix/store` and `~/.ix/cache`. Preserve a custom aggregate
+cache too if `AIUR_AGGREGATE_CACHE_DIR` was set. Cache indexes contain
+addresses, not the proof objects. Keep this state on durable storage before
+an ephemeral runner is destroyed, together with the exact prover binary,
+exporter build identities and frozen axiom policy.
+
+For interruption recovery, rerun the same catalog command with its original
+`--base`, profile and caches. A pending record is not a certificate. The
+driver publishes `proving.json` only after final verification; a subsequent
+snapshot must use that completed catalog as its base.
+
+For each transition, report new subjects, retained claims and changed base
+claims from the plan; compare leaf claim/proof addresses in the two completed
+records to count evidence actually reused. Retained-plan counts alone do
+not establish a cache hit. Preserve the prover's reuse messages and aggregate
+cache-hit messages. Separately report export/preparation, base verification,
+leaf proving, aggregation and final verification time where observable, plus
+end-to-end wall time, one-second GPU memory samples, process/cgroup peaks
+and artifact sizes. A smaller declaration delta does not guarantee a
+proportional runtime saving; old leaf proofs still undergo verification.
+
+Completion means A, B and C each have a verified certificate, B was proved
+using A and C using B, and repeats perform no new proving. A → B measures
+the release-to-main transition including toolchain/dependency churn; B → C
+measures an actual refactor with stable pins. Report errors or cache misses
+explicitly. A successful cold proof alone does not complete this handoff.

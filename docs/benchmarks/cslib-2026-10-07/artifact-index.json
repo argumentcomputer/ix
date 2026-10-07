@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "description": "Byte-for-byte copies of local compile measurements and pinned CSLib dependency manifest; paths in reports identify the measurement machine. No proofs were generated.",
+  "files": {
+    "summary.json": {
+      "sha256": "e6b6cf0b289c45bdb4f6e1cff114db120fbdf635c2699d3f474480f6ce2dedc2",
+      "bytes": 3321
+    },
+    "provenance.json": {
+      "sha256": "45511fae1e835a520083ad6f85de82f965d704cf3dfa6e00af1b1cd792333985",
+      "bytes": 431
+    },
+    "bench.json": {
+      "sha256": "cc8f7f98f8351fca90913c0144f8ae5614ae70806bdf6fb13319c50f0038b647",
+      "bytes": 267
+    },
+    "cslib.report.json": {
+      "sha256": "7d15ee90fbc14798936576260a689b0b4576f72de3179ca27b7da838e463ee2f",
+      "bytes": 614
+    },
+    "mathlib.report.json": {
+      "sha256": "0279a1837080b7d53f8a56d38cf71650a5eb84c90cf203493257a3cbfc6514a5",
+      "bytes": 619
+    },
+    "cslib.time": {
+      "sha256": "b477d5b167a8e266cd15aef36e3797815c039433cd4bd02ea977e39ddbc73f74",
+      "bytes": 1136
+    },
+    "mathlib.time": {
+      "sha256": "57cdf49bbd17875ed8355c77dab64c456232bf1a1c74017feca263694efb1d0c",
+      "bytes": 1149
+    },
+    "CompileCslib.lean": {
+      "sha256": "e748ce30271d4ac885686aff92d4adaf121449e53f8379998bb132122c6e0077",
+      "bytes": 152
+    },
+    "CompileMathlib.lean": {
+      "sha256": "78004823fdb57b1a00da5376512bd648890db9d6c36f38ba6d37c79156edfb90",
+      "bytes": 154
+    },
+    "cslib-lake-manifest.json": {
+      "sha256": "c514c3beaef90c5dc4d58ceed377a17d93e6e926f6213ed48a5a288e5c9e7be8",
+      "bytes": 3139
+    },
+    "main-lake-manifest.json": {
+      "sha256": "25b9b5e4af5a65bbf35266e83318dc6bba3a5afd1a626fd215bbbc714f64e3fb",
+      "bytes": 3176
+    }
+  }
+}

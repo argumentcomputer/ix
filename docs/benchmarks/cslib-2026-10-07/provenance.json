@@ -1,0 +1,8 @@
+{
+  "cslibCommit": "7c8f6c0f67015df29b152fdcffaf7850db2e9185",
+  "mathlibCommit": "d13f23b723b8a846827a245b89c10fc7d3f11612",
+  "ixBinary": "/home/sam/repos/ix.gpu-lanes/.lake/build/bin/ix",
+  "ixBinarySha256": "fd3b668d5297d44982600ffe09849defa19ec245ee72dc9980827d5e4761d04d",
+  "toolchain": "leanprover/lean4:v4.34.1",
+  "scope": "Classic import wrappers; full environments including imported dependencies; metadata retained"
+}

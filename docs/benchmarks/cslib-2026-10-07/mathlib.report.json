@@ -1,0 +1,23 @@
+{"written": true,
+ "uniqueAnon": 689374,
+ "ungroundedCount": 0,
+ "ungrounded": [],
+ "seeds":
+ {"module": null,
+  "excludeFile": null,
+  "exclude": null,
+  "constsFile": null,
+  "consts": null},
+ "schemaVersion": 1,
+ "root": "e90c32fe9149cda02491dd90e011f2c01c5d20b32fab955a6d85cd7f6210b723",
+ "requested": 783115,
+ "output":
+ "/home/sam/repos/ix/.lake/benches/cslib-v4.34.1-2026-10-07/mathlib.ixe",
+ "named": 790417,
+ "leanToolchain": "4.34.1",
+ "ixeFormatVersion": 4,
+ "ixVersion": "4.34.1|0.0.1",
+ "input": ".lake/ix-benchmark/CompileMathlib.lean",
+ "elapsedMs": 112364,
+ "bytes": 2360309573,
+ "allowPartial": false}

@@ -137,7 +137,15 @@ coverage audit; it is not yet a compact, proof-only release verifier.
 
 The driver does not provide release upload/download, a hosted API,
 terminal compression, chunked catalog production, source elaboration,
-olean correspondence auditing or automatic corpus checkpoints.
+olean correspondence auditing or automatic corpus checkpoints. It does not
+yet invoke `ix prove --lanes` or adopt a completed lane run as a baseline.
+That path can reuse aggregate subtrees without collecting every final leaf
+wrapper, while this driver needs the complete leaf inventory. The
+[CSLib GPU handoff](aiur-gpu-proving.md#8-cslib-benchmark-handoff-2026-10-07)
+therefore creates its baseline through this driver and tests real subsequent
+commits with one GPU. That handoff separates toolchain-specific exporters
+from one fixed proving binary: replacing the prover during a Lean upgrade
+would invalidate this implementation's executable-bound profile.
 
 Focused Rust tests exercise planning, history retention, claim changes,
 tampering rejection, axiom policy, locks and interruption recovery using

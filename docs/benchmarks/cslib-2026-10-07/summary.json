@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-07",
+  "provenance": {
+    "cslibCommit": "7c8f6c0f67015df29b152fdcffaf7850db2e9185",
+    "mathlibCommit": "d13f23b723b8a846827a245b89c10fc7d3f11612",
+    "ixBinary": "/home/sam/repos/ix.gpu-lanes/.lake/build/bin/ix",
+    "ixBinarySha256": "fd3b668d5297d44982600ffe09849defa19ec245ee72dc9980827d5e4761d04d",
+    "toolchain": "leanprover/lean4:v4.34.1",
+    "scope": "Classic import wrappers; full environments including imported dependencies; metadata retained"
+  },
+  "ixeFormatVersion": 4,
+  "machine": {
+    "cpu": "AMD Ryzen 9 7900",
+    "logicalCpus": 24,
+    "memoryBytes": 50512257024,
+    "parallelism": "Unmodified defaults"
+  },
+  "setup": {
+    "cacheRestoreWallSeconds": 98.89,
+    "cslibBuildWallSeconds": 174.28,
+    "locallyCachedFilesRestored": 8907
+  },
+  "cslib": {
+    "requestedLeanConstants": 441356,
+    "namedIxonEntries": 445875,
+    "uniqueAnonymousConstants": 385304,
+    "ungroundedConstants": 0,
+    "fullEnvBytes": 1037346098,
+    "anonymousEnvBytes": 519496338,
+    "blobs": 196437,
+    "compileSeconds": 48.35,
+    "commandWallSeconds": 60.47,
+    "peakTreeRssBytes": 10049249280,
+    "sourceLeanFilesExcludingRoot": 210,
+    "constsRoot": "f80bbc527eed7892206d4e6cf552dd21a33b723c569f43a698915aee39be2d30"
+  },
+  "mathlib": {
+    "requestedLeanConstants": 783115,
+    "namedIxonEntries": 790417,
+    "uniqueAnonymousConstants": 689374,
+    "ungroundedConstants": 0,
+    "fullEnvBytes": 2360309573,
+    "anonymousEnvBytes": 1194407419,
+    "blobs": 346082,
+    "compileSeconds": 112.364,
+    "commandWallSeconds": 146.83,
+    "peakTreeRssBytes": 19144085504,
+    "sourceLeanFilesExcludingRoot": 8529,
+    "constsRoot": "e90c32fe9149cda02491dd90e011f2c01c5d20b32fab955a6d85cd7f6210b723"
+  },
+  "comparison": {
+    "cslibToMathlibUniqueConstantsPercent": 55.89186711422247,
+    "cslibToMathlibFullEnvBytesPercent": 43.949578049692555,
+    "cslibToMathlibAnonymousEnvBytesPercent": 43.494064900814216,
+    "sharedUniqueConstants": 370677,
+    "cslibOnlyUniqueConstants": 14627,
+    "mathlibOnlyUniqueConstants": 318697,
+    "cslibConstantsAlreadyInMathlibPercent": 96.20377675809232,
+    "unionUniqueConstants": 704001,
+    "unionAnonymousEnvBytes": 1217249216,
+    "additionalUnionBytesBeyondMathlib": 22841797,
+    "unionBlobs": 350586,
+    "additionalBlobsBeyondMathlib": 4504,
+    "unionRoot": "7bed6065d2b1fc92b293cf46b451c88eec9504fc6265aea2cbcca7a61f7d65b3",
+    "catalogVerificationPassed": true
+  },
+  "notes": [
+    "Both compile inputs are classic import wrappers with no seed filter; counts include imported dependencies and private declarations.",
+    "CSLib imports a subset of Mathlib; its export is not the full Mathlib-plus-CSLib union.",
+    "Anonymous environments were derived by ix merge; their roots match the corresponding full exports.",
+    "Compile timing excludes Lake builds and frontend loading; command wall time includes frontend loading. Each export was measured once, sequentially.",
+    "Shared counts are exact content-address intersections, derived from the verified catalog union cardinality.",
+    "The additional byte count is the anonymous union file size minus the anonymous Mathlib file size; it is not a standalone delta file size.",
+    "Proof generation and proof-cache reuse were not benchmarked."
+  ]
+}

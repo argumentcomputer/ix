@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/leanprover/cslib",
+  "upstreamMainObserved": "4f4086a6426d96103b13ef7ec9171b9c2bf15d17",
+  "upstreamRefsCheckedOn": "2026-10-07",
+  "proverImplementationBaseline": "5a5ef1cd84b3fac5444620f87734d8c0ac298370",
+  "revisions": [
+    {
+      "id": "A",
+      "commit": "7c8f6c0f67015df29b152fdcffaf7850db2e9185",
+      "parent": "990e65a685bed413f43b139db900a36ad5322a10",
+      "committedAt": "2026-09-24T20:52:39Z",
+      "subject": "chore: bump toolchain to v4.34.1",
+      "role": "Cold catalog baseline at the v4.34.1 release tag",
+      "toolchain": "leanprover/lean4:v4.34.1",
+      "mathlibCommit": "d13f23b723b8a846827a245b89c10fc7d3f11612",
+      "lakeManifest": "cslib-lake-manifest.json",
+      "lakeManifestSha256": "c514c3beaef90c5dc4d58ceed377a17d93e6e926f6213ed48a5a288e5c9e7be8",
+      "base": null,
+      "expectedConstantsRoot": "f80bbc527eed7892206d4e6cf552dd21a33b723c569f43a698915aee39be2d30",
+      "expectedUniqueAnonymousConstants": 385304
+    },
+    {
+      "id": "B",
+      "commit": "3f4ec2623bd8c7c554167da2dc9e80fa75fcbd6b",
+      "parent": "94ea80f41a5678fce997a004f0d8d12dbe47cc4b",
+      "committedAt": "2026-09-25T06:38:20Z",
+      "subject": "chore: remove kim-em from the catch-all CODEOWNERS rule (#937)",
+      "role": "First upstream main commit after the release; transition from the release branch, including earlier main changes and new Lean/Mathlib pins",
+      "toolchain": "leanprover/lean4:v4.35.0-rc2",
+      "mathlibCommit": "1cae91f0957ccf8847f22a6239fa0c032a9e28c6",
+      "lakeManifest": "main-lake-manifest.json",
+      "lakeManifestSha256": "25b9b5e4af5a65bbf35266e83318dc6bba3a5afd1a626fd215bbbc714f64e3fb",
+      "base": "A",
+      "expectedConstantsRoot": null,
+      "expectedUniqueAnonymousConstants": null
+    },
+    {
+      "id": "C",
+      "commit": "255a404cd12bab901c5c3e87fa2dbf7655196d8e",
+      "parent": "3f4ec2623bd8c7c554167da2dc9e80fa75fcbd6b",
+      "committedAt": "2026-09-25T07:57:10Z",
+      "subject": "refactor(Circuit): describe output tuples with Computes (#948)",
+      "role": "Source change on main with the same Lean and dependency pins as B",
+      "toolchain": "leanprover/lean4:v4.35.0-rc2",
+      "mathlibCommit": "1cae91f0957ccf8847f22a6239fa0c032a9e28c6",
+      "lakeManifest": "main-lake-manifest.json",
+      "lakeManifestSha256": "25b9b5e4af5a65bbf35266e83318dc6bba3a5afd1a626fd215bbbc714f64e3fb",
+      "base": "B",
+      "expectedConstantsRoot": null,
+      "expectedUniqueAnonymousConstants": null
+    }
+  ],
+  "notes": [
+    "The release tag A is not an ancestor of upstream main B or C; catalog reuse is based on declaration content, not Git ancestry.",
+    "B's own commit changes only CODEOWNERS, but A to B is not a no-change source transition.",
+    "B to C changes source while preserving the complete Lake dependency manifest.",
+    "A was built and exported; B and C were selected and their source/toolchain/dependency pins inspected, but not built or exported.",
+    "All stages must use one unchanged prover binary and axiom policy; the exporter may differ to match each Lean frontend. Cross-toolchain export and proving compatibility require validation before the expensive run."
+  ]
+}

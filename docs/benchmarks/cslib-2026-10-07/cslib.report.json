@@ -1,0 +1,23 @@
+{"written": true,
+ "uniqueAnon": 385304,
+ "ungroundedCount": 0,
+ "ungrounded": [],
+ "seeds":
+ {"module": null,
+  "excludeFile": null,
+  "exclude": null,
+  "constsFile": null,
+  "consts": null},
+ "schemaVersion": 1,
+ "root": "f80bbc527eed7892206d4e6cf552dd21a33b723c569f43a698915aee39be2d30",
+ "requested": 441356,
+ "output":
+ "/home/sam/repos/ix/.lake/benches/cslib-v4.34.1-2026-10-07/cslib.ixe",
+ "named": 445875,
+ "leanToolchain": "4.34.1",
+ "ixeFormatVersion": 4,
+ "ixVersion": "4.34.1|0.0.1",
+ "input": ".lake/ix-benchmark/CompileCslib.lean",
+ "elapsedMs": 48350,
+ "bytes": 1037346098,
+ "allowPartial": false}
