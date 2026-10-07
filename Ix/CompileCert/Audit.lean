@@ -853,22 +853,25 @@ def m5Roots : Array Lean.Name :=
     `kernelEq, `eqParts, `eqParts_kernelEq, `eqParts_sound, `endsInEq, `eqLeftHead,
     `HasTheoremRow, `isTheoremRow, `isTheoremRow_iff, `hasTheoremRow_iff,
     `HasRflRow, `isRflRow, `isRflRow_iff, `hasRflRow_iff,
-    `HasDefinitionHeader, `isDefinitionHeader, `hasDefinitionHeader_iff,
-    `HasTheoremHeader, `isTheoremHeader, `hasTheoremHeader_iff,
+    `HasTypeRow, `isTypeRow, `isTypeRow_iff, `hasTypeRow_iff, `TypeAgrees,
+    `DefinitionHeaderMatch, `isDefinitionHeader, `definitionHeaderMatch_iff,
+    `TheoremHeaderMatch, `isTheoremHeader, `theoremHeaderMatch_iff,
     `isThmInfo, `ThmStatementMatch, `RflEquation, `EqDefEquation, `EquationMatch,
     `ChangedMember, `exportChangedBlock, `ChangedMemberMatch, `ChangedBlockMatch,
     `SourceCorrespondence', `BlockCorrespondence',
     `directHeader_refines, `ruleStatements_refines, `definitionSides_refines,
     `exportChangedBlock_refines, `changedBlockMatch_transfer,
     `mem_of_compatible_thm, `mem_of_compatible_defn, `streamEntries_append, `mem_rows_thm,
-    `thmHeaderIs, `thmHeaderIs_sound, `defnHeaderIs, `defnHeaderIs_sound, `defnHeaderAt_sound,
+    `typeRowAt, `typeRowAt_sound, `headerAgreesAt, `headerAgreesAt_sound,
+    `defnHeaderAt, `defnHeaderAt_sound, `thmHeaderAt, `thmHeaderAt_sound,
     `thmAt, `thmAt_sound, `rowAt, `rowAt_sound, `rflAt, `rflAt_sound, `eqDefAt, `eqDefAt_sound,
     `equationsAt, `equationsAt_sound,
     `FoldedSupport, `FoldError, `foldSupport, `AcceptedAssociation', `Decline',
     `SharedW, `SharedW.ofArtifact, `SharedW.small_extends, `SharedW.rows_toList, `HintsW,
     `SharedW.declCheck', `checkIndexed', `checkIndexed'_sound,
     `AcceptedAssociation'.toAccepted, `AcceptedAssociation'.unchanged_faithful,
-    `thm_mem_folded, `EquationHolds, `equationHolds_of_installed,
+    `thm_mem_folded, `EquationHolds, `equationHolds_of_installed, `TypeHolds,
+    `AcceptedAssociation'.row_holds, `AcceptedAssociation'.type_holds, `AcceptedAssociation'.model_statement,
     `AcceptedAssociation'.model_equations].map (`Ix.CompileCert ++ ·)
 
 end Ix.CompileCert.Audit
@@ -913,7 +916,8 @@ def decisionRoots : Array Lean.Name :=
     ``Ix.CompileCert.SourceNormalizedInstallation.artifact_strong_model_all,
     ``Ix.CompileCert.decideStrongCone, ``Ix.CompileCert.StrongCone.sound,
     ``Ix.CompileCert.checkIndexed', ``Ix.CompileCert.checkIndexed'_sound,
-    ``Ix.CompileCert.AcceptedAssociation'.model_equations, ``Ix.CompileCert.leanRuleStatement,
+    ``Ix.CompileCert.AcceptedAssociation'.model_equations, ``Ix.CompileCert.AcceptedAssociation'.model_statement,
+    ``Ix.CompileCert.leanRuleStatement,
     ``Ix.CompileCert.installSourceNormalizedWith]
 
 def constClosure (env : Lean.Environment) (roots : Array Lean.Name) : Lean.NameSet := Id.run do

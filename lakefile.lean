@@ -561,12 +561,14 @@ script "check-cert" (args) := do
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
       "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
       "projection-lowering", "strong",
-      "compiled"].map (fun mode => (mode, #[exe, mode])) ++
+      "compiled", "changed"].map (fun mode => (mode, #[exe, mode])) ++
     #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
       ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
         s!"{outDir}/compiled.ixe", s!"{outDir}/certify"]),
       ("certify-strong", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
-        s!"{outDir}/compiled.ixe", s!"{outDir}/certify-strong", "--strong"])] ++
+        s!"{outDir}/compiled.ixe", s!"{outDir}/certify-strong", "--strong"]),
+      ("certify-changed", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.ChangedDefs",
+        s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed"])] ++
     mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
   for (name, checkArgs) in checks do
     let out ← IO.Process.output {

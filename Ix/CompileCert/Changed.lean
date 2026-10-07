@@ -367,57 +367,132 @@ instance (rows : List DirectEntry) (levels : List Kernel.Name) (carrier left rig
     Decidable (HasRflRow rows levels carrier left right) :=
   decidable_of_iff _ hasRflRow_iff.symm
 
-/-- A reader definition entry with exactly this header (any value, any hint). -/
-def HasDefinitionHeader (entries : List DirectEntry) (header : Kernel.ConstantVal) : Prop :=
-  ∃ value hint, DirectEntry.defn header value hint ∈ entries
+/-- A **type row**: a theorem entry stating `@Eq.{_} (Sort _) ixType leanType`.
+The checker accepted that the declared type of an Ix constant is convertible
+to Lean's exported type. Found on compiler output: a changed block's
+`brecOn`/`brecOn.go`/`_f` types mention `below`, which Pass 3 inlines in the
+compiled type as well (hereditary substitution of the image), so the compiled
+type is convertible to Lean's, not syntactically equal. -/
+def HasTypeRow (rows : List DirectEntry) (levels : List Kernel.Name) (ixType leanType : Kernel.Expr) : Prop :=
+  ∃ name proof eqLevel sortLevel,
+    DirectEntry.thm ⟨name, levels, kernelEq eqLevel (.sort sortLevel) ixType leanType⟩ proof ∈ rows
 
-def isDefinitionHeader (header : Kernel.ConstantVal) : DirectEntry → Bool
-  | .defn cv _ _ => decide (cv = header)
+def isTypeRow (levels : List Kernel.Name) (ixType leanType : Kernel.Expr) : DirectEntry → Bool
+  | .thm cv _ => decide (cv.levelParams = levels) &&
+    match eqParts cv.type with
+    | some (_, .sort _, l, r) => decide (l = ixType) && decide (r = leanType)
+    | _ => false
   | _ => false
 
-theorem hasDefinitionHeader_iff {entries : List DirectEntry} {header : Kernel.ConstantVal} :
-    HasDefinitionHeader entries header ↔ entries.any (isDefinitionHeader header) = true := by
+theorem isTypeRow_iff {levels : List Kernel.Name} {ixType leanType : Kernel.Expr} {e : DirectEntry} :
+    isTypeRow levels ixType leanType e = true ↔
+      ∃ name proof eqLevel sortLevel,
+        e = .thm ⟨name, levels, kernelEq eqLevel (.sort sortLevel) ixType leanType⟩ proof := by
+  cases e with
+  | thm cv proof =>
+    obtain ⟨name, ls, type⟩ := cv
+    constructor
+    · intro h
+      simp only [isTypeRow, Bool.and_eq_true, decide_eq_true_eq] at h
+      obtain ⟨rfl, h⟩ := h
+      cases hp : eqParts type with
+      | none => simp [hp] at h
+      | some parts =>
+        obtain ⟨level, carrier, l, r⟩ := parts
+        cases carrier with
+        | sort s =>
+          simp only [hp, Bool.and_eq_true, decide_eq_true_eq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          exact ⟨name, proof, level, s, by rw [eqParts_sound hp]⟩
+        | _ => simp [hp] at h
+    · rintro ⟨_, _, eqLevel, sortLevel, h⟩
+      simp only [DirectEntry.thm.injEq, Kernel.ConstantVal.mk.injEq] at h
+      obtain ⟨⟨rfl, rfl, rfl⟩, rfl⟩ := h
+      simp [isTypeRow, eqParts_kernelEq]
+  | _ => simp [isTypeRow]
+
+theorem hasTypeRow_iff {rows : List DirectEntry} {levels : List Kernel.Name} {ixType leanType : Kernel.Expr} :
+    HasTypeRow rows levels ixType leanType ↔ rows.any (isTypeRow levels ixType leanType) = true := by
   rw [List.any_eq_true]
   constructor
-  · rintro ⟨value, hint, mem⟩
-    exact ⟨_, mem, by simp [isDefinitionHeader]⟩
+  · rintro ⟨name, proof, eqLevel, sortLevel, mem⟩
+    exact ⟨_, mem, isTypeRow_iff.mpr ⟨name, proof, eqLevel, sortLevel, rfl⟩⟩
+  · rintro ⟨e, mem, row⟩
+    obtain ⟨name, proof, eqLevel, sortLevel, rfl⟩ := isTypeRow_iff.mp row
+    exact ⟨name, proof, eqLevel, sortLevel, mem⟩
+
+instance (rows : List DirectEntry) (levels : List Kernel.Name) (ixType leanType : Kernel.Expr) :
+    Decidable (HasTypeRow rows levels ixType leanType) :=
+  decidable_of_iff _ hasTypeRow_iff.symm
+
+/-- The declared type of the Ix constant is Lean's exported type, or a type
+row equates them. -/
+def TypeAgrees (rows : List DirectEntry) (levels : List Kernel.Name) (ixType leanType : Kernel.Expr) : Prop :=
+  ixType = leanType ∨ HasTypeRow rows levels ixType leanType
+
+instance (rows : List DirectEntry) (levels : List Kernel.Name) (ixType leanType : Kernel.Expr) :
+    Decidable (TypeAgrees rows levels ixType leanType) :=
+  inferInstanceAs (Decidable (ixType = leanType ∨ HasTypeRow rows levels ixType leanType))
+
+/-- A reader **definition** entry with the exported name and universe telescope
+whose declared type agrees with the exported type (any value, any hint). -/
+def DefinitionHeaderMatch (entries rows : List DirectEntry) (header : Kernel.ConstantVal) : Prop :=
+  ∃ type value hint, DirectEntry.defn ⟨header.name, header.levelParams, type⟩ value hint ∈ entries ∧
+    TypeAgrees rows header.levelParams type header.type
+
+def isDefinitionHeader (rows : List DirectEntry) (header : Kernel.ConstantVal) : DirectEntry → Bool
+  | .defn cv _ _ => decide (cv.name = header.name) && decide (cv.levelParams = header.levelParams) &&
+    decide (TypeAgrees rows header.levelParams cv.type header.type)
+  | _ => false
+
+theorem definitionHeaderMatch_iff {entries rows : List DirectEntry} {header : Kernel.ConstantVal} :
+    DefinitionHeaderMatch entries rows header ↔ entries.any (isDefinitionHeader rows header) = true := by
+  rw [List.any_eq_true]
+  constructor
+  · rintro ⟨type, value, hint, mem, agrees⟩
+    exact ⟨_, mem, by simp [isDefinitionHeader, agrees]⟩
   · rintro ⟨e, mem, row⟩
     cases e with
     | defn cv value hint =>
-      simp only [isDefinitionHeader, decide_eq_true_eq] at row
-      subst row
-      exact ⟨value, hint, mem⟩
+      obtain ⟨n, ls, t⟩ := cv
+      simp only [isDefinitionHeader, Bool.and_eq_true, decide_eq_true_eq] at row
+      obtain ⟨⟨rfl, rfl⟩, agrees⟩ := row
+      exact ⟨t, value, hint, mem, agrees⟩
     | _ => simp [isDefinitionHeader] at row
 
-instance (entries : List DirectEntry) (header : Kernel.ConstantVal) :
-    Decidable (HasDefinitionHeader entries header) :=
-  decidable_of_iff _ hasDefinitionHeader_iff.symm
+instance (entries rows : List DirectEntry) (header : Kernel.ConstantVal) :
+    Decidable (DefinitionHeaderMatch entries rows header) :=
+  decidable_of_iff _ definitionHeaderMatch_iff.symm
 
-/-- A reader theorem entry with exactly this header (any proof). -/
-def HasTheoremHeader (entries : List DirectEntry) (header : Kernel.ConstantVal) : Prop :=
-  ∃ proof, DirectEntry.thm header proof ∈ entries
+/-- A reader **theorem** entry with the exported name and universe telescope
+whose statement agrees with the exported statement (any proof). -/
+def TheoremHeaderMatch (entries rows : List DirectEntry) (header : Kernel.ConstantVal) : Prop :=
+  ∃ type proof, DirectEntry.thm ⟨header.name, header.levelParams, type⟩ proof ∈ entries ∧
+    TypeAgrees rows header.levelParams type header.type
 
-def isTheoremHeader (header : Kernel.ConstantVal) : DirectEntry → Bool
-  | .thm cv _ => decide (cv = header)
+def isTheoremHeader (rows : List DirectEntry) (header : Kernel.ConstantVal) : DirectEntry → Bool
+  | .thm cv _ => decide (cv.name = header.name) && decide (cv.levelParams = header.levelParams) &&
+    decide (TypeAgrees rows header.levelParams cv.type header.type)
   | _ => false
 
-theorem hasTheoremHeader_iff {entries : List DirectEntry} {header : Kernel.ConstantVal} :
-    HasTheoremHeader entries header ↔ entries.any (isTheoremHeader header) = true := by
+theorem theoremHeaderMatch_iff {entries rows : List DirectEntry} {header : Kernel.ConstantVal} :
+    TheoremHeaderMatch entries rows header ↔ entries.any (isTheoremHeader rows header) = true := by
   rw [List.any_eq_true]
   constructor
-  · rintro ⟨proof, mem⟩
-    exact ⟨_, mem, by simp [isTheoremHeader]⟩
+  · rintro ⟨type, proof, mem, agrees⟩
+    exact ⟨_, mem, by simp [isTheoremHeader, agrees]⟩
   · rintro ⟨e, mem, row⟩
     cases e with
     | thm cv proof =>
-      simp only [isTheoremHeader, decide_eq_true_eq] at row
-      subst row
-      exact ⟨proof, mem⟩
+      obtain ⟨n, ls, t⟩ := cv
+      simp only [isTheoremHeader, Bool.and_eq_true, decide_eq_true_eq] at row
+      obtain ⟨⟨rfl, rfl⟩, agrees⟩ := row
+      exact ⟨t, proof, mem, agrees⟩
     | _ => simp [isTheoremHeader] at row
 
-instance (entries : List DirectEntry) (header : Kernel.ConstantVal) :
-    Decidable (HasTheoremHeader entries header) :=
-  decidable_of_iff _ hasTheoremHeader_iff.symm
+instance (entries rows : List DirectEntry) (header : Kernel.ConstantVal) :
+    Decidable (TheoremHeaderMatch entries rows header) :=
+  decidable_of_iff _ theoremHeaderMatch_iff.symm
 
 /-! ## The three matches -/
 
@@ -426,16 +501,17 @@ def isThmInfo : Lean.ConstantInfo → Bool
   | _ => false
 
 /-- **A Lean theorem whose Ix proof may differ**: the reader stream has a
-*theorem* entry with the theorem's exported header (name under the map,
-universe telescope, statement). Kind is compared; the proof is not. -/
-def ThmStatementMatch (cx : ExportContext) (entries : List DirectEntry) (ci : Lean.ConstantInfo) : Prop :=
+*theorem* entry with the theorem's exported name and universe telescope, whose
+statement is the exported statement or is equated to it by a type row. Kind is
+compared; the proof is not. -/
+def ThmStatementMatch (cx : ExportContext) (entries rows : List DirectEntry) (ci : Lean.ConstantInfo) : Prop :=
   isThmInfo ci = true ∧
     match directHeader cx ci with
-    | .ok header => HasTheoremHeader entries header
+    | .ok header => TheoremHeaderMatch entries rows header
     | .error _ => False
 
-instance (cx : ExportContext) (entries : List DirectEntry) (ci : Lean.ConstantInfo) :
-    Decidable (ThmStatementMatch cx entries ci) := by
+instance (cx : ExportContext) (entries rows : List DirectEntry) (ci : Lean.ConstantInfo) :
+    Decidable (ThmStatementMatch cx entries rows ci) := by
   unfold ThmStatementMatch
   split <;> infer_instance
 
@@ -472,7 +548,7 @@ instance (cx : ExportContext) (rows : List DirectEntry) (d : Lean.DefinitionVal)
   · infer_instance
 
 /-- **A Lean recursor or definition whose Ix row is a different term**: the
-reader stream has a *definition* entry with the constant's exported header (a
+reader stream has a *definition* entry with the constant's exported header, its type up to a type row (a
 recursor's image is a definition, a definition's is a definition; any other
 kind fails), and each of Lean's defining equations is the statement of a
 theorem row of `rows` (the artifact's stream followed by the support):
@@ -482,7 +558,7 @@ def EquationMatch (cx : ExportContext) (entries rows : List DirectEntry) (ci : L
   match directHeader cx ci with
   | .error _ => False
   | .ok header =>
-    HasDefinitionHeader entries header ∧
+    DefinitionHeaderMatch entries rows header ∧
     match ci with
     | .recInfo r =>
       match ruleStatements cx r with
@@ -581,14 +657,14 @@ def SourceCorrespondence' (cx : ExportContext) (reader : Kernel.Reader.Ctx)
     (rows : List DirectEntry) : Prop :=
   ∀ ci ∈ cx.source.declarations,
     DirectMatch cx (streamEntries decls) ci ∨ RawSourceMatch cx reader constants ci ∨
-      ThmStatementMatch cx (streamEntries decls) ci ∨ EquationMatch cx (streamEntries decls) rows ci
+      ThmStatementMatch cx (streamEntries decls) rows ci ∨ EquationMatch cx (streamEntries decls) rows ci
 
 instance (cx : ExportContext) (reader : Kernel.Reader.Ctx) (constants : List (Address × Ixon.Constant))
     (decls : Array Kernel.Declaration) (rows : List DirectEntry) :
     Decidable (SourceCorrespondence' cx reader constants decls rows) :=
   inferInstanceAs (Decidable (∀ ci ∈ cx.source.declarations,
     DirectMatch cx (streamEntries decls) ci ∨ RawSourceMatch cx reader constants ci ∨
-      ThmStatementMatch cx (streamEntries decls) ci ∨ EquationMatch cx (streamEntries decls) rows ci))
+      ThmStatementMatch cx (streamEntries decls) rows ci ∨ EquationMatch cx (streamEntries decls) rows ci))
 
 /-- W+'s block correspondence: whole-block match, or a changed block. -/
 def BlockCorrespondence' (cx : ExportContext) (state : Kernel.Reader.State) : Prop :=
@@ -692,68 +768,6 @@ theorem mem_rows_thm {rows : Array DirectEntry} {stream support : List DirectEnt
 
 /-! ## Decisions at hinted positions -/
 
-def thmHeaderIs (header : Kernel.ConstantVal) : Option DirectEntry → Bool
-  | some (.thm h _) => decide (h = header)
-  | _ => false
-
-theorem thmHeaderIs_sound {header : Kernel.ConstantVal} {o : Option DirectEntry}
-    (hq : thmHeaderIs header o = true) : ∃ proof, o = some (.thm header proof) := by
-  rcases o with _ | e
-  · exact absurd hq (by simp [thmHeaderIs])
-  · cases e with
-    | thm h proof =>
-      simp only [thmHeaderIs, decide_eq_true_eq] at hq
-      exact ⟨proof, by rw [hq]⟩
-    | _ => exact absurd hq (by simp [thmHeaderIs])
-
-def defnHeaderIs (header : Kernel.ConstantVal) : Option DirectEntry → Bool
-  | some (.defn h _ _) => decide (h = header)
-  | _ => false
-
-theorem defnHeaderIs_sound {header : Kernel.ConstantVal} {o : Option DirectEntry}
-    (hq : defnHeaderIs header o = true) : ∃ value hint, o = some (.defn header value hint) := by
-  rcases o with _ | e
-  · exact absurd hq (by simp [defnHeaderIs])
-  · cases e with
-    | defn h value hint =>
-      simp only [defnHeaderIs, decide_eq_true_eq] at hq
-      exact ⟨value, hint, by rw [hq]⟩
-    | _ => exact absurd hq (by simp [defnHeaderIs])
-
-theorem defnHeaderAt_sound {entries : Array DirectEntry} {stream : List DirectEntry}
-    (he : entries.toList = compatibleEntries stream) {position : Nat} {header : Kernel.ConstantVal}
-    (hq : defnHeaderIs header entries[position]? = true) : HasDefinitionHeader stream header := by
-  obtain ⟨value, hint, hp⟩ := defnHeaderIs_sound hq
-  have mem : DirectEntry.defn header value hint ∈ compatibleEntries stream := by
-    rw [← he]
-    exact Array.mem_def.mp (Array.mem_of_getElem? hp)
-  obtain ⟨original, mem⟩ := mem_of_compatible_defn mem
-  exact ⟨value, original, mem⟩
-
-/-- `ThmStatementMatch` at the hinted stream position. -/
-def thmAt (cy : ExportContext) (entries : Array DirectEntry) (position : Nat) (ci : Lean.ConstantInfo) : Bool :=
-  isThmInfo ci &&
-    match directHeader cy ci with
-    | .ok header => thmHeaderIs header entries[position]?
-    | .error _ => false
-
-theorem thmAt_sound {cx cy : ExportContext} (h : Extends cx cy) {entries : Array DirectEntry}
-    {stream : List DirectEntry} (he : entries.toList = compatibleEntries stream) {position : Nat}
-    {ci : Lean.ConstantInfo} (hq : thmAt cy entries position ci = true) : ThmStatementMatch cx stream ci := by
-  simp only [thmAt, Bool.and_eq_true] at hq
-  refine ⟨hq.1, ?_⟩
-  have rest := hq.2
-  cases hd : directHeader cy ci with
-  | error _ => simp [hd] at rest
-  | ok header =>
-    rw [directHeader_refines h ci header hd]
-    simp only [hd] at rest
-    obtain ⟨proof, hp⟩ := thmHeaderIs_sound rest
-    have mem : DirectEntry.thm header proof ∈ compatibleEntries stream := by
-      rw [← he]
-      exact Array.mem_def.mp (Array.mem_of_getElem? hp)
-    exact ⟨proof, mem_of_compatible_thm mem⟩
-
 /-- A theorem row at one of the hinted positions of `rows`. -/
 def rowAt (rows : Array DirectEntry) (positions : List Nat) (levels : List Kernel.Name)
     (statement : Kernel.Expr) : Bool :=
@@ -795,6 +809,125 @@ theorem rflAt_sound {rows : Array DirectEntry} {stream support : List DirectEntr
     obtain ⟨name, proof, level, rfl⟩ := isRflRow_iff.mp hp
     exact ⟨name, proof, level, mem_rows_thm hr ho⟩
 
+/-- A type row at one of the hinted positions of `rows`. -/
+def typeRowAt (rows : Array DirectEntry) (positions : List Nat) (levels : List Kernel.Name)
+    (ixType leanType : Kernel.Expr) : Bool :=
+  positions.any fun p =>
+    match rows[p]? with
+    | some e => isTypeRow levels ixType leanType e
+    | none => false
+
+theorem typeRowAt_sound {rows : Array DirectEntry} {stream support : List DirectEntry}
+    (hr : rows.toList = compatibleEntries stream ++ support) {positions : List Nat}
+    {levels : List Kernel.Name} {ixType leanType : Kernel.Expr}
+    (hq : typeRowAt rows positions levels ixType leanType = true) :
+    HasTypeRow (stream ++ support) levels ixType leanType := by
+  obtain ⟨p, -, hp⟩ := List.any_eq_true.mp hq
+  cases ho : rows[p]? with
+  | none => simp [ho] at hp
+  | some e =>
+    simp only [ho] at hp
+    obtain ⟨name, proof, eqLevel, sortLevel, rfl⟩ := isTypeRow_iff.mp hp
+    exact ⟨name, proof, eqLevel, sortLevel, mem_rows_thm hr ho⟩
+
+/-- A reader header agrees with the exported one: same name and universe
+telescope, and the type is equal or a type row at the hinted positions
+equates them. -/
+def headerAgreesAt (rows : Array DirectEntry) (positions : List Nat) (header cv : Kernel.ConstantVal) : Bool :=
+  decide (cv.name = header.name) && decide (cv.levelParams = header.levelParams) &&
+    (decide (cv.type = header.type) || typeRowAt rows positions header.levelParams cv.type header.type)
+
+theorem headerAgreesAt_sound {rows : Array DirectEntry} {stream support : List DirectEntry}
+    (hr : rows.toList = compatibleEntries stream ++ support) {positions : List Nat}
+    {header cv : Kernel.ConstantVal} (hq : headerAgreesAt rows positions header cv = true) :
+    cv.name = header.name ∧ cv.levelParams = header.levelParams ∧
+      TypeAgrees (stream ++ support) header.levelParams cv.type header.type := by
+  simp only [headerAgreesAt, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at hq
+  obtain ⟨⟨sameName, sameLevels⟩, agrees⟩ := hq
+  refine ⟨sameName, sameLevels, ?_⟩
+  rcases agrees with same | row
+  · exact .inl same
+  · exact .inr (typeRowAt_sound hr row)
+
+/-- `DefinitionHeaderMatch` at the hinted stream position. -/
+def defnHeaderAt (rows : Array DirectEntry) (positions : List Nat) (header : Kernel.ConstantVal) :
+    Option DirectEntry → Bool
+  | some (.defn cv _ _) => headerAgreesAt rows positions header cv
+  | _ => false
+
+theorem defnHeaderAt_sound {entries rows : Array DirectEntry} {stream support : List DirectEntry}
+    (he : entries.toList = compatibleEntries stream) (hr : rows.toList = compatibleEntries stream ++ support)
+    {position : Nat} {positions : List Nat} {header : Kernel.ConstantVal}
+    (hq : defnHeaderAt rows positions header entries[position]? = true) :
+    DefinitionHeaderMatch stream (stream ++ support) header := by
+  cases hp : entries[position]? with
+  | none => simp [hp, defnHeaderAt] at hq
+  | some e =>
+    cases e with
+    | defn cv value hint =>
+      simp only [hp, defnHeaderAt] at hq
+      obtain ⟨sameName, sameLevels, agrees⟩ := headerAgreesAt_sound hr hq
+      have mem : DirectEntry.defn cv value hint ∈ compatibleEntries stream := by
+        rw [← he]
+        exact Array.mem_def.mp (Array.mem_of_getElem? hp)
+      obtain ⟨original, mem⟩ := mem_of_compatible_defn mem
+      obtain ⟨n, ls, t⟩ := cv
+      simp only at sameName sameLevels agrees
+      subst sameName sameLevels
+      exact ⟨t, value, original, mem, agrees⟩
+    | _ => simp [hp, defnHeaderAt] at hq
+
+/-- `TheoremHeaderMatch` at the hinted stream position. -/
+def thmHeaderAt (rows : Array DirectEntry) (positions : List Nat) (header : Kernel.ConstantVal) :
+    Option DirectEntry → Bool
+  | some (.thm cv _) => headerAgreesAt rows positions header cv
+  | _ => false
+
+theorem thmHeaderAt_sound {entries rows : Array DirectEntry} {stream support : List DirectEntry}
+    (he : entries.toList = compatibleEntries stream) (hr : rows.toList = compatibleEntries stream ++ support)
+    {position : Nat} {positions : List Nat} {header : Kernel.ConstantVal}
+    (hq : thmHeaderAt rows positions header entries[position]? = true) :
+    TheoremHeaderMatch stream (stream ++ support) header := by
+  cases hp : entries[position]? with
+  | none => simp [hp, thmHeaderAt] at hq
+  | some e =>
+    cases e with
+    | thm cv proof =>
+      simp only [hp, thmHeaderAt] at hq
+      obtain ⟨sameName, sameLevels, agrees⟩ := headerAgreesAt_sound hr hq
+      have mem : DirectEntry.thm cv proof ∈ compatibleEntries stream := by
+        rw [← he]
+        exact Array.mem_def.mp (Array.mem_of_getElem? hp)
+      have mem := mem_of_compatible_thm mem
+      obtain ⟨n, ls, t⟩ := cv
+      simp only at sameName sameLevels agrees
+      subst sameName sameLevels
+      exact ⟨t, proof, mem, agrees⟩
+    | _ => simp [hp, thmHeaderAt] at hq
+
+/-- `ThmStatementMatch` at the hinted stream position (type rows at the hinted row positions). -/
+def thmAt (cy : ExportContext) (entries rows : Array DirectEntry) (position : Nat) (positions : List Nat)
+    (ci : Lean.ConstantInfo) : Bool :=
+  isThmInfo ci &&
+    match directHeader cy ci with
+    | .ok header => thmHeaderAt rows positions header entries[position]?
+    | .error _ => false
+
+theorem thmAt_sound {cx cy : ExportContext} (h : Extends cx cy) {entries rows : Array DirectEntry}
+    {stream support : List DirectEntry} (he : entries.toList = compatibleEntries stream)
+    (hr : rows.toList = compatibleEntries stream ++ support) {position : Nat} {positions : List Nat}
+    {ci : Lean.ConstantInfo} (hq : thmAt cy entries rows position positions ci = true) :
+    ThmStatementMatch cx stream (stream ++ support) ci := by
+  simp only [thmAt, Bool.and_eq_true] at hq
+  refine ⟨hq.1, ?_⟩
+  have rest := hq.2
+  cases hd : directHeader cy ci with
+  | error _ => simp [hd] at rest
+  | ok header =>
+    rw [directHeader_refines h ci header hd]
+    simp only [hd] at rest
+    exact thmHeaderAt_sound he hr rest
+
 /-- `EqDefEquation` with the row at a hinted position. -/
 def eqDefAt (cy : ExportContext) (rows : Array DirectEntry) (positions : List Nat)
     (d : Lean.DefinitionVal) (header : Kernel.ConstantVal) : Bool :=
@@ -834,7 +967,7 @@ def equationsAt (cy : ExportContext) (entries rows : Array DirectEntry) (positio
   match directHeader cy ci with
   | .error _ => false
   | .ok header =>
-    defnHeaderIs header entries[position]? &&
+    defnHeaderAt rows positions header entries[position]? &&
     match ci with
     | .recInfo r =>
       match ruleStatements cy r with
@@ -859,7 +992,7 @@ theorem equationsAt_sound {cx cy : ExportContext} (h : Extends cx cy) {entries r
   | ok header =>
     rw [directHeader_refines h ci header hd]
     simp only [hd, Bool.and_eq_true] at hq
-    refine ⟨defnHeaderAt_sound he hq.1, ?_⟩
+    refine ⟨defnHeaderAt_sound he hr hq.1, ?_⟩
     have rest := hq.2
     cases ci with
     | recInfo r =>
@@ -989,7 +1122,7 @@ def SharedW.declCheck' (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) 
   let cy := sh.small hints.toHints ci.name
   (directAt cy sh.entries (hints.entryAt ci.name) ci ||
     rawAt cy sh.constants (hints.recordAt ci.name) sh.reader ci ||
-    thmAt cy sh.entries (hints.entryAt ci.name) ci ||
+    thmAt cy sh.entries sh.rows (hints.entryAt ci.name) (hints.rowsAt ci.name) ci ||
     equationsAt cy sh.entries sh.rows (hints.entryAt ci.name) (hints.rowsAt ci.name) ci) &&
   (decide (BlockMatch cy sh.state ci) || decide (ChangedBlockMatch cy sh.state ci)) &&
   (definitionGroupImage cy ci).isSome
@@ -1028,7 +1161,9 @@ def checkIndexed' (input : Input) (images : Lean.Name → Bool)
                       · exact .inl (directAt_sound (ext ci.name) List.toList_toArray direct)
                       · exact .inr (.inl (rawAt_sound (ext ci.name) List.toList_toArray
                           (addressesNodup_sound hn) raw))
-                      · exact .inr (.inr (.inl (thmAt_sound (ext ci.name) List.toList_toArray thm)))
+                      · refine .inr (.inr (.inl ?_))
+                        rw [streamEntries_append]
+                        exact thmAt_sound (ext ci.name) List.toList_toArray SharedW.rows_toList thm
                       · refine .inr (.inr (.inr ?_))
                         rw [streamEntries_append]
                         exact equationsAt_sound (ext ci.name) List.toList_toArray SharedW.rows_toList eqn
@@ -1079,7 +1214,7 @@ theorem checkIndexed'_sound {input : Input} {images : Lean.Name → Bool}
           (streamContext accepted.pins accepted.prelude accepted.constants input.blobs input.hint)
           accepted.constants ci ∨
         ThmStatementMatch ⟨input.source, input.map, accepted.pins, images⟩
-          (streamEntries accepted.declarations) ci ∨
+          (streamEntries accepted.declarations) (streamEntries (accepted.declarations ++ support)) ci ∨
         EquationMatch ⟨input.source, input.map, accepted.pins, images⟩
           (streamEntries accepted.declarations) (streamEntries (accepted.declarations ++ support)) ci) ∧
     BlockCorrespondence' ⟨input.source, input.map, accepted.pins, images⟩ accepted.readerState ∧
@@ -1168,20 +1303,49 @@ theorem equationHolds_of_installed {env : Kernel.Env} {levels : List Kernel.Name
       leftValue rightValue typed leftRead rightRead
     exact strong.theorem_eq ⟨name, levels, annotated⟩ proof present typed leftRead rightRead⟩
 
+/-- The declared type of an Ix constant denotes Lean's exported type in every
+strong model of `env`: it is that type, or a type row equating the two holds. -/
+def TypeHolds.{u} (env : Kernel.Env) (levels : List Kernel.Name) (ixType leanType : Kernel.Expr) : Prop :=
+  ixType = leanType ∨
+    ∃ eqLevel sortLevel, EquationHolds.{u} env levels (kernelEq eqLevel (.sort sortLevel) ixType leanType)
+
+/-- Every theorem row of the artifact's stream or of the support is installed by
+the fold and holds in every strong model. -/
+theorem AcceptedAssociation'.row_holds.{u} {input : Input} {images : Lean.Name → Bool}
+    {support : Array Kernel.Declaration} (accepted : AcceptedAssociation' input images support)
+    {levels : List Kernel.Name} {s : Kernel.Expr}
+    (row : HasTheoremRow (streamEntries (accepted.declarations ++ support)) levels s) :
+    EquationHolds.{u} accepted.folded.env levels s := by
+  obtain ⟨name, proof, mem⟩ := row
+  exact equationHolds_of_installed
+    (AnnotationTrace.theorem_checked (thm_mem_folded mem) accepted.folded.checked)
+
+theorem AcceptedAssociation'.type_holds.{u} {input : Input} {images : Lean.Name → Bool}
+    {support : Array Kernel.Declaration} (accepted : AcceptedAssociation' input images support)
+    {levels : List Kernel.Name} {ixType leanType : Kernel.Expr}
+    (agrees : TypeAgrees (streamEntries (accepted.declarations ++ support)) levels ixType leanType) :
+    TypeHolds.{u} accepted.folded.env levels ixType leanType := by
+  rcases agrees with same | ⟨name, proof, eqLevel, sortLevel, mem⟩
+  · exact .inl same
+  · exact .inr ⟨eqLevel, sortLevel, accepted.row_holds ⟨name, proof, mem⟩⟩
+
 /-- **The semantic corollary (M5).** A constant that `AcceptedAssociation'`
-matched by its equations has its header in the reader stream as a definition,
-and each of Lean's defining equations (every computation rule of a recursor;
-a definition's `c = value` or Lean's `c.eq_def`) is installed by the
-certified fold of the artifact and its support and holds in every strong model
-of it (`EquationHolds`). Uniqueness of the function these equations define is
-not claimed. -/
+matched by its equations has, under its exported name and universe telescope,
+a reader *definition* entry whose declared type denotes Lean's type in every
+strong model (`TypeHolds`), and each of Lean's defining equations (every
+computation rule of a recursor; a definition's `c = value` or Lean's
+`c.eq_def`) is installed by the certified fold of the artifact and its support
+and holds in every strong model of it (`EquationHolds`). Uniqueness of the
+function these equations define is not claimed. -/
 theorem AcceptedAssociation'.model_equations.{u} {input : Input} {images : Lean.Name → Bool}
     {support : Array Kernel.Declaration} (accepted : AcceptedAssociation' input images support)
     {ci : Lean.ConstantInfo}
     (equations : EquationMatch ⟨input.source, input.map, accepted.pins, images⟩
       (streamEntries accepted.declarations) (streamEntries (accepted.declarations ++ support)) ci) :
     ∃ header, directHeader ⟨input.source, input.map, accepted.pins, images⟩ ci = .ok header ∧
-      HasDefinitionHeader (streamEntries accepted.declarations) header ∧
+      (∃ type value hint,
+        DirectEntry.defn ⟨header.name, header.levelParams, type⟩ value hint ∈ streamEntries accepted.declarations ∧
+        TypeHolds.{u} accepted.folded.env header.levelParams type header.type) ∧
       match ci with
       | .recInfo r =>
         ∃ statements, ruleStatements ⟨input.source, input.map, accepted.pins, images⟩ r = .ok statements ∧
@@ -1197,19 +1361,13 @@ theorem AcceptedAssociation'.model_equations.{u} {input : Input} {images : Lean.
           eqLeftHead eqHeader.type = some header.name ∧
           EquationHolds.{u} accepted.folded.env eqHeader.levelParams eqHeader.type)
       | _ => False := by
-  have installed : ∀ {levels : List Kernel.Name} {s : Kernel.Expr},
-      HasTheoremRow (streamEntries (accepted.declarations ++ support)) levels s →
-        EquationHolds.{u} accepted.folded.env levels s := by
-    rintro levels s ⟨name, proof, row⟩
-    exact equationHolds_of_installed
-      (AnnotationTrace.theorem_checked (thm_mem_folded row) accepted.folded.checked)
   unfold EquationMatch at equations
   cases hd : directHeader ⟨input.source, input.map, accepted.pins, images⟩ ci with
   | error _ => simp [hd] at equations
   | ok header =>
     simp only [hd] at equations
-    refine ⟨header, rfl, equations.1, ?_⟩
-    have rest := equations.2
+    obtain ⟨⟨type, value, hint, mem, agrees⟩, rest⟩ := equations
+    refine ⟨header, rfl, ⟨type, value, hint, mem, accepted.type_holds agrees⟩, ?_⟩
     cases ci with
     | recInfo r =>
       dsimp only at rest ⊢
@@ -1217,7 +1375,7 @@ theorem AcceptedAssociation'.model_equations.{u} {input : Input} {images : Lean.
       | error _ => simp [hs] at rest
       | ok statements =>
         simp only [hs] at rest
-        exact ⟨statements, rfl, ruleStatements_length hs, fun s hm => installed (rest s hm).2⟩
+        exact ⟨statements, rfl, ruleStatements_length hs, fun s hm => accepted.row_holds (rest s hm).2⟩
     | defnInfo d =>
       dsimp only at rest ⊢
       rcases rest with byRfl | byEqDef
@@ -1229,7 +1387,7 @@ theorem AcceptedAssociation'.model_equations.{u} {input : Input} {images : Lean.
           obtain ⟨left, right⟩ := sides
           simp only [hsd] at byRfl
           obtain ⟨name, proof, level, row⟩ := byRfl
-          exact ⟨left, right, level, rfl, installed ⟨name, proof, row⟩⟩
+          exact ⟨left, right, level, rfl, accepted.row_holds ⟨name, proof, row⟩⟩
       · right
         unfold EqDefEquation at byEqDef
         cases hf : input.source.find (d.name.str "eq_def") with
@@ -1242,8 +1400,29 @@ theorem AcceptedAssociation'.model_equations.{u} {input : Input} {images : Lean.
             | error _ => simp [hh] at byEqDef
             | ok eqHeader =>
               simp only [hh] at byEqDef
-              exact ⟨t, eqHeader, rfl, hh, byEqDef.1, installed byEqDef.2⟩
+              exact ⟨t, eqHeader, rfl, hh, byEqDef.1, accepted.row_holds byEqDef.2⟩
           | _ => simp [hf] at byEqDef
     | _ => simp at rest
+
+/-- The semantic reading of a theorem matched by its statement: under its
+exported name and universe telescope the reader stream has a *theorem* whose
+statement denotes Lean's statement in every strong model (`TypeHolds`); the
+theorem holds in the model by the checker's own soundness. -/
+theorem AcceptedAssociation'.model_statement.{u} {input : Input} {images : Lean.Name → Bool}
+    {support : Array Kernel.Declaration} (accepted : AcceptedAssociation' input images support)
+    {ci : Lean.ConstantInfo}
+    (statement : ThmStatementMatch ⟨input.source, input.map, accepted.pins, images⟩
+      (streamEntries accepted.declarations) (streamEntries (accepted.declarations ++ support)) ci) :
+    ∃ header, directHeader ⟨input.source, input.map, accepted.pins, images⟩ ci = .ok header ∧
+      ∃ type proof,
+        DirectEntry.thm ⟨header.name, header.levelParams, type⟩ proof ∈ streamEntries accepted.declarations ∧
+        TypeHolds.{u} accepted.folded.env header.levelParams type header.type := by
+  obtain ⟨_, rest⟩ := statement
+  cases hd : directHeader ⟨input.source, input.map, accepted.pins, images⟩ ci with
+  | error _ => simp [hd] at rest
+  | ok header =>
+    simp only [hd] at rest
+    obtain ⟨type, proof, mem, agrees⟩ := rest
+    exact ⟨header, rfl, type, proof, mem, accepted.type_holds agrees⟩
 
 end Ix.CompileCert

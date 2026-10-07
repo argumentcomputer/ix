@@ -1,4 +1,4 @@
-import Ix.CompileCert.Indexed
+import Ix.CompileCert.Changed
 import Ix.CompileCert.ProjectionLoweringLean
 import Ix.Meta
 import Benchmarks.Kernel.CheckIxeStep
@@ -518,6 +518,443 @@ def diagnose (sh : Shared) (hints : Hints) (ci : Lean.ConstantInfo) (entry : Opt
           .rejected "map: reader name differs from the exported name"
         else .rejected "map: recursor flags differ"
 
+/-! ## W+ (M5): changed constants (untrusted orchestration)
+
+What the certifier proposes for W+ (`Ix/CompileCert/Changed.lean`) and how it
+classifies; nothing here is trusted. **Image claims**: the Lean recursors whose
+named record is a singleton definition (a changed block's recursor holds its
+image, Def 3.4); the map check refuses a wrong claim. **Support rows**: for a
+recursor claimed an image whose correspondence fails, one theorem per
+computation rule (`ruleStatements`), proof `Eq.refl` under the rule's
+telescope; for a definition with a definition header whose value differs, the
+row `@Eq.{ℓ} T c value`, `ℓ` computed by `Meta.getLevel` (the fold validates
+it). Rows are named `<target name>._ix_eq.<k>` (D14 keeps `_ix` components out
+of Lean names, the fold checks freshness), **pre-screened** one by one with the
+stepping checker over the admitted environment, and folded by the certified
+checker once (`foldSupport`, inside `checkIndexed'`). A definition whose `rfl`
+row the checker refuses falls back to Lean's `c.eq_def` (a row of the artifact
+under the map). Routes (`direct`, `raw`, `theorem`, `equations:rfl`,
+`equations:eq_def`, `changed-block`) recompute the same Boolean checks the
+decision uses and only label the TSV. -/
+
+/-- The certifier's image claims (untrusted). -/
+def imageClaims (env : Lean.Environment) (store : RecordStore) (names : Array Lean.Name)
+    (namedAddr : Std.HashMap Lean.Name Address) : Std.HashSet Lean.Name := Id.run do
+  let mut out : Std.HashSet Lean.Name := {}
+  for n in names do
+    let some (.recInfo _) := env.find? n | continue
+    let some a := namedAddr[n]? | continue
+    let some c := store[a]? | continue
+    if let .defn d := c.info then
+      if d.kind == .defn then out := out.insert n
+  return out
+
+/-- `λ telescope, @Eq.refl.{ℓ} carrier left` for `∀ telescope, @Eq.{ℓ} carrier left right`. -/
+def rflProof : Kernel.Expr → Option Kernel.Expr
+  | .forallE t b m => (rflProof b).map fun body => .lam t body m
+  | e => (eqParts e).map fun (level, carrier, left, _) =>
+    .app (.app (.const Kernel.eqReflName [level]) carrier) left
+
+/-- A support row `name : statement := rflProof statement`. -/
+def supportRow (name : Kernel.Name) (levels : List Kernel.Name) (statement : Kernel.Expr) :
+    Option Kernel.Declaration :=
+  (rflProof statement).map fun proof => .thmDecl ⟨name, levels, statement⟩ proof
+
+/-- The rows proposed for one changed constant (each with what it states:
+`type`, `rule <k>` or `rfl`), or why none could be formed. -/
+structure RowProposal where
+  owner : Lean.Name
+  rows : Array (String × Kernel.Declaration) := #[]
+  failure : Option String := none
+  deriving Inhabited
+
+/-- Propose the rows of a failing theorem, definition or recursor claimed an
+image: a **type row** when the reader entry of the right kind has the exported
+name and universes but another (convertible) type, and the **equation rows**
+of a recursor (one per rule) or a definition (`rfl`). -/
+def proposeRows (env : Lean.Environment) (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) :
+    IO RowProposal := do
+  let cy := sh.small hints.toHints ci.name
+  match directHeader cy ci with
+  | .error e => return { owner := ci.name, failure := some s!"header export: {e}" }
+  | .ok header =>
+    let actualType : Option Kernel.Expr := match ci, sh.entries[hints.entryAt ci.name]? with
+      | .thmInfo _, some (.thm cv _) | .defnInfo _, some (.defn cv _ _) | .recInfo _, some (.defn cv _ _) =>
+        if cv.name == header.name && cv.levelParams == header.levelParams then some cv.type else none
+      | _, _ => none
+    let some ixType := actualType
+      | return { owner := ci.name, failure := some "no reader entry of the required kind under the exported name and universes" }
+    let typeDiffers := ixType != header.type
+    let tc : TermContext := ⟨cy, ci.levelParams, header.levelParams⟩
+    -- the universe of Lean's type, for a type row and for a definition's `rfl` row
+    let level? ← if typeDiffers || (match ci with | .defnInfo _ => true | _ => false) then
+        match ← LoweringLean.runMeta env (Lean.Meta.getLevel ci.type) with
+        | .error e => pure (Except.error s!"universe of the type: {oneLine e}")
+        | .ok level => pure (exportLevel tc level)
+      else pure (.error "not needed")
+    let mut rows : Array (String × Kernel.Declaration) := #[]
+    if typeDiffers then
+      match level? with
+      | .error e => return { owner := ci.name, failure := some s!"type row: {e}" }
+      | .ok ℓ =>
+        match supportRow (header.name.str "_ix_type") header.levelParams
+            (kernelEq (.succ ℓ) (.sort ℓ) ixType header.type) with
+        | some row => rows := rows.push ("type", row)
+        | none => return { owner := ci.name, failure := some "type row shape" }
+    let base := header.name.str "_ix_eq"
+    match ci with
+    | .recInfo r =>
+      match ruleStatements cy r with
+      | .error e => return { owner := ci.name, rows, failure := some s!"rule statement export: {e}" }
+      | .ok statements =>
+        for (s, k) in statements.zipIdx do
+          match supportRow (base.num k) header.levelParams s with
+          | some d => rows := rows.push (s!"rule {k}", d)
+          | none => return { owner := ci.name, rows, failure := some "rule statement is not an Eq telescope" }
+        return { owner := ci.name, rows }
+    | .defnInfo d =>
+      match level?, definitionSides cy d header.levelParams with
+      | .ok ℓ, .ok (left, right) =>
+        match supportRow (base.num 0) header.levelParams (kernelEq ℓ header.type left right) with
+        | some row => return { owner := ci.name, rows := rows.push ("rfl", row) }
+        | none => return { owner := ci.name, rows, failure := some "rfl statement shape" }
+      | .error e, _ | _, .error e => return { owner := ci.name, rows, failure := some s!"rfl statement: {e}" }
+    | .thmInfo _ =>
+      if rows.isEmpty then return { owner := ci.name, failure := some "the statement is the exported one" }
+      return { owner := ci.name, rows }
+    | _ => return { owner := ci.name, failure := some "not a theorem, recursor or definition" }
+
+/-- Pre-screen rows (untrusted): each against the admitted environment with the
+stepping checker; `none` when accepted, the checker's message otherwise. -/
+def prescreen (pins : List Ix.Kernel.NatOpPinSet) (base : Benchmarks.Kernel.CheckIxeStep.Checker)
+    (rows : Array Kernel.Declaration) : Array (Option String) :=
+  let tasks := rows.map fun row => Task.spawn fun _ =>
+    match (base.step pins row).2 with
+    | none => none
+    | some e => let (w, m) := checkOutcome e; some s!"{w}: {m}"
+  tasks.map Task.get
+
+/-- The route a declaration passes by (the decision's own Boolean checks,
+recomputed to label the report), or `none`. `, type-row` marks a header whose
+type matched through a type row. -/
+def routeOf (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) : Option String :=
+  let cy := sh.small hints.toHints ci.name
+  let position := hints.entryAt ci.name
+  let header? := match directHeader cy ci with
+    | .ok h => some h
+    | .error _ => none
+  let typeRow : String := match header?, sh.entries[position]? with
+    | some h, some (.defn cv _ _) | some h, some (.thm cv _) => if cv.type == h.type then "" else ", type-row"
+    | _, _ => ""
+  let corr : Option String :=
+    if directAt cy sh.entries position ci then some "direct"
+    else if rawAt cy sh.constants (hints.recordAt ci.name) sh.reader ci then some "raw"
+    else if thmAt cy sh.entries sh.rows position (hints.rowsAt ci.name) ci then some s!"theorem{typeRow}"
+    else if equationsAt cy sh.entries sh.rows position (hints.rowsAt ci.name) ci then
+      match ci, header? with
+      | .defnInfo d, some h =>
+        match definitionSides cy d h.levelParams with
+        | .ok (left, right) =>
+          if rflAt sh.rows (hints.rowsAt ci.name) h.levelParams h.type left right then
+            some s!"equations:rfl{typeRow}"
+          else some s!"equations:eq_def{typeRow}"
+        | .error _ => some s!"equations:eq_def{typeRow}"
+      | _, _ => some s!"equations:rfl{typeRow}"
+    else none
+  match corr with
+  | none => none
+  | some c =>
+    let block : Option String :=
+      if decide (BlockMatch cy sh.state ci) then some c
+      else if decide (ChangedBlockMatch cy sh.state ci) then some s!"{c}, changed-block"
+      else none
+    match block with
+    | none => none
+    | some b => if (definitionGroupImage cy ci).isSome then some b else none
+
+/-- Stream positions by reader name (first occurrence). -/
+def entryPositions (entries : Array DirectEntry) : Std.HashMap Kernel.Name Nat := Id.run do
+  let mut m : Std.HashMap Kernel.Name Nat := {}
+  for i in [0:entries.size] do
+    let n := match entries[i]? with
+      | some e => entryName e
+      | none => .anonymous
+    unless m.contains n do m := m.insert n i
+  return m
+
+/-- `buildHints` with the row positions of W+. -/
+def buildHintsW (input : Input) (sh : SharedW) (entryPos : Std.HashMap Kernel.Name Nat)
+    (queries : Lean.Name → Array Lean.Name) (workers : Nat)
+    (rowsAt : Lean.Name → List Nat) : HintsW :=
+  let pos : Std.HashMap Lean.Name Nat := Id.run do
+    let mut m : Std.HashMap Lean.Name Nat := {}
+    for (ci, i) in input.source.declarations.zipIdx do m := m.insert ci.name i
+    return m
+  let recordPos : Std.HashMap Address Nat := Id.run do
+    let mut m : Std.HashMap Address Nat := {}
+    for i in [0:sh.constants.size] do
+      let a := sh.constants[i]!.1
+      unless m.contains a do m := m.insert a i
+    return m
+  let targets : Std.HashMap Lean.Name MapEntry :=
+    input.map.foldl (fun m e => m.insert e.source e) {}
+  let at_ (n : Lean.Name) : List Nat :=
+    ((queries n).toList.filterMap (pos[·]?)).eraseDups
+  { sourceAt := at_, mapAt := at_, workers, rowsAt
+    entryAt := fun n => match targets[n]? with
+      | some e => (entryPos[sh.reader.nameOf e.target]?).getD 0
+      | none => 0
+    recordAt := fun n => match targets[n]? with
+      | some e => (recordPos[e.record]?).getD 0
+      | none => 0 }
+
+/-- A kernel name as dotted text (diagnostics). -/
+def kernelNameStr : Kernel.Name → String
+  | .anonymous => ""
+  | .str .anonymous s => s
+  | .num .anonymous n => toString n
+  | .str p s => s!"{kernelNameStr p}.{s}"
+  | .num p n => s!"{kernelNameStr p}.{n}"
+
+/-- A one-line head of an expression (diagnostics). -/
+def exprHead : Kernel.Expr → String
+  | .bvar i => s!"#{i}"
+  | .fvar i _ => s!"fvar {i}"
+  | .sort u => s!"Sort {repr u}"
+  | .const n us => s!"const {kernelNameStr n} {us.length} levels"
+  | .app f _ => s!"app ({exprHead f})"
+  | .lam .. => "lam"
+  | .forallE .. => "forall"
+  | .letE .. => "let"
+  | .lit (.natVal n) => s!"nat {n}"
+  | .lit (.strVal _) => "string"
+  | .proj n i _ => s!"proj {kernelNameStr n} {i}"
+
+/-- The path to the first difference of two expressions and their heads there (diagnostics). -/
+partial def firstDiff (path : String) : Kernel.Expr → Kernel.Expr → Option String
+  | .app f a, .app g b => (firstDiff s!"{path}.fn" f g).orElse fun _ => firstDiff s!"{path}.arg" a b
+  | .lam t b _, .lam u c _ | .forallE t b _, .forallE u c _ =>
+    (firstDiff s!"{path}.dom" t u).orElse fun _ => firstDiff s!"{path}.body" b c
+  | .letE t v b, .letE u w c =>
+    ((firstDiff s!"{path}.type" t u).orElse fun _ => firstDiff s!"{path}.val" v w).orElse fun _ =>
+      firstDiff s!"{path}.body" b c
+  | .proj n i e, .proj m j f =>
+    if n == m && i == j then firstDiff s!"{path}.proj" e f else some s!"{path}: proj differs"
+  | x, y => if x == y then none else some s!"{path}: {exprHead x} vs {exprHead y}"
+
+/-- A W+ diagnosis of a declaration that fails every route (untrusted). -/
+def diagnoseW (sh : SharedW) (hints : HintsW) (ci : Lean.ConstantInfo) (entry : Option MapEntry)
+    (rowRefusal : Option String) : Verdict :=
+  let cy := sh.small hints.toHints ci.name
+  match directHeader cy ci with
+  | .error e =>
+    if (e.splitOn "missing source").length > 1 then .rejected s!"certifier: small context incomplete: {e}"
+    else if (e.splitOn "unsupported").length > 1 then .unsupported s!"export: {e}"
+    else .rejected s!"export: {e}"
+  | .ok header =>
+    let actual := sh.entries[hints.entryAt ci.name]?
+    let headerDetail : String := match actual with
+      | none => "no reader entry under the target's name"
+      | some a =>
+        let (kind, cv) : String × Kernel.ConstantVal := match a with
+          | .defn cv .. => ("definition", cv) | .thm cv _ => ("theorem", cv)
+          | .opaque cv _ => ("opaque", cv) | .axiom cv => ("axiom", cv) | .quot _ cv => ("quotient", cv)
+          | .induct cv _ => ("inductive", cv) | .ctor cv .. => ("constructor", cv)
+          | .recursor cv .. => ("recursor", cv)
+        if cv.name != header.name then s!"name differs ({kind})"
+        else if cv.levelParams != header.levelParams then s!"universe parameters differ ({kind})"
+        else if cv.type != header.type then s!"type differs ({kind})"
+        else s!"{kind}"
+    let corrOk := directAt cy sh.entries (hints.entryAt ci.name) ci ||
+      rawAt cy sh.constants (hints.recordAt ci.name) sh.reader ci ||
+      thmAt cy sh.entries sh.rows (hints.entryAt ci.name) (hints.rowsAt ci.name) ci ||
+      equationsAt cy sh.entries sh.rows (hints.entryAt ci.name) (hints.rowsAt ci.name) ci
+    if !corrOk then
+      let refusal := match rowRefusal with
+        | some r => s!"; equation row: {r}"
+        | none => ""
+      match ci with
+      | .thmInfo _ => .rejected s!"correspondence: theorem: reader entry {headerDetail}"
+      | .recInfo _ =>
+        if headerDetail == "definition" then .rejected s!"correspondence: recursor image: equations fail{refusal}"
+        else .rejected s!"correspondence: recursor: reader entry {headerDetail}{refusal}"
+      | .defnInfo d =>
+        if headerDetail == "definition" then
+          let clique := d.all.length > 1 || (d.value.getUsedConstants.contains ``WellFounded.fix)
+          let eqDef := sh.cx.source.find (d.name.str "eq_def")
+          if clique && eqDef.isNone then
+            .unsupported "changed definition: transported clique member without eq_def"
+          else .rejected s!"correspondence: definition: value differs, no equation row accepted{refusal}"
+        else .rejected s!"correspondence: definition: reader entry {headerDetail}"
+      | _ => .rejected s!"correspondence: reader entry {headerDetail}"
+    else if !(decide (BlockMatch cy sh.state ci) || decide (ChangedBlockMatch cy sh.state ci)) then
+      .rejected "inductive block differs (whole and changed)"
+    else if !(definitionGroupImage cy ci).isSome then .rejected "definition group member unmapped"
+    else match entry with
+      | none => .rejected "no map entry"
+      | some e =>
+        if !decide (Kernel.Reader.resolve sh.reader.store e.record = some e.target) then
+          .rejected "map: record does not resolve to the proposed member"
+        else if !decide (NameAgrees cy e.source (sh.reader.nameOf e.target)) then
+          .rejected "map: reader name differs from the exported name"
+        else .rejected "map: recursor flags or image claim differ"
+
+/-- The positions in the row pool (`SharedW.rows`) of a name's rows: its own
+support rows (after the `offset` stream entries), then Lean's `eq_def` entry. -/
+def rowsAtWith (entries : Std.HashMap Lean.Name MapEntry) (entryPos : Std.HashMap Kernel.Name Nat)
+    (reader : Kernel.Reader.Ctx) (rowsOf : Std.HashMap Lean.Name (Array Nat)) (offset : Nat)
+    (n : Lean.Name) : List Nat :=
+  ((rowsOf.getD n #[]).map (offset + ·)).toList ++
+    (match entries[n.str "eq_def"]? with
+      | some e => (entryPos[reader.nameOf e.target]?).toList
+      | none => [])
+
+/-- What the W+ pre-pass learns over one input (untrusted): each declaration's
+route or diagnosis, and the pre-screened support rows. -/
+structure PrePass where
+  routes : Std.HashMap Lean.Name String := {}
+  failed : Std.HashMap Lean.Name Verdict := {}
+  support : Array Kernel.Declaration := #[]
+  rowsOf : Std.HashMap Lean.Name (Array Nat) := {}
+  refusals : Std.HashMap Lean.Name String := {}
+  entryPos : Std.HashMap Kernel.Name Nat := {}
+  passOneFailures : Nat := 0
+  proposedRows : Nat := 0
+  proposedFor : Nat := 0
+  refusedRows : Nat := 0
+
+/-- The W+ pre-pass: every declaration's own checks (pass 1), rows for the
+failing theorems, definitions and recursors claimed images, the row-by-row
+pre-screen, and the failing declarations again with their rows and Lean's
+`eq_def` (pass 2), diagnosing what still fails. -/
+def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry) (input : Input)
+    (images : Std.HashSet Lean.Name) (artifact : AdmittedArtifact input.toArtifactInput)
+    (queries : Lean.Name → Array Lean.Name) (workers : Nat) (log : String → IO Unit) : IO PrePass := do
+  let imagesFn : Lean.Name → Bool := fun n => images.contains n
+  let w := max workers 1
+  let pass (sh : SharedW) (hints : HintsW) (decls : List Lean.ConstantInfo) :
+      Array (Lean.ConstantInfo × Option String) :=
+    let tasks := (List.range w).map fun i => Task.spawn fun _ =>
+      (strideOf w i 0 decls).map fun ci =>
+        let ok := ((entries[ci.name]?).map (sh.entryCheck hints.toHints)).getD false
+        (ci, if ok then routeOf sh hints ci else none)
+    tasks.toArray.flatMap fun t => t.get.toArray
+  let t5 ← IO.monoMsNow
+  let mut out : PrePass := {}
+  -- pass 1: every declaration's own W+ checks, no support yet
+  let sh1 := SharedW.ofArtifact input imagesFn artifact #[]
+  let entryPos := entryPositions sh1.entries
+  out := { out with entryPos }
+  let hints1 := buildHintsW input sh1 entryPos queries workers (fun _ => [])
+  let r1 := pass sh1 hints1 input.source.declarations
+  let mut failing : Array Lean.ConstantInfo := #[]
+  for (ci, route) in r1 do
+    match route with
+    | some r => out := { out with routes := out.routes.insert ci.name r }
+    | none => failing := failing.push ci
+  out := { out with passOneFailures := failing.size }
+  let t6 ← IO.monoMsNow
+  log s!"[certify] W+ pass 1 (no support): {r1.size - failing.size} of {r1.size} pass their own checks, \
+    {failing.size} fail; {t6 - t5} ms"
+  -- rows for the failing theorems, definitions and recursors claimed images
+  let proposable := failing.filter fun ci => match ci with
+    | .recInfo _ => images.contains ci.name
+    | .defnInfo _ | .thmInfo _ => true
+    | _ => false
+  let mut proposals : Array RowProposal := #[]
+  for ci in proposable do proposals := proposals.push (← proposeRows env sh1 hints1 ci)
+  let natPins ← IO.ofExcept Ix.Kernel.Reader.builtinNatOpPins
+  let base : Benchmarks.Kernel.CheckIxeStep.Checker := { fe := Ix.Kernel.mkFEnv artifact.env }
+  let allRows := proposals.flatMap fun p => p.rows.map (·.2)
+  let screened := prescreen natPins base allRows
+  let mut k := 0
+  let mut support : Array Kernel.Declaration := #[]
+  let mut rowsOf : Std.HashMap Lean.Name (Array Nat) := {}
+  let mut refusals : Std.HashMap Lean.Name String := {}
+  let mut refusedRows := 0
+  for p in proposals do
+    -- every row the pre-screen accepts is kept; a refusal is recorded for the diagnosis
+    let mut idx : Array Nat := #[]
+    for (what, row) in p.rows do
+      match screened[k]? with
+      | some none =>
+        idx := idx.push support.size
+        support := support.push row
+      | some (some refusal) =>
+        refusedRows := refusedRows + 1
+        unless refusals.contains p.owner do
+          refusals := refusals.insert p.owner s!"{what} row refused by the checker: {oneLine refusal}"
+      | none => pure ()
+      k := k + 1
+    if let some f := p.failure then
+      unless refusals.contains p.owner do refusals := refusals.insert p.owner f
+    unless idx.isEmpty do rowsOf := rowsOf.insert p.owner idx
+  out := { out with support, rowsOf, refusals, refusedRows, proposedRows := allRows.size,
+                    proposedFor := proposals.size }
+  let t7 ← IO.monoMsNow
+  log s!"[certify] W+ support: {allRows.size} rows proposed for {proposals.size} constants; \
+    {support.size} accepted by the pre-screen, {refusedRows} refused; {t7 - t6} ms"
+  -- pass 2: the failing declarations again, with their rows and Lean's `eq_def` as the fallback
+  let sh2 := SharedW.ofArtifact input imagesFn artifact support
+  let hints2 := buildHintsW input sh2 entryPos queries workers
+    (rowsAtWith entries entryPos sh2.reader rowsOf sh2.entries.size)
+  let r2 := pass sh2 hints2 failing.toList
+  let mut failures := 0
+  for (ci, route) in r2 do
+    match route with
+    | some r => out := { out with routes := out.routes.insert ci.name r }
+    | none =>
+      failures := failures + 1
+      let verdict := diagnoseW sh2 hints2 ci entries[ci.name]? refusals[ci.name]?
+      out := { out with failed := out.failed.insert ci.name verdict }
+  let t8 ← IO.monoMsNow
+  log s!"[certify] W+ pass 2: {failing.size - failures} of {failing.size} pass by theorem statement or \
+    equations, {failures} fail; {t8 - t7} ms"
+  return out
+
+/-- The support rows of the final members, in their order, with each row's
+owner and each member's row indices. -/
+def finalSupport (finalNames : Array Lean.Name) (pre : PrePass) :
+    Array Kernel.Declaration × Array Lean.Name × Std.HashMap Lean.Name (Array Nat) := Id.run do
+  let mut sup : Array Kernel.Declaration := #[]
+  let mut owners : Array Lean.Name := #[]
+  let mut rowsFinal : Std.HashMap Lean.Name (Array Nat) := {}
+  for n in finalNames do
+    if let some idx := pre.rowsOf[n]? then
+      let start := sup.size
+      for i in idx do
+        sup := sup.push pre.support[i]!
+        owners := owners.push n
+      rowsFinal := rowsFinal.insert n ((List.range idx.size).toArray.map (start + ·))
+  return (sup, owners, rowsFinal)
+
+/-- The source names whose positions a declaration's small context needs
+(untrusted hints): the declaration, its block, its references and their
+prefixes; for W+ also `Eq` and a recursor's rule constructors or a
+definition's `eq_def`. -/
+def queriesFor (env : Lean.Environment) (refs : Std.HashMap Lean.Name (Array Lean.Name))
+    (n : Lean.Name) : Array Lean.Name := Id.run do
+  let some ci := env.find? n | return #[n]
+  let mut out : Std.HashSet Lean.Name := ({} : Std.HashSet Lean.Name).insert n
+  let block : Array Lean.Name := match ci with
+    | .inductInfo v => Id.run do
+      let mut ms : Array Lean.Name := #[n]
+      for m in v.all do
+        ms := ms.push m
+        if let some (.inductInfo iv) := env.find? m then ms := ms ++ iv.ctors.toArray
+        ms := ms.push (m.str "rec")
+      for i in [0:v.numNested] do
+        if let some h := v.all.head? then ms := ms.push (h.str s!"rec_{i + 1}")
+      return ms
+    | .recInfo v => #[n, ``Eq] ++ (v.rules.map (·.ctor)).toArray
+    | .defnInfo _ => #[n, ``Eq, n.str "eq_def"]
+    | _ => #[n]
+  for d in block do
+    out := out.insert d
+    for r in refs.getD d #[] do
+      out := (out.insert r).insert r.getPrefix
+  return out.toArray
+
 /-! ## The run -/
 
 inductive LeanSource where
@@ -564,6 +1001,8 @@ structure WState where
   namedAddr : Std.HashMap Lean.Name Address
   refs : Std.HashMap Lean.Name (Array Lean.Name)
   verdicts : Std.HashMap Lean.Name Verdict
+  /-- Each certified constant's route (`direct`, `theorem`, `equations:rfl`, …; M5). -/
+  routes : Std.HashMap Lean.Name String := {}
   /-- Whether the global W check ran (`--strong-only` skips it). -/
   wRun : Bool := true
 
@@ -765,103 +1204,153 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   let t4 ← IO.monoMsNow
   say s!"[certify] admission (checkBytes) of {recordBytes.length} records: \
     {artifact.declarations.size} declarations; {t4 - t3} ms"
-  let queriesOf (n : Lean.Name) : Array Lean.Name := Id.run do
-    let some ci := env.find? n | return #[n]
-    let mut out : Std.HashSet Lean.Name := ({} : Std.HashSet Lean.Name).insert n
-    let block : Array Lean.Name := match ci with
-      | .inductInfo v => Id.run do
-        let mut ms : Array Lean.Name := #[n]
-        for m in v.all do
-          ms := ms.push m
-          if let some (.inductInfo iv) := env.find? m then ms := ms ++ iv.ctors.toArray
-          ms := ms.push (m.str "rec")
-        for i in [0:v.numNested] do
-          if let some h := v.all.head? then ms := ms.push (h.str s!"rec_{i + 1}")
-        return ms
-      | _ => #[n]
-    for d in block do
-      out := out.insert d
-      for r in refs.getD d #[] do
-        out := (out.insert r).insert r.getPrefix
-    return out.toArray
+  let queriesOf := queriesFor env refs
   let makeInput (members : Array Lean.Name) : Input :=
     { toArtifactInput := ai
       source := ⟨members.toList.filterMap env.find?⟩
       roots := members.toList
       map := members.toList.filterMap (entries[·]?) }
-  -- the certified check over all candidates; only if it refuses, the pre-pass runs every
-  -- candidate's own checks, classifies the failures, and the check runs again without them
   let decline (e : Decline) : String := match e with
     | .sourceDomain => "source domain" | .mapMismatch => "map"
     | .correspondence => "correspondence" | .blockCorrespondence => "blocks"
     | .definitionGroupCorrespondence => "definition groups"
     | .setup r => s!"setup: {r}" | _ => "other"
+  -- W+ (M5): the recursors claimed images (untrusted; the map check refuses a wrong claim)
+  let images := imageClaims env store names namedAddr
+  let imagesFn : Lean.Name → Bool := fun n => images.contains n
+  say s!"[certify] image claims: {images.size} recursors whose named record is a definition"
   let mut finalNames := candidates
-  let mut input := makeInput candidates
-  let mut sh := Shared.ofArtifact input artifact
-  let mut hints := buildHints input sh queriesOf cfg.workers
-  let mut refusal : Option Decline := match checkIndexed input artifact hints with
-    | .ok _ => none
-    | .error e => some e
-  let t5 ← IO.monoMsNow
-  if let some e := refusal then
-    say s!"[certify] certified check over {candidates.size} candidates refused ({decline e}); \
-      {t5 - t4} ms; pre-pass"
-    let mut failures := 0
-    -- the same per-declaration checks, on `workers` tasks
-    let shP := sh
-    let hintsP := hints
-    let decls := input.source.declarations
-    let w := max cfg.workers 1
-    let tasks := (List.range w).map fun i => Task.spawn fun _ =>
-      (strideOf w i 0 decls).filterMap fun ci =>
-        let entry := entries[ci.name]?
-        if shP.declCheck hintsP ci && (entry.map (shP.entryCheck hintsP)).getD false then none
-        else some (ci.name, diagnose shP hintsP ci entry)
-    for t in tasks do
-      for (n, v) in t.get do
-        failures := failures + 1
-        verdicts := verdicts.insert n v
-    say s!"[certify] pre-pass: {failures} of {candidates.size} fail their own checks; \
-      {(← IO.monoMsNow) - t5} ms"
+  let mut routes : Std.HashMap Lean.Name String := {}
+  let mut support : Array Kernel.Declaration := #[]
+  let mut rowsOf : Std.HashMap Lean.Name (Array Nat) := {}
+  let mut proposedRows := 0
+  let mut proposedFor := 0
+  let mut accepted := false
+  let mut entryPos : Std.HashMap Kernel.Name Nat := {}
+  let mut usedSupport := 0
+  if images.isEmpty then
+    -- no changed block: W's own decision first (`checkIndexed`, `checkIndexed_sound`)
+    let input := makeInput candidates
+    let sh := Shared.ofArtifact input artifact
+    let hints := buildHints input sh queriesOf cfg.workers
+    match checkIndexed input artifact hints with
+    | .ok _ =>
+      -- `checkIndexed_sound`: every member of `input.source` is certified with W's meaning
+      accepted := true
+      for n in candidates do routes := routes.insert n "direct/raw"
+    | .error e =>
+      say s!"[certify] certified check (W) over {candidates.size} candidates refused ({decline e}); \
+        {(← IO.monoMsNow) - t4} ms; W+ pre-pass"
+  if !accepted then
+    let pre ← wPrePass env entries (makeInput candidates) images artifact queriesOf cfg.workers say
+    for (n, r) in pre.routes.toList do routes := routes.insert n r
+    for (n, v) in pre.failed.toList do verdicts := verdicts.insert n v
+    support := pre.support
+    rowsOf := pre.rowsOf
+    entryPos := pre.entryPos
+    proposedRows := pre.proposedRows
+    proposedFor := pre.proposedFor
     let survivors := candidates.filter (fun n => !verdicts.contains n)
     let (v2, closed2) := closeCandidates refs verdicts survivors
     verdicts := v2
     finalNames := closed2
-    input := makeInput finalNames
-    sh := Shared.ofArtifact input artifact
-    hints := buildHints input sh queriesOf cfg.workers
-    refusal := match checkIndexed input artifact hints with
-      | .ok _ => none
-      | .error e => some e
-  match refusal with
-  | some e =>
-    IO.eprintln s!"[certify] the certified check refused the final input ({finalNames.size} \
-      declarations): {decline e}"
-    return (1, none)
-  | none =>
-    -- `checkIndexed` returned an `AcceptedAssociation` for `input`; by `checkIndexed_sound`
-    -- every member of `input.source` is certified.
-    for n in finalNames do verdicts := verdicts.insert n .certified
-  let t6 ← IO.monoMsNow
-  say s!"[certify] certified check over {finalNames.size} declarations: accepted; {t6 - t4} ms \
-    since admission"
+    -- the final decision; a support row the certified fold refuses (after an accepting
+    -- pre-screen) takes its constant out, and the decision runs again
+    let mut attempts := 0
+    while !accepted && attempts < 4 do
+      attempts := attempts + 1
+      let input := makeInput finalNames
+      let (sup, owners, rowsFinal) := finalSupport finalNames { support, rowsOf }
+      let oldRoutes := finalNames.all fun n => match routes[n]? with
+        | some "direct" | some "raw" => true
+        | _ => false
+      if images.isEmpty && sup.isEmpty && oldRoutes then
+        let sh := Shared.ofArtifact input artifact
+        let hints := buildHints input sh queriesOf cfg.workers
+        match checkIndexed input artifact hints with
+        | .ok _ =>
+          -- `checkIndexed_sound`: W's meaning, every member of `input.source` certified
+          accepted := true
+        | .error e =>
+          IO.eprintln s!"[certify] the certified check (W) refused the final input ({finalNames.size} \
+            declarations): {decline e}"
+          return (1, none)
+      else
+        let shF := SharedW.ofArtifact input imagesFn artifact sup
+        let hintsF := buildHintsW input shF entryPos queriesOf cfg.workers
+          (rowsAtWith entries entryPos shF.reader rowsFinal shF.entries.size)
+        let decision := (Task.spawn (prio := .dedicated) fun _ =>
+          checkIndexed' input imagesFn artifact sup hintsF).get
+        match decision with
+        | .ok _ =>
+          -- `checkIndexed'_sound`: every member of `input.source` is certified with W+'s meaning
+          accepted := true
+          usedSupport := sup.size
+        | .error (.fold (.checking err position)) =>
+          let prepared := (Kernel.Frontend.preparePrelude artifact.prelude.ix artifact.declarations).size
+          let (word, message) := checkOutcome err
+          if prepared ≤ position && position - prepared < owners.size then
+            let owner := owners[position - prepared]!
+            say s!"[certify] the certified fold refused support row {position - prepared} of {owner}: \
+              {word}: {oneLine message}; deciding again without it"
+            verdicts := verdicts.insert owner
+              (.rejected s!"correspondence: equation row refused by the certified fold: {word}: {oneLine message}")
+            let (v3, closed3) := closeCandidates refs verdicts (finalNames.filter (· != owner))
+            verdicts := v3
+            finalNames := closed3
+          else
+            IO.eprintln s!"[certify] the certified fold refused the artifact and support at {position}: \
+              {word}: {oneLine message}"
+            return (1, none)
+        | .error (.fold (.setup r)) =>
+          IO.eprintln s!"[certify] support fold setup: {r}"
+          return (1, none)
+        | .error (.base e) =>
+          IO.eprintln s!"[certify] the certified check (W+) refused the final input ({finalNames.size} \
+            declarations): {decline e}"
+          return (1, none)
+    unless accepted do
+      IO.eprintln "[certify] the certified fold kept refusing support rows; giving up"
+      return (1, none)
+  for n in finalNames do verdicts := verdicts.insert n .certified
+  let t9 ← IO.monoMsNow
+  let wOnly := usedSupport == 0 && images.isEmpty &&
+    routes.toList.all (fun (_, r) => r == "direct" || r == "raw" || r == "direct/raw")
+  let mode := if wOnly then "W" else s!"W+, {usedSupport} support rows"
+  say s!"[certify] certified check over {finalNames.size} declarations: accepted ({mode}); \
+    {t9 - t4} ms since admission"
   -- diagnostics: the export and the reader entries of the requested names, in the
   -- context of all candidates
   unless cfg.explain.isEmpty do
     let inputE := makeInput candidates
-    let shE := Shared.ofArtifact inputE artifact
-    let hintsE := buildHints inputE shE queriesOf cfg.workers
+    let shE := SharedW.ofArtifact inputE imagesFn artifact #[]
+    let entryPosE := entryPositions shE.entries
+    let hintsE := buildHintsW inputE shE entryPosE queriesOf cfg.workers (fun _ => [])
     for n in cfg.explain do
       let some ci := env.find? n | say s!"[explain] {n}: not in the environment"
-      let cy := shE.small hintsE n
-      say s!"[explain] {n}: verdict {(verdicts.getD n (.unsupported "none")).word}"
+      let cy := shE.small hintsE.toHints n
+      let verdictE := verdicts.getD n (.unsupported "none")
+      let routeE := match routes[n]? with
+        | some r => s!"route {r}"
+        | none => ""
+      say s!"[explain] {n}: verdict {verdictE.word}; {verdictE.cause}{routeE}; image claim {images.contains n}"
       match directExport cy ci with
       | .error e => say s!"[explain]   export error: {e}"
       | .ok e =>
         say s!"[explain]   export: {repr e.withoutHint}"
         for a in shE.entries do
-          if entryName a == entryName e then say s!"[explain]   reader: {repr a}"
+          if entryName a == entryName e then
+            say s!"[explain]   reader: {repr a}"
+            let parts : DirectEntry → Option (Kernel.ConstantVal × Option Kernel.Expr)
+              | .defn cv v _ | .thm cv v | .opaque cv v => some (cv, some v)
+              | .axiom cv | .quot _ cv | .induct cv _ | .ctor cv .. | .recursor cv .. => some (cv, none)
+            match parts e.withoutHint, parts a with
+            | some (x, xv), some (y, yv) =>
+              say s!"[explain]   type: {(firstDiff "type" x.type y.type).getD "equal"}"
+              match xv, yv with
+              | some u, some v => say s!"[explain]   value: {(firstDiff "value" u v).getD "equal"}"
+              | _, _ => pure ()
+            | _, _ => pure ()
       if let .inductInfo iv := ci then
         match exportBlock cy iv, cy.name iv.name with
         | .ok b, .ok k =>
@@ -870,18 +1359,36 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
           | some actual => say s!"[explain]   reader block: {repr (readerBlock actual)}"
           | none => say "[explain]   no reader block"
         | .error e, _ | _, .error e => say s!"[explain]   block export error: {e}"
-  -- report: per name, per address, per class
+      -- W+: the type and equation rows and the checker's verdict on each
+      match ci with
+      | .recInfo _ | .defnInfo _ | .thmInfo _ =>
+        let p ← proposeRows env shE hintsE ci
+        if let some f := p.failure then say s!"[explain]   rows: {f}"
+        let natPins ← IO.ofExcept Ix.Kernel.Reader.builtinNatOpPins
+        let base : Benchmarks.Kernel.CheckIxeStep.Checker := { fe := Ix.Kernel.mkFEnv artifact.env }
+        let screened := prescreen natPins base (p.rows.map (·.2))
+        for ((what, row), verdict) in p.rows.zip screened do
+          if let .thmDecl cv _ := row then
+            say s!"[explain]   {what} row {kernelNameStr cv.name}: {repr cv.type}"
+          say s!"[explain]     checker: {verdict.getD "accepted"}"
+        if let .defnInfo d := ci then
+          say s!"[explain]   Lean eq_def: {(env.find? (d.name.str "eq_def")).isSome}"
+      | _ => pure ()
+  -- report: per name, per address, per class; a certified row's cause column is its route
   let mut tsv := "name\taddress\tverdict\tcause\n"
   let mut byWord : Std.HashMap String Nat := {}
   let mut byClass : Std.HashMap (String × String) Nat := {}
+  let mut byRoute : Std.HashMap String Nat := {}
   let mut addrVerdict : Std.HashMap Address String := {}
   for n in names do
     let v := verdicts.getD n (.unsupported "no verdict")
     let addr := match namedAddr[n]? with
       | some a => toString a
       | none => ""
-    tsv := tsv ++ s!"{n}\t{addr}\t{v.word}\t{v.cause}\n"
+    let cause := if v.isCertified then routes.getD n "" else v.cause
+    tsv := tsv ++ s!"{n}\t{addr}\t{v.word}\t{cause}\n"
     byWord := byWord.insert v.word (byWord.getD v.word 0 + 1)
+    if v.isCertified then byRoute := byRoute.insert cause (byRoute.getD cause 0 + 1)
     unless v.isCertified do
       byClass := byClass.insert (v.word, v.cls) (byClass.getD (v.word, v.cls) 0 + 1)
     if let some a := namedAddr[n]? then
@@ -894,7 +1401,24 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   let classes := byClass.toArray.qsort (fun a b => a.2 > b.2 || (a.2 == b.2 && toString a.1 < toString b.1))
   let mut classText := "verdict\tclass\tcount\n"
   for ((w, c), k) in classes do classText := classText ++ s!"{w}\t{c}\t{k}\n"
+  let routeList := byRoute.toArray.qsort (fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1))
+  for (r, k) in routeList do classText := classText ++ s!"certified\troute: {r}\t{k}\n"
   IO.FS.writeFile s!"{cfg.out}.classes.tsv" classText
+  -- the artifact's names with no Lean constant: the canonical `_ix` constants (and any other)
+  let hasIxComponent (n : Lean.Name) : Bool :=
+    n.components.any fun c => match c with
+      | .str _ s => s.startsWith "_ix"
+      | _ => false
+  let mut ixOnly := 0
+  let mut ixOnlyIx := 0
+  for (n, _) in produced.named.toList do
+    let ln := ixName n
+    unless env.contains ln do
+      ixOnly := ixOnly + 1
+      if hasIxComponent ln then ixOnlyIx := ixOnlyIx + 1
+  say s!"[certify] W+: image claims {images.size}; equation rows proposed {proposedRows} for {proposedFor} \
+    constants, folded {usedSupport}; routes {String.intercalate ", " (routeList.toList.map fun (r, k) => s!"{r}={k}")}; \
+    artifact names with no Lean constant {ixOnly} ({ixOnlyIx} with an `_ix` component)"
   let (projRows, projJson) := measureProjections env names refs verdicts
   IO.FS.writeFile s!"{cfg.out}.proj.tsv" projRows
   say s!"[certify] raw projections: {projJson.compress}"
@@ -906,12 +1430,17 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
     ("perAddress", Lean.Json.mkObj (words.toList.map fun w => (w, Lean.toJson (byAddr.getD w 0)))),
     ("classes", Lean.Json.arr (classes.map fun ((w, c), k) => Lean.Json.mkObj
       [("verdict", Lean.toJson w), ("class", Lean.toJson c), ("count", Lean.toJson k)])),
+    ("routes", Lean.Json.mkObj (routeList.toList.map fun (r, k) => (r, Lean.toJson k))),
+    ("imageClaims", Lean.toJson images.size),
+    ("equationRows", Lean.Json.mkObj [("proposed", Lean.toJson proposedRows),
+      ("proposedFor", Lean.toJson proposedFor), ("folded", Lean.toJson usedSupport)]),
+    ("ixOnly", Lean.Json.mkObj [("total", Lean.toJson ixOnly), ("withIxComponent", Lean.toJson ixOnlyIx)]),
     ("rawProjections", projJson), ("projectionReceipts", receiptJson)]
   IO.FS.writeFile s!"{cfg.out}.json" json.pretty
   let counts := " ".intercalate (words.toList.map fun w => s!"{w}={byWord.getD w 0}")
   let addrCounts := " ".intercalate (words.toList.map fun w => s!"{w}={byAddr.getD w 0}")
   say s!"[certify] per name: {counts}; per address: {addrCounts}; total {(← IO.monoMsNow) - t0} ms"
-  let w : WState := { env, produced, store, names, namedAddr, refs, verdicts }
+  let w : WState := { env, produced, store, names, namedAddr, refs, verdicts, routes }
   if byWord.getD "certified" 0 == 0 then
     IO.eprintln "[certify] FAIL: nothing certified"
     return (1, some w)
