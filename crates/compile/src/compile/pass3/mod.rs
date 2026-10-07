@@ -19,7 +19,13 @@
 //!
 //! `Pass/Opt/{Core,Engine,O1..O6,O11a}.lean` are [`opt`] (slice 2). `Clique/**` and `Pass/Cliques.lean` are [`clique`] (slice 3).
 //! `Pass/Opt/{Packed,O7,O8,O9,CollapseRec,O10,O12,O11b}.lean` are [`pj`] (slice 4).
-//! Not yet ported: the closure producers and pack (slice 5).
+//! The logical units of the closure producers and `ix pack` (slice 5) are
+//! `ixon::unit` (the unit view, ported from `Ix/Common.lean` and
+//! `Ix/Cli/PackCmd.lean`) and `ixon::env::Env::prune_to_closure_units`: the
+//! selected closures of the input are Lean's (`Ix.EnvScope.collectSelectedDeps`)
+//! and reach this compiler as its input, so the canonical constants Pass 3
+//! stores (`_ix` names) need no closure code here; a pack of the output
+//! carries them with their declaration's unit.
 
 pub mod build;
 pub mod clique;

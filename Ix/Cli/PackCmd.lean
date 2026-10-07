@@ -18,6 +18,10 @@
   block's whole logical unit (eager and on-demand auxiliaries, design
   document §6.3), as the other closure producers do since M1-d
   (`packWholeUnits`); `--no-units` keeps the bare value closure.
+  `--rust-units` completes the units in Rust instead (M6R slice 5:
+  `Ixon.rsPackEnvUnits`, one prune with the unit view ported from
+  `ixonUnitView`); the completion here is its reference, compared byte for
+  byte by the `pack-units` suite.
 
   Different from `ix shard extract`: extract produces a general sub-env
   for the kernel-check pipeline (no `main`, no `assumptions`, anon-work
@@ -168,14 +172,20 @@ def runPackCmd (p : Cli.Parsed) : IO UInt32 := do
   let anon := p.hasFlag "anon"
   let verbose := p.hasFlag "verbose"
   let units := !p.hasFlag "no-units"
+  let rustUnits := p.hasFlag "rust-units"
+  if rustUnits && !units then
+    p.printError "error: --rust-units and --no-units are mutually exclusive"
+    return 1
   try
     let (rounds, packed) ← if units then
-        packWholeUnits envPath mainName assume outPath anon verbose
+        if rustUnits then Ixon.rsPackEnvUnits envPath mainName assume outPath anon verbose
+        else packWholeUnits envPath mainName assume outPath anon verbose
       else do
         Ixon.rsPackEnv envPath mainName assume outPath anon verbose
         pure (0, 0)
     let mode := if anon then " [anon]" else ""
-    let unitNote := if units then s!", whole units: {packed} member bundle(s) merged in {rounds} round(s)"
+    let unitNote := if rustUnits then s!", whole units (Rust): {packed} member(s) added in {rounds} round(s)"
+      else if units then s!", whole units: {packed} member bundle(s) merged in {rounds} round(s)"
       else ", units not completed"
     IO.println s!"[pack] wrote {outPath} (main {mainName}, \
       {assume.size} assumption cut(s) declared{unitNote}){mode}"
@@ -197,6 +207,7 @@ def packCmd : Cli.Cmd := `[Cli|
     "assume-file" : String; "Additionally read cut-points from a file (one per line; `#` comments and blank lines ignored). Unions with --assume."
     out           : String; "Output `.ixe` path. Defaults to `<name>.ixe` (e.g. `Nat.add.ixe`)."
     "no-units";             "Do not complete the logical units (the 3-edge value closure only, as before M1-h)."
+    "rust-units";           "Complete the logical units in Rust (one prune, `rs_pack_env_units`; M6R slice 5) instead of in Lean (the default, its reference)."
     verbose;                "Print pack details (source stats, kept counts, bytes written) to stderr."
 
   ARGS:

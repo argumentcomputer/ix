@@ -2714,6 +2714,26 @@ opaque rsIxeFilesEqual : @& String → @& String → IO Bool
 opaque rsPackEnv : @& String → @& String → @& Array String → @& String →
   Bool → Bool → IO Unit
 
+/-- `rsPackEnv` carrying whole logical units (M6R slice 5): the Rust form of
+    `Ix.Cli.PackCmd.packWholeUnits` (design document §6.3). The units are read
+    from the source's names and metadata (`ixon::unit::IxonUnitView`, the port
+    of `ixonUnitView`), and every member of the unit of every name whose
+    constant the bundle carries joins the prune as a root, to a fixpoint, in
+    one walk. Returns the rounds in which members were missing and the members
+    added. Same arguments as `rsPackEnv`. -/
+@[extern "rs_pack_env_units"]
+opaque rsPackEnvUnits : @& String → @& String → @& Array String → @& String →
+  Bool → Bool → IO (Nat × Nat)
+
+/-- The Rust unit view of the env at a path (`ixon::unit::IxonUnitView`), as
+    three tables for comparison with `Ix.Cli.PackCmd.ixonUnitView`: every name
+    with an auxiliary owner and its owner (`auxOwner?`); every owner (a name's
+    owner, or the name itself) and the roots of its unit (`roots`, in order);
+    every unit key and its auxiliaries (`index`, in no particular order). -/
+@[extern "rs_ixon_unit_view"]
+opaque rsIxonUnitView : @& String →
+  IO (Array (Ix.Name × Ix.Name) × Array (Ix.Name × Array Ix.Name) × Array (Ix.Name × Array Ix.Name))
+
 /-! ## Canonical merkle root over consts -/
 
 @[extern "rs_env_merkle_root"]
