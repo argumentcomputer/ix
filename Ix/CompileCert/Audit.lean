@@ -5,6 +5,7 @@ import Ix.CompileCert.StrongCone
 import Ix.CompileCert.Indexed
 import Ix.CompileCert.Canon
 import Ix.CompileCert.Changed
+import Ix.CompileCert.Conv
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -1284,3 +1285,60 @@ end Ix.CompileCert.Audit
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.cRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.cDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+/-! The roots added by M7 X1 (`Ix/CompileCert/Conv/**`): the conversion relation on the
+compiler's terms (through their erasure), its stability under the compiler's term operations,
+the development lemma (the developed term is convertible to the plain substitution; the inline
+rewrite is δ then the development), the simple types of the erasure and the development's
+termination on them, and fuel monotonicity. Audited separately, against the same allowed set,
+so the frozen line above is unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def x1Roots : Array Lean.Name :=
+  #[-- the erased terms
+    `Tm, `er, `Tm.lift, `Tm.lower, `Tm.inst, `Tm.occ, `Tm.range, `Tm.appN, `Tm.appN_append,
+    `Tm.appN_concat, `Tm.lift_zero, `Tm.lift_lift_of_le, `Tm.lift_lift_comm, `Tm.occ_lift_lt,
+    `Tm.occ_lift_mid, `Tm.occ_of_range_le, `Tm.lift_of_range_le, `Tm.lower_of_range_le,
+    `Tm.inst_of_range_le, `Tm.inst_lift_self, `Tm.inst_lift_lo, `Tm.lift_inst_hi, `Tm.inst_inst,
+    `Tm.lift_appN, `Tm.inst_appN, `Tm.lower_appN, `Tm.inst_eq_lower, `Tm.occ_inst_lt,
+    `Tm.lower_zero,
+    -- the relation and its theory
+    `pairName, `Env, `Env.empty, `pair4, `Step, `Conv, `Forall2, `ExprConv, `Conv.rfl',
+    `Conv.equivalence, `Conv.appN, `Conv.appN_args, `Conv.forall₂_refl, `Conv.beta_appN,
+    `Conv.mono, `Env.LiftClosed, `Env.InstClosed, `Env.empty_liftClosed, `Env.empty_instClosed,
+    `Env.liftClosed_of_closed, `Env.instClosed_of_closed, `Step.lift, `Conv.lift, `Step.inst,
+    `Conv.inst, `Conv.inst_val, `Conv.inst₂, `Conv.lower,
+    -- the compiler's term functions erased
+    `er_mkBVar, `er_mkFVar, `er_mkSort, `er_mkConst, `er_mkApp, `er_mkLam, `er_mkForallE,
+    `er_mkLetE, `er_mkProj, `er_mkMData, `er_getAppFnArgs, `er_mkAppN_list, `er_mkAppN,
+    `er_liftLoose_go, `er_liftLoose, `er_lowerLoose_go, `er_lowerLoose, `projCtor?_spec,
+    -- stability under the compiler's other operations
+    `Tm.mapC, `Tm.mapC_lift, `Tm.mapC_inst, `Tm.occ_mapC, `Tm.mapC_lower, `Tm.mapC_appN,
+    `Conv.mapC, `er_substLevels_go, `Tm.mapC_id, `er_substLevels, `er_canonicalizeConstNames_go,
+    `er_canonicalizeConstNames, `Tm.abstractF, `Tm.abstractF_lift, `Tm.abstractF_inst,
+    `Tm.occ_abstractF, `Tm.abstractF_appN, `Env.AbstractClosed, `Conv.abstractF,
+    `er_abstractFVars_go, `Tm.abstractF_empty, `er_abstractFVars,
+    -- the development without its tables, and the development lemma
+    `looseRangeP, `liftP, `lowerP, `occursP, `hinstP, `happP, `instantiateP, `substFVarsP,
+    `looseRangeP_eq, `er_liftP, `er_lowerP, `occursP_eq, `EForall2, `mapM_ok, `bind_ok, `map_ok,
+    `pure_ok, `hinstP_zero, `happP_zero, `happP_succ, `forall2_of_mapM, `develop_conv,
+    `hinstP_conv, `happP_conv, `instantiateP_conv, `inline_conv,
+    `Env.ofExpansions, `Tm.range_mapC, `range_substLevels, `ofExpansions_closed,
+    `ofExpansions_liftClosed, `ofExpansions_instClosed, `expansion_inline_conv, `imageInlineP,
+    `imageInlineP_conv, `foldl_inst_conv, `foldlM_conv, `substFVarsP_conv, `hasLooseBVar_go_eq,
+    `hasLooseBVar_eq, `etaReduce_conv, `er_eq_of_eRen, `exprConv_of_eRen,
+    -- simple types of the erasure, and the development's termination
+    `Ty, `Ty.size, `Ty.pair, `Ty.arrows, `Ty.pair_inj, `Ty.size_pos, `Ty.size_pair,
+    `Ty.arrows_append, `Ty.arr_inj, `pairKind, `ctorKind, `Typ, `TypArgs, `Typ.appN_iff,
+    `Typ.lift, `Typ.lift_front, `Typ.lower, `Typ.inst, `TypArgs.length, `TypArgs.append,
+    `TypArgs.split, `TypArgs.lower, `Ext, `Ext.refl, `Ext.bind, `Ext.map, `Ext.mapM,
+    `appTail_ext, `fuel_mono, `appN_eq_app, `Tm.occ_appN, `lower_lift_succ, `getAppFnArgs_sizeOf,
+    `DirectInv, `HinstOk, `size_arrows_le, `size_arrows_dom, `HinstOk.size, `pairName_ctorKind,
+    `pairName_pairKind, `typ_const_pair, `typ_pair4, `typ_lam_inv, `args_total, `HinstTotalAt,
+    `mkAppN_toList, `happP_succ_nonlam, `happP_total_of, `hinstTotalAt_of, `develop_total,
+    `happP_total, `instantiate_total, `instantiateP_of_total].map (`Ix.CompileCert.Conv ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.x1Roots Ix.CompileCert.Audit.allowedAxioms
