@@ -46,6 +46,7 @@ import Tests.Ix.Compile.PlanCache
 import Tests.Ix.Compile.ChangedSet
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CallerIndependence
+import Tests.Ix.Compile.DevCensus
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -448,6 +449,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- carriers and reserved names, on the pass3 fixtures and Init+Std
   -- (Tests.Ix.Compile.ChangedSet).
   ("changed-set", Tests.Ix.Compile.ChangedSet.run env),
+  -- M7 X1: what the development (hereditary substitution) substitutes, on the pass3
+  -- fixtures and Init+Std: depths, levels, value kinds, the core against the executable
+  -- (Tests.Ix.Compile.DevCensus).
+  ("dev-census", Tests.Ix.Compile.DevCensus.run env),
 ]
 
 def main (args : List String) : IO UInt32 := do
