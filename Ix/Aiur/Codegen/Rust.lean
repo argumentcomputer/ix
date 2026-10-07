@@ -35,6 +35,7 @@ inductive MatchPat where
   | litU64 (n : Nat)
   | wildcard
   | tuple (elems : Array MatchPat)
+  | array (elems : Array MatchPat)
   | constructor (path : Array String) (args : Array MatchPat)
   deriving Inhabited, BEq
 
@@ -73,6 +74,7 @@ inductive RustExpr where
 inductive RustStmt where
   | letStmt (isMut : Bool) (name : String) (ty : Option RustType) (val : RustExpr)
   | letPattern (pat : MatchPat) (ty : Option RustType) (val : RustExpr)
+  | assign (target : RustExpr) (val : RustExpr)
   | exprStmt (e : RustExpr)
   | returnStmt (e : RustExpr)
   | ifStmt (cond : RustExpr) (thenStmts : Array RustStmt)
@@ -143,6 +145,7 @@ partial def MatchPat.toStr : MatchPat → String
   | .litU64 n => s!"{n}u64"
   | .wildcard => "_"
   | .tuple ps => tupleText (ps.map MatchPat.toStr)
+  | .array ps => "[" ++ commaSep (ps.map MatchPat.toStr) ++ "]"
   | .constructor path ps => "::".intercalate path.toList ++
       "(" ++ commaSep (ps.map MatchPat.toStr) ++ ")"
 
@@ -167,11 +170,11 @@ partial def RustExpr.toStr : RustExpr → String
     let callee := match f with
       | .field .. => "(" ++ f.toStr ++ ")"
       | _ => f.postfixBase
-    callee ++ "(" ++ commaSep (xs.map (·.toStr)) ++ ")"
+    callee ++ "(" ++ commaSep (xs.map (·.toStrBare)) ++ ")"
   | .methodCall e n xs => e.postfixBase ++ "." ++ n ++
-      "(" ++ commaSep (xs.map (·.toStr)) ++ ")"
+      "(" ++ commaSep (xs.map (·.toStrBare)) ++ ")"
   | .constGeneric f xs => f.postfixBase ++ "::<" ++ commaSep (xs.map (·.toStr)) ++ ">"
-  | .index a i => a.postfixBase ++ "[" ++ i.toStr ++ "]"
+  | .index a i => a.postfixBase ++ "[" ++ i.toStrBare ++ "]"
   | .field e n => e.postfixBase ++ "." ++ n
   | .binop op a b => "(" ++ a.toStr ++ " " ++ op.toStr ++ " " ++ b.toStr ++ ")"
   -- Parenthesize prefix/cast expressions so postfix composition preserves precedence.
@@ -182,12 +185,12 @@ partial def RustExpr.toStr : RustExpr → String
   | .tryExpr e => e.postfixBase ++ "?"
   | .range a b => (a.map (·.toStr) |>.getD "") ++ ".." ++
       (b.map (·.toStr) |>.getD "")
-  | .macroCall n xs => n ++ "!(" ++ commaSep (xs.map (·.toStr)) ++ ")"
-  | .arrayLit xs => "[" ++ commaSep (xs.map (·.toStr)) ++ "]"
-  | .arrayRepeat e n => "[" ++ e.toStr ++ "; " ++ n.toStr ++ "]"
-  | .tuple xs => tupleText (xs.map (·.toStr))
+  | .macroCall n xs => n ++ "!(" ++ commaSep (xs.map (·.toStrBare)) ++ ")"
+  | .arrayLit xs => "[" ++ commaSep (xs.map (·.toStrBare)) ++ "]"
+  | .arrayRepeat e n => "[" ++ e.toStrBare ++ "; " ++ n.toStr ++ "]"
+  | .tuple xs => tupleText (xs.map (·.toStrBare))
   | .structLit p fs => "::".intercalate p.toList ++ " { " ++
-      commaSep (fs.map fun (n, e) => n ++ ": " ++ e.toStr) ++ " }"
+      commaSep (fs.map fun (n, e) => n ++ ": " ++ e.toStrBare) ++ " }"
   | .block b => b.toStr
   | .unsafeBlock b => "unsafe " ++ b.toStr
   | .labeledBlock label b => "'" ++ label ++ ": " ++ b.toStr
@@ -202,13 +205,24 @@ partial def RustExpr.postfixBase (e : RustExpr) : String :=
   | .closure .. | .ifExpr .. | .matchExpr .. | .range .. => "(" ++ e.toStr ++ ")"
   | _ => e.toStr
 
+/-- An expression in a position the grammar already delimits (an argument,
+    an element, an index, an initializer), where its own parentheses would
+    be redundant and trip the lints. -/
+partial def RustExpr.toStrBare : RustExpr → String
+  | .binop op a b => a.toStr ++ " " ++ op.toStr ++ " " ++ b.toStr
+  | .deref e => "*" ++ e.toStr
+  | .ref e => "&" ++ e.toStr
+  | .not e => "!" ++ e.toStr
+  | .cast e t => e.toStr ++ " as " ++ t.toStr
+  | e => e.toStr
+
 /-- Generated source stays compact: whitespace separates tokens, but nested
     syntax never expands into additional lines. Each top-level item gets one
     line. String contents are escaped before rendering, not whitespace-stripped. -/
 partial def RustBlock.toStr (b : RustBlock) : String :=
   "{ " ++ stmtsToStr b.stmts ++
     (if b.stmts.isEmpty then "" else " ") ++
-    (b.tail.map RustExpr.toStr |>.getD "") ++ " }"
+    (b.tail.map RustExpr.toStrBare |>.getD "") ++ " }"
 
 partial def renderMatch (scrut : RustExpr) (arms : Array MatchArm) : String :=
   "match " ++ scrut.toStr ++ " { " ++
@@ -219,11 +233,13 @@ partial def renderMatch (scrut : RustExpr) (arms : Array MatchArm) : String :=
 
 partial def RustStmt.toStr : RustStmt → String
   | .letStmt isMut n ty e => "let " ++ (if isMut then "mut " else "") ++ n ++
-      (ty.map (fun t => ": " ++ t.toStr) |>.getD "") ++ " = " ++ e.toStr ++ ";"
+      (ty.map (fun t => ": " ++ t.toStr) |>.getD "") ++ " = " ++ e.toStrBare ++ ";"
   | .letPattern p ty e => "let " ++ p.toStr ++
-      (ty.map (fun t => ": " ++ t.toStr) |>.getD "") ++ " = " ++ e.toStr ++ ";"
-  | .exprStmt e => e.toStr ++ ";"
-  | .returnStmt e => "return " ++ e.toStr ++ ";"
+      (ty.map (fun t => ": " ++ t.toStr) |>.getD "") ++ " = " ++ e.toStrBare ++ ";"
+  | .assign t e => t.toStr ++ " = " ++ e.toStrBare ++ ";"
+  | .exprStmt e => e.toStrBare ++ ";"
+  | .returnStmt (.tuple #[]) => "return;"
+  | .returnStmt e => "return " ++ e.toStrBare ++ ";"
   | .ifStmt c t e => "if " ++ c.toStr ++ " " ++
       RustBlock.toStr { stmts := t } ++
       (e.map (fun ss => " else " ++ RustBlock.toStr { stmts := ss }) |>.getD "")
@@ -231,7 +247,7 @@ partial def RustStmt.toStr : RustStmt → String
   | .block ss => RustBlock.toStr { stmts := ss }
   | .forStmt p e ss => "for " ++ p.toStr ++ " in " ++ e.toStr ++
       " " ++ RustBlock.toStr { stmts := ss }
-  | .breakWith label e => "break '" ++ label ++ " " ++ e.toStr ++ ";"
+  | .breakWith label e => "break '" ++ label ++ " " ++ e.toStrBare ++ ";"
 
 partial def stmtsToStr (ss : Array RustStmt) : String :=
   " ".intercalate (ss.toList.map RustStmt.toStr)
@@ -243,10 +259,12 @@ def RustItem.toStr : RustItem → String
     let vis := match f.visibility with | .internal => "" | .crate => "pub(crate) "
     let generics := if f.constParams.isEmpty then "" else
       "<" ++ commaSep (f.constParams.map fun (n, t) => "const " ++ n ++ ": " ++ t.toStr) ++ ">"
+    -- A unit return type is left implicit, as the lints prefer.
+    let returns := if f.returnTy == .tuple #[] then "" else "-> " ++ f.returnTy.toStr ++ " "
     vis ++ "fn " ++ f.name ++ generics ++ "(" ++
       commaSep (f.params.map fun (n, t) => n ++ ": " ++ t.toStr) ++
       (if f.params.isEmpty then "" else ",") ++
-      ") -> " ++ f.returnTy.toStr ++ " " ++ f.body.toStr ++ "\n"
+      ") " ++ returns ++ f.body.toStr ++ "\n"
 
 end Aiur.Codegen
 end
