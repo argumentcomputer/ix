@@ -212,9 +212,11 @@ def eqUpTo (mapB : Name → Name) : Expr → Expr → Bool
   | .proj s i a _, .proj s' i' b _ => s == mapB s' && i == i' && eqUpTo mapB a b
   | _, _ => false
 
-/-- `eqUpTo id`, walking distinct pairs. The hash shortcut uses the same
-hash-consistent-term invariant as the expression maps; metadata is still
-ignored on either side, and the first differing child still ends the walk. -/
+/-- `eqUpTo id`, walking distinct pairs. The hash shortcut and visited hits
+require run-local expression-key faithfulness (equal keys denote the same
+full expression), independently of constructor consistency; see Dag.lean.
+Metadata is still ignored on either side, and the first differing child
+still ends the walk. This is an implementation premise, not a theorem. -/
 def alphaEq (a b : Expr) : Bool := Id.run do
   let mut seen : Std.HashSet (Expr × Expr) := {}
   let mut stack := #[(a, b)]
@@ -467,3 +469,4 @@ def defaultFuel : Nat := 1000000
 end Ix.Compile.Clique
 
 end
+

@@ -27,16 +27,20 @@ def samples : Array Expr := Id.run do
       Expr.mkProj (nm "S") k shared]
   return out
 
+/-- Compare the full derived tree representations, including constructor fields,
+rather than Expr's hash-only BEq. This is regression evidence, not a proof. -/
+def sameTree (a b : Expr) : Bool := reprStr a == reprStr b
+
 def helpersAgree : Bool := samples.all fun e =>
   (List.range 5).all fun k =>
     (List.range 4).all fun n =>
-      liftLoose e n k == _root_.Ix.Compile.Canon.liftLoose e n k &&
-      lowerLoose e n k == _root_.Ix.Compile.Canon.lowerLoose e n k &&
+      sameTree (liftLoose e n k) (_root_.Ix.Compile.Canon.liftLoose e n k) &&
+      sameTree (lowerLoose e n k) (_root_.Ix.Compile.Canon.lowerLoose e n k) &&
       looseAtLeast e k == _root_.Ix.Compile.Canon.looseAtLeast e k &&
-      instantiateRev e #[Expr.mkBVar k, Expr.mkFVar (nm "x")] ==
-        _root_.Ix.Compile.Canon.instantiateRev e #[Expr.mkBVar k, Expr.mkFVar (nm "x")] &&
-      abstractFVars #[nm "x", nm "y", nm "x"] e ==
-        _root_.Ix.Compile.Image.abstractFVars #[nm "x", nm "y", nm "x"] e
+      sameTree (instantiateRev e #[Expr.mkBVar k, Expr.mkFVar (nm "x")])
+        (_root_.Ix.Compile.Canon.instantiateRev e #[Expr.mkBVar k, Expr.mkFVar (nm "x")]) &&
+      sameTree (abstractFVars #[nm "x", nm "y", nm "x"] e)
+        (_root_.Ix.Compile.Image.abstractFVars #[nm "x", nm "y", nm "x"] e)
 
 def layout : WFLayout := {
   n := 2, sigma := #[1, 0], mutualName := nm "source", newMutualName := nm "target",
@@ -89,3 +93,4 @@ def suite : List TestSeq := [
 
 end Tests.Ix.Compile.CliqueDag
 end
+

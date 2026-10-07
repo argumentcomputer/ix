@@ -154,42 +154,55 @@ pub fn scan_proofs(
   e: &Expr,
   acc: &mut FxHashMap<Name, Vec<usize>>,
 ) {
-  match e.as_data() {
-    ExprData::App(f, a, _) => {
-      let (h, args) = get_app_fn_args(e);
-      if let ExprData::Const(c, _, _) = h.as_data()
-        && proofs.contains(c)
-        && !acc.contains_key(c)
-      {
-        let mut out = Vec::new();
-        for x in &args {
-          match strip_mdata(x).as_data() {
-            ExprData::Fvar(y, _) => match fixed.iter().position(|z| z == y) {
-              Some(i) => out.push(i),
-              None => break,
-            },
-            _ => break,
+  fn visit(
+    proofs: &FxHashSet<Name>,
+    fixed: &[Name],
+    e: &Expr,
+    acc: &mut FxHashMap<Name, Vec<usize>>,
+    seen: &mut FxHashSet<Hash>,
+  ) {
+    if !seen.insert(*e.get_hash()) {
+      return;
+    }
+
+    match e.as_data() {
+      ExprData::App(f, a, _) => {
+        let (h, args) = get_app_fn_args(e);
+        if let ExprData::Const(c, _, _) = h.as_data()
+          && proofs.contains(c)
+          && !acc.contains_key(c)
+        {
+          let mut out = Vec::new();
+          for x in &args {
+            match strip_mdata(x).as_data() {
+              ExprData::Fvar(y, _) => match fixed.iter().position(|z| z == y) {
+                Some(i) => out.push(i),
+                None => break,
+              },
+              _ => break,
+            }
           }
+          acc.insert(c.clone(), out);
         }
-        acc.insert(c.clone(), out);
-      }
-      scan_proofs(proofs, fixed, f, acc);
-      scan_proofs(proofs, fixed, a, acc);
-    },
-    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      scan_proofs(proofs, fixed, t, acc);
-      scan_proofs(proofs, fixed, b, acc);
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      scan_proofs(proofs, fixed, t, acc);
-      scan_proofs(proofs, fixed, v, acc);
-      scan_proofs(proofs, fixed, b, acc);
-    },
-    ExprData::Proj(_, _, x, _) | ExprData::Mdata(_, x, _) => {
-      scan_proofs(proofs, fixed, x, acc)
-    },
-    _ => {},
+        visit(proofs, fixed, f, acc, seen);
+        visit(proofs, fixed, a, acc, seen);
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        visit(proofs, fixed, t, acc, seen);
+        visit(proofs, fixed, b, acc, seen);
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        visit(proofs, fixed, t, acc, seen);
+        visit(proofs, fixed, v, acc, seen);
+        visit(proofs, fixed, b, acc, seen);
+      },
+      ExprData::Proj(_, _, x, _) | ExprData::Mdata(_, x, _) => {
+        visit(proofs, fixed, x, acc, seen)
+      },
+      _ => {},
+    }
   }
+  visit(proofs, fixed, e, acc, &mut FxHashSet::default());
 }
 
 /// One constant's outcome (`Transported`).
@@ -462,69 +475,95 @@ pub fn rewrite_wf_obligations(
   fuel: usize,
   expression: &Expr,
 ) -> R<Expr> {
-  if fuel == 0 {
-    return Err("WF obligation: recursion bound".into());
+  fn visit(
+    schema: &WfRootSchema,
+    sigma: &[usize],
+    fuel: usize,
+    expression: &Expr,
+    memo: &mut FxHashMap<(Hash, usize), Expr>,
+  ) -> R<Expr> {
+    let memo_key = (*expression.get_hash(), fuel);
+    if let Some(result) = memo.get(&memo_key) {
+      return Ok(result.clone());
+    }
+
+    let result = (|| {
+      if fuel == 0 {
+        return Err("WF obligation: recursion bound".into());
+      }
+      let fuel = fuel - 1;
+      let go = |memo: &mut FxHashMap<(Hash, usize), Expr>, x: &Expr| {
+        visit(schema, sigma, fuel, x, memo)
+      };
+      let (head, args) = get_app_fn_args(expression);
+      let relation: Option<(Expr, Expr, Expr)> = (|| {
+        if let (Some(source), Some(target)) =
+          (&schema.source_relation, &schema.target_relation)
+          && alpha_eq(&head, source)
+          && args.len() == 2
+        {
+          return Some((target.clone(), args[0].clone(), args[1].clone()));
+        }
+        if let Some((name, levels, a)) = const_app(expression)
+          && name == n_inv_image()
+          && a.len() == 6
+          && alpha_eq(&a[0], &schema.source_spine.typ())
+          && alpha_eq(&a[3], &schema.source_measure)
+        {
+          return Some((
+            mk_app_n(
+              cnst(&name, &levels),
+              &[
+                schema.target_spine.typ(),
+                a[1].clone(),
+                a[2].clone(),
+                schema.target_measure.clone(),
+              ],
+            ),
+            a[4].clone(),
+            a[5].clone(),
+          ));
+        }
+        None
+      })();
+      if let Some((relation, first, second)) = relation {
+        let n = schema.source_spine.size();
+        if let Some((fs, fi, fp)) = decode_inj(n, &first)
+          && let Some((ss, si, sp)) = decode_inj(n, &second)
+          && alpha_eq(&fs.typ(), &schema.source_spine.typ())
+          && alpha_eq(&ss.typ(), &schema.source_spine.typ())
+        {
+          let a = mk_inj(&schema.target_spine, sigma[fi], &go(memo, &fp)?);
+          let b = mk_inj(&schema.target_spine, sigma[si], &go(memo, &sp)?);
+          return Ok(mk_app_n(relation, &[a, b]));
+        }
+      }
+      Ok(match expression.as_data() {
+        ExprData::App(f, a, _) => Expr::app(go(memo, f)?, go(memo, a)?),
+        ExprData::Lam(n, t, b, bi, _) => {
+          Expr::lam(n.clone(), go(memo, t)?, go(memo, b)?, bi.clone())
+        },
+        ExprData::ForallE(n, t, b, bi, _) => {
+          Expr::all(n.clone(), go(memo, t)?, go(memo, b)?, bi.clone())
+        },
+        ExprData::LetE(n, t, v, b, nd, _) => {
+          Expr::letE(n.clone(), go(memo, t)?, go(memo, v)?, go(memo, b)?, *nd)
+        },
+        ExprData::Proj(s, i, x, _) => {
+          Expr::proj(s.clone(), i.clone(), go(memo, x)?)
+        },
+        ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), go(memo, x)?),
+        _ => expression.clone(),
+      })
+    })();
+
+    if let Ok(value) = &result {
+      memo.insert(memo_key, value.clone());
+    }
+
+    result
   }
-  let fuel = fuel - 1;
-  let go = |x: &Expr| rewrite_wf_obligations(schema, sigma, fuel, x);
-  let (head, args) = get_app_fn_args(expression);
-  let relation: Option<(Expr, Expr, Expr)> = (|| {
-    if let (Some(source), Some(target)) =
-      (&schema.source_relation, &schema.target_relation)
-      && alpha_eq(&head, source)
-      && args.len() == 2
-    {
-      return Some((target.clone(), args[0].clone(), args[1].clone()));
-    }
-    if let Some((name, levels, a)) = const_app(expression)
-      && name == n_inv_image()
-      && a.len() == 6
-      && alpha_eq(&a[0], &schema.source_spine.typ())
-      && alpha_eq(&a[3], &schema.source_measure)
-    {
-      return Some((
-        mk_app_n(
-          cnst(&name, &levels),
-          &[
-            schema.target_spine.typ(),
-            a[1].clone(),
-            a[2].clone(),
-            schema.target_measure.clone(),
-          ],
-        ),
-        a[4].clone(),
-        a[5].clone(),
-      ));
-    }
-    None
-  })();
-  if let Some((relation, first, second)) = relation {
-    let n = schema.source_spine.size();
-    if let Some((fs, fi, fp)) = decode_inj(n, &first)
-      && let Some((ss, si, sp)) = decode_inj(n, &second)
-      && alpha_eq(&fs.typ(), &schema.source_spine.typ())
-      && alpha_eq(&ss.typ(), &schema.source_spine.typ())
-    {
-      let a = mk_inj(&schema.target_spine, sigma[fi], &go(&fp)?);
-      let b = mk_inj(&schema.target_spine, sigma[si], &go(&sp)?);
-      return Ok(mk_app_n(relation, &[a, b]));
-    }
-  }
-  Ok(match expression.as_data() {
-    ExprData::App(f, a, _) => Expr::app(go(f)?, go(a)?),
-    ExprData::Lam(n, t, b, bi, _) => {
-      Expr::lam(n.clone(), go(t)?, go(b)?, bi.clone())
-    },
-    ExprData::ForallE(n, t, b, bi, _) => {
-      Expr::all(n.clone(), go(t)?, go(b)?, bi.clone())
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => {
-      Expr::letE(n.clone(), go(t)?, go(v)?, go(b)?, *nd)
-    },
-    ExprData::Proj(s, i, x, _) => Expr::proj(s.clone(), i.clone(), go(x)?),
-    ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), go(x)?),
-    _ => expression.clone(),
-  })
+  visit(schema, sigma, fuel, expression, &mut FxHashMap::default())
 }
 
 /// `decodeWFRoot`.
@@ -843,70 +882,100 @@ pub fn owned_wf_calls(
   depth: usize,
   e: &Expr,
 ) -> R<Expr> {
-  if fuel == 0 {
-    return Err("WF ownership: body recursion bound".into());
-  }
-  let fuel = fuel - 1;
-  if l.sigma == id_perm(l.n) {
-    return Ok(e.clone());
-  }
-  let go = |x: &Expr| owned_wf_calls(l, adapter, fuel, depth, x);
-  if let ExprData::App(..) = e.as_data() {
-    let (head, args) = get_app_fn_args(e);
-    if alpha_eq(&head, &mk_bvar(depth)) {
-      if args.len() < 2 {
-        let a2: R<Vec<Expr>> = args.iter().map(go).collect();
-        return Ok(mk_app_n(lift(adapter, depth), &a2?));
-      }
-      let Some((spine, index, payload)) = decode_inj(l.n, &args[0]) else {
-        let a2: R<Vec<Expr>> = args.iter().map(go).collect();
-        return Ok(mk_app_n(lift(adapter, depth), &a2?));
-      };
-      if !l.is_clique(&spine) {
-        return Err("WF ownership: foreign recursive injection".into());
-      }
-      let argument =
-        mk_inj(&spine.permute(&l.sigma), l.sigma[index], &go(&payload)?);
-      let proof = go(&args[1])?;
-      let mut out = vec![argument, proof];
-      for x in &args[2..] {
-        out.push(go(x)?);
-      }
-      return Ok(mk_app_n(head, &out));
+  fn visit(
+    l: &WfLayout,
+    adapter: &Expr,
+    fuel: usize,
+    depth: usize,
+    e: &Expr,
+    memo: &mut FxHashMap<(Hash, usize, usize), Expr>,
+  ) -> R<Expr> {
+    let memo_key = (*e.get_hash(), fuel, depth);
+    if let Some(result) = memo.get(&memo_key) {
+      return Ok(result.clone());
     }
-  }
-  Ok(match e.as_data() {
-    ExprData::Bvar(..) => {
-      if is_bvar(e, depth) {
-        lift(adapter, depth)
-      } else {
-        e.clone()
+
+    let result = (|| {
+      if fuel == 0 {
+        return Err("WF ownership: body recursion bound".into());
       }
-    },
-    ExprData::App(f, a, _) => Expr::app(go(f)?, go(a)?),
-    ExprData::Lam(n, t, b, bi, _) => Expr::lam(
-      n.clone(),
-      go(t)?,
-      owned_wf_calls(l, adapter, fuel, depth + 1, b)?,
-      bi.clone(),
-    ),
-    ExprData::ForallE(n, t, b, bi, _) => Expr::all(
-      n.clone(),
-      go(t)?,
-      owned_wf_calls(l, adapter, fuel, depth + 1, b)?,
-      bi.clone(),
-    ),
-    ExprData::LetE(n, t, v, b, nd, _) => Expr::letE(
-      n.clone(),
-      go(t)?,
-      go(v)?,
-      owned_wf_calls(l, adapter, fuel, depth + 1, b)?,
-      *nd,
-    ),
-    ExprData::Proj(s, i, x, _) => Expr::proj(s.clone(), i.clone(), go(x)?),
-    ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), go(x)?),
-    _ => e.clone(),
-  })
+      let fuel = fuel - 1;
+      if l.sigma == id_perm(l.n) {
+        return Ok(e.clone());
+      }
+      let go = |memo: &mut FxHashMap<(Hash, usize, usize), Expr>, x: &Expr| {
+        visit(l, adapter, fuel, depth, x, memo)
+      };
+      if let ExprData::App(..) = e.as_data() {
+        let (head, args) = get_app_fn_args(e);
+        if alpha_eq(&head, &mk_bvar(depth)) {
+          if args.len() < 2 {
+            let a2: R<Vec<Expr>> = args.iter().map(|x| go(memo, x)).collect();
+            return Ok(mk_app_n(lift(adapter, depth), &a2?));
+          }
+          let Some((spine, index, payload)) = decode_inj(l.n, &args[0]) else {
+            let a2: R<Vec<Expr>> = args.iter().map(|x| go(memo, x)).collect();
+            return Ok(mk_app_n(lift(adapter, depth), &a2?));
+          };
+          if !l.is_clique(&spine) {
+            return Err("WF ownership: foreign recursive injection".into());
+          }
+          let argument = mk_inj(
+            &spine.permute(&l.sigma),
+            l.sigma[index],
+            &go(memo, &payload)?,
+          );
+          let proof = go(memo, &args[1])?;
+          let mut out = vec![argument, proof];
+          for x in &args[2..] {
+            out.push(go(memo, x)?);
+          }
+          return Ok(mk_app_n(head, &out));
+        }
+      }
+      Ok(match e.as_data() {
+        ExprData::Bvar(..) => {
+          if is_bvar(e, depth) {
+            lift(adapter, depth)
+          } else {
+            e.clone()
+          }
+        },
+        ExprData::App(f, a, _) => Expr::app(go(memo, f)?, go(memo, a)?),
+        ExprData::Lam(n, t, b, bi, _) => Expr::lam(
+          n.clone(),
+          go(memo, t)?,
+          visit(l, adapter, fuel, depth + 1, b, memo)?,
+          bi.clone(),
+        ),
+        ExprData::ForallE(n, t, b, bi, _) => Expr::all(
+          n.clone(),
+          go(memo, t)?,
+          visit(l, adapter, fuel, depth + 1, b, memo)?,
+          bi.clone(),
+        ),
+        ExprData::LetE(n, t, v, b, nd, _) => Expr::letE(
+          n.clone(),
+          go(memo, t)?,
+          go(memo, v)?,
+          visit(l, adapter, fuel, depth + 1, b, memo)?,
+          *nd,
+        ),
+        ExprData::Proj(s, i, x, _) => {
+          Expr::proj(s.clone(), i.clone(), go(memo, x)?)
+        },
+        ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), go(memo, x)?),
+        _ => e.clone(),
+      })
+    })();
+
+    if let Ok(value) = &result {
+      memo.insert(memo_key, value.clone());
+    }
+
+    result
+  }
+  visit(l, adapter, fuel, depth, e, &mut FxHashMap::default())
 }
 
 /// `ownedWFRecAdapter`.
@@ -1446,103 +1515,138 @@ pub fn rewrite_owned_wf_uses(
   fuel: usize,
   e: &Expr,
 ) -> R<Expr> {
-  if fuel == 0 {
-    return Err("WF ownership: constant-use recursion bound".into());
-  }
-  let fuel = fuel - 1;
-  fn packed_use(
+  fn visit(
     tm: &mut Tm,
     l: &WfLayout,
     packed: &Decl,
     fuel: usize,
-    levels: &[Level],
-    args: &[Expr],
+    e: &Expr,
+    memo: &mut FxHashMap<(Hash, usize), Expr>,
   ) -> R<Expr> {
-    if args.len() < l.num_fixed {
-      return Err("WF ownership: partial fixed prefix of packed root".into());
+    let memo_key = (*e.get_hash(), fuel);
+    if let Some(result) = memo.get(&memo_key) {
+      return Ok(result.clone());
     }
-    let mut a2 = Vec::new();
-    for x in args {
-      a2.push(rewrite_owned_wf_uses(tm, l, packed, fuel, x)?);
-    }
-    let fixed = a2[..l.num_fixed].to_vec();
-    if a2.len() == l.num_fixed {
-      let (spine, _, _) = wf_packed_domain(l, packed, levels, &fixed)?;
-      let identity = tm.fresh();
-      let argument =
-        local(identity, root("input"), spine.typ(), BinderInfo::Default);
-      let value = apply_wf_packed_adapter(
-        tm,
-        l,
-        packed,
-        levels,
-        &fixed,
-        &argument.expr(),
-      )?;
-      return Ok(mk_lambda(&[argument], &value));
-    }
-    let value =
-      apply_wf_packed_adapter(tm, l, packed, levels, &fixed, &a2[l.num_fixed])?;
-    Ok(mk_app_n(value, &a2[l.num_fixed + 1..]))
-  }
-  let go =
-    |tm: &mut Tm, x: &Expr| rewrite_owned_wf_uses(tm, l, packed, fuel, x);
-  Ok(match e.as_data() {
-    ExprData::App(..) => {
-      let (head, args) = get_app_fn_args(e);
-      if let ExprData::Const(name, levels, _) = head.as_data() {
-        if *name == l.mutual_name {
-          return packed_use(tm, l, packed, fuel, levels, &args);
+    let before = tm.next;
+    let result = (|| {
+      if fuel == 0 {
+        return Err("WF ownership: constant-use recursion bound".into());
+      }
+      let fuel = fuel - 1;
+      fn packed_use(
+        tm: &mut Tm,
+        l: &WfLayout,
+        packed: &Decl,
+        fuel: usize,
+        levels: &[Level],
+        args: &[Expr],
+        memo: &mut FxHashMap<(Hash, usize), Expr>,
+      ) -> R<Expr> {
+        if args.len() < l.num_fixed {
+          return Err(
+            "WF ownership: partial fixed prefix of packed root".into(),
+          );
         }
-        if let Some(permutation) = l.proof_perm.get(name) {
-          if args.len() < permutation.len() {
-            return Err("WF ownership: partial proof use".into());
+        let mut a2 = Vec::new();
+        for x in args {
+          a2.push(visit(tm, l, packed, fuel, x, memo)?);
+        }
+        let fixed = a2[..l.num_fixed].to_vec();
+        if a2.len() == l.num_fixed {
+          let (spine, _, _) = wf_packed_domain(l, packed, levels, &fixed)?;
+          let identity = tm.fresh();
+          let argument =
+            local(identity, root("input"), spine.typ(), BinderInfo::Default);
+          let value = apply_wf_packed_adapter(
+            tm,
+            l,
+            packed,
+            levels,
+            &fixed,
+            &argument.expr(),
+          )?;
+          return Ok(mk_lambda(&[argument], &value));
+        }
+        let value = apply_wf_packed_adapter(
+          tm,
+          l,
+          packed,
+          levels,
+          &fixed,
+          &a2[l.num_fixed],
+        )?;
+        Ok(mk_app_n(value, &a2[l.num_fixed + 1..]))
+      }
+      let go = |memo: &mut FxHashMap<(Hash, usize), Expr>,
+                tm: &mut Tm,
+                x: &Expr| visit(tm, l, packed, fuel, x, memo);
+      Ok(match e.as_data() {
+        ExprData::App(..) => {
+          let (head, args) = get_app_fn_args(e);
+          if let ExprData::Const(name, levels, _) = head.as_data() {
+            if *name == l.mutual_name {
+              return packed_use(tm, l, packed, fuel, levels, &args, memo);
+            }
+            if let Some(permutation) = l.proof_perm.get(name) {
+              if args.len() < permutation.len() {
+                return Err("WF ownership: partial proof use".into());
+              }
+              let mut a2 = Vec::new();
+              for x in &args {
+                a2.push(go(memo, tm, x)?);
+              }
+              let mut out: Vec<Expr> =
+                permutation.iter().map(|&i| a2[i].clone()).collect();
+              out.extend(a2[permutation.len()..].iter().cloned());
+              return Ok(mk_app_n(head.clone(), &out));
+            }
           }
+          let h2 = go(memo, tm, &head)?;
           let mut a2 = Vec::new();
           for x in &args {
-            a2.push(go(tm, x)?);
+            a2.push(go(memo, tm, x)?);
           }
-          let mut out: Vec<Expr> =
-            permutation.iter().map(|&i| a2[i].clone()).collect();
-          out.extend(a2[permutation.len()..].iter().cloned());
-          return Ok(mk_app_n(head.clone(), &out));
-        }
-      }
-      let h2 = go(tm, &head)?;
-      let mut a2 = Vec::new();
-      for x in &args {
-        a2.push(go(tm, x)?);
-      }
-      mk_app_n(h2, &a2)
-    },
-    ExprData::Const(name, levels, _) => {
-      if *name == l.mutual_name {
-        return packed_use(tm, l, packed, fuel, levels, &[]);
-      }
-      if let Some(permutation) = l.proof_perm.get(name)
-        && !permutation.is_empty()
-      {
-        return Err("WF ownership: bare proof use".into());
-      }
-      e.clone()
-    },
-    ExprData::Lam(n, t, b, bi, _) => {
-      let t2 = go(tm, t)?;
-      Expr::lam(n.clone(), t2, go(tm, b)?, bi.clone())
-    },
-    ExprData::ForallE(n, t, b, bi, _) => {
-      let t2 = go(tm, t)?;
-      Expr::all(n.clone(), t2, go(tm, b)?, bi.clone())
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => {
-      let t2 = go(tm, t)?;
-      let v2 = go(tm, v)?;
-      Expr::letE(n.clone(), t2, v2, go(tm, b)?, *nd)
-    },
-    ExprData::Proj(s, i, x, _) => Expr::proj(s.clone(), i.clone(), go(tm, x)?),
-    ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), go(tm, x)?),
-    _ => e.clone(),
-  })
+          mk_app_n(h2, &a2)
+        },
+        ExprData::Const(name, levels, _) => {
+          if *name == l.mutual_name {
+            return packed_use(tm, l, packed, fuel, levels, &[], memo);
+          }
+          if let Some(permutation) = l.proof_perm.get(name)
+            && !permutation.is_empty()
+          {
+            return Err("WF ownership: bare proof use".into());
+          }
+          e.clone()
+        },
+        ExprData::Lam(n, t, b, bi, _) => {
+          let t2 = go(memo, tm, t)?;
+          Expr::lam(n.clone(), t2, go(memo, tm, b)?, bi.clone())
+        },
+        ExprData::ForallE(n, t, b, bi, _) => {
+          let t2 = go(memo, tm, t)?;
+          Expr::all(n.clone(), t2, go(memo, tm, b)?, bi.clone())
+        },
+        ExprData::LetE(n, t, v, b, nd, _) => {
+          let t2 = go(memo, tm, t)?;
+          let v2 = go(memo, tm, v)?;
+          Expr::letE(n.clone(), t2, v2, go(memo, tm, b)?, *nd)
+        },
+        ExprData::Proj(s, i, x, _) => {
+          Expr::proj(s.clone(), i.clone(), go(memo, tm, x)?)
+        },
+        ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), go(memo, tm, x)?),
+        _ => e.clone(),
+      })
+    })();
+    if before == tm.next
+      && let Ok(value) = &result
+    {
+      memo.insert(memo_key, value.clone());
+    }
+    result
+  }
+  visit(tm, l, packed, fuel, e, &mut FxHashMap::default())
 }
 
 /// `transportOwnedWFEqDef`.
@@ -1981,4 +2085,69 @@ pub fn finish_renames(
   renames.extend(numbered);
   renames.extend(lemma_renames);
   WfOutput { decls: renamed, renames }
+}
+
+// These neighbours distinguish fuel-sensitive and stateful visits even when
+// the same expression occurs more than once in the DAG.
+#[cfg(test)]
+mod dag_tests {
+  use super::*;
+
+  fn layout_and_packed() -> (WfLayout, Decl) {
+    let spine = Spine {
+      kind: PackKind::Psum,
+      leaves: vec![sort0(), sort0()],
+      lvls: vec![Level::zero(), Level::zero()],
+    };
+    let layout = WfLayout {
+      n: 2,
+      sigma: vec![1, 0],
+      mutual_name: root("source"),
+      new_mutual_name: root("target"),
+      num_fixed: 0,
+      fixed_perm: vec![],
+      leaves: spine.leaves.clone(),
+      proof_perm: FxHashMap::default(),
+      member_fixed: vec![],
+    };
+    let packed = Decl {
+      name: layout.mutual_name.clone(),
+      level_params: vec![],
+      typ: Expr::all(root("input"), spine.typ(), sort0(), BinderInfo::Default),
+      value: cnst(&ln("WellFounded.Nat.fix"), &[Level::zero(), Level::zero()]),
+      is_thm: false,
+    };
+    (layout, packed)
+  }
+
+  #[test]
+  fn shared_visits_preserve_fuel_refusal_and_success() {
+    let (layout, _) = layout_and_packed();
+    let shared = Expr::app(cnst(&root("f"), &[]), cnst(&root("a"), &[]));
+    let term = Expr::app(shared.clone(), Expr::app(shared.clone(), shared));
+    assert_eq!(
+      owned_wf_calls(&layout, &mk_bvar(0), 3, 0, &term),
+      Err("WF ownership: body recursion bound".into())
+    );
+    assert_eq!(owned_wf_calls(&layout, &mk_bvar(0), 4, 0, &term), Ok(term));
+  }
+
+  #[test]
+  fn shared_allocating_visits_preserve_fresh_counter() {
+    let (layout, packed) = layout_and_packed();
+    let use_packed = cnst(&layout.mutual_name, &[]);
+    let term =
+      mk_app_n(cnst(&root("consume"), &[]), &[use_packed.clone(), use_packed]);
+    let mut tm = Tm::default();
+    assert!(
+      rewrite_owned_wf_uses(&mut tm, &layout, &packed, 10, &term).is_ok()
+    );
+    assert_eq!(tm.next, 6);
+    let plain = Expr::app(cnst(&root("f"), &[]), cnst(&root("x"), &[]));
+    assert_eq!(
+      rewrite_owned_wf_uses(&mut tm, &layout, &packed, 10, &plain),
+      Ok(plain)
+    );
+    assert_eq!(tm.next, 6);
+  }
 }

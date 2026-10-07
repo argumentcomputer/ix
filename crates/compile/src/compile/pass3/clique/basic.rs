@@ -301,27 +301,39 @@ pub fn is_app_of_arity(e: &Expr, n: &Name, k: usize) -> bool {
 
 /// `stripAllMdata`.
 pub fn strip_all_mdata(e: &Expr) -> Expr {
-  match e.as_data() {
-    ExprData::Mdata(_, x, _) => strip_all_mdata(x),
-    ExprData::App(f, a, _) => Expr::app(strip_all_mdata(f), strip_all_mdata(a)),
-    ExprData::Lam(n, t, b, bi, _) => {
-      Expr::lam(n.clone(), strip_all_mdata(t), strip_all_mdata(b), bi.clone())
-    },
-    ExprData::ForallE(n, t, b, bi, _) => {
-      Expr::all(n.clone(), strip_all_mdata(t), strip_all_mdata(b), bi.clone())
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => Expr::letE(
-      n.clone(),
-      strip_all_mdata(t),
-      strip_all_mdata(v),
-      strip_all_mdata(b),
-      *nd,
-    ),
-    ExprData::Proj(s, i, x, _) => {
-      Expr::proj(s.clone(), i.clone(), strip_all_mdata(x))
-    },
-    _ => e.clone(),
+  fn visit(e: &Expr, memo: &mut FxHashMap<Hash, Expr>) -> Expr {
+    let memo_key = px::key(e);
+    if let Some(result) = memo.get(&memo_key) {
+      return result.clone();
+    }
+    let result = {
+      match e.as_data() {
+        ExprData::Mdata(_, x, _) => visit(x, memo),
+        ExprData::App(f, a, _) => Expr::app(visit(f, memo), visit(a, memo)),
+        ExprData::Lam(n, t, b, bi, _) => {
+          Expr::lam(n.clone(), visit(t, memo), visit(b, memo), bi.clone())
+        },
+        ExprData::ForallE(n, t, b, bi, _) => {
+          Expr::all(n.clone(), visit(t, memo), visit(b, memo), bi.clone())
+        },
+        ExprData::LetE(n, t, v, b, nd, _) => Expr::letE(
+          n.clone(),
+          visit(t, memo),
+          visit(v, memo),
+          visit(b, memo),
+          *nd,
+        ),
+        ExprData::Proj(s, i, x, _) => {
+          Expr::proj(s.clone(), i.clone(), visit(x, memo))
+        },
+        _ => e.clone(),
+      }
+    };
+    memo.insert(memo_key, result.clone());
+    result
   }
+
+  visit(e, &mut FxHashMap::default())
 }
 
 /// `eqUpTo`: equality up to binder names, binder info and `mdata`, with the
@@ -369,90 +381,147 @@ pub fn alpha_eq(a: &Expr, b: &Expr) -> bool {
 }
 
 fn alpha_eq_go(a: &Expr, b: &Expr) -> bool {
-  if a.get_hash() == b.get_hash() {
-    return true;
+  fn visit(
+    a: &Expr,
+    b: &Expr,
+    memo: &mut FxHashMap<(Hash, Hash), bool>,
+  ) -> bool {
+    let memo_key = (px::key(a), px::key(b));
+    if let Some(result) = memo.get(&memo_key) {
+      return *result;
+    }
+    let result = (|| {
+      if a.get_hash() == b.get_hash() {
+        return true;
+      }
+      match (a.as_data(), b.as_data()) {
+        (ExprData::Mdata(_, x, _), _) => visit(x, b, memo),
+        (_, ExprData::Mdata(_, y, _)) => visit(a, y, memo),
+        (ExprData::Bvar(i, _), ExprData::Bvar(j, _)) => i == j,
+        (ExprData::Fvar(x, _), ExprData::Fvar(y, _)) => x == y,
+        (ExprData::Mvar(x, _), ExprData::Mvar(y, _)) => x == y,
+        (ExprData::Sort(u, _), ExprData::Sort(v, _)) => u == v,
+        (ExprData::Const(x, us, _), ExprData::Const(y, vs, _)) => {
+          x == y && us == vs
+        },
+        (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
+          visit(f, g, memo) && visit(x, y, memo)
+        },
+        (ExprData::Lam(_, t, b1, _, _), ExprData::Lam(_, t2, b2, _, _))
+        | (
+          ExprData::ForallE(_, t, b1, _, _),
+          ExprData::ForallE(_, t2, b2, _, _),
+        ) => visit(t, t2, memo) && visit(b1, b2, memo),
+        (
+          ExprData::LetE(_, t, v, b1, _, _),
+          ExprData::LetE(_, t2, v2, b2, _, _),
+        ) => visit(t, t2, memo) && visit(v, v2, memo) && visit(b1, b2, memo),
+        (ExprData::Lit(x, _), ExprData::Lit(y, _)) => x == y,
+        (ExprData::Proj(s, i, x, _), ExprData::Proj(s2, i2, y, _)) => {
+          s == s2 && i == i2 && visit(x, y, memo)
+        },
+        _ => false,
+      }
+    })();
+    memo.insert(memo_key, result);
+    result
   }
-  match (a.as_data(), b.as_data()) {
-    (ExprData::Mdata(_, x, _), _) => alpha_eq_go(x, b),
-    (_, ExprData::Mdata(_, y, _)) => alpha_eq_go(a, y),
-    (ExprData::Bvar(i, _), ExprData::Bvar(j, _)) => i == j,
-    (ExprData::Fvar(x, _), ExprData::Fvar(y, _)) => x == y,
-    (ExprData::Mvar(x, _), ExprData::Mvar(y, _)) => x == y,
-    (ExprData::Sort(u, _), ExprData::Sort(v, _)) => u == v,
-    (ExprData::Const(x, us, _), ExprData::Const(y, vs, _)) => {
-      x == y && us == vs
-    },
-    (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
-      alpha_eq_go(f, g) && alpha_eq_go(x, y)
-    },
-    (ExprData::Lam(_, t, b1, _, _), ExprData::Lam(_, t2, b2, _, _))
-    | (ExprData::ForallE(_, t, b1, _, _), ExprData::ForallE(_, t2, b2, _, _)) => {
-      alpha_eq_go(t, t2) && alpha_eq_go(b1, b2)
-    },
-    (
-      ExprData::LetE(_, t, v, b1, _, _),
-      ExprData::LetE(_, t2, v2, b2, _, _),
-    ) => alpha_eq_go(t, t2) && alpha_eq_go(v, v2) && alpha_eq_go(b1, b2),
-    (ExprData::Lit(x, _), ExprData::Lit(y, _)) => x == y,
-    (ExprData::Proj(s, i, x, _), ExprData::Proj(s2, i2, y, _)) => {
-      s == s2 && i == i2 && alpha_eq_go(x, y)
-    },
-    _ => false,
-  }
+
+  visit(a, b, &mut FxHashMap::default())
 }
 
 /// `substBVar0Same`: loose `bvar 0` of `body` replaced by `t`, which lives
 /// in the same context (no variable is lowered).
 pub fn subst_bvar0_same(body: &Expr, t: &Expr) -> Expr {
-  fn go(e: &Expr, t: &Expr, d: usize) -> Expr {
-    match e.as_data() {
-      ExprData::Bvar(i, _) => {
-        if nat_usize(i) == d {
-          lift_loose(t, d, 0)
-        } else {
-          e.clone()
-        }
-      },
-      ExprData::App(f, a, _) => Expr::app(go(f, t, d), go(a, t, d)),
-      ExprData::Lam(n, ty, b, bi, _) => {
-        Expr::lam(n.clone(), go(ty, t, d), go(b, t, d + 1), bi.clone())
-      },
-      ExprData::ForallE(n, ty, b, bi, _) => {
-        Expr::all(n.clone(), go(ty, t, d), go(b, t, d + 1), bi.clone())
-      },
-      ExprData::LetE(n, ty, v, b, nd, _) => {
-        Expr::letE(n.clone(), go(ty, t, d), go(v, t, d), go(b, t, d + 1), *nd)
-      },
-      ExprData::Proj(s, i, x, _) => {
-        Expr::proj(s.clone(), i.clone(), go(x, t, d))
-      },
-      ExprData::Mdata(m, x, _) => Expr::mdata(m.clone(), go(x, t, d)),
-      _ => e.clone(),
+  fn go(
+    e: &Expr,
+    t: &Expr,
+    d: usize,
+    memo: &mut FxHashMap<(Hash, usize), Expr>,
+  ) -> Expr {
+    let memo_key = (px::key(e), d);
+    if let Some(result) = memo.get(&memo_key) {
+      return result.clone();
     }
+    let result = {
+      match e.as_data() {
+        ExprData::Bvar(i, _) => {
+          if nat_usize(i) == d {
+            lift_loose(t, d, 0)
+          } else {
+            e.clone()
+          }
+        },
+        ExprData::App(f, a, _) => {
+          Expr::app(go(f, t, d, memo), go(a, t, d, memo))
+        },
+        ExprData::Lam(n, ty, b, bi, _) => Expr::lam(
+          n.clone(),
+          go(ty, t, d, memo),
+          go(b, t, d + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::ForallE(n, ty, b, bi, _) => Expr::all(
+          n.clone(),
+          go(ty, t, d, memo),
+          go(b, t, d + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::LetE(n, ty, v, b, nd, _) => Expr::letE(
+          n.clone(),
+          go(ty, t, d, memo),
+          go(v, t, d, memo),
+          go(b, t, d + 1, memo),
+          *nd,
+        ),
+        ExprData::Proj(s, i, x, _) => {
+          Expr::proj(s.clone(), i.clone(), go(x, t, d, memo))
+        },
+        ExprData::Mdata(m, x, _) => Expr::mdata(m.clone(), go(x, t, d, memo)),
+        _ => e.clone(),
+      }
+    };
+    memo.insert(memo_key, result.clone());
+    result
   }
-  go(body, t, 0)
+  go(body, t, 0, &mut FxHashMap::default())
 }
 
 /// `Canon.looseAtLeast`: every loose bound variable is `>= k`.
 pub fn loose_all_at_least(e: &Expr, d: usize) -> bool {
-  fn go(e: &Expr, k: usize, d: usize) -> bool {
-    match e.as_data() {
-      ExprData::Bvar(i, _) => {
-        let i = nat_usize(i);
-        i < k || i - k >= d
-      },
-      ExprData::App(f, a, _) => go(f, k, d) && go(a, k, d),
-      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-        go(t, k, d) && go(b, k + 1, d)
-      },
-      ExprData::LetE(_, t, v, b, _, _) => {
-        go(t, k, d) && go(v, k, d) && go(b, k + 1, d)
-      },
-      ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => go(s, k, d),
-      _ => true,
+  fn go(
+    e: &Expr,
+    k: usize,
+    d: usize,
+    memo: &mut FxHashMap<(Hash, usize), bool>,
+  ) -> bool {
+    let memo_key = (px::key(e), k);
+    if let Some(result) = memo.get(&memo_key) {
+      return *result;
     }
+    let result = {
+      match e.as_data() {
+        ExprData::Bvar(i, _) => {
+          let i = nat_usize(i);
+          i < k || i - k >= d
+        },
+        ExprData::App(f, a, _) => go(f, k, d, memo) && go(a, k, d, memo),
+        ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+          go(t, k, d, memo) && go(b, k + 1, d, memo)
+        },
+        ExprData::LetE(_, t, v, b, _, _) => {
+          go(t, k, d, memo) && go(v, k, d, memo) && go(b, k + 1, d, memo)
+        },
+        ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => {
+          go(s, k, d, memo)
+        },
+        _ => true,
+      }
+    };
+    memo.insert(memo_key, result);
+    result
   }
-  go(e, 0, d)
+  go(e, 0, d, &mut FxHashMap::default())
 }
 
 /// `lower?`.
@@ -519,7 +588,12 @@ pub fn const_occurrences(p: &dyn Fn(&Name) -> bool, e: &Expr) -> Vec<Name> {
     p: &dyn Fn(&Name) -> bool,
     acc: &mut Vec<Name>,
     seen: &mut rustc_hash::FxHashSet<Name>,
+    nodes: &mut rustc_hash::FxHashSet<Hash>,
   ) {
+    if !nodes.insert(px::key(e)) {
+      return;
+    }
+
     match e.as_data() {
       ExprData::Const(n, _, _) => {
         if p(n) && seen.insert(n.clone()) {
@@ -527,93 +601,135 @@ pub fn const_occurrences(p: &dyn Fn(&Name) -> bool, e: &Expr) -> Vec<Name> {
         }
       },
       ExprData::App(f, a, _) => {
-        go(f, p, acc, seen);
-        go(a, p, acc, seen);
+        go(f, p, acc, seen, nodes);
+        go(a, p, acc, seen, nodes);
       },
       ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-        go(t, p, acc, seen);
-        go(b, p, acc, seen);
+        go(t, p, acc, seen, nodes);
+        go(b, p, acc, seen, nodes);
       },
       ExprData::LetE(_, t, v, b, _, _) => {
-        go(t, p, acc, seen);
-        go(v, p, acc, seen);
-        go(b, p, acc, seen);
+        go(t, p, acc, seen, nodes);
+        go(v, p, acc, seen, nodes);
+        go(b, p, acc, seen, nodes);
       },
       ExprData::Proj(_, _, x, _) | ExprData::Mdata(_, x, _) => {
-        go(x, p, acc, seen)
+        go(x, p, acc, seen, nodes)
       },
       _ => {},
     }
   }
   let mut acc = Vec::new();
   let mut seen = rustc_hash::FxHashSet::default();
-  go(e, p, &mut acc, &mut seen);
+  go(e, p, &mut acc, &mut seen, &mut rustc_hash::FxHashSet::default());
   acc
 }
 
 /// `renameConsts` (projection structure names are left alone).
 pub fn rename_consts(m: &dyn Fn(&Name) -> Option<Name>, e: &Expr) -> Expr {
-  match e.as_data() {
-    ExprData::Const(n, us, _) => match m(n) {
-      Some(n2) => Expr::cnst(n2, us.clone()),
-      None => e.clone(),
-    },
-    ExprData::App(f, a, _) => {
-      Expr::app(rename_consts(m, f), rename_consts(m, a))
-    },
-    ExprData::Lam(n, t, b, bi, _) => {
-      Expr::lam(n.clone(), rename_consts(m, t), rename_consts(m, b), bi.clone())
-    },
-    ExprData::ForallE(n, t, b, bi, _) => {
-      Expr::all(n.clone(), rename_consts(m, t), rename_consts(m, b), bi.clone())
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => Expr::letE(
-      n.clone(),
-      rename_consts(m, t),
-      rename_consts(m, v),
-      rename_consts(m, b),
-      *nd,
-    ),
-    ExprData::Proj(s, i, x, _) => {
-      Expr::proj(s.clone(), i.clone(), rename_consts(m, x))
-    },
-    ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), rename_consts(m, x)),
-    _ => e.clone(),
+  fn visit(
+    m: &dyn Fn(&Name) -> Option<Name>,
+    e: &Expr,
+    memo: &mut FxHashMap<Hash, Expr>,
+  ) -> Expr {
+    let memo_key = px::key(e);
+    if let Some(result) = memo.get(&memo_key) {
+      return result.clone();
+    }
+    let result = {
+      match e.as_data() {
+        ExprData::Const(n, us, _) => match m(n) {
+          Some(n2) => Expr::cnst(n2, us.clone()),
+          None => e.clone(),
+        },
+        ExprData::App(f, a, _) => {
+          Expr::app(visit(m, f, memo), visit(m, a, memo))
+        },
+        ExprData::Lam(n, t, b, bi, _) => {
+          Expr::lam(n.clone(), visit(m, t, memo), visit(m, b, memo), bi.clone())
+        },
+        ExprData::ForallE(n, t, b, bi, _) => {
+          Expr::all(n.clone(), visit(m, t, memo), visit(m, b, memo), bi.clone())
+        },
+        ExprData::LetE(n, t, v, b, nd, _) => Expr::letE(
+          n.clone(),
+          visit(m, t, memo),
+          visit(m, v, memo),
+          visit(m, b, memo),
+          *nd,
+        ),
+        ExprData::Proj(s, i, x, _) => {
+          Expr::proj(s.clone(), i.clone(), visit(m, x, memo))
+        },
+        ExprData::Mdata(d, x, _) => Expr::mdata(d.clone(), visit(m, x, memo)),
+        _ => e.clone(),
+      }
+    };
+    memo.insert(memo_key, result.clone());
+    result
   }
+
+  visit(m, e, &mut FxHashMap::default())
 }
 
 /// `mentions`.
 pub fn mentions(n: &Name, e: &Expr) -> bool {
-  match e.as_data() {
-    ExprData::Const(m, _, _) => m == n,
-    ExprData::App(f, a, _) => mentions(n, f) || mentions(n, a),
-    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      mentions(n, t) || mentions(n, b)
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      mentions(n, t) || mentions(n, v) || mentions(n, b)
-    },
-    ExprData::Proj(_, _, x, _) | ExprData::Mdata(_, x, _) => mentions(n, x),
-    _ => false,
+  fn visit(n: &Name, e: &Expr, memo: &mut FxHashMap<Hash, bool>) -> bool {
+    let memo_key = px::key(e);
+    if let Some(result) = memo.get(&memo_key) {
+      return *result;
+    }
+    let result = {
+      match e.as_data() {
+        ExprData::Const(m, _, _) => m == n,
+        ExprData::App(f, a, _) => visit(n, f, memo) || visit(n, a, memo),
+        ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+          visit(n, t, memo) || visit(n, b, memo)
+        },
+        ExprData::LetE(_, t, v, b, _, _) => {
+          visit(n, t, memo) || visit(n, v, memo) || visit(n, b, memo)
+        },
+        ExprData::Proj(_, _, x, _) | ExprData::Mdata(_, x, _) => {
+          visit(n, x, memo)
+        },
+        _ => false,
+      }
+    };
+    memo.insert(memo_key, result);
+    result
   }
+
+  visit(n, e, &mut FxHashMap::default())
 }
 
 /// `mentionsFVar`.
 pub fn mentions_fvar(x: &Name, e: &Expr) -> bool {
-  match e.as_data() {
-    ExprData::Fvar(y, _) => x == y,
-    ExprData::App(f, a, _) => mentions_fvar(x, f) || mentions_fvar(x, a),
-    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      mentions_fvar(x, t) || mentions_fvar(x, b)
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      mentions_fvar(x, t) || mentions_fvar(x, v) || mentions_fvar(x, b)
-    },
-    ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
-      mentions_fvar(x, e)
-    },
-    _ => false,
+  fn visit(x: &Name, e: &Expr, memo: &mut FxHashMap<Hash, bool>) -> bool {
+    let memo_key = px::key(e);
+    if let Some(result) = memo.get(&memo_key) {
+      return *result;
+    }
+    let result = {
+      match e.as_data() {
+        ExprData::Fvar(y, _) => x == y,
+        ExprData::App(f, a, _) => visit(x, f, memo) || visit(x, a, memo),
+        ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+          visit(x, t, memo) || visit(x, b, memo)
+        },
+        ExprData::LetE(_, t, v, b, _, _) => {
+          visit(x, t, memo) || visit(x, v, memo) || visit(x, b, memo)
+        },
+        ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
+          visit(x, e, memo)
+        },
+        _ => false,
+      }
+    };
+    memo.insert(memo_key, result);
+    result
   }
+
+  visit(x, e, &mut FxHashMap::default())
 }
 
 pub fn is_bvar(e: &Expr, i: usize) -> bool {

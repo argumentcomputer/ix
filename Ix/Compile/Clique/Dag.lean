@@ -12,8 +12,14 @@
   (`Ix/Compile/Clique/**`) uses them in place of those helpers, which are
   unchanged (Pass 1 and the image generator keep theirs).
 
-  For hash-consistent terms built by the hashing constructors, these walks
-  preserve the original results using two devices:
+  Two separate premises justify the implementation: constructor consistency
+  (every stored hash matches the hashing constructor's result) permits the
+  identity skips; run-local key faithfulness (equal expression keys denote
+  the same full expression throughout a call) permits memo and visited hits.
+  Constructor consistency alone does not imply key faithfulness: distinct
+  constructor-built expressions can in principle collide. These premises
+  describe the implementation, not a proved equivalence on arbitrary Expr.
+  Subject to both premises, these walks preserve the original results:
   * **a memo by subterm and binder depth** within one call: each helper is a
     function of the subterm and the depth below the call's root (its other
     arguments are fixed during the call), and `Ix.Expr`'s equality is the
@@ -335,3 +341,4 @@ def mentionsFVar (x : Name) (e : Expr) : Bool := Id.run do
 end Ix.Compile.Clique
 
 end
+

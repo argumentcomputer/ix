@@ -19,7 +19,9 @@ use ix_common::env::{
 pub type Hash = blake3::Hash;
 
 /// The hash key of an expression (`Ix.Expr`'s `BEq`/`Hashable` are by the
-/// embedded hash).
+/// embedded hash). Memo hits require run-local key faithfulness: equal keys
+/// denote the same complete expression; constructor consistency alone does not
+/// rule out collisions. The memo tables are implementation caches, not proofs.
 pub fn key(e: &Expr) -> Hash {
   *e.get_hash()
 }
@@ -156,30 +158,55 @@ pub fn lift_loose(e: &Expr, n: usize, cutoff: usize) -> Expr {
   if n == 0 {
     return e.clone();
   }
-  fn go(e: &Expr, n: usize, c: usize) -> Expr {
-    match e.as_data() {
-      ExprData::Bvar(i, _) => {
-        let i = nat_usize(i);
-        if i >= c { bvar(i + n) } else { bvar(i) }
-      },
-      ExprData::App(f, a, _) => Expr::app(go(f, n, c), go(a, n, c)),
-      ExprData::Lam(nm, t, b, bi, _) => {
-        Expr::lam(nm.clone(), go(t, n, c), go(b, n, c + 1), bi.clone())
-      },
-      ExprData::ForallE(nm, t, b, bi, _) => {
-        Expr::all(nm.clone(), go(t, n, c), go(b, n, c + 1), bi.clone())
-      },
-      ExprData::LetE(nm, t, v, b, nd, _) => {
-        Expr::letE(nm.clone(), go(t, n, c), go(v, n, c), go(b, n, c + 1), *nd)
-      },
-      ExprData::Proj(nm, i, s, _) => {
-        Expr::proj(nm.clone(), i.clone(), go(s, n, c))
-      },
-      ExprData::Mdata(md, x, _) => Expr::mdata(md.clone(), go(x, n, c)),
-      _ => e.clone(),
+  fn go(
+    e: &Expr,
+    n: usize,
+    c: usize,
+    memo: &mut FxHashMap<(Hash, usize), Expr>,
+  ) -> Expr {
+    let memo_key = (key(e), c);
+    if let Some(result) = memo.get(&memo_key) {
+      return result.clone();
     }
+    let result = {
+      match e.as_data() {
+        ExprData::Bvar(i, _) => {
+          let i = nat_usize(i);
+          if i >= c { bvar(i + n) } else { bvar(i) }
+        },
+        ExprData::App(f, a, _) => {
+          Expr::app(go(f, n, c, memo), go(a, n, c, memo))
+        },
+        ExprData::Lam(nm, t, b, bi, _) => Expr::lam(
+          nm.clone(),
+          go(t, n, c, memo),
+          go(b, n, c + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::ForallE(nm, t, b, bi, _) => Expr::all(
+          nm.clone(),
+          go(t, n, c, memo),
+          go(b, n, c + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::LetE(nm, t, v, b, nd, _) => Expr::letE(
+          nm.clone(),
+          go(t, n, c, memo),
+          go(v, n, c, memo),
+          go(b, n, c + 1, memo),
+          *nd,
+        ),
+        ExprData::Proj(nm, i, s, _) => {
+          Expr::proj(nm.clone(), i.clone(), go(s, n, c, memo))
+        },
+        ExprData::Mdata(md, x, _) => Expr::mdata(md.clone(), go(x, n, c, memo)),
+        _ => e.clone(),
+      }
+    };
+    memo.insert(memo_key, result.clone());
+    result
   }
-  go(e, n, cutoff)
+  go(e, n, cutoff, &mut FxHashMap::default())
 }
 
 /// Subtract `n` from every loose bound variable `>= cutoff + n`.
@@ -187,79 +214,120 @@ pub fn lower_loose(e: &Expr, n: usize, cutoff: usize) -> Expr {
   if n == 0 {
     return e.clone();
   }
-  fn go(e: &Expr, n: usize, c: usize) -> Expr {
-    match e.as_data() {
-      ExprData::Bvar(i, _) => {
-        let i = nat_usize(i);
-        if i >= c + n { bvar(i - n) } else { bvar(i) }
-      },
-      ExprData::App(f, a, _) => Expr::app(go(f, n, c), go(a, n, c)),
-      ExprData::Lam(nm, t, b, bi, _) => {
-        Expr::lam(nm.clone(), go(t, n, c), go(b, n, c + 1), bi.clone())
-      },
-      ExprData::ForallE(nm, t, b, bi, _) => {
-        Expr::all(nm.clone(), go(t, n, c), go(b, n, c + 1), bi.clone())
-      },
-      ExprData::LetE(nm, t, v, b, nd, _) => {
-        Expr::letE(nm.clone(), go(t, n, c), go(v, n, c), go(b, n, c + 1), *nd)
-      },
-      ExprData::Proj(nm, i, s, _) => {
-        Expr::proj(nm.clone(), i.clone(), go(s, n, c))
-      },
-      ExprData::Mdata(md, x, _) => Expr::mdata(md.clone(), go(x, n, c)),
-      _ => e.clone(),
+  fn go(
+    e: &Expr,
+    n: usize,
+    c: usize,
+    memo: &mut FxHashMap<(Hash, usize), Expr>,
+  ) -> Expr {
+    let memo_key = (key(e), c);
+    if let Some(result) = memo.get(&memo_key) {
+      return result.clone();
     }
+    let result = {
+      match e.as_data() {
+        ExprData::Bvar(i, _) => {
+          let i = nat_usize(i);
+          if i >= c + n { bvar(i - n) } else { bvar(i) }
+        },
+        ExprData::App(f, a, _) => {
+          Expr::app(go(f, n, c, memo), go(a, n, c, memo))
+        },
+        ExprData::Lam(nm, t, b, bi, _) => Expr::lam(
+          nm.clone(),
+          go(t, n, c, memo),
+          go(b, n, c + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::ForallE(nm, t, b, bi, _) => Expr::all(
+          nm.clone(),
+          go(t, n, c, memo),
+          go(b, n, c + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::LetE(nm, t, v, b, nd, _) => Expr::letE(
+          nm.clone(),
+          go(t, n, c, memo),
+          go(v, n, c, memo),
+          go(b, n, c + 1, memo),
+          *nd,
+        ),
+        ExprData::Proj(nm, i, s, _) => {
+          Expr::proj(nm.clone(), i.clone(), go(s, n, c, memo))
+        },
+        ExprData::Mdata(md, x, _) => Expr::mdata(md.clone(), go(x, n, c, memo)),
+        _ => e.clone(),
+      }
+    };
+    memo.insert(memo_key, result.clone());
+    result
   }
-  go(e, n, cutoff)
+  go(e, n, cutoff, &mut FxHashMap::default())
 }
 
 /// `Canon.instantiateRevAt`.
 fn instantiate_rev_at(args: &[Expr], e: &Expr, depth: usize) -> Expr {
-  match e.as_data() {
-    ExprData::Bvar(i, _) => {
-      let i = nat_usize(i);
-      if i >= depth {
-        let r = i - depth;
-        if r < args.len() {
-          lift_loose(&args[r], depth, 0)
-        } else {
-          bvar(i - args.len())
-        }
-      } else {
-        bvar(i)
+  fn visit(
+    args: &[Expr],
+    e: &Expr,
+    depth: usize,
+    memo: &mut FxHashMap<(Hash, usize), Expr>,
+  ) -> Expr {
+    let memo_key = (key(e), depth);
+    if let Some(result) = memo.get(&memo_key) {
+      return result.clone();
+    }
+    let result = {
+      match e.as_data() {
+        ExprData::Bvar(i, _) => {
+          let i = nat_usize(i);
+          if i >= depth {
+            let r = i - depth;
+            if r < args.len() {
+              lift_loose(&args[r], depth, 0)
+            } else {
+              bvar(i - args.len())
+            }
+          } else {
+            bvar(i)
+          }
+        },
+        ExprData::App(f, a, _) => {
+          Expr::app(visit(args, f, depth, memo), visit(args, a, depth, memo))
+        },
+        ExprData::Lam(nm, t, b, bi, _) => Expr::lam(
+          nm.clone(),
+          visit(args, t, depth, memo),
+          visit(args, b, depth + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::ForallE(nm, t, b, bi, _) => Expr::all(
+          nm.clone(),
+          visit(args, t, depth, memo),
+          visit(args, b, depth + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::LetE(nm, t, v, b, nd, _) => Expr::letE(
+          nm.clone(),
+          visit(args, t, depth, memo),
+          visit(args, v, depth, memo),
+          visit(args, b, depth + 1, memo),
+          *nd,
+        ),
+        ExprData::Proj(nm, i, s, _) => {
+          Expr::proj(nm.clone(), i.clone(), visit(args, s, depth, memo))
+        },
+        ExprData::Mdata(md, x, _) => {
+          Expr::mdata(md.clone(), visit(args, x, depth, memo))
+        },
+        _ => e.clone(),
       }
-    },
-    ExprData::App(f, a, _) => Expr::app(
-      instantiate_rev_at(args, f, depth),
-      instantiate_rev_at(args, a, depth),
-    ),
-    ExprData::Lam(nm, t, b, bi, _) => Expr::lam(
-      nm.clone(),
-      instantiate_rev_at(args, t, depth),
-      instantiate_rev_at(args, b, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::ForallE(nm, t, b, bi, _) => Expr::all(
-      nm.clone(),
-      instantiate_rev_at(args, t, depth),
-      instantiate_rev_at(args, b, depth + 1),
-      bi.clone(),
-    ),
-    ExprData::LetE(nm, t, v, b, nd, _) => Expr::letE(
-      nm.clone(),
-      instantiate_rev_at(args, t, depth),
-      instantiate_rev_at(args, v, depth),
-      instantiate_rev_at(args, b, depth + 1),
-      *nd,
-    ),
-    ExprData::Proj(nm, i, s, _) => {
-      Expr::proj(nm.clone(), i.clone(), instantiate_rev_at(args, s, depth))
-    },
-    ExprData::Mdata(md, x, _) => {
-      Expr::mdata(md.clone(), instantiate_rev_at(args, x, depth))
-    },
-    _ => e.clone(),
+    };
+    memo.insert(memo_key, result.clone());
+    result
   }
+
+  visit(args, e, depth, &mut FxHashMap::default())
 }
 
 /// `Canon.instantiateRev`: `args[i]` for `bvar i`.
@@ -626,34 +694,57 @@ pub fn abstract_fvars(xs: &[Name], e: &Expr) -> Expr {
   if xs.is_empty() {
     return e.clone();
   }
-  fn go(xs: &[Name], e: &Expr, d: usize) -> Expr {
-    match e.as_data() {
-      ExprData::Fvar(n, _) => match xs.iter().position(|x| x == n) {
-        Some(i) => bvar(d + (xs.len() - 1 - i)),
-        None => e.clone(),
-      },
-      ExprData::App(f, a, _) => Expr::app(go(xs, f, d), go(xs, a, d)),
-      ExprData::Lam(nm, t, b, bi, _) => {
-        Expr::lam(nm.clone(), go(xs, t, d), go(xs, b, d + 1), bi.clone())
-      },
-      ExprData::ForallE(nm, t, b, bi, _) => {
-        Expr::all(nm.clone(), go(xs, t, d), go(xs, b, d + 1), bi.clone())
-      },
-      ExprData::LetE(nm, t, v, b, nd, _) => Expr::letE(
-        nm.clone(),
-        go(xs, t, d),
-        go(xs, v, d),
-        go(xs, b, d + 1),
-        *nd,
-      ),
-      ExprData::Proj(nm, i, s, _) => {
-        Expr::proj(nm.clone(), i.clone(), go(xs, s, d))
-      },
-      ExprData::Mdata(md, x, _) => Expr::mdata(md.clone(), go(xs, x, d)),
-      _ => e.clone(),
+  fn go(
+    xs: &[Name],
+    e: &Expr,
+    d: usize,
+    memo: &mut FxHashMap<(Hash, usize), Expr>,
+  ) -> Expr {
+    let memo_key = (key(e), d);
+    if let Some(result) = memo.get(&memo_key) {
+      return result.clone();
     }
+    let result = {
+      match e.as_data() {
+        ExprData::Fvar(n, _) => match xs.iter().position(|x| x == n) {
+          Some(i) => bvar(d + (xs.len() - 1 - i)),
+          None => e.clone(),
+        },
+        ExprData::App(f, a, _) => {
+          Expr::app(go(xs, f, d, memo), go(xs, a, d, memo))
+        },
+        ExprData::Lam(nm, t, b, bi, _) => Expr::lam(
+          nm.clone(),
+          go(xs, t, d, memo),
+          go(xs, b, d + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::ForallE(nm, t, b, bi, _) => Expr::all(
+          nm.clone(),
+          go(xs, t, d, memo),
+          go(xs, b, d + 1, memo),
+          bi.clone(),
+        ),
+        ExprData::LetE(nm, t, v, b, nd, _) => Expr::letE(
+          nm.clone(),
+          go(xs, t, d, memo),
+          go(xs, v, d, memo),
+          go(xs, b, d + 1, memo),
+          *nd,
+        ),
+        ExprData::Proj(nm, i, s, _) => {
+          Expr::proj(nm.clone(), i.clone(), go(xs, s, d, memo))
+        },
+        ExprData::Mdata(md, x, _) => {
+          Expr::mdata(md.clone(), go(xs, x, d, memo))
+        },
+        _ => e.clone(),
+      }
+    };
+    memo.insert(memo_key, result.clone());
+    result
   }
-  go(xs, e, 0)
+  go(xs, e, 0, &mut FxHashMap::default())
 }
 
 /// `mkBinders`: `fun xs, b` or `forall xs, b`.
@@ -681,51 +772,81 @@ pub fn mk_forall(xs: &[Local], b: &Expr) -> Expr {
 
 /// Equality up to binder names and binder info (Lean's `Expr.eqv`).
 pub fn alpha_eq(a: &Expr, b: &Expr) -> bool {
-  if a.get_hash() == b.get_hash() {
-    return true;
+  fn visit(
+    a: &Expr,
+    b: &Expr,
+    memo: &mut FxHashMap<(Hash, Hash), bool>,
+  ) -> bool {
+    let memo_key = (key(a), key(b));
+    if let Some(result) = memo.get(&memo_key) {
+      return *result;
+    }
+    let result = (|| {
+      if a.get_hash() == b.get_hash() {
+        return true;
+      }
+      match (a.as_data(), b.as_data()) {
+        (ExprData::Bvar(i, _), ExprData::Bvar(j, _)) => i == j,
+        (ExprData::Fvar(x, _), ExprData::Fvar(y, _))
+        | (ExprData::Mvar(x, _), ExprData::Mvar(y, _)) => x == y,
+        (ExprData::Sort(u, _), ExprData::Sort(v, _)) => u == v,
+        (ExprData::Const(x, us, _), ExprData::Const(y, vs, _)) => {
+          x == y && us == vs
+        },
+        (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
+          visit(f, g, memo) && visit(x, y, memo)
+        },
+        (ExprData::Lam(_, t, b, _, _), ExprData::Lam(_, t2, b2, _, _))
+        | (
+          ExprData::ForallE(_, t, b, _, _),
+          ExprData::ForallE(_, t2, b2, _, _),
+        ) => visit(t, t2, memo) && visit(b, b2, memo),
+        (
+          ExprData::LetE(_, t, v, b, _, _),
+          ExprData::LetE(_, t2, v2, b2, _, _),
+        ) => visit(t, t2, memo) && visit(v, v2, memo) && visit(b, b2, memo),
+        (ExprData::Lit(x, _), ExprData::Lit(y, _)) => x == y,
+        (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
+          visit(x, y, memo)
+        },
+        (ExprData::Proj(s, i, x, _), ExprData::Proj(s2, i2, y, _)) => {
+          s == s2 && i == i2 && visit(x, y, memo)
+        },
+        _ => false,
+      }
+    })();
+    memo.insert(memo_key, result);
+    result
   }
-  match (a.as_data(), b.as_data()) {
-    (ExprData::Bvar(i, _), ExprData::Bvar(j, _)) => i == j,
-    (ExprData::Fvar(x, _), ExprData::Fvar(y, _))
-    | (ExprData::Mvar(x, _), ExprData::Mvar(y, _)) => x == y,
-    (ExprData::Sort(u, _), ExprData::Sort(v, _)) => u == v,
-    (ExprData::Const(x, us, _), ExprData::Const(y, vs, _)) => {
-      x == y && us == vs
-    },
-    (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
-      alpha_eq(f, g) && alpha_eq(x, y)
-    },
-    (ExprData::Lam(_, t, b, _, _), ExprData::Lam(_, t2, b2, _, _))
-    | (ExprData::ForallE(_, t, b, _, _), ExprData::ForallE(_, t2, b2, _, _)) => {
-      alpha_eq(t, t2) && alpha_eq(b, b2)
-    },
-    (ExprData::LetE(_, t, v, b, _, _), ExprData::LetE(_, t2, v2, b2, _, _)) => {
-      alpha_eq(t, t2) && alpha_eq(v, v2) && alpha_eq(b, b2)
-    },
-    (ExprData::Lit(x, _), ExprData::Lit(y, _)) => x == y,
-    (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => alpha_eq(x, y),
-    (ExprData::Proj(s, i, x, _), ExprData::Proj(s2, i2, y, _)) => {
-      s == s2 && i == i2 && alpha_eq(x, y)
-    },
-    _ => false,
-  }
+
+  visit(a, b, &mut FxHashMap::default())
 }
 
 /// `bvar i` occurs loose in `e`.
 pub fn has_loose_bvar(e: &Expr, i: usize) -> bool {
-  fn go(e: &Expr, k: usize) -> bool {
-    match e.as_data() {
-      ExprData::Bvar(j, _) => nat_usize(j) == k,
-      ExprData::App(f, a, _) => go(f, k) || go(a, k),
-      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-        go(t, k) || go(b, k + 1)
-      },
-      ExprData::LetE(_, t, v, b, _, _) => go(t, k) || go(v, k) || go(b, k + 1),
-      ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => go(s, k),
-      _ => false,
+  fn go(e: &Expr, k: usize, memo: &mut FxHashMap<(Hash, usize), bool>) -> bool {
+    let memo_key = (key(e), k);
+    if let Some(result) = memo.get(&memo_key) {
+      return *result;
     }
+    let result = {
+      match e.as_data() {
+        ExprData::Bvar(j, _) => nat_usize(j) == k,
+        ExprData::App(f, a, _) => go(f, k, memo) || go(a, k, memo),
+        ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+          go(t, k, memo) || go(b, k + 1, memo)
+        },
+        ExprData::LetE(_, t, v, b, _, _) => {
+          go(t, k, memo) || go(v, k, memo) || go(b, k + 1, memo)
+        },
+        ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => go(s, k, memo),
+        _ => false,
+      }
+    };
+    memo.insert(memo_key, result);
+    result
   }
-  go(e, i)
+  go(e, i, &mut FxHashMap::default())
 }
 
 /// Lean's `Expr.eta`: `fun x. f x` to `f` when `x` is not in `f`, inner
