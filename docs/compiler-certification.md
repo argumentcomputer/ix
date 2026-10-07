@@ -103,7 +103,8 @@ some accepted cone contains it; the conclusion then holds for every member of th
 
 The source of a cone may be any closed set of declarations. A cover (S on every W-certified
 constant) decides roots nothing uses whose cones overlap as **one cone whose source is the union
-of theirs** (a batch: same namespace, the union within 5/4 of the largest cone); a batch that
+of theirs** (a batch: roots of the same namespace, an auxiliary declaration such as `f._simp_1`
+or `f.eq_1` counted in `f`'s, the union within 3/2 of the largest cone); a batch that
 cannot run or fails as one cone is dissolved and its roots are decided on their own cones. A cone
 that contains a pin-certified Nat operation also takes its certificate ground, and a cone that
 contains `Quot` takes Lean's `Eq`, listed first (the checker installs the quotient block only over
@@ -175,7 +176,7 @@ lake build compile-certify
 compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
   [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--explain <name>]* [--receipts-only] \
   [--strong | --strong-only] [--strong-roots <A,B,...>] [--strong-every <k>] \
-  [--strong-max-cone <n>] [--strong-tasks <n>]
+  [--strong-max-cone <n>] [--strong-tasks <n>] [--strong-plan]
 ```
 
 - `--file` elaborates the file as `ix compile` does (`Benchmarks/Compile/CompileInitStd.lean`,
@@ -201,6 +202,13 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
   roots, members, records, support, witnesses, time per stage, outcome), `<prefix>.strong.classes.tsv`
   and `<prefix>.strong.json`. `--strong-only` skips the global W (each cone still runs its own W
   association) for probes.
+- `--strong-plan` computes the cones S would run (the same order, batches and budget) without
+  running any, each counted as accepted, and writes `<prefix>.strong.plan.tsv` (per cone: position,
+  root, roots, members, the constants it is the first to contain, the running total) and
+  `<prefix>.strong.plan.names.tsv` (per W-certified constant: its first cone, or why it has none);
+  it writes no S verdict. With `--explain <name>`, the stages of that root's cone are timed one by
+  one (input, admission, W, each step of the source installation, the proposal, the support and
+  every family of the strong check).
 - Exit 0 iff something is certified, nothing is rejected, every raw projection on a non-direct
   structure-like has a receipt, and, with S, something is S-certified and nothing is S-rejected.
 
@@ -228,8 +236,9 @@ pins), and writes the file only if every step passed.
   about it.
 - **Proof-field projections of mutual or nested structure-likes** (theorems in Lean 4.34.1) are refused by W.
 - **Cost.** S is decided per cone, and each cone re-decides its whole closed source: W of the cone, the
-  source export and fold, and the strong checks, whose environment lookups are lists. On Init+Std-a3 a
-  cone of about 4,000 declarations takes about 7 minutes and one of 12,000 about 25 minutes (one task
-  each, 12 at once), and almost every constant lies in thousands of cones, so a cover of every
-  W-certified constant is far longer than W. `--strong-max-cone` bounds the cone size; larger cones are
-  S-unsupported (`cone over budget`).
+  source export, model proposal and fold, and the strong checks, whose comparison walks look constants
+  up in list environments at every node. On Init+Std-a3 (one run, 12 cones at once) a cone of 3,000
+  declarations takes about half a minute, and one of 4,000 that reaches the `String`/`TreeMap` lemma
+  core 3–5 minutes; the cover plans 3,939 cones (a constant lies in 30 of them on average). Two runs
+  at once halve each cone's speed. `--strong-max-cone` bounds the cone size; larger cones are
+  S-unsupported (`cone over budget`) and their users S-blocked, never rejected.

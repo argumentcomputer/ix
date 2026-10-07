@@ -433,22 +433,42 @@ def coneMembers (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.N
     Array Lean.Name × Array Lean.Name :=
   coneMembersOf refs known ground #[root]
 
+/-- A last name component Lean gives to an auxiliary declaration that belongs to the
+declaration it hangs under: generated lemmas and proofs (`_simp_1`, `_proof_1`, `eq_1`,
+`eq_def`, `congr_simp`, `sizeOf_spec`, `injEq`, …), defaults, unfolding and structural helpers
+(`_sunfold`, `_default`, `match_1`, `recOn`, `casesOn`, …). -/
+def auxiliarySuffix (s : String) : Bool :=
+  s.startsWith "_" || s.startsWith "eq_" || s.startsWith "match_" ||
+    ["congr_simp", "sizeOf_spec", "injEq", "inj", "recOn", "casesOn", "below", "brecOn",
+      "noConfusion", "noConfusionType", "ctorIdx", "induct", "fun_cases", "splitter"].contains s
+
+/-- The batch group of a root (`coverBatches`): the namespace of the declaration it belongs
+to. An auxiliary declaration (`f._simp_1`, `f.eq_1`, `f.congr_simp`, …) is grouped with `f`'s
+siblings, not alone under `f` (on Init+Std most roots nothing uses that ran alone in a cone of
+1,000 or more declarations were such auxiliaries). -/
+def batchGroup : Lean.Name → Lean.Name
+  | n@(.str p s) => if auxiliarySuffix s then batchGroup p else n.getPrefix
+  | .num p _ => batchGroup p
+  | .anonymous => .anonymous
+
 /-- Batches of a cover's roots (untrusted orchestration). Each root nothing uses needs a
-cone of its own, and the cost of a cone grows faster than its size (the strong check about
-as size^2.5 on Init+Std), so roots whose cones overlap are decided as **one cone whose
-source is the union of theirs**: the decision then S-certifies every member at once (the
-S conclusion holds for any closed source; nothing about the verdict's meaning changes).
-`order` are the roots nothing uses in the cover's order (largest cone first); they are
-grouped by namespace (`Name.getPrefix`); in each group a leader takes, from the next
-`window` roots of its group not yet taken, those whose cones keep the union within 5/4 of
-the leader's cone (plus 16), at most `maxRoots` roots per batch. Returns, per leader, the
-other roots of its batch. -/
+cone of its own, and the cost of a cone grows faster than its size (on Init+Std the strong
+check about as size^2.5, and every cone that reaches the `String`/`TreeMap` lemma core pays
+for it again), so roots whose cones overlap are decided as **one cone whose source is the
+union of theirs**: the decision then S-certifies every member at once (the S conclusion holds
+for any closed source; nothing about the verdict's meaning changes). `order` are the roots
+nothing uses in the cover's order (largest cone first); they are grouped by the namespace of
+the declaration they belong to (`batchGroup`); in each group a leader takes, from the next
+`window` roots of its group not yet taken, those whose cones keep the union within 3/2 of
+the leader's cone (plus 16), at most `maxRoots` roots per batch (the cover passes 128 and
+256: on Init+Std-a3 that plans 3,939 cones where namespace groups with 32 and 64 and 5/4
+planned 11,905). Returns, per leader, the other roots of its batch. -/
 def coverBatches (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.Name → Bool)
     (order : Array Lean.Name) (window maxRoots : Nat) : Std.HashMap Lean.Name (Array Lean.Name) := Id.run do
   let mut groups : Std.HashMap Lean.Name (Array Lean.Name) := {}
   let mut prefixes : Array Lean.Name := #[]
   for n in order do
-    let p := n.getPrefix
+    let p := batchGroup n
     match groups[p]? with
     | some g => groups := groups.insert p (g.push n)
     | none =>
@@ -463,7 +483,7 @@ def coverBatches (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.
     for i in [0:group.size] do
       if taken[i]! then continue
       let lead := cones[i]!
-      let limit := lead.size * 5 / 4 + 16
+      let limit := lead.size * 3 / 2 + 16
       let mut union : Std.HashSet Lean.Name := lead.foldl (·.insert ·) {}
       let mut batch : Array Lean.Name := #[]
       let mut looked := 0
@@ -798,7 +818,6 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
             | _ => pure ()
           | none => pure ()
       | _ => pure ()
-      time "complete source (lists)" (fun _ => decide (CompleteSource input.source input.roots)) toString
       match exportSourceDeclarations input.source with
       | .error e => say s!"[explain-S] {n}: export failed: {e}"
       | .ok original =>
@@ -872,7 +891,7 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   -- cannot run or fails as one cone is dissolved and its roots get cones of their own
   let mut batchOf : Std.HashMap Lean.Name (Array Lean.Name) :=
     if cover then coverBatches w.refs wCertified.contains
-      (roots.filter fun n => wCertified.contains n && userCount.getD n 0 == 0) 32 64
+      (roots.filter fun n => wCertified.contains n && userCount.getD n 0 == 0) 128 256
     else {}
   if cover then
     let merged := batchOf.fold (fun k _ b => k + b.size) 0
