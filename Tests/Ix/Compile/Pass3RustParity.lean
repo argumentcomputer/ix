@@ -1,43 +1,29 @@
 /-
   pass3-rust-parity: per-address parity of the Rust compiler's Pass 3 (M6R)
-  against the Lean compiler's, with the switch on (`IX_PASS3=images`).
+  against the Lean compiler's. Pass 3 is the only mode of both compilers
+  since M6R slice 6.
 
   Per compile unit (the `pass3` suite's units: the aux-cert fixtures, the
   prototype's cases, the passes' fixtures, the twins), or for a whole file
   (`PARITY_FILE=<path>`, e.g. `Benchmarks/Compile/CompileInitStd.lean`):
 
-  1. the Lean compiler with Pass 3 (`compileLeanInput … (pass3? := some true)`)
-     and the Rust compiler through the FFI (`rsCompileEnvBytesPass3FFI`, given the
-     mode the Lean side reads: `IX_PASS3=images` or unset is Pass 3) compile the same prepared
-     constants;
+  1. the Lean compiler (`compileLeanInput …`) and the Rust compiler through
+     the FFI (`rsCompileEnvBytesFFI`) compile the same prepared constants;
   2. the two `Named` tables are joined by name and every name is classified:
      (a) identical (address, metadata, original, hints), (b) different,
      (c) on one side only;
-  3. every name of (b) and (c) must be owned by a later slice of M6R, read off
-     the Lean compile itself (slices 1-4 are implemented: the definitional
-     passes O1-O6 and O11a, the clique transport, and the proof-justified
-     passes O7-O12 with the unit pass O11b, are checked for identity, not
-     attributed; a constant where only the passes change the rewrite is
-     reported as `slice-2 checked`, the clique table's members and carried
-     lemmas (`CompileEnv.p3Cliques`) and the hook's canonical constants under
-     reserved names (whose functional carries the side-car record
-     `_ix.clique` in its metadata; the members carry the decompile record of
-     Lean's value) as `slice-3 checked`, and the constants where a
-     proof-justified pass fires (`BlockRewrite.canon` non-empty: `PJ-FORM`,
-     the Lean name keeps its baseline) or the unit pass O11b applies
-     (`unitPasses`), with their canonical constants under reserved names
-     (`c._ix`, the re-typed handlers `p._ix_retyped.s`, O12's `fg`, O11b's
-     pair), as `slice-4 checked`, for the record):
-     * **F1** (lands with the flip `4c18e1b1`, not on this base): the image of
-       a Lean theorem, which Rust stores as a theorem;
-     * **cascade**: a name in the reverse-dependency cone of the names above
-       whose metadata, hints and original metadata are equal on both sides
-       (only referenced addresses moved)
-       (through the Lean input's references; a reserved display name follows
-       its Lean prefix).
-     Anything else is a defect and fails the run (a failed block publishes
-     nothing on either side since slice 2, so the names of a failed block are
-     absent from both outputs).
+  3. every name of (b) and (c) is a defect and fails the run. The constants
+     each slice of M6R covers are reported with how many are identical
+     (`slice-2 checked`: where the definitional passes O1-O6/O11a change the
+     rewrite or record a decline; `slice-3 checked`: the clique table's
+     members and carried lemmas and the hook's canonical constants under
+     reserved names; `slice-4 checked`: the Lean names where a
+     proof-justified pass fires or O11b applies, and their canonical
+     constants). Until M6R slice 6 a difference could be owned by a later
+     slice, by F1 or by their cascade, and the suite ran an `IX_PASS3=off`
+     control with the legacy surgery on both sides; both are retired.
+     (A failed block publishes nothing on either side since slice 2, so the
+     names of a failed block are absent from both outputs.)
   4. the two compiles' failures (requested constants whose block failed) and
      their non-canonical sets (Lean `CompileEnv.p3NonCanonical`, Rust
      `CompileEnvStatus.nonCanonical`: the recorded declines with their
@@ -57,11 +43,13 @@
 
   Besides the `pass3` units, the `changed-set` suite's clique unit (the clique
   and ownership families together), the O11a decline inputs of `o11a-decline` (the
-  withheld instance and the M1-h side conditions, hand-built closures) are
+  withheld instance and the M1-h side conditions, hand-built closures) and the
+  `validate-aux` corpus (`validateAuxClosure`, unit `corpus`: the `Mutual`,
+  `Canonicity`, `LevelSpellings` and IxVM fixtures; added at M6R slice 6, whose
+  flip of Rust's default exposed a Rust-only failure there, F1) are
   compared, so every recorded decline cause is exercised on both sides.
 
-  Run: `lake test -- --ignored pass3-rust-parity` (Pass 3; `IX_PASS3=off` runs
-  the same comparison with the legacy surgery on both sides, as a control)
+  Run: `lake test -- --ignored pass3-rust-parity`
   (`PARITY_ONLY=<stems>` restricts the units; `PARITY_FILE=<path>` runs one
   file's whole environment instead; `PARITY_SHOW=<n>` lists up to n names per
   class).
@@ -73,6 +61,7 @@ import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.Compile.CliqueOwnership
 import Tests.Ix.Compile.PackParity
+import Tests.Ix.Compile.ValidateAux
 
 open Lean
 
@@ -82,17 +71,6 @@ open Tests.Ix.Compile.Pass3 (CUnit unitOfFile ixN toLeanName auxCertFiles protoF
   pjPassFiles closureOf leanRejects)
 
 abbrev IxName := _root_.Ix.Name
-
-/-- The class of a differing name. -/
-inductive Owner where
-  | slice3 | f1 | cascade | defect
-  deriving BEq, Repr, Inhabited
-
-def Owner.label : Owner → String
-  | .slice3 => "slice 3 (clique transport)"
-  | .f1 => "F1 (flip 4c18e1b1)"
-  | .cascade => "cascade of the above"
-  | .defect => "DEFECT"
 
 def sameNamed (a b : Ixon.Named) : Bool :=
   a.addr == b.addr && a.constMeta == b.constMeta && a.hints == b.hints &&
@@ -120,13 +98,13 @@ def beforeReserved (n : IxName) : Option IxName :=
   | some i => some (Ix.Compile.Pass.ofComps (cs.take i))
   | none => none
 
-/-- The later-slice roots of a Lean switch-on compile, from its own records
-and its own rewrite functions. -/
+/-- The constants each slice of M6R covers in a Lean compile, from its own
+records and its own rewrite functions (reported, as counts of identical
+constants: every slice is implemented, so no difference is attributed to one). -/
 structure Roots where
   slice2 : Std.HashSet IxName := {}
   slice3 : Std.HashSet IxName := {}
   slice4 : Std.HashSet IxName := {}
-  f1 : Std.HashSet IxName := {}
 
 def computeRoots (cenv : Ix.CompileM.CompileEnv) (closure : List (Name × ConstantInfo)) :
     IO Roots := do
@@ -137,9 +115,6 @@ def computeRoots (cenv : Ix.CompileM.CompileEnv) (closure : List (Name × Consta
   -- slice 2: recorded declines
   for (n, _) in cenv.p3NonCanonical do
     r := { r with slice2 := r.slice2.insert n }
-  -- F1: images of Lean theorems
-  for (h, _) in cenv.p3Heads do
-    if let some (.thmInfo _) := cenv.env.get? h then r := { r with f1 := r.f1.insert h }
   -- slices 2 and 4: where the passes change a constant's rewrite
   let views0 : Std.HashMap IxName Ix.Compile.Pass.BlockView := {}
   let mut views := views0
@@ -170,54 +145,16 @@ def computeRoots (cenv : Ix.CompileM.CompileEnv) (closure : List (Name × Consta
     | .error e, _ | _, .error e => IO.eprintln s!"[parity] rewrite of {x.pretty}: {e}"
   return r
 
-/-- The reverse-dependency cone of `roots` over the Lean input. -/
-def cone (closure : List (Name × ConstantInfo)) (roots : Std.HashSet IxName) :
-    Std.HashSet IxName := Id.run do
-  let mut rev : Std.HashMap IxName (Array IxName) := {}
-  for (n, ci) in closure do
-    let x := ixN n
-    for r in ci.getUsedConstantsAsSet do
-      rev := rev.insert (ixN r) ((rev.getD (ixN r) #[]).push x)
-    match ci with
-    | .ctorInfo cv => rev := rev.insert (ixN cv.induct) ((rev.getD (ixN cv.induct) #[]).push x)
-    | .inductInfo iv =>
-      for c in iv.ctors do rev := rev.insert x ((rev.getD x #[]).push (ixN c))
-    | _ => pure ()
-  let mut out : Std.HashSet IxName := {}
-  let mut todo : Array IxName := roots.toArray
-  while !todo.isEmpty do
-    let n := todo.back!
-    todo := todo.pop
-    if out.contains n then continue
-    out := out.insert n
-    for d in rev.getD n #[] do
-      if !out.contains d then todo := todo.push d
-  return out
-
 structure Report where
   identical : Nat := 0
   different : Array (IxName × String) := #[]
   leanOnly : Array IxName := #[]
   rustOnly : Array IxName := #[]
-  owners : Array (IxName × Owner) := #[]
 
-def classify (roots : Roots) (coneSet : Std.HashSet IxName) (metaEqual : IxName → Bool)
-    (n : IxName) : Owner :=
-  let base := (beforeReserved n).getD n
-  if roots.f1.contains n then .f1
-  else if coneSet.contains base || coneSet.contains n then
-    -- a cascade changes referenced addresses only: the metadata (names,
-    -- binders, arena shape), the hints and the original stay equal
-    if metaEqual n then .cascade else .defect
-  else .defect
-
-def compare (lean rust : Ixon.Env) (roots : Roots) (closure : List (Name × ConstantInfo)) :
-    Report := Id.run do
-  -- the definitional passes (slice 2), the clique transport (slice 3) and
-  -- the proof-justified passes with O11b (slice 4) are implemented: their
-  -- constants are not roots, they must be identical
-  let all : Std.HashSet IxName := roots.f1
-  let coneSet := cone closure all
+/-- Join the two `Named` tables by name. Every name of (b) and (c) is a defect:
+every slice of M6R is implemented (until slice 6 a difference could be owned
+by a later slice, F1 or their cascade; that attribution is retired). -/
+def compare (lean rust : Ixon.Env) : Report := Id.run do
   let mut rep : Report := {}
   for (n, a) in lean.named do
     if Tests.Ix.Compile.Pass3.isSyntheticMuts n then continue
@@ -229,12 +166,6 @@ def compare (lean rust : Ixon.Env) (roots : Roots) (closure : List (Name × Cons
   for (n, _) in rust.named do
     if Tests.Ix.Compile.Pass3.isSyntheticMuts n then continue
     if !lean.named.contains n then rep := { rep with rustOnly := rep.rustOnly.push n }
-  let names := rep.different.map (·.1) ++ rep.leanOnly ++ rep.rustOnly
-  let metaEqual := fun n => match lean.named.get? n, rust.named.get? n with
-    | some a, some b => a.constMeta == b.constMeta && a.hints == b.hints &&
-        (a.original.map (·.2)) == (b.original.map (·.2))
-    | _, _ => false
-  rep := { rep with owners := names.map fun n => (n, classify roots coneSet metaEqual n) }
   return rep
 
 /-- The synthetic `Muts` entries compared separately (their keys contain the
@@ -273,21 +204,19 @@ def o11aUnits : IO (Array (String × Environment × List (Name × ConstantInfo))
     out := out.push (c.label.replace " " "-", senv, cs)
   return out
 
-/-- Compile one unit both ways and report; returns the defects. -/
-def runOne (on : Bool) (name : String) (env : Environment) (closure : List (Name × ConstantInfo)) :
+/-- Compile one unit with both compilers and report; returns the defects. -/
+def runOne (name : String) (env : Environment) (closure : List (Name × ConstantInfo)) :
     IO (Array String) := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
   let t0 ← IO.monoMsNow
-  let out ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) (pass3? := some on) with
+  let out ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) with
     | .ok o => pure o
     | .error e => throw (IO.userError s!"{name}: Lean compile failed: {e}")
   let t1 ← IO.monoMsNow
   let dir ← IO.FS.createTempDir
   let path := dir / "rust.ixe"
   let constants ← IO.ofExcept input.prepare
-  -- the Rust side gets the mode explicitly: its own unset default is still
-  -- the surgery (until M6R slice 6), the Lean compiler's is Pass 3
-  let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants path.toString true on
+  let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString true
   let t2 ← IO.monoMsNow
   let rustBytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
@@ -300,7 +229,7 @@ def runOne (on : Bool) (name : String) (env : Environment) (closure : List (Name
   let rust ← IO.ofExcept (Ixon.deEnv rustBytes)
   let lean ← IO.ofExcept (Ixon.deEnv out.bytes)
   let roots ← computeRoots out.cenv closure
-  let rep := compare lean rust roots closure
+  let rep := compare lean rust
   let (mSame, mLean, mRust) := mutsCounts lean rust
   let k ← showN
   let leanFails := out.cenv.ungrounded.size
@@ -377,36 +306,29 @@ canonical constant(s) under reserved names, {(s4canon.filter same).size} identic
   IO.FS.removeDirAll packDir
   for (n, c) in leanNC.toList.take k do
     IO.println s!"[parity] {name}:   non-canonical {n}: {c}"
-  for o in [Owner.slice3, .f1, .cascade, .defect] do
-    let ns := rep.owners.filter (·.2 == o)
-    if ns.isEmpty then continue
-    IO.println s!"[parity] {name}:   {o.label}: {ns.size}"
-    for (n, _) in ns.toList.take (if o == .defect then k * 5 else k) do
-      let why := match rep.different.find? (·.1 == n) with
-        | some (_, d) => s!"differs: {d}"
-        | none => if rep.leanOnly.contains n then "lean only" else "rust only"
-      IO.println s!"[parity] {name}:     {n.pretty} ({why})"
-  let defects := rep.owners.filter (·.2 == .defect)
+  let defects : Array (IxName × String) := rep.different.map (fun (n, d) => (n, s!"differs: {d}")) ++
+    rep.leanOnly.map (·, "lean only") ++ rep.rustOnly.map (·, "rust only")
+  for (n, why) in defects.toList.take (k * 5) do
+    IO.println s!"[parity] {name}:   DEFECT {n.pretty} ({why})"
   return defects.map (fun (n, _) => s!"{name}: {n.pretty}") ++ extra
 
 def run (env : Environment) : IO UInt32 := do
-  -- the mode of both compiles, read as the Lean compiler reads it
-  -- (`switchFromEnv`): Pass 3 (`IX_PASS3=images` or unset, the gate) or the
-  -- legacy surgery (`IX_PASS3=off`, the control: no difference but those of
-  -- the default path); any other value is refused
-  let on ← match ← Ix.Compile.Pass.switchFromEnv with
-    | .ok b => pure b
+  -- both compilers in Pass 3, their only mode (M6R slice 6 deleted the legacy
+  -- surgery and with it this suite's `IX_PASS3=off` control); a leftover
+  -- `IX_PASS3=off` is refused
+  match ← Ix.Compile.Pass.switchFromEnv with
+    | .ok () => pure ()
     | .error msg =>
       IO.println s!"[parity] {msg}"
       return 2
-  IO.println s!"[parity] mode {Ix.Compile.Pass.switchLabel on}"
+  IO.println "[parity] mode: Pass 3 (both compilers)"
   let k ← showN
   let mut defects : Array String := #[]
   let mut failures : Array String := #[]
   if let some p := ← IO.getEnv "PARITY_FILE" then
     let fe ← getFileEnv p
     let closure := fe.constants.toList
-    defects := defects ++ (← runOne on p fe closure)
+    defects := defects ++ (← runOne p fe closure)
   else
     let only := ((← IO.getEnv "PARITY_ONLY").map (·.splitOn ",")).getD []
     let want := fun (s : String) => only.isEmpty || only.contains s
@@ -415,14 +337,14 @@ def run (env : Environment) : IO UInt32 := do
       if !want stem || leanRejects.contains stem || stem == "ReservedIx" then continue
       try
         let u ← unitOfFile p
-        defects := defects ++ (← runOne on stem u.env u.closure)
+        defects := defects ++ (← runOne stem u.env u.closure)
       catch e =>
         IO.println s!"[parity] FAIL {stem}: {e}"
         failures := failures.push s!"{stem}: {e}"
     if want "twins" then
       try
         let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
-        defects := defects ++ (← runOne on "twins" env (closureOf env seeds.toList))
+        defects := defects ++ (← runOne "twins" env (closureOf env seeds.toList))
       catch e =>
         IO.println s!"[parity] FAIL twins: {e}"
         failures := failures.push s!"twins: {e}"
@@ -433,7 +355,7 @@ def run (env : Environment) : IO UInt32 := do
         let families := Tests.Ix.Compile.Twins.cliqueFamilies ++ Tests.Ix.Compile.Twins.ownershipFamilies
         let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env families
         let extra := [``Lean.Order.monotone_compose].filter env.contains
-        defects := defects ++ (← runOne on "cliques" env (closureOf env (seeds.toList ++ extra)))
+        defects := defects ++ (← runOne "cliques" env (closureOf env (seeds.toList ++ extra)))
       catch e =>
         IO.println s!"[parity] FAIL cliques: {e}"
         failures := failures.push s!"cliques: {e}"
@@ -453,17 +375,27 @@ def run (env : Environment) : IO UInt32 := do
           continue
         let extra := if c.name.startsWith "WF8" then #[ns ++ `caller, ns ++ `neighbour] else #[]
         try
-          defects := defects ++ (← runOne on s!"co-{c.name}" env (closureOf env (ms ++ extra).toList))
+          defects := defects ++ (← runOne s!"co-{c.name}" env (closureOf env (ms ++ extra).toList))
         catch e =>
           IO.println s!"[parity] FAIL co-{c.name}: {e}"
           failures := failures.push s!"co-{c.name}: {e}"
+    -- the `validate-aux` corpus (`validateAuxClosure`: the `Mutual`, `Canonicity`,
+    -- `LevelSpellings` and IxVM fixtures), whose `AuxOwnership` families exposed F1 at
+    -- M6R slice 6 (Rust lacked Lean's Pass 3 exemption of the aux-ownership check; no
+    -- unit here compiled them before)
+    if want "corpus" then
+      try
+        defects := defects ++ (← runOne "corpus" env (validateAuxClosure env))
+      catch e =>
+        IO.println s!"[parity] FAIL corpus: {e}"
+        failures := failures.push s!"corpus: {e}"
     -- the O11a decline inputs (`o11a-decline`): the neighbour and the
     -- withheld instance of `O2Split`, and the M1-h side conditions
     if want "o11a" then
       try
         let units ← o11aUnits
         for (label, uenv, cs) in units do
-          defects := defects ++ (← runOne on s!"o11a-{label}" uenv cs)
+          defects := defects ++ (← runOne s!"o11a-{label}" uenv cs)
       catch e =>
         IO.println s!"[parity] FAIL o11a: {e}"
         failures := failures.push s!"o11a: {e}"

@@ -39,7 +39,8 @@ driver and worker count (the `changed-set` suite checks 1 against 32
 workers).
 
 ## Side condition and fallback
-Only a Pass 3 compile has the tables; with `IX_PASS3=off` no record is made.
+Only a driver-prepared Pass 3 compile has the tables (the only mode since M6R slice 6; until then
+`IX_PASS3=off` made no record); a hand-built environment (`pass3 := false`) makes none.
 
 ## Non-canonical set and evidence
 Not a pass. Evidence: the `changed-set` suite (determinism, coverage of every

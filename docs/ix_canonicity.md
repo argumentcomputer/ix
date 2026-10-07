@@ -3,7 +3,8 @@
 > This is the authoritative spec for **anonymous canonicity** — the
 > foundational content-addressing property of the Ix compiler. It covers
 > the theory (what the property is and why we need it), the operational
-> pipeline that achieves it (compile, decompile, surgery, metadata),
+> pipeline that achieves it (compile, decompile, metadata; the legacy
+> call-site surgery as history),
 > worked examples from `Tests/Ix/Compile/Mutual.lean`, a testing plan,
 > and the currently-open implementation work.
 >
@@ -27,6 +28,14 @@
 > `sort_aux_by_content_hash` and `sort_kconsts` over rediscovered auxes
 > describe the design before the migration; read them with (1)–(3).
 > Paths under `src/ix/…` are now under `crates/…`.
+>
+> **Status note (2026-10-07, M6R slice 6).** The call-site surgery was
+> deleted from both compilers on 2026-10-07: Pass 3 (the faithful rewrite,
+> `docs/compiler-passes.md` §4 and §11) is the only mode, and §7's last
+> step is Pass 3. §8, §10.3 and the surgery entries of §10.2, §14, §15,
+> §18 and §19 are kept as history and marked so. The Ixon format still
+> decodes `CallSite`/`EtaCallSite` metadata (tags 10 and 11) in files the
+> surgery wrote (the `-a2` references); nothing writes it now.
 
 ---
 
@@ -278,7 +287,8 @@ Everything needed to round-trip back to a source-faithful Lean
 | `Expr.mdata` KVMaps                     | `ExprMetaData::Mdata`                                |
 | Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`; name choice at alias occurrences: §10.5 |
 | Projection struct name                  | `ExprMetaData::Prj`                                  |
-| Call-site source/canonical metadata     | `ExprMetaData::CallSite { entries, canon_meta }`     |
+| Call-site source/canonical metadata     | `ExprMetaData::CallSite { entries, canon_meta }` (files the surgery wrote, §8, history) |
+| Source occurrences Pass 3 rewrote       | `_ix.inline` / `_ix.inline_meta` mdata records into `ConstantMeta.meta_sharing` |
 | Level-parameter names                   | `ConstantMetaInfo::*.lvls`                           |
 | `InductiveVal.all` (Lean source order)  | `ConstantMetaInfo::{Def,Indc,Rec}.all`               |
 | `ReducibilityHints`                     | `Named.hints` (`.ixe` §5 header, exact per name) + merged `Env::anon_hints` (§3) |
@@ -794,7 +804,13 @@ other stored form can check. Concretely:
 - `<all0>.rec_N` claims are **address aliases of `<Ext>.rec`**
   (`aux_gen`'s evaporated-alias pass). All evaporated auxes with the
   same external head collapse to one address, across declarations.
-- Call sites are rebuilt onto the external telescope by a
+- (History: this bullet and the next describe the call-site surgery,
+  deleted 2026-10-07, §8. Under Pass 3 a changed block’s Lean-named
+  auxiliaries compile as images with source telescopes. This removes
+  the legacy argument adaptation; Pass 3 still develops occurrences
+  and records their source form with `_ix.inline`,
+  `docs/compiler-passes.md` §4, §11.)
+  Call sites are rebuilt onto the external telescope by a
   **head-rewrite `CallSitePlan`**: spec args and the extended level
   list are derived from the source recursor's type instantiated with
   call-site args (`surgery::derive_head_rewrite_app`); the aux's own
@@ -987,7 +1003,10 @@ stt.aux_perms.insert(
 )
   │
   ▼
-compute_call_site_plans (per aux name) → surgery              [surgery.rs]
+Pass 3 (a changed block only): images under the Lean names, [pass3/]
+  the Ix auxiliaries under `_ix` names, `_ix.inline` records
+  at the occurrences it rewrites (the call-site surgery, §8,
+  until 2026-10-07)
   │
   ▼
 Ixon bytes (many canonical blocks + per-block metadata)
@@ -1024,7 +1043,19 @@ written:
    on its expanded roots. They do not depend on how the compiler built or
    shared the expression DAG.
 
-## 8. Call-Site Surgery
+## 8. Call-Site Surgery (history: deleted 2026-10-07)
+
+> **History.** This section describes the legacy call-site surgery, the
+> compile pipeline's last step until the flip (the Lean default, M6) and
+> M6R slice 6 (2026-10-07), which deleted it from both compilers. Pass 3
+> replaced it: a changed block's Lean-named auxiliaries compile as
+> *images* with their Lean telescopes, removing the legacy adaptation
+> of call-site arguments to canonical telescopes. Pass 3 still develops
+> occurrences and records their source form with `_ix.inline`
+> (`docs/compiler-passes.md` §4, §11). The Ixon format still decodes the
+> `CallSite`/`EtaCallSite` metadata the surgery wrote (tags 10 and 11, the
+> `-a2` references); nothing writes it now, and a recompile no longer
+> reproduces a surgered call site. The text below is kept as written.
 
 User code — and Lean-auto-generated constants like `_sizeOf_N`,
 `_ctorIdx`, `.noConfusion` — reference aux constants by applying them
@@ -1334,7 +1365,8 @@ compile(c')                             ─▸ canonical bytes B₂
       (sorted_classes, expanded, level params, etc.) — all of which
       are determined by c''s structure.
     - stt.aux_perms is repopulated with the same AuxLayout, and
-      surgery rewrites call sites identically.
+      surgery rewrites call sites identically (history: until
+      2026-10-07; Pass 3 builds the same images from the same inputs).
 
 Therefore B₂ == B₁.
 ```
@@ -1427,17 +1459,16 @@ pub struct AuxLayout {
   auxes that belong to a different SCC (so they shouldn't be
   resolved via this block).
 - **Source ctor counts** `source_ctor_counts: Vec<usize>` — ctor
-  count of each source-walk aux. Surgery consumes this to rewrite
-  call sites, and decompile consumes it to reconstruct the
+  count of each source-walk aux. The surgery consumed this to rewrite
+  call sites (until 2026-10-07, §8), and decompile consumes it to reconstruct the
   source-indexed `_N` names that Lean exposes.
 
 **Compile** constructs the layout as a local in
 `compile_aux_gen_block` (`mutual.rs:453-483`) using `aux_out.perm`
 from `generate_aux_patches` plus ctor counts from
-`nested::source_aux_order`. The same local is (a) passed directly
-to surgery (`compute_call_site_plans` at `surgery.rs:166` takes
-`aux_layout: Option<&AuxLayout>`) and (b) embedded on the block's
-`ConstantMetaInfo::Muts.aux_layout` for persistence.
+`nested::source_aux_order`. It is embedded on the block's
+`ConstantMetaInfo::Muts.aux_layout` for persistence (until 2026-10-07
+it was also passed to the surgery's `compute_call_site_plans`, §8).
 
 **Decompile** recovers it by scanning every Muts-tagged Named entry
 at startup via `rehydrate_aux_perms_from_env`
@@ -1454,7 +1485,11 @@ a block's layout before handing it to
 `metadata.rs:1056-1065` (write) and `metadata.rs:1144-1161` (read);
 the 0/1 tag for `Option<AuxLayout>` lives on disk.
 
-### 10.3 CallSite metadata alignment
+### 10.3 CallSite metadata alignment (history: the surgery's, deleted 2026-10-07)
+
+> **History.** Only files the surgery wrote carry `CallSite` metadata
+> (§8); both decompilers and kernel ingress still read it, and nothing
+> writes it since M6R slice 6.
 
 `ExprMetaData::CallSite` is expression metadata, not block-layout
 metadata. Its `entries` field is the source-order inverse map needed
@@ -1494,7 +1529,7 @@ as well (§13.5). The anonymous form is unaffected — any spelling of a
 reference compiles to the same `Rec(idx)` / `Ref(addr)` bytes — but
 the metadata sidecar records a **display name per occurrence**:
 `ExprMetaData::Ref { name }` for each `Const` occurrence,
-`CallSite.name` for surgered heads, `Prj.struct_name` for projections
+`CallSite.name` for surgered heads (files written before 2026-10-07), `Prj.struct_name` for projections
 (`metadata.rs`; Lean mirror `Ix/Ixon.lean`). Wherever the referenced
 address carries more than one name, the metadata must record a name
 at each such occurrence, and that choice was previously unspecified.
@@ -1515,22 +1550,22 @@ source: ordinary constants, each class member's own primary meta
 (compiled from that member's source form in the per-class loop of
 `compile_mutual` / `compileMutConsts`), the `Named.original` forms
 compiled by `compile_const_no_aux` (§9.2), and the source-order
-`entries` of surgered call sites (§8, §10.3).
+`entries` of surgered call sites (§8, §10.3; history).
 
 **Rule: synthesized occurrences inherit their source spelling.** An
 expression the compiler synthesizes rather than reads — the
 regenerated `.rec` / `.casesOn` / `.recOn` / `.below` / `.brecOn`
 (and `.go` / `.eq`) families, aux `.rec_N` / `.below_N` derivatives,
-and canonical arguments synthesized by surgery inside otherwise
-source-derived bodies (§8) — is not free-standing: it is derived from
+and canonical arguments synthesized by the surgery (until 2026-10-07)
+inside otherwise source-derived bodies (§8) — is not free-standing: it is derived from
 identified source material of its own block. Minor premises splice
 the constructor telescopes (`buildMinorType` in
 `Ix/AuxGen/Recursor.lean` and its `recursor.rs` mirror),
 `.casesOn` / `.recOn` are built from `.rec`'s type, `_nested`
 expansions are restored to the original source application
-(`RestoreCtx.restore` in `Ix/AuxGen/ExprUtils.lean`), and surgery
-peels its synthesized arguments off the source minor
-(`adaptSplitMinor`, §8). The rule: every metadata position in a
+(`RestoreCtx.restore` in `Ix/AuxGen/ExprUtils.lean`), and the surgery
+peeled its synthesized arguments off the source minor
+(`adaptSplitMinor`, §8, history). The rule: every metadata position in a
 synthesized expression that records a display name records **the
 spelling of the source occurrence it derives from** — the name is
 inherited through the derivation, never chosen at emission. Where the
@@ -1572,7 +1607,7 @@ record a *reference to another constant*:
 - `ExprMetaData::Ref { name }` — every `Const` occurrence,
   block-local (`Rec`) and external (`Ref`) alike;
 - `ExprMetaData::CallSite { name, … }` — the surgered head reference
-  (doubles as the head's `Ref` metadata);
+  (doubles as the head's `Ref` metadata; files the surgery wrote);
 - arena subtrees for arguments surgery synthesized rather than kept
   (split-SCC wrapper minors and `adapt_split_minor` IHs, §6.5 / §8)
   — reached from `CallSite.canon_meta` with no source-order `Kept`
@@ -1889,7 +1924,7 @@ stage-1 rule — decorate from the primary table entry when its `mk*`
 rebuild differs — remains as the patchless FALLBACK: on canonical
 tables it never fires (P3), and it keeps hand-built raw-table
 fixtures meaningful. One structural subtlety, mirrored in all
-consumers: a surgered call-site head's own arena root is unreachable
+consumers (files the surgery wrote): a surgered call-site head's own arena root is unreachable
 during replay (`CallSite.name` subsumes it), so the compiler CLONES
 a head patch onto the `callSite` node root, and both the decompiler
 head rebuild and the kernel meta-ingress head arms key their lookup
@@ -2138,11 +2173,14 @@ sort_aux_by_content_hash   (nested.rs:538)
     and renames them to canonical _N positions.
 
 compute_aux_perm            (nested.rs:797)
-  → builds the source-walk → canonical permutation for surgery.
+  → builds the source-walk → canonical permutation (the stored
+    `AuxLayout`).
 
-compute_call_site_plans    (src/ix/compile/surgery.rs:166)
-  → rewrites call-site arg lists so `f.rec_2 args` produced by Lean's
-    source-walk lands in our canonical-order recursor.
+compute_call_site_plans    (history: deleted 2026-10-07, §8)
+  → rewrote call-site arg lists so `f.rec_2 args` produced by Lean's
+    source-walk landed in the canonical-order recursor; Pass 3 compiles
+    `f.rec_2` as an image with its source telescope instead. Occurrences
+    still undergo the faithful rewrite with `_ix.inline` source records.
 ```
 
 ### 14.1 `NestedSimple` — single inductive nesting
@@ -2266,8 +2304,9 @@ that enforces it:
 | Nested-aux dedup across aliases                            | `replace_if_nested` `aux_seen` table, `nested.rs:191-362`       |
 | Nested-aux section is in discovery order (no sort)         | `expand_nested_block_canonical`; `sort_aux_by_partition_refinement` is the identity, `nested.rs` |
 | Source-walk → canonical permutation is reversible          | `compute_aux_perm`, `nested.rs:797-907`                         |
-| Call sites are surgically rewritten to canonical order     | `compute_call_site_plans`, `surgery.rs:166-570`                 |
-| CallSite metadata keeps source and canonical views separate | `ExprMetaData::CallSite { entries, canon_meta }`; `compile_expr::BuildCallSite`; `kernel/ingress.rs` |
+| (history, until 2026-10-07) Call sites surgically rewritten | `compute_call_site_plans`, `surgery.rs` (deleted, §8)            |
+| A changed block's Lean-named auxiliaries are images (Pass 3) | `crates/compile/src/compile/pass3/`, `Ix/Compile/Pass/`     |
+| (history) CallSite metadata keeps source and canonical views separate | `ExprMetaData::CallSite { entries, canon_meta }` (read only since 2026-10-07); `kernel/ingress.rs` |
 | Optional original-kernel check isolates adversarial raw constants | `CompileOptions::check_originals`, `mutual.rs::check_originals`, `orig_kenv` in `compile/env.rs` |
 | Stored primary order matches `sort_consts` (kernel-side)   | `validate_canonical_block_single_pass`, `src/ix/kernel/canonical_check.rs` (called from `ingress_muts_block`) |
 | Rediscovered aux follow the same discovery order           | `build_flat_block`, `crates/kernel/src/inductive.rs` (no sort); position-by-position recursor validation |
@@ -2322,6 +2361,11 @@ Phases 2 and 6 both compare aux_gen output against Lean originals using
 the permutation-aware congruence comparator in `src/ix/congruence/perm.rs`.
 Phase 4b is skipped for fully absent fixture groups when validating an
 arbitrary environment that does not import the test fixtures.
+Under Pass 3 (the only mode since 2026-10-07) phase 4b resolves a
+changed block's `.rec`, `.casesOn`, `.recOn`, `.below` and `.brecOn` under
+their `_ix` names when those exist: the Lean names hold the images,
+which keep their source telescopes and so do not coincide across
+namespaces.
 
 ### 16.3 Permutation-Aware Congruence
 
@@ -2469,7 +2513,7 @@ at `src/ix/decompile.rs:3252-3259` instead of re-running
 `sort_consts` on the decompiled inductives to recover the
 alpha-collapse classes compile saw. For non-alpha-collapsed blocks
 this is observationally identical; for blocks that compile
-alpha-collapsed, the workaround lets surgery still find
+alpha-collapsed, the workaround let the surgery (history) find
 callee positions but doesn't reconstruct the collapse at the
 decompiled-inductive level.
 
@@ -2637,10 +2681,14 @@ Anonymous canonicity in Ix reduces to six operational commitments:
 3. Nested-inductive auxes are **discovered in a fixed order over the
    canonical block** (no sort) and **de-duped**, independent of Lean's
    source-walk discovery (§6.2).
-4. Call sites are **surgically rewritten** so source-order aux
-   references resolve to canonical-order auxes.
+4. A changed block's Lean-named auxiliaries are **images** (Pass 3):
+   their source telescopes replace the legacy call-site argument
+   adaptation. Occurrences still undergo the faithful rewrite with
+   `_ix.inline` source records; the Ix auxiliaries live under `_ix` names
+   (until 2026-10-07 call sites were **surgically rewritten**, §8, history).
 5. A **metadata sidecar** — binder names, mdata, Lean-order `all`,
-   `CallSite.entries` / `CallSite.canon_meta`, and `AuxLayout` on
+   the `_ix.inline` records' `meta_sharing` (the surgery's
+   `CallSite.entries` / `CallSite.canon_meta` in older files), and `AuxLayout` on
    the block's Muts metadata (plus docstrings, planned) — preserves
    everything the hash erases, making
    `canonical + metadata` isomorphic to source Lean.
@@ -2696,10 +2744,13 @@ is known to be partial.
   manipulation primitives (`forall_telescope`, `mk_forall`, etc.).
 - `src/ix/compile/aux_gen/expr_utils.rs::RestoreCtx` — maps
   `_nested.X_N` references back to `ExtInd spec_params` form.
-- `src/ix/compile/surgery.rs` — call-site argument reordering;
-  `CallSitePlan`, `compute_call_site_plans`.
+- `src/ix/compile/surgery.rs` — (history: deleted 2026-10-07, §8) the
+  call-site argument reordering; its helpers the passes use are in
+  `crates/compile/src/compile/aux_source.rs`.
+- `crates/compile/src/compile/pass3/` — Pass 3 (images, `_ix` names,
+  records, the clique transport).
 - `src/ix/compile/mutual.rs` — orchestrates `generate_aux_patches` +
-  surgery + compilation per mutual block. Normal trusted compile paths skip
+  compilation per mutual block. Normal trusted compile paths skip
   the full `orig_kenv`; adversarial raw-constant tests can opt into
   `CompileOptions::check_originals` to validate Lean-original constants
   against a separate `lean_ingress` kernel environment.

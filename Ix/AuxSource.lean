@@ -1,38 +1,32 @@
 /-
-  Ix.CallSiteSurgery: call-site surgery — CONSUMPTION half.
+  Ix.AuxSource: the source side of a Lean block's auxiliaries, read by the
+  compiler's passes.
 
-  Port of the consumption half of `crates/compile/src/compile/surgery.rs`:
-  the expression-rewriting machinery `compile_expr`'s call-site arms apply
-  when a compiled body calls an auxiliary whose canonical layout differs
-  from Lean source order.
+  Contents (each mirrors the Rust function named in its docstring; the Rust
+  side is `crates/compile/src/compile/aux_source.rs` and, for the name
+  classification, `crates/compile/src/decompile.rs`):
+  - `classifyAuxGen`, `isAuxGenSuffix`: which Lean names are auxiliaries
+    aux-gen regenerates, and the inductive each hangs off.
+  - `collectLeanTelescope`, `collectIxonTelescope`: application spines.
+  - The split-minor helpers of O2 (`Ix.Compile.Pass.Opt.O2`) and O11a
+    (`Ix.Compile.Pass.Opt.O11a`): `AuxMotiveSig`/`auxMotiveSigs` (the nested
+    motives of a source recursor), `sourceCtorForMinor` (the constructor a
+    source minor eliminates), `sourceMinorType` (its type in caller terms),
+    `peelBinders`, `SourceRecTarget`/`findSourceRecTarget` (the recursive
+    target of a minor's field).
+  - `isPropFormer`, `belowFamilyLeanExists` (whether Lean generates the
+    `.below`/`.brecOn` families of a block), `blockLabel` (the block a
+    refusal names).
 
-  Like `Ix.CallSitePlan`, this lives BELOW `Ix.CompileM` as a leaf module
-  (unlike Rust, where everything shares one crate): plans are COMPUTED by
-  `Ix.AuxGen.Surgery` (above CompileM) but CONSUMED by
-  `Ix.CompileM.compileExpr` — so the consumption functions must sit below
-  both. Namespace stays `Ix.AuxGen`. Environment access: Rust threads
-  `lean_env: &LeanEnv`; here every consumer takes an explicit
-  `env : Ix.Environment` parameter (the same canonicalized environment
-  `CompileEnv.env` holds).
+  History: until M6R slice 6 (2026-10-07) these lived beside the legacy
+  call-site surgery (`Ix/CallSiteSurgery.lean`, `Ix/CallSitePlan.lean`,
+  `Ix/AuxGen/Surgery.lean`), which rewrote the call sites of a changed block
+  by plans under `IX_PASS3=off`. Pass 3 replaced it (the flip, M6) and slice 6
+  deleted it; O2 and O11a read a split block's source minors with the same
+  helpers, which is why they stay.
 
-  Contents:
-  - `isAuxGenSuffix` (decompile.rs:2151 / `classify_aux_gen`
-    decompile.rs:2157) — the compile-side aux-regen guard predicate. Only
-    the boolean projection is ported; the `(AuxKind, root)` payload is
-    used exclusively by the decompiler (out of scope).
-  - `collectLeanTelescope` / `collectIxonTelescope` (surgery.rs:208/225).
-  - `AuxMotiveSig` / `auxMotiveSigs` (surgery.rs:992/1002).
-  - `deriveHeadRewriteApp` (surgery.rs:1076) — head-rewrite spine pieces.
-  - `sourceCtorForMinor` (surgery.rs:942), `sourceMinorType`
-    (surgery.rs:1168), `peelBinders` (surgery.rs:1197),
-    `SourceRecTarget` / `findSourceRecTarget` (surgery.rs:1226/1233),
-    `synthesizeExternalIh` (surgery.rs:1306), `adaptSplitMinor`
-    (surgery.rs:834).
-
-  Not ported: `dump_plan_state` (surgery.rs:1354) and the
-  `IX_SPLIT_MINOR_DUMP` stderr diagnostic inside `adapt_split_minor` —
-  env-var debug blocks are not ported, matching the `IX_RECURSOR_DUMP`
-  precedent in `Ix.AuxGen.Nested`.
+  Lives below `Ix.CompileM` (imports only the environment, Ixon and
+  `Ix.AuxGen.ExprUtils`), so the compiler and aux-gen can both use it.
 
   PARITY RULE: every constructed node goes through the hash-maintaining
   smart constructors in `Ix.Environment` (`Expr.mkApp`, `Name.mkStr`, ...)
@@ -43,7 +37,6 @@ public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
 public import Ix.Ixon
-public import Ix.CallSitePlan
 public import Ix.AuxGen.ExprUtils
 public section
 
@@ -121,24 +114,23 @@ def classifyAuxGen (name : Name) : Option (AuxKind × Name) :=
     `.brecOn*`, `.brecOn*.go`, `.brecOn*.eq`)?
 
     Boolean projection of `classifyAuxGen` — Rust `is_aux_gen_suffix`
-    (decompile.rs:2151). Used by the compile-side aux-regen guard in
-    `compile_expr` (compile.rs:829) and the decompiler's Pass-1 skip. -/
+    (decompile.rs:2151). Used by the decompiler's Pass-1 skip and the validators. -/
 def isAuxGenSuffix (name : Name) : Bool :=
   (classifyAuxGen name).isSome
 
-/-! ## Telescope utilities (surgery.rs:201) -/
+/-! ## Telescope utilities (aux_source.rs) -/
 
-/-- Mirrors Rust `collect_lean_telescope` (surgery.rs:208).
+/-- Mirrors Rust `collect_lean_telescope` (aux_source.rs).
 
     Collect a Lean App telescope: peel App nodes to get
     `(head, #[a1, ..., aN])`, arguments in application order (leftmost
-    first). Same walk as `decomposeApps` (Rust keeps both — surgery.rs's
+    first). Same walk as `decomposeApps` (Rust keeps both — aux_source.rs's
     reference-based collector and expr_utils' owned `decompose_apps`);
     the Lean port delegates so the two can never drift. -/
 def collectLeanTelescope (e : Expr) : Expr × Array Expr :=
   decomposeApps e
 
-/-- Mirrors Rust `collect_ixon_telescope` (surgery.rs:225).
+/-- Mirrors Rust `collect_ixon_telescope` (aux_source.rs).
 
     Collect an Ixon App telescope: peel App nodes to get
     `(head, #[a1, ..., aN])`, arguments in application order (leftmost
@@ -155,13 +147,13 @@ def collectIxonTelescope (e : Ixon.Expr) : Ixon.Expr × Array Ixon.Expr :=
       | _ => break
     return (cur, args.reverse)
 
-/-! ## Aux motive signatures (surgery.rs:992) -/
+/-! ## Aux motive signatures (aux_source.rs) -/
 
 /-- Signature of a nested-aux motive read off a source recursor's type:
     motive `sourcePos` targets `extName specs… idx…`. Spec args are
     concrete (the recursor type is instantiated with call-site params
     before extraction), so field types can be matched against them by
-    hash. Mirrors Rust `AuxMotiveSig` (surgery.rs:992). -/
+    hash. Mirrors Rust `AuxMotiveSig` (aux_source.rs). -/
 structure AuxMotiveSig where
   sourcePos : Nat
   extName : Name
@@ -172,7 +164,7 @@ structure AuxMotiveSig where
 /-- Extract `AuxMotiveSig`s for every aux motive position (`≥ all.size`)
     of `recVal`, by walking its type instantiated with the call site's
     levels, params, and motives. Mirrors Rust `aux_motive_sigs`
-    (surgery.rs:1002). -/
+    (aux_source.rs). -/
 def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
     (params : Array Expr) (motives : Array Expr) (env : Ix.Environment) :
     Array AuxMotiveSig := Id.run do
@@ -187,7 +179,7 @@ def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
     match cur with
     | .forallE _ _ body _ _ =>
       -- Shift-aware substitution — args may reference the caller's
-      -- telescope (see `source_minor_type`, surgery.rs:1019).
+      -- telescope (see `source_minor_type`, aux_source.rs).
       cur := instantiateRev body #[arg]
     | _ => return out
   for (motive, mIdx) in motives.zipIdx do
@@ -197,7 +189,7 @@ def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
     | .forallE _ dom body _ _ =>
       if mIdx >= nUser then
         -- dom = `∀ idx…, Ext specs… idx… → Sort _` — the major's type is
-        -- the last peeled domain (surgery.rs:1031).
+        -- the last peeled domain (aux_source.rs).
         let mut d := consumeTypeAnnotations dom
         let mut lastDom : Option Expr := none
         let mut i : Nat := 0
@@ -225,88 +217,13 @@ def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
     | _ => return out
   return out
 
-/-- Derive the pieces needed to rebuild a head-rewritten call site onto
-    the external recursor's telescope: the extended universe-level list
-    and the external inductive's parameter (spec) arguments.
-
-    Both are read off the SOURCE aux recursor's type — the motive binder
-    at `hr.targetMotivePos` has domain `∀ idx…, Ext.{occ} specs… idx… →
-    Sort _` — instantiated with the call site's levels, params, and
-    preceding motives, so the result is expressed in caller terms.
-
-    Mirrors Rust `derive_head_rewrite_app` (surgery.rs:1076), including
-    its `Result<_, String>` error channel (`Except String` — the
-    consumption caller decides how to wrap failures). -/
-def deriveHeadRewriteApp (recName : Name) (recLevels : Array Level)
-    (hr : AuxHeadRewrite) (params : Array Expr) (motives : Array Expr)
-    (env : Ix.Environment) :
-    Except String (Array Level × Array Expr) := Id.run do
-  let some (.recInfo recVal) := env.get? recName
-    | return .error s!"'{recName.pretty}' is not a recursor"
-  let sigs := auxMotiveSigs recVal recLevels params motives env
-  let some sig := sigs.find? fun s => s.sourcePos == hr.targetMotivePos
-    | return .error s!"no aux motive signature at position {hr.targetMotivePos}"
-  if Name.mkStr sig.extName "rec" != hr.targetRec then
-    return .error s!"aux motive targets '{sig.extName.pretty}' but the \
-plan's target is '{hr.targetRec.pretty}'"
-  -- Occurrence levels: re-extract the external const's level args from
-  -- the motive's major type — `auxMotiveSigs` keeps only the value args
-  -- (surgery.rs:1105).
-  let mut cur :=
-    substLevels recVal.cnst.type recVal.cnst.levelParams recLevels
-  for arg in params ++ motives.extract 0 hr.targetMotivePos do
-    match cur with
-    | .forallE _ _ body _ _ =>
-      -- Shift-aware substitution — args may reference the caller's
-      -- telescope (see `source_minor_type`, surgery.rs:1110).
-      cur := instantiateRev body #[arg]
-    | _ => return .error "recursor telescope too short"
-  let .forallE _ dom _ _ _ := cur
-    | return .error "missing target motive binder"
-  let mut d := consumeTypeAnnotations dom
-  let mut lastDom : Option Expr := none
-  let mut i : Nat := 0
-  repeat
-    match d with
-    | .forallE _ dd db _ _ =>
-      lastDom := some (consumeTypeAnnotations dd)
-      let (_, fv) := freshFVar "hr_idx" i
-      d := instantiate1 db fv
-      i := i + 1
-    | _ => break
-  let some t := lastDom
-    | return .error "motive domain has no major binder"
-  let (head, _) := decomposeApps t
-  let occLevels : Array Level ←
-    match head with
-    | .const _ lvls _ => pure lvls
-    | _ => return .error "major type head is not a constant"
-  let some (.recInfo target) := env.get? hr.targetRec
-    | return .error
-        s!"target recursor '{hr.targetRec.pretty}' missing from env"
-  let needed := target.cnst.levelParams.size
-  let targetLevels : Array Level ←
-    if needed == occLevels.size + 1 then
-      -- Elimination level first (Lean's recursor level convention), then
-      -- the external inductive's own levels from the occurrence.
-      let some elim := recLevels[0]?
-        | return .error "source recursor has no elimination level"
-      pure (#[elim] ++ occLevels)
-    else if needed == occLevels.size then
-      pure occLevels
-    else
-      return .error s!"cannot map universe levels: target \
-'{hr.targetRec.pretty}' has {needed} level params, occurrence supplies \
-{occLevels.size}"
-  return .ok (targetLevels, sig.specs)
-
-/-! ## Split-minor adaptation (surgery.rs:834-1352) -/
+/-! ## The source side of a split minor (O2, O11a) -/
 
 /-- Source minor index → `(sourcePos, ConstructorVal)` across the user
     minor bands (one per `rec.all` inductive, in source order) followed
     by the aux minor bands (one per source aux, the external inductive's
     own ctor list). Mirrors Rust `source_ctor_for_minor`
-    (surgery.rs:942). -/
+    (aux_source.rs). -/
 def sourceCtorForMinor (srcMinorIdx : Nat) (recVal : RecursorVal)
     (env : Ix.Environment) (auxSigs : Array AuxMotiveSig) :
     Option (Nat × ConstructorVal) := Id.run do
@@ -338,7 +255,7 @@ def sourceCtorForMinor (srcMinorIdx : Nat) (recVal : RecursorVal)
 
 /-- Instantiated type of the `srcMinorIdx`-th minor binder of a source
     recursor, expressed in caller terms. Mirrors Rust `source_minor_type`
-    (surgery.rs:1168). -/
+    (aux_source.rs). -/
 def sourceMinorType (recVal : RecursorVal) (recLevels : Array Level)
     (params : Array Expr) (motives : Array Expr) (minors : Array Expr)
     (srcMinorIdx : Nat) : Option Expr := Id.run do
@@ -350,7 +267,7 @@ def sourceMinorType (recVal : RecursorVal) (recLevels : Array Level)
       -- `instantiateRev`, not `instantiate1`: call-site args may carry
       -- loose BVars into the caller's telescope (rec applications under
       -- binders, e.g. `.brecOn_N.go` bodies) and must be lifted when
-      -- substituted under the type's remaining binders (surgery.rs:1180).
+      -- substituted under the type's remaining binders (aux_source.rs).
       cur := instantiateRev body #[arg]
     | _ => return none
   match cur with
@@ -359,7 +276,7 @@ def sourceMinorType (recVal : RecursorVal) (recLevels : Array Level)
 
 /-- Open `n` foralls into fresh-FVar `LocalDecl`s, returning
     `(decls, fvars, remainder)`. Mirrors Rust `peel_binders`
-    (surgery.rs:1197). -/
+    (aux_source.rs). -/
 def peelBinders (cur₀ : Expr) (n : Nat) (pfx : String) (offset : Nat) :
     Option (Array LocalDecl × Array Expr × Expr) := Id.run do
   let mut cur := cur₀
@@ -383,7 +300,7 @@ def peelBinders (cur₀ : Expr) (n : Nat) (pfx : String) (offset : Nat) :
 /-- A minor field whose (peeled) type targets a source or aux inductive:
     the target's source position, the index args of the occurrence, and
     the field's own binder telescope. Mirrors Rust `SourceRecTarget`
-    (surgery.rs:1226). -/
+    (aux_source.rs). -/
 structure SourceRecTarget where
   sourcePos : Nat
   idxArgs : Array Expr
@@ -394,7 +311,7 @@ structure SourceRecTarget where
 /-- Detect whether a minor field's domain targets one of the source
     inductives (`originalAll`) at the call-site params, or a nested-aux
     occurrence matching one of the recursor's aux motive signatures.
-    Mirrors Rust `find_source_rec_target` (surgery.rs:1233).
+    Mirrors Rust `find_source_rec_target` (aux_source.rs).
 
     (Rust indexes fresh FVars with `field_idx.saturating_mul(1024)`;
     `Nat` multiplication cannot overflow, and the saturation point is
@@ -451,100 +368,50 @@ def findSourceRecTarget (dom : Expr) (originalAll : Array Name)
       idxArgs := args.extract matched.extNParams args.size
       xsDecls, xsFvars }
 
-/-- Build the recursive-call IH for a field targeting an out-of-block
-    source position: eliminate with the target's own source recursor
-    (user targets) or the source aux recursor `<all0>.rec_{j+1}` (aux
-    targets), passing the full source telescope verbatim — the inner call
-    then goes through its own call-site surgery (plan lookup by head
-    name), which canonicalizes it for its SCC. Mirrors Rust
-    `synthesize_external_ih` (surgery.rs:1306). -/
-def synthesizeExternalIh (target : SourceRecTarget) (fieldFVar : Expr)
-    (originalAll : Array Name) (recLevels : Array Level)
-    (params : Array Expr) (motives : Array Expr) (minors : Array Expr) :
-    Expr := Id.run do
-  let targetRecName :=
-    if target.sourcePos < originalAll.size then
-      Name.mkStr originalAll[target.sourcePos]! "rec"
-    else
-      let auxJ := target.sourcePos - originalAll.size
-      Name.mkStr originalAll[0]! s!"rec_{auxJ + 1}"
-  let mut ih := Expr.mkConst targetRecName recLevels
-  for arg in params do
-    ih := Expr.mkApp ih arg
-  for arg in motives do
-    ih := Expr.mkApp ih arg
-  for arg in minors do
-    ih := Expr.mkApp ih arg
-  for idx in target.idxArgs do
-    ih := Expr.mkApp ih idx
-  let mut fieldApp := fieldFVar
-  for fv in target.xsFvars do
-    fieldApp := Expr.mkApp fieldApp fv
-  ih := Expr.mkApp ih fieldApp
-  return mkLambda ih target.xsDecls
+/-! ## Existence of the `.below`/`.brecOn` families (A0, WB-B1) -/
 
-/-- Adapt a kept source minor for a canonical recursor whose SCC is
-    smaller than Lean's original mutual `all` block.
+/-- Whether a type is a Prop former: a forall telescope ending in `Prop`
+    (Lean's `isPropFormerType` on an inductive's type, a syntactic telescope
+    for every inductive the elaborator emits). Mirrors Rust
+    `is_prop_former` (aux_gen.rs). -/
+def isPropFormer (typ : Expr) : Bool := Id.run do
+  let mut cur := typ
+  repeat
+    match cur with
+    | .forallE _ _ body _ _ => cur := body
+    | .sort (.zero _) _ => return true
+    | _ => return false
+  return false -- unreachable: the loop always returns
 
-    Lean's source recursor minor for a constructor receives an IH
-    argument for every recursive field targeting any inductive in the
-    original mutual block. After canonical SCC splitting, the regenerated
-    recursor only supplies IHs for fields targeting the current SCC. For
-    fields targeting another SCC, we synthesize the missing IH by
-    recursively calling the target's source recursor with the original
-    source-order motive/minor telescope. That inner recursor call then
-    goes through the normal call-site surgery for its own SCC.
+/-- Whether Lean generates the `.below`/`.brecOn` families (and their nested
+    `_N` members) for the Lean mutual block `originalAll`, by Lean's own
+    conditions, never by name shape:
 
-    Returns `none` when no adaptation is needed (every source position is
-    in-block, or the minor's fields target nothing out-of-block).
-    Mirrors Rust `adapt_split_minor` (surgery.rs:834). The
-    `IX_SPLIT_MINOR_DUMP` leak diagnostic is not ported. -/
-def adaptSplitMinor (recName : Name) (recLevels : Array Level)
-    (plan : CallSitePlan) (srcMinorIdx : Nat) (minor : Expr)
-    (params : Array Expr) (motives : Array Expr) (minors : Array Expr)
-    (env : Ix.Environment) : Option Expr := Id.run do
-  if plan.sourceInBlock.all (fun inBlock => inBlock) then
-    return none
-  let some recCi := env.get? recName | return none
-  let .recInfo recVal := recCi | return none
-  let originalAll := recVal.all
-  -- Nested-aux motive signatures: fields targeting an aux occurrence
-  -- (`List B` rather than a user original) also carry IH binders in the
-  -- source minor; they must be detected for the peel below to stay
-  -- aligned, and synthesized/kept like user-target IHs.
-  let auxSigs := auxMotiveSigs recVal recLevels params motives env
-  let some (_parentSrc, ctor) :=
-    sourceCtorForMinor srcMinorIdx recVal env auxSigs | return none
-  let nFields := ctor.numFields
-  let some sourceMinorTy :=
-    sourceMinorType recVal recLevels params motives minors srcMinorIdx
-    | return none
-  let some (fieldDecls, fieldFVars, afterFields) :=
-    peelBinders sourceMinorTy nFields "split_field" 0 | return none
-  let mut recFields : Array (Nat × SourceRecTarget) := #[]
-  for (decl, fieldIdx) in fieldDecls.zipIdx do
-    if let some target := findSourceRecTarget decl.domain originalAll
-        params env "split_xs" fieldIdx auxSigs then
-      recFields := recFields.push (fieldIdx, target)
-  if !recFields.any (fun (_, target) =>
-      !(plan.sourceInBlock.getD target.sourcePos false)) then
-    return none
-  let some (sourceIhDecls, sourceIhFVars, _) :=
-    peelBinders afterFields recFields.size "split_ih" 0 | return none
-  if sourceIhDecls.size != recFields.size then
-    return none
-  let mut wrapperDecls := fieldDecls
-  let mut body := minor
-  for fv in fieldFVars do
-    body := Expr.mkApp body fv
-  for ((fieldIdx, target), ihIdx) in recFields.zipIdx do
-    if plan.sourceInBlock.getD target.sourcePos false then
-      wrapperDecls := wrapperDecls.push sourceIhDecls[ihIdx]!
-      body := Expr.mkApp body sourceIhFVars[ihIdx]!
-    else
-      let synth := synthesizeExternalIh target fieldFVars[fieldIdx]!
-        originalAll recLevels params motives minors
-      body := Expr.mkApp body synth
-  return some (mkLambda body wrapperDecls)
+    - Type-level (`Lean.Meta.mkBelow`/`mkBRecOn`): the inductive is
+      recursive (`isRec`) and not a Prop former;
+    - Prop-level (`Lean.Meta.IndPredBelow.mkBelow`): the inductive predicate
+      is recursive and not `unsafe` (Lean also skips classes, which the
+      compiler's environment does not record).
+
+    `isRec` is a property of the whole Lean block, so the first member found
+    decides. A user constant named `T.below`/`T.brecOn` for a non-recursive
+    `T` (a definition, or a structure field accessor such as
+    `IndPredBelow.NewDecl.below`) is therefore never taken for the
+    auxiliary. Mirrors Rust `below_family_lean_exists` (aux_gen.rs). -/
+def belowFamilyLeanExists (lookup : Name → Option ConstantInfo)
+    (originalAll : Array Name) : Bool := Id.run do
+  for n in originalAll do
+    match lookup n with
+    | some (.inductInfo v) =>
+      return v.isRec && !(v.isUnsafe && isPropFormer v.cnst.type)
+    | _ => pure ()
+  return false
+
+/-- The block a refusal names: the first member of its first canonical
+    class. Mirrors Rust `aux_gen::block_label`. -/
+def blockLabel (sortedClasses : Array (Array Name)) : String :=
+  match sortedClasses[0]? >>= (·[0]?) with
+  | some n => n.pretty
+  | none => "<empty>"
 
 end Ix.AuxGen

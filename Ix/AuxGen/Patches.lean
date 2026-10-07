@@ -268,7 +268,7 @@ refusing to synthesize canonical-indexed _N names")
         generateCanonicalRecursorsWithOverlay sortedClasses none none maps
     else do
       -- Standard flat-block generation; disagreement flavors still need
-      -- the perm for surgery/aliases (aux_gen.rs:500-548).
+      -- the perm for the layout and the aliases (aux_gen.rs:500-548).
       if structuralHasNested || metadataHasNested then do
         let mut origToCanonMap : Std.HashMap Name Name := {}
         for cls in sortedClasses do
@@ -656,9 +656,9 @@ exists")
   --    discovering reference forces the scheduler edge). Evaporating
   --    here would claim the same name with different content.
   --
-  -- Fired decisions are recorded per position in `evaporated`; surgery's
-  -- head-rewrite plans key off the SAME flags (alias and rewrite fire
-  -- together or not at all).
+  -- Fired decisions are recorded per position in `evaporated` (the block's
+  -- `AuxLayout`; until M6R slice 6 the legacy surgery's head-rewrite plans
+  -- keyed off the same flags).
   let mut evaporated : Option (Array Bool) :=
     capturedPerm.map fun p => Array.replicate p.size false
   if let some perm := capturedPerm then
@@ -717,8 +717,8 @@ exists")
 canonically owned by its spec members' SCC, but that SCC registered no \
 address for the name")
             continue
-          -- Target guard mirrors the head-rewrite plan registration in
-          -- surgery (driven by the same `evaporated` flags) —
+          -- Target guard (it mirrored the legacy surgery's head-rewrite plan
+          -- registration until M6R slice 6) —
           -- multi-motive external targets are outside the supported
           -- rewrite domain, and so is a target the environment lacks. Both
           -- are refused, naming the block (A0, WB-E1): compiling Lean's

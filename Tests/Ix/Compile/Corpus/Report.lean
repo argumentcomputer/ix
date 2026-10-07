@@ -16,7 +16,7 @@ they never replace the required phase rows. -/
 def checkLedger (cases : Array Case) (modes phases : Array String) (rows : Array Verdict) :
     Except String Unit := do
   if cases.isEmpty || modes.isEmpty || rows.isEmpty then throw "empty corpus execution ledger"
-  unless modes.all (#["off", "on"].contains ·) && modes.toList.eraseDups.length == modes.size do
+  unless modes.all (#["on"].contains ·) && modes.toList.eraseDups.length == modes.size do
     throw "invalid or duplicate ledger modes"
   unless phases.all (phaseNames.contains ·) && phases.toList.eraseDups.length == phases.size &&
       phases.contains "elaborate" && phases.contains "compile" do
@@ -37,7 +37,7 @@ def checkLedger (cases : Array Case) (modes phases : Array String) (rows : Array
     else if !phases.contains row.phase then
       unless row.status == "not-selected" do throw s!"unselected phase has a result: {row.phase}"
     else if row.status == "not-selected" then throw s!"requested phase marked not-selected: {row.phase}"
-    if row.status == "not-applicable" && !(row.phase == "parity" && row.mode == "on") then
+    if row.status == "not-applicable" then
       throw s!"invalid not-applicable phase {row.phase}/{row.mode}"
   for case in cases do
     for mode in modes do
@@ -51,7 +51,7 @@ def validateExpected (cases : Array Case) (expected : Array Expected) : Except S
     if seen.contains (e.caseId, e.mode, e.phase) then throw s!"duplicate expectation {e.caseId}/{e.mode}/{e.phase}"
     seen := seen.insert (e.caseId, e.mode, e.phase)
     unless cases.any (·.id == e.caseId) do throw s!"expectation names absent case {e.caseId}"
-    unless #["off", "on"].contains e.mode && phaseNames.contains e.phase do
+    unless #["on"].contains e.mode && phaseNames.contains e.phase do
       throw s!"invalid expected mode/phase {e.mode}/{e.phase}"
     if e.diagnostic.isEmpty || e.cause.isEmpty then throw "expected unsupported case lacks diagnostic or cause"
 
@@ -82,7 +82,8 @@ def run (cfg : RunConfig) (cases : Array Case) (expected : Array Expected)
     if case.id.isEmpty || case.ns.isEmpty then throw <| IO.userError "empty case ID or namespace"
     caseIds := caseIds.insert case.id
   for mode in modes do
-    unless #["off", "on"].contains mode do throw <| IO.userError s!"invalid switch mode {mode}"
+    unless #["on"].contains mode do
+      throw <| IO.userError s!"invalid mode {mode}: Pass 3 (`on`) is the only mode since M6R slice 6"
   for phase in cfg.phases do
     unless phaseNames.contains phase do throw <| IO.userError s!"unknown phase {phase}"
   unless cfg.phases.contains "elaborate" && cfg.phases.contains "compile" do
@@ -460,7 +461,7 @@ def matrix (dir : System.FilePath) : IO UInt32 := do
     "|---|---|---|" ++ String.join (statuses.toList.map fun _ => "---|")]
   for f in families do
     for phase in phaseNames.push "infrastructure" do
-      for mode in #["off", "on"] do
+      for mode in #["on"] do
         let selected := rows.filter fun r => family r.caseId == f && r.phase == phase && r.mode == mode
         unless selected.isEmpty do
           let counts := statuses.map fun status => toString (selected.filter (·.status == status)).size

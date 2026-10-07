@@ -589,7 +589,10 @@ pub fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
 ///
 /// Each peeled argument is instantiated with [`instantiate_rev`] so loose
 /// BVars in the argument are lifted beneath any binders that remain in the
-/// telescope. Closed arguments behave exactly as with [`instantiate1`].
+/// telescope. Closed arguments behave exactly as with [`instantiate1`]. (Its
+/// production caller, the legacy surgery's eta adapter, was deleted at M6R
+/// slice 6; the checked twin `checked_expr::instantiate_pi_params` is live.)
+#[cfg(test)]
 pub(crate) fn instantiate_pi_params(
   typ: &LeanExpr,
   n: usize,
@@ -658,6 +661,9 @@ pub(super) fn instantiate_spec_with_fvars(
 ///
 /// Used when substituting args under
 /// inner binders (each args element is re-shifted by the current depth).
+/// (Its production caller, the legacy surgery's eta adapter, was deleted at
+/// M6R slice 6; `checked_expr::shift_vars` is live.)
+#[cfg(test)]
 pub(crate) fn shift_vars(
   expr: &LeanExpr,
   amount: usize,

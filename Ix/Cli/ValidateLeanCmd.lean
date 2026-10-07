@@ -1,8 +1,9 @@
 /-
   `ix validate-lean <file.lean>`: the validator of record for Phase A
-  (design `PLAN-A` §6 A3v). Pure Lean, over the Lean compiler's output, in
-  both states of the Pass 3 switch (Pass 3 by default; `IX_PASS3=off` for
-  the legacy surgery).
+  (design `PLAN-A` §6 A3v). Pure Lean, over the Lean compiler's output
+  (Pass 3, the only mode since M6R slice 6). With `--ixe` it reads any
+  stored file, also one the legacy call-site surgery wrote before slice 6
+  (no `_ix` names: its changed blocks are reported, not oracle subjects).
 
   Phases (each a function below with a paragraph saying what it
   establishes and what it does not; the old numbers are kept where their
@@ -213,8 +214,8 @@ def changedOf (env : Ixon.Env) (view : View) : Changed := Id.run do
 
 /-- How the compiler presented a Lean inductive block, read off the stored
     projections of its members: `identity` (one block, members at their
-    source positions), or permuted, split, collapsed. Independent of the
-    switch (it reads addresses only). -/
+    source positions), or permuted, split, collapsed. It reads addresses
+    only. -/
 inductive Shape where
   | identity | permuted | split | collapsed | unknown
   deriving BEq, Inhabited
@@ -567,13 +568,13 @@ meta mode on them (reported, not gated): {report.routedChecked} equal, \
     resolution); and, in path mode, that the auxiliary names agree both
     ways (§4.7(b): Ix generates an auxiliary iff Lean has it). It does not
     check auxiliaries of changed blocks (their Lean names denote images
-    under Pass 3, phase 7; or name surgered Ix auxiliaries with the switch
-    off, which are reported by block shape), Lean's non-regenerated
+    under Pass 3, phase 7; or, in a file the legacy surgery wrote before M6R
+    slice 6, name surgered Ix auxiliaries, which are reported by block
+    shape), Lean's non-regenerated
     auxiliaries (`noConfusion`, `sizeOf`, …: ordinary constants, phase 4),
     and it is only as independent as the shared compiler (the `aux-oracle`
-    suite's `Gen.lean` replay is the independent leg, on fixtures). Under
-    Pass 3 a changed block without `_ix` names (one left on the surgery
-    path) fails the phase. -/
+    suite's `Gen.lean` replay is the independent leg, on fixtures). In
+    a Pass 3 compile a changed block without `_ix` names fails the phase. -/
 def phaseOracle (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompiled)
     (leanAux? : Option (Std.HashSet Ix.Name)) (ungrounded : Std.HashSet Ix.Name := {})
     (pass3 : Bool := false) (explain : Bool := false) :
@@ -631,7 +632,7 @@ def phaseOracle (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompiled)
   if !ixOnly.isEmpty then
     lines := lines.push s!"✗ §4.7(b) Ix auxiliary Lean does not have: {showNames ixOnly}"
   if !surgery.isEmpty then
-    lines := lines.push s!"changed blocks without `_ix` names (switch off: surgery path, not an \
+    lines := lines.push s!"changed blocks without `_ix` names (legacy surgery output, not an \
 oracle subject): {surgeryLine}"
     for (k, rs) in surgery.toList do lines := lines.push s!"  {k}: {showNames (dedup rs) 6}"
   if !changedNonImage.isEmpty then
@@ -662,16 +663,16 @@ unclassified {mismatch.size}; changed blocks skipped: {(if surgeryLine.isEmpty t
     `Eq.refl`), is accepted by `Ix.Tc` in anonymous mode, in a test-only
     copy of the environment. It does not check the non-recursor images'
     equations (they are Lean's own values over the images, Def 3.5, checked
-    as constants here and by decompile in phase 5), and with the switch off
-    it does not apply (no images; the surgery path is reported by
-    phase 6). -/
+    as constants here and by decompile in phase 5), and on a file the
+    legacy surgery wrote it does not apply (no images; reported by phase
+    6). -/
 def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharing.Exact.Limits)
     (ungrounded : Std.HashSet Ix.Name := {}) :
     PhaseResult × Array String × Array String := Id.run do
   let cliqueNote := if ch.cliques.isEmpty then ""
     else s!"; {ch.cliques.size} clique display member(s), not image-checked here"
   if ch.blocks.isEmpty then
-    return (.skipped ((if ch.unknown.isEmpty then "no changed block with `_ix` names (switch off, or no block changed)"
+    return (.skipped ((if ch.unknown.isEmpty then "no changed block with `_ix` names (no block changed, or legacy surgery output)"
       else s!"display members without a Lean block: {showNames ch.unknown}") ++ cliqueNote), #[], #[])
   -- a block Pass 2 refused (its compile failed, phase 1) has no images to check
   let live := ch.blocks.filter fun all =>
@@ -757,8 +758,8 @@ def phaseRules (env : Ixon.Env) (view : View) (ch : Changed) (limits : Ix.Sharin
     unless it is some name's canonical address (the Rust phase 3 rule);
     (iv) only regenerated auxiliary names carry `original`, and every image
     has one. Every violation is reported by name. It does not re-derive the
-    surgered originals of the switch-off path (their provenance is the
-    surgery replay, checked by phase 5). -/
+    surgered originals of a file the legacy surgery wrote (their provenance
+    is the surgery replay, checked by phase 5). -/
 def phaseProvenance (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompiled) :
     PhaseResult × Array String := Id.run do
   let canonical : Std.HashSet Address := env.named.fold (init := {}) fun s _ nd => s.insert nd.addr
@@ -804,7 +805,7 @@ def phaseProvenance (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompil
       if nd.original.isNone then violations := violations.push s!"{n.pretty}: image without Named.original"
   let detail := s!"{nWith} entries with Named.original: {nImg} images/changed-block auxiliaries \
 (original = Lean's form recompiled), {nAux} unchanged-block auxiliaries (original = own address), \
-{nSurg} surgered (switch off, not re-derived); {violations.size} violation(s)"
+{nSurg} surgered (legacy surgery output, not re-derived); {violations.size} violation(s)"
   let lines := (violations.extract 0 12).map ("✗ " ++ ·)
   if violations.isEmpty then return (.passed detail, lines)
   return (.failed detail, lines)
@@ -820,7 +821,7 @@ def phaseProvenance (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompil
     store canonical forms under `c._ix` and helper names (`p._ix_retyped.s`,
     `T.noConfusionType._ix`, …), which are recorded in the non-canonical set
     (`PJ-FORM-<pass>`, `INHERITED`) and never in the clique table, so they are
-    excluded by construction. Empty with the switch off (no table). Sorted by
+    excluded by construction. Empty without a Pass 3 compile (no table). Sorted by
     first member, so the phase's order is the same on every run. -/
 def transportedCliques (cenv : Ix.CompileM.CompileEnv) : Array (Array Lean.Name) := Id.run do
   let mut out : Array (Array Ix.Name) := #[]
@@ -902,7 +903,7 @@ def auxTableRows (env : Ixon.Env) (view : View) (ch : Changed) (rc : Recompiled)
       else if shape == .identity then
         ("6 oracle leg" ++ routed, if differs then "exception" else "equal")
       else if pass3 then ("6 oracle leg: changed block without `_ix` names", "fail")
-      else ("surgery path (switch off): 5 replay, 8 (iii)" ++ routed, "not re-derived")
+      else ("legacy surgery output: 5 replay, 8 (iii)" ++ routed, "not re-derived")
     rows := rows.push s!"{n.pretty}\t{status}\t{differs}\t{phase}\t{verdict}"
   return rows
 
@@ -914,8 +915,8 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if ixe?.isNone && path?.isNone then
     p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
     return 1
-  let switchOn ← match ← Ix.Compile.Pass.switchFromEnv with
-    | .ok b => pure b
+  match ← Ix.Compile.Pass.switchFromEnv with
+    | .ok () => pure ()
     | .error e =>
       p.printError s!"error: {e}"
       return 2
@@ -941,7 +942,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Phase 9's cliques: the transported cliques of the compiler's clique
   -- record, read off the compile state at phase 1 (path mode).
   let mut cliques9? : Option (Array (Array Lean.Name)) := none
-  IO.println s!"[validate-lean] switch {Ix.Compile.Pass.switchVar}: {if switchOn then "on" else "off"}"
+  IO.println "[validate-lean] mode: Pass 3 (the only mode since M6R slice 6)"
 
   match ixe?, path? with
   | some ixePath, _ =>
@@ -1212,7 +1213,7 @@ phases 6–8 read Lean's forms from the decompiler)"
       else
         let t0 ← IO.monoMsNow
         let (r, lines) := phaseOracle ixonEnv view ch rc inputAux? ungrounded
-          (pass3 := if inputAux?.isSome then switchOn else pass3Env)
+          (pass3 := inputAux?.isSome || pass3Env)
           (explain := (← IO.getEnv "IX_VALIDATE_EXPLAIN").isSome)
         phases ← pushPhase phases { key := "6", name := "Oracle leg (unchanged blocks)", result := r,
                                     ms := (← IO.monoMsNow) - t0 + tRc } lines
@@ -1233,7 +1234,7 @@ phases 6–8 read Lean's forms from the decompiler)"
                                     ms := (← IO.monoMsNow) - t0 } lines
       if let some path := ← IO.getEnv "IX_VALIDATE_AUXTABLE" then
         let rows := auxTableRows ixonEnv view ch rc rulesProblems
-          (if inputAux?.isSome then switchOn else pass3Env)
+          (inputAux?.isSome || pass3Env)
         IO.FS.writeFile path ("\n".intercalate rows.toList ++ "\n")
         IO.println s!"[validate-lean] auxiliary table: {rows.size - 1} row(s) to {path}"
   | _ =>
@@ -1243,7 +1244,7 @@ phases 6–8 read Lean's forms from the decompiler)"
 
   -- The summary table, then a `RESULT:` line matching `ix validate`'s.
   IO.println ""
-  IO.println s!"[validate-lean] phase summary (switch {if switchOn then "on" else "off"}; \
+  IO.println s!"[validate-lean] phase summary (\
 {if pass3Env then "Pass 3 environment" else "no `_ix` names"}):"
   IO.println "[validate-lean]   #  phase                          verdict  time"
   for r in phases do
@@ -1279,7 +1280,7 @@ phases 6–8 read Lean's forms from the decompiler)"
       , ("input", Lean.Json.str (ixe?.getD (path?.getD "")))
       , ("ns", (p.flag? "ns").map (Lean.Json.str <| ·.as! String) |>.getD Lean.Json.null)
       , ("local", Lean.toJson (p.hasFlag "local"))
-      , ("pass3Switch", Lean.toJson switchOn)
+      , ("pass3Switch", Lean.toJson true)
       , ("pass3Env", Lean.toJson pass3Env)
       , ("phases", phaseRows)
       , ("totalFailures", Lean.toJson failures.size)

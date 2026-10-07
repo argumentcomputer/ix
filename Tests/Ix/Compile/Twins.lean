@@ -11,19 +11,16 @@
 
   The suite compiles the union of every presentation's closure with the
   Lean compiler (`Ix.CompileM.compileLeanInput`, the `ix compile-lean`
-  pipeline) in both modes, the legacy surgery (`IX_PASS3=off`) and Pass 3
-  (the default since the flip, M6), and once with the Rust compiler
-  (`rsCompileEnvBytesFFI`, the `ix compile` path), and requires:
+  pipeline) and with the Rust compiler (`rsCompileEnvBytesFFI`, the
+  `ix compile` path), both in Pass 3 (their only mode since M6R slice 6;
+  until then the suite also compiled the legacy surgery, `IX_PASS3=off`,
+  against its own record), and requires:
 
-  1. the Rust compiler and the Lean compiler's legacy mode (the surgery,
-     which Rust implements until M6R) give every fixture constant the same
-     address, and refuse exactly `NonCanonical.expectedRefusals`; the Pass 3
-     compile refuses nothing;
-  2. in each mode, for every pair `(A, B)`, every constant of `B` that maps
-     to a constant of `A` has `A`'s address, except the entries of that
-     mode's non-canonical set (legacy:
-     `Tests.Ix.Compile.NonCanonical.nonCanonicalOff`; default:
-     `Tests.Ix.Compile.NonCanonicalDefault.nonCanonical`), and the set is
+  1. the two compilers give every fixture constant the same address, and
+     neither refuses anything;
+  2. for every pair `(A, B)`, every constant of `B` that maps to a constant
+     of `A` has `A`'s address, except the entries of the non-canonical set
+     (`Tests.Ix.Compile.NonCanonicalDefault.nonCanonical`), and the set is
      exact: a difference without an entry and an entry without a
      difference both fail. Constants on one side only are differences too,
      after generated-number names (`match_N`, `proof_N`, `_sizeOf_N`, `eq_N`, …)
@@ -38,9 +35,8 @@
 
   Diagnostics: `IX_TWINS_DUMP=<dir>` writes, per difference, both Lean
   constants pretty-printed and the first differing subterms;
-  `IX_TWINS_IXE=<path>` (`IX_TWINS_IXE_ON` for the Pass 3 compile) writes the
-  Lean compiler's output for the kernel
-  checks of the evidence; `IX_TWINS_KERNELS=<dir>` (`IX_TWINS_KERNELS_ON`) reads the three
+  `IX_TWINS_IXE=<path>` writes the Lean compiler's output for the kernel
+  checks of the evidence; `IX_TWINS_KERNELS=<dir>` reads the three
   kernels' verdicts on that output (`KernelVerdicts`) into the suggested
   entries; `IX_TWINS_ONLY=<substring>` restricts the
   families.
@@ -229,11 +225,12 @@ private def ownPair (fam : String) (enc : Name) (skip : List Name := []) : Famil
                rename := if enc.isAnonymous then [] else [(`second ++ enc, `first ++ enc)] }] }
 
 /-- The clique-ownership sources as twin families (FIX-pfwf O3), compared
-    with the switch on by `pass3-cliques` against `nonCanonicalOn`: the
+    by `pass3-cliques` against `nonCanonicalOn`: the
     cliques the transport keeps in Lean's form there (`SHAPE`, `NOSPEC`) and
     Lean's encoding constants of the transported ones are recorded like every
-    other clique family's. They are not in `allFamilies` (the switch-off
-    twins): there both orders are Lean's form by construction. -/
+    other clique family's. They are not in `allFamilies` (the twins
+    gate's families, which date from the legacy surgery, where both orders
+    were Lean's form by construction). -/
 def ownershipFamilies : List Family :=
   (["PF1", "PF2", "PF3", "PF4", "PF2C", "PF3C", "PF4C", "PF5", "PF6", "PF7"].map (ownPair · `mutual)) ++
   (["WF1", "WF2", "WF3", "WF4", "WF5", "WF6", "WF7"].map (ownPair · `_mutual)) ++
@@ -514,37 +511,18 @@ def entrySyntax (k : KernelVerdicts) (f : Family) (a b : Pres) (d : DiffRec)
   s!"  e `{f.fixture} \"{a.id}\" \"{b.id}\" `{d.constant} \"{role}\" {cause}\n" ++
   s!"    \"{d.addrA}\" \"{d.addrB}\" \"{d.firstDiff}\" \"{note}\"{ks},"
 
-/-- The expected refusals (`NonCanonical.expectedRefusals`) as a set. -/
-def refusedSet : Std.HashSet Name :=
-  expectedRefusals.foldl (init := {}) fun s r => s.insert r.constant
-
-/-- Check one compiler's block failures against the expected refusals of
-    the constants in `scope`: every failure must be an expected refusal with
-    its message, and every expected refusal in scope must happen. Returns
-    the number of violations. -/
-def refusalCheck (label : String) (scope : Std.HashSet Name)
-    (fails : List (String × String)) : IO Nat := do
-  let mut bad := 0
+/-- Check one compiler's block failures: Pass 3 refuses none of the twins, so
+    every failure is a violation (until M6R slice 6 the legacy surgery's A0
+    refusals, `NonCanonical.expectedRefusals`, were expected here, and deleted
+    with it). Returns the number of violations. -/
+def refusalCheck (label : String) (fails : List (String × String)) : IO Nat := do
   for (n, e) in fails do
-    match expectedRefusals.find? (·.constant.toString == n) with
-    | some r =>
-      if (e.splitOn r.message).length > 1 then
-        IO.println s!"[{label}] expected refusal: {n} ({r.reason})"
-      else
-        IO.println s!"[{label}] refusal with another message: {n}: {(e.replace "\n" " ").take 200}"
-        bad := bad + 1
-    | none =>
-      IO.println s!"[{label}] block failure: {n}: {(e.replace "\n" " ").take 200}"
-      bad := bad + 1
-  for r in expectedRefusals do
-    if scope.contains r.constant && !(fails.any (·.1 == r.constant.toString)) then
-      IO.println s!"[{label}] expected refusal did not happen: {r.constant}"
-      bad := bad + 1
-  return bad
+    IO.println s!"[{label}] block failure: {n}: {(e.replace "\n" " ").take 200}"
+  return fails.length
 
 /-- Compare one pair; returns the differences. -/
 def comparePair (env : Environment) (lean : Compiled) (f : Family) (a b : Pres)
-    (dumpDir : Option System.FilePath) (refused : Std.HashSet Name := refusedSet) :
+    (dumpDir : Option System.FilePath) (refused : Std.HashSet Name := {}) :
     IO (Array DiffRec) := do
   -- refused constants (and the constants of A they map to) are not compared
   let cb := (presConsts env b).filter (!refused.contains ·.1)
@@ -712,12 +690,11 @@ def familyClosure (env : Environment) (families : List Family) :
   return (seeds, closeWithRecursors env (Ix.EnvScope.collectDeps env seeds.toList))
 
 /-- The Lean compiler on a closure: the `ix compile-lean` pipeline
-    (`compileInputFromEnv`, then `compileLeanInput`). `pass3?` sets the Pass 3
-    switch explicitly (`none`: `IX_PASS3`, as `ix compile-lean`). -/
+    (`compileInputFromEnv`, then `compileLeanInput`). -/
 def leanCompile (env : Environment) (closure : List (Name × ConstantInfo))
-    (workers : Nat := 32) (pass3? : Option Bool := none) : IO Ix.CompileM.LeanPipelineOut := do
+    (workers : Nat := 32) : IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (pass3? := pass3?) with
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) with
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")
 
@@ -727,9 +704,10 @@ def leanCompile (env : Environment) (closure : List (Name × ConstantInfo))
     counterpart (in B) is an image-kind head of a changed block in the compile
     (`p3Heads`: its Lean name denotes the image, decision 3); the cause the
     switch-on clique record (`nonCanonicalOn`) or pass record
-    (`nonCanonicalPasses`) gives the same constant; a permanent cause of the
-    legacy record (§7.1: not a `pending*` one, which named surgery-path
-    differences). `none`: no rule applies, the entry is marked for review. -/
+    (`nonCanonicalPasses`) gives the same constant; the classes the default
+    compile keeps by design, by the constant's role. `none`: no rule applies,
+    the entry is marked for review. (Until M6R slice 6 the legacy record and
+    the surgery's A0 refusals were consulted too.) -/
 def defaultCause (env : Environment) (heads : Std.HashSet Ix.Name) (f : Family) (a b : Pres)
     (d : DiffRec) : Option (String × String) := Id.run do
   if d.cls == "INHERITED" then return some (".inherited", "user constant")
@@ -741,18 +719,6 @@ def defaultCause (env : Environment) (heads : Std.HashSet Ix.Name) (f : Family) 
     e.fixture == f.fixture && e.presA == a.id && e.presB == b.id && e.constant == d.constant
   if let some e := (nonCanonicalOn ++ nonCanonicalPasses).find? key then
     return some ((reprPrec e.cause 1024).pretty, e.canonical)
-  if let some e := nonCanonicalOff.find? key then
-    match e.cause with
-    | .inherited => pure ()
-    -- a difference the legacy record gave a `pending*` cause that the default
-    -- compile still shows: the package that cause names has not removed it
-    -- under Pass 3 either, so the cause stands
-    | c => return some ((reprPrec c 1024).pretty, e.canonical)
-  -- the A0 refusals of the surgery (different minors or arms over a collapsed
-  -- pair), which Pass 3 compiles faithfully
-  if refusedSet.contains (a.ns ++ d.constant) || (presConsts env b).any fun (n, _) =>
-      mapInto a b n == a.ns ++ d.constant && refusedSet.contains n then
-    return some (".collapseArms", "over a collapsed pair with different arms (an A0 refusal of the surgery)")
   -- the classes the default compile keeps by design, by the constant's role
   let s := lastStr d.constant
   let parent := lastStr d.constant.getPrefix
@@ -831,9 +797,9 @@ def run : IO UInt32 := do
   IO.println s!"[twins] {families.length} families, {seeds.size} fixture constants, \
 {closure.length} in the closure"
   let t0 ← IO.monoMsNow
-  let leanOut ← leanCompile env closure (pass3? := some false)
+  let leanOut ← leanCompile env closure
   let t1 ← IO.monoMsNow
-  IO.println s!"[twins] Lean compile: {leanOut.bytes.size} bytes, \
+  IO.println s!"[twins] Lean compile (Pass 3): {leanOut.bytes.size} bytes, \
 {leanOut.cenv.ungrounded.size} block failures, {t1 - t0} ms"
   if let some path := (← IO.getEnv "IX_TWINS_IXE") then
     IO.FS.writeBinFile path leanOut.bytes
@@ -842,7 +808,8 @@ def run : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env closure)
   let rsPath := dir / "twins-rs.ixe"
-  let mut failures ← refusalCheck "twins: Lean" ((closure.foldl (init := {}) fun s (n, _) => s.insert n))
+  -- Pass 3 refuses none of the twins: every block failure fails
+  let mut failures ← refusalCheck "twins: Lean"
     (leanOut.cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e))
   let mut rsUngrounded : Array (String × String) := #[]
   let mut rsEnv : Ixon.Env := {}
@@ -854,13 +821,12 @@ def run : IO UInt32 := do
     IO.println s!"[twins] Rust compile failed: {ex}"
     failures := failures + 1
   IO.FS.removeDirAll dir
-  IO.println s!"[twins] Rust compile: {rsUngrounded.size} ungrounded, {(← IO.monoMsNow) - t1} ms"
+  IO.println s!"[twins] Rust compile (Pass 3): {rsUngrounded.size} ungrounded, {(← IO.monoMsNow) - t1} ms"
   let leanAddr (n : Name) : Option String :=
     (leanOut.env.getAddr? (Ix.Name.fromLeanName n)).map toString
   let rsAddr (n : Name) : Option String :=
     (rsEnv.getAddr? (Ix.Name.fromLeanName n)).map toString
-  let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
-  failures := failures + (← refusalCheck "twins: Rust" scope rsUngrounded.toList)
+  failures := failures + (← refusalCheck "twins: Rust" rsUngrounded.toList)
   -- 1. Lean and Rust agree on every fixture constant
   let mut lr := 0
   for n in seeds do
@@ -870,31 +836,11 @@ def run : IO UInt32 := do
         IO.println s!"[twins] Lean/Rust differ: {n}: lean {leanAddr n} rust {rsAddr n}"
   IO.println s!"[twins] Lean/Rust: {seeds.size - lr}/{seeds.size} fixture constants agree"
   failures := failures + lr
-  -- 2. pairs, in both modes: the legacy surgery against its record (the compile
-  -- above), the default (Pass 3) against the default's record
-  failures := failures + (← pairsGate env families "off" { addr := leanAddr }
-    Tests.Ix.Compile.NonCanonical.nonCanonicalOff refusedSet dumpDir
-    (fun f a b d => entrySyntax kernels f a b d))
-  let t2 ← IO.monoMsNow
-  let onOut ← leanCompile env closure (pass3? := some true)
-  IO.println s!"[twins] Lean compile (Pass 3, the default): {onOut.bytes.size} bytes, \
-{onOut.cenv.ungrounded.size} block failures, {(← IO.monoMsNow) - t2} ms"
-  if let some path := (← IO.getEnv "IX_TWINS_IXE_ON") then
-    IO.FS.writeBinFile path onOut.bytes
-    IO.println s!"[twins] wrote {path}"
-  -- Pass 3 refuses none of the A0 refusals of the surgery: every block failure fails
-  for (n, e) in onOut.cenv.ungrounded.toList do
-    IO.println s!"[twins] (default) block failure: {n.pretty}: {(e.replace "\n" " ").take 200}"
-  failures := failures + onOut.cenv.ungrounded.size
-  let onAddr (n : Name) : Option String :=
-    (onOut.env.getAddr? (Ix.Name.fromLeanName n)).map toString
-  let heads : Std.HashSet Ix.Name := onOut.cenv.p3Heads.fold (init := {}) fun s k _ => s.insert k
-  let kernelsOn ← match ← IO.getEnv "IX_TWINS_KERNELS_ON" with
-    | some d => loadKernels d
-    | none => pure {}
-  failures := failures + (← pairsGate env families "default" { addr := onAddr }
+  -- 2. pairs: the compile against the non-canonical set
+  let heads : Std.HashSet Ix.Name := leanOut.cenv.p3Heads.fold (init := {}) fun s k _ => s.insert k
+  failures := failures + (← pairsGate env families "default" { addr := leanAddr }
     Tests.Ix.Compile.NonCanonicalDefault.nonCanonical {} dumpDir
-    (fun f a b d => entrySyntax kernelsOn f a b d
+    (fun f a b d => entrySyntax kernels f a b d
       ((defaultCause env heads f a b d).getD ("REVIEW", "REVIEW"))))
   IO.println s!"[twins] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"
   return if failures == 0 then 0 else 1

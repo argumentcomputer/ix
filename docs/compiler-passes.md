@@ -141,12 +141,11 @@ plan's "residual image". "Image" keeps its meaning: the extra constants of Def 3
 - **D2 and D6** (discovery order; one constant per auxiliary) landed in one migration, with every
   moved address accounted for (§2.8) [measured, A2M].
 - **Pass 2** is today's generators with D6 packaging.
-- **Pass 3 (images, the faithful rewrite)** is the default since the flip (M6, 2026-10-06; §4.8, §7.4);
-  `IX_PASS3=off` selects the legacy call-site surgery, kept as the comparison mode against the Rust
-  compiler's default until M6R slice 6. The Rust compiler implements Pass 3 under `IX_PASS3=images`
-  (M6R slices 1–4), byte-identical to Lean's default on Init+Std and Mathlib; with `IX_PASS3` unset it
-  still runs the surgery (§4.8, "Switch").
-  With the switch off (`IX_PASS3=off`), no byte moves against the pre-Pass 3 compiler [measured, A3W/A3M].
+- **Pass 3 (images, the faithful rewrite)** is the default since the flip (M6, 2026-10-06; §4.8, §7.4)
+  and the only mode of both compilers since M6R slice 6 (2026-10-07), which deleted the legacy
+  call-site surgery from both and made Pass 3 the Rust compiler's default; the two are
+  byte-identical on Init+Std and Mathlib (§4.8, "Switch"). Before the deletion, with the switch off
+  (`IX_PASS3=off`), no byte moved against the pre-Pass 3 compiler [measured, A3W/A3M].
 - **Not yet wired into the compiler** at `564d03f0` (since wired, under Pass 3: the clique transport
   through `Ix/Compile/Pass/Cliques.lean`, §5.7, and the optimisation passes O1–O12, §1.5–§1.6):
   - the clique transport (`Ix/Compile/Clique/**`, §5.7–5.8);
@@ -360,7 +359,7 @@ Modules `Ix/Compile/Pass/Opt/{Core,O1,O2,O3,O4,O5,O6,O11a,Engine}.lean`, each wi
 docstring. One hook: `Ix.Compile.Pass.Translate.rw` asks the engine at every full application of
 an image-kind head, after the arguments were rewritten and before the image is inlined; the
 engine's `none` is the baseline. The driver builds the blocks' data once per block rewrite
-(`Ix.Compile.Pass.optLookup`). With the switch off nothing runs.
+(`Ix.Compile.Pass.optLookup`). (Under the legacy `IX_PASS3=off`, until M6R slice 6, nothing ran.)
 
 - **The shape of an image.** Every pass reads the image of the related Lean recursor: `img(r) =
   λ ps ms mins is t. ρ.{ℓs} ps ms′ mins′ is t` with the parameters, indices and major as the
@@ -375,10 +374,10 @@ engine's `none` is the baseline. The driver builds the blocks' data once per blo
   another component adapted: `λ fs ihsᶜ. mⱼ fs ih⃗`, domains from Lean's minor type, the relocated
   hypothesis the engine's rewrite of `r_T ps ms mins idx (f ys)`, `mⱼ` applied (β-redex left).
   This is the term the old surgery emitted; the image's developed form differs from it only by β.
-  The minor's constructor, its type and its field and IH binders are read with the surgery's
-  split-minor helpers (`Ix/CallSiteSurgery.lean`: `auxMotiveSigs`, `sourceCtorForMinor`,
-  `sourceMinorType`, `peelBinders`, `findSourceRecTarget`; the Rust compiler's `surgery.rs`
-  counterparts), which O11a uses too: deleting the surgery (M6R slice 6) must keep them.
+  The minor's constructor, its type and its field and IH binders are read with the split-minor
+  helpers the surgery used (`Ix/AuxSource.lean`: `auxMotiveSigs`, `sourceCtorForMinor`,
+  `sourceMinorType`, `peelBinders`, `findSourceRecTarget`; Rust `crates/compile/src/compile/aux_source.rs`),
+  which O11a uses too; M6R slice 6 kept them there when it deleted the surgery.
 - **O3** `casesOn`, no collapsed class (permuted or split): the Ix `casesOn`, same arguments.
 - **O4** `below`/`brecOn`/`.go`/`.eq` when the recursor's image is a *selection* (every minor a
   bare variable): permuted blocks and the cross-field-free components of split blocks; motives and
@@ -424,7 +423,7 @@ from the final term (§4.7 (e), now measured). The Mathlib measurement is in the
 
 Modules `Ix/Compile/Pass/Opt/{Packed,O7,O8,O9,CollapseRec,O10,O12,O11b}.lean`, each with the
 five-part docstring whose Faithfulness part is the lemma Phase B formalises. All run under
-Pass 3 (the default; not under `IX_PASS3=off`); with the switch off nothing runs, and with it on they need a collapsed or split
+Pass 3 (the only mode since M6R slice 6; until then not under `IX_PASS3=off`), and need a collapsed or split
 block, so Init+Std is unchanged by them (§1.6.3).
 
 **The rule (decision 5, D1, owner 2026-10-05).** Each of these passes produces a term that is
@@ -860,16 +859,17 @@ validator's oracle leg found it).
   (`Ix.Compile.Pass.editPermutedBelowFamily`). A changed Prop parent was already covered (its
   canonical family moves to display names and Lean's own family compiles as its own block, which is
   then a changed block by the same predicate).
-- *Switch off.* Unchanged (Rust is not mirrored for Pass 3): the defect stays recorded as A3V-IPB
-  until the switch flips.
+- *Switch off (history).* The surgery left the defect recorded as A3V-IPB until M6R slice 6
+  (2026-10-07) deleted it from both compilers; Pass 3 is the only mode.
 - [measured, A6f] With the switch on, `ix validate-lean --local` passes every phase on
   `ValidateLeanIPB` (phase 7: 2 changed blocks, 10 images, 7 rules by `rfl`) and on `Neighbours`
   (7 changed blocks, 88 images, 30 rules). WB-B6 (`RecAlias.PA.below`) and WB-B9
   (`UnsafeI.UNestNeg.rec`) are single-member blocks and do not share the cause: WB-B6 is Pass 2's
   generator form (a recursive field behind a reducible alias), WB-B9 the recursor block's packaging.
 
-**Default path: the CORPUS-IPB refusal (`REFUSED-IPB-COLLAPSE`; owner, 2026-10-06, option 1; M1-j).**
-With the switch off, the stored meaning of a Lean `IndPredBelow` name is its `Named.original`: the
+**History: the legacy path's CORPUS-IPB refusal (`REFUSED-IPB-COLLAPSE`; owner, 2026-10-06, option 1;
+M1-j).** The default path until the flip, then the `IX_PASS3=off` path; deleted with the surgery in
+M6R slice 6 (2026-10-07), from both compilers. The text below is kept as written. With the switch off, the stored meaning of a Lean `IndPredBelow` name is its `Named.original`: the
 promotion compile of Lean's own `.below` block (`compileConstNoAuxPure`, Rust `compile_const_no_aux`,
 provenance only) with each `.below` head's call-site plan applied, and each plan keeps the motive of
 its own member. When a collapse merges members whose `.below` inductives are alpha-equivalent before
@@ -889,8 +889,8 @@ A.z`). All kernels accept that type, and no call site exists for D13 to check.
   whose `.below` are definitions) compile as before; a Prop block that collapses nothing never has a
   multi-member class there. Fixtures: `aux-cert` `IPBCollapse2p1`, `IPBMixed` (refused) and
   `IPBCollapseNone` (valid neighbour).
-- *Switch on.* Unchanged: a changed block registers no surgery plan, so the check cannot fire; Pass 3's
-  images refuse both corpus shapes (`image: hypothesis motive N not in its slot's class`), which is
+- *Switch on (Pass 3, the only mode since slice 6).* A changed block registered no surgery plan, so
+  the check could not fire; Pass 3's images refuse both corpus shapes (`image: hypothesis motive N not in its slot's class`), which is
   a Pass 3 item of M1. The shape does not occur in Init+Std or Mathlib (byte-identical outputs).
 
 ### 2.6 Evaporation
@@ -1513,45 +1513,39 @@ Two neighbouring findings:
 Everything here is [measured, A3W/A3M] unless marked. The figures come from the gates of `ca90424b`
 (A3M) and of the A3W chain.
 
-**Switch.** Pass 3 is **the default** since the flip (M6, 2026-10-06; the migration is §7.4). The
-mode is read from `IX_PASS3` by the drivers that read the environment (`compileEnvParallelAux`,
-so `ix compile-lean`, `ix validate-lean` and `compileLeanInput`), or given by their `pass3?`
-argument; the pure sequential driver `compileEnvAux` takes `pass3`, defaulting to Pass 3
-(`Ix.Compile.Pass.switchDefault`). The values:
-- unset or `IX_PASS3=images`: Pass 3;
-- `IX_PASS3=off`: the legacy call-site surgery, kept as the comparison mode for the gates against
-  the Rust compiler's default until M6R slice 6;
-- any other value: refused (`switchFromEnv`), so a mistyped value never selects a mode silently.
+**Switch (retired).** Pass 3 is the default since the flip (M6, 2026-10-06; the migration is §7.4) and
+the only mode of both compilers since M6R slice 6 (2026-10-07), which deleted the legacy call-site
+surgery from both. `IX_PASS3` is read for one release, by the drivers that read the environment
+(`compileEnvParallelAux`, so `ix compile-lean`, `ix validate-lean` and `compileLeanInput`;
+`Ix.Compile.Pass.switchFromEnv`) and by the Rust compiler (`switch_from_env`,
+`crates/compile/src/compile/pass3/names.rs`, read once per compile in `compile_env_with_profile`,
+`crates/compile/src/compile/env.rs`, which `ix compile`, `ix validate` and the Rust compile of
+`ix compile-lean --rust-check` all reach), with the same values and texts in both:
+- unset: Pass 3;
+- `IX_PASS3=images`: Pass 3, with a deprecation note on stderr;
+- `IX_PASS3=off`: refused ("the legacy call-site surgery was deleted from both compilers (M6R slice 6,
+  2026-10-07); Pass 3 is the only mode, unset IX_PASS3"): a caller that asks for the legacy bytes
+  gets a refusal, not Pass 3's bytes under the legacy mode's name;
+- any other value: refused, as before.
+After that release the variable is ignored. The Rust default (`SWITCH_DEFAULT = true`) is Pass 3, so
+`ix compile` and `ix compile-lean` agree by default and `ix compile-lean --rust-check` compares Pass 3
+with Pass 3. Measured on the slice-6 tree: Init+Std is 256,128,289 bytes from both default compilers, byte-identical to the frozen
+`-a3` artifact (SHA-256 `a2e22ee7f8d0fcf0d607047dda7d83749f20886f2d03f1cbaf2ede3a7d1ba676`);
+`--rust-check` reports `ALIGNED: 256128289 bytes byte-identical with Rust`.
 
-**The Rust compiler** reads the same variable with the same values and the same refusal
-(`switch_from_env`, `crates/compile/src/compile/pass3/names.rs`, read once per compile in
-`compile_env_with_profile`, `crates/compile/src/compile/env.rs`, which `ix compile`, `ix validate`
-and the Rust compile of `ix compile-lean --rust-check` all reach). It implements Pass 3: on the main
-line, M6R slices 1–4 (the driver and images; O1–O6/O11a; the clique transport; O7–O12/O11b in the D1
-form). Only its default differs, until M6R slice 6: unset is the surgery (`SWITCH_DEFAULT = false`).
-In each mode its output equals Lean's byte for byte where measured:
-- `IX_PASS3=images`: Init+Std `a2e22ee7…ba676` from both compilers (landing gate of `5d0e493a`,
-  `ix-cc-proof/out/land-m6r.log`: Rust `IX_PASS3=images ix compile` and Lean's default
-  `ix compile-lean` both hash to `initstd-a3.ixe`; `pass3-rust-parity`: 0 defects on the fixtures and
-  on Init+Std, "BYTE-IDENTICAL"); Mathlib `d0427adf…f6db` (Rust `IX_PASS3=images` equal to
-  `mathlib-a3.ixe`, `cmp` identical, and the per-name parity run 0 defects:
-  `plans/review2/M6R-4-rust-pj.md`, log 10:31 UTC, on the slice-4 tree, whose Rust code the main line
-  carries unchanged);
-- `IX_PASS3=off`: `ix compile-lean --rust-check` ALIGNED on Init+Std, `468ad7ae…` = `initstd-a2.ixe`
-  (`[compile-lean] ALIGNED: 254684853 bytes byte-identical with Rust` in every landing gate, e.g.
-  `ix-cc-proof2/out/land-wpe.log` at `6634c58f`); Mathlib: Rust's default output `0758ba05…` =
-  `mathlib-a2.ixe`, the legacy reference (the same M6R-4 run).
+*History (until slice 6).* Rust's default was the surgery (`SWITCH_DEFAULT = false`), and the gates
+compared each mode separately: `IX_PASS3=images` gave Init+Std `a2e22ee7…ba676` from both compilers
+(landing gate of `5d0e493a`, `ix-cc-proof/out/land-m6r.log`; `pass3-rust-parity`: 0 defects on the
+fixtures and on Init+Std) and Mathlib `d0427adf…f6db` (slice 4's Rust Pass 3 gate, 2026-10-07
+10:31 UTC); `IX_PASS3=off` gave `ix compile-lean --rust-check` ALIGNED on Init+Std, `468ad7ae…` =
+`initstd-a2.ixe` (`[compile-lean] ALIGNED: 254684853 bytes byte-identical with Rust`, e.g.
+`ix-cc-proof2/out/land-wpe.log` at `6634c58f`), and Mathlib `0758ba05…` = `mathlib-a2.ixe`. Neither
+compiler reproduces the `-a2` references any more.
 
-So `--rust-check` compares one mode only when `IX_PASS3` is set. Unset, Lean compiles Pass 3 and Rust
-the surgery, and the outputs differ wherever a block or clique changes (Init+Std: `a2e22ee7…` against
-`468ad7ae…`). The images-mode identity above was measured by hash and by `pass3-rust-parity`; no
-`--rust-check` run in that mode is recorded.
+The surgery's default-path defects (WB-B2, WB-B3, KF-O1, KF-C7, KF-O1C, the CORPUS-IPB refusal) went
+with it, and so did the records' `off` states (§7.4).
 
-The surgery and its default-path defects (WB-B2, WB-B3, KF-O1, KF-C7, KF-O1C, the CORPUS-IPB
-refusal) stay in the compiler, and in the records under the `off` switch state, until M6R deletes
-the surgery from both compilers.
-
-Under the switch no call-site surgery plan is registered. Pass 3 then works as follows:
+Pass 3 works as follows (no call-site surgery plan exists since slice 6):
 - a full application of a changed block's `rec`, `rec_N`, `casesOn`, `recOn`, `below*`, `brecOn*`,
   `.go` or `.eq` is inlined from its image by hereditary substitution (§4.3, Q10);
 - `casesOn`, `recOn` and the `below`/`brecOn` family are expanded to Lean's own values, rewritten
@@ -1635,17 +1629,15 @@ failure in a unit with a collapsed block (BB-F7, BB-F1) is accepted only where t
 accepts the same constant, and it is named
 by defect id in the output. REFUSED-SIBLING consequences are listed per unit (§7.3).
 
-**The surgery is the legacy mode until M6R slice 6.** Since the flip (§7.4) the surgery is not the
-compiler's form of anything in the default output: it runs only under `IX_PASS3=off`, as the comparison
-mode against the Rust compiler, whose default is still the surgery. The Rust compiler implements Pass 3
-under `IX_PASS3=images` (M6R slices 1–4 on the main line: the driver and images, O1–O6/O11a, the clique
-transport, O7–O12/O11b; "Switch" above); slice 6 deletes the surgery from both compilers and flips
-Rust's default, keeping the split-minor helpers O2 and O11a share with it (`Ix/CallSiteSurgery.lean`'s
-`sourceCtorForMinor`, `sourceMinorType`, `peelBinders`, `findSourceRecTarget`, `auxMotiveSigs`). Until
-then `--rust-check` compares one mode only with `IX_PASS3` set (the landing gates use `off`), and text
-in this document that describes the surgery as what the compiler does (the measured counts of §4.8 and
-§9 taken with the switch off, A3W, A3M) describes that legacy mode. Rust's reader accepts Pass 3's
-output.
+**The surgery was the legacy mode until M6R slice 6 (history).** From the flip (§7.4) to slice 6 the
+surgery was not the compiler's form of anything in the default output: it ran only under
+`IX_PASS3=off`, as the comparison mode against the Rust compiler's default. Slice 6 (2026-10-07)
+deleted it from both compilers and flipped Rust's default ("Switch" above), keeping the split-minor
+helpers O2 and O11a share with it (`Ix/AuxSource.lean`: `sourceCtorForMinor`, `sourceMinorType`,
+`peelBinders`, `findSourceRecTarget`, `auxMotiveSigs`; Rust `compile/aux_source.rs`). Text in this
+document that describes the surgery as what the compiler does (the measured counts of §4.8 and §9
+taken with the switch off, A3W, A3M) describes that deleted mode. Both decompilers still read the
+surgery's metadata in files written before (`CallSite`, `EtaCallSite`; `docs/Ixon.md`).
 
 ## 5. Transport of proof terms
 
@@ -2424,7 +2416,8 @@ a whole compile. Certification can state one obligation per block.
 
 **How it is checked.**
 
-- Schedule identity (§6.1): byte-equal output across every driver and worker count, switch off and on.
+- Schedule identity (§6.1): byte-equal output across every driver and worker count (in both switch states
+  until M6R slice 6, Pass 3 alone since).
 - Closure against whole: every constant of a closure compile has the address the whole compile gives it.
 - Whole units in every closure producer (M1-d, M1-h, M6R slice 5): the selected closures of the input
   (`Ix.EnvScope.collectSelectedDeps`, `withUnits`) carry the unit of every declaration they reach, and the
@@ -2560,7 +2553,7 @@ came in wave 1:
   partial `@A.rec`, C7's IndPred "below" matchers, and their users). The gates require exactly
   these refusals in both directions, and the constants are not canonicity data [measured, A1G2].
 
-**The `pass3` suite (switch on)** keeps its own recorded classes, by defect id. These are switch-on
+**The `pass3` suite** keeps its own recorded classes, by defect id. These are Pass 3
 consequences, not entries of the twins fixture:
 - **BB-F7 / BB-F1.** These are meta-mode kernel ingress failures on collapsed blocks. The suite
   accepts them only where the certified checker accepts the same constant (orchestrator, A3).
@@ -2587,9 +2580,9 @@ failures [measured, A3M].
 
 ### 7.4 The flip: Pass 3 by default (M6, 2026-10-06)
 
-**What changed.** Pass 3 is the compiler's default mode (§4.8, "Switch"); `IX_PASS3=off` selects the
-legacy surgery, which stays as the comparison mode against the Rust compiler until M6R (owner,
-2026-10-06). The flip changes the default only: the two modes compile exactly as before, each
+**What changed.** Pass 3 is the compiler's default mode (§4.8, "Switch"); `IX_PASS3=off` selected the
+legacy surgery, which stayed as the comparison mode against the Rust compiler until M6R (owner,
+2026-10-06); M6R slice 6 deleted it from both compilers (2026-10-07). The flip changes the default only: the two modes compile exactly as before, each
 byte-identical to its pre-flip output (Init+Std, switch on: sha256 `a2e22ee7…ba676`; switch off:
 the `-a2` references). The owner accepted that the flip moves bytes, with stated causes, on the
 condition that no address pinned by the certified checker moves (decision log, 2026-10-04); the
@@ -2625,11 +2618,13 @@ same addresses as under `IX_PASS3=off`, so they are not among the moved names, w
 `…._ix._f` constants are among the 27 added (M1-g §3).
 
 **References.** The switch-on outputs replace the default-path references under new names (`-a3`); the
-`-a2` (switch-off) references stay for the gates that run the legacy mode against Rust.
+`-a2` (switch-off) references stayed for the gates that ran the legacy mode against Rust until M6R
+slice 6, and are history since: neither compiler reproduces them, and the gate is "Lean's default =
+Rust's default = `-a3`", `ix compile-lean --rust-check` ALIGNED (§4.8, "Switch").
 At the flip: `initstd-a3.ixe` 256,128,289 B, sha256 `a2e22ee7…ba676` (certified checker 97,041 accept, 902
 decline, 0 reject); `mathlib-a3.ixe` 2,376,572,399 B, sha256 `d0427adf…f6db` (669,942 accept, 4,030 decline,
 0 reject, the counts of M1-g; `ixe-diff` against `mathlib-a2.ixe`: 783 changed, 356 added, 0 removed, the
-classes above). `IX_PASS3=off` on Init+Std stays byte-identical to Rust and to `initstd-a2.ixe`.
+classes above). `IX_PASS3=off` on Init+Std stayed byte-identical to Rust and to `initstd-a2.ixe` until slice 6.
 
 **Images keep Lean's kind (owner, 2026-10-06).** The image of a Lean theorem is stored as a theorem
 (`Ix.Compile.Pass.imageInfo`): every `brecOn.eq` and the `brecOn` of a Prop family. The Lean kind is
@@ -2637,18 +2632,22 @@ part of what the name denotes, and the adversarial matrix refuses a forged kind.
 byte (Init+Std has no changed inductive block) and no pin; on Mathlib it changes the bytes of the 53
 `brecOn.eq` image heads and of their dependents, all in the image class above.
 
-**Records.** Records kept per switch state (`Pass3Kernels`, `validate-lean`'s pins, the corpus harness's
-modes, `nonCanonicalOn`, `nonCanonicalPasses`) keep both states: `off` is now `IX_PASS3=off`, the same
-compile as the former unset switch. The twins' non-canonical set is kept in two records: the legacy one
-(`NonCanonical.nonCanonicalOff`, the 497 differences of the surgery, checked against the twins'
-`IX_PASS3=off` compile, read by `clique-transport` and by `validate-lean-nc`'s switch-off runs) and the
-default's (`NonCanonicalDefault.nonCanonical`, 959 differences of the Pass 3 compile, each with its cause:
+**Records.** From the flip to M6R slice 6 the records kept per switch state (`Pass3Kernels`,
+`validate-lean`'s pins, the corpus harness's modes, `nonCanonicalOn`, `nonCanonicalPasses`) kept both
+states, `off` being `IX_PASS3=off`, and the twins' non-canonical set was kept in two records: the legacy
+one (`NonCanonical.nonCanonicalOff`, the 497 differences of the surgery) and the default's
+(`NonCanonicalDefault.nonCanonical`, 959 differences of the Pass 3 compile, each with its cause:
 `IMAGE` 493 (the Lean name of an image-kind head, a new cause), `INHERITED` 155, `ORDER-STMT` 86, the
 remaining 225 under the §7.1 causes, the legacy `pending*` causes where Pass 3 has not removed the
-difference either, by role, or by hand). Suites that compare the Lean compiler with the Rust compiler
-(`twins`' Lean/Rust leg, `aux-cert`, `aux-gen-diff`, `compile`, the contract pipeline, the corpus
-harness's Rust and parity phases) run the legacy mode explicitly until M6R; `aux-oracle` too (its classes
-describe Ix auxiliaries under Lean names; M6R slice 6).
+difference either, by role, or by hand). Since slice 6 (2026-10-07) every record keeps the Pass 3 state
+only: the `off` rows and the legacy record are gone, `clique-transport` reads the 157 entries of the
+legacy record whose causes are the transport's own (`NonCanonical.transportOracle`), and the twins gate
+and `validate-lean-nc` read the default record alone. The suites that compare the Lean compiler with
+the Rust compiler (`twins`' Lean/Rust leg, `aux-cert`, `aux-gen-diff`, `compile`, the contract
+pipeline, the corpus harness's Rust and parity phases) ran the legacy mode explicitly until slice 6
+and compare Pass 3 with Pass 3 since (Rust's default); `aux-oracle` reads a changed block's Ix
+auxiliaries at their `_ix` display names and accepts a user of an image only as a difference the
+default record lists (class `(nc)`).
 
 ---
 
@@ -2702,7 +2701,7 @@ extended in Lean with five legs:
   anonymous mode.
 
 It runs on Init+Std at every integration. The Rust `ix validate` (8 phases) is rewritten to the same
-phase list in the Rust catch-up PR; until then it runs with the switch off only. In Phase B the
+phase list in the Rust catch-up PR; since M6R slice 6 it validates Rust's Pass 3 output (below). In Phase B the
 certifier is the validator.
 
 **Phase table with the switch on** [measured, A3W §7.1; A3M]. `ix validate-lean`:
@@ -2724,21 +2723,23 @@ The collapsed-block BB-F7 route remains separately documented.
 - (iii) treat `_ix` entries as aliases of the Ix auxiliaries;
 - (iv) check an image's `Named.original` against Lean's form.
 
-**Whether Rust's `ix validate` holds on Pass 3 output is unmeasured.** It compiles the input itself
+**Rust's `ix validate` on Pass 3 output** [measured, M6R slice 6]. It compiles the input itself
 through the Rust compiler (`rs_compile_validate_aux`, `crates/ffi/src/lean_env.rs`, with
-`CompileOptions::default()`), so it runs in the mode `IX_PASS3` selects: unset, Rust's default, the
-legacy surgery until M6R slice 6; `images`, Rust's Pass 3 (M6R slices 1–4, byte-identical to Lean's
-default output on Init+Std and Mathlib, §4.8). No run of it under `IX_PASS3=images` is recorded in the
-M6R reports. By its phase definitions, on Pass 3 output [argued, not run]:
-- phase 3 ("an original's bytes are never stored") would fail on every stored image;
-- phases 2 and 6 would see the `_ix` entries as unknown auxiliaries;
-- phases 5, 7 and 7b need the inline-record replay.
-
-These are what a Pass 3 `ix validate` must handle.
+`CompileOptions::default()`), so since slice 6 it validates Rust's Pass 3 output (until then Rust's
+default, the legacy surgery). On the `validate-aux` fixture closure: 6,991 constants, zero failures
+(2026-10-07). Slice 6
+adapted three phases to Pass 3: phase 4b reads a changed block's auxiliaries at their `_ix` display
+names, and no longer claims that the evaporated auxiliaries of `AuxDedup1`/`AuxDedup2` alias
+`List.rec` (their Lean names hold images, §2.6); phases 5 and 7 count the compiler-introduced
+reserved names (`_ix`, `_ix_retyped`) of the decompiled environment apart instead of failing on
+them (`check_decompile`'s `introduced`); and the Rust decompiler replays `_ix.inline` records, as
+the Lean one does. The failures argued here before the measurement (phase 3 on stored images,
+phases 2 and 6 on `_ix` entries) do not occur.
 
 **`aux-cert`** [measured, CI]:
-- It now compiles each fixture's local closure (`ix compile --local`). That takes 19 s at 4-way,
-  against 39 min 41 s before, with identical verdicts on all 42 fixtures.
+- It compiles each fixture's local closure (`ix compile --local`). The original CI measurement
+  before slice 6 took 19 s at 4-way, against 39 min 41 s for whole-file compiles, with identical
+  verdicts on the then-current 42 fixtures. The suite now has 46 fixtures and runs Pass 3 only.
 - `AUX_CERT_WHOLE=1` restores the whole-file compiles plus a bridge checking `--local` against them.
   It runs per checkpoint.
 
@@ -2784,10 +2785,11 @@ environment writer; no Rust work):
 
 This section states what a compiled artifact means, for the reader that checks it (the certifier,
 `docs/compiler-certification.md`; the validators of §9). It replaces the interim contract of the proof
-session's handoff. It describes the compiler's **default mode**, Pass 3 (§4.8, §7.4); with `IX_PASS3=off`
-(the legacy surgery, kept until the Rust compiler drops it in M6R slice 6) none of §11.2's Pass 3 cases
-applies and no changed-set record is written. Every statement cites the code that makes it true at
-`jcb/ix-certify-compile` = `36778059` plus this section's commit; where the code is not uniform the
+session's handoff. It describes Pass 3 (§4.8, §7.4), both compilers' only mode since M6R slice 6 (2026-10-07; until then
+`IX_PASS3=off` selected the legacy surgery, under which none of §11.2's Pass 3 cases applied and no
+changed-set record was written). Every statement cites the code that makes it true at
+`jcb/ix-certify-compile` = `36778059` plus this section's commit, and the slice-6 edits (the retired
+switch) the slice-6 tree; where the code is not uniform the
 inconsistency is listed in §11.6, not smoothed over.
 
 Vocabulary (§2, §6.3): a *block* is a component of the reference graph after Pass 1; a block is
@@ -2895,7 +2897,8 @@ intentionally other than the independent export, and the faithful non-canonical 
 with the compiler's reason. It is a pure function of the final driver state
 (`Ix.Compile.ChangedSet.ofCompile`, available to every driver: `compileEnvAux`, `compileEnvParallelAux` and
 `compileLeanInput` all return the `CompileEnv`), read from the compiler's own tables, never from a symptom
-of the output. No byte of the `.ixe` depends on it. Under `IX_PASS3=off` none is written.
+of the output. No byte of the `.ixe` depends on it. (Under the legacy `IX_PASS3=off`, until M6R slice 6,
+none was written.)
 
 **Format** (`ix-changed-set/1`; JSON, one element per line, every array sorted by name, then name hash,
 change, cause, ref):
@@ -3051,8 +3054,8 @@ the certifier independently of the record, by rows); the cause texts of declines
   - REFUSED-SIBLING follows A0's evaporation refusal and lasts as long as that refusal does;
   - [superseded] neither the clique transport nor the optimisation passes were wired into the compiler
     (both are, under Pass 3, the default since the flip, §7.4);
-  - [superseded] Rust stays on surgery: it implements Pass 3 slice by slice (M6R) and keeps the surgery as
-    its default until slice 6 (§4.8, "The surgery is the legacy mode");
+  - [superseded] Rust stays on surgery: it implemented Pass 3 slice by slice (M6R) and kept the surgery as
+    its default until slice 6, which deleted it from both compilers (2026-10-07; §4.8, "Switch");
   - C6 remains in Rust until the catch-up PR;
   - A7's items D2a–D16 are open, and D2a may move side-car bytes;
   - the `exprCompileDepth` fix has not been rerun on Mathlib;

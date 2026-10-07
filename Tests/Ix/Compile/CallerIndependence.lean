@@ -14,7 +14,8 @@
     unrelated constants of the fixture (`CallerInd.Unrelated`) in place of
     the dependents.
 
-  Both are compiled by the Lean pipeline with the switch off and on, and
+  Both are compiled by the Lean pipeline (Pass 3, the only mode since M6R
+  slice 6; until then also with the legacy surgery, `IX_PASS3=off`), and
   every name of `U`, and every `_ix` name the compiler stores for a member
   of `U`, must have the same `Named` entry (address and metadata) in both
   outputs, with the same records (the clique table entry, the
@@ -137,7 +138,7 @@ refusal is reported, and the unit is still compared. -/
 def compile (env : Environment) (label : String) (cs : List (Name × ConstantInfo)) (mode : Bool)
     (callers : List Name := []) : IO Out := do
   let unit : Tests.Ix.Compile.Pass3.CUnit := { name := label, env, seeds := #[], closure := cs }
-  let out ← Tests.Ix.Compile.Pass3.compileUnit unit mode
+  let out ← Tests.Ix.Compile.Pass3.compileUnit unit
   for (n, why) in out.cenv.ungrounded.toList do
     if callers.any (fun c => ixN c == n) && (why.splitOn callerRefusal).length > 1 then
       say s!"  {label} mode={mode}: {n.pretty} refused by name (decision 5): {why.take 160}"
@@ -181,7 +182,8 @@ def run : IO UInt32 := do
     -- the declared external callers that unfold the clique's encoding: with the switch
     -- on they may be refused by name (and are reported either way); nothing else may be
     let callers := if case == "WP" || case == "WQ" then deps.filter (·.toString.endsWith ".caller") else []
-    for mode in [false, true] do
+    -- Pass 3 only (until M6R slice 6 also the legacy surgery, `mode=false`)
+    for mode in [true] do
       let a ← compile env s!"{case}-with" withDeps mode (callers := if mode then callers else [])
       let b ← compile env s!"{case}-without" without mode
       if mode then
@@ -231,8 +233,8 @@ def run : IO UInt32 := do
     if failed.contains (case, mode) then say s!"expected failure {case} mode={mode}: {cause}"
     else errors := errors.push s!"stale expected failure {case} mode={mode} ({cause})"
   for e in errors do say s!"FAIL {e}"
-  say s!"{if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}: {cases.length} cases × 2 \
-    switch states, {expectedFailures.length} expected failure(s)"
+  say s!"{if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}: {cases.length} cases (Pass 3), \
+    {expectedFailures.length} expected failure(s)"
   return if errors.isEmpty then 0 else 1
 
 end Tests.Ix.Compile.CallerIndependence

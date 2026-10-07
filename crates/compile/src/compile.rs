@@ -64,24 +64,12 @@ pub static IX_TIMING: std::sync::LazyLock<bool> =
 pub static IX_LOG_AUX_NAMES: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_LOG_AUX_NAMES").is_ok());
 
-/// Trace call-site surgery decisions at the apply site: for every App whose
-/// head has a `call_site_plans` entry, print the compiling constant, the
-/// guard outcomes, and the applied/expected arg counts. Set via
-/// IX_SURGERY_APPLY_DEBUG=1.
-pub static IX_SURGERY_APPLY_DEBUG: std::sync::LazyLock<bool> =
-  std::sync::LazyLock::new(|| std::env::var("IX_SURGERY_APPLY_DEBUG").is_ok());
-
 /// Options controlling whole-environment compilation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CompileOptions {
   /// Override the scheduler worker ceiling. `None` uses available parallelism
   /// or `IX_COMPILE_WORKERS`; adaptive admission may run fewer active blocks.
   pub max_workers: Option<usize>,
-  /// Pass 3, the faithful rewrite: `Some(true)` for `IX_PASS3=images`,
-  /// `Some(false)` for the legacy surgery; `None` reads `IX_PASS3`
-  /// (`pass3::names::switch_from_env`: unset is the surgery until M6R slice
-  /// 6, an unrecognised value is refused).
-  pub pass3: Option<bool>,
 }
 
 /// Worker-local kernel context for aux_gen sort-level inference.
@@ -158,44 +146,16 @@ pub struct CompileState {
   /// Original Lean environment, if available. Used by the decompiler for
   /// aux_gen comparison (verifying regenerated constants match originals).
   pub lean_env: Option<Arc<LeanEnv>>,
-  /// Per-auxiliary-name surgery plans for call-site argument reordering.
-  /// Keyed by the original auxiliary name (e.g., `A.rec`, `B.rec`).
-  /// Computed per original recursor name in `compile_mutual` after `sort_consts`.
-  pub call_site_plans: DashMap<Name, surgery::CallSitePlan>,
-  /// Per-`.brecOn` surgery plans. These share the motive permutation with
-  /// `.rec`, but `.brecOn` places indices+major before the handler binders,
-  /// so the telescope has to be rewritten by a separate layout rule.
-  pub brec_on_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
-  /// Per-`.below`-family surgery plans. A `X.below`/`X.below_N` HEAD has
-  /// the motive-only telescope `params, motives, indices, major`. For
-  /// Prop-level (IndPredBelow) families the map also carries the rest of
-  /// the family's user-visible surface under their own names — the
-  /// `.below` constructors (`X.below.succ`, …) and the `.below.casesOn`
-  /// wrapper. Those telescopes start with the below inductive's
-  /// parameters (parent params, then parent motives), so the same motive
-  /// permutation applies to `[n_params, n_params + n_source_motives)`
-  /// and everything after (ctor fields / casesOn
-  /// target-motive+indices+major+minors) rides along kept-identity —
-  /// but with NO major-premise floor: a field-less below ctor
-  /// (`EvenP.below.zero`) is fully applied at exactly params+motives.
-  /// The apply site discriminates the two telescope shapes by the key's
-  /// last component (`below`/`below_N` = head, anything else = family
-  /// member); `X.below.rec` is deliberately NOT registered (nothing
-  /// user-visible references it — only regenerated wrappers, which skip
-  /// surgery via the aux-regen guard).
-  pub below_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Per-block nested-auxiliary layout (permutation + source ctor
-  /// counts) for each source `InductiveVal.all[0]` name. Used by:
-  ///  - `compute_call_site_plans` to rewrite source-order aux motive/minor
-  ///    call-site args to canonical positions.
-  ///  - `compile_aux_block` (via `generate_and_compile_aux_recursors`) to
+  /// counts) for each source `InductiveVal.all[0]` name. Used by
+  /// `compile_aux_block` (via `generate_and_compile_aux_recursors`) to
   ///    register Lean-source aux-rec/below/brecOn names at the canonical
   ///    DPrj/RPrj position.
   ///
   /// Computed once per block in `generate_and_compile_aux_recursors`
   /// right after `aux_gen::generate_aux_patches`. Blocks without nested
   /// auxiliaries simply aren't inserted.
-  pub aux_perms: DashMap<Name, surgery::AuxLayout>,
+  pub aux_perms: DashMap<Name, ixon::env::AuxLayout>,
   /// Reducibility hints per definition NAME, recorded by
   /// `compile_definition` (the only place the Lean-side hints are in
   /// scope — hints are not part of `ConstantMeta`). The constant
@@ -210,8 +170,13 @@ pub struct CompileState {
   /// deserialized environment sets them with [`compiler_sharing_limits`].
   /// The default is [`ExactSharingLimits::default`].
   pub sharing_limits: ExactSharingLimits,
-  /// Pass 3, the faithful rewrite (`IX_PASS3=images`): selected for this
-  /// compile (`CompileOptions::pass3`, else the environment variable).
+  /// The driver prepared Pass 3's state (the faithful rewrite, the only
+  /// mode since M6R slice 6, which deleted the legacy call-site surgery):
+  /// set by every whole-environment compile (`compile_env_with_options`).
+  /// A hand-built state (the decompiler's recompile check, unit tests)
+  /// leaves it false and runs none of Pass 3's hooks; such a state compiles
+  /// single blocks, and the aux tail of a changed block is refused there
+  /// (`compile_mutual`). Lean: `CompileEnv.pass3`.
   pub pass3: bool,
   /// Pass 3's records carried from block to block.
   pub p3: pass3::Pass3State,
@@ -276,16 +241,12 @@ pub struct BlockCache {
   pub univ_patches: Vec<UnivPatch>,
   /// Name of the constant currently being compiled (for error context).
   pub compiling: Option<Name>,
-  /// Accumulated compiled Ixon expressions for collapsed call-site args.
-  /// Drained into `ConstantMeta.meta_sharing` after compilation completes.
-  pub surgery_sharing: Vec<Arc<Expr>>,
-  /// Set while compiling the original Lean form of a regenerated auxiliary
-  /// (`compile_const_inner` with `aux = false`): the result is provenance
-  /// only (`Named.original` address and metadata, never a stored constant),
-  /// and its call sites keep every dropped argument in `Collapsed`
-  /// metadata, so the collapse-drop check (A0) does not apply there. Every
-  /// stored constant is compiled with this flag unset.
-  pub provenance_only: bool,
+  /// The current constant's `ConstantMeta.meta_sharing` accumulator: the
+  /// compiled source occurrences of its Pass 3 decompile records
+  /// (`pass3_compile_records`), drained after compilation completes. Until
+  /// M6R slice 6 it was `surgery_sharing`, which also held the legacy
+  /// surgery's collapsed call-site arguments. Lean: `BlockState.metaSharing`.
+  pub meta_sharing: Vec<Arc<Expr>>,
   /// Pass 3: the block's members rewritten by the call-site rewrite
   /// (`Ix.Compile.Pass.prepareBlock`'s overlay), read instead of the input.
   pub p3_overlay: FxHashMap<Name, LeanConstantInfo>,
@@ -324,9 +285,6 @@ impl Default for CompileState {
       aux_gen_pending: std::sync::Mutex::new(Vec::new()),
       aux_name_to_addr: Default::default(),
       lean_env: None,
-      call_site_plans: Default::default(),
-      brec_on_call_site_plans: Default::default(),
-      below_call_site_plans: Default::default(),
       aux_perms: Default::default(),
       def_hints: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
@@ -883,129 +841,6 @@ pub fn collect_mut_const_exprs<'a>(
 // Expression compilation
 // ===========================================================================
 
-fn compiling_is_aux_regen(cache: &BlockCache, stt: &CompileState) -> bool {
-  cache.compiling.as_ref().is_some_and(|c| {
-    crate::decompile::is_aux_gen_suffix(c)
-      && (stt.aux_name_to_addr.contains_key(c)
-        || stt.env.named.get(c).is_some_and(|n| n.has_original()))
-  })
-}
-
-fn eta_adapter_needed(
-  name: &Name,
-  n_args: usize,
-  cache: &BlockCache,
-  stt: &CompileState,
-) -> bool {
-  if compiling_is_aux_regen(cache, stt) {
-    return false;
-  }
-  plan_head_arity(stt, name)
-    .is_some_and(|arity| !arity.head_rewrite && n_args < arity.floor)
-}
-
-/// The constant being compiled, for error messages.
-fn compiling_label(cache: &BlockCache) -> String {
-  cache.compiling.as_ref().map_or_else(|| "<none>".to_string(), |c| c.pretty())
-}
-
-/// Refuse the Tier-B eta adapter for a head whose plan drops arguments of
-/// collapsed members. The wrapper binds the missing source arguments as
-/// variables, so a dropped motive or minor is a bound variable that no kept
-/// argument equals: the drop cannot be justified (and both kernels reject
-/// such users anyway).
-fn refuse_collapsed_eta(
-  name: &Name,
-  n_args: usize,
-  cache: &BlockCache,
-  stt: &CompileState,
-) -> Result<(), CompileError> {
-  if cache.provenance_only {
-    return Ok(());
-  }
-  if plan_head_arity(stt, name).is_some_and(|arity| arity.drops_collapsed) {
-    return Err(CompileError::InvalidMutualBlock {
-      reason: format!(
-        "{}: compiling '{}', call-site head '{}' applied to {} argument(s) \
-         would be eta-wrapped, dropping bound arguments of collapsed members",
-        surgery::COLLAPSE_ETA_ERROR,
-        compiling_label(cache),
-        name.pretty(),
-        n_args,
-      ),
-    });
-  }
-  Ok(())
-}
-
-/// Build the source-interface eta wrapper for a short plan-bearing
-/// application. Binder types/names/info come from the source declaration's
-/// stored Pi telescope after universe and applied-prefix instantiation.
-fn synthesize_eta_call_site(
-  name: &Name,
-  levels: &[Level],
-  applied: &[&LeanExpr],
-  stt: &CompileState,
-) -> Result<(LeanExpr, usize), CompileError> {
-  let lean_env = stt.lean_env.as_deref().ok_or_else(|| {
-    CompileError::InvalidMutualBlock {
-      reason: format!(
-        "eta call-site adapter for '{}' needs the source Lean environment",
-        name.pretty()
-      ),
-    }
-  })?;
-  let ci = lean_env.get(name).ok_or_else(|| CompileError::MissingConstant {
-    name: name.pretty(),
-    caller: "synthesize_eta_call_site".into(),
-  })?;
-  let instantiated_type = aux_gen::expr_utils::subst_levels(
-    ci.get_type(),
-    ci.get_level_params(),
-    levels,
-  );
-  let applied_owned: Vec<LeanExpr> =
-    applied.iter().map(|arg| (*arg).clone()).collect();
-  let residual = aux_gen::expr_utils::instantiate_pi_params(
-    &instantiated_type,
-    applied_owned.len(),
-    &applied_owned,
-  );
-
-  let mut binders: Vec<(Name, LeanExpr, BinderInfo)> = Vec::new();
-  let mut cur = residual;
-  while let ExprData::ForallE(binder_name, ty, body, info, _) = cur.as_data() {
-    binders.push((binder_name.clone(), ty.clone(), info.clone()));
-    cur = body.clone();
-  }
-  if binders.is_empty() {
-    return Err(CompileError::InvalidMutualBlock {
-      reason: format!(
-        "eta call-site adapter for '{}' found no residual Pi binders after {} args",
-        name.pretty(),
-        applied_owned.len()
-      ),
-    });
-  }
-
-  let n_synth = binders.len();
-  let mut full_args: Vec<LeanExpr> = applied_owned
-    .iter()
-    .map(|arg| aux_gen::expr_utils::shift_vars(arg, n_synth, 0))
-    .collect();
-  for i in 0..n_synth {
-    full_args.push(LeanExpr::bvar(Nat::from((n_synth - 1 - i) as u64)));
-  }
-  let mut body = LeanExpr::cnst(name.clone(), levels.to_vec());
-  for arg in full_args {
-    body = LeanExpr::app(body, arg);
-  }
-  for (binder_name, ty, info) in binders.into_iter().rev() {
-    body = LeanExpr::lam(binder_name, ty, body, info);
-  }
-  Ok((body, n_synth))
-}
-
 /// Intern an address into the block's refs table, returning its index. While
 /// compiling a Pass 3 decompile record, an address outside the primary table
 /// goes to the constant's extension table (`meta_refs`, virtual index
@@ -1097,8 +932,8 @@ fn pass3_compile_records(
         reason: "Pass 3: call-site record without an arena root".into(),
       }
     })?;
-    cache.p3_records.insert(n, (cache.surgery_sharing.len() as u64, root));
-    cache.surgery_sharing.push(ix);
+    cache.p3_records.insert(n, (cache.meta_sharing.len() as u64, root));
+    cache.meta_sharing.push(ix);
   }
   Ok(())
 }
@@ -1151,14 +986,9 @@ pub fn compile_expr(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Arc<Expr>, CompileError> {
-  use ixon::metadata::CallSiteEntry;
-
   // Stack-based iterative compilation to avoid stack overflow
   enum Frame {
     Compile(LeanExpr),
-    /// Compile the Const at the head of a canonical call-site body without
-    /// interpreting the bare Const itself as another partial reference.
-    CompileCallSiteHead(LeanExpr),
     BuildApp,
     BuildLam(Address, BinderInfo),
     BuildAll(Address, BinderInfo),
@@ -1167,31 +997,6 @@ pub fn compile_expr(
     WrapMdata(Vec<KVMap>),
     ApplyContract(crate::semantic_contract::Contract, LeanExpr),
     Cache(LeanExpr),
-    /// Build a surgered call-site from compiled head + canonical args + collapsed args.
-    BuildCallSite {
-      name_addr: Address,
-      /// Source-order entries. `meta` fields are placeholder 0 — filled during build.
-      entries: Vec<CallSiteEntry>,
-      /// Number of canonical (kept) args on the results stack.
-      n_canonical: usize,
-      /// Number of collapsed args on the results stack (after canonical args).
-      n_collapsed: usize,
-      /// True when the LAST collapsed arg is the ORIGINAL (pre-rewrite) head
-      /// expression of a head-rewritten call site. It gets a
-      /// `CallSite.orig_head` pointer instead of a source-order entry.
-      orig_head_collapsed: bool,
-      /// Collapse drops to justify once the arguments are compiled: each
-      /// dropped argument's compiled form must equal its kept partner's.
-      collapse_checks: Vec<surgery::CollapseCheck>,
-      /// The call-site head, for the refusal message.
-      head_name: Name,
-    },
-    /// Replace the ordinary synthesized Binder/CallSite root with the
-    /// decompile-facing eta marker after the wrapper has compiled.
-    BuildEtaCallSite {
-      n_synth: usize,
-      n_applied: usize,
-    },
   }
 
   // Pass 3: the decompile records of the rewritten call sites in `expr`
@@ -1202,9 +1007,7 @@ pub fn compile_expr(
 
   // Top-level cache check (O(1) with arena)
   let expr_key = Address::from_blake3_hash(*expr.get_hash());
-  let root_is_eta = matches!(expr.as_data(), ExprData::Const(name, _, _)
-    if eta_adapter_needed(name, 0, cache, stt));
-  if !root_is_eta && let Some(cached) = cache.exprs.get(&expr_key).cloned() {
+  if let Some(cached) = cache.exprs.get(&expr_key).cloned() {
     cache.arena_roots.push(cached.arena_root);
     return Ok(cached.expr);
   }
@@ -1214,28 +1017,9 @@ pub fn compile_expr(
 
   while let Some(frame) = stack.pop() {
     match frame {
-      Frame::CompileCallSiteHead(e) => {
-        let ExprData::Const(name, levels, _) = e.as_data() else {
-          return Err(CompileError::InvalidMutualBlock {
-            reason: "call-site canonical head is not a Const".into(),
-          });
-        };
-        let (head, root) = compile_const_expr_raw(
-          name,
-          levels,
-          univ_params,
-          mut_ctx,
-          cache,
-          stt,
-        )?;
-        results.push(head);
-        cache.arena_roots.push(root);
-      },
       Frame::Compile(e) => {
         let e_key = Address::from_blake3_hash(*e.get_hash());
-        let is_eta = matches!(e.as_data(), ExprData::Const(name, _, _)
-          if eta_adapter_needed(name, 0, cache, stt));
-        if !is_eta && let Some(cached) = cache.exprs.get(&e_key).cloned() {
+        if let Some(cached) = cache.exprs.get(&e_key).cloned() {
           // O(1) cache hit: arena root already valid
           results.push(cached.expr);
           cache.arena_roots.push(cached.arena_root);
@@ -1268,14 +1052,6 @@ pub fn compile_expr(
           },
 
           ExprData::Const(name, levels, _) => {
-            if is_eta {
-              refuse_collapsed_eta(name, 0, cache, stt)?;
-              let (wrapper, n_synth) =
-                synthesize_eta_call_site(name, levels, &[], stt)?;
-              stack.push(Frame::BuildEtaCallSite { n_synth, n_applied: 0 });
-              stack.push(Frame::Compile(wrapper));
-              continue;
-            }
             let (raw, root) = compile_const_expr_raw(
               name,
               levels,
@@ -1290,787 +1066,9 @@ pub fn compile_expr(
 
           ExprData::App(_, _, _) => {
             // Collect the full App telescope in one pass (O(depth) pointer chase).
-            // This avoids any double-traversal and gives us the head + all args
-            // for both the surgery check and the normal compilation path.
-            let (head_expr, args) = surgery::collect_lean_telescope(&e);
+            let (head_expr, args) = aux_source::collect_lean_telescope(&e);
 
-            // Check for surgery: only when head is a Const in
-            // `call_site_plans` *and* the body currently being compiled is
-            // in Lean source order. Canonical-order bodies generated by
-            // aux_gen (`.brecOn`, regenerated `.rec`, …) already pass
-            // args in sorted-block order — applying surgery there would
-            // permute correct args into the wrong positions. The flag
-            // tracks caller context; see `BlockCache::body_is_canonical`
-            // for the full rationale.
-            //
-            // The previous guard (`!aux_gen_extra_names.contains(name)`)
-            // checked the *head* rather than the caller, which meant
-            // Lean-auto-generated consts like `_sizeOf_N`,
-            // `_sparseCasesOn_N`, and `.sizeOf_spec` — whose bodies are
-            // in source order but whose heads (`Code.rec` etc.) are
-            // registered projections — never got surgery, producing
-            // `AppTypeMismatch` whenever `sort_consts` reordered a
-            // mutual block (the `Alt`↔`Cases`, `EqCnstr`↔`DiseqCnstr`
-            // failure family in `kernel-check-env`).
-            if let ExprData::Const(name, levels, _) = head_expr.as_data() {
-              // Call-site surgery guard. Surgery applies iff:
-              //  (1) the compiling constant is *not* an AuxRegen name —
-              //      i.e. not one of the Lean auto-generated auxiliaries
-              //      we ourselves regenerate (`.rec`, `.recOn`,
-              //      `.casesOn`, `.below`, `.below.rec`, `.brecOn`,
-              //      `.brecOn.go`, `.brecOn.eq`). Our regenerator emits
-              //      those bodies in canonical order by construction, so
-              //      applying surgery would permute already-canonical
-              //      args into the wrong positions.
-              //  (2) the head has a non-identity surgery plan.
-              //
-              // Constants in the other categories pass through:
-              //   - AuxSurgery: Lean auto-generated consts whose bodies
-              //     reference `.rec` in Lean source order
-              //     (`_sizeOf_N`, `_sparseCasesOn_N`, `.sizeOf_spec`,
-              //     `.noConfusion`, etc.). Surgery MUST rewrite them.
-              //   - Primary: user-defined constants. Surgery applies
-              //     iff they transitively reference an AuxRegen name
-              //     whose canonical layout differs from Lean source
-              //     order (i.e. a non-identity plan).
-              //
-              // The guard is name-based rather than a cache flag
-              // because AuxRegen names are compiled *twice* — once as
-              // Lean originals via `compile_mutual` (cache flag would
-              // be false), once as regenerated canonicals via
-              // `compile_aux_block` (cache flag would be true) — and we
-              // need both compiles to skip surgery. Only the regen's
-              // output survives name-lookup anyway, but the Lean-
-              // original's Ixon still lives in `stt.env.consts` and its
-              // arena must be decompile-safe (decompile iterates all
-              // constants).
-              //
-              // The suffix alone is NOT sufficient: an EVAPORATED aux
-              // (`.below_N` / `.brecOn_N` family whose nested occurrence
-              // left the SCC) has no regenerated canonical at all — its
-              // surgered original IS its canonical form, so surgery MUST
-              // run for it. "Has a regen/alias" is:
-              //  - membership in `aux_name_to_addr` (in-memory compile
-              //    state: every compile_aux_block projection, below ctor,
-              //    and alias registration inserts here — covers the
-              //    original-track compile, which runs BEFORE promote), or
-              //  - `Named.original.is_some()` (durable: set by
-              //    `promote_aux` exactly for regen/aliased names and
-              //    survives serialization — covers decompile-side
-              //    roundtrip recompiles on a DESERIALIZED state, where
-              //    `aux_name_to_addr` is empty and the in-memory check
-              //    alone would wrongly re-enable surgery).
-              // Evaporated names enter neither.
-              let compiling_is_aux_regen =
-                cache.compiling.as_ref().is_some_and(|c| {
-                  crate::decompile::is_aux_gen_suffix(c)
-                    && (stt.aux_name_to_addr.contains_key(c)
-                      || stt.env.named.get(c).is_some_and(|n| n.has_original()))
-                });
-              if *IX_SURGERY_APPLY_DEBUG
-                && let Some(plan) = stt.call_site_plans.get(name)
-              {
-                let expected_total = plan.n_params
-                  + plan.n_source_motives
-                  + plan.n_source_minors
-                  + plan.n_indices
-                  + 1;
-                eprintln!(
-                  "[surgery-apply] head={} compiling={} aux_regen={} \
-                   identity={} args={} expected={}",
-                  name.pretty(),
-                  cache
-                    .compiling
-                    .as_ref()
-                    .map_or_else(|| "<none>".to_string(), |c| c.pretty()),
-                  compiling_is_aux_regen,
-                  plan.is_identity(),
-                  args.len(),
-                  expected_total,
-                );
-              }
-              if !compiling_is_aux_regen {
-                if let Some(plan) = stt.call_site_plans.get(name)
-                  && !plan.is_identity()
-                {
-                  // Evaporated-aux head rewrite: the callee's claim is
-                  // aliased to the external inductive's recursor, so the
-                  // over-merged spine is rebuilt onto that telescope —
-                  // specs… motive minors′… indices… major — with the level
-                  // list extended to the target's arity. Dropped args are
-                  // preserved as Collapsed entries for decompile; wrapped
-                  // minors follow the adapted-minor convention below.
-                  if let Some(hr) = plan.head_rewrite.clone() {
-                    let expected_total = plan.n_params
-                      + plan.n_source_motives
-                      + plan.n_source_minors
-                      + plan.n_indices
-                      + 1; // major
-                    if args.len() < expected_total {
-                      return Err(CompileError::InvalidMutualBlock {
-                        reason: format!(
-                          "head-rewrite call site for '{}' is under-applied: \
-                           {} args, telescope needs {}",
-                          name.pretty(),
-                          args.len(),
-                          expected_total,
-                        ),
-                      });
-                    }
-                    let lean_env_ref =
-                      stt.lean_env.as_deref().ok_or_else(|| {
-                        CompileError::InvalidMutualBlock {
-                          reason: format!(
-                            "head-rewrite for '{}' requires the Lean env",
-                            name.pretty()
-                          ),
-                        }
-                      })?;
-                    let name_addr = compile_name(name, stt);
-                    let args_owned: Vec<LeanExpr> =
-                      args.iter().map(|arg| (*arg).clone()).collect();
-                    let params = &args_owned[..plan.n_params];
-                    let motives = &args_owned
-                      [plan.n_params..plan.n_params + plan.n_source_motives];
-                    let minors = &args_owned[plan.n_params
-                      + plan.n_source_motives
-                      ..plan.n_params
-                        + plan.n_source_motives
-                        + plan.n_source_minors];
-                    let tail = &args_owned[plan.n_params
-                      + plan.n_source_motives
-                      + plan.n_source_minors..];
-                    let (target_levels, specs) =
-                      surgery::derive_head_rewrite_app(
-                        name,
-                        levels,
-                        &hr,
-                        params,
-                        motives,
-                        lean_env_ref,
-                      )
-                      .map_err(|e| {
-                        CompileError::InvalidMutualBlock {
-                          reason: format!(
-                            "head-rewrite for '{}': {e}",
-                            name.pretty()
-                          ),
-                        }
-                      })?;
-
-                    let mut canonical_args: Vec<LeanExpr> = Vec::with_capacity(
-                      specs.len() + 1 + plan.n_canonical_minors() + tail.len(),
-                    );
-                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
-                    let mut entries: Vec<CallSiteEntry> = Vec::new();
-
-                    // Source params don't appear in the target spine (the
-                    // specs subsume them) — collapse for reconstruction.
-                    for p in params.iter() {
-                      let sharing_idx = collapsed_args.len();
-                      collapsed_args.push(p.clone());
-                      entries.push(CallSiteEntry::Collapsed {
-                        sharing_idx: sharing_idx as u64,
-                        meta: 0,
-                      });
-                    }
-                    let mut motive_slots: Vec<surgery::ArgSlot> =
-                      Vec::with_capacity(motives.len());
-                    let mut minor_slots: Vec<surgery::ArgSlot> =
-                      Vec::with_capacity(minors.len());
-                    let n_specs = specs.len();
-                    canonical_args.extend(specs);
-                    for (src_i, motive) in motives.iter().enumerate() {
-                      if plan.motive_keep[src_i] {
-                        motive_slots
-                          .push(surgery::ArgSlot::Canon(canonical_args.len()));
-                        canonical_args.push(motive.clone());
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: n_specs as u64,
-                          meta: 0,
-                        });
-                      } else {
-                        let sharing_idx = collapsed_args.len();
-                        collapsed_args.push(motive.clone());
-                        motive_slots
-                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                        entries.push(CallSiteEntry::Collapsed {
-                          sharing_idx: sharing_idx as u64,
-                          meta: 0,
-                        });
-                      }
-                    }
-                    for (src_i, minor) in minors.iter().enumerate() {
-                      if plan.minor_keep[src_i] {
-                        let canon_pos = canonical_args.len();
-                        let adapted_minor = surgery::adapt_split_minor(
-                          name,
-                          levels,
-                          &plan,
-                          src_i,
-                          minor,
-                          params,
-                          motives,
-                          minors,
-                          lean_env_ref,
-                        );
-                        let minor_arg = adapted_minor
-                          .clone()
-                          .unwrap_or_else(|| minor.clone());
-                        canonical_args.push(minor_arg);
-                        if adapted_minor.is_some() {
-                          let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(minor.clone());
-                          minor_slots
-                            .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                          entries.push(CallSiteEntry::Collapsed {
-                            sharing_idx: sharing_idx as u64,
-                            meta: 0,
-                          });
-                        } else {
-                          minor_slots.push(surgery::ArgSlot::Canon(canon_pos));
-                          entries.push(CallSiteEntry::Kept {
-                            canon_idx: canon_pos as u64,
-                            meta: 0,
-                          });
-                        }
-                      } else {
-                        let sharing_idx = collapsed_args.len();
-                        collapsed_args.push(minor.clone());
-                        minor_slots
-                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                        entries.push(CallSiteEntry::Collapsed {
-                          sharing_idx: sharing_idx as u64,
-                          meta: 0,
-                        });
-                      }
-                    }
-                    for t in tail.iter() {
-                      let canon_pos = canonical_args.len();
-                      canonical_args.push(t.clone());
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: canon_pos as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    // Preserve the ORIGINAL head (source name + source
-                    // level args) as the LAST sharing entry so decompile
-                    // can restore it — the stored canonical head carries
-                    // the target recursor's extended level list.
-                    collapsed_args.push(head_expr.clone());
-                    let n_canonical = canonical_args.len();
-                    let n_collapsed = collapsed_args.len();
-                    // The head keeps its SOURCE name (the alias resolves it
-                    // to the external recursor's address and the arena
-                    // records the source name for decompile) but carries
-                    // the target's level list.
-                    let head_for_canon =
-                      LeanExpr::cnst(name.clone(), target_levels);
-                    let compiling = compiling_label(cache);
-                    let head = name.pretty();
-                    let mut collapse_checks = surgery::collapse_checks(
-                      "motive",
-                      &plan.motive_keep,
-                      &plan.source_to_canon_motive,
-                      &plan.source_in_block,
-                      &motive_slots,
-                      &compiling,
-                      &head,
-                    )?;
-                    collapse_checks.extend(surgery::collapse_checks(
-                      "minor",
-                      &plan.minor_keep,
-                      &plan.source_to_canon_minor,
-                      &plan.minor_in_block,
-                      &minor_slots,
-                      &compiling,
-                      &head,
-                    )?);
-                    stack.push(Frame::BuildCallSite {
-                      name_addr,
-                      entries,
-                      n_canonical,
-                      n_collapsed,
-                      orig_head_collapsed: true,
-                      collapse_checks,
-                      head_name: name.clone(),
-                    });
-                    for arg in collapsed_args.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    for arg in canonical_args.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    stack.push(Frame::CompileCallSiteHead(head_for_canon));
-                    continue;
-                  }
-                  let minimal_full_prefix = plan.minimal_full_prefix();
-                  if args.len() >= minimal_full_prefix {
-                    // Surgery path: separate args into kept/collapsed,
-                    // reorder kept to canonical, compile everything.
-                    let name_addr = compile_name(name, stt);
-
-                    let args_owned: Vec<LeanExpr> =
-                      args.iter().map(|arg| (*arg).clone()).collect();
-
-                    // Decompose source args into regions
-                    let params = &args_owned[..plan.n_params];
-                    let motives = &args_owned
-                      [plan.n_params..plan.n_params + plan.n_source_motives];
-                    let minors = &args_owned[plan.n_params
-                      + plan.n_source_motives
-                      ..plan.n_params
-                        + plan.n_source_motives
-                        + plan.n_source_minors];
-                    let tail = &args_owned[plan.n_params
-                      + plan.n_source_motives
-                      + plan.n_source_minors..];
-
-                    // Build canonical-order args and entries
-                    let n_canon_motives = plan.n_canonical_motives();
-                    let n_canon_minors = plan.n_canonical_minors();
-                    let mut canonical_args: Vec<(usize, LeanExpr)> =
-                      Vec::with_capacity(
-                        plan.n_params
-                          + n_canon_motives
-                          + n_canon_minors
-                          + tail.len(),
-                      );
-                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
-                    let mut entries: Vec<CallSiteEntry> = Vec::new();
-                    let mut motive_slots: Vec<surgery::ArgSlot> =
-                      Vec::with_capacity(motives.len());
-                    let mut minor_slots: Vec<surgery::ArgSlot> =
-                      Vec::with_capacity(minors.len());
-
-                    // Params: always kept, identity mapping
-                    for (i, p) in params.iter().enumerate() {
-                      canonical_args.push((i, p.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: i as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    // Motives: kept or collapsed per plan
-                    let canon_base = plan.n_params;
-                    for (src_i, motive) in motives.iter().enumerate() {
-                      if plan.motive_keep[src_i] {
-                        let canon_pos =
-                          canon_base + plan.source_to_canon_motive[src_i];
-                        canonical_args.push((canon_pos, motive.clone()));
-                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: canon_pos as u64,
-                          meta: 0,
-                        });
-                      } else {
-                        let sharing_idx = collapsed_args.len();
-                        collapsed_args.push(motive.clone());
-                        motive_slots
-                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                        entries.push(CallSiteEntry::Collapsed {
-                          sharing_idx: sharing_idx as u64,
-                          meta: 0,
-                        });
-                      }
-                    }
-
-                    // Minors: kept or collapsed per plan
-                    let minor_canon_base = plan.n_params + n_canon_motives;
-                    for (src_i, minor) in minors.iter().enumerate() {
-                      if plan.minor_keep[src_i] {
-                        let canon_pos =
-                          minor_canon_base + plan.source_to_canon_minor[src_i];
-                        let adapted_minor =
-                          stt.lean_env.as_deref().and_then(|lean_env| {
-                            surgery::adapt_split_minor(
-                              name, levels, &plan, src_i, minor, params,
-                              motives, minors, lean_env,
-                            )
-                          });
-                        let minor_arg = adapted_minor
-                          .clone()
-                          .unwrap_or_else(|| minor.clone());
-                        canonical_args.push((canon_pos, minor_arg));
-                        if adapted_minor.is_some() {
-                          let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(minor.clone());
-                          minor_slots
-                            .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                          entries.push(CallSiteEntry::Collapsed {
-                            sharing_idx: sharing_idx as u64,
-                            meta: 0,
-                          });
-                        } else {
-                          minor_slots.push(surgery::ArgSlot::Canon(canon_pos));
-                          entries.push(CallSiteEntry::Kept {
-                            canon_idx: canon_pos as u64,
-                            meta: 0,
-                          });
-                        }
-                      } else {
-                        let sharing_idx = collapsed_args.len();
-                        collapsed_args.push(minor.clone());
-                        minor_slots
-                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                        entries.push(CallSiteEntry::Collapsed {
-                          sharing_idx: sharing_idx as u64,
-                          meta: 0,
-                        });
-                      }
-                    }
-
-                    // Tail (indices + major): always kept, identity
-                    let tail_canon_base =
-                      plan.n_params + n_canon_motives + n_canon_minors;
-                    for (i, t) in tail.iter().enumerate() {
-                      canonical_args.push((tail_canon_base + i, t.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: (tail_canon_base + i) as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    // Sort canonical_args by their target canon_idx
-                    canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
-                    let sorted_canon: Vec<LeanExpr> = canonical_args
-                      .into_iter()
-                      .map(|(_, expr)| expr)
-                      .collect();
-
-                    let n_canonical = sorted_canon.len();
-                    let n_collapsed = collapsed_args.len();
-
-                    // Push frames in reverse order (LIFO)
-                    let compiling = compiling_label(cache);
-                    let head = name.pretty();
-                    let mut collapse_checks = surgery::collapse_checks(
-                      "motive",
-                      &plan.motive_keep,
-                      &plan.source_to_canon_motive,
-                      &plan.source_in_block,
-                      &motive_slots,
-                      &compiling,
-                      &head,
-                    )?;
-                    collapse_checks.extend(surgery::collapse_checks(
-                      "minor",
-                      &plan.minor_keep,
-                      &plan.source_to_canon_minor,
-                      &plan.minor_in_block,
-                      &minor_slots,
-                      &compiling,
-                      &head,
-                    )?);
-                    stack.push(Frame::BuildCallSite {
-                      name_addr,
-                      entries,
-                      n_canonical,
-                      n_collapsed,
-                      orig_head_collapsed: false,
-                      collapse_checks,
-                      head_name: name.clone(),
-                    });
-                    for arg in collapsed_args.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    for arg in sorted_canon.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    stack.push(Frame::CompileCallSiteHead(head_expr.clone()));
-                    continue;
-                  }
-                }
-                if let Some(plan) = stt.below_call_site_plans.get(name)
-                  && !plan.is_identity()
-                {
-                  // The map covers the whole below family (see the field
-                  // docs). A `.below`/`.below_N` HEAD has the telescope
-                  // `params, motives, indices, major` and surgery needs
-                  // the full floor; a Prop-below FAMILY member (ctor /
-                  // `.below.casesOn`) starts with the below params —
-                  // parent params then parent motives — and has NO
-                  // major-premise floor (a field-less below ctor is
-                  // fully applied at exactly params+motives). In both
-                  // shapes everything after the motive segment is kept
-                  // in place, so one identity tail covers indices+major,
-                  // ctor fields, and casesOn target-motive+indices+
-                  // major+minors alike.
-                  let minimal_full_prefix = plan.below_minimal_full_prefix();
-                  if args.len() >= minimal_full_prefix {
-                    let name_addr = compile_name(name, stt);
-                    let args_owned: Vec<LeanExpr> =
-                      args.iter().map(|arg| (*arg).clone()).collect();
-                    let params = &args_owned[..plan.n_params];
-                    let motives = &args_owned
-                      [plan.n_params..plan.n_params + plan.n_source_motives];
-                    let tail =
-                      &args_owned[plan.n_params + plan.n_source_motives..];
-
-                    let n_canon_motives = plan.n_canonical_motives();
-                    let mut canonical_args: Vec<(usize, LeanExpr)> =
-                      Vec::with_capacity(
-                        plan.n_params + n_canon_motives + tail.len(),
-                      );
-                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
-                    let mut entries: Vec<CallSiteEntry> = Vec::new();
-                    let mut motive_slots: Vec<surgery::ArgSlot> =
-                      Vec::with_capacity(motives.len());
-
-                    for (i, p) in params.iter().enumerate() {
-                      canonical_args.push((i, p.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: i as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    let motive_canon_base = plan.n_params;
-                    for (src_i, motive) in motives.iter().enumerate() {
-                      if plan.motive_keep[src_i] {
-                        let canon_pos = motive_canon_base
-                          + plan.source_to_canon_motive[src_i];
-                        canonical_args.push((canon_pos, motive.clone()));
-                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: canon_pos as u64,
-                          meta: 0,
-                        });
-                      } else {
-                        let sharing_idx = collapsed_args.len();
-                        collapsed_args.push(motive.clone());
-                        motive_slots
-                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                        entries.push(CallSiteEntry::Collapsed {
-                          sharing_idx: sharing_idx as u64,
-                          meta: 0,
-                        });
-                      }
-                    }
-
-                    let tail_canon_base = plan.n_params + n_canon_motives;
-                    for (i, t) in tail.iter().enumerate() {
-                      canonical_args.push((tail_canon_base + i, t.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: (tail_canon_base + i) as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
-                    let sorted_canon: Vec<LeanExpr> = canonical_args
-                      .into_iter()
-                      .map(|(_, expr)| expr)
-                      .collect();
-
-                    let n_canonical = sorted_canon.len();
-                    let n_collapsed = collapsed_args.len();
-                    let collapse_checks = surgery::collapse_checks(
-                      "motive",
-                      &plan.motive_keep,
-                      &plan.source_to_canon_motive,
-                      &plan.source_in_block,
-                      &motive_slots,
-                      &compiling_label(cache),
-                      &name.pretty(),
-                    )?;
-                    stack.push(Frame::BuildCallSite {
-                      name_addr,
-                      entries,
-                      n_canonical,
-                      n_collapsed,
-                      orig_head_collapsed: false,
-                      collapse_checks,
-                      head_name: name.clone(),
-                    });
-                    for arg in collapsed_args.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    for arg in sorted_canon.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    stack.push(Frame::CompileCallSiteHead(head_expr.clone()));
-                    continue;
-                  }
-                }
-                if let Some(plan) = stt.brec_on_call_site_plans.get(name)
-                  && !plan.is_identity()
-                {
-                  let fixed_tail_len = plan.n_indices + 1; // indices + major
-                  let expected_total = plan.brecon_minimal_full_prefix();
-                  if args.len() >= expected_total {
-                    let name_addr = compile_name(name, stt);
-
-                    let args_owned: Vec<LeanExpr> =
-                      args.iter().map(|arg| (*arg).clone()).collect();
-                    let params = &args_owned[..plan.n_params];
-                    let motives = &args_owned
-                      [plan.n_params..plan.n_params + plan.n_source_motives];
-                    let fixed_tail = &args_owned[plan.n_params
-                      + plan.n_source_motives
-                      ..plan.n_params + plan.n_source_motives + fixed_tail_len];
-                    let handlers = &args_owned[plan.n_params
-                      + plan.n_source_motives
-                      + fixed_tail_len
-                      ..expected_total];
-                    let extra_tail = &args_owned[expected_total..];
-
-                    let n_canon_motives = plan.n_canonical_motives();
-                    let mut canonical_args: Vec<(usize, LeanExpr)> =
-                      Vec::with_capacity(
-                        plan.n_params
-                          + n_canon_motives
-                          + fixed_tail.len()
-                          + n_canon_motives
-                          + extra_tail.len(),
-                      );
-                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
-                    let mut entries: Vec<CallSiteEntry> = Vec::new();
-                    let mut motive_slots: Vec<surgery::ArgSlot> =
-                      Vec::with_capacity(motives.len());
-                    let mut handler_slots: Vec<surgery::ArgSlot> =
-                      Vec::with_capacity(handlers.len());
-
-                    for (i, p) in params.iter().enumerate() {
-                      canonical_args.push((i, p.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: i as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    let motive_canon_base = plan.n_params;
-                    for (src_i, motive) in motives.iter().enumerate() {
-                      if plan.motive_keep[src_i] {
-                        let canon_pos = motive_canon_base
-                          + plan.source_to_canon_motive[src_i];
-                        canonical_args.push((canon_pos, motive.clone()));
-                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: canon_pos as u64,
-                          meta: 0,
-                        });
-                      } else {
-                        let sharing_idx = collapsed_args.len();
-                        collapsed_args.push(motive.clone());
-                        motive_slots
-                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                        entries.push(CallSiteEntry::Collapsed {
-                          sharing_idx: sharing_idx as u64,
-                          meta: 0,
-                        });
-                      }
-                    }
-
-                    let fixed_tail_canon_base = plan.n_params + n_canon_motives;
-                    for (i, t) in fixed_tail.iter().enumerate() {
-                      canonical_args
-                        .push((fixed_tail_canon_base + i, t.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: (fixed_tail_canon_base + i) as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    let handler_canon_base =
-                      fixed_tail_canon_base + fixed_tail_len;
-                    for (src_i, handler) in handlers.iter().enumerate() {
-                      if plan.motive_keep[src_i] {
-                        let canon_pos = handler_canon_base
-                          + plan.source_to_canon_motive[src_i];
-                        canonical_args.push((canon_pos, handler.clone()));
-                        handler_slots.push(surgery::ArgSlot::Canon(canon_pos));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: canon_pos as u64,
-                          meta: 0,
-                        });
-                      } else {
-                        let sharing_idx = collapsed_args.len();
-                        collapsed_args.push(handler.clone());
-                        handler_slots
-                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
-                        entries.push(CallSiteEntry::Collapsed {
-                          sharing_idx: sharing_idx as u64,
-                          meta: 0,
-                        });
-                      }
-                    }
-
-                    let extra_tail_canon_base =
-                      handler_canon_base + n_canon_motives;
-                    for (i, t) in extra_tail.iter().enumerate() {
-                      canonical_args
-                        .push((extra_tail_canon_base + i, t.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: (extra_tail_canon_base + i) as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
-                    let sorted_canon: Vec<LeanExpr> = canonical_args
-                      .into_iter()
-                      .map(|(_, expr)| expr)
-                      .collect();
-
-                    let n_canonical = sorted_canon.len();
-                    let n_collapsed = collapsed_args.len();
-                    let compiling = compiling_label(cache);
-                    let head = name.pretty();
-                    let mut collapse_checks = surgery::collapse_checks(
-                      "motive",
-                      &plan.motive_keep,
-                      &plan.source_to_canon_motive,
-                      &plan.source_in_block,
-                      &motive_slots,
-                      &compiling,
-                      &head,
-                    )?;
-                    collapse_checks.extend(surgery::collapse_checks(
-                      "handler",
-                      &plan.motive_keep,
-                      &plan.source_to_canon_motive,
-                      &plan.source_in_block,
-                      &handler_slots,
-                      &compiling,
-                      &head,
-                    )?);
-                    stack.push(Frame::BuildCallSite {
-                      name_addr,
-                      entries,
-                      n_canonical,
-                      n_collapsed,
-                      orig_head_collapsed: false,
-                      collapse_checks,
-                      head_name: name.clone(),
-                    });
-                    for arg in collapsed_args.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    for arg in sorted_canon.iter().rev() {
-                      stack.push(Frame::Compile(arg.clone()));
-                    }
-                    stack.push(Frame::CompileCallSiteHead(head_expr.clone()));
-                    continue;
-                  }
-                }
-                if eta_adapter_needed(name, args.len(), cache, stt) {
-                  refuse_collapsed_eta(name, args.len(), cache, stt)?;
-                  let (wrapper, n_synth) =
-                    synthesize_eta_call_site(name, levels, &args, stt)?;
-                  stack.push(Frame::BuildEtaCallSite {
-                    n_synth,
-                    n_applied: args.len(),
-                  });
-                  stack.push(Frame::Compile(wrapper));
-                  continue;
-                }
-              }
-            }
-
-            // Normal telescope path: interleave BuildApp + Compile(arg) for
+            // Telescope path: interleave BuildApp + Compile(arg) for
             // each arg (right to left), then Compile(head).
             // This compiles the same result as the recursive one-App-at-a-time
             // approach, but avoids re-entering the App branch for inner nodes.
@@ -2294,468 +1292,12 @@ pub fn compile_expr(
             .insert(e_key, CachedExpr { expr: result.clone(), arena_root });
         }
       },
-
-      Frame::BuildEtaCallSite { n_synth, n_applied } => {
-        let wrapper_root = cache
-          .arena_roots
-          .pop()
-          .expect("BuildEtaCallSite missing wrapper root");
-        let wrapper_expr =
-          results.pop().expect("BuildEtaCallSite missing wrapper result");
-
-        let mut body_root = wrapper_root;
-        for _ in 0..n_synth {
-          body_root = match cache.arena.nodes.get(body_root as usize) {
-            Some(ExprMetaData::Binder { children, .. }) => children[1],
-            other => {
-              return Err(CompileError::InvalidMutualBlock {
-                reason: format!(
-                  "eta adapter metadata expected {n_synth} Binder nodes, \
-                   found {other:?}"
-                ),
-              });
-            },
-          };
-        }
-
-        let (name, mut entries, canon_meta, orig_head) =
-          match cache.arena.nodes.get(body_root as usize) {
-            Some(ExprMetaData::CallSite {
-              name,
-              entries,
-              canon_meta,
-              orig_head,
-            }) => {
-              (name.clone(), entries.clone(), canon_meta.clone(), *orig_head)
-            },
-            other => {
-              return Err(CompileError::InvalidMutualBlock {
-                reason: format!(
-                  "eta adapter body did not compile to CallSite metadata: \
-                   {other:?}"
-                ),
-              });
-            },
-          };
-        if orig_head.is_some() || entries.len() != n_applied + n_synth {
-          return Err(CompileError::InvalidMutualBlock {
-            reason: format!(
-              "eta adapter body metadata mismatch: {} source entries for {} \
-               applied + {} synthesized args (orig_head={})",
-              entries.len(),
-              n_applied,
-              n_synth,
-              orig_head.is_some()
-            ),
-          });
-        }
-        entries.truncate(n_applied);
-        let eta_root = cache.arena.alloc(ExprMetaData::EtaCallSite {
-          n_synth: n_synth as u64,
-          name,
-          entries,
-          canon_meta,
-          wrapper_meta: wrapper_root,
-        });
-        if let Some(body_patch) =
-          cache.univ_patches.iter().find(|p| p.arena_idx == body_root)
-        {
-          cache.univ_patches.push(UnivPatch {
-            arena_idx: eta_root,
-            univ_idxs: body_patch.univ_idxs.clone(),
-          });
-        }
-        results.push(wrapper_expr);
-        cache.arena_roots.push(eta_root);
-      },
-
-      Frame::BuildCallSite {
-        name_addr,
-        mut entries,
-        n_canonical,
-        n_collapsed,
-        orig_head_collapsed,
-        collapse_checks,
-        head_name,
-      } => {
-        // Pop collapsed arg results and their arena roots
-        let mut collapsed_exprs = Vec::with_capacity(n_collapsed);
-        let mut collapsed_roots = Vec::with_capacity(n_collapsed);
-        for _ in 0..n_collapsed {
-          collapsed_roots.push(
-            cache
-              .arena_roots
-              .pop()
-              .expect("BuildCallSite missing collapsed root"),
-          );
-          collapsed_exprs.push(
-            results.pop().expect("BuildCallSite missing collapsed result"),
-          );
-        }
-        // Reverse: they were pushed in reverse order
-        collapsed_exprs.reverse();
-        collapsed_roots.reverse();
-
-        // Pop canonical arg results and their arena roots
-        let mut canonical_exprs = Vec::with_capacity(n_canonical);
-        let mut canonical_roots = Vec::with_capacity(n_canonical);
-        for _ in 0..n_canonical {
-          canonical_roots.push(
-            cache
-              .arena_roots
-              .pop()
-              .expect("BuildCallSite missing canonical root"),
-          );
-          canonical_exprs.push(
-            results.pop().expect("BuildCallSite missing canonical result"),
-          );
-        }
-        canonical_exprs.reverse();
-        canonical_roots.reverse();
-
-        // A collapse drop is sound only when the dropped argument compiles
-        // to the same Ixon as the kept argument at its canonical slot (the
-        // two members share one projection address, so motives written
-        // over `A` and `B` agree here). Otherwise the rebuilt spine would
-        // run the kept member's code at the dropped member's nodes.
-        let checks: &[surgery::CollapseCheck] =
-          if cache.provenance_only { &[] } else { &collapse_checks };
-        for check in checks {
-          let slot_expr = |slot: surgery::ArgSlot| match slot {
-            surgery::ArgSlot::Canon(i) => canonical_exprs.get(i),
-            surgery::ArgSlot::Collapsed(i) => collapsed_exprs.get(i),
-          };
-          let (Some(dropped), Some(kept)) =
-            (slot_expr(check.dropped), slot_expr(check.kept))
-          else {
-            return Err(CompileError::InvalidMutualBlock {
-              reason: format!(
-                "{}: compiling '{}', call-site head '{}': {} #{} has no \
-                 compiled argument",
-                surgery::COLLAPSE_DROP_ERROR,
-                compiling_label(cache),
-                head_name.pretty(),
-                check.what,
-                check.src,
-              ),
-            });
-          };
-          if dropped != kept {
-            return Err(CompileError::InvalidMutualBlock {
-              reason: format!(
-                "{}: compiling '{}', call-site head '{}': dropped {} #{} \
-                 differs from the kept {} #{}",
-                surgery::COLLAPSE_DROP_ERROR,
-                compiling_label(cache),
-                head_name.pretty(),
-                check.what,
-                check.src,
-                check.what,
-                check.kept_src,
-              ),
-            });
-          }
-        }
-        let canon_meta = canonical_roots.clone();
-
-        // Pop head result and root
-        let head_root =
-          cache.arena_roots.pop().expect("BuildCallSite missing head root");
-        let head_expr =
-          results.pop().expect("BuildCallSite missing head result");
-        let _ = head_root; // head's Ref metadata is subsumed by CallSite.name
-
-        // Store collapsed arg expressions in surgery_sharing
-        let sharing_base = cache.surgery_sharing.len();
-        for expr in &collapsed_exprs {
-          cache.surgery_sharing.push(expr.clone());
-        }
-
-        // Fill in `meta` fields in entries and adjust sharing_idx offsets.
-        // Kept entries record the source arg's `canon_idx` — its canonical
-        // position — so the arena root must come from `canonical_roots`
-        // indexed by `canon_idx` (since the Compile frames processed
-        // sorted_canon in canonical order, the roots land in canonical
-        // slots). `kept_idx` (source-sequential) coincides with
-        // `canon_idx` only under identity plans, which surgery
-        // short-circuits anyway — non-identity is the case where surgery
-        // actually fires, and only `canon_idx` gives the right root
-        // there.
-        //
-        // When `orig_head_collapsed`, the LAST collapsed slot is the
-        // original head expression — it has no source-order entry, so the
-        // sequential fill below never reaches it; it's referenced by the
-        // node's `orig_head` field instead.
-        let mut collapsed_idx = 0usize;
-        for entry in &mut entries {
-          match entry {
-            CallSiteEntry::Kept { canon_idx, meta } => {
-              *meta = canonical_roots[*canon_idx as usize];
-            },
-            CallSiteEntry::Collapsed { sharing_idx, meta, .. } => {
-              *meta = collapsed_roots[collapsed_idx];
-              *sharing_idx = (sharing_base + collapsed_idx) as u64;
-              collapsed_idx += 1;
-            },
-          }
-        }
-        let orig_head = if orig_head_collapsed && n_collapsed > 0 {
-          Some((
-            (sharing_base + n_collapsed - 1) as u64,
-            collapsed_roots[n_collapsed - 1],
-          ))
-        } else {
-          None
-        };
-
-        // Allocate CallSite metadata node in the arena
-        let call_site_root = cache.arena.alloc(ExprMetaData::CallSite {
-          name: name_addr,
-          entries,
-          canon_meta,
-          orig_head,
-        });
-
-        // Canonicity §10.6: the head's Ref arena node is not referenced
-        // by the CallSite node (its metadata is subsumed by
-        // `CallSite.name`), so a level-spelling patch keyed by
-        // `head_root` would be unreachable during replay — both the
-        // decompiler's head rebuild and the kernel's meta-ingress head
-        // path have only the CallSite root in hand. Clone the head's
-        // patch (if any) onto the CallSite root; the original entry
-        // stays because `head_root` may be a shared expr-cache root
-        // reachable from other occurrences.
-        if let Some(head_patch) =
-          cache.univ_patches.iter().find(|p| p.arena_idx == head_root)
-        {
-          let univ_idxs = head_patch.univ_idxs.clone();
-          cache
-            .univ_patches
-            .push(UnivPatch { arena_idx: call_site_root, univ_idxs });
-        }
-
-        // Build canonical Ixon App spine: foldl App head canonical_args
-        let mut ixon = head_expr;
-        for arg in &canonical_exprs {
-          ixon = Expr::app(ixon, arg.clone());
-        }
-
-        results.push(ixon);
-        cache.arena_roots.push(call_site_root);
-      },
     }
   }
 
   results
     .pop()
     .ok_or(CompileError::UnsupportedExpr { desc: "empty result".into() })
-}
-
-/// Arity information for a source-visible head carrying non-identity
-/// call-site surgery.
-#[derive(Clone, Copy)]
-struct PlanHeadArity {
-  /// Prefix at which Tier-A permutation preserves the residual interface.
-  floor: usize,
-  /// Full public telescope count when it is statically known.
-  expected: usize,
-  /// Evaporated-aux head rewrites do not yet have a Tier-B adapter.
-  head_rewrite: bool,
-  /// The plan drops arguments of collapsed members: a Tier-B eta wrapper
-  /// would drop bound variables, which no kept argument equals.
-  drops_collapsed: bool,
-}
-
-fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
-  if let Some(plan) = stt.call_site_plans.get(name)
-    && !plan.is_identity()
-  {
-    let expected = plan.n_params
-      + plan.n_source_motives
-      + plan.n_source_minors
-      + plan.n_indices
-      + 1;
-    return Some(PlanHeadArity {
-      floor: plan.minimal_full_prefix(),
-      expected,
-      head_rewrite: plan.head_rewrite.is_some(),
-      drops_collapsed: plan.drops_collapsed(),
-    });
-  }
-  if let Some(plan) = stt.below_call_site_plans.get(name)
-    && !plan.is_identity()
-  {
-    let floor = plan.below_minimal_full_prefix();
-    let expected = if surgery::below_plan_key_is_head(name) {
-      floor + plan.n_indices + 1
-    } else {
-      floor
-    };
-    return Some(PlanHeadArity {
-      floor,
-      expected,
-      head_rewrite: false,
-      drops_collapsed: plan.drops_collapsed(),
-    });
-  }
-  if let Some(plan) = stt.brec_on_call_site_plans.get(name)
-    && !plan.is_identity()
-  {
-    let expected = plan.brecon_minimal_full_prefix();
-    return Some(PlanHeadArity {
-      floor: expected,
-      expected,
-      head_rewrite: false,
-      drops_collapsed: plan.drops_collapsed(),
-    });
-  }
-  None
-}
-
-/// Read-only pre-walk over an ORIGINAL Lean expression.  Tier B handles
-/// ordinary partial and bare references locally; this audit closes the two
-/// deliberately unsupported holes that would otherwise silently reach the
-/// kernel: an under-applied evaporated-aux head rewrite, and a plan head whose
-/// App spine is split by `Mdata`/`LetE` (the telescope collector cannot see the
-/// surrounding arguments).
-fn audit_plan_head_arities(
-  owner: &Name,
-  top: &LeanExpr,
-  stt: &CompileState,
-) -> Result<usize, CompileError> {
-  if stt.call_site_plans.is_empty()
-    && stt.below_call_site_plans.is_empty()
-    && stt.brec_on_call_site_plans.is_empty()
-  {
-    return Ok(0);
-  }
-
-  let annotated = crate::semantic_contract::inspect(top)?;
-  // `obscured` means this expression occurs in the function part of an outer
-  // App whose telescope stopped at a non-App wrapper.  A short plan spine in
-  // that position cannot be assigned a local source-order interface safely.
-  //
-  // Lean expressions are DAGs.  In particular, large tactic proofs can reuse
-  // the same subexpression through exponentially many tree paths.  The real
-  // compiler memoizes those nodes, so this preflight walk must do the same;
-  // otherwise the audit alone can turn a sub-second proof into minutes of
-  // repeated traversal.  `obscured` is part of the key because the same node
-  // is safe in an argument position but may be invalid in a wrapped function
-  // position.
-  let mut seen: FxHashSet<(blake3::Hash, bool)> = FxHashSet::default();
-  let mut stack: Vec<(LeanExpr, bool)> = vec![(top.clone(), false)];
-  while let Some((e, obscured)) = stack.pop() {
-    if !seen.insert((*e.get_hash(), obscured)) {
-      continue;
-    }
-    match e.as_data() {
-      ExprData::App(..) => {
-        let (head, args) = surgery::collect_lean_telescope(&e);
-        match head.as_data() {
-          ExprData::Const(name, _, _) => {
-            if annotated && plan_head_arity(stt, name).is_some() {
-              return Err(CompileError::UnsupportedExpr {
-                desc: format!(
-                  "resource contracts across non-identity call-site surgery: {} calls {}",
-                  owner.pretty(),
-                  name.pretty()
-                ),
-              });
-            }
-            if let Some(arity) = plan_head_arity(stt, name)
-              && args.len()
-                < if arity.head_rewrite { arity.expected } else { arity.floor }
-              && (obscured || arity.head_rewrite)
-            {
-              return Err(CompileError::InvalidMutualBlock {
-                reason: format!(
-                  "plan-head arity audit while compiling '{}': head '{}' has \
-                   {} args, expected at least {}{}",
-                  owner.pretty(),
-                  name.pretty(),
-                  args.len(),
-                  if arity.head_rewrite { arity.expected } else { arity.floor },
-                  if obscured {
-                    " (application spine obscured by mdata/let)"
-                  } else {
-                    ""
-                  },
-                ),
-              });
-            }
-          },
-          // Lambda-headed applications are the supported split-redex shape.
-          // Recurse into the lambda normally; its inner partial plan head gets
-          // the same local Tier-B adapter as every other short reference.
-          ExprData::Lam(..) => stack.push((head.clone(), false)),
-          _ => stack.push((head.clone(), true)),
-        }
-        for arg in args {
-          stack.push((arg.clone(), false));
-        }
-      },
-      ExprData::Const(name, _, _) => {
-        if annotated && plan_head_arity(stt, name).is_some() {
-          return Err(CompileError::UnsupportedExpr {
-            desc: format!(
-              "resource contracts across non-identity call-site surgery: {} calls {}",
-              owner.pretty(),
-              name.pretty()
-            ),
-          });
-        }
-        if let Some(arity) = plan_head_arity(stt, name)
-          && (obscured || arity.head_rewrite)
-        {
-          return Err(CompileError::InvalidMutualBlock {
-            reason: format!(
-              "plan-head arity audit while compiling '{}': head '{}' has 0 \
-               args, expected at least {}{}",
-              owner.pretty(),
-              name.pretty(),
-              if arity.head_rewrite { arity.expected } else { arity.floor },
-              if obscured {
-                " (application spine obscured by mdata/let)"
-              } else {
-                ""
-              },
-            ),
-          });
-        }
-      },
-      ExprData::Lam(_, ty, body, _, _)
-      | ExprData::ForallE(_, ty, body, _, _) => {
-        stack.push((body.clone(), obscured));
-        stack.push((ty.clone(), false));
-      },
-      ExprData::LetE(_, ty, val, body, _, _) => {
-        stack.push((body.clone(), obscured));
-        stack.push((val.clone(), false));
-        stack.push((ty.clone(), false));
-      },
-      ExprData::Mdata(_, inner, _) => stack.push((inner.clone(), obscured)),
-      ExprData::Proj(_, _, s, _) => stack.push((s.clone(), false)),
-      _ => {},
-    }
-  }
-  Ok(seen.len())
-}
-
-fn audit_constant_info_plan_heads(
-  ci: &LeanConstantInfo,
-  stt: &CompileState,
-) -> Result<(), CompileError> {
-  let owner = ci.get_name();
-  audit_plan_head_arities(owner, ci.get_type(), stt)?;
-  if let Some(value) = ci.get_value() {
-    audit_plan_head_arities(owner, value, stt)?;
-  }
-  if let LeanConstantInfo::RecInfo(rec) = ci {
-    for rule in &rec.rules {
-      audit_plan_head_arities(owner, &rule.rhs, stt)?;
-    }
-  }
-  Ok(())
 }
 
 /// Compile a Lean DataValue to Ixon DataValue.
@@ -3204,10 +1746,10 @@ pub fn compile_definition(
   let value = compile_expr(&def.value, univ_params, mut_ctx, cache, stt)?;
   let value_root = *cache.arena_roots.last().expect("missing value arena root");
 
-  // Take arena, surgery sharing, and level-spelling channels (canonicity
+  // Take arena, meta sharing, and level-spelling channels (canonicity
   // §10.6), clear for next constant
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_sharing = std::mem::take(&mut cache.meta_sharing);
   let p3_meta_refs: Vec<Address> =
     std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
   cache.p3_records.clear();
@@ -3241,7 +1783,7 @@ pub fn compile_definition(
     type_root,
     value_root,
   });
-  meta.meta_sharing = surgery_sharing;
+  meta.meta_sharing = meta_sharing;
   meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
@@ -3294,7 +1836,7 @@ pub fn compile_recursor(
     rules.push(r);
   }
 
-  // Take arena and surgery sharing, clear for next constant.
+  // Take arena and meta sharing, clear for next constant.
   // Rule RHS bodies can contain surgered call-sites (a recursor rule for
   // ctor C may reference another alpha-collapsed auxiliary), so any
   // collapsed args accumulated during rule compilation must be attached
@@ -3302,7 +1844,7 @@ pub fn compile_recursor(
   // constant's `sharing_idx` offsets. Level-spelling channels (canonicity
   // §10.6) drain on the same boundary for the same reason.
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_sharing = std::mem::take(&mut cache.meta_sharing);
   let p3_meta_refs: Vec<Address> =
     std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
   cache.p3_records.clear();
@@ -3342,7 +1884,7 @@ pub fn compile_recursor(
     type_root,
     rule_roots,
   });
-  meta.meta_sharing = surgery_sharing;
+  meta.meta_sharing = meta_sharing;
   meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
@@ -3365,7 +1907,7 @@ fn compile_constructor(
   let type_root =
     *cache.arena_roots.last().expect("missing ctor type arena root");
 
-  // Take arena and surgery sharing for this constructor. A ctor's type
+  // Take arena and meta sharing for this constructor. A ctor's type
   // may contain surgered call-sites when the ctor's field types reference
   // alpha-collapsed auxiliaries, so drain here to attach to THIS ctor's
   // meta rather than leaking into whichever constant comes next.
@@ -3373,7 +1915,7 @@ fn compile_constructor(
   // boundary — the decompiler's ctor-scoped window installs them per
   // constructor.
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_sharing = std::mem::take(&mut cache.meta_sharing);
   let p3_meta_refs: Vec<Address> =
     std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
   cache.p3_records.clear();
@@ -3404,7 +1946,7 @@ fn compile_constructor(
     arena,
     type_root,
   });
-  meta.meta_sharing = surgery_sharing;
+  meta.meta_sharing = meta_sharing;
   meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
@@ -3431,14 +1973,14 @@ pub fn compile_inductive(
   let type_root =
     *cache.arena_roots.last().expect("missing indc type arena root");
 
-  // Take arena and surgery sharing for the inductive's OWN type. Any
+  // Take arena and meta sharing for the inductive's OWN type. Any
   // surgered call-sites accumulated while compiling `ind.ind.cnst.typ`
-  // belong to this inductive's meta. Ctor surgery_sharing is handled
+  // belong to this inductive's meta. Ctor meta_sharing is handled
   // separately by `compile_constructor` below — each ctor attaches its
   // own sharing to its own meta. Level-spelling channels (canonicity
   // §10.6) split on the same boundary.
   let indc_arena = std::mem::take(&mut cache.arena);
-  let indc_surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let indc_meta_sharing = std::mem::take(&mut cache.meta_sharing);
   let p3_meta_refs: Vec<Address> =
     std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
   cache.p3_records.clear();
@@ -3488,7 +2030,7 @@ pub fn compile_inductive(
     arena: indc_arena,
     type_root,
   });
-  meta.meta_sharing = indc_surgery_sharing;
+  meta.meta_sharing = indc_meta_sharing;
   meta.meta_refs = p3_meta_refs;
   meta.meta_univs = indc_meta_univs;
   meta.univ_patches = indc_univ_patches;
@@ -3510,12 +2052,12 @@ fn compile_axiom(
   let type_root =
     *cache.arena_roots.last().expect("missing axiom type arena root");
 
-  // Drain surgery sharing onto this axiom's meta. Axioms can reference
+  // Drain meta sharing onto this axiom's meta. Axioms can reference
   // alpha-collapsed auxiliaries in their type; any collapsed args must
   // stay with this axiom rather than leak to the next constant. Same for
   // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_sharing = std::mem::take(&mut cache.meta_sharing);
   let p3_meta_refs: Vec<Address> =
     std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
   cache.p3_records.clear();
@@ -3538,7 +2080,7 @@ fn compile_axiom(
     arena,
     type_root,
   });
-  meta.meta_sharing = surgery_sharing;
+  meta.meta_sharing = meta_sharing;
   meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
@@ -3560,12 +2102,12 @@ fn compile_quotient(
   let type_root =
     *cache.arena_roots.last().expect("missing quot type arena root");
 
-  // Drain surgery sharing onto this quotient's meta — same reasoning as
+  // Drain meta sharing onto this quotient's meta — same reasoning as
   // in compile_axiom / compile_recursor / etc.: keep collapsed args
   // attached to the constant whose compilation produced them. Same for
   // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_sharing = std::mem::take(&mut cache.meta_sharing);
   let p3_meta_refs: Vec<Address> =
     std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
   cache.p3_records.clear();
@@ -3587,7 +2129,7 @@ fn compile_quotient(
     arena,
     type_root,
   });
-  meta.meta_sharing = surgery_sharing;
+  meta.meta_sharing = meta_sharing;
   meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
@@ -4566,9 +3108,7 @@ pub fn compile_const_no_aux(
 }
 
 /// `aux = false` is the original-form compile of a regenerated auxiliary
-/// (`Named.original` provenance): its constants are never stored, so the
-/// block cache is marked `provenance_only` for its duration (see
-/// `BlockCache::provenance_only`).
+/// (`Named.original` provenance): its constants are never stored.
 fn compile_const_inner(
   name: &Name,
   all: &NameSet,
@@ -4578,12 +3118,7 @@ fn compile_const_inner(
   kctx: &mut KernelCtx,
   aux: bool,
 ) -> Result<Address, CompileError> {
-  let prev = cache.provenance_only;
-  cache.provenance_only = !aux;
-  let res =
-    compile_const_inner_body(name, all, lean_env, cache, stt, kctx, aux);
-  cache.provenance_only = prev;
-  res
+  compile_const_inner_body(name, all, lean_env, cache, stt, kctx, aux)
 }
 
 /// Compile a single definition/theorem/opaque (non-mutual case). When `aux`
@@ -4708,7 +3243,6 @@ fn compile_const_inner_body(
       })?
       .cloned(),
   };
-  audit_constant_info_plan_heads(&cnst, stt)?;
   let _cnst_kind = match &cnst {
     LeanConstantInfo::DefnInfo(_) => "defn",
     LeanConstantInfo::ThmInfo(_) => "thm",
@@ -4903,18 +3437,8 @@ fn compile_mutual(
         },
       },
     };
-    audit_constant_info_plan_heads(&const_info, stt)?;
     let mut_const = match &const_info {
       LeanConstantInfo::InductInfo(val) => {
-        for ctor_name in &val.ctors {
-          let ctor = lean_env.get(ctor_name).ok_or_else(|| {
-            CompileError::MissingConstant {
-              name: ctor_name.pretty(),
-              caller: "plan-head arity audit (constructor)".into(),
-            }
-          })?;
-          audit_constant_info_plan_heads(&ctor, stt)?;
-        }
         let mut ind = mk_indc(val, lean_env)?;
         for c in &mut ind.ctors {
           if let Some(LeanConstantInfo::CtorInfo(o)) =
@@ -4976,26 +3500,6 @@ fn compile_mutual(
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Indc(data));
             representative_pushed = true;
-          } else if cache.provenance_only
-            && let Some(IxonMutConst::Indc(rep)) = ixon_mutuals.last()
-            && *rep != data
-          {
-            // CORPUS-IPB (M1-j): in Lean's original form of a regenerated
-            // block (`compile_const_no_aux`, the only caller reaching here
-            // with `provenance_only`), a class stores only its
-            // representative's data, so a member that compiles differently
-            // (each `.below` head keeps its own member's motive) would read
-            // back with the representative's motives. Mirrors Lean
-            // `refuseIpbCollapse`.
-            return Err(CompileError::InvalidMutualBlock {
-              reason: format!(
-                "{}: '{}' and its class representative '{}' compile to \
-                 different data in Lean's original form of the block",
-                surgery::IPB_COLLAPSE_ERROR,
-                ind.ind.cnst.name.pretty(),
-                class[0].name().pretty(),
-              ),
-            });
           }
           // Register per-constructor ConstantMeta::Ctor entries
           for (ctor, ctor_meta) in ind.ctors.iter().zip(ctor_metas_vec) {
@@ -5223,8 +3727,9 @@ fn compile_mutual(
     let journal = if stt.pass3 { pass3::journal_take() } else { None };
     let aux_layout_stored = tail?;
 
-    // Compute call-site surgery plans for reordered/collapsed blocks.
-    // Extract the original inductive `all` list from any InductiveVal in the block.
+    // Change detection (Def 3.1; Lean `Ix.Compile.Pass.isChanged`): the
+    // original inductive `all` list from any InductiveVal in the block, and
+    // the canonical classes restricted to it.
     let original_all: Vec<Name> = cs
       .iter()
       .find_map(|c| match c {
@@ -5232,7 +3737,7 @@ fn compile_mutual(
         _ => None,
       })
       .unwrap_or_default();
-    let plan_class_names: Vec<Vec<Name>> = if original_all.is_empty() {
+    let user_class_names: Vec<Vec<Name>> = if original_all.is_empty() {
       Vec::new()
     } else {
       let original_all_lookup: FxHashMap<Name, ()> =
@@ -5289,19 +3794,18 @@ fn compile_mutual(
     }
 
     let user_layout_changed = !original_all.is_empty()
-      && (plan_class_names.len() < original_all.len()
-        || (plan_class_names.len() == original_all.len()
-          && plan_class_names
+      && (user_class_names.len() < original_all.len()
+        || (user_class_names.len() == original_all.len()
+          && user_class_names
             .iter()
             .zip(original_all.iter())
             .any(|(class, orig)| class[0] != *orig)));
     let aux_layout_changed = aux_layout_stored.as_ref().is_some_and(|layout| {
-      // Evaporated positions need their head-rewrite plans even when no
-      // canonical slot moved (all-OUT perms). `user_layout_changed`
-      // happens to cover today's shapes (evaporation requires an SCC
-      // split), but plan computation must not depend on that
-      // coincidence. Keep this predicate identical to the decompile dual
-      // in `install_decompile_call_site_plans`.
+      // An evaporated position changes the block even when no canonical
+      // slot moved (all-OUT perms). `user_layout_changed` happens to cover
+      // today's shapes (evaporation requires an SCC split), but the
+      // predicate must not depend on that coincidence. Keep it identical to
+      // Lean's `isChanged`.
       layout.evaporated.iter().any(|&b| b)
         || layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
           canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
@@ -5309,9 +3813,13 @@ fn compile_mutual(
         })
     });
 
-    // Pass 3 (`IX_PASS3=images`): a changed block registers no surgery
-    // plan; its Ix auxiliaries move to their `_ix` display names and the
-    // block records its image-kind heads (`Driver.editChangedBlock`).
+    // Pass 3: a changed block's Ix auxiliaries move to their `_ix` display
+    // names and the block records its image-kind heads
+    // (`Driver.editChangedBlock`). Only a driver-prepared state can do that
+    // (the journal runs under `stt.pass3`); a hand-built one would leave the
+    // Ix auxiliaries under Lean's names with no caller rewritten for them,
+    // which the legacy call-site surgery did until M6R slice 6: refused,
+    // with the Lean side's text (`compileBlockWithAux`).
     if let Some(journal) = journal {
       let release = if user_layout_changed || aux_layout_changed {
         pass3::driver::edit_changed_block(
@@ -5335,171 +3843,14 @@ fn compile_mutual(
         pass3::release_pending(stt, release);
       }
     } else if user_layout_changed || aux_layout_changed {
-      let plans = surgery::compute_call_site_plans(
-        &plan_class_names,
-        &original_all,
-        lean_env,
-        aux_layout_stored.as_ref(),
-      )?;
-      // Shape check for the derived plans (A0, WB-A5/C3): `.brecOn` and
-      // `.below` plans exist only when Lean generates those families
-      // (`below_family_lean_exists`), the same rule aux_gen uses. A user
-      // constant `X.brecOn`/`X.below` of a reordered non-recursive block
-      // is the user's and keeps its call sites.
-      let below_lean =
-        aux_gen::below_family_lean_exists(lean_env, &original_all);
-      for (name, plan) in plans {
-        if *IX_LOG_AUX_NAMES {
-          eprintln!(
-            "[aux-names] plan scc={} all0={} {} head_rewrite={} overwrote={}",
-            plan_class_names
-              .first()
-              .and_then(|c| c.first())
-              .map_or_else(String::new, |n| n.pretty()),
-            original_all.first().map_or_else(String::new, |n| n.pretty()),
-            name.pretty(),
-            plan
-              .head_rewrite
-              .as_ref()
-              .map_or_else(|| "none".to_string(), |h| h.target_rec.pretty()),
-            stt.call_site_plans.contains_key(&name),
-          );
-        }
-        // Head-rewritten (evaporated-aux) recursors get NO derived
-        // brecOn/below plans: their `.brecOn_N`/`.below_N` siblings have no
-        // canonical regeneration — they compile as surgered originals that
-        // KEEP the source telescope — so their callers must not be
-        // rewritten.
-        //
-        // Plan keys (`X.rec`, `all0.rec_N`, …) are shared across every
-        // SCC split from one original mutual, and `DashMap::insert` is
-        // last-writer-wins. With per-position ownership resolved in
-        // aux_gen exactly one block computes each name's plan, so a
-        // differing pre-existing entry is a claim collision — fail
-        // loudly instead of shipping schedule-dependent rewrites
-        // (plans/aux-recursor-alias-collision.md §2.4).
-        if plan.head_rewrite.is_none() && below_lean {
-          // Keyed per name present, not gated on `.brecOn` itself: a
-          // closure-only environment can hold `X.brecOn.go` (an equation
-          // lemma's dependency) without `X.brecOn`, and aux_gen regenerates
-          // the `.go` family all the same.
-          if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
-            && std::iter::once(brecon_name.clone())
-              .chain(
-                ["go", "eq"]
-                  .iter()
-                  .map(|sub| Name::str(brecon_name.clone(), sub.to_string())),
-              )
-              .any(|n| lean_env.get(&n).is_some())
-          {
-            let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
-            // Type-level brecOn splits into `.go` (the PProd-packed
-            // worker) and `.eq` (its unfolding lemma). Lean's
-            // auto-generated equation-lemma proofs (`f.eq_def`) reference
-            // both DIRECTLY with explicit motive/handler arguments, and
-            // their telescopes are identical to `.brecOn`'s (params,
-            // motives, indices, major, handlers) — so they need the same
-            // call-site permutation. Without these keys, eq_def proofs
-            // ship source-order motives against the canonical-order
-            // regenerated `.go`/`.eq` (the torchlean
-            // `NN.GraphSpec.DAG.*.eq_def` AppTypeMismatch family; fixture
-            // `Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDef`).
-            let mut plan_keys = Vec::new();
-            if lean_env.get(&brecon_name).is_some() {
-              plan_keys.push(brecon_name.clone());
-            }
-            for sub in ["go", "eq"] {
-              let sub_name = Name::str(brecon_name.clone(), sub.to_string());
-              if lean_env.get(&sub_name).is_some() {
-                plan_keys.push(sub_name);
-              }
-            }
-            for key in plan_keys {
-              if stt
-                .brec_on_call_site_plans
-                .get(&key)
-                .is_some_and(|existing| *existing != new_plan)
-              {
-                return Err(CompileError::InvalidMutualBlock {
-                  reason: format!(
-                    "conflicting brecOn call-site plans for '{}' — two \
-                     blocks claim one source-indexed aux name",
-                    key.pretty(),
-                  ),
-                });
-              }
-              stt.brec_on_call_site_plans.insert(key, new_plan.clone());
-            }
-          }
-          if let Some(below_name) = surgery::rec_name_to_below_name(&name)
-            && let Some(below_ci) = lean_env.get(&below_name)
-          {
-            let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
-            if stt
-              .below_call_site_plans
-              .get(&below_name)
-              .is_some_and(|existing| *existing != new_plan)
-            {
-              return Err(CompileError::InvalidMutualBlock {
-                reason: format!(
-                  "conflicting below call-site plans for '{}' — two blocks \
-                   claim one source-indexed aux name",
-                  below_name.pretty(),
-                ),
-              });
-            }
-            // Prop-level (IndPredBelow) `.below` is an INDUCTIVE, so user
-            // code can also reference its constructors and its
-            // `.casesOn` wrapper — both start with the below params
-            // (parent params + parent motives) and need the same motive
-            // permutation. Registered under their own names in the same
-            // map; the apply site discriminates the telescope shape via
-            // `below_plan_key_is_head`. `X.below.rec` is deliberately
-            // not registered (only regenerated wrappers reference it,
-            // and those skip surgery via the aux-regen guard).
-            let mut family_names: Vec<Name> = Vec::new();
-            if let LeanConstantInfo::InductInfo(bv) = &*below_ci {
-              family_names.extend(bv.ctors.iter().cloned());
-              let cases_name =
-                Name::str(below_name.clone(), "casesOn".to_string());
-              if lean_env.get(&cases_name).is_some() {
-                family_names.push(cases_name);
-              }
-            }
-            for member in family_names {
-              if stt
-                .below_call_site_plans
-                .get(&member)
-                .is_some_and(|existing| *existing != new_plan)
-              {
-                return Err(CompileError::InvalidMutualBlock {
-                  reason: format!(
-                    "conflicting below call-site plans for '{}' — two \
-                     blocks claim one source-indexed aux name",
-                    member.pretty(),
-                  ),
-                });
-              }
-              stt.below_call_site_plans.insert(member, new_plan.clone());
-            }
-            stt.below_call_site_plans.insert(below_name, new_plan);
-          }
-        }
-        if stt
-          .call_site_plans
-          .get(&name)
-          .is_some_and(|existing| *existing != plan)
-        {
-          return Err(CompileError::InvalidMutualBlock {
-            reason: format!(
-              "conflicting call-site plans for '{}' — two blocks claim one \
-               source-indexed aux name",
-              name.pretty(),
-            ),
-          });
-        }
-        stt.call_site_plans.insert(name, plan);
-      }
+      return Err(CompileError::InvalidMutualBlock {
+        reason: format!(
+          "changed block '{}' compiled with its aux tail outside a \
+           driver-prepared environment (Pass 3 is the only mode since M6R \
+           slice 6)",
+          name.pretty()
+        ),
+      });
     }
   }
 
@@ -5516,13 +3867,13 @@ fn compile_mutual(
 
 mod admission;
 pub mod aux_gen;
+pub mod aux_source;
 pub mod block_txn;
 mod env;
 mod memory;
 pub mod mutual;
 pub mod nat_conv;
 pub mod pass3;
-pub mod surgery;
 pub(crate) mod validation;
 pub use env::{
   compile_env, compile_env_with_options, compile_env_with_profile,
@@ -5532,7 +3883,6 @@ pub use env::{
 mod tests {
   use super::*;
   use ix_common::env::{BinderInfo, Expr as LeanExpr, Level};
-  use ixon::metadata::CallSiteEntry;
 
   #[test]
   fn test_compile_univ_zero() {
@@ -5733,304 +4083,6 @@ mod tests {
       },
       _ => panic!("expected Str"),
     }
-  }
-
-  #[test]
-  fn test_plan_head_arity_audit_rejects_mdata_split_spine() {
-    let stt = CompileState::default();
-    let head =
-      Name::str(Name::str(Name::anon(), "A".to_string()), "rec".to_string());
-    stt.call_site_plans.insert(
-      head.clone(),
-      surgery::CallSitePlan {
-        n_params: 0,
-        n_source_motives: 2,
-        n_source_minors: 2,
-        n_indices: 0,
-        motive_keep: vec![true, true],
-        minor_keep: vec![true, true],
-        source_to_canon_motive: vec![1, 0],
-        source_to_canon_minor: vec![1, 0],
-        source_in_block: vec![true, true],
-        minor_in_block: vec![true, true],
-        head_rewrite: None,
-      },
-    );
-
-    // App(Mdata(App(App(A.rec, m1), m2)), minor): the outer telescope
-    // cannot see through Mdata, while the inner plan spine is too short.
-    let inner = LeanExpr::app(
-      LeanExpr::app(
-        LeanExpr::cnst(head.clone(), vec![]),
-        LeanExpr::bvar(Nat::from(0u64)),
-      ),
-      LeanExpr::bvar(Nat::from(1u64)),
-    );
-    let split = LeanExpr::app(
-      LeanExpr::mdata(vec![], inner),
-      LeanExpr::bvar(Nat::from(2u64)),
-    );
-    let owner = Name::str(Name::anon(), "offending".to_string());
-    let err = audit_plan_head_arities(&owner, &split, &stt)
-      .expect_err("mdata-split plan spine must fail the preflight audit")
-      .to_string();
-    assert!(err.contains("offending"), "missing owner in: {err}");
-    assert!(err.contains("A.rec"), "missing head in: {err}");
-    assert!(err.contains("has 2 args"), "missing arity in: {err}");
-    assert!(err.contains("at least 4"), "missing floor in: {err}");
-    assert!(err.contains("obscured by mdata/let"), "missing cause in: {err}");
-  }
-
-  #[test]
-  fn test_plan_head_arity_audit_visits_shared_dag_once() {
-    let stt = CompileState::default();
-    let head =
-      Name::str(Name::str(Name::anon(), "A".to_string()), "rec".to_string());
-    stt.call_site_plans.insert(
-      head,
-      surgery::CallSitePlan {
-        n_params: 0,
-        n_source_motives: 2,
-        n_source_minors: 2,
-        n_indices: 0,
-        motive_keep: vec![true, true],
-        minor_keep: vec![true, true],
-        source_to_canon_motive: vec![1, 0],
-        source_to_canon_minor: vec![1, 0],
-        source_in_block: vec![true, true],
-        minor_in_block: vec![true, true],
-        head_rewrite: None,
-      },
-    );
-
-    // Each lambda reuses the exact previous DAG node as both its domain and
-    // body. A tree walk sees 2^40 paths; the audit must see 41 unique nodes.
-    let mut shared = LeanExpr::bvar(Nat::from(0u64));
-    for _ in 0..40 {
-      shared = LeanExpr::lam(
-        Name::anon(),
-        shared.clone(),
-        shared.clone(),
-        BinderInfo::Default,
-      );
-    }
-    let owner = Name::str(Name::anon(), "shared-dag".to_string());
-    let visited = audit_plan_head_arities(&owner, &shared, &stt)
-      .expect("shared DAG without plan references should pass the audit");
-    assert_eq!(visited, 41, "audit should expand each shared node once");
-  }
-
-  #[test]
-  fn test_compile_expr_call_site_uses_nested_aux_telescope_perm() {
-    let stt = CompileState::default();
-    let head = Name::str(Name::anon(), "A".to_string());
-    let head = Name::str(head, "rec_1".to_string());
-    let head_addr = Address::hash(b"A.rec_1");
-    stt.name_to_addr.insert(head.clone(), head_addr);
-
-    // Source telescope:
-    //   motives: [A, B, aux0, aux1]
-    //   minors:  [A.mk, B.mk, aux0.mk, aux1.mk]
-    //   tail:    [major]
-    //
-    // Canonical nested-aux layout swaps aux0/aux1 while keeping user
-    // motives/minors fixed. This is the call-site side of AuxLayout.perm.
-    stt.call_site_plans.insert(
-      head.clone(),
-      surgery::CallSitePlan {
-        n_params: 0,
-        n_source_motives: 4,
-        n_source_minors: 4,
-        n_indices: 0,
-        motive_keep: vec![true, true, true, true],
-        minor_keep: vec![true, true, true, true],
-        source_to_canon_motive: vec![0, 1, 3, 2],
-        source_to_canon_minor: vec![0, 1, 3, 2],
-        source_in_block: vec![true, true, true, true],
-        minor_in_block: vec![true, true, true, true],
-        head_rewrite: None,
-      },
-    );
-
-    let mut expr = LeanExpr::cnst(head.clone(), vec![]);
-    for i in 10..=18u64 {
-      expr = LeanExpr::app(expr, LeanExpr::bvar(Nat::from(i)));
-    }
-
-    let mut cache = BlockCache {
-      compiling: Some(Name::str(Name::anon(), "caller".to_string())),
-      ..BlockCache::default()
-    };
-    let result =
-      compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
-
-    fn app_args(e: &Arc<Expr>) -> Vec<u64> {
-      let mut cur = e.clone();
-      let mut args = Vec::new();
-      while let Expr::App(f, a) = cur.as_ref() {
-        match a.as_ref() {
-          Expr::Var(i) => args.push(*i),
-          other => panic!("expected Var arg, got {other:?}"),
-        }
-        cur = f.clone();
-      }
-      match cur.as_ref() {
-        Expr::Ref(0, lvls) => assert!(lvls.is_empty()),
-        other => panic!("expected Ref head, got {other:?}"),
-      }
-      args.reverse();
-      args
-    }
-
-    assert_eq!(
-      app_args(&result),
-      vec![10, 11, 13, 12, 14, 15, 17, 16, 18],
-      "source-order aux motive/minor args should be emitted in canonical aux order",
-    );
-
-    let root = *cache.arena_roots.last().expect("compiled expression root");
-    let ExprMetaData::CallSite { name, entries, canon_meta, orig_head: _ } =
-      &cache.arena.nodes[root as usize]
-    else {
-      panic!("expected CallSite metadata at expression root");
-    };
-    assert_eq!(*name, compile_name(&head, &stt));
-    assert_eq!(
-      canon_meta.len(),
-      app_args(&result).len(),
-      "CallSite canonical metadata has one root per canonical argument",
-    );
-    let canon_indices: Vec<u64> = entries
-      .iter()
-      .map(|entry| match entry {
-        CallSiteEntry::Kept { canon_idx, .. } => *canon_idx,
-        CallSiteEntry::Collapsed { .. } => {
-          panic!("this fixture keeps every source argument")
-        },
-      })
-      .collect();
-    assert_eq!(
-      canon_indices,
-      vec![0, 1, 3, 2, 4, 5, 7, 6, 8],
-      "CallSite metadata stays in source order and records each canonical target",
-    );
-  }
-
-  #[test]
-  fn test_compile_expr_brecon_call_site_permutes_motives_and_handlers() {
-    let stt = CompileState::default();
-    let head = Name::str(Name::anon(), "A".to_string());
-    let head = Name::str(head, "brecOn".to_string());
-    let head_addr = Address::hash(b"A.brecOn");
-    stt.name_to_addr.insert(head.clone(), head_addr);
-
-    // Source `.brecOn` telescope:
-    //   motives:  [A, B, C, D]
-    //   major:    t
-    //   handlers: [F_A, F_B, F_C, F_D]
-    //
-    // Canonical class order is [A, C, D, B], so both motives and handlers
-    // must be permuted while the major premise stays between them.
-    stt.brec_on_call_site_plans.insert(
-      head.clone(),
-      surgery::BRecOnCallSitePlan {
-        n_params: 0,
-        n_source_motives: 4,
-        n_indices: 0,
-        motive_keep: vec![true, true, true, true],
-        source_to_canon_motive: vec![0, 3, 1, 2],
-        source_in_block: vec![true, true, true, true],
-      },
-    );
-
-    let mut expr = LeanExpr::cnst(head.clone(), vec![]);
-    for i in 10..=18u64 {
-      expr = LeanExpr::app(expr, LeanExpr::bvar(Nat::from(i)));
-    }
-
-    let mut cache = BlockCache {
-      compiling: Some(Name::str(Name::anon(), "caller".to_string())),
-      ..BlockCache::default()
-    };
-    let result =
-      compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
-
-    fn app_args(e: &Arc<Expr>) -> Vec<u64> {
-      let mut cur = e.clone();
-      let mut args = Vec::new();
-      while let Expr::App(f, a) = cur.as_ref() {
-        match a.as_ref() {
-          Expr::Var(i) => args.push(*i),
-          other => panic!("expected Var arg, got {other:?}"),
-        }
-        cur = f.clone();
-      }
-      match cur.as_ref() {
-        Expr::Ref(0, lvls) => assert!(lvls.is_empty()),
-        other => panic!("expected Ref head, got {other:?}"),
-      }
-      args.reverse();
-      args
-    }
-
-    assert_eq!(
-      app_args(&result),
-      vec![10, 12, 13, 11, 14, 15, 17, 18, 16],
-      "brecOn call-site surgery should permute motives and handlers around the major premise",
-    );
-  }
-
-  #[test]
-  fn test_compile_expr_below_call_site_permutes_motives_before_major() {
-    let stt = CompileState::default();
-    let head = Name::str(Name::anon(), "A".to_string());
-    let head = Name::str(head, "below".to_string());
-    let head_addr = Address::hash(b"A.below");
-    stt.name_to_addr.insert(head.clone(), head_addr);
-
-    stt.below_call_site_plans.insert(
-      head.clone(),
-      surgery::BRecOnCallSitePlan {
-        n_params: 0,
-        n_source_motives: 4,
-        n_indices: 0,
-        motive_keep: vec![true, true, true, true],
-        source_to_canon_motive: vec![0, 3, 1, 2],
-        source_in_block: vec![true, true, true, true],
-      },
-    );
-
-    let mut expr = LeanExpr::cnst(head.clone(), vec![]);
-    for i in 10..=14u64 {
-      expr = LeanExpr::app(expr, LeanExpr::bvar(Nat::from(i)));
-    }
-
-    let mut cache = BlockCache {
-      compiling: Some(Name::str(Name::anon(), "caller".to_string())),
-      ..BlockCache::default()
-    };
-    let result =
-      compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
-
-    fn app_args(e: &Arc<Expr>) -> Vec<u64> {
-      let mut cur = e.clone();
-      let mut args = Vec::new();
-      while let Expr::App(f, a) = cur.as_ref() {
-        match a.as_ref() {
-          Expr::Var(i) => args.push(*i),
-          other => panic!("expected Var arg, got {other:?}"),
-        }
-        cur = f.clone();
-      }
-      match cur.as_ref() {
-        Expr::Ref(0, lvls) => assert!(lvls.is_empty()),
-        other => panic!("expected Ref head, got {other:?}"),
-      }
-      args.reverse();
-      args
-    }
-
-    assert_eq!(app_args(&result), vec![10, 12, 13, 11, 14]);
   }
 
   #[test]
@@ -6360,7 +4412,7 @@ mod tests {
     for max_workers in [1, 4] {
       let compiled = compile_env_with_options(
         &source,
-        CompileOptions { max_workers: Some(max_workers), ..Default::default() },
+        CompileOptions { max_workers: Some(max_workers) },
       )
       .unwrap();
       assert!(compiled.ungrounded.is_empty());

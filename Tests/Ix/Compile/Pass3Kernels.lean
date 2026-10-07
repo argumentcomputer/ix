@@ -1,8 +1,12 @@
 /-
   The kernel-failure record of `pass3` (KF triage, 2026-10-05): every failure
   of the three checkers (`cert`, the certified checker; `rs`, `ix check-rs`;
-  `lean`, `ix check-lean`, both in meta mode) on every unit, with the switch
-  off and on, each tagged with its cause.
+  `lean`, `ix check-lean`, both in meta mode) on every unit, in Pass 3, each
+  tagged with its cause. Until M6R slice 6 (2026-10-07) the record also held
+  the failures with the switch off (the legacy call-site surgery, 192 rows);
+  they went with the surgery, and every row's `switch` is `on`. The units'
+  compile failures, which no checker sees, are recorded apart
+  (`compileFailures`).
 
   A row covers the failures of one unit, switch state and leg whose message
   contains `msg`: exactly the names listed, or (a large uniform class)
@@ -47,8 +51,8 @@
     is absent). `Ix.Tc`'s whole-environment meta ingress stops at the first
     such entry, so the `lean` leg checks nothing in those units (name `*`,
     checked 0). Anonymous mode accepts them.
-  - `BB-F6 (= WB-A2)`: the same for the dependents of a constant whose
-    compile fails (`F6_OrderIdxBrecOn`, switch off).
+  - `BB-F6 (= WB-A2)` (history, switch off only): the same for the dependents
+    of a constant whose compile fails (`F6_OrderIdxBrecOn`).
   - `WB-…`, `BB-F5`, `WB §6`: the documented compiler and checker defects of
     `aux-cert` (`Tests/Ix/Compile/AuxCert.lean`), on the same fixtures and
     their twins; `WB-B3` also covers the prototype's and the twins' split
@@ -56,7 +60,7 @@
     and the O9 fixture `O9Split`, whose structural functions over a split
     block the surgery path compiles the same way).
   - `KF-O1`, `KF-C7`, `KF-UNIVM`: default-path defects without an earlier id
-    (KF triage): with the switch off, `recOn` of a permuted mutual block
+    (KF triage; `KF-O1` and `KF-C7` history since M6R slice 6): with the switch off, `recOn` of a permuted mutual block
     (`PassO1.Src.Odd.viaRecOn`) and the `IndPredBelow` case split of a mutual
     Prop block (`C7b.Src.EvenP.toR.match_2`) are ill-typed for all three
     checkers; in both switch states, the nested recursors of
@@ -64,7 +68,7 @@
     universes) are rejected by both executable kernels in both modes
     (`canonical-order mismatch`), and accepted by the certified checker,
     which does not check auxiliary order.
-  - `KF-O1C` (found when the O7–O12 fixtures joined the record, M1-b): with
+  - `KF-O1C` (history since M6R slice 6; found when the O7–O12 fixtures joined the record, M1-b): with
     the switch off, `recOn` of a collapsed mutual block
     (`PassO7.Src.B.viaRecOn`, its value pin `viaRecOn_one`) is rejected by
     the certified checker (`application type mismatch`) and the Rust kernel;
@@ -74,9 +78,10 @@
   - `CERT-AXIOM`: the certified checker declines axioms outside its standard
     set (`Tests.Ix.Compile.LevelSpellings` declares its own).
   - CORPUS-IPB (M1-j), units `IPBCollapse2p1` and `IPBMixed` (the corpus
-    shapes `M3_P_alpha2p1`, `M4_P_mixed`): with the switch off the compile
-    refuses Lean's `IndPredBelow` block (`REFUSED-IPB-COLLAPSE`), with the
-    switch on Pass 3 refuses the family's images (`switchOnRefusals`). Their
+    shapes `M3_P_alpha2p1`, `M4_P_mixed`): Pass 3 refuses the family's images
+    (`switchOnRefusals`); until M6R slice 6 the switch-off compile refused
+    Lean's `IndPredBelow` block instead (`REFUSED-IPB-COLLAPSE`, deleted with
+    the surgery). Their
     kernel failures are all meta-mode only, on the collapsed aliases
     (`BB-F1`, `BB-F7`; the same names in four runs): the certified checker
     and anonymous mode accept every checked constant. Their valid neighbour
@@ -196,69 +201,33 @@ def table : List Expect := [
     msg := "unknown constant ", count := 71 },
   { unit := "SurgCollapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", names := ["SurgCollapse.B.g"] },
-  { unit := "SurgCollapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["SurgCollapse.A", "SurgCollapse.A.a", "SurgCollapse.A.nil"] },
-  { unit := "SurgCollapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 43 },
   { unit := "SurgCollapseEq", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["SurgCollapseEq.B", "SurgCollapseEq.B.b", "SurgCollapseEq.B.nil"] },
   { unit := "SurgCollapseEq", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 74 },
-  { unit := "SurgCollapseEq", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["SurgCollapseEq.B", "SurgCollapseEq.B.b", "SurgCollapseEq.B.nil"] },
-  { unit := "SurgCollapseEq", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 51 },
   { unit := "F4FlatAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["F4FlatAlphaUsers.A", "F4FlatAlphaUsers.A.s", "F4FlatAlphaUsers.A.z"] },
   { unit := "F4FlatAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 56 },
-  { unit := "F4FlatAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["F4FlatAlphaUsers.A", "F4FlatAlphaUsers.A.s", "F4FlatAlphaUsers.A.z"] },
-  { unit := "F4FlatAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 37 },
   { unit := "F4_NestedAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["B", "B._ix.rec", "B.leaf", "B.node"] },
   { unit := "F4_NestedAlphaUsers", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 76 },
-  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", names := ["A.size._unsafe_rec", "B.size._unsafe_rec", "sizeL._unsafe_rec", "sizeLA._unsafe_rec"] },
-  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 7 },
-  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 43 },
-  { unit := "F4_NestedAlphaUsers", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", names := ["A._sizeOf_4_eq"] },
   { unit := "F3_SplitRoseRace", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
     msg := "Named entry for 'A", count := 10 },
   { unit := "F3_SplitRoseRace", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
-    msg := "Named entry for 'A", names := ["*"] },
-  { unit := "F3_SplitRoseRace", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
-    msg := "Named entry for 'A", count := 12 },
-  { unit := "F3_SplitRoseRace", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of A: not a one-motive recursor)",
     msg := "Named entry for 'A", names := ["*"] },
   { unit := "NestRoseSplit", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
     msg := "Named entry for 'NestRoseSplit.A", count := 10 },
   { unit := "NestRoseSplit", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
     msg := "Named entry for 'NestRoseSplit.A", names := ["*"] },
-  { unit := "NestRoseSplit", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
-    msg := "Named entry for 'NestRoseSplit.A", count := 12 },
-  { unit := "NestRoseSplit", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestRoseSplit.A: not a one-motive recursor)",
-    msg := "Named entry for 'NestRoseSplit.A", names := ["*"] },
   { unit := "NestMutExt", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
     msg := "Named entry for 'NestMutExt.A", count := 20 },
   { unit := "NestMutExt", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
     msg := "Named entry for 'NestMutExt.A", names := ["*"] },
-  { unit := "NestMutExt", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
-    msg := "Named entry for 'NestMutExt.A", count := 24 },
-  { unit := "NestMutExt", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExt.A: not a one-motive recursor)",
-    msg := "Named entry for 'NestMutExt.A", names := ["*"] },
   { unit := "NestMutExtA", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
     msg := "Named entry for 'NestMutExtA.A", count := 10 },
   { unit := "NestMutExtA", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
-    msg := "Named entry for 'NestMutExtA.A", names := ["*"] },
-  { unit := "NestMutExtA", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
-    msg := "Named entry for 'NestMutExtA.A", count := 12 },
-  { unit := "NestMutExtA", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of NestMutExtA.A: not a one-motive recursor)",
     msg := "Named entry for 'NestMutExtA.A", names := ["*"] },
   { unit := "Neighbours", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", count := 18 },
@@ -269,52 +238,14 @@ def table : List Expect := [
     mayBeEmpty := some "check-lean's verdict on the collapsed aliases depends on which work item a worker \
       meets first (KF triage §4): this cell's 'app type mismatch' class is small and some runs see none \
       (M1-a: failed stale on one run, passed the next, same tree)" },
-  { unit := "Neighbours", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 18 },
-  { unit := "Neighbours", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 225 },
   { unit := "NestShapes", switch := "on", leg := "cert", cause := "WB §6",
     msg := "blocked: ", count := 25 },
   { unit := "NestShapes", switch := "on", leg := "cert", cause := "WB §6",
     msg := "decline: reader: in-process model", names := ["NestShapes.R", "NestShapes.R.leaf", "NestShapes.R.mk", "NestShapes.R.rec", "NestShapes.R.rec_1"] },
-  { unit := "NestShapes", switch := "off", leg := "cert", cause := "WB §6",
-    msg := "blocked: ", count := 25 },
-  { unit := "NestShapes", switch := "off", leg := "cert", cause := "WB §6",
-    msg := "decline: reader: in-process model", names := ["NestShapes.R", "NestShapes.R.leaf", "NestShapes.R.mk", "NestShapes.R.rec", "NestShapes.R.rec_1"] },
-  { unit := "Coind", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "blocked: ", names := ["Coind.CA.casesOn", "Coind.CA.functor_unfold", "Coind.CA.mk", "Coind.CB.casesOn", "Coind.CB.functor_unfold", "Coind.CB.mk"] },
-  { unit := "Coind", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "incorrect number of universe levels", names := ["Coind.CA._functor.existential_equiv", "Coind.CB._functor.existential_equiv"] },
-  { unit := "Coind", switch := "off", leg := "rs", cause := "WB-B2",
-    msg := "universe param count", names := ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn", "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] },
-  { unit := "Coind", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "universe param count", names := ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn", "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] },
-  { unit := "PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "incorrect number of universe levels", names := ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
-  { unit := "PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
-    msg := "universe param count", names := ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
-  { unit := "PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "universe param count", names := ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
   { unit := "PropCollapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["PropCollapse.Q", "PropCollapse.Q._ix.below", "PropCollapse.Q._ix.below.step", "PropCollapse.Q.step"] },
   { unit := "PropCollapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 29 },
-  { unit := "PropCollapse", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "incorrect number of universe levels", names := ["PropCollapse.p_cases"] },
-  { unit := "PropCollapse", switch := "off", leg := "rs", cause := "WB-B2",
-    msg := "universe param count", names := ["PropCollapse.p_cases"] },
-  { unit := "PropCollapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["PropCollapse.Q", "PropCollapse.Q.below", "PropCollapse.Q.below.step", "PropCollapse.Q.step"] },
-  { unit := "PropCollapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 14 },
-  { unit := "PropCollapse", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "unknown constant ", names := ["PropCollapse.p_cases"] },
-  { unit := "L2_PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "incorrect number of universe levels", names := ["ua"] },
-  { unit := "L2_PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
-    msg := "universe param count", names := ["ua"] },
-  { unit := "L2_PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "universe param count", names := ["ua"] },
   { unit := "RecAlias", switch := "on", leg := "cert", cause := "WB-B6",
     msg := "reject: function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
   { unit := "RecAlias", switch := "on", leg := "cert", cause := "WB-B6",
@@ -322,14 +253,6 @@ def table : List Expect := [
   { unit := "RecAlias", switch := "on", leg := "rs", cause := "WB-B6",
     msg := "FunExpected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
   { unit := "RecAlias", switch := "on", leg := "lean", cause := "WB-B6",
-    msg := "function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
-  { unit := "RecAlias", switch := "off", leg := "cert", cause := "WB-B6",
-    msg := "reject: function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
-  { unit := "RecAlias", switch := "off", leg := "cert", cause := "WB-B6",
-    msg := "blocked: ", names := ["RecAlias.PA.triv"] },
-  { unit := "RecAlias", switch := "off", leg := "rs", cause := "WB-B6",
-    msg := "FunExpected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
-  { unit := "RecAlias", switch := "off", leg := "lean", cause := "WB-B6",
     msg := "function expected", names := ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] },
   { unit := "SurgAlias", switch := "on", leg := "cert", cause := "WB-B5",
     msg := "blocked: ", names := ["SurgAlias.A._sizeOf_inst", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec"] },
@@ -343,37 +266,9 @@ def table : List Expect := [
     msg := "app type mismatch", names := ["SurgAlias.A._sizeOf_1"] },
   { unit := "SurgAlias", switch := "on", leg := "lean", cause := "WB-B5",
     msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec"] },
-  { unit := "SurgAlias", switch := "off", leg := "cert", cause := "WB-B5",
-    msg := "blocked: ", names := ["SurgAlias.A._sizeOf_inst", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec", "SurgAlias.f1"] },
-  { unit := "SurgAlias", switch := "off", leg := "cert", cause := "WB-B5",
-    msg := "reject: application type mismatch", names := ["SurgAlias.A._sizeOf_1", "SurgAlias.f"] },
-  { unit := "SurgAlias", switch := "off", leg := "rs", cause := "WB-B5",
-    msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec", "SurgAlias.f1"] },
-  { unit := "SurgAlias", switch := "off", leg := "rs", cause := "WB-B5",
-    msg := "AppTypeMismatch", names := ["SurgAlias.A._sizeOf_1", "SurgAlias.f"] },
-  { unit := "SurgAlias", switch := "off", leg := "lean", cause := "WB-B5",
-    msg := "app type mismatch", names := ["SurgAlias.A._sizeOf_1", "SurgAlias.f"] },
-  { unit := "SurgAlias", switch := "off", leg := "lean", cause := "WB-B5",
-    msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec", "SurgAlias.f1"] },
-  { unit := "SurgSplit", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "blocked: ", names := ["SurgSplit.A.len", "SurgSplit.A.len._sunfold", "SurgSplit.len2"] },
-  { unit := "SurgSplit", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "decline: projection on a non-structure", names := ["SurgSplit.A.len._f"] },
-  { unit := "SurgSplit", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["SurgSplit.A.len._f"] },
-  { unit := "SurgSplit", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["SurgSplit.len2"] },
-  { unit := "SurgSplit", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["SurgSplit.len2"] },
-  { unit := "SurgSplit", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["SurgSplit.A.len._f"] },
   { unit := "UnsafeI", switch := "on", leg := "rs", cause := "WB-B9",
     msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
   { unit := "UnsafeI", switch := "on", leg := "lean", cause := "WB-B9",
-    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
-  { unit := "UnsafeI", switch := "off", leg := "rs", cause := "WB-B9",
-    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
-  { unit := "UnsafeI", switch := "off", leg := "lean", cause := "WB-B9",
     msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
   { unit := "F1_Collapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
     msg := "AppTypeMismatch", count := 62 },
@@ -385,32 +280,14 @@ def table : List Expect := [
     msg := "unknown constant ", count := 72 },
   { unit := "F1_Collapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", count := 17 },
-  { unit := "F1_Collapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", count := 38 },
-  { unit := "F1_Collapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "ctor return type: head is not the inductive", count := 9 },
-  { unit := "F1_Collapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["B", "B.rec", "B.s", "B.z"] },
-  { unit := "F1_Collapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 47 },
-  { unit := "F1_Collapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", count := 11 },
   { unit := "F5_SigmaNestedNested", switch := "on", leg := "rs", cause := "BB-F5",
     msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
   { unit := "F5_SigmaNestedNested", switch := "on", leg := "lean", cause := "BB-F5",
-    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
-  { unit := "F5_SigmaNestedNested", switch := "off", leg := "rs", cause := "BB-F5",
-    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
-  { unit := "F5_SigmaNestedNested", switch := "off", leg := "lean", cause := "BB-F5",
     msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
   { unit := "F7_AlphaVLean", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["B", "B.s", "B.z"] },
   { unit := "F7_AlphaVLean", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 56 },
-  { unit := "F7_AlphaVLean", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["B", "B.s", "B.z"] },
-  { unit := "F7_AlphaVLean", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 37 },
   { unit := "KernelSpec", switch := "on", leg := "cert", cause := "WB-A7",
     msg := "blocked: ", count := 20 },
   { unit := "KernelSpec", switch := "on", leg := "cert", cause := "WB-A7",
@@ -419,90 +296,22 @@ def table : List Expect := [
     msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
   { unit := "KernelSpec", switch := "on", leg := "lean", cause := "WB-A7",
     msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
-  { unit := "KernelSpec", switch := "off", leg := "cert", cause := "WB-A7",
-    msg := "blocked: ", count := 20 },
-  { unit := "KernelSpec", switch := "off", leg := "cert", cause := "WB-A7",
-    msg := "decline: reader: in-process model", names := ["KernelSpec.T", "KernelSpec.T.leaf", "KernelSpec.T.mk", "KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
-  { unit := "KernelSpec", switch := "off", leg := "rs", cause := "WB-A7",
-    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
-  { unit := "KernelSpec", switch := "off", leg := "lean", cause := "WB-A7",
-    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
-  { unit := "SurgIdx", switch := "off", leg := "cert", cause := "WB-A2",
-    msg := "blocked: ", names := ["SurgIdx2.B.size._sunfold", "SurgIdx2.bsize"] },
-  { unit := "SurgIdx", switch := "off", leg := "cert", cause := "WB-A2",
-    msg := "reject: application type mismatch", names := ["SurgIdx2.B.size"] },
-  { unit := "SurgIdx", switch := "off", leg := "rs", cause := "WB-A2",
-    msg := "declaration type mismatch", names := ["SurgIdx2.bsize"] },
-  { unit := "SurgIdx", switch := "off", leg := "rs", cause := "WB-A2",
-    msg := "AppTypeMismatch", names := ["SurgIdx2.B.size"] },
-  { unit := "SurgIdx", switch := "off", leg := "lean", cause := "WB-A2",
-    msg := "declaration type mismatch", names := ["SurgIdx2.bsize"] },
-  { unit := "SurgIdx", switch := "off", leg := "lean", cause := "WB-A2",
-    msg := "app type mismatch", names := ["SurgIdx2.B.size"] },
-  { unit := "F6_OrderIdxBrecOn", switch := "off", leg := "rs", cause := "BB-F6 (= WB-A2): A.w fails to compile; its dependents",
-    msg := "Named entry for 'A.w", names := ["A.w._sunfold", "B.w"] },
-  { unit := "F6_OrderIdxBrecOn", switch := "off", leg := "lean", cause := "BB-F6 (= WB-A2): A.w fails to compile; its dependents",
-    msg := "Named entry for 'A.w", names := ["*"] },
-  { unit := "C2Split", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "blocked: ", names := ["C2.Src.A.cnt", "C2.Src.A.cnt._sunfold", "C2.Src.A.len", "C2.Src.A.len._sunfold", "C2.Src.cnt1", "C2.Src.len2"] },
-  { unit := "C2Split", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "decline: projection on a non-structure", names := ["C2.Src.A.cnt._f", "C2.Src.A.len._f"] },
-  { unit := "C2Split", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["C2.Src.A.cnt._f", "C2.Src.A.len._f"] },
-  { unit := "C2Split", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["C2.Src.cnt1", "C2.Src.len2"] },
-  { unit := "C2Split", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["C2.Src.cnt1", "C2.Src.len2"] },
-  { unit := "C2Split", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["C2.Src.A.cnt._f", "C2.Src.A.len._f"] },
-  { unit := "C3PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "incorrect number of universe levels", names := ["C3.Src.p1", "C3.Src.p2", "C3b.Src.q1", "C3b.Src.q2"] },
-  { unit := "C3PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
-    msg := "universe param count", names := ["C3.Src.p1", "C3.Src.p2", "C3b.Src.q1", "C3b.Src.q2"] },
-  { unit := "C3PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "universe param count", names := ["C3.Src.p1", "C3.Src.p2", "C3b.Src.q1", "C3b.Src.q2"] },
   { unit := "C4Evap", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
     msg := "Named entry for 'C4b.Src.A", count := 156 },
   { unit := "C4Evap", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
-    msg := "Named entry for 'C4b.Src.A", names := ["*"] },
-  { unit := "C4Evap", switch := "off", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
-    msg := "Named entry for 'C4b.Src.A", count := 148 },
-  { unit := "C4Evap", switch := "off", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
     msg := "Named entry for 'C4b.Src.A", names := ["*"] },
   { unit := "C5Collapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["C5.Src.B", "C5.Src.B.b", "C5.Src.B.nil"] },
   { unit := "C5Collapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 85 },
-  { unit := "C5Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["C5.Src.B", "C5.Src.B.b", "C5.Src.B.nil"] },
-  { unit := "C5Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 52 },
   { unit := "C6NestedCollapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["C6.Src.B", "C6.Src.B._ix.rec", "C6.Src.B.leaf", "C6.Src.B.node"] },
   { unit := "C6NestedCollapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 97 },
-  { unit := "C6NestedCollapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 7 },
-  { unit := "C6NestedCollapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 51 },
-  { unit := "C6NestedCollapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", names := ["C6.Src.A._sizeOf_4_eq"] },
   { unit := "C7IndPred", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["C7.Src.P", "C7.Src.P._ix.below", "C7.Src.P._ix.below.base", "C7.Src.P._ix.below.step", "C7.Src.P.base", "C7.Src.P.step"] },
   { unit := "C7IndPred", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 40 },
-  { unit := "C7IndPred", switch := "off", leg := "cert", cause := "KF-C7",
-    msg := "blocked: ", names := ["C7b.Src.EvenP.toR", "C7b.Src.OddP.toR"] },
-  { unit := "C7IndPred", switch := "off", leg := "cert", cause := "KF-C7",
-    msg := "reject: function expected", names := ["C7b.Src.EvenP.toR.match_2"] },
-  { unit := "C7IndPred", switch := "off", leg := "rs", cause := "KF-C7",
-    msg := "FunExpected", names := ["C7b.Src.EvenP.toR.match_2"] },
-  { unit := "C7IndPred", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["C7.Src.P", "C7.Src.P.base", "C7.Src.P.below", "C7.Src.P.below.base", "C7.Src.P.below.step", "C7.Src.P.step"] },
-  { unit := "C7IndPred", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 18 },
-  { unit := "C7IndPred", switch := "off", leg := "lean", cause := "KF-C7",
-    msg := "function expected", names := ["C7b.Src.EvenP.toR.match_2"] },
   { unit := "C8Collapse3", switch := "on", leg := "rs", cause := "BB-F1",
     msg := "AppTypeMismatch", varies := true },
   { unit := "C8Collapse3", switch := "on", leg := "lean", cause := "BB-F7",
@@ -511,70 +320,18 @@ def table : List Expect := [
     msg := "unknown constant ", count := 212 },
   { unit := "C8Collapse3", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", varies := true },
-  { unit := "C8Collapse3", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", varies := true },
-  { unit := "C8Collapse3", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 11 },
-  { unit := "C8Collapse3", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 127 },
-  { unit := "C8Collapse3", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", varies := true },
   { unit := "C9Params", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["C9b.Src.B", "C9b.Src.B.b", "C9b.Src.B.nil"] },
   { unit := "C9Params", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 74 },
-  { unit := "C9Params", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "blocked: ", names := ["C9.Src.A.depth", "C9.Src.A.depth._sunfold", "C9.Src.depth_ex"] },
-  { unit := "C9Params", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "decline: projection on a non-structure", names := ["C9.Src.A.depth._f"] },
-  { unit := "C9Params", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "projection: struct type is not a constant", names := ["C9.Src.A.depth._f"] },
-  { unit := "C9Params", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["C9.Src.depth_ex"] },
-  { unit := "C9Params", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["C9b.Src.B", "C9b.Src.B.b", "C9b.Src.B.nil"] },
-  { unit := "C9Params", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 45 },
-  { unit := "C9Params", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "projection: struct type is not a constant", names := ["C9.Src.A.depth._f"] },
-  { unit := "C9Params", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["C9.Src.depth_ex"] },
   { unit := "O1Perm", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["PassO1.Col.A", "PassO1.Col.A.a", "PassO1.Col.A.nil"] },
   { unit := "O1Perm", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 59 },
-  { unit := "O1Perm", switch := "off", leg := "cert", cause := "KF-O1",
-    msg := "blocked: ", names := ["PassO1.Src.viaRecOn_three"] },
-  { unit := "O1Perm", switch := "off", leg := "cert", cause := "KF-O1",
-    msg := "reject: application type mismatch", names := ["PassO1.Src.Odd.viaRecOn"] },
-  { unit := "O1Perm", switch := "off", leg := "rs", cause := "KF-O1",
-    msg := "declaration type mismatch", names := ["PassO1.Src.viaRecOn_three"] },
-  { unit := "O1Perm", switch := "off", leg := "rs", cause := "KF-O1",
-    msg := "AppTypeMismatch", names := ["PassO1.Src.Odd.viaRecOn"] },
-  { unit := "O1Perm", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["PassO1.Col.A", "PassO1.Col.A.a", "PassO1.Col.A.nil"] },
-  { unit := "O1Perm", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 39 },
-  { unit := "O1Perm", switch := "off", leg := "lean", cause := "KF-O1",
-    msg := "declaration type mismatch", names := ["PassO1.Src.viaRecOn_three"] },
-  { unit := "O1Perm", switch := "off", leg := "lean", cause := "KF-O1",
-    msg := "app type mismatch", names := ["PassO1.Src.Odd.viaRecOn"] },
   { unit := "O3Cases", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["PassO3.Col.A", "PassO3.Col.A.a", "PassO3.Col.A.nil"] },
   { unit := "O3Cases", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "unknown constant ", count := 59 },
-  { unit := "O3Cases", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", names := ["PassO3.Col.A", "PassO3.Col.A.a", "PassO3.Col.A.nil"] },
-  { unit := "O3Cases", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 39 },
-  { unit := "O5PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "incorrect number of universe levels", names := ["PassO5.P.toQ", "PassO5.P.viaRec", "PassO5.Q.elim"] },
-  { unit := "O5PropSplit", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "blocked: ", names := ["PassO5.toQ_pin"] },
-  { unit := "O5PropSplit", switch := "off", leg := "rs", cause := "WB-B2",
-    msg := "universe param count", names := ["PassO5.P.toQ", "PassO5.P.viaRec", "PassO5.Q.elim"] },
-  { unit := "O5PropSplit", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "universe param count", names := ["PassO5.P.toQ", "PassO5.P.viaRec", "PassO5.Q.elim"] },
   { unit := "twins", switch := "on", leg := "cert", cause := "WB-B6",
     msg := "reject: function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
   { unit := "twins", switch := "on", leg := "cert", cause := "WB-B6",
@@ -591,66 +348,6 @@ def table : List Expect := [
     msg := "app type mismatch", varies := true },
   { unit := "twins", switch := "on", leg := "lean", cause := "WB-B6",
     msg := "function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
-  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B2",
-    msg := "incorrect number of universe levels", count := 9 },
-  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "decline: projection on a non-structure", count := 7 },
-  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "blocked: ", count := 19 },
-  { unit := "twins", switch := "off", leg := "cert", cause := "KF-C7",
-    msg := "reject: function expected", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR.match_2"] },
-  { unit := "twins", switch := "off", leg := "cert", cause := "KF-C7",
-    msg := "blocked: ", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR", "Tests.Ix.Compile.Twins.Proto.C7b.Src.OddP.toR"] },
-  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B6",
-    msg := "reject: function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
-  { unit := "twins", switch := "off", leg := "cert", cause := "WB-A2",
-    msg := "reject: application type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size"] },
-  { unit := "twins", switch := "off", leg := "cert", cause := "WB-B6",
-    msg := "blocked: ", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv"] },
-  { unit := "twins", switch := "off", leg := "cert", cause := "WB-A2",
-    msg := "blocked: ", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size._sunfold", "Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.bsize"] },
-  { unit := "twins", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", varies := true },
-  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B2",
-    msg := "universe param count", count := 9 },
-  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["Tests.Ix.Compile.Twins.Proto.C2.Src.A.cnt._f", "Tests.Ix.Compile.Twins.Proto.C2.Src.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQMut.A.size._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.sum._f", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.A.len._f"] },
-  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.DQMut.size2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len_succ", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.sum1", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.len2"] },
-  { unit := "twins", switch := "off", leg := "rs", cause := "KF-C7",
-    msg := "FunExpected", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR.match_2"] },
-  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B6",
-    msg := "FunExpected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
-  { unit := "twins", switch := "off", leg := "rs", cause := "WB-A2",
-    msg := "AppTypeMismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size"] },
-  { unit := "twins", switch := "off", leg := "rs", cause := "WB-A2",
-    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.bsize"] },
-  { unit := "twins", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "projection: struct type is not a constant", names := ["Tests.Ix.Compile.Twins.Proto.C9.Src.A.depth._f"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 48 },
-  { unit := "twins", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 405 },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["Tests.Ix.Compile.Twins.Proto.C2.Src.A.cnt._f", "Tests.Ix.Compile.Twins.Proto.C2.Src.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQMut.A.size._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.len._f", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.A.sum._f", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.A.len._f"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "universe param count", count := 8 },
-  { unit := "twins", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", varies := true },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.DQMut.size2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len2", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.len_succ", "Tests.Ix.Compile.Twins.Repro.Orig.DQSplit.sum1", "Tests.Ix.Compile.Twins.Repro.Orig.SurgSplit.len2"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B6",
-    msg := "function expected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-A2",
-    msg := "declaration type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.bsize"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B2",
-    msg := "unknown constant ", names := ["Tests.Ix.Compile.Twins.Repro.Orig.PropCollapse.p_cases"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "KF-C7",
-    msg := "function expected", names := ["Tests.Ix.Compile.Twins.Proto.C7b.Src.EvenP.toR.match_2"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-A2",
-    msg := "app type mismatch", names := ["Tests.Ix.Compile.Twins.Repro.Orig.SurgIdx2.B.size"] },
-  { unit := "twins", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "projection: struct type is not a constant", names := ["Tests.Ix.Compile.Twins.Proto.C9.Src.A.depth._f"] },
   -- CORPUS-IPB (M1-j): the refused units' meta-mode failures on collapsed aliases (four runs, stable)
   { unit := "IPBCollapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
     msg := "AppTypeMismatch", count := 51 },
@@ -662,14 +359,6 @@ def table : List Expect := [
     msg := "unknown constant ", count := 47 },
   { unit := "IPBCollapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", names := ["IPBCollapse2p1.A.casesOn", "IPBCollapse2p1.A.rec", "IPBCollapse2p1.B.rec", "IPBCollapse2p1.C.rec"] },
-  { unit := "IPBCollapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", count := 24 },
-  { unit := "IPBCollapse2p1", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "ctor return type: head is not the inductive", count := 9 },
-  { unit := "IPBCollapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 8 },
-  { unit := "IPBCollapse2p1", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 28 },
   { unit := "IPBMixed", switch := "on", leg := "rs", cause := "BB-F1",
     msg := "AppTypeMismatch", count := 58 },
   { unit := "IPBMixed", switch := "on", leg := "rs", cause := "BB-F1",
@@ -680,14 +369,6 @@ def table : List Expect := [
     msg := "unknown constant ", count := 63 },
   { unit := "IPBMixed", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", names := ["IPBMixed.A.rec", "IPBMixed.B.casesOn", "IPBMixed.B.rec", "IPBMixed.C.rec", "IPBMixed.D.rec"] },
-  { unit := "IPBMixed", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "FunExpected", count := 11 },
-  { unit := "IPBMixed", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", count := 27 },
-  { unit := "IPBMixed", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 8 },
-  { unit := "IPBMixed", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 38 },
   { unit := "corpus", switch := "on", leg := "cert", cause := "CERT-AXIOM",
     msg := "decline: non-standard axiom", count := 20 },
   { unit := "corpus", switch := "on", leg := "rs", cause := "KF-UNIVM",
@@ -704,18 +385,6 @@ def table : List Expect := [
     msg := "unknown constant ", count := 2461 },
   { unit := "corpus", switch := "on", leg := "lean", cause := "KF-UNIVM",
     msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
-  { unit := "corpus", switch := "off", leg := "cert", cause := "CERT-AXIOM",
-    msg := "decline: non-standard axiom", count := 20 },
-  { unit := "corpus", switch := "off", leg := "rs", cause := "KF-UNIVM",
-    msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
-  { unit := "corpus", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 211 },
-  { unit := "corpus", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 1361 },
-  { unit := "corpus", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", varies := true },
-  { unit := "corpus", switch := "off", leg := "lean", cause := "KF-UNIVM",
-    msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
   -- the per-pass fixtures of O7–O12 (M1-b: the units joined the record with the rebase of the
   -- A6p commits; written by `PASS3_EXPECT_EMIT` from a run, its anonymous recheck and three meta
   -- rechecks of the same outputs)
@@ -729,26 +398,6 @@ def table : List Expect := [
     msg := "unknown constant ", count := 137 },
   { unit := "O7Collapse", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", varies := true },
-  { unit := "O7Collapse", switch := "off", leg := "cert", cause := "KF-O1C",
-    msg := "reject: application type mismatch", names := ["PassO7.Src.B.viaRecOn"] },
-  { unit := "O7Collapse", switch := "off", leg := "cert", cause := "KF-O1C",
-    msg := "blocked: ", names := ["PassO7.Src.viaRecOn_one"] },
-  { unit := "O7Collapse", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "ctor return type: head is not the inductive", count := 15 },
-  { unit := "O7Collapse", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", varies := true },
-  { unit := "O7Collapse", switch := "off", leg := "rs", cause := "KF-O1C",
-    msg := "declaration type mismatch", names := ["PassO7.Src.viaRecOn_one"] },
-  { unit := "O7Collapse", switch := "off", leg := "rs", cause := "KF-O1C",
-    msg := "AppTypeMismatch", names := ["PassO7.Src.B.viaRecOn"] },
-  { unit := "O7Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 7 },
-  { unit := "O7Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 88 },
-  { unit := "O7Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", varies := true },
-  { unit := "O7Collapse", switch := "off", leg := "lean", cause := "KF-O1C",
-    msg := "unknown constant ", names := ["PassO7.Src.B.viaRecOn", "PassO7.Src.viaRecOn_one"] },
   { unit := "O8Cases", switch := "on", leg := "rs", cause := "BB-F1",
     msg := "AppTypeMismatch", varies := true },
   { unit := "O8Cases", switch := "on", leg := "lean", cause := "BB-F7",
@@ -757,26 +406,6 @@ def table : List Expect := [
     msg := "unknown constant ", count := 139 },
   { unit := "O8Cases", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", varies := true },
-  { unit := "O8Cases", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", varies := true },
-  { unit := "O8Cases", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 7 },
-  { unit := "O8Cases", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 94 },
-  { unit := "O8Cases", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", varies := true },
-  { unit := "O9Split", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "blocked: ", count := 12 },
-  { unit := "O9Split", switch := "off", leg := "cert", cause := "WB-B3",
-    msg := "decline: projection on a non-structure", names := ["PassO9.Src.A.cnt._f", "PassO9.Src.A.len._f", "PassO9.Src.A.sum._f"] },
-  { unit := "O9Split", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["PassO9.Src.A.cnt._f", "PassO9.Src.A.len._f", "PassO9.Src.A.sum._f"] },
-  { unit := "O9Split", switch := "off", leg := "rs", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["PassO9.Src.cnt1", "PassO9.Src.len2", "PassO9.Src.len3", "PassO9.Src.len_succ", "PassO9.Src.sum1", "PassO9.Src.sum2"] },
-  { unit := "O9Split", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "projection: type mismatch with declared struct", names := ["PassO9.Src.A.cnt._f", "PassO9.Src.A.len._f", "PassO9.Src.A.sum._f"] },
-  { unit := "O9Split", switch := "off", leg := "lean", cause := "WB-B3",
-    msg := "declaration type mismatch", names := ["PassO9.Src.cnt1", "PassO9.Src.len2", "PassO9.Src.len3", "PassO9.Src.len_succ", "PassO9.Src.sum1", "PassO9.Src.sum2"] },
   { unit := "O10O12Collapse", switch := "on", leg := "rs", cause := "BB-F1",
     msg := "AppTypeMismatch", varies := true },
   { unit := "O10O12Collapse", switch := "on", leg := "lean", cause := "BB-F7",
@@ -787,22 +416,50 @@ def table : List Expect := [
   -- class, since the latter is absent from some runs (measured: present in five runs, absent in
   -- the full-suite run)
   { unit := "O10O12Collapse", switch := "on", leg := "lean", cause := "BB-F7",
-    msg := "type mismatch", varies := true },
-  { unit := "O10O12Collapse", switch := "off", leg := "rs", cause := "BB-F1",
-    msg := "AppTypeMismatch", varies := true },
-  { unit := "O10O12Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 11 },
-  { unit := "O10O12Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 157 },
-  { unit := "O10O12Collapse", switch := "off", leg := "lean", cause := "BB-F7",
-    msg := "app type mismatch", varies := true }
+    msg := "type mismatch", varies := true }
 ]
 
-/-- Compile failures with the switch on only, by unit and exact name, that are
-not consequences of a block refused in both modes: Pass 3's own refusals,
-recorded with their cause and a substring of their message. `pass3` checks
-them both ways (an unrecorded switch-on-only failure and a recorded name that
-does not fail so are both problems). -/
+/-- The root block failures of a unit, by exact name, with their cause and a
+substring of their message: the refusals of Pass 2 (A0's "not a one-motive
+recursor") and the compile totality defects (WB-A3, WB-A7). `pass3` checks them
+both ways, and every other failure must be a consequence of one (its message
+names a root or an earlier consequence, REFUSED-SIBLING) or a recorded image
+refusal (`switchOnRefusals`). Until M6R slice 6 the roots were not recorded:
+they were the constants failing in both switch states, read off the legacy
+surgery's compile of the same unit; written from a run by
+`PASS3_EMIT_FAILURES=1`, then reviewed (the causes are the `aux-cert` and
+`validate-lean` records' for the same fixtures). -/
+structure CompileFailure where
+  unit : String
+  cause : String
+  msg : String
+  names : List String
+
+def compileFailures : List CompileFailure := [
+]
+
+/-- Step 2's decompile problems that are documented defects of the decompile
+roundtrip, by unit and the constant each problem names (`decompile mismatch:
+n`, `decompile error n: …`, `not decompiled: n`), with the defect. Until M6R
+slice 6 they were exempted as "also with the switch off": the legacy
+surgery's output of the same unit decompiled with the same problems
+(`[pass3] … N problem(s) (N also with the switch off)` at `e020a72e`: RecAlias
+6, UnsafeI 13, F5_SigmaNestedNested 18, twins 12); the slice-6 run measured
+the same sets. `pass3` checks them both ways (an unrecorded problem fails, and
+so does a recorded name with none). -/
+structure DecompileKnown where
+  unit : String
+  cause : String
+  names : List String
+
+def decompileKnown : List DecompileKnown := [
+]
+
+
+/-- Compile failures that are refusals of Pass 3's own images, by unit and
+exact name, recorded with their cause and a substring of their message. `pass3`
+checks them both ways (an unrecorded failure and a recorded name that does not
+fail so are both problems). -/
 structure OnRefusal where
   unit : String
   cause : String
@@ -810,11 +467,11 @@ structure OnRefusal where
   names : List String
 
 /-- CORPUS-IPB (M1-j): in `IPBCollapse2p1` (corpus `M3_P_alpha2p1`) and
-`IPBMixed` (`M4_P_mixed`) the switch-off compile refuses Lean's `IndPredBelow`
-block (`REFUSED-IPB-COLLAPSE`: the `.below` inductives and their constructors),
-and with the switch on Pass 3 refuses the images of the same family's
+`IPBMixed` (`M4_P_mixed`) Pass 3 refuses the images of the family's
 `.below.rec`/`.below.casesOn` (a partially collapsed Prop block; a Pass 3 item
-of M1). The two sets are disjoint, so neither is a consequence of the other. -/
+of M1). Until M6R slice 6 the switch-off compile refused Lean's `IndPredBelow`
+block instead (`REFUSED-IPB-COLLAPSE`, deleted with the surgery); the name
+`switchOnRefusals` is kept. -/
 def switchOnRefusals : List OnRefusal := [
   { unit := "IPBCollapse2p1", msg := "image: ",
     cause := "CORPUS-IPB, switch on: Pass 3 images of a partially collapsed Prop block's IndPredBelow family",

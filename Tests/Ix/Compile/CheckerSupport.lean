@@ -32,11 +32,11 @@ def tableCheck : IO Unit := do
   require ((checkerSupportOf {} ``Nat.land).isEmpty) "support synthesized missing source records"
   IO.println "[checker-support] all 15 operation policies agree with the unchanged kernel"
 
-private def compile (env : Environment) (closed : List (Name × ConstantInfo))
-    (mode : Bool) : IO Ix.CompileM.LeanPipelineOut := do
+private def compile (env : Environment) (closed : List (Name × ConstantInfo)) :
+    IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closed).mapError toString)
   let output ← IO.ofExcept ((← Ix.CompileM.compileLeanInput input
-    (numWorkers := 4) (pass3? := some mode)).mapError toString)
+    (numWorkers := 4)).mapError toString)
   require output.cenv.ungrounded.isEmpty "checker-support regression has ungrounded declarations"
   return output
 
@@ -62,7 +62,8 @@ private def verdict (report : KernelReport.Report) (env : Ixon.Env)
   let some result := report[address]? | throw <| IO.userError s!"missing verdict {name}"
   return result
 
-/-- Exact failing corpus case, both rewrite modes. Raw closure remains a negative
+/-- Exact failing corpus case, Pass 3 (until M6R slice 6 also the legacy
+surgery's rewrite mode). Raw closure remains a negative
 control; selected closure must certify and retain every whole-output Named record
 (including metadata, original and hints), constant body and blob. -/
 def run : IO UInt32 := do
@@ -89,11 +90,10 @@ def run : IO UInt32 := do
   IO.FS.writeFile (dir / "added-source-names.txt") (String.intercalate "\n" (added.map (toString ∘ Prod.fst)))
   let required := [`AX.S_T_0_0_dir.isBase, `AX.S_T_0_0_dir.isBase.match_1,
     `AX.S_T_0_0_dir.isBase._sparseCasesOn_1, ``Nat.land, ``Nat.mul]
-  for mode in [false, true] do
-    let label := if mode then "on" else "off"
-    let whole ← compile env env.constants.toList mode
-    let closed ← compile env selected mode
-    let negative ← compile env raw mode
+  for label in ["on"] do
+    let whole ← compile env env.constants.toList
+    let closed ← compile env selected
+    let negative ← compile env raw
     for (name, nd) in closed.env.named do
       require (whole.env.named[name]? == some nd) s!"{label}: whole Named differs for {name.pretty}"
     for (address, body) in closed.env.consts do

@@ -111,13 +111,14 @@ def run : IO UInt32 := do
   let dir : System.FilePath := "out/codex-a7/selected-closure/e2e"
   IO.FS.createDirAll dir
   let mut errors : Array String := #[]
-  for mode in [false, true] do
+  -- Pass 3 only (until M6R slice 6 also the legacy surgery, `mode=false`)
+  for mode in [true] do
     let wholeUnit : Pass3.CUnit :=
       { name := "O2Split-whole", env := env,
         seeds := Pass3.ownConstants env,
         closure := env.constants.toList }
     IO.println s!"[selected-closure-e2e] whole environment: {wholeUnit.closure.length} declarations, mode={mode}"
-    let whole ← Pass3.compileUnit wholeUnit mode
+    let whole ← Pass3.compileUnit wholeUnit
     unless whole.cenv.ungrounded.isEmpty do
       errors := errors.push s!"whole mode={mode}: {whole.cenv.ungrounded.size} refusals"
     let mut subsetBytes : Option ByteArray := none
@@ -125,18 +126,18 @@ def run : IO UInt32 := do
       let unit : Pass3.CUnit :=
         { name := s!"O2Split-selected-{i}", env := env,
           seeds := seeds.toArray, closure := Ix.EnvScope.collectSelectedDeps env seeds }
-      let out ← Pass3.compileUnit unit mode
+      let out ← Pass3.compileUnit unit
       let legDir := dir / s!"mode-{mode}-{i}"
       IO.FS.createDirAll legDir
       let path := legDir / "output.ixe"
       IO.FS.writeBinFile path out.bytes
       unless out.cenv.ungrounded.isEmpty do
         errors := errors.push s!"{unit.name} mode={mode}: {out.cenv.ungrounded.size} refusals"
-      -- the Rust compiler on the same selected closure, in the same switch state
+      -- the Rust compiler on the same selected closure
       let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env unit.closure).mapError toString)
       let rustPath := legDir / "rust.ixe"
-      let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI (← IO.ofExcept input.prepare)
-        rustPath.toString true mode
+      let status ← Ix.CompileM.rsCompileEnvBytesFFI (← IO.ofExcept input.prepare)
+        rustPath.toString true
       let rustBytes ← IO.FS.readBinFile rustPath
       unless rustBytes == out.bytes && status.ungrounded.isEmpty do
         errors := errors.push s!"{unit.name} mode={mode}: the Rust compile differs ({rustBytes.size} B, \

@@ -23,7 +23,7 @@ use ix_common::env::{
 use crate::compile::aux_gen::expr_utils::{
   LocalDecl, fresh_fvar, instantiate1, mk_lambda,
 };
-use crate::compile::surgery::{
+use crate::compile::aux_source::{
   SourceRecTarget, aux_motive_sigs, find_source_rec_target, peel_binders,
   source_ctor_for_minor, source_minor_type,
 };
@@ -535,7 +535,7 @@ fn rec_fields_of(
   rv: &RecursorVal,
   field_decls: &[LocalDecl],
   ps: &[Expr],
-  aux_sigs: &[crate::compile::surgery::AuxMotiveSig],
+  aux_sigs: &[crate::compile::aux_source::AuxMotiveSig],
 ) -> Vec<(usize, SourceRecTarget)> {
   let mut out = Vec::new();
   for (field_idx, decl) in field_decls.iter().enumerate() {

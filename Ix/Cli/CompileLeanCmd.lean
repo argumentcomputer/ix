@@ -15,27 +15,20 @@
   identical environments — so byte equality here certifies the full
   pipeline, not just the compiler core.
 
-  Mode: Pass 3 (the faithful rewrite) is the default since the flip (M6);
-  `IX_PASS3=off` selects the legacy call-site surgery. The Rust compile of
-  `--rust-check` reads the same variable in this process
-  (`compile_env_with_profile`, `crates/compile/src/compile/env.rs`) and
-  implements both modes (Pass 3 since M6R slices 1–4), but until M6R
-  slice 6 its default is the surgery (`SWITCH_DEFAULT = false`,
-  `crates/compile/src/compile/pass3/names.rs`). So with `IX_PASS3` unset
-  Lean compiles Pass 3 and Rust the surgery, and `--rust-check` reports a
-  divergence wherever a block or clique changes (Init+Std included). Set
-  the mode for both: `IX_PASS3=off` (the surgery in both: ALIGNED on
-  Init+Std in the landing gates) or `IX_PASS3=images` (Pass 3 in both:
-  the two outputs are byte-identical on Init+Std and Mathlib; design
-  document `docs/compiler-passes.md` §4.8, "Switch"). The mode is printed
-  first.
+  Mode: Pass 3 (the faithful rewrite) is the only mode of both compilers
+  since M6R slice 6 (2026-10-07), which deleted the legacy call-site surgery
+  (`IX_PASS3=off`) from both; the two outputs are byte-identical on Init+Std
+  and Mathlib (design document `docs/compiler-passes.md` §4.8). For one
+  release `IX_PASS3=images` is accepted with a deprecation note and
+  `IX_PASS3=off` (or any other value) is refused by both compilers with the
+  same explanation (`Ix.Compile.Pass.switchCheck`): this command exits 2;
+  `ix compile` reports the Rust compiler's error.
 
-  With Pass 3 the command also writes the changed-set record next to the
-  output, `<stem>.changed.json` (`Ix.Compile.ChangedSet`; design document,
+  The command also writes the changed-set record next to the output, `<stem>.changed.json` (`Ix.Compile.ChangedSet`; design document,
   the output contract): a side file, so no byte of the `.ixe` depends on it.
 
   Exit codes: 0 success (and aligned, when checked); 1 pipeline error or
-  divergence; 2 usage (including an unrecognised `IX_PASS3` value).
+  divergence; 2 usage (including a refused `IX_PASS3` value).
 -/
 module
 public import Cli
@@ -84,12 +77,12 @@ def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let constList ← Ix.PhaseTimers.timeWall "constant list" do
     if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
-  let pass3 ← match ← Ix.Compile.Pass.switchFromEnv with
-    | .ok b => pure b
+  match ← Ix.Compile.Pass.switchFromEnv with
+    | .ok () => pure ()
     | .error e =>
       IO.eprintln s!"[compile-lean] error: {e}"
       return 2
-  IO.println s!"[compile-lean] mode: {Ix.Compile.Pass.switchLabel pass3}"
+  IO.println "[compile-lean] mode: Pass 3 (the only mode since M6R slice 6)"
 
   let t0 ← IO.monoMsNow
   let input ← Ix.PhaseTimers.timeWall "source-contract preparation (compileInputFromEnv)" do
@@ -110,7 +103,7 @@ def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let rustTask? ← if p.hasFlag "rust-check" && !rustSerial then
       some <$> IO.asTask (prio := .dedicated) rustCompile
     else pure none
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (pass3? := some pass3)
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
       (dbg := true) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
@@ -133,18 +126,15 @@ serialize the grounded subset)"
 ({out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
 {ungroundedCount} block failures) in {elapsed}ms"
     -- the changed-set record (the output contract): a side file, never part of
-    -- the artifact; only a Pass 3 compile has the tables it is read from
-    if pass3 then
-      let recPath := Ix.Compile.ChangedSet.pathFor outPath
-      let record ← Ix.PhaseTimers.timeWall "changed-set record"
-        (pure (Ix.Compile.ChangedSet.ofCompile out.cenv))
-      IO.FS.writeFile recPath record.render
-      let counts := ", ".intercalate (record.counts.toList.filterMap fun (t, k) =>
-        if k == 0 then none else some s!"{t} {k}")
-      IO.println s!"[compile-lean] changed-set record: {record.entries.size} entries \
+    -- the artifact
+    let recPath := Ix.Compile.ChangedSet.pathFor outPath
+    let record ← Ix.PhaseTimers.timeWall "changed-set record"
+      (pure (Ix.Compile.ChangedSet.ofCompile out.cenv))
+    IO.FS.writeFile recPath record.render
+    let counts := ", ".intercalate (record.counts.toList.filterMap fun (t, k) =>
+      if k == 0 then none else some s!"{t} {k}")
+    IO.println s!"[compile-lean] changed-set record: {record.entries.size} entries \
 ({counts}), {record.blocks.size} changed blocks, {record.cliques.size} cliques, written to {recPath}"
-    else
-      IO.println s!"[compile-lean] no changed-set record (the legacy surgery has no Pass 3 tables)"
     if ungroundedCount > 0 then
       IO.println s!"[compile-lean] PARTIAL: {ungroundedCount} constants failed to compile"
       for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
@@ -166,11 +156,6 @@ serialize the grounded subset)"
             firstDiff := i
         IO.println s!"[compile-lean] DIVERGED: lean {out.bytes.size}B vs \
 rust {rustBytes.size}B, first difference at byte {firstDiff}"
-        if pass3 then
-          IO.println s!"[compile-lean] note: the mode is Pass 3; with {Ix.Compile.Pass.switchVar} \
-unset the Rust compiler runs its default, the legacy surgery (until M6R slice 6): set \
-{Ix.Compile.Pass.switchVar}={Ix.Compile.Pass.switchValue} (Pass 3 in both compilers) or \
-{Ix.Compile.Pass.switchVar}={Ix.Compile.Pass.switchOffValue} (the surgery in both) to compare one mode"
         return 1
     return 0
 
@@ -193,7 +178,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies, instead of the whole import env (as `ix compile --local`); applies to --rust-check too."
-    "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate). The Rust compile reads IX_PASS3 too, but until M6R slice 6 its default (unset) is the legacy surgery while Lean's is Pass 3: set IX_PASS3=images or IX_PASS3=off to compare one mode; exit 1 on divergence"
+    "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate; both compilers run Pass 3, their only mode); exit 1 on divergence"
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
 
@@ -202,4 +187,3 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
 ]
 
 end
-

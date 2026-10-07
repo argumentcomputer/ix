@@ -71,7 +71,7 @@ universe-polymorphic cross target, a reflexive or indexed cross field, an
 instance or size function not of Lean's shape, a recursor telescope that is
 not the occurrence's, a minor that is not a λ over its fields and IHs,
 "the constructor and minor type of minor `j` cannot be read" (the split-minor
-helpers O2 shares with the surgery, `Ix.AuxGen.sourceCtorForMinor`,
+helpers O2 uses too, `Ix.AuxGen.sourceCtorForMinor`,
 `sourceMinorType`, `peelBinders`, cannot place minor `j`; measured on split
 blocks with an evaporated nested auxiliary, EvapClosure, F2, C4 and their
 twins, where the minor exists but the helpers do not place it: the wording
@@ -436,8 +436,9 @@ untouched). Were the argument wrong, the fold would stop with its
 
 **Bytes.** No component, representative or iteration order of `blocks` or
 `lowLinks` changes; only the ready order of the fold, which the schedule-
-identity gate requires to be immaterial. With the switch off nothing
-reads the new references. **Where the edges are added** (the drivers are not
+identity gate requires to be immaterial. Without Pass 3 (a hand-built
+environment; until M6R slice 6 also `IX_PASS3=off`) nothing reads the new
+references. **Where the edges are added** (the drivers are not
 uniform, harmlessly, since an edge only orders blocks):
 `Ix.CompileM.compileEnvAux` (sequential, wave) and
 `Ix.CompileM.compileEnvParallelAux` add them under Pass 3 only

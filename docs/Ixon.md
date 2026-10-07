@@ -978,8 +978,12 @@ rung end, so v3's integer codes would write the same bytes for this table.
 ### Sharing in metadata expressions
 
 Metadata expressions are the entries of `ConstantMeta.metaSharing`: the
-compiled call-site arguments that call-site surgery collapsed, and rewritten
-call-site heads. A `Share(i)` inside them is read in an extended index
+source occurrences Pass 3 rewrote, each pointed at by an `_ix.inline` record
+(an `Expr.mdata` whose keys `_ix.inline` and `_ix.inline_meta` carry the
+entry index and its metadata-arena root, wrapping the rewritten occurrence;
+both decompilers replay the entry in its place). Files the call-site surgery
+wrote (until 2026-10-07, the `-a2` references) hold its collapsed call-site
+arguments and rewritten call-site heads there instead. A `Share(i)` inside them is read in an extended index
 space. This is a reader rule; it adds no bytes. Let `p` be the size of the
 primary `sharing` table (for a projection, the table of its `Muts` block)
 and `q` the size of `metaSharing`.
@@ -997,7 +1001,7 @@ and `q` the size of `metaSharing`.
 
   Every metadata-to-metadata step goes to a lower entry, so expansion
   terminates.
-- **Call-site references.** `CallSiteEntry.collapsed sharingIdx` and
+- **Call-site references** (files the surgery wrote). `CallSiteEntry.collapsed sharingIdx` and
   `origHead = some (sharingIdx, _)` index `metaSharing` directly, not offset
   by `p`, and read that entry in its own scope.
 
@@ -1067,8 +1071,12 @@ follow in declaration order:
 | 7 | Ref | name_idx | — |
 | 8 | Prj | struct_name_idx, child? | child |
 | 9 | Mdata | kvmap_count + kvmaps, child? | child |
-| 10 | CallSite | name_idx, entries, canon_meta, orig_head | — |
-| 11 | EtaCallSite | n_synth, name_idx, entries, canon_meta, wrapper_meta | — |
+| 10 | CallSite (legacy) | name_idx, entries, canon_meta, orig_head | — |
+| 11 | EtaCallSite (legacy) | n_synth, name_idx, entries, canon_meta, wrapper_meta | — |
+
+Kinds 10 and 11 are the call-site surgery's (deleted from both compilers on
+2026-10-07, M6R slice 6): readers still decode them in files written before,
+and no compiler writes them.
 
 Child references are never absolute indices:
 
@@ -1114,7 +1122,7 @@ four extension vectors appended after it (the wrapper):
 ```rust
 pub struct ConstantMeta {
     pub info: ConstantMetaInfo,        // variant payload (below)
-    pub meta_sharing: Vec<Arc<Expr>>,  // collapsed call-site args (surgery)
+    pub meta_sharing: Vec<Arc<Expr>>,  // Pass 3 records' source occurrences
     pub meta_refs: Vec<Address>,       // refs-table extension (virtual space)
     pub meta_univs: Vec<Arc<Univ>>,    // univs-table extension (virtual space)
     pub univ_patches: Vec<UnivPatch>,  // original level spellings (§10.6)
@@ -1130,8 +1138,9 @@ pub struct UnivPatch {
 Each wrapper vector serializes as an `N0` count + entries and is
 empty (one zero byte) on most constants. `meta_univs`/`univ_patches`
 restore source level spellings the §10.6 canonicalization displaced
-from content; `meta_sharing` holds call-site surgery's collapsed
-arguments, whose `Share` references use the extended index space of
+from content; `meta_sharing` holds the source occurrences of Pass 3's
+`_ix.inline` records (in files the call-site surgery wrote, its collapsed
+arguments), whose `Share` references use the extended index space of
 [Sharing in metadata expressions](#sharing-in-metadata-expressions). Each `ConstantMetaInfo` variant stores a name, universe
 parameter names, an `ExprMeta` arena, and root indices pointing into
 the arena:
@@ -1180,8 +1189,8 @@ only, never entering any content hash):
 The three vectors always serialize together (one unified format), and
 `evaporated` always carries `perm.len()` flags — a flag set means the
 block owns the evaporation of that source position (its alias resolves
-to an external head's generic recursor; call-site surgery keys
-head-rewrite plans off these flags alone). Writers normalize
+to an external head's generic recursor; the call-site surgery keyed its
+head-rewrite plans off these flags alone until 2026-10-07). Writers normalize
 legacy-constructed values with defaulted-empty `evaporated` to
 all-zero flags, so Lean and Rust serializers agree byte-for-byte.
 

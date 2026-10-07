@@ -281,18 +281,20 @@ codec, is retired ([kernel](kernel.md), "Removal ledger").
 
 ### 5.1 Index spaces
 
-- **Separate namespaces.** `CallSiteEntry.collapsed sharingIdx` indexes
-  `ConstantMeta.metaSharing`. Both compilers start it at 0 per constant: Lean `buildCallSite`
-  numbers collapsed arguments from the current surgery table, which `takeSurgerySharing` drains
-  into `metaSharing` per constant; Rust `compile.rs` drains its `surgery_sharing` into
-  `meta.meta_sharing` the same way. `callSite.origHead.0` also indexes `metaSharing`.
-- **No offset.** Collapsed and `origHead` indices are never offset by the primary table length.
+- **Separate namespaces.** `ConstantMeta.metaSharing` is its own index space, starting at 0 per
+  constant in both compilers. Pass 3's `_ix.inline` records index it: Lean `pass3CompileRecords`
+  appends each record's compiled source occurrence to the constant's table, which
+  `takeMetaSharing` drains into `metaSharing`; Rust `compile.rs` drains its `meta_sharing`
+  accumulator into `meta.meta_sharing` the same way. In files the call-site surgery wrote (until
+  2026-10-07, when it was deleted from both compilers; its tables were `takeSurgerySharing` and
+  `surgery_sharing`), `CallSiteEntry.collapsed sharingIdx` and `callSite.origHead.0` index it.
+- **No offset.** Record, collapsed and `origHead` indices are never offset by the primary table length.
 - **Kernel ingress ignores it.** `Ix/Tc/IngressMeta.lean` and Rust `crates/kernel/src/ingress.rs`
   do not read `metaSharing`.
 
 ### 5.2 Metadata payloads contain no primary Share references
 
-`metaSharing` entries are raw compiled expressions (Lean `compileExprSurgical`, Rust
+`metaSharing` entries are raw compiled expressions (Lean `compileExprPartial`, Rust
 `compile_expr`). Share is produced only by the sharing construction, which runs on the roots
 after metadata is built. Their Ref/univ indices point into the block's primary `refs`/`univs`
 tables, which the construction does not change, so no remapping is needed when the primary table
@@ -334,8 +336,8 @@ expanding Shares along the spine (Lean `collectIxonTelescopeExpandingShares`; th
 decompiler and kernel ingress do the same), and eta call sites strip `nSynth` lambdas,
 expanding Shares at each step. Universe patches are keyed by arena index. Root indices
 (`typeRoot`, `valueRoot`, `ruleRoots`) are arena indices. So any change of which subterms are
-shared, or of where a Share cuts a telescope, leaves arena roots, binder data, call-site
-surgery, universe patches and `Named.original` valid, and a metadata-only edit cannot change
+shared, or of where a Share cuts a telescope, leaves arena roots, binder data, Pass 3's
+records (and the surgery's call sites in older files), universe patches and `Named.original` valid, and a metadata-only edit cannot change
 anonymous bytes (metadata is not part of `Constant`).
 
 ## 6. Version, identifiers, fixtures and caches

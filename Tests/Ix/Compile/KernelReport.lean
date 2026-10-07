@@ -1,8 +1,12 @@
-import Lean.Data.Json
-import Std.Data.HashMap
+module
+
+public import Lean.Data.Json
+public import Std.Data.HashMap
 
 /-! Strict reading of the certified checker's JSONL evidence. Display names
 are capped by the checker; coverage is determined by owning record address. -/
+
+public section
 
 namespace Tests.Ix.Compile.KernelReport
 

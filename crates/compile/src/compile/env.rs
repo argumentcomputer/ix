@@ -162,13 +162,12 @@ pub fn compile_env_with_profile(
   // scheduled (Lean `compileEnvParallelAux` does the same).
   let sharing_limits = crate::compile::compiler_sharing_limits()
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
-  // The mode (Pass 3 or the legacy surgery), read once; an unrecognised
-  // `IX_PASS3` value fails the compile with the Lean side's text.
-  let pass3 = match options.pass3 {
-    Some(b) => b,
-    None => crate::compile::pass3::names::switch_from_env()
-      .map_err(|desc| CompileError::UnsupportedExpr { desc })?,
-  };
+  // Pass 3 is the only mode (M6R slice 6 deleted the legacy call-site
+  // surgery): a leftover `IX_PASS3=off` (or any value but `images`) fails
+  // the compile with the Lean side's text; `images` prints a deprecation
+  // note.
+  crate::compile::pass3::names::switch_from_env()
+    .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
   // groups in one decode per constant — the env decodes lazily, so
@@ -268,21 +267,19 @@ pub fn compile_env_with_profile(
   // driver): every member block of a clique waits for everything any member
   // references, and the clique's other blocks for its first member's block
   // (which plans the clique first). Block dependencies only.
-  let (p3_cliques, p3_clique_roots) = if pass3 {
+  let (p3_cliques, p3_clique_roots) = {
     let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
     crate::compile::pass3::clique::hook::schedule_cliques(
       &const_of,
       &mut condensed,
     )
-  } else {
-    Default::default()
   };
   // Pass 3: O11a's scheduling edges `all0._sizeOf_N -> T._sizeOf_inst`
   // (and `-> SizeOf.sizeOf`), references its output adds that the input does
   // not have (`O11a.addSizeOfEdges`, design document §6.3 obligation 2):
   // the instance compiles first. Block dependencies only; the components
   // and representatives do not change.
-  if pass3 {
+  {
     let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
     // the candidates are the inductive families' first members (the
     // setup scan's groups), the only names the edges start from
@@ -338,11 +335,9 @@ pub fn compile_env_with_profile(
   }
 
   // Pass 3 (D14): an input name with a reserved `_ix` component is refused.
-  if pass3
-    && let Some(msg) = crate::compile::pass3::driver::reserved_input_in(
-      condensed.blocks.values().flat_map(|b| b.iter()),
-    )
-  {
+  if let Some(msg) = crate::compile::pass3::driver::reserved_input_in(
+    condensed.blocks.values().flat_map(|b| b.iter()),
+  ) {
     return Err(CompileError::UnsupportedExpr { desc: msg });
   }
 
@@ -350,7 +345,7 @@ pub fn compile_env_with_profile(
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
-    pass3,
+    pass3: true,
     p3: crate::compile::pass3::Pass3State {
       cliques: p3_cliques,
       clique_roots: p3_clique_roots,
@@ -1240,9 +1235,7 @@ fn precompile_aux_gen_prereqs(
   // Pass 3: images pack with `And` at Prop motives (`PProd` and `True` are
   // seeds already), so `And` is a seed too (Lean `auxGenSeeds`).
   let mut seeds = aux_gen_seed_names();
-  if stt.pass3 {
-    seeds.push(Name::str(Name::anon(), "And".into()));
-  }
+  seeds.push(Name::str(Name::anon(), "And".into()));
   let seed_reps: Vec<Name> = seeds
     .into_iter()
     .filter_map(|n| condensed.low_links.get(&n).cloned())

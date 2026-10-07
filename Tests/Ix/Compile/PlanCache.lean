@@ -6,7 +6,7 @@
   Over the twins closure (every family, the clique ownership families
   included) and the aux fixture corpus (`validateAuxClosure`:
   `Tests.Ix.Compile.Mutual`'s `TypeBrecOnEqDef*` cliques with their carried
-  equation lemmas, and the rest), with the switch on:
+  equation lemmas, and the rest), under Pass 3 (the only mode since M6R slice 6):
 
   1. the reference: the sequential driver without the check;
   2. the check mode (`checkPlans`, `IX_PASS3_CHECK_PLANS=1` in the CLI):
@@ -62,7 +62,7 @@ def run : IO UInt32 := do
   let mut problems : Array String := #[]
   -- 1. the reference
   let (refBytes, refFails) ← match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed
-      (nameByHash := nameByHash) (pass3 := true) with
+      (nameByHash := nameByHash) with
     | .error e => throw (IO.userError s!"[plan-cache] reference compile: {e}")
     | .ok (ixon, _, cenv) => pure (← IO.ofExcept (Ixon.serEnv ixon), failuresOf cenv)
   say s!"reference (sequential, no check): {refBytes.size} B, {refFails.length} block failures"
@@ -86,12 +86,12 @@ def run : IO UInt32 := do
       unless failuresOf cenv == refFails do ps := ps.push s!"{label}: block failures differ from the reference"
       return (some cenv, ps)
   let (s, ps) ← check "sequential" (Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed
-    (nameByHash := nameByHash) (pass3 := true) (checkPlans := true))
+    (nameByHash := nameByHash) (checkPlans := true))
   seqState := s
   problems := problems ++ ps
   for k in [1, 4, 32] do
     let (_, ps) ← check s!"wave --jobs {k}" (← Ix.CompileM.compileEnvParallelAux phases.rawEnv
-      phases.condensed (numWorkers := k) (nameByHash := nameByHash) (pass3? := some true)
+      phases.condensed (numWorkers := k) (nameByHash := nameByHash)
       (checkPlans? := some true))
     problems := problems ++ ps
   -- 3. coverage

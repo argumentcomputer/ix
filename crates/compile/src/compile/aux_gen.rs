@@ -134,8 +134,8 @@ pub struct AuxDef {
 /// Output of [`generate_aux_patches`].
 ///
 /// In addition to the patch map, carries the canonical hash-sort permutation
-/// so callers can reuse it — both during compile (to build the
-/// `CallSitePlan` / surgery layout) and during decompile / validation
+/// so callers can reuse it — both during compile (the block's `AuxLayout`,
+/// which Pass 3's view reads) and during decompile / validation
 /// (to canonicalize Lean-source-order originals before structural
 /// comparison).
 #[derive(Clone, Default)]
@@ -156,8 +156,9 @@ pub struct AuxPatchesOutput {
   /// pipeline didn't reach the hash-sort step, e.g. empty `original_all`).
   pub perm: Option<Vec<usize>>,
   /// `evaporated[source_j]`: this block registered the evaporation alias
-  /// `all0.rec_{source_j+1} → <ext>.rec` for the position (and surgery
-  /// must register the matching head-rewrite plan). `Some` exactly when
+  /// `all0.rec_{source_j+1} → <ext>.rec` for the position (until M6R slice 6
+  /// the legacy surgery registered the matching head-rewrite plan; Pass 3
+  /// rewrites the callers through the images). `Some` exactly when
   /// `perm` is; positions that are canonical here or owned by another
   /// SCC are `false`. Travels into `AuxLayout.evaporated`.
   pub evaporated: Option<Vec<bool>>,
@@ -285,12 +286,12 @@ pub fn generate_aux_patches(
     // After this, patches (recs, belows, brecOns, etc.) are emitted in
     // canonical order rather than Lean's source-walk order.
     //
-    // Why this must happen here: call-site surgery uses `aux_perms` to
-    // reorder user code's arguments when they call the aux. If the patch
-    // layout doesn't match what surgery thinks it is, downstream bodies
-    // that reference the aux (notably `_sizeOf_*`) wind up with mismatched
-    // addresses. Keeping a single canonical layout shared by compile,
-    // decompile, and surgery is the only way to maintain that the same
+    // Why this must happen here: the call-site rewrite (Pass 3; until M6R
+    // slice 6 the legacy surgery) reads `aux_perms` to place user code's
+    // arguments when they call the aux. If the patch layout doesn't match
+    // it, downstream bodies that reference the aux (notably `_sizeOf_*`)
+    // wind up with mismatched addresses. Keeping a single canonical layout
+    // shared by compile, decompile, and the rewrite is the only way to maintain that the same
     // semantic block declared in permuted source orders hashes to the
     // same Ixon bytes.
     nested::sort_aux_by_partition_refinement(&mut expanded, stt)?;
@@ -525,10 +526,10 @@ pub fn generate_aux_patches(
     //     this SCC (e.g. `mutual A | mk : List B → A; B | leaf end`
     //     splits into {A},{B} and `List B` stops being nested for {A}).
     //     The source walk still has aux positions; the perm is all
-    //     `PERM_OUT_OF_SCC`, which drives call-site surgery drops and the
-    //     evaporated-aux `<ext>.rec` aliases below. Falling back to
-    //     `perm = None` would make surgery treat the evaporated auxes as
-    //     identity-mapped canonical slots that don't exist.
+    //     `PERM_OUT_OF_SCC`, which drives the evaporated-aux `<ext>.rec`
+    //     aliases below and the call-site rewrite. Falling back to
+    //     `perm = None` would treat the evaporated auxes as identity-mapped
+    //     canonical slots that don't exist.
     //
     //   * structural-only: the detector finds auxes where Lean's metadata
     //     says zero (parameterized nested blocks); extra Lean aux names
@@ -1217,10 +1218,10 @@ pub fn generate_aux_patches(
   // the canonical constant instead of falling back to an original-form
   // compile — the kernel rejects a standalone specialized recursor block,
   // since it regenerates the generic signature from the external
-  // inductive's block. Call sites are rewritten onto the external
-  // telescope by the surgery head-rewrite plan, keyed off the SAME
-  // per-position `evaporated` flags recorded here (alias and rewrite fire
-  // together or not at all).
+  // inductive's block. Call sites are rewritten through the images
+  // of the block (Pass 3; until M6R slice 6 onto the external telescope by
+  // the legacy surgery's head-rewrite plan), keyed off the SAME
+  // per-position `evaporated` flags recorded here.
   //
   // Two gates make the decision global and deterministic
   // (plans/aux-recursor-alias-collision.md §2, §13):
@@ -1297,8 +1298,14 @@ pub fn generate_aux_patches(
         // The spec SCC compiled first (scheduler dependency) and
         // registered the name as its canonical patch/alias. Nothing to
         // do here — but the registration must actually exist, or the
-        // probe and the compiled state disagree.
-        if stt.resolve_addr(&source_name).is_none() {
+        // probe and the compiled state disagree. (Pass 3 moves the Lean
+        // names of a changed block's auxiliaries to their images and the
+        // Ix auxiliary to its `_ix` display name, so in a driver-prepared
+        // state the Lean-named registration is absent by design: Lean
+        // `Ix.AuxGen.Patches`, the same exemption. Found when Rust's default
+        // became Pass 3, M6R slice 6: the `AuxOwnership` fixtures of
+        // `Tests/Ix/Compile/Mutual.lean` failed here in Rust only.)
+        if !stt.pass3 && stt.resolve_addr(&source_name).is_none() {
           return Err(CompileError::InvalidMutualBlock {
             reason: format!(
               "aux position {source_j} ('{}') is canonically owned by its \
@@ -1320,9 +1327,9 @@ pub fn generate_aux_patches(
         }
         continue;
       }
-      // Target guard mirrors the head-rewrite plan registration in
-      // `surgery::compute_call_site_plans` (now driven by the same
-      // `evaporated` flags). Multi-motive external targets
+      // Target guard (it mirrored the legacy surgery's head-rewrite plan
+      // registration, driven by the same `evaporated` flags, until M6R
+      // slice 6). Multi-motive external targets
       // (mutual/nested external families) are outside the supported
       // rewrite domain, and so is a target the environment lacks (a slice
       // without the external container's recursor). Both are refused,

@@ -211,7 +211,20 @@ partial def rawDeps (env : Lean.Environment) (seeds : List Lean.Name)
           if !needed.contains r then worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
-/-- One leg: per seed, compile `closureOf seed`, compare every shared name's
+/-- The compiler's introduced references (`Ix.EnvScope.introducedSupport`: the
+    Pass 3 images' packing and rule constants, `PProd`, `And`, `True`, `Eq`, and
+    the clique transport's prerequisites) with their closure, added to every
+    closure this suite compiles: under Pass 3 (both compilers' only mode since
+    M6R slice 6) the image of an alpha-collapsed block's recursor packs motives
+    with `PProd`, so a closure without it is refused for a reason this suite
+    does not test. (The legacy surgery needed none of them.) -/
+def withSupport (env : Lean.Environment) (closure : List (Lean.Name × Lean.ConstantInfo)) :
+    List (Lean.Name × Lean.ConstantInfo) :=
+  let present : Std.HashSet Lean.Name := closure.foldl (fun s (n, _) => s.insert n) {}
+  closure ++ (Ix.EnvScope.collectDeps env (Ix.EnvScope.introducedSupport env)).filter
+    (!present.contains ·.1)
+
+/-- One leg: per seed, compile `closureOf seed` (with `withSupport`), compare every shared name's
     address with `ref`, kernel-check the seed. A seed with `refused seed =
     some msg` must instead be refused by the compiler with `msg` in the
     error (and is not kernel-checked: nothing was written). -/
@@ -222,7 +235,7 @@ def runLeg (env : Lean.Environment) (dir : System.FilePath) (ref : Ixon.Env)
   let mut failed := 0
   for seed in seeds do
     let mut errs : Array String := #[]
-    let closure := closureOf seed
+    let closure := withSupport env (closureOf seed)
     let compiled ← compileClosure env dir s!"{label}-{seed}" closure
     if let some msg := refused seed then
       match compiled with
@@ -268,7 +281,7 @@ def suite : List TestSeq := [
         (·.toString < ·.toString)
     let dir ← IO.FS.createTempDir
     let ref ← match ← compileClosure env dir "ref"
-        (Ix.EnvScope.collectDeps env seeds.toList) with
+        (withSupport env (Ix.EnvScope.collectDeps env seeds.toList)) with
       | .ok e => pure e
       | .error e => throw (IO.userError s!"reference compile: {e}")
     -- Leg 1, the closure producers (`collectDeps`): every address is the

@@ -55,7 +55,7 @@ def applyExpected (expected : Array Expected) (row : Verdict) (diagnostic : Stri
     else row
 
 def envFor (cfg : RunConfig) : Array (String × Option String) := #[
-  ("IX_PASS3", some (if cfg.mode == "on" then "images" else "off")),
+  ("IX_PASS3", none),
   ("LEAN_NUM_THREADS", some (toString cfg.workers)),
   ("RAYON_NUM_THREADS", some (toString cfg.workers)),
   ("IX_VALIDATE_AUXTABLE", none), ("LD_LIBRARY_PATH", none), ("CHECK_IXE_ROOTS", none)]
@@ -217,7 +217,7 @@ def closureLeg (cfg : RunConfig) (dir : System.FilePath)
   for ((name, _), i) in (mine whole owned).toList.zipIdx do
     let path := dir / "closure" / s!"{i}.ixe"
     let label := s!"closure/{i}"
-    let out ← command { cfg with mode := "off" } dir label cfg.ix.toString
+    let out ← command cfg dir label cfg.ix.toString
       #["compile", src.toString, "--no-build", "--consts", name.pretty, "--out", path.toString]
     let mut issues := #[]
     if out.exitCode != 0 || !(← path.pathExists) then
@@ -332,7 +332,7 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
           let path := if isRust then rustPath else leanPath
           let args := if isRust then #["compile", src.toString, "--no-build", "--out", path.toString] ++ scope
             else #["compile-lean", src.toString, "--workers", toString cfg.workers, "--out", path.toString] ++ scope
-          let out ← command (if isRust then { cfg with mode := "off" } else cfg) dir phase cfg.ix.toString args
+          let out ← command cfg dir phase cfg.ix.toString args
           let mut row := resultRow cfg case phase out
           if out.exitCode == 0 then
             if !(← path.pathExists) then row := { row with status := "infrastructure-error", detail := "successful compiler wrote no output" }
@@ -354,9 +354,7 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
       | _ => do
         let some env := leanEnv
           | pure { base with status := "not-run", detail := "Lean compilation did not produce checked input" }
-        if phase == "parity" && cfg.mode == "on" then
-          pure { base with status := "not-applicable", detail := "Rust retains legacy surgery; parity is required only with Pass 3 off" }
-        else if phase == "determinism" then
+        if phase == "determinism" then
           let path := dir / "repeat.ixe"
           let out ← command cfg dir phase cfg.ix.toString
             (#["compile-lean", src.toString, "--workers", toString cfg.workers, "--out", path.toString] ++ scope)
@@ -369,7 +367,7 @@ def runCase (cfg : RunConfig) (expected : Array Expected) (case : Case) : IO (Ar
           let equal ← if rustEnv.isSome then
               pure <| (← IO.FS.readBinFile leanPath) == (← IO.FS.readBinFile rustPath)
             else pure false
-          pure { base with status := if equal then "pass" else "fail", detail := "switch-off Rust/Lean byte equality" }
+          pure { base with status := if equal then "pass" else "fail", detail := "Rust/Lean byte equality (Pass 3, both compilers)" }
         else if phase == "certified" then
           let row ← certifiedLeg cfg case dir leanPath env owned
           pure <| applyExpected expected row row.detail

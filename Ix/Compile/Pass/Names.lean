@@ -1,11 +1,11 @@
-/- # Pass 3: reserved names (D14) and the switch
+/- # Pass 3: reserved names (D14) and the retired switch
 
 ## Contract
 Input: Lean names (`Ix.Name`). Output: the reserved display names of the
 faithful rewrite and the predicates on them.
 
 * `_ix` is the reserved name component (D14). A Lean input name with a
-  component that is `_ix` or starts with `_ix` is rejected under the switch
+  component that is `_ix` or starts with `_ix` is rejected
   (`reservedInput?`), so every reserved name below is fresh.
 * The Ix auxiliaries of a changed block (Pass 2's canonical `rec`,
   `casesOn`, `recOn`, `below`, `brecOn`, `.go`, `.eq`, `_N`, and the
@@ -31,11 +31,12 @@ faithful rewrite and the predicates on them.
   `_ix.inline` (index of the source occurrence in `metaSharing`) and
   `_ix.inline_meta` (its arena root); the rewrite leaves the placeholder
   `[(_ix.inline, n)]` that the compiler replaces (`Ix.CompileM.compileKVMap`).
-* The switch: Pass 3 is the default (the flip, M6, 2026-10-06); `IX_PASS3=off`
-  selects the legacy call-site surgery, kept as the comparison mode for the
-  gates against the Rust compiler until it implements Pass 3 (M6R);
-  `IX_PASS3=images`, or the variable unset, selects Pass 3; any other value
-  is refused (`switchVar`, `switchMode?`, `switchOn`, `switchFromEnv`).
+* The switch is retired: Pass 3 became the default at the flip (M6,
+  2026-10-06) and the only mode at M6R slice 6 (2026-10-07), which deleted
+  the legacy call-site surgery (`IX_PASS3=off`) from both compilers. For one
+  release `IX_PASS3=images` is accepted with a deprecation note and `off` or
+  any other value is refused (`switchCheck`, `switchFromEnv`; the Rust
+  compiler reads it the same way).
 
 ## Faithfulness
 Names are metadata: no definition here changes a term or an address.
@@ -61,51 +62,46 @@ namespace Ix.Compile.Pass
 
 open Ix (Name)
 
-/-- The environment variable that selects the mode (Pass 3 or the legacy surgery). -/
+/-- The environment variable that selected the mode until M6R slice 6. -/
 def switchVar : String := "IX_PASS3"
 
-/-- The value of `IX_PASS3` that selects Pass 3 explicitly (the default). -/
+/-- The value of `IX_PASS3` that selected Pass 3 (accepted, with a
+    deprecation note, for one release after slice 6). -/
 def switchValue : String := "images"
 
-/-- The value of `IX_PASS3` that selects the legacy call-site surgery (the
-    Rust-aligned comparison mode until M6R). -/
+/-- The value of `IX_PASS3` that selected the legacy call-site surgery, which
+    M6R slice 6 deleted from both compilers (2026-10-07). -/
 def switchOffValue : String := "off"
 
-/-- The mode when `IX_PASS3` is unset: Pass 3 (the flip, M6). -/
-def switchDefault : Bool := true
-
-/-- The mode a value of `IX_PASS3` selects: `some true` for Pass 3 (unset,
-    or `images`), `some false` for the surgery (`off`), `none` for any other
-    value (refused by `switchFromEnv`: a mistyped value must not silently
-    select either mode). -/
-def switchMode? : Option String → Option Bool
-  | none => some switchDefault
+/-- What `IX_PASS3` does since slice 6, for a value of the variable:
+    `.ok none` when unset (Pass 3, the only mode), `.ok (some note)` for
+    `images` (accepted, no effect: the deprecation note to print), `.error`
+    for `off` (the surgery no longer exists; a caller that asks for it expects
+    the legacy bytes of the `-a2` references, so compiling Pass 3 instead
+    would be silently wrong) and for any other value (refused, as before:
+    a mistyped value must not be ignored). The Rust compiler reads the
+    variable the same way with the same texts (`pass3::names`). -/
+def switchCheck : Option String → Except String (Option String)
+  | none => .ok none
   | some v =>
-    if v == switchValue then some true
-    else if v == switchOffValue then some false
-    else none
+    if v == switchValue then
+      .ok (some s!"{switchVar}={switchValue} has no effect: Pass 3 is the only mode \
+since M6R slice 6 (2026-10-07); the variable is read for one release and then ignored")
+    else if v == switchOffValue then
+      .error s!"{switchVar}={switchOffValue}: the legacy call-site surgery was deleted \
+from both compilers (M6R slice 6, 2026-10-07); Pass 3 is the only mode, unset {switchVar}"
+    else
+      .error s!"{switchVar}={v} is not a mode: Pass 3 is the only mode since M6R slice 6; \
+unset {switchVar}"
 
-/-- Is Pass 3 selected by this value of `IX_PASS3`? An unrecognised value
-    selects neither mode; the drivers refuse it first (`switchFromEnv`). -/
-def switchOn (v : Option String) : Bool := switchMode? v == some true
-
-/-- The refusal of an unrecognised `IX_PASS3` value. -/
-def switchRefusal (v : String) : String :=
-  s!"{switchVar}={v} is not a mode: use {switchValue} (Pass 3, the default) or \
-{switchOffValue} (the legacy surgery, the comparison mode against the Rust compiler)"
-
-/-- The mode `IX_PASS3` selects in this process, or the refusal of an
-    unrecognised value. -/
-def switchFromEnv : IO (Except String Bool) := do
-  let v ← IO.getEnv switchVar
-  return match switchMode? v with
-    | some b => .ok b
-    | none => .error (switchRefusal (v.getD ""))
-
-/-- The mode, for logs. -/
-def switchLabel (on : Bool) : String :=
-  if on then s!"on (Pass 3, the default; {switchVar}={switchValue} or unset)"
-  else s!"off (legacy surgery, {switchVar}={switchOffValue})"
+/-- `switchCheck` on this process's `IX_PASS3`, printing the deprecation note
+    (on stderr) when there is one; the refusal is returned for the caller to
+    report. -/
+def switchFromEnv : IO (Except String Unit) := do
+  match switchCheck (← IO.getEnv switchVar) with
+  | .ok none => return .ok ()
+  | .ok (some note) => IO.eprintln s!"note: {note}"; return .ok ()
+  | .error e => return .error e
 
 /-- The reserved component (D14). -/
 def ixComponent : String := "_ix"

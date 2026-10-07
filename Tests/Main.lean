@@ -51,7 +51,7 @@ import Tests.Ix.CompileCert.BridgeRoundTrip
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
-import Tests.Ix.AuxGen.SurgeryTests
+import Tests.Ix.AuxGen.AuxSourceTests
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -161,7 +161,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
-  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
+  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.AuxSource.suite),
   ("ground-unit", Tests.Ground.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
@@ -407,14 +407,14 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Value-sensitive ownership regressions of the clique transport: user values, binders and
   -- relations shaped like the encoding keep their meaning (Tests.Ix.Compile.CliqueOwnership).
   ("clique-ownership", Tests.Ix.Compile.CliqueOwnership.run),
-  -- Pass 3, the faithful rewrite (the default; IX_PASS3=off is the surgery): identity, cones, decompile,
+  -- Pass 3, the faithful rewrite (the only mode since M6R slice 6): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
-  -- M6R: per-address parity of the Rust Pass 3 against the Lean one, the
-  -- differences owned by later slices (Tests.Ix.Compile.Pass3RustParity).
+  -- M6R: per-address parity of the Rust Pass 3 against the Lean one, every difference a
+  -- defect, and `ix pack` against its Lean oracle (Tests.Ix.Compile.Pass3RustParity).
   ("pass3-rust-parity", Tests.Ix.Compile.Pass3RustParity.run env),
   -- `ix validate-lean --local`, the Phase A validator of record, on every fixture
-  -- family with the switch off and on, against its verdict table (Tests.Ix.Compile.ValidateLean).
+  -- family, against its verdict table (Tests.Ix.Compile.ValidateLean).
   ("validate-lean", Tests.Ix.Compile.ValidateLean.run),
   -- validate-lean on the non-canonical fixtures: every auxiliary that differs from
   -- Lean's form, the phase that covers it, its match (Tests.Ix.Compile.ValidateLeanNC).
@@ -423,20 +423,20 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- valid neighbour accepted by the same checker, or a recorded reason it does not
   -- apply (Tests.Ix.Compile.AdversarialMatrix).
   ("adversarial-matrix", Tests.Ix.Compile.AdversarialMatrix.run),
-  -- Changed definition cliques under Pass 3 (the default): plans, cones,
-  -- decompile, kernels and the twins against the switch-on non-canonical set
+  -- Changed definition cliques under Pass 3: plans, cones,
+  -- decompile, kernels and the twins against the non-canonical set
   -- (Tests.Ix.Compile.Pass3Cliques).
   ("pass3-cliques", Tests.Ix.Compile.Pass3Cliques.run env),
-  -- The switch-on library measurement of plan M1 (M1G_PHASE=compile|classify|kernels;
+  -- The Pass 3 library measurement of plan M1 (M1G_PHASE=compile|classify|kernels;
   -- Tests.Ix.Compile.MathlibMeasure). Measurement only.
   ("mathlib-measure", Tests.Ix.Compile.MathlibMeasure.run),
   -- O11a declines with a recorded cause when the size instance is absent from the
   -- input; the valid neighbour with the instance rewrites (Tests.Ix.Compile.O11aDecline).
   ("o11a-decline", Tests.Ix.Compile.O11aDecline.run),
-  -- Closure against whole on Init+Std, both switch states, and whole logical units in every
+  -- Closure against whole on Init+Std, and whole logical units in every
   -- selected closure (Tests.Ix.Compile.ClosureWhole).
   ("compile-closure-whole", Tests.Ix.Compile.ClosureWhole.run),
-  -- A block compiles the same with and without its dependents, both switch states
+  -- A block compiles the same with and without its dependents
   -- (Tests.Ix.Compile.CallerIndependence).
   ("compile-caller-independence", Tests.Ix.Compile.CallerIndependence.run),
   -- `ix pack` carries whole logical units; bundle members keep the whole compile's bytes

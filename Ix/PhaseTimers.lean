@@ -60,8 +60,6 @@ inductive Phase where
   | auxTc
   /-- Compile of the generated auxiliary blocks. -/
   | auxCompile
-  /-- Call-site plan computation after the tail. -/
-  | callSitePlans
   /-- The second, no-aux compile of Lean's original auxiliary forms, and
       `promote_aux`. -/
   | noAux
@@ -89,15 +87,15 @@ inductive Phase where
 def Phase.idx : Phase → Nat
   | .blockOther => 0 | .classes => 1 | .exprCompile => 2 | .sharing => 3
   | .auxTail => 4 | .auxIngress => 5 | .auxTc => 6 | .auxCompile => 7
-  | .callSitePlans => 8 | .noAux => 9 | .merge => 10
-  | .p3Prepare => 11 | .p3Cliques => 12 | .p3Image => 13
-  | .p3Views => 14 | .p3Rewrite => 15 | .p3Canon => 16
+  | .noAux => 8 | .merge => 9
+  | .p3Prepare => 10 | .p3Cliques => 11 | .p3Image => 12
+  | .p3Views => 13 | .p3Rewrite => 14 | .p3Canon => 15
 
-def phaseCount : Nat := 17
+def phaseCount : Nat := 16
 
 def Phase.all : Array Phase :=
   #[.blockOther, .classes, .exprCompile, .sharing, .auxTail, .auxIngress, .auxTc,
-    .auxCompile, .callSitePlans, .noAux, .merge, .p3Prepare, .p3Cliques, .p3Image, .p3Views, .p3Rewrite, .p3Canon]
+    .auxCompile, .noAux, .merge, .p3Prepare, .p3Cliques, .p3Image, .p3Views, .p3Rewrite, .p3Canon]
 
 def Phase.label : Phase → String
   | .blockOther => "block glue (outside the phases below)"
@@ -108,7 +106,6 @@ def Phase.label : Phase → String
   | .auxIngress => "aux-gen tail: kernel ingress into Ix.Tc"
   | .auxTc => "aux-gen tail: Ix.Tc calls (whnf/infer/defeq)"
   | .auxCompile => "aux-gen tail: compile of the auxiliaries"
-  | .callSitePlans => "call-site plans"
   | .noAux => "no-aux compile of original forms (promote_aux)"
   | .merge => "driver merge of block outcomes (driving thread)"
   | .p3Prepare => "Pass 3 prepareBlock (outside the clique hook and the three below)"

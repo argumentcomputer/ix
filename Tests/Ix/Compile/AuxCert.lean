@@ -267,9 +267,12 @@ private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 private def certExe : System.FilePath := ".lake" / "build" / "bin" / "kernel-check-ixe"
 
 /-- Nested `lake` builds (compile-lean builds the fixture module) must not see
-    the toolchain's `LD_LIBRARY_PATH` (see `Tests.Cli.spawnEnv`). -/
+    the toolchain's `LD_LIBRARY_PATH` (see `Tests.Cli.spawnEnv`); `IX_PASS3` is
+    unset, so both compilers run Pass 3, their only mode since M6R slice 6 (the
+    record above was measured with the legacy surgery, `IX_PASS3=off`, until
+    then; to be re-measured under Pass 3). -/
 private def spawnEnv : Array (String × Option String) :=
-  #[("LD_LIBRARY_PATH", none), ("IX_PASS3", some "off")]
+  #[("LD_LIBRARY_PATH", none), ("IX_PASS3", none)]
 
 private def run (cmd : System.FilePath) (args : Array String) : IO IO.Process.Output := do
   let exe ← IO.FS.realPath cmd
@@ -434,8 +437,12 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
     let namesFile := dir / "names.txt"
     IO.FS.writeFile namesFile ("\n".intercalate mine ++ "\n")
     let failOut := dir / "lean.fail"
+    -- Match the Pass 3 kernel gate: start each requested item with fresh
+    -- worker state. A warm cache can resolve a collapsed alias through an
+    -- earlier item's type, masking BB-F7 failures in scheduling order.
     let leanCheck ← run ixExe #["check-lean", rsOut.toString, "--consts-file",
-      namesFile.toString, "--fail-out", failOut.toString, "--workers", "8"]
+      namesFile.toString, "--fail-out", failOut.toString, "--workers", "8",
+      "--clear-every", "1"]
     IO.FS.writeFile (dir / "lean.stdout") leanCheck.stdout
     IO.FS.writeFile (dir / "lean.stderr") leanCheck.stderr
     if leanCheck.exitCode == 0 || leanCheck.exitCode == 3 then

@@ -301,9 +301,9 @@ impl Named {
 /// correctly permute source-order aux motives/minors into canonical
 /// positions. Both arrays have one entry per source-walk-discovered aux.
 ///
-/// This lives in `ixon::env` (not `ix_compile::surgery`, where it originated)
-/// so it can be persisted into the serialized Ixon environment as a
-/// side-table on [`Env::aux_layouts`]. The surgery layer re-exports it.
+/// This lives in `ixon::env` (it originated in `ix_compile::surgery`, deleted
+/// at M6R slice 6) so it can be persisted into the serialized Ixon environment
+/// as a side-table on [`Env::aux_layouts`].
 ///
 /// Keyed by `<source_all[0]>` — the first inductive in the Lean source's
 /// mutual block, which is what Lean hangs `.rec_N` / `.below_N` /

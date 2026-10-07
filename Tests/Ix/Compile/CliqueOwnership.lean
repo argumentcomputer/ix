@@ -8,7 +8,7 @@
   For each fixture clique (both member orders) and the permutation `σ = [1,0]`:
 
   1. the public transport (the function the compiler calls under
-     `IX_PASS3=images`, `Ix.Compile.Pass.planClique`) either transports the
+     Pass 3, `Ix.Compile.Pass.planClique`) either transports the
      clique or keeps Lean's form (`baseline`, a named cause);
   2. when it transports, every output constant is added to a scratch Lean
      environment (the Lean kernel must accept it);
@@ -359,7 +359,7 @@ def runPlanCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
 
 /-! ## Compile units (the compiler, not the transport alone)
 
-A fixture clique compiled by the Lean pipeline with the switch on, as a
+A fixture clique compiled by the Lean pipeline (Pass 3), as a
 compile unit made of its members (and, for some cases, constants of the
 fixture namespace that use them) with their closure
 (`Tests.Ix.Compile.Pass3.closureOf`):
@@ -384,7 +384,7 @@ fixture namespace that use them) with their closure
 
 open Tests.Ix.Compile.Pass3 (CUnit kernelFailures) in
 /-- The Rust leg of a compile unit (M6R slice 3): the same prepared input
-compiled by the Rust compiler under Pass 3 (`rsCompileEnvBytesPass3FFI`). The
+compiled by the Rust compiler under Pass 3 (`rsCompileEnvBytesFFI`). The
 clique's members and the hook's canonical constants under reserved names must
 have the same `Named` entries (address, metadata incl. the decompile records
 and the side-car record `_ix.clique`, original, hints) as in the Lean compile
@@ -398,7 +398,7 @@ def rustLeg (u : CUnit) (on : Ix.CompileM.LeanPipelineOut) (ms : Array Name) (na
   let dir ← IO.FS.createTempDir
   try
     let path := dir / "rust.ixe"
-    let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants path.toString true true
+    let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString true
     let rust ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
     let mut failures : Array String := #[]
     let leanFailed := (on.cenv.ungrounded.toArray.map (·.1.pretty)).qsort (· < ·)
@@ -443,15 +443,12 @@ def runUnitCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
   let eqLemmas := u.closure.filterMap fun (n, _) =>
     if ms.contains n.getPrefix && (match n with | .str _ s => s.startsWith "eq_" | _ => false) then some n else none
   unless eqLemmas.isEmpty do failures := failures.push s!"{c.name}: the unit carries equation lemmas {eqLemmas}"
-  let on ← compileUnit u true
-  let off ← compileUnit u false
+  let on ← compileUnit u
   -- the Rust leg (M6R slice 3): the same input through the Rust compiler
   let rustNames := (ms.map (·.toString)) ++ (on.env.named.toArray.filterMap fun (n, _) =>
     if Ix.Compile.Pass.hasReserved n then some n.pretty else none)
   let (rustFailures, rustSummary) ← rustLeg u on ms rustNames
   failures := failures ++ rustFailures
-  unless off.cenv.ungrounded.isEmpty do
-    failures := failures.push s!"{c.name}: switch off: block failures {off.cenv.ungrounded.toList.map (·.1.pretty)}"
   let key := ixName ms[0]!
   let some (all, carried) := on.cenv.p3Cliques.get? key |
     return { name := c.name, outcome := "not in the clique table", failures := failures.push s!"{c.name}: not in the clique table" }
@@ -479,7 +476,7 @@ def runUnitCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
       failures := failures.push s!"{c.name}: unexpected block failure {n.pretty}: {e.take 300}"
   -- the clique does not depend on its callers
   if !extra.isEmpty then
-    let alone ← compileUnit (mkUnit ms) true
+    let alone ← compileUnit (mkUnit ms)
     for m in ms do
       let a := (on.env.named.get? (ixName m)).map (·.addr)
       let b := (alone.env.named.get? (ixName m)).map (·.addr)
@@ -679,7 +676,7 @@ def runLemmaUnit (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.
   let used := ns ++ `unfold_used
   let u : CUnit := { name := s!"clique-lemmas-{c.name}", env, seeds := ms.push used,
                      closure := closureOf env (ms.push used).toList }
-  let on ← compileUnit u true
+  let on ← compileUnit u
   for (n, e) in on.cenv.ungrounded.toList do
     failures := failures.push s!"{c.name}: block failure {n.pretty}: {e.take 300}"
   -- the carried lemmas: every member's `eq_def`

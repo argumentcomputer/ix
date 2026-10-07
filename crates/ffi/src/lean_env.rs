@@ -3576,25 +3576,14 @@ extern "C" fn rs_compile_validate_aux(
         "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.B",
         "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.C",
       ],
-      // Evaporated aux recursors: dropping the irrelevant over-merged
-      // motives leaves exactly the external inductive's generic recursor,
-      // so every `rec_N` claim aliases `List.rec` itself. AuxDedupMixed's
-      // `rec_2` is the evaporated half of a mixed block (its `rec_1` stays
-      // a genuine canonical aux of M's own block).
-      //
-      // `List.rec` itself is deliberately NOT in the group: groups whose
-      // fixture names are all absent are skipped (subset envs like
-      // validate-aux's seed closure), and a stdlib member would make such
-      // a group partially present and fail as "missing names". The
-      // equality to `List.rec`'s address is enforced by kernel-check
-      // anyway — the claims only typecheck as projections of List's
-      // recursor block.
-      &[
-        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1",
-        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2",
-        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1",
-        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",
-      ],
+      // (Until M6R slice 6 a group here checked that the evaporated aux
+      // recursors `AuxDedup1.A.rec_1`/`rec_2`, `AuxDedup2.A.rec_1` and
+      // `AuxDedupMixed.M.rec_2` share one address: the legacy surgery stored
+      // each as an address alias of `List.rec`. Under Pass 3, the only mode
+      // since, the Lean name of an evaporated auxiliary holds its image, a
+      // definition with its source telescope that eliminates with the
+      // external recursor (design document §2.6), and no Ix auxiliary exists
+      // for it, so there is no cross-namespace claim to check.)
       // ── ZFA: joint below.rec canonical order ──
       // Five alpha-identical transcriptions of Mathlib's SetTheory/Lists
       // shape (a mutual Prop pair whose `.below` inductives get a JOINT
@@ -3656,7 +3645,20 @@ extern "C" fn rs_compile_validate_aux(
     // whichever form their original flavor used; resolution tries the
     // other form before declaring a name absent, so one seed list serves
     // both env flavors.
-    let resolve_seed = |name: &str| -> Option<ix_common::address::Address> {
+    // Under Pass 3 (the only mode since M6R slice 6) the Lean name of a changed
+    // block's auxiliary holds its image and the canonical Ix auxiliary is
+    // stored under its reserved display name `x._ix.S` (`pass3::names`,
+    // `ix_aux_name`); the canonicity question of this phase is about the Ix
+    // auxiliaries, so an auxiliary name resolves to its display name when the
+    // output has one (until slice 6 the legacy surgery kept the Ix auxiliary
+    // under the Lean name).
+    let display = |name: &str| -> Option<String> {
+      let (pre, last) = name.rsplit_once('.')?;
+      ["rec", "casesOn", "recOn", "below", "brecOn"]
+        .contains(&last)
+        .then(|| format!("{pre}._ix.{last}"))
+    };
+    let resolve_plain = |name: &str| -> Option<ix_common::address::Address> {
       if let Some(a) = stt.resolve_addr(&mk_name(name)) {
         return Some(a);
       }
@@ -3675,6 +3677,11 @@ extern "C" fn rs_compile_validate_aux(
         }
       }
       None
+    };
+    let resolve_seed = |name: &str| -> Option<ix_common::address::Address> {
+      display(name)
+        .and_then(|d| resolve_plain(&d))
+        .or_else(|| resolve_plain(name))
     };
 
     for group in groups {

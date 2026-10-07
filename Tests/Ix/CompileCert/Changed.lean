@@ -8,7 +8,7 @@ import Tests.Ix.CompileCert.LoweringDefs
 /-! # W+ on compiler output: changed constants (M5)
 
 `Tests.Ix.CompileCert.ChangedDefs` is compiled in-process with the Lean compiler
-under Pass 3 (`compileLeanConsts … (pass3? := some true)`, the default), its
+under Pass 3 (`compileLeanConsts …`, the default), its
 bytes written to `$C1_OUTPUT_DIR/changed.ixe` (the `certify-changed` step of
 `lake run check-cert` runs `compile-certify` on them). Then, on the same
 compiled cone, with the certifier's own functions (`imageClaims`,
@@ -80,7 +80,7 @@ def compile : IO (Lean.Environment × Source × Ix.CompileM.LeanPipelineOut) := 
   let env ← getCompileEnv #[prefixName]
   let captured ← IO.ofExcept (captureCone env.find? (roots ++ expectedUnsupported) 128)
   let compiled ← match ← _root_.Ix.CompileM.compileLeanConsts
-      (captured.source.declarations.map (fun ci => (ci.name, ci))) (numWorkers := 1) (pass3? := some true) with
+      (captured.source.declarations.map (fun ci => (ci.name, ci))) (numWorkers := 1) with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compiler failed: {e}")
   unless compiled.ungroundedCount == 0 do throw (IO.userError "compiler output contains ungrounded declarations")
@@ -205,7 +205,7 @@ def runSized : IO Unit := do
   let env ← getCompileEnv #[lowering]
   let captured ← IO.ofExcept (captureCone env.find? [ok, lowering ++ `Sized.vec, lowering ++ `Rose.children] 128)
   let compiled ← match ← _root_.Ix.CompileM.compileLeanConsts
-      (captured.source.declarations.map (fun ci => (ci.name, ci))) (numWorkers := 1) (pass3? := some true) with
+      (captured.source.declarations.map (fun ci => (ci.name, ci))) (numWorkers := 1) with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compiler failed: {e}")
   let b ← build env captured.source compiled.env
@@ -505,7 +505,7 @@ def probe (args : List String) : IO Unit := do
       unless seen.contains r do todo := todo.push r
   IO.println s!"changed-probe: {decls.size} declarations in the cone"
   let compiled ← match ← _root_.Ix.CompileM.compileLeanConsts
-      (decls.toList.map (fun ci => (ci.name, ci))) (numWorkers := 16) (pass3? := some true) with
+      (decls.toList.map (fun ci => (ci.name, ci))) (numWorkers := 16) with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compiler failed: {e}")
   IO.FS.writeBinFile out compiled.bytes

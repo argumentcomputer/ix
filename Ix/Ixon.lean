@@ -239,15 +239,18 @@ structure UnivPatch where
 /-- Per-constant metadata wrapper: variant payload + extension tables.
     The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) extend the
     index spaces of the primary `Constant` tables (for a projection, the
-    tables of its `muts` block), used by `callSite` nodes in the metadata
-    arena for call-site surgery roundtrip and by `univPatches` for original
-    level spellings (canonicity §10.6). Mirrors Rust
+    tables of its `muts` block), used by Pass 3's `_ix.inline` records (and
+    the legacy `callSite` nodes of files written before M6R slice 6) and by
+    `univPatches` for original level spellings (canonicity §10.6). Mirrors Rust
     `ixon::metadata::ConstantMeta`. -/
 structure ConstantMeta where
   info : ConstantMetaInfo := .empty
-  /-- Compiled Ixon expressions for collapsed call-site arguments and
-      rewritten call-site heads, indexed DIRECTLY (no offset) by
-      `CallSiteEntry.collapsed sharingIdx` and `origHead = some (sharingIdx, _)`.
+  /-- Compiled Ixon expressions: the source occurrences of Pass 3's
+      `_ix.inline` records (the record's first value is the index), and, in
+      files the legacy surgery wrote before M6R slice 6, collapsed call-site
+      arguments and rewritten call-site heads, indexed DIRECTLY (no offset)
+      by `CallSiteEntry.collapsed sharingIdx` and
+      `origHead = some (sharingIdx, _)`.
 
       Extended index space for `share` (a reader rule; the bytes are
       unchanged). Let the primary table `sharing` have `p` entries and this
@@ -283,8 +286,8 @@ def ConstantMeta.new (info : ConstantMetaInfo) : ConstantMeta := { info }
     pre-wrapper `.empty` construction idiom working. -/
 def ConstantMeta.empty : ConstantMeta := {}
 
-/-- Whether this metadata has any wrapper extension payload (surgery
-    tables or level-spelling patches). -/
+/-- Whether this metadata has any wrapper extension payload (record or
+    legacy call-site tables or level-spelling patches). -/
 def ConstantMeta.hasExtensions (cm : ConstantMeta) : Bool :=
   !cm.metaSharing.isEmpty || !cm.metaRefs.isEmpty || !cm.metaUnivs.isEmpty
     || !cm.univPatches.isEmpty

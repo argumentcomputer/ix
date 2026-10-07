@@ -3,13 +3,15 @@
   (`Ix.Cli.ValidateLeanCmd`), on every fixture of `aux-cert`, the prototype's
   cases (`Tests/Ix/Compile/Image/C*.lean`), the twin families
   (`Tests/Ix/Compile/Twins/*`) and the library twins
-  (`Tests/Ix/Compile/Oracle/Lib.lean`), with the Pass 3 switch off and on,
-  against the expected verdict table below.
+  (`Tests/Ix/Compile/Oracle/Lib.lean`), in Pass 3 (the only mode since M6R
+  slice 6; until then each file also ran with the legacy surgery,
+  `IX_PASS3=off`, against its own rows), against the expected verdict table
+  below.
 
   Every phase passes, except:
   - phase 7 (image rules) skips when there is no changed block with `_ix`
-    names (always with the switch off; phase 6 fails a changed block without
-    `_ix` names under the switch, so a skip cannot hide a lost image);
+    names (phase 6 fails a changed block without `_ix` names, so a skip
+    cannot hide a lost image);
   - the recorded pre-existing failures (`expected`), each by defect id; a
     recorded failure that passes is a problem too, so the table stays exact,
     and a recorded failing phase must fail with exactly its recorded counts
@@ -28,82 +30,54 @@ open Lean
 
 namespace Tests.Ix.Compile.ValidateLean
 
-/-- A recorded failure: the file stem, the switch state (`off`, `on` or `*`),
-the phases that fail, and the cause by defect id. -/
+/-- A recorded failure: the file stem, the mode (`on`: Pass 3, the only one
+since M6R slice 6, which deleted the `off` rows of the legacy surgery and the
+`*` rows of both), the phases that fail, and the cause by defect id. -/
 structure Expected where
   stem : String
   switch : String
   phases : List String
   cause : String
 
-/-- The expected verdict table (A3v, 2026-10-03). The causes:
-- A0 refusals on the surgery path (switch off; D13 = WB-B4): the compile
-  refuses a collapse call site (phase 1), so the output is partial and the
-  decompile misses the refused constants (phase 5). Pass 3 compiles them
-  faithfully: these pass with the switch on.
-- A0 evaporation refusal ("not a one-motive recursor", both modes): phase 1;
-  the partial output's siblings of the refused component fail phases 4–5
+/-- The expected verdict table (A3v, 2026-10-03; Pass 3 only since M6R slice 6,
+2026-10-07, which removed the rows of the legacy surgery: its A0 collapse
+refusals, REFUSED-IPB-COLLAPSE, WB-A2, BB-F6, BB-F8 and A3V-IPB, all of which
+Pass 3 compiles or refuses as recorded here). The causes:
+- A0 evaporation refusal ("not a one-motive recursor"): phase 1; the partial
+  output's siblings of the refused component fail phases 4–5
   (REFUSED-SIBLING).
-- REFUSED-IPB-COLLAPSE (CORPUS-IPB, M1-j; switch off): the compile refuses
-  Lean's `IndPredBelow` block of a collapse that merges alpha-equivalent
-  `.below` members (phase 1); the partial output's refused names have no
-  `Named.original`, so they decompile to the canonical form (phase 5). With
-  the switch on, Pass 3's images refuse the same family (phases 1, 5).
-- Compile totality defects by id (WB-A2, WB-A3, WB-A7, BB-F6, BB-F8).
+- CORPUS-IPB (M1-j): Pass 3's images refuse Lean's `IndPredBelow` block of a
+  collapse that merges alpha-equivalent `.below` members (phases 1, 5).
+- Compile totality defects by id (WB-A3, WB-A7).
 - Decompile and auxiliary defects by id (BB-F5, WB-B6, WB-B9).
 - BELOW-ORDER (removed, A6f): the kernels' single-pass canonicity gate used to
   reject an adjacent pair comparing *weakly* `Greater` (a mutual cross
   reference under the final classes) instead of falling back to the full
   refinement; fixed in both kernels, so `ValidateLeanSwap` (user blocks of
   that shape), `PropCollapse` and the twins' `Repro` pass phase 4.
-- A3V-IPB (found by the oracle leg): for the nested Prop block `F8NoSplit`
-  (BB-F8's passing neighbour) the Ix `IndPredBelow` family's
-  `.rec`/`.casesOn` (`A.below.rec`, `A.below_1.rec`, `.casesOn`) differ by
-  address from Lean's own: the family is a permuted Lean-generated block.
-  Fixed under the switch (A6f: the family is treated as a changed block,
-  `Ix.Compile.Pass.editPermutedBelowFamily`); recorded with the switch off. -/
+- A3V-IPB (found by the oracle leg; the legacy surgery's, fixed by Pass 3,
+  A6f: a permuted `IndPredBelow` family is treated as a changed block,
+  `Ix.Compile.Pass.editPermutedBelowFamily`). -/
 def expected : List Expected := [
-  -- A0 collapse refusals on the surgery path
-  ⟨"SurgCollapse", "off", ["1", "5"], "A0 refusal (D13: collapse call site drops distinct arguments)"⟩,
-  ⟨"F4FlatAlphaUsers", "off", ["1", "5"], "A0 refusal (collapse call site is a partial application)"⟩,
-  ⟨"F4_NestedAlphaUsers", "off", ["1", "5"], "A0 refusal (collapse call site is a partial application)"⟩,
-  ⟨"C5Collapse", "off", ["1", "5"], "A0 refusal (D13)"⟩,
-  ⟨"C6NestedCollapse", "off", ["1", "5"], "A0 refusal (collapse call site is a partial application)"⟩,
-  ⟨"C7IndPred", "off", ["1", "5"], "A0 refusal (D13, on `below` call sites)"⟩,
-  ⟨"C8Collapse3", "off", ["1", "5"], "A0 refusal (D13)"⟩,
-  ⟨"C9Params", "off", ["1", "5"], "A0 refusal (D13)"⟩,
-  ⟨"Proto", "off", ["1", "5"], "A0 refusals (D13, partial applications) of the prototype twins"⟩,
-  -- CORPUS-IPB (M1-j): the default path refuses the Lean `IndPredBelow`
-  -- block of a collapse that merges alpha-equivalent `.below` members; with
-  -- the switch on Pass 3's images refuse the same shapes (`image: hypothesis
+  -- CORPUS-IPB (M1-j): Pass 3's images refuse the Lean `IndPredBelow` block of
+  -- a collapse that merges alpha-equivalent `.below` members (`image: hypothesis
   -- motive N not in its slot's class`, a Pass 3 item of M1)
-  ⟨"IPBCollapse2p1", "off", ["1", "5"], "REFUSED-IPB-COLLAPSE (CORPUS-IPB)"⟩,
   ⟨"IPBCollapse2p1", "on", ["1", "5"], "Pass 3 images refusal (hypothesis motive not in its slot's class)"⟩,
-  ⟨"IPBMixed", "off", ["1", "5"], "REFUSED-IPB-COLLAPSE (CORPUS-IPB)"⟩,
   ⟨"IPBMixed", "on", ["1", "5"], "Pass 3 images refusal (hypothesis motive not in its slot's class)"⟩,
-  ⟨"IPBCollapseNone", "off", ["6", "8"], "A3V-IPB (its IndPredBelow .rec/.casesOn ≠ Lean's; fixed by Pass 3)"⟩,
-  -- A0 evaporation refusal, both modes
-  ⟨"C4Evap", "off", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
+  -- A0 evaporation refusal
   ⟨"C4Evap", "on", ["1", "5"], "A0 refusal (not a one-motive recursor)"⟩,
-  ⟨"F3_SplitRoseRace", "*", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
-  ⟨"NestRoseSplit", "*", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
-  ⟨"NestMutExt", "off", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
+  ⟨"F3_SplitRoseRace", "on", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
+  ⟨"NestRoseSplit", "on", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
   ⟨"NestMutExt", "on", ["1", "5"], "A0 refusal (not a one-motive recursor)"⟩,
-  ⟨"NestMutExtA", "*", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
+  ⟨"NestMutExtA", "on", ["1", "4", "5"], "A0 refusal (not a one-motive recursor); REFUSED-SIBLING"⟩,
   -- compile totality defects
-  ⟨"AliasIdx", "*", ["1", "5"], "WB-A3"⟩,
-  ⟨"KernelSpec", "*", ["1", "5"], "WB-A7"⟩,
-  ⟨"SurgIdx", "off", ["1", "5"], "WB-A2 (fixed by Pass 3)"⟩,
-  ⟨"F6_OrderIdxBrecOn", "off", ["1", "5"], "BB-F6 (= WB-A2; fixed by Pass 3)"⟩,
-  ⟨"F8_PropSplitNested", "off", ["1", "5"], "BB-F8 (fixed by Pass 3)"⟩,
+  ⟨"AliasIdx", "on", ["1", "5"], "WB-A3"⟩,
+  ⟨"KernelSpec", "on", ["1", "5"], "WB-A7"⟩,
   -- decompile and auxiliary defects
-  ⟨"F5_SigmaNestedNested", "*", ["5"], "BB-F5 (decompile regenerates T.rec differently)"⟩,
-  ⟨"RecAlias", "*", ["5", "6", "8"], "WB-B6 (Ix's PA.below family ≠ Lean's)"⟩,
-  ⟨"UnsafeI", "*", ["5", "6", "8"], "WB-B9 (Ix's UNestNeg.rec ≠ Lean's)"⟩,
-  ⟨"Neighbours", "off", ["6", "8"], "A3V-IPB (F8NoSplit's IndPredBelow .rec/.casesOn ≠ Lean's; fixed by Pass 3)"⟩,
-  ⟨"ValidateLeanIPB", "off", ["6", "8"], "A3V-IPB (reproducer: IPB.Nested, IPB.MutNested; fixed by Pass 3)"⟩,
-  -- the twin families: their RecAlias (WB-B6) and SurgCollapse (A0) members
-  ⟨"Repro", "off", ["1", "5", "6", "8"], "A0 refusal of Repro.Orig.SurgCollapse (D13); WB-B6"⟩,
+  ⟨"F5_SigmaNestedNested", "on", ["5"], "BB-F5 (decompile regenerates T.rec differently)"⟩,
+  ⟨"RecAlias", "on", ["5", "6", "8"], "WB-B6 (Ix's PA.below family ≠ Lean's)"⟩,
+  ⟨"UnsafeI", "on", ["5", "6", "8"], "WB-B9 (Ix's UNestNeg.rec ≠ Lean's)"⟩,
+  -- the twin families: their RecAlias member (WB-B6)
   ⟨"Repro", "on", ["5", "6", "8"], "WB-B6"⟩,
   -- the clique-ownership sources (added with phase 9, M4): the block rule refuses
   -- `WF8B.caller`, a caller outside the clique's unit that unfolds the transported
@@ -137,101 +111,37 @@ constant differs, and `Nat` is among the listed names; `Nat` decompiles
 digest-identical in a closure without the failing blocks,
 `ix validate-lean --ns Nat.succ,Nat.rec` on the same file: 173/173). -/
 def pins : List (String × String × String × String) := [
-  ("AliasIdx", "off", "1", "31 per-block compile failure(s)"),
-  ("AliasIdx", "off", "5", "31 digest mismatch(es), 31 missing"),
   ("AliasIdx", "on", "1", "31 per-block compile failure(s)"),
   ("AliasIdx", "on", "5", "31 digest mismatch(es), 31 missing"),
-  ("C4Evap", "off", "1", "49 per-block compile failure(s)"),
-  ("C4Evap", "off", "4", "7 comparison error(s)"),
-  ("C4Evap", "off", "5", "70 digest mismatch(es), 57 missing"), -- M1-d re-record, was 68/55
   ("C4Evap", "on", "1", "58 per-block compile failure(s)"),
   ("C4Evap", "on", "5", "79 digest mismatch(es), 73 missing"), -- M1-d re-record, was 77/71
-  ("C5Collapse", "off", "1", "8 per-block compile failure(s)"),
-  ("C5Collapse", "off", "5", "8 digest mismatch(es), 8 missing"),
-  ("C6NestedCollapse", "off", "1", "12 per-block compile failure(s)"),
-  ("C6NestedCollapse", "off", "5", "12 digest mismatch(es), 12 missing"),
-  ("C7IndPred", "off", "1", "4 per-block compile failure(s)"),
-  ("C7IndPred", "off", "5", "4 digest mismatch(es), 4 missing"),
-  ("C8Collapse3", "off", "1", "18 per-block compile failure(s)"),
-  ("C8Collapse3", "off", "5", "18 digest mismatch(es), 18 missing"),
-  ("C9Params", "off", "1", "6 per-block compile failure(s)"),
-  ("C9Params", "off", "5", "6 digest mismatch(es), 6 missing"),
-  ("F3_SplitRoseRace", "off", "1", "41 per-block compile failure(s)"),
-  ("F3_SplitRoseRace", "off", "4", "9 comparison error(s)"),
-  ("F3_SplitRoseRace", "off", "5", "54 digest mismatch(es), 43 missing"), -- M1-d re-record, was 50/39
   ("F3_SplitRoseRace", "on", "1", "43 per-block compile failure(s)"),
   ("F3_SplitRoseRace", "on", "4", "2 comparison error(s)"),
   ("F3_SplitRoseRace", "on", "5", "56 digest mismatch(es), 52 missing"), -- M1-d re-record, was 52/48
-  ("F4FlatAlphaUsers", "off", "1", "1 per-block compile failure(s)"),
-  ("F4FlatAlphaUsers", "off", "5", "1 digest mismatch(es), 1 missing"),
-  ("F4_NestedAlphaUsers", "off", "1", "1 per-block compile failure(s)"),
-  ("F4_NestedAlphaUsers", "off", "5", "1 digest mismatch(es), 1 missing"),
-  ("F5_SigmaNestedNested", "off", "5", "11 decompile error(s)"),
   ("F5_SigmaNestedNested", "on", "5", "11 decompile error(s)"),
-  ("F6_OrderIdxBrecOn", "off", "1", "2 per-block compile failure(s)"),
-  ("F6_OrderIdxBrecOn", "off", "5", "2 digest mismatch(es), 2 missing"),
-  ("F8_PropSplitNested", "off", "1", "3 per-block compile failure(s)"),
-  ("F8_PropSplitNested", "off", "5", "12 digest mismatch(es), 6 missing"), -- M1-d re-record, was 8/3
-  ("IPBCollapse2p1", "off", "1", "9 per-block compile failure(s)"),
-  ("IPBCollapse2p1", "off", "5", "7 digest mismatch(es), 0 missing"),
   ("IPBCollapse2p1", "on", "1", "6 per-block compile failure(s)"),
   ("IPBCollapse2p1", "on", "5", "6 digest mismatch(es), 6 missing"),
-  ("IPBCollapseNone", "off", "6", "unclassified 6"),
-  ("IPBCollapseNone", "off", "8", "6 violation(s)"),
-  ("IPBMixed", "off", "1", "11 per-block compile failure(s)"),
-  ("IPBMixed", "off", "5", "9 digest mismatch(es), 0 missing"),
   ("IPBMixed", "on", "1", "8 per-block compile failure(s)"),
   ("IPBMixed", "on", "5", "8 digest mismatch(es), 8 missing"),
-  ("KernelSpec", "off", "1", "16 per-block compile failure(s)"),
-  ("KernelSpec", "off", "5", "7 decompile error(s)"),
   ("KernelSpec", "on", "1", "16 per-block compile failure(s)"),
   ("KernelSpec", "on", "5", "7 decompile error(s)"),
-  ("Neighbours", "off", "6", "unclassified 6"),
-  ("Neighbours", "off", "8", "6 violation(s)"),
-  ("NestMutExt", "off", "1", "84 per-block compile failure(s)"),
-  ("NestMutExt", "off", "4", "14 comparison error(s)"),
-  ("NestMutExt", "off", "5", "110 digest mismatch(es), 88 missing"), -- M1-d re-record, was 106/84
   ("NestMutExt", "on", "1", "88 per-block compile failure(s)"),
   ("NestMutExt", "on", "5", "114 digest mismatch(es), 106 missing"), -- M1-d re-record, was 110/102
-  ("NestMutExtA", "off", "1", "43 per-block compile failure(s)"),
-  ("NestMutExtA", "off", "4", "9 comparison error(s)"),
-  ("NestMutExtA", "off", "5", "56 digest mismatch(es), 45 missing"), -- M1-d re-record, was 55/44
   ("NestMutExtA", "on", "1", "45 per-block compile failure(s)"),
   ("NestMutExtA", "on", "4", "2 comparison error(s)"),
   ("NestMutExtA", "on", "5", "58 digest mismatch(es), 54 missing"), -- M1-d re-record, was 57/53
-  ("NestRoseSplit", "off", "1", "43 per-block compile failure(s)"),
-  ("NestRoseSplit", "off", "4", "9 comparison error(s)"),
-  ("NestRoseSplit", "off", "5", "56 digest mismatch(es), 45 missing"), -- M1-d re-record, was 52/41
   ("NestRoseSplit", "on", "1", "45 per-block compile failure(s)"),
   ("NestRoseSplit", "on", "4", "2 comparison error(s)"),
   ("NestRoseSplit", "on", "5", "58 digest mismatch(es), 54 missing"), -- M1-d re-record, was 54/50
-  ("Proto", "off", "1", "50 per-block compile failure(s)"),
-  ("Proto", "off", "5", "50 digest mismatch(es), 50 missing"),
-  ("RecAlias", "off", "5", "3 decompile error(s)"),
-  ("RecAlias", "off", "6", "unclassified 5"),
-  ("RecAlias", "off", "8", "5 violation(s)"),
   ("RecAlias", "on", "5", "3 decompile error(s)"),
   ("RecAlias", "on", "6", "unclassified 5"),
   ("RecAlias", "on", "8", "5 violation(s)"),
-  ("Repro", "off", "1", "11 per-block compile failure(s)"),
-  ("Repro", "off", "5", "6 decompile error(s)"),
-  ("Repro", "off", "6", "unclassified 10"),
-  ("Repro", "off", "8", "10 violation(s)"),
   ("Repro", "on", "5", "6 decompile error(s)"),
   ("Repro", "on", "6", "unclassified 10"),
   ("Repro", "on", "8", "10 violation(s)"),
-  ("SurgCollapse", "off", "1", "7 per-block compile failure(s)"),
-  ("SurgCollapse", "off", "5", "7 digest mismatch(es), 7 missing"),
-  ("SurgIdx", "off", "1", "3 per-block compile failure(s)"),
-  ("SurgIdx", "off", "5", "3 digest mismatch(es), 3 missing"),
-  ("UnsafeI", "off", "5", "7 decompile error(s)"),
-  ("UnsafeI", "off", "6", "unclassified 2"),
-  ("UnsafeI", "off", "8", "2 violation(s)"),
   ("UnsafeI", "on", "5", "7 decompile error(s)"),
   ("UnsafeI", "on", "6", "unclassified 2"),
   ("UnsafeI", "on", "8", "2 violation(s)"),
-  ("ValidateLeanIPB", "off", "6", "unclassified 10"),
-  ("ValidateLeanIPB", "off", "8", "10 violation(s)"),
   ("Sources", "on", "1", "1 per-block compile failure(s)"),
   ("Sources", "on", "5", "1 digest mismatch(es), 1 missing")
 ]
@@ -357,8 +267,7 @@ def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := fal
     cmd := exe.toString
     args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
       ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
-    env := #[("LD_LIBRARY_PATH", none),
-             ("IX_PASS3", some (if switch == "on" then "images" else "off"))] }
+    env := #[("LD_LIBRARY_PATH", none), ("IX_PASS3", none)] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
   if !(← report.pathExists) then return (stem, switch, none, s!"exit {out.exitCode}")
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))
@@ -376,8 +285,8 @@ def run : IO UInt32 := do
     | some d => do IO.FS.createDirAll d; pure d
     | none => IO.FS.createTempDir
   let todo := (files.filter fun f =>
-      only.isEmpty || only.contains ((System.FilePath.mk f).fileStem.getD f)).flatMap fun f =>
-    [(f, "off"), (f, "on")]
+      only.isEmpty || only.contains ((System.FilePath.mk f).fileStem.getD f)).map fun f =>
+    (f, "on")
   let t0 ← IO.monoMsNow
   let noBuild ← prebuild (todo.map (·.1)).eraseDups leanRejects
   -- a pool of `VALIDATE_LEAN_JOBS` runs at a time (default 12; the longest
@@ -389,7 +298,7 @@ def run : IO UInt32 := do
     runOne dir f s (noBuild.contains f)
   let mut problems : Array String := #[]
   for (stem, switch, rows?, exit) in results do
-    let exp := expected.filter fun e => e.stem == stem && (e.switch == switch || e.switch == "*")
+    let exp := expected.filter fun e => e.stem == stem && e.switch == switch
     let failing : List String := exp.flatMap (·.phases)
     let causes := ", ".intercalate (exp.map (·.cause))
     match rows? with
@@ -406,13 +315,11 @@ def run : IO UInt32 := do
         let want := failing.contains k
         if r == "fail" && !want then problems := problems.push s!"{stem} {switch}: phase {k} fails (not recorded)"
         if r != "fail" && want then problems := problems.push s!"{stem} {switch}: phase {k} recorded as failing ({causes}) but {r}"
-        -- phase 9 skips exactly when no definition clique is transported
-        -- (always with the switch off); a switch-on run that transports one
-        -- must value-check it with exactly its recorded counts
+        -- phase 9 skips exactly when no definition clique is transported; a
+        -- run that transports one must value-check it with exactly its
+        -- recorded counts
         if r == "skip" && k != "7" && k != "9" then problems := problems.push s!"{stem} {switch}: phase {k} skipped"
         if k == "9" then
-          if switch == "off" && r != "skip" then
-            problems := problems.push s!"{stem} {switch}: phase 9 {r} with the switch off (no clique can be transported)"
           if r == "pass" then
             IO.println s!"[validate-lean]   {stem} {switch} phase 9: {d}"
             match phase9PinOf stem switch with
@@ -455,7 +362,7 @@ def run : IO UInt32 := do
     if !used && (only.isEmpty || only.contains stem) then
       problems := problems.push s!"{stem} {switch}: phase {k} recorded as failing with '{p}' (stale)"
   for p in problems do IO.println s!"[validate-lean] FAIL {p}"
-  IO.println s!"[validate-lean] {results.size} runs ({todo.length / 2} files × 2 switch states), \
+  IO.println s!"[validate-lean] {results.size} runs ({todo.length} files, Pass 3), \
 {problems.size} problem(s), {(← IO.monoMsNow) - t0} ms"
   if keep?.isNone then IO.FS.removeDirAll dir
   return if problems.isEmpty then 0 else 1

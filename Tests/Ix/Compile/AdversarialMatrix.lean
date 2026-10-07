@@ -209,12 +209,12 @@ def ixN (n : Name) : _root_.Ix.Name := _root_.Ix.Name.fromLeanName n
 
 /-- Compile `seeds` with their closure, each constant of the closure passed
 through `forge` (the forged input), `drop` removed. -/
-def compileForged (env : Environment) (seeds : Array Name) (pass3 : Bool)
+def compileForged (env : Environment) (seeds : Array Name)
     (forge : Name → ConstantInfo → ConstantInfo := fun _ c => c) (drop : Name → Bool := fun _ => false) :
     IO Ix.CompileM.LeanPipelineOut := do
   let closure := (closureOf env seeds.toList).filterMap fun (n, c) =>
     if drop n then none else some (n, forge n c)
-  compileUnit { name := "adversarial-matrix", env, seeds, closure } pass3
+  compileUnit { name := "adversarial-matrix", env, seeds, closure }
 
 def withValue (c : ConstantInfo) (f : Expr → Expr) : ConstantInfo :=
   match c with
@@ -235,7 +235,7 @@ def phase4 (env : Environment) (ixon : Ixon.Env) : Except String (Array _root_.I
 honest one must have no comparison error. -/
 def phase4Case (env : Environment) (row : Nat) (kind : Kind) (name what : String) (target : Name)
     (forge : Name → ConstantInfo → ConstantInfo) (extra : Array Name := #[]) : IO Result := do
-  let out ← compileForged env (#[target] ++ extra) false (forge := forge)
+  let out ← compileForged env (#[target] ++ extra) (forge := forge)
   match phase4 env out.env with
   | .error e => return { row, kind, name, what, checker := "validate-lean phase 4 (meta roundtrip)", ok := false,
                          log := #[s!"phase 4 did not run: {e}"] }
@@ -293,13 +293,13 @@ def phase9Cases (env : Environment) (row : Nat) (family : String) (forgeWhat : S
     let ms := membersOf fx
     -- the neighbour: the honest compile
     if nbr.isNone then
-      let out ← compileForged env ms true
+      let out ← compileForged env ms
       let (r, lines) ← phase9 env out
       match r with
       | .skipped d => log := log.push s!"{fx} honest: not transported ({d})"
       | .passed d =>
         nbr := some { row, kind := .neighbour, name := s!"R{row}-{fx}-honest",
-                      what := s!"{fx} compiled honestly (switch on, transported)",
+                      what := s!"{fx} compiled honestly (transported)",
                       checker := "validate-lean phase 9 (clique values)", ok := (d.splitOn "(0 value-checked").length == 1,
                       log := #[s!"phase 9: PASS {d}"] ++ lines }
       | .failed d | .stubbed d =>
@@ -308,7 +308,7 @@ def phase9Cases (env : Environment) (row : Nat) (family : String) (forgeWhat : S
                       log := #[s!"phase 9: {d}"] ++ lines }
     -- the negative: the forged compile
     if neg.isNone then
-      let out ← compileForged env ms true (forge := forgeClique ms f)
+      let out ← compileForged env ms (forge := forgeClique ms f)
       let (r, lines) ← phase9 env out
       match r with
       | .skipped d => log := log.push s!"{fx} forged: not transported ({d})"
@@ -332,7 +332,7 @@ def phase9Cases (env : Environment) (row : Nat) (family : String) (forgeWhat : S
 
 def provenanceCases (env : Environment) : IO (Array Result) := do
   let target := `Tests.Ix.Compile.AdversarialMatrix.Src.double
-  let out ← compileForged env #[target] false
+  let out ← compileForged env #[target]
   let ixon := out.env
   let view := Ix.Cli.ValidateLeanCmd.leanViewOf env ixon
   let ch := Ix.Cli.ValidateLeanCmd.changedOf ixon view
@@ -380,7 +380,7 @@ def rustFailures (env : Environment) (seeds : Array Name) (drop : Name → Bool 
   let constants ← IO.ofExcept input.prepare
   let dir ← IO.FS.createTempDir
   try
-    let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants (dir / "rust.ixe").toString true true
+    let status ← Ix.CompileM.rsCompileEnvBytesFFI constants (dir / "rust.ixe").toString true
     return status.ungrounded
   finally IO.FS.removeDirAll dir
 
@@ -390,7 +390,7 @@ refused by name in both compilers (the named refusal `UNGROUNDED-INPUT`,
 the closed input compiles with no failure. -/
 def omittedDependencyCases (env : Environment) : IO (Array Result) := do
   let target := `Tests.Ix.Compile.AdversarialMatrix.Src.double
-  let honest ← compileForged env #[target] false
+  let honest ← compileForged env #[target]
   let stored0 := honest.env.named.contains (ixN target)
   let rust0 ← rustFailures env #[target]
   let nbr := R 11 .neighbour "R11-compile-closed" "`double` with its whole closure"
@@ -405,7 +405,7 @@ def omittedDependencyCases (env : Environment) : IO (Array Result) := do
       (target, "UNGROUNDED-INPUT: references a constant that is itself ungrounded")]
   let neg ← try
       let drop := (· == ``Nat.add)
-      let forged ← compileForged env #[target] false (drop := drop)
+      let forged ← compileForged env #[target] (drop := drop)
       let stored := forged.env.named.contains (ixN target)
       let rust ← rustFailures env #[target] drop
       let named := expected.all fun (n, msg) =>

@@ -1855,7 +1855,7 @@ fn canonical_minor_count_for_head(rh: &RecHeadInfo) -> usize {
 
 /// Decompose a left-associative App spine into `(head, args)`. Arguments
 /// are returned in application order (outermost-left-first). This is
-/// the same convention as `surgery::collect_lean_telescope`.
+/// the same convention as `aux_source::collect_lean_telescope`.
 fn decompose_app_spine(e: &Expr) -> (Expr, Vec<Expr>) {
   let mut args: Vec<Expr> = Vec::new();
   let mut cur = e.clone();

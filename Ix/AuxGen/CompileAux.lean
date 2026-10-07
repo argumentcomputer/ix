@@ -62,7 +62,7 @@ public import Ix.AuxGen.Nested
 public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.Patches
-public import Ix.AuxGen.Surgery
+public import Ix.AuxSource
 public import Ix.Compile.Canon.Graph
 public section
 
@@ -688,7 +688,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)
-  -- Pass 3 (the default; not under `IX_PASS3=off`): the family's canonical recursors, the image
+  -- Pass 3 (a driver-prepared environment): the family's canonical recursors, the image
   -- generator's input if the family is permuted (A3V-IPB,
   -- `Ix.Compile.Pass.editPermutedBelowFamily`).
   if (← liftM (getCompileEnv : CompileM _)).pass3 then
@@ -820,7 +820,7 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
   let patches := auxOut.patches
   if patches.isEmpty then
     return none
-  -- Pass 3 (the default; not under `IX_PASS3=off`): the canonical recursors are the image
+  -- Pass 3 (a driver-prepared environment): the canonical recursors are the image
   -- generator's input (`Ix.Compile.Pass.ImageView`).
   if (← liftM (getCompileEnv : CompileM _)).pass3 then
     let recs := patches.fold (init := #[]) fun acc n p =>
@@ -830,9 +830,9 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
     liftM (modifyBlockState fun st => { st with p3AuxRecs := st.p3AuxRecs ++ recs } : CompileM _)
 
   -- Record the nested-aux permutation + per-source ctor counts
-  -- (mutual.rs:590-643). Fail closed on missing ctor metadata: silently
-  -- dropping `perm` would make call-site surgery fall back to identity
-  -- exactly for the cases that need the permutation.
+  -- (mutual.rs:590-643). Fail closed on missing ctor metadata: the layout
+  -- (stored in the block's `Muts` entry) is what Pass 3's view and the
+  -- decompiler read the nested permutation from.
   let originalAll : Array Name := sourceAll
   let mut auxLayout : Option Ixon.AuxLayout := none
   if !originalAll.isEmpty then
@@ -852,9 +852,8 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
             s!"aux layout mismatch: {sourceCtorCounts.size} source aux \
 ctor counts for {perm.size} permutation entries")
         -- Fail closed if the evaporation flags don't line up with the
-        -- perm — surgery keys head-rewrite plans off them, so a silent
-        -- mismatch would desynchronize aliases and call-site rewrites
-        -- (mutual.rs evaporated threading).
+        -- perm: the aliases of evaporated positions and Pass 3's view
+        -- read them together (mutual.rs evaporated threading).
         let evaporated : Array UInt64 ← match auxOut.evaporated with
           | some flags =>
             if flags.size == perm.size then
@@ -1079,19 +1078,16 @@ source-indexed aux name")
   return auxLayout
 
 /-- The aux tail of `compile_mutual` (compile.rs:3986-4144): register the
-    primary block's synthetic `Muts` named entry, run the aux pipeline,
-    re-register the entry with the returned `AuxLayout`, and compute
-    call-site surgery plans. Returns `(auxLayout, plans, brecOnPlans,
-    belowPlans)` — the driver stores them (next milestone); the plans gate
-    dumps them. Lives here rather than in `Ix.CompileM.compileMutualBlock`
-    because CompileM cannot import AuxGen (dependency direction). -/
+    primary block's synthetic `Muts` named entry, run the aux pipeline, and
+    re-register the entry with the returned `AuxLayout`. Returns the layout.
+    (Until M6R slice 6 it also computed the legacy call-site surgery's plans
+    for a changed block; Pass 3 rewrites the callers instead.) Lives here
+    rather than in `Ix.CompileM.compileMutualBlock` because CompileM cannot
+    import AuxGen (dependency direction). -/
 def compileMutualAuxTail (cs : Array MutConst)
     (sortedClasses : List (List MutConst)) (blockAddr : Address)
     (maps : AddrMaps)
-    : KBridgeM (Option Ixon.AuxLayout
-        × Std.HashMap Name CallSitePlan
-        × Std.HashMap Name BRecOnCallSitePlan
-        × Std.HashMap Name BRecOnCallSitePlan) := do
+    : KBridgeM (Option Ixon.AuxLayout) := do
   -- Primary `Muts` named entry (compile.rs:3986-4013); registered on the
   -- aux path only — the no-aux promotion pass reuses these entries.
   let firstName := (← listHead (← listHead sortedClasses
@@ -1110,24 +1106,6 @@ def compileMutualAuxTail (cs : Array MutConst)
     sortedClasses.toArray.map fun cls => cls.toArray.map (·.name)
   let auxLayout ← generateAndCompileAuxRecursors cs classNames maps
 
-  -- Original inductive `all` + the plan class filtering (compile.rs:4031-4056).
-  let originalAll : Array Name := Id.run do
-    for c in cs do
-      if let .indc ind := c then
-        return ind.all
-    return #[]
-  let planClassNames : Array (Array Name) :=
-    if originalAll.isEmpty then #[]
-    else Id.run do
-      let lookup : Std.HashSet Name :=
-        originalAll.foldl (init := {}) (·.insert ·)
-      let mut out : Array (Array Name) := #[]
-      for cls in classNames do
-        let names := cls.filter lookup.contains
-        if !names.isEmpty then
-          out := out.push names
-      return out
-
   -- Patch the Muts entry with the layout (compile.rs:4058-4094; the
   -- re-registration overrides — `auxNamed` keeps later entries last).
   if let some layout := auxLayout then
@@ -1136,108 +1114,6 @@ def compileMutualAuxTail (cs : Array MutConst)
         { addr := blockAddr
           constMeta := Ixon.ConstantMeta.new (.muts mutsAll (some layout)) }
 
-  -- Change detection (compile.rs:4096-4108).
-  let userLayoutChanged : Bool := !originalAll.isEmpty
-    && (planClassNames.size < originalAll.size
-      || (planClassNames.size == originalAll.size
-        && (planClassNames.zip originalAll).any
-            (fun (cls, orig) => cls[0]? != some orig)))
-  let auxLayoutChanged : Bool := match auxLayout with
-    | some layout =>
-      -- Evaporated positions need their head-rewrite plans even when no
-      -- canonical slot moved (all-OUT perms). Keep this predicate
-      -- identical to Rust `compile_mutual` and the decompile dual.
-      layout.evaporated.any (· != 0)
-        || layout.perm.zipIdx.any fun (canonicalI, sourceJ) =>
-          canonicalI.toNat != PERM_OUT_OF_SCC && canonicalI.toNat != sourceJ
-    | none => false
-
-  let mut plans : Std.HashMap Name CallSitePlan := {}
-  let mut brecPlans : Std.HashMap Name BRecOnCallSitePlan := {}
-  let mut belowPlans : Std.HashMap Name BRecOnCallSitePlan := {}
-  if userLayoutChanged || auxLayoutChanged then
-    plans ← liftM (Ix.CompileM.timedC .callSitePlans
-      (computeCallSitePlans planClassNames originalAll auxLayout : CompileM _))
-    -- Plan keys (`X.rec`, `all0.rec_N`, …) are shared across every SCC
-    -- split from one original mutual, and the driver's merge is
-    -- last-writer-wins. With per-position ownership resolved in aux_gen
-    -- exactly one block computes each name's plan, so a differing plan
-    -- already merged from an earlier block is a claim collision — fail
-    -- loudly instead of shipping schedule-dependent rewrites
-    -- (compile.rs checked plan inserts;
-    -- plans/aux-recursor-alias-collision.md §2.4).
-    let cenvGlobal ← liftM (getCompileEnv : CompileM _)
-    -- Shape check for the derived plans (A0, WB-A5/C3): `.brecOn` and
-    -- `.below` plans exist only when Lean generates those families
-    -- (`belowFamilyLeanExists`), the rule aux_gen uses. A user constant
-    -- `X.brecOn`/`X.below` of a reordered non-recursive block is the
-    -- user's and keeps its call sites (compile.rs, same place).
-    let belowLean ← liftM (belowFamilyLeanExistsM originalAll : CompileM _)
-    -- Head-rewritten (evaporated-aux) recursors get NO derived
-    -- brecOn/below plans (compile.rs:4117-4140).
-    for (name, plan) in plans do
-      if let some existing := cenvGlobal.callSitePlans.get? name then
-        if existing != plan then
-          throw (.invalidMutualBlock
-            s!"conflicting call-site plans for '{name.pretty}' — two \
-blocks claim one source-indexed aux name")
-      if plan.headRewrite.isNone && belowLean then
-        if let some breconName := recNameToBreconName name then
-          -- Mirror compile.rs: Type-level `.brecOn.go` / `.brecOn.eq`
-          -- share `.brecOn`'s telescope and are referenced directly by
-          -- equation-lemma proofs, so they carry the same plan keys. Keyed
-          -- per name present, not gated on `.brecOn` itself: a closure can
-          -- hold `X.brecOn.go` without `X.brecOn`.
-          let mut planKeys : Array Name := #[]
-          for key in [breconName, Name.mkStr breconName "go",
-              Name.mkStr breconName "eq"] do
-            if (← liftM (lookupConst? key : CompileM _)).isSome then
-              planKeys := planKeys.push key
-          if !planKeys.isEmpty then
-            let newPlan := BRecOnCallSitePlan.fromRecPlan plan
-            for key in planKeys do
-              if let some existing :=
-                  cenvGlobal.brecOnCallSitePlans.get? key then
-                if existing != newPlan then
-                  throw (.invalidMutualBlock
-                    s!"conflicting brecOn call-site plans for \
-'{key.pretty}' — two blocks claim one source-indexed aux name")
-              brecPlans := brecPlans.insert key newPlan
-        if let some belowName := recNameToBelowName name then
-          if let some belowCi ← liftM (lookupConst? belowName : CompileM _) then
-            let newPlan := BRecOnCallSitePlan.fromRecPlan plan
-            if let some existing :=
-                cenvGlobal.belowCallSitePlans.get? belowName then
-              if existing != newPlan then
-                throw (.invalidMutualBlock
-                  s!"conflicting below call-site plans for \
-'{belowName.pretty}' — two blocks claim one source-indexed aux name")
-            -- Prop-level (IndPredBelow) `.below` is an INDUCTIVE, so user
-            -- code can also reference its constructors and its `.casesOn`
-            -- wrapper — both start with the below params (parent params +
-            -- parent motives) and need the same motive permutation.
-            -- Registered under their own names in the same map; the apply
-            -- site discriminates the telescope shape via
-            -- `belowPlanKeyIsHead` (compile.rs family registration).
-            -- `X.below.rec` is deliberately not registered (only
-            -- regenerated wrappers reference it, and those skip surgery
-            -- via the aux-regen guard).
-            let mut familyNames : Array Name := #[]
-            if let .inductInfo bv := belowCi then
-              familyNames := bv.ctors
-              let casesName := Name.mkStr belowName "casesOn"
-              if (← liftM (lookupConst? casesName : CompileM _)).isSome then
-                familyNames := familyNames.push casesName
-            for member in familyNames do
-              if let some existing :=
-                  cenvGlobal.belowCallSitePlans.get? member then
-                if existing != newPlan then
-                  throw (.invalidMutualBlock
-                    s!"conflicting below call-site plans for \
-'{member.pretty}' — two blocks claim one source-indexed aux name")
-              belowPlans := belowPlans.insert member newPlan
-            belowPlans := belowPlans.insert belowName newPlan
-
-  return (auxLayout, plans, brecPlans, belowPlans)
+  return auxLayout
 
 end Ix.AuxGen

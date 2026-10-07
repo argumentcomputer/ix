@@ -1,25 +1,31 @@
 /-
-  pass3: the gates of Pass 3, the faithful rewrite (`IX_PASS3=images`;
-  design document §4.5-4.6, `Ix.Compile.Pass`), on every fixture family:
+  pass3: the gates of Pass 3, the faithful rewrite (the only mode of both
+  compilers since M6R slice 6; design document §4.5-4.6, `Ix.Compile.Pass`),
+  on every fixture family:
   the aux-cert reproducers (`Tests/Ix/Compile/AuxCert/*.lean`), the
   prototype's cases (`Tests/Ix/Compile/Image/C*.lean`), the twin families
   (`Tests/Ix/Compile/Twins/*`) and the decompile-diff corpus
   (`validateAuxClosure`).
 
   Per compile unit (a fixture's closure), compiled in-process by the Lean
-  pipeline (`compileLeanInput`) with the switch off and on:
+  pipeline (`compileLeanInput`):
 
-  1. **identity**: with no changed block the two outputs are byte-identical;
-     otherwise every name whose address moved is in the cone of a changed
-     block (the block's own constants and everything that references them,
-     transitively), and every new name is a reserved `_ix` name;
-  2. **decompile**: the switch-on output, decompiled by the Lean decompiler
+  1. **names**: every input constant is emitted or has a recorded block
+     failure; every named entry of the output is an input constant, a
+     reserved `_ix` name or a synthetic `Muts` name; every block failure is a
+     recorded root (`Pass3Kernels.compileFailures`), a consequence of one, or
+     a recorded refusal of the images (`switchOnRefusals`). (Until M6R slice
+     6 the unit was also compiled with the legacy surgery, `IX_PASS3=off`, and
+     step 1 was the identity of the two outputs outside the changed blocks'
+     cones; that mode is deleted.)
+  2. **decompile**: the output, decompiled by the Lean decompiler
      (`decompileEnvFullParallel`), equals the source constants (the
-     decompile-diff buckets: plain, aux, call-site, coverage, all zero);
+     decompile-diff buckets: plain, aux, call-site, coverage, all zero), but
+     for the documented roundtrip defects (`Pass3Kernels.decompileKnown`,
+     by unit and constant, checked both ways);
   3. **kernels**: `ix check-rs`, `ix check-lean` (meta mode) and the
-     certified checker (`kernel-check-ixe`) on the switch-on output (every
-     fixture constant and every `_ix` name) and on the switch-off output
-     (every fixture constant); every failure of both, and only those, must
+     certified checker (`kernel-check-ixe`) on the output (every fixture
+     constant and every `_ix` name); every failure, and only those, must
      be in the record (`Tests.Ix.Compile.Pass3Kernels.table`, by cause), and
      each leg must check every requested name (declines only in documented
      classes);
@@ -88,11 +94,11 @@ def unitOfFile (path : String) : IO CUnit := do
 
 /-! ## Compiles -/
 
-def compileUnit (u : CUnit) (pass3 : Bool) : IO Ix.CompileM.LeanPipelineOut := do
+def compileUnit (u : CUnit) : IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv u.env u.closure).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) (pass3? := some pass3) with
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) with
   | .ok o => pure o
-  | .error e => throw (IO.userError s!"{u.name}: Lean compile (pass3={pass3}) failed: {e}")
+  | .error e => throw (IO.userError s!"{u.name}: Lean compile failed: {e}")
 
 def ixN (n : Name) : _root_.Ix.Name := _root_.Ix.Name.fromLeanName n
 
@@ -107,72 +113,40 @@ def isSyntheticMuts (n : _root_.Ix.Name) : Bool :=
   | "Ix" :: h :: _ => h.length == 64 && h.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
   | _ => false
 
-/-! ## 1. Identity and cones -/
+/-! ## 1. Changed blocks and names -/
 
-structure IdentityReport where
+/-- What step 1 reports: the changed blocks, the counts of the output's named
+entries by kind, and the problems. -/
+structure NamesReport where
   changedBlocks : Array (Array _root_.Ix.Name) := #[]
-  identical : Bool := false
-  equalNames : Nat := 0
-  movedInCone : Nat := 0
-  newReserved : Nat := 0
-  newCompiled : Nat := 0
+  inputNames : Nat := 0
+  reserved : Nat := 0
   problems : Array String := #[]
 
-/-- The reverse-dependency cone of a changed block: its members' constants
-(every name with a member as a prefix) and everything that references them,
-transitively, within the closure. -/
-def cone (u : CUnit) (blocks : Array (Array _root_.Ix.Name)) : Std.HashSet Name := Id.run do
-  let members : Array Name := blocks.foldl (fun acc b => acc ++ b.map toLeanName) #[]
-  let mut rev : Std.HashMap Name (Array Name) := {}
-  for (n, ci) in u.closure do
-    for r in ci.getUsedConstantsAsSet do
-      rev := rev.insert r ((rev.getD r #[]).push n)
-    -- an inductive owns its constructors and recursors
-    match ci with
-    | .ctorInfo cv => rev := rev.insert cv.induct ((rev.getD cv.induct #[]).push n)
-    | _ => pure ()
-  let mut out : Std.HashSet Name := {}
-  let mut todo : Array Name := #[]
-  for (n, _) in u.closure do
-    if members.any (·.isPrefixOf n) then todo := todo.push n
-  while !todo.isEmpty do
-    let n := todo.back!
-    todo := todo.pop
-    if out.contains n then continue
-    out := out.insert n
-    for d in rev.getD n #[] do
-      if !out.contains d then todo := todo.push d
-  return out
-
-def identityCheck (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : IdentityReport := Id.run do
+/-- The changed blocks of the output (`CompileEnv.p3Blocks`), and its named
+entries: every input constant is emitted or recorded as ungrounded, and
+every output entry is a constant of the input environment, a reserved `_ix`
+name (D14) or a synthetic `Muts` name, so Pass 3 invents no other name. Until
+M6R slice 6 this step compared the output with the legacy surgery's
+(`IX_PASS3=off`): byte-identical without a changed block, every moved name in
+a changed block's cone, every new name reserved. That mode is deleted; the
+identity it checked is the flip's (M6) evidence, and the fixture outputs are
+compared before and after the deletion by the slice's own gate. -/
+def namesCheck (u : CUnit) (on : Ix.CompileM.LeanPipelineOut) : NamesReport := Id.run do
   let blocks := on.cenv.p3Blocks.toArray.map (·.2)
-  let mut r : IdentityReport := { changedBlocks := blocks }
-  if blocks.isEmpty && on.cenv.p3Cliques.isEmpty then
-    r := { r with identical := off.bytes == on.bytes }
-    if !r.identical then
-      r := { r with problems := r.problems.push "no changed block, but the outputs differ" }
-    return r
-  -- the changed blocks' cones, and the cones of the definition cliques the
-  -- switch may transport (`Ix.Compile.Pass.Cliques`: the clique table's
-  -- members and carried lemmas)
-  let cliques : Array (Array _root_.Ix.Name) := on.cenv.p3Cliques.toArray.filterMap
-    fun (n, (all, carried)) => if all[0]? == some n then some (all ++ carried) else none
-  let c := cone u (blocks ++ cliques)
-  for (n, nd) in off.env.named do
-    if isSyntheticMuts n then continue
-    match on.env.named.get? n with
-    | none => r := { r with problems := r.problems.push s!"{n.pretty} missing with the switch on" }
-    | some nd' =>
-      if nd'.addr == nd.addr then r := { r with equalNames := r.equalNames + 1 }
-      else if c.contains (toLeanName n) then r := { r with movedInCone := r.movedInCone + 1 }
-      else r := { r with problems := r.problems.push s!"{n.pretty} moved outside the changed blocks' cones" }
+  let mut r : NamesReport := { changedBlocks := blocks }
+  -- Partial outputs skip the whole-environment decompile below, and kernel
+  -- requests are built from emitted names. Check source coverage here too:
+  -- a missing name must not disappear from both checks without a refusal.
+  for (n, _) in u.closure do
+    let name := ixN n
+    unless on.env.named.contains name || on.cenv.ungrounded.contains name do
+      r := { r with problems := r.problems.push s!"{name.pretty} is neither emitted nor recorded as ungrounded" }
   for (n, _) in on.env.named do
-    if isSyntheticMuts n || off.env.named.contains n then continue
-    if Ix.Compile.Pass.hasReserved n then r := { r with newReserved := r.newReserved + 1 }
-    -- refused or failed with the switch off (A0's collapse refusal is on the
-    -- surgery path only)
-    else if off.cenv.ungrounded.contains n then r := { r with newCompiled := r.newCompiled + 1 }
-    else r := { r with problems := r.problems.push s!"{n.pretty} is new with the switch on and not reserved" }
+    if isSyntheticMuts n then continue
+    if Ix.Compile.Pass.hasReserved n then r := { r with reserved := r.reserved + 1 }
+    else if u.env.contains (toLeanName n) then r := { r with inputNames := r.inputNames + 1 }
+    else r := { r with problems := r.problems.push s!"{n.pretty} is neither an input constant nor a reserved name" }
   return r
 
 /-! ## 2. Decompile -/
@@ -448,19 +422,19 @@ def leanOf (s : String) : String :=
   let s := if s.endsWith "._ix" then (s.dropEnd 4).toString else s
   String.intercalate "." ((s.splitOn ".").filter (fun c => c != "_ix" && c != "_ix_retyped"))
 
-/-- The switch-on failures that follow from failures of both modes: a failure
-whose message names (a member of) a constant failing in both modes or an
-earlier consequence, to a fixed point. -/
-def refusalClosure (off on : Ix.CompileM.LeanPipelineOut) : Std.HashSet _root_.Ix.Name := Id.run do
-  let both : Array _root_.Ix.Name := off.cenv.ungrounded.toArray.filterMap fun (n, _) =>
-    if on.cenv.ungrounded.contains n then some n else none
-  let mut bad : Std.HashSet String := both.foldl (fun s n => s.insert n.pretty) {}
+/-- The failures that follow from recorded root failures (`roots`, the
+constants `Pass3Kernels.compileFailures` names): a failure whose message names
+(a member of) a root or an earlier consequence, to a fixed point. (Until M6R
+slice 6 the roots were the constants failing in both switch states.) -/
+def refusalClosure (roots : Std.HashSet _root_.Ix.Name) (on : Ix.CompileM.LeanPipelineOut) :
+    Std.HashSet _root_.Ix.Name := Id.run do
+  let mut bad : Std.HashSet String := roots.fold (fun s n => s.insert n.pretty) {}
   let mut out : Std.HashSet _root_.Ix.Name := {}
   let mut changed := true
   while changed do
     changed := false
     for (n, e) in on.cenv.ungrounded do
-      if out.contains n || off.cenv.ungrounded.contains n then continue
+      if out.contains n || roots.contains n then continue
       let msg := leanOf e
       if bad.toList.any fun b => (msg.splitOn b).length > 1 then
         out := out.insert n
@@ -477,7 +451,7 @@ def parseName (s : String) : Name :=
     | some k => .num n k
     | none => .str n c
 
-/-! ## Surgery comparison (A4): the switch-off call-site constants against the switch-on output -/
+/-! ## Expression comparison helpers (the pass checks, `PASS3_LIB`) -/
 
 /-- The expressions of the constant at `addr`, with the constant whose tables
 they index (a projection's block). -/
@@ -618,27 +592,6 @@ partial def describeDeep (env : Ixon.Env) (nm : Std.HashMap Address String) (a b
           return s!"{here}\n      → {(nm.get? ra).getD "?"} / {(nm.get? rb).getD "?"}: {describeDeep env nm ra rb (depth - 1)}"
   return here
 
-/-- The constants the surgery rewrote (altering call-site metadata in the
-switch-off output), counted as byte-identical with the switch on or not; with
-`PASS3_DIFF` set, the first difference of each that differs. -/
-def surgeryComparison (off on : Ix.CompileM.LeanPipelineOut) (detail : Bool) : IO (Array String) := do
-  let mut lines : Array String := #[]
-  let mut same : Array String := #[]
-  let mut differ : Array (String × Address × Address) := #[]
-  for (n, nd) in off.env.named do
-    if isSyntheticMuts n then continue
-    if !Ix.Tc.metaHasAlteringSurgery nd.constMeta then continue
-    match on.env.named.get? n with
-    | some nd' => if nd'.addr == nd.addr then same := same.push n.pretty else differ := differ.push (n.pretty, nd.addr, nd'.addr)
-    | none => differ := differ.push (n.pretty, nd.addr, nd.addr)
-  lines := lines.push s!"  surgery call sites: {same.size + differ.size} constant(s), {same.size} byte-identical with the switch on, {differ.size} differ"
-  if detail then
-    let offNames := addrNames off.env
-    let onNames := addrNames on.env
-    for (n, a, b) in differ.qsort (fun x y => x.1 < y.1) do
-      lines := lines.push s!"    differs: {n}: {describeDiff off.env on.env offNames onNames a b}"
-  return lines
-
 /-! ## The definitional passes' fixtures (A4, `Tests/Ix/Compile/Pass/`) -/
 
 /-- The per-pass fixtures. -/
@@ -696,16 +649,26 @@ def passRefs : List (String × String × String × Bool) := [
   ("O5PropSplit", "PassO5.Q.elim", "PassO5.Q._ix.rec", true),
   ("O5PropSplit", "PassO5.P.viaRec", "PassO5.P._ix.rec", true)]
 
-/-- Constants whose switch-on term equals the switch-off output's (the pass
-reproduces the old surgery's term): with `true`, byte for byte; with `false`,
-expression for expression, the tables differing only by the surgery's
-leftover entries of dropped arguments and their order (design document §4.7
-(e): Pass 3 derives the tables from the final term only). -/
-def passSameAsOff : List (String × String × Bool) := [
-  ("O1Perm", "PassO1.Src.Even.viaRec", true), ("O1Perm", "PassO1.Src.viaRec_two", true),
-  ("O2Split", "PassO2.SA.viaRec", false), ("O2Split", "PassO2.SB.viaRec", false),
-  ("O4BRecOn", "PassO4.Src.Odd.toNat", true), ("O4BRecOn", "PassO4.Src.Even.toNat", true),
-  ("O4BRecOn", "PassO4.Src.SB.depth._f", false)]
+/-- Constants whose term reproduces the legacy surgery's (the definitional
+pass rewrites the call site to the surgery's canonical spine), pinned by
+address: until M6R slice 6 they were compared with the switch-off output
+(`IX_PASS3=off`), byte for byte (`true`) or expression for expression with
+the tables differing only by the surgery's leftover entries of dropped
+arguments (`false`; design document §4.7 (e)). With the surgery deleted the
+addresses are pinned instead, as measured by this suite on the slice-6 tree
+(2026-10-07; the Rust compiler gives the same, `pass3-rust-parity`). Slice 6
+changed no Pass 3 code path (`compileExprPartial` is the former driver path
+with its plan maps, always empty under Pass 3, removed), so for a `true` row
+the pin is the surgery's own address, the switch-off comparison having passed
+at `e020a72e`. An empty pin is reported with the measured address. -/
+def passSameAsSurgery : List (String × String × Bool × String) := [
+  ("O1Perm", "PassO1.Src.Even.viaRec", true, ""),
+  ("O1Perm", "PassO1.Src.viaRec_two", true, ""),
+  ("O2Split", "PassO2.SA.viaRec", false, ""),
+  ("O2Split", "PassO2.SB.viaRec", false, ""),
+  ("O4BRecOn", "PassO4.Src.Odd.toNat", true, ""),
+  ("O4BRecOn", "PassO4.Src.Even.toNat", true, ""),
+  ("O4BRecOn", "PassO4.Src.SB.depth._f", false, "")]
 
 /-! ## The proof-justified passes' fixtures (A6p, `Tests/Ix/Compile/Pass/`) -/
 
@@ -852,7 +815,7 @@ def passNonCanonicalChecks (u : CUnit) (on : Ix.CompileM.LeanPipelineOut) : Arra
   return (problems, n)
 
 /-- The per-pass checks of one fixture unit. -/
-def passChecks (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : Array String × Array String := Id.run do
+def passChecks (u : CUnit) (on : Ix.CompileM.LeanPipelineOut) : Array String × Array String := Id.run do
   let mut problems : Array String := #[]
   let mut lines : Array String := #[]
   let addr := fun (o : Ix.CompileM.LeanPipelineOut) (s : String) => o.env.getAddr? (ixN (parseName s))
@@ -879,21 +842,17 @@ def passChecks (u : CUnit) (off on : Ix.CompileM.LeanPipelineOut) : Array String
     if has != want then
       problems := problems.push s!"{u.name}: {c} {if want then "does not reference" else "references"} {r}"
   let mut ns := 0
-  for (unit, c, bytes) in passSameAsOff do
+  for (unit, c, _, pin) in passSameAsSurgery do
     if unit != u.name then continue
     ns := ns + 1
-    let (some a, some b) := (addr off c, addr on c) | problems := problems.push s!"{u.name}: {c} missing"; continue
-    if bytes then
-      if a != b then problems := problems.push s!"{u.name}: {c} differs from the switch-off output"
-    else
-      let same : Bool := match ixonBody off.env a, ixonBody on.env b with
-        | some (ca, xs), some (cb, ys) => xs.size == ys.size &&
-            (xs.zip ys).all fun ((l, x), (_, y)) => (ixonFirstDiff ca cb l x y).isNone
-        | _, _ => false
-      if !same then problems := problems.push s!"{u.name}: {c}: the term differs from the switch-off output's"
+    let some b := addr on c | problems := problems.push s!"{u.name}: {c} missing"; continue
+    if pin.isEmpty then
+      problems := problems.push s!"{u.name}: {c}: no pinned address (measured \"{b}\")"
+    else if toString b != pin then
+      problems := problems.push s!"{u.name}: {c}: address {b}, pinned {pin} (the surgery's term)"
   let (ncp, nnc) := passNonCanonicalChecks u on
   problems := problems ++ ncp
-  lines := lines.push s!"  passes: {nt} twin pairs equal with the switch on, {nr} firing checks, {ns} constants with the switch-off term, {nnc} recorded non-canonical pairs ({problems.size} problem(s))"
+  lines := lines.push s!"  passes: {nt} twin pairs equal with the switch on, {nr} firing checks, {ns} constants with the surgery's term (pinned), {nnc} recorded non-canonical pairs ({problems.size} problem(s))"
   return (problems, lines)
 
 /-- `PASS3_FAILURES=<file>`: append every kernel failure of a unit, one
@@ -909,8 +868,8 @@ def dumpRuns (unit : String) (runs : List (String × KernelRun)) : IO Unit := do
     for (leg, n, m) in r.failed do h.putStrLn s!"{unit}\t{sw}\t{leg}\t{n}\t{clean m}"
   h.flush
 
-def dumpFailures (unit : String) (onRun offRun : KernelRun) : IO Unit :=
-  dumpRuns unit [("on", onRun), ("off", offRun)]
+def dumpFailures (unit : String) (onRun : KernelRun) : IO Unit :=
+  dumpRuns unit [("on", onRun)]
 
 /-- `PASS3_RECHECK=<dir>` (a `PASS3_KEEP` directory, possibly written by an
 older revision): rerun this revision's kernels on every unit's kept `on.ixe`
@@ -946,24 +905,18 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
   let mut problems : Array String := #[]
   let mut lines : Array String := #[]
   let t0 ← IO.monoMsNow
-  let off ← compileUnit u false
-  let on ← compileUnit u true
-  let failOff := off.cenv.ungrounded.size
-  let failOn := on.cenv.ungrounded.size
+  let on ← compileUnit u
   lines := lines.push s!"{u.name}: {u.seeds.size} fixture constants, {u.closure.length} in the \
-    closure; block failures off {failOff}, on {failOn} ({(← IO.monoMsNow) - t0} ms)"
+    closure; block failures {on.cenv.ungrounded.size} ({(← IO.monoMsNow) - t0} ms)"
   for (n, e) in on.cenv.ungrounded.toList.take 6 do
-    lines := lines.push s!"  failed with the switch on: {n.pretty}: {e.take 240}"
-  -- 1. identity
-  let idr := identityCheck u off on
+    lines := lines.push s!"  failed: {n.pretty}: {e.take 240}"
+  -- 1. changed blocks and names
+  let idr := namesCheck u on
   lines := lines.push s!"  changed blocks: {idr.changedBlocks.map (·.map (·.pretty))}; \
-    identical {idr.identical}; equal names {idr.equalNames}, moved in cones {idr.movedInCone}, \
-    new reserved {idr.newReserved}, compiled only with the switch on {idr.newCompiled}"
+    named entries: {idr.inputNames} input constants, {idr.reserved} reserved"
   problems := problems ++ idr.problems.map (s!"{u.name}: " ++ ·)
-  if !idr.changedBlocks.isEmpty then
-    lines := lines ++ (← surgeryComparison off on ((← IO.getEnv "PASS3_DIFF").isSome))
   if u.name == "twins" || u.name == "names" || (passFiles ++ pjPassFiles).any (fun p => (System.FilePath.mk p).fileStem == some u.name) then
-    let (pp, pl) := passChecks u off on
+    let (pp, pl) := passChecks u on
     problems := problems ++ pp
     lines := lines ++ pl
   -- 5. display names of the changed blocks' auxiliaries
@@ -973,58 +926,69 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
     let hasIx := on.env.named.toList.any fun (n, _) =>
       Ix.Compile.Pass.hasReserved n && all.any fun m => (toLeanName m).isPrefixOf (toLeanName n)
     if !hasIx then problems := problems.push s!"{u.name}: no `_ix` name for the block of {x.pretty} ({ixRec.pretty})"
-  -- no new failure with the switch on, except the consequences of a block
-  -- that fails in both modes (Pass 2 refuses it): under Pass 3 a Lean
-  -- auxiliary of a changed block is its image, whose type mentions every
-  -- member of the Lean block, the refused component included (REFUSED-SIBLING)
-  let consequence := refusalClosure off on
-  -- or a recorded switch-on refusal of Pass 3's images (by exact name, with
-  -- its message class; `Pass3Kernels.switchOnRefusals`), checked both ways
+  -- every block failure is recorded (`Pass3Kernels.compileFailures`: the
+  -- refusals of Pass 2 and the compile totality defects, by name), a
+  -- consequence of one (a failure whose message names a recorded root or an
+  -- earlier consequence: under Pass 3 a Lean auxiliary of a changed block is
+  -- its image, whose type mentions every member of the Lean block, the
+  -- refused component included, REFUSED-SIBLING), or a recorded refusal of
+  -- Pass 3's images (`Pass3Kernels.switchOnRefusals`); checked both ways
+  -- (`PASS3_EMIT_FAILURES=1` prints the unrecorded roots as rows)
+  let recorded := Pass3Kernels.compileFailures.filter (·.unit == u.name)
+  let roots : Std.HashSet _root_.Ix.Name := on.cenv.ungrounded.fold (init := {}) fun s n e =>
+    if recorded.any (fun r => r.names.contains n.pretty && (e.splitOn r.msg).length > 1) then s.insert n else s
+  let consequence := refusalClosure roots on
   let recordedOn := Pass3Kernels.switchOnRefusals.filter (·.unit == u.name)
   let recordedOnly (n : _root_.Ix.Name) (e : String) : Bool :=
     recordedOn.any fun r => r.names.contains n.pretty && (e.splitOn r.msg).length > 1
+  let emit := (← IO.getEnv "PASS3_EMIT_FAILURES").isSome
   let mut nRefused := 0
   let mut nRecordedOn := 0
   for (n, e) in on.cenv.ungrounded do
-    if !off.cenv.ungrounded.contains n then
-      if consequence.contains n then nRefused := nRefused + 1
-      else if recordedOnly n e then nRecordedOn := nRecordedOn + 1
-      else problems := problems.push s!"{u.name}: {n.pretty} fails only with the switch on: {e.take 240}"
-  if nRefused > 0 then
-    lines := lines.push s!"  {nRefused} constant(s) fail only with the switch on as consequences of a block Pass 2 refuses in both modes (REFUSED-SIBLING)"
-  if nRecordedOn > 0 then
-    lines := lines.push s!"  {nRecordedOn} constant(s) fail only with the switch on as recorded ({", ".intercalate (recordedOn.map (·.cause))})"
+    if roots.contains n then continue
+    if consequence.contains n then nRefused := nRefused + 1
+    else if recordedOnly n e then nRecordedOn := nRecordedOn + 1
+    else
+      problems := problems.push s!"{u.name}: {n.pretty} fails, not recorded: {e.take 240}"
+      if emit then
+        lines := lines.push s!"  emit: \{ unit := {u.name.quote}, cause := \"?\", msg := {((e.take 60).toString).quote}, names := [{n.pretty.quote}] },"
+  lines := lines.push s!"  block failures: {roots.size} recorded root(s) \
+    [{", ".intercalate (recorded.map (·.cause))}], {nRefused} consequence(s) (REFUSED-SIBLING), \
+    {nRecordedOn} recorded image refusal(s)"
+  for r in recorded do
+    for nm in r.names do
+      let ok := on.cenv.ungrounded.toList.any fun (n, e) => n.pretty == nm && (e.splitOn r.msg).length > 1
+      if !ok then
+        problems := problems.push s!"{u.name}: {nm} is recorded as failing ({r.cause}: {r.msg}) but does not (stale)"
   for r in recordedOn do
     for nm in r.names do
-      let ok := on.cenv.ungrounded.toList.any fun (n, e) =>
-        n.pretty == nm && !off.cenv.ungrounded.contains n && (e.splitOn r.msg).length > 1
+      let ok := on.cenv.ungrounded.toList.any fun (n, e) => n.pretty == nm && (e.splitOn r.msg).length > 1
       if !ok then
-        problems := problems.push s!"{u.name}: {nm} is recorded as failing only with the switch on ({r.msg}) but does not (stale)"
-  -- a name the switch-off output registers although its compile failed there
-  -- too (the regenerated auxiliary of a refused block), or a recorded
-  -- switch-on refusal, is not missing
-  let refusedBoth : Array _root_.Ix.Name := on.cenv.ungrounded.toArray.filterMap fun (n, e) =>
-    if off.cenv.ungrounded.contains n || consequence.contains n || recordedOnly n e then some n
-    else none
-  problems := problems.filter fun p =>
-    !(refusedBoth.any fun n => p == s!"{u.name}: {n.pretty} missing with the switch on")
-  for (n, e) in off.cenv.ungrounded.toList.take 3 do
-    lines := lines.push s!"  failed with the switch off: {n.pretty}: {e.take 200}"
+        problems := problems.push s!"{u.name}: {nm} is recorded as failing ({r.msg}) but does not (stale)"
   -- 2. decompile (of a complete output: a partial one, where Pass 2 refused a
-  -- block in both modes, is not decompilable as a whole)
+  -- block, is not decompilable as a whole)
   if on.cenv.ungrounded.isEmpty then
     let (dprob, dsum) ← decompileCheck u on
-    -- the same decompile of the switch-off output, for pre-existing problems
-    let (dprobOff, _) ← if dprob.isEmpty then pure (#[], "")
-      else decompileCheck u off
-    let pre := dprob.filter dprobOff.contains
-    lines := lines.push s!"  decompile: {dsum}, {dprob.size} problem(s) ({pre.size} also with the switch off)"
+    -- the documented roundtrip defects (`Pass3Kernels.decompileKnown`), by the
+    -- constant each problem names; checked both ways
+    let known : Std.HashSet String := (Pass3Kernels.decompileKnown.filter (·.unit == u.name)).foldl
+      (fun s k => k.names.foldl (·.insert ·) s) {}
+    let subjectOf (p : String) : String :=
+      if p.startsWith "decompile mismatch: " then (p.drop 20).toString
+      else if p.startsWith "not decompiled: " then (p.drop 16).toString
+      else if p.startsWith "decompile error " then (((p.drop 16).toString.splitOn ": ").headD "")
+      else p
+    let recorded := dprob.filter (fun p => known.contains (subjectOf p))
+    lines := lines.push s!"  decompile: {dsum}, {dprob.size} problem(s) ({recorded.size} recorded \
+      as documented roundtrip defects)"
     for p in dprob.toList.take 8 do lines := lines.push s!"    {p}"
-    -- a problem the switch-off output has too is pre-existing, outside this package
-    problems := problems ++ (dprob.filter (!dprobOff.contains ·)).map (s!"{u.name}: " ++ ·)
+    problems := problems ++ (dprob.filter (fun p => !known.contains (subjectOf p))).map (s!"{u.name}: " ++ ·)
+    for k in known do
+      unless dprob.any (subjectOf · == k) do
+        problems := problems.push s!"{u.name}: {k} is recorded as a decompile problem but has none (stale)"
   else
-    lines := lines.push s!"  decompile: skipped, {on.cenv.ungrounded.size} block failure(s) in both modes"
-  -- 3. kernels on the switch-on output; 4. rules in a test-only copy
+    lines := lines.push s!"  decompile: skipped, {on.cenv.ungrounded.size} block failure(s)"
+  -- 3. kernels on the output; 4. rules in a test-only copy
   let dir ← match keep? with
     | some d => do
       let d := d / u.name
@@ -1034,38 +998,28 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
   try
     let path := dir / "on.ixe"
     IO.FS.writeBinFile path on.bytes
-    IO.FS.writeBinFile (dir / "off.ixe") off.bytes
     let seedSet : Std.HashSet String := u.seeds.foldl (fun s n => s.insert (ixN n).pretty) {}
     let names := on.env.named.toArray.filterMap fun (n, _) =>
       let s := n.pretty
       if seedSet.contains s || Ix.Compile.Pass.hasReserved n then some s else none
     let onRun ← kernelRun dir path names
-    -- the same kernels on the switch-off output (the default path)
-    let offDir := dir / "off"
-    IO.FS.createDirAll offDir
-    let offNames := off.env.named.toArray.filterMap fun (n, _) =>
-      let s := n.pretty
-      if seedSet.contains s then some s else none
-    let offRun ← kernelRun offDir (dir / "off.ixe") offNames
-    dumpFailures u.name onRun offRun
-    -- Every failure of both switch states against the record
-    -- (`Tests.Ix.Compile.Pass3Kernels.table`), both ways, and each leg's
-    -- checked count against the names requested.
-    for (sw, r, ixe, ns) in [("on", onRun, path, names), ("off", offRun, dir / "off.ixe", offNames)] do
-      -- where the meta verdicts vary between runs, the anonymous kernels on
-      -- the same output decide which failures are meta-only
-      let anon? : Option (Std.HashSet (String × String)) ←
-        if Pass3Kernels.table.any (fun e => e.unit == u.name && e.switch == sw && e.varies)
-        then do
-          let adir := dir / s!"anon-{sw}"
-          IO.FS.createDirAll adir
-          let a ← kernelRun adir ixe ns (anon := true) (skipDeps := true)
-          pure (some (a.failed.foldl (fun s (l, n, _) => s.insert (l, n)) {}))
-        else pure none
-      let (ps, summary) :=
-        Pass3Kernels.check Pass3Kernels.table u.name sw r.failed r.checked ns.size anon?
-      problems := problems ++ ps
-      lines := lines.push s!"  kernels ({sw}): {summary}"
+    dumpFailures u.name onRun
+    -- Every failure against the record (`Tests.Ix.Compile.Pass3Kernels.table`),
+    -- both ways, and each leg's checked count against the names requested.
+    -- where the meta verdicts vary between runs, the anonymous kernels on
+    -- the same output decide which failures are meta-only
+    let anon? : Option (Std.HashSet (String × String)) ←
+      if Pass3Kernels.table.any (fun e => e.unit == u.name && e.switch == "on" && e.varies)
+      then do
+        let adir := dir / "anon-on"
+        IO.FS.createDirAll adir
+        let a ← kernelRun adir path names (anon := true) (skipDeps := true)
+        pure (some (a.failed.foldl (fun s (l, n, _) => s.insert (l, n)) {}))
+      else pure none
+    let (ps, summary) :=
+      Pass3Kernels.check Pass3Kernels.table u.name "on" onRun.failed onRun.checked names.size anon?
+    problems := problems ++ ps
+    lines := lines.push s!"  kernels: {summary}"
     if !idr.changedBlocks.isEmpty && on.cenv.ungrounded.isEmpty then
       match ruleEnv on with
       | .error e => problems := problems.push s!"{u.name}: rule environment: {e}"
@@ -1237,11 +1191,11 @@ def runFind (path : String) (pfxs : List String) : IO UInt32 := do
   return 0
 
 /-- Debugging aid: `PASS3_VIEW=<file.lean>` compiles the file's closure with
-the switch on and prints, per changed block, Pass 1's classes, the compiler's
+Pass 3 and prints, per changed block, Pass 1's classes, the compiler's
 classes, the view's canonical recursor types and the images. -/
 def runView (path : String) : IO UInt32 := do
   let u ← unitOfFile path
-  let on ← compileUnit u true
+  let on ← compileUnit u
   for (n, cls) in on.cenv.blocks do
     if (n.pretty.splitOn ".below").length > 1 then
       IO.println s!"[pass3-view] compiler block of {n.pretty}: {cls.map (·.map (·.pretty))}"
@@ -1265,18 +1219,16 @@ def runView (path : String) : IO UInt32 := do
   return 0
 
 /-- Debugging aid: `PASS3_CLOSURE=<file.lean>,<constant>` compiles the
-closure of one constant of the file's environment with the switch off and on,
-timing both. -/
+closure of one constant of the file's environment, timing it. -/
 def runClosure (path : String) (c : String) : IO UInt32 := do
   let env ← getFileEnv path
   let n := c.toName
   let closure := closureOf env [n]
   IO.println s!"[pass3-closure] {c}: {closure.length} constants"
   let u : CUnit := { name := c, env, seeds := #[n], closure }
-  for p3 in [false, true] do
-    let t0 ← IO.monoMsNow
-    let o ← compileUnit u p3
-    IO.println s!"[pass3-closure] pass3={p3}: {o.bytes.size} bytes, {o.cenv.ungrounded.size} failures, {(← IO.monoMsNow) - t0} ms"
+  let t0 ← IO.monoMsNow
+  let o ← compileUnit u
+  IO.println s!"[pass3-closure] {o.bytes.size} bytes, {o.cenv.ungrounded.size} failures, {(← IO.monoMsNow) - t0} ms"
   return 0
 
 /-! ## The suite -/
@@ -1344,11 +1296,10 @@ def run (env : Environment) : IO UInt32 := do
   -- negative control: an input name with the reserved component `_ix`
   if want "ReservedIx" then
     let u ← unitOfFile "Tests/Ix/Compile/AuxCert/ReservedIx.lean"
-    let offOk ← try (do discard <| compileUnit u false; pure true) catch _ => pure false
-    let msg ← try (do discard <| compileUnit u true; pure "compiled") catch e => pure (toString e)
+    let msg ← try (do discard <| compileUnit u; pure "compiled") catch e => pure (toString e)
     let rejected : Bool := decide ((msg.splitOn "reserved component").length > 1)
-    IO.println s!"[pass3] ReservedIx: switch off compiles {offOk}; switch on rejects {rejected}: {msg.take 200}"
-    if !offOk || !rejected then problems := problems.push "ReservedIx: the reserved `_ix` name is not handled"
+    IO.println s!"[pass3] ReservedIx: rejected {rejected}: {msg.take 200}"
+    if !rejected then problems := problems.push "ReservedIx: the reserved `_ix` name is not handled"
     -- with several reserved names, both compilers name the least by pretty
     -- form (design document §11.6 item 3)
     let least := "input name 'ReservedIx.A._ix.g'"
@@ -1357,7 +1308,7 @@ def run (env : Environment) : IO UInt32 := do
         let constants ← IO.ofExcept input.prepare
         let dir ← IO.FS.createTempDir
         try
-          discard <| Ix.CompileM.rsCompileEnvBytesPass3FFI constants (dir / "rust.ixe").toString true true
+          discard <| Ix.CompileM.rsCompileEnvBytesFFI constants (dir / "rust.ixe").toString true
           pure "compiled"
         finally IO.FS.removeDirAll dir) catch e => pure (toString e)
     let leanNames : Bool := decide ((msg.splitOn least).length > 1)

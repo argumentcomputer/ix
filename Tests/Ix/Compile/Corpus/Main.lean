@@ -6,7 +6,7 @@ open Tests.Ix.Compile.Corpus
 private def usage : String :=
   "aux-shape-sweep <inventory|generate|filter|assemble|aggregate|run|ownership|compare|matrix|records|self-check|verify-legacy|verify-round2>\n" ++
   "  --dir PATH --select all|curated|smoke|id,... --data PATH\n" ++
-  "  --jobs N --workers N --timeout SECONDS --mode off|on|both\n" ++
+  "  --jobs N --workers N --timeout SECONDS --mode on\n" ++
   "  --phases comma,list --revision COMMIT --expected FILE --cases FILE\n" ++
   "  --local --keep-envs --legacy FILE --size N --ix PATH --cert PATH --env FILE --ns PREFIX --file SRC --out FILE\n" ++
   "Run requires --revision. Outputs are immutable per run directory; no silent resume.\n"
@@ -221,19 +221,19 @@ private def selfCheck (data : System.FilePath) : IO UInt32 := do
       (rows.any fun r => r.phase == "infrastructure" && failure r)
   let aggregateCase : Case := ⟨"Agg_test", "Agg_test", "aggregate-family", "aggregate", "AX", "aggregates/Agg_test.lean", #[], #[]⟩
   let ledger : Array Verdict := phaseNames.map fun phase =>
-    ⟨aggregateCase.id, "off", phase, if #["elaborate", "compile"].contains phase then "pass" else "not-selected", "", ""⟩
+    ⟨aggregateCase.id, "on", phase, if #["elaborate", "compile"].contains phase then "pass" else "not-selected", "", ""⟩
   check "complete aggregate ledger accepted"
-    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] ledger).toOption.isSome)
+    ((checkLedger #[aggregateCase] #["on"] #["elaborate", "compile"] ledger).toOption.isSome)
   check "missing phase ledger rejected"
-    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] (ledger.extract 1 ledger.size)).toOption.isNone)
+    ((checkLedger #[aggregateCase] #["on"] #["elaborate", "compile"] (ledger.extract 1 ledger.size)).toOption.isNone)
   check "duplicate phase ledger rejected"
-    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] (ledger ++ ledger)).toOption.isNone)
+    ((checkLedger #[aggregateCase] #["on"] #["elaborate", "compile"] (ledger ++ ledger)).toOption.isNone)
   check "wrong executed case manifest rejected"
-    ((checkLedger #[{ aggregateCase with id := "different" }] #["off"] #["elaborate", "compile"] ledger).toOption.isNone)
+    ((checkLedger #[{ aggregateCase with id := "different" }] #["on"] #["elaborate", "compile"] ledger).toOption.isNone)
   check "empty ledger rejected"
-    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile"] #[]).toOption.isNone)
+    ((checkLedger #[aggregateCase] #["on"] #["elaborate", "compile"] #[]).toOption.isNone)
   check "unknown ledger phase selection rejected"
-    ((checkLedger #[aggregateCase] #["off"] #["elaborate", "compile", "unknown"] ledger).toOption.isNone)
+    ((checkLedger #[aggregateCase] #["on"] #["elaborate", "compile", "unknown"] ledger).toOption.isNone)
   IO.println s!"[corpus] curated {curated shapes |>.size} cases; smoke4; full{shapes.size}"
   return 0
 
@@ -300,8 +300,10 @@ def main (args : List String) : IO UInt32 := do
     let data : System.FilePath := opts.getD "--data" "Tests/Ix/Compile/Corpus/Data"
     let jobs ← natOption opts "--jobs" 4
     let timeout ← natOption opts "--timeout" 900
-    let mode := opts.getD "--mode" "both"
-    let modes := if mode == "both" then #["off", "on"] else #[mode]
+    -- Pass 3 is the only mode since M6R slice 6 (`off`, the legacy surgery, and
+    -- `both` are gone; a leftover `--mode off` is refused by the run's checks)
+    let mode := opts.getD "--mode" "on"
+    let modes := #[mode]
     match op with
     | "inventory" =>
       let shapes ← loadCatalog data

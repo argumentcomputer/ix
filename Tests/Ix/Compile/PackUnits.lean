@@ -4,8 +4,7 @@
 
   Source: the closure of the fixture `Tests/Ix/Compile/Pass/PackUnits.lean`'s
   own constants (`Ix.EnvScope.collectSelectedDeps`, whole units since M1-d),
-  compiled by the Lean pipeline in each switch state and written as an `.ixe`.
-  Per switch state:
+  compiled by the Lean pipeline (Pass 3) and written as an `.ixe`:
 
   1. for every name the Lean environment declares, the unit view read from the compiled
      environment's names and metadata
@@ -78,10 +77,10 @@ def run : IO UInt32 := do
   let dir : System.FilePath := ".lake/pack-units"
   IO.FS.createDirAll dir
   let mut errors : Array String := #[]
-  for mode in [false, true] do
+  for mode in [true] do
     let tag := if mode then "on" else "off"
     let unit : Tests.Ix.Compile.Pass3.CUnit := { name := s!"pack-units-{tag}", env, seeds := own, closure }
-    let out ← Tests.Ix.Compile.Pass3.compileUnit unit mode
+    let out ← Tests.Ix.Compile.Pass3.compileUnit unit
     unless out.cenv.ungrounded.isEmpty do
       errors := errors.push s!"{tag}: {out.cenv.ungrounded.size} refusals"
     let srcPath := dir / s!"source-{tag}.ixe"
@@ -194,7 +193,7 @@ def run : IO UInt32 := do
         (maxLean := maxLean))
   for e in errors do IO.println s!"[pack-units] FAIL {e}"
   IO.println s!"[pack-units] {if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}: \
-    {roots.length} roots × 2 switch states"
+    {roots.length} roots (Pass 3)"
   return if errors.isEmpty then 0 else 1
 
 end Tests.Ix.Compile.PackUnits

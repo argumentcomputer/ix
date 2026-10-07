@@ -23,11 +23,11 @@ def get (label : String) (result : Except α β) [ToString α] : IO β :=
   | .ok value => pure value
   | .error error => throw <| IO.userError s!"contract transport {label}: {error}"
 
-def compileMany (sources : Array Lean.Expr) (surgical : Bool := false) :
+def compileMany (sources : Array Lean.Expr) (partialImpl : Bool := false) :
     Except Ix.CompileM.CompileError (Array Ixon.Expr) := do
   let ix := Id.run ((sources.mapM Ix.CanonM.canonExpr).run' {})
   let action := ix.mapM fun e => do
-    let (result, _) ← if surgical then Ix.CompileM.compileExprSurgical e else Ix.CompileM.compileExpr e
+    let (result, _) ← if partialImpl then Ix.CompileM.compileExprPartial e else Ix.CompileM.compileExpr e
     pure result
   let (output, _) ← Ix.CompileM.CompileM.run default block {} action
   return output
@@ -53,10 +53,10 @@ def run : IO Unit := do
         let some body := sourceBody? decorated | throw <| IO.userError "missing decorated body"
         sources := sources.push body
         expected := expected.push (.lam binder (.sort 0) (.var 0))
-  for surgical in [false, true] do
-    let output ← get "cached lambdas" (compileMany sources surgical)
-    unless output == expected do throw <| IO.userError s!"lambda contracts collided during compilation (surgical={surgical}):\n{repr output}\nexpected {repr expected}"
-    let output ← get "cached foralls" (compileMany allSources surgical)
+  for partialImpl in [false, true] do
+    let output ← get "cached lambdas" (compileMany sources partialImpl)
+    unless output == expected do throw <| IO.userError s!"lambda contracts collided during compilation (partialImpl={partialImpl}):\n{repr output}\nexpected {repr expected}"
+    let output ← get "cached foralls" (compileMany allSources partialImpl)
     unless output == allExpected do throw <| IO.userError "arrow contracts collided during compilation"
   -- All occurrences share their unannotated inner binder. The complete
   -- metadata wrapper must distinguish them in both hash and equality paths.
@@ -79,8 +79,8 @@ def run : IO Unit := do
   let borrow : Ix.SemanticContract.Contract := {
     kind := .letE, binder := ⟨.affine, .localShared⟩, letKind := .borrowShared }
   let annotated := borrow.attach rawLet
-  for surgical in [false, true] do
-    let output ← get "borrow lowering" (compileMany #[rawLet, annotated, rawLet] surgical)
+  for partialImpl in [false, true] do
+    let output ← get "borrow lowering" (compileMany #[rawLet, annotated, rawLet] partialImpl)
     let expectedBorrow := Ixon.Expr.letE ⟨false, .borrowShared, ⟨.affine, .localShared⟩⟩ (.sort 0) (.var 0) (.var 0)
     unless output == #[.leanLet false (.sort 0) (.var 0) (.var 0), expectedBorrow,
       .leanLet false (.sort 0) (.var 0) (.var 0)] do

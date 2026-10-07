@@ -1,14 +1,14 @@
-/- # Pass 3 in the compile fold (the default; `IX_PASS3=off` selects the surgery)
+/- # Pass 3 in the compile fold (the only mode since M6R slice 6)
 
 ## Contract
-Two hooks of the block compile (`Ix.CompileDriver`), both inert unless
-`CompileEnv.pass3`:
+Two hooks of the block compile (`Ix.CompileDriver`), both inert in a
+hand-built environment (`CompileEnv.pass3` false; every driver sets it):
 
 1. **After the aux tail of a changed block** (`editChangedBlock`): the block
-   is changed when today's plan predicate holds (fewer classes than Lean's
+   is changed when the change predicate holds (fewer classes than Lean's
    `all`, a class representative out of `all` order, or a nested auxiliary
-   moved or evaporated), which under the compiler's rules is Def 3.1. No
-   surgery plan is registered. The side-car edit (`Ix.Compile.Pass.SideCar`)
+   moved or evaporated), which under the compiler's rules is Def 3.1. The
+   side-car edit (`Ix.Compile.Pass.SideCar`)
    gives every Ix auxiliary its `_ix` display name and moves the canonical
    `IndPredBelow` family off Lean's names; the block records its image-kind
    heads, its Lean `all` and Pass 2's canonical recursors for the driver.
@@ -36,18 +36,18 @@ Two hooks of the block compile (`Ix.CompileDriver`), both inert unless
 ## Faithfulness
 See `Translate` (the rewrite is definitional) and `ImageView` (images compute
 as Lean's recursors). The originals of the regenerated auxiliaries are still
-compiled for `Named.original` by the promotion pass, now with no call-site
-rewrite at all (no plan exists): the provenance is Lean's form as written.
+compiled for `Named.original` by the promotion pass, with no call-site
+rewrite at all: the provenance is Lean's form as written.
 
 ## Canonicity
 Faithful only (A4's definitional passes restore the optimised forms).
-Identity blocks are untouched: every byte of a compile with no changed block
-is the switch-off output.
+Identity blocks are untouched: a compile with no changed block is byte-identical
+to what the legacy surgery wrote for it (until M6R slice 6 that was checked by
+the switch-off comparison).
 
 ## Side condition and fallback
 A failure to build an image or to rewrite is a compile error of the block
-that needs it, naming the constant (no fallback to surgery under the
-switch).
+that needs it, naming the constant (no fallback).
 
 ## Non-canonical set and evidence
 `BARE` for stored image constants. Evidence: the `pass3` suite.
@@ -197,19 +197,20 @@ is excluded by the kernels: every all-inductive block is checked against the
 comparator order (`validateCanonicalBlockSinglePass`, Rust and `Ix.Tc`), so a
 family stored in Lean's order would be rejected as non-canonical wherever
 Pass 1 orders it differently, which is exactly the A3V-IPB case. The second
-keeps the Ix family canonical and byte-identical to the switch-off output (it
+keeps the Ix family canonical and byte-identical to the switch-off output of
+the time (it
 is a function of the canonical parent, then of Pass 1) and moves only Lean's
 names (Q2: names are metadata): the governing principle's choice. The
 decision reads stored positions, a function of the canonical form.
 
 ## Side condition and fallback
-Decidable: the switch is on, the parent is unchanged, `all₀.below` is an
+Decidable: a driver-prepared environment, the parent is unchanged, `all₀.below` is an
 inductive of Lean's environment with at least two members, every member of
 Lean's family is registered by the tail at a projection of one stored block,
 at pairwise distinct positions, and the tail recorded the family's canonical
 recursors. Otherwise nothing moves: today's registration (a collapsed family,
-never observed, would stay as it is; the switch-off path keeps the defect,
-recorded by its id A3V-IPB until the surgery is deleted, M6R).
+never observed, would stay as it is). (The legacy surgery kept the defect,
+recorded as A3V-IPB, until M6R slice 6 deleted it.)
 
 ## Non-canonical cases and evidence
 None new: Lean's `below` recursors and `casesOn` are image kinds of a changed

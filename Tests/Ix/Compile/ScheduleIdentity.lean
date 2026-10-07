@@ -5,10 +5,8 @@
   Over the twins closure (`Tests.Ix.Compile.Twins`, every family) and the
   aux fixture corpus (`validateAuxClosure`: `Tests.Ix.Compile.Mutual`,
   `Canonicity`, `LevelSpellings`, the IxVM and `Test.Ix.Fixtures`
-  families), compile, once with the Pass 3 switch off and once with it on
-  (Pass 3, the default; switch off is the legacy surgery, `IX_PASS3=off`; the
-  mode is passed explicitly to every driver so the environment
-  variable does not matter), with
+  families), compile with Pass 3 (the only mode since M6R slice 6; until then
+  each leg also ran with the legacy surgery, `IX_PASS3=off`), with
 
   - the sequential driver `Ix.CompileM.compileEnvAux` (the fold that §6.2
     makes the definition: least canonical key first, A7 D9), on the
@@ -19,26 +17,21 @@
     and condensation, so other block representatives) at 1, 4 and 16
     workers;
 
-  and require every serialized environment of one mode to be
-  byte-identical. A difference is reported with the constant and its two
+  and require every serialized environment to be byte-identical. A difference is reported with the constant and its two
   addresses; it is a finding for A7, not something this suite repairs.
   There is no speculative driver in the Lean compiler (the optimisation
   branch's was not taken, owner 2026-10-03), so it has no leg here.
 
-  With the switch off, block failures must be exactly the closure's
-  `NonCanonical.expectedRefusals`, each with its message. With Pass 3,
-  those former surgery refusals are supported: require zero block failures
-  and every source name in the output. The twelve former refusals were
-  checked by all three kernels, including explicit certified record
-  coverage, before introducing this mode-specific expectation. Any
+  Pass 3 compiles the legacy surgery's former A0 refusals of this closure:
+  require zero block failures and every source name in the output. Any
   difference in (name, message) failures between schedules still fails.
 
-  The legs of both modes run concurrently (each is an independent compile of
+  The legs run concurrently (each is an independent compile of
   the same read-only input; `SCHED_JOBS=<n>` runs at most n at a time), and
   are reported and compared in the order above once all have finished.
 
   Tiers: the default (`SCHED_LEGS=full`) is the integration gate, all nine
-  legs per mode. `SCHED_LEGS=quick` is the per-iteration tier: per mode
+  legs. `SCHED_LEGS=quick` is the per-iteration tier:
   `wave --jobs 4` (the reference), `wave --jobs 32` and `compile-lean
   --workers 16`, with every check below; it is never the integration gate.
 
@@ -82,7 +75,7 @@ def saveRun (pass3 : Bool) (label : String) (bytes : ByteArray)
   for line in (← Ix.PhaseTimers.report) do IO.eprintln line
   if let some dir ← IO.getEnv "SCHED_OUTPUT_DIR" then
     IO.FS.createDirAll dir
-    let path := s!"{dir}/{if pass3 then "on" else "off"}-{label}.ixe"
+    let path := s!"{dir}/{if pass3 then "on" else "legacy"}-{label}.ixe"
     IO.FS.writeBinFile path bytes
     let sorted := failures.toArray.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
     let lines := sorted.toList.map fun (name, cause) =>
@@ -118,7 +111,7 @@ def quickTier : IO Bool := do
 def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
     (phases : Ix.CompileM.CompilePhases) (nameByHash : Std.HashMap Address Ix.Name)
     (pass3 : Bool) : IO (Array Leg) := do
-  let mode := if pass3 then "Pass 3 (the default)" else "IX_PASS3=off (legacy surgery)"
+  let mode := if pass3 then "Pass 3" else "?"
   let diagnostic := (← IO.getEnv "SCHED_DIAGNOSTIC") == some "1"
   let singleWave := (← IO.getEnv "SCHED_SINGLE_WAVE") == some "32"
   let quick ← quickTier
@@ -132,7 +125,6 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
       -- compiler may evaluate a pure term before the action runs
       let seq := Task.spawn fun _ =>
         Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash)
-          (pass3 := pass3)
       match ← IO.wait seq with
       | .error e => throw (IO.userError s!"[schedule] {mode}: sequential driver: {e}")
       | .ok (ixon, _, cenv) =>
@@ -145,7 +137,7 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
     legs := legs.push { label := s!"wave --jobs {k}", saveLabel := s!"wave-{k}",
                         act := do
       match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
-          (nameByHash := nameByHash) (pass3? := some pass3) with
+          (nameByHash := nameByHash) with
       | .error e => throw (IO.userError s!"[schedule] {mode}: wave driver, {k} workers: {e}")
       | .ok (ixon, _, cenv) =>
         let bytes ← IO.ofExcept (Ixon.serEnv ixon)
@@ -155,7 +147,7 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
   for k in pipes do
     legs := legs.push { label := s!"compile-lean --workers {k}", saveLabel := s!"pipeline-{k}",
                         act := do
-      let out ← Tests.Ix.Compile.Twins.leanCompile env closure k (pass3? := some pass3)
+      let out ← Tests.Ix.Compile.Twins.leanCompile env closure k
       pure (out.bytes, out.env, failuresOf out.cenv) }
   return legs
 
@@ -189,7 +181,7 @@ def runLegs (modes : List (Bool × Array Leg)) : IO (Array (Array LegResult)) :=
     number of failures. -/
 def runMode (closure : List (Name × ConstantInfo)) (pass3 : Bool) (legs : Array Leg)
     (results : Array LegResult) : IO Nat := do
-  let mode := if pass3 then "Pass 3 (the default)" else "IX_PASS3=off (legacy surgery)"
+  let mode := if pass3 then "Pass 3" else "?"
   let diagnostic := (← IO.getEnv "SCHED_DIAGNOSTIC") == some "1"
   let singleWave := (← IO.getEnv "SCHED_SINGLE_WAVE") == some "32"
   if singleWave then say "[schedule] DIAGNOSTIC: wave 32 only; no schedule-identity claim; not a full gate"
@@ -205,29 +197,23 @@ def runMode (closure : List (Name × ConstantInfo)) (pass3 : Bool) (legs : Array
     runs := runs.push r
   let some (refLabel, refBytes, refEnv, refFails) := runs[0]? | return 1
   let mut failures := 0
-  -- Refusals: under every schedule the block failures are exactly the
-  -- expected refusals (`NonCanonical.expectedRefusals`) of the constants in
-  -- the closure, each with its message (`Twins.refusalCheck`: an unexpected
-  -- failure, a refusal with another message, and an expected refusal that
-  -- does not happen all fail), and the full (name, message) list is the same
-  -- in every schedule.
-  let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
+  -- Refusals: under every schedule there is no block failure and every
+  -- source name is in the output, and the full (name, message) list of
+  -- failures is the same in every schedule.
   let sortFails (xs : List (String × String)) : Array (String × String) :=
     xs.toArray.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
   for (label, _, ixon, fails) in runs do
-    let bad ← if pass3 then do
-        for (name, message) in fails do
-          say s!"[schedule] {label}: unexpected switch-on refusal {name}: {message}"
-        let missing := closure.filter fun (name, _) => !ixon.named.contains (Ix.Name.fromLeanName name)
-        for (name, _) in missing do
-          say s!"[schedule] {label}: switch-on output omitted source name {name}"
-        pure (fails.length + missing.length)
-      else Tests.Ix.Compile.Twins.refusalCheck s!"schedule: {mode}: {label}" scope fails
+    for (name, message) in fails do
+      say s!"[schedule] {label}: unexpected refusal {name}: {message}"
+    let missing := closure.filter fun (name, _) => !ixon.named.contains (Ix.Name.fromLeanName name)
+    for (name, _) in missing do
+      say s!"[schedule] {label}: output omitted source name {name}"
+    let bad := fails.length + missing.length
     if bad == 0 then
-      say s!"[schedule] {mode}: {label}: refusals = expectedRefusals ({fails.length})"
+      say s!"[schedule] {mode}: {label}: no refusal, every source name present"
     else
       failures := failures + 1
-      say s!"[schedule] {mode}: {label}: refusals ≠ expectedRefusals ({bad} violations)"
+      say s!"[schedule] {mode}: {label}: {bad} violation(s)"
     if sortFails fails != sortFails refFails then
       failures := failures + 1
       say s!"[schedule] {mode}: {label}: block failures (names or messages) differ \
@@ -254,32 +240,7 @@ meta={x.constMeta != y.constMeta} original={x.original != y.original} hints={x.h
       say s!"[schedule] Named differences: {metaDiffs}"
   return failures
 
-/-- Diagnose the on-mode domain of the off-mode refusal fixtures against a
-saved artifact. Require explicit owning-record acceptance and real work by
-both executable kernels before changing a refusal expectation. -/
-def checkRefusalArtifact (path : System.FilePath) : IO UInt32 := do
-  let names := Tests.Ix.Compile.NonCanonical.expectedRefusals.toArray.map (·.constant.toString)
-  let dir := System.FilePath.mk ((← IO.getEnv "SCHED_CHECK_OUTPUT").getD "out/schedule-refusal-check")
-  IO.FS.createDirAll dir
-  let failures ← Tests.Ix.Compile.Pass3.kernelFailures dir path names (anon := true)
-  for (kernel, name, message) in failures do
-    say s!"[schedule-check] {kernel}: {name}: {message}"
-  let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy (← IO.FS.readBinFile path))
-  let records := parts.namedRows.foldl (init := ({} : Std.HashMap String Address)) fun m row =>
-    m.insert row.name.pretty (Tests.Ix.Compile.AuxCert.recordOf parts.env row.addr)
-  let report ← IO.ofExcept (Tests.Ix.Compile.KernelReport.parse (← IO.FS.readFile (dir / "cert.jsonl")))
-  let mut rejected := failures.size
-  for name in names do
-    let some address := records.get? name | throw (IO.userError s!"missing compiled fixture {name}")
-    let some verdict := report.get? (toString address) | throw (IO.userError s!"missing verdict {name}@{address}")
-    say s!"[schedule-check] {name}@{address}: {verdict.outcome}: {verdict.reason}"
-    if verdict.outcome != "accept" then rejected := rejected + 1
-  say s!"[schedule-check] {names.size} fixtures, {rejected} failed acceptance checks"
-  return if rejected == 0 then 0 else 1
-
 def run : IO UInt32 := do
-  if let some path ← IO.getEnv "SCHED_CHECK_IXE" then
-    return ← checkRefusalArtifact path
   let env ← get_env!
   let (_, twins) := Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
   let fixtures := validateAuxClosure env
@@ -319,11 +280,8 @@ def run : IO UInt32 := do
     let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
     nameByHash := nameByHash.insert ixn.getHash ixn
   let mut failures := 0
-  -- `SCHED_MODES=off` or `on` runs one mode only (diagnostics).
-  let modes := match ← IO.getEnv "SCHED_MODES" with
-    | some "off" => [false]
-    | some "on" => [true]
-    | _ => [false, true]
+  -- one mode: Pass 3 (the legacy surgery's legs were deleted at M6R slice 6)
+  let modes := [true]
   -- Every leg of every mode is an independent compile of the same input: run
   -- them concurrently (`SCHED_JOBS` bounds it), then compare in leg order.
   let mut plan : List (Bool × Array Leg) := []

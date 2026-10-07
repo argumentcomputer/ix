@@ -126,8 +126,8 @@ structure AuxPatchesOutput where
   aliases : Std.HashMap Name Name := {}
   perm : Option (Array Nat) := none
   /-- `evaporated[sourceJ]`: this block registered the evaporation alias
-      `all0.rec_{sourceJ+1} → <ext>.rec` for the position (and surgery
-      must register the matching head-rewrite plan). `some` exactly when
+      `all0.rec_{sourceJ+1} → <ext>.rec` for the position (until M6R slice 6 the
+      legacy surgery registered the matching head-rewrite plan). `some` exactly when
       `perm` is; positions that are canonical here or owned by another
       SCC are `false`. Travels into `AuxLayout.evaporated`. Mirrors Rust
       `AuxPatchesOutput.evaporated`. -/

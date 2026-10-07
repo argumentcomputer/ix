@@ -1091,8 +1091,9 @@ to the canonical constant {}",
   Ok(())
 }
 
-/// Compile one scheduled block under Pass 3 (hook 2 and image blocks); the
-/// ordinary `compile_const` when the switch is off.
+/// Compile one scheduled block under Pass 3 (hook 2 and image blocks), the
+/// scheduler's only route since M6R slice 6 (the switch-off route, plain
+/// `compile_const` with the legacy surgery, is deleted).
 pub fn compile_block(
   lo: &Name,
   all: &NameSet,
@@ -1101,9 +1102,6 @@ pub fn compile_block(
   stt: &CompileState,
   kctx: &mut KernelCtx,
 ) -> Result<Address, CompileError> {
-  if !stt.pass3 {
-    return compile_const(lo, all, lean_env, cache, stt, kctx);
-  }
   let ctx = Ctx { lean_env, stt };
   if is_image_block(stt, all) {
     return compile_image_block(&ctx, lo, all, kctx);

@@ -30,7 +30,7 @@ def get (label : String) (r : Except String α) : IO α :=
 
 def run : IO Unit := do
   let valid ← get "input" ((input).mapError toString)
-  let lean ← Ix.CompileM.compileLeanInput valid (numWorkers := 1) (pass3? := some false) >>= get "Lean compiler"
+  let lean ← Ix.CompileM.compileLeanInput valid (numWorkers := 1) >>= get "Lean compiler"
   let prepared ← get "preparation" valid.prepare
   let rust ← Ix.CompileM.rsCompileEnvFFI prepared
   let rust := rust.toEnv

@@ -12,17 +12,18 @@
   `_private.<M>.0.PSigma.casesOn._arg_pusher`, realised by Lean, Ix,
   Batteries and test modules), and by §6.3 those belong to the unit, so a
   closure drawn from the larger environment carries them. The whole
-  environment is compiled once per switch state by the Lean pipeline
-  (`compileLeanInput`), or read from a stored compile of the same file:
-  `CLOSURE_WHOLE_OFF=<ixe>` / `CLOSURE_WHOLE_ON=<ixe>` (the reference
-  `initstd-a2.ixe` and the switch-on output of
-  `ix compile-lean Benchmarks/Compile/CompileInitStd.lean`).
+  environment is compiled once by the Lean pipeline (`compileLeanInput`), or
+  read from a stored compile of the same file: `CLOSURE_WHOLE_ON=<ixe>` (the
+  reference `initstd-a3.ixe`, the output of
+  `ix compile-lean Benchmarks/Compile/CompileInitStd.lean`). Pass 3 only since
+  M6R slice 6 (until then also the legacy surgery, `CLOSURE_WHOLE_OFF`
+  = `initstd-a2.ixe`).
 
   For every root (a fixed list over the kinds that read their own unit,
   plus mutual inductive blocks, definition cliques and definitions with
   on-demand equation lemmas discovered in Init+Std; `CLOSURE_ROOTS=a,b,…`
   replaces the list), the closure is what `ix compile --consts` hands the
-  compiler (`Ix.EnvScope.collectSelectedDeps`). Per root and switch state:
+  compiler (`Ix.EnvScope.collectSelectedDeps`). Per root:
 
   1. the closure stays inside the whole environment;
   2. **whole units**: for every constant of the closure, every member of its
@@ -40,14 +41,14 @@
      constants and the clique transport's prerequisites), and, derived from
      the output, every constant the closure's output references that the
      closure without them does not account for is carried (the set observed
-     per switch state is printed);
-  7. **local scope** of a collapse fixture with the switch on
+     is printed);
+  7. **local scope** of a collapse fixture
      (`Tests/Ix/Compile/Fixtures/LocalCollapse.lean`): it compiles with no
      refusal, decompiles to the source and passes `ix validate-lean --local`;
      the same closure without the introduced references is refused naming
      one of them (negative control).
   8. **the Rust compiler** (M6R slice 5): every closure of 3-5 and 7 compiled
-     by the Rust compiler in the same switch state (`rsCompileEnvBytesPass3FFI`)
+     by the Rust compiler (`rsCompileEnvBytesFFI`, Pass 3, its only mode)
      gives the Lean compile's artifact byte for byte, so the Rust output of a
      closure carries the same units, `_ix` canonical constants and introduced
      references, and agrees with the whole compile (Rust's whole Init+Std
@@ -103,9 +104,7 @@ def discoveredRoots (whole : List (Name × ConstantInfo)) (k : Nat) : List Name 
     | _ => pure ()
   return (ind ++ size ++ clq ++ eqd).toList
 
-/-- The Rust compiler on the same closure, in the same switch state
-(`rsCompileEnvBytesPass3FFI`, the mode given explicitly as the parity suite
-does): its artifact must be the Lean compile's, byte for byte. Returns the
+/-- The Rust compiler on the same closure (`rsCompileEnvBytesFFI`): its artifact must be the Lean compile's, byte for byte. Returns the
 problem, if any. -/
 def rustLeg (label : String) (env : Environment) (closure : List (Name × ConstantInfo))
     (mode : Bool) (lean : Ix.CompileM.LeanPipelineOut) : IO (Option String) := do
@@ -113,7 +112,7 @@ def rustLeg (label : String) (env : Environment) (closure : List (Name × Consta
   let constants ← IO.ofExcept input.prepare
   let dir ← IO.FS.createTempDir
   let path := dir / "rust.ixe"
-  let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants path.toString true mode
+  let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString true
   let bytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
   if bytes == lean.bytes && status.ungrounded.isEmpty then return none
@@ -131,14 +130,14 @@ def rustLeg (label : String) (env : Environment) (closure : List (Name × Consta
 
 def loadOrCompile (env : Environment) (whole : List (Name × ConstantInfo)) (mode : Bool) :
     IO Ixon.Env := do
-  let var := if mode then "CLOSURE_WHOLE_ON" else "CLOSURE_WHOLE_OFF"
+  let var := "CLOSURE_WHOLE_ON"
   if let some path ← IO.getEnv var then
     say s!"whole mode={mode}: reading {path}"
     return ← IO.ofExcept (Ixon.rsDeEnv (← IO.FS.readBinFile path))
   say s!"whole mode={mode}: compiling {whole.length} Init+Std constants"
   let unit : Tests.Ix.Compile.Pass3.CUnit :=
     { name := s!"initstd-whole-{mode}", env, seeds := #[], closure := whole }
-  let out ← Tests.Ix.Compile.Pass3.compileUnit unit mode
+  let out ← Tests.Ix.Compile.Pass3.compileUnit unit
   unless out.cenv.ungrounded.isEmpty do
     throw (IO.userError s!"whole mode={mode}: {out.cenv.ungrounded.size} refusals")
   return out.env
@@ -171,10 +170,10 @@ def introducedRefs (out : Ix.CompileM.LeanPipelineOut) (base full : Std.HashSet 
       unless ns.any full.contains do bad := bad.push s!"{ns} is referenced but not carried"
   return (intro, bad)
 
-/-- The local scope of a collapse fixture with the switch on (the corpus
+/-- The local scope of a collapse fixture (the corpus
 sweep's `compile-lean --local` defect): the selected closure of the file's
 own constants compiles with no refusal and decompiles to the source, and
-`ix validate-lean --local` passes with `IX_PASS3=images`. Negative control:
+`ix validate-lean --local` passes. Negative control:
 the same closure without the compiler's introduced references is refused,
 naming one of them. -/
 def localCollapse : IO (Array String) := do
@@ -188,7 +187,7 @@ def localCollapse : IO (Array String) := do
   let noSupport := Ix.EnvScope.collectDeps env own (withRecursors := true)
   let mut errors : Array String := #[]
   let u : Tests.Ix.Compile.Pass3.CUnit := { name := "local-collapse", env, seeds := own.toArray, closure := full }
-  let out ← Tests.Ix.Compile.Pass3.compileUnit u true
+  let out ← Tests.Ix.Compile.Pass3.compileUnit u
   unless out.cenv.ungrounded.isEmpty do
     errors := errors.push s!"local collapse: {out.cenv.ungrounded.size} refusals, first \
       {out.cenv.ungrounded.toList.head?}"
@@ -203,10 +202,10 @@ def localCollapse : IO (Array String) := do
   let (intro, bad) := introducedRefs out baseNames fullNames
   errors := errors ++ bad.map (s!"local collapse: {·}")
   say s!"local collapse: references introduced by the output (derived): {intro.toList.map toString |>.toArray.qsort (· < ·)}"
-  say s!"local collapse (switch on): closure {full.length} (the pre-M1-d scope \
+  say s!"local collapse: closure {full.length} (the pre-M1-d scope \
     {noSupport.length}); {out.cenv.ungrounded.size} refusals; {summary}"
   let neg : List (String × String) ← try
-      let o ← Tests.Ix.Compile.Pass3.compileUnit { u with closure := noSupport } true
+      let o ← Tests.Ix.Compile.Pass3.compileUnit { u with closure := noSupport }
       pure (o.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
     catch e => pure [("compile", toString e)]
   let support := ["True", "And", "PProd", "PUnit", "Eq"]
@@ -217,9 +216,9 @@ def localCollapse : IO (Array String) := do
   say s!"local collapse negative control (the pre-M1-d scope: recursors only): {neg.length} refusal(s), first {neg.head?}"
   let exe ← IO.FS.realPath (".lake" / "build" / "bin" / "ix")
   let args : Array String := #["validate-lean", "--local", "--workers", "8", file]
-  let r ← IO.Process.output { cmd := exe.toString, args := args, env := #[("IX_PASS3", some "images")] }
+  let r ← IO.Process.output { cmd := exe.toString, args := args, env := #[("IX_PASS3", none)] }
   let verdict := (r.stdout.splitOn "\n").filter (fun l => (l.splitOn "VERDICTS").length > 1)
-  say s!"local collapse: ix validate-lean --local (switch on): exit {r.exitCode}; {verdict}"
+  say s!"local collapse: ix validate-lean --local: exit {r.exitCode}; {verdict}"
   if r.exitCode != 0 then errors := errors.push s!"local collapse: validate-lean --local exit {r.exitCode}"
   return errors
 
@@ -235,7 +234,7 @@ def run : IO UInt32 := do
     unless wholeNames.contains r do errors := errors.push s!"root {r} is not in the whole environment"
   say s!"Init+Std: {whole.length} constants; {roots.length} roots: {roots}"
   let units := Lean.unitIndex env.constants
-  -- the closures and their units (independent of the switch)
+  -- the closures and their units
   let mut closures : Array (Name × List (Name × ConstantInfo) × Std.HashSet Name) := #[]
   let support := Ix.EnvScope.introducedSupport env
   let mut unitChecks := 0
@@ -255,7 +254,8 @@ def run : IO UInt32 := do
   say s!"introduced references carried by every closure: {support}"
   say s!"closures: {closures.map (·.2.1.length) |>.foldl (· + ·) 0} constants over {roots.length} \
     roots; {unitChecks} unit memberships checked"
-  for mode in [false, true] do
+  -- Pass 3 only (until M6R slice 6 also the legacy surgery, `mode=false`)
+  for mode in [true] do
     let ref ← loadOrCompile env whole mode
     let mut compared := 0
     let mut addrDiffs := 0
@@ -266,7 +266,7 @@ def run : IO UInt32 := do
     for (r, c, base) in closures do
       let unit : Tests.Ix.Compile.Pass3.CUnit :=
         { name := s!"closure-{r}", env, seeds := #[r], closure := c }
-      let out ← Tests.Ix.Compile.Pass3.compileUnit unit mode
+      let out ← Tests.Ix.Compile.Pass3.compileUnit unit
       unless out.cenv.ungrounded.isEmpty do
         errors := errors.push s!"{r} mode={mode}: {out.cenv.ungrounded.size} refusals, first \
           {(out.cenv.ungrounded.toList.head?.map (·.1.pretty))}"

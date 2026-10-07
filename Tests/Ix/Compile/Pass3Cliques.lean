@@ -1,26 +1,27 @@
 /-
-  pass3-cliques: changed definition cliques under the switch
-  (`IX_PASS3=images`; `Ix.Compile.Pass.Cliques`, design document §5).
+  pass3-cliques: changed definition cliques under Pass 3 (the only mode since
+  M6R slice 6; `Ix.Compile.Pass.Cliques`, design document §5).
 
   One compile unit, the closure of every clique twin family
-  (`Tests/Ix/Compile/Twins/Cliques.lean`), compiled by the Lean pipeline with
-  the switch off and on:
+  (`Tests/Ix/Compile/Twins/Cliques.lean`), compiled by the Lean pipeline:
 
   1. **plans**: every clique of the fixtures, as the compiler planned it
-     (`Ix.Compile.Pass.planClique` against the switch-on compile state):
+     (`Ix.Compile.Pass.planClique` against the compile state):
      encoding, Lean's order, `σ`, the source of the order, the outcome
      (transported, unchanged, baseline with its cause, not encoded) and the
      transport's causes;
-  2. **identity**: with the switch on, every name whose address moved is in
-     the cone of a transported clique (its members and everything that
-     references them, transitively), and every new name is reserved (`_ix`);
-  3. **decompile**: the switch-on output decompiles to the source constants
+  2. **names**: every named entry of the output is an input constant, a
+     reserved `_ix` name or a synthetic `Muts` name (`Pass3.namesCheck`), and
+     no block fails (until M6R slice 6 this step compared the output with the
+     legacy surgery's, `IX_PASS3=off`: every moved name in a transported
+     clique's cone; that mode is deleted);
+  3. **decompile**: the output decompiles to the source constants
      (the members through their `_ix.inline` records);
   4. **kernels**: `ix check-rs`, `ix check-lean` (meta mode) and the
      certified checker on every fixture constant and every `_ix` constant of
-     the switch-on output (the value pins `rfl` over clique members among
+     the output (the value pins `rfl` over clique members among
      them);
-  5. **twins under the switch**: for every presentation pair, every Lean name
+  5. **twins**: for every presentation pair, every Lean name
      compiles to the reference's address, except the entries of the switch-on
      non-canonical set (`Tests.Ix.Compile.NonCanonical.nonCanonicalOn`), which
      is exact in both directions. The canonical `_ix` constants are stored
@@ -90,48 +91,6 @@ def plans (on : Ix.CompileM.LeanPipelineOut) (cliques : Array (Array Name)) : Ar
     out := out.push row
   return out
 
-/-! ## Identity: cones of the transported cliques -/
-
-def cone (u : Tests.Ix.Compile.Pass3.CUnit) (members : Array Name) : Std.HashSet Name := Id.run do
-  let mut rev : Std.HashMap Name (Array Name) := {}
-  for (n, ci) in u.closure do
-    for r in ci.getUsedConstantsAsSet do
-      rev := rev.insert r ((rev.getD r #[]).push n)
-  let mut out : Std.HashSet Name := {}
-  let mut todo := members
-  while !todo.isEmpty do
-    let n := todo.back!
-    todo := todo.pop
-    if out.contains n then continue
-    out := out.insert n
-    for d in rev.getD n #[] do
-      if !out.contains d then todo := todo.push d
-  return out
-
-def identity (u : Tests.Ix.Compile.Pass3.CUnit) (off on : Ix.CompileM.LeanPipelineOut)
-    (members : Array Name) : Array String × String := Id.run do
-  -- the cones of the transported cliques and of the changed blocks (Pass 3
-  -- rewrites those too, `pass3`)
-  let c := cone u members
-  let cb := Tests.Ix.Compile.Pass3.cone u (on.cenv.p3Blocks.toArray.map (·.2))
-  let mut problems := #[]
-  let mut equal := 0
-  let mut moved := 0
-  let mut newReserved := 0
-  for (n, nd) in off.env.named do
-    if Tests.Ix.Compile.Pass3.isSyntheticMuts n then continue
-    match on.env.named.get? n with
-    | none => problems := problems.push s!"{n.pretty} missing with the switch on"
-    | some nd' =>
-      if nd'.addr == nd.addr then equal := equal + 1
-      else if c.contains (toLeanName n) || cb.contains (toLeanName n) then moved := moved + 1
-      else problems := problems.push s!"{n.pretty} moved outside the transported cliques' cones"
-  for (n, _) in on.env.named do
-    if Tests.Ix.Compile.Pass3.isSyntheticMuts n || off.env.named.contains n then continue
-    if Ix.Compile.Pass.hasReserved n then newReserved := newReserved + 1
-    else problems := problems.push s!"{n.pretty} is new with the switch on and not reserved"
-  return (problems, s!"equal names {equal}, moved in cones {moved}, new reserved {newReserved}")
-
 /-! ## Twins under the switch -/
 
 /-- The `_ix` names of presentation `p` in the switch-on output, relative to
@@ -186,8 +145,7 @@ def entrySyntax (f : Family) (a b : Pres) (d : DiffRec) : String :=
 
 /-! ## A library (`PASS3_CLIQUES_FILE=<file.lean>`) -/
 
-/-- Compile a file's environment as `ix compile-lean` does, with the switch
-on, and list every clique of it as the compiler planned it; optionally write
+/-- Compile a file's environment as `ix compile-lean` does, and list every clique of it as the compiler planned it; optionally write
 the output (`PASS3_CLIQUES_OUT`) and check the transported and canonical
 constants with the three kernels (`PASS3_CLIQUES_KERNELS=1`). -/
 def runFile (path : String) : IO UInt32 := do
@@ -196,10 +154,10 @@ def runFile (path : String) : IO UInt32 := do
   IO.println s!"[pass3-cliques-file] {path}: {constList.length} constants"
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
   let t0 ← IO.monoMsNow
-  let on ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) (pass3? := some true) with
+  let on ← match ← Ix.CompileM.compileLeanInput input (numWorkers := 32) with
     | .ok o => pure o
     | .error e => throw (IO.userError s!"compile failed: {e}")
-  IO.println s!"[pass3-cliques-file] switch on: {on.bytes.size} B, {on.cenv.ungrounded.size} block failures, \
+  IO.println s!"[pass3-cliques-file] compiled: {on.bytes.size} B, {on.cenv.ungrounded.size} block failures, \
     {(← IO.monoMsNow) - t0} ms"
   -- every caller refused by the block rule (`Ix.Compile.Pass.cliqueCallers`),
   -- then the first other failures
@@ -262,28 +220,25 @@ def run (env : Environment) : IO UInt32 := do
   IO.println s!"[pass3-cliques] {families.length} families, {seeds.size} fixture constants, \
     {u.closure.length} in the closure"
   let t0 ← IO.monoMsNow
-  let off ← Tests.Ix.Compile.Pass3.compileUnit u false
-  let on ← Tests.Ix.Compile.Pass3.compileUnit u true
-  IO.println s!"[pass3-cliques] compiles: off {off.bytes.size} B ({off.cenv.ungrounded.size} failures), \
-    on {on.bytes.size} B ({on.cenv.ungrounded.size} failures), {(← IO.monoMsNow) - t0} ms"
+  let on ← Tests.Ix.Compile.Pass3.compileUnit u
+  IO.println s!"[pass3-cliques] compile: {on.bytes.size} B ({on.cenv.ungrounded.size} failures), \
+    {(← IO.monoMsNow) - t0} ms"
   let mut problems : Array String := #[]
   for (n, e) in on.cenv.ungrounded do
-    if !off.cenv.ungrounded.contains n then
-      problems := problems.push s!"{n.pretty} fails only with the switch on: {e.take 300}"
+    problems := problems.push s!"{n.pretty} fails: {e.take 300}"
   -- 1. plans
   let rows := plans on (leanCliques (seeds.toList.filterMap fun n => (env.find? n).map (n, ·)))
-  let mut members : Array Name := #[]
   let mut nT := 0
   for r in rows do
     IO.println s!"[pass3-cliques] clique {r.all.map (·.pretty)}: {r.outcome}"
     if r.transported then
       nT := nT + 1
-      members := members ++ r.all.map toLeanName
   IO.println s!"[pass3-cliques] {rows.size} cliques, {nT} transported"
-  -- 2. identity
-  let (iprob, isum) := identity u off on members
-  IO.println s!"[pass3-cliques] identity: {isum}, {iprob.size} problem(s)"
-  problems := problems ++ iprob
+  -- 2. names
+  let nr := Tests.Ix.Compile.Pass3.namesCheck u on
+  IO.println s!"[pass3-cliques] names: {nr.inputNames} input constants, {nr.reserved} reserved, \
+    {nr.problems.size} problem(s)"
+  problems := problems ++ nr.problems
   -- 3. decompile
   if on.cenv.ungrounded.isEmpty then
     let (dprob, dsum) ← Tests.Ix.Compile.Pass3.decompileCheck u on

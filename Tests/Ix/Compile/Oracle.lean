@@ -22,7 +22,8 @@
   classified, and the suite passes when every exception is in an expected
   class: the six split differences of §4.7 ((a) universe list, (b) existence
   for the Lean block, (c) `noConfusion` enumeration form, (d) the `sizeOf`
-  family, (e)/(f) surgery). Two further classes are still recognised but
+  family, (e)/(f) the surgery's, which no longer arise since M6R slice 6 deleted it).
+  Two further classes are still recognised but
   now fail the suite, because each would be a regression of a canonical-form
   change of the A2 migration: `PACKAGING` (`ix(o) = ix(t)`, and `ix(t)` is
   a projection into a block of several members while Lean's form is packaged
@@ -34,6 +35,18 @@
   Class (f) also takes the open audit defects of a fixture at
   this head (WB-B1 `FieldBelow`, WB `RecAlias`), with the defect id.
   A constant absent on one side is class (b).
+
+  Under Pass 3 (the only mode since M6R slice 6, 2026-10-07; until then
+  the oracle compiled with the legacy surgery, `IX_PASS3=off`) a changed
+  block's Ix auxiliaries are read at their `_ix` display names
+  (`displayOf`), and the users of its images that are not auxiliaries Ix
+  regenerates (`ctorIdx`, `ctorElim`, `.elim`, `.inj`, `.injEq`, …) are
+  Lean's own terms over the images: the surgery rewrote them onto the
+  canonical auxiliaries, Pass 3 does not. Such an exception is accepted
+  only when the twins gate's record of the Pass 3 compile
+  (`NonCanonicalDefault.nonCanonical`, exact in both directions against
+  the same compile) lists the constant for the same family and
+  presentations, as class `(nc) <cause>`; any other is `UNEXPECTED`.
 
   Also checked: that `T` is in Ix's canonical order (in every Lean block of
   `T`, the `iPrj` indices of the members increase), which the oracle
@@ -110,17 +123,73 @@ def classify (env : Environment) (t o : Option Name) (sameIx packaged : Bool) : 
   else if sameIx && packaged then "PACKAGING"
   else "UNEXPECTED"
 
+/-- The twins gate's recorded cause of a non-canonical constant of the Pass 3
+    compile (`NonCanonicalDefault.nonCanonical`): the entry for this family,
+    these two presentations (either order) and `t` (relative to the first
+    presentation's namespace). -/
+def recordedCause (fixture : Name) (a b : String) (t : Name) : Option String :=
+  (NonCanonicalDefault.nonCanonical.find? fun x =>
+    x.fixture == fixture && x.constant == t &&
+      ((x.presA == a && x.presB == b) || (x.presA == b && x.presB == a))).map
+    fun x => s!"(nc) {x.cause.tag}"
+
 structure Row where
   family : Name
   aux : Name
   cls : String
   detail : String
 
+/-- The Lean block (`all`) of the longest inductive prefix of `n`. -/
+def blockOf (env : Environment) : Name → Option (List Name)
+  | .anonymous => none
+  | .num q _ => blockOf env q
+  | p@(.str q _) => match env.find? p with
+    | some (.inductInfo v) => some v.all
+    | _ => blockOf env q
+
+/-- Pass 3 stores the Ix auxiliaries of a changed block under reserved display
+    names (`x._ix.S` for Lean's `x.S`; a nested `all₀.kind_j` at its canonical
+    position `rep₀._ix.kind_i`, `Ix.Compile.Pass.ixAuxName`) and gives the Lean
+    names the images. The display name of the Ix auxiliary Lean calls `n`, read
+    off the output: the components of `n`'s Lean block are its `Muts` entries
+    whose classes hold a member of the block; the component that owns `n` is
+    the one holding `n`'s longest member prefix, or, for a nested auxiliary,
+    the one whose layout places Lean's position `j` (not `PERM_OUT_OF_SCC`).
+    `none` when `n` is not an auxiliary of a changed block (the name holds the
+    Ix auxiliary itself, as the legacy surgery stored every one until M6R
+    slice 6). -/
+def displayOf (env : Environment) (ixon : Ixon.Env) (n : Name) : Option Ix.Name := Id.run do
+  let ixn := Ix.Name.fromLeanName n
+  -- the Lean block of the longest inductive prefix of `n`
+  let some all := blockOf env n | return none
+  let members : Array Ix.Name := all.toArray.map Ix.Name.fromLeanName
+  let memberHashes : Std.HashSet Address := members.foldl (fun s m => s.insert m.getHash) {}
+  -- the block's components: `Muts` entries whose classes hold a member
+  let nameOf : Std.HashMap Address Ix.Name := members.foldl (fun m x => m.insert x.getHash x) {}
+  let mut comps : Array (Ix.Name × Array (Option Nat)) := #[]
+  for (_, nd) in ixon.named do
+    if let .muts classes lay? := nd.constMeta.info then
+      if classes.any (·.any memberHashes.contains) then
+        let some rep0 := (classes[0]? >>= (·[0]?)) >>= nameOf.get? | continue
+        let perm : Array (Option Nat) := match lay? with
+          | some l => l.perm.map fun p => if p == 0xFFFFFFFFFFFFFFFF then none else some p.toNat
+          | none => #[]
+        comps := comps.push (rep0, perm)
+  if comps.isEmpty then return none
+  -- a nested auxiliary picks the component that owns its position
+  for (rep0, perm) in comps do
+    if let some d := Ix.Compile.Pass.ixAuxName members rep0 perm ixn then
+      if ixon.named.contains d then return some d
+  return none
+
 /-- One family: the rows of every exception, and the number compared. -/
 def oracleFamily (env : Environment) (ixon : Ixon.Env) (f : Family) : IO (Nat × Array Row) := do
   let some a := f.pres.head? | return (0, #[])
   let some b := f.pres[1]? | return (0, #[])
-  let addr (n : Name) : Option Address := ixon.getAddr? (Ix.Name.fromLeanName n)
+  -- the Ix auxiliary Lean calls `n`: under Pass 3 at its display name when
+  -- its block changed (`displayOf`), else under `n`
+  let addr (n : Name) : Option Address :=
+    ixon.getAddr? ((displayOf env ixon n).getD (Ix.Name.fromLeanName n))
   let named (n : Name) := ixon.named.get? (Ix.Name.fromLeanName n)
   let lean (n : Name) : Option Address := match named n with
     | some nm => some (nm.original.map (·.1) |>.getD nm.addr)
@@ -174,6 +243,9 @@ def oracleFamily (env : Environment) (ixon : Ixon.Env) (f : Family) : IO (Nat ×
       | "FieldBelow" => "(f) WB-B1"
       | "RecAlias" => "(f) WB-RecAlias"
       | _ => cls
+    -- Pass 3: a recorded non-canonical difference of the twins gate
+    let cls := if cls != "UNEXPECTED" then cls else
+      (recordedCause f.fixture a.id b.id (rel t)).getD cls
     let k (x : Option Address) : String := (x.map (kindOf ixon)).getD "-"
     rows := rows.push
       { family := f.fixture, aux := rel t, cls,
@@ -201,11 +273,13 @@ def run : IO UInt32 := do
   let (seeds, closure) := familyClosure env families
   IO.println s!"[aux-oracle] {families.length} families, {seeds.size} fixture constants, \
 {closure.length} in the closure"
-  -- The legacy surgery, explicitly (`IX_PASS3=off`): the oracle and its exception classes
-  -- describe Ix auxiliaries under their Lean names; under Pass 3 (the default since M6)
-  -- those names hold images, checked by the `pass3` suite (rules by `rfl`).
-  let out ← leanCompile env closure (pass3? := some false)
-  let mut failures ← refusalCheck "aux-oracle" (closure.foldl (init := {}) fun s (x, _) => s.insert x)
+  -- Pass 3 (the only mode since M6R slice 6; until then the oracle compiled
+  -- with the legacy surgery, `IX_PASS3=off`, which kept the Ix auxiliaries
+  -- under their Lean names): the Ix auxiliary of a changed block is read at
+  -- its display name (`displayOf`); its Lean name holds the image, checked by
+  -- the `pass3` suite (rules by `rfl`)
+  let out ← leanCompile env closure
+  let mut failures ← refusalCheck "aux-oracle"
     (out.cenv.ungrounded.toList.map fun (x, e) => (x.pretty, e))
   let mut total := 0
   let mut byClass : Std.HashMap String Nat := {}

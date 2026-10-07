@@ -3745,6 +3745,78 @@ mod tests {
     );
   }
 
+  /// Valid image-packing support for compile_env fixtures. Pass 3 uses
+  /// And/True for Prop motives and PProd for Type motives; these are source
+  /// declarations, not generated placeholders or trusted kernel entries.
+  fn add_image_support(env: &mut LeanEnv) {
+    add_punit_pprod(env);
+    let prop = LeanExpr::sort(Level::zero());
+    let and = n("And");
+    let intro = Name::str(and.clone(), "intro".into());
+    let bv = |i: u64| LeanExpr::bvar(Nat::from(i));
+    let and_ty =
+      epi(n("a"), prop.clone(), epi(n("b"), prop.clone(), prop.clone()));
+    let intro_ty = LeanExpr::all(
+      n("a"),
+      prop.clone(),
+      LeanExpr::all(
+        n("b"),
+        prop.clone(),
+        epi(
+          n("left"),
+          bv(1),
+          epi(
+            n("right"),
+            bv(1),
+            LeanExpr::app(
+              LeanExpr::app(LeanExpr::cnst(and.clone(), vec![]), bv(3)),
+              bv(2),
+            ),
+          ),
+        ),
+        BinderInfo::Implicit,
+      ),
+      BinderInfo::Implicit,
+    );
+    for (name, ctor, typ, ctor_typ, params, fields) in [
+      (and, intro, and_ty, intro_ty, 2u64, 2u64),
+      (
+        n("True"),
+        Name::str(n("True"), "intro".into()),
+        prop,
+        LeanExpr::cnst(n("True"), vec![]),
+        0,
+        0,
+      ),
+    ] {
+      env.insert(
+        name.clone(),
+        ConstantInfo::InductInfo(InductiveVal {
+          cnst: ConstantVal { name: name.clone(), level_params: vec![], typ },
+          num_params: Nat::from(params),
+          num_indices: Nat::from(0u64),
+          all: vec![name.clone()],
+          ctors: vec![ctor.clone()],
+          num_nested: Nat::from(0u64),
+          is_rec: false,
+          is_unsafe: false,
+          is_reflexive: false,
+        }),
+      );
+      env.insert(
+        ctor.clone(),
+        ConstantInfo::CtorInfo(ConstructorVal {
+          cnst: ConstantVal { name: ctor, level_params: vec![], typ: ctor_typ },
+          induct: name,
+          cidx: Nat::from(0u64),
+          num_params: Nat::from(params),
+          num_fields: Nat::from(fields),
+          is_unsafe: false,
+        }),
+      );
+    }
+  }
+
   /// Build a Prop mutual with drec eligibility (single ctor, all-Prop fields).
   /// This is is_prop=true BUT is_large=true (drec).
   /// P : Prop, P | mk : P → P  (single ctor with one Prop field)
@@ -4353,7 +4425,7 @@ mod tests {
     use ix_kernel::{
       env::KEnv,
       id::KId,
-      ingress::ixon_ingress,
+      ingress::{ixon_ingress, lean_ingress},
       mode::{Anon, Meta},
       tc::TypeChecker,
     };
@@ -4361,13 +4433,29 @@ mod tests {
 
     let (flat, _, _) = build_alpha_collapse_env_with_recursors();
     let (nested, _) = build_nested_source_recursors();
-    for source in [flat, nested] {
+    for mut source in [flat, nested] {
+      add_image_support(&mut source);
+      // Check the complete input, including support declarations, before
+      // compiling it. An invalid prelude cannot make this test pass.
+      let mut source_kernel = lean_ingress(&source).unwrap();
+      let source_ids: Vec<_> = source_kernel.consts.keys().cloned().collect();
+      for id in source_ids {
+        TypeChecker::new(&mut source_kernel).check_const(&id).unwrap_or_else(
+          |e| panic!("source fixture {}: {e}", id.name.pretty()),
+        );
+      }
       let source = Arc::new(source);
       let stt = compile_env(&source).unwrap();
       assert!(stt.ungrounded.is_empty(), "{:?}", stt.ungrounded);
       let (mut meta_env, _intern) = ixon_ingress::<Meta>(&stt.env).unwrap();
       let mut anon_env = KEnv::<Anon>::new();
-      for (name, _) in source.iter() {
+      // Retain every source target and also check canonical auxiliary
+      // records moved to reserved names by Pass 3.
+      let mut names: Vec<_> = source.iter().map(|(n, _)| n.clone()).collect();
+      names.extend(stt.aux_name_to_addr.iter().map(|e| e.key().clone()));
+      names.sort_by_key(Name::pretty);
+      names.dedup();
+      for name in &names {
         let addr = stt.resolve_addr(name).unwrap();
         // Meta ingress stores canonical representatives, not every source
         // alias. Use the actual ingressed KId for this canonical address.
@@ -4456,8 +4544,10 @@ mod tests {
 
   /// 3h. Full compile pipeline for alpha-collapsed recursor aliases.
   ///
-  /// Compile genuine uncollapsed recursors and check their canonical content,
-  /// not just alias equality (two compiled placeholders could compare equal).
+  /// Compile genuine uncollapsed source recursors into Pass 3 images, keeping
+  /// their source telescopes. The exact reserved canonical recursors must
+  /// alias and carry the collapsed content; placeholders cannot satisfy the
+  /// shape and kernel assertions. Both contracts hold with 1 and 4 workers.
   #[test]
   fn test_aux_gen_compile_roundtrip() {
     use crate::compile::{CompileOptions, env::compile_env_with_options};
@@ -4465,16 +4555,19 @@ mod tests {
     use ixon::constant::ConstantInfo as IxonCI;
     use std::sync::Arc;
 
-    let (env, a, b) = build_alpha_collapse_env_with_recursors();
+    let (mut env, a, b) = build_alpha_collapse_env_with_recursors();
+    add_image_support(&mut env);
     let lean_env = Arc::new(env);
     let a_rec = Name::str(a.clone(), "rec".into());
     let b_rec = Name::str(b.clone(), "rec".into());
+    let a_canon = Name::str(Name::str(a.clone(), "_ix".into()), "rec".into());
+    let b_canon = Name::str(Name::str(b.clone(), "_ix".into()), "rec".into());
     let mut canonical_addrs = Vec::new();
 
     for max_workers in [1, 4] {
       let stt = compile_env_with_options(
         &lean_env,
-        CompileOptions { max_workers: Some(max_workers), ..Default::default() },
+        CompileOptions { max_workers: Some(max_workers) },
       )
       .expect("compile_env should succeed for alpha-collapse inductives");
       assert!(
@@ -4483,11 +4576,55 @@ mod tests {
         stt.ungrounded,
       );
 
-      let a_addr = stt.resolve_addr(&a_rec).expect("A.rec should be compiled");
-      let b_addr = stt.resolve_addr(&b_rec).expect("B.rec should be compiled");
-      assert_eq!(a_addr, b_addr, "alpha-equivalent recursors must alias");
-      assert!(stt.aux_gen_extra_names.contains(&a_rec));
-      assert!(stt.aux_gen_extra_names.contains(&b_rec));
+      assert_eq!(
+        stt.resolve_addr(&a).unwrap(),
+        stt.resolve_addr(&b).unwrap(),
+        "the supported fixture must still alpha-collapse"
+      );
+      let a_addr = stt.resolve_addr(&a_canon).expect("A._ix.rec must exist");
+      let b_addr = stt.resolve_addr(&b_canon).expect("B._ix.rec must exist");
+      assert_eq!(
+        a_addr, b_addr,
+        "alpha-equivalent canonical recursors must alias"
+      );
+      assert!(stt.aux_name_to_addr.contains_key(&a_canon));
+      assert!(stt.aux_name_to_addr.contains_key(&b_canon));
+      let recovered = crate::decompile::decompile_env(&stt).unwrap();
+      for name in [&a_rec, &b_rec] {
+        let source_addr =
+          stt.resolve_addr(name).expect("source image must exist");
+        assert_ne!(
+          source_addr, a_addr,
+          "a source image is not the canonical recursor"
+        );
+        assert!(
+          matches!(
+            &stt.env.get_const(&source_addr).unwrap().info,
+            IxonCI::Defn(_)
+          ),
+          "{} must compile as a source image",
+          name.pretty()
+        );
+        assert!(
+          !stt.aux_gen_extra_names.contains(name),
+          "the source image must be released from auxiliary ownership"
+        );
+        let original = lean_env.get(name).unwrap();
+        let ConstantInfo::RecInfo(original) = &*original else {
+          unreachable!()
+        };
+        assert_eq!(original.num_motives, Nat::from(2u64));
+        assert_eq!(original.num_minors, Nat::from(2u64));
+        let restored =
+          recovered.env.get(name).expect("source recursor must materialize");
+        let ConstantInfo::RecInfo(restored) = &*restored else {
+          panic!("{} must materialize as its source recursor", name.pretty());
+        };
+        assert_eq!(
+          restored, original,
+          "every source recursor field must roundtrip"
+        );
+      }
 
       // The collapsed singleton is a standalone recursor with 1+1 binders,
       // not the original mutual's 2+2, nor the old stub's 0+0.
@@ -4511,6 +4648,12 @@ mod tests {
         let addr = stt.resolve_addr(name).unwrap();
         tc.check_const(&KId::new(addr, ())).unwrap_or_else(|e| {
           panic!("compiled fixture {}: {e}", name.pretty())
+        });
+      }
+      for name in [&a_canon, &b_canon] {
+        let addr = stt.resolve_addr(name).unwrap();
+        tc.check_const(&KId::new(addr, ())).unwrap_or_else(|e| {
+          panic!("compiled canonical recursor {}: {e}", name.pretty())
         });
       }
       canonical_addrs.push(a_addr);

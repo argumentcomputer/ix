@@ -7,27 +7,28 @@
   Fixture `Tests/Ix/Compile/Pass/O2Split.lean`: the mutual block `SA`/`SB`
   splits (`SA.a : SB → SA`, nothing of `SB` mentions `SA`), so Lean's
   `PassO2.SA._sizeOf_1` (the size function of `SA`, over Lean's block
-  recursor) is O11a's pattern: with the switch on, the cross field into the
+  recursor) is O11a's pattern: under Pass 3, the cross field into the
   lower component `SB` gets its size through `PassO2.SB._sizeOf_inst`.
 
-  Two inputs, each compiled by the Lean pipeline with the switch off and on:
+  Two inputs, each compiled by the Lean pipeline (Pass 3, the only mode since
+  M6R slice 6; until then also with the legacy surgery, `IX_PASS3=off`, where
+  nothing was recorded):
 
   - **valid neighbour**: the selected closure of `PassO2.SA._sizeOf_1`
     (`Ix.EnvScope.collectSelectedDeps`, which carries the instance). The
     scheduler has the edge `SA._sizeOf_1 → SB._sizeOf_inst`
-    (`prepareSizeOfScheduling`, on the input's own condensation); with the
-    switch on `SA._sizeOf_1` references `SB._sizeOf_inst` (O11a fired) and
+    (`prepareSizeOfScheduling`, on the input's own condensation);
+    `SA._sizeOf_1` references `SB._sizeOf_inst` (O11a fired) and
     the compile's non-canonical set is empty;
   - **withheld**: the same closure without `PassO2.SB._sizeOf_inst` and
     without every constant that references it (the `sizeOf_spec` lemmas),
-    so the input is closed. No edge to the instance; with the switch on
+    so the input is closed. No edge to the instance;
     `SA._sizeOf_1` keeps O2's relocated form (it references the lower
     component's recursor `PassO2.SB._ix.rec`, not the instance) and the
     non-canonical set is exactly `{PassO2.SA._sizeOf_1}` with a cause that
     names `PassO2.SB._sizeOf_inst`.
 
-  With the switch off nothing is recorded in either input. Every compile
-  must have no refusals.
+  Every compile must have no refusals.
 
   M1-h adds one input per other side condition (`runSide`, below).
 
@@ -85,8 +86,8 @@ closure: `NB._sizeOf_inst`'s size function is replaced by `NB.sizeOfAlt` (a
 recursion of `NB.rec` with another telescope) or by `NB.sizeOfWrapped` (not
 `λ t. NB.rec … t`). The users' functions `NA.viaRec`/`PA.viaRec` (the same
 recursors, not the `sizeOf` recursion) are in the closures and must not be
-recorded: with the switch on, each declining input records exactly its root,
-with a cause naming the condition; with the switch off nothing is recorded.
+recorded: each declining input records exactly its root, with a cause naming
+the condition.
 -/
 
 /-- One side-condition input. -/
@@ -139,10 +140,10 @@ def runSide : IO (Array String) := do
         errors := errors.push s!"{c.label}: {e}"
         continue
     unless cs.any (·.1 == c.inst) do errors := errors.push s!"{c.label}: the closure lacks {c.inst}"
-    for mode in [false, true] do
+    for mode in [true] do
       let unit : Tests.Ix.Compile.Pass3.CUnit :=
         { name := s!"o11a-{c.label}", env, seeds := seeds.toArray, closure := cs }
-      let out ← Tests.Ix.Compile.Pass3.compileUnit unit mode
+      let out ← Tests.Ix.Compile.Pass3.compileUnit unit
       unless out.cenv.ungrounded.isEmpty do
         errors := errors.push s!"{c.label} mode={mode}: {out.cenv.ungrounded.size} refusals"
       let nc := out.cenv.p3NonCanonical.toList
@@ -150,10 +151,6 @@ def runSide : IO (Array String) := do
       IO.println s!"[o11a-decline] side {c.label} mode={mode} ({cs.length} constants): \
         {c.root} references {c.inst}: {toInst}; non-canonical set \
         {nc.map fun (n, x) => s!"{n.pretty}: {x}"}"
-      if !mode then
-        unless nc.isEmpty do errors := errors.push s!"{c.label} mode=off: records {nc.length} entries"
-        if toInst then errors := errors.push s!"{c.label} mode=off: {c.root} references {c.inst}"
-        continue
       match c.cause? with
       | none =>
         unless nc.isEmpty do errors := errors.push s!"{c.label}: unexpected records {nc.map (·.1.pretty)}"
@@ -197,21 +194,18 @@ def run : IO UInt32 := do
       errors := errors.push s!"{label}: scheduling edge {root} → {inst} is \
         {if edge then "present" else "absent"}"
     IO.println s!"[o11a-decline] {label}: scheduling edge {root} → {inst}: {edge}"
-    for mode in [false, true] do
+    for mode in [true] do
       let unit : Tests.Ix.Compile.Pass3.CUnit :=
         { name := s!"o11a-{label}", env, seeds := #[root], closure := cs }
-      let out ← Tests.Ix.Compile.Pass3.compileUnit unit mode
+      let out ← Tests.Ix.Compile.Pass3.compileUnit unit
       unless out.cenv.ungrounded.isEmpty do
         errors := errors.push s!"{label} mode={mode}: {out.cenv.ungrounded.size} refusals"
       let nc := out.cenv.p3NonCanonical.toList
       IO.println s!"[o11a-decline] {label} mode={mode}: non-canonical set {nc.map fun (n, c) => s!"{n.pretty}: {c}"}"
       let toInst ← IO.ofExcept (references out.env root inst)
-      let toLower ← if mode then IO.ofExcept (references out.env root lowerRec) else pure false
+      let toLower ← IO.ofExcept (references out.env root lowerRec)
       IO.println s!"[o11a-decline] {label} mode={mode}: {root} references {inst}: {toInst}; {lowerRec}: {toLower}"
-      if !mode then
-        unless nc.isEmpty do errors := errors.push s!"{label} mode=off: records {nc.length} entries"
-        if toInst then errors := errors.push s!"{label} mode=off: {root} references {inst}"
-      else if wantEdge then
+      if wantEdge then
         unless nc.isEmpty do errors := errors.push s!"neighbour: unexpected records {nc.map (·.1.pretty)}"
         unless toInst do errors := errors.push s!"neighbour: O11a did not fire ({root} lacks {inst})"
       else
@@ -227,7 +221,7 @@ def run : IO UInt32 := do
   errors := errors ++ sideErrors
   for e in errors do IO.println s!"[o11a-decline] FAIL {e}"
   IO.println s!"[o11a-decline] {if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}: \
-    {2 + sideCases.size} inputs × 2 switch states"
+    {2 + sideCases.size} inputs (Pass 3)"
   return if errors.isEmpty then 0 else 1
 
 end Tests.Ix.Compile.O11aDecline

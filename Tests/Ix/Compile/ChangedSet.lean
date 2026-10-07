@@ -51,7 +51,7 @@ def say (s : String) : IO Unit := IO.println s!"[changed-set] {s}"
 def compileWith (name : String) (env : Environment) (closure : List (Name × ConstantInfo))
     (workers : Nat) : IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (pass3? := some true) with
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) with
   | .ok o => pure o
   | .error e => throw (IO.userError s!"{name}: Lean compile (workers {workers}) failed: {e}")
 

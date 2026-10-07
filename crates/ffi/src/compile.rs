@@ -304,8 +304,7 @@ pub extern "C" fn rs_compile_env_full(
 /// root — matches the serialized header, computed even when nothing is
 /// written), ungrounded (`Array (String × String)` of pretty-name /
 /// reason, sorted by name), nonCanonical (Pass 3's recorded declines,
-/// `Array (String × String)` of pretty-name / cause, sorted by name;
-/// empty with the switch off), bytes (0 when not written), named count,
+/// `Array (String × String)` of pretty-name / cause, sorted by name), bytes (0 when not written), named count,
 /// unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
@@ -313,7 +312,7 @@ pub extern "C" fn rs_compile_env(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, false, None)
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, false)
 }
 
 /// `rs_compile_env` with strict-anon output (`ix compile --anon`):
@@ -333,35 +332,7 @@ pub extern "C" fn rs_compile_env_anon(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(env_consts_ptr, out_path, allow_partial, true, None)
-}
-
-/// `rs_compile_env` with the Pass 3 mode given by the caller instead of read
-/// from `IX_PASS3` (`pass3 != 0`: Pass 3; `0`: the legacy surgery). The
-/// parity suite resolves the mode as the Lean compiler does (unset is Pass 3
-/// there, the surgery in Rust until M6R slice 6) and passes it here.
-///
-/// Lean signature:
-/// ```lean
-/// @[extern "rs_compile_env_pass3"]
-/// opaque rsCompileEnvBytesPass3FFI
-///   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool → Bool
-///   → IO CompileEnvStatus
-/// ```
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_env_pass3(
-  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
-  out_path: LeanString<LeanBorrowed<'_>>,
-  allow_partial: u8,
-  pass3: u8,
-) -> LeanIOResult<LeanOwned> {
-  compile_env_inner(
-    env_consts_ptr,
-    out_path,
-    allow_partial,
-    false,
-    Some(pass3 != 0),
-  )
+  compile_env_inner(env_consts_ptr, out_path, allow_partial, true)
 }
 
 fn compile_env_inner(
@@ -369,21 +340,18 @@ fn compile_env_inner(
   out_path: LeanString<LeanBorrowed<'_>>,
   allow_partial: u8,
   strict_anon: bool,
-  pass3: Option<bool>,
 ) -> LeanIOResult<LeanOwned> {
   let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
 
-  let compile_stt = match compile_env_with_options(
-    &rust_env,
-    CompileOptions { pass3, ..CompileOptions::default() },
-  ) {
-    Ok(stt) => stt,
-    Err(e) => {
-      let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-      return LeanIOResult::error_string(&msg);
-    },
-  };
+  let compile_stt =
+    match compile_env_with_options(&rust_env, CompileOptions::default()) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+        return LeanIOResult::error_string(&msg);
+      },
+    };
 
   // Deterministically ordered (pretty name, reason) pairs — DashMap
   // iteration order is shard-dependent.
@@ -2505,12 +2473,7 @@ pub extern "C" fn rs_aux_gen_dump_patches(
   LeanIOResult::ok(LeanString::new(&out))
 }
 
-/// Render bool-vec keep masks / usize perms compactly for the plans dump.
-#[cfg(feature = "test-ffi")]
-fn aux_dump_bits(bits: &[bool]) -> String {
-  bits.iter().map(|&b| if b { '1' } else { '0' }).collect()
-}
-
+/// Render usize perms compactly for the layout dump.
 #[cfg(feature = "test-ffi")]
 fn aux_dump_usizes(xs: &[usize]) -> String {
   xs.iter()
@@ -2519,14 +2482,9 @@ fn aux_dump_usizes(xs: &[usize]) -> String {
     .join(",")
 }
 
-/// FFI: deterministic text dump of the post-compile surgery plans,
-/// AuxLayouts, and synthetic `Muts` named entries — the orchestration
-/// parity gate's medium. Lines:
-///   plan <name> params=<n> smotives=<n> sminors=<n> indices=<n>
-///        mkeep=<bits> nkeep=<bits> m2c=<csv> n2c=<csv> inblock=<bits>
-///        head=<target>@<pos>|none
-///   bplan <name> params=<n> smotives=<n> indices=<n> mkeep=<bits> m2c=<csv>
-///   wplan <name> ...                    (below plans, same shape as bplan)
+/// FFI: deterministic text dump of the post-compile AuxLayouts and synthetic
+/// `Muts` named entries — the orchestration parity gate's medium (until M6R
+/// slice 6 it also dumped the legacy call-site surgery's plans). Lines:
 ///   layout <all0> perm=<csv> counts=<csv>
 ///   muts <name> addr=<hex> all=<h,h;h|...> layout=<perm csv>/<counts csv>|none
 #[cfg(feature = "test-ffi")]
@@ -2551,56 +2509,7 @@ pub extern "C" fn rs_aux_gen_dump_plans(
 
   let mut out = String::new();
 
-  let mut plans: Vec<(String, ix_compile::compile::surgery::CallSitePlan)> =
-    stt
-      .call_site_plans
-      .iter()
-      .map(|e| (e.key().pretty(), e.value().clone()))
-      .collect();
-  plans.sort_by(|(a, _), (b, _)| a.cmp(b));
-  for (name, p) in &plans {
-    let head = match &p.head_rewrite {
-      Some(h) => format!("{}@{}", h.target_rec.pretty(), h.target_motive_pos),
-      None => "none".to_string(),
-    };
-    let _ = writeln!(
-      out,
-      "plan {name} params={} smotives={} sminors={} indices={} mkeep={} nkeep={} m2c={} n2c={} inblock={} head={head}",
-      p.n_params,
-      p.n_source_motives,
-      p.n_source_minors,
-      p.n_indices,
-      aux_dump_bits(&p.motive_keep),
-      aux_dump_bits(&p.minor_keep),
-      aux_dump_usizes(&p.source_to_canon_motive),
-      aux_dump_usizes(&p.source_to_canon_minor),
-      aux_dump_bits(&p.source_in_block),
-    );
-  }
-
-  for (tag, map) in [
-    ("bplan", &stt.brec_on_call_site_plans),
-    ("wplan", &stt.below_call_site_plans),
-  ] {
-    let mut bplans: Vec<(
-      String,
-      ix_compile::compile::surgery::BRecOnCallSitePlan,
-    )> = map.iter().map(|e| (e.key().pretty(), e.value().clone())).collect();
-    bplans.sort_by(|(a, _), (b, _)| a.cmp(b));
-    for (name, p) in &bplans {
-      let _ = writeln!(
-        out,
-        "{tag} {name} params={} smotives={} indices={} mkeep={} m2c={}",
-        p.n_params,
-        p.n_source_motives,
-        p.n_indices,
-        aux_dump_bits(&p.motive_keep),
-        aux_dump_usizes(&p.source_to_canon_motive),
-      );
-    }
-  }
-
-  let mut layouts: Vec<(String, ix_compile::compile::surgery::AuxLayout)> = stt
+  let mut layouts: Vec<(String, ixon::env::AuxLayout)> = stt
     .aux_perms
     .iter()
     .map(|e| (e.key().pretty(), e.value().clone()))

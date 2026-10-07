@@ -8,7 +8,7 @@ directory; existing manifests are never used as an implicit successful resume.
 
 The merge-test `compiler closure and corpus` partition runs the selected/whole
 closure end-to-end suite, the corpus driver's self-checks, and the exact
-checker-support regression in both rewrite modes. It does not run a broad shape
+checker-support regression (Pass 3, the only rewrite mode since M6R slice 6). It does not run a broad shape
 sweep. The main test job also runs the strict report, index-safety, provenance,
 and selected-closure unit controls.
 
@@ -95,8 +95,8 @@ lake env .lake/build/bin/aux-shape-sweep verify-round2 \
 
 ```sh
 lake env .lake/build/bin/aux-shape-sweep run --dir out/corpus-curated \
-  --revision EXACT_COMPILER_COMMIT --mode both --jobs 4 --workers 1 --timeout 900
-lake env .lake/build/bin/aux-shape-sweep compare --dir out/corpus-curated --mode both
+  --revision EXACT_COMPILER_COMMIT --mode on --jobs 4 --workers 1 --timeout 900
+lake env .lake/build/bin/aux-shape-sweep compare --dir out/corpus-curated --mode on
 lake env .lake/build/bin/aux-shape-sweep matrix --dir out/corpus-curated
 ```
 
@@ -123,10 +123,11 @@ smaller explicit set; it must include `elaborate,compile`. `closure` and `parity
 also require `rust`. Every phase receives a verdict, including `not-selected`,
 `not-applicable`, and `not-run`. No missing output counts as success.
 
-The primary compiler is Lean with Pass 3 off and/or on. The Rust compiler is an
-explicit legacy baseline. Off-mode Lean/Rust outputs must have identical bytes;
-on-mode parity is recorded as not applicable because Rust retains legacy surgery.
-Repeated Lean compilation checks complete serialized byte equality in each mode.
+The primary compiler is Lean with Pass 3, the only mode of both compilers since
+M6R slice 6 (2026-10-07; `--mode on`, the default; the legacy surgery, `off`, was
+deleted with its `--mode off` and `both`). The Rust compiler is the second
+implementation: Lean/Rust outputs must have identical bytes (the `parity` phase).
+Repeated Lean compilation checks complete serialized byte equality.
 
 Variant comparison retains complete fixture-owned name/address maps and address
 multisets, with no generated-name exclusions. Rename comparisons undo only whole
@@ -144,7 +145,9 @@ Each compile phase writes `compile-records.json`: for every fixture-owned name,
 its address, the kind of the constant at that address (`iprj`/`cprj`/`rprj`/
 `dprj` projections with their stored block, or `defn`/`recr`/...), and the
 address of `Named.original` when present. `compare` reads the base's and the
-permutation's records in the same switch mode and requires:
+permutation's records in the same switch mode and requires the checks below. New runs use only
+Pass 3 (`on`); the comparator also reads stored pre-slice-6 `off` records, whose rules are retained
+here for that historical format. Its synthetic `off` controls do not invoke a retired compiler mode.
 
 1. **Roots.** The records whose constant is a datatype or constructor projection
    (`iprj`/`cprj`) have the same names on both sides and equal addresses. A base
@@ -222,7 +225,7 @@ untrusted policy in `Ix.Common.CheckerSupport` selects existing source records;
 the certified checker still verifies them and its unchanged pins. Raw dependency
 and default whole-file selection remain unchanged. Run
 `lake exe checker-support-regression` for the exact Single corpus regression,
-whole-output record equality, both switch modes, and raw-closure negative controls.
+whole-output record equality, and raw-closure negative controls (Pass 3).
 
 The closure phase ports the legacy Rust `compile --consts` driver, comparing
 complete `Named` records against Rust whole output and checking each produced

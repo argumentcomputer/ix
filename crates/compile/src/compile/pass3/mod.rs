@@ -1,6 +1,7 @@
-//! Pass 3, the faithful rewrite (`IX_PASS3=images`), in the Rust compiler
-//! (M6R slices 1-4). The specification is `docs/compiler-passes.md` §4; the
-//! reference is the Lean compiler's switch-on output (`Ix/Compile/Pass/*`,
+//! Pass 3, the faithful rewrite, in the Rust compiler (M6R slices 1-4; the
+//! only mode since slice 6, which deleted the legacy call-site surgery and
+//! made it the default). The specification is `docs/compiler-passes.md` §4;
+//! the reference is the Lean compiler's output (`Ix/Compile/Pass/*`,
 //! `Ix/Compile/Image/*`).
 //!
 //! Module map (Lean to Rust):

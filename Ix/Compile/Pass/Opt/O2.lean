@@ -56,11 +56,11 @@ the recursion of Lean's `sizeOf` family, O2's relocated form stays and O11a
 records the decline with its cause (`O11a.declineCause?`, cause
 `O11A-PENDING` in the twins' records).
 
-The minor's constructor, type and binders are read with the surgery's
-split-minor helpers (`Ix/CallSiteSurgery.lean`: `auxMotiveSigs`,
-`sourceCtorForMinor`, `sourceMinorType`, `peelBinders`,
-`findSourceRecTarget`), shared with O11a: deleting the surgery (M6R slice 6)
-must keep them, in both compilers.
+The minor's constructor, type and binders are read with the split-minor
+helpers (`Ix/AuxSource.lean`: `auxMotiveSigs`, `sourceCtorForMinor`,
+`sourceMinorType`, `peelBinders`, `findSourceRecTarget`; Rust
+`compile/aux_source.rs`), shared with O11a. They were the legacy call-site
+surgery's and stayed when M6R slice 6 deleted it.
 
 ## Side condition and fallback
 Decidable: `classify` gives `rec`; the block is split and has no collapsed
@@ -82,7 +82,7 @@ O2 fires).
 module
 public import Ix.Compile.Pass.Opt.Core
 public import Ix.Compile.Pass.Opt.O5
-public import Ix.CallSiteSurgery
+public import Ix.AuxSource
 public import Ix.AuxGen.ExprUtils
 public section
 
@@ -112,8 +112,8 @@ def wrappedMinorSrc (arity np nm nmin : Nat) (t : Expr) : Option Nat := do
 /-- The relocated call for an IH binder over a field outside the component:
 the Lean recursor of the field's type applied to the occurrence's telescope,
 the field's indices and the field (under its own binders), rewritten by the
-engine (`recur`). Mirrors the old surgery's `synthesizeExternalIh`, with the
-inner occurrence rewritten here instead of by a second surgery. -/
+engine (`recur`). Mirrors the deleted legacy surgery's `synthesizeExternalIh`, with
+the inner occurrence rewritten here instead of by a second surgery. -/
 def relocatedIh (recur : Occ → Option Expr) (target : Ix.AuxGen.SourceRecTarget)
     (field : Expr) (all : Array Name) (us : Array Level)
     (ps ms mins : Array Expr) : Option Expr := do

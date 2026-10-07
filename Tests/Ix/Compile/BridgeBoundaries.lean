@@ -50,7 +50,7 @@ private def provisionalCompilation (resolved : Bool) : Bool := Id.run do
     nameToAddr := if resolved then ({} : Std.HashMap _ _).insert x actual else {} }
   match CompileM.run env
       { all := {}, current := y, mutCtx := default, univCtx := [] } {}
-      (compileExprNoSurgery restored) with
+      (compileExprTotal restored) with
   | .ok (_, state) => return resolved && state.refs == #[actual]
   | .error (.missingConstant _) => return !resolved
   | .error _ => return false

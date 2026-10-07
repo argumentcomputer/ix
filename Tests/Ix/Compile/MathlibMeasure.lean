@@ -8,7 +8,7 @@
   into `M1G_DIR` (default `out/m1g`):
 
   * `compile`: compile the file's environment as `ix compile-lean` does,
-    switch on (`pass3? := some true`), `M1G_WORKERS` workers (default 32);
+    Pass 3 (the only mode), `M1G_WORKERS` workers (default 32);
     write the output (`M1G_OUT`, if set) and the compile's own records:
     `failures.tsv` (every block failure, the block rule's refusals marked),
     `cliques.tsv` (every definition clique of the input, as the compiler
@@ -79,8 +79,7 @@ def runCompile (dir : System.FilePath) : IO UInt32 := do
   IO.println s!"[m1g] {path}: {constList.length} constants, {workers} workers"
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
   let t0 ← IO.monoMsNow
-  let on ← match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (dbg := true)
-      (pass3? := some true) with
+  let on ← match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (dbg := true) with
     | .ok o => pure o
     | .error e => throw (IO.userError s!"compile failed: {e}")
   IO.println s!"[m1g] switch on: {on.bytes.size} B, {on.blockCount} blocks, \

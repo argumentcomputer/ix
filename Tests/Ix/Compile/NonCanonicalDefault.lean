@@ -5,8 +5,9 @@
   its cause and evidence (addresses, first differing node of the Lean terms,
   the three kernels' anonymous verdicts on the Pass 3 output). Read by the
   twins gate (exact in both directions, against its Pass 3 compile) and by
-  `validate-lean-nc` for its switch-on runs. The record of the legacy
-  surgery (`IX_PASS3=off`) is `Tests.Ix.Compile.NonCanonical.nonCanonicalOff`.
+  `validate-lean-nc`. The record of the legacy surgery (`IX_PASS3=off`,
+  `NonCanonical.nonCanonicalOff`) was deleted with it at M6R slice 6
+  (2026-10-07); its causes, cited below, are history.
 
   Emitted from the twins gate's suggested entries (`entrySyntax`, cause by
   `Tests.Ix.Compile.Twins.defaultCause`), the rest reviewed by hand

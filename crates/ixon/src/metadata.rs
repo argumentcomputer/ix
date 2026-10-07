@@ -237,11 +237,12 @@ pub struct UnivPatch {
 ///
 /// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) extend the
 /// index spaces of the primary `Constant` tables (for a projection, the
-/// tables of its `Muts` block). They are used by `CallSite` nodes in the
-/// metadata arena for call-site surgery roundtrip — collapsed argument
-/// expressions use `Ref(idx)` and universe indices in the extended spaces,
-/// and `Share(idx)` as specified on `meta_sharing` — and by `univ_patches`
-/// for original level spellings (canonicity §10.6).
+/// tables of its `Muts` block). They hold the source occurrences of Pass 3's
+/// `_ix.inline` decompile records (and, in files the legacy call-site surgery
+/// wrote before M6R slice 6, its `CallSite` nodes' collapsed arguments):
+/// those expressions use `Ref(idx)` and universe indices in the extended
+/// spaces, and `Share(idx)` as specified on `meta_sharing`. `univ_patches`
+/// holds original level spellings (canonicity §10.6).
 ///
 /// At decompile time `meta_refs`/`meta_univs` are appended to the block
 /// cache's primary tables, creating contiguous index spaces; `meta_sharing`
@@ -249,7 +250,9 @@ pub struct UnivPatch {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantMeta {
   pub info: ConstantMetaInfo,
-  /// Compiled Ixon expressions for collapsed call-site arguments and
+  /// Compiled Ixon expressions: the source occurrences of Pass 3's
+  /// `_ix.inline` records (the record's first value is the index), and, in
+  /// files the legacy surgery wrote, collapsed call-site arguments and
   /// rewritten call-site heads, indexed DIRECTLY (no offset) by
   /// `CallSiteEntry::Collapsed.sharing_idx` and
   /// `orig_head = Some((sharing_idx, _))`.
@@ -303,8 +306,8 @@ impl ConstantMeta {
     }
   }
 
-  /// Whether this metadata has any wrapper extension payload (surgery
-  /// tables or level-spelling patches).
+  /// Whether this metadata has any wrapper extension payload (record or
+  /// legacy call-site tables, or level-spelling patches).
   pub fn has_extensions(&self) -> bool {
     !self.meta_sharing.is_empty()
       || !self.meta_refs.is_empty()

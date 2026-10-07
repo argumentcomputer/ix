@@ -315,7 +315,9 @@ Both compilers build every table with this construction; it is the only
 sharing construction.
 
 **Metadata expressions.** A `Share(i)` inside entry `j` of
-`ConstantMeta.metaSharing` (the collapsed call-site arguments) is read in an
+`ConstantMeta.metaSharing` (the source occurrences of Pass 3's `_ix.inline`
+records; in files the call-site surgery wrote, its collapsed call-site
+arguments) is read in an
 extended index space. With `p` the size of the primary table:
 
 - `i < p` refers to primary entry `i`;

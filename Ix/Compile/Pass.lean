@@ -1,11 +1,11 @@
 /-
   Ix.Compile.Pass: Pass 3, the faithful rewrite (design document §4.5-4.6,
-  decisions Q10, Q11), the default since the flip (M6, 2026-10-06);
-  `IX_PASS3=off` selects the legacy call-site surgery instead (the comparison
-  mode against the Rust compiler until M6R).
+  decisions Q10, Q11), the default since the flip (M6, 2026-10-06) and the only mode since M6R
+  slice 6 (2026-10-07), which deleted the legacy call-site surgery from both
+  compilers.
 
   * `Names`: the reserved `_ix` names (D14), the decompile-record keys and
-    the switch;
+    the retired switch;
   * `Translate`: the call-site rewrite (Def 3.5, Def 3.6): inline at full
     applications by hereditary substitution, the image constant at bare and
     partial occurrences;
