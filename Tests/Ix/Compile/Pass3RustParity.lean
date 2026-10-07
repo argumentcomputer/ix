@@ -14,13 +14,14 @@
      (a) identical (address, metadata, original, hints), (b) different,
      (c) on one side only;
   3. every name of (b) and (c) must be owned by a later slice of M6R, read off
-     the Lean compile itself (slices 1 and 2 are implemented: the definitional
-     passes O1-O6 and O11a are checked for identity, not attributed; a
-     constant where only they change the rewrite is reported as such,
-     `slice-2 checked`, for the record):
-     * **slice 3** (clique transport): a member or carried lemma of the
-       clique table (`CompileEnv.p3Cliques`), and the reserved names under a
-       clique member (the hook's canonical constants);
+     the Lean compile itself (slices 1-3 are implemented: the definitional
+     passes O1-O6 and O11a, and the clique transport, are checked for
+     identity, not attributed; a constant where only the passes change the
+     rewrite is reported as `slice-2 checked`, and the clique table's members
+     and carried lemmas (`CompileEnv.p3Cliques`) and the hook's canonical
+     constants under reserved names (whose functional carries the side-car
+     record `_ix.clique` in its metadata; the members carry the decompile
+     record of Lean's value) as `slice-3 checked`, for the record):
      * **slice 4** (O7-O12, O11b): a constant where a proof-justified pass
        fires (`BlockRewrite.canon` non-empty: `PJ-FORM`) or the unit pass O11b
        applies (`unitPasses`), and its canonical form `c._ix`;
@@ -54,6 +55,7 @@ import Ix.CompileDriver
 import Ix.Compile.Pass
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.O11aDecline
+import Tests.Ix.Compile.CliqueOwnership
 
 open Lean
 
@@ -187,7 +189,6 @@ def classify (roots : Roots) (coneSet : Std.HashSet IxName) (metaEqual : IxName 
     (n : IxName) : Owner :=
   let base := (beforeReserved n).getD n
   if roots.slice4.contains base || roots.slice4.contains n then .slice4
-  else if roots.slice3.contains base || roots.slice3.contains n then .slice3
   else if roots.f1.contains n then .f1
   else if coneSet.contains base || coneSet.contains n then
     -- a cascade changes referenced addresses only: the metadata (names,
@@ -197,10 +198,10 @@ def classify (roots : Roots) (coneSet : Std.HashSet IxName) (metaEqual : IxName 
 
 def compare (lean rust : Ixon.Env) (roots : Roots) (closure : List (Name × ConstantInfo)) :
     Report := Id.run do
-  -- the definitional passes (slice 2) are implemented: their constants are
-  -- not roots, they must be identical
+  -- the definitional passes (slice 2) and the clique transport (slice 3) are
+  -- implemented: their constants are not roots, they must be identical
   let all : Std.HashSet IxName :=
-    roots.slice3.union roots.slice4 |>.union roots.f1
+    roots.slice4.union roots.f1
   let coneSet := cone closure all
   let mut rep : Report := {}
   for (n, a) in lean.named do
@@ -305,6 +306,17 @@ lean-only/different {mLean}, rust-only {mRust}"
     | _, _ => false
   IO.println s!"[parity] {name}: slice-2 checked: {s2.size} constant(s) the definitional passes \
 change, {s2same.size} identical"
+  let same (n : IxName) : Bool := match lean.named.get? n, rust.named.get? n with
+    | some a, some b => sameNamed a b
+    | _, _ => false
+  let s3members := roots.slice3.toArray.filter (lean.named.contains ·)
+  let s3canon := lean.named.toArray.filterMap fun (n, _) =>
+    match beforeReserved n with
+    | some b => if roots.slice3.contains b && !roots.slice3.contains n then some n else none
+    | none => none
+  IO.println s!"[parity] {name}: slice-3 checked: {s3members.size} member(s) and carried lemma(s), \
+{(s3members.filter same).size} identical; {s3canon.size} canonical constant(s) under reserved \
+names, {(s3canon.filter same).size} identical"
   -- the failures and the non-canonical sets, compared by name (and cause)
   let leanFailed : Array String := (out.cenv.ungrounded.toArray.map (·.1.pretty)).qsort (· < ·)
   let rustFailed : Array String := status.ungrounded.map (·.1)
@@ -378,6 +390,26 @@ def run (env : Environment) : IO UInt32 := do
       catch e =>
         IO.println s!"[parity] FAIL twins: {e}"
         failures := failures.push s!"twins: {e}"
+    -- the clique-ownership cases (`clique-ownership`): each case's clique as
+    -- a compile unit (its members' closure; WF8 with its caller and a
+    -- neighbour, the caller refused by name on both sides)
+    if want "clique-ownership" then
+      let eqn := Tests.Ix.Compile.Transport.eqnCliques env
+      let mut seen : Std.HashSet String := {}
+      for c in Tests.Ix.Compile.CliqueOwnership.cases do
+        if c.alter.isSome || seen.contains c.name then continue
+        seen := seen.insert c.name
+        let ns := Tests.Ix.Compile.CliqueOwnership.srcNs ++ c.name.toName
+        let some (_, ms) := eqn.get? (ns ++ `first) | do
+          IO.println s!"[parity] FAIL co-{c.name}: no clique recorded"
+          failures := failures.push s!"co-{c.name}: no clique recorded"
+          continue
+        let extra := if c.name.startsWith "WF8" then #[ns ++ `caller, ns ++ `neighbour] else #[]
+        try
+          defects := defects ++ (← runOne on s!"co-{c.name}" env (closureOf env (ms ++ extra).toList))
+        catch e =>
+          IO.println s!"[parity] FAIL co-{c.name}: {e}"
+          failures := failures.push s!"co-{c.name}: {e}"
     -- the O11a decline inputs (`o11a-decline`): the neighbour and the
     -- withheld instance of `O2Split`, and the M1-h side conditions
     if want "o11a" then

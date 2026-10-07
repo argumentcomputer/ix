@@ -381,6 +381,50 @@ fixture namespace that use them) with their closure
   without its callers in the unit (the clique is never changed for a
   caller). -/
 
+open Tests.Ix.Compile.Pass3 (CUnit kernelFailures) in
+/-- The Rust leg of a compile unit (M6R slice 3): the same prepared input
+compiled by the Rust compiler under Pass 3 (`rsCompileEnvBytesPass3FFI`). The
+clique's members and the hook's canonical constants under reserved names must
+have the same `Named` entries (address, metadata incl. the decompile records
+and the side-car record `_ix.clique`, original, hints) as in the Lean compile
+whose values this suite checks, the failures must be the same names, and the
+three kernels must accept the Rust file's compiled names. Returns the failures
+and a summary. -/
+def rustLeg (u : CUnit) (on : Ix.CompileM.LeanPipelineOut) (ms : Array Name) (names : Array String) :
+    IO (Array String × String) := do
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv u.env u.closure).mapError toString)
+  let constants ← IO.ofExcept input.prepare
+  let dir ← IO.FS.createTempDir
+  try
+    let path := dir / "rust.ixe"
+    let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants path.toString true true
+    let rust ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+    let mut failures : Array String := #[]
+    let leanFailed := (on.cenv.ungrounded.toArray.map (·.1.pretty)).qsort (· < ·)
+    let rustFailed := status.ungrounded.map (·.1)
+    unless leanFailed == rustFailed do
+      failures := failures.push s!"{u.name}: Rust failures {rustFailed} differ from Lean's {leanFailed}"
+    let msIx := ms.map ixName
+    let keys := on.env.named.toArray.filterMap fun (n, _) =>
+      if msIx.contains n then some n
+      else if Ix.Compile.Pass.hasReserved n && msIx.any (fun m => (Ix.Compile.Pass.stripPrefix? m n).isSome) then some n
+      else none
+    let mut same := 0
+    for n in keys do
+      match on.env.named.get? n, rust.named.get? n with
+      | some a, some b =>
+        if a.addr == b.addr && a.constMeta == b.constMeta && a.hints == b.hints &&
+            (a.original.map (·.1)) == (b.original.map (·.1)) then same := same + 1
+        else failures := failures.push s!"{u.name}: Rust's {n.pretty} differs from Lean's"
+      | _, none => failures := failures.push s!"{u.name}: Rust has no {n.pretty}"
+      | none, _ => pure ()
+    let kf ← if names.isEmpty then pure #[] else kernelFailures dir path names
+    for (leg, n, m) in kf do failures := failures.push s!"{u.name}: Rust-compiled {n} rejected by {leg}: {m.take 200}"
+    if keys.isEmpty then failures := failures.push s!"{u.name}: the Rust leg compared nothing"
+    return (failures, s!"rust: {same}/{keys.size} member and canonical entries identical to Lean's, \
+failures {rustFailed.size}, {kf.size} kernel failure(s) on {names.size} names")
+  finally IO.FS.removeDirAll dir
+
 open Tests.Ix.Compile.Pass3 (CUnit closureOf compileUnit kernelFailures) in
 /-- Compile `c`'s clique as a unit (members, plus `callers` and
 `neighbours`, relative to the fixture namespace) and check it. -/
@@ -400,6 +444,11 @@ def runUnitCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
   unless eqLemmas.isEmpty do failures := failures.push s!"{c.name}: the unit carries equation lemmas {eqLemmas}"
   let on ← compileUnit u true
   let off ← compileUnit u false
+  -- the Rust leg (M6R slice 3): the same input through the Rust compiler
+  let rustNames := (ms.map (·.toString)) ++ (on.env.named.toArray.filterMap fun (n, _) =>
+    if Ix.Compile.Pass.hasReserved n then some n.pretty else none)
+  let (rustFailures, rustSummary) ← rustLeg u on ms rustNames
+  failures := failures ++ rustFailures
   unless off.cenv.ungrounded.isEmpty do
     failures := failures.push s!"{c.name}: switch off: block failures {off.cenv.ungrounded.toList.map (·.1.pretty)}"
   let key := ixName ms[0]!
@@ -444,7 +493,7 @@ def runUnitCase (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.C
       let some (_, o) := c.oracles.find? (·.1 == rel) | throwError "no oracle for {rel}"
       pure (mkConst o)
   let isFixpoint := enc != .structural
-  let tag := s!"unit: {refused.length} caller(s) refused"
+  let tag := s!"unit: {refused.length} caller(s) refused; {rustSummary}"
   let refusalLines := refused.toArray.map fun (n, e) => s!"refused {n.pretty}: {e}"
   match outcome with
   | .transported plan =>
