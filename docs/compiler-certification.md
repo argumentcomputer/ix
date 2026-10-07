@@ -264,11 +264,12 @@ pins), and writes the file only if every step passed.
 - **Proof-field projections of mutual or nested structure-likes** (theorems in Lean 4.34.1): refused by W
   before W+; W+ certifies them by the `theorem` route (the `LoweringDefs` fixture's `Sized.ok`), so S
   treats them as changed constants (above).
-- **Cost.** S is decided per cone, and each cone re-decides its whole closed source: W of the cone, the
-  source export, model proposal and fold, and the strong checks, whose comparison walks look constants
-  up in list environments at every node. On Init+Std-a3 (one run, 12 cones at once) a cone of 3,000
-  declarations takes about half a minute, and one of 4,000 that reaches the `String`/`TreeMap` lemma
-  core 3–5 minutes; with W+ the cover plans 3,952 cones (3,559,461 members for 116,720 constants: a
-  constant lies in about 30 of them). Two runs
-  at once halve each cone's speed. `--strong-max-cone` bounds the cone size; larger cones are
-  S-unsupported (`cone over budget`) and their users S-blocked, never rejected.
+- **Cost.** Since M7 WP-F a cone costs about its admission and its certified fold (the source export,
+  model proposal, correspondence and normalisation run on indices and the DAG, and the strong check takes
+  seconds: 0.3 s on a 4,000-declaration cone that reaches the `String`/`TreeMap` lemma core, 1.2 s on one
+  of 12,000, where it took 43 s and about 20 minutes before). On Init+Std-a3, `--strong-global` decides
+  one cone of 116,727 members in about 10 minutes (admission 3, installation 6 of which the fold 3, the
+  strong check 9 s; peak 10.6 GB), every W-certified constant in S's domain but the 25 users of W+
+  constants. The per-cone cover (4,145 cones on Init+Std-a3 with W+ and WP-B, a constant in about 34 of them) remains the
+  fallback.
+  `--strong-max-cone` bounds the cone size of the cover; larger cones are S-unsupported (`cone over budget`) and their users S-blocked, never rejected.
