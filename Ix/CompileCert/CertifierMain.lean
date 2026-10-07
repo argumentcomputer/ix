@@ -11,7 +11,9 @@ def usage : String :=
   [--strong | --strong-only [--strong-roots <A,B,...>] [--strong-every <k>] [--strong-max-cone <n>] [--strong-tasks <n>]]\n  writes <out-prefix>.tsv (one row per constant), \
   <out-prefix>.classes.tsv, <out-prefix>.proj.tsv, <out-prefix>.receipts.tsv (projection lowering receipts), \
   <out-prefix>.receipts.statements, <out-prefix>.json, <out-prefix>.ixonly.tsv (artifact names with no Lean \
-  constant) and, when W+ proposes rows, <out-prefix>.rows.tsv (each row's pre-screen time and verdict); \
+  constant), <out-prefix>.sizes.tsv (distinct Expr objects and tree size of every declaration with at least 4096 \
+  objects) and, when W+ proposes rows, <out-prefix>.rows.tsv (each row's pre-screen time and verdict); \
+  --budget: the size budget of one declaration (distinct Expr objects of its type, value and rules, default 2^28); \
   --row-budget: the pre-screen time budget of one W+ row (ms, default 60000; 0 checks no row); exit 0 iff something is \
   certified, nothing is rejected and every raw projection on a non-direct structure-like has a receipt;\n  --receipts-only: the projection measurement and receipts without the W check (exit 0 iff no refusal);\n  \
   --strong: after W, the strong-model endpoint S per cone (every W-certified constant, or the given roots, or every k-th \

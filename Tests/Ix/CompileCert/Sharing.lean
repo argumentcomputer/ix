@@ -1,17 +1,21 @@
 import Ix.CompileCert.Indexed
+import Ix.CompileCert.Changed
 
 /-! The sharing-aware walks of M5 WP-B in compiled code: `exportExprWithShared`
 and `exportExprShared` (substituted for `exportExprWith`/`exportExpr` by
-`@[csimp]`), `refsInShared` (for `refsIn`), and the entry comparison
-`DirectEntry.decEqShared` (for the derived `DecidableEq`, through
-`Kernel.Expr.beqMemo`). Their equality with the tree functions is proved
+`@[csimp]`), `refsInShared` (for `refsIn`), the entry comparison
+`DirectEntry.decEqShared` (for the derived `DecidableEq` of `DirectEntry`,
+through `Kernel.Expr.beqMemo`), and `exprDecEqShared` (for the derived
+`DecidableEq` of `Kernel.Expr` itself, which W+'s row, header and type checks and
+the raw route's `ResultIs` use). Their equality with the tree functions is proved
 (`exportExprWithShared_eq`, `exportExprShared_eq`, `refsInShared_eq`,
-`DirectEntry.beqShared_iff`); these controls check what a proof cannot: that
-compiled callers run the DAG walks (a tower whose tree has 2^66 nodes finishes
-within a time limit only if every walk visits a shared node once), and that the
-results are the expected terms, with valid neighbours for every negative; and
-`treeControls` shows that the towers are huge trees: the derived tree decision on
-the same pair does not finish. -/
+`DirectEntry.beqShared_iff`, `Subsingleton.elim` for the decisions); these
+controls check what a proof cannot: that compiled callers run the DAG walks (a
+tower whose tree has 2^66 nodes finishes within a time limit only if every walk
+visits a shared node once), and that the results are the expected terms, with
+valid neighbours for every negative; and `treeControls` shows that the towers
+are huge trees: a plain structural comparison of the same pair (no pointer test,
+no memo) does not finish. -/
 
 namespace Tests.Ix.CompileCert.Sharing
 
@@ -140,12 +144,81 @@ def controls : List (String × (Unit → Bool)) := [
       fun n => n != `Nat.succ, fun n => n != `Char.ofNat, fun n => n != `v]
     es.all fun e => ps.all fun p => refsIn p e == (exprRefs e).all p)]
 
-/-- Controls that must *not* finish: the tree-walking decision on the same pair, which shows that the
-towers above are huge trees (a valid neighbour for every "deep" control). -/
+/-- The exported tower of constants, or `Sort 0` if the export failed (the
+controls below also check the export itself). -/
+def exportedC (leaf : Lean.Name) : KExpr :=
+  match exportSourceExpr [] (towerC leaf deep) with
+  | .ok v => v
+  | .error _ => .sort .zero
+
+def lvl0 : _root_.Ix.Kernel.Level := .zero
+
+/-- `Kernel.Expr`'s derived `DecidableEq` as compiled lane code runs it
+(`@[csimp] instDecidableEqExpr_eq_shared`), and the W+ decisions of
+`Changed.lean` and the raw route's `ResultIs` that use it, on deep towers: an
+exported tower against one built independently (equal), and against one whose
+bottom leaf differs (unequal). -/
+def exprControls : List (String × (Unit → Bool)) := [
+  ("deep: Kernel.Expr's derived DecidableEq (csimp): the exported and the built tower are equal", fun _ =>
+    (exportSourceExpr [] (towerC `c deep)).toOption.isSome &&
+      decide (exportedC `c = expectC `c deep)),
+  ("deep: Kernel.Expr's derived DecidableEq (csimp): a different bottom leaf is unequal", fun _ =>
+    !decide (exportedC `c = expectC `d deep)),
+  ("deep: ResultIs (raw route): the exported tower is the expected result", fun _ =>
+    decide (ResultIs (exportSourceExpr [] (towerC `c deep)) (expectC `c deep))),
+  ("deep: ResultIs (raw route): a different bottom leaf is refused", fun _ =>
+    !decide (ResultIs (exportSourceExpr [] (towerC `c deep)) (expectC `d deep))),
+  ("deep: W+ rfl row (isRflRow): right side the exported tower, row built independently", fun _ =>
+    isRflRow [] (.sort .zero) (.const (sourceName `k) []) (exportedC `c)
+      (.thm (cv (kernelEq lvl0 (.sort .zero) (.const (sourceName `k) []) (expectC `c deep)))
+        (.const (sourceName `p) []))),
+  ("deep: W+ rfl row (isRflRow): right side differs at the bottom leaf, refused", fun _ =>
+    !isRflRow [] (.sort .zero) (.const (sourceName `k) []) (exportedC `c)
+      (.thm (cv (kernelEq lvl0 (.sort .zero) (.const (sourceName `k) []) (expectC `d deep)))
+        (.const (sourceName `p) []))),
+  ("deep: W+ theorem row (isTheoremRow): the statement is the tower", fun _ =>
+    isTheoremRow [] (exportedC `c) (.thm (cv (expectC `c deep)) (.const (sourceName `p) []))),
+  ("deep: W+ theorem row (isTheoremRow): a different statement, refused", fun _ =>
+    !isTheoremRow [] (exportedC `c) (.thm (cv (expectC `d deep)) (.const (sourceName `p) []))),
+  ("deep: W+ type row (isTypeRow): both sides towers", fun _ =>
+    isTypeRow [] (exportedC `c) (exportedC `d)
+      (.thm (cv (kernelEq lvl0 (.sort (.succ .zero)) (expectC `c deep) (expectC `d deep)))
+        (.const (sourceName `p) []))),
+  ("deep: W+ type row (isTypeRow): the sides swapped, refused", fun _ =>
+    !isTypeRow [] (exportedC `c) (exportedC `d)
+      (.thm (cv (kernelEq lvl0 (.sort (.succ .zero)) (expectC `d deep) (expectC `c deep)))
+        (.const (sourceName `p) []))),
+  ("deep: W+ header (headerAgreesAt): the exported type is the reader's, no type row needed", fun _ =>
+    headerAgreesAt #[] [] (cv (exportedC `c)) (cv (expectC `c deep))),
+  ("deep: W+ header (headerAgreesAt): a different type and no type row, refused", fun _ =>
+    !headerAgreesAt #[] [] (cv (exportedC `c)) (cv (expectC `d deep))),
+  ("deep: W+ header (headerAgreesAt): a different type equated by a type row at the hinted position", fun _ =>
+    headerAgreesAt
+      #[.thm (cv (kernelEq lvl0 (.sort (.succ .zero)) (expectC `d deep) (expectC `c deep)))
+        (.const (sourceName `p) [])] [0]
+      (cv (exportedC `c)) (cv (expectC `d deep)))]
+
+/-- A plain structural comparison: no pointer test, no word filter, no memo
+(the tree walk the derived decision was before the substitution). -/
+def treeEq : KExpr → KExpr → Bool
+  | .bvar i, .bvar j => i == j
+  | .fvar i t, .fvar j u => i == j && treeEq t u
+  | .sort u, .sort v => decide (u = v)
+  | .const n us, .const m vs => decide (n = m) && decide (us = vs)
+  | .app f a, .app g b => treeEq f g && treeEq a b
+  | .lam t b _, .lam t' b' _ => treeEq t t' && treeEq b b'
+  | .forallE t b _, .forallE t' b' _ => treeEq t t' && treeEq b b'
+  | .letE t v b, .letE t' v' b' => treeEq t t' && treeEq v v' && treeEq b b'
+  | .proj s i e, .proj s' i' e' => decide (s = s') && i == i' && treeEq e e'
+  | .lit l, .lit l' => decide (l = l')
+  | _, _ => false
+
+/-- Controls that must *not* finish: a tree walk on the same pair, which shows that the towers above
+are huge trees (a valid neighbour for every "deep" control). -/
 def treeControls : List (String × (Unit → Bool)) := [
-  ("the derived tree decision of `Kernel.Expr` on the exported and the built tower does not finish", fun _ =>
+  ("a plain structural comparison of the exported and the built tower does not finish", fun _ =>
     match exportSourceExpr [] (towerC `c deep) with
-    | .ok v => @decide (v = expectC `c deep) (_root_.Ix.Kernel.instDecidableEqExpr _ _)
+    | .ok v => treeEq v (expectC `c deep)
     | .error _ => false)]
 
 /-- Run a control on its own task: its result, or `none` if it does not finish in time. -/
@@ -157,7 +230,7 @@ def finishes (ms : UInt32) (control : Unit → Bool) : IO (Option Bool) := do
 
 def run : IO Unit := do
   let mut failed := 0
-  for (label, control) in controls do
+  for (label, control) in controls ++ exprControls do
     let ok := (← finishes 60000 control) == some true
     IO.println s!"{if ok then "PASS" else "FAIL"}: {label}"
     unless ok do failed := failed + 1
@@ -165,7 +238,7 @@ def run : IO Unit := do
     let ok := (← finishes 5000 control).isNone
     IO.println s!"{if ok then "PASS" else "FAIL"}: {label} (within 5 s)"
     unless ok do failed := failed + 1
-  let total := controls.length + treeControls.length
+  let total := controls.length + exprControls.length + treeControls.length
   -- the controls that did not finish still run on their tasks: leave without waiting for them
   if failed != 0 then
     IO.eprintln s!"{failed}/{total} sharing controls failed"

@@ -815,7 +815,7 @@ def Screened.text : Screened → String
   | .overBudget b => s!"over the pre-screen time budget ({b} ms)"
 
 /-- The class of a changed constant that would pass if its rows over the
-pre-screen time budget were accepted (a resource limit, like the tree budget). -/
+pre-screen time budget were accepted (a resource limit, like the size budget). -/
 def overBudgetClass : String := "changed constant: a type or equation row over the pre-screen time budget"
 
 /-- What `prescreenTimed` returns: each row's outcome and time (ms), and how
@@ -1283,7 +1283,8 @@ structure Config where
   lean : LeanSource
   ixe : String
   out : String
-  /-- Tree-size budget per declaration (type, value and rules together). -/
+  /-- Size budget per declaration: distinct `Expr` objects of its type, value and rules, each
+  expression counted separately (`declDagSize`; since M5 WP-B the certified walks run on the DAG). -/
   budget : Nat := 268435456
   /-- Tasks for the per-declaration checks. -/
   workers : Nat := 16

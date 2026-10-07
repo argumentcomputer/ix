@@ -1000,7 +1000,7 @@ def m5bRoots : Array Lean.Name :=
     `exportExpr_eq_shared,
     `constantValBeq, `constantValBeq_iff, `recRuleBeq, `recRuleBeq_iff, `recRulesBeq,
     `recRulesBeq_iff, `DirectEntry.beqShared, `DirectEntry.beqShared_iff, `DirectEntry.decEqShared,
-    `instDecidableEqDirectEntry_eq_shared,
+    `instDecidableEqDirectEntry_eq_shared, `exprDecEqShared, `instDecidableEqExpr_eq_shared,
     `RefsEntry, `RefsMemo, `RefsRes, `RefsOut, `refsProbe, `refsGo, `RefsVal, `refsInSharedVal,
     `refsInShared, `refsInShared_eq, `refsIn_eq_shared].map (`Ix.CompileCert ++ ·)
 
@@ -1016,7 +1016,8 @@ what their compiled code runs. `executedClosure` also follows every `@[csimp]`
 substitution registered in the environment (the certified kernel's
 `Kernel.Expr.beq ↦ beqMemo` and siblings, WP-B's `exportExprWith ↦
 exportExprWithShared`, `exportExpr ↦ exportExprShared`, `refsIn ↦ refsInShared`,
-`instDecidableEqDirectEntry ↦ DirectEntry.decEqShared`, core's), so the check
+`instDecidableEqDirectEntry ↦ DirectEntry.decEqShared`, `Kernel.instDecidableEqExpr ↦
+exprDecEqShared`, core's), so the check
 below covers the code that runs. The control: a decision whose substitute reads
 `Lean.Expr.hash` passes the definitional check and is refused by this one. -/
 
@@ -1069,7 +1070,8 @@ def m5bDecisionRoots : Array Lean.Name :=
   #[``Ix.CompileCert.exportExprWithShared, ``Ix.CompileCert.exportExprShared,
     ``Ix.CompileCert.refsInShared, ``Ix.CompileCert.DirectEntry.decEqShared,
     ``Ix.CompileCert.exportExprWith_eq_shared, ``Ix.CompileCert.exportExpr_eq_shared,
-    ``Ix.CompileCert.refsIn_eq_shared, ``Ix.CompileCert.instDecidableEqDirectEntry_eq_shared]
+    ``Ix.CompileCert.refsIn_eq_shared, ``Ix.CompileCert.instDecidableEqDirectEntry_eq_shared,
+    ``Ix.CompileCert.exprDecEqShared, ``Ix.CompileCert.instDecidableEqExpr_eq_shared]
 
 /-- A control decision: `true`, whose compiled substitute reads `Lean.Expr.hash`. -/
 def executedHashControl (_a : Lean.Expr) : Bool := true

@@ -119,13 +119,22 @@ declaration (erasing binder names, binder infos and `mdata`; universes canonical
 proved guard); that a theorem the certifier lists as a lowering witness was accepted by Lean's
 kernel; for W+, that Lean's `c.eq_def` is `c`'s unfolding equation (the relation checks that it is an
 equation about `c`) and, until M7, that the transformation of a changed block preserves the meaning
-of its types; the Lean runtime that executes the decisions. The tracked axiom audit
-(`Ix/CompileCert/Audit.lean`, `lake run check-cert`) checks that every root of the lane uses only
-`propext`, `Classical.choice` and `Quot.sound`, and that no decision reaches a hash-cached
-equality.
+of its types; the Lean runtime that executes the decisions. That runtime includes, since M5 WP-B,
+the compiler's `@[csimp]` substitutions through which the decisions run on the DAG (a shared
+subterm visited once): the export (`exportExprWith ↦ exportExprWithShared`, `exportExpr ↦
+exportExprShared`), the reference walk (`refsIn ↦ refsInShared`) and the comparisons
+(`DirectEntry`'s and `Kernel.Expr`'s derived `DecidableEq` ↦ the certified kernel's memoised
+`Kernel.Expr.beq`); each substitution is a proved equation (`exportExprWithShared_eq`,
+`refsInShared_eq`, `DirectEntry.beqShared_iff`; decisions are subsingletons), and the memos rest on
+`Init.Util`'s `withPtrAddr`/`withPtrEq`, as the certified kernel's own compiled equality does. The
+tracked axiom audit (`Ix/CompileCert/Audit.lean`, `lake run check-cert`) checks that every root of
+the lane uses only `propext`, `Classical.choice` and `Quot.sound`, and that no decision reaches a
+hash-cached equality, both in the decisions' definitions and as executed (following every
+registered `@[csimp]`).
 
 **Executable only (no proof):** which constants are offered to the decisions (record selection,
-the expression-size budget, the cone choice and budget), the classification of what is not
+the expression-size budget — distinct `Expr` objects per declaration, the work of the DAG walks —,
+the cone choice and budget), the classification of what is not
 certified (class, blocking dependency, diagnostic), and every proposal. A wrong triage or proposal
 can only leave a constant uncertified; Certified and S-Certified come only from an accepted
 decision.
@@ -133,7 +142,7 @@ decision.
 ## 3. Verdicts
 
 W: **certified**, **unsupported** (a named class, e.g. `partial`/`unsafe` definitions the
-checker's reader declines, an expression over the tree budget), **blocked** (by a dependency that
+checker's reader declines, a declaration over the size budget), **blocked** (by a dependency that
 is not certified) or **rejected** (a diagnostic: the compiled constant is not the Lean
 declaration). S, beside it: **S-certified**, **S-unsupported** (class), **S-blocked** (by a cone
 member that fails, or by W), **S-rejected** (diagnostic). A W verdict other than certified carries
@@ -147,7 +156,7 @@ rows are pre-screened one by one with the stepping checker under a time budget p
 (`--row-budget`, 60 s): a row over its budget is not decided and never folded, and a changed
 constant that would pass with its rows over the budget taken as accepted (those rows are all it
 lacks) is unsupported (`changed constant: a type or equation row over the pre-screen time budget`, a
-resource limit like the tree budget); a definite refusal of another of its rows keeps it rejected.
+resource limit like the size budget); a definite refusal of another of its rows keeps it rejected.
 S for changed constants is not decided yet (M7): their cones keep W's old decision and are refused.
 
 ## 4. Running it
@@ -162,6 +171,10 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
 
 - `--file` elaborates the file as `ix compile` does (`Benchmarks/Compile/CompileInitStd.lean`,
   `Benchmarks/Compile/CompileMathlib.lean`); `--modules` imports modules.
+- `--budget` bounds the distinct `Expr` objects of one declaration (type, value and rule right-hand
+  sides, each counted separately; default 2^28): a declaration over it is unsupported (`expression
+  DAG over budget`). `<prefix>.sizes.tsv` lists every declaration with at least 4096 objects with its
+  tree size (computed on the DAG): the tree size is reported, not budgeted.
 - W writes `<prefix>.tsv` (one row per constant: name, address, verdict, cause),
   `<prefix>.classes.tsv`, `<prefix>.json`, the raw-projection measurement `<prefix>.proj.tsv` and
   the lowering receipts `<prefix>.receipts.tsv`/`.receipts.statements`; the JSON records the routes,

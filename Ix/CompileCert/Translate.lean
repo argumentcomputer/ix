@@ -954,6 +954,28 @@ def DirectEntry.decEqShared (a b : DirectEntry) : Decidable (a = b) :=
   funext a b
   exact Subsingleton.elim _ _
 
+/-! ### `Kernel.Expr` equality in the lane's compiled code (M5 WP-B)
+
+The substitution above covers comparisons of whole entries. Decisions written
+after this point that compare `Kernel.Expr`s directly (`decide (a = b)`: the
+row, header and type checks of W+ in `Changed.lean`, the raw route's
+`ResultIs` in `Faithful.lean`) would still run the derived structural decision,
+a tree walk. `@[csimp]` (`instDecidableEqExpr_eq_shared`) substitutes
+`Kernel.Expr.beq` (executed as `beqMemo`) for the derived instance in every
+lane definition compiled after it; code compiled earlier, including the
+certified kernel's own, is unchanged. Statements and proofs keep reading the
+derived instance: `Decidable (a = b)` is a subsingleton. -/
+
+/-- `Kernel.Expr` equality decided through `Kernel.Expr.beq` (hence `beqMemo`). -/
+def exprDecEqShared (a b : Kernel.Expr) : Decidable (a = b) :=
+  decidable_of_iff (Kernel.Expr.beq a b = true) (by simp [Kernel.Expr.beq])
+
+/-- Compiled lane code decides `Kernel.Expr` equality through `exprDecEqShared`. -/
+@[csimp] theorem instDecidableEqExpr_eq_shared :
+    @Kernel.instDecidableEqExpr = @exprDecEqShared := by
+  funext a b
+  exact Subsingleton.elim _ _
+
 def exportHint : Lean.ReducibilityHints → Kernel.ReducibilityHint
   | .opaque => .opaque
   | .abbrev => .abbrev
