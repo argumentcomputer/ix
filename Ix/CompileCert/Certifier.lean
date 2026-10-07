@@ -1,4 +1,5 @@
 import Ix.CompileCert.Changed
+import Ix.CompileCert.CliqueRows
 import Ix.CompileCert.ProjectionLoweringLean
 import Ix.Meta
 import Benchmarks.Kernel.CheckIxeStep
@@ -1135,6 +1136,120 @@ def rowsAtWith (entries : Std.HashMap Lean.Name MapEntry) (entryPos : Std.HashMa
       | some e => (entryPos[reader.nameOf e.target]?).toList
       | none => [])
 
+/-- A transported clique member's value row (package V): its outcome
+(`proposed`, `accepted`, `refused`, `over budget`, `not generated`,
+`not exported`) and the detail. Untrusted bookkeeping for the report. -/
+structure ValueOutcome where
+  name : Lean.Name
+  encoding : String
+  outcome : String
+  detail : String := ""
+  deriving Inhabited
+
+/-- The component that names a value row (`<c>._ix_val.<k>`). -/
+def valueRowComponent : String := "_ix_val"
+
+/-- Does a kernel name have the value-row component? -/
+def hasValueComponent : Kernel.Name → Bool
+  | .anonymous => false
+  | .str p s => s == valueRowComponent || hasValueComponent p
+  | .num p _ => hasValueComponent p
+
+/-- Is this support row a value row? -/
+def isValueRow : Kernel.Declaration → Bool
+  | .thmDecl cv _ => hasValueComponent cv.name
+  | _ => false
+
+/-- The value row's name beside the `rfl` row `<c>._ix_eq.<k>`: `<c>._ix_val.0`. -/
+def valueRowName : Kernel.Name → Kernel.Name
+  | .num (.str c _) _ => .num (.str c valueRowComponent) 0
+  | n => .num (.str n valueRowComponent) 0
+
+/-- A failing definition that is a member of a transported clique: Lean's `all`
+has two or more members and its value mentions one of Lean's encoding
+constants of the clique (`all₀._mutual…`, `all₀.mutual…`, `m._f`). -/
+def transportedMember? (ci : Lean.ConstantInfo) : Option (Array Lean.Name) :=
+  match ci with
+  | .defnInfo d =>
+    let all := d.all.toArray
+    if all.size ≥ 2 && d.value.getUsedConstants.any (IxCliqueValues.isLeanEncoding all) then some all
+    else none
+  | _ => none
+
+/-- **Value rows** (package V, untrusted): for every failing member of a
+transported definition clique that has an `rfl` row proposal, a second row with
+the same statement `@Eq T c v_lean` and a proof the certifier generates
+(`IxValueRows.proveClique` on the clique decompiled from the artifact,
+exported by `CliqueRows.exportProof`). The rows go through the pre-screen and
+the certified fold like every other row; `RflEquation` accepts any proof of its
+statement, so `model_equations` covers a member matched by its value row
+without any statement change. -/
+def addValueRows (env : Lean.Environment) (produced : Ixon.Env) (sh : SharedW)
+    (failing : Array Lean.ConstantInfo) (proposals : Array RowProposal) (log : String → IO Unit) :
+    IO (Array RowProposal × Array ValueOutcome) := do
+  -- the cliques, in the order of their first failing member
+  let mut cliques : Array (Array Lean.Name) := #[]
+  let mut members : Std.HashSet Lean.Name := {}
+  for ci in failing do
+    if let some all := transportedMember? ci then
+      members := members.insert ci.name
+      unless cliques.contains all do cliques := cliques.push all
+  if cliques.isEmpty then return (proposals, #[])
+  -- the full context's names, once per constant (`ExportContext.name` scans the source)
+  let nameCache ← IO.mkRef ({} : Std.HashMap Lean.Name Kernel.Name)
+  let nameOfLean (n : Lean.Name) : IO (ExportM Kernel.Name) := do
+    if let some k := (← nameCache.get)[n]? then return .ok k
+    match sh.cx.name n with
+    | .ok k => nameCache.modify (·.insert n k); return .ok k
+    | .error e => return .error e
+  let mut out := proposals
+  let mut outcomes : Array ValueOutcome := #[]
+  for all in cliques do
+    let t0 ← IO.monoMsNow
+    let proofs ← IxValueRows.proveClique env produced all
+    log s!"[certify] V: clique {all.toList} ({proofs.encoding}): proofs generated for \
+      {(proofs.members.filter (·.proof.toOption.isSome)).size} of {all.size} members; {(← IO.monoMsNow) - t0} ms"
+    for mp in proofs.members do
+      unless members.contains mp.name do continue
+      let some (.defnInfo d) := env.find? mp.name | continue
+      let note (outcome detail : String) : ValueOutcome :=
+        { name := mp.name, encoding := proofs.encoding, outcome, detail }
+      let some pi := out.findIdx? (·.owner == mp.name) | do
+        outcomes := outcomes.push (note "not generated" "no row proposal for the member")
+      let some (_, rflRow) := out[pi]!.rows.find? (·.1 == "rfl") | do
+        outcomes := outcomes.push (note "not generated" s!"no rfl statement ({out[pi]!.failure.getD "none"})")
+      let .thmDecl cv _ := rflRow | continue
+      match mp.proof with
+      | .error e => outcomes := outcomes.push (note "not generated" e)
+      | .ok proof =>
+        -- the Lean constants the proof uses, through the map (the scratch members as their members)
+        let mut names : Std.HashMap Lean.Name Kernel.Name := {}
+        let mut missing : Option String := none
+        for c in proof.getUsedConstants do
+          -- a scratch member `m._ix_value` stands for the member `m` (whose Ix constant holds the
+          -- transported value); the other reserved names are canonical constants (exported by record)
+          let c'? : Option Lean.Name := match c with
+            | .str p "_ix_value" => if all.contains p then some p else none
+            | _ => if IxCliqueValues.isReservedName c then none else some c
+          if let some c' := c'? then
+            match ← nameOfLean c' with
+            | .ok k => names := names.insert c' k
+            | .error e => if missing.isNone then missing := some s!"{c'}: {e}"
+        if let some m := missing then
+          outcomes := outcomes.push (note "not exported" m)
+          continue
+        let tc : TermContext := ⟨sh.cx, d.levelParams, cv.levelParams⟩
+        match CliqueRows.exportProof produced sh.reader all
+            (fun c => match names[c]? with
+              | some k => .ok k
+              | none => .error s!"no name for {c}") (exportLevel tc) proof with
+        | .error e => outcomes := outcomes.push (note "not exported" e)
+        | .ok kproof =>
+          let row : Kernel.Declaration := .thmDecl ⟨valueRowName cv.name, cv.levelParams, cv.type⟩ kproof
+          out := out.set! pi { out[pi]! with rows := out[pi]!.rows.push ("value", row) }
+          outcomes := outcomes.push (note "proposed" "")
+  return (out, outcomes)
+
 /-- What the W+ pre-pass learns over one input (untrusted): each declaration's
 route or diagnosis, and the pre-screened support rows. -/
 structure PrePass where
@@ -1154,6 +1269,8 @@ structure PrePass where
   overBudgetRows : Nat := 0
   /-- Of those, rows left running in the background. -/
   abandonedRows : Nat := 0
+  /-- Package V: the value rows of the transported clique members, one outcome each. -/
+  values : Array ValueOutcome := #[]
 
 /-- The default time budget of one row in the pre-screen (ms). -/
 def defaultRowBudget : Nat := 60000
@@ -1166,12 +1283,20 @@ diagnosing what still fails. A row over its budget is not decided: it is never
 folded, and a constant that fails is classified `overBudgetClass` (Unsupported)
 only if it passes with its rows over the budget taken as accepted, that is, if
 those rows are all it lacks; otherwise it keeps its diagnosis (a definite
-refusal of another row stays Rejected). -/
+refusal of another row stays Rejected).
+
+With `produced` (the artifact's `Ixon.Env`), the transported clique members among
+the failing definitions also get a **value row** (`addValueRows`, package V):
+the `rfl` row's statement with a generated proof. A member matched by an
+accepted value row is labelled `equations:value-row`; one whose value row is not
+accepted keeps Lean's `eq_def` (or its Unsupported class), with the reason in
+`PrePass.values`. -/
 def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry) (input : Input)
     (images : Std.HashSet Lean.Name) (artifact : AdmittedArtifact input.toArtifactInput)
     (queries : Lean.Name → Array Lean.Name) (workers : Nat) (log : String → IO Unit)
     (rowsLog : String → IO Unit := fun _ => pure ())
-    (rowBudget : Lean.Name → String → Nat := fun _ _ => defaultRowBudget) : IO PrePass := do
+    (rowBudget : Lean.Name → String → Nat := fun _ _ => defaultRowBudget)
+    (produced? : Option Ixon.Env := none) : IO PrePass := do
   let imagesFn : Lean.Name → Bool := fun n => images.contains n
   let w := max workers 1
   let pass (sh : SharedW) (hints : HintsW) (decls : List Lean.ConstantInfo) :
@@ -1215,6 +1340,12 @@ def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry)
     let t1 ← IO.monoMsNow
     if trace || t1 - t0 > 5000 then log s!"[certify] W+ rows of {ci.name}: {t1 - t0} ms ({p.rows.size} rows)"
     proposals := proposals.push p
+  -- package V: a value row beside the `rfl` row of each transported clique member
+  let mut values : Array ValueOutcome := #[]
+  if let some produced := produced? then
+    let (ps, vs) ← addValueRows env produced sh1 failing proposals log
+    proposals := ps
+    values := vs
   let natPins ← IO.ofExcept Ix.Kernel.Reader.builtinNatOpPins
   let allRows := proposals.flatMap fun p => p.rows.map (·.2)
   let tq ← IO.monoMsNow
@@ -1236,6 +1367,9 @@ def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry)
   -- the rows over their budget, kept apart (never folded), by owner
   let mut overRows : Array Kernel.Declaration := #[]
   let mut overOf : Std.HashMap Lean.Name (Array Nat) := {}
+  -- the labels of each constant's accepted rows (the route label of a value row)
+  let mut acceptedWhat : Std.HashMap Lean.Name (Array String) := {}
+  let valueAt (n : Lean.Name) : Option Nat := values.findIdx? (·.name == n)
   for p in proposals do
     -- every row the pre-screen accepts is kept; a refusal is recorded for the diagnosis
     let mut idx : Array Nat := #[]
@@ -1244,14 +1378,23 @@ def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry)
       match screened.results[k]? with
       | some (Screened.accepted, _) =>
         idx := idx.push support.size
+        acceptedWhat := acceptedWhat.insert p.owner ((acceptedWhat.getD p.owner #[]).push what)
+        if what == "value" then
+          if let some vi := valueAt p.owner then values := values.set! vi { values[vi]! with outcome := "accepted" }
         -- the index makes the name unique: an alias fiber shares one reader name
         support := support.push (renameRow support.size row)
       | some (Screened.refused refusal, _) =>
         refusedRows := refusedRows + 1
+        if what == "value" then
+          if let some vi := valueAt p.owner then
+            values := values.set! vi { values[vi]! with outcome := "refused", detail := oneLine refusal }
         unless refusals.contains p.owner do
           refusals := refusals.insert p.owner s!"{what} row refused by the checker: {oneLine refusal}"
       | some (Screened.overBudget _, _) =>
         overIdx := overIdx.push overRows.size
+        if what == "value" then
+          if let some vi := valueAt p.owner then
+            values := values.set! vi { values[vi]! with outcome := "over budget" }
         overRows := overRows.push row
       | none => pure ()
       k := k + 1
@@ -1274,7 +1417,13 @@ def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry)
   let mut stillFailing : Array Lean.ConstantInfo := #[]
   for (ci, route) in r2 do
     match route with
-    | some r => out := { out with routes := out.routes.insert ci.name r }
+    | some r => 
+      -- a definition matched by its value row (its `rfl` row refused): `equations:value-row`
+      let accepted := acceptedWhat.getD ci.name #[]
+      let r := if r.startsWith "equations:rfl" && accepted.contains "value" && !accepted.contains "rfl" then
+          "equations:value-row" ++ (r.drop "equations:rfl".length).toString
+        else r
+      out := { out with routes := out.routes.insert ci.name r }
     | none => stillFailing := stillFailing.push ci
   -- the constants with rows over the budget, again, with those rows taken as accepted
   -- (a hypothesis for the classification only: these rows are never folded)
@@ -1298,6 +1447,7 @@ def wPrePass (env : Lean.Environment) (entries : Std.HashMap Lean.Name MapEntry)
   let t8 ← IO.monoMsNow
   log s!"[certify] W+ pass 2: {failing.size - stillFailing.size} of {failing.size} pass by theorem statement or \
     equations, {stillFailing.size} fail ({undecided.size} of them only for rows over the time budget); {t8 - t7} ms"
+  out := { out with values }
   return out
 
 /-- The support rows of the final members, in their order, with each row's
@@ -1384,6 +1534,9 @@ structure Config where
   /-- Fold the W+ support with the artifact again (`foldSupport`) instead of continuing the
   admission's fold (`foldSupportStaged`, package C); for measurement and the control. -/
   refold : Bool := false
+  /-- Package V: propose value rows for the transported clique members (default); off, they are
+  matched by Lean's `eq_def` as before (`--no-value-rows`, the control). -/
+  valueRows : Bool := true
   /-- Skip the global W check (probing): every constant the reader keeps is offered to S. -/
   strongOnly : Bool := false
   /-- Plan the S cones without running any (`Strong.runStrong`): the cover's cones as if each
@@ -1646,6 +1799,7 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   let mut accepted := false
   let mut entryPos : Std.HashMap Kernel.Name Nat := {}
   let mut usedSupport := 0
+  let mut values : Array ValueOutcome := #[]
   if images.isEmpty then
     -- no changed block: W's own decision first (`checkIndexed`, `checkIndexed_sound`)
     let input := makeInput candidates
@@ -1662,6 +1816,8 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   if !accepted then
     let pre ← wPrePass env entries (makeInput candidates) images artifact queriesOf cfg.workers say
       (fun text => IO.FS.writeFile s!"{cfg.out}.rows.tsv" text) (fun _ _ => cfg.rowBudget)
+      (if cfg.valueRows then some produced else none)
+    values := pre.values
     for (n, r) in pre.routes.toList do routes := routes.insert n r
     for (n, v) in pre.failed.toList do verdicts := verdicts.insert n v
     support := pre.support
@@ -1714,11 +1870,31 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
             let owner := owners[position - prepared]!
             say s!"[certify] the certified fold refused support row {position - prepared} of {owner}: \
               {word}: {oneLine message}; deciding again without it"
-            verdicts := verdicts.insert owner
-              (.rejected s!"correspondence: equation row refused by the certified fold: {word}: {oneLine message}")
-            let (v3, closed3) := closeCandidates refs verdicts (finalNames.filter (· != owner))
-            verdicts := v3
-            finalNames := closed3
+            let refusedRow := sup[position - prepared]!
+            if isValueRow refusedRow then
+              -- package V: a value row the fold refuses is dropped; its member keeps Lean's `eq_def`
+              -- (the residual trust) or, without one, its Unsupported class
+              let positions := rowsFinal.getD owner #[]
+              let mine := rowsOf.getD owner #[]
+              let keep := (mine.zip positions).filter (·.2 != position - prepared) |>.map (·.1)
+              rowsOf := rowsOf.insert owner keep
+              if let some vi := values.findIdx? (·.name == owner) then
+                let refusedBy := s!"by the certified fold: {word}: {oneLine message}"
+                values := values.set! vi { values[vi]! with outcome := "refused", detail := refusedBy }
+              if entries.contains (owner.str "eq_def") && finalNames.contains (owner.str "eq_def") then
+                routes := routes.insert owner "equations:eq_def"
+              else
+                verdicts := verdicts.insert owner
+                  (.unsupported "changed definition: transported clique member without eq_def")
+                let (v3, closed3) := closeCandidates refs verdicts (finalNames.filter (· != owner))
+                verdicts := v3
+                finalNames := closed3
+            else
+              verdicts := verdicts.insert owner
+                (.rejected s!"correspondence: equation row refused by the certified fold: {word}: {oneLine message}")
+              let (v3, closed3) := closeCandidates refs verdicts (finalNames.filter (· != owner))
+              verdicts := v3
+              finalNames := closed3
           else
             IO.eprintln s!"[certify] the certified fold refused the artifact and support at {position}: \
               {word}: {oneLine message}"
@@ -1850,6 +2026,23 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   say s!"[certify] W+: image claims {images.size}; equation rows proposed {proposedRows} for {proposedFor} \
     constants, folded {usedSupport}, over the pre-screen time budget {overBudgetRows} ({abandonedRows} left running); routes {String.intercalate ", " (routeList.toList.map fun (r, k) => s!"{r}={k}")}; \
     artifact names with no Lean constant {ixOnly} ({ixOnlyIx} with an `_ix` component)"
+  -- package V: the transported clique members' value rows, and what stays trusted (residual)
+  let mut valueText := "name\tencoding\tvalue row\tverdict\troute or cause\tdetail\n"
+  let mut residual : Array (Lean.Name × String × String) := #[]
+  for v in values do
+    let verdict := verdicts.getD v.name (.unsupported "no verdict")
+    let routeOrCause := if verdict.isCertified then routes.getD v.name "" else verdict.cause
+    valueText := valueText ++ s!"{v.name}\t{v.encoding}\t{v.outcome}\t{verdict.word}\t{routeOrCause}\t{oneLine v.detail}\n"
+    -- residual: Lean's `eq_def` trusted, or not certified (an `rfl` row needs no value row)
+    unless verdict.isCertified && !routeOrCause.startsWith "equations:eq_def" do
+      residual := residual.push (v.name, s!"{verdict.word}: {routeOrCause}",
+        s!"value row {v.outcome}{if v.detail.isEmpty then "" else s!": {oneLine v.detail}"}")
+  unless values.isEmpty do IO.FS.writeFile s!"{cfg.out}.values.tsv" valueText
+  let valueAccepted := (values.filter (·.outcome == "accepted")).size
+  unless values.isEmpty do
+    say s!"[certify] V: value rows for {values.size} transported clique members: {valueAccepted} accepted; \
+      residual (Lean's eq_def trusted, or not certified) {residual.size}{if residual.isEmpty then "" else
+        s!": {String.intercalate "; " (residual.toList.map fun (n, r, why) => s!"{n} ({r}; {why.take 160})")}"}"
   let (projRows, projJson) := measureProjections env names refs verdicts
   IO.FS.writeFile s!"{cfg.out}.proj.tsv" projRows
   say s!"[certify] raw projections: {projJson.compress}"
@@ -1868,6 +2061,10 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
       ("overBudget", Lean.toJson overBudgetRows), ("leftRunning", Lean.toJson abandonedRows),
       ("rowBudgetMs", Lean.toJson cfg.rowBudget)]),
     ("ixOnly", Lean.Json.mkObj [("total", Lean.toJson ixOnly), ("withIxComponent", Lean.toJson ixOnlyIx)]),
+    ("valueRows", Lean.Json.mkObj [("members", Lean.toJson values.size),
+      ("accepted", Lean.toJson valueAccepted),
+      ("residual", Lean.Json.arr (residual.map fun (n, r, why) => Lean.Json.mkObj
+        [("name", Lean.toJson n.toString), ("verdict", Lean.toJson r), ("reason", Lean.toJson why)]))]),
     ("rawProjections", projJson), ("projectionReceipts", receiptJson)]
   IO.FS.writeFile s!"{cfg.out}.json" json.pretty
   let counts := " ".intercalate (words.toList.map fun w => s!"{w}={byWord.getD w 0}")

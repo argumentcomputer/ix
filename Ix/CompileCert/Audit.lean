@@ -1342,3 +1342,24 @@ def x1Roots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.x1Roots Ix.CompileCert.Audit.allowedAxioms
+
+/-! ## Package V: value rows for transported clique members (M7)
+
+Package V adds no relation and changes no statement: a value row is a support row
+stating a transported member's `rfl` equation `@Eq T c v_lean` with a proof the
+certifier generates (`Ix/CompileCert/CliqueRows.lean`, untrusted), checked by the
+certified fold like every row. The roots its reading rests on, audited on their own
+line against the same allowed set: the two lemmas it adds (`rflEquation_of_row`: such a
+row is an `RflEquation` whatever its proof; `value_row_holds`: an accepted one holds in
+every strong model of the folded environment) and W+'s theorems they compose with. -/
+
+namespace Ix.CompileCert.Audit
+
+def vRoots : Array Lean.Name :=
+  #[`rflEquation_of_row, `AcceptedAssociation'.value_row_holds, `AcceptedAssociation'.row_holds,
+    `AcceptedAssociation'.model_equations, `checkIndexed'_sound, `hasRflRow_iff, `rflAt_sound,
+    `equationsAt_sound].map (`Ix.CompileCert ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.vRoots Ix.CompileCert.Audit.allowedAxioms

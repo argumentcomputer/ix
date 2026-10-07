@@ -570,7 +570,7 @@ script "check-cert" (args) := do
     #["direct", "blocks", "groups", "universes", "expressions", "source-install",
       "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
       "projection-lowering", "strong", "sharing", "strong-pins", "strong-indexed",
-      "compiled", "changed", "wplus-cost"].map (fun mode => (mode, #[exe, mode])) ++
+      "compiled", "changed", "wplus-cost", "changed-values"].map (fun mode => (mode, #[exe, mode])) ++
     #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
       ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
         s!"{outDir}/compiled.ixe", s!"{outDir}/certify"]),
@@ -594,7 +594,12 @@ script "check-cert" (args) := do
       -- same verdicts as the default, the fold continued from the admission
       ("certify-changed-refold", #[".lake/build/bin/compile-certify", "--modules",
         "Tests.Ix.CompileCert.ChangedDefs", s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed-refold",
-        "--refold"])] ++
+        "--refold"]),
+      -- package V: the certifier on the clique fixture (twins and ownership sources); every
+      -- transported well-founded member certified by its value row, no constant rejected
+      ("certify-changed-values", #[".lake/build/bin/compile-certify", "--modules",
+        "Tests.Ix.Compile.Twins.Cliques,Tests.Ix.Compile.CliqueOwnership.Sources,Tests.Ix.CompileCert.ValueRowDefs",
+        s!"{outDir}/changed-values.ixe", s!"{outDir}/certify-changed-values"])] ++
     mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
   for (name, checkArgs) in checks do
     let out ← IO.Process.output {

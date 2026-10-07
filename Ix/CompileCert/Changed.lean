@@ -1456,4 +1456,38 @@ theorem AcceptedAssociation'.model_statement.{u} {input : Input} {images : Lean.
     obtain ⟨type, proof, mem, agrees⟩ := rest
     exact ⟨header, rfl, type, proof, mem, accepted.type_holds agrees⟩
 
+/-! ### Value rows (package V): an `rfl` row whatever its proof
+
+`RflEquation` asks for a theorem row stating `@Eq.{ℓ} T c v` (`T`, `c`, `v` the
+exported type, constant and Lean value) and quantifies its proof away
+(`HasRflRow`). For a transported clique member the certifier proposes such a row
+with a proof it generates (`Ix/CompileCert/CliqueRows.lean`) instead of
+`Eq.refl`. The two lemmas below record, with no statement changed, that such a
+row matches `RflEquation` and, once a row of the folded support, gives the
+equation in every strong model; `model_equations`' first disjunct is then the
+member's value equation. -/
+
+/-- A theorem row stating a definition's `rfl` equation, whatever its proof,
+matches `RflEquation`. -/
+theorem rflEquation_of_row {cx : ExportContext} {rows : List DirectEntry} {d : Lean.DefinitionVal}
+    {header : Kernel.ConstantVal} {left right : Kernel.Expr} {name : Kernel.Name} {level : Kernel.Level}
+    {proof : Kernel.Expr}
+    (sides : definitionSides cx d header.levelParams = .ok (left, right))
+    (row : DirectEntry.thm ⟨name, header.levelParams, kernelEq level header.type left right⟩ proof ∈ rows) :
+    RflEquation cx rows d header := by
+  unfold RflEquation
+  rw [sides]
+  exact ⟨name, proof, level, row⟩
+
+/-- A theorem row of the folded support stating an equation, whatever its proof,
+holds in every strong model of the folded environment. -/
+theorem AcceptedAssociation'.value_row_holds.{u} {input : Input} {images : Lean.Name → Bool}
+    {support : Array Kernel.Declaration} (accepted : AcceptedAssociation' input images support)
+    {levels : List Kernel.Name} {name : Kernel.Name} {level : Kernel.Level}
+    {carrier left right proof : Kernel.Expr}
+    (row : DirectEntry.thm ⟨name, levels, kernelEq level carrier left right⟩ proof ∈
+      streamEntries (accepted.declarations ++ support)) :
+    EquationHolds.{u} accepted.folded.env levels (kernelEq level carrier left right) :=
+  accepted.row_holds ⟨name, proof, row⟩
+
 end Ix.CompileCert

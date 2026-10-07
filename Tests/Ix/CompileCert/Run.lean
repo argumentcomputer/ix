@@ -19,6 +19,7 @@ import Tests.Ix.CompileCert.StrongChanged
 import Tests.Ix.CompileCert.StrongIndexed
 import Tests.Ix.CompileCert.StrongGlobal
 import Tests.Ix.CompileCert.WPlusCost
+import Tests.Ix.CompileCert.ChangedValues
 
 /-- Standalone remote driver; shared test registration belongs to the
 coordinator. Production/test library modules do not define a global main. -/
@@ -48,6 +49,7 @@ def main (args : List String) : IO Unit := do
   | ["strong-indexed"] => Tests.Ix.CompileCert.StrongIndexed.run
   | ["strong-global", compiled, changed, dir] => Tests.Ix.CompileCert.StrongGlobal.run compiled changed dir
   | ["wplus-cost"] => Tests.Ix.CompileCert.WPlusCost.run
+  | ["changed-values"] => Tests.Ix.CompileCert.ChangedValues.run
   | "wplus-cost-measure" :: args => Tests.Ix.CompileCert.WPlusCost.measure args
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>
