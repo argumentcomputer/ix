@@ -15,6 +15,8 @@ import Ix.CompileCert.Canon.Refine
 import Ix.CompileCert.Canon.Round
 import Ix.CompileCert.Canon.Coarsest
 import Ix.CompileCert.Canon.Seed
+import Ix.CompileCert.Canon.SortOk
+import Ix.CompileCert.Canon.SeedFree
 
 /-!
 # M7 L1: Pass 1 proved
@@ -40,5 +42,7 @@ stated against the code as it is. The modules:
 * `Refine`, `Round`, `Coarsest`: the refinement is a pure function of its input and returns the
   coarsest consistent partition (Def 2.2, §3.3 (b));
 * `Seed`: under the compiler's name-hash seed, the refinement does not depend on the order of
-  its input (§3.3 (c)).
+  its input (§3.3 (c));
+* `SortOk`, `SeedFree`: for any seed, the classes and their order do not depend on the seed or
+  the input order, only the order inside a class does (§3.3 (c)).
 -/
