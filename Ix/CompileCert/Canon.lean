@@ -24,6 +24,7 @@ import Ix.CompileCert.Canon.Collapse
 import Ix.CompileCert.Canon.CliqueMap
 import Ix.CompileCert.Canon.SccFuel
 import Ix.CompileCert.Canon.Total
+import Ix.CompileCert.Canon.Refs
 
 /-!
 # M7 L1: Pass 1 proved
@@ -61,5 +62,7 @@ stated against the code as it is. The modules:
   restricted to the kept members, each a singleton (Def 4.3, collapse and equal members);
 * `CliqueMap`: the clique name map sends each member to its class position;
 * `SccFuel`, `Total`: Tarjan's fuel suffices, so `condensation`, `sccsOf` and `blockComponents` always
-  return.
+  return;
+* `Refs`: `refsExpr`/`refsConst` return the names a constant references (sound always, complete on
+  collision-free cached hashes), so the reference graph is the graph of occurrence.
 -/
