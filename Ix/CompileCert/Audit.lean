@@ -824,7 +824,9 @@ def l1Roots : Array Lean.Name :=
     `compareRef_ren, `constOrd_ren, `sortClasses_rename,
     `constOrd_size_of_eq, `consistent_size, `keysDistinct_col, `ctx_col, `compareRef_col,
     `restrictC_single, `sortClasses_collapse, `sortClasses_collapse_single,
-    `cliquePairs, `cliqueNameMap_eq, `cliqueNameMap_spec].map (`Ix.CompileCert.Canon ++ ·)
+    `cliquePairs, `cliqueNameMap_eq, `cliqueNameMap_spec,
+    `pot, `tarjanLoop_fuel, `rootStep_fuel, `fold_fuel, `condensation_isSome, `condensation_some,
+    `sccsOf_some, `blockComponents_ok, `canon_member_order_total, `blockComponents_separate_total].map (`Ix.CompileCert.Canon ++ ·)
 
 end Ix.CompileCert.Audit
 

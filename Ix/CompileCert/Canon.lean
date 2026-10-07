@@ -22,6 +22,8 @@ import Ix.CompileCert.Canon.Simulate
 import Ix.CompileCert.Canon.Rename
 import Ix.CompileCert.Canon.Collapse
 import Ix.CompileCert.Canon.CliqueMap
+import Ix.CompileCert.Canon.SccFuel
+import Ix.CompileCert.Canon.Total
 
 /-!
 # M7 L1: Pass 1 proved
@@ -57,5 +59,7 @@ stated against the code as it is. The modules:
   the members); renamed members have the same classes in the same order (Def 4.3, renaming);
 * `Collapse`: the quotient block (one member per class, references redirected) has the same classes
   restricted to the kept members, each a singleton (Def 4.3, collapse and equal members);
-* `CliqueMap`: the clique name map sends each member to its class position.
+* `CliqueMap`: the clique name map sends each member to its class position;
+* `SccFuel`, `Total`: Tarjan's fuel suffices, so `condensation`, `sccsOf` and `blockComponents` always
+  return.
 -/
