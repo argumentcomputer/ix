@@ -20,6 +20,7 @@ import Ix.CompileCert.Canon.SeedFree
 import Ix.CompileCert.Canon.BlockComp
 import Ix.CompileCert.Canon.Simulate
 import Ix.CompileCert.Canon.Rename
+import Ix.CompileCert.Canon.Collapse
 
 /-!
 # M7 L1: Pass 1 proved
@@ -52,5 +53,7 @@ stated against the code as it is. The modules:
   reference graph restricted to the members; a permuted block has the same components and the
   same classes; a component declared on its own is one component (Def 4.3);
 * `Simulate`, `Rename`: the refinement under a change of presentation (a restriction and a map of
-  the members); renamed members have the same classes in the same order (Def 4.3, renaming).
+  the members); renamed members have the same classes in the same order (Def 4.3, renaming);
+* `Collapse`: the quotient block (one member per class, references redirected) has the same classes
+  restricted to the kept members, each a singleton (Def 4.3, collapse and equal members).
 -/
