@@ -49,7 +49,14 @@ theorem foldl_insert_getElem? :
         (∃ p ∈ L, (p.1 == x) = true ∧ p.2 = i) ∨ ((∀ p ∈ L, (p.1 == x) = false) ∧ m0[x]? = some i) := by
   intro L
   induction L with
-  | nil => intro m0 _ x i; simp
+  | nil =>
+    intro m0 _ x i
+    simp only [List.foldl_nil]
+    constructor
+    · intro h; exact .inr ⟨fun p hp => absurd hp List.not_mem_nil, h⟩
+    · rintro (⟨p, hp, -⟩ | ⟨-, h⟩)
+      · exact absurd hp List.not_mem_nil
+      · exact h
   | cons p L ih =>
     intro m0 hd x i
     simp only [List.map_cons, List.pairwise_cons] at hd
@@ -121,7 +128,7 @@ theorem nameIdx_spec {names : Array Name} (hnd : NodupB names) (x : Name) (i : N
     simp only [Option.some.injEq] at hg
     exact ⟨hk, by rw [hg]; exact hx⟩
   · rintro ⟨hi, hx⟩
-    exact ⟨(names[i], i), List.mem_zipIdx_iff_getElem?.2 (by simp [hi]), hx, rfl⟩
+    exact ⟨(names[i], i), List.mem_zipIdx_iff_getElem?.2 (by rw [Array.getElem?_toList]; exact Array.getElem?_eq_getElem hi), hx, rfl⟩
 
 /-! ## The successor lists -/
 
@@ -138,13 +145,17 @@ theorem edge_adjOf {names : Array Name} (hnd : NodupB names) (refs : Name → St
   rw [edge_filt]
   simp only [adjOf, Array.size_map, Array.getElem?_map, NEdge]
   cases hi : names[i]? with
-  | none => simp
+  | none =>
+    simp only [Option.map_none, Option.getD_none]
+    constructor
+    · rintro ⟨h, -⟩; exact absurd h (Array.not_mem_empty _)
+    · rintro ⟨a, b, h, -⟩; cases h
   | some a =>
     simp only [Option.map_some, Option.getD_some, mem_qsort, Array.mem_filterMap,
       Std.HashMap.get?_eq_getElem?, nameIdx_spec hnd]
     constructor
     · rintro ⟨⟨y, hy, hj, hjy⟩, -⟩
-      refine ⟨a, names[j], rfl, by simp [hj], ?_⟩
+      refine ⟨a, names[j], rfl, Array.getElem?_eq_getElem hj, ?_⟩
       rw [Std.HashSet.contains_congr hjy]
       exact Std.HashSet.contains_of_mem_toArray hy
     · rintro ⟨a', b, ha', hb, hc⟩
@@ -271,7 +282,7 @@ theorem sccsOf_cover : ∀ a ∈ names, ∃ c ∈ cs, a ∈ c := by
       have := hr j (by simpa using hj); simpa [adjOf] using this
     exact ⟨l'.toArray, by rw [hl']; rfl⟩
   obtain ⟨c, hc⟩ := hm
-  exact ⟨c, (hcs c).2 ⟨c0, hc0, hc⟩, (mem_comp_names hc _).2 ⟨i, hic, by simp [hi]⟩⟩
+  exact ⟨c, (hcs c).2 ⟨c0, hc0, hc⟩, (mem_comp_names hc _).2 ⟨i, hic, Array.getElem?_eq_getElem hi⟩⟩
 
 omit hnd in
 /-- Components hold only the names. -/
@@ -332,8 +343,8 @@ theorem sccsOf_scc (i j : Nat) (hi : i < names.size) (hj : j < names.size) :
       have := condensation_unique hC k k' c0 c0' i hk hk' hic hi'
       subst this; rw [hk] at hk'; cases hk'
       exact ⟨c', hm'⟩
-    exact ⟨c, (hcs c).2 ⟨c0, hc0, hc⟩, (mem_comp_names hc _).2 ⟨i, hic, by simp [hi]⟩,
-      (mem_comp_names hc _).2 ⟨j, hjc, by simp [hj]⟩⟩
+    exact ⟨c, (hcs c).2 ⟨c0, hc0, hc⟩, (mem_comp_names hc _).2 ⟨i, hic, Array.getElem?_eq_getElem hi⟩,
+      (mem_comp_names hc _).2 ⟨j, hjc, Array.getElem?_eq_getElem hj⟩⟩
 
 end
 
