@@ -456,4 +456,59 @@ def run : IO Unit := do
     alias-fiber rows named apart; {pre0.failed.size} changed constants unsupported at a zero row budget, none \
     rejected; Sized.ok certified by its statement"
 
+/-- Probe (not a `check-cert` step): compile the cone of `roots` from a Lean
+environment (`--module <M>` imports a module, `--file <F>` elaborates a file as
+`compile-certify --file` does) in-process under Pass 3 and write it to `out`,
+for `compile-certify` to decide. Used to try W+ on a library's changed blocks
+before a library run. -/
+def probe (args : List String) : IO Unit := do
+  let (env, rest) ← match args with
+    | "--module" :: m :: rest => pure (← getCompileEnv #[m.toName], rest)
+    | "--file" :: f :: rest => pure (← getFileEnv f, rest)
+    | _ => throw (IO.userError "changed-probe (--module <M> | --file <F>) <out.ixe> <root>…")
+  let some out := rest.head? | throw (IO.userError "changed-probe: missing output path")
+  let auxOnly := rest.tail.contains "--aux-only"
+  let explicit := (rest.tail.filter (· != "--aux-only")).map String.toName |>.filter fun r =>
+    env.contains r
+  IO.println s!"changed-probe: roots present {explicit}"
+  -- every constant in the namespace of a root's block member (its auxiliaries and users);
+  -- with `--aux-only`, the members, their constructors and Lean's auxiliaries only
+  let members : List Lean.Name := explicit.flatMap fun r => match env.find? r with
+    | some (.inductInfo v) => v.all
+    | _ => [r]
+  let auxiliary (m n : Lean.Name) : Bool :=
+    let last := match n with
+      | .str _ s => s
+      | _ => ""
+    n == m || (n.getPrefix == m && (["rec", "casesOn", "recOn", "below", "brecOn", "noConfusion",
+        "noConfusionType", "ctorIdx", "ctorElim", "sizeOf_spec", "inj", "injEq"].contains last ||
+        last.startsWith "rec_" || last.startsWith "below_" || last.startsWith "brecOn_" ||
+        last.startsWith "_sizeOf" || (match env.find? n with | some (.ctorInfo _) => true | _ => false))) ||
+      (n.getPrefix.getPrefix == m && (last == "go" || last == "eq"))
+  let mut roots : Array Lean.Name := explicit.toArray
+  for (n, _) in env.constants.toList do
+    if members.any fun m => if auxOnly then auxiliary m n else m.isPrefixOf n then roots := roots.push n
+  IO.println s!"changed-probe: {roots.size} roots in the namespaces of {members.length} members"
+  -- the closure under `declarationRefs`, by a hash set (the probe's cones are large)
+  let mut seen : Std.HashSet Lean.Name := {}
+  let mut todo : Array Lean.Name := roots
+  let mut decls : Array Lean.ConstantInfo := #[]
+  while h : todo.size > 0 do
+    let n := todo[todo.size - 1]
+    todo := todo.pop
+    if seen.contains n then continue
+    seen := seen.insert n
+    let some ci := env.find? n | throw (IO.userError s!"changed-probe: {n} is referenced but absent")
+    decls := decls.push ci
+    for r in refsOf ci do
+      unless seen.contains r do todo := todo.push r
+  IO.println s!"changed-probe: {decls.size} declarations in the cone"
+  let compiled ← match ← _root_.Ix.CompileM.compileLeanConsts
+      (decls.toList.map (fun ci => (ci.name, ci))) (numWorkers := 16) (pass3? := some true) with
+    | .ok out => pure out
+    | .error e => throw (IO.userError s!"compiler failed: {e}")
+  IO.FS.writeBinFile out compiled.bytes
+  IO.println s!"changed-probe: wrote {out}: {compiled.bytes.size} bytes, ungrounded {compiled.ungroundedCount}, \
+    Blake3 {Address.blake3 compiled.bytes}"
+
 end Tests.Ix.CompileCert.Changed

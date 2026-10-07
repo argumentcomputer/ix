@@ -33,6 +33,7 @@ def main (args : List String) : IO Unit := do
   | ["projection-lowering"] => Tests.Ix.CompileCert.ProjectionLowering.run
   | ["strong"] => Tests.Ix.CompileCert.Strong.run
   | ["changed"] => Tests.Ix.CompileCert.Changed.run
+  | "changed-probe" :: args => Tests.Ix.CompileCert.Changed.probe args
   | ["stored", path] => Tests.Ix.CompileCert.Stored.run path
   | [] =>
     Tests.Ix.CompileCert.Direct.run
