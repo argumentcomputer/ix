@@ -17,10 +17,13 @@ Two hooks of the block compile (`Ix.CompileDriver`), both inert unless
    (`Ix.Compile.Pass.Translate`, Def 3.6) into an environment overlay (the
    definitional passes, `Ix.Compile.Pass.Opt.Engine`, are tried first at every
    full application: `optLookup`, the one A4 call site), the
-   source occurrences become the block's decompile records, and the image
-   constant of every bare or partial occurrence (`a._ix`, Q11) is compiled as
-   an ordinary constant and stored with the block (its `Named.original`, the
-   provenance of Lean's `a`, is filled in at assembly).
+   source occurrences become the block's decompile records (`_ix.inline`).
+   A bare or partial occurrence keeps the Lean name, which denotes the stored
+   image (decision 3, §4.5; Lean's own block of image-kind auxiliaries
+   compiles to the images, `compileImageBlock`); no `a._ix` constant is made.
+   The recorded declines (`BlockState.p3NonCanonical`), the rewritten members
+   (`BlockState.p3Rewritten`) and the members whose canonical form a
+   proof-justified pass wrote (`BlockState.p3PjForms`) go to the driver.
 
    The changed-clique hook (`Ix.Compile.Pass.Cliques.prepareCliques`, A5)
    runs first, at this one call site: the members of a changed definition
@@ -533,17 +536,17 @@ definitional passes' blocks of a block's referenced changed blocks
 (`optBlocks`, computed once by the caller): the hook the rewrite tries at
 every full application before it inlines an image (heads of other blocks
 keep their baseline). The result says whether the pass is proof-justified
-(`Opt.isProofJustified`), whose output goes to the canonical `_ix` form only
-(D1, `Translate.RwState.inPlace`). -/
+(`Opt.isProofJustified`; then its name, for the `PJ-FORM-<pass>` record), whose
+output goes to the canonical `_ix` form only (D1, `Translate.RwState.inPlace`). -/
 def optLookup (cenv : CompileEnv) (blocks : Std.HashMap Name Opt.OptBlock) :
-    Option Name → Name → Array Ix.Level → Array Expr → Option (Expr × Array ConstantInfo × Bool) :=
+    Option Name → Name → Array Ix.Level → Array Expr → Option (Expr × Array ConstantInfo × Option String) :=
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
       addrOf := resolveAddr cenv
       ixForm? := ixFormOf cenv }
   fun site n us args => (Opt.engineFull env { head := n, us, args, site }).map fun (nm, e, cs) =>
-    (e, cs, Opt.isProofJustified nm)
+    (e, cs, if Opt.isProofJustified nm then some nm else none)
 
 /-- The unit passes (A6p) over a block's members: O11b gives Lean's
 `noConfusion` pair of a split-off enumeration its enumeration form
@@ -727,11 +730,24 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
     rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) cenv.p3Sources
   -- the recorded declines go to the block state, and from there into the
   -- compile's non-canonical set (`CompileEnv.p3NonCanonical`)
+  -- (one cause per constant once merged: the last in this rewrite order,
+  -- `CompileEnv.p3NonCanonical`); the rewritten members and the members whose
+  -- canonical form a proof-justified pass wrote are records too (the
+  -- changed-set record, `Ix.Compile.ChangedSet`); none of them changes a byte
+  let unit := unitPasses cenv views members
+  -- O11b's pair: the Lean names `T.noConfusionType`, `T.noConfusion` keep
+  -- Lean's form, the canonical ones are `…._ix` (the `PJ-FORM-O11b` record)
+  let unitForms : Array (Name × Array String) := unit.filterMap fun ci =>
+    match ci.getCnst.name with
+    | .str p s _ => if s == ixComponent then some (p, #["O11b"]) else none
+    | _ => none
   let init := { init with p3NonCanonical := init.p3NonCanonical ++ rwr.declines,
+                           p3Rewritten := init.p3Rewritten ++ rwr.overlay.map (·.1),
+                           p3PjForms := init.p3PjForms ++ rwr.pjForms ++ unitForms,
                            p3MemoViews := init.p3MemoViews ++ newMemoViews cenv views }
   -- the canonical constants (D1): the `_ix` forms where a proof-justified
   -- pass fires, the unit passes' (O11b), the helpers the rewrites reference
-  let init ← compileCanon cenv views (rwr.canon ++ unitPasses cenv views members) init
+  let init ← compileCanon cenv views (rwr.canon ++ unit) init
   return ({ cenv with env := { cenv.env with overlay }, p3Sources := sources }, init)
 
 /-! ## The Lean names of a changed block's auxiliaries: their images -/

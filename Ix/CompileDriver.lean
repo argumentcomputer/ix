@@ -576,7 +576,10 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       p3CanonRecs := cache.p3AuxRecs.foldl (fun m (k, v) => m.insert k v) cenv.p3CanonRecs
       p3Heads := cache.p3Heads.foldl (fun m (k, v) => m.insert k v) cenv.p3Heads
       p3Blocks := cache.p3Blocks.foldl (fun m (k, v) => m.insert k v) cenv.p3Blocks
+      -- one cause per constant: the last of the block's rewrite order wins
       p3NonCanonical := cache.p3NonCanonical.foldl (fun m (k, v) => m.insert k v) cenv.p3NonCanonical
+      p3Rewritten := cache.p3Rewritten.foldl (·.insert ·) cenv.p3Rewritten
+      p3PjForms := cache.p3PjForms.foldl (fun m (k, v) => m.insert k v) cenv.p3PjForms
       -- the clique plan table: a memo of a function of the clique's unit
       -- (`Ix.Compile.Pass.cliquePlanFor`); two blocks of one wave may both
       -- compute a plan, and the first entry of a key is kept (both are equal)

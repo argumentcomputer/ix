@@ -636,6 +636,12 @@ def cliquePlanFor (cenv : CompileEnv) (cl carried : Array Name) : Except String 
           table {o.tag}; recomputed {o'.tag}"
     return (o, true)
 
+/-- The prefix of a caller's refusal (`cliqueCallers`): the named error the
+driver records as the block's failure (`CompileEnv.ungrounded`), by which the
+changed-set record (`Ix.Compile.ChangedSet`) tells a refused caller from any
+other failed block. -/
+def callerRefusalPrefix : String := "Pass 3 cliques: caller refused"
+
 /-- The callers' side of the block rule (design document §6.3, "callers
 adapt"; decision 5 of the plan). A block outside a clique's unit (no member,
 no carried lemma, no encoding constant of the clique) that references a
@@ -671,7 +677,7 @@ def cliqueCallers (cenv : CompileEnv) (all : Set Name) (refs : Ix.Set Name) :
     match outcome with
     | .transported plan =>
       let callers := all.toList.map (·.pretty)
-      return (some s!"Pass 3 cliques: caller refused (block rule, callers adapt): {callers} \
+      return (some s!"{callerRefusalPrefix} (block rule, callers adapt): {callers} \
         reference{if callers.length == 1 then "s" else ""} {m.pretty} and Lean's encoding constant \
         {r.pretty} of the transported clique {cl.map (·.pretty)} (sigma {plan.sigma}); a caller may \
         not unfold Lean's encoding of a transported clique", fresh, reused)

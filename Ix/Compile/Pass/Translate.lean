@@ -16,9 +16,12 @@ an `a` replaced:
   (`Ix.Compile.Image.instantiate`, Q10: β, projection of a constructor and η
   at the substituted positions, never ι); arguments beyond the arity stay
   applied;
-* **bare or partial occurrence**: the image constant `a._ix` applied to the
-  arguments (Q11: the image constant is the eta adapter); `a` is recorded as
-  needed, and the driver compiles `a._ix` as an ordinary constant.
+* **bare or partial occurrence**: left as written, `a` applied to the
+  (rewritten) arguments. The Lean name `a` of an image-kind auxiliary of a
+  changed block denotes its stored image (decision 3, design document §4.5),
+  a λ over Lean's telescope with Lean's type, so it is the eta adapter (Q11).
+  No separate image constant (`a._ix`) exists, and `needed` stays empty (the
+  field is kept for the record of a bare occurrence, `BARE`).
 
 Every outermost rewritten occurrence is wrapped in the placeholder
 `[(_ix.inline, n)]`, and the source occurrence is returned as source `n`:
@@ -103,9 +106,10 @@ structure RwState where
   /-- The optimisation passes (`Ix.Compile.Pass.Opt.engineFull`), tried at
   every full application before the image is inlined; `none` keeps the
   baseline. The first argument is `site`; the result carries the canonical
-  constants the rewrite references and whether the pass is proof-justified
-  (O7–O12, `Opt.isProofJustified`). -/
-  opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Bool) :=
+  constants the rewrite references and, when the pass is proof-justified
+  (O7–O12, `Opt.isProofJustified`), its name (`none` for a definitional
+  pass). -/
+  opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Option String) :=
     fun _ _ _ _ => none
   /-- Canonical constants to compile with the block (reserved `_ix` names):
   the canonical form `c._ix` of a definition `c` where a proof-justified pass
@@ -137,6 +141,13 @@ structure RwState where
   inPlace : Bool := false
   /-- A proof-justified pass fired in the value being rewritten (`site`). -/
   pjFired : Bool := false
+  /-- The proof-justified passes that fired in the value being rewritten,
+  each once, in firing order (a record only: no byte depends on it). -/
+  pjPasses : Array String := #[]
+  /-- The Lean definitions whose canonical form `c._ix` a proof-justified
+  pass wrote (decision 5, D1), with the passes (`pjPasses`): the compile's
+  `PJ-FORM-<pass>` record (`CompileEnv.p3PjForms`). A record only. -/
+  pjForms : Array (Name × Array String) := #[]
   /-- An expansion's value at the universe levels of an occurrence
   (`substLevels`), per head and levels: the same value at every full
   application with those levels (independent of `site`, `record` and
@@ -205,13 +216,15 @@ def rw : Nat → Bool → Expr → RwM Expr
               return mkAppN (Expr.mkConst n us) args'
             let st ← get
             let res ← match st.opt? site n us args' with
-              | some (e, cs, false) => pure (some (e, cs))
-              | some (e, cs, true) =>
+              | some (e, cs, none) => pure (some (e, cs))
+              | some (e, cs, some pass) =>
                 if st.inPlace then pure (some (e, cs))
                 else do
                   -- a Lean name keeps the faithful form (D1): the baseline
                   -- here, the rewrite in the canonical form `c._ix`
-                  modify fun st => { st with pjFired := true }
+                  modify fun st => { st with
+                    pjFired := true
+                    pjPasses := if st.pjPasses.contains pass then st.pjPasses else st.pjPasses.push pass }
                   pure ((st.opt? none n us args').map fun (e, cs, _) => (e, cs))
               | none => pure none
             let body ← match res with
@@ -277,12 +290,14 @@ def rewriteConstM (ci : ConstantInfo) : RwM ConstantInfo := do
     let cnst' ← cnst v.cnst
     -- the value of a definition is the one place a proof-justified pass may
     -- fire (`RwState.site`)
-    modify fun st => { st with site := some v.cnst.name, pjFired := false }
+    modify fun st => { st with site := some v.cnst.name, pjFired := false, pjPasses := #[] }
     let value ← go v.value
     let fired := (← get).pjFired
+    let passes := (← get).pjPasses
     let inPlace := (← get).inPlace
-    modify fun st => { st with site := none, pjFired := false }
+    modify fun st => { st with site := none, pjFired := false, pjPasses := #[] }
     if fired && !inPlace then
+      modify fun st => { st with pjForms := st.pjForms.push (v.cnst.name, passes) }
       -- decision 5 (D1): the canonical form under `c._ix`, Lean's constant
       -- renamed, rewritten in place when the block's canonical constants
       -- compile (`Driver.compileCanon`)
@@ -321,6 +336,9 @@ structure BlockRewrite where
   declines : Array (Name × String) := #[]
   /-- Canonical constants the passes' rewrites reference (`RwState.canon`). -/
   canon : Array ConstantInfo := #[]
+  /-- The members whose canonical form a proof-justified pass wrote, with the
+  passes (`RwState.pjForms`). -/
+  pjForms : Array (Name × Array String) := #[]
   deriving Inhabited
 
 /-- Rewrite the members of one block (`base(c)` for each); placeholder
@@ -330,7 +348,7 @@ they are Lean constants, which keep the faithful form, and the canonical form
 of each one a proof-justified pass fires in is returned in `canon`. -/
 def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     (members : Array (Name × ConstantInfo))
-    (opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Bool) :=
+    (opt? : Option Name → Name → Array Level → Array Expr → Option (Expr × Array ConstantInfo × Option String) :=
       fun _ _ _ _ => none)
     (decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none)
     (inPlace : Bool := false) :
@@ -345,7 +363,8 @@ def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     for c in st.declines.extract before st.declines.size do
       unless declines.contains (n, c) do declines := declines.push (n, c)
     if ci' != ci then overlay := overlay.push (n, ci')
-  return { overlay, sources := st.sources, needed := st.needed, declines, canon := st.canon }
+  return { overlay, sources := st.sources, needed := st.needed, declines, canon := st.canon,
+           pjForms := st.pjForms }
 
 end Ix.Compile.Pass
 

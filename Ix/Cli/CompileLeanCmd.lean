@@ -22,6 +22,10 @@
   divergence of Pass 3's output from Rust's (expected wherever a block or
   clique changes, until M6R). The mode is printed first.
 
+  With Pass 3 the command also writes the changed-set record next to the
+  output, `<stem>.changed.json` (`Ix.Compile.ChangedSet`; design document,
+  the output contract): a side file, so no byte of the `.ixe` depends on it.
+
   Exit codes: 0 success (and aligned, when checked); 1 pipeline error or
   divergence; 2 usage (including an unrecognised `IX_PASS3` value).
 -/
@@ -31,6 +35,7 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.Compile.ChangedSet
 public import Ix.Cli.ValidateCmd
 public import Ix.Cli.CompileCmd
 public section
@@ -119,6 +124,19 @@ serialize the grounded subset)"
     IO.println s!"[compile-lean] wrote {out.bytes.size} bytes to {outPath} \
 ({out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
 {ungroundedCount} block failures) in {elapsed}ms"
+    -- the changed-set record (the output contract): a side file, never part of
+    -- the artifact; only a Pass 3 compile has the tables it is read from
+    if pass3 then
+      let recPath := Ix.Compile.ChangedSet.pathFor outPath
+      let record ← Ix.PhaseTimers.timeWall "changed-set record"
+        (pure (Ix.Compile.ChangedSet.ofCompile out.cenv))
+      IO.FS.writeFile recPath record.render
+      let counts := ", ".intercalate (record.counts.toList.filterMap fun (t, k) =>
+        if k == 0 then none else some s!"{t} {k}")
+      IO.println s!"[compile-lean] changed-set record: {record.entries.size} entries \
+({counts}), {record.blocks.size} changed blocks, {record.cliques.size} cliques, written to {recPath}"
+    else
+      IO.println s!"[compile-lean] no changed-set record (the legacy surgery has no Pass 3 tables)"
     if ungroundedCount > 0 then
       IO.println s!"[compile-lean] PARTIAL: {ungroundedCount} constants failed to compile"
       for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do

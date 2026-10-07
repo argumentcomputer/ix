@@ -159,14 +159,30 @@ structure CompileEnv where
       `all₀.mutual`, `m._f` ↦ the clique), for the callers' check
       (`Ix.Compile.Pass.cliqueCallers`). -/
   p3CliqueRoots : Std.HashMap Name (Array Name) := {}
-  /-- Pass 3: the compile's non-canonical set, as far as the passes record
-      it (design document §6.3, obligation 4; §7): constant ↦ cause. A
-      constant is here when a pass declined on it because a reference its
-      output needs is absent from the input (O11a without
-      `T._sizeOf_inst`), so it keeps a faithful but non-canonical form.
-      Merged from the blocks (`BlockState.p3NonCanonical`); empty with the
-      switch off. -/
+  /-- Pass 3: the compile's recorded declines (design document §6.3,
+      obligation 4; §7; the output contract, "Records"): constant ↦ cause. A
+      constant is here when O11a declined at the recursion of Lean's `sizeOf`
+      family of a split block (`Opt.O11a.declineCause?`): an instance its
+      output needs is absent from the input, or a side condition failed; it
+      keeps O2's faithful, non-canonical form. **One cause per constant: the
+      last.** A block's declines are `(member, cause)` pairs in the order of
+      its rewrite (`Translate.rewriteBlock`, each pair once), and this map is
+      filled from them by `insert` (`mergeCompiledBlock`), so a constant with
+      two causes keeps the one its rewrite met last (no fixture has two).
+      Merged only from blocks that compile (a failed block publishes
+      nothing); empty with the switch off. -/
   p3NonCanonical : Std.HashMap Name String := {}
+  /-- Pass 3: the Lean constants whose type, value or rules the call-site
+      rewrite changed (Def 3.6: inline images and the definitional passes
+      O1–O6/O11a), each carrying its `_ix.inline` decompile records. A record
+      for the changed-set record (`Ix.Compile.ChangedSet`); no byte depends
+      on it. Merged from the blocks that compile (`BlockState.p3Rewritten`);
+      empty with the switch off. -/
+  p3Rewritten : Std.HashSet Name := {}
+  /-- Pass 3: the Lean definitions whose canonical form `c._ix` a
+      proof-justified pass (O7–O12) wrote (decision 5, D1) ↦ the passes that
+      fired in its value (`PJ-FORM-<pass>`). A record, like `p3Rewritten`. -/
+  p3PjForms : Std.HashMap Name (Array String) := {}
   /-- Pass 3: the clique plan table, Lean's first member of a changed
       clique (`all₀`) ↦ the clique's plan (`Ix.Compile.Pass.planClique`).
       A memo, not a decision: the plan is a function of the clique, its own
@@ -348,8 +364,15 @@ structure BlockState where
       (`Ix.Compile.Pass.editPermutedBelowFamily`); never merged by itself. -/
   p3BelowRecs : Array (Name × RecursorVal) := #[]
   /-- Pass 3: the recorded declines of this block's rewrite (constant,
-      cause), merged into `CompileEnv.p3NonCanonical`. -/
+      cause), in rewrite order, merged into `CompileEnv.p3NonCanonical`
+      (where the last cause of a constant wins). -/
   p3NonCanonical : Array (Name × String) := #[]
+  /-- Pass 3: the members the call-site rewrite changed, and the members
+      whose canonical form a proof-justified pass wrote (with the passes);
+      merged into `CompileEnv.p3Rewritten` / `CompileEnv.p3PjForms`. Records
+      only. -/
+  p3Rewritten : Array Name := #[]
+  p3PjForms : Array (Name × Array String) := #[]
   /-- Pass 3: the clique plans this block computed (`all₀`, plan), merged
       into `CompileEnv.p3CliquePlans`, and the number of plans it took from
       that table (merged into `CompileEnv.p3PlanReuses`). -/
