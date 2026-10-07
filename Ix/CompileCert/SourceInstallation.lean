@@ -1,4 +1,5 @@
 import Ix.CompileCert.Installed
+import Ix.CompileCert.SourceExportFast
 
 /-! # Source installation
 

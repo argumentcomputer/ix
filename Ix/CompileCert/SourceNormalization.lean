@@ -1,5 +1,6 @@
 import Ix.CompileCert.AnnotationTrace
 import Ix.CompileCert.SourceProjectionLowering
+import Ix.CompileCert.SourceInstallFast
 
 /-! # Source projection normalization
 
@@ -383,6 +384,185 @@ def normalizeSourceProjections (source : Source) (witnesses : LoweringWitnesses)
         return ⟨replacement :: equation :: output.val,
           .lowered hp association lowering hf output.property⟩
       else .error "source projection equation name conflicts with an existing declaration"
+
+/-! ### The normalisation through a source index (M7 WP-F)
+
+`proposeSourceProjection` and `proposeSourceProof` find a declaration's source by a list
+scan of the source (`find? (sourceName ci.name = header.name)`), once per definition and
+theorem of the stream: quadratic on one global cone. `normalizeSourceProjectionsF` is the
+same function with the lookup through a hash map keyed by `sourceName` (the first
+declaration of a name winning, as `List.find?` returns it: `sourceKernelIndex_get`). The
+method: copies parameterised by the lookup (`…P`), equal to the originals at the original
+lookup by `rfl`, and to the indexed instance by `subst`. `@[csimp]` substitutes it for the
+installation below; every statement keeps reading `normalizeSourceProjections`. -/
+
+/-- The original lookup of the two proposals. -/
+def sourceKernelFind (source : Source) (k : Kernel.Name) : Option Lean.ConstantInfo :=
+  source.declarations.find? (fun ci => decide (sourceName ci.name = k))
+
+/-- The source's declarations under their `sourceName`, the first of a name winning. -/
+def sourceKernelIndex (source : Source) : Std.HashMap Kernel.Name Lean.ConstantInfo :=
+  source.declarations.foldr (fun ci m => m.insert (sourceName ci.name) ci) {}
+
+theorem sourceKernelIndex_go (ds : List Lean.ConstantInfo) (k : Kernel.Name) :
+    (ds.foldr (fun ci m => m.insert (sourceName ci.name) ci)
+      ({} : Std.HashMap Kernel.Name Lean.ConstantInfo))[k]? =
+      ds.find? (fun ci => decide (sourceName ci.name = k)) := by
+  induction ds with
+  | nil => simp
+  | cons ci cs ih =>
+    rw [List.foldr_cons, Std.HashMap.getElem?_insert, ih, List.find?_cons]
+    by_cases h : sourceName ci.name = k <;> simp [h]
+
+theorem sourceKernelIndex_find (source : Source) :
+    (fun k => (sourceKernelIndex source)[k]?) = sourceKernelFind source :=
+  funext fun k => sourceKernelIndex_go source.declarations k
+
+/-- `proposeSourceProjection` with its lookup given. -/
+def proposeSourceProjectionP (find : Kernel.Name → Option Lean.ConstantInfo) (source : Source)
+    (witnesses : LoweringWitnesses) (declaration : Kernel.Declaration) :
+    ExportM (Option (Kernel.Declaration × Kernel.Declaration)) := do
+  let .defnDecl header body hint := declaration | return none
+  let some ci := find header.name | return none
+  let .defnInfo definition := ci | return none
+  let some (owner, field, binders) := sourceProjectionBody definition.value | return none
+  let some witness := witnesses.find? (fun w => decide (w.name = loweringEquationName definition.name))
+    | return none
+  let site ← sourceProjectionSite source owner field
+  unless binders == site.owner.numParams + 1 do
+    throw "source projection binder count differs from original owner parameters"
+  let original ← exportSourceEntry ci
+  unless decide (original = .defn header body hint) do
+    throw "source projection declaration differs from its immutable original export"
+  let statement ← exportSourceExpr definition.levelParams witness.type
+  let some value := loweringValueOf (site.owner.numParams + 1) statement
+    | throw "source projection lowering equation has no right-hand side"
+  let some level := loweredLevel (site.owner.numParams + 1) value
+    | throw "source projection lowering equation's right-hand side has no recursor level"
+  let equation ← sourceProjectionEquation site header level
+  return some (.defnDecl header value hint, equation)
+
+theorem proposeSourceProjectionP_find (source : Source) (witnesses : LoweringWitnesses)
+    (declaration : Kernel.Declaration) :
+    proposeSourceProjectionP (sourceKernelFind source) source witnesses declaration =
+      proposeSourceProjection source witnesses declaration := rfl
+
+/-- `proposeSourceProof` with its lookup given. -/
+def proposeSourceProofP (find : Kernel.Name → Option Lean.ConstantInfo) (source : Source)
+    (witnesses : LoweringWitnesses) (declaration : Kernel.Declaration) : ExportM (Option Kernel.Declaration) := do
+  let .thmDecl header body := declaration | return none
+  let some ci := find header.name | return none
+  let .thmInfo proof := ci | return none
+  let some (owner, field, binders) := sourceProjectionBody proof.value | return none
+  let some witness := witnesses.find? (fun w => decide (w.name = loweringEquationName proof.name))
+    | return none
+  let site ← sourceProjectionSite source owner field
+  unless binders == site.owner.numParams + 1 do
+    throw "source proof projection binder count differs from original owner parameters"
+  let original ← exportSourceEntry ci
+  unless decide (original = .thm header body) do
+    throw "source proof projection differs from its immutable original export"
+  let statement ← exportSourceExpr proof.levelParams witness.type
+  let some value := loweringValueOf (site.owner.numParams + 1) statement
+    | throw "source proof projection lowering equation has no right-hand side"
+  return some (.thmDecl header value)
+
+theorem proposeSourceProofP_find (source : Source) (witnesses : LoweringWitnesses)
+    (declaration : Kernel.Declaration) :
+    proposeSourceProofP (sourceKernelFind source) source witnesses declaration =
+      proposeSourceProof source witnesses declaration := rfl
+
+theorem proposeSourceProjectionP_conv {source : Source} {find : Kernel.Name → Option Lean.ConstantInfo}
+    (hfind : ∀ k, find k = sourceKernelFind source k) {witnesses : LoweringWitnesses} {declaration : Kernel.Declaration}
+    {result : ExportM (Option (Kernel.Declaration × Kernel.Declaration))}
+    (h : proposeSourceProjectionP find source witnesses declaration = result) :
+    proposeSourceProjection source witnesses declaration = result := by
+  have same : find = sourceKernelFind source := funext hfind
+  subst same; exact h
+
+theorem proposeSourceProofP_conv {source : Source} {find : Kernel.Name → Option Lean.ConstantInfo}
+    (hfind : ∀ k, find k = sourceKernelFind source k) {witnesses : LoweringWitnesses} {declaration : Kernel.Declaration}
+    {result : ExportM (Option Kernel.Declaration)}
+    (h : proposeSourceProofP find source witnesses declaration = result) :
+    proposeSourceProof source witnesses declaration = result := by
+  have same : find = sourceKernelFind source := funext hfind
+  subst same; exact h
+
+/-- `normalizeSourceProjections` with the proposals' lookup given (and a proof that it is
+the original lookup, from which the receipts' proposal equations are read). -/
+def normalizeSourceProjectionsP (find : Kernel.Name → Option Lean.ConstantInfo)
+    (hfind : ∀ k, find k = sourceKernelFind source k) (witnesses : LoweringWitnesses)
+    (state : SourceModelState) (input : List Kernel.Declaration) :
+    ExportM { output : List Kernel.Declaration //
+      SourceProjectionNormalization source witnesses state input output } :=
+  match input with
+  | [] => .ok ⟨[], .nil state⟩
+  | original :: rest =>
+    match hp : proposeSourceProjectionP find source witnesses original with
+    | .error why => .error why
+    | .ok none =>
+      match hq : proposeSourceProofP find source witnesses original with
+      | .error why => .error why
+      | .ok none => do
+        let output ← normalizeSourceProjectionsP find hfind witnesses (state.note original) rest
+        return ⟨original :: output.val, .unchanged (proposeSourceProjectionP_conv hfind hp) (proposeSourceProofP_conv hfind hq)
+          output.property⟩
+      | .ok (some replacement) => do
+        let lowering ← checkSourceProjectionLowering source witnesses original replacement
+        let output ← normalizeSourceProjectionsP find hfind witnesses (state.note replacement) rest
+        return ⟨replacement :: output.val, .loweredProof (proposeSourceProjectionP_conv hfind hp) (proposeSourceProofP_conv hfind hq)
+          lowering output.property⟩
+    | .ok (some (replacement, equation)) =>
+      if hf : ∀ name ∈ equation.names, state.types[name]? = none ∧
+          ∀ declaration ∈ original :: rest, name ∉ declaration.names then do
+        let association ← checkSourceProjectionReceipt source original replacement equation
+        let lowering ← checkSourceProjectionLowering source witnesses original replacement
+        let output ← normalizeSourceProjectionsP find hfind witnesses
+          ((state.note replacement).note equation) rest
+        return ⟨replacement :: equation :: output.val,
+          .lowered (proposeSourceProjectionP_conv hfind hp) association lowering hf output.property⟩
+      else .error "source projection equation name conflicts with an existing declaration"
+
+theorem normalizeSourceProjectionsP_find (source : Source) (witnesses : LoweringWitnesses) :
+    ∀ (state : SourceModelState) (input : List Kernel.Declaration),
+      normalizeSourceProjectionsP (source := source) (sourceKernelFind source) (fun _ => rfl) witnesses state input =
+        normalizeSourceProjections source witnesses state input
+  | state, [] => rfl
+  | state, original :: rest => by
+    unfold normalizeSourceProjectionsP normalizeSourceProjections
+    simp only [proposeSourceProjectionP_find, proposeSourceProofP_find,
+      normalizeSourceProjectionsP_find source witnesses _ rest]
+
+theorem normalizeSourceProjectionsP_subst (source : Source) (find : Kernel.Name → Option Lean.ConstantInfo)
+    (hfind : ∀ k, find k = sourceKernelFind source k) (witnesses : LoweringWitnesses) (state : SourceModelState)
+    (input : List Kernel.Declaration) :
+    normalizeSourceProjectionsP find hfind witnesses state input =
+      normalizeSourceProjectionsP (sourceKernelFind source) (fun _ => rfl) witnesses state input := by
+  have same : find = sourceKernelFind source := funext hfind
+  subst same; rfl
+
+/-- **The normalisation through the source index.** -/
+def normalizeSourceProjectionsF (source : Source) (witnesses : LoweringWitnesses) (state : SourceModelState)
+    (input : List Kernel.Declaration) :
+    ExportM { output : List Kernel.Declaration //
+      SourceProjectionNormalization source witnesses state input output } :=
+  let idx := sourceKernelIndex source
+  normalizeSourceProjectionsP (fun k => idx[k]?) (congrFun (sourceKernelIndex_find source)) witnesses state input
+
+theorem normalizeSourceProjectionsF_eq (source : Source) (witnesses : LoweringWitnesses)
+    (state : SourceModelState) (input : List Kernel.Declaration) :
+    normalizeSourceProjectionsF source witnesses state input =
+      normalizeSourceProjections source witnesses state input := by
+  unfold normalizeSourceProjectionsF
+  dsimp only
+  rw [normalizeSourceProjectionsP_subst, normalizeSourceProjectionsP_find]
+
+/-- Compiled code runs the indexed normalisation wherever it calls
+`normalizeSourceProjections`. -/
+@[csimp] theorem normalizeSourceProjections_eq_fast :
+    @normalizeSourceProjections = @normalizeSourceProjectionsF := by
+  funext source witnesses state input
+  exact (normalizeSourceProjectionsF_eq source witnesses state input).symm
 
 /-- The finite source-owned basis suffix is selected from the normalized
 stream itself. A present source identity is left intact, even if it will be
