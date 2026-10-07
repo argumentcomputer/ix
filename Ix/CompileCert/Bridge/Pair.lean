@@ -9,11 +9,9 @@ its structure's projection table describes (`Denotes.proj_table`), and that a co
 application's field *is* the constructor's argument is the model's tower law (`TowerOk` (B),
 `IxC/Kernel/Model/Annot/Laws.lean`), stated on the internal annotated reading with grading and
 telescope-fit premises. Its public form is `PairLaw`; this module proves the rule from it
-(`semEq_proj0`, `semEq_proj1`, `Justified.proj0`, `Justified.proj1`). Discharging `PairLaw` from the
-tower law for every strong model is the transport of `TowerOk` (B) to the public reading, an open
-item of X2 (report §8, D-X2-4): no statement of `IxC/**` is missing for it (the law is the
-`tower_ok` field of the exported `EnvModelM`), only the lane-side transport of the grading and the
-telescope fit (the shape of `AnnotatedApplication`, `Installed.lean`).
+(`semEq_proj0`, `semEq_proj1`, `Justified.proj0`, `Justified.proj1`), and `Tower.lean` proves the
+law in every strong model from the exported `EnvModelM.tower_ok` (`pairLaw_of_tower`,
+`pairLaw_of_fireOk`).
 -/
 
 namespace Ix.CompileCert.Bridge
@@ -29,12 +27,17 @@ section Pair
 variable {V : Type u} [Kernel.SetTheory V]
 
 /-- **The model's pair law** for a structure `s` with constructor `c` (at `φ`): projections `0` and
-`1` of a constructor application at typed components read those components. -/
+`1` of a constructor application whose four arguments fit the constructor's installed type
+telescope read the third and fourth argument. -/
 def PairLaw (cval : Kernel.Name → (Kernel.Name → Nat) → V) (env : Kernel.Env)
     (φ : Kernel.Name → Nat) (s c : Kernel.Name) : Prop :=
-  ∀ (ρ : Nat → V) (us : List Kernel.Level) (α β a b : Kernel.Expr) (A B X Y : V),
+  ∀ (ρ : Nat → V) (us : List Kernel.Level) (α β a b : Kernel.Expr) (A B X Y : V)
+    (cv : Kernel.ConstantVal) (nP nF : Nat) (finalρ : Nat → V) (result : Kernel.Expr),
+    env.find? c = some (.ctorInfo cv nP nF) → us.length = cv.levelParams.length →
     Denotes cval env φ ρ α A → Denotes cval env φ ρ β B →
-    Denotes cval env φ ρ a X → Denotes cval env φ ρ b Y → X ∈ˢ A → Y ∈ˢ B →
+    Denotes cval env φ ρ a X → Denotes cval env φ ρ b Y →
+    InstalledTelescope cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us)
+      [A, B, X, Y] finalρ result →
     (∃ v, Denotes cval env φ ρ (.proj s 0 (Kernel.Expr.mkAppN (.const c us) [α, β, a, b])) v) ∧
     (∀ v, Denotes cval env φ ρ (.proj s 0 (Kernel.Expr.mkAppN (.const c us) [α, β, a, b])) v →
       v = X) ∧
@@ -49,18 +52,24 @@ variable {cval : Kernel.Name → (Kernel.Name → Nat) → V} {env : Kernel.Env}
 theorem semEq_proj0 {s c : Kernel.Name} (law : PairLaw cval env φ s c) {ρ : Nat → V}
     {us : List Kernel.Level} {α β a b : Kernel.Expr} {A B X Y : V}
     (hα : Denotes cval env φ ρ α A) (hβ : Denotes cval env φ ρ β B)
-    (ha : Denotes cval env φ ρ a X) (hb : Denotes cval env φ ρ b Y) (hX : X ∈ˢ A) (hY : Y ∈ˢ B) :
+    (ha : Denotes cval env φ ρ a X) (hb : Denotes cval env φ ρ b Y) {cv : Kernel.ConstantVal} {nP nF : Nat} {finalρ : Nat → V}
+    {result : Kernel.Expr} (hc : env.find? c = some (.ctorInfo cv nP nF)) (harity : us.length = cv.levelParams.length)
+    (typed : InstalledTelescope cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us)
+      [A, B, X, Y] finalρ result) :
     SemEq cval env φ ρ (.proj s 0 (Kernel.Expr.mkAppN (.const c us) [α, β, a, b])) a := by
-  obtain ⟨⟨v, hv⟩, h0, -, -⟩ := law ρ us α β a b A B X Y hα hβ ha hb hX hY
+  obtain ⟨⟨v, hv⟩, h0, -, -⟩ := law ρ us α β a b A B X Y cv nP nF finalρ result hc harity hα hβ ha hb typed
   exact ⟨X, h0 v hv ▸ hv, ha⟩
 
 /-- **Projection `1` of a pair**, under the pair law, at typed components. -/
 theorem semEq_proj1 {s c : Kernel.Name} (law : PairLaw cval env φ s c) {ρ : Nat → V}
     {us : List Kernel.Level} {α β a b : Kernel.Expr} {A B X Y : V}
     (hα : Denotes cval env φ ρ α A) (hβ : Denotes cval env φ ρ β B)
-    (ha : Denotes cval env φ ρ a X) (hb : Denotes cval env φ ρ b Y) (hX : X ∈ˢ A) (hY : Y ∈ˢ B) :
+    (ha : Denotes cval env φ ρ a X) (hb : Denotes cval env φ ρ b Y) {cv : Kernel.ConstantVal} {nP nF : Nat} {finalρ : Nat → V}
+    {result : Kernel.Expr} (hc : env.find? c = some (.ctorInfo cv nP nF)) (harity : us.length = cv.levelParams.length)
+    (typed : InstalledTelescope cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us)
+      [A, B, X, Y] finalρ result) :
     SemEq cval env φ ρ (.proj s 1 (Kernel.Expr.mkAppN (.const c us) [α, β, a, b])) b := by
-  obtain ⟨-, -, ⟨v, hv⟩, h1⟩ := law ρ us α β a b A B X Y hα hβ ha hb hX hY
+  obtain ⟨-, -, ⟨v, hv⟩, h1⟩ := law ρ us α β a b A B X Y cv nP nF finalρ result hc harity hα hβ ha hb typed
   exact ⟨Y, h1 v hv ▸ hv, hb⟩
 
 variable {Γ : Env} {N : Ix.Name → Option Kernel.Name} {L : Ix.Level → Option Kernel.Level}
@@ -85,11 +94,14 @@ theorem Justified.proj0 {ρ : Nat → V} {s c : Ix.Name} {us : Array Ix.Level} {
     (sα : Skel N L α kα) (sβ : Skel N L β kβ) (sa : Skel N L a ka) (sb : Skel N L b kb)
     (law : PairLaw cval env φ s' c')
     (hα : Denotes cval env φ ρ kα A) (hβ : Denotes cval env φ ρ kβ B)
-    (ha : Denotes cval env φ ρ ka X) (hb : Denotes cval env φ ρ kb Y) (hX : X ∈ˢ A) (hY : Y ∈ˢ B) :
+    (ha : Denotes cval env φ ρ ka X) (hb : Denotes cval env φ ρ kb Y) {cv : Kernel.ConstantVal} {nP nF : Nat} {finalρ : Nat → V}
+    {result : Kernel.Expr} (hcc : env.find? c' = some (.ctorInfo cv nP nF)) (harity : ls.length = cv.levelParams.length)
+    (typed : InstalledTelescope cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams ls)
+      [A, B, X, Y] finalρ result) :
     Justified Γ N L cval env φ ρ (.proj s 0 (pair4 c us α β a b))
       (.proj s' 0 (Kernel.Expr.mkAppN (.const c' ls) [kα, kβ, ka, kb])) a ka :=
   ⟨skel_pair hs hc hl sα sβ sa sb, sa, Conv.step (.proj0 s c us α β a b hp),
-    semEq_proj0 law hα hβ ha hb hX hY⟩
+    semEq_proj0 law hα hβ ha hb hcc harity typed⟩
 
 /-- **X1's projection rule `.2`, justified**: under the pair law, at typed components. -/
 theorem Justified.proj1 {ρ : Nat → V} {s c : Ix.Name} {us : Array Ix.Level} {α β a b : Tm}
@@ -99,11 +111,14 @@ theorem Justified.proj1 {ρ : Nat → V} {s c : Ix.Name} {us : Array Ix.Level} {
     (sα : Skel N L α kα) (sβ : Skel N L β kβ) (sa : Skel N L a ka) (sb : Skel N L b kb)
     (law : PairLaw cval env φ s' c')
     (hα : Denotes cval env φ ρ kα A) (hβ : Denotes cval env φ ρ kβ B)
-    (ha : Denotes cval env φ ρ ka X) (hb : Denotes cval env φ ρ kb Y) (hX : X ∈ˢ A) (hY : Y ∈ˢ B) :
+    (ha : Denotes cval env φ ρ ka X) (hb : Denotes cval env φ ρ kb Y) {cv : Kernel.ConstantVal} {nP nF : Nat} {finalρ : Nat → V}
+    {result : Kernel.Expr} (hcc : env.find? c' = some (.ctorInfo cv nP nF)) (harity : ls.length = cv.levelParams.length)
+    (typed : InstalledTelescope cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams ls)
+      [A, B, X, Y] finalρ result) :
     Justified Γ N L cval env φ ρ (.proj s 1 (pair4 c us α β a b))
       (.proj s' 1 (Kernel.Expr.mkAppN (.const c' ls) [kα, kβ, ka, kb])) b kb :=
   ⟨skel_pair hs hc hl sα sβ sa sb, sb, Conv.step (.proj1 s c us α β a b hp),
-    semEq_proj1 law hα hβ ha hb hX hY⟩
+    semEq_proj1 law hα hβ ha hb hcc harity typed⟩
 
 end Pair
 

@@ -1423,7 +1423,12 @@ def x2Roots : Array Lean.Name :=
     -- pair projections, ι, the round trip's proved half
     `PairLaw, `semEq_proj0, `semEq_proj1, `skel_pair, `Justified.proj0, `Justified.proj1,
     `semEq_iota, `bridgeLane, `bridgeLane_eq, `bridgeExport, `bridgeSource, `bridgeSource_eq,
-    `bridge_eq_with].map
+    `bridge_eq_with,
+    -- the tower law on the public reading, the pair law discharged
+    `field_eq_projS, `FChain, `FChain.instantiate1, `fchain_of_telescope, `piChain_of_reading,
+    `tower_field, `Reads, `Reads.mkAppN, `denotes_proj_ctor, `pairLaw_of_tower, `towerGuard_of_fireOk,
+    `pairLaw_of_fireOk].map
+
 
 
 

@@ -8,6 +8,7 @@ import Ix.CompileCert.Bridge.Graded
 import Ix.CompileCert.Bridge.Develop
 import Ix.CompileCert.Bridge.RoundTrip
 import Ix.CompileCert.Bridge.Pair
+import Ix.CompileCert.Bridge.Tower
 
 /-!
 # M7 X2: the bridge from the compiler's terms to the checker's, and conversion soundness
@@ -54,9 +55,11 @@ This package connects the two (PLAN-L2a §1.4 obligation O-B, §2.0 B1/B2):
   its development denote the same (`developB_sem`, `instantiateB_sem`), and an inlined image
   occurrence denotes what the unfolded constant does (`inlineB_sem`), with X1's `inline_conv` on the
   compiler side (`inlineB_justified`);
-* **pair projections and ι** (`Bridge/Pair.lean`): X1's projection rules relative to the model's pair
-  law (`PairLaw`, `semEq_proj0`, `semEq_proj1`, `Justified.proj0`, `Justified.proj1`), and ι as a
-  semantic equality (`semEq_iota`, the lane's public recursor law);
+* **pair projections and ι** (`Bridge/Pair.lean`, `Bridge/Tower.lean`): X1's projection rules from the
+  model's pair law (`PairLaw`, `semEq_proj0`, `semEq_proj1`, `Justified.proj0`, `Justified.proj1`),
+  which holds in every strong model (`pairLaw_of_tower`, `pairLaw_of_fireOk`): IxC's tower law
+  transported to the public reading (`tower_field`, `denotes_proj_ctor`); and ι as a semantic
+  equality (`semEq_iota`, the lane's public recursor law);
 * **the executable round trip** (`Bridge/RoundTrip.lean`): `bridgeExport` and `bridgeSource` (the
   lane's exports through the compiler's `canonExpr` and the bridge), `bridgeSource_eq`; the ignored
   runner `bridge-roundtrip` compares them on the fixtures (through the bytes and the certified reader)
