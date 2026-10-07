@@ -808,13 +808,22 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   }
   return (ixonEnv, cenv.totalBytes, cenv)
 
-/-- Pass 3: the first input name with a reserved `_ix` component (D14),
-    as a rejection message. -/
+/-- Pass 3: an input name with a reserved `_ix` component (D14), as a
+    rejection message: the least such message, so the least such name by
+    pretty form, as the Rust compiler names it. -/
 def pass3ReservedInput? (blocks : Ix.CondensedBlocks) : Option String := Id.run do
+  -- the least message (by its text: the least name by pretty form), as the
+  -- Rust compiler reports it (`reserved_input_in`), not the first in the
+  -- blocks' iteration order: with several reserved names both compilers
+  -- name the same one
+  let mut best : Option String := none
   for (_, all) in blocks.blocks do
     for n in all do
-      if let some msg := Ix.Compile.Pass.reservedInput? n then return some msg
-  return none
+      if let some msg := Ix.Compile.Pass.reservedInput? n then
+        best := match best with
+          | some b => if msg < b then some msg else some b
+          | none => some msg
+  return best
 
 /-! ## The aux-aware sequential driver -/
 

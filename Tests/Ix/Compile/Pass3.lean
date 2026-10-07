@@ -1343,6 +1343,22 @@ def run (env : Environment) : IO UInt32 := do
     let rejected : Bool := decide ((msg.splitOn "reserved component").length > 1)
     IO.println s!"[pass3] ReservedIx: switch off compiles {offOk}; switch on rejects {rejected}: {msg.take 200}"
     if !offOk || !rejected then problems := problems.push "ReservedIx: the reserved `_ix` name is not handled"
+    -- with several reserved names, both compilers name the least by pretty
+    -- form (design document §11.6 item 3)
+    let least := "input name 'ReservedIx.A._ix.g'"
+    let rustMsg ← try (do
+        let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv u.env u.closure).mapError toString)
+        let constants ← IO.ofExcept input.prepare
+        let dir ← IO.FS.createTempDir
+        try
+          discard <| Ix.CompileM.rsCompileEnvBytesPass3FFI constants (dir / "rust.ixe").toString true true
+          pure "compiled"
+        finally IO.FS.removeDirAll dir) catch e => pure (toString e)
+    let leanNames : Bool := decide ((msg.splitOn least).length > 1)
+    let rustNames : Bool := decide ((rustMsg.splitOn least).length > 1)
+    IO.println s!"[pass3] ReservedIx: Lean names the least reserved name {leanNames}, Rust {rustNames}: {rustMsg.take 200}"
+    if !leanNames || !rustNames then
+      problems := problems.push "ReservedIx: the two compilers do not name the least reserved name"
   -- Units load one after the other (each elaborates its file in this process),
   -- and each loaded unit's checks start at once in a task of their own, at most
   -- `PASS3_JOBS` (default 8) at a time: the units are independent (own closure,

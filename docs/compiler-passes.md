@@ -2823,8 +2823,8 @@ second claim at another address fails the block).
 | 7c | **Lean's encoding constants of a transported clique** (`all₀._mutual`, `all₀.mutual` with everything under them, `m._f`). | Lean's form under Lean's names (case 1; their statements follow Lean's order: `ORDER-STMT`); Lean's equation lemmas that are not carried refer to them. | `Cliques.isEncodingName`, `encodingOwner?` |
 | 7d | **A clique kept in Lean's form**: plan `.baseline` (`NOSPEC`: the order is undetermined; `SHAPE`: the transport left Lean's form), `.unchanged` (`σ` the identity, no alias), `.notEncoded` (one member, an unsafe or partial or kernel mutual block, no encoding recognised). | Case 1 (or 5). Faithful; for `.baseline` non-canonical with the cause. | `Cliques.planClique`; `Clique/Plan.lean` (`CliqueOutcome`) |
 | 8 | **A caller refused**: a block outside a transported clique's unit that references a member and one of Lean's encoding constants. | **Nothing**: the block fails with the named error `Pass 3 cliques: caller refused (block rule, callers adapt): …`; the clique is never changed for it. On Init+Std and Mathlib no such caller exists (M1-a, M1-g). | `Cliques.cliqueCallers`, `callerRefusalPrefix` |
-| 9 | **A failed block** (any compile error of the block, a conflicting claim, a refused caller, a missing dependency). | **Nothing**: its members are recorded in `CompileEnv.ungrounded` with the message and no name of the block, no constant and no record of it (declines, plans, views, heads) is merged; dependents fail with a missing constant. In the promotion path (case 1b) a failure of the original-form compile marks the members failed although their names were already bound by the inductive's aux tail. `ix compile-lean` is fail-closed: with any failure it writes no `.ixe` unless `--allow-partial`. | `mergeCompiledBlock` is called only on success (every driver); the `fail` paths of `compileEnvAux`/`compileEnvParallelAux`; `CompileLeanCmd` |
-| 10 | **An input name with a reserved component** (`_ix`, or any component starting with `_ix`). | Under Pass 3 the whole compile is refused, the message naming one such name (D14). Scope: the names of the condensation the driver is given (§11.6 item 3). | `Names.reservedInput?`, `CompileDriver.pass3ReservedInput?` |
+| 9 | **A failed block** (any compile error of the block, a conflicting claim, a refused caller, a missing dependency). | **Nothing**: its members are recorded in `CompileEnv.ungrounded` with the message and no name of the block, no constant and no record of it (declines, plans, views, heads) is merged; dependents fail with a missing constant. In the promotion path (case 1b) a failure of the original-form compile marks the members failed although their names were already bound by the inductive's aux tail and are still promoted (the exception, §11.6 item 4). `ix compile-lean` is fail-closed: with any failure it writes no `.ixe` unless `--allow-partial`. | `mergeCompiledBlock` is called only on success (every driver); the `fail` paths of `compileEnvAux`/`compileEnvParallelAux`; `CompileLeanCmd` |
+| 10 | **An input name with a reserved component** (`_ix`, or any component starting with `_ix`). | Under Pass 3 the whole compile is refused, the message naming the least such name by pretty form, in both compilers (D14). Scope: the names of the condensation the driver is given (§11.6 item 3). | `Names.reservedInput?`, `CompileDriver.pass3ReservedInput?` |
 
 ### 11.3 The records the output carries
 
@@ -2962,7 +2962,8 @@ Rejected for being unlisted. (Before W+ the record was planned as a certifier in
 "value differs" on a `differs: true` name into Unsupported(changed); M5 superseded that.) A reader can
 verify, from the artifact and Lean's environment alone:
 - every `addr` is the `Named.addr` of the name and a constant of the artifact (the `changed-set` suite
-  asserts it); `refused`/`failed` names are absent;
+  asserts it); `refused`/`failed` names are absent, except a block that failed in the promotion path
+  (case 9, §11.6 item 4);
 - `image`: the name is in `imageKinds` of Lean's block `ref` (a function of Lean's constants), the
   constant has Lean's type up to the rewrite of heads in it (case 3) and Lean's kind or, for a recursor,
   a definition, and `original` is the export of Lean's declaration;
@@ -2980,22 +2981,37 @@ A reader of the record trusts: that a block is *changed* (Def 3.1, Pass 1's clas
 the certifier independently of the record, by rows); the cause texts of declines and plans.
 `differs: false` entries are information only.
 
-### 11.6 Inconsistencies found while writing this section (reported, not changed)
+### 11.6 Inconsistencies found while writing this section, and their resolution (2026-10-07)
 
 1. **O11a's scheduling edges** are added under Pass 3 only by `compileEnvAux` and `compileEnvParallelAux`,
    and in both modes by `compileDecoratedConsts` (`compileLeanInput`, `ix compile-lean`), which then calls
-   `compileEnvParallelAux` (adding them again under Pass 3, idempotently). Edges only order blocks, so no
-   byte depends on it; the O11a docstring now says what the code does (it said "both switch states").
+   `compileEnvParallelAux` (adding them again under Pass 3, idempotently); the Rust compiler under Pass 3
+   only. **Resolved by the text** (the code is right: edges only order blocks, so no byte depends on where
+   they are added, and the schedule-identity gate holds): §1.5, the O11a docstring and
+   `prepareSizeOfScheduling`'s docstring say what each driver does.
 2. **O11a's decline cause "the constructor and minor type of minor `j` cannot be read"** is the split-minor
    helpers (`sourceCtorForMinor`, `sourceMinorType`, `peelBinders`, shared with the surgery) failing to place
    the minor, measured on split blocks with an evaporated nested auxiliary; the minor itself can be read.
-   Documented with its exact wording; the wording is unchanged (the Rust compiler mirrors the text).
-3. **D14's check** runs over the condensation the driver is given: in `ix compile-lean` the grounded one,
-   so an ungrounded input name with an `_ix` component is not checked (it is not compiled either). With
-   several reserved names, the Lean message names the first in `CondensedBlocks.blocks`' iteration order,
-   the Rust message the least by pretty name: the two compilers can name different constants.
-4. **Failed blocks in the promotion path** (case 9): the members' names stay bound (by the inductive's tail)
-   while the block is recorded as failed. `ix compile-lean` is fail-closed, so no artifact carries it.
+   **Resolved by the text** (§1.5, the O11a docstring): the wording is the code's and stays (it is a record
+   text both compilers emit; the decline is faithful, O2's form, and recorded).
+3. **D14's naming.** With several reserved names the Lean compiler named the first in
+   `CondensedBlocks.blocks`' iteration order, the Rust compiler the least by pretty form, so the two could
+   name different constants. **Resolved in the code**: `CompileDriver.pass3ReservedInput?` names the least
+   message, so the least name, as `pass3::driver::reserved_input_in` does (control: the `pass3` suite's
+   `ReservedIx` unit has three reserved names and checks that both compilers name `ReservedIx.A._ix.g`).
+   The scope is unchanged: the check runs over the condensation the driver is given, in `ix compile-lean`
+   the grounded one; an ungrounded input name is not D14-checked but is a named failure of the compile
+   (`UNGROUNDED-INPUT`, §11.5), so the compile is refused either way.
+4. **Failed blocks in the promotion path** (case 9): when the original-form compile of a block whose
+   auxiliaries Pass 2 regenerated fails (`compileConstNoAuxPure`, e.g. `REFUSED-IPB-COLLAPSE`), the
+   members are recorded as failed, but their names, bound by the block's aux tail, are still promoted
+   (`promoteRemaining`; Rust `compile_env`, the same), against case 9's "no name of the block is merged"
+   and §11.5's "`refused`/`failed` names are absent". Both compilers behave alike; `ix compile-lean` is
+   fail-closed, so no artifact written without `--allow-partial` carries it. **Not changed**: making the
+   path publish nothing (skip the promotion when the original-form compile failed, in both compilers)
+   moves the outcome of existing fixtures (the IPB refusal fixtures' dependents would fail with a missing
+   constant), which re-records `aux-cert` and `validate-lean` pins; that is a decision for the owner of the
+   records (FU report, open item). Until then the exception is the contract: case 9 and §11.5 name it.
 5. Stale docstrings fixed with this section (no code change): `ImageView` (the image terms reference
    Pass 2's recursors by their `_ix` display names, not by Lean's names), `Translate`/`Driver`/`Names` (no
    `a._ix` image constant exists for bare or partial occurrences), the decline map's docstring (the last
