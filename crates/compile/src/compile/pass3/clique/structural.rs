@@ -407,7 +407,9 @@ fn phi_s_fix(
   if fuel == 0 {
     return Err("Φ: recursion bound exhausted".into());
   }
-  let key = (*e.get_hash(), ctx_hash(ctx));
+  // the ownership mode is part of the key (`phiSFix`): the members'
+  // results are not shared with the carried lemmas'
+  let key = (*e.get_hash(), ctx_hash(ctx), l.check_ownership);
   if let Some(r) = tm.cache_own.get(&key) {
     return Ok(r.clone());
   }

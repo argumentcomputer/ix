@@ -683,10 +683,12 @@ pub fn no_dups(xs: &[usize]) -> bool {
 // The transport monad's state
 // ---------------------------------------------------------------------------
 
-/// The key of the structural memo (`TState.cacheOwn`): the term and the
-/// context (each binder type with its ownership). Lean keys by a 64-bit mix
-/// of the hashes and checks both on a hit; this keys by the full content.
-pub type OwnKey = (Hash, Hash);
+/// The key of the structural memo (`TState.cacheOwn`): the term, the
+/// context (each binder type with its ownership) and the ownership mode
+/// (`StructLayout::check_ownership`). Lean keys by a 64-bit mix of the
+/// hashes and the mode and checks all three on a hit; this keys by the full
+/// content.
+pub type OwnKey = (Hash, Hash, bool);
 
 /// `TState`.
 #[derive(Default)]

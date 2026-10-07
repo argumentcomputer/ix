@@ -625,6 +625,48 @@ def lemmaControl (cenv : Ix.CompileM.CompileEnv) (all carried : Array IxName) (s
       if lemmaNames.contains n then none else m?.map fun m => s!"{n}: {m.take 200}"
     return .ok (ks.filter (lemmaNames.contains ·.1), other)
 
+open _root_.Ix.Compile.Clique in
+/-- The structural memo is keyed by the ownership mode
+(`Clique.phiSFix`; M6R-3's observation, `FU-compiler-followups.md` item 3).
+`HC`'s functional's dictionary type `Nat.below M x`, taken as a term outside
+an owned binder, keeps its motive with ownership enforced and has it
+repacked without (`σ = [1, 0]`, `M = fun _ => PProd Bool Nat`). Within one
+run, each mode must give its own result whichever comes first (before the
+fix the second mode took the first one's from the memo); the valid
+neighbour: without a repacked group (`σ` the identity) the modes agree.
+Returns the failures and a summary. -/
+def memoByMode (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.Clique.Encoding × Array Name)) :
+    Except String (Array String × String) := do
+  let ns := lemNs ++ `HC
+  let some (_, ms) := eqn.get? (ns ++ `hb) | throw "HC: no clique"
+  let const? (n : IxName) : Option _root_.Ix.ConstantInfo := (env.find? (toLeanName n)).map toIxConst
+  let some members := ms.mapM (declOf env ·) | throw "HC: a member is not a definition"
+  let all := ms.map ixName
+  let some (_, aux) := Ix.Compile.Pass.encodingOf const? all members | throw "HC: no encoding"
+  let some f := aux.find? (·.name == ixName (ms[0]! ++ `_f)) | throw "HC: no functional"
+  let (bs, _) := _root_.Ix.Compile.Canon.peelForalls 2 f.type #[]
+  let some (_, natTy, _) := bs[0]? | throw "HC: the functional has no major"
+  let some (_, belowTy, _) := bs[1]? | throw "HC: the functional has no dictionary"
+  let ctx : Array (_root_.Ix.Expr × Bool) := #[(natTy, false)]
+  let one (σ : Array Nat) : Except String (_root_.Ix.Expr × _root_.Ix.Expr × _root_.Ix.Expr × _root_.Ix.Expr × _root_.Ix.Expr × _root_.Ix.Expr) := do
+    let L ← structLayout members aux σ const?
+    let Lp := { L with checkOwnership := false }
+    let on ← TM.run' (phiS L ctx belowTy)
+    let off ← TM.run' (phiS Lp ctx belowTy)
+    let (onOff1, onOff2) ← TM.run' do pure (← phiS L ctx belowTy, ← phiS Lp ctx belowTy)
+    let (offOn1, offOn2) ← TM.run' do pure (← phiS Lp ctx belowTy, ← phiS L ctx belowTy)
+    pure (on, off, onOff1, onOff2, offOn2, offOn1)
+  let mut failures : Array String := #[]
+  let (on, off, a1, b1, a2, b2) ← one #[1, 0]
+  unless on == belowTy do failures := failures.push "HC: ownership enforced, the user's below application lost its motive"
+  if off == belowTy then failures := failures.push "HC: ownership off, the motive was not repacked"
+  unless a1 == on && b1 == off do failures := failures.push "HC: run (enforced, off): the second mode took the first one's result"
+  unless a2 == on && b2 == off do failures := failures.push "HC: run (off, enforced): the second mode took the first one's result"
+  let (on', off', _, _, _, _) ← one #[0, 1]
+  unless on' == off' do failures := failures.push "HC: without a repacked group the modes differ"
+  return (failures, s!"memo by ownership mode: repacked {if on != off then "distinct" else "equal"} \
+    results per mode in both orders; identity σ: modes agree {on' == off'}")
+
 open Tests.Ix.Compile.Pass3 (CUnit closureOf compileUnit kernelFailures) in
 /-- Compile one carried-lemma unit and check it (see the section's text). -/
 def runLemmaUnit (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.Clique.Encoding × Array Name))
@@ -919,6 +961,15 @@ def run : IO UInt32 := do
   unless lemmaPlans.getD "refused" 0 ≥ 1 && lemmaPlans.getD "transported" 0 ≥ 1 do
     failures := failures.push s!"carried lemmas: refused and transported must both pass ({lemmaPlans.toList})"
   IO.println s!"[clique-ownership] carried-lemma units: {lemmaCases.size}, passing by plan {lemmaPlans.toList.mergeSort (fun a b => a.1 < b.1)}"
+  -- the structural memo is keyed by the ownership mode
+  match memoByMode env eqn with
+  | .error e =>
+    IO.println s!"[clique-ownership]   FAIL memo: {e}"
+    failures := failures.push s!"memo: {e}"
+  | .ok (fs, summary) =>
+    IO.println s!"[clique-ownership] {summary}"
+    for f in fs do IO.println s!"[clique-ownership]   FAIL {f}"
+    failures := failures ++ fs
   IO.println s!"[clique-ownership] {cases.size} cases: {transported} transported, {kept} kept in Lean's form, {failures.size} failure(s)"
   return if failures.isEmpty then 0 else 1
 

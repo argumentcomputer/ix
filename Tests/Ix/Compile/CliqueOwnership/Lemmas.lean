@@ -142,4 +142,19 @@ theorem unfold_used (a : TA) (b : TB) : f a = f a ∧ g a = g a ∧ h b = h b :=
    (h.eq_def b).trans (h.eq_def b).symm⟩
 end MD
 
+/-! `HC`: two functions with different result types (`Bool`, `Nat`), so the
+group's packed motive `fun _ => PProd Bool Nat` changes when the group is
+repacked: the structural memo's ownership-mode check of `clique-ownership`
+(`memoByMode`). -/
+namespace HC
+mutual
+def hb : Nat → Bool
+  | 0 => false
+  | n + 1 => hn n == 0
+def hn : Nat → Nat
+  | 0 => 1
+  | n + 1 => if hb n then 1 else 2
+end
+end HC
+
 end Tests.Ix.Compile.CliqueOwnership.Lem

@@ -304,10 +304,11 @@ structure TState where
   region) and on which bound variables are the recursion variable: keyed by
   the hashes, all checked on a hit -/
   cacheMode : Std.HashMap UInt64 (Expr × Bool × Array Bool × Expr) := {}
-  /-- the structural `Φ`, which depends on the binder context and on which
-  bound variables are the recursion's own `below` dictionaries: keyed by the
-  hashes, both checked on a hit -/
-  cacheOwn : Std.HashMap UInt64 (Expr × Array (Expr × Bool) × Expr) := {}
+  /-- the structural `Φ`, which depends on the binder context, on which
+  bound variables are the recursion's own `below` dictionaries and on the
+  ownership mode (`StructLayout.checkOwnership`): keyed by the hashes and the
+  mode, all checked on a hit -/
+  cacheOwn : Std.HashMap UInt64 (Expr × Array (Expr × Bool) × Bool × Expr) := {}
 
 /-- Pure, over `Except String`: an error is a grammar failure (or an
 exhausted bound), which the caller turns into the faithful fallback. -/

@@ -549,17 +549,24 @@ def phiSStep (L : StructLayout) (go : Array (Expr × Bool) → Expr → TM Expr)
   | .mdata d x _ => return Expr.mkMData d (← go ctx x)
   | _ => return e
 
-/-- `Φ_σ` with a context, memoised by the term and the context's hash. -/
+/-- `Φ_σ` with a context, memoised by the term, the context and the
+ownership mode (`L.checkOwnership`). Within one transport the layout differs
+only in that mode (the members and functionals of a definition clique with
+ownership enforced, the carried lemmas without), and `phiSStep`'s result
+depends on it (a `below` application outside an owned binder keeps its
+motive with ownership enforced and is re-associated without), so a result is
+shared only within one mode. -/
 def phiSFix (L : StructLayout) : Nat → Array (Expr × Bool) → UInt64 → Expr → TM Expr
   | 0, _, _, _ => throw "Φ: recursion bound exhausted"
   | fuel + 1, ctx, hctx, e => do
-    let key := mixHash (hash e) hctx
-    if let some (e', ctx', r) := (← get).cacheOwn.get? key then
-      if e' == e && ctx' == ctx then return r
+    let own := L.checkOwnership
+    let key := mixHash (mixHash (hash e) hctx) (if own then 17 else 19)
+    if let some (e', ctx', own', r) := (← get).cacheOwn.get? key then
+      if e' == e && ctx' == ctx && own' == own then return r
     let go (ctx' : Array (Expr × Bool)) (x : Expr) : TM Expr :=
       phiSFix L fuel ctx' (ctxHash ctx') x
     let r ← phiSStep L go ctx e
-    modify fun st => { st with cacheOwn := st.cacheOwn.insert key (e, ctx, r) }
+    modify fun st => { st with cacheOwn := st.cacheOwn.insert key (e, ctx, own, r) }
     return r
 where
   ctxHash (ctx : Array (Expr × Bool)) : UInt64 :=
