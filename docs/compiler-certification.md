@@ -73,8 +73,9 @@ with theorem rows checked by the certified checker and no new trust:
 - **equations** (`EquationMatch`): the reader has a *definition* under the exported name and
   universes, and every defining equation is the statement of a theorem row: for a recursor, one
   per computation rule, stated by a pure function of Lean's `RecursorVal` (`leanRuleStatement`)
-  and exported as everything else; for a definition, `@Eq T c value` (proof `Eq.refl`), or Lean's
-  own `c.eq_def`;
+  and exported as everything else; for a definition, `@Eq T c value` (proof `Eq.refl`, or a
+  **value row**: the same statement with a proof the certifier generates, below), or Lean's own
+  `c.eq_def`;
 - a declared type that is convertible to Lean's but not equal (Pass 3 inlines images in types too)
   is matched through a **type row** `@Eq (Sort ℓ) T_ix T_lean` (proof `Eq.refl`). A type row and a
   definition's `rfl` row are stated at the universe ℓ the certified checker itself infers for Lean's
@@ -85,6 +86,26 @@ with theorem rows checked by the certified checker and no new trust:
   exported to the reader block holding it, which holds nothing else; every recursor of the Lean
   block is claimed an image (`ExportContext.images`, checked by the map). That the block
   transformation itself preserves the meaning of the types is trusted here and proved in M7.
+- **value rows** (package V, `Ix/CompileCert/CliqueRows.lean`): a member of a transported
+  definition clique (`docs/compiler-passes.md` §11.2 case 7) holds the transported value under
+  Lean's name, which is not convertible to Lean's value, so its `rfl` row is refused. The certifier
+  decompiles the clique's compiled constants from the artifact (the stored, transported terms),
+  adds them to Lean's environment (Lean's kernel checks them) and builds a proof of `c = v` there:
+  for a **well-founded** clique, well-founded induction on Lean's relation with the members'
+  equations as the motive (a `PSum.casesOn` tree), each step `WellFounded.fix_eq` (or
+  `WellFounded.Nat.fix_eq`) on both sides, one unfolding of either side the same body (the
+  conjugation) and `congrArg`/`funext` from the induction hypothesis; for a **structural** clique,
+  induction on the major premise with the block's recursor (mutual and nested motives), each
+  case by unfolding both sides to the user's body and congruence with the induction hypotheses as
+  leaves, a match on another variable split by `cases` on it. The proof is exported like any
+  support row (`<name>._ix_val.<k>`), pre-screened and folded by the certified checker;
+  `RflEquation` quantifies the proof away, so a member matched by its value row has `c = v` in every
+  strong model (`model_equations`, `rflEquation_of_row`,
+  `value_row_holds`) with no statement changed. A member whose value row is not generated or is
+  refused keeps Lean's `eq_def` route (or its Unsupported class) and is listed as a residual:
+  `partial_fixpoint` cliques (no generator), and structural cliques over a changed inductive block
+  (their compiled constants reach the canonical block's recursor, which the generator does not add
+  to Lean's environment).
 
 The rows are either the artifact's own (a carried `eq_def`) or **support** declarations the
 certifier builds (`<name>._ix_eq.<k>`, `<name>._ix_type`), pre-screened one by one and folded once
@@ -139,7 +160,9 @@ use of `captureCone`); that `directExport`/`exportSourceExpr` is the intended re
 declaration (erasing binder names, binder infos and `mdata`; universes canonicalised under the
 proved guard); that a theorem the certifier lists as a lowering witness was accepted by Lean's
 kernel; for W+, that Lean's `c.eq_def` is `c`'s unfolding equation (the relation checks that it is an
-equation about `c`) and, until M7, that the transformation of a changed block preserves the meaning
+equation about `c`), for the members certified by the `equations:eq_def` route only (a member with an
+accepted value row has `c = v` checked instead; the run lists the others in `<prefix>.values.tsv` and
+its `V:` line) and, until M7, that the transformation of a changed block preserves the meaning
 of its types; the Lean runtime that executes the decisions. That runtime includes, since M5 WP-B,
 the compiler's `@[csimp]` substitutions through which the decisions run on the DAG (a shared
 subterm visited once): the export (`exportExprWith ↦ exportExprWithShared`, `exportExpr ↦
@@ -184,7 +207,7 @@ is not certified) or **rejected** (a diagnostic: the compiled constant is not th
 declaration). S, beside it: **S-certified**, **S-unsupported** (class), **S-blocked** (by a cone
 member that fails, or by W), **S-rejected** (diagnostic). A W verdict other than certified carries
 over to S (`W unsupported: …`, `W: …`, `W rejected: …`). A certified row's cause column names its
-route: `direct`, `raw`, `theorem`, `equations:rfl`, `equations:eq_def` (W+), with `, type-row` when the
+route: `direct`, `raw`, `theorem`, `equations:rfl`, `equations:value-row`, `equations:eq_def` (W+), with `, type-row` when the
 declared type matched through a type row and `, changed-block` for an inductive of a changed block;
 `direct/raw` when the old W decision accepted the input at once. A changed definition whose equation
 rows the checker refuses is rejected, except a transported clique member without `eq_def` in Lean's
@@ -208,7 +231,7 @@ S-rejected for it.
 ```
 lake build compile-certify
 compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-prefix> \
-  [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--refold] [--explain <name>]* [--receipts-only] \
+  [--budget <nodes>] [--workers <n>] [--row-budget <ms>] [--refold] [--no-value-rows] [--explain <name>]* [--receipts-only] \
   [--strong | --strong-only] [--strong-roots <A,B,...>] [--strong-every <k>] \
   [--strong-max-cone <n>] [--strong-tasks <n>] [--strong-plan] [--strong-global] [--explain-global]
 ```
@@ -225,7 +248,10 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
   the image claims, the W+ rows proposed and folded and the artifact names with no Lean constant
   (`ixOnly`, the canonical `_ix` constants among them; listed in `<prefix>.ixonly.tsv`) and the rows
   over the pre-screen time budget; `<prefix>.rows.tsv` gives each W+ row's pre-screen time and
-  verdict; `--explain <name>` also prints the rows of a changed constant, the checker's verdict on
+  verdict; `<prefix>.values.tsv` gives each transported clique member's value row (accepted,
+  refused, not generated, not exported, with the reason) and its route, the JSON's `valueRows` the
+  members certified otherwise (the residual trust in Lean's `eq_def`); `--no-value-rows` proposes
+  none (the members are matched by Lean's `eq_def` only, the earlier behaviour); `--explain <name>` also prints the rows of a changed constant, the checker's verdict on
   each and the first difference of type and value. The command exits as soon as its report is
   written, without waiting for a row left running past its budget (the checker cannot be
   interrupted).
