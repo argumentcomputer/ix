@@ -584,7 +584,9 @@ script "check-cert" (args) := do
         "--row-budget", "0"]),
       ("certify-strong-plan", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
         s!"{outDir}/compiled.ixe", s!"{outDir}/certify-strong-plan", "--strong-plan"]),
-      ("strong-plan", #[exe, "strong-plan", outDir])] ++
+      ("strong-plan", #[exe, "strong-plan", outDir]),
+      -- S over W+: the changed constants S-unsupported, their users S-blocked, a forged route refused
+      ("strong-changed", #[exe, "strong-changed", s!"{outDir}/changed.ixe", outDir])] ++
     mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
   for (name, checkArgs) in checks do
     let out ← IO.Process.output {

@@ -167,7 +167,11 @@ rows are pre-screened one by one with the stepping checker under a time budget p
 constant that would pass with its rows over the budget taken as accepted (those rows are all it
 lacks) is unsupported (`changed constant: a type or equation row over the pre-screen time budget`, a
 resource limit like the size budget); a definite refusal of another of its rows keeps it rejected.
-S for changed constants is not decided yet (M7): their cones keep W's old decision and are refused.
+S for changed constants is not decided yet (M7): S decides only the constants W certifies by the
+`direct`/`raw` routes. A constant certified by a W+ route (a theorem or equation row, a type row, a
+changed block) is **S-unsupported** (`certified by a W+ route; S for changed constants is M7`), is
+put in no cone, and every cone that reaches it is S-blocked by it with that class; it is never
+S-rejected for it.
 
 ## 4. Running it
 
@@ -234,7 +238,12 @@ pins), and writes the file only if every step passed.
 - **Axioms the checker does not install** (`sorryAx`): the fold installs no row for them on either side and
   declines every use, so no support is proposed and an S verdict on such an axiom's own cone says nothing
   about it.
-- **Proof-field projections of mutual or nested structure-likes** (theorems in Lean 4.34.1) are refused by W.
+- **Changed constants** (certified by W+, §3) are S-unsupported, and the constants whose cones reach them
+  S-blocked by them: S's per-cone W association and strong checks compare the installed source with
+  target rows that are, for a changed constant, not its Lean declaration's export. M7.
+- **Proof-field projections of mutual or nested structure-likes** (theorems in Lean 4.34.1): refused by W
+  before W+; W+ certifies them by the `theorem` route (the `LoweringDefs` fixture's `Sized.ok`), so S
+  treats them as changed constants (above).
 - **Cost.** S is decided per cone, and each cone re-decides its whole closed source: W of the cone, the
   source export, model proposal and fold, and the strong checks, whose comparison walks look constants
   up in list environments at every node. On Init+Std-a3 (one run, 12 cones at once) a cone of 3,000

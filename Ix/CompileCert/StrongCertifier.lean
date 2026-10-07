@@ -478,8 +478,11 @@ def coverBatches (refs : Std.HashMap Lean.Name (Array Lean.Name)) (known : Lean.
   for p in prefixes do
     let group := groups.getD p #[]
     if group.size < 2 then continue
-    let cones : Array (Array Lean.Name) := group.map fun n => (coneOf refs known #[n]).1
-    let mut taken : Array Bool := Array.replicate group.size false
+    let closures := group.map fun n => coneOf refs known #[n]
+    let cones : Array (Array Lean.Name) := closures.map (·.1)
+    -- a root whose cone reaches a constant outside `known` (one W certifies by a W+ route, say)
+    -- cannot run a cone: it is never batched, so it cannot dissolve a batch of roots that can
+    let mut taken : Array Bool := closures.map fun c => !c.2.isEmpty
     for i in [0:group.size] do
       if taken[i]! then continue
       let lead := cones[i]!
@@ -725,6 +728,15 @@ def SVerdict.isFinalFailure : SVerdict → Bool
   | .unsupported _ | .rejected _ => true
   | _ => false
 
+/-- The W routes whose constants S decides (`runStrong`): W's own decision, `direct` or `raw`
+(`direct/raw` when the whole input passed `checkIndexed` at once). -/
+def sRoute (route : String) : Bool :=
+  route == "direct" || route == "raw" || route == "direct/raw"
+
+/-- The S class of a constant W certifies by a W+ route (M5: a theorem or equation row, a type
+row, a changed block): outside what S decides. -/
+def wPlusClass : String := "certified by a W+ route; S for changed constants is M7"
+
 /-- The S verdict a constant gets from its W verdict when W did not certify it. -/
 def ofW : Verdict → SVerdict
   | .certified => .unsupported "no S verdict"
@@ -764,8 +776,24 @@ cones, largest-first by user count), a sample, or given roots. Writes
 nothing is S-certified). -/
 def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   let t0 ← IO.monoMsNow
+  -- W+ (M5): S decides only the constants W certifies by the direct or raw route. A constant W
+  -- certifies by a W+ route (a theorem or equation row, a type row, a changed block) has a
+  -- target row that is not its Lean declaration's export, which S's per-cone W association
+  -- (`checkIndexed`) and strong checks compare against; S for changed constants is M7. Such a
+  -- constant is S-unsupported (`wPlusClass`), is never put in a cone (so never S-rejected for
+  -- it), and every cone that reaches it is S-blocked by it. Untrusted orchestration: this only
+  -- keeps constants out of cones; a wrong route label cannot certify anything, since a cone's
+  -- members are certified only by the cone's own W association and strong check.
+  let wPlus : Std.HashMap Lean.Name String := w.names.foldl (fun m n =>
+    if (w.verdicts.getD n (.unsupported "")).isCertified then
+      match w.routes[n]? with
+      | some r => if sRoute r then m else m.insert n r
+      | none => m
+    else m) {}
   let wCertified : Std.HashSet Lean.Name := w.names.foldl (fun s n =>
-    if (w.verdicts.getD n (.unsupported "")).isCertified then s.insert n else s) {}
+    if (w.verdicts.getD n (.unsupported "")).isCertified && !wPlus.contains n then s.insert n else s) {}
+  say s!"[certify-S] W+ routes: {wPlus.size} W-certified constants are certified by a W+ route \
+    ({wPlusClass})"
   -- the Lean-kernel-checked lowering witnesses, once (KB): projection functions of
   -- mutual, nested or recursive structure-likes among the W-certified constants
   let decls := w.names.toList.filterMap fun n => if wCertified.contains n then w.env.find? n else none
@@ -930,7 +958,8 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
         continue
       attempted := attempted.insert root
       unless wCertified.contains root do
-        sv := sv.insert root (match w.verdicts[root]? with
+        sv := sv.insert root (if wPlus.contains root then .unsupported wPlusClass
+          else match w.verdicts[root]? with
           | some v => ofW v
           | none => .unsupported "not in the artifact or the environment")
         continue
@@ -949,7 +978,9 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
         | some bm => (bm, #[])
         | none => coneMembers w.refs wCertified.contains pinGround root
       if let some m := missing[0]? then
-        sv := sv.insert root (.blocked m s!"W: {(ofW (w.verdicts.getD m (.unsupported "outside the artifact"))).cls}")
+        let cls := if wPlus.contains m then wPlusClass
+          else s!"W: {(ofW (w.verdicts.getD m (.unsupported "outside the artifact"))).cls}"
+        sv := sv.insert root (.blocked m cls)
         continue
       -- a member with a final S failure blocks the cone without running it
       match members.find? (fun m => (cover || (cfg.strongRoots.isEmpty && firstRoots.contains m)) && m != root &&
@@ -1050,6 +1081,9 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
     let mut rows := "name\tcone\tcause\n"
     let mut without : Std.HashMap String Nat := {}
     for n in w.names do
+      if wPlus.contains n then
+        rows := rows ++ s!"{n}\t-\tS-unsupported: {wPlusClass}\n"
+        continue
       unless wCertified.contains n do continue
       match firstCone[n]? with
       | some i => rows := rows ++ s!"{n}\t{i}\t\n"
@@ -1067,7 +1101,8 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
     say s!"[certify-S] plan (no cone run; each counted as accepted): {cones.size} cones ({batched} batches), \
       {sizes.foldl (· + ·) 0} members in all; cone sizes <1k {band 0 1000}, 1k–2k {band 1000 2000}, \
       2k–5k {band 2000 5000}, 5k–10k {band 5000 10000}, ≥10k {band 10000 (1 <<< 62)}; \
-      {covered} of {wCertified.size} W-certified constants in a cone, {wCertified.size - covered} in none\
+      {covered} of {wCertified.size} W-certified constants (direct or raw) in a cone, \
+      {wCertified.size - covered} in none; {wPlus.size} certified by a W+ route, outside S\
       {String.join (classes.toList.map fun (c, k) => s!"; {k} {c}")}"
     return 0
   -- every W-certified constant without an S verdict was not reached (sample or roots mode)
@@ -1077,7 +1112,9 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   let mut byClass : Std.HashMap (String × String) Nat := {}
   for n in w.names do
     let wv := w.verdicts.getD n (.unsupported "no verdict")
-    let some v := (sv[n]?).orElse (fun _ => if wv.isCertified then none else some (ofW wv))
+    let some v := (sv[n]?).orElse (fun _ =>
+        if wPlus.contains n then some (.unsupported wPlusClass)
+        else if wv.isCertified then none else some (ofW wv))
       | continue
     tsv := tsv ++ s!"{n}\t{if w.wRun then wv.word else "not run"}\t{v.word}\t{oneLine v.cause}\n"
     byWord := byWord.insert v.word (byWord.getD v.word 0 + 1)
@@ -1102,6 +1139,7 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
     ("conesCertified", Lean.toJson (cones.filter (fun c => match c.outcome with | .certified _ => true | _ => false)).size),
     ("coneMsTotal", Lean.toJson coneMs), ("witnesses", Lean.toJson witnessOf.size),
     ("witnessesRefused", Lean.toJson witnessRefused.size), ("notReached", Lean.toJson notReached),
+    ("wPlusRoute", Lean.toJson wPlus.size),
     ("perName", Lean.Json.mkObj (words.toList.map fun v => (v, Lean.toJson (byWord.getD v 0)))),
     ("classes", Lean.Json.arr (classes.map fun ((v, c), k) => Lean.Json.mkObj
       [("verdict", Lean.toJson v), ("class", Lean.toJson c), ("count", Lean.toJson k)]))]
