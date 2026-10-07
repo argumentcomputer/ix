@@ -162,7 +162,7 @@ def levelR : Ix.Level → Ix.Level
 
 def levelParam : Ix.Level → Ix.Name
   | .param n _ => n
-  | _ => default
+  | _ => rawName
 
 /-- `compareLevelSyn` on points. -/
 def lvlSyn (a b : LvlPt) : Except String SOrder := compareLevelSyn a.1 b.1 a.2 b.2

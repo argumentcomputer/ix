@@ -26,6 +26,18 @@ form of the constant case, `SOrder.zipM` on lists), comparisons by a lawful `cmp
 
 namespace Ix.CompileCert.Canon
 
+/-! ## Values built without hashing
+
+Where a function needs a stand-in value, it is built from raw constructors: no hash is
+computed, so no hashing code (`Address.blake3`, `Ix.Name.mkStr`, whose definitions carry
+`native_decide` auxiliaries) enters a statement. `default : Ix.Name` is `Name.mkAnon`, a Blake3
+hash, and must not be used here. -/
+
+def rawAddr : Address := ⟨ByteArray.empty⟩
+def rawName : Ix.Name := .anonymous rawAddr
+def rawLevel : Ix.Level := .zero rawAddr
+def rawExpr : Ix.Expr := .bvar 0 rawAddr
+
 /-! ## Results -/
 
 /-- `r` succeeded with an ordering other than `gt`. -/

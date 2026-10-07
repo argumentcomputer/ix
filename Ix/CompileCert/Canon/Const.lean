@@ -145,17 +145,21 @@ theorem compareRecr_total (c : CmpCtx) (hc : AddrCongr c.addr?) : TotalPre (comp
 
 /-! ## The kind dispatch -/
 
+/-- Stand-ins built without hashing. -/
+def rawDef : Def := ⟨rawName, #[], rawExpr, .defn, rawExpr, .opaque, .safe, #[]⟩
+def rawInd : Ind := ⟨rawName, #[], rawExpr, 0, 0, #[], #[], 0, false, false, false⟩
+
 def defOf : MutConst → Def
   | .defn d => d
-  | _ => default
+  | _ => rawDef
 
 def indOf : MutConst → Ind
   | .indc i => i
-  | _ => default
+  | _ => rawInd
 
 /-- A recursor value standing in for the other kinds. -/
 def recDefault : RecursorVal :=
-  ⟨⟨default, #[], default⟩, #[], 0, 0, 0, 0, #[], false, false⟩
+  ⟨⟨rawName, #[], rawExpr⟩, #[], 0, 0, 0, 0, #[], false, false⟩
 
 def recOf : MutConst → RecursorVal
   | .recr r => r

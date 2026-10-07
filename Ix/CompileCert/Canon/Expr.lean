@@ -232,11 +232,11 @@ def eBvar : Expr → Nat
 
 def eSort : Expr → Level
   | .sort u _ => u
-  | _ => default
+  | _ => rawLevel
 
 def eConstName : Expr → Name
   | .const n _ _ | .proj n _ _ _ => n
-  | _ => default
+  | _ => rawName
 
 def eConstLevels : Expr → List Level
   | .const _ us _ => us.toList

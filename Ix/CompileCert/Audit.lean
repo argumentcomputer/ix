@@ -3,6 +3,7 @@ import Ix.CompileCert.Entry
 import Ix.CompileCert.StrongEntry
 import Ix.CompileCert.StrongCone
 import Ix.CompileCert.Indexed
+import Ix.CompileCert.Canon
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -770,6 +771,33 @@ def m4dRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m4dRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! The roots added by M7 L1 (WP-D, `plans/PLAN-proofs.md`): Pass 1 proved
+(`Ix/CompileCert/Canon/**`, theorems about `Ix/Compile/Canon/**` as it is). Checked the same
+way, against the same allowed set; the frozen line above is unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def l1Roots : Array Lean.Name :=
+  #[`Le, `PreOn, `TotalPre, `PreOn.cmpM, `PreOn.lexIf, `PreOn.ofTag, `PreOn.zipCtx,
+    `instLawfulBEqOrderingIx, `PreOn.ofSize,
+    `transCmp_compareUniv, `compareLevelSyn_total, `compareLevel_total, `compareLevels_total,
+    `AddrCongr, `name_beq_iff, `nameCompare_eq_iff, `transCmp_nameCompare, `transCmp_address,
+    `mutCtx_getElem?_congr, `compareRef_total,
+    `transCmp_literal, `ehd, `eC, `compareExpr_strip, `compareExpr_bad, `compareExpr_diff,
+    `compareExpr_total,
+    `transCmp_defKind, `ctorP, `indP, `constP, `compareDef_total, `ctorP_total, `indP_total,
+    `compareRecr_total, `constP_total, `compareConstBody_today_mixed,
+    `ResRel, `compareExpr_rel, `constP_rel, `StrongRel, `SameDom, `constP_strong, `ctorP_strong,
+    `EqRel, `Coarser, `constP_eq_mono,
+    `Ent, `ents, `NameInj, `entP, `Run, `Coh, `Sim, `cacheGet_spec, `cachePut_coh,
+    `compareCtor_sim, `compareInd_sim, `compareConstBody_sim, `compareConstIn_sim, `constOrd,
+    `compareConst_sim, `compareFresh_eq, `liftOrd, `constOrd_total, `compareFresh_total,
+    `cacheGet_today_reversed].map (`Ix.CompileCert.Canon ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l1Roots Ix.CompileCert.Audit.allowedAxioms
 
 namespace Ix.CompileCert.Audit
 
