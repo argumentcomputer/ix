@@ -14,17 +14,20 @@
      (a) identical (address, metadata, original, hints), (b) different,
      (c) on one side only;
   3. every name of (b) and (c) must be owned by a later slice of M6R, read off
-     the Lean compile itself (slices 1-3 are implemented: the definitional
-     passes O1-O6 and O11a, and the clique transport, are checked for
-     identity, not attributed; a constant where only the passes change the
-     rewrite is reported as `slice-2 checked`, and the clique table's members
-     and carried lemmas (`CompileEnv.p3Cliques`) and the hook's canonical
-     constants under reserved names (whose functional carries the side-car
-     record `_ix.clique` in its metadata; the members carry the decompile
-     record of Lean's value) as `slice-3 checked`, for the record):
-     * **slice 4** (O7-O12, O11b): a constant where a proof-justified pass
-       fires (`BlockRewrite.canon` non-empty: `PJ-FORM`) or the unit pass O11b
-       applies (`unitPasses`), and its canonical form `c._ix`;
+     the Lean compile itself (slices 1-4 are implemented: the definitional
+     passes O1-O6 and O11a, the clique transport, and the proof-justified
+     passes O7-O12 with the unit pass O11b, are checked for identity, not
+     attributed; a constant where only the passes change the rewrite is
+     reported as `slice-2 checked`, the clique table's members and carried
+     lemmas (`CompileEnv.p3Cliques`) and the hook's canonical constants under
+     reserved names (whose functional carries the side-car record
+     `_ix.clique` in its metadata; the members carry the decompile record of
+     Lean's value) as `slice-3 checked`, and the constants where a
+     proof-justified pass fires (`BlockRewrite.canon` non-empty: `PJ-FORM`,
+     the Lean name keeps its baseline) or the unit pass O11b applies
+     (`unitPasses`), with their canonical constants under reserved names
+     (`c._ix`, the re-typed handlers `p._ix_retyped.s`, O12's `fg`, O11b's
+     pair), as `slice-4 checked`, for the record):
      * **F1** (lands with the flip `4c18e1b1`, not on this base): the image of
        a Lean theorem, which Rust stores as a theorem;
      * **cascade**: a name in the reverse-dependency cone of the names above
@@ -68,12 +71,11 @@ abbrev IxName := _root_.Ix.Name
 
 /-- The class of a differing name. -/
 inductive Owner where
-  | slice3 | slice4 | f1 | cascade | defect
+  | slice3 | f1 | cascade | defect
   deriving BEq, Repr, Inhabited
 
 def Owner.label : Owner → String
   | .slice3 => "slice 3 (clique transport)"
-  | .slice4 => "slice 4 (O7-O12 PJ-FORM)"
   | .f1 => "F1 (flip 4c18e1b1)"
   | .cascade => "cascade of the above"
   | .defect => "DEFECT"
@@ -188,8 +190,7 @@ structure Report where
 def classify (roots : Roots) (coneSet : Std.HashSet IxName) (metaEqual : IxName → Bool)
     (n : IxName) : Owner :=
   let base := (beforeReserved n).getD n
-  if roots.slice4.contains base || roots.slice4.contains n then .slice4
-  else if roots.f1.contains n then .f1
+  if roots.f1.contains n then .f1
   else if coneSet.contains base || coneSet.contains n then
     -- a cascade changes referenced addresses only: the metadata (names,
     -- binders, arena shape), the hints and the original stay equal
@@ -198,10 +199,10 @@ def classify (roots : Roots) (coneSet : Std.HashSet IxName) (metaEqual : IxName 
 
 def compare (lean rust : Ixon.Env) (roots : Roots) (closure : List (Name × ConstantInfo)) :
     Report := Id.run do
-  -- the definitional passes (slice 2) and the clique transport (slice 3) are
-  -- implemented: their constants are not roots, they must be identical
-  let all : Std.HashSet IxName :=
-    roots.slice4.union roots.f1
+  -- the definitional passes (slice 2), the clique transport (slice 3) and
+  -- the proof-justified passes with O11b (slice 4) are implemented: their
+  -- constants are not roots, they must be identical
+  let all : Std.HashSet IxName := roots.f1
   let coneSet := cone closure all
   let mut rep : Report := {}
   for (n, a) in lean.named do
@@ -317,6 +318,17 @@ change, {s2same.size} identical"
   IO.println s!"[parity] {name}: slice-3 checked: {s3members.size} member(s) and carried lemma(s), \
 {(s3members.filter same).size} identical; {s3canon.size} canonical constant(s) under reserved \
 names, {(s3canon.filter same).size} identical"
+  -- slice 4: the Lean names where a proof-justified pass fires or O11b
+  -- applies (they keep their baseline) and their canonical constants under
+  -- reserved names (`c._ix`, `p._ix_retyped.s`, `fg`, O11b's pair)
+  let s4names := roots.slice4.toArray.filter (lean.named.contains ·)
+  let s4canon := lean.named.toArray.filterMap fun (n, _) =>
+    match beforeReserved n with
+    | some b => if roots.slice4.contains b && !roots.slice4.contains n then some n else none
+    | none => none
+  IO.println s!"[parity] {name}: slice-4 checked: {s4names.size} Lean name(s) with a \
+proof-justified rewrite or O11b, {(s4names.filter same).size} identical; {s4canon.size} \
+canonical constant(s) under reserved names, {(s4canon.filter same).size} identical"
   -- the failures and the non-canonical sets, compared by name (and cause)
   let leanFailed : Array String := (out.cenv.ungrounded.toArray.map (·.1.pretty)).qsort (· < ·)
   let rustFailed : Array String := status.ungrounded.map (·.1)
@@ -341,7 +353,7 @@ names, {(s3canon.filter same).size} identical"
       if !leanNC.contains e then extra := extra.push s!"{name}: non-canonical entry on the Rust side only: {e.1}: {e.2}"
   for (n, c) in leanNC.toList.take k do
     IO.println s!"[parity] {name}:   non-canonical {n}: {c}"
-  for o in [Owner.slice3, .slice4, .f1, .cascade, .defect] do
+  for o in [Owner.slice3, .f1, .cascade, .defect] do
     let ns := rep.owners.filter (·.2 == o)
     if ns.isEmpty then continue
     IO.println s!"[parity] {name}:   {o.label}: {ns.size}"
