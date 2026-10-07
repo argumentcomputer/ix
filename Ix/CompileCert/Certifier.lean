@@ -1411,11 +1411,16 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
       | _ => false
   let mut ixOnly := 0
   let mut ixOnlyIx := 0
-  for (n, _) in produced.named.toList do
+  let mut ixOnlyRows : Array String := #[]
+  for (n, named) in produced.named.toList do
     let ln := ixName n
     unless env.contains ln do
       ixOnly := ixOnly + 1
-      if hasIxComponent ln then ixOnlyIx := ixOnlyIx + 1
+      let ix := hasIxComponent ln
+      if ix then ixOnlyIx := ixOnlyIx + 1
+      ixOnlyRows := ixOnlyRows.push s!"{ln}\t{named.addr}\t{if ix then "_ix" else "other"}"
+  IO.FS.writeFile s!"{cfg.out}.ixonly.tsv"
+    ("name\taddress\tkind\n" ++ String.join ((ixOnlyRows.qsort (· < ·)).toList.map (· ++ "\n")))
   say s!"[certify] W+: image claims {images.size}; equation rows proposed {proposedRows} for {proposedFor} \
     constants, folded {usedSupport}; routes {String.intercalate ", " (routeList.toList.map fun (r, k) => s!"{r}={k}")}; \
     artifact names with no Lean constant {ixOnly} ({ixOnlyIx} with an `_ix` component)"

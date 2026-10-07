@@ -1134,7 +1134,7 @@ def checkIndexed' (input : Input) (images : Lean.Name → Bool)
     (hints : HintsW) : Except Decline' (AcceptedAssociation' input images support) :=
   if hd : domainFast hints.workers input.source input.roots input.map = true then
     let sh := SharedW.ofArtifact input images artifact support
-    if hm : input.map.all (sh.entryCheck hints.toHints) = true then
+    if hm : allPar (sh.entryCheck hints.toHints) hints.workers input.map = true then
       if hn : addressesNodup (artifact.constants.map Prod.fst) = true then
         if hs : allPar (sh.declCheck' hints) hints.workers input.source.declarations = true then
           let blocks := addressSet (input.map.map (·.target.block))
@@ -1150,7 +1150,7 @@ def checkIndexed' (input : Input) (images : Lean.Name → Bool)
                     folded
                     domain
                     map_agrees := fun e he => by
-                      have c := List.all_eq_true.mp hm e he
+                      have c := List.all_eq_true.mp (allPar_true hm) e he
                       simp only [Shared.entryCheck, Bool.and_eq_true, decide_eq_true_eq] at c
                       exact ⟨c.1.1, nameAgrees_transfer (ext e.source) c.1.2,
                         sourceRecordFlags_transfer (ext e.source) c.2⟩
