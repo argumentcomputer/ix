@@ -43,6 +43,7 @@ import Tests.Ix.Compile.MathlibMeasure
 import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.PlanCache
+import Tests.Ix.Compile.ChangedSet
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.AuxGen.ExprUtilsTests
@@ -433,6 +434,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- The Pass 3 clique plan table is a memo: the check mode (IX_PASS3_CHECK_PLANS) under
   -- every driver, coverage, a negative control (Tests.Ix.Compile.PlanCache).
   ("pass3-plan-cache", Tests.Ix.Compile.PlanCache.run),
+  -- The changed-set record (the output contract): deterministic across worker counts,
+  -- every address in the artifact, coverage of images, transported cliques, `_ix.inline`
+  -- carriers and reserved names, on the pass3 fixtures and Init+Std
+  -- (Tests.Ix.Compile.ChangedSet).
+  ("changed-set", Tests.Ix.Compile.ChangedSet.run env),
 ]
 
 def main (args : List String) : IO UInt32 := do

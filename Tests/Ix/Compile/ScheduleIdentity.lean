@@ -26,7 +26,7 @@
   branch's was not taken, owner 2026-10-03), so it has no leg here.
 
   With the switch off, block failures must be exactly the closure's
-  `NonCanonical.expectedRefusals`, each with its message. With images on,
+  `NonCanonical.expectedRefusals`, each with its message. With Pass 3,
   those former surgery refusals are supported: require zero block failures
   and every source name in the output. The twelve former refusals were
   checked by all three kernels, including explicit certified record
@@ -118,7 +118,7 @@ def quickTier : IO Bool := do
 def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
     (phases : Ix.CompileM.CompilePhases) (nameByHash : Std.HashMap Address Ix.Name)
     (pass3 : Bool) : IO (Array Leg) := do
-  let mode := if pass3 then "IX_PASS3=images" else "switch off"
+  let mode := if pass3 then "Pass 3 (the default)" else "IX_PASS3=off (legacy surgery)"
   let diagnostic := (← IO.getEnv "SCHED_DIAGNOSTIC") == some "1"
   let singleWave := (← IO.getEnv "SCHED_SINGLE_WAVE") == some "32"
   let quick ← quickTier
@@ -189,7 +189,7 @@ def runLegs (modes : List (Bool × Array Leg)) : IO (Array (Array LegResult)) :=
     number of failures. -/
 def runMode (closure : List (Name × ConstantInfo)) (pass3 : Bool) (legs : Array Leg)
     (results : Array LegResult) : IO Nat := do
-  let mode := if pass3 then "IX_PASS3=images" else "switch off"
+  let mode := if pass3 then "Pass 3 (the default)" else "IX_PASS3=off (legacy surgery)"
   let diagnostic := (← IO.getEnv "SCHED_DIAGNOSTIC") == some "1"
   let singleWave := (← IO.getEnv "SCHED_SINGLE_WAVE") == some "32"
   if singleWave then say "[schedule] DIAGNOSTIC: wave 32 only; no schedule-identity claim; not a full gate"
