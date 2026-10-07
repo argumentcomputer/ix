@@ -57,8 +57,7 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr ConstantInfo)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose stripMdata peelForalls instantiateRev
-  CliqueMember Clique cliqueClasses Rules)
+open Ix.Compile.Canon (getAppFnArgs mkAppN stripMdata peelForalls CliqueMember Clique cliqueClasses Rules)
 
 /-! ## Placeholders -/
 

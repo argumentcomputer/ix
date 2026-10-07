@@ -42,13 +42,13 @@ def decodeWFNatMatcher (const? : Name → Option ConstantInfo) (name : Name)
   unless alphaEq succArgs[0]!.type nat && alphaEq succResult
       (Expr.mkApp motive.expr (Expr.mkApp (Expr.mkConst (leanName ``Nat.succ) #[]) succArgs[0]!.expr)) do
     throw "WF matcher: successor minor has a foreign motive or index"
-  let expectedMotive := Ix.Compile.Image.mkLambda motiveArgs (Expr.mkApp motive.expr motiveArgs[0]!.expr)
-  let expectedSucc := Ix.Compile.Image.mkLambda succArgs (Expr.mkApp succMinor.expr succArgs[0]!.expr)
+  let expectedMotive := Ix.Compile.Clique.mkLambda motiveArgs (Expr.mkApp motive.expr motiveArgs[0]!.expr)
+  let expectedSucc := Ix.Compile.Clique.mkLambda succArgs (Expr.mkApp succMinor.expr succArgs[0]!.expr)
   let expected := mkAppN (Expr.mkConst (leanName ``Nat.casesOn) #[resultLevel])
     #[expectedMotive, major.expr, Expr.mkApp zeroMinor.expr (Expr.mkConst (leanName ``Unit.unit) #[]), expectedSucc]
   unless alphaEq body expected do throw "WF matcher: body is not the exact symbolic Nat dispatch"
   let declaredType := Ix.Compile.Canon.substLevels declaration.levelParams levels declaration.type
-  unless alphaEq declaredType (Ix.Compile.Image.mkForall parameters (Expr.mkApp motive.expr major.expr)) do
+  unless alphaEq declaredType (Ix.Compile.Clique.mkForall parameters (Expr.mkApp motive.expr major.expr)) do
     throw "WF matcher: declaration telescope differs from the symbolic dispatch"
   return { zero }
 

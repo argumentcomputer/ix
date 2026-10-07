@@ -54,7 +54,7 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr ConstantInfo)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata instantiateRev)
+open Ix.Compile.Canon (getAppFnArgs mkAppN stripMdata)
 
 /-- A `below` or `brecOn` constant of the block. -/
 structure BlockAux where

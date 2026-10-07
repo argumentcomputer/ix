@@ -7,7 +7,7 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Expr Name ConstantInfo)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose stripMdata substLevels)
+open Ix.Compile.Canon (getAppFnArgs mkAppN stripMdata substLevels)
 
 /-- Ordinary constructor projection reduction. No type-shape recognition and
 no delta reduction: a projection reduces only when its actual operand is the
@@ -235,7 +235,7 @@ where
         unless args.size == L.numFixed do throw "PF ownership: partial/over-applied packed declaration"
         let args' ← args.mapM (go fuel)
         let source := { L.spine with leaves := L.spine.leaves.map fun t =>
-          Ix.Compile.Canon.instantiateRev t args.reverse }
+          Ix.Compile.Clique.instantiateRev t args.reverse }
         let target := source.permute L.sigma
         let value := mkAppN (Expr.mkConst L.newPackedName levels) (L.fixedPerm.map (args'[·]!))
         return mkTuple source (L.sigma.map fun j => applyProjs (target.projSteps j) value)
@@ -365,7 +365,7 @@ def conjugatePFEquation (L : PFLayout) (members : Array Decl) (sourcePacked targ
   let targetFix := betaApp targetPacked.value (L.fixedPerm.map (fixedArgs[·]!))
   let (binders, proofBody) := peelLams arity lemma.value #[]
   unless binders.size == arity do throw "PF equation ownership: proof telescope differs from its statement"
-  let proofBody := Ix.Compile.Image.instLocals proofBody (parameters.map (·.expr))
+  let proofBody := Ix.Compile.Clique.instLocals proofBody (parameters.map (·.expr))
   let proof ← liftE (conjugatePFEquationProof L component sourceFix targetFix defaultFuel proofBody)
   let value ← liftE (closeBinders true parameters proof.proof)
   return { lemma with name := newName, value }

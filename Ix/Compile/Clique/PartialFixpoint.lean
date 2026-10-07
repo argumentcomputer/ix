@@ -61,7 +61,7 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr ConstantInfo)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata peelForalls)
+open Ix.Compile.Canon (getAppFnArgs mkAppN stripMdata peelForalls)
 
 def nOrderFix : Name := leanName ``Lean.Order.fix
 def nInstCCPOPProd : Name := leanName ``Lean.Order.instCCPOPProd

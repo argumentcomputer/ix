@@ -37,8 +37,8 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata peelForalls)
-open Ix.Compile.Image (Local forallArity instLocals abstractFVars)
+open Ix.Compile.Canon (getAppFnArgs mkAppN stripMdata peelForalls)
+open Ix.Compile.Image (Local forallArity)
 
 /-- What `Φ_σ` needs to know about a well-founded clique. -/
 structure WFLayout where
@@ -125,27 +125,32 @@ def wfLayout (members : Array Decl) (mutDecl : Decl) (σ : Array Nat) (newMutual
 `f₀._mutual`: the fixed parameters (by Lean position) among its leading
 arguments. An application node is visited before its function part, so the
 full argument list is the one recorded. -/
-def scanProofs (proofs : Std.HashSet Name) (fixed : Array Name) :
-    Expr → Std.HashMap Name (Array Nat) → Std.HashMap Name (Array Nat)
-  | e@(.app f a _), acc =>
-    let (h, args) := getAppFnArgs e
-    let fixedIdx (x : Expr) : Option Nat := match stripMdata x with
-      | .fvar y _ => fixed.idxOf? y
-      | _ => none
-    let acc := match h with
-      | .const c _ _ =>
+def scanProofs (proofs : Std.HashSet Name) (fixed : Array Name) (e : Expr)
+    (initial : Std.HashMap Name (Array Nat)) : Std.HashMap Name (Array Nat) := Id.run do
+  let mut acc := initial
+  let mut seen : Std.HashSet Expr := {}
+  let mut stack := #[e]
+  while !stack.isEmpty do
+    let x := stack.back!
+    stack := stack.pop
+    if seen.contains x then continue
+    seen := seen.insert x
+    match x with
+    | .app f a _ =>
+      let (h, args) := getAppFnArgs x
+      let fixedIdx (x : Expr) : Option Nat := match stripMdata x with
+        | .fvar y _ => fixed.idxOf? y
+        | _ => none
+      if let .const c _ _ := h then
         if proofs.contains c && !acc.contains c then
-          acc.insert c (args.toList.map fixedIdx |>.takeWhile Option.isSome
+          acc := acc.insert c (args.toList.map fixedIdx |>.takeWhile Option.isSome
             |>.filterMap id).toArray
-        else acc
-      | _ => acc
-    scanProofs proofs fixed a (scanProofs proofs fixed f acc)
-  | .lam _ t b _ _, acc | .forallE _ t b _ _, acc =>
-    scanProofs proofs fixed b (scanProofs proofs fixed t acc)
-  | .letE _ t v b _ _, acc =>
-    scanProofs proofs fixed b (scanProofs proofs fixed v (scanProofs proofs fixed t acc))
-  | .proj _ _ x _, acc | .mdata _ x _, acc => scanProofs proofs fixed x acc
-  | _, acc => acc
+      stack := stack.push a |>.push f
+    | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
+    | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
+    | .proj _ _ x _ | .mdata _ x _ => stack := stack.push x
+    | _ => pure ()
+  return acc
 
 /-! ## The transport -/
 
@@ -217,7 +222,7 @@ def splitPSigma (motive : Expr → Expr) (leaf : Expr → Expr) :
         let b ← freshFVar
         let la : Local := { fvar := a, userName := Ix.Name.mkStr Ix.Name.mkAnon "a", type := α, bi := .default }
         let bty := (match stripMdata β with
-          | .lam _ _ body _ _ => Ix.Compile.Canon.instantiateRev body #[Expr.mkFVar a]
+          | .lam _ _ body _ _ => Ix.Compile.Clique.instantiateRev body #[Expr.mkFVar a]
           | _ => Expr.mkApp β (Expr.mkFVar a))
         let lb : Local := { fvar := b, userName := Ix.Name.mkStr Ix.Name.mkAnon "b", type := bty, bi := .default }
         let pair (t : Expr) : Expr :=
@@ -225,9 +230,9 @@ def splitPSigma (motive : Expr → Expr) (leaf : Expr → Expr) :
         let inner ← splitPSigma motive leaf fuel bty (fun t => mk (pair t)) (Expr.mkFVar b)
         let t ← freshFVar
         let lt : Local := { fvar := t, userName := Ix.Name.mkStr Ix.Name.mkAnon "t", type := ty, bi := .default }
-        let mot := Ix.Compile.Image.mkLambda #[lt] (motive (mk (Expr.mkFVar t)))
+        let mot := Ix.Compile.Clique.mkLambda #[lt] (motive (mk (Expr.mkFVar t)))
         return mkAppN (Expr.mkConst (leanName ``PSigma.casesOn) #[Level.mkZero, us[0]!, us[1]!])
-          #[α, β, mot, major, Ix.Compile.Image.mkLambda #[la, lb] inner]
+          #[α, β, mot, major, Ix.Compile.Clique.mkLambda #[la, lb] inner]
       else return leaf (mk major)
     | _ => return leaf (mk major)
 

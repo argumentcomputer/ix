@@ -8,16 +8,19 @@ public section
 
 namespace Ix.Compile.Clique
 open Ix (Expr Name)
-open Ix.Compile.Canon (stripMdata mkAppN getAppFnArgs liftLoose)
+open Ix.Compile.Canon (stripMdata mkAppN getAppFnArgs)
 
 /-- Substitute only the decoder-established recursive binder. A call at a
 decoded constructor reduces the explicit adapter directly. Other uses keep
 the adapter, including copies threaded through arbitrary user functions. -/
-def ownedWFCalls (L : WFLayout) (adapter : Expr) : Nat → Nat → Expr → TM Expr
+def ownedWFCalls (L : WFLayout) (adapter : Expr) (fuel depth : Nat) (e : Expr) : TM Expr :=
+  (visit fuel depth e).run' {}
+where
+  visit : Nat → Nat → Expr → TransportMemoM Expr
   | 0, _, _ => throw "WF ownership: body recursion bound"
-  | fuel + 1, depth, e => do
+  | fuel + 1, depth, e => memoTransport e (fuel + 1) depth do
     if L.sigma == idPerm L.n then return e
-    let go := ownedWFCalls L adapter fuel depth
+    let go := visit fuel depth
     if let .app .. := e then
       let (head, args) := getAppFnArgs e
       if alphaEq head (Expr.mkBVar depth) then
@@ -34,11 +37,11 @@ def ownedWFCalls (L : WFLayout) (adapter : Expr) : Nat → Nat → Expr → TM E
       return e
     | .app f a _ => return Expr.mkApp (← go f) (← go a)
     | .lam n t b bi _ =>
-      return Expr.mkLam n (← go t) (← ownedWFCalls L adapter fuel (depth + 1) b) bi
+      return Expr.mkLam n (← go t) (← visit fuel (depth + 1) b) bi
     | .forallE n t b bi _ =>
-      return Expr.mkForallE n (← go t) (← ownedWFCalls L adapter fuel (depth + 1) b) bi
+      return Expr.mkForallE n (← go t) (← visit fuel (depth + 1) b) bi
     | .letE n t v b nd _ =>
-      return Expr.mkLetE n (← go t) (← go v) (← ownedWFCalls L adapter fuel (depth + 1) b) nd
+      return Expr.mkLetE n (← go t) (← go v) (← visit fuel (depth + 1) b) nd
     | .proj s i x _ => return Expr.mkProj s i (← go x)
     | .mdata d x _ => return Expr.mkMData d (← go x)
     | _ => return e
@@ -57,21 +60,21 @@ def ownedWFRecAdapter (L : WFLayout) (spine : Spine) (w : Ix.Level)
     let payloadName ← freshFVar
     let payload : Ix.Compile.Image.Local := {
       fvar := payloadName, userName := leanName `value, type := spine.leaves[j]!, bi := .default }
-    let atConstructor := Ix.Compile.Image.instLocals
-      (Ix.Compile.Image.abstractFVars #[argument.fvar] result) #[mkInj spine j payload.expr]
+    let atConstructor := Ix.Compile.Clique.instLocals
+      (Ix.Compile.Clique.abstractFVars #[argument.fvar] result) #[mkInj spine j payload.expr]
     let (proofs, _) ← openBinders false 1 atConstructor
     let some proof := proofs[0]? | throw "WF ownership: missing decreasing proof binder"
     let value := mkAppN recursive.expr #[mkInj (spine.permute L.sigma) L.sigma[j]! payload.expr, proof.expr]
     leaves := leaves.push (← liftE (closeBinders true #[payload, proof] value))
   let tree : Tree := {
     spine, w, motiveName := argument.userName,
-    motiveBody := Ix.Compile.Image.abstractFVars #[argument.fvar] result,
+    motiveBody := Ix.Compile.Clique.abstractFVars #[argument.fvar] result,
     major := argument.expr, leaves, extras := #[], altNames := #[] }
   let some body := tree.build | throw "WF ownership: inverse-input case tree failed"
   liftE (closeBinders true #[argument] body)
 
 def substituteWFLocal (identity : Name) (value replacement : Expr) : Expr :=
-  Ix.Compile.Image.instLocals (Ix.Compile.Image.abstractFVars #[identity] value) #[replacement]
+  Ix.Compile.Clique.instLocals (Ix.Compile.Clique.abstractFVars #[identity] value) #[replacement]
 
 /-- Follow an exact recursive argument through the standard PSigma eliminator
 at the decoded payload. Its minor's third binder receives that argument by
@@ -148,10 +151,10 @@ def ownedWFBody (L : WFLayout) (schema : WFRootSchema) (w : Ix.Level)
           return mkAppN (Expr.mkConst name levels) #[motive, args[1]!, minors[0]!, minors[1]!, args[4]!]
     let body ← rewriteWFObligations schema L.sigma defaultFuel body
     let adapter ← ownedWFRecAdapter L schema.sourceSpine w recursive
-    let adapter := Ix.Compile.Image.abstractFVars #[recursive.fvar] adapter
+    let adapter := Ix.Compile.Clique.abstractFVars #[recursive.fvar] adapter
     let transformed ← ownedWFCalls L adapter defaultFuel 0
-      (Ix.Compile.Image.abstractFVars #[recursive.fvar] body)
-    return Ix.Compile.Image.instLocals transformed #[recursive.expr]
+      (Ix.Compile.Clique.abstractFVars #[recursive.fvar] body)
+    return Ix.Compile.Clique.instLocals transformed #[recursive.expr]
 
 /-- Decode the exact root relationship and preserve user syntax by transporting
 only its owned entry, recursive argument flow and output positions. -/
@@ -170,8 +173,8 @@ def conjugateWFRoot (L : WFLayout) (value : Expr)
   unless alphaEq tree.spine.type schema.sourceSpine.type && alphaEq tree.major x.expr &&
       tree.extras.size == 1 && alphaEq tree.extras[0]! recursive.expr do
     throw "WF ownership: root refinement has foreign entry identities"
-  let sourceTypeAt (point : Expr) := Ix.Compile.Image.instLocals
-    (Ix.Compile.Image.abstractFVars #[x.fvar] recursive.type) #[point]
+  let sourceTypeAt (point : Expr) := Ix.Compile.Clique.instLocals
+    (Ix.Compile.Clique.abstractFVars #[x.fvar] recursive.type) #[point]
   let mut leaves := #[]
   for index in [0:L.n] do
     let leaf := tree.leaves[index]!
@@ -192,14 +195,14 @@ def conjugateWFRoot (L : WFLayout) (value : Expr)
       #[payload, { recursor with type := targetType }] transformed))
   let pointName ← freshFVar
   let point := Expr.mkFVar pointName
-  let sourceMotive := Ix.Compile.Image.mkForall #[{ recursive with type := sourceTypeAt point }]
+  let sourceMotive := Ix.Compile.Clique.mkForall #[{ recursive with type := sourceTypeAt point }]
     (applyWFCase schema.sourceCodomain point)
-  unless alphaEq tree.motiveBody (Ix.Compile.Image.abstractFVars #[pointName] sourceMotive) do
+  unless alphaEq tree.motiveBody (Ix.Compile.Clique.abstractFVars #[pointName] sourceMotive) do
     throw "WF ownership: refinement motive differs from root telescope"
-  let targetMotive := Ix.Compile.Image.mkForall
+  let targetMotive := Ix.Compile.Clique.mkForall
     #[{ recursive with type := ← ownedWFRecType schema point point (sourceTypeAt point) }]
     (applyWFCase schema.targetCodomain point)
-  let tree := { tree with leaves, motiveBody := Ix.Compile.Image.abstractFVars #[pointName] targetMotive }
+  let tree := { tree with leaves, motiveBody := Ix.Compile.Clique.abstractFVars #[pointName] targetMotive }
   let some body := (tree.permute L.sigma).build | throw "WF ownership: root refinement reconstruction failed"
   let functional ← liftE (closeBinders true
     #[{ x with type := schema.targetSpine.type }, { recursive with type := recursiveType }] body)
@@ -219,7 +222,7 @@ def wfPackedDomain (L : WFLayout) (packed : Decl) (levels : Array Ix.Level)
   unless fixed.size == L.numFixed do throw "WF adapter: incomplete fixed arguments"
   let type := Ix.Compile.Canon.substLevels packed.levelParams levels packed.type
   let (_, result) := Ix.Compile.Canon.peelForalls L.numFixed type #[]
-  let result := Ix.Compile.Image.instLocals result fixed
+  let result := Ix.Compile.Clique.instLocals result fixed
   let .forallE _ domain codomain _ _ := stripMdata result
     | throw "WF adapter: packed type has no dependent input"
   let some spine := decodeSpine .psum L.n domain | throw "WF adapter: missing source sum domain"
@@ -246,7 +249,7 @@ def applyWFPackedAdapter (L : WFLayout) (packed : Decl) (levels : Array Ix.Level
     let name ← freshFVar
     let payload : Ix.Compile.Image.Local := {
       fvar := name, userName := leanName `payload, type := spine.leaves[index]!, bi := .default }
-    leaves := leaves.push (Ix.Compile.Image.mkLambda #[payload] (call index payload.expr))
+    leaves := leaves.push (Ix.Compile.Clique.mkLambda #[payload] (call index payload.expr))
   let tree : Tree := {
     spine, w := resultLevel, motiveName := leanName `input, motiveBody := codomain,
     major := argument, leaves, extras := #[], altNames := #[] }
@@ -257,11 +260,14 @@ def applyWFPackedAdapter (L : WFLayout) (packed : Decl) (levels : Array Ix.Level
 member call into the packed root. No user types, binders or relations grant
 entry to the encoding. General packed inputs use the dependent adapter;
 an incomplete fixed-parameter prefix remains an explicit decline. -/
-def rewriteOwnedWFUses (L : WFLayout) (packed : Decl) : Nat → Expr → TM Expr
+def rewriteOwnedWFUses (L : WFLayout) (packed : Decl) (fuel : Nat) (e : Expr) : TM Expr :=
+  (visit fuel e).run' {}
+where
+  visit : Nat → Expr → TransportMemoM Expr
   | 0, _ => throw "WF ownership: constant-use recursion bound"
-  | fuel + 1, e => do
-    let go := rewriteOwnedWFUses L packed fuel
-    let packedUse (levels : Array Ix.Level) (args : Array Expr) : TM Expr := do
+  | fuel + 1, e => memoTransport e (fuel + 1) 0 do
+    let go := visit fuel
+    let packedUse (levels : Array Ix.Level) (args : Array Expr) : TransportMemoM Expr := do
       unless args.size ≥ L.numFixed do throw "WF ownership: partial fixed prefix of packed root"
       let args ← args.mapM go
       let fixed := args.extract 0 L.numFixed
@@ -271,7 +277,7 @@ def rewriteOwnedWFUses (L : WFLayout) (packed : Decl) : Nat → Expr → TM Expr
         let argument : Ix.Compile.Image.Local := {
           fvar := identity, userName := leanName `input, type := spine.type, bi := .default }
         let value ← applyWFPackedAdapter L packed levels fixed argument.expr
-        return Ix.Compile.Image.mkLambda #[argument] value
+        return Ix.Compile.Clique.mkLambda #[argument] value
       let value ← applyWFPackedAdapter L packed levels fixed args[L.numFixed]!
       return mkAppN value (args.extract (L.numFixed + 1) args.size)
     match e with
@@ -315,8 +321,8 @@ def transportOwnedWFEqDef (L : WFLayout) (packed target : Decl) (equation : Decl
   let (targetBinders, targetBody) := peelLams L.numFixed target.value #[]
   unless sourceBinders.size == L.numFixed && targetBinders.size == L.numFixed do
     throw "WF equation: packed fixed telescope differs from its layout"
-  let sourceRoot := Ix.Compile.Image.instLocals sourceBody sourceFixed
-  let targetRoot := Ix.Compile.Image.instLocals targetBody targetFixed
+  let sourceRoot := Ix.Compile.Clique.instLocals sourceBody sourceFixed
+  let targetRoot := Ix.Compile.Clique.instLocals targetBody targetFixed
   let some (rootName, rootLevels, sourceArgs) := constApp? sourceRoot
     | throw "WF equation: source root is not a fixpoint"
   let some (_, _, targetArgs) := constApp? targetRoot
@@ -345,10 +351,10 @@ def transportOwnedWFEqDef (L : WFLayout) (packed target : Decl) (equation : Decl
     let body ← splitPSigma (fun value => atPoint (sourceInput value))
       (fun value => mkAppN (Expr.mkConst stepName stepLevels) (targetArgs.push (targetInput value)))
       64 payload.type id payload.expr
-    leaves := leaves.push (Ix.Compile.Image.mkLambda #[payload] body)
+    leaves := leaves.push (Ix.Compile.Clique.mkLambda #[payload] body)
   let tree : Tree := {
     spine, w := Ix.Level.mkZero, motiveName := point.userName,
-    motiveBody := Ix.Compile.Image.abstractFVars #[point.fvar] statement,
+    motiveBody := Ix.Compile.Clique.abstractFVars #[point.fvar] statement,
     major := point.expr, leaves, extras := #[], altNames := #[] }
   let some body := tree.build | throw "WF equation: source-domain case reconstruction failed"
   let value ← liftE (closeBinders true parameters body)
@@ -424,8 +430,8 @@ def transportWF (members : Array Decl) (packed : Decl) (proofs : Array Decl)
       for i in [0:positions.size] do
         unless positions[i]! < arguments.size do throw "WF obligation: fixed proof argument is out of scope"
         arguments := arguments.set! positions[i]! parameters[i]!.expr
-      let instantiate (expression : Expr) := Ix.Compile.Image.instLocals
-        (Ix.Compile.Image.abstractFVars (fixed.map (·.fvar)) expression) arguments
+      let instantiate (expression : Expr) := Ix.Compile.Clique.instLocals
+        (Ix.Compile.Clique.abstractFVars (fixed.map (·.fvar)) expression) arguments
       let proofSchema := schema.mapExpressions instantiate
       let body ← rewriteWFObligations proofSchema L.sigma defaultFuel body
       let body ← rewrite body

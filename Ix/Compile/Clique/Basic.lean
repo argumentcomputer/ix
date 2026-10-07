@@ -28,12 +28,13 @@ module
 public import Ix.Environment
 public import Ix.Compile.Canon.Expr
 public import Ix.Compile.Image.Expr
+public import Ix.Compile.Clique.Dag
 public section
 
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr ConstantInfo)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata instantiateRev)
+open Ix.Compile.Canon (getAppFnArgs mkAppN stripMdata)
 
 /-! ## The non-canonical causes the transport can report
 
@@ -157,16 +158,39 @@ def isAppOfArity (e : Expr) (n : Name) (k : Nat) : Bool :=
   | some (m, _, args) => m == n && args.size == k
   | none => false
 
-/-- Strip `mdata` everywhere. -/
-def stripAllMdata : Expr → Expr
-  | .mdata _ e _ => stripAllMdata e
-  | .app f a _ => Expr.mkApp (stripAllMdata f) (stripAllMdata a)
-  | .lam n t b bi _ => Expr.mkLam n (stripAllMdata t) (stripAllMdata b) bi
-  | .forallE n t b bi _ => Expr.mkForallE n (stripAllMdata t) (stripAllMdata b) bi
-  | .letE n t v b nd _ =>
-    Expr.mkLetE n (stripAllMdata t) (stripAllMdata v) (stripAllMdata b) nd
-  | .proj s i e _ => Expr.mkProj s i (stripAllMdata e)
-  | e => e
+/-- Strip `mdata` everywhere (memoised by the subterm: proofs are shared
+DAGs). -/
+def stripAllMdata (e : Expr) : Expr := (go e).run' {}
+where
+  go : Expr → StateM (Std.HashMap Expr Expr) Expr
+    | .mdata _ e _ => go e
+    | e@(.app f a _) => cached e do
+      let f' ← go f
+      let a' ← go a
+      pure (Expr.mkApp f' a')
+    | e@(.lam n t b bi _) => cached e do
+      let t' ← go t
+      let b' ← go b
+      pure (Expr.mkLam n t' b' bi)
+    | e@(.forallE n t b bi _) => cached e do
+      let t' ← go t
+      let b' ← go b
+      pure (Expr.mkForallE n t' b' bi)
+    | e@(.letE n t v b nd _) => cached e do
+      let t' ← go t
+      let v' ← go v
+      let b' ← go b
+      pure (Expr.mkLetE n t' v' b' nd)
+    | e@(.proj s i x _) => cached e do
+      let x' ← go x
+      pure (Expr.mkProj s i x')
+    | e => pure e
+  cached (e : Expr) (k : StateM (Std.HashMap Expr Expr) Expr) :
+      StateM (Std.HashMap Expr Expr) Expr := do
+    if let some r := (← get).get? e then return r
+    let r ← k
+    modify (·.insert e r)
+    return r
 
 /-- Equality up to binder names, binder info and `mdata`, with the constant
 names of `b` mapped by `mapB` (the tests' comparison and the recognisers'
@@ -188,28 +212,74 @@ def eqUpTo (mapB : Name → Name) : Expr → Expr → Bool
   | .proj s i a _, .proj s' i' b _ => s == mapB s' && i == i' && eqUpTo mapB a b
   | _, _ => false
 
-/-- `eqUpTo` without renaming. -/
-def alphaEq (a b : Expr) : Bool := eqUpTo id a b
+/-- `eqUpTo id`, walking distinct pairs. The hash shortcut uses the same
+hash-consistent-term invariant as the expression maps; metadata is still
+ignored on either side, and the first differing child still ends the walk. -/
+def alphaEq (a b : Expr) : Bool := Id.run do
+  let mut seen : Std.HashSet (Expr × Expr) := {}
+  let mut stack := #[(a, b)]
+  while !stack.isEmpty do
+    let (a, b) := stack.back!
+    stack := stack.pop
+    if a == b || seen.contains (a, b) then continue
+    seen := seen.insert (a, b)
+    match a, b with
+    | .mdata _ a _, b => stack := stack.push (a, b)
+    | a, .mdata _ b _ => stack := stack.push (a, b)
+    | .bvar i _, .bvar j _ => if i != j then return false
+    | .fvar a _, .fvar b _ | .mvar a _, .mvar b _ => if a != b then return false
+    | .sort u _, .sort v _ => if u != v then return false
+    | .const a us _, .const b vs _ => if a != b || us != vs then return false
+    | .app f a _, .app g b _ => stack := stack.push (a, b) |>.push (f, g)
+    | .lam _ t b _ _, .lam _ t' b' _ _
+    | .forallE _ t b _ _, .forallE _ t' b' _ _ =>
+      stack := stack.push (b, b') |>.push (t, t')
+    | .letE _ t v b _ _, .letE _ t' v' b' _ _ =>
+      stack := stack.push (b, b') |>.push (v, v') |>.push (t, t')
+    | .lit a _, .lit b _ => if a != b then return false
+    | .proj s i a _, .proj s' i' b _ =>
+      if s != s' || i != i' then return false
+      stack := stack.push (a, b)
+    | _, _ => return false
+  return true
 
 /-- Replace loose `bvar 0` of `body` by `t`, where `t` lives in the same
 context as `body` (so its own `bvar 0` is the same binder): no variable is
 lowered. Used to instantiate a motive `λ x. M` at `pre(z)` under a new
-binder `z`. -/
-def substBVar0Same (body t : Expr) : Expr := go body 0
+binder `z`. Over distinct subterms (`Dag.lean`): a subterm with no loose
+variable at or above the depth is unchanged. -/
+def substBVar0Same (body t : Expr) : Expr := (go body 0).run' {}
 where
-  go : Expr → Nat → Expr
-    | e@(.bvar i _), d => if i == d then liftLoose t d else e
-    | .app f a _, d => Expr.mkApp (go f d) (go a d)
-    | .lam n ty b bi _, d => Expr.mkLam n (go ty d) (go b (d + 1)) bi
-    | .forallE n ty b bi _, d => Expr.mkForallE n (go ty d) (go b (d + 1)) bi
-    | .letE n ty v b nd _, d => Expr.mkLetE n (go ty d) (go v d) (go b (d + 1)) nd
-    | .proj s i x _, d => Expr.mkProj s i (go x d)
-    | .mdata m x _, d => Expr.mkMData m (go x d)
-    | e, _ => e
+  go : Expr → Nat → DagM Expr
+    | e@(.bvar i _), d => memoAt e d d fun _ => pure (if i == d then liftLoose t d else e)
+    | e@(.app f a _), d => memoAt e d d fun _ => do
+      let f' ← go f d
+      let a' ← go a d
+      pure (Expr.mkApp f' a')
+    | e@(.lam n ty b bi _), d => memoAt e d d fun _ => do
+      let ty' ← go ty d
+      let b' ← go b (d + 1)
+      pure (Expr.mkLam n ty' b' bi)
+    | e@(.forallE n ty b bi _), d => memoAt e d d fun _ => do
+      let ty' ← go ty d
+      let b' ← go b (d + 1)
+      pure (Expr.mkForallE n ty' b' bi)
+    | e@(.letE n ty v b nd _), d => memoAt e d d fun _ => do
+      let ty' ← go ty d
+      let v' ← go v d
+      let b' ← go b (d + 1)
+      pure (Expr.mkLetE n ty' v' b' nd)
+    | e@(.proj s i x _), d => memoAt e d d fun _ => do
+      let x' ← go x d
+      pure (Expr.mkProj s i x')
+    | e@(.mdata m x _), d => memoAt e d d fun _ => do
+      let x' ← go x d
+      pure (Expr.mkMData m x')
+    | e, _ => pure e
 
 /-- Every loose bound variable of `e` is `≥ k` (so `e` can be lowered by
 `k`). -/
-def looseAllAtLeast (e : Expr) (k : Nat) : Bool := Ix.Compile.Canon.looseAtLeast e k
+def looseAllAtLeast (e : Expr) (k : Nat) : Bool := looseAtLeast e k
 
 /-- Lower `e` by `k` when it does not mention the `k` innermost binders. -/
 def lower? (e : Expr) (k : Nat) : Option Expr :=
@@ -233,39 +303,84 @@ def lamArity : Expr → Nat
   | _ => 0
 
 /-- Pre-order first occurrences of the constants satisfying `p`. -/
-def constOccurrences (p : Name → Bool) (e : Expr) : Array Name := (go e (#[], {})).1
+def constOccurrences (p : Name → Bool) (e : Expr) : Array Name := Id.run do
+  let mut nodes : Std.HashSet Expr := {}
+  let mut names : Std.HashSet Name := {}
+  let mut out := #[]
+  let mut stack := #[e]
+  while !stack.isEmpty do
+    let x := stack.back!
+    stack := stack.pop
+    if nodes.contains x then continue
+    nodes := nodes.insert x
+    match x with
+    | .const n _ _ =>
+      if p n && !names.contains n then
+        names := names.insert n
+        out := out.push n
+    | .app f a _ => stack := stack.push a |>.push f
+    | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
+    | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
+    | .proj _ _ x _ | .mdata _ x _ => stack := stack.push x
+    | _ => pure ()
+  return out
+
+/-- Rename constants (projection structure names are left alone), caching
+only within this call, where the renaming function is fixed. -/
+def renameConsts (m : Name → Option Name) (e : Expr) : Expr := (go e).run' {}
 where
-  go : Expr → Array Name × Std.HashSet Name → Array Name × Std.HashSet Name
-    | .const n _ _, s@(acc, seen) =>
-      if p n && !seen.contains n then (acc.push n, seen.insert n) else s
-    | .app f a _, s => go a (go f s)
-    | .lam _ t b _ _, s | .forallE _ t b _ _, s => go b (go t s)
-    | .letE _ t v b _ _, s => go b (go v (go t s))
-    | .proj _ _ x _, s | .mdata _ x _, s => go x s
-    | _, s => s
+  go : Expr → StateM (Std.HashMap Expr Expr) Expr
+    | e@(.const n us _) => pure (match m n with
+      | some n' => Expr.mkConst n' us
+      | none => e)
+    | e@(.app f a _) => cached e do
+      let f' ← go f
+      let a' ← go a
+      pure (Expr.mkApp f' a')
+    | e@(.lam n t b bi _) => cached e do
+      let t' ← go t
+      let b' ← go b
+      pure (Expr.mkLam n t' b' bi)
+    | e@(.forallE n t b bi _) => cached e do
+      let t' ← go t
+      let b' ← go b
+      pure (Expr.mkForallE n t' b' bi)
+    | e@(.letE n t v b nd _) => cached e do
+      let t' ← go t
+      let v' ← go v
+      let b' ← go b
+      pure (Expr.mkLetE n t' v' b' nd)
+    | e@(.proj s i x _) => cached e do
+      let x' ← go x
+      pure (Expr.mkProj s i x')
+    | e@(.mdata d x _) => cached e do
+      let x' ← go x
+      pure (Expr.mkMData d x')
+    | e => pure e
+  cached (e : Expr) (k : StateM (Std.HashMap Expr Expr) Expr) :
+      StateM (Std.HashMap Expr Expr) Expr := do
+    if let some r := (← get).get? e then return r
+    let r ← k
+    modify (·.insert e r)
+    return r
 
-/-- Rename constants (and projection structure names are left alone). -/
-def renameConsts (m : Name → Option Name) : Expr → Expr
-  | e@(.const n us _) => match m n with
-    | some n' => Expr.mkConst n' us
-    | none => e
-  | .app f a _ => Expr.mkApp (renameConsts m f) (renameConsts m a)
-  | .lam n t b bi _ => Expr.mkLam n (renameConsts m t) (renameConsts m b) bi
-  | .forallE n t b bi _ => Expr.mkForallE n (renameConsts m t) (renameConsts m b) bi
-  | .letE n t v b nd _ =>
-    Expr.mkLetE n (renameConsts m t) (renameConsts m v) (renameConsts m b) nd
-  | .proj s i x _ => Expr.mkProj s i (renameConsts m x)
-  | .mdata d x _ => Expr.mkMData d (renameConsts m x)
-  | e => e
-
-/-- `e` mentions the constant `n`. -/
-def mentions (n : Name) : Expr → Bool
-  | .const m _ _ => m == n
-  | .app f a _ => mentions n f || mentions n a
-  | .lam _ t b _ _ | .forallE _ t b _ _ => mentions n t || mentions n b
-  | .letE _ t v b _ _ => mentions n t || mentions n v || mentions n b
-  | .proj _ _ x _ | .mdata _ x _ => mentions n x
-  | _ => false
+/-- `e` mentions the constant `n`, walking distinct nodes. -/
+def mentions (n : Name) (e : Expr) : Bool := Id.run do
+  let mut seen : Std.HashSet Expr := {}
+  let mut stack := #[e]
+  while !stack.isEmpty do
+    let x := stack.back!
+    stack := stack.pop
+    if seen.contains x then continue
+    seen := seen.insert x
+    match x with
+    | .const m _ _ => if n == m then return true
+    | .app f a _ => stack := stack.push a |>.push f
+    | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
+    | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
+    | .proj _ _ x _ | .mdata _ x _ => stack := stack.push x
+    | _ => pure ()
+  return false
 
 /-! ## Permutations -/
 
@@ -321,6 +436,24 @@ def trace (s : String) : TM Unit := modify fun st => { st with log := st.log.pus
 def liftE {α} : Except String α → TM α
   | .ok a => pure a
   | .error e => throw e
+
+/-- One local memo for a WF walk. Fuel and binder depth remain part of the
+key, so caching preserves even the small-fuel refusal paths. -/
+abbrev TransportMemoM := StateT (Std.HashMap (Expr × Nat × Nat) Expr) TM
+
+/-- Cache a state-neutral WF visit only. These walkers otherwise change only
+`TState.next` (via `freshFVar`); an allocating visit is repeated in full.
+Consequently both the fresh-name stream and the result are preserved, without
+assuming that newly allocated names disappear from the output. -/
+def memoTransport (e : Expr) (fuel depth : Nat) (act : TransportMemoM Expr) :
+    TransportMemoM Expr := do
+  let key := (e, fuel, depth)
+  if let some out := (← get).get? key then return out
+  let before ← liftM (get : TM TState)
+  let out ← act
+  let after ← liftM (get : TM TState)
+  if before.next == after.next then modify (·.insert key out)
+  return out
 
 def fvarRoot : Name := Ix.Name.mkStr Ix.Name.mkAnon "_clq_fvar"
 

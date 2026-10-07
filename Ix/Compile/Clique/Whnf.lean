@@ -23,7 +23,7 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr ConstantInfo)
-open Ix.Compile.Canon (getAppFnArgs mkAppN instantiateRev substLevels stripMdata)
+open Ix.Compile.Canon (getAppFnArgs mkAppN substLevels stripMdata)
 
 def nNatZero : Name := leanName ``Nat.zero
 def nNatSucc : Name := leanName ``Nat.succ

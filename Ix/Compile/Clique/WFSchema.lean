@@ -5,7 +5,7 @@ public section
 
 namespace Ix.Compile.Clique
 open Ix (Expr Name)
-open Ix.Compile.Canon (stripMdata mkAppN getAppFnArgs instantiateRev)
+open Ix.Compile.Canon (stripMdata mkAppN getAppFnArgs)
 
 def applyWFCase (function argument : Expr) : Expr :=
   match stripMdata function with
@@ -59,10 +59,13 @@ def WFRootSchema.mapExpressions (schema : WFRootSchema) (transform : Expr → Ex
 to the SAME user leaf. Thus this whole-proposition rewrite is definitional
 equality, even inside a user proof. It never rewrites a relation's underlying
 user instance or arbitrary inputs merely because their types match. -/
-def rewriteWFObligations (schema : WFRootSchema) (sigma : Array Nat) : Nat → Expr → TM Expr
+def rewriteWFObligations (schema : WFRootSchema) (sigma : Array Nat) (fuel : Nat)
+    (expression : Expr) : TM Expr := (visit fuel expression).run' {}
+where
+  visit : Nat → Expr → TransportMemoM Expr
   | 0, _ => throw "WF obligation: recursion bound"
-  | fuel + 1, expression => do
-    let go := rewriteWFObligations schema sigma fuel
+  | fuel + 1, expression => memoTransport expression (fuel + 1) 0 do
+    let go := visit fuel
     let (head, args) := getAppFnArgs expression
     let relation : Option (Expr × Expr × Expr) := Id.run do
       if let some source := schema.sourceRelation then

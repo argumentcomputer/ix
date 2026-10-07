@@ -18,17 +18,8 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr)
-open Ix.Compile.Canon (instantiateRev stripMdata)
-open Ix.Compile.Image (Local abstractFVars mkLambda mkForall instLocals)
-
-/-- `e` mentions the free variable `x`. -/
-def mentionsFVar (x : Name) : Expr → Bool
-  | .fvar y _ => x == y
-  | .app f a _ => mentionsFVar x f || mentionsFVar x a
-  | .lam _ t b _ _ | .forallE _ t b _ _ => mentionsFVar x t || mentionsFVar x b
-  | .letE _ t v b _ _ => mentionsFVar x t || mentionsFVar x v || mentionsFVar x b
-  | .proj _ _ e _ | .mdata _ e _ => mentionsFVar x e
-  | _ => false
+open Ix.Compile.Canon (stripMdata)
+open Ix.Compile.Image (Local)
 
 /-- Open `m` leading binders (`λ` when `isLam`, else `∀`) with fresh free
 variables. Fails when there are fewer. -/

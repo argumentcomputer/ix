@@ -31,6 +31,7 @@ import Tests.Ix.Compile.BridgeScopes
 import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.CliqueOwnership
+import Tests.Ix.Compile.CliqueDag
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.Pass3RustParity
 import Tests.Ix.Compile.KernelReportTests
@@ -148,6 +149,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("canon-clique", Tests.Ix.Compile.CanonClique.suite),
   -- D14 names the least reserved input name (`Tests/Ix/Compile/ReservedInput.lean`)
   ("reserved-input", Tests.Ix.Compile.ReservedInput.suite),
+  ("clique-dag", Tests.Ix.Compile.CliqueDag.suite),
   ("keccak", Tests.Keccak.suite),
   ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
   ("exact-sharing-ffi", Tests.SharingExactFFI.suite),

@@ -31,7 +31,7 @@ public section
 namespace Ix.Compile.Clique
 
 open Ix (Name Level Expr)
-open Ix.Compile.Canon (getAppFnArgs mkAppN liftLoose lowerLoose stripMdata)
+open Ix.Compile.Canon (getAppFnArgs mkAppN stripMdata)
 
 inductive PackKind where
   | psum
