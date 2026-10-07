@@ -981,13 +981,48 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
           time "entry correspondence" (fun _ => decide (SourceEntryCorrespondence input.source proposal.declarations)) toString
           time "fold" (fun _ => (Kernel.Cached.checkDecls .verified (sourcePins input pins) proposal.declarations).toOption.isSome) toString
     | _, _ => say s!"[explain-S] {n}: no cone input"
+  -- what a cone containing a pin-certified Nat operation also takes (`coneMembers`)
+  let readerPins ← IO.ofExcept Kernel.Reader.defaultPins
+  let pinGround := natOpPinGround w.env w.store w.namedAddr readerPins w.names wCertified.contains
+  say s!"[certify-S] source pins: {(SourcePinGen.sourceNatOpPinSets).map (·.toolchain)}"
+  say s!"[certify-S] pin ground of the Nat operations: {natOpLeanNames.map (fun op => (pinGround.getD op #[]).size)} constants"
+  -- the global cone (M7 WP-F): one cone over every W-certified (direct or raw) constant whose
+  -- closure stays among them, decided before the cover is planned; the cover then decides only
+  -- what it did not certify (everything, if it is refused)
+  let mut globalRecord : Option ConeRecord := none
+  let mut globalCertified : Std.HashSet Lean.Name := {}
+  if cfg.strongGlobal || cfg.explainGlobal then
+    let (members, outside) := globalConeMembers w.names w.refs wCertified.contains
+    let memberSet : Std.HashSet Lean.Name := members.foldl (·.insert ·) {}
+    let missingGround := natOpLeanNames.foldl (fun acc op =>
+      if memberSet.contains op then acc ++ (pinGround.getD op #[]).filter (!memberSet.contains ·) else acc) #[]
+    say s!"[certify-S] global cone: {members.size} members; {outside.size} W-certified constants outside it \
+      (each reaches a constant outside S's domain); Nat pin ground not in it: {missingGround.toList.take 5}"
+    if let some root := members[0]? then
+      let witnesses := members.toList.filterMap witnessOf.get?
+      if cfg.explainGlobal then
+        explainCone w.env w.produced w.store w.namedAddr root members witnesses
+      if cfg.strongGlobal && !cfg.strongPlan then
+        let began ← IO.monoMsNow
+        let (outcome, stats) ← runCone w.env w.produced w.store w.namedAddr cfg.workers root members witnesses
+        let record : ConeRecord := { root, outcome, stats, ms := (← IO.monoMsNow) - began, roots := members.size }
+        globalRecord := some record
+        match outcome with
+        | .certified certified =>
+          globalCertified := certified.foldl (·.insert ·) {}
+          say s!"[certify-S] global cone: accepted, {certified.size} S-certified; {record.ms} ms \
+            (input {stats.msInput}, admission {stats.msAdmit}, W {stats.msW}, installation {stats.msInstall}, \
+            strong {stats.msStrong})"
+        | .failed cls culprit _ =>
+          say s!"[certify-S] global cone: refused ({cls}; {culprit}); {record.ms} ms; the cover decides every root"
   -- users, for the order of a full cover (constants nothing uses first)
   let mut userCount : Std.HashMap Lean.Name Nat := {}
   for n in w.names do
     if wCertified.contains n then
       for r in w.refs.getD n #[] do
         if r != n then userCount := userCount.insert r (userCount.getD r 0 + 1)
-  let certifiedSorted := w.names.filter wCertified.contains
+  -- the cover plans only what the global cone (if any) did not certify
+  let certifiedSorted := w.names.filter fun n => wCertified.contains n && !globalCertified.contains n
   -- decided first (a sample or a cover): the constants whose own source fold decides every cone
   -- that contains them (the pin-certified Nat operations, through the source-named pins; `Quot`,
   -- over the pinned `Eq`); every later cone that contains one with a final failure is S-blocked
@@ -1012,7 +1047,7 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       let top := (sized.qsort (fun a b => a.1 > b.1 || (a.1 == b.1 && toString a.2 < toString b.2))).map (·.2)
       let rest := certifiedSorted.filter (fun n => userCount.getD n 0 != 0)
       -- the pin-certified Nat operations first: their verdicts decide every cone that has them
-      let ops := natOpLeanNames.filter wCertified.contains
+      let ops := natOpLeanNames.filter fun n => wCertified.contains n && !globalCertified.contains n
       ops ++ (top ++ rest).filter (fun n => !ops.contains n)
   let cover := cfg.strongRoots.isEmpty && cfg.strongEvery == 0
   -- the cover's profile (diagnostic): each root nothing uses needs its own cone
@@ -1023,11 +1058,6 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
     say s!"[certify-S] cover: {sizes.size} roots nothing uses; their cones: <1k {band 0 1000}, \
       1k–5k {band 1000 5000}, 5k–10k {band 5000 10000}, 10k–20k {band 10000 20000}, \
       ≥20k {band 20000 (1 <<< 62)}; {sizes.foldl (· + ·) 0} members in all"
-  -- what a cone containing a pin-certified Nat operation also takes (`coneMembers`)
-  let readerPins ← IO.ofExcept Kernel.Reader.defaultPins
-  let pinGround := natOpPinGround w.env w.store w.namedAddr readerPins w.names wCertified.contains
-  say s!"[certify-S] source pins: {(SourcePinGen.sourceNatOpPinSets).map (·.toolchain)}"
-  say s!"[certify-S] pin ground of the Nat operations: {natOpLeanNames.map (fun op => (pinGround.getD op #[]).size)} constants"
   -- diagnostics: the explained roots' cones (with their certificate ground), stage by stage
   for n in cfg.explain do
     if wCertified.contains n then
@@ -1059,35 +1089,14 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
   let mut covered := 0
   let mut firstCone : Std.HashMap Lean.Name Nat := {}
   let mut lastReport := t0
-  -- the global cone (M7 WP-F): one cone over every W-certified (direct or raw) constant whose
-  -- closure stays among them, decided before the cover; the cover then decides only what it
-  -- did not certify (everything, if it is refused)
-  if cfg.strongGlobal || cfg.explainGlobal then
-    let (members, outside) := globalConeMembers w.names w.refs wCertified.contains
-    let missingGround := natOpLeanNames.foldl (fun acc op =>
-      if members.contains op then acc ++ (pinGround.getD op #[]).filter (!members.contains ·) else acc) #[]
-    say s!"[certify-S] global cone: {members.size} members; {outside.size} W-certified constants outside it \
-      (each reaches a constant outside S's domain); Nat pin ground not in it: {missingGround.toList.take 5}"
-    if let some root := members[0]? then
-      let witnesses := members.toList.filterMap witnessOf.get?
-      if cfg.explainGlobal then
-        explainCone w.env w.produced w.store w.namedAddr root members witnesses
-      if cfg.strongGlobal && !cfg.strongPlan then
-        let began ← IO.monoMsNow
-        let (outcome, stats) ← runCone w.env w.produced w.store w.namedAddr cfg.workers root members witnesses
-        let record : ConeRecord := { root, outcome, stats, ms := (← IO.monoMsNow) - began, roots := members.size }
-        live.putStrLn (coneRow record)
-        live.flush
-        cones := cones.push record
-        match outcome with
-        | .certified certified =>
-          for m in certified do sv := sv.insert m (.certified root)
-          covered := covered + certified.size
-          say s!"[certify-S] global cone: accepted, {certified.size} S-certified; {record.ms} ms \
-            (input {stats.msInput}, admission {stats.msAdmit}, W {stats.msW}, installation {stats.msInstall}, \
-            strong {stats.msStrong})"
-        | .failed cls culprit _ =>
-          say s!"[certify-S] global cone: refused ({cls}; {culprit}); {record.ms} ms; the cover decides every root"
+  -- the global cone's record, inserted as the first cone below
+  if let some record := globalRecord then
+    live.putStrLn (coneRow record)
+    live.flush
+    cones := cones.push record
+    if let .certified certified := record.outcome then
+      for m in certified do sv := sv.insert m (.certified record.root)
+      covered := covered + certified.size
   while queue.size > 0 do
     -- one wave: up to `strongTasks` roots that still need a cone
     let mut wave : Array (Lean.Name × Array Lean.Name) := #[]
