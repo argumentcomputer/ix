@@ -5,6 +5,9 @@ import Ix.CompileCert.Opt.Rec
 import Ix.CompileCert.Opt.O1
 import Ix.CompileCert.Opt.O6
 import Ix.CompileCert.Opt.O3
+import Ix.CompileCert.Opt.O4
+import Ix.CompileCert.Opt.Guard
+import Ix.CompileCert.Opt.Engine
 
 /-!
 # M7 L3-def: the definitional passes, proved once over the compiler's code
@@ -31,6 +34,10 @@ The theorems, by pass:
 | O1 (`rec`/`recOn`, permuted block) | `O1_faithful` | `RecLaw`, `RecOnLaw`, `IxRecOnLaw` |
 | O6 (`rec`/`recOn`, selection image) | `O6_faithful` | the same |
 | O3 (`casesOn`, no collapse) | `O3_faithful` | `CasesOnLaw`, `Γ.InstClosed` |
+| O4 (`below`, `brecOn`, `.go`, `.eq`, selection) | `O4_faithful` | `O4Law` (`RecConsSquare`, `BRecOnSquare`, `EqPIrrel`), `Γ.InstClosed` |
+| O7–O12 (proof-justified) | `pj_site_none`: they decline with no site | — |
+| the engine | `engineN_faithful`, `engineN_site_none`, `engineN_site_iff` | `EngineLaws` (the above, `O2Faithful`, `O11aFaithful`) |
+| the hook (`Driver.optLookup`) | `hook_faithful`, `hook_siteStable`, `optLookup_eq` | `EngineLaws` |
 
 The common part: `rec_sel_conv`, `recOn_sel_conv` (`Rec.lean`), `delta_sel`, `delta_beta` (δ then
 β on a telescope, `Basic.lean`, `Subst.lean`), the β-reduct of a telescope as a simultaneous

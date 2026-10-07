@@ -60,6 +60,14 @@ theorem oguard {c : Prop} [Decidable c] {α β : Type} {f : α → Option β} {r
   · simp only [hc, ↓reduceIte] at h
     exact ⟨hc, h⟩
 
+/-- A run through a `none`: impossible. -/
+macro "oabsurd" h:ident : tactic =>
+  `(tactic| first
+    | (dsimp only at $h:ident; rw [onone_bind] at $h:ident; cases $h:ident)
+    | (rw [onone_bind] at $h:ident; cases $h:ident)
+    | (cases $h:ident; done)
+    | (simp at $h:ident; done))
+
 /-- The `then` branch of an `if` that holds. -/
 theorem oite_true {c : Prop} [Decidable c] {α : Type} {a b x : α} (hc : c)
     (h : (if c then a else b) = x) : a = x := by

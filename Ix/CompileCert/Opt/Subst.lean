@@ -352,3 +352,27 @@ theorem getD_map_tm {β : Type} {l : List β} {f : β → Tm} {p : Nat} {d : β}
     List.getElem?_eq_getElem h, Option.map_some, Option.getD_some, Option.getD_some]
 
 end Ix.CompileCert.Opt
+
+namespace Ix.CompileCert.Opt
+
+open Ix (Name Level Expr)
+open Ix.CompileCert.Conv
+
+theorem betaN_proj : ∀ (A : List Tm) (sn : Name) (i : Nat) (t : Tm),
+    betaN A (.proj sn i t) = .proj sn i (betaN A t)
+  | [], _, _, _ => rfl
+  | a :: A, sn, i, t => by simp only [betaN, Tm.inst]; exact betaN_proj A sn i _
+
+/-- δ then β on a telescope, any body. -/
+theorem delta_betaG {Γ : Env} {h : Name} {us : Array Level} {L : List Tm} {n : Nat}
+    {ts : List Tm} {body : Tm} (hn : n ≤ L.length) (hts : ts.length = n)
+    (hδ : Γ.ax (.const h us) (lamN ts body)) :
+    Conv Γ (Tm.appN (.const h us) L) (Tm.appN (betaN (L.take n) body) (L.drop n)) := by
+  have hAlen : (L.take n).length = n := by rw [List.length_take]; omega
+  have e : Tm.appN (.const h us) L = Tm.appN (.const h us) (L.take n ++ L.drop n) := by
+    rw [List.take_append_drop]
+  rw [e]
+  refine .trans (Conv.appN (.step (.ax hδ)) (Conv.forall₂_refl _)) ?_
+  exact beta_lamN (L.take n) ts _ _ (by rw [hts, hAlen])
+
+end Ix.CompileCert.Opt

@@ -1509,7 +1509,20 @@ def l3dRoots : Array Lean.Name :=
     `O6_some, `O6_faithful, `O6.Side, `O6_side,
     `casesTv, `casesBody, `CasesOnBody, `CasesOnLaw, `kind_casesOn, `eq_of_not_bne, `bool_false,
     `O3_some, `O3.Side, `O3_side, `getD_range_map, `casesBody_length, `casesOn_middle,
-    `O3_faithful].map (`Ix.CompileCert.Opt ++ ·)
+    `O3_faithful, `betaN_proj, `delta_betaG,
+    -- O4
+    `tvT, `recBody, `o4Len, `o4LenI, `o4Idx, `qRen, `length_o4Idx, `o4Idx_lt, `o4Idx_param,
+    `o4Idx_index, `recBody_length, `betaN_telVars, `RecConsSquare, `recCons_middle, `recCons_conv,
+    `BRecOnSquare, `brecOn_conv, `EqPIrrel, `O4Law, `kind_o4, `o4Hd, `O4_some, `o4_out, `O4_faithful,
+    -- the proof-justified passes decline with no site
+    `O7_pjAllowed, `O8_pjAllowed, `O9_pjAllowed, `O10_pjAllowed, `O12_pjAllowed, `pjAllowed_of_site,
+    `pj_site_none,
+    -- the engine and the hook
+    `findSome_some, `findSome_append, `omap_some, `O2Faithful, `O11aFaithful, `EngineLaws,
+    `isProofJustified_defs, `isProofJustified_pj, `engineN_cases, `engineN_site_none,
+    `engineN_faithful, `defs_site_irrel, `engineN_split, `pjPart_none, `pjPart_pj, `engineN_site_iff,
+    `engineN_site_irrel, `hookOf, `HookFaithful, `HookSiteStable, `engineFull_cases, `hook_faithful,
+    `hook_siteStable, `optLookup_eq].map (`Ix.CompileCert.Opt ++ ·)
 
 end Ix.CompileCert.Audit
 
