@@ -2323,6 +2323,13 @@ a whole compile. Certification can state one obligation per block.
 
 - Schedule identity (§6.1): byte-equal output across every driver and worker count, switch off and on.
 - Closure against whole: every constant of a closure compile has the address the whole compile gives it.
+- Whole units in every closure producer (M1-d, M1-h, M6R slice 5): the selected closures of the input
+  (`Ix.EnvScope.collectSelectedDeps`, `withUnits`) carry the unit of every declaration they reach, and the
+  Rust compiler's output on such a closure is the Lean compiler's, byte for byte (`compile-closure-whole`,
+  `compiler-selected-closure-e2e`); `ix pack` completes the units of a compiled environment read from its names
+  and metadata (`Ix.Cli.PackCmd.packWholeUnits` over `ixonUnitView`), Pass 3's reserved names (`_ix`, `_ix_*`)
+  belonging to the declaration they hang under (§11.2 case 4), and the Rust completion (`ix pack --rust-units`,
+  `ixon::unit`) gives the same bundle byte for byte (`pack-units`, `pass3-rust-parity` step 5).
 - **Caller independence** (to add): compile an environment, then the same environment with extra
   dependents and extra unrelated constants appended; every constant of the first must keep its bytes and
   its records. The appended dependents must not be auxiliaries of an existing unit: making Lean

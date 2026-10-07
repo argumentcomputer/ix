@@ -42,8 +42,21 @@
      their non-canonical sets (Lean `CompileEnv.p3NonCanonical`, Rust
      `CompileEnvStatus.nonCanonical`: the recorded declines with their
      causes) must be equal; a difference is a defect.
+  5. **pack** (M6R slice 5, `Tests.Ix.Compile.PackParity`): on the Lean
+     compile's artifact, the Rust unit view has the Lean view's tables (every
+     name's unit, Pass 3's `_ix` names placed under their declaration); the
+     Rust whole-unit bundle of one root per unit holding an `_ix` name is
+     whole under the Lean view, and, for up to `PARITY_PACK_MAX` (default 10)
+     of those roots per compile unit covering the reserved-name shapes,
+     byte-identical to `ix pack`'s (`packWholeUnits`); a difference is a
+     defect. `PARITY_PACK_ROOTS=<a>,<b>,…` adds roots, always compared (with
+     `PARITY_FILE`: on Init+Std the whole-unit bundle of most roots, the
+     clique hook's `_ix` units among them, gathers about 10,700 unit members,
+     which the Lean completion packs one at a time from the 256 MB source, so
+     the gate compares small roots there, with `PARITY_PACK_MAX=0`).
 
-  Besides the `pass3` units, the O11a decline inputs of `o11a-decline` (the
+  Besides the `pass3` units, the `changed-set` suite's clique unit (the clique
+  and ownership families together), the O11a decline inputs of `o11a-decline` (the
   withheld instance and the M1-h side conditions, hand-built closures) are
   compared, so every recorded decline cause is exercised on both sides.
 
@@ -59,6 +72,7 @@ import Ix.Compile.Pass
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.Compile.CliqueOwnership
+import Tests.Ix.Compile.PackParity
 
 open Lean
 
@@ -351,6 +365,16 @@ canonical constant(s) under reserved names, {(s4canon.filter same).size} identic
       if !rustNC.contains e then extra := extra.push s!"{name}: non-canonical entry on the Lean side only: {e.1}: {e.2}"
     for e in rustNC do
       if !leanNC.contains e then extra := extra.push s!"{name}: non-canonical entry on the Rust side only: {e.1}: {e.2}"
+  -- 5. the whole-unit pack of the Lean artifact, Rust against Lean
+  let packMax := (← IO.getEnv "PARITY_PACK_MAX").bind String.toNat?
+  let packRoots : Array Name := ((((← IO.getEnv "PARITY_PACK_ROOTS").map (·.splitOn ",")).getD []).filter
+    (!·.isEmpty)).toArray.map String.toName
+  let packDir ← IO.FS.createTempDir
+  let packPath := packDir / "lean.ixe"
+  IO.FS.writeBinFile packPath out.bytes
+  extra := extra ++ (← Tests.Ix.Compile.PackParity.run s!"{name}" packPath.toString
+    (extra := packRoots) (maxLean := packMax.getD 10))
+  IO.FS.removeDirAll packDir
   for (n, c) in leanNC.toList.take k do
     IO.println s!"[parity] {name}:   non-canonical {n}: {c}"
   for o in [Owner.slice3, .f1, .cascade, .defect] do
@@ -402,6 +426,17 @@ def run (env : Environment) : IO UInt32 := do
       catch e =>
         IO.println s!"[parity] FAIL twins: {e}"
         failures := failures.push s!"twins: {e}"
+    -- the `changed-set` suite's clique unit (M6R slice 5): the closure of the clique and
+    -- ownership families together
+    if want "cliques" then
+      try
+        let families := Tests.Ix.Compile.Twins.cliqueFamilies ++ Tests.Ix.Compile.Twins.ownershipFamilies
+        let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env families
+        let extra := [``Lean.Order.monotone_compose].filter env.contains
+        defects := defects ++ (← runOne on "cliques" env (closureOf env (seeds.toList ++ extra)))
+      catch e =>
+        IO.println s!"[parity] FAIL cliques: {e}"
+        failures := failures.push s!"cliques: {e}"
     -- the clique-ownership cases (`clique-ownership`): each case's clique as
     -- a compile unit (its members' closure; WF8 with its caller and a
     -- neighbour, the caller refused by name on both sides)

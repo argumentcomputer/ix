@@ -46,6 +46,12 @@
      refusal, decompiles to the source and passes `ix validate-lean --local`;
      the same closure without the introduced references is refused naming
      one of them (negative control).
+  8. **the Rust compiler** (M6R slice 5): every closure of 3-5 and 7 compiled
+     by the Rust compiler in the same switch state (`rsCompileEnvBytesPass3FFI`)
+     gives the Lean compile's artifact byte for byte, so the Rust output of a
+     closure carries the same units, `_ix` canonical constants and introduced
+     references, and agrees with the whole compile (Rust's whole Init+Std
+     compile is Lean's, the byte gates).
 
   Run with: `lake test -- --ignored compile-closure-whole`.
 -/
@@ -96,6 +102,32 @@ def discoveredRoots (whole : List (Name × ConstantInfo)) (k : Nat) : List Name 
       if v.all.length ≥ 2 && v.all.head? == some n && clq.size < k then clq := clq.push n
     | _ => pure ()
   return (ind ++ size ++ clq ++ eqd).toList
+
+/-- The Rust compiler on the same closure, in the same switch state
+(`rsCompileEnvBytesPass3FFI`, the mode given explicitly as the parity suite
+does): its artifact must be the Lean compile's, byte for byte. Returns the
+problem, if any. -/
+def rustLeg (label : String) (env : Environment) (closure : List (Name × ConstantInfo))
+    (mode : Bool) (lean : Ix.CompileM.LeanPipelineOut) : IO (Option String) := do
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
+  let constants ← IO.ofExcept input.prepare
+  let dir ← IO.FS.createTempDir
+  let path := dir / "rust.ixe"
+  let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI constants path.toString true mode
+  let bytes ← IO.FS.readBinFile path
+  IO.FS.removeDirAll dir
+  if bytes == lean.bytes && status.ungrounded.isEmpty then return none
+  let rust ← IO.ofExcept (Ixon.deEnv bytes)
+  let mut differ := 0
+  let mut leanOnly := 0
+  for (n, a) in lean.env.named do
+    match rust.named.get? n with
+    | some b => if a != b then differ := differ + 1
+    | none => leanOnly := leanOnly + 1
+  let rustOnly := (rust.named.toList.filter fun (n, _) => !lean.env.named.contains n).length
+  return some s!"{label} mode={mode}: the Rust compile differs: Rust {bytes.size} B, Lean \
+    {lean.bytes.size} B; Named entries different {differ}, Lean-only {leanOnly}, Rust-only \
+    {rustOnly}; Rust failures {status.ungrounded.size}"
 
 def loadOrCompile (env : Environment) (whole : List (Name × ConstantInfo)) (mode : Bool) :
     IO Ixon.Env := do
@@ -160,6 +192,9 @@ def localCollapse : IO (Array String) := do
   unless out.cenv.ungrounded.isEmpty do
     errors := errors.push s!"local collapse: {out.cenv.ungrounded.size} refusals, first \
       {out.cenv.ungrounded.toList.head?}"
+  match ← rustLeg "local collapse" env full true out with
+  | none => say "local collapse: the Rust compile is byte-identical with the Lean compile"
+  | some e => errors := errors.push e
   let (de, summary) ← Tests.Ix.Compile.Pass3.decompileCheck u out
   errors := errors ++ de.map (s!"local collapse: {·}")
   let baseNames : Std.HashSet Name := (Ix.EnvScope.collectDeps env own (withRecursors := true)
@@ -227,6 +262,7 @@ def run : IO UInt32 := do
     let mut metaDiffs := 0
     let mut missing := 0
     let mut introduced : Std.HashSet Name := {}
+    let mut rustSame := 0
     for (r, c, base) in closures do
       let unit : Tests.Ix.Compile.Pass3.CUnit :=
         { name := s!"closure-{r}", env, seeds := #[r], closure := c }
@@ -234,6 +270,10 @@ def run : IO UInt32 := do
       unless out.cenv.ungrounded.isEmpty do
         errors := errors.push s!"{r} mode={mode}: {out.cenv.ungrounded.size} refusals, first \
           {(out.cenv.ungrounded.toList.head?.map (·.1.pretty))}"
+      -- 8. the Rust compiler on the same closure
+      match ← rustLeg s!"{r}" env c mode out with
+      | none => rustSame := rustSame + 1
+      | some e => errors := errors.push e
       for (n, _) in c do
         unless out.env.named.contains (Tests.Ix.Compile.Pass3.ixN n) do
           missing := missing + 1
@@ -269,6 +309,8 @@ def run : IO UInt32 := do
       compile: {addrDiffs} address differences, {metaDiffs} metadata differences, {missing} \
       closure constants missing from the output; references introduced by the output (derived): \
       {introduced.toList.map toString |>.toArray.qsort (· < ·)}"
+    say s!"mode={mode}: Rust compiler on the same closures: {rustSame}/{closures.size} \
+      byte-identical with the Lean compile"
   errors := errors ++ (← localCollapse)
   for e in errors do say s!"FAIL {e}"
   say s!"{if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}"

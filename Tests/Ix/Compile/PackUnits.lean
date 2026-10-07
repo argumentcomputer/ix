@@ -23,6 +23,17 @@
   4. negative control: the `--no-units` bundle of `PackU.Tree.size` lacks its
      on-demand equation lemma `PackU.Tree.size.eq_1` (the check of 2 fails on
      it), while the whole-unit bundle carries it.
+  5. **the Rust pack** (M6R slice 5; `Tests.Ix.Compile.PackParity`): the Rust
+     unit view (`ixon::unit::IxonUnitView`) has the Lean view's tables on the
+     source, and the Rust whole-unit bundle (`Ixon.rsPackEnvUnits`) of every
+     root above, of one root per unit holding a Pass 3 `_ix` name, and of the
+     first root anonymously, is byte-identical to `packWholeUnits`'s.
+
+  `PACK_UNITS_IXE=<a.ixe>,<b.ixe>,…` runs check 5 on stored compiles too (the
+  compiled artifacts of `Tests/Ix/CompileCert/BlockDefs` and `ChangedDefs`,
+  Init+Std); on one with at most 2,000 names every name is a root, all of them
+  compared with `packWholeUnits`; otherwise `PACK_UNITS_IXE_MAX=<n>` bounds the
+  roots compared (default 10, `Tests.Ix.Compile.PackParity`).
 
   Run with: `lake test -- --ignored pack-units`.
 -/
@@ -30,6 +41,7 @@ import Ix.EnvScope
 import Ix.CompileM
 import Ix.Cli.PackCmd
 import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.PackParity
 
 open Lean
 
@@ -166,6 +178,20 @@ def run : IO UInt32 := do
         errors := errors.push s!"{tag}: negative control: the unit check does not report eq_1 missing"
       IO.println s!"[pack-units] {tag} negative control (--no-units PackU.Tree.size): \
         {tb.consts.size} constants, unit gaps {gaps.size}"
+    -- 5. the Rust unit view and whole-unit pack against the Lean ones
+    errors := errors ++ (← Tests.Ix.Compile.PackParity.run s!"pack-units {tag}" srcPath.toString
+      (extra := roots.toArray) (anon := true))
+  -- 5 on stored compiles
+  if let some paths := ← IO.getEnv "PACK_UNITS_IXE" then
+    let maxLean := ((← IO.getEnv "PACK_UNITS_IXE_MAX").bind String.toNat?).getD 10
+    for p in (paths.splitOn ",").filter (!·.isEmpty) do
+      -- a small artifact: every name is a root (compared whatever the bound)
+      let art ← readIxe p
+      let every : Array Name := if art.named.size ≤ 2000 then
+          (art.named.toArray.map (ixToLeanName ·.1)).qsort (·.toString < ·.toString)
+        else #[]
+      errors := errors ++ (← Tests.Ix.Compile.PackParity.run p p (extra := every) (anon := true)
+        (maxLean := maxLean))
   for e in errors do IO.println s!"[pack-units] FAIL {e}"
   IO.println s!"[pack-units] {if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}: \
     {roots.length} roots × 2 switch states"

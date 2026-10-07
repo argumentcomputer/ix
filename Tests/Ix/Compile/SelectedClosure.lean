@@ -102,7 +102,9 @@ def suite : List TestSeq := [
 ]
 
 /-- End-to-end selected versus whole-environment compilation, retaining complete Named
-metadata, refusal coverage, decompile fidelity and strict kernel evidence. -/
+metadata, refusal coverage, decompile fidelity and strict kernel evidence; and the Rust
+compiler on each selected closure (M6R slice 5: O11a's `T._sizeOf_inst` closure
+membership on the Rust side) gives the Lean compile's artifact byte for byte. -/
 def run : IO UInt32 := do
   let env ← getFileEnv "Tests/Ix/Compile/Pass/O2Split.lean"
   let roots := [`PassO2.SA._sizeOf_1, `PassO2.SA._sizeOf_2]
@@ -130,6 +132,15 @@ def run : IO UInt32 := do
       IO.FS.writeBinFile path out.bytes
       unless out.cenv.ungrounded.isEmpty do
         errors := errors.push s!"{unit.name} mode={mode}: {out.cenv.ungrounded.size} refusals"
+      -- the Rust compiler on the same selected closure, in the same switch state
+      let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env unit.closure).mapError toString)
+      let rustPath := legDir / "rust.ixe"
+      let status ← Ix.CompileM.rsCompileEnvBytesPass3FFI (← IO.ofExcept input.prepare)
+        rustPath.toString true mode
+      let rustBytes ← IO.FS.readBinFile rustPath
+      unless rustBytes == out.bytes && status.ungrounded.isEmpty do
+        errors := errors.push s!"{unit.name} mode={mode}: the Rust compile differs ({rustBytes.size} B, \
+          Lean {out.bytes.size} B, {status.ungrounded.size} Rust failures)"
       for (name, named) in out.env.named do
         match whole.env.named[name]? with
         | none => errors := errors.push s!"{unit.name}: full output lacks {name.pretty}"
@@ -151,7 +162,8 @@ def run : IO UInt32 := do
         let record := AuxCert.recordOf out.env named.addr
         unless (report[toString record]?).any (·.outcome == "accept") do
           errors := errors.push s!"{seed} mode={mode}: selected owning record not accepted"
-      IO.println s!"[selected-closure-e2e] mode={mode} seeds={seeds}: {out.bytes.size}B; {summary}"
+      IO.println s!"[selected-closure-e2e] mode={mode} seeds={seeds}: {out.bytes.size}B; {summary}; Rust \
+        {if rustBytes == out.bytes then "byte-identical" else "DIFFERENT"}"
   for e in errors do IO.println s!"[selected-closure-e2e] FAIL {e}"
   IO.println s!"[selected-closure-e2e] {errors.size} failure(s)"
   return if errors.isEmpty then 0 else 1
