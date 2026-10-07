@@ -1,5 +1,6 @@
 import Ix.CompileCert.Certifier
 import Ix.CompileCert.StrongCone
+import Ix.CompileCert.StrongChanged
 import Ix.CompileCert.SourcePinGen
 
 /-! # The certifier's S path: the strong-model endpoint per cone
@@ -260,9 +261,10 @@ def proposeSourceHelperBindingsIdx {source : Source} (proposal : SourceModelProp
   return projections ++ generated.filterMap (fun name =>
     (renameGeneratedSuffixIdx anchorIdx name).map (name, ·))
 
-/-- Names, support and receipt names for one cone. Nothing here is trusted:
-`decideStrongCone` checks every part. -/
-def propose {input : Input} (accepted : AcceptedAssociation input)
+/-- Names, support and receipt names for one cone, given the accepted pins, the image claims and
+the admitted target environment (`propose` for W's association; M7 S+a's value-level cones pass
+W+'s). Nothing here is trusted: the decision checks every part. -/
+def proposeWith {input : Input} (pins : Kernel.Reader.Pins) (images : Lean.Name → Bool) (target : Kernel.Env)
     (installed : SourceNormalizedInstallation input.source input.roots) :
     Except String StrongProposal := do
   -- the export names through the source and map indices (`contextNameL`: `ExportContext.name`
@@ -270,7 +272,7 @@ def propose {input : Input} (accepted : AcceptedAssociation input)
   let sIdx := sourceIndex input.source
   let mIdx := mapIndex input.map
   let mappings ← input.source.declarations.mapM fun ci => do
-    return (sourceName ci.name, ← contextNameL (fun n => sIdx[n]?) (fun n => mIdx[n]?) accepted.pins noImages ci.name)
+    return (sourceName ci.name, ← contextNameL (fun n => sIdx[n]?) (fun n => mIdx[n]?) pins images ci.name)
   let helpers ← proposeSourceHelperBindingsIdx installed.modelProposal mappings
   let direct : Std.HashMap Kernel.Name Kernel.Name := mappings.foldl (fun m (k, v) => m.insert k v) {}
   -- the projection tables of the installed direct structures, under their owner's image
@@ -290,7 +292,7 @@ def propose {input : Input} (accepted : AcceptedAssociation input)
     (bindings.reverse ++ mappings.reverse).foldl (fun m (k, v) => m.insert k v) {}
   let names : Kernel.Name → Kernel.Name := fun n => table.getD n n
   let targetNames : Std.HashSet Kernel.Name :=
-    accepted.env.consts.foldl (fun s e => s.insert e.name) {}
+    target.consts.foldl (fun s e => s.insert e.name) {}
   let mut support : Array Kernel.Declaration := #[]
   for declaration in installed.declarations do
     let declared := declaration.names
@@ -309,6 +311,13 @@ def propose {input : Input} (accepted : AcceptedAssociation input)
   let never : Kernel.Name → Kernel.Name := fun n => n.str "_ix_no_value_certificate"
   return { names, support, certificates := never, operationCertificates := never,
            elementCertificates := never, levels := fun _ => .succ .zero }
+
+/-- Names, support and receipt names for one cone of W's association. Nothing here is trusted:
+`decideStrongCone` checks every part. -/
+def propose {input : Input} (accepted : AcceptedAssociation input)
+    (installed : SourceNormalizedInstallation input.source input.roots) :
+    Except String StrongProposal :=
+  proposeWith accepted.pins noImages accepted.env installed
 
 /-! ## Diagnosis of a refused strong check (untrusted) -/
 
@@ -714,6 +723,219 @@ def runCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordStore)
     let (family, row, unavailable) := diagnoseStrong accepted installed target proposal.names
     return (.failed s!"strong check: {family}" (row.map leanNameOf) unavailable, stats)
 
+/-! ## Value-level cones (M7 S+a; untrusted orchestration)
+
+A constant W certifies by a W+ route outside a changed inductive block (a theorem by its
+statement, a definition by a value row) and the constants that use it are decided by
+`decideStrongCone'` (`StrongChanged.lean`): the cone's W association is W+'s
+(`checkIndexed'`, with the rows of the cone's members as support, folded once by the certified
+checker), and the conclusion is `StrongCone'.sound`, at the value level. -/
+
+/-- The S class of a W+-route constant over a changed inductive block (a member of a changed
+block, an image recursor, a header matched through a type row): decided by S+b, not here. -/
+def changedBlockClass : String :=
+  "certified by a W+ route over a changed inductive block (a member, an image recursor or a type row); S for it is S+b"
+
+/-- The S class of a transported clique member W certifies by Lean's `eq_def` only: an unfolding
+equation does not determine a value in an existence-only model; its value row is package V's. -/
+def valueRowClass : String :=
+  "transported clique member certified by its eq_def only (no value row); S for it needs package V"
+
+/-- The value-level class of a constant W certifies by the W+ route `route`, or `none` when
+value-level S decides it: a theorem by the `theorem` route, a definition by an `equations:`
+route with a value row (W+'s `rfl` rows, package V's value rows), no type row, no changed
+block. -/
+def valueClassOf (env : Lean.Environment) (n : Lean.Name) (route : String) : Option String :=
+  if (route.splitOn "changed-block").length > 1 || (route.splitOn "type-row").length > 1 then
+    some changedBlockClass
+  else if route.startsWith "equations:eq_def" then some valueRowClass
+  else match env.find? n with
+    | some (.recInfo _) => some changedBlockClass
+    | some (.thmInfo _) => if route == "theorem" then none else some s!"W+ route {route} of a theorem"
+    | some (.defnInfo _) => if route.startsWith "equations:" then none else some s!"W+ route {route} of a definition"
+    | _ => some s!"W+ route {route}"
+
+/-- The class of a refused W+ association of a value cone: the support fold's refusal (with the
+checker's word), or the association's own decline. -/
+def changedDeclineLabel : Decline' → String
+  | .fold (.checking error _) => s!"cone W+ support fold refused: {(checkOutcome error).1}: {((checkOutcome error).2.take 100)}"
+  | .fold (.setup reason) => s!"cone W+ support fold: setup: {reason}"
+  | .base _ => "cone W+ association refused"
+
+/-- The W+ rows of a cone's members (the global pre-pass's support rows, uniquely named), in
+member order, with each member's row indices into them. -/
+def coneRows (w : WState) (members : Array Lean.Name) :
+    Array Kernel.Declaration × Std.HashMap Lean.Name (Array Nat) := Id.run do
+  let mut rows : Array Kernel.Declaration := #[]
+  let mut rowsFinal : Std.HashMap Lean.Name (Array Nat) := {}
+  for n in members do
+    if let some idx := w.rowsOf[n]? then
+      let start := rows.size
+      for i in idx do
+        if let some row := w.support[i]? then rows := rows.push row
+      rowsFinal := rowsFinal.insert n ((List.range (rows.size - start)).toArray.map (start + ·))
+  return (rows, rowsFinal)
+
+/-- The row proposed for each target definition: a support theorem whose statement is
+`@Eq T c r` with `c` the definition's constant, by the target name of `c` (the first such
+row; untrusted: the decision reads the row's installed statement and compares its right side
+with the source value). -/
+def rowHints (rows : Array Kernel.Declaration) : Std.HashMap Kernel.Name Kernel.Name :=
+  rows.foldl (fun m d => match d with
+    | .thmDecl cv _ => match eqParts cv.type with
+      | some (_, _, .const t _, _) => if m.contains t then m else m.insert t cv.name
+      | _ => m
+    | _ => m) {}
+
+/-- The Lean constants the W+ rows of each constant mention (statements and proofs). A value cone
+takes them, so that its records hold what its members' rows need: a certifier-generated value
+row's proof cites `WellFounded.fix_eq`, `funext`, … which the member's own dependencies need not
+reach. Target names are resolved to Lean names through the given constants' records (the first
+Lean name of a record wins); a name with no Lean counterpart (a canonical `_ix` constant) is
+reached through the references of its user's record. Untrusted: it only adds members to a cone. -/
+def rowGround (w : WState) (readerPins : Kernel.Reader.Pins) (known : Lean.Name → Bool) :
+    Std.HashMap Lean.Name (Array Lean.Name) := Id.run do
+  let targetToLean : Std.HashMap Kernel.Name Lean.Name := w.names.foldl (fun m n =>
+    if !known n then m else
+    match w.namedAddr[n]? with
+    | some a => match Kernel.Reader.resolve (w.store[·]?) a with
+      | some r =>
+        let k := readerPins.names.getD r (Kernel.Reader.keyName r)
+        if m.contains k then m else m.insert k n
+      | none => m
+    | none => m) {}
+  let mut out : Std.HashMap Lean.Name (Array Lean.Name) := {}
+  for (owner, idx) in w.rowsOf.toList do
+    let mut ground : Std.HashSet Lean.Name := {}
+    for i in idx do
+      if let some (.thmDecl cv proof) := w.support[i]? then
+        for (_, c) in exprConsts cv.type ++ exprConsts proof do
+          if let some n := targetToLean[c]? then
+            if n != owner then ground := ground.insert n
+    unless ground.isEmpty do
+      out := out.insert owner (ground.toArray.qsort (fun a b => toString a < toString b))
+  return out
+
+/-- Which part of the value-level check refuses, and on which source row (diagnostics). -/
+def diagnoseChanged (source target : Kernel.Env) (names rows : Kernel.Name → Kernel.Name) :
+    String × Option Kernel.Name := Id.run do
+  let fS := envFind source
+  let fT := envFind target
+  for entry in source.consts do
+    match fT (names entry.name) with
+    | none => return ("no target row", some entry.name)
+    | some targetEntry =>
+      unless decide (TelescopeEntry entry targetEntry) do return ("telescopes", some entry.name)
+      unless checkInstalledMemberExprF fS fT names entry.name entry.toConstantVal.type
+          targetEntry.toConstantVal.type == some true do
+        return (s!"types ({kindOf entry})", some entry.name)
+      if let .defnInfo header value _ := entry then
+        let direct := match targetEntry with
+          | .defnInfo _ targetValue _ =>
+            checkInstalledMemberExprF fS fT names header.name value targetValue == some true
+          | _ => false
+        unless direct || definitionRowF fS fT names rows header.name value do
+          let why := match fT (rows header.name) with
+            | some (.thmInfo ..) => "definitions: the value differs and the proposed row does not state it"
+            | _ => "definitions: the value differs and no theorem row is proposed"
+          return (why, some header.name)
+  let checks : List (String × Bool) := [
+    ("False pin", checkInstalledPin source names Kernel.falseName 0),
+    ("Eq pin", checkInstalledPin source names Kernel.eqName 1),
+    ("capabilities", checkInstalledCapabilitiesF source fS fT names),
+    ("recursors", checkInstalledRecursorsF source fS fT names),
+    ("constructors", checkInstalledConstructorsF source fS fT names),
+    ("eta associations", checkInstalledEtaAssociationsF source fS fT names == some true),
+    ("rule level links", checkInstalledRuleLevelLinksF source fS fT names == some true)]
+  for (family, ok) in checks do
+    unless ok do return (family, none)
+  return ("unexplained", none)
+
+/-- The decision on one value-level cone and, when it refuses, the diagnosis. -/
+def decideChanged {input : Input} {images : Lean.Name → Bool} {support : Array Kernel.Declaration}
+    (accepted : AcceptedAssociation' input images support)
+    (installed : SourceNormalizedInstallation input.source input.roots) (proposal : StrongProposal')
+    (root : Lean.Name) : ConeOutcome :=
+  match decideStrongCone' accepted installed proposal with
+  | .ok _cone =>
+    -- `StrongCone'.sound` holds for `_cone`: every member of `input.source` is S-Certified at
+    -- the value level.
+    .certified (input.source.declarations.toArray.map (·.name))
+  | .error .names => .failed "value check: the name map against W+'s" (some root) false
+  | .error .check =>
+    let (family, row) := diagnoseChanged installed.env accepted.folded.env proposal.names proposal.rows
+    .failed s!"value check: {family}" (some ((row.map leanNameOf).getD root)) false
+
+/-- Decide value-level S on one cone (M7 S+a): its input, its admission (staged, so W+'s fold
+of the rows continues it), W+'s association with the rows of its members (`checkIndexed'`), the
+normalised source installation, the proposal (names, source-owned support, row names) and
+`decideStrongCone'`. Source-owned support, when the cone needs any, is folded with the rows
+(W+'s association decided again on rows and support). -/
+def runConeChanged (w : WState) (workers : Nat) (root : Lean.Name) (members : Array Lean.Name)
+    (witnesses : LoweringWitnesses) : IO (ConeOutcome × ConeStats) := do
+  let mut stats : ConeStats := { members := members.size, witnesses := witnesses.length }
+  let stage {α : Type} (f : Unit → α) : IO (α × Nat) := do
+    let t ← IO.monoMsNow
+    let a ← IO.lazyPure f
+    return (a, (← IO.monoMsNow) - t)
+  let (input?, ms) ← stage fun _ => coneInput w.env w.produced w.store w.namedAddr [root] members
+  stats := { stats with msInput := ms }
+  let input ← match input? with
+    | .ok i => pure i
+    | .error why => return (.failed s!"cone input: {(why.splitOn " ").take 3 |> " ".intercalate}" (some root) false, stats)
+  stats := { stats with records := input.records.length }
+  let (admitted?, ms) ← stage fun _ => prepareArtifactStaged input.toArtifactInput
+  stats := { stats with msAdmit := ms }
+  let ⟨artifact, staged⟩ ← match admitted? with
+    | .ok a => pure a
+    | .error _ => return (.failed "cone admission refused" (some root) false, stats)
+  let imagesFn : Lean.Name → Bool := fun n => w.images.contains n
+  let (rows, rowsFinal) := coneRows w members
+  let coneEntries : Std.HashMap Lean.Name MapEntry := input.map.foldl (fun m e => m.insert e.source e) {}
+  let queries := queriesFor w.env w.refs
+  let association (support : Array Kernel.Declaration) :=
+    let sh := SharedW.ofArtifact input imagesFn artifact support
+    let entryPos := entryPositions sh.entries
+    let hints := buildHintsW input sh entryPos queries workers
+      (rowsAtWith coneEntries entryPos sh.reader rowsFinal sh.entries.size)
+    checkIndexed' input imagesFn artifact support hints staged
+  let (accepted?, ms) ← stage fun _ => association rows
+  stats := { stats with msW := ms }
+  let accepted ← match accepted? with
+    | .ok a => pure a
+    | .error e => return (.failed (changedDeclineLabel e) (some root) false, stats)
+  let (installed?, ms) ← stage fun _ =>
+    installSourceNormalizedComplete accepted.domain.1 (sourcePins input accepted.pins) witnesses
+  stats := { stats with msInstall := ms }
+  let installed ← match installed? with
+    | .ok i => pure i
+    | .error e =>
+      let (cls, unsupported) := sourceErrorLabel e
+      let culprit := match e with
+        | .checking _ position => (foldDeclarationAt input.source witnesses position).getD root
+        | _ => root
+      return (.failed cls (some culprit) unsupported, stats)
+  let proposal ← match proposeWith accepted.pins imagesFn accepted.env installed with
+    | .ok p => pure p
+    | .error why => return (.failed s!"proposal: {(why.splitOn ":").headD why}" (some root) true, stats)
+  stats := { stats with support := proposal.support.size }
+  let hints := rowHints rows
+  let proposal' : StrongProposal' :=
+    { names := proposal.names, rows := fun n => hints.getD (proposal.names n) (n.str "_ix_no_row") }
+  if proposal.support.isEmpty then
+    let (outcome, ms) ← stage fun _ => decideChanged accepted installed proposal' root
+    stats := { stats with msStrong := ms }
+    return (outcome, stats)
+  else
+    let (accepted2?, ms) ← stage fun _ => association (rows ++ proposal.support)
+    stats := { stats with msW := stats.msW + ms }
+    match accepted2? with
+    | .error e => return (.failed s!"{changedDeclineLabel e} (with the source-owned support)" (some root) false, stats)
+    | .ok accepted2 =>
+      let (outcome, ms) ← stage fun _ => decideChanged accepted2 installed proposal' root
+      stats := { stats with msStrong := ms }
+      return (outcome, stats)
+
 /-- The number of rounds `orderSourceGroups` takes on `groups` (diagnostics only: the depth of
 the source's dependency order, computed with a hash set of the available names). -/
 def orderRounds (groups : List SourceDeclGroup) : Nat := Id.run do
@@ -832,20 +1054,23 @@ def explainCone (env : Lean.Environment) (produced : Ixon.Env) (store : RecordSt
 /-- An S verdict, beside the W verdict. -/
 inductive SVerdict where
   | certified (root : Lean.Name)
+  /-- S-certified at the value level (M7 S+a): a member of an accepted value-level cone
+  (`StrongCone'.sound`). -/
+  | certifiedValue (root : Lean.Name)
   | unsupported (cls : String)
   | blocked (dependency : Lean.Name) (cls : String)
   | rejected (diagnostic : String)
   deriving Inhabited
 
 def SVerdict.word : SVerdict → String
-  | .certified _ => "S-certified" | .unsupported _ => "S-unsupported"
+  | .certified _ | .certifiedValue _ => "S-certified" | .unsupported _ => "S-unsupported"
   | .blocked .. => "S-blocked" | .rejected _ => "S-rejected"
 
 def SVerdict.cls : SVerdict → String
-  | .certified _ => "certified" | .unsupported c => c | .blocked _ c => c | .rejected d => d
+  | .certified _ | .certifiedValue _ => "certified" | .unsupported c => c | .blocked _ c => c | .rejected d => d
 
 def SVerdict.cause : SVerdict → String
-  | .certified r => s!"cone {r}" | .unsupported c => c | .blocked d c => s!"{d}: {c}" | .rejected d => d
+  | .certified r => s!"cone {r}" | .certifiedValue r => s!"value cone {r}" | .unsupported c => c | .blocked d c => s!"{d}: {c}" | .rejected d => d
 
 def SVerdict.isFinalFailure : SVerdict → Bool
   | .unsupported _ | .rejected _ => true
@@ -1236,6 +1461,106 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       lastReport := now
       let done := sv.fold (fun n _ v => match v with | .certified _ => n + 1 | _ => n) 0
       say s!"[certify-S] progress: {cones.size} cones, {done} S-certified, {queue.size} roots queued; {now - t0} ms"
+  -- M7 S+a (`--strong-changed`): after the strong cones, S at the value level for what they left
+  -- for W+'s sake. The W+-route constants outside a changed inductive block (theorems; definitions
+  -- with a value row) are decided with the W-certified constants S-blocked by them, as one cone
+  -- (its own W association W+'s, `decideStrongCone'`, `StrongCone'.sound`); if it is refused,
+  -- each root on its own cone. A W+ constant over a changed block (S+b) or a transported member
+  -- without a value row (package V) is S-unsupported with its class, and what reaches it S-blocked.
+  -- Untrusted orchestration: the strong verdicts above are not touched, and a member is certified
+  -- only by an accepted cone.
+  let mut valueCertified := 0
+  if cfg.strongChanged && !cfg.strongPlan then
+    let tA ← IO.monoMsNow
+    let mut domainA : Std.HashSet Lean.Name := {}
+    let mut outsideA : Std.HashMap Lean.Name String := {}
+    for n in w.names do
+      if let some r := wPlus[n]? then
+        match valueClassOf w.env n r with
+        | none => domainA := domainA.insert n
+        | some cls => outsideA := outsideA.insert n cls
+    let knownA : Lean.Name → Bool := fun n => wCertified.contains n || domainA.contains n
+    let leftForWPlus (n : Lean.Name) : Bool := match sv[n]? with
+      | some (.blocked _ c) | some (.unsupported c) => c == wPlusClass
+      | _ => false
+    let rootsAll := w.names.filter fun n => domainA.contains n || (wCertified.contains n && leftForWPlus n)
+    let (closedA, blockedA) := globalConeMembers w.names w.refs knownA
+    let closedSet : Std.HashSet Lean.Name := closedA.foldl (·.insert ·) {}
+    let rootsA := rootsAll.filter closedSet.contains
+    for (n, c) in outsideA.toList do sv := sv.insert n (.unsupported c)
+    for n in rootsAll do
+      unless closedSet.contains n do
+        if let some b := blockedA[n]? then
+          let cls := match outsideA[b]? with
+            | some c => c
+            | none => match sv[b]? with
+              | some v => v.cls
+              | none => (ofW (w.verdicts.getD b (.unsupported "outside the artifact"))).cls
+          sv := sv.insert n (.blocked b cls)
+    let countClass (c : String) : Nat := outsideA.fold (fun k _ v => if v == c then k + 1 else k) 0
+    say s!"[certify-S] value level (S+a): {domainA.size} W+ constants decided at the value level, \
+      {outsideA.size} not ({countClass changedBlockClass} over a changed inductive block: S+b; \
+      {countClass valueRowClass} transported members without a value row: package V); {rootsA.size} roots, \
+      {rootsAll.size - rootsA.size} blocked"
+    -- a value cone: the closure of its roots, with the constants its members' W+ rows mention
+    let ground := rowGround w readerPins knownA
+    let valueCone (roots : Array Lean.Name) : Array Lean.Name := Id.run do
+      let mut seeds := roots
+      let mut members := (coneMembersOf w.refs knownA pinGround seeds).1
+      for _ in [0:4] do
+        let present : Std.HashSet Lean.Name := members.foldl (·.insert ·) {}
+        let extra := (members.flatMap fun m => ground.getD m #[]).filter fun g => knownA g && !present.contains g
+        if extra.isEmpty then break
+        seeds := seeds ++ extra
+        members := (coneMembersOf w.refs knownA pinGround seeds).1
+      return members
+    let commit (root : Lean.Name) (certified : Array Lean.Name) (sv : Std.HashMap Lean.Name SVerdict) :
+        Std.HashMap Lean.Name SVerdict × Nat := Id.run do
+      let mut sv := sv
+      let mut fresh := 0
+      for m in certified do
+        unless (match sv[m]? with | some (.certified _) | some (.certifiedValue _) => true | _ => false) do
+          sv := sv.insert m (.certifiedValue root)
+          fresh := fresh + 1
+      return (sv, fresh)
+    if let some root := rootsA[0]? then
+      let members := valueCone rootsA
+      let began ← IO.monoMsNow
+      let (outcome, stats) ← runConeChanged w cfg.workers root members (members.toList.filterMap witnessOf.get?)
+      let record : ConeRecord := { root, outcome, stats, ms := (← IO.monoMsNow) - began, roots := rootsA.size }
+      cones := cones.push record
+      live.putStrLn (coneRow record)
+      live.flush
+      match outcome with
+      | .certified certified =>
+        let (sv', fresh) := commit root certified sv
+        sv := sv'
+        valueCertified := valueCertified + fresh
+        say s!"[certify-S] value cone: accepted, {members.size} members, {fresh} S-certified at the value level; \
+          {record.ms} ms (input {stats.msInput}, admission {stats.msAdmit}, W+ {stats.msW}, installation \
+          {stats.msInstall}, value check {stats.msStrong}; {stats.support} source-owned support declarations)"
+      | .failed cls culprit _ =>
+        say s!"[certify-S] value cone: refused ({cls}; {culprit}); {record.ms} ms; each root on its own cone"
+        for r in rootsA do
+          if (match sv[r]? with | some (.certified _) | some (.certifiedValue _) => true | _ => false) then continue
+          let rm := valueCone #[r]
+          let began ← IO.monoMsNow
+          let (o, st) ← runConeChanged w cfg.workers r rm (rm.toList.filterMap witnessOf.get?)
+          let rr : ConeRecord := { root := r, outcome := o, stats := st, ms := (← IO.monoMsNow) - began }
+          cones := cones.push rr
+          live.putStrLn (coneRow rr)
+          live.flush
+          match o with
+          | .certified cs =>
+            let (sv', fresh) := commit r cs sv
+            sv := sv'
+            valueCertified := valueCertified + fresh
+          | .failed c culprit unsupported =>
+            let culprit := culprit.getD r
+            sv := sv.insert r (if culprit == r || !rm.contains culprit then
+                (if unsupported then .unsupported c else .rejected c)
+              else .blocked culprit c)
+    say s!"[certify-S] value level (S+a): {valueCertified} S-certified at the value level; {(← IO.monoMsNow) - tA} ms"
   if cfg.strongPlan then
     live.flush
     -- per W-certified constant: the first cone of the plan that contains it, or why none does
@@ -1280,7 +1605,7 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
     tsv := tsv ++ s!"{n}\t{if w.wRun then wv.word else "not run"}\t{v.word}\t{oneLine v.cause}\n"
     byWord := byWord.insert v.word (byWord.getD v.word 0 + 1)
     match v with
-    | .certified _ => pure ()
+    | .certified _ | .certifiedValue _ => pure ()
     | _ => byClass := byClass.insert (v.word, v.cls) (byClass.getD (v.word, v.cls) 0 + 1)
   let notReached := w.names.foldl (fun k n => if wCertified.contains n && !sv.contains n then k + 1 else k) 0
   IO.FS.writeFile s!"{cfg.out}.strong.tsv" tsv
@@ -1300,7 +1625,7 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
     ("conesCertified", Lean.toJson (cones.filter (fun c => match c.outcome with | .certified _ => true | _ => false)).size),
     ("coneMsTotal", Lean.toJson coneMs), ("witnesses", Lean.toJson witnessOf.size),
     ("witnessesRefused", Lean.toJson witnessRefused.size), ("notReached", Lean.toJson notReached),
-    ("wPlusRoute", Lean.toJson wPlus.size),
+    ("wPlusRoute", Lean.toJson wPlus.size), ("valueCertified", Lean.toJson valueCertified),
     ("perName", Lean.Json.mkObj (words.toList.map fun v => (v, Lean.toJson (byWord.getD v 0)))),
     ("classes", Lean.Json.arr (classes.map fun ((v, c), k) => Lean.Json.mkObj
       [("verdict", Lean.toJson v), ("class", Lean.toJson c), ("count", Lean.toJson k)]))]

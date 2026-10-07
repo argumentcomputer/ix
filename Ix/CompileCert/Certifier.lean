@@ -1548,6 +1548,9 @@ structure Config where
   strongGlobal : Bool := false
   /-- Time the stages of the global cone (`--explain`'s stages, diagnostics only; no verdict). -/
   explainGlobal : Bool := false
+  /-- After the strong cones, decide S at the value level for the constants W certifies by a W+
+  route outside a changed inductive block, and their users (M7 S+a, `StrongChanged.lean`). -/
+  strongChanged : Bool := false
 
 /-- What the S path reuses from the W run. -/
 structure WState where
@@ -1562,6 +1565,11 @@ structure WState where
   routes : Std.HashMap Lean.Name String := {}
   /-- Whether the global W check ran (`--strong-only` skips it). -/
   wRun : Bool := true
+  /-- The W+ image claims, the pre-pass's support rows and each constant's row indices (M7 S+a's
+  value-level cones take the rows of their members). -/
+  images : Std.HashSet Lean.Name := {}
+  support : Array Kernel.Declaration := #[]
+  rowsOf : Std.HashMap Lean.Name (Array Nat) := {}
 
 /-- Propagate blocking: every candidate referring (`declarationRefs`) to a
 name that is not a candidate is blocked by it, until nothing changes. -/
@@ -2070,7 +2078,7 @@ def runW (cfg : Config) : IO (UInt32 × Option WState) := do
   let counts := " ".intercalate (words.toList.map fun w => s!"{w}={byWord.getD w 0}")
   let addrCounts := " ".intercalate (words.toList.map fun w => s!"{w}={byAddr.getD w 0}")
   say s!"[certify] per name: {counts}; per address: {addrCounts}; total {(← IO.monoMsNow) - t0} ms"
-  let w : WState := { env, produced, store, names, namedAddr, refs, verdicts, routes }
+  let w : WState := { env, produced, store, names, namedAddr, refs, verdicts, routes, images, support, rowsOf }
   if byWord.getD "certified" 0 == 0 then
     IO.eprintln "[certify] FAIL: nothing certified"
     return (1, some w)
