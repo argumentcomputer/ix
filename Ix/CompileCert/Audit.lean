@@ -8,6 +8,7 @@ import Ix.CompileCert.Changed
 import Ix.CompileCert.Conv
 import Ix.CompileCert.Bridge
 import Ix.CompileCert.StrongChanged
+import Ix.CompileCert.Opt
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -1470,3 +1471,46 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.saRoots Ix.Com
 run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.saDecisionRoots Ix.CompileCert.Audit.hashEqualities
 
 run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.saDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+/-! ## M7 L3-def: the definitional passes
+
+The roots of `Ix.CompileCert.Opt` (`plans/review2/M7-L3-def.md`): telescopes and their
+β-reduction, simultaneous substitution and its composition, the shape of an image and the laws
+the passes read, and the faithfulness of O1, O3 and O6 restated over the compiler's functions.
+Audited separately, against the same allowed set, so every line above is unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dRoots : Array Lean.Name :=
+  #[-- telescopes, selections, the arguments of an occurrence
+    `lamN, `instTs, `instTs_length, `inst_lamN, `betaN, `beta_lamN, `betaN_app, `betaN_appN,
+    `betaN_const, `betaN_lift, `inst_bvar_self, `inst_bvar_lt, `betaN_bvar, `betaN_vars, `gL,
+    `getD_append_lt, `getD_append_ge, `getD_map, `getD_range, `range_getD, `range_add,
+    `gL_append_lt, `gL_append_ge, `gL_sel, `sel_sel, `drop_sel, `delta_sel, `argT, `argT_of_lt,
+    `gL_args, `extract_map, `args_drop, `pick_list, `pick_map, `argT_extract, `pick_extract,
+    `occTerm, `er_occTerm,
+    -- simultaneous substitution
+    `msubst, `msubst_appN, `msubst_lift, `msubst_lift_out, `msubst_msubst, `msubst_id,
+    `msubst_congr, `instσ, `inst_eq_msubst, `betaσ, `betaσ_nil, `betaσ_cons, `betaN_eq_msubst,
+    `betaN_betaN, `conv_betaN, `forall2_append, `forall2_map, `forall2_of_eq, `forall2_symm,
+    `forall2_mapRight, `delta_beta, `betaN_tv, `gD4_1, `gD4_2, `gD4_3, `gD4_4, `getD_map_tm,
+    -- shapes and laws
+    `obind, `onone_bind, `opure_bind, `oguard, `oite_true, `oite_false, `shapeTv, `shapeArgs,
+    `ShapeAt, `selMinors, `shapeIdx, `mins_eq, `ShapeAt.sel, `ImageAt, `ShapeWF, `ShapeIn,
+    `RecLaw, `recOnIdx, `RecOnBody, `RecOnLaw, `IxRecOnLaw, `O5_levels_eq, `stdArity,
+    `standardTelescope_eq, `isPerm_sel, `filterMap_id_length, `selMinors_length,
+    -- `rec` and `recOn` over a selection shape
+    `getD_map_nat, `getD_map_range, `gL_sel', `sel_sel', `app4, `getD4_1, `getD4_2, `getD4_3,
+    `getD4_4, `length_recOnIdx, `map_range_getD, `recOnOutIdx, `recOnTarget, `length_recOnOutIdx,
+    `recOn_index_lean, `recOn_index_ix, `SelOk, `shapeIdx_lt, `recOnIdx_lt, `selOk_of_picks,
+    `rec_sel_conv, `recOn_sel_conv,
+    -- O1, O6, O3
+    `kind_rec_or_recOn, `bnot_false, `O1_some, `O1_faithful, `O1.Side, `O1_side,
+    `O6_some, `O6_faithful, `O6.Side, `O6_side,
+    `casesTv, `casesBody, `CasesOnBody, `CasesOnLaw, `kind_casesOn, `eq_of_not_bne, `bool_false,
+    `O3_some, `O3.Side, `O3_side, `getD_range_map, `casesBody_length, `casesOn_middle,
+    `O3_faithful].map (`Ix.CompileCert.Opt ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dRoots Ix.CompileCert.Audit.allowedAxioms
