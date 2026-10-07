@@ -298,7 +298,20 @@ mutual
 
 /-- Recursively flatten a level into canonical form, accumulating into `acc`.
     `path` tracks the imax-conditioning chain, `k` the accumulated succ offset.
-    Mirrors level.rs `normalize_aux`. -/
+    Mirrors level.rs `normalize_aux`.
+
+    **The `UInt64` accumulator cannot wrap from `normalizeLevel`** (M3 §8
+    item 4; FU item 11). `normalizeLevel` starts at `k = 0` and only `.succ`
+    adds one, so `k`, and every constant and offset of the normal form
+    (each a `max` of such `k`), is at most the number of `succ` nodes on one
+    path of `l`. A `KUniv` with `2⁶⁴ - 1` nested `succ` nodes cannot exist in
+    memory: no node is shared along a `succ` chain (each wraps a different
+    level), and the Ixon reader expands the wire format's `succ` count into
+    that many nodes (`Univ.addSucc`) before any level reaches the kernel, so
+    a stored count near `2⁶⁴` exhausts memory in the reader instead. The
+    `+ 1`s of `subsumption` and `coversConst` are bounded the same way. Only
+    a direct call with `k` near `2⁶⁴` could wrap (as `canonUniv`'s did, M3
+    §5.2); there is none. -/
 def normalizeAux (l : KUniv m) (path : Path) (k : UInt64)
     (acc : NormLevel) : NormLevel :=
   match l with
