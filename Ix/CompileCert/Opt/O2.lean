@@ -330,7 +330,7 @@ theorem binderLoop_forIn_conv {Γ : Env} {α : Type} (step : α → Expr → Exp
 theorem mkLambda_conv {Γ : Env} (hc : AuxGenCopies) (hΓ : BAbsClosed Γ) {b b' : Expr}
     (ds : Array Ix.AuxGen.LocalDecl) (h : ExprConv Γ b b') :
     ExprConv Γ (Ix.AuxGen.mkLambda b ds) (Ix.AuxGen.mkLambda b' ds) := by
-  clear hc -- Retain the original compatibility premise and theorem domain.
+  have _compatibility : AuxGenCopies := hc -- Retain the original premise and theorem domain.
   unfold ExprConv at h ⊢
   unfold Ix.AuxGen.mkLambda Ix.AuxGen.mkBinderChain
   simp only [Id.run]

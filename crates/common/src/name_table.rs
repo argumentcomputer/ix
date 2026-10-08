@@ -31,12 +31,11 @@ impl<T> NameTable<T> {
   }
 
   pub fn get(&self, name: &Name) -> Option<&T> {
-    if let Some(&index) = self.cache.get(name.get_hash()) {
-      if let Some((stored, value)) = self.entries.get(index) {
-        if name_eq(stored, name) {
-          return Some(value);
-        }
-      }
+    if let Some(&index) = self.cache.get(name.get_hash())
+      && let Some((stored, value)) = self.entries.get(index)
+      && name_eq(stored, name)
+    {
+      return Some(value);
     }
     self
       .entries
