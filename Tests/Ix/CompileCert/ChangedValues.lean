@@ -86,7 +86,7 @@ def compileFixture : IO (Lean.Environment × Source × Ix.CompileM.LeanPipelineO
     for r in refsOf ci do
       unless seen.contains r do todo := todo.push r
   let compiled ← match ← _root_.Ix.CompileM.compileLeanConsts
-      (decls.toList.map (fun ci => (ci.name, ci))) (numWorkers := 16) (pass3? := some true) with
+      (decls.toList.map (fun ci => (ci.name, ci))) (numWorkers := 16) with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compiler failed: {e}")
   unless compiled.ungroundedCount == 0 do throw (IO.userError "compiler output contains ungrounded declarations")

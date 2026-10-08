@@ -722,7 +722,7 @@ def run (env : Environment) : IO UInt32 := do
   for (stem, mk) in work do
     try
       let u ← mk
-      let on ← Tests.Ix.Compile.Pass3.compileUnit u true
+      let on ← Tests.Ix.Compile.Pass3.compileUnit u
       let r := runCompiled on.cenv
       units := units + 1
       for l in summary stem r do IO.println s!"[dev-census] {l}"
@@ -735,7 +735,7 @@ def run (env : Environment) : IO UInt32 := do
     let ienv ← getFileEnv "Benchmarks/Compile/CompileInitStd.lean"
     let whole := ienv.constants.toList
     let input ← IO.ofExcept ((_root_.Ix.Compile.compileInputFromEnv ienv whole).mapError toString)
-    match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := 32) (pass3? := some true) with
+    match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := 32) with
     | .ok o =>
       let r := runCompiled o.cenv
       units := units + 1

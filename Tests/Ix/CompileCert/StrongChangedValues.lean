@@ -73,7 +73,7 @@ def compileValues (dir : String) : IO String := do
   let env ← getCompileEnv #[valuePrefix]
   let captured ← IO.ofExcept (captureCone env.find? valueRoots 128)
   let compiled ← match ← _root_.Ix.CompileM.compileLeanConsts
-      (captured.source.declarations.map (fun ci => (ci.name, ci))) (numWorkers := 1) (pass3? := some true) with
+      (captured.source.declarations.map (fun ci => (ci.name, ci))) (numWorkers := 1) with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compiler failed: {e}")
   unless compiled.ungroundedCount == 0 do throw (IO.userError "compiler output contains ungrounded declarations")
