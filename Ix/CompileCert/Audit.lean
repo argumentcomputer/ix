@@ -1536,6 +1536,11 @@ def l3dRoots : Array Lean.Name :=
     `rwP_faithful_inst, `rewriteConstP_faithful_inst, `expansionOfP_instLookup_of_stored,
     -- actual stored expansion origin; source-domain properties remain to be derived
     `expansion_stored_origin, `expansion_stored_property,
+    -- universe scope of the original independently exported source expressions
+    `SourceScope.LevelOccurs, `SourceScope.ExprOccurs, `SourceScope.exportUniv_scope,
+    `SourceScope.exportSourceLevel_scope, `SourceScope.source_levels_scope,
+    `SourceScope.exportSourceExpr_scope, `SourceScope.exportSourceEntry_defn_scope,
+    `SourceScope.exportSourceEntry_thm_scope,
     -- exact scalar normalization and term-substitution transport
     `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
     `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
