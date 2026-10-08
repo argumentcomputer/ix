@@ -1534,6 +1534,8 @@ def l3dRoots : Array Lean.Name :=
     `InstExpansionRel, `InstExpansionRel.refl, `InstExpansionRel.trans,
     `InstExpansionRel.of_levelClosed, `InstExpansionLookup, `spineP_faithful_inst,
     `rwP_faithful_inst, `rewriteConstP_faithful_inst, `expansionOfP_instLookup_of_stored,
+    -- actual stored expansion origin; source-domain properties remain to be derived
+    `expansion_stored_origin, `expansion_stored_property,
     -- exact scalar normalization and term-substitution transport
     `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
     `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
