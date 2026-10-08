@@ -30,8 +30,10 @@ The proof splits the argument where the code splits it:
   Lean recursor occurrences (L2a-syn: Def 3.4 step 4 and the minor-type correspondence; the
   report's laws ledger).
 
-**`O2_faithful`**: `O2Faithful Γ env` (the engine's hypothesis on O2) from `RecLawI`,
-`O2MinorLaw`, the copies (`AuxGenCopies`) and `BAbsClosed Γ`.
+**`O2_faithful_on`** proves conversion at an occurrence satisfying `O2Ready`, which includes
+`PrefixFresh` and `RecurConvFrom`, from `RecLawI`, `O2MinorLaw`, the copies (`AuxGenCopies`)
+and `BAbsClosed Γ`. It does not discharge the general `O2Faithful` engine hypothesis. That
+discharge awaits capture-avoiding helpers; the engine, hook and rewrite keep their general domains.
 -/
 
 namespace Ix.CompileCert.Opt

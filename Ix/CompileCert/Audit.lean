@@ -1474,9 +1474,9 @@ run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.sa
 
 /-! ## M7 L3-def: the definitional passes
 
-The roots of `Ix.CompileCert.Opt` (`plans/review2/M7-L3-def.md`): telescopes and their
-β-reduction, simultaneous substitution and its composition, the shape of an image and the laws
-the passes read, and the faithfulness of O1, O3 and O6 restated over the compiler's functions.
+The roots of `Ix.CompileCert.Opt`: telescopes and their β-reduction, simultaneous substitution
+and its composition, the shape of an image and the laws the passes read, the faithfulness of
+O1, O3, O4 and O6, and O2's conditional per-occurrence conversion theorem.
 Audited separately, against the same allowed set, so every line above is unchanged. -/
 
 namespace Ix.CompileCert.Audit
@@ -1540,7 +1540,20 @@ def l3dRoots : Array Lean.Name :=
     `obind_ex, `oguard_ex, `bnot_true_false, `bool_ne_true, `not_lt_of_le', `pick_some_list,
     `pick_some, `pick_extract_some, `ShapesWF, `motives_lt, `minors_lt, `O1_of_side, `O1_none_iff,
     `O6_of_side, `O6_none_iff, `O3_of_side, `O3_none_iff, `O4.Side, `O4_side, `O4_of_side,
-    `O4_none_iff].map (`Ix.CompileCert.Opt ++ ·)
+    `O4_none_iff,
+    -- abstraction core and its conversion laws (the executable equality is a named hypothesis)
+    `batchAbstractP, `AuxGenCopies, `babs, `babs_zero, `babs_lift, `babs_inst, `occ_babs,
+    `babs_appN, `fvarFree, `babs_of_closed, `BAbsClosed, `bAbsClosed_of_closed, `conv_babs,
+    `er_batchAbstractP, `binderLoop_conv,
+    -- O2, conditional on freshness at this occurrence and the named image/minor laws
+    `Rel2, `forIn_option_push, `forIn_option_sim, `osim_bind, `osim_ite, `osim_forIn_arr,
+    `occRecur, `RecurConvFrom, `PrefixFresh, `OptConv, `psOf, `msOf, `minsOf, `inBlockOf,
+    `O2Minor, `minorsAt, `RecLawI, `imgMinor, `O2MinorLaw, `kind_rec, `split_ok, `O2_some,
+    `betaN_shapeTv, `rel2_forall2, `idBind_conv, `binderLoop_forIn_conv, `mkLambda_conv,
+    `relocatedIh_mono, `adaptMinor_mono, `optConv_none, `optConv_some, `extract_get,
+    `O2_minor_conv, `O2Ready, `O2_faithful_on,
+    -- successful shape-reader loops
+    `forIn_option_inv].map (`Ix.CompileCert.Opt ++ ·)
 
 end Ix.CompileCert.Audit
 

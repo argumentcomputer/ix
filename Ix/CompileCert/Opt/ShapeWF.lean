@@ -2,13 +2,11 @@ import Ix.CompileCert.Opt.Total
 import Ix.CompileCert.Canon.Cache
 
 /-!
-# M7 L3-def: the shapes the passes read are within Lean's ranges (`ShapesWF`, discharged)
+# M7 L3-def: invariants for the shape reader
 
-`readShape` checks that every motive source is one of Lean's motives and every minor source one of
-Lean's minors (`readShape_wf`); `optBlockOf` keeps only shapes `readShape` read (`optBlockOf_wf`);
-`Driver.optBlocks` keeps only `optBlockOf`'s blocks; so the environment of the hook
-(`Driver.optLookup`) satisfies `ShapesWF` (`shapesWF_optLookup`), the hypothesis of the totality
-of O1, O4 and O6 (`Total.lean`).
+The successful `Option` loop invariant supports the bounds checked by `readShape`. The reader
+and the block-building loops must still discharge `ShapesWF`, the hypothesis used by the
+totality of O1, O4 and O6 (`Total.lean`).
 -/
 
 namespace Ix.CompileCert.Opt
