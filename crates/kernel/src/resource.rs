@@ -8,15 +8,21 @@ use crate::env::KEnv;
 use crate::id::KId;
 #[cfg(test)]
 use crate::mode::Anon;
-use crate::primitive::PrimAddrs;
+
 #[cfg(test)]
 use crate::tc::TypeChecker;
 use ixon::env::Env;
 use ixon::resource::addressed::{AddressedProgram, Profile, check_resources};
 
-/// Minimal built-in profile, restricted to interfaces present in the closure.
+/// Minimal resource profile, restricted to bound interfaces in the closure.
 pub fn standard_profile(env: &Env) -> Profile {
-  let p = PrimAddrs::new();
+  standard_profile_with(env, crate::prim_profile::current())
+}
+
+fn standard_profile_with(
+  env: &Env,
+  p: &ix_common::prim_addrs::PrimAddrs,
+) -> Profile {
   let mut shareable_types: Vec<_> =
     [p.nat.clone(), p.bool_type.clone(), p.string.clone()]
       .into_iter()
@@ -24,15 +30,21 @@ pub fn standard_profile(env: &Env) -> Profile {
       .collect();
   shareable_types.sort_unstable();
   Profile {
-    nat_type: env.consts.contains_key(&p.nat).then_some(p.nat),
-    string_type: env.consts.contains_key(&p.string).then_some(p.string),
+    nat_type: env.consts.contains_key(&p.nat).then_some(p.nat.clone()),
+    string_type: env.consts.contains_key(&p.string).then_some(p.string.clone()),
     shareable_types,
     ..Default::default()
   }
 }
 
 pub fn check_literal_profile(profile: &Profile) -> Result<(), String> {
-  let p = PrimAddrs::new();
+  check_literal_profile_with(profile, crate::prim_profile::current())
+}
+
+fn check_literal_profile_with(
+  profile: &Profile,
+  p: &ix_common::prim_addrs::PrimAddrs,
+) -> Result<(), String> {
   for (selected, actual) in
     [(&profile.nat_type, &p.nat), (&profile.string_type, &p.string)]
   {
@@ -262,5 +274,16 @@ mod tests {
     // This ordinary component has no resource annotation. It still must typecheck.
     assert!(check_resources(&malformed, &Profile::default()).is_ok());
     assert!(validate(&malformed, &Profile::default()).is_err());
+  }
+  #[test]
+  fn resource_literal_identity_follows_the_selected_bindings() {
+    let (env, typ) = base();
+    let mut p = ix_common::prim_addrs::PrimAddrs::new();
+    p.string = typ.clone();
+    let profile = standard_profile_with(&env, &p);
+    assert_eq!(profile.string_type, Some(typ.clone()));
+    assert!(profile.shareable_types.contains(&typ));
+    assert!(check_literal_profile_with(&profile, &p).is_ok());
+    assert!(check_literal_profile(&profile).is_err());
   }
 }

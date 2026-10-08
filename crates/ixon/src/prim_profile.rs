@@ -12,12 +12,15 @@
 //! Wire layout, under the claim flag like every other standalone object:
 //!
 //! ```text
-//! [TagN(0xE, 10) = E8 02] [OBJECT_FORMAT : u8] [count : TagN] [addr : 32 bytes] * count
+//! [TagN(0xE, 10) = E8 02] [OBJECT_FORMAT : u8] [SCHEMA_VERSION : u8] [count : TagN]
+//! ([present : u8] [addr : 32 bytes if present]) * count
 //! ```
 
 use ix_common::address::Address;
 use ix_common::env::Name;
-use ix_common::prim_addrs::{MARKER_ROLE, PrimAddrs, ROLE_NAMES};
+use ix_common::prim_addrs::{
+  MARKER_ROLE, PrimAddrs, ROLE_NAMES, absent_role_address, reserved_marker_name,
+};
 
 use crate::env::Env;
 use crate::proof::{FLAG_CLAIM, VARIANT_PRIM_PROFILE};
@@ -25,8 +28,8 @@ use crate::tag::TagN;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrimProfile {
-  /// One address per role in `PrimProfile::role_names()` order.
-  pub addrs: Vec<Address>,
+  /// Optional bindings in `PrimProfile::role_names()` order.
+  pub addrs: Vec<Option<Address>>,
 }
 
 /// A dotted Lean name as the compiler registers it in an `.ixe`.
@@ -35,6 +38,7 @@ fn dotted_name(s: &str) -> Name {
 }
 
 impl PrimProfile {
+  pub const SCHEMA_VERSION: u8 = 1;
   /// The roles a profile binds, in wire order.
   pub fn role_names() -> impl Iterator<Item = &'static str> {
     ROLE_NAMES.iter().copied().filter(|n| *n != MARKER_ROLE)
@@ -45,46 +49,66 @@ impl PrimProfile {
       .roles()
       .into_iter()
       .filter(|(name, _)| *name != MARKER_ROLE)
-      .map(|(_, addr)| addr)
+      .map(|(role, addr)| (addr != absent_role_address(role)).then_some(addr))
       .collect();
     PrimProfile { addrs }
   }
 
   pub fn to_addrs(&self) -> Result<PrimAddrs, String> {
-    let expected = Self::role_names().count();
-    if self.addrs.len() != expected {
-      return Err(format!(
-        "primitive profile binds {} roles, this build knows {expected}",
-        self.addrs.len()
-      ));
-    }
-    PrimAddrs::from_roles(
-      Self::role_names().map(str::to_string).zip(self.addrs.iter().cloned()),
-    )
+    self.validate()?;
+    PrimAddrs::from_roles(Self::role_names().zip(&self.addrs).map(
+      |(role, addr)| {
+        (
+          role.to_string(),
+          addr.clone().unwrap_or_else(|| absent_role_address(role)),
+        )
+      },
+    ))
   }
 
-  /// Bind every role through `lookup`, which resolves a Lean name to the
-  /// address registered under it. Fails naming every role that did not
-  /// resolve, so a partial environment is reported rather than guessed.
+  /// Resolve available declarations by name. Missing roles remain absent;
+  /// the checker requires support only when a corresponding rule is used.
   pub fn from_lookup<F>(mut lookup: F) -> Result<Self, String>
   where
     F: FnMut(&Name) -> Option<Address>,
   {
-    let mut addrs = Vec::new();
-    let mut missing = Vec::new();
-    for role in Self::role_names() {
-      match lookup(&dotted_name(role)) {
-        Some(addr) => addrs.push(addr),
-        None => missing.push(role),
-      }
-    }
-    if !missing.is_empty() {
+    let profile = Self {
+      addrs: Self::role_names()
+        .map(|role| lookup(&dotted_name(role)))
+        .collect(),
+    };
+    profile.validate()?;
+    Ok(profile)
+  }
+
+  fn validate(&self) -> Result<(), String> {
+    let expected = Self::role_names().count();
+    if self.addrs.len() != expected {
       return Err(format!(
-        "environment does not register the primitive roles: {}",
-        missing.join(", ")
+        "primitive profile binds {} roles, expected {expected}",
+        self.addrs.len()
       ));
     }
-    Ok(PrimProfile { addrs })
+    for (role, addr) in Self::role_names().zip(&self.addrs) {
+      if addr.as_ref().is_some_and(|a| reserved_marker_name(a).is_some()) {
+        return Err(format!("primitive role {role} binds a reserved marker"));
+      }
+    }
+    Ok(())
+  }
+
+  /// Parse a complete canonical profile object, including schema and arity.
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    let mut cursor = bytes;
+    let profile = Self::get(&mut cursor)?;
+    if !cursor.is_empty() {
+      return Err("primitive profile: trailing bytes".into());
+    }
+    profile.validate()?;
+    if profile.ser() != bytes {
+      return Err("primitive profile: noncanonical encoding".into());
+    }
+    Ok(profile)
   }
 
   /// The profile of the toolchain that produced `env`, read from its
@@ -96,9 +120,13 @@ impl PrimProfile {
   pub fn put(&self, buf: &mut Vec<u8>) {
     TagN::put(4, FLAG_CLAIM, VARIANT_PRIM_PROFILE, buf);
     buf.push(Env::OBJECT_FORMAT);
+    buf.push(Self::SCHEMA_VERSION);
     TagN::put(0, 0, self.addrs.len() as u64, buf);
     for addr in &self.addrs {
-      buf.extend_from_slice(addr.as_bytes());
+      buf.push(u8::from(addr.is_some()));
+      if let Some(addr) = addr {
+        buf.extend_from_slice(addr.as_bytes());
+      }
     }
   }
 
@@ -119,23 +147,46 @@ impl PrimProfile {
         Env::OBJECT_FORMAT
       ));
     }
-    let count = TagN::get(0, buf)?.value;
-    let count = usize::try_from(count)
-      .map_err(|e| format!("PrimProfile::get: count overflow: {e}"))?;
-    if buf.len() < count.saturating_mul(32) {
+    let (schema, rest) =
+      buf.split_first().ok_or("primitive profile: missing schema")?;
+    *buf = rest;
+    if *schema != Self::SCHEMA_VERSION {
       return Err(format!(
-        "PrimProfile::get: {count} addresses need {} bytes, have {}",
-        count * 32,
-        buf.len()
+        "primitive profile schema {schema}, expected {} — regenerate the profile",
+        Self::SCHEMA_VERSION
       ));
     }
-    let mut addrs = Vec::with_capacity(count);
-    for _ in 0..count {
-      let (head, rest) = buf.split_at(32);
+    let count = TagN::get(0, buf)?.value;
+    let expected = Self::role_names().count();
+    if count != expected as u64 {
+      return Err(format!(
+        "primitive profile binds {count} roles, expected {expected}"
+      ));
+    }
+    let mut addrs = Vec::with_capacity(expected);
+    for _ in 0..expected {
+      let (present, rest) =
+        buf.split_first().ok_or("primitive profile: missing presence tag")?;
       *buf = rest;
-      let addr = Address::from_slice(head)
-        .map_err(|e| format!("PrimProfile::get: invalid address: {e:?}"))?;
-      addrs.push(addr);
+      match present {
+        0 => addrs.push(None),
+        1 => {
+          if buf.len() < 32 {
+            return Err("primitive profile: truncated address".into());
+          }
+          let (head, rest) = buf.split_at(32);
+          *buf = rest;
+          addrs.push(Some(
+            Address::from_slice(head)
+              .map_err(|e| format!("invalid address: {e:?}"))?,
+          ));
+        },
+        _ => {
+          return Err(format!(
+            "primitive profile: invalid presence tag {present}"
+          ));
+        },
+      }
     }
     Ok(PrimProfile { addrs })
   }
@@ -180,6 +231,7 @@ mod tests {
     assert_eq!(bytes[2], Env::OBJECT_FORMAT);
     let mut cursor = &bytes[..];
     let decoded = PrimProfile::get(&mut cursor).unwrap();
+    assert_eq!(PrimProfile::from_bytes(&bytes).unwrap(), profile);
     assert!(cursor.is_empty());
     assert_eq!(decoded, profile);
     assert_eq!(decoded.address(), addr);
@@ -205,12 +257,12 @@ mod tests {
     );
     let bytes = PrimProfile::from_addrs(&PrimAddrs::new()).ser();
     assert!(PrimProfile::get(&mut &bytes[..bytes.len() - 1]).is_err());
-    let wrong_count = PrimProfile { addrs: vec![PrimAddrs::new().nat] };
+    let wrong_count = PrimProfile { addrs: vec![Some(PrimAddrs::new().nat)] };
     assert!(wrong_count.to_addrs().unwrap_err().contains("roles"));
   }
 
   #[test]
-  fn from_env_reads_the_named_section_and_reports_gaps() {
+  fn from_env_reads_the_named_section_and_preserves_absence() {
     let builtin = PrimAddrs::new();
     let env = Env::new();
     for (name, addr) in builtin.roles() {
@@ -224,7 +276,56 @@ mod tests {
 
     let partial = Env::new();
     partial.register_name(dotted_name("Nat"), Named::with_addr(builtin.nat));
-    let err = PrimProfile::from_env(&partial).unwrap_err();
-    assert!(err.contains("Nat.zero") && !err.contains("eagerReduce"));
+    let partial = PrimProfile::from_env(&partial).unwrap();
+    assert_eq!(partial.addrs.iter().filter(|a| a.is_some()).count(), 1);
+    let resolved = partial.to_addrs().unwrap();
+    assert_eq!(resolved.nat_zero, absent_role_address("Nat.zero"));
+    assert_eq!(PrimProfile::from_addrs(&resolved), partial);
+  }
+  #[test]
+  fn whole_object_loader_rejects_junk_wrong_schema_and_counts() {
+    let profile = PrimProfile::from_addrs(&PrimAddrs::new());
+    let mut bytes = profile.ser();
+    bytes.extend_from_slice(b"junk");
+    assert!(PrimProfile::from_bytes(&bytes).unwrap_err().contains("trailing"));
+    let mut bytes = profile.ser();
+    bytes[3] = 0;
+    assert!(PrimProfile::from_bytes(&bytes).unwrap_err().contains("schema"));
+    for count in [0, 1, u64::MAX] {
+      let mut bytes = profile.ser()[..4].to_vec();
+      TagN::put(0, 0, count, &mut bytes);
+      assert!(PrimProfile::from_bytes(&bytes).unwrap_err().contains("roles"));
+    }
+    let mut bytes = profile.ser();
+    bytes[5] = 2;
+    assert!(PrimProfile::from_bytes(&bytes).unwrap_err().contains("presence"));
+  }
+
+  #[test]
+  fn unavailable_operations_stay_absent_without_old_version_fallback() {
+    let a = PrimAddrs::new();
+    let retired = ["Lean.reduceBool", "Lean.reduceNat", "String.Legacy.back"];
+    let profile = PrimProfile::from_lookup(|name| {
+      a.roles()
+        .into_iter()
+        .find(|(role, _)| !retired.contains(role) && dotted_name(role) == *name)
+        .map(|(_, a)| a)
+    })
+    .unwrap();
+    assert_eq!(profile.addrs.iter().filter(|a| a.is_none()).count(), 3);
+    let resolved = profile.to_addrs().unwrap();
+    assert_ne!(resolved.reduce_nat, a.reduce_nat);
+    assert_ne!(resolved.reduce_nat, resolved.reduce_bool);
+    assert!(reserved_marker_name(&resolved.reduce_nat).is_some());
+    assert_eq!(PrimProfile::from_bytes(&profile.ser()).unwrap(), profile);
+  }
+
+  #[test]
+  fn explicit_reserved_addresses_are_not_bindings() {
+    let mut a = PrimAddrs::new();
+    a.nat_add = a.eager_reduce.clone();
+    let profile = PrimProfile::from_addrs(&a);
+    assert!(profile.to_addrs().is_err());
+    assert!(PrimProfile::from_bytes(&profile.ser()).is_err());
   }
 }

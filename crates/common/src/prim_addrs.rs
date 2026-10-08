@@ -23,7 +23,7 @@ use std::sync::LazyLock;
 use crate::address::Address;
 
 /// Hardcoded primitive addresses (for lookup in the env).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrimAddrs {
   pub nat: Address,
   pub nat_zero: Address,
@@ -906,6 +906,11 @@ prim_roles! {
 /// address-only dispatch on it would be unsound.
 pub const MARKER_ROLE: &str = "eagerReduce";
 
+/// An absent role cannot alias a declaration or another absent role.
+pub fn absent_role_address(role: &str) -> Address {
+  Address::hash(format!("ix.kernel.absent-primitive.v1:{role}").as_bytes())
+}
+
 impl PrimAddrs {
   /// Build a table from `(lean_name, address)` pairs. Every role except
   /// the marker must be present exactly once; unknown names are errors;
@@ -943,11 +948,15 @@ impl PrimAddrs {
 }
 
 pub fn reserved_marker_name(addr: &Address) -> Option<&'static str> {
-  static MARKERS: LazyLock<[(&'static str, Address); 2]> =
-    LazyLock::new(PrimAddrs::reserved_marker_addrs);
-  MARKERS
-    .iter()
-    .find_map(|(name, marker_addr)| (marker_addr == addr).then_some(*name))
+  static MARKERS: LazyLock<rustc_hash::FxHashMap<Address, &'static str>> =
+    LazyLock::new(|| {
+      PrimAddrs::reserved_marker_addrs()
+        .into_iter()
+        .chain(ROLE_NAMES.iter().map(|role| (*role, absent_role_address(role))))
+        .map(|(name, address)| (address, name))
+        .collect()
+    });
+  MARKERS.get(addr).copied()
 }
 
 #[cfg(test)]

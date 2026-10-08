@@ -29,16 +29,17 @@ fn export(ixe_path: &str, out_path: &str) -> Result<String, String> {
 
 fn info(path: &str) -> Result<String, String> {
   let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-  let profile = PrimProfile::get(&mut &bytes[..])?;
+  let profile = PrimProfile::from_bytes(&bytes)?;
   let builtin =
     PrimProfile::from_addrs(&ix_common::prim_addrs::PrimAddrs::new());
   let roles: Vec<serde_json::Value> = PrimProfile::role_names()
     .zip(profile.addrs.iter())
-    .map(|(name, addr)| serde_json::json!({"name": name, "addr": addr.hex()}))
+    .map(|(name, addr)| serde_json::json!({"name": name, "addr": addr.as_ref().map(|a| a.hex())}))
     .collect();
   let summary = serde_json::json!({
     "address": profile.address().hex(),
     "objectFormat": IxonEnv::OBJECT_FORMAT,
+    "schemaVersion": PrimProfile::SCHEMA_VERSION,
     "roles": roles,
     "matchesBuiltin": profile == builtin,
   });

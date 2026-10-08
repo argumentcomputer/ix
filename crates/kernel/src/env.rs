@@ -655,6 +655,8 @@ pub struct KEnv<M: KernelMode> {
 
   // -- Primitives (resolved lazily from consts) --
   prims: OnceCell<Primitives<M>>,
+  pub(crate) primitive_admission:
+    FxHashMap<(Address, super::primitive_validation::Rule), bool>,
 
   // -- Global caches (grow monotonically, keyed by content hash) --
   // All cache keys use `Addr` (= `Arc<blake3::Hash>`, content-addressed) rather
@@ -825,6 +827,7 @@ impl<M: KernelMode> KEnv<M> {
       blocks: FxHashMap::default(),
       intern: InternTable::new(),
       prims: OnceCell::new(),
+      primitive_admission: FxHashMap::default(),
       whnf_cache: FxHashMap::default(),
       whnf_no_delta_cache: FxHashMap::default(),
       whnf_no_delta_cheap_cache: FxHashMap::default(),
@@ -901,7 +904,8 @@ impl<M: KernelMode> KEnv<M> {
       );
     }
     if self.consts.insert(id, c).is_some() {
-      self.decl_summary_cache.clear();
+      self.primitive_admission.clear();
+      self.clear_reduction_caches();
     }
   }
 
@@ -948,6 +952,7 @@ impl<M: KernelMode> KEnv<M> {
     self.intern.lift_scratch.clear();
     self.intern.clo_scratch_pool.clear();
     let _ = self.prims.take();
+    self.primitive_admission.clear();
     self.whnf_cache.clear();
     self.whnf_no_delta_cache.clear();
     self.whnf_no_delta_cheap_cache.clear();
@@ -1014,6 +1019,7 @@ impl<M: KernelMode> KEnv<M> {
     self.blocks = FxHashMap::default();
     self.intern = InternTable::new();
     self.prims = OnceCell::new();
+    self.primitive_admission.clear();
     self.whnf_cache = FxHashMap::default();
     self.whnf_no_delta_cache = FxHashMap::default();
     self.whnf_no_delta_cheap_cache = FxHashMap::default();

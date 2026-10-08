@@ -28,7 +28,7 @@ static CURRENT: LazyLock<Current> =
     Ok(path) if !path.is_empty() => {
       let bytes = std::fs::read(&path)
         .unwrap_or_else(|e| panic!("{PROFILE_ENV_VAR}={path}: {e}"));
-      let profile = PrimProfile::get(&mut &bytes[..])
+      let profile = PrimProfile::from_bytes(&bytes)
         .unwrap_or_else(|e| panic!("{PROFILE_ENV_VAR}={path}: {e}"));
       let addrs = profile
         .to_addrs()

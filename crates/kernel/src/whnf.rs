@@ -477,7 +477,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // instance terms and `of_decide_eq_true` proofs per character.
       // Consumers that need the `Char.mk` constructor form (iota majors,
       // projections, def-eq lazy delta) expand it explicitly.
-      if self.char_lit_value(&cur).is_some() {
+      if (self.prims.native.character && !self.primitive_validation)
+        && self.char_lit_value(&cur).is_some()
+      {
         break;
       }
 
@@ -1430,6 +1432,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         }
       }
       major_was_nat_lit = true;
+      self.require_primitive(super::primitive_validation::Rule::Nat)?;
       major_whnf = self.nat_to_constructor(&val.clone());
     }
     if let Some(cleaned) = self.cleanup_nat_offset_major(&major_whnf)? {
@@ -1451,6 +1454,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Cheap mode leaves the major stuck, as it did before the fast path
     // (`Char.ofNat` is a Defn head that cheap whnf never delta-unfolds).
     if !flags.cheap_rec
+      && (self.prims.native.character && !self.primitive_validation)
       && self.char_lit_value(&major_whnf).is_some()
       && let Some(unfolded) = self.delta_unfold_one(&major_whnf)?
     {
@@ -1643,6 +1647,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.prims.native.offsets || self.primitive_validation {
+      return Ok(None);
+    }
+
     if self.eval_nat_offset_literal(e, 0).is_some() {
       return Ok(None);
     }
@@ -1732,7 +1740,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return None;
     };
 
-    if id.addr == self.prims.nat_pred.addr && args.len() == 1 {
+    if id.addr == self.prims.nat_pred.addr
+      && args.len() == 1
+      && self.admit_nat_operation(&id.addr)
+    {
       let n = self.eval_nat_offset_literal(&args[0], depth + 1)?;
       let result = if n.0 == num_bigint::BigUint::ZERO {
         Nat(num_bigint::BigUint::ZERO)
@@ -1761,6 +1772,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.prims.native.offsets || self.primitive_validation {
+      return Ok(None);
+    }
+
     // Allocation-free quick reject: this probe runs once per delta-unfold
     // loop iteration, so don't collect a spine Vec unless the head constant
     // is one of the three Nat primitives.
@@ -2058,7 +2073,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let wval = if let ExprData::Str(s, _, _) = wval.data() {
       wval_expanded = self.str_lit_to_ctor_app(&s.clone())?;
       &wval_expanded
-    } else if self.char_lit_value(wval).is_some() {
+    } else if (self.prims.native.character && !self.primitive_validation)
+      && self.char_lit_value(wval).is_some()
+    {
       // Native char values stay stuck in whnf; a projection (`.val`)
       // needs the `Char.mk` form, so expand structurally, once.
       match self.delta_unfold_one(wval)? {
@@ -2117,6 +2134,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     head: &KExpr<M>,
     args: &[KExpr<M>],
   ) -> Option<KExpr<M>> {
+    if !self.prims.native.decidable || self.primitive_validation {
+      return None;
+    }
+
     if id.addr != self.prims.fin.addr || field != 0 {
       return None;
     }
@@ -2411,6 +2432,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       _ => return Ok(None),
     };
     // Nat.succ n → n + 1
+    if !self.trusted_primitives() {
+      self.require_primitive(super::primitive_validation::Rule::Nat)?;
+      if addr != self.prims.nat_succ.addr && !self.admit_nat_operation(&addr) {
+        return Ok(None);
+      }
+    }
     if addr == self.prims.nat_succ.addr && args.len() == 1 {
       if nat_succ_mode == NatSuccMode::Stuck {
         return Ok(None);
@@ -2553,6 +2580,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     arg: &KExpr<M>,
     offset: &num_bigint::BigUint,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.prims.native.recursor || self.primitive_validation {
+      return Ok(None);
+    }
+
     let Some(parts) = self.nat_rec_literal_parts(arg)? else {
       return Ok(None);
     };
@@ -2683,7 +2714,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e
   }
 
-  fn is_nat_bin_arith_addr(&self, addr: &Address) -> bool {
+  fn is_nat_bin_arith_addr(&mut self, addr: &Address) -> bool {
+    if !self.admit_nat_operation(addr) {
+      return false;
+    }
+
     let p = &self.prims;
     *addr == p.nat_add.addr
       || *addr == p.nat_sub.addr
@@ -2699,7 +2734,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       || *addr == p.nat_shift_right.addr
   }
 
-  fn is_nat_bin_pred_addr(&self, addr: &Address) -> bool {
+  fn is_nat_bin_pred_addr(&mut self, addr: &Address) -> bool {
+    if !self.admit_nat_operation(addr) {
+      return false;
+    }
+
     *addr == self.prims.nat_beq.addr || *addr == self.prims.nat_ble.addr
   }
 
@@ -2827,7 +2866,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           };
           return Ok(Some(Nat(pred.0 + 1u64)));
         }
-        if id.addr == self.prims.nat_pred.addr && args.len() == 1 {
+        if id.addr == self.prims.nat_pred.addr
+          && args.len() == 1
+          && self.admit_nat_operation(&id.addr)
+        {
           let Some(n) =
             self.try_eval_nat_value_for_pred_core(&args[0], depth + 1)?
           else {
@@ -2875,7 +2917,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.try_eval_nat_value_for_pred_core(&w, depth + 1)
   }
 
-  fn is_stuck_nat_predicate_probe(&self, e: &KExpr<M>) -> bool {
+  fn is_stuck_nat_predicate_probe(&mut self, e: &KExpr<M>) -> bool {
     let head = app_head(e);
     match head.data() {
       ExprData::Const(id, _, _) => {
@@ -2919,6 +2961,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.prims.native.decidable || self.primitive_validation {
+      return Ok(None);
+    }
+
     let (head, args) = collect_app_spine(e);
     let addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
@@ -3141,6 +3187,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(None);
     };
 
+    self.require_primitive(if addr == self.prims.quot_lift.addr {
+      super::primitive_validation::Rule::QuotLift
+    } else {
+      super::primitive_validation::Rule::QuotInd
+    })?;
     let major_whnf = self.whnf(&args[major_idx])?;
     let (mk_head, mk_args) = collect_app_spine(&major_whnf);
     let mk_addr = match mk_head.data() {
@@ -3176,6 +3227,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.prims.native.bitvec || self.primitive_validation {
+      return Ok(None);
+    }
+
     let (head, args) = collect_app_spine(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
@@ -3383,6 +3438,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.prims.native.platform || self.primitive_validation {
+      return Ok(None);
+    }
+
     let (head, args) = collect_app_spine(e);
     let head_addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
@@ -3525,10 +3584,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.primitive_validation || !self.prims.native.strings {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
-    let ExprData::Const(id, _, _) = head.data() else {
+    let ExprData::Const(id, us, _) = head.data() else {
       return Ok(None);
     };
+    if !us.is_empty() {
+      return Ok(None);
+    }
     let addr = &id.addr;
 
     // String.ofList / String.mk: collapse a literal char-list argument.
@@ -3726,10 +3791,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let ExprData::App(f, arg, _) = e.data() else {
       return None;
     };
-    let ExprData::Const(id, _, _) = f.data() else {
+    let ExprData::Const(id, us, _) = f.data() else {
       return None;
     };
-    if id.addr != self.prims.char_of_nat.addr {
+    if id.addr != self.prims.char_of_nat.addr || !us.is_empty() {
       return None;
     }
     let ExprData::Nat(n, _, _) = arg.data() else {

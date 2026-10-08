@@ -1,15 +1,12 @@
 //! Well-known primitive constant KIds.
 //!
-//! Content-addresses are hardcoded blake3 hashes matching the kernel's
-//! `build_primitives` in `src/ix/kernel/ingress.rs`. Regenerate with
-//! `lake test -- rust-kernel-build-primitives`, which dumps the current
-//! `(name, hex)` pairs for every `kernelPrimitives` entry — paste the
-//! updated lines into `PrimAddrs::new`.
+//! Built-in addresses identify established native rules. Profiles can supply
+//! other addresses; their literal and reduction contracts are checked in
+//! `primitive_validation` before those rules are enabled.
 //!
 //! `Primitives<M>` stores `KId<M>` values, resolved from the environment by
 //! address so that names match in both Meta and Anon modes. `Lean.reduceBool`
-//! and `Lean.reduceNat` are real primitive constants and are dispatched by
-//! content address. `eager_reduce` is a synthetic kernel-only marker because
+//! and `Lean.reduceNat`, when available, are dispatched by content address. `eager_reduce` is a synthetic kernel-only marker because
 //! Lean's `eagerReduce` compiles to the same canonical content address as
 //! `id`; address-only dispatch on the real constant would be unsound.
 
@@ -19,9 +16,145 @@ use super::env::KEnv;
 use super::id::KId;
 use super::mode::KernelMode;
 
+static ESTABLISHED_BINDINGS: std::sync::LazyLock<[PrimAddrs; 2]> =
+  std::sync::LazyLock::new(|| [PrimAddrs::new(), PrimAddrs::new_orig()]);
+
+/// Existing native rules remain reusable when their own bindings are identical.
+/// An unrelated role does not invalidate these capabilities.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct NativeRules {
+  pub nat_ops: u64,
+  pub ambiguous_nat_ops: u64,
+  pub offsets: bool,
+  pub recursor: bool,
+  pub decidable: bool,
+  pub bitvec: bool,
+  pub platform: bool,
+  pub strings: bool,
+  pub character: bool,
+}
+
+impl NativeRules {
+  fn new(a: &PrimAddrs) -> Self {
+    use super::primitive_validation::Rule;
+    let mut result = Self::default();
+    for b in ESTABLISHED_BINDINGS.iter() {
+      macro_rules! same { ($($field:ident),+ $(,)?) => { true $(&& a.$field == b.$field)+ }; }
+      let nat = same!(nat, nat_zero, nat_succ);
+      let bools = same!(bool_type, bool_true, bool_false);
+      macro_rules! nat_ops { ($($role:ident => $field:ident),+ $(,)?) => { $(
+        if nat && a.$field == b.$field { result.nat_ops |= 1 << (Rule::$role as u32); }
+      )+ }; }
+      nat_ops!(Pred => nat_pred, Add => nat_add, Sub => nat_sub,
+        Mul => nat_mul, Pow => nat_pow, Div => nat_div, Mod => nat_mod,
+        Gcd => nat_gcd, Land => nat_land, Lor => nat_lor, Xor => nat_xor,
+        ShiftLeft => nat_shift_left, ShiftRight => nat_shift_right);
+      if bools {
+        nat_ops!(Beq => nat_beq, Ble => nat_ble);
+      }
+      result.offsets |= nat && same!(nat_add, nat_pred, nat_div, nat_mod);
+      result.recursor |= nat && same!(nat_rec, nat_cases_on, nat_add);
+      let decisions = nat
+        && bools
+        && same!(
+          nat_dec_le,
+          nat_dec_eq,
+          nat_dec_lt,
+          nat_beq,
+          nat_ble,
+          decidable_rec,
+          decidable_is_true,
+          decidable_is_false,
+          nat_le_of_ble_eq_true,
+          nat_not_le_of_not_ble_eq_true,
+          nat_eq_of_beq_eq_true,
+          nat_ne_of_beq_eq_false,
+          eq,
+          eq_refl,
+          fin,
+          int,
+          int_of_nat,
+          int_neg_succ,
+          int_dec_eq,
+          int_dec_le,
+          int_dec_lt
+        );
+      result.decidable |= decisions;
+      result.bitvec |= decisions
+        && same!(
+          bit_vec,
+          bit_vec_to_nat,
+          bit_vec_of_nat,
+          bit_vec_ult,
+          decidable_decide,
+          lt_lt,
+          of_nat_of_nat
+        );
+      result.platform |= nat
+        && bools
+        && same!(
+          punit,
+          unit,
+          punit_size_of_1,
+          size_of_size_of,
+          subtype_val,
+          system_platform_num_bits,
+          system_platform_get_num_bits,
+          reduce_nat,
+          reduce_bool
+        );
+      let character = nat && same!(char_type, char_mk, char_of_nat);
+      result.character |= character;
+      result.strings |= character
+        && decisions
+        && same!(
+          string,
+          string_mk,
+          string_of_list,
+          list,
+          list_nil,
+          list_cons,
+          string_append,
+          string_dec_eq,
+          string_utf8_byte_size,
+          string_back,
+          string_legacy_back,
+          string_to_byte_array,
+          byte_array_empty
+        );
+    }
+    let operations = [
+      (Rule::Pred, &a.nat_pred),
+      (Rule::Add, &a.nat_add),
+      (Rule::Sub, &a.nat_sub),
+      (Rule::Mul, &a.nat_mul),
+      (Rule::Pow, &a.nat_pow),
+      (Rule::Beq, &a.nat_beq),
+      (Rule::Ble, &a.nat_ble),
+      (Rule::Div, &a.nat_div),
+      (Rule::Mod, &a.nat_mod),
+      (Rule::Gcd, &a.nat_gcd),
+      (Rule::Land, &a.nat_land),
+      (Rule::Lor, &a.nat_lor),
+      (Rule::Xor, &a.nat_xor),
+      (Rule::ShiftLeft, &a.nat_shift_left),
+      (Rule::ShiftRight, &a.nat_shift_right),
+    ];
+    for (rule, addr) in operations {
+      if operations.iter().filter(|(_, other)| *other == addr).count() > 1 {
+        result.ambiguous_nat_ops |= 1 << (rule as u32);
+      }
+    }
+    result
+  }
+}
+
 /// Well-known primitive KIds.
 #[derive(Clone)]
 pub struct Primitives<M: KernelMode> {
+  pub(crate) binding_key: Address,
+  pub(crate) trusted: bool,
+  pub(crate) native: NativeRules,
   // -- Nat --
   pub nat: KId<M>,
   pub nat_zero: KId<M>,
@@ -161,20 +294,8 @@ pub struct Primitives<M: KernelMode> {
 pub use ix_common::prim_addrs::{PrimAddrs, reserved_marker_name};
 
 impl<M: KernelMode> Primitives<M> {
-  /// Resolve primitives from the environment using the table in force
-  /// for this process (`crate::prim_profile::current`: the built-in canonical table,
-  /// or the profile file named by `IX_PRIM_PROFILE`). This is the correct
-  /// call for `kctx.kenv` (the incrementally-compiled canonical
-  /// environment).
-  ///
-  /// Addresses that don't resolve fall back to a synthetic KId with the
-  /// address hex as the name. That is expected for the synthetic
-  /// `eager_reduce` marker and is a symptom of hash drift otherwise:
-  /// either regenerate the built-in table with
-  /// `lake test -- rust-kernel-build-primitives`, or point
-  /// `IX_PRIM_PROFILE` at a table generated for the environment's
-  /// toolchain. Addresses that resolve to a declaration of the wrong
-  /// kind are reported through `log::warn!`.
+  /// Resolve the process's bindings by address. Optional roles can be absent;
+  /// required literal and kernel support is validated when it is used.
   pub fn from_env(env: &KEnv<M>) -> Self {
     Self::from_env_with(env, crate::prim_profile::current())
   }
@@ -212,14 +333,13 @@ impl<M: KernelMode> Primitives<M> {
   /// Core primitive-resolution logic parameterized on the address
   /// table. See `from_env` (canonical) and `from_env_orig` (LEON) for
   /// the entry points.
-  fn from_env_with(env: &KEnv<M>, a: &PrimAddrs) -> Self {
+  pub fn from_env_with(env: &KEnv<M>, a: &PrimAddrs) -> Self {
     // Build addr → KId index from the env.
     let mut by_addr = rustc_hash::FxHashMap::default();
     for (id, _) in env.iter() {
       by_addr.entry(id.addr.clone()).or_insert_with(|| id.clone());
     }
 
-    warn_kind_mismatches(env, a, &by_addr);
     Self::from_addrs_with(a, |addr| by_addr.get(addr).cloned())
   }
 
@@ -247,7 +367,18 @@ impl<M: KernelMode> Primitives<M> {
       KId::new(addr.clone(), M::meta_field(name))
     };
 
+    let roles = a.roles();
+    let binding_key = Address::hash(
+      &roles
+        .iter()
+        .flat_map(|(_, a)| a.as_bytes().iter().copied())
+        .collect::<Vec<_>>(),
+    );
+    let trusted = ESTABLISHED_BINDINGS.iter().any(|baseline| a == baseline);
     Primitives {
+      binding_key,
+      trusted,
+      native: NativeRules::new(a),
       nat: r(&a.nat),
       nat_zero: r(&a.nat_zero),
       nat_succ: r(&a.nat_succ),
@@ -339,76 +470,6 @@ impl<M: KernelMode> Primitives<M> {
       string_utf8_byte_size: r(&a.string_utf8_byte_size),
       string_append: r(&a.string_append),
       string_dec_eq: r(&a.string_dec_eq),
-    }
-  }
-}
-
-/// The declaration kind a pinned role must have for the checker's special
-/// rules about it to make sense. `None` for the synthetic marker.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RoleKind {
-  Inductive,
-  Constructor,
-  Recursor,
-  Quotient,
-  Definition,
-}
-
-fn expected_role_kind(lean_name: &str) -> Option<RoleKind> {
-  Some(match lean_name {
-    "Nat" | "Bool" | "String" | "Char" | "List" | "Eq" | "Fin" | "Int"
-    | "PUnit" | "PProd" | "BitVec" => RoleKind::Inductive,
-    "Nat.zero" | "Nat.succ" | "Bool.true" | "Bool.false" | "Char.mk"
-    | "List.nil" | "List.cons" | "Eq.refl" | "Decidable.isTrue"
-    | "Decidable.isFalse" | "Int.ofNat" | "Int.negSucc" | "PProd.mk" => {
-      RoleKind::Constructor
-    },
-    "Nat.rec" | "Decidable.rec" => RoleKind::Recursor,
-    "Quot" | "Quot.mk" | "Quot.lift" | "Quot.ind" => RoleKind::Quotient,
-    ix_common::prim_addrs::MARKER_ROLE => return None,
-    _ => RoleKind::Definition,
-  })
-}
-
-fn kind_of<M: KernelMode>(c: &super::constant::KConst<M>) -> RoleKind {
-  use super::constant::KConst;
-  match c {
-    KConst::Indc { .. } => RoleKind::Inductive,
-    KConst::Ctor { .. } => RoleKind::Constructor,
-    KConst::Recr { .. } => RoleKind::Recursor,
-    KConst::Quot { .. } => RoleKind::Quotient,
-    KConst::Defn { .. } | KConst::Axio { .. } => RoleKind::Definition,
-  }
-}
-
-/// A pinned address that resolves to a declaration of the wrong kind means
-/// the table binds a role to something the special rules were not written
-/// for: the checker would apply native semantics to the wrong constant.
-/// Absent addresses are not reported here; they fall back to synthetic
-/// KIds and surface as unknown constants when a rule needs them. Axioms
-/// are accepted for any role because test environments stand primitives
-/// in with axioms of the right type.
-fn warn_kind_mismatches<M: KernelMode>(
-  env: &KEnv<M>,
-  a: &PrimAddrs,
-  by_addr: &rustc_hash::FxHashMap<Address, KId<M>>,
-) {
-  for (name, addr) in a.roles() {
-    let Some(expected) = expected_role_kind(name) else { continue };
-    let Some(id) = by_addr.get(&addr) else { continue };
-    let Some(c) = env.get(id) else { continue };
-    if matches!(c, super::constant::KConst::Axio { .. }) {
-      continue;
-    }
-    let found = kind_of(&c);
-    if found != expected {
-      log::warn!(
-        "primitive role {name} at {} resolves to a {found:?}, expected a \
-         {expected:?}; the special rules for this role are unsound here \
-         (profile: {})",
-        addr.hex(),
-        crate::prim_profile::current_source()
-      );
     }
   }
 }

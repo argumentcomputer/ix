@@ -9,8 +9,9 @@
     ix prims info <file>                       describe a profile object
 
   The Rust checker takes `IX_PRIM_PROFILE=<file>` to bind its roles to the
-  exported profile instead of the table it was built with, so an env
-  compiled under another Lean release checks without rebuilding ix.
+  exported profile. The checker validates literal construction and optional
+  reduction contracts before enabling rules at new addresses. Unsupported
+  accelerations use ordinary reduction; required unsupported rules fail.
 -/
 module
 public import Cli
@@ -52,7 +53,7 @@ end Ix.Cli.PrimsCmd
 
 open Ix.Cli.PrimsCmd in
 def primsExportCmd : Cli.Cmd := `[Cli|
-  export VIA runPrimsExport;
+  "export" VIA runPrimsExport;
   "Write the primitive profile object of the toolchain that compiled a `.ixe`, read from its named section, and print the object's address. Pass the file as IX_PRIM_PROFILE to `ix check-rs`."
 
   FLAGS:
@@ -65,7 +66,7 @@ def primsExportCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.PrimsCmd in
 def primsInfoCmd : Cli.Cmd := `[Cli|
   info VIA runPrimsInfo;
-  "Describe a primitive profile object as JSON: address, object format, every role's address, and whether it equals this build's built-in table."
+  "Describe a primitive profile as JSON: address, object format, schema version, every binding (null when absent), and whether it equals the built-in table."
 
   ARGS:
     file : String; "Path to a profile object written by `ix prims export`."

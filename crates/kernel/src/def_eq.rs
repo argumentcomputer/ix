@@ -899,7 +899,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Ok(v1 == v2);
       },
       (ExprData::Str(v1, _, _), ExprData::Str(v2, _, _)) => {
-        return Ok(v1 == v2);
+        if (self.prims.native.strings && !self.primitive_validation) || v1 == v2
+        {
+          return Ok(v1 == v2);
+        }
+        return self.try_string_lit_expansion(a, b);
       },
       _ => false,
     };
@@ -1137,6 +1141,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    self.require_primitive(super::primitive_validation::Rule::Nat)?;
+
     // Fast path: both literals — compare by value directly
     if let (ExprData::Nat(va, _, _), ExprData::Nat(vb, _, _)) =
       (a.data(), b.data())
@@ -1167,6 +1173,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<Option<bool>, TcError<M>> {
+    if !self.prims.native.offsets || self.primitive_validation {
+      return Ok(None);
+    }
+
     // Fast path: both literals — compare by value directly
     if let (ExprData::Nat(va, _, _), ExprData::Nat(vb, _, _)) =
       (a.data(), b.data())
@@ -1222,12 +1232,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ExprData::Str(v, _, _) => v.clone(),
       _ => return Ok(false),
     };
-    // Literal vs literal: equal literals are one interned node (caught
-    // long before this point); distinct literals are never defeq — their
-    // constructor expansions differ in the codepoint payloads. Decide
-    // directly instead of expanding both sides structurally.
+    // The established String representation is injective in its character
+    // sequence. A general typed construction need not be, so different
+    // payloads under other bindings must compare their expansions.
     if let ExprData::Str(s_val, _, _) = s.data() {
-      return Ok(*s_val == str_val);
+      if (self.prims.native.strings && !self.primitive_validation)
+        || *s_val == str_val
+      {
+        return Ok(*s_val == str_val);
+      }
+      let a = self.str_lit_to_ctor_app(&str_val)?;
+      let b = self.str_lit_to_ctor_app(s_val)?;
+      return self.is_def_eq(&a, &b);
     }
     let expanded = self.str_lit_to_ctor_app(&str_val)?;
     self.is_def_eq(&expanded, s)
@@ -1291,6 +1307,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     s: &str,
   ) -> Result<KExpr<M>, TcError<M>> {
+    self.require_primitive(super::primitive_validation::Rule::String)?;
+
     let of_list_app = self.str_lit_to_constructor(s);
     match self.delta_unfold_one(&of_list_app)? {
       // Beta the unfolded body against the char list. `whnf_core` stops
@@ -1510,6 +1528,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Check if expression is the Bool.true constant.
   fn is_bool_true(&self, e: &KExpr<M>) -> bool {
+    if !self.trusted_primitives() {
+      return false;
+    }
+
     match e.data() {
       ExprData::Const(id, us, _) => {
         us.is_empty() && id.addr == self.prims.bool_true.addr

@@ -154,6 +154,7 @@ pub mod mode;
 pub mod perf;
 pub mod prim_profile;
 pub mod primitive;
+mod primitive_validation;
 // Sharding cost model + partitioner (out-of-circuit). `profile` records
 // per-block heartbeats + the delta-unfold graph (the cost graph); `shard`
 // partitions that graph into balanced, low-cross-ingress shards. Ported here

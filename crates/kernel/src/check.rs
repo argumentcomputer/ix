@@ -910,7 +910,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// - Correct universe parameter count per variant
   /// - The complete type is the canonical type installed by `addQuot`
   /// - Eq and Eq.refl have exact canonical metadata/types for Quot.lift
-  fn check_quot(
+  pub(super) fn check_quot(
     &mut self,
     id: &KId<M>,
     kind: QuotKind,

@@ -284,8 +284,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         self.infer_proj(&struct_id, *field, val, &val_ty)?
       },
 
-      ExprData::Nat(..) => self.infer_nat_type(),
-      ExprData::Str(..) => self.infer_str_type(),
+      ExprData::Nat(..) => self.infer_nat_type()?,
+      ExprData::Str(..) => self.infer_str_type()?,
     };
 
     if !infer_only {
@@ -445,12 +445,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
-  fn infer_nat_type(&mut self) -> KExpr<M> {
-    self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([])))
+  fn infer_nat_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_primitive(super::primitive_validation::Rule::Nat)?;
+    Ok(self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([]))))
   }
 
-  fn infer_str_type(&mut self) -> KExpr<M> {
-    self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([])))
+  fn infer_str_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_primitive(super::primitive_validation::Rule::String)?;
+    Ok(self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([]))))
   }
 
   fn inductive_app_is_prop(

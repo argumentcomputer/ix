@@ -95,10 +95,11 @@ pub struct IotaInfo<M: KernelMode> {
   pub lvls: u64,
 }
 
+#[derive(Clone)]
 pub struct LazyIxonIngress<'a> {
   ixon_env: &'a IxonEnv,
   lookups: &'a IxonIngressLookups,
-  faulted_addrs: FxHashSet<Address>,
+  pub(super) faulted_addrs: FxHashSet<Address>,
 }
 
 /// Lazy on-demand ingress for the anon kernel. Faults a missing
@@ -106,9 +107,10 @@ pub struct LazyIxonIngress<'a> {
 /// no metadata access. Intended for use with envs loaded via
 /// `Env::get_anon` (which discards metadata sections), but the
 /// implementation never consults those sections regardless.
+#[derive(Clone)]
 pub struct LazyAnonIngress<'a> {
   anon_env: &'a IxonEnv,
-  faulted_addrs: FxHashSet<Address>,
+  pub(super) faulted_addrs: FxHashSet<Address>,
 }
 
 /// Thread-local type-checking handle. Cheap to create — only allocates empty
@@ -121,15 +123,17 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub(crate) ixon_ingress: bool,
   /// Optional read-only Ixon source used to fault constants into `env` when
   /// typechecking discovers a missing address.
-  lazy_ixon: Option<LazyIxonIngress<'a>>,
+  pub(super) lazy_ixon: Option<LazyIxonIngress<'a>>,
   /// Optional metadata-free lazy ingress (anon mode). Mutually exclusive with
   /// `lazy_ixon` — `new_with_lazy_anon` constructs Anon-mode checkers; the
   /// `lazy_ingress_addr` dispatcher uses whichever is set. The anon path
   /// never reads `Env::named`/`Env::names`.
-  lazy_anon: Option<LazyAnonIngress<'a>>,
+  pub(super) lazy_anon: Option<LazyAnonIngress<'a>>,
   /// Primitive constant KIds. Copied from `env.prims()` at construction;
   /// overridable for tests via `tc.prims = custom`.
   pub prims: Primitives<M>,
+  pub(super) primitive_validation: bool,
+  pub(super) validating_primitive_rules: u64,
 
   // -- Thread-local context --
   /// Local variable types, indexed by de Bruijn level.
@@ -232,6 +236,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       lazy_anon: None,
       ixon_ingress: false,
       prims,
+      primitive_validation: false,
+      validating_primitive_rules: 0,
       ctx: Vec::new(),
       let_vals: Vec::new(),
       num_let_bindings: 0,
