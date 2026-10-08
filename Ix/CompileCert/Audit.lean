@@ -1530,6 +1530,10 @@ def l3dRoots : Array Lean.Name :=
     -- totality and fuel of the rewrite; a constant
     `except_bind_error, `mapM_error, `RwFailure, `spineP_error, `rwP_error, `except_bind_of_ok,
     `mapM_mono, `spineP_mono, `rwP_mono, `rewriteConstP, `cnst_type, `rewriteConstP_faithful,
+    -- expansion conversion at every caller universe substitution (construction obligation open)
+    `InstExpansionRel, `InstExpansionRel.refl, `InstExpansionRel.trans,
+    `InstExpansionRel.of_levelClosed, `InstExpansionLookup, `spineP_faithful_inst,
+    `rwP_faithful_inst, `rewriteConstP_faithful_inst, `expansionOfP_instLookup_of_stored,
     -- canonicity
     `bool_guard2, `bool_guard3, `O2_pattern, `O8_pattern, `O7_pattern, `ebind, `eguard, `epattern,
     `toOption_some, `O11a_O2_pattern, `O1_O3_disjoint, `O1_O4_disjoint, `O3_O4_disjoint,
