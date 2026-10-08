@@ -269,7 +269,7 @@ def run (env : Environment) : IO UInt32 := do
   for (stem, mk) in work do
     try
       let u ← mk
-      let on ← Tests.Ix.Compile.Pass3.compileUnit u true
+      let on ← Tests.Ix.Compile.Pass3.compileUnit u
       let r := runCompiled on.cenv
       units := units + 1
       for l in summary stem r do IO.println s!"[opt-census] {l}"
