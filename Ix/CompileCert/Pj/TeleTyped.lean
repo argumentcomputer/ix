@@ -150,10 +150,11 @@ theorem graded_piJoin {bs : List (Kernel.Expr × Kernel.BinderMeta)} {b : Kernel
       obtain ⟨A, domain, member, rest⟩ := TeleTyped.cons_iff.mp typed
       obtain ⟨_, B, readB, body, _⟩ := graded
       have equal : A = B := Kernel.Denotes_functional domain readB
-      exact ih (body x (equal ▸ member)) rest
+      exact ih (ρ := Kernel.push x ρ) (xs := xs) (body x (equal ▸ member)) rest
 
 
 /-- Inserting arguments at the bottom of the de Bruijn valuation. -/
+omit [Kernel.SetTheory V] in
 theorem valuationLift_prefix (ρ : Nat → V) (xs : List V) :
     ValuationLift xs.length 0 ρ (pushArguments ρ xs) := by
   intro i
@@ -161,6 +162,7 @@ theorem valuationLift_prefix (ρ : Nat → V) (xs : List V) :
     Ix.CompileCert.pushArguments_above xs ρ i
 
 /-- A common suffix of arguments advances an existing insertion cutoff. -/
+omit [Kernel.SetTheory V] in
 theorem valuationLift_pushArguments {ρ target : Nat → V} {amount cutoff : Nat}
     (related : ValuationLift amount cutoff ρ target) (xs : List V) :
     ValuationLift amount (cutoff + xs.length)
@@ -173,6 +175,7 @@ theorem valuationLift_pushArguments {ρ target : Nat → V} {amount cutoff : Nat
 
 /-- Motives inserted between parameters and fields do not change the readings
 of the appropriately lifted parameter/field terms. -/
+omit [Kernel.SetTheory V] in
 theorem valuationLift_middle (ρ : Nat → V) (ps ms fs : List V) :
     ValuationLift ms.length fs.length
       (pushArguments ρ (ps ++ fs)) (pushArguments ρ (ps ++ ms ++ fs)) := by
@@ -213,7 +216,7 @@ theorem tele_pick (bs : List (Kernel.Expr × Kernel.BinderMeta))
       · exact TeleTyped.cons domain member typed
       · exact readC
     obtain ⟨xs, typed, properties⟩ := ih (body x member)
-      (fun prefix y => Q (x :: prefix) y) chooseTail
+      (fun prior y => Q (x :: prior) y) chooseTail
     refine ⟨x :: xs, .cons domain member typed, ?_⟩
     intro i bound
     cases i with
