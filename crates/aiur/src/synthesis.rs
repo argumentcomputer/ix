@@ -1154,9 +1154,7 @@ impl AiurSystem {
       }
     }
     // `AIUR_TRACE_SHARD_MAX_CELLS` is a device-residency bound (VRAM) in
-    // committed cells: with it every trace-sharded proof is planned to
-    // cells, whatever the host peak, and the plan is then held to the host
-    // budget separately.
+    // committed cells. Host-memory planning may choose a smaller cap.
     let device_cells = trace_shards
       .then(|| {
         std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
@@ -1168,25 +1166,8 @@ impl AiurSystem {
     if device_cells.is_some() || peak > max {
       if trace_shards {
         let record_bytes = crate::execute::record_retained_bytes(&query_record);
-        let planned = match device_cells {
-          Some(cells) => {
-            let plan = self.plan_shards(&query_record, Some(cells));
-            let shard_peak = (0..plan.num_shards())
-              .map(|s| self.shard_peak_bytes(&plan, s, record_bytes))
-              .max()
-              .unwrap_or(0);
-            if shard_peak > max {
-              eprintln!(
-                "[trace-shards] the {}-shard plan for {cells} committed cells projects a {shard_peak} B host peak over the {max} B budget",
-                plan.num_shards()
-              );
-              Err(shard_peak)
-            } else {
-              Ok((plan, shard_peak))
-            }
-          },
-          None => self.plan_shards_within(&query_record, max),
-        };
+        let planned =
+          self.plan_shards_within_cells(&query_record, max, device_cells);
         match planned {
           Ok((plan, shard_peak)) => {
             let retention =
@@ -1237,8 +1218,8 @@ impl AiurSystem {
             });
           },
           Err(floor) => eprintln!(
-            "[trace-shards] no shard count fits a {} B budget: record {} B, \
-             whole-execution peak {} B, lowest heaviest-shard peak {} B",
+            "[trace-shards] no fitting plan found within a {} B budget: record {} B, \
+             whole-execution peak {} B, lowest examined heaviest-shard peak {} B",
             max, record_bytes, peak, floor
           ),
         }
@@ -2138,6 +2119,7 @@ mod tests {
       let covered: usize = plan.shards.iter().map(|s| s.rows[ci].len()).sum();
       assert_eq!(covered, single.shards[0].rows[ci].len(), "circuit {ci}");
     }
+
     assert_eq!(plan.shards[0].rows[BYTES2], 0..65536);
     assert!(plan.shards[1].rows[BYTES2].is_empty());
 
@@ -2676,6 +2658,13 @@ mod tests {
       let covered: usize = plan.shards.iter().map(|s| s.rows[ci].len()).sum();
       assert_eq!(covered, single.shards[0].rows[ci].len(), "circuit {ci}");
     }
+
+    // A device ceiling must still allow smaller plans for host admission.
+    let (capped, capped_peak) = system
+      .plan_shards_within_cells(&record, single_peak - 1, Some(usize::MAX))
+      .expect("the explicit device ceiling does not disable host replanning");
+    assert!(capped.num_shards() > 1);
+    assert!(capped_peak < single_peak);
 
     // Below the record plus the byte tables nothing can fit.
     assert!(system.plan_shards_within(&record, record_bytes).is_err());

@@ -106,8 +106,11 @@ fn proof_claim(ix_root: &Path, addr: &Address) -> Result<Address, String> {
 
 /// These pointers are hints only. `ix prove --skip-proven` verifies the
 /// wrapper's exact claim and its proof with the active verifier before reuse.
-fn seed_index(ix_root: &Path, record: &Value) -> Result<(), String> {
-  let dir = ix_root.join("cache").join("shard-proofs");
+fn seed_index(
+  ix_root: &Path,
+  dir: &Path,
+  record: &Value,
+) -> Result<(), String> {
   fs::create_dir_all(&dir).map_err(|e| format!("create shard index: {e}"))?;
   for leaf in record["leaves"].as_array().ok_or("missing leaf records")? {
     let claim = address(string(leaf, "claim")?)?;
@@ -158,6 +161,67 @@ fn bind_leaf_proofs(
     .collect()
 }
 
+fn claim_summary(
+  leaves: &[plan::Leaf],
+  base: Option<&Value>,
+) -> Result<Value, String> {
+  let mut previous = rustc_hash::FxHashSet::default();
+  if let Some(base) = base {
+    for leaf in base["leaves"].as_array().ok_or("missing base leaves")? {
+      previous.insert(address(string(leaf, "claim")?)?);
+    }
+  }
+  let mut retained = 0;
+  let mut subjects_in_new_claims = 0;
+  let claims = leaves
+    .iter()
+    .map(|leaf| {
+      let reused = previous.contains(&leaf.claim);
+      if reused {
+        retained += 1;
+      } else {
+        subjects_in_new_claims += leaf.subjects.len();
+      }
+      json!({"id": leaf.id, "claim": leaf.claim.hex(),
+        "subjects": leaf.subjects.len(), "frontier": leaf.frontier.len(),
+        "retainedFromBase": reused})
+    })
+    .collect::<Vec<_>>();
+  Ok(json!({"shards": leaves.len(), "claims": claims,
+    "retainedClaims": retained, "changedBaseClaims": previous.len() - retained,
+    "newClaims": leaves.len() - retained,
+    "subjectsInNewClaims": subjects_in_new_claims}))
+}
+
+/// An unchanged partition and corpus can carry the verified base root into a
+/// new snapshot. Leaf wrappers remain required for later incremental updates.
+fn reusable_base_root(
+  ix_root: &Path,
+  artifacts: &Artifacts,
+  base: Option<&Value>,
+) -> Result<Option<(Address, Vec<Value>)>, String> {
+  let Some(base) = base else { return Ok(None) };
+  if inventory_root(&artifacts.inventory)?.hex() != string(base, "corpusRoot")?
+    || file_hash(&artifacts.manifest_path)?.hex()
+      != string(base, "partitionHash")?
+  {
+    return Ok(None);
+  }
+  let proofs = base["leaves"]
+    .as_array()
+    .ok_or("missing base leaves")?
+    .iter()
+    .map(|leaf| address(string(leaf, "proof")?))
+    .collect::<Result<Vec<_>, _>>()?;
+  match bind_leaf_proofs(ix_root, &artifacts.leaves, &proofs) {
+    Ok(rows) => Ok(Some((address(string(base, "rootProof")?)?, rows))),
+    Err(error) => {
+      eprintln!("[catalog prove] base leaf artifacts need recovery: {error}");
+      Ok(None)
+    },
+  }
+}
+
 fn binding(
   snapshot: &Snapshot,
   profile: &Value,
@@ -187,6 +251,123 @@ fn ensure_pending_binding(
     }
   }
   Ok(())
+}
+
+fn prove_and_aggregate(
+  options: &Options,
+  ix_root: &Path,
+  runner: &mut dyn Runner,
+  artifacts: &mut Artifacts,
+  base_record: Option<&Value>,
+  pending: &mut Value,
+) -> Result<Address, String> {
+  let use_lanes = options.lanes > 0 && artifacts.leaves.len() > 1;
+  let index_dir = if use_lanes {
+    std::env::var_os("AIUR_LANES_CACHE_DIR")
+      .map(PathBuf::from)
+      .unwrap_or_else(|| ix_root.join("cache"))
+      .join("shard-proofs")
+  } else {
+    ix_root.join("cache/shard-proofs")
+  };
+  if let Some(record) = base_record {
+    seed_index(ix_root, &index_dir, record)?;
+  }
+  if pending["status"] == "leaves-proved" {
+    seed_index(ix_root, &index_dir, pending)?;
+  }
+  let next_manifest = artifacts.work.join("refined.ixes");
+  let mut prove = vec![
+    "prove".into(),
+    "--ixe".into(),
+    artifacts.env_path.display().to_string(),
+    "--ixes".into(),
+    artifacts.manifest_path.display().to_string(),
+    "--skip-proven".into(),
+    "--out-ixes".into(),
+    next_manifest.display().to_string(),
+  ];
+  if options.max_ram != 0 {
+    prove.extend(["--max-ram".into(), options.max_ram.to_string()]);
+  }
+  if options.trace_shards || use_lanes {
+    prove.push("--trace-shards".into());
+  }
+  if use_lanes {
+    eprintln!(
+      "[catalog prove] using {} GPU lane(s) for pipelined proving and aggregation",
+      options.lanes
+    );
+    prove.extend([
+      "--lanes".into(),
+      options.lanes.to_string(),
+      "--structural-above".into(),
+      options.structural_above.to_string(),
+    ]);
+  } else {
+    prove.push("--leaf-only".into());
+  }
+  if options.exec_jobs != 0 {
+    prove.extend(["--exec-jobs".into(), options.exec_jobs.to_string()]);
+  }
+  let produced = runner.run(&prove)?;
+  let refined =
+    crate::shard::ShardManifest::from_bytes(&read(&next_manifest)?)?;
+  let final_leaves =
+    plan::leaves(&artifacts.env, &artifacts.inventory, &refined)?;
+  let (proofs, lane_root) = if use_lanes {
+    if produced.len() != 1 {
+      return Err("GPU pipeline did not return exactly one root proof".into());
+    }
+    let proofs = final_leaves
+      .iter()
+      .map(|leaf| {
+        let bytes = read(&index_dir.join(leaf.claim.hex()))?;
+        let text = std::str::from_utf8(&bytes)
+          .map_err(|_| format!("invalid proof index for leaf {}", leaf.id))?;
+        address(text.trim())
+      })
+      .collect::<Result<Vec<_>, String>>()?;
+    (proofs, Some(produced[0].clone()))
+  } else {
+    (produced, None)
+  };
+  let proof_rows = bind_leaf_proofs(ix_root, &final_leaves, &proofs)?;
+  atomic_write(&artifacts.manifest_path, &refined.to_bytes())?;
+  artifacts.manifest = refined;
+  artifacts.leaves = final_leaves;
+  pending["status"] = json!("leaves-proved");
+  pending["partitionHash"] = json!(file_hash(&artifacts.manifest_path)?.hex());
+  pending["leaves"] = json!(proof_rows);
+  write_json(&artifacts.work.join("pending.json"), pending)?;
+
+  let mut aggregate = vec![
+    "aggregate".into(),
+    "--ixe".into(),
+    artifacts.env_path.display().to_string(),
+    "--ixes".into(),
+    artifacts.manifest_path.display().to_string(),
+    "--structural-above".into(),
+    options.structural_above.to_string(),
+  ];
+  if options.max_ram != 0 {
+    aggregate.extend(["--max-ram".into(), options.max_ram.to_string()]);
+  }
+  if options.jobs != 0 {
+    aggregate.extend(["--jobs".into(), options.jobs.to_string()]);
+  }
+  if options.trace_shards {
+    aggregate.push("--trace-shards".into());
+  }
+  aggregate.extend(proofs.iter().map(Address::hex));
+  let roots = match lane_root {
+    Some(root) => vec![root],
+    None => runner.run(&aggregate)?,
+  };
+  if roots.len() != 1 {
+    return Err("aggregate did not return exactly one root proof".into());
+  }
+  Ok(roots[0].clone())
 }
 
 pub(super) fn execute(
@@ -321,88 +502,52 @@ pub(super) fn execute(
     "corpusRoot": inventory_root(&artifacts.inventory)?.hex(),
     "axioms": addresses_json(&artifacts.inventory.axioms), "profile": profile,
     "snapshotSubjects": snapshot.addresses.len(), "corpusSubjects": artifacts.inventory.addresses.len(),
-    "newSubjects": pending["newSubjects"], "retainedClaims": pending["retainedClaims"],
-    "changedBaseClaims": pending["changedBaseClaims"], "shards": artifacts.leaves.len(),
-    "claims": artifacts.leaves.iter().map(|l| json!({"id": l.id, "claim": l.claim.hex(),
-      "subjects": l.subjects.len(), "frontier": l.frontier.len()})).collect::<Vec<_>>()});
+    "newSubjects": pending["newSubjects"]});
+  report.as_object_mut().unwrap().extend(
+    claim_summary(&artifacts.leaves, base_record.as_ref())?
+      .as_object()
+      .unwrap()
+      .clone(),
+  );
   eprintln!(
-    "[catalog prove] snapshot={} corpus={} new={} retained-claims={} changed-base-claims={} shards={}",
+    "[catalog prove] snapshot={} corpus={} new={} retained-claims={} changed-base-claims={} new-claims={} subjects-in-new-claims={} shards={}",
     snapshot.addresses.len(),
     artifacts.inventory.addresses.len(),
     pending["newSubjects"],
-    pending["retainedClaims"],
-    pending["changedBaseClaims"],
+    report["retainedClaims"],
+    report["changedBaseClaims"],
+    report["newClaims"],
+    report["subjectsInNewClaims"],
     artifacts.leaves.len()
   );
   if options.plan_only {
     return Ok(report);
   }
 
-  if let Some(record) = &base_record {
-    seed_index(ix_root, record)?;
-  }
-  if pending["status"] == "leaves-proved" {
-    seed_index(ix_root, &pending)?;
-  }
-  let next_manifest = artifacts.work.join("refined.ixes");
-  let mut prove = vec![
-    "prove".into(),
-    "--ixe".into(),
-    artifacts.env_path.display().to_string(),
-    "--ixes".into(),
-    artifacts.manifest_path.display().to_string(),
-    "--skip-proven".into(),
-    "--out-ixes".into(),
-    next_manifest.display().to_string(),
-  ];
-  if options.max_ram != 0 {
-    prove.extend(["--max-ram".into(), options.max_ram.to_string()]);
-  }
-  if options.trace_shards {
-    prove.push("--trace-shards".into());
-  }
-  if options.exec_jobs != 0 {
-    prove.extend(["--exec-jobs".into(), options.exec_jobs.to_string()]);
-  }
-  let proofs = runner.run(&prove)?;
-  let refined =
-    crate::shard::ShardManifest::from_bytes(&read(&next_manifest)?)?;
-  let final_leaves =
-    plan::leaves(&artifacts.env, &artifacts.inventory, &refined)?;
-  let proof_rows = bind_leaf_proofs(ix_root, &final_leaves, &proofs)?;
-  atomic_write(&artifacts.manifest_path, &refined.to_bytes())?;
-  artifacts.manifest = refined;
-  artifacts.leaves = final_leaves;
-  pending["status"] = json!("leaves-proved");
-  pending["partitionHash"] = json!(file_hash(&artifacts.manifest_path)?.hex());
-  pending["leaves"] = json!(proof_rows);
-  write_json(&pending_path, &pending)?;
-
-  let mut aggregate = vec![
-    "aggregate".into(),
-    "--ixe".into(),
-    artifacts.env_path.display().to_string(),
-    "--ixes".into(),
-    artifacts.manifest_path.display().to_string(),
-    "--structural-above".into(),
-    options.structural_above.to_string(),
-  ];
-  if options.max_ram != 0 {
-    aggregate.extend(["--max-ram".into(), options.max_ram.to_string()]);
-  }
-  if options.jobs != 0 {
-    aggregate.extend(["--jobs".into(), options.jobs.to_string()]);
-  }
-  if options.trace_shards {
-    aggregate.push("--trace-shards".into());
-  }
-  aggregate.extend(proofs.iter().map(Address::hex));
-  let roots = runner.run(&aggregate)?;
-  if roots.len() != 1 {
-    return Err("aggregate did not return exactly one root proof".into());
-  }
-  let root = &roots[0];
-  proof_claim(ix_root, root)?;
+  let root = if let Some((root, rows)) =
+    reusable_base_root(ix_root, &artifacts, base_record.as_ref())?
+  {
+    eprintln!("[catalog prove] reusing verified base root; no new proof work");
+    pending["status"] = json!("leaves-proved");
+    pending["partitionHash"] =
+      json!(file_hash(&artifacts.manifest_path)?.hex());
+    pending["leaves"] = json!(rows);
+    write_json(&pending_path, &pending)?;
+    report["reusedBaseRoot"] = json!(true);
+    report["newProofs"] = json!(0);
+    root
+  } else {
+    report["reusedBaseRoot"] = json!(false);
+    prove_and_aggregate(
+      options,
+      ix_root,
+      runner,
+      &mut artifacts,
+      base_record.as_ref(),
+      &mut pending,
+    )?
+  };
+  proof_claim(ix_root, &root)?;
   runner.run(&verify_args(&artifacts, &root.hex(), options))?;
   let final_snapshot = Snapshot::load(&options.catalog)?;
   if final_snapshot.manifest_hash != snapshot.manifest_hash {
@@ -423,18 +568,15 @@ pub(super) fn execute(
   pending["rootProof"] = json!(root.hex());
   pending["corpusRoot"] = json!(inventory_root(&artifacts.inventory)?.hex());
   pending["axioms"] = addresses_json(&artifacts.inventory.axioms);
+  let summary = claim_summary(&artifacts.leaves, base_record.as_ref())?;
+  for key in
+    ["retainedClaims", "changedBaseClaims", "newClaims", "subjectsInNewClaims"]
+  {
+    pending[key] = summary[key].clone();
+  }
   write_json(&record_path, &pending)?;
   report["status"] = json!("certified");
   report["rootProof"] = json!(root.hex());
-  report["shards"] = json!(artifacts.leaves.len());
-  report["claims"] = json!(
-    artifacts
-      .leaves
-      .iter()
-      .map(|l| json!({
-    "id": l.id, "claim": l.claim.hex(), "subjects": l.subjects.len(),
-    "frontier": l.frontier.len()}))
-      .collect::<Vec<_>>()
-  );
+  report.as_object_mut().unwrap().extend(summary.as_object().unwrap().clone());
   Ok(report)
 }

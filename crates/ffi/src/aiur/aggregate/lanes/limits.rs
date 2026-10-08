@@ -49,7 +49,9 @@ impl HostBudget {
       .checked_mul(2)
       .and_then(|n| n.checked_add(executions))
       .ok_or("record admission count overflow")?;
-    let initial = records / slots;
+    // Initial credit bounds admission, not each execution's eventual
+    // share. Large speculative grants strand RAM in waiting executions.
+    let initial = (records / slots).min(16 << 20);
     if initial == 0 {
       return Err("no host capacity remains for execution records".into());
     }
@@ -57,22 +59,27 @@ impl HostBudget {
   }
 }
 
-fn memory_limit_at(mount: &Path, group: &Path) -> Option<usize> {
+fn memory_available_at(mount: &Path, group: &Path) -> Option<usize> {
   let mut limit = None;
   for path in group.ancestors().take_while(|path| path.starts_with(mount)) {
     if let Some(bytes) = fs::read_to_string(path.join("memory.max"))
       .ok()
       .and_then(|s| s.trim().parse::<usize>().ok())
     {
-      limit = Some(limit.map_or(bytes, |old: usize| old.min(bytes)));
+      let current = fs::read_to_string(path.join("memory.current"))
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(bytes);
+      let available = bytes.saturating_sub(current);
+      limit = Some(limit.map_or(available, |old: usize| old.min(available)));
     }
   }
   limit
 }
 
-/// The tightest visible cgroup-v2 ancestor limit, also respecting a
-/// cgroup namespace whose mount starts below the hierarchy root.
-pub(super) fn cgroup_memory_limit() -> Option<usize> {
+/// Remaining capacity under every visible cgroup-v2 ancestor, including
+/// memory already occupied by this process and other group members.
+pub(super) fn cgroup_memory_available() -> Option<usize> {
   let membership = fs::read_to_string("/proc/self/cgroup").ok()?;
   let group = membership.lines().find_map(|line| line.strip_prefix("0::"))?;
   let mounts = fs::read_to_string("/proc/self/mountinfo").ok()?;
@@ -85,8 +92,8 @@ pub(super) fn cgroup_memory_limit() -> Option<usize> {
     };
     let mount = PathBuf::from(mount.replace("\\040", " "));
     let root = PathBuf::from(root.replace("\\040", " "));
-    let relative = Path::new(group).strip_prefix(&root).ok()?;
-    if let Some(bytes) = memory_limit_at(&mount, &mount.join(relative)) {
+    let Ok(relative) = Path::new(group).strip_prefix(&root) else { continue };
+    if let Some(bytes) = memory_available_at(&mount, &mount.join(relative)) {
       limit = Some(limit.map_or(bytes, |old: usize| old.min(bytes)));
     }
   }
@@ -108,7 +115,7 @@ mod tests {
       explicit.records + explicit.workspace * 4 + explicit.headroom,
       explicit.limit
     );
-    assert_eq!(explicit.initial, explicit.records / 20);
+    assert_eq!(explicit.initial, 16 << 20);
     let auto = HostBudget::new(
       4,
       12,
@@ -130,11 +137,16 @@ mod tests {
     let group = mount.join("parent/leaf");
     fs::create_dir_all(&group).unwrap();
     fs::write(mount.join("memory.max"), "1000\n").unwrap();
+    fs::write(mount.join("memory.current"), "100\n").unwrap();
     fs::write(mount.join("parent/memory.max"), "800\n").unwrap();
+    fs::write(mount.join("parent/memory.current"), "200\n").unwrap();
     fs::write(group.join("memory.max"), "max\n").unwrap();
-    assert_eq!(memory_limit_at(&mount, &group), Some(800));
+    fs::write(group.join("memory.current"), "50\n").unwrap();
+    assert_eq!(memory_available_at(&mount, &group), Some(600));
     fs::write(group.join("memory.max"), "600\n").unwrap();
-    assert_eq!(memory_limit_at(&mount, &group), Some(600));
+    assert_eq!(memory_available_at(&mount, &group), Some(550));
+    fs::write(mount.join("memory.current"), "1100\n").unwrap();
+    assert_eq!(memory_available_at(&mount, &group), Some(0));
     fs::remove_dir_all(mount).unwrap();
   }
 }

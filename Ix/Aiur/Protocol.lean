@@ -14,6 +14,10 @@ public section
 
 namespace Aiur
 
+/-- Number of CUDA devices visible to this process; zero in CPU builds. -/
+@[extern "rs_aiur_visible_gpu_count"]
+opaque visibleGpuCount : IO Nat
+
 private opaque PoofNonempty : NonemptyType
 def Proof : Type := PoofNonempty.type
 instance : Nonempty Proof := PoofNonempty.property

@@ -176,12 +176,11 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       if suggestedParts <= 1 then
         IO.println s!"[{label}] prover peak {gib} GiB (exec-only)"
         return .ok #[(blocks, peakBytes)]
-      -- With trace shards the budget is met inside the proof, never by
-      -- changing the claim: a shard no trace-shard count can fit stops
-      -- the run (the `[trace-shards]` line above names the floor).
+      -- Leaf-only trace sharding preserves the claim; a failed search
+      -- stops this mode without refining its environment partition.
       if traceShards then
-        return .error s!"{label}: no trace-shard count fits the budget \
-          (whole-execution peak {gib} GiB) — raise --max-ram"
+        return .error s!"{label}: trace planning found no fitting plan \
+          (whole-execution peak {gib} GiB); refine the environment claim or adjust --max-ram"
       -- A single block is the atom the kernel checks together; there is
       -- no smaller shard to fall back to.
       if blocks.size <= 1 then
@@ -254,16 +253,15 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   -- breakdown (execute vs witness vs STARK) of every prove in the run.
   if p.hasFlag "texray" then TracingTexray.init {}
   let keepGoing := p.hasFlag "keep-going"
-  -- Same units as `ix shard --max-ram`: the per-shard prover budget the
-  -- partition was sized against, re-checked here against each shard's
-  -- measured peak. 0 = detect (85% of `MemAvailable`, the check batch's
-  -- gate policy — see `shardProveWithEnv`).
+  -- Zero delegates budget detection to the backend. GPU lanes share one
+  -- detected process budget; an explicit budget is per lane. The leaf
+  -- backend gates each shard against its measured projected peak.
   let maxRamBytes :=
     ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * gibBytes
   let execOnly := p.hasFlag "exec-only"
   -- Over-budget shards become batches of trace shards within the budget
   -- instead of being cut into parts (see `shardProveWithEnv`).
-  let traceShards := p.hasFlag "trace-shards"
+  let mut traceShards := p.hasFlag "trace-shards"
   let retention ← match (p.flag? "retention").map (·.as! String) with
     | none => pure Aiur.AiurSystem.ShardRetention.auto
     | some s => match Aiur.AiurSystem.ShardRetention.parse s with
@@ -291,17 +289,33 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
-  -- N GPUs: one child process per device over its share of the Stage 2
-  -- plan, then the final joins (see `Ix.Cli.Lanes`). Dispatched before
-  -- any prover system is built, so this process opens no device.
-  if let some lanes := (p.flag? "lanes").map (·.as! Nat) then
+  let mut lanes? := (p.flag? "lanes").map (·.as! Nat)
+  if lanes?.isNone && ixePath.isSome && claimHex.isNone && names.isEmpty &&
+      !execOnly && !p.hasFlag "shard" && !p.hasFlag "shards" &&
+      !p.hasFlag "distributed" && !p.hasFlag "plan-only" &&
+      !p.hasFlag "leaf-only" && !p.hasFlag "no-index" &&
+      !p.hasFlag "keep-going" && !p.hasFlag "retention" then
+    if let some manifest := (p.flag? "ixes").map (·.as! String) then
+      let visible ← Aiur.visibleGpuCount
+      if visible > 0 then
+        let view ← IO.ofExcept <| Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest)
+        if view.shards.size > 1 then
+          lanes? := some visible
+          traceShards := true
+          IO.eprintln s!"[prove] using all {visible} visible GPU(s) with the shared execution pool"
+  if let some lanes := lanes? then
+    let visible ← Aiur.visibleGpuCount
+    if lanes == 0 || lanes > visible then
+      IO.eprintln s!"--lanes must be between 1 and the {visible} visible CUDA devices"
+      return 1
     let some ixe := ixePath | IO.eprintln "--lanes requires --ixe"; return 1
     let some manifest := (p.flag? "ixes").map (·.as! String)
       | IO.eprintln "--lanes requires --ixes"; return 1
     if !traceShards then
       IO.eprintln "--lanes requires --trace-shards"; return 1
-    if p.hasFlag "shards" || p.hasFlag "shard" || p.hasFlag "distributed" || execOnly then
-      IO.eprintln "--lanes cannot be combined with --shard, --shards, --distributed or --exec-only"
+    if p.hasFlag "shards" || p.hasFlag "shard" || p.hasFlag "distributed" ||
+        p.hasFlag "leaf-only" || execOnly then
+      IO.eprintln "--lanes cannot be combined with --shard, --shards, --distributed, --leaf-only or --exec-only"
       return 1
     let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
@@ -328,7 +342,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     let result ← IO.lazyPure fun _ =>
       Aiur.AiurSystem.proveLanes ixvmSystem aggrSystem envHandle manifest
         verifyIdx aggrIdx lanes maxRamBytes
-        (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0) 0 rp.cacheFriBytes
+        (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0)
+        (((p.flag? "structural-above").map (·.as! Nat)).getD 0) rp.cacheFriBytes
         (outIxes.getD "")
     match result with
     | .error e => IO.eprintln s!"[lanes] {e}"; return 1
@@ -539,12 +554,14 @@ def proveCmd : Cli.Cmd := `[Cli|
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
-    "lanes" : Nat;      "With --ixes and --trace-shards: prove on N GPUs using a shared execution pool. --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition. Prints the verified root address on stdout."
+    "lanes" : Nat;      "GPU workers for full-manifest proving and aggregation. Omitted: automatically use all visible CUDA devices and trace sharding. --max-ram and --exec-jobs are per-GPU values. Oversized claims are bisected and checkpointed. Prints the verified aggregate root address; --out-ixes writes the final partition."
+    "leaf-only";        "Prove manifest leaves without automatic GPU-lane aggregation; prints each leaf proof address."
+    "structural-above" : Nat; "Structural aggregate threshold for GPU-lane proving (default 0); use the same threshold for aggregate verification."
     "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core, or each worker's share of the cores with --lanes); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
     "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
-    "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."
+    "max-ram" : Nat;    "Optional host RAM budget override in GiB. Default: automatic (also 0). GPU lanes share a detected process-wide budget bounded by available host RAM and remaining cgroup capacity, with workspace and headroom reserved; positive values are per GPU lane. In leaf-only mode, the value gates each shard's projected prover peak; automatic detection uses 85% of available host RAM."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

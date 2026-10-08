@@ -30,6 +30,7 @@ def runCatalogProving (p : Cli.Parsed) (verifyOnly : Bool) : IO UInt32 := do
     ("maxRam", natFlag "max-ram" 0),
     ("jobs", natFlag "jobs" 0),
     ("execJobs", natFlag "exec-jobs" 0),
+    ("lanes", natFlag "lanes" 0),
     ("traceShards", Lean.toJson (p.hasFlag "trace-shards")),
     ("planOnly", Lean.toJson (p.hasFlag "plan-only")),
     ("verifyOnly", Lean.toJson verifyOnly)]
@@ -62,10 +63,11 @@ def catalogProveCmd : Cli.Cmd := `[Cli|
     "plan-only"; "Prepare/resume the corpus and shard plan, verify the base certificate if supplied, and stop without executing or proving new claims. Writes pending artifacts under the catalog's proving directory."
     "allow-axioms" : String; "Reviewed axiom addresses, one hex address per line (# comments allowed). Defaults to the prior record's policy, or no axioms for a fresh baseline."
     shards : Nat; "Initial shard count for NEW blocks only; 0 (default) seeds roughly 16 MiB per shard. Existing ownership is preserved; the prover can split over-budget shards."
-    "max-ram" : Nat; "Prover/aggregate RAM budget in GiB; 0 or omitted uses the existing backend defaults."
+    "max-ram" : Nat; "Optional host RAM budget override in GiB. Default: automatic (also 0). GPU runs detect a process-wide budget from available host RAM and remaining cgroup capacity, reserving workspace and headroom. Positive values are per GPU lane; CPU values apply to the backend."
+    lanes : Nat; "GPU lanes; 0 or omitted uses every visible CUDA device. GPU builds pipeline leaf proving and aggregation through the shared record pool."
     "trace-shards"; "Use trace-sharded leaf and aggregate proving."
-    jobs : Nat; "Concurrent aggregate slots; default 0 uses all ready slots subject to the backend RAM gate."
-    "exec-jobs" : Nat; "Concurrent leaf executions with --trace-shards; default 0 uses the backend default."
+    jobs : Nat; "Concurrent aggregate slots for the CPU backend; default 0 uses all ready slots subject to the RAM gate. GPU concurrency follows the lane count."
+    "exec-jobs" : Nat; "Concurrent executions per GPU lane, or leaf executions in the CPU backend; default 0 uses the available CPU threads."
     "structural-above" : Nat; "Structural aggregate threshold (default 4096); must match the base's proof profile."
     json; "Print the planning/result record as JSON; subprocess progress goes to stderr."
 

@@ -170,10 +170,8 @@ thread_local! {
     const { std::cell::RefCell::new(None) };
   static RECORD_BYTE_CAP: std::cell::Cell<Option<usize>> =
     const { std::cell::Cell::new(None) };
-  /// Retained bytes of the record being built on this thread, counted at
-  /// every query-map insertion ([`note_retained`]), so every path that
-  /// grows a record is covered and the total is exact at every check.
-  static RECORD_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+  /// Charged arena pages and index allocations of this thread's record.
+  static RECORD_ALLOCATED_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Caps the retained bytes of every record created on this thread from
@@ -193,7 +191,7 @@ pub fn bind_record_reservation(
   let previous =
     RECORD_RESERVATION.with(|cell| cell.replace(Some(reservation.clone())));
   let cap = RECORD_BYTE_CAP.with(|cell| cell.replace(None));
-  RECORD_BYTES.with(|cell| cell.set(0));
+  RECORD_ALLOCATED_BYTES.with(|cell| cell.set(0));
   RecordBinding { previous, cap, thread: std::marker::PhantomData }
 }
 
@@ -210,18 +208,15 @@ impl Drop for RecordBinding {
   }
 }
 
-/// Counts a query-map entry of `elems` field elements toward the record
-/// being built on this thread, as [`record_retained_bytes`] measures it.
 #[inline]
-pub fn note_retained(
-  elems: usize,
+pub(crate) fn note_allocated(
+  bytes: usize,
   budget: &RecordBudget,
 ) -> Result<(), ExecError> {
-  let bytes = elems.saturating_mul(8).saturating_add(21);
-  if let Some(reservation) = &budget.reservation {
-    reservation.reserve(bytes)?;
+  if bytes == 0 {
+    return Ok(());
   }
-  RECORD_BYTES.with(|cell| {
+  RECORD_ALLOCATED_BYTES.with(|cell| {
     let next = cell.get().saturating_add(bytes);
     if let Some(cap) = budget.cap
       && next > cap
@@ -230,14 +225,16 @@ pub fn note_retained(
     }
     cell.set(next);
     Ok(())
-  })
+  })?;
+  if let Some(reservation) = &budget.reservation {
+    reservation.reserve(bytes)?;
+  }
+  Ok(())
 }
 
-/// Retained bytes of the record most recently built on this thread, as
-/// the cap measures them ([`note_retained`]): what a driver reads after
-/// an execution to report the record's size against its share.
+/// Arena pages and index allocations charged by the current execution.
 pub fn record_bytes() -> usize {
-  RECORD_BYTES.with(std::cell::Cell::get)
+  RECORD_ALLOCATED_BYTES.with(std::cell::Cell::get)
 }
 
 /// Fixed-cap admission or a share of a process-wide pool.
@@ -250,7 +247,7 @@ pub struct RecordBudget {
 impl RecordBudget {
   /// The cap set for this thread, and a fresh count for the new record.
   fn for_this_thread() -> Self {
-    RECORD_BYTES.with(|cell| cell.set(0));
+    RECORD_ALLOCATED_BYTES.with(|cell| cell.set(0));
     Self {
       cap: RECORD_BYTE_CAP.with(std::cell::Cell::get),
       reservation: RECORD_RESERVATION.with(|cell| cell.borrow().clone()),
@@ -268,7 +265,7 @@ pub fn check_record_cap(budget: &RecordBudget) -> Result<(), ExecError> {
   let Some(cap) = budget.cap else {
     return Ok(());
   };
-  let bytes = RECORD_BYTES.with(std::cell::Cell::get);
+  let bytes = RECORD_ALLOCATED_BYTES.with(std::cell::Cell::get);
   if bytes > cap {
     return Err(ExecError::RecordBudgetExceeded { bytes, cap });
   }
@@ -1415,23 +1412,16 @@ fn build_klimbs_u64(
   Ok(tail_ptr)
 }
 
-/// Approximate retained bytes of a record's query maps: field elements
-/// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
-/// overhead (hash-table slot, stored hash, multiplicity). Feeds the
-/// witness phase of the prover RAM model
-/// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
+/// Charged query-map storage: arena page residency and hash-index growth.
+/// The charge retains rehash overlap as allocator headroom until the maps
+/// are dropped, and feeds the prover's host-memory model.
 pub fn record_retained_bytes(record: &QueryRecord) -> usize {
-  let mut elems = 0usize;
-  let mut entries = 0usize;
-  for m in &record.function_queries {
-    elems += m.retained_elems();
-    entries += m.len();
-  }
-  for (_, m) in &record.memory_queries {
-    elems += m.retained_elems();
-    entries += m.len();
-  }
-  elems * 8 + entries * 21
+  record
+    .function_queries
+    .iter()
+    .chain(record.memory_queries.values())
+    .map(QueryMap::allocated_bytes)
+    .sum()
 }
 
 #[cfg(test)]
@@ -1465,16 +1455,18 @@ mod record_pool_tests {
       memory_sizes: Vec::new(),
       circuits: Vec::new(),
     };
-    let pool = RecordPool::new(1000, 100);
+    let mut sample = QueryMap::new(0);
+    sample.insert(&[], &[], G::ONE).unwrap();
+    let limit = 4 * sample.allocated_bytes();
+    drop(sample);
+    let pool = RecordPool::new(limit, 1);
     let reservation = pool.try_admit().unwrap().unwrap();
     let binding = bind_record_reservation(&reservation);
     let mut io = IOBuffer { data: Default::default(), map: Default::default() };
     let error = toplevel.execute(0, Vec::new(), &mut io).err().unwrap();
-    assert_eq!(
-      error,
-      ExecError::RecordBudgetExceeded { bytes: 1008, cap: 1000 }
-    );
-    assert!(pool.stats().peak_reserved <= 1000);
+    assert!(matches!(error, ExecError::RecordBudgetExceeded { bytes, cap }
+      if bytes > cap && cap == limit));
+    assert!(pool.stats().peak_reserved <= limit);
     drop(binding);
     drop(reservation);
     assert_eq!(pool.stats().reserved, 0);
@@ -1482,7 +1474,7 @@ mod record_pool_tests {
 
   #[test]
   fn bigint_growth_is_charged_and_maps_keep_reservations_across_threads() {
-    let pool = RecordPool::new(300, 109);
+    let pool = RecordPool::new(16 << 20, 4096);
     let reservation = pool.try_admit().unwrap().unwrap();
     let binding = bind_record_reservation(&reservation);
     let mut record = QueryRecord::new(&Toplevel {
@@ -1491,18 +1483,16 @@ mod record_pool_tests {
       circuits: Vec::new(),
     });
     let result = build_klimbs_u64(&mut record.memory_queries, 0, &[1, 2, 3]);
-    assert_eq!(
-      result,
-      Err(ExecError::RecordBudgetExceeded { bytes: 327, cap: 300 })
-    );
-    assert_eq!(record.memory_queries[&10].len(), 2);
-    assert_eq!(record_retained_bytes(&record), 218);
+    assert!(result.is_ok());
+    assert_eq!(record.memory_queries[&10].len(), 4);
+    let charged = record_retained_bytes(&record);
+    assert!(charged > 327);
     reservation.finish_execution();
     let table = record.memory_queries.swap_remove(&10).unwrap();
     drop(record);
     drop(binding);
     drop(reservation);
-    assert_eq!(pool.stats().reserved, 218);
+    assert_eq!(pool.stats().reserved, charged);
     std::thread::spawn(move || drop(table)).join().unwrap();
     assert_eq!(pool.stats().reserved, 0);
   }

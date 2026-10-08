@@ -426,7 +426,7 @@ fn prepare_aggr_io(
     Ok(prepared) => Ok(prepared),
     Err(GatedProve::Split { peak, .. }) => Err(
       format!(
-        "{OVER_SLOT_BUDGET}{label}: no trace-shard count fits the {} B budget \
+        "{OVER_SLOT_BUDGET}{label}: trace planning found no fitting plan within the {} B budget \
        (whole-execution peak {peak} B) — raise --max-ram",
         ctx.wrap_budget.unwrap_or(0)
       )

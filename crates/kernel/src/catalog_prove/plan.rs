@@ -231,7 +231,13 @@ pub(super) fn extend(
       bytes = bytes.saturating_add(size);
       let size32 = u32::try_from(size)
         .map_err(|_| "atomic block exceeds profile size limit")?;
-      builder.block(block.clone(), size.max(1), size32, 1, OpCounts::default());
+      builder.block(
+        block.clone(),
+        size.max(1),
+        size32,
+        1,
+        OpCounts { subst_nodes: size.max(1), ..OpCounts::default() },
+      );
     }
     for (consumer, producer) in &inventory.edges {
       let c = &inventory.blocks[consumer];

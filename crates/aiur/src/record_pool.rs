@@ -278,16 +278,25 @@ impl RecordReservation {
       }
       let missing = bytes - credit;
       let available = pool.limit - state.stats.reserved;
-      if state.preferred.is_none_or(|preferred| preferred == id)
-        && available >= missing
-      {
+      // Protect the selected execution's next growth while allowing peers
+      // to use capacity released by proving. Exclusive growth until that
+      // execution ends would strand free memory and idle the other CPUs.
+      let protected = state
+        .preferred
+        .filter(|&preferred| preferred != id)
+        .map_or(0, |preferred| {
+          state.entries[&preferred].needed.max(pool.chunk)
+        });
+      let spendable = available.saturating_sub(protected);
+      if spendable >= missing {
         let extra = missing
           .max(pool.chunk)
-          .min(available)
+          .min(spendable)
           .min(pool.record_limit - entry.grant);
         let entry = state.entries.get_mut(&id).unwrap();
         entry.grant += extra;
         entry.waiting = false;
+        entry.needed = 0;
         entry.credit.available.fetch_add(extra, Ordering::Relaxed);
         state.stats.reserved += extra;
         state.stats.peak_reserved =
@@ -458,6 +467,43 @@ mod tests {
     owner.join().unwrap();
     peer.join().unwrap();
     assert_eq!(pool.stats().retries, 0);
+  }
+
+  #[test]
+  fn released_capacity_allows_peer_growth_before_preferred_finishes() {
+    let pool = RecordPool::with_chunk(180, 40, 8);
+    let _shutdown = Shutdown(pool.clone());
+    let first = pool.try_admit().unwrap().unwrap();
+    let second = pool.try_admit().unwrap().unwrap();
+    let proving = pool.try_admit().unwrap().unwrap();
+    for record in [&first, &second, &proving] {
+      record.reserve(40).unwrap();
+    }
+    proving.finish_execution();
+    let (grown_tx, grown_rx) = mpsc::channel();
+    let (finish_tx, finish_rx) = mpsc::channel();
+    let owner = thread::spawn(move || {
+      first.reserve(80).unwrap();
+      grown_tx.send(()).unwrap();
+      finish_rx.recv().unwrap();
+      first.finish_execution();
+    });
+    wait_for(&pool, 1);
+    let (peer_tx, peer_rx) = mpsc::channel();
+    let peer = thread::spawn(move || {
+      second.reserve(10).unwrap();
+      peer_tx.send(()).unwrap();
+    });
+    wait_for(&pool, 2);
+    drop(proving);
+    grown_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    peer_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert!(pool.stats().peak_reserved <= pool.limit());
+    assert_eq!(pool.stats().retries, 0);
+    finish_tx.send(()).unwrap();
+    owner.join().unwrap();
+    peer.join().unwrap();
+    assert_eq!(pool.stats().reserved, 0);
   }
 
   #[test]

@@ -9,7 +9,22 @@ pub extern "C" fn rs_catalog_prove(
   let result = (|| {
     let value = serde_json::from_str(request.as_str())
       .map_err(|e| format!("invalid catalog proving request: {e}"))?;
-    let options = ix_kernel::catalog_prove::Options::from_json(&value)?;
+    let mut options = ix_kernel::catalog_prove::Options::from_json(&value)?;
+    if !options.plan_only && !options.verify_only {
+      let visible = crate::aiur::device::visible_gpu_count()?;
+      if options.lanes > visible {
+        return Err(format!(
+          "requested {} GPU lanes, but only {visible} devices are visible",
+          options.lanes
+        ));
+      }
+      if options.lanes == 0 {
+        options.lanes = visible;
+      }
+      if options.lanes > 0 {
+        options.trace_shards = true;
+      }
+    }
     ix_kernel::catalog_prove::run_catalog(&options)
   })();
   match result {

@@ -545,12 +545,10 @@ impl AiurSystem {
     }
   }
 
-  /// The plan with the fewest shards whose projected peaks
-  /// ([`Self::shard_peak_bytes`]) all fit `max_bytes`, with the heaviest
-  /// shard's projected peak. When no shard count fits — the record plus
-  /// the smallest shard the planner can cut already exceeds the budget —
-  /// the error carries the lowest heaviest-shard peak any plan reached,
-  /// the floor a budget would have to clear.
+  /// Search for a plan whose projected peaks ([`Self::shard_peak_bytes`])
+  /// all fit `max_bytes`, with the heaviest shard's projected peak.
+  /// An error carries either a mandatory record/table floor or the
+  /// lowest peak examined; it is not proof that every possible plan fails.
   ///
   /// The cell budget handed to [`Self::plan_shards`] is halved until a plan
   /// fits, then the largest fitting cell budget is found by bisection: a
@@ -561,6 +559,17 @@ impl AiurSystem {
     record: &QueryRecord,
     max_bytes: usize,
   ) -> Result<(ShardPlan, usize), usize> {
+    self.plan_shards_within_cells(record, max_bytes, None)
+  }
+
+  /// Bound device residency as well as host memory. The supplied cell
+  /// ceiling is an upper bound; smaller plans remain eligible.
+  pub fn plan_shards_within_cells(
+    &self,
+    record: &QueryRecord,
+    max_bytes: usize,
+    max_cells: Option<usize>,
+  ) -> Result<(ShardPlan, usize), usize> {
     let record_bytes = record_retained_bytes(record);
     let peak_of = |plan: &ShardPlan| {
       (0..plan.num_shards())
@@ -568,10 +577,10 @@ impl AiurSystem {
         .max()
         .unwrap_or(0)
     };
-    let single = self.single_shard_plan(record);
-    let single_peak = peak_of(&single);
-    if single_peak <= max_bytes {
-      return Ok((single, single_peak));
+    let initial = self.plan_shards(record, max_cells.map(|cells| cells.max(1)));
+    let initial_peak = peak_of(&initial);
+    if initial_peak <= max_bytes {
+      return Ok((initial, initial_peak));
     }
 
     // Every shard carries the record and the byte tables at full height;
@@ -601,13 +610,11 @@ impl AiurSystem {
     // so a budget below that cuts the same plan as one at it.
     let widest = widths.iter().copied().max().unwrap_or(1).max(1);
 
-    // Halve the cell budget until a plan fits. The shard count need not
-    // grow with every halving (a piece-height cap can pin it at one
-    // circuit's piece count while the room still shrinks), so the search
-    // runs the budget down to zero before giving up; planning is cheap.
-    let mut hi = total;
-    let mut cells = total / 2;
-    let mut floor = single_peak;
+    // Halve the cell budget until a plan fits. Stop before single-row
+    // pieces would create impractically large plans.
+    let mut hi = max_cells.map_or(total, |cap| cap.max(1).min(total));
+    let mut cells = hi / 2;
+    let mut floor = initial_peak;
     let (mut lo, mut best, mut best_peak) = loop {
       if cells < 2 * widest {
         return Err(floor);

@@ -9,7 +9,7 @@
 mod checkpoint;
 mod limits;
 mod queue;
-use limits::{HostBudget, cgroup_memory_limit};
+use limits::{HostBudget, cgroup_memory_available};
 use queue::WorkQueue;
 
 use std::collections::{BTreeSet, VecDeque};
@@ -29,7 +29,7 @@ use super::protocol::serialize_claims;
 use super::prove::{
   PrepareFailure, Slot, StagedSlot, finish_slot, prepare_slot,
 };
-use super::store::{decode_wrapper, load_cached, read_store};
+use super::store::{decode_wrapper, load_cached, persist_cached, read_store};
 use super::*;
 use crate::aiur::lean_unbox_nat_as_usize;
 use aiur::synthesis::{GatedProve, PreparedProve};
@@ -216,7 +216,7 @@ fn prepare_loop(
             },
             Err(GatedProve::Failed(error)) => return Err(format!("execution failed: {error}").into()),
             Err(GatedProve::Split { peak, .. }) => return Err(format!(
-              "no trace-shard count fits the process budget (whole-execution peak {peak} B)"
+              "trace planning found no fitting plan within the reserved workspace (lowest examined workspace {peak} B)"
             ).into()),
             Err(_) => return Err("execution did not prepare a proof".into()),
           };
@@ -347,6 +347,15 @@ fn prove_loop(
             },
           )?;
           let address = match (&wrapped, &root.proof_address) {
+            (Some(proof), _) => persist_cached(
+              ctx.store_dir,
+              ctx.cache_dir,
+              ctx.write_outputs,
+              slot,
+              &ctx.specs[slot],
+              proof,
+            )?
+            .ok_or("root wrapping requires a persistent proof cache")?,
             (None, Some(address)) => address.clone(),
             _ => persist_wrapper(ctx.store_dir, &root.statement, proof)?,
           };
@@ -643,13 +652,13 @@ fn plan_pass(
     Err(std::env::VarError::NotPresent) => 1_500_000_000,
     Err(error) => return Err(format!("AIUR_TRACE_SHARD_MAX_CELLS: {error}")),
   };
-  let cgroup_limit = cgroup_memory_limit();
+  let cgroup_available = cgroup_memory_available();
   let host = HostBudget::new(
     cfg.lanes,
     executions,
     cfg.max_ram_bytes,
     super::super::protocol::detected_ram_budget(),
-    cgroup_limit,
+    cgroup_available,
     cells,
   )?;
   let pool = RecordPool::for_provers(
@@ -659,10 +668,10 @@ fn plan_pass(
   )
   .with_record_limit(record_max_bytes);
   say(&format!(
-    "host budget {} GiB process-wide (requested {} GiB per GPU, visible cgroup limit {}): {} GiB shared records, {} GiB workspace per GPU, {} GiB headroom; {executions} CPU executions, {} prepared queue slots; {} GiB initial reservation, growth waits for shared capacity; {cells} trace cells",
+    "host budget {} GiB process-wide (requested {} GiB per GPU, remaining cgroup capacity {}): {} GiB shared records, {} GiB workspace per GPU, {} GiB headroom; {executions} CPU executions, {} prepared queue slots; {} GiB initial reservation, growth waits for shared capacity; {cells} trace cells",
     format_gib(host.limit),
     format_gib(cfg.max_ram_bytes),
-    cgroup_limit.map_or_else(
+    cgroup_available.map_or_else(
       || "unlimited or unavailable".into(),
       |bytes| format!("{} GiB", format_gib(bytes))
     ),

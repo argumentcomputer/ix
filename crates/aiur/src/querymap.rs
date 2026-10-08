@@ -42,6 +42,44 @@ const SEG_BITS: usize = 20;
 const SEG_ENTRIES: usize = 1 << SEG_BITS;
 const SEG_MASK: usize = SEG_ENTRIES - 1;
 
+fn arena_page_bytes() -> usize {
+  static PAGE: std::sync::LazyLock<usize> = std::sync::LazyLock::new(|| {
+    #[cfg(target_os = "linux")]
+    {
+      let enabled =
+        std::fs::read_to_string("/sys/kernel/mm/transparent_hugepage/enabled")
+          .unwrap_or_default();
+      if !enabled.contains("[never]") {
+        return std::fs::read_to_string(
+          "/sys/kernel/mm/transparent_hugepage/hpage_pmd_size",
+        )
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .filter(|&size| size > 0)
+        .unwrap_or(2 << 20);
+      }
+    }
+    #[cfg(unix)]
+    if let Ok(page) =
+      usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) })
+    {
+      if page > 0 {
+        return page;
+      }
+    }
+    4096
+  });
+  *PAGE
+}
+
+#[inline]
+fn arena_growth(entries: usize, stride: usize, page_shift: u32) -> usize {
+  let page = 1usize << page_shift;
+  let before = (entries & SEG_MASK) * stride * 8;
+  let after = before + stride * 8;
+  ((after + page - 1) & !(page - 1)) - ((before + page - 1) & !(page - 1))
+}
+
 /// A fixed-capacity append-only buffer mmap'd straight from the kernel,
 /// with `MADV_HUGEPAGE` applied BEFORE any page is touched. At billions of
 /// entries the query maps are walked by random probes; with 4K pages nearly
@@ -257,6 +295,8 @@ pub struct QueryMap {
   mults: SegStore,
   hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
+  allocated_bytes: usize,
+  page_shift: u32,
   // Fields drop in declaration order; release the charge after storage.
   budget: RecordBudget,
 }
@@ -274,6 +314,8 @@ impl QueryMap {
       mults: SegStore::new(1),
       hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
+      allocated_bytes: 0,
+      page_shift: arena_page_bytes().next_power_of_two().trailing_zeros(),
       budget,
     }
   }
@@ -292,6 +334,11 @@ impl QueryMap {
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
     self.keys.retained_elems() + self.outs.retained_elems()
+  }
+
+  /// Committed arena pages and hash-index growth, including rehash overlap.
+  pub(crate) fn allocated_bytes(&self) -> usize {
+    self.allocated_bytes
   }
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
@@ -409,7 +456,22 @@ impl QueryMap {
     debug_assert_eq!(key.len(), self.keys.stride);
     debug_assert_eq!(hash, hash_g_slice(key));
     debug_assert!(self.get_index_of_hashed(key, hash).is_none());
-    crate::execute::note_retained(key.len() + output.len(), &self.budget)?;
+    let entries = self.mults.entries;
+    let arenas = arena_growth(entries, key.len(), self.page_shift)
+      + arena_growth(entries, output.len(), self.page_shift)
+      + 2 * arena_growth(entries, 1, self.page_shift);
+    // Hashbrown grows below 7/8 load. Reserve the new table before rehash,
+    // while the old allocation is still live; retain this headroom with
+    // the record to cover allocator residency after the old table is freed.
+    let index = if self.table.len() == self.table.capacity() {
+      let buckets = ((entries + 1) * 8).div_ceil(7).next_power_of_two().max(4);
+      buckets * (size_of::<u32>() + 1) + 64
+    } else {
+      0
+    };
+    let growth = arenas + index;
+    crate::execute::note_allocated(growth, &self.budget)?;
+    self.allocated_bytes += growth;
     if !self.out_stride_set {
       self.outs.stride = output.len();
       self.out_stride_set = true;
@@ -452,5 +514,45 @@ impl QueryMap {
         QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
       )
     })
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::record_pool::RecordPool;
+
+  #[test]
+  fn denied_growth_leaves_the_map_empty_and_releases_its_reservation() {
+    let pool = RecordPool::new(1, 1);
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let mut map = QueryMap::with_budget(
+      1,
+      RecordBudget { cap: None, reservation: Some(reservation) },
+    );
+    assert!(matches!(
+      map.insert(&[G::ONE], &[G::ONE], G::ONE),
+      Err(ExecError::RecordBudgetExceeded { .. })
+    ));
+    assert!(map.is_empty());
+    assert_eq!(map.allocated_bytes(), 0);
+    assert_eq!(pool.stats().peak_reserved, 1);
+    drop(map);
+    assert_eq!(pool.stats().reserved, 0);
+  }
+
+  #[test]
+  fn admission_covers_resident_arenas_and_hash_table_growth() {
+    let mut map = QueryMap::new(1);
+    for value in 0..4096 {
+      let value = G::from_usize(value);
+      map.insert(&[value], &[value], G::ONE).unwrap();
+      let arena_bytes =
+        (map.len() * 8).div_ceil(arena_page_bytes()) * arena_page_bytes() * 4;
+      assert!(
+        map.allocated_bytes() >= arena_bytes + map.table.allocation_size()
+      );
+      assert_eq!(map.get(&[value]).unwrap().output, &[value]);
+    }
   }
 }
