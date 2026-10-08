@@ -1,0 +1,34 @@
+From f468e83884f722a7d56bec1e1e34c354b97a7788 Mon Sep 17 00:00:00 2001
+From: samuelburnham <45365069+samuelburnham@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 22:38:35 +0000
+Subject: [PATCH] refactor(Circuit): evaluate designated outputs explicitly
+
+Synthetic incremental-proving benchmark on Lean v4.34.1: replace composition in Circuit.eval with an explicit output function, and remove the now-unused composition simp rule from eval_id. Circuit behavior and theorem propositions remain unchanged.
+---
+ Cslib/Computability/Circuit/Basic.lean | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/Cslib/Computability/Circuit/Basic.lean b/Cslib/Computability/Circuit/Basic.lean
+index c5a18a2..e18583f 100644
+--- a/Cslib/Computability/Circuit/Basic.lean
++++ b/Cslib/Computability/Circuit/Basic.lean
+@@ -85,14 +85,14 @@ def Circuit.eval
+     (c : Circuit σ inputCount gateCount outputCount)
+     (i : Interpretation σ U)
+     (x : Fin inputCount → U) : Fin outputCount → U :=
+-  c.program.trace i x ∘ c.outputs
++  fun output => c.program.trace i x (c.outputs output)
+ 
+ @[simp] theorem Circuit.eval_id
+     (interpretation : Interpretation σ U)
+     (input : Fin inputCount → U) :
+     (Circuit.id σ inputCount).eval interpretation input = input := by
+   funext output
+-  simp only [Circuit.eval, Circuit.id, Function.comp_apply, Program.trace_input]
++  simp only [Circuit.eval, Circuit.id, Program.trace_input]
+ 
+ /-- Each output of the identity circuit returns the corresponding input. -/
+ theorem Circuit.eval_id_apply
+-- 
+2.54.0
+

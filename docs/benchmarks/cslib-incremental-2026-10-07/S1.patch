@@ -1,0 +1,32 @@
+From 40827427e8b2437b6c88c0844341cd1aae9fb899 Mon Sep 17 00:00:00 2001
+From: samuelburnham <45365069+samuelburnham@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 22:26:40 +0000
+Subject: [PATCH] feat(Circuit): add pointwise identity evaluation lemma
+
+Synthetic incremental-proving benchmark on Lean v4.34.1: add a corollary without changing existing declarations.
+---
+ Cslib/Computability/Circuit/Basic.lean | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/Cslib/Computability/Circuit/Basic.lean b/Cslib/Computability/Circuit/Basic.lean
+index c3d1508..5139270 100644
+--- a/Cslib/Computability/Circuit/Basic.lean
++++ b/Cslib/Computability/Circuit/Basic.lean
+@@ -94,6 +94,14 @@ def Circuit.eval
+   funext output
+   exact Program.trace_input .empty interpretation input output
+ 
++/-- Each output of the identity circuit returns the corresponding input. -/
++theorem Circuit.eval_id_apply
++    (interpretation : Interpretation σ U)
++    (input : Fin inputCount → U)
++    (output : Fin inputCount) :
++    (Circuit.id σ inputCount).eval interpretation input output = input output :=
++  congrFun (Circuit.eval_id interpretation input) output
++
+ /-- Evaluating a circuit commutes with a homomorphism. -/
+ theorem Circuit.map_eval
+     {i₁ : Interpretation σ U₁}
+-- 
+2.54.0
+

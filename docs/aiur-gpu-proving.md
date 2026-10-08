@@ -1,5 +1,8 @@
 # Proving on GPUs: lanes, generated traces, and how to benchmark them
 
+For the current implementation checkpoint, compatibility design, and remaining
+work, see the [2026-10-08 proof reuse handoff](lean-proof-reuse-handoff.md).
+
 Everything in this document builds on prover-level trace sharding
 ([aiur-trace-sharding.md](aiur-trace-sharding.md)): one execution of a
 claim is proven as a batch of trace shards that each fit a device, and the
@@ -54,13 +57,17 @@ With `mathlib.ixe` compiled and the GPU binary built, a whole environment
 proves in four commands. The run directory holds the inputs and the
 caches; the whole process goes under one cgroup cap, since one process now
 holds every worker and the record pool is the thing that grows.
+Proving automatically uses all visible GPUs and available CPU threads.
+Omit `--max-ram` to detect the host budget from available RAM and remaining
+cgroup capacity; `--max-ram 0` is equivalent. The 920 GiB cgroup cap below
+is an example for a 1 TiB host and should match the job's resource allowance.
 
 ```sh
-# 0. Partition. The CUDA build seeds the shard count from the per-worker
-#    record share (--max-ram, --exec-jobs and the cell budget below).
-ix shard mathlib.ixe --max-ram 230 --exec-jobs 3 --out mathlib.ixes
+# 0. Seed the partition with the 78-leaf Mathlib cut measured in §6.
+#    Oversized claims can be split during proving.
+ix shard mathlib.ixe --shards 78 --out mathlib.ixes
 
-# 1 + 2. Stage 1 and Stage 2 on four devices. Every claim's proof is
+# 1 + 2. Stage 1 and Stage 2 on all visible devices. Every claim's proof is
 #    persisted as it lands; joins run as soon as their children exist;
 #    the root is wrapped while its trace-shard count decreases, verified,
 #    and its address printed on stdout. Check K=1 separately (see §7).
@@ -68,8 +75,8 @@ export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24
 export AIUR_TRACE_SHARD_MAX_CELLS=1500000000
 export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$PWD/cache
 systemd-run --user --scope -q -p MemoryMax=920G -- \
-  ix prove --ixe mathlib.ixe --ixes mathlib.ixes --trace-shards \
-    --lanes 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
+  ix prove --ixe mathlib.ixe --ixes mathlib.ixes \
+    --out-ixes mathlib-proven.ixes \
     > lanes.out 2> lanes.err
 
 # 3. Verify the root against the partition that was actually proven.
@@ -91,17 +98,19 @@ scheduler is the one-process equivalent and is what the measurements in
 
 ## 3. Lanes: one resident prover per device
 
-`ix prove --lanes N` builds an `AiurSystem` pair per device from the two
-compiled systems (nothing is copied across the FFI; the verifying keys do
+Full-manifest `ix prove` uses every visible CUDA device by default;
+`--lanes N` overrides the device count. It builds an `AiurSystem` pair per
+device from the two compiled systems (nothing is copied across the FFI; the verifying keys do
 not depend on the device, and every cache key and claim binding derives
 from them) and runs one scheduler over them:
 
 - **One execution pool.** Claims and ready joins execute on the host
-  through one bounded queue, joins first, `--exec-jobs` executions at a
-  time per lane. A prepared record goes to whichever device is free, so no
-  packing is decided ahead of time.
+  through one bounded queue, joins first, using the available CPU threads.
+  `--exec-jobs` overrides the executions per lane. A prepared record goes
+  to whichever device is free, so no packing is decided ahead of time.
 - **Record reservations.** Each execution reserves its record's bytes from
-  a pool sized by `--max-ram` per lane; the reservation follows the record
+  a shared pool sized from the detected host budget after workspace and
+  headroom are reserved; the reservation follows the record
   through both proving rounds and is released when the proof lands. Under
   pressure, executions wait for capacity; if waiters block each other, the
   youngest is cancelled so the selected one can finish.
@@ -116,13 +125,18 @@ from them) and runs one scheduler over them:
   both children are published, and the root is wrapped and verified at
   the end.
 
-Memory is governed by three numbers and nothing else: `--max-ram` (the
-record pool per lane), `--exec-jobs` (records in flight per lane, so the
-cold wave and the speculative execution concurrency), and the cgroup cap
-as the backstop. On a 4-GPU, 1 TiB host, `--max-ram 230 --exec-jobs 3`
-keeps Mathlib's largest records (about 45 GiB) inside one lane's share and
-the process peak under 750 GiB; `--exec-jobs 4` is 5% faster at the cost
-of the pool running at 99%.
+Automatic budgeting considers available host RAM and remaining capacity
+under every visible cgroup ancestor. It reserves workspace per GPU and
+10% headroom before admitting records. `--max-ram N` remains an optional
+override for a fixed allowance: a positive value requests N GiB per GPU
+lane, still bounded by remaining cgroup capacity. It is a planning budget;
+the cgroup limit is the operating system's hard backstop. Concurrent records
+share capacity, and host workspace planning can reduce trace-shard sizes.
+
+The historical 4-GPU, 1 TiB measurements in §6 used
+`--max-ram 230 --exec-jobs 3`: Mathlib's largest records were about 45 GiB
+and the process peak stayed under 750 GiB. Those overrides identify the
+measured configuration; normal runs use the automatic defaults above.
 
 ## 4. Generated traces
 
@@ -189,9 +203,11 @@ The ones a run needs, then the ones a measurement might.
 ## 6. Benchmarking a multi-GPU run
 
 The unit of measurement is one complete `.ixe`/`.ixes` pair under one
-command, recorded with its identities. The script that produced the
-measurements below does only this: write the provenance, sample the
-devices, run the one command under the cap, and keep the exit status.
+command, recorded with its identities. The script below preserves the
+explicit settings used for the historical measurements. It writes the
+provenance, samples the devices, runs the command under the cap, and keeps
+the exit status. Use the automatic defaults in §2 for new runs unless a
+comparison specifically requires these settings.
 
 ```sh
 #!/bin/bash
@@ -643,24 +659,23 @@ worker filesystem for the timed cold baseline without deleting shared caches.
 ### Catalog baseline and real incremental revisions
 
 Use `ix catalog prove` from A onward so the baseline has a `proving.json`,
-cumulative corpus, partition and leaf inventory. The current driver invokes
-the GPU-enabled ordinary leaf prover and aggregator, with trace sharding,
-on one visible device. It does not invoke the lane scheduler. Multi-GPU
-lane integration is a separate optimization, not required for this first
-single-GPU catalog chain. A naked lane root cannot be supplied as `--base`.
+cumulative corpus, partition and leaf inventory. The GPU driver uses all
+visible devices and pipelines leaf proving and aggregation through the
+shared record pool. A naked lane root cannot be supplied as `--base`.
 
-For a single L40S on a host comparable to the 248 GiB machine in §7, begin
-with the trace settings and host budget below. These settings derive from
-the ISLB lane run, not a validated CSLib catalog run; the ordinary leaf
-pipeline has different memory admission and retry behavior. Leave CPU
+The example below uses the trace settings from the v4.34.1 CSLib run on
+two 96 GiB Blackwell devices and a 500 GiB host, with a 440 GiB process
+limit. For L40S devices, use a 600-million-cell cap and a 4 GiB seed cache.
+The host budget is detected automatically; omit `--max-ram` and leave CPU
 execution and build parallelism at their defaults. The 64 initial shards
-are a starting partition, not a measured memory bound.
+are a starting partition, not a measured memory bound. Validate exporter
+and checker compatibility before attempting B or C on a newer Lean version.
 
 ```bash
-export CUDA_VISIBLE_DEVICES=0
+unset CUDA_VISIBLE_DEVICES RUST_LOG MULTI_STARK_CUDA_MEMORY_LOG
 export AIUR_GPU_TRACE=generated AIUR_TRACE_ONLY_LOOKUPS=1
-export AIUR_TRACE_SHARD_MAX_CELLS=600000000 AIUR_MAX_PIECE_LOG_HEIGHT=24
-export AIUR_GPU_SEED_CACHE_BYTES=4294967296 MULTI_STARK_CUDA_MEMORY_LOG=1
+export AIUR_TRACE_SHARD_MAX_CELLS=1500000000 AIUR_MAX_PIECE_LOG_HEIGHT=24
+export AIUR_GPU_SEED_CACHE_BYTES=17179869184
 test -f "$RUN_DIR/axioms.txt"
 PREVIOUS=
 for ID in A B C; do
@@ -673,10 +688,10 @@ for ID in A B C; do
   fi
   COMMON_ARGS=("$RUN_DIR/$ID.ixc" "${BASE_ARGS[@]}" "${SHARD_ARGS[@]}"
     --allow-axioms "$RUN_DIR/axioms.txt" --structural-above 0
-    --trace-shards --max-ram 100 --json)
+    --json)
   "$IX_BIN" catalog prove "${COMMON_ARGS[@]}" --plan-only \
     > "$RUN_DIR/$ID.plan.json" 2> "$RUN_DIR/$ID.plan.log"
-  systemd-run --user --scope -q -p MemoryMax=220G -p MemorySwapMax=0 -- \
+  systemd-run --user --scope -q -p MemoryMax=440G -p MemorySwapMax=0 -- \
     /usr/bin/time -v -o "$RUN_DIR/$ID.prove.time" \
     "$IX_BIN" catalog prove "${COMMON_ARGS[@]}" \
     > "$RUN_DIR/$ID.result.json" 2> "$RUN_DIR/$ID.prove.log"
@@ -693,13 +708,14 @@ done
 ```
 
 On a runner without a user systemd manager, apply equivalent memory and
-swap limits through the container or job runtime. `--max-ram` is a backend
-budget, not an RSS cap. This driver does not accept `--lanes`. Its
-trace-sharded leaf pipeline can fail if one execution record exceeds the
-whole record budget; it does not inherit the lane scheduler's automatic
-leaf bisection. Retain the completed evidence and resolve shard sizing or
-memory admission if that happens. Repeating `--shards` with a different
-value does not replan an existing pending catalog.
+swap limits through the container or job runtime. Choose the hard limit
+for that host; the detected budget accounts for the remaining capacity
+under it. GPU runs reduce trace sizes to fit workspace and bisect
+splittable claims that exceed the execution-record ceiling, checkpointing
+the new partition and reusing completed proofs. A failed trace-plan search,
+an oversized indivisible block, or an oversized aggregation record can
+still stop the run. Repeating `--shards` with a different value does not
+replan an existing pending catalog.
 
 For a 32 GiB RTX 5090, a 300-million-cell cap and 2 GiB seed cache are
 experimental starting settings. Qualify device fit on a small input first;

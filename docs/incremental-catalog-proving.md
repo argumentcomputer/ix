@@ -19,6 +19,12 @@ ix catalog prove A.ixc --allow-axioms axioms.txt --plan-only --json
 ix catalog prove A.ixc --allow-axioms axioms.txt
 ```
 
+GPU runs automatically use all visible devices, the available CPU threads,
+and a host-memory budget derived from available RAM and remaining cgroup
+capacity. Omit `--max-ram` for normal runs; `--max-ram 0` is equivalent.
+Automatic budgeting still enforces memory admission, workspace reservations
+and headroom.
+
 `axioms.txt` is an independently reviewed allowlist of axiom declaration
 addresses, one 64-character hex address per line; blank lines and `#`
 comments are accepted. An omitted file means no axioms for a fresh
@@ -48,17 +54,30 @@ those bytes.
 The driver verifies A's certificate, merges A's retained corpus with B's
 pieces, and partitions newly required blocks. It preserves old ownership
 and the old aggregation subtree. Leaf proofs are looked up by exact claim
-and verified through `ix prove --skip-proven`; `ix aggregate` reuses its
-existing aggregate cache. Budget-driven splits are saved as B's final
+and verified before reuse; aggregate proofs reuse the existing aggregate
+cache. CUDA builds use all visible GPUs, with leaf execution, proving and
+aggregation pipelined through a shared host-memory pool. Budget-driven
+splits are saved as B's final
 partition. A new projection of an old mutual block can change its owner's
 claim, which requires new evidence for that leaf.
 
 Old versions remain in the anonymous corpus. The record separately binds
 the current snapshot and verifies that all its addresses are covered.
 Consequently, deleting a declaration or reverting to already certified
-content can require no new leaf proof. Changing a widely referenced
-declaration can still change many dependent addresses and require
-substantial proving.
+content can reuse the verified base root directly, without invoking the
+prover or aggregator. This requires the same corpus root and partition,
+and all recorded leaf wrappers to remain available and match their claims.
+Missing or corrupt wrappers take the ordinary cache recovery path. The new
+record binds the current snapshot even when its proof root is unchanged.
+Changing a widely referenced declaration can still change many dependent
+addresses and require substantial proving.
+
+For example, editing `B` in a proved chunk `{A, B, C}` leaves that chunk
+and its proof intact. The new versions of `B` and any dependents whose
+addresses change go into new chunks, whose proofs are aggregated with the
+retained evidence. Old declarations and mutually defined blocks keep their
+ownership; chunk sizes for new content follow the existing partition and
+memory-admission heuristics.
 
 Repeating `ix catalog prove B.ixc` after success validates its artifacts and
 root certificate and returns without invoking either prover or aggregator.
@@ -69,9 +88,16 @@ For C, use `--base B.ixc`. Keep each catalog manifest and its pieces immutable.
 `--plan-only` creates or resumes a pending plan, and verifies the supplied
 base certificate, without executing new checking claims or generating
 proofs. Its JSON includes new subject counts, unchanged and changed base
-claims, and each planned shard's claim and frontier size. Retained claim
-counts describe compatible statements, not guaranteed cache availability;
-missing leaf objects can still require re-proving.
+claims, and each planned shard's claim and frontier size. Each claim has a
+`retainedFromBase` flag determined by exact claim identity. `newClaims`
+counts claims absent from the base, and `subjectsInNewClaims` counts their
+subjects, including older subjects when a block's claim changes. The final
+report recalculates these counts after any budget-driven splits.
+
+These counts describe compatible statements, not guaranteed cache hits or
+proofs generated: missing leaf objects can still require re-proving, while
+claims absent from the base may already be cached from another run. Direct
+base-root reuse reports `reusedBaseRoot: true` and `newProofs: 0`.
 
 After an interruption, rerun the same command with the same catalog,
 `--base` and profile. Completed leaf and aggregate proofs remain cached.
@@ -107,6 +133,14 @@ cached. Losing an intermediate aggregate cache increases join work;
 losing leaf objects can increase checking proof work. Restoring just the
 published root is insufficient for the next revision.
 
+Each completed catalog contains the cumulative corpus and complete leaf
+inventory needed to serve as the next base. It does not need older catalog
+directories to reconstruct that history. Keeping the latest catalog or two
+is sufficient for successive updates, provided the shared store retains
+every proof object referenced by the retained catalogs. A proof's age alone
+does not make it safe to remove: a recent catalog can still depend on a
+much older chunk's proof.
+
 The current profile pins the complete `ix` executable hash, Ixon object
 format, structural threshold and accepted axiom set. This is conservative:
 even a binary rebuild with unchanged checking semantics can require a
@@ -117,9 +151,31 @@ profile identities and can change between attempts:
 - `--shards N` seeds N shards for new blocks; the default uses roughly
   16 MiB of serialized block bytes per initial shard. This is a heuristic,
   not a memory bound.
-- `--max-ram N` passes a GiB budget to proving and aggregation.
-- `--trace-shards`, `--exec-jobs N` and `--jobs N` use the existing
-  backend's trace-sharding and concurrency controls.
+- `--lanes N` selects N visible CUDA devices; omission uses all of them.
+  CUDA's `CUDA_VISIBLE_DEVICES` still determines device visibility.
+- `--max-ram N` overrides automatic budgeting, for example to reserve more
+  RAM for other jobs or compare runs at a fixed allowance. Positive values
+  are GiB per GPU lane (process-wide on the CPU backend). Omission or zero
+  detects a process-wide budget from available host RAM and remaining
+  cgroup capacity, including ancestor limits. GPU lanes reserve workspace
+  per device and 10% headroom before admitting records. The budget plans
+  accounted memory; the operating system's process limit remains the hard
+  memory backstop.
+- `--exec-jobs N` sets executions per GPU lane; omission distributes the
+  available CPU threads across the lanes. Concurrent records share one
+  capacity pool and retain their charges through proving. Admission counts
+  touched arena pages, including transparent huge pages, and hash-table
+  growth. Large records can grow as other work releases capacity; claims
+  exceeding the per-record ceiling are split and checkpointed.
+- GPU lanes use trace sharding automatically. `AIUR_TRACE_SHARD_MAX_CELLS`
+  bounds device trace size; host workspace planning can reduce it further.
+  Reducing trace size does not reduce the underlying execution record.
+- `--trace-shards` enables trace sharding in the CPU backend; `--jobs N`
+  controls its aggregate concurrency.
+
+`ix prove --ixe ... --ixes ...` also selects all visible GPUs for a full
+manifest with multiple leaves and returns a verified aggregate root.
+`--leaf-only` keeps individual leaf proving and its per-leaf output.
 
 ## Scope and validation
 
@@ -137,14 +193,14 @@ coverage audit; it is not yet a compact, proof-only release verifier.
 
 The driver does not provide release upload/download, a hosted API,
 terminal compression, chunked catalog production, source elaboration,
-olean correspondence auditing or automatic corpus checkpoints. It does not
-yet invoke `ix prove --lanes` or adopt a completed lane run as a baseline.
-That path can reuse aggregate subtrees without collecting every final leaf
-wrapper, while this driver needs the complete leaf inventory. The
+olean correspondence auditing or automatic corpus checkpoints. The driver
+requires every final leaf wrapper, including when a GPU lane reuses an
+aggregate subtree, to bind its complete leaf inventory. The
 [CSLib GPU handoff](aiur-gpu-proving.md#8-cslib-benchmark-handoff-2026-10-07)
-therefore creates its baseline through this driver and tests real subsequent
-commits with one GPU. That handoff separates toolchain-specific exporters
-from one fixed proving binary: replacing the prover during a Lean upgrade
+contains measurements with older single-GPU scheduling and fixed memory
+settings; those settings are not requirements for current catalog proving.
+It also separates toolchain-specific exporters from one fixed proving
+binary: replacing the prover during a Lean upgrade
 would invalidate this implementation's executable-bound profile.
 
 Focused Rust tests exercise planning, history retention, claim changes,
@@ -152,3 +208,23 @@ tampering rejection, axiom policy, locks and interruption recovery using
 a simulated proof backend. They do not establish cryptographic proof
 validity or warm proving performance. Real baseline/delta proving remains
 an integration check against the existing prover and verifier.
+
+The [synthetic CSLib v4.34.1 measurements](benchmarks/cslib-incremental-2026-10-07/summary.json)
+cover four sequential local commits: adding a lemma, refactoring a proof,
+refactoring a shared definition, and reverting that definition change.
+All four full catalogs passed independent proof verification under the
+same prover profile and axiom policy. The first three commits added 1, 4,
+and 7 anonymous constants to the cumulative corpus, each requiring one
+new leaf while preserving all prior claims. The revert added no constants
+to the corpus and reused the preceding aggregate root without new proving.
+Every warm repeat generated zero new proofs.
+
+On two RTX PRO 6000 Blackwell GPUs with automatic host budgeting, the
+catalog proving commands took 85.5, 99.0, 85.0, and 67.2 seconds; separate
+planning commands took 54.9–66.4 seconds. The internal proving pipelines
+took 19, 23, 22, and 2 seconds, respectively. Full-corpus validation and
+artifact processing dominated these small changes. Peak proving-job host
+memory ranged from 6.4 to 17.4 GiB. The
+[per-proof metrics](benchmarks/cslib-incremental-2026-10-07/proof-metrics.csv)
+and four patches accompany the summary; these localized edits do not
+measure the cost of changing a widely used foundational definition.

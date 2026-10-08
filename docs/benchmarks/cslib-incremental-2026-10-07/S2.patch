@@ -1,0 +1,26 @@
+From 27ad0ef1efcef2810b7548ffab0f494990f15412 Mon Sep 17 00:00:00 2001
+From: samuelburnham <45365069+samuelburnham@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 22:32:32 +0000
+Subject: [PATCH] refactor(Circuit): simplify the identity evaluation proof
+
+Synthetic incremental-proving benchmark on Lean v4.34.1: change a proof body while preserving its proposition and the dependent pointwise corollary.
+---
+ Cslib/Computability/Circuit/Basic.lean | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Cslib/Computability/Circuit/Basic.lean b/Cslib/Computability/Circuit/Basic.lean
+index 5139270..c5a18a2 100644
+--- a/Cslib/Computability/Circuit/Basic.lean
++++ b/Cslib/Computability/Circuit/Basic.lean
+@@ -92,7 +92,7 @@ def Circuit.eval
+     (input : Fin inputCount → U) :
+     (Circuit.id σ inputCount).eval interpretation input = input := by
+   funext output
+-  exact Program.trace_input .empty interpretation input output
++  simp only [Circuit.eval, Circuit.id, Function.comp_apply, Program.trace_input]
+ 
+ /-- Each output of the identity circuit returns the corresponding input. -/
+ theorem Circuit.eval_id_apply
+-- 
+2.54.0
+

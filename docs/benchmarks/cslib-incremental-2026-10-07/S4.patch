@@ -1,0 +1,34 @@
+From 0ff7aa7288be337211a0477ca2edac1e0fe142ff Mon Sep 17 00:00:00 2001
+From: samuelburnham <45365069+samuelburnham@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 22:44:30 +0000
+Subject: [PATCH] revert(Circuit): restore composition-based evaluation
+
+Revert f468e83884f722a7d56bec1e1e34c354b97a7788 as a synthetic incremental-proving benchmark. The source tree returns to the second snapshot; its previously certified content remains in the cumulative corpus.
+---
+ Cslib/Computability/Circuit/Basic.lean | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/Cslib/Computability/Circuit/Basic.lean b/Cslib/Computability/Circuit/Basic.lean
+index e18583f..c5a18a2 100644
+--- a/Cslib/Computability/Circuit/Basic.lean
++++ b/Cslib/Computability/Circuit/Basic.lean
+@@ -85,14 +85,14 @@ def Circuit.eval
+     (c : Circuit σ inputCount gateCount outputCount)
+     (i : Interpretation σ U)
+     (x : Fin inputCount → U) : Fin outputCount → U :=
+-  fun output => c.program.trace i x (c.outputs output)
++  c.program.trace i x ∘ c.outputs
+ 
+ @[simp] theorem Circuit.eval_id
+     (interpretation : Interpretation σ U)
+     (input : Fin inputCount → U) :
+     (Circuit.id σ inputCount).eval interpretation input = input := by
+   funext output
+-  simp only [Circuit.eval, Circuit.id, Program.trace_input]
++  simp only [Circuit.eval, Circuit.id, Function.comp_apply, Program.trace_input]
+ 
+ /-- Each output of the identity circuit returns the corresponding input. -/
+ theorem Circuit.eval_id_apply
+-- 
+2.54.0
+

@@ -1,0 +1,2040 @@
+{
+  "schema": "ix-cslib-incremental-findings/1",
+  "updatedAt": "2026-10-07T22:48:50.701263+00:00",
+  "complete": true,
+  "sequence": {
+    "schema": "ix-cslib-synthetic-sequence/1",
+    "baselineDirectory": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825",
+    "baselineCommit": "7c8f6c0f67015df29b152fdcffaf7850db2e9185",
+    "baselineCatalog": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/A.ixc",
+    "sourceDirectory": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/cslib",
+    "sourceBranch": "bench/incremental-v4.34.1",
+    "leanVersion": "4.34.1",
+    "prover": {
+      "executable": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+      "sha256": "a97d61977cde7e6d50e9d0ffba005f2f1d234a3d9c9cbdf7b393ef88111ca6d1",
+      "sourceCommit": "f084e9b54b0977d5827e9cc6931c1503ff43c7d6",
+      "patchSha256": "3f3f13d34fe567c5dd63a519a7bc5b381e42c418ebb9720a2475efe7a1f7c087",
+      "patch": "automatic-gpu-v2.patch",
+      "buildLog": "build-auto-gpu-v2.log",
+      "features": [
+        "parallel",
+        "cuda-trace-codegen",
+        "net"
+      ],
+      "validation": {
+        "catalogTests": 18,
+        "recordPoolTests": 11,
+        "querymapTests": 2,
+        "tracePlannerTests": 1,
+        "peakTests": 3,
+        "hostBudgetTests": 2
+      }
+    },
+    "sourceFiles": [
+      "Cslib/Computability/Circuit/Basic.lean"
+    ],
+    "patterns": [
+      {
+        "stage": "S1",
+        "pattern": "additive lemma",
+        "description": "Add Circuit.eval_id_apply, a pointwise corollary of Circuit.eval_id."
+      },
+      {
+        "stage": "S2",
+        "pattern": "proof-body refactor",
+        "description": "Use simp to prove Circuit.eval_id without changing its proposition; the S1 corollary depends on it."
+      },
+      {
+        "stage": "S3",
+        "pattern": "shared-definition refactor",
+        "description": "Express Circuit.eval with an explicit output function and remove the now-unused composition simp rule from eval_id; behavior and theorem propositions are preserved while dependent content addresses change."
+      },
+      {
+        "stage": "S4",
+        "pattern": "revert",
+        "description": "Revert the Circuit.eval implementation change, restoring the S2 source tree while retaining the cumulative proof corpus."
+      }
+    ],
+    "resourcePolicy": {
+      "gpuSelection": "all visible devices automatically",
+      "hostBudget": "automatic; --max-ram omitted",
+      "cpuParallelism": "default",
+      "processMemoryMaxGiB": 440,
+      "processSwapMaxBytes": 0
+    },
+    "validation": [
+      "lake build --wfail --iofail",
+      "lake exe mk_all --check",
+      "lake test",
+      "lake lint",
+      "lake exe lint-style"
+    ],
+    "timingPolicy": "Run validation, export, planning, proving, independent verification, and warm repeat sequentially so builds do not contend with timed proving."
+  },
+  "notes": [
+    "All stages use full import Cslib exports on Lean 4.34.1 and the same frozen prover binary, dependency pins, and axiom policy.",
+    "The synthetic commits are a sequential chain, each proven against its immediate predecessor's cumulative catalog.",
+    "Plan-only and prove are separate measured commands; both costs are reported. Prove reuses the pending plan but includes certificate validation and final verification.",
+    "New leaf proof count measures claims actually proven; historically new constants measure declarations first added to the cumulative corpus.",
+    "Cached leaf rows carry proof size and identity but no new execution/proving time. Their creation costs are in the baseline report or earlier stages.",
+    "Prover worker durations can overlap; they are not wall time. Inclusive root timing already contains the separately listed recursive wraps.",
+    "Per-proof CSV deduplicates aggregate objects within each attempt. Intermediate persisted aggregate objects have sizes and addresses; root-wrap rows report overlapping substeps of the inclusive root duration.",
+    "All visible GPUs and automatic host memory budgeting are enabled. Small incremental dependencies may expose too little concurrent work to keep both GPUs busy.",
+    "GPU samples are taken once per second; measured cgroup memory peak includes the job's child processes and charged file pages."
+  ],
+  "revertChecks": {
+    "restoresS2SourceTree": true,
+    "restoresS2SnapshotRoot": true,
+    "reusesS3CumulativeRoot": true
+  },
+  "stages": [
+    {
+      "overview": {
+        "stage": "S1",
+        "pattern": "additive lemma",
+        "commit": "40827427e8b2437b6c88c0844341cd1aae9fb899",
+        "snapshotConstants": 385305,
+        "corpusConstants": 385305,
+        "historicallyNewConstants": 1,
+        "newConstantsVsPreviousSnapshot": 1,
+        "removedConstantsVsPreviousSnapshot": 0,
+        "addedNamedDeclarations": 1,
+        "changedNamedDeclarations": 0,
+        "retainedClaims": 145,
+        "changedBaseClaims": 0,
+        "newLeafProofs": 1,
+        "reusedLeafProofs": 145,
+        "newAggregateOperations": 1,
+        "rootWraps": 1,
+        "planSeconds": 57.15887110600306,
+        "proveSeconds": 85.5228864899982,
+        "pipelineSeconds": 19,
+        "verifySeconds": 25.29438984599983,
+        "warmRepeatSeconds": 25.204110599999694,
+        "planAndProveSeconds": 142.68175759600126,
+        "buildSeconds": 8.77477481099777,
+        "exportSeconds": 39.723451914996986,
+        "peakProveHostGiB": 15.183635711669922,
+        "rootProofBytes": 5550081,
+        "rootProof": "baf3f2db19b1f2dd9768ee8a7598f5201384427120d0bc547621d05eaafbdf75",
+        "newLeafExecutionSeconds": 0.3,
+        "newLeafProvingWorkerSeconds": 0.2024652359978063,
+        "aggregateExecutionSeconds": 6.9,
+        "aggregateProvingWorkerSeconds": 10.721566125997924
+      },
+      "description": "Add Circuit.eval_id_apply, a pointwise corollary of Circuit.eval_id.",
+      "source": {
+        "stage": "S1",
+        "commit": "40827427e8b2437b6c88c0844341cd1aae9fb899",
+        "parent": "7c8f6c0f67015df29b152fdcffaf7850db2e9185",
+        "tree": "318231e25d2cb987f35e9c76ea9518e07a58c449",
+        "subject": "feat(Circuit): add pointwise identity evaluation lemma",
+        "toolchain": "leanprover/lean4:v4.34.1",
+        "lakeManifestSha256": "c514c3beaef90c5dc4d58ceed377a17d93e6e926f6213ed48a5a288e5c9e7be8",
+        "patch": "S1.patch",
+        "patchSha256": "039856d243ba468854b68085dd11ca5cb654e58e2a36e925fbbbeefdf27100ba",
+        "validation": {
+          "build": {
+            "measurement": "S1.build.metrics.json",
+            "wallSeconds": 8.77477481099777
+          },
+          "imports": {
+            "measurement": "S1.imports.metrics.json",
+            "wallSeconds": 8.431225342999824
+          },
+          "test": {
+            "measurement": "S1.test.metrics.json",
+            "wallSeconds": 80.31548548799765
+          },
+          "lint": {
+            "measurement": "S1.lint.metrics.json",
+            "wallSeconds": 8.275967910998588
+          },
+          "style": {
+            "measurement": "S1.style.metrics.json",
+            "wallSeconds": 3.413944146999711
+          }
+        }
+      },
+      "export": {
+        "written": true,
+        "uniqueAnon": 385305,
+        "ungroundedCount": 0,
+        "ungrounded": [],
+        "seeds": {
+          "module": null,
+          "excludeFile": null,
+          "exclude": null,
+          "constsFile": null,
+          "consts": null
+        },
+        "schemaVersion": 1,
+        "root": "b746d40b753993244c02ee7b2ec3beaef4f3eda08c4ff0efc088a28d737206c7",
+        "requested": 441357,
+        "output": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixe",
+        "named": 445876,
+        "leanToolchain": "4.34.1",
+        "ixeFormatVersion": 4,
+        "ixVersion": "4.34.1|0.0.1",
+        "input": ".lake/ix-benchmark/CompileCslib.lean",
+        "elapsedMs": 36634,
+        "bytes": 1037347014,
+        "allowPartial": false
+      },
+      "delta": {
+        "addedNamedDeclarations": [
+          {
+            "address": "4f6b99de29022dbd44c44dec47ee979ae089c9417fd16bef04734e77e1a0eea4",
+            "name": "Cslib.Circuits.Circuit.eval_id_apply"
+          }
+        ],
+        "afterConstants": 385305,
+        "afterFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixe",
+        "beforeConstants": 385304,
+        "beforeFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/A.ixe",
+        "changedNamedDeclarations": [],
+        "newConstantAddresses": [
+          "4f6b99de29022dbd44c44dec47ee979ae089c9417fd16bef04734e77e1a0eea4"
+        ],
+        "removedConstantAddresses": [],
+        "removedNamedDeclarations": []
+      },
+      "phases": {
+        "build": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 8.77477481099777,
+          "startedAt": "2026-10-07T22:24:24.307604+00:00",
+          "finishedAt": "2026-10-07T22:24:33.082711+00:00",
+          "command": [
+            "lake",
+            "build",
+            "--wfail",
+            "--iofail"
+          ],
+          "userCpuSeconds": 2.39,
+          "systemCpuSeconds": 0.93,
+          "peakRssBytes": 1550843904.0,
+          "cgroupPeakBytes": 691998720,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.build.metrics.json"
+        },
+        "imports": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 8.431225342999824,
+          "startedAt": "2026-10-07T22:24:33.138409+00:00",
+          "finishedAt": "2026-10-07T22:24:41.569940+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "mk_all",
+            "--check"
+          ],
+          "userCpuSeconds": 51.63,
+          "systemCpuSeconds": 3.28,
+          "peakRssBytes": 1269559296.0,
+          "cgroupPeakBytes": 1087029248,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.imports.metrics.json"
+        },
+        "test": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 80.31548548799765,
+          "startedAt": "2026-10-07T22:24:41.631384+00:00",
+          "finishedAt": "2026-10-07T22:26:01.947173+00:00",
+          "command": [
+            "lake",
+            "test"
+          ],
+          "userCpuSeconds": 36.57,
+          "systemCpuSeconds": 12.96,
+          "peakRssBytes": 7065001984.0,
+          "cgroupPeakBytes": 5810462720,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.test.metrics.json"
+        },
+        "lint": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 8.275967910998588,
+          "startedAt": "2026-10-07T22:26:02.002614+00:00",
+          "finishedAt": "2026-10-07T22:26:10.278876+00:00",
+          "command": [
+            "lake",
+            "lint"
+          ],
+          "userCpuSeconds": 71.7,
+          "systemCpuSeconds": 30.23,
+          "peakRssBytes": 4597956608.0,
+          "cgroupPeakBytes": 2219790336,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.lint.metrics.json"
+        },
+        "style": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 3.413944146999711,
+          "startedAt": "2026-10-07T22:26:10.337864+00:00",
+          "finishedAt": "2026-10-07T22:26:13.752115+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "lint-style"
+          ],
+          "userCpuSeconds": 5.04,
+          "systemCpuSeconds": 1.94,
+          "peakRssBytes": 1247363072.0,
+          "cgroupPeakBytes": 867385344,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.style.metrics.json"
+        },
+        "export": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 39.723451914996986,
+          "startedAt": "2026-10-07T22:26:51.861197+00:00",
+          "finishedAt": "2026-10-07T22:27:31.584973+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix",
+            "compile",
+            ".lake/ix-benchmark/CompileCslib.lean",
+            "--no-build",
+            "--out",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixe",
+            "--report",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.export-report.json"
+          ],
+          "userCpuSeconds": 529.25,
+          "systemCpuSeconds": 6.52,
+          "peakRssBytes": 10945712128.0,
+          "cgroupPeakBytes": 9088712704,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.export.metrics.json"
+        },
+        "assemble": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 4.6968088899993745,
+          "startedAt": "2026-10-07T22:27:31.648375+00:00",
+          "finishedAt": "2026-10-07T22:27:36.345506+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "assemble",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixe",
+            "--labels",
+            "CSLib",
+            "--toolchains",
+            "leanprover/lean4:v4.34.1",
+            "--pins",
+            "git:local-synthetic-cslib@40827427e8b2437b6c88c0844341cd1aae9fb899"
+          ],
+          "userCpuSeconds": 5.11,
+          "systemCpuSeconds": 0.18,
+          "peakRssBytes": 3330490368.0,
+          "cgroupPeakBytes": 11100766208,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.assemble.metrics.json"
+        },
+        "plan": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 57.15887110600306,
+          "startedAt": "2026-10-07T22:27:36.405111+00:00",
+          "finishedAt": "2026-10-07T22:28:33.564278+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/A.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json",
+            "--plan-only"
+          ],
+          "userCpuSeconds": 75.35,
+          "systemCpuSeconds": 2.84,
+          "peakRssBytes": 4008689664.0,
+          "cgroupPeakBytes": 2917011456,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.plan.1.metrics.json",
+          "result": {
+            "status": "planned",
+            "snapshotSubjects": 385305,
+            "corpusSubjects": 385305,
+            "newSubjects": 1,
+            "retainedClaims": 145,
+            "changedBaseClaims": 0,
+            "shards": 146
+          }
+        },
+        "prove": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 85.5228864899982,
+          "startedAt": "2026-10-07T22:28:33.633921+00:00",
+          "finishedAt": "2026-10-07T22:29:59.721443+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/A.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 204.68,
+          "systemCpuSeconds": 12.15,
+          "peakRssBytes": 15461007360.0,
+          "cgroupPeakBytes": 16303304704,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "gpuSamples": {
+            "0": {
+              "uuid": "GPU-da8c4403-46d3-1f00-bf60-0ab5534cf762",
+              "samples": 86,
+              "peakMemoryMiB": 1203.0,
+              "peakUtilizationPercent": 1.0,
+              "peakPowerWatts": 88.54,
+              "meanSampledUtilizationPercent": 0.011627906976744186
+            },
+            "1": {
+              "uuid": "GPU-e7c1cda8-e5d2-ac22-67ff-735b5e6305c5",
+              "samples": 86,
+              "peakMemoryMiB": 51771.0,
+              "peakUtilizationPercent": 100.0,
+              "peakPowerWatts": 318.13,
+              "meanSampledUtilizationPercent": 6.988372093023256
+            }
+          },
+          "measurementFile": "incremental-v4.34.1/S1.prove.1.metrics.json",
+          "result": {
+            "status": "certified",
+            "snapshotSubjects": 385305,
+            "corpusSubjects": 385305,
+            "newSubjects": 1,
+            "retainedClaims": 145,
+            "changedBaseClaims": 0,
+            "shards": 146,
+            "rootProof": "baf3f2db19b1f2dd9768ee8a7598f5201384427120d0bc547621d05eaafbdf75"
+          }
+        },
+        "verify": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 25.29438984599983,
+          "startedAt": "2026-10-07T22:29:59.779249+00:00",
+          "finishedAt": "2026-10-07T22:30:25.073938+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "verify-proof",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 40.19,
+          "systemCpuSeconds": 1.98,
+          "peakRssBytes": 2593472512.0,
+          "cgroupPeakBytes": 2697732096,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.verify.1.metrics.json",
+          "result": {
+            "status": "verified",
+            "snapshotSubjects": 385305,
+            "corpusSubjects": 385305,
+            "newProofs": 0,
+            "rootProof": "baf3f2db19b1f2dd9768ee8a7598f5201384427120d0bc547621d05eaafbdf75"
+          }
+        },
+        "repeat": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 25.204110599999694,
+          "startedAt": "2026-10-07T22:30:25.142673+00:00",
+          "finishedAt": "2026-10-07T22:30:50.347097+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/A.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 40.52,
+          "systemCpuSeconds": 2.09,
+          "peakRssBytes": 2599997440.0,
+          "cgroupPeakBytes": 2771677184,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S1.repeat.1.metrics.json",
+          "result": {
+            "status": "reused",
+            "snapshotSubjects": 385305,
+            "corpusSubjects": 385305,
+            "newProofs": 0,
+            "rootProof": "baf3f2db19b1f2dd9768ee8a7598f5201384427120d0bc547621d05eaafbdf75"
+          }
+        }
+      },
+      "certificate": {
+        "path": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc/proving.json",
+        "sha256": "bd71177cbf39db4fd1492dc999d8b4455cf2f87f45f4430a14fb60c49cb8bf1b",
+        "status": "certified",
+        "rootProof": {
+          "address": "baf3f2db19b1f2dd9768ee8a7598f5201384427120d0bc547621d05eaafbdf75",
+          "claim": "CheckEnv { root: Address { hash: Hash(\"ecd210cb4be31f17d7662c79f6c1cf9a80e9742c7b7d59362aca2ccdefd6ef8d\") }, assumptions: None }",
+          "payloadBytes": 5550041,
+          "traceShards": 1,
+          "wrapperBytes": 5550081,
+          "path": "proof-worker/store/ba/f3/f2/db19b1f2dd9768ee8a7598f5201384427120d0bc547621d05eaafbdf75",
+          "objectPresent": true
+        },
+        "profile": {
+          "allowedAxioms": [
+            "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+            "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+            "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+            "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+            "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+            "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+            "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+            "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+            "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+            "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+            "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+            "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+            "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+          ],
+          "executable": "ec913eecc1f3cd57deff39896ffc132a815465b36aed77f3b0c21508c9d2fa8d",
+          "objectFormat": 4,
+          "schema": "ix-catalog-profile/1",
+          "structuralAbove": 0
+        },
+        "axioms": [
+          "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+          "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+          "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+          "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+          "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+          "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+          "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+          "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+          "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+          "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+          "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+          "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+          "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+        ]
+      }
+    },
+    {
+      "overview": {
+        "stage": "S2",
+        "pattern": "proof-body refactor",
+        "commit": "27ad0ef1efcef2810b7548ffab0f494990f15412",
+        "snapshotConstants": 385307,
+        "corpusConstants": 385309,
+        "historicallyNewConstants": 4,
+        "newConstantsVsPreviousSnapshot": 4,
+        "removedConstantsVsPreviousSnapshot": 2,
+        "addedNamedDeclarations": 2,
+        "changedNamedDeclarations": 2,
+        "retainedClaims": 146,
+        "changedBaseClaims": 0,
+        "newLeafProofs": 1,
+        "reusedLeafProofs": 146,
+        "newAggregateOperations": 1,
+        "rootWraps": 1,
+        "planSeconds": 66.41384207300143,
+        "proveSeconds": 99.04580329300006,
+        "pipelineSeconds": 23,
+        "verifySeconds": 29.49402350499804,
+        "warmRepeatSeconds": 29.586191554000834,
+        "planAndProveSeconds": 165.4596453660015,
+        "buildSeconds": 2.1997484500025166,
+        "exportSeconds": 43.23707046700292,
+        "peakProveHostGiB": 17.376636505126953,
+        "rootProofBytes": 5543713,
+        "rootProof": "dcdf02c72e8382261edcfd355e70673e8bf360e2437934109288e97f00155a96",
+        "newLeafExecutionSeconds": 0.5,
+        "newLeafProvingWorkerSeconds": 0.31709375499849557,
+        "aggregateExecutionSeconds": 9.0,
+        "aggregateProvingWorkerSeconds": 12.306006201997661
+      },
+      "description": "Use simp to prove Circuit.eval_id without changing its proposition; the S1 corollary depends on it.",
+      "source": {
+        "stage": "S2",
+        "commit": "27ad0ef1efcef2810b7548ffab0f494990f15412",
+        "parent": "40827427e8b2437b6c88c0844341cd1aae9fb899",
+        "tree": "075b54e8e607e1a80aad63ad004d37f5cdc8a47a",
+        "subject": "refactor(Circuit): simplify the identity evaluation proof",
+        "toolchain": "leanprover/lean4:v4.34.1",
+        "lakeManifestSha256": "c514c3beaef90c5dc4d58ceed377a17d93e6e926f6213ed48a5a288e5c9e7be8",
+        "patch": "S2.patch",
+        "patchSha256": "22db35eba229fb8ed766d99312f21e1719113271171c07a46c0a4707ff0b46d6",
+        "validation": {
+          "build": {
+            "measurement": "S2.build.metrics.json",
+            "wallSeconds": 2.1997484500025166
+          },
+          "imports": {
+            "measurement": "S2.imports.metrics.json",
+            "wallSeconds": 0.8403990139995585
+          },
+          "test": {
+            "measurement": "S2.test.metrics.json",
+            "wallSeconds": 12.251500082998973
+          },
+          "lint": {
+            "measurement": "S2.lint.metrics.json",
+            "wallSeconds": 5.047443215997191
+          },
+          "style": {
+            "measurement": "S2.style.metrics.json",
+            "wallSeconds": 1.0913194679997105
+          }
+        }
+      },
+      "export": {
+        "written": true,
+        "uniqueAnon": 385307,
+        "ungroundedCount": 0,
+        "ungrounded": [],
+        "seeds": {
+          "module": null,
+          "excludeFile": null,
+          "exclude": null,
+          "constsFile": null,
+          "consts": null
+        },
+        "schemaVersion": 1,
+        "root": "f4ca56c9b9ef601beeca6ccb8f29f6373c23c7672d2f3de89eb99c5990351588",
+        "requested": 441359,
+        "output": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixe",
+        "named": 445878,
+        "leanToolchain": "4.34.1",
+        "ixeFormatVersion": 4,
+        "ixVersion": "4.34.1|0.0.1",
+        "input": ".lake/ix-benchmark/CompileCslib.lean",
+        "elapsedMs": 39712,
+        "bytes": 1037349231,
+        "allowPartial": false
+      },
+      "delta": {
+        "addedNamedDeclarations": [
+          {
+            "address": "4ffa6ec59607dff0a4f01619dd4022e7cfc77381a1e33fc912ecd2aca7722bb6",
+            "name": "Cslib.Circuits.Circuit.eval.eq_1"
+          },
+          {
+            "address": "8ab2caaa43b60dcf286e6281f1ef900e85fd4a6589fbb5386f9d1dbeb79d245d",
+            "name": "Cslib.Circuits.Circuit.id.eq_1"
+          }
+        ],
+        "afterConstants": 385307,
+        "afterFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixe",
+        "beforeConstants": 385305,
+        "beforeFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixe",
+        "changedNamedDeclarations": [
+          {
+            "after": "31e51656dc33455239dd9dd4b3bd1697e9c1c058e37c8a1a550b3ec8f2e1696a",
+            "before": "76eab72c6c1214f74f1fb4d3c258368acf0bd0a4fb1ff594e086151cd88fd004",
+            "name": "Cslib.Circuits.Circuit.eval_id"
+          },
+          {
+            "after": "fa48858470d4382ad5d11b56c0908da5d1450cb8b172c4a62960db549f217f99",
+            "before": "4f6b99de29022dbd44c44dec47ee979ae089c9417fd16bef04734e77e1a0eea4",
+            "name": "Cslib.Circuits.Circuit.eval_id_apply"
+          }
+        ],
+        "newConstantAddresses": [
+          "31e51656dc33455239dd9dd4b3bd1697e9c1c058e37c8a1a550b3ec8f2e1696a",
+          "4ffa6ec59607dff0a4f01619dd4022e7cfc77381a1e33fc912ecd2aca7722bb6",
+          "8ab2caaa43b60dcf286e6281f1ef900e85fd4a6589fbb5386f9d1dbeb79d245d",
+          "fa48858470d4382ad5d11b56c0908da5d1450cb8b172c4a62960db549f217f99"
+        ],
+        "removedConstantAddresses": [
+          "4f6b99de29022dbd44c44dec47ee979ae089c9417fd16bef04734e77e1a0eea4",
+          "76eab72c6c1214f74f1fb4d3c258368acf0bd0a4fb1ff594e086151cd88fd004"
+        ],
+        "removedNamedDeclarations": []
+      },
+      "phases": {
+        "build": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 2.1997484500025166,
+          "startedAt": "2026-10-07T22:31:22.289418+00:00",
+          "finishedAt": "2026-10-07T22:31:24.489482+00:00",
+          "command": [
+            "lake",
+            "build",
+            "--wfail",
+            "--iofail"
+          ],
+          "userCpuSeconds": 2.27,
+          "systemCpuSeconds": 0.85,
+          "peakRssBytes": 1551028224.0,
+          "cgroupPeakBytes": 519454720,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.build.metrics.json"
+        },
+        "imports": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 0.8403990139995585,
+          "startedAt": "2026-10-07T22:31:24.546410+00:00",
+          "finishedAt": "2026-10-07T22:31:25.387114+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "mk_all",
+            "--check"
+          ],
+          "userCpuSeconds": 0.47,
+          "systemCpuSeconds": 0.31,
+          "peakRssBytes": 879861760.0,
+          "cgroupPeakBytes": 243388416,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.imports.metrics.json"
+        },
+        "test": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 12.251500082998973,
+          "startedAt": "2026-10-07T22:31:25.439530+00:00",
+          "finishedAt": "2026-10-07T22:31:37.691325+00:00",
+          "command": [
+            "lake",
+            "test"
+          ],
+          "userCpuSeconds": 16.71,
+          "systemCpuSeconds": 4.93,
+          "peakRssBytes": 7088705536.0,
+          "cgroupPeakBytes": 1584242688,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.test.metrics.json"
+        },
+        "lint": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 5.047443215997191,
+          "startedAt": "2026-10-07T22:31:37.754356+00:00",
+          "finishedAt": "2026-10-07T22:31:42.802109+00:00",
+          "command": [
+            "lake",
+            "lint"
+          ],
+          "userCpuSeconds": 66.62,
+          "systemCpuSeconds": 19.2,
+          "peakRssBytes": 4625620992.0,
+          "cgroupPeakBytes": 1544908800,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.lint.metrics.json"
+        },
+        "style": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 1.0913194679997105,
+          "startedAt": "2026-10-07T22:31:42.861803+00:00",
+          "finishedAt": "2026-10-07T22:31:43.953442+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "lint-style"
+          ],
+          "userCpuSeconds": 0.59,
+          "systemCpuSeconds": 0.45,
+          "peakRssBytes": 879894528.0,
+          "cgroupPeakBytes": 249143296,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.style.metrics.json"
+        },
+        "export": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 43.23707046700292,
+          "startedAt": "2026-10-07T22:32:34.770340+00:00",
+          "finishedAt": "2026-10-07T22:33:18.007804+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix",
+            "compile",
+            ".lake/ix-benchmark/CompileCslib.lean",
+            "--no-build",
+            "--out",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixe",
+            "--report",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.export-report.json"
+          ],
+          "userCpuSeconds": 612.5,
+          "systemCpuSeconds": 6.9,
+          "peakRssBytes": 11116978176.0,
+          "cgroupPeakBytes": 8939008000,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.export.metrics.json"
+        },
+        "assemble": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 5.1572456270005205,
+          "startedAt": "2026-10-07T22:33:18.079414+00:00",
+          "finishedAt": "2026-10-07T22:33:23.237009+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "assemble",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixe",
+            "--labels",
+            "CSLib",
+            "--toolchains",
+            "leanprover/lean4:v4.34.1",
+            "--pins",
+            "git:local-synthetic-cslib@27ad0ef1efcef2810b7548ffab0f494990f15412"
+          ],
+          "userCpuSeconds": 5.6,
+          "systemCpuSeconds": 0.18,
+          "peakRssBytes": 3188359168.0,
+          "cgroupPeakBytes": 11100766208,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.assemble.metrics.json"
+        },
+        "plan": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 66.41384207300143,
+          "startedAt": "2026-10-07T22:33:23.302437+00:00",
+          "finishedAt": "2026-10-07T22:34:29.716628+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json",
+            "--plan-only"
+          ],
+          "userCpuSeconds": 87.89,
+          "systemCpuSeconds": 3.31,
+          "peakRssBytes": 3999817728.0,
+          "cgroupPeakBytes": 2946641920,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.plan.1.metrics.json",
+          "result": {
+            "status": "planned",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385309,
+            "newSubjects": 4,
+            "retainedClaims": 146,
+            "changedBaseClaims": 0,
+            "shards": 147
+          }
+        },
+        "prove": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 99.04580329300006,
+          "startedAt": "2026-10-07T22:34:29.784602+00:00",
+          "finishedAt": "2026-10-07T22:36:08.894528+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 243.34,
+          "systemCpuSeconds": 12.99,
+          "peakRssBytes": 17740730368.0,
+          "cgroupPeakBytes": 18658021376,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "gpuSamples": {
+            "0": {
+              "uuid": "GPU-da8c4403-46d3-1f00-bf60-0ab5534cf762",
+              "samples": 99,
+              "peakMemoryMiB": 1779.0,
+              "peakUtilizationPercent": 22.0,
+              "peakPowerWatts": 92.44,
+              "meanSampledUtilizationPercent": 0.23232323232323232
+            },
+            "1": {
+              "uuid": "GPU-e7c1cda8-e5d2-ac22-67ff-735b5e6305c5",
+              "samples": 99,
+              "peakMemoryMiB": 51773.0,
+              "peakUtilizationPercent": 100.0,
+              "peakPowerWatts": 342.6,
+              "meanSampledUtilizationPercent": 7.333333333333333
+            }
+          },
+          "measurementFile": "incremental-v4.34.1/S2.prove.1.metrics.json",
+          "result": {
+            "status": "certified",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385309,
+            "newSubjects": 4,
+            "retainedClaims": 146,
+            "changedBaseClaims": 0,
+            "shards": 147,
+            "rootProof": "dcdf02c72e8382261edcfd355e70673e8bf360e2437934109288e97f00155a96"
+          }
+        },
+        "verify": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 29.49402350499804,
+          "startedAt": "2026-10-07T22:36:08.964714+00:00",
+          "finishedAt": "2026-10-07T22:36:38.459108+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "verify-proof",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 47.19,
+          "systemCpuSeconds": 2.15,
+          "peakRssBytes": 2584195072.0,
+          "cgroupPeakBytes": 2699120640,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.verify.1.metrics.json",
+          "result": {
+            "status": "verified",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385309,
+            "newProofs": 0,
+            "rootProof": "dcdf02c72e8382261edcfd355e70673e8bf360e2437934109288e97f00155a96"
+          }
+        },
+        "repeat": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 29.586191554000834,
+          "startedAt": "2026-10-07T22:36:38.528708+00:00",
+          "finishedAt": "2026-10-07T22:37:08.115253+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S1.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 46.89,
+          "systemCpuSeconds": 2.38,
+          "peakRssBytes": 2593472512.0,
+          "cgroupPeakBytes": 2818871296,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S2.repeat.1.metrics.json",
+          "result": {
+            "status": "reused",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385309,
+            "newProofs": 0,
+            "rootProof": "dcdf02c72e8382261edcfd355e70673e8bf360e2437934109288e97f00155a96"
+          }
+        }
+      },
+      "certificate": {
+        "path": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc/proving.json",
+        "sha256": "a287e1796bda99349ee6998e0cedbed4a10a09d5470fe298f6838dab56bdd732",
+        "status": "certified",
+        "rootProof": {
+          "address": "dcdf02c72e8382261edcfd355e70673e8bf360e2437934109288e97f00155a96",
+          "claim": "CheckEnv { root: Address { hash: Hash(\"11b6b422d560d5cb7b93421b6cc64d13219c2122f9b3df031e1cd6d7c194c717\") }, assumptions: None }",
+          "payloadBytes": 5543673,
+          "traceShards": 1,
+          "wrapperBytes": 5543713,
+          "path": "proof-worker/store/dc/df/02/c72e8382261edcfd355e70673e8bf360e2437934109288e97f00155a96",
+          "objectPresent": true
+        },
+        "profile": {
+          "allowedAxioms": [
+            "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+            "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+            "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+            "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+            "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+            "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+            "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+            "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+            "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+            "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+            "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+            "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+            "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+          ],
+          "executable": "ec913eecc1f3cd57deff39896ffc132a815465b36aed77f3b0c21508c9d2fa8d",
+          "objectFormat": 4,
+          "schema": "ix-catalog-profile/1",
+          "structuralAbove": 0
+        },
+        "axioms": [
+          "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+          "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+          "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+          "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+          "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+          "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+          "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+          "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+          "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+          "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+          "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+          "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+          "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+        ]
+      }
+    },
+    {
+      "overview": {
+        "stage": "S3",
+        "pattern": "shared-definition refactor",
+        "commit": "f468e83884f722a7d56bec1e1e34c354b97a7788",
+        "snapshotConstants": 385307,
+        "corpusConstants": 385316,
+        "historicallyNewConstants": 7,
+        "newConstantsVsPreviousSnapshot": 7,
+        "removedConstantsVsPreviousSnapshot": 7,
+        "addedNamedDeclarations": 0,
+        "changedNamedDeclarations": 7,
+        "retainedClaims": 147,
+        "changedBaseClaims": 0,
+        "newLeafProofs": 1,
+        "reusedLeafProofs": 147,
+        "newAggregateOperations": 1,
+        "rootWraps": 1,
+        "planSeconds": 55.41338311000072,
+        "proveSeconds": 85.02479774699896,
+        "pipelineSeconds": 22,
+        "verifySeconds": 24.34387002999938,
+        "warmRepeatSeconds": 25.162484123000468,
+        "planAndProveSeconds": 140.43818085699968,
+        "buildSeconds": 2.437551152001106,
+        "exportSeconds": 39.01804247700056,
+        "peakProveHostGiB": 17.40283966064453,
+        "rootProofBytes": 5552993,
+        "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3",
+        "newLeafExecutionSeconds": 0.5,
+        "newLeafProvingWorkerSeconds": 0.3104369899992889,
+        "aggregateExecutionSeconds": 8.2,
+        "aggregateProvingWorkerSeconds": 11.959689003000676
+      },
+      "description": "Express Circuit.eval with an explicit output function and remove the now-unused composition simp rule from eval_id; behavior and theorem propositions are preserved while dependent content addresses change.",
+      "source": {
+        "stage": "S3",
+        "commit": "f468e83884f722a7d56bec1e1e34c354b97a7788",
+        "parent": "27ad0ef1efcef2810b7548ffab0f494990f15412",
+        "tree": "451956d2906d7a785f8b51d87d9ca07265d9126f",
+        "subject": "refactor(Circuit): evaluate designated outputs explicitly",
+        "toolchain": "leanprover/lean4:v4.34.1",
+        "lakeManifestSha256": "c514c3beaef90c5dc4d58ceed377a17d93e6e926f6213ed48a5a288e5c9e7be8",
+        "patch": "S3.patch",
+        "patchSha256": "330cc5ea8f6444d0e02c8336135a6af394eaa721e94c92b7dc7d4bee063955be",
+        "validation": {
+          "build": {
+            "measurement": "S3.build.metrics.json",
+            "wallSeconds": 2.437551152001106
+          },
+          "imports": {
+            "measurement": "S3.imports.metrics.json",
+            "wallSeconds": 0.9535158799990313
+          },
+          "test": {
+            "measurement": "S3.test.metrics.json",
+            "wallSeconds": 14.104750384998624
+          },
+          "lint": {
+            "measurement": "S3.lint.metrics.json",
+            "wallSeconds": 5.609416347000661
+          },
+          "style": {
+            "measurement": "S3.style.metrics.json",
+            "wallSeconds": 1.2284799489971192
+          }
+        }
+      },
+      "export": {
+        "written": true,
+        "uniqueAnon": 385307,
+        "ungroundedCount": 0,
+        "ungrounded": [],
+        "seeds": {
+          "module": null,
+          "excludeFile": null,
+          "exclude": null,
+          "constsFile": null,
+          "consts": null
+        },
+        "schemaVersion": 1,
+        "root": "96ecc418a472081eb0af07aaa739de65aa3da768d6352051ad649f7144d7f48b",
+        "requested": 441359,
+        "output": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixe",
+        "named": 445878,
+        "leanToolchain": "4.34.1",
+        "ixeFormatVersion": 4,
+        "ixVersion": "4.34.1|0.0.1",
+        "input": ".lake/ix-benchmark/CompileCslib.lean",
+        "elapsedMs": 36030,
+        "bytes": 1037348856,
+        "allowPartial": false
+      },
+      "delta": {
+        "addedNamedDeclarations": [],
+        "afterConstants": 385307,
+        "afterFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixe",
+        "beforeConstants": 385307,
+        "beforeFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixe",
+        "changedNamedDeclarations": [
+          {
+            "after": "52b98e0acb581c6095b885c1f10131b919c47793acae625138e7031ba9364a1e",
+            "before": "a4e6dc50caa2b46980e6f816d90be1680c957353b41903692a890cc527fadccf",
+            "name": "Cslib.Circuits.Circuit.computation"
+          },
+          {
+            "after": "532ac46e38a9809960811852f6f499c8145707491dc993fb5747e58610222e83",
+            "before": "3ed582d59b65daf139a23fb9724a577345e589a287f3b3860718bc41c872a819",
+            "name": "Cslib.Circuits.Circuit.eval"
+          },
+          {
+            "after": "a650625a14492d4de3685dbd3f41f6aed09bf4c1cf522fae3f5563bf186a9a3e",
+            "before": "4ffa6ec59607dff0a4f01619dd4022e7cfc77381a1e33fc912ecd2aca7722bb6",
+            "name": "Cslib.Circuits.Circuit.eval.eq_1"
+          },
+          {
+            "after": "5ed33f519056b9f8807d19c1f6bc6979c8f119fc455355e5ea8632e7b393436e",
+            "before": "31e51656dc33455239dd9dd4b3bd1697e9c1c058e37c8a1a550b3ec8f2e1696a",
+            "name": "Cslib.Circuits.Circuit.eval_id"
+          },
+          {
+            "after": "c80b674c9e11c060eca63719bc3fc8686b0c6c1c13adf3da871321bb58cc2f4f",
+            "before": "fa48858470d4382ad5d11b56c0908da5d1450cb8b172c4a62960db549f217f99",
+            "name": "Cslib.Circuits.Circuit.eval_id_apply"
+          },
+          {
+            "after": "b208b512200b06a773d6dcd5a8bbb6f88090c307f477826f71783f6bac3f6d27",
+            "before": "69bc74de72a5ebf4fdcc1f8a5179052609b65830f91f01f618ac7f045467de1d",
+            "name": "Cslib.Circuits.Circuit.map_eval"
+          },
+          {
+            "after": "ee5a01aa1460c0d5f8f349e29667c1fc78f2ca60776e9e6c5323debb30404fe0",
+            "before": "2b7cb5c3ff473176b1eb38c3a13d3d93d6d286f45b97bac143f1b434ed96afee",
+            "name": "Cslib.Circuits.Circuit.trace"
+          }
+        ],
+        "newConstantAddresses": [
+          "52b98e0acb581c6095b885c1f10131b919c47793acae625138e7031ba9364a1e",
+          "532ac46e38a9809960811852f6f499c8145707491dc993fb5747e58610222e83",
+          "5ed33f519056b9f8807d19c1f6bc6979c8f119fc455355e5ea8632e7b393436e",
+          "a650625a14492d4de3685dbd3f41f6aed09bf4c1cf522fae3f5563bf186a9a3e",
+          "b208b512200b06a773d6dcd5a8bbb6f88090c307f477826f71783f6bac3f6d27",
+          "c80b674c9e11c060eca63719bc3fc8686b0c6c1c13adf3da871321bb58cc2f4f",
+          "ee5a01aa1460c0d5f8f349e29667c1fc78f2ca60776e9e6c5323debb30404fe0"
+        ],
+        "removedConstantAddresses": [
+          "2b7cb5c3ff473176b1eb38c3a13d3d93d6d286f45b97bac143f1b434ed96afee",
+          "31e51656dc33455239dd9dd4b3bd1697e9c1c058e37c8a1a550b3ec8f2e1696a",
+          "3ed582d59b65daf139a23fb9724a577345e589a287f3b3860718bc41c872a819",
+          "4ffa6ec59607dff0a4f01619dd4022e7cfc77381a1e33fc912ecd2aca7722bb6",
+          "69bc74de72a5ebf4fdcc1f8a5179052609b65830f91f01f618ac7f045467de1d",
+          "a4e6dc50caa2b46980e6f816d90be1680c957353b41903692a890cc527fadccf",
+          "fa48858470d4382ad5d11b56c0908da5d1450cb8b172c4a62960db549f217f99"
+        ],
+        "removedNamedDeclarations": []
+      },
+      "phases": {
+        "build": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 2.437551152001106,
+          "startedAt": "2026-10-07T22:37:27.850734+00:00",
+          "finishedAt": "2026-10-07T22:37:30.288639+00:00",
+          "command": [
+            "lake",
+            "build",
+            "--wfail",
+            "--iofail"
+          ],
+          "userCpuSeconds": 2.54,
+          "systemCpuSeconds": 0.9,
+          "peakRssBytes": 1550663680.0,
+          "cgroupPeakBytes": 535732224,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.build.metrics.json"
+        },
+        "imports": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 0.9535158799990313,
+          "startedAt": "2026-10-07T22:37:30.353799+00:00",
+          "finishedAt": "2026-10-07T22:37:31.307693+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "mk_all",
+            "--check"
+          ],
+          "userCpuSeconds": 0.52,
+          "systemCpuSeconds": 0.38,
+          "peakRssBytes": 879886336.0,
+          "cgroupPeakBytes": 243175424,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.imports.metrics.json"
+        },
+        "test": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 14.104750384998624,
+          "startedAt": "2026-10-07T22:37:31.370943+00:00",
+          "finishedAt": "2026-10-07T22:37:45.476073+00:00",
+          "command": [
+            "lake",
+            "test"
+          ],
+          "userCpuSeconds": 19.52,
+          "systemCpuSeconds": 5.41,
+          "peakRssBytes": 7088525312.0,
+          "cgroupPeakBytes": 1581137920,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.test.metrics.json"
+        },
+        "lint": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 5.609416347000661,
+          "startedAt": "2026-10-07T22:37:45.536933+00:00",
+          "finishedAt": "2026-10-07T22:37:51.146736+00:00",
+          "command": [
+            "lake",
+            "lint"
+          ],
+          "userCpuSeconds": 76.82,
+          "systemCpuSeconds": 21.57,
+          "peakRssBytes": 4634357760.0,
+          "cgroupPeakBytes": 1554767872,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.lint.metrics.json"
+        },
+        "style": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 1.2284799489971192,
+          "startedAt": "2026-10-07T22:37:51.219379+00:00",
+          "finishedAt": "2026-10-07T22:37:52.448259+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "lint-style"
+          ],
+          "userCpuSeconds": 0.67,
+          "systemCpuSeconds": 0.52,
+          "peakRssBytes": 880709632.0,
+          "cgroupPeakBytes": 249368576,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.style.metrics.json"
+        },
+        "export": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 39.01804247700056,
+          "startedAt": "2026-10-07T22:38:37.585170+00:00",
+          "finishedAt": "2026-10-07T22:39:16.603534+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix",
+            "compile",
+            ".lake/ix-benchmark/CompileCslib.lean",
+            "--no-build",
+            "--out",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixe",
+            "--report",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.export-report.json"
+          ],
+          "userCpuSeconds": 515.2,
+          "systemCpuSeconds": 6.12,
+          "peakRssBytes": 11092639744.0,
+          "cgroupPeakBytes": 9222471680,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.export.metrics.json"
+        },
+        "assemble": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 4.544983490999584,
+          "startedAt": "2026-10-07T22:39:16.665137+00:00",
+          "finishedAt": "2026-10-07T22:39:21.210424+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "assemble",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixe",
+            "--labels",
+            "CSLib",
+            "--toolchains",
+            "leanprover/lean4:v4.34.1",
+            "--pins",
+            "git:local-synthetic-cslib@f468e83884f722a7d56bec1e1e34c354b97a7788"
+          ],
+          "userCpuSeconds": 4.98,
+          "systemCpuSeconds": 0.14,
+          "peakRssBytes": 3333296128.0,
+          "cgroupPeakBytes": 11100766208,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.assemble.metrics.json"
+        },
+        "plan": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 55.41338311000072,
+          "startedAt": "2026-10-07T22:39:21.274446+00:00",
+          "finishedAt": "2026-10-07T22:40:16.688119+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json",
+            "--plan-only"
+          ],
+          "userCpuSeconds": 73.96,
+          "systemCpuSeconds": 3.04,
+          "peakRssBytes": 4128550912.0,
+          "cgroupPeakBytes": 2952970240,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.plan.1.metrics.json",
+          "result": {
+            "status": "planned",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newSubjects": 7,
+            "retainedClaims": 147,
+            "changedBaseClaims": 0,
+            "shards": 148
+          }
+        },
+        "prove": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 85.02479774699896,
+          "startedAt": "2026-10-07T22:40:16.752546+00:00",
+          "finishedAt": "2026-10-07T22:41:41.841342+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 208.13,
+          "systemCpuSeconds": 12.61,
+          "peakRssBytes": 17815719936.0,
+          "cgroupPeakBytes": 18686156800,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "gpuSamples": {
+            "0": {
+              "uuid": "GPU-da8c4403-46d3-1f00-bf60-0ab5534cf762",
+              "samples": 85,
+              "peakMemoryMiB": 1845.0,
+              "peakUtilizationPercent": 1.0,
+              "peakPowerWatts": 90.5,
+              "meanSampledUtilizationPercent": 0.023529411764705882
+            },
+            "1": {
+              "uuid": "GPU-e7c1cda8-e5d2-ac22-67ff-735b5e6305c5",
+              "samples": 85,
+              "peakMemoryMiB": 51809.0,
+              "peakUtilizationPercent": 100.0,
+              "peakPowerWatts": 341.52,
+              "meanSampledUtilizationPercent": 9.788235294117648
+            }
+          },
+          "measurementFile": "incremental-v4.34.1/S3.prove.1.metrics.json",
+          "result": {
+            "status": "certified",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newSubjects": 7,
+            "retainedClaims": 147,
+            "changedBaseClaims": 0,
+            "shards": 148,
+            "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3"
+          }
+        },
+        "verify": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 24.34387002999938,
+          "startedAt": "2026-10-07T22:41:41.897991+00:00",
+          "finishedAt": "2026-10-07T22:42:06.242177+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "verify-proof",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 38.63,
+          "systemCpuSeconds": 2.02,
+          "peakRssBytes": 2587463680.0,
+          "cgroupPeakBytes": 2692861952,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.verify.1.metrics.json",
+          "result": {
+            "status": "verified",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newProofs": 0,
+            "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3"
+          }
+        },
+        "repeat": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 25.162484123000468,
+          "startedAt": "2026-10-07T22:42:06.304760+00:00",
+          "finishedAt": "2026-10-07T22:42:31.467539+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S2.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 40.21,
+          "systemCpuSeconds": 2.0,
+          "peakRssBytes": 2592260096.0,
+          "cgroupPeakBytes": 2796564480,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S3.repeat.1.metrics.json",
+          "result": {
+            "status": "reused",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newProofs": 0,
+            "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3"
+          }
+        }
+      },
+      "certificate": {
+        "path": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc/proving.json",
+        "sha256": "d94dd21c6f6694d999fc2c25fe9aed7767321b512b70c3d31cb99905e1a76436",
+        "status": "certified",
+        "rootProof": {
+          "address": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3",
+          "claim": "CheckEnv { root: Address { hash: Hash(\"173fd45a0bd5fa385a114584f693ca35fcdea91919e47a90551281f9a125317a\") }, assumptions: None }",
+          "payloadBytes": 5552953,
+          "traceShards": 1,
+          "wrapperBytes": 5552993,
+          "path": "proof-worker/store/62/ef/87/027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3",
+          "objectPresent": true
+        },
+        "profile": {
+          "allowedAxioms": [
+            "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+            "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+            "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+            "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+            "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+            "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+            "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+            "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+            "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+            "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+            "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+            "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+            "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+          ],
+          "executable": "ec913eecc1f3cd57deff39896ffc132a815465b36aed77f3b0c21508c9d2fa8d",
+          "objectFormat": 4,
+          "schema": "ix-catalog-profile/1",
+          "structuralAbove": 0
+        },
+        "axioms": [
+          "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+          "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+          "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+          "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+          "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+          "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+          "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+          "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+          "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+          "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+          "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+          "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+          "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+        ]
+      }
+    },
+    {
+      "overview": {
+        "stage": "S4",
+        "pattern": "revert",
+        "commit": "0ff7aa7288be337211a0477ca2edac1e0fe142ff",
+        "snapshotConstants": 385307,
+        "corpusConstants": 385316,
+        "historicallyNewConstants": 0,
+        "newConstantsVsPreviousSnapshot": 7,
+        "removedConstantsVsPreviousSnapshot": 7,
+        "addedNamedDeclarations": 0,
+        "changedNamedDeclarations": 7,
+        "retainedClaims": 148,
+        "changedBaseClaims": 0,
+        "newLeafProofs": 0,
+        "reusedLeafProofs": 148,
+        "newAggregateOperations": 0,
+        "rootWraps": 0,
+        "planSeconds": 54.865451388999645,
+        "proveSeconds": 67.2471251729985,
+        "pipelineSeconds": 2,
+        "verifySeconds": 25.615767497001798,
+        "warmRepeatSeconds": 25.396937217003142,
+        "planAndProveSeconds": 122.11257656199814,
+        "buildSeconds": 2.1956635850001476,
+        "exportSeconds": 38.7819725340014,
+        "peakProveHostGiB": 6.397769927978516,
+        "rootProofBytes": 5552993,
+        "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3",
+        "newLeafExecutionSeconds": 0,
+        "newLeafProvingWorkerSeconds": 0,
+        "aggregateExecutionSeconds": 0,
+        "aggregateProvingWorkerSeconds": 0
+      },
+      "description": "Revert the Circuit.eval implementation change, restoring the S2 source tree while retaining the cumulative proof corpus.",
+      "source": {
+        "stage": "S4",
+        "commit": "0ff7aa7288be337211a0477ca2edac1e0fe142ff",
+        "parent": "f468e83884f722a7d56bec1e1e34c354b97a7788",
+        "tree": "075b54e8e607e1a80aad63ad004d37f5cdc8a47a",
+        "subject": "revert(Circuit): restore composition-based evaluation",
+        "toolchain": "leanprover/lean4:v4.34.1",
+        "lakeManifestSha256": "c514c3beaef90c5dc4d58ceed377a17d93e6e926f6213ed48a5a288e5c9e7be8",
+        "patch": "S4.patch",
+        "patchSha256": "feddb4b2eba0f7e1476be12c661b4055f4a7ac01ec4b5fe3676a83483002204e",
+        "validation": {
+          "build": {
+            "measurement": "S4.build.metrics.json",
+            "wallSeconds": 2.1956635850001476
+          },
+          "imports": {
+            "measurement": "S4.imports.metrics.json",
+            "wallSeconds": 0.8605818319992977
+          },
+          "test": {
+            "measurement": "S4.test.metrics.json",
+            "wallSeconds": 12.654395893001492
+          },
+          "lint": {
+            "measurement": "S4.lint.metrics.json",
+            "wallSeconds": 4.998565668000083
+          },
+          "style": {
+            "measurement": "S4.style.metrics.json",
+            "wallSeconds": 1.0640402270000777
+          }
+        }
+      },
+      "export": {
+        "written": true,
+        "uniqueAnon": 385307,
+        "ungroundedCount": 0,
+        "ungrounded": [],
+        "seeds": {
+          "module": null,
+          "excludeFile": null,
+          "exclude": null,
+          "constsFile": null,
+          "consts": null
+        },
+        "schemaVersion": 1,
+        "root": "f4ca56c9b9ef601beeca6ccb8f29f6373c23c7672d2f3de89eb99c5990351588",
+        "requested": 441359,
+        "output": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixe",
+        "named": 445878,
+        "leanToolchain": "4.34.1",
+        "ixeFormatVersion": 4,
+        "ixVersion": "4.34.1|0.0.1",
+        "input": ".lake/ix-benchmark/CompileCslib.lean",
+        "elapsedMs": 35799,
+        "bytes": 1037349231,
+        "allowPartial": false
+      },
+      "delta": {
+        "addedNamedDeclarations": [],
+        "afterConstants": 385307,
+        "afterFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixe",
+        "beforeConstants": 385307,
+        "beforeFile": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixe",
+        "changedNamedDeclarations": [
+          {
+            "after": "a4e6dc50caa2b46980e6f816d90be1680c957353b41903692a890cc527fadccf",
+            "before": "52b98e0acb581c6095b885c1f10131b919c47793acae625138e7031ba9364a1e",
+            "name": "Cslib.Circuits.Circuit.computation"
+          },
+          {
+            "after": "3ed582d59b65daf139a23fb9724a577345e589a287f3b3860718bc41c872a819",
+            "before": "532ac46e38a9809960811852f6f499c8145707491dc993fb5747e58610222e83",
+            "name": "Cslib.Circuits.Circuit.eval"
+          },
+          {
+            "after": "4ffa6ec59607dff0a4f01619dd4022e7cfc77381a1e33fc912ecd2aca7722bb6",
+            "before": "a650625a14492d4de3685dbd3f41f6aed09bf4c1cf522fae3f5563bf186a9a3e",
+            "name": "Cslib.Circuits.Circuit.eval.eq_1"
+          },
+          {
+            "after": "31e51656dc33455239dd9dd4b3bd1697e9c1c058e37c8a1a550b3ec8f2e1696a",
+            "before": "5ed33f519056b9f8807d19c1f6bc6979c8f119fc455355e5ea8632e7b393436e",
+            "name": "Cslib.Circuits.Circuit.eval_id"
+          },
+          {
+            "after": "fa48858470d4382ad5d11b56c0908da5d1450cb8b172c4a62960db549f217f99",
+            "before": "c80b674c9e11c060eca63719bc3fc8686b0c6c1c13adf3da871321bb58cc2f4f",
+            "name": "Cslib.Circuits.Circuit.eval_id_apply"
+          },
+          {
+            "after": "69bc74de72a5ebf4fdcc1f8a5179052609b65830f91f01f618ac7f045467de1d",
+            "before": "b208b512200b06a773d6dcd5a8bbb6f88090c307f477826f71783f6bac3f6d27",
+            "name": "Cslib.Circuits.Circuit.map_eval"
+          },
+          {
+            "after": "2b7cb5c3ff473176b1eb38c3a13d3d93d6d286f45b97bac143f1b434ed96afee",
+            "before": "ee5a01aa1460c0d5f8f349e29667c1fc78f2ca60776e9e6c5323debb30404fe0",
+            "name": "Cslib.Circuits.Circuit.trace"
+          }
+        ],
+        "newConstantAddresses": [
+          "2b7cb5c3ff473176b1eb38c3a13d3d93d6d286f45b97bac143f1b434ed96afee",
+          "31e51656dc33455239dd9dd4b3bd1697e9c1c058e37c8a1a550b3ec8f2e1696a",
+          "3ed582d59b65daf139a23fb9724a577345e589a287f3b3860718bc41c872a819",
+          "4ffa6ec59607dff0a4f01619dd4022e7cfc77381a1e33fc912ecd2aca7722bb6",
+          "69bc74de72a5ebf4fdcc1f8a5179052609b65830f91f01f618ac7f045467de1d",
+          "a4e6dc50caa2b46980e6f816d90be1680c957353b41903692a890cc527fadccf",
+          "fa48858470d4382ad5d11b56c0908da5d1450cb8b172c4a62960db549f217f99"
+        ],
+        "removedConstantAddresses": [
+          "52b98e0acb581c6095b885c1f10131b919c47793acae625138e7031ba9364a1e",
+          "532ac46e38a9809960811852f6f499c8145707491dc993fb5747e58610222e83",
+          "5ed33f519056b9f8807d19c1f6bc6979c8f119fc455355e5ea8632e7b393436e",
+          "a650625a14492d4de3685dbd3f41f6aed09bf4c1cf522fae3f5563bf186a9a3e",
+          "b208b512200b06a773d6dcd5a8bbb6f88090c307f477826f71783f6bac3f6d27",
+          "c80b674c9e11c060eca63719bc3fc8686b0c6c1c13adf3da871321bb58cc2f4f",
+          "ee5a01aa1460c0d5f8f349e29667c1fc78f2ca60776e9e6c5323debb30404fe0"
+        ],
+        "removedNamedDeclarations": []
+      },
+      "phases": {
+        "build": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 2.1956635850001476,
+          "startedAt": "2026-10-07T22:43:08.414759+00:00",
+          "finishedAt": "2026-10-07T22:43:10.610731+00:00",
+          "command": [
+            "lake",
+            "build",
+            "--wfail",
+            "--iofail"
+          ],
+          "userCpuSeconds": 2.26,
+          "systemCpuSeconds": 0.81,
+          "peakRssBytes": 1550864384.0,
+          "cgroupPeakBytes": 529596416,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.build.metrics.json"
+        },
+        "imports": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 0.8605818319992977,
+          "startedAt": "2026-10-07T22:43:10.680600+00:00",
+          "finishedAt": "2026-10-07T22:43:11.541480+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "mk_all",
+            "--check"
+          ],
+          "userCpuSeconds": 0.44,
+          "systemCpuSeconds": 0.36,
+          "peakRssBytes": 879509504.0,
+          "cgroupPeakBytes": 244023296,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.imports.metrics.json"
+        },
+        "test": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 12.654395893001492,
+          "startedAt": "2026-10-07T22:43:11.598289+00:00",
+          "finishedAt": "2026-10-07T22:43:24.252997+00:00",
+          "command": [
+            "lake",
+            "test"
+          ],
+          "userCpuSeconds": 17.23,
+          "systemCpuSeconds": 4.91,
+          "peakRssBytes": 7088549888.0,
+          "cgroupPeakBytes": 1571885056,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.test.metrics.json"
+        },
+        "lint": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 4.998565668000083,
+          "startedAt": "2026-10-07T22:43:24.312629+00:00",
+          "finishedAt": "2026-10-07T22:43:29.311501+00:00",
+          "command": [
+            "lake",
+            "lint"
+          ],
+          "userCpuSeconds": 73.29,
+          "systemCpuSeconds": 14.52,
+          "peakRssBytes": 4632866816.0,
+          "cgroupPeakBytes": 1548742656,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.lint.metrics.json"
+        },
+        "style": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 1.0640402270000777,
+          "startedAt": "2026-10-07T22:43:29.367215+00:00",
+          "finishedAt": "2026-10-07T22:43:30.431556+00:00",
+          "command": [
+            "lake",
+            "exe",
+            "lint-style"
+          ],
+          "userCpuSeconds": 0.57,
+          "systemCpuSeconds": 0.45,
+          "peakRssBytes": 878329856.0,
+          "cgroupPeakBytes": 245100544,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.style.metrics.json"
+        },
+        "export": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 38.7819725340014,
+          "startedAt": "2026-10-07T22:44:32.787724+00:00",
+          "finishedAt": "2026-10-07T22:45:11.570023+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix",
+            "compile",
+            ".lake/ix-benchmark/CompileCslib.lean",
+            "--no-build",
+            "--out",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixe",
+            "--report",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.export-report.json"
+          ],
+          "userCpuSeconds": 504.53,
+          "systemCpuSeconds": 6.33,
+          "peakRssBytes": 11203891200.0,
+          "cgroupPeakBytes": 9034567680,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.export.metrics.json"
+        },
+        "assemble": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 4.532588310998108,
+          "startedAt": "2026-10-07T22:45:11.631631+00:00",
+          "finishedAt": "2026-10-07T22:45:16.164528+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "assemble",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixc",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixe",
+            "--labels",
+            "CSLib",
+            "--toolchains",
+            "leanprover/lean4:v4.34.1",
+            "--pins",
+            "git:local-synthetic-cslib@0ff7aa7288be337211a0477ca2edac1e0fe142ff"
+          ],
+          "userCpuSeconds": 4.95,
+          "systemCpuSeconds": 0.14,
+          "peakRssBytes": 3333292032.0,
+          "cgroupPeakBytes": 11100766208,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.assemble.metrics.json"
+        },
+        "plan": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 54.865451388999645,
+          "startedAt": "2026-10-07T22:45:16.228146+00:00",
+          "finishedAt": "2026-10-07T22:46:11.093891+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json",
+            "--plan-only"
+          ],
+          "userCpuSeconds": 72.89,
+          "systemCpuSeconds": 2.96,
+          "peakRssBytes": 4128145408.0,
+          "cgroupPeakBytes": 2970681344,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.plan.1.metrics.json",
+          "result": {
+            "status": "planned",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newSubjects": 0,
+            "retainedClaims": 148,
+            "changedBaseClaims": 0,
+            "shards": 148
+          }
+        },
+        "prove": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 67.2471251729985,
+          "startedAt": "2026-10-07T22:46:11.162637+00:00",
+          "finishedAt": "2026-10-07T22:47:19.274733+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 145.66,
+          "systemCpuSeconds": 8.06,
+          "peakRssBytes": 6182961152.0,
+          "cgroupPeakBytes": 6869553152,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "gpuSamples": {
+            "0": {
+              "uuid": "GPU-da8c4403-46d3-1f00-bf60-0ab5534cf762",
+              "samples": 68,
+              "peakMemoryMiB": 913.0,
+              "peakUtilizationPercent": 1.0,
+              "peakPowerWatts": 86.71,
+              "meanSampledUtilizationPercent": 0.04411764705882353
+            },
+            "1": {
+              "uuid": "GPU-e7c1cda8-e5d2-ac22-67ff-735b5e6305c5",
+              "samples": 68,
+              "peakMemoryMiB": 817.0,
+              "peakUtilizationPercent": 2.0,
+              "peakPowerWatts": 86.76,
+              "meanSampledUtilizationPercent": 0.04411764705882353
+            }
+          },
+          "measurementFile": "incremental-v4.34.1/S4.prove.1.metrics.json",
+          "result": {
+            "status": "certified",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newSubjects": 0,
+            "retainedClaims": 148,
+            "changedBaseClaims": 0,
+            "shards": 148,
+            "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3"
+          }
+        },
+        "verify": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 25.615767497001798,
+          "startedAt": "2026-10-07T22:47:19.334425+00:00",
+          "finishedAt": "2026-10-07T22:47:44.950500+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "verify-proof",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 40.89,
+          "systemCpuSeconds": 2.19,
+          "peakRssBytes": 2591424512.0,
+          "cgroupPeakBytes": 2704556032,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.verify.1.metrics.json",
+          "result": {
+            "status": "verified",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newProofs": 0,
+            "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3"
+          }
+        },
+        "repeat": {
+          "status": "completed",
+          "exitCode": 0,
+          "wallSeconds": 25.396937217003142,
+          "startedAt": "2026-10-07T22:47:45.014158+00:00",
+          "finishedAt": "2026-10-07T22:48:10.411409+00:00",
+          "command": [
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/bin/ix-auto-v2",
+            "catalog",
+            "prove",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixc",
+            "--base",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S3.ixc",
+            "--allow-axioms",
+            "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/axioms.txt",
+            "--structural-above",
+            "0",
+            "--json"
+          ],
+          "userCpuSeconds": 40.3,
+          "systemCpuSeconds": 2.04,
+          "peakRssBytes": 2598473728.0,
+          "cgroupPeakBytes": 2794803200,
+          "cgroupEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+          "measurementFile": "incremental-v4.34.1/S4.repeat.1.metrics.json",
+          "result": {
+            "status": "reused",
+            "snapshotSubjects": 385307,
+            "corpusSubjects": 385316,
+            "newProofs": 0,
+            "rootProof": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3"
+          }
+        }
+      },
+      "certificate": {
+        "path": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/S4.ixc/proving.json",
+        "sha256": "1db183a53f73bcfafde2a417bc132a40cfeb919a0a8791de452ccca3cffb2e61",
+        "status": "certified",
+        "rootProof": {
+          "address": "62ef87027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3",
+          "claim": "CheckEnv { root: Address { hash: Hash(\"173fd45a0bd5fa385a114584f693ca35fcdea91919e47a90551281f9a125317a\") }, assumptions: None }",
+          "payloadBytes": 5552953,
+          "traceShards": 1,
+          "wrapperBytes": 5552993,
+          "path": "proof-worker/store/62/ef/87/027c554584281b063145a67d1a6bc2ea0ce99aa0808cf4e8e8e4845ed3",
+          "objectPresent": true
+        },
+        "profile": {
+          "allowedAxioms": [
+            "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+            "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+            "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+            "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+            "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+            "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+            "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+            "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+            "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+            "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+            "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+            "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+            "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+          ],
+          "executable": "ec913eecc1f3cd57deff39896ffc132a815465b36aed77f3b0c21508c9d2fa8d",
+          "objectFormat": 4,
+          "schema": "ix-catalog-profile/1",
+          "structuralAbove": 0
+        },
+        "axioms": [
+          "16bba1a1afac7ff7048ba993de3e369f415ff0f1387e418a74e8bb940b258994",
+          "1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b",
+          "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34",
+          "265898d9def7237ef8b55652630f59093555c8de478b915c6e8e5a4c9a06f56a",
+          "560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b",
+          "5b97caa160e8f85bf1dd62e6a93f68c29ebef42150ab86878e2077656c4de9c9",
+          "6ae3fc6c7a6a8123e6797f474f728ec463d6c35214d5303dbc3224e3f35e74cd",
+          "78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2",
+          "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a",
+          "c3a231c61bd9be1378ab17ecd3d86ff9019a9cd753d32f7e79e4160a68f7e449",
+          "c70d0ad33080e4f19feb86fcf84d51c2b451d6a3c04f403b9cb2d64f653dfd29",
+          "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40",
+          "eb0e8cf40898f789cc69f74da60676c61bcca8a2e569c96386ccac97456d5cb1"
+        ]
+      }
+    }
+  ],
+  "artifacts": {
+    "fullMetrics": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/findings.json",
+    "perProofMetrics": "proof-metrics.csv",
+    "summaryCsv": "summary.csv",
+    "commitBundle": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/synthetic-commits.bundle",
+    "sourceRepository": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/incremental-v4.34.1/cslib",
+    "baselineReport": "/home/sam/repos/ix/.lake/benches/cslib-gpu-20261007-1825/completion.json"
+  }
+}
