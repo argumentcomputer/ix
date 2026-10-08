@@ -1538,6 +1538,12 @@ def l3dRoots : Array Lean.Name :=
     `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
     `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
     `conv_substLevels_viaConv,
+    -- semantic normalization: numeric fragment and independent checked relation
+    `NumericLevel, `NumericLevel.peel, `NumericLevel.explicit, `NumericLevel.eval,
+    `levelMaxSmart_numeric, `levelImaxSmart_numeric, `normalizeLevel_numeric,
+    `normalizeLevel_paramFree_eval, `substLevel_paramFree_eval,
+    `CheckedIxLevelEq, `checkedIxLevelEq_eval, `normalizeLevel_eval_of_checked,
+    `substLevel_empty_params_eval_of_checked, `substLevel_paramFree_eval_of_checked,
     -- canonicity
     `bool_guard2, `bool_guard3, `O2_pattern, `O8_pattern, `O7_pattern, `ebind, `eguard, `epattern,
     `toOption_some, `O11a_O2_pattern, `O1_O3_disjoint, `O1_O4_disjoint, `O3_O4_disjoint,
