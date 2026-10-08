@@ -59,6 +59,7 @@ theorem O8_pattern {env : OptEnv} {o : Occ} {e : Expr} (h : O8.apply env o = som
     ∃ r b, classify o.head = some (.kCasesOn, r) ∧ env.blockOf o.head = some b ∧
       b.change.collapse = true := by
   unfold O8.apply at h
+  obtain ⟨-, h⟩ := oguard h
   obtain ⟨⟨k, r⟩, hc, h⟩ := obind.1 h
   try dsimp only at h
   obtain ⟨hk, h⟩ := oguard h
@@ -76,6 +77,7 @@ theorem O7_pattern {env : OptEnv} {o : Occ} {e : Expr} (h : O7.apply env o = som
     ∃ k r b, classify o.head = some (k, r) ∧ (k = .kRec ∨ k = .kRecOn) ∧ env.blockOf o.head = some b ∧
       b.change.collapse = true ∧ b.change.split = false := by
   unfold O7.apply at h
+  obtain ⟨-, h⟩ := oguard h
   obtain ⟨⟨k, r⟩, hc, h⟩ := obind.1 h
   try dsimp only at h
   obtain ⟨hk, h⟩ := oguard h
