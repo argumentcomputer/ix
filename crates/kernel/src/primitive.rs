@@ -161,18 +161,22 @@ pub struct Primitives<M: KernelMode> {
 pub use ix_common::prim_addrs::{PrimAddrs, reserved_marker_name};
 
 impl<M: KernelMode> Primitives<M> {
-  /// Resolve primitives from the environment using the canonical
-  /// content-hash address table (`PrimAddrs::new`). This is the correct
+  /// Resolve primitives from the environment using the table in force
+  /// for this process (`crate::prim_profile::current`: the built-in canonical table,
+  /// or the profile file named by `IX_PRIM_PROFILE`). This is the correct
   /// call for `kctx.kenv` (the incrementally-compiled canonical
   /// environment).
   ///
   /// Addresses that don't resolve fall back to a synthetic KId with the
   /// address hex as the name. That is expected for the synthetic
-  /// `eager_reduce` marker and is a symptom of hash drift otherwise.
-  /// Regenerate stale hashes with
-  /// `lake test -- rust-kernel-build-primitives`.
+  /// `eager_reduce` marker and is a symptom of hash drift otherwise:
+  /// either regenerate the built-in table with
+  /// `lake test -- rust-kernel-build-primitives`, or point
+  /// `IX_PRIM_PROFILE` at a table generated for the environment's
+  /// toolchain. Addresses that resolve to a declaration of the wrong
+  /// kind are reported through `log::warn!`.
   pub fn from_env(env: &KEnv<M>) -> Self {
-    Self::from_env_with(env, &PrimAddrs::new())
+    Self::from_env_with(env, crate::prim_profile::current())
   }
 
   /// Resolve primitives from the environment using the LEON
@@ -199,7 +203,7 @@ impl<M: KernelMode> Primitives<M> {
   where
     F: FnMut(&Address) -> Option<ix_common::env::Name>,
   {
-    Self::from_addrs_with(&PrimAddrs::new(), |addr| {
+    Self::from_addrs_with(crate::prim_profile::current(), |addr| {
       name_for_addr(addr)
         .map(|name| KId::new(addr.clone(), M::meta_field(name)))
     })
@@ -215,6 +219,7 @@ impl<M: KernelMode> Primitives<M> {
       by_addr.entry(id.addr.clone()).or_insert_with(|| id.clone());
     }
 
+    warn_kind_mismatches(env, a, &by_addr);
     Self::from_addrs_with(a, |addr| by_addr.get(addr).cloned())
   }
 
@@ -334,6 +339,76 @@ impl<M: KernelMode> Primitives<M> {
       string_utf8_byte_size: r(&a.string_utf8_byte_size),
       string_append: r(&a.string_append),
       string_dec_eq: r(&a.string_dec_eq),
+    }
+  }
+}
+
+/// The declaration kind a pinned role must have for the checker's special
+/// rules about it to make sense. `None` for the synthetic marker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RoleKind {
+  Inductive,
+  Constructor,
+  Recursor,
+  Quotient,
+  Definition,
+}
+
+fn expected_role_kind(lean_name: &str) -> Option<RoleKind> {
+  Some(match lean_name {
+    "Nat" | "Bool" | "String" | "Char" | "List" | "Eq" | "Fin" | "Int"
+    | "PUnit" | "PProd" | "BitVec" => RoleKind::Inductive,
+    "Nat.zero" | "Nat.succ" | "Bool.true" | "Bool.false" | "Char.mk"
+    | "List.nil" | "List.cons" | "Eq.refl" | "Decidable.isTrue"
+    | "Decidable.isFalse" | "Int.ofNat" | "Int.negSucc" | "PProd.mk" => {
+      RoleKind::Constructor
+    },
+    "Nat.rec" | "Decidable.rec" => RoleKind::Recursor,
+    "Quot" | "Quot.mk" | "Quot.lift" | "Quot.ind" => RoleKind::Quotient,
+    ix_common::prim_addrs::MARKER_ROLE => return None,
+    _ => RoleKind::Definition,
+  })
+}
+
+fn kind_of<M: KernelMode>(c: &super::constant::KConst<M>) -> RoleKind {
+  use super::constant::KConst;
+  match c {
+    KConst::Indc { .. } => RoleKind::Inductive,
+    KConst::Ctor { .. } => RoleKind::Constructor,
+    KConst::Recr { .. } => RoleKind::Recursor,
+    KConst::Quot { .. } => RoleKind::Quotient,
+    KConst::Defn { .. } | KConst::Axio { .. } => RoleKind::Definition,
+  }
+}
+
+/// A pinned address that resolves to a declaration of the wrong kind means
+/// the table binds a role to something the special rules were not written
+/// for: the checker would apply native semantics to the wrong constant.
+/// Absent addresses are not reported here; they fall back to synthetic
+/// KIds and surface as unknown constants when a rule needs them. Axioms
+/// are accepted for any role because test environments stand primitives
+/// in with axioms of the right type.
+fn warn_kind_mismatches<M: KernelMode>(
+  env: &KEnv<M>,
+  a: &PrimAddrs,
+  by_addr: &rustc_hash::FxHashMap<Address, KId<M>>,
+) {
+  for (name, addr) in a.roles() {
+    let Some(expected) = expected_role_kind(name) else { continue };
+    let Some(id) = by_addr.get(&addr) else { continue };
+    let Some(c) = env.get(id) else { continue };
+    if matches!(c, super::constant::KConst::Axio { .. }) {
+      continue;
+    }
+    let found = kind_of(&c);
+    if found != expected {
+      log::warn!(
+        "primitive role {name} at {} resolves to a {found:?}, expected a \
+         {expected:?}; the special rules for this role are unsound here \
+         (profile: {})",
+        addr.hex(),
+        crate::prim_profile::current_source()
+      );
     }
   }
 }

@@ -152,6 +152,7 @@ pub mod lctx;
 pub mod level;
 pub mod mode;
 pub mod perf;
+pub mod prim_profile;
 pub mod primitive;
 // Sharding cost model + partitioner (out-of-circuit). `profile` records
 // per-block heartbeats + the delta-unfold graph (the cost graph); `shard`

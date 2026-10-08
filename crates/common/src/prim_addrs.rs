@@ -11,12 +11,19 @@
 //! dumps the current `(name, hex)` pairs — paste the updated lines into
 //! `PrimAddrs::new`. `lake test -- prim-addrs` pins this table against
 //! the Lean mirror in `Ix/Tc/Primitive.lean`.
+//!
+//! `ROLE_NAMES` fixes the order of the roles, which is the identity a
+//! primitive profile object (`ixon::prim_profile::PrimProfile`) binds
+//! addresses to; the checker takes the table in force from
+//! `ix_kernel::prim_profile::current`, which may load such an object for
+//! another toolchain instead of this built-in table.
 
 use std::sync::LazyLock;
 
 use crate::address::Address;
 
 /// Hardcoded primitive addresses (for lookup in the env).
+#[derive(Clone, Debug)]
 pub struct PrimAddrs {
   pub nat: Address,
   pub nat_zero: Address,
@@ -462,104 +469,6 @@ impl PrimAddrs {
     Self::parity_table(&Self::new_orig())
   }
 
-  fn parity_table(p: &Self) -> Vec<(&'static str, String)> {
-    vec![
-      ("Nat", p.nat.hex()),
-      ("Nat.zero", p.nat_zero.hex()),
-      ("Nat.succ", p.nat_succ.hex()),
-      ("Nat.add", p.nat_add.hex()),
-      ("Nat.pred", p.nat_pred.hex()),
-      ("Nat.sub", p.nat_sub.hex()),
-      ("Nat.mul", p.nat_mul.hex()),
-      ("Nat.pow", p.nat_pow.hex()),
-      ("Nat.gcd", p.nat_gcd.hex()),
-      ("Nat.mod", p.nat_mod.hex()),
-      ("Nat.div", p.nat_div.hex()),
-      ("Nat.bitwise", p.nat_bitwise.hex()),
-      ("Nat.beq", p.nat_beq.hex()),
-      ("Nat.ble", p.nat_ble.hex()),
-      ("Nat.land", p.nat_land.hex()),
-      ("Nat.lor", p.nat_lor.hex()),
-      ("Nat.xor", p.nat_xor.hex()),
-      ("Nat.shiftLeft", p.nat_shift_left.hex()),
-      ("Nat.shiftRight", p.nat_shift_right.hex()),
-      ("Bool", p.bool_type.hex()),
-      ("Bool.true", p.bool_true.hex()),
-      ("Bool.false", p.bool_false.hex()),
-      ("String", p.string.hex()),
-      ("String.mk", p.string_mk.hex()),
-      ("Char", p.char_type.hex()),
-      ("Char.mk", p.char_mk.hex()),
-      ("Char.ofNat", p.char_of_nat.hex()),
-      ("String.ofList", p.string_of_list.hex()),
-      ("List", p.list.hex()),
-      ("List.nil", p.list_nil.hex()),
-      ("List.cons", p.list_cons.hex()),
-      ("Eq", p.eq.hex()),
-      ("Eq.refl", p.eq_refl.hex()),
-      ("Quot", p.quot_type.hex()),
-      ("Quot.mk", p.quot_ctor.hex()),
-      ("Quot.lift", p.quot_lift.hex()),
-      ("Quot.ind", p.quot_ind.hex()),
-      ("Lean.reduceBool", p.reduce_bool.hex()),
-      ("Lean.reduceNat", p.reduce_nat.hex()),
-      ("eagerReduce", p.eager_reduce.hex()),
-      ("System.Platform.numBits", p.system_platform_num_bits.hex()),
-      ("System.Platform.getNumBits", p.system_platform_get_num_bits.hex()),
-      ("Subtype.val", p.subtype_val.hex()),
-      ("String.toByteArray", p.string_to_byte_array.hex()),
-      ("ByteArray.empty", p.byte_array_empty.hex()),
-      ("Nat.decLe", p.nat_dec_le.hex()),
-      ("Nat.decEq", p.nat_dec_eq.hex()),
-      ("Nat.decLt", p.nat_dec_lt.hex()),
-      ("Decidable.rec", p.decidable_rec.hex()),
-      ("Decidable.isTrue", p.decidable_is_true.hex()),
-      ("Decidable.isFalse", p.decidable_is_false.hex()),
-      ("Nat.le_of_ble_eq_true", p.nat_le_of_ble_eq_true.hex()),
-      ("Nat.not_le_of_not_ble_eq_true", p.nat_not_le_of_not_ble_eq_true.hex()),
-      ("Nat.eq_of_beq_eq_true", p.nat_eq_of_beq_eq_true.hex()),
-      ("Nat.ne_of_beq_eq_false", p.nat_ne_of_beq_eq_false.hex()),
-      ("Fin", p.fin.hex()),
-      ("Bool.noConfusion", p.bool_no_confusion.hex()),
-      ("Int", p.int.hex()),
-      ("Int.ofNat", p.int_of_nat.hex()),
-      ("Int.negSucc", p.int_neg_succ.hex()),
-      ("Int.add", p.int_add.hex()),
-      ("Int.sub", p.int_sub.hex()),
-      ("Int.mul", p.int_mul.hex()),
-      ("Int.neg", p.int_neg.hex()),
-      ("Int.emod", p.int_emod.hex()),
-      ("Int.ediv", p.int_ediv.hex()),
-      ("Int.bmod", p.int_bmod.hex()),
-      ("Int.bdiv", p.int_bdiv.hex()),
-      ("Int.natAbs", p.int_nat_abs.hex()),
-      ("Int.pow", p.int_pow.hex()),
-      ("Int.decEq", p.int_dec_eq.hex()),
-      ("Int.decLe", p.int_dec_le.hex()),
-      ("Int.decLt", p.int_dec_lt.hex()),
-      ("PUnit", p.punit.hex()),
-      ("PProd", p.pprod.hex()),
-      ("PProd.mk", p.pprod_mk.hex()),
-      ("Nat.rec", p.nat_rec.hex()),
-      ("Nat.casesOn", p.nat_cases_on.hex()),
-      ("BitVec", p.bit_vec.hex()),
-      ("BitVec.toNat", p.bit_vec_to_nat.hex()),
-      ("BitVec.ofNat", p.bit_vec_of_nat.hex()),
-      ("BitVec.ult", p.bit_vec_ult.hex()),
-      ("Decidable.decide", p.decidable_decide.hex()),
-      ("LT.lt", p.lt_lt.hex()),
-      ("OfNat.ofNat", p.of_nat_of_nat.hex()),
-      ("Unit", p.unit.hex()),
-      ("PUnit._sizeOf_1", p.punit_size_of_1.hex()),
-      ("SizeOf.sizeOf", p.size_of_size_of.hex()),
-      ("String.back", p.string_back.hex()),
-      ("String.Legacy.back", p.string_legacy_back.hex()),
-      ("String.utf8ByteSize", p.string_utf8_byte_size.hex()),
-      ("String.append", p.string_append.hex()),
-      ("String.decEq", p.string_dec_eq.hex()),
-    ]
-  }
-
   /// LEON content-hash addresses, hardcoded from
   /// `ConstantInfo::get_hash()` applied to each primitive's original
   /// (pre-compile) Lean declaration. Used by `Primitives::from_env_orig`
@@ -867,10 +776,227 @@ impl PrimAddrs {
   }
 }
 
+/// Every pinned role as `"Lean.name" => field`, in the canonical order of
+/// `Tests/Ix/Kernel/BuildPrimitives.lean`'s `kernelPrimitives`. One source
+/// of truth for the parity table, the profile loader and the profile hash,
+/// so a role cannot be added to one and forgotten in another.
+macro_rules! prim_roles {
+  ($( $lean:literal => $field:ident ),* $(,)?) => {
+    /// Lean names of the pinned roles, canonical order.
+    pub const ROLE_NAMES: &[&str] = &[ $( $lean ),* ];
+
+    impl PrimAddrs {
+      fn parity_table(p: &Self) -> Vec<(&'static str, String)> {
+        vec![ $( ($lean, p.$field.hex()) ),* ]
+      }
+
+      /// `(lean_name, address)` for every pinned role, canonical order.
+      pub fn roles(&self) -> Vec<(&'static str, Address)> {
+        vec![ $( ($lean, self.$field.clone()) ),* ]
+      }
+
+      fn set_role(&mut self, name: &str, addr: Address) -> bool {
+        match name {
+          $( $lean => { self.$field = addr; true } )*
+          _ => false,
+        }
+      }
+    }
+  };
+}
+
+prim_roles! {
+    "Nat" => nat,
+    "Nat.zero" => nat_zero,
+    "Nat.succ" => nat_succ,
+    "Nat.add" => nat_add,
+    "Nat.pred" => nat_pred,
+    "Nat.sub" => nat_sub,
+    "Nat.mul" => nat_mul,
+    "Nat.pow" => nat_pow,
+    "Nat.gcd" => nat_gcd,
+    "Nat.mod" => nat_mod,
+    "Nat.div" => nat_div,
+    "Nat.bitwise" => nat_bitwise,
+    "Nat.beq" => nat_beq,
+    "Nat.ble" => nat_ble,
+    "Nat.land" => nat_land,
+    "Nat.lor" => nat_lor,
+    "Nat.xor" => nat_xor,
+    "Nat.shiftLeft" => nat_shift_left,
+    "Nat.shiftRight" => nat_shift_right,
+    "Bool" => bool_type,
+    "Bool.true" => bool_true,
+    "Bool.false" => bool_false,
+    "String" => string,
+    "String.mk" => string_mk,
+    "Char" => char_type,
+    "Char.mk" => char_mk,
+    "Char.ofNat" => char_of_nat,
+    "String.ofList" => string_of_list,
+    "List" => list,
+    "List.nil" => list_nil,
+    "List.cons" => list_cons,
+    "Eq" => eq,
+    "Eq.refl" => eq_refl,
+    "Quot" => quot_type,
+    "Quot.mk" => quot_ctor,
+    "Quot.lift" => quot_lift,
+    "Quot.ind" => quot_ind,
+    "Lean.reduceBool" => reduce_bool,
+    "Lean.reduceNat" => reduce_nat,
+    "eagerReduce" => eager_reduce,
+    "System.Platform.numBits" => system_platform_num_bits,
+    "System.Platform.getNumBits" => system_platform_get_num_bits,
+    "Subtype.val" => subtype_val,
+    "String.toByteArray" => string_to_byte_array,
+    "ByteArray.empty" => byte_array_empty,
+    "Nat.decLe" => nat_dec_le,
+    "Nat.decEq" => nat_dec_eq,
+    "Nat.decLt" => nat_dec_lt,
+    "Decidable.rec" => decidable_rec,
+    "Decidable.isTrue" => decidable_is_true,
+    "Decidable.isFalse" => decidable_is_false,
+    "Nat.le_of_ble_eq_true" => nat_le_of_ble_eq_true,
+    "Nat.not_le_of_not_ble_eq_true" => nat_not_le_of_not_ble_eq_true,
+    "Nat.eq_of_beq_eq_true" => nat_eq_of_beq_eq_true,
+    "Nat.ne_of_beq_eq_false" => nat_ne_of_beq_eq_false,
+    "Fin" => fin,
+    "Bool.noConfusion" => bool_no_confusion,
+    "Int" => int,
+    "Int.ofNat" => int_of_nat,
+    "Int.negSucc" => int_neg_succ,
+    "Int.add" => int_add,
+    "Int.sub" => int_sub,
+    "Int.mul" => int_mul,
+    "Int.neg" => int_neg,
+    "Int.emod" => int_emod,
+    "Int.ediv" => int_ediv,
+    "Int.bmod" => int_bmod,
+    "Int.bdiv" => int_bdiv,
+    "Int.natAbs" => int_nat_abs,
+    "Int.pow" => int_pow,
+    "Int.decEq" => int_dec_eq,
+    "Int.decLe" => int_dec_le,
+    "Int.decLt" => int_dec_lt,
+    "PUnit" => punit,
+    "PProd" => pprod,
+    "PProd.mk" => pprod_mk,
+    "Nat.rec" => nat_rec,
+    "Nat.casesOn" => nat_cases_on,
+    "BitVec" => bit_vec,
+    "BitVec.toNat" => bit_vec_to_nat,
+    "BitVec.ofNat" => bit_vec_of_nat,
+    "BitVec.ult" => bit_vec_ult,
+    "Decidable.decide" => decidable_decide,
+    "LT.lt" => lt_lt,
+    "OfNat.ofNat" => of_nat_of_nat,
+    "Unit" => unit,
+    "PUnit._sizeOf_1" => punit_size_of_1,
+    "SizeOf.sizeOf" => size_of_size_of,
+    "String.back" => string_back,
+    "String.Legacy.back" => string_legacy_back,
+    "String.utf8ByteSize" => string_utf8_byte_size,
+    "String.append" => string_append,
+    "String.decEq" => string_dec_eq,
+}
+
+/// The synthetic reduction marker is not a Lean declaration and is never
+/// part of a profile: it must stay distinct from every real address or
+/// address-only dispatch on it would be unsound.
+pub const MARKER_ROLE: &str = "eagerReduce";
+
+impl PrimAddrs {
+  /// Build a table from `(lean_name, address)` pairs. Every role except
+  /// the marker must be present exactly once; unknown names are errors;
+  /// the marker keeps its built-in value whatever the pairs say.
+  pub fn from_roles<I>(roles: I) -> Result<Self, String>
+  where
+    I: IntoIterator<Item = (String, Address)>,
+  {
+    let mut prims = Self::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, addr) in roles {
+      if !seen.insert(name.clone()) {
+        return Err(format!("duplicate role `{name}`"));
+      }
+      if name == MARKER_ROLE {
+        continue;
+      }
+      if !prims.set_role(&name, addr) {
+        return Err(format!("unknown role `{name}`"));
+      }
+    }
+    let missing: Vec<&str> = ROLE_NAMES
+      .iter()
+      .copied()
+      .filter(|n| *n != MARKER_ROLE && !seen.contains(*n))
+      .collect();
+    if !missing.is_empty() {
+      return Err(format!(
+        "incomplete profile, missing: {}",
+        missing.join(", ")
+      ));
+    }
+    Ok(prims)
+  }
+}
+
 pub fn reserved_marker_name(addr: &Address) -> Option<&'static str> {
   static MARKERS: LazyLock<[(&'static str, Address); 2]> =
     LazyLock::new(PrimAddrs::reserved_marker_addrs);
   MARKERS
     .iter()
     .find_map(|(name, marker_addr)| (marker_addr == addr).then_some(*name))
+}
+
+#[cfg(test)]
+mod role_tests {
+  use super::*;
+
+  #[test]
+  fn roles_round_trip_through_from_roles() {
+    let builtin = PrimAddrs::new();
+    let pairs = builtin.roles().into_iter().map(|(n, a)| (n.to_string(), a));
+    let rebuilt = PrimAddrs::from_roles(pairs).unwrap();
+    assert_eq!(rebuilt.roles(), builtin.roles());
+  }
+
+  #[test]
+  fn role_names_cover_every_field_once() {
+    let builtin = PrimAddrs::new();
+    assert_eq!(builtin.roles().len(), ROLE_NAMES.len());
+    let mut names: Vec<&str> = ROLE_NAMES.to_vec();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), ROLE_NAMES.len());
+  }
+
+  #[test]
+  fn rejects_unknown_missing_and_duplicate_roles() {
+    let builtin = PrimAddrs::new();
+    let all = || builtin.roles().into_iter().map(|(n, a)| (n.to_string(), a));
+    let unknown = all().chain([("Not.aRole".to_string(), builtin.nat.clone())]);
+    assert!(
+      PrimAddrs::from_roles(unknown).unwrap_err().contains("unknown role")
+    );
+    let partial = all().take(10);
+    assert!(PrimAddrs::from_roles(partial).unwrap_err().contains("missing"));
+    let dup = all().chain([("Nat".to_string(), builtin.nat.clone())]);
+    assert!(PrimAddrs::from_roles(dup).unwrap_err().contains("duplicate"));
+  }
+
+  #[test]
+  fn marker_is_never_taken_from_roles() {
+    let builtin = PrimAddrs::new();
+    let pairs = builtin.roles().into_iter().map(|(n, a)| {
+      if n == MARKER_ROLE {
+        (n.to_string(), builtin.nat.clone())
+      } else {
+        (n.to_string(), a)
+      }
+    });
+    let loaded = PrimAddrs::from_roles(pairs).unwrap();
+    assert_eq!(loaded.eager_reduce, builtin.eager_reduce);
+  }
 }

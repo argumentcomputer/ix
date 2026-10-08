@@ -21,6 +21,7 @@ pub mod lazy;
 pub mod map;
 pub mod merkle;
 pub mod metadata;
+pub mod prim_profile;
 pub mod proof;
 pub mod resource;
 pub mod serialize;

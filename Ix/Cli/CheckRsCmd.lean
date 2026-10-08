@@ -405,7 +405,7 @@ end Ix.Cli.CheckRsCmd
 open Ix.Cli.CheckRsCmd in
 def checkRsCmd : Cli.Cmd := `[Cli|
   "check-rs" VIA runCheckRsCmd;
-  "Typecheck a `.ixe` through the Rust kernel. Exits 0 when everything passes, 3 when the kernel rejects any constant (with --json, the rejected rows are on disk), nonzero otherwise on infrastructure failures."
+  "Typecheck a `.ixe` through the Rust kernel. Exits 0 when everything passes, 3 when the kernel rejects any constant (with --json, the rejected rows are on disk), nonzero otherwise on infrastructure failures. Set IX_PRIM_PROFILE=<profile> to bind the kernel's primitive roles to another toolchain's addresses, where <profile> is a primitive profile object written by `ix prims export`."
 
   FLAGS:
     anon;                   "Run the kernel in anon mode (no metadata read from .ixe)"

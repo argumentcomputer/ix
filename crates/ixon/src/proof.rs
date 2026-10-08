@@ -207,6 +207,7 @@ pub struct Proof {
 /// - 7: Contains claim
 /// - 8: Catalog claim (`E8 00`)
 /// - 9: Resource claim (`E8 01`)
+/// - 10: PrimProfile (`E8 02`, see `prim_profile.rs`)
 ///
 /// The `.ixe` header also uses flag 0xE, with the format version as the
 /// value (`Env::VERSION`): version 4 is the byte `0xE4`, the same byte as
@@ -223,6 +224,7 @@ pub const VARIANT_REVEAL_CLAIM: u64 = 6;
 pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 pub const VARIANT_CATALOG_CLAIM: u64 = 8;
 pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
+pub const VARIANT_PRIM_PROFILE: u64 = 10;
 
 /// TagN flag for ZK proofs (0xF). Every variant is in rung 1, a single-byte
 /// tag (`0xF0`–`0xF6`); slot 7 (`0xF7`) is the last free single byte.

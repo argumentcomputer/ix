@@ -21,6 +21,7 @@ import Ix.Cli.ProfileCmd
 import Ix.Cli.ProveCmd
 import Ix.Cli.ShardCmd
 import Ix.Cli.TreeCmd
+import Ix.Cli.PrimsCmd
 import Ix.Cli.ValidateCmd
 import Ix.Cli.VerifyCmd
 import Ix.Cli.ServeCmd
@@ -50,6 +51,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     diffCmd;
     packCmd;
     treeCmd;
+    primsCmd;
     profileCmd;
     proveCmd;
     shardCmd;
