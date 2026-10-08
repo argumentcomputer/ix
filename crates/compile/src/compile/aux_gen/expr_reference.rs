@@ -479,7 +479,7 @@ pub(super) fn subst_level(
     ),
     LevelData::Param(name, _) => {
       for (i, p) in params.iter().enumerate() {
-        if p == name && i < univs.len() {
+        if p.same_structure(name) && i < univs.len() {
           return univs[i].clone();
         }
       }

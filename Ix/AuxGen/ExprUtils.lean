@@ -24,6 +24,7 @@ module
 public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
+public import Ix.Compile.Canon.Expr
 public import Std.Data.HashMap
 public import Std.Data.HashSet
 
@@ -338,7 +339,7 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
   if let (some (_, ox), some (_, oy)) := (levelExplicitOffset x, levelExplicitOffset y) then
     -- Both explicit numerals (Succ^n(Zero)): take the larger.
     return if ox >= oy then x else y
-  if x == y then
+  if Ix.Compile.Canon.levelSameStructure x y then
     return x
   if let .zero _ := x then
     return y
@@ -346,16 +347,16 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
     return x
   -- max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
   if let .max bl br _ := y then
-    if bl == x || br == x then
+    if Ix.Compile.Canon.levelSameStructure bl x || Ix.Compile.Canon.levelSameStructure br x then
       return y
   -- max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
   if let .max al ar _ := x then
-    if al == y || ar == y then
+    if Ix.Compile.Canon.levelSameStructure al y || Ix.Compile.Canon.levelSameStructure ar y then
       return x
   -- Same base, different offsets: succ^n(x) vs succ^m(x) → take larger.
   let (baseX, offX) := levelPeelSucc x
   let (baseY, offY) := levelPeelSucc y
-  if baseX == baseY then
+  if Ix.Compile.Canon.levelSameStructure baseX baseY then
     return if offX >= offY then x else y
   return Level.mkMax x y
 
@@ -377,7 +378,7 @@ def levelImaxSmart (x y : Level) : Level := Id.run do
   if let .succ inner _ := x then
     if let .zero _ := inner then
       return y
-  if x == y then
+  if Ix.Compile.Canon.levelSameStructure x y then
     return x
   return Level.mkIMax x y
 
@@ -399,7 +400,7 @@ partial def substLevel (lvl : Level) (params : Array Name) (univs : Array Level)
     levelImaxSmart (substLevel a params univs) (substLevel b params univs)
   | .param name _ => Id.run do
     for h : i in [0:params.size] do
-      if hu : params[i] == name ∧ i < univs.size then
+      if hu : Ix.Compile.Canon.keyName params[i] == Ix.Compile.Canon.keyName name ∧ i < univs.size then
         return univs[i]'hu.2
     return lvl
 

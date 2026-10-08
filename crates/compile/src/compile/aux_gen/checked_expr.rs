@@ -345,17 +345,21 @@ pub(super) fn subst_levels(
     params: &[Name],
     univs: &[Level],
     c: &Checkpoint,
-    cache: &mut FxHashMap<Hash, Level>,
+    cache: &mut FxHashMap<Hash, (Level, Level)>,
   ) -> Result<Level> {
     c.visit()?;
     let key = *l.get_hash();
-    if let Some(value) = cache.get(&key) {
-      return Ok(value.clone());
+    if let Some((stored, value)) = cache.get(&key) {
+      // Confirm the entire input, including cached fields: returning an old
+      // result must preserve exactly this pure step's raw output as well.
+      if stored == l {
+        return Ok(value.clone());
+      }
     }
     let value = match l.as_data() {
       LevelData::Param(n, _) => params
         .iter()
-        .position(|p| p == n)
+        .position(|p| p.same_structure(n))
         .and_then(|i| univs.get(i))
         .unwrap_or(l)
         .clone(),
@@ -370,7 +374,7 @@ pub(super) fn subst_levels(
       ),
       _ => l.clone(),
     };
-    cache.insert(key, value.clone());
+    cache.insert(key, (l.clone(), value.clone()));
     Ok(value)
   }
   let mut levels = FxHashMap::default();
@@ -447,6 +451,62 @@ mod tests {
   }
   fn pi(t: LeanExpr, body: LeanExpr) -> LeanExpr {
     LeanExpr::all(name("x"), t, body, BinderInfo::Default)
+  }
+
+  #[test]
+  fn level_cache_collision_recomputes_and_preserves_valid_neighbour() {
+    use std::sync::Arc;
+    let u = name("u");
+    let v = name("v");
+    let first = Level::param(u.clone());
+    let collision = Level(Arc::new(LevelData::Param(v.clone(), *first.get_hash())));
+    let arguments = [Level::zero(), Level::succ(Level::zero())];
+    let expected = LeanExpr::cnst(name("C"), arguments.to_vec());
+    for last in [collision, Level::param(v.clone())] {
+      let source = LeanExpr::cnst(name("C"), vec![first.clone(), last]);
+      let result = subst_levels(&source, &[u.clone(), v.clone()], &arguments, &Checkpoint::default()).unwrap();
+      assert_eq!(result, expected);
+      assert_eq!(result, old::subst_levels(&source, &[u.clone(), v.clone()], &arguments));
+    }
+  }
+
+  #[test]
+  fn same_semantic_input_with_changed_caches_keeps_each_raw_result() {
+    use ix_common::env::NameData;
+    use std::sync::Arc;
+    let v = name("v");
+    let first = Level::param(v);
+    let digest = blake3::hash(b"changed descendant cache");
+    let rehashed = Name(Arc::new(NameData::Str(
+      Name(Arc::new(NameData::Anonymous(digest))), "v".into(), digest,
+    )));
+    let other = Level(Arc::new(LevelData::Param(rehashed, *first.get_hash())));
+    assert!(first.same_structure(&other));
+    assert_ne!(first, other);
+    let source = LeanExpr::cnst(name("C"), vec![first, other]);
+    let result = subst_levels(&source, &[name("u")], &[Level::zero()], &Checkpoint::default()).unwrap();
+    // Neither parameter matches: each original leaf, including its caches,
+    // is the exact result of the pure scalar step.
+    assert_eq!(result, source);
+  }
+
+  #[test]
+  fn structural_parameter_match_keeps_first_match_and_short_array_fallback() {
+    use ix_common::env::NameData;
+    use std::sync::Arc;
+    let u = name("u");
+    let rehashed = Name(Arc::new(NameData::Str(
+      Name::anon(), "u".into(), blake3::hash(b"parameter cache"),
+    )));
+    let source = LeanExpr::cnst(name("C"), vec![Level::param(rehashed.clone())]);
+    let arguments = [Level::zero(), Level::succ(Level::zero())];
+    for parameters in [vec![u.clone()], vec![u.clone(), rehashed]] {
+      let result = subst_levels(&source, &parameters, &arguments, &Checkpoint::default()).unwrap();
+      assert_eq!(result, LeanExpr::cnst(name("C"), vec![arguments[0].clone()]));
+    }
+    let unmatched = LeanExpr::cnst(name("C"), vec![Level::param(name("v"))]);
+    let parameters = [u, name("v")];
+    assert_eq!(subst_levels(&unmatched, &parameters, &arguments[..1], &Checkpoint::default()).unwrap(), unmatched);
   }
 
   #[test]
