@@ -1541,6 +1541,9 @@ def l3dRoots : Array Lean.Name :=
     `SourceScope.exportSourceLevel_scope, `SourceScope.source_levels_scope,
     `SourceScope.exportSourceExpr_scope, `SourceScope.exportSourceEntry_defn_scope,
     `SourceScope.exportSourceEntry_thm_scope,
+    -- original finite-source inventory facts from the existing installation receipt
+    `SourceScope.definition_scope_of_export, `SourceScope.theorem_scope_of_export,
+    `SourceScope.definition_scope_of_installation, `SourceScope.theorem_scope_of_installation,
     -- exact scalar normalization and term-substitution transport
     `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
     `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
