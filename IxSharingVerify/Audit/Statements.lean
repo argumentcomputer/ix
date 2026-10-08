@@ -1,6 +1,7 @@
 import IxC.Kernel.Audit.Axioms
 import IxSharingVerify
 import IxSharingVerify.Builder
+import Ix.Compile.Canon.NameTable
 
 /-!
 # Trust manifest for the sharing proofs
@@ -304,7 +305,12 @@ def hostCodeRoots : Array RootAllowance := #[
   -- `Ix.Common` compares byte arrays with core's `ByteArray.beq` (`memcmp`)
   -- in place of the derived `BEq ByteArray`.
   { root := ``instBEqByteArray_ix_beq_eq_core,
-    standardAxioms := quotOnly }
+    standardAxioms := quotOnly },
+  -- Structural table hits are confirmed against their hash-free specifications.
+  { root := ``Ix.Compile.Canon.OccurrenceTable.get?_eq_fast,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Canon.NameTable.get?_eq_fast,
+    standardAxioms := standard }
 ]
 
 /-- The complete manifest. `Audit.CompiledCode` requires every `@[csimp]`

@@ -4,6 +4,7 @@ import Ix.CompileCert.StrongEntry
 import Ix.CompileCert.StrongCone
 import Ix.CompileCert.Indexed
 import Ix.CompileCert.Canon
+import Ix.CompileCert.Canon.GeneratedTables
 import Ix.CompileCert.Changed
 import Ix.CompileCert.Conv
 import Ix.CompileCert.Bridge
@@ -1598,3 +1599,23 @@ def l3dRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Structural table specifications reused by the L3 runtime refinement.
+These roots are additive; the frozen and existing lane inventories above
+remain unchanged. Hash buckets select candidates only. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dTableRoots : Array Lean.Name :=
+  #[`OccurrenceTable.getFast?_eq, `OccurrenceTable.get?_eq_fast,
+    `OccurrenceTable.get?_bucket, `OccurrenceRef.named_ne_external,
+    `OccurrenceKey.const_tag_disjoint, `OccurrenceKey.proj_tag_disjoint,
+    `NameTable.getFast?_eq, `NameTable.get?_eq_fast,
+    `nameLookup_some_mem, `nameLookup_filter_other,
+    `NameTable.get?_insert, `NameTable.get?_insert_self,
+    `NameTable.contains_insert, `NameTable.contains_insert_mono,
+    `NameTable.contains_insert_self].map (`Ix.Compile.Canon ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dTableRoots Ix.CompileCert.Audit.allowedAxioms
