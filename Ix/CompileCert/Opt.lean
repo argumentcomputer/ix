@@ -14,6 +14,7 @@ import Ix.CompileCert.Opt.RewriteTotal
 import Ix.CompileCert.Opt.RewriteInst
 import Ix.CompileCert.Opt.LevelTransport
 import Ix.CompileCert.Opt.LevelSemantics
+import Ix.CompileCert.Opt.LevelRefinement
 import Ix.CompileCert.Opt.ExpansionOrigin
 import Ix.CompileCert.Opt.SourceScope
 import Ix.CompileCert.Opt.SourceInstallScope
@@ -67,6 +68,7 @@ The theorems, by pass:
 | captured original-source lookups | `IngestionLookup.captured_lookup`, `IngestionLookup.closed_reference_lookup`, `IngestionLookup.closed_reference_canon_arity` | exact supplied lookup and ingestion count follow from the existing capture/closure witness; hash-keyed compiler lookup, cache-content and annotation correspondence remain open |
 | universe-map transport | `substLevel_empty_params`, `substLevel_empty_univs`, `substLevel_paramFree`; `Conv.mapC_viaConv`, `conv_substLevels_viaConv` | exact scalar normalization facts; mapped-rule conversion remains an explicit intermediate obligation, not a discharged source law |
 | semantic level bridge | `normalizeLevel_paramFree_eval`, `substLevel_paramFree_eval`; `checkedIxLevelEq_eval`, `normalizeLevel_eval_of_checked` | numeric fragment proved for every successful evaluation with arbitrary caches; the general independent-check relation is intermediate, and polymorphic source-derived soundness remains open |
+| polymorphic scalar runtime | `LevelRefinement.normalizeLevel_evalP`, `substLevel_evalP`, `substLevel_compose_of_source_export_evalP`, `substLevel_params_of_source_export` | actual structural smart/lookup semantics with arbitrary cached fields; source-export scope is derived internally, while ingestion, referenced-spine arity and the general term-conversion bridge remain open |
 | canonicity (C-1, C-2) | `O1_O3_disjoint` … `O2_O7_disjoint`, `O1_O6_agree`, `O11a_O2_pattern`, `engine_of_O1`, `engine_of_O3`, `engine_of_O4`, `O1_out`, `argT_congr` | — |
 
 The common part: `rec_sel_conv`, `recOn_sel_conv` (`Rec.lean`), `delta_sel`, `delta_beta` (δ then

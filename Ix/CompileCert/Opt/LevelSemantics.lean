@@ -11,9 +11,10 @@ not a replacement for the original compiler domain or its polymorphic obligation
 
 `CheckedIxLevelEq` connects the existing independent structural level export and semantic
 checker to `ixLevelEval` under the same source/wire/target valuations. It does not add a check
-to the compiler, assume one as a final law, or prove all smart results pass it. The general
-source-derived normalization and composed-instantiation obligations, structural helper
-refinement, capture avoidance and runtime/core refinements remain open.
+to the compiler, assume one as a final law, or prove all smart results pass it.
+`LevelRefinement` extends the scalar evaluation bridge to polymorphic normalization and
+substitution with structural comparisons. Source ingestion, referenced-spine arity, the
+general term-conversion bridge, capture avoidance and runtime/core refinements remain open.
 -/
 
 namespace Ix.CompileCert.Opt

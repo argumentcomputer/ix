@@ -1619,3 +1619,26 @@ def l3dTableRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dTableRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Polymorphic scalar runtime refinement. These roots are additive to every
+existing lane and frozen inventory. Source ingestion, referenced-spine arity
+and general term conversion remain independent obligations. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dLevelRefinementRoots : Array Lean.Name :=
+  #[`subst_compose_of_scope_evalP, `runtime_parameter_collision_repaired, `runtime_max_collision_repaired,
+    `candidate_parameter_collision_control, `candidate_lookup_controls, `candidate_max_collision_control,
+    `subst_evalP, `subst_compose_evalP, `normalize_ixLevelEval,
+    `maxSmart_eval, `imaxSmart_eval, `maxSmart_params,
+    `imaxSmart_params, `normalize_params, `subst_params,
+    `subst_params_from_arguments, `ixLevel_params, `exportUniv_scope,
+    `exportSourceLevel_scope, `ixLevel_source_scope, `subst_params_of_source_export,
+    `maxSmart_eq_runtime, `imaxSmart_eq_runtime, `normalize_eq_runtime,
+    `subst_eq_runtime, `normalizeLevel_evalP, `normalizeLevel_ixLevelEval,
+    `substLevel_evalP, `substLevel_compose_of_scope_evalP, `substLevel_compose_of_source_export_evalP,
+    `substLevel_params_of_source_export].map (`Ix.CompileCert.Opt.LevelRefinement ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dLevelRefinementRoots Ix.CompileCert.Audit.allowedAxioms
