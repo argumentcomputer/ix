@@ -18,6 +18,7 @@ import Ix.CompileCert.Opt.ExpansionOrigin
 import Ix.CompileCert.Opt.SourceScope
 import Ix.CompileCert.Opt.SourceInstallScope
 import Ix.CompileCert.Opt.IngestionArity
+import Ix.CompileCert.Opt.IngestionLookup
 import Ix.CompileCert.Opt.Canonicity
 import Ix.CompileCert.Opt.AuxCore
 import Ix.CompileCert.Opt.O2
@@ -63,6 +64,7 @@ The theorems, by pass:
 | independent source universe scope | `SourceScope.exportSourceExpr_scope`, `SourceScope.exportSourceEntry_defn_scope`, `SourceScope.exportSourceEntry_thm_scope` | scope follows from the actual independent source-export guards; source ingestion correspondence and referenced-spine arity remain open |
 | installed original-source universe scope | `SourceScope.definition_scope_of_installation`, `SourceScope.theorem_scope_of_installation` | scope follows for each original definition/theorem in an existing `SourceInstallation` inventory; obtaining the receipt and proving ingestion correspondence and referenced-spine arity remain open |
 | actual ingestion/export counts | `IngestionArity.canonConst_params_size`, `IngestionArity.source_constant_export`, `IngestionArity.source_constant_inferred_arity` | declaration telescope count for every `CanonState`; export-spine length and arity from the existing kernel reference inference; cache-content, source-lookup and annotation correspondence remain open |
+| captured original-source lookups | `IngestionLookup.captured_lookup`, `IngestionLookup.closed_reference_lookup`, `IngestionLookup.closed_reference_canon_arity` | exact supplied lookup and ingestion count follow from the existing capture/closure witness; hash-keyed compiler lookup, cache-content and annotation correspondence remain open |
 | universe-map transport | `substLevel_empty_params`, `substLevel_empty_univs`, `substLevel_paramFree`; `Conv.mapC_viaConv`, `conv_substLevels_viaConv` | exact scalar normalization facts; mapped-rule conversion remains an explicit intermediate obligation, not a discharged source law |
 | semantic level bridge | `normalizeLevel_paramFree_eval`, `substLevel_paramFree_eval`; `checkedIxLevelEq_eval`, `normalizeLevel_eval_of_checked` | numeric fragment proved for every successful evaluation with arbitrary caches; the general independent-check relation is intermediate, and polymorphic source-derived soundness remains open |
 | canonicity (C-1, C-2) | `O1_O3_disjoint` … `O2_O7_disjoint`, `O1_O6_agree`, `O11a_O2_pattern`, `engine_of_O1`, `engine_of_O3`, `engine_of_O4`, `O1_out`, `argT_congr` | — |

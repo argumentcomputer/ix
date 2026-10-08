@@ -1549,6 +1549,11 @@ def l3dRoots : Array Lean.Name :=
     `IngestionArity.canonConstantVal_params_size, `IngestionArity.canonConst_params_size,
     `IngestionArity.list_mapM_export_length, `IngestionArity.source_levels_length,
     `IngestionArity.source_constant_export, `IngestionArity.source_constant_inferred_arity,
+    -- exact supplied lookup provenance of the existing closed source capture
+    `IngestionLookup.source_find_mem, `IngestionLookup.source_find_name,
+    `IngestionLookup.source_find_exists, `IngestionLookup.captured_lookup,
+    `IngestionLookup.captured_member_lookup, `IngestionLookup.closed_reference_lookup,
+    `IngestionLookup.closed_reference_canon_arity, `IngestionLookup.definition_reference_lookup,
     -- exact scalar normalization and term-substitution transport
     `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
     `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
