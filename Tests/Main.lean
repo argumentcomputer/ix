@@ -50,6 +50,7 @@ import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.Compile.DevCensus
 import Tests.Ix.CompileCert.BridgeRoundTrip
+import Tests.Ix.Compile.OptCensus
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -462,6 +463,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- export and the certified reader's entries on the fixtures, against the lane's source export
   -- on Init+Std, with a moved name map and shifted levels refused (Tests.Ix.CompileCert.BridgeRoundTrip).
   ("bridge-roundtrip", Tests.Ix.CompileCert.BridgeRoundTrip.run),
+  -- M7 L3-def: the definitional passes' core rewrite against the executable, the shapes'
+  -- bounds, the Def 3.5 bodies and the passes' coverage on the pass3 fixtures
+  -- (Tests.Ix.Compile.OptCensus).
+  ("opt-census", Tests.Ix.Compile.OptCensus.run env),
 ]
 
 def main (args : List String) : IO UInt32 := do
