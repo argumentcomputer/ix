@@ -1,10 +1,13 @@
-//! Frozen pre-memoization implementations for differential tests only.
+//! Independent tree-walk implementations for differential tests only.
+//! Raw-map compatibility is retained; binder producers use the shared
+//! structural table and preserve forward insertion / reverse binder order.
 #![allow(dead_code)]
 
 use super::expr_utils::{LocalDecl, fresh_fvar};
 use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
 use bignat::Nat;
 use ix_common::env::{Expr as LeanExpr, ExprData, Level, LevelData, Name};
+use ix_common::name_table::NameTable;
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Copy)]
@@ -64,18 +67,18 @@ fn mk_binder_chain(
   }
 
   // Build FVar name → binder position map (0 = outermost).
-  let fvar_map: FxHashMap<Name, usize> =
+  let fvar_map: NameTable<usize> =
     binders.iter().enumerate().map(|(i, d)| (d.fvar_name.clone(), i)).collect();
 
   // Abstract body: all k binders in scope.
-  let mut result = batch_abstract(&body, &fvar_map, k, 0);
+  let mut result = batch_abstract_names(&body, &fvar_map, k, 0);
 
   // Build binder chain from innermost to outermost.
   for j in (0..k).rev() {
     let decl = &binders[j];
     // Domain D_j: only binders 0..j-1 are in scope (scope_depth = j).
     // Binder j's domain is NOT under binder j itself — only the body is.
-    let domain = batch_abstract(&decl.domain, &fvar_map, j, 0);
+    let domain = batch_abstract_names(&decl.domain, &fvar_map, j, 0);
     result = match kind {
       BinderKind::Forall => LeanExpr::all(
         decl.binder_name.clone(),
@@ -100,13 +103,31 @@ pub(super) fn batch_abstract(
   scope_depth: usize,
   internal_depth: u64,
 ) -> LeanExpr {
+  batch_abstract_with(expr, &|name| fvar_map.get(name).copied(), scope_depth, internal_depth)
+}
+
+fn batch_abstract_names(
+  expr: &LeanExpr,
+  fvar_map: &NameTable<usize>,
+  scope_depth: usize,
+  internal_depth: u64,
+) -> LeanExpr {
+  batch_abstract_with(expr, &|name| fvar_map.get(name).copied(), scope_depth, internal_depth)
+}
+
+fn batch_abstract_with(
+  expr: &LeanExpr,
+  lookup: &impl Fn(&Name) -> Option<usize>,
+  scope_depth: usize,
+  internal_depth: u64,
+) -> LeanExpr {
   // Fast path: no binders to abstract.
   if scope_depth == 0 {
     return expr.clone();
   }
   match expr.as_data() {
     ExprData::Fvar(name, _) => {
-      if let Some(&pos) = fvar_map.get(name) {
+      if let Some(pos) = lookup(name) {
         if pos < scope_depth {
           let idx = (scope_depth - 1 - pos) as u64 + internal_depth;
           LeanExpr::bvar(Nat::from(idx))
@@ -131,36 +152,36 @@ pub(super) fn batch_abstract(
       }
     },
     ExprData::App(f, a, _) => LeanExpr::app(
-      batch_abstract(f, fvar_map, scope_depth, internal_depth),
-      batch_abstract(a, fvar_map, scope_depth, internal_depth),
+      batch_abstract_with(f, lookup, scope_depth, internal_depth),
+      batch_abstract_with(a, lookup, scope_depth, internal_depth),
     ),
     ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
       n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
+      batch_abstract_with(t, lookup, scope_depth, internal_depth),
+      batch_abstract_with(b, lookup, scope_depth, internal_depth + 1),
       bi.clone(),
     ),
     ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
       n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
+      batch_abstract_with(t, lookup, scope_depth, internal_depth),
+      batch_abstract_with(b, lookup, scope_depth, internal_depth + 1),
       bi.clone(),
     ),
     ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
       n.clone(),
-      batch_abstract(t, fvar_map, scope_depth, internal_depth),
-      batch_abstract(v, fvar_map, scope_depth, internal_depth),
-      batch_abstract(b, fvar_map, scope_depth, internal_depth + 1),
+      batch_abstract_with(t, lookup, scope_depth, internal_depth),
+      batch_abstract_with(v, lookup, scope_depth, internal_depth),
+      batch_abstract_with(b, lookup, scope_depth, internal_depth + 1),
       *nd,
     ),
     ExprData::Proj(n, i, e, _) => LeanExpr::proj(
       n.clone(),
       i.clone(),
-      batch_abstract(e, fvar_map, scope_depth, internal_depth),
+      batch_abstract_with(e, lookup, scope_depth, internal_depth),
     ),
     ExprData::Mdata(kvs, e, _) => LeanExpr::mdata(
       kvs.clone(),
-      batch_abstract(e, fvar_map, scope_depth, internal_depth),
+      batch_abstract_with(e, lookup, scope_depth, internal_depth),
     ),
     // Sort, Const, MVar, Lit — no FVars or BVars to process.
     _ => expr.clone(),

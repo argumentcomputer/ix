@@ -22,10 +22,11 @@
   4. **coverage**: the passes that fire at the occurrences of the inputs
      (the engine at every full application of a head, before rewriting);
   5. **the core copies against the executables** (`AuxGenCopies`, design
-     D-3): `batchAbstract` against `Ix.CompileCert.Opt.batchAbstractP` on the
-     abstractions `mkLambda` makes over every telescope opened from the
-     inputs' types and values (the body under all its binders, each domain
-     under the binders before it).
+     D-3): the original arbitrary-HashMap `batchAbstract` compatibility
+     entry point against `Ix.CompileCert.Opt.batchAbstractP`, over every
+     telescope opened from the inputs' types and values. The production
+     binder builders now use structural NameTable lookup; their focused
+     forged-cache and ordinary-name controls are in `aux-gen-unit`.
 
   Run with: `lake test -- --ignored opt-census` (`OPT_CENSUS_ONLY` restricts
   the units: comma-separated stems, `twins`, `corpus`).
@@ -142,11 +143,11 @@ partial def occurrences (heads : Std.HashMap Name Name) (arity : Name → Option
   | .proj _ _ x _ | .mdata _ x _ => occurrences heads arity x
   | _ => #[]
 
-/-- `mkBinderChain`'s map from a telescope's variables to their positions. -/
+/-- The original arbitrary-HashMap compatibility map from telescope variables to positions. -/
 def fvarMapOf (decls : Array _root_.Ix.AuxGen.LocalDecl) : Std.HashMap Name Nat :=
   decls.zipIdx.foldl (fun m (b, i) => m.insert b.fvarName i) {}
 
-/-- The abstractions `mkLambda` makes over the telescope opened from `e`: (checked, differing). -/
+/-- Compatibility-entry abstractions over the telescope opened from `e`: (checked, differing). -/
 def copyChecks (e : Expr) : Nat × Nat :=
   let (_, decls, body) := match e with
     | .lam .. => _root_.Ix.AuxGen.lambdaTelescope e 4096 "oc" 0

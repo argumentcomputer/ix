@@ -710,17 +710,17 @@ def mkBinderChain (body : Expr) (binders : Array LocalDecl) (kind : BinderKind) 
   let k := binders.size
   if k == 0 then
     return body
-  -- Build FVar name → binder position map (0 = outermost).
-  let mut fvarMap : Std.HashMap Name Nat := {}
+  -- Structural name → position map (0 = outermost); later writes win.
+  let mut fvarMap : Ix.Compile.Canon.NameTable Nat := {}
   for (b, i) in binders.zipIdx do
     fvarMap := fvarMap.insert b.fvarName i
   -- Abstract body: all k binders in scope.
-  let mut result := batchAbstract body fvarMap k 0
+  let mut result := batchAbstractNames body fvarMap k 0
   -- Build binder chain from innermost to outermost.
   for (decl, j) in binders.zipIdx.reverse do
     -- Domain D_j: only binders 0..j-1 are in scope (scopeDepth = j).
     -- Binder j's domain is NOT under binder j itself — only the body is.
-    let domain := batchAbstract decl.domain fvarMap j 0
+    let domain := batchAbstractNames decl.domain fvarMap j 0
     result := match kind with
       | .forallE => Expr.mkForallE decl.binderName domain result decl.info
       | .lambda => Expr.mkLam decl.binderName domain result decl.info

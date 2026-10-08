@@ -5,6 +5,7 @@
 use bignat::Nat;
 use blake3::Hash;
 use ix_common::env::{Expr as LeanExpr, ExprData, Level, LevelData, Name};
+use ix_common::name_table::NameTable;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::expr_utils::{LocalDecl, fresh_fvar};
@@ -18,13 +19,17 @@ fn rewrite(
   e: &LeanExpr,
   depth: u64,
   control: &Checkpoint,
-  cache: &mut FxHashMap<Key, LeanExpr>,
+  cache: &mut FxHashMap<Key, (LeanExpr, LeanExpr)>,
   leaf: &mut impl FnMut(&LeanExpr, u64) -> Result<Option<LeanExpr>>,
 ) -> Result<LeanExpr> {
   control.visit()?;
   let key = (*e.get_hash(), depth);
-  if let Some(value) = cache.get(&key) {
-    return Ok(value.clone());
+  if let Some((stored, value)) = cache.get(&key) {
+    // Exact input equality includes every cached field: a hit must retain
+    // the raw result of this invocation's pure substitution step.
+    if stored == e {
+      return Ok(value.clone());
+    }
   }
   let result = if let Some(value) = leaf(e, depth)? {
     value
@@ -65,11 +70,15 @@ fn rewrite(
     }
   };
   // Avoid retaining a second copy of unchanged nodes and their children.
-  let result =
-    if result.get_hash() == e.get_hash() { e.clone() } else { result };
-  cache.insert(key, result.clone());
+  let result = if result.get_hash() == e.get_hash() && result == *e {
+    e.clone()
+  } else {
+    result
+  };
+  cache.insert(key, (e.clone(), result.clone()));
   control.scratch(
-    cache.capacity() * (size_of::<(Key, LeanExpr)>() + size_of::<ExprData>()),
+    cache.capacity()
+      * (size_of::<(Key, (LeanExpr, LeanExpr))>() + size_of::<ExprData>()),
   );
   Ok(result)
 }
@@ -202,6 +211,7 @@ pub(super) fn forall_telescope(
   Ok((fvars, decls, cur))
 }
 
+#[cfg(test)]
 fn batch_abstract(
   e: &LeanExpr,
   vars: &FxHashMap<Name, usize>,
@@ -218,6 +228,26 @@ pub(super) fn batch_abstract_at(
   depth: u64,
   c: &Checkpoint,
 ) -> Result<LeanExpr> {
+  batch_abstract_with(e, &|name| vars.get(name).copied(), scope, depth, c)
+}
+
+pub(super) fn batch_abstract_names_at(
+  e: &LeanExpr,
+  vars: &NameTable<usize>,
+  scope: usize,
+  depth: u64,
+  c: &Checkpoint,
+) -> Result<LeanExpr> {
+  batch_abstract_with(e, &|name| vars.get(name).copied(), scope, depth, c)
+}
+
+fn batch_abstract_with(
+  e: &LeanExpr,
+  lookup: &impl Fn(&Name) -> Option<usize>,
+  scope: usize,
+  depth: u64,
+  c: &Checkpoint,
+) -> Result<LeanExpr> {
   if scope == 0 {
     c.visit()?;
     return Ok(e.clone());
@@ -225,7 +255,7 @@ pub(super) fn batch_abstract_at(
   rewrite(e, depth, c, &mut FxHashMap::default(), &mut |e, depth| {
     Ok(match e.as_data() {
       ExprData::Fvar(n, _) => {
-        vars.get(n).filter(|&&pos| pos < scope).map(|&pos| {
+        lookup(n).filter(|&pos| pos < scope).map(|pos| {
           LeanExpr::bvar(Nat::from((scope - 1 - pos) as u64 + depth))
         })
       },
@@ -246,12 +276,12 @@ pub(super) fn mk_forall(
   if binders.is_empty() {
     return Ok(body);
   }
-  let vars =
+  let vars: NameTable<usize> =
     binders.iter().enumerate().map(|(i, d)| (d.fvar_name.clone(), i)).collect();
-  let mut result = batch_abstract(&body, &vars, binders.len(), c)?;
+  let mut result = batch_abstract_names_at(&body, &vars, binders.len(), 0, c)?;
   for (j, decl) in binders.iter().enumerate().rev() {
     c.visit()?;
-    let domain = batch_abstract(&decl.domain, &vars, j, c)?;
+    let domain = batch_abstract_names_at(&decl.domain, &vars, j, 0, c)?;
     result = LeanExpr::all(
       decl.binder_name.clone(),
       domain,
@@ -451,6 +481,108 @@ mod tests {
   }
   fn pi(t: LeanExpr, body: LeanExpr) -> LeanExpr {
     LeanExpr::all(name("x"), t, body, BinderInfo::Default)
+  }
+
+  #[test]
+  fn expression_cache_collision_recomputes_with_valid_neighbour() {
+    use std::sync::Arc;
+    let first = b(0);
+    let collision =
+      LeanExpr(Arc::new(ExprData::Bvar(Nat::from(1u64), *first.get_hash())));
+    let value = LeanExpr::cnst(name("replacement"), vec![]);
+    for second in [collision, b(1)] {
+      let source = LeanExpr::app(first.clone(), second);
+      let expected = LeanExpr::app(value.clone(), b(0));
+      let result = instantiate1(&source, &value, &Checkpoint::default()).unwrap();
+      assert_eq!(result, expected);
+      assert_eq!(result, old::instantiate1(&source, &value));
+    }
+  }
+
+  #[test]
+  fn expression_cache_preserves_raw_fields_after_semantic_match() {
+    use ix_common::env::NameData;
+    use std::sync::Arc;
+    let first = LeanExpr::fvar(name("x"));
+    let altered = Name(Arc::new(NameData::Str(
+      Name(Arc::new(NameData::Anonymous(blake3::hash(b"root cache")))),
+      "x".into(),
+      blake3::hash(b"name cache"),
+    )));
+    assert!(name("x").same_structure(&altered));
+    let second = LeanExpr(Arc::new(ExprData::Fvar(altered, *first.get_hash())));
+    assert_ne!(first, second);
+    let mut cache = FxHashMap::default();
+    let mut visits = 0;
+    let mut leaf = |_: &LeanExpr, _: u64| {
+      visits += 1;
+      Ok(None)
+    };
+    let control = Checkpoint::default();
+    assert_eq!(rewrite(&first, 0, &control, &mut cache, &mut leaf).unwrap(), first);
+    assert_eq!(rewrite(&second, 0, &control, &mut cache, &mut leaf).unwrap(), second);
+    assert_eq!(rewrite(&second, 0, &control, &mut cache, &mut leaf).unwrap(), second);
+    assert_eq!(visits, 2); // The exact repeated input still uses the completed hit.
+  }
+
+  #[test]
+  fn result_reuse_requires_exact_result_with_valid_neighbour() {
+    use std::sync::Arc;
+    let value = LeanExpr::cnst(name("replacement"), vec![]);
+    let collision =
+      LeanExpr(Arc::new(ExprData::Bvar(Nat::from(0u64), *value.get_hash())));
+    for source in [collision, b(0)] {
+      let result = instantiate1(&source, &value, &Checkpoint::default()).unwrap();
+      assert_eq!(result, value);
+      assert_eq!(result, old::instantiate1(&source, &value));
+    }
+  }
+
+  #[test]
+  fn binder_producers_use_last_structural_position_with_valid_neighbour() {
+    use super::super::expr_utils as main;
+    use ix_common::env::NameData;
+    use std::sync::Arc;
+    let a = name("a");
+    let forged_b = Name(Arc::new(NameData::Str(
+      Name::anon(), "b".into(), *a.get_hash(),
+    )));
+    let altered_a = Name(Arc::new(NameData::Str(
+      Name(Arc::new(NameData::Anonymous(blake3::hash(b"binder root")))),
+      "a".into(), blake3::hash(b"binder name"),
+    )));
+    let sort = LeanExpr::sort(Level::zero());
+    for (b_name, last_a) in [(forged_b, altered_a), (name("b"), a.clone())] {
+      let decls: Vec<_> = [a.clone(), b_name.clone(), last_a]
+        .into_iter()
+        .enumerate()
+        .map(|(i, fvar_name)| LocalDecl {
+          fvar_name,
+          binder_name: name(&format!("binder{i}")),
+          domain: sort.clone(),
+          info: BinderInfo::Default,
+        })
+        .collect();
+      let source = LeanExpr::app(LeanExpr::fvar(a.clone()), LeanExpr::fvar(b_name));
+      let expected_body = LeanExpr::app(b(0), b(1));
+      let mut expected_forall = expected_body.clone();
+      let mut expected_lambda = expected_body;
+      for decl in decls.iter().rev() {
+        expected_forall = LeanExpr::all(
+          decl.binder_name.clone(), sort.clone(), expected_forall,
+          BinderInfo::Default,
+        );
+        expected_lambda = LeanExpr::lam(
+          decl.binder_name.clone(), sort.clone(), expected_lambda,
+          BinderInfo::Default,
+        );
+      }
+      assert_eq!(main::mk_forall(source.clone(), &decls), expected_forall);
+      assert_eq!(mk_forall(source.clone(), &decls, &Checkpoint::default()).unwrap(), expected_forall);
+      assert_eq!(old::mk_forall(source.clone(), &decls), expected_forall);
+      assert_eq!(main::mk_lambda(source.clone(), &decls), expected_lambda);
+      assert_eq!(old::mk_lambda(source, &decls), expected_lambda);
+    }
   }
 
   #[test]

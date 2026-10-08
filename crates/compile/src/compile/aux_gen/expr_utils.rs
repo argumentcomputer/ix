@@ -7,6 +7,7 @@
 //! Also includes substitution, shifting, and universe manipulation helpers
 //! used across `recursor.rs`, `below.rs`, and `brecon.rs`.
 
+use ix_common::name_table::NameTable;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::compile::nat_conv::nat_to_u64;
@@ -473,19 +474,19 @@ fn mk_binder_chain(
     return body;
   }
 
-  // Build FVar name → binder position map (0 = outermost).
-  let fvar_map: FxHashMap<Name, usize> =
+  // Structural name → position map (0 = outermost); later writes win.
+  let fvar_map: NameTable<usize> =
     binders.iter().enumerate().map(|(i, d)| (d.fvar_name.clone(), i)).collect();
 
   // Abstract body: all k binders in scope.
-  let mut result = batch_abstract(&body, &fvar_map, k, 0);
+  let mut result = batch_abstract_names(&body, &fvar_map, k, 0);
 
   // Build binder chain from innermost to outermost.
   for j in (0..k).rev() {
     let decl = &binders[j];
     // Domain D_j: only binders 0..j-1 are in scope (scope_depth = j).
     // Binder j's domain is NOT under binder j itself — only the body is.
-    let domain = batch_abstract(&decl.domain, &fvar_map, j, 0);
+    let domain = batch_abstract_names(&decl.domain, &fvar_map, j, 0);
     result = match kind {
       BinderKind::Forall => LeanExpr::all(
         decl.binder_name.clone(),
@@ -529,6 +530,23 @@ pub(super) fn batch_abstract(
   internal_depth: u64,
 ) -> LeanExpr {
   super::checked_expr::batch_abstract_at(
+    expr,
+    fvar_map,
+    scope_depth,
+    internal_depth,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
+}
+
+/// Structural-table entry point for generated binder positions.
+pub(super) fn batch_abstract_names(
+  expr: &LeanExpr,
+  fvar_map: &NameTable<usize>,
+  scope_depth: usize,
+  internal_depth: u64,
+) -> LeanExpr {
+  super::checked_expr::batch_abstract_names_at(
     expr,
     fvar_map,
     scope_depth,

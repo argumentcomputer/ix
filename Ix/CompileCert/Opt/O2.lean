@@ -1,4 +1,5 @@
 import Ix.CompileCert.Opt.AuxCore
+import Ix.CompileCert.Opt.AuxRuntime
 
 /-!
 # M7 L3-def: O2, the recursor of a split block (`Ix/Compile/Pass/Opt/O2.lean`)
@@ -329,6 +330,7 @@ theorem binderLoop_forIn_conv {Γ : Env} {α : Type} (step : α → Expr → Exp
 theorem mkLambda_conv {Γ : Env} (hc : AuxGenCopies) (hΓ : BAbsClosed Γ) {b b' : Expr}
     (ds : Array Ix.AuxGen.LocalDecl) (h : ExprConv Γ b b') :
     ExprConv Γ (Ix.AuxGen.mkLambda b ds) (Ix.AuxGen.mkLambda b' ds) := by
+  clear hc -- Retain the original compatibility premise and theorem domain.
   unfold ExprConv at h ⊢
   unfold Ix.AuxGen.mkLambda Ix.AuxGen.mkBinderChain
   simp only [Id.run]
@@ -341,7 +343,7 @@ theorem mkLambda_conv {Γ : Env} (hc : AuxGenCopies) (hΓ : BAbsClosed Γ) {b b'
     · intro x a c hac
       simp only [er_mkLam]
       exact .lam (.refl _) hac
-    · rw [hc.batchAbstract, er_batchAbstractP, er_batchAbstractP]
+    · rw [er_batchAbstractNames, er_batchAbstractNames]
       exact conv_babs hΓ _ _ h 0
 
 theorem relocatedIh_mono {Γ : Env} (hc : AuxGenCopies) (hΓ : BAbsClosed Γ) {recur : Occ → Option Expr}
