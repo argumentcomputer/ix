@@ -1,15 +1,52 @@
 # Certifying the Lean → Ix compiler: what `compile-certify` establishes
 
 This document describes the compiler-certification lane (`Ix/CompileCert/**`) as it runs on real
-compiler output: the two theorems it decides (W and S), the receipts they use and how far each is
-trusted, and how to run the certifier. It does not describe what each Lean name denotes after
-compilation (the output contract); that belongs to `docs/compiler-passes.md`.
+compiler output: W's export correspondence, W+'s statement and equation checks, and S's model
+pull-back; the receipts and trust each requires; and how to run and read the certifier. The
+[output contract](compiler-passes.md#11-the-output-contract) states what the compiler puts under
+each Lean name. Its [changed-set record](compiler-passes.md#115-the-changed-set-record) records
+transformations; a record entry alone is not a certification verdict. The
+[compiler gate guide](compiler-gates.md) describes the regression suites and their limits.
 
 The certified checker (`IxC/**`) proves Ix environments consistent: an environment it admits has a
 set-theoretic model. The lane relates a Lean environment to the compiled Ixon environment so that
 this consistency result speaks about the Lean declarations.
 
-## 1. The two theorems
+## 0. What is established
+
+The per-output decisions below certify the particular closed source and admitted bytes supplied
+to them. Separately, L1 proves properties of the Pass 1 implementation under its stated
+hypotheses. Neither a successful library run nor the Pass 1 result is the remaining general
+theorem that every successful compiler run preserves source meaning through every pass.
+
+| Claim | Conclusion | Checked theorem and audit registration |
+| --- | --- | --- |
+| W (§1.1) | The source exports correspond to entries obtained by admitting the exact records; whole blocks and touched definition groups are covered. | [`checkIndexed_sound`](../Ix/CompileCert/Indexed.lean), [`faithful_sound`](../Ix/CompileCert/CheckCompiled.lean); `roots` (597), `m3Roots` (68). |
+| W+ (§1.3) | The accepted direct/raw, theorem-statement or equation relation holds, with whole or changed-block correspondence; the typed theorem rows hold in every strong model of the artifact plus folded support. | [`checkIndexed'_sound`, `AcceptedAssociation'.model_equations`, `model_statement`](../Ix/CompileCert/Changed.lean); `m5Roots` (103), `vRoots` (8). |
+| S, strong (§1.2) | Every strong target model supplies a strong installed-source model with the prescribed annotation and value pull-back. | [`StrongCone.sound`, `SourceNormalizedInstallation.artifact_strong_model_all`](../Ix/CompileCert/StrongCone.lean); `m4dRoots` (15). |
+| S, value level (§1.5) | Every strong target model supplies a public value model of the installed source with value pull-back, public capability laws and universal rule simulation. | [`StrongCone'.sound`, `checkedChangedAssociation_values`](../Ix/CompileCert/StrongChanged.lean); `saRoots` (20). |
+| L1, Pass 1 (§1.6) | SCCs, comparator/refinement properties, specified canonical classes and name maps, and nested discovery/position/evaporation properties, with the hypotheses below. | [`Canon.lean`](../Ix/CompileCert/Canon.lean) and its imported proofs; `l1Roots` (411), `hashRoots` (41). |
+
+The numbers are entries in the named root arrays in
+[`Audit.lean`](../Ix/CompileCert/Audit.lean), not a count of independent theorems or a measure of
+compiler coverage. The audit follows each root's dependencies and permits only `propext`,
+`Classical.choice` and `Quot.sound`. The decision audits also inspect the compiled substitutions
+described in §2. An audit checks proof dependencies; it does not remove a theorem's source,
+model, name-map or hash hypotheses.
+
+For the semantic conclusions, fix a carrier `V` with `[Kernel.SetTheory V]`. “Every model” in
+the S statements means every `StrongInstalledModel V` of the specified target environment,
+which includes the checked support. The source interpretation is the normalised installation
+with the exact-export or projection-lowering relation back to the original declarations. W+
+alone establishes its checked statements and equations; equations need not determine a unique
+function. §1.5 establishes the value pull-back by its additional check, without asserting the
+annotation pull-back of §1.2.
+
+The reader's `partial` and `unsafe` declaration classes are excluded by design from this
+certification domain. More time or a larger size budget does not admit those classes. A
+resource refusal of an otherwise eligible declaration is a separate limitation (§3).
+
+## 1. The statements
 
 ### 1.1 W: the compiled bytes are a faithful reading of the Lean declarations
 
@@ -85,7 +122,8 @@ with theorem rows checked by the certified checker and no new trust:
 - **changed blocks** (`ChangedBlockMatch`): every member and constructor of the Lean block is
   exported to the reader block holding it, which holds nothing else; every recursor of the Lean
   block is claimed an image (`ExportContext.images`, checked by the map). That the block
-  transformation itself preserves the meaning of the types is trusted here and proved in M7.
+  transformation itself preserves the meaning of the types remains trusted here; the general
+  compiler proof obligation is described in §1.7.
 - **value rows** (package V, `Ix/CompileCert/CliqueRows.lean`): a member of a transported
   definition clique (`docs/compiler-passes.md` §11.2 case 7) holds the transported value under
   Lean's name, which is not convertible to Lean's value, so its `rfl` row is refused. The certifier
@@ -185,6 +223,77 @@ pulled back). `StrongCone.sound` is unchanged and still decides every cone witho
 Cones that reach a changed inductive block, an image recursor or a header matched through a type row
 are not decided here: their rows fail the existing type, capability or recursor checks (S+b).
 
+### 1.6 L1: Theorem 4.2 at Pass 1's level
+
+The Pass 1 result is a family of theorems about the executable functions in
+[`Ix/Compile/Canon`](../Ix/Compile/Canon), assembled in
+[`Ix/CompileCert/Canon.lean`](../Ix/CompileCert/Canon.lean). In the statements below, the source
+is the finite block/component presented to those functions, references and external addresses
+are supplied by their environment, and a successful result is the actual return value of the
+function. The result covers these clauses:
+
+| Clause | Statement at this level | Principal theorem names |
+| --- | --- | --- |
+| Dependency components | The returned components are SCCs of the supplied block-restricted reference graph; their condensation is acyclic. The graph traversal has sufficient fuel. | `condensation_scc`, `condensation_acyclic`, `condensation_isSome`, `sccsOf_scc`, `blockComponents_scc`, `blockComponents_acyclic`, `blockComponents_ok`. |
+| Comparison | At a fixed class context the pure comparator satisfies `TotalPre` on its successful-comparison domain: orientation and transitivity of successful comparisons. The fresh-cache comparison agrees on component entries satisfying its name hypotheses. | `constOrd_total`, `compareFresh_total`, `compareFresh_eq`. |
+| Refinement | A successful result partitions the members into the coarsest consistent classes. Refinement succeeds when comparisons of distinct members succeed at every context. | `sortClasses_coarsest`, `sortClasses_ok`. |
+| Seed and member order | With the name-hash seed, permuting the input members gives the same result. More generally, rule sets agreeing on levels and tie-breaks give the same ordered classes as sets; member order inside an equal class may differ. | `sortClasses_perm`, `sortClasses_setEq`. |
+| Renaming and collapse | A renaming satisfying the stated reference/name relation preserves the ordered classes as sets. Collapsing equal classes has the specified quotient behavior. | `sortClasses_rename`, `sortClasses_collapse`, `sortClasses_collapse_single`. |
+| Block driver | A successful `canonBlock` satisfies its component specification. Reordering members or declaring a component separately preserves its corresponding classes under the stated conditions. | `canonBlock_spec`, `canonBlock_coarsest`, `canonBlock_member_order`, `canonBlock_separate`. |
+| Nested discovery and ownership | Expansion keeps originals first, appends auxiliaries in discovery order and records each auxiliary's discovering owner. The canonical nested component uses that expansion. | `expand_spec`, `expand_owner`, `componentNested_discovery`, `canonBlock_nested_discovery`. |
+| Nested positions and evaporation | Every canonical auxiliary position is reached by a source position; each mapped position satisfies the signature-matching relation. Evaporation changes exactly the specified flags satisfying `Evaporates`. | `computePerm_spec`, `computePerm_onto`, `computePerm_some`, `evaporate_spec`, `canonBlock_evaporated_perm`. |
+| Name maps | Members, suffixes, constructors and nested positions receive the specified mappings, including the specified absent/outside cases. | `cliqueNameMap_spec`, `blockNameMap_member`, `blockNameMap_suffix`, `blockNameMap_ctor`, `blockNameMap_nested`, `blockNameMap_other`, `nestedVal_aux`, `nestedVal_evaporated`, `nestedVal_outside`, `nestedVal_none`. |
+| Definition and theorem cliques | The clique classes have the stated refinement/order properties; the theorem-statement ordering has its specified form. | `cliqueClasses_coarsest`, `cliqueClasses_ok`, `cliqueClasses_perm`, `cliqueClasses_setEq`, `statementOrder_spec`. |
+
+These clauses retain the hypotheses in their individual declarations. In particular:
+
+- `PreOn` and `TotalPre` describe comparisons that return `.ok`; they do not establish that
+  every comparison succeeds. Refinement success has the separate comparison-success premise
+  stated above.
+- `AddrCongr` requires the external address lookup to answer alike for names equal under the
+  implementation's `==`. `NameInj` requires component member/constructor names to identify their
+  entries under that equality; `KeysDistinct` requires the relevant keys to be pairwise distinct
+  under it. At this source version, `Ix.Name`'s `==` compares cached hashes. These are explicit
+  conditions, not consequences of constructing a name with a hashing constructor.
+- The block results use `NodupB` and `EnvWF`: the relevant keys are distinct, environment queries
+  return declarations bearing the queried names, and an inductive's listed constructors have
+  the specified names and owner. Successful-run clauses also retain their success equations.
+- Comparator/refinement clauses use `portFixes = true` where stated. Exact seed-permutation
+  equality uses `.byNameHash`; the nested-order results use `.discovery`. Renaming and collapse
+  retain their term/reference relations, rather than allowing an arbitrary replacement of
+  names or universe parameters.
+- `refsConst_sound` needs no collision-free premise. Its completeness theorem uses
+  `ConstHashCons`, built from `HashCons`: equal cached hashes of subterms imply equality of
+  those subterms. This is a collision-freedom condition, stronger than consistent construction
+  of cached hashes. The SCC statement about the supplied reference graph and the statement
+  that this graph contains every syntactic occurrence are therefore distinct.
+- The block name-map clauses use `NameMapKeys`, which bounds nested positions and separates
+  member-phase keys, nested-position/suffix keys, and the two families under `==`.
+
+None of these hypotheses is a new axiom: theorems quantify over them and the audit preserves
+that fact. Applying the clauses to an arbitrary successful production compilation still needs
+the corresponding source/runtime invariants. This result does not prove invariance of the
+emitted declaration under the choice of representative beyond Pass 1, invariance under arbitrary
+universe respelling, the equality of the auxiliary generator with the proved expansion, or the
+complete compiler's block/output contract.
+
+### 1.7 Remaining general compiler proof obligations
+
+The per-output W/W+/S decisions above remain useful independently of a general compiler proof.
+The remaining layers concern all inputs in the compiler theorem's original domain, not only
+the libraries or fixtures which pass a gate:
+
+| Layer | Obligation still needed for the complete compiler theorem |
+| --- | --- |
+| L2: canonical blocks and images | Prove totality of image construction on `Dom`, the original compiler theorem's domain. Connect production expansion and source/reference/name invariants to the canonical specification; prove the generated inductive, constructor and recursor/image declarations have the required syntax, typing and value behavior, including nested and mutual cases. |
+| L3: rewriting and cliques | Establish the optimizer, image traversal, projection/recursor operations and clique transport's typing and value preservation; discharge the required substitution, telescope and recursion invariants at their actual call sites. |
+| L4: composition and emission | Prove that the Lean compiler is total on `Dom`, every source name is faithful, and models pull back. This requires total generators and composition of the pass results through the production driver, ownership/name maps and emitted records, including failure behavior and the output contract. |
+
+Individual lemmas in these layers do not make the layer complete. In particular, the general
+changed-block meaning obligation in §2 is not discharged by an accepted W+ changed-block match
+or by the value-level S check for the cones §1.5 supports. The end-to-end theorem also needs the
+runtime refinements and invariant bridges used to apply the Pass 1 clauses above.
+
 ## 2. Receipts and their trust
 
 | Receipt | What it says | How it is established |
@@ -206,8 +315,8 @@ proved guard); that a theorem the certifier lists as a lowering witness was acce
 kernel; for W+, that Lean's `c.eq_def` is `c`'s unfolding equation (the relation checks that it is an
 equation about `c`), for the members certified by the `equations:eq_def` route only (a member with an
 accepted value row has `c = v` checked instead; the run lists the others in `<prefix>.values.tsv` and
-its `V:` line) and, until M7, that the transformation of a changed block preserves the meaning
-of its types; the Lean runtime that executes the decisions. That runtime includes, since M5 WP-B,
+its `V:` line) and, pending the general proof in §1.7, that the transformation of a changed block
+preserves the meaning of its types; the Lean runtime that executes the decisions. That runtime includes, since M5 WP-B,
 the compiler's `@[csimp]` substitutions through which the decisions run on the DAG (a shared
 subterm visited once): the export (`exportExprWith ↦ exportExprWithShared`, `exportExpr ↦
 exportExprShared`), the reference walk (`refsIn ↦ refsInShared`) and the comparisons
@@ -241,6 +350,17 @@ can only leave a constant uncertified; Certified and S-Certified come only from 
 decision.
 
 ## 3. Verdicts
+
+The positive verdict is evidence for the accepted decision's theorem. The other verdicts
+explain why this run did not obtain that evidence; they are not four grades of a correctness
+proof.
+
+| Verdict | Reading |
+| --- | --- |
+| `certified` / `S-certified` | The corresponding association or cone was accepted. Read the route or cone cause to identify W, W+, strong S or value-level S. |
+| `unsupported` / `S-unsupported` | A named source/reader class or route is outside this decision's domain, or a declared resource limit prevented a decision. The cause distinguishes these cases. |
+| `blocked` / `S-blocked` | A required declaration or cone member lacks the needed verdict; the cause identifies the dependency. |
+| `rejected` / `S-rejected` | A required check failed. This is a diagnostic to investigate, not an independently proved counterexample to compiler correctness. |
 
 W: **certified**, **unsupported** (a named class, e.g. `partial`/`unsafe` definitions the
 checker's reader declines; `target record not selected`, a name whose record goes with a block the
@@ -295,7 +415,7 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
   sides, each counted separately; default 2^28): a declaration over it is unsupported (`expression
   DAG over budget`). `<prefix>.sizes.tsv` lists every declaration with at least 4096 objects with its
   tree size (computed on the DAG): the tree size is reported, not budgeted.
-- W writes `<prefix>.tsv` (one row per constant: name, address, verdict, cause),
+- W writes `<prefix>.tsv` (one row per source name present in the artifact: name, address, verdict, cause),
   `<prefix>.classes.tsv`, `<prefix>.json`, the raw-projection measurement `<prefix>.proj.tsv` and
   the lowering receipts `<prefix>.receipts.tsv`/`.receipts.statements`; the JSON records the routes,
   the image claims, the W+ rows proposed and folded and the artifact names with no Lean constant
@@ -331,8 +451,33 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
   strong cones: W+-route constants outside a changed inductive block and the constants left
   S-blocked by them form one value cone, each root on its own if it is refused. The JSON records
   `valueCertified`. `--strong-changed` remains an alias enabling `--strong`; no extra flag is needed.
-- Exit 0 iff something is certified, nothing is rejected, every raw projection on a non-direct
-  structure-like has a receipt, and, with S, something is S-certified and nothing is S-rejected.
+- For a normal W/W+ run, exit 0 requires something certified, nothing rejected and no refused
+  projection receipt. With S, it additionally requires something S-certified and nothing
+  S-rejected. `--strong-only` skips the global W conditions and applies the S conditions to
+  the cones it runs. The diagnostic modes differ: `--receipts-only` exits 0 when its receipt
+  census has no refusals, without running a W or S association; `--strong-plan` returns 0
+  from its planning path without an S verdict. The overall planning command still retains
+  the W exit code unless the global W run was skipped.
+
+For example, after building the executable, W+ for the benchmark input can be run as:
+
+```sh
+.lake/build/bin/compile-certify --file Benchmarks/Compile/CompileInitStd.lean \
+  initstd-a3.ixe out/initstd --workers 16
+```
+
+Add `--strong --strong-global` for both S routes, with the large-stack setting
+above. For a library exposed by imports, use `--modules A,B`; use `--file` when its elaborated
+source file defines the intended environment. The Ixon input must correspond to that source
+environment. Keep the command, toolchain, source and executable revisions, input digest, logs
+and all output tables together when comparing runs.
+
+The historical Mathlib W+ command in §6 used `--workers 16 --budget 16777216`. Its peak RSS was
+about 84 GB; the Init+Std commands used about 8–11 GB. These are observations on those inputs
+and binaries, not resource bounds. On a shared benchmark machine, reserve a Mathlib-scale run
+and run only one such producer at a time. A lower `--row-budget` or `--strong-max-cone` can
+change coverage to unsupported/blocked; it does not turn an unperformed check into an accepted
+one. `--strong-plan` estimates cover structure and runs no S decision.
 
 The lane's own gate is `lake run check-cert` (the audit, the strict build, the fixture checks, the
 certifier on the fixture with and without `--strong`).
@@ -343,7 +488,165 @@ generator loads the environment of `IxC.Kernel.PinGen.Certs`, generates the vari
 operation's source cone through the normalised source installation with it (and refuses it without
 pins), and writes the file only if every step passed.
 
-## 5. Known limits of the S route (2026-10-07)
+## 5. Reading the output tables
+
+All files share the chosen output prefix. W's `certified` word covers both the original W and
+W+; the cause field supplies the route. Both S routes similarly use `S-certified`, distinguished
+by `cone <root>` versus `value cone <root>`. The implementation of the report is in
+[`Certifier.lean`](../Ix/CompileCert/Certifier.lean) and
+[`StrongCertifier.lean`](../Ix/CompileCert/StrongCertifier.lean).
+
+The per-name universe is the intersection of the loaded Lean environment and the artifact's
+name map. Source names absent from the artifact are counted separately in JSON `notInArtifact`;
+they receive no W or S verdict, and that count does not itself make the command fail. Check
+`notInArtifact` alongside the verdict totals before claiming coverage of the whole loaded
+source environment.
+
+| File | Columns or fields and their interpretation |
+| --- | --- |
+| `.tsv` | `name`, `address`, `verdict`, `cause`: one row per source name present in the artifact. For a certified row, `cause` is the direct/raw/theorem/equations route, possibly with a type-row or changed-block suffix. Otherwise it describes the refusal or dependency. |
+| `.classes.tsv` | `verdict`, `class`, `count`: groups negative verdicts by cause class; positive groups have `class = route: <route>`. |
+| `.rows.tsv` | `owner`, `row`, `ms`, `verdict`: proposed W+ support rows and their pre-screen results. An accepted pre-screen is not the final association or support-fold verdict. A refused proposal may be unnecessary if another route succeeds. |
+| `.values.tsv` | `name`, `encoding`, `value row`, `verdict`, `route or cause`, `detail`: transported clique members, whether a value row was generated/exported/accepted, and the final route. Written when such members were considered; inspect the residuals as well as the accepted count. |
+| `.ixonly.tsv` | `name`, `address`, `kind`: names present in the artifact but absent from the loaded Lean environment. `_ix` means a name component starts with `_ix`; it is a reporting category, not a certification theorem or a list of omissions. |
+| `.sizes.tsv` | `name`, `dagNodes`, `treeNodes`: declarations with at least 4,096 distinct expression objects. The budget uses `dagNodes`; the expanded `treeNodes` count is diagnostic. |
+| `.proj.tsv` | `name`, `kind`, `structures`, `W verdict`: the raw-projection census. This does not replace the lowering-receipt result. |
+| `.receipts.tsv` | `name`, `kind`, `class`, `lowering equation`, `elimination level`, `Lean kernel`, `receipt`, `cause`: the witness check and the lane's lowering-recipe check separately. Both must accept a required receipt. `.receipts.statements` records the witness statements and universe telescopes. |
+| `.json` | `names` counts the source/artifact intersection; `notInArtifact` counts source names absent from the artifact. `perName` and `perAddress` give verdict totals, alongside `classes`, `routes`, `imageClaims`, `equationRows`, `ixOnly`, `valueRows`, `rawProjections`, `projectionReceipts`. `equationRows` separates proposed, folded and over-budget rows; `valueRows.residual` lists members relying on `eq_def` or not certified. |
+| `.strong.tsv` | `name`, `W verdict`, `S verdict`, `cause`: inspect the cone/value-cone distinction. W may say `not run` in `--strong-only` mode; every accepted cone still performs its own W association. |
+| `.strong.cones.tsv` | `root`, `roots`, `members`, `records`, `support`, `witnesses`, `ms`, the five stage columns (`ms input`, `ms admission`, `ms W`, `ms installation`, `ms strong`), `outcome`, `class`, `culprit`. A batch's `roots` may exceed one; `members` counts its union. The stage named `ms strong` also holds the value check's time for a value cone. |
+| `.strong.classes.tsv`, `.strong.json` | Negative S classes; mode, cone counts, `coneMsTotal`, `notReached`, `wPlusRoute`, `valueCertified` and per-name totals. `valueCertified` counts newly certified members of accepted value cones, which can include users of changed constants. |
+| `.strong.plan.tsv`, `.strong.plan.names.tsv` | Proposed cover order, roots, member counts, first coverage and cumulative coverage; each name's proposed first cone or reason for none. These are planning outputs and contain no S verdict. |
+
+Read `perName` for a statement about source declarations. Different source names can share an
+address, so `perAddress` is smaller and is not a declaration count. Its implementation retains
+the first non-certified verdict encountered at an address, if any; it is not a severity maximum
+over all aliases. Use the per-name rows to resolve mixed verdicts on an address.
+
+For a concrete historical example, the Init+Std `is5` run in §6 certified the
+`BVExpr.bitblast.goCache_Inv_of_Inv` family by `theorem`. This says that the certified reader's
+theorem statement matches the source export; it does not say the compiled proof term equals
+Lean's proof term. In that same run, all four proposed reflexivity rows for the transported
+definition members were refused, yet all four members were certified by `equations:eq_def`
+using the carried equations. Thus a refused `.rows.tsv` entry need not make its owner's final
+`.tsv` verdict rejected. It also does not supply §1.5's value equality: an unfolding equation
+alone is insufficient for that route. A later accepted `equations:value-row` must be read with
+its final association/support fold and value-row record, not inferred from this older run.
+
+For S, first check `mode` and `notReached`; a roots/sample run makes no verdict for unreached
+W-certified constants. Then inspect `S-unsupported` and `S-blocked`, even if `S-rejected = 0`.
+The historical indexed global run in §6.1 has no rejections but leaves 16 W+ constants
+unsupported by that route and 25 of their users blocked. The value route needs its own
+accepted decision to cover them; §6.2 records that later Init+Std decision. For a certification
+run, exit code 0 means its applicable success conditions in §4 hold;
+the diagnostic modes have the separate exit conditions listed there. Neither implies that
+every source name is present and certified, every W+ definition has a value row, or every
+W-certified name has an S verdict.
+
+## 6. Library evidence
+
+### 6.1 Historical runs from 2026-10-07
+
+The following completed certification runs used Lean 4.34.1, commit
+`5045d0056413266e57c625dcd7c365b10e377c52`. They are measurements of the listed certifier
+revisions and a3 artifacts, not of every later revision. The four counts are **certified /
+unsupported / blocked / rejected**, per source name present in the artifact; an S row reports
+S verdicts.
+
+| Input and decision | Certifier source | Counts | Wall time of command | Peak RSS reported by `time -v` |
+| --- | --- | --- | --- | --- |
+| Init+Std-a3 W+, `is5` | `a2251806c53786c0e00be486825d4e6dd5e82c92` | 116,768 / 926 / 0 / 0 | 5:25.63 | 7,984,884 kB |
+| Mathlib-a3 W+, `ml5` | `a2251806c53786c0e00be486825d4e6dd5e82c92` | 778,612 / 4,461 / 42 / 0 | 3:08:53 | 84,053,884 kB |
+| Init+Std-a3 W+ then indexed S with a global cone, `isG4` | `ed5ea197fa93ba31b3b05d16e2b2dcc852e2b83c` | S: 116,727 / 942 / 25 / 0 | 13:44.72, including W+ | About 10.6 GB |
+
+Input identity:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Init+Std-a3 | `a2e22ee7f8d0fcf0d607047dda7d83749f20886f2d03f1cbaf2ede3a7d1ba676` |
+| Mathlib-a3, 2,376,572,399 bytes | `d0427adf7b995f7f48c6fe5fa069c5d3a3d5c10c6f061425729e87339f6bf6db` |
+
+Both W+ runs used the same sealed executable, SHA-256
+`f07935568376dd36c4da0fd7deb4739db80b30e3d499bb44b79fbac1d37a200a`, with 16 workers. The
+Init+Std run used the default 2²⁸-object size budget; the Mathlib run used 16,777,216 objects.
+The indexed S executable's SHA-256 was
+`7c8d6bcc362d4e9a18358084e695797e7fe580abff37c9586fe75529876b5194`.
+The reports record these different counting units:
+
+| W+ run | Records admitted by `checkBytes` | Declarations from admission | Final certified source names | Final certified addresses | Support rows folded |
+| --- | --- | --- | --- | --- | --- |
+| `is5` | 99,384 | 96,252 | 116,768 | 98,492 | 0 |
+| `ml5` | 684,845 | 665,888 | 778,612 | 678,352 | 465 |
+
+Init+Std's 926 unsupported names were reader exclusions: 835 `partial`, 75 `unsafe`, eight
+unsafe axioms and eight unsafe opaque declarations. Its certified routes were 116,752 direct,
+12 theorem and four `equations:eq_def`. Mathlib's completed run had 42 rows over the pre-screen
+budget; 21 declarations were unsupported only for missing those rows, and 42 users were
+blocked. It admitted 53 image claims and accepted all 67 required projection receipts. None
+of those totals asserts general correctness of every possible image transformation.
+
+The S row is the strong route of §1.2, before the changed-value route of §1.5. Its global cone
+contained 116,727 members and took 540,413 ms: input 9,759; admission 191,726; W 24,900;
+installation 299,820; strong check 8,571. The 942 unsupported names comprise the 926 reader
+exclusions and 16 W+ constants outside that route; the 25 blocked names are users of those
+constants. There were no unreached W-certified names. This table does not claim a full-library
+S+a measurement of the later certifier source or a full-library Mathlib S result.
+
+Repeat evidence is scoped to the recorded outputs: the same W+ executable's second Init+Std
+run (`is6`) produced byte-identical per-name verdicts; the four indexed-S global runs produced
+the same per-name S table, and the last two used the gated `ed5ea197` executable. The listed
+Mathlib W+ result is one run. This is not a statistical performance study. The `is5` run shared
+the 64-thread machine with a gate and Mathlib loading (observed load 26–52); the indexed `isG4`
+run was recorded alone. Do not treat differences between those wall times as a controlled
+comparison, or extrapolate a forecast into an unmeasured library verdict.
+
+### 6.2 Completed runs from 2026-10-08
+
+The later completed records below use the same Lean toolchain and the same a3 artifact
+hashes listed above. Counts retain the same certified / unsupported / blocked / rejected order.
+The Init+Std row uses the default value-level stage; the Mathlib roots row is a bounded
+diagnostic and does not cover the whole library.
+
+| Input and decision | Certifier source | Counts and coverage | Wall time of command | Peak RSS reported by `time -v` |
+| --- | --- | --- | --- | --- |
+| Init+Std-a3, W+ then global S with the default value stage | `cfe49cb95ee8f0f953e253a4a47a50181dbc390f` | Both W and S: 116,768 / 926 / 0 / 0; all 117,694 names accounted for; `notReached = 0` | 12:00.92, including W+ | 10,610,344 kB |
+| Mathlib-a3, complete W+ | `fc058f9357da4e14fd3ff9e4d506f417faf7957a` | 778,675 / 4,440 / 0 / 0; all 783,115 names accounted for | 53:43.70 | 80,292,724 kB |
+| Mathlib-a3, exact 780 requested S roots (`--strong-only`) | `fc058f9357da4e14fd3ff9e4d506f417faf7957a` | S: 83,633 / 4,442 / 0 / 0; 695,040 names not reached | 21:19.30 | 45,796,756 kB |
+
+The Init+Std command used `--budget 16777216 --workers 16 --row-budget 60000 --strong
+--strong-global`, without `--strong-changed`. Its value cone certified 41 additional names;
+four transported definition members had accepted value rows. `notInArtifact = 0`. The
+complete per-name W and S maps and non-timing result fields matched the earlier explicit-flag
+reference. This verifies the default-on route on this input, without establishing the
+remaining general compiler theorem. Its executable SHA-256 is
+`4e07b244a80aa520d5d819ebe1c8cd3006bd0d6fb1b757a5f0a31c5eb5c73e97`;
+the retained output prefix is `out/sa-default-runtime-20261008t1455z/result`.
+
+The complete Mathlib W+ run used the same size budget, 16 workers and a 60,000 ms row budget.
+It folded 574 support rows, with zero rows over budget or left running, and accepted all 67
+required projection receipts. Its 4,440 unsupported names are reader exclusions: 3,720 partial
+definitions, 672 unsafe definitions, 19 unsafe inductives, 15 unsafe opaques, eight unsafe
+axioms and six names whose records were not selected. `notInArtifact = 0`; nothing was blocked
+or rejected. The executable SHA-256 is
+`ac9ae09ca06b270acdb6408d31ba7d4416b6a579f87caefa9f7a5bbb7c8992a0`;
+the retained output prefix is `out/certqueue-mathlib-w-20261008t0630z/result`.
+
+The 780-root diagnostic used that same executable with `--strong-only`: its W column says
+`not run`, and each executed cone performs its own W association. It executed 778 cones,
+all accepted; two requested roots exceeded the 50,000-declaration per-cone budget and were
+not executed. Those two resource refusals account for the increase from 4,440 to 4,442
+unsupported names. Coverage was accounted against the complete W+ reference; the diagnostic
+did not rerun global W. The 695,040 unreached names remain outside this diagnostic's S claim.
+The retained output prefix is
+`out/certqueue-sprobe-historical780-20261008t1720z/result`. No completed full-library Mathlib S result
+is claimed by these records.
+
+These are individual correctness-gated observations on a shared machine. The runs have
+different scopes and revisions; their times do not establish an isolated speedup or a
+statistical performance comparison. Per-record artifact checking, the complete W+ decision
+and the S model checks are different operations and must be timed and reported separately.
+
+## 7. Known limits of the S route (2026-10-08)
 
 - **The pin-certified Nat operations** (`Nat.div`, `Nat.mod`, `Nat.gcd`, `Nat.land`, `Nat.lor`, `Nat.xor`,
   `Nat.shiftLeft`, `Nat.shiftRight`) are no longer a limit: the source fold runs with the source-named pins
@@ -365,12 +668,8 @@ pins), and writes the file only if every step passed.
 - **Proof-field projections of mutual or nested structure-likes** (theorems in Lean 4.34.1): refused by W
   before W+; W+ certifies them by the `theorem` route (the `LoweringDefs` fixture's `Sized.ok`), so S
   treats them as changed constants (above): at the value level by default.
-- **Cost.** Since M7 WP-F a cone costs about its admission and its certified fold (the source export,
-  model proposal, correspondence and normalisation run on indices and the DAG, and the strong check takes
-  seconds: 0.3 s on a 4,000-declaration cone that reaches the `String`/`TreeMap` lemma core, 1.2 s on one
-  of 12,000, where it took 43 s and about 20 minutes before). On Init+Std-a3, `--strong-global` decides
-  one cone of 116,727 members in about 10 minutes (admission 3, installation 6 of which the fold 3, the
-  strong check 9 s; peak 10.6 GB), every W-certified constant in S's domain but the 25 users of W+
-  constants. The per-cone cover (4,145 cones on Init+Std-a3 with W+ and WP-B, a constant in about 34 of them) remains the
-  fallback.
+- **Cost.** Source export, model proposal, correspondence and normalisation run on indices and
+  the DAG. Admission and the certified fold dominate the measured global-cone run in §6;
+  those measurements are tied to their certifier revision and input. The per-cone cover
+  remains the fallback when a global cone is unavailable or refused.
   `--strong-max-cone` bounds the cone size of the cover; larger cones are S-unsupported (`cone over budget`) and their users S-blocked, never rejected.
