@@ -16,6 +16,10 @@ mkdir -p "$dir" "$work"
 exec 9>"$dir/.lock"
 flock 9
 
+# Part of the proving profile: catalogs proved with another value cannot be
+# used as a base, so this must never change for an existing state directory.
+structural_above=0
+
 read -ra libraries <<<"$IX_LIBRARIES"
 label=$(IFS=-; echo "${libraries[*]}")
 
@@ -50,7 +54,7 @@ else
   fi
   base=$(<"$base_file")
 
-  prove_args=()
+  prove_args=(--structural-above "$structural_above")
   if [[ "$base" != none ]]; then
     prove_args+=(--base "$base")
   else
@@ -65,7 +69,8 @@ else
 fi
 
 jq -r '.profile.allowedAxioms[]' "$catalog/proving.json" >"$work/axioms.txt"
-ix catalog verify-proof "$catalog" --allow-axioms "$work/axioms.txt" --json \
+ix catalog verify-proof "$catalog" --allow-axioms "$work/axioms.txt" \
+  --structural-above "$structural_above" --json \
   >"$work/verify.json"
 # Re-verifying an older commit must not move `latest` backwards.
 if [[ "$reused" == false ]]; then
@@ -73,8 +78,31 @@ if [[ "$reused" == false ]]; then
 fi
 echo "catalog=$catalog" >>"$GITHUB_OUTPUT"
 
+root=$(jq -r .rootProof "$catalog/proving.json")
+root_file="$HOME/.ix/store/${root:0:2}/${root:2:2}/${root:4:2}/${root:6}"
+bucket=argument-ix-certificates-063002298335-us-east-1-an
+key="$GITHUB_REPOSITORY/$GITHUB_SHA/$root.ixon"
+download=""
+if [[ -n "${AWS_SHARED_CREDENTIALS_FILE:-}" ]]; then
+  aws s3 cp --region us-east-1 --only-show-errors "$root_file" "s3://$bucket/$key"
+  download="https://$bucket.s3.us-east-1.amazonaws.com/$key"
+else
+  echo "No AWS credentials on the runner; skipping the proof upload." >&2
+fi
+
 {
   echo "### ix proof for \`${GITHUB_SHA:0:12}\`"
+  echo
+  echo "Root proof: \`$root\` ($(stat -c %s "$root_file") bytes)"
+  if [[ -n "$download" ]]; then
+    echo
+    echo "Download the root proof and check that its BLAKE3 hash is its address:"
+    echo
+    echo '```sh'
+    echo "curl -fsSLO $download"
+    echo "b3sum --no-names $root.ixon  # expect $root"
+    echo '```'
+  fi
   echo
   if [[ "$reused" == true ]]; then
     echo "Already proved on this runner; the existing certificate verified."
@@ -89,7 +117,7 @@ echo "catalog=$catalog" >>"$GITHUB_OUTPUT"
     echo
     echo '</details>'
   fi
-} | tee "$RUNNER_TEMP/ix-summary.md" >>"$GITHUB_STEP_SUMMARY"
+} | tee "$RUNNER_TEMP/ix-summary.md" | tee -a "$GITHUB_STEP_SUMMARY"
 
 if [[ -n "${IX_PR_NUMBER:-}" ]]; then
   gh pr comment "$IX_PR_NUMBER" --repo "$GITHUB_REPOSITORY" \

@@ -25,8 +25,20 @@ jobs:
           image: ix-prover:<tag from build-image.sh>
 ```
 
-The result is written to the job summary and, for pull requests, to a single
-PR comment that is updated on each run.
+The result is printed to the job log and summary and, for pull requests,
+posted as a single PR comment that is updated on each run.
+
+## Downloading proofs
+
+Each run uploads its root proof, the serialized `Ixon.Proof` wrapper, to the
+public bucket `argument-ix-certificates-063002298335-us-east-1-an` at
+`<owner>/<repo>/<commit>/<root proof address>.ixon`, and prints `curl`
+download instructions in the job log and summary. The file's BLAKE3 hash is
+its address.
+
+Upload credentials live on the runner, not in calling repositories: the
+action mounts the runner user's `~/.aws/credentials` read-only into the
+container, and skips the upload when that file does not exist.
 
 ## Prover image
 
@@ -42,9 +54,20 @@ IX_CUDA_TRACE_CODEGEN=1 MULTI_STARK_CUDA_ARCHS=120 CFLAGS=-std=gnu17 lake build 
 
 The script prints the tag to pass as `image:`, `ix-prover:<sha256 prefix of
 ix>`. The image is not pushed anywhere; the action runs it with `docker run`,
-so it only has to exist on the runner. The proving profile pins the `ix`
-executable, so switching to an image with a different binary starts a new
-baseline. The libraries' Lean version must match the image's.
+so it only has to exist on the runner. The libraries' Lean version must match
+the image's.
+
+The image enables generated device traces with trace-only lookups, and
+`prove.sh` proves and verifies with `--structural-above 0`. The `ix`
+executable and that threshold are part of the proving profile, and every run
+uses the repository's `latest` catalog as its base, so after switching to an
+image with a different binary or changing the threshold, proving fails with
+"incompatible proving profile". To start a new baseline, move the runner
+user's `~/.ix-prover/ix-catalogs/<owner>/<repo>/latest` link aside and delete
+the failed commit's `<sha>.base` file there, which pins a retry to its
+original base. A catalog
+proved elsewhere can seed the runner's state only if it used the same binary,
+threshold, and axiom policy.
 
 ## Runner requirements
 
