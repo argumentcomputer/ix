@@ -6,6 +6,7 @@ import Ix.CompileCert.Opt.O1
 import Ix.CompileCert.Opt.O6
 import Ix.CompileCert.Opt.O3
 import Ix.CompileCert.Opt.O4
+import Ix.CompileCert.Opt.Total
 import Ix.CompileCert.Opt.Guard
 import Ix.CompileCert.Opt.Engine
 import Ix.CompileCert.Opt.Rewrite
@@ -38,6 +39,7 @@ The theorems, by pass:
 | O6 (`rec`/`recOn`, selection image) | `O6_faithful` | the same |
 | O3 (`casesOn`, no collapse) | `O3_faithful` | `CasesOnLaw`, `Γ.InstClosed` |
 | O4 (`below`, `brecOn`, `.go`, `.eq`, selection) | `O4_faithful` | `O4Law` (`RecConsSquare`, `BRecOnSquare`, `EqPIrrel`), `Γ.InstClosed` |
+| totality of O1, O3, O4, O6 | `O1_none_iff`, `O3_none_iff`, `O4_none_iff`, `O6_none_iff`: a decline is exactly a failed side condition (`O1_of_side` …) | `ShapesWF` (the shapes within Lean's ranges) for O1, O4, O6 |
 | O7–O12 (proof-justified) | `pj_site_none`: they decline with no site | — |
 | the engine | `engineN_faithful`, `engineN_site_none`, `engineN_site_iff` | `EngineLaws` (the above, `O2Faithful`, `O11aFaithful`) |
 | the hook (`Driver.optLookup`) | `hook_faithful`, `hook_siteStable`, `optLookup_eq` | `EngineLaws` |

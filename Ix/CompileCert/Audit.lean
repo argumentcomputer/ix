@@ -1535,7 +1535,12 @@ def l3dRoots : Array Lean.Name :=
     `toOption_some, `O11a_O2_pattern, `O1_O3_disjoint, `O1_O4_disjoint, `O3_O4_disjoint,
     `O3_O6_disjoint, `O4_O6_disjoint, `O1_O2_disjoint, `O3_O8_disjoint, `O1_O7_disjoint,
     `O2_O7_disjoint, `O1_O6_agree, `engine_of_O1, `engine_of_O3, `engine_of_O4, `O1_out,
-    `argT_congr].map (`Ix.CompileCert.Opt ++ ·)
+    `argT_congr,
+    -- totality of the passes: a decline is a failed side condition
+    `obind_ex, `oguard_ex, `bnot_true_false, `bool_ne_true, `not_lt_of_le', `pick_some_list,
+    `pick_some, `pick_extract_some, `ShapesWF, `motives_lt, `minors_lt, `O1_of_side, `O1_none_iff,
+    `O6_of_side, `O6_none_iff, `O3_of_side, `O3_none_iff, `O4.Side, `O4_side, `O4_of_side,
+    `O4_none_iff].map (`Ix.CompileCert.Opt ++ ·)
 
 end Ix.CompileCert.Audit
 
