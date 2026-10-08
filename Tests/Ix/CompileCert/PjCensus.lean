@@ -35,7 +35,7 @@ def targetsOf (compiled : _root_.Ix.CompileM.LeanPipelineOut) : IO (Array Target
     | .ok v => views := views.insert key v
     | .error e => throw (IO.userError s!"view {key.pretty}: {e}")
   let blocks := _root_.Ix.Compile.Pass.optBlocks cenv views
-  let mut targets := #[]
+  let mut targets : Array Target := #[]
   let mut seen : Std.HashSet _root_.Ix.Name := {}
   for (_, block) in blocks do
     for (name, recursor) in block.ixRecs do
@@ -83,13 +83,18 @@ def artifactOf (bytes : ByteArray) (targets : Array Target) :
     records := constants.map (fun (a, c) => (a, Ixon.serConstant c))
     blobs := produced.blobs.toList
     hint := hints.lookup }
-  let mut names := #[]
-  for target in targets do
-    let some ref := _root_.Ix.Kernel.Reader.resolve setup.cx.store target.address
-      | throw (IO.userError s!"cannot resolve emitted recursor: {target.name.pretty}")
-    names := names.push (setup.cx.nameOf ref)
   match prepareArtifact input with
-  | .ok artifact => return ⟨input, artifact, names⟩
+  | .ok artifact => do
+    -- Resolve names in the exact admitted subset. Recursor indices depend on
+    -- this context, so the larger preparation store is not interchangeable.
+    let reader := _root_.Ix.Kernel.Admission.streamContext artifact.pins artifact.prelude
+      artifact.constants input.blobs input.hint
+    let mut names : Array _root_.Ix.Kernel.Name := #[]
+    for target in targets do
+      let some ref := _root_.Ix.Kernel.Reader.resolve reader.store target.address
+        | throw (IO.userError s!"cannot resolve admitted recursor: {target.name.pretty}")
+      names := names.push (reader.nameOf ref)
+    return ⟨input, artifact, names⟩
   | .error e => throw (IO.userError (declineText e))
 
 /-- Report the first extraction/check condition that fails, retaining the exact
