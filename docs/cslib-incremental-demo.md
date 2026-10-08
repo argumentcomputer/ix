@@ -3,9 +3,10 @@
 This runbook shows `ix` certifying CSLib on every push to the
 `argumentcomputer/cslib` `dev` branch, proving only the declarations each
 commit adds or changes. Proving runs on the org self-hosted runner
-`ix-gpu-prover` (label `gpu-prover`) through the
+`ix-gpu-prover` (label `ix-gpu-prover`) through the
 [`catalog-prove`](../.github/actions/catalog-prove/README.md) action, inside
-the local image `ix-prover:7ef9884d53cdacea`.
+the local image `ix-prover:7ef9884d53cdacea`. The runner's setup, state and
+backup are described in [cslib-ci-runner.md](cslib-ci-runner.md).
 
 The runner's prover state is `/srv/ghrunner/.ix-prover`: the proof store in
 `.ix/` and one catalog per proved commit in
