@@ -48,6 +48,7 @@ import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.Compile.DevCensus
 import Tests.Ix.CompileCert.BridgeRoundTrip
+import Tests.Ix.CompileCert.PjCensus
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -458,6 +459,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- export and the certified reader's entries on the fixtures, against the lane's source export
   -- on Init+Std, with a moved name map and shifted levels refused (Tests.Ix.CompileCert.BridgeRoundTrip).
   ("bridge-roundtrip", Tests.Ix.CompileCert.BridgeRoundTrip.run),
+  -- Canonical recursors for every O7–O12 firing fixture, through certified admission.
+  ("pj-census", Tests.Ix.CompileCert.PjCensus.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
