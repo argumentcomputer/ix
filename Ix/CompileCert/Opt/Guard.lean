@@ -3,13 +3,13 @@ import Ix.CompileCert.Opt.O4
 /-!
 # M7 L3-def: the proof-justified passes decline outside a definition's value
 
-O7, O8 (`Engine.pjPasses`) and O9, O10, O12 (`Engine.emitPasses`) end with the site guard
+O7, O8 (`Engine.pjPasses`) and O9, O10, O12 (`Engine.emitPasses`) begin with the site guard
 `if !pjAllowed o then none` (`Opt/Packed.lean`: `pjAllowed o := o.site.isSome`, decision 5, D1:
 they fire only in the value of a definition, for its canonical `_ix` form). A firing passed the
 guard (`O7_pjAllowed`, …), so at an occurrence with no site they return `none`
-(`O7_site_none`, …). The proofs walk the do-block (`owalk`): every bind that succeeded
-(`obind`), every guard passed (`oguard`), every matcher split (its failing branch is a `none`),
-until the site guard.
+(`O7_site_none`, …). The proofs inspect the initial guard with `owalk`: the failed branch is `none`,
+and the successful branch supplies `pjAllowed o = true`. The same helper retains its
+general bind/guard/matcher steps for other proof consumers.
 -/
 
 namespace Ix.CompileCert.Opt
@@ -44,22 +44,16 @@ macro_rules
 theorem O7_pjAllowed {env : OptEnv} {o : Occ} {e : Expr} (h : O7.apply env o = some e) :
     pjAllowed o = true := by
   unfold O7.apply at h
-  obtain ⟨⟨k, r⟩, _, h⟩ := obind.1 h
-  try dsimp only at h
   owalk h
 
 theorem O8_pjAllowed {env : OptEnv} {o : Occ} {e : Expr} (h : O8.apply env o = some e) :
     pjAllowed o = true := by
   unfold O8.apply at h
-  obtain ⟨⟨k, r⟩, _, h⟩ := obind.1 h
-  try dsimp only at h
   owalk h
 
 theorem O9_pjAllowed {env : OptEnv} {o : Occ} {x : Expr × Array ConstantInfo}
     (h : O9.apply env o = some x) : pjAllowed o = true := by
   unfold O9.apply at h
-  obtain ⟨⟨k, r⟩, _, h⟩ := obind.1 h
-  try dsimp only at h
   owalk h
 
 theorem O10_pjAllowed {env : OptEnv} {o : Occ} {x : Expr × Array ConstantInfo}
