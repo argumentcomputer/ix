@@ -257,7 +257,7 @@ pub fn schedule_cliques(
   let mut seen: FxHashSet<Name> = FxHashSet::default();
   let mut cliques: Vec<Vec<Name>> = Vec::new();
   let mut los_sorted: Vec<&Name> = condensed.blocks.keys().collect();
-  los_sorted.sort_by_key(|n| n.pretty());
+  los_sorted.sort_by_cached_key(|n| n.pretty());
   for lo in los_sorted {
     let mems = &condensed.blocks[lo];
     let refs = condensed.block_refs.get(lo);
@@ -991,5 +991,61 @@ impl HookEnv<'_> {
       }
     }
     Ok(prep)
+  }
+}
+
+#[cfg(test)]
+mod scheduling_order_tests {
+  use super::*;
+  use std::cell::RefCell;
+
+  #[test]
+  fn schedule_order_keeps_equal_pretty_names_distinct_and_stable() {
+    let prefix = root("F");
+    let tied = [
+      Name::num(prefix.clone(), Nat::from(1u64)),
+      mk_str(&prefix, "1"),
+      root("F.1"),
+    ];
+    for (i, a) in tied.iter().enumerate() {
+      assert_eq!(a.pretty(), "F.1");
+      for b in &tied[..i] {
+        assert_ne!(a, b);
+      }
+    }
+    for capacity in [0, 16, 64] {
+      for reversed in [false, true] {
+        let mut names = vec![root("F.2"), root("F.0")];
+        names.extend(tied.iter().cloned());
+        if reversed {
+          names.reverse();
+        }
+        let mut blocks: FxHashMap<Name, NameSet> =
+          FxHashMap::with_capacity_and_hasher(capacity, Default::default());
+        for name in names {
+          blocks.insert(name.clone(), [name].into_iter().collect());
+        }
+        let original: Vec<Name> = blocks.keys().cloned().collect();
+        let mut expected = original.clone();
+        // The previous stable sort is the ordering contract, including ties.
+        expected.sort_by_key(Name::pretty);
+        let mut condensed = CondensedBlocks {
+          low_links: original.iter().map(|n| (n.clone(), n.clone())).collect(),
+          block_refs: original
+            .iter()
+            .map(|n| (n.clone(), [root("_f")].into_iter().collect()))
+            .collect(),
+          blocks,
+        };
+        let visited = RefCell::new(Vec::new());
+        let lookup = |n: &Name| {
+          visited.borrow_mut().push(n.clone());
+          None
+        };
+        let (table, roots) = schedule_cliques(&lookup, &mut condensed);
+        assert!(table.is_empty() && roots.is_empty());
+        assert_eq!(*visited.borrow(), expected);
+      }
+    }
   }
 }
