@@ -10,7 +10,7 @@ on: [push, pull_request]
 
 jobs:
   proof:
-    runs-on: [self-hosted, gpu-prover]
+    runs-on: [self-hosted, ix-gpu-prover]
     timeout-minutes: 120
     permissions:
       contents: read
