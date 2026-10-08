@@ -25,6 +25,7 @@ public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
 public import Ix.Compile.Canon.Expr
+public import Ix.Compile.Canon.NameTable
 public import Std.Data.HashMap
 public import Std.Data.HashSet
 
@@ -639,13 +640,13 @@ partial def abstractFVar (expr : Expr) (fvarName : Name) (depth : Nat) : Expr :=
     - `internalDepth`: expression-internal binder depth, starts at 0.
     - FVar at binder position `i`: `BVar((scopeDepth - 1 - i) + internalDepth)`.
     - Free BVar(n) where `n >= internalDepth`: shifted to `BVar(n + scopeDepth)`. -/
-partial def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
+def batchAbstractWith (lookup : Name → Option Nat) (expr : Expr)
     (scopeDepth : Nat) (internalDepth : Nat) : Expr :=
   -- Fast path: no binders to abstract.
   if scopeDepth == 0 then expr
   else match expr with
   | .fvar name _ =>
-    match fvarMap.get? name with
+    match lookup name with
     | some pos =>
       if pos < scopeDepth then
         Expr.mkBVar ((scopeDepth - 1 - pos) + internalDepth)
@@ -664,24 +665,36 @@ partial def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
       -- Bound by an expression-internal binder — unchanged.
       expr
   | .app f a _ =>
-    Expr.mkApp (batchAbstract f fvarMap scopeDepth internalDepth)
-      (batchAbstract a fvarMap scopeDepth internalDepth)
+    Expr.mkApp (batchAbstractWith lookup f scopeDepth internalDepth)
+      (batchAbstractWith lookup a scopeDepth internalDepth)
   | .lam n t b bi _ =>
-    Expr.mkLam n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) bi
+    Expr.mkLam n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) bi
   | .forallE n t b bi _ =>
-    Expr.mkForallE n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) bi
+    Expr.mkForallE n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) bi
   | .letE n t v b nd _ =>
-    Expr.mkLetE n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract v fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) nd
+    Expr.mkLetE n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup v scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) nd
   | .proj n i e _ =>
-    Expr.mkProj n i (batchAbstract e fvarMap scopeDepth internalDepth)
+    Expr.mkProj n i (batchAbstractWith lookup e scopeDepth internalDepth)
   | .mdata kvs e _ =>
-    Expr.mkMData kvs (batchAbstract e fvarMap scopeDepth internalDepth)
+    Expr.mkMData kvs (batchAbstractWith lookup e scopeDepth internalDepth)
   -- Sort, Const, MVar, Lit — no FVars or BVars to process.
   | _ => expr
+
+/-- Compatibility entry point for arbitrary hash-map callers. Its lookup
+semantics remain exactly the supplied map's; no name/hash law is required. -/
+def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
+    (scopeDepth internalDepth : Nat) : Expr :=
+  batchAbstractWith fvarMap.get? expr scopeDepth internalDepth
+
+/-- Structural generated-name entry point, preserving the table's last-write
+lookup semantics independently of cached name fields. -/
+def batchAbstractNames (expr : Expr) (fvarMap : Ix.Compile.Canon.NameTable Nat)
+    (scopeDepth internalDepth : Nat) : Expr :=
+  batchAbstractWith fvarMap.get? expr scopeDepth internalDepth
 
 /-- Mirrors Rust `BinderKind` (aux_gen/expr_utils.rs:453). Constructor
     names deviate (`Forall`/`Lambda` → `forallE`/`lambda`) because

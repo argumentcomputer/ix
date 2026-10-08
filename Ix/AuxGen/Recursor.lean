@@ -624,7 +624,7 @@ partial def hasLooseBVarInExplicitDomain (e : Expr) (target : Nat)
     (`refs/lean4/src/Lean/Expr.lean:1362-1368`): marks explicit binders
     implicit when the binder's own BVar appears in an explicit domain
     downstream. -/
-partial def inferImplicit (ty : Expr) (numParams : Nat) : Expr :=
+def inferImplicit (ty : Expr) (numParams : Nat) : Expr :=
   if numParams == 0 then ty
   else match ty with
   | .forallE name dom body bi _ =>
