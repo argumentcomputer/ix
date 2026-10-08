@@ -1861,7 +1861,9 @@ mod scalar_structure_tests {
     let a = Level::param(u.clone());
     let digest = blake3::hash(b"deliberately unrelated cache");
     let rehashed_name = Name(Arc::new(NameData::Str(
-      Name(Arc::new(NameData::Anonymous(digest))), "u".into(), digest,
+      Name(Arc::new(NameData::Anonymous(digest))),
+      "u".into(),
+      digest,
     )));
     let b = Level(Arc::new(LevelData::Param(rehashed_name, digest)));
     let collision = Level(Arc::new(LevelData::Param(v, *a.get_hash())));
@@ -1870,7 +1872,10 @@ mod scalar_structure_tests {
     assert!(!a.same_structure(&collision));
     assert_eq!(Level::max_smart(a.clone(), b.clone()), a);
     assert_eq!(Level::imax_smart(a.clone(), b), a);
-    assert!(matches!(Level::max_smart(a.clone(), collision).as_data(), LevelData::Max(..)));
+    assert!(matches!(
+      Level::max_smart(a.clone(), collision).as_data(),
+      LevelData::Max(..)
+    ));
     let valid_neighbour = Level::param(u);
     assert_eq!(Level::max_smart(a.clone(), valid_neighbour), a);
   }
@@ -1879,7 +1884,8 @@ mod scalar_structure_tests {
   fn separate_shared_level_dags_keep_structural_leaf_differences() {
     fn dag(depth: usize, name: &str, cache: Hash) -> Level {
       let mut value = Level(Arc::new(LevelData::Param(
-        Name::str(Name::anon(), name.into()), cache,
+        Name::str(Name::anon(), name.into()),
+        cache,
       )));
       for _ in 0..depth {
         value = Level(Arc::new(LevelData::Max(value.clone(), value, cache)));

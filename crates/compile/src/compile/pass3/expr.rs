@@ -382,9 +382,11 @@ pub fn subst_level(params: &[Name], univs: &[Level], l: &Level) -> Level {
       subst_level(params, univs, a),
       subst_level(params, univs, b),
     ),
-    LevelData::Param(nm, _) => match params.iter().position(|p| p.same_structure(nm)) {
-      Some(i) => univs.get(i).cloned().unwrap_or_else(|| l.clone()),
-      None => l.clone(),
+    LevelData::Param(nm, _) => {
+      match params.iter().position(|p| p.same_structure(nm)) {
+        Some(i) => univs.get(i).cloned().unwrap_or_else(|| l.clone()),
+        None => l.clone(),
+      }
     },
     _ => l.clone(),
   }

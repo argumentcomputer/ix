@@ -459,14 +459,24 @@ mod tests {
     let u = name("u");
     let v = name("v");
     let first = Level::param(u.clone());
-    let collision = Level(Arc::new(LevelData::Param(v.clone(), *first.get_hash())));
+    let collision =
+      Level(Arc::new(LevelData::Param(v.clone(), *first.get_hash())));
     let arguments = [Level::zero(), Level::succ(Level::zero())];
     let expected = LeanExpr::cnst(name("C"), arguments.to_vec());
     for last in [collision, Level::param(v.clone())] {
       let source = LeanExpr::cnst(name("C"), vec![first.clone(), last]);
-      let result = subst_levels(&source, &[u.clone(), v.clone()], &arguments, &Checkpoint::default()).unwrap();
+      let result = subst_levels(
+        &source,
+        &[u.clone(), v.clone()],
+        &arguments,
+        &Checkpoint::default(),
+      )
+      .unwrap();
       assert_eq!(result, expected);
-      assert_eq!(result, old::subst_levels(&source, &[u.clone(), v.clone()], &arguments));
+      assert_eq!(
+        result,
+        old::subst_levels(&source, &[u.clone(), v.clone()], &arguments)
+      );
     }
   }
 
@@ -478,13 +488,21 @@ mod tests {
     let first = Level::param(v);
     let digest = blake3::hash(b"changed descendant cache");
     let rehashed = Name(Arc::new(NameData::Str(
-      Name(Arc::new(NameData::Anonymous(digest))), "v".into(), digest,
+      Name(Arc::new(NameData::Anonymous(digest))),
+      "v".into(),
+      digest,
     )));
     let other = Level(Arc::new(LevelData::Param(rehashed, *first.get_hash())));
     assert!(first.same_structure(&other));
     assert_ne!(first, other);
     let source = LeanExpr::cnst(name("C"), vec![first, other]);
-    let result = subst_levels(&source, &[name("u")], &[Level::zero()], &Checkpoint::default()).unwrap();
+    let result = subst_levels(
+      &source,
+      &[name("u")],
+      &[Level::zero()],
+      &Checkpoint::default(),
+    )
+    .unwrap();
     // Neither parameter matches: each original leaf, including its caches,
     // is the exact result of the pure scalar step.
     assert_eq!(result, source);
@@ -496,17 +514,31 @@ mod tests {
     use std::sync::Arc;
     let u = name("u");
     let rehashed = Name(Arc::new(NameData::Str(
-      Name::anon(), "u".into(), blake3::hash(b"parameter cache"),
+      Name::anon(),
+      "u".into(),
+      blake3::hash(b"parameter cache"),
     )));
-    let source = LeanExpr::cnst(name("C"), vec![Level::param(rehashed.clone())]);
+    let source =
+      LeanExpr::cnst(name("C"), vec![Level::param(rehashed.clone())]);
     let arguments = [Level::zero(), Level::succ(Level::zero())];
     for parameters in [vec![u.clone()], vec![u.clone(), rehashed]] {
-      let result = subst_levels(&source, &parameters, &arguments, &Checkpoint::default()).unwrap();
+      let result =
+        subst_levels(&source, &parameters, &arguments, &Checkpoint::default())
+          .unwrap();
       assert_eq!(result, LeanExpr::cnst(name("C"), vec![arguments[0].clone()]));
     }
     let unmatched = LeanExpr::cnst(name("C"), vec![Level::param(name("v"))]);
     let parameters = [u, name("v")];
-    assert_eq!(subst_levels(&unmatched, &parameters, &arguments[..1], &Checkpoint::default()).unwrap(), unmatched);
+    assert_eq!(
+      subst_levels(
+        &unmatched,
+        &parameters,
+        &arguments[..1],
+        &Checkpoint::default()
+      )
+      .unwrap(),
+      unmatched
+    );
   }
 
   #[test]

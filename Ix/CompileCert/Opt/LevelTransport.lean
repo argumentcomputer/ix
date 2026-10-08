@@ -26,7 +26,7 @@ open Ix.Compile.Canon (substLevel substLevels normalizeLevel)
 theorem substLevel_empty_params (us : Array Level) : ∀ l : Level,
     substLevel #[] us l = normalizeLevel l
   | .zero _ | .mvar .. => rfl
-  | .param _ _ => by simp only [substLevel, normalizeLevel, Array.idxOf?_empty]
+  | .param _ _ => by simp only [substLevel, normalizeLevel, Array.map_empty, Array.idxOf?_empty]
   | .succ l _ => by simp only [substLevel, normalizeLevel, substLevel_empty_params us l]
   | .max a b _ => by
     simp only [substLevel, normalizeLevel, substLevel_empty_params us a, substLevel_empty_params us b]
@@ -39,7 +39,7 @@ theorem substLevel_empty_univs (ps : Array Name) : ∀ l : Level,
   | .zero _ | .mvar .. => rfl
   | .param n h => by
     simp only [substLevel, normalizeLevel]
-    cases ps.idxOf? n <;> rfl
+    cases (ps.map Ix.Compile.Canon.keyName).idxOf? (Ix.Compile.Canon.keyName n) <;> rfl
   | .succ l _ => by simp only [substLevel, normalizeLevel, substLevel_empty_univs ps l]
   | .max a b _ => by
     simp only [substLevel, normalizeLevel, substLevel_empty_univs ps a, substLevel_empty_univs ps b]
