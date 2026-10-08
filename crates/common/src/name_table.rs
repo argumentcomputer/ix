@@ -146,9 +146,8 @@ mod tests {
       "x".into(),
       blake3::hash(b"changed cache"),
     )));
-    let table: NameTable<_> = [(x.clone(), 0), (name("y"), 1), (x_other, 2)]
-      .into_iter()
-      .collect();
+    let table: NameTable<_> =
+      [(x.clone(), 0), (name("y"), 1), (x_other, 2)].into_iter().collect();
     assert_eq!(table.get(&x), Some(&2));
     assert_eq!(table.get(&name("y")), Some(&1));
     assert_eq!(table.get(&name("absent")), None);

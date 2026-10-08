@@ -103,7 +103,12 @@ pub(super) fn batch_abstract(
   scope_depth: usize,
   internal_depth: u64,
 ) -> LeanExpr {
-  batch_abstract_with(expr, &|name| fvar_map.get(name).copied(), scope_depth, internal_depth)
+  batch_abstract_with(
+    expr,
+    &|name| fvar_map.get(name).copied(),
+    scope_depth,
+    internal_depth,
+  )
 }
 
 fn batch_abstract_names(
@@ -112,7 +117,12 @@ fn batch_abstract_names(
   scope_depth: usize,
   internal_depth: u64,
 ) -> LeanExpr {
-  batch_abstract_with(expr, &|name| fvar_map.get(name).copied(), scope_depth, internal_depth)
+  batch_abstract_with(
+    expr,
+    &|name| fvar_map.get(name).copied(),
+    scope_depth,
+    internal_depth,
+  )
 }
 
 fn batch_abstract_with(

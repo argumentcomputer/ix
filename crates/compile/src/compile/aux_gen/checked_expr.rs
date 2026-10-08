@@ -254,11 +254,9 @@ fn batch_abstract_with(
   }
   rewrite(e, depth, c, &mut FxHashMap::default(), &mut |e, depth| {
     Ok(match e.as_data() {
-      ExprData::Fvar(n, _) => {
-        lookup(n).filter(|&pos| pos < scope).map(|pos| {
-          LeanExpr::bvar(Nat::from((scope - 1 - pos) as u64 + depth))
-        })
-      },
+      ExprData::Fvar(n, _) => lookup(n)
+        .filter(|&pos| pos < scope)
+        .map(|pos| LeanExpr::bvar(Nat::from((scope - 1 - pos) as u64 + depth))),
       ExprData::Bvar(i, _) if nat_to_u64(i) >= depth => {
         Some(LeanExpr::bvar(Nat::from(nat_to_u64(i) + scope as u64)))
       },
@@ -493,7 +491,8 @@ mod tests {
     for second in [collision, b(1)] {
       let source = LeanExpr::app(first.clone(), second);
       let expected = LeanExpr::app(value.clone(), b(0));
-      let result = instantiate1(&source, &value, &Checkpoint::default()).unwrap();
+      let result =
+        instantiate1(&source, &value, &Checkpoint::default()).unwrap();
       assert_eq!(result, expected);
       assert_eq!(result, old::instantiate1(&source, &value));
     }
@@ -519,9 +518,18 @@ mod tests {
       Ok(None)
     };
     let control = Checkpoint::default();
-    assert_eq!(rewrite(&first, 0, &control, &mut cache, &mut leaf).unwrap(), first);
-    assert_eq!(rewrite(&second, 0, &control, &mut cache, &mut leaf).unwrap(), second);
-    assert_eq!(rewrite(&second, 0, &control, &mut cache, &mut leaf).unwrap(), second);
+    assert_eq!(
+      rewrite(&first, 0, &control, &mut cache, &mut leaf).unwrap(),
+      first
+    );
+    assert_eq!(
+      rewrite(&second, 0, &control, &mut cache, &mut leaf).unwrap(),
+      second
+    );
+    assert_eq!(
+      rewrite(&second, 0, &control, &mut cache, &mut leaf).unwrap(),
+      second
+    );
     assert_eq!(visits, 2); // The exact repeated input still uses the completed hit.
   }
 
@@ -532,7 +540,8 @@ mod tests {
     let collision =
       LeanExpr(Arc::new(ExprData::Bvar(Nat::from(0u64), *value.get_hash())));
     for source in [collision, b(0)] {
-      let result = instantiate1(&source, &value, &Checkpoint::default()).unwrap();
+      let result =
+        instantiate1(&source, &value, &Checkpoint::default()).unwrap();
       assert_eq!(result, value);
       assert_eq!(result, old::instantiate1(&source, &value));
     }
@@ -544,12 +553,12 @@ mod tests {
     use ix_common::env::NameData;
     use std::sync::Arc;
     let a = name("a");
-    let forged_b = Name(Arc::new(NameData::Str(
-      Name::anon(), "b".into(), *a.get_hash(),
-    )));
+    let forged_b =
+      Name(Arc::new(NameData::Str(Name::anon(), "b".into(), *a.get_hash())));
     let altered_a = Name(Arc::new(NameData::Str(
       Name(Arc::new(NameData::Anonymous(blake3::hash(b"binder root")))),
-      "a".into(), blake3::hash(b"binder name"),
+      "a".into(),
+      blake3::hash(b"binder name"),
     )));
     let sort = LeanExpr::sort(Level::zero());
     for (b_name, last_a) in [(forged_b, altered_a), (name("b"), a.clone())] {
@@ -563,22 +572,30 @@ mod tests {
           info: BinderInfo::Default,
         })
         .collect();
-      let source = LeanExpr::app(LeanExpr::fvar(a.clone()), LeanExpr::fvar(b_name));
+      let source =
+        LeanExpr::app(LeanExpr::fvar(a.clone()), LeanExpr::fvar(b_name));
       let expected_body = LeanExpr::app(b(0), b(1));
       let mut expected_forall = expected_body.clone();
       let mut expected_lambda = expected_body;
       for decl in decls.iter().rev() {
         expected_forall = LeanExpr::all(
-          decl.binder_name.clone(), sort.clone(), expected_forall,
+          decl.binder_name.clone(),
+          sort.clone(),
+          expected_forall,
           BinderInfo::Default,
         );
         expected_lambda = LeanExpr::lam(
-          decl.binder_name.clone(), sort.clone(), expected_lambda,
+          decl.binder_name.clone(),
+          sort.clone(),
+          expected_lambda,
           BinderInfo::Default,
         );
       }
       assert_eq!(main::mk_forall(source.clone(), &decls), expected_forall);
-      assert_eq!(mk_forall(source.clone(), &decls, &Checkpoint::default()).unwrap(), expected_forall);
+      assert_eq!(
+        mk_forall(source.clone(), &decls, &Checkpoint::default()).unwrap(),
+        expected_forall
+      );
       assert_eq!(old::mk_forall(source.clone(), &decls), expected_forall);
       assert_eq!(main::mk_lambda(source.clone(), &decls), expected_lambda);
       assert_eq!(old::mk_lambda(source, &decls), expected_lambda);
