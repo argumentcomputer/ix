@@ -21,7 +21,7 @@
   and the evaporation probe (`positionClaimedBySpecScc`) are still its own.
 
   Under `Rules.phaseA` the functions compute the Phase A canonical form
-  (`plans/PLAN-A-compiler-design.md` §3.1). The census executable
+  (`docs/compiler-passes.md` §2–§3). The census executable
   `canon-census` (`Benchmarks/Canon/Census.lean`) runs both on libraries;
   `Tests/Ix/Compile/Canon.lean` (`canon-pass1`) checks the wired path.
 

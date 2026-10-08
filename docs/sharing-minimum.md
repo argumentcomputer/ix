@@ -890,9 +890,12 @@ sharing + integers together.
 ### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
 The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
-and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (111 roots on Lean
-4.34.0; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
-`sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
+and are roots of the audit manifest
+[`IxSharingVerify/Audit/Statements.lean`](../IxSharingVerify/Audit/Statements.lean)
+(113 roots at the Lean 4.34.1 source revision, including the two host-code roots
+`Ixon.putTagN_eq_I` and `instBEqByteArray_ix_beq_eq_core`). Each root's axioms
+are fixed exactly; the sorry-frontier check covers `Ix.Sharing` declarations.
+These checks run in `lake build --wfail IxSharingVerify`. The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
 
 - **Phase 1** (`UniformOptimality.lean`): `optimizeUniform_minimum` (a successful

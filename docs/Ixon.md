@@ -1188,11 +1188,40 @@ only, never entering any content hash):
 
 The three vectors always serialize together (one unified format), and
 `evaporated` always carries `perm.len()` flags — a flag set means the
-block owns the evaporation of that source position (its alias resolves
-to an external head's generic recursor; the call-site surgery keyed its
-head-rewrite plans off these flags alone until 2026-10-07). Writers normalize
+block owns the evaporation of that source position. Under Pass 3 the
+source recursor name denotes its image, rather than a direct alias to an
+external recursor with a different telescope (`compiler-passes.md` §2.6).
+The historical call-site surgery keyed its head-rewrite plans off these
+flags alone until 2026-10-07. Writers normalize
 legacy-constructed values with defaulted-empty `evaporated` to
 all-zero flags, so Lean and Rust serializers agree byte-for-byte.
+
+### Pass 3 provenance records
+
+The metadata keys have distinct roles:
+
+| Key or field | Contents and interpretation |
+| --- | --- |
+| `_ix.inline` | Index of the compiled source occurrence in `ConstantMeta.metaSharing`, wrapping the rewritten occurrence. |
+| `_ix.inline_meta` | The metadata-arena root for that source occurrence. Both decompilers replay the source; ordinary kernel ingress sees metadata. |
+| `_ix.clique` | A string on a transported clique's canonical functional: encoding, source order, permutation, order source, classes, aliases and causes. `CliquePlan.record` constructs it. |
+| `Named.original` | Address and metadata of the source form compiled without rewrite, for a stored image or promoted regenerated auxiliary. It is source-specific provenance, not the canonical value under `Named.addr`. |
+
+The inline pair also appears at transported members' and carried lemmas' value
+roots. Replaying the source for decompilation and checking the stored transformed
+value answer different questions. None of these metadata records is a proof of
+the transformation. The certifier checks its association and support rows
+independently; it does not read the diagnostic `<stem>.changed.json` file, which
+is not part of the environment serialization.
+
+See [the output contract](compiler-passes.md#11-the-output-contract), especially
+§11.3–§11.5, and the implementations in
+[SideCar](../Ix/Compile/Pass/SideCar.lean),
+[Cliques](../Ix/Compile/Pass/Cliques.lean) and
+[CompileDriver](../Ix/CompileDriver.lean). Rust's `Named` uses accessors and can
+keep metadata in a serialized/lazy representation; the logical fields described
+here do not require an eagerly materialized metadata tree
+([implementation](../crates/ixon/src/env.rs)).
 
 ### Indexed Serialization
 
@@ -1208,6 +1237,10 @@ pub type NameReverseIndex = Vec<Address>;
 ## Environment
 
 The `Env` structure stores all Ixon data using concurrent `DashMap`s.
+The following is a schematic view of its principal tables and a named entry;
+the current Rust `Named` also carries per-name hints and original-form provenance,
+and its private metadata representation is read through accessors
+([source](../crates/ixon/src/env.rs)).
 
 ```rust
 pub struct Env {

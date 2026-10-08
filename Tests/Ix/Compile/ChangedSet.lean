@@ -22,9 +22,11 @@
      whose claim is `differs`; every reserved (`_ix`) name of the artifact has
      a `canonical` entry; and conversely every `rewritten` entry carries an
      `_ix.inline` record;
-  5. Init+Std only: the twelve constants W rejects on `initstd-a3` ("value
-     differs", `plans/review2/M4-d-strong-model.md` §6) are each claimed
-     (`transported` or `carried`), and with `CHANGED_SET_INITSTD=<file>` the
+  5. Init+Std only: the twelve historical W-regression name fragments in
+     `initStdRejected` are each claimed (`transported` or `carried`). This
+     checks the named subset, not the total changed set or a current W+
+     verdict (`docs/compiler-certification.md` §1.3). With
+     `CHANGED_SET_INITSTD=<file>` the
      record `ix compile-lean` wrote equals this compile's byte for byte.
 
   Run with: `lake test -- --ignored changed-set`. `CHANGED_SET_ONLY` restricts
@@ -130,9 +132,11 @@ def runUnit (unit : String) (env : Environment) (closure : List (Name × Constan
   say s!"{line}; record {rbs.utf8ByteSize} B, 1 and 32 workers {if ra == rbs then "identical" else "DIFFER"}"
   return (ps ++ cs, some (b, rbs))
 
-/-- The twelve Init+Std constants W rejects on `initstd-a3` (M4-d §6), as
-name fragments (several are private): each must be claimed by a
-`transported` or `carried` entry. -/
+/-- Historical Init+Std W-regression subset, as name fragments (several
+are private): each must have a `transported` or `carried` entry. The old
+identifier is retained; this list is neither the full changed set nor a
+current W+ rejection list. See `docs/compiler-passes.md` §11.5 and
+`docs/compiler-certification.md` §1.3. -/
 def initStdRejected : List String :=
   ["findLeadingSpacesSize.consumeSpaces", "findLeadingSpacesSize.findNextLine",
    "removeNumLeadingSpaces.consumeSpaces", "removeNumLeadingSpaces.saveLine",

@@ -38,9 +38,10 @@ import Ix.CompileCert.Canon.CliqueClasses
 /-!
 # M7 L1: Pass 1 proved
 
-Theorem 4.2 of `plans/PLAN-B-certification.md` §2.3 over `Ix/Compile/Canon/**` (Pass 1 of the
-Lean compiler: components, classes, canonical order, nested auxiliaries, cliques, name map),
-stated against the code as it is. The modules:
+Theorem 4.2 at Pass 1's level over `Ix/Compile/Canon/**` (components, classes, canonical
+order, nested auxiliaries, cliques, name map), stated against the code as it is. The tracked
+statement and its hypotheses are in `docs/compiler-certification.md` §1.6; the remaining
+general production/runtime obligations are §1.7. The modules:
 
 * `Basic`: total preorders on the ok-domain of a comparison that can fail (`PreOn`), and the
   lexicographic, list and tag combinators;

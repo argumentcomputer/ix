@@ -776,7 +776,7 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.m4dRoots Ix.CompileCert.Audit.allowedAxioms
 
-/-! The roots added by M7 L1 (WP-D, `plans/PLAN-proofs.md`): Pass 1 proved
+/-! The roots added by M7 L1 (tracked statement: `docs/compiler-certification.md` §1.6): Pass 1 proved
 (`Ix/CompileCert/Canon/**`, theorems about `Ix/Compile/Canon/**` as it is). WP-E (2026-10-07)
 adds the block driver, the nested auxiliaries' discovery order, evaporation, the block name map
 and the clique statements, over the functions the hashing change cleared. Checked the same way,
@@ -880,7 +880,8 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l1Roots Ix.Com
 finalized by `Address.ofHasher`, which passes the package's length bound explicitly
 (`Address.digestLen_lt_wordBound`, by cases on the word size) instead of its default
 `by native_decide`. The constructors that hash, and the Pass 1 functions built on them (the
-functions that carried the two `native_decide` auxiliaries, `plans/review2/M7-L1-pass1.md` §3),
+functions that carried the two `native_decide` auxiliaries; current implementations in
+`Ix/Address.lean`, and the exact roots below),
 are checked the same way, against the same allowed set; the frozen line above is unchanged. -/
 
 namespace Ix.CompileCert.Audit
@@ -1260,7 +1261,7 @@ run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.m7fDecisio
 
 run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.m7fDecisionRoots Ix.CompileCert.Audit.hashEqualities
 
-/-! ## Package C (PLAN-L2a, the costs of W+): the certified fold continued
+/-! ## Package C (`docs/compiler-certification.md` §1.3): the certified fold continued
 
 The roots added by package C (`FoldCompose.lean`, `Changed.lean`): the fold over
 artifact + support composed from the admission's two phases and the support's

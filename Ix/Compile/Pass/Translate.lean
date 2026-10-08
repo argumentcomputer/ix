@@ -102,6 +102,10 @@ structure RwState where
   needed : Array Name := #[]
   /-- Rewritten expansions. -/
   exps : Std.HashMap Name Expansion := {}
+  /-- Results reaching `rw`'s final insertion, keyed by term, record mode
+  and definition site. The bare/partial image-head early return is not
+  inserted here; do not infer that every visited subterm is memoized.
+  See `docs/compiler-passes.md` §6.3. -/
   cache : Std.HashMap (Expr × Bool × Option Name) Expr := {}
   /-- The optimisation passes (`Ix.Compile.Pass.Opt.engineFull`), tried at
   every full application before the image is inlined; `none` keeps the

@@ -24,7 +24,7 @@
   **Rule sets** (`Rules`): `Rules.today` reproduces the compiler as it was
   before A2; `Rules.compiler` is what the compiler runs now, which since
   A2-order is `Rules.phaseA`; `Rules.phaseA` is the Phase A decision set
-  (`PLAN-A-compiler-design.md` §3.1, owner's decisions of 2026-10-03 on Q1
+  (`docs/compiler-passes.md` §2.3 and §8, decisions of 2026-10-03 on Q1
   and Q2): today's comparator (external references by address at the first
   difference), today's name-hash seed and least-name-hash representative,
   plus levels after `canonUniv`, nested auxiliaries in discovery order and
@@ -116,7 +116,7 @@ structure Rules where
 def Rules.today : Rules :=
   ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural, false⟩
 
-/-- The Phase A decisions (`PLAN-A-compiler-design.md` §3.1; owner, 2026-10-03:
+/-- The Phase A decisions (`docs/compiler-passes.md` §2.3 and §8; owner, 2026-10-03:
 first-difference address comparison, name-hash seed and representative kept). -/
 def Rules.phaseA : Rules :=
   ⟨.byNameHash, .afterCanonUniv, .leastNameHash, .inline, .discovery, true⟩

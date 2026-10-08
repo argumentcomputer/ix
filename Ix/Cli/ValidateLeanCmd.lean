@@ -1,6 +1,6 @@
 /-
   `ix validate-lean <file.lean>`: the validator of record for Phase A
-  (design `PLAN-A` §6 A3v). Pure Lean, over the Lean compiler's output
+  (design `docs/compiler-passes.md` §9). Pure Lean, over the Lean compiler's output
   (Pass 3, the only mode since M6R slice 6). With `--ixe` it reads any
   stored file, also one the legacy call-site surgery wrote before slice 6
   (no `_ix` names: its changed blocks are reported, not oracle subjects).
