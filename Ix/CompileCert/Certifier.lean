@@ -1549,8 +1549,9 @@ structure Config where
   /-- Time the stages of the global cone (`--explain`'s stages, diagnostics only; no verdict). -/
   explainGlobal : Bool := false
   /-- After the strong cones, decide S at the value level for the constants W certifies by a W+
-  route outside a changed inductive block, and their users (M7 S+a, `StrongChanged.lean`). -/
-  strongChanged : Bool := false
+  route outside a changed inductive block, and their users (M7 S+a, `StrongChanged.lean`).
+  Enabled by default for S; false retains the direct/raw-only control. -/
+  strongChanged : Bool := true
 
 /-- What the S path reuses from the W run. -/
 structure WState where

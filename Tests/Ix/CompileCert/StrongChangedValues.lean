@@ -5,16 +5,16 @@ import Tests.Ix.CompileCert.ChangedValueDefs
 
 /-! # S at the value level for changed constants (M7 S+a)
 
-`compile-certify --strong --strong-changed` (`Strong.runStrong` with `strongChanged`) decides, after
+`compile-certify --strong` (`Strong.runStrong` with the default `strongChanged`) decides, after
 the strong cones, the constants W certifies by a W+ route outside a changed inductive block and
 their users, at the value level (`decideStrongCone'`, `StrongCone'.sound`,
 `Ix/CompileCert/StrongChanged.lean`). Checks, run in-process on real compiler output:
 
 1. **`ChangedValueDefs`** (a theorem clique in both member orders, compiled here under Pass 3 into
    `value-cones.ixe`): the transported clique's members are W-certified by the `theorem` route;
-   without the flag (the neighbour) they are S-unsupported with WP-C's class and their users
-   S-blocked; with it every one of them and every user is S-certified by a value cone, and every
-   other verdict and cause is the run without the flag's. Nothing is S-rejected.
+   with `strongChanged := false` (the control) they are S-unsupported with WP-C's class and
+   their users S-blocked; with the default every one of them and every user is S-certified by a
+   value cone, and every other verdict and cause is the control's. Nothing is S-rejected.
 2. **`ChangedDefs`** (`changed.ixe`, the W+ fixture: changed blocks, image recursors, type rows,
    a transported well-founded clique): no W+ constant keeps WP-C's class; each one over a changed
    inductive block is S-unsupported with the S+b class, each transported member W certifies by its
@@ -95,28 +95,28 @@ def valuesFixture (dir : String) : IO String := do
   require s!"the fixture has {theoremRoute.size} constants W certifies by the theorem route (the transported clique)"
     (theoremRoute.size > 0)
   let isTheorem : Std.HashSet String := theoremRoute.foldl (·.insert ·) {}
-  -- the neighbour: without the flag
-  let _ ← runStrong base w
+  -- the direct/raw-only control; the positive run below uses the default.
+  let _ ← runStrong { base with strongChanged := false } w
   let s0 ← sVerdicts base.out
-  require s!"without --strong-changed: each of the {theoremRoute.size} is S-unsupported ({wPlusClass})"
+  require s!"control with strongChanged disabled: each of the {theoremRoute.size} is S-unsupported ({wPlusClass})"
     (theoremRoute.all fun n => s0.getD n ("", "") == ("S-unsupported", wPlusClass))
   let blocked0 := (routes.map (·.1)).filter fun n => match s0[n]? with
     | some ("S-blocked", cause) => match cause.splitOn s!": {wPlusClass}" with
       | [dep, ""] => isTheorem.contains dep
       | _ => false
     | _ => false
-  require s!"without --strong-changed: {blocked0.size} users S-blocked by them" (blocked0.size > 0)
-  -- with the flag
-  let on := { base with out := s!"{dir}/strong-changed-values-on", strongChanged := true }
+  require s!"control with strongChanged disabled: {blocked0.size} users S-blocked by them" (blocked0.size > 0)
+  -- No explicit strongChanged override: this checks the shipped default.
+  let on := { base with out := s!"{dir}/strong-changed-values-on" }
   let code ← runStrong on w
   let s1 ← sVerdicts on.out
-  require s!"with --strong-changed: each of the {theoremRoute.size} S-certified by a value cone"
+  require s!"default value-level S: each of the {theoremRoute.size} S-certified by a value cone"
     (theoremRoute.all fun n => isValueCone (s1.getD n ("", "")))
-  require s!"with --strong-changed: each of the {blocked0.size} users S-certified by a value cone"
+  require s!"default value-level S: each of the {blocked0.size} users S-certified by a value cone"
     (blocked0.all fun n => isValueCone (s1.getD n ("", "")))
   let changedNames : Std.HashSet String := (theoremRoute ++ blocked0).foldl (·.insert ·) {}
   let others := s0.toList.filter fun (n, _) => !changedNames.contains n
-  require s!"every other verdict and cause ({others.length}) is the run without the flag's"
+  require s!"every other verdict and cause ({others.length}) is the control's"
     (others.all fun (n, v) => s1[n]? == some v)
   require "nothing S-rejected; exit 0" (code == 0 && s1.toList.all fun (_, v) => v.1 != "S-rejected")
   return s!"{theoremRoute.size} transported theorems and {blocked0.size} users S-certified at the value level \
@@ -131,9 +131,9 @@ def changedFixture (ixe dir : String) : IO String := do
   let routes ← wRoutes base.out
   let wPlus := routes.filter fun (_, r) => !(r == "" || sRoute r)
   let isWPlus : Std.HashSet String := wPlus.foldl (fun s (n, _) => s.insert n) {}
-  let _ ← runStrong base w
+  let _ ← runStrong { base with strongChanged := false } w
   let s0 ← sVerdicts base.out
-  let on := { base with out := s!"{dir}/strong-changed-values-cd-on", strongChanged := true }
+  let on := { base with out := s!"{dir}/strong-changed-values-cd-on" }
   let code ← runStrong on w
   let s1 ← sVerdicts on.out
   require s!"the W+ fixture has {wPlus.size} W+ constants; none keeps the class {wPlusClass}"
@@ -160,7 +160,7 @@ def changedFixture (ixe dir : String) : IO String := do
   let blockedByChanged := blockedAll.filter fun (_, v) => sbOrV v.2
   let blockedOther := blockedAll.filter fun (n, v) => !sbOrV v.2 && s0[n]? != some v
   require s!"{blockedByChanged.length} constants S-blocked by a W+ constant with its class named; every other \
-    S-blocked verdict is the run without the flag's" (blockedByChanged.length > 0 && blockedOther.isEmpty)
+    S-blocked verdict is the control's" (blockedByChanged.length > 0 && blockedOther.isEmpty)
   let strongBefore := s0.toList.filter fun (_, v) => v.1 == "S-certified"
   require s!"the {strongBefore.length} strong verdicts unchanged" (strongBefore.all fun (n, v) => s1[n]? == some v)
   require "nothing S-rejected; exit 0" (code == 0 && s1.toList.all fun (_, v) => v.1 != "S-rejected")

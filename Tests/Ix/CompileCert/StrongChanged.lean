@@ -1,10 +1,11 @@
 import Ix.CompileCert.StrongCertifier
 
-/-! S over the changed constants of W+ (M5): `compile-certify --strong` on the `ChangedDefs`
+/-! The direct/raw-only S control over the changed constants of W+ (M5), on the `ChangedDefs`
 fixture (compiled under Pass 3 by the `changed` mode into `changed.ixe`), run in-process
 (`Certifier.runW`, then `Strong.runStrong`), read back from the files it writes.
 
-S decides only constants W certifies by the `direct`/`raw` routes. Checks:
+The default includes value-level S for changed constants. This control explicitly sets
+`strongChanged := false` so S decides only the `direct`/`raw` routes. Checks:
 
 1. the fixture has constants W certifies by a W+ route (a theorem or equation row, a type
    row, a changed block), and each is S-unsupported with the class `Strong.wPlusClass`;
@@ -41,9 +42,11 @@ def sVerdicts (pre : String) : IO (Std.HashMap String (String × String)) := do
   return rows.foldl (fun m r => m.insert (cell r 0) (cell r 2, cell r 3)) {}
 
 def checks (ixe dir : String) : IO Unit := do
-  let base : Config :=
+  let defaults : Config :=
     { lean := .modules #[`Tests.Ix.CompileCert.ChangedDefs], ixe, out := s!"{dir}/strong-changed",
       strong := true, workers := 4, strongTasks := 4 }
+  require "value-level S for changed constants is enabled by default" defaults.strongChanged
+  let base := { defaults with strongChanged := false }
   let (_, some w) ← runW base | throw (IO.userError "W produced no state")
   let _ ← runStrong base w
   -- W's verdicts and routes (the cause column of a certified constant is its route)

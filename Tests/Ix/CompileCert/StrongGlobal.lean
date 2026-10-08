@@ -2,7 +2,8 @@ import Ix.CompileCert.StrongCertifier
 
 /-! One global S cone (M7 WP-F) on the fixtures, run in-process (`Certifier.runW`, then
 `Strong.runStrong` with `strongGlobal`), read back from the files it writes, beside the cover
-(`runStrong` without it) on the same W state:
+(`runStrong` without it) on the same W state. Both explicitly disable `strongChanged`
+so this control compares the direct/raw cone algorithms:
 
 1. `BlockDefs` over `compiled.ixe` and `ChangedDefs` over `changed.ixe`: the global cone is the
    only cone run and it is accepted; the S verdict of every constant is the cover's (the cover
@@ -138,7 +139,7 @@ def equalities (label : String) (w : WState) : IO Unit := do
 
 def baseConfig (label : String) (mods : Lean.Name) (ixe dir : String) : Config :=
   { lean := .modules #[mods], ixe, out := s!"{dir}/strong-global-{label}-cover",
-    strong := true, workers := 4, strongTasks := 4 }
+    strong := true, strongChanged := false, workers := 4, strongTasks := 4 }
 
 def checks (compiledIxe changedIxe dir : String) : IO Unit := do
   for (label, mods, ixe) in [("BlockDefs", `Tests.Ix.CompileCert.BlockDefs, compiledIxe),

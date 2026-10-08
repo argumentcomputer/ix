@@ -28,7 +28,8 @@ def usage : String :=
   --strong-global: before the cover, one cone over every W-certified (direct or raw) constant whose closure stays among \
   them; the cover decides the rest (and everything, if the global cone is refused);\n  \
   --explain-global: the stages of the global cone, timed (diagnostics, no verdict);\n  \
-  --strong-changed: after the strong cones, S at the value level (M7 S+a) for the constants W certifies by a W+ route \
+  --strong-changed: alias enabling --strong; value-level checks are included in S by default. After the strong \
+  cones, S at the value level (M7 S+a) for the constants W certifies by a W+ route \
   outside a changed inductive block (theorems, definitions with a value row) and their users, as one cone (each root \
   on its own if that cone is refused); a changed block, image recursor or type row stays S-unsupported (S+b), a \
   transported clique member without a value row S-unsupported (package V)"

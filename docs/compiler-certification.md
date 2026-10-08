@@ -266,18 +266,18 @@ command exits, right after its report.
 
 The strong cones decide only the constants W certifies by the `direct`/`raw` routes. A constant
 certified by a W+ route (a theorem or equation row, a type row, a changed block) is put in no strong
-cone; without `--strong-changed` it is **S-unsupported** (`certified by a W+ route; S for changed
-constants is M7`) and every cone that reaches it is S-blocked by it with that class; it is never
-S-rejected for it. With `--strong-changed` (§1.5) the W+-route constants outside a changed inductive
-block (a theorem by its statement; a definition by an `equations:` route with a value row) and the
-constants the strong cones left S-blocked by them are decided after the strong cones, as **one value
-cone** (each root on its own cone if that one is refused): a member is then **S-certified** with the
+cone. After those cones, S by default decides the W+-route constants outside a changed inductive
+block at the value level (§1.5): a theorem by its statement; a definition by an `equations:` route
+with a value row. Together with the constants left S-blocked by them, they form **one value cone**
+(each root on its own cone if that one is refused). A member is then **S-certified** with the
 cause `value cone <root>` (the strong verdicts keep `cone <root>`). What stays out has a class: a
 W+-route constant over a changed inductive block (a member of a changed block, an image recursor,
 a header matched through a type row) is S-unsupported `certified by a W+ route over a changed
 inductive block (…); S for it is S+b`; a transported clique member W certifies by its `eq_def` only is
 S-unsupported `transported clique member certified by its eq_def only (no value row); S for it needs
-package V`; what reaches either is S-blocked by it with its class.
+package V`; what reaches either is S-blocked by it with its class. The in-process control
+`Config.strongChanged := false` disables the value-level stage: all W+-route constants then stay
+S-unsupported (`certified by a W+ route; S for changed constants is M7`), and users stay S-blocked.
 
 ## 4. Running it
 
@@ -327,9 +327,10 @@ compile-certify (--file <source.lean> | --modules <A,B,...>) <env.ixe> <out-pref
   if it is refused. Run it with a large stack (`ulimit -s unlimited`): the source normalisation recurses
   once per declaration. `--explain-global` times the global cone's stages (with `--strong-plan`, no
   verdict).
-- `--strong-changed` decides, after the strong cones, the W+-route constants outside a changed
-  inductive block and the constants left S-blocked by them, at the value level (§1.5, §3): one value
-  cone, each root on its own if it is refused; the JSON records `valueCertified`.
+- S includes value-level certification of changed constants by default (§1.5, §3), after the
+  strong cones: W+-route constants outside a changed inductive block and the constants left
+  S-blocked by them form one value cone, each root on its own if it is refused. The JSON records
+  `valueCertified`. `--strong-changed` remains an alias enabling `--strong`; no extra flag is needed.
 - Exit 0 iff something is certified, nothing is rejected, every raw projection on a non-direct
   structure-like has a receipt, and, with S, something is S-certified and nothing is S-rejected.
 
@@ -358,12 +359,12 @@ pins), and writes the file only if every step passed.
 - **Changed constants** (certified by W+, §3) are outside the strong cones: their per-cone W association
   and strong checks compare the installed source with target rows that are, for a changed constant, not
   its Lean declaration's export, and the strong conclusion cannot hold above a changed definition (§1.5).
-  With `--strong-changed` they are decided at the value level (§1.5) except two classes: a changed
+  S decides them at the value level by default (§1.5) except two classes: a changed
   inductive block, an image recursor or a type row (S+b, M7), and a transported clique member certified
   by its `eq_def` only, which has no value row (package V, M7).
 - **Proof-field projections of mutual or nested structure-likes** (theorems in Lean 4.34.1): refused by W
   before W+; W+ certifies them by the `theorem` route (the `LoweringDefs` fixture's `Sized.ok`), so S
-  treats them as changed constants (above): at the value level with `--strong-changed`.
+  treats them as changed constants (above): at the value level by default.
 - **Cost.** Since M7 WP-F a cone costs about its admission and its certified fold (the source export,
   model proposal, correspondence and normalisation run on indices and the DAG, and the strong check takes
   seconds: 0.3 s on a 4,000-declaration cone that reaches the `String`/`TreeMap` lemma core, 1.2 s on one

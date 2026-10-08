@@ -1461,7 +1461,7 @@ def runStrong (cfg : Config) (w : WState) : IO UInt32 := do
       lastReport := now
       let done := sv.fold (fun n _ v => match v with | .certified _ => n + 1 | _ => n) 0
       say s!"[certify-S] progress: {cones.size} cones, {done} S-certified, {queue.size} roots queued; {now - t0} ms"
-  -- M7 S+a (`--strong-changed`): after the strong cones, S at the value level for what they left
+  -- M7 S+a (enabled in S by default): after the strong cones, S at the value level for what they left
   -- for W+'s sake. The W+-route constants outside a changed inductive block (theorems; definitions
   -- with a value row) are decided with the W-certified constants S-blocked by them, as one cone
   -- (its own W association W+'s, `decideStrongCone'`, `StrongCone'.sound`); if it is refused,
