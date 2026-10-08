@@ -1534,6 +1534,10 @@ def l3dRoots : Array Lean.Name :=
     `InstExpansionRel, `InstExpansionRel.refl, `InstExpansionRel.trans,
     `InstExpansionRel.of_levelClosed, `InstExpansionLookup, `spineP_faithful_inst,
     `rwP_faithful_inst, `rewriteConstP_faithful_inst, `expansionOfP_instLookup_of_stored,
+    -- exact scalar normalization and term-substitution transport
+    `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
+    `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
+    `conv_substLevels_viaConv,
     -- canonicity
     `bool_guard2, `bool_guard3, `O2_pattern, `O8_pattern, `O7_pattern, `ebind, `eguard, `epattern,
     `toOption_some, `O11a_O2_pattern, `O1_O3_disjoint, `O1_O4_disjoint, `O3_O4_disjoint,
@@ -1563,7 +1567,7 @@ def l3dRoots : Array Lean.Name :=
     `stripLams_er, `lamN_body_range, `appN_head_range, `appN_arg_range, `stripLams_arg_range,
     -- O11a selection is independent of positive engine fuel
     `O1_O11a_disjoint, `engine_of_O11a, `engineN_O11a_fuel_eq, `engineFull_of_O11a
-    ].map (`Ix.CompileCert.Opt ++ ·)
+    ].map (`Ix.CompileCert.Opt ++ ·) ++ #[``Ix.CompileCert.Conv.Conv.mapC_viaConv]
 
 end Ix.CompileCert.Audit
 

@@ -12,6 +12,7 @@ import Ix.CompileCert.Opt.Engine
 import Ix.CompileCert.Opt.Rewrite
 import Ix.CompileCert.Opt.RewriteTotal
 import Ix.CompileCert.Opt.RewriteInst
+import Ix.CompileCert.Opt.LevelTransport
 import Ix.CompileCert.Opt.Canonicity
 import Ix.CompileCert.Opt.AuxCore
 import Ix.CompileCert.Opt.O2
@@ -53,6 +54,7 @@ The theorems, by pass:
 | the hook (`Driver.optLookup`) | `hook_faithful`, `hook_siteStable`, `optLookup_eq` | `EngineLaws` |
 | the rewrite (`Translate.rw`, its core `rwP`) | `rwP_faithful`, `rewriteConstP_faithful`; D1: `rwP_lean_name`; totality: `rwP_error` (named failures only), `rwP_mono` (fuel-independent) | `HeadLaws`, `LevelClosed Γ`, `HookFaithful`, `HookSiteStable` |
 | instantiated expansion lifting | `spineP_faithful_inst`, `rwP_faithful_inst`, `rewriteConstP_faithful_inst`; lookup reduction: `expansionOfP_instLookup_of_stored` | `HeadLaws`, `HookFaithful`, `HookSiteStable`, and pointwise computed/raw expansion conversion; deriving this intermediate relation from source remains open |
+| universe-map transport | `substLevel_empty_params`, `substLevel_empty_univs`, `substLevel_paramFree`; `Conv.mapC_viaConv`, `conv_substLevels_viaConv` | exact scalar normalization facts; mapped-rule conversion remains an explicit intermediate obligation, not a discharged source law |
 | canonicity (C-1, C-2) | `O1_O3_disjoint` … `O2_O7_disjoint`, `O1_O6_agree`, `O11a_O2_pattern`, `engine_of_O1`, `engine_of_O3`, `engine_of_O4`, `O1_out`, `argT_congr` | — |
 
 The common part: `rec_sel_conv`, `recOn_sel_conv` (`Rec.lean`), `delta_sel`, `delta_beta` (δ then
