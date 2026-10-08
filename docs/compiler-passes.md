@@ -14,6 +14,9 @@ What the certification lane (`Ix/CompileCert/**`) establishes about the compiler
 theorems W and S, their receipts and trust, and how to run the certifier `compile-certify`, is in
 `docs/compiler-certification.md`.
 
+For the Rust implementation, FFI boundaries, scheduler/cache behavior and parity
+limits, see [the Rust compiler guide](compiler-rust.md).
+
 Lean's elaborator is cited from a Lean **4.34.0** source tree (`src/lean/Lean/...`), the only one
 readable when this was written; whether 4.34.1 changed any cited line is **[open]**.
 

@@ -164,6 +164,8 @@ Ix consists of the following core components:
   The compiler also includes a decompiler to convert `ixon` objects back into
   Lean programs (by preserving the alpha-relevant metadata in a separate ixon
   object and re-merging the computationally relevant and irrelevant parts).
+  See [the Rust compiler guide](docs/compiler-rust.md) for its data flow, FFI,
+  scheduling, parity checks and trust boundary.
 - The [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Ix/Aiur)
   which is a first-order functional programming language that generates
   multi-STARK circuits.
