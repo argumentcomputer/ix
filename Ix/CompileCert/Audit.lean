@@ -1544,6 +1544,11 @@ def l3dRoots : Array Lean.Name :=
     -- original finite-source inventory facts from the existing installation receipt
     `SourceScope.definition_scope_of_export, `SourceScope.theorem_scope_of_export,
     `SourceScope.definition_scope_of_installation, `SourceScope.theorem_scope_of_installation,
+    -- counts on the actual stateful ingestion and independent source-export paths
+    `IngestionArity.list_mapM_state_length, `IngestionArity.array_mapM_state_size,
+    `IngestionArity.canonConstantVal_params_size, `IngestionArity.canonConst_params_size,
+    `IngestionArity.list_mapM_export_length, `IngestionArity.source_levels_length,
+    `IngestionArity.source_constant_export, `IngestionArity.source_constant_inferred_arity,
     -- exact scalar normalization and term-substitution transport
     `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
     `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
