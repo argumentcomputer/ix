@@ -137,10 +137,11 @@ not zero-duration or completed performance checks.
 ## Where checks run
 
 [Ordinary CI](../.github/workflows/ci.yml) builds and lints Lean with warnings as
-errors, runs the primary tests except in the push-to-main build-only case, checks
-code generation and toolchain agreement, runs CLI and Ixon primitive checks, and
-runs Rust formatting, release Clippy/check and release nextest. The Rust feature
-set for Clippy/check is
+errors and runs release Rust Clippy/check. On non-push events it also runs the
+primary tests, code-generation and toolchain checks, CLI and Ixon checks,
+Rust formatting and release nextest tests. On push events those additional
+checks are skipped and nextest uses `--no-run` to build the test binaries.
+The Rust feature set for Clippy/check is
 `ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile`.
 
 [Merge tests](../.github/workflows/merge-tests.yml) divide ignored tests into
@@ -231,7 +232,7 @@ not an automatic re-record.
 | [`compile-claim-conflict`](../Tests/Ix/Compile/ClaimConflict.lean) | Direct claim/merge APIs and a constructed conflicting closure: identical reclaims succeed, competing claims fail consistently across both compilers and Lean drivers. | Exact diagnostics in source. | Compiler scheduling; Landing. |
 | [`compile-claim-order`](../Tests/Ix/Compile/ClaimOrder.lean) | Artificial arrival-order changes and source-family metadata: ownership follows source provenance. | Inline expected ownership/refusals. | Compiler scheduling; Landing. |
 | [`changed-set`](../Tests/Ix/Compile/ChangedSet.lean) | Pass3/twin/clique units and Init+Std, at 1 and 32 workers: identical bytes/records, address and image/clique/inline/reserved-name coverage. | `initStdRejected` coverage sample; optional CLI record comparison. | Compiler records, parity and pack; Landing. |
-| [`pass3-rust-parity`](../Tests/Ix/Compile/Pass3RustParity.lean) | Pass3 units, ownership cliques, O11a declines and corpus: equal named records, compile-failure names and noncanonical `(name, cause)` pairs; Rust pack bytes against Lean's closure oracle. | No accepted parity differences. | Compiler records, parity and pack; Landing fixtures and separate Init+Std file. |
+| [`pass3-rust-parity`](../Tests/Ix/Compile/Pass3RustParity.lean) | Pass3 units, ownership cliques, O11a declines and corpus: equal named records excluding synthetic `Muts` entries, compile-failure names and noncanonical `(name, cause)` pairs; Rust pack bytes against Lean's closure oracle. | No accepted parity differences in the checked scope. | Compiler records, parity and pack; Landing fixtures and separate Init+Std file. |
 | [`pack-units`](../Tests/Ix/Compile/PackUnits.lean) | Pack fixture: reference closure rather than the logical unit, retained constant bytes, correct root, reserved-name coverage and Lean pack oracle. Optional stored artifacts extend the run. | Inline roots and neighbours. | Compiler records, parity and pack; Landing. |
 | [`clique-ownership`](../Tests/Ix/Compile/CliqueOwnership.lean) | Both member orders of user packing-shaped values/binders/relations: kernel-checked transport and value-sensitive probes; `mustTransport` controls reject gratuitous declines. | `cases`, probe values and `mustTransport`. | Compiler records, parity and pack; Landing. |
 | [`pass3-plan-cache`](../Tests/Ix/Compile/PlanCache.lean) | Sequential/wave runs with recomputed plan/view/image-cache hits: same bytes/failures, nonvacuous cache coverage, corrupted-entry controls. | None. | Compiler plan cache; Landing. |
@@ -239,12 +240,13 @@ not an automatic re-record.
 | [`compile-closure-whole`](../Tests/Ix/Compile/ClosureWhole.lean) | Init+Std selected roots versus whole compile: closed logical units, emitted names, identical `Named` entries and introduced references; local collapse fixture. | Inline root list; optional stored `CLOSURE_WHOLE_ON`. | Compiler closure and corpus; Landing. |
 | [`compile-determinism`](../Tests/Ix/CompileDeterminism.lean) | Mutual fixture and Batteries: two independent CLI processes must write the same file SHA-256. | None. | Manual. |
 | [`fidelity-initstd`, `fidelity-flt`, `fidelity-mathlib`](../Tests/Ix/CompileFidelity.lean) | Library `ix validate` reports must be nonempty, passed and have zero total failures, with successful process exit. | No expected-failure table. | InitStd: Miscellaneous; FLT/Mathlib: manual. |
-| [`dev-census`](../Tests/Ix/Compile/DevCensus.lean) | Pass3 fixtures and Init+Std: reconstructed development calls, executable/core agreement, recursion depths, hereditary levels and erased typing measurements. | No new acceptance record. | Manual lane census. |
-| [`bridge-roundtrip`](../Tests/Ix/CompileCert/BridgeRoundTrip.lean) | BlockDefs bytes through certified reader versus source/bridge export; Init+Std term export; moved-name/shifted-level negative controls. | Inline controls. | Manual lane gate. |
+| [`dev-census`](../Tests/Ix/Compile/DevCensus.lean) | Pass3 fixtures and Init+Std: reconstructed development calls, executable/instrumented-copy comparison, conditional core comparison, depths/levels and typing measurements. See the coverage limits below. | No new acceptance record. | Manual lane census. |
+| [`bridge-roundtrip`](../Tests/Ix/CompileCert/BridgeRoundTrip.lean) | BlockDefs source/bridge export comparison ignoring hints, with at least one reader match; size-bounded Init+Std term comparison; moved-name/shifted-level negative controls. See the coverage limits below. | Inline controls. | Manual lane gate. |
 | [`mathlib-measure`](../Tests/Ix/Compile/MathlibMeasure.lean) | `M1G_PHASE=compile`, `classify`, or `kernels`: retain library compile/changed-name records and checker coverage. It is measurement tooling, not a meaning theorem or substitute for library byte gates. | Supplied old/new artifacts and measured TSVs. | Manual. |
 
-`pass3-rust-parity` reports whole-file `BYTE-IDENTICAL` or `files differ` as a
-diagnostic; that message alone does not affect its exit verdict. The separate
+`pass3-rust-parity` reports synthetic `Muts` counts and whole-file
+`BYTE-IDENTICAL` or `files differ` as diagnostics; neither determines its exit
+verdict. The separate
 `cmp`/`ALIGNED` library legs below enforce whole-file byte identity.
 It defaults to at most **10 pack roots per unit**, with explicit
 roots always included; the compiler comparison itself covers the whole selected
@@ -254,6 +256,21 @@ roots must be reported as a five-root pack check. The current landing defaults
 leave `PARITY_PACK_MAX` and `PARITY_PACK_ROOTS` unset. `pack-units` separately uses
 `PACK_UNITS_MAX=2000` for its fixture and `PACK_UNITS_IXE_MAX=10` for large stored
 artifacts. These bounds are coverage limits, not runtime budgets.
+
+`dev-census` compares the memo-free core only for developments below 20,000
+measured nodes. Typability is reported but is absent from the failure predicate;
+its positive and negative typing controls still must pass. Caught fixture
+compile refusals and the Init+Std compiler error branch are printed without
+adding a problem. There is no minimum unit/development count. Retain and inspect
+unit, development, core-checked, refused and untypable counts alongside exit
+status; the census does not prove the general development-domain theorem.
+
+`bridge-roundtrip` counts two export declines as equal and compares successful
+fixture exports without hints. It requires a nonzero reader-match count, not a
+match for every exported declaration. Init+Std terms at or above the 1,000,000
+node tree cap are counted as skipped and excluded from its differing count.
+Retain matched, declined and skipped counts; zero differences does not establish
+complete reader coverage or acceptance of every term.
 
 ### Adjacent kernel and artifact checks
 
