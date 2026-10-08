@@ -71,7 +71,8 @@ fi
 jq -r '.profile.allowedAxioms[]' "$catalog/proving.json" >"$work/axioms.txt"
 ix catalog verify-proof "$catalog" --allow-axioms "$work/axioms.txt" \
   --structural-above "$structural_above" --json \
-  >"$work/verify.json"
+  >"$work/verify.json" 2>"$work/verify.log" || { cat "$work/verify.log" >&2; exit 1; }
+cat "$work/verify.log" >&2
 # Re-verifying an older commit must not move `latest` backwards.
 if [[ "$reused" == false ]]; then
   ln -sfn "$catalog" "$dir/latest"
@@ -85,6 +86,7 @@ key="$GITHUB_REPOSITORY/$GITHUB_SHA/$root.ixon"
 download=""
 if [[ -n "${AWS_SHARED_CREDENTIALS_FILE:-}" ]]; then
   aws s3 cp --region us-east-1 --only-show-errors "$root_file" "s3://$bucket/$key"
+  echo "Uploaded the root proof to s3://$bucket/$key" >&2
   download="https://$bucket.s3.us-east-1.amazonaws.com/$key"
 else
   echo "No AWS credentials on the runner; skipping the proof upload." >&2
@@ -94,6 +96,16 @@ fi
   echo "### ix proof for \`${GITHUB_SHA:0:12}\`"
   echo
   echo "Root proof: \`$root\` ($(stat -c %s "$root_file") bytes)"
+  echo
+  echo "What was proven, as reported by \`ix catalog verify-proof\`:"
+  echo
+  echo '```text'
+  grep -E '^ok: aggregate proof|aggregate coverage:|certified well-typed' "$work/verify.log" || true
+  echo '```'
+  echo
+  jq -r '"Snapshot: \(.snapshotSubjects) constants, content root `\(.contentRoot)`, " +
+    "\(.axioms | length) allowed axioms."' "$work/verify.json"
+  echo "Source: \`$GITHUB_SERVER_URL/$GITHUB_REPOSITORY@$GITHUB_SHA\`"
   if [[ -n "$download" ]]; then
     echo
     echo "Download the root proof and check that its BLAKE3 hash is its address:"
