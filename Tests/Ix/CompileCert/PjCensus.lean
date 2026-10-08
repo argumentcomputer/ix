@@ -45,8 +45,12 @@ def targetsOf (compiled : _root_.Ix.CompileM.LeanPipelineOut) : IO (Array Target
         require (compiled.env.consts.contains address)
           s!"canonical recursor address absent from emitted bytes: {name.pretty}@{address}"
         seen := seen.insert name
-        targets := targets.push { name, address, np := recursor.numParams,
-          nm := recursor.numMotives, nmin := recursor.numMinors }
+        targets := targets.push {
+          name := name
+          address := address
+          np := recursor.numParams
+          nm := recursor.numMotives
+          nmin := recursor.numMinors }
   return targets.qsort (fun a b => a.name.pretty < b.name.pretty)
 
 def declineText : Decline → String
