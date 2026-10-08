@@ -294,11 +294,15 @@ codec, is retired ([kernel](kernel.md), "Removal ledger").
 
 ### 5.2 Metadata payloads contain no primary Share references
 
-`metaSharing` entries are raw compiled expressions (Lean `compileExprPartial`, Rust
-`compile_expr`). Share is produced only by the sharing construction, which runs on the roots
-after metadata is built. Their Ref/univ indices point into the block's primary `refs`/`univs`
-tables, which the construction does not change, so no remapping is needed when the primary table
-changes.
+The current compilers put raw compiled expressions (Lean `compileExprPartial`, Rust
+`compile_expr`) in `metaSharing`. They introduce Share only through the sharing construction
+on primary roots, after metadata is built. Metadata Ref/univ indices may reuse entries in the
+block's primary `refs`/`univs` tables; metadata-only addresses or universes use the constant's
+`metaRefs`/`metaUnivs` extensions, with virtual index `primary table length + extension slot`.
+These Ref/univ index spaces are distinct from the Share index space. The primary sharing
+construction rewrites expression roots and the `sharing` table while retaining the supplied
+`refs`/`univs`, so changing that sharing table does not require a Ref/univ index remap. This
+describes the current writers; the accepted metadata-Share wire format is described in §5.3.
 
 ### 5.3 Metadata `Share`: the extended index space
 

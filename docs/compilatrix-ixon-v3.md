@@ -57,10 +57,14 @@ Optional metadata and cached materializations grant no semantic facts.
 | IxVM Resource proofs | Explicitly unsupported |
 | Compilatrix backend | External migration required; support not inferred from these fixtures |
 
-Annotated inductive/constructor/recursor generation and nonidentity compiler
-surgery reject before emission. The native projection fragment requires closed,
-transparent fields with many usage. See [resource checking](resource-checking.md)
-for higher-order capture, recursion, loan, and normalization limits.
+Current source-contract decoration and semantic inspection reject annotated
+inductive, constructor and recursor declarations. Admitted bodies use
+Pass 3; for inputs retaining semantic contract metadata or supplying an explicit
+resource profile, emission requires the complete requested closure and resource
+and erased-type validation. See the [source frontend](source-contracts.md) for the
+admission boundary. The native projection fragment requires closed, transparent
+fields with many usage. See [resource checking](resource-checking.md) for
+higher-order capture, recursion, loan, and normalization limits.
 
 ## Fixture package
 

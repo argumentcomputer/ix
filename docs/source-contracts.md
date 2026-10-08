@@ -14,9 +14,14 @@ ownership, scopes, captures, and loan checks, with shared Lean/Rust fixtures
 and proofs of the executed state invariants.
 
 The admitted source fragment includes definitions, theorems, opaque bodies,
-and explicitly admitted external interfaces. Annotated inductive/constructor/
-recursor generation and nonidentity compiler surgery currently report an
-unsupported transformation before emission. Ordinary source keeps its existing
+and explicitly admitted external interfaces. Source-contract decoration and
+semantic inspection reject annotated inductive, constructor and recursor
+declarations. Admitted bodies proceed through the
+[Pass 3 pipeline](compiler-passes.md); for inputs retaining semantic contract
+metadata or supplying an explicit resource profile, emission requires the
+complete requested closure and resource and erased-type validation. The declaration-kind checks
+are in [source transport](../Ix/Compile/SourceContract/Transport.lean) and the
+[compiler driver](../Ix/CompileDriver.lean). Ordinary source keeps its existing
 compilation path. Source syntax alone does not establish resource validity.
 
 The complete semantic and binary design is in [Ixon v4](Ixon-v4.md).
