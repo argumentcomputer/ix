@@ -437,6 +437,9 @@ reader-fidelity logs.
 
 ### On a toolchain bump
 
+The compiler and certification lane also require updated reference artifacts,
+source pins and exact test records; follow [Compiler and certification gates](compiler-gates.md#toolchain-format-and-lane-changes) alongside the kernel steps below.
+
 When `lean-toolchain` changes, by hand or by the toolchain bot
 (`.github/workflows/update.yml`, which moves the toolchain files and the
 Mathlib tag but regenerates nothing), the change also does the following.
@@ -471,6 +474,9 @@ Mathlib tag but regenerates nothing), the change also does the following.
 4. **Gate.** `lake run check-kernel --with-model` passes in full.
 
 ### On a format change
+
+For compiler byte migrations and reference installation, also follow the
+[compiler gate procedure](compiler-gates.md#when-a-compiler-change-moves-bytes).
 
 A change of the Ixon wire format (a new `Ixon.Env.VERSION`, as from v3 to
 v4) moves essentially every address: an integer whose bytes change, or a
