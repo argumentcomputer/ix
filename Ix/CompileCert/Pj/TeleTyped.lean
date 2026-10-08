@@ -153,16 +153,16 @@ theorem graded_piJoin {bs : List (Kernel.Expr × Kernel.BinderMeta)} {b : Kernel
       exact ih (ρ := Kernel.push x ρ) (xs := xs) (body x (equal ▸ member)) rest
 
 
-/-- Inserting arguments at the bottom of the de Bruijn valuation. -/
 omit [Kernel.SetTheory V] in
+/-- Inserting arguments at the bottom of the de Bruijn valuation. -/
 theorem valuationLift_prefix (ρ : Nat → V) (xs : List V) :
     ValuationLift xs.length 0 ρ (pushArguments ρ xs) := by
   intro i
   simpa only [Nat.zero_le, ↓reduceIte, Nat.add_comm i] using
     Ix.CompileCert.pushArguments_above xs ρ i
 
-/-- A common suffix of arguments advances an existing insertion cutoff. -/
 omit [Kernel.SetTheory V] in
+/-- A common suffix of arguments advances an existing insertion cutoff. -/
 theorem valuationLift_pushArguments {ρ target : Nat → V} {amount cutoff : Nat}
     (related : ValuationLift amount cutoff ρ target) (xs : List V) :
     ValuationLift amount (cutoff + xs.length)
@@ -173,9 +173,9 @@ theorem valuationLift_pushArguments {ρ target : Nat → V} {amount cutoff : Nat
     have next := ih (related.push x)
     simpa only [pushArguments, List.length_cons, Nat.add_assoc, Nat.add_comm 1] using next
 
+omit [Kernel.SetTheory V] in
 /-- Motives inserted between parameters and fields do not change the readings
 of the appropriately lifted parameter/field terms. -/
-omit [Kernel.SetTheory V] in
 theorem valuationLift_middle (ρ : Nat → V) (ps ms fs : List V) :
     ValuationLift ms.length fs.length
       (pushArguments ρ (ps ++ fs)) (pushArguments ρ (ps ++ ms ++ fs)) := by
