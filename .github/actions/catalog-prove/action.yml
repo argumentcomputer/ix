@@ -1,0 +1,37 @@
+name: Prove Lean libraries incrementally
+description: >-
+  Build Lake libraries, export them with ix, and prove them against the
+  previous catalog proved on this persistent runner.
+
+inputs:
+  libraries:
+    description: Space-separated Lake library names to prove, e.g. "Cslib"
+    required: true
+  image:
+    description: Local ix prover image built from this directory's Dockerfile
+    required: true
+  comment:
+    description: Post or update a PR comment with the result
+    required: false
+    default: 'true'
+  github-token:
+    description: Token used for the PR comment
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  catalog:
+    description: Path of the proved .ixc directory on the runner
+    value: ${{ steps.prove.outputs.catalog }}
+
+runs:
+  using: composite
+  steps:
+    - id: prove
+      shell: bash
+      env:
+        IX_IMAGE: ${{ inputs.image }}
+        IX_LIBRARIES: ${{ inputs.libraries }}
+        IX_PR_NUMBER: ${{ inputs.comment == 'true' && github.event.pull_request.number || '' }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: '"$GITHUB_ACTION_PATH/run.sh"'
