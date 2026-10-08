@@ -15,6 +15,7 @@ import Ix.CompileCert.Opt.Canonicity
 import Ix.CompileCert.Opt.AuxCore
 import Ix.CompileCert.Opt.O2
 import Ix.CompileCert.Opt.ShapeWF
+import Ix.CompileCert.Opt.ShapeRange
 
 /-!
 # M7 L3-def: the definitional passes, proved once over the compiler's code
@@ -44,6 +45,8 @@ The theorems, by pass:
 | O3 (`casesOn`, no collapse) | `O3_faithful` | `CasesOnLaw`, `Γ.InstClosed` |
 | O4 (`below`, `brecOn`, `.go`, `.eq`, selection) | `O4_faithful` | `O4Law` (`RecConsSquare`, `BRecOnSquare`, `EqPIrrel`), `Γ.InstClosed` |
 | totality of O1, O3, O4, O6 | `O1_none_iff`, `O3_none_iff`, `O4_none_iff`, `O6_none_iff`: a decline is exactly a failed side condition (`O1_of_side` …) | `ShapesWF` (the shapes within Lean's ranges) for O1, O4, O6 |
+| shape ranges | `readShape_wf`, `optBlockOf_wf`, `optBlocks_wf`, `shapesWF_optLookup` | none; `ShapesWF` holds for the actual driver environment |
+| O11a selection | `engine_of_O11a`, `engineN_O11a_fuel_eq`, `engineFull_of_O11a` | an O11a success; this is selection/fuel independence, not its conversion law |
 | O7–O12 (proof-justified) | `pj_site_none`: they decline with no site | — |
 | the engine | `engineN_faithful`, `engineN_site_none`, `engineN_site_iff` | `EngineLaws` (the above, `O2Faithful`, `O11aFaithful`) |
 | the hook (`Driver.optLookup`) | `hook_faithful`, `hook_siteStable`, `optLookup_eq` | `EngineLaws` |
@@ -54,6 +57,7 @@ The common part: `rec_sel_conv`, `recOn_sel_conv` (`Rec.lean`), `delta_sel`, `de
 β on a telescope, `Basic.lean`, `Subst.lean`), the β-reduct of a telescope as a simultaneous
 substitution and its composition (`betaN_eq_msubst`, `betaN_betaN`, `Subst.lean`); abstraction
 through the total core copy (`conv_babs`, `er_batchAbstractP`, `AuxCore.lean`) and the successful
-`Option` loop invariant (`forIn_option_inv`, `ShapeWF.lean`). `AuxGenCopies` names the remaining
+`Option` loop invariant (`forIn_option_inv`, `ShapeWF.lean`). `ShapeRange.lean` derives argument ranges from a closed
+image telescope; image construction must still supply that closedness. `AuxGenCopies` names the remaining
 executable-to-core equality hypothesis; fixture comparisons do not prove it.
 -/

@@ -1552,8 +1552,14 @@ def l3dRoots : Array Lean.Name :=
     `betaN_shapeTv, `rel2_forall2, `idBind_conv, `binderLoop_forIn_conv, `mkLambda_conv,
     `relocatedIh_mono, `adaptMinor_mono, `optConv_none, `optConv_some, `extract_get,
     `O2_minor_conv, `O2Ready, `O2_faithful_on,
-    -- successful shape-reader loops
-    `forIn_option_inv].map (`Ix.CompileCert.Opt ++ ·)
+    -- successful shape-reader loops and the actual driver environment
+    `forIn_option_inv, `readShape_wf, `forIn_id_inv, `forIn_id_array_inv,
+    `nameMap_forall_insert, `optBlockOf_wf, `optBlocks_wf, `shapesWF_optLookup,
+    -- image range facts, with closedness supplied explicitly where used
+    `stripLams_er, `lamN_body_range, `appN_head_range, `appN_arg_range, `stripLams_arg_range,
+    -- O11a selection is independent of positive engine fuel
+    `O1_O11a_disjoint, `engine_of_O11a, `engineN_O11a_fuel_eq, `engineFull_of_O11a
+    ].map (`Ix.CompileCert.Opt ++ ·)
 
 end Ix.CompileCert.Audit
 

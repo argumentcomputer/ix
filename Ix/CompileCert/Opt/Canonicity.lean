@@ -373,4 +373,40 @@ theorem argT_congr {a a' : Array Expr} (h : a.toList.map er = a'.toList.map er) 
   funext i
   rw [← gL_args a, ← gL_args a', h]
 
+/-! ## O11a selection and positive fuel -/
+
+/-- A split-block O11a success cannot overlap the permutation-only O1 pass. -/
+theorem O1_O11a_disjoint {env : OptEnv} {o : Occ} {e e' : Expr}
+    (h1 : O1.apply env o = some e) (h11 : O11a.apply env o = some e') : False := by
+  obtain ⟨_, _, b, _, _, _, hb, hperm, _⟩ := O1_some h1
+  obtain ⟨_, b', _, hb', hsplit, _⟩ := O11a_O2_pattern h11
+  rw [hb] at hb'
+  cases hb'
+  simp only [permutationOnly, hsplit, Bool.not_true, Bool.false_and] at hperm
+  cases hperm
+
+/-- O11a is selected at every positive fuel. Its result needs no relocated recursive call. -/
+theorem engine_of_O11a {env : OptEnv} {fuel : Nat} {o : Occ} {e : Expr}
+    (h11 : O11a.apply env o = some e) : engineN (fuel + 1) env o = some ("O11a", e) := by
+  have h1 : O1.apply env o = none := by
+    cases h : O1.apply env o with
+    | none => rfl
+    | some e' => exact False.elim (O1_O11a_disjoint h h11)
+  simp only [engineN, passes, List.cons_append, List.findSome?, h1, Option.map_none,
+    h11, Option.map_some]
+
+/-- Positive fuel changes do not affect an occurrence selected by O11a. This is a restricted
+fuel-independence lemma, not a discharge of the O2 relocation-depth bound. -/
+theorem engineN_O11a_fuel_eq {env : OptEnv} {o : Occ} {e : Expr}
+    (h11 : O11a.apply env o = some e) (fuel fuel' : Nat) :
+    engineN (fuel + 1) env o = engineN (fuel' + 1) env o := by
+  rw [engine_of_O11a h11, engine_of_O11a h11]
+
+/-- The shipped fuel-64 engine returns the O11a result without emitting auxiliary constants. -/
+theorem engineFull_of_O11a {env : OptEnv} {o : Occ} {e : Expr}
+    (h11 : O11a.apply env o = some e) : engineFull env o = some ("O11a", e, #[]) := by
+  have h : engine env o = some ("O11a", e) := engine_of_O11a (fuel := 63) h11
+  unfold engineFull
+  rw [h]
+
 end Ix.CompileCert.Opt
