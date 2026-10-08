@@ -4,13 +4,13 @@ import Ix.CompileCert.Canon.Loop
 /-!
 # M7 L3-def: core copies of the `partial` AuxGen helpers (design D-3), and abstraction
 
-O2 and O11a build their adapted minors with the split-minor helpers of the call-site surgery
-(`Ix/CallSiteSurgery.lean`) over the de Bruijn helpers of `Ix/AuxGen/ExprUtils.lean`, several of
-which are `partial` (opaque to proofs). Ruling D-3: **core copies** of the `partial` helpers the
-proofs read, total (structural on `Expr`), the same clauses; their equality with the executables
-is the named hypothesis `AuxGenCopies` (checked on the fixtures by `opt-census`), removed by the
-byte-neutral refactor that drops `partial` (queued after slice 6 with X1's R-1/R-2: the copies are
-then the executables, and each field of `AuxGenCopies` is `rfl`).
+O2 and O11a build their adapted minors with the source-recursion helpers in
+`Ix/AuxSource.lean` over the de Bruijn helpers of `Ix/AuxGen/ExprUtils.lean`,
+several of which were originally `partial` (opaque to proofs). Ruling D-3 retains the total structural core
+copy and the original `AuxGenCopies` proposition for compatibility. The actual abstraction
+now uses one total lookup-function traversal. `AuxRuntime.lean` proves exact raw-result
+equality for every supplied hash map and provides the unconditional witness `auxGenCopies`.
+The fixture comparison remains regression evidence; it is not the proof of that equality.
 
 * `batchAbstractP`: `Ix.AuxGen.batchAbstract` (the abstraction of `mkLambda`/`mkForall`);
 * `babs`: what it does on erased terms (a variable of the telescope becomes a bound variable,
@@ -60,8 +60,8 @@ def batchAbstractP (expr : Expr) (fvarMap : Std.HashMap Name Nat) (scopeDepth in
     Expr.mkMData kvs (batchAbstractP e fvarMap scopeDepth internalDepth)
   | _ => expr
 
-/-- **The copies are the executables** (design D-3; checked by `opt-census` on every call the
-fixtures make; `rfl` once the refactor drops `partial`). -/
+/-- The original executable-copy proposition, with its arbitrary-map domain unchanged.
+`AuxRuntime.lean` supplies the unconditional exact-runtime witness `auxGenCopies`. -/
 structure AuxGenCopies : Prop where
   batchAbstract : Ix.AuxGen.batchAbstract = batchAbstractP
 

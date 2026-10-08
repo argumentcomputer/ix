@@ -22,6 +22,7 @@ import Ix.CompileCert.Opt.IngestionArity
 import Ix.CompileCert.Opt.IngestionLookup
 import Ix.CompileCert.Opt.Canonicity
 import Ix.CompileCert.Opt.AuxCore
+import Ix.CompileCert.Opt.AuxRuntime
 import Ix.CompileCert.Opt.O2
 import Ix.CompileCert.Opt.ShapeWF
 import Ix.CompileCert.Opt.ShapeRange
@@ -50,7 +51,7 @@ The theorems, by pass:
 |---|---|---|
 | O1 (`rec`/`recOn`, permuted block) | `O1_faithful` | `RecLaw`, `RecOnLaw`, `IxRecOnLaw` |
 | O6 (`rec`/`recOn`, selection image) | `O6_faithful` | the same |
-| O2 (`rec`, split block), per occurrence | `O2_faithful_on` | `RecLawI`, `O2MinorLaw`, `AuxGenCopies`, `BAbsClosed Γ`, `O2Ready` (`PrefixFresh` and `RecurConvFrom`) |
+| O2 (`rec`, split block), per occurrence | `O2_faithful_on` | `RecLawI`, `O2MinorLaw`, `AuxGenCopies` (proved by `auxGenCopies`), `BAbsClosed Γ`, `O2Ready` (`PrefixFresh` and `RecurConvFrom`) |
 | O3 (`casesOn`, no collapse) | `O3_faithful` | `CasesOnLaw`, `Γ.InstClosed` |
 | O4 (`below`, `brecOn`, `.go`, `.eq`, selection) | `O4_faithful` | `O4Law` (`RecConsSquare`, `BRecOnSquare`, `EqPIrrel`), `Γ.InstClosed` |
 | totality of O1, O3, O4, O6 | `O1_none_iff`, `O3_none_iff`, `O4_none_iff`, `O6_none_iff`: a decline is exactly a failed side condition (`O1_of_side` …) | `ShapesWF` (the shapes within Lean's ranges) for O1, O4, O6 |
@@ -76,6 +77,8 @@ The common part: `rec_sel_conv`, `recOn_sel_conv` (`Rec.lean`), `delta_sel`, `de
 substitution and its composition (`betaN_eq_msubst`, `betaN_betaN`, `Subst.lean`); abstraction
 through the total core copy (`conv_babs`, `er_batchAbstractP`, `AuxCore.lean`) and the successful
 `Option` loop invariant (`forIn_option_inv`, `ShapeWF.lean`). `ShapeRange.lean` derives argument ranges from a closed
-image telescope; image construction must still supply that closedness. `AuxGenCopies` names the remaining
-executable-to-core equality hypothesis; fixture comparisons do not prove it.
+image telescope; image construction must still supply that closedness. The original `AuxGenCopies`
+compatibility proposition is discharged by the exact runtime theorem `auxGenCopies` in `AuxRuntime.lean`.
+`er_batchAbstractNames` and `er_inferImplicit` provide the actual structural-wrapper and implicit-marking
+erasure bridges; capture avoidance and generated-type scope still require their own proofs.
 -/

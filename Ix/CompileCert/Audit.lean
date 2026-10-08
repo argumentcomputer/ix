@@ -1642,3 +1642,16 @@ def l3dLevelRefinementRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dLevelRefinementRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Actual auxiliary helper refinement; the original arbitrary-map proposition
+is retained and its unconditional witness is audited alongside the erasure laws. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dAuxRuntimeRoots : Array Lean.Name :=
+  #[`batchAbstract_eq_copy, `auxGenCopies, `er_batchAbstractWith,
+    `er_batchAbstractNames, `er_inferImplicit].map (`Ix.CompileCert.Opt ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dAuxRuntimeRoots Ix.CompileCert.Audit.allowedAxioms
