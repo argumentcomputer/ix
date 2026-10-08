@@ -1223,8 +1223,8 @@ pub fn generate_aux_patches(
   // the legacy surgery's head-rewrite plan), keyed off the SAME
   // per-position `evaporated` flags recorded here.
   //
-  // Two gates make the decision global and deterministic
-  // (plans/aux-recursor-alias-collision.md §2, §13):
+  // The owner and cross-SCC claim checks are described in
+  // `docs/compiler-passes.md` sections 2.5 and 6.1:
   //
   //  * Owner gate: an out-of-SCC entry whose owner is ALSO out-of-SCC is
   //    another SCC's business — only the owner's SCC may decide

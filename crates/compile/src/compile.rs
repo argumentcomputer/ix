@@ -59,7 +59,8 @@ pub static IX_TIMING: std::sync::LazyLock<bool> =
 /// registrations — with full addresses and block context. The
 /// cross-SCC ownership of `all[0].rec_N`-style names is invisible in
 /// normal logs; this flag exists to attribute both claimants when a
-/// name is contested (see plans/aux-recursor-alias-collision.md).
+/// name is contested (see the ownership checks in `compile/mutual.rs`
+/// and `compile/aux_gen.rs`).
 /// Set via IX_LOG_AUX_NAMES=1.
 pub static IX_LOG_AUX_NAMES: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_LOG_AUX_NAMES").is_ok());

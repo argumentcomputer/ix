@@ -1,6 +1,7 @@
 /-
-  adversarial-matrix: the adversarial matrix of `plans/codex/PLAN-phase-A-and-B.md`
-  §9.2 as a regression suite (plan M4 (c)).
+  adversarial-matrix: compiler/certifier negative and neighbour controls
+  (M4 (c)); the executed and cited rows are described in
+  `docs/compiler-gates.md`.
 
   Every row has at least one NEGATIVE case (a forged or mutated artifact) and
   one valid NEIGHBOUR, both run through the same checker, or is marked NOT

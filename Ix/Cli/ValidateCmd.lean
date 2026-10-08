@@ -3,7 +3,7 @@
   against the Lean environment for any file.
 
   This is the CLI counterpart to the `validate-aux` test runner. Both funnel
-  into the same Rust FFI (`rs_compile_validate_aux` in `src/ffi/lean_env.rs`),
+  into the same Rust FFI (`rs_compile_validate_aux` in `crates/ffi/src/lean_env.rs`),
   which performs:
 
     1. Compilation succeeds (every input constant gets an address)

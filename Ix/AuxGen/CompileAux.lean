@@ -918,8 +918,8 @@ for {perm.size} permutation entries")
     -- rec patches: a pre-existing DIFFERENT address means two blocks
     -- claimed one name — registration is last-writer-wins, so without
     -- this check the disagreement ships silently as schedule-dependent
-    -- content (mutual.rs pre_claims;
-    -- plans/aux-recursor-alias-collision.md §2.4). Same-address
+    -- content (the matching `pre_claims` check is in
+    -- `crates/compile/src/compile/mutual.rs`). Same-address
     -- re-registration (content-addressed idempotence) is fine.
     let mut preClaims : Array (Name × Option Address) := #[]
     for c in recConsts do

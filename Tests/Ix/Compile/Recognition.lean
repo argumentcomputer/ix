@@ -128,8 +128,8 @@ end
 
 /-! Frozen outputs of the deleted shape routes (`transportWFShape`,
 `transportPFShape`, deleted by the commit that introduced these definitions;
-recorded by running them on `4907a048`, design document §5 and
-`plans/review2/FIX-pfwf.md` §1.2–1.3). Each is the user-facing part of the old
+recorded by running them on `4907a048`; see `docs/compiler-passes.md` §5
+for the source-specific recognition boundary). Each is the user-facing part of the old
 route's output on the clique above with `σ = [1, 0]`, kept so that the
 negative controls still show what the shape-based recognition did, without
 keeping the code that did it:

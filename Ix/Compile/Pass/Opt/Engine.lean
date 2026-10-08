@@ -1,106 +1,65 @@
-/- # The definitional passes' engine: fixed order, fixed point (design document §1.4)
+/- # The occurrence-pass engine: fixed order (design document §1.4)
 
 ## Contract
-Input: an occurrence `a.{us} args` of an image-kind auxiliary `a` of a
-changed block, at least fully applied, met by the call-site rewrite
-(`Ix.Compile.Pass.Translate.rw`) after its arguments were rewritten (the
-traversal is bottom-up: arguments before the head, left to right); the
-blocks' data (`OptBlock`, built here from Pass 1's canonical form and the
-images of Pass 3a, `optBlockOf`).
+Input: an occurrence `a.{us} args` of an image-kind auxiliary of a changed
+block, at least fully applied, after `Translate.rw` has rewritten its
+arguments left to right; and the block's `OptBlock`, built by `optBlockOf`
+from Pass 1's canonical form and Pass 3a's images.
 
-Output: the rewrite of the **first** pass, in the fixed order below, whose
-pattern and side condition hold, or `none`; on `none` the rewrite inlines the
-image (the baseline, Def 3.6). The fixed order:
+`engineFull` returns the first applicable pass's name, term and emitted
+constants, or `none`. The production rewrite uses the developed image as
+its fallback. The order is:
 
-| slot | pass | pattern |
-|---|---|---|
-| 1 | O1 | `rec`/`recOn`, permuted block |
-| 2 | O11a | `rec` of a split block that is Lean's mutual `sizeOf` family (cross fields through the instances); its references `T._sizeOf_inst` are scheduling edges (`O11a.addSizeOfEdges`, A6f) |
-| 3 | O2 | `rec`, split block (relocated minors) |
-| 4 | O3 | `casesOn`, permuted or split block |
-| 5 | O4 | `below`/`brecOn`/`.go`/`.eq`, permuted block |
-| — | O5 | the level rule inside O1-O4 (not a pattern) |
-| 6 | O6 | `rec` whose image is `ρ` applied to its own variables |
-| unit | O13a/b | cliques changed only by order, or by the fixed-parameter telescope: **A5's slot**, run once per clique after the occurrence passes; not implemented here |
-| 6 | O8 | `casesOn` over a collapsed or lifted member: the Ix `casesOn` of the class (**proof-justified**, `pjPasses`) |
-| 7 | O7 | `rec`/`recOn` over a collapsed block with identical motives and minors per class (**proof-justified**, `pjPasses`) |
-| 8 | O9 | `brecOn` over the component of a split block with a cross field: the Ix `brecOn` with the handler re-typed and re-pathed, the canonical handler `c._ix_retyped._f` emitted (**proof-justified**, `emitPasses`) |
-| 9 | O10 | `brecOn` over a collapsed block, equal arms per class: the Ix `brecOn` with one motive and one re-typed handler per class (**proof-justified**, `emitPasses`) |
-| 10 | O12 | `brecOn` over a collapsed pair, different arms: the projection of the shared pair-valued helper `fg` (**proof-justified**, `emitPasses`) |
+| stage | passes |
+|---|---|
+| definitional occurrence passes (`passes`) | O1, O11a, O2, O3, O4, O6 |
+| proof-justified occurrence passes (`pjPasses`) | O8, O7 |
+| proof-justified emitting passes (`emitPasses`) | O9, O10, O12 |
 
-**The engine is fused with the rewrite.** The design document's engine
-traverses the baseline term and, at each image occurrence `img(a) args`,
-applies the first pass. Pass 3b meets each occurrence exactly once, as
-`a.{us} args` with `args` already rewritten, before it inlines `img(a)`. The
-engine runs there: the occurrence is the pattern, and when no pass applies
-the inline image *is* the baseline. Running the passes on the inlined term
-instead would have to recognise `img(a)`'s developed body, which is the same
-information read back from a less structured term.
+O5 is the universe rule used by the passes, not another list entry. O11b
+and clique transport are separate unit-level operations; there is no
+generic O13 occurrence pass here. O11a precedes O2 deliberately, and O10
+precedes O12 so equal handlers use the simpler collapse.
 
-## Faithfulness
-O1-O6 are definitional (each module gives the conversion steps); a
-composition of conversions is a conversion, so where only they fire the
-engine's output is definitionally equal to the baseline. The
-proof-justified passes (`pjPasses`: O8, O7; `emitPasses`: O9, O10, O12; A6)
-give a term provably equal to the occurrence's baseline (each module states
-the lemma Phase B formalises); they fire only in the value of a definition,
-and their output goes only to the definition's canonical form `c._ix`, never
-to the Lean name `c`, which keeps the baseline (decision 5, D1;
-`Translate.RwState.site`). `c._ix` equals `c` by congruence (`funext`,
-`congrArg`) over the rewritten occurrences. Arguments are rewritten before the head (each by its
-own fixed point), and every pass copies its arguments unchanged.
+## Rewrite and resource bounds
+The engine is fused with `Translate.rw`: it sees the source head and the
+rewritten arguments before the image is inlined. It does not repeatedly
+run every pass over the developed term to test for a structural fixed
+point. O2 can synthesize relocated calls and invokes `engineN` recursively
+on them. `engineN 0` returns `none`; `engine` starts it with fuel 64.
+`engineFull` tries the emitting passes if `engine` declines. The rewrite
+and the hereditary development have their own bounds and error paths.
 
-## Canonicity
-**Termination** [argued]. The measure is the number of image-kind
-occurrences. A pass replaces its occurrence by a term over Ix auxiliaries
-(`ρ`, `ρ.casesOn`, `ρ.below`, … are display names of Ix auxiliaries, never
-image-kind heads) and copies the already-rewritten arguments, so it removes
-one occurrence and introduces none; the baseline's inline image is itself
-rewritten (Def 3.5 values) and contains no image-kind head. So one
-bottom-up traversal reaches the fixed point.
+The generic `RwState.opt?` callback may return different results with and
+without a definition site. Its fallback retry is part of that interface;
+the production ordered-engine shortcut does not impose an order on every
+possible callback. See `docs/compiler-passes.md` §1.4 and
+`Ix/Compile/Pass/Translate.lean`.
 
-**Confluence** [argued], so the fixed order is immaterial for the result:
-* O1, O2, O3, O4 have pairwise disjoint patterns: O1 and O2 are `rec`/`recOn`
-  with disjoint change kinds (permutation-only versus split), O3 is
-  `casesOn`, O4 is the `below`/`brecOn` family.
-* O5 is not a pattern: it is the level rule O1-O4 and O6 share.
-* O11a's pattern is contained in O2's (a split block's `rec` whose minors
-  are Lean's sizeOf family). On it the two outputs differ only in the minors
-  of constructors with cross fields, where O11a puts `sizeOf f` through the
-  instance and O2 the relocated recursor call: definitionally equal
-  (O11a's faithfulness), not syntactically, so this overlap is ordered, not
-  confluent: O11a runs first, because its output is the canonical one (the
-  separately declared components' term).
-* O6 overlaps O1 (a permutation-only block's `rec`) and O2 (a split
-  component without cross fields). On the overlap both give `ρ` applied to
-  `img(r)`'s body at the arguments, the same term (O1's `π, π′` and O6's
-  `σ, σ′` are read off the same image).
-* Every pass is left-linear and copies its arguments, so rewrites at nested
-  positions commute; the bottom-up traversal rewrites inner occurrences
-  first, so an outer pass's side condition (on the head, the block and the
-  argument count) never depends on whether an inner one fired.
-* The development cannot turn a bare occurrence into a full application
-  here: the passes produce no λ-substitution (they only reorder arguments),
-  and the baseline's development happens after the passes declined, on the
-  occurrence that is being inlined.
-The unit slot (O13) runs after the occurrence passes; O13 belongs to A5
-(cliques are elaborated over the Ix auxiliaries, which the occurrence passes
-restore, design document §1.4 order constraint 1).
-* O8 and O7 come after O1-O6 and are disjoint from them: O8 needs a
-  collapsed class, where O3 declines; O7 needs a collapsed, unsplit block,
-  where O1 (permutation only) and O2 (split) decline and O6 cannot read a
-  selection shape (a packed image's head is a projection). O8 (`casesOn`)
-  and O7 (`rec`/`recOn`) have disjoint heads. Their side conditions compare
-  arguments that are already rewritten (bottom-up), design document §1.4
-  order constraint 3.
+## Faithfulness and canonicity obligations
+O1–O6/O11a target conversion with the image baseline. O7, O8, O9, O10
+and O12 target a provably equal canonical value. The production hook enables the latter
+only at definition-value sites, and `Translate.rw` keeps the baseline at
+the Lean name while arranging the canonical `_ix` form (decision 5, D1).
+Each pass module gives its shape conditions and conversion/equality
+argument. These arguments and finite controls do not establish the
+general compiler theorem.
 
-## Side condition and fallback
-Per pass. The engine's own fallback is the baseline (`none`).
+The original L3 target remains: total rewriting/passes on the stated
+domain, denotation preservation under the pass side conditions, and
+preservation of provability by clique transport. A general fixed-point or
+idempotence argument must cover the actual traversal, synthesized O2
+calls, fuel, fallback, and image construction. No confluence theorem here
+makes the order immaterial: O11a and O2 have an intentional ordered
+overlap. The more general canonical-form and compiler-composition targets
+remain open; see `docs/compiler-certification.md` §1.7 and
+`docs/compiler-passes.md` §§0.2, 3.5, 6.2.
 
-## Non-canonical set and evidence
-See each pass. Evidence: the per-pass fixtures under `Tests/Ix/Compile/Pass/`
-and the `pass3` suite's surgery comparison (constants the surgery rewrote,
-byte-identical with the switch on or not).
+## Evidence
+The per-pass fixtures under `Tests/Ix/Compile/Pass/` and the `pass3` suite
+exercise the implemented cases. The old switch-on/surgery comparison is
+historical; surgery was removed at slice 6. Current gate assertions and
+their limits are documented in `docs/compiler-gates.md`.
 -/
 module
 public import Ix.Compile.Pass.Names
@@ -136,9 +95,10 @@ canonical `_ix` form (D1). -/
 def pjPasses : List (String × (OptEnv → Occ → Option Expr)) :=
   [("O8", O8.apply), ("O7", O7.apply)]
 
-/-- The first pass that applies, with its name. The bound is on the nesting of
-O2's relocated calls (one level per component below the major's, in the
-condensation DAG), far below it. -/
+/-- The first pass that applies, with its name. Fuel bounds recursive
+optimization of O2's relocated calls; zero returns `none`. Showing the
+required bound for every input in the general domain is a separate
+completeness obligation, not a consequence of this definition. -/
 def engineN : Nat → OptEnv → Occ → Option (String × Expr)
   | 0, _, _ => none
   | fuel + 1, env, o =>
@@ -161,7 +121,7 @@ def engineFull (env : OptEnv) (o : Occ) : Option (String × Expr × Array Consta
   | some (nm, e) => some (nm, e, #[])
   | none => emitPasses.findSome? fun (nm, p) => (p env o).map fun (e, cs) => (nm, e, cs)
 
-/-- A pass whose output is not a conversion of the baseline (O7–O12): its
+/-- One of the proof-justified passes (O7, O8, O9, O10 or O12): its
 result goes to the canonical `_ix` form of the site only (D1). -/
 def isProofJustified (nm : String) : Bool :=
   pjPasses.any (·.1 == nm) || emitPasses.any (·.1 == nm)

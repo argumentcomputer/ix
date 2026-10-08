@@ -322,8 +322,8 @@ partial def stripMdata (e : Expr) : Expr :=
     are out of the matching SCC here — those act as external constants
     inside specs, but address-equating them would let an alpha-twin
     member of a DIFFERENT SCC match this SCC's canonical specs, making
-    two SCCs claim one source position
-    (plans/aux-recursor-alias-collision.md §2/§13.4). Genuine external
+    two SCCs claim one source position (see `computeAuxPerm` below).
+    Genuine external
     types (never mutual members) keep the address fallback: their
     alpha-twins legitimately dedup many-to-one. -/
 partial def auxSpecEq (canon src : Expr)
@@ -1067,8 +1067,8 @@ def buildSccClaimCtx (memberClasses : Array (Array Name))
     the discovering constructor's reference forces the scheduler edge),
     and the owner's SCC must register neither an evaporation alias nor a
     head-rewrite plan for it. Only when NO SCC discovers the position
-    may it evaporate to the external head's generic recursor
-    (plans/aux-recursor-alias-collision.md §2). Mirrors Rust
+    may it evaporate to the external head's generic recursor (the owner and
+    claim checks in `Ix/AuxGen/Patches.lean`). Mirrors Rust
     `position_claimed_by_spec_scc`; the per-SCC context cache (keyed by
     the SCC's recorded representative) threads through the return. -/
 def positionClaimedBySpecScc (sourceExpanded : ExpandedBlock)

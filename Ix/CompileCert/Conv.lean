@@ -36,7 +36,9 @@ equality is contained in it (`exprConv_of_eRen`).
 ## The development (`Core.lean`, `Develop.lean`, `Image.lean`)
 
 `Ix.Compile.Image.Develop` without its hash tables (`hinstP`, `happP`, `instantiateP`,
-`substFVarsP`; equality with the tabled executable is the refactor named in the report).
+`substFVarsP`; equality with the tabled executable remains the runtime-refinement
+obligation described in `Ix/CompileCert/Conv/Core.lean` and
+`docs/compiler-certification.md` §1.7).
 
 * `develop_conv`, `hinstP_conv`, `happP_conv`, `instantiateP_conv`: **the developed term is
   convertible to the plain substitution** (to the application, at a call site), in every
@@ -56,7 +58,7 @@ unification (the census runs it on every development of the `pass3` fixtures: al
 * `fuel_mono`: a result at some fuel is the result at every larger fuel, so `defaultFuel`
   suffices exactly when the run's depth is within it (`instantiateP_of_total`).
 
-## Map to the design's definitions (PLAN-B, `docs/compiler-passes.md` §4)
+## Map to the design's definitions (`docs/compiler-passes.md` §4)
 
 * **Def 3.4** (the image of a recursor, §4.2–§4.3): the image is built with `substFVars`
   (`substFVarsP_conv`: its motive substitutions into the canonical minor types are conversions

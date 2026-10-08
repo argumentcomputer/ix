@@ -1290,8 +1290,8 @@ fn build_scc_claim_ctx(
 /// the discovering constructor's reference forces the scheduler edge),
 /// and the owner's SCC must register neither an evaporation alias nor a
 /// head-rewrite plan for it. Only when NO SCC discovers the position may
-/// it evaporate to the external head's generic recursor
-/// (plans/aux-recursor-alias-collision.md §2).
+/// it evaporate to the external head's generic recursor (the owner and
+/// claim checks in `compile/aux_gen.rs`).
 ///
 /// `scc_ctx_cache` memoizes per-spec-SCC work across the positions of
 /// one block, keyed by the spec SCC's representative (first member of
@@ -1417,7 +1417,7 @@ pub fn position_claimed_by_spec_scc(
 /// out of the matching SCC here — those act as external constants inside
 /// specs, but address-equating them would let an alpha-twin member of a
 /// DIFFERENT SCC match this SCC's canonical specs, making two SCCs claim
-/// one source position (plans/aux-recursor-alias-collision.md §2/§13.4).
+/// one source position (see `compute_aux_perm`).
 /// Genuine external types (never mutual members) keep the address
 /// fallback: their alpha-twins legitimately dedup many-to-one.
 fn aux_spec_eq(

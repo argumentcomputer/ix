@@ -625,7 +625,8 @@ def isGuessLex (e : NonCanonicalEntry) : Bool :=
   | .guessLex => true
   | _ => false
 
-/-- The families added by A5f (`plans/wave1/a5f.md`). -/
+/-- The historical A5f clique families, declared in
+`Tests/Ix/Compile/Twins/Cliques.lean`. -/
 def a5fFamilies : List String := ["RF", "NS", "LI", "LC", "PU", "RA", "WH", "TR", "TQ", "WU"]
 
 /-- Families the transport covers so far. -/

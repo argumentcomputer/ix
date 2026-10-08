@@ -5,7 +5,7 @@ import IxC.Kernel.BasisA
 # M7 X2: model-level induction
 
 A recursor's typing law in the checker's model gives induction over the model's reading of the
-inductive type, for **any** meta-level predicate (PLAN-L2a §2.0 B2(b), risk R8). The motive is the
+inductive type, for **any** meta-level predicate. The motive is the
 graph of the predicate's truth values over the carrier (`predMotive`); `SetTheory V`'s separation
 and replacement take arbitrary Lean predicates, so there is no definability side condition. At a
 `Prop` motive (universe `0`) every minor premise's type is a truth value whose inhabitation is the

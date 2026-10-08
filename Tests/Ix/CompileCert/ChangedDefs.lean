@@ -7,8 +7,7 @@ definitions, their users' values inline the images), and definition cliques
 in a non-canonical order (transported). Shapes copied from the compiler's
 image fixtures (`Tests/Ix/Compile/Image/C1Perm`, `C2Split`, `C4Evap`,
 `C5Collapse`), the clique twins (`Tests/Ix/Compile/Twins/Cliques.lean`, `WD`,
-`SA`) and M3's minimal reordered Prop block (`plans/review2/M3-certifier.md`
-§4.2). Each clique is given in both member orders: one of them is the
+`SA`) and the minimal reordered Prop block retained below. Each clique is given in both member orders: one of them is the
 canonical one, the other is transported. Every block has a theorem over it. -/
 
 namespace Tests.Ix.CompileCert.ChangedDefs
@@ -153,7 +152,7 @@ end WF1
 /-! ## A structural clique, both member orders. The canonical order (`SC0`)
 uses Lean's `eq_def`s; the transported order (`SC1`) does not: compiled with
 them, its `eq_def`s are rejected by the certified checker (compiler defect
-D-M5-1, `plans/review2/M5-W-changed.md`), so without them its members are the
+D-M5-1, `docs/compiler-passes.md` §5.3), so without them its members are the
 expected Unsupported class `changed definition: transported clique member
 without eq_def` -/
 namespace SC0

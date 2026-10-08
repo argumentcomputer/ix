@@ -1,7 +1,7 @@
 /-
   Ix.Compile.Canon.Clique: definition cliques, their recursive
-  specifications, and their classes and canonical order (old plan M.1-M.3,
-  `plans/review/auxgen-certify/PLAN.md:910-998`).
+  specifications, and their classes and canonical order (M.1–M.3 in
+  `docs/compiler-passes.md` §2.7).
 
   **M.1 Clique.** The pre-definitions Lean compiled together. The caller
   reads them from the Lean environment (this module imports no Lean

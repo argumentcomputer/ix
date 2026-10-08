@@ -1,13 +1,15 @@
 /-
-  Twin families from the image prototype (`plans/review/auxgen-certify/
-  exp-prototype/CertProto/Cases/*.lean`, PRO): each case declares a source
+  Retained twin families from the image prototype (PRO; see also
+  `Tests/Ix/Compile/Image.lean`): each case declares a source
   block `Src` and a hand-written canonical block `Can` (permuted, split,
   evaporated, collapsed, Prop, parameters), with the same user functions.
   The `namespace Cx … end Cx` sections are verbatim; the prototype's own
   commands (`#lean_view`, `#bridge_*`, `#dump_seeds`) and its bridge
   theorems over the generated `View` namespace are left out. Case C4b
-  (evaporation through the nested `Rose`) is left out: its source block
-  fails to compile at this head (as `NestRoseSplit`, `Repro.lean`).
+  (evaporation through the nested `Rose`) was left out when these fixtures
+  were imported because its source block failed to compile (the historical
+  `NestRoseSplit` exclusion in `Repro.lean`). This records the fixture
+  selection, not a new measurement of that excluded case.
 -/
 
 namespace Tests.Ix.Compile.Twins.Proto

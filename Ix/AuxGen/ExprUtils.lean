@@ -12,8 +12,9 @@
 
   The kernel-backed half of expr_utils.rs (TcScope, kenv ingress,
   `decompose_inductive_type`, `kexpr_to_lean`, `to_kexpr_static`, the
-  WHNF source-name restore machinery) is intentionally NOT here — it is a
-  separate milestone that bridges to `Ix.Tc`.
+  WHNF source-name restore machinery) is intentionally outside this pure
+  module. See `Ix/AuxGen/Kernel.lean` and the recursor-side
+  `decomposeInductiveType` in `Ix/AuxGen/Recursor.lean`.
 
   PARITY RULE: every constructed node goes through the hash-maintaining
   smart constructors in `Ix.Environment` (`Expr.mkApp`, `Level.mkMax`, ...)
@@ -85,15 +86,17 @@ def freshFVar (pfx : String) (idx : Nat) : Name × Expr :=
 
 Rust `decompose_inductive_type` (aux_gen/expr_utils.rs:121) is
 kernel-backed (it interleaves `TcScope::whnf_lean` between peeling steps)
-and is NOT ported here — kernel-bridge milestone. Only its pure result
-shape is declared so downstream data plumbing can be ported ahead of it. -/
+and is implemented as `Ix.AuxGen.decomposeInductiveType` in
+`Ix/AuxGen/Recursor.lean`. Only its pure result shape is declared here, so
+these expression utilities do not depend on the kernel bridge. -/
 
 /-- Mirrors Rust `IndRecInfo` (aux_gen/expr_utils.rs:63).
 
     Per-inductive recursor-structural info, derived from the stored type by
     WHNF-peeling params and indices. Binders use FVars (via `LocalDecl`) so
     the result can be embedded in any outer binder chain without de-Bruijn
-    shifting. Produced by the (not yet ported) `decompose_inductive_type`. -/
+    shifting. Produced by `Ix.AuxGen.decomposeInductiveType` in
+    `Ix/AuxGen/Recursor.lean`. -/
 structure IndRecInfo where
   /-- Index binders after WHNF-peeling. -/
   indices : Array LocalDecl

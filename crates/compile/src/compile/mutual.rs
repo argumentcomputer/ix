@@ -942,8 +942,8 @@ pub fn generate_and_compile_aux_recursors(
     // rec patches: a pre-existing DIFFERENT address means two blocks
     // claimed one name — DashMap registration is last-writer-wins, so
     // without this check the disagreement ships silently as
-    // schedule-dependent content (plans/aux-recursor-alias-collision.md
-    // §2.4). Same-address re-registration (content-addressed idempotence)
+    // schedule-dependent content (see `Ix/AuxGen/CompileAux.lean` for
+    // the Lean counterpart). Same-address re-registration (content-addressed idempotence)
     // is fine.
     let pre_claims: Vec<_> = rec_consts
       .iter()

@@ -1,6 +1,7 @@
 /-
-  The prototype's generic machinery (`plans/review/auxgen-certify/exp-prototype/CertProto/Lib.lean`,
-  Lean-view prototype, PRO), kept verbatim apart from the result log and the deprecated `levelZero`/`levelOne` spellings (rows go to `rowsRef` and the
+  Retained generic machinery of the Lean-view prototype (PRO), used by
+  `Tests/Ix/Compile/Image.lean`. Its imported result log and deprecated
+  `levelZero`/`levelOne` spellings were adapted (rows go to `rowsRef` and the
   per-case log to `logRef` instead of `out/results.tsv`), so that the image-gen test can
 
   * compare the pure generator's images with the prototype's hand-built transports

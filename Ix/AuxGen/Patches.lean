@@ -643,8 +643,8 @@ exists")
   -- MAY have no home in ANY split SCC: dropping the irrelevant
   -- motives/minors from Lean's `<all0>.rec_{j+1}` leaves exactly the
   -- external inductive's own generic recursor, and the Lean-visible name
-  -- aliases to `<ext>.rec`. Two gates make the decision global and
-  -- deterministic (plans/aux-recursor-alias-collision.md §2, §13):
+  -- aliases to `<ext>.rec`. The owner and cross-SCC claim checks are
+  -- described in `docs/compiler-passes.md` §§2.5, 6.1:
   --
   --  * Owner gate: an out-of-SCC entry whose owner is ALSO out-of-SCC is
   --    another SCC's business — only the owner's SCC may decide

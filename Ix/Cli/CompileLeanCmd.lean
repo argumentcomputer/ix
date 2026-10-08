@@ -10,10 +10,10 @@
   `--rust-check` additionally compiles the same environment through the
   Rust FFI compiler (`rs_compile_env_bytes` — the exact bytes
   `ix compile` writes) and byte-compares the two outputs: this is the
-  ALIGNED gate. The comparison is cross-serializer (Rust `Env::put`
-  vs Lean `Ixon.serEnv`), which the serde gate guarantees agree on
-  identical environments — so byte equality here certifies the full
-  pipeline, not just the compiler core.
+  ALIGNED gate. It compares Rust `Env::put` with Lean `Ixon.serEnv`.
+  It checks the complete serialized outputs
+  for this input; it is not a general proof of compiler semantics. See
+  `docs/compiler-rust.md`, "What is trusted" and "What the gates check".
 
   Mode: Pass 3 (the faithful rewrite) is the only mode of both compilers
   since M6R slice 6 (2026-10-07), which deleted the legacy call-site surgery

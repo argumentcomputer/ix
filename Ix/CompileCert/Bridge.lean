@@ -16,7 +16,7 @@ import Ix.CompileCert.Bridge.Tower
 The proved-once ladder (L2a, L3) states its theorems about the compiler's `Ix.Expr` (through X1's
 erasure `er` and conversion `Conv`); the certified checker reads `Kernel.Expr` from the bytes and
 its model (`Kernel.Denotes`, `StrongInstalledModel`) interprets the installed, annotated terms.
-This package connects the two (PLAN-L2a §1.4 obligation O-B, §2.0 B1/B2):
+This package connects the two through the following stated theorems and hypotheses:
 
 * **the bridge** (`Bridge/Term.lean`): `bridgeT N L : Tm → Option Kernel.Expr` and
   `bridge N L := bridgeT N L ∘ er`, the reader's form (binders `.never`, constants by `N`, levels
@@ -29,7 +29,8 @@ This package connects the two (PLAN-L2a §1.4 obligation O-B, §2.0 B1/B2):
   `bridge_eq_ixToKernel`), hence the reader's entry for every constant W certifies by a direct
   match; for compiler-built constants, `Emitted` (the installed value is an annotation of the
   bridge of the compiler's value), decided per compile by `checkEmitted` (`checkEmitted_sound`),
-  proved once by L4's emission theorem;
+  with the general compiler-to-emission implication still required from L4
+  (`docs/compiler-certification.md` §1.7);
 * **the public reading under the operations** (`Bridge/Denote.lean`): `denotes_lift`,
   `denotes_inst`, `denotes_inst0`, `denotes_lower`, `denotes_levels` (for level-local
   interpretations, `cvalLocal_of_strong`);
@@ -66,5 +67,6 @@ This package connects the two (PLAN-L2a §1.4 obligation O-B, §2.0 B1/B2):
   and on every Init+Std constant.
 
 Not claimed: `Conv a b → ⟦a⟧ = ⟦b⟧` for an arbitrary derivation (false for untyped β and η in the
-set model, `M7-X2-bridge.md` §1.3), and the emission of compiler terms into bytes (L4).
+set model; `Bridge/Rules.lean` states the β/η premises), and the general emission
+of compiler terms into bytes (L4, `docs/compiler-certification.md` §1.7).
 -/

@@ -1,6 +1,6 @@
 /-
-  Twin families from the oracle experiment (`plans/review/auxgen-certify/
-  exp-oracle/repro/{Orig,Twin,Maps}`, ORA): each original block and its
+  Retained twin families from the oracle experiment (ORA): each original
+  block and its
   hand-written twin in Ix's canonical form (reordered, split into
   separately declared components with the block's universes and
   parameters, or collapsed). The sources are verbatim, wrapped in
@@ -9,9 +9,7 @@
   are the experiment's `Maps/*.map`, transcribed in
   `Tests.Ix.Compile.Twins` (`reproFamilies`).
 
-  Not included, because they do not compile at this head (both compilers
-  or one of them), which would make the gate test the defect instead of
-  canonicity:
+  Historical exclusions at fixture import (not new current-run verdicts):
   - `F3_SplitRoseRace`: the compile races (BB F3; refused deterministically
     after A0's evaporation fix);
   - `AliasIdx`: `T` fails in both presentations (`missingConstant`, WB H5);

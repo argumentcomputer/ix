@@ -297,7 +297,7 @@ pub extern "C" fn rs_compile_env_full(
 /// never created — and the returned status carries the full ungrounded
 /// list for the caller to report. With `allow_partial != 0`, the
 /// grounded subset is serialized and the same status discloses what
-/// was omitted (see plans/aux-recursor-alias-collision.md §8).
+/// was omitted (see `docs/compiler-passes.md` section 11.6).
 ///
 /// Returns `Ix.CompileM.CompileEnvStatus` (layout
 /// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle

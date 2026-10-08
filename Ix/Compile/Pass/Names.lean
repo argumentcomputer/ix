@@ -24,9 +24,11 @@ faithful rewrite and the predicates on them.
 * The check of input names runs over the condensation the driver is given
   (`Ix.CompileM.pass3ReservedInput?`): in `ix compile-lean` that is the
   grounded condensation, so an ungrounded input name (which is not compiled)
-  is not checked. When several input names are reserved, the message names
-  the first met in the iteration order of `CondensedBlocks.blocks`, not a
-  canonical choice (the Rust compiler names the least by pretty name).
+  is not checked. When several input names are reserved, both compilers
+  choose the least rejection message by its text (the least displayed name),
+  rather than the first name in block iteration order. This is an ordering
+  of diagnostics, not a claim that pretty names uniquely identify names.
+  `Tests/Ix/Compile/ReservedInput.lean` checks this selection.
 * The decompile record of a rewritten call site is the metadata key pair
   `_ix.inline` (index of the source occurrence in `metaSharing`) and
   `_ix.inline_meta` (its arena root); the rewrite leaves the placeholder

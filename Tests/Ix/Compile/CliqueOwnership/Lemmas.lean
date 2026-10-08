@@ -1,7 +1,7 @@
 /-
   Structural definition cliques whose equation lemmas are realised (each
   namespace's `unfold_used` uses the members' `eq_def`s), for the carried-lemma
-  units of `clique-ownership` (D-M5-1, `plans/review2/FU-compiler-followups.md`).
+  units of `clique-ownership` (D-M5-1, `docs/compiler-passes.md` §5.3).
 
   Lean's `eq_def` of a structural member unfolds it through the recursion's
   encoding: `brecOn.go`, `brecOn.eq`, the packed functional and tuple, and the

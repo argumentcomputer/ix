@@ -15,8 +15,8 @@ This module states the same functions without the tables, clause by clause in th
 decremented at every call): `looseRangeP`, `liftP`, `lowerP`, `occursP`, `hinstP`, `happP`,
 `instantiateP`, `substFVarsP`. They are what the executable computes when every table hit is a
 hit on the same term. **The equality of the executable with this core is not proved here** (it
-needs the hit confirmed by structural equality or the tables made self-proving; the restatement
-and its estimate are in the report, `plans/review2/M7-X1-conversion.md` §refactors). Every
+needs the hit confirmed by structural equality or the tables made self-proving; see the
+runtime-refinement obligation in `docs/compiler-certification.md` §1.7). Every
 theorem of this package about the development is a theorem about this core.
 -/
 

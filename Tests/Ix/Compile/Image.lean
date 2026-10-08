@@ -1,6 +1,6 @@
 /-
   image-gen: the pure image generator (`Ix.Compile.Image`) on the prototype's
-  fifteen sub-cases (PRO, `plans/review/auxgen-certify/exp-prototype`), with
+  fifteen retained prototype sub-cases (`Tests/Ix/Compile/Image/`), with
   Lean's kernel as the oracle.
 
   Fixtures: `Tests/Ix/Compile/Image/C*.lean` are the prototype's case files

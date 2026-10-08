@@ -6,7 +6,8 @@ import Ix.CompileCert.FoldCompose
 
 W (`SourceCorrespondence`) asks that the export of every Lean declaration be an
 entry of the certified reader's output. A *changed* constant breaks that in
-three ways (`plans/PLAN-proofs.md` §1, `docs/compiler-passes.md` §4–§5):
+three ways (`docs/compiler-passes.md` §4–§5 and
+`docs/compiler-certification.md` §1.3):
 
 * a Lean **theorem** whose Ix proof term differs (theorem images, carried
   `eq_def`s, theorems proved through transported cliques);
@@ -42,9 +43,11 @@ new trust, by **theorem rows checked by the certified checker**:
   member contains it with its index count and its constructors in Lean's order,
   and holds nothing that is not the export of a member or constructor of this
   Lean block (containment). The reader block's recursors (the canonical `_ix`
-  ones) are not compared. **Trusted here, proved in M7 L2a/L1:** that the
-  block transformation itself (reorder, split, collapse) preserves the meaning
-  of the types.
+  ones) are not compared. **Trusted here:** that the block transformation
+  itself (reorder, split, collapse) preserves the meaning of the types. The
+  general compiler/image proof remains an L2/L4 obligation; the conditional
+  Pass 1 results do not discharge it (`docs/compiler-certification.md`
+  §§1.6–1.7).
 
 `AcceptedAssociation'` is W with the four-way correspondence
 (`SourceCorrespondence'`: direct ∨ raw ∨ theorem ∨ equations) and the two-way

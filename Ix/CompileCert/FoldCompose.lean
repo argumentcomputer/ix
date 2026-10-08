@@ -7,8 +7,9 @@ import IxC.Kernel.Verify.Cached.KnotCongr
 W+ folds its support rows with the certified checker on top of the admitted
 artifact: the fact it needs is `checkDecls .verified pins (base ++ support) = .ok env`
 (`FoldedSupport.checked`, `Ix/CompileCert/Changed.lean`). Computing it by running
-`checkDecls` over `base ++ support` re-checks the whole artifact (on Mathlib about 78
-of the run's 189 minutes and its 84 GB peak, `plans/review2/M5-B-budget.md` §9.4).
+`checkDecls` over `base ++ support` re-checks the whole artifact. The staged
+continuation below avoids repeating that work; dated library measurements are
+separate evidence in `docs/compiler-certification.md` §6.
 This module proves, from what `IxC` states about its own fold, that the fact
 follows from the admission's two phases over `base` and the two phases over the
 support **continued from the admission's state**, so that only the support is

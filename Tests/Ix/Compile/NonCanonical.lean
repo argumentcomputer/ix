@@ -1,43 +1,38 @@
 /-
   The non-canonical set (design document `docs/compiler-passes.md` §7.2).
 
-  Every byte difference between two presentations of a twin family
-  (`Tests.Ix.Compile.Twins`) that the compiler at this head produces is
-  listed here, with its cause and the evidence it was classified from.
-  The twins gate (`lake test -- --ignored twins`) reads this list and is
-  exact in both directions: every difference must match an entry by
-  `(fixture, presA, presB, constant)`, and every entry must still match a
-  difference (a stale entry fails the gate). Entries change only in a
-  commit that states the cause.
+  This module keeps the cause/entry types, the retained transport oracle,
+  and the Pass 3 pass/clique fixture records. The default twins record is
+  `Tests.Ix.Compile.NonCanonicalDefault.nonCanonical`; `twins` compares
+  it in both directions, so unrecorded and stale differences fail. See
+  `docs/compiler-gates.md`, "Exact records and re-recording". Entries change
+  only in a commit that states the cause.
 
-  The causes of §5.5/§7.1 are the permanent ones (what stays faithful but
-  not canonical once Phase A is complete). The compiler at this head does
-  not yet run the Phase A passes, so the measured set also holds
-  differences that a later package removes; those carry one of the
-  `pending*` causes, each naming the pass that removes it, and `inherited`
-  for a constant whose own term is identical under the name map and that
-  differs only because it references a differing constant.
+  The chronology below describes the retired legacy record and its later
+  retained subsets. Its `pending*` classifications describe that historical
+  compiler, not the absence of Pass 3 in today's compiler. `inherited`
+  marks a term equal under the name map whose referenced constant differs.
 
-  The evidence was measured at `f829b760` (Lean 4.34.1): the addresses are
+  The original evidence was measured at `f829b760` (Lean 4.34.1): the addresses are
   the Lean compiler's; the kernel verdicts are those of `ix check-lean
   --anon` (Ix.Tc), `ix check-rs --anon` (Rust) and `kernel-check-ixe` (the
   certified checker) on the twins closure as the Lean compiler compiled it,
   where a certified decline or a blocked row counts as not accepted. Most
   rejections are open audit defects of the presentations themselves
-  (PropSplit, FieldBelow, F4, collapse; report `plans/wave1/a1g.md`).
+  (PropSplit, FieldBelow, F4, collapse). These are historical observations.
 
   Re-run on the merged tree `de10a62e` (A0's safety fixes included): every
   remaining entry has the same addresses as at `f829b760`; the entries of
   the constants A0 now refuses were removed and the refusals are listed in
-  `expectedRefusals` (report `plans/wave1/a1g2.md`).
+  `expectedRefusals`.
 
-  A5f (2026-10-03, report `plans/wave1/a5f.md`) added the clique families
+  A5f (2026-10-03) added the clique families
   `RF`, `NS`, `LI`, `LC`, `PU`, `RA`, `WH`, `TR`, `TQ` and `WU` (70 entries,
   measured at `b86e2043`), with the first measured `RECARG` (`RA`),
   `TACTIC-ASYM` (`WH`) and `SHAPE` (`PU`) entries, and moved `TN` from
   `NOSPEC` to `pendingTransport` (Q6's recovered specification orders it).
 
-  A2 (D6, one constant per auxiliary; report `plans/wave1/a2p.md`): the set
+  A2 (D6, one constant per auxiliary): the set
   is unchanged (same entries, same causes); the evidence addresses of 21
   entries moved. Four are auxiliaries that are now standalone constants
   instead of projections into a per-kind block (F4 `A.below_2`,
@@ -47,8 +42,7 @@
   cascade).
 
   A2 migration commit (discovery order for nested auxiliaries, levels after
-  `canonUniv`, one constant per auxiliary; reports `plans/wave1/a2o.md`,
-  `a2p.md`, `a2m.md`): re-measured on the merged tree. The set is unchanged
+  `canonUniv`, one constant per auxiliary): re-measured on the merged tree. The set is unchanged
   (427 differences, same entries, same causes), and the evidence addresses
   are exactly those above: the 21 D6 updates are the whole move, because
   discovery order and the level rule move no address of the twins closure

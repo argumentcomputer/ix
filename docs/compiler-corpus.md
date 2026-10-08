@@ -82,14 +82,20 @@ olean is built alone, the ones Lean rejects are listed in `preparation.json`
 at `elaborate`. Every module failing, or an ownership inventory failing, stops
 the run as a preparation failure.
 
-For development parity with the historical read-only catalog:
+Optional development checks can compare with a separately retained historical
+catalog. That catalog is not shipped in this repository; replace the placeholder
+paths below with your own JSON catalog and round-two source directory. The
+commands require `--legacy` and do not reconstruct those external inputs.
 
 ```sh
 lake env .lake/build/bin/aux-shape-sweep verify-legacy \
-  --legacy plans/review/auxgen-audit/blackbox/corpus/shapes.json
+  --legacy /path/to/historical/shapes.json
 lake env .lake/build/bin/aux-shape-sweep verify-round2 \
-  --legacy plans/review/auxgen-audit/blackbox/corpus/R2
+  --legacy /path/to/historical/R2
 ```
+
+The tracked catalog and its ordinary checks are described above; these optional
+comparisons are not evidence that the current full corpus has been executed.
 
 ## Execute and account for every outcome
 

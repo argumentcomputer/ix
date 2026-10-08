@@ -7,7 +7,7 @@ import Ix.CompileCert.Installed
 The checker's public semantics `Kernel.Denotes cval env φ ρ e v` (`IxC/Kernel/Denotes.lean`) reads a
 closed term `e` at a universe assignment `φ` and a bound-variable environment `ρ`. IxC states its
 substitution and level-instantiation metatheory on the internal readings (`denote`, `denoteMeta`),
-not on the public relation (PLAN-B §1). This module proves the public versions the bridge needs,
+not on the public relation. This module proves the public versions the bridge needs,
 by induction on the derivation, using only the relation's constructors:
 
 * `Denotes.lift`: a term read at `liftEnv n c ρ` is read at `ρ` once lifted (`liftLooseBVars`);

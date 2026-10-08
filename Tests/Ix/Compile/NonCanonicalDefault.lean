@@ -11,7 +11,7 @@
 
   Emitted from the twins gate's suggested entries (`entrySyntax`, cause by
   `Tests.Ix.Compile.Twins.defaultCause`), the rest reviewed by hand
-  (M6, `plans/review2/M6-flip.md` §7). Causes, 959 entries:
+  at the M6 flip (see `docs/compiler-passes.md` §7.4). Causes, 959 entries:
   - `IMAGE` (493): the Lean name of an image-kind head of a changed block
     denotes its image (decision 3, Def 3.4); the canonical constant is the
     `_ix` one;

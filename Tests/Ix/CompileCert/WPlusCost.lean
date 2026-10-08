@@ -10,7 +10,8 @@ On `Tests.Ix.CompileCert.ChangedDefs` compiled in-process under Pass 3 (as the
   checker infers for Lean's exported type (`checkerSortLevel`), which is also the
   one it infers for the compiled type: typing the row compares the two sorts by
   syntactic equality instead of `Level.leq` (exponential on the nested `imax`
-  chain of a long telescope: the Cutsat `brecOn(_k).go`, `plans/review2/M7-C-wplus-cost.md`).
+  chain of a long telescope, such as Cutsat `brecOn(_k).go`; see
+  `Ix/CompileCert/Certifier.lean`'s `checkerSortLevel` and type-row construction).
   **Valid neighbour:** both rows of `Reord.Even.brecOn.go` at that universe are
   accepted by the certified fold; **negative:** the type row at the successor of
   that universe is refused.

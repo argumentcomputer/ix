@@ -5,8 +5,8 @@
   Every fixture is a standalone Lean file under `Tests/Ix/Compile/AuxCert/`
   (never imported into the test binary: some must be refused, and a refused
   constant would fail every whole-environment suite). The fixtures are the
-  auxgen audit reproducers (`plans/review/auxgen-audit/{whitebox,blackbox}/
-  repro`, 28 + 10 files, verbatim), their passing neighbours
+  retained auxgen audit reproducers (the original 28 whitebox and 10
+  blackbox files), their passing neighbours
   (`Neighbours.lean`), and the A0 fixtures: `SurgCollapseEq` (the equal-arms
   neighbour of `SurgCollapse`), `F4FlatAlphaUsers` (an eta-wrapped collapsed
   recursor) and `NestMutGroup` (nesting through an external mutual family).
@@ -120,8 +120,8 @@ def kf (leg defect : String) (names : List String) : List (String × String × S
   names.map fun n => (leg, n, defect)
 
 -- The fixture record (filled from the A0 survey on 2026-10-03, Lean
--- 4.34.1; expected behaviours from `plans/replan/D-evidence-digest.md` §2,
--- `audit-whitebox-5.md` and `audit-blackbox-final.md`).
+-- 4.34.1). The entries below retain the expected outcomes; `run` checks
+-- each enabled leg and its listed failures. See `docs/compiler-gates.md`.
 def fixtures : List Fixture := [
   -- A0 item 1 (WB-B4): the collapse refusal, its equal-arms neighbour, and
   -- the eta-wrapped partial applications of collapsed recursors. Until M6R

@@ -34,16 +34,17 @@
   `all₀.rec_1, …, all₀.rec_k` in exactly this order (`mk_aux_rec_name_map`),
   which `recMajorSignatures` reads back for validation.
 
-  **One difference between Lean and today's compiler** (`Dedup`): Lean
-  records every `J Ds` of the new group as seen (`m_nested_aux` gets one
-  entry per `J`); the compiler records only the occurrence `I Ds` that
-  triggered the group, and keys it to the group's *first* auxiliary
-  (`Ix/AuxGen/Nested.lean` `replaceIfNested`, `auxSeen`; Rust
-  `replace_if_nested`). The two agree unless a block nests a non-first
-  member of an external mutual group, or nests two members of one; then the
-  compiler either creates a second group or replaces `I Ds` by the
-  auxiliary of `all₀ I`. `Dedup.compiler` mirrors the compiler,
-  `Dedup.lean` the kernel.
+  **Deduplication models** (`Dedup`): `Dedup.compiler` retains the
+  historical trigger-only policy: record only `I Ds`, pointing to the
+  group's first auxiliary. A non-first member or two siblings can then
+  select the wrong auxiliary or create a second group. `Dedup.lean`
+  records every member of each new group/class. The current production
+  `Ix/AuxGen/Nested.lean` `replaceIfNested` and Rust `replace_if_nested`
+  also iterate every class member and insert its occurrence key when absent; the
+  historical constructor name is not a description of today's compiler.
+  This correspondence of the registration clauses is not a proof that
+  the full runtime expansion equals this total model; that remains part
+  of the general obligations in `docs/compiler-certification.md` §1.7.
 
   ## Orders
 
@@ -129,8 +130,9 @@ def IndView.ofConst? (const? : Name → Option ConstantInfo) (n : Name) : Option
 /-! ## Expansion -/
 
 inductive Dedup where
-  /-- Today's compiler: only the triggering occurrence, keyed to the first
-  auxiliary of the group. -/
+  /-- Historical trigger-only compiler policy: only the triggering
+  occurrence, keyed to the first auxiliary of the group. Kept as a model
+  variant; current production iterates every class member. -/
   | compiler
   /-- Lean's kernel: every member of the new group. -/
   | lean
