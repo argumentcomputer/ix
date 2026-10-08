@@ -22,7 +22,8 @@ theorem RecRd.motive_graph {r : Kernel.Name} {R : RecRd}
   intro p inside
   have metadata := checked.2.2.2.1 m member p inside
   rw [metadata]
-  simp only [Bridge.regime_never, Nat.one_ne_zero, not_false_eq_true]
+  simp only [Bridge.regime_never]
+  decide
 
 /-- Previously selected motive values are removed by the proved valuation
 lift relation. No replacement of the universe assignment, zero-sort
