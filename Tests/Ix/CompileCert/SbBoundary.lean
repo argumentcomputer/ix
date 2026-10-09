@@ -82,11 +82,11 @@ Nested pins use the same capture-avoiding sequence as
 `SourceRuleComparisons.nested`; closed runtime arguments still use the
 unchanged `recFireComparands`. No caller closedness assumption is added. -/
 def openFireParameters (rule : Kernel.RecRule) (levels : List Kernel.Name)
-    (universes : List Kernel.Level) (arguments : List Kernel.Expr) (prefix : Nat) :
+    (universes : List Kernel.Level) (arguments : List Kernel.Expr) (prefixCount : Nat) :
     List Kernel.Expr :=
   match rule.fire with
   | .nested _ pins => pins.map fun pin =>
-      Kernel.Expr.instSeqLift (arguments.take prefix) (prefix - 1)
+      Kernel.Expr.instSeqLift (arguments.take prefixCount) (prefixCount - 1)
         (pin.instantiateLevelParams levels universes)
   | _ => arguments.take rule.ctorParams
 
