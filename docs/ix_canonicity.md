@@ -1,2002 +1,390 @@
 # Anonymous Canonicity in Ix
 
-> This is the authoritative spec for **anonymous canonicity** — the
-> foundational content-addressing property of the Ix compiler. It covers
-> the theory (what the property is and why we need it), the operational
-> pipeline that achieves it (compile, decompile, metadata; the legacy
-> call-site surgery as history),
-> worked examples from `Tests/Ix/Compile/Mutual.lean`, a testing plan,
-> and the currently-open implementation work.
->
-> Companion document: [`docs/Ixon.md`](./Ixon.md) (binary format
-> reference).
->
-> **Status note (2026-10-07).** This document predates the A2 migration
-> (2026-10-03) and the kernels' weak-`Greater` repair. Three of its
-> statements were wrong against the code and are corrected in §4.4, §5.1,
-> §6 (intro, §6.0, §6.0.1, §6.1, §6.2, §6.4, §6.6), §7, §11.2, §15 and
-> §18: (1) the nested-aux section is in **discovery order** over the
-> canonical block, not structurally sorted (decision D2,
-> `docs/compiler-passes.md` §2.5); (2) every auxiliary other than the
-> recursor family and the Prop-level `.below` family is **its own
-> constant**, not a member of a per-kind `Muts` block (decision D6,
-> `docs/compiler-passes.md` §2.8); (3) the kernels' single-pass
-> canonicity check falls back to full refinement on a weak `Greater` as
-> on a weak `Less`, and the kernels order rediscovered nested auxiliaries
-> by the same discovery walk, with no sort (§4.4). Elsewhere (§9, §10,
-> §14, §16, §17, §19) "structurally sorted" auxes,
-> `sort_aux_by_content_hash` and `sort_kconsts` over rediscovered auxes
-> describe the design before the migration; read them with (1)–(3).
-> Paths under `src/ix/…` are now under `crates/…`.
->
-> **Status note (2026-10-07, M6R slice 6).** The call-site surgery was
-> deleted from both compilers on 2026-10-07: Pass 3 (the faithful rewrite,
-> `docs/compiler-passes.md` §4 and §11) is the only mode, and §7's last
-> step is Pass 3. §8, §10.3 and the surgery entries of §10.2, §14, §15,
-> §18 and §19 are kept as history and marked so. The Ixon format still
-> decodes `CallSite`/`EtaCallSite` metadata (tags 10 and 11) in files the
-> surgery wrote (the `-a2` references); nothing writes it now.
+This guide states the canonicity target, the source-recovery contract and the
+worked layouts. Its implementation baseline is `8bac9c61` (Lean 4.34.1), reviewed
+on 2026-10-09. The full compiler theorem remains open. A passing fixture, library
+byte comparison or proof audit establishes only its stated result.
 
----
+Use the [pass and output-contract guide](compiler-passes.md) for the current
+pipeline, [certification guide](compiler-certification.md) for checked meaning
+claims and their hypotheses, [gate guide](compiler-gates.md) for validation, and
+[Ixon](Ixon.md) for the binary representation. Historical section numbers remain
+where source comments cite them; implementation recipes live in those guides.
 
 ## 1. The Property
 
-Given a Lean 4 `ConstantInfo` `c`, compilation produces a content-address
-`addr(c) ∈ Ixon`. The **anonymous canonicity** property is:
+Anonymous canonicity requires equivalent presentations to produce the same
+canonical content and hence the same content address. The intended quotient
+removes:
 
+- Bound-variable and declaration names, through the prescribed reference map.
+- Binder information, ordinary expression metadata and other presentation data.
+- Source member order within mutual blocks and the resulting source auxiliary
+  numbering, through the corresponding canonical classes and positions.
+- Non-canonical universe-level spellings under the specified level quotient.
+- Expression sharing in memory, allocation order and compiler scheduling.
+
+In the original address notation, the target is
+
+```text
+addr(c₁) = addr(c₂)  ⇔  c₁ and c₂ have the same anonymous canonical content.
 ```
-For every pair (c₁, c₂) of Lean constants:
 
-    addr(c₁) = addr(c₂)
-    ⇔
-    c₁ and c₂ are structurally identical modulo:
-      - local variable names
-      - declaration metadata (mdata, binder info, docstrings, source positions)
-      - source declaration order within mutual blocks
-      - nested-inductive aux discovery order
-      - hygiene annotations on Name components
-```
+This specifies a structural quotient. The quotient does not identify arbitrary
+mathematically equivalent programs or arbitrary theorem proofs. The ordered
+universe parameters and de Bruijn indices still distinguish their respective
+roles. Type and value structure, constructor structure and computationally
+relevant flags remain subject to the declared format and comparison contracts.
+Semantic-contract metadata has its own lowering into primary content and is
+excluded from this presentation erasure. The hashing and reference hypotheses
+of individual proofs remain explicit.
 
-Equivalently: two Lean constants share a hash iff they denote the same
-mathematical object modulo cosmetic choices.
+**Faithfulness comes first.** A transformation must preserve the source name's
+specified kind, type and value contract. If a canonical presentation cannot be
+produced by a supported faithful transformation, the compiler keeps the faithful
+baseline and records its reason, or refuses the block when it cannot produce
+that baseline. A retained baseline need not share the address of a canonical
+form. Proof-justified forms at `c._ix` coexist with the source name's baseline;
+they do not license changing every caller to `_ix`.
 
-Informally: **renaming a bound variable, reordering a mutual block, or
-decorating a term with `@[inline]` does not move the content address.**
-If it does, canonicity is broken and the property fails — which in turn
-breaks the zk-PCC story, because two parties compiling the same library
-would produce different hashes and could not share proofs.
-
-The address hashes the constant's serialized bytes, and those bytes include
-its sharing table and every `Share` occurrence. Since format version 4, the
-sharing representation is itself canonical: a function of the constant's
-anonymous expressions (§6.7). So the property also holds modulo:
-
-- how the expression DAG happens to be shared in memory;
-- the order in which the compiler built it;
-- which compiler ran, Lean or Rust.
-
-These are properties of the definition. The construction's proofs start from
-the canonical DAG of the expressions; independence from in-memory sharing and
-the agreement of the Rust implementation with the Lean definition are tested
-(§6.7).
+These qualifications describe the current implementation without replacing the
+full target by the passing fixtures. The required general result still includes
+representative independence, total generators and image construction on the
+original `Dom`, every source name's faithfulness, and model pull-back through the
+complete production driver. The
+[remaining compiler proof obligations](compiler-certification.md#17-remaining-general-compiler-proof-obligations)
+state those endpoints.
 
 ## 2. Why It Matters
 
-Ix is a **zero-knowledge proof-carrying code** platform. A proof that
-`constant X typechecks` is really a proof about `addr(X)`. If two
-developers compile the same mathematical library and get different
-addresses, the proof from one developer doesn't verify against the
-other's hash — the whole interop story collapses.
+A proof about a compiled declaration is tied to its content address. If two
+presentations covered by the structural quotient produce different canonical
+content, their proofs cannot be reused at the same address.
 
-The failure mode isn't subtle. Consider:
-
-```lean
--- Developer A writes:
-mutual
-  inductive Tree  | leaf | node : List Tree  → Tree
-  inductive Forest | nil  | cons : Tree → Forest → Forest
-end
-
--- Developer B writes the same library but declares:
-mutual
-  inductive Forest | nil  | cons : Tree → Forest → Forest
-  inductive Tree   | leaf | node : List Tree  → Tree
-end
-```
-
-Both define the same mathematical objects. If `addr(A.Tree) ≠ addr(B.Tree)`,
-a proof of `X : Tree` from A cannot be used by B's verifier. **Canonicity
-restores this property** by erasing source order, binder names, and
-metadata from the hash input.
+For example, reordering the declarations of a mutually recursive `Tree` and
+`Forest` should preserve the canonical classes, the corresponding member
+addresses and the canonical recursor layout. The source member order and Lean's
+auxiliary suffixes remain recoverable separately. This needs a correspondence
+for every affected constructor, recursor, image and user, as well as equal
+primary inductive bytes.
 
 ## 3. The Epimorphism / Isomorphism Pair
 
-Write `Source` for the set of Lean source constants and `Canonical` for
-the set of content addresses. Compilation induces two maps:
+The design has two complementary maps:
 
-```
-Source ──(compile)──→ Canonical              (many-to-one: α-equivalent sources
-                                              collapse to one canonical form)
-Source ──(compile)──→ Canonical × Metadata   (bijective: metadata preserves
-                                              the information erased by compile)
+```text
+Source ──compile──→ Canonical content
+Source ──compile──→ Canonical content + source-recovery information
 ```
 
-- **Canonical alone is epimorphic onto Source.** Renaming, reordering,
-  and stripping decoration are surjective: any canonical form is the image
-  of some Lean term, but different Lean terms can share one canonical.
-- **Canonical + metadata is isomorphic to Source** (modulo source
-  ranges and hygiene, which are explicitly out of scope — see §5.3).
-  The metadata sidecar carries exactly the information needed to
-  reconstruct a particular Lean-visible term — binder names, mdata
-  wrappers, source member order, docstrings — without contributing to
-  the hash.
+The first is many-to-one and is onto its image: alpha-equivalent declarations
+can share canonical content. The second aims to recover the original supported
+`ConstantInfo` presentation. Its recovery data includes metadata, the original
+address-and-metadata pairs in `Named.original`, and source occurrences retained
+by Pass 3. An original address is provenance; its declaration blob need not be
+stored. Recovery can therefore require regeneration as well as metadata replay.
 
-This pair is the entire design:
+Source recovery is a stronger requirement than equality of one block address.
+It must preserve the source names, kind, telescope, binders, metadata, universe
+spellings and auxiliary numbering covered by the output contract. Source ranges
+and editor hygiene traces are outside that presentation contract. Docstring
+persistence is still separate work (§17.5); it is not already supplied by a
+`ConstantInfo` roundtrip.
 
-```
-Lean  ──compile──▸  Ixon (canonical)
-                    │
-                    │    bytes flow through kernel / ZK pipeline
-                    │    using only the canonical form.
-                    │
-                    ▼
-Lean' ◀─decompile─  Ixon + Metadata
-```
-
-where `Lean' ≡ Lean` as Lean `ConstantInfo`s, not just observationally.
+Changed blocks make the two readings visible: canonical recursors can coexist
+with source-named image definitions. Source recovery uses the recorded source
+provenance and recovery paths; transformation checking must also inspect the
+transformed stored term.
+The complete general inverse/faithfulness theorem is not established by this
+design diagram or by one successful roundtrip.
 
 ## 4. Four Operational Invariants
 
-The abstract property in §1 decomposes into four concrete invariants
-that every stage of the pipeline must uphold:
-
 ### 4.1 Content-address invariance under declaration permutation
 
-Two Lean blocks whose inductives, constructors, and field types are
-pairwise-equal **modulo source order** must compile to the same Ixon
-block address, and each constituent inductive / constructor / recursor
-must share a content address with its counterpart.
-
-**Corollary.** The canonical block layout cannot embed any information
-specific to a Lean source-walk: no aux names like
-`<InductiveVal.all[0]>._nested.List_1` inside the canonical content, no
-source-indexed `rec_N` positions inside bodies, no source-order
-motive / minor binder positions.
+Corresponding members of structurally equivalent blocks must receive the same
+canonical addresses under the prescribed member/reference correspondence.
+Source-first member names, source `_N` positions and source-order motives or
+minors must not determine the canonical payload.
 
 ### 4.2 Canonical round-trip fixed point
 
-```
-Lean(source₁)            → compile   → Ixon₁
-Ixon₁                    → decompile → Lean(decompiled)
-Lean(decompiled)         → compile   → Ixon₂      // must equal Ixon₁
-```
-
-Decompile must produce a Lean representation that, when recompiled,
-yields byte-equal Ixon. This forces decompile to regenerate auxiliaries
-using the same canonical layout that compile produced them in — **not**
-to re-run a fresh Lean source walk against the decompiled
-`InductiveVal` (which would re-introduce source-order fragility).
+The canonical reading, recompiled under its intended input/name convention,
+must reproduce the same canonical content. Source-faithful materialization has
+a separate source-projection roundtrip: an artifact may also expose reserved
+canonical declarations that were never source inputs. Passing all materialized
+names back as fresh source can correctly trigger the `_ix` input refusal.
+[ImportIxe](../Tests/Ix/ImportIxe.lean) exercises this distinction, source-root
+stability and certified canonical recursors.
 
 ### 4.3 Lean-visible `_N` numbering stability
 
-User code (including Lean-auto-generated `_sizeOf_N`, `_ctorIdx`, etc.)
-references auxiliaries by their Lean-visible `<all0>.rec_N` /
-`.below_N` / `.brecOn_N` names. That numbering is part of Lean's
-public API, and Lean's elaborator chose a specific
-`N ↦ source aux position` mapping when the source was compiled. We
-must preserve the original `N ↦ source position` relationship on
-decompile, even across Lean-version drift, so downstream constants
-continue to resolve their references consistently.
+Lean's source `_N` suffixes identify positions chosen by its source expansion.
+Canonical expansion can reorder or merge those positions. Decompilation must
+retain the source correspondence so downstream source declarations resolve the
+same recursors and auxiliary families (§6.4).
 
 ### 4.4 Kernel-side canonicity validation
 
-The kernel must not trust compile-side metadata for canonicity. It
-runs an independent `sort_consts` port
-(`crates/kernel/src/canonical_check.rs`; the Lean kernel `Ix.Tc` has
-the same in `Ix/Tc/CanonicalCheck.lean`) and checks canonical order in
-two places:
+The executable checkers validate stored canonical order independently of source
+metadata. Their fast adjacent-member check accepts strong strict `Less`, rejects
+strong `Greater` and uncollapsed `Equal`, and falls back to full refinement on
+**either** weak `Less` or weak `Greater`. The fallback must recover the same
+ordered singleton classes. The distinction matters when mutual references
+supply a provisional comparison.
 
-1. **Primary validation with refinement fallback.** When a
-   `Muts(Indc, …)` block
-   is ingested, the stored member list is taken as the alleged
-   canonical partition (each member at its own class index) and
-   adjacent pairs are required to satisfy **strong** strict `Less`
-   under the ported comparator. A strong `Greater` rejects an ordering
-   violation; `Equal` rejects uncollapsed alpha-equivalent pairs (the
-   compiler should have collapsed them to one canonical address). A
-   weak `Less` **or a weak `Greater`** means the singleton partition
-   itself supplied the ordering through a block-local reference, which
-   proves nothing either way, so the validator falls back to full
-   `sort_kconsts` refinement and accepts only if refinement returns the
-   same ordered list of singleton classes. (A weak `Greater` used to
-   reject, which rejected canonical blocks whose members differ first
-   in a mutual cross reference: BELOW-ORDER, repaired in both
-   executable kernels; `docs/compiler-passes.md` §2.3, "Consequence for
-   the kernels"; reproducer `Tests/Ix/Compile/ValidateLeanSwap.lean`.)
-   Returns `TcError::NonCanonicalBlock` on failure. Implemented as
-   `validate_canonical_block_single_pass` in `canonical_check.rs`,
-   wired into `ingress_muts_block` (`crates/kernel/src/ingress.rs`);
-   in `Ix.Tc`, `validateCanonicalBlockSinglePass`, called from
-   `Ix/Tc/IngressMeta.lean`.
-
-2. **Nested auxiliaries in discovery order, with no sort.** When
-   the kernel rediscovers nested auxiliaries during recursor
-   generation (`build_flat_block` in
-   `crates/kernel/src/inductive.rs`; `buildFlatBlock` in
-   `Ix/Tc/Inductive.lean`), it walks the stored canonical members
-   and opens each external group as its stored block, as the
-   compilers' canonical expansion does, so the flat block comes out
-   in **discovery order**, which is the canonical order of the
-   nested section since the A2 migration (§6.2;
-   `docs/compiler-passes.md` §2.5). No `sort_kconsts` runs over the
-   auxiliaries. Stored aux recursors are then validated by position
-   against the kernel's flat block: the stored `.rec_N` at
-   rec-block position `n_originals + k` must validate against
-   `generated[n_originals + k]` via `is_def_eq` on the recursor
-   type.
-
-The primary validator is cheap (O(n) comparator calls, no fixpoint
-iteration) when every adjacent proof is strong. If any adjacent proof
-is weak, it runs the full iterative algorithm for that block.
-Rediscovered auxiliaries need no ordering pass (item 2). Both modes of
-item 1 share the same comparator:
-`compare_kconst` / `compare_kexpr` / `compare_kuniv`.
-
-**Trust boundary.** The kernel never reads `AuxLayout.perm` or any
-other sidecar to decide canonical order — the sidecar persists
-Lean-source `_N` numbering only (§6.4). The canonical *order* is
-recomputed kernel-side every time, making it adversary-resistant:
-shipping a permuted recursor block triggers the position-by-position
-`is_def_eq` mismatch and rejects.
-
-These four invariants taken together give the full canonicity story:
-(4.1) fixes the forward direction, (4.2) fixes the round-trip,
-(4.3) fixes Lean interop under the permuted aux layout, and (4.4)
-makes the kernel an independent oracle that doesn't trust the
-compiler's canonicity claims.
+Nested auxiliaries are rediscovered from canonical members in discovery order,
+with no auxiliary sort. Stored recursors are checked at the corresponding flat
+positions. This validation is distinct from proving that compiling every source
+block preserves its meaning. See the [kernel guide](kernel.md),
+[Lean implementation](../Ix/Tc/CanonicalCheck.lean) and
+[Rust implementation](../crates/kernel/src/canonical_check.rs).
 
 ## 5. What Is Erased vs. What Is Preserved
 
-### 5.1 Erased from canonical form
+| Data | Canonical content / source recovery |
+| --- | --- |
+| Binder names and `BinderInfo` | Erased from primary expressions; retained in metadata. |
+| Ordinary `Expr.mdata` | Erased from primary expressions; its supported KV data survives in metadata. Semantic-contract metadata has a separate lowering into primary content. |
+| Reference names and source member order | Content references use the compiled mapping; source spelling and class/member metadata retain the presentation. |
+| Universe expressions | `canonUniv` selects primary levels; occurrence patches retain non-canonical spellings. Universe parameter positions remain structural. |
+| Source auxiliary suffixes | Canonical flat positions determine the generated layout; persisted source layout supports recovery. |
+| Reducibility hints | Exact per-name hints are retained in `Named.hints`, alongside the environment's merged anonymous hints. |
+| Rewritten source forms | `Named.original` retains source-form address and metadata, without requiring its blob to be stored; Pass 3 inline records retain rewritten source occurrences. |
+| In-memory DAG sharing | Rebuilt by canonical sharing; memory identity does not define the canonical layout. |
 
-Everything that depends on source choices is stripped before hashing:
-
-| Category                           | Where it's erased                                    |
-| ---------------------------------- | ---------------------------------------------------- |
-| Bound variable names (λ, ∀, let)   | `Expr::Lam/All/Let` has no `name` field — `src/ix/ixon/expr.rs` |
-| `BinderInfo` (impl/inst/strict)    | not serialized in `put_expr`                         |
-| `Expr.mdata` wrappers              | canonical form has no `Mdata` node                   |
-| Free variable identity             | FVar and MVar are rejected — `compile.rs:848-857`    |
-| De Bruijn depth artifacts          | indices are **the** identifier; no names survive     |
-| Lean `InductiveVal.all` order      | replaced by `sort_consts` canonical class order; kernel enforces via `validate_canonical_block_single_pass` at ingress (§4.4) |
-| Nested-aux discovery order over Lean's source block | replaced by the discovery order over the canonical block (§6.2); the kernel rediscovers in that order + position-by-position recursor match (§4.4) |
-| `_N` suffixes on aux names         | internal `_nested.Ext_N` uses canonical `N`          |
-| Hygiene info on `Name`             | stripped by `compile_name`                           |
-| Non-canonical universe-level spellings (§10.6) | `canonUniv` at the compile univ-intern boundary (`CompileM.compileAndInternUnivCanon` / `compile.rs compile_univ_idx`) |
-| In-memory DAG sharing, construction order, compiler choice | the canonical sharing construction rebuilds `sharing` and every `Share` from the expanded roots (§6.7) |
-
-### 5.2 Preserved in the metadata sidecar
-
-Everything needed to round-trip back to a source-faithful Lean
-`ConstantInfo`:
-
-| Category                                | Where it lives                                       |
-| --------------------------------------- | ---------------------------------------------------- |
-| Binder names, `BinderInfo`              | `ExprMetaData::Binder { name, info, … }`             |
-| Let binders                             | `ExprMetaData::LetBinder`                            |
-| `Expr.mdata` KVMaps                     | `ExprMetaData::Mdata`                                |
-| Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`; name choice at alias occurrences: §10.5 |
-| Projection struct name                  | `ExprMetaData::Prj`                                  |
-| Call-site source/canonical metadata     | `ExprMetaData::CallSite { entries, canon_meta }` (files the surgery wrote, §8, history) |
-| Source occurrences Pass 3 rewrote       | `_ix.inline` / `_ix.inline_meta` mdata records into `ConstantMeta.meta_sharing` |
-| Level-parameter names                   | `ConstantMetaInfo::*.lvls`                           |
-| `InductiveVal.all` (Lean source order)  | `ConstantMetaInfo::{Def,Indc,Rec}.all`               |
-| `ReducibilityHints`                     | `Named.hints` (`.ixe` §5 header, exact per name) + merged `Env::anon_hints` (§3) |
-| Original pre-aux_gen form               | `Named.original = Some((addr, meta))`                |
-| Aux-name permutation (nested)           | `stt.aux_perms` in-memory → `ConstantMetaInfo::Muts.aux_layout` on disk — §10.2 |
-| Docstrings                              | planned: `ConstantMeta.doc_string: Option<Address>`  |
-| Original level spellings, per occurrence (§10.6) | `ConstantMeta.univPatches` (arena-indexed) + `metaUnivs` extension entries |
-
-### 5.3 Explicitly **not** preserved
-
-Source positions (`DeclarationRange`) and Lean's editor hygiene traces
-are out of scope. Canonical + metadata yields a Lean term equal modulo
-source-range and hygiene — which is enough for kernel, elaborator, and
-proof-carrying use cases.
+Free and metavariable nodes in a declaration's serialized body are refused,
+rather than erased. Safety/recursion flags are not decorative names. The
+[output contract](compiler-passes.md#11-the-output-contract) gives the precise
+kind/type/value and failure behavior, including the separately documented
+promotion-path exception at this baseline.
 
 ## 6. The Canonical Block Layout
 
-A mutual inductive declaration in Lean generates **many** Ixon
-constants, not one monolithic block. Since the A2 migration (decision
-D6, one constant per auxiliary; `docs/compiler-passes.md` §2.8) the
-user inductives form one `Muts` block, the recursor family (`rec`,
-`rec_N`) one block in its flat order, the Prop-level `.below`
-inductives one block and their `.below.rec` recursors one block; every
-other auxiliary (`casesOn`, `recOn`, a Type-level `.below`, `brecOn`,
-`.brecOn.go`, `.brecOn.eq`) is compiled one strongly connected
-component at a time, a singleton as a standalone constant, and only a
-genuine cycle is packed into a block (`aux_components` /
-`compile_aux_components`, `crates/compile/src/compile/mutual.rs`;
-`auxComponents`, `Ix/AuxGen/CompileAux.lean`). They are compiled in a
-specific downstream order and refer to each other by content address
-and by projections into blocks. This section is the structural
-reference for what each holds.
-
 ### 6.0 What lives in each Ixon block
 
-The Ixon types referenced below are defined in
-`src/ix/ixon/constant.rs`. The relevant constructors:
+For `n` primary equivalence classes and `m` canonical nested auxiliaries:
 
-```rust
-pub enum MutConst {
-  Defn(Definition),   // tag 0 — definitions, theorems, opaques
-  Indc(Inductive),    // tag 1 — an inductive type with its ctors
-  Recr(Recursor),     // tag 2 — an eliminator
-}
-
-pub struct Inductive {
-  pub recr: bool, pub refl: bool, pub is_unsafe: bool,
-  pub lvls: u64, pub params: u64, pub indices: u64, pub nested: u64,
-  pub typ: Arc<Expr>,
-  pub ctors: Vec<Constructor>,    // ← embedded; not separate MutConst entries
-}
-
-pub struct Recursor {
-  pub k: bool, pub is_unsafe: bool,
-  pub lvls: u64, pub params: u64, pub indices: u64,
-  pub motives: u64, pub minors: u64,
-  pub typ: Arc<Expr>,
-  pub rules: Vec<RecursorRule>,   // ← one per ctor, in canonical order
-}
+```text
+primary inductive block: Muts([Indc(rep₀), …, Indc(repₙ₋₁)])
+recursor block:          Muts([Recr(primary₀), …, Recr(primaryₙ₋₁),
+                              Recr(aux₀), …, Recr(auxₘ₋₁)])
 ```
 
-For one user-written `mutual { … }` block of `n` user inductives that
-exposes `m` distinct nested-aux signatures, compile produces these
-canonical blocks and constants (each has its own content address):
+Constructors are embedded in each `Indc`. Nested auxiliary inductives are
+transient inputs to generation; they are **not** extra primary `Indc` members.
+Their recursors occupy the auxiliary segment of the recursor block.
 
-#### Inductive block — `Muts([ Indc, Indc, … ])`
+The Prop-level `below` inductives and their `below.rec` recursors have their own
+family blocks. Other auxiliaries (`casesOn`, `recOn`, Type-level `below`,
+`brecOn`, `.go`, `.eq`) are emitted by strongly connected component: a singleton
+is its own constant, and a genuine cycle is a block. There is no universal
+per-kind block containing every auxiliary.
 
-```
-Muts([
-  Indc(rep₀),  Indc(rep₁), … Indc(rep_{n−1}),     // user reps in sort_consts order
-])
-```
+### 6.1 User-class ordering
 
-Each `Indc(I)` carries `I.ctors: Vec<Constructor>` inline. **Constructors
-are not separate `MutConst` entries** — they live inside their parent
-`Inductive`. This matters for projections (see [projections](inter-block-references--projections)).
-
-**Aux inductives are not serialized in the inductive block.** They are
-transient compile-time entities, derived from primary ctor walks during
-nested-occurrence detection. Per the compile pipeline
-(`compile_mutual` in `src/ix/compile.rs`), `ixon_mutuals` is built by
-iterating user (primary) classes only; aux `Indc`s are constructed
-inside `expand_nested_block` and used solely as inputs to aux
-recursor generation. The aux's only persistent footprint is via the
-recursor block (one `.rec_N` per canonical aux signature) and any
-downstream auxiliary blocks (`.below_N`, `.brecOn_N`).
-
-The kernel rediscovers aux inductives from the primary ctors during
-recursor regeneration (`build_flat_block` in
-`crates/kernel/src/inductive.rs`), in discovery order, which is the
-canonical aux order (§4.4, §6.2). There is no stored aux ordering
-to validate against in the inductive block.
-
-#### Recursor block — `Muts([ Recr, Recr, … ])`
-
-```
-Muts([
-  Recr(rep₀.rec), Recr(rep₁.rec), … Recr(rep_{n−1}.rec),     // user-class recursors
-  Recr(rep₀._nested.Ext_1.rec), …   Recr(rep₀._nested.Ext_m.rec),  // aux recursors, discovery order
-])
-```
-
-Each `Recr(R)` carries `R.rules: Vec<RecursorRule>` — one rule per
-constructor of the inductive being eliminated, in canonical layout
-order. For aux recursors, the rules cover the aux inductive's ctors.
-
-The motive/minor split inside each recursor's `typ` follows §6.3:
-`∀ params, [user-motives] [aux-motives] [user-minors] [aux-minors] indices major, target`.
-
-#### `casesOn` — one standalone `Defn` each
-
-```
-Defn(rep₀.casesOn)   Defn(rep₁.casesOn)   …   Defn(rep_{n−1}.casesOn)
-```
-
-One `Defn` per user representative, each compiled as its own
-constant (D6: a singleton component), not as a member of a shared
-block. Auxiliary inductives don't get their own `.casesOn` (Lean only
-emits them for user types). Each
-`.casesOn` body is `λ params motive indices major, rep.rec p₀ … (λ … PUnit) …`
-— the `.rec` with non-target motives stubbed to `PUnit`.
-
-#### `recOn` — one standalone `Defn` each
-
-```
-Defn(rep₀.recOn)   Defn(rep₁.recOn)   …   Defn(rep_{n−1}.recOn)
-```
-
-Each its own constant, as `.casesOn`. Same shape as `.casesOn` but
-preserves all motives and reorders the binder chain
-`(major after minors)` to `(major before minors)` —
-matching Lean's `Iff.rec` / `Eq.rec` style.
-
-#### `below` — one block in the Prop case, one constant each in the Type case
-
-```
-Muts([                               // BELOW INDC BLOCK (Prop case)
-  Indc(rep₀.below), Indc(rep₁.below), …,
-])
-
-Defn(rep₀.below)   Defn(rep₁.below)   …        // Type case: each its own constant (D6)
-Defn(rep₀.below_1) … Defn(rep₀.below_m)        // nested aux .below_N, likewise
-```
-
-`.below` is packaged differently depending on the inductive's universe:
-inductives in `Prop` get an `Inductive` payload (no value, just a
-type-level predicate); inductives in `Type` get a `Definition`
-payload (value-level, returning `PProd` of motives).
-
-#### `below.rec` block — Prop case only
-
-```
-Muts([                               // BELOW.REC BLOCK
-  Recr(rep₀.below.rec), Recr(rep₁.below.rec), …,
-])
-```
-
-Recursors for the Prop-case `.below` inductives.
-
-**Generation class order is semantic and canonicalized.** Unlike every
-other aux phase (per-member generation, layout canonicalized by the
-class sort), the `.below.rec` recursors are generated **jointly** as one
-mutual family: the class order determines the motive order across the
-block and the rule concatenation inside every member, and is therefore
-baked into the block *bytes* before any layout sort runs. The
-generation classes are ordered by the below inductives' own
-partition-refinement (`sort_consts`) order — their canonical member
-order in the compiled below-inductive block, equivalently ascending
-anon projection index. This order is content-derived (alpha-invariant,
-name-free) and is applied at the Phase-3 collection in both
-implementations (`mutual.rs` `generate_and_compile_aux_recursors`
-Phase 3; `Ix/AuxGen/CompileAux.lean` mirror), so Phase-5 generation and
-the per-name metadata `all` lists inherit it.
-
-History: the collection originally iterated a name-keyed hash map, so
-the joint generation order followed hash-bucket order over the member
-*names* — alpha-identical families could compile to different bytes (a
-canonicity violation; observed as a 49-byte divergence at Mathlib scale
-in the `SetTheory/Lists` mutual-Prop pair). The regression family
-`ZFA`–`ZFA5` in `Tests/Ix/Compile/Canonicity.lean` (five alpha-identical
-transcriptions of that shape) pins the fix: all five must produce the
-same `.below.rec` block address, enforced by validate Phase 4b twin
-groups and the aux-gen-diff driver gates. Ties in the canonical sort
-are structurally unreachable — alpha-identical belows would require
-alpha-identical parents, which collapse to a single class (and a single
-below patch) upstream; the `PropCollapseA/B` fixtures pin that
-collapsed path, including the `.below.rec` alias for non-representative
-members.
-
-#### `brecOn` — one standalone `Defn` each, in three batches
-
-```
-Defn(rep₀.brecOn.go)   …    // batch 0 (sub-defs)
-Defn(rep₀.brecOn)      …    // batch 1 (main entry)
-Defn(rep₀.brecOn.eq)   …    // batch 2 (unfolding lemmas)
-```
-
-Three batches because of dependency order: `.go` is the inner worker,
-`.brecOn` calls into `.go`, and `.eq` proves the unfolding equation
-for `.brecOn`. Within a batch each member is its own constant (D6).
-
-#### Inter-block references — projections
-
-Individual constants are exposed as **projections** into their
-containing `Muts` block:
-
-```rust
-pub enum ConstantInfo {
-  …
-  CPrj(ConstructorProj),  // → Muts inductive block, idx + cidx
-  RPrj(RecursorProj),     // → Muts recursor block, idx
-  IPrj(InductiveProj),    // → Muts inductive block, idx
-  DPrj(DefinitionProj),   // → Muts definition block, idx
-  …
-}
-
-pub struct InductiveProj   { pub idx: u64, pub block: Address }
-pub struct ConstructorProj { pub idx: u64, pub cidx: u64, pub block: Address }
-pub struct RecursorProj    { pub idx: u64, pub block: Address }
-pub struct DefinitionProj  { pub idx: u64, pub block: Address }
-```
-
-So for a mutual block with primary `A`, `B` and one nested aux
-`_nested.List_1`:
-
-```
-Lean-side name           Ixon resolution
-─────────────────────────────────────────────────────────────────────
-A                        IPrj { block: <ind-block-addr>, idx: 0 }
-A.mk                     CPrj { block: <ind-block-addr>, idx: 0, cidx: 0 }
-B                        IPrj { block: <ind-block-addr>, idx: 1 }
-B.mk                     CPrj { block: <ind-block-addr>, idx: 1, cidx: 0 }
-A._nested.List_1         (no IPrj) — aux Indc not stored; reached via rec block
-A._nested.List_1.cons    (no CPrj) — aux ctor not stored; rule positions only
-A.rec                    RPrj { block: <rec-block-addr>, idx: 0 }
-B.rec                    RPrj { block: <rec-block-addr>, idx: 1 }
-A.rec_1                  RPrj { block: <rec-block-addr>, idx: 2 }   ← canonical _N
-A.casesOn                DPrj { block: <cases-block-addr>, idx: 0 }
-A.below                  DPrj/IPrj { block: <below-block-addr>, idx: 0 }
-A.brecOn                 DPrj { block: <brecon-block-addr>, idx: 0 }
-A.brecOn.go              DPrj { block: <brecon-go-block-addr>, idx: 0 }
-A.brecOn.eq              DPrj { block: <brecon-eq-block-addr>, idx: 0 }
-```
-
-A few key consequences:
-
-- **The block address is the canonical content hash.** Two mutual
-  declarations with the same canonical layout produce the same
-  block address. Every projection into them therefore also has the
-  same address (the `Address` field is identical, the `idx` is
-  identical because the canonical order is identical).
-
-- **Constructors don't have their own block address.** They live as
-  `Constructor` records inside `Inductive.ctors`; their projection
-  carries both `idx` (which inductive in the Muts block) and `cidx`
-  (which constructor inside that inductive).
-
-- **Aux inductives are not stored in the inductive block.** Only
-  user reps live there (positions 0..n-1). Aux inductives are
-  rediscovered structurally during recursor regeneration, both at
-  compile time (`expand_nested_block` in `compile/aux_gen/nested.rs`)
-  and kernel-side (`build_flat_block` in `kernel/inductive.rs`).
-  No aux `IPrj` / `CPrj` exists; aux references inside other
-  constants are routed through the recursor block by canonical
-  position (`A.rec_1`, `A.rec_2`, …).
-
-- **Aux recursors sit in the same block as user recursors.** Same
-  layout: user recursors first (in `sort_consts` order), then aux
-  recursors in the canonical aux order, the discovery order over the
-  canonical block (§6.2). `A.rec` and `A.rec_1` differ only in
-  `idx`. The kernel revalidates aux ordering by rediscovering the
-  auxiliaries in the same order and position-matching against the
-  stored rec-block (§4.4).
-
-- **Aux `.below_N` definitions (Type case) are standalone
-  constants**, like the user-class `.below` definitions (D6); there
-  is no shared below-def block.
-
-- **`.casesOn` and `.recOn` have no aux variants.** Lean only emits
-  them for user-declared inductives: there are exactly `n` of each.
-
-- **Block membership is per family, not per name.** A closure-only
-  compile (`ix compile --consts`, a claim's dependency closure) may hold
-  `A.brecOn` without `B.brecOn`, or `T.brecOn` without `T.brecOn_1`.
-  `generate_aux_patches` emits a family's whole block whenever Lean
-  exported any of its members, so each block (and every projection into
-  it) has the same address as in a whole-environment compile. Building a
-  whole block can need constants none of the slice's own members reach
-  (a nested family's `<all0>.brecOn_N.eq` cases on the external
-  inductive, `List.casesOn`), so the closure
-  producers close slices under "block of" as well as "references":
-  `Lean.auxFamilySiblings` (`Ix/Common.lean`) names a member's family, and
-  `Ix.EnvScope.collectDeps` and `Lean.collectDependencies` pull it and its
-  dependencies. A slice built any other way that still lacks such a
-  dependency gets the members present, with an `[aux_gen] warning` naming
-  it. `ix pack` needs nothing extra: a block is one Ixon constant.
-
-This structure is what gives canonicity its operational form: the
-content of each block is byte-determined by `(sorted_classes, expanded
-nested aux, level params, parameter telescope)` — none of which depend
-on source declaration order.
-
-### 6.0.1 Compile-time block ordering
-
-The compile-time ordering (per `src/ix/compile/mutual.rs`) is:
-
-```
-compile_mutual_block                    // Primary inductives
-  → Muts([ Indc(U₀), Indc(U₁), … ])     // User classes in sort_consts order
-                                        // (nested aux inductives are not stored, §6.0)
-
-compile_aux_block(rec_consts)           // Primary + aux recursors
-  → Muts([ Recr(U₀.rec), Recr(U₁.rec), …,
-           Recr(A₀.rec), Recr(A₁.rec), … ])   // aux in discovery order (§6.2)
-
-compile_aux_components(cases_on_defs)   // CasesOn definitions, one constant each (D6)
-  → Defn(U₀.casesOn), Defn(U₁.casesOn), …
-
-compile_aux_components(rec_on_defs)     // RecOn definitions, one constant each
-  → Defn(U₀.recOn), Defn(U₁.recOn), …
-
-compile_aux_block(below_indcs)          // Prop-level .below inductives
-  → Muts([ Indc(U₀.below), Indc(U₁.below), … ])
-
-compile_aux_components(below_defs)      // Type-level .below definitions, one constant each
-  → Defn(U₀.below), Defn(U₁.below), …, Defn(U₀.below_1), Defn(U₀.below_2), …
-
-compile_below_recursors(below_indcs)    // .below's own recursors (Prop case)
-  → Muts([ Recr(U₀.below.rec), … ])
-
-compile_aux_components(brecon_defs) × 3 // BRecOn, 3 batches, one constant each
-  → Defn(U₀.brecOn.go), …               //   batch 0: .go sub-definitions
-  → Defn(U₀.brecOn), …                  //   batch 1: main .brecOn
-  → Defn(U₀.brecOn.eq), …               //   batch 2: .eq sub-definitions
-```
-
-Ixon references between these blocks are **content-address projections**
-(`InductiveProj`, `RecursorProj`, `DefinitionProj`): each projection
-carries a block address and an index within that block's member list.
-So the primary recursor `A₀.rec` lives at
-`RecursorProj { block: <rec-block-addr>, idx: 0 }`, independent of
-where the primary inductive `A₀` lives in the inductive block; a
-standalone auxiliary (`A₀.casesOn`, …) is referenced by its own
-address.
-
-### 6.1 User-class ordering (applies to every block kind)
-
-User classes are sorted by `sort_consts` (`src/ix/compile.rs:2526`),
-which is a structural sort:
-
-- Primary key: alpha-invariant structural comparison (ignores names,
-  compares type/value structure).
-- Secondary key: lexicographic on names, for ties.
-- **Alpha-collapse**: if two user inductives are structurally
-  equivalent modulo renaming, they collapse into one *class* with a
-  representative. Only the representative appears in each canonical
-  block; aliases get deep-renamed patches that also land in the same
-  block under the alias's name mapping. Metadata display names at
-  *synthesized* occurrences of a collapsed address inherit the
-  spelling of the source occurrence each derives from (§10.5).
-
-Every downstream block (the recursor block; in the Prop case the
-`.below` and `.below.rec` blocks) inherits this user-class ordering by
-construction — each block enumerates the primary members in the same
-order. The other auxiliaries are one constant each (D6, §6.0).
+Structural comparison and refinement determine primary classes and their
+canonical order. Names select representatives within equal classes under the
+specified tie-break. A name tie-break is not a substitute for proving that the
+emitted declaration is independent of that representative. Aliases retain their
+own source-recovery information while sharing the appropriate canonical member.
 
 ### 6.2 Nested-aux section ordering
 
-The canonical nested-aux ordering is a **property recomputed at
-validation time**, not a stored serialization. It appears positionally
-in the **recursor block** (and below / brecOn derivatives), but never
-in the inductive block — aux inductives are not stored on disk
-(§6.0).
+Canonical expansion walks canonical representatives and their constructors,
+opens external groups in their compiled class order, and uses a FIFO queue for
+newly discovered auxiliaries. Repeated matching occurrences reuse an auxiliary.
+**The auxiliary order is this canonical discovery order.** No subsequent
+structural/content-hash sort is run under `Rules.compiler`.
 
-- The nested expansion (`expand_nested_block_canonical`,
-  `crates/compile/src/compile/aux_gen/nested.rs`) walks the class
-  representatives' ctors in canonical order, with alias references
-  rewritten to their representatives and each external group opened
-  as its compiled canonical classes, replacing each nested occurrence
-  `ExtInd (args containing block params)` with a synthetic
-  `_nested.ExtInd_N α` aux inductive (compile time).
-- **The canonical aux order is the order of discovery** of that
-  expansion: a FIFO queue over the block's types, each constructor
-  walked pre-order (decision D2, the A2 migration of 2026-10-03;
-  `docs/compiler-passes.md` §2.5). No sort runs:
-  `sort_aux_by_partition_refinement` keeps its name for its callers
-  and returns the identity permutation (`nested.rs`, "Canonical order
-  of the aux section: discovery order"); in Lean,
-  `Ix.Compile.Canon.canonicalAuxOrder` under `Rules.compiler` is the
-  identity on the canonical expansion (`Ix/Compile/Canon/Nested.lean`,
-  called from `Ix/AuxGen/Nested.lean`). The structural sort this
-  section described before (temporary aux `Indc` values ordered by
-  `sort_consts`) is run by neither compiler; Pass 1 keeps it only as
-  the `Rules.today` alternative for the census.
-- Equal nested occurrences reuse one aux during the expansion (the
-  canonical expansion deduplicates them up to compiled addresses;
-  `replace_if_nested`'s `aux_seen` table, §7 invariant 3); source
-  auxes related to one canonical aux all point at it (`perm`, §6.4).
+The source walk may discover a different order; §6.4 records its correspondence.
+The historical function name `sort_aux_by_partition_refinement` does not imply
+that the production canonical walk sorts its auxiliary segment. See
+[the Pass 1 expansion](../Ix/Compile/Canon/Nested.lean) and the
+[nested layout contract](compiler-passes.md#25-nested-auxiliaries-in-discovery-order-def-25-d2).
 
-This gives a **source-order-independent** canonical layout: the
-expansion starts from the canonical class order (§6.1), which no
-permutation of the source declarations changes. Proved at Pass 1's
-level (M7 L1; roots of `l1Roots` in `Ix/CompileCert/Audit.lean`, on
-the three standard axioms): `expand_spec` and
-`componentNested_discovery` (`Ix/CompileCert/Canon/Expand.lean`: the
-`k`-th aux is discovered by an earlier queue entry, in non-decreasing
-order) and `canonBlock_member_order_nested`
-(`Ix/CompileCert/Canon/NestedCanon.lean`: the same canonical aux
-section for every member order). The compiler's own expansion port
-agrees with Pass 1's `expand` by test (`canon-pass1`), not by proof.
-
-The recursor block's aux positions (`<addr>.rec_1`, `.rec_2`, …) are
-the **only stored manifestation** of this canonical ordering. The
-kernel revalidates by:
-
-1. Rediscovering aux from the stored members' ctor walks in the same
-   discovery order (`build_flat_block` in
-   `crates/kernel/src/inductive.rs`; `buildFlatBlock` in
-   `Ix/Tc/Inductive.lean`), opening each external group as its
-   stored block, as the compilers do. No sort runs (§4.4).
-2. Position-by-position validating each stored aux recursor against
-   the kernel's aux at the same offset (`is_def_eq` on the recursor
-   type).
-
-Compile side and kernel side use the same walk, so they produce the
-same canonical order on the same input. A divergence is a kernel
-correctness bug, immediately observable as a `kernel-check-const`
-regression.
-
-The recursor block numbers its aux recursors in this same canonical
-order, so an aux at canonical position `i` has its recursor at the
-`i`-aligned position after the user recursors. Its other aux-derived
-constants (`.below_N`, `.brecOn_N`, …) are standalone constants since
-D6 (§6.0), named through the `rec_N` mapping of §6.4.
+Discovery and ownership theorems describe successful expansion under their
+stated hypotheses. General paired expansion, representative independence and
+production refinement must still be supplied where the full compiler proof
+needs them; discovery order alone does not discharge those obligations.
 
 ### 6.3 Recursor binder layout
 
-For any recursor (primary or nested-aux) in the canonical recursor
-block, the type binder chain is:
-
-```
-∀ params, motives, minors, indices, major, motive_target(…)
-```
-
-with motives and minors split into user + aux segments:
-
-```
-motives:  [ user-motives in sort_consts order ]
-          [ aux-motives in structural aux order, dedup'd ]
-minors:   [ user-minors grouped by user class ]
-          [ aux-minors grouped by aux class, structural aux order ]
-rules:    one per ctor, flattened in the same user → aux layout.
+```text
+∀ parameters, motives, minors, indices, major, target motive …
+motives: primary classes, then canonical-discovery auxiliary positions
+minors:  constructors of those primary classes, then of those auxiliaries
+rules:   this recursor's own flat member's constructors, in their order
 ```
 
-The same user/aux split appears in `.below` value bodies (which apply
-the rec with motive/minor wrappers in the same order), `.brecOn`,
-`.casesOn`, `.recOn` — everything that holds a rec-shaped argument
-list inherits the canonical split.
+Each rule selects the corresponding minor from the global minor band.
+Dependent binder indices and recursive arguments must follow that layout.
+Permutation of a list of names alone does not establish recursor correctness.
 
 ### 6.4 The `rec_N` / `below_N` / `brecOn_N` name mapping
 
-Lean uses **source-walk indexing** for aux-member names:
-`<source_all[0]>.rec_{source_j + 1}` where `source_j` is the order
-in which Lean's elaborator discovered the aux during ctor scanning.
+The source layout records `perm[source_j] = canonical_i`. Several source
+positions can reach one canonical auxiliary after collapse. Source-facing names
+retain their Lean positions, while canonical display declarations use the
+canonical layout. Recursors and the applicable `below`/`brecOn` families must
+use the same correspondence; one family's successful lookup is insufficient.
+Out-of-component positions use an explicit sentinel and cannot be indexed as
+members of this canonical block.
 
-Ix canonical layout uses **canonical aux indexing** internally. To keep
-Lean-visible naming stable, we carry a permutation:
+### 6.5 Evaporated auxiliaries
 
-```
-perm[source_j] = canonical_i   // O(n_source_aux) mapping
-```
+Splitting Lean's original mutual group into canonical SCCs can move an auxiliary
+outside a component or change whether it must be generated there. The mapping,
+absence and evaporation flags must reflect that relationship. An absent position
+is not permission to substitute a similarly named recursor. The
+[nested specification](../Ix/CompileCert/Canon/NestedCanon.lean) and name-map clauses
+retain their matching, bound and ownership hypotheses.
 
-and expose each `canonical aux at index i` under the Lean-visible
-name `<source_all[0]>.rec_{source_j + 1}` for the *representative*
-`source_j` of each canonical class (the minimum `source_j` whose
-`perm[source_j] = canonical_i`). The mapping applies identically to
-`.below_N`, `.brecOn_N`, `.brecOn_N.go`, `.brecOn_N.eq` — they all
-share the canonical aux-section numbering.
-
-Because of alpha-collapse in the aux section, multiple source `_N`
-names can point at the same canonical aux; all such names resolve to
-the same address.
-
-### 6.5 Evaporated auxiliaries (over-merge splits)
-
-A source aux can lose its home entirely: its OWNER (the inductive
-whose constructor walk discovers the occurrence) stays in an SCC while
-every spec-param inductive splits into other SCCs. Example:
+For example:
 
 ```lean
 mutual
   inductive A | mk : List B → List C → A
-  inductive B | leaf
-  inductive C | leaf
+  inductive B | leaf : B
+  inductive C | leaf : C
 end
 ```
 
-SCC splitting yields `{A}`, `{B}`, `{C}`. From `{A}`'s view, `List B`
-mentions no block member — it is no longer a nested occurrence at all.
-Since SCCs partition the block, no SCC contains both the owner and the
-specs: the aux **evaporates**. (`compute_aux_perm` marks these source
-positions `PERM_OUT_OF_SCC`; an out-of-SCC entry whose owner is ALSO
-out-of-SCC is just another SCC's aux, handled there.)
-
-The canonical form follows from the isomorphism principle: a source
-declaration with `C` outside the mutual is isomorphic and never had
-the extra motives, so they are irrelevant and canonicalization drops
-them. Dropping the irrelevant motives/minors from `<all0>.rec_N`
-leaves exactly the EXTERNAL inductive's own generic recursor — which
-is also what the kernel regenerates from the external block, so no
-other stored form can check. Concretely:
-
-- `<all0>.rec_N` claims are **address aliases of `<Ext>.rec`**
-  (`aux_gen`'s evaporated-alias pass). All evaporated auxes with the
-  same external head collapse to one address, across declarations.
-- (History: this bullet and the next describe the call-site surgery,
-  deleted 2026-10-07, §8. Under Pass 3 a changed block’s Lean-named
-  auxiliaries compile as images with source telescopes. This removes
-  the legacy argument adaptation; Pass 3 still develops occurrences
-  and records their source form with `_ix.inline`,
-  `docs/compiler-passes.md` §4, §11.)
-  Call sites are rebuilt onto the external telescope by a
-  **head-rewrite `CallSitePlan`**: spec args and the extended level
-  list are derived from the source recursor's type instantiated with
-  call-site args (`surgery::derive_head_rewrite_app`); the aux's own
-  motive maps to the external motive slot; its minor band is kept,
-  with `adapt_split_minor` synthesizing IHs consumed from dropped
-  motives (via the target's source recursor — including AUX targets,
-  which recurse through their own head-rewrite plans). The ORIGINAL
-  head (source name + source levels) is preserved in `meta_sharing`,
-  pointed at by `ExprMetaData::CallSite::orig_head`, and restored by
-  decompile.
-- `.below_N` / `.brecOn_N[.go|.eq]` of evaporated auxes have no
-  canonical regeneration: they compile as **surgered originals**
-  (source telescopes kept, embedded `rec_N` spines rewritten), exactly
-  like `_sizeOf_N`. Their claims typecheck; address identity across
-  isomorphic declarations is deliberately NOT promised for these
-  derived definitions (their telescopes still carry the source arity).
-- The rewrite domain is restricted to single-motive external targets;
-  unsupported shapes skip both alias and plan together and fall back
-  to original compilation, which kernel-check reports per constant.
-
-Decompile regenerates the Lean-faithful over-merged view from the
-stored `Muts` metadata, and the regeneration is **byte-exact**: for
-every aux constant, `roundtrip_block`'s recompile of the regenerated
-form reproduces `Named.original.0` exactly (this requires mirroring
-the production compile paths' `preseed_expr_tables` call — the
-serialized constant embeds its ref/univ tables in preseeded sorted
-order, so an unseeded recompile permutes every `Ref`/univ index into
-a byte-different, semantically identical constant). A Phase-A address
-mismatch is therefore a **hard error** with no aux exemption; the
-recovery path (`recover_aux_from_original`) only preserves the
-Lean-facing constant for diagnosis while the error is recorded.
+The dependency graph splits into `{A}`, `{B}` and `{C}`. In A's canonical
+component, `List B` and `List C` no longer contain a member of that component,
+so those fields do not require its nested auxiliaries. The original mutual
+group's source recursors still need faithful Pass 3 images and source-layout
+recovery. Evaporation does not authorize changing their telescopes by aliasing
+them to the new component's recursors. The
+[evaporation contract](compiler-passes.md#26-evaporation)
+lists the complete conditions.
 
 ### 6.6 The content-address recipe
 
-Each block's content hash is computed from its **members array in
-canonical layout order**. The aux permutation and the Lean-visible
-name mapping are metadata on the `Named` entries (see §10) — they do
-not enter any block's content hash.
-
-Because each block's canonical layout is deterministic from the set
-of user-class inductives (after alpha-collapse) and the nested-aux
-section discovered from them in a fixed order (§6.2), two Lean
-mutual declarations that agree on those produce identical block content hashes
-**and** identical projection addresses for every aux constant —
-regardless of source declaration order.
-
-Since the level canonicalization (§10.6), the recipe additionally
-presupposes canonical (`canonUniv`-fixed) `univs` tables — level
-spellings have left the hash input.
-
-Since format version 4, the recipe also presupposes the canonical
-`sharing` table of §6.7. The members array, `refs` and `univs` fix the
-expressions. The sharing construction then fixes how they are written.
+A block's ordered members, references, canonical universe table and canonical
+sharing representation determine its serialized payload. The source auxiliary
+permutation and presentation metadata do not enter that payload. Any declaration
+that changes the actual source unit, type or value must be assessed under the
+[output contract](compiler-passes.md#114-identity-requirements-a-checker-may-rely-on),
+rather than assumed to be a cosmetic change.
 
 ### 6.7 Canonical sharing
 
-A block's `sharing` table, and the choice of each occurrence (inline or
-`Share`), are part of the canonical definition. They are the output of
-`Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Rust
-`canonical_sharing_tiered(ShareLayout::TagN, ..)`) on the block's roots,
-with every existing `Share` expanded first. The roots are the
-`ConstantInfo` expressions in their fixed order (`constantInfoRootExprs`).
-The output depends only on those expanded expressions:
+Both compilers reconstruct the sharing representation from expanded expression
+roots in their fixed order. Structural IDs determine identity; hashed lookup
+and pointer caches accelerate discovery. The selected stored set, topological
+order and index widths have deterministic tie-breaks, and stored references
+point backwards.
 
-- **Identity is structural.** Subterms are identified by structural IDs,
-  numbered by height and then by constructor, scalars and child IDs.
-  Hashes and the interner's pointer cache only speed up discovery; they
-  never decide identity. `canonicalize_det` proves that the numbering of
-  interned terms depends only on the terms the roots denote. The step that
-  interns the input (`expand`) is outside the proofs; that pointer layout
-  does not change the bytes is tested on generated inputs.
-- **Metadata does not participate.** The arena, names, binder info and
-  call-site data play no part, so a metadata-only change never moves an
-  address. Conversely, re-sharing never invalidates metadata: arena nodes
-  follow the unshared tree and a `Share` is transparent to them
-  (`sharing-minimum-integration.md` §5.4).
-- **Every tie is pinned.** The stored set is the `setPrec`-least minimum of
-  phase 1. The first tier, the Kahn order and the width selection all have
-  fixed tie-breaks. The result therefore does not depend on search order,
-  parallelism or hash-map iteration. The Rust implementation's
-  deterministic parallelism is checked by byte-identity tests.
-- **Backward references.** Entry `i` references only entries below `i`.
-  Expanding the table left to right reproduces every root exactly.
-- **Idempotent.** Normalizing a canonically shared constant reproduces its
-  bytes (tested; proved under the hypothesis that the output expands to the
-  input's canonical DAG, `canonicalSharingTieredTable_idem`).
-
-[Ixon](Ixon.md#sharing-system) describes the three phases and the width
-selection. It also states which properties are machine-checked: phase-1
-minimality, the per-phase specifications of phases 2 and 3 and of the
-selection, that the minimized length is the serialized length
-(`canonicalSharingTiered_serialized`), and wire validity of the output
-(`canonicalSharingTiered_format`), all for a run on the canonical DAG. Three
-things are not claimed: that the result is a global byte minimum, that the
-step building the DAG from the input expressions is correct, and that the
-Rust implementation is proved. Rust is held to the Lean definition
-by differential tests (`exact-sharing-ffi`, and the corpus differential on
-Init and a Mathlib sample described in
-[Ixon](Ixon.md#what-is-proved-and-what-is-not)).
-
-A failed construction, for example one that exceeds a resource limit, is a
-compile error for that block. There is no fallback, because a fallback
-would make the address depend on resource limits rather than on the
-expressions.
-
-Both compilers route every block through this construction, including
-aux-gen blocks, and in Rust also kernel egress and the decompiler's
-recompile. The recompile invariant `Named.original` (§9.2) relies on
-recompile using exactly this route.
-
-Lean and Rust produce identical bytes for every stored constant of the
-Init (56,783) and Init+Std (100,277) files compiled on Lean 4.34.0, and
-did for Init (56,622) and a Mathlib sample of 20,284 constants on Lean
-4.33.1; the merge-queue suite `lake test -- --ignored compile` requires
-the Lean and Rust compilers to write identical environments for its whole
-test environment (238,574 constants on Lean 4.34.0).
+The checked sharing results concern runs on the canonical DAG: phase-1
+minimality, subsequent phase specifications, serialized length and wire validity.
+Idempotence retains its output-expands-to-input hypothesis. The input-to-DAG
+bridge and Rust implementation agreement are separately tested; a global byte
+minimum is not claimed. These boundaries and the exact theorems are in
+[Ixon's sharing specification](Ixon.md#sharing-system) and its
+[proof-status section](Ixon.md#what-is-proved-and-what-is-not).
+A failed sharing construction is a block error, with no resource-dependent
+alternative encoding.
 
 ## 7. The Compile Pipeline
 
-```
-Lean.Env
-  │
-  │  (for each mutual inductive block)
-  ▼
-sort_consts → sorted_classes: Vec<Vec<Name>>                  [compile.rs]
-  │                                                           // alpha-collapse
-  │
-  ▼
-compile_mutual_block(primary_inductives)                      [compile.rs]
-  → Muts([ Indc(U₀), Indc(U₁), … ])                           // INDUCTIVE BLOCK
-  // Constructors are embedded in each Indc's `ctors` field.
-  //
-  // Nested-aux inductives are not stored (§6.0): the
-  // `_nested.ExtInd_N` synthetic inductives built by the nested
-  // expansion are inputs to aux generation only, in discovery
-  // order (§6.2).
-  │
-  │
-  ▼
-generate_aux_patches(sorted_classes, original_all, …)         [aux_gen.rs]
-  │
-  ├─ expand_nested_block_canonical(reps, alias_to_rep, stt)   [nested.rs]
-  │    → ExpandedBlock { types, aux_to_nested, aux_ctor_map, … }
-  │      (auxes in discovery order, §6.2)
-  │
-  ├─ sort_aux_by_partition_refinement(&mut expanded, stt)     [nested.rs]
-  │    → the identity: the canonical aux order is the
-  │      expansion's discovery order (§6.2, §11.2)
-  │
-  ├─ compute_aux_perm(expanded, original_all, …)              [nested.rs]
-  │    → perm[source_j] = canonical_i
-  │
-  ├─ generate_recursors_from_expanded(sorted_classes, expanded) [recursor.rs]
-  │    → Vec<(Name, RecursorVal)>  // in canonical layout
-  │
-  ├─ RestoreCtx::restore — map _nested.X_N references in rec bodies
-  │    back to ExtInd spec_params form                        [expr_utils.rs]
-  │
-  ├─ generate_below_constants, generate_brecon_constants,
-  │    generate_cases_on, generate_rec_on                     [below/brecon/…]
-  │    → Derived patches (Defn or Indc, per aux kind)
-  │
-  └─ alias_patches — deep-rename each rep's patches for each
-       non-rep class member                                   [aux_gen.rs:648-700]
-  │
-  ▼
-AuxPatchesOutput { patches, perm, … }
-  │
-  │  (per aux kind; D6: one constant per auxiliary, only the recursor
-  │   family and the Prop-level .below family stay blocks:)
-  ▼
-compile_aux_block(rec_consts)         → Muts([ Recr(…), … ])  // REC BLOCK
-compile_aux_components(cases_on_defs) → Defn(…), Defn(…), …   // one constant each
-compile_aux_components(rec_on_defs)   → Defn(…), Defn(…), …   // one constant each
-compile_aux_block(below_indcs)        → Muts([ Indc(…), … ])  // BELOW INDC BLOCK (Prop)
-compile_aux_components(below_defs)    → Defn(…), Defn(…), …   // one constant each (Type)
-compile_below_recursors(…)            → Muts([ Recr(…), … ])  // BELOW.REC BLOCK (Prop)
-compile_aux_components(brecon_go)     → Defn(…), Defn(…), …   // one constant each
-compile_aux_components(brecon_main)   → Defn(…), Defn(…), …   // one constant each
-compile_aux_components(brecon_eq)     → Defn(…), Defn(…), …   // one constant each
-  │
-  │  The REC BLOCK's member order is [user-classes (sort_consts) | aux (discovery order)].
-  │  Constants reference each other by content address and by projections
-  │  into blocks (IndcProj / RecrProj / DefnProj), NOT by embedding.
-  │
-  ▼
-stt.aux_perms.insert(
-    name_of(<source_all[0]>),           // key: Name (from env.get_name(addr))
-    AuxLayout { perm, source_ctor_counts },
-)
-  │
-  ▼
-Pass 3 (a changed block only): images under the Lean names, [pass3/]
-  the Ix auxiliaries under `_ix` names, `_ix.inline` records
-  at the occurrences it rewrites (the call-site surgery, §8,
-  until 2026-10-07)
-  │
-  ▼
-Ixon bytes (many canonical blocks + per-block metadata)
-```
+Both compilers use Pass 1 canonicalization, Pass 2 generators and Pass 3's
+faithful image rewrite, optimizations and clique handling. The current order,
+recognizers, faithful fallbacks and emission rules are maintained in
+[compiler-passes.md](compiler-passes.md); backend ownership is in
+[compiler-rust.md](compiler-rust.md). These stages' general proof obligations are
+not replaced by their implementation descriptions.
 
-Five invariants hold at the pipeline seams:
+## 8. Call-Site Surgery (history)
 
-1. **Ingress is name-only via content-hash.** `compile_name(name)`
-   uses `Blake3(name.components)`; hygiene is stripped.
-2. **Sort is total, deterministic, and refinement-closed.**
-   `sort_consts` iterates until the partition of a mutual block into
-   equivalence classes stabilizes. Name-based tie-breaking only selects
-   *within* a class — class membership is determined by structure.
-3. **Nested-aux discovery is de-duped by bundle-hash.**
-   `replace_if_nested` in `nested.rs` keeps an `aux_seen: Vec<(Hash, Name)>`
-   table so alpha-equivalent nested occurrences reuse the same aux name.
-4. **Nested-aux section is in discovery order over the canonical block.**
-   The expansion starts from the canonical classes (invariant 2) and
-   lists its auxes in discovery order, the canonical order; no sort
-   runs (`sort_aux_by_partition_refinement` is the identity, §6.2,
-   §11.2), so two semantically equal blocks declared in different source
-   orders produce byte-equal aux sections (proved at Pass 1's level:
-   `canonBlock_member_order_nested`, M7 L1).
-5. **Binder names exit the bytes, into the arena.** `put_expr` omits
-   names on `Lam`/`All`/`Let`; the arena records them as
-   `ExprMetaData::Binder` entries that never contribute to
-   `Constant::commit()`.
-
-A sixth invariant governs the final step, where each block's bytes are
-written:
-
-6. **Sharing is canonical (format v4).** Each block's `sharing` table and
-   `Share` occurrences are the output of the canonical construction (§6.7)
-   on its expanded roots. They do not depend on how the compiler built or
-   shared the expression DAG.
-
-## 8. Call-Site Surgery (history: deleted 2026-10-07)
-
-> **History.** This section describes the legacy call-site surgery, the
-> compile pipeline's last step until the flip (the Lean default, M6) and
-> M6R slice 6 (2026-10-07), which deleted it from both compilers. Pass 3
-> replaced it: a changed block's Lean-named auxiliaries compile as
-> *images* with their Lean telescopes, removing the legacy adaptation
-> of call-site arguments to canonical telescopes. Pass 3 still develops
-> occurrences and records their source form with `_ix.inline`
-> (`docs/compiler-passes.md` §4, §11). The Ixon format still decodes the
-> `CallSite`/`EtaCallSite` metadata the surgery wrote (tags 10 and 11, the
-> `-a2` references); nothing writes it now, and a recompile no longer
-> reproduces a surgered call site. The text below is kept as written.
-
-User code — and Lean-auto-generated constants like `_sizeOf_N`,
-`_ctorIdx`, `.noConfusion` — reference aux constants by applying them
-to source-order argument lists:
-
-```
-<source_all[0]>.rec_N   p₁ … p_P   m₁ … m_K   x₁ … x_L   i₁ … i_I   j
-                        params     motives    minors     indices    major
-```
-
-In Ix, the canonical `rec_N` has motives / minors in canonical order
-(different positions from what the source call site expects). Surgery
-**rewrites each call site's argument list** to match the canonical
-aux's binder order, using the stored `perm` and `source_ctor_counts`.
-
-The `CallSitePlan` per aux name records:
-
-- `motive_keep[i]`: which source motives survive alpha-collapse
-- `minor_keep[i]`: which source minors survive
-- `source_to_canon_motive[i]`: permutation into canonical positions
-- `source_to_canon_minor[i]`: same for minors
-
-At every `App(rec, args)` site, surgery decomposes the spine and
-reorders / drops arguments accordingly.
-
-Each non-head-rewritten `X.rec` plan also derives a
-`BRecOnCallSitePlan` (motive band + handler band, no minors) that is
-registered for every regenerated sibling whose public telescope embeds
-the motive order: `X.brecOn`, and — Type-level only — `X.brecOn.go`
-and `X.brecOn.eq` (identical telescopes: params, motives, indices,
-major, handlers), plus `X.below` (and, for Prop-level below
-inductives, the below ctors and `.below.casesOn`). The `.go`/`.eq`
-keys are load-bearing: Lean's auto-generated equation lemmas
-(`f.eq_def`) reference `X.brecOn.go` / `X.brecOn.eq` DIRECTLY with
-explicit motive arguments, so without those keys eq_def proofs ship
-source-order motives against the canonical-order regenerated `.go` and
-fail kernel check with `AppTypeMismatch` (the torchlean
-`NN.GraphSpec.DAG.*.eq_def` family; fixture
-`Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDef`).
-
-The IXON expression after surgery is already the canonical App spine.
-`ExprMetaData::CallSite` is the metadata wrapper for that spine, with
-two deliberately different views:
-
-- `entries` is in **Lean source order**. Decompile uses it to rebuild
-  the original source-order telescope. A `Kept` entry points at a
-  canonical argument by `canon_idx`; a `Collapsed` entry points into
-  `ConstantMeta.meta_sharing` for source arguments that did not survive
-  canonicalization.
-- `canon_meta` is in **canonical App-spine order**, one arena root per
-  canonical argument actually present in the IXON expression. Kernel
-  ingress uses it to assign binder / reference metadata to each
-  canonical argument without guessing names from content addresses.
-
-These two maps are both metadata. They do not choose the canonical
-argument order — the IXON App spine already does that — and they are
-not accepted as evidence of canonicity. Kernel ingress only checks that
-`canon_meta.len()` matches the canonical telescope length and then
-uses those roots as names / binder info for the already-present
-arguments. The kernel still validates block order and aux-recursion
-order independently (§4.4).
-
-The separation matters for split-SCC minors: a source minor may be
-stored as `Collapsed` for decompile while compile emits a synthesized
-canonical wrapper argument. In that case there is no source-order
-`Kept` entry from which kernel ingress could recover the wrapper's
-reference metadata; `canon_meta` is the direct metadata sidecar for
-the canonical wrapper.
-
-**This is why patches must be emitted in canonical layout.** Surgery
-operates on call sites, assuming the callee has canonical binder
-order. If the patch were in source order, surgery's rewrites would
-misalign with the actual callee, and transitively-dependent constants
-(notably `_sizeOf_*`) would reference wrong addresses.
+The legacy call-site surgery was deleted from both compilers. The format still
+reads its historical `CallSite`/`EtaCallSite` metadata; current compilation writes
+Pass 3 source-occurrence records. The former algorithm is available in version
+history and is not a second supported compiler mode.
 
 ## 9. The Decompile Pipeline
 
-Decompile is the inverse of compile: given an Ixon environment (bytes
-+ `Named` metadata), reconstruct Lean `ConstantInfo` values that Lean
-treats as equivalent to the original source. It has two audiences with
-different requirements:
-
-- **Kernel / ZK consumers** want the *canonical* Lean form — the one
-  whose recompile will yield byte-equal Ixon, which is what the
-  proof-carrying-code pipeline checks against.
-- **Human / elaborator consumers** want the *source-faithful* Lean
-  form — the one that matches what the user typed, with original
-  binder names and the original Lean-visible `rec_N` / `below_N`
-  numbering.
-
-These two forms differ because aux_gen rewrites some constants
-(notably recursors, `.below`, `.brecOn`) into canonical layouts that
-are not byte-equal to Lean's own `.rec` / `.below` / `.brecOn` output.
-The `Named.original` field (§9.2) is how we serve both audiences from
-the same Ixon environment.
-
-### 9.1 The three-track decompile
-
-```
-Ixon bytes + Named map
-  │
-  ▼
-Ixon decoder → (Constant content, ConstantMeta, Option<(orig_addr, orig_meta)>)
-  │                                             ───── Named.original ─────
-  │
-  │  (for each Named entry)
-  ▼
-route on constant kind + Named.original presence
-  │
-  ├─ Non-aux_gen constant (Def, Axio, Quot, ordinary Indc/Ctor/Rec):
-  │     original == None
-  │     → decompile Constant content directly using meta.arena for
-  │       binder names.
-  │     → Result: one LeanConstantInfo; canonical ≡ source for these.
-  │
-  ├─ Aux_gen-rewritten constant (.rec, .casesOn, .below, .brecOn,
-  │                              .rec_N, .below_N, .brecOn_N, etc.):
-  │     original == Some((orig_addr, orig_meta))
-  │     │
-  │     ├─ Canonical path (for recompile / kernel / ZK):
-  │     │     Decompile the Constant at `named.addr` using
-  │     │     `named.meta`. This is the structurally sorted, alpha-collapsed,
-  │     │     source-order-independent form.
-  │     │
-  │     └─ Source-faithful path (for elaborator / decompile_check):
-  │           Decompile the Constant at `orig_addr` using `orig_meta`.
-  │           This is the original pre-aux_gen form, with Lean's
-  │           source-order motives, source-order `rec_N`, and
-  │           original binder names.
-  │
-  └─ Non-aux_gen projection into an aux_gen-rewritten block
-    (e.g. `A.rec` where A's rec block was regenerated):
-        Decompile resolves the projection against the canonical
-        block's `idx`, then reconstructs the Lean recursor by
-        composing the block's per-member Lean form with the
-        per-member `original` when needed.
-```
-
-Key correspondence:
-
-- `named.addr` is the **content address** of the canonical
-  constant in `env.consts`. Equal for alpha-collapsed aliases
-  (that's the epimorphism direction).
-- `named.meta` is the **canonical metadata** — binder names, mdata,
-  `all` field — aligned with the canonical-layout constant at
-  `named.addr`.
-- `named.original.as_ref().map(|(a, _)| a)` is the content address
-  of the **pre-aux_gen constant** (if the rewrite changed the form).
-- `named.original.as_ref().map(|(_, m)| m)` is the pre-aux_gen
-  metadata — same arena shape, but with the Lean-source binder names
-  and Lean-source `all` ordering.
+Source recovery and reading the transformed/canonical declaration serve different
+purposes. Evaluating the reconstructed source value does not independently test
+the transformed value. The validation guide keeps these checks separate.
 
 ### 9.2 The `Named.original` field
 
-```rust
-// src/ix/ixon/env.rs
-pub struct Named {
-  /// Address of the canonical Constant (in env.consts).
-  /// Alpha-equivalent sources share this address.
-  pub addr: Address,
-
-  /// Metadata aligned with the canonical form: binder names, mdata,
-  /// BinderInfo, Lean-source `all` list, reducibility hints, etc.
-  pub meta: ConstantMeta,
-
-  /// When aux_gen replaces the source Lean form with a canonical
-  /// layout, `original` carries the pre-rewrite form:
-  ///   - original.0 = content address of the source-form Constant
-  ///                  (may equal `addr` if no rewrite; then `None`)
-  ///   - original.1 = metadata for the source form
-  ///
-  /// None for constants that aux_gen doesn't touch (ordinary defs,
-  /// axioms, user inductives) — their canonical IS the source.
-  pub original: Option<(Address, ConstantMeta)>,
-}
-```
-
-**Who writes it.** `src/ix/compile.rs:331` populates `original`
-inside the aux_gen post-compilation step. For every constant whose
-aux_gen patch differs from Lean's own output (i.e. any `.rec`,
-`.casesOn`, `.recOn`, `.below`, `.brecOn` in a block that required
-canonicalization), the compiler:
-
-1. Compiles the canonical patch the way aux_gen emits it —
-   its address becomes `named.addr`, its metadata `named.meta`.
-2. Compiles the Lean-source form through `compile_const_no_aux`
-   (`compile.rs:2584`), which is a pristine compile that does NOT
-   enter aux_gen — its address becomes `named.original.0`, its
-   metadata `named.original.1`.
-3. Only the canonical patch goes into `env.consts`. The source-form
-   compile is ephemeral: its constant is never stored (validate-aux
-   phase 3, "No ephemeral leaks", fails if one is), so `original.0` is
-   a provenance address, not a reference. The `Named` entry points at
-   the canonical via `addr` and records the original via `original`;
-   decompile tolerates the original's bytes being absent, and
-   `Env::prune_to_closure` (`ix pack`) follows `original.0` only when
-   the source env happens to store it.
-
-**Who reads it.** `src/ix/decompile.rs`:
-
-- Lines 2534, 2544: `if let Some((ref orig_a, _)) = named.original` —
-  decompile uses the *original* address when it needs the
-  source-faithful form (e.g. for roundtrip against Lean's own output
-  in ValidateAux Phase 6).
-- Line 2648: picks between `named.meta` and `named.original.as_ref().unwrap().1`
-  depending on which form the caller asked for.
-- Line 1889: `pub(crate) fn is_aux_gen_suffix(name: &Name) -> bool` —
-  the suffix predicate.
-- Line 3055: `if named.original.is_some() && is_aux_gen_suffix(name)` —
-  routing gate that selects the canonical-vs-source two-track path.
-- Line 4038: `if named.original.is_none()` — fast path for ordinary
-  constants (no aux_gen involvement).
-
-**Why two forms are needed.** Without `original`:
-
-- Decompile could produce only the canonical form, which doesn't
-  match what Lean's `A.rec` looks like (canonical has structurally sorted
-  motives / aux, Lean has source-walk order). That breaks
-  ValidateAux Phase 6 (aux congruence) and any source-faithful Lean
-  isomorphism check layered on top of decompile.
-- Or decompile could re-run aux_gen on the decompiled inductive
-  block and derive a fresh canonical form. But Lean-version drift
-  in the source walk would cause that fresh form to diverge from
-  the stored canonical (invariant 4.2 violated).
-
-Storing both forms is the cheapest way to serve both consumers and
-preserve invariant 4.2 across Lean upgrades.
+`Named.addr` identifies the stored compiled declaration. For an image or promoted
+regenerated auxiliary, `Named.original` carries the independently compiled source
+form's address and metadata. It is source-name-specific: an alias cannot borrow
+a different declaration's original merely because both compiled addresses agree.
+The original declaration blob need not be stored: original-form compilation of
+regenerated auxiliaries deliberately omits it. The decompiler handles that case
+through regeneration and the recorded metadata, rather than assuming the address
+can always be dereferenced to source bytes.
+Pass 3's `_ix.inline` and `_ix.inline_meta` additionally preserve rewritten source
+occurrences through `metaSharing`. See
+[the actual record contract](compiler-passes.md#113-the-records-the-output-carries).
 
 ### 9.3 Mutual-block reconstruction
 
-For aux_gen-rewritten mutual blocks, decompile's canonical path needs
-to regenerate the block in the same layout compile produced. The
-entry point is `decompile_block_aux_gen` at
-`src/ix/decompile.rs:3226`, which today proceeds as follows:
-
-```
-decompile_block_aux_gen(block_addr, env):
-  1. Before any block work, rehydrate_aux_perms_from_env (decompile.rs:3148)
-     has already scanned every Muts-tagged Named entry and populated
-     `stt.aux_perms[source_first_name] = layout` from
-     ConstantMetaInfo::Muts.aux_layout (§10.2).
-  2. Load Muts block at `block_addr`.
-  3. For each primary inductive in the block, decompile its user-form
-     InductiveVal (using original.1 for source-faithful binder names).
-  4. Build a singleton-class alpha layout (decompile.rs:3252-3259) —
-     one inductive per class. This is a tactical workaround for the
-     full sort_consts re-run and is the remaining open item here
-     (§17.2); it's sufficient for non-alpha-collapsed blocks but
-     skips the collapse-class rebuild.
-  5. Look up the block's stored AuxLayout from `stt.aux_perms`
-     (populated by step 1). When present, pass it to
-     `generate_canonical_recursors_with_layout` at decompile.rs:3324
-     to recover the exact canonical aux layout compile produced.
-     When absent (block had no nested auxes), fall back to
-     `generate_canonical_recursors_with_overlay`.
-  6. Insert decompiled user-form ConstantInfos into dstt.env.
-```
-
-**Decompile MUST NOT** run a fresh source walk on the decompiled
-inductives to re-derive the nested-aux order. A fresh walk's
-discovery order could differ from the original compile-time source
-walk (Lean-version drift, ctor reordering in the source), which
-would produce different `_N` numbering and break invariants 4.2 and
-4.3. The persisted `ConstantMetaInfo::Muts.aux_layout` **preserves
-the original compile-time source-walk numbering** forever; that's
-the whole point of storing it.
-
-### 9.4 Recompilation and the roundtrip fixed point
-
-The strongest statement of canonicity is the **fixed-point property**:
-
-```
-∀ c ∈ Lean. compile(decompile(compile(c))) = compile(c)   as Ixon bytes
-```
-
-i.e. one compile → decompile → compile round-trip produces the same
-canonical bytes as the first compile. This is invariant 4.2 made
-operational.
-
-The mechanism:
-
-```
-compile(c)                              ─▸ canonical bytes B₁,
-                                            with Named { addr = A_canon,
-                                                         meta = M_canon,
-                                                         original = Some((A_orig, M_orig)) }
-                                            when c is aux_gen-touched.
-
-decompile( … )  ─ (source-faithful track) ─▸ Lean constant c'
-  reads:                                      with binder names from
-    - named.original.1 for aux_gen names      M_orig, mutual-member
-    - named.meta for others                   order from M_orig.all,
-                                              Lean-source _N numbering.
-
-compile(c')                             ─▸ canonical bytes B₂
-  path:
-    - sort_consts sees the same α-classes as the first compile
-      because c' has the same structural shape (only cosmetic fields
-      may differ, and they don't affect sort_consts).
-    - expand_nested_block produces the same ExpandedBlock because
-      c''s ctors mention the same nested inductives applied to the
-      same structural block members.
-    - sort_aux_by_content_hash produces the same canonical order
-      because aux comparison depends on structural content and resolved
-      addresses, not source names.
-    - aux_gen produces the same patches because its input is
-      (sorted_classes, expanded, level params, etc.) — all of which
-      are determined by c''s structure.
-    - stt.aux_perms is repopulated with the same AuxLayout, and
-      surgery rewrites call sites identically (history: until
-      2026-10-07; Pass 3 builds the same images from the same inputs).
-
-Therefore B₂ == B₁.
-```
-
-Where this can break:
-
-- **Metadata incompleteness.** If decompile drops information that
-  compile's canonicalization relies on — e.g. if `original` is not
-  populated and decompile has to re-derive binder names from the
-  canonical form — the second compile may produce a subtly different
-  `ExpandedBlock` (different nested-aux param spellings), which then
-  structurally sorts into a different order. Invariant 4.2 violated.
-- **Permutation-comparator partiality.** The comparator used by
-  ValidateAux Phase 6 to check `decompile(canonical) ≡ original`
-  (see §16.3) must match aux_gen's actual canonicalization. If `PermCtx`
-  misses a case, Phase 6 fails even though the canonical form itself is
-  correct; decompile outputs differ from Lean's `.rec_N` at motive
-  positions, and the roundtrip fixed-point becomes observable only
-  through recompile-and-compare, not through the cheaper ≡-check.
-- **Source-walk drift.** If Lean's internal source walk for nested-
-  aux discovery changes between versions (commit history, library
-  updates), the stored `AuxLayout` still anchors us to the original
-  `source_j → canonical_i` mapping — but a fresh walk inside
-  decompile would pick different source `_N`s. That's precisely why
-  decompile must read `AuxLayout` from `Named`, not re-derive it.
-
-In practice, the roundtrip test is:
-
-```rust
-for name in env.constants.keys() {
-    let original   = env.find(name);
-    let ixon_1     = compile(&[original], &env).bytes();
-    let decompiled = decompile(ixon_1).find(name);
-    let ixon_2     = compile(&[decompiled], &env).bytes();
-    assert_eq!(ixon_1, ixon_2);
-}
-```
-
-This is validate-aux Phase 7b (§16.2).
+Reconstruction needs the source `all` lists, original forms, canonical block
+membership and persisted nested layout. It must preserve the declared names and
+source kinds while handling additional reserved canonical declarations. A
+successful check of one reconstructed constant is not the full block roundtrip.
+The [materialization tests](../Tests/Ix/ImportIxe.lean) cover collapsed and
+non-collapsed neighbours; broader generator and decompiler correspondence remains
+part of the general work in §17.
 
 ## 10. Metadata Required for Round-trip
 
-Metadata is attached to `Named` entries in the Ixon env, one per Lean
-name. It's distinct from the block content — metadata doesn't enter
-any block's content hash. For a mutual inductive declaration,
-canonicity requires metadata on the per-inductive Named entries
-*and* on the block-level `Muts` Named entry.
+The [Ixon format](Ixon.md) is the field/encoding reference. Metadata does not
+justify a transformed term's typing or meaning; the checker must validate the
+relevant actual content.
 
-### 10.1 Stored and wired through
+### 10.2 Aux layout persistence
 
-- **Per-inductive `all` list**: the Lean source-order
-  `InductiveVal.all`, including all alpha-collapsed aliases. Stored
-  on each inductive's `ConstantMetaInfo::Indc { all, … }`
-  (`src/ix/ixon/metadata.rs:131`) and likewise on `Def.all` / `Rec.all`
-  for constants that carry a mutual context. Without this, decompile
-  can't reconstruct alias names or re-run `sort_consts`.
-- **Block-level `Muts.all`**: the synthetic metadata for the block
-  itself, `all: Vec<Vec<Address>>` — each inner `Vec` is one
-  alpha-equivalence class of name-hash addresses
-  (`metadata.rs:166-169`).
-- **Per-constant names and binder info**: each constant's Lean name
-  (canonical `Named` entry key), plus the `ExprMetaData::Binder`
-  arena entries.
-
-### 10.2 Aux layout persistence (shipped)
-
-The aux permutation lives on the block's `Muts` meta variant, not on
-`Named` itself — it's a property of the block rather than of any
-individual member:
-
-```rust
-// src/ix/ixon/metadata.rs
-ConstantMetaInfo::Muts {
-    all: Vec<Vec<Address>>,
-    aux_layout: Option<AuxLayout>,   // Some for blocks with nested auxes
-}
-
-// src/ix/ixon/env.rs
-pub struct AuxLayout {
-    /// `perm[source_j] = canonical_i`: source-walk → canonical aux order.
-    pub perm: Vec<usize>,
-    /// Ctor count of each source-walk aux at position j.
-    pub source_ctor_counts: Vec<usize>,
-}
-```
-
-- **Aux permutation** `perm: Vec<usize>` — length `n_source_aux`,
-  where `perm[source_j] = canonical_i`. The sentinel
-  `PERM_OUT_OF_SCC = usize::MAX` (`nested.rs:762`) marks source
-  auxes that belong to a different SCC (so they shouldn't be
-  resolved via this block).
-- **Source ctor counts** `source_ctor_counts: Vec<usize>` — ctor
-  count of each source-walk aux. The surgery consumed this to rewrite
-  call sites (until 2026-10-07, §8), and decompile consumes it to reconstruct the
-  source-indexed `_N` names that Lean exposes.
-
-**Compile** constructs the layout as a local in
-`compile_aux_gen_block` (`mutual.rs:453-483`) using `aux_out.perm`
-from `generate_aux_patches` plus ctor counts from
-`nested::source_aux_order`. It is embedded on the block's
-`ConstantMetaInfo::Muts.aux_layout` for persistence (until 2026-10-07
-it was also passed to the surgery's `compute_call_site_plans`, §8).
-
-**Decompile** recovers it by scanning every Muts-tagged Named entry
-at startup via `rehydrate_aux_perms_from_env`
-(`src/ix/decompile.rs:3148`). The scan resolves each block's
-`Muts.all[0][0]` — the first canonical-class representative — back
-to its source-order first inductive via `rep.meta.Indc.all[0]`, and
-writes `stt.aux_perms[source_first_name] = layout`. This DashMap
-(`compile.rs:187`, `DashMap<Name, AuxLayout>`) is the shared
-lookup table that `decompile_block_aux_gen` (§9.3) uses to retrieve
-a block's layout before handing it to
-`generate_canonical_recursors_with_layout`.
-
-**Serialization.** The Muts payload round-trips through
-`metadata.rs:1056-1065` (write) and `metadata.rs:1144-1161` (read);
-the 0/1 tag for `Option<AuxLayout>` lives on disk.
-
-### 10.3 CallSite metadata alignment (history: the surgery's, deleted 2026-10-07)
-
-> **History.** Only files the surgery wrote carry `CallSite` metadata
-> (§8); both decompilers and kernel ingress still read it, and nothing
-> writes it since M6R slice 6.
-
-`ExprMetaData::CallSite` is expression metadata, not block-layout
-metadata. Its `entries` field is the source-order inverse map needed
-by decompile; its `canon_meta` field is the canonical-order metadata
-alignment needed by kernel ingress.
-
-`canon_meta` is allowed because it stores arena roots for arguments
-that already exist in the canonical IXON expression. It does not store
-or influence:
-
-- user-class order,
-- nested-aux order,
-- recursor block positions,
-- the source-walk → canonical aux permutation.
-
-Those remain derived from `sort_consts` / `sort_kconsts` and validated
-kernel-side. A malformed `canon_meta` can make metadata-bearing kernel
-ingress reject or assign different metadata names to already-present
-arguments, but it cannot cause the kernel to accept a non-canonical
-block order or pick a different canonical aux target.
-
-### 10.4 Not stored (derived at compile and decompile time)
-
-The **canonical block layout** (canonical aux positions, user-class
-order, recursor binder split) is derived from the inductives plus
-alpha-collapse plus structural aux sorting — all of which are computable from the
-decompiled inductive data alone. Do not store the derived layout
-directly; it falls out of the canonical rules, and storing it would
-just create room for skew between storage and rederivation.
+`ConstantMetaInfo::Muts.aux_layout` holds the optional `AuxLayout`, including
+source-position permutation and source constructor counts. The decompiler
+rehydrates this source/canonical correspondence into its lookup. Its source
+auxiliary recovery path nevertheless passes no layout override to recursor
+generation, preserving source-walk order; §17.2 records the remaining distinction.
+The
+out-of-SCC sentinel stays distinct from a valid canonical index. This persisted
+relationship is why source suffixes survive a canonical reorder or collapse.
+See [metadata types](../crates/ixon/src/metadata.rs).
 
 ### 10.5 Metadata name canonicalization at alias occurrences
 
-Alpha-collapse makes a content address many-named: every member of a
-collapsed class resolves to one address (§6.1), and structurally
-identical declarations from different blocks coincide on one address
-as well (§13.5). The anonymous form is unaffected — any spelling of a
-reference compiles to the same `Rec(idx)` / `Ref(addr)` bytes — but
-the metadata sidecar records a **display name per occurrence**:
-`ExprMetaData::Ref { name }` for each `Const` occurrence,
-`CallSite.name` for surgered heads (files written before 2026-10-07), `Prj.struct_name` for projections
-(`metadata.rs`; Lean mirror `Ix/Ixon.lean`). Wherever the referenced
-address carries more than one name, the metadata must record a name
-at each such occurrence, and that choice was previously unspecified.
-The ambiguity is invisible to
-the §1 property, but it is visible to byte comparison of the
-metadata: the two compiler implementations (`crates/compile`;
-`Ix/CompileM.lean` + `Ix/AuxGen`) could disagree while both remaining
-individually correct.
+Canonical content can merge equal subterms or declarations while their source
+occurrences retain different reference names. Metadata remains aligned to the
+expanded occurrence tree; a sharing reference is transparent to that alignment.
+When a rewritten occurrence has a source ancestor, its spelling comes from that
+ancestor, not from a hash-table entry's arbitrary alias. Synthesis-created
+references with no source ancestor, such as primitives and generated-family
+references, use the algorithm's prescribed names. The metadata/original/inline
+controls in the gate guide exercise this boundary.
 
-**Source-derived expressions are already determined.** Both compilers
-record exactly the name spelled at the source occurrence:
-`compile_expr` (`compile.rs`) and `compileExpr` (`Ix/CompileM.lean`)
-allocate the `Ref` node from the input `Const` node's own name, alias
-or not, while the anonymous side collapses it to the shared address.
-That is normative — decompile reconstructs the source spelling from
-`Ref.name` — so source fidelity governs every expression that *has* a
-source: ordinary constants, each class member's own primary meta
-(compiled from that member's source form in the per-class loop of
-`compile_mutual` / `compileMutConsts`), the `Named.original` forms
-compiled by `compile_const_no_aux` (§9.2), and the source-order
-`entries` of surgered call sites (§8, §10.3; history).
+### 10.6 Universe-level canonicalization
 
-**Rule: synthesized occurrences inherit their source spelling.** An
-expression the compiler synthesizes rather than reads — the
-regenerated `.rec` / `.casesOn` / `.recOn` / `.below` / `.brecOn`
-(and `.go` / `.eq`) families, aux `.rec_N` / `.below_N` derivatives,
-and canonical arguments synthesized by the surgery (until 2026-10-07)
-inside otherwise source-derived bodies (§8) — is not free-standing: it is derived from
-identified source material of its own block. Minor premises splice
-the constructor telescopes (`buildMinorType` in
-`Ix/AuxGen/Recursor.lean` and its `recursor.rs` mirror),
-`.casesOn` / `.recOn` are built from `.rec`'s type, `_nested`
-expansions are restored to the original source application
-(`RestoreCtx.restore` in `Ix/AuxGen/ExprUtils.lean`), and the surgery
-peeled its synthesized arguments off the source minor
-(`adaptSplitMinor`, §8, history). The rule: every metadata position in a
-synthesized expression that records a display name records **the
-spelling of the source occurrence it derives from** — the name is
-inherited through the derivation, never chosen at emission. Where the
-synthesis introduces a reference with no source ancestor — the family
-head applied under fresh motives, references to sibling auxiliaries
-(`.rec` inside `.brecOn`), and primitives the algorithm names
-outright (`Eq`, `PUnit`, …) — the spelling is fixed by the synthesis
-algorithm itself, identically in both implementations by
-construction.
+The intended universe quotient is kernel semantic equality of levels with
+parameter positions fixed. The current normalizers have known subsumption
+leftovers: for example, `max (v+1) (imax (imax 2 u) v)` retains a redundant
+constant at `[u, v]`. General fixed-point and class-independence claims therefore
+remain obligations. The [Rust property checks](../crates/ixon/src/canon_univ.rs)
+and [Lean property checks](../Tests/Ix/Tc/Unit.lean) qualify their idempotence,
+roundtrip, class-stability and absorption checks by absence of these leftovers;
+they do not narrow the full compiler theorem's original domain.
 
-**Corollary: kernel-cache state must not outlive the block.** Kernel
-expression identity is name-erased (`ExprKey` keys on content
-addresses; `KId` carries the display name alongside), so WHNF, infer,
-and intern caches replay whichever alias spelling first populated
-them — the "display-name aliasing" hazard documented on
-`findRecTarget` / `decomposeInductiveType` in both pipelines. A
-kernel context surviving across blocks therefore makes emitted names
-depend on which blocks that context saw earlier — under a parallel
-scheduler, on the work-stealing schedule itself. Both compilers must
-run aux synthesis in kernel contexts scoped to the block, and on
-egress restore source spellings structurally
-(`restore_source_names_same_content` and the source-name hint maps in
-`expr_utils.rs` / `source_name_hints.rs`; `restoreSourceNamesSameContent`
-and mirrors in `Ix/AuxGen/Kernel.lean`). The restoration heuristics —
-hint candidacy restricted to `App`/`Proj` subterms, first-insert-wins hint slots —
-are part of the specified behavior: they must remain mirrored
-hole-for-hole, since a restoration difference is a parity break even
-with block-scoped contexts (§17.8).
-
-The Rust hint pass uses exact, shallow structural keys over canonical child
-identities, not a lossy digest as evidence of equality. Its conversion and
-restoration memos are scoped to one pass with a fixed view of referenced
-name resolutions; first-wins collection precedes restoration against the
-completed hint map. These temporary identities never enter serialized output.
-
-**Positions in scope.** The rule governs the metadata positions that
-record a *reference to another constant*:
-
-- `ExprMetaData::Ref { name }` — every `Const` occurrence,
-  block-local (`Rec`) and external (`Ref`) alike;
-- `ExprMetaData::CallSite { name, … }` — the surgered head reference
-  (doubles as the head's `Ref` metadata; files the surgery wrote);
-- arena subtrees for arguments surgery synthesized rather than kept
-  (split-SCC wrapper minors and `adapt_split_minor` IHs, §6.5 / §8)
-  — reached from `CallSite.canon_meta` with no source-order `Kept`
-  entry;
-- `ExprMetaData::Prj { struct_name }` — the projected structure
-  reference.
-
-It does **not** govern positions fixed by the subject constant's own
-identity or defined as whole-set enumerations: the meta variant's
-`name` and `lvls`; `all` (Lean source order, aliases included —
-§10.1); `ctx` (the full mutual-context enumeration); `Rec.rules`,
-`Indc.ctors`, `Ctor.induct` (the subject constant's own constructors
-and parent); and `Binder` / `LetBinder` names (locals, not constant
-references).
-
-**Why provenance.** The choice must be a deterministic function of
-block content, not of traversal or discovery order, or two correct
-implementations can diverge forever. Inherited spellings are exactly
-that: a function of the block's source expressions and the fixed
-synthesis algorithm, with no new ordering, no alias-set lookup, and
-no hash impact (metadata never enters a content hash, §6.6). The
-fidelity checkers already enforce it: both decompile-side checkers
-rebuild their reference by re-running the same generator over
-decompiled source constants (`DecompileDriver` Pass 2 in Lean;
-validate-aux Phase 2's `generate_aux_patches` on fresh per-block
-contexts in Rust) and compare name-sensitively (`congruence.rs`
-const-name check; hash-`BEq` in Lean) — under this rule, emitter and
-checker agree by construction, and the comparators' name-sensitivity
-enforces the rule instead of fighting it. Any one-name-per-address
-canonicalization would instead require teaching all four
-emitter/checker sites a shared alias-visibility order that is
-ill-defined for cross-block coincidences (§13.5) under streaming
-compilation. Decompiled auxiliaries also read like the source. The
-class representative persists where it already governs — alias
-registration clones the representative's `Named`
-(`register_aux_aliases`), Lean-native originals are recovered from
-`Named.original` (§9.2), `Muts.all` and block serialization keep the
-`sort_consts` order (§11.1) — just not as an occurrence-spelling
-rule.
-
-**Motivating instance.** A whole-Mathlib parity run (736,624
-constants) of the Rust and Lean compilers produced byte-identical
-anonymous content — all 647,127 content-addressed constants, hints,
-blobs, and name tables — and diverged by 47 bytes total, entirely
-inside the `ConstantMeta.info` of `Quiver.FreeGroupoid.redStep.rec`,
-`.casesOn`, and `.recOn`. The source spells the collapsed pair as
-`Paths (Symmetrify V)` — `CategoryTheory.Paths` and
-`Quiver.Symmetrify` are a §13.5 cross-block coincidence on one
-address. The Lean output preserved each occurrence's source spelling
-(outer `Paths`, inner `Symmetrify`) — conforming to this rule — while
-the Rust output recorded `Paths` at both occurrences. The Rust
-divergence traced not to a policy but to two defects. The observed
-one is deterministic and in-block: `redStep`'s stored type is
-`HomRel (Paths (Symmetrify V))`, whose recursor regeneration must
-genuinely WHNF through `HomRel`; the kernel's intern/canonicalization
-collapses the two spellings of the shared address to the
-first-interned display name inside the reduct, and the hint-based
-source-name restoration that should have undone this restored
-*nothing*, because its keys were intern uids rather than content
-digests (§17.8) — so the regenerated telescope spelled
-`Paths (Paths V)`. Separately, the production scheduler's
-worker-lifetime kernel contexts (`compile/env.rs`) let cache entries
-recorded while compiling one block replay their spellings into later
-blocks on the same worker — a schedule-dependent channel, closed by
-giving each block compile a fresh `KernelCtx` (as the aux-dump and
-validate-aux checker paths already did). With both fixed, the
-redStep-closure and whole-Mathlib outputs are byte-identical; the
-earlier reading of the Rust output as a deliberate
-one-name-per-address canonicalization was coincidental. Both outputs
-roundtrip correctly, so §1 held and only metadata determinism failed;
-this rule closes that gap.
-
-### 10.6 Universe-level canonicalization (live)
-
-> **Status.** Adopted 2026-08-06; **live** as of 2026-08-07 (Rust
-> pipeline first, Lean mirror after — see §17.9 for the landed
-> record). Every gate below runs strict: whole-Mathlib `ix validate`
-> and `validate-lean` report 0 failures with phase 3 STRICT (no
-> `reduceIxonUniv` modulo) and phase 4 at 714,346 spellings checked /
-> 0 findings; both compilers are byte-ALIGNED at 3,155,562,665 bytes;
-> the census probe reports `Géran-noncanonical: 0` entries and 0
-> spelling-collision constants on regenerated artifacts.
-
-**The quotient.** Universe-level spellings are presentation, not
-content. Two levels are identified in canonical form exactly when the
-kernels' semantic level equality holds — `univEq`
-(`Ix/Tc/Level.lean`), the relation all three kernels decide during
-defeq. `univEq`'s normal-form comparison ignores EMPTY subsumption
-entries (constant 0, no vars — bookkeeping the subsumption pass
-leaves behind rather than removing; `normLevelLe` always ignored
-them), so it is the exact semantic quotient: before that fix the
-comparison distinguished 3 of 3,253,373 whole-Mathlib entries from
-their semantic equals (e.g. `max (u+1) (imax (u+1) v)` vs
-`max (u+1) v`). This is the endpoint quotient for levels: the content
-address coincides with kernel identity, and no stronger level
-quotient exists to migrate to later. Levels meet the criterion for
-address-baked quotients — decidable equality, a computable canonical
-representative, no environment context — where general expression
-defeq does not; the quotient is the same *kind* as the §5.1
-alpha-collapse and follows the §10.5 template: canonical content plus
-per-occurrence metadata restoring source presentation, the
-restoration a deterministic function of the source, never a choice
-made at emission.
-
-**Boundary.** Declaration-level universe-parameter **list** order
-remains structural: §12.3's `h₁.{u,v}` / `h₂.{u,v}` keep distinct
-addresses. What is quotiented is spelling *inside* level
-expressions: `max u v` and `max v u` at an occurrence become one
-content, as do `imax (imax 1 u) u` and `u` (the motivating
-WF-recursion `eq_def` shape, where Lean metaprograms store
-unnormalized substitution results).
-
-**Canonical representative.** `canonUniv : Univ → Univ` is
-`linearize ∘ subsumption ∘ normalizeAux` — the kernels' Géran
-comparison form (`normalizeLevel`, `Ix/Tc/Level.lean:227-472`;
-`crates/kernel/src/level.rs:335-696`;
-`Ix/IxVM/Kernel/Levels.lean:336-386`), transliterated to positional
-`Ixon.Univ` and then linearized back into a level term. The Géran
-form is a map from **paths** (sorted lists of param indices —
-imax-conditioning chains) to **nodes** (a constant offset plus
-`(paramIdx, offset)` contributions sorted by ascending index): an
-entry `(P, node)` contributes its max-value whenever every param in
-`P` is ≥ 1, and the level is the pointwise max over contributing
-entries. `linearize` emits a representative term from that form —
-total and deterministic, with every ordering inherited from the
-canonical structure itself (entries in lexicographic path order, vars
-in ascending index order, a fixed right-nested `max` association) and
-atoms `succ^c zero` / `succ^k (var i)`; entries at non-empty paths
-are reconstructed as `imax`-gated subterms by **per-atom gate
-inversion**: each atom self-strips gates its own value already
-dominates (`covered` — a subset-path constant `≥ k`, or a var
-`offset+1 ≥ k`) **provided the stripped context stays leak-free**
-(`gatesLeakFree` / `gate_order(..).1`: each of its gates keeps an
-absorber atom at a map path inside the gate's prefix, since
-`imax t u_g ≥ u_g` wherever the outer gates are active), the
-remaining gate order is recovered greedily outermost-first (the
-smallest gate carrying a `(g,·)` absorber atom at a path within the
-chosen set), marker entries are consumed, and a root constant is
-absorbed into the emission (settled empirically during
-implementation — formerly open detail O1; P2 pins it exhaustively over
-all ≤8-node terms). Required properties, pinned by tests in both
-languages:
-
-- **P0 (value preservation):** `canonUniv u` and `u` take the same
-  value at every valuation of the parameters. The compiler must not
-  change the universe a declaration states: the kernel checks the
-  stored canonical levels. Without the leak-free proviso above, P0
-  fails on deep `imax`-by-parameter chains over three or more
-  parameters: `imax (imax (imax u w + 1) u) v` canonicalizes to
-  `max (imax (imax (w+1) u) v) (imax (imax (u+1) w) v)`, which is `2`
-  at `u = 0, v = 1, w = 2` where the level is `1` (the self-strip of
-  `u + 1` from `[u, v, w]` leaves gate `w` without an absorber in
-  `[v, w]`). The proviso changes a canonical form only where the form
-  without it has the wrong value; it changes no stored level of the
-  Init+Std or Mathlib environments (0 of 345,177 and 3,343,350 table entries,
-  0 of 16,621 and 426,093 original spellings), so no address moved.
-  Tests: the witness family, every ≤8-node term (Rust) / ≤6-node term
-  (Lean) over three parameters, and the kernel level comparison's
-  biased random levels in both languages, with exact valuation sets.
-- **P1 (idempotence):** `canonUniv (canonUniv u) = canonUniv u`.
-  It holds wherever the normal forms involved carry no subsumption
-  leftover (below), which covers every stored level of both environments;
-  the random family pins how rare the exceptions are.
-- **P2 (roundtrip-fixpoint):** `geran (linearize L) = L` on canonical
-  forms — `linearize` picks a genuine representative of its class;
-  with P1, `canonUniv` is constant on Géran classes. Like P1, it fails
-  only on normal forms with a **subsumption leftover**: `subsumption`
-  mirrors the kernels' normalizers, which test a gated constant
-  against its own node's vars instead of the dominator's, so
-  `max (v+1) (imax (imax 2 u) v)` keeps a constant `2` at `[u, v]` that
-  `v + 1` dominates (`Ix/Tc/Level.lean`, `crates/kernel/src/level.rs`,
-  `Ix/IxonUniv.lean` alike). Then two equal levels can have different
-  normal forms. 239 of the 125,000 levels of the random family hit
-  it, and none of the environments'. An exact subsumption (in all
-  normalizers together, to keep P4's oracle aligned) would make P1, P2
-  and P6 unconditional and the quotient exact; measured on both
-  environments it changes no stored level either.
-- **P3 (mk\*-fixpoint):** `linearize` output triggers no rule of the
-  kernel-rebuild set below — rebuilding it through the `mk*`
-  constructors is the node-for-node identity, so kernel ingress
-  preserves stored canonical content exactly.
-- **P4 (soundness):** `univEq u (canonUniv u)`, with the kernels'
-  Géran implementation as the oracle.
-- **P5 (mirror parity):** Rust and Lean `canonUniv` agree
-  byte-for-byte on serialized output.
-- **P6 (mk\* absorption):** `canonUniv ∘ reduceIxonUniv = canonUniv`
-  (`reduceIxonUniv`, `Ix/Tc/Ingress.lean`, is the retained oracle
-  for this).
-
-`canonUniv` lives next to the wire type (`crates/ixon/src/univ.rs`
-and the Lean mirror), kernel-free, so both compilers, the Tc egress,
-and probes share one implementation per language; the three kernel
-`NormLevel` implementations stay untouched as the P4 oracle. Worst
-case, canonical forms are exponential in nested `imax`-of-`max`
-depth (the Géran distribution rules duplicate the left subterm,
-`Ix/Tc/Level.lean:333-351`); real levels are a handful of nodes, and
-the blowup is paid once at compile time by whoever writes a
-pathological spelling — never by readers of stored canonical forms.
-
-**The kernel-rebuild rule set.** The `mk*` simplification rules —
-Lean `kernel/level.cpp:81-103`/`:112-120`, mirrored at
-`Ix/Tc/Level.lean:144-197`, `crates/kernel/src/level.rs:162-247`,
-`Ix/IxVM/Kernel/Levels.lean:637-680` — are normative here in three
-roles: the P3 fixpoint target (kernel ingress rebuilds through them),
-the stage-1 decoration-presence test (below), and the P6 oracle.
-They are **not** the address quotient (they miss commutative twins).
-`nMax a b`, first applicable rule wins:
-
-| # | Rule | Guard |
-| --- | --- | --- |
-| M1 | both explicit numerals → the larger (ties → `a`) | `a.isExplicit && b.isExplicit` |
-| M2 | `max a a = a` | structural `a == b` |
-| M3 | `max 0 b = b` | `a.isZero` |
-| M4 | `max a 0 = a` | `b.isZero` |
-| M5 | `max a (max x y) = max x y` if `x == a ∨ y == a` | absorption into `b` |
-| M6 | `max (max x y) b = max x y` if `x == b ∨ y == b` | absorption into `a` |
-| M7 | `max (succ^n x) (succ^m x) = succ^(max n m) x` | same offset base |
-| M8 | otherwise raw `max a b` | — |
-
-`nIMax a b`:
-
-| # | Rule | Guard |
-| --- | --- | --- |
-| I1 | `imax a b = nMax a b` | `b.isNeverZero` |
-| I2 | `imax a 0 = 0` | `b.isZero` |
-| I3 | `imax 0 b = b` | `a.isZero` |
-| I4 | `imax 1 b = b` | `a == succ zero` |
-| I5 | `imax a a = a` | structural `a == b` |
-| I6 | otherwise raw `imax a b` | — |
-
-with predicates `isZero` / `isExplicit` (`succ^n zero`) /
-`isNeverZero` / `offset` exactly as in `Ix/Tc/Level.lean:64-95` /
-`crates/kernel/src/level.rs:111-150`. Both rule sets — `mk*` and the
-Géran linearization — are **frozen** at the pinned toolchain's
-behavior; upstream drift mints new spellings, which simply
-canonicalize (or patch), and never redefines the address.
-
-**Format invariant (stage 2).** Every `univs` table entry in a valid
-artifact is `canonUniv`-fixed; tables are preseeded, sorted by
-serialized key, and deduplicated as today (`univSortKey`,
-`Ix/CompileM.lean:1115-1118`; `compile.rs:487-491`). Both compilers
-canonicalize at the single univ-intern choke point
-(`compileAndInternUniv`, `Ix/CompileM.lean:351-353`;
-`compile_univ_idx`, `compile.rs:468-484`). Declared level-parameter
-counts and the positional names channel are untouched —
-canonicalization can only make a parameter unused in content, never
-renumber it.
-
-**Restoration metadata: `univPatches`.** For each `sort` / `ref` /
-`recur` occurrence whose original level list differs from its
-canonical list, the compiler records a patch keyed by the
-occurrence's **metadata-arena node index**, with original spellings
-stored in the `metaUnivs` extension table under the documented
-virtual-index contract (index `< univs.size` → primary table; index
-`≥ univs.size` → `metaUnivs[i − univs.size]`;
-`crates/ixon/src/metadata.rs:205-213`). Encoding: a fourth
-`ConstantMeta` wrapper vector after `metaUnivs` —
-
-```
-univPatches : Array UnivPatch
-UnivPatch   ::= { arenaIdx : UInt64, univIdxs : Array UInt64 }
-```
-
-— empty (one zero byte, the count `N0(0)`) on the overwhelming majority of
-constants. The arena key is exact because occurrence identity is
-spelling-injective: `Ix.Level.mk*` hash spelling trees per node and
-`Expr.mkSort`/`mkConst` fold those hashes into expression identity
-(`Ix/Environment.lean:178-210`, `:333-345`), so occurrences sharing a
-compile-cache entry (hence an arena root, `Ix/CompileM.lean:599-628`)
-share a spelling, while spelling twins keep distinct arena subtrees.
-A table-keyed alternative (patching `anonIdx → spelling`) is
-**unsound**: canonicalization dedups distinct spellings onto one
-entry, and a constant containing both a weird spelling and its
-canonical form could restore only one of them. The patch obeys the
-§10.5 provenance principle verbatim — it records the spelling of the
-source occurrence it derives from, inherited through derivation,
-never chosen at emission — and `Named.original` metas carry their own
-patches (both meta slots are emitted; they describe different
-constants' occurrences). Decompile applies patches at the
-`.sort`/`.ref`/`.recur` arms, where the walk already pairs
-expressions with arena indices; artifacts without patches (foreign
-or pre-change) decompile to canonical spellings — semantically
-equal, presentation-lossy, accepted.
-
-**Kernel contract.** Anonymous ingress — the trust boundary feeding
-checking and content hashing — never reads patches or extension
-tables; patches influence no hash and no kernel judgment (a
-malicious patch can only skew decompiled presentation, same trust
-class as binder names, and is caught by the strict roundtrip gates).
-**Meta** ingress, whose job is syntax-faithful reconstruction, is the
-one kernel-side consumer: the original spelling rides as a
-**decoration** on meta-mode `sort`/`const` occurrence nodes — folded
-into the metadata-aware `metaAddr` (so interning and egress
-memoization never collapse spelling twins, `Ix/Tc/Expr.lean:61-72`)
-and **never** into the semantic `addr` (anon/meta address parity,
-`tc-meta-addr`, is preserved; checking never sees spellings). Meta
-egress replays the decoration at its `sort`/`const` arms
-(`Ix/Tc/EgressLean.lean:119-128`) instead of egressing the
-normalized kernel level. Decorations must not live on `KUniv` nodes
-— KUniv interning is semantic-address-keyed and would collapse
-spelling twins first-wins, the same lossiness as table-keyed
-patches. Validation comparators are **never weakened**: the kernel
-meta roundtrip (validate-lean phase 4) remains a strict syntactic
-comparison and is an active spelling-fidelity gate through the
-kernel's data path, complementing the decompiler gate (phase 5).
-With stored content canonical, the anon roundtrip comparison is
-strict too (the `reduceIxonUniv` modulo in `canonExpr` was deleted;
-`Ix/Tc/Egress.lean` module doc).
-
-**Decoration source.** Patches are the primary source: meta ingress
-looks the occurrence's (post-mdata) arena index up in `univPatches`
-and resolves the virtual indices through `univs ++ metaUnivs`. The
-stage-1 rule — decorate from the primary table entry when its `mk*`
-rebuild differs — remains as the patchless FALLBACK: on canonical
-tables it never fires (P3), and it keeps hand-built raw-table
-fixtures meaningful. One structural subtlety, mirrored in all
-consumers (files the surgery wrote): a surgered call-site head's own arena root is unreachable
-during replay (`CallSite.name` subsumes it), so the compiler CLONES
-a head patch onto the `callSite` node root, and both the decompiler
-head rebuild and the kernel meta-ingress head arms key their lookup
-there. Artifacts predating the format carry a
-"pre-normal-levels .ixe; recompile it" parse hint following the
-pre-compact-keys precedent (`crates/ixon/src/serialize.rs`).
+`canonUniv` selects the primary universe spelling. `metaUnivs` and arena-indexed
+`univPatches` retain non-canonical source spellings at each occurrence; a constant
+occurrence's patch carries its entire universe-argument list. Two occurrences
+sharing a primary table entry can therefore recover different source spellings.
+The ordered universe parameters keep their roles, as the examples below show.
 
 ## 11. Sort Algorithms
 
-### 11.1 User-class `sort_consts`
-
-Iterative refinement (`src/ix/compile.rs:2526`):
-
-```
-Initial sort: lex by name (cs.sort_by_key(|x| x.name()))
-classes := [cs]
-loop:
-  for each class with |class| > 1:
-    ctx := MutConst::ctx(classes)
-    sorted := sort_by_compare(class, ctx, cache, stt)
-    groups := group_by(sorted, |a,b| eq_const(a, b, ctx, cache, stt))
-    new_classes.extend(groups)
-  re-sort each class by name
-  if new_classes == classes: break
-  classes := new_classes
-```
-
-`compare_const` and `eq_const` compare structurally under the current
-partition, so alpha-equivalent constants end up grouped and
-structurally-distinct constants end up separated. The refinement loop
-terminates because the partition can only get finer, and there are
-finitely many constants.
-
-### 11.2 Nested-aux order: discovery order (formerly `sort_aux_by_content_hash`)
-
-Since the A2 migration (2026-10-03, decision D2;
-`docs/compiler-passes.md` §2.5) the nested-aux section is **not
-sorted**. Its canonical order is the **discovery order** of the
-expansion of the canonical block:
-
-```
-class representatives in canonical order (sort_consts, §11.1),
-  alias references rewritten to them,
-  each external group opened as its compiled canonical classes
-→ expand_nested_block_canonical: a FIFO queue over the block's types,
-  each constructor walked pre-order; each new nested occurrence becomes
-  `<all0>._nested.<Ext>_<k+1>` in the order it is discovered
-→ sort_aux_by_partition_refinement: the identity permutation
-  (the name is kept for its callers)
-```
-
-Code: `crates/compile/src/compile/aux_gen/nested.rs` ("Canonical order
-of the aux section: discovery order"); in Lean,
-`Ix.Compile.Canon.canonicalAuxOrder` under `Rules.compiler`
-(`Ix/Compile/Canon/Nested.lean`), which `Ix/AuxGen/Nested.lean`
-calls. The kernels rediscover the same order by the same walk over
-the stored members (§4.4). Source-walk aux positions are related to
-canonical positions by `compute_aux_perm` (Lean: `computePerm`).
-
-Proved at Pass 1's level (M7 L1; roots of `l1Roots` in
-`Ix/CompileCert/Audit.lean`, three standard axioms): `expand_spec`
-and `componentNested_discovery` (`Ix/CompileCert/Canon/Expand.lean`),
-`canonicalAuxOrder_discovery` (`NestedCanon.lean`: under the
-compiler's rules the canonical order is the expansion's own),
-`computePerm_spec` (`Perm.lean`). The compiler's own expansion port
-(`Ix.AuxGen.expandNestedBlock`) agrees with Pass 1's `expand` by test
-(`canon-pass1`), not by proof.
-
-The structural sort this section used to describe (temporary
-`MutConst::Indc` values ordered by `sort_consts`, then renamed to
-canonical `_N`) is run by neither compiler; Pass 1 keeps it only as
-the `Rules.today` alternative for the census (`structuralAuxClasses`).
+[Pass 1's specification](compiler-passes.md#2-canonical-form-defined) owns the
+comparator, refinement and tie-break details. Canonical nested auxiliaries use
+§6.2's discovery walk. Updating a comparator requires the relevant Lean/Rust,
+refinement, kernel, parity and library-byte checks; a library observation alone
+does not prove comparator equivalence on arbitrary inputs.
 
 ## 12. Worked Examples — Single Constants
 
@@ -2007,7 +395,8 @@ def f₁ : Nat → Nat := fun x => x + 1
 def f₂ : Nat → Nat := fun y => y + 1
 ```
 
-Under compile:
+Schematic compiled expression (elaborated implicit/type/instance arguments
+omitted):
 
 ```
 Ixon Expr for both:
@@ -2021,14 +410,20 @@ input. `addr(f₁) == addr(f₂)`.
 
 ### 12.2 mdata strip
 
+Construct two input expression trees with Lean's metaprogramming API:
+
 ```lean
-def g₁ : Nat := n + n
-def g₂ : Nat := @[inline] (n + n)   -- conceptually; Lean stores via `mdata`
+def plain : Lean.Expr := .lit (.natVal 7)
+def decorated : Lean.Expr :=
+  .mdata (({} : Lean.KVMap).insert `displayNote (.ofString "example")) plain
 ```
 
-`put_expr` ignores `Mdata` nodes entirely — the canonical form has no
-`Mdata` variant. Both values hash to the same bytes;
-`addr(g₁) == addr(g₂)`.
+Used as values of otherwise identical input declarations, these trees produce
+the same primary expression. The ordinary `displayNote` wrapper survives in
+source metadata. This example concerns those constructed trees, rather than
+compiling the metaprogramming definitions above as declarations about `Lean.Expr`.
+Semantic-contract metadata follows its separate lowering and cannot be dropped
+under this rule.
 
 ### 12.3 Universe permutation (non-equal)
 
@@ -2037,12 +432,13 @@ def h₁.{u, v} : Sort u → Sort v → Sort (max u v) := …
 def h₂.{u, v} : Sort v → Sort u → Sort (max u v) := …
 ```
 
-These are **not** α-equivalent: the order of universe params is part
-of the structural signature. `addr(h₁) ≠ addr(h₂)`. Canonicity isn't
+With the displayed parameter lists fixed, their binder domains refer to
+different parameter positions. Those positions are part of the structural
+signature; this example does not permit a permutation of them. Canonicity isn't
 "equal up to any renaming" — it's equal up to the *specific*
 equivalences in §1.
 
-The level quotient (§10.6) keeps this boundary: the parameter *list*
+Universe normalization (§10.6) keeps this boundary: the parameter *list*
 order stays structural even as spellings *inside* level expressions
 (`max u v` vs `max v u` at an occurrence) are quotiented.
 
@@ -2053,10 +449,10 @@ axiom twin₁.{u, v} : Sort ((max u v) + 1)      -- succ-lifted spelling
 axiom twin₂.{u, v} : Sort (max (u+1) (v+1))    -- Géran-canonical form
 ```
 
-These ARE identified (§10.6): `canonUniv` maps both spellings to
+These spellings have the same canonical level (§10.6): `canonUniv` maps both spellings to
 `max (u+1) (v+1)` — the Géran linearization distributes `succ` into
 `max`, the opposite direction from the kernel's `mk*` constructors —
-so both constants intern the same primary `univs` entry and
+so otherwise matching declarations intern the same primary `univs` entry and
 `addr(twin₁) = addr(twin₂)`. Presentation survives in metadata only:
 `twin₁`'s meta carries `metaUnivs = [(max u v) + 1]` and a
 `univPatches` entry keying its `sort` occurrence's arena root to
@@ -2075,7 +471,7 @@ distinct arena roots.
 
 ## 13. Worked Examples — Mutual Blocks
 
-The fixtures in `Tests/Ix/Compile/Mutual.lean` exercise the cases
+The fixtures in [Mutual.lean](../Tests/Ix/Compile/Mutual.lean) exercise the cases
 below. Unless otherwise noted, every example declares the same block
 twice in different order; the assertion is that **both declarations
 hash to the same block address**.
@@ -2160,28 +556,10 @@ to `Inductive with one ctor of domain (Rec 0)`. The test verifies
 
 ## 14. Worked Examples — Nested Inductives
 
-Nested inductives are the hardest case. The pipeline:
-
-```
-expand_nested_block        (src/ix/compile/aux_gen/nested.rs:369)
-  → replaces each `ExtInd (args-with-block-params)` with a synthetic
-    `_nested.ExtInd_N` aux inductive sharing block params/levels.
-  → dedupes alpha-equivalent occurrences via hash-keyed aux_seen table.
-
-sort_aux_by_content_hash   (nested.rs:538)
-  → sorts auxes with the same structural comparator as `sort_consts`
-    and renames them to canonical _N positions.
-
-compute_aux_perm            (nested.rs:797)
-  → builds the source-walk → canonical permutation (the stored
-    `AuxLayout`).
-
-compute_call_site_plans    (history: deleted 2026-10-07, §8)
-  → rewrote call-site arg lists so `f.rec_2 args` produced by Lean's
-    source-walk landed in the canonical-order recursor; Pass 3 compiles
-    `f.rec_2` as an image with its source telescope instead. Occurrences
-    still undergo the faithful rewrite with `_ix.inline` source records.
-```
+These diagrams distinguish the primary stored block from the transient flat
+expansion used to generate recursors. Auxiliary suffixes below are illustrative
+source/display names; the structural positions are what the layout specifies.
+The fixtures are in [Mutual.lean](../Tests/Ix/Compile/Mutual.lean).
 
 ### 14.1 `NestedSimple` — single inductive nesting
 
@@ -2191,18 +569,16 @@ inductive Tree where
   | node : List Tree → Tree
 ```
 
-Single inductive, no alpha-collapse. `expand_nested_block` creates one
-aux `Tree._nested.List_1` with ctors mirroring `List.nil` and
-`List.cons` but fixed to `Tree`. Canonical block:
+The flat expansion has `Tree` and one `List Tree` auxiliary:
 
-```
-Muts([
-  Indc(Tree),                 // idx 0
-  Indc(_nested.List_1),       // idx 1 — sole aux
-])
+```text
+primary stored block: Muts([Indc(Tree)])
+transient flat types: [Tree, nested List Tree]
+recursor block:       Muts([Recr(Tree), Recr(nested List Tree)])
 ```
 
-Aux recursor `Tree.rec_1` lives at `RPrj { block: <rec-block>, idx: 1 }`.
+The auxiliary recursor occupies position 1 of the recursor block. Its auxiliary
+inductive is not a second member of the primary stored block.
 
 ### 14.2 `NestedAlphaCollapse` — dedup across aliases
 
@@ -2215,12 +591,10 @@ mutual
 end
 ```
 
-`TreeA ≅ TreeB`, so `sort_consts` collapses them to one class with
-`TreeA` as representative. Under the alias substitution, both
-`List TreeA` and `List TreeB` rewrite to `List rep`, which — thanks to
-`replace_if_nested`'s `aux_seen` dedup — yields **one** aux entry.
-The canonical block has two members (`Indc(rep)`,
-`Indc(_nested.List_1)`); not four.
+The primary class merges `TreeA` and `TreeB`. Under its alias substitution,
+`List TreeA` and `List TreeB` become the same nested occurrence. The primary
+block has one `Indc(rep)`; the transient flat layout has `rep` plus one nested
+auxiliary, and the recursor block has the corresponding two positions.
 
 ### 14.3 `NestedAuxOrdering` — the canonicity test
 
@@ -2238,35 +612,18 @@ mutual
 end
 ```
 
-Both blocks describe the same cyclic 3-inductive system over
-`Array/Option/List`. They differ only in **source declaration order**,
-which drives Lean's source-walk discovery of nested auxes into a
-different `_N` numbering for each block.
+The required correspondence is `A↔A2`, `B↔B2`, `C↔C2`, with equal canonical
+primary and recursor block content. Canonical classes determine the walk's
+starting order; constructor traversal and the FIFO expansion then determine
+canonical auxiliary discovery order. The source declaration order can change
+Lean's `_N` numbering, and `AuxLayout` records that correspondence. No
+`sort_aux_by_content_hash` step assigns the canonical order.
 
-The canonicity assertion:
+The test concerns the corresponding generated declarations and positions as
+well as the primary member address. It is finite evidence for this fixture,
+not a proof that every nested/collapsed block has the required correspondence.
 
-```
-addr(A)  ==  addr(A2)
-addr(B)  ==  addr(B2)
-addr(C)  ==  addr(C2)
-addr(primary block)       ==  addr(primary block reordered)
-addr(recursor block)      ==  addr(recursor block reordered)
-```
-
-This holds because:
-
-- `sort_consts` produces the **same** class ordering for both blocks
-  (alpha structure is source-order-blind);
-- `sort_aux_by_content_hash` assigns **same canonical `_N`** to each
-  nested aux based on structural content and resolved addresses — not on
-  source-walk position.
-
-Without canonical aux sorting, the two `Array/Option/List` auxes would be numbered
-differently between the two blocks, and so would `A.rec_1` /
-`A2.rec_1`, and so would every downstream constant that references
-them. With structural aux sorting, the `_N`s match.
-
-### 14.4 `NestedAuxOrderingAlpha` — combined alpha + aux sort
+### 14.4 `NestedAuxOrderingAlpha` — collapse with nested discovery
 
 ```lean
 mutual
@@ -2275,504 +632,98 @@ mutual
 end
 ```
 
-Here `A ≅ B`. After alpha-collapse both collapse to one representative,
-and `Array rep` + `Option rep` become two distinct nested auxes
-(different containers ⇒ different structural signatures). The canonical block:
+After primary collapse, the walk sees `Array rep` and `Option rep`. Nested
+expansion may expose further external dependencies, so source container names
+alone are not a complete census of the flat auxiliary list. The exact positions
+come from opening the external groups and completing the canonical FIFO walk.
+The stored primary block still contains only `Indc(rep)`; the recursor block
+contains that primary recursor followed by the discovered auxiliary recursors.
 
-```
-Muts([
-  Indc(rep),                   // idx 0 — alpha-class {A, B}
-  Indc(_nested.Array_N),       // idx 1 — canonical aux position
-  Indc(_nested.Option_M),      // idx 2 — canonical aux position
-])
-```
+## 15. Invariants by Module
 
-`N` and `M` are determined by structural comparison of the aux declarations
-and their resolved references — content order, not source order.
+The [pipeline map](compiler-passes.md#11-the-passes) and
+[Rust module map](compiler-rust.md) identify the executable owners. The
+[certification guide](compiler-certification.md#16-l1-theorem-42-at-pass-1s-level)
+gives L1's actual clauses and hypotheses. In particular, comparison success,
+name/address relations, environment well-formedness, source graph completeness
+and name-map separation are explicit obligations where their theorems use them.
+An audit on the standard axioms does not make those hypotheses automatic.
 
-## 15. Where Canonicity Comes From — Invariants by Module
+## 16. Validation
 
-A compact correspondence between the canonicity property and the code
-that enforces it:
+Use [compiler-gates.md](compiler-gates.md) for the exact commands, suite defaults,
+reference files, coverage records and limitations. The relevant evidence includes
+alpha/permutation twins, nested and mutual generators, source/metadata recovery,
+canonical roundtrips, independent kernel checks, Lean/Rust parity, deterministic
+scheduling and both-library byte checks. Negative controls retain valid
+neighbours. No test's scope is expanded into a universal claim.
 
-| Invariant                                                  | Enforced by                                                     |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| `Expr` has no binder names                                 | `src/ix/ixon/expr.rs` — no `name` field on `Lam/All/Let`        |
-| Serializer omits names, mdata, universe names              | `src/ix/ixon/serialize.rs:111-210` `put_expr`                   |
-| Hash is Blake3 over serializer output                      | `Constant::commit` at `serialize.rs:861` → `Address::hash`      |
-| `sort_consts` is deterministic and refinement-stable       | `src/ix/compile.rs:2526-2564` (iterative refinement)            |
-| Nested-aux dedup across aliases                            | `replace_if_nested` `aux_seen` table, `nested.rs:191-362`       |
-| Nested-aux section is in discovery order (no sort)         | `expand_nested_block_canonical`; `sort_aux_by_partition_refinement` is the identity, `nested.rs` |
-| Source-walk → canonical permutation is reversible          | `compute_aux_perm`, `nested.rs:797-907`                         |
-| (history, until 2026-10-07) Call sites surgically rewritten | `compute_call_site_plans`, `surgery.rs` (deleted, §8)            |
-| A changed block's Lean-named auxiliaries are images (Pass 3) | `crates/compile/src/compile/pass3/`, `Ix/Compile/Pass/`     |
-| (history) CallSite metadata keeps source and canonical views separate | `ExprMetaData::CallSite { entries, canon_meta }` (read only since 2026-10-07); `kernel/ingress.rs` |
-| Optional original-kernel check isolates adversarial raw constants | `CompileOptions::check_originals`, `mutual.rs::check_originals`, `orig_kenv` in `compile/env.rs` |
-| Stored primary order matches `sort_consts` (kernel-side)   | `validate_canonical_block_single_pass`, `src/ix/kernel/canonical_check.rs` (called from `ingress_muts_block`) |
-| Rediscovered aux follow the same discovery order           | `build_flat_block`, `crates/kernel/src/inductive.rs` (no sort); position-by-position recursor validation |
-
-## 16. Testing Plan
-
-The canonicity property is an equivalence, so the test strategy is
-**pairs of known-equivalent and known-inequivalent Lean inputs with
-address comparison as the observation**.
-
-### 16.1 Rust-side unit tests
-
-`src/ix/compile/canonicity_tests.rs` (new file, `#[cfg(test)]`):
-
-- **`alpha_rename_hashes_equal`** — `λx.x+1` vs `λy.y+1` → same address.
-- **`mdata_wrapper_stripped`** — `e` vs `Mdata(kv, e)` → same address.
-- **`mutual_reorder_invariant`** — declare `[A, B]` and `[B, A]`
-  (alpha-equivalent) → same block address.
-- **`mutual_rename_invariant`** — declare `[A, B]` and `[X, Y]`
-  with `A↔X, B↔Y` → same block address.
-- **`nested_rename_invariant`** — `Tree | mk : List Tree → Tree` vs
-  `Tree' | mk : List Tree' → Tree'` → same address; the
-  `_nested.List_1` aux must collapse identically across both.
-- **`nested_aux_permutation`** — `NestedAuxOrdering` fixture, two
-  source orders, assert primary + aux block addresses match.
-- **`non_equivalent_distinct`** — `λx.x+1` vs `λx.x+2` → different.
-- **`universe_permutation_distinct`** — `f.{u,v}` vs `f.{v,u}` → different.
-- **`sort_consts_classes_stable`** — invariant test: repeated sort on
-  same input yields same classes.
-- **`sort_aux_by_content_hash_idempotent`** — sorting already-sorted
-  auxes is identity.
-
-### 16.2 Validate-aux phases
-
-`Tests/Ix/Compile/ValidateAux.lean` ships the validation phases below.
-The numbering matches current test output:
-
-| Phase | Name                                   | Checks                                                               |
-| ----- | -------------------------------------- | -------------------------------------------------------------------- |
-| 1     | Compilation                            | Every seed compiles and gets an address                               |
-| 2     | Aux_gen congruence                     | In-memory aux_gen output ≡ Lean original modulo canonical reorder     |
-| 3     | No ephemeral leaks                     | Intermediate compile-time addresses don't leak into the final env     |
-| 4     | Alpha-equivalence canonicity           | Same-class names share the canonical address                          |
-| 4b    | Cross-namespace canonicity             | Structurally identical declarations across namespaces share addresses |
-| 5     | Decompile (with debug)                 | Full env round-trips with compile-state metadata live                 |
-| 6     | Aux congruence (roundtrip)             | Decompiled aux_gen ≡ Lean original modulo canonical reorder           |
-| 7     | Decompile (no debug)                   | Serialize → drop state → deserialize → decompile round-trip           |
-| 7b    | Roundtrip fidelity                     | Per-constant content address matches after Phase 7                    |
-| 8     | Nested detection                       | `build_compile_flat_block` finds the expected auxiliaries             |
-
-Phases 2 and 6 both compare aux_gen output against Lean originals using
-the permutation-aware congruence comparator in `src/ix/congruence/perm.rs`.
-Phase 4b is skipped for fully absent fixture groups when validating an
-arbitrary environment that does not import the test fixtures.
-Under Pass 3 (the only mode since 2026-10-07) phase 4b resolves a
-changed block's `.rec`, `.casesOn`, `.recOn`, `.below` and `.brecOn` under
-their `_ix` names when those exist: the Lean names hold the images,
-which keep their source telescopes and so do not coincide across
-namespaces.
-
-### 16.3 Permutation-Aware Congruence
-
-Aux-gen congruence is checked by `src/ix/congruence/perm.rs`, not by
-rewriting Lean's source-order constants into a separate canonical form.
-The comparator carries `AuxLayout`, constructor counts, source/canonical
-member correspondence, and a `const_addr` map so it can compare Lean's
-source telescopes against Ix's canonical aux layout directly.
-
-### 16.4 Fixture Coverage
-
-`Tests/Ix/Compile/Mutual.lean` and `Tests/Ix/Compile/Canonicity.lean`
-cover reordered mutuals, alpha-collapse, nested aux ordering, over-merge
-splits, parameterized nested blocks, and cross-namespace twins. New
-fixtures should be added when a new equivalence mechanism is introduced
-or when a failure mode cannot be reduced to one of those existing shapes.
-
-### 16.6 Kernel canonicity validation
-
-The kernel-side validator (§4.4) is exercised by both unit tests and
-integration tests:
-
-**Unit tests** (`src/ix/kernel/canonical_check.rs::tests`):
-
-- `compare_kuniv_*` — universe comparator agrees with compile-side
-  `compare_level` on the cases visible in Anon mode.
-- `compare_kexpr_alpha_blind` — binder-named and binder-anonymous
-  λ/∀/let bodies compare Equal under the comparator.
-- `compare_kexpr_var_ordering` — `Var(0) < Var(1)` etc.
-- `compare_kexpr_const_external_by_addr` — refs not in `KMutCtx`
-  fall back to `Address` order.
-- `compare_kexpr_const_block_local` — refs in `KMutCtx` resolve to
-  class indices.
-- `compare_kindc_alpha_collapse` — structurally-equal Indcs compare
-  Equal.
-- `sort_kconsts_canonical_three_indcs` — three Indcs in arbitrary
-  input order produce the canonical (params-ascending) output.
-- `sort_kconsts_alpha_collapses_into_one_class` — alpha-equivalent
-  Indcs collapse to a single class.
-- `validate_single_pass_accepts_canonical_order` — Ok on canonical
-  input.
-- `validate_single_pass_rejects_swap` — `Greater` rejection.
-- `validate_single_pass_rejects_uncollapsed_alpha` — `Equal`
-  rejection.
-
-**Integration tests** (existing test suites that exercise the
-validator end-to-end):
-
-- `lake test -- validate-aux --ignored` — must remain at 0 failures
-  (Phases 7 and 7b round-trip every constant through the kernel).
-- `lake test -- kernel-tutorial --ignored` — 267/267, covering the
-  manually-constructed kernel fixtures.
-- `lake test -- kernel-check-const --ignored` — focus list of the
-  Mathlib failure shapes; this is where Step 5 of the
-  kernel-canonicity port shows up: stored aux recursor positions
-  must align with the kernel-canonical aux order produced by Step 4.
-
-### 16.5 Roundtrip fixed-point
-
-The strongest test of canonicity + metadata is:
-
-```
-for c in env.constants:
-    ixon  = compile(c, env)
-    lean  = decompile(ixon)
-    ixon2 = compile(lean, env')
-    assert ixon.bytes == ixon2.bytes
-```
-
-If any step diverges, either (a) canonicity is broken (different
-compile paths yielded different canonical forms for the same input),
-or (b) metadata is incomplete (decompile didn't recover enough info
-for recompile to find the same canonical form). Both are first-class
-bugs.
-
-This is implemented as validate-aux Phase 7b (§16.2), which checks that
-each constant's content address is stable after serialize → deserialize →
-decompile → recompile.
-
-### 16.7 Level canonicalization (§10.6)
-
-Landed with the §17.9 stages:
-
-- `canonUniv` property tests P1–P6 in both languages (Rust in
-  `crates/ixon/src/univ.rs` tests; Lean next to the existing
-  level-algebra unit tests), with the kernel `NormLevel`
-  implementations as the P4 oracle.
-- A `LevelSpellings` fixture namespace in the validate-aux closure:
-  one deliberately unnormalized spelling per `mk*` rule (M1–M7 /
-  I1–I5) in both `Sort` and `Const`-arg position; order/association
-  twins (`max u v` / `max v u`, reassociated `max`-chains) asserting
-  post-stage-2 identical anon addresses with differing metadata; a
-  constant containing both a spelling and its canonical form (the
-  table-keyed-patch killer) asserting exact decompile; a WF-recursion
-  `._unary.eq_def` reproducing the Mathlib shape.
-- Decoration roundtrip: spelling in → meta ingress decorates → meta
-  egress restores — pinned strictly by `tc-roundtrip` and
-  `tc-meta-addr` from stage 1, before any format change.
-- Extension-append fixture: a synthetic `Named` with populated
-  `metaRefs`/`metaUnivs`, decompiled identically by both pipelines
-  (FFI cross-check).
-- `univPatches`/`metaUnivs` serde vectors in the property-test
-  generators and hand-written wire fixtures.
-
-### 16.8 Canonical sharing (§6.7)
-
-- `lake test -- exact-sharing` covers the plan fixtures, with exact bytes
-  (`T2 → T2` in 17 bytes, from 20 unshared). It also covers the uniform
-  optimizer against the width-state reference, the tiered construction's
-  slot allocation, idempotence, and brute force for the first tier.
-- `lake test -- exact-sharing-ffi` compares Lean and Rust bytes on fixtures
-  and on generated inputs.
-- The Rust crate's `sharing_exact` tests cover:
-  - representation independence: every valid incoming encoding normalizes
-    to the same bytes;
-  - parallel against sequential byte identity.
-- Roundtrip (§16.5) adds the end-to-end check: a recompiled block must
-  reproduce its address, so decompile's recompile and the compiler must
-  produce the same canonical sharing.
+The [canonicity fixtures](../Tests/Ix/Compile/Canonicity.lean),
+[mutual fixtures](../Tests/Ix/Compile/Mutual.lean),
+[import/materialization suite](../Tests/Ix/ImportIxe.lean), and
+[sharing specification](Ixon.md#sharing-system) provide the corresponding entry
+points. Historical test counts and old toolchain timings are not current gates.
 
 ## 17. Open Work
 
-### 17.1 PermCtx Builder Consolidation
+The full general theorem still requires all inputs of its original domain,
+representative independence, total generators, nested/source correspondence,
+image construction, optimizer/clique refinement and driver/emission composition.
+Every source name must satisfy its meaning contract, and the model pull-back must
+follow for the full output. Successful library certification and the conditional
+L2/L3 proof checkpoints leave those general obligations intact.
 
-`src/ffi/lean_env.rs` currently has separate builders for validate-aux
-Phase 2 and rust-compile Phase 1b. They should be factored into one
-shared `PermCtx` construction path so the two validation modes cannot
-drift in how they populate `aux_layout`, constructor counts, and
-`const_addr`.
+### 17.1 Production invariant bridges
+
+Derive the name, reference, protected-allocation, graph and reader invariants
+needed by the actual compiler calls. General callback statements retain their
+original domains; supporting finite-source adapters do not replace them.
 
 ### 17.2 Decompile canonical-path unification
 
-`decompile_block_aux_gen` now lives at `src/ix/decompile.rs:3226`
-and is layout-aware: the rehydrate scan at
-`src/ix/decompile.rs:3148` (`rehydrate_aux_perms_from_env`)
-populates `stt.aux_perms` from `ConstantMetaInfo::Muts.aux_layout`,
-and the function calls `generate_canonical_recursors_with_layout`
-at line 3324 with that layout (falling back to
-`generate_canonical_recursors_with_overlay` when the block has no
-nested auxes).
-
-What's still tactical rather than principled: decompile builds an
-**un-collapsed singleton-class layout** (one inductive per class)
-at `src/ix/decompile.rs:3252-3259` instead of re-running
-`sort_consts` on the decompiled inductives to recover the
-alpha-collapse classes compile saw. For non-alpha-collapsed blocks
-this is observationally identical; for blocks that compile
-alpha-collapsed, the workaround let the surgery (history) find
-callee positions but doesn't reconstruct the collapse at the
-decompiled-inductive level.
-
-Remaining work: replace the singleton-class builder with a proper
-`sort_consts` run over the decompiled inductives, so the
-alpha-collapse story survives the full compile → decompile →
-compile round trip at the `ConstantInfo` level, not just at the
-`addr` level.
+Layout-aware generation and the canonical/source reconstruction paths must agree
+on the real collapsed and nested families. Retain the checks around missing
+layout, source aliases, canonical positions and complete `ConstantInfo`
+reconstruction. The source auxiliary recovery path still constructs singleton
+classes from the source inductives, even when compilation collapsed equivalent
+classes, and passes no recursor-layout override to preserve source-walk order.
+Reconciling that path with canonical classes and the persisted layout remains
+implementation and proof work; the complete correspondence theorem is open.
+See [the current decompiler](../crates/compile/src/decompile.rs) and §9.3.
 
 ### 17.3 `check_decompile` scoping
 
-Keep ordinary `check_decompile` scoped to source-faithful decompile output;
-Phase 6 and Phase 7b are authoritative for aux_gen-specific canonical
-roundtrip behavior.
+Keep ordinary source-faithful recovery checks separate from checks of the actual
+canonical/transformed declarations. Read the current gate guide's phase scopes;
+source metadata replay must not conceal a transformed-value failure.
 
-### 17.4 `compute_aux_perm` Regression Guards
+### 17.4 Nested mapping regression guards
 
-The out-of-SCC sentinel path is wired and covered by validate-aux. Keep
-targeted regression fixtures for multi-SCC blocks whose `InductiveVal.all`
-contains members split out by Ix's SCC pass, because those are the cases
-where a source aux can belong to Lean's full mutual numbering but not to the
-current canonical SCC block.
+Keep multi-SCC, out-of-component, nested-collapse and reordered-source controls,
+including repeated generation and full source-position/name coverage. Removing
+a failing case or weakening its comparison does not resolve its obligation.
 
 ### 17.5 Docstring persistence
 
-Add `doc_string: Option<Address>` to `ConstantMeta`. Ingest via
-`Lean.findDocString?` at the FFI boundary
-(`src/ffi/lean_env.rs`); re-attach in decompile via
-`Lean.addDocString`. Optional but trivial to add.
+Docstrings are separate from the supported `ConstantInfo` metadata roundtrip.
+Persistence would need explicit ingestion, format and replay work; this guide
+does not describe it as implemented.
 
-### 17.6 Regression guards
+### 17.6 Remaining compiler repairs and release checks
 
-- Assert `generate_aux_patches` called twice with same inputs returns
-  byte-equal patches.
-- Assert decompile's re-derived canonical aux order equals the stored
-  `AuxLayout` for every nested-aux block.
-- Targeted test: compile `NestedAuxOrdering { A | B | C }` and
-  `NestedAuxOrdering.second { C2 | A2 | B2 }` (permuted sources),
-  assert block addresses are equal.
-
-### 17.7 `kernel-check-const` Category B residue
-
-After the §4.4 kernel-canonicity port (independent `sort_consts`
-on rediscovered aux + position-based stored-recursor lookup),
-Categories A, C, F, and G still show some residual failures.
-Investigate whether the kernel's synthetic aux Indc views
-(in `canonical_aux_order`) need a more faithful mirror of
-compile-side's `replace_ctor_result_head_with_aux` — the current
-implementation rewrites the result head but does not re-wrap with
-block-param Pis. Some failure modes may also reflect orthogonal
-issues (e.g. `String.Legacy.back ""` reduction, `_sparseCasesOn_N`
-regeneration) that surface alongside the canonical-order
-mismatches but have unrelated root causes.
-
-### 17.8 Alias-occurrence metadata audit (§10.5)
-
-§10.5 fixes display names at synthesized occurrences as inherited
-source spellings emitted from block-scoped kernel contexts. The
-production Rust scheduler has been block-scoped (`compile/env.rs`:
-fresh `KernelCtx` per block compile; the aux-dump and validate-aux
-Phase 2 paths already were). Remaining audit items:
-
-- **Restoration-heuristic mirror parity.** The kernel-egress
-  restoration passes are heuristic: hint candidacy is `App`/`Proj`
-  only (`Pass::candidate` in `source_name_hints.rs` — a bare
-  aliased `Const` surviving a genuinely-reducing WHNF is not
-  restored), and hint slots are first-insert-wins (two same-address
-  source subterms take the traversal-first spelling). The Lean
-  mirrors (`collectLeanSourceNameHints` /
-  `restoreLeanSourceNameHints` / `restoreSourceNamesSameContent` in
-  `Ix/AuxGen/Kernel.lean`) match arm-for-arm; what diverged — and
-  produced the Mathlib redStep instance — was the **key
-  equivalence**: the Lean side keys hints by `Ix.Tc.KExpr` content
-  addresses, while the Rust side keyed by `KExpr::hash_key()`, which
-  is an intern-assigned uid, fresh for every un-interned
-  `to_kexpr_static` construction — so no restore-time key ever
-  matched a collect-time key and the Rust hint pass restored nothing.
-  Originally fixed by `kexpr_content_key` (a pure name-erased structural
-  digest mirroring the `ExprKey`/`Ix.Tc` equivalence) and by making the
-  WHNF no-op test structural (`==`) rather than uid equality. The hint
-  pass now uses exact, pass-local structural identities instead of that
-  digest, with full shallow-key equality on hash collisions. Any future
-  keying change must preserve that both sides induce the identical
-  equivalence.
-- **Lean `nameForAddr` fallback.** `TcScopeSt.nameForAddr`
-  (`Ix/AuxGen/Kernel.lean`) resolves a provisional kernel address by
-  a linear scan of `cenv.nameToNamed` in `HashMap` iteration order —
-  non-deterministic when the address is multiply-named. Confirm its
-  result cannot reach emitted metadata, or make the scan canonical.
-- **Rust decompile Pass 2 shared context.** The decompiler's
-  regeneration loop (`decompile.rs`) reuses one `KernelCtx` across
-  blocks (serial and deterministic, size-triggered clears). A checker
-  cannot perturb emitted bytes, but a restoration-hole hit that
-  differs from the block-scoped compile side could produce a spurious
-  congruence failure; consider block-scoping it too.
-- **Decompile name fallback via `addrToName`.**
-  `Ixon.Env.addrToName` is single-valued (last-registered wins, i.e.
-  the greatest alias in name-hash order) and serves as the
-  decompiler's fallback when an occurrence has no arena `.ref` name
-  (`Ix/DecompileM.lean`). Confirm no §10.5-governed position reaches
-  this fallback.
-- **Evaporated auxiliaries.** Aux names without `Named.original` are
-  decompiled from the regenerated `constMeta` and compared
-  name-sensitively against the source env
-  (`Tests/Ix/Compile/DecompileDiff.lean`) — the one gate path that
-  reads regenerated metas directly. It stays green exactly when
-  emission inherits source spellings.
-
-Pin the rule with reduced fixtures — a one-block alpha class, and
-separately the cross-block coincident shape of §13.5 in **both
-orientations** (`A (B x)` and `B (A y)`; the mirrored orientation
-distinguishes spelling inheritance from any first-seen or least-name
-policy) — asserting metadata byte-equality between the two compilers,
-in the spirit of the `ZFA` family (§6.0).
-
-### 17.9 Universe-level canonicalization staging (§10.6) — LANDED
-
-All stages complete (2026-08-07), executed Rust-pipeline-first (Rust
-compiler + kernel end-to-end, validated by Rust-only gates, then the
-Lean mirror against the cross-compiler gates). The landed record:
-
-**Stage 1 (no format change):** meta-ingress spelling decorations +
-meta-egress replay in both kernels; the Lean decompiler
-extension-append fix; the `LevelSpellings` fixtures (§16.7).
-
-**Probe (D8):** `dump_reducible_univs` measured the whole-Mathlib
-blast radius — 373,799 Géran-noncanonical entries in 134,929
-constants (~1.04 M patch occurrences, ~10.9 MB, 0.34%), 79,088
-spelling-collision constants (the table-keyed-patch killer
-population), 84% transitive-dependent closure, 44 pinned primitives
-(56 pins once dependent-address shifts are counted).
-
-**Stage 2 (one format break):** `canonUniv` + P1–P6 in both
-languages (the O1 gating construction settled by per-atom gate
-inversion, §10.6); the `univPatches` wrapper vector across both
-serializers, demoted encoders, FFI, diff labels, generators, and
-fixtures; compile-side canonicalization + patch emission in both
-pipelines; decompile patch replay; the decoration source switch to
-patches (stage-1 rule retained as the patchless fallback); phase 3
-strict; `univEq` empty-entry-insensitive (the exact semantic
-quotient, §10.6); primitive pins regenerated in all mirrors
-(`prim_addrs.rs`, `Ix/Tc/Primitive.lean`, the IxVM address
-literals); artifacts regenerated with the format-break hint.
-
-**Acceptance evidence:** `ix validate` and `ix validate-lean` at
-whole-Mathlib scale both `RESULT: 0 total failures` (736,624
-constants; phase 4 = 714,346 spellings checked / 0); Rust kernel
-typecheck 736,624/736,624; both compilers byte-ALIGNED
-(3,155,562,665 bytes); census probe on regenerated artifacts:
-`Géran-noncanonical: 0`, collision constants 0.
-
-**Follow-ups (open):** kernel-side univ-table canonicity enforcement
-at ingress (§4.4-style, all three kernels, plus a foreign-`.ixe`
-policy — reject, never silently canonicalize); Tc Verify-layer
-proofs of P1/P2/P4.
-
-## 18. Summary
-
-Anonymous canonicity in Ix reduces to six operational commitments:
-
-1. Binder names, mdata, and hygiene **never enter the hash input**.
-2. Mutual blocks are **structurally sorted** by an iterative-refinement
-   equivalence-class algorithm (`sort_consts`); source order and name
-   choices don't leak into the block address.
-3. Nested-inductive auxes are **discovered in a fixed order over the
-   canonical block** (no sort) and **de-duped**, independent of Lean's
-   source-walk discovery (§6.2).
-4. A changed block's Lean-named auxiliaries are **images** (Pass 3):
-   their source telescopes replace the legacy call-site argument
-   adaptation. Occurrences still undergo the faithful rewrite with
-   `_ix.inline` source records; the Ix auxiliaries live under `_ix` names
-   (until 2026-10-07 call sites were **surgically rewritten**, §8, history).
-5. A **metadata sidecar** — binder names, mdata, Lean-order `all`,
-   the `_ix.inline` records' `meta_sharing` (the surgery's
-   `CallSite.entries` / `CallSite.canon_meta` in older files), and `AuxLayout` on
-   the block's Muts metadata (plus docstrings, planned) — preserves
-   everything the hash erases, making
-   `canonical + metadata` isomorphic to source Lean.
-6. The **kernel independently re-runs `sort_consts`** on every
-   stored mutual block when the primary validator needs refinement
-   (a weak `Less` or a weak `Greater`; fast strong-adjacent
-   validation at ingress otherwise), and rediscovers the auxes in the
-   same discovery order during recursor regeneration. The kernel
-   never trusts the compiler's claim that an input is canonical; it
-   verifies the claim by recomputing it. See §4.4 and
-   `crates/kernel/src/canonical_check.rs`.
-
-The failure of any one commitment breaks the zk-PCC story. The test
-harness in §16 makes each commitment observable as an address-equality
-predicate. The open items in §17 are where the current implementation
-is known to be partial.
+The source baseline still has the documented structural-clique fallback,
+projection/value-check boundaries and promotion exception. Follow their precise
+contracts in [compiler-passes.md](compiler-passes.md). Reviewed repairs must retain
+the appropriate failure controls, ownership and both-library gates. Neither
+this document update nor approval of a repair claims that it has landed.
 
 ## 19. Cross-References
 
-- [`docs/Ixon.md`](./Ixon.md) — binary format, Expr/Constant/Meta
-  layout, serialization details.
-- [`docs/Ixon.md` § Sharing System](./Ixon.md#sharing-system) and
-  [`docs/sharing-minimum.md`](./sharing-minimum.md) §12 — the canonical sharing
-  construction (§6.7): `Ix/Sharing/Exact/Tiered.lean`,
-  `crates/ixon/src/sharing_exact/tiered.rs`, proofs in
-  `IxSharingVerify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
-- `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
-- `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
-  port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,
-  `sort_kconsts`, `validate_canonical_block_single_pass`. The
-  kernel's independent canonicity oracle (§4.4).
-- `src/ix/kernel/ingress.rs::ingress_muts_block` — wires
-  `validate_canonical_block_single_pass` for stored Indc blocks.
-- `src/ix/kernel/inductive.rs::canonical_aux_order` — synthesizes
-  `KConst::Indc` views of rediscovered auxes and runs
-  `sort_kconsts` to compute the kernel-canonical aux order.
-  Position-by-position recursor validation lives in
-  `check_recursor`.
-- `src/ix/kernel/error.rs::TcError::NonCanonicalBlock` — rejection
-  variant emitted when ingress finds a non-canonical primary block.
-- `src/ix/compile/aux_gen.rs` — main `generate_aux_patches` entry
-  and the `AuxPatchesOutput` return type.
-- `src/ix/compile/aux_gen/nested.rs` — `expand_nested_block`,
-  `sort_aux_by_content_hash`, `compute_aux_perm`, `source_aux_order`.
-- `src/ix/compile/aux_gen/recursor.rs` — canonical recursors from an
-  expanded block, plus targeted canonical KEnv ingress for aux_gen
-  sort/recursor generation. Reducible definitions referenced by inductive
-  target types or constructor fields are loaded as real definitions;
-  type-only dependencies remain stubs to avoid mirroring the full Lean env.
-- `src/ix/compile/aux_gen/below.rs`, `brecon.rs`, `cases_on.rs`,
-  `rec_on.rs` — derived aux generation.
-- `src/ix/compile/aux_gen/expr_utils.rs` — FVar-based expression
-  manipulation primitives (`forall_telescope`, `mk_forall`, etc.).
-- `src/ix/compile/aux_gen/expr_utils.rs::RestoreCtx` — maps
-  `_nested.X_N` references back to `ExtInd spec_params` form.
-- `src/ix/compile/surgery.rs` — (history: deleted 2026-10-07, §8) the
-  call-site argument reordering; its helpers the passes use are in
-  `crates/compile/src/compile/aux_source.rs`.
-- `crates/compile/src/compile/pass3/` — Pass 3 (images, `_ix` names,
-  records, the clique transport).
-- `src/ix/compile/mutual.rs` — orchestrates `generate_aux_patches` +
-  compilation per mutual block. Normal trusted compile paths skip
-  the full `orig_kenv`; adversarial raw-constant tests can opt into
-  `CompileOptions::check_originals` to validate Lean-original constants
-  against a separate `lean_ingress` kernel environment.
-- `src/ix/decompile.rs::rehydrate_aux_perms_from_env` — rehydrates
-  `stt.aux_perms` from `ConstantMetaInfo::Muts.aux_layout` before any
-  block is decompiled.
-- `src/ix/decompile.rs::decompile_block_aux_gen` — canonical → Lean
-  reconstruction, layout-aware (calls
-  `generate_canonical_recursors_with_layout` when the block carries
-  a persisted aux layout).
-- `src/ix/ixon/env.rs::{Named, AuxLayout, Env}` — on-disk env
-  layout; aux permutation lives on the `Muts` meta variant.
-- `src/ix/ixon/metadata.rs::ConstantMetaInfo::Muts.aux_layout` —
-  persisted aux permutation sidecar (read/written at
-  `metadata.rs:1056-1065` / `1144-1161`).
-- `src/ix/ixon/expr.rs`, `serialize.rs`, `metadata.rs` — canonical
-  data types.
-- `Tests/Ix/Compile/Mutual.lean` — canonicity fixtures.
-- `Tests/Ix/Compile/ValidateAux.lean` — validate-aux phases.
-- `refs/lean4/src/kernel/inductive.cpp` — Lean's reference
-  implementation of nested inductive handling; our
-  `expand_nested_block` port mirrors the source walk.
-- `refs/lean4/src/Lean/Meta/Constructions/BRecOn.lean` — Lean's
-  `.below` / `.brecOn` generator; our `below.rs` / `brecon.rs`
-  follow it.
+| Reference | Purpose |
+| --- | --- |
+| [Compiler passes and output contract](compiler-passes.md) | Executable pipeline, transformations, fallbacks, names and records. |
+| [Compiler certification](compiler-certification.md) | W/W+/S, proved conditional results, trust and remaining general obligations. |
+| [Compiler gates](compiler-gates.md) | Tests, parity, byte checks and evidence limits. |
+| [Rust compiler](compiler-rust.md) | Backend organization and correspondence boundaries. |
+| [Ixon](Ixon.md) | Binary format, metadata, universe patches and canonical sharing. |
+| [Kernel](kernel.md) | Admission and kernel-side validation. |
