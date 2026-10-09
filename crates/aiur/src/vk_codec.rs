@@ -196,7 +196,7 @@ fn encode_circuit(buf: &mut Vec<u8>, circuit: &Circuit<Val>) {
 /// skipped — see the module docs). The config's construction parameters are
 /// passed alongside because [`AiurConfig`] doesn't expose them back; they are
 /// written first so the decoder can rebuild the config.
-pub(crate) fn to_bytes(
+pub fn to_bytes(
   system: &System<AiurConfig>,
   commitment_parameters: CommitmentParameters,
   fri_parameters: FriParameters,
@@ -521,6 +521,26 @@ impl AiurVerifyingKey {
 
   pub const fn fri_parameters(&self) -> FriParameters {
     self.fri_parameters
+  }
+
+  /// Constraint system and fixed commitments for recursive verifier construction.
+  pub fn system(&self) -> &System<AiurConfig> {
+    &self.system
+  }
+
+  /// Check application policy and trace bounds without a proof. Intended for
+  /// deterministic construction of a verifier circuit, not proof verification.
+  pub fn validate_preamble(
+    &self,
+    claim: &[Val],
+    preamble: &multi_stark::batch::BatchPreamble<AiurConfig>,
+  ) -> Result<(), crate::synthesis::AiurVerificationError> {
+    crate::synthesis::validate_preamble(
+      &self.system,
+      self.commitment_parameters,
+      claim,
+      preamble,
+    )
   }
 
   pub fn num_circuits(&self) -> usize {

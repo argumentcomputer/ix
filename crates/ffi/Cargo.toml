@@ -21,6 +21,7 @@ ix-common = { workspace = true }
 ix-compile = { workspace = true }
 ixon = { workspace = true }
 ix-kernel = { workspace = true }
+ix-proof-compression = { path = "../proof-compression", default-features = false }
 lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
 multi-stark = { workspace = true }
@@ -47,7 +48,7 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
 default = []
-parallel = ["aiur/parallel"]
+parallel = ["aiur/parallel", "ix-proof-compression/parallel"]
 cuda = ["aiur/cuda"]
 cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
 test-ffi = []

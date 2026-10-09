@@ -13,6 +13,8 @@ use multi_stark::{
   verifier::VerificationError,
 };
 
+mod normalization;
+
 use crate::{
   G,
   bytecode::{FunIdx, Toplevel},
@@ -67,7 +69,18 @@ pub(crate) fn verify_against(
   claim: &[G],
   proof: &AiurProof,
 ) -> Result<(), AiurVerificationError> {
-  for header in &proof.preamble.headers {
+  validate_preamble(system, commitment_parameters, claim, &proof.preamble)?;
+  system.verify_batch(proof)?;
+  Ok(())
+}
+
+pub(crate) fn validate_preamble(
+  system: &System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  claim: &[G],
+  preamble: &multi_stark::batch::BatchPreamble<AiurConfig>,
+) -> Result<(), AiurVerificationError> {
+  for header in &preamble.headers {
     let well_shaped = fixed_trace_heights(
       system.circuits.iter().map(|circuit| circuit.preprocessed_height),
       &header.active,
@@ -88,9 +101,8 @@ pub(crate) fn verify_against(
       ));
     }
   }
-  check_batch_policy(system.circuits.len(), claim, &proof.preamble)
+  check_batch_policy(system.circuits.len(), claim, preamble)
     .map_err(AiurVerificationError::Policy)?;
-  system.verify_batch(proof)?;
   Ok(())
 }
 
@@ -1569,6 +1581,57 @@ mod tests {
 
   fn empty_io_buffer() -> IOBuffer {
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() }
+  }
+
+  #[test]
+  fn fixed_normalization_pads_unused_tables_and_checks_bounds() {
+    let (cp, fp) = test_parameters();
+    let mut toplevel = call_and_memory_toplevel();
+    toplevel.memory_sizes.push(2); // An unused memory table must also be active.
+    let system = AiurSystem::build(toplevel, cp, fp);
+    let mut previous = None;
+    for input in [
+      vec![G::from_u64(3), G::from_u64(5)],
+      vec![G::from_u64(7), G::from_u64(11)],
+    ] {
+      let mut io = empty_io_buffer();
+      let (record, output) =
+        system.toplevel().execute(0, input.clone(), &mut io).unwrap();
+      let (claim, proof) = system
+        .prove_from_execution_normalized(0, &input, &io, record, &output, 4)
+        .unwrap();
+      system.verify(&claim, &proof).unwrap();
+      assert!(proof.preamble.headers[0].active.iter().all(|&v| v));
+      let logs = &proof.preamble.headers[0].log_degrees;
+      if let Some(old) = &previous {
+        assert_eq!(old, logs);
+      }
+      previous = Some(logs.clone());
+      assert_eq!(
+        proof.preamble.messages.len(),
+        2 * system.toplevel().memory_sizes.len()
+      );
+      let (record, output) =
+        system.toplevel().execute(0, input.clone(), &mut io).unwrap();
+      assert!(
+        system
+          .prove_from_execution_normalized(0, &input, &io, record, &output, 0)
+          .is_err()
+      );
+    }
+    let mut io = empty_io_buffer();
+    let mut record = QueryRecord::new(system.toplevel());
+    for i in 0..3 {
+      system
+        .toplevel()
+        .execute_in(0, vec![G::from_usize(i), G::ONE], &mut io, &mut record)
+        .unwrap();
+    }
+    let err = system
+      .prove_from_execution_normalized(0, &[], &io, record, &[], 1)
+      .err()
+      .expect("oversized execution");
+    assert!(err.contains("needs 3 rows; configured bound is 2"), "{err}");
   }
 
   /// Hand-build the toplevel for a single constrained function `f(a, b) = a*b`.
