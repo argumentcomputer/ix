@@ -39,7 +39,7 @@ theorem stripAllPis_piJoin_sort (bs : Telescope) (s : Kernel.Level) :
   induction bs with
   | nil => rfl
   | cons b bs ih =>
-    obtain ⟨domain, meta⟩ := b
+    obtain ⟨domain, binderData⟩ := b
     simp only [piJoin, stripAllPis, ih]
 
 theorem replacePisPw_piJoin (pw : Kernel.PropWhen) (bs : Telescope)
@@ -49,7 +49,7 @@ theorem replacePisPw_piJoin (pw : Kernel.PropWhen) (bs : Telescope)
   induction bs with
   | nil => rfl
   | cons b bs ih =>
-    obtain ⟨domain, meta⟩ := b
+    obtain ⟨domain, binderData⟩ := b
     simp only [List.length_cons, piJoin, Kernel.Expr.replacePisPw, ih,
       resetOuter, List.map_cons, Option.map_some]
 
@@ -57,11 +57,18 @@ theorem replacePisPw_piJoin (pw : Kernel.PropWhen) (bs : Telescope)
 position. No `Check`, well-scopedness or metadata premise is needed. -/
 theorem readMotive_zero_type (np : Nat) (m : MotiveRd) :
     readMotive 0 (m.type np, m.binderMeta) = some m := by
-  cases m
-  simp only [readMotive, lowerBVars_zero, MotiveRd.type, MotiveRd.tele,
-    stripAllPis_piJoin_sort, List.getLast?_concat, List.dropLast_concat,
-    Option.bind_some, MotiveRd.majTy, Kernel.Expr.getAppFn_mkAppN,
-    Kernel.Expr.getAppFn, Option.pure_def]
+  cases m with
+  | mk ind us indices majorInfo level outer =>
+    simp only [readMotive, lowerBVars_zero, MotiveRd.type, MotiveRd.tele,
+      stripAllPis_piJoin_sort, List.getLast?_concat, List.dropLast_concat,
+      MotiveRd.majTy, Option.pure_def]
+    change
+      (match ((Kernel.Expr.const ind us).mkAppN
+          (bvarsAt np indices.length ++ bvarsAt indices.length 0)).getAppFn with
+       | .const n ls => some (⟨n, ls, indices, majorInfo, level, outer⟩ : MotiveRd)
+       | _ => none) = some ⟨ind, us, indices, majorInfo, level, outer⟩
+    rw [Kernel.Expr.getAppFn_mkAppN]
+    rfl
 
 /-- The exact reader data of the native generator's first motive. -/
 def nativeMotive (T : Kernel.Name) (lps : List Kernel.Name) (indices : Telescope)
@@ -94,14 +101,17 @@ theorem matchMotive_native {env : Kernel.Env} {cv : Kernel.ConstantVal}
   have parsed : read env (resetOuter pw parameters).length
       (nativeMotive cv.name cv.levelParams indices level outer) =
         some ⟨parameters, indices, sort⟩ := by
-    simp only [read, nativeMotive, resetOuter, List.length_map, lookup,
+    simp only [InstalledHeader.read, nativeMotive, resetOuter, List.length_map, lookup,
       ite_eq_left (Eq.refl cv.levelParams.length), Kernel.Expr.instantiateLevelParams_self,
       shape, readType_piJoin]
   have domains : parameters.map Prod.fst = (resetOuter pw parameters).map Prod.fst ∧
       indices.map Prod.fst =
         (nativeMotive cv.name cv.levelParams indices level outer).idxs.map Prod.fst := by
-    exact ⟨(List.map_map).symm, (List.map_map).symm⟩
-  simpa only [matchMotive, parsed, ite_eq_left domains]
+    constructor
+    · exact (List.map_map).symm
+    · change indices.map Prod.fst = (resetOuter .never indices).map Prod.fst
+      exact (List.map_map).symm
+  simp only [matchMotive, parsed, ite_eq_left domains]
 
 /-- The actual recursive generator places that motive immediately after
 the same parameter domains. The rest of the recursor is the actual output
@@ -189,7 +199,9 @@ theorem consSumCtors_lookup_of_ne (np : Nat) (n : Kernel.Name) (ci : Kernel.Cons
     intro env names lookup
     apply ih ⟨.ctorInfo c.1 np c.2 :: env.consts⟩
       (fun c' present => names c' (List.mem_cons_of_mem _ present))
-    rw [Kernel.Env.find?_cons, if_neg (names c List.mem_cons_self)]
+    rw [Kernel.Env.find?_cons]
+    change (if c.1.name = n then some (.ctorInfo c.1 np c.2) else env.find? n) = some ci
+    rw [ite_eq_right (names c List.mem_cons_self)]
     exact lookup
 
 /-- Every existing lookup survives the ACTUAL ordered constructor stage
