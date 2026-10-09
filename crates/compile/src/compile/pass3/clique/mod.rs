@@ -9,6 +9,7 @@
 //! | `Clique/Telescope.lean`, `Whnf.lean` | [`telescope`] |
 //! | `Clique/WF.lean`, `WFSchema.lean`, `WFMatcher.lean`, `WFConjugation.lean` | [`wf`] |
 //! | `Clique/Structural.lean` | [`structural`] |
+//! | `Clique/StructuralEq.lean` | [`structural_eq`] |
 //! | `Clique/PartialFixpoint.lean`, `PFConjugation.lean` | [`pf`] |
 //! | `Clique/Transport.lean`, `Plan.lean` | [`transport`] |
 //! | `Clique/Recover.lean` | [`recover`] |
@@ -35,6 +36,7 @@ pub mod packing;
 pub mod pf;
 pub mod recover;
 pub mod structural;
+pub mod structural_eq;
 pub mod telescope;
 pub mod transport;
 pub mod wf;

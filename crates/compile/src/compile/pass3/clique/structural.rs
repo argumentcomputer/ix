@@ -6,6 +6,7 @@ use ix_common::env::{ConstantInfo, Expr, ExprData, Name, NameData};
 
 use super::basic::*;
 use super::packing::*;
+use super::structural_eq::{eq_def_name_eq, regenerate_structural_eq};
 use super::telescope::*;
 use super::wf::Transported;
 use crate::compile::pass3::expr::{get_app_fn_args, nat_usize, strip_mdata};
@@ -1381,31 +1382,77 @@ pub fn transport_structural(
       ..d.clone()
     }));
   }
-  // the carried lemmas (D-M5-1, `transportStructural`): with a repacked
-  // group, a lemma that reaches the recursion's encoding (Lean's unfolding
-  // proof through `brecOn.go`/`brecOn.eq` and packed values) is outside the
-  // grammar
-  if l.repacks() {
-    let enc = |c: &Name| l.is_encoding_const(c);
-    for (d, _) in lemmas {
-      if mentions_where(&enc, &d.typ) || mentions_where(&enc, &d.value) {
-        return Err(format!(
-          "grammar: the carried equation lemma {} unfolds a member through the encoding of a repacked group (brecOn.go/brecOn.eq and packed values the transport does not re-associate)",
-          name_to_string(&d.name)
-        ));
+  if lemmas.is_empty() {
+    return Ok(out);
+  }
+  let targets: Vec<_> = out.iter().map(|d| d.decl.clone()).collect();
+  let target_const = |n: &Name| {
+    let mut ci = const_of(n)?;
+    if let Some(d) = targets.iter().find(|d| eq_def_name_eq(&d.name, n)) {
+      match &mut ci {
+        ConstantInfo::DefnInfo(v) => {
+          v.cnst.typ = d.typ.clone();
+          v.value = d.value.clone();
+        },
+        ConstantInfo::ThmInfo(v) => {
+          v.cnst.typ = d.typ.clone();
+          v.value = d.value.clone();
+        },
+        _ => {},
       }
     }
-  }
+    Some(ci)
+  };
   l.check_ownership = false;
   for (d, nn) in lemmas {
-    let typ = phi_s(tm, &l, &empty, &d.typ)?;
-    let value = phi_s(tm, &l, &empty, &d.value)?;
-    out.push(Transported::ok(Decl {
-      name: nn.clone(),
-      typ,
-      value,
-      ..d.clone()
-    }));
+    let enc = |c: &Name| l.is_encoding_const(c);
+    if l.repacks()
+      && (mentions_where(&enc, &d.typ) || mentions_where(&enc, &d.value))
+    {
+      let attempt = (|| {
+        let member = members
+          .iter()
+          .find(|m| eq_def_name_eq(&d.name, &mk_str(&m.name, "eq_def")))
+          .ok_or("structural eq_def: not a member unfolding theorem")?;
+        let sh = member_shape(member)?;
+        let a = l
+          .aux
+          .get(&sh.brec_on_name)
+          .ok_or("structural eq_def: no block layout")?;
+        let pos = l.num_params + l.num_motives + l.groups[a.pos].arity - 1;
+        let major = sh
+          .brec_args
+          .get(pos)
+          .ok_or("structural eq_def: no recursive argument")?;
+        let i = bvar_idx(&strip_mdata(major))
+          .ok_or("structural eq_def: recursive argument is not a binder")?;
+        if i < sh.lets || i - sh.lets >= sh.lams {
+          return Err("structural eq_def: recursive binder lies outside the member telescope".into());
+        }
+        regenerate_structural_eq(
+          tm,
+          &target_const,
+          member,
+          d,
+          nn,
+          sh.lams - 1 - (i - sh.lets),
+        )
+      })();
+      let regenerated = attempt.map_err(|_: String| format!(
+        "grammar: the carried equation lemma {} unfolds a member through the encoding of a repacked group (brecOn.go/brecOn.eq and packed values the transport does not re-associate)",
+        name_to_string(&d.name)
+      ))?;
+      out.push(Transported::ok(regenerated));
+    } else {
+      let typ = phi_s(tm, &l, &empty, &d.typ)?;
+      let value = phi_s(tm, &l, &empty, &d.value)?;
+      out.push(Transported::ok(Decl {
+        name: nn.clone(),
+        typ,
+        value,
+        ..d.clone()
+      }));
+    }
   }
   Ok(out)
 }

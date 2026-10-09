@@ -40,15 +40,17 @@
   Unsupported shapes are outside the grammar and leave the clique in Lean's
   form (§5.3: the fallback is the baseline): a dictionary passed whole to a
   helper other than a matcher, a path the walk cannot follow, a projection
-  of a `brecOn` result that is not a full path, a carried equation lemma
-  that reaches the encoding when a group is repacked (D-M5-1: Lean's
-  unfolding proof carries packed values the walk does not see).
+  of a `brecOn` result that is not a full path, or a carried equation lemma
+  of a repacked group that cannot be regenerated. StructuralEq builds an
+  unfolding proof from the unchanged statement and actual casesOn; it does
+  not transport Lean's old packed proof (D-M5-1).
 -/
 module
 public import Ix.Compile.Clique.Packing
 public import Ix.Compile.Clique.Telescope
 public import Ix.Compile.Clique.Whnf
 public import Ix.Compile.Clique.WF
+public import Ix.Compile.Clique.StructuralEq
 public section
 
 namespace Ix.Compile.Clique
@@ -843,27 +845,40 @@ def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Na
       ctx := ctx.push (t, false)
     let body ← phiS L ctx b2
     out := out.push { decl := { d with type := ← phi d.type, value := mkLams ps' (mkLets ls' body) } }
-  -- the carried equation lemmas (a failure leaves the clique in Lean's form);
-  -- they are theorems, so dictionary ownership is not enforced in them (a
-  -- lemma's statement must still be Lean's, `Pass/Cliques.lean`).
-  -- A lemma that reaches the recursion's encoding is outside the grammar when
-  -- the clique repacks a group (D-M5-1): Lean's unfolding proof (`eq_def`,
-  -- `Structural.mkUnfoldEq`) carries the packed values through `brecOn.go`
-  -- and `brecOn.eq`, the β-reduced packed functional and tuple, a λ over a
-  -- packed value (`congrArg`'s motive) and the `below` dictionary unfolded by
-  -- `whnf` in the splitter's motive, none of which `Φ_σ` re-associates; the
-  -- transported proof would not type-check (the certified checker rejects it).
-  -- Without a repacked group no packed value moves, and the lemma transports
-  -- as the members do.
-  if L.repacks then
-    for (d, _) in lemmas do
-      if mentionsWhere L.isEncodingConst d.type || mentionsWhere L.isEncodingConst d.value then
-        throw s!"grammar: the carried equation lemma {d.name} unfolds a member through the encoding \
-          of a repacked group (brecOn.go/brecOn.eq and packed values the transport does not re-associate)"
+  if lemmas.isEmpty then return out
+  -- Regeneration sees exactly the transported members/functionals, before
+  -- (R) gives their encoding constants canonical names. Source declarations
+  -- retain all metadata; the override changes only the produced type/value.
+  let targets := out.map (·.decl)
+  let targetConst? (n : Name) : Option ConstantInfo := do
+    let ci ← const? n
+    match targets.find? (fun d => eqDefNameEq d.name n), ci with
+    | some d, .defnInfo v => return .defnInfo { v with cnst := { v.cnst with type := d.type }, value := d.value }
+    | some d, .thmInfo v => return .thmInfo { v with cnst := { v.cnst with type := d.type }, value := d.value }
+    | _, _ => return ci
   let Lp := { L with checkOwnership := false }
   for (d, nn) in lemmas do
-    out := out.push { decl := { d with name := nn, type := ← phiS Lp #[] d.type,
-                                           value := ← phiS Lp #[] d.value } }
+    if L.repacks && (mentionsWhere L.isEncodingConst d.type || mentionsWhere L.isEncodingConst d.value) then
+      -- Keep the original refusal, including its text, unless every branch
+      -- of the replacement proof was constructed and checked by conversion.
+      let regenerated ← try
+        let some member := members.find? (fun m => eqDefNameEq d.name (Name.mkStr m.name "eq_def"))
+          | throw "structural eq_def: not a member unfolding theorem"
+        let sh ← liftE (memberShape member)
+        let some a := L.aux.get? sh.brecOnName | throw "structural eq_def: no block layout"
+        let some major := sh.brecArgs[L.numParams + L.numMotives + L.groups[a.pos]!.arity - 1]?
+          | throw "structural eq_def: no recursive argument"
+        let .bvar i _ := stripMdata major | throw "structural eq_def: recursive argument is not a binder"
+        unless sh.lets ≤ i && i - sh.lets < sh.lams do
+          throw "structural eq_def: recursive binder lies outside the member telescope"
+        regenerateStructuralEq targetConst? member d nn (sh.lams - 1 - (i - sh.lets))
+      catch _ =>
+        throw s!"grammar: the carried equation lemma {d.name} unfolds a member through the encoding \
+          of a repacked group (brecOn.go/brecOn.eq and packed values the transport does not re-associate)"
+      out := out.push { decl := regenerated }
+    else
+      out := out.push { decl := { d with name := nn, type := ← phiS Lp #[] d.type,
+                                             value := ← phiS Lp #[] d.value } }
   return out
 
 end Ix.Compile.Clique

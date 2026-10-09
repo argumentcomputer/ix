@@ -6,17 +6,18 @@
   Lean's `eq_def` of a structural member unfolds it through the recursion's
   encoding: `brecOn.go`, `brecOn.eq`, the packed functional and tuple, and the
   `below` dictionary unfolded in the splitter's motive. The transport carries
-  such a lemma only when no type former's group is repacked:
+  such a lemma by transport when nothing is repacked, and regenerates the
+  supported repacked unfolding proofs from their unchanged statements:
 
   * `SC1`: `od`/`ev` over `Nat` (one group of two), Lean's order not the
-    canonical one: the group is repacked, the clique keeps Lean's form (`SHAPE`);
+    canonical one: regenerate both unfolding proofs over the canonical group;
   * `SC0`: the same clique in the canonical order (unchanged);
   * `MA`: one function per type former of a mutual inductive (groups of one),
     order not canonical: transported with its `eq_def`s;
   * `MB`: as `MA`, with fixed parameters in different orders (the fixed
     parameters are reordered, nothing is repacked): transported;
   * `MC`: two functions on `TA` in a non-canonical order and one on `TB`: the
-    `TA` group is repacked, Lean's form (`SHAPE`);
+    `TA` group is repacked: regenerate all three unfolding proofs;
   * `MD`: as `MC` with the `TA` group in the canonical order but the clique's
     order not (`σ` moves `h` only): transported.
 -/
@@ -34,6 +35,7 @@ def ev : Nat → Bool
 end
 theorem unfold_used (n : Nat) : ev n = ev n ∧ od n = od n :=
   ⟨(ev.eq_def n).trans (ev.eq_def n).symm, (od.eq_def n).trans (od.eq_def n).symm⟩
+theorem equations_used : ev 0 = true ∧ od 0 = false := ⟨ev.eq_1, od.eq_1⟩
 end SC1
 
 namespace SC0
@@ -47,6 +49,7 @@ def od : Nat → Bool
 end
 theorem unfold_used (n : Nat) : ev n = ev n ∧ od n = od n :=
   ⟨(ev.eq_def n).trans (ev.eq_def n).symm, (od.eq_def n).trans (od.eq_def n).symm⟩
+theorem equations_used : ev 0 = true ∧ od 0 = false := ⟨ev.eq_1, od.eq_1⟩
 end SC0
 
 namespace MA

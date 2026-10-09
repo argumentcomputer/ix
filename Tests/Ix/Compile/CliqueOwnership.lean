@@ -547,10 +547,10 @@ switch on, as a unit seeded by the members and `unfold_used` (the closure
 carries the `eq_def`s):
 
 * the clique table carries every member's `eq_def` (`scheduleCliques`);
-* the plan is the expected one: transported (no group repacked: the lemmas
-  transport with the members), unchanged (Lean's order is canonical), or
-  Lean's form with the transport's refusal of a carried lemma that reaches the
-  encoding of a repacked group (`transportStructural`, cause `SHAPE`);
+* the plan is the expected one: transported (repacked eq_def proofs are
+  regenerated over the target definitions), or unchanged (Lean's order is
+  canonical). Separate malformed/missing-support controls must retain the
+  exact refusal of an unsupported repacked proof;
 * the three kernels (`check-rs`, `check-lean`, the certified checker) accept
   every compiled name of the case's namespace, the `eq_def`s and
   `unfold_used` included (before the refusal, the certified checker rejected
@@ -576,7 +576,7 @@ structure LemmaCase where
   what : String
 
 def lemmaCases : Array LemmaCase := #[
-  { name := "SC1", member := `od, expect := "refused", repacks := true,
+  { name := "SC1", member := `od, expect := "transported", repacks := true,
     what := "one group of two in a non-canonical order (D-M5-1's source)" },
   { name := "SC0", member := `od, expect := "unchanged", repacks := false,
     what := "the same clique in the canonical order (neighbour)" },
@@ -584,7 +584,7 @@ def lemmaCases : Array LemmaCase := #[
     what := "groups of one, non-canonical order (neighbour)" },
   { name := "MB", member := `sa, expect := "transported", repacks := false,
     what := "groups of one, fixed parameters reordered (neighbour)" },
-  { name := "MC", member := `f, expect := "refused", repacks := true,
+  { name := "MC", member := `f, expect := "transported", repacks := true,
     what := "a group of two repacked beside a group of one" },
   { name := "MD", member := `f, expect := "transported", repacks := false,
     what := "a group of two in the canonical order, the clique's order not (neighbour)" }]
@@ -674,8 +674,10 @@ def runLemmaUnit (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.
   let mut failures : Array String := #[]
   unless enc == .structural do failures := failures.push s!"{c.name}: not a structural clique"
   let used := ns ++ `unfold_used
-  let u : CUnit := { name := s!"clique-lemmas-{c.name}", env, seeds := ms.push used,
-                     closure := closureOf env (ms.push used).toList }
+  let derived := if env.contains (ns ++ `equations_used) then #[ns ++ `equations_used] else #[]
+  let seeds := ms.push used ++ derived
+  let u : CUnit := { name := s!"clique-lemmas-{c.name}", env, seeds,
+                     closure := closureOf env seeds.toList }
   let on ← compileUnit u
   for (n, e) in on.cenv.ungrounded.toList do
     failures := failures.push s!"{c.name}: block failure {n.pretty}: {e.take 300}"
@@ -707,10 +709,11 @@ def runLemmaUnit (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.
       kernelFailures dir p names
     finally IO.FS.removeDirAll dir
   for (leg, n, m) in kf do failures := failures.push s!"{c.name}: compiled {n} rejected by {leg}: {m.take 200}"
-  unless names.any (· == (ixName used).pretty) && carried.all (fun l => names.contains l.pretty) do
+  unless names.any (· == (ixName used).pretty) && carried.all (fun l => names.contains l.pretty) &&
+      derived.all (fun n => names.contains (ixName n).pretty) do
     failures := failures.push s!"{c.name}: the kernels did not check unfold_used and every carried lemma"
   -- the Rust leg: members, carried lemmas, `unfold_used`, canonical constants
-  let (rustFailures, rustSummary) ← rustLeg u on (ms ++ carried.map toLeanName |>.push used) #[]
+  let (rustFailures, rustSummary) ← rustLeg u on ((ms ++ carried.map toLeanName |>.push used) ++ derived) #[]
   failures := failures ++ rustFailures
   -- the control
   let ctx : Core.Context := { fileName := "<clique-ownership>", fileMap := default, maxHeartbeats := 0 }
@@ -732,6 +735,88 @@ def runLemmaUnit (env : Environment) (eqn : Std.HashMap Name (_root_.Ix.Compile.
   return { name := c.name, outcome := s!"plan {got}; carried {carried.size}; {rustSummary}",
            kernel := s!"{names.size} compiled names, {kf.size} kernel failure(s)",
            values := #[ctlLine], failures }
+
+open _root_.Ix.Compile.Clique in
+/-- A false, but well-typed, Bool unfolding statement for the refusal control. -/
+def eqDefFalseRhs : _root_.Ix.Expr → _root_.Ix.Expr
+  | .forallE n t b bi _ => _root_.Ix.Expr.mkForallE n t (eqDefFalseRhs b) bi
+  | e => match constApp? e with
+    | some (n, us, #[ty, lhs, _]) =>
+      _root_.Ix.Compile.Canon.mkAppN (_root_.Ix.Expr.mkConst n us)
+        #[ty, lhs, _root_.Ix.Expr.mkConst (ixName ``Bool.false) #[]]
+    | _ => e
+
+open _root_.Ix.Compile.Clique in
+/-- Exact P1→P0 members/functionals and independently regenerated equations;
+source-proof wrapping is irrelevant. Each failed replacement must still hit
+the old structural refusal. The old mixed-packing kernel control above stays. -/
+def equationRegenerationChecks (env : Environment)
+    (eqn : Std.HashMap Name (_root_.Ix.Compile.Clique.Encoding × Array Name)) :
+    Except String (Array String × String) := do
+  let ns := lemNs ++ `SC1
+  let canonical := lemNs ++ `SC0
+  let const? (n : IxName) := (env.find? (toLeanName n)).map toIxConst
+  let some (_, ms) := eqn.get? (ns ++ `od) | throw "eq_def: SC1 clique missing"
+  let some members := ms.mapM (declOf env ·) | throw "eq_def: SC1 member missing"
+  let all := ms.map ixName
+  let some (_, aux) := Ix.Compile.Pass.encodingOf const? all members | throw "eq_def: SC1 encoding missing"
+  let some lemmas := ms.mapM (fun n => declOf env (n ++ `eq_def)) | throw "eq_def: SC1 lemma missing"
+  let pairs := lemmas.map fun d => (d, d.name)
+  let generate (lookup : IxName → Option _root_.Ix.ConstantInfo) (pairs : Array (Decl × IxName)) :=
+    TM.run' (transportStructural members aux #[1, 0] lookup pairs)
+  let produced ← generate const? pairs
+  let ren (n : IxName) : Option IxName :=
+    let name := toLeanName n
+    if ns.isPrefixOf name then some (ixName (name.replacePrefix ns canonical)) else none
+  let mut failures := #[]
+  let mut equations := 0
+  let mut declarations := 0
+  for t in produced do
+    let d := t.decl
+    let name := (toLeanName d.name).replacePrefix ns canonical
+    let some reference := declOf env name | throw s!"eq_def: canonical reference {name} missing"
+    let reference ← if lemmas.any (fun l => eqDefNameEq l.name d.name) then do
+        let .str owner _ := name | throw "eq_def: equation has no owner"
+        let some member := declOf env owner | throw "eq_def: canonical owner missing"
+        equations := equations + 1
+        TM.run' (regenerateStructuralEq const? member reference reference.name 0)
+      else pure reference
+    unless eqDefExprEq (renameConsts ren d.type) reference.type &&
+        eqDefExprEq (renameConsts ren d.value) reference.value do
+      failures := failures.push s!"eq_def: canonical P1→P0 oracle differs at {name}"
+    declarations := declarations + 1
+  unless equations == 2 && declarations == produced.size && declarations ≥ 6 do
+    failures := failures.push s!"eq_def: incomplete canonical oracle ({equations}/{declarations})"
+  let wrapped := pairs.map fun (d, n) =>
+    ({ d with value := _root_.Ix.Compile.Canon.mkAppN
+        (_root_.Ix.Expr.mkConst (ixName ``id) #[_root_.Ix.Level.mkZero]) #[d.type, d.value] }, n)
+  let wrappedOutput ← generate const? wrapped
+  unless produced.size == wrappedOutput.size && (produced.zip wrappedOutput).all (fun (a, b) =>
+      eqDefNameEq a.decl.name b.decl.name && eqDefExprEq a.decl.type b.decl.type &&
+        eqDefExprEq a.decl.value b.decl.value) do
+    failures := failures.push "eq_def: a harmless source proof wrapper changed regeneration"
+  let falsePairs := pairs.map fun (d, n) =>
+    (if eqDefNameEq d.name (ixName (ns ++ `ev.eq_def)) then { d with type := eqDefFalseRhs d.type } else d, n)
+  let renamedPairs := pairs.map fun (d, n) => ({ d with name := _root_.Ix.Name.mkStr d.name "unsupported" }, n)
+  let attempts := #[
+    ("false equation", generate const? falsePairs),
+    ("foreign lemma", generate const? renamedPairs),
+    ("missing Eq.refl", generate (fun n => if eqDefNameEq n (ixName ``Eq.refl) then none else const? n) pairs),
+    ("missing casesOn", generate (fun n => if eqDefNameEq n (ixName ``Nat.casesOn) then none else const? n) pairs)]
+  for (label, result) in attempts do
+    match result with
+    | .error e =>
+      unless e.startsWith "grammar: the carried equation lemma " &&
+          (e.splitOn "of a repacked group").length == 2 do
+        failures := failures.push s!"eq_def: {label} lost the original refusal: {e}"
+    | .ok _ => failures := failures.push s!"eq_def: {label} was admitted"
+  let z := _root_.Ix.Expr.mkBVar 0
+  let one : _root_.Ix.Expr := .bvar 1 z.getHash
+  let zOther : _root_.Ix.Expr := .bvar 0 (_root_.Ix.Expr.mkBVar 9).getHash
+  unless !eqDefExprEq z one && eqDefExprEq z zOther && !eqDefConvertible const? 0 z z do
+    failures := failures.push "eq_def: structural cache/fuel admission controls failed"
+  return (failures, s!"equation regeneration: {declarations} exact canonical declarations, {equations} equations, \
+    proof-wrapper neighbour, {attempts.size} original refusals, cache/fuel controls")
 
 /-! ## The cases -/
 
@@ -945,7 +1030,7 @@ def run : IO UInt32 := do
   unless refusals ≥ 1 && compiledCallers ≥ 1 do
     failures := failures.push s!"callers: {refusals} refused and {compiledCallers} compiled; the block-rule check needs a transported and a kept WF8 order"
   IO.println s!"[clique-ownership] compile units: {units}, WF8 callers refused {refusals}, compiled {compiledCallers}"
-  -- the carried-lemma units (D-M5-1): both expectations must be exercised
+  -- All six original units and their full kernel/name/parity predicates stay.
   let mut lemmaPlans : Std.HashMap String Nat := {}
   for c in lemmaCases do
     let o ← try runLemmaUnit env eqn c
@@ -955,9 +1040,14 @@ def run : IO UInt32 := do
     for f in o.failures do IO.println s!"[clique-ownership]   FAIL {f}"
     if o.failures.isEmpty then lemmaPlans := lemmaPlans.insert c.expect (lemmaPlans.getD c.expect 0 + 1)
     failures := failures ++ o.failures
-  unless lemmaPlans.getD "refused" 0 ≥ 1 && lemmaPlans.getD "transported" 0 ≥ 1 do
-    failures := failures.push s!"carried lemmas: refused and transported must both pass ({lemmaPlans.toList})"
+  unless lemmaPlans.getD "transported" 0 == 5 && lemmaPlans.getD "unchanged" 0 == 1 do
+    failures := failures.push s!"carried lemmas: five transported and one unchanged must pass ({lemmaPlans.toList})"
   IO.println s!"[clique-ownership] carried-lemma units: {lemmaCases.size}, passing by plan {lemmaPlans.toList.mergeSort (fun a b => a.1 < b.1)}"
+  match equationRegenerationChecks env eqn with
+  | .error e => failures := failures.push s!"equation regeneration: {e}"
+  | .ok (fs, summary) =>
+    IO.println s!"[clique-ownership] {summary}"
+    failures := failures ++ fs
   -- the structural memo is keyed by the ownership mode
   match memoByMode env eqn with
   | .error e =>
