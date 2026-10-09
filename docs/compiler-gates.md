@@ -572,8 +572,14 @@ Logs contain the Lean version, commit, command, actual command exit and complete
 output. `planned-stages.json`, `stages.json`, `stages.tsv`, `result.json` and
 `driver.rc` preserve each success, failure or explicit unrun stage. Required
 evidence-write failures force nonzero. Source, references, dependency sources
-and tools are rehashed afterward; complete available imports/native artifacts
-are compared across each library compilation interval. Input modules are built
+and tools are rehashed afterward; complete compiled-import, native-library and
+Lean-prefix trees are compared across each library compilation interval.
+`LEAN_SRC_PATH` is inventoried separately: all recursive `.lean` candidates,
+source-root package directories (including empty shadowing directories), ordered
+search paths and Lean's two builtin source fallbacks remain pinned. Source links
+are followed with explicit missing-root, dangling-source and cycle checks;
+changing unrelated logs or non-source lock files does not change this inventory.
+Tracked and dependency source checks remain complete. Input modules are built
 before that interval. Outputs and full pin diffs are retained, including on a
 mismatch; their hashes are in the result before any later manual cleanup.
 The lane's existing `.lake/build/compile-cert` data and four kernel report files

@@ -125,6 +125,85 @@ def tree(path, *, artifacts=False, ancestors=(), source_only=False):
     return result
 
 
+def source_tree(path):
+    """Lean source candidates, not arbitrary files below LEAN_SRC_PATH.
+
+    findWithExt selects the first root with a top-level package directory or
+    package.lean entry, before testing any nested file. Preserve those directory
+    names even when empty. Recurse through every directory (including .lake/out)
+    for .lean candidates; generated logs and non-source lock files are not inputs.
+    """
+    path = Path(path)
+    root = {'path': str(path), 'resolved': str(path.resolve()),
+            'link': os.readlink(path) if path.is_symlink() else None}
+    if not path.exists():
+        require(not path.is_symlink(), f'dangling Lean source root: {path}')
+        return {**root, 'absent': True}
+    require(path.is_dir(), f'Lean source root is not a directory: {path}')
+    packages, files = [], []
+
+    def visit(directory, ancestors):
+        real = directory.resolve(strict=True)
+        require(real not in ancestors, f'Lean source directory cycle: {directory}')
+        for entry in sorted(directory.iterdir()):
+            if entry.is_dir():
+                if directory == path:
+                    packages.append({'path': str(entry), 'resolved': str(entry.resolve(strict=True)),
+                                     'link': os.readlink(entry) if entry.is_symlink() else None})
+                # A directory named A.lean also changes root selection for A.
+                require(entry.suffix != '.lean', f'Lean source candidate is a directory: {entry}')
+                visit(entry, (*ancestors, real))
+            elif entry.suffix == '.lean':
+                require(entry.is_file(), f'nonregular/dangling Lean source candidate: {entry}')
+                files.append(identity(entry))
+            # A non-directory, non-.lean entry cannot satisfy source lookup.
+            # If a dangling directory link gains a target containing source,
+            # the next snapshot follows it and sees the new candidates.
+
+    visit(path, ())
+    return {**root, 'packages': packages, 'files': files}
+
+
+def import_inventory(views, root):
+    """Separate compiled/native inputs from Lean source lookup candidates."""
+    result = {'schema': 2, 'views': views, 'files': {}, 'sources': {}}
+
+    def full(path, *, required=False):
+        if required:
+            require(path.is_dir(), f'required import/native root missing: {path}')
+        key = str(path)
+        if key in result['files']:
+            return
+        if not path.exists():
+            require(not path.is_symlink(), f'dangling import/native root: {path}')
+            result['files'][key] = {'absent': True}
+        else:
+            require(path.is_dir(), f'import/native root is not a directory: {path}')
+            result['files'][key] = tree(path)
+
+    for view in views:
+        cwd, prefix = Path(view['cwd']), Path(view['prefix'])
+        full(prefix / 'lib', required=True)
+        for kind in ('LEAN_PATH', 'LD_LIBRARY_PATH'):
+            value = view['paths'][kind]
+            if value is not None:
+                # SearchPath.parse and the native loader retain empty entries as cwd.
+                for raw in value.split(os.pathsep):
+                    full(Path(raw) if Path(raw).is_absolute() else cwd / raw)
+        value = view['paths']['LEAN_SRC_PATH']
+        paths = [] if value is None else [Path(raw) if Path(raw).is_absolute() else cwd / raw
+                                          for raw in value.split(os.pathsep)]
+        # Lean.getSrcSearchPath appends these after the environment entries.
+        paths += [prefix / 'src/lean/lake', prefix / 'src/lean']
+        for path in paths:
+            if str(path) not in result['sources']:
+                result['sources'][str(path)] = source_tree(path)
+    # Preserve the original full generated native/executable scope as well.
+    for path in (root / '.lake/build/lib', root / '.lake/build/bin'):
+        full(path, required=True)
+    return result
+
+
 def normalize_pins(kind, text):
     """Exactly the two Init-source fields; the certificate digest is immutable."""
     if kind == 'PinData':
@@ -321,31 +400,18 @@ class Gate:
             require(result == self.snapshot_inputs, 'tool/dependency/benchmark identity changed')
 
     def imports(self, label, group):
-        result = {'views': [], 'files': {}}
+        views = []
         for cwd in (self.root, self.args.benchmark_dir):
             query = ('import os,json,subprocess; print(json.dumps({'
                      '"prefix":subprocess.check_output(["lean","--print-prefix"],text=True).strip(),'
-                     '"paths":{k:os.environ.get(k,"") for k in '
+                     '"paths":{k:os.environ.get(k) for k in '
                      '["LEAN_PATH","LEAN_SRC_PATH","LD_LIBRARY_PATH"]}}))')
             view = json.loads(subprocess.check_output(['lake', '--offline', '--no-cache', 'env', sys.executable, '-I', '-B', '-c', query],
                 cwd=cwd, env=self.env, text=True))
             require(view['paths']['LEAN_PATH'], 'empty effective Lean import path')
             view['cwd'] = str(cwd)
-            result['views'].append(view)
-            roots = [Path(view['prefix']) / 'lib']
-            for key, value in view['paths'].items():
-                for raw in filter(None, value.split(os.pathsep)):
-                    path = Path(raw) if Path(raw).is_absolute() else cwd / raw
-                    if path.exists():
-                        roots.append(path)
-                    else:
-                        result['files'][str(path)] = {'absent': True}
-            for path in roots:
-                if str(path) not in result['files']:
-                    result['files'][str(path)] = tree(path)
-        # Pin all generated native inputs/executables, not just the ix command.
-        for path in (self.root / '.lake/build/lib', self.root / '.lake/build/bin'):
-            result['files'][str(path)] = tree(path)
+            views.append(view)
+        result = import_inventory(views, self.root)
         write_json(self.out / f'{group}-imports-{label}.json', result)
         if label == 'pre':
             self.library_before[group] = result
