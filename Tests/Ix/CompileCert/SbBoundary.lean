@@ -77,6 +77,19 @@ def resultSort : Kernel.Expr → Option Kernel.Level
   | .sort u => some u
   | _ => none
 
+/-- The public open-argument counterpart of the installed firing recipe.
+Nested pins use the same capture-avoiding sequence as
+`SourceRuleComparisons.nested`; closed runtime arguments still use the
+unchanged `recFireComparands`. No caller closedness assumption is added. -/
+def openFireParameters (rule : Kernel.RecRule) (levels : List Kernel.Name)
+    (universes : List Kernel.Level) (arguments : List Kernel.Expr) (prefix : Nat) :
+    List Kernel.Expr :=
+  match rule.fire with
+  | .nested _ pins => pins.map fun pin =>
+      Kernel.Expr.instSeqLift (arguments.take prefix) (prefix - 1)
+        (pin.instantiateLevelParams levels universes)
+  | _ => arguments.take rule.ctorParams
+
 /-- An independent symbolic equation assembled from the actual installed frame.
 `motivePosition` is printed source metadata, not an assumed theorem. All needed
 syntactic arities and installed constructor counts are checked here. The output
@@ -93,12 +106,17 @@ def frameStatement {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
   let some (motive, _) := pre[motivePosition]? | throw "installed motive position"
   let some level := resultSort motive | throw "installed motive result sort"
   let preVars := (List.range p).map fun i => Kernel.Expr.bvar (p - 1 - i)
-  let (us, parameters) := Kernel.recFireComparands f.rule f.header.levelParams
-    (f.header.levelParams.map .param) f.constructor.levelParams preVars p
+  let universes := f.header.levelParams.map Kernel.Level.param
+  -- Universe comparands do not depend on the argument spine. Term parameters
+  -- live in the still-open recursor prefix and must not use closed-only instSpine.
+  let us := (Kernel.recFireComparands f.rule f.header.levelParams
+    universes f.constructor.levelParams [] p).1
+  let parameters := openFireParameters f.rule f.header.levelParams universes preVars p
   unless us.length == f.constructor.levelParams.length && parameters.length == f.constructorParams do
     throw "installed firing recipe arity"
   let ctorType := f.constructor.type.instantiateLevelParams f.constructor.levelParams us
-  let some fieldsType := ctorType.instPis parameters | throw "installed constructor parameter telescope"
+  let some fieldsType := Kernel.Expr.instPisAtLift parameters ctorType
+    | throw "installed constructor parameter telescope"
   let some (fields, result) := fieldsType.stripPis nf | throw "installed constructor field telescope"
   let indices := result.getAppArgs.drop f.constructorParams
   unless indices.length == ni do throw "installed constructor result index count"
@@ -108,7 +126,7 @@ def frameStatement {env : Kernel.Env} {name : Kernel.Name} {index : Nat}
     (parameters.map (Kernel.Expr.liftLooseBVars nf 0) ++ fieldVars)
   let lhs := Kernel.Expr.mkAppN (.const name (f.header.levelParams.map .param)) (leading ++ indices ++ [major])
   let rhs := Kernel.Expr.mkAppN f.rule.rhs (leading ++ fieldVars)
-  let some carrier := (Kernel.Expr.liftLooseBVars nf 0 rest).instPis (indices ++ [major])
+  let some carrier := Kernel.Expr.instPisAtLift (indices ++ [major]) (Kernel.Expr.liftLooseBVars nf 0 rest)
     | throw "installed result carrier"
   let body := kernelEq level carrier lhs rhs
   return (pre ++ fields).foldr (fun (ty, binderData) body => .forallE ty body binderData) body
@@ -250,8 +268,8 @@ def ruleRows (o : Output) (label : String) (cx : ExportContext) (source target :
           ("exportVsProposed", match expected with | .ok e => comparison e header.type | .error _ => .null),
           ("proposedVsInstalled", (installed.map fun v => comparison header.type v.toConstantVal.type).getD .null),
           ("installedKind", j ((installed.map kind).getD "missing"))]
-      -- Sensitivity control: changing the applied installed RHS changes the
-      -- literal equation. This is not a semantic counterexample or W+ verdict.
+      -- Sensitivity control: appending an application changes the whole literal
+      -- equation. This is not a wrong-rule semantic control or W+ verdict.
       if let .ok statement := actualStatement then
         let forged := Kernel.Expr.app statement (.sort .zero)
         o.row "rule-difference-control" [("cone", j label), ("source", j (toString r.name)),
@@ -304,6 +322,7 @@ def inspectCone (o : Output) (w : WState) (root : Lean.Name) (limit : Nat)
           ("route", j (pre.routes.getD ci.name "missing")),
           ("failure", j (match pre.failed[ci.name]? with | none => "" | some v => v.word ++ ": " ++ v.cause))]
       let (rows, owners, rowsOf) := finalSupport input.source.names.toArray pre
+      unless rows.size == owners.size do throw (IO.userError "support owner inventory length mismatch")
       let localW := { w with support := rows, rowsOf }
       let ground := rowGround localW pins known
       let present : Std.HashSet Lean.Name := members.foldl (·.insert ·) {}
@@ -329,7 +348,17 @@ def inspectCone (o : Output) (w : WState) (root : Lean.Name) (limit : Nat)
           ("wRows", n rows.size), ("sourceSupport", n proposal.support.size), ("witnesses", n ws.length),
           ("originalRules", n (input.source.declarations.foldl (fun total ci => match ci with
             | .recInfo r => total + r.rules.length | _ => total) 0)),
-          ("sourceOriginals", Lean.toJson (input.source.names.map toString))]
+          ("sourceOriginals", Lean.toJson (input.source.names.map toString)),
+          ("sourceInstalledNames", Lean.toJson (input.source.names.map (fun name => toString (sourceName name)))),
+          ("sourceRecursors", .arr ((input.source.declarations.filterMap fun ci => match ci with
+            | .recInfo r => some (obj [("source", j (toString r.name)),
+                ("installedSource", j (toString (sourceName r.name))),
+                ("constructors", Lean.toJson (r.rules.map (fun rule => toString rule.ctor)))])
+            | _ => none).toArray)),
+          ("supportRows", .arr ((rows.toList.zipIdx.map fun (row, ordinal) => obj [
+            ("ordinal", n ordinal), ("owner", j (toString (sourceName owners[ordinal]!))),
+            ("ownerOriginal", j (toString owners[ordinal]!)),
+            ("names", Lean.toJson (row.names.map toString))]).toArray))]
         installedRows o label installed.env target proposal.names rows owners
         ruleRows o label ⟨input.source, input.map, accepted.pins, imagesFn⟩ installed.env target rows rowsOf
       if proposal.support.isEmpty then inspect accepted.folded.env else
@@ -364,6 +393,43 @@ def fixture (o : Output) : IO Bool := do
   o.row "fixture-summary" [("requestedFamilies", n 5), ("completedFamilies", n complete),
     ("scope", j "all source rows of each complete cone; unchanged dependencies included")]
   return complete == 5
+
+/-- Additional structural controls, separate from the eight folded TypeRows
+controls. The open cases expose the former closed-only substitution; the closed
+neighbours preserve the agreed result. These are not kernel-fold or S+b claims. -/
+def openSubstitutionControls (o : Output) : IO Bool := do
+  let source : Lean.Expr := .forallE `a (.sort .zero)
+    (.forallE `x (.sort .zero) (.bvar 1) .default) .default
+  let target ← IO.ofExcept (exportSourceExpr [] source)
+  let mut passed := true
+  for (label, argument, expected, oldAgrees) in
+      [("open-binder", Lean.Expr.bvar 0, Kernel.Expr.forallE (.sort .zero) (.bvar 1) default, false),
+       ("closed-neighbour", Lean.Expr.sort .zero,
+        Kernel.Expr.forallE (.sort .zero) (.sort .zero) default, true)] do
+    let replacement ← IO.ofExcept (exportSourceExpr [] argument)
+    let some residual := sourceInstForalls [argument] source
+      | throw (IO.userError "source open-binder control did not peel")
+    let exported ← IO.ofExcept (exportSourceExpr [] residual)
+    let lifted := Kernel.Expr.instPisAtLift [replacement] target
+    let old := target.instPis [replacement]
+    let ok := decide (lifted = some expected) && decide (exported = expected) &&
+      (decide (old = lifted) == oldAgrees)
+    o.row "open-substitution-control" [("name", j ("telescope-" ++ label)),
+      ("sourceExportMatches", b (decide (lifted = some exported))),
+      ("oldAgrees", b (decide (old = lifted))), ("expectedOldAgrees", b oldAgrees), ("pass", b ok)]
+    passed := passed && ok
+    let pin : Kernel.Expr := .forallE (.sort .zero) (.bvar 1) default
+    let rule := Kernel.RecRule.mk .anonymous 0 1 (.nested [] [pin]) (.sort .zero) false false false
+    let liftedPins := openFireParameters rule [] [] [replacement] 1
+    let oldPins := (Kernel.recFireComparands rule [] [] [] [replacement] 1).2
+    let nestedOk := decide (liftedPins = [expected]) &&
+      (decide (oldPins = liftedPins) == oldAgrees)
+    o.row "open-substitution-control" [("name", j ("nested-" ++ label)),
+      ("sourceExportMatches", b (decide (liftedPins = [exported]))),
+      ("oldAgrees", b (decide (oldPins = liftedPins))), ("expectedOldAgrees", b oldAgrees), ("pass", b nestedOk)]
+    passed := passed && nestedOk
+  o.row "open-substitution-summary" [("count", n 4), ("allPassed", b passed)]
+  return passed
 
 /-- Controls use real folded fixture declarations. Mutation changes only the
 target definition's type to a convertible beta-redex; no arbitrary axiom. -/
@@ -421,7 +487,8 @@ def controls (o : Output) : IO Bool := do
     | throw (IO.userError "false row shape")
   results := (← record "false-row-fold-refusal" (match fold (ds.push falseRow) with | .ok _ => false | .error _ => true) true) :: results
   o.row "controls-summary" [("count", n results.length), ("allPassed", b (results.all id))]
-  return results.all id
+  let openPassed ← openSubstitutionControls o
+  return results.all id && openPassed
 
 def mathlib (o : Output) (ixe benchmark : String) : IO Bool := do
   let (rc, state) ← runW { lean := .file benchmark, ixe, out := "unused-sb-loader",
