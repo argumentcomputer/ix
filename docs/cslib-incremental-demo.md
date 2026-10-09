@@ -83,18 +83,21 @@ are not guaranteed to be reused. In the job summary point out:
   declarations and `retainedClaims` the claims reused unchanged from the
   base.
 - `Root proof:` is the new root address, about 5.5 MB.
-- The `curl` and `b3sum` download instructions.
+- The `curl`, `b3sum` and `ix verify` download instructions.
 
 ## 4. Download and check the proof
 
-Copy the two commands from the job summary. They have this form:
+Copy the commands from the job summary. They have this form:
 
 ```sh
 curl -fsSLO https://argument-ix-certificates-063002298335-us-east-1-an.s3.us-east-1.amazonaws.com/argumentcomputer/cslib/<commit>/<root>.ixon
 b3sum --no-names <root>.ixon  # expect <root>
+ix verify --aggregate <root>.ixon
 ```
 
-The printed hash equals the root proof address.
+The printed hash equals the root proof address. `ix verify` needs a CUDA
+GPU and takes a couple of seconds; it prints the proven claim,
+`CheckEnv(<corpus root>, none)`.
 
 ## 5. Optional: revert
 

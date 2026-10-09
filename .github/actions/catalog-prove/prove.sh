@@ -108,11 +108,13 @@ fi
   echo "Source: \`$GITHUB_SERVER_URL/$GITHUB_REPOSITORY@$GITHUB_SHA\`"
   if [[ -n "$download" ]]; then
     echo
-    echo "Download the root proof and check that its BLAKE3 hash is its address:"
+    echo "Download the root proof, check that its BLAKE3 hash is its address, and"
+    echo "verify it (needs a CUDA GPU):"
     echo
     echo '```sh'
     echo "curl -fsSLO $download"
     echo "b3sum --no-names $root.ixon  # expect $root"
+    echo "ix verify --aggregate $root.ixon"
     echo '```'
   fi
   echo

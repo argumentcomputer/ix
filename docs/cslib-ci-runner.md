@@ -166,24 +166,23 @@ That claim is about the retained corpus and partition, so tying it to a
 CSLib commit currently needs the runner's catalog (the coverage lines printed
 by `verify-proof`).
 
-`ix verify --aggregate` takes a store address, not a file, so place the file
-in a throwaway store first. This needs a GPU and an `ix` with the same
-verifying keys as the prover (the same binary is safest):
+`ix verify` takes either a store address or a file. It needs a CUDA GPU and
+an `ix` with the same verifying keys as the prover:
 
 ```sh
-h=<root address>
-home=$(mktemp -d)
-dir=$home/.ix/store/${h:0:2}/${h:2:2}/${h:4:2}
-mkdir -p "$dir" && cp "$h.ixon" "$dir/${h:6}"
-HOME=$home ix verify --aggregate "$h"
+ix verify --aggregate <root>.ixon
 ```
+
+It prints `ok: aggregate proof <address> verifies CheckEnv(<corpus root>,
+none)`, where the address is the file's BLAKE3 hash. `ix store put <file>`
+copies a downloaded proof into `~/.ix/store/` for commands that only take
+addresses.
 
 ## Open items
 
 - `ix catalog gc`, to drop proofs no retained catalog references. It needs
   `proving.json` to record the join proof addresses. Until then the store
   only grows: about 1.7 GB, including leftovers from the S1–S3 bench runs.
-- `ix verify` accepting a file path and printing the claim.
 - A portable `Catalog` claim that binds the root to the export without the
   runner's corpus.
 - A dedicated upload-only IAM user for the bucket, replacing the personal
