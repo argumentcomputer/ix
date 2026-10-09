@@ -164,6 +164,12 @@ lean_exe «trace-fixtures» where
   root := `Tests.Aiur.TraceFixtures
   supportInterpreter := true
 
+/-- Compression CLI and stored-proof identity checks. -/
+lean_exe «compression-cli-tests» where
+  root := `Tests.CompressionCliMain
+  needs := #[`@/ix]
+  moreLinkObjs := #[ix_rs]
+
 /-- Focused source-contract checks, including fresh-module registration export. -/
 lean_exe «source-contract-tests» where
   root := `Tests.SourceContractMain

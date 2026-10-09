@@ -18,10 +18,12 @@ import Ix.Cli.MergeCmd
 import Ix.Cli.NameOfCmd
 import Ix.Cli.PackCmd
 import Ix.Cli.ProfileCmd
+import Ix.Cli.CompressCmd
 import Ix.Cli.ProveCmd
 import Ix.Cli.ShardCmd
 import Ix.Cli.TreeCmd
 import Ix.Cli.ValidateCmd
+import Ix.Cli.VerifierCmd
 import Ix.Cli.VerifyCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
@@ -52,9 +54,11 @@ def ixCmd : Cli.Cmd := `[Cli|
     treeCmd;
     profileCmd;
     proveCmd;
+    compressCmd;
     shardCmd;
     codegenCmd;
     verifyCmd;
+    verifierCmd;
     addrOfCmd;
     nameOfCmd;
     ingressCmd;
@@ -64,6 +68,13 @@ def ixCmd : Cli.Cmd := `[Cli|
 ]
 
 def main (args : List String) : IO UInt32 := do
+  if let ["--compression-worker", json] := args then
+    try
+      Ix.Cli.Compression.worker json
+      return 0
+    catch e =>
+      IO.eprintln s!"compression: {e}"
+      return 1
   if args.isEmpty then
     ixCmd.printHelp
     return 0

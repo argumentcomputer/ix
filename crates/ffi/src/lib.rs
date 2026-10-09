@@ -26,6 +26,7 @@ pub mod unsigned;
 pub mod builder;
 pub mod catalog;
 pub mod compile;
+pub mod compression;
 pub mod graph;
 pub mod ix;
 pub mod kernel;

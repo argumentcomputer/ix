@@ -1,6 +1,7 @@
 module
 
 public import Ix.Ixon
+public import Tests.CompressionCli
 
 /- Integration tests for the Ix CLI -/
 
@@ -166,6 +167,7 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
 
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
+  Tests.CompressionCli.run
   Tests.Cli.testCompileNoBuild
   Tests.Cli.testCompileContracts
   Tests.Cli.testCompileSharingLimits

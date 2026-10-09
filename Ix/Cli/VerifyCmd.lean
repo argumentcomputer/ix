@@ -10,6 +10,7 @@
 -/
 module
 public import Cli
+public import Ix.Cli.Compression
 public import Ix.Address
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
@@ -94,7 +95,8 @@ structure ExpectedAggregate where
   constantCount : Nat
 
 private def verifyAggregateProof (backend : Aggr.VerificationBackend)
-    (expected? : Option ExpectedAggregate) (proofAddr : Address) : IO UInt32 := do
+    (expected? : Option ExpectedAggregate) (proofAddr : Address)
+    (devSrs : Bool := false) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
@@ -108,6 +110,8 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
       IO.eprintln s!"error: aggregate claim {wrapper.claim} does not match expected {expected.claim}"
       return 1
   | none => pure ()
+  if Compression.isCompressed wrapper.proof then
+    return ← Compression.verifyProof proofAddr wrapper devSrs
   let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
     | .error e =>
@@ -276,7 +280,8 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "aggregate proof" hex
-      if (← verifyAggregateProof backend expected? proofAddr) != 0 then
+      if (← verifyAggregateProof backend expected? proofAddr
+          (p.hasFlag "dev-srs")) != 0 then
         rc := 1
     return rc
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
@@ -287,13 +292,23 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
       return 1
-    let (aiurSystem, compiled) ← match (← buildBackend) with
-      | .error e => IO.eprintln e; return 1
-      | .ok b => pure b
+    let mut backend? := none
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "proof" hex
-      if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
+      let wrapper ← Compression.readProof proofAddr
+      if Compression.isCompressed wrapper.proof then
+        if (← Compression.verifyProof proofAddr wrapper
+            (p.hasFlag "dev-srs")) != 0 then
+          rc := 1
+      else
+        let (aiurSystem, compiled) ← match backend? with
+          | some b => pure b
+          | none =>
+            let b ← IO.ofExcept (← buildBackend)
+            backend? := some b
+            pure b
+        if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
     return rc
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 :=
@@ -304,9 +319,10 @@ end Ix.Cli.VerifyCmd
 open Ix.Cli.VerifyCmd in
 def verifyCmd : Cli.Cmd := `[Cli|
   verify VIA runVerifyCmd;
-  "Verify STARK proof(s) against their bundled claims, or a `.ixes` shard partition"
+  "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
+    "dev-srs"; "Allow development compressed proofs; these are not production-secure."
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
