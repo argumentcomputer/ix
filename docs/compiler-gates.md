@@ -522,6 +522,76 @@ sampling and certification. Retain output on any mismatch.
 
 ## Landing a package
 
+The tracked manual entry point is
+[`scripts/compiler-gate.py`](../scripts/compiler-gate.py) (Python 3.11+). It
+implements the common procedure below without changing CI. It runs only when
+invoked explicitly, and does not reserve a shared machine, transfer source,
+download dependencies, retry failures, update records or publish a result.
+Use an idle checkout and arrange the required machine reservation first.
+Provision its locked root, benchmark, kernel and model dependencies before
+running offline. Builds use the normal `.lake` and Cargo caches; the evidence
+directory contains no newly built project or copied build cache.
+
+Supply a reviewed full source manifest (standard `sha256sum` format, paths
+relative to the checkout), its SHA-256, and the exact source commit. Include
+the runner itself. Verify that the manifest describes that committed tree,
+including any integration changes, before transfer. All references are explicit:
+the two current libraries and certificate file have the hashes in
+[Reference artifacts](#reference-artifacts); `--legacy-ref` and `--legacy-sha`
+identify the historical Init+Std comparison input used by `pass3-lib`.
+`--kernel-baseline` is a reviewed complete Init+Std checker JSONL, bound by
+`--kernel-baseline-sha`. Its ordered addresses, names, kinds, outcomes and reasons
+must agree exactly; only `micros` and `readMicros` are ignored. An intentional
+checker change needs a separately reviewed baseline, never an automatic rerecord.
+
+For example, from the checkout root, substitute actual reviewed paths and hashes:
+
+```sh
+python3 -B scripts/compiler-gate.py --phase core \
+  --commit FULL_SOURCE_COMMIT --source-manifest /path/to/source.sha256 \
+  --source-sha SOURCE_MANIFEST_SHA256 --benchmark-dir "$PWD/Benchmarks/Compile" \
+  --initstd-ref /path/to/initstd-a3.ixe --mathlib-ref /path/to/mathlib-a3.ixe \
+  --certs-ref /path/to/certs-v4341.ixe --legacy-ref /path/to/initstd-a2.ixe \
+  --legacy-sha LEGACY_REFERENCE_SHA256 \
+  --kernel-baseline /path/to/reviewed-initstd.jsonl --kernel-baseline-sha ROWS_SHA256 \
+  --workers 32 --cargo-jobs 4 --out "$PWD/out/compiler-core-FRESH"
+```
+
+`core` runs the full primary suite, all 35 ignored suites listed below, the
+Init+Std controls and bytes, pin checks, lint, certification and kernel/model
+checks. `--extra-suite NAME` adds a package-specific ignored suite without
+replacing that inventory. Run `--phase mathlib` with a fresh output directory
+and the same source, references and worker settings for the separate reserved
+Mathlib byte legs. Each partial result explicitly lists the other section as
+pending; join their exact source/tool/native/import evidence when reviewing the
+complete gate. `--phase all` runs both sections sequentially and starts Mathlib
+only after every core stage passes. Library certification and other named
+package obligations remain separate; this runner does not invent their scope.
+
+Logs contain the Lean version, commit, command, actual command exit and complete
+output. `planned-stages.json`, `stages.json`, `stages.tsv`, `result.json` and
+`driver.rc` preserve each success, failure or explicit unrun stage. Required
+evidence-write failures force nonzero. Source, references, dependency sources
+and tools are rehashed afterward; complete available imports/native artifacts
+are compared across each library compilation interval. Input modules are built
+before that interval. Outputs and full pin diffs are retained, including on a
+mismatch; their hashes are in the result before any later manual cleanup.
+The lane's existing `.lake/build/compile-cert` data and four kernel report files
+are moved into clearly labeled `prior-*-details` directories before those checks.
+Their new complete logs/tables are copied separately into the run's evidence,
+including partial failures; old data cannot stand in for an unrun check.
+
+Suite selection, diagnostic, rerecord and skip environment variables are
+cleared. The schedule and pack suites retain their own worker/coverage matrix.
+`--workers` sets the Lean library worker count and Rust scheduler/Rayon ceiling;
+Rust may admit fewer workers. `--rust-check` runs serially to avoid overlapping
+the backends. The default 100 GB free-space check is a startup floor, not a disk
+or memory quota. These are correctness gates, not quiet benchmark measurements;
+the Lean command includes its cached input build and the Rust command uses
+`--no-build`. Stage elapsed times include verification and logging and are not
+compiler-only measurements. A stale `.lake/compiler-gate.lock` is refused and requires manual
+process inspection before removal.
+
 Use an isolated landing checkout based on the current mainline, with the reviewed
 package range and all conflict resolutions included. Gate the final tree rather
 than reusing a predecessor's result. Keep its source fixed until the run and
@@ -605,7 +675,10 @@ crossing the certified reader/order boundary also require `check-kernel`.
    the certificate environment and is not normalized. Preserve all other
    bytes and reject missing or additional provenance matches. Its negative
    controls mutate actual pin data, Nat-operation data and
-   the certificate digest, beside unchanged/provenance-only neighbours.
+   the certificate digest, beside unchanged/provenance-only neighbours. The
+   runner preserves input bytes before strict UTF-8 decoding; its eleven pin
+   controls include CRLF and lone-CR rejection for each file through the actual
+   file comparator, with unchanged LF and provenance-only valid neighbours.
    Preserve the historical old/new `ixe-diff` classification if that comparison
    is part of the package's reference migration evidence.
 
