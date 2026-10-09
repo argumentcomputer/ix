@@ -12,8 +12,8 @@
   * `GenM`: a counter for fresh variables over `Except String`;
   * `telescope`: open the leading `∀`s of a type (`forallTelescope`);
   * `mkLambda`/`mkForall`: close them again (`mkLambdaFVars`);
-  * `alphaEq`: equality up to binder names and binder info (Lean's
-    `Expr.eqv`, which the prototype's `==` used);
+  * `alphaEq`: equality up to binder names and binder info, comparing full
+    raw names/levels and paired metadata constructors;
   * `etaReduce`: Lean's `Expr.eta`, by structural recursion;
   * `usedConstants` / `findApp?`: Lean's `Expr.getUsedConstants` and
     `Expr.find?` orders (pre-order, function before argument), which fix the
@@ -26,6 +26,7 @@
 module
 public import Ix.Environment
 public import Ix.Compile.Canon.Expr
+public import Ix.Compile.Image.RawExact
 public section
 
 namespace Ix.Compile.Image
@@ -178,20 +179,23 @@ def mkForall (xs : Array Local) (b : Expr) : Expr := mkBinders false xs b
 
 /-! ## Comparisons and small reductions -/
 
-/-- Equality up to binder names and binder info (Lean's `Expr.eqv`). -/
+/-- Equality up to binder names, binder info, let flags and paired metadata.
+Names and levels are compared as complete raw values, including their cached
+addresses. Expression hashes never decide equality; one-sided metadata is not
+skipped. These are the same alpha cases as before, with exact retained leaves. -/
 def alphaEq : Expr → Expr → Bool
   | .bvar i _, .bvar j _ => i == j
-  | .fvar a _, .fvar b _ => a == b
-  | .mvar a _, .mvar b _ => a == b
-  | .sort u _, .sort v _ => u == v
-  | .const a us _, .const b vs _ => a == b && us == vs
+  | .fvar a _, .fvar b _ => RawExact.nameEq a b
+  | .mvar a _, .mvar b _ => RawExact.nameEq a b
+  | .sort u _, .sort v _ => RawExact.levelEq u v
+  | .const a us _, .const b vs _ => RawExact.nameEq a b && RawExact.levelsEq us vs
   | .app f a _, .app g b _ => alphaEq f g && alphaEq a b
   | .lam _ t b _ _, .lam _ t' b' _ _ => alphaEq t t' && alphaEq b b'
   | .forallE _ t b _ _, .forallE _ t' b' _ _ => alphaEq t t' && alphaEq b b'
   | .letE _ t v b _ _, .letE _ t' v' b' _ _ => alphaEq t t' && alphaEq v v' && alphaEq b b'
   | .lit a _, .lit b _ => a == b
   | .mdata _ a _, .mdata _ b _ => alphaEq a b
-  | .proj s i a _, .proj s' i' b _ => s == s' && i == i' && alphaEq a b
+  | .proj s i a _, .proj s' i' b _ => RawExact.nameEq s s' && i == i' && alphaEq a b
   | _, _ => false
 
 /-- `bvar i` occurs loose in `e`. -/

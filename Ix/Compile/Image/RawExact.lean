@@ -5,7 +5,7 @@ public section
 
 namespace Ix.Compile.Image.RawExact
 
-/-! Exact raw equality for retained development-cache keys. Unlike the global
+/-! Exact raw equality for retained development-cache keys and alpha leaves. Unlike the global
 `BEq` instances, this includes cached addresses and every metadata field.
 These decisions are local implementation details, not global equality changes. -/
 
@@ -15,6 +15,25 @@ attribute [local instance] instDecidableEqName
 deriving instance DecidableEq for Ix.Level
 attribute [-instance] instDecidableEqLevel
 attribute [local instance] instDecidableEqLevel
+
+/-- Full retained name equality, including cached addresses at every node. -/
+def nameEq (a b : Ix.Name) : Bool := decide (a = b)
+
+/-- Full retained level equality, including recursive name and level caches. -/
+def levelEq (a b : Ix.Level) : Bool := decide (a = b)
+
+/-- The exact universe arguments retained by expression erasure. -/
+def levelsEq (a b : Array Ix.Level) : Bool := decide (a = b)
+
+@[simp] theorem nameEq_eq_true (a b : Ix.Name) : nameEq a b = true ↔ a = b := by
+  simp only [nameEq, decide_eq_true_eq]
+
+@[simp] theorem levelEq_eq_true (a b : Ix.Level) : levelEq a b = true ↔ a = b := by
+  simp only [levelEq, decide_eq_true_eq]
+
+@[simp] theorem levelsEq_eq_true (a b : Array Ix.Level) : levelsEq a b = true ↔ a = b := by
+  simp only [levelsEq, decide_eq_true_eq]
+
 deriving instance DecidableEq for Ix.Int
 attribute [-instance] instDecidableEqInt
 attribute [local instance] instDecidableEqInt
