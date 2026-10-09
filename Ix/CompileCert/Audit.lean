@@ -6,6 +6,7 @@ import Ix.CompileCert.Indexed
 import Ix.CompileCert.Canon
 import Ix.CompileCert.Changed
 import Ix.CompileCert.Conv
+import Ix.CompileCert.Image
 import Ix.CompileCert.Bridge
 import Ix.CompileCert.StrongChanged
 
@@ -1471,3 +1472,92 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.saRoots Ix.Com
 run_cmd Ix.CompileCert.Audit.checkNoHashEquality Ix.CompileCert.Audit.saDecisionRoots Ix.CompileCert.Audit.hashEqualities
 
 run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.saDecisionRoots Ix.CompileCert.Audit.hashEqualities
+
+/-! The roots added by M7 L2a-syn (`Ix/CompileCert/Image/**`): the development's fuel bounded by
+the input's height (decision D-X1-1); the construction restated at a development parameter and run
+from shifted counters. Audited separately, against the same allowed set, so every line above is
+unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def l2aRoots : Array Lean.Name :=
+  #[-- the development's fuel, explicitly (`Fuel.lean`)
+    `hgt, `hgt_pos, `hgt_mkApp, `hgt_mkLam, `hgt_mkForallE, `hgt_mkLetE, `hgt_mkProj,
+    `hgt_mkMData, `hgt_mkBVar, `hgt_getAppFnArgs, `hgt_foldl_mkApp, `hgt_mkAppN, `foldl_hgt_le,
+    `hgt_getAppFnArgs_eq, `hgt_liftP, `hgt_lowerP, `mapM_of_forall, `forall₂_length,
+    `EForall2.imp, `EForall2.map_eq, `thd, `TmInert, `thd_appN, `thd_lift, `TmInert.lift,
+    `TmInert.appN, `TmInert.not_lam, `TmInert.not_pair4, `not_lam_of_inert, `hinstP_inert, `Act,
+    `Passive, `PassiveF, `passiveF_act, `passive_appN, `hinstP_passive, `foldl_hgt_eq,
+    `occ_er_app_of, `forall2_hgt_of_mapM, `hinstP_noocc, `act_occ, `passive_of_noocc,
+    `occ_lift_ge, `occ_inst_gen, `occ_appN_or, `act_inst_lt, `passive_inst_lt, `hsum, `hsum_cons,
+    `foldl_hgt_mono, `foldl_hgt_le_sum, `hgt_mkAppN_le, `happP_mkAppN, `happP_inert, `isParam,
+    `FOv, `fov_inst, `happP_passive, `occ_lower_one, `occ_inst_noocc, `NoOcc, `Site, `Hd,
+    `noOcc_of_er, `hd_of_noOcc, `hd_of_site, `noOcc_args, `noOcc_lower, `occ_appN_head,
+    `occ_appN_of_mem, `getAppFnArgs_foldl, `getAppFnArgs_mkAppN_bvar, `hinstP_bvar_ge,
+    `hinstP_sites, `substChain, `substFVarsP_eq, `substChain_sites, `act_inst_above,
+    `passive_inst_above, `substChain_passive, `instantiateP_inert, `hgt_abstractFVars_go,
+    `hgt_abstractFVars,
+    -- the restatement at a development parameter (`Build.lean`), the renaming simulation of the
+    -- construction from shifted counters (`Ren`, `Fv`, `Sim`, `SimTel`, `SimFind`, `SimBuild`, `SimRec`),
+    -- L2a-2 (`Post`), the domain (`Dom`) and L2a-1 (`Total`)
+    `DevOps, `execDev, `coreDev, `buildRecAppW, `imageProgW, `imageOfW, `buildRecApp_eq, `imageOf_eq,
+    `imageOfP, `buildRecAppP, `Ren, `FvAll, `LRen, `ARen, `Ren.mkBVar, `Ren.mkApp, `Ren.mkApp',
+    `Ren.mkLam', `Ren.mkForallE', `Ren.mkLetE', `Ren.mkMData', `Ren.mkProj', `Ren.mkConst',
+    `Ren.mkFVar', `Ren.mkSort', `Ren.mkBVar', `Ren.refl_of, `Ren.id_refl, `Ren.trans, `Ren.fvAll,
+    `FvAll.mono, `Tm.renF, `er_ren, `er_ren_id, `LRen.length, `LRen.append, `LRen.map, `LRen.get,
+    `foldl_mkApp_ren, `mkAppN_ren, `getAppFnArgs_ren, `liftLoose_go_ren, `liftLoose_ren,
+    `lowerLoose_go_ren, `lowerLoose_ren, `ARen.size, `ARen.get, `instantiateRevAt_ren,
+    `instantiateRev_ren, `ARen.reverse, `instLocals_ren, `stripMdata_ren, `forallArity_ren, `BRen,
+    `BsRen, `BsRen.push, `peelForalls_ren, `instForall_ren, `list_findIdx?_congr, `array_findIdx?_congr,
+    `array_idxOf?_eq, `InjOn, `array_idxOf?_ren, `alphaEq_ren, `LocRen, `LsRen, `fvarIdx?_ren,
+    `abstractFVars_go_ren, `abstractFVars_ren, `LsRen.names, `binderStep, `mkBinders_eq, `mkBinders_ren,
+    `mkLambda_ren, `mkForall_ren, `ORen, `hasLooseBVar_go_ren, `etaStep, `etaReduce_lam, `etaStep_ren,
+    `etaReduce_ren, `headConst?_ren, `getAppFn_ren, `getAppArgs_ren, `appArg?_ren,
+    `usedConstants_go_ren, `usedConstants_ren, `findSub?_ren, `stripSort_ren, `motiveLevel_ren,
+    `substLevels_go_ren, `substLevels_ren, `canonicalizeConstNames_go_ren, `canonicalizeConstNames_ren,
+    `ExRel, `ExRel.ok, `ExRel.pure, `ExRel.err, `ExRel.bind, `ExRel.map, `ExRel.ok_of, `looseRangeP_ren,
+    `liftP_ren, `lowerP_ren, `occursP_ren, `projCtor?_ren, `mapM_ren, `PRen, `lamStepP, `lamStepP_ren,
+    `develop_ren, `instantiateP_ren, `foldlM_hinst_ren, `LRen.reverse, `substFVarsP_ren, `PLRen, `LRel,
+    `LRel.of_getElem, `LRel.foldr, `foldr1_rel, `mkPProdTy_ren, `wrapTy_ren, `P2Ren, `TRen,
+    `mkPProdVal_ren, `wrapVal_ren, `unwrap_ren, `FvAll.mkApp, `FvAll.mkLam, `FvAll.mkForallE,
+    `FvAll.mkLetE, `FvAll.mkMData, `FvAll.mkProj, `FvAll.mkConst, `FvAll.mkBVar, `FvAll.mkFVar, `LFv,
+    `foldl_mkApp_fv, `mkAppN_fv, `getAppFnArgs_fv, `liftLoose_go_fv, `liftLoose_fv, `lowerLoose_go_fv,
+    `lowerLoose_fv, `instantiateRevAt_fv, `instantiateRev_fv, `instLocals_fv, `abstractFVars_go_fv,
+    `abstractFVars_fv, `mkBinders_fv, `stripMdata_fv, `peelForalls_fv, `instForall_fv, `etaReduce_fv,
+    `fresh, `freshName_run, `NamesOK, `FreshBelow, `FreshBelow.mono, `shift, `shift_fresh, `shiftIdx,
+    `shift_fresh', `shiftIdx_lt, `shiftIdx_inj, `injOn_shift, `injOn_shift_zero, `SR, `Sim, `Mono,
+    `run_bind, `run_pure, `Sim.pure, `Mono.pure, `Mono.bind, `Sim.bind, `Sim.throw, `Mono.throw,
+    `Sim.liftExcept, `Mono.liftExcept, `Sim.freshName, `Mono.freshName, `Sim.trace, `Mono.trace,
+    `Sim.idx, `Mono.idx, `StepRel, `Mono.forIn_list, `Sim.forIn_list, `Mono.forIn_array,
+    `Sim.forIn_array, `Sim.of_fail, `Mono.of_fail, `throw_bind_fail, `Sim.refl0, `Mono.get, `Sim.get,
+    `RE, `RL, `RLs, `RLs.empty, `RLs.push, `RLs.exprs, `RLs.fv, `RLs.lsRen, `RLs.extract,
+    `mono_telescope, `sim_telescope, `sim_telescope', `ARE, `ARE.size, `ARE.get, `RE.ren, `CtxOK,
+    `shift_fix, `RE.refl, `RLs.refl, `CtxOK.ps, `CtxOK.ms, `CtxOK.mins, `CtxRE, `CtxOK.re, `RLs.refl',
+    `CtxRE.ps, `CtxRE.ms, `CtxRE.mins, `getAppFn_fv, `appArg?_rel, `mono_analyzeLeanMinor,
+    `sim_analyzeLeanMinor, `RLs.idx_eq, `mono_analyzeCanonMinor, `sim_analyzeCanonMinor, `EnvClosed,
+    `RE.closed, `substLevels_go_fv, `substLevels_fv, `stripSort_fv, `Sim.liftExcept_same, `recOf_ok,
+    `mono_elimMotiveTypes, `ARE.lsMapType, `sim_elimMotiveTypes, `CRel, `ARel, `ARel.push, `ARel.lrel,
+    `ElimRel, `OElimRel, `ARE.extract, `getAppArgs_rel, `first2_some, `findSub?_fv, `findSub?_rel,
+    `indOf_ok, `mono_findElim, `LRel.refl_eq, `ARel.empty, `ARel.pop, `ARel.singleton_append,
+    `ARel.back?, `ARE.ofCtx, `findIdx_alphaEq_eq, `occ_match, `occ_G, `occ_match_ss, `occ_match_sn,
+    `occ_match_ns, `sim_findElim, `liftP_fv, `lowerP_fv, `projCtor?_fv, `lfv_of_mapM, `develop_fv,
+    `substFVarsP_fv, `instantiateP_fv, `rhoP, `str_ne_self, `rhoP_eq, `Ren.fix_fv, `fv_of_self_ren,
+    `self_ren_of_fv, `LRen.self_of_lfv, `wrapTy_fv, `wrapVal_fv, `unwrap_fv, `ARE.iff, `ARE.empty,
+    `ARE.push, `ARE.pop, `ARE.append, `ARE.singleton, `RE.mkAppN, `RE.etaReduce, `RE.unwrap,
+    `RE.mkLambda, `RE.instLocals, `RLs.are, `RLs.fvars, `Sim.liftRE, `Mono.forIn'_list,
+    `Mono.forIn'_range, `Mono.forIn_range, `Mono.mapM_list, `Mono.mapM_array, `Sim.forIn'_list,
+    `Sim.forIn'_range, `Sim.forIn_range, `Sim.mapM_list, `Sim.mapM_array, `LRel.arel, `ARE.of_lrel,
+    `mono_buildRecAppW, `map_congr_eq, `filter_congr_mem, `Sim.forIn'_range2, `RE.ofFix, `CtxRE.ms_expr,
+    `CtxRE.mins_expr, `RLs.extract_from, `RL.expr, `subst_exrel, `subst_fv, `DevRel, `devRel_core,
+    `Sim.liftExcept', `instForall_exrel, `sim_buildRecAppW, `sim_buildRecAppP, `Post, `Post.pure,
+    `Post.bind, `Post.bind_of, `Post.throw, `Post.liftExcept, `Post.run', `imageOfW_type,
+    `imageOfP_type, `imageOf_type, `blockView_image_type, `noOccB, `noOccB_iff, `siteB, `siteB_iff,
+    `hdB, `hdB_iff, `hdH, `inertB, `inertB_iff, `maxHgt, `le_maxHgt, `checkSubst, `checkInst, `bigFuel,
+    `defaultFuel_le_big, `domDev, `Dom, `substChain_mono, `core_subst_of_dom, `core_inst_of_dom,
+    `devRel_dom, `Sim.and, `shift_zero_fresh, `RE.zero, `CtxRE.zero, `mem_of_mem_extract, `ctorOf_ok,
+    `lfv_extract, `LRel.refl_mem, `RecRulesClosed, `canonicalizeConstNames_fv, `tr_fv, `sim_imageProgW,
+    `imageOfW_ok_of, `imageOfP_total, `DevRel.trans_ok, `imageOf_total_of, `blockView_expansion_total].map (`Ix.CompileCert.Img ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l2aRoots Ix.CompileCert.Audit.allowedAxioms
