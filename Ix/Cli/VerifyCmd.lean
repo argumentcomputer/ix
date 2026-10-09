@@ -1,12 +1,12 @@
 /-
-  `ix verify <proof-hex>`: read a persisted `Ixon.Proof` wrapper from
-  the content-addressed store, extract the inner claim + opaque ZK
-  proof bytes, reconstruct the Aiur-level public input, and run the
-  Aiur backend's `verify`. Exits 0 on success, 1 with an error
+  `ix verify <proof>`: read a serialized `Ixon.Proof` wrapper, from the
+  content-addressed store by address or from a file, extract the inner
+  claim + opaque ZK proof bytes, reconstruct the Aiur-level public input,
+  and run the Aiur backend's `verify`. Exits 0 on success, 1 with an error
   message otherwise.
 
   The wrapper carries the claim, so this command takes only the proof
-  hex — no separate claim arg.
+  — no separate claim arg.
 -/
 module
 public import Cli
@@ -33,12 +33,19 @@ open System (FilePath)
 namespace Ix.Cli.VerifyCmd
 open Aggr
 
-private def addrOfHex! (label : String) (s : String) : IO Address := do
-  match Address.fromString s with
-  | some a => pure a
-  | none =>
+/-- Load a proof argument. A 64-char hex address names an object in the
+    store; anything else is the path of a serialized `Ixon.Proof`, whose
+    address is the BLAKE3 hash of its bytes. Returns the address, the bytes,
+    and whether they came from a file. -/
+def loadProof (label : String) (arg : String) : IO (Address × ByteArray × Bool) := do
+  if let some addr := Address.fromString arg then
+    return (addr, ← StoreIO.toIO (Store.read addr), false)
+  let path : FilePath := arg
+  if !(← path.pathExists) || (← path.isDir) then
     throw <| IO.userError
-      s!"error: {label}: expected 64-char hex (32-byte address), got {s.length}-char {s}"
+      s!"error: {label}: {arg} is neither a 64-char hex address nor a file"
+  let bytes ← IO.FS.readBinFile path
+  return (Address.blake3 bytes, bytes, true)
 
 /-- Same parameters as `ix prove` (the shared canonical defaults).
     Mismatch makes verification fail silently with no useful diagnostic,
@@ -50,11 +57,10 @@ private def commitmentParameters : Aiur.CommitmentParameters :=
 private def friParameters : Aiur.FriParameters :=
   Aiur.defaultFriParameters
 
-/-- Verify one persisted `Ixon.Proof` wrapper (by store address) against its
-    bundled claim, using an already-built Aiur backend. -/
+/-- Verify one serialized `Ixon.Proof` wrapper against its bundled claim,
+    using an already-built Aiur backend. -/
 def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (proofAddr : Address) : IO UInt32 := do
-  let bytes ← StoreIO.toIO (Store.read proofAddr)
+    (proofAddr : Address) (bytes : ByteArray) : IO UInt32 := do
   let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
   let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
@@ -94,8 +100,8 @@ structure ExpectedAggregate where
   constantCount : Nat
 
 private def verifyAggregateProof (backend : Aggr.VerificationBackend)
-    (expected? : Option ExpectedAggregate) (proofAddr : Address) : IO UInt32 := do
-  let bytes ← StoreIO.toIO (Store.read proofAddr)
+    (expected? : Option ExpectedAggregate) (proofAddr : Address) (bytes : ByteArray) :
+    IO UInt32 := do
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
     | .error e => IO.eprintln s!"error: {e}"; return 1
@@ -148,8 +154,13 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
   -- `--record`: a proof that binds to its shard and verifies is indexed
   -- under its claim digest, for `ix prove --skip-proven` / `ix shard refine`.
   let indexDir? ← if record then some <$> Ix.Cli.ShardProofIndex.indexDir else pure none
-  let recordProof (digest proofAddr : Address) : IO Unit := do
+  -- The index maps claims to store addresses, so a proof read from a file
+  -- is copied into the store before it is recorded.
+  let recordProof (digest proofAddr : Address) (bytes : ByteArray) (fromFile : Bool) :
+      IO Unit := do
     if let some dir := indexDir? then
+      if fromFile then
+        let _ ← StoreIO.toIO (Store.write bytes)
       Ix.Cli.ShardProofIndex.writeAddress dir digest proofAddr
       IO.println s!"[verify] recorded {proofAddr} for claim {digest} in the shard-proof index"
   let digestOf (k : Nat) : IO (Option Address) := do
@@ -158,10 +169,10 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
     | some blocks => match Ix.Shard.shardClaimDigest ixonEnv blocks with
       | .error e => IO.eprintln s!"reconstruct shard {k} claim failed: {e}"; pure none
       | .ok d => pure (some d)
-  let claimDigestOfProof (hex : String) : IO (Address × Address) := do
-    let proofAddr ← addrOfHex! "proof" hex
-    let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read proofAddr)))
-    pure (proofAddr, Address.blake3 (Ix.Claim.ser wrapper.claim))
+  let claimDigestOfProof (arg : String) : IO (Address × Address × ByteArray × Bool) := do
+    let (proofAddr, bytes, fromFile) ← loadProof "proof" arg
+    let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
+    pure (proofAddr, Address.blake3 (Ix.Claim.ser wrapper.claim), bytes, fromFile)
   match shardK? with
   | some k =>
     let some expected ← digestOf k | return 1
@@ -172,17 +183,21 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       | .error e => IO.eprintln e; return 1
       | .ok b => pure b
     let mut rc : UInt32 := 0
-    for hex in proofs do
-      let (proofAddr, d) ← claimDigestOfProof hex
+    for arg in proofs do
+      let (proofAddr, d, bytes, fromFile) ← claimDigestOfProof arg
       if d != expected then
         IO.eprintln s!"[verify] FAIL: proof {proofAddr} (claim {d}) is not shard {k} (claim {expected})"
         rc := 1
-      else if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
-      else recordProof d proofAddr
+      else if (← verifyOneProof aiurSystem compiled proofAddr bytes) != 0 then rc := 1
+      else recordProof d proofAddr bytes fromFile
     return rc
   | none =>
     if !(← Ix.Shard.shardsCover ixonEnv shards) then return 1
     if proofs.isEmpty then return 0
+    if let some file := proofs.find? (Address.fromString · |>.isNone) then
+      IO.eprintln s!"error: composed shard verification reads proofs from the store; \
+        add {file} with `ix store put` and pass its address"
+      return 1
     -- Composed verdict through the native Stage 2 import: Rust reconstructs
     -- every shard claim from the manifest (the Lean reconstruction above is
     -- one shard at a time on one core — ~15 s per Mathlib shard, an hour for
@@ -208,8 +223,8 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
     | .error e => IO.eprintln s!"[verify] FAIL: {e}"; return 1
     | .ok _ => pure ()
     for hex in proofs do
-      let (proofAddr, d) ← claimDigestOfProof hex
-      recordProof d proofAddr
+      let (proofAddr, d, bytes, fromFile) ← claimDigestOfProof hex
+      recordProof d proofAddr bytes fromFile
     return 0
 
 /-- Verify with an explicit aggregate-recursion configuration. Ordinary IxVM
@@ -217,9 +232,15 @@ proof verification remains pinned to its independent canonical parameters. -/
 def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
+  for arg in proofs do
+    if (Address.fromString arg).isNone then
+      let path : FilePath := arg
+      if !(← path.pathExists) || (← path.isDir) then
+        p.printError s!"error: {arg} is neither a 64-char hex address nor a file"
+        return 1
   if p.hasFlag "aggregate" then
     if proofs.isEmpty then
-      p.printError "error: --aggregate requires at least one aggregate proof address"
+      p.printError "error: --aggregate requires at least one aggregate proof"
       return 1
     let ixePath? : Option String := (p.flag? "ixe").map (·.as! String)
     let manifestPath? : Option String := (p.flag? "ixes").map (·.as! String)
@@ -274,9 +295,9 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     IO.println s!"[verify] aggregate backend setup: \
       {(← IO.monoMsNow) - backendStarted}ms"
     let mut rc : UInt32 := 0
-    for hex in proofs do
-      let proofAddr ← addrOfHex! "aggregate proof" hex
-      if (← verifyAggregateProof backend expected? proofAddr) != 0 then
+    for arg in proofs do
+      let (proofAddr, bytes, _) ← loadProof "aggregate proof" arg
+      if (← verifyAggregateProof backend expected? proofAddr bytes) != 0 then
         rc := 1
     return rc
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
@@ -285,15 +306,15 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
       (p.hasFlag "record") recursionParameters
   | _, _ =>
     if proofs.isEmpty then
-      p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
+      p.printError "error: must specify <proof>... (or --ixe + --ixes for a shard partition)"
       return 1
     let (aiurSystem, compiled) ← match (← buildBackend) with
       | .error e => IO.eprintln e; return 1
       | .ok b => pure b
     let mut rc : UInt32 := 0
-    for hex in proofs do
-      let proofAddr ← addrOfHex! "proof" hex
-      if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
+    for arg in proofs do
+      let (proofAddr, bytes, _) ← loadProof "proof" arg
+      if (← verifyOneProof aiurSystem compiled proofAddr bytes) != 0 then rc := 1
     return rc
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 :=
@@ -315,7 +336,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it. How already-proved leaves are imported before a refinement."
 
   ARGS:
-    ...proofs : String; "32-byte hex address(es) of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. Omit when using --ixe + --ixes."
+    ...proofs : String; "Serialized `Ixon.Proof` wrappers: 32-byte hex addresses in `~/.ix/store/`, or file paths. Omit when using --ixe + --ixes."
 ]
 
 end
