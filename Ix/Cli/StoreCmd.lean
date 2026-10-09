@@ -1,6 +1,7 @@
 module
 public import Cli
 public import Ix.Store
+public import Ix.Claim
 
 public section
 
@@ -24,6 +25,70 @@ def storePutCmd : Cli.Cmd := `[Cli|
     ...files : String; "Files to add, e.g. downloaded `Ixon.Proof` wrappers"
 ]
 
+/-- Describe a store object: the address it was requested by, its size, and,
+    when it decodes as an `Ixon.Proof` or a bare claim, the claim. The first
+    byte's flag distinguishes the two, so only the matching decoder runs. -/
+private def describe (addr : Address) (bytes : ByteArray) : String :=
+  let header := s!"address: {addr}\nsize: {bytes.size} bytes"
+  match Ixon.Proof.de bytes with
+  | .ok wrapper =>
+    s!"{header}\nkind: Ixon.Proof\nclaim: {wrapper.claim}\n\
+      claim digest: {Ix.Claim.commit wrapper.claim}\nproof bytes: {wrapper.proof.size}"
+  | .error _ => match Ix.Claim.de bytes with
+    | .ok claim =>
+      s!"{header}\nkind: claim\nclaim: {claim}\nclaim digest: {Ix.Claim.commit claim}"
+    | .error _ =>
+      let first := bytes[0]?.map (fun b => s!", first byte 0x{hexOfBytes ⟨#[b]⟩}") |>.getD ""
+      s!"{header}\nkind: not a proof or claim{first}"
+
+/-- `ix store get <object>`: write a store object's bytes unchanged to a file
+    or stdout, or with `--show` describe it. A file path is accepted in place
+    of an address, which lets `--show` describe downloaded objects. -/
+def runStoreGet (p : Cli.Parsed) : IO UInt32 := do
+  let arg := p.positionalArg! "object" |>.as! String
+  let (addr, bytes) ← match Address.fromString arg with
+    | some addr =>
+      let path ← StoreIO.toIO (Store.storePath addr)
+      if !(← path.pathExists) then
+        p.printError s!"error: {addr} is not in the store"
+        return 1
+      pure (addr, ← IO.FS.readBinFile path)
+    | none =>
+      let path : System.FilePath := arg
+      if !(← path.pathExists) || (← path.isDir) then
+        p.printError s!"error: {arg} is neither a 64-char hex address nor a file"
+        return 1
+      let bytes ← IO.FS.readBinFile path
+      pure (Address.blake3 bytes, bytes)
+  -- Objects stored with `Store.writeAt` are keyed by something other than
+  -- their BLAKE3 hash (assumption trees by Merkle root), so a mismatch is
+  -- reported but not fatal.
+  let actual := Address.blake3 bytes
+  if actual != addr then
+    IO.eprintln s!"warning: object {addr} hashes to {actual}; it is either keyed \
+      by another hash or corrupted"
+  if let some out := p.flag? "output" then
+    IO.FS.writeBinFile (out.as! String) bytes
+  if p.hasFlag "show" then
+    IO.println (describe addr bytes)
+  else if !p.hasFlag "output" then
+    let stdout ← IO.getStdout
+    stdout.write bytes
+    stdout.flush
+  return 0
+
+def storeGetCmd : Cli.Cmd := `[Cli|
+  get VIA runStoreGet;
+  "Write a store object's bytes to stdout or a file, or describe it with --show"
+
+  FLAGS:
+    o, output : String; "Write the bytes to this file instead of stdout"
+    "show";             "Print the object's address, size and, for proofs and claims, the claim"
+
+  ARGS:
+    object : String; "32-byte hex address in `~/.ix/store/`, or a file path"
+]
+
 def runStore (p : Cli.Parsed) : IO UInt32 := do
   p.printHelp
   return 0
@@ -33,6 +98,7 @@ def storeCmd : Cli.Cmd := `[Cli|
   "Interact with the content-addressed store"
 
   SUBCOMMANDS:
+    storeGetCmd;
     storePutCmd
 ]
 

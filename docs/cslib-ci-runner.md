@@ -174,9 +174,11 @@ ix verify --aggregate <root>.ixon
 ```
 
 It prints `ok: aggregate proof <address> verifies CheckEnv(<corpus root>,
-none)`, where the address is the file's BLAKE3 hash. `ix store put <file>`
-copies a downloaded proof into `~/.ix/store/` for commands that only take
-addresses.
+none)`, where the address is the file's BLAKE3 hash. To read the claim
+without verifying (no GPU needed), run `ix store get --show <root>.ixon`.
+`ix store put <file>` copies a downloaded proof into `~/.ix/store/` for
+commands that only take addresses, and `ix store get <address> -o <file>`
+copies it back out unchanged.
 
 ## Open items
 
