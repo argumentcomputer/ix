@@ -2574,43 +2574,37 @@ pub fn compare_indc(
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
-    SOrd::cmp(
-      &x.ind.cnst.level_params.len(),
-      &y.ind.cnst.level_params.len(),
-    ),
+    SOrd::cmp(&x.ind.cnst.level_params.len(), &y.ind.cnst.level_params.len()),
     || {
-      SOrd::try_compare(
-        SOrd::cmp(&x.ind.num_params, &y.ind.num_params),
-        || {
-          SOrd::try_compare(
-            SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
-            || {
-              SOrd::try_compare(
-                SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
-                || {
-                  SOrd::try_compare(
-                    compare_expr(
-                      &x.ind.cnst.typ,
-                      &y.ind.cnst.typ,
-                      mut_ctx,
-                      &x.ind.cnst.level_params,
-                      &y.ind.cnst.level_params,
-                      stt,
-                    )?,
-                    || {
-                      SOrd::try_zip(
-                        |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
-                        &x.ctors,
-                        &y.ctors,
-                      )
-                    },
-                  )
-                },
-              )
-            },
-          )
-        },
-      )
+      SOrd::try_compare(SOrd::cmp(&x.ind.num_params, &y.ind.num_params), || {
+        SOrd::try_compare(
+          SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
+          || {
+            SOrd::try_compare(
+              SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
+              || {
+                SOrd::try_compare(
+                  compare_expr(
+                    &x.ind.cnst.typ,
+                    &y.ind.cnst.typ,
+                    mut_ctx,
+                    &x.ind.cnst.level_params,
+                    &y.ind.cnst.level_params,
+                    stt,
+                  )?,
+                  || {
+                    SOrd::try_zip(
+                      |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
+                      &x.ctors,
+                      &y.ctors,
+                    )
+                  },
+                )
+              },
+            )
+          },
+        )
+      })
     },
   )
 }

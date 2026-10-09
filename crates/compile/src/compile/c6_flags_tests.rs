@@ -47,10 +47,8 @@ fn env_of(ind: &Ind) -> LeanEnv {
     LeanConstantInfo::InductInfo(ind.ind.clone()),
   );
   for ctor in &ind.ctors {
-    env.insert(
-      ctor.cnst.name.clone(),
-      LeanConstantInfo::CtorInfo(ctor.clone()),
-    );
+    env
+      .insert(ctor.cnst.name.clone(), LeanConstantInfo::CtorInfo(ctor.clone()));
   }
   env
 }
