@@ -250,7 +250,7 @@ def runCase (c : Case) : CoreM Unit := do
   let some (first, _) := c.hand[0]? | throwError "case without members"
   let all := (← getConstInfoInduct first).all
   -- Pass 1
-  let cenv : _root_.Ix.Compile.Canon.Env := {
+  let cenv := _root_.Ix.Compile.Canon.Env.ofSource {
     source := { consts := {}, fallback? := some {
       index := (← getEnv).constants.toList.foldl
         (fun m (n, ci) => m.insert (ixName n) (n, ci)) {}

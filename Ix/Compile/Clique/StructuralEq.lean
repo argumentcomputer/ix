@@ -129,8 +129,8 @@ def regenerateStructuralEq (const? : Name → Option ConstantInfo)
     throw "structural eq_def: left side is not the complete ordered member application"
   unless (const? (leanName ``Eq.refl)).isSome do
     throw "structural eq_def: Eq.refl is not in the input"
-  let (prefix, goal) ← openBinders false (majorPos + 1) equation.type
-  let major := prefix[majorPos]!
+  let (openedBinders, goal) ← openBinders false (majorPos + 1) equation.type
+  let major := openedBinders[majorPos]!
   let some (ind, indLevels, params) := constApp? (whnf const? whnfFuel major.type)
     | throw "structural eq_def: recursive argument has no inductive head"
   let some (.inductInfo iv) := const? ind
@@ -166,7 +166,7 @@ def regenerateStructuralEq (const? : Name → Option ConstantInfo)
     type ← liftE (Ix.Compile.Image.instForall type #[proof])
   unless eqDefConvertible const? 256 type goal do
     throw "structural eq_def: casesOn result differs from the full statement"
-  let value ← liftE (closeBinders true prefix (mkAppN (Expr.mkConst casesName casesLevels) proofArgs))
+  let value ← liftE (closeBinders true openedBinders (mkAppN (Expr.mkConst casesName casesLevels) proofArgs))
   return { equation with name := newName, value }
 
 end Ix.Compile.Clique
