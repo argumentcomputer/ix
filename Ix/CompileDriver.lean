@@ -579,23 +579,44 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints
     pending }
 
+/-- Withdraw a failed source block's provisional auxiliary publication.
+    Anonymous content and unrelated successful names remain available. -/
+def failAuxPromotion (acc : DriverAcc) (all : Set Name) (msg : String) : DriverAcc :=
+  Id.run do
+  let mut acc := acc
+  for n in all do
+    acc := { acc with
+      cenv := { acc.cenv with
+        nameToAddr := acc.cenv.nameToAddr.erase n
+        auxNameToAddr := acc.cenv.auxNameToAddr.erase n
+        nameToNamed := acc.cenv.nameToNamed.erase n
+        auxGenExtraNames := acc.cenv.auxGenExtraNames.erase n
+        blocks := acc.cenv.blocks.erase n
+        p3Heads := acc.cenv.p3Heads.erase n
+        p3CanonRecs := acc.cenv.p3CanonRecs.erase n
+        p3NonCanonical := acc.cenv.p3NonCanonical.erase n
+        p3Rewritten := acc.cenv.p3Rewritten.erase n
+        p3PjForms := acc.cenv.p3PjForms.erase n
+        ungrounded := acc.cenv.ungrounded.insert n msg }
+      defHints := acc.defHints.erase n }
+  return { acc with pending := acc.pending.filter (!all.contains ·) }
+
 /-- The scheduler's promote-remaining pass over a pre-compiled block's
     members (Rust env.rs:757-789). A member already in `nameToAddr` keeps
     its address; an aux claim on it at a different address is recorded as
-    a conflict for that member (single ownership, A0) instead of being
-    skipped silently. A member not yet registered takes its resolved
-    address. Returns the members newly registered. -/
+    a block failure (single ownership, A0). Check all claims before
+    publishing any member. Returns the members newly registered. -/
 def promoteRemaining (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Name := Id.run do
+  for name in all do
+    if let some existing := acc.cenv.nameToAddr.get? name then
+      if let some claimed := acc.cenv.auxNameToAddr.get? name then
+        if claimed != existing then
+          return (failAuxPromotion acc all (toString (nameClaimConflict name existing claimed)), #[])
   let mut acc := acc
   let mut newNames : Array Name := #[]
   for name in all do
     match acc.cenv.nameToAddr.get? name with
-    | some existing =>
-      if let some claimed := acc.cenv.auxNameToAddr.get? name then
-        if claimed != existing then
-          let msg := toString (nameClaimConflict name existing claimed)
-          acc := { acc with cenv := { acc.cenv with
-            ungrounded := acc.cenv.ungrounded.insert name msg } }
+    | some _ => pure ()
     | none =>
       if let some addr := resolveAddrPure acc.cenv name then
         acc := { acc with cenv := { acc.cenv with
@@ -630,11 +651,58 @@ def promoteAuxDriver (cenv : CompileEnv) (name : Name)
 address is {metaAddr}")
   let mut cenv := cenv
   if let some auxAddr := cenv.auxNameToAddr.get? name then
+    if let some existing := cenv.nameToAddr.get? name then
+      if existing != auxAddr then throw (nameClaimConflict name existing auxAddr)
     cenv := { cenv with nameToAddr := cenv.nameToAddr.insert name auxAddr }
   if let some named := cenv.nameToNamed.get? name then
     let named' := { named with original := some (origAddr, origMeta) }
     cenv := { cenv with nameToNamed := cenv.nameToNamed.insert name named' }
   pure cenv
+
+/-- Stage the entire original-form promotion in pure state. On error the
+    caller keeps none of these writes, then withdraws the failed block's
+    earlier auxiliary bindings. Both driver paths use this same operation. -/
+def promoteOriginalBlock (acc : DriverAcc) (lo : Name)
+    (result : BlockResult) (cache : BlockState) : Except CompileError DriverAcc := do
+  let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
+    if result.projections.isEmpty then
+      #[(lo, result.blockAddr, result.blockMeta)]
+    else
+      result.projections.map fun (name, proj, constMeta) =>
+        (name, Address.blake3 (Ixon.ser proj), constMeta)
+  let mut acc := acc
+  for (name, origAddr, origMeta) in promotions do
+    let cenv ← Ix.PhaseTimers.withPhase .noAux acc.cenv
+      (promoteAuxDriver · name origAddr origMeta)
+    acc := { acc with cenv }
+  return { acc with
+    cenv := { acc.cenv with
+      blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs }
+    blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
+    defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints }
+
+/-- Finish a source block's promotion atomically, including remaining
+    claims. Failure discards staged original metadata even for other members
+    visited by the original-form compiler's full source-family traversal. -/
+def finishAuxPromotion (acc : DriverAcc) (lo : Name) (all : Set Name)
+    (original : Option (BlockResult × BlockState)) : DriverAcc × Array Name × Bool := Id.run do
+  let mut staged := acc
+  if let some (result, cache) := original then
+    match promoteOriginalBlock staged lo result cache with
+    | .error e => return (failAuxPromotion acc all (toString e), #[], true)
+    | .ok next => staged := next
+  let (next, names) := promoteRemaining staged all
+  for name in all do
+    if let some msg := next.cenv.ungrounded.get? name then
+      return (failAuxPromotion acc all msg, #[], true)
+  return (next, names, false)
+
+/-- A provisional source auxiliary must complete its own block before it
+    releases dependents. A generated name without a source block can resolve
+    immediately; failed source blocks settle too, so missing reads are reported. -/
+def auxDependencyReady (sourceOwned : Name → Bool) (cenv : CompileEnv)
+    (settled : Set Name) (name : Name) : Bool :=
+  settled.contains name || (!sourceOwned name && (resolveAddrPure cenv name).isSome)
 
 /-! ## Aux-gen seeds: scheduling dependencies (Rust: the prereq pre-pass, env.rs:993-1140) -/
 
@@ -883,9 +951,7 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
             (unresolvedNames.toList.map (·.pretty))
           let msg := s!"aux_gen precompile incomplete for {lo.pretty}; \
 missing canonical aliases: {missing}"
-          for m in all do
-            acc := { acc with cenv := { acc.cenv with
-              ungrounded := acc.cenv.ungrounded.insert m msg } }
+          acc := failAuxPromotion acc all msg
         else
           -- Cross-SCC compile of the unresolved subset (env.rs:617-651).
           let crossAll : Set Name :=
@@ -910,50 +976,15 @@ missing canonical aliases: {missing}"
                   cenv := { acc.cenv with
                     auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n }
                   pending := acc.pending.push n }
-      if anyAuxGen && !auxIncomplete then
-        -- Compile the original Lean form and promote (env.rs:656-693).
-        match compileConstNoAuxPure acc.cenv lo all with
-        | .error e =>
-          let msg := toString e
-          for m in all do
-            acc := { acc with cenv := { acc.cenv with
-              ungrounded := acc.cenv.ungrounded.insert m msg } }
-        | .ok (result, cache) =>
-          -- Promote per member: original projection (addr, meta) — or the
-          -- lone constant for singleton no-aux blocks.
-          let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
-            if result.projections.isEmpty then
-              #[(lo, result.blockAddr, result.blockMeta)]
-            else
-              result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.blake3 (Ixon.ser proj), constMeta)
-          let mut promoteFailed := false
-          for (name, origAddr, origMeta) in promotions do
-            if promoteFailed then continue
-            match Ix.PhaseTimers.withPhase .noAux acc.cenv
-              (promoteAuxDriver · name origAddr origMeta) with
-            | .error e =>
-              promoteFailed := true
-              let msg := toString e
-              for m in all do
-                acc := { acc with cenv := { acc.cenv with
-                  ungrounded := acc.cenv.ungrounded.insert m msg } }
-            | .ok cenv' =>
-              acc := { acc with cenv := cenv' }
-          -- The ephemeral compile still stores blobs/name components and
-          -- records hints (Rust `store_string`/`compile_name`/`def_hints`
-          -- are unconditional; only const/Named stores are aux-gated).
-          acc := { acc with
-            cenv := { acc.cenv with
-              blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
-                acc.cenv.blobs }
-            blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
-              acc.blockNames
-            defHints := cache.defHints.fold (fun m k v => m.insert k v)
-              acc.defHints }
       if !auxIncomplete then
-        -- Promote remaining names from auxNameToAddr (env.rs:757-789).
-        acc := (promoteRemaining acc all).1
+        let original := if anyAuxGen then
+          (compileConstNoAuxPure acc.cenv lo all).map some
+        else .ok none
+        match original with
+        | .error e => acc := failAuxPromotion acc all (toString e)
+        | .ok result =>
+          let (next, _, _) := finishAuxPromotion acc lo all result
+          acc := next
     else
       -- Normal path: compile the block with the aux tail.
       let fail (acc : DriverAcc) (e : CompileError) : DriverAcc := Id.run do
@@ -981,7 +1012,9 @@ missing canonical aliases: {missing}"
     let mut releaseNames : Array Name := #[]
     for n in all do
       releaseNames := releaseNames.push n
-    releaseNames := releaseNames ++ pendingDrained
+    -- Source-owned auxiliaries settle only when their own original-form
+    -- promotion finishes. Generated names without a source block can release now.
+    releaseNames := releaseNames ++ pendingDrained.filter (!blocks.lowLinks.contains ·)
     for name in releaseNames do
       if released.contains name then
         continue
@@ -1138,44 +1171,14 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
         for n in crossNames do
           acc := { acc with cenv := { acc.cenv with
             auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n } }
-    match incompleteMsg with
-    | some msg =>
-      acc := recordFailure acc msg
-    | none =>
-      match noAuxFailMsg with
-      | some msg =>
-        acc := recordFailure acc msg
-      | none =>
-        if let some (result, cache) := noAux then
-          let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
-            if result.projections.isEmpty then
-              #[(lo, result.blockAddr, result.blockMeta)]
-            else
-              result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.blake3 (Ixon.ser proj), constMeta)
-          let mut promoteFailed := false
-          for (name, origAddr, origMeta) in promotions do
-            if promoteFailed then continue
-            match Ix.PhaseTimers.withPhase .noAux acc.cenv
-              (promoteAuxDriver · name origAddr origMeta) with
-            | .error e =>
-              promoteFailed := true
-              acc := recordFailure acc (toString e)
-            | .ok cenv' =>
-              acc := { acc with cenv := cenv' }
-          acc := { acc with
-            cenv := { acc.cenv with
-              blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
-                acc.cenv.blobs }
-            blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
-              acc.blockNames
-            defHints := cache.defHints.fold (fun m k v => m.insert k v)
-              acc.defHints }
-      -- Promote remaining names from auxNameToAddr (env.rs:757-789) —
-      -- against the LIVE env; also counts as registration for rustRef.
-      let (acc', promoted) := promoteRemaining acc all
-      acc := acc'
-      newNames := newNames ++ promoted
+    if let some msg := incompleteMsg then
+      return (failAuxPromotion acc all msg, #[], true)
+    if let some msg := noAuxFailMsg then
+      return (failAuxPromotion acc all msg, #[], true)
+    let (next, promoted, failed) := finishAuxPromotion acc lo all noAux
+    if failed then return (next, #[], true)
+    acc := next
+    newNames := newNames ++ promoted
   return (acc, newNames, false)
 
 /-- Work item for the aux-aware parallel driver. -/
@@ -1287,29 +1290,30 @@ rss{(rssKb.getD "?").trimAscii}"
   let mut remaining : Set Name := {}
   for (lo, _) in blocks.blocks do
     remaining := remaining.insert lo
-  -- Names of failed blocks count as "released" so dependents still run
-  -- (and fail with MissingConstant, recorded per member) — mirroring the
-  -- Rust scheduler's release-on-failure cascade.
-  let mut failedNames : Set Name := {}
+  -- A source dependency settles at its own block's completion, successful
+  -- or failed. A parent's provisional aux publication cannot release it before
+  -- original-form validation. Failed dependencies still run and report missing reads.
+  let mut settledNames : Set Name := {}
   -- Dependency-driven dispatch (no wave barrier): a block is sent to the
-  -- workers as soon as every scheduling dependency resolves in the merged
-  -- state (or names a failed block), against the state current at that
-  -- moment. `pending` counts a block's unmet dependencies, `waiting` lists
+  -- workers as soon as every source scheduling dependency has completed
+  -- its block (or an external generated dependency resolves), against the
+  -- state current at that moment. `pending` counts a block's unmet dependencies,
+  -- `waiting` lists
   -- the blocks waiting on a name; a merge wakes the waiters of the names it
   -- registered and of its block's members, and every wake-up re-checks the
   -- dependency against the merged state. Should a dependency resolve without
   -- being reported (no such case is known), the driver falls back to a full
   -- rescan of the undispatched blocks when nothing is in flight, which is
   -- exactly the wave driver's readiness test.
-  let depOk (cenv : CompileEnv) (failed : Set Name) (d : Name) : Bool :=
-    (resolveAddrPure cenv d).isSome || failed.contains d
+  let depOk (cenv : CompileEnv) (settled : Set Name) (d : Name) : Bool :=
+    auxDependencyReady blocks.lowLinks.contains cenv settled d
   let mut waiting : Std.HashMap Name (Array Name) := {}
   let mut pending : Std.HashMap Name Nat := {}
   let mut ready : Array Name := #[]
   for (lo, _) in blocks.blocks do
     let mut unmet := 0
     for d in (schedDeps.get? lo).getD {} do
-      if !depOk acc.cenv failedNames d then
+      if !depOk acc.cenv settledNames d then
         unmet := unmet + 1
         -- take the array out of the map before pushing, so it is not copied
         let ws := waiting.getD d #[]
@@ -1361,7 +1365,7 @@ rss{(rssKb.getD "?").trimAscii}"
       rescans := rescans + 1
       for lo in remaining do
         let deps := (schedDeps.get? lo).getD {}
-        if deps.toList.all (depOk acc.cenv failedNames) then
+        if deps.toList.all (depOk acc.cenv settledNames) then
           ready := ready.push lo
       if ready.isEmpty then
         discard <| workChan.close
@@ -1382,17 +1386,10 @@ blocks remaining but none ready"
       return .error "Result channel closed unexpectedly"
     | some (some (lo, all, outcome)) =>
       inFlight := inFlight - 1
-      if let .failed _ := outcome then
-        for n in all do
-          failedNames := failedNames.insert n
-      if let .promoted _ _ (some _) _ _ := outcome then
-        for n in all do
-          failedNames := failedNames.insert n
-      let (acc', newNames, mergeFailed) := Ix.PhaseTimers.withPhase .merge acc
+      let (acc', newNames, _) := Ix.PhaseTimers.withPhase .merge acc
         (applyAuxBlockOutcome · lo all outcome)
-      if mergeFailed then
-        for n in all do
-          failedNames := failedNames.insert n
+      for n in all do
+        settledNames := settledNames.insert n
       acc := acc'
       if let some rust := rustRef then
         for name in newNames do
@@ -1406,7 +1403,7 @@ lean={named.addr} rust={rustAddr} (block {lo.pretty})"
       -- wake the blocks waiting on a name this merge settled
       for d in newNames ++ all.toArray do
         let some ws := waiting.get? d | continue
-        if !depOk acc.cenv failedNames d then continue
+        if !depOk acc.cenv settledNames d then continue
         waiting := waiting.erase d
         for w in ws do
           match pending.get? w with

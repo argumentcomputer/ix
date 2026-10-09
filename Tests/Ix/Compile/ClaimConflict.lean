@@ -214,6 +214,70 @@ def aliasProvenanceCheck : Except String Unit := do
   if !repeated.auxNamed.isEmpty then
     throw "D11: consistent re-registration overwrote the source's own original"
 
+/-- Original-form publication is conditional on the entire promotion succeeding,
+including writes for a different member visited by the source-family compiler. -/
+def promotionCases : List (String × Bool) := Id.run do
+  let a := ixName "Fx.Promote.a"
+  let b := ixName "Fx.Promote.b"
+  let other := ixName "Fx.Promote.other"
+  let canonical := addr "promotion-canonical"
+  let original := addr "promotion-original"
+  let different := addr "promotion-conflict"
+  let all : Ix.Set Ix.Name := (({} : Ix.Set Ix.Name).insert a).insert b
+  let acc : DriverAcc :=
+    { cenv := { (default : CompileEnv) with
+        auxNameToAddr := ({} : Std.HashMap _ _).insert a canonical |>.insert b canonical
+        nameToNamed := ({} : Std.HashMap _ _).insert a { addr := canonical }
+          |>.insert b { addr := canonical } |>.insert other { addr := canonical }
+        nameToAddr := ({} : Std.HashMap _ _).insert other canonical
+        auxGenExtraNames := all
+        constants := ({} : Std.HashMap _ _).insert canonical ByteArray.empty }
+      defHints := ({} : Std.HashMap _ _).insert a .abbrev |>.insert other .opaque
+      pending := #[a, b, other] }
+  let withdrawn (out : DriverAcc) : Bool :=
+    all.toList.all (fun n => (resolveAddrPure out.cenv n).isNone &&
+      !out.cenv.nameToNamed.contains n && !out.cenv.auxGenExtraNames.contains n &&
+      out.cenv.ungrounded.contains n && !out.defHints.contains n && !out.pending.contains n)
+  let untouched (out : DriverAcc) : Bool :=
+    out.cenv.nameToNamed.get? other == acc.cenv.nameToNamed.get? other &&
+    out.cenv.nameToAddr.get? other == some canonical &&
+    out.defHints.get? other == some .opaque && out.cenv.constants.contains canonical
+  let (failed, names, bad) := applyAuxBlockOutcome acc a all
+    (.promoted none #[] none none (some "original compile refused"))
+  let mut cases := [("no-aux refusal withdraws all provisional names",
+    bad && names.isEmpty && withdrawn failed && untouched failed)]
+  let (incomplete, names, bad) := applyAuxBlockOutcome acc a all
+    (.promoted none #[] (some "incomplete auxiliary family") none none)
+  cases := cases ++ [("incomplete family has no public residue",
+    bad && names.isEmpty && withdrawn incomplete && untouched incomplete)]
+  let malformed : Ixon.ConstantMeta := { Ixon.ConstantMeta.empty with
+    info := .axio different #[] {} 0 }
+  let lateBad : BlockResult := { loneResult original with projections :=
+    #[(other, default, .empty), (a, default, malformed)] }
+  let (lateFailure, names, bad) := finishAuxPromotion acc a all (some (lateBad, default))
+  cases := cases ++ [("late self-name failure discards earlier outside-SCC original",
+    bad && names.isEmpty && withdrawn lateFailure && untouched lateFailure)]
+  let conflict := { acc with cenv := { acc.cenv with
+    nameToAddr := acc.cenv.nameToAddr.insert b different } }
+  let outside : BlockResult := { loneResult original with projections :=
+    #[(other, default, .empty)] }
+  let (claimFailure, names, bad) := finishAuxPromotion conflict a all
+    (some (outside, default))
+  cases := cases ++ [("remaining-claim failure discards staged originals",
+    bad && names.isEmpty && withdrawn claimFailure && untouched claimFailure)]
+  let (ok, _, bad) := finishAuxPromotion acc a all (some (loneResult original, default))
+  cases := cases ++ [("valid neighbor promotes canonical addresses and own original",
+    !bad && all.toList.all (fun n => ok.cenv.nameToAddr.get? n == some canonical) &&
+    ((ok.cenv.nameToNamed.get? a).bind (·.original)) == some (original, .empty) &&
+    ok.cenv.ungrounded.isEmpty && untouched ok)]
+  let sourceOwned := fun n => all.contains n
+  cases := cases ++ [("source dependency waits despite provisional resolution",
+    !auxDependencyReady sourceOwned acc.cenv {} a &&
+    auxDependencyReady sourceOwned acc.cenv all a &&
+    auxDependencyReady sourceOwned acc.cenv {} other &&
+    !auxDependencyReady sourceOwned acc.cenv {} (ixName "Fx.Promote.absent"))]
+  return cases
+
 end DriverApi
 
 /-! ## Part 2: both compilers on a constructed closure -/
@@ -279,6 +343,12 @@ def run : IO UInt32 := do
       failures := failures + 1
       IO.println s!"[claim-conflict] driver: {label}: FAIL: expected {expected.getD "accepted"}, \
 got {actual.getD "accepted"}"
+  for (label, passed) in promotionCases do
+    if passed then
+      IO.println s!"[claim-conflict] promotion: {label}: PASS"
+    else
+      failures := failures + 1
+      IO.println s!"[claim-conflict] promotion: {label}: FAIL"
   -- Part 2
   let env ← get_env!
   let closure ← IO.ofExcept (conflictClosure env)

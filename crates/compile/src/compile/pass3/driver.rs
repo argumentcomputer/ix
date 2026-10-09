@@ -919,7 +919,7 @@ fn compile_image_block(
   // the image's hints, not the original's (Lean merges only the images'
   // block states' `defHints` in `runImageBlock`)
   for (a, h) in hints {
-    stt.def_hints.insert(a, h);
+    stt.record_hint(&a, Some(h));
   }
   for a in &compiled {
     if let Some(addr) = stt.aux_name_to_addr.get(a).map(|r| r.clone()) {
@@ -1106,7 +1106,7 @@ fn compile_canon(
         p3_sources: srcs.into_iter().enumerate().collect(),
         ..Default::default()
       };
-      let prev_hints = stt.def_hints.get(&c).map(|r| *r);
+      let prev_hints = stt.recorded_hint(&c);
       let (addr, meta, constant) =
         compile_single_def_parts(&c, &def, &mut cache, stt).map_err(|e| {
           invalid(format!(
@@ -1118,10 +1118,10 @@ fn compile_canon(
         // the hints this compile recorded belong to no binding
         match prev_hints {
           Some(h) => {
-            stt.def_hints.insert(c.clone(), h);
+            stt.record_hint(&c, Some(h));
           },
           None => {
-            stt.def_hints.remove(&c);
+            stt.record_hint(&c, None);
           },
         }
         invalid(format!(

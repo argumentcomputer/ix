@@ -401,6 +401,27 @@ impl CompileState {
     self.resolve_addr_aux(name, true)
   }
 
+  /// Scheduled blocks publish hints only after all compilation/promotion
+  /// checks succeed. Direct callers retain the immediate-write behaviour.
+  pub fn record_hint(&self, name: &Name, hint: Option<ReducibilityHints>) {
+    if block_txn::defer_hint(name, hint) {
+      return;
+    }
+    match hint {
+      Some(h) => {
+        self.def_hints.insert(name.clone(), h);
+      },
+      None => {
+        self.def_hints.remove(name);
+      },
+    }
+  }
+
+  pub fn recorded_hint(&self, name: &Name) -> Option<ReducibilityHints> {
+    block_txn::hint(name)
+      .unwrap_or_else(|| self.def_hints.get(name).map(|r| *r))
+  }
+
   /// Resolve the per-name hints recorded by `compile_definition` into
   /// the env. Runs once after the scheduler drains: addresses aren't
   /// final until the `Named` entries are registered. Two channels:
@@ -427,6 +448,8 @@ impl CompileState {
   /// `Named.original` to the given `(orig_addr, orig_meta)` from the
   /// ephemeral no-aux compilation. The existing aux_gen `Named` entry keeps
   /// its canonical `addr`/`meta`; `original` captures the Lean-native form.
+  /// During a scheduled block the metadata and address claims are deferred
+  /// until the whole block has succeeded (`block_txn::commit`).
   ///
   /// Errors with `CompileError::InvalidMutualBlock` if the metadata's
   /// self-name address does not match `name`'s compiled address — that
@@ -467,10 +490,14 @@ impl CompileState {
       }
     }
 
-    if let Some(aux_addr) = self.aux_name_to_addr.get(name)
-      && self.name_to_addr.insert(name.clone(), aux_addr.clone()).is_none()
-    {
-      block_txn::log_compiled(name);
+    let Some((orig_addr, orig_meta)) =
+      block_txn::defer_promotion(name, orig_addr, orig_meta)
+    else {
+      return Ok(());
+    };
+    let aux_addr = self.aux_name_to_addr.get(name).map(|r| r.value().clone());
+    if let Some(aux_addr) = aux_addr {
+      self.claim_compiled_name(name, &aux_addr)?;
     }
     if let Some(mut entry) = self.env.named.get_mut(name) {
       entry.value_mut().set_original(orig_addr, orig_meta);
@@ -1788,7 +1815,7 @@ pub fn compile_definition(
   meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
-  stt.def_hints.insert(def.name.clone(), def.hints);
+  stt.record_hint(&def.name, Some(def.hints));
 
   Ok((data, meta))
 }

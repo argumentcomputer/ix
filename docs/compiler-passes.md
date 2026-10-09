@@ -1018,7 +1018,7 @@ serialized content, while side-car includes names, metadata, hints and originals
 | Item | Current source and behavior | Status / remaining obligation |
 | --- | --- | --- |
 | D1: merge ownership | [`checkBlockClaims`, `mergeCompiledBlock`](../Ix/CompileDriver.lean) check primary/aux claims and head/block/recursor records against live state and earlier records of the same block. A different second address/record fails. `Named` metadata overrides remain intentional. | Implemented conflict checks; not every map is insert-once. Establish the full block-owned claim invariant when composing the general proof. |
-| D2a: auxiliary promotion | [`auxBlockOutcome`, `compileConstNoAuxPure`, `promoteRemaining`](../Ix/CompileDriver.lean) still distinguish a previously generated auxiliary from an ordinary block and attach its own original form. | Present. Original-form failure can still be followed by promotion (§11.6); changing that behavior is owner-pending. |
+| D2a: auxiliary promotion | [`auxBlockOutcome`, `compileConstNoAuxPure`, `promoteRemaining`](../Ix/CompileDriver.lean) still distinguish a previously generated auxiliary from an ordinary block and attach its own original form. | Original-form failure now withdraws the block’s provisional source bindings (§11.6); successful promotion preserves canonical content and attaches the source original. |
 | D2b: prerequisite precompile | Lean [`scheduleDeps`](../Ix/CompileDriver.lean) makes auxiliary seed closure ordinary dependencies. Rust [`precompile_aux_gen_prereqs`](../crates/compile/src/compile/env.rs) still performs a prepass. | Old Lean prepass removed; Rust is a real implementation difference. Byte gates cover measured successful inputs, not every failure-path correspondence. |
 | D2c: phase/member selection | [`compileConstNoAuxPure`](../Ix/CompileDriver.lean) sorts members by `aliasPrecedes` before first-match selection; it still reads `auxGenExtraNames`. | The iteration-order issue is changed in Lean. Derive the claimed owner/phase/closure invariants generally; a source comment asserting them is not their proof. |
 | D2d: already claimed names | Promotion still branches on `resolveAddrPure`; normal claims reject a different existing address. [`checkAuxSourceClaim`](../Ix/AuxGen/CompileAux.lean) rejects a source-name claim without forward provenance to the inductive owner. | Added source-ownership protection, not the complete generated-family freshness and claim-set theorem. |
@@ -1035,12 +1035,12 @@ serialized content, while side-car includes names, metadata, hints and originals
 | D13: generator registry reads | [`Nested`](../Ix/AuxGen/Nested.lean) reads the canonical classes of referenced external groups; [`Below`](../Ix/AuxGen/Below.lean) and [`BRecOn`](../Ix/AuxGen/BRecOn.lean) distinguish compile-local metadata from decompile-only registry use. | The required referenced entries must be available and source-determined. A comment calling a branch decompile-only does not prove every generator read is in closure. |
 | D14: reverse output index | [`insertCanonicalAlias`](../Ix/CompileM.lean), used by `assembleEnv`, retains the earliest alias in seed order. | Old last-wins map iteration changed. This canonical reverse alias is not structural injectivity of arbitrary cached names. |
 | D15: conflicting wave reports | Live claims decide which conflicting block first registers and which reports the error. | The conflict is refused; diagnostic owner/order need not be a unique canonical successful result. |
-| D16: Rust rollback | [`block_txn`](../crates/compile/src/compile/block_txn.rs) surrounds the normal scheduled block branch and rolls back its newly published named claims/records on error. | Implemented for that branch. Anonymous content caches can remain; the separate promotion-path exception is not repaired by this transaction. |
+| D16: Rust rollback | [`block_txn`](../crates/compile/src/compile/block_txn.rs) surrounds normal compilation and original-form promotion, staging original metadata and hints until success and rolling back newly published claims on error. | Failed promotion also withdraws its earlier provisional source bindings. Anonymous content caches can remain; this is not a general concurrent-publication theorem. |
 | D17: expression height | [`exprCompileDepth`](../Ix/CompileM.lean) retains its structural definition with a memoized `implemented_by` runtime height. | Implemented and included in the source-specific library gates in §7.3. The runtime refinement still belongs in the full compiler trust/proof account. |
 
 The worklist now distinguishes removed paths, actual improvements and remaining
 invariants. It is not a request to reopen removed surgery or to change pending
-failure behavior as part of documentation.
+failure behavior as part of documentation alone.
 
 ### 6.2 The definition the compiler targets
 
@@ -1073,8 +1073,8 @@ This definition has two distinct obligations:
 L1 supplies the relevant component/class/name-map clauses under its hypotheses;
 it does not prove this entire fold. The normal Rust transaction, Lean live-claim
 checks and cache admission rules are parts of the implementation to relate to the
-definition. `--allow-partial` and the promotion exception require their own
-explicit failure reading (§11.6), not the successful-fold theorem applied silently.
+definition. `--allow-partial` requires its own explicit failure reading (§11.6),
+not the successful-fold theorem applied silently.
 
 ### 6.3 The block rule: what a block may read
 
@@ -1152,7 +1152,7 @@ not upgrade the complete compiler to a proved canonicalizer.
 | Source encoding constants and packing-dependent statements | Faithful source form (`ORDER-STMT`). |
 | Unrecognized clique order/grammar | Faithful form (`NOSPEC`, `SHAPE`). |
 | `sizeOf` declines, bare/partial uses, changed `IndPredBelow`, lazy lemmas | Faithful form with the applicable recorded cause. |
-| Failed/refused blocks | No successful declaration contract; read the failure and promotion exception explicitly. |
+| Failed/refused blocks | No successful declaration contract; failed original-form promotion withdraws provisional source bindings (§11.6). |
 
 The supported change-of-presentation relation (Def 4.3) includes the specified
 member permutation, renaming, component separation and equal-class collapse,
@@ -1278,8 +1278,7 @@ source/loader manifest and byte gate for each new run.
 | Caller mixing incompatible encodings | Named refusal, without changing the callee's clique plan. |
 | Output packing | Reference closure, distinct from source-unit input selection. |
 
-The following choices remain open and are not made by this guide:
-the failed-original promotion behavior; D-M5-1's
+The following choices remain open and are not made by this guide: D-M5-1's
 structural carried-proof alternative; the phase-9 inverse-image bridge and its
 additional large-library coverage; the requested whole-scope corpus/large-run
 reconciliation; and the placement of additional tracked integration/CI machinery.
@@ -1401,7 +1400,7 @@ entry supplies an address and metadata. Several source names can share an addres
 for example when a class collapses. `insertCanonicalAlias` chooses the reverse
 index's earliest alias in seed order. Primary/aux address claims are checked before
 the Lean merge; an incompatible second claim fails the block. Intentional `Named`
-metadata overrides and the promotion exception are described separately below.
+metadata overrides and failed-promotion cleanup are described separately below.
 
 An address comparison and a cached `Ix.Name` comparison have the implementation's
 hash semantics. The per-output certification lane does not acquire a new hash
@@ -1431,7 +1430,7 @@ The principal paths are in [Pass/Driver](../Ix/Compile/Pass/Driver.lean),
 | 7c | Source encoding constants of a transported clique. | Source form under source names, because their statements follow source order (`ORDER-STMT`). Uncarried source lemmas can still refer to them. `isEncodingName`, `encodingOwner?`. |
 | 7d | Clique plan is baseline, unchanged or not encoded. | Ordinary source/image baseline. `.baseline` records `NOSPEC` or `SHAPE`; `.unchanged` needs no transport; `.notEncoded` is outside the recognized input-clique route. `CliqueOutcome`, `planClique`. |
 | 8 | Caller mixing a transported member with incompatible source encoding constants outside its unit. | Named refusal: `Pass 3 cliques: caller refused (block rule, callers adapt): …`. The compiler does not change the clique to accommodate that caller. `cliqueCallers`, `callerRefusalPrefix`. |
-| 9 | Compile/claim/missing-dependency failure. | Record the block members as failed in `ungrounded`. The normal Lean branch does not merge its failed block result; the normal Rust scheduled branch rolls back its newly published named claims/records. Content caches and earlier successful dependencies are not a guarantee of an empty environment. The promotion exception in §11.6 remains. `compile-lean` writes no artifact with failures unless `--allow-partial`. |
+| 9 | Compile/claim/missing-dependency failure. | Record the block members as failed in `ungrounded`. The normal Lean branch does not merge its failed block result; the normal Rust scheduled branch rolls back its newly published named claims/records. Content caches and earlier successful dependencies are not a guarantee of an empty environment. Failed original-form promotion also withdraws the affected source bindings (§11.6). `compile-lean` writes no artifact with failures unless `--allow-partial`. |
 | 10 | Grounded input name has a reserved `_ix` component/prefix. | Refuse the compile with the least pretty-form diagnostic selected by `reservedInput?`/`pass3ReservedInput?`. The scan is over the supplied grounded condensation; excluded ungrounded inputs remain named failures, not accepted declarations. |
 
 Case 3 includes `rec`, nested `rec_N`, `casesOn`, `recOn` and the applicable
@@ -1548,8 +1547,9 @@ ref.pretty-or-empty)`; this ordering is not a checked uniqueness guarantee.
 Failure/refusal rows have `differs: false` and `addr: null`; this does not claim
 that an artifact declaration equals the source. Several ordinary-claim loops
 skip failed names, but the record builder does not globally remove every other
-claim for a failed name. The known promotion exception means that absence from
-the *artifact* cannot be inferred solely from such an entry in a partial output.
+claim for a failed name. Failed original-form promotion withdraws the affected
+source-name bindings, but the record builder is not itself an artifact-absence
+proof for every failure path; consumers still check the partial artifact.
 
 The groundedness scan reports missing input dependencies, rejected dependencies,
 out-of-scope variables/levels and metavariables as named
@@ -1575,17 +1575,26 @@ plan classifications and `differs` claims remain compiler reports until checked
 by the relevant independent condition. See
 [certification §1.3 and §5](compiler-certification.md).
 
-### 11.6 Known exception and reconciled inconsistencies
+### 11.6 Failed promotion and reconciled inconsistencies
 
-**Promotion failure remains an exception.** If original-form compilation of an
-already regenerated auxiliary block fails, the driver records failure but can
-still promote names that the owning inductive's auxiliary tail registered.
-[`CompileDriver`](../Ix/CompileDriver.lean)'s sequential branch and
-`applyAuxOutcome` both retain this behavior; Rust's promotion branch has the
-corresponding separation. Normal scheduled-block rollback does not repair it.
-`compile-lean` refuses to write an artifact by default, but `--allow-partial` can
-expose those retained names. Changing this behavior and the affected refusal/
-dependent records remains owner-pending; the contract must show the exception.
+Original-form compilation and promotion must both succeed before their writes
+are retained. [`CompileDriver`](../Ix/CompileDriver.lean)'s sequential and
+parallel paths share `finishAuxPromotion`: failed metadata/claim checks discard
+the staged state, and `failAuxPromotion` withdraws the block's provisional
+source-name bindings from both resolution maps and the named registry. The
+[Rust scheduler](../crates/compile/src/compile/env.rs) stages original metadata
+and reducibility hints in `block_txn`, checks all promotion claims before
+publishing that metadata, and withdraws the same source-block bindings on error.
+Names outside that block and anonymous content caches are retained.
+
+A provisional auxiliary with its own source block cannot release dependents
+before that block finishes. Failed blocks still settle their scheduling edges;
+dependents then report actual missing reads, while independent blocks continue.
+`--allow-partial` does not restore those rejected source names. The former
+fall-through after original-form failure was an exception to this policy;
+its fixture refusal/cascade records require measured review when this change
+is gated. Source inspection alone establishes no library-byte or general
+concurrent-publication theorem.
 
 Other inconsistencies in the earlier text are resolved as follows:
 

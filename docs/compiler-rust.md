@@ -260,19 +260,26 @@ reusing it across unrelated blocks could replay a different alias's display
 name. The driver uses dedicated large-stack threads for recursive rewrite and
 transport work, bypassing that work for blocks that do not need it.
 
-For normal scheduled compilation, `BlockTxn` records newly published `Named`,
-compiled-name, auxiliary-name, and Pass 3 head/block entries. Dependent releases
-are deferred until the block finishes; failure removes those recorded name
-bindings. An identical existing claim is not newly owned or logged. Anonymous
-content and blobs remain in their content-addressed tables.
+For scheduled compilation, `BlockTxn` records newly published `Named`,
+compiled-name, auxiliary-name, and Pass 3 head/block entries. Original metadata
+and reducibility-hint writes are staged until all compilation and promotion
+claims succeed. Failure removes newly recorded bindings; failed original-form
+promotion also withdraws that source block's earlier provisional bindings from
+both address maps and the named registry. An identical existing claim is not
+newly owned or logged by the normal transaction. Anonymous content and blobs
+remain in their content-addressed tables.
 
-This mechanism is not a proved atomic-publication guarantee for every path.
-The precompiled-auxiliary promotion branch is distinct from the normal
-transaction, and identical claims shared with a concurrently failing owner
-need separate reasoning. Lean checks claims using a block snapshot plus its
-own state and later merge; Rust consults live shared tables. A conflict can
-therefore be detected at a different point. The claim-conflict fixtures below
-exercise concrete cases; they do not discharge a general failed-block theorem.
+A source auxiliary releases dependents only when its own scheduled block has
+finished original-form validation. Failed blocks settle those edges too, so
+dependents report missing reads and independent blocks can continue. Generated
+names without a source block can still release immediately after their producer.
+
+This mechanism is not a proved atomic-publication guarantee for every path;
+identical claims shared with a concurrently failing owner still need the general
+ownership argument. Lean checks claims using a block snapshot plus its own state
+and later merge; Rust consults live shared tables. A conflict can therefore be
+detected at a different point. The claim-conflict fixtures below exercise concrete
+cases; they do not discharge a general failed-block theorem.
 
 The scheduler contains `catch_unwind`, but the workspace's
 [`Cargo.toml`](../Cargo.toml) selects `panic = "abort"` for both development and
