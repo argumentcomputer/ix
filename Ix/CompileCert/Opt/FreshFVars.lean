@@ -46,7 +46,7 @@ theorem protectExpr_mem (e : Expr) (s : FreshFVars) (key : Lean.Name) :
   | mdata data body hash ih =>
       exact ih s
   | fvar name hash =>
-      simpa only [FreshFVars.protectExpr, reserve_mem, Occurs, or_comm]
+      simp only [FreshFVars.protectExpr, reserve_mem, Occurs, or_comm]
   | _ => simp only [FreshFVars.protectExpr, Occurs, or_false]
 
 private theorem protectList_mem (es : List Expr) (s : FreshFVars) (key : Lean.Name) :
@@ -97,10 +97,11 @@ private theorem suffixStep_ge (key name : Lean.Name) (next : Nat) :
   | anonymous => exact Nat.le_refl _
   | str parent text => exact Nat.le_refl _
   | num parent n =>
-      unfold suffixStep
-      split
-      · exact Nat.le_max_left _ _
-      · exact Nat.le_refl _
+      by_cases equal : (parent == key) = true
+      · rw [suffixStep, ite_eq_left equal]
+        exact Nat.le_max_left _ _
+      · rw [suffixStep, ite_eq_right equal]
+        exact Nat.le_refl _
 
 private theorem suffixFold_ge (names : List Lean.Name) (key : Lean.Name) (init : Nat) :
     init ≤ names.foldl (suffixStep key) init := by
@@ -184,7 +185,8 @@ theorem fresh_of_unused (s : FreshFVars) (pfx : String) (idx : Nat)
     (unused : keyName (freshFVar pfx idx).1 ∉ s.used) :
     s.fresh pfx idx = (freshFVar pfx idx, s.reserve (freshFVar pfx idx).1) := by
   have absent := Std.HashSet.contains_eq_false_iff_not_mem.2 unused
-  simpa only [FreshFVars.fresh, absent, Bool.false_eq_true, ↓reduceIte, freshFVar]
+  simp only [FreshFVars.fresh, absent, Bool.false_eq_true, ↓reduceIte]
+  rfl
 
 /-- Collision branch, including the exact resulting supply. -/
 theorem fresh_of_used (s : FreshFVars) (pfx : String) (idx : Nat)
@@ -194,7 +196,8 @@ theorem fresh_of_used (s : FreshFVars) (pfx : String) (idx : Nat)
         (nextSuffix s (keyName (freshFVar pfx idx).1))
       ((name, Expr.mkFVar name), s.reserve name) := by
   have present := Std.HashSet.mem_iff_contains.1 used
-  simpa only [FreshFVars.fresh, present, ↓reduceIte, nextSuffix, suffixStep]
+  simp only [FreshFVars.fresh, present, ↓reduceIte]
+  rfl
 
 /-- No input invariant is required: every allocator output is fresh. -/
 theorem fresh_not_mem (s : FreshFVars) (pfx : String) (idx : Nat) :

@@ -37,6 +37,9 @@ private theorem run_lift {α : Type} (x : Except String α) (s : RwState) :
 private theorem run_throw {α : Type} (message : String) (s : RwState) :
     (throw message : RwM α).run s = .error message := rfl
 
+private theorem except_bind_ok {α β : Type} (a : α) (k : α → Except String β) :
+    ((Except.ok a : Except String α) >>= k) = k a := rfl
+
 def atom (literal : Lean.Literal) (address : Address) : Expr := .lit literal address
 
 def input (literal : Lean.Literal) (address : Address) : Expansion :=
@@ -72,22 +75,16 @@ theorem cold_atom_run (literal : Lean.Literal) (address : Address) :
     (Ix.Compile.Pass.rw (lookup literal address) 1 false (atom literal address)).run cold =
       .ok (atom literal address, afterAtom literal address) := by
   rw [Ix.Compile.Pass.rw.eq_def]
-  simp [run_bind, run_pure, run_get, run_modify, atom, cold, afterAtom,
-    Std.HashMap.get?_eq_getElem?]
+  simp [atom, cold, afterAtom, Std.HashMap.get?_eq_getElem?]
+  rfl
 
 /-- The displayed warm state is produced by the actual runtime from cold. -/
 theorem cold_high_run (name : Name) (literal : Lean.Literal) (address : Address) :
     (Ix.Compile.Pass.expansionOf (lookup literal address) 2 name).run cold =
       .ok (some (ready literal address), warm name literal address) := by
   rw [Ix.Compile.Pass.expansionOf.eq_def]
-  simp only [run_bind, run_get, run_lift, run_modify, run_pure,
-    cold_expansion_empty, lookup, input, ↓reduceIte,
-    Except.map, Except.bind]
-  change ((Ix.Compile.Pass.rw (lookup literal address) 1 false
-    (atom literal address)).run cold >>= fun p =>
-      .ok (some { input literal address with value := p.1, needsRewrite := false },
-        { p.2 with site := none, exps := p.2.exps.insert name
-          { input literal address with value := p.1, needsRewrite := false } })) = _
+  simp only [run_bind, run_get, except_bind_ok, cold_expansion_empty]
+  change (Except.bind ((Ix.Compile.Pass.rw (lookup literal address) 1 false (atom literal address)).run cold) (fun p => .ok (some { input literal address with value := p.1, needsRewrite := false }, { p.2 with site := none, exps := p.2.exps.insert name ({ input literal address with value := p.1, needsRewrite := false }) }))) = _
   rw [cold_atom_run]
   rfl
 
@@ -96,28 +93,28 @@ theorem warm_low_run (name : Name) (literal : Lean.Literal) (address : Address) 
       (warm name literal address) =
       .ok (some (ready literal address), warm name literal address) := by
   rw [Ix.Compile.Pass.expansionOf.eq_def]
-  simp only [run_bind, run_get, warm_exact_entry, run_pure, Except.bind]
+  simp only [run_bind, run_get, except_bind_ok, warm_exact_entry, run_pure]
 
 theorem pure_low_error (name : Name) (literal : Lean.Literal) (address : Address) :
     expansionOfP (lookup literal address) cold.opt? false 1 name =
       .error "Pass 3 rewrite: recursion bound exhausted" := by
   rw [expansionOfP.eq_def]
-  simp [lookup, input, rwP.eq_def]
+  rfl
 
 /-- Cold low fuel still fails: the disagreement is introduced by a reachable hit. -/
 theorem cold_low_error (name : Name) (literal : Lean.Literal) (address : Address) :
     (Ix.Compile.Pass.expansionOf (lookup literal address) 1 name).run cold =
       .error "Pass 3 rewrite: recursion bound exhausted" := by
   rw [Ix.Compile.Pass.expansionOf.eq_def]
-  simp [run_bind, run_get, run_lift, run_modify, run_pure, run_throw,
-    cold_expansion_empty, lookup, input, cold, Ix.Compile.Pass.rw.eq_def]
+  simp [lookup, input, cold, Ix.Compile.Pass.rw.eq_def]
+  rfl
 
 /-- Sufficient-fuel positive neighbour, with exactly the same callback and input. -/
 theorem pure_high_result (name : Name) (literal : Lean.Literal) (address : Address) :
     expansionOfP (lookup literal address) cold.opt? false 2 name =
       .ok (some (ready literal address)) := by
   rw [expansionOfP.eq_def]
-  simp [lookup, input, ready, atom, rwP.eq_def]
+  rfl
 
 theorem reachable_smaller_fuel_disagrees (name : Name) (literal : Lean.Literal)
     (address : Address) :

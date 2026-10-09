@@ -23,7 +23,7 @@ theorem abstraction_occurs_source (lookup : Name → Option Nat) (scope : Nat)
     Occurs key (batchAbstractWith lookup e scope depth) → Occurs key e := by
   by_cases zero : scope = 0
   · subst scope
-    simpa only [batchAbstractWith, beq_self_eq_true, ↓reduceIte] using (id : Occurs key e → Occurs key e)
+    cases e <;> exact id
   have nonzero : (scope == 0) = false := by simpa using zero
   induction e generalizing depth with
   | app f a hash ihf iha =>
@@ -55,12 +55,11 @@ theorem abstraction_occurs_source (lookup : Name → Option Nat) (scope : Nat)
       exact ih depth
   | fvar name hash =>
       simp only [batchAbstractWith, nonzero, Bool.false_eq_true, ↓reduceIte]
-      cases lookup name with
-      | none => exact id
-      | some pos =>
-          split
-          · exact False.elim
-          · exact id
+      split
+      · split
+        · exact False.elim
+        · exact id
+      · exact id
   | bvar index hash =>
       simp only [batchAbstractWith, nonzero, Bool.false_eq_true, ↓reduceIte]
       split <;> exact False.elim
@@ -76,7 +75,7 @@ theorem abstraction_occurs_iff_of_lookup (lookup : Name → Option Nat) (scope :
     Occurs key (batchAbstractWith lookup e scope depth) ↔ Occurs key e := by
   by_cases zero : scope = 0
   · subst scope
-    simp only [batchAbstractWith, beq_self_eq_true, ↓reduceIte]
+    cases e <;> rfl
   have nonzero : (scope == 0) = false := by simpa using zero
   induction e generalizing depth with
   | app f a hash ihf iha =>
@@ -99,18 +98,18 @@ theorem abstraction_occurs_iff_of_lookup (lookup : Name → Option Nat) (scope :
       exact ih depth
   | fvar name hash =>
       simp only [batchAbstractWith, nonzero, Bool.false_eq_true, ↓reduceIte]
-      cases hit : lookup name with
-      | none => exact Iff.rfl
-      | some pos =>
-          have different : keyName name ≠ key := by
-            intro equal
-            have absent := leaves name equal
-            rw [hit] at absent
-            contradiction
-          split
-          · change False ↔ keyName name = key
-            exact ⟨False.elim, different⟩
-          · exact Iff.rfl
+      split
+      · rename_i pos hit
+        have different : keyName name ≠ key := by
+          intro equal
+          have absent := leaves name equal
+          rw [hit] at absent
+          contradiction
+        split
+        · change False ↔ keyName name = key
+          exact ⟨False.elim, different⟩
+        · exact Iff.rfl
+      · exact Iff.rfl
   | bvar index hash =>
       simp only [batchAbstractWith, nonzero, Bool.false_eq_true, ↓reduceIte]
       split <;> exact Iff.rfl

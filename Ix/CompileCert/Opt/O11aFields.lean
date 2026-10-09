@@ -63,7 +63,9 @@ theorem rawFieldRead_eq_fvarFieldRead (fields : Array Expr)
     (shapes : FieldsAreFVars fields) (index : Nat) (cause : String) :
     rawFieldRead fields index cause = fvarFieldRead fields index cause := by
   cases found : fields[index]? with
-  | none => simp only [rawFieldRead, fvarFieldRead, found, O11aM.side, bind, Except.bind]
+  | none =>
+      simp only [rawFieldRead, fvarFieldRead, found, O11aM.side, bind, Except.bind]
+      rfl
   | some field =>
       obtain ⟨name, hash, rfl⟩ := shapes field (Array.mem_of_getElem? found)
       simp only [rawFieldRead, fvarFieldRead, found, O11aM.side, bind, Except.bind,
@@ -133,10 +135,10 @@ theorem lam_body_support (cur : Expr) (parts : Name × Expr × Expr × Lean.Bind
       exact fun _ h => .inr h
   | _ => cases shape
 
+open O11aM in
 /-- The actual body of the source loop. The parameter changes only the field
 read, after the instance callback. Both its raw and confirming instantiations
 use all four source state fields and every original error branch. -/
-open O11aM in
 def binderStepWith (readField : Array Expr → Nat → String → O11aM Expr)
     (inst? : Name → Array Expr → O11aM (Name × Level))
     (rv : RecursorVal) (inBlock : Array Bool) (recFields : Array (Nat × SourceRecTarget))
@@ -207,8 +209,7 @@ theorem binderStep_preserves (inst? : Name → Array Expr → O11aM (Name × Lev
     exact ⟨_, rfl, fields_push_fresh supply fvars shapes "o11a" i,
       fields_protected_push_fresh supply fvars covered "o11a" i,
       supported_open source body _ _ bodySupport newField⟩
-  · dsimp only at run
-    split at run
+  · split at run
     · cases run
       exact ⟨_, rfl, shapes, oldFields,
         supported_open source body _ _ bodySupport newField⟩
@@ -318,9 +319,9 @@ theorem binderLoop_source_support (inst? : Name → Array Expr → O11aM (Name �
   (binderLoop_invariant inst? rv inBlock recFields telescope
     numFields j unread count supply minor out run).2.2
 
+open O11aM in
 /-- Source preparation copied literally, followed by the factored actual loop.
 No source/type/target success or callback validity is assumed. -/
-open O11aM in
 def minorWithReader (readField : Array Expr → Nat → String → O11aM Expr)
     (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name × Level))
     (rv : RecursorVal) (inBlock : Array Bool) (us : Array Level)
@@ -445,6 +446,7 @@ theorem missing_field_retained (cause : String) (index : Nat) :
     rawFieldRead #[] index cause = .error (some cause) ∧
       fvarFieldRead #[] index cause = .error (some cause) := by
   simp only [rawFieldRead, fvarFieldRead, Array.getElem?_empty, O11aM.side,
-    bind, Except.bind, and_self]
+    bind, Except.bind]
+  exact ⟨rfl, rfl⟩
 
 end Ix.CompileCert.Opt.O11aFields

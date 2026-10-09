@@ -40,8 +40,11 @@ def peelStep (pfx : String) (offset i : Nat) (state : PeelState) :
   match cur with
   | .forallE name dom body info _ =>
       let made := supply.fresh pfx (offset + i)
-      let decl : LocalDecl := { fvarName := made.1.1, binderName := name,
-        domain := Ix.AuxGen.consumeTypeAnnotations dom, info := info }
+      let decl : LocalDecl := {
+        fvarName := made.1.1
+        binderName := name
+        domain := Ix.AuxGen.consumeTypeAnnotations dom
+        info := info }
       (.yield (none, Ix.AuxGen.instantiate1 body made.1.2,
         decls.push decl, fvars.push made.1.2), made.2)
   | _ => (.done (some none, cur, decls, fvars), supply)
@@ -60,8 +63,27 @@ def peelWith (cur : Expr) (count : Nat) (pfx : String) (offset : Nat) :
 /-- Whole StateM equality, including the supply retained by an early refusal. -/
 theorem peelBindersWith_eq (cur : Expr) (count : Nat) (pfx : String) (offset : Nat) :
     Ix.AuxGen.peelBindersWith cur count pfx offset = peelWith cur count pfx offset := by
-  unfold Ix.AuxGen.peelBindersWith peelWith peelStep peelFinish Ix.AuxGen.freshFVarM
-  rfl
+  unfold Ix.AuxGen.peelBindersWith peelWith
+  apply bind_congr
+  intro _
+  dsimp only
+  have bindCongr (left right : StateM FreshFVars PeelState)
+      (f g : PeelState → StateM FreshFVars (Option PeelResult))
+      (sameLoop : left = right) (sameFinish : f = g) :
+      (left >>= f) = (right >>= g) := by
+    rw [sameLoop, sameFinish]
+  apply bindCongr
+  · apply congrArg (forIn [0:count] ((none, cur, #[], #[]) : PeelState))
+    funext i state
+    rcases state with ⟨flag, current, decls, fvars⟩
+    cases current with
+    | forallE name dom body info hash =>
+        funext supply
+        dsimp only [peelStep, Ix.AuxGen.freshFVarM, bind, StateT.bind, pure, StateT.pure]
+    | _ => rfl
+  · funext state supply
+    dsimp only [peelFinish]
+    cases state.1 <;> rfl
 
 theorem state_forIn_cons {α σ τ : Type} (body : α → τ → StateM σ (ForInStep τ))
     (x : α) (xs : List α) (state : τ) (supply : σ) :
@@ -70,8 +92,11 @@ theorem state_forIn_cons {α σ τ : Type} (body : α → τ → StateM σ (ForI
       match answer.1 with
       | .done out => (out, answer.2)
       | .yield out => (forIn xs out body).run answer.2 := by
-  rw [List.forIn_cons]
-  rfl
+  have runBind (m : StateM σ (ForInStep τ)) (k : ForInStep τ → StateM σ τ) :
+      (m >>= k).run supply = (k (m.run supply).1).run (m.run supply).2 := rfl
+  rw [List.forIn_cons, runBind]
+  dsimp only
+  cases ((body x state).run supply).1 <;> rfl
 
 theorem state_forIn_grows {α τ : Type}
     (body : α → τ → StateM FreshFVars (ForInStep τ))
@@ -147,10 +172,12 @@ theorem peelLoop_count (pfx : String) (offset : Nat) :
       generalize observed : (peelStep pfx offset i state).run supply = answer at shape run
       rcases answer with ⟨step, nextSupply⟩
       rcases shape with failed | ⟨next, continued, active, declCount, fieldCount⟩
-      · subst step
+      · change step = _ at failed
+        subst step
         cases run
         exact .inl rfl
-      · subst step
+      · change step = _ at continued
+        subst step
         have tail := peelLoop_count pfx offset xs next nextSupply out finalSupply active run
         rcases tail with failed | ⟨active, decls, fields⟩
         · exact .inl failed
@@ -221,8 +248,20 @@ theorem collectTargets_eq_loop (readTarget : TargetRead) (decls : Array LocalDec
         if let some target := target? then
           recFields := recFields.push (fieldIdx, target)
       return (supply, recFields) : O11aM TargetState) := by
-  unfold collectTargets targetStep
-  simp only [bind_pure]
+  have finish (run : O11aM TargetState) :
+      (do let state ← run; pure (state.1, state.2) : O11aM TargetState) = run := by
+    cases run <;> rfl
+  unfold collectTargets
+  refine Eq.trans ?_ (finish _).symm
+  apply congrArg (forIn decls.zipIdx (initial, #[]))
+  funext entry state
+  rcases entry with ⟨decl, index⟩
+  rcases state with ⟨supply, fields⟩
+  unfold targetStep
+  dsimp only
+  generalize readTarget decl index supply = answer
+  rcases answer with ⟨target, nextSupply⟩
+  cases target <;> rfl
 
 theorem collectTargets_origin (readTarget : TargetRead) (decls : Array LocalDecl)
     (supply : FreshFVars) (out : TargetState)
@@ -286,6 +325,21 @@ theorem prepareFields_eq_sourceLoop (minorTy : Expr) (numFields : Nat)
           recFields := recFields.push (fieldIdx, target)
       return (supply, recFields) : O11aM TargetState) := by
   simp only [prepareFields, collectTargets_eq_loop, actualTargetRead]
+  generalize (Ix.AuxGen.peelBindersWith minorTy numFields "split_field" 0).run initial = peeled
+  rcases peeled with ⟨fields, supply⟩
+  apply bind_congr
+  intro parts
+  apply congrArg (fun run : O11aM TargetState =>
+    run >>= fun state => pure (state.1, state.2))
+  apply congrArg (forIn parts.1.zipIdx (supply, #[]))
+  funext entry state
+  rcases entry with ⟨decl, index⟩
+  rcases state with ⟨current, entries⟩
+  dsimp only
+  generalize (Ix.AuxGen.findSourceRecTargetWith decl.domain rv.all ps env
+    "split_xs" index auxSigs).run current = answer
+  rcases answer with ⟨target, nextSupply⟩
+  cases target <;> rfl
 
 /-- The actual public helper with just its source-preparation fragment named.
 No source read, callback, error, optional absence or raw result is discarded. -/
@@ -314,7 +368,18 @@ theorem sizeOfMinorWith_eq_prepared (env : OptEnv)
       minorPrepared env inst? rv inBlock us ps ms mins j := by
   rw [sizeOfMinorWith_eq_raw]
   unfold minorWithReader minorPrepared
-  simp only [prepareFields_eq_sourceLoop, bind_assoc, pure_bind]
+  simp only [prepareFields_eq_sourceLoop]
+  generalize (Ix.AuxGen.auxMotiveSigsWith rv us ps ms env.ienv).run
+    ((FreshFVars.protectExpr {} rv.cnst.type).protectExprs (ps ++ ms ++ mins)) = aux
+  rcases aux with ⟨auxSigs, supply⟩
+  apply bind_congr
+  rintro ⟨sourcePos, ctor⟩
+  apply bind_congr
+  intro minorTy
+  generalize (Ix.AuxGen.peelBindersWith minorTy ctor.numFields "split_field" 0).run supply = peeled
+  rcases peeled with ⟨fields, nextSupply⟩
+  simp only [bind_assoc, pure_bind]
+  rfl
 
 theorem prepareFields_bound (minorTy : Expr) (numFields : Nat) (supply : FreshFVars)
     (readTarget : TargetRead) (unread : String) (out : TargetState)
@@ -354,7 +419,6 @@ theorem binderStep_count_grows (inst? : Name → Array Expr → O11aM (Name × L
     refine ⟨_, rfl, fresh_grows supply "o11a" i, ?_⟩
     simp only [isField, ↓reduceIte, Array.size_push]
   · rename_i isIH
-    dsimp only at run
     split at run
     · cases run
       refine ⟨_, rfl, fresh_grows supply "o11a" i, ?_⟩
@@ -441,8 +505,8 @@ theorem prepared_prefix_field (minorTy : Expr) (numFields : Nat) (initial : Fres
       IsFieldFVar field ∧ Protects out.1 field := by
   have slot : count - numFields < prepared.2.size := by omega
   have member : prepared.2[count - numFields]! ∈ prepared.2 := by
-    rw [getElem!_pos _ _ slot]
-    exact Array.getElem_mem _
+    rw [getElem!_pos prepared.2 (count - numFields) slot]
+    exact Array.getElem_mem slot
   have indexBound := prepareFields_bound minorTy numFields initial readTarget unread
     prepared prepareRun _ member
   have fieldCount := binderLoop_count inst? rv inBlock prepared.2 telescope
@@ -453,7 +517,9 @@ theorem prepared_prefix_field (minorTy : Expr) (numFields : Nat) (initial : Fres
     Array.getElem?_eq_getElem validIndex
   have fieldShape := binderLoop_field_access inst? rv inBlock prepared.2 telescope
     numFields j unread count prepared.1 minor out prefixRun _ field found
-  exact ⟨field, by simp only [rawFieldRead, found, O11aM.side], fieldShape⟩
+  refine ⟨field, ?_, fieldShape⟩
+  simp only [rawFieldRead, found, O11aM.side]
+  rfl
 
 /-- The successful public helper itself supplies the preparation and loop
 witnesses. This is a success projection of the complete Except equality above;
@@ -502,12 +568,15 @@ from the actual preparation, not asserted for arbitrary manufactured arrays. -/
 theorem out_of_range_field_refusal (fields : Array Expr) (index : Nat) (cause : String)
     (outside : fields.size ≤ index) : rawFieldRead fields index cause = .error (some cause) := by
   simp only [rawFieldRead, Array.getElem?_eq_none outside, O11aM.side]
+  rfl
 
 /-- A zero-length peel succeeds on any raw expression and still protects it. -/
 theorem zero_peel_neighbour (cur : Expr) (pfx : String) (offset : Nat) (supply : FreshFVars) :
     (Ix.AuxGen.peelBindersWith cur 0 pfx offset).run supply =
       (some (#[], #[], cur), supply.protectExpr cur) := by
   rw [peelBindersWith_eq]
+  unfold peelWith
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
   rfl
 
 /-- Requesting a binder from an open FVar refuses, retaining protection of
@@ -517,6 +586,8 @@ theorem open_fvar_peel_refusal (name : Name) (hash : _root_.Address)
     (Ix.AuxGen.peelBindersWith (.fvar name hash) 1 pfx offset).run supply =
       (none, supply.protectExpr (.fvar name hash)) := by
   rw [peelBindersWith_eq]
+  unfold peelWith
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
   rfl
 
 end Ix.CompileCert.Opt.O11aSourceBounds

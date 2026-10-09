@@ -106,6 +106,9 @@ private theorem run_pure {α : Type} (value : α) (st : RwState) :
 private theorem run_get (st : RwState) :
     (get : RwM RwState).run st = .ok (st, st) := rfl
 
+private theorem except_bind_ok {α β : Type} (value : α) (k : α → Except String β) :
+    ((Except.ok value : Except String α) >>= k) = k value := rfl
+
 /-- An actual hit retains the complete input state and never invokes the
 lookup. The hit equation alone makes no semantic-validity claim. -/
 theorem expansion_hit (lookup : Name → Except String (Option Expansion))
@@ -114,7 +117,7 @@ theorem expansion_hit (lookup : Name → Except String (Option Expansion))
     (Ix.Compile.Pass.expansionOf lookup (fuel + 1) name).run st =
       .ok (some value, st) := by
   rw [Ix.Compile.Pass.expansionOf.eq_def]
-  simp only [run_bind, run_pure, run_get, found, Except.bind]
+  simp only [run_bind, run_pure, run_get, found, except_bind_ok]
 
 /-- Proof-side spelling of the exact DefinitionVal assembled by imageDeclWith.
 The fresh expansion supplies the header; the cache supplies only the value. -/
@@ -143,8 +146,8 @@ theorem imageDecl_hit_eq (cenv : Ix.CompileM.CompileEnv) (views : Std.HashMap Na
         Ix.Compile.Pass.rewriteFuel false type).run st >>= fun (type', out) =>
           .ok (assembled cenv name fresh cached.value type', out)) := by
   unfold Ix.Compile.Pass.imageDeclWith
-  simp only [head, viewRead, expanded, Except.bind, found]
-  simp only [run_bind, run_pure, Except.bind]
+  simp only [head, viewRead, expanded, except_bind_ok, found]
+  simp only [run_bind, run_pure, except_bind_ok]
   cases typed : (Ix.Compile.Pass.rw
     (Ix.Compile.Pass.expansionLookupIn table cenv views)
     Ix.Compile.Pass.rewriteFuel false type).run st with

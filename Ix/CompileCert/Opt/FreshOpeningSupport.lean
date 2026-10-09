@@ -29,7 +29,7 @@ theorem tmOccurs_openAt_source (replacement t : Tm) (depth : Nat) (key : Lean.Na
       · intro occurs
         exact .inr (by simpa only [openAt, same, ↓reduceIte] using occurs)
       · intro occurs
-        exact False.elim (by simpa only [openAt, same, ↓reduceIte, tmOccurs] using occurs)
+        simp only [openAt, same, ↓reduceIte, tmOccurs] at occurs
   | fvar name => exact Or.inl
   | app f a ihf iha =>
       rintro (fromF | fromA)
