@@ -110,6 +110,45 @@ def dependentControls (env : Environment) : IO Unit := do
   require "dependent-wrong-permutation-rejected" results.2.2.2.1
   require "universe-permutation-rejected" results.2.2.2.2
 
+/-- Read and define a correspondence for the actual two-universe `List.rec`.
+The unchanged neighbor keeps both parameters in place; the nonidentity case
+swaps the universes in the canonical telescope and in the image application.
+Both the inverse definition and the image are kernel-checked. This is a
+control of the qualified bridge, not a claim that List is a permuted block. -/
+def universeNeighbour (swapped : Bool) : MetaM Bool := do
+  let some (.recInfo source) := (← getEnv).find? ``List.rec
+    | throwError "List.rec is absent"
+  unless source.levelParams.length == 2 do
+    throwError "List.rec no longer has the two universes required by this control"
+  let stem := if swapped then `Tests.Ix.Compile.InverseRecursor.UniverseSwap
+    else `Tests.Ix.Compile.InverseRecursor.UniverseIdentity
+  let canonicalName := (stem.str "_ix").str "rec"
+  let imageName := stem.str "image"
+  let us := source.levelParams.map Level.param
+  let canonicalType := if swapped then
+      source.type.instantiateLevelParams source.levelParams us.reverse
+    else source.type
+  let p : Permutation := {
+    args := (List.range (source.numParams + source.numMotives + source.numMinors + source.numIndices + 1)).toArray
+    levels := if swapped then #[1, 0] else #[0, 1] }
+  let canonical : RecursorVal := { source with name := canonicalName, type := canonicalType }
+  let imageValue ← forallTelescope source.type fun xs _ => do
+    unless xs.size == p.args.size do throwError "List.rec telescope changed"
+    mkLambdaFVars xs (mkAppN (mkConst canonicalName (if swapped then us.reverse else us)) xs)
+  let image : DefinitionVal := { source.toConstantVal with name := imageName, value := imageValue,
+    hints := .abbrev, safety := .safe, all := [imageName] }
+  let read ← readPermutation source canonical image
+  let inverseDecl ← definition source canonical read
+  if let some e ← IxCliqueValues.kernelAdd (.defnDecl inverseDecl) then
+    throwError "universe inverse definition rejected: {e}"
+  if let some e ← IxCliqueValues.kernelAdd (.defnDecl image) then
+    throwError "universe image definition rejected: {e}"
+  return read.args == p.args && read.levels == p.levels
+
+def universeControls (env : Environment) : IO Unit := do
+  require "universe-identity-neighbour" (← metaIO env (universeNeighbour false))
+  require "universe-swap-reader-definition" (← metaIO env (universeNeighbour true))
+
 /-- One existing ordinary fixture, through the default compiler and phase 9.
 No skipped recursor or not-checkable member can satisfy this neighbour. -/
 def compiledControls (env : Environment) : IO Unit := do
@@ -166,7 +205,8 @@ def run : IO UInt32 := do
     valueControls env
     dependentControls env
     compiledControls env
-    IO.println "[clique-values-inverse] 18 controls passed; inverse-correspondence-relative, no inverse proof"
+    universeControls env
+    IO.println "[clique-values-inverse] 20 controls passed; inverse-correspondence-relative, no inverse proof"
     return 0
   catch e =>
     IO.eprintln s!"[clique-values-inverse] FAIL {e}"

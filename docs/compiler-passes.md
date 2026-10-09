@@ -915,9 +915,15 @@ and recursive-call correspondence at each constructor.
 
 **Carried equation lemmas.** When a structural clique repacks its type-former
 group, a carried `eq_def` can mention the old packed group in its statement/proof.
-The current `repacks` boundary keeps that route in Lean's form with `SHAPE`.
-Transporting, reassociating or regenerating that proof is a remaining design
-choice (D-M5-1), not an implemented extension asserted by this guide.
+For supported unindexed recursive arguments, both compilers regenerate the proof
+under the unchanged statement using the actual `casesOn` telescope and the
+transported definitions. Each branch must close by bounded reduction and
+structural conversion before emitting `Eq.refl`; the old proof is not transported.
+[`StructuralEq`](../Ix/Compile/Clique/StructuralEq.lean) and its
+[Rust counterpart](../crates/compile/src/compile/pass3/clique/structural_eq.rs)
+implement this recipe. Indexed or otherwise unsupported telescopes, missing
+declarations and failed conversion retain the existing `SHAPE` refusal and
+faithful clique. General regeneration and its conversion proof remain open.
 
 ### 5.4 Theorems proved by mutual recursion
 
@@ -1278,11 +1284,13 @@ source/loader manifest and byte gate for each new run.
 | Caller mixing incompatible encodings | Named refusal, without changing the callee's clique plan. |
 | Output packing | Reference closure, distinct from source-unit input selection. |
 
-The following choices remain open and are not made by this guide: D-M5-1's
-structural carried-proof alternative; the phase-9 inverse-image bridge and its
-additional large-library coverage; the requested whole-scope corpus/large-run
-reconciliation; and the placement of additional tracked integration/CI machinery.
-Existing implemented gates remain required while those choices are pending.
+C6's keys (§2.2), failed-original promotion (§11.6), the supported carried-proof
+recipe (§5.3) and the qualified phase-9 inverse reading (§9) are implemented
+choices. General/indexed proof regeneration, a general inverse theorem and the
+collapsed-block boundary remain open, together with current whole-scope
+corpus/large-library coverage. The manual landing runner is a separate proposal;
+the existing CI scope is unchanged. Existing gates remain required, and these
+source changes do not themselves establish new proof or runtime results.
 
 ## 9. The validators
 
@@ -1303,8 +1311,14 @@ Existing implemented gates remain required while those choices are pending.
 Phase 9 counts unsupported/unevaluable members and reasons. It does not check all
 carried lemmas, source encoding constants, O7–O12 canonical forms, or arbitrary
 inputs/deep fixpoint unfolding. Its passed summary must be read with those counts.
-The pending inverse-image bridge for changed-inductive clique cases is not
-established by unrelated fixture passes.
+For supported complete permutations of inductive members, phase 9 defines the
+canonical recursor through the original recursor using the stored image's inverse
+motive/minor and universe permutations, with dependent type and kernel checks.
+Auxiliary definitions are read over that recursor. Results are explicitly
+relative to this correspondence, not a proof of inverse computation rules;
+phase-7 forward equality does not supply that proof. Collapsed and unsupported
+forms remain counted as not checkable. No current large-library coverage follows
+from this implementation or from unrelated fixture passes.
 
 Phase 4 excludes entries with `Named.original`, inline rewrite records and reserved
 display names from its direct source comparison; the other phases cover the
@@ -1426,7 +1440,7 @@ The principal paths are in [Pass/Driver](../Ix/Compile/Pass/Driver.lean),
 | 5b | O11a declines on a split `sizeOf` recursion. | O2/the faithful image baseline remains, with the actual decline recorded through `declineLookup` and `p3NonCanonical`. The diagnostic is not a canonical result. |
 | 6 | Proof-justified occurrence/unit pass. | The source name keeps case 5's faithful baseline. A canonical form is emitted at `c._ix`, with `PJ-FORM-<pass>` for the source name. Callers retain source references; no blanket redirection to `_ix` occurs. `RwState.site`, `inPlace`, `pjFired`, `compileCanon`, `unitPasses`, `p3PjForms`. |
 | 7 | Member of a transported definition/theorem clique. | Source kind, universe parameters and type, with transported value/proof `Φσ`. The hook checks the source type up to its alpha/metadata comparison. Root inline metadata retains the source value. An equal-specification alias uses its representative's transported declaration under its own source name. `planClique`, `prepareCliques`, `withValue`, `Clique.transport`. |
-| 7b | Equation lemma carried with the clique. | Source theorem statement with the transported proof and source inline record. Reached packed lemmas are regenerated at canonical helper names. Repacked structural groups retain the `SHAPE` boundary of §5.3. `memberEqLemmas`, `packedLemmas`, `scheduleCliques`, `planClique`. |
+| 7b | Equation lemma carried with the clique. | Source theorem statement with the transported or regenerated proof and source inline record. Reached packed lemmas are regenerated at canonical helper names. Supported repacked structural groups use the unchanged-statement recipe of §5.3; unsupported or failed regeneration retains `SHAPE`. `memberEqLemmas`, `packedLemmas`, `scheduleCliques`, `planClique`. |
 | 7c | Source encoding constants of a transported clique. | Source form under source names, because their statements follow source order (`ORDER-STMT`). Uncarried source lemmas can still refer to them. `isEncodingName`, `encodingOwner?`. |
 | 7d | Clique plan is baseline, unchanged or not encoded. | Ordinary source/image baseline. `.baseline` records `NOSPEC` or `SHAPE`; `.unchanged` needs no transport; `.notEncoded` is outside the recognized input-clique route. `CliqueOutcome`, `planClique`. |
 | 8 | Caller mixing a transported member with incompatible source encoding constants outside its unit. | Named refusal: `Pass 3 cliques: caller refused (block rule, callers adapt): …`. The compiler does not change the clique to accommodate that caller. `cliqueCallers`, `callerRefusalPrefix`. |
