@@ -212,15 +212,21 @@ def sizeOfMinorWith (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name 
     (rv : RecursorVal) (inBlock : Array Bool) (us : Array Level)
     (ps ms mins : Array Expr) (j : Nat) : O11aM (Option Expr) := do
   let ienv := env.ienv
-  let auxSigs := Ix.AuxGen.auxMotiveSigs rv us ps ms ienv
+  let initial := (Ix.AuxGen.FreshFVars.protectExpr {} rv.cnst.type).protectExprs (ps ++ ms ++ mins)
+  let (auxSigs, supply) := (Ix.AuxGen.auxMotiveSigsWith rv us ps ms ienv).run initial
   let unread := s!"the constructor and minor type of minor {j} cannot be read"
   let (_, ctor) ← side (Ix.AuxGen.sourceCtorForMinor j rv ienv auxSigs) unread
   let minorTy ← side (Ix.AuxGen.sourceMinorType rv us ps ms mins j) unread
-  let (fieldDecls, _, _) ← side (Ix.AuxGen.peelBinders minorTy ctor.numFields "split_field" 0) unread
+  let (fields?, supply) :=
+    (Ix.AuxGen.peelBindersWith minorTy ctor.numFields "split_field" 0).run supply
+  let (fieldDecls, _, _) ← side fields? unread
+  let mut supply := supply
   let mut recFields : Array (Nat × Ix.AuxGen.SourceRecTarget) := #[]
   for (decl, fieldIdx) in fieldDecls.zipIdx do
-    if let some target := Ix.AuxGen.findSourceRecTarget decl.domain rv.all
-        ps ienv "split_xs" fieldIdx auxSigs then
+    let (target?, nextSupply) := (Ix.AuxGen.findSourceRecTargetWith decl.domain rv.all
+      ps ienv "split_xs" fieldIdx auxSigs).run supply
+    supply := nextSupply
+    if let some target := target? then
       recFields := recFields.push (fieldIdx, target)
   if !recFields.any (fun (_, t) => !(inBlock.getD t.sourcePos false)) then
     return none
@@ -236,7 +242,8 @@ def sizeOfMinorWith (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name 
       | .lam bn dom b bi _ => some (bn, dom, b, bi)
       | _ => none) s!"minor {j} is not a λ over its {ctor.numFields} field(s) and \
         {recFields.size} induction hypothesis(es)"
-    let (fvName, fv) := Ix.AuxGen.freshFVar "o11a" i
+    let ((fvName, fv), nextSupply) := supply.fresh "o11a" i
+    supply := nextSupply
     if i < ctor.numFields then
       decls := decls.push { fvarName := fvName, binderName := bn, domain := dom, info := bi }
       fvars := fvars.push fv

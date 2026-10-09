@@ -132,19 +132,26 @@ component (the minor is passed as it is), `none` on failure. -/
 def adaptMinor (recur : Occ → Option Expr) (env : Ix.Environment) (rv : RecursorVal)
     (inBlock : Array Bool) (us : Array Level) (ps ms mins : Array Expr) (j : Nat) :
     Option (Option Expr) := do
-  let auxSigs := Ix.AuxGen.auxMotiveSigs rv us ps ms env
+  let initial := (Ix.AuxGen.FreshFVars.protectExpr {} rv.cnst.type).protectExprs (ps ++ ms ++ mins)
+  let (auxSigs, supply) := (Ix.AuxGen.auxMotiveSigsWith rv us ps ms env).run initial
   let (_, ctor) ← Ix.AuxGen.sourceCtorForMinor j rv env auxSigs
   let minorTy ← Ix.AuxGen.sourceMinorType rv us ps ms mins j
-  let (fieldDecls, fieldFVars, afterFields) ←
-    Ix.AuxGen.peelBinders minorTy ctor.numFields "split_field" 0
+  let (fields?, supply) :=
+    (Ix.AuxGen.peelBindersWith minorTy ctor.numFields "split_field" 0).run supply
+  let (fieldDecls, fieldFVars, afterFields) ← fields?
+  let mut supply := supply
   let mut recFields : Array (Nat × Ix.AuxGen.SourceRecTarget) := #[]
   for (decl, fieldIdx) in fieldDecls.zipIdx do
-    if let some target := Ix.AuxGen.findSourceRecTarget decl.domain rv.all
-        ps env "split_xs" fieldIdx auxSigs then
+    let (target?, nextSupply) := (Ix.AuxGen.findSourceRecTargetWith decl.domain rv.all
+      ps env "split_xs" fieldIdx auxSigs).run supply
+    supply := nextSupply
+    if let some target := target? then
       recFields := recFields.push (fieldIdx, target)
   if !recFields.any (fun (_, t) => !(inBlock.getD t.sourcePos false)) then
     return none
-  let (ihDecls, ihFVars, _) ← Ix.AuxGen.peelBinders afterFields recFields.size "split_ih" 0
+  let (ihs?, _) :=
+    (Ix.AuxGen.peelBindersWith afterFields recFields.size "split_ih" 0).run supply
+  let (ihDecls, ihFVars, _) ← ihs?
   if ihDecls.size != recFields.size then none
   let mut decls := fieldDecls
   let m ← mins[j]?

@@ -83,6 +83,55 @@ def freshFVar (pfx : String) (idx : Nat) : Name × Expr :=
   let fvar := Expr.mkFVar name
   (name, fvar)
 
+/-- Temporary-variable supply for source minor adaptation. Keys are rebuilt
+structural Lean names, so no cached Ix name digest establishes membership. -/
+structure FreshFVars where
+  used : Std.HashSet Lean.Name := {}
+  deriving Inhabited
+
+namespace FreshFVars
+
+def reserve (s : FreshFVars) (name : Name) : FreshFVars :=
+  { used := s.used.insert (Ix.Compile.Canon.keyName name) }
+
+/-- Collect exactly the FVar-bearing expression positions traversed by
+`batchAbstractNames`, including dependent domains and let values. -/
+def protectExpr (s : FreshFVars) (e : Expr) : FreshFVars :=
+  match e with
+  | .fvar name _ => s.reserve name
+  | .app f a _ => (s.protectExpr f).protectExpr a
+  | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
+      (s.protectExpr ty).protectExpr body
+  | .letE _ ty value body _ _ =>
+      ((s.protectExpr ty).protectExpr value).protectExpr body
+  | .proj _ _ body _ | .mdata _ body _ => s.protectExpr body
+  | _ => s
+
+def protectExprs (s : FreshFVars) (es : Array Expr) : FreshFVars :=
+  es.foldl protectExpr s
+
+/-- Retain the old spelling when fresh. On collision, append a numeric
+component greater than every protected suffix with this exact prefix.
+This finite fold needs neither a bounded telescope nor an unbounded search. -/
+def fresh (s : FreshFVars) (pfx : String) (idx : Nat) :
+    (Name × Expr) × FreshFVars :=
+  let preferred := (freshFVar pfx idx).1
+  let key := Ix.Compile.Canon.keyName preferred
+  let name := if s.used.contains key then
+      let next := s.used.fold (init := 0) fun next name =>
+        match name with
+        | .num parent n => if parent == key then max next (n + 1) else next
+        | _ => next
+      Name.mkNat preferred next
+    else preferred
+  ((name, Expr.mkFVar name), s.reserve name)
+
+end FreshFVars
+
+/-- Shared supply operation used at every split-minor opening. -/
+def freshFVarM (pfx : String) (idx : Nat) : StateM FreshFVars (Name × Expr) :=
+  fun s => s.fresh pfx idx
+
 /-! ## Inductive recursor-structural decomposition
 
 Rust `decompose_inductive_type` (aux_gen/expr_utils.rs:121) is
