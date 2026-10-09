@@ -49,7 +49,7 @@ theorem checkMember_iff {env : Kernel.Env} {common : RecRd}
     cases parsed : readRec env r common.np common.nm common.nmin with
     | none => simp only [checkMember, parsed, Bool.false_eq_true] at accepted
     | some member =>
-      refine ⟨member, parsed, ?_⟩
+      refine ⟨member, rfl, ?_⟩
       exact of_decide_eq_true (by simpa only [checkMember, parsed] using accepted)
   · rintro ⟨member, parsed, shared⟩
     simpa only [checkMember, parsed, decide_eq_true_eq] using shared
@@ -74,14 +74,14 @@ theorem check_iff {env : Kernel.Env} {common : RecRd}
           member.minors = common.minors ∧ member.major = j := by
   constructor
   · intro accepted
-    obtain ⟨length, entries⟩ := Bool.and_eq_true.mp accepted
+    obtain ⟨length, entries⟩ := Bool.and_eq_true_iff.mp accepted
     refine ⟨of_decide_eq_true length, ?_⟩
     intro j bound
     have present : (recursors[j], j) ∈ recursors.zipIdx :=
       List.mk_mem_zipIdx_iff_getElem?.mpr (List.getElem?_eq_getElem bound)
     exact checkMember_iff.mp ((List.all_eq_true.mp entries) _ present)
   · rintro ⟨length, entries⟩
-    apply Bool.and_eq_true.mpr
+    apply Bool.and_eq_true_iff.mpr
     refine ⟨decide_eq_true length, List.all_eq_true.mpr ?_⟩
     intro entry present
     have bound : entry.2 < recursors.length := by

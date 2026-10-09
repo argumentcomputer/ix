@@ -68,7 +68,7 @@ theorem stripSort_instantiate {k : Nat} {e : Kernel.Expr}
       stripped parsed).1
     have sortEq : body = .sort (Kernel.Level.subst ks us s) := by
       simpa only [Kernel.Expr.instantiateLevelParams] using bodyEq
-    exact ⟨bs', by rw [← sortEq]; exact parsed⟩
+    exact ⟨bs', by rw [← sortEq]⟩
 
 /-- The actual installed-inductive lookup and a stored sort telescope
 guarantee reader success at every correctly sized universe instance. No
@@ -118,7 +118,7 @@ theorem read_of_checkSumInd {mode : Kernel.CheckMode} {fuel : Nat}
   have lookup : installed.find? m.ind = some (.indInfo cv (capsOf completed)) := by
     rw [environment, name]
     simp only [Kernel.Env.find?, List.find?_cons, Kernel.ConstantInfo.name,
-      Kernel.ConstantInfo.toConstantVal, beq_self_eq_true, ↓reduceIte]
+      Kernel.ConstantInfo.toConstantVal, beq_self_eq_true]
   exact read_of_stored_sort lookup arity stripped
 
 /-- The former-header reader succeeds on the actual former environment
