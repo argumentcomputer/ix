@@ -159,8 +159,9 @@ theorem componentNested_some {rules : Rules} (discovery : rules.nested = .discov
       (∃ source, Ix.Compile.Canon.expand env.ind? rules.dedup all
         (protect := env.protection.source all) = .ok source ∧ nested.source = source.sigs ∧
         computePerm env.addr? nested.canon nested.source all (origToCanonOf classes) = .ok nested.perm) ∧
-      nested.evaporated = Array.replicate nested.perm.size false :=
-  CallbackPublic.componentNested_some discovery run
+      nested.evaporated = Array.replicate nested.perm.size false := by
+  rw [ComponentCoreProof.componentNested_eq_core] at run
+  exact CallbackPublic.componentNested_some discovery run
 
 theorem componentNested_discovery {rules : Rules} (discovery : rules.nested = .discovery)
     {env : Env}
@@ -174,8 +175,9 @@ theorem componentNested_discovery {rules : Rules} (discovery : rules.nested = .d
       (∀ (i : Nat) (member : XMember), x.types[i]? = some member →
         member.sourceOwner ∈ repsOf classes) ∧
       (∃ D : List Nat, D.length = x.aux.size ∧ D.Pairwise (· ≤ ·) ∧
-        ∀ (k d : Nat), D[k]? = some d → d < x.nOriginals + k) :=
-  CallbackPublic.componentNested_discovery discovery run
+        ∀ (k d : Nat), D[k]? = some d → d < x.nOriginals + k) := by
+  rw [ComponentCoreProof.componentNested_eq_core] at run
+  exact CallbackPublic.componentNested_discovery discovery run
 
 theorem componentNested_source_spec {rules : Rules} (discovery : rules.nested = .discovery)
     {env : SourceEnv} {all : Array Name} {classes : Array (Array Name)}
@@ -209,8 +211,9 @@ theorem canonBlock_nested_discovery {rules : Rules} (discovery : rules.nested = 
       (∀ (i : Nat) (entry : XMember), x.types[i]? = some entry →
         entry.sourceOwner ∈ repsOf component.classes) ∧
       (∃ D : List Nat, D.length = x.aux.size ∧ D.Pairwise (· ≤ ·) ∧
-        ∀ (k d : Nat), D[k]? = some d → d < x.nOriginals + k) :=
-  CallbackBlock.canonBlock_nested_history discovery run member hasNested
+        ∀ (k d : Nat), D[k]? = some d → d < x.nOriginals + k) := by
+  rw [ComponentCoreProof.canonBlock_eq_core] at run
+  exact CallbackBlock.canonBlock_nested_history discovery run member hasNested
 
 theorem canonBlock_member_order {rules : Rules} (hseed : rules.seed = .byNameHash) {env : Env}
     {all all' : Array Name} (hp : all.toList.Perm all'.toList) (hnd : NodupB (nodesOf env all))

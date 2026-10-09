@@ -83,8 +83,9 @@ theorem canonBlockCompiled_eq_spec (env : SourceEnv) (compiled? : Name → Bool)
   have evaporation : evaporate (Env.ofSource env) = SourceBlock.evaporate env := by
     funext rules names comps here entry
     exact evaporate_eq_spec env rules names comps here entry
+  have addresses : (Env.ofSource env).addr? = env.addr? := rfl
   unfold Ix.Compile.Pass.canonBlockCompiled Ix.Compile.Pass.canonBlockCompiledSourceSpec
-  simpa only [blockComponents_eq_spec, constants, nested, evaporation]
+  simpa only [blockComponents_eq_spec, constants, nested, evaporation, addresses]
 
 /-- The production buildView result is unchanged as a complete Except value.
 The remainder of image construction is byte-for-byte retained in the companion. -/
