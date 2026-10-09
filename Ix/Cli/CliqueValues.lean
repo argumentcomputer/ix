@@ -16,8 +16,11 @@
     reference to a member renamed with them) through `addDecl`, i.e. Lean's
     kernel checks them, and the evaluation runs over them. References to
     library constants resolve by name in Lean's environment; that the
-    output's addresses for them are Lean's is phases 4–5's claim, and that a
-    Lean name holding an image computes as Lean's recursor is phase 7's.
+    output's addresses for them are Lean's is phases 4–5's claim. For a
+    supported permuted inductive block, a canonical recursor is defined over
+    Lean's original recursor using the inverse permutations read from its
+    stored image. These results are explicitly relative to that inverse
+    correspondence; phase 7's forward rules do not prove the inverse.
     Lean's kernel and `Meta.reduce` are used as an evaluator of the compiled
     term: what is evaluated is the output's term, not Lean's, so a transport
     that moves a user value changes the compiled value (FIX-pfwf §1).
@@ -47,7 +50,8 @@
     the statement is checked by phases 3–5), opaque members, a structural
     member without closed inputs, an evaluation of Lean's own constant that
     the evaluator cannot perform, the resource limit (heartbeats), a compiled
-    clique that references compiled inductive-block constants. An evaluation
+    clique that references unsupported compiled inductive-block constants
+    (in particular, collapsed or split blocks). An evaluation
     failure on the compiled side where Lean's side evaluated is a failure.
 
   Coverage is asserted: every member of every transported clique has a
@@ -59,6 +63,7 @@ public import Lean.Meta
 public import Ix.DecompileM
 public import Ix.CanonM
 public import Ix.Compile.Pass
+public import Ix.Cli.InverseRecursor
 
 public section
 
@@ -315,6 +320,9 @@ structure CliqueRow where
   failure : Option String := none
   /-- a clique-level reason none of its members is value-checkable -/
   reason : Option String := none
+  /-- Qualified inverse correspondences installed for this clique, never an
+  independent phase-7 or image-correctness proof. -/
+  inverseBridges : Array String := #[]
 
 structure Report where
   cliques : Array CliqueRow := #[]
@@ -387,7 +395,8 @@ def kindName : ConstantInfo → String
 
 /-- Add the compiled constants (members renamed) in dependency order;
 `none` when all are accepted, else the first problem. -/
-def addCompiled (all : Array Name) (cs : Array ConstantInfo) : CoreM (Option String) := do
+def addCompiled (all : Array Name) (cs : Array ConstantInfo)
+    (inverse : NameMap DefinitionVal := {}) : CoreM (Option String) := do
   let ren : NameMap Name := all.foldl (fun m a => m.insert a (scratchName a)) {}
   let names : NameSet := cs.foldl (fun s c => s.insert c.name) {}
   let mut pending := cs.toList
@@ -413,6 +422,9 @@ def addCompiled (all : Array Name) (cs : Array ConstantInfo) : CoreM (Option Str
         | .opaqueInfo v =>
           let v' : OpaqueVal := { v with name := n, type := ty, value := renameConsts ren v.value, all := [n] }
           .ok (.opaqueDecl v')
+        | .recInfo _ => match inverse.find? c.name with
+          | some v => .ok (.defnDecl { v with name := n, type := ty, value := renameConsts ren v.value, all := [n] })
+          | none => .error s!"{c.name}: a compiled recursor without a supported inverse correspondence"
         | _ => .error s!"{c.name}: a compiled {kindName c} (compiled inductive-block constants are not added to Lean's environment here)"
       match decl? with
       | .error e => return some s!"NOTCHECKABLE {e}"
@@ -582,7 +594,21 @@ def run (leanEnv : Environment) (ixonEnv : Ixon.Env) (cliques : Array (Array Nam
           if let some v ← staticVerdict? m then pre := pre.push (m, v)
         if pre.size == all.size then
           return { all := all, encoding := enc, sigma := sigma, members := pre }
-        match ← addCompiled all cs with
+        let mut inverse : NameMap DefinitionVal := {}
+        let mut bridges : Array String := #[]
+        for c in cs do
+          if let .recInfo rv := c then
+            let attempted : Except String InverseRecursor.Bridge ←
+              try pure (.ok (← InverseRecursor.build ixonEnv (decompileCompiled ixonEnv) rv))
+              catch e => pure (.error (← e.toMessageData.toString))
+            match attempted with
+            | .error reason => return bareRow all enc sigma none
+                (some s!"{rv.name}: inverse correspondence unsupported: {reason}")
+            | .ok bridge =>
+              inverse := inverse.insert rv.name bridge.decl
+              bridges := bridges.push s!"{rv.name} via {bridge.source}; canonical-to-source arguments \
+                {bridge.permutation.args}, universes {bridge.permutation.levels}"
+        match ← addCompiled all cs inverse with
         | some p =>
           if p.startsWith "NOTCHECKABLE " then return bareRow all enc sigma none (some (p.drop 13).toString)
           return bareRow all enc sigma (some p) none
@@ -591,7 +617,7 @@ def run (leanEnv : Environment) (ixonEnv : Ixon.Env) (cliques : Array (Array Nam
             return bareRow all enc sigma (some "no side-car record `_ix.clique` on the compiled canonical constants") none
           let mut ms : Array (Name × Verdict) := #[]
           for m in all do ms := ms.push (m, ← checkMember all enc sigma m)
-          return { all := all, encoding := enc, sigma := sigma, members := ms }
+          return { all := all, encoding := enc, sigma := sigma, members := ms, inverseBridges := bridges }
       let row ← try
           let (r, _) ← (body.run' {} : CoreM CliqueRow).toIO ctx { env := leanEnv }
           pure r
@@ -613,8 +639,13 @@ def summarize (rep : Report) : Bool × String × Array String := Id.run do
   let mut cliquesChecked := 0
   let mut cliquesNot := 0
   let mut cliquesFailed := 0
+  let mut relativeCliques := 0
   for c in rep.cliques do
     let head := s!"clique {c.all.toList} ({c.encoding}, sigma {c.sigma.toList})"
+    if !c.inverseBridges.isEmpty then
+      relativeCliques := relativeCliques + 1
+      lines := lines.push s!"{head}: values relative to image-derived inverse correspondence \
+        (not proved by phase-7 forward equality): {c.inverseBridges.toList}"
     if let some f := c.failure then
       failures := failures + 1
       cliquesFailed := cliquesFailed + 1
@@ -658,7 +689,9 @@ def summarize (rep : Report) : Bool × String × Array String := Id.run do
   let detail := s!"{rep.cliques.size} transported clique(s) ({cliquesChecked} value-checked, \
 {cliquesNot} with no value-checkable member, each with a reason, {cliquesFailed} failing), {nMembers} \
 member(s): {nChecked} value-checked on {nClosed + nSymb} input tuple(s) ({nClosed} closed, {nSymb} \
-symbolic), {nNot} not value-checkable; {failures} failure(s)"
+symbolic), {nNot} not value-checkable; {failures} failure(s)" ++
+    (if relativeCliques == 0 then "" else s!"; {relativeCliques} clique(s) evaluated relative to \
+image-derived inverse correspondence (not an inverse proof)")
   return (failures > 0, detail, lines)
 
 end IxCliqueValues

@@ -844,7 +844,13 @@ def transportedCliques (cenv : Ix.CompileM.CompileEnv) : Array (Array Lean.Name)
     free-variable oracle per member placed by the side-car `σ`). Members
     that cannot be evaluated (theorems, propositions, opaque, structural
     without closed data, resource limits) are reported with the reason and
-    counted; every member has a verdict. A clique the record calls
+    counted; every member has a verdict. Supported permuted inductive-block
+    recursors are interpreted through the stored image's inverse motive/minor
+    permutations, over Lean's original recursor. Such results are explicitly
+    reported as relative to that correspondence: phase 7's forward equations
+    do not establish the inverse. Collapsed/split blocks and non-bijective
+    images remain not checkable, with reasons; this does not establish O14
+    or the general image/totality endpoint. A clique the record calls
     transported whose compiled constants carry no side-car record
     `_ix.clique` fails. It does not check equation lemmas carried with a
     clique, Lean's encoding constants (kept in Lean's form), the O7–O12

@@ -31,6 +31,7 @@ import Tests.Ix.Compile.BridgeScopes
 import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.Transport
 import Tests.Ix.Compile.CliqueOwnership
+import Tests.Ix.Compile.InverseRecursor
 import Tests.Ix.Compile.CliqueDag
 import Tests.Ix.Compile.RewriteRetry
 import Tests.Ix.Compile.Pass3
@@ -412,6 +413,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Value-sensitive ownership regressions of the clique transport: user values, binders and
   -- relations shaped like the encoding keep their meaning (Tests.Ix.Compile.CliqueOwnership).
   ("clique-ownership", Tests.Ix.Compile.CliqueOwnership.run),
+  -- Qualified inverse recursors for phase 9: actual permuted-block neighbour,
+  -- wrong-permutation value/dependent-type controls and collapse exclusion.
+  ("clique-values-inverse", Tests.Ix.Compile.InverseRecursor.run),
   -- Pass 3, the faithful rewrite (the only mode since M6R slice 6): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
