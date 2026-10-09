@@ -602,8 +602,9 @@ def run (leanEnv : Environment) (ixonEnv : Ixon.Env) (cliques : Array (Array Nam
               try pure (.ok (← InverseRecursor.build ixonEnv (decompileCompiled ixonEnv) rv))
               catch e => pure (.error (← e.toMessageData.toString))
             match attempted with
-            | .error reason => return bareRow all enc sigma none
-                (some s!"{rv.name}: inverse correspondence unsupported: {reason}")
+            | .error reason =>
+              return (bareRow all enc sigma none
+                (some s!"{rv.name}: inverse correspondence unsupported: {reason}"))
             | .ok bridge =>
               inverse := inverse.insert rv.name bridge.decl
               bridges := bridges.push s!"{rv.name} via {bridge.source}; canonical-to-source arguments \

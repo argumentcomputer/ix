@@ -788,8 +788,8 @@ def equationRegenerationChecks (env : Environment)
   unless equations == 2 && declarations == produced.size && declarations ≥ 6 do
     failures := failures.push s!"eq_def: incomplete canonical oracle ({equations}/{declarations})"
   let wrapped := pairs.map fun (d, n) =>
-    ({ d with value := _root_.Ix.Compile.Canon.mkAppN
-        (_root_.Ix.Expr.mkConst (ixName ``id) #[_root_.Ix.Level.mkZero]) #[d.type, d.value] }, n)
+    ({ d with value := (_root_.Ix.Compile.Canon.mkAppN
+        (_root_.Ix.Expr.mkConst (ixName ``id) #[_root_.Ix.Level.mkZero]) #[d.type, d.value]) }, n)
   let wrappedOutput ← generate const? wrapped
   unless produced.size == wrappedOutput.size && (produced.zip wrappedOutput).all (fun (a, b) =>
       eqDefNameEq a.decl.name b.decl.name && eqDefExprEq a.decl.type b.decl.type &&
