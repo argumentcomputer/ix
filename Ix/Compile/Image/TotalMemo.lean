@@ -123,17 +123,17 @@ def rangeGo (hint : Expr → UInt64) (e : Expr) (memo : RangeMemo) :
       | .app f a _ =>
         let rf := rangeGo hint f memo
         let ra := rangeGo hint a rf.state
-        ⟨max rf.value ra.value, by rw [looseRangeP.eq_def, rf.correct, ra.correct], ra.state⟩
+        ⟨max rf.value ra.value, congr (congrArg Nat.max rf.correct) ra.correct, ra.state⟩
       | .lam _ t b _ _ | .forallE _ t b _ _ =>
         let rt := rangeGo hint t memo
         let rb := rangeGo hint b rt.state
-        ⟨max rt.value (rb.value - 1), by rw [looseRangeP.eq_def, rt.correct, rb.correct], rb.state⟩
+        ⟨max rt.value (rb.value - 1), congr (congrArg Nat.max rt.correct) (congrArg (fun x : Nat => x - 1) rb.correct), rb.state⟩
       | .letE _ t v b _ _ =>
         let rt := rangeGo hint t memo
         let rv := rangeGo hint v rt.state
         let rb := rangeGo hint b rv.state
-        ⟨max (max rt.value rv.value) (rb.value - 1), by
-          rw [looseRangeP.eq_def, rt.correct, rv.correct, rb.correct], rb.state⟩
+        ⟨max (max rt.value rv.value) (rb.value - 1), congr (congrArg Nat.max (congr (congrArg Nat.max rt.correct) rv.correct))
+          (congrArg (fun x : Nat => x - 1) rb.correct), rb.state⟩
       | .proj _ _ s _ | .mdata _ s _ =>
         let rs := rangeGo hint s memo
         ⟨rs.value, rs.correct, rs.state⟩
@@ -146,13 +146,13 @@ def liftGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
     (e : Expr) (n c : Nat) (st : ShiftState liftAt) :
     Answer (liftP e n c) (ShiftState liftAt) :=
   if hz : n == 0 then
-    ⟨e, by rw [liftP.eq_def, if_pos hz], st⟩
+    ⟨e, by rw [liftP.eq_def, ite_eq_left hz], st⟩
   else
     let rr := rangeGo rangeHint e st.range
     let st1 : ShiftState liftAt := { st with range := rr.state }
     if hc : rr.value ≤ c then
       have cut : looseRangeP e ≤ c := by simpa only [rr.correct] using hc
-      ⟨e, by rw [liftP.eq_def, if_neg hz, if_pos cut], st1⟩
+      ⟨e, by rw [liftP.eq_def, ite_eq_right hz, ite_eq_left cut], st1⟩
     else
       have uncut : ¬looseRangeP e ≤ c := by simpa only [rr.correct] using hc
       match probe shiftDecEq liftAt st1.values (hint (e, n, c)) (e, n, c) with
@@ -168,7 +168,9 @@ def liftGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
         | .mdata md x _ => Expr.mkMData md (liftP x n c)
         | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => e) (ShiftState liftAt) :=
           match e with
-          | e@(.bvar i _) => ⟨if i ≥ c then Expr.mkBVar (i + n) else e, rfl, st1⟩
+          | e@same:(.bvar i _) =>
+            ⟨if i ≥ c then Expr.mkBVar (i + n) else e,
+              congrArg (fun x => if i ≥ c then Expr.mkBVar (i + n) else x) same, st1⟩
           | .app f a _ =>
             let rf := liftGo rangeHint hint f n c st1
             let ra := liftGo rangeHint hint a n c rf.state
@@ -197,7 +199,7 @@ def liftGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
           | e@same:(.const ..) | e@same:(.lit ..) =>
             ⟨e, same, st1⟩
         have correct : r.value = liftP e n c := by
-          rw [liftP.eq_def, if_neg hz, if_neg uncut]
+          rw [liftP.eq_def, ite_eq_right hz, ite_eq_right uncut]
           exact r.correct
         ⟨r.value, correct,
           { r.state with values := put liftAt r.state.values (hint (e, n, c)) (e, n, c) r.value correct }⟩
@@ -208,13 +210,13 @@ def lowerGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
     (e : Expr) (n c : Nat) (st : ShiftState lowerAt) :
     Answer (lowerP e n c) (ShiftState lowerAt) :=
   if hz : n == 0 then
-    ⟨e, by rw [lowerP.eq_def, if_pos hz], st⟩
+    ⟨e, by rw [lowerP.eq_def, ite_eq_left hz], st⟩
   else
     let rr := rangeGo rangeHint e st.range
     let st1 : ShiftState lowerAt := { st with range := rr.state }
     if hc : rr.value ≤ c then
       have cut : looseRangeP e ≤ c := by simpa only [rr.correct] using hc
-      ⟨e, by rw [lowerP.eq_def, if_neg hz, if_pos cut], st1⟩
+      ⟨e, by rw [lowerP.eq_def, ite_eq_right hz, ite_eq_left cut], st1⟩
     else
       have uncut : ¬looseRangeP e ≤ c := by simpa only [rr.correct] using hc
       match probe shiftDecEq lowerAt st1.values (hint (e, n, c)) (e, n, c) with
@@ -230,7 +232,9 @@ def lowerGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
         | .mdata md x _ => Expr.mkMData md (lowerP x n c)
         | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => e) (ShiftState lowerAt) :=
           match e with
-          | e@(.bvar i _) => ⟨if i ≥ c + n then Expr.mkBVar (i - n) else e, rfl, st1⟩
+          | e@same:(.bvar i _) =>
+            ⟨if i ≥ c + n then Expr.mkBVar (i - n) else e,
+              congrArg (fun x => if i ≥ c + n then Expr.mkBVar (i - n) else x) same, st1⟩
           | .app f a _ =>
             let rf := lowerGo rangeHint hint f n c st1
             let ra := lowerGo rangeHint hint a n c rf.state
@@ -259,7 +263,7 @@ def lowerGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
           | e@same:(.const ..) | e@same:(.lit ..) =>
             ⟨e, same, st1⟩
         have correct : r.value = lowerP e n c := by
-          rw [lowerP.eq_def, if_neg hz, if_neg uncut]
+          rw [lowerP.eq_def, ite_eq_right hz, ite_eq_right uncut]
           exact r.correct
         ⟨r.value, correct,
           { r.state with values := put lowerAt r.state.values (hint (e, n, c)) (e, n, c) r.value correct }⟩
@@ -272,7 +276,7 @@ def occursGo (rangeHint : Expr → UInt64) (hint : OccursKey → UInt64)
   let st1 : OccursState := { st with range := rr.state }
   if hc : rr.value ≤ k then
     have cut : looseRangeP e ≤ k := by simpa only [rr.correct] using hc
-    ⟨false, by rw [occursP.eq_def, if_pos cut], st1⟩
+    ⟨false, by rw [occursP.eq_def, ite_eq_left cut], st1⟩
   else
     have uncut : ¬looseRangeP e ≤ k := by simpa only [rr.correct] using hc
     match probe occursDecEq occursAt st1.values (hint (e, k)) (e, k) with
@@ -305,7 +309,7 @@ def occursGo (rangeHint : Expr → UInt64) (hint : OccursKey → UInt64)
           ⟨rx.value, rx.correct, rx.state⟩
         | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => ⟨false, rfl, st1⟩
       have correct : r.value = occursP e k := by
-        rw [occursP.eq_def, if_neg uncut]
+        rw [occursP.eq_def, ite_eq_right uncut]
         exact r.correct
       ⟨r.value, correct,
         { r.state with values := put occursAt r.state.values (hint (e, k)) (e, k) r.value correct }⟩
