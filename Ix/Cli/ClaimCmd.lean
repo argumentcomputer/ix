@@ -63,7 +63,7 @@ def claimCheckCmd : Cli.Cmd := `[Cli|
   "Build and persist a `Check` claim: the constant at <addr-hex> is well-typed (optionally modulo an assumption tree)."
 
   FLAGS:
-    asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already live in `~/.ix/store/` (build it with `ix tree canonical`). When set, the claim asserts well-typedness modulo the assumed leaves."
+    asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already be stored by `ix tree canonical`. When set, the claim asserts well-typedness modulo the assumed leaves."
 
   ARGS:
     addr : String; "32-byte hex address of the constant being claimed well-typed."
@@ -90,7 +90,7 @@ def claimCheckEnvCmd : Cli.Cmd := `[Cli|
   "Build and persist a `CheckEnv` claim: every constant in the env merkle-rooted at <env-root-hex> is well-typed (optionally modulo an assumption tree). The env tree itself must already live in the store (`ix tree env <ixe>`); same goes for the asm tree if set."
 
   FLAGS:
-    asm : String; "32-byte hex address of an assumption-tree merkle root (typically the env's axiom leaves). The tree must already live in `~/.ix/store/`."
+    asm : String; "32-byte hex address of an assumption-tree merkle root (typically the env's axiom leaves). The tree must already be stored by `ix tree`."
 
   ARGS:
     root : String; "32-byte hex address of the env's canonical merkle root (build with `ix tree env <ixe>`)."
@@ -112,7 +112,7 @@ def runClaimContains (p : Cli.Parsed) : IO UInt32 := do
 
 def claimContainsCmd : Cli.Cmd := `[Cli|
   contains VIA runClaimContains;
-  "Build and persist a `Contains` claim: <target-hex> is a leaf in the merkle tree rooted at <tree-root-hex>. The tree itself must already live in `~/.ix/store/` (build with `ix tree canonical`)."
+  "Build and persist a `Contains` claim: <target-hex> is a leaf in the merkle tree rooted at <tree-root-hex>. The tree itself must already be stored by `ix tree canonical`."
 
   ARGS:
     tree   : String; "32-byte hex address of the merkle tree's root."
@@ -149,7 +149,7 @@ def claimEvalCmd : Cli.Cmd := `[Cli|
   "Build and persist an `Eval` claim: <input-hex> evaluates to <output-hex> (optionally modulo an assumption tree). NOTE: the IxVM `verify_claim` `run_eval` arm is currently a placeholder (`assert_eq!(0, 1)`); proving an Eval claim will fail at execution time until the kernel implements eval semantics."
 
   FLAGS:
-    asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already live in `~/.ix/store/`."
+    asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already be stored by `ix tree`."
 
   ARGS:
     input  : String; "32-byte hex address of the input constant."
@@ -190,7 +190,7 @@ def claimCatalogCmd : Cli.Cmd := `[Cli|
   "Build and persist a `Catalog` claim from a .ixc directory's manifest: the content root is exactly the union of the member envs, and every constant in it is well-typed (optionally modulo an assumption tree). Verification is by composition of per-piece claims — run `ix catalog verify` for the artifact-level checks."
 
   FLAGS:
-    asm : String; "32-byte hex address of an assumption-tree merkle root (the catalog's declared trust leaves). The tree must already live in `~/.ix/store/`."
+    asm : String; "32-byte hex address of an assumption-tree merkle root (the catalog's declared trust leaves). The tree must already be stored by `ix tree`."
 
   ARGS:
     ixc : String; "Path to the .ixc directory whose roots the claim binds."

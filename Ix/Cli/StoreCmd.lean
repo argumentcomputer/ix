@@ -41,8 +41,9 @@ private def describe (addr : Address) (bytes : ByteArray) : String :=
       let first := bytes[0]?.map (fun b => s!", first byte 0x{hexOfBytes ⟨#[b]⟩}") |>.getD ""
       s!"{header}\nkind: not a proof or claim{first}"
 
-/-- `ix store get <object>`: write a store object's bytes unchanged to a file
-    or stdout, or with `--show` describe it. A file path is accepted in place
+/-- `ix store get <object>`: check that a store object's bytes hash to its
+    address, then write them unchanged to a file or stdout, or with `--show`
+    describe it. A file path is accepted in place
     of an address, which lets `--show` describe downloaded objects. -/
 def runStoreGet (p : Cli.Parsed) : IO UInt32 := do
   let arg := p.positionalArg! "object" |>.as! String
@@ -60,13 +61,10 @@ def runStoreGet (p : Cli.Parsed) : IO UInt32 := do
         return 1
       let bytes ← IO.FS.readBinFile path
       pure (Address.blake3 bytes, bytes)
-  -- Objects stored with `Store.writeAt` are keyed by something other than
-  -- their BLAKE3 hash (assumption trees by Merkle root), so a mismatch is
-  -- reported but not fatal.
   let actual := Address.blake3 bytes
   if actual != addr then
-    IO.eprintln s!"warning: object {addr} hashes to {actual}; it is either keyed \
-      by another hash or corrupted"
+    IO.eprintln s!"error: store object {addr} is corrupted: its bytes hash to {actual}"
+    return 1
   if let some out := p.flag? "output" then
     IO.FS.writeBinFile (out.as! String) bytes
   if p.hasFlag "show" then

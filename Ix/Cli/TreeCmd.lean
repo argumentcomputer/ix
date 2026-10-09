@@ -1,9 +1,9 @@
 /-
   `ix tree <subcommand>`: build and persist `Ix.AssumptionTree`
   values into the content-addressed store. Trees are stored under
-  their merkle root (NOT under `blake3(bytes)`), so callers that
-  reference a tree by `root` in a claim's `--asm` field can resolve
-  the tree blob with a straight `Store.read root` lookup.
+  `blake3(bytes)` like every store object and indexed by merkle root in
+  `~/.ix/cache/trees/`, so callers that reference a tree by `root` in a
+  claim's `--asm` field resolve it with `Store.readKeyed "trees" root`.
 
   MVP: only `ix tree canonical <addrs>` (sorted+padded merkle tree
   over a leaf set).
@@ -51,12 +51,12 @@ def runTreeCanonical (p : Cli.Parsed) : IO UInt32 := do
     | IO.eprintln "error: canonical tree build returned none (post-dedup empty)"
       return 1
   let bytes := Ix.AssumptionTree.ser tree
-  StoreIO.toIO (Store.writeAt tree.root bytes)
+  StoreIO.toIO (discard <| Store.writeKeyed "trees" tree.root bytes)
   IO.println (toString tree.root)
   return 0
 
 /-- Build the canonical merkle tree over every `Ixon.Env` constant
-    address and persist it at `~/.ix/store/<root>`. Same shape as
+    address and persist it, indexed by its root. Same shape as
     `IxVM.ClaimHarness.envCanonicalTree`; the root is what
     `Claim.checkEnv root _` expects. -/
 def runTreeEnv (p : Cli.Parsed) : IO UInt32 := do
@@ -72,7 +72,7 @@ def runTreeEnv (p : Cli.Parsed) : IO UInt32 := do
     | IO.eprintln s!"error: {ixePath} has no consts; cannot build env tree"
       return 1
   let tbytes := Ix.AssumptionTree.ser tree
-  StoreIO.toIO (Store.writeAt tree.root tbytes)
+  StoreIO.toIO (discard <| Store.writeKeyed "trees" tree.root tbytes)
   IO.println (toString tree.root)
   return 0
 
@@ -85,7 +85,7 @@ end Ix.Cli.TreeCmd
 open Ix.Cli.TreeCmd in
 def treeCanonicalCmd : Cli.Cmd := `[Cli|
   canonical VIA runTreeCanonical;
-  "Build the canonical sorted+padded merkle tree over the listed leaf addresses and persist it at `~/.ix/store/<merkle-root-hex>`. Prints the merkle root hex on stdout — that root is what `--asm` arguments on claims reference."
+  "Build the canonical sorted+padded merkle tree over the listed leaf addresses and persist it, indexed by its merkle root. Prints the merkle root hex on stdout — that root is what `--asm` arguments on claims reference."
 
   ARGS:
     leaves : String; "Comma-separated 64-char hex leaf addresses (e.g. `<addr1>,<addr2>,...`)."
@@ -94,7 +94,7 @@ def treeCanonicalCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.TreeCmd in
 def treeEnvCmd : Cli.Cmd := `[Cli|
   env VIA runTreeEnv;
-  "Compute the canonical merkle tree over every constant in a `.ixe` and persist it at `~/.ix/store/<env-root-hex>`. Prints the env root hex — that root is what `ix claim check-env <root>` expects."
+  "Compute the canonical merkle tree over every constant in a `.ixe` and persist it, indexed by its root. Prints the env root hex — that root is what `ix claim check-env <root>` expects."
 
   ARGS:
     ixe : String; "Path to a serialized Ixon env (`.ixe`)."

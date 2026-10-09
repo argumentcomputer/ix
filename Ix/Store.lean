@@ -78,17 +78,30 @@ def write (bytes: ByteArray) : StoreIO Address := do
   let _ <- IO.toEIO .ioError (publish path bytes)
   return addr
 
-/-- Persist `bytes` keyed by an explicit caller-supplied address. Used
-    for content whose canonical key isn't `blake3(bytes)` — e.g.
-    `AssumptionTree` blobs that key by merkle root, not by their Ixon
-    byte-serialization hash. -/
-def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit := do
-  let path <- storePath addr
-  IO.toEIO .ioError (publish path bytes)
-
 def read (a: Address) : StoreIO ByteArray := do
   let path <- storePath a
   IO.toEIO .ioError (IO.FS.readBinFile path)
+
+/-- Write `bytes` under their BLAKE3 address, like every store object, and
+    record `key → address` in the `~/.ix/cache/<namespace>` index. For
+    objects referenced by another hash of their content, such as an
+    assumption tree by its Merkle root. -/
+def writeKeyed (namespace' : String) (key : Address) (bytes : ByteArray) :
+    StoreIO Address := do
+  let addr ← write bytes
+  let index ← cacheDir namespace'
+  IO.toEIO .ioError (publish (index / hexOfBytes key.hash) s!"{hexOfBytes addr.hash}\n".toUTF8)
+  return addr
+
+/-- Read an object recorded by `writeKeyed`. The index is only a hint:
+    callers must check that the bytes have the requested `key`. -/
+def readKeyed (namespace' : String) (key : Address) : StoreIO ByteArray := do
+  let entry := (← cacheDir namespace') / hexOfBytes key.hash
+  if !(← entry.pathExists) then throw (.unknownAddress key)
+  let raw ← IO.toEIO .ioError (IO.FS.readFile entry)
+  match Address.fromString raw.trimAscii.toString with
+  | some addr => read addr
+  | none => throw (.ixonError s!"malformed {namespace'} index entry for {hexOfBytes key.hash}")
 
 end Store
 

@@ -51,7 +51,7 @@ def loadClaimAndTrees (claimHex : String) :
     | _                        => #[]
   let mut trees : Std.HashMap Address Ix.AssumptionTree := {}
   for r in treeRoots do
-    let tbytes ← StoreIO.toIO (Store.read r)
+    let tbytes ← StoreIO.toIO (Store.readKeyed "trees" r)
     let tree ← match Ix.AssumptionTree.de tbytes with
       | .error e => throw <| IO.userError s!"error: tree at {r}: deserialize failed: {e}"
       | .ok t => pure t
