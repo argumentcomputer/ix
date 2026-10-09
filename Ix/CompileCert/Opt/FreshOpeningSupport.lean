@@ -93,7 +93,7 @@ theorem protects_mono (s t : FreshFVars) (e : Expr)
     (grows : ∀ key, key ∈ s.used → key ∈ t.used) (covered : Protects s e) :
     Protects t e := fun key occurs => grows key (covered key occurs)
 
-theorem protects_fvar (s : FreshFVars) (name : Name) (hash : Ix.Address) :
+theorem protects_fvar (s : FreshFVars) (name : Name) (hash : _root_.Address) :
     Protects s (.fvar name hash) ↔ keyName name ∈ s.used := by
   constructor
   · intro covered
@@ -203,7 +203,7 @@ theorem sizeOfReplacement_occurs (target instName : Name) (level : Level)
 /-- The non-FVar replacement produced from any allocated FVar has no loose
 bound variables. Its constants, universes and cached field address are arbitrary. -/
 theorem sizeOfReplacement_range (target instName fieldName : Name) (level : Level)
-    (hash : Ix.Address) :
+    (hash : _root_.Address) :
     Tm.range (er (sizeOfReplacement target instName level (.fvar fieldName hash))) = 0 := by
   rw [er_sizeOfReplacement]
   rfl
@@ -211,7 +211,7 @@ theorem sizeOfReplacement_range (target instName fieldName : Name) (level : Leve
 /-- Actual O11a replacement opening agrees with substitution on every raw
 body and at every depth, without a closed-body or callback validity premise. -/
 theorem er_open_sizeOfReplacement (body : Expr) (target instName fieldName : Name)
-    (level : Level) (hash : Ix.Address) (depth : Nat) :
+    (level : Level) (hash : _root_.Address) (depth : Nat) :
     er (instantiate1At body (sizeOfReplacement target instName level (.fvar fieldName hash)) depth) =
       Tm.inst (er (sizeOfReplacement target instName level (.fvar fieldName hash))) depth (er body) := by
   rw [er_instantiate1At]
@@ -235,7 +235,7 @@ construction: errors are unchanged, and every successful name/level is admitted.
 This is the local O11a branch, not yet the full sizeOfMinorWith loop theorem. -/
 theorem sizeOf_callback_opening (inst? : Name → Array Expr → Ix.Compile.Pass.Opt.O11aM (Name × Level))
     (target fieldName : Name) (telescope : Array Expr) (body : Expr)
-    (hash : Ix.Address) (depth : Nat) :
+    (hash : _root_.Address) (depth : Nat) :
     (inst? target telescope).map (fun answer =>
       er (instantiate1At body (sizeOfReplacement target answer.1 answer.2 (.fvar fieldName hash)) depth)) =
     (inst? target telescope).map (fun answer =>
@@ -249,7 +249,7 @@ theorem sizeOf_callback_opening (inst? : Name → Array Expr → Ix.Compile.Pass
 /-- Boundary control: a fabricated loose field does not justify the producer
 corollary. The actual loop must derive its field-FVar invariant internally. -/
 theorem loose_sizeOf_field_distinguishes (target instName : Name) (level : Level)
-    (bodyHash fieldHash : Ix.Address) :
+    (bodyHash fieldHash : _root_.Address) :
     er (instantiate1At (.bvar 1 bodyHash)
       (sizeOfReplacement target instName level (.bvar 0 fieldHash)) 1) ≠
     Tm.inst (er (sizeOfReplacement target instName level (.bvar 0 fieldHash))) 1

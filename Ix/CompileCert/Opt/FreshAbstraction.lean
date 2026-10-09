@@ -154,7 +154,7 @@ theorem fresh_abstraction_occurs (s : FreshFVars) (e : Expr)
 
 /-- A particular existing FVar's complete raw node is retained, including its
 cached fields, by the actual structural-table abstraction. -/
-theorem fresh_abstraction_fvar (s : FreshFVars) (name : Name) (hash : Ix.Address)
+theorem fresh_abstraction_fvar (s : FreshFVars) (name : Name) (hash : _root_.Address)
     (pfx : String) (idx scope depth : Nat) :
     let e := Expr.fvar name hash
     let chosen := ((s.protectExpr e).fresh pfx idx).1.1

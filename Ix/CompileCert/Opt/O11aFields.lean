@@ -432,12 +432,12 @@ theorem callback_error_precedes_field_read (inst? : Name → Array Expr → O11a
   rfl
 
 /-- Forged cached hashes do not affect structural confirmation. -/
-theorem forged_fvar_neighbour (name : Name) (hash : Ix.Address) (cause : String) :
+theorem forged_fvar_neighbour (name : Name) (hash : _root_.Address) (cause : String) :
     fvarFieldRead #[Expr.fvar name hash] 0 cause = .ok (Expr.fvar name hash) := rfl
 
 /-- A fabricated loose field is not covered by the redundant-read claim for
 arbitrary tables. The actual source loop derives its stronger array invariant. -/
-theorem loose_field_negative (index : Nat) (hash : Ix.Address) (cause : String) :
+theorem loose_field_negative (index : Nat) (hash : _root_.Address) (cause : String) :
     rawFieldRead #[Expr.bvar index hash] 0 cause = .ok (Expr.bvar index hash) ∧
       fvarFieldRead #[Expr.bvar index hash] 0 cause = .error (some cause) := ⟨rfl, rfl⟩
 
