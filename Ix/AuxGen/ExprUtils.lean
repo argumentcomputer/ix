@@ -243,7 +243,7 @@ partial def lowerVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
 /-! ## Instantiation: BVar -> replacement (aux_gen/expr_utils.rs:591) -/
 
 /-- Mirrors Rust `instantiate1_at` (aux_gen/expr_utils.rs:605). -/
-partial def instantiate1At (body : Expr) (replacement : Expr) (depth : Nat) : Expr :=
+def instantiate1At (body : Expr) (replacement : Expr) (depth : Nat) : Expr :=
   match body with
   | .bvar i _ =>
     if i == depth then replacement
