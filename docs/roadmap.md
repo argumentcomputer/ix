@@ -79,13 +79,24 @@ Independent heap foundations can proceed alongside producer repairs; final
 real-source integration requires the reviewed producer and consumer gates.
 General K2/K3 coverage and ownership optimizations remain later Phase 2 work.
 
-The remaining combined acceptance gate is G1's original resource/consumer
-requirements at their original budgets, a reviewed final producer with
+The remaining combined acceptance gate is G1's resource/consumer requirements
+at the October 9 selected cap of 500,000 charged steps per declaration/equation
+and depth 256, a reviewed final producer with
 reproducible fixture refreeze and verdict review, and complete proof/fence,
 trust, build-graph and Nix checks at that final integration head. Historical producer bytes still
 back the current RC fixture. Neither the bounded heap result nor upstream
 certification discharges those remaining obligations, so Phase 1.5 and the
 combined goal are not marked complete.
+
+Optimization toward the previous 100,000-step target remains follow-up work.
+Fresh validation admits the isolated Lean cold action at 438,235 steps, but
+full public Q06 still returns `Budget` at declaration 740 in both Lean and Rust.
+Repair at the selected 500,000 cap remains required. Historical failures and
+larger-budget diagnostics retain their original meaning, including the separate
+1,934,024-step Rust measurement of declaration 740. A subsequent diagnostic
+replays the actual Rust action with matching result and full checker state:
+it exhausts all 500,000 steps with depth fuel still available. No optimization
+has yet restored full Q06 acceptance.
 
 The September 29 reset, retired pipeline, Ixby backend and Stage2 fixture are
 preserved on `jcb/ixby-archive`, with their former gates and measurements.
@@ -115,7 +126,7 @@ snapshot in23m25.126s with the existing local store. The subsequent
 observations, actual RC event counts, object-only corruption and real-source
 heap exhaustion; all four passed in isolated staging before integration.
 Every later integration tree requires the same full validation surface.
-Final original-budget producer acceptance/review/refreeze remains open; no
+Final selected-budget producer acceptance/review/refreeze remains open; no
 hosted-CI or cold-store timing is claimed.
 
 ## Plan
@@ -183,9 +194,9 @@ and correspondence to executed runtime remain explicit trust boundaries.
    Use a separate validation target so the full kernel and its tests do not
    enter the production codec dependency. This gates adoption of certification
    interfaces; checker-only improvements retain their existing acceptance gates.
-3. **Finish the existing resource and consumer gates.** Preserve original
-   budgets, all R2-1 cast-bypass controls, Lean/Rust parity, equation/profile
-   bindings, and D16/CX-2 contract transport. W/S acceptance cannot replace
+3. **Finish the existing resource and consumer gates.** Validate the selected
+   500,000-step/depth-256 limits, all R2-1 cast-bypass controls, Lean/Rust parity,
+   equation/profile bindings, and D16/CX-2 contract transport. W/S acceptance cannot replace
    these checks. Reassess the stalled engine against the selected upstream
    interfaces before choosing another optimization experiment.
 4. **Review, freeze and validate the combined result.** Perform the final

@@ -98,8 +98,10 @@ constant (sharing, references, universes, mutual members, constructors,
 rules, universe arguments) and 256 expression depth (a `share` node is a
 leaf), checked on the decoded value. Universes are bounded by ix's decoder:
 65,536 expanded constructors per constant. Resource admission allows profile
-depth at most 256 and 100,000 steps per declaration. Budget restrictions do
-not change committed bytes.
+depth at most 256 and 500,000 steps per declaration. The default profile still
+selects 100,000 steps; using the higher cap requires explicit profile bytes and
+their new address. Optimization toward 100,000 steps remains a follow-up target.
+Budget restrictions do not change committed bytes.
 
 Typing additionally caps declaration counts and variable/field indices at
 4,096, expression conversion at 100,000 steps and 1,024 pending frames, and

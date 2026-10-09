@@ -229,8 +229,12 @@ requirements without acquiring a dependency on this pilot.
 3. Run the consumer compatibility cases on that exact candidate: equation and
    `csimp` selection, annotation/profile transport, recursor-complete closure
    discovery and the previously failing proof closure. Keep unsupported,
-   blocked, rejected and exhausted outcomes distinct. Preserve the original
-   resource-checker budgets and negative controls alongside certification.
+   blocked, rejected and exhausted outcomes distinct. Preserve recorded
+   resource-checker configurations and negative controls alongside certification.
+   For the October 9 combined goal, run fresh paired acceptance at 500,000 steps
+   per declaration/equation and depth 256; preserve historical 100,000-step results
+   and explicit low-budget exhaustion controls. Optimization toward 100,000 is
+   follow-up work, not evidence of current acceptance.
 4. Treat compiler-output changes as a separate refreeze from checker-only
    changes. Follow [the corpus procedure](corpus.md#refreezing), retain
    independent source/oracle expectations, review every address/verdict delta,

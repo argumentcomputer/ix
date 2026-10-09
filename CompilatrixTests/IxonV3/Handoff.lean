@@ -44,9 +44,35 @@ def handoff (root : System.FilePath) : IO Nat := do
   require ((decodeAnonymousEnv (bytes.set! 1 (bytes[1]! ^^^ 1))).toOption.isNone) "accepted corrupt root"
   require ((decodeAnonymousEnv bytes (bytes.size - 1)).toOption.isNone) "ignored environment byte budget"
   require ((decodeAnonymousEnv (bytes.set! 180 (bytes[180]! ^^^ 1))).toOption.isNone) "accepted corrupt object"
-  let excessive := { input.profile with limits := { depth := 257, steps := 100000 } }
-  require ((admitResources bytes excessive.bytes).toOption.isNone) "ignored consumer checker budget"
-  let mut assertions := 19
+  let raised := { input.profile with limits := { depth := 256, steps := 500000 } }
+  let raisedInput ← IO.ofExcept (admitResources bytes raised.bytes)
+  require (raisedInput.env.root == input.env.root && raisedInput.profile.bytes == raised.bytes)
+    "500k admission changed the source or profile"
+  require (raisedInput.resolved.profileAddress == Address.blake3 raised.bytes &&
+      raisedInput.resolved.profileAddress != input.resolved.profileAddress)
+    "500k profile did not receive its own address"
+  match raisedInput.checkClaimBinding claimBytes with
+  | .error error =>
+    require (error == "ixon-v3: claim profile mismatch")
+      s!"wrong old-profile claim rejection: {error}"
+  | .ok _ => throw (IO.userError "accepted the old claim under the 500k profile")
+  match admitResources rejected raised.bytes with
+  | .error error =>
+    require ((error.splitOn "unrestrictedEscape").length > 1)
+      s!"wrong 500k local-escape rejection: {error}"
+  | .ok _ => throw (IO.userError "accepted local escape under the 500k profile")
+  let excessiveLimits : Array (String × Resource.Limits) := #[
+    ("original depth", { depth := 257, steps := 100000 }),
+    ("raised depth", { depth := 257, steps := 500000 }),
+    ("steps", { depth := 256, steps := 500001 })]
+  for (label, limits) in excessiveLimits do
+    let excessive := { input.profile with limits }
+    match admitResources bytes excessive.bytes with
+    | .error error =>
+      require (error == "ixon-v3: profile exceeds consumer checker budget")
+        s!"wrong consumer {label} budget rejection: {error}"
+    | .ok _ => throw (IO.userError s!"ignored consumer {label} checker budget")
+  let mut assertions := 25
   for count in [:(bytes.size - input.env.metadata.size)] do
     require ((decodeAnonymousEnv (bytes.extract 0 count)).toOption.isNone) "accepted truncated anonymous environment"
     assertions := assertions + 1

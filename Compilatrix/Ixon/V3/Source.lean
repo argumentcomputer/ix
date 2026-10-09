@@ -49,7 +49,7 @@ def admitResources (bytes profileBytes : ByteArray) :
     match profileDecoded : Resource.Profile.ofBytes profileBytes with
     | .error error => throw error
     | .ok profile =>
-      if profile.limits.depth > 256 || profile.limits.steps > 100000 then
+      if profile.limits.depth > 256 || profile.limits.steps > 500000 then
         throw "ixon-v3: profile exceeds consumer checker budget"
       match admitted : Resource.Addressed.checkResources env profile with
       | .error error => throw error
