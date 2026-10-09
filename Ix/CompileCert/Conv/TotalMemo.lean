@@ -79,7 +79,8 @@ theorem looseRange_run (e : Expr) (st : DevState) :
       .ok (looseRangeP e,
         { st with range := (TotalMemo.rangeGo hash e st.range).state }) := by
   change Except.ok ((TotalMemo.rangeGo hash e st.range).value, _) = _
-  rw [TotalMemo.rangeGo_result, range_spec]
+  apply congrArg Except.ok
+  exact Prod.ext ((TotalMemo.rangeGo hash e st.range).correct.trans (range_spec e)) rfl
 
 theorem liftM_run (e : Expr) (n c : Nat) (st : DevState) :
     (liftM e n c).run st =
@@ -88,7 +89,8 @@ theorem liftM_run (e : Expr) (n c : Nat) (st : DevState) :
           range := (TotalMemo.liftGo hash hash e n c ⟨st.range, st.lifted⟩).state.range
           lifted := (TotalMemo.liftGo hash hash e n c ⟨st.range, st.lifted⟩).state.values }) := by
   change Except.ok ((TotalMemo.liftGo hash hash e n c ⟨st.range, st.lifted⟩).value, _) = _
-  rw [TotalMemo.liftGo_result, lift_spec]
+  apply congrArg Except.ok
+  exact Prod.ext ((TotalMemo.liftGo hash hash e n c ⟨st.range, st.lifted⟩).correct.trans (lift_spec e n c)) rfl
 
 theorem lowerM_run (e : Expr) (n c : Nat) (st : DevState) :
     (lowerM e n c).run st =
@@ -97,7 +99,8 @@ theorem lowerM_run (e : Expr) (n c : Nat) (st : DevState) :
           range := (TotalMemo.lowerGo hash hash e n c ⟨st.range, st.lowered⟩).state.range
           lowered := (TotalMemo.lowerGo hash hash e n c ⟨st.range, st.lowered⟩).state.values }) := by
   change Except.ok ((TotalMemo.lowerGo hash hash e n c ⟨st.range, st.lowered⟩).value, _) = _
-  rw [TotalMemo.lowerGo_result, lower_spec]
+  apply congrArg Except.ok
+  exact Prod.ext ((TotalMemo.lowerGo hash hash e n c ⟨st.range, st.lowered⟩).correct.trans (lower_spec e n c)) rfl
 
 theorem occursM_run (e : Expr) (k : Nat) (st : DevState) :
     (occursM e k).run st =
@@ -106,7 +109,8 @@ theorem occursM_run (e : Expr) (k : Nat) (st : DevState) :
           range := (TotalMemo.occursGo hash hash e k ⟨st.range, st.occurs⟩).state.range
           occurs := (TotalMemo.occursGo hash hash e k ⟨st.range, st.occurs⟩).state.values }) := by
   change Except.ok ((TotalMemo.occursGo hash hash e k ⟨st.range, st.occurs⟩).value, _) = _
-  rw [TotalMemo.occursGo_result, occurs_spec]
+  apply congrArg Except.ok
+  exact Prod.ext ((TotalMemo.occursGo hash hash e k ⟨st.range, st.occurs⟩).correct.trans (occurs_spec e k)) rfl
 
 /-- A complete frame: the hereditary table is never modified by these
 four total helpers, even when its contents are arbitrary. -/
