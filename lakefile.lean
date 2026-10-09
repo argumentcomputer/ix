@@ -110,6 +110,28 @@ re-run by the kernel. -/
 lean_exe «tests-rt» where
   root := `CompilatrixTests.Rt.Main
 
+/- Plain-RC runtime controls, iterative reclamation and native allocator ABI. -/
+lean_exe «tests-rt-rc» where
+  root := `CompilatrixTests.Rt.Rc.Main
+
+/- Exact RC Cfg admission predicates and independently literal evaluator results. -/
+lean_exe «tests-cfg-rc» where
+  root := `CompilatrixTests.Cfg.Rc.Main
+
+/- Real-source RC certificates: independent writer/reader processes,
+complete list observations, corruptions and same-arena call/drop recycling. -/
+lean_exe «tests-rc-certificate» where
+  root := `CompilatrixTests.Recheck.Rc.Main
+
+/- Actual RC pipeline observations and event counts, with independent emitted
+object corruption and real-source heap exhaustion controls. -/
+lean_exe «tests-pipeline-rc» where
+  root := `CompilatrixTests.Pipeline.Rc.Main
+
+/- Object driver protocol, raw-word release and inter-call memory controls. -/
+lean_exe «tests-driver-session» where
+  root := `CompilatrixTests.X86.DriverSession.Main
+
 /- The compiler end to end (M1.I1, M1.I2): the `compilatrix` command line on
 the bench-k1 closures and k1.ixe (with `--cc`, linked with the runtime driver
 and run at test and bench sizes), `produce` + `Recheck.run` against the stage
@@ -132,6 +154,11 @@ pinned ix and recomputes the expected outputs with Lean's interpreter. -/
 lean_exe corpus where
   root := `CompilatrixTests.Corpus.ToolMain
 
+/- Optional diagnostic report from an external, pinned certified checker.
+The kernel itself is neither imported nor a build dependency. -/
+lean_exe «certified-census» where
+  root := `CompilatrixTests.Corpus.CertifiedCensusMain
+
 /- The corpus suite (MT.2): every root of every registered corpus family
 compiled, declined with its expected code, or run at every level (SrcEval
 … Cfg, Lir, Xv, Xl, typed x86, ByteEval) and natively (with `--cc`) on its
@@ -145,6 +172,10 @@ level and natively, their code compared, erasure, the Cfg stepper's counters,
 CX-1, and ix's recorded verdicts (`fixtures/ownership`). -/
 lean_exe «tests-own» where
   root := `CompilatrixTests.Own.Main
+
+/- Checked plain-RC acceptance, execution, aliasing and complete release. -/
+lean_exe «tests-own-plain» where
+  root := `CompilatrixTests.Own.Plain.Main
 
 /- Shrinking and first-divergence reports for the generators (MT.5): recorded
 choice sequences replay to the seeded cases, and a planted bug per generator
@@ -167,6 +198,11 @@ artifact against a fresh ingress, `produce` and native run, and the
 recheck path's statistics-free selection against `Select.run`. -/
 lean_exe «tests-recheck» where
   root := `CompilatrixTests.Recheck.Main
+
+/- Ground first-order readback discovery: source instances, emitted layouts,
+independent signature validation and malformed candidate rejection. -/
+lean_exe «tests-recheck-readback» where
+  root := `CompilatrixTests.Recheck.ReadbackMain
 
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main

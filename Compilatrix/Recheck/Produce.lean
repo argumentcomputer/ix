@@ -76,7 +76,8 @@ def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := 
     (V3.Tc.checkEnv env).mapError fun m => { stage := .ingress, code := "typing", message := m }
   let p ← (Src.Ingress.ofEnv env (chosen.map (·.1))).mapError fun m =>
     { stage := .ingress, code := "ingress", message := m }
-  let p := { p with known := Src.Pinned.known p }
+  let p := { p with known := Src.Pinned.known p, resource := hints.resource }
+  (Src.Resource.validate p).mapError fun m => { stage := .ingress, code := "resource-binding", message := m }
   let names := chosen.toList.zipIdx.map fun ((_, n), i) => n.getD s!"root{i}"
   pure { env, hints, program := p, names }
 
@@ -101,6 +102,7 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let P := inp.program
   let (table, tableDiags, tableStats) := Src.Table.build cfg.table P inp.hints.proposals
   let p0 := { P with table }
+  (Src.Table.validate cfg.table p0).mapError fun m => { stage := .table, code := "table.entry", message := m }
   let ann ← (Src.Relevance.annotate inp.env p0).mapError fun m =>
     { stage := .relevance, code := "relevance-oracle", message := m }
   let (src, checked) ← match Src.Recheck.annotation p0 ann with

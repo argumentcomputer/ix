@@ -15,6 +15,7 @@ import CompilatrixTests.Corpus.Run
 import CompilatrixTests.Corpus.Build
 import CompilatrixTests.Corpus.KernelGen
 import CompilatrixTests.Own.Suite
+import CompilatrixTests.Own.Plain.Suite
 import CompilatrixTests.Pipeline.ShrinkSuite
 import CompilatrixTests.Recheck.Run
 import CompilatrixTests.Recheck.KernelSlow

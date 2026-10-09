@@ -12,7 +12,7 @@ contracts:
   `{0 α : Type}`, `(~! x : Nat)`);
 * result and arrow contracts: a run of `!` and `~` after `: ` or `→ ` and
   followed by a space (`: ~ Nat`, `A → ! B`);
-* the `borrow` of `let borrow`.
+* `let borrow (~ x : T)` becomes the ordinary typed binder `let x : T`.
 
 Comments and strings are not special-cased: the fixture sources keep their
 contract syntax out of comments. `tests-own` checks that every committed
@@ -38,6 +38,16 @@ def atomRun (p : Char → Bool) (cs : List Char) : Option Nat :=
     | none => false
   if n > 0 && cs[n]? == some ' ' && name then some n else none
 
+/-- Split the contents of one balanced parenthesized borrow binder. Nested
+parentheses belong to its type and must survive. This tool handles fixture
+syntax on one line, not arbitrary Lean tokens in strings or comments. -/
+def borrowBinder : List Char → Nat → List Char → Option (List Char × List Char)
+  | [], _, _ => none
+  | ')' :: rest, 0, acc => some (acc.reverse, rest)
+  | ')' :: rest, n + 1, acc => borrowBinder rest n (')' :: acc)
+  | '(' :: rest, n, acc => borrowBinder rest (n + 1) ('(' :: acc)
+  | c :: rest, n, acc => borrowBinder rest n (c :: acc)
+
 /-- Delete the contract syntax of one line. -/
 partial def stripLine (line : String) : String :=
   String.ofList (go line.toList [])
@@ -54,7 +64,22 @@ where
         | some n => go (rest.drop (n + 2)) (' ' :: c :: acc)
         | none => go rest (c :: acc)
       else if c == 'l' && (rest.take 10) == "et borrow ".toList then
-        go (rest.drop 10) ("let ".toList.reverse ++ acc)
+        let tail := rest.drop 10
+        let binder := match tail with
+          | '(' :: cs => do
+            let (inside, after) ← borrowBinder cs 0 []
+            if (after.dropWhile Char.isWhitespace).take 2 != ":=".toList then none
+            else
+              let inside := match atomRun isAtom inside with
+                | some n => inside.drop (n + 1)
+                | none => inside
+              let name := inside.takeWhile fun (c : Char) =>
+                c.isAlpha || c.isDigit || c == '_' || c.toNat ≥ 0x80
+              let suffix := (inside.drop name.length).dropWhile Char.isWhitespace
+              if name.isEmpty || suffix.head? != some ':' then none
+              else some (inside ++ after)
+          | _ => none
+        go (binder.getD tail) ("let ".toList.reverse ++ acc)
       else go rest (c :: acc)
 
 /-- The plain twin of an annotated source. -/
@@ -64,5 +89,16 @@ def strip (src : String) : String :=
     | l :: "" :: rest => if l == elabImport then rest else lines
     | _ => lines
   "\n".intercalate (lines.map stripLine)
+
+/-- Explicit output oracles, including ordinary syntax which must not change. -/
+def regressionCases : List (String × String) := [
+  ("let borrow (~ v : List Nat) := xs", "let v : List Nat := xs"),
+  ("  let borrow (~! view : (List Nat)) := xs", "  let view : (List Nat) := xs"),
+  ("let borrow (~ f : (Nat → Nat)) := g", "let f : (Nat → Nat) := g"),
+  ("let (v : List Nat) := xs", "let (v : List Nat) := xs"),
+  ("let borrow (a, b) := pair", "let (a, b) := pair"),
+  ("def f (! x : Nat) : ! Nat := x", "def f (x : Nat) : Nat := x"),
+  ("def f := (1 + 2)", "def f := (1 + 2)"),
+  ("let borrow v := xs", "let v := xs")]
 
 end CompilatrixTests.Own.Strip

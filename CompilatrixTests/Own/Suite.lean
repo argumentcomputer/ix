@@ -1,7 +1,9 @@
 import CompilatrixTests.Corpus.Run
+import CompilatrixTests.Corpus.ResourceChecks
 import CompilatrixTests.Own.Verdicts
 import CompilatrixTests.Own.Strip
 import CompilatrixTests.Own.Counters
+import CompilatrixTests.Own.AnnotatedRecursion
 import Compilatrix.Fir.Print
 import Compilatrix.Cfg.Print
 
@@ -18,17 +20,20 @@ annotated source are in `verdicts.json`. Parts:
 * **`fixtures`**: `corpus check` of the family (hashes, sidecars, censuses
   reproduced, cases), and the verdicts checked against the sources and the
   manifest (`Own.Verdicts.check`).
-* **`equiv`**: every root of every fixture at every level the pipeline
+* **`resource-records`**: verification-output protocol, optional resource/profile
+  metadata, and subprocess exit/EOF regressions (`Corpus.ResourceChecks`).
+* **`equiv`**: every admitted root of every fixture at every level the pipeline
   checks (SrcEval, Lam, Anf after each step, Fir, Own, Cfg, Lir, Xv, Xl, the
   typed x86 machine and ByteEval on `machine` cases) and natively with
   `--cc`, against Lean 4.34's interpreter on the annotated source and on its
   twin (`tests-corpus`'s `root`); the twins' recorded cases and values are
-  equal; and per root the twins' code: equal Fir, equal Cfg and an equal
-  object, as `twinCode` records.
+  equal; and when both roots compile, the twins' code: equal Fir, equal Cfg
+  and an equal object, as `twinCode` records. Expected declines are checked
+  against their exact stage and code by `Corpus.root` and reported separately.
 * **`erasure`**: `0` binders, proof arguments, `Subtype` and `Decidable`
   cost nothing: no `alloc` in the Cfg of the scalar fixtures, and the work
   of an erased argument (OS-03b's `cube`) is not in the code.
-* **`counters`**: the Cfg stepper (`Own.Counters`) on every root and case
+* **`counters`**: the Cfg stepper (`Own.Counters`) on every compiled root and case
   with a word: its result is `Cfg.run`'s; annotated and plain twins count
   the same; no cell where none is expected; OS-16's `2n` cells, and with
   `--cc` its `48n` bump bytes natively; every reference-counting counter 0
@@ -46,7 +51,7 @@ open System
 
 def manifest : FilePath := "fixtures/ownership/corpus.json"
 
-def parts : List String := ["strip", "fixtures", "equiv", "erasure", "counters", "cx1"]
+def parts : List String := ["strip", "fixtures", "resource-records", "annotated-recursion", "equiv", "erasure", "counters", "cx1"]
 
 structure Options where
   cc : Option String := none
@@ -125,6 +130,8 @@ def compileRoot (m : Family) (f : Fixture) (r : String) : IO (Cert × Artifact) 
 /-! ## Parts -/
 
 def strip (a : Assert) (m : Family) : IO (Array String) := do
+  for (input, expected) in Strip.regressionCases do
+    expect a (Strip.stripLine input == expected) s!"strip regression: {input}"
   let ps ← pairs m
   for (ann, plain) in ps do
     let src ← IO.FS.readFile ((m.sourceRoot : FilePath) / ann.source.path)
@@ -155,11 +162,17 @@ def equiv (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Array 
     {tl.native} native runs, {tl.allowed} allowed resource failures"
   -- the twins: the same cases and values, and the code `twinCode` records
   let mut same := 0
+  let mut declinedPairs := 0
   for (ann, plain) in ← pairs m do
     expect a (ann.roots.map (·.name) == plain.roots.map (·.name)) s!"{ann.name}: roots differ from {plain.name}'s"
     for (ra, rp) in ann.roots.zip plain.roots do
       expect a (ra.cases.map (fun c => (c.args, c.value)) == rp.cases.map (fun c => (c.args, c.value)))
         s!"{ann.name}/{ra.name}: the interpreter's values differ from the plain twin's"
+      if ra.decline.isSome || rp.decline.isSome then
+        -- Each root's exact verdict was checked above, including asymmetric
+        -- compiler support. Interpreter observations still agree for the pair.
+        declinedPairs := declinedPairs + 1
+        continue
       let (_, aa) ← compileRoot m ann ra.name
       let (_, ap) ← compileRoot m plain rp.name
       let want := twinCode ann.name ra.name
@@ -174,12 +187,15 @@ def equiv (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Array 
       expect a (obj == want.object) s!"{ann.name}/{ra.name}: object {if obj then "equal" else "differs"}"
       if fir && cfg && obj then same := same + 1
   out := out.push s!"equiv: {same} annotated roots compile to the plain twin's Fir, Cfg and object"
+  if declinedPairs > 0 then
+    out := out.push s!"equiv: {declinedPairs} twin roots include an expected compiler decline; no code comparison"
   return out
 
 def erasure (a : Assert) (m : Family) : IO (Array String) := do
   let mut n := 0
   for f in m.fixtures do
     for r in f.roots do
+      if r.decline.isSome then continue
       let (_, art) ← compileRoot m f r.name
       if noAlloc f.name then
         expectEq a (Counters.staticAllocs art.cfg) 0 s!"{f.name}/{r.name}: alloc in the Cfg\n{art.cfg.render}"
@@ -200,6 +216,7 @@ def counters (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Arr
   let mut table : Array (String × Counters.Counts) := #[]
   for f in m.fixtures do
     for r in f.roots do
+      if r.decline.isSome then continue
       let (_, art) ← compileRoot m f r.name
       for c in r.cases do
         if c.args.any (· ≥ CompilatrixTests.Corpus.limit) then continue
@@ -216,6 +233,7 @@ def counters (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Arr
   let mut pairsSame := 0
   for (ann, plain) in ← pairs m do
     for (ra, rp) in ann.roots.zip plain.roots do
+      if ra.decline.isSome || rp.decline.isSome then continue
       for (ca, cp) in ra.cases.zip rp.cases do
         let ka := table.find? (·.1 == s!"{ann.name}/{ra.name} {ca.args}")
         let kp := table.find? (·.1 == s!"{plain.name}/{rp.name} {cp.args}")
@@ -248,6 +266,7 @@ def counters (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Arr
     for f in m.fixtures do
       if !noAlloc f.name then continue
       for r in f.roots do
+        if r.decline.isSome then continue
         let (_, art) ← compileRoot m f r.name
         let some root := art.roots.head? | throw (IO.userError s!"{f.name}: no root")
         let exe ← link { cc, work } s!"own_{f.name}_{r.name}" art.object root.symbol
@@ -325,6 +344,8 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
       (← IO.getStdout).flush
   run "strip" (strip a m)
   run "fixtures" (fixtures a)
+  run "resource-records" (CompilatrixTests.Corpus.ResourceChecks.run a work)
+  run "annotated-recursion" (CompilatrixTests.Own.AnnotatedRecursion.run a work)
   run "equiv" (equiv a o work m)
   run "erasure" (erasure a m)
   run "counters" (counters a o work m)

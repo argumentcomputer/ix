@@ -223,6 +223,8 @@ import Compilatrix.Own.Heap
 import Compilatrix.Own.Semantics
 import Compilatrix.Own.Immortal
 import Compilatrix.Own.WellFormed
+import Compilatrix.Own.Plain.Check
+import Compilatrix.Own.Plain.Semantics
 import Compilatrix.Fir.Proof.Unfold
 import Compilatrix.Sem.Forall2
 import Compilatrix.Fir.Proof.Mono
@@ -257,6 +259,8 @@ import Compilatrix.Rt.Procs.Entry
 import Compilatrix.Rt.Procs.Nat
 import Compilatrix.Rt.Lower
 import Compilatrix.Rt.Readback
+import Compilatrix.Rt.Rc.Layout
+import Compilatrix.Rt.Rc.Readback
 import Compilatrix.Rt.Switches
 import Compilatrix.Rt.Proof.Words
 import Compilatrix.Rt.Proof.Procs
@@ -469,6 +473,10 @@ import Compilatrix.Recheck
 import Compilatrix.Recheck.Proof.Front
 import Compilatrix.Recheck.Proof.Sound
 import Compilatrix.Recheck.Linked
+import Compilatrix.Recheck.Rc.Produce
+import Compilatrix.Recheck.Rc.Linked
+import Compilatrix.Recheck.Rc.Bytes
+import Compilatrix.X86.DriverSession
 import Compilatrix.Recheck.Proof.Parts
 import Compilatrix.Recheck.Proof.Back
 import Compilatrix.Recheck.Proof.Object
@@ -496,4 +504,9 @@ run by the runtime driver, `X86.Linked`, refines the loaded Lir program), and
 roadmap §1.1 at stage S for every object `Recheck.run` makes (`Recheck.sound`); `Cli`: the `compilatrix` command line), and the Aiur target. The
 compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
 regression and proof collection is built explicitly through
-`CompilatrixTests.Proofs`. -/
+`CompilatrixTests.Proofs`. The checked plain-RC companion API is
+`Recheck.RcReplay`: complete ownership certificate serialization/replay,
+allocation/reclamation/recycling lowering, emitted ELF and raw-word `cx_drop`.
+Its separate proof modules extend the SrcEval-relative statement to the
+admitted heap fragment while preserving the existing source and driver
+qualifications. -/

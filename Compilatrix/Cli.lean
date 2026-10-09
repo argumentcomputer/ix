@@ -24,8 +24,9 @@ producer); `--emit-cert` writes the certificate used. `check-cert` runs
 `Recheck.run` on a certificate and reports acceptance or the rejection.
 
 `--signatures FILE` writes, per root, its symbol, parameter count and the
-driver's `--type`/`--sig` arguments (JSON; `null` for a result type Phase 1
-does not read back). `--dump-ir LEVEL` prints a level (`lam`, `anf`, `fir`,
+driver's `--type`/`--sig` arguments (JSON; `null` when bounded ground
+first-order signature discovery does not support the result type).
+`--dump-ir LEVEL` prints a level (`lam`, `anf`, `fir`,
 `cfg`, `lir`, `xv`, `xl`, or `all`) to standard output; `--stats` prints
 timings, sizes and the allocation outcomes. `--no-typecheck` skips erased
 typing at ingress (the fixtures' typing is gated by `tests-ixon-v3`).

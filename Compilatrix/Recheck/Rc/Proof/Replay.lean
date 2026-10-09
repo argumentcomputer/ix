@@ -1,0 +1,80 @@
+import Compilatrix.Cfg.Rc.Proof.Language
+import Compilatrix.Recheck.Rc.Replay
+
+/-! Compose the actual certificate-consuming front end with the abstract RC
+Cfg machine. This deliberately retains the existing accepted stage-S source
+boundary; physical memory/runtime/backend composition is still separate. -/
+set_option autoImplicit false
+namespace Compilatrix.Recheck.RcReplay
+
+theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
+    (accepted : runFront cfg P c = .ok f) :
+    Recheck.front cfg P c.base = .ok (f.src, f.checked) ∧
+    (∃ st, Lam.erase f.src f.checked = .ok (f.lam, st)) ∧
+    Anf.Pipeline.run c.base.mid f.lam = .ok f.anf ∧
+    Fir.lower f.anf = .ok f.fir ∧
+    Own.Plain.Certificate.admit f.fir c.own = .ok f.own ∧
+    Cfg.Rc.generate f.fir f.own.bodies = some f.cfg ∧
+    Cfg.Rc.checkScopedProgram f.fir f.own.bodies f.cfg = true := by
+  unfold runFront at accepted
+  cases hfront : Recheck.front cfg P c.base with
+  | error e => rw [hfront] at accepted; cases accepted
+  | ok sc =>
+    obtain ⟨src, checked⟩ := sc
+    rw [hfront] at accepted
+    simp only [bind, Except.bind] at accepted
+    cases herase : Lam.erase src checked with
+    | error e => rw [herase] at accepted; cases accepted
+    | ok ls =>
+      obtain ⟨lam, st⟩ := ls
+      simp only [herase, Except.mapError] at accepted
+      cases hanf : Anf.Pipeline.run c.base.mid lam with
+      | error e => rw [hanf] at accepted; cases accepted
+      | ok anf =>
+        simp only [hanf, Except.mapError, bind, Except.bind] at accepted
+        cases hfir : Fir.lower anf with
+        | error e => rw [hfir] at accepted; cases accepted
+        | ok fir =>
+          simp only [hfir, Except.mapError, bind, Except.bind] at accepted
+          cases hown : Own.Plain.Certificate.admit fir c.own with
+          | error e => rw [hown] at accepted; cases accepted
+          | ok own =>
+            simp only [hown, Except.mapError, bind, Except.bind] at accepted
+            cases hgen : Cfg.Rc.generate fir own.bodies with
+            | none => rw [hgen] at accepted; cases accepted
+            | some candidate =>
+              simp only [hgen] at accepted
+              cases hscope : Cfg.Rc.checkScopedProgram fir own.bodies candidate with
+              | false => simp [hscope] at accepted
+              | true =>
+                simp only [hscope, Bool.true_eq_false, ↓reduceIte, pure, Except.pure,
+                  bind, Except.bind] at accepted
+                cases hparams : Recheck.checkParams cfg candidate.base
+                    (candidate.base.exports.zipIdx.map fun (f, i) => (i, f)) with
+                | error e => rw [hparams] at accepted; cases accepted
+                | ok unit =>
+                  cases unit
+                  simp only [hparams, bind, Except.bind] at accepted
+                  cases hnative : Cfg.Rc.Public.lower { names := cfg.names }
+                      fir own.bodies candidate with
+                  | error e => rw [hnative] at accepted; cases accepted
+                  | ok lowered =>
+                    simp only [hnative, Except.mapError, bind, Except.bind,
+                      pure, Except.pure, Except.ok.injEq] at accepted
+                    subst accepted
+                    exact ⟨rfl, ⟨st, herase⟩, hanf, hfir, hown, hgen, hscope⟩
+
+/-- Every accepted RC certificate front end refines its actual stage-S source
+through the abstract checked RC Cfg machine. No execution-agreement premise
+is supplied by a caller, producer or certificate. -/
+theorem source_refines_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
+    (accepted : runFront cfg P c = .ok f) :
+    Sem.Refines (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) f.cfg := by
+  obtain ⟨_, ⟨st, herase⟩, hanf, hfir, _, _, hscope⟩ := runFront_spec accepted
+  exact (Lam.Erase.Proof.erase_refines herase).trans
+    ((Anf.Pipeline.Proof.run_correct hanf).trans
+      (Cfg.Rc.checked_lower_refines hfir hscope))
+
+
+
+end Compilatrix.Recheck.RcReplay

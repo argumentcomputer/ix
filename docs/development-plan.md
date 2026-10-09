@@ -63,9 +63,9 @@ coverage inventory and the coverage-change record. During development:
   `check-x86-bytes`, `check-x86-streams` and `check-x86-object`, and the
   pipeline suites `tests-src`, `tests-relevance`, `tests-lam`, `tests-anf`,
   `tests-fir`, `tests-rt --cc cc`, `tests-pipeline --cc cc`,
-  `tests-recheck`, `check-lir`, `check-xv-select`, `check-regalloc`,
+  `tests-recheck`, `tests-recheck-readback`, `check-lir`, `check-xv-select`, `check-regalloc`,
   `check-backend --cc cc`, `corpus check`, `tests-corpus --cc cc`,
-  `tests-own --cc cc`, `tests-shrink` and
+  `tests-own --cc cc`, `tests-own-plain`, `tests-shrink` and
   `check-steps` (the required checks that run each are in the CI guide).
 - After a reviewed change to emitted code, regenerate the step-count
   baseline with `lake exe check-steps --write` and review its diff; it is
@@ -80,6 +80,106 @@ coverage inventory and the coverage-change record. During development:
 
 The former complete surface, including every family gate and its command,
 is documented on branch `jcb/ixby-archive`.
+
+For equation/profile consumer changes, build the shared source and ownership
+executables once, then run the affected checks:
+
+```sh
+lake build tests-src tests-own
+lake exe tests-src
+lake exe tests-own --only annotated-recursion
+```
+
+The `annotated-recursion` part also runs in default `tests-own`, including the
+required Nix suite. It authenticates committed historical annotated/plain
+fixtures, checks 36 complete observations, retains the annotated plain-RC
+domain refusal and tests the local legacy empty-metadata adapter. It invokes
+no producer and changes no production parser. Keep its historical provenance
+distinct from final selected-producer acceptance and family refreeze.
+
+For the plain-RC foundation, build and run `tests-own-plain` and build
+`CompilatrixTests.Own.Plain.Suite`, `CompilatrixTests.Fences.OwnPlain` and
+`CompilatrixTests.Fences.OwnRc`. The pure suite is also required by
+`CompilatrixTests.Proofs`.
+The executable covers candidate rejection, complete values, shared aliases,
+calls/joins, clocks and final release. These abstract-heap checks remain
+required alongside the promoted runtime/certificate gates. Keep proof modules
+out of the executable checker's import closure.
+
+For the bounded plain-RC path, build the five focused executables and pure
+Cfg controls once:
+
+```sh
+nix develop -c lake build CompilatrixTests.Cfg.Rc.Proofs tests-rt-rc tests-rc-certificate tests-driver-session tests-cfg-rc tests-pipeline-rc
+```
+
+Run the portable Lir and driver-model controls:
+
+```sh
+.lake/build/bin/tests-rt-rc controls
+.lake/build/bin/tests-rt-rc deep
+.lake/build/bin/tests-driver-session
+.lake/build/bin/tests-cfg-rc
+.lake/build/bin/tests-pipeline-rc levels plans/rc-validation/run-1/levels
+.lake/build/bin/tests-pipeline-rc counters plans/rc-validation/run-1/counters
+```
+
+On x86-64 Linux, from the repository root with `cc`, `timeout` and `sha256sum`
+available, run the native and fresh-process gates with a new log directory:
+
+```sh
+.lake/build/bin/tests-rt-rc native plans/rc-validation/run-1/runtime
+.lake/build/bin/tests-rc-certificate fresh plans/rc-validation/run-1/certificate
+.lake/build/bin/tests-pipeline-rc native plans/rc-validation/run-1/levels-native
+.lake/build/bin/tests-pipeline-rc negative plans/rc-validation/run-1/negative
+```
+
+`fresh` starts four independent compiled processes: codec writer/reader and
+complete RC replay writer/reader. It preserves the serialized certificates,
+producer/replayed ELF bytes, refusal diagnostics, complete native observations
+and memory dumps. The replayed objects also execute 168 calls/output drops in
+three bounded arenas initialized once each. The independent C and Lean
+oracles check full values and exact reclamation, including shared tails and
+repeated elements. The runtime gates separately cover short heaps, count
+and stack boundaries, a 64-cell release and 50 same-arena reuse cycles.
+The Cfg pure aggregate retains 29 exact bounds, marker, map and scope examples.
+Its executable checks four complete value/heap cases, bounded timeout
+correspondence and 12 alias, stale-binding, ownership and count-limit controls.
+The separate RC pipeline gate checks complete independent constructor trees
+at Src, Lam, every certificate Anf stage, Fir, plain Own, RC Cfg, Lir, Xv,
+Xl, typed x86 and emitted-byte execution. Its counter mode observes actual
+`Cfg.Rc.step` transitions and compares entire results/heaps with `Cfg.Rc.run`.
+It records attempts, allocations, increment multiplicities, decrements,
+cascading frees and peak/final live cells separately, stopping before the
+caller drops the owned result. These are bounded abstract-stage measurements;
+the existing native call/drop gate checks physical recycling separately.
+The native mode compares both C decoding and Lean dump readback. The negative
+mode uses a fresh positive bundle, rejects object-only corruption both before
+and after rehashing, and distinguishes real-root heap exhaustion from
+initializer refusal, with successful full-value neighbors on the same code.
+Do not rerun `fresh` over an existing bundle or replace it with an in-process
+round trip. The fixture manifest under `fixtures/rc/real-source` pins the
+input bytes and independent C harnesses; its current historical producer
+identity does not establish final producer/refreeze acceptance.
+
+The Nix registrations are `rc-runtime` on every configured system (including
+RC pipeline `levels`/`counters`) and `rc-native` on x86-64 Linux (including
+RC pipeline `native`/`negative`). They execute the shared programs artifact, with
+600-second outer command limits, 120-second fresh-child limits and
+30-second native-child limits. Build and run them explicitly during integration:
+
+```sh
+nix build .#checks.x86_64-linux.rc-runtime .#checks.x86_64-linux.rc-native
+nix develop -c lake build CompilatrixTests.Proofs
+```
+
+Also run the complete build-graph, exact fence, trust/tool and required Nix
+surface after registration. The separate `Recheck.RcReplay.run` theorem keeps
+successful replay, `X86.Driver.Ok`, source `GoesWrong` and the documented
+source/native model qualifications. Public drop/reentry proofs compose owned
+operation boundaries; the native session test is not a new unconditional
+arbitrary-session soundness theorem. See [compiler design](compiler-design.md#runtime)
+and [CI coverage](ci.md) for their precise scope and recorded local results.
 
 Compiler-comparison and measurement runners live in an optional package outside
 the root flake; they are being rebuilt for the new benchmark ladder. CakeML
@@ -99,6 +199,41 @@ coverage accurately. Ordinary CI checks compiler correctness and artifacts.
 Changes to the optional comparison package also require its explicit
 correctness, smoke, analysis, and replay commands. Timing thresholds require a
 controlled performance host.
+
+### Validating a certify-compile integration candidate
+
+The [roadmap](roadmap.md#phase-15-priorities-after-the-certification-work)
+defines the integration priorities. When adopting its certification interfaces,
+use the following gates. Checker-only changes retain their existing validation
+requirements without acquiring a dependency on this pilot.
+
+1. Record the immutable upstream revision and actual checked-out source,
+   binary/library/profile hashes and toolchain. In a Jujutsu workspace,
+   `jj --ignore-working-copy log` and `jj --ignore-working-copy file show -r
+   REV PATH` permit inspection without updating the working copy. A newer
+   bookmark or remote run does not describe older checked-out files.
+2. Keep a certification pilot in a separate validation target. Record its
+   exact source cone, Ixon bytes, name map, support declarations, selected
+   W/S route and route-specific theorem conclusion. At upstream `fc058f93`,
+   changed-value S+a requires `--strong-changed`; direct/raw S and S+a have
+   different conclusions and supported domains. Build and run the target;
+   test a valid neighbor and independently corrupted evidence.
+3. Run the consumer compatibility cases on that exact candidate: equation and
+   `csimp` selection, annotation/profile transport, recursor-complete closure
+   discovery and the previously failing proof closure. Keep unsupported,
+   blocked, rejected and exhausted outcomes distinct. Preserve the original
+   resource-checker budgets and negative controls alongside certification.
+4. Treat compiler-output changes as a separate refreeze from checker-only
+   changes. Follow [the corpus procedure](corpus.md#refreezing), retain
+   independent source/oracle expectations, review every address/verdict delta,
+   and run the focused native suites plus the full proof/fence, build-graph,
+   trust and Nix surface before landing. Audit any expanded dependency closure;
+   the existing production ix dependency is codec-only.
+
+Library-wide upstream certification counts are evidence for those inputs;
+they do not validate a consumer integration, a new theorem closure, resource
+contracts, SrcEval adequacy, or IxVM proving. Keep the revision and the logs
+supporting each claim together in `plans/<task>/`.
 
 ### Shrinking a generated failure
 

@@ -1,0 +1,11 @@
+{
+  "source_path": "plans/codex/phase-1.5-to-phase-2/h0",
+  "producer_status": "Historical accepted H0/H4 baseline; final selected-producer refreeze tracked separately.",
+  "source_sha256": {
+    "anonymous.ixe": "41e1d6594ebff384c05c7ca9e61fd065028717ff81d6fd31e1c6f8fa1058f06d",
+    "consumer.equations.json": "3cacdd50e9ad5e00a4ac8d70c865f6d871ef9b20803fe430ab95262534f0abb5",
+    "Reverse.lean": "f063666664571f5ea071fa290a0ba31a5537616057b4f960e0414b751c46a01d"
+  },
+  "original_lean_version": "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
+  "consumer_sha256_receipt": "097835eaa8cfa733b38e94fc4069036a4d6fd67969bc742d652204a0a77d7193  /home/jcb/projects/Compilatr.ix/.lake/build/bin/compilatrix\n"
+}

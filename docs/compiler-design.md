@@ -8,8 +8,11 @@ Normative wire and trust contracts remain in their focused specifications:
 - [x86 streams and objects](x86-stream-objects.md);
 - the [trust ledger](trusted-extern-ledger.md).
 
-The pipeline described here is being built (2026-09-29). The earlier
-pipeline, its IRs and their contracts are on branch `jcb/ixby-archive`.
+Reviewed 2026-10-08. The scalar pipeline and a bounded checked plain-RC
+path are implemented. General ownership optimizations and later heap features
+below remain extensions. Source adequacy, Phase 1.5 producer integration,
+final fixture refreeze and full promotion validation remain open. The earlier pipeline, its IRs
+and their contracts are on branch `jcb/ixby-archive`.
 
 ## Principles
 
@@ -92,8 +95,77 @@ on three specification assumptions in the
   (`x86-v0-elf-writer`);
 - SrcEval is the source's meaning (stage 2 is not proved).
 
-No theorem is stated of `Recheck.compile` itself. Ingress and `produce`
-reach BLAKE3's native-decided lemmas, so its statements are made of `run`.
+No theorem is stated of `Recheck.compile` itself. Ixon v4 decoding and address
+authentication use pure BLAKE3, but ingress's erased typechecking and the
+relevance producer still reach native hashing dependencies. Pure decoding
+alone supplies neither a standard-axiom `compile` theorem nor source adequacy;
+the current statements are made of `run`.
+
+**Bounded plain-RC path.** The separate
+[`Compilatrix.Recheck.RcReplay`](../Compilatrix/Recheck/Rc/Replay.lean) API
+provides serialized `Cert` values and `run`; the separate
+[`produce`](../Compilatrix/Recheck/Rc/Produce.lean) entry constructs candidates. Its
+[`object_refines` and `sound`](../Compilatrix/Recheck/Rc/Proof/ObjectSound.lean)
+prove the same SrcEval-relative return, safety and divergence clauses for the
+actual emitted RC object. The final premises remain successful `run` and
+`X86.Driver.Ok`; `driver_exists` proves that the driver contract is inhabited.
+The source `GoesWrong` qualification and the source/processor/loader/driver
+assumptions above remain explicit. The theorem is about accepted replay,
+not a stronger theorem for ingress or `produce`.
+
+The complete constructor tree is observed at the root's discovered first-order
+result type. This path composes actual initialization, checked source and
+ownership code, borrowed projection followed by explicit acquisition, native
+allocation/count/release effects, fused branches, calls, layout and the existing
+backend/object proofs. It keeps finite heap/count/stack/Nat failures explicit;
+no premise assumes successful target execution or an immortal heap. Its
+single-call object language initializes before calling the selected root.
+The separate release/reentry operation contract is described under
+[Runtime](#runtime).
+
+Validation retains the earlier abstract-Cfg gates independently of the native
+certificate path: `CompilatrixTests.Cfg.Rc.Proofs` checks all 29 original
+marker/map/scope/bounds examples, and `tests-cfg-rc` executes complete value/heap,
+timeout and bridge ownership controls. They are test dependencies of the
+required proof/runtime checks, not imports of the compiler algorithms.
+
+`tests-pipeline-rc` follows the actual serialized RC certificate through all
+available IR evaluators and the emitted bytes, comparing complete values to
+independent source-level list/pair formulas. Test-side counters observe the
+production RC Cfg stepper and distinguish executed allocation/retain/release
+events from final heap totals. Native controls compare the C decoder and Lean
+memory readback, reject independently corrupted emitted objects before linking,
+and separate root heap exhaustion from initializer refusal using successful
+neighbors. These bounded regression gates add no correctness premise or native
+cost theorem; their portable and native modes have separate required checks.
+
+The recheck path separately authenticates resource profile bytes and selected
+equation bindings with pure hashing. This establishes the identity of supplied
+data; it does not establish resource safety. The native resource-admission API
+is separate from `compile`. See the [compile and recheck boundary](compile-boundary.md)
+for the declaration-level dependency inventory and the obligations of a
+future theorem about `compile`.
+
+The required source suite tests resource-bound `csimp` rejection with an
+otherwise valid redirect that is accepted without a resource context.
+The ownership suite also uses authentic historical annotated/plain recursive
+`len` fixtures: both reach complete Src and Fir results; the annotated case
+passes checked immortal Own, and the plain twin passes checked plain RC Own.
+The annotated erased parameter remains outside the plain-RC domain. These
+consumer regressions authenticate retained bytes and preserve the refusal
+boundary; they do not establish arbitrary profile semantics or final producer
+admission. Their provenance is recorded in the
+[historical fixture directory](../fixtures/ownership/historical/annotated-recursion-cb68/README.md).
+
+**Upstream certification boundary.** The October 8
+[roadmap assessment](roadmap.md#phase-15-priorities-after-the-certification-work)
+distinguishes byte/source association (W/W+), strong-model pullback for
+direct/raw source cones (S), and the weaker public-value-model endpoint for
+supported changed-value cones (S+a). All relate an upstream source installation
+to an admitted Ixon environment under their own premises. Composition here
+still needs authenticated decoding, the selected unfolding-table interpretation,
+the resource-contract/relevance relation and a SrcEval adequacy theorem.
+Upstream metadata erasure does not prove ownership-contract preservation.
 
 **Statement shape (decision D-1).** Per-level and pipeline theorems are
 stated in the traced shape of `Compilatrix.Sem`, so IO can be added without
@@ -121,7 +193,7 @@ lemmas and adds one case, not the per-construct proofs.
 
 | IR | Form | Semantics | Main obligation |
 | --- | --- | --- | --- |
-| **Src** | Closed, relevance-annotated v3 kernel terms plus an unfolding table | Clocked big-step environment machine. It never evaluates irrelevant positions and calls lazy constants by name. | Adequacy against `Ix.Kernel`'s model |
+| **Src** | Closed, relevance-annotated kernel terms from Ixon v4 plus an unfolding table | Clocked big-step environment machine. It never evaluates irrelevant positions and calls lazy constants by name. | Adequacy against `Ix.Kernel`'s model |
 | **Lam** | Erased λ-calculus: □, constructors, `case`, recursive definitions, primitives, `trap`; binder contracts retained | Clocked big-step | Erasure simulation |
 | **Anf** | A-normal form with join points and known calls | Clocked big-step | Fuel-indexed logical relation; heuristic-parametric rewrites |
 | **Fir** | First order: top-level functions, closure objects, `pap`/`apply`, tail calls | Clocked big-step | Forward simulation |
@@ -211,7 +283,28 @@ safe-source condition of the correctness statement.
 A checked program refines its Fir program up to heap isomorphism. When the
 checker rejects the optimised output, the plain dup/drop output is used.
 
-**v3 resource admission** is an early diagnostic, not a compile gate: it may
+The first plain-RC implementation lives in `Own.Plain` and `Own.Rc`.
+`Plain.checkPlainMap` conservatively requires the complete proposed function
+map to equal the canonical producer's map, including its trie shape. It checks
+all numbered callees, lexical scopes, arities, ordinary shared contracts,
+scanned constructor fields and fieldless resolved Boolean pins. Calls execute
+that same checked map. A proposal outside this domain is explicitly declined.
+This is the initial checker; the general ownership optimizations above remain
+later work.
+
+`Plain.checked_program_refines` proves Fir-relative execution from concrete
+input denotations and exact external/root/heap-edge counts. Successful results
+denote the complete Fir value, carry one owned output token, and preserve
+successful external-root denotations. Source-stuck behavior retains the existing
+qualification. With an initially ordered heap, `checked_program_reclaims`
+also proves every cell dead after the output's final release when no external
+owners remain. Ordering excludes disconnected reference cycles; numerical
+balance alone does not prove their reclamation. The separate checked RC path
+now composes these ownership invariants through
+`Cfg.Rc`, the ordinary Lir runtime and certificate/object replay. The scalar
+path and its public API remain available.
+
+**Ixon resource admission** is an early diagnostic, not a compile gate: it may
 reject annotated matchers and recursors that the ownership checker accepts.
 It is not a premise of the compiler's theorems. Immediates satisfy every
 ownership kind, so a literal may flow into a `unique` position.
@@ -244,6 +337,38 @@ ownership kind, so a literal may flow into a `unique` position.
 
 The runtime is ordinary Lir code under the same proofs. It links no C runtime
 and does not depend on GMP.
+
+The implemented bounded route uses
+[`Rt.Rc.Procs`](../Compilatrix/Rt/Rc/Procs.lean),
+[`Cfg.Rc.Native`](../Compilatrix/Cfg/Rc/Native.lean) and
+[`Cfg.Rc.Public`](../Compilatrix/Cfg/Rc/Public.lean). It admits table-bound,
+fully scanned shared constructors with at most 31 fields and the existing tag
+bound; fieldless constructors use immediates. Unsupported layouts, contracts
+and malformed ownership/control maps are explicit declines. Allocation and
+iterative release preserve the size-class free lists and bounded arena.
+General scalar-field layouts, reset/reuse optimizations and stronger written
+ownership contracts are outside this first route.
+
+A successful physical source completion carries one owned output token.
+`Returned.release_public` in
+[`PublicRelease`](../Compilatrix/Recheck/Rc/Proof/PublicRelease.lean) executes
+the actual exported `cx_drop` on that exact represented word and restores full
+allocator readiness. The caller observes the complete result before dropping
+it; the `.word` export representation passes the original word unchanged,
+including immediates. Ownership comes from the return invariant, never from
+successful readback or a header inspection. With no external owners, the
+ordered-heap invariant proves complete reclamation.
+
+[`recycled_entry`](../Compilatrix/Recheck/Rc/Proof/Reentry.lean) starts another
+numeric root from that reached heap without resetting the bump pointer or
+free lists. The emitted drop export also has its existing backend ABI
+simulation under `EntryBase`. These are operation-composition results, not an
+unconditional theorem that every successful arbitrary `DriverSession` trace
+owns each returned word: source-stuck behavior retains `GoesWrong`, and general
+session iteration also needs the whole-call budget-word frame. The required
+native regression separately exercises 168 calls/drops on three objects with
+one initialization per bounded arena, independent complete-value decoders
+and exact reclaimed-address checks.
 
 ## Backend
 
@@ -300,9 +425,10 @@ kernel, code generator, runtime, host compiler, Nix inputs and native
 dependencies are recorded bootstrap provenance.
 
 Four obligations stay distinct:
-1. theory adequacy of the source semantics, which `Ix.Kernel`'s model
-   provides;
+1. adequacy of the source evaluator against `Ix.Kernel`'s model, which remains
+   to be proved here; upstream model certification supplies interfaces for it;
 2. correctness of the executable compiler and checkers;
 3. the remaining runtime, ISA, linker and loader assumptions, and Gen-0
    provenance, each with its own inventory;
-4. statement faithfulness: roots are identified by their v3 addresses.
+4. statement faithfulness: roots are identified by their Ixon v4 addresses,
+   with source maps and any replacements bound to the certified artifact.

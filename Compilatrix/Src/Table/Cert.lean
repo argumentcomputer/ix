@@ -113,6 +113,8 @@ def ofCert (cfg : Config) (p : Program) (c : TableCert) : Except String Table :=
   let inline ← columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
     (c.inline.map (·, ())) .leaf
   let opaqueByValue ← columnOfCert (validateOpaque p) id (c.opaqueByValue.map (·, ())) .leaf
-  pure { resolve, recKind, lazy, inline, opaqueByValue }
+  let table : Table := { resolve, recKind, lazy, inline, opaqueByValue }
+  Resource.selected p table
+  pure table
 
 end Compilatrix.Src.Table

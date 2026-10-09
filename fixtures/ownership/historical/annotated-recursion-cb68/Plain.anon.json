@@ -1,0 +1,7 @@
+{"root": "dcb30957d0f6d6ced074f8d3fc0cf327d08a6c43fb5da071812f39a41a222ba4",
+ "resourceChecked": [],
+ "format": "ix/compile-equations/1",
+ "failures": [],
+ "equations":
+ [{"equation": "Nat.add.eq_def", "definition": "Nat.add"},
+  {"equation": "len.eq_def", "definition": "len"}]}

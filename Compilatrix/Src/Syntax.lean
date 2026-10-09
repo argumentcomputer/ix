@@ -1,6 +1,7 @@
 import Compilatrix.Ixon.V3.Const
 import Compilatrix.Src.Level
 import Compilatrix.Src.NatMap
+import Compilatrix.Src.Resource.Syntax
 
 /-! # Src syntax
 
@@ -287,6 +288,9 @@ structure Program where
   table : Table := {}
   roots : List (Address × CId) := []
   known : Known := {}
+  /-- Untrusted address/header bindings; revalidated with the unfolding table.
+  This is not a resource-safety or profile-execution certificate. -/
+  resource : Option Resource.Context := none
   deriving Inhabited
 
 namespace Program

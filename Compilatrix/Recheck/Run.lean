@@ -5,6 +5,7 @@ import Compilatrix.Lam.Erase
 import Compilatrix.Cfg.Lower
 import Compilatrix.Rt.Backend
 import Compilatrix.Rt.Readback
+import Compilatrix.Recheck.Readback
 
 /-! # `Recheck.run`: the compiler's checked path
 
@@ -58,7 +59,8 @@ structure Root where
   symbol : String
   /-- Parameters the entry wrapper passes (all tagged `Nat`s). -/
   params : Nat
-  /-- The result's readback type, when Phase 1 reads it (`Nat`, `Bool`). -/
+  /-- The result's readback type: Nat/Bool or a supported bounded ground
+  first-order constructor signature; none for unsupported layouts. -/
   ty : Option (Rt.Sig × Rt.FoTy)
   deriving Inhabited
 
@@ -92,9 +94,8 @@ def Artifact.bytes (a : Artifact) : List UInt8 := a.object.data.toList
 
 /-! ## Roots -/
 
-/-- A root constant's result type from its Src type: `Nat` or `Bool`
-(Phase 1 reads first-order results of those types; others have no
-readback type yet). -/
+/-- The original scalar root classification, preserved for Nat/Bool callers.
+`rootTy` additionally discovers supported ground constructor signatures. -/
 def resultTy (p : Src.Program) (c : CId) : Option Rt.FoTy :=
   match p.decl? c with
   | some d =>
@@ -118,13 +119,13 @@ def boolSig (C : Cfg.Program) : Rt.Sig :=
 def cfgParams (C : Cfg.Program) (f : Fir.FunId) : Nat :=
   ((C.fun? f).map (·.params.length)).getD 0
 
-/-- A root constant's readback signature and type: `Nat`, or `Bool` with the
-program's tags (`none`: Phase 1 reads it back as nothing). -/
+/-- A root's readback type: the original Nat/Bool route, then bounded generic
+ground first-order discovery. Unsupported layouts have no readback type. -/
 def rootTy (p : Src.Program) (C : Cfg.Program) (c : CId) : Option (Rt.Sig × Rt.FoTy) :=
   match resultTy p c with
   | some .nat => some ({}, Rt.FoTy.nat)
   | some t => some (boolSig C, t)
-  | none => none
+  | none => (Readback.discover p C c).toOption
 
 /-- The roots: Src's roots, Cfg's exports and Rt's symbols correspond by
 position (erasure keeps the Src root order, Anf and Fir keep Lam's). -/

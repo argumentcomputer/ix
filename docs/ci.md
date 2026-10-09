@@ -1,11 +1,30 @@
 # CI builds and required coverage
 
-**Status, 2026-09-29.** Compilatr.ix is rebuilding its compiler around Ixon v3
-and a general x86 backend.
-- Every check `nix flake check` ran was removed in one recorded coverage
-  change.
-- The checks for the kept foundations are back.
-- Further gates return one at a time as the new pipeline needs them.
+**Status, reviewed 2026-10-09.** The Ixon v4 scalar compiler has required
+pipeline, native, proof/fence, trust, corpus and deterministic-step checks,
+listed below. The September 29 reset removed the former surface in one
+recorded coverage change; foundations and scalar-pipeline gates subsequently
+returned. The October 8 consumer/readback integration passed all 14 local
+x86_64-linux Nix checks on a source snapshot including the unstaged modules,
+in 1,019.645 seconds with Lean 4.34.1, `--max-jobs 1 --cores 12` and the
+existing local store. This is not a clean-store or hosted-CI measurement.
+The subsequent plain-RC foundation added 256 exact theorem fences. The bounded
+RC compiler/runtime promotion now has a composed SrcEval-relative object
+proof and passing focused compiled production gates. New `rc-runtime` and
+`rc-native` checks reuse the shared program build; 979 additional exact fences
+are registered, preserving the existing 4,367, and the augmented complete proof
+aggregate passed locally. Trust/build-graph reconciliation and all16 required
+local Nix checks passed on the2337-file promotion snapshot in23m25.126s,
+including trust-auditor mutation controls and RC behavior execution. The
+subsequent four-mode RC pipeline supplement passed required registration and
+all 16 local Nix checks on the 2,343-file snapshot in 25m 02.062s; its commands
+and measured scope are below. The later consumer additions passed focused
+execution on their separately guarded snapshots: tests-src runs 8,514
+assertions, and the new tests-own part runs 48 counted assertions and 36
+complete observations. Every later
+integration tree requires the same complete validation surface. G1 acceptance
+and the selected-producer fixture refreeze remain open. These local results
+do not establish hosted CI, clean-store timing or completion of Phase1.5.
 
 The removed surface, with its code and its last passing run, is preserved on
 branch `jcb/ixby-archive` at `7599a43`. There, `nix flake check` passed all 44
@@ -35,8 +54,105 @@ with the checks.
 | `build-graph` | `check-build-graph`: the module manifest, production-import hygiene, and the proof, fence and runtime coverage inventory in [`nix/ci-coverage.json`](../nix/ci-coverage.json) |
 | `census` | `census` on the K1 pack and on the five K1 benchmark closures in [`fixtures/ixon-v4/bench-k1`](../fixtures/ixon-v4/bench-k1/README.md); each report must equal its reviewed baseline (for example [`fixtures/ixon-v4/k1/census.json`](../fixtures/ixon-v4/k1/census.json)) |
 | `x86-hardware` | x86-64 Linux only: `check-x86-hardware` enumerates `Op.rows` and runs 53,279 generated cases natively, compares them with `ByteEval`, and checks `llvm-mc` decodes each identically |
-| `suites` | The pipeline suites, concurrently (`NIX_BUILD_CORES` at a time, longest first), each with its complete output, status and wall time in the log: `tests-src` (8,452 assertions), `tests-relevance` (2,626), `tests-lam` (26,050), `tests-anf` (340,249), `tests-fir` (129,126), `tests-rt --cc` (75,412), `tests-pipeline --cc` (1,731), `tests-recheck` (1,005; the kernel recheck artifacts are current), `check-lir`, `check-xv-select`, `check-regalloc`, `check-backend --cc`, `corpus check` (6 families, 32 closures, 160 roots, 1,403 cases), `tests-corpus --cc` (44,099), `tests-own --cc` (9,476; the ownership suite, its own `corpus check` included) and `tests-shrink` (120; recorded choice sequences replay, and a planted bug per generator is named at its level, shrunk and written out). With `--cc` the objects are linked with the C drivers and run natively; that part is x86-64 Linux only, and elsewhere the check says the native runs are skipped and runs every Lean level |
+| `suites` | The pipeline suites, concurrently (`NIX_BUILD_CORES` at a time, longest first), each with its complete output, status and wall time in the log: `tests-src` (8,514 assertions), `tests-relevance` (2,626), `tests-lam` (26,050), `tests-anf` (340,249), `tests-fir` (129,126), `tests-rt --cc` (75,412), `tests-pipeline --cc` (1,731), `tests-recheck` (1,005; the kernel recheck artifacts are current), `tests-recheck-readback` (27 structural signature controls), `certified-census --self-test` (11 protocol controls), `check-lir`, `check-xv-select`, `check-regalloc`, `check-backend --cc`, `corpus check` (6 families, 32 closures, 160 roots, 1,403 cases), `tests-corpus --cc` (44,099), `tests-own --cc` (ownership suite, including its own `corpus check` and the new `annotated-recursion` part) and `tests-shrink` (120; recorded choice sequences replay, and a planted bug per generator is named at its level, shrunk and written out). With `--cc` the objects are linked with the C drivers and run natively; that part is x86-64 Linux only, and elsewhere the check says the native runs are skipped and runs every Lean level |
+| `rc-runtime` | Portable: `tests-rt-rc controls`, `tests-rt-rc deep`, `tests-driver-session`, `tests-cfg-rc`, and `tests-pipeline-rc levels LOGDIR` / `counters LOGDIR`; actual Lir procedures, bounded reuse/release, modeled driver protocol, complete abstract-Cfg values/heaps, every actual RC pipeline level and executed allocation/RC/free counts |
+| `rc-native` | x86-64 Linux only: `tests-rt-rc native LOGDIR`, `tests-rc-certificate fresh LOGDIR`, and `tests-pipeline-rc native LOGDIR` / `negative LOGDIR`; independent C runtime controls, separate certificate writer/readers, exact ELF bytes, complete C+Lean results, same-region output drops, object-only corruption and actual-root heap exhaustion |
 | `x86-steps` | `check-steps`: the typed x86 and `ByteEval` step counts of `cx_init` and the root, and the result, for nine bench-k1 programs at their machine-level test arguments, equal to the reviewed baseline [`steps.json`](../fixtures/ixon-v4/bench-k1/steps.json) exactly (MEAS-3). A baseline change is a reviewed, performance-relevant change: `lake exe check-steps --write`, then review the diff |
+
+The source suite preserves 53 resource controls and adds nine tests that
+distinguish resource-bound replacement refusal from ordinary redirect
+validation. Its installed build took 2,800 ms and complete execution 50,104 ms.
+The installed `tests-own --only annotated-recursion` gate built in 7,805 ms
+and ran in 341 ms: 48 counted assertions, five retained structural refusals,
+six local legacy-metadata controls and 36 complete Src/Fir/Own observations.
+It uses committed historical fixtures without an external producer. The
+annotated case retains its precise plain-RC domain refusal and runs the
+checked immortal Own path; the plain twin runs checked plain RC Own. These
+are local warm focused measurements, distinct from full default/Nix execution.
+The earlier default ownership suite had 9,617 assertions; retain its existing
+coverage when validating the new default suite. Fixture identities and
+limitations are in the
+[historical fixture README](../fixtures/ownership/historical/annotated-recursion-cb68/README.md).
+
+The required `suites` check also runs `tests-own-plain`: 9 complete-value cases,
+83 clock controls, exact shared-field identities/counts and complete output
+release. Its 41 pure kernel assertions are built through
+`CompilatrixTests.Proofs`. `OwnPlain` and `OwnRc` add 256 exact public theorem
+fences, bringing the inventory to 4,367; all 4,098 original assertions and the
+13 readback/header additions retain their exact statements and axiom sets.
+The checker-only executable does not import the source simulation proofs.
+
+The bounded RC promotion adds 923 base fences, eight owned-release/reentry
+fences and 48 assertions from 23 earlier accepted proof gates, for a required
+total of 5,346. The earlier gates are retained independently of their absence
+from the final object theorem's import closure. Exact accepted axiom subsets
+are preserved; the standard-three whitelist is not a replacement for exact
+fences. These include `Recheck.RcReplay`'s source-to-object, safety, divergence
+and byte-identity theorems, actual public drop, reclaimed-heap reentry and the
+emitted raw-word release ABI. The theorem remains relative to SrcEval with
+successful replay, the existing driver/model contract and source `GoesWrong`;
+the repeated-call test does not claim unconditional arbitrary-session validity.
+
+### Focused RC execution record
+
+On 2026-10-08, the initial three production executables built together and all five
+behavior commands passed. The additional Cfg executable and its pure aggregate
+subsequently passed, retaining the earlier gates outside the final-library
+import closure. Promoted test sources, original reference sources
+and compiled binaries matched their before/after SHA guards. These are local
+warm execution measurements with Lean 4.34.1, separate from cold compilation
+and Nix/hosted execution.
+
+| Command | Time | Accepted evidence |
+| --- | ---: | --- |
+| `tests-rt-rc controls` | 61 ms | 18 controls: allocation/count/header, exact and short capacity, immediate/static values, aliases and timeouts |
+| `tests-rt-rc deep` | 194 ms | Full readback, exact 64-cell iterative release and 50 two-cell cycles in the same 48-byte arena, including exhaustion |
+| `tests-rt-rc native LOGDIR` | 283 ms | 4,393 independent C assertions against the emitted procedures; allocation/release, sharing, overflow, layout and stack boundaries |
+| `tests-rc-certificate fresh LOGDIR` | 27,890 ms | Four independent child processes; 40 codec refusals and nine native values; three byte-identical full replay objects, 15 stage-specific refusals, 16 standalone full values and 168 same-arena calls/drops |
+| `tests-driver-session` | 23 ms | All 12 protocol, invalid-object, raw-word and call-setup controls |
+| `tests-cfg-rc` | 20 ms | Four complete Cfg value/heap cases, clocks 0–3 timeout checks and 12 exact decrement/increment ownership controls |
+
+The required proof aggregate also builds `CompilatrixTests.Cfg.Rc.Proofs`:
+29 unchanged bounds, marker-neighbor, exact-map and scope examples. The five
+focused executables supply ten behavior commands; all six earlier commands
+remain required alongside the four RC pipeline modes below.
+
+The additional executable first built in5046ms using existing artifacts and
+passed all four modes in isolated staging on2026-10-09, with unchanged source,
+input and binary hashes. Build time is separate from these execution times:
+
+| Added command | Staged time | Accepted bounded coverage |
+| --- | ---: | --- |
+| `tests-pipeline-rc levels LOGDIR` | 1,412 ms | 192 complete values over nine real-source cases at Src, Lam, every actual certificate Anf stage, Fir, plain Own, RC Cfg, Lir, Xv, Xl, typed x86 and actual emitted-byte execution |
+| `tests-pipeline-rc counters LOGDIR` | 482 ms | 12 actual RC-step counter cases, 48 exact bounded-clock result/heap differentials, five literal event-classification controls |
+| `tests-pipeline-rc native LOGDIR` | 966 ms | Nine complete native results, each checked by independent C decoding and Lean dump readback |
+| `tests-pipeline-rc negative LOGDIR` | 38,109 ms | Fresh positive writer/reader; stale-hash and separately rehashed object corruption refused before link; three actual-root heap exhaustions, three initializer refusals and six complete-value successful neighbors |
+
+Expected list/pair trees come from independent source-level formulas. Counter
+rows distinguish attempts/successes, increment multiplicity/dynamic units,
+per-decrement cascading frees, and final/peak live cells. They stop before
+caller output-drop and compare the entire outcome/heap with production
+`Cfg.Rc.run`; they are abstract-stage event measurements, not native operation
+instrumentation or a complexity theorem. Shared-input roots keep both result
+lists live; their final release remains covered by the existing reuse gate.
+
+Each of the three reuse workloads initializes once and executes 56 calls/drops.
+Actual regions are 4096/4096/6808 bytes; all 114,820 independent C assertions
+pass, alongside complete Lean readback and exact reclaimed-address checks.
+The C reuse harness writes no allocator metadata after initialization. Both
+new checks use the same compiled program artifact; neither rebuilds the
+compiler per fixture. Both preserve logs in their Nix output and print failure
+diagnostics. Their outer command cap is 600 seconds; existing
+fresh-child and native-child caps remain 120 and 30 seconds. Native execution
+requires x86-64 Linux and the C compiler; coreutils supplies timeout and hashing.
+Full observations, certificates, object hashes, subprocess diagnostics and
+memory dumps are retained by the gates.
+
+Fixture identity is recorded under `fixtures/rc/real-source`; the current
+accepted baseline still uses its historical producer. Final G1/producer
+review and refreeze are separate from this test promotion. See
+[development commands](development-plan.md) and the
+[roadmap](roadmap.md#current-state-2026-10-08) for the remaining integration gates.
 
 ### Suite costs
 
@@ -84,6 +200,9 @@ changes visible.
 
 | Date | Change | Checks |
 | --- | --- | --- |
+| 2026-10-09 | Complete RC pipeline and failure controls | Adds `tests-pipeline-rc`: required portable `levels`/`counters` and x86-64 Linux `native`/`negative` modes, all from the shared programs artifact. Staging passes 192 complete stage observations, 12 event-count cases, nine native values, two object-only corruption refusals and 12 region controls. All six earlier RC behavior commands and 5,346 exact fences remain required. Every integrated tree must pass full validation; producer acceptance/refreeze remains separate. |
+| 2026-10-08 | Bounded checked RC promotion | Adds `rc-runtime` (portable) and `rc-native` (x86-64 Linux), using one shared program build. Focused compiled gates and the augmented complete proof aggregate pass, including fresh complete certificate replay, 168 same-region calls/drops and restored Cfg/bridge controls. Registers 979 new exact fences over the unchanged 4,367 baseline (5,346 total), including 48 assertions from earlier accepted proof gates outside the final-library closure. Trust/build-graph reconciliation and all16 local Nix checks pass on the2337-file promotion snapshot. Existing required gates stay required. |
+| 2026-10-08 | Ground constructor readback and dynamic-header groundwork | `suites` adds `tests-recheck-readback` (27 assertions); `proofs` preserves all 4,098 original exact fences and adds 13 in `RecheckReadback` and `RtRc` (4,111 total). The complete proof aggregate, focused executable and all 14 local Nix checks pass on Lean 4.34.1. This groundwork does not certify an RC compiler/recycling runtime. |
 | 2026-09-29 | Removed the complete required surface | `build`, `proofs`, `build-graph`, `ci-workflow`, `trusted-extern-ledger`, `tests`, `catalog-contact`, `x86-encoder-decoder`, `x86-byte-execution`, `x86-stream-objects`, `x86-elf-object`, `source-coverage`, `source-recursion`, `source-call-reuse`, `source-space`, `source-modular`, `assembly-scaling`, `source-evidence`, `ixir2-identity`, `source-unique-reuse`, `source-borrow`, `source-borrow-runtime`, `source-native-{unique,runtime,allocating,upstream,scalar,physical-scalar,heap,captured-scalar}`, `native-sharing`, `native-graph`, `aiur`, `ixby`, `ixby-symbolic`, `ixby-stage2`, `ixby-lean`, and eight `ixby-stage2-binary-*` checks |
 | 2026-09-29 | Restored the kept foundations | `build`, `proofs` (387 exact axiom assertions), `ixon-v3` (new; its suite was part of the former `tests`), `aiur`, `x86-encoder-decoder`, `x86-byte-execution`, `x86-stream-objects` and `x86-elf-object` (without their legacy reversal cases), `trusted-extern-ledger` (reset inventory), and `build-graph` (redefined coverage inventory) |
 | 2026-09-29 | Added the admission census | `census` (new): per-constant first rejecting stage and v3 budget headroom for the K1 pack, exact match against its reviewed baseline |
@@ -127,10 +246,11 @@ changes visible.
 | 2026-10-03 | Ixon v4 ingress through ix's codec (branch `jcb/p15-ixon-v4`) | `proofs`: 4,098 exact axiom assertions, unchanged (same digest; no fence added, removed, renamed or restated). Proof-module inventory: `Compilatrix.Ixon.PureHash`, `Ixon.V3.Wire`, `Ixon.V4.Convert`, `Ixon.Kinds` and `Ixon.Laws` added; `Ixon.V3.ConstDecode` and the Ixon v2 modules `Ixon.Expr`, `Ixon.Const` and `Ixon.Sharing.Basic` (5,577 lines, 210 theorems, none fenced; the two the IxIR readers use moved to `Ixon.Laws` with their names) removed; 602 production modules (from 601). `build` and `proofs` also build ix's 11-module Ixon v4 codec (`IxKernel/` at `f829b760`, a pure Lean Lake dependency packaged by `nix/build.nix`). `trusted-extern-ledger`: the new `lean_dependencies` section (pins, closure hashes, no native code, import inventory) and its rejection paths in `check-tools-tests`. `tests-ixon-v3` frames its constructed environments as v4 |
 | 2026-10-03 | Refreeze of every fixture family with the Ixon v4 producer (ix `be45a159`) | Every closure, sidecar, census, primitive pin, kernel artifact and ix fixture-package file regenerated by the commands of [`docs/corpus.md`](corpus.md#refreezing); no source, root, case, value, equation list or failure list changed. `ixon-v3`: 2,300 assertions (from 2,120 on ix's v3 package), the handoff subject and profile ix's; `census`: six new baselines, every constant still reaching the policy stage; `x86-steps`: unchanged. `suites`: `tests-relevance` 2,626 (from 2,650) and `tests-lam` 26,050 (from 27,096) — their annotation-mutation sections draw mutants by constant number, which the new addresses renumber, so the checker rejects more of them; none changes a result, and every other section and suite count is unchanged (`tests-corpus` 44,099, `tests-own` 9,476, `tests-shrink` 120, `corpus check` 1,403 cases). Expectations that moved: `phase1-decline`'s `stringLength` now declines at `admit: unsupported` (from `ingress: decode`: the v4 closure is within the decoder budgets); the ownership verdicts N-02, OS-15 and OS-15b report another first failure, all still rejected. `CompilatrixTests.Lam.KernelK1` names the renumbered constants (each statement evaluated natively first). New manual tool `refreeze-ixon`; `k1` gains a corpus manifest |
 
-The restored surface builds in about 2.5 minutes cold at `--max-jobs 2`,
-measured with `--rebuild`: the library in 82 s, the shared program and
-proof build in 44 s, and the checks in about 22 s. Blake3 and the
-toolchain came from the binary cache.
+The initial restored-foundation surface was measured at about 2.5 minutes
+cold at `--max-jobs 2`, with `--rebuild`: the library in 82 s, the shared
+program and proof build in 44 s, and the checks in about 22 s. Blake3 and the
+toolchain came from the binary cache. This historical measurement predates
+the full scalar pipeline and is not a timing for the current required surface.
 
 Each returning gate adds a row: its date and the check it restores or
 replaces.

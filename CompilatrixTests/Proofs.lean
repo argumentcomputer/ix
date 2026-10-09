@@ -27,6 +27,8 @@ import CompilatrixTests.Aiur.RankAIR.Proofs
 import CompilatrixTests.Sem.Toy.Cases
 import CompilatrixTests.Sem.Toy.IO.Cases
 import CompilatrixTests.Fences
+import CompilatrixTests.Own.Plain.Suite
+import CompilatrixTests.Cfg.Rc.Proofs
 
 /-! Complete proof and fence collection: elaboration-time proofs of the kept
 foundations and every exact axiom fence. Built explicitly; the production

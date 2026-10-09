@@ -1,0 +1,83 @@
+import Compilatrix.Cfg.Rc.Proof.Physical.AllocationSource
+import Compilatrix.Cfg.Rc.Proof.Physical.AllocationArguments
+
+set_option autoImplicit false
+namespace Compilatrix.Cfg.Rc.Native
+open Compilatrix.Own Compilatrix.Own.Rc Compilatrix.Cfg.Rc.Proof.Physical.Bridge
+open Compilatrix.Rt Compilatrix.Rt.Rc Compilatrix.Rt.Rc.Procs
+
+/-- Execute a real lowered positive-constructor call, starting in its source
+caller. Operand words and wrapper parameter registers are derived internally;
+the two charged calls either restore the source caller with the new owned
+root and complete arena invariant, or reach actual heap exhaustion. -/
+theorem allocation_instruction
+    {H : Heap} {external : Nat → Nat} {fields held roots : List RVal}
+    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    (before : Tokens H external (fields ++ held) live ρf ρo roots)
+    (tables : Own.Tables) (ctor : Fir.CtorInfo) (args : List Fir.Arg) (x : Fir.Var)
+    (fresh : x ∉ live) (scope : args.all (Own.Plain.argIn live) = true)
+    (arguments : Own.evalArgs ρo args = some fields) (arity : fields.length = ctor.arity)
+    (positive : 0 < ctor.arity) (small : ctor.arity < 32)
+    (tagBound : ctor.tag ≤ maxTag) (nobj : ctor.nobj = ctor.arity)
+    (nscalar : ctor.nscalar = 0) (shared : ctor.fieldKinds = List.replicate ctor.arity .shared)
+    {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
+    {slots : List Slot} {lists : Nat → List Lir.Word}
+    (ready : AllocatorReady H addresses mem
+      (holdRoots external (roots ++ fields ++ held)) context base bump limit slots lists)
+    {P : Lir.Program} {wrapper procedure bound : Nat}
+    (wrapperLookup : P.funcs[wrapper]? = some (allocationWrapper procedure ctor.arity))
+    (procedureLookup : P.funcs[procedure]? = some (alloc ctor.arity ctor.tag))
+    (caller : Lir.Frame) (callers : List Lir.Frame)
+    {function : Lir.Func} {block : Lir.Block} {operands : List Lir.Arg}
+    (functionLookup : P.funcs[caller.fn]? = some function)
+    (blockLookup : function.blocks[caller.label]? = some block)
+    (position : caller.pos < block.body.size)
+    (statement : block.body[caller.pos] = .call [x] wrapper operands)
+    (lowered : Lower.operands caller.fn args = .ok (some operands))
+    (related : EnvWordsBelow addresses bound ρo caller.env)
+    (real : ∀ y ∈ live, y < bound)
+    (bounded : Own.Plain.EnvBounded H.size ρo) :
+    ∃ sourceValues,
+      Fir.evalArgs ρf args = some sourceValues ∧
+      let allocated := H.alloc .rc {ctor, fields}
+      Own.Plain.evalRhs tables ρo H (.ctor ctor args) = .ok allocated ∧
+      Tokens allocated.2 external held (live ++ [x])
+        (ρf.insert x (.ctor ctor sourceValues)) (ρo.insert x allocated.1) (roots ++ [allocated.1]) ∧
+      ((∃ address next finalMem finalSlots finalLists,
+        AllocatorReady allocated.2 (placeFresh addresses H.size address) finalMem
+          (holdRoots external ((roots ++ [allocated.1]) ++ held))
+          context base next limit finalSlots finalLists ∧
+        Sem.Star (Lir.semStep P)
+          {mem, ctx := context, stack := caller :: callers} 2
+          {mem := finalMem, ctx := context,
+            stack := {caller with pos := caller.pos+1, env := caller.env.insert x address, dsts := []} :: callers} ∧
+        EnvWordsBelow (placeFresh addresses H.size address) bound
+          (ρo.insert x allocated.1) (caller.env.insert x address)) ∨
+      Sem.Reaches (Lir.semStep P)
+        {mem, ctx := context, stack := caller :: callers} 2 (.resource .heap)) := by
+  have argsReal : ∀ y, Fir.Arg.var y ∈ args → y < bound := by
+    intro y hy
+    have member := List.all_eq_true.mp scope _ hy
+    exact real y (by simpa [Own.Plain.argIn] using member)
+  obtain ⟨words, wordArgs, wordValues⟩ := operands_words related lowered argsReal arguments
+  obtain ⟨env, binding, registers, values⟩ := allocation_bind_arguments wordValues
+  let entry : Lir.Frame := {fn := wrapper, label := 0, pos := 0, env}
+  let suspended : Lir.Frame := {caller with pos := caller.pos+1, dsts := [x]}
+  have enter : Lir.enter P wrapper words = some entry := by
+    simp [Lir.enter, wrapperLookup, allocationWrapper, ← arity, binding, entry]
+  have callStep := Lir.step_call (p := P) (mem := mem) (ctx := context)
+    (fr := caller) (rest := callers) functionLookup blockLookup position statement wordArgs enter
+  obtain ⟨sourceValues, sourceArgs, effect, tokens, outcome⟩ :=
+    allocation_source_wrapper before tables ctor args x fresh scope arguments arity positive small
+      tagBound nobj nscalar shared ready (fun i => words[i]?.getD 0)
+      wrapperLookup procedureLookup registers values suspended callers rfl related bounded
+  refine ⟨sourceValues, sourceArgs, effect, tokens, ?_⟩
+  rcases outcome with ⟨address, next, finalMem, finalSlots, finalLists, restored, trace, represented⟩ | failure
+  · refine .inl ⟨address, next, finalMem, finalSlots, finalLists, restored, ?_, represented⟩
+    have joined := (Sem.Star.single (Lir.semStep_next.mpr callStep)).trans trace
+    simpa only [entry, suspended, Bool.toNat_true] using joined
+  · have joined := Sem.Reaches.star (Sem.Star.single (Lir.semStep_next.mpr callStep)) failure
+    exact .inr (by simpa only [entry, suspended, Bool.toNat_true] using joined)
+
+
+end Compilatrix.Cfg.Rc.Native

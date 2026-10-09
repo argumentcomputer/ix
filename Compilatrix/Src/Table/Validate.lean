@@ -65,6 +65,7 @@ def validateOpaque (p : Program) (c : CId) (_ : Unit) : Except String Unit :=
 /-- Revalidate the whole table of `p` (and its pinned identities). -/
 def validate (cfg : Config) (p : Program) : Except String Unit := do
   unless Pinned.knownOk p do throw "known: a pinned constant is misidentified"
+  Resource.selected p p.table
   validateEach (validateResolve cfg p) p.table.resolve.toList
   validateEach (validateRecKind p) p.table.recKind.toList
   validateEach (checkLazy p) p.table.lazy.toList

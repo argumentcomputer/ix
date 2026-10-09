@@ -21,13 +21,23 @@ The design combines three ideas:
 
 ## Status
 
-The compiler is being rebuilt (2026-09-29); see the
-[roadmap](docs/roadmap.md). Main currently holds:
+Reviewed 2026-10-08. The Phase 1 scalar pipeline is implemented, from Src
+through register allocation to ELF. `Recheck.sound` proves the accepted
+recheck path correct relative to the source evaluator and the native driver
+model; the connection to Lean's denotation remains open. See the
+[roadmap](docs/roadmap.md) for scope and remaining work. Main includes:
+- the scalar compiler, certificate rechecker, proof fences and native suites;
 - [Ixon v4 ingress](docs/ixon-v4.md) (through ix's pinned Ixon v4 codec);
 - the x86 target model with its certified
   [encoder](docs/x86-encoded-instructions.md) and
   [stream/ELF layer](docs/x86-stream-objects.md);
 - the [Aiur target](docs/aiur-backend.md).
+
+Phase 1.5's resource-checker work, final producer repin and consumer integration
+remain incomplete. New upstream Lean-to-Ixon certification provides interfaces
+to assess for that integration; it does not yet close the source-adequacy or
+resource-contract obligations. The next goal combines Phase 1.5 completion
+with a first certified RC heap slice for real `List.reverse`.
 
 The earlier pipeline, the Ixby backend and their measurements are on branch
 `jcb/ixby-archive`.
@@ -48,7 +58,7 @@ individual checks and build troubleshooting.
 
 Start with the [documentation guide](docs/README.md):
 - [Roadmap](docs/roadmap.md): mission, phases, benchmark rungs and decisions.
-- [Compiler design](docs/compiler-design.md): the pipeline being built.
+- [Compiler design](docs/compiler-design.md): the pipeline and its correctness boundary.
 - [Trust ledger](docs/trusted-extern-ledger.md): remaining assumptions.
 
 Pre-alpha research software: interfaces, encodings, and hashes may change

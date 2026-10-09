@@ -70,7 +70,7 @@ def prepare (cfg : LoadConfig) (env : V3.Env) (hints : Hints) :
     Except Diag (Program × Array Diag × Table.Stats) := do
   if cfg.typecheck then stage "typing" (V3.Tc.checkEnv env)
   let p ← stage "ingress" (Ingress.ofEnv env (hints.roots.map (·.1)))
-  let p := { p with known := Pinned.known p }
+  let p := { p with known := Pinned.known p, resource := hints.resource }
   let (table, tableDiags, tableStats) := Table.build cfg.table p hints.proposals
   let p := { p with table }
   stage "table-recheck" (Table.validate cfg.table p)

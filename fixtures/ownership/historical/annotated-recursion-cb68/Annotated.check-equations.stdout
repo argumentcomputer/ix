@@ -1,0 +1,3 @@
+check-equations: resource claim (root c2a9fe25627c17a5e7c8d7cd32f039dd91bb5168695914354f5d26ed95591e42, profile 5e387038c267c42212fa9c62ddbac9d062eb3354f79ade3fb57ee9a3ddac09b9) holds
+  len 3206312baf22a918e3c0c1deaa5dce1031f03b1ce823d155ac1659a4febaa40a ↦ len.eq_def 81199f3ff47c8e5442a4ad4d0f8aa970c8d8627c505cada21a0d8a33d3f9c97f
+check-equations: 1 checked pair(s) verified

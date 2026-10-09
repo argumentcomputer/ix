@@ -18,7 +18,12 @@ import CompilatrixTests.Fences.SemTraced
 import CompilatrixTests.Fences.Validate
 import CompilatrixTests.Fences.Fir
 import CompilatrixTests.Fences.Own
+import CompilatrixTests.Fences.OwnPlain
+import CompilatrixTests.Fences.OwnRc
 import CompilatrixTests.Fences.Rt
+import CompilatrixTests.Fences.RtRc
+import CompilatrixTests.Fences.RcPromotion
+import CompilatrixTests.Fences.RecheckReadback
 import CompilatrixTests.Fences.Erase
 import CompilatrixTests.Fences.Anf
 import CompilatrixTests.Fences.SemForward

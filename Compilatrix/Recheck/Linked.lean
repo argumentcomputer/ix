@@ -7,8 +7,8 @@ import Compilatrix.X86.Linked
 `Artifact.linked a D` is the object `Recheck.run` made, run by the driver
 `D` (`X86.Linked`, the object's `Lang`): its bytes, `cx_init`'s symbol, and
 one root per lowered root, in order, with the root's symbol, the parameter
-count of its Cfg function and its readback type (the root's result type,
-`rootTy`: `Nat`, `Bool`, or none). These are the entries of the loaded
+count of its Cfg function and its readback type (`rootTy`: the scalar types
+and supported ground first-order constructor signatures, or none). These are the entries of the loaded
 Lir program (`Rt.Loaded.ofLowered`), so the two languages take the same
 inputs; where the artifact lists a root (`Artifact.roots`) it is the same
 symbol, parameter count and type.

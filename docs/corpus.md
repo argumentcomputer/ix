@@ -190,6 +190,46 @@ fresh ingress, `produce` and native run. The manual target
 about 4 GB each on 2026-10-01). Like `CompilatrixTests.Recheck.KernelSlow`,
 nothing in the default build or the programs derivation imports it.
 
+## Optional certified-checker census
+
+`certified-census` runs a separately built `kernel-check-ixe` and writes a
+diagnostic JSON report plus the original per-declaration rows and process
+logs. It does not import or build the kernel, change corpus expectations, or
+gate compiler admission. A full source revision and the executable's verified
+SHA-256 identify the checker; the source-to-binary attribution is supplied by
+the caller and should come from a recorded build.
+
+```sh
+lake build certified-census
+systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 --quiet \
+  taskset -c 4-23 nix develop -c lake exe certified-census \
+  --checker /path/to/frozen/kernel-check-ixe \
+  --revision <40-digit-revision> --sha256 <64-digit-sha256> \
+  --out plans/certified-census/run-1 --timeout 60 --recursors as-frozen
+```
+
+With no inputs it checks the six registered corpus families. Repeated
+`--manifest PATH` selects other families; repeated `--input CLOSURE.ixe`
+selects individual closures. Manifest inputs must match their frozen hash.
+Use `--recursors explicitly-seeded` only when the supplied inputs were built
+with explicit recursor seeds; use `unknown` when that provenance is absent.
+The tool records this assertion and never recompiles or seeds inputs itself.
+
+Every invocation is sequential and bounded by `--timeout` (1–3,600 seconds).
+The output directory must be new. Completed records distinguish accepted,
+rejected, declined and blocked declarations. Timeouts, crashes, malformed
+rows, duplicate addresses, missing completion markers and partial output are
+reported as incomplete runs and make the tool exit nonzero. Partial record
+counts remain visible under `complete: false`; they are not whole-closure
+acceptance. Completed rejections and declines are report data, so they do not
+make the diagnostic command fail. This matters for known missing-recursor
+declines and non-v4 input hangs in older external checker revisions.
+
+`certified-census --self-test` checks the reporting protocol without an
+external checker. CI runs that small test; actual certified census results
+remain non-gating. Run all probes under the same machine-wide two-stream
+limit as the compiler checks.
+
 ## Refreezing
 
 Every frozen closure is a function of the producer (ix binary, its Lean

@@ -1,6 +1,7 @@
 import Compilatrix.Tools.TrustLedger
 import Compilatrix.Tools.X86Check
 import Compilatrix.Tools.BuildGraph
+import CompilatrixTests.Tools.BuildGraph
 
 /-! Regression tests for the trust gate's failure paths. Mutations are confined
 to fresh temporary copies; the source tree and reviewed ledger are never edited. -/
@@ -106,6 +107,7 @@ private def disassemblyTests : IO Unit := do
     "invalid instruction escaped the instruction check"
 
 private def buildGraphTests (root : FilePath) : IO Unit := do
+  CompilatrixTests.Tools.BuildGraph.run
   let checkGraph := Compilatrix.Tools.BuildGraph.check root
   checkGraph
   let api := root / "Compilatrix.lean"

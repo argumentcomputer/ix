@@ -160,10 +160,29 @@ def addresses (p : Program) : Array Compilatrix.Ixon.Address := Id.run do
       unless out.contains a do out := out.push a
   for (a, _) in p.roots do
     unless out.contains a do out := out.push a
+  if let some ctx := p.resource then
+    unless out.contains ctx.address do out := out.push ctx.address
+    for pair in ctx.pairs do
+      for a in [pair.definition, pair.equation, pair.profile] do
+        unless out.contains a do out := out.push a
   return out
 
 def bytes (a : Compilatrix.Ixon.Address) : String :=
   listOf (fun (b : UInt8) => s!"{b}") a.hash.data.toList
+
+/-- Preserve raw binding evidence in kernel artifacts. Legacy artifacts omit
+the default `none` field, so their generated text remains identical. -/
+def resourceField (addrName : Ixon.Address → String) : Option Resource.Context → String
+  | none => ""
+  | some ctx =>
+    let header (h : Resource.Header) :=
+      s!"\{ position := {h.position}, contract := {binderContract h.contract} }"
+    let pair (p : Resource.Pair) :=
+      s!"\{ definition := {addrName p.definition}, equation := {addrName p.equation}, \
+        profile := {addrName p.profile}, contracts := {listOf header p.contracts} }"
+    let raw := listOf (fun (b : UInt8) => s!"{b}") ctx.bytes.data.toList
+    s!"\n    resource := some \{ address := {addrName ctx.address}, bytes := ⟨({raw} : List UInt8).toArray⟩, \
+      pairs := {listOf pair ctx.pairs} }"
 
 /-- One bench-k1 artifact's module text. -/
 def render (name modName : String) (p : Program) (ann : Ann) : String := Id.run do
@@ -211,7 +230,7 @@ noncomputable def program : Program :=
     size := {p.size}
     table
     roots := {listOf (fun ((a, c) : Compilatrix.Ixon.Address × CId) => s!"({addrName a}, {c})") p.roots}
-    known := {known p.known} }
+    known := {known p.known}{resourceField addrName p.resource} }
 
 /-- The relevance annotation (the annotator's output for the program). -/
 noncomputable def ann : Ann :=

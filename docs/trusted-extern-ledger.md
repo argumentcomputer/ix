@@ -202,6 +202,21 @@ preserve the same axiom basis. The 445 catalog assertions include producer
 fat and independently Rust-verified chunk fixtures, corruptions, exact bounds
 and filesystem/CLI tests. Validator 1 does not select a resource profile.
 
+The required ownership consumer regression retains authentic historical
+cb68d94c annotated/plain recursion bytes under
+`fixtures/ownership/historical/annotated-recursion-cb68/`. Its pinned inventory
+includes the source twins, raw named/anonymous bytes and sidecars, original
+profile, address receipts and independent literal reference results. Tests
+verify those hashes before ingress and compare 36 complete Src/Fir/Own
+observations. A test-only adapter accepts the historical plain sidecar's
+absent or empty checked list only when no profile is present; malformed and
+nonempty orphan claims are refused. Production paired-key parsing is unchanged.
+The annotated erased contract retains its explicit plain-RC domain refusal.
+These fixtures and the valid-neighbor resource/csimp controls add no native
+interface, symbol, dependency, build seed, specification assumption or axiom.
+Historical producer acceptance remains separate from the final producer review
+and fixture refreeze.
+
 ## Pure Lean dependencies
 
 `lean_dependencies` records Lake dependencies that contain no native code, so
@@ -219,10 +234,14 @@ agree.
 The one entry, `ix-kernel-ixon-v4-codec`, is ix's `IxKernel/` package at
 `f829b760`, of which Compilatr.ix imports `Ix.Ixon.Canonical` and
 `Ix.Ixon.Codec` (an 11-module closure importing only `Init`; its public roots
-use `propext` and `Quot.sound`). It is the ingress decoder and encoder; it is
-not on the recheck path (`Recheck.run`'s import closure contains no ix
-module), so a codec defect can make ingress reject a closure or read a
-different program than ix compiled, which `Recheck.run` then checks as given.
+use `propext` and `Quot.sound`). It is the ingress decoder and encoder.
+The resource-selection checker also uses its pure framing operations on the
+recheck path, with pure BLAKE3 for the effective profile's identity. The
+rechecker receives the raw profile bytes and pair records and validates them
+against its Src declarations; it does not trust an ix acceptance Boolean.
+A codec defect can make ingress reject a closure or read a different program
+than ix compiled, which `Recheck.run` then checks as given. No whole-kernel
+semantic theorem follows from this codec dependency.
 Nix packages the same 11 sources under the same package name with a codec-only
 library (`nix/build.nix`), so the kernel is never built; the
 `trusted-extern-ledger` check reads the pinned source (`ix-src`).
@@ -371,8 +390,73 @@ decoder against `Rt.readback` of the dump. `native_harness.c` stays only as
 still needs its `compilatrix_rt_allocate` stub) until `Instr.callRuntime`
 retires.
 
+`Recheck.Readback` adds bounded structural signature discovery for ground
+first-order constructor results. Successful discovery certifies closed
+indices and checked source-instance/emitted-layout provenance; its three
+exact fences use only `propext`. It adds no source-typing or SrcEval adequacy
+claim. `Rt.Rc.Layout` and `Rt.Rc.Readback` add ten header/observation fences
+using the existing logical basis. Those header/readback laws are inputs to
+the bounded recycling runtime below; neither extension adds a native
+interface or changes this driver.
+
+`Own.Plain` and `Own.Rc` add a conservative executable plain-RC checker and
+abstract semantics. The checker binds the complete untrusted function map to
+its canonical producer. The separate refinement and heap-shape proofs derive
+full result values, exact ownership counts and final reclamation from concrete
+input denotations, balanced counts and older-field ordering. Their public
+theorems have exact fences in `OwnPlain` and `OwnRc`, with at most `propext`,
+`Classical.choice` and `Quot.sound`. They add no axiom, native interface or
+trusted allocator. The promoted `Cfg.Rc` and `Rt.Rc.Procs` path now composes
+these invariants through actual initialization, allocation, count changes,
+iterative release, source control/calls, layout and the existing backend.
+`Recheck.RcReplay.run` checks the complete serialized ownership/backend
+certificate and emits the actual public object. Its `sound` theorem retains
+successful replay, `X86.Driver.Ok`, the source `GoesWrong` qualification and
+SrcEval as semantic anchor, with complete constructor-tree observations.
+The general source-adequacy and selected-producer obligations remain open.
+
+The public `cx_drop` export receives the original owned result word unchanged
+through its `.word` argument representation. `Returned.release_public` derives
+release from the actual physical return invariant and restores allocator
+readiness; successful readback alone is not ownership evidence. With zero
+external owners, ordered-heap balance proves complete reclamation.
+`recycled_entry` starts the next numeric root on that reached heap without
+resetting bump/free-list history, and `drop_sim_linked` supplies the emitted
+drop ABI simulation under the established `EntryBase` contract. These are
+operation-composition results. They do not assert unconditional ownership for
+every successful arbitrary `DriverSession`: source-stuck behavior remains
+qualified, and general backend session iteration needs the whole-call budget
+word frame as well.
+
+The independent C harnesses
+[`rc-runtime-driver.c`](../fixtures/x86/rc-runtime-driver.c) and
+[`rc-reuse-driver.c`](../fixtures/x86/rc-reuse-driver.c) reuse the unchanged
+runtime driver's trampoline and complete decoder. They are test evidence,
+not allocator externs. The primitive harness writes synthetic fixture fields
+to test exact procedure behavior; the reuse harness initializes once and
+makes no allocator metadata writes afterward. The compiled gates preserve
+4,393 primitive C assertions, 40 codec refusals, 15 complete-replay refusals,
+25 standalone full-value checks and 168 same-arena calls/drops with 114,820
+independent C assertions, full Lean readback and exact reclaimed-address sets.
+The separately required `tests-cfg-rc` retains four complete abstract-Cfg
+value/heap cases, bounded timeout checks and 12 bridge ownership/count controls;
+its pure proof aggregate retains all 29 original marker/map/scope/bounds examples.
+`tests-pipeline-rc` additionally compares complete values across actual RC
+pipeline stages with independent list/pair formulas. Its allocation/inc/dec/free
+counter is a test-side observer of production `Cfg.Rc.step`, differential-tested
+against `Cfg.Rc.run`; it is neither a new trusted evaluator nor a native cost
+theorem. The native modes retain independent C and Lean observations, reject
+object-only text corruption before link even when its bundle is rehashed, and
+exercise real-source root heap exhaustion separately from initializer refusal,
+with successful same-code neighbors. Counts stop before caller output-drop;
+physical reclamation remains covered by the existing native recycling gate.
+These tests add no driver assumption, extern or trusted allocator.
+The real-source fixture records its historical producer; final G1/producer
+review and refreeze are still separate from these accepted local results.
+
 **The driver model (specification assumption
-`x86-phase1-runtime-driver-model`).** `Recheck.sound` is a theorem about
+`x86-phase1-runtime-driver-model`).** `Recheck.sound` and the bounded
+`Recheck.RcReplay.sound` are theorems about
 `X86.Linked` ([`Linked.lean`](../Compilatrix/X86/Linked.lean)): the
 object's execution from a `X86.Driver`
 ([`Driver.lean`](../Compilatrix/X86/Driver.lean)) that calls `cx_init` and
@@ -402,6 +486,15 @@ hypothesis of the theorem, satisfiable for every accepted artifact
 (`Recheck.driver_exists`), not part of this assumption. The reading also
 rests on `x86-v0-local-semantics` and `x86-v0-elf-writer`.
 
+The same specification entry records the distinct `X86.DriverSession`
+protocol: initialize once; call a numeric root at exact arity; observe the
+complete result while live; call `cx_drop` with that original raw word; then
+continue from the released bytes, repeating only return-slot setup. The
+existing `X86.Linked.call` theorem initializes per root call, so it is not
+definitionally that session protocol. Native session evidence and the proved
+release/reentry operations complement the single-call theorem without adding
+a trusted allocator, new extern or Lean axiom.
+
 The benchmark runner's entry profile
 ([`benchmarks/runner/entry/`](../benchmarks/runner/entry/): the timing
 driver, one adapter per row, and tagged C twins of `ackermann`, `tak`,
@@ -425,7 +518,7 @@ Four additional public fences retain the ordinary logical axiom basis.
 | --- | --- | --- |
 | Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
-| Runtime driver model | `X86.Driver`/`X86.Linked` model how `runtime_driver.c` and the linker call an accepted object (`cx_init`, then the root's export by symbol) and observe its result; the premise under which `Recheck.sound` speaks of the native executable. | The driver stores the budget and decodes as modelled; `tests-rt`, `tests-pipeline` and `tests-corpus` run every level and the native executable on the same inputs. A model of process start and the linker's resolution, and memory outside the region shown untouched, remain. |
+| Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. Process start/linker correspondence, source adequacy and general whole-call session framing remain explicit. |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
 The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)
@@ -483,4 +576,3 @@ the ledger does not claim that Darwin uses glibc.
 - “Empty ledger” means no persistent target/runtime extern assumptions. Seed
   provenance and independently reproducible build attestation remain separate
   bootstrap obligations.
-

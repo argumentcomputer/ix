@@ -80,9 +80,12 @@ def digest (values : List String) : IO String :=
 /-- The exact axiom assertions of every registered fence module. -/
 def fenceAssertions (root : FilePath) (proofs : List String) : IO (List String) := do
   let mut axioms := []
-  for path in ← files (root / "CompilatrixTests/Fences") do
+  let directory := root / "CompilatrixTests/Fences"
+  for path in ← files directory do
     if path.extension != some "lean" then continue
-    let name := "CompilatrixTests.Fences." ++ (path.fileStem.getD "")
+    let relative := (path.toString.dropPrefix (directory.toString ++ "/")).toString
+    let name := "CompilatrixTests.Fences." ++
+      ((FilePath.mk relative).withExtension "").toString.replace "/" "."
     need (proofs.contains name) s!"unregistered axiom-fence module {name}"
     axioms := axioms ++ (← axiomAssertions (← IO.FS.readFile path))
   return axioms

@@ -1,4 +1,5 @@
-import Compilatrix.Src.Pinned
+import Compilatrix.Src.Table.Shape
+import Compilatrix.Src.Resource.Check
 
 /-! # Unfolding-table checks
 
@@ -19,71 +20,45 @@ structure Config where
   inlineCap : Nat := 256
   deriving Inhabited
 
-/-- `param 0 … param (n-1)`. -/
-def paramUnivs (n : Nat) : List Univ := (List.range n).map fun i => .var i.toUInt64
+/-! ## `eqn` -/
 
-/-- `#(k-1) … #0`. -/
-def boundVars (k : Nat) : List Term := (List.range k).reverse.map Term.var
-
-def safeDefn? (p : Program) (c : CId) : Option (Nat × Term × Term) :=
-  match p.decl? c with
-  | some (.defn .defn .safe lvls type value) => some (lvls, type, value)
-  | _ => none
-
-/-- Match `app* (const Eq [l]) [B, lhs, rhs]` over the pinned `Eq`. -/
-def eqApp? (p : Program) (t : Term) : Option (Term × Term × Term) :=
-  match t.spine with
-  | (.const c [_], [(ty, _), (lhs, _), (rhs, _)]) =>
-    if some c == p.known.eq then some (ty, lhs, rhs) else none
-  | _ => none
-
-/-- Peel exactly `k` leading Π binders. -/
-def peelPis : Nat → Term → Option (List (Binder × Term) × Term)
+/-- Peel exactly the equation header; remaining lambdas are internal syntax. -/
+def peelLams : Nat → Term → Option (List (Binder × Term) × Term)
   | 0, t => some ([], t)
-  | k + 1, .pi b _ d t => do
-    let (bs, body) ← peelPis k t
+  | k + 1, .lam b d t => do
+    let (bs, body) ← peelLams k t
     return ((b, d) :: bs, body)
   | _ + 1, _ => none
 
-/-! ## Binder wrappers
+/-- The current lowering observes the final result contract. Intermediate
+curried-result promises need a separate transport design. -/
+def supportedHeaderResults : Term → Bool
+  | .pi _ r _ body =>
+    match body with
+    | .pi .. => r == .shared && supportedHeaderResults body
+    | _ => body.leanFragment
+  | body => body.leanFragment
 
-Lean's `eq_def` states its binders without the `autoParam`/`optParam`
-wrappers the definition's type may carry. A wrapper is recognised by its
-body, not its address: a safe definition whose value is exactly `λ _. #0` or
-`λ _ _. #1`, so one δ step and β give its first argument, and the two domains
-are definitionally equal (the bridge's R6 step takes that δ step). -/
-
-/-- Arity of an identity-like wrapper definition. -/
-def wrapperArity? (p : Program) (c : CId) : Option Nat :=
-  match safeDefn? p c with
-  | some (_, _, .lam _ _ (.var 0)) => some 1
-  | some (_, _, .lam _ _ (.lam _ _ (.var 1))) => some 2
-  | _ => none
-
-/-- Contract an application node whose (already stripped) spine is a
-wrapper applied to exactly its arity. -/
-def contractWrapper (p : Program) (t : Term) : Term :=
-  match t.spine with
-  | (.const c _, args) =>
-    match wrapperArity? p c, args.head? with
-    | some n, some (first, _) => if args.length == n then first else t
-    | _, _ => t
-  | _ => t
-
-/-- Remove saturated wrapper applications everywhere, bottom-up. -/
-def stripWrappers (p : Program) : Term → Term
-  | .app f a m r => contractWrapper p (.app (stripWrappers p f) (stripWrappers p a) m r)
-  | .lam b d t => .lam b (stripWrappers p d) (stripWrappers p t)
-  | .pi b r d t => .pi b r (stripWrappers p d) (stripWrappers p t)
-  | .letE c r ty v b => .letE c r (stripWrappers p ty) (stripWrappers p v) (stripWrappers p b)
-  | .proj s i e => .proj s i (stripWrappers p e)
-  | t => t
-
-/-- Domain agreement of check 3: equal once binder wrappers are removed. -/
-def domainEqv (p : Program) (a b : Term) : Bool :=
-  a.eqv b || (stripWrappers p a).eqv (stripWrappers p b)
-
-/-! ## `eqn` -/
+/-- Transport only matching written header contracts. Refuse every body or
+domain annotation whose location cannot be preserved in the selected RHS. -/
+def equationBody (p : Program) (f thm : CId) (tf vf rhs : Term)
+    (fBinders binders : List (Binder × Term)) : Except String Term := do
+  if vf.leanFragment && tf.leanFragment then
+    return binders.foldr (fun (b, d) acc => .lam { b with contract := {} } d acc) rhs
+  Resource.requirePair p f thm
+  unless fBinders.length == tf.pis.1.length && supportedHeaderResults tf do
+    throw "eqn-drops-contracts: partial or curried-result header is unsupported"
+  let some (bodyBinders, rest) := peelLams binders.length vf
+    | throw "eqn-drops-contracts: subject body has too few header lambdas"
+  unless rest.leanFragment && rhs.leanFragment do
+    throw "eqn-drops-contracts: body-internal contracts cannot be transported"
+  unless (fBinders.zip (bodyBinders.zip binders)).all (fun ((b, d), ((vb, vd), (tb, td))) =>
+      b.contract == vb.contract && b.contract == tb.contract &&
+      d.leanFragment && vd.leanFragment && td.leanFragment &&
+      domainEqv p d vd && domainEqv p d td) do
+    throw "eqn-drops-contracts: header contracts or domains disagree"
+  return (fBinders.zip binders).foldr (fun ((b, d), (tb, _)) acc =>
+    .lam { tb with contract := b.contract } d acc) rhs
 
 /-- Check `eqn f thm` and build the entry body `λ xs. rhs` (§4.1, checks 1–5). -/
 def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
@@ -105,10 +80,7 @@ def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
   unless (fBinders.zip binders).all (fun ((_, a), (_, a')) => domainEqv p a a') do
     throw "eqn: binder domains differ from the subject's type"
   unless domainEqv p fBody b do throw "eqn: the equation's type differs from the subject's result"
-  unless vf.leanFragment do
-    throw "eqn-drops-contracts: the subject's body carries written contracts"
-  let body := binders.foldr (fun (bnd, dom) acc =>
-    Term.lam { bnd with contract := {} } dom acc) rhs
+  let body ← equationBody p f thm tf vf rhs fBinders binders
   return .eqn thm body
 
 /-! ## `csimp` -/
@@ -116,6 +88,7 @@ def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
 /-- Check `csimp f g thm`: `thm : @f = @g` exactly. The target's own
 admissibility and acyclicity are checked by `Table.Build`. -/
 def checkCsimp (p : Program) (f g thm : CId) : Except String Resolve := do
+  unless p.resource.isNone do throw "csimp: resource-bound replacement is unsupported"
   let some (n, tf, _) := safeDefn? p f
     | throw "csimp: the subject is not a safe definition"
   let some (.defn .thm .safe n' tθ _) := p.decl? thm

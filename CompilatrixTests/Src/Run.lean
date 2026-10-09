@@ -1,11 +1,13 @@
 import CompilatrixTests.Src.Rules
 import CompilatrixTests.Src.Table
+import CompilatrixTests.Src.Resource
 import CompilatrixTests.Src.Runs
 import CompilatrixTests.Src.Differential
 import CompilatrixTests.Src.Pins
 import CompilatrixTests.Src.Diagnostics
 import CompilatrixTests.Src.Bench
 import CompilatrixTests.Src.SortPoly
+import CompilatrixTests.Src.ResourceCsimp
 
 /-! The `tests-src` suite (design note 01 §10): rules, the K1 table, K1 runs
 on the eqn route, the native differential, pins, diagnostics, sort-polymorphic
@@ -34,6 +36,9 @@ def main (args : List String) : IO UInt32 := do
     IO.println "tests-src"
     part a "rules and eval_mono" (Rules.run a)
     part a "table on K1" (Table.run a)
+    part a "resource equation bindings" do
+      Resource.run a
+      ResourceCsimp.run a
     part a "K1 on the eqn route" do
       for r in ← Runs.eqnRoute a do
         IO.println s!"    {r.label} = {r.expected} in {r.ms} ms (clock 16 × {r.calls} Lean calls)"

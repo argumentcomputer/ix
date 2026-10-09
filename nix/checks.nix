@@ -80,6 +80,26 @@ in
       ./.lake/build/bin/check-build-graph --root ${auditSrc}
     '';
 
+    # Portable RC semantics and driver protocol. All programs come from the
+    # same shared build as the other required checks.
+    rc-runtime = mkCheck "rc-runtime" [pkgs.findutils] ''
+      mkdir -p rc-logs
+      show_rc_runtime_logs() {
+        find rc-logs -type f \
+          \( -name '*.stdout' -o -name '*.stderr' -o -name '*.json' -o -name '*.tsv' \) \
+          -exec sh -c 'for file do echo "=== $file"; cat "$file"; done' sh {} +
+      }
+      trap show_rc_runtime_logs ERR
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-rt-rc controls
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-rt-rc deep
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-cfg-rc
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-driver-session
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-pipeline-rc levels rc-logs/levels
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-pipeline-rc counters rc-logs/counters
+      mkdir -p "$out"
+      cp -R rc-logs "$out/"
+    '';
+
     # The pipeline suites (M3.1, MT.8), run from the shared programs build
     # against the tracked tree. Run one after another they take about 21
     # minutes in the sandbox, which with the rest of the surface exceeds the
@@ -111,6 +131,7 @@ in
       # stack (LEAN_STACK_SIZE_KB): about 4.4 GB peak.
       launch tests-pipeline $bin/tests-pipeline ${ccArg}
       launch corpus-check $bin/corpus check
+      launch certified-census-protocol $bin/certified-census --self-test
       launch tests-corpus $bin/tests-corpus ${ccArg}
       launch check-backend $bin/check-backend ${ccArg}
       launch check-regalloc $bin/check-regalloc
@@ -122,9 +143,11 @@ in
       launch check-lir $bin/check-lir
       launch tests-anf $bin/tests-anf
       launch tests-own $bin/tests-own ${ccArg}
+      launch tests-own-plain $bin/tests-own-plain
       launch tests-shrink $bin/tests-shrink
       launch tests-relevance $bin/tests-relevance
       launch tests-recheck $bin/tests-recheck
+      launch tests-recheck-readback $bin/tests-recheck-readback
       wait
       failed=()
       for name in "''${names[@]}"; do
@@ -148,6 +171,25 @@ in
     '';
   }
   // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+    # Actual generated runtime procedures and fresh serialized certificate
+    # replay with complete native values and same-arena reclamation. Keep
+    # independent C oracles, child budgets and diagnostics in the required gate.
+    rc-native = mkCheck "rc-native" [pkgs.stdenv.cc pkgs.findutils] ''
+      mkdir -p rc-logs
+      show_rc_logs() {
+        find rc-logs -type f \
+          \( -name '*.stdout' -o -name '*.stderr' -o -name '*.json' \) \
+          -exec sh -c 'for file do echo "=== $file"; cat "$file"; done' sh {} +
+      }
+      trap show_rc_logs ERR
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-rt-rc native rc-logs/runtime
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-rc-certificate fresh rc-logs/certificate
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-pipeline-rc native rc-logs/levels-native
+      timeout --kill-after=5 600 ./.lake/build/bin/tests-pipeline-rc negative rc-logs/negative
+      mkdir -p "$out"
+      cp -R rc-logs "$out/"
+    '';
+
     # Runs every generated case natively (the harness maps fixed pages and
     # executes code), so it is limited to x86-64 Linux hosts.
     x86-hardware = mkCheck "x86-hardware" [pkgs.stdenv.cc pkgs.llvmPackages.llvm] ''

@@ -75,8 +75,12 @@ domain check, and re-encoding to exactly the input), converts, applies the
 consumer budgets below, and retains `constantBytes value = bytes` as evidence.
 This is not a universal codec roundtrip or source-typing theorem; ix proves
 its codec's roundtrip at the same revision (`Ix.Ixon.Verify`), which we do not
-import. Neither `Src`, nor `Recheck.run`, nor any proof mentions an ix type:
-`Recheck.run`'s import closure contains no ix module.
+import. Src terms remain the consumer's own data types. Resource-selection
+metadata is checked again on the `Recheck.run` path using the pinned pure
+codec's framing operations and pure BLAKE3; this adds those pure modules to
+its import closure. The full ix kernel and the ix resource checker remain
+outside the production dependency closure. Resource metadata is input data,
+not an external acceptance result used as a proof premise.
 
 [`Ixon.V3.Env`](../Compilatrix/Ixon/V3/Env.lean) frames environments itself,
 after ix's `Env.getEnv` (whose module is outside the pure package): it checks

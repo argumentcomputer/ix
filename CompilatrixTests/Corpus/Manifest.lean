@@ -125,6 +125,31 @@ structure Source where
   origins : OJson := .arr #[]
   deriving Inhabited, BEq
 
+/-- One unfolding equation ix's resource admission checked a definition
+through (an entry of the sidecar's `resourceChecked`, re-verified by
+`ix check-equations`). -/
+structure CheckedPair where
+  definition : String
+  definitionAddress : String
+  equation : String
+  equationAddress : String
+  deriving Inhabited, BEq
+
+/-- What ix's resource admission reported for a closure compiled under the
+family's profile (derived; absent when no admission ran: a closure without
+written contracts). -/
+structure Resource where
+  /-- The effective profile address `ix compile` printed: the written
+  profile restricted to the closure, with its generated `case` and
+  `equation` lines (it depends on the closure). -/
+  profile : String
+  /-- `ix check-equations SIDECAR CLOSURE` on the anonymous closure:
+  `pass` (exit 0) or `fail`. -/
+  checkEquations : String
+  /-- The checked pairs it verified (the sidecar's `resourceChecked`). -/
+  pairs : List CheckedPair := []
+  deriving Inhabited, BEq
+
 structure Fixture where
   name : String
   source : Source
@@ -143,6 +168,7 @@ structure Fixture where
   failureCount : Nat := 0
   namedEnvSha256 : String := ""
   census : FileRec
+  resource : Option Resource := none
   roots : List Root
   deriving Inhabited, BEq
 
@@ -151,6 +177,9 @@ structure Producer where
   ixBinarySha256 : String
   ixVersion : String
   ixBuild : String := ""
+  /-- The written resource profile the family is compiled under (`--profile`;
+  reviewed path from the repository root, derived SHA-256); absent: none. -/
+  profile : Option FileRec := none
   deriving Inhabited, BEq
 
 structure Family where
@@ -181,6 +210,21 @@ def namedCommand : List String :=
    "--equations-out", "{named-equations}", "{src}"]
 
 def addrCommand : List String := ["ix", "addr-of", "--ixe", "{named}", "{name}"]
+
+/-- A compile command under a written resource profile: `--profile
+{profile}` after `--equations`. -/
+def withProfile (command : List String) : List String :=
+  command.flatMap fun a => if a == "--equations" then [a, "--profile", "{profile}"] else [a]
+
+/-- The re-verification of an annotated closure's checked pairs. -/
+def checkEquationsCommand : List String := ["ix", "check-equations", "{equations}", "{ixe}"]
+
+/-- A family's commands: with `--profile` when it pins a profile. -/
+def Producer.anonymous (p : Producer) : List String :=
+  if p.profile.isSome then withProfile anonCommand else anonCommand
+
+def Producer.named (p : Producer) : List String :=
+  if p.profile.isSome then withProfile namedCommand else namedCommand
 
 def interpretCommand (protocol : String) : List String :=
   if protocol == "args" then ["lean", "-Dlinter.all=false", "--run", "{src}", "{args}"]
@@ -241,8 +285,19 @@ def Source.ofJson (j : Json) : IO Source := do
            license := ← strField j "license", variant := ← strField j "variant"
            origins := ← checked (OJson.ofJson ((j.getObjVal? "origins").toOption.getD (.arr #[]))) }
 
+def CheckedPair.ofJson (j : Json) : IO CheckedPair := do
+  return { definition := ← strField j "definition", definitionAddress := ← strField j "definition_address"
+           equation := ← strField j "equation", equationAddress := ← strField j "equation_address" }
+
+def Resource.ofJson (j : Json) : IO Resource := do
+  return { profile := ← strField j "profile", checkEquations := ← strField j "check_equations"
+           pairs := ← (← arrField j "pairs").toList.mapM CheckedPair.ofJson }
+
 def Fixture.ofJson (j : Json) : IO Fixture := do
   let eqs ← field j "equations"
+  let resource ← match j.getObjVal? "resource" with
+    | .ok r => some <$> Resource.ofJson r
+    | .error _ => pure none
   return { name := ← strField j "name", source := ← Source.ofJson (← field j "source")
            consts := ← (← arrField j "consts").toList.mapM string
            protocol := (optStr j "protocol").getD "stdin"
@@ -252,17 +307,22 @@ def Fixture.ofJson (j : Json) : IO Fixture := do
            equationCount := (optNat eqs "equations").getD 0, failureCount := (optNat eqs "failures").getD 0
            namedEnvSha256 := (optStr j "named_env_sha256").getD ""
            census := ← FileRec.ofJson (← field j "census")
+           resource
            roots := ← (← arrField j "roots").toList.mapM Root.ofJson }
 
 def Family.ofJson (j : Json) : IO Family := do
   need ((← strField j "format") == format) s!"not a {format} manifest"
   let p ← field j "producer"
+  let profile ← match p.getObjVal? "profile" with
+    | .ok r => some <$> FileRec.ofJson r
+    | .error _ => pure none
   return { family := ← strField j "family", description := (optStr j "description").getD ""
            tier := ← strField j "tier", phase := ← nat (← field j "phase")
            directory := ← strField j "directory", sourceRoot := ← strField j "source_root"
            leanVersion := ← strField (← field j "lean") "version"
            producer := { ixRevision := ← strField p "ix_revision", ixBinarySha256 := ← strField p "ix_binary_sha256"
-                         ixVersion := ← strField p "ix_version", ixBuild := (optStr p "ix_build").getD "" }
+                         ixVersion := ← strField p "ix_version", ixBuild := (optStr p "ix_build").getD ""
+                         profile }
            fixtures := ← (← arrField j "fixtures").toList.mapM Fixture.ofJson }
 
 def Family.read (path : System.FilePath) : IO Family := do
@@ -308,6 +368,11 @@ def Fixture.toOJson (f : Fixture) : OJson :=
       ("failures", some (.nat f.failureCount))])),
     ("named_env_sha256", some (.str f.namedEnvSha256)),
     ("census", some f.census.toOJson),
+    ("resource", f.resource.map fun r => .obj #[("profile", .str r.profile),
+      ("check_equations", .str r.checkEquations),
+      ("pairs", .arr (r.pairs.map fun q => OJson.obj #[("definition", .str q.definition),
+        ("definition_address", .str q.definitionAddress), ("equation", .str q.equation),
+        ("equation_address", .str q.equationAddress)]).toArray)]),
     ("roots", some (.arr (f.roots.map Root.toOJson).toArray))]
 
 def Family.toOJson (m : Family) : OJson :=
@@ -321,8 +386,10 @@ def Family.toOJson (m : Family) : OJson :=
       ("ix_binary_sha256", some (.str m.producer.ixBinarySha256)),
       ("ix_version", some (.str m.producer.ixVersion)),
       ("ix_build", if m.producer.ixBuild.isEmpty then none else some (.str m.producer.ixBuild)),
-      ("anonymous", some (.strs anonCommand)), ("named", some (.strs namedCommand)),
-      ("address", some (.strs addrCommand))])),
+      ("profile", m.producer.profile.map (·.toOJson)),
+      ("anonymous", some (.strs m.producer.anonymous)), ("named", some (.strs m.producer.named)),
+      ("address", some (.strs addrCommand)),
+      ("check_equations", if m.producer.profile.isSome then some (.strs checkEquationsCommand) else none)])),
     ("fixtures", some (.arr (m.fixtures.map Fixture.toOJson).toArray))]
 
 def Family.write (m : Family) (path : System.FilePath) : IO Unit :=

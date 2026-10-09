@@ -1,14 +1,15 @@
 # Documentation guide
 
-This guide indexes current contracts, plans and evidence. The compiler is
-being rebuilt (2026-09-29). Documents for the retired pipeline, the Ixby
+This guide indexes current contracts, plans and evidence. As reviewed on
+2026-10-08, the scalar recheck pipeline is implemented and Phase 1.5 integration
+remains incomplete. Documents for the retired pipeline, the Ixby
 backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 
 ## Direction and process
 
 - [Roadmap](roadmap.md): mission, current state, phases, benchmark rungs and
   decisions.
-- [Compiler design](compiler-design.md): the pipeline being built, its
+- [Compiler design](compiler-design.md): the pipeline, its
   semantics, ownership and runtime design, backend, and trust obligations.
 - [Development and validation](development-plan.md): landing work,
   validation commands and documentation maintenance.
@@ -17,6 +18,9 @@ backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 
 ## Source boundary
 
+- [Compile and recheck boundary](compile-boundary.md): what the public
+  theorem covers, the hashing dependencies, and the remaining source-adequacy
+  obligations.
 - [Ixon v4](ixon-v4.md): the ix pins (the v4 codec and the producer), contract encoding, strict
   decoding, catalog-v2 admission, erased typing, resource admission and
   claims.
