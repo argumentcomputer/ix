@@ -523,6 +523,11 @@ impl AiurVerifyingKey {
     self.fri_parameters
   }
 
+  /// Constraint system and fixed commitments for recursive verifier construction.
+  pub fn system(&self) -> &System<AiurConfig> {
+    &self.system
+  }
+
   pub fn num_circuits(&self) -> usize {
     self.system.circuits.len()
   }
