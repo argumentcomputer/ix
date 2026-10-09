@@ -47,7 +47,7 @@ pub(super) fn build_claim(fun_idx: usize, input: &[G], output: &[G]) -> Vec<G> {
   claim
 }
 
-pub(super) fn serialize_claims(claims: &[&[G]]) -> Vec<u8> {
+pub(crate) fn serialize_claims(claims: &[&[G]]) -> Vec<u8> {
   let mut out = Vec::new();
   out.extend_from_slice(&(claims.len() as u64).to_le_bytes());
   for claim in claims {
@@ -63,7 +63,7 @@ pub(super) fn inner_claim(verify_idx: usize, claim_bytes: &[u8]) -> Vec<G> {
   build_claim(verify_idx, &packed_digest(claim_bytes), &[])
 }
 
-pub(super) fn aggregate_outer_claim(
+pub(crate) fn aggregate_outer_claim(
   aggr_idx: usize,
   allowed: &[u8],
   claim_bytes: &[u8],
