@@ -60,8 +60,14 @@ def closedValueControl (wrong : Bool) : MetaM IxCliqueValues.Verdict := do
     check value
     mkLambdaFVars #[b] value
   for (n, value) in #[(name, sourceBody), (IxCliqueValues.scratchName name, compiledBody)] do
-    let d : DefinitionVal := { name := n, levelParams := [], type := ty, value,
-      hints := .abbrev, safety := .safe, all := [n] }
+    let d : DefinitionVal := {
+      name := n
+      levelParams := []
+      type := ty
+      value
+      hints := .abbrev
+      safety := .safe
+      all := [n] }
     if let some e ← IxCliqueValues.kernelAdd (.defnDecl d) then
       throwError "closed permutation control is not kernel-well-typed: {e}"
   IxCliqueValues.checkMember #[name] "structural" #[0] name
@@ -91,8 +97,11 @@ def dependentControls (env : Environment) : IO Unit := do
       let v ← mkLambdaFVars xs (mkAppN (mkConst canonName us) (p.args.map (xs[·]!)))
       return (ty, v)
     let canonical : RecursorVal := { source with name := canonName, type := ty }
-    let image : DefinitionVal := { source.toConstantVal with value := imageValue,
-      hints := .abbrev, safety := .safe, all := [source.name] }
+    let image : DefinitionVal := { source.toConstantVal with
+      value := imageValue
+      hints := .abbrev
+      safety := .safe
+      all := [source.name] }
     let read ← readPermutation source canonical image
     let exact := read.args == p.args && read.levels == p.levels
     let goodDecl ← definition source canonical read
@@ -135,8 +144,12 @@ def universeNeighbour (swapped : Bool) : MetaM Bool := do
   let imageValue ← forallTelescope source.type fun xs _ => do
     unless xs.size == p.args.size do throwError "List.rec telescope changed"
     mkLambdaFVars xs (mkAppN (mkConst canonicalName (if swapped then us.reverse else us)) xs)
-  let image : DefinitionVal := { source.toConstantVal with name := imageName, value := imageValue,
-    hints := .abbrev, safety := .safe, all := [imageName] }
+  let image : DefinitionVal := { source.toConstantVal with
+    name := imageName
+    value := imageValue
+    hints := .abbrev
+    safety := .safe
+    all := [imageName] }
   let read ← readPermutation source canonical image
   let inverseDecl ← definition source canonical read
   if let some e ← IxCliqueValues.kernelAdd (.defnDecl inverseDecl) then
@@ -154,7 +167,10 @@ No skipped recursor or not-checkable member can satisfy this neighbour. -/
 def compiledControls (env : Environment) : IO Unit := do
   let members := #[`Tests.Ix.Compile.Twins.Cliques.SM.P0.szTr,
     `Tests.Ix.Compile.Twins.Cliques.SM.P0.szFo]
-  let u : Pass3.CUnit := { name := "phase9-inverse-SM.P0", env, seeds := members,
+  let u : Pass3.CUnit := {
+    name := "phase9-inverse-SM.P0"
+    env
+    seeds := members
     closure := Pass3.closureOf env members.toList }
   let out ← Pass3.compileUnit u
   require "fixture-no-refusal" out.cenv.ungrounded.isEmpty
