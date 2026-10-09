@@ -208,7 +208,7 @@ refusing to synthesize canonical-indexed _N names")
         -- inductive, NOT the class rep — below/brecOn hang their `_N`
         -- names off it too).
         let sourceAll0 ← arrIdx originalAll 0 "generateAuxPatches: Lean all0"
-        let mut auxRecMap : Std.HashMap Name Name := {}
+        let mut auxRecMap : Ix.Compile.Canon.NameTable Name := {}
         for (mem, canonicalI) in
             ((expanded.types.toList.drop expanded.nOriginals).toArray).zipIdx do
           let sourceJ ← arrIdx sourceOfCanonical canonicalI "generateAuxPatches: source of canonical aux"

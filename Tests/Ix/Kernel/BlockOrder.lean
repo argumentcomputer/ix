@@ -207,6 +207,148 @@ def byteAccepts : Bool := (checkBytes 16 ByteAdmission.limits {}
 #guard (Error.admission (.decode 0 owner "")).outcome == .rejected
 #guard (Error.admission (.limit .totalBytes)).outcome == .declined
 
+/-! ## A `let`'s nondependency bit is a key
+
+`ndLet b` is `let a : Type := Prop; a` (`b = false`) or the same `have`
+(`b = true`) over `record`'s universe table (`.sort 0` is `Prop`, `.sort 1`
+is `Type`). The arm compares the type, the value, the body, then the bit
+(`false < true`) (`compareExpr_letE`). -/
+
+def ndLet (nonDep : Bool) (body : Ixon.Expr := .var 0) : Ixon.Expr :=
+  .letE (.lean nonDep) (.sort 1) (.sort 0) body
+
+-- the bit decides when the type, the value and the body are equal
+#guard compareIn simple (ndLet false) (ndLet true) == .ok .lt
+#guard compareIn simple (ndLet true) (ndLet false) == .ok .gt
+#guard compareIn simple (ndLet true) (ndLet true) == .ok .eq
+-- the type, the value and the body each decide before the bit
+#guard compareIn simple (.letE (.lean true) (.sort 0) (.sort 0) (.var 0)) (ndLet false) == .ok .lt
+#guard compareIn simple (.letE (.lean false) (.sort 1) (.sort 1) (.var 0)) (ndLet true) == .ok .gt
+#guard compareIn simple (ndLet false (.var 1)) (ndLet true (.var 0)) == .ok .gt
+#guard compareIn simple (ndLet true (.var 0)) (ndLet false (.var 1)) == .ok .lt
+-- the body is compared whatever the bits, so a body that fails (`.sort 9` is
+-- outside the universe table) fails the comparison with equal or unequal bits
+#guard compareIn simple (ndLet false (.sort 9)) (ndLet true (.sort 9)) ==
+  .error (.malformed "universe index outside table")
+#guard compareIn simple (ndLet false (.sort 9)) (ndLet false (.sort 9)) ==
+  .error (.malformed "universe index outside table")
+-- under a binder and an application, as anywhere in a member
+#guard compareIn simple (.app (.var 0) (ndLet true)) (.app (.var 0) (ndLet false)) == .ok .gt
+#guard compareIn simple (.all .many .shared (ndLet false) (.var 0))
+  (.all .many .shared (ndLet true) (.var 0)) == .ok .lt
+-- a `let`'s kind and binder contract are not keys
+#guard compareIn simple (.letE (.borrow false) (.sort 1) (.sort 0) (.var 0)) (ndLet false) == .ok .eq
+
+/-- `e` with every recursive reference `.recur i` renumbered to `.recur (σ i)`. -/
+def ndRelabel (σ : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
+  | .recur i us => .recur (σ i) us
+  | .app f a => .app (ndRelabel σ f) (ndRelabel σ a)
+  | .lam c t b => .lam c (ndRelabel σ t) (ndRelabel σ b)
+  | .all c r t b => .all c r (ndRelabel σ t) (ndRelabel σ b)
+  | .letE c t v b => .letE c (ndRelabel σ t) (ndRelabel σ v) (ndRelabel σ b)
+  | .prj t i v => .prj t i (ndRelabel σ v)
+  | e => e
+
+def ndRelabelMember (σ : UInt64 → UInt64) : Ixon.MutConst → Ixon.MutConst
+  | .defn d => .defn { d with typ := ndRelabel σ d.typ, value := ndRelabel σ d.value }
+  | .indc i => .indc { i with
+      typ := ndRelabel σ i.typ
+      ctors := i.ctors.map fun c => { c with typ := ndRelabel σ c.typ } }
+  | .recr r => .recr { r with
+      typ := ndRelabel σ r.typ
+      rules := r.rules.map fun x => { x with rhs := ndRelabel σ x.rhs } }
+
+/-- A block rearranged: position `k` holds member `order[k]`, and recursive
+references follow their members to the new positions. -/
+def ndArrange (source : Ixon.Constant) (order : List Nat) : Ixon.Constant :=
+  match source.info with
+  | .muts members =>
+    let σ (i : UInt64) : UInt64 := UInt64.ofNat (order.idxOf i.toNat)
+    { source with info := .muts (order.toArray.map fun i => ndRelabelMember σ members[i]!) }
+  | _ => source
+
+/-- The bytes of a block put in its canonical order (its classes flattened). -/
+def ndCanonicalBytes (source : Ixon.Constant) : Except Error (Array UInt8) := do
+  return (Ixon.serConstant (ndArrange source (← classes source).flatten)).data
+
+-- Two definitions that differ only in the bit: two classes in either listing
+-- order, the same canonical bytes; only the canonical listing is accepted, the
+-- other is refused as non-canonical (a reject)
+def ndDefn (nonDep : Bool) : Ixon.MutConst := defn (ndLet nonDep) (.sort 1)
+def letHave : Ixon.Constant := record #[ndDefn false, ndDefn true]
+def haveLet : Ixon.Constant := record #[ndDefn true, ndDefn false]
+
+#guard classes letHave == .ok [[0], [1]]
+#guard classes haveLet == .ok [[1], [0]]
+#guard accepts letHave
+#guard !accepts haveLet
+#guard checkBlock {} owner haveLet [] == .error (.nonCanonical owner [[1], [0]])
+#guard ndCanonicalBytes letHave == .ok (Ixon.serConstant letHave).data
+#guard ndCanonicalBytes haveLet == ndCanonicalBytes letHave
+#guard accepts (ndArrange haveLet [1, 0])
+
+/-- One class holding both members of a two-member block (within a class,
+members keep the seed's address order). -/
+def ndOneClass : Classes → Bool
+  | [members] => members.length == 2 && members.contains 0 && members.contains 1
+  | _ => false
+
+-- The same-bit neighbour (the binder renamed: Ixon stores no names, so these
+-- are the same bytes) is one class: stored uncollapsed it is refused, stored
+-- collapsed (one member) it is accepted
+def letLet : Ixon.Constant := record #[ndDefn false, ndDefn false]
+#guard match classes letLet with | .ok c => ndOneClass c | .error _ => false
+#guard match checkBlock {} owner letLet [] with
+  | .error (.nonCanonical o c) => o == owner && ndOneClass c
+  | _ => false
+#guard accepts (record #[ndDefn false])
+
+-- The census's reproducer, a mutual inductive block: `Left.mk : (let a : Type
+-- := Prop; a) → Right → Left` and `Right.mk`, the same with `have`, `→ Left →
+-- Right`. `ndMember b self other` is the member at `self` whose other member
+-- is at `other`.
+def ndMember (nonDep : Bool) (self other : UInt64) : Ixon.MutConst :=
+  .indc ⟨false, 0, 0, 0, .sort 1, #[⟨false, 0, 0, 0, 2,
+    .all .many .shared (ndLet nonDep) (.all .many .shared (.recur other #[]) (.recur self #[]))⟩]⟩
+def leftRight : Ixon.Constant := record #[ndMember false 0 1, ndMember true 1 0]
+def rightLeft : Ixon.Constant := record #[ndMember true 0 1, ndMember false 1 0]
+
+#guard classes leftRight == .ok [[0], [1]]
+#guard classes rightLeft == .ok [[1], [0]]
+#guard accepts leftRight
+#guard checkBlock {} owner rightLeft [] == .error (.nonCanonical owner [[1], [0]])
+#guard ndCanonicalBytes leftRight == .ok (Ixon.serConstant leftRight).data
+#guard ndCanonicalBytes rightLeft == ndCanonicalBytes leftRight
+#guard accepts (ndArrange rightLeft [1, 0])
+-- with equal bits the two members are one class (the recursive references are
+-- tentatively equal), so the uncollapsed block is refused
+#guard match classes (record #[ndMember false 0 1, ndMember false 1 0]) with
+  | .ok c => ndOneClass c
+  | .error _ => false
+#guard !accepts (record #[ndMember false 0 1, ndMember false 1 0])
+-- The order check sees the stored members, not the names a member stands for:
+-- a block that collapses the pair into one member (what a comparator blind to
+-- the bit made the compiler store, with either representative) is a canonical
+-- singleton, accepted whichever bit it kept. Not collapsing them is the
+-- compiler's obligation, under the same key.
+#guard accepts (record #[ndMember false 0 0])
+#guard accepts (record #[ndMember true 0 0])
+
+-- Through the bytes: the non-canonical listing stops at the order stage as a
+-- reject; the canonical one passes it (whatever the checker then says)
+#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, rightLeft)]) [] with
+  | .error e@(.order (.nonCanonical _ [[1], [0]])) => e.outcome == .rejected
+  | _ => false
+#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, leftRight)]) [] with
+  | .error (.order _) => false
+  | _ => true
+#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, haveLet)]) [] with
+  | .error e@(.order (.nonCanonical _ [[1], [0]])) => e.outcome == .rejected
+  | _ => false
+#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, letHave)]) [] with
+  | .error (.order _) => false
+  | _ => true
+
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
     (h : checkBytes 16 ByteAdmission.limits {}
       (Projection.encode Projection.separatedInput) [] = .ok env) : Nonempty (Ix.Kernel.Model V env) :=

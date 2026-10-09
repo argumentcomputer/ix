@@ -5,7 +5,8 @@ import Ix.CompileCert.Canon.Simulate
 
 `ERen σ S e e'`: `e'` is `e` with every constant and projection-structure name `n` (each
 satisfying `S`) replaced by `σ n`, binder names, binder infos and the cached hashes arbitrary
-(the comparator reads none of them). `compareExpr_ren`: the comparison of two renamed
+(the comparator reads none of them); the serialized `letE.nonDep` flag is preserved.
+`compareExpr_ren`: the comparison of two renamed
 expressions under `c'` is related to the comparison of the originals under `c` by any relation
 the comparator's combinators preserve (`ResRel2`) as soon as the reference comparisons are.
 The same for the constants (`constP_ren`).
@@ -30,9 +31,9 @@ inductive ERen (σ : Name → Name) (S : Name → Prop) : Expr → Expr → Prop
       ERen σ S t t' → ERen σ S b b' → ERen σ S (.lam n t b bi h) (.lam n' t' b' bi' h')
   | forallE {t b t' b' : Expr} (n n' : Name) (bi bi' : Lean.BinderInfo) (h h' : Address) :
       ERen σ S t t' → ERen σ S b b' → ERen σ S (.forallE n t b bi h) (.forallE n' t' b' bi' h')
-  | letE {t v b t' v' b' : Expr} (n n' : Name) (nd nd' : Bool) (h h' : Address) :
+  | letE {t v b t' v' b' : Expr} (n n' : Name) (nd : Bool) (h h' : Address) :
       ERen σ S t t' → ERen σ S v v' → ERen σ S b b' →
-        ERen σ S (.letE n t v b nd h) (.letE n' t' v' b' nd' h')
+        ERen σ S (.letE n t v b nd h) (.letE n' t' v' b' nd h')
   | lit (l : Lean.Literal) (h h' : Address) : ERen σ S (.lit l h) (.lit l h')
   | mdata {x x' : Expr} (d : Array (Name × Ix.DataValue)) (h h' : Address) :
       ERen σ S x x' → ERen σ S (.mdata d x h) (.mdata d x' h')
@@ -70,8 +71,8 @@ theorem ehd_ren {x x' : Expr} (r : ERen σ S x x') :
     exact .inr ⟨_, _, by simp only [ehd], by simp only [ehd], .lam n n' bi bi' h h' r1 r2⟩
   | forallE n n' bi bi' h h' r1 r2 =>
     exact .inr ⟨_, _, by simp only [ehd], by simp only [ehd], .forallE n n' bi bi' h h' r1 r2⟩
-  | letE n n' nd nd' h h' r1 r2 r3 =>
-    exact .inr ⟨_, _, by simp only [ehd], by simp only [ehd], .letE n n' nd nd' h h' r1 r2 r3⟩
+  | letE n n' nd h h' r1 r2 r3 =>
+    exact .inr ⟨_, _, by simp only [ehd], by simp only [ehd], .letE n n' nd h h' r1 r2 r3⟩
   | lit l h h' => exact .inr ⟨_, _, by simp only [ehd], by simp only [ehd], .lit l h h'⟩
   | proj n i h h' hs r =>
     exact .inr ⟨_, _, by simp only [ehd], by simp only [ehd], .proj n i h h' hs r⟩
@@ -155,7 +156,8 @@ theorem compareExpr_ren {R} (hR : ResRel2 R) (c c' : CmpCtx) (hlv : c.levels = c
              exact hR.cmpM (ih _ _ _ _ (by omega) ‹_› ‹_›) (ih _ _ _ _ (by omega) ‹_› ‹_›))
           | (rw [cE_letE, cE_letE]
              exact hR.cmpM (ih _ _ _ _ (by omega) ‹_› ‹_›)
-               (hR.cmpM (ih _ _ _ _ (by omega) ‹_› ‹_›) (ih _ _ _ _ (by omega) ‹_› ‹_›)))
+               (hR.cmpM (ih _ _ _ _ (by omega) ‹_› ‹_›)
+                 (hR.cmpM (ih _ _ _ _ (by omega) ‹_› ‹_›) (hR.refl _))))
           | (rw [cE_lit, cE_lit]; exact hR.refl _)
           | (rw [cE_proj, cE_proj]
              exact hR.cmpM (href _ _ ‹_› ‹_›) (hR.cmpM (hR.refl _) (ih _ _ _ _ (by omega) ‹_› ‹_›)))

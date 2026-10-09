@@ -54,6 +54,8 @@ import Tests.Ix.Compile.Twins.Cliques
 import Tests.Ix.Compile.CliqueOwnership.Sources
 import Tests.Ix.Compile.Twins.Repro
 import Tests.Ix.Compile.Twins.Proto
+import Tests.Ix.Compile.Fixtures.LetNonDep
+import Tests.Ix.Compile.Fixtures.NestedLevels
 import Tests.Ix.Compile.Oracle.Lib
 import LSpec
 
@@ -238,7 +240,15 @@ def ownershipFamilies : List Family :=
   (["S1", "S2", "S3", "S4", "S5", "S6", "R1", "R2"].map (ownPair · .anonymous))
 
 def allFamilies : List Family :=
-  cliqueFamilies ++ reproFamilies ++ protoFamilies ++ libraryFamilies
+  cliqueFamilies ++ reproFamilies ++ protoFamilies ++ libraryFamilies ++
+    ([`Split, `Equal].map fun family =>
+      let ns := `Tests.Ix.Compile.Fixtures.LetNonDep ++ family
+      { fixture := ns, kind := .block,
+        pres := [{ id := "A", ns := ns ++ `A }, { id := "B", ns := ns ++ `B }] }) ++
+    ([`Mixed, `Neighbour].map fun family =>
+      let ns := `Tests.Ix.Compile.Fixtures.NestedLevels ++ family
+      { fixture := ns, kind := .block,
+        pres := [{ id := "A", ns := ns ++ `A }, { id := "B", ns := ns ++ `B }] })
 
 /-! ## Lean terms under the name map -/
 

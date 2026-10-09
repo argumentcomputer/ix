@@ -85,15 +85,18 @@ structure ExpandedBlock where
   types : Array ExpandedMember
   /-- `auxName → nested expr` (the original nested application with block
       param FVars free) — the aux's semantic identity, used by restore. -/
-  auxToNested : Std.HashMap Name Expr
+  auxToNested : Ix.Compile.Canon.NameTable Expr
   /-- `auxCtorName → (originalCtorName, auxInductiveName)`. -/
-  auxCtorMap : Std.HashMap Name (Name × Name)
+  auxCtorMap : Ix.Compile.Canon.NameTable (Name × Name)
   /-- Block parameters as FVars (shared across all members). -/
   blockParamFvars : Array Expr
   /-- Number of original (non-auxiliary) types. -/
   nOriginals : Nat
   /-- Block-level universe parameters (from the first original inductive). -/
   levelParams : Array Name
+  /-- Allocation context retained for the non-identity auxiliary-order branch. -/
+  all0 : Name := default
+  sourceNames : List Lean.Name := []
   deriving Inhabited
 
 /-- Sentinel: "this source aux position has no canonical match in the
@@ -110,7 +113,7 @@ def PERM_OUT_OF_SCC : Nat := 18446744073709551615
     Support for `nameReplacePrefix` (Rust `Name::strip_prefix`). -/
 partial def stripPrefixComponents (name oldPrefix : Name)
     : Option (List (String ⊕ Nat)) :=
-  if name == oldPrefix then some []
+  if Ix.Compile.Canon.keyName name = Ix.Compile.Canon.keyName oldPrefix then some []
   else
     match name with
     | .str parent s _ =>
@@ -428,15 +431,19 @@ partial def collectMemberRefs (expr : Expr)
 structure ExpandSt where
   types : Array ExpandedMember := #[]
   /-- Incremental mirror of `types[*].name` for O(1) membership. -/
-  typeNameSet : Std.HashSet Name := {}
-  auxToNested : Std.HashMap Name Expr := {}
-  auxCtorMap : Std.HashMap Name (Name × Name) := {}
-  /-- Dedup: nested-app (`IAs`) → aux name (hash-keyed Expr map mirrors
-      Rust's `FxHashMap<Hash, Name>`). -/
-  auxSeen : Std.HashMap Expr Name := {}
+  typeNameSet : Ix.Compile.Canon.NameSet := {}
+  auxToNested : Ix.Compile.Canon.NameTable Expr := {}
+  auxCtorMap : Ix.Compile.Canon.NameTable (Name × Name) := {}
+  /-- First structural occurrence discovery; hash hits are confirmed. -/
+  auxSeen : Ix.Compile.Canon.OccurrenceTable := {}
   nextAuxIdx : Nat := 1
+  sourceMembers : Array Name := #[]
+  sourceNames? : Option (List Lean.Name) := none
+  allocatedNames : List Lean.Name := []
+  allocatedCtorRoots : List Lean.Name := []
   all0 : Name := default
   blockLevels : Array Level := #[]
+  levelParams : List Name := []
   blockParamFvars : Array Expr := #[]
   blockParamDecls : Array LocalDecl := #[]
   blockParamFvarNames : Array Name := #[]
@@ -458,7 +465,7 @@ abbrev ExpandM := StateT ExpandSt CompileM
     nested.rs:148). All pushes must go through here. -/
 def ExpandM.pushType (member : ExpandedMember) : ExpandM Unit :=
   modify fun st => { st with
-    typeNameSet := st.typeNameSet.insert member.name
+    typeNameSet := st.typeNameSet.insert member.name ()
     types := st.types.push member }
 
 /-- Non-throwing constant lookup (Rust `lean_env.get`; sees the
@@ -489,7 +496,7 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
   -- Some parameter arg must mention a block member.
   let st ← get
   if !(args.toList.take extNParams).any
-      (fun a => exprMentionsAnyName a st.typeNameSet) then
+      (fun a => Ix.Compile.Canon.mentionsName st.typeNameSet.contains a) then
     return none
 
   -- Extract spec_params normalized to block-param FVars.
@@ -505,9 +512,12 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
 
   -- Dedup by nested-app identity.
   let keyOf := fun (x : Expr) => match st.keyAddr? with
-    | some f => Ix.Compile.Canon.addrKey f st.typeNameSet.contains x
-    | none => x
-  if let some auxName := st.auxSeen.get? (keyOf iAs) then
+    | some f => Ix.Compile.Canon.addrOccurrence st.levelParams f st.typeNameSet.contains x
+    | none => .ok (Ix.Compile.Canon.sourceOccurrence x)
+  let key ← match keyOf iAs with
+    | .ok k => pure k
+    | .error e => throw (.invalidMutualBlock e)
+  if let some auxName := st.auxSeen.get? key then
     let mut result := Expr.mkConst auxName st.blockLevels
     for af in asFvars do
       result := Expr.mkApp result af
@@ -534,11 +544,21 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     let some jName := cls[0]? | continue
     let some (.inductInfo jInfo) ← lookupConst? jName | continue
 
-    -- `<all0>._nested.<Ext>_N`
+    -- Collect the block's actual source closure only when its first auxiliary is allocated.
+    let sourceNames ← match (← get).sourceNames? with
+      | some names => pure names
+      | none => do
+        let cenv ← Ix.CompileM.getCompileEnv
+        let groups := if (← get).canonicalGroups then cenv.blocks else {}
+        pure (Ix.Compile.Canon.sourceContext cenv.env (← get).sourceMembers groups).protectedNames
     let auxIdx := (← get).nextAuxIdx
-    let auxName := Name.mkStr (Name.mkStr (← get).all0 "_nested")
-      s!"{jName.pretty.replace "." "_"}_{auxIdx}"
-    modify fun s => { s with nextAuxIdx := s.nextAuxIdx + 1 }
+    let auxName := Ix.Compile.Canon.freshFamily ((← get).allocatedNames ++ sourceNames)
+      (Name.mkStr (← get).all0 "_nested") s!"{jName.pretty.replace "." "_"}_{auxIdx}"
+    modify fun s => { s with
+      nextAuxIdx := s.nextAuxIdx + 1
+      sourceNames? := some sourceNames
+      allocatedNames := Ix.Compile.Canon.keyName auxName :: s.allocatedNames }
+
 
     -- aux → `J.{I_lvls} spec_params` (semantic identity).
     let jAs := mkAppN (Expr.mkConst jName headLevels) specParams
@@ -552,7 +572,9 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     -- A canonical class registers each of its names (collapsed members of
     -- the external block share the representative's auxiliary).
     for k in cls do
-      let kAs := keyOf (mkAppN (Expr.mkConst k headLevels) specParams)
+      let kAs ← match keyOf (mkAppN (Expr.mkConst k headLevels) specParams) with
+        | .ok key => pure key
+        | .error e => throw (.invalidMutualBlock e)
       modify fun s =>
         if s.auxSeen.contains kAs then s
         else { s with auxSeen := s.auxSeen.insert kAs auxName }
@@ -568,7 +590,9 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     let mut auxCtors : Array ExpandedCtor := #[]
     for jCtorName in jInfo.ctors do
       let some (.ctorInfo jCtor) ← lookupConst? jCtorName | continue
-      let auxCtorName := nameReplacePrefix jCtorName jName auxName
+      let candidate := nameReplacePrefix jCtorName jName auxName
+      let auxCtorName := Ix.Compile.Canon.freshCtorFamily
+        ((← get).allocatedNames ++ sourceNames) auxName candidate auxCtors.size (← get).allocatedCtorRoots
       let ctorTypeInst :=
         substLevels jCtor.cnst.type jInfo.cnst.levelParams headLevels
       let ctorTypePeeled := instantiatePiParams ctorTypeInst extNParams specParams
@@ -578,7 +602,9 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
         auxName extNParams (← get).blockLevels (← get).blockParamFvars
       let auxCtorType := mkForall ctorTypeBlock (← get).blockParamDecls
       modify fun s => { s with
-        auxCtorMap := s.auxCtorMap.insert auxCtorName (jCtorName, auxName) }
+        auxCtorMap := s.auxCtorMap.insert auxCtorName (jCtorName, auxName)
+        allocatedNames := Ix.Compile.Canon.keyName auxCtorName :: s.allocatedNames
+        allocatedCtorRoots := Ix.Compile.Canon.keyName auxCtorName :: s.allocatedCtorRoots }
       auxCtors := auxCtors.push
         { name := auxCtorName, typ := auxCtorType, nFields := jCtor.numFields }
 
@@ -666,7 +692,7 @@ def expandNestedBlock (orderedOriginals : Array Name)
 
   let addr? ← Ix.CompileM.constAddrLookup
   let init : ExpandSt := {
-    all0, blockLevels
+    all0, sourceMembers := orderedOriginals, blockLevels, levelParams := levelParams.toList
     blockParamFvars, blockParamDecls, blockParamFvarNames
     nParams, canonicalGroups
     keyAddr? := if canonicalGroups then some addr? else none
@@ -740,6 +766,8 @@ def expandNestedBlock (orderedOriginals : Array Name)
       blockParamFvars
       nOriginals
       levelParams
+      all0
+      sourceNames := st.sourceNames?.getD []
     }
 
   Prod.fst <$> build.run init
@@ -768,7 +796,9 @@ def ExpandedBlock.toCanon (x : ExpandedBlock) : Ix.Compile.Canon.Expanded :=
     auxCtorMap := x.auxCtorMap
     nOriginals := x.nOriginals
     levelParams := x.levelParams
-    nParams := np }
+    nParams := np
+    all0 := x.all0
+    sourceNames := x.sourceNames }
 
 /-- The canonical order of the aux tail of an `ExpandedBlock`, applied to
     it, returning the updated block and `perm[oldJ] = canonicalJ`.
@@ -809,7 +839,7 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
   let mut sortedOrder : Array Nat := #[]
   for (cls, canonicalJ) in sortedClasses.zipIdx do
     for (member, memberJ) in cls.zipIdx do
-      let some oldJ := auxTailNames.findIdx? (· == member)
+      let some oldJ := auxTailNames.findIdx? (fun n => Ix.Compile.Canon.keyName n == Ix.Compile.Canon.keyName member)
         | throw (.invalidMutualBlock
             s!"aux sort returned unknown member {member.pretty}")
       perm ← arrSet perm oldJ canonicalJ "sortAuxByPartitionRefinement: auxiliary permutation"
@@ -823,15 +853,11 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
   if nCanon == nAux && (perm.zipIdx.all fun (p, i) => p == i) then
     return (expanded, perm)
 
-  -- `<all0>._nested` prefix from the first aux name.
-  let firstAuxName := (← arrIdx expanded.types nOriginals "sortAuxByPartitionRefinement: first aux").name
-  let nestedPrefix ← match firstAuxName with
-    | .str prefix_ _ _ => pure prefix_
-    | _ => throw (.invalidMutualBlock
-        s!"nested aux name is not a string name: {firstAuxName.pretty}")
-
-  -- New canonical names `<all0>._nested.<Ext>_<newJ+1>` (Ext recovered by
-  -- stripping the trailing `_<N>` from the OLD suffix).
+  -- Reallocate from the original block anchor, never from a previously
+  -- freshened auxiliary's numeric parent. Source protection is the exact
+  -- context captured by expansion; no ambient names are consulted here.
+  let nestedPrefix := Name.mkStr expanded.all0 "_nested"
+  let mut allocated : List Lean.Name := []
   let mut newAuxNames : Array Name := #[]
   for newJ in [0:nCanon] do
     let oldJ ← arrIdx sortedOrder newJ "sortAuxByPartitionRefinement: sorted order"
@@ -839,50 +865,70 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
     let ext ← match oldName with
       | .str _ suffix _ =>
         let parts := suffix.splitOn "_"
-        pure (if parts.length > 1 then
-          String.intercalate "_" parts.dropLast
-        else suffix)
+        pure (if parts.length > 1 then String.intercalate "_" parts.dropLast else suffix)
       | _ => throw (.invalidMutualBlock
           s!"nested aux name is not a string name: {oldName.pretty}")
-    newAuxNames := newAuxNames.push
-      (Name.mkStr nestedPrefix s!"{ext}_{newJ + 1}")
+    let newName := Ix.Compile.Canon.freshFamily (allocated ++ expanded.sourceNames)
+      nestedPrefix s!"{ext}_{newJ + 1}"
+    allocated := Ix.Compile.Canon.keyName newName :: allocated
+    newAuxNames := newAuxNames.push newName
 
-  let mut nameRename : Std.HashMap Name Name := {}
+  let mut nameRename : Ix.Compile.Canon.NameTable Name := {}
   for (canonicalJ, oldJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
     let oldName := (← arrIdx expanded.types (nOriginals + oldJ) "sortAuxByPartitionRefinement: aux member").name
     nameRename := nameRename.insert oldName (← arrIdx newAuxNames canonicalJ "sortAuxByPartitionRefinement: new aux name")
 
-  -- Cascade 1: auxCtorMap (keys are prefix-renamed; first insert wins).
-  let mut newAuxCtorMap : Std.HashMap Name (Name × Name) := {}
-  for (oldCtorName, origCtorName, oldAuxInd) in expanded.auxCtorMap do
-    let newAuxInd := (nameRename.get? oldAuxInd).getD oldAuxInd
-    let newCtorName := nameReplacePrefix oldCtorName oldAuxInd newAuxInd
-    if !newAuxCtorMap.contains newCtorName then
-      newAuxCtorMap := newAuxCtorMap.insert newCtorName (origCtorName, newAuxInd)
+  -- Allocate each representative's actual constructors from its recorded
+  -- original constructor/head pair. Transport every old constructor by its
+  -- position in the equivalent ordered constructor list; no constructor
+  -- prefix premise or global prefix rewrite is used.
+  let mut allocatedCtorRoots : List Lean.Name := []
+  let mut canonicalCtors : Array (Array Name) := #[]
+  let mut newAuxCtorMap : Ix.Compile.Canon.NameTable (Name × Name) := {}
+  for newJ in [0:nCanon] do
+    let oldJ ← arrIdx sortedOrder newJ "sortAuxByPartitionRefinement: constructor owner"
+    let mem ← arrIdx expanded.types (nOriginals + oldJ) "sortAuxByPartitionRefinement: constructor member"
+    let newAux ← arrIdx newAuxNames newJ "sortAuxByPartitionRefinement: constructor new owner"
+    let some occurrence := expanded.auxToNested.get? mem.name
+      | throw (.invalidMutualBlock s!"aux sort missing occurrence for {mem.name.pretty}")
+    let .const originalHead _ _ := (decomposeApps occurrence).1
+      | throw (.invalidMutualBlock s!"aux sort occurrence has no constant head: {mem.name.pretty}")
+    let mut names : Array Name := #[]
+    for (ctor, index) in mem.ctors.zipIdx do
+      let some (originalCtor, _) := expanded.auxCtorMap.get? ctor.name
+        | throw (.invalidMutualBlock s!"aux sort missing constructor origin: {ctor.name.pretty}")
+      let candidate := nameReplacePrefix originalCtor originalHead newAux
+      let newCtor := Ix.Compile.Canon.freshCtorFamily
+        (allocated ++ expanded.sourceNames) newAux candidate index allocatedCtorRoots
+      allocated := Ix.Compile.Canon.keyName newCtor :: allocated
+      allocatedCtorRoots := Ix.Compile.Canon.keyName newCtor :: allocatedCtorRoots
+      names := names.push newCtor
+      newAuxCtorMap := newAuxCtorMap.insert newCtor (originalCtor, newAux)
+    canonicalCtors := canonicalCtors.push names
+  for (canonicalJ, oldJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
+    let mem ← arrIdx expanded.types (nOriginals + oldJ) "sortAuxByPartitionRefinement: transported constructors"
+    let names ← arrIdx canonicalCtors canonicalJ "sortAuxByPartitionRefinement: canonical constructors"
+    for (ctor, index) in mem.ctors.zipIdx do
+      nameRename := nameRename.insert ctor.name
+        (← arrIdx names index "sortAuxByPartitionRefinement: constructor correspondence")
 
   -- Cascade 2: auxToNested keys (values are name-independent).
-  let mut newAuxToNested : Std.HashMap Name Expr := {}
+  let mut newAuxToNested : Ix.Compile.Canon.NameTable Expr := {}
   for (oldName, nestedExpr) in expanded.auxToNested do
     let newName := (nameRename.get? oldName).getD oldName
     if !newAuxToNested.contains newName then
       newAuxToNested := newAuxToNested.insert newName nestedExpr
 
   -- Cascade 3: every member/ctor type (sibling auxes reference each other
-  -- via Const nodes); shared rewrite cache. NOTE: this deliberately uses
-  -- `replaceConstNamesCached` (proj type names renamed too), matching the
-  -- Rust call to `expr_utils::replace_const_names_cached` — NOT
-  -- `canonicalizeConstNames`.
-  let mut renameCache : ExprCache := {}
+  -- via Const nodes); projection names are renamed too.
+  -- This historical non-identity branch uses the total generated-name walk.
+  -- Generated-name lookup uses the structural table throughout the rewrite.
   let mut renamedTypes : Array ExpandedMember := #[]
   for mem in expanded.types do
-    let (memTyp, cache1) :=
-      (replaceConstNamesCached mem.typ nameRename).run renameCache
-    renameCache := cache1
+    let memTyp := nameRename.replaceConstNames mem.typ
     let mut ctors : Array ExpandedCtor := #[]
     for ctor in mem.ctors do
-      let (ctorTyp, cache2) :=
-        (replaceConstNamesCached ctor.typ nameRename).run renameCache
-      renameCache := cache2
+      let ctorTyp := nameRename.replaceConstNames ctor.typ
       ctors := ctors.push { ctor with typ := ctorTyp }
     renamedTypes := renamedTypes.push { mem with typ := memTyp, ctors }
 
@@ -894,10 +940,9 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
   for newJ in [0:nCanon] do
     let oldJ ← arrIdx sortedOrder newJ "sortAuxByPartitionRefinement: sorted order"
     let mem ← arrIdx auxTail oldJ "sortAuxByPartitionRefinement: aux tail"
-    let oldName := mem.name
     let newName ← arrIdx newAuxNames newJ "sortAuxByPartitionRefinement: new aux name"
     let ctors := mem.ctors.map fun ctor =>
-      { ctor with name := nameReplacePrefix ctor.name oldName newName }
+      { ctor with name := (nameRename.get? ctor.name).getD ctor.name }
     reordered := reordered.push { mem with name := newName, ctors }
   let finalTypes :=
     (renamedTypes.toList.take nOriginals).toArray ++ reordered

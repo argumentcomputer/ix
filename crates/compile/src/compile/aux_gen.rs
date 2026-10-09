@@ -81,9 +81,11 @@ mod checked_expr;
 #[cfg(test)]
 mod expr_reference;
 pub mod expr_utils;
+mod fresh_names;
 #[cfg(test)]
 mod kernel_bridge_reference;
 pub mod nested;
+mod occurrence_key;
 pub mod rec_on;
 pub mod recursor;
 
@@ -395,7 +397,8 @@ pub fn generate_aux_patches(
       // read from `first_ind.all[0]` for their own `_N` naming.
       // Using `ordered_originals[0]` (a class rep) would diverge
       // whenever sort_consts reorders the first class.
-      let mut aux_rec_map: FxHashMap<Name, Name> = FxHashMap::default();
+      let mut aux_rec_map: occurrence_key::NameTable<Name> =
+        occurrence_key::NameTable::default();
       let source_all0 = &original_all[0];
       for (canonical_i, member) in
         expanded.types.iter().skip(expanded.n_originals).enumerate()

@@ -251,7 +251,10 @@ def runCase (c : Case) : CoreM Unit := do
   let all := (← getConstInfoInduct first).all
   -- Pass 1
   let cenv : _root_.Ix.Compile.Canon.Env := {
-    const? := ixLookup (← getEnv)
+    source := { consts := {}, fallback? := some {
+      index := (← getEnv).constants.toList.foldl
+        (fun m (n, ci) => m.insert (ixName n) (n, ci)) {}
+      fetch := fun (_, ci) => some (toIx ci) } }
     addr? := fun n => some (Address.blake3 n.pretty.toUTF8) }
   let block ← match _root_.Ix.Compile.Canon.canonBlock _root_.Ix.Compile.Canon.Rules.phaseA cenv
       (all.toArray.map ixName) with

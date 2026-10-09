@@ -341,9 +341,9 @@ def table : List Expect := [
   { unit := "twins", switch := "on", leg := "rs", cause := "WB-B6",
     msg := "FunExpected", names := ["Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Orig.RecAlias.PA.triv.match_1_7", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.brecOn", "Tests.Ix.Compile.Twins.Repro.Twin.Tw.RecAlias.PA.triv.match_1_7"] },
   { unit := "twins", switch := "on", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 41 },
+    msg := "requested selector matched no checkable work item", count := 57 },
   { unit := "twins", switch := "on", leg := "lean", cause := "BB-F7",
-    msg := "unknown constant ", count := 666 },
+    msg := "unknown constant ", count := 670 },
   { unit := "twins", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", varies := true },
   { unit := "twins", switch := "on", leg := "lean", cause := "WB-B6",
@@ -374,7 +374,7 @@ def table : List Expect := [
   { unit := "corpus", switch := "on", leg := "rs", cause := "KF-UNIVM",
     msg := "populate_recursor_rules_from_block: canonical-order mismatch", names := ["IxVMInd.UnivM.rec", "IxVMInd.UnivM.rec_1", "IxVMInd.UnivM.rec_2"] },
   { unit := "corpus", switch := "on", leg := "lean", cause := "BB-F7",
-    msg := "requested selector matched no checkable work item", count := 162 },
+    msg := "requested selector matched no checkable work item", count := 178 },
   -- re-recorded (FU item 13): 2457 → 2461. The lean leg now checks every item
   -- from a fresh worker state (`--clear-every 1`); warm caches let 4 BB-F7
   -- references resolve through another item's cached inference, depending on

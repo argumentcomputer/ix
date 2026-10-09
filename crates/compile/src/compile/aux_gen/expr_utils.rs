@@ -9,6 +9,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use super::occurrence_key::NameTable;
 use crate::compile::nat_conv::nat_to_u64;
 use bignat::Nat;
 use ix_common::address::Address;
@@ -723,13 +724,13 @@ pub fn subst_levels(
 pub(super) struct RestoreCtx {
   /// `aux_name → nested_expr`: the original nested application with block
   /// param FVars. Example: `"_nested.Array_1" → Array.{max u v}(Part.{u,v} fvar_α fvar_β)`
-  pub aux_to_nested: FxHashMap<Name, LeanExpr>,
+  pub aux_to_nested: NameTable<LeanExpr>,
   /// `aux_ctor_name → (original_ctor_name, original_ind_name)`: maps auxiliary
   /// constructor names back to originals for prefix replacement.
-  pub aux_ctor_map: FxHashMap<Name, (Name, Name)>,
+  pub aux_ctor_map: NameTable<(Name, Name)>,
   /// `aux_rec_name → canonical_rec_name`: maps auxiliary recursor names
   /// (e.g., `_nested.Array_1.rec`) to their canonical names (e.g., `Part.rec_1`).
-  pub aux_rec_map: FxHashMap<Name, Name>,
+  pub aux_rec_map: NameTable<Name>,
   /// Block-param FVars used during expansion. These are the free variables
   /// in the `aux_to_nested` expressions.
   pub block_param_fvars: Vec<LeanExpr>,
@@ -758,12 +759,12 @@ struct RestoreStateCache {
   /// `instantiate_rev` on every encounter of an aux, even though the
   /// inputs were identical across the entire block; now materialised
   /// once.
-  aux_restored: FxHashMap<Name, LeanExpr>,
+  aux_restored: NameTable<LeanExpr>,
   /// `aux_ind name → (orig_head_levels, orig_ind_args)` derived from
   /// decomposing the restored nested expression. Used for the aux-ctor
   /// restoration path where we need to rebuild
   /// `orig_ctor.{I_lvls} spec_params`.
-  aux_decomp: FxHashMap<Name, (Vec<Level>, Vec<LeanExpr>)>,
+  aux_decomp: NameTable<(Vec<Level>, Vec<LeanExpr>)>,
   /// Walk memoization shared across every `restore()` call on this
   /// context. DAG-shared subterms between recursor rules collapse to a
   /// single rewrite.
@@ -781,9 +782,9 @@ impl RestoreCtx {
   /// Build a context with an empty cache. The cache is populated lazily
   /// on the first `restore()` call.
   pub(super) fn new(
-    aux_to_nested: FxHashMap<Name, LeanExpr>,
-    aux_ctor_map: FxHashMap<Name, (Name, Name)>,
-    aux_rec_map: FxHashMap<Name, Name>,
+    aux_to_nested: NameTable<LeanExpr>,
+    aux_ctor_map: NameTable<(Name, Name)>,
+    aux_rec_map: NameTable<Name>,
     block_param_fvars: Vec<LeanExpr>,
     n_params: usize,
   ) -> Self {
@@ -831,13 +832,10 @@ impl RestoreCtx {
       })
       .collect();
 
-    let mut aux_restored: FxHashMap<Name, LeanExpr> =
-      FxHashMap::with_capacity_and_hasher(
-        self.aux_to_nested.len(),
-        Default::default(),
-      );
-    let mut aux_decomp: FxHashMap<Name, (Vec<Level>, Vec<LeanExpr>)> =
-      FxHashMap::default();
+    let mut aux_restored: NameTable<LeanExpr> =
+      NameTable::with_capacity(self.aux_to_nested.len());
+    let mut aux_decomp: NameTable<(Vec<Level>, Vec<LeanExpr>)> =
+      NameTable::default();
     for (aux_name, nested) in &self.aux_to_nested {
       let abstracted = batch_abstract(nested, &bp_fvar_map, self.n_params, 0);
       let restored = instantiate_rev(&abstracted, &subst_fvars);

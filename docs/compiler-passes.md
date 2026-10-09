@@ -346,13 +346,15 @@ and name/reference relations used in a proof must describe those actual entries;
 they cannot be replaced by an assumption that an arbitrary input never mentions
 its constructors.
 
-Two current-source boundaries matter. Rust still compares `is_rec` and `is_unsafe`
-before the other inductive fields; the C6 choice remains unresolved (§8). The Lean
-expression comparator's `letE` branch ignores `nonDep` at this source revision.
-Neither a future repair nor a structural name-key replacement is included in the
-theorems/source being described here. The general bridge from these keys to the
-intended representation must account for those fields, rather than infer safety
-from library parity alone.
+A `letE` compares type, value, body, then its serialized `nonDep` bit, with
+`false < true`. The bit comparison is strong; an earlier weak equality remains
+weak. Both compilers and the three canonical-order checkers use that order.
+Binder names and binder information remain metadata. Rust and Lean both start
+the inductive key with universe-parameter count; `is_rec` and `is_unsafe` are
+validation/generation inputs, not ordering keys. Raw inputs with disagreeing
+flags can compare equal without equal serialized safety bits. The general
+representation bridge must account for this boundary; library parity alone
+does not prove it.
 
 ### 2.3 Canonical order (Def 2.3), as a procedure
 
@@ -385,7 +387,8 @@ independent.
 Canonicalization retains each representative's universe-parameter list and type
 and value under the prescribed member/name mapping. It does not minimize the
 universe telescope by deleting apparently unused parameters, reorder arbitrary
-binders, or normalize arbitrary user computation. Constructor order within a
+binders, or normalize arbitrary user computation. The serialized `letE.nonDep`
+bit is content and remains in the anonymous payload. Constructor order within a
 member is source order; member classes, component order and nested positions are
 the separate decisions above.
 
@@ -417,6 +420,32 @@ opened in the order supplied by `GroupOf`; production uses the compiled registry
 for that referenced block. It does not scan unrelated ambient declarations to
 choose a different order.
 
+The canonical occurrence key converts each universe through `toUniv` in the
+first original member's positional universe context, then `Ixon.canonUniv`.
+Thus `List.{0} C` and `List.{max 0 0} C` share an auxiliary, while different
+parameter positions remain distinct. External constructor levels are
+instantiated into the block context before their types enter the queue.
+Unknown parameters and universe metavariables are errors, including errors
+detected before an empty or fuel-zero queue exit; there is no fallback key.
+Source expansion retains raw level spellings for its numbering and metadata.
+
+[`OccurrenceKey`](../Ix/Compile/Canon/OccurrenceKey.lean) distinguishes named
+references from external addresses for constant and projection heads. Its
+table and [`NameTable`](../Ix/Compile/Canon/NameTable.lean) confirm candidate
+hits structurally; cached digests do not establish identity. The source context
+uses the actual finite lookup index and reached declaration/reference groups
+([`Source`](../Ix/Compile/Canon/Source.lean)); metadata names are protected
+without being followed as declaration references. The exact source-cache
+refinement in [`SourceFast`](../Ix/Compile/Canon/SourceFast.lean) preserves the
+work-list result's order, multiplicity and query spelling.
+
+[`FreshNames`](../Ix/Compile/Canon/FreshNames.lean) retains an available
+historical auxiliary family and otherwise chooses a deterministic fresh family
+against that block's protected source closure and allocated families. The
+constructor map records the actual allocated name through auxiliary reordering.
+This is a closure-local allocator, not an ambient declaration scan or a proof
+of the full paired generator correspondence.
+
 The executable generator is
 [`AuxGen.Nested`](../Ix/AuxGen/Nested.lean). Its current `replaceIfNested` records
 every member of an external group, and each name of a collapsed class, under its
@@ -435,8 +464,17 @@ expansion. `computePerm_spec`, `computePerm_onto` and `computePerm_some` prove t
 position-map clauses. See [Expand](../Ix/CompileCert/Canon/Expand.lean) and
 [Perm](../Ix/CompileCert/Canon/Perm.lean). Connecting the production generator,
 its finite source reads, name allocation and constructor-origin transport to
-that specification remains a general obligation at this revision. Later allocator
-and name-key work is not presumed here.
+that specification remains a general obligation. The public expansion and
+component entries retain arbitrary lookup/group callbacks and an implicit
+callback environment. Their protection thunk is part of the actual algorithm
+context; allocation-history clauses refer to that thunk and the real
+pre-allocation state. Production constructs the callbacks and lazy protection
+from the source environment and reached block registry. Explicit finite-source
+companions retain the prior implementation, with full-result/error bridges to
+the production entries. These bridges do not supply the full paired expansion,
+collapse, representative-independence or generator/serialization correspondence.
+The original source, alias, constructor, universe and initialization obligations
+remain open.
 
 ### 2.6 Evaporation
 
@@ -481,9 +519,9 @@ content from source metadata without claiming that every metadata byte is erased
 
 The Lean mixed-kind and cache-orientation repairs are enabled by
 `Rules.compiler := Rules.phaseA`. The old `Rules.today` is an explicit comparison
-mode for historical studies. It is not the production rule set. Rust's additional
-C6 fields are still present; §8 records the unresolved choice rather than promise
-a deletion that has not occurred.
+mode for historical studies. It is not the production rule set. Rust's former
+C6 recursion/safety ordering keys have been removed to match Lean; their
+validation, serialization and auxiliary-generation uses remain.
 
 ## 3. The comparator is a total preorder
 
@@ -540,14 +578,17 @@ class to differ. The distinction matters when later code chooses a representativ
 | C3: weak/strong order | Only strong results survive class refinement. | Weak results are not immutable facts about every later context. |
 | C4: level spelling | Compiler compares `canonUniv` forms. | This does not prove every representative declaration or image is invariant under arbitrary universe respelling. |
 | C5: external addresses | Compared at the first difference, by policy. | Format-version independence is not promised. |
-| C6: Rust flags | `is_rec`/`is_unsafe` remain in Rust's inductive key. | Matching library bytes do not settle removing them or extending the specification. |
+| C6: Rust flags | `is_rec`/`is_unsafe` are absent from both inductive keys; other flag uses remain. | Comparator equality on arbitrary raw inputs does not validate their flags or imply equal serialized safety bits. |
 | C7: constructor references | The context gives constructor positions as specified by `MutCtx`. | Production reference/owner invariants still have to be connected to that context. |
 | C8: semantic metadata | Compared by semantic contract key, then body. | Arbitrary source-contract transformations are not automatically authorized. |
 | C9/C10: fixed point and stopping | The procedure defines the order; Lean refinement uses the proved splitting invariant. | A second implementation with a different stopping check is not formally refined by the Lean proof. |
 
-The current ignored `letE.nonDep` comparison and the hash-based name/reference
-identification are additional runtime-to-specification boundaries (§2.2, §0.2).
-They are not repaired by stating a stronger theorem conclusion than the source has.
+The expression key now includes `letE.nonDep`. The renaming relation's let arm
+therefore preserves that bit; it no longer relates two independently chosen
+flags. This is a correction of the auxiliary relation, not equivalence with its
+old flag-changing domain. Structural occurrence/generated-name tables do not
+remove the separately stated name/reference hypotheses of the general Pass 1
+comparison theorems (§2.2, §0.2).
 
 ### 3.5 Pass 1, stated at the theorem level
 
@@ -1123,13 +1164,13 @@ changes the source unit and therefore is not a comparison of identical inputs.
 
 The current default record is
 [`NonCanonicalDefault.nonCanonical`](../Tests/Ix/Compile/NonCanonicalDefault.lean):
-**959 entries**, with **16 represented causes**. The cause type has **19
+**963 entries**, with **16 represented causes**. The cause type has **19
 constructors/tag families**, including parameterized `PJ-FORM-<pass>`.
 The default entries have this histogram:
 
 | Cause | Entries | Cause | Entries |
 | --- | ---: | --- | ---: |
-| `IMAGE` | 493 | `INHERITED` | 155 |
+| `IMAGE` | 497 | `INHERITED` | 155 |
 | `ORDER-STMT` | 86 | `PENDING-SPLIT-AUX` | 55 |
 | `O11A-PENDING` | 42 | `PENDING-COLLAPSE` | 30 |
 | `LAZY` | 24 | `INDPRED-BELOW` | 21 |
@@ -1153,8 +1194,10 @@ The twins consumer matches the actual differences against the default keys in
 both directions. Other consumers check their own projections of a record; an
 evidence field present in the data is not automatically an asserted condition.
 See [record inventory](compiler-gates.md#exact-records-and-re-recording).
-The proposed additional four rows on a separate compiler repair branch are not
-part of this source snapshot or its 959-row record.
+The four additional `IMAGE` rows name `LetNonDep.Split` and `LetNonDep.Equal`
+recursors. They retain the repair branch's measured addresses and cause evidence;
+all 959 earlier entries remain. These source counts do not replace the exact
+stacked twins and compiler gates.
 
 ### 7.3 Current gates and evidence scope
 
@@ -1235,8 +1278,8 @@ source/loader manifest and byte gate for each new run.
 | Caller mixing incompatible encodings | Named refusal, without changing the callee's clique plan. |
 | Output packing | Reference closure, distinct from source-unit input selection. |
 
-The following choices remain open and are not made by this guide: C6's Rust
-`is_rec`/`is_unsafe` keys; the failed-original promotion behavior; D-M5-1's
+The following choices remain open and are not made by this guide:
+the failed-original promotion behavior; D-M5-1's
 structural carried-proof alternative; the phase-9 inverse-image bridge and its
 additional large-library coverage; the requested whole-scope corpus/large-run
 reconciliation; and the placement of additional tracked integration/CI machinery.
@@ -1425,7 +1468,7 @@ names, `g._ix._mutual`, `g._ix.mutual`, `x._ix._f`, transformed matchers and
   insert-once record of every decline and is not serialized in `.ixe`.
 - `<stem>.changed.json` describes the final driver's changes (§11.5).
 - The tracked non-canonical fixture records (§7.2) are test data, not emitted
-  compiler output. Their 959-row default and 157-row transport oracle have
+  compiler output. Their 963-row default and 157-row transport oracle have
   different consumers and do not constitute a runtime exception list.
 
 The representation is documented in [Ixon](Ixon.md). The implementing fields are
@@ -1572,9 +1615,12 @@ Their domains are not narrowed to the libraries or closed terms that pass tests.
 
 The pending choices in §8, gates for subsequent compiler changes, quiet-window
 benchmarks and release reconciliation remain separate deliverables. The accepted
-combined 881 and default-S results are exactly those in §7.3. No later allocator, `nonDep`, tagged
-occurrence-key or L2/L3 proof branch is included by implication in this revision.
-The current 959-row record must not be described as the proposed 963-row record.
+combined 881 and default-S results are exactly those in §7.3; they predate the
+allocator, `nonDep` and tagged occurrence-key repairs described here. They do not
+gate this later compiler slice by implication. The current source record has
+963 rows (§7.2). General L2/L3 production, renaming and generator proofs remain
+open; the structural tables and exact cache lemmas do not complete those
+endpoints.
 
 Historical comparator modes, prototype ablations, the default flip and slice-6
 surgery deletion explain the current design. They do not describe a supported

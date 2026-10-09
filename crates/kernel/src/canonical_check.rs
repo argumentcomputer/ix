@@ -245,12 +245,15 @@ pub fn compare_kexpr<M: KernelMode>(
     (_, ExprData::All(..)) => Ok(SOrd::gt(true)),
 
     (
-      ExprData::Let(_, xt, xv, xb, _, _),
-      ExprData::Let(_, yt, yv, yb, _, _),
-    ) => SOrd::try_zip::<_, TcError<M>, _>(
-      |a, b| compare_kexpr(a, b, ctx),
-      &[xt, xv, xb],
-      &[yt, yv, yb],
+      ExprData::Let(_, xt, xv, xb, xnd, _),
+      ExprData::Let(_, yt, yv, yb, ynd, _),
+    ) => SOrd::try_compare(
+      SOrd::try_zip::<_, TcError<M>, _>(
+        |a, b| compare_kexpr(a, b, ctx),
+        &[xt, xv, xb],
+        &[yt, yv, yb],
+      )?,
+      || Ok(SOrd::cmp(xnd, ynd)),
     ),
     (ExprData::Let(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Let(..)) => Ok(SOrd::gt(true)),
@@ -1361,6 +1364,119 @@ mod tests {
   }
 
   // ---- KMutCtx ----
+
+  #[test]
+  fn let_non_dep_is_content_and_compares_after_children() {
+    let ctx = KMutCtx::default();
+    let make = |body, nd| {
+      AE::let_((), AE::sort(AU::succ(AU::zero())), sort0(), body, nd)
+    };
+    let a = make(AE::var(0, ()), false);
+    let b = make(AE::var(0, ()), true);
+    let neighbour = make(AE::var(0, ()), false);
+    assert_ne!(a.addr(), b.addr());
+    let order = compare_kexpr(&a, &b, &ctx).unwrap();
+    assert_eq!(order.ordering, Ordering::Less);
+    assert!(order.strong);
+    assert_eq!(
+      compare_kexpr(&b, &a, &ctx).unwrap().ordering,
+      Ordering::Greater
+    );
+    assert_eq!(
+      compare_kexpr(&a, &neighbour, &ctx).unwrap().ordering,
+      Ordering::Equal
+    );
+    // A preceding body decision wins even against the opposite flag order.
+    let earlier = make(AE::var(0, ()), true);
+    let later = make(AE::var(1, ()), false);
+    assert_eq!(
+      compare_kexpr(&earlier, &later, &ctx).unwrap().ordering,
+      Ordering::Less
+    );
+  }
+
+  #[test]
+  fn validate_non_dep_classes_and_collapsing_neighbour() {
+    let (id_a, ind_a) = mk_indc("SA", 0, 0, vec![mk_id("SA.mk")], sort0());
+    let (id_b, ind_b) = mk_indc("SB", 0, 0, vec![mk_id("SB.mk")], sort0());
+    let make_ctor = |owner: &str, other: &str, nd| {
+      let ty = AE::let_(
+        (),
+        AE::sort(AU::succ(AU::zero())),
+        sort0(),
+        AE::var(0, ()),
+        nd,
+      );
+      mk_ctor(
+        owner,
+        2,
+        0,
+        AE::all(
+          (),
+          (),
+          ty,
+          AE::all(
+            (),
+            (),
+            AE::cnst(mk_id(other), Box::new([])),
+            AE::cnst(mk_id(owner), Box::new([])),
+          ),
+        ),
+      )
+    };
+    let ca = make_ctor("SA", "SB", false);
+    for right_flag in [false, true] {
+      let cb = make_ctor("SB", "SA", right_flag);
+      let resolve = |id: &KId<Anon>| {
+        if id.addr == mk_addr("SA.mk") {
+          Some(ca.clone())
+        } else if id.addr == mk_addr("SB.mk") {
+          Some(cb.clone())
+        } else {
+          None
+        }
+      };
+      let members = vec![(id_a.clone(), &ind_a), (id_b.clone(), &ind_b)];
+      let verdict = validate_canonical_block_single_pass(
+        &mk_addr("blk"),
+        &members,
+        &resolve,
+      );
+      if right_flag {
+        assert!(verdict.is_ok(), "distinct flag classes rejected: {verdict:?}");
+        let reversed = vec![(id_b.clone(), &ind_b), (id_a.clone(), &ind_a)];
+        assert!(matches!(
+          validate_canonical_block_single_pass(
+            &mk_addr("blk"),
+            &reversed,
+            &resolve
+          ),
+          Err(TcError::NonCanonicalBlock {
+            ordering: Ordering::Greater,
+            pos: 0,
+            ..
+          })
+        ));
+      } else {
+        assert!(matches!(
+          verdict,
+          Err(TcError::NonCanonicalBlock {
+            ordering: Ordering::Equal,
+            pos: 0,
+            ..
+          })
+        ));
+        assert!(
+          validate_canonical_block_single_pass(
+            &mk_addr("blk"),
+            &members[..1],
+            &resolve
+          )
+          .is_ok()
+        );
+      }
+    }
+  }
 
   #[test]
   fn kmutctx_from_id_pairs_assigns_class_per_member() {

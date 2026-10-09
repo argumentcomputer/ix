@@ -11,8 +11,8 @@
 
   Emitted from the twins gate's suggested entries (`entrySyntax`, cause by
   `Tests.Ix.Compile.Twins.defaultCause`), the rest reviewed by hand
-  at the M6 flip (see `docs/compiler-passes.md` §7.4). Causes, 959 entries:
-  - `IMAGE` (493): the Lean name of an image-kind head of a changed block
+  at the M6 flip (see `docs/compiler-passes.md` §7.4). Causes, 963 entries:
+  - `IMAGE` (497): the Lean name of an image-kind head of a changed block
     denotes its image (decision 3, Def 3.4); the canonical constant is the
     `_ix` one;
   - `INHERITED` (155): the term is equal under the name map;
@@ -41,6 +41,14 @@ open Tests.Ix.Compile.NonCanonical
 
 /-- The measured non-canonical set of the default (Pass 3) compile. -/
 def nonCanonical : List NonCanonicalEntry := [
+  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Right.rec "image-kind head of a changed block (Lean's name denotes the image)" .image
+    "0a332fefb2139bc295cb2394cf49ba1da5d77a84565b3222f10bc2b4f5332ff8" "47a7a7d529c14fc353bbc4ab0546173c806399dd01c50431b778bf15d283b89a" "type.∀.dom.∀.dom" "ROOT[TV]",
+  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Left.rec "image-kind head of a changed block (Lean's name denotes the image)" .image
+    "2160eea920c18ef2361d6c2a8859f332bed9d4c3ebde702fb07e762d926300cb" "9ecaab2697b9e2b459cf50333469faa03db1c68f04e74078cbba4ab7ac872b6f" "type.∀.dom.∀.dom" "ROOT[TV]",
+  e `Tests.Ix.Compile.Fixtures.LetNonDep.Equal "A" "B" `Left.rec "image-kind head of a changed block (Lean's name denotes the image)" .image
+    "a731530733ed61c5855a00b8604dd40dcc8cc47ad9b2fe47e60f13d78bb90f1e" "24bf667f7ec512fde8b5f64806a8ab1ada647672ead7dec5c81301e665599a83" "type.∀.dom.∀.dom" "ROOT[TV]",
+  e `Tests.Ix.Compile.Fixtures.LetNonDep.Equal "A" "B" `Right.rec "image-kind head of a changed block (Lean's name denotes the image)" .image
+    "24bf667f7ec512fde8b5f64806a8ab1ada647672ead7dec5c81301e665599a83" "a731530733ed61c5855a00b8604dd40dcc8cc47ad9b2fe47e60f13d78bb90f1e" "type.∀.dom.∀.dom" "ROOT[TV]",
   e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P1" `od._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt
     "43281966e05730c23b3a58e91c7d538d88266e8eb7f3b7c4fe9ee28bb30f003e" "65e783795028f8e0de56fed91c7f0e72c756296832635fd169f985d3b9193187" "value.λ.body.λ.body.@3.λ.body.λ.body" "ROOT[V]",
   e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P1" `ev._f "Lean's encoding constant (faithful; canonical form under `_ix`)" .orderStmt

@@ -260,6 +260,11 @@ def e3 : Expr → Expr
   | .letE _ _ _ b _ _ => b
   | e => e
 
+/-- The serialized `let` flag, compared after its type, value and body. -/
+def eNonDep : Expr → Bool
+  | .letE _ _ _ _ nd _ => nd
+  | _ => false
+
 def eLit : Expr → Lean.Literal
   | .lit l _ => l
   | _ => .natVal 0
@@ -378,7 +383,8 @@ theorem compareExpr_total (c : CmpCtx) (hc : AddrCongr c.addr?) : TotalPre (eC c
     symm; rw [eC, compareExpr.eq_def]; rfl
   | 6 =>
     refine ((P1 fun a h => h1 a h (by omega)).cmpM ((P2 fun a h => h2 a h (by omega)).cmpM
-      (P3 fun a h => h3 a h (by omega)))).congr ?_
+      ((P3 fun a h => h3 a h (by omega)).cmpM
+        (PreOn.pureCmp (compare : Bool → Bool → Ordering) (fun a : EPt => eNonDep a.2))))).congr ?_
     rintro ⟨xl, x⟩ ⟨yl, y⟩ ⟨_, hx⟩ ⟨_, hy⟩
     cases x <;> cases y <;> simp only [etag] at hx hy <;> try omega
     symm; rw [eC, compareExpr.eq_def]; rfl

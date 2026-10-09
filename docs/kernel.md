@@ -73,6 +73,22 @@ the compiler stores it in and not always the structural one (a structural
 check would refuse 2 of the 7 compiled recursor blocks of the fidelity
 fixture, `Rose.rec`/`Rose.rec_1` and `Args.rec`/`Tm.rec`).
 
+The structural order's keys (`Ixon.BlockOrder.compareExpr`) are the members'
+Ixon content up to binder contracts (a binder's contract, and a `let`'s kind
+and binder contract, are not compared). A `let`'s nondependency bit
+(`LetContract.nonDep`, Lean's `let` against `have`) is a key: the `let` arm
+compares the type, then the value, then the body, then the bit
+(`false < true`), each only when everything before it is equal
+(`Ixon.BlockOrder.compareExpr_letE`), as every canonical-order comparator
+does (the compilers', the Rust kernel's and `Ix.Tc`'s). Two members that differ only in that
+bit are therefore two classes (`compareExpr_letE_nonDep`): a block that stores
+both is accepted in that order and refused (`.nonCanonical`) in the other,
+and a block that stores two members equal under every key is refused
+uncollapsed. The check sees the stored members, not the names a member
+stands for: a block that stores one member for two names is a canonical
+singleton, so not collapsing members that differ in a key is the compiler's
+obligation, under the same keys (`docs/compiler-passes.md` §2.2).
+
 **Outcomes.** `Admission.Error.outcome` (called as `e.outcome`) classifies
 every failure as a reject (the input is wrong) or a decline (the checker
 does not certify it):
@@ -190,8 +206,10 @@ The projection and block-order variants have the same shape:
 `Ixon.Projection.checkBytes_{run_iff, ok_iff, of_expansion, reading,
 has_model, no_proof_of_False}` and `Ixon.BlockOrder.checkBytes_{run_iff,
 ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
-`UniqueKeys` in its reading. The separate package `Models/SetTheory`
-(Mathlib) provides `IxSetTheoryModel.zfSetTheoryOfCarneiro`, a
+`UniqueKeys` in its reading; the block-order variant also states its
+comparison's `let` arm (`Ixon.BlockOrder.compareExpr_letE`; the nondependency
+bit is a key: `compareExpr_letE_nonDep`, `compareExpr_letE_sameBit`). The
+separate package `Models/SetTheory` (Mathlib) provides `IxSetTheoryModel.zfSetTheoryOfCarneiro`, a
 `Ix.Kernel.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
 corollaries `IxSetTheoryModel.checkBytes_has_ZFSet_model` and
 `IxSetTheoryModel.checkBytes_no_proof_of_False`.
@@ -378,7 +396,7 @@ Frozen runtime closures (compiled functions; inherited externs):
 | entry: `checkBytes{,With}`, `checkConstants{,With}` | 5295 | 121 |
 | byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5293 | 121 |
 | projection: `address`, `reconstruct`, `Projection.checkBytes` | 5416 | 130 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5549 | 130 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5551 | 130 |
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.

@@ -621,10 +621,21 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-! ## Environment -/
 
+/-- A finite index of pinned Lean source declarations with a pure decoder.
+The compile driver reuses its existing name pre-pass index; values are
+canonicalized only when looked up. The index supplies actual finite
+support for block-reference closure, without enumerating it at runtime. -/
+structure LazyConstants where
+  index : HashMap Name (Lean.Name × Lean.ConstantInfo)
+  fetch : (Lean.Name × Lean.ConstantInfo) → Option ConstantInfo
+
+def LazyConstants.get? (source : LazyConstants) (n : Name) : Option ConstantInfo :=
+  (source.index.get? n).bind source.fetch
+
 /-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
 
     `fallback?` supports STREAMING consumers (the pure-Lean compile
-    driver at whole-Mathlib scale): a pure resolver consulted when
+    driver at whole-Mathlib scale): a finitely indexed resolver consulted when
     `consts` misses, typically canon-on-demand against the pinned
     elaborated Lean env. A materialized environment leaves it `none`,
     and every existing `{ consts := … }` literal behaves exactly as
@@ -638,7 +649,7 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
     the shared map. It is empty everywhere else. -/
 structure Environment where
   consts : HashMap Name ConstantInfo
-  fallback? : Option (Name → Option ConstantInfo) := none
+  fallback? : Option LazyConstants := none
   overlay : HashMap Name ConstantInfo := {}
 
 /-- Constant lookup: the overlay, the materialized map, then the lazy
@@ -651,7 +662,7 @@ def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
   | some ci => some ci
   | none =>
     match env.fallback? with
-    | some f => f n
+    | some f => f.get? n
     | none => none
 
 /-- Raw environment data as arrays (returned from Rust FFI).

@@ -5,6 +5,63 @@ namespace Ixon.BlockOrder
 
 open Ix.Kernel
 
+/-! ## The comparison's `let` arm: the nondependency bit is a key -/
+
+/-- The `let` arm of the canonical comparison: the type, then the value, then
+the body, then the nondependency bit (`LetContract.nonDep`, `false < true`),
+each only when everything before it is equal (`thenM`). The `let`'s kind and
+binder contract are not compared. -/
+theorem compareExpr_letE (block : Block) (ctx : LocalContext) (fuel leftLimit rightLimit : Nat)
+    (xc yc : Ixon.LetContract) (xt xv xb yt yv yb : Ixon.Expr) :
+    compareExpr block ctx (fuel + 1) leftLimit (.letE xc xt xv xb) rightLimit (.letE yc yt yv yb) =
+      (do
+        thenM (← compareExpr block ctx fuel leftLimit xt rightLimit yt) fun _ => do
+          thenM (← compareExpr block ctx fuel leftLimit xv rightLimit yv) fun _ => do
+            thenM (← compareExpr block ctx fuel leftLimit xb rightLimit yb) fun _ =>
+              .ok (compare xc.nonDep.toNat yc.nonDep.toNat)) :=
+  rfl
+
+/-- **The nondependency bit is a key.** Two `let`s whose types, values and
+bodies compare equal and whose bits differ compare by their bits: the `let`
+(`false`) before the `have` (`true`), never equal. So two members that differ
+only in the bit of one `let` are never one class. -/
+theorem compareExpr_letE_nonDep {block : Block} {ctx : LocalContext}
+    {fuel leftLimit rightLimit : Nat} {xc yc : Ixon.LetContract} {xt xv xb yt yv yb : Ixon.Expr}
+    (type : compareExpr block ctx fuel leftLimit xt rightLimit yt = .ok .eq)
+    (value : compareExpr block ctx fuel leftLimit xv rightLimit yv = .ok .eq)
+    (body : compareExpr block ctx fuel leftLimit xb rightLimit yb = .ok .eq)
+    (bit : xc.nonDep ≠ yc.nonDep) :
+    compareExpr block ctx (fuel + 1) leftLimit (.letE xc xt xv xb) rightLimit (.letE yc yt yv yb) =
+      .ok (if xc.nonDep then .gt else .lt) := by
+  rw [compareExpr_letE, type, value, body]
+  cases hx : xc.nonDep <;> cases hy : yc.nonDep
+  all_goals first
+    | exact absurd (hx.trans hy.symm) bit
+    | rfl
+
+/-- A comparison followed by an equal one is that comparison. -/
+theorem bind_thenM_eq (e : Except Error Ordering) :
+    (do thenM (← e) fun _ => (.ok .eq : Except Error Ordering)) = e := by
+  cases e with
+  | error _ => rfl
+  | ok r => cases r <;> rfl
+
+/-- With equal bits the `let` arm is the type, the value, then the body, as
+before the bit was a key: the key changes only comparisons of `let`s whose
+bits differ. -/
+theorem compareExpr_letE_sameBit {block : Block} {ctx : LocalContext}
+    {fuel leftLimit rightLimit : Nat} {xc yc : Ixon.LetContract} {xt xv xb yt yv yb : Ixon.Expr}
+    (bit : xc.nonDep = yc.nonDep) :
+    compareExpr block ctx (fuel + 1) leftLimit (.letE xc xt xv xb) rightLimit (.letE yc yt yv yb) =
+      (do
+        thenM (← compareExpr block ctx fuel leftLimit xt rightLimit yt) fun _ => do
+          thenM (← compareExpr block ctx fuel leftLimit xv rightLimit yv) fun _ =>
+            compareExpr block ctx fuel leftLimit xb rightLimit yb) := by
+  have same : compare xc.nonDep.toNat yc.nonDep.toNat = .eq := by
+    rw [bit]; cases yc.nonDep <;> rfl
+  rw [compareExpr_letE, same]
+  simp only [bind_thenM_eq]
+
 /-- An independently counted refinement derivation. A terminal derivation
 must exhibit an unchanged complete pass; a changing pass cannot be terminal.
 No rule converts exhaustion into a result. -/

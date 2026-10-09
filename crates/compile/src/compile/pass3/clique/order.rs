@@ -181,10 +181,12 @@ fn compare_expr(
       cmp_m(compare_expr(c, xl, yl, xt, yt), || compare_expr(c, xl, yl, xb, yb))
     },
     (
-      ExprData::LetE(_, xt, xv, xb, _, _),
-      ExprData::LetE(_, yt, yv, yb, _, _),
+      ExprData::LetE(_, xt, xv, xb, xnd, _),
+      ExprData::LetE(_, yt, yv, yb, ynd, _),
     ) => cmp_m(compare_expr(c, xl, yl, xt, yt), || {
-      cmp_m(compare_expr(c, xl, yl, xv, yv), || compare_expr(c, xl, yl, xb, yb))
+      cmp_m(compare_expr(c, xl, yl, xv, yv), || {
+        cmp_m(compare_expr(c, xl, yl, xb, yb), || so(true, xnd.cmp(ynd)))
+      })
     }),
     (ExprData::Lit(a, _), ExprData::Lit(b, _)) => so(true, a.cmp(b)),
     (ExprData::Proj(xn, xi, xs, _), ExprData::Proj(yn, yi, ys, _)) => {
@@ -488,4 +490,38 @@ pub fn statement_order(
       .map(|m| cls.iter().position(|c| c.contains(&m.name)).unwrap_or(0))
       .collect(),
   ))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::compile::pass3::expr::{bvar, root_name};
+
+  #[test]
+  fn non_dep_splits_classes_but_binder_names_do_not() {
+    let typ = Expr::sort(Level::succ(Level::zero()));
+    let make = |name: &str, binder: &str, flag| Member {
+      name: root_name(name),
+      level_params: vec![],
+      typ: typ.clone(),
+      value: Expr::letE(
+        root_name(binder),
+        typ.clone(),
+        Expr::sort(Level::zero()),
+        bvar(0),
+        flag,
+      ),
+    };
+    let a = make("let", "x", false);
+    let b = make("have", "x", true);
+    let neighbour = make("neighbour", "y", false);
+    let addr: AddrOf<'_> = &|_| None;
+    let reference =
+      clique_classes(addr, &[a.clone(), b.clone(), neighbour.clone()]).unwrap();
+    assert_eq!(reference.iter().map(Vec::len).collect::<Vec<_>>(), vec![2, 1]);
+    assert!(reference[0].contains(&a.name));
+    assert!(reference[0].contains(&neighbour.name));
+    assert_eq!(reference[1], vec![b.name.clone()]);
+    assert_eq!(clique_classes(addr, &[b, neighbour, a]).unwrap(), reference);
+  }
 }

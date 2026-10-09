@@ -167,7 +167,7 @@ def levelTests : TestSeq :=
 def restoreTests : TestSeq :=
   test "RestoreCtx renames aux recursor consts in application position"
     ((let ctx := RestoreCtx.new ∅ ∅
-        (Std.HashMap.ofList [(nm "auxrec", nm "origrec")]) #[] 0
+        (({} : Ix.Compile.Canon.NameTable Name).insert (nm "auxrec") (nm "origrec")) #[] 0
       let (out, _) := ctx.restore (Expr.mkApp (cst "auxrec") (cst "a"))
       out == Expr.mkApp (cst "origrec") (cst "a") : Bool))
 

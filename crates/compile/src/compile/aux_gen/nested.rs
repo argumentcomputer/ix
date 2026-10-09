@@ -25,6 +25,10 @@ use super::expr_utils::{
   LocalDecl, batch_abstract, decompose_apps, forall_telescope, instantiate1,
   strip_mdata_ref, subst_levels,
 };
+use super::fresh_names::{fresh_ctor_family, fresh_family, source_names};
+use super::occurrence_key::{
+  NameTable, OccurrenceInput, OccurrenceRef, OccurrenceShape, OccurrenceTable,
+};
 use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
 use crate::compile::validation::{self, AttemptError, Cancelled, Checkpoint};
 use ix_common::env::{
@@ -64,7 +68,7 @@ pub struct ExpandedBlock {
   /// auxiliary references back to original nested form.
   ///
   /// Example: `"_nested.Array_1" → Array.{max u v} (Part.{u,v} fvar_α fvar_β)`
-  pub aux_to_nested: FxHashMap<Name, LeanExpr>,
+  pub aux_to_nested: NameTable<LeanExpr>,
   /// `aux_ctor_name → (original_ctor_name, aux_inductive_name)`.
   ///
   /// Second element is the aux inductive (e.g., `_nested.List_1`) that this
@@ -73,7 +77,7 @@ pub struct ExpandedBlock {
   /// this stored the *original external* inductive name (e.g., `List`) and
   /// callers had to prefix-scan `aux_to_nested.keys()` to find the aux
   /// inductive; the data was wasted overhead.
-  pub aux_ctor_map: FxHashMap<Name, (Name, Name)>, // (orig_ctor, aux_ind)
+  pub aux_ctor_map: NameTable<(Name, Name)>, // (orig_ctor, aux_ind)
   /// Block parameters as FVars (shared across all members).
   pub block_param_fvars: Vec<LeanExpr>,
   /// Number of original (non-auxiliary) types.
@@ -128,16 +132,19 @@ struct ExpandCtx<'a> {
   /// `replace_if_nested` path. Must be updated whenever a member is pushed
   /// (seeding, nested aux creation). Invariant: `type_name_set.len() ==
   /// types.len()` and both contain the same names.
-  type_name_set: FxHashSet<Name>,
-  aux_to_nested: FxHashMap<Name, LeanExpr>,
-  aux_ctor_map: FxHashMap<Name, (Name, Name)>,
-  /// Dedup: maps nested_expr_hash → aux_name for each detected occurrence.
-  /// Previously a `Vec<(Hash, Name)>` scanned linearly per subterm; swapped
-  /// to a map so the lookup in `replace_if_nested` is O(1).
-  aux_seen: FxHashMap<Hash, Name>,
+  type_name_set: NameTable<()>,
+  aux_to_nested: NameTable<LeanExpr>,
+  aux_ctor_map: NameTable<(Name, Name)>,
+  /// Structural first-discovery table with confirmed hash candidates.
+  aux_seen: OccurrenceTable,
   next_aux_idx: usize,
+  source_members: Vec<Name>,
+  source_names: Option<Vec<Name>>,
+  allocated_names: Vec<Name>,
+  allocated_ctor_roots: Vec<Name>,
   all0: Name,
   block_levels: Vec<Level>,
+  level_params: Vec<Name>,
   block_param_fvars: Vec<LeanExpr>,
   block_param_decls: Vec<LocalDecl>,
   block_param_fvar_names: Vec<Name>,
@@ -153,14 +160,15 @@ struct ExpandCtx<'a> {
 }
 
 impl<'a> ExpandCtx<'a> {
-  /// The deduplication key of an occurrence: its hash on Lean's source walk;
-  /// on a canonical expansion, the hash of [`addr_key`], so that occurrences
-  /// equal up to compiled addresses share one auxiliary, as in the kernels'
-  /// walk (Lean `Ix.Compile.Canon.addrKey`).
-  fn dedup_key(&self, e: &LeanExpr) -> Hash {
+  /// Raw source structure, or the canonical address/universe key. The
+  /// occurrence table ignores cached digests when confirming equality.
+  fn dedup_key(&self, e: &LeanExpr) -> Result<OccurrenceInput, CompileError> {
     match self.canon {
-      None => *e.get_hash(),
-      Some(stt) => *addr_key(e, stt, &self.type_name_set).get_hash(),
+      None => Ok(OccurrenceInput::source(e)),
+      Some(stt) => Ok(OccurrenceInput {
+        key: addr_key(e, stt, &self.type_name_set, &self.level_params)?,
+        bucket: *e.get_hash(),
+      }),
     }
   }
 
@@ -168,7 +176,7 @@ impl<'a> ExpandCtx<'a> {
   /// `types` must go through this method so the incremental name set
   /// stays consistent with the vector.
   fn push_type(&mut self, member: ExpandedMember) {
-    self.type_name_set.insert(member.name.clone());
+    self.type_name_set.insert(member.name.clone(), ());
     self.types.push(member);
   }
 
@@ -193,7 +201,7 @@ impl<'a> ExpandCtx<'a> {
     as_fvars: &[LeanExpr],
     source_owner: &Name,
     cache: &mut FxHashMap<Hash, LeanExpr>,
-  ) -> Result<LeanExpr, Cancelled> {
+  ) -> Result<LeanExpr, AttemptError> {
     self.control.visit()?;
     let key = *e.get_hash();
     if let Some(cached) = cache.get(&key) {
@@ -260,7 +268,7 @@ impl<'a> ExpandCtx<'a> {
     e: &LeanExpr,
     as_fvars: &[LeanExpr],
     source_owner: &Name,
-  ) -> Result<Option<LeanExpr>, Cancelled> {
+  ) -> Result<Option<LeanExpr>, AttemptError> {
     self.control.visit()?;
     let (head, args) = decompose_apps(e);
     let (head_name, head_levels) = match head.as_data() {
@@ -340,11 +348,11 @@ impl<'a> ExpandCtx<'a> {
       }
       app
     };
-    let i_as_hash = self.dedup_key(&i_as);
+    let i_as_key = self.dedup_key(&i_as)?;
 
-    // Dedup: check if we've already created an auxiliary for this occurrence.
-    // O(1) HashMap lookup; previously a linear scan over `Vec<(Hash, Name)>`.
-    if let Some(aux_name) = self.aux_seen.get(&i_as_hash).cloned() {
+    // Hash candidates are confirmed structurally; collisions fall back
+    // to the same first-discovery specification.
+    if let Some(aux_name) = self.aux_seen.get(&i_as_key).cloned() {
       let mut result = LeanExpr::cnst(aux_name, self.block_levels.clone());
       for af in as_fvars {
         result = LeanExpr::app(result, af.clone());
@@ -355,7 +363,23 @@ impl<'a> ExpandCtx<'a> {
       return Ok(Some(result));
     }
 
+    // Materialize the actual reached source closure once per expansion.
+    // Non-nested blocks never force it or their lazy declaration bodies.
+    let source_names = if let Some(names) = &self.source_names {
+      names.clone()
+    } else {
+      let names = source_names(
+        self.lean_env,
+        &self.source_members,
+        self.canon,
+        self.control,
+      )?;
+      self.source_names = Some(names.clone());
+      names
+    };
+
     // New nested occurrence — create auxiliary types for all members of
+
     // the external inductive's mutual group. The group is a list of classes,
     // representative first: Lean's `I.all` on the source walk; on a
     // canonical expansion, `I`'s compiled canonical classes (Pass 1's
@@ -380,10 +404,14 @@ impl<'a> ExpandCtx<'a> {
       };
 
       // Auxiliary name: _nested.ExtInd_N (scoped under all[0]).
-      let aux_name = Name::str(
-        Name::str(self.all0.clone(), "_nested".to_string()),
+      let mut forbidden = self.allocated_names.clone();
+      forbidden.extend_from_slice(&source_names);
+      let aux_name = fresh_family(
+        &forbidden,
+        &Name::str(self.all0.clone(), "_nested".to_string()),
         format!("{}_{}", j_name.pretty().replace('.', "_"), self.next_aux_idx),
       );
+      self.allocated_names.push(aux_name.clone());
       self.next_aux_idx += 1;
 
       // Store mapping: aux_name → J.{I_lvls} spec_params (with block param FVars).
@@ -406,8 +434,8 @@ impl<'a> ExpandCtx<'a> {
         for sp in &spec_params {
           k_as = LeanExpr::app(k_as, sp.clone());
         }
-        let key = self.dedup_key(&k_as);
-        self.aux_seen.entry(key).or_insert_with(|| aux_name.clone());
+        let key = self.dedup_key(&k_as)?;
+        self.aux_seen.insert(key, aux_name.clone());
       }
       self.aux_to_nested.insert(aux_name.clone(), j_as);
 
@@ -448,7 +476,19 @@ impl<'a> ExpandCtx<'a> {
           Some(ConstantInfo::CtorInfo(c)) => c,
           _ => continue,
         };
-        let aux_ctor_name = name_replace_prefix(j_ctor_name, j_name, &aux_name);
+        let candidate = name_replace_prefix(j_ctor_name, j_name, &aux_name);
+        let mut forbidden = self.allocated_names.clone();
+        forbidden.extend_from_slice(&source_names);
+        let aux_ctor_name = fresh_ctor_family(
+          &forbidden,
+          &aux_name,
+          candidate,
+          aux_ctors.len(),
+          &self.allocated_ctor_roots,
+        );
+        self.allocated_names.push(aux_ctor_name.clone());
+        self.allocated_ctor_roots.push(aux_ctor_name.clone());
+
         let ctor_type_inst = checked_expr::subst_levels(
           &j_ctor.cnst.typ,
           &j_info.cnst.level_params,
@@ -613,13 +653,18 @@ fn expand_nested_block_checked(
 
   let mut ctx = ExpandCtx {
     types: Vec::new(),
-    type_name_set: FxHashSet::default(),
-    aux_to_nested: FxHashMap::default(),
-    aux_ctor_map: FxHashMap::default(),
-    aux_seen: FxHashMap::default(),
+    type_name_set: NameTable::default(),
+    aux_to_nested: NameTable::default(),
+    aux_ctor_map: NameTable::default(),
+    aux_seen: OccurrenceTable::default(),
     next_aux_idx: 1,
+    source_members: ordered_originals.to_vec(),
+    source_names: None,
+    allocated_names: Vec::new(),
+    allocated_ctor_roots: Vec::new(),
     all0,
     block_levels,
+    level_params: level_params.clone(),
     block_param_fvars: block_param_fvars.clone(),
     block_param_decls: block_param_decls.clone(),
     block_param_fvar_names,
@@ -1694,60 +1739,89 @@ fn name_replace_prefix(
   }
 }
 
-/// `e` with every constant outside the queue (`keep`) whose compiled address
-/// is known replaced by that address (as the name `#<hex>`): the
-/// deduplication key of a canonical expansion (design document §2.5,
-/// A2-order; Lean `Ix.Compile.Canon.addrKey`). Collapsed or content-equal
-/// constants under different names, which the stored Ixon cannot tell apart,
-/// then give one auxiliary.
+/// Reconstruct a canonical positional universe with the block's original
+/// parameter names. Invalid positions are errors, never fallback levels.
+fn key_level_from_univ(
+  u: &ixon::univ::Univ,
+  ctx: &[Name],
+) -> Result<Level, CompileError> {
+  use ixon::univ::Univ;
+  Ok(match u {
+    Univ::Zero => Level::zero(),
+    Univ::Succ(a) => Level::succ(key_level_from_univ(a, ctx)?),
+    Univ::Max(a, b) => {
+      Level::max(key_level_from_univ(a, ctx)?, key_level_from_univ(b, ctx)?)
+    },
+    Univ::IMax(a, b) => {
+      Level::imax(key_level_from_univ(a, ctx)?, key_level_from_univ(b, ctx)?)
+    },
+    Univ::Var(i) => Level::param(
+      usize::try_from(*i).ok().and_then(|i| ctx.get(i)).cloned().ok_or_else(
+        || CompileError::InvalidMutualBlock {
+          reason: format!(
+            "nested key: universe position {i} outside block context"
+          ),
+        },
+      )?,
+    ),
+  })
+}
+
+/// The serializer's positional universe normal form. It is used only in
+/// occurrence keys; original expressions and metadata keep their spelling.
+fn key_level(u: &Level, ctx: &[Name]) -> Result<Level, CompileError> {
+  key_level_from_univ(
+    &ixon::canon_univ::canon_univ(&crate::compile::level_to_univ(u, ctx)?),
+    ctx,
+  )
+}
+
+/// Canonical nested keys use typed external-address references. A retained
+/// source/generated name cannot collide with an address, for any spelling.
+/// Keep resolver visits and universe conversion in the existing order:
+/// CompileState contains live maps, so this path has no Expr-identity memo.
 fn addr_key(
   e: &LeanExpr,
   stt: &crate::compile::CompileState,
-  keep: &FxHashSet<Name>,
-) -> LeanExpr {
-  let key_name = |n: &Name| -> Option<Name> {
-    if keep.contains(n) {
-      return None;
+  keep: &NameTable<()>,
+  levels: &[Name],
+) -> Result<std::sync::Arc<OccurrenceShape>, CompileError> {
+  let key_ref = |n: &Name| -> OccurrenceRef {
+    if !keep.contains(n) {
+      if let Some(a) = stt.resolve_addr(n) {
+        return OccurrenceRef::External(a);
+      }
     }
-    stt
-      .resolve_addr(n)
-      .map(|a| Name::str(Name::anon(), format!("#{}", a.hex())))
+    OccurrenceRef::Named(n.clone())
   };
-  match e.as_data() {
-    ExprData::Const(n, ls, _) => match key_name(n) {
-      Some(k) => LeanExpr::cnst(k, ls.clone()),
-      None => e.clone(),
+  let go = |e: &LeanExpr| addr_key(e, stt, keep, levels);
+  Ok(std::sync::Arc::new(match e.as_data() {
+    ExprData::Sort(u, _) => OccurrenceShape::Sort(key_level(u, levels)?),
+    ExprData::Const(n, ls, _) => OccurrenceShape::Const(
+      key_ref(n),
+      ls.iter().map(|u| key_level(u, levels)).collect::<Result<_, _>>()?,
+    ),
+    ExprData::App(f, a, _) => OccurrenceShape::App(go(f)?, go(a)?),
+    ExprData::Lam(_, t, b, _, _) => {
+      OccurrenceShape::Lam(Name::anon(), go(t)?, go(b)?, BinderInfo::Default)
     },
-    ExprData::App(f, a, _) => {
-      LeanExpr::app(addr_key(f, stt, keep), addr_key(a, stt, keep))
-    },
-    ExprData::Lam(_, t, b, _, _) => LeanExpr::lam(
+    ExprData::ForallE(_, t, b, _, _) => OccurrenceShape::ForallE(
       Name::anon(),
-      addr_key(t, stt, keep),
-      addr_key(b, stt, keep),
+      go(t)?,
+      go(b)?,
       BinderInfo::Default,
     ),
-    ExprData::ForallE(_, t, b, _, _) => LeanExpr::all(
-      Name::anon(),
-      addr_key(t, stt, keep),
-      addr_key(b, stt, keep),
-      BinderInfo::Default,
-    ),
-    ExprData::LetE(_, t, v, b, nd, _) => LeanExpr::letE(
-      Name::anon(),
-      addr_key(t, stt, keep),
-      addr_key(v, stt, keep),
-      addr_key(b, stt, keep),
-      *nd,
-    ),
-    ExprData::Proj(n, i, s, _) => LeanExpr::proj(
-      key_name(n).unwrap_or_else(|| n.clone()),
-      i.clone(),
-      addr_key(s, stt, keep),
-    ),
-    ExprData::Mdata(_, x, _) => addr_key(x, stt, keep),
-    _ => e.clone(),
-  }
+    ExprData::LetE(_, t, v, b, nd, _) => {
+      OccurrenceShape::LetE(Name::anon(), go(t)?, go(v)?, go(b)?, *nd)
+    },
+    ExprData::Proj(n, i, s, _) => {
+      OccurrenceShape::Proj(key_ref(n), i.clone(), go(s)?)
+    },
+    ExprData::Mdata(_, x, _) => return addr_key(x, stt, keep, levels),
+    // These cases are atomic source keys: no canonical address lookup or
+    // universe normalization is hidden in the context-free source helper.
+    _ => return Ok(OccurrenceShape::source(e)),
+  }))
 }
 
 /// Rewrite the final result of an auxiliary constructor from the external
@@ -2529,6 +2603,38 @@ mod tests {
     LeanExpr::sort(LL::zero())
   }
 
+  #[test]
+  fn nested_key_uses_serialized_positional_universes() {
+    let stt = crate::compile::CompileState::new_empty();
+    let keep = NameTable::default();
+    let ctx = vec![mk_name_for("u"), mk_name_for("v")];
+    let u = LL::param(ctx[0].clone());
+    let v = LL::param(ctx[1].clone());
+    let app = |l: LL| {
+      LeanExpr::app(
+        LeanExpr::cnst(mk_name_for("List"), vec![l.clone()]),
+        LeanExpr::sort(l),
+      )
+    };
+    let key = |l| addr_key(&app(l), &stt, &keep, &ctx);
+    assert_eq!(
+      key(LL::zero()).unwrap(),
+      key(LL::max(LL::zero(), LL::zero())).unwrap()
+    );
+    assert_ne!(key(u.clone()).unwrap(), key(v.clone()).unwrap());
+    assert_eq!(
+      key(LL::max(u.clone(), v.clone())).unwrap(),
+      key(LL::max(v, u)).unwrap()
+    );
+    assert!(key(LL::param(mk_name_for("missing"))).is_err());
+    assert!(key(LL::mvar(mk_name_for("unknown"))).is_err());
+    assert!(key_level_from_univ(&ixon::univ::Univ::Var(2), &ctx).is_err());
+    assert_eq!(
+      key_level_from_univ(&ixon::univ::Univ::Var(1), &ctx).unwrap(),
+      LL::param(ctx[1].clone())
+    );
+  }
+
   /// Small test helper: build an `FxHashSet<Name>` from a slice of names.
   /// `expr_mentions_any_name` takes a set so the hot caller is O(1); tests
   /// use this to stay ergonomic.
@@ -2586,13 +2692,13 @@ mod tests {
       )
     };
     let build = |spec2: &str| {
-      let mut aux_to_nested = FxHashMap::default();
+      let mut aux_to_nested = NameTable::default();
       aux_to_nested.insert(aux_name(1), nested_id("Nat"));
       aux_to_nested.insert(aux_name(2), nested_id(spec2));
       ExpandedBlock {
         types: vec![mk_orig(), mk_aux(1), mk_aux(2)],
         aux_to_nested,
-        aux_ctor_map: FxHashMap::default(),
+        aux_ctor_map: NameTable::default(),
         block_param_fvars: vec![],
         n_originals: 1,
         level_params: vec![],

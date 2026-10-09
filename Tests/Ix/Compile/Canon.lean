@@ -67,6 +67,9 @@ import Ix.CanonM
 import Ix.Meta
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.AuxNames
+import Tests.Ix.Compile.AddressNames
 
 open _root_.Ix.Compile.Canon
 
@@ -181,8 +184,474 @@ def representativeUnitChecks (t : Tally) : Tally :=
         s!"stable class order: {pretty names} from {p.map (namePretty ·.name)}"
     | .error e => t.check false s!"stable class order: {e}"
 
+/-- Compile the checked flag fixture through the ordinary class/member fold and
+canonical sharing builder, returning the complete serialized anonymous block.
+Reversing class members also exercises the choice of representative. -/
+def nonDepPayload (env : Lean.Environment) (ns : Lean.Name) (reverseInput reverseReps : Bool) :
+    Except String (List Nat × ByteArray) := do
+  let inputs := ([`Left, `Right, `Left.mk, `Right.mk].filterMap fun n =>
+    (env.find? (ns ++ n)).map (fun ci => (ns ++ n, ci))).toArray
+  let consts := (Ix.CanonM.canonChunk inputs).foldl
+    (fun m (n, ci) => m.insert n ci) ({} : Std.HashMap Ix.Name Ix.ConstantInfo)
+  let cenv := Env.ofSource { source := { consts }, addr? := fun _ => none }
+  let names := [`Left, `Right].map fun n => Ix.Name.fromLeanName (ns ++ n)
+  let members ← names.mapM (mutConstOf cenv)
+  let (classes, _) ← sortClasses Rules.compiler cenv.addr?
+    (if reverseInput then members.reverse else members)
+  let classes := if reverseReps then classes.map List.reverse else classes
+  let benv : Ix.CompileM.BlockEnv := {
+    all := names.foldl (fun s n => s.insert n) {}, current := names.head!,
+    mutCtx := Ix.MutConst.ctx classes, univCtx := [] }
+  let (bytes, _) ← (Ix.CompileM.CompileM.run default benv {} do
+    let (payloads, _, _) ← Ix.CompileM.compileMutConsts classes
+    let cache ← get
+    let block ← Ix.CompileM.buildBlockConstant (.muts payloads) cache.refs cache.univs
+    pure (Ixon.serConstant block)).mapError toString
+  pure (classes.map List.length, bytes)
+
+def nonDepUnitChecks (env : Lean.Environment) (t : Tally) : Tally := Id.run do
+  let mut t := t
+  let ns := `Tests.Ix.Compile.Fixtures.LetNonDep
+  let values := [`letForm, `haveForm, `neighbour].mapM fun n => do
+    let some (.defnInfo d) := env.find? (ns ++ n) | none
+    pure ((Ix.CanonM.canonExpr d.value).run' {})
+  match values with
+  | some [a, b, neighbour] =>
+    let ctx : CmpCtx := {
+      levels := .afterCanonUniv, mode := .addr,
+      addr? := fun _ => none, mutCtx := {} }
+    let cmp := fun x y => (compareExpr ctx [] [] x y).toOption.map fun o => (o.strong, o.ord)
+    t := t.check (cmp a b == some (true, .lt) && cmp b a == some (true, .gt))
+      "checked let nonDep spellings must compare strongly false < true"
+    t := t.check (cmp a neighbour == some (true, .eq))
+      "checked same-flag binder-renamed neighbour must compare equal"
+  | _ => t := t.check false "checked let nonDep declarations missing"
+  for (family, sizes) in [(`Split, [1, 1]), (`Equal, [2])] do
+    let ns := `Tests.Ix.Compile.Fixtures.LetNonDep ++ family
+    match nonDepPayload env (ns ++ `A) false false with
+    | .error e => t := t.check false s!"let nonDep {family}: {e}"
+    | .ok (actual, reference) =>
+      t := t.check (actual == sizes) s!"let nonDep {family}: classes {actual}, expected {sizes}"
+      for pres in [`A, `B] do
+        for input in [false, true] do
+          for reps in [false, true] do
+            match nonDepPayload env (ns ++ pres) input reps with
+            | .error e => t := t.check false s!"let nonDep {family}.{pres}: {e}"
+            | .ok (actual, bytes) =>
+              t := t.check (actual == sizes && bytes == reference)
+                s!"let nonDep {family}.{pres}: serialized payload changed (input={input}, reps={reps})"
+  return t
+
+/-- The key follows positional serialized universes, including nested sort
+and constant levels. Malformed levels fail beside well-formed neighbours. -/
+def nestedKeyUnitChecks (t : Tally) : Tally := Id.run do
+  let nm := Ix.Name.fromLeanName
+  let u := nm `u
+  let v := nm `v
+  let z := Ix.Level.mkZero
+  let pu := Ix.Level.mkParam u
+  let pv := Ix.Level.mkParam v
+  let key := addrKey [u, v] (fun _ => none) (fun _ => false)
+  let app := fun l => Ix.Expr.mkApp (Ix.Expr.mkConst (nm `List) #[l])
+    (Ix.Expr.mkSort l)
+  let mut t := t
+  t := t.check ((key (app z)).isOk && (key (app (Ix.Level.mkMax z z))).isOk &&
+      (key (app z)).toOption == (key (app (Ix.Level.mkMax z z))).toOption)
+    "nested key: zero and max zero zero must agree in constant and sort levels"
+  t := t.check ((key (app pu)).isOk && (key (app pv)).isOk &&
+      (key (app pu)).toOption != (key (app pv)).toOption)
+    "nested key: distinct positional universe parameters must remain distinct"
+  t := t.check ((key (app (Ix.Level.mkMax pu pv))).isOk &&
+      (key (app (Ix.Level.mkMax pv pu))).isOk &&
+      (key (app (Ix.Level.mkMax pu pv))).toOption ==
+      (key (app (Ix.Level.mkMax pv pu))).toOption)
+    "nested key: commuted max must follow canonical serialized universes"
+  t := t.check (!(key (app (Ix.Level.mkParam (nm `missing)))).isOk &&
+      !(key (app (Ix.Level.mkMvar (nm `unknown)))).isOk)
+    "nested key: unknown universe parameters and metavariables must fail"
+  let cx : XCtx := {
+    ind? := fun _ => none, dedup := .lean,
+    all0 := nm `Empty, blockLevels := #[], nParams := 0, paramBinders := #[] }
+  for fuel in [0, 1, 2] do
+    t := t.check (match walkQueue cx fuel 0 { keyError := some "first key error" } with
+      | .error e => e == "first key error"
+      | .ok _ => false) s!"nested key: pending error bypassed at empty queue/fuel={fuel}"
+    t := t.check ((walkQueue cx fuel 0 {}).isOk)
+      s!"nested key: valid empty queue rejected at fuel={fuel}"
+  return t
+
+/-- Serialize all members of an expanded block using the ordinary canonical
+sharing builder. This compares every primary payload byte, not Expr hashes
+or source-order metadata. This helper is used only for the checked safe
+fixture and safe external List. `numNested`, `isRec` and `isReflexive` are
+not fields of the primary `Ixon.Inductive` emitted by
+`finishInductiveDataCompilation`; `isUnsafe` is checked below. -/
+def expandedPayload (cenv : CompileEnv) (x : Expanded) : Except String ByteArray := do
+  let members := x.types.map fun mem =>
+    let ctors := mem.ctors.zipIdx.map fun (c, ci) =>
+      ({ cnst := { name := c.name, levelParams := x.levelParams, type := c.typ }
+         induct := mem.name, cidx := ci, numParams := mem.nParams,
+         numFields := c.nFields, isUnsafe := false } : Ix.ConstructorVal)
+    Ix.MutConst.indc {
+      name := mem.name, levelParams := x.levelParams, type := mem.typ,
+      numParams := mem.nParams, numIndices := mem.nIndices, all := x.types.map (·.name),
+      ctors, numNested := 0, isRec := false, isReflexive := false, isUnsafe := false }
+  let classes := members.toList.map (fun m => [m])
+  let benv : Ix.CompileM.BlockEnv := {
+    all := members.foldl (fun s m => s.insert m.name) {},
+    current := members[0]!.name, mutCtx := Ix.MutConst.ctx classes,
+    univCtx := x.levelParams.toList }
+  let (bytes, _) ← (Ix.CompileM.CompileM.run cenv benv {} do
+    let (payloads, _, _) ← Ix.CompileM.compileMutConsts classes
+    let cache ← get
+    let block ← Ix.CompileM.buildBlockConstant (.muts payloads) cache.refs cache.univs
+    pure (Ixon.serConstant block)).mapError toString
+  pure bytes
+
+/-- The kernel-checked level-spelling fixture through both the pure and
+production expansion, with actual compiled dependency addresses/registry.
+Either representative, either source member order, and either input order
+has one auxiliary and identical complete canonical payload bytes. -/
+def nestedLevelChecks (cenv : CompileEnv) (t : Tally) : Tally := Id.run do
+  let addr? := fun n => cenv.nameToAddr.get? n <|> cenv.auxNameToAddr.get? n
+  let sourceEnv : SourceEnv := { source := cenv.env, addr?, groupOf := sourceGroupsOfBlocks cenv.blocks }
+  let env := Env.ofSource sourceEnv
+  let mut t := t
+  for family in [`Mixed, `Neighbour] do
+    let mut reference : Option ByteArray := none
+    for pres in [`A, `B] do
+      let ns := `Tests.Ix.Compile.Fixtures.NestedLevels ++ family ++ pres
+      let names := [`Left, `Right].map (fun n => Ix.Name.fromLeanName (ns ++ n))
+      for reverse in [false, true] do
+        let result : Except String (List Nat × Array (Nat × Nat × ByteArray × ByteArray)) := do
+          let ms ← (if reverse then names.reverse else names).mapM (mutConstOf env)
+          let (cls, _) ← sortClasses Rules.compiler addr? ms
+          let mut results := #[]
+          for rep in names do
+            let aliases := names.foldl (fun m n => if n == rep then m else m.insert n rep)
+              ({} : Std.HashMap Ix.Name Ix.Name)
+            let x ← expandSource cenv.env .lean #[rep] aliases sourceEnv.groupOf (some addr?)
+            let benv : Ix.CompileM.BlockEnv := {
+              all := names.foldl (·.insert ·) {}, current := rep,
+              mutCtx := Ix.MutConst.ctx cls, univCtx := [] }
+            let (y, _) ← (Ix.CompileM.CompileM.run cenv benv {} do
+              let y ← Ix.AuxGen.expandNestedBlock #[rep] aliases true
+              pure (← Ix.AuxGen.sortAuxByPartitionRefinement y).1).mapError toString
+            results := results.push (x.aux.size, y.types.size - y.nOriginals,
+              ← expandedPayload cenv x, ← expandedPayload cenv y.toCanon)
+          pure (cls.map List.length, results)
+        match result with
+        | .error e => t := t.check false s!"nested levels {family}.{pres}: {e}"
+        | .ok (sizes, results) =>
+          t := t.check (sizes == [2]) s!"nested levels {family}.{pres}: classes={sizes}"
+          for (pureCount, productionCount, pureBytes, productionBytes) in results do
+            if reference.isNone then reference := some pureBytes
+            t := t.check (pureCount == 1 && productionCount == 1 &&
+                some pureBytes == reference && productionBytes == pureBytes)
+              s!"nested levels {family}.{pres}: pure={pureCount}, production={productionCount}, input-reversed={reverse}; full payload bytes must agree"
+  return t
+
+/-- The identical checked source has ten image-slot refusals before the
+nested-key repair. Preserve those exact named refusals and accept every
+other fixture declaration, including the same-spelling neighbour. The actual
+stored projection and owning-block payloads agree under member reordering. -/
+def nestedLevelPipelineChecks (env : Lean.Environment) (t : Tally) : IO Tally := do
+  let fixturePrefix := `Tests.Ix.Compile.Fixtures.NestedLevels
+  let seeds := env.constants.toList.filterMap fun (n, _) =>
+    if fixturePrefix.isPrefixOf n then some n else none
+  let closure := Tests.Ix.Compile.Twins.closeWithRecursors env <|
+    Ix.EnvScope.collectDeps env (seeds ++ [`PProd, `PProd.mk, `And, `And.intro,
+      `True, `True.intro, `Eq, `Eq.refl])
+  let mut t := t.check (!seeds.isEmpty) "nested levels: checked fixture seeds missing"
+  t := t.check (closure.all fun (_, ci) => match ci with
+    | .inductInfo i => !i.isUnsafe
+    | .ctorInfo c => !c.isUnsafe
+    | _ => true) "nested levels: payload helper requires safe source and external inductives"
+  let result ← Ix.CompileM.compileLeanConsts closure (numWorkers := 1)
+  match result with
+  | .error e => return t.check false s!"nested levels: complete pipeline failed: {e}"
+  | .ok out =>
+    let expected := #[
+      (`Mixed.A.Left.rec, 3), (`Mixed.A.Right.rec, 3),
+      (`Mixed.A.Left.rec_1, 3), (`Mixed.A.Left.rec_2, 3), (`Mixed.A.Left.rec_3, 3),
+      (`Mixed.B.Left.rec, 2), (`Mixed.B.Right.rec, 2),
+      (`Mixed.B.Right.rec_1, 2), (`Mixed.B.Right.rec_2, 2), (`Mixed.B.Right.rec_3, 2)].map
+      fun (entry : Lean.Name × Nat) =>
+        let (suffix, motive) := entry
+        (fixturePrefix ++ suffix,
+          s!"invalidMutualBlock: image: hypothesis motive {motive} not in its slot's class")
+    t := t.check (out.ungroundedCount == 0 && out.cenv.ungrounded.size == expected.size)
+      s!"nested levels: unexpected pipeline failures: {out.cenv.ungrounded.toArray.map (fun (n,e) => (n.pretty,e))}"
+    for (n, reason) in expected do
+      let name := Ix.Name.fromLeanName n
+      let isRecursor := match env.constants.find? n with
+        | some (.recInfo _) => true
+        | _ => false
+      t := t.check (seeds.contains n && isRecursor && (out.env.getNamed? name).isNone &&
+          out.cenv.ungrounded.get? name == some reason)
+        s!"nested levels: exact pre-existing recursor refusal changed: {n}"
+    for n in seeds do
+      let name := Ix.Name.fromLeanName n
+      let refused := expected.any (fun (m, _) => m == n)
+      t := t.check ((out.env.getNamed? name).isSome == !refused &&
+          (out.cenv.ungrounded.get? name).isSome == refused)
+        s!"nested levels: checked declaration has wrong emitted/refused coverage: {n}"
+    let bytesOf := fun n => do
+      let nd ← out.env.getNamed? (Ix.Name.fromLeanName n)
+      let lc ← out.env.consts.get? nd.addr
+      let c ← lc.get.toOption
+      let block ← match c.info with
+        | .iPrj p => some p.block
+        | .cPrj p => some p.block
+        | _ => none
+      let owner ← out.env.consts.get? block
+      pure (lc.rawBytes, owner.rawBytes)
+    for family in [`Mixed, `Neighbour] do
+      let ns := fixturePrefix ++ family
+      for role in [`Left, `Right, `Left.mk, `Right.mk] do
+        let a := bytesOf (ns ++ `A ++ role)
+        let b := bytesOf (ns ++ `B ++ role)
+        t := t.check (a.isSome && b.isSome && a == b)
+          s!"nested levels {family}.{role}: actual full projection/owning-block bytes differ"
+    return t
+
+/-- Generated-name tables ignore every cached prefix digest, while
+retaining all structural components and ordinary overwrite semantics. -/
+def nameTableChecks (t : Tally) : Tally := Id.run do
+  let root := Ix.Name.fromLeanName `Root
+  let changed := Ix.Name.str Ix.Name.mkAnon "Root" (Ix.Name.fromLeanName `Other).getHash
+  let aux := fun r => Ix.Name.mkStr (Ix.Name.mkStr r "_nested") "List_1"
+  let a := aux root
+  let b := aux changed
+  let collision := Ix.Name.str Ix.Name.mkAnon "Different" a.getHash
+  let first := ({} : NameTable Nat).insert a 1
+  let both := first.insert collision 2
+  let updated := both.insert b 3
+  let mut t := t.check (first.get? a == some 1 && first.getFast? a == first.get? a)
+    "name table: ordinary generated-name hit"
+  t := t.check (first.get? collision == none && first.getFast? collision == none)
+    "name table: equal root digest cannot merge unequal structural names"
+  t := t.check (both.getFast? a == some 1 && both.getFast? collision == some 2)
+    "name table: cache overwrite retains both entries"
+  t := t.check (first.get? b == some 1 && first.getFast? b == first.get? b)
+    "name table: generated names over rehashed prefixes still match"
+  t := t.check (updated.size == 2 && updated.getFast? a == some 3 &&
+      updated.getFast? b == some 3 && updated.getFast? collision == some 2)
+    "name table: structural overwrite replaces exactly one entry"
+  let ctor := Ix.Name.mkStr a "mk"
+  let target := Ix.Name.fromLeanName `Fresh
+  t := t.check (keyName (nameReplacePrefix ctor b target) == `Fresh.mk &&
+      keyName (Ix.AuxGen.nameReplacePrefix ctor b target) == `Fresh.mk)
+    "name prefix: generated constructor matching ignores cached prefixes"
+  t := t.check (keyName (nameReplacePrefix ctor collision target) == keyName ctor)
+    "name prefix: unequal structural prefixes remain unchanged"
+  let expr := Ix.Expr.mkProj b 0 (Ix.Expr.mkConst b #[])
+  let table := ({} : NameTable Ix.Name).insert a target
+  t := t.check (decide (occurrenceKey (table.replaceConstNames expr) =
+      occurrenceKey (Ix.Expr.mkProj target 0 (Ix.Expr.mkConst target #[]))))
+    "name table: generated constant and projection references both rename"
+  return t
+
+/-- Exercise confirmed hits, collisions and misses on the total structural
+table. Forged cached fields here are cache controls, not Lean declarations. -/
+def occurrenceTableChecks (t : Tally) : Tally := Id.run do
+  let a := Ix.Expr.mkBVar 0
+  let other := Ix.Expr.bvar 1 a.getHash
+  let rehashed := Ix.Expr.bvar 0 (Ix.Expr.mkBVar 1).getHash
+  let an := Ix.Name.fromLeanName `OccurrenceA
+  let bn := Ix.Name.fromLeanName `OccurrenceB
+  let first := ({} : OccurrenceTable).insert a an
+  let both := first.insert other bn
+  let again := both.insert rehashed bn
+  let read := fun (table : OccurrenceTable) e =>
+    (table.get? e).map keyName
+  let fast := fun (table : OccurrenceTable) e =>
+    (table.getFast? e).map keyName
+  let mut t := t.check (read first a == some `OccurrenceA && fast first a == read first a)
+    "occurrence table: ordinary hit"
+  t := t.check (read first other == none && fast first other == none)
+    "occurrence table: colliding unequal key must miss"
+  t := t.check (read both a == some `OccurrenceA && fast both a == read both a &&
+      read both other == some `OccurrenceB && fast both other == read both other)
+    "occurrence table: overwritten cache candidate must preserve both structural entries"
+  t := t.check (read both rehashed == some `OccurrenceA && fast both rehashed == read both rehashed)
+    "occurrence table: different stored hash must find equal structural entry"
+  t := t.check (again.entries.length == 2 && read again a == some `OccurrenceA &&
+      fast again rehashed == some `OccurrenceA)
+    "occurrence table: equal rehashed insertion must retain first discovery"
+  let n := Ix.Name.fromLeanName `u
+  let n' := Ix.Name.str Ix.Name.mkAnon "u" an.getHash
+  let u := Ix.Level.mkParam n
+  let u' := Ix.Level.param n' (Ix.Level.mkZero).getHash
+  let x := Ix.Expr.mkConst n #[u]
+  let y := Ix.Expr.mkConst n' #[u']
+  t := t.check (decide (occurrenceKey x = occurrenceKey y))
+    "occurrence key: nested name and level digests must not enter equality"
+  let x := Ix.Expr.mkMData #[(n, .ofName n)] x
+  let y := Ix.Expr.mkMData #[(n', .ofName n')] y
+  t := t.check (decide (occurrenceKey x = occurrenceKey y))
+    "occurrence key: metadata names must be structural"
+  let z := Ix.Expr.mdata #[] y x.getHash
+  t := t.check (!decide (occurrenceKey x = occurrenceKey z))
+    "occurrence key: source metadata remains part of the key"
+  return t
+
+/-- Synthetic cache controls exercise the source resolver's actual Address
+identity. The deliberately rehashed names are not claimed to be checked Lean
+declarations. Every queried structural spelling must still be protected. -/
+def sourceFastChecks (t : Tally) : Tally := Id.run do
+  let a := Ix.Name.fromLeanName `SourceA
+  let b := Ix.Name.str Ix.Name.mkAnon "SourceAlias" a.getHash
+  let dep := Ix.Name.fromLeanName `SourceDependency
+  let missing := Ix.Name.fromLeanName `MissingSource
+  let missingAlias := Ix.Name.str Ix.Name.mkAnon "MissingAlias" missing.getHash
+  let stored := Ix.Name.fromLeanName `StoredRecordName
+  let storedDep := Ix.Name.fromLeanName `StoredDependencyName
+  let ci : Ix.ConstantInfo := .axiomInfo {
+    cnst := { name := stored, levelParams := #[], type := Ix.Expr.mkConst dep #[] }
+    isUnsafe := false }
+  let depCi : Ix.ConstantInfo := .axiomInfo {
+    cnst := { name := storedDep, levelParams := #[], type := Ix.Expr.mkBVar 0 }
+    isUnsafe := false }
+  let source : Ix.Environment := { consts := ({} : Std.HashMap Ix.Name Ix.ConstantInfo).insert a ci |>.insert dep depCi }
+  let names := #[a,b,missing,missingAlias,a]
+  let result := sourceContextCached source names
+  let expected := [keyName a,keyName missingAlias,keyName missing,keyName b,
+    keyName storedDep,keyName dep,keyName stored,keyName dep,keyName a]
+  let mut t := t.check (result.protectedNames == expected)
+    "source cache: preserve all query spellings, missing aliases, order and duplicates"
+  t := t.check (result.visitedKeys == [dep.getHash,a.getHash])
+    "source cache: preserve exact finite visited-key order"
+  let readShape := fun n => (result.declarations.get? n).map fun value =>
+    (keyName value.getCnst.name,occurrenceKey value.getCnst.type)
+  let expectedRecord := some (keyName stored,occurrenceKey (Ix.Expr.mkConst dep #[]))
+  t := t.check (readShape a == expectedRecord && readShape b == expectedRecord &&
+      (readShape missing).isNone && (readShape missingAlias).isNone)
+    "source cache: actual lookup identity and record name remain distinct"
+  let first := ({} : SourceFetchCache source).read a
+  let aliasRead := first.cache.read b
+  let absent := aliasRead.cache.read missing
+  let absentAlias := absent.cache.read missingAlias
+  t := t.check (first.cache.rows.size == 1 && aliasRead.cache.rows.size == 1 &&
+      absent.cache.rows.size == 2 && absentAlias.cache.rows.size == 2 &&
+      absent.value.isNone && absentAlias.value.isNone)
+    "source cache: repeated present and missing lookup identities reuse exact fetch entries"
+  let overrideName := Ix.Name.fromLeanName `OverlayRecord
+  let override : Ix.ConstantInfo := .axiomInfo {
+    cnst := { name := overrideName, levelParams := #[], type := Ix.Expr.mkBVar 1 }
+    isUnsafe := false }
+  let overlay := { source with overlay := ({} : Std.HashMap Ix.Name Ix.ConstantInfo).insert a override }
+  let overlayResult := sourceContextCached overlay #[b,a]
+  t := t.check (overlayResult.protectedNames == [keyName a,keyName overrideName,keyName b] &&
+      overlayResult.visitedKeys == [a.getHash] &&
+      (overlayResult.declarations.get? b).map (fun value => keyName value.getCnst.name) == some (keyName overrideName))
+    "source cache: overlay precedence agrees with the actual resolver under alias queries"
+  -- This is the actual finite-index fallback API used for canon-on-demand.
+  -- The pinned payload and queried spelling deliberately differ from ci.name.
+  let pinned : Lean.ConstantInfo := .axiomInfo {
+    name := `PinnedSourceInput, levelParams := [], type := .sort .zero, isUnsafe := false }
+  let lazySource : Ix.Environment := {
+    consts := {}
+    fallback? := some {
+      index := ({} : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo))
+        |>.insert a (`DecodeRoot,pinned)
+        |>.insert dep (`DecodeDependency,pinned)
+        |>.insert missing (`DecodeNone,pinned)
+      fetch := fun payload =>
+        if payload.1 == `DecodeRoot then some ci
+        else if payload.1 == `DecodeDependency then some depCi
+        else none } }
+  let lazyResult := sourceContextCached lazySource names
+  let lazyReadShape := fun n => (lazyResult.declarations.get? n).map fun value =>
+    (keyName value.getCnst.name,occurrenceKey value.getCnst.type)
+  t := t.check (lazyResult.protectedNames == expected &&
+      lazyResult.visitedKeys == [dep.getHash,a.getHash])
+    "source cache: lazy decoder retains exact query/record spellings and traversal lists"
+  t := t.check (lazyResult.declarations.size == 2 &&
+      lazyReadShape a == expectedRecord && lazyReadShape b == expectedRecord &&
+      lazyReadShape dep == some (keyName storedDep,occurrenceKey (Ix.Expr.mkBVar 0)) &&
+      (lazyReadShape missing).isNone && (lazyReadShape missingAlias).isNone)
+    "source cache: lazy aliases and indexed decoder-none query retain complete declarations"
+  let lazyFirst := ({} : SourceFetchCache lazySource).read a
+  let lazyAlias := lazyFirst.cache.read b
+  let lazyDependency := lazyAlias.cache.read dep
+  let lazyAbsent := lazyDependency.cache.read missing
+  let lazyAbsentAlias := lazyAbsent.cache.read missingAlias
+  t := t.check (lazyFirst.cache.rows.size == 1 && lazyAlias.cache.rows.size == 1 &&
+      lazyDependency.cache.rows.size == 2 && lazyAbsent.cache.rows.size == 3 &&
+      lazyAbsentAlias.cache.rows.size == 3 && lazyAbsent.value.isNone &&
+      lazyAbsentAlias.value.isNone)
+    "source cache: lazy present and indexed decoder-none aliases reuse existing cache rows"
+  let before : SourceContext := {
+    declarations := ({} : Std.HashMap Ix.Name Ix.ConstantInfo).insert dep depCi
+    protectedNames := [`Before]
+    visitedKeys := [a.getHash,a.getHash] }
+  let resumed := collectSourceCached lazySource sourceConstRefs sourceConstNames
+    [b,missingAlias,a] before
+  t := t.check (resumed.protectedNames == [keyName a,keyName missingAlias,keyName b,`Before] &&
+      resumed.visitedKeys == [a.getHash,a.getHash])
+    "source cache: arbitrary intermediate entry retains duplicate visited keys and exact protection order"
+  t := t.check (resumed.declarations.size == 2 &&
+      (resumed.declarations.get? a).map (fun value => keyName value.getCnst.name) == some (keyName stored) &&
+      (resumed.declarations.get? dep).map (fun value => keyName value.getCnst.name) == some (keyName storedDep))
+    "source cache: resumed known aliases still install their declaration and retain old declarations"
+  return t
+
+/-- Canonical reference categories stay distinct for all source spellings,
+including the former literal address encoding. Cache hints are advisory. -/
+def taggedOccurrenceChecks (t : Tally) : Tally := Id.run do
+  let address := Address.blake3 "tagged occurrence control".toUTF8
+  let encoded := Ix.Name.mkStr Ix.Name.mkAnon s!"#{address}"
+  let sourceName := Ix.Name.fromLeanName `ExternalDependency
+  let an := Ix.Name.fromLeanName `FirstAux
+  let bn := Ix.Name.fromLeanName `SecondAux
+  let named : OccurrenceRef := .named (keyName encoded)
+  let external : OccurrenceRef := .external address
+  let mut t := t.check (named != external)
+    "occurrence key: an external address must not equal its literal source name"
+  for (left,right) in [
+      (OccurrenceKey.const named [], OccurrenceKey.const external []),
+      (OccurrenceKey.proj named 0 (.bvar 0), OccurrenceKey.proj external 0 (.bvar 0))] do
+    let a : OccurrenceInput := ⟨left, 37⟩
+    let b : OccurrenceInput := ⟨right, 37⟩
+    let rehashed : OccurrenceInput := ⟨left, 91⟩
+    let first := ({} : OccurrenceTable).insert a an
+    let both := first.insert b bn
+    let again := both.insert rehashed bn
+    t := t.check (first.get? b == none && first.getFast? b == none)
+      "occurrence key: distinct reference categories sharing a cache bucket must miss"
+    t := t.check ((both.getFast? a).map keyName == some `FirstAux &&
+        (both.getFast? b).map keyName == some `SecondAux && both.entries.length == 2)
+      "occurrence key: overwritten cache must retain both reference categories"
+    t := t.check ((again.getFast? rehashed).map keyName == some `FirstAux &&
+        again.entries.length == 2)
+      "occurrence key: changed hint must recover the first structural insertion"
+  let key := addrKey [] (fun n => if keyName n == keyName sourceName then some address else none)
+    (fun n => keyName n == keyName encoded)
+  for (retained,resolved) in [
+      (Ix.Expr.mkConst encoded #[], Ix.Expr.mkConst sourceName #[]),
+      (Ix.Expr.mkProj encoded 0 (Ix.Expr.mkBVar 0),
+       Ix.Expr.mkProj sourceName 0 (Ix.Expr.mkBVar 0))] do
+    t := t.check ((key retained).isOk && (key resolved).isOk &&
+        (key retained).toOption != (key resolved).toOption)
+      "canonical key: successful const/proj normalization must retain reference category"
+  return t
+
 def run (env : Lean.Environment) : IO UInt32 := do
-  let mut t : Tally := representativeUnitChecks (portFixUnitChecks (tarjanChecks {}))
+  let mut t : Tally := occurrenceTableChecks (nameTableChecks (nestedKeyUnitChecks (nonDepUnitChecks env
+    (representativeUnitChecks (portFixUnitChecks (tarjanChecks {}))))))
+  t := taggedOccurrenceChecks (sourceFastChecks t)
+  t ← nestedLevelPipelineChecks env t
+  try
+    Tests.Ix.Compile.AuxNames.run
+    t := t.check true "auxiliary name capture regression"
+  catch err =>
+    t := t.check false s!"auxiliary name capture regression: {err}"
+  try
+    Tests.Ix.Compile.AddressNames.run
+    t := t.check true "nested address identity regression"
+  catch err =>
+    t := t.check false s!"nested address identity regression: {err}"
   let filtered := validateAuxClosure env
   IO.println s!"[canon-pass1] {filtered.length} constants"
   let raw ← Ix.CompileM.rsCompilePhasesFFI filtered
@@ -195,10 +664,12 @@ def run (env : Lean.Environment) : IO UInt32 := do
     match cenv.nameToAddr.get? n with
     | some a => some a
     | none => cenv.auxNameToAddr.get? n
-  let cenvRef : Env := { const? := rawEnv.consts.get?, addr? }
+  let sourceRef : SourceEnv := { source := rawEnv, addr? }
+  let cenvRef := Env.ofSource sourceRef
   -- the canonical expansion as the compiler runs it: external groups from
   -- the compiled class registry
-  let cenvRefC : Env := { cenvRef with groupOf := groupOfBlocks cenv.blocks }
+  let cenvRefC := Env.ofSource { sourceRef with groupOf := sourceGroupsOfBlocks cenv.blocks }
+  t := nestedLevelChecks cenv t
 
   -- 1. components: the wired condensation against Rust's and `sccsOf`
   let names := rawEnv.consts.toArray.map (·.1)
@@ -373,7 +844,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
           | .error e => t := t.check false s!"preorder {rules.name} {namePretty all0}: {e}"
           | .ok vs => t := t.check vs.isEmpty s!"preorder {rules.name} {namePretty all0}: {vs}"
     if v.numNested > 0 then
-      match expand cenvRef.ind? .lean v.all with
+      match expandSource rawEnv .lean v.all with
       | .error e => t := t.check false s!"discovery {namePretty all0}: {e}"
       | .ok x =>
         let sigs := x.sigs
@@ -413,12 +884,12 @@ def run (env : Lean.Environment) : IO UInt32 := do
       | _ => false
     let consts := (Ix.CanonM.canonChunk indLike).foldl (init := ({} : Std.HashMap Ix.Name Ix.ConstantInfo))
       fun m (n, c) => m.insert n c
-    let fenv : Env := { const? := consts.get?, addr? := fun _ => none }
+    let fenv := Env.ofSource { source := { consts }, addr? := fun _ => none }
     for nm in [`CanonSiblingNest.T, `CanonSiblingNest.F, `CanonSiblingNest.B] do
       let n := Ix.Name.fromLeanName nm
       let some (.inductInfo v) := consts.get? n | t := t.check false s!"sibling {nm}: missing"; continue
-      let leanX := expand fenv.ind? .lean v.all
-      let compX := expand fenv.ind? .compiler v.all
+      let leanX := expandSource { consts } .lean v.all
+      let compX := expandSource { consts } .compiler v.all
       match leanX, compX with
       | .ok x, .ok y =>
         let sigs := x.sigs

@@ -1635,9 +1635,10 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --    kinds are the materialized (shared) map; proof bodies
   --    canonicalize on demand from the pinned Lean constants and are
   --    dropped when their block's `CompileM.run` returns.
-  let fallback : Ix.Name → Option Ix.ConstantInfo := fun n =>
-    (leanByIx.get? n).bind fun (ln, lci) =>
-      ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
+  let fallback : Ix.LazyConstants := {
+    index := leanByIx
+    fetch := fun (ln, lci) =>
+      ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2) }
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
   match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg

@@ -1,4 +1,4 @@
-import Ix.CompileCert.Canon.NestedCanon
+import Ix.CompileCert.Canon.NestedCanonSource
 import Ix.CompileCert.Canon.Perm
 
 /-!
@@ -50,7 +50,8 @@ matching the occurrence (its members renamed to their representatives). -/
 def Claims (env : Env) (rules : Rules) (all : Array Name) (here : Nat) (s : Sig)
     (e : Array (Array Name) × Nat) : Prop :=
   e.2 ≠ here ∧ (refsOfSig all s).toList.any (compMembersOf e.1).contains = true ∧
-    ∃ x, expand env.ind? rules.dedup (repsOf e.1) (aliasesOf e.1) env.groupOf (keyAddrOf rules env) = .ok x ∧
+    ∃ x, expand env.ind? rules.dedup (repsOf e.1) (aliasesOf e.1) env.groupOf (keyAddrOf rules env)
+      (env.protection.canonical (repsOf e.1)) = .ok x ∧
       (matchSig env.addr? (strictFor all e.1) x.sigs s.head s.levels
         (s.specs.map (replaceConstNames (origToCanonOf e.1)))).isSome = true
 
@@ -417,7 +418,7 @@ theorem canonBlock_evaporated {rules : Rules} (hr : rules.nested = .discovery) {
     have := except_pure_ok hev
     simp only [Option.some.injEq] at this
     subst this
-    obtain ⟨-, -, -, -, -, -, hrep⟩ := componentNested_some hr hn0
+    obtain ⟨-, -, -, -, -, -, hrep⟩ := componentNested_source_some hr hn0
     obtain ⟨hsrc, -, -, hperm, -, hsize, hflags⟩ := evaporate_spec hm'
     refine ⟨i, by rw [hsize, hrep, Array.size_replicate, hperm], fun j => ?_⟩
     rw [hflags j, hrep, Array.getElem?_replicate, Array.size_replicate, hperm,

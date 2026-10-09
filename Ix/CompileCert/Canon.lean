@@ -34,6 +34,11 @@ import Ix.CompileCert.Canon.Evaporate
 import Ix.CompileCert.Canon.BlockMap
 import Ix.CompileCert.Canon.Expand
 import Ix.CompileCert.Canon.CliqueClasses
+import Ix.CompileCert.Canon.GeneratedTables
+
+import Ix.CompileCert.Canon.CallbackExports
+import Ix.CompileCert.Canon.SourceAdapter
+import Ix.CompileCert.Canon.CallbackConsequenceSource
 
 /-!
 # M7 L1: Pass 1 proved

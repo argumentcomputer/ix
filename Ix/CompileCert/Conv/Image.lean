@@ -199,7 +199,7 @@ theorem er_eq_of_eRen {S : Name → Prop} : ∀ {e e' : Expr},
   | app h h' _ _ ih1 ih2 => simp only [er, ih1, ih2]
   | lam n n' bi bi' h h' _ _ ih1 ih2 => simp only [er, ih1, ih2]
   | forallE n n' bi bi' h h' _ _ ih1 ih2 => simp only [er, ih1, ih2]
-  | letE n n' nd nd' h h' _ _ _ ih1 ih2 ih3 => simp only [er, ih1, ih2, ih3]
+  | letE n n' nd h h' _ _ _ ih1 ih2 ih3 => simp only [er, ih1, ih2, ih3]
   | mdata d h h' _ ih => simp only [er, ih]
   | proj n i h h' _ _ ih => simp only [er, ih]; rfl
 

@@ -2401,12 +2401,15 @@ pub fn compare_expr(
     (ExprData::ForallE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::ForallE(..)) => Ok(SOrd::gt(true)),
     (
-      ExprData::LetE(_, xt, xv, xb, _, _),
-      ExprData::LetE(_, yt, yv, yb, _, _),
-    ) => SOrd::try_zip(
-      |a, b| compare_expr(a, b, mut_ctx, x_lvls, y_lvls, stt),
-      &[xt, xv, xb],
-      &[yt, yv, yb],
+      ExprData::LetE(_, xt, xv, xb, xnd, _),
+      ExprData::LetE(_, yt, yv, yb, ynd, _),
+    ) => SOrd::try_compare(
+      SOrd::try_zip(
+        |a, b| compare_expr(a, b, mut_ctx, x_lvls, y_lvls, stt),
+        &[xt, xv, xb],
+        &[yt, yv, yb],
+      )?,
+      || Ok(SOrd::cmp(xnd, ynd)),
     ),
     (ExprData::LetE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::LetE(..)) => Ok(SOrd::gt(true)),
@@ -2530,13 +2533,12 @@ pub fn compare_ctor(
   }
 }
 
-/// Compare two inductives by derived flags, params, indices, constructor count,
-/// type, then constructors.
+/// Compare two inductives by universe-parameter count, params, indices,
+/// constructor count, type, then constructors, matching Lean's `compareInd`.
 ///
-/// Includes `is_rec` and `is_unsafe` to prevent alpha-collapse from merging
-/// inductives whose derived properties differ — a mismatch in `is_rec` would
-/// cause the collapsed representative to silently omit `.brecOn` for aliases
-/// that need it (or generate it for aliases that shouldn't have it).
+/// Recursion and safety flags remain inputs to validation, serialization and
+/// auxiliary generation; they are not ordering keys. This comparator does not
+/// validate a raw mutual block's flags.
 pub fn compare_indc(
   x: &Ind,
   y: &Ind,
@@ -2544,39 +2546,35 @@ pub fn compare_indc(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
-  SOrd::try_compare(SOrd::cmp(&x.ind.is_rec, &y.ind.is_rec), || {
-    SOrd::try_compare(SOrd::cmp(&x.ind.is_unsafe, &y.ind.is_unsafe), || {
+  SOrd::try_compare(
+    SOrd::cmp(
+      &x.ind.cnst.level_params.len(),
+      &y.ind.cnst.level_params.len(),
+    ),
+    || {
       SOrd::try_compare(
-        SOrd::cmp(
-          &x.ind.cnst.level_params.len(),
-          &y.ind.cnst.level_params.len(),
-        ),
+        SOrd::cmp(&x.ind.num_params, &y.ind.num_params),
         || {
           SOrd::try_compare(
-            SOrd::cmp(&x.ind.num_params, &y.ind.num_params),
+            SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
             || {
               SOrd::try_compare(
-                SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
+                SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
                 || {
                   SOrd::try_compare(
-                    SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
+                    compare_expr(
+                      &x.ind.cnst.typ,
+                      &y.ind.cnst.typ,
+                      mut_ctx,
+                      &x.ind.cnst.level_params,
+                      &y.ind.cnst.level_params,
+                      stt,
+                    )?,
                     || {
-                      SOrd::try_compare(
-                        compare_expr(
-                          &x.ind.cnst.typ,
-                          &y.ind.cnst.typ,
-                          mut_ctx,
-                          &x.ind.cnst.level_params,
-                          &y.ind.cnst.level_params,
-                          stt,
-                        )?,
-                        || {
-                          SOrd::try_zip(
-                            |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
-                            &x.ctors,
-                            &y.ctors,
-                          )
-                        },
+                      SOrd::try_zip(
+                        |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
+                        &x.ctors,
+                        &y.ctors,
                       )
                     },
                   )
@@ -2586,8 +2584,8 @@ pub fn compare_indc(
           )
         },
       )
-    })
-  })
+    },
+  )
 }
 
 /// Compare two recursor rules by field count, then RHS expression.
@@ -3879,6 +3877,9 @@ pub(crate) mod validation;
 pub use env::{
   compile_env, compile_env_with_options, compile_env_with_profile,
 };
+
+#[cfg(test)]
+mod c6_flags_tests;
 
 #[cfg(test)]
 mod tests {

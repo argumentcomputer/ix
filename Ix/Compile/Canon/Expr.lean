@@ -31,6 +31,7 @@
 module
 public import Ix.Environment
 public import Ix.Common
+public import Ix.Compile.Canon.NameTable
 public section
 
 namespace Ix.Compile.Canon
@@ -52,7 +53,7 @@ def namePretty : Name → String
 /-- The components of `name` below `pre`, root first, or `none` when `name`
 does not extend `pre`. -/
 def stripPrefix (name pre : Name) : Option (List (String ⊕ Nat)) :=
-  if name == pre then some []
+  if keyName name = keyName pre then some []
   else match name with
     | .str p s _ => (stripPrefix p pre).map (· ++ [.inl s])
     | .num p i _ => (stripPrefix p pre).map (· ++ [.inr i])

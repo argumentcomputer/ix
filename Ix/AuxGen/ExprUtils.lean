@@ -25,6 +25,7 @@ module
 public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
+public import Ix.Compile.Canon.NameTable
 public import Std.Data.HashMap
 public import Std.Data.HashSet
 
@@ -1072,10 +1073,10 @@ expressions (aux_gen/expr_utils.rs:949) -/
     Block-scoped cached state, populated lazily on the first `restore`. -/
 structure RestoreStateCache where
   /-- `auxName → nested instantiated with the per-call subst FVars`. -/
-  auxRestored : Std.HashMap Name Expr
+  auxRestored : Ix.Compile.Canon.NameTable Expr
   /-- `auxInd name → (origHeadLevels, origIndArgs)` from decomposing the
       restored nested expression, for the aux-ctor restoration path. -/
-  auxDecomp : Std.HashMap Name (Array Level × Array Expr)
+  auxDecomp : Ix.Compile.Canon.NameTable (Array Level × Array Expr)
   /-- Walk memoization shared across every `restore` call on this context. -/
   walkCache : ExprCache
 
@@ -1091,11 +1092,11 @@ instance : Inhabited RestoreStateCache := ⟨{}, {}, {}⟩
 structure RestoreCtx where
   /-- `auxName → nestedExpr`: the original nested application with block
       param FVars. -/
-  auxToNested : Std.HashMap Name Expr
+  auxToNested : Ix.Compile.Canon.NameTable Expr
   /-- `auxCtorName → (origCtorName, origIndName)`. -/
-  auxCtorMap : Std.HashMap Name (Name × Name)
+  auxCtorMap : Ix.Compile.Canon.NameTable (Name × Name)
   /-- `auxRecName → canonicalRecName`. -/
-  auxRecMap : Std.HashMap Name Name
+  auxRecMap : Ix.Compile.Canon.NameTable Name
   /-- Block-param FVars used during expansion. -/
   blockParamFVars : Array Expr
   /-- Number of block parameters. -/
@@ -1109,9 +1110,9 @@ structure RestoreCtx where
 namespace RestoreCtx
 
 /-- Mirrors Rust `RestoreCtx::new` (aux_gen/expr_utils.rs:1018). -/
-def new (auxToNested : Std.HashMap Name Expr)
-    (auxCtorMap : Std.HashMap Name (Name × Name))
-    (auxRecMap : Std.HashMap Name Name)
+def new (auxToNested : Ix.Compile.Canon.NameTable Expr)
+    (auxCtorMap : Ix.Compile.Canon.NameTable (Name × Name))
+    (auxRecMap : Ix.Compile.Canon.NameTable Name)
     (blockParamFVars : Array Expr) (nParams : Nat) : RestoreCtx :=
   { auxToNested, auxCtorMap, auxRecMap, blockParamFVars, nParams, cached := none }
 
@@ -1135,8 +1136,8 @@ def ensureCache (ctx : RestoreCtx) : RestoreStateCache := Id.run do
     match ctx.blockParamFVars[i] with
     | .fvar n _ => bpFVarMap := bpFVarMap.insert n i
     | _ => pure ()
-  let mut auxRestored : Std.HashMap Name Expr := {}
-  let mut auxDecomp : Std.HashMap Name (Array Level × Array Expr) := {}
+  let mut auxRestored : Ix.Compile.Canon.NameTable Expr := {}
+  let mut auxDecomp : Ix.Compile.Canon.NameTable (Array Level × Array Expr) := {}
   for (auxName, nested) in ctx.auxToNested do
     let abstracted := batchAbstract nested bpFVarMap ctx.nParams 0
     let restored := instantiateRev abstracted substFVars

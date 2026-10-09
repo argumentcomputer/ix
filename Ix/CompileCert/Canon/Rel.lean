@@ -62,7 +62,8 @@ theorem cE_forallE (n n' : Name) (t b t' b' : Expr) (bi bi' : Lean.BinderInfo) (
 theorem cE_letE (n n' : Name) (t v b t' v' b' : Expr) (nd nd' : Bool) (h h' : Address) :
     compareExpr c xl yl (.letE n t v b nd h) (.letE n' t' v' b' nd' h') =
       SOrder.cmpM (compareExpr c xl yl t t')
-        (SOrder.cmpM (compareExpr c xl yl v v') (compareExpr c xl yl b b')) := by
+        (SOrder.cmpM (compareExpr c xl yl v v')
+          (SOrder.cmpM (compareExpr c xl yl b b') (pure ⟨true, compare nd nd'⟩))) := by
   rw [compareExpr.eq_def]
 
 theorem cE_lit (a b : Lean.Literal) (h h' : Address) :
@@ -159,7 +160,7 @@ theorem compareExpr_rel {R} (hR : ResRel R) (c c' : CmpCtx) (hlv : c.levels = c'
                    exact hR.cmpM (ih _ _ (by omega)) (ih _ _ (by omega)))
                 | (rw [cE_letE, cE_letE]
                    exact hR.cmpM (ih _ _ (by omega))
-                     (hR.cmpM (ih _ _ (by omega)) (ih _ _ (by omega))))
+                     (hR.cmpM (ih _ _ (by omega)) (hR.cmpM (ih _ _ (by omega)) (hR.refl _))))
                 | (rw [cE_lit, cE_lit]; exact hR.refl _)
                 | (rw [cE_proj, cE_proj]
                    exact hR.cmpM (href _ _) (hR.cmpM (hR.refl _) (ih _ _ (by omega))))

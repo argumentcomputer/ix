@@ -304,7 +304,18 @@ def hostCodeRoots : Array RootAllowance := #[
   -- `Ix.Common` compares byte arrays with core's `ByteArray.beq` (`memcmp`)
   -- in place of the derived `BEq ByteArray`.
   { root := ``instBEqByteArray_ix_beq_eq_core,
-    standardAxioms := quotOnly }
+    standardAxioms := quotOnly },
+  -- Structural table hits are confirmed against their hash-free specifications.
+  { root := ``Ix.Compile.Canon.OccurrenceTable.get?_eq_fast,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Canon.NameTable.get?_eq_fast,
+    standardAxioms := standard },
+  -- The source cache retains the complete work-list result, including order
+  -- and multiplicity, and is installed before both expansion callers compile.
+  { root := ``Ix.Compile.Canon.collectSource_eq_cached,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Canon.sourceContext_eq_cached,
+    standardAxioms := standard }
 ]
 
 /-- The complete manifest. `Audit.CompiledCode` requires every `@[csimp]`

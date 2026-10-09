@@ -307,7 +307,7 @@ def headsIn (heads : Std.HashMap Name Name) (ci : ConstantInfo) : Std.HashSet Na
 
 /-- The view input of a compile environment. -/
 def viewInput (cenv : CompileEnv) : ViewInput :=
-  { const? := cenv.env.get?, addr? := resolveAddr cenv, canonRec? := cenv.p3CanonRecs.get? }
+  { source := cenv.env, addr? := resolveAddr cenv, canonRec? := cenv.p3CanonRecs.get? }
 
 /-! ### The check mode of the view and image-expansion tables
 

@@ -58,8 +58,8 @@
     the discovery order of the expansion of the canonical block (members in
     canonical order, collapsed members renamed to their representatives,
     Lean's deduplication of sibling occurrences). An external group opens
-    as `GroupOf` says: Lean's `I.all` (`leanGroup`), or, in the compiler, the
-    external block's compiled canonical classes (`groupOfBlocks`), which is
+    as `SourceGroups` says: Lean's `I.all` (`leanSourceGroup`), or, in the compiler, the
+    external block's compiled canonical classes (`sourceGroupsOfBlocks`), which is
     what the kernels recompute from the stored Ixon; the two agree whenever
     the external block is an identity block. The compiler reads this order
     through `canonicalAuxOrder` (`sortAuxByPartitionRefinement`), and it is
@@ -91,6 +91,9 @@ module
 public import Ix.Environment
 public import Ix.Mutual
 public import Ix.Compile.Canon.Expr
+public import Ix.Compile.Canon.OccurrenceKey
+public import Ix.Compile.Canon.SourceFast
+public import Ix.Compile.Canon.FreshNames
 public import Ix.Compile.Canon.Order
 public import Ix.Compile.Canon.Classes
 public section
@@ -159,11 +162,14 @@ order. -/
 structure Expanded where
   types : Array XMember
   /-- Auxiliary ↦ its occurrence `J.{ls} Ds`, `Ds` at depth 0. -/
-  auxToNested : Std.HashMap Name Expr
-  auxCtorMap : Std.HashMap Name (Name × Name)
+  auxToNested : NameTable Expr
+  auxCtorMap : NameTable (Name × Name)
   nOriginals : Nat
   levelParams : Array Name
   nParams : Nat
+  /-- Original block anchor and exact source protection for any later auxiliary ordering. -/
+  all0 : Name := default
+  sourceNames : List Lean.Name := []
   deriving Inhabited
 
 def Expanded.aux (x : Expanded) : Array XMember := x.types.extract x.nOriginals x.types.size
@@ -171,14 +177,13 @@ def Expanded.aux (x : Expanded) : Array XMember := x.types.extract x.nOriginals 
 /-- The external group a new occurrence of `I` opens, as classes in order
 (each class's first name is its representative, which gets the auxiliary;
 every name of the class is registered as seen). Lean's kernel opens `I.all`
-(`leanGroup`). Over a canonical block the group is `I`'s canonical
+(`leanSourceGroup`). Over a canonical block the group is `I`'s canonical
 component instead, which is what the kernels can recompute from Ixon (the
 compiler passes its compiled classes); the two agree whenever `I`'s block is
 an identity block. -/
-abbrev GroupOf := IndView → Array (Array Name)
-
-/-- Lean's group: `I.all`, one name per class. -/
-def leanGroup : GroupOf := fun v => v.all.map (#[·])
+structure SourceGroups where
+  blocks : Std.HashMap Name (Array (Array Name)) := {}
+  deriving Inhabited
 
 /-- The canonical group from a compiled class registry (the compiler's
 `CompileEnv.blocks` / Rust `stt.blocks`: each member's block classes in
@@ -191,62 +196,118 @@ def blockGroup (blocks : Std.HashMap Name (Array (Array Name))) (name : Name)
   | none => all.map (#[·])
 
 @[inherit_doc blockGroup]
-def groupOfBlocks (blocks : Std.HashMap Name (Array (Array Name))) : GroupOf := fun v =>
-  blockGroup blocks v.name v.all
+def SourceGroups.apply (groups : SourceGroups) (v : IndView) : Array (Array Name) :=
+  blockGroup groups.blocks v.name v.all
 
-/-- The deduplication key of an occurrence in a canonical expansion: every
-constant outside the queue (`keep`) whose compiled address is known is
-replaced by that address (as the name `#<hex>`), so two occurrences equal up
-to compiled addresses (collapsed or content-equal constants under different
-names, which the stored Ixon cannot tell apart) share one auxiliary, as they
-do in the kernels' walk, which sees addresses only. Lean's own walk compares
-names; the difference is recorded by the block's permutation (A2-order).
-Binder names and info and `mdata` are erased as well: the kernels' key is the
-anonymous content. -/
-def addrKey (addr? : Name → Option Address) (keep : Name → Bool) : Expr → Expr
-  | e@(.const n ls _) =>
-    if keep n then e else
-    match addr? n with
-    | some a => Expr.mkConst (Name.mkStr Name.mkAnon s!"#{a}") ls
-    | none => e
-  | .app f a _ => Expr.mkApp (addrKey addr? keep f) (addrKey addr? keep a)
-  | .lam _ t b _ _ => Expr.mkLam Name.mkAnon (addrKey addr? keep t) (addrKey addr? keep b) .default
-  | .forallE _ t b _ _ =>
-    Expr.mkForallE Name.mkAnon (addrKey addr? keep t) (addrKey addr? keep b) .default
-  | .letE _ t v b nd _ =>
-    Expr.mkLetE Name.mkAnon (addrKey addr? keep t) (addrKey addr? keep v) (addrKey addr? keep b) nd
-  | .proj n i s _ =>
-    let n' := if keep n then n else
-      match addr? n with
-      | some a => Name.mkStr Name.mkAnon s!"#{a}"
-      | none => n
-    Expr.mkProj n' i (addrKey addr? keep s)
-  | .mdata _ x _ => addrKey addr? keep x
-  | e => e
+instance : CoeFun SourceGroups (fun _ => IndView → Array (Array Name)) := ⟨SourceGroups.apply⟩
+
+/-- Lean's group: the recorded `I.all`, with no compiled registry override. -/
+def leanSourceGroup : SourceGroups := {}
+
+def sourceGroupsOfBlocks (blocks : Std.HashMap Name (Array (Array Name))) : SourceGroups := ⟨blocks⟩
+
+/-- The original unrestricted group callback. No finite registry or completeness
+proof is required of a generic caller. -/
+abbrev GroupOf := IndView → Array (Array Name)
+
+/-- Lean's source grouping, with each recorded member its own class. -/
+def leanGroup : GroupOf := leanSourceGroup.apply
+
+/-- The original registry-to-callback API, with no restriction on other callbacks. -/
+def groupOfBlocks (blocks : Std.HashMap Name (Array (Array Name))) : GroupOf :=
+  (sourceGroupsOfBlocks blocks).apply
+
+/-- Reconstruct a canonical positional universe using the block's original
+parameter names. An invalid position is an explicit error, never a fallback
+level. -/
+def keyLevelOfUniv (ctx : List Name) : Ixon.Univ → Except String Level
+  | .zero => pure Level.mkZero
+  | .succ u => Level.mkSucc <$> keyLevelOfUniv ctx u
+  | .max u v => Level.mkMax <$> keyLevelOfUniv ctx u <*> keyLevelOfUniv ctx v
+  | .imax u v => Level.mkIMax <$> keyLevelOfUniv ctx u <*> keyLevelOfUniv ctx v
+  | .var i => match ctx[i.toNat]? with
+    | some n => pure (Level.mkParam n)
+    | none => .error s!"nested key: universe position {i} outside block context"
+
+/-- The serializer's universe normal form, with parameters kept distinct by
+position. Only the occurrence key uses this form; original level spellings
+remain in the expansion and its metadata. -/
+def keyLevel (ctx : List Name) (u : Level) : Except String Level := do
+  keyLevelOfUniv ctx (Ixon.canonUniv (← toUniv ctx u))
+
+/-- Reference identities remain typed: an external address is never encoded
+as an ordinary source name. Missing addresses retain the source identity. -/
+def addrRef (addr? : Name → Option Address) (keep : Name → Bool) (n : Name) : OccurrenceRef :=
+  if keep n then .named (keyName n) else match addr? n with
+    | some a => .external a
+    | none => .named (keyName n)
+
+/-- The canonical nested occurrence key. Resolved external references are
+address-tagged; source/generated names retain a distinct tag. Universes use
+exactly the serializer's positional normal form. Binder annotations and
+metadata are erased only in this canonical key. -/
+def addrKey (ctx : List Name) (addr? : Name → Option Address)
+    (keep : Name → Bool) : Expr → Except String OccurrenceKey
+  | .sort u _ => (OccurrenceKey.sort ∘ keyLevelShape) <$> keyLevel ctx u
+  | .const n ls _ => do
+    pure (.const (addrRef addr? keep n) ((← ls.mapM (keyLevel ctx)).toList.map keyLevelShape))
+  | .app f a _ => OccurrenceKey.app <$> addrKey ctx addr? keep f <*> addrKey ctx addr? keep a
+  | .lam _ t b _ _ => do
+    pure (.lam .anonymous (← addrKey ctx addr? keep t) (← addrKey ctx addr? keep b) 0)
+  | .forallE _ t b _ _ => do
+    pure (.forallE .anonymous (← addrKey ctx addr? keep t) (← addrKey ctx addr? keep b) 0)
+  | .letE _ t v b nd _ => do
+    pure (.letE .anonymous (← addrKey ctx addr? keep t)
+      (← addrKey ctx addr? keep v) (← addrKey ctx addr? keep b) nd)
+  | .proj n i s _ => do
+    pure (.proj (addrRef addr? keep n) i (← addrKey ctx addr? keep s))
+  | .mdata _ x _ => addrKey ctx addr? keep x
+  | e => pure (occurrenceKey e)
+
+/-- The raw expression digest is only a candidate bucket; confirmed structural
+lookup handles equal canonical keys with different raw names or levels. -/
+def addrOccurrence (ctx : List Name) (addr? : Name → Option Address)
+    (keep : Name → Bool) (e : Expr) : Except String OccurrenceInput :=
+  (fun key => ⟨key, hash e⟩) <$> addrKey ctx addr? keep e
 
 structure XCtx where
+  source : Ix.Environment := { consts := {} }
+  sourceMembers : Array Name := #[]
   ind? : Name → Option IndView
-  groupOf : GroupOf := leanGroup
+  groupOf : SourceGroups := leanSourceGroup
   /-- Deduplicate occurrences up to compiled addresses (`addrKey`): the
   canonical expansion. `none` for Lean's source walk. -/
   keyAddr? : Option (Name → Option Address) := none
   dedup : Dedup
   all0 : Name
   blockLevels : Array Level
+  levelParams : List Name := []
   nParams : Nat
   paramBinders : Array Binder
 
 structure XSt where
   types : Array XMember := #[]
-  typeNames : Std.HashSet Name := {}
-  auxToNested : Std.HashMap Name Expr := {}
-  auxCtorMap : Std.HashMap Name (Name × Name) := {}
-  seen : Std.HashMap Expr Name := {}
+  typeNames : NameSet := {}
+  auxToNested : NameTable Expr := {}
+  auxCtorMap : NameTable (Name × Name) := {}
+  seen : OccurrenceTable := {}
+  /-- A malformed canonical key is reported by the queue driver. -/
+  keyError : Option String := none
   nextAuxIdx : Nat := 1
+  /-- Computed once, on the first auxiliary allocation. -/
+  sourceNames? : Option (List Lean.Name) := none
+  allocatedNames : List Lean.Name := []
+  allocatedCtorRoots : List Lean.Name := []
   deriving Inhabited
 
+/-- Lazily collect actual block-reachable source names. Non-nested blocks do not traverse it. -/
+def XSt.sourceNames (cx : XCtx) (st : XSt) : List Lean.Name :=
+  match st.sourceNames? with
+  | some names => names
+  | none => (sourceContext cx.source cx.sourceMembers cx.groupOf.blocks).protectedNames
+
 def XSt.push (st : XSt) (m : XMember) : XSt :=
-  { st with types := st.types.push m, typeNames := st.typeNames.insert m.name }
+  { st with types := st.types.push m, typeNames := st.typeNames.insert m.name () }
 
 /-- Rewrite the result `J Ds is` of an auxiliary constructor to
 `aux params is` (`replaceCtorResultHeadWithAux`); `depth` counts the binders
@@ -283,7 +344,7 @@ def replaceIfNested (cx : XCtx) (np : Nat) (owner : Name) (e : Expr) (d : Nat)
   let enp := ext.numParams
   if args.size < enp then return (none, st)
   let ps := args.extract 0 enp
-  if !ps.any (mentionsAnyName st.typeNames) then return (none, st)
+  if !ps.any (mentionsName st.typeNames.contains) then return (none, st)
   if !ps.all (looseAtLeast · d) then return (none, st)
   let specs := ps.map (lowerLoose · d)
   let iAs := mkAppN (Expr.mkConst hn hls) specs
@@ -292,38 +353,51 @@ def replaceIfNested (cx : XCtx) (np : Nat) (owner : Name) (e : Expr) (d : Nat)
       (args.extract enp args.size)
   let names := st.typeNames
   let keyOf := fun (x : Expr) => match cx.keyAddr? with
-    | some f => addrKey f names.contains x
-    | none => x
-  if let some aux := st.seen.get? (keyOf iAs) then return (some (repl aux), st)
-  let mut st := st
-  let mut result : Option Expr := none
-  for cls in cx.groupOf ext do
-    let some jName := cls[0]? | continue
-    let some j := cx.ind? jName | continue
-    let auxName := Name.mkStr (Name.mkStr cx.all0 "_nested")
-      s!"{(namePretty jName).replace "." "_"}_{st.nextAuxIdx}"
-    let jAs := mkAppN (Expr.mkConst jName hls) specs
-    st := { st with
-      nextAuxIdx := st.nextAuxIdx + 1
-      auxToNested := st.auxToNested.insert auxName jAs }
-    st := match cx.dedup with
-      | .compiler => if st.seen.contains iAs then st else { st with seen := st.seen.insert iAs auxName }
-      | .lean => cls.foldl (init := st) fun st k =>
-          let kAs := keyOf (mkAppN (Expr.mkConst k hls) specs)
-          if st.seen.contains kAs then st else { st with seen := st.seen.insert kAs auxName }
-    let jType := instantiatePiParams (substLevels j.levelParams hls j.type) enp specs
-    let auxType := mkForalls cx.paramBinders jType
-    let mut ctors : Array XCtor := #[]
-    for (cn, ct, nf) in j.ctors do
-      let auxCtorName := nameReplacePrefix cn jName auxName
-      let t := instantiatePiParams (substLevels j.levelParams hls ct) enp specs
-      let t := replaceCtorResultHead jName auxName enp cx.blockLevels cx.nParams t 0
-      st := { st with auxCtorMap := st.auxCtorMap.insert auxCtorName (cn, auxName) }
-      ctors := ctors.push { name := auxCtorName, typ := mkForalls cx.paramBinders t, nFields := nf }
-    if cls.contains hn then result := some (repl auxName)
-    st := st.push { name := auxName, sourceOwner := owner, typ := auxType, ctors,
-                    nParams := cx.nParams, nIndices := j.numIndices }
-  return (result, st)
+    | some f => addrOccurrence cx.levelParams f names.contains x
+    | none => .ok (sourceOccurrence x)
+  match keyOf iAs with
+  | .error e => return (none, { st with keyError := st.keyError.or (some e) })
+  | .ok key =>
+    if let some aux := st.seen.get? key then return (some (repl aux), st)
+    let mut st := st
+    let mut result : Option Expr := none
+    for cls in cx.groupOf ext do
+      let some jName := cls[0]? | continue
+      let some j := cx.ind? jName | continue
+      let sourceNames := st.sourceNames cx
+      let forbidden := st.allocatedNames ++ sourceNames
+      let auxName := freshFamily forbidden (Name.mkStr cx.all0 "_nested")
+        s!"{(namePretty jName).replace "." "_"}_{st.nextAuxIdx}"
+      let jAs := mkAppN (Expr.mkConst jName hls) specs
+      st := { st with
+        nextAuxIdx := st.nextAuxIdx + 1
+        sourceNames? := some sourceNames
+        allocatedNames := keyName auxName :: st.allocatedNames
+        auxToNested := st.auxToNested.insert auxName jAs }
+      st := match cx.dedup with
+        | .compiler => if st.seen.contains iAs then st else { st with seen := st.seen.insert iAs auxName }
+        | .lean => cls.foldl (init := st) fun st k =>
+            match keyOf (mkAppN (Expr.mkConst k hls) specs) with
+            | .error e => { st with keyError := st.keyError.or (some e) }
+            | .ok kAs =>
+              if st.seen.contains kAs then st else { st with seen := st.seen.insert kAs auxName }
+      let jType := instantiatePiParams (substLevels j.levelParams hls j.type) enp specs
+      let auxType := mkForalls cx.paramBinders jType
+      let mut ctors : Array XCtor := #[]
+      for (cn, ct, nf) in j.ctors do
+        let candidate := nameReplacePrefix cn jName auxName
+        let auxCtorName := freshCtorFamily (st.allocatedNames ++ sourceNames) auxName candidate ctors.size st.allocatedCtorRoots
+        let t := instantiatePiParams (substLevels j.levelParams hls ct) enp specs
+        let t := replaceCtorResultHead jName auxName enp cx.blockLevels cx.nParams t 0
+        st := { st with
+          auxCtorMap := st.auxCtorMap.insert auxCtorName (cn, auxName)
+          allocatedNames := keyName auxCtorName :: st.allocatedNames
+          allocatedCtorRoots := keyName auxCtorName :: st.allocatedCtorRoots }
+        ctors := ctors.push { name := auxCtorName, typ := mkForalls cx.paramBinders t, nFields := nf }
+      if cls.contains hn then result := some (repl auxName)
+      st := st.push { name := auxName, sourceOwner := owner, typ := auxType, ctors,
+                      nParams := cx.nParams, nIndices := j.numIndices }
+    return (result, st)
 
 /-- Lean's `replace` with `replaceIfNested`, pre-order. -/
 def replaceAll (cx : XCtx) (np : Nat) (owner : Name) : Expr → Nat → XSt → Expr × XSt
@@ -373,29 +447,37 @@ def walkCtor (cx : XCtx) (qi ci : Nat) (st : XSt) : XSt :=
 
 /-- The queue loop; the fuel bounds the number of members. -/
 def walkQueue (cx : XCtx) : Nat → Nat → XSt → Except String XSt
-  | 0, qi, st => if qi < st.types.size then .error "nested expansion: auxiliary bound exceeded" else pure st
+  | 0, qi, st =>
+    match st.keyError with
+    | some e => .error e
+    | none => if qi < st.types.size then .error "nested expansion: auxiliary bound exceeded" else pure st
   | fuel + 1, qi, st =>
-    match st.types[qi]? with
-    | none => pure st
-    | some mem =>
-      let st := (List.range mem.ctors.size).foldl (fun st ci => walkCtor cx qi ci st) st
-      walkQueue cx fuel (qi + 1) st
+    match st.keyError with
+    | some e => .error e
+    | none =>
+      match st.types[qi]? with
+      | none => pure st
+      | some mem =>
+        let st := (List.range mem.ctors.size).foldl (fun st ci => walkCtor cx qi ci st) st
+        walkQueue cx fuel (qi + 1) st
 
 /-- Maximum members of an expanded block. -/
 def expansionBound : Nat := 100000
 
 /-- Expand the block whose members are `ordered` (in that order), with
 collapsed members renamed by `aliasToRep` first (`expandNestedBlock`). -/
-def expand (ind? : Name → Option IndView) (dedup : Dedup) (ordered : Array Name)
-    (aliasToRep : Std.HashMap Name Name := {}) (groupOf : GroupOf := leanGroup)
+def expandSourceSpec (source : Ix.Environment) (dedup : Dedup) (ordered : Array Name)
+    (aliasToRep : Std.HashMap Name Name := {}) (groupOf : SourceGroups := leanSourceGroup)
     (keyAddr? : Option (Name → Option Address) := none) :
     Except String Expanded := do
+  let ind? := IndView.ofConst? source.get?
   let some first := ordered[0]? | .error "expand: empty block"
   let some fi := ind? first | .error s!"expand: {namePretty first} is not an inductive"
   let nParams := fi.numParams
   let (paramBinders, _) := peelForalls nParams fi.type #[]
-  let cx : XCtx := { ind?, groupOf, keyAddr?, dedup, all0 := fi.all[0]?.getD first,
-                     blockLevels := fi.levelParams.map Level.mkParam, nParams, paramBinders }
+  let cx : XCtx := { source, sourceMembers := ordered, ind?, groupOf, keyAddr?, dedup, all0 := fi.all[0]?.getD first,
+                     blockLevels := fi.levelParams.map Level.mkParam,
+                     levelParams := fi.levelParams.toList, nParams, paramBinders }
   let mut st : XSt := {}
   for n in ordered do
     let some v := ind? n | .error s!"expand: {namePretty n} is not an inductive"
@@ -406,7 +488,226 @@ def expand (ind? : Name → Option IndView) (dedup : Dedup) (ordered : Array Nam
   let nOriginals := st.types.size
   let fin ← walkQueue cx expansionBound 0 st
   return { types := fin.types, auxToNested := fin.auxToNested, auxCtorMap := fin.auxCtorMap,
-           nOriginals, levelParams := fi.levelParams, nParams }
+           nOriginals, levelParams := fi.levelParams, nParams,
+           all0 := cx.all0, sourceNames := fin.sourceNames?.getD [] }
+
+/-! ## Callback-generic expansion core
+
+The finite source wrapper above remains byte-for-byte unchanged during this
+additive extraction. `ExpansionCore` keeps arbitrary view/group callbacks and
+receives the real wrapper's finite protection as a lazy pure thunk. Its generic
+discovery/ownership laws impose no completeness or freshness premise. The
+separate `CoreBridge` proof compares complete results with the existing wrapper.
+-/
+
+namespace ExpansionCore
+
+/-- Every callback accepted by the former generic expansion interface. -/
+abbrev GroupCallback := GroupOf
+
+/-- Queue inputs independent of the representation of the source environment.
+`protect` is evaluated only on the existing first-allocation cache miss. -/
+structure Ctx where
+  protect : Unit → List Lean.Name
+  ind? : Name → Option IndView
+  groupOf : GroupCallback
+  keyAddr? : Option (Name → Option Address) := none
+  dedup : Dedup
+  all0 : Name
+  blockLevels : Array Level
+  levelParams : List Name := []
+  nParams : Nat
+  paramBinders : Array Binder
+
+/-- The actual source-backed context supplies its exact computed support.
+This adapter neither traverses the closure eagerly nor supplies a support hint. -/
+def Ctx.ofSource (cx : XCtx) : Ctx :=
+  { protect := fun () => (sourceContext cx.source cx.sourceMembers cx.groupOf.blocks).protectedNames
+    ind? := cx.ind?, groupOf := cx.groupOf.apply, keyAddr? := cx.keyAddr?
+    dedup := cx.dedup, all0 := cx.all0, blockLevels := cx.blockLevels
+    levelParams := cx.levelParams, nParams := cx.nParams, paramBinders := cx.paramBinders }
+
+/-- Keep the existing lazy source-name cache, even for arbitrary core contexts. -/
+def sourceNames (cx : Ctx) (st : XSt) : List Lean.Name :=
+  match st.sourceNames? with
+  | some names => names
+  | none => cx.protect ()
+
+/-- Test `e` (at depth `d` below `np` peeled parameters) as a nested
+occurrence; on a new one, append its group. -/
+def replaceIfNested (cx : Ctx) (np : Nat) (owner : Name) (e : Expr) (d : Nat)
+    (st : XSt) : Option Expr × XSt := Id.run do
+  let (h, args) := getAppFnArgs e
+  let .const hn hls _ := h | return (none, st)
+  if st.typeNames.contains hn then return (none, st)
+  let some ext := cx.ind? hn | return (none, st)
+  let enp := ext.numParams
+  if args.size < enp then return (none, st)
+  let ps := args.extract 0 enp
+  if !ps.any (mentionsName st.typeNames.contains) then return (none, st)
+  if !ps.all (looseAtLeast · d) then return (none, st)
+  let specs := ps.map (lowerLoose · d)
+  let iAs := mkAppN (Expr.mkConst hn hls) specs
+  let repl := fun (aux : Name) =>
+    mkAppN (mkAppN (Expr.mkConst aux cx.blockLevels) (paramArgs np d))
+      (args.extract enp args.size)
+  let names := st.typeNames
+  let keyOf := fun (x : Expr) => match cx.keyAddr? with
+    | some f => addrOccurrence cx.levelParams f names.contains x
+    | none => .ok (sourceOccurrence x)
+  match keyOf iAs with
+  | .error e => return (none, { st with keyError := st.keyError.or (some e) })
+  | .ok key =>
+    if let some aux := st.seen.get? key then return (some (repl aux), st)
+    let mut st := st
+    let mut result : Option Expr := none
+    for cls in cx.groupOf ext do
+      let some jName := cls[0]? | continue
+      let some j := cx.ind? jName | continue
+      let sourceNames := sourceNames cx st
+      let forbidden := st.allocatedNames ++ sourceNames
+      let auxName := freshFamily forbidden (Name.mkStr cx.all0 "_nested")
+        s!"{(namePretty jName).replace "." "_"}_{st.nextAuxIdx}"
+      let jAs := mkAppN (Expr.mkConst jName hls) specs
+      st := { st with
+        nextAuxIdx := st.nextAuxIdx + 1
+        sourceNames? := some sourceNames
+        allocatedNames := keyName auxName :: st.allocatedNames
+        auxToNested := st.auxToNested.insert auxName jAs }
+      st := match cx.dedup with
+        | .compiler => if st.seen.contains iAs then st else { st with seen := st.seen.insert iAs auxName }
+        | .lean => cls.foldl (init := st) fun st k =>
+            match keyOf (mkAppN (Expr.mkConst k hls) specs) with
+            | .error e => { st with keyError := st.keyError.or (some e) }
+            | .ok kAs =>
+              if st.seen.contains kAs then st else { st with seen := st.seen.insert kAs auxName }
+      let jType := instantiatePiParams (substLevels j.levelParams hls j.type) enp specs
+      let auxType := mkForalls cx.paramBinders jType
+      let mut ctors : Array XCtor := #[]
+      for (cn, ct, nf) in j.ctors do
+        let candidate := nameReplacePrefix cn jName auxName
+        let auxCtorName := freshCtorFamily (st.allocatedNames ++ sourceNames) auxName candidate ctors.size st.allocatedCtorRoots
+        let t := instantiatePiParams (substLevels j.levelParams hls ct) enp specs
+        let t := replaceCtorResultHead jName auxName enp cx.blockLevels cx.nParams t 0
+        st := { st with
+          auxCtorMap := st.auxCtorMap.insert auxCtorName (cn, auxName)
+          allocatedNames := keyName auxCtorName :: st.allocatedNames
+          allocatedCtorRoots := keyName auxCtorName :: st.allocatedCtorRoots }
+        ctors := ctors.push { name := auxCtorName, typ := mkForalls cx.paramBinders t, nFields := nf }
+      if cls.contains hn then result := some (repl auxName)
+      st := st.push { name := auxName, sourceOwner := owner, typ := auxType, ctors,
+                      nParams := cx.nParams, nIndices := j.numIndices }
+    return (result, st)
+
+/-- Lean's `replace` with `replaceIfNested`, pre-order. -/
+def replaceAll (cx : Ctx) (np : Nat) (owner : Name) : Expr → Nat → XSt → Expr × XSt
+  | e, d, st =>
+    match replaceIfNested cx np owner e d st with
+    | (some r, st) => (r, st)
+    | (none, st) =>
+      match e with
+      | .app f a _ =>
+        let (f', st) := replaceAll cx np owner f d st
+        let (a', st) := replaceAll cx np owner a d st
+        (Expr.mkApp f' a', st)
+      | .lam n t b bi _ =>
+        let (t', st) := replaceAll cx np owner t d st
+        let (b', st) := replaceAll cx np owner b (d + 1) st
+        (Expr.mkLam n t' b' bi, st)
+      | .forallE n t b bi _ =>
+        let (t', st) := replaceAll cx np owner t d st
+        let (b', st) := replaceAll cx np owner b (d + 1) st
+        (Expr.mkForallE n t' b' bi, st)
+      | .letE n t v b nd _ =>
+        let (t', st) := replaceAll cx np owner t d st
+        let (v', st) := replaceAll cx np owner v d st
+        let (b', st) := replaceAll cx np owner b (d + 1) st
+        (Expr.mkLetE n t' v' b' nd, st)
+      | .proj n i s _ =>
+        let (s', st) := replaceAll cx np owner s d st
+        (Expr.mkProj n i s', st)
+      | .mdata md x _ =>
+        let (x', st) := replaceAll cx np owner x d st
+        (Expr.mkMData md x', st)
+      | _ => (e, st)
+
+/-- Process constructor `ci` of queue member `qi`. -/
+def walkCtor (cx : Ctx) (qi ci : Nat) (st : XSt) : XSt :=
+  match st.types[qi]? with
+  | none => st
+  | some mem =>
+    match mem.ctors[ci]? with
+    | none => st
+    | some c =>
+      let (bs, body) := peelForalls cx.nParams c.typ #[]
+      let (body', st) := replaceAll cx bs.size mem.sourceOwner body 0 st
+      let typ := mkForalls bs body'
+      { st with types := st.types.modify qi fun m =>
+          { m with ctors := m.ctors.modify ci fun c => { c with typ } } }
+
+/-- The queue loop; the fuel bounds the number of members. -/
+def walkQueue (cx : Ctx) : Nat → Nat → XSt → Except String XSt
+  | 0, qi, st =>
+    match st.keyError with
+    | some e => .error e
+    | none => if qi < st.types.size then .error "nested expansion: auxiliary bound exceeded" else pure st
+  | fuel + 1, qi, st =>
+    match st.keyError with
+    | some e => .error e
+    | none =>
+      match st.types[qi]? with
+      | none => pure st
+      | some mem =>
+        let st := (List.range mem.ctors.size).foldl (fun st ci => walkCtor cx qi ci st) st
+        walkQueue cx fuel (qi + 1) st
+
+/-- Expand the block whose members are `ordered` (in that order), with
+collapsed members renamed by `aliasToRep` first (`expandNestedBlock`). -/
+def expand (protect : Unit → List Lean.Name) (ind? : Name → Option IndView)
+    (dedup : Dedup) (ordered : Array Name)
+    (aliasToRep : Std.HashMap Name Name := {}) (groupOf : GroupCallback := fun v => v.all.map (#[·]))
+    (keyAddr? : Option (Name → Option Address) := none) :
+    Except String Expanded := do
+  let some first := ordered[0]? | .error "expand: empty block"
+  let some fi := ind? first | .error s!"expand: {namePretty first} is not an inductive"
+  let nParams := fi.numParams
+  let (paramBinders, _) := peelForalls nParams fi.type #[]
+  let cx : Ctx := { protect, ind?, groupOf, keyAddr?, dedup, all0 := fi.all[0]?.getD first,
+                     blockLevels := fi.levelParams.map Level.mkParam,
+                     levelParams := fi.levelParams.toList, nParams, paramBinders }
+  let mut st : XSt := {}
+  for n in ordered do
+    let some v := ind? n | .error s!"expand: {namePretty n} is not an inductive"
+    let ctors := v.ctors.map fun (cn, ct, nf) =>
+      { name := cn, typ := canonicalizeConstNames aliasToRep ct, nFields := nf : XCtor }
+    st := st.push { name := n, sourceOwner := n, typ := canonicalizeConstNames aliasToRep v.type,
+                    ctors, nParams, nIndices := v.numIndices }
+  let nOriginals := st.types.size
+  let fin ← walkQueue cx expansionBound 0 st
+  return { types := fin.types, auxToNested := fin.auxToNested, auxCtorMap := fin.auxCtorMap,
+           nOriginals, levelParams := fi.levelParams, nParams,
+           all0 := cx.all0, sourceNames := fin.sourceNames?.getD [] }
+
+end ExpansionCore
+
+/-- Public expansion over arbitrary callbacks. Protection is fixed executable
+data; the allocator consumes it lazily on the existing first-miss path. -/
+def expand (ind? : Name → Option IndView) (dedup : Dedup)
+    (ordered : Array Name) (aliases : Std.HashMap Name Name := {})
+    (groupOf : GroupOf := leanGroup)
+    (keyAddr? : Option (Name → Option Address) := none)
+    (protect : Unit → List Lean.Name := fun () => []) : Except String Expanded :=
+  ExpansionCore.expand protect ind? dedup ordered aliases groupOf keyAddr?
+
+/-- The actual source producer supplies the exact block-reachable protection
+from its source and group registry. The old finite body remains expandSourceSpec
+for full-result comparison, including every refusal. -/
+def expandSource (source : Ix.Environment) (dedup : Dedup)
+    (ordered : Array Name) (aliases : Std.HashMap Name Name := {})
+    (groups : SourceGroups := leanSourceGroup)
+    (keyAddr? : Option (Name → Option Address) := none) : Except String Expanded :=
+  expand (IndView.ofConst? source.get?) dedup ordered aliases groups.apply keyAddr?
+    (fun () => (sourceContext source ordered groups.blocks).protectedNames)
 
 /-! ## Signatures -/
 

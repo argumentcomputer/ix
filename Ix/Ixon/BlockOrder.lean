@@ -1,8 +1,11 @@
 /-
 Canonical comparison and refinement follow crates/kernel/src/canonical_check.rs
 and crates/common/src/strong_ordering.rs at Ix revision
-11aa5649700b371e1c65dcb86157999839fe7e5e. This adapter compares physical Ixon
-references directly; it does not import the old Ix.Tc representation.
+11aa5649700b371e1c65dcb86157999839fe7e5e, with one later change made in every
+canonical-order comparator at once: a `let`'s nondependency bit is a key,
+compared after the `let`'s type, value and body. This adapter
+compares physical Ixon references directly; it does not import the old Ix.Tc
+representation.
 -/
 
 import Ix.Ixon.Projection
@@ -17,6 +20,10 @@ Projection addresses are computed by the pure writer/hash path. Universes
 are rebuilt once through the same simplifying constructors as host ingress.
 Sharing is followed only to earlier entries, without constructing another
 expanded expression tree. Literal comparison uses values, not blob addresses.
+The keys are the members' Ixon content up to binder contracts: in particular a
+`let`'s nondependency bit is compared (`compareExpr`), so two members that
+differ only in it are two classes, and a block that stores both is accepted in
+their order only (`nonCanonical` otherwise).
 
 A block whose members are all recursors is checked in motive order instead
 (`checkMotives`): member `j` eliminates motive `j` and declares one motive per
@@ -199,9 +206,15 @@ def exprKind : Expr → Nat
   | .prj .. => 9
   | .share _ => 10 -- eliminated before comparing variants
 
-/-- Binder modes and the let nondependency bit do not affect canonical
-ordering. Physical ref aliases are retained, and recursive slots resolve to
-the computed projection keys rather than logical ConstRef values. -/
+/-- The canonical comparison of two expressions. Binder contracts, and a
+`let`'s kind and binder contract, do not affect canonical ordering; a `let`'s
+nondependency bit (`LetContract.nonDep`, Lean's `letE` flag: `let` against
+`have`) does. The bit is content (the payload is its only carrier), so two
+`let`s that differ only in it are different keys: the `let` arm compares the
+type, then the value, then the body, then the bit (`false < true`), each only
+when everything before it is equal (`compareExpr_letE`, `compareExpr_letE_nonDep`).
+Physical ref aliases are retained, and recursive slots resolve to the computed
+projection keys rather than logical ConstRef values. -/
 def compareExpr (block : Block) (ctx : LocalContext) :
     Nat → Nat → Expr → Nat → Expr → Except Error Ordering
   | 0, _, _, _, _ => .error (.exhausted .comparison)
@@ -228,10 +241,11 @@ def compareExpr (block : Block) (ctx : LocalContext) :
     | .all _ _ xl xr, .all _ _ yl yr =>
       thenM (← compareExpr block ctx fuel leftLimit xl rightLimit yl) fun _ =>
         compareExpr block ctx fuel leftLimit xr rightLimit yr
-    | .letE _ xt xv xb, .letE _ yt yv yb =>
+    | .letE xc xt xv xb, .letE yc yt yv yb =>
       thenM (← compareExpr block ctx fuel leftLimit xt rightLimit yt) fun _ => do
-        thenM (← compareExpr block ctx fuel leftLimit xv rightLimit yv) fun _ =>
-          compareExpr block ctx fuel leftLimit xb rightLimit yb
+        thenM (← compareExpr block ctx fuel leftLimit xv rightLimit yv) fun _ => do
+          thenM (← compareExpr block ctx fuel leftLimit xb rightLimit yb) fun _ =>
+            .ok (compare xc.nonDep.toNat yc.nonDep.toNat)
     | .nat x, .nat y => return compare (Ingress.natural (← blobAt block x)) (Ingress.natural (← blobAt block y))
     | .str x, .str y =>
       let x ← required "literal is not UTF-8" (String.fromUTF8? (← blobAt block x))
