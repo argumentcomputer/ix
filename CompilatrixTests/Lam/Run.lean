@@ -1,5 +1,6 @@
 import CompilatrixTests.Lam.Eval
 import CompilatrixTests.Lam.Erase
+import CompilatrixTests.Lam.EvaluationOrder
 import CompilatrixTests.Lam.Differential
 import CompilatrixTests.Lam.Mutation
 import CompilatrixTests.Lam.KernelEval
@@ -35,9 +36,14 @@ def main (args : List String) : IO UInt32 := do
   let a ← IO.mkRef 0
   try
     IO.println "tests-lam"
+    if args == ["--only", "evaluation-order"] then
+      part a "synthetic rechecked evaluation order" (EvaluationOrder.run a)
+      IO.println s!"tests-lam: {← a.get} assertions passed"
+      return 0
     part a "Lam rules and clock monotonicity" (Eval.run a)
     part a "erasure on synthetic programs" do
       for line in ← Erase.run a do IO.println s!"    {line}"
+    part a "synthetic rechecked evaluation order" (EvaluationOrder.run a)
     part a "SrcEval against Lam on k1.ixe and bench-k1" do
       for line in ← Differential.packs a do IO.println s!"    {line}"
     part a "src-sortpoly" do

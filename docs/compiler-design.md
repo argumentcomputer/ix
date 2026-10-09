@@ -157,6 +157,14 @@ boundary; they do not establish arbitrary profile semantics or final producer
 admission. Their provenance is recorded in the
 [historical fixture directory](../fixtures/ownership/historical/annotated-recursion-cb68/README.md).
 
+The required Lam suite also checks sixteen synthetic evaluation-order cases
+through `Src.Recheck.run`, lazification and erasure. Checked direct cases demand
+only the selected minor and dispatch before evaluating an extra argument;
+ordinary wrappers evaluate their strict arguments before entering the body.
+Both evaluators must match explicit value, trap or timeout expectations at two
+clocks. These controls establish the tested consumer behavior; their synthetic
+types and addresses supply no kernel admission or resource-profile verdict.
+
 **Upstream certification boundary.** The October 8
 [roadmap assessment](roadmap.md#phase-15-priorities-after-the-certification-work)
 distinguishes byte/source association (W/W+), strong-model pullback for

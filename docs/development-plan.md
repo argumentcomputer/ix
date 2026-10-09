@@ -97,6 +97,14 @@ domain refusal and tests the local legacy empty-metadata adapter. It invokes
 no producer and changes no production parser. Keep its historical provenance
 distinct from final selected-producer acceptance and family refreeze.
 
+For consumer case, wrapper and overapplication order, build `tests-lam` once
+and run `.lake/build/bin/tests-lam --only evaluation-order`. Its 118 assertions
+check sixteen synthetic cases through actual table/relevance rechecking,
+lazification and erasure, with independent Src/Lam outcomes at two clocks.
+The same part runs in default `tests-lam` and the required Nix `suites` check.
+It does not establish arbitrary resource-profile compatibility or producer
+admission. Run the complete `tests-lam` suite after changing this gate.
+
 For the plain-RC foundation, build and run `tests-own-plain` and build
 `CompilatrixTests.Own.Plain.Suite`, `CompilatrixTests.Fences.OwnPlain` and
 `CompilatrixTests.Fences.OwnRc`. The pure suite is also required by

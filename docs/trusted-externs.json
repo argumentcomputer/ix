@@ -710,6 +710,7 @@
   "ci_actions": [],
   "integrity": {
     "tracked_files": {
+      "CompilatrixTests/Lam/EvaluationOrder.lean": "6be23cea5146e040da44d5eab39ef02c43ebaf1b7d3ec3d1ee03f464a1ff8968",
       "CompilatrixTests/Src/ResourceCsimp.lean": "ca2fff5b98f65e753857f9b57b12dc3f7c280d6d4cb0e062ffdb32bf55711d6d",
       "CompilatrixTests/Own/AnnotatedFixture.lean": "1dd931cd05c1d8533dc37582bd4caad0de66ace2b58b2da522dd287c5042bf15",
       "CompilatrixTests/Own/AnnotatedRecursion.lean": "093a5d23423d7f168af30ca481b4e0a1b567af18977fa09025e6954c63aa783e",
@@ -2154,7 +2155,7 @@
       "nix/build.nix": "cc5575d9e87f363c0606d9dd24e8a6e0f0513204807c7081df20a25fb8469883",
       "nix/checks.nix": "93ff0d826f075e0ffe9e89acf92da7bc8642fae23ea2bdbf21f675e6e195813e",
       "nix/ci-coverage.json": "27e29aa1bbd3ada95d9d3e1538a40c3450593b2d9edddaa9911f7de63806e81e",
-      "nix/lean-modules.json": "18c96bff5f55186f3a92de8511eaadbdfb058fdad1945e353a43ef08d69257f9",
+      "nix/lean-modules.json": "4a8b658ee9e764c4302561f8afdc24d0cea591b3415a1850a86cce05de3dce92",
       "nix/sources.nix": "247a3ff3bd7588e528005a48aebb53f97aea440181218082462967b3846edb2b",
       "scripts/CheckAiur.lean": "f7d14b79813a3c0702067aa1470e2d706907480a2d236854ee8fdaedd03f353d",
       "scripts/CheckBuildGraph.lean": "1db60bc2996ca295780aaba0078e631f526204f57fa419df50b84aedde1dc5c4",

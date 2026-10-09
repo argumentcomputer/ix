@@ -851,6 +851,7 @@
    "imports":
    ["CompilatrixTests.Lam.Eval",
     "CompilatrixTests.Lam.Erase",
+    "CompilatrixTests.Lam.EvaluationOrder",
     "CompilatrixTests.Lam.Differential",
     "CompilatrixTests.Lam.Mutation",
     "CompilatrixTests.Lam.KernelEval",
@@ -889,6 +890,9 @@
   "CompilatrixTests.Lam.KernelEval":
   {"path": "CompilatrixTests/Lam/KernelEval.lean",
    "imports": ["CompilatrixTests.Lam.Erase"]},
+  "CompilatrixTests.Lam.EvaluationOrder":
+  {"path": "CompilatrixTests/Lam/EvaluationOrder.lean",
+   "imports": ["CompilatrixTests.Lam.Support", "Compilatrix.Src.Recheck"]},
   "CompilatrixTests.Lam.Eval":
   {"path": "CompilatrixTests/Lam/Eval.lean",
    "imports": ["CompilatrixTests.Lam.Support", "CompilatrixTests.Src.Rules"]},

@@ -65,6 +65,13 @@ explicit plain-RC erased-contract refusal; the plain twin uses checked plain
 RC Own. These fixtures supplement the required consumer coverage; they do
 not replace the selected producer's paired matrix or final family refreeze.
 
+The Lam suite additionally passes 118 evaluation-order assertions, bringing
+its local default run to 26,168 assertions. Sixteen synthetic cases pass actual
+table/relevance rechecking, lazification and erasure before independently
+checking Src and Lam outcomes. They distinguish direct-case demand, strict
+wrappers and overapplication order, while retaining the separate resource
+profile compatibility and final producer obligations.
+
 The active goal combines Phase 1.5 completion with the first Phase 2
 slice: real `List.reverse` through checked plain reference counting,
 allocation/reclamation, the composed SrcEval-relative proof and native tests.
