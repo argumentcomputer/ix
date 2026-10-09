@@ -2523,24 +2523,6 @@ fn compute_is_large_and_k(
       ),
     })?;
 
-  let is_large =
-    tc.is_large_eliminator(&result_kuniv, &ind_infos).map_err(|e| {
-      CompileError::InvalidMutualBlock {
-        reason: format!(
-          "compute_is_large_and_k: is_large_eliminator failed for {}: {e}",
-          classes[0].ind.cnst.name.pretty()
-        ),
-      }
-    })?;
-
-  // No override (A0, WB-B8): Lean's kernel (`inductive.cpp`
-  // `elim_only_at_universe_zero`) gives large elimination when the result
-  // level is provably never zero and otherwise applies the Prop
-  // restrictions, which is exactly `is_large_eliminator`. A former override
-  // forced large elimination whenever the level was not literally zero, so
-  // a `Sort u` inductive (reachable through `addDecl`) got a large
-  // recursor both kernels reject.
-
   // Prop determination: use the WHNF-reduced kernel-derived level, not the
   // raw LeanExpr-syntactic path. For reducible-alias targets the syntactic
   // peel short-circuits (can't find enough Pi's) and returns None, which
@@ -2550,17 +2532,29 @@ fn compute_is_large_and_k(
   // here handles `Zero`, `IMax(_, Zero)`, and the like.
   let is_prop = result_kuniv.is_zero();
 
-  // C1 fix: if the block has nested auxiliary flat members that weren't
-  // inserted into the KEnv, the is_large_eliminator result may be wrong.
-  // In Lean's kernel, nested auxiliaries are full mutual block members
-  // (via elim_nested_inductive_fn), and any mutual Prop block (>1 type)
-  // gets small elimination. The KEnv path only saw n_classes types, so
-  // it may have incorrectly allowed large elimination.
-  let is_large = if is_large && is_prop && classes.len() > n_classes {
+  // C1: the full expanded Prop block has multiple members and eliminates
+  // small. Decide this before probing fields in the original-only KEnv;
+  // a field can refer to an auxiliary that was not inserted.
+  let is_large = if is_prop && classes.len() > n_classes {
     false
   } else {
-    is_large
+    tc.is_large_eliminator(&result_kuniv, &ind_infos).map_err(|e| {
+      CompileError::InvalidMutualBlock {
+        reason: format!(
+          "compute_is_large_and_k: is_large_eliminator failed for {}: {e}",
+          classes[0].ind.cnst.name.pretty()
+        ),
+      }
+    })?
   };
+
+  // No override (A0, WB-B8): Lean's kernel (`inductive.cpp`
+  // `elim_only_at_universe_zero`) gives large elimination when the result
+  // level is provably never zero and otherwise applies the Prop
+  // restrictions, which is exactly `is_large_eliminator`. A former override
+  // forced large elimination whenever the level was not literally zero, so
+  // a `Sort u` inductive (reachable through `addDecl`) got a large
+  // recursor both kernels reject.
 
   // K-target: single inductive, Prop, single ctor, 0 non-param fields.
   // Use classes.len() (full flat block including nested auxiliaries), not
@@ -2844,6 +2838,176 @@ mod tests {
   /// Helper: `∀ (name : domain), body` with default binder info.
   fn epi(name: Name, domain: LeanExpr, body: LeanExpr) -> LeanExpr {
     LeanExpr::all(name, domain, body, BinderInfo::Default)
+  }
+
+  // UNCOMPILED proposal: insert inside recursor.rs's existing cfg(test) module.
+  // No new production symbol or compatibility API is introduced.
+  fn c1_member(
+    label: &str,
+    level: Level,
+    fields: &[LeanExpr],
+    aux: bool,
+    levels: Vec<Name>,
+  ) -> FlatInfo {
+    let name = n(label);
+    let ctor = Name::str(name.clone(), "mk".into());
+    let result = LeanExpr::cnst(
+      name.clone(),
+      levels.iter().cloned().map(Level::param).collect(),
+    );
+    let ty = fields
+      .iter()
+      .rev()
+      .fold(result, |body, dom| epi(n("field"), dom.clone(), body));
+    let ind = InductiveVal {
+      cnst: ConstantVal {
+        name: name.clone(),
+        level_params: levels.clone(),
+        typ: LeanExpr::sort(level),
+      },
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      all: vec![name.clone()],
+      ctors: vec![ctor.clone()],
+      num_nested: Nat::from(0u64),
+      is_rec: !fields.is_empty(),
+      is_unsafe: false,
+      is_reflexive: false,
+    };
+    let cv = ConstructorVal {
+      cnst: ConstantVal { name: ctor, level_params: levels, typ: ty },
+      induct: name.clone(),
+      cidx: Nat::from(0u64),
+      num_params: Nat::from(0u64),
+      num_fields: Nat::from(fields.len() as u64),
+      is_unsafe: false,
+    };
+    FlatInfo {
+      name: name.clone(),
+      ind,
+      ctors: vec![cv],
+      all_names: vec![name],
+      is_aux: aux,
+      spec_params: vec![],
+      occurrence_level_args: vec![],
+      own_params: 0,
+      n_indices: 0,
+    }
+  }
+
+  fn c1_flags(
+    classes: &[FlatInfo],
+  ) -> Result<(bool, bool, bool), CompileError> {
+    compute_is_large_and_k(
+      classes,
+      1,
+      0,
+      &LeanEnv::default(),
+      &crate::compile::CompileState::default(),
+      &mut crate::compile::KernelCtx::new(),
+    )
+  }
+
+  #[test]
+  fn c1_nested_singleton_and_non_c1_error_controls() {
+    let cn = |s| LeanExpr::cnst(n(s), vec![]);
+    let p = c1_member("C1P", Level::zero(), &[cn("C1Q")], false, vec![]);
+    let q = c1_member("C1Q", Level::zero(), &[cn("C1P")], true, vec![]);
+    assert_eq!(c1_flags(&[p, q]).unwrap(), (false, false, true));
+
+    let p = c1_member("C1P", Level::zero(), &[cn("C1Q")], false, vec![]);
+    match c1_flags(&[p]) {
+      Err(CompileError::InvalidMutualBlock { reason }) => assert!(
+        reason
+          .starts_with("compute_is_large_and_k: is_large_eliminator failed")
+      ),
+      other => {
+        panic!("non-C1 missing field must retain its named error: {other:?}")
+      },
+    }
+    let mut bad = c1_member("C1P", Level::zero(), &[], false, vec![]);
+    bad.ind.cnst.typ = cn("MissingResult");
+    let q = c1_member("C1Q", Level::zero(), &[], true, vec![]);
+    match c1_flags(&[bad, q]) {
+      Err(CompileError::InvalidMutualBlock { reason }) => {
+        assert!(reason.starts_with("compute_is_large_and_k: TC failed"))
+      },
+      other => panic!("C1 must not bypass result-sort errors: {other:?}"),
+    }
+  }
+
+  #[test]
+  fn c1_flags_valid_neighbours_and_semantic_zero() {
+    let mut empty = c1_member("Empty", Level::zero(), &[], false, vec![]);
+    empty.ctors.clear();
+    empty.ind.ctors.clear();
+    assert_eq!(c1_flags(&[empty]).unwrap(), (true, false, true));
+    let k = c1_member("PlainK", Level::zero(), &[], false, vec![]);
+    assert_eq!(c1_flags(&[k]).unwrap(), (true, true, true));
+    let drec = c1_member(
+      "PlainDrec",
+      Level::zero(),
+      &[LeanExpr::cnst(n("PlainDrec"), vec![])],
+      false,
+      vec![],
+    );
+    assert_eq!(c1_flags(&[drec]).unwrap(), (true, false, true));
+    let t = c1_member(
+      "C1T",
+      Level::succ(Level::zero()),
+      &[LeanExpr::cnst(n("C1U"), vec![])],
+      false,
+      vec![],
+    );
+    let a = c1_member("C1U", Level::succ(Level::zero()), &[], true, vec![]);
+    assert_eq!(c1_flags(&[t, a]).unwrap(), (true, false, false));
+    let p = c1_member(
+      "ZeroSpelling",
+      Level::imax(Level::param(n("u")), Level::zero()),
+      &[LeanExpr::cnst(n("MissingAux"), vec![])],
+      false,
+      vec![n("u")],
+    );
+    let q = c1_member("C1Q", Level::zero(), &[], true, vec![]);
+    assert_eq!(c1_flags(&[p, q]).unwrap(), (false, false, true));
+    let mut su =
+      c1_member("SortU", Level::param(n("u")), &[], false, vec![n("u")]);
+    let mut other = su.ctors[0].clone();
+    other.cnst.name = Name::str(su.name.clone(), "other".into());
+    other.cidx = Nat::from(1u64);
+    su.ind.ctors.push(other.cnst.name.clone());
+    su.ctors.push(other);
+    assert_eq!(c1_flags(&[su]).unwrap(), (false, false, false));
+  }
+
+  #[test]
+  fn c1_followed_by_ordinary_call_on_same_kernel_context() {
+    let env = LeanEnv::default();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
+    let p = c1_member(
+      "C1P",
+      Level::zero(),
+      &[LeanExpr::cnst(n("C1Q"), vec![])],
+      false,
+      vec![],
+    );
+    let q = c1_member("C1Q", Level::zero(), &[], true, vec![]);
+    assert_eq!(
+      compute_is_large_and_k(&[p, q], 1, 0, &env, &stt, &mut kctx).unwrap(),
+      (false, false, true)
+    );
+    let drec = c1_member(
+      "PlainDrec",
+      Level::zero(),
+      &[LeanExpr::cnst(n("PlainDrec"), vec![])],
+      false,
+      vec![],
+    );
+    assert_eq!(
+      compute_is_large_and_k(&[drec], 1, 0, &env, &stt, &mut kctx).unwrap(),
+      (true, false, true)
+    );
   }
 
   /// Mirrors the Lean `RecursorTests` case: metadata on a parameter spine

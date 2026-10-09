@@ -1582,8 +1582,8 @@ partial def peekResultSort (ty : MKExpr) : Option MKUniv := Id.run do
       "mutual Prop → small" rule;
     - `getResultSortLevel` WHNF-peels params+indices (crucial for
       reducible-alias targets like `Set σ := σ → Prop`);
-    - spec-level override: non-Prop inductives always eliminate large
-      (inductive.cpp:539-548) — corrects syntactically-nonzero Params;
+    - kernel elimination rule: large when the result level is provably
+      nonzero; otherwise apply Prop restrictions, with no non-Prop override;
     - C1 fix: a Prop block with nested auxiliaries the kenv didn't see is
       forced small;
     - K: single flat member (aux included), single ctor, 0 fields, Prop.
@@ -1652,13 +1652,22 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
         s!"compute_is_large_and_k: TC failed for \
 {(classes[0]?.map (·.ind.cnst.name.pretty)).getD "?"}: {e}")
 
+  -- Prop determination from the WHNF-reduced kernel-derived level.
+  let isProp := resultKuniv.isSemanticZero
+
+  -- C1: the full expanded Prop block has multiple members, so it eliminates
+  -- small. Decide this before probing fields in the incomplete original-only
+  -- KEnv; those fields can refer to an auxiliary that was not inserted.
   let isLarge ←
-    match ← runTc (Ix.Tc.TcM.runRec
-        (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
-    | .ok b => pure b
-    | .error e =>
-      throw (.invalidMutualBlock
-        s!"compute_is_large_and_k: is_large_eliminator failed for \
+    if isProp && classes.size > nClasses then
+      pure false
+    else
+      match ← runTc (Ix.Tc.TcM.runRec
+          (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
+      | .ok b => pure b
+      | .error e =>
+        throw (.invalidMutualBlock
+          s!"compute_is_large_and_k: is_large_eliminator failed for \
 {(classes[0]?.map (·.ind.cnst.name.pretty)).getD "?"}: {e}")
 
   -- No override (A0, WB-B8): Lean's kernel (`elim_only_at_universe_zero`)
@@ -1667,14 +1676,6 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
   -- `isLargeEliminator`. A former override forced large elimination
   -- whenever the level was not semantically zero, so a `Sort u` inductive
   -- (reachable through `addDecl`) got a large recursor both kernels reject.
-
-  -- Prop determination from the WHNF-reduced kernel-derived level.
-  let isProp := resultKuniv.isSemanticZero
-
-  -- C1 fix: Prop block with nested auxiliaries the KEnv didn't see →
-  -- small elimination (Lean treats nested auxes as full mutual members).
-  let isLarge :=
-    if isLarge && isProp && classes.size > nClasses then false else isLarge
 
   -- K-target: single flat member (aux included, matching Lean's expanded
   -- `m_ind_types.size() == 1`), single ctor, 0 fields, Prop.
