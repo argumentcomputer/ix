@@ -11,6 +11,7 @@ import Ix.CompileCert.Image
 import Ix.CompileCert.Bridge
 import Ix.CompileCert.StrongChanged
 import Ix.CompileCert.Opt
+import Ix.CompileCert.Publication
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -2026,4 +2027,23 @@ def l3dAuxRuntimeRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dAuxRuntimeRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Anonymous publication is a local boundary of the actual compiler merge.
+These roots do not assert source faithfulness or that the production driver
+currently invokes the publication-content check. -/
+
+namespace Ix.CompileCert.Audit
+
+def publicationRoots : Array Lean.Name :=
+  #[`Extends.refl, `Extends.trans, `insert_extends, `applyWrites_preserves,
+    `forIn_project, `forIn_preserves, `merge_constants, `merge_blobs,
+    `merge_anonymous, `merge_extends, `merge_anonymous_congr,
+    `checkWrite_sound, `checkWrite_complete, `checkWrites_sound,
+    `checkWrites_compatible, `checkWrites_consistent, `checkWrites_complete,
+    `checkWrites_iff, `checkPublication_extends, `checkPublication_present,
+    `checkPublication_iff].map (`Ix.CompileCert.Publication ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.publicationRoots Ix.CompileCert.Audit.allowedAxioms
 

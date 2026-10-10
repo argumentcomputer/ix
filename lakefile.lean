@@ -579,7 +579,7 @@ script "check-cert" (args) := do
   let mainTests := #["HelperNames", "InstalledCaps", "InstalledFields", "InstalledRules",
     "SourceBasis", "Support"]
   let elabTests := #["AnnotEntry", "AnnotNatOps", "AnnotReduceOps", "AnnotSupport",
-    "InstalledImage", "Telescope", "ValueReceipt"]
+    "InstalledImage", "Telescope", "ValueReceipt", "Publication"]
   run "lake" #["build", "--wfail", "Ix.CompileCert.Audit"]
   run "lake" (#["build", "--wfail", "compile-cert-c1", "compile-certify"] ++
     (mainTests ++ elabTests).map (s!"+Tests.Ix.CompileCert.{·}"))
