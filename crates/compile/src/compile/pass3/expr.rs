@@ -834,6 +834,159 @@ pub fn alpha_eq(a: &Expr, b: &Expr) -> bool {
   alpha_eq_visit(a, b, &mut AlphaMemo::default())
 }
 
+/// `bvar i` occurs loose in `e`.
+pub fn has_loose_bvar(e: &Expr, i: usize) -> bool {
+  fn go(e: &Expr, k: usize, memo: &mut FxHashMap<(Hash, usize), bool>) -> bool {
+    let memo_key = (key(e), k);
+    if let Some(result) = memo.get(&memo_key) {
+      return *result;
+    }
+    let result = {
+      match e.as_data() {
+        ExprData::Bvar(j, _) => nat_usize(j) == k,
+        ExprData::App(f, a, _) => go(f, k, memo) || go(a, k, memo),
+        ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+          go(t, k, memo) || go(b, k + 1, memo)
+        },
+        ExprData::LetE(_, t, v, b, _, _) => {
+          go(t, k, memo) || go(v, k, memo) || go(b, k + 1, memo)
+        },
+        ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => go(s, k, memo),
+        _ => false,
+      }
+    };
+    memo.insert(memo_key, result);
+    result
+  }
+  go(e, i, &mut FxHashMap::default())
+}
+
+/// Lean's `Expr.eta`: `fun x. f x` to `f` when `x` is not in `f`, inner
+/// binders first.
+pub fn eta_reduce(e: &Expr) -> Expr {
+  match e.as_data() {
+    ExprData::Lam(n, d, b, bi, _) => {
+      let b2 = eta_reduce(b);
+      if let ExprData::App(f, a, _) = b2.as_data()
+        && let ExprData::Bvar(z, _) = a.as_data()
+        && nat_usize(z) == 0
+        && !has_loose_bvar(f, 0)
+      {
+        return lower_loose(f, 1, 0);
+      }
+      Expr::lam(n.clone(), d.clone(), b2, bi.clone())
+    },
+    _ => e.clone(),
+  }
+}
+
+/// The head constant of an application spine.
+pub fn head_const(e: &Expr) -> Option<(Name, Vec<Level>)> {
+  match get_app_fn(e).as_data() {
+    ExprData::Const(n, us, _) => Some((n.clone(), us.clone())),
+    _ => None,
+  }
+}
+
+/// The last argument of an application.
+pub fn app_arg(e: &Expr) -> Option<Expr> {
+  match e.as_data() {
+    ExprData::App(_, a, _) => Some(a.clone()),
+    _ => None,
+  }
+}
+
+/// Constants of `e` in first-occurrence order of a pre-order walk, function
+/// before argument (Lean's `Expr.getUsedConstants`).
+pub fn used_constants(e: &Expr) -> Vec<Name> {
+  let mut acc = Vec::new();
+  let mut seen = FxHashSet::default();
+  let mut stack = vec![e.clone()];
+  while let Some(x) = stack.pop() {
+    match x.as_data() {
+      ExprData::Const(n, _, _) => {
+        if seen.insert(n.clone()) {
+          acc.push(n.clone());
+        }
+      },
+      ExprData::App(f, a, _) => {
+        stack.push(a.clone());
+        stack.push(f.clone());
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(t.clone());
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(v.clone());
+        stack.push(t.clone());
+      },
+      ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => {
+        stack.push(s.clone());
+      },
+      _ => {},
+    }
+  }
+  acc
+}
+
+/// The first subterm satisfying `p` in a pre-order walk, function before
+/// argument (Lean's `Expr.find?`).
+pub fn find_sub(p: &dyn Fn(&Expr) -> bool, e: &Expr) -> Option<Expr> {
+  let mut stack = vec![e.clone()];
+  while let Some(x) = stack.pop() {
+    if p(&x) {
+      return Some(x);
+    }
+    match x.as_data() {
+      ExprData::App(f, a, _) => {
+        stack.push(a.clone());
+        stack.push(f.clone());
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(t.clone());
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(b.clone());
+        stack.push(v.clone());
+        stack.push(t.clone());
+      },
+      ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => {
+        stack.push(s.clone());
+      },
+      _ => {},
+    }
+  }
+  None
+}
+
+/// The sort at the end of a motive type (`motiveLevel`).
+pub fn motive_level(e: &Expr) -> Level {
+  let mut cur = e.clone();
+  loop {
+    let next = match cur.as_data() {
+      ExprData::ForallE(_, _, b, _, _) | ExprData::Mdata(_, b, _) => b.clone(),
+      ExprData::Sort(l, _) => return l.clone(),
+      _ => return lvl_zero(),
+    };
+    cur = next;
+  }
+}
+
+/// A motive type with its sort replaced by `Sort 0` (`stripSort`).
+pub fn strip_sort(e: &Expr) -> Expr {
+  match e.as_data() {
+    ExprData::ForallE(n, t, b, bi, _) => {
+      Expr::all(n.clone(), t.clone(), strip_sort(b), bi.clone())
+    },
+    ExprData::Mdata(_, b, _) => strip_sort(b),
+    ExprData::Sort(_, _) => Expr::sort(lvl_zero()),
+    _ => e.clone(),
+  }
+}
+
 #[cfg(test)]
 mod alpha_eq_tests {
   use super::*;
@@ -1161,158 +1314,5 @@ mod alpha_eq_tests {
     memo.clear();
     assert!(original_a.upgrade().is_none());
     assert!(original_b.upgrade().is_none());
-  }
-}
-
-/// `bvar i` occurs loose in `e`.
-pub fn has_loose_bvar(e: &Expr, i: usize) -> bool {
-  fn go(e: &Expr, k: usize, memo: &mut FxHashMap<(Hash, usize), bool>) -> bool {
-    let memo_key = (key(e), k);
-    if let Some(result) = memo.get(&memo_key) {
-      return *result;
-    }
-    let result = {
-      match e.as_data() {
-        ExprData::Bvar(j, _) => nat_usize(j) == k,
-        ExprData::App(f, a, _) => go(f, k, memo) || go(a, k, memo),
-        ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-          go(t, k, memo) || go(b, k + 1, memo)
-        },
-        ExprData::LetE(_, t, v, b, _, _) => {
-          go(t, k, memo) || go(v, k, memo) || go(b, k + 1, memo)
-        },
-        ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => go(s, k, memo),
-        _ => false,
-      }
-    };
-    memo.insert(memo_key, result);
-    result
-  }
-  go(e, i, &mut FxHashMap::default())
-}
-
-/// Lean's `Expr.eta`: `fun x. f x` to `f` when `x` is not in `f`, inner
-/// binders first.
-pub fn eta_reduce(e: &Expr) -> Expr {
-  match e.as_data() {
-    ExprData::Lam(n, d, b, bi, _) => {
-      let b2 = eta_reduce(b);
-      if let ExprData::App(f, a, _) = b2.as_data()
-        && let ExprData::Bvar(z, _) = a.as_data()
-        && nat_usize(z) == 0
-        && !has_loose_bvar(f, 0)
-      {
-        return lower_loose(f, 1, 0);
-      }
-      Expr::lam(n.clone(), d.clone(), b2, bi.clone())
-    },
-    _ => e.clone(),
-  }
-}
-
-/// The head constant of an application spine.
-pub fn head_const(e: &Expr) -> Option<(Name, Vec<Level>)> {
-  match get_app_fn(e).as_data() {
-    ExprData::Const(n, us, _) => Some((n.clone(), us.clone())),
-    _ => None,
-  }
-}
-
-/// The last argument of an application.
-pub fn app_arg(e: &Expr) -> Option<Expr> {
-  match e.as_data() {
-    ExprData::App(_, a, _) => Some(a.clone()),
-    _ => None,
-  }
-}
-
-/// Constants of `e` in first-occurrence order of a pre-order walk, function
-/// before argument (Lean's `Expr.getUsedConstants`).
-pub fn used_constants(e: &Expr) -> Vec<Name> {
-  let mut acc = Vec::new();
-  let mut seen = FxHashSet::default();
-  let mut stack = vec![e.clone()];
-  while let Some(x) = stack.pop() {
-    match x.as_data() {
-      ExprData::Const(n, _, _) => {
-        if seen.insert(n.clone()) {
-          acc.push(n.clone());
-        }
-      },
-      ExprData::App(f, a, _) => {
-        stack.push(a.clone());
-        stack.push(f.clone());
-      },
-      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-        stack.push(b.clone());
-        stack.push(t.clone());
-      },
-      ExprData::LetE(_, t, v, b, _, _) => {
-        stack.push(b.clone());
-        stack.push(v.clone());
-        stack.push(t.clone());
-      },
-      ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => {
-        stack.push(s.clone());
-      },
-      _ => {},
-    }
-  }
-  acc
-}
-
-/// The first subterm satisfying `p` in a pre-order walk, function before
-/// argument (Lean's `Expr.find?`).
-pub fn find_sub(p: &dyn Fn(&Expr) -> bool, e: &Expr) -> Option<Expr> {
-  let mut stack = vec![e.clone()];
-  while let Some(x) = stack.pop() {
-    if p(&x) {
-      return Some(x);
-    }
-    match x.as_data() {
-      ExprData::App(f, a, _) => {
-        stack.push(a.clone());
-        stack.push(f.clone());
-      },
-      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-        stack.push(b.clone());
-        stack.push(t.clone());
-      },
-      ExprData::LetE(_, t, v, b, _, _) => {
-        stack.push(b.clone());
-        stack.push(v.clone());
-        stack.push(t.clone());
-      },
-      ExprData::Proj(_, _, s, _) | ExprData::Mdata(_, s, _) => {
-        stack.push(s.clone());
-      },
-      _ => {},
-    }
-  }
-  None
-}
-
-/// The sort at the end of a motive type (`motiveLevel`).
-pub fn motive_level(e: &Expr) -> Level {
-  let mut cur = e.clone();
-  loop {
-    let next = match cur.as_data() {
-      ExprData::ForallE(_, _, b, _, _) | ExprData::Mdata(_, b, _) => b.clone(),
-      ExprData::Sort(l, _) => return l.clone(),
-      _ => return lvl_zero(),
-    };
-    cur = next;
-  }
-}
-
-/// A motive type with its sort replaced by `Sort 0` (`stripSort`).
-pub fn strip_sort(e: &Expr) -> Expr {
-  match e.as_data() {
-    ExprData::ForallE(n, t, b, bi, _) => {
-      Expr::all(n.clone(), t.clone(), strip_sort(b), bi.clone())
-    },
-    ExprData::Mdata(_, b, _) => strip_sort(b),
-    ExprData::Sort(_, _) => Expr::sort(lvl_zero()),
-    _ => e.clone(),
   }
 }

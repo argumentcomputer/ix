@@ -289,7 +289,11 @@ mod tests {
       } else {
         Name::str(ordinary.clone(), suffix.into())
       };
-      let fresh = fresh_family(&[collision.clone()], &parent, "List_1".into());
+      let fresh = fresh_family(
+        std::slice::from_ref(&collision),
+        &parent,
+        "List_1".into(),
+      );
       assert!(!prefix(&fresh, &collision));
       assert_ne!(fresh.components(), ordinary.components());
     }

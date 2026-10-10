@@ -141,7 +141,8 @@ pub(crate) fn aux_motive_sigs(
           let mut i = 0usize;
           while let ExprData::ForallE(_, dd, db, _, _) = d.as_data() {
             last_dom = Some(consume_type_annotations(dd));
-            let (_, fv) = supply.fresh("aux_sig_idx", fvar_index(m_idx, 64, i));
+            let (_, fv) =
+              supply.fresh("aux_sig_idx", &fvar_index(m_idx, 64, i));
             d = instantiate1(db, &fv);
             i += 1;
           }
@@ -214,7 +215,7 @@ pub(crate) fn peel_binders(
   for i in 0..n {
     match cur.as_data() {
       ExprData::ForallE(name, dom, body, bi, _) => {
-        let (fv_name, fv) = supply.fresh(prefix, fvar_index(offset, 1, i));
+        let (fv_name, fv) = supply.fresh(prefix, &fvar_index(offset, 1, i));
         let decl = LocalDecl {
           fvar_name: fv_name,
           binder_name: name.clone(),
@@ -260,7 +261,7 @@ pub(crate) fn find_source_rec_target(
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     let (fv_name, fv) =
-      supply.fresh(prefix, fvar_index(field_idx, 1024, xs_fvars.len()));
+      supply.fresh(prefix, &fvar_index(field_idx, 1024, xs_fvars.len()));
     let decl = LocalDecl {
       fvar_name: fv_name,
       binder_name: name.clone(),

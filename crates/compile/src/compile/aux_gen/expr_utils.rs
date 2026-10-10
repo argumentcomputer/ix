@@ -96,7 +96,7 @@ impl FreshFVars {
   /// `FreshFVars.fresh`: preserve the old candidate, otherwise choose the
   /// first number above every used numeric child of that exact candidate.
   /// Nat arithmetic also avoids overflow in historical stride expressions.
-  pub(crate) fn fresh(&mut self, prefix: &str, idx: Nat) -> (Name, LeanExpr) {
+  pub(crate) fn fresh(&mut self, prefix: &str, idx: &Nat) -> (Name, LeanExpr) {
     let preferred = Name::str(Name::anon(), format!("_{prefix}_{idx}"));
     let name = if self.used.contains(&preferred) {
       let mut next = Nat::ZERO;
@@ -3719,7 +3719,7 @@ mod tests {
       let caller = LeanExpr::fvar(forged);
       let mut supply = FreshFVars::default();
       supply.protect_expr(&caller);
-      let (chosen, fv) = supply.fresh("split_field", Nat::ZERO);
+      let (chosen, fv) = supply.fresh("split_field", &Nat::ZERO);
       let expected_name = if same_spelling {
         Name::num(preferred.clone(), Nat::ZERO)
       } else {
@@ -3749,8 +3749,8 @@ mod tests {
     supply.reserve(preferred.clone());
     supply.reserve(Name::num(preferred.clone(), Nat::ZERO));
     supply.reserve(Name::num(preferred.clone(), Nat::from(17u64)));
-    let a = supply.fresh("split_xs", fvar_index(0, 1024, 1024)).0;
-    let b = supply.fresh("split_xs", fvar_index(1, 1024, 0)).0;
+    let a = supply.fresh("split_xs", &fvar_index(0, 1024, 1024)).0;
+    let b = supply.fresh("split_xs", &fvar_index(1, 1024, 0)).0;
     assert!(a.same_structure(&Name::num(preferred.clone(), Nat::from(18u64))));
     assert!(b.same_structure(&Name::num(preferred, Nat::from(19u64))));
   }
@@ -3790,7 +3790,7 @@ mod tests {
     for i in 0..5 {
       assert!(
         supply
-          .fresh("field", Nat::from(i))
+          .fresh("field", &Nat::from(i))
           .0
           .same_structure(&Name::num(names[i as usize].clone(), Nat::ZERO))
       );

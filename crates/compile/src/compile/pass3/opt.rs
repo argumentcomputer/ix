@@ -1052,7 +1052,7 @@ fn size_of_minor_with(
         )
       },
     )?;
-    let (fv_name, fv) = supply.fresh("o11a", fvar_index(i, 1, 0));
+    let (fv_name, fv) = supply.fresh("o11a", &fvar_index(i, 1, 0));
     if i < num_fields {
       decls.push(LocalDecl {
         fvar_name: fv_name,
