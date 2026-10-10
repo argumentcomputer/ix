@@ -4584,6 +4584,83 @@ mod tests {
   }
 
   #[test]
+  fn test_original_mutual_result_precedes_promotion() {
+    use crate::compile::{
+      BlockCache, CompileOptions, KernelCtx, block_txn, compile_const_no_aux,
+      env::compile_env_with_options,
+    };
+    use crate::graph::NameSet;
+    use std::sync::Arc;
+
+    let (mut source, a, b) = build_alpha_collapse_env_with_recursors();
+    add_image_support(&mut source);
+    let source = Arc::new(source);
+    let a_rec = Name::str(a.clone(), "rec".into());
+    let b_rec = Name::str(b.clone(), "rec".into());
+    let a_ctor = Name::str(a.clone(), "a".into());
+    let b_ctor = Name::str(b.clone(), "b".into());
+    let family = vec![a.clone(), b, a_ctor.clone(), b_ctor.clone()];
+
+    for (requested, members) in [
+      (a_rec.clone(), vec![a_rec.clone(), b_rec]),
+      (a, family.clone()),
+      (a_ctor, family.clone()),
+      (b_ctor, family),
+    ] {
+      let stt = compile_env_with_options(
+        &source,
+        CompileOptions { max_workers: Some(1) },
+      )
+      .unwrap();
+      assert!(stt.ungrounded.is_empty(), "{:?}", stt.ungrounded);
+      let all: NameSet = members.into_iter().collect();
+      let canonical: Vec<_> = all
+        .iter()
+        .map(|name| (name.clone(), stt.resolve_addr(name).unwrap()))
+        .collect();
+      for (name, addr) in &canonical {
+        stt.name_to_addr.remove(name);
+        stt.aux_name_to_addr.insert(name.clone(), addr.clone());
+        stt.env.named.get_mut(name).unwrap().clear_original();
+      }
+      let canonical_target = stt.resolve_addr(&requested).unwrap();
+      let stored = stt.env.const_count();
+
+      block_txn::start();
+      let original = compile_const_no_aux(
+        &requested,
+        &all,
+        &source,
+        &mut BlockCache::default(),
+        &stt,
+        &mut KernelCtx::new(),
+      )
+      .unwrap();
+      for (name, addr) in &canonical {
+        assert!(!stt.name_to_addr.contains_key(name));
+        let named = stt.env.named.get(name).unwrap();
+        assert!(!named.has_original());
+        assert_eq!(&named.addr, addr);
+      }
+      assert_eq!(stt.env.const_count(), stored, "originals are ephemeral");
+      if requested == a_rec {
+        assert_ne!(original, canonical_target, "return the source projection");
+      }
+
+      block_txn::commit(&stt).unwrap();
+      let _ = block_txn::take().unwrap();
+      assert_eq!(
+        stt.env.named.get(&requested).unwrap().original().unwrap().0,
+        original,
+      );
+      for (name, addr) in &canonical {
+        assert_eq!(stt.name_to_addr.get(name).unwrap().value(), addr);
+        assert_eq!(&stt.env.named.get(name).unwrap().addr, addr);
+      }
+    }
+  }
+
+  #[test]
   fn test_compiled_recursors_keep_meta_and_anon_layout() {
     use crate::compile::env::compile_env;
     use ix_kernel::{

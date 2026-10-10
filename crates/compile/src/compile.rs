@@ -2946,7 +2946,8 @@ pub fn compile_const(
 
 /// Compile a constant without aux_gen: no `aux_name_to_addr` fallback,
 /// no aux_gen side effects. Used to compile the original Lean form of
-/// aux_gen-rewritten constants for metadata preservation.
+/// aux_gen-rewritten constants for metadata preservation. A newly compiled
+/// result returns its original-form address before deferred promotions commit.
 pub fn compile_const_no_aux(
   name: &Name,
   all: &NameSet,
@@ -3401,16 +3402,7 @@ fn compile_const_inner_body(
       if let Some(LeanConstantInfo::InductInfo(_)) =
         lean_env.get(&val.induct).as_deref()
       {
-        let _ =
-          compile_mutual(&val.induct, all, lean_env, cache, stt, kctx, aux)?;
-        stt
-          .name_to_addr
-          .get(name)
-          .ok_or_else(|| CompileError::MissingConstant {
-            name: name.pretty(),
-            caller: "compile_const(ctor_lookup)".into(),
-          })?
-          .clone()
+        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       } else {
         return Err(CompileError::MissingConstant {
           name: val.induct.pretty(),
@@ -3619,6 +3611,7 @@ fn compile_mutual(
   // When aux=false: promote from aux_name_to_addr, setting Named.original
   // with the original (proj_addr, meta) for decompilation roundtrip.
   let mut idx = 0u64;
+  let mut requested_addr = None;
   for class in &sorted_classes {
     for cnst in class {
       let n = cnst.name();
@@ -3634,6 +3627,9 @@ fn compile_mutual(
           let mut proj_bytes = Vec::new();
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
+          if n == *name {
+            requested_addr = Some(proj_addr.clone());
+          }
           if aux {
             stt.env.store_const(proj_addr.clone(), indc_proj);
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
@@ -3651,6 +3647,9 @@ fn compile_mutual(
             let mut ctor_bytes = Vec::new();
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
+            if ctor.cnst.name == *name {
+              requested_addr = Some(ctor_addr.clone());
+            }
             if aux {
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.register_named(
@@ -3671,6 +3670,9 @@ fn compile_mutual(
       let mut proj_bytes = Vec::new();
       proj.put(&mut proj_bytes);
       let proj_addr = Address::hash(&proj_bytes);
+      if n == *name {
+        requested_addr = Some(proj_addr.clone());
+      }
       if aux {
         stt.env.store_const(proj_addr.clone(), proj);
         stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
@@ -3874,15 +3876,14 @@ fn compile_mutual(
     }
   }
 
-  // Return the address for the requested name
-  stt
-    .name_to_addr
-    .get(name)
-    .ok_or_else(|| CompileError::MissingConstant {
-      name: name.pretty(),
-      caller: "compile_mutual(result)".into(),
-    })
-    .map(|r| r.clone())
+  // Return this compilation's projection, independently of publication.
+  // Original-form compilation stages promotions until transaction commit;
+  // its requested name need not be in name_to_addr yet, and its original
+  // projection can differ from the canonical address published there.
+  requested_addr.ok_or_else(|| CompileError::MissingConstant {
+    name: name.pretty(),
+    caller: "compile_mutual(result)".into(),
+  })
 }
 
 mod admission;
