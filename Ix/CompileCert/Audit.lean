@@ -4,11 +4,13 @@ import Ix.CompileCert.StrongEntry
 import Ix.CompileCert.StrongCone
 import Ix.CompileCert.Indexed
 import Ix.CompileCert.Canon
+import Ix.CompileCert.Canon.GeneratedTables
 import Ix.CompileCert.Changed
 import Ix.CompileCert.Conv
 import Ix.CompileCert.Image
 import Ix.CompileCert.Bridge
 import Ix.CompileCert.StrongChanged
+import Ix.CompileCert.Opt
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -1841,3 +1843,187 @@ def l2aRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l2aRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! ## M7 L3-def: the definitional passes
+
+The roots of `Ix.CompileCert.Opt`: telescopes and their β-reduction, simultaneous substitution
+and its composition, the shape of an image and the laws the passes read, the faithfulness of
+O1, O3, O4 and O6, and O2's conditional per-occurrence conversion theorem.
+Audited separately, against the same allowed set, so every line above is unchanged. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dRoots : Array Lean.Name :=
+  #[-- telescopes, selections, the arguments of an occurrence
+    `lamN, `instTs, `instTs_length, `inst_lamN, `betaN, `beta_lamN, `betaN_app, `betaN_appN,
+    `betaN_const, `betaN_lift, `inst_bvar_self, `inst_bvar_lt, `betaN_bvar, `betaN_vars, `gL,
+    `getD_append_lt, `getD_append_ge, `getD_map, `getD_range, `range_getD, `range_add,
+    `gL_append_lt, `gL_append_ge, `gL_sel, `sel_sel, `drop_sel, `delta_sel, `argT, `argT_of_lt,
+    `gL_args, `extract_map, `args_drop, `pick_list, `pick_map, `argT_extract, `pick_extract,
+    `occTerm, `er_occTerm,
+    -- simultaneous substitution
+    `msubst, `msubst_appN, `msubst_lift, `msubst_lift_out, `msubst_msubst, `msubst_id,
+    `msubst_congr, `instσ, `inst_eq_msubst, `betaσ, `betaσ_nil, `betaσ_cons, `betaN_eq_msubst,
+    `betaN_betaN, `conv_betaN, `forall2_append, `forall2_map, `forall2_of_eq, `forall2_symm,
+    `forall2_mapRight, `delta_beta, `betaN_tv, `gD4_1, `gD4_2, `gD4_3, `gD4_4, `getD_map_tm,
+    -- shapes and laws
+    `obind, `onone_bind, `opure_bind, `oguard, `oite_true, `oite_false, `shapeTv, `shapeArgs,
+    `ShapeAt, `selMinors, `shapeIdx, `mins_eq, `ShapeAt.sel, `ImageAt, `ShapeWF, `ShapeIn,
+    `RecLaw, `recOnIdx, `RecOnBody, `RecOnLaw, `IxRecOnLaw, `O5_levels_eq, `stdArity,
+    `standardTelescope_eq, `isPerm_sel, `filterMap_id_length, `selMinors_length,
+    -- `rec` and `recOn` over a selection shape
+    `getD_map_nat, `getD_map_range, `gL_sel', `sel_sel', `app4, `getD4_1, `getD4_2, `getD4_3,
+    `getD4_4, `length_recOnIdx, `map_range_getD, `recOnOutIdx, `recOnTarget, `length_recOnOutIdx,
+    `recOn_index_lean, `recOn_index_ix, `SelOk, `shapeIdx_lt, `recOnIdx_lt, `selOk_of_picks,
+    `rec_sel_conv, `recOn_sel_conv,
+    -- O1, O6, O3
+    `kind_rec_or_recOn, `bnot_false, `O1_some, `O1_faithful, `O1.Side, `O1_side,
+    `O6_some, `O6_faithful, `O6.Side, `O6_side,
+    `casesTv, `casesBody, `CasesOnBody, `CasesOnLaw, `kind_casesOn, `eq_of_not_bne, `bool_false,
+    `O3_some, `O3.Side, `O3_side, `getD_range_map, `casesBody_length, `casesOn_middle,
+    `O3_faithful, `betaN_proj, `delta_betaG,
+    -- O4
+    `tvT, `recBody, `o4Len, `o4LenI, `o4Idx, `qRen, `length_o4Idx, `o4Idx_lt, `o4Idx_param,
+    `o4Idx_index, `recBody_length, `betaN_telVars, `RecConsSquare, `recCons_middle, `recCons_conv,
+    `BRecOnSquare, `brecOn_conv, `EqPIrrel, `O4Law, `kind_o4, `o4Hd, `O4_some, `o4_out, `O4_faithful,
+    -- the proof-justified passes decline with no site
+    `O7_pjAllowed, `O8_pjAllowed, `O9_pjAllowed, `O10_pjAllowed, `O12_pjAllowed, `pjAllowed_of_site,
+    `pj_site_none,
+    -- the engine and the hook
+    `findSome_some, `findSome_append, `omap_some, `O2Faithful, `O11aFaithful, `EngineLaws,
+    `isProofJustified_defs, `isProofJustified_pj, `engineN_cases, `engineN_site_none,
+    `engineN_faithful, `defs_site_irrel, `engineN_split, `pjPart_none, `pjPart_pj, `engineN_site_iff,
+    `engineN_site_irrel, `hookOf, `HookFaithful, `HookSiteStable, `engineFull_cases, `hook_faithful,
+    `hook_siteStable, `optLookup_eq,
+    -- the rewrite
+    `Hook, `hookRes, `spineP, `expansionOfP, `rwP, `HeadLaws, `LevelClosed, `conv_substLevels,
+    `HookUntagged, `hook_untagged, `hookRes_faithful, `hookRes_lean_name, `except_bind_ok,
+    `except_pure_ok', `forall2_of_mapM_conv, `spineP_faithful, `rwP_faithful, `rwP_lean_name,
+    -- totality and fuel of the rewrite; a constant
+    `except_bind_error, `mapM_error, `RwFailure, `spineP_error, `rwP_error, `except_bind_of_ok,
+    `mapM_mono, `spineP_mono, `rwP_mono, `rewriteConstP, `cnst_type, `rewriteConstP_faithful,
+    -- expansion conversion at every caller universe substitution (construction obligation open)
+    `InstExpansionRel, `InstExpansionRel.refl, `InstExpansionRel.trans,
+    `InstExpansionRel.of_levelClosed, `InstExpansionLookup, `spineP_faithful_inst,
+    `rwP_faithful_inst, `rewriteConstP_faithful_inst, `expansionOfP_instLookup_of_stored,
+    -- actual stored expansion origin; source-domain properties remain to be derived
+    `expansion_stored_origin, `expansion_stored_property,
+    -- universe scope of the original independently exported source expressions
+    `SourceScope.LevelOccurs, `SourceScope.ExprOccurs, `SourceScope.exportUniv_scope,
+    `SourceScope.exportSourceLevel_scope, `SourceScope.source_levels_scope,
+    `SourceScope.exportSourceExpr_scope, `SourceScope.exportSourceEntry_defn_scope,
+    `SourceScope.exportSourceEntry_thm_scope,
+    -- original finite-source inventory facts from the existing installation receipt
+    `SourceScope.definition_scope_of_export, `SourceScope.theorem_scope_of_export,
+    `SourceScope.definition_scope_of_installation, `SourceScope.theorem_scope_of_installation,
+    -- counts on the actual stateful ingestion and independent source-export paths
+    `IngestionArity.list_mapM_state_length, `IngestionArity.array_mapM_state_size,
+    `IngestionArity.canonConstantVal_params_size, `IngestionArity.canonConst_params_size,
+    `IngestionArity.list_mapM_export_length, `IngestionArity.source_levels_length,
+    `IngestionArity.source_constant_export, `IngestionArity.source_constant_inferred_arity,
+    -- exact supplied lookup provenance of the existing closed source capture
+    `IngestionLookup.source_find_mem, `IngestionLookup.source_find_name,
+    `IngestionLookup.source_find_exists, `IngestionLookup.captured_lookup,
+    `IngestionLookup.captured_member_lookup, `IngestionLookup.closed_reference_lookup,
+    `IngestionLookup.closed_reference_canon_arity, `IngestionLookup.definition_reference_lookup,
+    -- exact scalar normalization and term-substitution transport
+    `substLevel_empty_params, `substLevel_empty_univs, `LevelParamFree,
+    `substLevel_paramFree, `substLevels_empty_params, `substLevels_empty_univs,
+    `conv_substLevels_viaConv,
+    -- semantic normalization: numeric fragment and independent checked relation
+    `NumericLevel, `NumericLevel.peel, `NumericLevel.explicit, `NumericLevel.eval,
+    `levelMaxSmart_numeric, `levelImaxSmart_numeric, `normalizeLevel_numeric,
+    `normalizeLevel_paramFree_eval, `substLevel_paramFree_eval,
+    `CheckedIxLevelEq, `checkedIxLevelEq_eval, `normalizeLevel_eval_of_checked,
+    `substLevel_empty_params_eval_of_checked, `substLevel_paramFree_eval_of_checked,
+    -- canonicity
+    `bool_guard2, `bool_guard3, `O2_pattern, `O8_pattern, `O7_pattern, `ebind, `eguard, `epattern,
+    `toOption_some, `O11a_O2_pattern, `O1_O3_disjoint, `O1_O4_disjoint, `O3_O4_disjoint,
+    `O3_O6_disjoint, `O4_O6_disjoint, `O1_O2_disjoint, `O3_O8_disjoint, `O1_O7_disjoint,
+    `O2_O7_disjoint, `O1_O6_agree, `engine_of_O1, `engine_of_O3, `engine_of_O4, `O1_out,
+    `argT_congr,
+    -- totality of the passes: a decline is a failed side condition
+    `obind_ex, `oguard_ex, `bnot_true_false, `bool_ne_true, `not_lt_of_le', `pick_some_list,
+    `pick_some, `pick_extract_some, `ShapesWF, `motives_lt, `minors_lt, `O1_of_side, `O1_none_iff,
+    `O6_of_side, `O6_none_iff, `O3_of_side, `O3_none_iff, `O4.Side, `O4_side, `O4_of_side,
+    `O4_none_iff,
+    -- abstraction core and its conversion laws (the executable equality is a named hypothesis)
+    `batchAbstractP, `AuxGenCopies, `babs, `babs_zero, `babs_lift, `babs_inst, `occ_babs,
+    `babs_appN, `fvarFree, `babs_of_closed, `BAbsClosed, `bAbsClosed_of_closed, `conv_babs,
+    `er_batchAbstractP, `binderLoop_conv,
+    -- O2, conditional on freshness at this occurrence and the named image/minor laws
+    `Rel2, `forIn_option_push, `forIn_option_sim, `osim_bind, `osim_ite, `osim_forIn_arr,
+    `occRecur, `RecurConvFrom, `PrefixFresh, `OptConv, `psOf, `msOf, `minsOf, `inBlockOf,
+    `O2Minor, `minorsAt, `RecLawI, `imgMinor, `O2MinorLaw, `kind_rec, `split_ok, `O2_some,
+    `betaN_shapeTv, `rel2_forall2, `idBind_conv, `binderLoop_forIn_conv, `mkLambda_conv,
+    `relocatedIh_mono, `adaptMinor_mono, `optConv_none, `optConv_some, `extract_get,
+    `O2_minor_conv, `O2Ready, `O2_faithful_on,
+    -- successful shape-reader loops and the actual driver environment
+    `forIn_option_inv, `readShape_wf, `forIn_id_inv, `forIn_id_array_inv,
+    `nameMap_forall_insert, `optBlockOf_wf, `optBlocks_wf, `shapesWF_optLookup,
+    -- image range facts, with closedness supplied explicitly where used
+    `stripLams_er, `lamN_body_range, `appN_head_range, `appN_arg_range, `stripLams_arg_range,
+    -- O11a selection is independent of positive engine fuel
+    `O1_O11a_disjoint, `engine_of_O11a, `engineN_O11a_fuel_eq, `engineFull_of_O11a
+    ].map (`Ix.CompileCert.Opt ++ ·) ++ #[``Ix.CompileCert.Conv.Conv.mapC_viaConv]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Structural table specifications reused by the L3 runtime refinement.
+These roots are additive; the frozen and existing lane inventories above
+remain unchanged. Hash buckets select candidates only. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dTableRoots : Array Lean.Name :=
+  #[`OccurrenceTable.getFast?_eq, `OccurrenceTable.get?_eq_fast,
+    `OccurrenceTable.get?_bucket, `OccurrenceRef.named_ne_external,
+    `OccurrenceKey.const_tag_disjoint, `OccurrenceKey.proj_tag_disjoint,
+    `NameTable.getFast?_eq, `NameTable.get?_eq_fast,
+    `nameLookup_some_mem, `nameLookup_filter_other,
+    `NameTable.get?_insert, `NameTable.get?_insert_self,
+    `NameTable.contains_insert, `NameTable.contains_insert_mono,
+    `NameTable.contains_insert_self].map (`Ix.Compile.Canon ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dTableRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Polymorphic scalar runtime refinement. These roots are additive to every
+existing lane and frozen inventory. Source ingestion, referenced-spine arity
+and general term conversion remain independent obligations. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dLevelRefinementRoots : Array Lean.Name :=
+  #[`subst_compose_of_scope_evalP, `runtime_parameter_collision_repaired, `runtime_max_collision_repaired,
+    `candidate_parameter_collision_control, `candidate_lookup_controls, `candidate_max_collision_control,
+    `subst_evalP, `subst_compose_evalP, `normalize_ixLevelEval,
+    `maxSmart_eval, `imaxSmart_eval, `maxSmart_params,
+    `imaxSmart_params, `normalize_params, `subst_params,
+    `subst_params_from_arguments, `ixLevel_params, `exportUniv_scope,
+    `exportSourceLevel_scope, `ixLevel_source_scope, `subst_params_of_source_export,
+    `maxSmart_eq_runtime, `imaxSmart_eq_runtime, `normalize_eq_runtime,
+    `subst_eq_runtime, `normalizeLevel_evalP, `normalizeLevel_ixLevelEval,
+    `substLevel_evalP, `substLevel_compose_of_scope_evalP, `substLevel_compose_of_source_export_evalP,
+    `substLevel_params_of_source_export].map (`Ix.CompileCert.Opt.LevelRefinement ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dLevelRefinementRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Actual auxiliary helper refinement; the original arbitrary-map proposition
+is retained and its unconditional witness is audited alongside the erasure laws. -/
+
+namespace Ix.CompileCert.Audit
+
+def l3dAuxRuntimeRoots : Array Lean.Name :=
+  #[`batchAbstract_eq_copy, `auxGenCopies, `er_batchAbstractWith,
+    `er_batchAbstractNames, `er_inferImplicit].map (`Ix.CompileCert.Opt ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dAuxRuntimeRoots Ix.CompileCert.Audit.allowedAxioms
+

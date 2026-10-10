@@ -7,6 +7,7 @@
 //! Also includes substitution, shifting, and universe manipulation helpers
 //! used across `recursor.rs`, `below.rs`, and `brecon.rs`.
 
+use ix_common::name_table::NameTable;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::occurrence_key::NameTable;
@@ -48,6 +49,76 @@ pub fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
   let name = Name::str(Name::anon(), format!("_{}_{}", prefix, idx));
   let fvar = LeanExpr::fvar(name.clone());
   (name, fvar)
+}
+
+/// Temporary variables are reserved by complete name structure, not a digest.
+#[derive(Default)]
+pub(crate) struct FreshFVars {
+  used: NameTable<()>,
+}
+
+impl FreshFVars {
+  pub(crate) fn reserve(&mut self, name: Name) {
+    self.used.insert(name, ());
+  }
+
+  /// Visit actual immutable nodes once per input, without assuming hash
+  /// injectivity. All FVar-bearing children that abstraction visits count.
+  pub(crate) fn protect_expr(&mut self, expr: &LeanExpr) {
+    let mut pending = vec![expr];
+    let mut visited = FxHashSet::default();
+    while let Some(expr) = pending.pop() {
+      if !visited.insert(std::sync::Arc::as_ptr(&expr.0)) {
+        continue;
+      }
+      match expr.as_data() {
+        ExprData::Fvar(name, _) => self.reserve(name.clone()),
+        ExprData::App(f, a, _) => pending.extend([f, a]),
+        ExprData::Lam(_, ty, body, _, _)
+        | ExprData::ForallE(_, ty, body, _, _) => pending.extend([ty, body]),
+        ExprData::LetE(_, ty, value, body, _, _) => {
+          pending.extend([ty, value, body]);
+        },
+        ExprData::Proj(_, _, body, _) | ExprData::Mdata(_, body, _) => {
+          pending.push(body);
+        },
+        _ => {},
+      }
+    }
+  }
+
+  pub(crate) fn protect_exprs(&mut self, exprs: &[LeanExpr]) {
+    for expr in exprs {
+      self.protect_expr(expr);
+    }
+  }
+
+  /// `FreshFVars.fresh`: preserve the old candidate, otherwise choose the
+  /// first number above every used numeric child of that exact candidate.
+  /// Nat arithmetic also avoids overflow in historical stride expressions.
+  pub(crate) fn fresh(&mut self, prefix: &str, idx: Nat) -> (Name, LeanExpr) {
+    let preferred = Name::str(Name::anon(), format!("_{prefix}_{idx}"));
+    let name = if self.used.contains(&preferred) {
+      let mut next = Nat::ZERO;
+      for (name, ()) in self.used.iter() {
+        if let ix_common::env::NameData::Num(parent, n, _) = name.as_data()
+          && parent.same_structure(&preferred)
+        {
+          next = next.max(Nat(&n.0 + 1u32));
+        }
+      }
+      Name::num(preferred, next)
+    } else {
+      preferred
+    };
+    self.reserve(name.clone());
+    (name.clone(), LeanExpr::fvar(name))
+  }
+}
+
+/// Exact Nat counterpart of the Lean preferred-name index; no stride bound.
+pub(crate) fn fvar_index(base: usize, stride: u64, offset: usize) -> Nat {
+  Nat(Nat::from(base as u64).0 * stride + Nat::from(offset as u64).0)
 }
 
 // =========================================================================
@@ -474,19 +545,19 @@ fn mk_binder_chain(
     return body;
   }
 
-  // Build FVar name → binder position map (0 = outermost).
-  let fvar_map: FxHashMap<Name, usize> =
+  // Structural name → position map (0 = outermost); later writes win.
+  let fvar_map: NameTable<usize> =
     binders.iter().enumerate().map(|(i, d)| (d.fvar_name.clone(), i)).collect();
 
   // Abstract body: all k binders in scope.
-  let mut result = batch_abstract(&body, &fvar_map, k, 0);
+  let mut result = batch_abstract_names(&body, &fvar_map, k, 0);
 
   // Build binder chain from innermost to outermost.
   for j in (0..k).rev() {
     let decl = &binders[j];
     // Domain D_j: only binders 0..j-1 are in scope (scope_depth = j).
     // Binder j's domain is NOT under binder j itself — only the body is.
-    let domain = batch_abstract(&decl.domain, &fvar_map, j, 0);
+    let domain = batch_abstract_names(&decl.domain, &fvar_map, j, 0);
     result = match kind {
       BinderKind::Forall => LeanExpr::all(
         decl.binder_name.clone(),
@@ -530,6 +601,23 @@ pub(super) fn batch_abstract(
   internal_depth: u64,
 ) -> LeanExpr {
   super::checked_expr::batch_abstract_at(
+    expr,
+    fvar_map,
+    scope_depth,
+    internal_depth,
+    &Default::default(),
+  )
+  .expect("disabled cancellation checkpoint")
+}
+
+/// Structural-table entry point for generated binder positions.
+pub(super) fn batch_abstract_names(
+  expr: &LeanExpr,
+  fvar_map: &NameTable<usize>,
+  scope_depth: usize,
+  internal_depth: u64,
+) -> LeanExpr {
+  super::checked_expr::batch_abstract_names_at(
     expr,
     fvar_map,
     scope_depth,
@@ -3616,4 +3704,69 @@ mod tests {
     let dom = sort0();
     assert_eq!(find_motive_fvar(&dom, &motives), None);
   }
+
+  #[test]
+  fn fresh_supply_confirms_structure_and_preserves_free_names() {
+    use ix_common::env::NameData;
+    use std::sync::Arc;
+    let preferred = fresh_fvar("split_field", 0).0;
+    for same_spelling in [true, false] {
+      let forged = Name(Arc::new(NameData::Str(
+        Name(Arc::new(NameData::Anonymous(blake3::hash(b"forged parent")))),
+        if same_spelling { "_split_field_0" } else { "other" }.into(),
+        *preferred.get_hash(),
+      )));
+      let caller = LeanExpr::fvar(forged);
+      let mut supply = FreshFVars::default();
+      supply.protect_expr(&caller);
+      let (chosen, fv) = supply.fresh("split_field", Nat::ZERO);
+      let expected_name = if same_spelling {
+        Name::num(preferred.clone(), Nat::ZERO)
+      } else {
+        preferred.clone()
+      };
+      assert!(chosen.same_structure(&expected_name));
+      let decls = [LocalDecl { fvar_name: chosen, binder_name: mk_name_for("x"),
+        domain: sort0(), info: BinderInfo::Default }];
+      let expected = LeanExpr::lam(mk_name_for("x"), sort0(),
+        LeanExpr::app(caller.clone(), bvar_at(0)), BinderInfo::Default);
+      assert_eq!(mk_lambda(LeanExpr::app(caller, fv), &decls), expected);
+    }
+  }
+
+  #[test]
+  fn fresh_supply_numeric_suffixes_and_stride_overlap() {
+    let preferred = fresh_fvar("split_xs", 1024).0;
+    let mut supply = FreshFVars::default();
+    supply.reserve(preferred.clone());
+    supply.reserve(Name::num(preferred.clone(), Nat::ZERO));
+    supply.reserve(Name::num(preferred.clone(), Nat::from(17u64)));
+    let a = supply.fresh("split_xs", fvar_index(0, 1024, 1024)).0;
+    let b = supply.fresh("split_xs", fvar_index(1, 1024, 0)).0;
+    assert!(a.same_structure(&Name::num(preferred.clone(), Nat::from(18u64))));
+    assert!(b.same_structure(&Name::num(preferred, Nat::from(19u64))));
+  }
+
+  #[test]
+  fn free_name_collection_visits_all_children_and_confirms_node_identity() {
+    use std::sync::Arc;
+    let names: Vec<_> = (0..5).map(|i| fresh_fvar("field", i).0).collect();
+    let a = LeanExpr::fvar(names[0].clone());
+    // Distinct nodes with equal cached expression digests must both be visited.
+    let b = LeanExpr(Arc::new(ExprData::Fvar(names[1].clone(), *a.get_hash())));
+    let shared = LeanExpr::app(a, b);
+    let expr = LeanExpr::letE(mk_name_for("x"), shared.clone(),
+      LeanExpr::lam(mk_name_for("z"), LeanExpr::fvar(names[2].clone()), shared,
+        BinderInfo::Default),
+      LeanExpr::mdata(vec![], LeanExpr::proj(mk_name_for("P"), Nat::ZERO,
+        LeanExpr::app(LeanExpr::fvar(names[3].clone()), LeanExpr::fvar(names[4].clone())))),
+      false);
+    let mut supply = FreshFVars::default();
+    supply.protect_expr(&expr);
+    for i in 0..5 {
+      assert!(supply.fresh("field", Nat::from(i)).0.same_structure(
+        &Name::num(names[i as usize].clone(), Nat::ZERO)));
+    }
+  }
+
 }

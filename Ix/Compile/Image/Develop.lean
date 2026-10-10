@@ -36,6 +36,7 @@ module
 public import Ix.Environment
 public import Ix.Compile.Canon.Expr
 public import Ix.Compile.Image.Expr
+public import Ix.Compile.Image.TotalMemo
 public section
 
 namespace Ix.Compile.Image
@@ -68,91 +69,41 @@ def projCtor? (s : Name) (i : Nat) (e : Expr) : Option Expr :=
 
 The terms substituted at a call site are the user's arguments: large, and
 DAG-shaped (proof terms share subterms heavily). Every traversal below is
-memoised per node (the cache keys are `Ix.Expr`s, compared by their embedded
-hash), and a subterm with no loose variable at or above the substitution
-depth is returned untouched without being entered. The results are exactly
-those of the plain recursions (`Ix.Compile.Canon.liftLoose`, `lowerLoose`);
-only the work is shared. -/
+memoised per node. The four total tables retain exact input keys and certified
+answers. Embedded hashes select candidates; pointer-accelerated raw equality
+confirms a hit. No property of cached hashes or source well-formedness is
+required. The hereditary table below retains its existing fuel-sensitive
+behavior and is a separate refinement obligation. -/
 
 structure DevState where
-  range : Std.HashMap Expr Nat := {}
-  lifted : Std.HashMap (Expr × Nat × Nat) Expr := {}
-  lowered : Std.HashMap (Expr × Nat × Nat) Expr := {}
-  occurs : Std.HashMap (Expr × Nat) Bool := {}
+  range : TotalMemo.RangeMemo := {}
+  lifted : TotalMemo.LiftMemo := {}
+  lowered : TotalMemo.LowerMemo := {}
+  occurs : TotalMemo.OccursMemo := {}
   insts : Std.HashMap (Expr × Expr × Nat) (Expr × Created) := {}
 
 abbrev DevM := StateT DevState (Except String)
 
 /-- One more than the largest loose bound variable of `e` (`0`: closed). -/
-def looseRange (e : Expr) : DevM Nat := do
-  if let some r := (← get).range.get? e then return r
-  let r ← match e with
-    | .bvar i _ => pure (i + 1)
-    | .app f a _ => do pure (max (← looseRange f) (← looseRange a))
-    | .lam _ t b _ _ => do pure (max (← looseRange t) ((← looseRange b) - 1))
-    | .forallE _ t b _ _ => do pure (max (← looseRange t) ((← looseRange b) - 1))
-    | .letE _ t v b _ _ => do
-      pure (max (max (← looseRange t) (← looseRange v)) ((← looseRange b) - 1))
-    | .proj _ _ s _ => looseRange s
-    | .mdata _ s _ => looseRange s
-    | _ => pure 0
-  modify fun st => { st with range := st.range.insert e r }
-  return r
+def looseRange (e : Expr) : DevM Nat := fun st =>
+  let r := TotalMemo.rangeGo hash e st.range
+  .ok (r.value, { st with range := r.state })
 
-/-- `liftLoose e n c`, memoised. -/
-def liftM (e : Expr) (n c : Nat) : DevM Expr := do
-  if n == 0 then return e
-  if (← looseRange e) ≤ c then return e
-  if let some r := (← get).lifted.get? (e, n, c) then return r
-  let r ← match e with
-    | .bvar i _ => pure (if i ≥ c then Expr.mkBVar (i + n) else e)
-    | .app f a _ => do pure (Expr.mkApp (← liftM f n c) (← liftM a n c))
-    | .lam nm t b bi _ => do pure (Expr.mkLam nm (← liftM t n c) (← liftM b n (c + 1)) bi)
-    | .forallE nm t b bi _ => do
-      pure (Expr.mkForallE nm (← liftM t n c) (← liftM b n (c + 1)) bi)
-    | .letE nm t v b nd _ => do
-      pure (Expr.mkLetE nm (← liftM t n c) (← liftM v n c) (← liftM b n (c + 1)) nd)
-    | .proj nm i s _ => do pure (Expr.mkProj nm i (← liftM s n c))
-    | .mdata md x _ => do pure (Expr.mkMData md (← liftM x n c))
-    | e => pure e
-  modify fun st => { st with lifted := st.lifted.insert (e, n, c) r }
-  return r
+/-- `liftLoose e n c`, with exact confirmed memo hits. -/
+def liftM (e : Expr) (n c : Nat) : DevM Expr := fun st =>
+  let r := TotalMemo.liftGo hash hash e n c ⟨st.range, st.lifted⟩
+  .ok (r.value, { st with range := r.state.range, lifted := r.state.values })
 
-/-- `lowerLoose e n c`, memoised. -/
-def lowerM (e : Expr) (n c : Nat) : DevM Expr := do
-  if n == 0 then return e
-  if (← looseRange e) ≤ c then return e
-  if let some r := (← get).lowered.get? (e, n, c) then return r
-  let r ← match e with
-    | .bvar i _ => pure (if i ≥ c + n then Expr.mkBVar (i - n) else e)
-    | .app f a _ => do pure (Expr.mkApp (← lowerM f n c) (← lowerM a n c))
-    | .lam nm t b bi _ => do pure (Expr.mkLam nm (← lowerM t n c) (← lowerM b n (c + 1)) bi)
-    | .forallE nm t b bi _ => do
-      pure (Expr.mkForallE nm (← lowerM t n c) (← lowerM b n (c + 1)) bi)
-    | .letE nm t v b nd _ => do
-      pure (Expr.mkLetE nm (← lowerM t n c) (← lowerM v n c) (← lowerM b n (c + 1)) nd)
-    | .proj nm i s _ => do pure (Expr.mkProj nm i (← lowerM s n c))
-    | .mdata md x _ => do pure (Expr.mkMData md (← lowerM x n c))
-    | e => pure e
-  modify fun st => { st with lowered := st.lowered.insert (e, n, c) r }
-  return r
+/-- `lowerLoose e n c`, with exact confirmed memo hits. -/
+def lowerM (e : Expr) (n c : Nat) : DevM Expr := fun st =>
+  let r := TotalMemo.lowerGo hash hash e n c ⟨st.range, st.lowered⟩
+  .ok (r.value, { st with range := r.state.range, lowered := r.state.values })
 
-/-- `bvar k` occurs loose in `e`, memoised. -/
-def occursM (e : Expr) (k : Nat) : DevM Bool := do
-  if (← looseRange e) ≤ k then return false
-  if let some r := (← get).occurs.get? (e, k) then return r
-  let r ← match e with
-    | .bvar i _ => pure (i == k)
-    | .app f a _ => do pure ((← occursM f k) || (← occursM a k))
-    | .lam _ t b _ _ => do pure ((← occursM t k) || (← occursM b (k + 1)))
-    | .forallE _ t b _ _ => do pure ((← occursM t k) || (← occursM b (k + 1)))
-    | .letE _ t v b _ _ => do
-      pure ((← occursM t k) || (← occursM v k) || (← occursM b (k + 1)))
-    | .proj _ _ s _ => occursM s k
-    | .mdata _ s _ => occursM s k
-    | _ => pure false
-  modify fun st => { st with occurs := st.occurs.insert (e, k) r }
-  return r
+/-- `bvar k` occurs loose in `e`, with exact confirmed memo hits. -/
+def occursM (e : Expr) (k : Nat) : DevM Bool := fun st =>
+  let r := TotalMemo.occursGo hash hash e k ⟨st.range, st.occurs⟩
+  .ok (r.value, { st with range := r.state.range, occurs := r.state.values })
+
 
 mutual
 /-- `e[bvar k := v]`, contracting the redexes formed at the substituted

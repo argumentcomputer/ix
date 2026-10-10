@@ -19,9 +19,9 @@ use ix_common::env::{
 pub type Hash = blake3::Hash;
 
 /// The hash key of an expression (`Ix.Expr`'s `BEq`/`Hashable` are by the
-/// embedded hash). Memo hits require run-local key faithfulness: equal keys
-/// denote the same complete expression; constructor consistency alone does not
-/// rule out collisions. The memo tables are implementation caches, not proofs.
+/// embedded hash). `alpha_eq` confirms retained raw keys. Other hash-only memo
+/// hits require run-local key faithfulness: equal keys denote the same complete
+/// expression; constructor consistency alone does not rule out collisions.
 pub fn key(e: &Expr) -> Hash {
   *e.get_hash()
 }
@@ -382,9 +382,11 @@ pub fn subst_level(params: &[Name], univs: &[Level], l: &Level) -> Level {
       subst_level(params, univs, a),
       subst_level(params, univs, b),
     ),
-    LevelData::Param(nm, _) => match params.iter().position(|p| p == nm) {
-      Some(i) => univs.get(i).cloned().unwrap_or_else(|| l.clone()),
-      None => l.clone(),
+    LevelData::Param(nm, _) => {
+      match params.iter().position(|p| p.same_structure(nm)) {
+        Some(i) => univs.get(i).cloned().unwrap_or_else(|| l.clone()),
+        None => l.clone(),
+      }
     },
     _ => l.clone(),
   }
@@ -770,56 +772,396 @@ pub fn mk_forall(xs: &[Local], b: &Expr) -> Expr {
   mk_binders(false, xs, b)
 }
 
-/// Equality up to binder names and binder info (Lean's `Expr.eqv`).
-pub fn alpha_eq(a: &Expr, b: &Expr) -> bool {
-  fn visit(
-    a: &Expr,
-    b: &Expr,
-    memo: &mut FxHashMap<(Hash, Hash), bool>,
-  ) -> bool {
-    let memo_key = (key(a), key(b));
-    if let Some(result) = memo.get(&memo_key) {
-      return *result;
+/// The hash pair selects a candidate entry; retained raw expression owners
+/// confirm both keys before reusing either a true or a false result.
+type AlphaMemo = FxHashMap<(Hash, Hash), (Expr, Expr, bool)>;
+
+fn alpha_eq_visit(a: &Expr, b: &Expr, memo: &mut AlphaMemo) -> bool {
+  let memo_key = (key(a), key(b));
+  if let Some((saved_a, saved_b, result)) = memo.get(&memo_key)
+    && saved_a == a
+    && saved_b == b
+  {
+    return *result;
+  }
+  let result = (|| {
+    if a.get_hash() == b.get_hash() && a == b {
+      return true;
     }
-    let result = (|| {
-      if a.get_hash() == b.get_hash() {
-        return true;
-      }
-      match (a.as_data(), b.as_data()) {
-        (ExprData::Bvar(i, _), ExprData::Bvar(j, _)) => i == j,
-        (ExprData::Fvar(x, _), ExprData::Fvar(y, _))
-        | (ExprData::Mvar(x, _), ExprData::Mvar(y, _)) => x == y,
-        (ExprData::Sort(u, _), ExprData::Sort(v, _)) => u == v,
-        (ExprData::Const(x, us, _), ExprData::Const(y, vs, _)) => {
-          x == y && us == vs
-        },
-        (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
-          visit(f, g, memo) && visit(x, y, memo)
-        },
-        (ExprData::Lam(_, t, b, _, _), ExprData::Lam(_, t2, b2, _, _))
-        | (
-          ExprData::ForallE(_, t, b, _, _),
-          ExprData::ForallE(_, t2, b2, _, _),
-        ) => visit(t, t2, memo) && visit(b, b2, memo),
-        (
-          ExprData::LetE(_, t, v, b, _, _),
-          ExprData::LetE(_, t2, v2, b2, _, _),
-        ) => visit(t, t2, memo) && visit(v, v2, memo) && visit(b, b2, memo),
-        (ExprData::Lit(x, _), ExprData::Lit(y, _)) => x == y,
-        (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
-          visit(x, y, memo)
-        },
-        (ExprData::Proj(s, i, x, _), ExprData::Proj(s2, i2, y, _)) => {
-          s == s2 && i == i2 && visit(x, y, memo)
-        },
-        _ => false,
-      }
-    })();
-    memo.insert(memo_key, result);
-    result
+    match (a.as_data(), b.as_data()) {
+      (ExprData::Bvar(i, _), ExprData::Bvar(j, _)) => i == j,
+      (ExprData::Fvar(x, _), ExprData::Fvar(y, _))
+      | (ExprData::Mvar(x, _), ExprData::Mvar(y, _)) => x == y,
+      (ExprData::Sort(u, _), ExprData::Sort(v, _)) => u == v,
+      (ExprData::Const(x, us, _), ExprData::Const(y, vs, _)) => {
+        x == y && us == vs
+      },
+      (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
+        alpha_eq_visit(f, g, memo) && alpha_eq_visit(x, y, memo)
+      },
+      (ExprData::Lam(_, t, b, _, _), ExprData::Lam(_, t2, b2, _, _))
+      | (
+        ExprData::ForallE(_, t, b, _, _),
+        ExprData::ForallE(_, t2, b2, _, _),
+      ) => alpha_eq_visit(t, t2, memo) && alpha_eq_visit(b, b2, memo),
+      (
+        ExprData::LetE(_, t, v, b, _, _),
+        ExprData::LetE(_, t2, v2, b2, _, _),
+      ) => {
+        alpha_eq_visit(t, t2, memo)
+          && alpha_eq_visit(v, v2, memo)
+          && alpha_eq_visit(b, b2, memo)
+      },
+      (ExprData::Lit(x, _), ExprData::Lit(y, _)) => x == y,
+      (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
+        alpha_eq_visit(x, y, memo)
+      },
+      (ExprData::Proj(s, i, x, _), ExprData::Proj(s2, i2, y, _)) => {
+        s == s2 && i == i2 && alpha_eq_visit(x, y, memo)
+      },
+      _ => false,
+    }
+  })();
+  memo.insert(memo_key, (a.clone(), b.clone(), result));
+  result
+}
+
+/// Equality up to binder names, binder info, let flags and paired metadata.
+/// Name/Level/Expr derived equality includes every raw cached field. Hashes
+/// only select candidates: the fast return and every memo hit are confirmed.
+/// One-sided metadata is not skipped (unlike the separate clique comparator).
+pub fn alpha_eq(a: &Expr, b: &Expr) -> bool {
+  alpha_eq_visit(a, b, &mut AlphaMemo::default())
+}
+
+#[cfg(test)]
+mod alpha_eq_tests {
+  use super::*;
+  use ix_common::env::{DataValue, Literal};
+  use std::sync::Arc;
+
+  fn h(n: u8) -> Hash {
+    Hash::from_bytes([n; 32])
   }
 
-  visit(a, b, &mut FxHashMap::default())
+  fn raw(data: ExprData) -> Expr {
+    Expr(Arc::new(data))
+  }
+
+  fn raw_bvar(index: usize, cache: u8) -> Expr {
+    raw(ExprData::Bvar(nat(index), h(cache)))
+  }
+
+  /// Labels and constructor cases mirror Tests/Ix/Compile/AlphaEq.lean.
+  fn controls() -> Vec<(&'static str, Expr, Expr, bool)> {
+    use ExprData::*;
+    let n = Name(Arc::new(NameData::Anonymous(h(0))));
+    let m = Name(Arc::new(NameData::Str(n.clone(), "different".into(), h(0))));
+    let na = Name(Arc::new(NameData::Str(
+      Name(Arc::new(NameData::Anonymous(h(1)))),
+      "same".into(),
+      h(0),
+    )));
+    let nb = Name(Arc::new(NameData::Str(
+      Name(Arc::new(NameData::Anonymous(h(2)))),
+      "same".into(),
+      h(0),
+    )));
+    let z = Level(Arc::new(LevelData::Zero(h(0))));
+    let s = Level(Arc::new(LevelData::Succ(z.clone(), h(0))));
+    let za = Level(Arc::new(LevelData::Succ(
+      Level(Arc::new(LevelData::Zero(h(1)))),
+      h(0),
+    )));
+    let zb = Level(Arc::new(LevelData::Succ(
+      Level(Arc::new(LevelData::Zero(h(2)))),
+      h(0),
+    )));
+    let t = raw(Sort(z.clone(), h(0)));
+    let x = raw_bvar(0, 1);
+    let y = raw_bvar(0, 2);
+    vec![
+      ("identical-bvar", raw_bvar(0, 0), raw_bvar(0, 0), true),
+      ("expression-hash-collision", raw_bvar(0, 0), raw_bvar(1, 0), false),
+      ("expression-cache-ignored", x.clone(), y.clone(), true),
+      ("constructor-hash-collision", raw_bvar(0, 0), t.clone(), false),
+      (
+        "fvar-name-collision",
+        raw(Fvar(n.clone(), h(1))),
+        raw(Fvar(m.clone(), h(2))),
+        false,
+      ),
+      (
+        "mvar-name-collision",
+        raw(Mvar(n.clone(), h(1))),
+        raw(Mvar(m.clone(), h(2))),
+        false,
+      ),
+      (
+        "sort-level-collision",
+        raw(Sort(z.clone(), h(1))),
+        raw(Sort(s.clone(), h(2))),
+        false,
+      ),
+      (
+        "constant-name-collision",
+        raw(Const(n.clone(), vec![], h(1))),
+        raw(Const(m.clone(), vec![], h(2))),
+        false,
+      ),
+      (
+        "constant-level-collision",
+        raw(Const(n.clone(), vec![z.clone()], h(1))),
+        raw(Const(n.clone(), vec![s.clone()], h(2))),
+        false,
+      ),
+      (
+        "constant-level-count",
+        raw(Const(n.clone(), vec![], h(1))),
+        raw(Const(n.clone(), vec![z.clone()], h(2))),
+        false,
+      ),
+      (
+        "projection-name-collision",
+        raw(Proj(n.clone(), nat(0), x.clone(), h(1))),
+        raw(Proj(m.clone(), nat(0), y.clone(), h(2))),
+        false,
+      ),
+      (
+        "nested-name-cache-retained",
+        raw(Fvar(na.clone(), h(1))),
+        raw(Fvar(nb.clone(), h(2))),
+        false,
+      ),
+      (
+        "nested-level-cache-retained",
+        raw(Sort(za.clone(), h(1))),
+        raw(Sort(zb.clone(), h(2))),
+        false,
+      ),
+      (
+        "level-param-name-cache-retained",
+        raw(Sort(Level(Arc::new(LevelData::Param(na, h(0)))), h(1))),
+        raw(Sort(Level(Arc::new(LevelData::Param(nb, h(0)))), h(2))),
+        false,
+      ),
+      (
+        "level-max-child-collision",
+        raw(Sort(
+          Level(Arc::new(LevelData::Max(z.clone(), z.clone(), h(0)))),
+          h(1),
+        )),
+        raw(Sort(
+          Level(Arc::new(LevelData::Max(z.clone(), s.clone(), h(0)))),
+          h(2),
+        )),
+        false,
+      ),
+      (
+        "constant-nested-level-cache",
+        raw(Const(n.clone(), vec![za], h(1))),
+        raw(Const(n.clone(), vec![zb], h(2))),
+        false,
+      ),
+      (
+        "lambda-binder-neighbour",
+        raw(Lam(n.clone(), t.clone(), x.clone(), BinderInfo::Default, h(1))),
+        raw(Lam(m.clone(), t.clone(), y.clone(), BinderInfo::Implicit, h(2))),
+        true,
+      ),
+      (
+        "forall-binder-neighbour",
+        raw(ForallE(
+          n.clone(),
+          t.clone(),
+          x.clone(),
+          BinderInfo::Default,
+          h(1),
+        )),
+        raw(ForallE(
+          m.clone(),
+          t.clone(),
+          y.clone(),
+          BinderInfo::InstImplicit,
+          h(2),
+        )),
+        true,
+      ),
+      (
+        "let-flag-neighbour",
+        raw(LetE(n.clone(), t.clone(), x.clone(), x.clone(), false, h(1))),
+        raw(LetE(m.clone(), t.clone(), y.clone(), y.clone(), true, h(2))),
+        true,
+      ),
+      (
+        "paired-metadata-neighbour",
+        raw(Mdata(
+          vec![(n.clone(), DataValue::OfNat(nat(0)))],
+          x.clone(),
+          h(1),
+        )),
+        raw(Mdata(vec![(m, DataValue::OfBool(true))], y.clone(), h(2))),
+        true,
+      ),
+      (
+        "one-sided-metadata-left",
+        raw(Mdata(vec![], x.clone(), h(0))),
+        x.clone(),
+        false,
+      ),
+      (
+        "one-sided-metadata-right",
+        x.clone(),
+        raw(Mdata(vec![], x.clone(), h(0))),
+        false,
+      ),
+      (
+        "metadata-child-collision",
+        raw(Mdata(vec![], raw_bvar(0, 0), h(1))),
+        raw(Mdata(vec![], raw_bvar(1, 0), h(2))),
+        false,
+      ),
+      (
+        "projection-index",
+        raw(Proj(n.clone(), nat(0), x.clone(), h(1))),
+        raw(Proj(n.clone(), nat(1), y.clone(), h(2))),
+        false,
+      ),
+      (
+        "equal-literal-neighbour",
+        raw(Lit(Literal::NatVal(nat(0)), h(1))),
+        raw(Lit(Literal::NatVal(nat(0)), h(2))),
+        true,
+      ),
+      (
+        "different-literal",
+        raw(Lit(Literal::NatVal(nat(0)), h(1))),
+        raw(Lit(Literal::NatVal(nat(1)), h(2))),
+        false,
+      ),
+      (
+        "literal-constructor",
+        raw(Lit(Literal::NatVal(nat(0)), h(1))),
+        raw(Lit(Literal::StrVal("0".into()), h(2))),
+        false,
+      ),
+      (
+        "equal-constant-neighbour",
+        raw(Const(n.clone(), vec![z.clone()], h(1))),
+        raw(Const(n.clone(), vec![z.clone()], h(2))),
+        true,
+      ),
+      (
+        "universe-order",
+        raw(Const(n.clone(), vec![z.clone(), s.clone()], h(1))),
+        raw(Const(n.clone(), vec![s, z], h(2))),
+        false,
+      ),
+      (
+        "sibling-memo-collision",
+        raw(App(x.clone(), raw_bvar(1, 1), h(3))),
+        raw(App(y.clone(), raw_bvar(2, 2), h(4))),
+        false,
+      ),
+      (
+        "repeated-pair-neighbour",
+        raw(App(x.clone(), x.clone(), h(3))),
+        raw(App(y.clone(), y.clone(), h(4))),
+        true,
+      ),
+      (
+        "false-child-neighbour",
+        raw(App(x, raw_bvar(0, 1), h(3))),
+        raw(App(raw_bvar(1, 2), y, h(4))),
+        false,
+      ),
+      (
+        "equal-fvar-neighbour",
+        raw(Fvar(n.clone(), h(1))),
+        raw(Fvar(n, h(2))),
+        true,
+      ),
+      (
+        "smart-lambda-neighbour",
+        Expr::lam(
+          root_name("x"),
+          Expr::sort(Level::zero()),
+          bvar(0),
+          BinderInfo::Default,
+        ),
+        Expr::lam(
+          root_name("y"),
+          Expr::sort(Level::zero()),
+          bvar(0),
+          BinderInfo::Implicit,
+        ),
+        true,
+      ),
+      (
+        "smart-constant-neighbour",
+        Expr::cnst(root_name("Nat"), vec![]),
+        Expr::cnst(root_name("Nat"), vec![]),
+        true,
+      ),
+    ]
+  }
+
+  #[test]
+  fn alpha_eq_raw_cases_match_lean() {
+    for (label, a, b, expected) in controls() {
+      assert_eq!(alpha_eq(&a, &b), expected, "{label}");
+    }
+  }
+
+  #[test]
+  fn alpha_eq_confirms_true_and_false_memo_hits() {
+    let mut memo = AlphaMemo::default();
+    let a = raw_bvar(0, 1);
+    let b = raw_bvar(0, 2);
+    assert!(alpha_eq_visit(&a, &b, &mut memo));
+    assert_eq!(memo.len(), 1);
+    assert!(alpha_eq_visit(&a.clone(), &b.clone(), &mut memo));
+
+    // The successful pair has the same hashes as this unequal pair.
+    let c = raw_bvar(1, 1);
+    let d = raw_bvar(2, 2);
+    assert!(!alpha_eq_visit(&c, &d, &mut memo));
+    assert_eq!(memo.len(), 1);
+    assert_eq!(memo.get(&(h(1), h(2))), Some(&(c.clone(), d.clone(), false)));
+    assert!(!alpha_eq_visit(&c.clone(), &d.clone(), &mut memo));
+
+    // Conversely a cached false result must not reject an equal neighbour.
+    assert!(alpha_eq_visit(&a, &b, &mut memo));
+    assert_eq!(memo.get(&(h(1), h(2))), Some(&(a, b, true)));
+  }
+
+  #[test]
+  fn alpha_eq_memo_retains_owners_and_confirms_distinct_allocations() {
+    let mut memo = AlphaMemo::default();
+    let (original_a, original_b) = {
+      let a = raw_bvar(0, 1);
+      let b = raw_bvar(0, 2);
+      assert!(alpha_eq_visit(&a, &b, &mut memo));
+      let (saved_a, saved_b, _) = memo.get(&(h(1), h(2))).unwrap();
+      assert!(Arc::ptr_eq(&saved_a.0, &a.0));
+      assert!(Arc::ptr_eq(&saved_b.0, &b.0));
+      (Arc::downgrade(&a.0), Arc::downgrade(&b.0))
+    };
+    // The entry keeps the original raw owners alive after the callers leave.
+    assert!(original_a.upgrade().is_some());
+    assert!(original_b.upgrade().is_some());
+    let a = raw_bvar(0, 1);
+    let b = raw_bvar(0, 2);
+    assert!(!Arc::ptr_eq(&a.0, &original_a.upgrade().unwrap()));
+    assert!(!Arc::ptr_eq(&b.0, &original_b.upgrade().unwrap()));
+    assert!(alpha_eq_visit(&a, &b, &mut memo));
+    let (saved_a, saved_b, _) = memo.get(&(h(1), h(2))).unwrap();
+    assert!(Arc::ptr_eq(&saved_a.0, &original_a.upgrade().unwrap()));
+    assert!(Arc::ptr_eq(&saved_b.0, &original_b.upgrade().unwrap()));
+    memo.clear();
+    assert!(original_a.upgrade().is_none());
+    assert!(original_b.upgrade().is_none());
+  }
 }
 
 /// `bvar i` occurs loose in `e`.

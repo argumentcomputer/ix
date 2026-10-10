@@ -25,6 +25,7 @@ module
 public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
+public import Ix.Compile.Canon.Expr
 public import Ix.Compile.Canon.NameTable
 public import Std.Data.HashMap
 public import Std.Data.HashSet
@@ -82,6 +83,55 @@ def freshFVar (pfx : String) (idx : Nat) : Name × Expr :=
   let name := Name.mkStr .mkAnon s!"_{pfx}_{idx}"
   let fvar := Expr.mkFVar name
   (name, fvar)
+
+/-- Temporary-variable supply for source minor adaptation. Keys are rebuilt
+structural Lean names, so no cached Ix name digest establishes membership. -/
+structure FreshFVars where
+  used : Std.HashSet Lean.Name := {}
+  deriving Inhabited
+
+namespace FreshFVars
+
+def reserve (s : FreshFVars) (name : Name) : FreshFVars :=
+  { used := s.used.insert (Ix.Compile.Canon.keyName name) }
+
+/-- Collect exactly the FVar-bearing expression positions traversed by
+`batchAbstractNames`, including dependent domains and let values. -/
+def protectExpr (s : FreshFVars) (e : Expr) : FreshFVars :=
+  match e with
+  | .fvar name _ => s.reserve name
+  | .app f a _ => (s.protectExpr f).protectExpr a
+  | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
+      (s.protectExpr ty).protectExpr body
+  | .letE _ ty value body _ _ =>
+      ((s.protectExpr ty).protectExpr value).protectExpr body
+  | .proj _ _ body _ | .mdata _ body _ => s.protectExpr body
+  | _ => s
+
+def protectExprs (s : FreshFVars) (es : Array Expr) : FreshFVars :=
+  es.foldl protectExpr s
+
+/-- Retain the old spelling when fresh. On collision, append a numeric
+component greater than every protected suffix with this exact prefix.
+This finite fold needs neither a bounded telescope nor an unbounded search. -/
+def fresh (s : FreshFVars) (pfx : String) (idx : Nat) :
+    (Name × Expr) × FreshFVars :=
+  let preferred := (freshFVar pfx idx).1
+  let key := Ix.Compile.Canon.keyName preferred
+  let name := if s.used.contains key then
+      let next := s.used.fold (init := 0) fun next name =>
+        match name with
+        | .num parent n => if parent == key then max next (n + 1) else next
+        | _ => next
+      Name.mkNat preferred next
+    else preferred
+  ((name, Expr.mkFVar name), s.reserve name)
+
+end FreshFVars
+
+/-- Shared supply operation used at every split-minor opening. -/
+def freshFVarM (pfx : String) (idx : Nat) : StateM FreshFVars (Name × Expr) :=
+  fun s => s.fresh pfx idx
 
 /-! ## Inductive recursor-structural decomposition
 
@@ -196,7 +246,7 @@ partial def lowerVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
 /-! ## Instantiation: BVar -> replacement (aux_gen/expr_utils.rs:591) -/
 
 /-- Mirrors Rust `instantiate1_at` (aux_gen/expr_utils.rs:605). -/
-partial def instantiate1At (body : Expr) (replacement : Expr) (depth : Nat) : Expr :=
+def instantiate1At (body : Expr) (replacement : Expr) (depth : Nat) : Expr :=
   match body with
   | .bvar i _ =>
     if i == depth then replacement
@@ -342,7 +392,7 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
   if let (some (_, ox), some (_, oy)) := (levelExplicitOffset x, levelExplicitOffset y) then
     -- Both explicit numerals (Succ^n(Zero)): take the larger.
     return if ox >= oy then x else y
-  if x == y then
+  if Ix.Compile.Canon.levelSameStructure x y then
     return x
   if let .zero _ := x then
     return y
@@ -350,16 +400,16 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
     return x
   -- max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
   if let .max bl br _ := y then
-    if bl == x || br == x then
+    if Ix.Compile.Canon.levelSameStructure bl x || Ix.Compile.Canon.levelSameStructure br x then
       return y
   -- max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
   if let .max al ar _ := x then
-    if al == y || ar == y then
+    if Ix.Compile.Canon.levelSameStructure al y || Ix.Compile.Canon.levelSameStructure ar y then
       return x
   -- Same base, different offsets: succ^n(x) vs succ^m(x) → take larger.
   let (baseX, offX) := levelPeelSucc x
   let (baseY, offY) := levelPeelSucc y
-  if baseX == baseY then
+  if Ix.Compile.Canon.levelSameStructure baseX baseY then
     return if offX >= offY then x else y
   return Level.mkMax x y
 
@@ -381,7 +431,7 @@ def levelImaxSmart (x y : Level) : Level := Id.run do
   if let .succ inner _ := x then
     if let .zero _ := inner then
       return y
-  if x == y then
+  if Ix.Compile.Canon.levelSameStructure x y then
     return x
   return Level.mkIMax x y
 
@@ -403,7 +453,7 @@ partial def substLevel (lvl : Level) (params : Array Name) (univs : Array Level)
     levelImaxSmart (substLevel a params univs) (substLevel b params univs)
   | .param name _ => Id.run do
     for h : i in [0:params.size] do
-      if hu : params[i] == name ∧ i < univs.size then
+      if hu : Ix.Compile.Canon.keyName params[i] == Ix.Compile.Canon.keyName name ∧ i < univs.size then
         return univs[i]'hu.2
     return lvl
 
@@ -642,13 +692,13 @@ partial def abstractFVar (expr : Expr) (fvarName : Name) (depth : Nat) : Expr :=
     - `internalDepth`: expression-internal binder depth, starts at 0.
     - FVar at binder position `i`: `BVar((scopeDepth - 1 - i) + internalDepth)`.
     - Free BVar(n) where `n >= internalDepth`: shifted to `BVar(n + scopeDepth)`. -/
-partial def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
+def batchAbstractWith (lookup : Name → Option Nat) (expr : Expr)
     (scopeDepth : Nat) (internalDepth : Nat) : Expr :=
   -- Fast path: no binders to abstract.
   if scopeDepth == 0 then expr
   else match expr with
   | .fvar name _ =>
-    match fvarMap.get? name with
+    match lookup name with
     | some pos =>
       if pos < scopeDepth then
         Expr.mkBVar ((scopeDepth - 1 - pos) + internalDepth)
@@ -667,24 +717,36 @@ partial def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
       -- Bound by an expression-internal binder — unchanged.
       expr
   | .app f a _ =>
-    Expr.mkApp (batchAbstract f fvarMap scopeDepth internalDepth)
-      (batchAbstract a fvarMap scopeDepth internalDepth)
+    Expr.mkApp (batchAbstractWith lookup f scopeDepth internalDepth)
+      (batchAbstractWith lookup a scopeDepth internalDepth)
   | .lam n t b bi _ =>
-    Expr.mkLam n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) bi
+    Expr.mkLam n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) bi
   | .forallE n t b bi _ =>
-    Expr.mkForallE n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) bi
+    Expr.mkForallE n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) bi
   | .letE n t v b nd _ =>
-    Expr.mkLetE n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract v fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) nd
+    Expr.mkLetE n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup v scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) nd
   | .proj n i e _ =>
-    Expr.mkProj n i (batchAbstract e fvarMap scopeDepth internalDepth)
+    Expr.mkProj n i (batchAbstractWith lookup e scopeDepth internalDepth)
   | .mdata kvs e _ =>
-    Expr.mkMData kvs (batchAbstract e fvarMap scopeDepth internalDepth)
+    Expr.mkMData kvs (batchAbstractWith lookup e scopeDepth internalDepth)
   -- Sort, Const, MVar, Lit — no FVars or BVars to process.
   | _ => expr
+
+/-- Compatibility entry point for arbitrary hash-map callers. Its lookup
+semantics remain exactly the supplied map's; no name/hash law is required. -/
+def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
+    (scopeDepth internalDepth : Nat) : Expr :=
+  batchAbstractWith fvarMap.get? expr scopeDepth internalDepth
+
+/-- Structural generated-name entry point, preserving the table's last-write
+lookup semantics independently of cached name fields. -/
+def batchAbstractNames (expr : Expr) (fvarMap : Ix.Compile.Canon.NameTable Nat)
+    (scopeDepth internalDepth : Nat) : Expr :=
+  batchAbstractWith fvarMap.get? expr scopeDepth internalDepth
 
 /-- Mirrors Rust `BinderKind` (aux_gen/expr_utils.rs:453). Constructor
     names deviate (`Forall`/`Lambda` → `forallE`/`lambda`) because
@@ -700,17 +762,17 @@ def mkBinderChain (body : Expr) (binders : Array LocalDecl) (kind : BinderKind) 
   let k := binders.size
   if k == 0 then
     return body
-  -- Build FVar name → binder position map (0 = outermost).
-  let mut fvarMap : Std.HashMap Name Nat := {}
+  -- Structural name → position map (0 = outermost); later writes win.
+  let mut fvarMap : Ix.Compile.Canon.NameTable Nat := {}
   for (b, i) in binders.zipIdx do
     fvarMap := fvarMap.insert b.fvarName i
   -- Abstract body: all k binders in scope.
-  let mut result := batchAbstract body fvarMap k 0
+  let mut result := batchAbstractNames body fvarMap k 0
   -- Build binder chain from innermost to outermost.
   for (decl, j) in binders.zipIdx.reverse do
     -- Domain D_j: only binders 0..j-1 are in scope (scopeDepth = j).
     -- Binder j's domain is NOT under binder j itself — only the body is.
-    let domain := batchAbstract decl.domain fvarMap j 0
+    let domain := batchAbstractNames decl.domain fvarMap j 0
     result := match kind with
       | .forallE => Expr.mkForallE decl.binderName domain result decl.info
       | .lambda => Expr.mkLam decl.binderName domain result decl.info

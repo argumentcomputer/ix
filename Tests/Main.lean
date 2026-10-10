@@ -16,6 +16,7 @@ import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.Image
+import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -52,6 +53,8 @@ import Tests.Ix.Compile.CallerIndependence
 import Tests.Ix.Compile.DevCensus
 import Tests.Ix.Compile.L2aSyn
 import Tests.Ix.CompileCert.BridgeRoundTrip
+import Tests.Ix.Compile.OptCensus
+import Tests.Ix.CompileCert.PjCensus
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -134,6 +137,7 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
+  ("image-alpha-eq", Tests.Ix.Compile.AlphaEq.suite),
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),
@@ -471,6 +475,12 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- export and the certified reader's entries on the fixtures, against the lane's source export
   -- on Init+Std, with a moved name map and shifted levels refused (Tests.Ix.CompileCert.BridgeRoundTrip).
   ("bridge-roundtrip", Tests.Ix.CompileCert.BridgeRoundTrip.run),
+  -- M7 L3-def: the definitional passes' core rewrite against the executable, the shapes'
+  -- bounds, the Def 3.5 bodies and the passes' coverage on the pass3 fixtures
+  -- (Tests.Ix.Compile.OptCensus).
+  ("opt-census", Tests.Ix.Compile.OptCensus.run env),
+  -- Canonical recursors for every O7–O12 firing fixture, through certified admission.
+  ("pj-census", Tests.Ix.CompileCert.PjCensus.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

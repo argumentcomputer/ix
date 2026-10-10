@@ -1,6 +1,7 @@
 import IxC.Kernel.Audit.Axioms
 import IxSharingVerify
 import IxSharingVerify.Builder
+import Ix.Compile.Canon.NameTable
 
 /-!
 # Trust manifest for the sharing proofs

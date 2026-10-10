@@ -1,4 +1,5 @@
 import Ix.CompileCert.Conv.Tm
+import Ix.CompileCert.Conv.AlphaEq
 import Ix.CompileCert.Conv.Rel
 import Ix.CompileCert.Conv.Erase
 import Ix.CompileCert.Conv.Core

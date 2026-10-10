@@ -165,9 +165,10 @@ structure AuxMotiveSig where
     of `recVal`, by walking its type instantiated with the call site's
     levels, params, and motives. Mirrors Rust `aux_motive_sigs`
     (aux_source.rs). -/
-def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
+def auxMotiveSigsWith (recVal : RecursorVal) (recLevels : Array Level)
     (params : Array Expr) (motives : Array Expr) (env : Ix.Environment) :
-    Array AuxMotiveSig := Id.run do
+    StateM FreshFVars (Array AuxMotiveSig) := do
+  modify fun s => (s.protectExpr recVal.cnst.type).protectExprs (params ++ motives)
   let nUser := recVal.all.size
   let nMotives := recVal.numMotives
   let mut out : Array AuxMotiveSig := #[]
@@ -197,7 +198,7 @@ def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
           match d with
           | .forallE _ dd db _ _ =>
             lastDom := some (consumeTypeAnnotations dd)
-            let (_, fv) := freshFVar "aux_sig_idx" (mIdx * 64 + i)
+            let (_, fv) ← freshFVarM "aux_sig_idx" (mIdx * 64 + i)
             d := instantiate1 db fv
             i := i + 1
           | _ => break
@@ -216,6 +217,11 @@ def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
       cur := instantiateRev body #[motive]
     | _ => return out
   return out
+
+/-- Standalone signature reader with protection derived from its inputs. -/
+def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
+    (params motives : Array Expr) (env : Ix.Environment) : Array AuxMotiveSig :=
+  (auxMotiveSigsWith recVal recLevels params motives env).run' {}
 
 /-! ## The source side of a split minor (O2, O11a) -/
 
@@ -277,15 +283,16 @@ def sourceMinorType (recVal : RecursorVal) (recLevels : Array Level)
 /-- Open `n` foralls into fresh-FVar `LocalDecl`s, returning
     `(decls, fvars, remainder)`. Mirrors Rust `peel_binders`
     (aux_source.rs). -/
-def peelBinders (cur₀ : Expr) (n : Nat) (pfx : String) (offset : Nat) :
-    Option (Array LocalDecl × Array Expr × Expr) := Id.run do
+def peelBindersWith (cur₀ : Expr) (n : Nat) (pfx : String) (offset : Nat) :
+    StateM FreshFVars (Option (Array LocalDecl × Array Expr × Expr)) := do
+  modify (·.protectExpr cur₀)
   let mut cur := cur₀
   let mut decls : Array LocalDecl := #[]
   let mut fvars : Array Expr := #[]
   for i in [0:n] do
     match cur with
     | .forallE name dom body bi _ =>
-      let (fvName, fv) := freshFVar pfx (offset + i)
+      let (fvName, fv) ← freshFVarM pfx (offset + i)
       let decl : LocalDecl := {
         fvarName := fvName
         binderName := name
@@ -296,6 +303,11 @@ def peelBinders (cur₀ : Expr) (n : Nat) (pfx : String) (offset : Nat) :
       decls := decls.push decl
     | _ => return none
   return some (decls, fvars, cur)
+
+/-- Standalone peeler; shared callers use `peelBindersWith`. -/
+def peelBinders (cur0 : Expr) (n : Nat) (pfx : String) (offset : Nat) :
+    Option (Array LocalDecl × Array Expr × Expr) :=
+  (peelBindersWith cur0 n pfx offset).run' {}
 
 /-- A minor field whose (peeled) type targets a source or aux inductive:
     the target's source position, the index args of the occurrence, and
@@ -313,20 +325,22 @@ structure SourceRecTarget where
     occurrence matching one of the recursor's aux motive signatures.
     Mirrors Rust `find_source_rec_target` (aux_source.rs).
 
-    (Rust indexes fresh FVars with `field_idx.saturating_mul(1024)`;
-    `Nat` multiplication cannot overflow, and the saturation point is
-    unreachable for real field counts, so a plain `*` is exact.) -/
-def findSourceRecTarget (dom : Expr) (originalAll : Array Name)
+    The historical stride chooses a preferred name only. The shared supply
+    resolves both caller-name collisions and overlapping stride bands. -/
+def findSourceRecTargetWith (dom : Expr) (originalAll : Array Name)
     (params : Array Expr) (env : Ix.Environment) (pfx : String)
     (fieldIdx : Nat) (auxSigs : Array AuxMotiveSig) :
-    Option SourceRecTarget := Id.run do
+    StateM FreshFVars (Option SourceRecTarget) := do
+  modify fun s => (s.protectExpr dom).protectExprs params
+  for sig in auxSigs do
+    modify (·.protectExprs sig.specs)
   let mut cur := consumeTypeAnnotations dom
   let mut xsDecls : Array LocalDecl := #[]
   let mut xsFvars : Array Expr := #[]
   repeat
     match cur with
     | .forallE name d body bi _ =>
-      let (fvName, fv) := freshFVar pfx (fieldIdx * 1024 + xsFvars.size)
+      let (fvName, fv) ← freshFVarM pfx (fieldIdx * 1024 + xsFvars.size)
       let decl : LocalDecl := {
         fvarName := fvName
         binderName := name
@@ -367,6 +381,12 @@ def findSourceRecTarget (dom : Expr) (originalAll : Array Name)
       sourcePos := matched.sourcePos
       idxArgs := args.extract matched.extNParams args.size
       xsDecls, xsFvars }
+
+/-- Standalone recursive-field reader with operand-derived protection. -/
+def findSourceRecTarget (dom : Expr) (originalAll : Array Name)
+    (params : Array Expr) (env : Ix.Environment) (pfx : String)
+    (fieldIdx : Nat) (auxSigs : Array AuxMotiveSig) : Option SourceRecTarget :=
+  (findSourceRecTargetWith dom originalAll params env pfx fieldIdx auxSigs).run' {}
 
 /-! ## Existence of the `.below`/`.brecOn` families (A0, WB-B1) -/
 

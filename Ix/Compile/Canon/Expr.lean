@@ -30,6 +30,7 @@
 -/
 module
 public import Ix.Environment
+public import Ix.Compile.Canon.OccurrenceKey
 public import Ix.Common
 public import Ix.Compile.Canon.NameTable
 public section
@@ -185,6 +186,10 @@ def mkForalls (binders : Array Binder) (body : Expr) : Expr :=
 
 /-! ## Universes -/
 
+/-- Scalar universe equality ignores every cached name and level field. -/
+def levelSameStructure (a b : Level) : Bool :=
+  decide (keyLevelShape a = keyLevelShape b)
+
 /-- `succⁿ base ↦ (base, n)`. -/
 def levelPeelSucc : Level → Level × Nat
   | .succ l _ => let (b, n) := levelPeelSucc l; (b, n + 1)
@@ -200,24 +205,24 @@ def levelMaxSmart (x y : Level) : Level :=
   match levelExplicitOffset x, levelExplicitOffset y with
   | some ox, some oy => if ox ≥ oy then x else y
   | _, _ =>
-    if x == y then x
+    if levelSameStructure x y then x
     else match x, y with
       | .zero _, _ => y
       | _, .zero _ => x
       | _, _ =>
         let yAbsorbs := match y with
-          | .max bl br _ => bl == x || br == x
+          | .max bl br _ => levelSameStructure bl x || levelSameStructure br x
           | _ => false
         if yAbsorbs then y
         else
           let xAbsorbs := match x with
-            | .max al ar _ => al == y || ar == y
+            | .max al ar _ => levelSameStructure al y || levelSameStructure ar y
             | _ => false
           if xAbsorbs then x
           else
             let (bx, ox) := levelPeelSucc x
             let (by_, oy) := levelPeelSucc y
-            if bx == by_ then (if ox ≥ oy then x else y)
+            if levelSameStructure bx by_ then (if ox ≥ oy then x else y)
             else Level.mkMax x y
 
 /-- `Ix.AuxGen.levelImaxSmart` (Rust `Level::imax_smart`). -/
@@ -229,7 +234,7 @@ def levelImaxSmart (x y : Level) : Level :=
     match x with
     | .zero _ => y
     | .succ (.zero _) _ => y
-    | _ => if x == y then x else Level.mkIMax x y
+    | _ => if levelSameStructure x y then x else Level.mkIMax x y
 
 /-- `Ix.AuxGen.substLevel`: parameters by name, through the smart
 constructors. -/
@@ -238,7 +243,7 @@ def substLevel (params : Array Name) (univs : Array Level) : Level → Level
   | .max a b _ => levelMaxSmart (substLevel params univs a) (substLevel params univs b)
   | .imax a b _ => levelImaxSmart (substLevel params univs a) (substLevel params univs b)
   | l@(.param nm _) =>
-    match params.idxOf? nm with
+    match (params.map keyName).idxOf? (keyName nm) with
     | some i => univs[i]?.getD l
     | none => l
   | l => l
