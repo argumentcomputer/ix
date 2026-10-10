@@ -23,7 +23,7 @@ namespace Tests.Ix.Kernel.RoundtripNoCompile
 /-- FFI: run the no-compile kernel roundtrip and collect per-constant diff
     messages. Empty array = roundtrip agrees with the original Lean env.
 
-    Implemented in `src/ffi/kernel.rs::rs_kernel_roundtrip_no_compile`. -/
+    Implemented in `crates/ffi/src/kernel.rs::rs_kernel_roundtrip_no_compile`. -/
 @[extern "rs_kernel_roundtrip_no_compile"]
 opaque rsKernelRoundtripNoCompileFFI :
     @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)

@@ -725,7 +725,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
 /// FFI function to compute the LEON content hash of every constant in a
 /// Lean environment. Returns an `Array (Ix.Name × Ix.Address)` where each
 /// `Address` is the 32-byte Blake3 digest produced by
-/// `ConstantInfo::get_hash()` in `src/ix/env.rs`.
+/// `ConstantInfo::get_hash()` in `crates/common/src/env.rs`.
 ///
 /// The LEON hash is the Rust kernel's "original" addressing scheme: it's
 /// derived from the serialized `ConstantInfo` (name + level params + type

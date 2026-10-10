@@ -2690,7 +2690,7 @@ impl<'a> TcScope<'a> {
 /// Convert a `KExpr<Meta>` back to `LeanExpr`, reconstructing FVar
 /// references from de-Bruijn `Var` indices.
 ///
-/// Parallels `egress_expr` in `src/ix/kernel/egress.rs`, which handles
+/// Parallels `egress_expr` in `crates/compile/src/kernel_egress.rs`, which handles
 /// the closed-expression case (Var → Bvar unconditionally). This version
 /// is for expressions that live inside an ambient FVar context — the
 /// shape we produce mid-pipeline when working in LeanExpr+FVar with a

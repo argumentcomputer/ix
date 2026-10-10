@@ -2,7 +2,7 @@
 //!
 //! Detects nested occurrences in constructor field types (e.g., `List Tree`)
 //! and builds auxiliary entries for the flat block. Ported from the kernel's
-//! `build_flat_block` + `try_detect_nested` (`src/ix/kernel/inductive.rs:364-612`),
+//! `build_flat_block` + `try_detect_nested` (`crates/kernel/src/inductive.rs`),
 //! adapted to use `Name`/`LeanExpr`/`Level` types from the compile-side environment.
 //!
 //! Key differences from the kernel implementation:
@@ -1898,7 +1898,7 @@ fn replace_ctor_result_head_with_aux(
 /// Check if any `Const` or `Proj` name in `expr` is in `names`.
 ///
 /// Uses an explicit stack to avoid recursion. Analogous to the kernel's
-/// `expr_mentions_any_addr` (`src/ix/kernel/tc.rs:459-501`).
+/// `expr_mentions_any_addr` (`crates/kernel/src/tc.rs`).
 ///
 /// `names` is a hash set so each check is O(1). The hot caller
 /// (`ExpandCtx::replace_if_nested`) tests this for every parameter arg of
@@ -2017,7 +2017,7 @@ struct FvarFlatMember {
 /// This avoids manual BVar depth tracking — field-local dependencies are
 /// caught by checking for non-param FVars in the detected spec_params.
 ///
-/// Ported from the kernel's `build_flat_block` (`src/ix/kernel/inductive.rs:364-475`).
+/// Ported from the kernel's `build_flat_block` (`crates/kernel/src/inductive.rs`).
 pub fn build_compile_flat_block(
   ordered_originals: &[Name],
   lean_env: &LeanEnv,
@@ -2234,7 +2234,7 @@ fn abstract_spec_params_to_bvars(
 /// field-local dependencies are detected by checking for non-param FVars
 /// rather than BVar range arithmetic.
 ///
-/// Ported from the kernel's `try_detect_nested` (`src/ix/kernel/inductive.rs:483-612`).
+/// Ported from the kernel's `try_detect_nested` (`crates/kernel/src/inductive.rs`).
 fn try_detect_nested_fvar(
   dom: &LeanExpr,
   block_names: &FxHashSet<Name>,

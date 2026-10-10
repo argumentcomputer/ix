@@ -52,7 +52,10 @@ def focusConsts : Array Lean.Name := #[
   -- (`chebyshevMeasureT_eq_withDensity`, proved by measure ext), so
   -- every whnf of the stuck cast retries K-like reduction, whose
   -- `measureT ≟ withDensity …` def-eq must exhaust unfoldings and fail.
-  -- Optimization work items: plans/kernel-rec-fuel.md.
+  -- These are dated cost observations, not evidence of a current failure
+  -- or a completed optimization. Current fuel/guard definitions are in
+  -- `crates/kernel/src/tc.rs` (`MAX_REC_FUEL`, `max_rec_fuel`); the focused
+  -- acceptance expectation below does not certify a performance bound.
   `TauCeti.chebyshevWeightL2Isometry_apply,
   `TauCeti.chebyshevWeightL2Isometry_symm_apply,
 
@@ -70,9 +73,9 @@ def focusConsts : Array Lean.Name := #[
 ]
 
 /-- Every focus constant is a legitimate TauCeti theorem, so the kernel
-    is expected to accept all of them; the suite stays red until the
-    fuel-exhaustion family above is fixed (same convention as
-    `CheckEnv.expectedPass`). -/
+    is expected to accept all of them (same convention as
+    `CheckEnv.expectedPass`). The suite fails if any retained seed is refused;
+    the dated observations above are not a new run at the current source. -/
 def expectedPass (_name : Lean.Name) : Bool := true
 
 /-- Same narrowing hook as `CheckEnv.filterFocusConsts`: restrict the

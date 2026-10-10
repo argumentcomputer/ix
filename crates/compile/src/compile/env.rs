@@ -391,7 +391,7 @@ pub fn compile_env_with_profile(
   // error (race depends on work-stealing order).
   //
   // Seed names (exact Const refs aux_gen emits — grep `mk_const` in
-  // `src/ix/compile/aux_gen/**`):
+  // `crates/compile/src/compile/aux_gen/**`):
   //   - `.below` (Type-level): PUnit, PProd (+ ctors via SCC)
   //   - `.brecOn.eq`: Eq, Eq.refl, Eq.symm, Eq.ndrec, HEq, HEq.refl, True
   //
@@ -1225,7 +1225,7 @@ pub fn compile_env_with_profile(
 ///
 /// These are the exact `Const` refs that `aux_gen` emits in generated
 /// `.below` / `.brecOn` / `.brecOn.eq` bodies — grep for `mk_const` in
-/// `src/ix/compile/aux_gen/**` to verify. They must all be compiled and
+/// `crates/compile/src/compile/aux_gen/**` to verify. They must all be compiled and
 /// registered in `aux_name_to_addr` before any block's aux_gen runs, or
 /// else `compile_expr` raises `MissingConstant`.
 fn aux_gen_seed_names() -> Vec<Name> {

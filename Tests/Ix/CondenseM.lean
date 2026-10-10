@@ -45,7 +45,7 @@ def sccsEq (actual expected : List (List String)) : Bool :=
   actual.length == expected.length &&
   actual.all (expected.contains ·)
 
-/-! ## Test cases (mirroring Rust's src/ix/condense.rs tests) -/
+/-! ## Test cases (mirroring Rust's crates/compile/src/condense.rs tests) -/
 
 /-- Test 1: Single node with no edges → one SCC containing just that node -/
 def testSingleNode : TestSeq :=

@@ -2,7 +2,8 @@
   `ix profile <path.ixe>`: run the Ix kernel out of circuit over a serialized
   `.ixe` environment, recording per-block heartbeats and the delta-unfold graph
   into a `.ixprof` sidecar. This is the cost model consumed by `ix shard`
-  (see `plans/sharding.md`).
+  (the profiled strategy in `Ix/Cli/ShardCmd.lean`; recording is implemented
+  by `profile_anon_ixe` in `crates/ffi/src/kernel.rs`).
 
   Recording defaults to *cache-isolated* mode: the kernel clears its
   cross-constant reduction-memo caches between constants so every delta-unfold

@@ -1,4 +1,4 @@
-//! Egress: convert kernel types (`Meta` mode) to `src/ix/env.rs` Lean types.
+//! Egress: convert kernel types (`Meta` mode) to `crates/common/src/env.rs` Lean types.
 //!
 //! Only works for `Meta` mode since it needs actual names and binder info.
 

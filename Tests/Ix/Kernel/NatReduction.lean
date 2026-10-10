@@ -217,7 +217,7 @@ good_decl (.thmDecl {
 })
 
 /-! ## D. Def-eq across literal / constructor forms
-    Exercises `is_def_eq_nat` (`src/ix/kernel/def_eq.rs:920-983`).
+    Exercises `is_def_eq_nat` (`crates/kernel/src/def_eq.rs`).
     These keep the surface syntax with `OfNat`-wrapped literals on
     purpose, complementing the raw-literal tests in C. -/
 

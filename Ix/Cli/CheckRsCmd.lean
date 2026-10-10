@@ -374,7 +374,7 @@ def runCheckRsCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- `--workers N` is plumbed through the existing
   -- `IX_KERNEL_CHECK_WORKERS` env var that `resolve_kernel_check_workers`
-  -- (`src/ffi/kernel.rs`) reads. Setting `1` forces a single-threaded
+  -- (`crates/ffi/src/kernel.rs`) reads. Setting `1` forces a single-threaded
   -- runner, useful for isolating per-worker memory usage and timing.
   if let some flag := p.flag? "workers" then
     let n := flag.as! Nat

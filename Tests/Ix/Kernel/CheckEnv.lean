@@ -79,7 +79,7 @@ def testRustCheckEnv : TestSeq :=
     let allNames : Array Lean.Name :=
       allConsts.toArray.map fun (name, _) => name
     -- Every env constant is expected to typecheck; `expect_pass` is an
-    -- FFI-side progress-log hint (see `src/ffi/kernel.rs`'s `ErrKind`
+    -- FFI-side progress-log hint (see `crates/ffi/src/kernel.rs`'s `ErrKind`
     -- and `check_consts_loop`), but all-true keeps the `[ok]` / `[FAIL]`
     -- log lines consistent.
     let expectPass : Array Bool := Array.replicate allNames.size true
@@ -174,7 +174,7 @@ def focusConsts : Array Lean.Name := #[
   `Tests.Ix.Compile.Mutual.PropRecMotives.pa_eq,
   `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_length,
   `Tests.Ix.Compile.Mutual.PropRecMotives.pa2_eq,
-  -- Call-site shape coverage (plans/callsite-adapter-generalization.md):
+  -- Call-site shape coverage (`Tests/Ix/Compile/Mutual.lean`, PropRecMotives):
   -- direct full application at the Const head, inner-full redex, and
   -- dead-binder split redex (Collapsed-entry fallback), each in both
   -- source orders.

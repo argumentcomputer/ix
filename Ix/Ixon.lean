@@ -388,7 +388,7 @@ def deConstantAt (buf : ByteArray) (off : Nat) : Except String Constant :=
 
 /-- Lazily-materialized constant: an offset window `(buf, off, len)` into a
     shared backing `ByteArray` plus an optional pre-materialized `Constant`.
-    Mirrors the Rust kernel's `LazyConstant` (`src/ix/ixon/lazy.rs`) — the
+    Mirrors the Rust kernel's `LazyConstant` (`crates/ixon/src/lazy.rs`) — the
     `ofSlice` form is the analog of its window-into-a-shared-buffer
     (`from_mmap_slice`) variant, except here the shared buffer is the resident
     `.ixe` bytes rather than an mmap.
@@ -2736,7 +2736,7 @@ the Rust implementation. Returns `none` for an empty const set, otherwise
 the 32-byte root wrapped in `some`.
 
 The same value is stored in the env's on-disk TagN header (see
-`Env::put`/`Env::get` in `src/ix/ixon/serialize.rs`).
+`Env::put`/`Env::get` in `crates/ixon/src/serialize.rs`).
 -/
 def rsEnvMerkleRoot (env : Env) : Option Address :=
   let bytes := rsEnvMerkleRootFFI env.toRawEnv

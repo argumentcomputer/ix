@@ -126,7 +126,7 @@ private def validateAggregationTree (tree : AggregationTree)
 
 /-- Parse every shard's owned block addresses and aggregation tree from a
 serialized `.ixes`
-    manifest (`ShardManifest::to_bytes`, `src/ix/shard.rs`):
+    manifest (`ShardManifest::to_bytes`, `crates/kernel/src/shard.rs`):
     magic(8) ‖ total_cross_ingress(u128) ‖ num_shards(u32) ‖ per shard
     { id(u32) ‖ heartbeats(u64) ‖ own_size(u64) ‖ cross_ingress(u64) ‖
       assumption_root(u8 tag + 32?) ‖ blocks(u32 len + 32·len) ‖

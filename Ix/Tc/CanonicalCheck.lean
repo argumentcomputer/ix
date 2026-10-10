@@ -24,7 +24,7 @@ order is the discovery order, which `buildFlatBlock` produces directly.)
 Both share the comparators (`compareKConst`/`compareKExpr`/`compareKUniv`)
 keyed on a `KMutCtx` mapping block-local addresses to class indices:
 ctx hits compare positionally (weak), misses fall back to address order
-(strong). Field orders match `src/ix/compile.rs` comparators exactly.
+(strong). Field orders match `crates/compile/src/compile.rs` comparators exactly.
 -/
 
 public section

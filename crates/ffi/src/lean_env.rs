@@ -4291,7 +4291,7 @@ extern "C" fn rs_compile_validate_aux(
   );
 
   // Skip destructors on the CLI path. Mirrors the `rs_compile_env`
-  // treatment (`src/ffi/compile.rs`). On Mathlib the remaining live state
+  // treatment (`crates/ffi/src/compile.rs`). On Mathlib the remaining live state
   // — `env` (~1–2 GB), `dstt2` (~30 GB) — would otherwise take 60+ seconds
   // to drop serially across DashMap shards and `Arc<NameData>` chains, and
   // the process exits moments after this function returns anyway.
@@ -4518,7 +4518,7 @@ fn serialized_meta_size(
 /// handle Lean's `«…»` escape syntax, so it's unsuitable for names
 /// containing special characters; callers that receive Lean-originated
 /// names should instead pass the structured `Lean.Name` across FFI and
-/// use `decode_name`, as done by `src/ffi/kernel.rs`.
+/// use `decode_name`, as done by `crates/ffi/src/kernel.rs`.
 #[cfg(feature = "test-ffi")]
 pub fn parse_name(s: &str) -> Name {
   let parts: Vec<&str> = s.split('.').collect();

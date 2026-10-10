@@ -3404,7 +3404,7 @@ opaque rsCompileEnvBytesAnonFFI
     Shared between the `ix validate` CLI subcommand (`Ix.Cli.ValidateCmd`)
     and the `validate-aux` test runner (`Tests.Ix.Compile.ValidateAux`).
     The underlying Rust function is `rs_compile_validate_aux` in
-    `src/ffi/lean_env.rs`. -/
+    `crates/ffi/src/lean_env.rs`. -/
 @[extern "rs_compile_validate_aux"]
 opaque rsCompileValidateAuxFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → USize
@@ -3436,7 +3436,7 @@ opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.Ra
 /-- FFI: Compute the LEON content hash of every constant in a Lean
     environment. Returns `(Ix.Name, Ix.Address)` pairs where the address
     is the 32-byte Blake3 digest produced by `ConstantInfo::get_hash()`
-    in `src/ix/env.rs`. This is the addressing scheme under which
+    in `crates/common/src/env.rs`. This is the addressing scheme under which
     `orig_kenv` stores KIds in the kernel — two constants with the same
     Lean name but different content get distinct addresses. Used by
     `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimAddrs::new_orig`

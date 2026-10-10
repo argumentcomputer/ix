@@ -4,9 +4,10 @@
   The textual syntax denotes the *named Ix level* — a Lean-resembling
   closed grammar over `Ix.Expr`-shaped trees — never the pack-level
   tables (sharing/refs/univs are derived by the one canonical compile
-  pipeline). See `plans/ixon-syntax.md` for the design and
-  requirements (R1–R8), and `crates/ixon/src/syntax/` for the Rust
-  twin this module mirrors behaviorally.
+  pipeline). The surface types, limits and positioned errors are in
+  `Ix/IxonSyntax/AST.lean` and `Ix/IxonSyntax/Error.lean`; the parser and
+  printer are in `Ix/IxonSyntax/Parser.lean` and `Ix/IxonSyntax/Print.lean`.
+  `crates/ixon/src/syntax/` is the Rust twin this module mirrors behaviorally.
 
   This is the AST-level layer: text ↔ AST both ways, with structured
   errors and metered parsing. The `Constant` ↔ AST stages
