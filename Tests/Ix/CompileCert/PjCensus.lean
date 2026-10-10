@@ -131,7 +131,7 @@ def readFailure (env : _root_.Ix.Kernel.Env) (name : _root_.Ix.Kernel.Name)
 
 def runUnit (path : String) : IO (Nat × Nat × Nat) := do
   let unit ← Tests.Ix.Compile.Pass3.unitOfFile path
-  let compiled ← Tests.Ix.Compile.Pass3.compileUnit unit true
+    let compiled ← Tests.Ix.Compile.Pass3.compileUnit unit
   let targets ← targetsOf compiled
   require (!targets.isEmpty) s!"{unit.name}: zero canonical recursors"
   let ⟨_, artifact, names⟩ ← artifactOf compiled.bytes targets
