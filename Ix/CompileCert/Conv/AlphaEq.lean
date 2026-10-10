@@ -37,27 +37,27 @@ theorem alphaEq_er (a b : Expr) (h : alphaEq a b = true) : er a = er b := by
   case sort.sort u _ v _ =>
     exact congrArg Tm.sort ((levelEq_eq_true u v).mp h)
   case const.const a us _ b vs _ =>
-    obtain ⟨hn, hu⟩ := Bool.and_eq_true.mp h
+    obtain ⟨hn, hu⟩ := Bool.and_eq_true_iff.mp h
     have sameName := (nameEq_eq_true a b).mp hn
     have sameLevels := (levelsEq_eq_true us vs).mp hu
     cases sameName
     cases sameLevels
     rfl
   case app.app f x _ ihf ihx g y _ =>
-    obtain ⟨hf, hx⟩ := Bool.and_eq_true.mp h
+    obtain ⟨hf, hx⟩ := Bool.and_eq_true_iff.mp h
     change Tm.app (er f) (er x) = Tm.app (er g) (er y)
     rw [ihf g hf, ihx y hx]
   case lam.lam _ t x _ _ iht ihx _ u y _ _ =>
-    obtain ⟨ht, hx⟩ := Bool.and_eq_true.mp h
+    obtain ⟨ht, hx⟩ := Bool.and_eq_true_iff.mp h
     change Tm.lam (er t) (er x) = Tm.lam (er u) (er y)
     rw [iht u ht, ihx y hx]
   case forallE.forallE _ t x _ _ iht ihx _ u y _ _ =>
-    obtain ⟨ht, hx⟩ := Bool.and_eq_true.mp h
+    obtain ⟨ht, hx⟩ := Bool.and_eq_true_iff.mp h
     change Tm.pi (er t) (er x) = Tm.pi (er u) (er y)
     rw [iht u ht, ihx y hx]
   case letE.letE _ t v x _ _ iht ihv ihx _ u w y _ _ =>
-    obtain ⟨htv, hx⟩ := Bool.and_eq_true.mp h
-    obtain ⟨ht, hv⟩ := Bool.and_eq_true.mp htv
+    obtain ⟨htv, hx⟩ := Bool.and_eq_true_iff.mp h
+    obtain ⟨ht, hv⟩ := Bool.and_eq_true_iff.mp htv
     change Tm.letE (er t) (er v) (er x) = Tm.letE (er u) (er w) (er y)
     rw [iht u ht, ihv w hv, ihx y hx]
   case lit.lit a _ b _ =>
@@ -65,8 +65,8 @@ theorem alphaEq_er (a b : Expr) (h : alphaEq a b = true) : er a = er b := by
   case mdata.mdata _ a _ ih _ b _ =>
     exact ih b h
   case proj.proj s i a _ ih t j b _ =>
-    obtain ⟨hsi, hab⟩ := Bool.and_eq_true.mp h
-    obtain ⟨hs, hi⟩ := Bool.and_eq_true.mp hsi
+    obtain ⟨hsi, hab⟩ := Bool.and_eq_true_iff.mp h
+    obtain ⟨hs, hi⟩ := Bool.and_eq_true_iff.mp hsi
     have sameName := (nameEq_eq_true s t).mp hs
     have sameIndex : i = j := beq_iff_eq.mp hi
     cases sameName

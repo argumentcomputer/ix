@@ -618,13 +618,13 @@ theorem ARE.ofCtx {xs : Array Local} (h : ∀ l ∈ xs, FreshBelow s0 l.fvar ∧
   (RLs.refl (d := d) h hB).exprs
 
 /-- The motive-type comparison of the eliminator choice, from related motive types. -/
-theorem findIdx_alphaEq_eq (hok : InjOn (shift s0 d) (FreshBelow B)) {mts mts' : Array Expr} (h : ARE s0 d B mts mts')
+theorem findIdx_alphaEq_eq (_hok : InjOn (shift s0 d) (FreshBelow B)) {mts mts' : Array Expr} (h : ARE s0 d B mts mts')
     {target : Expr} (htr : RE s0 d B target target) :
     mts'.findIdx? (fun x => Ix.Compile.Image.alphaEq x target) =
       mts.findIdx? (fun x => Ix.Compile.Image.alphaEq x target) := by
   apply array_findIdx?_congr _ _ h.size.symm
   intro i h1 h2
-  exact alphaEq_ren hok (h.1.get i h2 h1) htr.1 (h.2 _ (by simp)) htr.2
+  exact alphaEq_ren exactInjOn_shift (h.1.get i h2 h1) htr.1 (h.2 _ (by simp)) htr.2
 
 /-- The occurrence finder of `findElim`, through any head-respecting predicate: related answers. -/
 theorem occ_match {P : Expr → Bool} (hP : ∀ a b, Ren (shift s0 d) a b → P b = P a)

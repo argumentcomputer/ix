@@ -66,6 +66,26 @@ theorem shiftIdx_inj {s0 d i j : Nat} : (shiftIdx s0 d i = shiftIdx s0 d j) ↔ 
   · intro h; split at h <;> split at h <;> omega
   · intro h; subst h; rfl
 
+/-- The index is retained structurally in a generated name, independently of
+its cached address. -/
+theorem fresh_injective : Function.Injective fresh := by
+  intro i j same
+  have indices := congrArg (fun n : Name => match n with
+    | .num _ k _ => k
+    | _ => 0) same
+  exact indices
+
+theorem fresh_eq_iff (i j : Nat) : fresh i = fresh j ↔ i = j :=
+  fresh_injective.eq_iff
+
+/-- Exact comparison is preserved by the actual counter shift. The existing
+fresh-name support is enough; no hash-distinctness premise is needed here. -/
+theorem exactInjOn_shift {s0 d B : Nat} :
+    ExactInjOn (shift s0 d) (FreshBelow B) := by
+  rintro a b ⟨i, -, rfl⟩ ⟨j, -, rfl⟩
+  rw [shift_fresh', shift_fresh', Bool.eq_iff_iff]
+  simp only [Ix.Compile.Image.RawExact.nameEq_eq_true, fresh_eq_iff, shiftIdx_inj]
+
 /-- **The shift keeps `==` on the fresh names below `B`**, given that the fresh names below
 `B + d` are distinct. -/
 theorem injOn_shift {s0 d B : Nat} (hok : NamesOK (B + d)) : InjOn (shift s0 d) (FreshBelow B) := by

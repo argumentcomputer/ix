@@ -477,6 +477,13 @@ theorem array_idxOf?_eq {α : Type} [BEq α] (xs : Array α) (a : α) :
 /-- `ρ` keeps `==` on the names satisfying `P`. -/
 def InjOn (ρ : Name → Name) (P : Name → Prop) : Prop := ∀ a b, P a → P b → (ρ a == ρ b) = (a == b)
 
+/-- The exact alpha comparator observes complete raw names. Hash-based lookup
+preservation remains the separate `InjOn` property above. -/
+def ExactInjOn (ρ : Name → Name) (P : Name → Prop) : Prop :=
+  ∀ a b, P a → P b →
+    Ix.Compile.Image.RawExact.nameEq (ρ a) (ρ b) =
+      Ix.Compile.Image.RawExact.nameEq a b
+
 theorem array_idxOf?_ren {ρ : Name → Name} {P : Name → Prop} (hi : InjOn ρ P) (xs : Array Name)
     (n : Name) (hx : ∀ x ∈ xs, P x) (hn : P n) : (xs.map ρ).idxOf? (ρ n) = xs.idxOf? n := by
   rw [array_idxOf?_eq, array_idxOf?_eq]
@@ -492,7 +499,7 @@ theorem array_idxOf?_ren {ρ : Name → Name} {P : Name → Prop} (hi : InjOn ρ
 section
 variable {ρ : Name → Name}
 
-theorem alphaEq_ren {P : Name → Prop} (hi : InjOn ρ P) : ∀ {a a' b b' : Expr}, Ren ρ a a' →
+theorem alphaEq_ren {P : Name → Prop} (hi : ExactInjOn ρ P) : ∀ {a a' b b' : Expr}, Ren ρ a a' →
     Ren ρ b b' → FvAll P a → FvAll P b →
     Ix.Compile.Image.alphaEq a' b' = Ix.Compile.Image.alphaEq a b
   | _, _, _, _, .bvar .., hb, _, _ => by cases hb <;> rfl

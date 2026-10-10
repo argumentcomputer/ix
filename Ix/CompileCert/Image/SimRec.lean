@@ -195,7 +195,7 @@ theorem sim_buildRecAppW {D1 D2 : DevOps} (hD : DevRel s0 d B D1 D2)
       refine congrArg _ (filter_congr_mem fun x hx => ?_)
       obtain ⟨ty, n⟩ := x
       have htr := hc.2 ty (Array.fst_mem_of_mem_zipIdx hx)
-      exact alphaEq_ren hok htr.1 (hm.1.get i h1 h2) htr.2 (hm.2 _ (by simp))
+      exact alphaEq_ren exactInjOn_shift htr.1 (hm.1.get i h1 h2) htr.2 (hm.2 _ (by simp))
     refine Sim.bind (R := fun _ _ => True) (Sim.forIn_array (Ra := Eq) (fun a a' u u' ha hu => ?_)
       (fun _ _ => by mono_auto) (LRel.refl_eq _) trivial) (fun _ _ _ => ?_) (fun _ => by mono_auto)
     · subst ha
