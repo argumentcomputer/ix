@@ -127,7 +127,7 @@ theorem checkInstalledTypesRows_sound {V : Type u} [Kernel.SetTheory V]
       (Kernel.Semantics.Env.find?_mem targetLookup)
       ((PullbackMap.fromEnvs sourceEnv targetEnv names).levels entry.name levels) valuation
     refine ⟨type, image.symm.denotes typeRead, ?_⟩
-    simpa only [PullbackMap.values, targetName] using member
+    simpa only [PullbackMap.values, PullbackMap.fromEnvs, targetName] using member
   · obtain ⟨targetEntry, row, proof, level, sortLevel, right, targetLookup, rowLookup, rowType, comparison⟩ :=
       installedTypeRowF_spec viaRow
     rw [checkInstalledMemberExprF_env] at comparison
@@ -152,7 +152,7 @@ theorem checkInstalledTypesRows_sound {V : Type u} [Kernel.SetTheory V]
         have read := image.symm.denotes rightRead
         rw [← equal, leftValue] at read
         refine ⟨type, read, ?_⟩
-        simpa only [PullbackMap.values, targetName] using member
+        simpa only [PullbackMap.values, PullbackMap.fromEnvs, targetName] using member
 
 /-- Public membership, False and Eq for the actual pulled-back interpretation.
 This extends type checking without replacing structural type-image evidence. -/
