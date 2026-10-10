@@ -149,8 +149,7 @@ theorem aliasesOf_related {σ : Name → Name} {S : Name → Prop}
     (classes : Array (Array Name)) (supported : ∀ cls ∈ classes, ∀ n ∈ cls, S n) :
     MapsRelated σ S (aliasesOf classes)
       (aliasesOf (classes.map (fun cls => cls.map σ))) := by
-  simpa only [classStep, Bool.false_eq_true, ↓reduceIte, aliasesOf] using
-    classFold_related hinj false classes supported
+  exact classFold_related hinj false classes supported
 
 /-- The same argument covers the actual map consumed by source-to-canonical
 restoration, including its representative self-entries. -/
@@ -159,8 +158,7 @@ theorem origToCanonOf_related {σ : Name → Name} {S : Name → Prop}
     (classes : Array (Array Name)) (supported : ∀ cls ∈ classes, ∀ n ∈ cls, S n) :
     MapsRelated σ S (origToCanonOf classes)
       (origToCanonOf (classes.map (fun cls => cls.map σ))) := by
-  simpa only [classStep, ↓reduceIte, origToCanonOf] using
-    classFold_related hinj true classes supported
+  exact classFold_related hinj true classes supported
 
 /-- A separate actual-producer specialization: every alias value is in the
 precise protected list computed for this expansion. `S` above is not being
@@ -206,7 +204,8 @@ private theorem const_related {σ : Name → Name} {S : Name → Prop}
     have found' : right.get? (σ n) = none := by simpa only [found, Option.map_none] using transported
     unfold canonicalizeConstNames
     cases leftEmpty : left.isEmpty <;> cases rightEmpty : right.isEmpty <;>
-      simp only [Bool.false_eq_true, ↓reduceIte, canonicalizeConstNames.go, found, found']
+      simp only [Bool.false_eq_true, ↓reduceIte,
+        Ix.Compile.Canon.canonicalizeConstNames.go, found, found']
     all_goals exact .const _ _ _ _ member
   | some value =>
     have found' : right.get? (σ n) = some (σ value) := by
@@ -228,7 +227,8 @@ private theorem const_related {σ : Name → Name} {S : Name → Prop}
         rw [found'] at absent
         cases absent
     simp only [canonicalizeConstNames, leftNotEmpty, rightNotEmpty,
-      Bool.false_eq_true, ↓reduceIte, canonicalizeConstNames.go, found, found']
+      Bool.false_eq_true, ↓reduceIte,
+      Ix.Compile.Canon.canonicalizeConstNames.go, found, found']
     exact .const _ _ _ _ (maps.range n value member found)
 
 /-- Transport the actual constant-only walker. Empty/nonempty map branches
@@ -245,7 +245,8 @@ theorem canonicalize_related {σ : Name → Name} {S : Name → Prop}
       exact const_related maps n levels h h' member
     | _ =>
       simp only [canonicalizeConstNames, leftEmpty, rightEmpty,
-        Bool.false_eq_true, ↓reduceIte, canonicalizeConstNames.go] at *
+        Bool.false_eq_true, ↓reduceIte,
+        Ix.Compile.Canon.canonicalizeConstNames.go] at *
       constructor <;> assumption
 
 /-- Raw related source bodies are still related after the initializer's

@@ -111,7 +111,7 @@ theorem memberOf_related {σ : Name → Name} {S : Name → Prop}
   simp only [memberOf, Array.toList_map]
   apply map_related views.ctors
   intro a b related
-  obtain ⟨an,at,af⟩ := a
+  obtain ⟨an,aty,af⟩ := a
   obtain ⟨bn,bt,bf⟩ := b
   exact ⟨related.name,canonicalize_related aliases related.type,related.fields⟩
 
@@ -142,7 +142,8 @@ def stateOf (members : List XMember) : XSt := members.foldl XSt.push ({} : XSt)
 covers arbitrary prepopulated states and preserves all other fields exactly. -/
 theorem push_fold (members : List XMember) (st : XSt) :
     members.foldl XSt.push st =
-      { st with types := st.types ++ members.toArray,
+      { st with
+        types := st.types ++ members.toArray
         typeNames := members.foldl (fun names member => names.insert member.name ()) st.typeNames } := by
   induction members generalizing st with
   | nil => simp only [List.foldl_nil, List.toArray_nil, Array.append_empty]
@@ -153,7 +154,8 @@ theorem push_fold (members : List XMember) (st : XSt) :
 
 theorem stateOf_eq (members : List XMember) :
     stateOf members =
-      { ({} : XSt) with types := members.toArray,
+      { ({} : XSt) with
+        types := members.toArray
         typeNames := members.foldl (fun names member => names.insert member.name ()) ({} : NameSet) } := by
   simpa only [stateOf, Array.empty_append] using push_fold members ({} : XSt)
 
@@ -243,7 +245,7 @@ private theorem forIn_push_eq (read : Name → Except String XMember)
     cases found : read name with
     | error message => rfl
     | ok member =>
-      simp only [bind, Except.bind, pure, Except.pure]
+      simp only [bind, Except.bind, pure, Except.pure, found]
       rw [ih]
       cases rest.mapM read <;> rfl
 
@@ -349,8 +351,8 @@ theorem initialMembers_outcomes {σ : Name → Name} {S : Name → Prop}
     (aliasesOf (classes.map (fun cls => cls.map σ))) = right at related
   cases related with
   | ok states =>
-    exact .inl ⟨_,_,leftRun,rightRun,states,StatesRelated.typeNames names references states,
+    exact .inl ⟨_,_,rfl,rfl,states,StatesRelated.typeNames names references states,
       StatesRelated.protection states leftCtx rightCtx⟩
-  | missing query queryIn => exact .inr ⟨query,queryIn,leftRun,rightRun⟩
+  | missing query queryIn => exact .inr ⟨query,queryIn,rfl,rfl⟩
 
 end Ix.CompileCert.Canon.PairedInitializer
