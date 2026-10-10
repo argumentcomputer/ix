@@ -2,7 +2,7 @@ import Ix.CompileCert.Opt.FreshOpeningSupport
 
 /-!
 Finite fresh opening and closing, and the exact erased reconstruction performed
-by the actual `mkLambda`. This additive proof leaf is SOURCE-ONLY / UNCOMPILED.
+by the actual `mkLambda`.
 All raw expressions, initial supplies and preferred allocation names are admitted.
 The lookup table is the structural NameTable, including its last-write semantics.
 This file makes no claim about the O11a instance callback or final faithfulness.
@@ -177,7 +177,9 @@ roundtrip. Its domain is outside its own binder. -/
 theorem mkLambda_singleton (body : Expr) (decl : LocalDecl) :
     mkLambda body #[decl] = Expr.mkLam decl.binderName decl.domain
       (batchAbstractNames body (singletonTable decl.fvarName) 1 0) decl.info := by
-  rfl
+  simp [mkLambda, Ix.AuxGen.mkBinderChain, singletonTable, Ix.AuxGen.batchAbstractNames]
+  congr 1
+  cases decl.domain <;> rfl
 
 /-- Iterated one-binder closing, in original declaration order. -/
 def closeDecls : List LocalDecl → Expr → Expr

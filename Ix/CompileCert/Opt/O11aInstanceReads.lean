@@ -2,7 +2,7 @@ import Ix.CompileCert.Opt.O11aFields
 
 /-!
 Actual `sizeOfInstanceE` reads and the corresponding local delta/beta steps.
-SOURCE-ONLY / UNCOMPILED. The witness retains the exact Boolean guards and
+The witness retains the exact Boolean guards and
 raw universe arrays used by the implementation. In particular, a successful
 hash comparison is not promoted to structural Name/Level or erased equality.
 The local delta hypotheses are explicit environment-rule obligations; this
@@ -22,19 +22,19 @@ open Ix.CompileCert.Opt.FreshFVarsProof
 
 private theorem need_success {test : Bool} {cause : String} {out : Unit}
     (run : O11aM.need test cause = .ok out) : test = true := by
-  cases test <;> cases run <;> rfl
+  cases test <;> cases run; rfl
 
 private theorem defn_match_some {info : ConstantInfo} {value : DefinitionVal}
     (read : (match info with | .defnInfo value => some value | _ => none) = some value) :
     info = .defnInfo value := by
-  cases info <;> cases read <;> rfl
+  cases info <;> cases read; rfl
 
 private theorem defn_lookup_some {info : Option ConstantInfo} {value : DefinitionVal}
     (read : (match info with | some (.defnInfo value) => some value | _ => none) = some value) :
     info = some (.defnInfo value) := by
   cases info with
   | none => cases read
-  | some info => exact congrArg some (defn_match_some read)
+  | some info => cases info <;> cases read; rfl
 
 private theorem need_pair_loop_all {α β : Type} (check : α → β → Bool) (cause : String) :
     ∀ (values : List (α × β)),
@@ -147,13 +147,15 @@ theorem sizeOfInstanceE_success (env : OptEnv) (target : Name) (telescope : Arra
     instanceRead := (side_ok instanceFound).trans
       (congrArg some (defn_match_some (side_ok instanceShape))),
     instanceMonomorphic := need_success monomorphic,
-    instanceSpine := instanceSpine, constructorRead := side_ok constructorRead,
+    instanceSpine := instanceSpine,
+    constructorRead := by cases instanceHead <;> exact side_ok constructorRead,
     constructorCheck := constructorChecks.1,
     instanceArity := beq_iff_eq.1 constructorChecks.2,
     returnedLevel := side_ok levelRead, targetCheck := need_success targetGuard,
     functionRead := side_ok functionRead, functionLookup := defn_lookup_some (side_ok functionLookup),
     lambdaRead := side_ok lambdaRead, recursorSpine := recursorSpine,
-    recursorCheck := need_success recursorGuard, argumentCheck := need_success argumentGuard,
+    recursorCheck := by cases recursorHead <;> exact need_success recursorGuard,
+    argumentCheck := need_success argumentGuard,
     recursorArity := beq_iff_eq.1 (need_success arityGuard), telescopeChecks := ?_ }⟩
   rw [← Array.forIn_toList] at loopRun
   intro pair member
@@ -252,6 +254,7 @@ theorem instanceBody_inst_spine (env : OptEnv) (target : Name) (telescope : Arra
       Tm.appN (Tm.inst field 0 (er read.recursorHead))
         (read.recursorArgs.toList.map (fun argument => Tm.inst field 0 (er argument))) := by
   rw [er_getAppFnArgs, read.recursorSpine, Tm.inst_appN, List.map_map]
+  rfl
 
 /-- The checked final argument and arity determine the exact source prefix.
 This uses the callback's actual array, without identifying its checked prefix
@@ -292,7 +295,12 @@ theorem instanceBody_inst_last (env : OptEnv) (target : Name) (telescope : Array
         .app (Tm.appN (.const name levels)
           ((read.recursorArgs.extract 0 telescope.size).toList.map
             (fun argument => Tm.inst field 0 (er argument)))) field := by
-  have checked := read.recursorCheck
+  have checked : (match read.recursorHead with
+      | .const name _ _ => name == Name.mkStr target "rec"
+      | _ => false) = true := by
+    rcases read with ⟨_, _, _, _, _, _, _, _, head, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+      checked, _, _, _⟩
+    cases head <;> exact checked
   have head : ∃ name levels, er read.recursorHead = .const name levels ∧
       (name == Name.mkStr target "rec") = true := by
     generalize read.recursorHead = value at checked ⊢
@@ -309,6 +317,7 @@ theorem instanceBody_inst_last (env : OptEnv) (target : Name) (telescope : Array
     er, Tm.inst, ↓reduceIte, Tm.lift_zero] at mapped
   rw [instanceBody_inst_spine env target telescope answer read field, head,
     mapped, Tm.appN_concat]
+  rfl
 
 /-- A successful run exposes the exact semantic function application after
 its local definition rule and beta steps. The source-prefix substitution is

@@ -124,25 +124,25 @@ theorem checkInstalledFiringRow_spec {source target : Kernel.Env}
         (frame.rowStatement proposal) row.type = some true := by
   unfold checkInstalledFiringRow at checked
   cases lookup : target.find? rowName with
-  | none => simp only [lookup, reduceCtorEq] at checked
+  | none => simp [lookup] at checked
   | some entry =>
     cases entry with
     | thmInfo row proof =>
       simp only [lookup] at checked
       cases stripped : row.type.stripPis proposal.binders.length with
-      | none => simp only [stripped, reduceCtorEq] at checked
+      | none => simp [stripped] at checked
       | some result =>
         obtain ⟨binders, body⟩ := result
         simp only [stripped] at checked
         cases parts : eqParts body with
-        | none => simp only [parts, reduceCtorEq] at checked
+        | none => simp [parts] at checked
         | some result =>
           obtain ⟨level, carrier, left, right⟩ := result
           simp only [parts] at checked
           refine ⟨row, proof, binders, level, carrier, left, right, rfl, ?_, checked⟩
           rw [stripped, eqParts_sound parts]
     | axiomInfo _ | defnInfo _ _ _ | recInfo _ _ _ _ | indInfo _ _
-    | ctorInfo _ _ _ | projInfo _ => simp only [lookup, reduceCtorEq] at checked
+    | ctorInfo _ _ _ | projInfo _ => simp [lookup] at checked
 
 /-- A checked row proves the actual selected source firing equation at each
 typed source tuple. Both endpoint readings, the target tuple and its grading

@@ -3,8 +3,8 @@ import Ix.CompileCert.Canon.NameTablesRelated
 import Ix.CompileCert.Canon.AllocationHistory
 
 /-!
-UNCOMPILED, proof-only full-result transport for the actual generic member
-initializer. This file does not replace a public endpoint or add premises to
+Proof-only full-result transport for the actual generic member initializer.
+This file does not replace a public endpoint or add premises to
 one. The callback-view relation and structural reference correspondence below
 are internal initialization obligations; deriving them from the original raw
 source/collapse presentation remains separate.
@@ -146,11 +146,14 @@ theorem push_fold (members : List XMember) (st : XSt) :
         types := st.types ++ members.toArray
         typeNames := members.foldl (fun names member => names.insert member.name ()) st.typeNames } := by
   induction members generalizing st with
-  | nil => simp only [List.foldl_nil, List.toArray_nil, Array.append_empty]
+  | nil => simp
   | cons member rest ih =>
     rw [List.foldl_cons, ih]
-    simp only [XSt.push, List.toArray_cons, Array.push_eq_append_singleton,
-      Array.append_assoc, List.foldl_cons]
+    simp only [XSt.push, List.foldl_cons]
+    congr 1
+    apply Array.toList_inj.mp
+    simp only [Array.toList_append, Array.toList_push,
+      List.append_assoc, List.singleton_append]
 
 theorem stateOf_eq (members : List XMember) :
     stateOf members =
@@ -245,31 +248,27 @@ private theorem forIn_push_eq (read : Name → Except String XMember)
     cases found : read name with
     | error message => rfl
     | ok member =>
-      simp only [bind, Except.bind, pure, Except.pure, found]
-      rw [ih]
-      cases rest.mapM read <;> rfl
+      change forIn rest (st.push member) (fun name state => do
+        let member ← read name
+        pure (.yield (state.push member))) = _
+      exact (ih (st.push member)).trans (by cases rest.mapM read <;> rfl)
 
 theorem initialMembers_eq (cx : ExpansionCore.Ctx) (ordered : Array Name)
     (aliases : Std.HashMap Name Name) :
     ExpansionHistory.initialMembers cx ordered aliases =
       Except.map stateOf (ordered.toList.mapM (readMember cx.ind? cx.nParams aliases)) := by
-  have body : (fun (name : Name) (st : XSt) => (do
-      let some view := cx.ind? name | .error s!"expand: {namePretty name} is not an inductive"
-      let constructors := view.ctors.map fun (cn,ct,nf) =>
-        { name := cn, typ := canonicalizeConstNames aliases ct, nFields := nf : XCtor }
-      pure (.yield (st.push {
-        name := name, sourceOwner := name, typ := canonicalizeConstNames aliases view.type,
-        ctors := constructors, nParams := cx.nParams, nIndices := view.numIndices })) :
-        Except String (ForInStep XSt))) =
-      (fun name st => do
-        let member ← readMember cx.ind? cx.nParams aliases name
-        pure (.yield (st.push member))) := by
-    funext name st
-    cases found : cx.ind? name <;> simp only [found, readMember, missing, memberOf,
-      bind, Except.bind, pure, Except.pure]
-  unfold ExpansionHistory.initialMembers
-  rw [body, ← Array.forIn_toList]
-  exact forIn_push_eq (readMember cx.ind? cx.nParams aliases) ordered.toList ({} : XSt)
+  calc
+    _ = forIn ordered ({} : XSt) (fun name st => do
+      let member ← readMember cx.ind? cx.nParams aliases name
+      pure (.yield (st.push member))) := by
+        unfold ExpansionHistory.initialMembers
+        congr 1
+        funext name st
+        cases found : cx.ind? name <;>
+          simp only [found, readMember, missing, memberOf, bind, Except.bind, pure, Except.pure]
+    _ = _ := by
+      rw [← Array.forIn_toList]
+      exact forIn_push_eq (readMember cx.ind? cx.nParams aliases) ordered.toList ({} : XSt)
 
 private theorem mapM_related {σ : Name → Name} {S : Name → Prop}
     {leftRead rightRead : Name → Except String XMember} (ordered : List Name)
@@ -283,9 +282,13 @@ private theorem mapM_related {σ : Name → Name} {S : Name → Prop}
     have head := reads name List.mem_cons_self
     have tail := ih (fun n member => reads n (List.mem_cons_of_mem _ member))
     rw [List.map_cons, List.mapM_cons, List.mapM_cons]
+    generalize leftHead : leftRead name = lh at head ⊢
+    generalize rightHead : rightRead (σ name) = rh at head ⊢
     cases head with
     | missing query supported => exact .missing query supported
     | ok member =>
+      generalize leftTail : rest.mapM leftRead = lt at tail ⊢
+      generalize rightTail : (rest.map σ).mapM rightRead = rt at tail ⊢
       cases tail with
       | missing query supported => exact .missing query supported
       | ok rest => exact .ok (.cons member rest)

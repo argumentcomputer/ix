@@ -13,6 +13,10 @@ import Ix.CompileCert.StrongChanged
 import Ix.CompileCert.Opt
 import Ix.CompileCert.Publication
 import Ix.CompileCert.Promotion
+import Ix.CompileCert.Opt.FreshTelescope
+import Ix.CompileCert.RuleRows
+import Ix.CompileCert.Canon.PairedInitializer
+import Ix.CompileCert.Opt.O11aInstanceReads
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -2062,4 +2066,43 @@ def promotionRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.promotionRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Retained proof leaves: fresh opening/closing on arbitrary raw expressions,
+and checked installed firing equations at the stated typed source tuples.
+These roots do not assert O11a callback correctness or rule-instance coverage. -/
+namespace Ix.CompileCert.Audit
+
+def freshTelescopeRoots : Array Lean.Name :=
+  #[`openRequests_grows, `openRequests_protects, `openRequests_close_of_protected,
+    `protected_openRequests_close, `openRequests_reserved, `er_mkLambda,
+    `mkLambda_er_congr, `mkLambda_singleton, `closeDecls_append,
+    `closeDecls_er_congr, `fresh_lambda_close].map (`Ix.CompileCert.Opt.FreshTelescope ++ ·)
+
+def firingRowRoots : Array Lean.Name :=
+  #[`ruleRowForalls_strip, `InstalledTelescope.ruleRow_arity,
+    `checkInstalledFiringRow_spec, `checkInstalledFiringRow_sound].map (`Ix.CompileCert ++ ·)
+
+/-- Full initializer transport retains errors and every initial state field;
+the source-reader bridge must still discharge its callback relation. -/
+def pairedInitializerRoots : Array Lean.Name :=
+  #[`ResultRelated.map, `memberOf_related, `readMember_related, `push_fold,
+    `stateOf_eq, `StatesRelated.types, `stateOf_fields, `stateOf_protection,
+    `StatesRelated.typeNames, `StatesRelated.protection, `initialMembers_eq,
+    `initialMembers_related, `initialMembers_outcomes].map (`Ix.CompileCert.Canon.PairedInitializer ++ ·)
+
+/-- Exact callback reads and local conversion steps. Raw hash-based guards
+remain Booleans, and the stated environment-rule premises are not discharged. -/
+def o11aInstanceReadRoots : Array Lean.Name :=
+  #[`sizeOfInstanceE_success, `sizeOfInstanceE_returnedName, `functionRead_spelling,
+    `functionSpelling_apply, `functionBody_beta, `actual_function_application,
+    `instanceBody_inst_spine, `recursorArgs_last, `instanceBody_inst_last,
+    `sizeOfInstanceE_local_function, `sizeOfReplacement_instance_delta].map
+      (`Ix.CompileCert.Opt.O11aInstanceReads ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.freshTelescopeRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.firingRowRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.pairedInitializerRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.o11aInstanceReadRoots Ix.CompileCert.Audit.allowedAxioms
 
