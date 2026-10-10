@@ -10,8 +10,8 @@ blob addresses are keys; these results assume no injectivity of a digest.
 Presentation metadata and compiler caches are outside this projection.
 
 Content compatibility is a separate obligation from `checkBlockClaims`, which
-checks source-name and Pass 3 claims. The conditional preservation results here
-must not be read as a discharge of that production obligation.
+checks source-name and Pass 3 claims. The production `checkCompiledBlock` checks
+both; the final results below connect its success to anonymous preservation.
 -/
 
 namespace Ix.CompileCert.Publication
@@ -406,5 +406,80 @@ theorem checkPublication_iff (acc : DriverAcc) (result : BlockResult) (cache : B
         Consistent (recordWrites result cache)) ∧
       (Compatible acc.cenv.blobs (blobWrites cache) ∧ Consistent (blobWrites cache)) := by
   simp only [checkPublication, Bool.and_eq_true, checkWrites_iff]
+
+theorem checkContentWrites_eq (store : Store) (writes : Writes) :
+    checkContentWrites store writes = checkWrites store writes := by
+  induction writes generalizing store with
+  | nil => rfl
+  | cons row rest ih =>
+    rcases row with ⟨key, bytes⟩
+    simp only [checkContentWrites, checkWrites, ih]
+    rfl
+
+/-- The efficient production check has exactly the reference check's domain.
+It only inserts into a fresh per-unit map, never the prior environment. -/
+theorem checkAnonymousWrites_iff (store : Store) (writes : Writes) :
+    checkAnonymousWrites store writes = true ↔
+      Compatible store writes ∧ Consistent writes := by
+  simp only [checkAnonymousWrites, Bool.and_eq_true, checkContentWrites_eq, checkWrites_iff]
+  constructor
+  · rintro ⟨againstOld, _, consistent⟩
+    refine ⟨?_, consistent⟩
+    intro key bytes mem
+    exact checkWrite_sound (List.all_eq_true.mp againstOld (key, bytes) mem)
+  · rintro ⟨compatible, consistent⟩
+    refine ⟨?_, ?_, consistent⟩
+    · apply List.all_eq_true.mpr
+      rintro ⟨key, bytes⟩ mem
+      exact checkWrite_complete (compatible key bytes mem)
+    · intro key bytes _ old found
+      simp at found
+
+theorem checkAnonymousWrites_eq (store : Store) (writes : Writes) :
+    checkAnonymousWrites store writes = checkWrites store writes := by
+  apply Bool.eq_iff_iff.mpr
+  exact (checkAnonymousWrites_iff store writes).trans (checkWrites_iff store writes).symm
+
+theorem checkBlockContent_iff (acc : DriverAcc) (result : BlockResult) (cache : BlockState) :
+    checkBlockContent acc.cenv result cache = .ok () ↔
+      checkPublication acc result cache = true := by
+  change (if checkAnonymousWrites acc.cenv.constants (recordWrites result cache) then
+      if checkAnonymousWrites acc.cenv.blobs (blobWrites cache) then (Except.ok () : Except CompileError Unit)
+      else .error (.invalidMutualBlock "anonymous publication: conflicting blob payload")
+    else .error (.invalidMutualBlock "anonymous publication: conflicting constant payload")) =
+      .ok () ↔ _
+  rw [checkAnonymousWrites_eq, checkAnonymousWrites_eq]
+  cases records : checkWrites acc.cenv.constants (recordWrites result cache) <;>
+    cases blobs : checkWrites acc.cenv.blobs (blobWrites cache) <;>
+      simp [checkPublication, records, blobs]
+
+theorem checkCompiledBlock_publication (acc : DriverAcc) (lo : Ix.Name)
+    (result : BlockResult) (cache : BlockState)
+    (accepted : checkCompiledBlock acc.cenv lo result cache = .ok ()) :
+    checkPublication acc result cache = true := by
+  apply (checkBlockContent_iff acc result cache).mp
+  cases claims : checkBlockClaims acc.cenv (primaryClaims lo result) cache with
+  | error e => simp [checkCompiledBlock, claims, bind, Except.bind] at accepted
+  | ok u => simpa [checkCompiledBlock, claims, bind, Except.bind] using accepted
+
+/-- The guard used by every aux-aware driver merge preserves the entire
+anonymous prefix. This is a publication result, not source correctness. -/
+theorem checkCompiledBlock_extends (acc : DriverAcc) (lo : Ix.Name)
+    (result : BlockResult) (cache : BlockState)
+    (accepted : checkCompiledBlock acc.cenv lo result cache = .ok ()) :
+    Extends acc.cenv.constants (mergeCompiledBlock acc lo result cache).cenv.constants ∧
+      Extends acc.cenv.blobs (mergeCompiledBlock acc lo result cache).cenv.blobs :=
+  checkPublication_extends acc lo result cache
+    (checkCompiledBlock_publication acc lo result cache accepted)
+
+theorem checkCompiledBlock_present (acc : DriverAcc) (lo : Ix.Name)
+    (result : BlockResult) (cache : BlockState)
+    (accepted : checkCompiledBlock acc.cenv lo result cache = .ok ()) :
+    (∀ key bytes, (key, bytes) ∈ recordWrites result cache →
+      (mergeCompiledBlock acc lo result cache).cenv.constants[key]? = some bytes) ∧
+    (∀ key bytes, (key, bytes) ∈ blobWrites cache →
+      (mergeCompiledBlock acc lo result cache).cenv.blobs[key]? = some bytes) :=
+  checkPublication_present acc lo result cache
+    (checkCompiledBlock_publication acc lo result cache accepted)
 
 end Ix.CompileCert.Publication

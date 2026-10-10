@@ -131,7 +131,7 @@ fn move_to_display(
   let full = hash_map_of(&display);
   let moved: FxHashSet<Name> = display.iter().map(|(n, _)| n.clone()).collect();
   for (n, d) in &display {
-    compile_name(d, stt);
+    compile_name(d, stt)?;
     let named = stt.env.named.get(n).map(|r| r.clone());
     let addr = stt.aux_name_to_addr.get(n).map(|r| r.clone());
     stt.env.named.remove(n);
@@ -1149,7 +1149,7 @@ to the canonical constant {}",
           dashmap::mapref::entry::Entry::Vacant(e) => {
             e.insert(addr.clone());
             crate::compile::block_txn::log_aux(&c);
-            stt.env.store_const(addr.clone(), constant);
+            stt.store_const(addr.clone(), constant)?;
             stt.register_named(c.clone(), Named::new(addr, meta));
           },
         },

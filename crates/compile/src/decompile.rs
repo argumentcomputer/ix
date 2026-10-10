@@ -3276,8 +3276,11 @@ fn roundtrip_block(
   let mut name_to_class: FxHashMap<Name, usize> = FxHashMap::default();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
   let mut ixon_mutuals: Vec<MutConst> = Vec::new();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()
+    .map_err(|e| AuxGenError::recompile(&first_name, "context names", e))?;
 
   for (class_idx, class) in sorted_classes.iter().enumerate() {
     let mut rep_pushed = false;
@@ -5924,7 +5927,7 @@ mod tests {
   /// Register a Name in `stt.env.names` so `decompile_name` can resolve it.
   /// Mirrors `compile_name` (content-address the name, insert into names map).
   fn register_name(stt: &CompileState, name: &Name) -> Address {
-    compile_name(name, stt)
+    compile_name(name, stt).unwrap()
   }
 
   /// Extract the source-order `(head, args)` telescope from a Lean App spine.
@@ -6371,8 +6374,8 @@ mod meta_share_tests {
     let stt = CompileState::default();
     let head = Name::str(Name::anon(), "MS.head".to_string());
     let head2 = Name::str(Name::anon(), "MS.head2".to_string());
-    let head_addr = compile_name(&head, &stt);
-    let head2_addr = compile_name(&head2, &stt);
+    let head_addr = compile_name(&head, &stt).unwrap();
+    let head2_addr = compile_name(&head2, &stt).unwrap();
     Fx { stt, head, head_addr, head2, head2_addr }
   }
 
@@ -6691,7 +6694,7 @@ mod meta_share_tests {
   ) -> (Result<DecompileState, DecompileError>, Fx, Name) {
     let fx = fx();
     let ax_name = Name::str(Name::anon(), "MS.ax".to_string());
-    let ax_addr_name = compile_name(&ax_name, &fx.stt);
+    let ax_addr_name = compile_name(&ax_name, &fx.stt).unwrap();
     let ax = Constant {
       info: ConstantInfo::Axio(Axiom {
         is_unsafe: false,

@@ -42,6 +42,7 @@ public import Ix.Ixon
 public import Ix.CanonM
 public import Ix.Ground
 public import Ix.CompileM
+public import Ix.Compile.Publication
 public import Ix.AuxGen.CompileAux
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Resource.Validate
@@ -492,6 +493,13 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
         throw (.invalidMutualBlock s!"Pass 3: conflicting canonical recursor '{name.pretty}'")
     recs := recs.insert name rv
 
+/-- Validate both source-name claims and anonymous payloads against the live
+state before publishing any output of this block. -/
+def checkCompiledBlock (cenv : CompileEnv) (lo : Name) (result : BlockResult)
+    (cache : BlockState) : Except CompileError Unit := do
+  checkBlockClaims cenv (primaryClaims lo result) cache
+  checkBlockContent cenv result cache
+
 /-- Merge one compiled block's outputs into the driver state, mirroring
     the Rust global-mutation order: block constant, member projections
     (primary `register_name` + `name_to_addr`, compile.rs:3902-3969),
@@ -499,7 +507,7 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
     `Muts` entry and aliases), aux name→addr map and extra names.
 
     Every caller first checks the block for single ownership against the
-    live state (`checkBlockClaims`) and merges only if the check passes: a
+    live state (`checkCompiledBlock`) and merges only if the check passes: a
     conflict is an error and nothing is merged. The check is a separate
     step, not part of this function, so that the merge keeps consuming the
     driver state uniquely (a merge returning `Except` would keep the old
@@ -664,6 +672,9 @@ address is {metaAddr}")
     earlier auxiliary bindings. Both driver paths use this same operation. -/
 def promoteOriginalBlock (acc : DriverAcc) (lo : Name)
     (result : BlockResult) (cache : BlockState) : Except CompileError DriverAcc := do
+  -- Original constants stay ephemeral, but their metadata also stores blobs
+  -- in the anonymous table. It must preserve earlier literal payloads.
+  checkBlobContent acc.cenv cache
   let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
     if result.projections.isEmpty then
       #[(lo, result.blockAddr, result.blockMeta)]
@@ -967,7 +978,7 @@ missing canonical aliases: {missing}"
           | .ok (result, cache, _) =>
             -- A conflicting claim is a compile failure of the subset (Rust
             -- claims inside `compile_const`): nothing is registered.
-            match checkBlockClaims acc.cenv (primaryClaims clo result) cache with
+            match checkCompiledBlock acc.cenv clo result cache with
             | .error _ => pure ()
             | .ok () =>
               acc := mergeCompiledBlock acc clo result cache
@@ -1001,7 +1012,7 @@ missing canonical aliases: {missing}"
       | .ok (result, cache, _) =>
         -- A conflicting claim is a failure of this block (Rust raises it
         -- inside `compile_const`).
-        match checkBlockClaims acc.cenv (primaryClaims lo result) cache with
+        match checkCompiledBlock acc.cenv lo result cache with
         | .error e => acc := fail acc e
         | .ok () => acc := mergeCompiledBlock acc lo result cache
 
@@ -1127,7 +1138,7 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
 /-- Apply a worker outcome to the live driver state. Returns the names
     newly REGISTERED by this block (for rustRef fail-fast comparison), and
     whether the block failed at merge time: a conflicting claim
-    (`checkBlockClaims`) fails the block like a compile error, so the wave
+    (`checkCompiledBlock`) fails the block like a compile error, so the wave
     loop must release its dependents as failed. -/
 def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     (outcome : AuxBlockOutcome) : DriverAcc × Array Name × Bool := Id.run do
@@ -1141,7 +1152,7 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     return acc
   match outcome with
   | .compiled result cache =>
-    match checkBlockClaims acc.cenv (primaryClaims lo result) cache with
+    match checkCompiledBlock acc.cenv lo result cache with
     | .error e => return (recordFailure acc (toString e), #[], true)
     | .ok () => acc := mergeCompiledBlock acc lo result cache
     if result.projections.isEmpty then
@@ -1157,7 +1168,7 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     if let some (clo, result, cache) := crossScc then
       -- A conflicting claim is a compile failure of the cross-SCC subset,
       -- as in the sequential driver: nothing is registered.
-      match checkBlockClaims acc.cenv (primaryClaims clo result) cache with
+      match checkCompiledBlock acc.cenv clo result cache with
       | .error _ => pure ()
       | .ok () =>
         acc := mergeCompiledBlock acc clo result cache

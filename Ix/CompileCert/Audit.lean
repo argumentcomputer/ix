@@ -2029,8 +2029,8 @@ end Ix.CompileCert.Audit
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l3dAuxRuntimeRoots Ix.CompileCert.Audit.allowedAxioms
 
 /-! Anonymous publication is a local boundary of the actual compiler merge.
-These roots do not assert source faithfulness or that the production driver
-currently invokes the publication-content check. -/
+These roots connect the production publication guard to anonymous preservation;
+they do not assert source faithfulness. -/
 
 namespace Ix.CompileCert.Audit
 
@@ -2041,7 +2041,9 @@ def publicationRoots : Array Lean.Name :=
     `checkWrite_sound, `checkWrite_complete, `checkWrites_sound,
     `checkWrites_compatible, `checkWrites_consistent, `checkWrites_complete,
     `checkWrites_iff, `checkPublication_extends, `checkPublication_present,
-    `checkPublication_iff].map (`Ix.CompileCert.Publication ++ ·)
+    `checkPublication_iff, `checkContentWrites_eq, `checkAnonymousWrites_iff, `checkAnonymousWrites_eq,
+    `checkBlockContent_iff, `checkCompiledBlock_publication,
+    `checkCompiledBlock_extends, `checkCompiledBlock_present].map (`Ix.CompileCert.Publication ++ ·)
 
 end Ix.CompileCert.Audit
 

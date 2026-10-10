@@ -34,6 +34,41 @@ private def conflicting : DriverAcc :=
 #guard (checkBlockClaims conflicting.cenv (primaryClaims sourceName result) {}).isOk
 #guard (mergeCompiledBlock conflicting sourceName result {}).cenv.constants[key]? == some payload
 
+-- The production guard keeps the name check and rejects the content conflict.
+#guard (checkCompiledBlock empty.cenv sourceName result {}).isOk
+#guard (checkCompiledBlock matching.cenv sourceName result {}).isOk
+#guard !(checkCompiledBlock conflicting.cenv sourceName result {}).isOk
+#guard !(checkCompiledBlock empty.cenv sourceName result
+  { auxConsts := #[(key, sharedIdentity)] }).isOk
+
+private def refused :=
+  applyAuxBlockOutcome conflicting sourceName (({} : Ix.Set Ix.Name).insert sourceName) (.compiled result {})
+#guard refused.2.2
+#guard refused.2.1.isEmpty
+#guard refused.1.cenv.constants[key]? == some changedPayload
+#guard !refused.1.cenv.nameToAddr.contains sourceName
+#guard refused.1.cenv.ungrounded.contains sourceName
+
+private def accepted :=
+  applyAuxBlockOutcome matching sourceName (({} : Ix.Set Ix.Name).insert sourceName) (.compiled result {})
+#guard !accepted.2.2
+#guard accepted.1.cenv.constants[key]? == some payload
+#guard accepted.1.cenv.nameToAddr[sourceName]? == some key
+
+-- Cross-SCC publication also goes through the same guard.
+private def refusedCross := applyAuxBlockOutcome conflicting sourceName {}
+  (.promoted (some (sourceName, result, {})) #[sourceName] none none none)
+#guard refusedCross.1.cenv.constants[key]? == some changedPayload
+#guard !refusedCross.1.cenv.nameToAddr.contains sourceName
+
+-- Original-form promotion stores blobs even though its constants are ephemeral.
+private def withBlob : DriverAcc :=
+  { cenv := { matching.cenv with blobs := ({} : Store).insert key payload } }
+#guard !(promoteOriginalBlock withBlob sourceName result
+  { blockBlobs := ({} : Store).insert key changedPayload }).isOk
+#guard (promoteOriginalBlock withBlob sourceName result
+  { blockBlobs := ({} : Store).insert key payload }).isOk
+
 -- Repeated identical content is allowed; a conflicting write inside the
 -- same unit is rejected even when the old store did not contain the key.
 #guard checkWrites {} [(key, payload), (key, payload)]

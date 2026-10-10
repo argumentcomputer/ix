@@ -1413,7 +1413,7 @@ mod promotion_tests {
 
   fn wrong_meta(stt: &CompileState, other: &Name) -> ConstantMeta {
     ConstantMeta::new(ConstantMetaInfo::Axio {
-      name: compile_name(other, stt),
+      name: compile_name(other, stt).unwrap(),
       lvls: vec![],
       arena: Default::default(),
       type_root: 0,
