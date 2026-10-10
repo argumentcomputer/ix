@@ -13,6 +13,7 @@ import Ix.CompileCert.Bridge
 import Ix.CompileCert.StrongChanged
 import Ix.CompileCert.Opt
 import Ix.CompileCert.Publication
+import Ix.CompileCert.ReferencePublication
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
 import Ix.CompileCert.RuleRows
@@ -2120,4 +2121,21 @@ def motiveMatchRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.motiveMatchRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual guard/merge facts for primary source-reference publication, not an
+assumed source-map extension or a statement of source semantic correctness. -/
+def referencePublicationRoots : Array Lean.Name :=
+  #[`applyClaims_keeps, `applyClaims_present, `applyClaims_preserves,
+    `seen_or_prior, `seen_insert, `primaryBody_result, `primaryBody_selected,
+    `primaryBody_compatible, `primaryBody_extends_seen, `checkBlockClaims_consistent,
+    `checkBlockClaims_primary, `checkCompiledBlock_primary, `merge_primary,
+    `checked_merge_primary_extends, `checked_merge_primary_present,
+    `checked_merge_resolves_prior, `primary_claim_record,
+    `checked_merge_primary_record].map (`Ix.CompileCert.ReferencePublication ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.referencePublicationRoots Ix.CompileCert.Audit.allowedAxioms
 
