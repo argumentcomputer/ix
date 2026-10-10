@@ -20,8 +20,8 @@ use ix_common::env::{
 
 use super::{
   aux_gen::expr_utils::{
-    FreshFVars, LocalDecl, consume_type_annotations, decompose_apps, fvar_index,
-    instantiate_rev, instantiate1, subst_levels,
+    FreshFVars, LocalDecl, consume_type_annotations, decompose_apps,
+    fvar_index, instantiate_rev, instantiate1, subst_levels,
   },
   nat_conv::nat_to_usize,
 };
@@ -347,71 +347,139 @@ mod tests {
 
   #[test]
   fn fresh_peeling_preserves_open_inputs_and_dependent_domains() {
-    use ix_common::env::BinderInfo;
     use super::super::aux_gen::expr_utils::{fresh_fvar, mk_lambda};
+    use ix_common::env::BinderInfo;
     let sort = LeanExpr::sort(Level::zero());
-    for prefix in ["split_field", "split_ih", "split_xs", "o11a", "aux_sig_idx"] {
+    for prefix in ["split_field", "split_ih", "split_xs", "o11a", "aux_sig_idx"]
+    {
       for collision in [true, false] {
         let caller = fresh_fvar(if collision { prefix } else { "caller" }, 0).1;
         let domain = LeanExpr::app(caller.clone(), LeanExpr::bvar(Nat::ZERO));
         let body = LeanExpr::app(
           caller,
-          LeanExpr::app(LeanExpr::bvar(Nat::from(1u64)), LeanExpr::bvar(Nat::ZERO)),
+          LeanExpr::app(
+            LeanExpr::bvar(Nat::from(1u64)),
+            LeanExpr::bvar(Nat::ZERO),
+          ),
         );
-        let source = LeanExpr::all(n("x"), sort.clone(),
-          LeanExpr::all(n("y"), domain.clone(), body.clone(), BinderInfo::Implicit),
-          BinderInfo::Default);
-        let expected = LeanExpr::lam(n("x"), sort.clone(),
-          LeanExpr::lam(n("y"), domain, body, BinderInfo::Implicit), BinderInfo::Default);
+        let source = LeanExpr::all(
+          n("x"),
+          sort.clone(),
+          LeanExpr::all(
+            n("y"),
+            domain.clone(),
+            body.clone(),
+            BinderInfo::Implicit,
+          ),
+          BinderInfo::Default,
+        );
+        let expected = LeanExpr::lam(
+          n("x"),
+          sort.clone(),
+          LeanExpr::lam(n("y"), domain, body, BinderInfo::Implicit),
+          BinderInfo::Default,
+        );
         let mut supply = FreshFVars::default();
-        let (decls, fvars, opened) = peel_binders(source, 2, prefix, 0, &mut supply).unwrap();
+        let (decls, fvars, opened) =
+          peel_binders(source, 2, prefix, 0, &mut supply).unwrap();
         assert_eq!(decls.len(), 2);
         assert_eq!(fvars.len(), 2);
         // Derived Expr equality visits all fields, not only a cached digest.
         assert_eq!(mk_lambda(opened, &decls), expected);
-        assert_eq!(decls[0].fvar_name.same_structure(&fresh_fvar(prefix, 0).0), !collision);
+        assert_eq!(
+          decls[0].fvar_name.same_structure(&fresh_fvar(prefix, 0).0),
+          !collision
+        );
       }
     }
-    assert!(peel_binders(sort, 1, "split_field", 0, &mut FreshFVars::default()).is_none());
+    assert!(
+      peel_binders(sort, 1, "split_field", 0, &mut FreshFVars::default())
+        .is_none()
+    );
   }
-
 
   #[test]
   fn signature_opening_preserves_caller_name_and_ordinary_neighbour() {
-    use ix_common::env::{BinderInfo, ConstantVal, InductiveVal};
     use super::super::aux_gen::expr_utils::fresh_fvar;
+    use ix_common::env::{BinderInfo, ConstantVal, InductiveVal};
     let sort = LeanExpr::sort(Level::zero());
     let ext = n("Ext");
     let mut env = LeanEnv::default();
-    env.insert(ext.clone(), LeanConstantInfo::InductInfo(InductiveVal {
-      cnst: ConstantVal { name: ext.clone(), level_params: vec![], typ: sort.clone() },
-      num_params: Nat::from(1u64), num_indices: Nat::ZERO, all: vec![ext.clone()],
-      ctors: vec![], num_nested: Nat::ZERO, is_rec: false,
-      is_unsafe: false, is_reflexive: false,
-    }));
+    env.insert(
+      ext.clone(),
+      LeanConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: ext.clone(),
+          level_params: vec![],
+          typ: sort.clone(),
+        },
+        num_params: Nat::from(1u64),
+        num_indices: Nat::ZERO,
+        all: vec![ext.clone()],
+        ctors: vec![],
+        num_nested: Nat::ZERO,
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
     for collision in [true, false] {
-      let free = fresh_fvar(if collision { "aux_sig_idx" } else { "caller" }, 0).1;
+      let free =
+        fresh_fvar(if collision { "aux_sig_idx" } else { "caller" }, 0).1;
       let pair = LeanExpr::cnst(n("pair"), vec![]);
-      let spec = LeanExpr::app(LeanExpr::app(pair.clone(), free.clone()),
-        LeanExpr::bvar(Nat::ZERO));
-      let motive_ty = LeanExpr::all(n("idx"), sort.clone(),
-        LeanExpr::all(n("major"), LeanExpr::app(LeanExpr::cnst(ext.clone(), vec![]), spec),
-          sort.clone(), BinderInfo::Default), BinderInfo::Default);
+      let spec = LeanExpr::app(
+        LeanExpr::app(pair.clone(), free.clone()),
+        LeanExpr::bvar(Nat::ZERO),
+      );
+      let motive_ty = LeanExpr::all(
+        n("idx"),
+        sort.clone(),
+        LeanExpr::all(
+          n("major"),
+          LeanExpr::app(LeanExpr::cnst(ext.clone(), vec![]), spec),
+          sort.clone(),
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      );
       let rv = RecursorVal {
-        cnst: ConstantVal { name: n("R"), level_params: vec![],
-          typ: LeanExpr::all(n("motive"), motive_ty, sort.clone(), BinderInfo::Default) },
-        all: vec![], num_params: Nat::ZERO, num_indices: Nat::ZERO,
-        num_motives: Nat::from(1u64), num_minors: Nat::ZERO,
-        rules: vec![], k: false, is_unsafe: false,
+        cnst: ConstantVal {
+          name: n("R"),
+          level_params: vec![],
+          typ: LeanExpr::all(
+            n("motive"),
+            motive_ty,
+            sort.clone(),
+            BinderInfo::Default,
+          ),
+        },
+        all: vec![],
+        num_params: Nat::ZERO,
+        num_indices: Nat::ZERO,
+        num_motives: Nat::from(1u64),
+        num_minors: Nat::ZERO,
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
       };
       let mut supply = FreshFVars::default();
-      let sigs = aux_motive_sigs(&rv, &[], &[], std::slice::from_ref(&sort), &env, &mut supply);
+      let sigs = aux_motive_sigs(
+        &rv,
+        &[],
+        &[],
+        std::slice::from_ref(&sort),
+        &env,
+        &mut supply,
+      );
       assert_eq!(sigs.len(), 1);
       assert_eq!(sigs[0].specs.len(), 1);
       let preferred = fresh_fvar("aux_sig_idx", 0).0;
-      let chosen = if collision { Name::num(preferred, Nat::ZERO) } else { preferred };
-      assert_eq!(sigs[0].specs[0], LeanExpr::app(LeanExpr::app(pair, free), LeanExpr::fvar(chosen)));
+      let chosen =
+        if collision { Name::num(preferred, Nat::ZERO) } else { preferred };
+      assert_eq!(
+        sigs[0].specs[0],
+        LeanExpr::app(LeanExpr::app(pair, free), LeanExpr::fvar(chosen))
+      );
     }
   }
-
 }

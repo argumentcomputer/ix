@@ -1570,7 +1570,7 @@ mod promotion_tests {
     stt
       .promote_aux(&n, addr("discarded-original"), ConstantMeta::default())
       .unwrap();
-    std::thread::scope(|s| {
+    thread::scope(|s| {
       s.spawn(|| {
         stt
           .promote_aux(&n, addr("successful-original"), ConstantMeta::default())

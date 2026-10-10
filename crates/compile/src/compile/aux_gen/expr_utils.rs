@@ -7,7 +7,7 @@
 //! Also includes substitution, shifting, and universe manipulation helpers
 //! used across `recursor.rs`, `below.rs`, and `brecon.rs`.
 
-use ix_common::name_table::NameTable;
+use ix_common::name_table::NameTable as FreshNameTable;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::occurrence_key::NameTable;
@@ -54,7 +54,7 @@ pub fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
 /// Temporary variables are reserved by complete name structure, not a digest.
 #[derive(Default)]
 pub(crate) struct FreshFVars {
-  used: NameTable<()>,
+  used: FreshNameTable<()>,
 }
 
 impl FreshFVars {
@@ -546,7 +546,7 @@ fn mk_binder_chain(
   }
 
   // Structural name → position map (0 = outermost); later writes win.
-  let fvar_map: NameTable<usize> =
+  let fvar_map: FreshNameTable<usize> =
     binders.iter().enumerate().map(|(i, d)| (d.fvar_name.clone(), i)).collect();
 
   // Abstract body: all k binders in scope.
@@ -613,7 +613,7 @@ pub(super) fn batch_abstract(
 /// Structural-table entry point for generated binder positions.
 pub(super) fn batch_abstract_names(
   expr: &LeanExpr,
-  fvar_map: &NameTable<usize>,
+  fvar_map: &FreshNameTable<usize>,
   scope_depth: usize,
   internal_depth: u64,
 ) -> LeanExpr {
@@ -3726,10 +3726,18 @@ mod tests {
         preferred.clone()
       };
       assert!(chosen.same_structure(&expected_name));
-      let decls = [LocalDecl { fvar_name: chosen, binder_name: mk_name_for("x"),
-        domain: sort0(), info: BinderInfo::Default }];
-      let expected = LeanExpr::lam(mk_name_for("x"), sort0(),
-        LeanExpr::app(caller.clone(), bvar_at(0)), BinderInfo::Default);
+      let decls = [LocalDecl {
+        fvar_name: chosen,
+        binder_name: mk_name_for("x"),
+        domain: sort0(),
+        info: BinderInfo::Default,
+      }];
+      let expected = LeanExpr::lam(
+        mk_name_for("x"),
+        sort0(),
+        LeanExpr::app(caller.clone(), bvar_at(0)),
+        BinderInfo::Default,
+      );
       assert_eq!(mk_lambda(LeanExpr::app(caller, fv), &decls), expected);
     }
   }
@@ -3755,18 +3763,37 @@ mod tests {
     // Distinct nodes with equal cached expression digests must both be visited.
     let b = LeanExpr(Arc::new(ExprData::Fvar(names[1].clone(), *a.get_hash())));
     let shared = LeanExpr::app(a, b);
-    let expr = LeanExpr::letE(mk_name_for("x"), shared.clone(),
-      LeanExpr::lam(mk_name_for("z"), LeanExpr::fvar(names[2].clone()), shared,
-        BinderInfo::Default),
-      LeanExpr::mdata(vec![], LeanExpr::proj(mk_name_for("P"), Nat::ZERO,
-        LeanExpr::app(LeanExpr::fvar(names[3].clone()), LeanExpr::fvar(names[4].clone())))),
-      false);
+    let expr = LeanExpr::letE(
+      mk_name_for("x"),
+      shared.clone(),
+      LeanExpr::lam(
+        mk_name_for("z"),
+        LeanExpr::fvar(names[2].clone()),
+        shared,
+        BinderInfo::Default,
+      ),
+      LeanExpr::mdata(
+        vec![],
+        LeanExpr::proj(
+          mk_name_for("P"),
+          Nat::ZERO,
+          LeanExpr::app(
+            LeanExpr::fvar(names[3].clone()),
+            LeanExpr::fvar(names[4].clone()),
+          ),
+        ),
+      ),
+      false,
+    );
     let mut supply = FreshFVars::default();
     supply.protect_expr(&expr);
     for i in 0..5 {
-      assert!(supply.fresh("field", Nat::from(i)).0.same_structure(
-        &Name::num(names[i as usize].clone(), Nat::ZERO)));
+      assert!(
+        supply
+          .fresh("field", Nat::from(i))
+          .0
+          .same_structure(&Name::num(names[i as usize].clone(), Nat::ZERO))
+      );
     }
   }
-
 }

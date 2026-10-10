@@ -584,7 +584,8 @@ fn adapt_minor(
     0,
     &mut supply,
   )?;
-  let rec_fields = rec_fields_of(env, rv, &field_decls, ps, &aux_sigs, &mut supply);
+  let rec_fields =
+    rec_fields_of(env, rv, &field_decls, ps, &aux_sigs, &mut supply);
   let inb = |p: usize| in_block.get(p).copied().unwrap_or(false);
   if !rec_fields.iter().any(|(_, t)| !inb(t.source_pos)) {
     return Some(None);
@@ -1024,7 +1025,8 @@ fn size_of_minor_with(
     peel_binders(minor_ty, num_fields, "split_field", 0, &mut supply),
     unread,
   )?;
-  let rec_fields = rec_fields_of(ienv, rv, &field_decls, ps, &aux_sigs, &mut supply);
+  let rec_fields =
+    rec_fields_of(ienv, rv, &field_decls, ps, &aux_sigs, &mut supply);
   let inb = |p: usize| in_block.get(p).copied().unwrap_or(false);
   if !rec_fields.iter().any(|(_, t)| !inb(t.source_pos)) {
     return Ok(None);
@@ -1515,96 +1517,211 @@ mod tests {
 
   /// Raw general-input helper fixture, not kernel-accepted-source evidence.
   fn capture_fixture(higher: bool) -> (LeanEnv, RecursorVal) {
-    use ix_common::env::{BinderInfo, ConstantVal, ConstructorVal, InductiveVal};
     use bignat::Nat;
+    use ix_common::env::{
+      BinderInfo, ConstantVal, ConstructorVal, InductiveVal,
+    };
     let sort = Expr::sort(Level::zero());
     let a = dotted("A");
     let b = dotted("B");
     let ctor = dotted("A.mk");
-    let cv = |name: Name, typ: Expr| ConstantVal { name, typ, level_params: vec![] };
+    let cv =
+      |name: Name, typ: Expr| ConstantVal { name, typ, level_params: vec![] };
     let target = mk_const(&b, vec![]);
     let field_ty = if higher {
       Expr::all(dotted("x"), sort.clone(), target, BinderInfo::Default)
-    } else { target };
-    let minor_ty = Expr::all(dotted("field"), field_ty,
+    } else {
+      target
+    };
+    let minor_ty = Expr::all(
+      dotted("field"),
+      field_ty,
       Expr::all(dotted("ih"), sort.clone(), sort.clone(), BinderInfo::Default),
-      BinderInfo::Default);
-    let rv = RecursorVal { cnst: cv(dotted("A.rec"),
-      Expr::all(dotted("minor"), minor_ty, sort.clone(), BinderInfo::Default)),
-      all: vec![a.clone(), b.clone()], num_params: Nat::ZERO,
-      num_indices: Nat::ZERO, num_motives: Nat::ZERO, num_minors: Nat::from(1u64),
-      rules: vec![], k: false, is_unsafe: false };
+      BinderInfo::Default,
+    );
+    let rv = RecursorVal {
+      cnst: cv(
+        dotted("A.rec"),
+        Expr::all(dotted("minor"), minor_ty, sort.clone(), BinderInfo::Default),
+      ),
+      all: vec![a.clone(), b.clone()],
+      num_params: Nat::ZERO,
+      num_indices: Nat::ZERO,
+      num_motives: Nat::ZERO,
+      num_minors: Nat::from(1u64),
+      rules: vec![],
+      k: false,
+      is_unsafe: false,
+    };
     let mut env = LeanEnv::default();
-    for (name, ctors) in [(a.clone(), vec![ctor.clone()]), (b.clone(), vec![])] {
-      env.insert(name.clone(), ConstantInfo::InductInfo(InductiveVal {
-        cnst: cv(name, sort.clone()), num_params: Nat::ZERO, num_indices: Nat::ZERO,
-        all: vec![a.clone(), b.clone()], ctors, num_nested: Nat::ZERO,
-        is_rec: true, is_unsafe: false, is_reflexive: false,
-      }));
+    for (name, ctors) in [(a.clone(), vec![ctor.clone()]), (b.clone(), vec![])]
+    {
+      env.insert(
+        name.clone(),
+        ConstantInfo::InductInfo(InductiveVal {
+          cnst: cv(name, sort.clone()),
+          num_params: Nat::ZERO,
+          num_indices: Nat::ZERO,
+          all: vec![a.clone(), b.clone()],
+          ctors,
+          num_nested: Nat::ZERO,
+          is_rec: true,
+          is_unsafe: false,
+          is_reflexive: false,
+        }),
+      );
     }
-    env.insert(ctor.clone(), ConstantInfo::CtorInfo(ConstructorVal {
-      cnst: cv(ctor, sort), induct: a, cidx: Nat::ZERO,
-      num_params: Nat::ZERO, num_fields: Nat::from(1u64), is_unsafe: false,
-    }));
+    env.insert(
+      ctor.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: cv(ctor, sort),
+        induct: a,
+        cidx: Nat::ZERO,
+        num_params: Nat::ZERO,
+        num_fields: Nat::from(1u64),
+        is_unsafe: false,
+      }),
+    );
     (env, rv)
   }
 
   #[test]
   fn o2_capture_avoiding_field_and_higher_order_neighbours() {
+    use crate::compile::aux_gen::expr_utils::fresh_fvar;
     use bignat::Nat;
     use ix_common::env::BinderInfo;
-    use crate::compile::aux_gen::expr_utils::fresh_fvar;
     for higher in [false, true] {
       for collision in [true, false] {
         let (env, rv) = capture_fixture(higher);
         let prefix = if higher { "split_xs" } else { "split_field" };
         let m = fresh_fvar(if collision { prefix } else { "caller" }, 0).1;
-        let recur = |o: &Occ<'_>| Some(mk_app_n(mk_const(o.head, o.us.to_vec()), o.args));
-        let actual = adapt_minor(&recur, &env, &rv, &[true, false], &[], &[], &[],
-          std::slice::from_ref(&m), 0).unwrap().unwrap();
+        let recur =
+          |o: &Occ<'_>| Some(mk_app_n(mk_const(o.head, o.us.to_vec()), o.args));
+        let actual = adapt_minor(
+          &recur,
+          &env,
+          &rv,
+          &[true, false],
+          &[],
+          &[],
+          &[],
+          std::slice::from_ref(&m),
+          0,
+        )
+        .unwrap()
+        .unwrap();
         let target = mk_const(&dotted("B"), vec![]);
         let bv = |i| Expr::bvar(Nat::from(i));
         let (field_ty, call) = if higher {
-          (Expr::all(dotted("x"), Expr::sort(Level::zero()), target, BinderInfo::Default),
-           Expr::lam(dotted("x"), Expr::sort(Level::zero()),
-             mk_app_n(mk_const(&dotted("B.rec"), vec![]),
-               &[m.clone(), Expr::app(bv(1), bv(0))]), BinderInfo::Default))
+          (
+            Expr::all(
+              dotted("x"),
+              Expr::sort(Level::zero()),
+              target,
+              BinderInfo::Default,
+            ),
+            Expr::lam(
+              dotted("x"),
+              Expr::sort(Level::zero()),
+              mk_app_n(
+                mk_const(&dotted("B.rec"), vec![]),
+                &[m.clone(), Expr::app(bv(1), bv(0))],
+              ),
+              BinderInfo::Default,
+            ),
+          )
         } else {
-          (target, mk_app_n(mk_const(&dotted("B.rec"), vec![]), &[m.clone(), bv(0)]))
+          (
+            target,
+            mk_app_n(mk_const(&dotted("B.rec"), vec![]), &[m.clone(), bv(0)]),
+          )
         };
-        let expected = Expr::lam(dotted("field"), field_ty,
-          mk_app_n(m.clone(), &[bv(0), call]), BinderInfo::Default);
+        let expected = Expr::lam(
+          dotted("field"),
+          field_ty,
+          mk_app_n(m.clone(), &[bv(0), call]),
+          BinderInfo::Default,
+        );
         assert_eq!(actual, expected);
-        assert!(adapt_minor(&|_| None, &env, &rv, &[true, false], &[], &[], &[],
-          std::slice::from_ref(&m), 0).is_none());
+        assert!(
+          adapt_minor(
+            &|_| None,
+            &env,
+            &rv,
+            &[true, false],
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&m),
+            0
+          )
+          .is_none()
+        );
       }
     }
   }
 
   #[test]
   fn o11a_capture_avoiding_open_neighbour_and_decline() {
+    use crate::compile::aux_gen::expr_utils::fresh_fvar;
     use bignat::Nat;
     use ix_common::env::BinderInfo;
-    use crate::compile::aux_gen::expr_utils::fresh_fvar;
     let (ienv, rv) = capture_fixture(false);
-    let env = OptEnv { ienv: &ienv, resolves: &|_| false, block_of: &|_| None,
-      addr_of: None, ix_form: None };
+    let env = OptEnv {
+      ienv: &ienv,
+      resolves: &|_| false,
+      block_of: &|_| None,
+      addr_of: None,
+      ix_form: None,
+    };
     for collision in [true, false] {
       let external = fresh_fvar(if collision { "o11a" } else { "caller" }, 0).1;
       let target = mk_const(&dotted("B"), vec![]);
-      let m = Expr::lam(dotted("field"), target.clone(),
-        Expr::lam(dotted("ih"), Expr::sort(Level::zero()),
-          Expr::app(external.clone(), Expr::bvar(Nat::from(1u64))), BinderInfo::Default),
-        BinderInfo::Default);
-      let actual = size_of_minor_with(&env, &|_, _| Ok((dotted("inst"), Level::zero())),
-        &rv, &[true, false], &[], &[], &[], std::slice::from_ref(&m), 0).unwrap().unwrap();
-      let expected = Expr::lam(dotted("field"), target,
-        Expr::app(external, Expr::bvar(Nat::ZERO)), BinderInfo::Default);
+      let m = Expr::lam(
+        dotted("field"),
+        target.clone(),
+        Expr::lam(
+          dotted("ih"),
+          Expr::sort(Level::zero()),
+          Expr::app(external.clone(), Expr::bvar(Nat::from(1u64))),
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      );
+      let actual = size_of_minor_with(
+        &env,
+        &|_, _| Ok((dotted("inst"), Level::zero())),
+        &rv,
+        &[true, false],
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&m),
+        0,
+      )
+      .unwrap()
+      .unwrap();
+      let expected = Expr::lam(
+        dotted("field"),
+        target,
+        Expr::app(external, Expr::bvar(Nat::ZERO)),
+        BinderInfo::Default,
+      );
       assert_eq!(actual, expected);
-      assert_eq!(size_of_minor_with(&env, &|_, _| Err(Some("fixture-decline".into())),
-        &rv, &[true, false], &[], &[], &[], std::slice::from_ref(&m), 0),
-        Err(Some("fixture-decline".into())));
+      assert_eq!(
+        size_of_minor_with(
+          &env,
+          &|_, _| Err(Some("fixture-decline".into())),
+          &rv,
+          &[true, false],
+          &[],
+          &[],
+          &[],
+          std::slice::from_ref(&m),
+          0
+        ),
+        Err(Some("fixture-decline".into()))
+      );
     }
   }
-
 }
