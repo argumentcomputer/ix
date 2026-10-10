@@ -1787,10 +1787,10 @@ fn addr_key(
   levels: &[Name],
 ) -> Result<std::sync::Arc<OccurrenceShape>, CompileError> {
   let key_ref = |n: &Name| -> OccurrenceRef {
-    if !keep.contains(n) {
-      if let Some(a) = stt.resolve_addr(n) {
-        return OccurrenceRef::External(a);
-      }
+    if !keep.contains(n)
+      && let Some(a) = stt.resolve_addr(n)
+    {
+      return OccurrenceRef::External(a);
     }
     OccurrenceRef::Named(n.clone())
   };

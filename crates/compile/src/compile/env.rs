@@ -871,10 +871,10 @@ pub fn compile_env_with_profile(
                 {
                   promotion_failure = Some(e.to_string());
                 }
-                if let Some(txn) = crate::compile::block_txn::take() {
-                  if promotion_failure.is_some() {
-                    crate::compile::block_txn::rollback(stt_ref, &txn);
-                  }
+                if let Some(txn) = crate::compile::block_txn::take()
+                  && promotion_failure.is_some()
+                {
+                  crate::compile::block_txn::rollback(stt_ref, &txn);
                 }
                 if let Some(msg) = promotion_failure {
                   fail_aux_promotion(stt_ref, &all, &msg);

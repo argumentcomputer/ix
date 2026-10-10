@@ -1438,7 +1438,7 @@ pub fn transport_structural(
           sh.lams - 1 - (i - sh.lets),
         )
       })();
-      let regenerated = attempt.map_err(|_: String| format!(
+      let regenerated = attempt.map_err(|_error: String| format!(
         "grammar: the carried equation lemma {} unfolds a member through the encoding of a repacked group (brecOn.go/brecOn.eq and packed values the transport does not re-associate)",
         name_to_string(&d.name)
       ))?;

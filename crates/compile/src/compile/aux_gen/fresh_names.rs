@@ -253,10 +253,10 @@ pub(super) fn source_names(
     }
     let mut refs = Vec::new();
     const_names_refs(&ci, &mut names, &mut refs, control)?;
-    if matches!(&*ci, ConstantInfo::InductInfo(_)) {
-      if let Some(classes) = canon.and_then(|stt| stt.blocks.get(&name)) {
-        refs.extend(classes.iter().flatten().cloned());
-      }
+    if matches!(&*ci, ConstantInfo::InductInfo(_))
+      && let Some(classes) = canon.and_then(|stt| stt.blocks.get(&name))
+    {
+      refs.extend(classes.iter().flatten().cloned());
     }
     // FIFO versus DFS cannot affect membership or the numeric-component
     // bound used by allocation. Both follow every reached outgoing edge.
