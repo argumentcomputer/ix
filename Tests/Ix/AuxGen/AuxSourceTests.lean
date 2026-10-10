@@ -118,17 +118,18 @@ def minorFixture (higher : Bool) : Environment × Ix.RecursorVal := Id.run do
   let minorTy := Expr.mkForallE (nm "field") fieldTy
     (Expr.mkForallE (nm "ih") sort0 sort0 .default) .default
   let rv : Ix.RecursorVal := {
-    cnst := { name := nm "A.rec", levelParams := #[],
+    cnst := {
+      name := nm "A.rec", levelParams := #[],
       type := Expr.mkForallE (nm "minor") minorTy sort0 .default },
     all := #[a, b], numParams := 0, numIndices := 0, numMotives := 0, numMinors := 1,
     rules := #[], k := false, isUnsafe := false }
   let cv : Ix.ConstructorVal := {
     cnst := { name := ctor, levelParams := #[], type := sort0 },
     induct := a, cidx := 0, numParams := 0, numFields := 1, isUnsafe := false }
-  let env : Environment := { consts := ({} : Std.HashMap Name ConstantInfo)
-    |>.insert a (.inductInfo (smallInd a #[ctor]))
-    |>.insert b (.inductInfo (smallInd b #[]))
-    |>.insert ctor (.ctorInfo cv) }
+  let consts := ({} : Std.HashMap Name ConstantInfo).insert a (.inductInfo (smallInd a #[ctor]))
+  let consts := consts.insert b (.inductInfo (smallInd b #[]))
+  let consts := consts.insert ctor (.ctorInfo cv)
+  let env : Environment := { consts }
   return (env, rv)
 
 def actualO2Capture (higher collision : Bool) : Bool := Id.run do
@@ -184,8 +185,9 @@ def signatureCapture (collision : Bool) : Bool := Id.run do
     cnst := { name := nm "R", levelParams := #[], type := Expr.mkForallE (nm "motive") motiveTy sort0 .default },
     all := #[], numParams := 0, numIndices := 0, numMotives := 1, numMinors := 0,
     rules := #[], k := false, isUnsafe := false }
-  let env : Environment := { consts := ({} : Std.HashMap Name ConstantInfo)
-    |>.insert (nm "Ext") (.inductInfo (smallInd (nm "Ext") #[] 1)) }
+  let consts := ({} : Std.HashMap Name ConstantInfo).insert
+    (nm "Ext") (.inductInfo (smallInd (nm "Ext") #[] 1))
+  let env : Environment := { consts }
   let sigs := auxMotiveSigs rv #[] #[] #[sort0] env
   let preferred := (freshFVar "aux_sig_idx" 0).1
   let chosen := if collision then Name.mkNat preferred 0 else preferred
