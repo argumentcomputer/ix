@@ -159,6 +159,26 @@ lean_exe «compile-cert-c1» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
+/-- Direct positive and negative controls for the production C1 flag helper. -/
+lean_exe «c1-flag-controls» where
+  root := `Tests.Ix.Compile.C1.FlagControls
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
+/-- Emit complete L2a-syn accounting rows; exit zero means collection completed,
+not that every row passed. -/
+lean_exe «c1-accounting» where
+  root := `Tests.Ix.Compile.C1.Accounting
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
+/-- Check C1 source/serialized controls with explicit worker count, order and
+fresh output directory arguments. -/
+lean_exe «c1-source-controls» where
+  root := `Tests.Ix.Compile.C1.SourceControls
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
 /-- The compiler certifier: a Lean environment and an `.ixe`, one verdict per
 constant (certified, unsupported, blocked, rejected), through the certified
 association check `Ix.CompileCert.checkIndexed` (`Ix/CompileCert/Certifier.lean`). -/
