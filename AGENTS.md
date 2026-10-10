@@ -80,13 +80,15 @@ of redundant workspaces after preserving their work. This supersedes the older
 cloud-only build/test restriction for this session. The cloud box is unavailable;
 do not depend on it or start remote jobs.
 
-Scope is ix-certify-compile and its identified compiler workspaces. Compilatr.ix
+Scope includes ix-certify-compile, /home/jcb/projects/ix (including shared jj
+metadata), and the identified compiler workspaces. Compilatr.ix
 and other separate projects are excluded, including their dependencies and
 build caches. Consolidate relevant source into one branch with meaningful
 commits; discard obsolete work and data instead of retaining blanket archives.
 
-Preserve the old cloud capture and unresolved reservation as historical facts.
-They do not block local consolidation. If remote work later resumes, its
+Record the old cloud run as incomplete historical evidence. Superseded capture
+and recovery data can be retired after relevance review; they do not block
+local consolidation. If remote work later resumes, its
 full-workspace wrapper excludes `plans/` and uses deletion semantics: review
 explicit staging for any required tool, and never pass it a small scratch
 directory or replace a pinned wrapper during organization work.
