@@ -12,6 +12,7 @@ import Ix.CompileCert.Bridge
 import Ix.CompileCert.StrongChanged
 import Ix.CompileCert.Opt
 import Ix.CompileCert.Publication
+import Ix.CompileCert.Promotion
 
 /-! # The compiler-certification lane's axiom audit
 
@@ -2048,4 +2049,17 @@ def publicationRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.publicationRoots Ix.CompileCert.Audit.allowedAxioms
+
+/-! Original-form promotion keeps constants ephemeral and preserves the
+anonymous prefix while publishing its checked blobs. -/
+namespace Ix.CompileCert.Audit
+
+def promotionRoots : Array Lean.Name :=
+  #[`promoteAuxDriver_anonymous, `promoteOriginalBlock_anonymous,
+    `promoteOriginalBlock_content, `promoteOriginalBlock_extends,
+    `promoteOriginalBlock_present].map (`Ix.CompileCert.Publication ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.promotionRoots Ix.CompileCert.Audit.allowedAxioms
 
