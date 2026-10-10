@@ -626,6 +626,15 @@ theorem findIdx_alphaEq_eq (_hok : InjOn (shift s0 d) (FreshBelow B)) {mts mts' 
   intro i h1 h2
   exact alphaEq_ren exactInjOn_shift (h.1.get i h2 h1) htr.1 (h.2 _ (by simp)) htr.2
 
+theorem findIdx_motiveEq_eq (params : Array Name)
+    (_hok : InjOn (shift s0 d) (FreshBelow B)) {mts mts' : Array Expr} (h : ARE s0 d B mts mts')
+    {target : Expr} (htr : RE s0 d B target target) :
+    mts'.findIdx? (fun x => Ix.Compile.Image.motiveEq params x target) =
+      mts.findIdx? (fun x => Ix.Compile.Image.motiveEq params x target) := by
+  apply array_findIdx?_congr _ _ h.size.symm
+  intro i h1 h2
+  exact motiveEq_ren params exactInjOn_shift (h.1.get i h2 h1) htr.1 (h.2 _ (by simp)) htr.2
+
 /-- The occurrence finder of `findElim`, through any head-respecting predicate: related answers. -/
 theorem occ_match {P : Expr → Bool} (hP : ∀ a b, Ren (shift s0 d) a b → P b = P a)
     {G : Expr → Array Expr × Array Level}
@@ -699,8 +708,8 @@ macro "rfl_tail" : tactic => `(tactic| (
         split
         · exact Sim.pure (by simp [StepRel, OElimRel])
         · refine Sim.bind (sim_elimMotiveTypes hok hcl ind lv hps) (fun mts mts' hm => ?_) (fun _ => ?_)
-          · rw [findIdx_alphaEq_eq hok hm htf]
-            cases Array.findIdx? (fun x => Ix.Compile.Image.alphaEq x target) mts with
+          · rw [findIdx_motiveEq_eq c.motiveParams hok hm htf]
+            cases Array.findIdx? (fun x => Ix.Compile.Image.motiveEq c.motiveParams x target) mts with
             | none => exact Sim.pure (by simp [StepRel, OElimRel])
             | some k =>
               simp only

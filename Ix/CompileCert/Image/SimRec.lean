@@ -11,8 +11,8 @@ returns renamed terms:
 * `sim_buildRecAppP`: **the relocation step from shifted counters**, for every fuel.
 
 The proof follows the code's steps (§4.2 steps 1-5): the eliminator choice (`sim_findElim`), the slot
-classes (equal: the motive types are compared with `alphaEq`, which the renaming keeps on fresh
-names, `alphaEq_ren`), the canonical recursor's telescope, the motives, the minors with their
+classes (equal: motive matching is preserved on fresh names by `motiveEq_ren`,
+with the same universe context), the canonical recursor's telescope, the motives, the minors with their
 components and hypothesis values (the relocated hypotheses by the induction hypothesis), and the
 final projection.
 
@@ -189,13 +189,13 @@ theorem sim_buildRecAppW {D1 D2 : DevOps} (hD : DevRel s0 d B D1 D2)
     refine Sim.bind (Sim.liftExcept_same _) (fun rv rv' hrv => ?_) (fun _ => by mono_auto)
     obtain ⟨rfl, hrv⟩ := hrv
     refine Sim.bind (sim_elimMotiveTypes hok hcl _ _ hps) (fun mts mts' hm => ?_) (fun _ => by mono_auto)
+    dsimp -zeta only [LCtx.slotClasses]
     rw [map_congr_eq hm.size (fun i h1 h2 => ?_)]
     rotate_left
-    · dsimp only
-      refine congrArg _ (filter_congr_mem fun x hx => ?_)
+    · refine congrArg _ (filter_congr_mem fun x hx => ?_)
       obtain ⟨ty, n⟩ := x
       have htr := hc.2 ty (Array.fst_mem_of_mem_zipIdx hx)
-      exact alphaEq_ren exactInjOn_shift htr.1 (hm.1.get i h1 h2) htr.2 (hm.2 _ (by simp))
+      exact motiveEq_ren c.motiveParams exactInjOn_shift htr.1 (hm.1.get i h1 h2) htr.2 (hm.2 _ (by simp))
     refine Sim.bind (R := fun _ _ => True) (Sim.forIn_array (Ra := Eq) (fun a a' u u' ha hu => ?_)
       (fun _ _ => by mono_auto) (LRel.refl_eq _) trivial) (fun _ _ _ => ?_) (fun _ => by mono_auto)
     · subst ha

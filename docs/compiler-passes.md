@@ -654,6 +654,16 @@ canonical block's recursor rather than the recursor of the occurrence's head
 constant. The container rule takes precedence; trying the head recursor first is
 the `naiveElim` ablation in the generator's tests.
 
+Motive/slot matching uses the source block's universe-parameter positions and
+the same `canonUniv` normal form as nested occurrence keys. Thus `List.{max 0 0}`
+and `List.{0}` occupy the same canonical slot. The source types retain their
+original universe spellings. Names remain exact, and metadata must be paired;
+the separate raw `Image.alphaEq` comparator keeps its existing behavior.
+See [MotiveEq](../Ix/Compile/Image/MotiveEq.lean). The corresponding proofs expose
+the canonical-wire equality check and preserve every previous raw-alpha match;
+the general semantic correctness of universe canonicalization remains a shared
+compiler proof obligation.
+
 Canonical positions and source constructors come from the specification and the
 read recursor telescope. They must agree with the generated declarations. The
 implementation's successful reads are checks of particular shapes; they do not

@@ -7,16 +7,16 @@
 //! type and arity are.
 
 use ix_common::env::{
-  ConstantInfo, ConstructorVal, Expr, ExprData, InductiveVal, Level, Name,
-  RecursorVal,
+  ConstantInfo, ConstructorVal, Expr, ExprData, InductiveVal, Level, LevelData,
+  Name, RecursorVal,
 };
 
 use super::develop::subst_fvars;
 use super::expr::{
-  Gen, GenResult, Local, alpha_eq, app_arg, eta_reduce, exprs, find_sub,
-  forall_arity, fvar_idx, get_app_args, get_app_fn, head_const, idx,
-  inst_forall, inst_locals, is_always_zero, lvl_one, lvl_zero, mk_app_n,
-  mk_lambda, mk_str, motive_level, normalize_level, strip_mdata, strip_sort,
+  Gen, GenResult, Local, app_arg, eta_reduce, exprs, find_sub, forall_arity,
+  fvar_idx, get_app_args, get_app_fn, head_const, idx, inst_forall,
+  inst_locals, is_always_zero, lvl_one, lvl_zero, mk_app_n, mk_lambda, mk_str,
+  motive_eq, motive_level, normalize_level, strip_mdata, strip_sort,
   subst_levels, telescope, used_constants,
 };
 use super::names::{
@@ -83,6 +83,19 @@ struct LCtx<'a> {
   ind_levels: Vec<Level>,
 }
 
+impl LCtx<'_> {
+  fn motive_params(&self) -> Vec<Name> {
+    self
+      .ind_levels
+      .iter()
+      .filter_map(|level| match level.as_data() {
+        LevelData::Param(name, _) => Some(name.clone()),
+        _ => None,
+      })
+      .collect()
+  }
+}
+
 fn analyze_lean_minor(
   g: &mut Gen,
   ms: &[Local],
@@ -132,6 +145,7 @@ fn is_inductive(const_of: ConstOf<'_>, n: &Name) -> bool {
 
 /// `elim(t)` (§4.1, Def 3.3).
 fn find_elim(g: &mut Gen, c: &LCtx<'_>, t: usize) -> GenResult<Elim> {
+  let motive_params = c.motive_params();
   let m = c.ms.get(t).ok_or("image: motive index")?;
   let target = idx(&c.motive_tys, t, "findElim: motive type")?.clone();
   let (xs, _) = telescope(g, &m.typ, None);
@@ -177,7 +191,9 @@ fn find_elim(g: &mut Gen, c: &LCtx<'_>, t: usize) -> GenResult<Elim> {
       continue;
     }
     let mts = elim_motive_types(g, c.const_of, &ind, &lv, &ps)?;
-    if let Some(k) = mts.iter().position(|mt| alpha_eq(mt, &target)) {
+    if let Some(k) =
+      mts.iter().position(|mt| motive_eq(&motive_params, mt, &target))
+    {
       let rn = rec_name_for(&ind.all, k);
       let rv = rec_of(c.const_of, &rn)?;
       let has_elim_level =
@@ -354,13 +370,14 @@ fn build_rec_app(
   let rv = rec_of(c.const_of, &e.rec_name)?;
   let mts = elim_motive_types(g, c.const_of, &e.ind, &e.ind_levels, &e.params)?;
   // step 1: slot classes
+  let motive_params = c.motive_params();
   let classes: Vec<Vec<usize>> = mts
     .iter()
     .map(|mt| {
       c.motive_tys
         .iter()
         .enumerate()
-        .filter(|(_, ty)| alpha_eq(ty, mt))
+        .filter(|(_, ty)| motive_eq(&motive_params, ty, mt))
         .map(|(j, _)| j)
         .collect()
     })

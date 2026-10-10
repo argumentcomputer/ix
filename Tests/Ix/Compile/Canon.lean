@@ -351,10 +351,9 @@ def nestedLevelChecks (cenv : CompileEnv) (t : Tally) : Tally := Id.run do
               s!"nested levels {family}.{pres}: pure={pureCount}, production={productionCount}, input-reversed={reverse}; full payload bytes must agree"
   return t
 
-/-- The identical checked source has ten image-slot refusals before the
-nested-key repair. Preserve those exact named refusals and accept every
-other fixture declaration, including the same-spelling neighbour. The actual
-stored projection and owning-block payloads agree under member reordering. -/
+/-- Every declaration in the checked mixed-level source and its same-spelling
+neighbour compiles, including all recursors. The actual stored projection and
+owning-block payloads agree under member reordering. -/
 def nestedLevelPipelineChecks (env : Lean.Environment) (t : Tally) : IO Tally := do
   let fixturePrefix := `Tests.Ix.Compile.Fixtures.NestedLevels
   let seeds := env.constants.toList.filterMap fun (n, _) =>
@@ -371,30 +370,12 @@ def nestedLevelPipelineChecks (env : Lean.Environment) (t : Tally) : IO Tally :=
   match result with
   | .error e => return t.check false s!"nested levels: complete pipeline failed: {e}"
   | .ok out =>
-    let expected := #[
-      (`Mixed.A.Left.rec, 3), (`Mixed.A.Right.rec, 3),
-      (`Mixed.A.Left.rec_1, 3), (`Mixed.A.Left.rec_2, 3), (`Mixed.A.Left.rec_3, 3),
-      (`Mixed.B.Left.rec, 2), (`Mixed.B.Right.rec, 2),
-      (`Mixed.B.Right.rec_1, 2), (`Mixed.B.Right.rec_2, 2), (`Mixed.B.Right.rec_3, 2)].map
-      fun (entry : Lean.Name × Nat) =>
-        let (suffix, motive) := entry
-        (fixturePrefix ++ suffix,
-          s!"invalidMutualBlock: image: hypothesis motive {motive} not in its slot's class")
-    t := t.check (out.ungroundedCount == 0 && out.cenv.ungrounded.size == expected.size)
+    t := t.check (out.ungroundedCount == 0 && out.cenv.ungrounded.isEmpty)
       s!"nested levels: unexpected pipeline failures: {out.cenv.ungrounded.toArray.map (fun (n,e) => (n.pretty,e))}"
-    for (n, reason) in expected do
-      let name := Ix.Name.fromLeanName n
-      let isRecursor := match env.constants.find? n with
-        | some (.recInfo _) => true
-        | _ => false
-      t := t.check (seeds.contains n && isRecursor && (out.env.getNamed? name).isNone &&
-          out.cenv.ungrounded.get? name == some reason)
-        s!"nested levels: exact pre-existing recursor refusal changed: {n}"
     for n in seeds do
       let name := Ix.Name.fromLeanName n
-      let refused := expected.any (fun (m, _) => m == n)
-      t := t.check ((out.env.getNamed? name).isSome == !refused &&
-          (out.cenv.ungrounded.get? name).isSome == refused)
+      t := t.check ((out.env.getNamed? name).isSome &&
+          (out.cenv.ungrounded.get? name).isNone)
         s!"nested levels: checked declaration has wrong emitted/refused coverage: {n}"
     let bytesOf := fun n => do
       let nd ← out.env.getNamed? (Ix.Name.fromLeanName n)

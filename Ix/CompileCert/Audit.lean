@@ -8,6 +8,7 @@ import Ix.CompileCert.Canon.GeneratedTables
 import Ix.CompileCert.Changed
 import Ix.CompileCert.Conv
 import Ix.CompileCert.Image
+import Ix.CompileCert.Image.MotiveEq
 import Ix.CompileCert.Bridge
 import Ix.CompileCert.StrongChanged
 import Ix.CompileCert.Opt
@@ -1797,7 +1798,7 @@ def l2aRoots : Array Lean.Name :=
     `lowerLoose_go_ren, `lowerLoose_ren, `ARen.size, `ARen.get, `instantiateRevAt_ren,
     `instantiateRev_ren, `ARen.reverse, `instLocals_ren, `stripMdata_ren, `forallArity_ren, `BRen,
     `BsRen, `BsRen.push, `peelForalls_ren, `instForall_ren, `list_findIdx?_congr, `array_findIdx?_congr,
-    `array_idxOf?_eq, `InjOn, `array_idxOf?_ren, `alphaEq_ren, `LocRen, `LsRen, `fvarIdx?_ren,
+    `array_idxOf?_eq, `InjOn, `array_idxOf?_ren, `alphaEq_ren, `motiveEq_ren, `LocRen, `LsRen, `fvarIdx?_ren,
     `abstractFVars_go_ren, `abstractFVars_ren, `LsRen.names, `binderStep, `mkBinders_eq, `mkBinders_ren,
     `mkLambda_ren, `mkForall_ren, `ORen, `hasLooseBVar_go_ren, `etaStep, `etaReduce_lam, `etaStep_ren,
     `etaReduce_ren, `headConst?_ren, `getAppFn_ren, `getAppArgs_ren, `appArg?_ren,
@@ -1827,7 +1828,7 @@ def l2aRoots : Array Lean.Name :=
     `mono_elimMotiveTypes, `ARE.lsMapType, `sim_elimMotiveTypes, `CRel, `ARel, `ARel.push, `ARel.lrel,
     `ElimRel, `OElimRel, `ARE.extract, `getAppArgs_rel, `first2_some, `findSub?_fv, `findSub?_rel,
     `indOf_ok, `mono_findElim, `LRel.refl_eq, `ARel.empty, `ARel.pop, `ARel.singleton_append,
-    `ARel.back?, `ARE.ofCtx, `findIdx_alphaEq_eq, `occ_match, `occ_G, `occ_match_ss, `occ_match_sn,
+    `ARel.back?, `ARE.ofCtx, `findIdx_alphaEq_eq, `findIdx_motiveEq_eq, `occ_match, `occ_G, `occ_match_ss, `occ_match_sn,
     `occ_match_ns, `sim_findElim, `liftP_fv, `lowerP_fv, `projCtor?_fv, `lfv_of_mapM, `develop_fv,
     `substFVarsP_fv, `instantiateP_fv, `rhoP, `str_ne_self, `rhoP_eq, `Ren.fix_fv, `fv_of_self_ren,
     `self_ren_of_fv, `LRen.self_of_lfv, `wrapTy_fv, `wrapVal_fv, `unwrap_fv, `ARE.iff, `ARE.empty,
@@ -2105,4 +2106,18 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.freshTelescope
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.firingRowRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.pairedInitializerRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.o11aInstanceReadRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Motive matching retains raw-alpha inputs and makes its additional
+canonical-universe comparison explicit; this does not assert canonUniv's
+general semantic correctness or complete image correctness. -/
+def motiveMatchRoots : Array Lean.Name :=
+  #[`univ_beq_iff, `levelEq_spec, `levelEq_refl, `levelEq_of_raw,
+    `levelsEq_of_raw, `motiveEq_of_alphaEq, `motiveEq_constant_name].map
+      (`Ix.CompileCert.Img.MotiveMatch ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.motiveMatchRoots Ix.CompileCert.Audit.allowedAxioms
 

@@ -834,6 +834,86 @@ pub fn alpha_eq(a: &Expr, b: &Expr) -> bool {
   alpha_eq_visit(a, b, &mut AlphaMemo::default())
 }
 
+/// Universe equality for motive-slot matching uses the compiler's canonical
+/// positional wire form. `level_to_univ` confirms complete parameter names;
+/// unresolved unequal levels never match. Keep exact raw matches, including
+/// those outside the supplied context, as the raw alpha comparator does.
+pub fn motive_level_eq(params: &[Name], a: &Level, b: &Level) -> bool {
+  a == b
+    || crate::compile::compare_level(a, b, params, params).is_ok_and(|order| {
+      order.strong && order.ordering == std::cmp::Ordering::Equal
+    })
+}
+
+fn motive_eq_visit(
+  params: &[Name],
+  a: &Expr,
+  b: &Expr,
+  memo: &mut AlphaMemo,
+) -> bool {
+  let memo_key = (key(a), key(b));
+  if let Some((saved_a, saved_b, result)) = memo.get(&memo_key)
+    && saved_a == a
+    && saved_b == b
+  {
+    return *result;
+  }
+  let result = if a.get_hash() == b.get_hash() && a == b {
+    true
+  } else {
+    match (a.as_data(), b.as_data()) {
+      (ExprData::Bvar(i, _), ExprData::Bvar(j, _)) => i == j,
+      (ExprData::Fvar(x, _), ExprData::Fvar(y, _))
+      | (ExprData::Mvar(x, _), ExprData::Mvar(y, _)) => x == y,
+      (ExprData::Sort(u, _), ExprData::Sort(v, _)) => {
+        motive_level_eq(params, u, v)
+      },
+      (ExprData::Const(x, us, _), ExprData::Const(y, vs, _)) => {
+        x == y
+          && us.len() == vs.len()
+          && us.iter().zip(vs).all(|(u, v)| motive_level_eq(params, u, v))
+      },
+      (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
+        motive_eq_visit(params, f, g, memo)
+          && motive_eq_visit(params, x, y, memo)
+      },
+      (ExprData::Lam(_, t, b, _, _), ExprData::Lam(_, t2, b2, _, _))
+      | (
+        ExprData::ForallE(_, t, b, _, _),
+        ExprData::ForallE(_, t2, b2, _, _),
+      ) => {
+        motive_eq_visit(params, t, t2, memo)
+          && motive_eq_visit(params, b, b2, memo)
+      },
+      (
+        ExprData::LetE(_, t, v, b, _, _),
+        ExprData::LetE(_, t2, v2, b2, _, _),
+      ) => {
+        motive_eq_visit(params, t, t2, memo)
+          && motive_eq_visit(params, v, v2, memo)
+          && motive_eq_visit(params, b, b2, memo)
+      },
+      (ExprData::Lit(x, _), ExprData::Lit(y, _)) => x == y,
+      (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
+        motive_eq_visit(params, x, y, memo)
+      },
+      (ExprData::Proj(s, i, x, _), ExprData::Proj(s2, i2, y, _)) => {
+        s == s2 && i == i2 && motive_eq_visit(params, x, y, memo)
+      },
+      _ => false,
+    }
+  };
+  memo.insert(memo_key, (a.clone(), b.clone(), result));
+  result
+}
+
+/// Image motive/slot comparison. Names remain exact and metadata is paired;
+/// only universe comparison differs from `alpha_eq`. The shared parameter
+/// context is fixed for the lifetime of this call's confirmed memo entries.
+pub fn motive_eq(params: &[Name], a: &Expr, b: &Expr) -> bool {
+  motive_eq_visit(params, a, b, &mut AlphaMemo::default())
+}
+
 /// `bvar i` occurs loose in `e`.
 pub fn has_loose_bvar(e: &Expr, i: usize) -> bool {
   fn go(e: &Expr, k: usize, memo: &mut FxHashMap<(Hash, usize), bool>) -> bool {
@@ -1263,6 +1343,143 @@ mod alpha_eq_tests {
   fn alpha_eq_raw_cases_match_lean() {
     for (label, a, b, expected) in controls() {
       assert_eq!(alpha_eq(&a, &b), expected, "{label}");
+    }
+  }
+
+  #[test]
+  fn motive_slots_use_canonical_universes_and_retain_raw_guards() {
+    let root = Name(Arc::new(NameData::Anonymous(h(0))));
+    let u = Name(Arc::new(NameData::Str(root.clone(), "u".into(), h(0))));
+    let v = Name(Arc::new(NameData::Str(root.clone(), "v".into(), h(0))));
+    let symbol = Name(Arc::new(NameData::Str(root, "F".into(), h(0))));
+    let zero = Level(Arc::new(LevelData::Zero(h(0))));
+    let one = Level(Arc::new(LevelData::Succ(zero.clone(), h(0))));
+    let p = Level(Arc::new(LevelData::Param(u.clone(), h(0))));
+    let q = Level(Arc::new(LevelData::Param(v.clone(), h(0))));
+    let max = |a: &Level, b: &Level| {
+      Level(Arc::new(LevelData::Max(a.clone(), b.clone(), h(0))))
+    };
+    let imax = |a: &Level, b: &Level| {
+      Level(Arc::new(LevelData::Imax(a.clone(), b.clone(), h(0))))
+    };
+    let sort = |level: &Level| raw(ExprData::Sort(level.clone(), h(0)));
+    let cnst =
+      |levels: Vec<Level>| raw(ExprData::Const(symbol.clone(), levels, h(0)));
+    let params = vec![u.clone(), v];
+    let max00 = max(&zero, &zero);
+    // These labels and cases mirror Tests/Ix/Compile/MotiveEq.lean.
+    let controls = vec![
+      ("zero-max00", vec![], sort(&zero), sort(&max00), true, false),
+      (
+        "commuting-parameters",
+        params.clone(),
+        sort(&max(&p, &q)),
+        sort(&max(&q, &p)),
+        true,
+        false,
+      ),
+      (
+        "idempotent-max",
+        params.clone(),
+        sort(&max(&p, &p)),
+        sort(&p),
+        true,
+        false,
+      ),
+      (
+        "imax-zero",
+        params.clone(),
+        sort(&imax(&p, &zero)),
+        sort(&zero),
+        true,
+        false,
+      ),
+      (
+        "imax-is-not-max",
+        params.clone(),
+        sort(&imax(&p, &q)),
+        sort(&max(&p, &q)),
+        false,
+        false,
+      ),
+      ("unequal-constants", vec![], sort(&zero), sort(&one), false, false),
+      (
+        "distinct-parameters-with-colliding-caches",
+        params.clone(),
+        sort(&p),
+        sort(&q),
+        false,
+        false,
+      ),
+      ("unknown-exact-parameter", vec![], sort(&p), sort(&p), true, true),
+      (
+        "unknown-semantic-alias",
+        vec![],
+        sort(&p),
+        sort(&max(&p, &zero)),
+        false,
+        false,
+      ),
+      (
+        "unknown-metavariable",
+        params.clone(),
+        sort(&Level(Arc::new(LevelData::Mvar(u.clone(), h(0))))),
+        sort(&zero),
+        false,
+        false,
+      ),
+      (
+        "constant-universe-alias",
+        vec![],
+        cnst(vec![max00.clone()]),
+        cnst(vec![zero.clone()]),
+        true,
+        false,
+      ),
+      (
+        "constant-universe-count",
+        params.clone(),
+        cnst(vec![p.clone()]),
+        cnst(vec![p.clone(), q.clone()]),
+        false,
+        false,
+      ),
+      (
+        "constant-universe-order",
+        params,
+        cnst(vec![p.clone(), q.clone()]),
+        cnst(vec![q, p]),
+        false,
+        false,
+      ),
+      (
+        "constant-name-collision",
+        vec![],
+        cnst(vec![zero.clone()]),
+        raw(ExprData::Const(u, vec![zero.clone()], h(0))),
+        false,
+        false,
+      ),
+      (
+        "paired-metadata",
+        vec![],
+        raw(ExprData::Mdata(vec![], sort(&max00), h(0))),
+        raw(ExprData::Mdata(vec![], sort(&zero), h(0))),
+        true,
+        false,
+      ),
+      (
+        "one-sided-metadata",
+        vec![],
+        raw(ExprData::Mdata(vec![], sort(&max00), h(0))),
+        sort(&zero),
+        false,
+        false,
+      ),
+    ];
+    for (label, params, left, right, expected, raw) in controls {
+      assert_eq!(motive_eq(&params, &left, &right), expected, "{label}");
+      assert_eq!(alpha_eq(&left, &right), raw, "raw alpha: {label}");
     }
   }
 

@@ -53,8 +53,7 @@ def buildRecAppW (D : DevOps) : Nat → LCtx → Nat → Array Expr → Expr →
     let rv ← Ix.Compile.Image.liftExcept (recOf c.const? e.recName)
     let mts ← elimMotiveTypes c.const? e.ind e.indLevels e.params
     -- step 1: slot classes
-    let classes : Array (Array Nat) := mts.map fun mt =>
-      (c.motiveTys.zipIdx.filter fun (ty, _) => alphaEq ty mt).map (·.2)
+    let classes := c.slotClasses mts
     for (cl, i) in classes.zipIdx do
       if cl.isEmpty then
         throw s!"image: eliminator {e.recName.pretty}: slot {i} has no Lean motive"

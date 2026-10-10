@@ -17,6 +17,7 @@ import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.AlphaEq
+import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -138,6 +139,7 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("image-alpha-eq", Tests.Ix.Compile.AlphaEq.suite),
+  ("image-motive-eq", Tests.Ix.Compile.MotiveEq.suite),
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),

@@ -159,6 +159,8 @@ have an automatically accepted failure baseline.
 | Suite or runner | Input and assertion | Source |
 | --- | --- | --- |
 | `canon` | Name, universe and expression canonicalization roundtrips and hash controls. | [CanonM](../Tests/Ix/CanonM.lean) |
+| `image-alpha-eq` | Exact raw name/level leaves, retained-cache controls and paired metadata in the general image alpha comparator. | [AlphaEq](../Tests/Ix/Compile/AlphaEq.lean) |
+| `image-motive-eq` | Motive-slot universe aliases, unequal and unresolved neighbours, colliding parameter caches, universe arity/order and unchanged raw-alpha verdicts. | [MotiveEq](../Tests/Ix/Compile/MotiveEq.lean) |
 | `cli-flags` | Long CLI flags parse under their public spelling; escaped spellings are refused beside valid neighbours. | [CliFlags](../Tests/Ix/CliFlags.lean) |
 | `canon-clique` | Clique values decide before pinned recursive-argument positions; ties and the collapsing neighbour are checked. | [CanonClique](../Tests/Ix/Compile/CanonClique.lean) |
 | `reserved-input` | Reserved input diagnostics select the least offending pretty name; the ordinary-name neighbour succeeds. | [ReservedInput](../Tests/Ix/Compile/ReservedInput.lean) |

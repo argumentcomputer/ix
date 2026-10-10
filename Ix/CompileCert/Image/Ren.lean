@@ -549,6 +549,58 @@ theorem alphaEq_ren {P : Name → Prop} (hi : ExactInjOn ρ P) : ∀ {a a' b b' 
       rw [alphaEq_ren hi h1 h3 ha hbP]
     all_goals rfl
 
+/-- Motive matching also commutes with fresh-variable renaming. Its universe
+context stays fixed: `Ren` changes free variables, not universe parameters. -/
+theorem motiveEq_ren (params : Array Name) {P : Name → Prop} (hi : ExactInjOn ρ P) :
+    ∀ {a a' b b' : Expr}, Ren ρ a a' → Ren ρ b b' → FvAll P a → FvAll P b →
+      Ix.Compile.Image.motiveEq params a' b' = Ix.Compile.Image.motiveEq params a b
+  | _, _, _, _, .bvar .., hb, _, _ => by cases hb <;> rfl
+  | _, _, _, _, .fvar n .., hb, ha, hbP => by
+    cases hb
+    case fvar m _ _ => simp only [Ix.Compile.Image.motiveEq]; exact hi _ _ ha hbP
+    all_goals rfl
+  | _, _, _, _, .mvar .., hb, _, _ => by cases hb <;> rfl
+  | _, _, _, _, .sort .., hb, _, _ => by cases hb <;> rfl
+  | _, _, _, _, .const .., hb, _, _ => by cases hb <;> rfl
+  | _, _, _, _, .lit .., hb, _, _ => by cases hb <;> rfl
+  | _, _, _, _, .app _ _ h1 h2, hb, ha, hbP => by
+    cases hb
+    case app _ _ h3 h4 =>
+      simp only [Ix.Compile.Image.motiveEq]
+      rw [motiveEq_ren params hi h1 h3 ha.1 hbP.1, motiveEq_ren params hi h2 h4 ha.2 hbP.2]
+    all_goals rfl
+  | _, _, _, _, .lam _ _ _ _ h1 h2, hb, ha, hbP => by
+    cases hb
+    case lam _ _ _ _ h3 h4 =>
+      simp only [Ix.Compile.Image.motiveEq]
+      rw [motiveEq_ren params hi h1 h3 ha.1 hbP.1, motiveEq_ren params hi h2 h4 ha.2 hbP.2]
+    all_goals rfl
+  | _, _, _, _, .forallE _ _ _ _ h1 h2, hb, ha, hbP => by
+    cases hb
+    case forallE _ _ _ _ h3 h4 =>
+      simp only [Ix.Compile.Image.motiveEq]
+      rw [motiveEq_ren params hi h1 h3 ha.1 hbP.1, motiveEq_ren params hi h2 h4 ha.2 hbP.2]
+    all_goals rfl
+  | _, _, _, _, .letE _ _ _ _ h1 h2 h5, hb, ha, hbP => by
+    cases hb
+    case letE _ _ _ _ h3 h4 h6 =>
+      simp only [Ix.Compile.Image.motiveEq]
+      rw [motiveEq_ren params hi h1 h3 ha.1 hbP.1, motiveEq_ren params hi h2 h4 ha.2.1 hbP.2.1,
+        motiveEq_ren params hi h5 h6 ha.2.2 hbP.2.2]
+    all_goals rfl
+  | _, _, _, _, .mdata _ _ _ h1, hb, ha, hbP => by
+    cases hb
+    case mdata _ _ _ h3 =>
+      simp only [Ix.Compile.Image.motiveEq]
+      exact motiveEq_ren params hi h1 h3 ha hbP
+    all_goals rfl
+  | _, _, _, _, .proj _ _ _ _ h1, hb, ha, hbP => by
+    cases hb
+    case proj _ _ _ _ h3 =>
+      simp only [Ix.Compile.Image.motiveEq]
+      rw [motiveEq_ren params hi h1 h3 ha hbP]
+    all_goals rfl
+
 /-- A local renamed: its variable by `ρ`, its type by `Ren ρ`, name and info kept. -/
 def LocRen (ρ : Name → Name) (l l' : Ix.Compile.Image.Local) : Prop :=
   l'.fvar = ρ l.fvar ∧ l'.userName = l.userName ∧ Ren ρ l.type l'.type ∧ l'.bi = l.bi

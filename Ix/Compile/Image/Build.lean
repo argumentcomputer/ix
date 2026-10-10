@@ -37,6 +37,7 @@ module
 public import Ix.Environment
 public import Ix.Compile.Canon.Expr
 public import Ix.Compile.Image.Expr
+public import Ix.Compile.Image.MotiveEq
 public import Ix.Compile.Image.Develop
 public import Ix.Compile.Image.Spec
 public section
@@ -115,6 +116,15 @@ structure LCtx where
   /-- The Lean block's universe parameters, as levels. -/
   indLevels : Array Level
 
+/-- The source block's universe parameters, shared by both sides of motive
+matching. Produced contexts store these as `Level.mkParam` applications. -/
+def LCtx.motiveParams (c : LCtx) : Array Name :=
+  c.indLevels.filterMap fun | .param name _ => some name | _ => none
+
+def LCtx.slotClasses (c : LCtx) (slots : Array Expr) : Array (Array Nat) :=
+  slots.map fun slot =>
+    (c.motiveTys.zipIdx.filter fun (ty, _) => motiveEq c.motiveParams ty slot).map (·.2)
+
 def analyzeLeanMinor (ms : Array Local) (ty : Expr) : GenM LeanMinor := do
   let (_, concl) ← telescope ty
   let some m := fvarIdx? ms (getAppFn concl) | throw "image: Lean minor's conclusion is not a motive"
@@ -182,7 +192,7 @@ def findElim (c : LCtx) (t : Nat) : GenM Elim := do
     let ind ← liftExcept (indOf c.const? i)
     if ps.size != ind.numParams then continue
     let mts ← elimMotiveTypes c.const? ind lv ps
-    if let some k := mts.findIdx? (alphaEq · target) then
+    if let some k := mts.findIdx? (motiveEq c.motiveParams · target) then
       let rn := recNameFor ind.all k
       let rv ← liftExcept (recOf c.const? rn)
       return { recName := rn, ind, indLevels := lv, params := ps, k,
@@ -285,8 +295,7 @@ def buildRecApp : Nat → LCtx → Nat → Array Expr → Expr → GenM Expr
     let rv ← liftExcept (recOf c.const? e.recName)
     let mts ← elimMotiveTypes c.const? e.ind e.indLevels e.params
     -- step 1: slot classes
-    let classes : Array (Array Nat) := mts.map fun mt =>
-      (c.motiveTys.zipIdx.filter fun (ty, _) => alphaEq ty mt).map (·.2)
+    let classes := c.slotClasses mts
     for (cl, i) in classes.zipIdx do
       if cl.isEmpty then
         throw s!"image: eliminator {e.recName.pretty}: slot {i} has no Lean motive"
