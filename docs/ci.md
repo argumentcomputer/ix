@@ -26,6 +26,12 @@ integration tree requires the same complete validation surface. G1 acceptance
 and the selected-producer fixture refreeze remain open. These local results
 do not establish hosted CI, clean-store timing or completion of Phase1.5.
 
+The later consumer-order snapshot (2,394 files) passed all 16 required local
+checks in 19m 43.930s with the existing store. The subsequent explicit-cap
+commit has four affected-check results. The cleanup checkpoint requires its
+own complete run; [workspaces and recovery](workspaces-and-recovery.md)
+separates published source recovery from compiler/proof acceptance.
+
 The removed surface, with its code and its last passing run, is preserved on
 branch `jcb/ixby-archive` at `7599a43`. There, `nix flake check` passed all 44
 checks in 15 min 38 s at `--max-jobs 2`, with no `--accept-flake-config`.

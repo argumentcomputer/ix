@@ -7,6 +7,9 @@ backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 
 ## Direction and process
 
+- [Workspaces and recovery](workspaces-and-recovery.md): published source and
+  evidence checkpoints, restoration, workspace retirement and validation.
+
 - [Roadmap](roadmap.md): mission, current state, phases, benchmark rungs and
   decisions.
 - [Compiler design](compiler-design.md): the pipeline, its

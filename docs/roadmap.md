@@ -6,6 +6,10 @@ explains the architecture; [development and validation](development-plan.md) exp
 how to land a change; the [documentation guide](README.md) indexes contracts
 and evidence.
 
+[Workspaces and recovery](workspaces-and-recovery.md) records the published
+research and donor-history checkpoints. Their preservation does not select a
+new producer or close the implementation acceptance gates below.
+
 ## Mission
 
 Certified compilation from Ixon v4 (ix's content-addressed Lean kernel
