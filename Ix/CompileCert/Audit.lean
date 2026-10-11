@@ -22,6 +22,7 @@ import Ix.CompileCert.HeadOutcome
 import Ix.CompileCert.ExpressionFrame
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
+import Ix.CompileCert.AuxDiscoveryFrame
 import Ix.CompileCert.AuxNames
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
@@ -2307,6 +2308,19 @@ def blockFrameRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.blockFrameRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- The new source-discovery worklist preserves head claims on every state,
+including cache hits and errors, without a cache-validity premise. -/
+def auxDiscoveryFrameRoots : Array Lean.Name :=
+  #[`Frame.auxLookupConst, `Frame.auxEnvGet, `Frame.tryDetectNestedFVarAt,
+    `Frame.scanNestedFVars, `Frame.tryDetectNestedFVar].map
+      (`Ix.CompileCert.HeadWriterFrame ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.auxDiscoveryFrameRoots Ix.CompileCert.Audit.allowedAxioms
 
 namespace Ix.CompileCert.Audit
 
