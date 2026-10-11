@@ -2310,6 +2310,43 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.blockFrameRoot
 
 namespace Ix.CompileCert.Audit
 
+/-- Exact expression-runtime refinement, without restrictions on source
+annotations, environments, caches or partially completed error states. -/
+def expressionRuntimeRoots : Array Lean.Name :=
+  #[`ExpressionRuntime.depth_pos, `ExpressionRuntime.appTotal_eq_spine,
+    `ExpressionRuntime.appTotal_congr, `ExpressionRuntime.step_congr,
+    `ExpressionRuntime.argsLoop_eq_fold, `ExpressionRuntime.partial_unfold,
+    `ExpressionRuntime.fuel_eq, `compileExprTotal_eq_partial].map (`Ix.CompileM ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionRuntimeRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  let some replacement := substitutions.find? ``Ix.CompileM.compileExprTotal
+    | throwError "missing production expression-compiler csimp equation"
+  unless replacement.toDeclName == ``Ix.CompileM.compileExprPartial &&
+      replacement.thmName == ``Ix.CompileM.compileExprTotal_eq_partial do
+    throwError "wrong production expression-compiler substitute"
+  let runtime := #[``Ix.CompileM.compileExprPartial, ``Ix.CompileM.exprCompileDepth,
+    ``Ix.CompileM.compileExprTotalFuel, ``Ix.CompileM.compileExprTotalStep,
+    ``Ix.CompileM.compileAppTotal]
+  for name in runtime do
+    unless (substitutions.find? name).isNone do
+      throwError m!"expression runtime helper has an unreviewed secondary substitution: {name}"
+  for name in runtime.push ``Ix.CompileM.compileExprTotal do
+    unless (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"expression entry still has an unchecked implemented_by substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"expression runtime entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"expression runtime entry is not kernel-visible and total: {name}"
+  logInfo "[cert-audit] expression compilers: total definitions and checked production substitution"
+
+namespace Ix.CompileCert.Audit
+
 /-- Exact monadic refinement of the total runtime table walks, registered
 in the production module before any singleton/mutual writer is compiled. -/
 def tableWorklistRoots : Array Lean.Name :=

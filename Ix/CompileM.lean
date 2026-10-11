@@ -27,6 +27,7 @@ public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.SOrder
 public import Ix.Compile.Canon.Classes
+import all Ix.Compile.Canon.Expr
 public import Ix.AuxSource
 public import Ix.CanonM
 public import Ix.Compile.Pass.Names
@@ -933,28 +934,9 @@ def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap :
 
 /-! ## Expression Compilation -/
 
-/-- Memoised runtime implementation of `exprCompileDepth`: the same height,
-computed once per distinct node (`Ix.Expr` keys compare by their embedded
-hash). The structural definition below is a tree walk, exponential on the
-DAG-shaped proof terms of a library. -/
-private partial def exprCompileDepthMemo (e : Expr) : StateM (Std.HashMap Expr Nat) Nat := do
-  if let some d := (← get).get? e then return d
-  let d ← match e with
-    | .app fn arg _ => do pure (max (← exprCompileDepthMemo fn) (← exprCompileDepthMemo arg) + 1)
-    | .lam _ ty body _ _ | .forallE _ ty body _ _ => do
-      pure (max (← exprCompileDepthMemo ty) (← exprCompileDepthMemo body) + 1)
-    | .letE _ ty val body _ _ => do
-      pure (max (← exprCompileDepthMemo ty) (max (← exprCompileDepthMemo val)
-        (← exprCompileDepthMemo body)) + 1)
-    | .mdata _ inner _ | .proj _ _ inner _ => do pure ((← exprCompileDepthMemo inner) + 1)
-    | _ => pure 1
-  modify (·.insert e d)
-  return d
-
-private def exprCompileDepthImpl (e : Expr) : Nat := (exprCompileDepthMemo e).run' {}
-
-/-- Structural height used to fuel ordinary expression compilation. -/
-@[implemented_by exprCompileDepthImpl]
+/-- Structural height for the fuel-based expression reference. Production
+callers of `compileExprTotal` use its checked substitution to the direct
+compiler, so they perform no runtime height walk over shared expressions. -/
 def exprCompileDepth : Expr → Nat
 
   | .bvar .. | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => 1
@@ -1251,12 +1233,13 @@ def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
         | .error error => throw (.unsupportedExpr error)
       let (value, root) ← compileExprPartial inner
       match contract.lower inner value with
-      | .ok value => return (value, root)
+      | .ok value => pure (value, root)
       | .error error => throw (.unsupportedExpr error)
-    let kvmap ← compileKVMap kvData
-    let (innerResult, innerRoot) ← compileExprPartial inner
-    let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
-    pure (innerResult, root)
+    else
+      let kvmap ← compileKVMap kvData
+      let (innerResult, innerRoot) ← compileExprPartial inner
+      let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
+      pure (innerResult, root)
 
   | .fvar _ _ => throw (.unsupportedExpr "free variable")
   | .mvar _ _ => throw (.unsupportedExpr "metavariable")
@@ -1271,6 +1254,175 @@ decreasing_by
     | exact Ix.AuxGen.decomposeApps_app_head_lt _ _ _
     | exact Ix.AuxGen.decomposeApps_app_mem_lt _ _ _ _mem
     | simp_wf; omega
+
+namespace ExpressionRuntime
+
+set_option maxHeartbeats 1000000
+
+theorem depth_pos (expr : Expr) : 0 < exprCompileDepth expr := by
+  cases expr <;> simp [exprCompileDepth]
+
+def appStep (compile : Expr → CompileM (Ixon.Expr × UInt64))
+    (acc : Ixon.Expr × UInt64) (arg : Expr) : CompileM (Ixon.Expr × UInt64) := do
+  let (value, root) ← compile arg
+  let next ← allocArenaNode (.app acc.2 root)
+  pure (.app acc.1 value, next)
+
+def spine (compile : Expr → CompileM (Ixon.Expr × UInt64))
+    (expr : Expr) : CompileM (Ixon.Expr × UInt64) := do
+  let parts := Ix.Compile.Canon.getAppFnArgs expr
+  let result ← compile parts.1
+  parts.2.foldlM (appStep compile) result
+
+theorem appTotal_eq_spine (compile : Expr → CompileM (Ixon.Expr × UInt64))
+    (expr : Expr) : compileAppTotal compile expr = spine compile expr := by
+  induction expr <;> simp only [compileAppTotal, spine, Ix.Compile.Canon.getAppFnArgs,
+    Array.foldlM_empty, bind_pure]
+  case app fn arg hash ihfn iharg =>
+    rw [ihfn]
+    simp only [spine, Array.foldlM_push, bind_assoc, appStep]
+
+theorem appTotal_congr (expr : Expr)
+    (first second : Expr → CompileM (Ixon.Expr × UInt64))
+    (agree : ∀ child, exprCompileDepth child ≤ exprCompileDepth expr → first child = second child) :
+    compileAppTotal first expr = compileAppTotal second expr := by
+  induction expr <;> simp only [compileAppTotal]
+  case app fn arg hash ihfn iharg =>
+    have fnEq := ihfn (fun child bound => agree child (by
+      simp only [exprCompileDepth]
+      have small := Nat.le_max_left (exprCompileDepth fn) (exprCompileDepth arg)
+      omega))
+    have argEq := agree arg (by
+      simp only [exprCompileDepth]
+      have small := Nat.le_max_right (exprCompileDepth fn) (exprCompileDepth arg)
+      omega)
+    rw [fnEq, argEq]
+  all_goals exact agree _ (Nat.le_refl _)
+
+theorem step_congr (expr : Expr)
+    (first second : Expr → CompileM (Ixon.Expr × UInt64))
+    (agree : ∀ child, exprCompileDepth child < exprCompileDepth expr → first child = second child) :
+    compileExprTotalStep first expr = compileExprTotalStep second expr := by
+  cases expr <;> simp only [compileExprTotalStep]
+  case app fn arg hash =>
+    have fnEq := appTotal_congr fn first second (fun child bound => agree child (by
+      simp only [exprCompileDepth]
+      omega))
+    have argEq := agree arg (by simp only [exprCompileDepth]; omega)
+    simp only [compileAppTotal, fnEq, argEq]
+  case lam name type body info hash =>
+    simp only [agree type (by simp only [exprCompileDepth]; omega),
+      agree body (by simp only [exprCompileDepth]; omega)]
+  case forallE name type body info hash =>
+    simp only [agree type (by simp only [exprCompileDepth]; omega),
+      agree body (by simp only [exprCompileDepth]; omega)]
+  case letE name type value body nonDep hash =>
+    simp only [agree type (by simp only [exprCompileDepth]; omega),
+      agree value (by simp only [exprCompileDepth]; omega),
+      agree body (by simp only [exprCompileDepth]; omega)]
+  case proj name index inner hash =>
+    simp only [agree inner (by simp only [exprCompileDepth]; omega)]
+  case mdata data inner hash =>
+    simp only [agree inner (by simp only [exprCompileDepth]; omega)]
+  case lit value hash => cases value <;> rfl
+
+def argsLoop (compile : Expr → CompileM (Ixon.Expr × UInt64))
+    (args : Array Expr) (initial : Ixon.Expr × UInt64) : CompileM (Ixon.Expr × UInt64) := do
+  let mut value := initial.1
+  let mut root := initial.2
+  for _mem : arg in args do
+    let (argValue, argRoot) ← compile arg
+    let next ← allocArenaNode (.app root argRoot)
+    value := .app value argValue
+    root := next
+  pure (value, root)
+
+theorem argsLoop_eq_fold (compile : Expr → CompileM (Ixon.Expr × UInt64))
+    (args : Array Expr) (initial : Ixon.Expr × UInt64) :
+    argsLoop compile args initial = args.foldlM (appStep compile) initial := by
+  have body (arg : Expr) (acc : Ixon.Expr × UInt64) :
+      (do
+        let (argValue, argRoot) ← compile arg
+        let next ← allocArenaNode (.app acc.2 argRoot)
+        pure (ForInStep.yield (.app acc.1 argValue, next))) =
+      ForInStep.yield <$> appStep compile acc arg := by
+    simp only [appStep, map_eq_pure_bind, bind_assoc, pure_bind]
+  simp only [argsLoop, forIn'_eq_forIn, body]
+  have eta : (fun result : Ixon.Expr × UInt64 => pure (result.1, result.2) :
+      (Ixon.Expr × UInt64) → CompileM (Ixon.Expr × UInt64)) = pure := by
+    funext result
+    cases result
+    rfl
+  rw [eta, bind_pure]
+  simpa only [map_eq_pure_bind, bind_pure, Prod.eta] using
+    (Array.forIn_yield_eq_foldlM (xs := args) (fun arg acc => appStep compile acc arg)
+      (fun _ _ value => value) initial)
+
+def cached (compile : Expr → CompileM (Ixon.Expr × UInt64))
+    (expr : Expr) : CompileM (Ixon.Expr × UInt64) := do
+  let state ← getBlockState
+  if let some result := state.exprCache.get? expr then return result
+  let (value, root) ← compile expr
+  modifyBlockState fun state => { state with exprCache := state.exprCache.insert expr (value, root) }
+  pure (value, root)
+
+theorem partial_unfold (expr : Expr) :
+    compileExprPartial expr = cached (compileExprTotalStep compileExprPartial) expr := by
+  unfold cached
+  rw [compileExprPartial]
+  congr 1
+  funext state
+  cases found : state.exprCache.get? expr with
+  | some result => rfl
+  | none =>
+    simp only
+    cases expr <;> (try cases ‹Lean.Literal›) <;>
+      simp only [compileExprTotalStep, compileConstExprRaw, bind_assoc, pure_bind]
+    case app fn arg hash =>
+      rw [appTotal_eq_spine]
+      simp only [spine, Ix.AuxGen.decomposeApps_eq, ← argsLoop_eq_fold, argsLoop,
+        bind_assoc, pure_bind]
+    case sort level hash =>
+      congr 1
+      funext result
+      congr 1
+      funext root
+      cases result.2 <;> simp only [bind_assoc, pure_bind]
+    case mdata data inner hash =>
+      split
+      · cases readEq : SemanticContract.read data with
+        | error error => simp only [bind_assoc]; rfl
+        | ok contract =>
+          simp only [bind_assoc]
+          congr 1
+          funext result
+          cases lowerEq : contract.lower inner result.1
+          · rfl
+          · simp only [pure_bind]
+      · simp only [bind_assoc, pure_bind]
+
+/-- The fuel reference agrees with the direct compiler on every environment
+and state, including arbitrary cache entries and all partial error effects. -/
+theorem fuel_eq (fuel : Nat) (expr : Expr) (enough : exprCompileDepth expr ≤ fuel) :
+    compileExprTotalFuel fuel expr = compileExprPartial expr := by
+  induction fuel generalizing expr with
+  | zero => have positive := depth_pos expr; omega
+  | succ fuel ih =>
+    rw [compileExprTotalFuel, partial_unfold]
+    change cached (compileExprTotalStep (compileExprTotalFuel fuel)) expr =
+      cached (compileExprTotalStep compileExprPartial) expr
+    unfold cached
+    have step := step_congr expr (compileExprTotalFuel fuel) compileExprPartial
+      (fun child smaller => ih child (by omega))
+    rw [step]
+
+end ExpressionRuntime
+
+/-- Execute the direct, total compiler without an unchecked height memo or
+a runtime tree walk. Register before any production expression caller. -/
+@[csimp] theorem compileExprTotal_eq_partial : @compileExprTotal = @compileExprPartial := by
+  funext expr
+  exact ExpressionRuntime.fuel_eq _ expr (Nat.le_refl _)
 
 /-- Compile an App telescope (Rust compile.rs:751-1407).
 
@@ -1347,12 +1499,9 @@ def pass3CompileRecords (e : Expr) : CompileM Unit := do
     decompile records of the rewritten call sites in `e` are compiled
     (`pass3CompileRecords`; the block's terms were rewritten before
     compilation, `Ix.Compile.Pass.Translate`); a hand-built environment with
-    `compileExprTotal`. The two are the same ordinary compiler (equal cache
-    and arena semantics); the driver path uses direct well-founded recursion
-    because `compileExprTotal` sizes its fuel with `exprCompileDepth` first. Until
-    M6R slice 6 the driver path was the call-site surgery's implementation
-    run with an empty plan map; slice 6 deleted the plan branches, so the
-    bytes are unchanged. -/
+    `compileExprTotal`. Their exact equality is proved above, including cache,
+    arena and error-state effects. Both paths execute direct well-founded
+    recursion through the checked `compileExprTotal_eq_partial` substitution. -/
 def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   let cenv ← getCompileEnv
   if cenv.pass3 then

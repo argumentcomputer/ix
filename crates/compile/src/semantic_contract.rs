@@ -392,6 +392,9 @@ mod tests {
         output,
         Expr::lam_contract(contract.binder, Expr::sort(0), Expr::var(0))
       );
+      let key =
+        ix_common::address::Address::from_blake3_hash(*source.get_hash());
+      assert_eq!(cache.exprs.get(&key).unwrap().expr, output);
       lambdas.push(source);
     }
     for code in 0..64 {
@@ -409,6 +412,9 @@ mod tests {
           Expr::sort(0)
         )
       );
+      let key =
+        ix_common::address::Address::from_blake3_hash(*source.get_hash());
+      assert_eq!(cache.exprs.get(&key).unwrap().expr, output);
     }
     for (i, a) in lambdas.iter().enumerate() {
       for (j, b) in lambdas.iter().enumerate() {
