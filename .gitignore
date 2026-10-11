@@ -13,6 +13,7 @@ result*
 
 # Scratch space: reference clones, experiments (untracked by design)
 scratchpad
+/refs/
 
 # Local plans, scratch programs, logs, and measurements
 /plans/
