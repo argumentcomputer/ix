@@ -803,7 +803,7 @@ def productionEnv (cenv : Ix.CompileM.CompileEnv)
     (blocks : Std.HashMap Name OptBlock) : OptEnv :=
   { ienv := cenv.env
     resolves := fun n => (Ix.Compile.Pass.resolveAddr cenv n).isSome
-    blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
+    blockOf := fun h => (Ix.Compile.Pass.headOwner? cenv.p3Heads h).bind blocks.get?
     addrOf := Ix.Compile.Pass.resolveAddr cenv
     ixForm? := Ix.Compile.Pass.ixFormOf cenv }
 

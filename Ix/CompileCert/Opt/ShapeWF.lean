@@ -178,7 +178,7 @@ theorem shapesWF_optLookup (cenv : Ix.CompileM.CompileEnv)
     (views : Std.HashMap Name Ix.Compile.Pass.BlockView) :
     ShapesWF
       { ienv := cenv.env, resolves := fun n => (Ix.Compile.Pass.resolveAddr cenv n).isSome
-        blockOf := fun h => (cenv.p3Heads.get? h).bind (Ix.Compile.Pass.optBlocks cenv views).get?
+        blockOf := fun h => (Ix.Compile.Pass.headOwner? cenv.p3Heads h).bind (Ix.Compile.Pass.optBlocks cenv views).get?
         addrOf := Ix.Compile.Pass.resolveAddr cenv
         ixForm? := Ix.Compile.Pass.ixFormOf cenv } := by
   intro h b r s hb hs

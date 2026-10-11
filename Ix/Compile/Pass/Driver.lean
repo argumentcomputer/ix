@@ -71,6 +71,13 @@ namespace Ix.Compile.Pass
 open Ix (Name Expr ConstantInfo)
 open Ix.CompileM
 
+/-- A cached name hash selects a bucket; only the full retained name may use
+its authenticated image-head entry. Rust's name-map equality already makes
+this check. A different name at the same cached hash is not an alias here. -/
+def headOwner? (heads : Std.HashMap Name Name) (name : Name) : Option Name := do
+  let stored ← heads.getKey? name
+  if Ix.Compile.Image.RawExact.nameEq name stored then heads.get? name else none
+
 /-- `stt.resolve_addr` over a compile environment. -/
 def resolveAddr (cenv : CompileEnv) (n : Name) : Option Address :=
   match cenv.nameToAddr.get? n with
@@ -139,6 +146,11 @@ def moveToDisplay (originalAll : Array Name) (rep0 : Name) (perm : Array (Option
     auxNamed := named, auxNameToAddr := n2a, auxGenExtraNames := extra }
   return display
 
+/-- Actual source-authenticated image heads used by both publication hooks. -/
+def sourceImageHeads (env : Ix.Environment) (all : Array Name) : Array Name :=
+  Ix.AuxGen.SourceFamily.filterHeads env all <|
+    (imageKinds env.get? all).filter (Ix.AuxGen.SourceIdentity.permitsOptimization env)
+
 /-- The side-car edit and the driver records of a changed block, applied to
 the block state. -/
 def editChangedBlock (cs : Array MutConst) (classNames : Array (Array Name))
@@ -149,9 +161,7 @@ def editChangedBlock (cs : Array MutConst) (classNames : Array (Array Name))
   -- Custom helpers compile as ordinary source definitions, retaining the
   -- rewrite records for their actual bodies. Family checks run here once,
   -- before the published heads can be used by occurrence optimizations.
-  let heads := Ix.AuxGen.SourceFamily.filterHeads cenv.env originalAll <|
-    (imageKinds cenv.env.get? originalAll).filter
-      (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
+  let heads := sourceImageHeads cenv.env originalAll
   -- every Lean name moves off the Ix auxiliaries: the image kinds denote
   -- their stored images (compiled when their own block comes up,
   -- `compileImageBlock`), the rest are Lean's own blocks
@@ -280,9 +290,7 @@ def editPermutedBelowFamily (cs : Array MutConst) : CompileM Unit := do
   let _ ← moveToDisplay belowAll rep0 #[] fun n =>
     !belowAll.contains n && !ctors.contains n
       && belowAll.any fun b => (stripPrefix? b n).isSome
-  let heads := Ix.AuxGen.SourceFamily.filterHeads cenv.env belowAll <|
-    (imageKinds cenv.env.get? belowAll).filter
-      (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
+  let heads := sourceImageHeads cenv.env belowAll
   modifyBlockState fun st => { st with
     p3AuxRecs := st.p3AuxRecs ++ st.p3BelowRecs
     p3Heads := st.p3Heads ++ heads.map (·, all0)
@@ -308,7 +316,7 @@ def headsIn (heads : Std.HashMap Name Name) (ci : ConstantInfo) : Std.HashSet Na
     if seen.contains x then continue
     seen := seen.insert x
     match x with
-    | .const n _ _ => if heads.contains n then out := out.insert n
+    | .const n _ _ => if (headOwner? heads n).isSome then out := out.insert n
     | .app f a _ => stack := stack.push a |>.push f
     | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
     | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
@@ -416,7 +424,7 @@ def newMemoViews (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
 precomputed (others are built on demand). -/
 def expansionLookup (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
     Name → Except String (Option Expansion) := fun n =>
-  match cenv.p3Heads.get? n with
+  match headOwner? cenv.p3Heads n with
   | none => pure none
   | some key => do
     let v ← viewOf cenv views key
@@ -463,6 +471,7 @@ def expansionTable (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
 def expansionLookupIn (table : Std.HashMap Name (Thunk (Except String (Option Expansion))))
     (cenv : CompileEnv) (views : Std.HashMap Name BlockView) :
     Name → Except String (Option Expansion) := fun n =>
+  if (headOwner? cenv.p3Heads n).isNone then .ok none else
   match table.get? n with
   | some t => t.get
   | none => expansionLookup cenv views n
@@ -537,7 +546,7 @@ reference is renamed to it (`compileCanon`). -/
 def ixFormOf (cenv : CompileEnv) (d : Name) : Option Name :=
   match cenv.env.get? d with
   | some (.defnInfo _) =>
-    if cenv.p3Heads.contains d then none
+    if (headOwner? cenv.p3Heads d).isSome then none
     else
       let c := ixFormName d
       if (resolveAddr cenv c).isSome then some c else none
@@ -554,7 +563,7 @@ def optLookup (cenv : CompileEnv) (blocks : Std.HashMap Name Opt.OptBlock) :
     Option Name → Name → Array Ix.Level → Array Expr → Option (Expr × Array ConstantInfo × Option String) :=
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
-      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
+      blockOf := fun h => (headOwner? cenv.p3Heads h).bind blocks.get?
       addrOf := resolveAddr cenv
       ixForm? := ixFormOf cenv }
   fun site n us args =>
@@ -575,7 +584,7 @@ def unitPasses (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
     (members : Array (Name × ConstantInfo)) : Array ConstantInfo := Id.run do
   let classesOf : Name → Option (Array (Array Name)) := fun t => do
     if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env (Name.mkStr t "casesOn") then none
-    let key ← cenv.p3Heads.get? (Name.mkStr t "casesOn")
+    let key ← headOwner? cenv.p3Heads (Name.mkStr t "casesOn")
     let v ← views.get? key
     let c ← v.canon.components.find? (·.members.contains t)
     pure c.classes
@@ -601,7 +610,7 @@ def declineLookup (cenv : CompileEnv) (blocks : Std.HashMap Name Opt.OptBlock) :
     Name → Array Ix.Level → Array Expr → Option String :=
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
-      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
+      blockOf := fun h => (headOwner? cenv.p3Heads h).bind blocks.get? }
   fun n us args => Opt.O11a.declineCause? env { head := n, us, args }
 
 /-- Pass 3's rewrite of a changed clique's canonical constants (the clique
@@ -614,7 +623,7 @@ def cliqueRewrite (cenv : CompileEnv) (members : Array (Name × ConstantInfo)) :
   let mut views : Std.HashMap Name BlockView := {}
   for (_, ci) in members do
     for h in headsIn cenv.p3Heads ci do
-      if let some key := cenv.p3Heads.get? h then
+      if let some key := headOwner? cenv.p3Heads h then
         if !views.contains key then views := views.insert key (← viewOf cenv views key)
   let table := expansionTable cenv views
   rewriteBlock (expansionLookupIn table cenv views) members (optLookup cenv (optBlocks cenv views))
@@ -723,7 +732,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
     prepareCliques cenv all (cenv.p3BlockRefs.getD lo {}) (cliqueRewrite cenv)
   if cenv.p3Heads.isEmpty then return (cenv, init)
   if let some refs := cenv.p3BlockRefs.get? lo then
-    if !refs.toList.any cenv.p3Heads.contains then return (cenv, init)
+    if !refs.toList.any (fun n => (headOwner? cenv.p3Heads n).isSome) then return (cenv, init)
   let mut members : Array (Name × ConstantInfo) := #[]
   let mut used : Std.HashSet Name := {}
   for n in all do
@@ -736,7 +745,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   let (views, table, blocks) ← Ix.PhaseTimers.withPhase .p3Views cenv fun cenv => do
     let mut views : Std.HashMap Name BlockView := {}
     for h in used do
-      if let some key := cenv.p3Heads.get? h then
+      if let some key := headOwner? cenv.p3Heads h then
         if !views.contains key then
           views := views.insert key (← viewOf cenv views key)
     pure (views, expansionTable cenv views, optBlocks cenv views)
@@ -776,7 +785,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
 (its recursors, or `casesOn`/`recOn`/`below*`/`brecOn*`): the block compiles
 to their images. -/
 def isImageBlock (cenv : CompileEnv) (all : Set Name) : Bool :=
-  cenv.pass3 && !all.isEmpty && all.toList.all cenv.p3Heads.contains
+  cenv.pass3 && !all.isEmpty && all.toList.all (fun n => (headOwner? cenv.p3Heads n).isSome)
 
 /-- Compile the images of an image block, each a constant of Lean's kind under
 the Lean name (the name map sends a changed block's auxiliary to its image,
@@ -787,8 +796,10 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
       × Array (Name × BlockView) × Array (Name × Expansion)) := do
   let mut views : Std.HashMap Name BlockView := {}
   for a in all do
-    if let some key := cenv.p3Heads.get? a then
+    if let some key := headOwner? cenv.p3Heads a then
       if !views.contains key then views := views.insert key (← viewOf cenv views key)
+    else
+      throw s!"Pass 3: {a.pretty} is not an image-kind head"
   let mut pending := all.toArray.qsort (fun a b => a.pretty < b.pretty)
   let mut known : Std.HashMap Name Address := {}
   let mut out : Array (Name × BlockResult × BlockState) := #[]
@@ -834,7 +845,7 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
   let newExps := rwSt.exps.fold (init := #[]) fun acc n x =>
     if cenv.p3ImageExps.contains n then acc else acc.push (n, x)
   let expsOk := views.keys.all (viewMemoable cenv) &&
-    newExps.all fun (n, _) => match cenv.p3Heads.get? n with
+    newExps.all fun (n, _) => match headOwner? cenv.p3Heads n with
       | some key => viewMemoable cenv key
       | none => false
   return (out, memoViews, if expsOk then newExps else #[])

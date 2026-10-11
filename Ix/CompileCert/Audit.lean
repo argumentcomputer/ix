@@ -17,6 +17,8 @@ import Ix.CompileCert.ReferencePublication
 import Ix.CompileCert.SourceIdentity
 import Ix.CompileCert.SourceFamily
 import Ix.CompileCert.SourceFamilyTraversal
+import Ix.CompileCert.HeadPublication
+import Ix.CompileCert.HeadOutcome
 import Ix.CompileCert.AuxNames
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
@@ -2196,4 +2198,42 @@ def sourceFamilyTraversalRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sourceFamilyTraversalRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual source-head writers, publication/erasure transitions and confirmed
+consumer lookups, without identifying names through their digests. -/
+def headPublicationRoots : Array Lean.Name :=
+  #[`headOwner_source, `headOwner_certified, `sourceImageHeads_certified,
+    `claims_of_sourceImageHeads, `editChangedBlock_claims, `editPermutedBelowFamily_claims,
+    `table_empty, `table_insert, `table_publish, `table_erase,
+    `merge_observe, `merge_source, `merge_heads, `merge_valid, `merge_lookup_certified,
+    `failAuxPromotion_observe, `failAuxPromotion_valid, `engineFull_no_block,
+    `engineFull_block, `optLookup_certified, `changed_block_lookup_certified,
+    `permuted_below_lookup_certified, `claims_empty].map
+      (`Ix.CompileCert.HeadPublication ++ ·)
+
+def headWriterFrameRoots : Array Lean.Name :=
+  #[`rawRun_bind, `Frame.pure, `Frame.bind, `compileName_heads, `Frame.compileName,
+    `Frame.moveToDisplay, `Frame.run_heads, `run_success].map
+      (`Ix.CompileCert.HeadWriterFrame ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headPublicationRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headWriterFrameRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- The actual promotion and worker-outcome transitions, and induction over
+their fold, given each compiled cache's authenticated claims. -/
+def headOutcomeRoots : Array Lean.Name :=
+  #[`certified_overlay, `claims_overlay, `promoteAuxDriver_observe,
+    `promoteOriginalBlock_observe, `promoteRemaining_good, `finishAuxPromotion_good,
+    `applyAuxBlockOutcome_good, `fold_outcomes_good, `initial_good,
+    `outcome_lookup_certified].map (`Ix.CompileCert.HeadOutcome ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headOutcomeRoots Ix.CompileCert.Audit.allowedAxioms
 

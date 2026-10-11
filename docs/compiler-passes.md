@@ -804,8 +804,27 @@ construction and actual source lookup, including both expression skeletons
 for definitions. The [traversal proof](../Ix/CompileCert/SourceFamilyTraversal.lean)
 produces a finite set containing the requested helper, with matching source
 declarations and closure under recipe dependencies, including mutual cycles.
-General generator laws, the semantic interpretation of recipe correspondence
-and the driver head-table invariant remain separate proof obligations.
+
+The driver confirms the full retained name before reading an authenticated
+head from Lean's hash-indexed table. Another name with the same cached digest
+cannot borrow that entry, matching Rust's existing full-name map equality.
+The [publication proofs](../Ix/CompileCert/HeadPublication.lean) connect both
+actual writer hooks, the merge and failed-promotion erasure to this stored-key
+invariant. A successful optimization must obtain a confirmed entry and thus
+the derived head's source-family construction and closed dependency witness.
+The generic image-construction core retains its interface; the driver confirms
+its heads before invoking it.
+
+The [outcome proof](../Ix/CompileCert/HeadOutcome.lean) extends the invariant
+through original-form promotion, remaining claims, all compiled/failed/promoted
+worker outcomes, and folds of the actual outcome handler. Its explicit
+premise is authentication of each compiled cache's claims; the writer-hook
+results provide the local construction facts for that premise. Temporary
+source overlays do not change the recipe certificate.
+
+General generator laws, the semantic interpretation of recipe correspondence,
+the whole compiler's cache-production trace and view/memo correspondence
+remain separate proof obligations.
 
 For image-kind definitions such as `casesOn`, `recOn`, `below` and `brecOn`, use
 Lean's own value with its head occurrences rewritten. For a recursor use §4.2's

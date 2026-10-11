@@ -20,6 +20,7 @@ import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.SourceIdentity
 import Tests.Ix.Compile.SourceFamily
+import Tests.Ix.Compile.HeadLookup
 import Tests.Ix.Compile.AuxPublication
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
@@ -144,6 +145,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("image-alpha-eq", Tests.Ix.Compile.AlphaEq.suite),
   ("image-motive-eq", Tests.Ix.Compile.MotiveEq.suite),
   ("aux-source-identity-unit", Tests.Ix.Compile.SourceIdentity.suite),
+  ("image-head-lookup", Tests.Ix.Compile.HeadLookup.suite),
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),
