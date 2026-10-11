@@ -21,6 +21,7 @@ import Ix.CompileCert.HeadPublication
 import Ix.CompileCert.HeadOutcome
 import Ix.CompileCert.ExpressionFrame
 import Ix.CompileCert.PayloadFrame
+import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxNames
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
@@ -2276,6 +2277,36 @@ def payloadFrameRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.payloadFrameRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual table preseeding, singleton/mutual compilation and block assembly
+preserve head claims. Runtime substitutions remain a separate refinement
+obligation; the frames cover arbitrary states and error effects. -/
+def blockFrameRoots : Array Lean.Name :=
+  #[`Frame.discard, `Frame.collectExprTableUnivs, `Frame.collectExprTablesStructural,
+    `Frame.collectExprTables, `Frame.collectPreseedExprs, `Frame.internPreseedRefs,
+    `Frame.canonPreseedUnivs, `Frame.internPreseedUnivs, `Frame.preseedExprTables,
+    `Frame.readContext, `Frame.liftSharing, `Frame.buildBlockConstant,
+    `Frame.finishMutualCompilation, `Frame.compileMutualPayload, `Frame.compileMutualBlock,
+    `Frame.findConst, `Frame.collectInductiveConstructors, `Frame.lookupInductiveConstructors,
+    `Frame.finishInductiveFamilyBlock, `Frame.finishConstantWithSharing,
+    `Frame.finishConstantInfoWithSharing, `Frame.compileDefinitionBlock,
+    `Frame.compileDefinitionInfo, `Frame.compileDefinitionDataBlock,
+    `Frame.compileDefinitionDataInfo, `Frame.compileTheoremInfo, `Frame.compileOpaqueInfo,
+    `Frame.compileAxiomBlock, `Frame.compileAxiomInfo, `Frame.compileQuotientBlock,
+    `Frame.compileQuotientInfo, `Frame.compileRecursorBlock, `Frame.compileRecursorInfo,
+    `Frame.compileInductiveFamilyBlock, `Frame.compileInductiveFamilyInfo,
+    `Frame.compileInductiveInfo, `Frame.compileConstructorInfo, `Frame.compileConstantInfo,
+    `Frame.constAddrLookup, `Frame.sortConstsCore, `Frame.sortConsts,
+    `Frame.collectMutConstConstructors, `Frame.mkIndc, `Frame.collectMutConst?,
+    `Frame.resolveMutConst?, `Frame.collectMutConsts, `Frame.compileMutualConstants,
+    `Frame.compileConstant, `compileBlockPure_heads, `compileConstNoAuxPure_heads].map
+      (`Ix.CompileCert.HeadWriterFrame ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.blockFrameRoots Ix.CompileCert.Audit.allowedAxioms
 
 namespace Ix.CompileCert.Audit
 
