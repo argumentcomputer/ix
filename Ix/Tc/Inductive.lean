@@ -2367,15 +2367,24 @@ def prepareGeneratedRecursorBuildInputs (blockId : KId m) :
     #[indInfos[0]!.2.1, indInfos[0]!.2.2.1]
   let resultLevel ← getResultSortLevel indInfos[0]!.2.2.2.2
     firstIndArity.toNat
-  let isLarge ← isLargeEliminator resultLevel indInfos
-  let univOffset : UInt64 := if isLarge then 1 else 0
-  let recLvls ← checkedMetadataSum "generated recursor universe arity"
+  let mut isLarge ← isLargeEliminator resultLevel indInfos
+  let mut univOffset : UInt64 := if isLarge then 1 else 0
+  let mut recLvls ← checkedMetadataSum "generated recursor universe arity"
     #[blockLvls, univOffset]
+  -- Prop elimination depends on the full expanded block. Nested proof
+  -- fields can pass the original singleton's field test while introducing
+  -- additional mutual members. If discovery retracts large elimination,
+  -- rebuild the specializations at the corrected universe offset.
+  let mut flat ← buildFlatBlock blockInds nParams univOffset
+  if isLarge && !resultLevel.isNeverZero && flat.size != 1 then
+    isLarge := false
+    univOffset := 0
+    recLvls := blockLvls
+    flat ← buildFlatBlock blockInds nParams univOffset
   let elimLevel : KUniv m ← if isLarge then
       TcM.internUniv (m := m) (.mkParam 0 anonN)
     else
       TcM.internUniv (m := m) .mkZero
-  let flat ← buildFlatBlock blockInds nParams univOffset
   -- The flat block is in discovery order, the canonical order the stored
   -- recursor block follows (design document §2.5, A2-order): no sort.
   -- Flat ind_infos (aux types from env).

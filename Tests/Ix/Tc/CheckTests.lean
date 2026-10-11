@@ -886,6 +886,83 @@ def overflowRecursorFixture : Ixon.Env × Address := Id.run do
     ⟨.muts #[.recr recr], #[], #[], #[.zero]⟩
   return (env, recrProjAddr recBlockAddr 0)
 
+/-- `Box p` and a singleton nesting through `Box`. At Prop, only the
+ordinary Box has a large eliminator; the expanded nested family is mutual. -/
+def nestedSingletonFixture (isProp : Bool) (polymorphic : Bool := false) :
+    Ixon.Env × Address × Address := Id.run do
+  let level : Ixon.Univ := if isProp then .zero else .succ .zero
+  let lvls : UInt64 := if polymorphic then 1 else 0
+  let us : Array UInt64 := if polymorphic then #[1] else #[]
+  let univs : Array Ixon.Univ := if polymorphic then #[level, .var 0] else #[level]
+  let box : Ixon.Inductive :=
+    ⟨false, lvls, 1, 0, .leanAll (.sort 0) (.sort 0),
+      #[⟨false, lvls, 0, 1, 1,
+        .leanAll (.sort 0)
+          (.leanAll (.var 0) (.app (.recur 0 us) (.var 1)))⟩]⟩
+  let (env, boxBlock) := storeMutsWithProjs {}
+    ⟨.muts #[.indc box], #[], #[], univs⟩
+  let nested : Ixon.Inductive :=
+    ⟨false, lvls, 0, 0, .sort 0,
+      #[⟨false, lvls, 0, 0, 1,
+        .leanAll (.app (.ref 0 us) (.recur 0 us)) (.recur 0 us)⟩]⟩
+  let (env, nestedBlock) := storeMutsWithProjs env
+    ⟨.muts #[.indc nested], #[], #[indcProjAddr boxBlock 0], univs⟩
+  return (env, boxBlock, nestedBlock)
+
+def nestedSingletonGenerated (isProp ordinary : Bool) (polymorphic : Bool := false) :
+    Except String (TcState .anon × KId .anon × Array (GeneratedRecursor .anon)) := do
+  let (ixon, boxBlock, nestedBlock) := nestedSingletonFixture isProp polymorphic
+  let address := if ordinary then boxBlock else nestedBlock
+  let block : KId .anon := ⟨address, ()⟩
+  match (TcM.checkConst (⟨indcProjAddr address 0, ()⟩ : KId .anon)).run
+      (.ofEnvAnon (ingressEnvOf ixon)) with
+  | .error e _ => throw (toString e)
+  | .ok () state =>
+    let some generated := state.env.recursorCache.get? block
+      | throw "missing generated recursors"
+    return (state, block, generated)
+
+def nestedSingletonHasHeaders (isProp ordinary : Bool) (lvls : UInt64)
+    (motives minors : Nat) : Bool :=
+  match nestedSingletonGenerated isProp ordinary with
+  | .error _ => false
+  | .ok (_, _, generated) =>
+    generated.size == motives && generated.all fun rec =>
+      rec.lvls == lvls && rec.motives == motives.toUInt64 && rec.minors == minors.toUInt64
+
+/-- Compare forged large metadata with the valid small-header neighbour
+through the actual peer-header/type check, before rule population. -/
+def nestedPropHeaderControl (forged : Bool) (polymorphic : Bool := false) : Bool := Id.run do
+  let .ok (state, block, generated) := nestedSingletonGenerated true false polymorphic | return false
+  if generated.size != 2 then return false
+  let recBlock : KId .anon := ⟨Address.blake3 "nested-prop-rec-block".toUTF8, ()⟩
+  let ids : Array (KId .anon) :=
+    #[⟨Address.blake3 "nested-prop-rec-0".toUTF8, ()⟩,
+      ⟨Address.blake3 "nested-prop-rec-1".toUTF8, ()⟩]
+  let mut env := state.env
+  for h : i in [:generated.size] do
+    let some id := ids[i]? | return false
+    let recursor := generated[i]
+    let smallLvls : UInt64 := if polymorphic then 1 else 0
+    let lvls := if forged && i == 0 then smallLvls + 1 else smallLvls
+    env := env.insert id (.recr () () false false lvls recursor.params recursor.indices
+      recursor.motives recursor.minors recBlock i.toUInt64 recursor.ty #[] ())
+  let state := { state with env := env.insertBlock recBlock ids }
+  match (TcM.runRec (RecM.populateRecursorRulesFromBlockCore block recBlock generated)).run state with
+  | .ok populated state =>
+    if forged then return false
+    let verify : RecM .anon Unit := do
+      for recursor in populated do
+        RecM.validateExprWellScoped recursor.ty 0 recursor.lvls.toNat
+        for rule in recursor.rules do
+          RecM.validateExprWellScoped rule.rhs 0 recursor.lvls.toNat
+    return match (TcM.runRec verify).run state with
+      | .ok _ _ => true
+      | .error _ _ => false
+  | .error (.other message) _ =>
+    return forged && (message.splitOn "canonical header mismatch").length > 1
+  | .error _ _ => return false
+
 def recursorTests : TestSeq :=
   test "canonical-shaped recursor validates against generation"
     ((let (ixon, recAddr) := recFixture false false
@@ -911,6 +988,20 @@ def recursorTests : TestSeq :=
     ((let (ixon, recAddr) := recFixtureWithMetadata true false 1 false false
       failsContaining ixon recAddr
         "populate_recursor_rules_from_block: canonical header mismatch" : Bool))
+  ++ test "nested Prop elimination counts the expanded mutual members"
+    (nestedSingletonHasHeaders true false 0 2 2)
+  ++ test "ordinary proof-only Prop retains large elimination"
+    (nestedSingletonHasHeaders true true 1 1 1)
+  ++ test "nested Type retains large elimination"
+    (nestedSingletonHasHeaders false false 1 2 2)
+  ++ test "nested Prop small recursor header is accepted"
+    (nestedPropHeaderControl false)
+  ++ test "nested Prop forged large recursor header is rejected"
+    (nestedPropHeaderControl true)
+  ++ test "polymorphic nested Prop rebuilds the unshifted universe context"
+    (nestedPropHeaderControl false true)
+  ++ test "polymorphic nested Prop rejects an extra elimination universe"
+    (nestedPropHeaderControl true true)
 
 /-! ### Parallel driver (`Ix.Tc.ParCheck`) -/
 
