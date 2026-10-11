@@ -35,9 +35,11 @@ Check out the research reference separately from the integration tree. From
 that checkout, use the pinned Lean 4.34.1 environment:
 
 ```sh
-nix develop -c lake -d research build research-recovery
-nix develop -c lake -d research exe research-recovery verify
-nix develop -c lake -d research exe research-recovery restore /path/to/recovery-checkout
+nix develop
+cd research
+lake build research-recovery
+lake exe research-recovery verify
+lake exe research-recovery restore /path/to/recovery-checkout
 ```
 
 The optional package's `research/README.md` and `packages.tsv` identify package
@@ -49,7 +51,9 @@ elaboration, checker acceptance and native execution.
 
 Keep original source and receipts byte-identical. Original builders contain
 historical absolute paths and artifact guards; relocation needs a separate
-recipe and a fresh result. G1's selected checker overlays and G2's production
+recipe and a fresh result. Subsequent commits on the research branch provide
+the portable source-build recipe and new validation receipts. The original
+6,047-file snapshot remains unchanged. G1's selected checker overlays and G2's production
 codec environment are different dependencies and must not be interchanged.
 Uncompiled linked-construction drafts and design-only dependent transports
 retain those statuses. Q06 still fails at the selected 500,000-step/depth-256
