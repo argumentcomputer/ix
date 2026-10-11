@@ -49,6 +49,8 @@ use crate::{
   mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
 };
 
+pub use expr_key::ExprKey;
+
 /// Whether to output timing diagnostics for slow blocks and aux_gen phases.
 /// Set via IX_TIMING=1 environment variable.
 pub static IX_TIMING: std::sync::LazyLock<bool> =
@@ -188,8 +190,9 @@ pub struct CompileState {
 
 /// Cached compiled expression with arena root index.
 ///
-/// On cache hit: O(1) — just push the cached expr and arena_root.
-/// The subtree's metadata nodes are already in the arena (append-only).
+/// Once exact key equality confirms a hit, reuse the compiled value and
+/// arena root. The subtree's metadata nodes are already in the append-only
+/// arena; shared source objects compare by identity.
 #[derive(Clone, Debug)]
 pub struct CachedExpr {
   pub expr: Arc<Expr>,
@@ -199,8 +202,8 @@ pub struct CachedExpr {
 /// Per-block compilation cache.
 #[derive(Default)]
 pub struct BlockCache {
-  /// Cache for compiled expressions (keyed by Lean hash address)
-  pub exprs: FxHashMap<Address, CachedExpr>,
+  /// Cache indexed by stored digest and confirmed by complete source equality.
+  pub exprs: FxHashMap<ExprKey, CachedExpr>,
   /// Cache for compiled universes (Level -> Univ conversion)
   /// Keyed by `(level, univ_params_key)`, NOT by `level` alone. A
   /// `Level::Param` compiles to `Univ::Var(i)` where `i` is the
@@ -1043,8 +1046,8 @@ pub fn compile_expr(
     pass3_compile_records(expr, univ_params, mut_ctx, cache, stt)?;
   }
 
-  // Top-level cache check (O(1) with arena)
-  let expr_key = Address::from_blake3_hash(*expr.get_hash());
+  // Exact source keys keep distinct terms with colliding digests separate.
+  let expr_key = ExprKey(expr.clone());
   if let Some(cached) = cache.exprs.get(&expr_key).cloned() {
     cache.arena_roots.push(cached.arena_root);
     return Ok(cached.expr);
@@ -1056,9 +1059,9 @@ pub fn compile_expr(
   while let Some(frame) = stack.pop() {
     match frame {
       Frame::Compile(e) => {
-        let e_key = Address::from_blake3_hash(*e.get_hash());
+        let e_key = ExprKey(e.clone());
         if let Some(cached) = cache.exprs.get(&e_key).cloned() {
-          // O(1) cache hit: arena root already valid
+          // Confirmed cache hit: arena root already valid.
           results.push(cached.expr);
           cache.arena_roots.push(cached.arena_root);
           continue;
@@ -1321,7 +1324,7 @@ pub fn compile_expr(
       },
 
       Frame::Cache(e) => {
-        let e_key = Address::from_blake3_hash(*e.get_hash());
+        let e_key = ExprKey(e);
         if let Some(result) = results.last() {
           let arena_root =
             *cache.arena_roots.last().expect("Cache missing arena root");
@@ -3934,6 +3937,7 @@ pub mod aux_gen;
 pub mod aux_source;
 pub mod block_txn;
 mod env;
+pub mod expr_key;
 mod memory;
 pub mod mutual;
 pub mod nat_conv;

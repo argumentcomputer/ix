@@ -31,6 +31,7 @@ import Ix.AuxGen.Patches
 import Ix.AuxGen.CompileAux
 import Ix.CompileDriver
 import Tests.Ix.Compile.ValidateAux
+import LSpec
 
 namespace Tests.Compile.AuxGenDiff
 
@@ -384,20 +385,29 @@ def seedBlockRegistry (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .error _ => continue
   return { cenv with blocks := registry }
 
+/-- Stable diagnostic inputs, shared by the expansion and patch dumps.
+Independent condensations can choose different Tarjan representatives. Use
+the production driver's canonical member key for the label and block order;
+retain every member and the existing pretty-sorted generator inputs. -/
+def dumpBlocks (isInductive : Ix.Name → Bool) (condensed : Ix.CondensedBlocks)
+    : Array (String × Ix.Name × Array Ix.Name) := Id.run do
+  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
+  for (lo, members) in condensed.blocks do
+    let all := members.toArray.qsort (fun a b => a.pretty < b.pretty)
+    if all.any isInductive then
+      let key := Ix.CompileM.canonicalKey lo all
+      blocks := blocks.push (key.pretty, key, all)
+  return blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+
+private def isInductive (cenv : CompileEnv) (name : Ix.Name) : Bool :=
+  match cenv.env.consts.get? name with
+  | some (.inductInfo _) => true
+  | _ => false
+
 /-- Whole-env Lean patches dump (same block selection/order as Rust). -/
 def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     : String := Id.run do
-  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
-  for (lo, members) in condensed.blocks do
-    let sortedAll := (members.toArray.map (·, ())).map (·.1)
-      |>.qsort (fun a b => a.pretty < b.pretty)
-    let hasInd := sortedAll.any fun n =>
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) => true
-      | _ => false
-    if hasInd then
-      blocks := blocks.push (lo.pretty, lo, sortedAll)
-  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+  let blocks := dumpBlocks (isInductive cenv) condensed
   let mut out := ""
   for (_, lo, all) in blocks do
     let blockEnv : Ix.CompileM.BlockEnv :=
@@ -459,22 +469,12 @@ def filterPatchDump (dump : String) (kinds : List String) : String :=
   String.intercalate "\n" ((dump.splitOn "\n").filter keep)
 
 /-- Whole-env Lean dump over the same block selection/order as the Rust
-    endpoint (inductive-containing SCCs, sorted by lowlink pretty name,
+    endpoint (inductive-containing SCCs, sorted by canonical key pretty name,
     members pretty-sorted). CompileM errors surface as `error` lines so a
     divergence shows in the diff instead of aborting. -/
 def leanDumpExpand (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     : String := Id.run do
-  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
-  for (lo, members) in condensed.blocks do
-    let all := (members.toArray.map (·, ())).map (·.1)
-    let sortedAll := all.qsort (fun a b => a.pretty < b.pretty)
-    let hasInd := sortedAll.any fun n =>
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) => true
-      | _ => false
-    if hasInd then
-      blocks := blocks.push (lo.pretty, lo, sortedAll)
-  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+  let blocks := dumpBlocks (isInductive cenv) condensed
 
   let mut out := ""
   for (_, lo, all) in blocks do
@@ -484,6 +484,34 @@ def leanDumpExpand (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .ok (s, _) => out := out ++ s
     | .error e => out := out ++ s!"block {lo.pretty}\nerror compilem {e}\n"
   return out
+
+/-- Exercise the actual dump input selection with a different representative,
+member insertion order and block insertion order, retaining both families. -/
+def suite : List LSpec.TestSeq := Id.run do
+  let eq := Ix.Name.fromLeanName `Eq
+  let refl := Ix.Name.fromLeanName `Eq.refl
+  let nat := Ix.Name.fromLeanName `Nat
+  let zero := Ix.Name.fromLeanName `Nat.zero
+  let plain := Ix.Name.fromLeanName `plain
+  let left : Ix.CondensedBlocks :=
+    { lowLinks := {}, blockRefs := {}, blocks := ({} : Ix.Map _ _)
+        |>.insert eq (({} : Ix.Set _).insert eq |>.insert refl)
+        |>.insert nat (({} : Ix.Set _).insert nat |>.insert zero)
+        |>.insert plain (({} : Ix.Set _).insert plain) }
+  let right : Ix.CondensedBlocks :=
+    { lowLinks := {}, blockRefs := {}, blocks := ({} : Ix.Map _ _)
+        |>.insert plain (({} : Ix.Set _).insert plain)
+        |>.insert zero (({} : Ix.Set _).insert zero |>.insert nat)
+        |>.insert refl (({} : Ix.Set _).insert refl |>.insert eq) }
+  let selected := dumpBlocks (fun n => n == eq || n == nat) left
+  let reordered := dumpBlocks (fun n => n == eq || n == nat) right
+  return [
+    LSpec.test "auxiliary dumps ignore SCC representative and insertion order"
+      (selected == reordered),
+    LSpec.test "auxiliary dumps retain both complete inductive blocks"
+      (selected.size == 2 && selected.all (fun (_, _, ns) => ns.size == 2)
+        && selected.any (fun (_, _, ns) => ns.contains eq && ns.contains refl)
+        && selected.any (fun (_, _, ns) => ns.contains nat && ns.contains zero))]
 
 /-- Compare the two dumps line-by-line; report the first divergence with
     surrounding context. Returns true iff identical. -/

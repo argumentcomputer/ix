@@ -30,7 +30,7 @@ def controls : List (String × Bool) := Id.run do
   let (innerResult, afterInner) := raw (compileExpr inner) after
   let (cached, afterCached) := raw (compileExpr outer) afterInner
   let seeded : BlockState := { initial with
-    exprCache := ({} : Std.HashMap Expr (Ixon.Expr × UInt64)).insert inner (.var 99, 99) }
+    exprCache := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64)).insert inner (.var 99, 99) }
   let (seedResult, seedAfter) := raw (compileExpr outer) seeded
   let broken := Expr.mkApp inner (Expr.mkMVar (Name.fromLeanName `missing))
   let (failure, failed) := raw (compileExpr broken)
@@ -60,6 +60,14 @@ def controls : List (String × Bool) := Id.run do
   let malformed := Expr.mkMData
     #[(Name.fromLeanName `ix.contract, _root_.Ix.DataValue.ofNat 3)] binder
   let (malformedResult, malformedAfter) := raw (compileExpr malformed)
+  -- Supplied raw keys deliberately share a digest. They exercise the
+  -- lookup boundary without claiming a cryptographic collision.
+  let colliding : Expr := .bvar 1 f.getHash
+  let collidingBad : Expr := .mvar (Name.fromLeanName `missing) f.getHash
+  let (_, firstAfter) := raw (compileExpr f)
+  let (collision, collisionAfter) := raw (compileExpr colliding) firstAfter
+  let (originalAgain, originalAfter) := raw (compileExpr f) collisionAfter
+  let (collisionError, collisionErrorAfter) := raw (compileExpr collidingBad) firstAfter
   return [
     ("flattened application result and root", compiled.toOption == some (.app (.app (.var 0) (.var 1)) (.var 2), 4)),
     ("head argument application allocation order",
@@ -95,7 +103,18 @@ def controls : List (String × Bool) := Id.run do
     ("malformed semantic frame fails before child compilation", !malformedResult.isOk &&
       !malformedAfter.exprCache.contains binder && !malformedAfter.exprCache.contains malformed && malformedAfter.arena.nodes.isEmpty),
     ("semantic contract paths retain prior head claims", annotationAfter.p3Heads == retained &&
-      wrongAfter.p3Heads == retained && malformedAfter.p3Heads == retained)
+      wrongAfter.p3Heads == retained && malformedAfter.p3Heads == retained),
+    ("different indices sharing a stored hash compile independently",
+      collision.toOption == some (.var 1, 1)),
+    ("colliding keys retain both cache entries",
+      collisionAfter.exprCache.get? f == some (.var 0, 0) &&
+      collisionAfter.exprCache.get? colliding == some (.var 1, 1) &&
+      collisionAfter.exprCache.size == 2),
+    ("colliding insertion preserves the original cached root",
+      originalAgain.toOption == some (.var 0, 0) && originalAfter.arena.nodes.size == 2),
+    ("a colliding unsupported expression still fails", (match collisionError with
+      | .error (.unsupportedExpr "metavariable") => true | _ => false) &&
+      collisionErrorAfter.arena.nodes == firstAfter.arena.nodes && collisionErrorAfter.p3Heads == retained)
   ]
 
 def suite : List TestSeq := controls.map fun (label, ok) => test s!"expression frame: {label}" ok

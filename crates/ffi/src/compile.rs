@@ -2144,6 +2144,29 @@ fn aux_dump_block(
   }
 }
 
+/// Stable inputs for both auxiliary dumps. A Tarjan representative can vary
+/// between independent condensations; label each nonempty block by its least
+/// member in name-hash order, matching the Lean driver's canonical key.
+/// Keep all members in the existing pretty-sorted generator input order.
+#[cfg(feature = "test-ffi")]
+fn aux_dump_blocks(
+  condensed: &ix_compile::condense::CondensedBlocks,
+  is_inductive: impl Fn(&Name) -> bool,
+) -> Vec<(String, Name, Vec<Name>)> {
+  let mut blocks: Vec<_> = condensed
+    .blocks
+    .values()
+    .filter_map(|members| {
+      let key = members.iter().min()?.clone();
+      let mut all: Vec<Name> = members.iter().cloned().collect();
+      all.sort_by_key(|a| a.pretty());
+      all.iter().any(&is_inductive).then(|| (key.pretty(), key, all))
+    })
+    .collect();
+  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+  blocks
+}
+
 /// FFI: deterministic text dump of nested-expansion/canonicity
 /// intermediates for every inductive SCC block. The pure-Lean port
 /// (`Tests.Compile.AuxGenDiff`) reproduces the same text from its own
@@ -2170,24 +2193,12 @@ pub extern "C" fn rs_aux_gen_dump_expand(
   let ref_graph = build_ref_graph(&rust_env);
   let condensed = compute_sccs(&ref_graph.out_refs);
 
-  // Deterministic block order: sort inductive-containing blocks by
-  // lowlink pretty name.
-  let mut blocks: Vec<(String, Name, Vec<Name>)> = condensed
-    .blocks
-    .iter()
-    .filter_map(|(lo, members)| {
-      let mut all: Vec<Name> = members.iter().cloned().collect();
-      all.sort_by_key(|a| a.pretty());
-      let has_ind = all.iter().any(|n| {
-        matches!(
-          rust_env.get(n).as_deref(),
-          Some(ix_common::env::ConstantInfo::InductInfo(_))
-        )
-      });
-      has_ind.then(|| (lo.pretty(), lo.clone(), all))
-    })
-    .collect();
-  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+  let blocks = aux_dump_blocks(&condensed, |n| {
+    matches!(
+      rust_env.get(n).as_deref(),
+      Some(ix_common::env::ConstantInfo::InductInfo(_))
+    )
+  });
 
   let mut out = String::new();
   for (_, lo, all) in &blocks {
@@ -2198,9 +2209,9 @@ pub extern "C" fn rs_aux_gen_dump_expand(
 }
 
 /// Render one generated patch as stable text lines. Expression bodies are
-/// content HASHES (both sides build via mirrored hash-maintaining
-/// constructors, so tree equality ⇔ hash equality — the expansion gate
-/// established this for expansion outputs). Lines are kind-tagged so the
+/// content hashes from the mirrored hash-maintaining constructors, serving
+/// as a differential diagnostic rather than a structural-equality proof.
+/// Lines are kind-tagged so the
 /// Lean harness can widen its comparison scope generator by generator
 /// (rec → casesOn/recOn → below → brecOn).
 #[cfg(feature = "test-ffi")]
@@ -2345,19 +2356,9 @@ pub extern "C" fn rs_aux_gen_dump_patches(
   let ref_graph = build_ref_graph(&rust_env);
   let condensed = compute_sccs(&ref_graph.out_refs);
 
-  let mut blocks: Vec<(String, Name, Vec<Name>)> = condensed
-    .blocks
-    .iter()
-    .filter_map(|(lo, members)| {
-      let mut all: Vec<Name> = members.iter().cloned().collect();
-      all.sort_by_key(|a| a.pretty());
-      let has_ind = all.iter().any(|n| {
-        matches!(rust_env.get(n).as_deref(), Some(LeanCI::InductInfo(_)))
-      });
-      has_ind.then(|| (lo.pretty(), lo.clone(), all))
-    })
-    .collect();
-  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+  let blocks = aux_dump_blocks(&condensed, |n| {
+    matches!(rust_env.get(n).as_deref(), Some(LeanCI::InductInfo(_)))
+  });
 
   let mut out = String::new();
   for (_, lo, all) in &blocks {

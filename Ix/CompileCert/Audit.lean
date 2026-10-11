@@ -20,6 +20,7 @@ import Ix.CompileCert.SourceFamilyTraversal
 import Ix.CompileCert.HeadPublication
 import Ix.CompileCert.HeadOutcome
 import Ix.CompileCert.ExpressionFrame
+import Ix.CompileCert.ExpressionCache
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2307,6 +2308,49 @@ def blockFrameRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.blockFrameRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Exact source keys and generic storage laws for the actual expression
+cache; source semantics of the inserted values remains a separate premise. -/
+def exactExpressionCacheRoots : Array Lean.Name :=
+  #[``Ix.Compile.ExactKey.exprEqImpl_eq, ``Ix.Compile.ExactKey.exprEq_eq,
+    ``Ix.Compile.ExactKey.exprEq_eq_impl, ``Ix.Compile.ExactKey.exprEq_sound,
+    ``Ix.Compile.ExactKey.instLawfulBEqExprKey,
+    ``Ix.CompileCert.ExpressionCache.lookup_insert,
+    ``Ix.CompileCert.ExpressionCache.sound_empty,
+    ``Ix.CompileCert.ExpressionCache.Sound.insert,
+    ``Ix.CompileCert.ExpressionCache.lookup_insert_other,
+    ``Ix.CompileCert.ExpressionCache.lookup_distinct_singleton,
+    ``Ix.CompileCert.ExpressionCache.Sound.mono]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.exactExpressionCacheRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  let some replacement := substitutions.find? ``Ix.Compile.ExactKey.exprEq
+    | throwError "missing production exact-key csimp equation"
+  unless replacement.toDeclName == ``Ix.Compile.ExactKey.exprEqImpl &&
+      replacement.thmName == ``Ix.Compile.ExactKey.exprEq_eq_impl do
+    throwError "wrong production exact-key substitute"
+  let runtime := #[`rawLevelDec, `rawExprDec, `ptrDec, `withAddr, `pairKey,
+    `probe, `out, `enter, `listGo, `syntaxDec, `syntaxGo, `syntaxSharedDec,
+    `dataDec, `metadataDec, `levelGo, `levelDec, `exprGo, `exprDec, `exprEqImpl,
+    `instBEqExprKey, `instHashableExprKey, `instCoeExprExprKey].map (`Ix.Compile.ExactKey ++ ·)
+  for name in runtime do
+    unless (substitutions.find? name).isNone do
+      throwError m!"exact-key helper has an unreviewed secondary substitution: {name}"
+  for name in runtime.push ``Ix.Compile.ExactKey.exprEq do
+    unless (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"exact-key entry has an unchecked implemented_by substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"exact-key runtime entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"exact-key runtime entry is not kernel-visible and total: {name}"
+  logInfo "[cert-audit] expression cache: exact keys, total comparison and checked production substitution"
 
 namespace Ix.CompileCert.Audit
 

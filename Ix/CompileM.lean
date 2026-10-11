@@ -28,6 +28,7 @@ public import Ix.CondenseM
 public import Ix.SOrder
 public import Ix.Compile.Canon.Classes
 import all Ix.Compile.Canon.Expr
+public import Ix.Compile.ExactKey
 public import Ix.AuxSource
 public import Ix.CanonM
 public import Ix.Compile.Pass.Names
@@ -253,9 +254,9 @@ structure BlockResult where
 
 /-- Per-block compilation state and tables. -/
 structure BlockState where
-  /-- Expression compilation cache (keyed by Expr for O(1) lookup).
-      Value is (compiled expression, arena root index). -/
-  exprCache : Std.HashMap Expr (Ixon.Expr × UInt64) := {}
+  /-- Expression cache indexed by stored hash and confirmed by exact source
+      equality. Value is (compiled expression, arena root index). -/
+  exprCache : Std.HashMap Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64) := {}
   /-- Universe compilation cache (keyed by Level for O(1) lookup) -/
   univCache : Std.HashMap Level Ixon.Univ := {}
   /-- Reference table (ordered unique addresses) -/
@@ -1129,7 +1130,8 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
 
 /-- Compile a canonical Ix.Expr to Ixon.Expr with arena-based metadata.
     Returns (compiled expression, arena root index).
-    Uses Ix.Expr as cache key for O(1) lookup via embedded hash.
+    Uses exact source keys with embedded hashes for indexing. Shared objects
+    compare by identity; distinct candidates receive a proved DAG comparison.
 
     The production implementation uses well-founded recursion on strict
     source subterms, without a runtime size walk or fuel checks. The former
@@ -1143,7 +1145,7 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
     are flattened in `compileAppSpine`, so inner partial-spine nodes are
     neither checked nor cached. -/
 def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
-  -- Check cache (O(1) lookup via embedded hash)
+  -- Hash-indexed lookup with exact source-key confirmation.
   let state ← getBlockState
   if let some cached := state.exprCache.get? e then
     return cached
