@@ -46,6 +46,8 @@ use rustc_hash::FxHashMap;
 #[derive(Clone)]
 pub struct BRecOnDef {
   pub name: Name,
+  /// Logical source-family role for existence and alias queries.
+  pub source_name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
   pub value: LeanExpr,
@@ -96,6 +98,33 @@ pub fn generate_brecon_constants_with(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
+  generate_brecon_constants_named(
+    sorted_classes,
+    canonical_recs,
+    below_consts,
+    lean_env,
+    is_prop,
+    all_aux,
+    stt,
+    kctx,
+    &super::names::AuxNames::default(),
+  )
+}
+
+/// Select generated identities at construction sites, keeping copied source
+/// references and source-family membership queries separate.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_brecon_constants_named(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  below_consts: &[BelowConstant],
+  lean_env: &LeanEnv,
+  is_prop: bool,
+  all_aux: bool,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+  names: &super::names::AuxNames,
+) -> Result<Vec<BRecOnDef>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() || below_consts.is_empty() {
     return Ok(vec![]);
@@ -141,8 +170,9 @@ pub fn generate_brecon_constants_with(
 
     if !is_prop {
       // Type-level: generate .brecOn.go + .brecOn + .brecOn.eq (BRecOn.lean path)
-      let brecon_name =
+      let source_name =
         Name::str(sorted_classes[ci][0].clone(), "brecOn".to_string());
+      let brecon_name = names.member(&sorted_classes[ci][0], "brecOn");
       let all0 = &ind.all[0];
       // Derive below names from below_consts (source-indexed, matching
       // canon_kenv's content hashes). Positions align with the canonical
@@ -164,13 +194,16 @@ pub fn generate_brecon_constants_with(
         n_classes,
         stt,
         kctx,
+        names,
+        &source_name,
       )?;
       results.extend(defs);
     } else {
       // Prop-level: generate single .brecOn theorem (IndPredBelow.lean path)
-      let brecon_name = Name::str(ind.cnst.name.clone(), "brecOn".to_string());
+      let source_name = Name::str(ind.cnst.name.clone(), "brecOn".to_string());
+      let brecon_name = names.member(&ind.cnst.name, "brecOn");
       let n_indices = try_nat_to_usize(&ind.num_indices)?;
-      let def = build_prop_brecon(
+      let mut def = build_prop_brecon(
         ci,
         rec_val,
         ind,
@@ -179,6 +212,7 @@ pub fn generate_brecon_constants_with(
         sorted_classes,
         below_consts,
       )?;
+      def.source_name = source_name;
       results.push(def);
     }
   }
@@ -206,15 +240,16 @@ pub fn generate_brecon_constants_with(
             ),
           }
         })?;
-        let brecon_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let source_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let brecon_name = names.nested(all0, "brecOn", idx);
         let exists = all_aux
-          || lean_env.contains_key(&brecon_name)
-          || stt.env.named.contains_key(&brecon_name);
+          || lean_env.contains_key(&source_name)
+          || stt.env.named.contains_key(&source_name);
         if !exists {
           continue;
         }
         let n_indices = try_nat_to_usize(&aux_rec_val.num_indices)?;
-        let def = build_prop_brecon(
+        let mut def = build_prop_brecon(
           n_classes + j,
           aux_rec_val,
           first_ind,
@@ -223,6 +258,7 @@ pub fn generate_brecon_constants_with(
           sorted_classes,
           below_consts,
         )?;
+        def.source_name = source_name;
         results.push(def);
       }
     }
@@ -255,7 +291,8 @@ pub fn generate_brecon_constants_with(
             ),
           }
         })?;
-        let brecon_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let source_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let brecon_name = names.nested(&all0, "brecOn", idx);
 
         // Only generate if this constant exists in the source environment.
         // Check lean_env (original Lean env during compilation) OR
@@ -263,8 +300,8 @@ pub fn generate_brecon_constants_with(
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
         let exists = all_aux
-          || lean_env.contains_key(&brecon_name)
-          || stt.env.named.contains_key(&brecon_name);
+          || lean_env.contains_key(&source_name)
+          || stt.env.named.contains_key(&source_name);
         if !exists {
           continue;
         }
@@ -287,6 +324,8 @@ pub fn generate_brecon_constants_with(
           n_classes,
           stt,
           kctx,
+          names,
+          &source_name,
         )?;
         results.extend(defs);
       }
@@ -567,6 +606,7 @@ fn build_prop_brecon(
 
   Ok(BRecOnDef {
     name: brecon_name.clone(),
+    source_name: brecon_name.clone(),
     level_params: ind_level_params.clone(),
     typ,
     value: val,
@@ -733,6 +773,8 @@ fn build_type_brecon_fvar(
   n_classes: usize,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
+  names: &super::names::AuxNames,
+  source_name: &Name,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
   // canon_kenv is populated by `populate_canon_kenv_with_below` in
   // aux_gen.rs between Phase 2 and Phase 3. It contains PUnit, PProd,
@@ -1158,6 +1200,7 @@ fn build_type_brecon_fvar(
     rec_level_params,
     stt,
     kctx,
+    names,
   )?;
 
   // Type-level `.brecOn.go` / `.brecOn` / `.brecOn.eq` all reference the
@@ -1168,6 +1211,7 @@ fn build_type_brecon_fvar(
   let mut results = vec![
     BRecOnDef {
       name: go_name,
+      source_name: Name::str(source_name.clone(), "go".into()),
       level_params: rec_level_params.clone(),
       typ: go_type,
       value: go_value,
@@ -1176,6 +1220,7 @@ fn build_type_brecon_fvar(
     },
     BRecOnDef {
       name: brecon_name,
+      source_name: source_name.clone(),
       level_params: rec_level_params.clone(),
       typ: brecon_type,
       value: brecon_value,
@@ -1187,6 +1232,7 @@ fn build_type_brecon_fvar(
   let (eq_typ, eq_val) = eq_result;
   results.push(BRecOnDef {
     name: eq_name,
+    source_name: Name::str(source_name.clone(), "eq".into()),
     level_params: rec_level_params.clone(),
     typ: eq_typ,
     value: eq_val,
@@ -1646,6 +1692,7 @@ fn build_type_brecon_eq_fvar(
   rec_level_params: &[Name],
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
+  names: &super::names::AuxNames,
 ) -> Result<(LeanExpr, LeanExpr), CompileError> {
   // .brecOn.eq requires Eq and Eq.refl as constants. The real pipeline only
   // calls aux_gen when the original Lean environment has these, so this
@@ -1730,7 +1777,7 @@ fn build_type_brecon_eq_fvar(
         .collect()
     }
   };
-  let cases_on_name = Name::str(target_ind_name.clone(), "casesOn".to_string());
+  let cases_on_name = names.member(target_ind_name, "casesOn");
 
   // --- Indexed path ---
   //

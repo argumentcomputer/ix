@@ -257,8 +257,9 @@ def run (env : Environment) : IO UInt32 := do
     let names := on.env.named.toArray.filterMap fun (n, _) =>
       let s := n.pretty
       if seedSet.contains s || Ix.Compile.Pass.hasReserved n then some s else none
-    let nIx := (names.filter fun s => (s.splitOn "._ix").length > 1).size
     let r ← Tests.Ix.Compile.Pass3.kernelRun dir path names
+    let names := r.targets
+    let nIx := (names.filter fun s => (s.splitOn "._ix").length > 1).size
     -- no failure is recorded (the empty record), and every leg checks every name
     let (kprob, ksum) := Tests.Ix.Compile.Pass3Kernels.check [] "cliques" "on" r.failed r.checked
       names.size

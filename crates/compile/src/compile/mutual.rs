@@ -775,12 +775,13 @@ pub fn generate_and_compile_aux_recursors(
   // (the input has already been validated by sort_consts and the compile
   // loop), so we propagate rather than swallow.
   let t0 = std::time::Instant::now();
-  let aux_out = aux_gen::generate_aux_patches(
+  let aux_out = aux_gen::generate_aux_patches_named(
     &aux_class_names,
     &source_all,
     lean_env,
     stt,
     kctx,
+    true,
   )?;
   let patches = &aux_out.patches;
   let gen_elapsed = t0.elapsed();
@@ -1169,7 +1170,14 @@ pub fn generate_and_compile_aux_recursors(
   // Phase 5: Compile .below.rec (for Prop-level .below inductives).
   let t5 = std::time::Instant::now();
   if !below_indcs.is_empty() {
-    compile_below_recursors(&below_indcs, lean_env, stt, kctx, &source_owners)?;
+    compile_below_recursors(
+      &below_indcs,
+      lean_env,
+      stt,
+      kctx,
+      &source_owners,
+      aux_out.names.is_private(),
+    )?;
   }
   let below_rec_elapsed = t5.elapsed();
 
@@ -1206,15 +1214,9 @@ pub fn generate_and_compile_aux_recursors(
     lean_env,
   )?;
 
-  // Note: `.noConfusion`, `.noConfusionType`, `.ctor.noConfusion`, `.ctorIdx`,
-  // `.ctorElim*`, `.ctor.inj*`, `._sizeOf_*`, etc. are **not** regenerated.
-  // Their bodies only invoke `.casesOn` (never `.rec`), and `.casesOn`'s
-  // public binder arity is invariant under alpha collapse. Compiling the
-  // original Lean values as-is produces correct Ixon — they resolve to our
-  // regenerated `.casesOn` at address-resolution time. The validate-aux
-  // roundtrip test confirms this empirically (0 mismatches across 25k+
-  // constants, including these auxiliaries for alpha-collapsed multi-ctor
-  // blocks). See the aux_gen.rs module docs for the full rationale.
+  // Derived helpers are private support. Source definitions, including
+  // user-defined auxiliary-looking names, compile from their own bodies;
+  // Pass 3 rewrites references where the inductive layout changed.
 
   let total = aux_total_start.elapsed();
   if *crate::compile::IX_TIMING && total.as_secs_f32() > 0.5 {
@@ -1384,6 +1386,7 @@ fn compile_below_recursors(
   stt: &CompileState,
   kctx: &mut crate::compile::KernelCtx,
   source_owners: &[Name],
+  private_helpers: bool,
 ) -> Result<(), CompileError> {
   // Build a small overlay with just the .below inductives + ctors.
   // These don't exist in the original lean_env, but generate_canonical_recursors
@@ -1476,15 +1479,9 @@ fn compile_below_recursors(
     )?;
   }
 
-  // Regenerate `.below.casesOn` against the canonical below-recs. Lean
-  // authors `X.below.casesOn` for every below inductive, and its value
-  // applies `X.below.rec` with motives in LEAN's member order — but the
-  // block above regenerated those recs with the canonical motive layout,
-  // so the Lean-authored wrapper is ill-typed in the compiled env
-  // (kernel: AppTypeMismatch on the motive arguments). Mirror the main
-  // family's Phase-2b: regenerate each casesOn from its canonical rec
-  // and register it here so the ordinary compile of the Lean value is
-  // skipped (aux registrations suppress it, like every other patch).
+  // Generate wrappers for the canonical below family's own recursors.
+  // Compiler-mode below identities are private; source below declarations
+  // and wrappers compile separately from their actual source bodies.
   //
   // Per family, not per name (as `aux_gen::generate_aux_patches` decides
   // every other aux block): if Lean exported any below inductive's
@@ -1499,24 +1496,29 @@ fn compile_below_recursors(
   // A collapsed class's non-representative `.below.casesOn` aliases the
   // representative's, so any member of a `.below` block Lean declared
   // counts.
-  let emit_below_cases = recs.iter().any(|(rec_name, _)| {
-    below_cases_name(rec_name).is_some_and(|n| lean_env.get(&n).is_some())
-  }) || below_indcs.iter().any(|c| {
-    matches!(
-      lean_env.get(&c.name()).as_deref(),
-      Some(LeanConstantInfo::InductInfo(v)) if v.all.iter().any(|m| {
-        lean_env.get(&Name::str(m.clone(), "casesOn".to_string())).is_some()
-      })
-    )
-  });
+  let emit_below_cases = private_helpers
+    || recs.iter().any(|(rec_name, _)| {
+      below_cases_name(rec_name).is_some_and(|n| lean_env.get(&n).is_some())
+    })
+    || below_indcs.iter().any(|c| {
+      matches!(
+        lean_env.get(&c.name()).as_deref(),
+        Some(LeanConstantInfo::InductInfo(v)) if v.all.iter().any(|m| {
+          lean_env.get(&Name::str(m.clone(), "casesOn".to_string())).is_some()
+        })
+      )
+    });
   let mut below_cases: Vec<MutConst> = Vec::new();
   for (rec_name, rec_val) in &recs {
     let Some(cases_on_name) = below_cases_name(rec_name) else {
       continue;
     };
     if emit_below_cases
-      && let Some(d) =
-        aux_gen::cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
+      && let Some(d) = aux_gen::cases_on::generate_cases_on(
+        &cases_on_name,
+        rec_val,
+        if private_helpers { &overlay } else { lean_env.as_ref() },
+      )
     {
       below_cases.push(MutConst::Defn(Def {
         name: d.name.clone(),

@@ -827,6 +827,7 @@ fn populate_canon_kenv_with_below_refuses_ill_formed_below() {
   let below = |n: &str, lps: Vec<Name>| {
     BelowConstant::Def(BelowDef {
       name: name(n),
+      source_name: name(n),
       level_params: lps,
       typ: LeanExpr::sort(Level::param(name("u"))),
       value: LeanExpr::sort(Level::zero()),

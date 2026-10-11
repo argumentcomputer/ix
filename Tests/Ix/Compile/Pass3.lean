@@ -191,6 +191,50 @@ constants each leg reports it checked. -/
 structure KernelRun where
   failed : Array (String × String × String)
   checked : List (String × Nat)
+  /-- Actual declaration selectors after expanding synthetic block labels. -/
+  targets : Array String := #[]
+
+/-- A synthetic `Muts` label denotes a container, not a kernel declaration.
+Private helper names can occur in that label. Expand it to all recorded
+members and verify each member's projection and owning block; retain every
+ordinary requested selector, including duplicates and their coverage checks. -/
+def expandKernelTargets (parts : Ixon.LazyEnvParts) (requested : Array String) :
+    Except String (Array String) := do
+  let rows := parts.namedRows.foldl (fun m row => m.insert row.name.pretty row)
+    ({} : Std.HashMap String Ixon.NamedRow)
+  let mut declarations : Array String := #[]
+  let mut members : Array String := #[]
+  for label in requested do
+    let some row := rows.get? label | throw s!"kernel selector is absent: {label}"
+    let some constant := parts.env.getConst? row.addr
+      | throw s!"kernel selector has no anonymous payload: {label}"
+    match constant.info with
+    | .muts entries =>
+      let named ← row.materialize parts.backing parts.nameRev
+      let .muts classes _ := named.constMeta.info
+        | throw s!"block selector has no member metadata: {label}"
+      unless !classes.isEmpty && classes.size == entries.size do
+        throw s!"block selector has inconsistent member count: {label}"
+      for (cls, index) in classes.zipIdx do
+        if cls.isEmpty then throw s!"block selector has an empty class: {label}"
+        for hash in cls do
+          let some name := parts.env.names.get? hash
+            | throw s!"block selector has an unknown member name: {label}"
+          let some memberIndex := parts.rowIdx.get? name
+            | throw s!"block selector has an unregistered member: {label}: {name.pretty}"
+          let some member := parts.namedRows[memberIndex]?
+            | throw s!"block selector has an invalid member row: {label}"
+          let some payload := parts.env.getConst? member.addr
+            | throw s!"block selector member has no payload: {label}: {name.pretty}"
+          let belongs := match payload.info with
+            | .iPrj p | .dPrj p | .rPrj p => p.block == row.addr && p.idx.toNat == index
+            | _ => false
+          unless belongs do throw s!"block selector member belongs elsewhere: {label}: {name.pretty}"
+          members := members.push name.pretty
+    | _ => declarations := declarations.push label
+  for member in members do
+    unless declarations.contains member do declarations := declarations.push member
+  return declarations
 
 /-- `(leg, name, message)` of every failure of the three kernels on `names`
 of the file `path`, and each leg's checked count. Declines of the certified
@@ -202,10 +246,12 @@ def kernelRun (dir : System.FilePath) (path : System.FilePath) (names : Array St
   if names.isEmpty then throw (IO.userError "kernel check requested no names")
   let mut failed : Array (String × String × String) := #[]
   let namesFile := dir / "names.txt"
-  IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
   -- Resolve all requested names from the environment. The certified checker
   -- reports owning records, with at most three display names per record.
   let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy (← IO.FS.readBinFile path))
+  let names ← IO.ofExcept (expandKernelTargets parts names)
+  if names.isEmpty then throw (IO.userError "kernel selectors contain no declarations")
+  IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
   let byName : Std.HashMap String String := parts.namedRows.foldl (fun m row =>
     m.insert row.name.pretty (toString (Tests.Ix.Compile.AuxCert.recordOf parts.env row.addr))) {}
   let rawAddresses : Std.HashMap String String := parts.namedRows.foldl
@@ -295,7 +341,10 @@ def kernelRun (dir : System.FilePath) (path : System.FilePath) (names : Array St
     for original in reportNames n do failed := failed.push ("lean", original, m)
   if leanFails.isEmpty && ln.exitCode != 0 then
     failed := failed.push ("lean", "*", s!"check-lean exit {ln.exitCode}: {((ln.stdout ++ ln.stderr).takeEnd 300).toString}")
-  return { failed, checked := [("cert", expected.size), ("rs", rsN.getD 0), ("lean", leanN.getD 0)] }
+  return {
+    failed
+    targets := names
+    checked := [("cert", expected.size), ("rs", rsN.getD 0), ("lean", leanN.getD 0)] }
 
 /-- `(leg, name, message)` of every failure of the three kernels on `names`
 of the file `path` (`kernelRun` without the checked counts). -/
@@ -1024,7 +1073,7 @@ def runUnit (u : CUnit) (keep? : Option System.FilePath) : IO (Array String × A
         pure (some (a.failed.foldl (fun s (l, n, _) => s.insert (l, n)) {}))
       else pure none
     let (ps, summary) :=
-      Pass3Kernels.check Pass3Kernels.table u.name "on" onRun.failed onRun.checked names.size anon?
+      Pass3Kernels.check Pass3Kernels.table u.name "on" onRun.failed onRun.checked onRun.targets.size anon?
     problems := problems ++ ps
     lines := lines.push s!"  kernels: {summary}"
     if !idr.changedBlocks.isEmpty && on.cenv.ungrounded.isEmpty then

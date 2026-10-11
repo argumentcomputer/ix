@@ -121,7 +121,7 @@ fn move_to_display(
   let mut display: Vec<(Name, Name)> = Vec::new();
   let mut seen: FxHashSet<Name> = FxHashSet::default();
   for n in &journal.claimed {
-    if !seen.insert(n.clone()) || !sel(n) {
+    if !seen.insert(n.clone()) || super::names::has_reserved(n) || !sel(n) {
       continue;
     }
     if let Some(d) = ix_aux_name(members, rep0, perm, n) {
@@ -206,7 +206,11 @@ pub fn edit_changed_block(
   };
   let perm = layout_perm(layout);
   let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
-  let heads = image_kinds(&const_of, original_all);
+  let heads = image_kinds(&const_of, original_all).into_iter().filter(|name| {
+    crate::compile::aux_gen::source_identity::permits_optimization(
+      lean_env, name,
+    )
+  });
   let moved =
     move_to_display(stt, original_all, &rep0, &perm, &journal, &|_| true)?;
   for h in heads {
@@ -308,7 +312,11 @@ pub fn edit_permuted_below_family(
       && below_all.iter().any(|b| super::expr::strip_prefix(b, n).is_some())
   };
   let moved = move_to_display(stt, &below_all, &rep0, &[], &journal, &sel)?;
-  let heads = image_kinds(&const_of, &below_all);
+  let heads = image_kinds(&const_of, &below_all).into_iter().filter(|name| {
+    crate::compile::aux_gen::source_identity::permits_optimization(
+      lean_env, name,
+    )
+  });
   insert_recs(stt, &journal.below_recs)?;
   for h in heads {
     insert_once(

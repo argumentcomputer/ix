@@ -100,6 +100,7 @@ private def checkReaders (dir path : System.FilePath) (names : Array String)
   need (names.toList.eraseDups.length == names.size) "duplicate pretty reader selector"
   IO.FS.createDirAll dir
   let run ← Tests.Ix.Compile.Pass3.kernelRun dir path names (anon := anon)
+  let names := run.targets
   -- kernelRun's permitted documented declines are insufficient here. Require
   -- an actual accepting owning-record verdict for every requested C1 record.
   let report ← IO.ofExcept <| Tests.Ix.Compile.KernelReport.parse

@@ -781,11 +781,13 @@ expansion. O11b's family lookup uses the same `casesOn` guard. The checked
 [source correspondence](../Ix/CompileCert/SourceIdentity.lean) is a syntactic
 boundary, separate from the generator laws and the source semantic model.
 
-This guard does not repair auxiliary publication by itself. An unchanged
-block can still provisionally bind a custom source helper to its regenerated
-counterpart; separating that generated support from the source definition is
-an open compiler defect. Other auxiliary families also still need their own
-source recognition contracts.
+Canonical derived helpers now receive private identities when constructed.
+Copied source expressions keep their original references, including a source
+field type named `T.below`. Source definitions and source `below` inductives
+compile separately; only authenticated simple wrappers enter the image path.
+Intrinsic recursors retain their existing promotion/image handling. Other
+auxiliary families still need their own source recognition contracts for
+optimizations that assume standard generated behavior.
 
 For image-kind definitions such as `casesOn`, `recOn`, `below` and `brecOn`, use
 Lean's own value with its head occurrences rewritten. For a recursor use §4.2's

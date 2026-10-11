@@ -12,6 +12,7 @@ module
 public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
+public import Ix.AuxGen.Names
 public section
 
 namespace Ix.AuxGen
@@ -34,6 +35,8 @@ structure AuxDef where
     Mirrors Rust `BelowDef` (aux_gen/below.rs:56). -/
 structure BelowDef where
   name : Name
+  /-- Logical source-family role; it need not name the generated declaration. -/
+  sourceName : Name := name
   levelParams : Array Name
   typ : Expr
   value : Expr
@@ -58,6 +61,8 @@ structure BelowCtor where
     `IndPredBelow` output). Mirrors Rust `BelowIndc` (aux_gen/below.rs:65). -/
 structure BelowIndc where
   name : Name
+  /-- Logical source-family role, kept separate from the generated identity. -/
+  sourceName : Name := name
   levelParams : Array Name
   nParams : Nat
   nIndices : Nat
@@ -83,6 +88,8 @@ inductive BelowConstant where
     (aux_gen/brecon.rs:47). -/
 structure BRecOnDef where
   name : Name
+  /-- Logical source-family role for existence/alias queries. -/
+  sourceName : Name := name
   levelParams : Array Name
   typ : Expr
   value : Expr
@@ -110,6 +117,14 @@ inductive PatchedConstant where
   | brecOnDef : BRecOnDef → PatchedConstant
   deriving Repr, Nonempty, Inhabited
 
+/-- Emitted identity, distinct from the source-role key in the patch table. -/
+def PatchedConstant.name : PatchedConstant → Name
+  | .recr r => r.cnst.name
+  | .recOnDef d | .casesOnDef d => d.name
+  | .belowDef d => d.name
+  | .belowIndc d => d.name
+  | .brecOnDef d => d.name
+
 /-- Output of `generateAuxPatches`.
 
     `perm` is the canonical hash-sort permutation for the aux section of the
@@ -118,11 +133,15 @@ inductive PatchedConstant where
     whose spec-params live in other SCCs; `none` when the block has no
     nested auxiliaries. Mirrors Rust `AuxPatchesOutput` (aux_gen.rs:137). -/
 structure AuxPatchesOutput where
-  /-- Regenerated canonical-layout constants, keyed by their Lean-visible
-      source-indexed name (e.g. `A.rec`, `A.below_2`). -/
+  /-- Construction policy shared by the generated families. -/
+  names : AuxNames := {}
+  /-- Regenerated canonical-layout constants, keyed by source-family role
+      (e.g. `A.rec`, `A.below_2`). Derived declarations can have different,
+      private emitted identities (`PatchedConstant.name`). -/
   patches : Std.HashMap Name PatchedConstant := {}
-  /-- Lean-visible aux names that resolve to an already-compiled canonical
-      patch instead of compiling a renamed copy (source name → patch name). -/
+  /-- Emitted aliases of an already-compiled canonical patch. In compiler
+      mode derived helpers use private names on both sides; source declarations
+      are not identified with these aliases. -/
   aliases : Std.HashMap Name Name := {}
   perm : Option (Array Nat) := none
   /-- `evaporated[sourceJ]`: this block registered the evaporation alias

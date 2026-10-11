@@ -19,22 +19,19 @@
      re-claim (accepted), a second compiled claim at another address (A7, a7s §6.2) and two
      differing Pass 3 records of one key inside one block (A7, D1).
      The messages must be Rust's, character for character.
-  2. **Both compilers.** A constructed closure that bypasses the B1
-     existence rule: it holds a user constant named `T.below` (a plain
-     definition, not Lean's auxiliary) for a recursive inductive `T` whose
-     field type depends on it, so `T.below` compiles before `T` in every
-     schedule and `T`'s aux tail then regenerates and claims `T.below`. Real
-     Lean input cannot contain this: Lean's own `mkBelow` would have failed
-     on the name. The Rust compiler (`ix compile`'s FFI), the sequential and
-     wave drivers (1, 4, 16 workers) and the `ix compile-lean` pipeline (1,
-     4, 16 workers), in Pass 3 (until M6R slice 6 also with the legacy
-     surgery, `IX_PASS3=off`), must all refuse exactly `T`'s block, with the same
-     conflict message (same name, same two addresses); the user `T.below`
-     itself compiles.
+  2. **Both compilers.** A closure holds a user definition named `T.below`
+     before the recursive inductive `T`, whose field type depends on it.
+     `Lean.addDecl` permits this source shape (the kernel-checked neighbor is
+     in `Fixtures.AuxiliaryIdentity`). Derived generated helpers use reserved
+     identities, so this must compile while preserving the existing source
+     binding. Rust, both Lean drivers and the full Lean pipeline at the
+     original worker counts must agree byte for byte and recover the supplied
+     source. The direct duplicate-claim and rollback checks above still refuse
+     genuine conflicting writes.
 
   Run with: `lake test -- --ignored compile-claim-conflict`.
 -/
-import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.Pass3
 
 open Lean
 
@@ -353,85 +350,63 @@ got {actual.getD "accepted"}"
   let env ← get_env!
   let closure ← IO.ofExcept (conflictClosure env)
   IO.println s!"[claim-conflict] constructed closure: {closure.length} constants"
-  -- Rust (the `ix compile` FFI), partial output allowed so the status
-  -- lists every refused constant
-  let dir ← IO.FS.createTempDir
+  -- A generated helper must not claim the already-settled source spelling.
+  let dir : System.FilePath := "plans/tasks/lean-to-ixon-correctness/claim-conflict-gate"
+  IO.FS.createDirAll dir
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env closure)
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared (dir / "rs.ixe").toString true
-  IO.FS.removeDirAll dir
+  let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared (dir / "rs.ixe").toString false
   let rust := sorted status.ungrounded.toList
   for (n, m) in rust do
     IO.println s!"[claim-conflict] rust refuses {n}: {m}"
-  let belowPretty := (Ix.Name.fromLeanName belowName).pretty
-  let tPretty := (Ix.Name.fromLeanName tName).pretty
-  let isConflict (m : String) :=
-    m == s!"auxiliary claim for source name '{belowPretty}' has no forward provenance to the claiming block"
-  if !(rust.any fun (n, m) => n == tPretty && isConflict m) then
-    failures := failures + 1
-    IO.println s!"[claim-conflict] FAIL: Rust does not refuse {tPretty} with the conflicting claim on {belowPretty}"
-  if rust.any (·.1 == belowPretty) then
-    failures := failures + 1
-    IO.println s!"[claim-conflict] FAIL: Rust refuses the user {belowPretty} itself"
+  unless rust.isEmpty do throw (IO.userError "Rust rejected the source-owned below fixture")
+  let rustBytes ← IO.FS.readBinFile (dir / "rs.ixe")
+  let checkOutput (label : String) (output : Ixon.Env) (cenv : Ix.CompileM.CompileEnv) : IO Unit := do
+    unless cenv.ungrounded.isEmpty do throw (IO.userError s!"{label}: source-owned below fixture refused")
+    for (name, _) in closure do
+      unless output.named.contains (Ix.Name.fromLeanName name) do
+        throw (IO.userError s!"{label}: source declaration missing: {name}")
+    let sourceName := Ix.Name.fromLeanName belowName
+    let generatedName := Ix.Name.mkStr (Ix.Name.mkStr (Ix.Name.fromLeanName tName) "_ix") "below"
+    let some source := output.getNamed? sourceName | throw (IO.userError "source below missing")
+    let some generated := output.getNamed? generatedName | throw (IO.userError "generated below missing")
+    unless source.addr != generated.addr do
+      throw (IO.userError s!"{label}: generated helper replaced the source definition")
+    unless (← IO.ofExcept (Ixon.serEnv output)) == rustBytes do
+      throw (IO.userError s!"{label}: serialized output differs from Rust")
+    let original := (Ix.CanonM.canonChunk prepared.toArray).foldl
+      (fun m (name, ci) => m.insert name ci) ({} : Std.HashMap Ix.Name Ix.ConstantInfo)
+    let (recovered, errors, _) ← Ix.DecompileM.decompileEnvFullParallel output (some original)
+    unless errors.isEmpty && recovered.size == original.size &&
+        original.toArray.all (fun (name, ci) => recovered.get? name == some ci) do
+      throw (IO.userError s!"{label}: source round-trip differs")
+    IO.println s!"[claim-conflict] {label}: all source names preserved; separate generated below; \
+exact source round-trip; BYTE-IDENTICAL to Rust"
   -- Lean: every schedule
-  let mut runs : Array (String × List (String × String)) := #[]
   let phases ← Ix.CompileM.rsCompilePhasesOf closure
   let mut nameByHash : Std.HashMap Address Ix.Name := {}
   for (ln, _) in closure do
     let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
     nameByHash := nameByHash.insert ixn.getHash ixn
-  -- Pass 3 (the only mode since M6R slice 6). `T`'s block is not changed,
-  -- so it must refuse it exactly as Rust does.
+  -- Keep every original schedule, now requiring successful source preservation.
   do
     let mode := "pass3"
     match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash) with
     | .error e => throw (IO.userError s!"[claim-conflict] sequential driver ({mode}): {e}")
-    | .ok (_, _, cenv) =>
-      runs := runs.push (s!"sequential ({mode})", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+    | .ok (output, _, cenv) => checkOutput s!"sequential ({mode})" output cenv
     for k in [1, 4, 16] do
       match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
           (nameByHash := nameByHash) with
       | .error e => throw (IO.userError s!"[claim-conflict] wave driver, {k} workers ({mode}): {e}")
-      | .ok (_, _, cenv) =>
-        runs := runs.push (s!"wave --jobs {k} ({mode})", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+      | .ok (output, _, cenv) => checkOutput s!"wave --jobs {k} ({mode})" output cenv
     for k in [1, 4, 16] do
       let out ← Tests.Ix.Compile.Twins.leanCompile env closure k
-      runs := runs.push (s!"compile-lean --workers {k} ({mode})",
-        out.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
-  -- Root refusals (every failure that is not a missing-dependency cascade)
-  -- must be Rust's in every schedule, name for name and message for message.
-  -- The cascades are exactly `T.rec` on both sides: a refused block merges
-  -- nothing (the Lean drivers: `checkBlockClaims` runs first; the Rust
-  -- compiler since M6R slice 2: `block_txn` removes what the block published
-  -- before its aux tail raised the conflict), so `T.rec`, a block of its own,
-  -- finds `T` missing. Until slice 2 Rust compiled `T.rec` against the
-  -- refused block's primary names (this suite pinned that difference).
-  -- Compared by name (the two compilers spell a missing constant
-  -- differently). Pinned so that a change on either side shows up here.
-  let cascadeNames : List String := [(Ix.Name.fromLeanName (tName ++ `rec)).pretty]
-  let rustRoots := rust.filter (!isCascade ·.2)
-  let rustCascades := (rust.filter (isCascade ·.2)).map (·.1)
-  if rustCascades != cascadeNames then
-    failures := failures + 1
-    IO.println s!"[claim-conflict] FAIL: Rust cascades {rustCascades}, expected {cascadeNames}"
-  let mut reference : Option (List (String × String)) := none
-  for (label, refusals) in runs do
-    let lean := sorted refusals
-    let roots := lean.filter (!isCascade ·.2)
-    let cascades := (lean.filter (isCascade ·.2)).map (·.1)
-    if roots == rustRoots && cascades == cascadeNames && cascades == rustCascades then
-      IO.println s!"[claim-conflict] {label}: {roots.length} refusals identical to Rust's; \
-cascade {cascades} identical to Rust's"
-    else
-      failures := failures + 1
-      IO.println s!"[claim-conflict] {label}: FAIL: refusals differ from Rust"
-      for (n, m) in lean do
-        IO.println s!"[claim-conflict]   lean {n}: {m}"
-    match reference with
-    | none => reference := some lean
-    | some r =>
-      if r != lean then
-        failures := failures + 1
-        IO.println s!"[claim-conflict] {label}: FAIL: refusals differ from the sequential driver's"
+      checkOutput s!"compile-lean --workers {k} ({mode})" out.env out.cenv
+  let names := closure.toArray.map (fun (name, _) => name.toString)
+  let checks := dir / "kernels"
+  IO.FS.createDirAll checks
+  let run ← Tests.Ix.Compile.Pass3.kernelRun checks (dir / "rs.ixe") names
+  unless run.failed.isEmpty && run.checked.all (fun (_, count) => count == run.targets.size) do
+    throw (IO.userError s!"source-owned below kernel checks failed: {run.failed}; {run.checked}")
   IO.println s!"[claim-conflict] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"
   return if failures == 0 then 0 else 1
 

@@ -15,6 +15,7 @@ import Ix.CompileCert.Opt
 import Ix.CompileCert.Publication
 import Ix.CompileCert.ReferencePublication
 import Ix.CompileCert.SourceIdentity
+import Ix.CompileCert.AuxNames
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
 import Ix.CompileCert.RuleRows
@@ -2152,4 +2153,18 @@ def sourceIdentityRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sourceIdentityRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Structural generated/source name separation and the actual casesOn
+builder's independence from its emitted name; no digest-injectivity premise. -/
+def auxNamesRoots : Array Lean.Name :=
+  #[`reserved_mkStr, `member_reserved, `member_source_disjoint,
+    `primary_rec_unchanged, `nested_rec_unchanged, `nested_reserved,
+    `source_member, `source_nested, `casesOn_name_only].map
+      (`Ix.CompileCert.AuxNames ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.auxNamesRoots Ix.CompileCert.Audit.allowedAxioms
 

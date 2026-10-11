@@ -35,15 +35,16 @@ hand-built environment (`CompileEnv.pass3` false; every driver sets it):
 
 ## Faithfulness
 See `Translate` (the rewrite is definitional) and `ImageView` (images compute
-as Lean's recursors). The originals of the regenerated auxiliaries are still
-compiled for `Named.original` by the promotion pass, with no call-site
-rewrite at all: the provenance is Lean's form as written.
+as Lean's recursors). Source definitions compile from their actual bodies;
+the simple wrappers enter the image path only after source-body recognition.
+Intrinsic recursors retain original-form promotion. Canonical generated
+definitions and below inductives have private identities from construction.
 
 ## Canonicity
 Faithful only (A4's definitional passes restore the optimised forms).
-Identity blocks are untouched: a compile with no changed block is byte-identical
-to what the legacy surgery wrote for it (until M6R slice 6 that was checked by
-the switch-off comparison).
+Private support can add named records even for an unchanged block. Source
+definitions keep their own compilation; kernel acceptance of a generated
+helper alone does not identify it with an arbitrary source declaration.
 
 ## Side condition and fallback
 A failure to build an image or to rewrite is a compile error of the block
@@ -126,7 +127,7 @@ def moveToDisplay (originalAll : Array Name) (rep0 : Name) (perm : Array (Option
   let st ← getBlockState
   let mut display : Std.HashMap Name Name := {}
   for n in st.auxNamed.map (·.1) ++ st.auxNameToAddr.toArray.map (·.1) do
-    if display.contains n || !sel n then continue
+    if display.contains n || hasReserved n || !sel n then continue
     if let some d := ixAuxName originalAll rep0 perm n then
       display := display.insert n d
   let edit : SideCarEdit := { display, kept := {} }
@@ -143,7 +144,10 @@ def editChangedBlock (cs : Array MutConst) (classNames : Array (Array Name))
   let cenv ← getCompileEnv
   let some (originalAll, rep0, perm) := displayInputs cs classNames layout? | return
   let some all0 := originalAll[0]? | return
-  let heads := imageKinds cenv.env.get? originalAll
+  -- Custom wrappers compile as ordinary source definitions, retaining the
+  -- rewrite records for their actual bodies. They are not regenerated images.
+  let heads := (imageKinds cenv.env.get? originalAll).filter
+    (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
   -- every Lean name moves off the Ix auxiliaries: the image kinds denote
   -- their stored images (compiled when their own block comes up,
   -- `compileImageBlock`), the rest are Lean's own blocks
@@ -272,7 +276,8 @@ def editPermutedBelowFamily (cs : Array MutConst) : CompileM Unit := do
   let _ ← moveToDisplay belowAll rep0 #[] fun n =>
     !belowAll.contains n && !ctors.contains n
       && belowAll.any fun b => (stripPrefix? b n).isSome
-  let heads := imageKinds cenv.env.get? belowAll
+  let heads := (imageKinds cenv.env.get? belowAll).filter
+    (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
   modifyBlockState fun st => { st with
     p3AuxRecs := st.p3AuxRecs ++ st.p3BelowRecs
     p3Heads := st.p3Heads ++ heads.map (·, all0)

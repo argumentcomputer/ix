@@ -353,7 +353,8 @@ def nestedLevelChecks (cenv : CompileEnv) (t : Tally) : Tally := Id.run do
 
 /-- Every declaration in the checked mixed-level source and its same-spelling
 neighbour compiles, including all recursors. The actual stored projection and
-owning-block payloads agree under member reordering. -/
+owning-block payloads agree under member reordering. Canonical recursors agree
+even when source-facing images retain different motive orders and numbering. -/
 def nestedLevelPipelineChecks (env : Lean.Environment) (t : Tally) : IO Tally := do
   let fixturePrefix := `Tests.Ix.Compile.Fixtures.NestedLevels
   let seeds := env.constants.toList.filterMap fun (n, _) =>
@@ -387,6 +388,22 @@ def nestedLevelPipelineChecks (env : Lean.Environment) (t : Tally) : IO Tally :=
         | _ => none
       let owner ← out.env.consts.get? block
       pure (lc.rawBytes, owner.rawBytes)
+    let recursorsOf := fun ns => (do
+      let mut count := 0
+      let mut payloads : Array (ByteArray × Option ByteArray) := #[]
+      for (name, named) in out.env.named do
+        if !ns.isPrefixOf (keyName name) || !Ix.Compile.Pass.hasReserved name then continue
+        let .recr .. := named.constMeta.info | continue
+        let loaded ← out.env.consts.get? named.addr
+        let constant ← loaded.get.toOption
+        match constant.info with
+        | .rPrj _ | .recr _ => pure ()
+        | _ => none
+        let payload ← Tests.Ix.Compile.AddressNames.payload out name
+        count := count + 1
+        if !payloads.contains payload then payloads := payloads.push payload
+      pure (count, payloads) : Option (Nat × Array (ByteArray × Option ByteArray)))
+    let mut referenceRecs : Option (Array (ByteArray × Option ByteArray)) := none
     for family in [`Mixed, `Neighbour] do
       let ns := fixturePrefix ++ family
       for role in [`Left, `Right, `Left.mk, `Right.mk] do
@@ -394,6 +411,19 @@ def nestedLevelPipelineChecks (env : Lean.Environment) (t : Tally) : IO Tally :=
         let b := bytesOf (ns ++ `B ++ role)
         t := t.check (a.isSome && b.isSome && a == b)
           s!"nested levels {family}.{role}: actual full projection/owning-block bytes differ"
+      for presentation in [`A, `B] do
+        match recursorsOf (ns ++ presentation) with
+        | none => t := t.check false s!"nested levels {family}.{presentation}: canonical recursor payload missing or malformed"
+        | some (count, payloads) =>
+          -- Left/Right share one canonical recursor; their one nested class
+          -- has the other. The representative spelling can differ across
+          -- presentations, so compare complete payload sets, not those names.
+          t := t.check (count == 3 && payloads.size == 2)
+            s!"nested levels {family}.{presentation}: canonical recursor coverage {count} names/{payloads.size} payloads, expected 3/2"
+          if let some reference := referenceRecs then
+            t := t.check (payloads.all reference.contains && reference.all payloads.contains)
+              s!"nested levels {family}.{presentation}: canonical recursor/owning-block bytes differ"
+          else referenceRecs := some payloads
     return t
 
 /-- Generated-name tables ignore every cached prefix digest, while

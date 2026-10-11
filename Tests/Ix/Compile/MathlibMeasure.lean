@@ -334,6 +334,7 @@ def runKernels (dir : System.FilePath) : IO UInt32 := do
   IO.FS.createDirAll kdir
   -- the distinct anonymous addresses among the names (what check-lean --anon checks)
   let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy (← IO.FS.readBinFile out))
+  let names ← IO.ofExcept (Tests.Ix.Compile.Pass3.expandKernelTargets parts names)
   let addrOf : Std.HashMap String String := parts.namedRows.foldl
     (fun m row => m.insert row.name.pretty (toString row.addr)) {}
   let addrs : Std.HashSet String := names.foldl (fun s n => match addrOf.get? n with

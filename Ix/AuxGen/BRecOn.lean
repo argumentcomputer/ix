@@ -862,7 +862,7 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
     (fFvars : Array Expr) (allDecls : Array LocalDecl)
     (allFvars : Array Expr) (minorDoms : Array Expr) (motiveCiApp : Expr)
     (elimLevel majorLevel : Level) (casesOnSpecParams : Array Expr)
-    (recLevelParams : Array Name) (maps : AddrMaps)
+    (recLevelParams : Array Name) (maps : AddrMaps) (names : AuxNames := {})
     : KBridgeM (Expr × Expr) := do
   let majorFvar ← arrIdx majorFvars 0 "buildTypeBreconEqFvar: majorFvars"
 
@@ -918,7 +918,7 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
       return #[Level.mkZero] ++ lvls
     else
       return #[Level.mkZero] ++ recUnivs.extract 1 recUnivs.size
-  let casesOnName := Name.mkStr targetIndName "casesOn"
+  let casesOnName := names.member targetIndName "casesOn"
 
   -- --- Indexed path (brecon.rs:1531-1579) ---
   let nIndices := indexDecls.size
@@ -1182,7 +1182,8 @@ def buildTypeMinorPremiseFvar (minorDom : Expr)
     from the first inductive (unused, mirroring Rust's `let _ = all0`). -/
 def buildTypeBreconFvar (ci : Nat) (recVal : RecursorVal)
     (breconName : Name) (_all0 : Name) (belowNames : Array Name)
-    (nClasses : Nat) (maps : AddrMaps) : KBridgeM (Array BRecOnDef) := do
+    (nClasses : Nat) (maps : AddrMaps) (names : AuxNames := {})
+    (sourceName : Name := breconName) : KBridgeM (Array BRecOnDef) := do
   -- canon_kenv is populated by `populateCanonKenvWithBelow` between
   -- and Phase 3: PUnit, PProd, parent inductives, canonical
   -- `.below` types.
@@ -1445,7 +1446,7 @@ TcScope::get_level on major domain returned {e}. This typically means \
   let eqResult ← buildTypeBreconEqFvar ci targetIndName breconName goName
     recUnivs paramFvars motiveFvars motiveDecls indexFvars indexDecls
     indexSortLevels majorFvars majorDecls fFvars allDecls allFvars
-    minorDoms motiveCiApp elimLevel ilvl casesOnSpec recLevelParams maps
+    minorDoms motiveCiApp elimLevel ilvl casesOnSpec recLevelParams maps names
 
   -- `.go` / `.brecOn` / `.eq` all reference the parent inductive's
   -- `.rec`, so Lean's `mkDefinitionValInferringUnsafe` /
@@ -1453,15 +1454,15 @@ TcScope::get_level on major domain returned {e}. This typically means \
   let isUnsafe := recVal.isUnsafe
 
   let mut results : Array BRecOnDef := #[
-    { name := goName, levelParams := recLevelParams, typ := goType,
+    { name := goName, sourceName := Name.mkStr sourceName "go", levelParams := recLevelParams, typ := goType,
       value := goValue, isUnsafe, isProp := false },
-    { name := breconName, levelParams := recLevelParams,
+    { name := breconName, sourceName, levelParams := recLevelParams,
       typ := breconType, value := breconValue, isUnsafe,
       isProp := false }]
 
   let (eqTyp, eqVal) := eqResult
   results := results.push
-    { name := eqName, levelParams := recLevelParams, typ := eqTyp,
+    { name := eqName, sourceName := Name.mkStr sourceName "eq", levelParams := recLevelParams, typ := eqTyp,
       value := eqVal, isUnsafe, isProp := false }
 
   return results
@@ -1769,7 +1770,7 @@ motive ({nMotives}), have {belowConsts.size}")
 def generateBreconConstants (sortedClasses : Array (Array Name))
     (canonicalRecs : Array (Name × RecursorVal))
     (belowConsts : Array BelowConstant) (isProp : Bool) (maps : AddrMaps)
-    (allAux : Bool := false) : KBridgeM (Array BRecOnDef) := do
+    (allAux : Bool := false) (names : AuxNames := {}) : KBridgeM (Array BRecOnDef) := do
   let nClasses := sortedClasses.size
   if nClasses == 0 || canonicalRecs.isEmpty || belowConsts.isEmpty then
     return #[]
@@ -1804,7 +1805,8 @@ and {belowConsts.size} `.below` constants")
 
     if !isProp then
       -- Type-level: .brecOn.go + .brecOn + .brecOn.eq (BRecOn.lean path).
-      let breconName := Name.mkStr classRep "brecOn"
+      let sourceName := Name.mkStr classRep "brecOn"
+      let breconName := names.member classRep "brecOn"
       let all0 ← arrIdx ind.all 0 "generateBreconConstants: all"
       -- Below names from belowConsts (source-indexed, matching
       -- canon_kenv's content hashes). Positions align with the canonical
@@ -1814,13 +1816,13 @@ and {belowConsts.size} `.below` constants")
         | .defn d => d.name
         | .indc i => i.name
       let defs ← buildTypeBreconFvar ci recVal breconName all0 belowNames
-        nClasses maps
+        nClasses maps names sourceName
       results := results ++ defs
     else
       -- Prop-level: single .brecOn theorem (IndPredBelow.lean path).
-      let d ← buildPropBrecon ci recVal ind (Name.mkStr ind.cnst.name "brecOn")
+      let d ← buildPropBrecon ci recVal ind (names.member ind.cnst.name "brecOn")
         ind.numIndices sortedClasses belowConsts
-      results := results.push d
+      results := results.push { d with sourceName := Name.mkStr ind.cnst.name "brecOn" }
 
   -- Prop-level `.brecOn_N` for nested auxiliary members: Lean's
   -- `IndPredBelow.mkBRecOn` declares one `.brecOn` theorem per motive,
@@ -1838,19 +1840,20 @@ and {belowConsts.size} `.below` constants")
             | throw (CompileError.invalidMutualBlock
                 s!"brecOn aux recursor '{auxRecName.pretty}' is not \
 source-indexed; refusing to synthesize brecOn_{j + 1}")
-          let breconName := Name.mkStr all0 s!"brecOn_{idx}"
+          let sourceName := Name.mkStr all0 s!"brecOn_{idx}"
+          let breconName := names.nested all0 "brecOn" idx
           -- A7 (D13): the compile path passes `allAux := true`
           -- (`Patches.lean`), so the global `nameToNamed` (what other
           -- blocks registered) is read only on the decompile path. The
           -- value is the one the former `allAux || …` gave.
           let existsInEnv ← if allAux then pure true else do
             let cenv ← Ix.CompileM.getCompileEnv
-            pure ((← lookupConst? breconName).isSome
-              || cenv.nameToNamed.contains breconName)
+            pure ((← lookupConst? sourceName).isSome
+              || cenv.nameToNamed.contains sourceName)
           if existsInEnv then
             let d ← buildPropBrecon (nClasses + j) auxRecVal firstInd
               breconName auxRecVal.numIndices sortedClasses belowConsts
-            results := results.push d
+            results := results.push { d with sourceName }
 
   -- Generate .brecOn_N for nested auxiliary members (Type-level only).
   -- Lean (BRecOn.lean:320-326): for each nested auxiliary recursor
@@ -1877,7 +1880,8 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
           | throw (CompileError.invalidMutualBlock
               s!"brecOn aux recursor '{auxRecName.pretty}' is not \
 source-indexed; refusing to synthesize brecOn_{j + 1}")
-        let breconName := Name.mkStr all0 s!"brecOn_{idx}"
+        let sourceName := Name.mkStr all0 s!"brecOn_{idx}"
+        let breconName := names.nested all0 "brecOn" idx
 
         -- Only generate if this constant exists in the source
         -- environment. Check lean_env OR stt.env.named (Ixon compile
@@ -1888,8 +1892,8 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
         -- (`allAux := true`) the global `nameToNamed` is not read.
         let existsInEnv ← if allAux then pure true else do
           let cenv ← Ix.CompileM.getCompileEnv
-          pure ((← lookupConst? breconName).isSome
-            || cenv.nameToNamed.contains breconName)
+          pure ((← lookupConst? sourceName).isSome
+            || cenv.nameToNamed.contains sourceName)
         if existsInEnv then
           let ci := nClasses + j -- target motive index in the flat block
           let belowNames : Array Name := belowConsts.map fun bc =>
@@ -1897,7 +1901,7 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
             | .defn d => d.name
             | .indc i => i.name
           let defs ← buildTypeBreconFvar ci auxRecVal breconName all0
-            belowNames nClasses maps
+            belowNames nClasses maps names sourceName
           results := results ++ defs
 
   return results

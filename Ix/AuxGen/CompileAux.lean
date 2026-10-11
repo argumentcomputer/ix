@@ -650,6 +650,7 @@ def brecOnToMutConst (d : BRecOnDef) : MutConst :=
     instead of at its Rust source position after it; no semantic
     difference.) -/
 def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
+    (privateHelpers : Bool := false)
     : KBridgeM Unit := do
   -- Overlay with just the .below inductives + ctors (mutual.rs:1063-1077).
   let mut overlay : Std.HashMap Name ConstantInfo := {}
@@ -714,13 +715,9 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
       (keyMap.get? c.name).getD u64Max
     compileAuxBlockWithRename belowRecs maps none (some classOrderKey)
 
-  -- Regenerate `.below.casesOn` against the canonical below-recs
-  -- (mirrors mutual.rs `compile_below_recursors`). Lean authors
-  -- `X.below.casesOn` with motives in LEAN's member order; the recs
-  -- above carry the canonical motive layout, so the Lean-authored
-  -- wrapper is ill-typed in the compiled env. Regenerate from the
-  -- canonical rec and register here so the ordinary compile of the
-  -- Lean value is skipped.
+  -- Generate the canonical below family's own casesOn wrappers. In compiler
+  -- mode the below identities are already private; the source below family
+  -- and its wrappers compile separately from their actual declarations.
   --
   -- Per family, not per name (as `generateAuxPatches` decides every other
   -- aux block; mutual.rs `compile_below_recursors`): if Lean exported any
@@ -728,15 +725,15 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   let belowCasesName? (recName : Name) : Option Name := match recName with
     | .str parent "rec" _ => some (Name.mkStr parent "casesOn")
     | _ => none
-  let mut emitBelowCases := false
-  for (recName, _) in recs do
+  let mut emitBelowCases := privateHelpers
+  for (recName, _) in (if privateHelpers then #[] else recs) do
     if let some n := belowCasesName? recName then
       if (← liftM (lookupConst? n : CompileM _)).isSome then
         emitBelowCases := true
   -- A collapsed class's non-representative `.below.casesOn` aliases the
   -- representative's, so any member of a `.below` block Lean declared
   -- counts.
-  for c in belowIndcs do
+  for c in (if privateHelpers then #[] else belowIndcs) do
     if let some (.inductInfo v) ← liftM (lookupConst? c.name : CompileM _) then
       for m in v.all do
         if (← liftM (lookupConst? (Name.mkStr m "casesOn") : CompileM _)).isSome then
@@ -745,8 +742,13 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   for (recName, recVal) in recs do
     if let some casesOnName := belowCasesName? recName then
       if emitBelowCases then
-        if let some d ←
-            liftM (generateCasesOn casesOnName recVal : CompileM _) then
+        let generate : CompileM (Option AuxDef) :=
+          if !privateHelpers then generateCasesOn casesOnName recVal else
+            withReader (fun (cenv, benv) =>
+            ({ cenv with env := { cenv.env with
+                overlay := overlay.fold (fun m n ci => m.insert n ci) cenv.env.overlay } }, benv))
+            (generateCasesOn casesOnName recVal)
+        if let some d ← liftM generate then
           belowCases := belowCases.push (.defn {
             name := d.name
             levelParams := d.levelParams
@@ -816,7 +818,7 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
 
   -- Phase 1: Generate patches (mutual.rs:572-587). Errors propagate —
   -- they indicate an aux_gen bug, not a user error.
-  let auxOut ← generateAuxPatches auxClassNames sourceAll maps
+  let auxOut ← generateAuxPatches auxClassNames sourceAll maps (privateHelpers := true)
   let patches := auxOut.patches
   if patches.isEmpty then
     return none
@@ -1050,7 +1052,7 @@ source-indexed aux name")
   -- Phase 5: Compile .below.rec for Prop-level .below inductives
   -- (mutual.rs:847-852).
   if !belowIndcs.isEmpty then
-    compileBelowRecursors belowIndcs maps
+    compileBelowRecursors belowIndcs maps (privateHelpers := true)
 
   -- Phase 6: Compile .brecOn in 3 batches: .go, main, .eq
   -- (mutual.rs:854-877).
@@ -1068,11 +1070,9 @@ source-indexed aux name")
   liftM (registerAuxAliases auxOut.aliases
     s!"{blockLabel}/final" : CompileM _)
 
-  -- Note: `.noConfusion`, `.noConfusionType`, `.ctorIdx`, `.ctor.inj*`,
-  -- `._sizeOf_*`, etc. are NOT regenerated: their bodies only invoke
-  -- `.casesOn` (never `.rec`), whose public binder arity is invariant
-  -- under alpha collapse — the original Lean values compile to correct
-  -- Ixon as-is (mutual.rs:881-889).
+  -- Derived helpers are private generated support. Every source definition,
+  -- including a user-defined auxiliary-looking name, compiles from its own
+  -- body. Pass 3 rewrites source references where the inductive layout changed.
 
   -- Rust's IX_TIMING report (mutual.rs:891-906) is not ported.
   return auxLayout

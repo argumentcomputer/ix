@@ -11,8 +11,8 @@
 
   Emitted from the twins gate's suggested entries (`entrySyntax`, cause by
   `Tests.Ix.Compile.Twins.defaultCause`), the rest reviewed by hand
-  at the M6 flip (see `docs/compiler-passes.md` §7.4). Causes, 963 entries:
-  - `IMAGE` (497): the Lean name of an image-kind head of a changed block
+  at the M6 flip (see `docs/compiler-passes.md` §7.4). Causes, 973 entries:
+  - `IMAGE` (507): the Lean name of an image-kind head of a changed block
     denotes its image (decision 3, Def 3.4); the canonical constant is the
     `_ix` one;
   - `INHERITED` (155): the term is equal under the name map;
@@ -41,6 +41,31 @@ open Tests.Ix.Compile.NonCanonical
 
 /-- The measured non-canonical set of the default (Pass 3) compile. -/
 def nonCanonical : List NonCanonicalEntry := [
+  -- NestedLevels' checked A/B declarations reverse the source mutual order.
+  -- Public images retain its motive order and source auxiliary ownership;
+  -- their bytes below already occur in the b87916d3 image-repair artifact.
+  -- Canon.nestedLevelPipelineChecks separately requires identical complete
+  -- canonical recursor/owning-block payloads in all four presentations.
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Right.rec "source recursor image retains the source mutual motive order" .image
+    "f1154ee85d4ad1b9827e1194378e4eaeacebc57f488284d4f0dcc6803a819559" "8a0bfa35be7da4d484fcfee7b02cb04f3ca041d7d3e2938ee45b7e7c90149af0" "type.∀.dom.∀.dom" "ROOT[TV]",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Left.rec "source recursor image retains the source mutual motive order" .image
+    "7491f38aa5180ce1a17bb67df6eebbe706c971d5d00e1e7b2e64f60cba1d11de" "90612f29a1874723dd245e736729413432cd46c6abd2a4ea4fd8073af984d58e" "type.∀.dom.∀.dom" "ROOT[TV]",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Left.rec_3 "source nested image belongs to the first source mutual member" .image
+    "e281747466cc8f2bcdfdae5c3587e28d1c72de21adf6e603a932312668e4aa90" "-" "" "ONLY-A",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Left.rec_2 "source nested image belongs to the first source mutual member" .image
+    "8df84916972d20e405d2f55ccc353b82ead5213ef22b13712a074f9d7eb086a9" "-" "" "ONLY-A",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Left.rec_1 "source nested image belongs to the first source mutual member" .image
+    "ac796825d9bcbe0eb9e1c3fed8dd34072750a23ce7201733c7d925f202088499" "-" "" "ONLY-A",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Right.rec_2 "source nested image belongs to the first source mutual member" .image
+    "-" "f1dd890edb39a99adc73fc82181c181c918e8216d0a53608ccbcaba427bddd30" "" "ONLY-B",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Right.rec_3 "source nested image belongs to the first source mutual member" .image
+    "-" "9c9f7774e8370fdc9a92bcb932c8f97ab0d32d62a388e42d3f0e9e72eb3f6611" "" "ONLY-B",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Mixed "A" "B" `Right.rec_1 "source nested image belongs to the first source mutual member" .image
+    "-" "c1f246847a385808070b3ada8a50a018d7bab24550fa4c22d9dc3110590b0484" "" "ONLY-B",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Neighbour "A" "B" `Right.rec "source recursor image retains the source mutual motive order" .image
+    "0c21353e8cd1dc848d115d8aad8f896bd4a4fdffc028f0c97a26ea880f3b1436" "d1c2ca9393f1c17bab9742888ecf096bf675563815b99de0e9fdf2bc695a72d3" "type.∀.dom.∀.dom" "ROOT[TV]",
+  e `Tests.Ix.Compile.Fixtures.NestedLevels.Neighbour "A" "B" `Left.rec "source recursor image retains the source mutual motive order" .image
+    "d1c2ca9393f1c17bab9742888ecf096bf675563815b99de0e9fdf2bc695a72d3" "0c21353e8cd1dc848d115d8aad8f896bd4a4fdffc028f0c97a26ea880f3b1436" "type.∀.dom.∀.dom" "ROOT[TV]",
   e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Right.rec "image-kind head of a changed block (Lean's name denotes the image)" .image
     "0a332fefb2139bc295cb2394cf49ba1da5d77a84565b3222f10bc2b4f5332ff8" "47a7a7d529c14fc353bbc4ab0546173c806399dd01c50431b778bf15d283b89a" "type.∀.dom.∀.dom" "ROOT[TV]",
   e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Left.rec "image-kind head of a changed block (Lean's name denotes the image)" .image
