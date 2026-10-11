@@ -22,6 +22,7 @@ import Tests.Ix.Compile.SourceIdentity
 import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.Compile.HeadLookup
 import Tests.Ix.Compile.ExpressionFrame
+import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.AuxPublication
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
@@ -148,6 +149,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aux-source-identity-unit", Tests.Ix.Compile.SourceIdentity.suite),
   ("image-head-lookup", Tests.Ix.Compile.HeadLookup.suite),
   ("expression-frame", Tests.Ix.Compile.ExpressionFrame.suite),
+  ("table-worklist", Tests.Ix.Compile.TableWorklist.suite),
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),

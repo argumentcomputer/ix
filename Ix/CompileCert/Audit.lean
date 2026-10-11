@@ -2282,8 +2282,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.payloadFrameRo
 namespace Ix.CompileCert.Audit
 
 /-- Actual table preseeding, singleton/mutual compilation and block assembly
-preserve head claims. Runtime substitutions remain a separate refinement
-obligation; the frames cover arbitrary states and error effects. -/
+preserve head claims. The frames cover arbitrary states and error effects. -/
 def blockFrameRoots : Array Lean.Name :=
   #[`Frame.discard, `Frame.collectExprTableUnivs, `Frame.collectExprTablesStructural,
     `Frame.collectExprTables, `Frame.collectPreseedExprs, `Frame.internPreseedRefs,
@@ -2308,6 +2307,52 @@ def blockFrameRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.blockFrameRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Exact monadic refinement of the total runtime table walks, registered
+in the production module before any singleton/mutual writer is compiled. -/
+def tableWorklistRoots : Array Lean.Name :=
+  #[`TableWorklist.expr_size_pos, `TableWorklist.levels_fold,
+    `TableWorklist.collect_cons, `TableWorklist.collect_singleton,
+    `TableWorklist.roots_fold, `TableWorklist.refs_fold,
+    `TableWorklist.canon_fold, `TableWorklist.univs_fold,
+    `TableWorklist.preseed_eq, `collectExprTables_eq_worklist,
+    `preseedExprTables_eq_worklist].map (`Ix.CompileM ++ ·)
+  ++ #[``Ix.CompileCert.HeadWriterFrame.Frame.collectExprTablesWorklist,
+    ``Ix.CompileCert.HeadWriterFrame.Frame.preseedTableWorklist]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.tableWorklistRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  let replacements := #[
+    (``Ix.CompileM.collectExprTables, ``Ix.CompileM.collectExprTablesWorklist,
+      ``Ix.CompileM.collectExprTables_eq_worklist),
+    (``Ix.CompileM.preseedExprTables, ``Ix.CompileM.TableWorklist.preseed,
+      ``Ix.CompileM.preseedExprTables_eq_worklist)]
+  for (source, target, equation) in replacements do
+    let some replacement := substitutions.find? source
+      | throwError m!"missing production table-worklist csimp equation: {source}"
+    unless replacement.toDeclName == target && replacement.thmName == equation do
+      throwError m!"wrong production table-worklist substitute: {source} -> {replacement.toDeclName}"
+  let runtime := #[``Ix.CompileM.TableWorklist.collect,
+    ``Ix.CompileM.collectExprTablesWorklist, ``Ix.CompileM.TableWorklist.refsStep,
+    ``Ix.CompileM.TableWorklist.univsStep, ``Ix.CompileM.TableWorklist.preseed]
+  for name in runtime do
+    unless (substitutions.find? name).isNone do
+      throwError m!"table runtime helper has an unreviewed secondary substitution: {name}"
+  for name in runtime ++ replacements.map (fun (source, _, _) => source) do
+    unless (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"table entry still has an unchecked implemented_by substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"table runtime entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"table runtime entry is not kernel-visible and total: {name}"
+  logInfo "[cert-audit] table collectors: total definitions and checked production substitutions"
 
 namespace Ix.CompileCert.Audit
 

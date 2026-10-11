@@ -3,9 +3,9 @@ import Ix.CompileDriver
 
 /-! Head-claim preservation through expression-table collection, preseeding
 and block assembly. These statements cover the production definitions on
-arbitrary initial states, including error effects. Runtime substitution
-refinement is an additional obligation; these frames do not assert semantic
-correspondence of the resulting declarations. -/
+arbitrary initial states, including error effects. The table worklists use
+the production module's proved runtime equations; these frames do not assert
+semantic correspondence of the resulting declarations. -/
 
 namespace Ix.CompileCert.HeadWriterFrame
 
@@ -49,6 +49,11 @@ theorem Frame.collectExprTablesStructural (context : Address) (mutualContext : M
 theorem Frame.collectExprTables (expr : Expr) (context : Address) (acc : ExprTableCollection) :
     Frame (collectExprTables expr context acc) :=
   Frame.bind Frame.readBlock fun _ => Frame.collectExprTablesStructural _ _ _ _
+
+theorem Frame.collectExprTablesWorklist (expr : Expr) (context : Address) (acc : ExprTableCollection) :
+    Frame (Ix.CompileM.collectExprTablesWorklist expr context acc) := by
+  rw [← Ix.CompileM.collectExprTables_eq_worklist]
+  exact Frame.collectExprTables expr context acc
 
 theorem Frame.collectPreseedExprs (roots : List (Expr × List Name)) (acc : ExprTableCollection) :
     Frame (collectPreseedExprs roots acc) := by
@@ -106,6 +111,11 @@ theorem Frame.preseedExprTables (roots : Array (Expr × List Name)) :
     | exact Frame.internPreseedUnivs _ _
     | apply Frame.modify; intro _; rfl
     | refine Frame.bind ?_ (fun value => ?_)
+
+theorem Frame.preseedTableWorklist (roots : Array (Expr × List Name)) :
+    Frame (Ix.CompileM.TableWorklist.preseed roots) := by
+  rw [← Ix.CompileM.preseedExprTables_eq_worklist]
+  exact Frame.preseedExprTables roots
 
 theorem Frame.readContext : Frame (MonadReader.read : CompileM (CompileEnv × BlockEnv)) := by
   intro _ _
