@@ -963,6 +963,46 @@ def nestedPropHeaderControl (forged : Bool) (polymorphic : Bool := false) : Bool
     return forged && (message.splitOn "canonical header mismatch").length > 1
   | .error _ _ => return false
 
+/-- Direct discovery controls exercise syntax and scope independently of
+declaration admission. `KernelSpec.T` supplies the checked-source end-to-end
+neighbour for the wrapper case. -/
+def nestedSyntaxTests : TestSeq := Id.run do
+  let (ixon, boxBlock, nestedBlock) := nestedSingletonFixture false
+  let env := ingressEnvOf ixon
+  let root : KId .anon := ⟨indcProjAddr nestedBlock 0, ()⟩
+  let boxId : KId .anon := ⟨indcProjAddr boxBlock 0, ()⟩
+  let rootExpr := KExpr.mkConst root #[]
+  let box := KExpr.mkConst boxId #[]
+  let wrapper : AE := .mkConst ⟨Address.blake3 "non-inductive-syntax-wrapper".toUTF8, ()⟩ #[]
+  let sort : AE := .mkSort (.mkSucc .mkZero)
+  let arrow := fun (a b : AE) => KExpr.mkAll () () a b
+  let run := fun (expr : AE) (params : UInt64) =>
+    match (TcM.runRec (RecM.tryDetectNested expr #[root.addr] #[] #[] 1 0 params)).run
+        (.ofEnvAnon env) with
+    | .ok (flat, _) state => if state.lctx.size == 0 then some flat else none
+    | .error _ _ => none
+  let found := fun (result : Option (Array (FlatBlockMember .anon))) (parameter : AE) =>
+    match result with
+    | some #[entry] => entry.id == boxId && entry.specParams == #[parameter]
+    | _ => false
+  let occurrence := KExpr.mkApp box rootExpr
+  let wrapped := KExpr.mkApp wrapper occurrence
+  let parameter := KExpr.mkApp rootExpr (.mkVar 0 ())
+  let scopeExpr := KExpr.mkApp box parameter
+  let localOnly := match run (arrow sort scopeExpr) 1 with
+    | some flat => flat.isEmpty
+    | none => false
+  let mut shared := occurrence
+  for _ in [:64] do shared := arrow shared shared
+  return test "nested discovery visits under non-inductive heads and binders"
+      (found (run (arrow sort wrapped) 0) rootExpr : Bool)
+    ++ test "nested discovery rejects field-local specializations"
+      (localOnly : Bool)
+    ++ test "nested discovery visit keys distinguish binder depth"
+      (found (run (.mkApp (arrow sort scopeExpr) scopeExpr) 1) parameter : Bool)
+    ++ test "nested discovery shared DAG has no runtime tree-size prepass"
+      (found (run shared 0) rootExpr : Bool)
+
 def recursorTests : TestSeq :=
   test "canonical-shaped recursor validates against generation"
     ((let (ixon, recAddr) := recFixture false false
@@ -1112,6 +1152,6 @@ public def suite : List TestSeq :=
   [acceptRejectTests, wellScopedTests, totalizationTests, safetyTests,
    quotTests, blockTests,
    lazyTests, cacheIsolationTests, primVerifyTests, inductiveTests,
-   recursorTests, parallelTests]
+   recursorTests, nestedSyntaxTests, parallelTests]
 
 end Tests.Tc.CheckTests

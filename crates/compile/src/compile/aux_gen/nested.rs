@@ -1,16 +1,15 @@
 //! Nested-inductive detection and flat block construction.
 //!
-//! Detects nested occurrences in constructor field types (e.g., `List Tree`)
-//! and builds auxiliary entries for the flat block. Ported from the kernel's
+//! Detects nested occurrences throughout constructor syntax (e.g., the
+//! `List Tree` inside `Id (List Tree)`) and builds auxiliary entries for the
+//! flat block. The traversal mirrors source expansion and the kernel's
 //! `build_flat_block` + `try_detect_nested` (`crates/kernel/src/inductive.rs`),
 //! adapted to use `Name`/`LeanExpr`/`Level` types from the compile-side environment.
 //!
+//! Both discovery paths walk syntax without delta-reducing definition heads.
+//! Producer-side block parameters are opened as FVars; later binders retain
+//! BVars. Free BVars and non-parameter FVars cannot enter a specialization.
 //! Key differences from the kernel implementation:
-//! - No WHNF — finalized Lean env types are already normalized
-//! - Uses FVar-based field processing (via `forall_telescope`) instead of manual
-//!   BVar depth tracking. This eliminates `lower_vars`-style normalization —
-//!   field-local dependencies are detected by checking for non-param FVars
-//!   rather than BVar range arithmetic.
 //! - Spec_params are built in FVar space during detection, then abstracted back
 //!   to BVars for the returned `CompileFlatMember`.
 
@@ -2123,11 +2122,8 @@ pub fn build_compile_flat_block_with_overlay(
       let ctor_ref = overlay
         .and_then(|o| o.get(ctor_name))
         .or_else(|| lean_env.get(ctor_name));
-      let (ctor_n_fields, ctor_typ) = match ctor_ref.as_deref() {
-        Some(ConstantInfo::CtorInfo(c)) => {
-          let fields = nat_to_usize(&c.num_fields);
-          (fields, c.cnst.typ.clone())
-        },
+      let ctor_typ = match ctor_ref.as_deref() {
+        Some(ConstantInfo::CtorInfo(c)) => c.cnst.typ.clone(),
         _ => continue,
       };
 
@@ -2158,22 +2154,18 @@ pub fn build_compile_flat_block_with_overlay(
         }
       }
 
-      // Open field foralls into FVars via forall_telescope. Each field
-      // domain is now in FVar space: block-param FVars for parameters,
-      // field FVars for earlier fields. No manual depth tracking needed.
-      let (_, field_decls, _) = forall_telescope(&cur, ctor_n_fields, "nf", 0);
-
-      for decl in &field_decls {
-        try_detect_nested_fvar(
-          &decl.domain,
-          &block_name_set,
-          &mut flat,
-          &mut aux_seen,
-          lean_env,
-          overlay,
-          &block_param_fvar_names,
-        );
-      }
+      // Follow source expansion's preorder through the remaining constructor
+      // syntax, including nested occurrences inside non-inductive heads such
+      // as Id (List T). Field-local BVars are rejected as specializations.
+      try_detect_nested_fvar(
+        &cur,
+        &block_name_set,
+        &mut flat,
+        &mut aux_seen,
+        lean_env,
+        overlay,
+        &block_param_fvar_names,
+      );
     }
   }
 
@@ -2230,11 +2222,12 @@ fn abstract_spec_params_to_bvars(
 /// where `ExtInd` is a previously-declared inductive (not in our block) and
 /// some parameter arg mentions a block or flat-block inductive.
 ///
-/// Field domains are in FVar space (block-param FVars + field FVars), so
-/// field-local dependencies are detected by checking for non-param FVars
-/// rather than BVar range arithmetic.
+/// Block parameters are FVars; free BVars below later binders identify local
+/// dependencies and are rejected as specialization parameters.
 ///
-/// Ported from the kernel's `try_detect_nested` (`crates/kernel/src/inductive.rs`).
+/// Source preorder with a constructor-local visited set, matching expansion's
+/// walk cache. A recognized specialization prunes its whole application even
+/// when it is already present, preserving queue/discovery order.
 fn try_detect_nested_fvar(
   dom: &LeanExpr,
   block_names: &FxHashSet<Name>,
@@ -2244,31 +2237,69 @@ fn try_detect_nested_fvar(
   overlay: Option<&LeanEnv>,
   block_param_fvar_names: &[Name],
 ) {
-  // Peel foralls structurally to get to the result type. No WHNF needed —
-  // finalized Lean env types are already in normal form. Note: we do NOT
-  // use forall_telescope here — the peeled binders introduce BVars in the
-  // body, which `has_invalid_spec_ref` will flag if they leak into a
-  // spec_param (domain-local dependency).
-  // Metadata on the forall spine is transparent.
-  let mut cur = strip_mdata_ref(dom).clone();
-  while let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-    cur = strip_mdata_ref(body).clone();
+  let mut work = vec![dom.clone()];
+  let mut visited = FxHashSet::default();
+  while let Some(expr) = work.pop() {
+    if !visited.insert(*expr.get_hash()) {
+      continue;
+    }
+    if try_detect_nested_fvar_at(
+      &expr,
+      block_names,
+      flat,
+      aux_seen,
+      lean_env,
+      overlay,
+      block_param_fvar_names,
+    ) {
+      continue;
+    }
+    match expr.as_data() {
+      ExprData::App(fun, arg, _) => {
+        work.push(arg.clone());
+        work.push(fun.clone());
+      },
+      ExprData::Lam(_, ty, body, _, _)
+      | ExprData::ForallE(_, ty, body, _, _) => {
+        work.push(body.clone());
+        work.push(ty.clone());
+      },
+      ExprData::LetE(_, ty, value, body, _, _) => {
+        work.push(body.clone());
+        work.push(value.clone());
+        work.push(ty.clone());
+      },
+      ExprData::Mdata(_, inner, _) | ExprData::Proj(_, _, inner, _) => {
+        work.push(inner.clone());
+      },
+      _ => {},
+    }
   }
+}
 
-  // Decompose into head and args.
-  let (head, args) = decompose_apps(&cur);
+/// Recognize one application without reducing or peeling it.
+fn try_detect_nested_fvar_at(
+  dom: &LeanExpr,
+  block_names: &FxHashSet<Name>,
+  flat: &mut Vec<FvarFlatMember>,
+  aux_seen: &mut Vec<(Name, Vec<Hash>, Vec<Hash>)>,
+  lean_env: &LeanEnv,
+  overlay: Option<&LeanEnv>,
+  block_param_fvar_names: &[Name],
+) -> bool {
+  let (head, args) = decompose_apps(strip_mdata_ref(dom));
   let (head_name, head_levels) = match head.as_data() {
     ExprData::Const(name, levels, _) => (name.clone(), levels.clone()),
-    _ => return,
+    _ => return false,
   };
 
   // Skip if head is in the original block (direct recursive, not nested).
   if block_names.contains(&head_name) {
-    return;
+    return false;
   }
   // Skip if head is already a non-auxiliary flat member.
   if flat.iter().any(|m| m.name == head_name && block_names.contains(&m.name)) {
-    return;
+    return false;
   }
 
   // Verify head is an external inductive.
@@ -2281,12 +2312,12 @@ fn try_detect_nested_fvar(
       let i = nat_to_usize(&v.num_indices);
       (p, i, v.all.clone())
     },
-    _ => return,
+    _ => return false,
   };
 
   // Must have at least ext_n_params applied args.
   if args.len() < ext_n_params {
-    return;
+    return false;
   }
 
   // Check if any parameter arg mentions an *original* block inductive. This
@@ -2310,7 +2341,7 @@ fn try_detect_nested_fvar(
     .take(ext_n_params)
     .any(|a| expr_mentions_any_name(a, block_names));
   if !has_nested_ref {
-    return;
+    return false;
   }
 
   // Extract spec_params (first ext_n_params args). In FVar space, these may
@@ -2322,7 +2353,7 @@ fn try_detect_nested_fvar(
   // domain-local foralls) or non-param FVars (from field-local binders).
   for sp in &spec_params {
     if has_invalid_spec_ref(sp, block_param_fvar_names) {
-      return;
+      return false;
     }
   }
 
@@ -2341,7 +2372,7 @@ fn try_detect_nested_fvar(
       && hashes.len() == spec_hashes.len()
       && hashes.iter().zip(spec_hashes.iter()).all(|(a, b)| a == b)
   }) {
-    return;
+    return true;
   }
   // Lean's rule (`elim_nested_inductive_fn`; A0): the first occurrence of
   // an external inductive `I As` registers an auxiliary for EVERY member
@@ -2383,6 +2414,7 @@ fn try_detect_nested_fvar(
       n_indices,
     });
   }
+  true
 }
 
 /// Lean-faithful declaration flags for an original mutual block
@@ -3058,6 +3090,145 @@ mod tests {
       flat[2].occurrence_level_args,
       vec![LL::zero(), LL::param(mk_name_for("v"))]
     );
+  }
+
+  #[test]
+  fn compile_flat_finds_nested_syntax_under_non_inductive_heads_and_binders() {
+    use ix_common::env::BinderInfo;
+    let mut env = universe_specialized_nested_compile_env();
+    for name in ["UniverseNested.left", "UniverseNested.right"] {
+      let Some(ConstantInfo::CtorInfo(ctor)) = env.get_mut(&mk_name_for(name))
+      else {
+        panic!("missing fixture constructor");
+      };
+      let ExprData::ForallE(field, domain, result, info, _) =
+        ctor.cnst.typ.as_data()
+      else {
+        panic!("missing fixture field");
+      };
+      let wrapped = LeanExpr::app(
+        LeanExpr::cnst(mk_name_for("NonInductiveWrapper"), vec![]),
+        domain.clone(),
+      );
+      let function_field = LeanExpr::all(
+        mk_name_for("local"),
+        sort0(),
+        wrapped,
+        BinderInfo::Default,
+      );
+      ctor.cnst.typ = LeanExpr::all(
+        field.clone(),
+        function_field,
+        result.clone(),
+        info.clone(),
+      );
+    }
+    let flat =
+      build_compile_flat_block(&[mk_name_for("UniverseNested")], &env).unwrap();
+    assert_eq!(
+      flat.len(),
+      3,
+      "both phantom-universe occurrences must survive beneath the wrapper and binder"
+    );
+    assert_eq!(flat[1].occurrence_level_args[1], LL::param(mk_name_for("u")));
+    assert_eq!(flat[2].occurrence_level_args[1], LL::param(mk_name_for("v")));
+  }
+
+  #[test]
+  fn compile_flat_rejects_field_local_specializations_under_wrappers() {
+    use ix_common::env::BinderInfo;
+    let mut env = universe_specialized_nested_compile_env();
+    for name in ["UniverseNested.left", "UniverseNested.right"] {
+      let Some(ConstantInfo::CtorInfo(ctor)) = env.get_mut(&mk_name_for(name))
+      else {
+        panic!("missing fixture constructor");
+      };
+      let ExprData::ForallE(field, domain, result, info, _) =
+        ctor.cnst.typ.as_data()
+      else {
+        panic!("missing fixture field");
+      };
+      let ExprData::App(head, root, _) = domain.as_data() else {
+        panic!("missing fixture occurrence");
+      };
+      let dependent = LeanExpr::app(
+        head.clone(),
+        LeanExpr::app(LeanExpr::bvar(Nat::from(0u64)), root.clone()),
+      );
+      let wrapped = LeanExpr::app(
+        LeanExpr::cnst(mk_name_for("NonInductiveWrapper"), vec![]),
+        dependent,
+      );
+      let function_type =
+        LeanExpr::all(mk_name_for("p"), sort0(), sort0(), BinderInfo::Default);
+      let function_field = LeanExpr::all(
+        mk_name_for("local"),
+        function_type,
+        wrapped,
+        BinderInfo::Default,
+      );
+      ctor.cnst.typ = LeanExpr::all(
+        field.clone(),
+        function_field,
+        result.clone(),
+        info.clone(),
+      );
+    }
+    let flat =
+      build_compile_flat_block(&[mk_name_for("UniverseNested")], &env).unwrap();
+    assert_eq!(
+      flat.len(),
+      1,
+      "a field-local binder cannot become a block specialization parameter"
+    );
+  }
+
+  #[test]
+  fn compile_flat_prunes_repeated_recognized_occurrences() {
+    let mut env = universe_specialized_nested_compile_env();
+    let root = LeanExpr::cnst(
+      mk_name_for("UniverseNested"),
+      vec![LL::param(mk_name_for("u")), LL::param(mk_name_for("v"))],
+    );
+    let inner = LeanExpr::app(
+      LeanExpr::cnst(
+        mk_name_for("Phantom"),
+        vec![LL::zero(), LL::param(mk_name_for("v"))],
+      ),
+      root,
+    );
+    let outer = LeanExpr::app(
+      LeanExpr::cnst(
+        mk_name_for("Phantom"),
+        vec![LL::zero(), LL::param(mk_name_for("u"))],
+      ),
+      inner.clone(),
+    );
+    for name in ["UniverseNested.left", "UniverseNested.right"] {
+      let Some(ConstantInfo::CtorInfo(ctor)) = env.get_mut(&mk_name_for(name))
+      else {
+        panic!("missing fixture constructor");
+      };
+      let ExprData::ForallE(field, _, result, info, _) =
+        ctor.cnst.typ.as_data()
+      else {
+        panic!("missing fixture field");
+      };
+      ctor.cnst.typ = LeanExpr::all(
+        field.clone(),
+        outer.clone(),
+        result.clone(),
+        info.clone(),
+      );
+    }
+    let flat =
+      build_compile_flat_block(&[mk_name_for("UniverseNested")], &env).unwrap();
+    assert_eq!(
+      flat.len(),
+      2,
+      "Phantom does not use its parameter in fields, so the inner occurrence is never expanded"
+    );
+    assert_eq!(flat[1].spec_params, vec![inner]);
   }
 
   #[test]

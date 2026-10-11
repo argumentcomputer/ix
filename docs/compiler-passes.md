@@ -836,8 +836,11 @@ not its source/target semantic correspondence or the whole block trace. The
 [payload frame](../Ix/CompileCert/PayloadFrame.lean) composes it through
 definition, axiom, quotient, recursor, constructor and inductive payloads,
 including their contexts, metadata finalizers and mutual equivalence-class
-folds. Table preseeding, with its
-native substitutions, and the auxiliary tail still need their own contracts.
+folds. The [block frame](../Ix/CompileCert/BlockFrame.lean) extends this through
+the logical table-preseeding definitions, sorting, singleton/mutual assembly
+and original-source recompilation. Plain block compilation introduces no head
+claims. Refinement of the native table substitutions and the auxiliary tail
+remain separate obligations.
 
 General generator laws, the semantic interpretation of recipe correspondence,
 the whole compiler's cache-production trace and view/memo correspondence
@@ -861,6 +864,20 @@ corresponding `below` proof. This preserves recursive fields hidden behind
 reducible aliases, including aliases of function telescopes; classifying only
 the raw constructor field's head missed those hypotheses. The single builder
 also keeps `below` and `brecOn` on the same recursor interface.
+
+Nested-member discovery follows constructor syntax in preorder, including an
+occurrence such as `List T` inside `Id (List T)`. It does not unfold definition
+heads to discover extra occurrences. Recognition stops traversal of the whole
+application, including repeated specializations, so nested members retain the
+expansion queue's order. Specialization parameters cannot depend on local
+constructor or domain binders. The comparison kernels distinguish visit scopes
+by binder depth and use fresh markers for those local variables.
+
+The comparison kernels also apply the expanded-block restriction on large
+elimination: unless the result sort is provably nonzero, the expanded block
+must be a singleton as well as passing the ordinary field test. If nested
+discovery retracts a provisional large eliminator, its specializations are
+rebuilt with the corrected universe offset before recursor construction.
 
 The implementation is [Pass/Driver](../Ix/Compile/Pass/Driver.lean). A baseline
 can be faithful while retaining source grouping. A proof-justified pass may add

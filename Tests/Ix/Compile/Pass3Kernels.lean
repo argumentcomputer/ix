@@ -258,10 +258,6 @@ def table : List Expect := [
     msg := "app type mismatch", names := ["SurgAlias.A._sizeOf_1"] },
   { unit := "SurgAlias", switch := "on", leg := "lean", cause := "WB-B5",
     msg := "declaration type mismatch", names := ["SurgAlias.A.a.sizeOf_spec"] },
-  { unit := "UnsafeI", switch := "on", leg := "rs", cause := "WB-B9",
-    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
-  { unit := "UnsafeI", switch := "on", leg := "lean", cause := "WB-B9",
-    msg := "check_recursor: could not resolve inductive block", names := ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
   { unit := "F1_Collapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
     msg := "AppTypeMismatch", count := 62 },
   { unit := "F1_Collapse2p1", switch := "on", leg := "rs", cause := "BB-F1",
@@ -272,10 +268,6 @@ def table : List Expect := [
     msg := "unknown constant ", count := 72 },
   { unit := "F1_Collapse2p1", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "app type mismatch", count := 17 },
-  { unit := "F5_SigmaNestedNested", switch := "on", leg := "rs", cause := "BB-F5",
-    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
-  { unit := "F5_SigmaNestedNested", switch := "on", leg := "lean", cause := "BB-F5",
-    msg := "check_recursor: could not resolve inductive block", names := ["T.rec", "T.rec_1", "T.rec_2"] },
   { unit := "F7_AlphaVLean", switch := "on", leg := "lean", cause := "BB-F7",
     msg := "requested selector matched no checkable work item", names := ["B", "B.s", "B.z"] },
   { unit := "F7_AlphaVLean", switch := "on", leg := "lean", cause := "BB-F7",
@@ -284,10 +276,6 @@ def table : List Expect := [
     msg := "blocked: ", count := 20 },
   { unit := "KernelSpec", switch := "on", leg := "cert", cause := "WB-A7",
     msg := "decline: reader: in-process model", names := ["KernelSpec.T", "KernelSpec.T.leaf", "KernelSpec.T.mk", "KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
-  { unit := "KernelSpec", switch := "on", leg := "rs", cause := "WB-A7",
-    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
-  { unit := "KernelSpec", switch := "on", leg := "lean", cause := "WB-A7",
-    msg := "check_recursor: could not resolve inductive block", names := ["KernelSpec.T.rec", "KernelSpec.T.rec_1"] },
   { unit := "C4Evap", switch := "on", leg := "rs", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
     msg := "Named entry for 'C4b.Src.A", count := 156 },
   { unit := "C4Evap", switch := "on", leg := "lean", cause := "REFUSED-SIBLING (A0 refuses the block of C4b.Src.A: not a one-motive recursor)",
@@ -435,37 +423,18 @@ def compileFailures : List CompileFailure := [
     msg := "is not a one-motive recursor", names := ["C4b.Src.A2", "C4b.Src.A2.mk"] },
   -- compile totality defects (aux-cert `.xfail`)
   { unit := "AliasIdx", cause := "WB-A3", msg := "function expected, got Sort u",
-    names := ["AliasIdx.T", "AliasIdx.T.mk", "AliasIdx.T.leaf"] },
-  { unit := "KernelSpec", cause := "WB-A7", msg := "is_large_eliminator failed",
-    names := ["KernelSpec.P", "KernelSpec.P.mk"] }
+    names := ["AliasIdx.T", "AliasIdx.T.mk", "AliasIdx.T.leaf"] }
 ]
 
-/-- Step 2's decompile problems that are documented defects of the decompile
-roundtrip, by unit and the constant each problem names (`decompile mismatch:
-n`, `decompile error n: …`, `not decompiled: n`), with the defect. Until M6R
-slice 6 they were exempted as "also with the switch off": the legacy
-surgery's output of the same unit decompiled with the same problems
-(`[pass3] … N problem(s) (N also with the switch off)` at `e020a72e`: RecAlias
-6, UnsafeI 13, F5_SigmaNestedNested 18, twins 12); the slice-6 run measured
-the same sets. `pass3` checks them both ways (an unrecorded problem fails, and
-so does a recorded name with none). -/
+/-- Explicit source-recovery defects, checked in both directions by `pass3`.
+The former RecAlias, UnsafeI and nested-Sigma exceptions were removed after
+their exact source recovery was repaired. The current inventory is empty. -/
 structure DecompileKnown where
   unit : String
   cause : String
   names : List String
 
-def decompileKnown : List DecompileKnown := [
-  { unit := "UnsafeI", cause := "WB-B9 (`UnsafeI.UNestNeg`'s nested recursor block)",
-    names := ["UnsafeI.UNestNeg", "UnsafeI.UNestNeg.below", "UnsafeI.UNestNeg.below_1",
-      "UnsafeI.UNestNeg.brecOn", "UnsafeI.UNestNeg.brecOn.eq", "UnsafeI.UNestNeg.brecOn.go",
-      "UnsafeI.UNestNeg.brecOn_1", "UnsafeI.UNestNeg.brecOn_1.eq", "UnsafeI.UNestNeg.brecOn_1.go",
-      "UnsafeI.UNestNeg.casesOn", "UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.recOn",
-      "UnsafeI.UNestNeg.rec_1"] },
-  { unit := "F5_SigmaNestedNested", cause := "BB-F5",
-    names := ["T", "T.below", "T.below_1", "T.below_2", "T.brecOn", "T.brecOn.eq", "T.brecOn.go",
-      "T.brecOn_1", "T.brecOn_1.eq", "T.brecOn_1.go", "T.brecOn_2", "T.brecOn_2.eq",
-      "T.brecOn_2.go", "T.casesOn", "T.rec", "T.recOn", "T.rec_1", "T.rec_2"] }
-]
+def decompileKnown : List DecompileKnown := []
 
 
 /-- Compile failures that are refusals of Pass 3's own images, by unit and

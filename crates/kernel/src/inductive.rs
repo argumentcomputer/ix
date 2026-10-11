@@ -764,13 +764,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       qi += 1;
 
       for ctor_id in &member.ctors {
-        let (_ctor_own_params, ctor_fields, ctor_ty, _ctor_lvls) =
-          match self.try_get_const(ctor_id)? {
-            Some(KConst::Ctor { params, fields, ty, lvls, .. }) => {
-              (params, fields, ty.clone(), lvls)
-            },
-            _ => continue,
-          };
+        let ctor_ty = match self.try_get_const(ctor_id)? {
+          Some(KConst::Ctor { ty, .. }) => ty.clone(),
+          _ => continue,
+        };
 
         // Instantiate ctor type with occurrence universe args (concrete) so that
         // transitively-detected nested occurrences get concrete universe args too.
@@ -795,34 +792,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           }
         }
 
-        // Walk fields, looking for nested occurrences.
-        // Push locals for each field to maintain correct de Bruijn context.
-        for _fi in 0..ctor_fields {
-          let w = self.whnf(&cur)?;
-          match w.data() {
-            ExprData::All(_, _, dom, body, _) => {
-              let dom = dom.clone();
-              let body = body.clone();
-
-              // Check if dom (after peeling foralls) is a nested occurrence.
-              // Pass saved depth so spec_params can be de-lifted to the
-              // param context (depth = saved), independent of field depth.
-              self.try_detect_nested(
-                &dom,
-                &all_block_addrs,
-                &mut flat,
-                &mut aux_seen,
-                univ_offset,
-                saved,
-                n_rec_params,
-              )?;
-
-              let (open, _) = self.open_binder_anon(dom, &body);
-              cur = open;
-            },
-            _ => break,
-          }
-        }
+        // Follow expansion's complete constructor-syntax preorder without
+        // reducing definition heads. The walk opens binders only to mark
+        // field-local references, which cannot be specialization parameters.
+        self.try_detect_nested(
+          &cur,
+          &all_block_addrs,
+          &mut flat,
+          &mut aux_seen,
+          univ_offset,
+          saved,
+          n_rec_params,
+        )?;
         self.lctx.truncate(saved);
       }
     }
@@ -845,7 +826,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// inductive — the kernel would then synthesize auxiliaries (e.g.
   /// `_nested.ST_Ref_*`) that the compile side never generates, and
   /// `populate_recursor_rules_from_block` would fail with `rec_ids/flat
-  /// count mismatch`. Peel `All` constructors structurally instead.
+  /// count mismatch`. Walk syntax beneath an unmatched head instead.
   fn try_detect_nested(
     &mut self,
     dom: &KExpr<M>,
@@ -856,33 +837,102 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     param_depth: usize, // depth at the param context (before field locals)
     n_rec_params: u64, // number of inductive parameters (valid Var refs in spec_params)
   ) -> Result<(), TcError<M>> {
-    let saved_lctx = self.lctx.len();
-    let result = (|| -> Result<(), TcError<M>> {
-      // Peel foralls structurally — no WHNF, see doc comment above. Open
-      // each peeled binder with a temporary fvar so domain-local dependencies
-      // in external inductive parameters are rejected by the same locality
-      // check as field-local dependencies.
-      let mut cur = dom.clone();
-      while let ExprData::All(_, _, inner_dom, body, _) = cur.data() {
-        let inner_dom = inner_dom.clone();
-        let body = body.clone();
-        let (open, _) = self.open_binder_anon(inner_dom, &body);
-        cur = open;
+    let mut work = vec![(dom.clone(), dom.clone(), 0usize)];
+    let mut visited = rustc_hash::FxHashSet::default();
+    while let Some((source, current, depth)) = work.pop() {
+      // Valid specializations do not use opened local markers, so the
+      // original syntax and binder depth determine this discovery decision.
+      if !visited.insert((source.hash_key(), depth)) {
+        continue;
       }
+      if self.try_detect_nested_at(
+        &current,
+        block_addrs,
+        flat,
+        aux_seen,
+        univ_offset,
+        param_depth,
+        n_rec_params,
+      )? {
+        continue;
+      }
+      match (source.data(), current.data()) {
+        (ExprData::App(sf, sa, _), ExprData::App(f, a, _)) => {
+          work.push((sa.clone(), a.clone(), depth));
+          work.push((sf.clone(), f.clone(), depth));
+        },
+        (ExprData::Lam(_, _, st, sb, _), ExprData::Lam(_, _, ty, body, _))
+        | (ExprData::All(_, _, st, sb, _), ExprData::All(_, _, ty, body, _)) =>
+        {
+          let body = self.open_nested_scan_body(body);
+          work.push((sb.clone(), body, depth + 1));
+          work.push((st.clone(), ty.clone(), depth));
+        },
+        (
+          ExprData::Let(_, st, sv, sb, _, _),
+          ExprData::Let(_, ty, value, body, _, _),
+        ) => {
+          let body = self.open_nested_scan_body(body);
+          work.push((sb.clone(), body, depth + 1));
+          work.push((sv.clone(), value.clone(), depth));
+          work.push((st.clone(), ty.clone(), depth));
+        },
+        (ExprData::Prj(_, _, sv, _), ExprData::Prj(_, _, value, _)) => {
+          work.push((sv.clone(), value.clone(), depth));
+        },
+        (ExprData::Var(..), ExprData::Var(..) | ExprData::FVar(..))
+        | (ExprData::FVar(..), ExprData::FVar(..))
+        | (ExprData::Sort(..), ExprData::Sort(..))
+        | (ExprData::Const(..), ExprData::Const(..))
+        | (ExprData::Nat(..), ExprData::Nat(..))
+        | (ExprData::Str(..), ExprData::Str(..)) => {},
+        _ => {
+          return Err(TcError::Other(
+            "nested discovery: binder substitution changed expression shape"
+              .into(),
+          ));
+        },
+      }
+    }
+    Ok(())
+  }
 
-      let (head, args) = collect_app_spine(&cur);
+  /// A fresh, untyped scope marker suffices: discovery never infers its
+  /// type and rejects every candidate parameter containing the marker.
+  fn open_nested_scan_body(&mut self, body: &KExpr<M>) -> KExpr<M> {
+    let id = self.fresh_fvar_id();
+    let marker =
+      self.intern(KExpr::fvar(id, M::meta_field(ix_common::env::Name::anon())));
+    instantiate_rev(&mut self.env.intern, body, &[marker])
+  }
+
+  /// Recognize one application. Already-seen specializations return true
+  /// too, so repeated occurrences prune their arguments as expansion does.
+  fn try_detect_nested_at(
+    &mut self,
+    dom: &KExpr<M>,
+    block_addrs: &[Address],
+    flat: &mut Vec<FlatBlockMember<M>>,
+    aux_seen: &mut Vec<(Address, Box<[KUniv<M>]>, Vec<KExpr<M>>)>,
+    univ_offset: u64,
+    param_depth: usize,
+    n_rec_params: u64,
+  ) -> Result<bool, TcError<M>> {
+    let saved_lctx = self.lctx.len();
+    let result = (|| -> Result<bool, TcError<M>> {
+      let (head, args) = collect_app_spine(dom);
       let head_id = match head.data() {
         ExprData::Const(id, _, _) => id.clone(),
-        _ => return Ok(()),
+        _ => return Ok(false),
       };
 
       // Skip if head is already a block member (direct recursive, not nested).
       if block_addrs.contains(&head_id.addr) {
-        return Ok(());
+        return Ok(false);
       }
       // Also skip if head is already a flat block member (already detected).
       if flat.iter().any(|m| m.id.addr == head_id.addr && !m.is_aux) {
-        return Ok(());
+        return Ok(false);
       }
 
       // Check if head is an external inductive.
@@ -891,12 +941,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           Some(KConst::Indc { params, indices, ctors, lvls, .. }) => {
             (params, indices, ctors.clone(), lvls)
           },
-          _ => return Ok(()),
+          _ => return Ok(false),
         };
 
       let ext_n_params = u64_to_usize::<M>(ext_params)?;
       if args.len() < ext_n_params {
-        return Ok(());
+        return Ok(false);
       }
 
       // Check if any param arg mentions a block original. Match Lean's
@@ -914,7 +964,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         .take(ext_n_params)
         .any(|a| expr_mentions_any_addr(a, block_addrs));
       if !has_nested_ref {
-        return Ok(());
+        return Ok(false);
       }
 
       // Extract spec_params (the first ext_n_params args). Field and
@@ -938,10 +988,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       )?;
       for sp in spec_params.iter() {
         if sp.has_fvars() {
-          return Ok(());
+          return Ok(false);
         }
         if sp.lbr() > param_bound {
-          return Ok(()); // param arg depends on field-local variables — not a valid nesting
+          return Ok(false); // param arg depends on field-local variables — not a valid nesting
         }
       }
 
@@ -967,7 +1017,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           &spec_hashes,
         )
       }) {
-        return Ok(());
+        return Ok(true);
       }
       // A new occurrence `I As` opens I's whole mutual group, one auxiliary
       // per member `J`, in group order, each `J As` registered as seen
@@ -1048,7 +1098,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           occurrence_us: occurrence_us.clone(),
         });
       }
-      Ok(())
+      Ok(true)
     })();
     self.lctx.truncate(saved_lctx);
     result
@@ -5589,6 +5639,76 @@ mod tests {
     );
     assert_eq!(generated[0].ind_addr, mk_addr("Tree"));
     assert_eq!(generated[1].ind_addr, mk_addr("List"));
+  }
+
+  fn discover_test_syntax(
+    expr: &AE,
+    params: u64,
+  ) -> Vec<super::FlatBlockMember<Anon>> {
+    let mut env = nested_tree_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let mut flat = vec![];
+    let mut seen = vec![];
+    tc.try_detect_nested(
+      expr,
+      &[mk_addr("Tree")],
+      &mut flat,
+      &mut seen,
+      1,
+      0,
+      params,
+    )
+    .unwrap();
+    assert!(
+      tc.lctx.is_empty(),
+      "syntax scope markers must not escape into the typing context"
+    );
+    flat
+  }
+
+  #[test]
+  fn nested_syntax_visits_under_non_inductive_heads_and_binders() {
+    let occurrence =
+      app(cnst("List", &[AU::succ(AU::zero())]), cnst("Tree", &[]));
+    let wrapped = app(cnst("NonInductiveWrapper", &[]), occurrence);
+    let flat = discover_test_syntax(&pi(sort1(), wrapped), 0);
+    assert_eq!(flat.len(), 1);
+    assert_eq!(flat[0].id, mk_id("List"));
+    assert!(
+      matches!(flat[0].spec_params[0].data(), ExprData::Const(id, levels, _)
+      if *id == mk_id("Tree") && levels.is_empty())
+    );
+  }
+
+  #[test]
+  fn nested_syntax_visit_keys_distinguish_binder_depth() {
+    // This is a direct S7 scope control. Inside the binder Var(0) is a
+    // field-local marker; outside it is the allowed block parameter.
+    let parameter = app(cnst("Tree", &[]), var(0));
+    let occurrence =
+      app(cnst("List", &[AU::succ(AU::zero())]), parameter.clone());
+    assert!(
+      discover_test_syntax(&pi(sort1(), occurrence.clone()), 1).is_empty()
+    );
+    let two_scopes = app(pi(sort1(), occurrence.clone()), occurrence);
+    let flat = discover_test_syntax(&two_scopes, 1);
+    assert_eq!(
+      flat.len(),
+      1,
+      "the rejected local occurrence must not suppress its valid parameter neighbour"
+    );
+    assert!(flat[0].spec_params[0].hash_eq(&parameter));
+  }
+
+  #[test]
+  fn nested_syntax_shared_dag_has_no_tree_size_prepass() {
+    let mut shared =
+      app(cnst("List", &[AU::succ(AU::zero())]), cnst("Tree", &[]));
+    for _ in 0..64 {
+      shared = pi(shared.clone(), shared);
+    }
+    let flat = discover_test_syntax(&shared, 0);
+    assert_eq!(flat.len(), 1);
   }
 
   /// Lean generates distinct nested auxiliaries when the external family and
