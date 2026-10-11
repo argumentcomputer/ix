@@ -403,6 +403,30 @@ theorem FormedClaim.natSucc {f r zero succ : ConstRef β} {entry : ConstantEntry
   simpa only [interp, List.map_nil] using hh.2.succApp n
 
 omit [DecidableEq β] in
+/-- The zero of a natural family reduces to the literal `0`. -/
+theorem ReductionClaim.zeroLiteral {r zero succ : ConstRef β} {entry : ConstantEntry β}
+    (h : entries r = some entry) (hf : .natural zero succ ∈ entry.facts) (hn : entry.universes = 0) :
+    ReductionClaim.{u,v} entries Γ (.const zero []) (.natLit r 0) := by
+  intro V _ constants hM levels env _ _
+  have hh := hM.factMeaning r entry h (.natural zero succ) hf [] (by simpa using hn.symm) env
+  exact ⟨by simpa [interp] using hh.2.zeroValue, trivial⟩
+
+omit [DecidableEq β] in
+/-- The successor applied to a term reducing to a literal reduces to the next
+literal. -/
+theorem ReductionClaim.succLiteral {r f zero succ : ConstRef β} {entry : ConstantEntry β}
+    (h : entries r = some entry) (hf : .natural zero succ ∈ entry.facts) (hn : entry.universes = 0)
+    {x : AExpr β} {n : Nat} (hx : ReductionClaim.{u,v} entries Γ x (.natLit f n)) :
+    ReductionClaim.{u,v} entries Γ (.app (.const succ []) x) (.natLit f (n + 1)) := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨-, hwx, -⟩ := hw
+  have hh := hM.factMeaning r entry h (.natural zero succ) hf [] (by simpa using hn.symm) env
+  have hxv := (hx V constants hM levels env hΓ hwx).1
+  refine ⟨?_, trivial⟩
+  simp only [interp, List.map_nil] at hxv ⊢
+  rw [hxv, hh.2.succValue n]
+
+omit [DecidableEq β] in
 /-- A binary operation's constant applied to arguments that reduce to literals
 reduces to the literal of its value. -/
 theorem ReductionClaim.natOp {r f g : ConstRef β} {entry : ConstantEntry β} {op : NatOp}

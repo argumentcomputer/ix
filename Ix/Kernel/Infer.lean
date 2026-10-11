@@ -160,6 +160,27 @@ def headHeight (entries : Environment β) (e : AExpr β) : Nat :=
   | (.const r _, _) => ((entries r).map (heightOf ·.facts)).getD 0
   | _ => 0
 
+/-- A literal a term reduces to, with its reduction. -/
+structure LitReduct (entries : Environment β) (Γ : Context β) (e : AExpr β) : Type u where
+  family : ConstRef β
+  value : Nat
+  claim : ReductionClaim.{u,v} entries Γ e (.natLit family value)
+
+/-- The natural family a constructor reference belongs to, with its fact. -/
+def naturalOf (entries : Environment β) (c : ConstRef β) :
+    Option ((r zero succ : ConstRef β) × (entry : ConstantEntry β) ×'
+      (entries r = some entry ∧ ConstantFact.natural zero succ ∈ entry.facts ∧ entry.universes = 0)) :=
+  match c with
+  | .ctor b i _ =>
+    match h : entries (.member b i) with
+    | some entry =>
+      match findNatural entry.facts with
+      | some ⟨(zero, succ), hf⟩ =>
+        if hn : entry.universes = 0 then some ⟨.member b i, zero, succ, entry, h, hf, hn⟩ else none
+      | none => none
+    | none => none
+  | .member .. => none
+
 /-- The largest exponent `pow` is evaluated at, as in the official kernel. -/
 def natPowMaxExponent : Nat := 2 ^ 24
 
@@ -443,6 +464,33 @@ structure TypedBody (entries : Environment β) (Γ : Context β) (b : AExpr β) 
 
 mutual
 
+/-- The literal a term normalizes to: a literal, the zero of a natural family,
+or the successor of a term that does, as con-leche's `reduceNat` reads
+arguments. -/
+def natLitC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Option (LitReduct.{u,v} entries Γ e))
+  | 0, _, _, _ => pure none
+  | fuel + 1, entries, Γ, e => do
+    let ⟨e', he, _⟩ ← whnfC fuel entries Γ e
+    match e', he with
+    | .natLit f n, he => pure (some ⟨f, n, he⟩)
+    | .const z [], he =>
+      match naturalOf entries z with
+      | some ⟨r, zero, _, _, h, hf, hn⟩ =>
+        if hz : z = zero then pure (some ⟨r, 0, he.trans (hz ▸ ReductionClaim.zeroLiteral h hf hn)⟩)
+        else pure none
+      | none => pure none
+    | .app (.const s []) x, he =>
+      match naturalOf entries s with
+      | some ⟨_, _, succ, _, h, hf, hn⟩ =>
+        if hs : s = succ then
+          match ← natLitC fuel entries Γ x with
+          | some ⟨f, n, hx⟩ => pure (some ⟨f, n + 1, he.trans (hs ▸ ReductionClaim.succLiteral h hf hn hx)⟩)
+          | none => pure none
+        else pure none
+      | none => pure none
+    | _, _ => pure none
+
 /-- Evaluate a numeric operation whose arguments normalize to literals
 (`ConstantFact.natOp`). The first argument is normalized first, and the second
 only if the first reached a literal. -/
@@ -457,10 +505,9 @@ def natStepC : Nat → (entries : Environment β) → (Γ : Context β) → (e :
         match findNatOp entry.facts with
         | some ⟨.pred, hf⟩ =>
           if hn : entry.universes = 0 then do
-            let ⟨a', ha, _⟩ ← whnfC fuel entries Γ a
-            match a', ha with
-            | .natLit f x, ha => pure ⟨.natLit f (NatOp.pred.eval x 0), ReductionClaim.natPred h hf hn ha⟩
-            | _, _ => throw .noMatch
+            match ← natLitC fuel entries Γ a with
+            | some ⟨f, x, ha⟩ => pure ⟨.natLit f (NatOp.pred.eval x 0), ReductionClaim.natPred h hf hn ha⟩
+            | none => throw .noMatch
           else throw .noMatch
         | _ => throw .noMatch
       | none => throw .noMatch
@@ -471,26 +518,22 @@ def natStepC : Nat → (entries : Environment β) → (Γ : Context β) → (e :
           match findNatOp entry.facts, findNatTest entry.facts with
           | some ⟨op, hf⟩, _ =>
             if hbin : op = .pred then throw .noMatch else do
-            let ⟨a', ha, _⟩ ← whnfC fuel entries Γ a
-            match a', ha with
-            | .natLit f x, ha => do
-              let ⟨b', hb, _⟩ ← whnfC fuel entries Γ b
-              match b', hb with
-              | .natLit _ y, hb =>
+            match ← natLitC fuel entries Γ a with
+            | some ⟨f, x, ha⟩ => do
+              match ← natLitC fuel entries Γ b with
+              | some ⟨_, y, hb⟩ =>
                 if op = .pow && y > natPowMaxExponent then throw .noMatch
                 else pure ⟨.natLit f (op.eval x y), ReductionClaim.natOp h hf hn hbin ha hb⟩
-              | _, _ => throw .noMatch
-            | _, _ => throw .noMatch
+              | none => throw .noMatch
+            | none => throw .noMatch
           | none, some ⟨(test, yes, no), hf⟩ => do
-            let ⟨a', ha, _⟩ ← whnfC fuel entries Γ a
-            match a', ha with
-            | .natLit _ x, ha => do
-              let ⟨b', hb, _⟩ ← whnfC fuel entries Γ b
-              match b', hb with
-              | .natLit _ y, hb =>
+            match ← natLitC fuel entries Γ a with
+            | some ⟨_, x, ha⟩ => do
+              match ← natLitC fuel entries Γ b with
+              | some ⟨_, y, hb⟩ =>
                 pure ⟨.const (if test.eval x y then yes else no) [], ReductionClaim.natTest h hf hn ha hb⟩
-              | _, _ => throw .noMatch
-            | _, _ => throw .noMatch
+              | none => throw .noMatch
+            | none => throw .noMatch
           | none, none => throw .noMatch
         else throw .noMatch
       | none => throw .noMatch

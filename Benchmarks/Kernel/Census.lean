@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Ixon
+import Ix.Ixon.Wire
 import Ix.Kernel
 
 /-! # Certified kernel census over a compiled Ixon environment
@@ -52,9 +53,26 @@ def owner (address : Address) (source : Ixon.Constant) : Address :=
 
 abbrev Store := Std.HashMap Address Ixon.Constant
 
+/-- Whether an Ixon expression contains a string literal. -/
+def exprHasStr : Ixon.Expr → Bool
+  | .str _ => true
+  | .prj _ _ e => exprHasStr e
+  | .app f a => exprHasStr f || exprHasStr a
+  | .lam _ t b => exprHasStr t || exprHasStr b
+  | .all _ _ t b => exprHasStr t || exprHasStr b
+  | .letE _ t v b => exprHasStr t || exprHasStr v || exprHasStr b
+  | _ => false
+
+/-- Whether a record contains a string literal, whose reading names the string
+constants (`String.ofList`, `List.cons`, `Char.ofNat`, ...). -/
+def hasStringLiteral (source : Ixon.Constant) : Bool :=
+  source.sharing.any exprHasStr || source.info.exprs.any exprHasStr
+
 /-- Primary records in dependency order: an iterative depth-first postorder
-over table references, with projections replaced by their owners. -/
-def order (store : Store) : Array Address := Id.run do
+over table references, with projections replaced by their owners. A record
+with a string literal also depends on the records of the string constants
+(`literalDeps`), which its stored references do not name. -/
+def order (store : Store) (literalDeps : Array Address := #[]) : Array Address := Id.run do
   let mut done : Std.HashSet Address := {}
   let mut active : Std.HashSet Address := {}
   let mut out : Array Address := #[]
@@ -75,7 +93,8 @@ def order (store : Store) : Array Address := Id.run do
         active := active.insert node
         stack := stack.push (node, true)
         if let some record := store[node]? then
-          for ref in record.refs do
+          let extra := if hasStringLiteral record then literalDeps else #[]
+          for ref in record.refs ++ extra do
             if let some target := store[ref]? then
               let dependency := owner ref target
               unless dependency == node || done.contains dependency || active.contains dependency do
@@ -276,7 +295,11 @@ def run (args : List String) : IO UInt32 := do
     return { char := ← resolveName `Char, charOfNat := ← resolveName `Char.ofNat,
              natural := ← natFamily, stringOfList := ← resolveName `String.ofList,
              listNil := ← resolveName `List.nil, listCons := ← resolveName `List.cons }
-  let ordered := order store
+  let literalDeps : Array Address := match strings with
+    | some refs => #[refs.char, refs.charOfNat, refs.natural, refs.stringOfList, refs.listNil,
+        refs.listCons].map fun r => match r with | .member b _ => b | .ctor b _ _ => b
+    | none => #[]
+  let ordered := order store literalDeps
   let cfg : Config := { fuel := options.fuel }
   let probe ← IO.getEnv "CENSUS_PROBE"
   -- The default: checks on the main thread, bounded by the kernel's work
