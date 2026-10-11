@@ -392,6 +392,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
+  ("validate-aux-source", runCompileValidateAuxSource env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).

@@ -1,9 +1,9 @@
 /-
   Comprehensive validation of the aux_gen compile pipeline.
 
-  Eight phases:
-    1. Aux_gen congruence (pre-compilation: original aux_gen matches Lean)
-    2. Compilation succeeds (every input constant gets an address)
+  Main phases, with additional canonicity and source-fidelity checks:
+    1. Compilation succeeds (every input constant gets an address)
+    2. Aux_gen congruence (standard-fixture oracle and production source claims)
     3. No ephemeral leaks (original constants don't pollute the Ixon env)
     4. Alpha-equivalence group canonicity (same-class names share addresses)
     5. Decompilation with debug info succeeds
@@ -20,8 +20,17 @@ import Tests.Ix.Compile.Canonicity
 import Tests.Ix.Compile.LevelSpellings
 import Tests.Ix.Compile.Fixtures.LetNonDep
 import Tests.Ix.Compile.Fixtures.NestedLevels
+import Tests.Ix.Compile.Fixtures.AuxiliaryIdentity
+import Tests.Ix.Compile.Fixtures.AuxiliaryFamilyIdentity
 import Tests.Ix.Kernel.TutorialDefs
 import Lean
+
+/-- The fixture corpus uses standard Lean-generated auxiliaries, so retain the
+extra generator/source oracle even for declarations compiled through their own
+source bodies. Arbitrary source files use `rsCompileValidateAuxFFI` instead. -/
+@[extern "rs_compile_validate_aux_oracle"]
+opaque rsCompileValidateAuxOracleFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → USize
 
 /-- Collect the transitive closure of constants referenced by a set of seed names. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
@@ -131,12 +140,82 @@ def validateAuxClosure (env : Lean.Environment)
   ]
   return collectDeps env seeds
 
+private def validateSourceReport (path : System.FilePath) (sourceCount : Nat)
+    (expectedOracleFailures : Array String) : IO Unit := do
+  let contents ← IO.FS.readFile path
+  let check : Except String Unit := do
+    let report ← Lean.Json.parse contents
+    let phases ← (← report.getObjVal? "phases").getArr?
+    unless (← report.getObjVal? "aborted") == .null do throw "validator aborted"
+    unless (← (← report.getObjVal? "totalFailures").getNat?) == expectedOracleFailures.size do
+      throw "unexpected total failure count"
+    let required := #["1. Compilation", "2. Aux_gen congruence", "3. No ephemeral leaks",
+      "4. Alpha-equivalence canonicity", "4b. Cross-namespace canonicity",
+      "5. Decompile (with debug)", "6. Aux congruence (roundtrip)",
+      "7. Decompile (without debug)", "7b. Roundtrip fidelity (per-constant)", "8. Nested detection"]
+    unless phases.size == required.size do throw "missing or extra phase rows"
+    for phaseName in required do
+      let some row := phases.find? fun row => (row.getObjValAs? String "name").toOption == some phaseName
+        | throw s!"missing phase {phaseName}"
+      let failures ← (← row.getObjVal? "fail").getNat?
+      let expected := if phaseName == "2. Aux_gen congruence" then expectedOracleFailures.size else 0
+      unless failures == expected do throw s!"{phaseName}: expected {expected} failures, got {failures}"
+      if phaseName == "1. Compilation" || phaseName == "7b. Roundtrip fidelity (per-constant)" then
+        unless (← (← row.getObjVal? "pass").getNat?) == sourceCount do
+          throw s!"{phaseName}: incomplete source coverage"
+      if phaseName == "2. Aux_gen congruence" then
+        unless (← (← row.getObjVal? "pass").getNat?) > 0 do throw "no positive recipe controls"
+        let messages ← (← row.getObjVal? "failures").getArr?
+        unless messages.size == expectedOracleFailures.size do throw "incomplete oracle failure details"
+        let messages ← messages.mapM Lean.Json.getStr?
+        for name in expectedOracleFailures do
+          unless messages.any (·.startsWith (name ++ ":")) do
+            throw s!"oracle failed for the wrong declaration; missing {name}"
+  IO.ofExcept check
+
+/-- Custom source bodies must pass ordinary validation. Treating the same
+declarations as standard-generator fixtures is an intentionally false oracle
+premise, and must fail for exactly the ten changed definitions. -/
+def runCompileValidateAuxSource (env : Lean.Environment) : IO UInt32 := do
+  let roots := #[`Tests.Ix.Compile.Fixtures.AuxiliaryIdentity,
+    `Tests.Ix.Compile.Fixtures.AuxiliaryFamilyIdentity]
+  let seeds := env.constants.toList.filterMap fun (name, _) =>
+    if roots.any (·.isPrefixOf name) then some name else none
+  unless !seeds.isEmpty do throw <| IO.userError "custom auxiliary source fixtures missing"
+  let source := collectDeps env seeds
+  let dir : System.FilePath := (← IO.getEnv "VALIDATE_AUX_SOURCE_KEEP").getD
+    "plans/tasks/lean-to-ixon-correctness/aux-source-validation-gate"
+  IO.FS.createDirAll dir
+  let normalReport := dir / "source.json"
+  let ordinary := Ix.CompileM.rsCompileValidateAuxFFI source normalReport.toString
+  unless ordinary == 0 do throw <| IO.userError s!"ordinary source validator failed: {ordinary}"
+  validateSourceReport normalReport source.length #[]
+  let oracleReport := dir / "oracle.json"
+  IO.println "[validate-aux-source] negative control: ten custom definitions must fail the standard-generator oracle"
+  let oracle := rsCompileValidateAuxOracleFFI source oracleReport.toString
+  let expected := #[
+    "Tests.Ix.Compile.Fixtures.AuxiliaryIdentity.BeforeOwner.Tree.below",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryIdentity.Changed.A.casesOn",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryIdentity.Changed.B.casesOn",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryIdentity.DifferentType.Box.casesOn",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryIdentity.SameType.Box.casesOn",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryIdentity.SameType.Box.recOn",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryIdentity.Unrelated.Box.casesOn",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryFamilyIdentity.Main.Odd.brecOn",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryFamilyIdentity.Go.Odd.brecOn.go",
+    "Tests.Ix.Compile.Fixtures.AuxiliaryFamilyIdentity.Below.Odd.below"]
+  unless oracle.toNat == expected.size do throw <| IO.userError s!"wrong oracle result: {oracle}"
+  validateSourceReport oracleReport source.length expected
+  IO.println s!"[validate-aux-source] {source.length} source declarations preserved; all phases covered; ten incorrect oracle assumptions rejected"
+  return 0
+
 def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println "[validate-aux] collecting fixture closure..."
   let filtered := validateAuxClosure env
   IO.println s!"[validate-aux] {filtered.length} constants"
 
   IO.println "[validate-aux] calling Rust FFI..."
-  let failures := Ix.CompileM.rsCompileValidateAuxFFI filtered ""
+  let failures := rsCompileValidateAuxOracleFFI filtered ""
   IO.println s!"[validate-aux] total failures: {failures}"
-  return if failures == 0 then 0 else 1
+  if failures != 0 then return 1
+  runCompileValidateAuxSource env

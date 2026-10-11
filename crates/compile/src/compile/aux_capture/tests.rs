@@ -97,6 +97,76 @@ fn frozen_bindings_accept_aliases_but_reject_later_source_rebinding() {
 }
 
 #[test]
+fn source_recipe_obligations_follow_publication_not_suffix_or_scheduler_marks()
+{
+  let stt = state();
+  let input = definition("Source.casesOn", Expr::sort(Level::zero()));
+  let source = declaration(&input);
+  let name = source.get_name();
+  assert!(!source_requires_recipe(&stt, name, &source));
+  // Cross-SCC ordinary compilation also uses this scheduler set.
+  stt.aux_gen_extra_names.insert(name.clone());
+  assert!(!source_requires_recipe(&stt, name, &source));
+  stt.p3.heads.insert(name.clone(), n("Source"));
+  assert!(source_requires_recipe(&stt, name, &source));
+  stt.p3.heads.remove(name);
+  publish(&stt, &[input]);
+  assert!(source_requires_recipe(&stt, name, &source));
+}
+
+#[test]
+fn primitive_recursors_always_require_source_recipe_agreement() {
+  let rec = ConstantInfo::RecInfo(RecursorVal {
+    cnst: cv("Source.rec", Expr::sort(Level::zero())),
+    all: vec![n("Source")],
+    num_params: 0u64.into(),
+    num_indices: 0u64.into(),
+    num_motives: 1u64.into(),
+    num_minors: 0u64.into(),
+    rules: vec![],
+    k: false,
+    is_unsafe: false,
+  });
+  assert!(source_requires_recipe(
+    &CompileState::default(),
+    rec.get_name(),
+    &rec
+  ));
+}
+
+#[test]
+fn ordinary_source_recovery_cannot_fall_back_to_a_standard_recipe() {
+  let input = definition("Source.below", Expr::sort(Level::zero()));
+  let source = declaration(&input);
+  assert!(check_source_record(&source, Some(&source)).is_ok());
+  assert!(check_source_record(&source, None).is_err());
+  let ConstantInfo::DefnInfo(base) = &source else { unreachable!() };
+  for field in 0..7 {
+    let mut actual = base.clone();
+    match field {
+      0 => actual.value = Expr::sort(Level::succ(Level::zero())),
+      1 => actual.cnst.typ = Expr::sort(Level::zero()),
+      2 => actual.safety = DefinitionSafety::Unsafe,
+      3 => actual.hints = ReducibilityHints::Opaque,
+      4 => actual.all = vec![n("Unrelated")],
+      5 => actual.cnst.name = n("Unrelated"),
+      _ => actual.cnst.level_params.push(n("u")),
+    }
+    assert!(
+      check_source_record(&source, Some(&ConstantInfo::DefnInfo(actual)))
+        .is_err(),
+      "field {field}"
+    );
+  }
+  let wrong_kind = ConstantInfo::ThmInfo(TheoremVal {
+    cnst: base.cnst.clone(),
+    value: base.value.clone(),
+    all: base.all.clone(),
+  });
+  assert!(check_source_record(&source, Some(&wrong_kind)).is_err());
+}
+
+#[test]
 fn capture_and_every_reference_are_required() {
   let stt = state();
   let input =

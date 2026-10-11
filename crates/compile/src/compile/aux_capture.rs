@@ -33,6 +33,40 @@ pub struct AuxInputCapture {
   declarations: DashMap<Name, PublishedAux>,
 }
 
+/// Which source declarations the diagnostic must relate to a generator recipe.
+/// Primitive recursors have the kernel-generated contract. Other declarations
+/// need an actual writer publication or an authenticated image-head claim;
+/// an auxiliary-looking suffix or scheduler bookkeeping is not evidence.
+pub fn source_requires_recipe(
+  stt: &super::CompileState,
+  name: &Name,
+  source: &ConstantInfo,
+) -> bool {
+  matches!(source, ConstantInfo::RecInfo(_))
+    || stt.p3.heads.contains_key(name)
+    || stt
+      .aux_input_capture
+      .as_ref()
+      .is_some_and(|capture| capture.declarations.contains_key(name))
+}
+
+/// Exact source-record fidelity for the diagnostic's ordinary source route.
+/// This uses the existing complete ConstantInfo digest (including kind, safety,
+/// universes, values and metadata), rather than a generated-recipe fallback.
+/// It is a diagnostic equality check, not a certified semantic theorem.
+pub fn check_source_record(
+  source: &ConstantInfo,
+  recovered: Option<&ConstantInfo>,
+) -> Result<(), String> {
+  let recovered = recovered
+    .ok_or("ordinary source declaration missing from recovered environment")?;
+  if source.get_hash() == recovered.get_hash() {
+    Ok(())
+  } else {
+    Err("ordinary source declaration differs from captured source".into())
+  }
+}
+
 /// The actual source records passed to the auxiliary writer, including
 /// constructors rather than only their containing inductive.
 pub(crate) fn input_declarations(input: &MutConst) -> Vec<ConstantInfo> {

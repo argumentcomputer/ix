@@ -5366,13 +5366,23 @@ fn decompile_block_aux_gen(
     }
   }
 
-  // Congruence check: verify generated constants are alpha-equivalent to originals.
+  // Diagnose the source contract actually used. An ordinary declaration with
+  // an optional helper name need not have the standard generated body.
   if let Some(orig) = orig_env {
     for (name, generated_ci) in &generated_consts {
-      if let Some(orig_ci) = orig.get(name)
-        && let Err(e) =
-          crate::congruence::const_alpha_eq(generated_ci, &orig_ci)
-      {
+      let Some(orig_ci) = orig.get(name) else { continue };
+      let check = if crate::compile::aux_capture::source_requires_recipe(
+        stt, name, &orig_ci,
+      ) {
+        crate::congruence::const_alpha_eq(generated_ci, &orig_ci)
+      } else {
+        let recovered = dstt.env.get(name);
+        crate::compile::aux_capture::check_source_record(
+          &orig_ci,
+          recovered.as_deref(),
+        )
+      };
+      if let Err(e) = check {
         aux_gen_errors.push((
           name.clone(),
           DecompileError::BadConstantFormat { msg: format!("congruence: {e}") }

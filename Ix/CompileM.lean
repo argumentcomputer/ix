@@ -3413,8 +3413,11 @@ opaque rsCompileEnvBytesAnonFFI
     machine-readable phase-table JSON there (on completion and on
     abort paths alike); empty ⇒ no report.
 
-    Shared between the `ix validate` CLI subcommand (`Ix.Cli.ValidateCmd`)
-    and the `validate-aux` test runner (`Tests.Ix.Compile.ValidateAux`).
+    Used by `ix validate` (`Ix.Cli.ValidateCmd`). Optional auxiliary names
+    can denote ordinary source declarations; those require exact source
+    recovery rather than equality with a standard generated recipe. The
+    known-standard `validate-aux` fixture oracle adds generator comparisons
+    through its separate test FFI entry.
     The underlying Rust function is `rs_compile_validate_aux` in
     `crates/ffi/src/lean_env.rs`. -/
 @[extern "rs_compile_validate_aux"]

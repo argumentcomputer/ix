@@ -1923,10 +1923,9 @@ fn write_validate_phase_report(
 /// Available in the main `ix` binary (unlike the other `#[cfg(feature =
 /// "test-ffi")]` helpers in this file) because `ix validate --path <file>`
 /// uses it to run the full compile → decompile → roundtrip → nested-detect
-/// pipeline on arbitrary Lean files. The `validate-aux` test suite in
-/// `Tests/Ix/Compile/ValidateAux.lean` also calls this FFI via
-/// `ix_rs_test`, but it's not gated on test-ffi any more — same function,
-/// same binary entry point, just two callers.
+/// pipeline on arbitrary Lean files. Optional auxiliary names can be ordinary
+/// source declarations. The separate fixture-oracle entry retains unconditional
+/// generator/source comparisons for fixtures constructed with standard helpers.
 ///
 /// Returns total failure count across all phases.
 ///
@@ -1939,6 +1938,28 @@ extern "C" fn rs_compile_validate_aux(
   obj: LeanList<LeanBorrowed<'_>>,
   report_path: LeanString<LeanBorrowed<'_>>,
 ) -> usize {
+  compile_validate_aux(obj, report_path, false)
+}
+
+/// The standard-generator oracle is an extra fixture assertion, not a premise
+/// imposed on arbitrary source files by `ix validate`.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+extern "C" fn rs_compile_validate_aux_oracle(
+  obj: LeanList<LeanBorrowed<'_>>,
+  report_path: LeanString<LeanBorrowed<'_>>,
+) -> usize {
+  compile_validate_aux(obj, report_path, true)
+}
+
+fn compile_validate_aux(
+  obj: LeanList<LeanBorrowed<'_>>,
+  report_path: LeanString<LeanBorrowed<'_>>,
+  source_oracle: bool,
+) -> usize {
+  use ix_compile::compile::aux_capture::{
+    check_source_record, source_requires_recipe,
+  };
   use ix_compile::congruence::const_alpha_eq;
   use rustc_hash::FxHashSet;
 
@@ -2070,6 +2091,7 @@ extern "C" fn rs_compile_validate_aux(
   //      into a `Vec<BlockResult>` and aggregated into `p2` serially
   //      afterward.
   let mut p2 = PhaseResult::new("2. Aux_gen congruence");
+  let mut ordinary_source_checks: FxHashSet<Name> = FxHashSet::default();
   println!("{VALIDATE_PREFIX} phase 2: checking aux_gen congruence...");
   {
     use ix_common::env::ConstantInfo as LeanCI;
@@ -2195,6 +2217,7 @@ extern "C" fn rs_compile_validate_aux(
       passes: usize,
       generate_error: Option<String>,
       failures: Vec<String>,
+      ordinary_source_checks: Vec<Name>,
     }
 
     // Build a `PermCtx` for the block: the congruence comparator uses
@@ -2582,6 +2605,17 @@ extern "C" fn rs_compile_validate_aux(
           };
           let orig_ci: &LeanCI = &orig_ci_ref;
 
+          // Decide from the actual production route before comparing bodies.
+          // Ordinary source declarations must recover exactly in Phases 6/7b.
+          // The known-standard fixture oracle additionally compares every
+          // generated recipe, preserving its existing independent coverage.
+          if !source_requires_recipe(&stt, patch_name, orig_ci) {
+            result.ordinary_source_checks.push(patch_name.clone());
+            if !source_oracle {
+              continue;
+            }
+          }
+
           let eq_result = match &perm_ctx {
             Some(ctx) => {
               ix_compile::congruence::perm::const_alpha_eq_with_perm(
@@ -2608,6 +2642,7 @@ extern "C" fn rs_compile_validate_aux(
 
     // ── Serial aggregation into PhaseResult ──────────────────────────
     for r in results {
+      ordinary_source_checks.extend(r.ordinary_source_checks);
       for _ in 0..r.passes {
         p2.record_pass();
       }
@@ -2619,6 +2654,10 @@ extern "C" fn rs_compile_validate_aux(
       }
     }
   }
+  println!(
+    "{VALIDATE_PREFIX} phase 2: {} ordinary source declarations require exact recovery in phases 6/7b; source oracle={source_oracle}",
+    ordinary_source_checks.len()
+  );
   p2.report();
   phase_rows.push(p2.json());
 
@@ -3817,6 +3856,7 @@ extern "C" fn rs_compile_validate_aux(
 
   let mut aux_names: ix_compile::graph::NameSet =
     stt.aux_gen_extra_names.iter().map(|entry| entry.key().clone()).collect();
+  aux_names.extend(ordinary_source_checks.iter().cloned());
   if let Some(capture) = &stt.aux_input_capture {
     aux_names.extend(capture.names());
   }
@@ -3852,12 +3892,16 @@ extern "C" fn rs_compile_validate_aux(
         },
       };
       let eq_result = if let Some(orig_ci) = lean_env.get(name) {
-        aux_congruence_result(
-          name,
-          dec_ci.value(),
-          &orig_ci,
-          aux_compare_contexts.get(name),
-        )
+        if ordinary_source_checks.contains(name) {
+          check_source_record(&orig_ci, Some(dec_ci.value()))
+        } else {
+          aux_congruence_result(
+            name,
+            dec_ci.value(),
+            &orig_ci,
+            aux_compare_contexts.get(name),
+          )
+        }
       } else if let Some(named) = stt.env.lookup_name(name) {
         capture.check(name, &named.addr, dec_ci.value(), |reference| {
           stt.env.lookup_name(reference).map(|named| named.addr)
@@ -4143,6 +4187,21 @@ extern "C" fn rs_compile_validate_aux(
       match dstt2.env.get(name) {
         Some(dec_entry) => {
           let dec_ci = dec_entry.value();
+          if ordinary_source_checks.contains(name) {
+            match check_source_record(&orig_ci, Some(dec_ci)) {
+              Ok(()) => {
+                passes.fetch_add(1, Ordering::Relaxed);
+              },
+              Err(error) => {
+                fails.fetch_add(1, Ordering::Relaxed);
+                let mut msgs = fail_msgs.lock().unwrap();
+                if msgs.len() < 20 {
+                  msgs.push(format!("{}: {error}", name.pretty()));
+                }
+              },
+            }
+            return;
+          }
           let type_ok =
             dec_ci.get_type().get_hash() == orig_ci.get_type().get_hash();
           let val_ok = match (dec_ci.get_value(), orig_ci.get_value()) {
