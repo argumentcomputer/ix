@@ -19,6 +19,7 @@ import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.SourceIdentity
+import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.Compile.AuxPublication
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
@@ -392,6 +393,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
   ("aux-source-identity", Tests.Ix.Compile.SourceIdentity.run env),
+  ("aux-source-family", Tests.Ix.Compile.SourceFamily.run env),
   ("aux-publication", Tests.Ix.Compile.AuxPublication.run env),
   -- Pass 1 (Ix.Compile.Canon) under today's rules against the compiler's
   -- CondenseM / sortConsts / nested order on the same fixture corpus, and

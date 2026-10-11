@@ -15,6 +15,8 @@ import Ix.CompileCert.Opt
 import Ix.CompileCert.Publication
 import Ix.CompileCert.ReferencePublication
 import Ix.CompileCert.SourceIdentity
+import Ix.CompileCert.SourceFamily
+import Ix.CompileCert.SourceFamilyTraversal
 import Ix.CompileCert.AuxNames
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
@@ -2167,4 +2169,31 @@ def auxNamesRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.auxNamesRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Source-family recognition exposes actual lookup and definition bodies,
+including the production image-head filter's acceptance boundary. -/
+def sourceFamilyRoots : Array Lean.Name :=
+  #[`signatureMatches_source, `authenticated_source, `authenticated_definition,
+    `authenticated_theorem, `filterHeads_authenticated, `filterHeads_source,
+    `filterHeads_constructed].map
+      (`Ix.CompileCert.SourceFamily ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sourceFamilyRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- The actual shared traversal retains checked source declarations and a
+finite closed set of recipe dependencies, including mutual cycles. -/
+def sourceFamilyTraversalRoots : Array Lean.Name :=
+  #[`visit_allChecked, `fresh_visit_allChecked, `visit_members, `visit_newClosed,
+    `authenticated_closed, `filterHeads_closed_source].map
+      (`Ix.CompileCert.SourceFamilyTraversal ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sourceFamilyTraversalRoots Ix.CompileCert.Audit.allowedAxioms
 

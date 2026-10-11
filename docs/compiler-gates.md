@@ -216,6 +216,7 @@ not an automatic re-record.
 | [`validate-aux`](../Tests/Ix/Compile/ValidateAux.lean) | Shared aux-heavy fixture closure: regeneration, emission, no ephemeral leakage, class canonicity, both decompile paths and nested detection. | Fixture assertions. | Compile pipeline; Landing. |
 | [`aux-gen-diff`](../Tests/Ix/Compile/AuxGenDiff.lean) | Per-block drift, nested expansion, selected generated patches and plans; full sequential/parallel driver parity, including metadata and hints. Individual auxiliary/red inventory buckets are diagnostic, not the whole acceptance predicate. | Inline kind filters and assertions. | Compile pipeline; Landing. |
 | [`aux-source-identity`](../Tests/Ix/Compile/SourceIdentity.lean) | Actual source `casesOn`/`recOn` recognition on mutual/Prop controls; custom definitions with different types or the standard type and a different value. Applicable unguarded rewrites must be declined by production dispatch, while standard-body neighbors still optimize. The primary `aux-source-identity-unit` suite checks positional universes, open expressions and cache collisions. | No allowed mismatches. | Compiler passes; Landing. |
+| [`aux-source-family`](../Tests/Ix/Compile/SourceFamily.lean) | Kernel-checked changes to `brecOn`, `.go` and `below` with standard types. Direct and transitive source recognition, retained ordinary image routes, exact recovery, Lean 1/4-worker and Rust byte parity, all three kernels. Dense cyclic recipe graph controls require shared visits and reject altered members, including previously visited names. | No allowed mismatches, source refusals or kernel failures. | Compiler passes; Landing. |
 | [`aux-publication`](../Tests/Ix/Compile/AuxPublication.lean) | Kernel-checked custom helpers, unchanged/changed blocks, a source `below` before its owner, and ordinary recursive Prop helpers. Zero refusals, complete source coverage and exact recovery, identical bytes in Lean at 1/4 workers and Rust, all three kernels, and malformed block-selector controls. | No allowed mismatches or kernel refusals. Synthetic containers expand to every checked member instead of being mistaken for declarations. | Compiler passes; Landing. |
 | [`decompile-diff`](../Tests/Ix/Compile/DecompileDiff.lean) | Aux-heavy closure: source reconstruction and bidirectional coverage; all gated plain/aux/replay buckets must be zero. | None. | Compile pipeline; Landing. |
 | [`aux-gen-closure`](../Tests/Ix/Compile/AuxGenClosure.lean) | Selected auxiliary and mutual-definition closures, Rust kernel checks, and packing an unstored-original case. | Inline success/refusal controls. | Compile pipeline; Landing. |
@@ -631,7 +632,7 @@ crossing the certified reader/order boundary also require `check-kernel`.
    pass3-cliques validate-lean pass3 pass3-plan-cache twins canon-pass1
    clique-transport clique-ownership aux-oracle aux-cert validate-lean-nc
    adversarial-matrix decompile-diff compile-claim-conflict compile-claim-order
-   compiler-selected-closure-e2e o11a-decline aux-source-identity aux-publication compile-closure-whole
+   compiler-selected-closure-e2e o11a-decline aux-source-identity aux-source-family aux-publication compile-closure-whole
    compile-caller-independence changed-set pack-units validate-aux aux-gen-diff
    rust-decompile kernel-ixon-roundtrip pass3-rust-parity
    compile compile-schedule-identity

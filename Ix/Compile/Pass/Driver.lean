@@ -36,7 +36,8 @@ hand-built environment (`CompileEnv.pass3` false; every driver sets it):
 ## Faithfulness
 See `Translate` (the rewrite is definitional) and `ImageView` (images compute
 as Lean's recursors). Source definitions compile from their actual bodies;
-the simple wrappers enter the image path only after source-body recognition.
+derived helpers enter the image path only after source recognition, including
+the helper dependencies of the below/brecOn families.
 Intrinsic recursors retain original-form promotion. Canonical generated
 definitions and below inductives have private identities from construction.
 
@@ -62,6 +63,7 @@ public import Ix.Compile.Pass.SideCar
 public import Ix.Compile.Pass.Opt.Engine
 public import Ix.Compile.Pass.Cliques
 public import Ix.AuxGen.SourceIdentity
+public import Ix.AuxGen.SourceFamily
 public section
 
 namespace Ix.Compile.Pass
@@ -144,10 +146,12 @@ def editChangedBlock (cs : Array MutConst) (classNames : Array (Array Name))
   let cenv ← getCompileEnv
   let some (originalAll, rep0, perm) := displayInputs cs classNames layout? | return
   let some all0 := originalAll[0]? | return
-  -- Custom wrappers compile as ordinary source definitions, retaining the
-  -- rewrite records for their actual bodies. They are not regenerated images.
-  let heads := (imageKinds cenv.env.get? originalAll).filter
-    (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
+  -- Custom helpers compile as ordinary source definitions, retaining the
+  -- rewrite records for their actual bodies. Family checks run here once,
+  -- before the published heads can be used by occurrence optimizations.
+  let heads := Ix.AuxGen.SourceFamily.filterHeads cenv.env originalAll <|
+    (imageKinds cenv.env.get? originalAll).filter
+      (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
   -- every Lean name moves off the Ix auxiliaries: the image kinds denote
   -- their stored images (compiled when their own block comes up,
   -- `compileImageBlock`), the rest are Lean's own blocks
@@ -276,8 +280,9 @@ def editPermutedBelowFamily (cs : Array MutConst) : CompileM Unit := do
   let _ ← moveToDisplay belowAll rep0 #[] fun n =>
     !belowAll.contains n && !ctors.contains n
       && belowAll.any fun b => (stripPrefix? b n).isSome
-  let heads := (imageKinds cenv.env.get? belowAll).filter
-    (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
+  let heads := Ix.AuxGen.SourceFamily.filterHeads cenv.env belowAll <|
+    (imageKinds cenv.env.get? belowAll).filter
+      (Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env)
   modifyBlockState fun st => { st with
     p3AuxRecs := st.p3AuxRecs ++ st.p3BelowRecs
     p3Heads := st.p3Heads ++ heads.map (·, all0)

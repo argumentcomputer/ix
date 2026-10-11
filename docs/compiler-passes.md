@@ -784,15 +784,34 @@ boundary, separate from the generator laws and the source semantic model.
 Canonical derived helpers now receive private identities when constructed.
 Copied source expressions keep their original references, including a source
 field type named `T.below`. Source definitions and source `below` inductives
-compile separately; only authenticated simple wrappers enter the image path.
-Intrinsic recursors retain their existing promotion/image handling. Other
-auxiliary families still need their own source recognition contracts for
-optimizations that assume standard generated behavior.
+compile separately. Intrinsic recursors retain their existing promotion/image
+handling.
+
+[SourceFamily](../Ix/AuxGen/SourceFamily.lean) authenticates the derived
+`below`/`brecOn` families before their names enter the image-head table used by
+O4/O9. It reconstructs recipes from the original source recursors and mutual
+order in a fresh source environment, then checks the actual declaration and
+its helper dependencies. A standard `brecOn` cannot borrow a modified `.go` or
+`below`. Definitions require matching types and values; theorems require the
+expected checked statement, with proof bodies handled by proof irrelevance.
+Prop below signatures include their complete mutual family and constructors.
+The traversal shares visited nodes across sibling dependencies, and a visited
+name still checks its actual source declaration. A failed reconstruction or
+source match leaves that declaration on the ordinary source compilation path.
+
+The [filter proofs](../Ix/CompileCert/SourceFamily.lean) expose successful
+construction and actual source lookup, including both expression skeletons
+for definitions. The [traversal proof](../Ix/CompileCert/SourceFamilyTraversal.lean)
+produces a finite set containing the requested helper, with matching source
+declarations and closure under recipe dependencies, including mutual cycles.
+General generator laws, the semantic interpretation of recipe correspondence
+and the driver head-table invariant remain separate proof obligations.
 
 For image-kind definitions such as `casesOn`, `recOn`, `below` and `brecOn`, use
 Lean's own value with its head occurrences rewritten. For a recursor use §4.2's
 generated image. The recursive `below`/`brecOn` families are included only where
-the source family has them; `Names.imageKinds` defines the set.
+the source family has them; `Names.imageKinds` proposes the set and the source
+recognition checks determine which derived heads enter it.
 
 Other declarations—`noConfusion`, the `sizeOf` family, matchers, injectivity
 lemmas, constructor-index helpers and their callers—compile as ordinary source
