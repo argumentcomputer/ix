@@ -297,13 +297,14 @@ pub extern "C" fn rs_compile_env_full(
 /// never created — and the returned status carries the full ungrounded
 /// list for the caller to report. With `allow_partial != 0`, the
 /// grounded subset is serialized and the same status discloses what
-/// was omitted (see plans/aux-recursor-alias-collision.md §8).
+/// was omitted (see `docs/compiler-passes.md` section 11.6).
 ///
 /// Returns `Ix.CompileM.CompileEnvStatus` (layout
 /// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle
 /// root — matches the serialized header, computed even when nothing is
 /// written), ungrounded (`Array (String × String)` of pretty-name /
-/// reason, sorted by name), bytes (0 when not written), named count,
+/// reason, sorted by name), nonCanonical (Pass 3's recorded declines,
+/// `Array (String × String)` of pretty-name / cause, sorted by name), bytes (0 when not written), named count,
 /// unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
@@ -360,6 +361,14 @@ fn compile_env_inner(
     .map(|e| (e.key().pretty(), e.value().clone()))
     .collect();
   ungrounded.sort_by(|a, b| a.0.cmp(&b.0));
+  // Pass 3's non-canonical set (the recorded declines), same order.
+  let mut non_canonical: Vec<(String, String)> = compile_stt
+    .p3
+    .non_canonical
+    .iter()
+    .map(|e| (e.key().pretty(), e.value().clone()))
+    .collect();
+  non_canonical.sort();
 
   // Canonical consts merkle root — equals the serialized header root
   // when a file is written; still reported on a fail-closed abort so
@@ -426,9 +435,14 @@ fn compile_env_inner(
     ungrounded_arr
       .set(i, LeanProd::new(LeanString::new(name), LeanString::new(reason)));
   }
+  let nc_arr = LeanArray::alloc(non_canonical.len());
+  for (i, (name, cause)) in non_canonical.iter().enumerate() {
+    nc_arr.set(i, LeanProd::new(LeanString::new(name), LeanString::new(cause)));
+  }
   let status = LeanIxCompileEnvStatus::alloc(0);
   status.set_obj(0, LeanString::new(&root.hex()));
   status.set_obj(1, ungrounded_arr);
+  status.set_obj(2, nc_arr);
   status.set_num_64(0, written);
   status.set_num_64(1, named_count);
   status.set_num_64(2, unique_anon);
@@ -711,7 +725,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
 /// FFI function to compute the LEON content hash of every constant in a
 /// Lean environment. Returns an `Array (Ix.Name × Ix.Address)` where each
 /// `Address` is the 32-byte Blake3 digest produced by
-/// `ConstantInfo::get_hash()` in `src/ix/env.rs`.
+/// `ConstantInfo::get_hash()` in `crates/common/src/env.rs`.
 ///
 /// The LEON hash is the Rust kernel's "original" addressing scheme: it's
 /// derived from the serialized `ConstantInfo` (name + level params + type
@@ -2013,10 +2027,11 @@ fn aux_dump_block(
     )
   });
 
-  let mut expanded = match nested::expand_nested_block(
+  let mut expanded = match nested::expand_nested_block_canonical(
     &ordered_originals,
     lean_env,
     &alias_to_rep,
+    stt,
   ) {
     Ok(x) => x,
     Err(e) => {
@@ -2458,12 +2473,7 @@ pub extern "C" fn rs_aux_gen_dump_patches(
   LeanIOResult::ok(LeanString::new(&out))
 }
 
-/// Render bool-vec keep masks / usize perms compactly for the plans dump.
-#[cfg(feature = "test-ffi")]
-fn aux_dump_bits(bits: &[bool]) -> String {
-  bits.iter().map(|&b| if b { '1' } else { '0' }).collect()
-}
-
+/// Render usize perms compactly for the layout dump.
 #[cfg(feature = "test-ffi")]
 fn aux_dump_usizes(xs: &[usize]) -> String {
   xs.iter()
@@ -2472,14 +2482,9 @@ fn aux_dump_usizes(xs: &[usize]) -> String {
     .join(",")
 }
 
-/// FFI: deterministic text dump of the post-compile surgery plans,
-/// AuxLayouts, and synthetic `Muts` named entries — the orchestration
-/// parity gate's medium. Lines:
-///   plan <name> params=<n> smotives=<n> sminors=<n> indices=<n>
-///        mkeep=<bits> nkeep=<bits> m2c=<csv> n2c=<csv> inblock=<bits>
-///        head=<target>@<pos>|none
-///   bplan <name> params=<n> smotives=<n> indices=<n> mkeep=<bits> m2c=<csv>
-///   wplan <name> ...                    (below plans, same shape as bplan)
+/// FFI: deterministic text dump of the post-compile AuxLayouts and synthetic
+/// `Muts` named entries — the orchestration parity gate's medium (until M6R
+/// slice 6 it also dumped the legacy call-site surgery's plans). Lines:
 ///   layout <all0> perm=<csv> counts=<csv>
 ///   muts <name> addr=<hex> all=<h,h;h|...> layout=<perm csv>/<counts csv>|none
 #[cfg(feature = "test-ffi")]
@@ -2504,56 +2509,7 @@ pub extern "C" fn rs_aux_gen_dump_plans(
 
   let mut out = String::new();
 
-  let mut plans: Vec<(String, ix_compile::compile::surgery::CallSitePlan)> =
-    stt
-      .call_site_plans
-      .iter()
-      .map(|e| (e.key().pretty(), e.value().clone()))
-      .collect();
-  plans.sort_by(|(a, _), (b, _)| a.cmp(b));
-  for (name, p) in &plans {
-    let head = match &p.head_rewrite {
-      Some(h) => format!("{}@{}", h.target_rec.pretty(), h.target_motive_pos),
-      None => "none".to_string(),
-    };
-    let _ = writeln!(
-      out,
-      "plan {name} params={} smotives={} sminors={} indices={} mkeep={} nkeep={} m2c={} n2c={} inblock={} head={head}",
-      p.n_params,
-      p.n_source_motives,
-      p.n_source_minors,
-      p.n_indices,
-      aux_dump_bits(&p.motive_keep),
-      aux_dump_bits(&p.minor_keep),
-      aux_dump_usizes(&p.source_to_canon_motive),
-      aux_dump_usizes(&p.source_to_canon_minor),
-      aux_dump_bits(&p.source_in_block),
-    );
-  }
-
-  for (tag, map) in [
-    ("bplan", &stt.brec_on_call_site_plans),
-    ("wplan", &stt.below_call_site_plans),
-  ] {
-    let mut bplans: Vec<(
-      String,
-      ix_compile::compile::surgery::BRecOnCallSitePlan,
-    )> = map.iter().map(|e| (e.key().pretty(), e.value().clone())).collect();
-    bplans.sort_by(|(a, _), (b, _)| a.cmp(b));
-    for (name, p) in &bplans {
-      let _ = writeln!(
-        out,
-        "{tag} {name} params={} smotives={} indices={} mkeep={} m2c={}",
-        p.n_params,
-        p.n_source_motives,
-        p.n_indices,
-        aux_dump_bits(&p.motive_keep),
-        aux_dump_usizes(&p.source_to_canon_motive),
-      );
-    }
-  }
-
-  let mut layouts: Vec<(String, ix_compile::compile::surgery::AuxLayout)> = stt
+  let mut layouts: Vec<(String, ixon::env::AuxLayout)> = stt
     .aux_perms
     .iter()
     .map(|e| (e.key().pretty(), e.value().clone()))

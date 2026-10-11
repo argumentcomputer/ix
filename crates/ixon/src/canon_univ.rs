@@ -225,15 +225,39 @@ fn ordered_insert(a: u64, path: &Path) -> Option<Path> {
   }
 }
 
-fn normalize_aux(l: &Univ, path: &Path, k: u64, acc: &mut NormLevel) {
+/// The calls the normalizer already made (Lean's `CanonUniv.NState`).
+/// Every contribution of `normalize_aux` and `normalize_imax_dispatch` is a
+/// max-merge into one entry of the form (`add_const`, `add_var`), so a call
+/// adds the same contributions whatever the form it starts from, and a call
+/// made a second time adds nothing: the sets skip repeated calls, and the
+/// form is the one the calls without them build. The `imax` distributions
+/// repeat calls: on a chain `imax a (imax a (… (imax a u)))` (one `imax` per
+/// binder, as Lean's `Meta.getLevel` returns for a long `∀`) the calls
+/// without the sets are `2ⁿ`, with them `O(n²)`.
+#[derive(Default)]
+struct Seen {
+  aux: HashSet<(Univ, Path, u64)>,
+  dispatch: HashSet<(Univ, Univ, Path, u64)>,
+}
+
+fn normalize_aux(
+  l: &Univ,
+  path: &Path,
+  k: u64,
+  acc: &mut NormLevel,
+  seen: &mut Seen,
+) {
+  if !seen.aux.insert((l.clone(), path.clone(), k)) {
+    return;
+  }
   match l {
     Univ::Zero => add_const(acc, k, path),
-    Univ::Succ(i) => normalize_aux(i, path, k + 1, acc),
+    Univ::Succ(i) => normalize_aux(i, path, k + 1, acc, seen),
     Univ::Max(a, b) => {
-      normalize_aux(a, path, k, acc);
-      normalize_aux(b, path, k, acc);
+      normalize_aux(a, path, k, acc, seen);
+      normalize_aux(b, path, k, acc, seen);
     },
-    Univ::IMax(u, b) => normalize_imax_dispatch(u, b, path, k, acc),
+    Univ::IMax(u, b) => normalize_imax_dispatch(u, b, path, k, acc, seen),
     Univ::Var(idx) => match ordered_insert(*idx, path) {
       Some(new_path) => {
         // When param(idx) = 0, imax(u, 0) = 0 — the outer k succs
@@ -253,39 +277,44 @@ fn normalize_aux(l: &Univ, path: &Path, k: u64, acc: &mut NormLevel) {
 /// Dispatch `imax(a, b)` on `b`'s shape, including the distributions
 /// `imax(a, max(v, w)) = max(imax(a, v), imax(a, w))` and
 /// `imax(a, imax(v, w)) = max(imax(a, w), imax(v, w))` (these duplicate
-/// `a` — the §3.5 worst-case-exponential compile-time cost).
+/// calls: without `Seen`, the §3.5 worst-case-exponential compile-time
+/// cost).
 fn normalize_imax_dispatch(
   a: &Univ,
   b: &Univ,
   path: &Path,
   k: u64,
   acc: &mut NormLevel,
+  seen: &mut Seen,
 ) {
+  if !seen.dispatch.insert((a.clone(), b.clone(), path.clone(), k)) {
+    return;
+  }
   match b {
     Univ::Zero => add_const(acc, k, path),
     Univ::Succ(v) => {
-      normalize_aux(a, path, k, acc);
-      normalize_aux(v, path, k + 1, acc);
+      normalize_aux(a, path, k, acc, seen);
+      normalize_aux(v, path, k + 1, acc, seen);
     },
     Univ::Max(v, w) => {
-      normalize_imax_dispatch(a, v, path, k, acc);
-      normalize_imax_dispatch(a, w, path, k, acc);
+      normalize_imax_dispatch(a, v, path, k, acc, seen);
+      normalize_imax_dispatch(a, w, path, k, acc, seen);
     },
     Univ::IMax(v, w) => {
-      normalize_imax_dispatch(a, w, path, k, acc);
-      normalize_imax_dispatch(v, w, path, k, acc);
+      normalize_imax_dispatch(a, w, path, k, acc, seen);
+      normalize_imax_dispatch(v, w, path, k, acc, seen);
     },
     Univ::Var(idx) => match ordered_insert(*idx, path) {
       Some(new_path) => {
         add_const(acc, k, path);
         add_var(acc, *idx, k, &new_path);
-        normalize_aux(a, &new_path, k, acc);
+        normalize_aux(a, &new_path, k, acc, seen);
       },
       None => {
         if k != 0 {
           add_var(acc, *idx, k, path);
         }
-        normalize_aux(a, path, k, acc);
+        normalize_aux(a, path, k, acc, seen);
       },
     },
   }
@@ -374,7 +403,7 @@ fn subsumption(acc: NormLevel) -> NormLevel {
 pub fn normalize(u: &Univ) -> NormLevel {
   let mut acc = NormLevel::new();
   acc.insert(Vec::new(), Node::default());
-  normalize_aux(u, &Vec::new(), 0, &mut acc);
+  normalize_aux(u, &Vec::new(), 0, &mut acc, &mut Seen::default());
   subsumption(acc)
 }
 
@@ -874,6 +903,45 @@ mod tests {
   /// without the leak-free proviso (`imax (imax (imax u w + 1) u) v`):
   /// the self-strip of `u + 1` from `[u, v, w]` to `[v, w]` would leave
   /// gate `w` without an absorber, leaking `w` at `u = 0`.
+  /// `imax (a (n-1)) (imax (a (n-2)) (… (imax (a 0) last)))`: one `imax`
+  /// per binder, the shape Lean's `Meta.getLevel` returns for a long `∀`.
+  fn imax_chain(
+    a: &dyn Fn(usize) -> Arc<Univ>,
+    last: Arc<Univ>,
+    n: usize,
+  ) -> Arc<Univ> {
+    (0..n).fold(last, |acc, i| im(a(i), acc))
+  }
+
+  /// FU item 10 (the Lean mirror tests the same chains): the `imax`
+  /// distributions repeat the normalizer's calls (`2ⁿ` on these chains);
+  /// `Seen` skips the repeats, so chains of 64 finish, keep their value and
+  /// are idempotent.
+  #[test]
+  fn long_imax_chains() {
+    let cutsat = |n| imax_chain(&|_| m(s(z()), v(0)), v(0), n);
+    let mixed = |n: usize| {
+      imax_chain(
+        &|i| match i % 3 {
+          0 => m(s(z()), v(0)),
+          1 => s(v(1)),
+          _ => im(v(1), v(0)),
+        },
+        v(if n.is_multiple_of(2) { 0 } else { 1 }),
+        n,
+      )
+    };
+    assert_eq!(canon_univ(&cutsat(64)), v(0));
+    for n in [0, 1, 2, 5, 10, 24, 40, 64] {
+      for l in [cutsat(n), mixed(n)] {
+        let c = canon_univ(&l);
+        assert_eq!(differ_at(&l, &c, 2), None, "P0 n={n}: {c:?}");
+        assert_eq!(canon_univ(&c), c, "P1 n={n}");
+        assert_eq!(reduce_univ(&c), c, "P3 n={n}");
+      }
+    }
+  }
+
   #[test]
   fn p0_witness() {
     let (u, vv, w) = (v(0), v(1), v(2));

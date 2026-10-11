@@ -24,7 +24,9 @@ open Ixon (PutM runPut putConstant putExpr Comm)
 
 /-- Create a CompileEnv from the output of rsCompilePhases.
     This allows incremental compilation of new definitions against
-    the already-compiled base environment. -/
+    the already-compiled base environment. A hand-built environment
+    (`pass3 := false`, `CompileEnv.pass3`): it runs no Pass 3 hook, and a
+    changed block's aux tail is refused there. -/
 def mkCompileEnv (phases : Ix.CompileM.CompilePhases) : Ix.CompileM.CompileEnv :=
   { env := phases.rawEnv
   , nameToNamed := phases.compileEnv.named

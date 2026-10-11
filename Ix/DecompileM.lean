@@ -17,6 +17,7 @@ public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
 public import Ix.AuxGen.ExprUtils
+public import Ix.Compile.Pass.Names
 
 public section
 
@@ -88,6 +89,11 @@ instance : ToString DecompileError := ⟨DecompileError.toString⟩
 /-- Global decompilation environment (reader, immutable). -/
 structure DecompileEnv where
   ixonEnv : Ixon.Env
+  /-- Read the compiled term under a Pass 3 decompile record (`_ix.inline`)
+      instead of replaying the recorded source occurrence. Off everywhere
+      but `ix validate-lean`'s clique value phase, which evaluates the
+      compiled (transported) value of a clique member against Lean's. -/
+  compiledTerms : Bool := false
   deriving Inhabited
 
 /-- Per-block context for decompiling a single constant (reader, immutable per-block). -/
@@ -98,9 +104,12 @@ structure BlockCtx where
   mutCtx : Array Ix.Name       -- mutual context: index = Rec index
   univParams : Array Ix.Name   -- universe parameter names
   arena : ExprMetaArena
-  /-- `ConstantMeta.metaSharing` of the constant being decompiled:
-      collapsed call-site arguments (and rewritten original heads),
-      indexed by `CallSiteEntry.collapsed.sharingIdx` / `origHead` —
+  /-- `ConstantMeta.metaSharing` of the constant being decompiled: the
+      source occurrences of its Pass 3 decompile records (`_ix.inline`),
+      or, in a file the legacy call-site surgery wrote (deleted at M6R
+      slice 6; read, never written), its collapsed call-site arguments and
+      rewritten original heads, indexed by
+      `CallSiteEntry.collapsed.sharingIdx` / `origHead` —
       distinct from the block's primary `sharing` table. A `share` inside
       one of these expressions is read in the extended index space
       (`ShareScope.metaEntry`). -/
@@ -504,6 +513,9 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
   -- 2. Follow mdata chain
   let mut currentIdx := arenaIdx
   let mut mdataLayers : Array (Array (Ix.Name × Ix.DataValue)) := #[]
+  -- Pass 3 decompile record of a rewritten call site (`_ix.inline`,
+  -- `_ix.inline_meta`): the source occurrence in `metaSharing`.
+  let mut inlineRecord : Option (Nat × Nat) := none
   let mut done := false
   while !done do
     match ← getArenaNode currentIdx with
@@ -512,9 +524,26 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
         let data ← decompileKVMap kvm
         if Ix.SemanticContract.hasMetadata data then
           throw (.badConstantFormat "semantic contracts cannot come from optional metadata")
-        mdataLayers := mdataLayers.push data
+        match data with
+        | #[(k1, .ofNat s), (k2, .ofNat m)] =>
+          if k1 == Ix.Compile.Pass.inlineKey && k2 == Ix.Compile.Pass.inlineMetaKey then
+            if inlineRecord.isNone then inlineRecord := some (s, m)
+          else mdataLayers := mdataLayers.push data
+        | _ => mdataLayers := mdataLayers.push data
       currentIdx := child
     | _ => done := true
+
+  -- Pass 3 replay: the decompiled term is the recorded source occurrence;
+  -- the compiled (rewritten) term is not read (unless `compiledTerms`).
+  if (← getEnv).compiledTerms then inlineRecord := none
+  if let some (s, m) := inlineRecord then
+    let ctx ← getCtx
+    let some shared := ctx.metaSharing[s]?
+      | throw (.invalidShareIndex s.toUInt64 ctx.metaSharing.size "Pass 3 inline record")
+    let src ← decompileExprIn (.metaEntry s) shared m.toUInt64
+    let result := applyMdata src mdataLayers
+    modify fun st => { st with exprCache := st.exprCache.insert cacheKey result }
+    return result
 
   let node ← getArenaNode currentIdx
 
@@ -533,7 +562,9 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
-  -- Eta adapter replay: strip the synthesized lambda telescope, read the
+  -- Eta adapter replay (legacy metadata: written only by the call-site
+  -- surgery deleted at M6R slice 6; read so older files decompile): strip
+  -- the synthesized lambda telescope, read the
   -- canonical body spine, and rebuild only the source prefix that was
   -- originally present. Existing source arguments were lifted under the
   -- wrapper, so lower their loose BVars after decompilation.
@@ -587,7 +618,9 @@ canonIdx {canonIdx} out of bounds (body telescope has \
         (Ix.AuxGen.lowerVars arg nSynth.toNat 0)
     pure (applyMdata spine mdataLayers)
 
-  -- Call-site surgery replay: reconstruct the SOURCE-order application
+  -- Call-site surgery replay (legacy metadata: written only by the surgery
+  -- deleted at M6R slice 6; read so older files decompile): reconstruct the
+  -- SOURCE-order application
   -- spine from the canonical Ixon spine plus the metadata extension
   -- tables (Rust `decompile_expr`, CallSite arm). Entries walk in source
   -- order: Kept entries index the canonical telescope by `canonIdx`;
@@ -854,7 +887,7 @@ def decompileMetaCtx (cMeta : ConstantMeta) : DecompileM (Array Ix.Name) := do
     wrapper. `metaRefs`/`metaUnivs` extend the primary tables — the
     documented virtual-address contract (mirrors Rust
     `load_meta_extensions`); `metaSharing` rides its own dedicated field
-    for surgery replay, and `share` nodes inside it are read in the
+    (Pass 3's decompile records; the legacy surgery replay), and `share` nodes inside it are read in the
     extended index space (`ShareScope`), never appended to `sharing`. The
     context is rebuilt per constant, so extensions never leak across
     sibling constants of a block. -/

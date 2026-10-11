@@ -46,6 +46,8 @@ use rustc_hash::FxHashMap;
 #[derive(Clone)]
 pub struct BRecOnDef {
   pub name: Name,
+  /// Logical source-family role for existence and alias queries.
+  pub source_name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
   pub value: LeanExpr,
@@ -96,14 +98,56 @@ pub fn generate_brecon_constants_with(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
+  generate_brecon_constants_named(
+    sorted_classes,
+    canonical_recs,
+    below_consts,
+    lean_env,
+    is_prop,
+    all_aux,
+    stt,
+    kctx,
+    &super::names::AuxNames::default(),
+  )
+}
+
+/// Select generated identities at construction sites, keeping copied source
+/// references and source-family membership queries separate.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_brecon_constants_named(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  below_consts: &[BelowConstant],
+  lean_env: &LeanEnv,
+  is_prop: bool,
+  all_aux: bool,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+  names: &super::names::AuxNames,
+) -> Result<Vec<BRecOnDef>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() || below_consts.is_empty() {
     return Ok(vec![]);
   }
 
+  // Every class needs its recursor and its `.below`; a shorter list is an
+  // inconsistent block, refused naming it (A0, WB-F5) instead of silently
+  // generating `.brecOn` for a prefix of the classes.
+  if canonical_recs.len() < n_classes || below_consts.len() < n_classes {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "brecOn generation for the block of '{}': {n_classes} classes \
+         but {} recursors and {} `.below` constants",
+        super::block_label(sorted_classes),
+        canonical_recs.len(),
+        below_consts.len(),
+      ),
+    });
+  }
+
   let mut results = Vec::new();
 
-  for ci in 0..n_classes.min(canonical_recs.len()).min(below_consts.len()) {
+  for ci in 0..n_classes {
     let (_, rec_val) = &canonical_recs[ci];
     let class_rep = &sorted_classes[ci][0];
     let ind_ref = lean_env.get(class_rep);
@@ -126,8 +170,9 @@ pub fn generate_brecon_constants_with(
 
     if !is_prop {
       // Type-level: generate .brecOn.go + .brecOn + .brecOn.eq (BRecOn.lean path)
-      let brecon_name =
+      let source_name =
         Name::str(sorted_classes[ci][0].clone(), "brecOn".to_string());
+      let brecon_name = names.member(&sorted_classes[ci][0], "brecOn");
       let all0 = &ind.all[0];
       // Derive below names from below_consts (source-indexed, matching
       // canon_kenv's content hashes). Positions align with the canonical
@@ -149,13 +194,16 @@ pub fn generate_brecon_constants_with(
         n_classes,
         stt,
         kctx,
+        names,
+        &source_name,
       )?;
       results.extend(defs);
     } else {
       // Prop-level: generate single .brecOn theorem (IndPredBelow.lean path)
-      let brecon_name = Name::str(ind.cnst.name.clone(), "brecOn".to_string());
+      let source_name = Name::str(ind.cnst.name.clone(), "brecOn".to_string());
+      let brecon_name = names.member(&ind.cnst.name, "brecOn");
       let n_indices = try_nat_to_usize(&ind.num_indices)?;
-      let def = build_prop_brecon(
+      let mut def = build_prop_brecon(
         ci,
         rec_val,
         ind,
@@ -164,6 +212,7 @@ pub fn generate_brecon_constants_with(
         sorted_classes,
         below_consts,
       )?;
+      def.source_name = source_name;
       results.push(def);
     }
   }
@@ -191,15 +240,16 @@ pub fn generate_brecon_constants_with(
             ),
           }
         })?;
-        let brecon_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let source_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let brecon_name = names.nested(all0, "brecOn", idx);
         let exists = all_aux
-          || lean_env.contains_key(&brecon_name)
-          || stt.env.named.contains_key(&brecon_name);
+          || lean_env.contains_key(&source_name)
+          || stt.env.named.contains_key(&source_name);
         if !exists {
           continue;
         }
         let n_indices = try_nat_to_usize(&aux_rec_val.num_indices)?;
-        let def = build_prop_brecon(
+        let mut def = build_prop_brecon(
           n_classes + j,
           aux_rec_val,
           first_ind,
@@ -208,6 +258,7 @@ pub fn generate_brecon_constants_with(
           sorted_classes,
           below_consts,
         )?;
+        def.source_name = source_name;
         results.push(def);
       }
     }
@@ -240,7 +291,8 @@ pub fn generate_brecon_constants_with(
             ),
           }
         })?;
-        let brecon_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let source_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
+        let brecon_name = names.nested(&all0, "brecOn", idx);
 
         // Only generate if this constant exists in the source environment.
         // Check lean_env (original Lean env during compilation) OR
@@ -248,8 +300,8 @@ pub fn generate_brecon_constants_with(
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
         let exists = all_aux
-          || lean_env.contains_key(&brecon_name)
-          || stt.env.named.contains_key(&brecon_name);
+          || lean_env.contains_key(&source_name)
+          || stt.env.named.contains_key(&source_name);
         if !exists {
           continue;
         }
@@ -272,6 +324,8 @@ pub fn generate_brecon_constants_with(
           n_classes,
           stt,
           kctx,
+          names,
+          &source_name,
         )?;
         results.extend(defs);
       }
@@ -552,6 +606,7 @@ fn build_prop_brecon(
 
   Ok(BRecOnDef {
     name: brecon_name.clone(),
+    source_name: brecon_name.clone(),
     level_params: ind_level_params.clone(),
     typ,
     value: val,
@@ -718,6 +773,8 @@ fn build_type_brecon_fvar(
   n_classes: usize,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
+  names: &super::names::AuxNames,
+  source_name: &Name,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
   // canon_kenv is populated by `populate_canon_kenv_with_below` in
   // aux_gen.rs between Phase 2 and Phase 3. It contains PUnit, PProd,
@@ -832,7 +889,7 @@ fn build_type_brecon_fvar(
     let ilvl_ctx: Vec<LocalDecl> =
       param_decls.iter().chain(motive_decls.iter()).cloned().collect();
     let mut ilvl_tc =
-      super::expr_utils::TcScope::new(&ilvl_ctx, rec_level_params, stt, kctx);
+      super::expr_utils::TcScope::new(&ilvl_ctx, rec_level_params, stt, kctx)?;
 
     motive_decls
       .iter()
@@ -849,7 +906,7 @@ fn build_type_brecon_fvar(
           &md.domain
         };
 
-        ilvl_tc.push_locals(&idcls);
+        ilvl_tc.push_locals(&idcls)?;
         let ilvl_j = ilvl_tc.get_level(major_dom).map_err(|e| {
           CompileError::UnsupportedExpr {
             desc: format!(
@@ -861,7 +918,7 @@ fn build_type_brecon_fvar(
             ),
           }
         })?;
-        ilvl_tc.pop_locals(&idcls);
+        ilvl_tc.pop_locals(&idcls)?;
         Ok(ilvl_j)
       })
       .collect::<Result<Vec<_>, _>>()?
@@ -956,12 +1013,12 @@ fn build_type_brecon_fvar(
   let base_ctx: Vec<LocalDecl> =
     param_decls.iter().chain(motive_decls.iter()).cloned().collect();
   let mut rtc =
-    super::expr_utils::TcScope::new(&base_ctx, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(&base_ctx, rec_level_params, stt, kctx)?;
 
   // go return type: PProd (motive_ci indices major) (below_ci params motives indices major)
   // Infer levels via TC with indices + major in scope.
-  rtc.push_locals(&index_decls);
-  rtc.push_locals(&major_decls);
+  rtc.push_locals(&index_decls)?;
+  rtc.push_locals(&major_decls)?;
 
   let motive_ci_app = mk_app_n(
     mk_app_n(motive_fvars[ci].clone(), &index_fvars),
@@ -982,8 +1039,8 @@ fn build_type_brecon_fvar(
   let go_ret_type =
     mk_pprod(&go_ret_lvl1, &go_ret_lvl2, &motive_ci_app, &below_ci_app);
 
-  rtc.pop_locals(&major_decls);
-  rtc.pop_locals(&index_decls);
+  rtc.pop_locals(&major_decls)?;
+  rtc.pop_locals(&index_decls)?;
 
   // go value: I.rec.{rlvl, lvls...} params [modified_motives] [modified_minors] indices major
   let mut go_val = mk_const(&rec_val.cnst.name, &{
@@ -1001,7 +1058,7 @@ fn build_type_brecon_fvar(
     let nma = super::expr_utils::count_foralls(mt);
     let (ifvs, idcls, _) = forall_telescope(mt, nma, &format!("tbgm{j}"), 0);
 
-    rtc.push_locals(&idcls);
+    rtc.push_locals(&idcls)?;
 
     let m_app = mk_app_n(motive_fvars[j].clone(), &ifvs);
     let b_app = mk_app_n(
@@ -1015,15 +1072,15 @@ fn build_type_brecon_fvar(
     let mm_lvl2 = rtc.get_level(&b_app)?;
     let pprod_body = mk_pprod(&mm_lvl1, &mm_lvl2, &m_app, &b_app);
 
-    rtc.pop_locals(&idcls);
+    rtc.pop_locals(&idcls)?;
 
     go_val = LeanExpr::app(go_val, mk_lambda(pprod_body, &idcls));
   }
 
   // Push remaining context (indices, major, F-binders) for minor premises.
-  rtc.push_locals(&index_decls);
-  rtc.push_locals(&major_decls);
-  rtc.push_locals(&f_decls);
+  rtc.push_locals(&index_decls)?;
+  rtc.push_locals(&major_decls)?;
+  rtc.push_locals(&f_decls)?;
 
   // Apply modified minors: for each ctor, build PProd-packed minor.
   //
@@ -1101,15 +1158,15 @@ fn build_type_brecon_fvar(
   //
   // Compute the levels here while the index decls are still pushed into
   // the live `rtc` scope so `get_level` resolves any FVar references to
-  // earlier indices/params correctly. Then pop them back to the state the
-  // existing code below expects.
+  // earlier indices/params correctly. The following equality construction
+  // opens its own fresh scope; these existing locals need no duplicate frame.
   let index_sort_levels: Vec<Level> = {
-    rtc.push_locals(&index_decls);
+    // Indices, major and F-binders remain live from minor construction.
+    // Re-pushing indices would duplicate their free-variable identities.
     let mut out = Vec::with_capacity(index_decls.len());
     for d in &index_decls {
       out.push(rtc.get_level(&d.domain)?);
     }
-    rtc.pop_locals(&index_decls);
     out
   };
   let eq_result = build_type_brecon_eq_fvar(
@@ -1143,7 +1200,8 @@ fn build_type_brecon_fvar(
     rec_level_params,
     stt,
     kctx,
-  );
+    names,
+  )?;
 
   // Type-level `.brecOn.go` / `.brecOn` / `.brecOn.eq` all reference the
   // parent inductive's `.rec`, so Lean's `mkDefinitionValInferringUnsafe` /
@@ -1153,6 +1211,7 @@ fn build_type_brecon_fvar(
   let mut results = vec![
     BRecOnDef {
       name: go_name,
+      source_name: Name::str(source_name.clone(), "go".into()),
       level_params: rec_level_params.clone(),
       typ: go_type,
       value: go_value,
@@ -1161,6 +1220,7 @@ fn build_type_brecon_fvar(
     },
     BRecOnDef {
       name: brecon_name,
+      source_name: source_name.clone(),
       level_params: rec_level_params.clone(),
       typ: brecon_type,
       value: brecon_value,
@@ -1172,6 +1232,7 @@ fn build_type_brecon_fvar(
   let (eq_typ, eq_val) = eq_result;
   results.push(BRecOnDef {
     name: eq_name,
+    source_name: Name::str(source_name.clone(), "eq".into()),
     level_params: rec_level_params.clone(),
     typ: eq_typ,
     value: eq_val,
@@ -1240,15 +1301,20 @@ fn build_type_minor_premise_fvar(
         rtc,
       )?;
       let (ih_fv_name, ih_fv) = fresh_fvar("tmih", fi);
-      lambda_decls.push(LocalDecl {
+      let lambda_decl = LocalDecl {
         fvar_name: ih_fv_name,
         binder_name: decl.binder_name.clone(),
         domain: pprod_dom,
         info: decl.info.clone(),
-      });
+      };
+      rtc.push_locals(std::slice::from_ref(&lambda_decl))?;
+      lambda_decls.push(lambda_decl);
       lambda_fvars.push(ih_fv.clone());
       prod_entries.push((ih_fv, lambda_decls.len() - 1));
     } else {
+      // Later IH domains can mention this ordinary field. Install the
+      // telescope prefix before inferring those domains, not after them.
+      rtc.push_locals(std::slice::from_ref(&decl))?;
       lambda_decls.push(decl);
       lambda_fvars.push(fvar);
     }
@@ -1257,10 +1323,8 @@ fn build_type_minor_premise_fvar(
   // Build PProdN.mk of prod entries (right-fold of VALUES, not types).
   //
   // Lean's mkPProdMk (PProdN.lean:44-53) infers universe levels from the
-  // types via getLevel. We use the TcScope to do the same. Push the lambda
-  // decls (with replaced IH domains) into the TC so FVars resolve correctly.
-
-  rtc.push_locals(&lambda_decls);
+  // types via getLevel. The lambda declarations, with replaced IH domains,
+  // are already in scope.
 
   let (b, b_type) = if prod_entries.is_empty() {
     // PUnit.{rlvl} : Sort rlvl
@@ -1310,7 +1374,7 @@ fn build_type_minor_premise_fvar(
   let lvl_b = rtc.get_level(&b_type)?;
   let body = mk_pprod_mk(&lvl_a, &lvl_b, &motive_app, &b_type, &f_app, &b);
 
-  rtc.pop_locals(&lambda_decls);
+  rtc.pop_locals(&lambda_decls)?;
 
   Ok(mk_lambda(body, &lambda_decls))
 }
@@ -1356,12 +1420,12 @@ fn replace_motive_with_pprod_fvar(
 
   // Infer PProd levels via TC, matching Lean's mkPProd (PProdN.lean:37-38).
   if !inner_decls.is_empty() {
-    rtc.push_locals(&inner_decls);
+    rtc.push_locals(&inner_decls)?;
   }
   let lvl1 = rtc.get_level(&motive_app)?;
   let lvl2 = rtc.get_level(&below_app)?;
   if !inner_decls.is_empty() {
-    rtc.pop_locals(&inner_decls);
+    rtc.pop_locals(&inner_decls)?;
   }
 
   let pprod = mk_pprod(&lvl1, &lvl2, &motive_app, &below_app);
@@ -1509,17 +1573,17 @@ fn meta_defeq(
   lean_env: &LeanEnv,
   a: &LeanExpr,
   b: &LeanExpr,
-) -> bool {
-  if tc.is_def_eq(a, b) {
-    return true;
+) -> Result<bool, CompileError> {
+  if tc.is_def_eq(a, b)? {
+    return Ok(true);
   }
-  if is_unit_like_pair(tc, lean_env, a, b) {
-    return true;
+  if is_unit_like_pair(tc, lean_env, a, b)? {
+    return Ok(true);
   }
   let (ha, aargs) = decompose_apps(a);
   let (hb, bargs) = decompose_apps(b);
   if aargs.is_empty() || aargs.len() != bargs.len() {
-    return false;
+    return Ok(false);
   }
   let heads_match = match (ha.as_data(), hb.as_data()) {
     (ExprData::Const(n1, l1, _), ExprData::Const(n2, l2, _)) => {
@@ -1528,9 +1592,14 @@ fn meta_defeq(
     _ => false,
   };
   if !heads_match {
-    return false;
+    return Ok(false);
   }
-  aargs.iter().zip(bargs.iter()).all(|(x, y)| meta_defeq(tc, lean_env, x, y))
+  for (x, y) in aargs.iter().zip(bargs.iter()) {
+    if !meta_defeq(tc, lean_env, x, y)? {
+      return Ok(false);
+    }
+  }
+  Ok(true)
 }
 
 /// `Meta.isDefEqUnitLike`: `a`'s type (whnf) is an application of a
@@ -1542,14 +1611,14 @@ fn is_unit_like_pair(
   lean_env: &LeanEnv,
   a: &LeanExpr,
   b: &LeanExpr,
-) -> bool {
-  let Some(ta) = tc.infer_lean(a) else {
-    return false;
+) -> Result<bool, CompileError> {
+  let Some(ta) = tc.infer_lean(a)? else {
+    return Ok(false);
   };
-  let ta = tc.whnf_lean(&ta);
+  let ta = tc.whnf_lean(&ta)?;
   let (head, _) = decompose_apps(&ta);
   let ExprData::Const(head_name, _, _) = head.as_data() else {
-    return false;
+    return Ok(false);
   };
   let is_unit_like = match lean_env.get(head_name).as_deref() {
     Some(ConstantInfo::InductInfo(iv)) => {
@@ -1566,10 +1635,10 @@ fn is_unit_like_pair(
     _ => false,
   };
   if !is_unit_like {
-    return false;
+    return Ok(false);
   }
-  let Some(tb) = tc.infer_lean(b) else {
-    return false;
+  let Some(tb) = tc.infer_lean(b)? else {
+    return Ok(false);
   };
   tc.is_def_eq(&ta, &tb)
 }
@@ -1623,7 +1692,8 @@ fn build_type_brecon_eq_fvar(
   rec_level_params: &[Name],
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) -> (LeanExpr, LeanExpr) {
+  names: &super::names::AuxNames,
+) -> Result<(LeanExpr, LeanExpr), CompileError> {
   // .brecOn.eq requires Eq and Eq.refl as constants. The real pipeline only
   // calls aux_gen when the original Lean environment has these, so this
   // always succeeds. If a future minimal-test caller needs to opt out (e.g.
@@ -1707,7 +1777,7 @@ fn build_type_brecon_eq_fvar(
         .collect()
     }
   };
-  let cases_on_name = Name::str(target_ind_name.clone(), "casesOn".to_string());
+  let cases_on_name = names.member(target_ind_name, "casesOn");
 
   // --- Indexed path ---
   //
@@ -1752,9 +1822,9 @@ fn build_type_brecon_eq_fvar(
       lean_env,
       stt,
       kctx,
-    );
+    )?;
     if let Some(eq_value) = eq_value_opt {
-      return (eq_type, eq_value);
+      return Ok((eq_type, eq_value));
     }
     // Fall through to the simple path if the indexed construction
     // couldn't be completed (e.g., missing ctor info).
@@ -1894,7 +1964,7 @@ fn build_type_brecon_eq_fvar(
 
   let eq_value = mk_lambda(eq_val, all_decls);
 
-  (eq_type, eq_value)
+  Ok((eq_type, eq_value))
 }
 
 // =========================================================================
@@ -1975,7 +2045,7 @@ fn build_indexed_eq_value(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) -> Option<LeanExpr> {
+) -> Result<Option<LeanExpr>, CompileError> {
   let n_indices = index_decls.len();
   let outer_major = &major_fvars[0];
   let major_type = &major_decls[0].domain;
@@ -1997,11 +2067,11 @@ fn build_indexed_eq_value(
     .filter(|e| matches!(e.as_data(), ExprData::Fvar(..)))
     .count();
   if n_fvar_indices != n_indices {
-    return None;
+    return Ok(None);
   }
   // Validate that `outer_major` is a FVar (mirrors the same requirement).
   if !matches!(outer_major.as_data(), ExprData::Fvar(..)) {
-    return None;
+    return Ok(None);
   }
 
   // OUTER_Eq_body: `Eq (motive outer_idxs outer_major) (brecOn …) (F_1 …)`
@@ -2093,11 +2163,11 @@ fn build_indexed_eq_value(
   // We use `meta_defeq` — `TcScope::is_def_eq` extended with the
   // elaborator's unit-like rule — for the decision.
   let mut eq_tc =
-    super::expr_utils::TcScope::new(all_decls, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(all_decls, rec_level_params, stt, kctx)?;
   // The compared "new" types mention the generalized index fvars
   // (`new_idx_decls`), which are not part of `all_decls` — push them so
   // inference inside `meta_defeq` (the unit-like check) can type them.
-  eq_tc.push_locals(&new_idx_decls);
+  eq_tc.push_locals(&new_idx_decls)?;
   // Track which index binders are HEq (for the remaining-list construction
   // below in `build_minor_via_cases_sim`).
   let mut idx_is_heq: Vec<bool> = Vec::with_capacity(n_indices);
@@ -2106,7 +2176,7 @@ fn build_indexed_eq_value(
   for (i, idx_decl) in index_decls.iter().enumerate() {
     let outer_type = &idx_decl.domain;
     let new_type = &new_idx_decls[i].domain;
-    let types_defeq = meta_defeq(&mut eq_tc, lean_env, outer_type, new_type);
+    let types_defeq = meta_defeq(&mut eq_tc, lean_env, outer_type, new_type)?;
     let eq_ty = if types_defeq {
       mk_eq(&idx_sort(i), outer_type, &index_fvars[i], &new_idx_fvars[i])
     } else {
@@ -2137,7 +2207,7 @@ fn build_indexed_eq_value(
   // checking), discharged by `Eq.refl` and consumed by a plain
   // `Eq.ndrec` in the minors. Fixture: `TypeBrecOnEqDefUnit`.
   let major_types_defeq =
-    meta_defeq(&mut eq_tc, lean_env, major_type, &new_major_type);
+    meta_defeq(&mut eq_tc, lean_env, major_type, &new_major_type)?;
   drop(eq_tc); // release the TC before building the rest of the term
   let major_eq_ty = if major_types_defeq {
     mk_eq(major_level, major_type, outer_major, &new_major_fvar)
@@ -2206,7 +2276,7 @@ fn build_indexed_eq_value(
     // separately as `ctor_applied` below.
     let (_, minor_ret_args) = decompose_apps(&minor_ret);
     if minor_ret_args.len() < n_indices {
-      return None;
+      return Ok(None);
     }
     let ret_args: Vec<LeanExpr> = minor_ret_args[..n_indices].to_vec();
 
@@ -2231,7 +2301,7 @@ fn build_indexed_eq_value(
     }
 
     // Build the minor body by simulating `cases + refl`.
-    let minor_value = build_minor_via_cases_sim(
+    let Some(minor_value) = build_minor_via_cases_sim(
       ctor_idx,
       &non_ih_decls,
       &ret_args,
@@ -2248,7 +2318,9 @@ fn build_indexed_eq_value(
       f_fvars,
       &idx_is_heq,
       !major_types_defeq,
-    )?;
+    ) else {
+      return Ok(None);
+    };
 
     eq_val = LeanExpr::app(eq_val, minor_value);
   }
@@ -2278,7 +2350,7 @@ fn build_indexed_eq_value(
   };
   eq_val = LeanExpr::app(eq_val, major_refl);
 
-  Some(mk_lambda(eq_val, all_decls))
+  Ok(Some(mk_lambda(eq_val, all_decls)))
 }
 
 /// Whether an expression contains a free variable with the given name.

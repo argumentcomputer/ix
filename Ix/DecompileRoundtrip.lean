@@ -35,7 +35,7 @@ public import Ix.DecompileM
 public import Ix.CompileM
 public import Ix.AuxGen.Types
 public import Ix.AuxGen.Nested
-public import Ix.CallSiteSurgery
+public import Ix.AuxSource
 public section
 
 namespace Ix.DecompileM
@@ -199,18 +199,11 @@ private def decompileIndcEntries (denv : DecompileEnv)
     uses `workEnv`; `orig_env` (the debug-track source env) is `origEnv?`;
     `stt.sharing_limits` (the run's sharing limits, read once by the
     driver) is `sharingLimits`.
-    The trailing optional plan maps mirror `stt.call_site_plans` /
-    `stt.brec_on_call_site_plans` / `stt.below_call_site_plans`, which in
-    Rust ride along inside `stt` (populated by plan rehydration);
-    pass them when available so surgered call sites inside below-ctor
-    types recompile byte-identically.
-
     Phase A (decompile.rs:2712-2868) is `sortConsts` +
     `compileMutualBlock` — the latter already performs Rust's explicit
     preseed (:2735-2746), the per-member representative pushes
     (:2753-2807) and the bare-constant singleton branch (:2834-2868).
-    The synthetic `CompileEnv` seeds `nameToNamed := ixonEnv.named` (so
-    the aux-regen surgery guard sees `Named.original`, compile.rs:829)
+    The synthetic `CompileEnv` seeds `nameToNamed := ixonEnv.named`
     and folds `nameToAddr` from it (the deserialized resolution map). -/
 def roundtripBlock (consts : List Ix.MutConst)
     (generatedConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
@@ -218,9 +211,6 @@ def roundtripBlock (consts : List Ix.MutConst)
     (workEnv : Std.HashMap Ix.Name Ix.ConstantInfo)
     (ixonEnv : Ixon.Env)
     (sharingLimits : Ix.Sharing.Exact.Limits)
-    (callSitePlans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {})
-    (brecOnCallSitePlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {})
-    (belowCallSitePlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {})
     : Except String (Std.HashMap Ix.Name Ix.ConstantInfo) := do
   let mut results : Std.HashMap Ix.Name Ix.ConstantInfo := {}
   -- decompile.rs:2707-2709.
@@ -235,17 +225,16 @@ def roundtripBlock (consts : List Ix.MutConst)
       nameToNamed := ixonEnv.named
       sharingLimits
       nameToAddr := ixonEnv.named.fold (init := {})
-        fun m n named => m.insert n named.addr
-      callSitePlans := callSitePlans
-      brecOnCallSitePlans := brecOnCallSitePlans
-      belowCallSitePlans := belowCallSitePlans }
+        fun m n named => m.insert n named.addr }
+  -- A decompile recompile only verifies a reconstructed form against its
+  -- stored address and stores no constant (Rust `roundtrip_block`).
   let blockEnv : Ix.CompileM.BlockEnv :=
     { all := {}, current := firstName, mutCtx := default, univCtx := [] }
   -- One shared run mirrors Rust's one shared `BlockCache` across
   -- sort_consts (:2717), preseed (:2742) and the member compiles.
   let (sorted, blockRes, cache) ←
     match Ix.CompileM.CompileM.run cenv blockEnv {} (do
-        let sorted ← Ix.CompileM.sortConsts consts
+        let sorted := Ix.CompileM.orderRecursorFamily (← Ix.CompileM.sortConsts consts)
         let res ← Ix.CompileM.compileMutualBlock sorted
         pure (sorted, res)) with
     | .ok ((sorted, res), cache) => pure (sorted, res, cache)

@@ -12,6 +12,11 @@
   2. `generateAndCompileAuxRecursors` (mutual.rs:511): the full aux_gen
      pipeline — generate patches, then compile recursors, `.casesOn`,
      `.recOn`, `.below`, `.below.rec`, and `.brecOn` (3 batches).
+     The recursor family and the Prop `.below` inductive family (with
+     its `.below.rec`) are one block each; every definition is its own
+     constant, packed into a block only when several form a strongly
+     connected component (`compileAuxComponents`; D6, one constant per
+     auxiliary).
 
   State model: Rust mutates the global `CompileState`
   (`stt.env.store_const` / `stt.env.register_name` /
@@ -27,10 +32,10 @@
   Cache model: Rust's `compile_aux_block` creates a fresh
   `BlockCache::default()` per call (mutual.rs:114). Here that means
   saving, clearing, and afterwards restoring the cache-like `BlockState`
-  fields (`exprCache`/`univCache`/`cmpCache`/`refs`/`refsIndex`/`univs`/
-  `univsIndex`/`arena`) around each `compileAuxBlockWithRename` call —
-  the same precedent as `sortAuxByPartitionRefinement` in
-  `Ix.AuxGen.Nested`. The stt-like fields (`blockBlobs`/`blockNames`/
+  fields (`exprCache`/`univCache`/`refs`/`refsIndex`/`univs`/
+  `univsIndex`/`arena`) around each `compileAuxBlockWithRename` call
+  (sorting itself is pure: `sortConsts` is Pass 1's `sortClasses`, whose
+  comparison cache is local to the call). The stt-like fields (`blockBlobs`/`blockNames`/
   `defHints` and the `aux*` fields) accumulate across phases, mirroring
   Rust's global state.
 
@@ -57,12 +62,13 @@ public import Ix.AuxGen.Nested
 public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.Patches
-public import Ix.AuxGen.Surgery
+public import Ix.AuxSource
+public import Ix.Compile.Canon.Graph
 public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError getBlockState modifyBlockState
+open Ix.CompileM (CompileM CompileError arrIdx arrSet getBlockState modifyBlockState
   getCompileEnv compileName withMutCtx preseedExprTables
   mutConstPreseedExprs compileMutConsts sortConsts buildBlockConstant)
 
@@ -87,10 +93,56 @@ def auxStoreConst (addr : Address) (constant : Ixon.Constant) : CompileM Unit :=
   modifyBlockState fun st =>
     { st with auxConsts := st.auxConsts.push (addr, constant) }
 
-/-- Model of Rust `stt.env.register_name(name, named)` for aux blocks:
-    append to `auxNamed` (later entries for a name override earlier —
-    DashMap insert semantics). -/
-def auxRegisterName (name : Name) (named : Ixon.Named) : CompileM Unit :=
+/-- Source ownership follows the source declaration, including a recursor's
+explicit source family. The latter survives evaporation to external content;
+the external target's source identity is never consulted. -/
+def auxSourceRefs (ci : Ix.ConstantInfo) : Std.HashSet Name :=
+  let refs := Ix.Compile.Canon.refsConst ci
+  match ci with
+  | .recInfo r => r.all.foldl (fun acc n => acc.insert n) refs
+  | _ => refs
+
+/-- Check only forward provenance from the claimed input name. Names absent
+from the source are new generated declarations. `sourceCount` bounds the
+explicit source domain, including a streaming caller's name table. -/
+def sourceClaimOwned (env : Ix.Environment) (owners : Std.HashSet Name)
+    (name : Name) (sourceCount : Nat) : Except String Bool := Id.run do
+  if (env.get? name).isNone then return .ok true
+  let mut pending := [name]
+  let mut seen : Std.HashSet Name := ({} : Std.HashSet Name).insert name
+  for _ in [:sourceCount + 1] do
+    let n :: rest := pending | return .ok false
+    pending := rest
+    if owners.contains n then return .ok true
+    let some ci := env.get? n | continue
+    let refs := auxSourceRefs ci
+    if refs.toList.any owners.contains then return .ok true
+    for r in refs do
+      if !seen.contains r && (env.get? r).isSome then
+        seen := seen.insert r
+        pending := r :: pending
+  if pending.isEmpty then return .ok false
+  return .error "auxiliary source ownership walk exceeded the explicit source domain"
+
+/-- Reject a source-name claim unrelated to this input block before
+arrival order or an existing content-address alias can influence it. -/
+def checkAuxSourceClaim (name : Name) : CompileM Unit := do
+  let cenv ← getCompileEnv
+  let source := { cenv.env with overlay := {} }
+  let owners : Std.HashSet Name := (← Ix.CompileM.getBlockEnv).all.fold (init := {}) fun owners n =>
+    match source.get? n with
+    | some (.inductInfo _) => owners.insert n
+    | _ => owners
+  if owners.isEmpty then return
+  match sourceClaimOwned source owners name (source.consts.size + cenv.nameByHash.size) with
+  | .ok true => return
+  | .ok false => throw (.invalidMutualBlock
+      s!"auxiliary claim for source name '{name.pretty}' has no forward provenance to the claiming block")
+  | .error reason => throw (.invalidMutualBlock reason)
+
+/-- Register a checked source-owned auxiliary name in the block result. -/
+def auxRegisterName (name : Name) (named : Ixon.Named) : CompileM Unit := do
+  checkAuxSourceClaim name
   modifyBlockState fun st =>
     { st with auxNamed := st.auxNamed.push (name, named) }
 
@@ -143,6 +195,13 @@ def nameLastStr? : Name → Option String
   | _ => none
 
 /-! ## compileAuxBlock (mutual.rs:46-414) -/
+
+/-- A7 (D8): the first element of a list, or the named error
+    (`internalIndexError`) in place of `head!`. -/
+private def listHead (xs : List α) (what : String) : CompileM α :=
+  match xs with
+  | x :: _ => pure x
+  | [] => Ix.CompileM.internalIndexError what 0 0
 
 /-- Body of `compile_aux_block_with_rename` (mutual.rs:111-413), run
     against already-cleared block caches (the wrapper handles the fresh
@@ -200,23 +259,25 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
 
   -- Singleton non-inductive aux blocks: standalone `Defn`/`Recr`
   -- Constant instead of `Muts([one])` (mutual.rs:199-247).
-  if mutConsts.size == 1 && !(mutConsts[0]! matches .indc _) then
-    let info : Ixon.ConstantInfo :=
-      match mutConsts[0]! with
-      | .defn d => .defn d
-      | .recr r => .recr r
-      | .indc _ => unreachable!
+  -- A7 (D8): matched on the array itself (no `mutConsts[0]!`, no
+  -- `unreachable!`); the same blocks take the standalone path.
+  let single? : Option Ixon.ConstantInfo := match mutConsts with
+    | #[.defn d] => some (.defn d)
+    | #[.recr r] => some (.recr r)
+    | _ => none
+  if let some info := single? then
     -- `apply_sharing_to_{definition,recursor}_with_limits`
     -- (mutual.rs:208-218): `buildBlockConstant` shares the single
     -- representative's roots ([typ, value] / [typ, rule rhss…]).
     let constant ←
-      liftM (buildBlockConstant info blockRefs blockUnivs : CompileM _)
+      liftM (Ix.CompileM.timedC .sharing
+        (buildBlockConstant info blockRefs blockUnivs) : CompileM _)
     let standaloneAddr := contentAddress constant
     liftM <| show CompileM Unit from do
       auxStoreConst standaloneAddr constant
       -- Register every class member at the standalone address
       -- (mutual.rs:222-233).
-      for cnst in sortedClasses.head! do
+      for cnst in (← listHead sortedClasses "compileAuxBlockCore: first class") do
         let canonN := cnst.name
         let n := resolveName canonN
         let cm := (metaMap.get? canonN).getD .empty
@@ -233,7 +294,8 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
 
   -- Compile the mutual block (mutual.rs:249-256).
   let block ← liftM
-    (buildBlockConstant (.muts mutConsts) blockRefs blockUnivs : CompileM _)
+    (Ix.CompileM.timedC .sharing
+      (buildBlockConstant (.muts mutConsts) blockRefs blockUnivs) : CompileM _)
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
   liftM (auxStoreConst blockAddr block : CompileM _)
@@ -293,7 +355,8 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
 
   -- Register the synthetic Muts named entry (mutual.rs:345-396). Rust
   -- `.expect`s the first class/member (invariant: aux_consts nonempty).
-  let firstNameCanonical := sortedClasses.head!.head!.name
+  let firstNameCanonical := (← listHead (← listHead sortedClasses
+    "compileAuxBlockCore: first class") "compileAuxBlockCore: first member").name
   let firstName := resolveName firstNameCanonical
   -- `muts_all` uses SOURCE names (after rename): kernel ingress resolves
   -- each class's primary name hash against the Named entries registered
@@ -337,15 +400,15 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
   -- Fresh BlockCache: save + clear the cache fields.
   let saved ← liftM (getBlockState : CompileM _)
   liftM (modifyBlockState (fun c => { c with
-    exprCache := {}, univCache := {}, cmpCache := {},
+    exprCache := {}, univCache := {},
     refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
     arena := {} }) : CompileM _)
-  compileAuxBlockCore auxConsts maps nameRename classOrderKey
+  timedK .auxCompile (compileAuxBlockCore auxConsts maps nameRename classOrderKey)
   -- Drop the local cache (restore the caller's cache fields; the aux
   -- registrations and blob/name/hint accumulators persist).
   liftM (modifyBlockState (fun c => { c with
     exprCache := saved.exprCache, univCache := saved.univCache,
-    cmpCache := saved.cmpCache, refs := saved.refs,
+    refs := saved.refs,
     refsIndex := saved.refsIndex, univs := saved.univs,
     univsIndex := saved.univsIndex, arena := saved.arena }) : CompileM _)
 
@@ -357,6 +420,74 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
 def compileAuxBlock (auxConsts : Array MutConst) (maps : AddrMaps)
     : KBridgeM Unit :=
   compileAuxBlockWithRename auxConsts maps none none
+
+/-- The names a `MutConst` refers to (types, values, constructor types,
+    rule right-hand sides), by the reference graph's rule
+    (`Canon.refsExpr`). Mirrors Rust `mut_const_references`. -/
+def mutConstReferences : MutConst → Std.HashSet Name
+  | .defn d => Ix.Compile.Canon.refsExpr d.value (Ix.Compile.Canon.refsExpr d.type)
+  | .recr r => r.rules.foldl (init := Ix.Compile.Canon.refsExpr r.cnst.type)
+      fun acc rule => Ix.Compile.Canon.refsExpr rule.rhs (acc.insert rule.ctor)
+  | .indc i => i.ctors.foldl (init := Ix.Compile.Canon.refsExpr i.type)
+      fun acc c => Ix.Compile.Canon.refsExpr c.cnst.type (acc.insert c.cnst.name)
+
+/-- The strongly connected components of a set of auxiliaries under their
+    references to one another, in dependency order (a component comes
+    after every component it refers to; ties by least member name).
+
+    D6, one constant per auxiliary: a component of one member is compiled
+    as a standalone constant, and only a genuine cycle is packed into a
+    block. Lean declares every `casesOn`, `recOn`, `below` definition and
+    `brecOn`/`.go`/`.eq` as its own non-mutual definition, so their
+    components are singletons. Mirrors Rust `aux_components`. -/
+def auxComponents (consts : Array MutConst) : Except String (Array (Array MutConst)) := do
+  let names := consts.map (·.name)
+  let nameSet : Std.HashSet Name := names.foldl (·.insert ·) {}
+  let refsOf : Std.HashMap Name (Std.HashSet Name) := consts.foldl (init := {}) fun m c =>
+    m.insert c.name ((mutConstReferences c).filter fun n => nameSet.contains n && n != c.name)
+  let some comps := Ix.Compile.Canon.sccsOf names (fun n => refsOf.getD n {})
+    | throw "auxComponents: Tarjan fuel exhausted"
+  let compOf : Std.HashMap Name Nat := comps.zipIdx.foldl (init := {}) fun m (c, i) =>
+    c.foldl (fun m n => m.insert n i) m
+  let deps : Array (Std.HashSet Nat) := comps.zipIdx.map fun (c, i) =>
+    c.foldl (init := {}) fun s n =>
+      (refsOf.getD n {}).fold (init := s) fun s r =>
+        match compOf.get? r with
+        | some j => if j != i then s.insert j else s
+        | none => s
+  let label (comp : Array Name) : String :=
+    (comp.map (·.pretty)).foldl (init := "") fun acc s =>
+      if acc.isEmpty || s < acc then s else acc
+  -- A7 (D8): each pending entry carries its component and dependencies, so
+  -- no access is by index (same order: the same comparisons on the same
+  -- initial sequence).
+  let mut pending : Array (Nat × Array Name × Std.HashSet Nat) :=
+    ((comps.zip deps).zipIdx.map fun ((c, d), i) => (i, c, d)).qsort
+      (fun a b => label a.2.1 < label b.2.1)
+  let mut done : Std.HashSet Nat := {}
+  let mut out : Array (Array MutConst) := #[]
+  for _ in [0:comps.size] do
+    let some pos := pending.findIdx? fun (_, _, d) => d.toList.all done.contains
+      | throw "auxComponents: no component has all dependencies ready"
+    let some (i, comp, _) := pending[pos]?
+      | throw "auxComponents: no pending component left"
+    pending := pending.eraseIdxIfInBounds pos
+    done := done.insert i
+    let members : Std.HashSet Name := comp.foldl (·.insert ·) {}
+    out := out.push (consts.filter fun c => members.contains c.name)
+  return out
+
+/-- Compile a batch of auxiliaries one strongly connected component at a
+    time (`auxComponents`): each singleton component becomes a standalone
+    constant, a genuine cycle one block. Mirrors Rust
+    `compile_aux_components`. -/
+def compileAuxComponents (auxConsts : Array MutConst) (maps : AddrMaps)
+    (nameRename : Option (Std.HashMap Name Name)) : KBridgeM Unit := do
+  let comps ← match auxComponents auxConsts with
+    | .ok cs => pure cs
+    | .error e => liftM (throw (.invalidMutualBlock e) : CompileM _)
+  for comp in comps do
+    compileAuxBlockWithRename comp maps nameRename none
 
 /-! ## Alias registration (mutual.rs:420) -/
 
@@ -379,6 +510,7 @@ def registerAuxAliases (aliases : Std.HashMap Name Name) (ctx : String)
   for (source, target) in entries do
     if source == target then
       continue
+    checkAuxSourceClaim source
 
     let some targetAddr ← resolveAddr? target
       | throw (.invalidMutualBlock
@@ -395,10 +527,14 @@ has not been compiled")
 via '{target.pretty}' (registering block/phase: {ctx})")
       -- Consistent — skip (Rust `continue`).
     | none =>
-      -- Clone the target's Named, overriding the address
-      -- (mutual.rs:465-471).
+      -- Canonical metadata is shared, source provenance is not. The
+      -- target may already have been promoted: its `original` belongs to
+      -- another Lean declaration. This source gets its own original only
+      -- when its source block is promoted. Generated `_ix` display aliases
+      -- have no independent Lean source original. Borrowing the target's
+      -- original here made their metadata depend on promotion order (D11).
       let targetNamed := (← lookupNamed? target).getD { addr := targetAddr }
-      let aliasNamed := { targetNamed with addr := targetAddr }
+      let aliasNamed := { targetNamed with addr := targetAddr, original := none }
       compileName source
       auxRegisterName source aliasNamed
       auxInsertNameToAddr source targetAddr
@@ -514,6 +650,7 @@ def brecOnToMutConst (d : BRecOnDef) : MutConst :=
     instead of at its Rust source position after it; no semantic
     difference.) -/
 def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
+    (privateHelpers : Bool := false)
     : KBridgeM Unit := do
   -- Overlay with just the .below inductives + ctors (mutual.rs:1063-1077).
   let mut overlay : Std.HashMap Name ConstantInfo := {}
@@ -552,6 +689,11 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)
+  -- Pass 3 (a driver-prepared environment): the family's canonical recursors, the image
+  -- generator's input if the family is permuted (A3V-IPB,
+  -- `Ix.Compile.Pass.editPermutedBelowFamily`).
+  if (← liftM (getCompileEnv : CompileM _)).pass3 then
+    liftM (modifyBlockState fun st => { st with p3BelowRecs := st.p3BelowRecs ++ recs } : CompileM _)
 
   if !belowRecs.isEmpty then
     -- The below-rec block's storage order must align with the below
@@ -573,13 +715,9 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
       (keyMap.get? c.name).getD u64Max
     compileAuxBlockWithRename belowRecs maps none (some classOrderKey)
 
-  -- Regenerate `.below.casesOn` against the canonical below-recs
-  -- (mirrors mutual.rs `compile_below_recursors`). Lean authors
-  -- `X.below.casesOn` with motives in LEAN's member order; the recs
-  -- above carry the canonical motive layout, so the Lean-authored
-  -- wrapper is ill-typed in the compiled env. Regenerate from the
-  -- canonical rec and register here so the ordinary compile of the
-  -- Lean value is skipped.
+  -- Generate the canonical below family's own casesOn wrappers. In compiler
+  -- mode the below identities are already private; the source below family
+  -- and its wrappers compile separately from their actual declarations.
   --
   -- Per family, not per name (as `generateAuxPatches` decides every other
   -- aux block; mutual.rs `compile_below_recursors`): if Lean exported any
@@ -587,15 +725,15 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   let belowCasesName? (recName : Name) : Option Name := match recName with
     | .str parent "rec" _ => some (Name.mkStr parent "casesOn")
     | _ => none
-  let mut emitBelowCases := false
-  for (recName, _) in recs do
+  let mut emitBelowCases := privateHelpers
+  for (recName, _) in (if privateHelpers then #[] else recs) do
     if let some n := belowCasesName? recName then
       if (← liftM (lookupConst? n : CompileM _)).isSome then
         emitBelowCases := true
   -- A collapsed class's non-representative `.below.casesOn` aliases the
   -- representative's, so any member of a `.below` block Lean declared
   -- counts.
-  for c in belowIndcs do
+  for c in (if privateHelpers then #[] else belowIndcs) do
     if let some (.inductInfo v) ← liftM (lookupConst? c.name : CompileM _) then
       for m in v.all do
         if (← liftM (lookupConst? (Name.mkStr m "casesOn") : CompileM _)).isSome then
@@ -604,8 +742,13 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
   for (recName, recVal) in recs do
     if let some casesOnName := belowCasesName? recName then
       if emitBelowCases then
-        if let some d ←
-            liftM (generateCasesOn casesOnName recVal : CompileM _) then
+        let generate : CompileM (Option AuxDef) :=
+          if !privateHelpers then generateCasesOn casesOnName recVal else
+            withReader (fun (cenv, benv) =>
+            ({ cenv with env := { cenv.env with
+                overlay := overlay.fold (fun m n ci => m.insert n ci) cenv.env.overlay } }, benv))
+            (generateCasesOn casesOnName recVal)
+        if let some d ← liftM generate then
           belowCases := belowCases.push (.defn {
             name := d.name
             levelParams := d.levelParams
@@ -616,7 +759,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
             safety := defSafety d.isUnsafe
             all := #[] })
   if !belowCases.isEmpty then
-    compileAuxBlock belowCases maps
+    compileAuxComponents belowCases maps none
 
 /-! ## generateAndCompileAuxRecursors (mutual.rs:511) -/
 
@@ -675,15 +818,23 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
 
   -- Phase 1: Generate patches (mutual.rs:572-587). Errors propagate —
   -- they indicate an aux_gen bug, not a user error.
-  let auxOut ← generateAuxPatches auxClassNames sourceAll maps
+  let auxOut ← generateAuxPatches auxClassNames sourceAll maps (privateHelpers := true)
   let patches := auxOut.patches
   if patches.isEmpty then
     return none
+  -- Pass 3 (a driver-prepared environment): the canonical recursors are the image
+  -- generator's input (`Ix.Compile.Pass.ImageView`).
+  if (← liftM (getCompileEnv : CompileM _)).pass3 then
+    let recs := patches.fold (init := #[]) fun acc n p =>
+      match p with
+      | .recr r => acc.push (n, r)
+      | _ => acc
+    liftM (modifyBlockState fun st => { st with p3AuxRecs := st.p3AuxRecs ++ recs } : CompileM _)
 
   -- Record the nested-aux permutation + per-source ctor counts
-  -- (mutual.rs:590-643). Fail closed on missing ctor metadata: silently
-  -- dropping `perm` would make call-site surgery fall back to identity
-  -- exactly for the cases that need the permutation.
+  -- (mutual.rs:590-643). Fail closed on missing ctor metadata: the layout
+  -- (stored in the block's `Muts` entry) is what Pass 3's view and the
+  -- decompiler read the nested permutation from.
   let originalAll : Array Name := sourceAll
   let mut auxLayout : Option Ixon.AuxLayout := none
   if !originalAll.isEmpty then
@@ -703,9 +854,8 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
             s!"aux layout mismatch: {sourceCtorCounts.size} source aux \
 ctor counts for {perm.size} permutation entries")
         -- Fail closed if the evaporation flags don't line up with the
-        -- perm — surgery keys head-rewrite plans off them, so a silent
-        -- mismatch would desynchronize aliases and call-site rewrites
-        -- (mutual.rs evaporated threading).
+        -- perm: the aliases of evaporated positions and Pass 3's view
+        -- read them together (mutual.rs evaporated threading).
         let evaporated : Array UInt64 ← match auxOut.evaporated with
           | some flags =>
             if flags.size == perm.size then
@@ -753,12 +903,13 @@ for {perm.size} permutation entries")
           Array.replicate nCanon PERM_OUT_OF_SCC
         for (canonI, srcJ) in perm.zipIdx do
           if canonI < nCanon
-              && sourceOfCanonical[canonI]! == PERM_OUT_OF_SCC then
-            sourceOfCanonical := sourceOfCanonical.set! canonI srcJ
+              && sourceOfCanonical[canonI]? == some PERM_OUT_OF_SCC then
+            sourceOfCanonical ← arrSet sourceOfCanonical canonI srcJ
+              "generateAndCompileAuxRecursors: canonical source slot"
         for (sourceJ, canonicalI) in sourceOfCanonical.zipIdx do
           if sourceJ != PERM_OUT_OF_SCC then
             let auxRecName :=
-              Name.mkStr originalAll[0]! s!"rec_{sourceJ + 1}"
+              Name.mkStr (← arrIdx originalAll 0 "generateAndCompileAuxRecursors: Lean all0") s!"rec_{sourceJ + 1}"
             nameToPos := nameToPos.insert auxRecName
               (UInt64.ofNat (nOriginalsInBlock + canonicalI))
     let keyMap := nameToPos
@@ -769,8 +920,8 @@ for {perm.size} permutation entries")
     -- rec patches: a pre-existing DIFFERENT address means two blocks
     -- claimed one name — registration is last-writer-wins, so without
     -- this check the disagreement ships silently as schedule-dependent
-    -- content (mutual.rs pre_claims;
-    -- plans/aux-recursor-alias-collision.md §2.4). Same-address
+    -- content (the matching `pre_claims` check is in
+    -- `crates/compile/src/compile/mutual.rs`). Same-address
     -- re-registration (content-addressed idempotence) is fine.
     let mut preClaims : Array (Name × Option Address) := #[]
     for c in recConsts do
@@ -814,7 +965,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !casesOnDefs.isEmpty then
-    compileAuxBlock casesOnDefs maps
+    compileAuxComponents casesOnDefs maps none
 
   -- Phase 2c: Compile .recOn definitions (arg-reordered .rec wrapper),
   -- after .rec (mutual.rs:761-783).
@@ -833,7 +984,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !recOnDefs.isEmpty then
-    compileAuxBlock recOnDefs maps
+    compileAuxComponents recOnDefs maps none
 
   -- Phase 3: Compile .below inductives (Prop-level); all .below names
   -- first for the mutual `all` field (mutual.rs:784-816).
@@ -861,19 +1012,9 @@ source-indexed aux name")
     if belowRaw.size ≤ 1 then pure belowRaw else do
       let prelimNames := belowRaw.map (·.name)
       let prelim := belowRaw.map (belowIndcToMutConst · prelimNames)
-      -- Fresh-cache sort, mirroring Rust's `BlockCache::default()`
-      -- (same save/clear/restore as compileAuxBlockWithRename).
-      let saved ← liftM (getBlockState : CompileM _)
-      liftM (modifyBlockState (fun c => { c with
-        exprCache := {}, univCache := {}, cmpCache := {},
-        refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
-        arena := {} }) : CompileM _)
+      -- `sortConsts` is pure (Pass 1, its comparison cache local to the
+      -- call), so it needs no fresh block cache around it.
       let sorted ← liftM (sortConsts prelim.toList : CompileM _)
-      liftM (modifyBlockState (fun c => { c with
-        exprCache := saved.exprCache, univCache := saved.univCache,
-        cmpCache := saved.cmpCache, refs := saved.refs,
-        refsIndex := saved.refsIndex, univs := saved.univs,
-        univsIndex := saved.univsIndex, arena := saved.arena }) : CompileM _)
       let canonical : Array Name :=
         sorted.toArray.flatMap fun cls => (cls.map (·.name)).toArray
       pure <| belowRaw.qsort fun a b =>
@@ -906,12 +1047,12 @@ source-indexed aux name")
           all := #[] })
     return out
   if !belowDefs.isEmpty then
-    compileAuxBlockWithRename belowDefs maps (some auxNameRename) none
+    compileAuxComponents belowDefs maps (some auxNameRename)
 
   -- Phase 5: Compile .below.rec for Prop-level .below inductives
   -- (mutual.rs:847-852).
   if !belowIndcs.isEmpty then
-    compileBelowRecursors belowIndcs maps
+    compileBelowRecursors belowIndcs maps (privateHelpers := true)
 
   -- Phase 6: Compile .brecOn in 3 batches: .go, main, .eq
   -- (mutual.rs:854-877).
@@ -924,37 +1065,33 @@ source-indexed aux name")
             out := out.push (brecOnToMutConst d)
       return out
     if !defs.isEmpty then
-      compileAuxBlockWithRename defs maps (some auxNameRename) none
+      compileAuxComponents defs maps (some auxNameRename)
 
   liftM (registerAuxAliases auxOut.aliases
     s!"{blockLabel}/final" : CompileM _)
 
-  -- Note: `.noConfusion`, `.noConfusionType`, `.ctorIdx`, `.ctor.inj*`,
-  -- `._sizeOf_*`, etc. are NOT regenerated: their bodies only invoke
-  -- `.casesOn` (never `.rec`), whose public binder arity is invariant
-  -- under alpha collapse — the original Lean values compile to correct
-  -- Ixon as-is (mutual.rs:881-889).
+  -- Derived helpers are private generated support. Every source definition,
+  -- including a user-defined auxiliary-looking name, compiles from its own
+  -- body. Pass 3 rewrites source references where the inductive layout changed.
 
   -- Rust's IX_TIMING report (mutual.rs:891-906) is not ported.
   return auxLayout
 
 /-- The aux tail of `compile_mutual` (compile.rs:3986-4144): register the
-    primary block's synthetic `Muts` named entry, run the aux pipeline,
-    re-register the entry with the returned `AuxLayout`, and compute
-    call-site surgery plans. Returns `(auxLayout, plans, brecOnPlans,
-    belowPlans)` — the driver stores them (next milestone); the plans gate
-    dumps them. Lives here rather than in `Ix.CompileM.compileMutualBlock`
-    because CompileM cannot import AuxGen (dependency direction). -/
+    primary block's synthetic `Muts` named entry, run the aux pipeline, and
+    re-register the entry with the returned `AuxLayout`. Returns the layout.
+    (Until M6R slice 6 it also computed the legacy call-site surgery's plans
+    for a changed block; Pass 3 rewrites the callers instead.) Lives here
+    rather than in `Ix.CompileM.compileMutualBlock` because CompileM cannot
+    import AuxGen (dependency direction). -/
 def compileMutualAuxTail (cs : Array MutConst)
     (sortedClasses : List (List MutConst)) (blockAddr : Address)
     (maps : AddrMaps)
-    : KBridgeM (Option Ixon.AuxLayout
-        × Std.HashMap Name CallSitePlan
-        × Std.HashMap Name BRecOnCallSitePlan
-        × Std.HashMap Name BRecOnCallSitePlan) := do
+    : KBridgeM (Option Ixon.AuxLayout) := do
   -- Primary `Muts` named entry (compile.rs:3986-4013); registered on the
   -- aux path only — the no-aux promotion pass reuses these entries.
-  let firstName := sortedClasses.head!.head!.name
+  let firstName := (← listHead (← listHead sortedClasses
+    "compileMutualAuxTail: first class") "compileMutualAuxTail: first member").name
   let mutsAll : Array (Array Address) := sortedClasses.toArray.map fun cls =>
     cls.toArray.map fun c => c.name.getHash
   let mutsName := blockAddr.mutsName firstName
@@ -969,24 +1106,6 @@ def compileMutualAuxTail (cs : Array MutConst)
     sortedClasses.toArray.map fun cls => cls.toArray.map (·.name)
   let auxLayout ← generateAndCompileAuxRecursors cs classNames maps
 
-  -- Original inductive `all` + the plan class filtering (compile.rs:4031-4056).
-  let originalAll : Array Name := Id.run do
-    for c in cs do
-      if let .indc ind := c then
-        return ind.all
-    return #[]
-  let planClassNames : Array (Array Name) :=
-    if originalAll.isEmpty then #[]
-    else Id.run do
-      let lookup : Std.HashSet Name :=
-        originalAll.foldl (init := {}) (·.insert ·)
-      let mut out : Array (Array Name) := #[]
-      for cls in classNames do
-        let names := cls.filter lookup.contains
-        if !names.isEmpty then
-          out := out.push names
-      return out
-
   -- Patch the Muts entry with the layout (compile.rs:4058-4094; the
   -- re-registration overrides — `auxNamed` keeps later entries last).
   if let some layout := auxLayout then
@@ -995,102 +1114,6 @@ def compileMutualAuxTail (cs : Array MutConst)
         { addr := blockAddr
           constMeta := Ixon.ConstantMeta.new (.muts mutsAll (some layout)) }
 
-  -- Change detection (compile.rs:4096-4108).
-  let userLayoutChanged : Bool := !originalAll.isEmpty
-    && (planClassNames.size < originalAll.size
-      || (planClassNames.size == originalAll.size
-        && (planClassNames.zip originalAll).any
-            (fun (cls, orig) => cls[0]! != orig)))
-  let auxLayoutChanged : Bool := match auxLayout with
-    | some layout =>
-      -- Evaporated positions need their head-rewrite plans even when no
-      -- canonical slot moved (all-OUT perms). Keep this predicate
-      -- identical to Rust `compile_mutual` and the decompile dual.
-      layout.evaporated.any (· != 0)
-        || layout.perm.zipIdx.any fun (canonicalI, sourceJ) =>
-          canonicalI.toNat != PERM_OUT_OF_SCC && canonicalI.toNat != sourceJ
-    | none => false
-
-  let mut plans : Std.HashMap Name CallSitePlan := {}
-  let mut brecPlans : Std.HashMap Name BRecOnCallSitePlan := {}
-  let mut belowPlans : Std.HashMap Name BRecOnCallSitePlan := {}
-  if userLayoutChanged || auxLayoutChanged then
-    plans ← liftM
-      (computeCallSitePlans planClassNames originalAll auxLayout : CompileM _)
-    -- Plan keys (`X.rec`, `all0.rec_N`, …) are shared across every SCC
-    -- split from one original mutual, and the driver's merge is
-    -- last-writer-wins. With per-position ownership resolved in aux_gen
-    -- exactly one block computes each name's plan, so a differing plan
-    -- already merged from an earlier block is a claim collision — fail
-    -- loudly instead of shipping schedule-dependent rewrites
-    -- (compile.rs checked plan inserts;
-    -- plans/aux-recursor-alias-collision.md §2.4).
-    let cenvGlobal ← liftM (getCompileEnv : CompileM _)
-    -- Head-rewritten (evaporated-aux) recursors get NO derived
-    -- brecOn/below plans (compile.rs:4117-4140).
-    for (name, plan) in plans do
-      if let some existing := cenvGlobal.callSitePlans.get? name then
-        if existing != plan then
-          throw (.invalidMutualBlock
-            s!"conflicting call-site plans for '{name.pretty}' — two \
-blocks claim one source-indexed aux name")
-      if plan.headRewrite.isNone then
-        if let some breconName := recNameToBreconName name then
-          -- Mirror compile.rs: Type-level `.brecOn.go` / `.brecOn.eq`
-          -- share `.brecOn`'s telescope and are referenced directly by
-          -- equation-lemma proofs, so they carry the same plan keys. Keyed
-          -- per name present, not gated on `.brecOn` itself: a closure can
-          -- hold `X.brecOn.go` without `X.brecOn`.
-          let mut planKeys : Array Name := #[]
-          for key in [breconName, Name.mkStr breconName "go",
-              Name.mkStr breconName "eq"] do
-            if (← liftM (lookupConst? key : CompileM _)).isSome then
-              planKeys := planKeys.push key
-          if !planKeys.isEmpty then
-            let newPlan := BRecOnCallSitePlan.fromRecPlan plan
-            for key in planKeys do
-              if let some existing :=
-                  cenvGlobal.brecOnCallSitePlans.get? key then
-                if existing != newPlan then
-                  throw (.invalidMutualBlock
-                    s!"conflicting brecOn call-site plans for \
-'{key.pretty}' — two blocks claim one source-indexed aux name")
-              brecPlans := brecPlans.insert key newPlan
-        if let some belowName := recNameToBelowName name then
-          if let some belowCi ← liftM (lookupConst? belowName : CompileM _) then
-            let newPlan := BRecOnCallSitePlan.fromRecPlan plan
-            if let some existing :=
-                cenvGlobal.belowCallSitePlans.get? belowName then
-              if existing != newPlan then
-                throw (.invalidMutualBlock
-                  s!"conflicting below call-site plans for \
-'{belowName.pretty}' — two blocks claim one source-indexed aux name")
-            -- Prop-level (IndPredBelow) `.below` is an INDUCTIVE, so user
-            -- code can also reference its constructors and its `.casesOn`
-            -- wrapper — both start with the below params (parent params +
-            -- parent motives) and need the same motive permutation.
-            -- Registered under their own names in the same map; the apply
-            -- site discriminates the telescope shape via
-            -- `belowPlanKeyIsHead` (compile.rs family registration).
-            -- `X.below.rec` is deliberately not registered (only
-            -- regenerated wrappers reference it, and those skip surgery
-            -- via the aux-regen guard).
-            let mut familyNames : Array Name := #[]
-            if let .inductInfo bv := belowCi then
-              familyNames := bv.ctors
-              let casesName := Name.mkStr belowName "casesOn"
-              if (← liftM (lookupConst? casesName : CompileM _)).isSome then
-                familyNames := familyNames.push casesName
-            for member in familyNames do
-              if let some existing :=
-                  cenvGlobal.belowCallSitePlans.get? member then
-                if existing != newPlan then
-                  throw (.invalidMutualBlock
-                    s!"conflicting below call-site plans for \
-'{member.pretty}' — two blocks claim one source-indexed aux name")
-              belowPlans := belowPlans.insert member newPlan
-            belowPlans := belowPlans.insert belowName newPlan
-
-  return (auxLayout, plans, brecPlans, belowPlans)
+  return auxLayout
 
 end Ix.AuxGen

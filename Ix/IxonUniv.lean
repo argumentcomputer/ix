@@ -51,8 +51,8 @@ abbrev CPath := List UInt64
     sorted by ascending idx. Normalizer invariant: every var's idx is a
     member of its own path (self-gating is free). -/
 structure CNode where
-  constant : UInt64 := 0
-  vars : Array (UInt64 × UInt64) := #[]
+  constant : Nat := 0
+  vars : Array (UInt64 × Nat) := #[]
   deriving BEq, Repr, Inhabited
 
 def CNode.isEmpty (n : CNode) : Bool :=
@@ -66,7 +66,7 @@ instance : Inhabited CNorm := ⟨.empty⟩
 /-- Insert `(idx, k)` into the sorted var list, max-merging offsets.
     `k` must be the current succ-accumulator (`Ix/Tc/Level.lean:249-252`
     — dropping it is the classic port bug). -/
-def CNode.addVar (n : CNode) (idx k : UInt64) : CNode :=
+def CNode.addVar (n : CNode) (idx : UInt64) (k : Nat) : CNode :=
   match n.vars.findIdx? (fun v => idx ≤ v.1) with
   | some p =>
     let v := n.vars[p]!
@@ -76,10 +76,10 @@ def CNode.addVar (n : CNode) (idx k : UInt64) : CNode :=
       { n with vars := n.vars.insertIdx! p (idx, k) }
   | none => { n with vars := n.vars.push (idx, k) }
 
-def CNorm.addVar (s : CNorm) (idx k : UInt64) (path : CPath) : CNorm :=
+def CNorm.addVar (s : CNorm) (idx : UInt64) (k : Nat) (path : CPath) : CNorm :=
   s.insert path ((s.findD path {}).addVar idx k)
 
-def CNorm.addConst (s : CNorm) (k : UInt64) (path : CPath) : CNorm :=
+def CNorm.addConst (s : CNorm) (k : Nat) (path : CPath) : CNorm :=
   if k == 0 || (k == 1 && !path.isEmpty) then s
   else
     let n := s.findD path {}
@@ -93,6 +93,29 @@ def orderedInsert (a : UInt64) : CPath → Option CPath
     else if a == x then none
     else (x :: ·) <$> orderedInsert a xs
 
+/-- The normalizer's state: the canonical form being built, and the calls
+    already made. Every contribution of `normalizeAux` and
+    `normalizeImaxDispatch` is a max-merge into one entry of the form
+    (`addConst`, `addVar`), so a call adds the same contributions whatever
+    the form it starts from, and a call made a second time adds nothing: the
+    sets skip repeated calls, and the result is the form the calls without
+    the sets build. The `imax` distributions (`normalizeImaxMax`,
+    `normalizeImaxImax`) repeat calls: on a chain `imax a (imax a (… (imax a
+    u)))`, one `imax` per binder as `Meta.getLevel` returns for a long `∀`,
+    the calls without the sets are `2ⁿ` (FU item 10:
+    `Lean.Meta.Grind.Arith.Cutsat.EqCnstr.brecOn`'s type did not finish in
+    300 s), with them `O(n²)`. -/
+structure NState where
+  acc : CNorm
+  seenAux : Std.HashSet (Univ × CPath × Nat) := {}
+  seenDispatch : Std.HashSet (Univ × Univ × CPath × Nat) := {}
+
+def NState.addConst (st : NState) (k : Nat) (path : CPath) : NState :=
+  { st with acc := st.acc.addConst k path }
+
+def NState.addVar (st : NState) (idx : UInt64) (k : Nat) (path : CPath) : NState :=
+  { st with acc := st.acc.addVar idx k path }
+
 /-!
 Termination mirrors `Ix/Tc/Level.lean:289-296`: the measure is
 `3·Σ Univ.size + {0,1,2}` ordering the equal-size hops between the
@@ -102,39 +125,27 @@ mutual
 
 /-- Flatten a level into canonical form (`Ix.Tc.Level.normalizeAux` on
     `Ixon.Univ`). `path` is the imax-conditioning chain, `k` the
-    accumulated succ offset. -/
-def normalizeAux (l : Univ) (path : CPath) (k : UInt64) (acc : CNorm) :
-    CNorm :=
+    accumulated succ offset; a call already made is skipped (`NState`). -/
+def normalizeAux (l : Univ) (path : CPath) (k : Nat) (st : NState) :
+    NState :=
+  if st.seenAux.contains (l, path, k) then st else
+  let st := { st with seenAux := st.seenAux.insert (l, path, k) }
   match l with
-  | .zero => acc.addConst k path
-  | .succ inner => normalizeAux inner path (k + 1) acc
-  | .max a b => normalizeAux b path k (normalizeAux a path k acc)
-  | .imax u b =>
-    match b with
-    | .zero => acc.addConst k path
-    | .succ v => normalizeAux v path (k + 1) (normalizeAux u path k acc)
-    | .max v w => normalizeImaxMax u v w path k acc
-    | .imax v w => normalizeImaxImax u v w path k acc
-    | .var idx =>
-      match orderedInsert idx path with
-      | some newPath =>
-        let acc := acc.addConst k path
-        let acc := acc.addVar idx k newPath
-        normalizeAux u newPath k acc
-      | none =>
-        let acc := if k != 0 then acc.addVar idx k path else acc
-        normalizeAux u path k acc
+  | .zero => st.addConst k path
+  | .succ inner => normalizeAux inner path (k + 1) st
+  | .max a b => normalizeAux b path k (normalizeAux a path k st)
+  | .imax u b => normalizeImaxDispatch u b path k st
   | .var idx =>
     match orderedInsert idx path with
-    | some newPath => ((acc.addConst k path).addVar idx k newPath)
-    | none => if k != 0 then acc.addVar idx k path else acc
+    | some newPath => ((st.addConst k path).addVar idx k newPath)
+    | none => if k != 0 then st.addVar idx k path else st
 termination_by 3 * l.size
 decreasing_by all_goals simp [Univ.size] <;> omega
 
 /-- `imax(u, max(v, w)) = max(imax(u, v), imax(u, w))`. -/
-def normalizeImaxMax (u v w : Univ) (path : CPath) (k : UInt64)
-    (acc : CNorm) : CNorm :=
-  normalizeImaxDispatch u w path k (normalizeImaxDispatch u v path k acc)
+def normalizeImaxMax (u v w : Univ) (path : CPath) (k : Nat)
+    (st : NState) : NState :=
+  normalizeImaxDispatch u w path k (normalizeImaxDispatch u v path k st)
 termination_by 3 * (u.size + v.size + w.size) + 1
 decreasing_by
   all_goals have hv := Univ.size_pos v
@@ -142,32 +153,35 @@ decreasing_by
   all_goals omega
 
 /-- `imax(u, imax(v, w)) = max(imax(u, w), imax(v, w))`. -/
-def normalizeImaxImax (u v w : Univ) (path : CPath) (k : UInt64)
-    (acc : CNorm) : CNorm :=
-  normalizeImaxDispatch v w path k (normalizeImaxDispatch u w path k acc)
+def normalizeImaxImax (u v w : Univ) (path : CPath) (k : Nat)
+    (st : NState) : NState :=
+  normalizeImaxDispatch v w path k (normalizeImaxDispatch u w path k st)
 termination_by 3 * (u.size + v.size + w.size) + 1
 decreasing_by
   all_goals have hu := Univ.size_pos u
   all_goals have hv := Univ.size_pos v
   all_goals omega
 
-/-- Dispatch `imax(a, b)` on `b`'s shape. -/
-def normalizeImaxDispatch (a b : Univ) (path : CPath) (k : UInt64)
-    (acc : CNorm) : CNorm :=
+/-- Dispatch `imax(a, b)` on `b`'s shape; a call already made is skipped
+    (`NState`). -/
+def normalizeImaxDispatch (a b : Univ) (path : CPath) (k : Nat)
+    (st : NState) : NState :=
+  if st.seenDispatch.contains (a, b, path, k) then st else
+  let st := { st with seenDispatch := st.seenDispatch.insert (a, b, path, k) }
   match b with
-  | .zero => acc.addConst k path
-  | .succ v => normalizeAux v path (k + 1) (normalizeAux a path k acc)
-  | .max v w => normalizeImaxMax a v w path k acc
-  | .imax v w => normalizeImaxImax a v w path k acc
+  | .zero => st.addConst k path
+  | .succ v => normalizeAux v path (k + 1) (normalizeAux a path k st)
+  | .max v w => normalizeImaxMax a v w path k st
+  | .imax v w => normalizeImaxImax a v w path k st
   | .var idx =>
     match orderedInsert idx path with
     | some newPath =>
-      let acc := acc.addConst k path
-      let acc := acc.addVar idx k newPath
-      normalizeAux a newPath k acc
+      let st := st.addConst k path
+      let st := st.addVar idx k newPath
+      normalizeAux a newPath k st
     | none =>
-      let acc := if k != 0 then acc.addVar idx k path else acc
-      normalizeAux a path k acc
+      let st := if k != 0 then st.addVar idx k path else st
+      normalizeAux a path k st
 termination_by 3 * (a.size + b.size) + 2
 decreasing_by all_goals simp [Univ.size]; omega
 
@@ -184,12 +198,12 @@ def isSubset : CPath → CPath → Bool
 
 /-- Keep only the `xs` entries not dominated by a `ys` entry
     (merge-walk over sorted var lists — `Ix.Tc.Level.subsumeVars`). -/
-def subsumeVars (xs ys : Array (UInt64 × UInt64)) :
-    Array (UInt64 × UInt64) :=
+def subsumeVars (xs ys : Array (UInt64 × Nat)) :
+    Array (UInt64 × Nat) :=
   go 0 0 #[]
 where
-  go (xi yi : Nat) (result : Array (UInt64 × UInt64)) :
-      Array (UInt64 × UInt64) :=
+  go (xi yi : Nat) (result : Array (UInt64 × Nat)) :
+      Array (UInt64 × Nat) :=
     if _hx : xi < xs.size then
       if _hy : yi ≥ ys.size then
         result ++ xs.extract xi xs.size
@@ -232,7 +246,7 @@ def subsumption (acc : CNorm) : CNorm := Id.run do
 
 /-- Normalize a stored level to Géran's canonical form. -/
 def normalize (u : Univ) : CNorm :=
-  subsumption (normalizeAux u [] 0 ((∅ : CNorm).insert [] {}))
+  subsumption (normalizeAux u [] 0 { acc := (∅ : CNorm).insert [] {} }).acc
 
 /-- Canonical-form equality modulo EMPTY entries (value-free subsumption
     artifacts; the kernels' `normLevelLe` is already empty-insensitive,
@@ -249,8 +263,8 @@ recovery, marker consumption, emission order). -/
 
 /-- Context-group accumulator. -/
 structure CGroup where
-  constant : UInt64 := 0
-  atoms : RBTree.RBMap UInt64 UInt64 compare := .empty
+  constant : Nat := 0
+  atoms : RBTree.RBMap UInt64 Nat compare := .empty
   deriving Inhabited
 
 /-- Is a `u_i = 0` fallout of `k` dominated under `ctx`? Some entry at
@@ -258,7 +272,7 @@ structure CGroup where
     constant ≥ k, or a var atom `(q, off)` with `off + 1 ≥ k`. Exact: at
     `u_i = 0`, with the context's params at 1 and every other param at 0,
     the map's value is the best such guarantee. -/
-def covered (norm : CNorm) (k : UInt64) (ctx : CPath) : Bool :=
+def covered (norm : CNorm) (k : Nat) (ctx : CPath) : Bool :=
   k == 0 || norm.toList.any fun (q, n) =>
     q.all (fun x => ctx.contains x)
       && (n.constant ≥ k || n.vars.any (fun v => v.2 + 1 ≥ k))
@@ -348,7 +362,7 @@ def linearize (norm : CNorm) : Univ := Id.run do
     for (i, k) in top.atoms.toList do
       if k == 0 && consumed.contains ([], i) then
         continue
-      terms := terms ++ [Univ.addSuccs (.var i) k.toNat]
+      terms := terms ++ [Univ.addSuccs (.var i) k]
       if k ≥ cRoot then
         rootCAbsorbed := true
   for (ctx, g) in groups.toList do
@@ -358,9 +372,9 @@ def linearize (norm : CNorm) : Univ := Id.run do
     for (i, k) in g.atoms.toList do
       if k == 0 && consumed.contains (ctx, i) then
         continue
-      atoms := atoms ++ [Univ.addSuccs (.var i) k.toNat]
+      atoms := atoms ++ [Univ.addSuccs (.var i) k]
     if g.constant > 0 then
-      atoms := atoms ++ [Univ.addSuccs .zero g.constant.toNat]
+      atoms := atoms ++ [Univ.addSuccs .zero g.constant]
     if atoms.isEmpty then
       continue
     let body := maxChain atoms
@@ -368,7 +382,7 @@ def linearize (norm : CNorm) : Univ := Id.run do
     let term := order.reverse.foldl (fun acc p => Univ.imax acc (.var p)) body
     terms := terms ++ [term]
   if cRoot > 0 && !rootCAbsorbed then
-    terms := terms ++ [Univ.addSuccs .zero cRoot.toNat]
+    terms := terms ++ [Univ.addSuccs .zero cRoot]
   return maxChain terms
 
 end CanonUniv

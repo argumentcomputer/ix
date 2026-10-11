@@ -20,14 +20,18 @@ public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Sharing.Exact
 public import Ix.Common
+public import Ix.PhaseTimers
 public import Ix.Store
 public import Ix.Mutual
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.SOrder
-public import Ix.CallSitePlan
-public import Ix.CallSiteSurgery
+public import Ix.Compile.Canon.Classes
+public import Ix.AuxSource
 public import Ix.CanonM
+public import Ix.Compile.Pass.Names
+public import Ix.Compile.Clique.Plan
+public import Ix.Compile.Pass.ImageView
 
 namespace Ix.CompileM
 public section
@@ -66,27 +70,6 @@ structure CompileEnv where
       blocks (Rust `stt.aux_name_to_addr`; scheduler-visible only after
       the driver merges each block's registrations). -/
   auxNameToAddr : Std.HashMap Name Address := {}
-  /-- Per-auxiliary call-site surgery plans, keyed by the original
-      auxiliary name (Rust `stt.call_site_plans`). Computed per block by
-      `compileMutualAuxTail`; visible to later blocks once the driver
-      merges them. -/
-  callSitePlans : Std.HashMap Name Ix.AuxGen.CallSitePlan := {}
-  /-- Per-`.brecOn` surgery plans (Rust `stt.brec_on_call_site_plans`).
-      Shares the motive permutation with `.rec`, but `.brecOn` places
-      indices+major before the handler binders. -/
-  brecOnCallSitePlans : Std.HashMap Name Ix.AuxGen.BRecOnCallSitePlan := {}
-  /-- Per-`.below`-family surgery plans (Rust
-      `stt.below_call_site_plans`). A `X.below`/`X.below_N` HEAD has the
-      motive-only telescope `params, motives, indices, major`. For
-      Prop-level (IndPredBelow) families the map also carries the rest
-      of the family's user-visible surface under their own names — the
-      `.below` constructors and the `.below.casesOn` wrapper, whose
-      telescopes start with the below inductive's parameters (parent
-      params, then parent motives) and have NO major-premise floor
-      (a field-less below ctor is fully applied at exactly
-      params+motives). The apply site discriminates the two shapes via
-      `Ix.AuxGen.belowPlanKeyIsHead`. -/
-  belowCallSitePlans : Std.HashMap Name Ix.AuxGen.BRecOnCallSitePlan := {}
   /-- Persistent set of names compiled by aux-gen (Rust
       `stt.aux_gen_extra_names`); merged from block tails by the driver
       and consulted by the scheduler's promotion pass. -/
@@ -115,6 +98,106 @@ structure CompileEnv where
       (`compilerSharingLimitsFromEnv`). Limits decide only whether a block
       compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
+  /-- The driver prepared Pass 3's state for this environment (the faithful
+      rewrite, design document §4.5, `Ix.Compile.Pass.Translate`): set by
+      every driver (`compileEnvAux`, `compileEnvParallelAux`, so
+      `ix compile-lean`), since Pass 3 is the only mode (the legacy
+      call-site surgery was deleted at M6R slice 6, 2026-10-07). The field
+      stays `false` in a hand-built environment (the decompile recompiles,
+      `Ix.Commit`, unit tests): such an environment runs none of Pass 3's
+      hooks and compiles single blocks only; the aux tail of a changed block
+      is refused there (`Ix.CompileM.compileBlockWithAux`), since its Lean
+      names would keep Ix auxiliaries no caller is rewritten for. With it
+      off no field below is ever written. -/
+  pass3 : Bool := false
+  /-- Pass 3: each image-kind auxiliary name of a changed Lean block (its
+      recursors, `casesOn`, `recOn` and the Type-level `below`/`brecOn`
+      family) ↦ the block's key (`all₀`). Merged from the block tails. -/
+  p3Heads : Std.HashMap Name Name := {}
+  /-- Pass 3: changed Lean block key ↦ its `all`. -/
+  p3Blocks : Std.HashMap Name (Array Name) := {}
+  /-- Pass 3: the canonical recursors (Pass 2's output) of the changed
+      blocks under aux-gen's names (`rep.rec`, `all₀.rec_j` by source
+      index), the image generator's input. -/
+  p3CanonRecs : Std.HashMap Name RecursorVal := {}
+  /-- Pass 3, set per block by the driver: the source occurrence of each
+      rewritten call site of the block, keyed by the placeholder index the
+      rewrite left in the term (`Ix.Compile.Pass.Translate`). Compiled into
+      `metaSharing` as the decompile record. -/
+  p3Sources : Std.HashMap Nat Expr := {}
+  /-- Pass 3: the input's block reference graph (block key ↦ referenced
+      names), to rewrite only blocks that reference a changed block's
+      auxiliary. -/
+  p3BlockRefs : Std.HashMap Name (Ix.Set Name) := {}
+  /-- Pass 3: the changed-clique table (`Ix.Compile.Pass.scheduleCliques`):
+      every member of an encoded definition clique, and every equation lemma
+      carried with it, ↦ (the clique in Lean's order, the carried lemmas).
+      Decided from the clique and its own unit only (design document §6.3). -/
+  p3Cliques : Std.HashMap Name (Array Name × Array Name) := {}
+  /-- Pass 3: the encoding roots of the clique table (`all₀._mutual`,
+      `all₀.mutual`, `m._f` ↦ the clique), for the callers' check
+      (`Ix.Compile.Pass.cliqueCallers`). -/
+  p3CliqueRoots : Std.HashMap Name (Array Name) := {}
+  /-- Pass 3: the compile's recorded declines (design document §6.3,
+      obligation 4; §7; the output contract, "Records"): constant ↦ cause. A
+      constant is here when O11a declined at the recursion of Lean's `sizeOf`
+      family of a split block (`Opt.O11a.declineCause?`): an instance its
+      output needs is absent from the input, or a side condition failed; it
+      keeps O2's faithful, non-canonical form. **One cause per constant: the
+      last.** A block's declines are `(member, cause)` pairs in the order of
+      its rewrite (`Translate.rewriteBlock`, each pair once), and this map is
+      filled from them by `insert` (`mergeCompiledBlock`), so a constant with
+      two causes keeps the one its rewrite met last (no fixture has two).
+      Merged only from blocks that compile (a failed block publishes
+      nothing); empty in a hand-built environment (`pass3 := false`). -/
+  p3NonCanonical : Std.HashMap Name String := {}
+  /-- Pass 3: the Lean constants whose type, value or rules the call-site
+      rewrite changed (Def 3.6: inline images and the definitional passes
+      O1–O6/O11a), each carrying its `_ix.inline` decompile records. A record
+      for the changed-set record (`Ix.Compile.ChangedSet`); no byte depends
+      on it. Merged from the blocks that compile (`BlockState.p3Rewritten`);
+      empty in a hand-built environment (`pass3 := false`). -/
+  p3Rewritten : Std.HashSet Name := {}
+  /-- Pass 3: the Lean definitions whose canonical form `c._ix` a
+      proof-justified pass (O7–O12) wrote (decision 5, D1) ↦ the passes that
+      fired in its value (`PJ-FORM-<pass>`). A record, like `p3Rewritten`. -/
+  p3PjForms : Std.HashMap Name (Array String) := {}
+  /-- Pass 3: the clique plan table, Lean's first member of a changed
+      clique (`all₀`) ↦ the clique's plan (`Ix.Compile.Pass.planClique`).
+      A memo, not a decision: the plan is a function of the clique, its own
+      logical unit and its dependencies (design document §5.4, §6.3), so
+      every block of the unit computes the same one; the first block that
+      needs it computes it and the driver merges it here
+      (`BlockState.p3CliquePlans`), keeping the first entry of a key. Never
+      read for anything but the plan of that clique; empty with the switch
+      off. -/
+  p3CliquePlans : Std.HashMap Name Ix.Compile.Pass.CliqueOutcome := {}
+  /-- Pass 3: recompute every plan the table would supply and fail the
+      block on any difference (`IX_PASS3_CHECK_PLANS=1`; the check mode of
+      the plan table, and of the view and image-expansion tables
+      `p3Views`/`p3ImageExps`, whose supplied entries are recomputed and
+      compared the same way). -/
+  p3CheckPlans : Bool := false
+  /-- Pass 3: how many times a block took a clique's plan from the table
+      (with `p3CheckPlans`: how many plans were recomputed and found equal).
+      A count of work saved, never part of the output; it depends on the
+      schedule (blocks of one wave do not see each other's plans). -/
+  p3PlanReuses : Nat := 0
+  /-- Pass 3: the view table, a changed block's key ↦ its view
+      (`Ix.Compile.Pass.viewOf`). A memo of a function of the changed block
+      and its compiled dependencies: only views built when every member of
+      the changed block was compiled are entered (`viewMemoable`), and a
+      later block, whose snapshot then has those members compiled at the
+      same addresses, would build the same view. Filled from
+      `BlockState.p3MemoViews`, the first entry of a key kept; empty in a
+      hand-built environment (`pass3 := false`). -/
+  p3Views : Std.HashMap Name Ix.Compile.Pass.BlockView := {}
+  /-- Pass 3: the rewritten expansions of image-kind heads in the image
+      blocks' rewrite context (no definitional passes, no records): head ↦
+      expansion, as `Ix.Compile.Pass.expansionOf` leaves it in
+      `RwState.exps`. A memo like `p3Views`, entered only from image blocks
+      whose views were all memoable (`BlockState.p3MemoExps`). -/
+  p3ImageExps : Std.HashMap Name Ix.Compile.Pass.Expansion := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -122,6 +205,28 @@ def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
 
 instance : Inhabited CompileEnv where
   default := { env := { consts := {} }, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }
+
+/-- The canonical choice between two aliases (distinct names at one
+    address): the earlier in seed order (`Ix.nameCompare`, the name hash;
+    design document §6.2, the last tie-break of the canonical alias rule,
+    and the seed of §2.3). A total order on names that depends on nothing
+    else, so a choice made with it is a function of the SET of aliases, not
+    of the order a map was filled or iterated in. -/
+def aliasPrecedes (a b : Name) : Bool :=
+  Ix.nameCompare a b == .lt
+
+/-- Insert `name` into a reverse index (address → one name) keeping the
+    canonical alias (`aliasPrecedes`). A7 (D14): the reverse index was
+    filled last-wins over `HashMap` iteration, so which alias an address
+    named depended on the map's iteration order (and so on what else was in
+    the map: a closure compile could name an address differently from the
+    whole compile). With this insert it is the earliest alias in seed order
+    whatever the order of the inserts. -/
+def insertCanonicalAlias (m : Std.HashMap Address Name) (addr : Address) (name : Name)
+    : Std.HashMap Address Name :=
+  m.alter addr fun
+    | some prev => some (if aliasPrecedes name prev then name else prev)
+    | none => some name
 
 /-- Result of compiling a block, including the main constant and any projections. -/
 structure BlockResult where
@@ -152,8 +257,6 @@ structure BlockState where
   exprCache : Std.HashMap Expr (Ixon.Expr × UInt64) := {}
   /-- Universe compilation cache (keyed by Level for O(1) lookup) -/
   univCache : Std.HashMap Level Ixon.Univ := {}
-  /-- Constant comparison cache (by name pairs) -/
-  cmpCache : Std.HashMap (Name × Name) Ordering := {}
   /-- Reference table (ordered unique addresses) -/
   refs : Array Address := #[]
   refsIndex : Std.HashMap Address UInt64 := {}
@@ -211,11 +314,55 @@ structure BlockState where
   auxNamed : Array (Name × Ixon.Named) := #[]
   /-- `stt.aux_gen_extra_names` membership (Rust mutual.rs). -/
   auxGenExtraNames : Std.HashSet Name := {}
-  /-- Compiled Ixon expressions for collapsed call-site args, accumulated
-      by surgered `compileExpr` calls within the current constant and
-      drained into `ConstantMeta.metaSharing` when the constant's
-      metadata is built (Rust `BlockCache.surgery_sharing`). -/
-  surgerySharing : Array Ixon.Expr := #[]
+  /-- The current constant's `ConstantMeta.metaSharing` accumulator: the
+      compiled source occurrences of its Pass 3 decompile records
+      (`pass3CompileRecords`), drained when the constant's metadata is built
+      (Rust `BlockCache.meta_sharing`). Until M6R slice 6 it was
+      `surgerySharing`, which also held the legacy surgery's collapsed
+      call-site arguments. -/
+  metaSharing : Array Ixon.Expr := #[]
+  /-- Pass 3: compiling a decompile record (the source occurrence of a
+      rewritten call site) into `metaSharing`. References and universes
+      outside the primary tables go to the per-constant extension tables
+      (`p3MetaRefs`, `metaUnivs`) instead, so the record never changes the
+      constant's bytes. -/
+  p3MetaMode : Bool := false
+  /-- Pass 3: the current constant's extension refs (`ConstantMeta.metaRefs`;
+      virtual index `refs.size + slot`). -/
+  p3MetaRefs : Array Address := #[]
+  p3MetaRefsIndex : Std.HashMap Address UInt64 := {}
+  /-- Pass 3: placeholder index ↦ (`metaSharing` index, arena root) of the
+      current constant's compiled decompile records. -/
+  p3Records : Std.HashMap Nat (Nat × UInt64) := {}
+  /-- Pass 3, filled by the aux tail of a changed block for the driver:
+      the canonical recursors aux-gen generated (Pass 2), the image-kind
+      heads (name ↦ Lean block key) and the Lean blocks (key ↦ `all`). -/
+  p3AuxRecs : Array (Name × RecursorVal) := #[]
+  p3Heads : Array (Name × Name) := #[]
+  p3Blocks : Array (Name × Array Name) := #[]
+  /-- Pass 3: the canonical recursors of the block's Prop `IndPredBelow`
+      family (`compileBelowRecursors`), read by the A3V-IPB hook
+      (`Ix.Compile.Pass.editPermutedBelowFamily`); never merged by itself. -/
+  p3BelowRecs : Array (Name × RecursorVal) := #[]
+  /-- Pass 3: the recorded declines of this block's rewrite (constant,
+      cause), in rewrite order, merged into `CompileEnv.p3NonCanonical`
+      (where the last cause of a constant wins). -/
+  p3NonCanonical : Array (Name × String) := #[]
+  /-- Pass 3: the members the call-site rewrite changed, and the members
+      whose canonical form a proof-justified pass wrote (with the passes);
+      merged into `CompileEnv.p3Rewritten` / `CompileEnv.p3PjForms`. Records
+      only. -/
+  p3Rewritten : Array Name := #[]
+  p3PjForms : Array (Name × Array String) := #[]
+  /-- Pass 3: the clique plans this block computed (`all₀`, plan), merged
+      into `CompileEnv.p3CliquePlans`, and the number of plans it took from
+      that table (merged into `CompileEnv.p3PlanReuses`). -/
+  p3CliquePlans : Array (Name × Ix.Compile.Pass.CliqueOutcome) := #[]
+  p3PlanReused : Nat := 0
+  /-- Pass 3: views and image-context expansions this block computed, merged
+      into `CompileEnv.p3Views` and `CompileEnv.p3ImageExps`. -/
+  p3MemoViews : Array (Name × Ix.Compile.Pass.BlockView) := #[]
+  p3MemoExps : Array (Name × Ix.Compile.Pass.Expansion) := #[]
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/
@@ -292,6 +439,16 @@ def CompileM.run (compileEnv : CompileEnv) (blockEnv : BlockEnv) (blockState : B
   | (Except.ok a, state') => Except.ok (a, state')
   | (Except.error e, _) => Except.error e
 
+/-- Run `act` inside worker phase `ph` (`Ix.PhaseTimers`, off unless
+    `IX_PHASE_TIMERS` is set). The phase opens on the block state `act`
+    receives and closes on the block state it returns, on success and on
+    error alike; the result is `act`'s, unchanged. -/
+@[inline] def timedC (ph : Ix.PhaseTimers.Phase) (act : CompileM α) : CompileM α :=
+  fun r => ExceptT.mk fun s =>
+    if Ix.PhaseTimers.enabled () then
+      Ix.PhaseTimers.exitV ((ExceptT.run (act r)).run (Ix.PhaseTimers.enterV ph s))
+    else (ExceptT.run (act r)).run s
+
 /-- Get the global compile environment. -/
 def getCompileEnv : CompileM CompileEnv := do
   pure (← read).1
@@ -303,6 +460,31 @@ def getBlockEnv : CompileM BlockEnv := do
 /-- Get the block state. -/
 def getBlockState : CompileM BlockState := do
   get
+
+/-- A7 (D8): the named error of an out-of-range access in the compiler. It
+    names the block (`BlockEnv.current`) and the site; the drivers record it
+    for every member of the block, like any other block failure. -/
+def internalIndexError (what : String) (i size : Nat) : CompileM α := do
+  throw (.invalidMutualBlock s!"internal error in block '{(← getBlockEnv).current.pretty}': \
+{what}: index {i} out of range (size {size})")
+
+/-- A7 (D8): total array access for the compiler's monads (`CompileM` and
+    the stacks over it, by lifting). Replaces `a[i]!`, which on an
+    out-of-range index printed `PANIC` and continued with `default`, so a
+    construction bug could reach the output as a well-formed but wrong
+    constant; now it is `internalIndexError`. On every index that was in
+    range the value is the same. -/
+@[inline] def arrIdx (a : Array α) (i : Nat) (what : String) : CompileM α :=
+  match a[i]? with
+  | some x => pure x
+  | none => internalIndexError what i a.size
+
+/-- A checked update preserves the array's size and reports the same named
+    construction error as `arrIdx` when the slot does not exist. -/
+@[inline] def arrSet (a : Array α) (i : Nat) (value : α) (what : String)
+    : CompileM (Array α) :=
+  if h : i < a.size then pure (a.set i value h)
+  else internalIndexError what i a.size
 
 /-- Modify the block state. -/
 def modifyBlockState (f : BlockState → BlockState) : CompileM Unit := do
@@ -368,18 +550,25 @@ def takeArena : CompileM Ixon.ExprMetaArena :=
 def resetArena : CompileM Unit :=
   modifyBlockState fun c =>
     { c with arena := {}, metaUnivs := #[], metaUnivsIndex := {},
-             univPatches := #[] }
+             univPatches := #[], p3MetaRefs := #[], p3MetaRefsIndex := {},
+             p3Records := {} }
 
 /-- Clear the expression cache (between constants to avoid cross-constant arena references). -/
 def clearExprCache : CompileM Unit :=
   modifyBlockState fun c => { c with exprCache := {} }
 
-/-- Take the accumulated collapsed call-site expressions for the current
-    constant, clearing the accumulator (Rust
-    `std::mem::take(&mut cache.surgery_sharing)`, compile.rs:2230). The
-    result becomes the constant's `ConstantMeta.metaSharing`. -/
-def takeSurgerySharing : CompileM (Array Ixon.Expr) :=
-  modifyGetBlockState fun c => (c.surgerySharing, { c with surgerySharing := #[] })
+/-- Take the current constant's `metaSharing` accumulator, clearing it (Rust
+    `std::mem::take(&mut cache.meta_sharing)`). The result becomes the
+    constant's `ConstantMeta.metaSharing`. -/
+def takeMetaSharing : CompileM (Array Ixon.Expr) :=
+  modifyGetBlockState fun c => (c.metaSharing, { c with metaSharing := #[] })
+
+/-- Take the current constant's Pass 3 extension refs (`ConstantMeta.metaRefs`;
+    empty unless a decompile record referenced an address outside the
+    primary table). -/
+def takeMetaRefs : CompileM (Array Address) :=
+  modifyGetBlockState fun c =>
+    (c.p3MetaRefs, { c with p3MetaRefs := #[], p3MetaRefsIndex := {} })
 
 /-! ## Universe Compilation -/
 
@@ -448,6 +637,13 @@ def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 :=
 def compileAndInternUnivCanon (lvl : Level) : CompileM (UInt64 × Option UInt64) := do
   let raw ← compileUniv lvl
   let canon ← canonUnivCached raw
+  -- Pass 3 decompile record: a universe outside the primary table goes to
+  -- the extension (virtual index), never into the primary table.
+  if (← getBlockState).p3MetaMode then
+    if !(← getBlockState).univsIndex.contains canon then
+      let cidx ← internMetaUniv canon
+      if canon == raw then return (cidx, none)
+      return (cidx, some (← internMetaUniv raw))
   let sizeBefore := (← getBlockState).univs.size
   let cidx ← internUniv canon
   -- V3 tripwire (canonicity §10.6): the primary table must not grow
@@ -478,8 +674,28 @@ def takeUnivPatches : CompileM (Array Ixon.Univ × Array Ixon.UnivPatch) :=
 
 /-! ## Reference Handling -/
 
-/-- Intern an address into the block's refs table, returning its index. -/
-def internRef (addr : Address) : CompileM UInt64 :=
+/-- Pass 3 decompile-record interning (see `internRef`). -/
+def internRefMeta (addr : Address) : CompileM UInt64 := do
+    let st ← getBlockState
+    if let some idx := st.refsIndex.get? addr then return idx
+    -- Pass 3 decompile record: an address outside the primary table goes
+    -- to the constant's extension (`metaRefs`, virtual `refs.size + j`).
+    -- The primary table is preseed-final here (preseeding walks the
+    -- rewritten terms, which are all that the constant's bytes contain).
+    match st.p3MetaRefsIndex.get? addr with
+    | some j => return st.refs.size.toUInt64 + j
+    | none =>
+      let j := st.p3MetaRefs.size.toUInt64
+      modifyBlockState fun c => { c with
+        p3MetaRefs := c.p3MetaRefs.push addr
+        p3MetaRefsIndex := c.p3MetaRefsIndex.insert addr j }
+      return st.refs.size.toUInt64 + j
+
+/-- Intern an address into the block's refs table, returning its index.
+    (The state is read only for the mode flag, so the update below stays in
+    place: no reference to the old state is alive.) -/
+def internRef (addr : Address) : CompileM UInt64 := do
+  if (← getBlockState).p3MetaMode then return ← internRefMeta addr
   modifyGetBlockState fun state =>
     let (state', idx) := state.internRef addr
     (idx, state')
@@ -693,8 +909,23 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     pure (.ofSyntax addr)
 
-/-- Compile a KVMap (array of name-value pairs). -/
+/-- Compile a KVMap (array of name-value pairs).
+
+    Pass 3: the placeholder `[(_ix.inline, n)]` that the faithful rewrite
+    leaves around a rewritten call site (`Ix.Compile.Pass.Names.inlineKey`)
+    becomes the decompile record `[(_ix.inline, s), (_ix.inline_meta, m)]`:
+    the `metaSharing` index and the arena root of the compiled source
+    occurrence (`compileExpr` compiles it before the term). -/
 def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap := do
+  if let #[(k, .ofNat n)] := kvs then
+    if k == Ix.Compile.Pass.inlineKey && (← getCompileEnv).pass3 then
+      let some (s, m) := (← getBlockState).p3Records.get? n
+        | throw (.invalidMutualBlock s!"Pass 3: call-site record {n} was not compiled")
+      return ← #[(Ix.Compile.Pass.inlineKey, Ix.DataValue.ofNat s),
+          (Ix.Compile.Pass.inlineMetaKey, Ix.DataValue.ofNat m.toNat)].mapM fun (k, v) => do
+        compileName k
+        let vData ← compileDataValue v
+        pure (k.getHash, vData)
   kvs.mapM fun (k, v) => do
     compileName k
     let vData ← compileDataValue v
@@ -702,28 +933,30 @@ def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap :
 
 /-! ## Expression Compilation -/
 
-/-- Stable insertion sort of `(canonical position, arg)` pairs by
-    position. Rust sorts surgered spines with `sort_by_key` (stable,
-    compile.rs:1136); canonical positions are structurally unique per
-    telescope, but stability is preserved anyway so the port stays exact
-    (`Array.qsort` is unstable). Spines are small — O(n²) is fine. -/
-def sortByCanonIdx (xs : Array (Nat × Expr)) : Array (Nat × Expr) := Id.run do
-  let mut out : Array (Nat × Expr) := #[]
-  for x in xs do
-    let pos := (out.findIdx? (fun y => x.1 < y.1)).getD out.size
-    out := ((out.extract 0 pos).push x) ++ out.extract pos out.size
-  return out
+/-- Memoised runtime implementation of `exprCompileDepth`: the same height,
+computed once per distinct node (`Ix.Expr` keys compare by their embedded
+hash). The structural definition below is a tree walk, exponential on the
+DAG-shaped proof terms of a library. -/
+private partial def exprCompileDepthMemo (e : Expr) : StateM (Std.HashMap Expr Nat) Nat := do
+  if let some d := (← get).get? e then return d
+  let d ← match e with
+    | .app fn arg _ => do pure (max (← exprCompileDepthMemo fn) (← exprCompileDepthMemo arg) + 1)
+    | .lam _ ty body _ _ | .forallE _ ty body _ _ => do
+      pure (max (← exprCompileDepthMemo ty) (← exprCompileDepthMemo body) + 1)
+    | .letE _ ty val body _ _ => do
+      pure (max (← exprCompileDepthMemo ty) (max (← exprCompileDepthMemo val)
+        (← exprCompileDepthMemo body)) + 1)
+    | .mdata _ inner _ | .proj _ _ inner _ => do pure ((← exprCompileDepthMemo inner) + 1)
+    | _ => pure 1
+  modify (·.insert e d)
+  return d
 
-/-- Whether expression compilation can take the kernel-visible ordinary
-    path.  A nonempty plan map selects the existing surgery implementation,
-    even when every plan happens to be the identity; this keeps the dispatch
-    criterion independent of the expression being compiled. -/
-def CompileEnv.surgeryFree (env : CompileEnv) : Bool :=
-  env.callSitePlans.isEmpty && env.brecOnCallSitePlans.isEmpty &&
-    env.belowCallSitePlans.isEmpty
+private def exprCompileDepthImpl (e : Expr) : Nat := (exprCompileDepthMemo e).run' {}
 
 /-- Structural height used to fuel ordinary expression compilation. -/
+@[implemented_by exprCompileDepthImpl]
 def exprCompileDepth : Expr → Nat
+
   | .bvar .. | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => 1
   | .app fn arg _ => max (exprCompileDepth fn) (exprCompileDepth arg) + 1
   | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
@@ -736,11 +969,11 @@ def exprCompileDepth : Expr → Nat
 /-- Compile one flattened App spine using `compile` only for the head and
     arguments.  Recursive partial-spine App nodes never pass through
     `compile`, hence never gain expression-cache entries. -/
-def compileAppNoSurgery
+def compileAppTotal
     (compile : Expr → CompileM (Ixon.Expr × UInt64)) :
     Expr → CompileM (Ixon.Expr × UInt64)
   | .app fn arg _ => do
-    let (f, fRoot) ← compileAppNoSurgery compile fn
+    let (f, fRoot) ← compileAppTotal compile fn
     let (a, aRoot) ← compile arg
     let root ← allocArenaNode (.app fRoot aRoot)
     pure (.app f a, root)
@@ -750,7 +983,7 @@ def compileAppNoSurgery
     the recursive compiler.  Factoring the constructor transition from cache
     lookup/insertion keeps the executable behavior unchanged while exposing a
     small kernel-visible proof boundary. -/
-def compileExprNoSurgeryStep
+def compileExprTotalStep
     (compile : Expr → CompileM (Ixon.Expr × UInt64))
     (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
   match e with
@@ -786,7 +1019,7 @@ def compileExprNoSurgeryStep
         recordPatch root
         pure (.ref refIdx univIndices, root)
 
-    | .app .. => compileAppNoSurgery compile e
+    | .app .. => compileAppTotal compile e
 
     | .lam name ty body bi _ => do
       compileName name
@@ -857,17 +1090,17 @@ def compileExprNoSurgeryStep
     | .fvar _ _ => throw (.unsupportedExpr "free variable")
     | .mvar _ _ => throw (.unsupportedExpr "metavariable")
 
-/-- Fuel-total implementation of the ordinary (no call-site surgery)
-    expression compiler.  The App arm deliberately flattens the complete
-    telescope before recurring, so inner partial-spine nodes are allocated
-    but not expression-cached, exactly as in the Rust compiler and the
-    surgery implementation's normal path.
+/-- Fuel-total implementation of the ordinary expression compiler (the
+    twin of `compileExprPartial`). The App arm deliberately flattens the
+    complete telescope before recurring, so inner partial-spine nodes are
+    allocated but not expression-cached, exactly as in the Rust compiler and
+    `compileAppSpine`.
 
     Recursive calls consume one unit of fuel.  The public entry point uses
     `exprCompileDepth e`; every recursively compiled head, argument, or
     constructor child is a strict source subterm, so the exhaustion branch is
     unreachable for that entry point. -/
-def compileExprNoSurgeryFuel : Nat → Expr → CompileM (Ixon.Expr × UInt64)
+def compileExprTotalFuel : Nat → Expr → CompileM (Ixon.Expr × UInt64)
   | 0, _ => throw (.invalidMutualBlock
       "internal error: ordinary expression compiler exhausted structural fuel")
   | fuel + 1, e => do
@@ -875,205 +1108,16 @@ def compileExprNoSurgeryFuel : Nat → Expr → CompileM (Ixon.Expr × UInt64)
     if let some cached := state.exprCache.get? e then
       return cached
 
-    let (result, root) ← compileExprNoSurgeryStep
-      (compileExprNoSurgeryFuel fuel) e
+    let (result, root) ← compileExprTotalStep
+      (compileExprTotalFuel fuel) e
 
     modifyBlockState fun c =>
       { c with exprCache := c.exprCache.insert e (result, root) }
     pure (result, root)
 
 /-- Kernel-visible ordinary expression compiler. -/
-def compileExprNoSurgery (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
-  compileExprNoSurgeryFuel (exprCompileDepth e) e
-
-/-- Arity information for a source-visible head carrying non-identity
-    call-site surgery. -/
-structure PlanHeadArity where
-  floor : Nat
-  expected : Nat
-  headRewrite : Bool
-
-/-- Shared Tier-A/Tier-B arity classification. Mirrors Rust
-    `plan_head_arity`. -/
-def planHeadArity? (cenv : CompileEnv) (name : Name) : Option PlanHeadArity :=
-  match cenv.callSitePlans.get? name with
-  | some plan =>
-    if !plan.isIdentity then
-      some { floor := plan.minimalFullPrefix
-             expected := plan.nParams + plan.nSourceMotives
-               + plan.nSourceMinors + plan.nIndices + 1
-             headRewrite := plan.headRewrite.isSome }
-    else none
-  | none =>
-    match cenv.belowCallSitePlans.get? name with
-    | some plan =>
-      if !plan.isIdentity then
-        let floor := plan.belowMinimalFullPrefix
-        some { floor
-               expected := if Ix.AuxGen.belowPlanKeyIsHead name then
-                 floor + plan.nIndices + 1 else floor
-               headRewrite := false }
-      else none
-    | none =>
-      match cenv.brecOnCallSitePlans.get? name with
-      | some plan =>
-        if !plan.isIdentity then
-          let expected := plan.brecOnMinimalFullPrefix
-          some { floor := expected, expected, headRewrite := false }
-        else none
-      | none => none
-
-/-- Read-only walk over one ORIGINAL expression. Ordinary partial/bare plan
-    references are handled by Tier B. The audit rejects the deliberately
-    unsupported cases before they can silently become a kernel type error:
-    partial evaporated-aux head rewrites, and a short plan spine split by a
-    `mdata`/`let` wrapper in the function part of an outer application.
-    Mirrors Rust `audit_plan_head_arities`. -/
-def auditPlanHeadArities (owner : Name) (top : Expr) : CompileM Unit := do
-  let cenv ← getCompileEnv
-  if cenv.callSitePlans.isEmpty && cenv.belowCallSitePlans.isEmpty &&
-      cenv.brecOnCallSitePlans.isEmpty then
-    return
-  let annotated ← match Ix.SemanticContract.inspect top with
-    | .ok annotated => pure annotated
-    | .error error => throw (.unsupportedExpr error)
-  -- Lean expressions are DAGs. Large tactic proofs may reach one shared
-  -- subexpression through exponentially many tree paths, while the ordinary
-  -- compiler memoizes it. Keep the audit linear in unique nodes as well.
-  -- `obscured` belongs in the key: a node that is safe as an argument can be
-  -- invalid when reused in a wrapped function position.
-  let mut seen : Std.HashSet (Expr × Bool) := {}
-  let mut stack : Array (Expr × Bool) := #[(top, false)]
-  while !stack.isEmpty do
-    let (e, obscured) := stack.back!
-    stack := stack.pop
-    if seen.contains (e, obscured) then continue
-    seen := seen.insert (e, obscured)
-    match e with
-    | .app .. =>
-      let (head, args) := Ix.AuxGen.collectLeanTelescope e
-      match head with
-      | .const name _ _ =>
-        if let some arity := planHeadArity? cenv name then
-          if annotated then
-            throw (.unsupportedExpr s!"resource contracts across non-identity call-site surgery: {owner.pretty} calls {name.pretty}")
-          let need := if arity.headRewrite then arity.expected else arity.floor
-          if args.size < need && (obscured || arity.headRewrite) then
-            let suffix := if obscured then
-              " (application spine obscured by mdata/let)" else ""
-            throw (.invalidMutualBlock s!"plan-head arity audit while \
-compiling '{owner.pretty}': head '{name.pretty}' has {args.size} args, \
-expected at least {need}{suffix}")
-      | .lam .. => stack := stack.push (head, false)
-      | _ => stack := stack.push (head, true)
-      for arg in args do
-        stack := stack.push (arg, false)
-    | .const name _ _ =>
-      if let some arity := planHeadArity? cenv name then
-        if annotated then
-          throw (.unsupportedExpr s!"resource contracts across non-identity call-site surgery: {owner.pretty} calls {name.pretty}")
-        if obscured || arity.headRewrite then
-          let need := if arity.headRewrite then arity.expected else arity.floor
-          let suffix := if obscured then
-            " (application spine obscured by mdata/let)" else ""
-          throw (.invalidMutualBlock s!"plan-head arity audit while \
-compiling '{owner.pretty}': head '{name.pretty}' has 0 args, expected at \
-least {need}{suffix}")
-    | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
-      stack := stack.push (body, obscured) |>.push (ty, false)
-    | .letE _ ty val body _ _ =>
-      stack := stack.push (body, obscured) |>.push (val, false) |>.push (ty, false)
-    | .mdata _ inner _ => stack := stack.push (inner, obscured)
-    | .proj _ _ s _ => stack := stack.push (s, false)
-    | _ => pure ()
-
-/-- Audit every original recursor-rule expression in source order. -/
-def auditRecursorRulePlanHeads (owner : Name) :
-    List RecursorRule → CompileM Unit
-  | [] => pure ()
-  | rule :: rest => do
-    auditPlanHeadArities owner rule.rhs
-    auditRecursorRulePlanHeads owner rest
-
-/-- Audit every original expression belonging to a singleton declaration. -/
-def auditConstantInfoPlanHeads (ci : ConstantInfo) : CompileM Unit := do
-  let owner := ci.getCnst.name
-  auditPlanHeadArities owner ci.getCnst.type
-  match ci with
-  | .defnInfo d => auditPlanHeadArities owner d.value
-  | .thmInfo d => auditPlanHeadArities owner d.value
-  | .opaqueInfo d => auditPlanHeadArities owner d.value
-  | .recInfo r => auditRecursorRulePlanHeads owner r.rules.toList
-  | _ => pure ()
-
-/-- Audit constructor types belonging to one original mutual inductive. -/
-def auditMutualConstructorPlanHeads : List ConstructorVal → CompileM Unit
-  | [] => pure ()
-  | ctor :: rest => do
-    auditPlanHeadArities ctor.cnst.name ctor.cnst.type
-    auditMutualConstructorPlanHeads rest
-
-/-- Audit every expression embedded in one original mutual member. -/
-def auditMutConstPlanHeads (c : MutConst) : CompileM Unit := do
-  match c with
-  | .defn d =>
-    auditPlanHeadArities d.name d.type
-    auditPlanHeadArities d.name d.value
-  | .indc i =>
-    auditPlanHeadArities i.name i.type
-    auditMutualConstructorPlanHeads i.ctors.toList
-  | .recr r =>
-    auditPlanHeadArities r.cnst.name r.cnst.type
-    auditRecursorRulePlanHeads r.cnst.name r.rules.toList
-
-/-- Whether the current body is one of our regenerated canonical
-    auxiliaries. Such bodies already use canonical argument order. -/
-def compilingIsAuxRegen : CompileM Bool := do
-  let compiling := (← getBlockEnv).current
-  if !Ix.AuxGen.isAuxGenSuffix compiling then return false
-  let cenv ← getCompileEnv
-  let bstate ← getBlockState
-  if bstate.auxNameToAddr.contains compiling then return true
-  if cenv.auxNameToAddr.contains compiling then return true
-  return match cenv.nameToNamed.get? compiling with
-    | some named => named.original.isSome
-    | none => false
-
-/-- Does this short source application need the Tier-B eta adapter? -/
-def etaAdapterNeeded (name : Name) (nArgs : Nat) : CompileM Bool := do
-  if ← compilingIsAuxRegen then return false
-  return match planHeadArity? (← getCompileEnv) name with
-    | some arity => !arity.headRewrite && nArgs < arity.floor
-    | none => false
-
-/-- Derive a partial call's residual source Pi telescope and build the
-    source-interface eta wrapper. Mirrors Rust `synthesize_eta_call_site`. -/
-def synthesizeEtaCallSite (name : Name) (lvls : Array Level)
-    (applied : Array Expr) : CompileM (Expr × Nat) := do
-  let ci ← findConst name
-  let cnst := ci.getCnst
-  let instantiatedType := Ix.AuxGen.substLevels cnst.type cnst.levelParams lvls
-  let residual := Ix.AuxGen.instantiatePiParams instantiatedType applied.size applied
-  let mut binders : Array (Name × Expr × Lean.BinderInfo) := #[]
-  let mut cur := residual
-  repeat
-    match cur with
-    | .forallE binderName ty body info _ =>
-      binders := binders.push (binderName, ty, info)
-      cur := body
-    | _ => break
-  if binders.isEmpty then
-    throw (.invalidMutualBlock s!"eta call-site adapter for '{name.pretty}' \
-found no residual Pi binders after {applied.size} args")
-  let nSynth := binders.size
-  let mut fullArgs := applied.map fun arg => Ix.AuxGen.shiftVars arg nSynth 0
-  for i in [0:nSynth] do
-    fullArgs := fullArgs.push (Expr.mkBVar (nSynth - 1 - i))
-  let mut body := Expr.mkConst name lvls
-  for arg in fullArgs do body := Expr.mkApp body arg
-  for (binderName, ty, info) in binders.reverse do
-    body := Expr.mkLam binderName ty body info
-  pure (body, nSynth)
+def compileExprTotal (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
+  compileExprTotalFuel (exprCompileDepth e) e
 
 /-- Compile a Const as the raw canonical call-site head. This bypasses bare
     reference eta detection and intentionally does not use the expression
@@ -1101,39 +1145,15 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
     recordPatch root
     pure (.ref refIdx univIndices, root)
 
-/-- Overlay the decompile-facing eta marker on an already-compiled ordinary
-    synthesized Binder/CallSite metadata tree. -/
-def finishEtaCallSite (wrapperIxon : Ixon.Expr) (wrapperRoot : UInt64)
-    (nSynth nApplied : Nat) : CompileM (Ixon.Expr × UInt64) := do
-  let arena := (← getBlockState).arena
-  let mut bodyRoot := wrapperRoot
-  for _ in [0:nSynth] do
-    match arena.nodes[bodyRoot.toNat]? with
-    | some (.binder _ _ _ bodyChild) => bodyRoot := bodyChild
-    | other => throw (.invalidMutualBlock s!"eta adapter metadata expected \
-{nSynth} Binder nodes, found {reprStr other}")
-  let (name, entries, canonMeta, origHead) ←
-    match arena.nodes[bodyRoot.toNat]? with
-    | some (.callSite name entries canonMeta origHead) =>
-      pure (name, entries, canonMeta, origHead)
-    | other => throw (.invalidMutualBlock s!"eta adapter body did not \
-compile to CallSite metadata: {reprStr other}")
-  if origHead.isSome || entries.size != nApplied + nSynth then
-    throw (.invalidMutualBlock s!"eta adapter body metadata mismatch: \
-{entries.size} source entries for {nApplied} applied + {nSynth} synthesized \
-args (origHead={origHead.isSome})")
-  let etaRoot ← allocArenaNode (.etaCallSite nSynth.toUInt64 name
-    (entries.extract 0 nApplied) canonMeta wrapperRoot)
-  if let some bodyPatch :=
-      (← getBlockState).univPatches.find? (·.arenaIdx == bodyRoot) then
-    pushUnivPatch etaRoot bodyPatch.univIdxs
-  pure (wrapperIxon, etaRoot)
-
 mutual
 
 /-- Compile a canonical Ix.Expr to Ixon.Expr with arena-based metadata.
     Returns (compiled expression, arena root index).
     Uses Ix.Expr as cache key for O(1) lookup via embedded hash.
+
+    The production implementation (`partial`, no fuel) of the ordinary
+    compiler; `compileExprTotal` is its fuel-total twin with the same cache
+    and arena semantics (`compileExpr` dispatches between them).
 
     Mirrors Rust `compile_expr` (compile.rs:650). Rust is stack-based
     (`Frame::Compile`/`Frame::Cache`); this recursion has identical
@@ -1141,18 +1161,11 @@ mutual
     exactly when Rust pushes a `Frame::Compile` for it — App telescopes
     are flattened in `compileAppSpine`, so inner partial-spine nodes are
     neither checked nor cached. -/
-partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
-  -- Bare plan references must decide on eta expansion before consulting the
-  -- ordinary expression cache: canonical call-site heads deliberately cache
-  -- their raw Const form under the same source expression.
-  let isEta ← match e with
-    | .const name _ _ => etaAdapterNeeded name 0
-    | _ => pure false
+partial def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   -- Check cache (O(1) lookup via embedded hash)
   let state ← getBlockState
-  if !isEta then
-    if let some cached := state.exprCache.get? e then
-      return cached
+  if let some cached := state.exprCache.get? e then
+    return cached
 
   let (result, root) ← match e with
   | .bvar idx _ => do
@@ -1168,38 +1181,32 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
       pushUnivPatch root #[vidx]
     pure (.sort idx, root)
 
-  | .const name lvls _ => do
-    if isEta then
-      let (wrapper, nSynth) ← synthesizeEtaCallSite name lvls #[]
-      let (wrapperIxon, wrapperRoot) ← compileExprSurgical wrapper
-      finishEtaCallSite wrapperIxon wrapperRoot nSynth 0
-    else
-      compileConstExprRaw name lvls
+  | .const name lvls _ => compileConstExprRaw name lvls
 
   | .app .. => compileAppSpine e
 
   | .lam name ty body bi _ => do
     compileName name
     let nameAddr := name.getHash
-    let (t, tyRoot) ← compileExprSurgical ty
-    let (b, bodyRoot) ← compileExprSurgical body
+    let (t, tyRoot) ← compileExprPartial ty
+    let (b, bodyRoot) ← compileExprPartial body
     let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
     pure (.leanLam t b, root)
 
   | .forallE name ty body bi _ => do
     compileName name
     let nameAddr := name.getHash
-    let (t, tyRoot) ← compileExprSurgical ty
-    let (b, bodyRoot) ← compileExprSurgical body
+    let (t, tyRoot) ← compileExprPartial ty
+    let (b, bodyRoot) ← compileExprPartial body
     let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
     pure (.leanAll t b, root)
 
   | .letE name ty val body nonDep _ => do
     compileName name
     let nameAddr := name.getHash
-    let (t, tyRoot) ← compileExprSurgical ty
-    let (v, valRoot) ← compileExprSurgical val
-    let (b, bodyRoot) ← compileExprSurgical body
+    let (t, tyRoot) ← compileExprPartial ty
+    let (v, valRoot) ← compileExprPartial val
+    let (b, bodyRoot) ← compileExprPartial body
     let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
     pure (.leanLet nonDep t v b, root)
 
@@ -1224,7 +1231,7 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
     let typeAddr ← lookupConstAddr typeName
     let typeRefIdx ← internRef typeAddr
     let structNameAddr := typeName.getHash
-    let (s, sRoot) ← compileExprSurgical struct
+    let (s, sRoot) ← compileExprPartial struct
     let root ← allocArenaNode (.prj structNameAddr sRoot)
     pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
 
@@ -1233,12 +1240,12 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
       let contract ← match SemanticContract.read kvData with
         | .ok contract => pure contract
         | .error error => throw (.unsupportedExpr error)
-      let (value, root) ← compileExprSurgical inner
+      let (value, root) ← compileExprPartial inner
       match contract.lower inner value with
       | .ok value => return (value, root)
       | .error error => throw (.unsupportedExpr error)
     let kvmap ← compileKVMap kvData
-    let (innerResult, innerRoot) ← compileExprSurgical inner
+    let (innerResult, innerRoot) ← compileExprPartial inner
     let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
     pure (innerResult, root)
 
@@ -1253,421 +1260,95 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
 /-- Compile an App telescope (Rust compile.rs:751-1407).
 
     Mirrors Rust's flattened-telescope semantics EXACTLY: the whole spine
-    is collected in one pass, call-site surgery is checked on a bare-Const
-    head, and the normal path compiles `head, arg₁, app-node, arg₂,
+    is collected in one pass, and it compiles `head, arg₁, app-node, arg₂,
     app-node, …` WITHOUT cache-checking or caching the inner partial-spine
-    App nodes — only the outermost App (our caller `compileExpr`) is
+    App nodes — only the outermost App (our caller `compileExprPartial`) is
     cached, matching Rust's `Frame::Compile`/`Frame::Cache` granularity.
     Inner-spine caching would diverge from Rust's arena layout: a later
     occurrence of a partial spine as a maximal subterm would reuse a
     cached arena root instead of re-allocating metadata nodes. -/
 partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   let (headExpr, args) := Ix.AuxGen.collectLeanTelescope e
-  if let .const name lvls _ := headExpr then
-    let cenv ← getCompileEnv
-    -- Call-site surgery guard (compile.rs:800-838). Surgery applies iff:
-    --  (1) the compiling constant is *not* an AuxRegen name — one of the
-    --      Lean auto-generated auxiliaries we ourselves regenerate. The
-    --      regenerator emits those bodies in canonical order by
-    --      construction, so surgery would permute already-canonical args
-    --      into the wrong positions. The guard is name-based (not a
-    --      cache flag) because AuxRegen names compile twice: as Lean
-    --      originals via `compileMutualBlock` and as regenerated
-    --      canonicals via `compileAuxBlock`. The suffix alone is NOT
-    --      sufficient: an EVAPORATED aux has no regenerated canonical —
-    --      its surgered original IS its canonical form. "Has a
-    --      regen/alias" is membership in the aux name→addr maps (fresh
-    --      compiles) or `Named.original.isSome` (deserialized states,
-    --      set by promote). Evaporated names enter neither.
-    --  (2) the head has a non-identity surgery plan.
-    let compiling := (← getBlockEnv).current
-    let compilingIsAuxRegen ← do
-      if Ix.AuxGen.isAuxGenSuffix compiling then
-        let bstate ← getBlockState
-        if bstate.auxNameToAddr.contains compiling then
-          pure true
-        else if cenv.auxNameToAddr.contains compiling then
-          pure true
-        else
-          pure (match cenv.nameToNamed.get? compiling with
-            | some named => named.original.isSome
-            | none => false)
-      else
-        pure false
-    if !compilingIsAuxRegen then
-      if let some plan := cenv.callSitePlans.get? name then
-        if !plan.isIdentity then
-          if let some hr := plan.headRewrite then
-            return ← compileHeadRewriteCallSite name lvls plan hr headExpr args
-          else
-            if args.size >= plan.minimalFullPrefix then
-              return ← compileRecCallSite name lvls plan headExpr args
-      if let some plan := cenv.belowCallSitePlans.get? name then
-        if !plan.isIdentity then
-          -- `.below`/`.below_N` HEADS need the indices+major floor; a
-          -- Prop-below FAMILY member (ctor / `.below.casesOn`) has no
-          -- floor — a field-less below ctor is fully applied at exactly
-          -- params+motives (compile.rs below-family branch).
-          if args.size >= plan.belowMinimalFullPrefix then
-            return ← compileBelowCallSite name plan headExpr args
-      if let some plan := cenv.brecOnCallSitePlans.get? name then
-        if !plan.isIdentity then
-          let expectedTotal := plan.brecOnMinimalFullPrefix
-          if args.size >= expectedTotal then
-            return ← compileBRecOnCallSite name plan headExpr args
-      if ← etaAdapterNeeded name args.size then
-        let (wrapper, nSynth) ← synthesizeEtaCallSite name lvls args
-        let (wrapperIxon, wrapperRoot) ← compileExprSurgical wrapper
-        return ← finishEtaCallSite wrapperIxon wrapperRoot nSynth args.size
-  -- Normal telescope path (compile.rs:1399-1407): head, then one App
-  -- node per arg. Same result as one-App-at-a-time recursion, but the
-  -- inner spine nodes never touch the expression cache.
-  let (h, hRoot) ← compileExprSurgical headExpr
+  -- Head, then one App node per arg (compile.rs:1399-1407). Same result as
+  -- one-App-at-a-time recursion, but the inner spine nodes never touch the
+  -- expression cache.
+  let (h, hRoot) ← compileExprPartial headExpr
   let mut acc := h
   let mut accRoot := hRoot
   for arg in args do
-    let (a, aRoot) ← compileExprSurgical arg
+    let (a, aRoot) ← compileExprPartial arg
     let root ← allocArenaNode (.app accRoot aRoot)
     acc := .app acc a
     accRoot := root
   pure (acc, accRoot)
 
-/-- Shared call-site build tail (Rust `Frame::BuildCallSite`,
-    compile.rs:1586-1668): compile the canonical head, the canonical args
-    (in canonical order), and the collapsed args (in source-collapse
-    order); append the collapsed Ixon expressions to the constant's
-    surgery-sharing accumulator; fill each entry's metadata root
-    (Kept → canonical root at its `canonIdx`, Collapsed → sequential
-    collapsed root + absolute sharing index); allocate the `callSite`
-    arena node; and fold the canonical Ixon App spine.
-
-    When `origHeadCollapsed`, the LAST collapsed slot is the original
-    (pre-rewrite) head expression — it has no source-order entry, so the
-    sequential fill never reaches it; it is referenced by the node's
-    `origHead` field instead. The head's own arena root is intentionally
-    dropped (subsumed by `CallSite.name`, compile.rs:1633) — which is
-    why any level-spelling patch keyed by it is CLONED onto the
-    `callSite` root below (canonicity §10.6): replay consumers (the
-    decompiler's head rebuild, the kernel's meta-ingress head arms) have
-    only the callSite root in hand. -/
-partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
-    (sortedCanon : Array Expr) (collapsedArgs : Array Expr)
-    (entries : Array Ixon.CallSiteEntry) (origHeadCollapsed : Bool) :
-    CompileM (Ixon.Expr × UInt64) := do
-  let (headIxon, headRoot) ← match headForCanon with
-    | .const name lvls _ => compileConstExprRaw name lvls
-    | _ => throw (.invalidMutualBlock "call-site canonical head is not a Const")
-  let mut canonicalExprs : Array Ixon.Expr := #[]
-  let mut canonicalRoots : Array UInt64 := #[]
-  for arg in sortedCanon do
-    let (a, aRoot) ← compileExprSurgical arg
-    canonicalExprs := canonicalExprs.push a
-    canonicalRoots := canonicalRoots.push aRoot
-  let mut collapsedIxon : Array Ixon.Expr := #[]
-  let mut collapsedRoots : Array UInt64 := #[]
-  for arg in collapsedArgs do
-    let (a, aRoot) ← compileExprSurgical arg
-    collapsedIxon := collapsedIxon.push a
-    collapsedRoots := collapsedRoots.push aRoot
-  -- Store collapsed arg expressions in surgery sharing (compile.rs:1637).
-  let sharingBase := (← getBlockState).surgerySharing.size
-  modifyBlockState fun c =>
-    { c with surgerySharing := c.surgerySharing ++ collapsedIxon }
-  -- Fill `meta` fields and absolute sharing indices (compile.rs:1640-1665).
-  -- Kept entries index `canonicalRoots` by `canonIdx` — their canonical
-  -- position — NOT by source-sequential order (the two coincide only
-  -- under identity plans, which surgery short-circuits).
-  let mut filled : Array Ixon.CallSiteEntry := #[]
-  let mut collapsedIdx : Nat := 0
-  for entry in entries do
-    match entry with
-    | .kept canonIdx _ =>
-      filled := filled.push (.kept canonIdx canonicalRoots[canonIdx.toNat]!)
-    | .collapsed _ _ =>
-      filled := filled.push (.collapsed (sharingBase + collapsedIdx).toUInt64
-        collapsedRoots[collapsedIdx]!)
-      collapsedIdx := collapsedIdx + 1
-  let origHead : Option (UInt64 × UInt64) :=
-    if origHeadCollapsed && collapsedArgs.size > 0 then
-      some ((sharingBase + collapsedArgs.size - 1).toUInt64,
-        collapsedRoots[collapsedArgs.size - 1]!)
-    else
-      none
-  let root ← allocArenaNode (.callSite nameAddr filled canonicalRoots origHead)
-  -- Canonicity §10.6: clone the head's level-spelling patch (if any)
-  -- onto the callSite root (see the docstring). Clone, not move — the
-  -- head root may be a shared expr-cache root serving other occurrences.
-  if let some headPatch :=
-      (← getBlockState).univPatches.find? (·.arenaIdx == headRoot) then
-    pushUnivPatch root headPatch.univIdxs
-  let mut ixon := headIxon
-  for a in canonicalExprs do
-    ixon := .app ixon a
-  pure (ixon, root)
-
-/-- Normal (non-head-rewrite) `.rec` call-site surgery
-    (compile.rs:1017-1160): separate source args into kept/collapsed per
-    plan, reorder kept args to canonical positions, adapt kept minors
-    whose fields target out-of-block SCCs, compile everything through
-    `buildCallSite`. -/
-partial def compileRecCallSite (name : Name) (lvls : Array Level)
-    (plan : Ix.AuxGen.CallSitePlan) (headExpr : Expr) (args : Array Expr) :
-    CompileM (Ixon.Expr × UInt64) := do
-  compileName name
-  let nameAddr := name.getHash
-  let params := args.extract 0 plan.nParams
-  let motives := args.extract plan.nParams (plan.nParams + plan.nSourceMotives)
-  let minors := args.extract (plan.nParams + plan.nSourceMotives)
-    (plan.nParams + plan.nSourceMotives + plan.nSourceMinors)
-  let tail := args.extract
-    (plan.nParams + plan.nSourceMotives + plan.nSourceMinors) args.size
-
-  let nCanonMotives := plan.nCanonicalMotives
-  let nCanonMinors := plan.nCanonicalMinors
-  let mut canonicalArgs : Array (Nat × Expr) := #[]
-  let mut collapsedArgs : Array Expr := #[]
-  let mut entries : Array Ixon.CallSiteEntry := #[]
-
-  -- Params: always kept, identity mapping.
-  for (p, i) in params.zipIdx do
-    canonicalArgs := canonicalArgs.push (i, p)
-    entries := entries.push (.kept i.toUInt64 0)
-
-  -- Motives: kept or collapsed per plan.
-  let canonBase := plan.nParams
-  for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := canonBase + plan.sourceToCanonMotive[srcI]!
-      canonicalArgs := canonicalArgs.push (canonPos, motive)
-      entries := entries.push (.kept canonPos.toUInt64 0)
-    else
-      entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-      collapsedArgs := collapsedArgs.push motive
-
-  -- Minors: kept (possibly split-adapted) or collapsed per plan. An
-  -- adapted minor compiles at the canonical position while the ORIGINAL
-  -- minor is preserved as a Collapsed sharing entry for decompile.
-  let minorCanonBase := plan.nParams + nCanonMotives
-  let env := (← getCompileEnv).env
-  for (minor, srcI) in minors.zipIdx do
-    if plan.minorKeep[srcI]! then
-      let canonPos := minorCanonBase + plan.sourceToCanonMinor[srcI]!
-      let adaptedMinor := Ix.AuxGen.adaptSplitMinor name lvls plan srcI minor
-        params motives minors env
-      let minorArg := adaptedMinor.getD minor
-      canonicalArgs := canonicalArgs.push (canonPos, minorArg)
-      if adaptedMinor.isSome then
-        entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-        collapsedArgs := collapsedArgs.push minor
-      else
-        entries := entries.push (.kept canonPos.toUInt64 0)
-    else
-      entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-      collapsedArgs := collapsedArgs.push minor
-
-  -- Tail (indices + major): always kept, identity.
-  let tailCanonBase := plan.nParams + nCanonMotives + nCanonMinors
-  for (t, i) in tail.zipIdx do
-    canonicalArgs := canonicalArgs.push (tailCanonBase + i, t)
-    entries := entries.push (.kept (tailCanonBase + i).toUInt64 0)
-
-  let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
-  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
-
-/-- Evaporated-aux head-rewrite call-site surgery (compile.rs:844-1015):
-    the callee's claim is aliased to the external inductive's recursor,
-    so the over-merged spine is rebuilt onto that telescope —
-    `specs… motive minors′… indices… major` — with the level list
-    extended to the target's arity. Dropped args are preserved as
-    Collapsed entries; the head keeps its SOURCE name (the alias resolves
-    it to the external recursor's address) but carries the target's level
-    list, and the ORIGINAL head lands as the last sharing entry
-    (`origHead`). -/
-partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
-    (plan : Ix.AuxGen.CallSitePlan) (hr : Ix.AuxGen.AuxHeadRewrite)
-    (headExpr : Expr) (args : Array Expr) : CompileM (Ixon.Expr × UInt64) := do
-  let expectedTotal := plan.nParams + plan.nSourceMotives
-    + plan.nSourceMinors + plan.nIndices + 1 -- major
-  if args.size < expectedTotal then
-    throw (.invalidMutualBlock s!"head-rewrite call site for \
-'{name.pretty}' is under-applied: {args.size} args, telescope needs \
-{expectedTotal}")
-  let env := (← getCompileEnv).env
-  compileName name
-  let nameAddr := name.getHash
-  let params := args.extract 0 plan.nParams
-  let motives := args.extract plan.nParams (plan.nParams + plan.nSourceMotives)
-  let minors := args.extract (plan.nParams + plan.nSourceMotives)
-    (plan.nParams + plan.nSourceMotives + plan.nSourceMinors)
-  let tail := args.extract
-    (plan.nParams + plan.nSourceMotives + plan.nSourceMinors) args.size
-  let (targetLevels, specs) ←
-    match Ix.AuxGen.deriveHeadRewriteApp name lvls hr params motives env with
-    | .ok v => pure v
-    | .error msg =>
-      throw (.invalidMutualBlock s!"head-rewrite for '{name.pretty}': {msg}")
-
-  let mut canonicalArgs : Array Expr := #[]
-  let mut collapsedArgs : Array Expr := #[]
-  let mut entries : Array Ixon.CallSiteEntry := #[]
-
-  -- Source params don't appear in the target spine (the specs subsume
-  -- them) — collapse for reconstruction.
-  for p in params do
-    entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-    collapsedArgs := collapsedArgs.push p
-  let nSpecs := specs.size
-  canonicalArgs := canonicalArgs ++ specs
-  for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      canonicalArgs := canonicalArgs.push motive
-      entries := entries.push (.kept nSpecs.toUInt64 0)
-    else
-      entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-      collapsedArgs := collapsedArgs.push motive
-  for (minor, srcI) in minors.zipIdx do
-    if plan.minorKeep[srcI]! then
-      let canonPos := canonicalArgs.size
-      let adaptedMinor := Ix.AuxGen.adaptSplitMinor name lvls plan srcI minor
-        params motives minors env
-      let minorArg := adaptedMinor.getD minor
-      canonicalArgs := canonicalArgs.push minorArg
-      if adaptedMinor.isSome then
-        entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-        collapsedArgs := collapsedArgs.push minor
-      else
-        entries := entries.push (.kept canonPos.toUInt64 0)
-    else
-      entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-      collapsedArgs := collapsedArgs.push minor
-  for t in tail do
-    let canonPos := canonicalArgs.size
-    canonicalArgs := canonicalArgs.push t
-    entries := entries.push (.kept canonPos.toUInt64 0)
-
-  -- Preserve the ORIGINAL head (source name + source level args) as the
-  -- LAST sharing entry so decompile can restore it (compile.rs:983).
-  collapsedArgs := collapsedArgs.push headExpr
-  let headForCanon := Expr.mkConst name targetLevels
-  buildCallSite nameAddr headForCanon canonicalArgs collapsedArgs entries true
-
-/-- `.below`-family call-site surgery (compile.rs below-family branch).
-    HEAD telescope is `params, motives, indices, major`; a Prop-below
-    FAMILY member (ctor / `.below.casesOn`) starts with the below params
-    (parent params, then parent motives). In both shapes everything
-    after the motive segment is kept identically, so one identity tail
-    covers indices+major, ctor fields, and casesOn
-    target-motive+indices+major+minors alike — the caller enforces the
-    per-shape application floor. -/
-partial def compileBelowCallSite (name : Name)
-    (plan : Ix.AuxGen.BRecOnCallSitePlan) (headExpr : Expr)
-    (args : Array Expr) : CompileM (Ixon.Expr × UInt64) := do
-  compileName name
-  let nameAddr := name.getHash
-  let params := args.extract 0 plan.nParams
-  let motives := args.extract plan.nParams (plan.nParams + plan.nSourceMotives)
-  let tail := args.extract (plan.nParams + plan.nSourceMotives) args.size
-
-  let nCanonMotives := plan.nCanonicalMotives
-  let mut canonicalArgs : Array (Nat × Expr) := #[]
-  let mut collapsedArgs : Array Expr := #[]
-  let mut entries : Array Ixon.CallSiteEntry := #[]
-
-  for (p, i) in params.zipIdx do
-    canonicalArgs := canonicalArgs.push (i, p)
-    entries := entries.push (.kept i.toUInt64 0)
-
-  let motiveCanonBase := plan.nParams
-  for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := motiveCanonBase + plan.sourceToCanonMotive[srcI]!
-      canonicalArgs := canonicalArgs.push (canonPos, motive)
-      entries := entries.push (.kept canonPos.toUInt64 0)
-    else
-      entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-      collapsedArgs := collapsedArgs.push motive
-
-  let tailCanonBase := plan.nParams + nCanonMotives
-  for (t, i) in tail.zipIdx do
-    canonicalArgs := canonicalArgs.push (tailCanonBase + i, t)
-    entries := entries.push (.kept (tailCanonBase + i).toUInt64 0)
-
-  let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
-  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
-
-/-- `.brecOn` call-site surgery (compile.rs:1265-1396): telescope is
-    `params, motives, indices, major, handlers` — one handler per motive,
-    keyed by the SAME motive keep/permutation as the motives band. -/
-partial def compileBRecOnCallSite (name : Name)
-    (plan : Ix.AuxGen.BRecOnCallSitePlan) (headExpr : Expr)
-    (args : Array Expr) : CompileM (Ixon.Expr × UInt64) := do
-  let fixedTailLen := plan.nIndices + 1 -- indices + major
-  let expectedTotal := plan.nParams + plan.nSourceMotives + fixedTailLen
-    + plan.nSourceMotives
-  compileName name
-  let nameAddr := name.getHash
-  let params := args.extract 0 plan.nParams
-  let motives := args.extract plan.nParams (plan.nParams + plan.nSourceMotives)
-  let fixedTail := args.extract (plan.nParams + plan.nSourceMotives)
-    (plan.nParams + plan.nSourceMotives + fixedTailLen)
-  let handlers := args.extract
-    (plan.nParams + plan.nSourceMotives + fixedTailLen) expectedTotal
-  let extraTail := args.extract expectedTotal args.size
-
-  let nCanonMotives := plan.nCanonicalMotives
-  let mut canonicalArgs : Array (Nat × Expr) := #[]
-  let mut collapsedArgs : Array Expr := #[]
-  let mut entries : Array Ixon.CallSiteEntry := #[]
-
-  for (p, i) in params.zipIdx do
-    canonicalArgs := canonicalArgs.push (i, p)
-    entries := entries.push (.kept i.toUInt64 0)
-
-  let motiveCanonBase := plan.nParams
-  for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := motiveCanonBase + plan.sourceToCanonMotive[srcI]!
-      canonicalArgs := canonicalArgs.push (canonPos, motive)
-      entries := entries.push (.kept canonPos.toUInt64 0)
-    else
-      entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-      collapsedArgs := collapsedArgs.push motive
-
-  let fixedTailCanonBase := plan.nParams + nCanonMotives
-  for (t, i) in fixedTail.zipIdx do
-    canonicalArgs := canonicalArgs.push (fixedTailCanonBase + i, t)
-    entries := entries.push (.kept (fixedTailCanonBase + i).toUInt64 0)
-
-  let handlerCanonBase := fixedTailCanonBase + fixedTailLen
-  for (handler, srcI) in handlers.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := handlerCanonBase + plan.sourceToCanonMotive[srcI]!
-      canonicalArgs := canonicalArgs.push (canonPos, handler)
-      entries := entries.push (.kept canonPos.toUInt64 0)
-    else
-      entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
-      collapsedArgs := collapsedArgs.push handler
-
-  let extraTailCanonBase := handlerCanonBase + nCanonMotives
-  for (t, i) in extraTail.zipIdx do
-    canonicalArgs := canonicalArgs.push (extraTailCanonBase + i, t)
-    entries := entries.push (.kept (extraTailCanonBase + i).toUInt64 0)
-
-  let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
-  buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
-
 end
 
-/-- Production expression compiler.  Environments without any call-site
-    plans use the total ordinary implementation, while plan-bearing
-    environments retain the existing surgery state machine.  The split gives
-    the ordinary refinement proof kernel-visible equations without changing
-    surgery behavior. -/
+
+/-- Pass 3: the placeholder indices of the rewritten call sites in `e`
+    (`[(_ix.inline, n)]` mdata nodes), in first-occurrence order, each once.
+    The walk visits every distinct node once. -/
+def pass3Placeholders (e : Expr) : Array Nat := Id.run do
+  let mut seen : Std.HashSet Expr := {}
+  let mut out : Array Nat := #[]
+  let mut stack : Array Expr := #[e]
+  while !stack.isEmpty do
+    let some x := stack.back? | break
+    stack := stack.pop
+    if seen.contains x then continue
+    seen := seen.insert x
+    match x with
+    | .mdata kvs inner _ =>
+      if let #[(k, .ofNat n)] := kvs then
+        if k == Ix.Compile.Pass.inlineKey && !out.contains n then out := out.push n
+      stack := stack.push inner
+    | .app f a _ => stack := stack.push a |>.push f
+    | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
+    | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
+    | .proj _ _ s _ => stack := stack.push s
+    | _ => pure ()
+  return out
+
+/-- Pass 3: compile the decompile record of every rewritten call site of
+    `e` that the current constant has not compiled yet: its source
+    occurrence (`CompileEnv.p3Sources`), into `metaSharing`, with
+    references and universes outside the primary tables in the extension
+    tables (`p3MetaMode`). The expression cache is saved and restored
+    around it, so no metadata-only form is ever reused by the term. -/
+def pass3CompileRecords (e : Expr) : CompileM Unit := do
+  let cenv ← getCompileEnv
+  for n in pass3Placeholders e do
+    if (← getBlockState).p3Records.contains n then continue
+    let some src := cenv.p3Sources.get? n
+      | throw (.invalidMutualBlock s!"Pass 3: no source occurrence for call-site record {n}")
+    let savedCache := (← getBlockState).exprCache
+    modifyBlockState fun c => { c with p3MetaMode := true }
+    let (ix, root) ← compileExprPartial src
+    modifyBlockState fun c => { c with
+      p3MetaMode := false
+      exprCache := savedCache
+      p3Records := c.p3Records.insert n (c.metaSharing.size, root)
+      metaSharing := c.metaSharing.push ix }
+
+/-- Production expression compiler. A driver-prepared environment
+    (`CompileEnv.pass3`) compiles with `compileExprPartial`, after the
+    decompile records of the rewritten call sites in `e` are compiled
+    (`pass3CompileRecords`; the block's terms were rewritten before
+    compilation, `Ix.Compile.Pass.Translate`); a hand-built environment with
+    `compileExprTotal`. The two are the same ordinary compiler (equal cache
+    and arena semantics); the driver path keeps the `partial` one because
+    `compileExprTotal` sizes its fuel with `exprCompileDepth` first. Until
+    M6R slice 6 the driver path was the call-site surgery's implementation
+    run with an empty plan map; slice 6 deleted the plan branches, so the
+    bytes are unchanged. -/
 def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
-  if (← getCompileEnv).surgeryFree then
-    compileExprNoSurgery e
+  let cenv ← getCompileEnv
+  if cenv.pass3 then
+    if !cenv.p3Sources.isEmpty then
+      pass3CompileRecords e
+    compileExprPartial e
   else
-    compileExprSurgical e
+    compileExprTotal e
 
 /-! ## Table Preseeding
 
@@ -1699,9 +1380,9 @@ def univSortKey (u : Ixon.Univ) : ByteArray :=
     `Address.cmpBytes`; Rust `Vec<u8>` `Ord`). -/
 def byteArrayCmp (x y : ByteArray) : Ordering := Id.run do
   let n := min x.size y.size
-  for i in [0:n] do
-    let xi := x[i]!
-    let yi := y[i]!
+  for h : i in [0:n] do
+    let xi := x[i]'(Nat.lt_of_lt_of_le h.upper (Nat.min_le_left _ _))
+    let yi := y[i]'(Nat.lt_of_lt_of_le h.upper (Nat.min_le_right _ _))
     if xi < yi then return .lt
     if xi > yi then return .gt
   return compare x.size y.size
@@ -1790,7 +1471,7 @@ private unsafe def collectExprTablesImpl (top : Expr) (ctxKey : Address)
   let mut (refs, univs, seen) := acc
   let mut stack : Array Expr := #[top]
   while !stack.isEmpty do
-    let e := stack.back!
+    let some e := stack.back? | break
     stack := stack.pop
     let key := (e.getHash, ctxKey)
     if seen.contains key then continue
@@ -1977,270 +1658,36 @@ def mutConstPreseedInputs (c : MutConst) : List (Expr × List Name) :=
 def mutConstPreseedExprs (c : MutConst) : Array (Expr × List Name) :=
   (mutConstPreseedInputs c).toArray
 
-/-! ## Level Comparison -/
+/-! ## Classes and canonical order (Pass 1, `Ix.Compile.Canon`)
 
-/-- Compare two Ix levels for ordering. -/
-def compareLevel (xctx yctx : List Name)
-    : Level → Level → CompileM SOrder
-  | .mvar .., _ => throw (.unsupportedExpr "level metavariable")
-  | _, .mvar .. => throw (.unsupportedExpr "level metavariable")
-  | .zero _, .zero _ => pure ⟨true, .eq⟩
-  | .zero _, _ => pure ⟨true, .lt⟩
-  | _, .zero _ => pure ⟨true, .gt⟩
-  | .succ x _, .succ y _ => compareLevel xctx yctx x y
-  | .succ .., _ => pure ⟨true, .lt⟩
-  | _, .succ .. => pure ⟨true, .gt⟩
-  | .max xl xr _, .max yl yr _ => SOrder.cmpM
-    (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
-  | .max .., _ => pure ⟨true, .lt⟩
-  | _, .max .. => pure ⟨true, .gt⟩
-  | .imax xl xr _, .imax yl yr _ => SOrder.cmpM
-      (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
-  | .imax .., _ => pure ⟨true, .lt⟩
-  | _, .imax .. => pure ⟨true, .gt⟩
-  | .param x _, .param y _ => do
-    match (xctx.idxOf? x), (yctx.idxOf? y) with
-    | some xi, some yi => pure ⟨true, compare xi yi⟩
-    | none, _ => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{x}")
-    | _, none => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{y}")
+Step 1 of a block's compilation, the classes (collapse) and their canonical
+order, is `Ix.Compile.Canon.sortClasses` under `Rules.compiler`: today's
+rules (name-hash seed and least-name-hash representative, syntactic levels,
+external references by address at the first difference, today's structural
+nested order) with the two Lean-port comparator fixes on (mixed kinds by
+kind tag; the comparison cache normalised to the key's orientation, design
+document §3.4, C1 and C2). Neither fix is reachable on Lean input, so the
+output is today's. The pure functions are the definition; what follows only
+converts between them and `CompileM`. -/
 
-/-! ## Expression Comparison -/
-
-/-- Structural size used to expose termination of name-irrelevant expression
-comparison. The body is exposed because it is also the public comparator's
-well-founded measure. -/
-@[expose] def compareExprSize : Expr → Nat
-  | .bvar .. | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => 1
-  | .app fn arg _ => compareExprSize fn + compareExprSize arg + 1
-  | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
-      compareExprSize ty + compareExprSize body + 1
-  | .letE _ ty value body _ _ =>
-      compareExprSize ty + compareExprSize value + compareExprSize body + 1
-  | .proj _ _ value _ | .mdata _ value _ => compareExprSize value + 1
-
-@[simp] theorem compareExprSize_app (fn arg : Expr)
-    (hash : Address) :
-    compareExprSize (.app fn arg hash) =
-      compareExprSize fn + compareExprSize arg + 1 := by rfl
-
-@[simp] theorem compareExprSize_lam (name : Name) (ty body : Expr)
-    (bi : Lean.BinderInfo) (hash : Address) :
-    compareExprSize (.lam name ty body bi hash) =
-      compareExprSize ty + compareExprSize body + 1 := by rfl
-
-@[simp] theorem compareExprSize_forallE (name : Name)
-    (ty body : Expr) (bi : Lean.BinderInfo) (hash : Address) :
-    compareExprSize (.forallE name ty body bi hash) =
-      compareExprSize ty + compareExprSize body + 1 := by rfl
-
-@[simp] theorem compareExprSize_letE (name : Name)
-    (ty value body : Expr) (nonDep : Bool) (hash : Address) :
-    compareExprSize (.letE name ty value body nonDep hash) =
-      compareExprSize ty + compareExprSize value + compareExprSize body + 1 :=
-  by rfl
-
-@[simp] theorem compareExprSize_proj (typeName : Name) (field : Nat)
-    (value : Expr) (hash : Address) :
-    compareExprSize (.proj typeName field value hash) =
-      compareExprSize value + 1 := by rfl
-
-@[simp] theorem compareExprSize_mdata
-    (data : Array (Name × DataValue)) (inner : Expr) (hash : Address) :
-    compareExprSize (.mdata data inner hash) = compareExprSize inner + 1 :=
-  by rfl
-
-/-- Name-irrelevant ordering of Ix expressions.
-    Matches Rust's compare_expr - no caching, handles mdata inline. -/
-@[expose] def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
-    (x y : Expr) : CompileM SOrder := do
-  match x, y with
-  | .mvar .., _ => throw (.unsupportedExpr "metavariable in comparison")
-  | _, .mvar .. => throw (.unsupportedExpr "metavariable in comparison")
-  | .fvar .., _ => throw (.unsupportedExpr "fvar in comparison")
-  | _, .fvar .. => throw (.unsupportedExpr "fvar in comparison")
-  | .mdata dx xi hx, .mdata dy yi hy => do
-    if SemanticContract.hasMetadata dx then
-      if SemanticContract.hasMetadata dy then
-        let cx ← match SemanticContract.read dx with
-          | .ok c => pure c | .error e => throw (.unsupportedExpr e)
-        let cy ← match SemanticContract.read dy with
-          | .ok c => pure c | .error e => throw (.unsupportedExpr e)
-        let order := compare cx.orderKey cy.orderKey
-        if order != .eq then return ⟨true, order⟩
-        compareExpr ctx xlvls ylvls xi yi
-      else compareExpr ctx xlvls ylvls (.mdata dx xi hx) yi
-    else compareExpr ctx xlvls ylvls xi (.mdata dy yi hy)
-  | .mdata data x _, y =>
-    if SemanticContract.hasMetadata data then pure ⟨true, .gt⟩
-    else compareExpr ctx xlvls ylvls x y
-  | x, .mdata data y _ =>
-    if SemanticContract.hasMetadata data then pure ⟨true, .lt⟩
-    else compareExpr ctx xlvls ylvls x y
-  | .bvar x _, .bvar y _ => pure ⟨true, compare x y⟩
-  | .bvar .., _ => pure ⟨true, .lt⟩
-  | _, .bvar .. => pure ⟨true, .gt⟩
-  | .sort x _, .sort y _ => compareLevel xlvls ylvls x y
-  | .sort .., _ => pure ⟨true, .lt⟩
-  | _, .sort .. => pure ⟨true, .gt⟩
-  | .const x xls _, .const y yls _ => do
-    let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls.toList yls.toList
-    if univs.ord != .eq then pure univs
-    else if x == y then pure ⟨true, .eq⟩
-    else match ctx.get? x, ctx.get? y with
-    | some nx, some ny => pure ⟨false, compare nx ny⟩
-    | some _, none => pure ⟨true, .lt⟩
-    | none, some _ => pure ⟨true, .gt⟩
-    | none, none => do
-      let x' ← lookupConstAddr x
-      let y' ← lookupConstAddr y
-      pure ⟨true, compare x' y'⟩
-  | .const .., _ => pure ⟨true, .lt⟩
-  | _, .const .. => pure ⟨true, .gt⟩
-  | .app xf xa _, .app yf ya _ =>
-    SOrder.cmpM
-      (compareExpr ctx xlvls ylvls xf yf)
-      (compareExpr ctx xlvls ylvls xa ya)
-  | .app .., _ => pure ⟨true, .lt⟩
-  | _, .app .. => pure ⟨true, .gt⟩
-  | .lam _ xt xb _ _, .lam _ yt yb _ _ =>
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
-  | .lam .., _ => pure ⟨true, .lt⟩
-  | _, .lam .. => pure ⟨true, .gt⟩
-  | .forallE _ xt xb _ _, .forallE _ yt yb _ _ =>
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
-  | .forallE .., _ => pure ⟨true, .lt⟩
-  | _, .forallE .. => pure ⟨true, .gt⟩
-  | .letE _ xt xv xb _ _, .letE _ yt yv yb _ _ =>
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) <|
-    SOrder.cmpM (compareExpr ctx xlvls ylvls xv yv)
-      (compareExpr ctx xlvls ylvls xb yb)
-  | .letE .., _ => pure ⟨true, .lt⟩
-  | _, .letE .. => pure ⟨true, .gt⟩
-  | .lit x _, .lit y _ => pure ⟨true, compare x y⟩
-  | .lit .., _ => pure ⟨true, .lt⟩
-  | _, .lit .. => pure ⟨true, .gt⟩
-  | .proj tnx ix tx _, .proj tny iy ty _ => do
-    let tn ← match ctx.get? tnx, ctx.get? tny with
-      | some nx, some ny => pure ⟨false, compare nx ny⟩
-      | none, some _ => pure ⟨true, .gt⟩
-      | some _, none => pure ⟨true, .lt⟩
-      | none, none =>
-        if tnx == tny then pure ⟨true, .eq⟩
-        else do
-          let x' ← lookupConstAddr tnx
-          let y' ← lookupConstAddr tny
-          pure ⟨true, compare x' y'⟩
-    SOrder.cmpM (pure tn) <|
-    SOrder.cmpM (pure ⟨true, compare ix iy⟩)
-      (compareExpr ctx xlvls ylvls tx ty)
-termination_by compareExprSize x + compareExprSize y
-decreasing_by
-  all_goals simp only [compareExprSize_app, compareExprSize_lam,
-    compareExprSize_forallE, compareExprSize_letE, compareExprSize_proj,
-    compareExprSize_mdata]
-  all_goals omega
-
-/-! ## Constant Comparison -/
-
-/-- Canonicalize an unordered pair of declaration names for the private
-comparison cache. -/
-def comparisonCacheKey (x y : Name) : Name × Name :=
-  match compare x y with
-  | .lt => (x, y)
-  | _ => (y, x)
-
-/-- Compare two definition members after the outer variant dispatch. -/
-def compareDef (ctx : Ix.MutCtx) (x y : Def) : CompileM SOrder := do
-  SOrder.cmpM (pure ⟨true, compare x.kind y.kind⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.levelParams.size y.levelParams.size⟩) <|
-  SOrder.cmpM
-    (compareExpr ctx x.levelParams.toList y.levelParams.toList x.type y.type)
-    (compareExpr ctx x.levelParams.toList y.levelParams.toList x.value y.value)
-
-/-- Compare two constructors, memoizing strong results in the private sort
-cache. -/
-def compareCtor (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
-    (x y : ConstructorVal) : CompileM SOrder := do
-  let key := comparisonCacheKey x.cnst.name y.cnst.name
-  let cache ← getBlockState
-  if let some o := cache.cmpCache.get? key then
-    return ⟨true, o⟩
-  let sorder ←
-    SOrder.cmpM
-      (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.cidx y.cidx⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.numFields y.numFields⟩)
-      (compareExpr ctx xlvls ylvls x.cnst.type y.cnst.type)
-  if sorder.strong then
-    modifyBlockState fun c =>
-      { c with cmpCache := c.cmpCache.insert key sorder.ord }
-  return sorder
-
-/-- Compare two inductive members after the outer variant dispatch. -/
-def compareInd (ctx : Ix.MutCtx) (x y : Ind) : CompileM SOrder := do
-  SOrder.cmpM (pure ⟨true, compare x.levelParams.size y.levelParams.size⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.ctors.size y.ctors.size⟩) <|
-  SOrder.cmpM
-    (compareExpr ctx x.levelParams.toList y.levelParams.toList x.type y.type)
-    (SOrder.zipM
-      (compareCtor ctx x.levelParams.toList y.levelParams.toList)
-      x.ctors.toList y.ctors.toList)
-
-/-- Compare two recursor rules under their parent universe contexts. -/
-def compareRule (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
-    (x y : RecursorRule) : CompileM SOrder := do
-  SOrder.cmpM (pure ⟨true, compare x.nfields y.nfields⟩)
-    (compareExpr ctx xlvls ylvls x.rhs y.rhs)
-
-/-- Compare two recursor members after the outer variant dispatch. -/
-def compareRecr (ctx : Ix.MutCtx) (x y : RecursorVal) : CompileM SOrder := do
-  SOrder.cmpM
-    (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numMotives y.numMotives⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.numMinors y.numMinors⟩) <|
-  SOrder.cmpM (pure ⟨true, compare x.k y.k⟩) <|
-  SOrder.cmpM
-    (compareExpr ctx x.cnst.levelParams.toList y.cnst.levelParams.toList
-      x.cnst.type y.cnst.type)
-    (SOrder.zipM
-      (compareRule ctx x.cnst.levelParams.toList y.cnst.levelParams.toList)
-      x.rules.toList y.rules.toList)
-
-/-- Uncached variant dispatch for mutual-constant comparison. -/
-def compareConstBody (ctx : Ix.MutCtx) (x y : MutConst) :
-    CompileM SOrder :=
-  match x, y with
-  | .defn x, .defn y => compareDef ctx x y
-  | .defn _, _ => pure ⟨true, .lt⟩
-  | .indc x, .indc y => compareInd ctx x y
-  | .indc _, _ => pure ⟨true, .lt⟩
-  | .recr x, .recr y => compareRecr ctx x y
-  | .recr _, _ => pure ⟨true, .lt⟩
-
-/-- Compare two mutual constants for ordering. -/
-def compareConst (ctx : Ix.MutCtx) (x y : MutConst) : CompileM Ordering := do
-  let key := comparisonCacheKey x.name y.name
-  let cache ← getBlockState
-  if let some o := cache.cmpCache.get? key then
-    return o
-  let sorder ← compareConstBody ctx x y
-  if sorder.strong then
-    modifyBlockState fun c =>
-      { c with cmpCache := c.cmpCache.insert key sorder.ord }
-  pure sorder.ord
-
-/-- Check if two mutual constants are equal (for grouping). -/
-def eqConst (ctx : Ix.MutCtx) (x y : MutConst) : CompileM Bool :=
-  do
-    let order ← compareConst ctx x y
-    pure (order == .eq)
-
-/-! ## sortConsts Fixed-Point Algorithm -/
+/-- The compiled address of a constant as `lookupConstAddr` resolves it
+(current block's primary registrations, the merged name map, the current
+block's auxiliary registrations, the merged auxiliary map), as a pure
+function of the current state. Sorting writes none of these maps, so a
+snapshot taken before a sort answers every lookup the sort makes. -/
+def constAddrLookup : CompileM (Name → Option Address) := do
+  let env ← getCompileEnv
+  let bstate ← getBlockState
+  pure fun name =>
+    match bstate.blockNameToAddr.get? name with
+    | some addr => some addr
+    | none =>
+    match env.nameToAddr.get? name with
+    | some addr => some addr
+    | none =>
+    match bstate.auxNameToAddr.get? name with
+    | some addr => some addr
+    | none => env.auxNameToAddr.get? name
 
 /-- Resolve one inductive member's constructors for SCC collection. -/
 def collectMutConstConstructors :
@@ -2259,94 +1706,57 @@ def MutConst.mkIndc (i : InductiveVal) : CompileM MutConst := do
     i.numIndices, i.all, ctors, i.numNested, i.isRec, i.isReflexive,
     i.isUnsafe⟩)
 
-/-- A sorter member retains erased evidence that it came from the SCC source
-list. This makes the classification boundary provenance-preserving by type. -/
-abbrev SortMutConstMember (sources : List MutConst) :=
-  { source : MutConst // source ∈ sources }
+/-- The classes of a block's members in canonical order, each class's
+representative first: `Ix.Compile.Canon.sortClasses Rules.compiler`, with
+external addresses from `constAddrLookup`. Pure: the comparison cache lives
+inside the call, so nothing leaks into the block state. -/
+def sortConstsCore (sources : List MutConst) : CompileM (List (List MutConst)) := do
+  let addr? ← constAddrLookup
+  match Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addr? sources with
+  | .ok (classes, _) => pure classes
+  | .error e => throw (.invalidMutualBlock s!"sortConsts: {e}")
 
-def sortMutConstCtx {sources : List MutConst}
-    (classes : List (List (SortMutConstMember sources))) : Ix.MutCtx :=
-  MutConst.ctx (classes.map fun constClass => constClass.map (fun x => x.1))
+/-- The declared flat position of a recursor in its family: `X.rec` of the
+`i`-th member of `RecursorVal.all` is at `i`, and the nested auxiliary
+recursor `all[0].rec_N` at `all.size + N - 1` (`u64::MAX` otherwise).
+Mirrors Rust `recursor_family_position`. -/
+def recursorFamilyPosition (r : RecursorVal) : UInt64 :=
+  match r.cnst.name with
+  | .str parent "rec" _ =>
+    match r.all.findIdx? (· == parent) with
+    | some i => UInt64.ofNat i
+    | none => 0xFFFFFFFFFFFFFFFF
+  | .str parent s _ =>
+    match (s.dropPrefix? "rec_").bind (·.toString.toNat?) with
+    | some k =>
+      if k ≥ 1 && r.all[0]? == some parent then UInt64.ofNat (r.all.size + k - 1)
+      else 0xFFFFFFFFFFFFFFFF
+    | none => 0xFFFFFFFFFFFFFFFF
+  | _ => 0xFFFFFFFFFFFFFFFF
 
-/-- Insert one tagged member into canonical source-name order. -/
-def insertSortMutConstMemberByName {sources : List MutConst}
-    (source : SortMutConstMember sources) :
-    List (SortMutConstMember sources) → List (SortMutConstMember sources)
-  | [] => [source]
-  | current :: rest =>
-    if compare source.1.name current.1.name == .gt then
-      current :: insertSortMutConstMemberByName source rest
-    else source :: current :: rest
-
-/-- Stable canonical source-name order used at every refinement boundary. -/
-def sortMutConstMembersByName {sources : List MutConst} :
-    List (SortMutConstMember sources) → List (SortMutConstMember sources)
-  | [] => []
-  | source :: rest =>
-    insertSortMutConstMemberByName source (sortMutConstMembersByName rest)
-
-/-- Refine one tentative equivalence class and restore canonical name order
-inside each resulting group. -/
-def refineMutConstClass {sources : List MutConst} (ctx : Ix.MutCtx) :
-    List (SortMutConstMember sources) →
-      CompileM (List (List (SortMutConstMember sources)))
-  | [] => throw (.invalidMutualBlock "empty class in sortConsts")
-  | [source] => pure [[source]]
-  | members => do
-    let sorted ← members.sortByM fun x y => compareConst ctx x.1 y.1
-    let groups ← List.groupByM (fun x y => eqConst ctx x.1 y.1) sorted
-    pure (groups.map sortMutConstMembersByName)
-
-/-- Refine every tentative class from left to right. -/
-def refineMutConstClasses {sources : List MutConst} (ctx : Ix.MutCtx) :
-    List (List (SortMutConstMember sources)) →
-      CompileM (List (List (SortMutConstMember sources)))
-  | [] => pure []
-  | sources :: rest => do
-    let groups ← refineMutConstClass ctx sources
-    let tail ← refineMutConstClasses ctx rest
-    pure (groups ++ tail)
-
-/-- Fuel-bounded fixed-point refinement. Refinement is class-local and emits
-one or more nonempty groups for every incoming class, so an increased class
-count consumes the finite source-member budget. Equal counts mean no class
-split occurred. The extra round observes that fixed point; exhaustion turns a
-malformed comparison relation into a deterministic compiler error. -/
-def sortConstsLoop {sources : List MutConst} :
-    Nat → List (List (SortMutConstMember sources)) →
-      CompileM (List (List (SortMutConstMember sources)))
-  | 0, _ => throw (.invalidMutualBlock "sortConsts did not converge")
-  | fuel + 1, classes => do
-    let refined ← refineMutConstClasses (sortMutConstCtx classes) classes
-    if classes.length == refined.length then pure refined
-    else sortConstsLoop fuel refined
-
-/-- Sort mutual constants into ordered equivalence classes using bounded
-partition refinement, starting from one canonical name-sorted class. The
-erased source-membership tags are removed only after refinement; final guards
-make nonempty classes and the representative-count bound explicit. -/
-def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) := do
-  let members : List (SortMutConstMember sources) := sources.attach
-  let initial := sortMutConstMembersByName members
-  let taggedClasses ← sortConstsLoop (sources.length + 1) [initial]
-  let classes := taggedClasses.map fun constClass =>
-    constClass.map fun source => source.1
-  if classes.any (fun constClass => constClass.isEmpty) then
-    throw (.invalidMutualBlock "empty class after sortConsts")
-  else if sources.length < classes.length then
-    throw (.invalidMutualBlock "too many classes after sortConsts")
+/-- A block of recursors is laid out in its family's flat order (the
+order the kernel pairs with the inductive block's flat members), not in
+`sortConsts` order; other blocks are returned unchanged. The regenerated
+families get this from `compileAuxBlockWithRename`'s class-order key; this
+applies the same rule to a recursor block compiled from Lean's own
+declarations (`Named.original`, decompile's verification recompile), so
+that on a block canonicalisation leaves unchanged Lean's form and the Ix
+form of each recursor have one address (D6). Stable. Mirrors Rust
+`order_recursor_family`. -/
+def orderRecursorFamily (classes : List (List MutConst)) : List (List MutConst) :=
+  if classes.isEmpty || !classes.all (·.all fun c => c matches .recr _) then classes
   else
-    pure classes
+    let key (cls : List MutConst) : UInt64 := cls.foldl (init := 0xFFFFFFFFFFFFFFFF)
+      fun acc c => match c with
+        | .recr r => min acc (recursorFamilyPosition r)
+        | _ => acc
+    let decorated := classes.toArray.zipIdx.map fun (cls, i) => (key cls, i, cls)
+    let sorted := decorated.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)
+    (sorted.map (·.2.2)).toList
 
-/-- Run classification with a private comparison cache. Sorting is a pure
-classification phase; restoring the incoming block state makes that boundary
-explicit and prevents its memoization strategy from leaking into compilation. -/
-def sortConstsIsolated (sources : List MutConst) :
-    CompileM (List (List MutConst)) := do
-  let saved ← getBlockState
-  let classes ← sortConsts sources
-  modifyBlockState fun _ => saved
-  pure classes
+/-- `sortConstsCore`, timed as the classes phase (`Ix.PhaseTimers`). -/
+def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) :=
+  timedC .classes (sortConstsCore sources)
 
 /-! ## Constant Building -/
 
@@ -2497,7 +1907,8 @@ def finishDefinitionDataCompilation (d : Def)
     (valueExpr : Ixon.Expr) (valueRoot : UInt64) :
     CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
+  let metaSharing ← takeMetaSharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2526,7 +1937,7 @@ def finishDefinitionDataCompilation (d : Def)
   recordDefHints d.name hints
   let constMeta := { Ixon.ConstantMeta.new
     (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := metaSharing, metaRefs, metaUnivs, univPatches }
   pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Definition specialization of the common definition-like finalizer. -/
@@ -2589,7 +2000,8 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
     (typeRoot : UInt64) :
     CompileM (Ixon.Axiom × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
+  let metaSharing ← takeMetaSharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2607,7 +2019,7 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
   }
   let constMeta := { Ixon.ConstantMeta.new
     (.axio nameAddr lvlAddrs arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := metaSharing, metaRefs, metaUnivs, univPatches }
   pure (axio, constMeta, typeExpr)
 
 /-- Compile an axiom to Ixon.Axiom with metadata. -/
@@ -2632,7 +2044,8 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
     (typeRoot : UInt64) :
     CompileM (Ixon.Quotient × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
+  let metaSharing ← takeMetaSharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2647,7 +2060,7 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
   let constMeta := { Ixon.ConstantMeta.new
     (.quot q.cnst.name.getHash
       (q.cnst.levelParams.map (·.getHash)) arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := metaSharing, metaRefs, metaUnivs, univPatches }
   pure (quot, constMeta, typeExpr)
 
 /-- Compile a quotient to Ixon.Quotient with metadata. -/
@@ -2692,7 +2105,8 @@ def finishRecursorCompilation (r : RecursorVal)
     (compiledRules : RecursorRuleCompileState) :
     CompileM (Ixon.Recursor × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
+  let metaSharing ← takeMetaSharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2723,7 +2137,7 @@ def finishRecursorCompilation (r : RecursorVal)
   let constMeta := { Ixon.ConstantMeta.new
     (.recr nameAddr lvlAddrs compiledRules.ruleAddrs allAddrs ctxAddrs
       arena typeRoot compiledRules.ruleRoots) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := metaSharing, metaRefs, metaUnivs, univPatches }
   pure (recursor, constMeta, typeExpr)
 
 /-- Compile a recursor to Ixon.Recursor with metadata. -/
@@ -2740,7 +2154,8 @@ def finishConstructorCompilation (c : ConstructorVal)
     (typeExpr : Ixon.Expr) (typeRoot : UInt64) :
     CompileM (Ixon.Constructor × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
+  let metaSharing ← takeMetaSharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -2761,7 +2176,7 @@ def finishConstructorCompilation (c : ConstructorVal)
   }
   let ctorMeta := { Ixon.ConstantMeta.new
     (.ctor nameAddr lvlAddrs c.induct.getHash arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := metaSharing, metaRefs, metaUnivs, univPatches }
   pure (ctor, ctorMeta, typeExpr)
 
 /-- Compile a constructor to Ixon.Constructor with metadata (ConstantMeta.ctor). -/
@@ -2783,16 +2198,18 @@ structure InductiveConstructorCompileState where
 starts. Each constructor subsequently owns an independent arena. -/
 structure InductiveTypeCompileMeta where
   arena : Ixon.ExprMetaArena
-  surgerySharing : Array Ixon.Expr
+  metaSharing : Array Ixon.Expr
+  metaRefs : Array Address := #[]
   metaUnivs : Array Ixon.Univ
   univPatches : Array Ixon.UnivPatch
 
 def takeInductiveTypeCompileMeta : CompileM InductiveTypeCompileMeta := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
+  let metaSharing ← takeMetaSharing
+  let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
-  pure { arena, surgerySharing, metaUnivs, univPatches }
+  pure { arena, metaSharing, metaRefs, metaUnivs, univPatches }
 
 /-- Compile constructors in source order. -/
 def compileInductiveConstructors :
@@ -2839,7 +2256,8 @@ def finishInductiveCompilation (i : InductiveVal)
   let constMeta := { Ixon.ConstantMeta.new
     (.indc nameAddr lvlAddrs compiledCtors.ctorNameAddrs allAddrs ctxAddrs
       typeMeta.arena typeRoot) with
-    metaSharing := typeMeta.surgerySharing
+    metaSharing := typeMeta.metaSharing
+    metaRefs := typeMeta.metaRefs
     metaUnivs := typeMeta.metaUnivs
     univPatches := typeMeta.univPatches }
   pure (ind, constMeta, compiledCtors.ctorMetaPairs,
@@ -2902,7 +2320,8 @@ def finishInductiveDataCompilation (i : Ind)
   let constMeta := { Ixon.ConstantMeta.new
     (.indc nameAddr lvlAddrs compiledCtors.ctorNameAddrs allAddrs ctxAddrs
       typeMeta.arena typeRoot) with
-    metaSharing := typeMeta.surgerySharing
+    metaSharing := typeMeta.metaSharing
+    metaRefs := typeMeta.metaRefs
     metaUnivs := typeMeta.metaUnivs
     univPatches := typeMeta.univPatches }
   pure (ind, constMeta, compiledCtors.ctorMetaPairs,
@@ -3034,32 +2453,15 @@ def mutualPreseedExprs (classes : List (List MutConst)) :
     Array (Expr × List Name) :=
   (mutualPreseedInputs classes).toArray
 
-/-- Audit one equivalence class in source order. -/
-def auditMutConstClassPlanHeads : List MutConst → CompileM Unit
-  | [] => pure ()
-  | source :: rest => do
-    auditMutConstPlanHeads source
-    auditMutConstClassPlanHeads rest
-
-/-- Audit all equivalence classes in source order. -/
-def auditMutConstClassesPlanHeads : List (List MutConst) → CompileM Unit
-  | [] => pure ()
-  | constClass :: rest => do
-    auditMutConstClassPlanHeads constClass
-    auditMutConstClassesPlanHeads rest
-
 /-- Standalone collapse used for a single definition or recursor
 representative. Inductives retain the mutual wrapper for their projection
 scheme. -/
 def standaloneMutConstInfo? (payloads : Array Ixon.MutConst) :
     Option Ixon.ConstantInfo :=
-  if payloads.size == 1 then
-    match payloads[0]! with
-    | .defn definition => some (.defn definition)
-    | .recr recursor => some (.recr recursor)
-    | .indc _ => none
-  else
-    none
+  match payloads with
+  | #[.defn definition] => some (.defn definition)
+  | #[.recr recursor] => some (.recr recursor)
+  | _ => none
 
 /-- Build a BlockResult from a block constant, serializing once. -/
 def BlockResult.mk' (block : Ixon.Constant)
@@ -3144,7 +2546,10 @@ def finishMutualCompilation (classes : List (List MutConst))
     (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   let cache ← getBlockState
-  match buildCompiledMutualBlock (← read).1.sharingLimits classes payloads metas cache with
+  let limits := (← read).1.sharingLimits
+  -- Timed at the call (`Ix.PhaseTimers`): the builders themselves carry proofs.
+  match Ix.PhaseTimers.withPhase .sharing payloads
+      (buildCompiledMutualBlock limits classes · metas cache) with
   | .ok result => pure result
   | .error e => throw e
 
@@ -3158,7 +2563,6 @@ def compileMutualPayload (classes : List (List MutConst)) :
     Returns the Muts block constant and projections for each name with metadata. -/
 def compileMutualBlock (classes : List (List MutConst))
     : CompileM BlockResult := do
-  auditMutConstClassesPlanHeads classes
   let mutCtx := MutConst.ctx classes
   withMutCtx mutCtx do
     -- Preseed mirrors Rust compile_mutual (compile.rs:3763): collect over
@@ -3179,14 +2583,13 @@ def buildInductiveMutCtx (i : InductiveVal) (ctorVals : Array ConstructorVal) : 
     ctx := ctx.insert ctor.cnst.name (idx + 1)
   return ctx
 
-/-- Resolve and audit an inductive's constructors in declaration order. -/
+/-- Resolve an inductive's constructors in declaration order. -/
 def collectInductiveConstructors :
     List Name → Array ConstructorVal → CompileM (Array ConstructorVal)
   | [], acc => pure acc
   | ctorName :: rest, acc => do
     match ← findConst ctorName with
     | .ctorInfo ctorVal =>
-      auditPlanHeadArities ctorVal.cnst.name ctorVal.cnst.type
       collectInductiveConstructors rest (acc.push ctorVal)
     | _ =>
       throw (.invalidMutualBlock s!"Expected constructor for {ctorName}")
@@ -3216,8 +2619,8 @@ def finishInductiveFamilyBlock (i : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   let cache ← getBlockState
-  let block ← buildBlockConstant
-    (.muts #[.indc ind]) cache.refs cache.univs
+  let block ← timedC .sharing (buildBlockConstant
+    (.muts #[.indc ind]) cache.refs cache.univs)
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
   let projections :=
@@ -3240,15 +2643,15 @@ def finishConstantInfoWithSharing (info : Ixon.ConstantInfo)
   finishConstantWithSharing info blockMeta
 
 /-- Compile and finalize the payload of a singleton definition declaration.
-The outer singleton driver remains responsible for auditing and preseeding. -/
+The outer singleton driver remains responsible for preseeding. -/
 def compileDefinitionBlock (definitionVal : DefinitionVal) :
     CompileM BlockResult := do
   let (defn, constMeta, _typeExpr, _valueExpr) ←
     compileDefinition definitionVal
-  finishConstantInfoWithSharing (.defn defn) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.defn defn) constMeta)
 
-/-- Preseed and compile a singleton definition after the common declaration
-audit and singleton mutual-context setup performed by `compileConstantInfo`. -/
+/-- Preseed and compile a singleton definition after the singleton
+mutual-context setup performed by `compileConstantInfo`. -/
 def compileDefinitionInfo (definitionVal : DefinitionVal) :
     CompileM BlockResult := do
   preseedExprTables
@@ -3260,7 +2663,7 @@ def compileDefinitionInfo (definitionVal : DefinitionVal) :
 def compileDefinitionDataBlock (definitionData : Def) : CompileM BlockResult := do
   let (defn, constMeta, _typeExpr, _valueExpr) ←
     compileDefinitionData definitionData
-  finishConstantInfoWithSharing (.defn defn) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.defn defn) constMeta)
 
 /-- Preseed and compile a common two-expression definition-like payload. -/
 def compileDefinitionDataInfo (definitionData : Def) : CompileM BlockResult := do
@@ -3276,13 +2679,13 @@ def compileOpaqueInfo (opaqueVal : OpaqueVal) : CompileM BlockResult :=
   compileDefinitionDataInfo (opaqueValData opaqueVal)
 
 /-- Compile and finalize the payload of a singleton axiom declaration.  The
-outer singleton driver remains responsible for auditing and preseeding. -/
+outer singleton driver remains responsible for preseeding. -/
 def compileAxiomBlock (axiomVal : AxiomVal) : CompileM BlockResult := do
   let (axiomInfo, constMeta, _typeExpr) ← compileAxiom axiomVal
-  finishConstantInfoWithSharing (.axio axiomInfo) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.axio axiomInfo) constMeta)
 
-/-- Preseed and compile a singleton axiom after the common declaration audit
-and singleton mutual-context setup performed by `compileConstantInfo`. -/
+/-- Preseed and compile a singleton axiom after the singleton
+mutual-context setup performed by `compileConstantInfo`. -/
 def compileAxiomInfo (axiomVal : AxiomVal) : CompileM BlockResult := do
   preseedExprTables
     #[(axiomVal.cnst.type, axiomVal.cnst.levelParams.toList)]
@@ -3291,7 +2694,7 @@ def compileAxiomInfo (axiomVal : AxiomVal) : CompileM BlockResult := do
 /-- Compile and finalize a singleton quotient payload. -/
 def compileQuotientBlock (quotientVal : QuotVal) : CompileM BlockResult := do
   let (quotientInfo, constMeta, _typeExpr) ← compileQuotient quotientVal
-  finishConstantInfoWithSharing (.quot quotientInfo) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.quot quotientInfo) constMeta)
 
 /-- Preseed and compile a singleton quotient after its driver setup. -/
 def compileQuotientInfo (quotientVal : QuotVal) : CompileM BlockResult := do
@@ -3302,7 +2705,7 @@ def compileQuotientInfo (quotientVal : QuotVal) : CompileM BlockResult := do
 /-- Compile and finalize a singleton recursor payload. -/
 def compileRecursorBlock (recursorVal : RecursorVal) : CompileM BlockResult := do
   let (recursor, constMeta, _typeExpr) ← compileRecursor recursorVal
-  finishConstantInfoWithSharing (.recr recursor) constMeta
+  timedC .sharing (finishConstantInfoWithSharing (.recr recursor) constMeta)
 
 /-- Preseed and compile a singleton recursor after its driver setup. -/
 def compileRecursorInfo (recursorVal : RecursorVal) : CompileM BlockResult := do
@@ -3322,7 +2725,7 @@ def compileInductiveFamilyInfo (inductiveVal : InductiveVal)
   preseedExprTables (inductivePreseedExprs inductiveVal ctorVals)
   compileInductiveFamilyBlock inductiveVal ctorVals
 
-/-- Reconstruct, audit, and compile a standalone inductive family. -/
+/-- Reconstruct and compile a standalone inductive family. -/
 def compileInductiveInfo (inductiveVal : InductiveVal) : CompileM BlockResult := do
   let ctorVals ← lookupInductiveConstructors inductiveVal
   let indMutCtx := buildInductiveMutCtx inductiveVal ctorVals
@@ -3336,51 +2739,43 @@ def compileConstructorInfo (constructorVal : ConstructorVal) :
   | .inductInfo inductiveVal => compileInductiveInfo inductiveVal
   | _ => throw (.invalidMutualBlock "Constructor has non-inductive parent")
 
-/-- Audit, establish the singleton mutual context, and compile a definition.
+/-- Establish the singleton mutual context and compile a definition.
 Kept separate so the definition dispatch equation reduces without unfolding the
 other `ConstantInfo` branches. -/
 def compileDefinitionConstantInfo (definitionVal : DefinitionVal) : CompileM BlockResult := do
-  auditConstantInfoPlanHeads (.defnInfo definitionVal)
   let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert definitionVal.cnst.name 0
   withMutCtx mutCtx (compileDefinitionInfo definitionVal)
 
 def compileTheoremConstantInfo (theoremVal : TheoremVal) : CompileM BlockResult := do
-  auditConstantInfoPlanHeads (.thmInfo theoremVal)
   let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert theoremVal.cnst.name 0
   withMutCtx mutCtx (compileTheoremInfo theoremVal)
 
 def compileOpaqueConstantInfo (opaqueVal : OpaqueVal) : CompileM BlockResult := do
-  auditConstantInfoPlanHeads (.opaqueInfo opaqueVal)
   let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert opaqueVal.cnst.name 0
   withMutCtx mutCtx (compileOpaqueInfo opaqueVal)
 
 def compileQuotientConstantInfo (quotientVal : QuotVal) : CompileM BlockResult := do
-  auditConstantInfoPlanHeads (.quotInfo quotientVal)
   let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert quotientVal.cnst.name 0
   withMutCtx mutCtx (compileQuotientInfo quotientVal)
 
 def compileRecursorConstantInfo (recursorVal : RecursorVal) : CompileM BlockResult := do
-  auditConstantInfoPlanHeads (.recInfo recursorVal)
   let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert recursorVal.cnst.name 0
   withMutCtx mutCtx (compileRecursorInfo recursorVal)
 
 def compileInductiveConstantInfo (inductiveVal : InductiveVal) :
     CompileM BlockResult := do
-  auditConstantInfoPlanHeads (.inductInfo inductiveVal)
   let mutCtx : Ix.MutCtx :=
     Std.TreeMap.empty.insert inductiveVal.cnst.name 0
   withMutCtx mutCtx (compileInductiveInfo inductiveVal)
 
 def compileConstructorConstantInfo (constructorVal : ConstructorVal) :
     CompileM BlockResult := do
-  auditConstantInfoPlanHeads (.ctorInfo constructorVal)
   let mutCtx : Ix.MutCtx :=
     Std.TreeMap.empty.insert constructorVal.cnst.name 0
   withMutCtx mutCtx (compileConstructorInfo constructorVal)
 
 /-- Shared implementation of the remaining singleton `ConstantInfo` branches. -/
 def compileConstantInfoCore (const : ConstantInfo) : CompileM BlockResult := do
-  auditConstantInfoPlanHeads const
   let name := const.getCnst.name
   let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert name 0
   withMutCtx mutCtx do
@@ -3455,7 +2850,7 @@ def collectMutConsts : List Name → Array MutConst →
 /-- Resolve, canonically classify, and compile a non-singleton SCC. -/
 def compileMutualConstants (all : Set Name) : CompileM BlockResult := do
   let consts ← collectMutConsts all.toList #[]
-  let mutConsts ← sortConstsIsolated consts.toList
+  let mutConsts := orderRecursorFamily (← sortConsts consts.toList)
   compileMutualBlock mutConsts
 
 /-- Compile a constant by name (looks it up in the environment).
@@ -3506,7 +2901,8 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   let mut reverseDeps : Std.HashMap Name (Array Name) := {}
 
   for (lo, all) in blocks.blocks do
-    let deps := blocks.blockRefs.get! lo
+    let some deps := blocks.blockRefs.get? lo
+      | return .error s!"compileEnv: block {lo.pretty} has no condensation reference set"
     blockInfo := blockInfo.insert lo (all, deps.size)
     -- Register reverse dependencies
     for depName in deps do
@@ -3526,7 +2922,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
 
   while !readyQueue.isEmpty do
     -- Pop from ready queue
-    let (lo, all) := readyQueue.back!
+    let some (lo, all) := readyQueue.back? | break
     readyQueue := readyQueue.pop
 
     match compileBlockPure compileEnv all lo with
@@ -3591,7 +2987,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   -- Seed with blockNames collected during compilation (binder names, level params, etc.)
   let (addrToNameMap, namesMap, nameBlobs) :=
     compileEnv.nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, blobs) name named =>
-      let addrMap := addrMap.insert named.addr name
+      let addrMap := insertCanonicalAlias addrMap named.addr name  -- A7 (D14)
       let (namesMap, blobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
       (addrMap, namesMap, blobs)
 
@@ -3840,8 +3236,12 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     -- Find all blocks ready to compile (all deps satisfied)
     let mut ready : Array (Name × Set Name) := #[]
     for lo in remaining do
-      let all := blocks.blocks.get! lo
-      let deps := blocks.blockRefs.get! lo
+      let some all := blocks.blocks.get? lo
+        | discard <| workChan.close
+          return .error (.system s!"compileEnvParallel: block {lo.pretty} is not in the condensation")
+      let some deps := blocks.blockRefs.get? lo
+        | discard <| workChan.close
+          return .error (.system s!"compileEnvParallel: block {lo.pretty} has no condensation reference set")
       if deps.all (nameToNamed.contains ·) then
         ready := ready.push (lo, all)
 
@@ -3903,7 +3303,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   -- Seed with blockNames collected during compilation (binder names, level params, etc.)
   let (addrToNameMap, namesMap, nameBlobs) :=
     nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, nameBlobs) name named =>
-      let addrMap := addrMap.insert named.addr name
+      let addrMap := insertCanonicalAlias addrMap named.addr name  -- A7 (D14)
       let (namesMap, nameBlobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap nameBlobs name
       (addrMap, namesMap, nameBlobs)
 
@@ -3946,8 +3346,8 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
 /-- Structured result of `rs_compile_env`. Field kinds/order must match
     the `LeanIxCompileEnvStatus` FFI layout in `crates/ffi/src/lean.rs`:
-    boxed fields first (`root`, `ungrounded`), then the UInt64 scalars
-    (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
+    boxed fields first (`root`, `ungrounded`, `nonCanonical`), then the
+    UInt64 scalars (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
 structure CompileEnvStatus where
   /-- 64-hex canonical consts merkle root. Equals the `.ixe` header root
       when a file was written; still computed on a fail-closed abort. -/
@@ -3955,6 +3355,10 @@ structure CompileEnvStatus where
   /-- `(pretty name, reason)` for every requested constant whose block
       failed to compile, sorted by name. Empty ⇔ complete environment. -/
   ungrounded : Array (String × String)
+  /-- `(pretty name, cause)` of the Rust compiler's Pass 3 non-canonical
+      set (the recorded declines, `CompileEnv.p3NonCanonical` on the Lean
+      side), sorted by name; empty when no Pass 3 decline was recorded. -/
+  nonCanonical : Array (String × String)
   /-- Bytes written to `outPath` (0 when nothing was written). -/
   bytes : UInt64
   /-- Named constants in the compiled env. -/
@@ -4000,7 +3404,7 @@ opaque rsCompileEnvBytesAnonFFI
     Shared between the `ix validate` CLI subcommand (`Ix.Cli.ValidateCmd`)
     and the `validate-aux` test runner (`Tests.Ix.Compile.ValidateAux`).
     The underlying Rust function is `rs_compile_validate_aux` in
-    `src/ffi/lean_env.rs`. -/
+    `crates/ffi/src/lean_env.rs`. -/
 @[extern "rs_compile_validate_aux"]
 opaque rsCompileValidateAuxFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → USize
@@ -4032,7 +3436,7 @@ opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.Ra
 /-- FFI: Compute the LEON content hash of every constant in a Lean
     environment. Returns `(Ix.Name, Ix.Address)` pairs where the address
     is the 32-byte Blake3 digest produced by `ConstantInfo::get_hash()`
-    in `src/ix/env.rs`. This is the addressing scheme under which
+    in `crates/common/src/env.rs`. This is the addressing scheme under which
     `orig_kenv` stores KIds in the kernel — two constants with the same
     Lean name but different content get distinct addresses. Used by
     `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimAddrs::new_orig`
@@ -4109,5 +3513,3 @@ def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
 
 end
 end Ix.CompileM
-
-

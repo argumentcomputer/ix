@@ -18,6 +18,8 @@ import Ix.Meta
 import Tests.Ix.Compile.Mutual
 import Tests.Ix.Compile.Canonicity
 import Tests.Ix.Compile.LevelSpellings
+import Tests.Ix.Compile.Fixtures.LetNonDep
+import Tests.Ix.Compile.Fixtures.NestedLevels
 import Tests.Ix.Kernel.TutorialDefs
 import Lean
 
@@ -83,6 +85,8 @@ def validateAuxClosure (env : Lean.Environment)
     -- Level-spelling fixtures (canonicity §10.6): mk*-reducible spellings
     -- per rule, spelling twins, Géran order twins, a WF eq_def.
     `Tests.Ix.Compile.LevelSpellings,
+    `Tests.Ix.Compile.Fixtures.LetNonDep,
+    `Tests.Ix.Compile.Fixtures.NestedLevels,
     -- IxVM ingress fixtures (Tests.Ix.IxVM) — nested/dedup shapes like
     -- IxVMInd.DedupM (two nested occurrences of one external inductive
     -- with distinct spec_params) that only otherwise compile under the

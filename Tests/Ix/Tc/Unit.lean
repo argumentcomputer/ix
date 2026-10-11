@@ -569,10 +569,42 @@ def canonUnivVectors : TestSeq :=
       && Ixon.reduceUniv (.imax (v 0) z) == z
       && Ixon.reduceUniv (.imax (s z) (v 0)) == v 0)
 
+/-- `imax (a (n-1)) (imax (a (n-2)) (… (imax (a 0) last)))`: one `imax` per
+    binder, the shape `Meta.getLevel` returns for a long `∀`. -/
+def imaxChain (a : Nat → Ixon.Univ) (last : Ixon.Univ) : Nat → Ixon.Univ
+  | 0 => last
+  | n + 1 => .imax (a n) (imaxChain a last n)
+
+/-- FU item 10: `canonUniv` on long `imax` chains. The `imax` distributions
+    repeat calls of the normalizer (`2ⁿ` on these chains: 6 s at `n = 22`,
+    not finishing at the length of `Lean.Meta.Grind.Arith.Cutsat.EqCnstr.brecOn`'s
+    type); the normalizer skips a repeated call (`CanonUniv.NState`), so
+    `n = 64` finishes here. Chains up to 10 links are checked as the random
+    levels are (P0–P6, the kernel's Géran normal form as P4's oracle, which is
+    itself exponential on them); the long ones by value (P0), idempotence
+    (P1) and the `mk*` fixpoint (P3). -/
+def canonUnivChainTests : TestSeq :=
+  let one : Ixon.Univ := .succ .zero
+  let cutsat (n : Nat) := imaxChain (fun _ => .max one (.var 0)) (.var 0) n
+  let mixed (n : Nat) := imaxChain
+    (fun i => if i % 3 == 0 then .max one (.var 0) else if i % 3 == 1 then .succ (.var 1)
+      else .imax (.var 1) (.var 0)) (.var (if n % 2 == 0 then 0 else 1)) n
+  let small := (List.range 11).foldl
+    (fun acc n => checkCanon 2 false (checkCanon 2 false acc (cutsat n)) (mixed n)) {}
+  let longOk (u : Ixon.Univ) : Bool :=
+    let c := Ixon.canonUniv u
+    (Tests.Gen.Ixon.univDifferAt? 2 u c).isNone && Ixon.canonUniv c == c && Ixon.reduceUniv c == c
+  test "canonUniv: the Cutsat-shaped chain of 64 imax is `u` (0 at u = 0, else u)"
+    (Ixon.canonUniv (cutsat 64) == .var 0)
+  ++ canonCheckTest "canonUniv P0–P6: imax chains up to 10 links" small
+  ++ test "canonUniv P0, P1, P3: Cutsat-shaped and mixed two-parameter chains of 24, 40, 64"
+    ([24, 40, 64].all fun n => longOk (cutsat n) && longOk (mixed n))
+
 def canonUnivTests : TestSeq :=
   let (p0, p1, p2, p3, p4, p6, agree) := canonUnivSweep
   canonUnivVectors
   ++ canonUnivValueTests
+  ++ canonUnivChainTests
   ++ test "canonUniv P0: value-preserving (exhaustive ≤6)" p0
   ++ test "canonUniv P1: idempotent (exhaustive ≤6)" p1
   ++ test "canonUniv P2: linearize∘normalize fixpoint (exhaustive ≤6)" p2

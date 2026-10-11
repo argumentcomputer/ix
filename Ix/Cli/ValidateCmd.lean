@@ -3,7 +3,7 @@
   against the Lean environment for any file.
 
   This is the CLI counterpart to the `validate-aux` test runner. Both funnel
-  into the same Rust FFI (`rs_compile_validate_aux` in `src/ffi/lean_env.rs`),
+  into the same Rust FFI (`rs_compile_validate_aux` in `crates/ffi/src/lean_env.rs`),
   which performs:
 
     1. Compilation succeeds (every input constant gets an address)
@@ -15,6 +15,12 @@
     7. Decompilation without debug info (serialize → deserialize)
     7b. Per-constant roundtrip fidelity
     8. Nested inductive detection verification
+
+  The compile is the Rust compiler's default, Pass 3 (the only mode since
+  M6R slice 6, 2026-10-07; until then the legacy call-site surgery): phase 4b
+  reads a changed block's auxiliaries at their `_ix` display names, and
+  phases 5 and 7 count the compiler-introduced reserved names of the
+  decompiled environment apart (design document §9).
 
   Separate from `ix compile` because validation is expensive (runs compile
   twice, decompile twice, and alpha-equivalence checks) and primarily useful
@@ -84,7 +90,7 @@ def runValidateCmd (p : Cli.Parsed) : IO UInt32 := do
         let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
           if prefixes.any (·.isPrefixOf n) then some n else none
         IO.println s!"[validate] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
-        let closed := collectDeps leanEnv seeds
+        let closed := collectSelectedDeps leanEnv seeds
         IO.println s!"[validate] filter: {closed.length} constants after transitive-dep closure"
         pure closed
 

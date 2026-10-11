@@ -522,7 +522,8 @@ Metadata expressions may also contain Share references or extension refs/univs, 
 to the pinned metadata format. If a payload depends on old primary entries, preserve its
 logical expression by correct remapping or inlining before removing/reordering those entries.
 Do not assume a one-to-one old/new slot map: the optimum can remove a previously stored term.
-Preserve per-occurrence arena roots, binder data, call-site surgery, universe patches and
+Preserve per-occurrence arena roots, binder data, Pass 3's decompile records (and, in files
+written before 2026-10-07, the call-site surgery's metadata), universe patches and
 `Named.original`. A metadata-only edit must leave anonymous bytes unchanged.
 
 Test mutual blocks with both shared anonymous terms and collapsed source call-site payloads.
@@ -591,7 +592,7 @@ Tests must include:
 | Semantic coverage | All ConstantInfo/MutConst kinds, multiple roots, all contracts, projections, no-expression constants, refs/recur/str/nat and universe indices |
 | Representation independence | Different pointer/DAG/alias layouts; allocation order; map iteration; repeated DAG edges; different incoming valid encodings of the same AST |
 | Safety and bounds | Bad indices, cycles, forward refs according to API policy, depth/state/output exhaustion, overflow, empty input, no silent partial success |
-| Metadata | Per-occurrence metadata, call-site/eta surgery, collapsed payloads, metaSharing namespace, universe patches, original records, metadata-only edits |
+| Metadata | Per-occurrence metadata, Pass 3 records (call-site/eta surgery and collapsed payloads in files before 2026-10-07), metaSharing namespace, universe patches, original records, metadata-only edits |
 | End-to-end | Lean/Rust byte equality, decode/encode equality, normalize fixpoint, compiler/decompiler roundtrip and new-format migration |
 
 Large numeric boundary tests should exercise scalar helpers and forced dictionary states;
@@ -889,9 +890,12 @@ sharing + integers together.
 ### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
 The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
-and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (111 roots on Lean
-4.34.0; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
-`sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
+and are roots of the audit manifest
+[`IxSharingVerify/Audit/Statements.lean`](../IxSharingVerify/Audit/Statements.lean)
+(113 roots at the Lean 4.34.1 source revision, including the two host-code roots
+`Ixon.putTagN_eq_I` and `instBEqByteArray_ix_beq_eq_core`). Each root's axioms
+are fixed exactly; the sorry-frontier check covers `Ix.Sharing` declarations.
+These checks run in `lake build --wfail IxSharingVerify`. The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
 
 - **Phase 1** (`UniformOptimality.lean`): `optimizeUniform_minimum` (a successful

@@ -1,15 +1,17 @@
 import IxC.Kernel.Audit.Axioms
 import IxSharingVerify
 import IxSharingVerify.Builder
+import Ix.Compile.Canon.NameTable
 
 /-!
 # Trust manifest for the sharing proofs
 
-These roots cover the TagN codec, the sharing construction (the exact core,
-the uniform optimizer, the tiered phases, the output format), the compiler's
-sharing builder, and every `@[csimp]` theorem by which compiled code runs a
-fast body in place of a sharing specification (`Audit.CompiledCode` fails the
-build if one is missing). Each root's transitive axiom set must be exactly the
+The sharing roots cover the TagN codec, the sharing construction (the exact
+core, the uniform optimizer, the tiered phases, the output format), the
+compiler's sharing builder, and its `@[csimp]` replacements. A separate
+host-code section covers replacements outside the sharing core. Both sections
+form the manifest checked by `Audit.CompiledCode`, which fails the build if
+any compiler-imported replacement is missing. Each root's transitive axiom set must be exactly the
 listed one (`Ix.Kernel.Audit.checkAxioms`, the certified kernel's exact
 traversal of checked types and bodies), and only Lean's `propext`,
 `Classical.choice` and `Quot.sound` may be listed, so a root that reaches
@@ -37,10 +39,9 @@ private def propextOnly : Array Lean.Name := #[``propext]
 
 private def quotOnly : Array Lean.Name := #[``Quot.sound]
 
-/-- The theorem roots and their exact axiom sets. `Audit.CompiledCode` also
-requires every `@[csimp]` theorem on the compiler's import path to be one of
-them. -/
-def roots : Array RootAllowance := #[
+/-- Sharing and codec theorem roots, including the sharing core's compiled
+replacements, with their exact axiom sets. -/
+def sharingRoots : Array RootAllowance := #[
   -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`). The
   -- theorems about `BlockResult.mk'` (`BlockResult.mk'_codec_roundtrip`,
   -- `BlockResult.constantInfo_codec_roundtrip`,
@@ -293,6 +294,35 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Exact.csBase_eq_fast,
     standardAxioms := noChoice }
 ]
+
+/-- Compiled host-code replacements outside the sharing core. These keep
+their exact axiom audit and the compiler-import-path coverage check. -/
+def hostCodeRoots : Array RootAllowance := #[
+  -- `Ix.Ixon` and its importers write TagN integers with the inlined copy
+  -- `putTagNI` (`@[csimp]`, by `rfl`).
+  { root := ``Ixon.putTagN_eq_I,
+    standardAxioms := noChoice },
+  -- `Ix.Common` compares byte arrays with core's `ByteArray.beq` (`memcmp`)
+  -- in place of the derived `BEq ByteArray`.
+  { root := ``instBEqByteArray_ix_beq_eq_core,
+    standardAxioms := quotOnly },
+  -- Structural table hits are confirmed against their hash-free specifications.
+  { root := ``Ix.Compile.Canon.OccurrenceTable.get?_eq_fast,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Canon.NameTable.get?_eq_fast,
+    standardAxioms := standard },
+  -- The source cache retains the complete work-list result, including order
+  -- and multiplicity, and is installed before both expansion callers compile.
+  { root := ``Ix.Compile.Canon.collectSource_eq_cached,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Canon.sourceContext_eq_cached,
+    standardAxioms := standard }
+]
+
+/-- The complete manifest. `Audit.CompiledCode` requires every `@[csimp]`
+theorem on the compiler's import path to occur in this union. Checking the
+union also rejects duplicates across its sections. -/
+def roots : Array RootAllowance := sharingRoots ++ hostCodeRoots
 
 /-- Check every root: no duplicates, only Lean's standard axioms listed, and
 the root's transitive axiom set exactly the listed one. Every root is checked

@@ -5,6 +5,7 @@ public import Ix.Tc.IngressMeta
 public import Ix.Tc.ParCheck
 public import Ix.Tc.EgressLean
 public import Ix.CanonM
+public import Ix.Compile.Pass.Names
 
 /-!
 Whole-env validation drivers for the pure-Lean `Ix.Tc` pipeline — the
@@ -30,7 +31,16 @@ Three gates over a Rust-compiled `.ixe` byte image:
    decompile regenerates those) and altering-surgery entries
    (`metaHasAlteringSurgery` — only decompile's surgery replay can
    restore their source form); ixon names absent from the Lean env count
-   as informational `notFound`, as in Rust.
+   as informational `notFound`, as in Rust, and reserved `_ix` display
+   entries as `display`. The streaming driver (`metaRoundtripEnvStreaming`)
+   routes the blocks the compiler collapsed (`collapsedBlocks`) out of the
+   gated comparison (BB-F7: the meta ingress loses a collapsed member) for
+   the caller's anonymous roundtrip, and charges an ingress failure to its
+   block rather than to its chunk.
+
+Plus `checkAnonAddrs`: anonymous `Ix.Tc` checks of chosen constants with
+lazy ingress of their closure (`ix validate-lean` phase 7's rule
+statements, in a test-only copy of the environment).
 -/
 
 public section
@@ -121,6 +131,10 @@ inductive MetaVerdict where
   | notFound
   | skippedAux
   | skippedSurgery
+  /-- A reserved `_ix` display entry (D14): an alias of an Ix auxiliary, not a
+      Lean constant, so the source environment has nothing to compare it
+      with. -/
+  | display
   | error (name : Ix.Name) (msg : String)
 
 /-- Whether a metadata arena carries ALTERING call-site surgery: collapsed
@@ -148,6 +162,10 @@ def metaHasAlteringSurgery (cm : Ixon.ConstantMeta) : Bool :=
         | .collapsed .. => true
         | .kept canonIdx _ => canonIdx.toNat != i)
     | .etaCallSite .. => true
+    -- Pass 3's decompile record of a rewritten call site (`_ix.inline`):
+    -- the term is the inline form, the source lives in `metaSharing`.
+    | .mdata kvmaps _ => kvmaps.any fun kv => kv.any fun (k, _) =>
+      k == Ix.Compile.Pass.inlineKey.getHash
     | _ => false
 
 /-- Meta roundtrip summary counts. -/
@@ -158,8 +176,24 @@ structure MetaRoundtripReport where
   skippedSurgery : Nat := 0
   /-- Total comparison errors (all of them, not just the stored ones). -/
   errorCount : Nat := 0
-  /-- First ≤ 50 comparison errors. -/
+  /-- The first comparison errors: ≤ 50 in the eager driver, ≤ 1000 in the
+      streaming one (which localises an ingress failure to its block, so
+      this bounds blocks rather than chunks). -/
   errors : Array (Ix.Name × String) := #[]
+  /-- Reserved `_ix` display entries (`MetaVerdict.display`). -/
+  display : Nat := 0
+  /-- Rows of collapsed blocks routed to the anonymous roundtrip (BB-F7: the
+      meta-mode ingress loses a collapsed member). They are neither counted
+      as checked nor as errors here; their meta-mode verdicts are reported in
+      the `routed*` fields and the caller roundtrips `routedBlocks` in
+      anonymous mode. -/
+  routedRows : Nat := 0
+  /-- Owning block addresses of the routed rows. -/
+  routedBlocks : Array Address := #[]
+  /-- Meta-mode verdicts on the routed rows (reported, not gated). -/
+  routedChecked : Nat := 0
+  routedErrorCount : Nat := 0
+  routedErrors : Array (Ix.Name × String) := #[]
 
 /-- Meta whole-env roundtrip: phase-parallel ingress (chunked local envs
     merged via `KEnv.union`), then parallel per-named-entry egress+compare
@@ -220,11 +254,42 @@ def metaRoundtripEnv (leanEnv : Lean.Environment) (ixonEnv : Ixon.Env)
         report := { report with skippedAux := report.skippedAux + 1 }
       | .skippedSurgery =>
         report := { report with skippedSurgery := report.skippedSurgery + 1 }
+      | .display => report := { report with display := report.display + 1 }
       | .error name msg =>
         report := { report with errorCount := report.errorCount + 1 }
         if report.errors.size < 50 then
           report := { report with errors := report.errors.push (name, msg) }
   return report
+
+/-- The projection key of a named row's constant: `(block, member, ctor+1)`
+    for a projection (`0` in the last slot for a non-constructor), `none`
+    for a standalone constant. Two distinct Lean names with one key are
+    members of a collapsed class (alpha-collapse in Pass 1). -/
+def projKey? (env : Ixon.Env) (addr : Address) : Option (Address × UInt64 × UInt64) :=
+  match (env.consts.get? addr).bind (·.get?) with
+  | some c =>
+    match c.info with
+    | .iPrj p => some (p.block, p.idx, 0)
+    | .cPrj p => some (p.block, p.idx, p.cidx + 1)
+    | .rPrj p => some (p.block, p.idx, 0)
+    | .dPrj p => some (p.block, p.idx, 0)
+    | _ => none
+  | none => none
+
+/-- The blocks of `parts` the compiler collapsed: a `Muts` block in which
+    two distinct named rows (synthetic `Muts` names excluded by the caller's
+    `skip`) project to the same member. -/
+def collapsedBlocks (parts : Ixon.LazyEnvParts) (skip : Ix.Name → Bool := fun _ => false) :
+    Std.HashSet Address := Id.run do
+  let mut seen : Std.HashMap (Address × UInt64 × UInt64) Ix.Name := {}
+  let mut out : Std.HashSet Address := {}
+  for row in parts.namedRows do
+    if skip row.name then continue
+    if let some k := projKey? parts.env row.addr then
+      match seen.get? k with
+      | some n => if n != row.name then out := out.insert k.1
+      | none => seen := seen.insert k row.name
+  return out
 
 /-- Streaming `metaRoundtripEnv`: same per-name verdicts, but each chunk
     materializes its §5 rows, ingresses them into a chunk-local `MetaEnv`
@@ -235,9 +300,24 @@ def metaRoundtripEnv (leanEnv : Lean.Environment) (ixonEnv : Ixon.Env)
     everything. The whole-env merged `MetaEnv` — a third whole-env copy
     live alongside the Lean oracle env at whole-Mathlib scale — never
     exists. Rows arrive in §5 order (ascending name hash), matching the
-    eager driver's sort. -/
+    eager driver's sort.
+
+    **Collapsed blocks (BB-F7).** The meta-mode ingress of a collapsed
+    block loses a collapsed member (`Ix.Tc`'s ingress keys a member by its
+    name, and a collapsed class has one member for several names). With
+    `routed` (the caller passes `collapsedBlocks`), the rows of those blocks
+    are taken out of the gated comparison: each such block is ingressed on
+    its own, its meta verdicts land in `routedChecked`/`routedErrors`
+    (reported, not gated), and its address in `routedBlocks`, which the
+    caller roundtrips in anonymous mode.
+
+    **Failure localisation.** When a chunk's ingress fails, each block of
+    the chunk is ingressed on its own, so an ingress failure is charged to
+    the rows of the block that caused it (e.g. BELOW-ORDER: the canonicity
+    gate rejects one `IndPredBelow` block), not to the whole chunk. -/
 def metaRoundtripEnvStreaming (leanEnv : Lean.Environment)
     (parts : Ixon.LazyEnvParts) (chunkSize : Nat := 512)
+    (routed : Std.HashSet Address := {})
     : Except String MetaRoundtripReport := do
   -- Source-side canonical map: Ix.Name → Lean.ConstantInfo.
   let canonMap : Std.HashMap Ix.Name Lean.ConstantInfo := Id.run do
@@ -263,7 +343,7 @@ def metaRoundtripEnvStreaming (leanEnv : Lean.Environment)
       | .dPrj p => p.block
       | _ => row.addr
     | none => row.addr
-  let grouped : Array (Array Ixon.NamedRow) := Id.run do
+  let (grouped, groupKeys) : Array (Array Ixon.NamedRow) × Array Address := Id.run do
     let mut byBlock : Std.HashMap Address (Array Ixon.NamedRow) := {}
     let mut order : Array Address := #[]
     for row in rows do
@@ -273,7 +353,7 @@ def metaRoundtripEnvStreaming (leanEnv : Lean.Environment)
       | none =>
         byBlock := byBlock.insert k #[row]
         order := order.push k
-    return order.map (byBlock.get? · |>.getD #[])
+    return (order.map (byBlock.get? · |>.getD #[]), order)
   -- Ingress also resolves every name a metadata arena REFERENCES to its
   -- constant address (`resolve_all`), across the whole env — only the
   -- `.addr` is read for referenced entries. One shared address-only stub
@@ -284,20 +364,34 @@ def metaRoundtripEnvStreaming (leanEnv : Lean.Environment)
     for row in rows do
       m := m.insert row.name { addr := row.addr, hints := row.hints }
     return m
-  let compareTasks := Id.run do
-    let mut out : Array (Task (Array MetaVerdict)) := #[]
-    let mut i := 0
-    let mut pending : Array Ixon.NamedRow := #[]
-    let mut chunks : Array (Array Ixon.NamedRow) := #[]
-    for group in grouped do
-      if !pending.isEmpty && pending.size + group.size > chunkSize then
+  -- Chunks of whole groups; a routed (collapsed) block is a chunk of its own.
+  let (chunks, routedFlags) : Array (Array (Array Ixon.NamedRow)) × Array Bool := Id.run do
+    let mut chunks : Array (Array (Array Ixon.NamedRow)) := #[]
+    let mut flags : Array Bool := #[]
+    let mut pending : Array (Array Ixon.NamedRow) := #[]
+    let mut pendingRows := 0
+    for (group, key) in grouped.zip groupKeys do
+      if routed.contains key then
+        chunks := chunks.push #[group]
+        flags := flags.push true
+        continue
+      if !pending.isEmpty && pendingRows + group.size > chunkSize then
         chunks := chunks.push pending
+        flags := flags.push false
         pending := #[]
-      pending := pending ++ group
+        pendingRows := 0
+      pending := pending.push group
+      pendingRows := pendingRows + group.size
     if !pending.isEmpty then
       chunks := chunks.push pending
+      flags := flags.push false
+    return (chunks, flags)
+  let compareTasks := Id.run do
+    let mut out : Array (Task (Array (Bool × MetaVerdict))) := #[]
+    let mut i := 0
     while i < chunks.size do
-      let chunk := chunks[i]!
+      let groups := chunks[i]!
+      let isRouted := routedFlags[i]!
       out := out.push <| Task.spawn fun () => Id.run do
         -- Materialize this chunk's rows; failures become per-name errors.
         -- Work is enumerated from the CHUNK-ONLY env (so only this
@@ -308,49 +402,92 @@ def metaRoundtripEnvStreaming (leanEnv : Lean.Environment)
         let mut chunkOnly : Std.HashMap Ix.Name Ixon.Named := {}
         let mut resolveNamed : Std.HashMap Ix.Name Ixon.Named := stubNamed
         let mut materializeErrs : Std.HashMap Ix.Name String := {}
-        for row in chunk do
-          match row.materialize parts.backing parts.nameRev with
-          | .ok named =>
-            chunkOnly := chunkOnly.insert row.name named
-            resolveNamed := resolveNamed.insert row.name named
-          | .error e => materializeErrs := materializeErrs.insert row.name e
+        for group in groups do
+          for row in group do
+            match row.materialize parts.backing parts.nameRev with
+            | .ok named =>
+              chunkOnly := chunkOnly.insert row.name named
+              resolveNamed := resolveNamed.insert row.name named
+            | .error e => materializeErrs := materializeErrs.insert row.name e
         let chunkNamed := chunkOnly
-        let workEnv := { parts.env with named := chunkOnly }
         let resolveEnv := { parts.env with named := resolveNamed }
-        let kenv? : Except IngressErr (MetaEnv) :=
+        let ingressRows (rs : Array Ixon.NamedRow) : Except IngressErr MetaEnv :=
+          let only : Std.HashMap Ix.Name Ixon.Named := rs.foldl (init := {}) fun m row =>
+            match chunkNamed.get? row.name with
+            | some nd => m.insert row.name nd
+            | none => m
+          let workEnv := { parts.env with named := only }
           ingressEnvParallelWith (buildMetaWork workEnv)
             (ingressMetaWorkItem resolveEnv · true) chunkSize
-        chunk.map fun row => Id.run do
-          if let some e := materializeErrs.get? row.name then
-            return .error row.name s!"metadata materialize failed: {e}"
-          let some named := chunkNamed.get? row.name
-            | return .error row.name "row lost during materialization"
-          if named.original.isSome then
-            return .skippedAux
-          if metaHasAlteringSurgery named.constMeta then
-            return .skippedSurgery
-          match canonMap[row.name]? with
-          | none => return .notFound
-          | some leanCI =>
-            match kenv? with
-            | .error e => return .error row.name s!"meta ingress failed: {e}"
-            | .ok kenv =>
-              match kenv.get? ⟨named.addr, row.name⟩ with
-              | none =>
-                return .error row.name "constant absent from kernel env after ingress"
-              | some kc =>
-                match egressConstant kc with
-                | .error e => return .error row.name s!"egress failed: {e}"
-                | .ok egressed =>
-                  let (orig, _) := (Ix.CanonM.canonConst leanCI).run {}
-                  match compareLeanCI orig egressed with
-                  | none => return .checked
-                  | some msg => return .error row.name msg
+        let whole := ingressRows (groups.foldl (· ++ ·) #[])
+        -- A failed chunk ingress is retried block by block, so the failure
+        -- is charged to the block that caused it.
+        let perGroup : Array (Except IngressErr MetaEnv) := match whole with
+          | .ok k => groups.map fun _ => .ok k
+          | .error e =>
+            if groups.size ≤ 1 then groups.map fun _ => .error e
+            else groups.map ingressRows
+        let mut verdicts : Array (Bool × MetaVerdict) := #[]
+        for (group, kenv?) in groups.zip perGroup do
+          for row in group do
+            let v : MetaVerdict := Id.run do
+              if let some e := materializeErrs.get? row.name then
+                return .error row.name s!"metadata materialize failed: {e}"
+              let some named := chunkNamed.get? row.name
+                | return .error row.name "row lost during materialization"
+              if named.original.isSome then
+                return .skippedAux
+              if metaHasAlteringSurgery named.constMeta then
+                return .skippedSurgery
+              if Ix.Compile.Pass.hasReserved row.name then
+                return .display
+              match canonMap[row.name]? with
+              | none => return .notFound
+              | some leanCI =>
+                match kenv? with
+                | .error e => return .error row.name s!"meta ingress failed: {e}"
+                | .ok kenv =>
+                  match kenv.get? ⟨named.addr, row.name⟩ with
+                  | none =>
+                    return .error row.name "constant absent from kernel env after ingress"
+                  | some kc =>
+                    match egressConstant kc with
+                    | .error e => return .error row.name s!"egress failed: {e}"
+                    | .ok egressed =>
+                      let (orig, _) := (Ix.CanonM.canonConst leanCI).run {}
+                      match compareLeanCI orig egressed with
+                      | none => return .checked
+                      | some msg => return .error row.name msg
+            verdicts := verdicts.push (isRouted, v)
+        return verdicts
       i := i + 1
     return out
   let mut report : MetaRoundtripReport := {}
+  let mut routedBlocks : Array Address := #[]
+  for (flag, group) in routedFlags.zip chunks do
+    if flag then
+      if let some row := (group[0]?).bind (·[0]?) then
+        routedBlocks := routedBlocks.push (blockKey row)
+  report := { report with routedBlocks }
   for t in compareTasks do
-    for v in t.get do
+    for (isRouted, v) in t.get do
+      if isRouted then
+        match v with
+        | .checked =>
+          report := { report with routedRows := report.routedRows + 1,
+                                  routedChecked := report.routedChecked + 1 }
+        | .error name msg =>
+          report := { report with routedRows := report.routedRows + 1,
+                                  routedErrorCount := report.routedErrorCount + 1 }
+          if report.routedErrors.size < 1000 then
+            report := { report with routedErrors := report.routedErrors.push (name, msg) }
+        | .skippedAux =>
+          report := { report with skippedAux := report.skippedAux + 1 }
+        | .skippedSurgery =>
+          report := { report with skippedSurgery := report.skippedSurgery + 1 }
+        | .display => report := { report with display := report.display + 1 }
+        | .notFound => report := { report with notFound := report.notFound + 1 }
+        continue
       match v with
       | .checked => report := { report with checked := report.checked + 1 }
       | .notFound => report := { report with notFound := report.notFound + 1 }
@@ -358,11 +495,49 @@ def metaRoundtripEnvStreaming (leanEnv : Lean.Environment)
         report := { report with skippedAux := report.skippedAux + 1 }
       | .skippedSurgery =>
         report := { report with skippedSurgery := report.skippedSurgery + 1 }
+      | .display => report := { report with display := report.display + 1 }
       | .error name msg =>
         report := { report with errorCount := report.errorCount + 1 }
-        if report.errors.size < 50 then
+        if report.errors.size < 1000 then
           report := { report with errors := report.errors.push (name, msg) }
   return report
+
+/-! ### Anonymous kernel checks of chosen constants (lazy ingress) -/
+
+/-- Type-check the constants at `addrs` in anonymous mode with `Ix.Tc`,
+    ingressing their dependencies lazily (the `TcState.newLazyAnon` fault
+    hook), so the cost is the closure of the targets, not the environment.
+    A projection is checked through its block. Returns one verdict per
+    requested address (`none` = accepted). -/
+def checkAnonAddrs (env : Ixon.Env) (addrs : Array Address) (verify : Bool := true) :
+    Array (Address × Option String) := Id.run do
+  let cfg : CheckCfg := { verifyHashes := verify }
+  let mut items : Array AnonWorkItem := #[]
+  let mut itemOf : Std.HashMap Address Nat := {}
+  let mut early : Std.HashMap Address String := {}
+  for a in addrs do
+    let b := blockOfAddr env a
+    if itemOf.contains b then continue
+    match buildAnonWorkItem env b with
+    | .ok (some item) =>
+      itemOf := itemOf.insert b items.size
+      items := items.push item
+    | .ok none => early := early.insert a s!"no work item for {b}"
+    | .error e => early := early.insert a s!"work discovery failed: {e}"
+  let st := runAnonCheckList cfg items.toList (initialAnonCheckLoopState env cfg)
+  let verdict : Std.HashMap Address (Option String) :=
+    st.results.foldl (init := {}) fun m r => m.insert r.addr r.err?
+  return addrs.map fun a =>
+    match early.get? a with
+    | some e => (a, some e)
+    | none =>
+      match verdict.get? a with
+      | some v => (a, v)
+      | none =>
+        -- a block's own address is not among its projection targets
+        match itemOf.get? (blockOfAddr env a) with
+        | some i => (a, (st.results.find? (·.addr == items[i]!.primary)).bind (·.err?))
+        | none => (a, some "not checked")
 
 end Ix.Tc
 

@@ -9,7 +9,13 @@
 //!
 //! 2. **`generate_and_compile_aux_recursors`**: Orchestrates the full aux_gen
 //!    pipeline: generates canonical patches (recursors, `.below`, `.brecOn`),
-//!    then compiles each phase's output via `compile_aux_block`.
+//!    then compiles each phase's output: the recursor family (and the
+//!    Prop `.below` inductive family with its `.below.rec`) as one block,
+//!    laid out in the inductive block's flat order as the kernel requires,
+//!    and every definition (`casesOn`, `recOn`, `below`, `brecOn`, `.go`,
+//!    `.eq`, `.below.casesOn`) as its own constant, packed into a block only
+//!    when several genuinely form a strongly connected component
+//!    (`aux_components`; D6, one constant per auxiliary).
 
 use std::sync::Arc;
 
@@ -26,6 +32,8 @@ use crate::compile::{
   compile_inductive, compile_mutual_block, compile_name, compile_recursor,
   preseed_expr_tables, sort_consts,
 };
+use crate::condense::compute_sccs;
+use crate::graph::{NameSet, RefMap, collect_expr_references};
 use crate::mutual::{Def, Ind, MutConst, ctx_to_all};
 use ix_common::address::Address;
 use ix_common::env::{
@@ -62,8 +70,170 @@ pub fn compile_aux_block(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   kctx: &mut crate::compile::KernelCtx,
+  source_owners: &[Name],
 ) -> Result<(), CompileError> {
-  compile_aux_block_with_rename(aux_consts, lean_env, stt, kctx, None, None)
+  compile_aux_block_with_rename(
+    aux_consts,
+    lean_env,
+    stt,
+    kctx,
+    None,
+    None,
+    source_owners,
+  )
+}
+
+/// A source-name claim needs forward provenance to the claiming source
+/// block. Recursor `all` is source provenance even when the generated
+/// content evaporates to an external recursor. Never inspect that target's
+/// source ownership or use a shared content address as evidence.
+fn check_aux_source_claim(
+  name: &Name,
+  source_owners: &[Name],
+  lean_env: &LeanEnv,
+) -> Result<(), CompileError> {
+  if source_owners.is_empty() || lean_env.get(name).is_none() {
+    return Ok(());
+  }
+  let mut pending = vec![name.clone()];
+  let mut seen = rustc_hash::FxHashSet::default();
+  seen.insert(name.clone());
+  while let Some(current) = pending.pop() {
+    if source_owners.contains(&current) {
+      return Ok(());
+    }
+    let Some(ci) = lean_env.get(&current) else { continue };
+    let mut refs = crate::graph::get_constant_info_references(&ci);
+    if let LeanConstantInfo::RecInfo(rec) = &*ci {
+      refs.extend(rec.all.iter().cloned());
+    }
+    if refs.iter().any(|r| source_owners.contains(r)) {
+      return Ok(());
+    }
+    for r in refs {
+      if seen.insert(r.clone()) && lean_env.get(&r).is_some() {
+        pending.push(r);
+      }
+    }
+  }
+  Err(CompileError::InvalidMutualBlock {
+    reason: format!(
+      "auxiliary claim for source name '{}' has no forward provenance to the claiming block",
+      name.pretty()
+    ),
+  })
+}
+
+/// The names a `MutConst` refers to (types, values, constructor types,
+/// rule right-hand sides), by the reference graph's rule
+/// (`graph::collect_expr_references`).
+fn mut_const_references(c: &MutConst) -> NameSet {
+  let mut acc = NameSet::default();
+  let mut visited = rustc_hash::FxHashSet::default();
+  match c {
+    MutConst::Defn(d) => {
+      collect_expr_references(&d.typ, &mut visited, &mut acc);
+      collect_expr_references(&d.value, &mut visited, &mut acc);
+    },
+    MutConst::Recr(r) => {
+      collect_expr_references(&r.cnst.typ, &mut visited, &mut acc);
+      for rule in &r.rules {
+        acc.insert(rule.ctor.clone());
+        collect_expr_references(&rule.rhs, &mut visited, &mut acc);
+      }
+    },
+    MutConst::Indc(i) => {
+      collect_expr_references(&i.ind.cnst.typ, &mut visited, &mut acc);
+      for ctor in &i.ctors {
+        acc.insert(ctor.cnst.name.clone());
+        collect_expr_references(&ctor.cnst.typ, &mut visited, &mut acc);
+      }
+    },
+  }
+  acc
+}
+
+/// The strongly connected components of a set of auxiliaries under their
+/// references to one another, in dependency order (a component comes after
+/// every component it refers to; ties by least member name).
+///
+/// D6, one constant per auxiliary: a component of one member is compiled as a
+/// standalone constant, and only a genuine cycle is packed into a block.
+/// Lean declares every `casesOn`, `recOn`, `below` definition and
+/// `brecOn`/`.go`/`.eq` as its own non-mutual definition, so their components
+/// are singletons; the order only matters for a member that refers to another
+/// member of the same batch.
+pub fn aux_components(consts: &[MutConst]) -> Vec<Vec<MutConst>> {
+  let by_name: FxHashMap<Name, &MutConst> =
+    consts.iter().map(|c| (c.name(), c)).collect();
+  let mut refs = RefMap::default();
+  for c in consts {
+    let r: NameSet = mut_const_references(c)
+      .into_iter()
+      .filter(|n| by_name.contains_key(n) && *n != c.name())
+      .collect();
+    refs.insert(c.name(), r);
+  }
+  let condensed = compute_sccs(&refs);
+  // Components keyed by representative; dependency order by repeated
+  // selection of the ready components, least member name first.
+  let mut comps: Vec<(Name, Vec<Name>)> = condensed
+    .blocks
+    .iter()
+    .map(|(root, members)| {
+      let mut ms: Vec<Name> = members.iter().cloned().collect();
+      ms.sort_by_key(|n| n.pretty());
+      (root.clone(), ms)
+    })
+    .collect();
+  comps.sort_by_key(|(_, ms)| ms[0].pretty());
+  let mut done: rustc_hash::FxHashSet<Name> = rustc_hash::FxHashSet::default();
+  let mut out: Vec<Vec<MutConst>> = Vec::with_capacity(comps.len());
+  while !comps.is_empty() {
+    let pos = comps
+      .iter()
+      .position(|(root, _)| {
+        condensed.block_refs.get(root).is_none_or(|deps| {
+          deps.iter().all(|d| {
+            condensed.low_links.get(d).is_some_and(|r| done.contains(r))
+          })
+        })
+      })
+      .unwrap_or(0);
+    let (root, ms) = comps.remove(pos);
+    done.insert(root);
+    // Keep the input order of the members inside a component.
+    let set: rustc_hash::FxHashSet<&Name> = ms.iter().collect();
+    out.push(
+      consts.iter().filter(|c| set.contains(&c.name())).cloned().collect(),
+    );
+  }
+  out
+}
+
+/// Compile a batch of auxiliaries one strongly connected component at a time
+/// (`aux_components`): each singleton component becomes a standalone
+/// constant, a genuine cycle one block.
+pub fn compile_aux_components(
+  aux_consts: &[MutConst],
+  lean_env: &Arc<LeanEnv>,
+  stt: &CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+  name_rename: Option<&FxHashMap<Name, Name>>,
+  source_owners: &[Name],
+) -> Result<(), CompileError> {
+  for comp in aux_components(aux_consts) {
+    compile_aux_block_with_rename(
+      &comp,
+      lean_env,
+      stt,
+      kctx,
+      name_rename,
+      None,
+      source_owners,
+    )?;
+  }
+  Ok(())
 }
 
 /// Like `compile_aux_block`, but applies an optional name-rename map when
@@ -107,6 +277,7 @@ pub fn compile_aux_block_with_rename(
   kctx: &mut crate::compile::KernelCtx,
   name_rename: Option<&FxHashMap<Name, Name>>,
   class_order_key: Option<&dyn Fn(&MutConst) -> u64>,
+  source_owners: &[Name],
 ) -> Result<(), CompileError> {
   if aux_consts.is_empty() {
     return Ok(());
@@ -120,6 +291,17 @@ pub fn compile_aux_block_with_rename(
       .and_then(|m| m.get(canon).cloned())
       .unwrap_or_else(|| canon.clone())
   };
+
+  // Preflight all source-facing products before this block publishes any
+  // of them. Canonical target addresses are irrelevant to source ownership.
+  for c in aux_consts {
+    check_aux_source_claim(&resolve_name(&c.name()), source_owners, lean_env)?;
+    if let MutConst::Indc(ind) = c {
+      for ctor in &ind.ctors {
+        check_aux_source_claim(&ctor.cnst.name, source_owners, lean_env)?;
+      }
+    }
+  }
 
   // Sort into equivalence classes (same algorithm as compile_mutual).
   let refs: Vec<&MutConst> = aux_consts.iter().collect();
@@ -149,8 +331,10 @@ pub fn compile_aux_block_with_rename(
   // list is identical for every member — computed once, not per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   for class in &sorted_classes {
     let mut rep_pushed = false;
@@ -224,23 +408,18 @@ pub fn compile_aux_block_with_rename(
       IxonMutConst::Indc(_) => unreachable!(),
     };
     let standalone_addr = content_address(&result);
-    stt.env.store_const(standalone_addr.clone(), result);
+    stt.store_const(standalone_addr.clone(), result)?;
 
     let mut pending_names: Vec<Name> = Vec::new();
     for cnst in &sorted_classes[0] {
       let canon_n = cnst.name();
       let n = resolve_name(&canon_n);
       let meta = all_metas.remove(&canon_n).unwrap_or_default();
-      stt
-        .env
-        .register_name(n.clone(), Named::new(standalone_addr.clone(), meta));
-      stt.aux_name_to_addr.insert(n.clone(), standalone_addr.clone());
-      stt.aux_gen_extra_names.insert(n.clone());
+      stt.register_named(n.clone(), Named::new(standalone_addr.clone(), meta));
+      stt.claim_aux_name(&n, &standalone_addr)?;
       pending_names.push(n);
     }
-    if !pending_names.is_empty() {
-      stt.aux_gen_pending.lock().unwrap().extend(pending_names);
-    }
+    crate::compile::pass3::release_pending(stt, pending_names);
     // Ingress all registered aux constants into the kernel environment.
     for cnst in aux_consts {
       aux_gen::expr_utils::ensure_in_kenv(
@@ -248,7 +427,7 @@ pub fn compile_aux_block_with_rename(
         lean_env.as_ref(),
         stt,
         kctx,
-      );
+      )?;
     }
     return Ok(());
   }
@@ -260,7 +439,7 @@ pub fn compile_aux_block_with_rename(
     block_univs,
   )?;
   let block_addr = compiled.addr.clone();
-  stt.env.store_const(block_addr.clone(), compiled.constant);
+  stt.store_const(block_addr.clone(), compiled.constant)?;
 
   // Register projections for each constant, same pattern as compile_mutual.
   // Collect names for batched pending-queue push (one lock acquisition).
@@ -291,12 +470,9 @@ pub fn compile_aux_block_with_rename(
             // Inductive projection
             let indc_proj = indc_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&indc_proj);
-            stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.aux_name_to_addr.insert(n.clone(), proj_addr.clone());
-            stt.aux_gen_extra_names.insert(n.clone());
+            stt.store_const(proj_addr.clone(), indc_proj)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
 
             // Constructor projections. Inductives don't typically get a
@@ -310,38 +486,29 @@ pub fn compile_aux_block_with_rename(
               let ctor_proj =
                 ctor_proj_constant(idx, cidx as u64, block_addr.clone());
               let ctor_addr = content_address(&ctor_proj);
-              stt.env.store_const(ctor_addr.clone(), ctor_proj);
-              stt.env.register_name(
+              stt.store_const(ctor_addr.clone(), ctor_proj)?;
+              stt.register_named(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
-              stt
-                .aux_name_to_addr
-                .insert(ctor.cnst.name.clone(), ctor_addr.clone());
-              stt.aux_gen_extra_names.insert(ctor.cnst.name.clone());
+              stt.claim_aux_name(&ctor.cnst.name, &ctor_addr)?;
               pending_names.push(ctor.cnst.name.clone());
             }
           },
           MutConst::Recr(_) => {
             let proj = recr_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
-            stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.aux_name_to_addr.insert(n.clone(), proj_addr);
-            stt.aux_gen_extra_names.insert(n.clone());
+            stt.store_const(proj_addr.clone(), proj)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
           },
           MutConst::Defn(_) => {
             let proj = defn_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
-            stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.aux_name_to_addr.insert(n.clone(), proj_addr);
-            stt.aux_gen_extra_names.insert(n.clone());
+            stt.store_const(proj_addr.clone(), proj)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.claim_aux_name(&n, &proj_addr)?;
             pending_names.push(n);
           },
         }
@@ -383,7 +550,8 @@ pub fn compile_aux_block_with_rename(
     })
     .collect();
   let muts_name = block_addr.muts_name(&first_name);
-  compile_name(&muts_name, stt);
+  compile_name(&muts_name, stt)?;
+  crate::compile::pass3::journal_muts(&muts_name);
   // `compile_aux_block_with_rename` handles derivative blocks (rec, below,
   // brecOn, ...) that share the same aux_layout as the primary inductive
   // block. We DO NOT attach aux_layout here — those derived blocks inherit
@@ -391,7 +559,7 @@ pub fn compile_aux_block_with_rename(
   // block, and decompile resolves layout via the primary inductive's Muts
   // meta (see `compile.rs:3254` for the primary-block registration and
   // `decompile_block_aux_gen` for the lookup).
-  stt.env.register_name(
+  stt.register_named(
     muts_name,
     Named::new(
       block_addr.clone(),
@@ -403,9 +571,7 @@ pub fn compile_aux_block_with_rename(
   );
 
   // Batch-push to pending queue (single lock acquisition).
-  if !pending_names.is_empty() {
-    stt.aux_gen_pending.lock().unwrap().extend(pending_names);
-  }
+  crate::compile::pass3::release_pending(stt, pending_names);
 
   // Ingress all registered aux constants into the kernel environment.
   for cnst in aux_consts {
@@ -414,7 +580,7 @@ pub fn compile_aux_block_with_rename(
       lean_env.as_ref(),
       stt,
       kctx,
-    );
+    )?;
   }
 
   Ok(())
@@ -428,6 +594,8 @@ fn register_aux_aliases(
   aliases: &FxHashMap<Name, Name>,
   stt: &CompileState,
   ctx: &str,
+  source_owners: &[Name],
+  lean_env: &LeanEnv,
 ) -> Result<(), CompileError> {
   if aliases.is_empty() {
     return Ok(());
@@ -444,6 +612,7 @@ fn register_aux_aliases(
     if source == target {
       continue;
     }
+    check_aux_source_claim(&source, source_owners, lean_env)?;
 
     let target_addr = stt.resolve_addr(&target).ok_or_else(|| {
       CompileError::InvalidMutualBlock {
@@ -489,17 +658,18 @@ fn register_aux_aliases(
       .unwrap_or_else(|| Named::with_addr(target_addr.clone()));
     let mut alias_named = target_named;
     alias_named.addr = target_addr.clone();
+    // The target's original belongs to another source declaration. The
+    // alias receives its own original when its source block is promoted;
+    // generated display aliases have no independent source original.
+    alias_named.clear_original();
 
-    compile_name(&source, stt);
-    stt.env.register_name(source.clone(), alias_named);
-    stt.aux_name_to_addr.insert(source.clone(), target_addr);
-    stt.aux_gen_extra_names.insert(source.clone());
+    compile_name(&source, stt)?;
+    stt.register_named(source.clone(), alias_named);
+    stt.claim_aux_name(&source, &target_addr)?;
     pending_names.push(source);
   }
 
-  if !pending_names.is_empty() {
-    stt.aux_gen_pending.lock().unwrap().extend(pending_names);
-  }
+  crate::compile::pass3::release_pending(stt, pending_names);
 
   Ok(())
 }
@@ -535,7 +705,7 @@ pub fn generate_and_compile_aux_recursors(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) -> Result<Option<crate::compile::surgery::AuxLayout>, CompileError> {
+) -> Result<Option<ixon::env::AuxLayout>, CompileError> {
   // Guard: aux_gen canonical generation only runs for blocks containing
   // inductives. Non-inductive blocks (plain defs, recursor-only SCCs,
   // etc.) have no canonical auxiliaries to generate.
@@ -589,22 +759,42 @@ pub fn generate_and_compile_aux_recursors(
   if aux_class_names.is_empty() {
     return Ok(None);
   }
+  let source_owners: Vec<Name> = class_names
+    .iter()
+    .flatten()
+    .filter(|name| {
+      matches!(
+        lean_env.get(name).as_deref(),
+        Some(LeanConstantInfo::InductInfo(_))
+      )
+    })
+    .cloned()
+    .collect();
 
   // Phase 1: Generate patches. Errors here indicate a bug in aux_gen
   // (the input has already been validated by sort_consts and the compile
   // loop), so we propagate rather than swallow.
   let t0 = std::time::Instant::now();
-  let aux_out = aux_gen::generate_aux_patches(
+  let aux_out = aux_gen::generate_aux_patches_named(
     &aux_class_names,
     &source_all,
     lean_env,
     stt,
     kctx,
+    true,
   )?;
   let patches = &aux_out.patches;
   let gen_elapsed = t0.elapsed();
   if patches.is_empty() {
     return Ok(None);
+  }
+  // Pass 3: the canonical recursors are the image generator's input
+  // (journaled only while Pass 3 edits this tail).
+  if crate::compile::pass3::journal_active() {
+    crate::compile::pass3::journal_recs(
+      crate::compile::pass3::driver::patch_recs(patches),
+      aux_out.n_canonical_aux,
+    );
   }
 
   // Record the nested-auxiliary permutation mapping Lean's source-walk
@@ -614,8 +804,9 @@ pub fn generate_and_compile_aux_recursors(
   // block's aux section and returns `perm[source_j] = canonical_i` via
   // `AuxPatchesOutput.perm`. We record it here keyed by
   // `InductiveVal.all[0]` for:
-  //   1. Call-site surgery plans (built below in compile.rs:compile_mutual)
-  //      so they can permute source-order aux motives/minors to canonical.
+  //   1. The block's `AuxLayout` (its `Muts` entry), which Pass 3's view
+  //      and the decompiler read (until M6R slice 6 also the legacy
+  //      surgery's plans).
   //   2. Compile_aux_block, to register Lean-source aux names at the
   //      permuted block projection index (so user code calling `X.rec_1`
   //      resolves to whatever aux Lean originally numbered `_1`, not
@@ -624,16 +815,16 @@ pub fn generate_and_compile_aux_recursors(
   // `original_all` (= `source_all` above) is hoisted to the enclosing
   // scope so the aux-name rename map construction below can reuse it.
   let original_all: Vec<Name> = source_all;
-  let mut aux_layout: Option<crate::compile::surgery::AuxLayout> = None;
+  let mut aux_layout: Option<ixon::env::AuxLayout> = None;
   if !original_all.is_empty()
     && let Some(perm) = aux_out.perm.clone()
     && !perm.is_empty()
   {
     // Also compute per-source-aux ctor counts: for each source aux position j,
     // look up the external inductive's constructor count. If this metadata is
-    // unavailable, fail closed: silently dropping `perm` makes call-site
-    // surgery fall back to identity, which is wrong precisely for the
-    // alpha-collapse / reordered cases that need the permutation.
+    // unavailable, fail closed: silently dropping `perm` would make the
+    // layout identity, which is wrong precisely for the alpha-collapse /
+    // reordered cases that need the permutation.
     let src_order = aux_gen::nested::source_aux_order(&original_all, lean_env)?;
     let mut source_ctor_counts: Vec<usize> =
       Vec::with_capacity(src_order.len());
@@ -659,9 +850,8 @@ pub fn generate_and_compile_aux_recursors(
         ),
       });
     }
-    // Fail closed if the evaporation flags don't line up with the perm —
-    // surgery keys head-rewrite plans off them, so a silent mismatch
-    // would desynchronize aliases and call-site rewrites.
+    // Fail closed if the evaporation flags don't line up with the perm: the
+    // aliases of evaporated positions and Pass 3's view read them together.
     let evaporated = match aux_out.evaporated.clone() {
       Some(flags) if flags.len() == perm.len() => flags,
       Some(flags) => {
@@ -676,11 +866,8 @@ pub fn generate_and_compile_aux_recursors(
       },
       None => vec![false; perm.len()],
     };
-    aux_layout = Some(crate::compile::surgery::AuxLayout {
-      perm,
-      source_ctor_counts,
-      evaporated,
-    });
+    aux_layout =
+      Some(ixon::env::AuxLayout { perm, source_ctor_counts, evaporated });
   }
 
   // NOTE: Historically, a canonical→source rename map was built here
@@ -758,8 +945,8 @@ pub fn generate_and_compile_aux_recursors(
     // rec patches: a pre-existing DIFFERENT address means two blocks
     // claimed one name — DashMap registration is last-writer-wins, so
     // without this check the disagreement ships silently as
-    // schedule-dependent content (plans/aux-recursor-alias-collision.md
-    // §2.4). Same-address re-registration (content-addressed idempotence)
+    // schedule-dependent content (see `Ix/AuxGen/CompileAux.lean` for
+    // the Lean counterpart). Same-address re-registration (content-addressed idempotence)
     // is fine.
     let pre_claims: Vec<_> = rec_consts
       .iter()
@@ -776,6 +963,7 @@ pub fn generate_and_compile_aux_recursors(
       kctx,
       Some(&aux_name_rename),
       Some(&class_order_key),
+      &source_owners,
     )?;
     for (name, pre_addr) in pre_claims {
       let post_addr = stt.resolve_addr(&name);
@@ -818,6 +1006,8 @@ pub fn generate_and_compile_aux_recursors(
     &available_rec_aliases,
     stt,
     &format!("{block_label}/rec-phase"),
+    &source_owners,
+    lean_env,
   )?;
   let rec_elapsed = t1.elapsed();
   // Phase 2b: Compile .casesOn definitions.
@@ -841,7 +1031,14 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !cases_on_defs.is_empty() {
-    compile_aux_block(&cases_on_defs, lean_env, stt, kctx)?;
+    compile_aux_components(
+      &cases_on_defs,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      &source_owners,
+    )?;
   }
   let cases_elapsed = t2.elapsed();
 
@@ -865,7 +1062,14 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !rec_on_defs.is_empty() {
-    compile_aux_block(&rec_on_defs, lean_env, stt, kctx)?;
+    compile_aux_components(
+      &rec_on_defs,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      &source_owners,
+    )?;
   }
   let rec_on_elapsed = t3.elapsed();
   // Phase 3: Compile .below inductives (Prop-level).
@@ -926,6 +1130,7 @@ pub fn generate_and_compile_aux_recursors(
       kctx,
       Some(&aux_name_rename),
       None,
+      &source_owners,
     )?;
     // Note: constructor names are already correctly set by rename_below_indc
     // during alias patching. register_below_ctor_aliases was removed because
@@ -951,13 +1156,13 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !below_defs.is_empty() {
-    compile_aux_block_with_rename(
+    compile_aux_components(
       &below_defs,
       lean_env,
       stt,
       kctx,
       Some(&aux_name_rename),
-      None,
+      &source_owners,
     )?;
   }
   let below_elapsed = t4.elapsed();
@@ -965,7 +1170,14 @@ pub fn generate_and_compile_aux_recursors(
   // Phase 5: Compile .below.rec (for Prop-level .below inductives).
   let t5 = std::time::Instant::now();
   if !below_indcs.is_empty() {
-    compile_below_recursors(&below_indcs, lean_env, stt, kctx)?;
+    compile_below_recursors(
+      &below_indcs,
+      lean_env,
+      stt,
+      kctx,
+      &source_owners,
+      aux_out.names.is_private(),
+    )?;
   }
   let below_rec_elapsed = t5.elapsed();
 
@@ -982,29 +1194,29 @@ pub fn generate_and_compile_aux_recursors(
       })
       .collect();
     if !defs.is_empty() {
-      compile_aux_block_with_rename(
+      compile_aux_components(
         &defs,
         lean_env,
         stt,
         kctx,
         Some(&aux_name_rename),
-        None,
+        &source_owners,
       )?;
     }
   }
   let brecon_elapsed = t6.elapsed();
 
-  register_aux_aliases(&aux_out.aliases, stt, &format!("{block_label}/final"))?;
+  register_aux_aliases(
+    &aux_out.aliases,
+    stt,
+    &format!("{block_label}/final"),
+    &source_owners,
+    lean_env,
+  )?;
 
-  // Note: `.noConfusion`, `.noConfusionType`, `.ctor.noConfusion`, `.ctorIdx`,
-  // `.ctorElim*`, `.ctor.inj*`, `._sizeOf_*`, etc. are **not** regenerated.
-  // Their bodies only invoke `.casesOn` (never `.rec`), and `.casesOn`'s
-  // public binder arity is invariant under alpha collapse. Compiling the
-  // original Lean values as-is produces correct Ixon — they resolve to our
-  // regenerated `.casesOn` at address-resolution time. The validate-aux
-  // roundtrip test confirms this empirically (0 mismatches across 25k+
-  // constants, including these auxiliaries for alpha-collapsed multi-ctor
-  // blocks). See the aux_gen.rs module docs for the full rationale.
+  // Derived helpers are private support. Source definitions, including
+  // user-defined auxiliary-looking names, compile from their own bodies;
+  // Pass 3 rewrites references where the inductive layout changed.
 
   let total = aux_total_start.elapsed();
   if *crate::compile::IX_TIMING && total.as_secs_f32() > 0.5 {
@@ -1173,6 +1385,8 @@ fn compile_below_recursors(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   kctx: &mut crate::compile::KernelCtx,
+  source_owners: &[Name],
+  private_helpers: bool,
 ) -> Result<(), CompileError> {
   // Build a small overlay with just the .below inductives + ctors.
   // These don't exist in the original lean_env, but generate_canonical_recursors
@@ -1227,6 +1441,11 @@ fn compile_below_recursors(
   for (_, rec) in &recs {
     below_recs.push(MutConst::Recr(rec.clone()));
   }
+  // Pass 3: the family's canonical recursors, the image generator's input
+  // if the family is permuted (A3V-IPB, `driver::edit_permuted_below_family`).
+  crate::compile::pass3::journal_below_recs(
+    recs.iter().map(|(n, r)| (n.clone(), r.clone())).collect(),
+  );
 
   if !below_recs.is_empty() {
     // The below-rec block's storage order must align with the below
@@ -1256,18 +1475,13 @@ fn compile_below_recursors(
       kctx,
       None,
       Some(&class_order_key),
+      source_owners,
     )?;
   }
 
-  // Regenerate `.below.casesOn` against the canonical below-recs. Lean
-  // authors `X.below.casesOn` for every below inductive, and its value
-  // applies `X.below.rec` with motives in LEAN's member order — but the
-  // block above regenerated those recs with the canonical motive layout,
-  // so the Lean-authored wrapper is ill-typed in the compiled env
-  // (kernel: AppTypeMismatch on the motive arguments). Mirror the main
-  // family's Phase-2b: regenerate each casesOn from its canonical rec
-  // and register it here so the ordinary compile of the Lean value is
-  // skipped (aux registrations suppress it, like every other patch).
+  // Generate wrappers for the canonical below family's own recursors.
+  // Compiler-mode below identities are private; source below declarations
+  // and wrappers compile separately from their actual source bodies.
   //
   // Per family, not per name (as `aux_gen::generate_aux_patches` decides
   // every other aux block): if Lean exported any below inductive's
@@ -1282,24 +1496,29 @@ fn compile_below_recursors(
   // A collapsed class's non-representative `.below.casesOn` aliases the
   // representative's, so any member of a `.below` block Lean declared
   // counts.
-  let emit_below_cases = recs.iter().any(|(rec_name, _)| {
-    below_cases_name(rec_name).is_some_and(|n| lean_env.get(&n).is_some())
-  }) || below_indcs.iter().any(|c| {
-    matches!(
-      lean_env.get(&c.name()).as_deref(),
-      Some(LeanConstantInfo::InductInfo(v)) if v.all.iter().any(|m| {
-        lean_env.get(&Name::str(m.clone(), "casesOn".to_string())).is_some()
-      })
-    )
-  });
+  let emit_below_cases = private_helpers
+    || recs.iter().any(|(rec_name, _)| {
+      below_cases_name(rec_name).is_some_and(|n| lean_env.get(&n).is_some())
+    })
+    || below_indcs.iter().any(|c| {
+      matches!(
+        lean_env.get(&c.name()).as_deref(),
+        Some(LeanConstantInfo::InductInfo(v)) if v.all.iter().any(|m| {
+          lean_env.get(&Name::str(m.clone(), "casesOn".to_string())).is_some()
+        })
+      )
+    });
   let mut below_cases: Vec<MutConst> = Vec::new();
   for (rec_name, rec_val) in &recs {
     let Some(cases_on_name) = below_cases_name(rec_name) else {
       continue;
     };
     if emit_below_cases
-      && let Some(d) =
-        aux_gen::cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
+      && let Some(d) = aux_gen::cases_on::generate_cases_on(
+        &cases_on_name,
+        rec_val,
+        if private_helpers { &overlay } else { lean_env.as_ref() },
+      )
     {
       below_cases.push(MutConst::Defn(Def {
         name: d.name.clone(),
@@ -1314,7 +1533,51 @@ fn compile_below_recursors(
     }
   }
   if !below_cases.is_empty() {
-    compile_aux_block(&below_cases, lean_env, stt, kctx)?;
+    compile_aux_components(
+      &below_cases,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      source_owners,
+    )?;
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod source_claim_tests {
+  use super::*;
+  use ix_common::env::{Expr, Level, RecursorVal};
+
+  #[test]
+  fn source_family_survives_evaporation_but_does_not_own_external_target() {
+    let owner = Name::str(Name::anon(), "Owner".into());
+    let source = Name::str(owner.clone(), "rec_1".into());
+    let external = Name::str(Name::anon(), "List".into());
+    let target = Name::str(external.clone(), "rec".into());
+    let rec = |name: Name, parent: Name| {
+      LeanConstantInfo::RecInfo(RecursorVal {
+        cnst: ConstantVal {
+          name,
+          level_params: vec![],
+          typ: Expr::sort(Level::zero()),
+        },
+        all: vec![parent],
+        num_params: 0u64.into(),
+        num_indices: 0u64.into(),
+        num_motives: 0u64.into(),
+        num_minors: 0u64.into(),
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
+      })
+    };
+    let mut env = LeanEnv::default();
+    env.insert(source.clone(), rec(source.clone(), owner.clone()));
+    env.insert(target.clone(), rec(target.clone(), external));
+    let owners = [owner];
+    assert!(check_aux_source_claim(&source, &owners, &env).is_ok());
+    assert!(check_aux_source_claim(&target, &owners, &env).is_err());
+  }
 }

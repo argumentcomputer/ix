@@ -969,694 +969,89 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }) {
         return Ok(());
       }
-      aux_seen.push((head_id.addr.clone(), occurrence_us.clone(), spec_hashes));
+      // A new occurrence `I As` opens I's whole mutual group, one auxiliary
+      // per member `J`, in group order, each `J As` registered as seen
+      // (Lean's `elim_nested_inductive_fn`; the compilers' expansion). Over
+      // a compiled environment (`Canonical`) the group is I's stored block in
+      // its canonical order, which is what the compilers open on a
+      // canonical expansion (design document §2.5): the auxiliaries are then
+      // in discovery order, the canonical order the stored recursor block
+      // follows, with no sort (A2-order). In `Source` mode (Lean's own
+      // recursors) the group is the head alone, as before.
+      let group: Vec<KId<M>> =
+        if self.env.recursor_aux_order == RecursorAuxOrder::Canonical {
+          match self.try_get_const(&head_id)? {
+            Some(KConst::Indc { block, .. }) => {
+              let members = self.discover_block_inductives(&block)?;
+              if members.iter().any(|j| j.addr == head_id.addr) {
+                members
+              } else {
+                vec![head_id.clone()]
+              }
+            },
+            _ => vec![head_id.clone()],
+          }
+        } else {
+          vec![head_id.clone()]
+        };
+      for j_id in group {
+        let (j_id, j_params, j_indices, j_ctors, j_lvls) =
+          if j_id.addr == head_id.addr {
+            (
+              head_id.clone(),
+              ext_params,
+              ext_indices,
+              ext_ctors.clone(),
+              ext_lvls,
+            )
+          } else {
+            match self.try_get_const(&j_id)? {
+              Some(KConst::Indc { params, indices, ctors, lvls, .. })
+                if params == ext_params =>
+              {
+                (j_id, params, indices, ctors.clone(), lvls)
+              },
+              _ => continue,
+            }
+          };
+        if aux_seen.iter().any(|(a, seen_us, s)| {
+          same_nested_specialization(
+            a,
+            seen_us,
+            s,
+            &j_id.addr,
+            &occurrence_us,
+            &spec_hashes,
+          )
+        }) {
+          continue;
+        }
+        aux_seen.push((
+          j_id.addr.clone(),
+          occurrence_us.clone(),
+          spec_hashes.clone(),
+        ));
 
-      // Abstract shifted universe params for internal processing (dedup, ctor walking).
-      let aux_us = self.mk_ind_univs(ext_lvls, univ_offset)?;
+        // Abstract shifted universe params for internal processing (dedup,
+        // ctor walking).
+        let aux_us = self.mk_ind_univs(j_lvls, univ_offset)?;
 
-      flat.push(FlatBlockMember {
-        id: head_id,
-        is_aux: true,
-        spec_params,
-        own_params: ext_params,
-        n_indices: ext_indices,
-        ctors: ext_ctors,
-        lvls: ext_lvls,
-        ind_us: aux_us,
-        occurrence_us,
-      });
+        flat.push(FlatBlockMember {
+          id: j_id,
+          is_aux: true,
+          spec_params: spec_params.clone(),
+          own_params: j_params,
+          n_indices: j_indices,
+          ctors: j_ctors,
+          lvls: j_lvls,
+          ind_us: aux_us,
+          occurrence_us: occurrence_us.clone(),
+        });
+      }
       Ok(())
     })();
     self.lctx.truncate(saved_lctx);
     result
-  }
-
-  /// Rewrite nested occurrences in synthetic aux member/ctor types to the
-  /// corresponding synthetic aux constants before running `sort_consts`
-  /// partition refinement. Compile-side `expand_nested_block` does this via
-  /// its queue pass over all expanded constructors; the kernel has already
-  /// discovered the flat aux set, so it can rewrite by matching each
-  /// occurrence against that set.
-  fn replace_aux_refs_for_sort(
-    &mut self,
-    e: &KExpr<M>,
-    aux: &[FlatBlockMember<M>],
-    aux_ids: &[KId<M>],
-    block_us: &[KUniv<M>],
-    n_block_params: u64,
-    local_depth: u64,
-  ) -> Result<KExpr<M>, TcError<M>> {
-    if let Some(replaced) = self.try_replace_aux_ref_for_sort(
-      e,
-      aux,
-      aux_ids,
-      block_us,
-      n_block_params,
-      local_depth,
-    )? {
-      return Ok(replaced);
-    }
-
-    let result = match e.data() {
-      ExprData::App(f, a, _) => {
-        let f2 = self.replace_aux_refs_for_sort(
-          f,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth,
-        )?;
-        let a2 = self.replace_aux_refs_for_sort(
-          a,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth,
-        )?;
-        KExpr::app(f2, a2)
-      },
-      ExprData::Lam(n, bi, ty, body, _) => {
-        let ty2 = self.replace_aux_refs_for_sort(
-          ty,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth,
-        )?;
-        let body2 = self.replace_aux_refs_for_sort(
-          body,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth + 1,
-        )?;
-        KExpr::lam(n.clone(), bi.clone(), ty2, body2)
-      },
-      ExprData::All(n, bi, ty, body, _) => {
-        let ty2 = self.replace_aux_refs_for_sort(
-          ty,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth,
-        )?;
-        let body2 = self.replace_aux_refs_for_sort(
-          body,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth + 1,
-        )?;
-        KExpr::all(n.clone(), bi.clone(), ty2, body2)
-      },
-      ExprData::Let(n, ty, val, body, nd, _) => {
-        let ty2 = self.replace_aux_refs_for_sort(
-          ty,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth,
-        )?;
-        let val2 = self.replace_aux_refs_for_sort(
-          val,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth,
-        )?;
-        let body2 = self.replace_aux_refs_for_sort(
-          body,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth + 1,
-        )?;
-        KExpr::let_(n.clone(), ty2, val2, body2, *nd)
-      },
-      ExprData::Prj(id, field, val, _) => {
-        let val2 = self.replace_aux_refs_for_sort(
-          val,
-          aux,
-          aux_ids,
-          block_us,
-          n_block_params,
-          local_depth,
-        )?;
-        KExpr::prj(id.clone(), *field, val2)
-      },
-      _ => return Ok(e.clone()),
-    };
-    Ok(self.env.intern.intern_expr(result))
-  }
-
-  fn try_replace_aux_ref_for_sort(
-    &mut self,
-    e: &KExpr<M>,
-    aux: &[FlatBlockMember<M>],
-    aux_ids: &[KId<M>],
-    block_us: &[KUniv<M>],
-    n_block_params: u64,
-    local_depth: u64,
-  ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    let (head, args) = collect_app_spine(e);
-    let head_id = match head.data() {
-      ExprData::Const(id, _, _) => id,
-      _ => return Ok(None),
-    };
-
-    for (idx, member) in aux.iter().enumerate() {
-      if member.id.addr != head_id.addr {
-        continue;
-      }
-      let own = u64_to_usize::<M>(member.own_params)?;
-      if args.len() < own || member.spec_params.len() != own {
-        continue;
-      }
-
-      let mut matched = true;
-      for (arg, sp) in args.iter().take(own).zip(member.spec_params.iter()) {
-        let sp_lifted = if local_depth > 0 {
-          lift(&mut self.env.intern, sp, local_depth, 0)
-        } else {
-          sp.clone()
-        };
-        if !self.is_def_eq(arg, &sp_lifted).unwrap_or(false) {
-          matched = false;
-          break;
-        }
-      }
-      if !matched {
-        continue;
-      }
-
-      let anon = || M::meta_field(ix_common::env::Name::anon());
-      let mut result = self.env.intern.intern_expr(KExpr::cnst(
-        aux_ids[idx].clone(),
-        block_us.to_vec().into_boxed_slice(),
-      ));
-      let param_base = checked_metadata_sum::<M>(
-        "auxiliary parameter index",
-        &[local_depth, n_block_params],
-      )?;
-      for pi in 0..n_block_params {
-        let p =
-          self.env.intern.intern_expr(KExpr::var(param_base - 1 - pi, anon()));
-        result = self.env.intern.intern_expr(KExpr::app(result, p));
-      }
-      for idx_arg in args.iter().skip(own) {
-        result =
-          self.env.intern.intern_expr(KExpr::app(result, idx_arg.clone()));
-      }
-      return Ok(Some(result));
-    }
-
-    Ok(None)
-  }
-
-  /// Walk past the first `n` Pi binders of the block's first inductive
-  /// type and return their `(name, BinderInfo, domain)` triples in
-  /// declaration order (outermost-first). Each domain is in the
-  /// recursor-external context: `domain_i` may have free `Var(j)` for
-  /// `j < i` referring to block param `i-1-j` (the standard de Bruijn
-  /// telescope shape, identical to how the original ind_ty stores its
-  /// param binders).
-  fn extract_block_param_binders(
-    &mut self,
-    block_first_id: &KId<M>,
-    n_block_params: u64,
-  ) -> Result<
-    Vec<(
-      M::MField<ix_common::env::Name>,
-      M::MField<ix_common::env::BinderInfo>,
-      KExpr<M>,
-    )>,
-    TcError<M>,
-  > {
-    let ind_ty = match self.try_get_const(block_first_id)? {
-      Some(KConst::Indc { ty, .. }) => ty.clone(),
-      _ => return Ok(Vec::new()),
-    };
-    let mut out = Vec::with_capacity(u64_to_usize::<M>(n_block_params)?);
-    let mut cur = ind_ty;
-    for _ in 0..n_block_params {
-      let w = self.whnf(&cur)?;
-      match w.data() {
-        ExprData::All(name, bi, dom, body, _) => {
-          out.push((name.clone(), bi.clone(), dom.clone()));
-          cur = body.clone();
-        },
-        _ => break,
-      }
-    }
-    Ok(out)
-  }
-
-  /// Wrap `body` with `∀ T_0 T_1 ... T_{n-1}, body` using the supplied
-  /// block-param binders (outermost-first). Mirrors compile-side
-  /// `mk_forall(body, &block_param_decls)`.
-  ///
-  /// # de Bruijn convention
-  /// Inside `body`, free `Var(i)` for `i < n_block_params` refers to
-  /// block param at position `n_block_params - 1 - i` in the
-  /// recursor-external context (because spec_params follow this
-  /// pattern). After the wrap, `Var(n_block_params - 1 - i)` inside
-  /// `body` resolves to `T_i` (block param at position `i`), matching
-  /// compile's `BVar(n - 1 - i) = block param i` after `mk_forall`.
-  fn wrap_with_block_param_foralls(
-    &mut self,
-    body: KExpr<M>,
-    binders: &[(
-      M::MField<ix_common::env::Name>,
-      M::MField<ix_common::env::BinderInfo>,
-      KExpr<M>,
-    )],
-  ) -> KExpr<M> {
-    if binders.is_empty() {
-      return body;
-    }
-    // Build inside-out: start with body, wrap with the innermost binder
-    // (the LAST element of `binders`, i.e., block param at position
-    // `n - 1`), then add outer binders one by one. Each binder's domain
-    // is reused as-is: it lives in the recursor-external context where
-    // its free Vars already correctly reference earlier (outer) block
-    // params via the standard telescope convention, which exactly
-    // matches the de Bruijn shape inside the wrap.
-    let mut cur = body;
-    for (name, bi, dom) in binders.iter().rev() {
-      cur = KExpr::all(name.clone(), bi.clone(), dom.clone(), cur);
-      cur = self.env.intern.intern_expr(cur);
-    }
-    cur
-  }
-
-  /// Compute the canonical aux ordering — kernel analogue of the
-  /// compile-side aux partition-refinement sort
-  /// (`src/ix/compile/aux_gen/nested.rs`).
-  ///
-  /// For each aux `FlatBlockMember`, synthesize a `KConst::Indc` view
-  /// (with its constructor `KConst::Ctor` views) that mirrors the
-  /// compile-side `MutConst::Indc` aux representation. Run
-  /// `sort_kconsts_with_seed_key` on the synthetic aux and return a
-  /// permutation `original_index → canonical_index` over the input slice.
-  ///
-  /// The synthetic indc carries the ext inductive's type with the
-  /// first `ext_n_params` Pi binders instantiated by the aux's
-  /// `spec_params`, then wrapped with the block's parameter Pis to
-  /// match compile-side `mk_forall(body, &block_param_decls)`. The
-  /// synthetic ctors carry the ext ctor's type with the same
-  /// instantiation+wrap. The kernel uses synthetic aux KIds derived
-  /// from `(source index, ext_addr, spec_params hashes, occurrence_us
-  /// hashes)`. Alpha-equivalent aux remain distinct synthetic members,
-  /// then collapse into a single class under the partition-refinement
-  /// sorter just as compile-side distinct aux names do.
-  ///
-  /// Returns a vector `perm[k] = original_idx_of_class_k_representative`
-  /// of length equal to the number of canonical classes.
-  fn canonical_aux_order(
-    &mut self,
-    aux: &[FlatBlockMember<M>],
-    n_block_params: u64,
-    block_us: &[KUniv<M>],
-    all0_name: Option<&ix_common::env::Name>,
-    block_first_id: Option<&KId<M>>,
-  ) -> Result<Vec<usize>, TcError<M>> {
-    use crate::canonical_check::{KMutCtx, sort_kconsts_with_seed_key};
-    use ix_common::env::Name;
-    use rustc_hash::FxHashMap;
-
-    // Build synthetic Indc + Ctor views for each aux.
-    // `aux_views[i]` corresponds to `aux[i]`.
-    let mut aux_indcs: Vec<(KId<M>, KConst<M>)> = Vec::with_capacity(aux.len());
-    let mut all_ctor_lookup: FxHashMap<Address, KConst<M>> =
-      FxHashMap::default();
-    let mut seed_key_by_addr: FxHashMap<Address, Address> =
-      FxHashMap::default();
-    let nested_prefix =
-      all0_name.map(|all0| Name::str(all0.clone(), "_nested".to_string()));
-
-    // Extract the block's first inductive's leading `n_block_params` Pi
-    // binders. These domains are used to wrap each synthetic aux indc/ctor
-    // type with `∀ block_params → body`, matching compile-side
-    // `mk_forall(body, &block_param_decls)`. When `n_block_params == 0` or
-    // the block's first inductive is unavailable, the wrap is empty (a no-op).
-    let block_param_binders: Vec<(
-      M::MField<Name>,
-      M::MField<ix_common::env::BinderInfo>,
-      KExpr<M>,
-    )> = match block_first_id {
-      Some(id) if n_block_params > 0 => {
-        self.extract_block_param_binders(id, n_block_params)?
-      },
-      _ => Vec::new(),
-    };
-
-    let mut aux_ids: Vec<KId<M>> = Vec::with_capacity(aux.len());
-    let mut aux_seed_names: Vec<Name> = Vec::with_capacity(aux.len());
-    for (source_idx, member) in aux.iter().enumerate() {
-      // Compile-side aux names are `<all0>._nested.<Ext>_<N>` in source
-      // discovery order before the partition-refinement sort renames them
-      // by canonical position. `sort_consts` uses those names only as a
-      // deterministic seed/tiebreak; below we turn structural name order into
-      // monotone seed ranks while keeping the synthetic KId address structural.
-      let ext_seed = M::meta_name(&member.id.name).map_or_else(
-        || member.id.addr.hex(),
-        |name| name.pretty().replace('.', "_"),
-      );
-      let seed_suffix = format!("{}_{}", ext_seed, source_idx + 1);
-      let seed_name = nested_prefix.as_ref().map_or_else(
-        || {
-          Name::str(
-            Name::str(Name::anon(), "IxCAux".to_string()),
-            seed_suffix.clone(),
-          )
-        },
-        |prefix| Name::str(prefix.clone(), seed_suffix.clone()),
-      );
-      // Synthetic aux KId: unique per discovered aux source slot, with the
-      // semantic content included so structurally equal aux still compare
-      // Equal and collapse under the current partition.
-      let mut h = blake3::Hasher::new();
-      h.update(b"AUX_INDC_VIEW");
-      h.update(&(source_idx as u64).to_le_bytes());
-      h.update(member.id.addr.as_bytes());
-      for sp in &member.spec_params {
-        h.update(&sp.addr().to_le_bytes());
-      }
-      for u in member.occurrence_us.iter() {
-        h.update(&u.addr().to_le_bytes());
-      }
-      let aux_addr = Address::from_blake3_hash(h.finalize());
-      let aux_id = KId::new(aux_addr.clone(), M::meta_field(seed_name.clone()));
-      aux_ids.push(aux_id);
-      aux_seed_names.push(seed_name);
-    }
-
-    // Compile-side `sort_consts` seeds and tiebreaks by structural `Name`
-    // ordering (`sort_by_key(|x| x.name())`). A name hash is not
-    // order-preserving and can change partition-refinement outcomes for
-    // intermediate equal classes, so mirror compile by converting sorted seed
-    // names to monotone rank addresses.
-    let mut seed_order: Vec<usize> = (0..aux_seed_names.len()).collect();
-    seed_order.sort_by(|&a, &b| aux_seed_names[a].cmp(&aux_seed_names[b]));
-    for (rank, source_idx) in seed_order.into_iter().enumerate() {
-      let mut bytes = [0u8; 32];
-      bytes[..8].copy_from_slice(&(rank as u64).to_be_bytes());
-      let rank_addr = Address::from_slice(&bytes).map_err(|_e| {
-        TcError::Other("canonical_aux_order: invalid seed-rank address".into())
-      })?;
-      seed_key_by_addr.insert(aux_ids[source_idx].addr.clone(), rank_addr);
-    }
-
-    for (source_idx, member) in aux.iter().enumerate() {
-      let aux_id = aux_ids[source_idx].clone();
-      let seed_name = aux_seed_names[source_idx].clone();
-      let aux_addr = aux_id.addr.clone();
-      let (ext_ty, ext_ctors, ext_n_params, ext_n_indices) =
-        match self.get_const(&member.id)? {
-          KConst::Indc { ty, ctors, params, indices, .. } => {
-            (ty.clone(), ctors.clone(), params, indices)
-          },
-          _ => {
-            return Err(TcError::Other(
-              "canonical_aux_order: aux ext is not an inductive".into(),
-            ));
-          },
-        };
-
-      // Instantiate ext_ty: replace J's universe params with the
-      // occurrence's universe args, then walk past `ext_n_params` Pi
-      // binders, substituting with `spec_params`. The result is the
-      // aux's "internal" type — what `mem.typ` becomes after
-      // compile-side's `instantiate_pi_params(j_type_inst,
-      // ext_n_params, &spec_params)` step.
-      let mut typ =
-        self.instantiate_univ_params(&ext_ty, &member.occurrence_us)?;
-      for j in 0..ext_n_params {
-        let w = self.whnf(&typ)?;
-        match w.data() {
-          ExprData::All(_, _, _, body, _) => {
-            let body = body.clone();
-            let p_idx = u64_to_usize::<M>(j)?;
-            if p_idx >= member.spec_params.len() {
-              break;
-            }
-            let p = member.spec_params[p_idx].clone();
-            typ = subst(&mut self.env.intern, &body, &p, 0);
-          },
-          _ => break,
-        }
-      }
-      typ = self.replace_aux_refs_for_sort(
-        &typ,
-        aux,
-        &aux_ids,
-        block_us,
-        n_block_params,
-        0,
-      )?;
-      // Wrap with `∀ block_params → body` to mirror compile-side
-      // `mk_forall(j_type_block, &block_param_decls)`. The body's free Vars
-      // for i < n_block_params already refer to the block params via the
-      // recursor's outer context; the wrap binds them in place.
-      typ = self.wrap_with_block_param_foralls(typ, &block_param_binders);
-
-      // Synthetic aux ctor KIds and KConst::Ctor entries.
-      let mut aux_ctor_kids: Vec<KId<M>> = Vec::with_capacity(ext_ctors.len());
-      for (ci, ext_ctor_id) in ext_ctors.iter().enumerate() {
-        let (ext_ctor_ty, ext_ctor_fields) =
-          match self.get_const(ext_ctor_id)? {
-            KConst::Ctor { ty, fields, .. } => (ty.clone(), fields),
-            _ => {
-              return Err(TcError::Other(
-                "canonical_aux_order: aux ext ctor is not a ctor".into(),
-              ));
-            },
-          };
-        let mut ctor_typ =
-          self.instantiate_univ_params(&ext_ctor_ty, &member.occurrence_us)?;
-        for j in 0..ext_n_params {
-          let w = self.whnf(&ctor_typ)?;
-          match w.data() {
-            ExprData::All(_, _, _, body, _) => {
-              let body = body.clone();
-              let p_idx = u64_to_usize::<M>(j)?;
-              if p_idx >= member.spec_params.len() {
-                break;
-              }
-              let p = member.spec_params[p_idx].clone();
-              ctor_typ = subst(&mut self.env.intern, &body, &p, 0);
-            },
-            _ => break,
-          }
-        }
-
-        // Rewrite nested occurrences inside aux ctor types to block-local
-        // synthetic aux references before sorting. This mirrors the
-        // compile-side `replace_all_nested` queue pass over the expanded
-        // aux members. It covers both recursive fields such as
-        // `List (ListItem Block)` and the ctor result head itself. This
-        // also rewrites the ctor's own result head (the `∀ ... → J spec`
-        // is rewritten to `∀ ... → aux block_params indices`), so we do
-        // not need a separate `replace_ctor_result_head_with_aux` pass.
-        ctor_typ = self.replace_aux_refs_for_sort(
-          &ctor_typ,
-          aux,
-          &aux_ids,
-          block_us,
-          n_block_params,
-          0,
-        )?;
-        // Wrap with `∀ block_params → body` to mirror compile-side
-        // `mk_forall(ctor_type_block, &block_param_decls)`.
-        ctor_typ =
-          self.wrap_with_block_param_foralls(ctor_typ, &block_param_binders);
-
-        let mut ch = blake3::Hasher::new();
-        ch.update(b"AUX_CTOR_VIEW");
-        ch.update(aux_addr.as_bytes());
-        ch.update(ext_ctor_id.addr.as_bytes());
-        let aux_ctor_addr = Address::from_blake3_hash(ch.finalize());
-        let aux_ctor_kid =
-          KId::new(aux_ctor_addr.clone(), M::meta_field(Name::anon()));
-
-        let aux_ctor = KConst::Ctor {
-          name: M::meta_field(Name::anon()),
-          level_params: M::meta_field(vec![]),
-          is_unsafe: false,
-          lvls: block_us.len() as u64,
-          induct: aux_id.clone(),
-          cidx: ci as u64,
-          params: n_block_params,
-          fields: ext_ctor_fields,
-          ty: ctor_typ,
-        };
-        all_ctor_lookup.insert(aux_ctor_addr, aux_ctor);
-        aux_ctor_kids.push(aux_ctor_kid);
-      }
-
-      // Synthetic trailing "identity marker" ctor carrying the aux's
-      // nested-occurrence identity (`Ext spec_params`, pre-rewrite: NOT
-      // passed through `replace_aux_refs_for_sort`, or it would become
-      // the self-reference and lose the distinction). Two nested
-      // occurrences of one external inductive can instantiate to
-      // alpha-identical views when the distinguishing spec param is
-      // phantom in the external's constructors — the marker keeps them
-      // in distinct classes and orders them by spec-param content
-      // (external consts by address, block params by index), mirroring
-      // the compile-side marker in `sort_aux_by_partition_refinement`.
-      // Genuinely alpha-collapsed occurrences have address-equal spec
-      // params, so their markers compare equal and still collapse.
-      {
-        let mut marker_ty = self
-          .intern(KExpr::cnst(member.id.clone(), member.occurrence_us.clone()));
-        for sp in member.spec_params.iter() {
-          marker_ty = self.intern(KExpr::app(marker_ty, sp.clone()));
-        }
-        let mut mh = blake3::Hasher::new();
-        mh.update(b"AUX_MARKER_VIEW");
-        mh.update(aux_addr.as_bytes());
-        let marker_addr = Address::from_blake3_hash(mh.finalize());
-        let marker_kid =
-          KId::new(marker_addr.clone(), M::meta_field(Name::anon()));
-        let marker_ctor = KConst::Ctor {
-          name: M::meta_field(Name::anon()),
-          level_params: M::meta_field(vec![]),
-          is_unsafe: false,
-          lvls: block_us.len() as u64,
-          induct: aux_id.clone(),
-          cidx: aux_ctor_kids.len() as u64,
-          params: n_block_params,
-          fields: 0,
-          ty: marker_ty,
-        };
-        all_ctor_lookup.insert(marker_addr, marker_ctor);
-        aux_ctor_kids.push(marker_kid);
-      }
-
-      let aux_indc = KConst::Indc {
-        name: M::meta_field(seed_name),
-        level_params: M::meta_field(vec![]),
-        lvls: block_us.len() as u64,
-        params: n_block_params,
-        indices: ext_n_indices,
-        is_unsafe: false,
-        block: KId::new(
-          Address::hash(b"synthetic-aux-block"),
-          M::meta_field(Name::anon()),
-        ),
-        member_idx: 0,
-        ty: typ,
-        ctors: aux_ctor_kids,
-        lean_all: M::meta_field(vec![]),
-      };
-
-      aux_indcs.push((aux_id, aux_indc));
-    }
-
-    // Build (KId, &KConst) pairs for sorting.
-    let pairs: Vec<(KId<M>, &KConst<M>)> =
-      aux_indcs.iter().map(|(id, c)| (id.clone(), c)).collect();
-
-    // resolve_ctor: synthetic ctors → synthetic KConst::Ctor.
-    let resolve_ctor = |cid: &KId<M>| -> Option<KConst<M>> {
-      all_ctor_lookup.get(&cid.addr).cloned()
-    };
-
-    // Optional canonical-sort dump for debugging the kernel/compile
-    // partition-refinement divergence. Triggered when `IX_RECURSOR_DUMP`
-    // matches the block's `all0_name` prefix. Dumps each synthetic aux's
-    // pre-sort `(seed_name, addr, typ, ctor.ty)`, then the post-sort
-    // class structure. Use to compare against compile-side
-    // `sort_aux_by_partition_refinement` output for the same block.
-    let dump_canonical = all0_name.as_ref().is_some_and(|n| {
-      IX_RECURSOR_DUMP
-        .as_ref()
-        .is_some_and(|prefix| n.pretty().contains(prefix.as_str()))
-    });
-
-    if dump_canonical {
-      eprintln!(
-        "[canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
-        all0_name.map(Name::pretty),
-        pairs.len(),
-        n_block_params
-      );
-      for (i, (kid, kconst)) in pairs.iter().enumerate() {
-        let seed = aux_seed_names.get(i).cloned().unwrap_or_else(Name::anon);
-        eprintln!(
-          "  pre-sort[{}] addr={} seed={} member_id_addr={}",
-          i,
-          &kid.addr.hex()[..8],
-          seed.pretty(),
-          &aux[i].id.addr.hex()[..8]
-        );
-        if let KConst::Indc { ty, ctors, .. } = kconst {
-          eprintln!("    indc.ty={ty}");
-          for (ci, ctor_kid) in ctors.iter().enumerate() {
-            if let Some(KConst::Ctor { ty, .. }) =
-              all_ctor_lookup.get(&ctor_kid.addr)
-            {
-              eprintln!("    ctor[{ci}].ty={ty}");
-            }
-          }
-        }
-      }
-    }
-
-    let classes = sort_kconsts_with_seed_key::<M>(
-      &pairs,
-      &resolve_ctor,
-      &|id: &KId<M>, _c: &KConst<M>| {
-        seed_key_by_addr
-          .get(&id.addr)
-          .cloned()
-          .unwrap_or_else(|| id.addr.clone())
-      },
-    )?;
-
-    if dump_canonical {
-      eprintln!("[canonical_aux_order.dump] post-sort classes:");
-      for (ci, class) in classes.iter().enumerate() {
-        for (mi, (kid, _)) in class.iter().enumerate() {
-          eprintln!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
-        }
-      }
-    }
-
-    // For each canonical class, pick the representative chosen by the
-    // compiler-shaped seed key. Alpha-equivalent aux remain distinct
-    // synthetic members until partition refinement collapses them, matching
-    // compile-side `sort_consts`.
-    let aux_addr_to_orig_idx: FxHashMap<Address, usize> = pairs
-      .iter()
-      .enumerate()
-      .map(|(i, (id, _))| (id.addr.clone(), i))
-      .collect();
-    let mut perm: Vec<usize> = Vec::with_capacity(classes.len());
-    for class in &classes {
-      // The sorter keeps each class ordered by the compiler-shaped seed
-      // key, so the first member is the same representative compile-side
-      // `sort_consts` would choose for an alpha-equivalence class.
-      let rep_addr = &class[0].0.addr;
-      let orig_idx = *aux_addr_to_orig_idx.get(rep_addr).ok_or_else(|| {
-        TcError::Other(
-          "canonical_aux_order: synthetic addr not in original index map"
-            .into(),
-        )
-      })?;
-      perm.push(orig_idx);
-    }
-    let _ = KMutCtx::default(); // re-export anchor for doc cross-ref
-    Ok(perm)
   }
 
   fn recursor_dump_matches_id(&self, id: &KId<M>) -> bool {
@@ -2626,53 +2021,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
 
     // Build flat block (detects nested occurrences).
-    let mut flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
+    let flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
     let n_originals = block_inds.len();
-    self.dump_flat_aux_order("pre-canonical", block_id, &flat, n_originals);
+    self.dump_flat_aux_order("discovery", block_id, &flat, n_originals);
 
-    // Canonicalize the discovered aux portion of `flat` when the stored
-    // recursors come from Ix's compiled environment. Lean's original
-    // recursors use source/queue aux order, so `lean_ingress` marks
-    // `orig_kenv` with `RecursorAuxOrder::Source` and skips this step.
-    //
-    // The stored recursor block ships aux recursors at positions
-    // determined by the compiler's canonical aux order. For
-    // position-by-position recursor matching to work, the kernel's flat
-    // block must list aux in the same canonical order. Since aux are
-    // discovered transiently (not serialized), the kernel re-runs
-    // `sort_consts` on its own discovery output. See
-    // `docs/ix_canonicity.md` §6.2 and the rationale in
-    // `plans/the-nested-inductive-work-declarative-naur.md`.
-    if self.env.recursor_aux_order == RecursorAuxOrder::Canonical
-      && flat.len() > n_originals + 1
-    {
-      let block_us = flat[0].occurrence_us.to_vec();
-      let all0_name = block_inds.first().and_then(|id| M::meta_name(&id.name));
-      let block_first_id = block_inds.first().cloned();
-      let canonical_order = self.canonical_aux_order(
-        &flat[n_originals..],
-        n_params,
-        &block_us,
-        all0_name.as_ref(),
-        block_first_id.as_ref(),
-      )?;
-      if self.recursor_dump_matches_block(block_id, &flat) {
-        eprintln!("[recursor.dump] canonical_order={canonical_order:?}");
-      }
-      // Apply the permutation produced by sort_consts: each canonical
-      // class index k maps to one representative aux from the original
-      // discovery order. Alpha-equivalent aux collapse to a single rep
-      // (matching the compile-side dedup behaviour).
-      let aux_part = flat[n_originals..].to_vec();
-      let mut new_aux: Vec<FlatBlockMember<M>> =
-        Vec::with_capacity(canonical_order.len());
-      for &orig_idx in &canonical_order {
-        new_aux.push(aux_part[orig_idx].clone());
-      }
-      flat.truncate(n_originals);
-      flat.extend(new_aux);
-    }
-    self.dump_flat_aux_order("post-canonical", block_id, &flat, n_originals);
+    // The flat block is in discovery order, which is the canonical order
+    // the stored recursor block follows (design document §2.5, A2-order):
+    // `build_flat_block` walks the stored canonical members and opens each
+    // external group as its stored block, as the compilers' canonical
+    // expansion does, so no sort is needed. Lean's original recursors
+    // (`RecursorAuxOrder::Source`, `lean_ingress`) use the same walk with
+    // each external group reduced to its head (unchanged).
 
     // Convert flat block to ind_infos format for existing build_motive_type / build_rec_type.
     // For auxiliary members, we need their type from the environment.
@@ -3652,8 +3011,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ) -> Result<Option<Vec<KId<M>>>, TcError<M>> {
     // Position-by-position alignment.
     //
-    // `flat` is in canonical order (`canonical_aux_order` was applied above
-    // when `RecursorAuxOrder::Canonical`). The recursor block — when one is
+    // `flat` is in canonical order (discovery order over the stored members,
+    // `build_flat_block`). The recursor block — when one is
     // co-resident with the inductive block — is itself stored in canonical
     // order. So `flat[fi]` aligns with `rec_ids[fi]` directly. We sanity-
     // check the alignment by comparing the major inductive address, and for
@@ -3873,31 +3232,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
       None => 0,
     };
-    let mut flat =
-      self.build_flat_block(&block_inds, n_params_u64, univ_offset)?;
-    let n_originals = block_inds.len();
-    if self.env.recursor_aux_order == RecursorAuxOrder::Canonical
-      && flat.len() > n_originals + 1
-    {
-      let block_us = flat[0].occurrence_us.to_vec();
-      let all0_name = block_inds.first().and_then(|id| M::meta_name(&id.name));
-      let block_first_id = block_inds.first().cloned();
-      let canonical_order = self.canonical_aux_order(
-        &flat[n_originals..],
-        n_params_u64,
-        &block_us,
-        all0_name.as_ref(),
-        block_first_id.as_ref(),
-      )?;
-      let aux_part = flat[n_originals..].to_vec();
-      let mut new_aux: Vec<FlatBlockMember<M>> =
-        Vec::with_capacity(canonical_order.len());
-      for &orig_idx in &canonical_order {
-        new_aux.push(aux_part[orig_idx].clone());
-      }
-      flat.truncate(n_originals);
-      flat.extend(new_aux);
-    }
+    let flat = self.build_flat_block(&block_inds, n_params_u64, univ_offset)?;
     if flat.len() != generated_snapshot.len() {
       return Err(TcError::Other(format!(
         "populate_recursor_rules_from_block: flat/generated length mismatch: flat={} generated={}",
@@ -3915,11 +3250,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     // Position-by-position alignment.
     //
-    // Both the kernel-side `flat` (rebuilt above with `canonical_aux_order`
-    // when `RecursorAuxOrder::Canonical`) and `rec_ids` (the recursor block
-    // members in their stored order) follow the same canonical permutation
-    // by construction — see the rationale at the `canonical_aux_order` call
-    // around line 2069 and `docs/ix_canonicity.md` §6.2. So generated peer
+    // Both the kernel-side `flat` (discovery order over the stored members,
+    // `build_flat_block`) and `rec_ids` (the recursor block
+    // members in their stored order) follow the same canonical order
+    // by construction (design document §2.5, A2-order; `docs/ix_canonicity.md`
+    // §6.2). So generated peer
     // `gi` aligns with `rec_ids[gi]` directly: no search, no greedy match.
     //
     // Verify the alignment with every header field and the complete closed

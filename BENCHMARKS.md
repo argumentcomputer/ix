@@ -15,10 +15,17 @@ environments, comparing the pure-Lean implementation (`Ix.CompileM` /
   gaps of interest).
 - Lean-file elaboration (`getFileEnv`) is excluded everywhere — both
   sides time their core operation after the environment is in memory.
-- The two implementations are **output-equivalent by construction**:
-  compilation is byte-identical (`ix compile-lean --rust-check` ALIGNED)
-  and decompilation is hash-identical against the canonicalized source,
-  so every row compares identical work.
+- When these rows were measured (2026-08-07, before Pass 3, one compile
+  mode in each implementation) the two did identical work: compilation
+  was byte-identical (`ix compile-lean --rust-check` ALIGNED) and
+  decompilation hash-identical against the canonicalized source. Since
+  M6R slice 6 (2026-10-07) Pass 3 is the only mode and the default of
+  both compilers, and their defaults are output-equivalent again
+  (`ix compile-lean --rust-check` ALIGNED; both write `a2e22ee7…` on
+  Init+Std and `d0427adf…` on Mathlib; `docs/compiler-passes.md` §4.8,
+  "Switch"). Between the flip (M6, 2026-10-06) and slice 6 the defaults
+  differed (Lean Pass 3, Rust the legacy surgery). The rows below were
+  measured before Pass 3 and have not been re-measured.
 - The Lean implementation is the *correctness reference*; its
   performance is reported, not optimized (per the alignment ground
   rules, Lean-side performance work is out of scope).

@@ -9,7 +9,7 @@ namespace Ix.Shard
 
 /-- The check-schedule block address of a constant: a projection collapses
     to its SCC/Muts wrapper (`p.block`); everything else is its own block.
-    Mirrors `check_schedule_block_addr` (`src/ffi/kernel.rs`). -/
+    Mirrors `check_schedule_block_addr` (`crates/ffi/src/kernel.rs`). -/
 private def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
   match c.info with
   | .iPrj prj => prj.block

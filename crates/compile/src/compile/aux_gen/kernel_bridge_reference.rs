@@ -8,6 +8,17 @@ use ix_kernel::ingress::{lean_level_to_kuniv, resolve_lean_name_addr};
 use ix_kernel::mode::Meta;
 use rustc_hash::FxHashMap;
 
+/// The kernel crate's level conversion as it was when this reference was
+/// frozen: it panicked on an unknown parameter or a level metavariable. The
+/// function now returns the same text as an error; the frozen reference
+/// keeps the panic.
+fn frozen_level(
+  lvl: &Level,
+  param_names: &[Name],
+) -> ix_kernel::level::KUniv<Meta> {
+  lean_level_to_kuniv(lvl, param_names).unwrap_or_else(|e| panic!("{e}"))
+}
+
 pub(super) fn kexpr_to_lean(
   expr: &ix_kernel::expr::KExpr<Meta>,
   outer_depth: usize,
@@ -55,14 +66,10 @@ pub(super) fn kexpr_to_lean(
     KED::FVar(id, _, _) => {
       LeanExpr::fvar(Name::str(Name::anon(), format!("_kernel_fvar_{}", id.0)))
     },
-    KED::Sort(u, _) => {
-      LeanExpr::sort(super::below::kuniv_to_level(u, param_names))
-    },
+    KED::Sort(u, _) => LeanExpr::sort(frozen_kuniv_to_level(u, param_names)),
     KED::Const(kid, us, _) => {
-      let levels: Vec<Level> = us
-        .iter()
-        .map(|u| super::below::kuniv_to_level(u, param_names))
-        .collect();
+      let levels: Vec<Level> =
+        us.iter().map(|u| frozen_kuniv_to_level(u, param_names)).collect();
       LeanExpr::cnst(kid.name.clone(), levels)
     },
     KED::App(f, a, _) => LeanExpr::app(
@@ -243,14 +250,12 @@ pub(super) fn to_kexpr_static(
       }
     },
     ExprData::Bvar(idx, _) => KExpr::var(nat_to_u64(idx), Name::anon()),
-    ExprData::Sort(lvl, _) => {
-      KExpr::sort(lean_level_to_kuniv(lvl, param_names))
-    },
+    ExprData::Sort(lvl, _) => KExpr::sort(frozen_level(lvl, param_names)),
     ExprData::Const(cname, us, _) => {
       let addr = resolve_lean_name_addr(cname, n2a, aux_n2a);
       let zid = KId::new(addr, cname.clone());
       let zus: Box<[KUniv<Meta>]> =
-        us.iter().map(|u| lean_level_to_kuniv(u, param_names)).collect();
+        us.iter().map(|u| frozen_level(u, param_names)).collect();
       KExpr::cnst(zid, zus)
     },
     ExprData::App(f, a, _) => {
@@ -300,5 +305,35 @@ pub(super) fn to_kexpr_static(
       to_kexpr_static(inner, fvar_levels, ctx_depth, param_names, stt)
     },
     _ => KExpr::sort(KUniv::zero()),
+  }
+}
+
+/// The pre-refusal `kuniv_to_level`, frozen with the rest of this oracle
+/// (the production function now refuses an out-of-range index).
+fn frozen_kuniv_to_level(
+  u: &ix_kernel::level::KUniv<Meta>,
+  param_names: &[Name],
+) -> Level {
+  use ix_kernel::level::UnivData;
+  match u.data() {
+    UnivData::Zero(_) => Level::zero(),
+    UnivData::Succ(inner, _) => {
+      Level::succ(frozen_kuniv_to_level(inner, param_names))
+    },
+    UnivData::Max(a, b, _) => Level::max(
+      frozen_kuniv_to_level(a, param_names),
+      frozen_kuniv_to_level(b, param_names),
+    ),
+    UnivData::IMax(a, b, _) => Level::imax(
+      frozen_kuniv_to_level(a, param_names),
+      frozen_kuniv_to_level(b, param_names),
+    ),
+    UnivData::Param(idx, _, _) => {
+      let name = param_names
+        .get(*idx as usize)
+        .cloned()
+        .unwrap_or_else(|| Name::str(Name::anon(), format!("u_{idx}")));
+      Level::param(name)
+    },
   }
 }

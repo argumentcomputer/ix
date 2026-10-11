@@ -150,8 +150,51 @@ lean_lib Tests
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix]
+  needs := #[`@/ix, `@/«kernel-check-ixe»]
   moreLinkObjs := #[ix_rs_test]
+
+/-- Focused compiler-certification checks, including native producer FFI. -/
+lean_exe «compile-cert-c1» where
+  root := `Tests.Ix.CompileCert.Run
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
+/-- Direct positive and negative controls for the production C1 flag helper. -/
+lean_exe «c1-flag-controls» where
+  root := `Tests.Ix.Compile.C1.FlagControls
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
+/-- Emit complete L2a-syn accounting rows; exit zero means collection completed,
+not that every row passed. -/
+lean_exe «c1-accounting» where
+  root := `Tests.Ix.Compile.C1.Accounting
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
+/-- Check C1 source/serialized controls with explicit worker count, order and
+fresh output directory arguments. -/
+lean_exe «c1-source-controls» where
+  root := `Tests.Ix.Compile.C1.SourceControls
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
+
+/-- The compiler certifier: a Lean environment and an `.ixe`, one verdict per
+constant (certified, unsupported, blocked, rejected), through the certified
+association check `Ix.CompileCert.checkIndexed` (`Ix/CompileCert/Certifier.lean`). -/
+lean_exe «compile-certify» where
+  root := `Ix.CompileCert.CertifierMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+/-- Regenerates `Ix/CompileCert/SourceNatOpPinData.lean`: the pin-certified Nat
+operations' pins and certificate proofs under Lean's own names, for the source
+installation of the strong-model endpoint S (`Ix/CompileCert/SourcePinGen.lean`),
+verified by the verified fold through the normalised source installation. -/
+lean_exe «source-pin-gen» where
+  root := `Ix.CompileCert.SourcePinGenMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
 
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
@@ -402,6 +445,38 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
+/-- The canonicalisation census computed by Pass 1 (`Ix.Compile.Canon`) under
+today's rules and the Phase A rules: `canon-census <source.lean> <stored.ixe>
+[--tsv <blocks.tsv>]` (`Benchmarks/Canon/Census.lean`). -/
+lean_exe «canon-census» where
+  root := `Benchmarks.Canon.Census
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+/-- Deterministic Phase A shape generation and explicit corpus oracle driver.
+`lake exe aux-shape-sweep --help` lists generation, filtering, assembly and run
+commands. Broad sweeps are explicit, never part of the default test runner. -/
+lean_exe «aux-shape-sweep» where
+  root := `Tests.Ix.Compile.Corpus.Main
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+/-- Selected checker-support closure against whole compilation, with a raw
+negative control and strict certified reports in both rewrite modes. -/
+lean_exe «checker-support-regression» where
+  root := `Tests.Ix.Compile.CheckerSupport.Main
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+/-- The Lean names whose address differs between two compiled environments,
+grouped by block with a one-word cause (packaging, nested order, cascade,
+content); `--originals` lists the regenerated auxiliaries whose
+`Named.original` differs from their address: `ixe-diff <old.ixe> <new.ixe>
+[--names] [--tsv <rows.tsv>]` (`Benchmarks/Canon/IxeDiff.lean`). -/
+lean_exe «ixe-diff» where
+  root := `Benchmarks.Canon.IxeDiff
+  moreLinkObjs := #[ix_rs]
+
 /-- Regenerates `IxC/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
@@ -477,3 +552,93 @@ script "check-kernel" (args) := do
   return 0
 
 end IxC
+
+section CompileCert
+
+/-- Run the compiler-certification lane's gate (`Ix/CompileCert`): the strict
+build of its axiom audit `Ix.CompileCert.Audit` (the frozen root list, each
+root within `propext`, `Classical.choice`, `Quot.sound`; the build prints the
+audit's own `[cert-audit]` line); the strict build of `compile-cert-c1` and of
+the test modules outside its closure, whose `#eval` and `#guard` controls run
+at elaboration; then the fixture checks, under `lake env` (some import the
+test modules' oleans): the self-contained `compile-cert-c1` modes and the test
+modules with their own `main`. Each fails on a wrong verdict and prints its
+own summary. `compiled` writes its producer output, which `projection-support`
+and the certifier (`compile-certify` over the producer's cone, Lean side from
+`Tests.Ix.CompileCert.BlockDefs`) then read. The runs over the stored Init+Std
+and Mathlib environments need those artifacts and run by hand. -/
+script "check-cert" (args) := do
+  unless args.isEmpty do
+    IO.eprintln "usage: lake run check-cert"
+    return 2
+  let run (cmd : String) (args : Array String) : ScriptM Unit := do
+    let child ← IO.Process.spawn { cmd, args, stdout := .inherit, stderr := .inherit }
+    let code ← child.wait
+    unless code == 0 do
+      throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+  let mainTests := #["HelperNames", "InstalledCaps", "InstalledFields", "InstalledRules",
+    "SourceBasis", "Support"]
+  let elabTests := #["AnnotEntry", "AnnotNatOps", "AnnotReduceOps", "AnnotSupport",
+    "InstalledImage", "Telescope", "ValueReceipt", "Publication"]
+  run "lake" #["build", "--wfail", "Ix.CompileCert.Audit"]
+  run "lake" (#["build", "--wfail", "compile-cert-c1", "compile-certify"] ++
+    (mainTests ++ elabTests).map (s!"+Tests.Ix.CompileCert.{·}"))
+  let outDir := ".lake/build/compile-cert"
+  IO.FS.createDirAll outDir
+  let exe := ".lake/build/bin/compile-cert-c1"
+  let checks : Array (String × Array String) :=
+    #["direct", "blocks", "groups", "universes", "expressions", "source-install",
+      "source-models", "source-normalized", "source-coverage", "source-projection-semantics", "indexed",
+      "projection-lowering", "strong", "sharing", "strong-pins", "strong-indexed",
+      "compiled", "changed", "wplus-cost", "changed-values"].map (fun mode => (mode, #[exe, mode])) ++
+    #[("projection-support", #[exe, "projection-support", s!"{outDir}/compiled.ixe"]),
+      ("certify", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
+        s!"{outDir}/compiled.ixe", s!"{outDir}/certify"]),
+      ("certify-strong", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
+        s!"{outDir}/compiled.ixe", s!"{outDir}/certify-strong", "--strong"]),
+      ("certify-changed", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.ChangedDefs",
+        s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed"]),
+      -- W+ with no row checked: the changed constants that need a row are Unsupported, none Rejected
+      ("certify-changed-row-budget-0", #[".lake/build/bin/compile-certify", "--modules",
+        "Tests.Ix.CompileCert.ChangedDefs", s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed-b0",
+        "--row-budget", "0"]),
+      ("certify-strong-plan", #[".lake/build/bin/compile-certify", "--modules", "Tests.Ix.CompileCert.BlockDefs",
+        s!"{outDir}/compiled.ixe", s!"{outDir}/certify-strong-plan", "--strong-plan"]),
+      ("strong-plan", #[exe, "strong-plan", outDir]),
+      -- S over W+: the changed constants S-unsupported, their users S-blocked, a forged route refused
+      ("strong-changed", #[exe, "strong-changed", s!"{outDir}/changed.ixe", outDir]),
+      -- one global S cone (M7 WP-F) on both fixtures, beside the cover; the fast decisions
+      -- against their list and tree references; a forged route refuses the global cone
+      ("strong-global", #[exe, "strong-global", s!"{outDir}/compiled.ixe", s!"{outDir}/changed.ixe", outDir]),
+      -- S at the value level for changed constants (M7 S+a): a transported theorem clique and its
+      -- users S-certified by a value cone, the W+ fixture's remaining classes (S+b, package V), a
+      -- forged route and a forged row refused, the value check on a cone's real environments
+      ("strong-changed-values", #[exe, "strong-changed-values", s!"{outDir}/changed.ixe", outDir]),
+      -- package C: the W+ support folded with the artifact again (the previous fold) gives the
+      -- same verdicts as the default, the fold continued from the admission
+      ("certify-changed-refold", #[".lake/build/bin/compile-certify", "--modules",
+        "Tests.Ix.CompileCert.ChangedDefs", s!"{outDir}/changed.ixe", s!"{outDir}/certify-changed-refold",
+        "--refold"]),
+      -- package V: the certifier on the clique fixture (twins and ownership sources); every
+      -- transported well-founded member certified by its value row, no constant rejected
+      ("certify-changed-values", #[".lake/build/bin/compile-certify", "--modules",
+        "Tests.Ix.Compile.Twins.Cliques,Tests.Ix.Compile.CliqueOwnership.Sources,Tests.Ix.CompileCert.ValueRowDefs",
+        s!"{outDir}/changed-values.ixe", s!"{outDir}/certify-changed-values"])] ++
+    mainTests.map (fun test => (test, #["lean", "--run", s!"Tests/Ix/CompileCert/{test}.lean"]))
+  for (name, checkArgs) in checks do
+    let out ← IO.Process.output {
+      cmd := "lake", args := #["env"] ++ checkArgs
+      env := #[("C1_OUTPUT_DIR", some outDir)] }
+    IO.FS.writeFile s!"{outDir}/{name}.log" (out.stdout ++ out.stderr)
+    IO.eprint out.stderr
+    unless out.exitCode == 0 do
+      IO.eprint out.stdout
+      throw <| IO.userError s!"compile-cert check {name} failed; see {outDir}/{name}.log"
+    let lines := (out.stdout.splitOn "\n").filter (· ≠ "")
+    let some summary := lines.getLast?
+      | throw <| IO.userError s!"compile-cert check {name} printed nothing"
+    IO.println s!"[check-cert] {name}: {summary}"
+  IO.println "Compiler-certification checks passed."
+  return 0
+
+end CompileCert

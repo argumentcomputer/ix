@@ -144,6 +144,18 @@ def collectBindersTests : TestSeq :=
     ((let dom := Expr.mkApp (Expr.mkConst (nm "outParam") #[u]) prop
       let ty := Expr.mkForallE (nm "x") dom prop .default
       (collectBinders ty 1)[0]!.domain == prop : Bool))
+  ++ test "metadata on parameter spines preserves dependent scope and binder information"
+    ((let mark := fun e => Expr.mkMData #[] e
+      let ty := mark (Expr.mkForallE (nm "alpha") (mark prop)
+        (mark (Expr.mkForallE (nm "x") (mark (Expr.mkBVar 0))
+          prop .instImplicit)) .implicit)
+      let binders := collectBinders ty 2
+      let (fvars, decls, _) := forallTelescope ty 2 "param" 0
+      binders.size == 2 && decls.size == 2 && fvars.size == 2 &&
+        (binders[0]!.info matches .implicit) &&
+        (binders[1]!.info matches .instImplicit) &&
+        binders[0]!.domain == mark prop &&
+        decls[1]!.domain == mark fvars[0]! : Bool))
 
 /-- Hand-built metadata for the same phantom-universe specialization that
 Lean expands into two distinct nested auxiliaries. -/

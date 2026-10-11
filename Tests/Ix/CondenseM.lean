@@ -27,6 +27,13 @@ def buildGraph (edges : List (String × List String)) : Map Ix.Name (Set Ix.Name
     let dstSet := dsts.foldl (init := {}) fun s d => s.insert (mkName d)
     acc.insert srcName dstSet
 
+/-- Condense; a failure gives no blocks at all, which every case below
+rejects (each expects at least one SCC). -/
+def condense (graph : Map Ix.Name (Set Ix.Name)) : CondensedBlocks :=
+  match Ix.CondenseM.run graph with
+  | .ok blocks => blocks
+  | .error _ => default
+
 /-- Extract SCC structure as sorted list of sorted lists (for deterministic comparison) -/
 def sccsToSorted (blocks : CondensedBlocks) : List (List String) :=
   let sccs := blocks.blocks.toList.map fun (_, members) =>
@@ -38,12 +45,12 @@ def sccsEq (actual expected : List (List String)) : Bool :=
   actual.length == expected.length &&
   actual.all (expected.contains ·)
 
-/-! ## Test cases (mirroring Rust's src/ix/condense.rs tests) -/
+/-! ## Test cases (mirroring Rust's crates/compile/src/condense.rs tests) -/
 
 /-- Test 1: Single node with no edges → one SCC containing just that node -/
 def testSingleNode : TestSeq :=
   let graph := buildGraph [("A", [])]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "single node: 1 SCC" (result.length == 1) ++
   test "single node: SCC contains A" (result == [["A"]])
@@ -51,7 +58,7 @@ def testSingleNode : TestSeq :=
 /-- Test 2: Simple cycle A→B→A → one SCC containing both -/
 def testSimpleCycle : TestSeq :=
   let graph := buildGraph [("A", ["B"]), ("B", ["A"])]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "simple cycle: 1 SCC" (result.length == 1) ++
   test "simple cycle: SCC contains A,B" (result == [["A", "B"]])
@@ -59,7 +66,7 @@ def testSimpleCycle : TestSeq :=
 /-- Test 3: Chain with no cycle A→B→C → three separate SCCs -/
 def testChainNoCycle : TestSeq :=
   let graph := buildGraph [("A", ["B"]), ("B", ["C"]), ("C", [])]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "chain: 3 SCCs" (result.length == 3) ++
   test "chain: each singleton" (sccsEq result [["A"], ["B"], ["C"]])
@@ -72,7 +79,7 @@ def testTwoCyclesConnected : TestSeq :=
     ("C", ["D"]),
     ("D", ["C"])
   ]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "two cycles: 2 SCCs" (result.length == 2) ++
   test "two cycles: correct SCCs" (sccsEq result [["A", "B"], ["C", "D"]])
@@ -91,7 +98,7 @@ def testComplexGraph : TestSeq :=
     ("G", ["F"]),
     ("H", ["D", "G"])
   ]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "complex: 3 SCCs" (result.length == 3) ++
   test "complex: correct SCCs" (sccsEq result [["A", "B", "E"], ["C", "D", "H"], ["F", "G"]])
@@ -101,14 +108,15 @@ def testComplexGraph : TestSeq :=
 /-- Empty graph -/
 def testEmptyGraph : TestSeq :=
   let graph : Map Ix.Name (Set Ix.Name) := {}
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
+  test "empty: condenses" (Ix.CondenseM.run graph).toOption.isSome ++
   test "empty: 0 SCCs" (result.length == 0)
 
 /-- Self-loop: A→A -/
 def testSelfLoop : TestSeq :=
   let graph := buildGraph [("A", ["A"])]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "self-loop: 1 SCC" (result.length == 1) ++
   test "self-loop: contains A" (result == [["A"]])
@@ -122,7 +130,7 @@ def testDisconnected : TestSeq :=
     ("D", ["C"]),
     ("E", [])
   ]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "disconnected: 3 SCCs" (result.length == 3) ++
   test "disconnected: correct SCCs" (sccsEq result [["A", "B"], ["C", "D"], ["E"]])
@@ -136,7 +144,7 @@ def testLinearChain : TestSeq :=
     ("D", ["E"]),
     ("E", [])
   ]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "linear: 5 SCCs" (result.length == 5) ++
   test "linear: all singletons" (result.all (·.length == 1))
@@ -150,7 +158,7 @@ def testLargeCycle : TestSeq :=
     ("D", ["E"]),
     ("E", ["A"])
   ]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   let result := sccsToSorted sccs
   test "large cycle: 1 SCC" (result.length == 1) ++
   test "large cycle: contains all 5" (result == [["A", "B", "C", "D", "E"]])
@@ -159,7 +167,7 @@ def testLargeCycle : TestSeq :=
 
 def testLowLinksSimpleCycle : TestSeq :=
   let graph := buildGraph [("A", ["B"]), ("B", ["A"])]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   -- All nodes in the same SCC should have the same lowLink
   let aLow := sccs.lowLinks.get? (mkName "A")
   let bLow := sccs.lowLinks.get? (mkName "B")
@@ -169,7 +177,7 @@ def testLowLinksSimpleCycle : TestSeq :=
 
 def testLowLinksChain : TestSeq :=
   let graph := buildGraph [("A", ["B"]), ("B", ["C"]), ("C", [])]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   -- Each node should be its own root in a chain
   let aLow := sccs.lowLinks.get? (mkName "A")
   let bLow := sccs.lowLinks.get? (mkName "B")
@@ -182,7 +190,7 @@ def testLowLinksChain : TestSeq :=
 
 def testBlockRefsChain : TestSeq :=
   let graph := buildGraph [("A", ["B"]), ("B", ["C"]), ("C", [])]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   -- A's block should reference B's block
   let aBlockRefs := sccs.blockRefs.get? (mkName "A")
   let bBlockRefs := sccs.blockRefs.get? (mkName "B")
@@ -198,7 +206,7 @@ def testBlockRefsTwoCycles : TestSeq :=
     ("C", ["D"]),
     ("D", ["C"])
   ]
-  let sccs := Ix.CondenseM.run graph
+  let sccs := condense graph
   -- The {A,B} SCC should reference the {C,D} SCC
   -- Find the root of A's SCC
   let aRoot := sccs.lowLinks.get? (mkName "A")
@@ -344,7 +352,7 @@ def testSccComparison : TestSeq :=
     IO.println s!"[Test] Step 2: Computing SCCs in Lean..."
     let leanStart ← IO.monoMsNow
     let leanRefMap := Ix.GraphM.envParallel ixEnv
-    let sccs := Ix.CondenseM.run leanRefMap
+    let sccs ← IO.ofExcept (Ix.CondenseM.run leanRefMap)
     IO.print s!"[Test]   Lean: {sccs.blocks.size} SCCs, {sccs.lowLinks.size} lowLinks "
     let leanTime := (← IO.monoMsNow) - leanStart
     IO.println s!"in {leanTime}ms"

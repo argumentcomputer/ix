@@ -25,6 +25,9 @@
     exists only to dodge a module-path collision, so the port reuses
     `countForalls`.
 
+  A7 (D8): out-of-range accesses are `internalIndexError`s naming the
+  block (`arrIdx`).
+
   Environment access: Rust threads `lean_env: &LeanEnv` and
   `stt: &CompileState`; the Lean port reads the base compile environment
   via `lookupConst?` / `getCompileEnv` (CompileM under KBridgeM), the same
@@ -50,7 +53,7 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError)
+open Ix.CompileM (CompileM CompileError arrIdx)
 
 /-- Mirrors Rust `aux_rec_suffix_idx` (aux_gen/below.rs:31).
 
@@ -182,7 +185,7 @@ def detectRecTargetClass (dom : Expr) (allIndNames : Array (Name × Nat))
     plus the applied field) is preserved. -/
 def transformToBelowFvar (fieldDom : Expr) (targetJ : Nat)
     (paramFvars motiveFvars : Array Expr) (belowNames : Array Name)
-    (levelParams : Array Name) (majorFvar : Expr) : Expr := Id.run do
+    (levelParams : Array Name) (majorFvar : Expr) : CompileM Expr := do
   -- Open any inner foralls (for higher-order recursive fields like
   -- `∀ a, I_j (f a)`)
   let nInner := countForalls fieldDom
@@ -193,7 +196,7 @@ def transformToBelowFvar (fieldDom : Expr) (targetJ : Nat)
   let (_head, args) := decomposeApps leaf
 
   -- Build: I_j.below params motives indices (majorFvar innerFvars)
-  let belowConst := mkConst belowNames[targetJ]!
+  let belowConst := mkConst (← arrIdx belowNames targetJ "transformToBelowFvar: belowNames")
     (levelParams.map Level.mkParam)
   let mut result := belowConst
   result := mkAppN result paramFvars
@@ -370,7 +373,7 @@ def buildBelowMinor (minorDom : Expr) (rlvl : Level)
   -- genMk calls mkPProd per-pair, which infers levels from each operand.
   let mut body := punitConst rlvl
   if !ihEntries.isEmpty then
-    let mut acc := ihEntries.back!
+    let mut acc ← arrIdx ihEntries (ihEntries.size - 1) "buildBelowMinor: ihEntries"
     let rest := ihEntries.pop
     for entry in rest.reverse do
       let lvl1 ← scope.getLevel entry
@@ -511,7 +514,7 @@ def buildBelowDef (belowName : Name) (recVal : RecursorVal)
 
   -- The elimination level is the first level param (for large
   -- eliminators).
-  let elimLevel := Level.mkParam recLevelParams[0]!
+  let elimLevel := Level.mkParam (← arrIdx recLevelParams 0 "buildBelowDef: recLevelParams")
 
   -- ilvl: the universe level of the inductive's type former.
   --
@@ -533,7 +536,7 @@ n_minors({nMinors}) + n_indices({nIndices}) + 1 major"
       | .ok t => pure t
       | .error (.unsupportedExpr desc) =>
         throw (CompileError.unsupportedExpr desc)
-    let majorDomain := decls[total - 1]!.domain
+    let majorDomain := (← arrIdx decls (total - 1) "buildBelowDef: decls").domain
 
     let ctxDecls : Array LocalDecl := decls.extract 0 (total - 1)
     let tc ← TcScopeSt.new ctxDecls recLevelParams maps
@@ -657,7 +660,7 @@ structure BelowFieldEntry where
 def buildBelowIndcCtor (belowName : Name) (ctorName : Name)
     (ctor : ConstructorVal) (recVal : RecursorVal) (ind : InductiveVal)
     (_ci : Nat) (nParams nMotives nClasses : Nat) (belowNames : Array Name)
-    (sortedClasses : Array (Array Name)) : KBridgeM BelowCtor := do
+    (sortedClasses : Array (Array Name)) (sourceBelowName : Name := belowName) : KBridgeM BelowCtor := do
   let ctorSuffix :=
     (nameStripPrefix ctorName ind.cnst.name).getD (nameComponents ctorName)
   let belowCtorName := nameAppendComponents belowName ctorSuffix
@@ -668,7 +671,7 @@ def buildBelowIndcCtor (belowName : Name) (ctorName : Name)
 
   -- Extract original field binder names from the Lean-generated `.below`
   -- ctor for faithful roundtrip of hygiene names.
-  let origBelowCtorName := nameAppendComponents belowName ctorSuffix
+  let origBelowCtorName := nameAppendComponents sourceBelowName ctorSuffix
   let origFieldNames : Array Name :=
     match ← lookupConst? origBelowCtorName with
     | some (.ctorInfo cv) => Id.run do
@@ -730,7 +733,7 @@ def buildBelowIndcCtor (belowName : Name) (ctorName : Name)
   -- skipped; non-inductive entries keep their own name.)
   let mut allIndNames : Array (Name × Nat) := #[]
   for j in [0:nClasses] do
-    for name in sortedClasses[j]! do
+    for name in (← arrIdx sortedClasses j "buildBelowIndcCtor: sortedClasses") do
       match ← lookupConst? name with
       | some (.inductInfo v) => allIndNames := allIndNames.push (v.cnst.name, j)
       | some _ => allIndNames := allIndNames.push (name, j)
@@ -774,7 +777,7 @@ def buildBelowIndcCtor (belowName : Name) (ctorName : Name)
       -- ih: Target_j.below params motives field_fvar
       -- The field domain is `I_j args` in FVar form. We need to build
       -- `I_j.below params motives args field_fvar`.
-      let ihDom := transformToBelowFvar field.decl.domain targetJ paramFvars
+      let ihDom ← transformToBelowFvar field.decl.domain targetJ paramFvars
         motiveFvars belowNames indLevelParams field.fvar
       let ihName :=
         origFieldNames[origNameIdx]?.getD (Name.mkStr .mkAnon "ih")
@@ -788,7 +791,7 @@ def buildBelowIndcCtor (belowName : Name) (ctorName : Name)
       -- Replace inductive head with motive FVar, skip params, apply
       -- indices + field_fvar
       let fihDom := replaceHeadWithFvar field.decl.domain
-        motiveFvars[targetJ]! field.fvar nParams
+        (← arrIdx motiveFvars targetJ "buildBelowIndcCtor: motiveFvars") field.fvar nParams
       let fihName := origFieldNames[origNameIdx]?.getD field.decl.binderName
       origNameIdx := origNameIdx + 1
       let (fihFvName, _fihFv) := freshFVar "bicih" expandedDecls.size
@@ -850,7 +853,8 @@ def buildBelowIndcCtor (belowName : Name) (ctorName : Name)
 def buildBelowIndc (ci : Nat) (belowName : Name) (recVal : RecursorVal)
     (ind : InductiveVal) (nClasses : Nat)
     (sortedClasses : Array (Array Name))
-    (_canonicalRecs : Array (Name × RecursorVal)) : KBridgeM BelowIndc := do
+    (_canonicalRecs : Array (Name × RecursorVal)) (names : AuxNames := {})
+    (sourceBelowName : Name := belowName) : KBridgeM BelowIndc := do
   let nParams := recVal.numParams
   let nMotives := recVal.numMotives
   let _nMinors := recVal.numMinors
@@ -859,8 +863,11 @@ def buildBelowIndc (ci : Nat) (belowName : Name) (recVal : RecursorVal)
   let indLevelParams := ind.cnst.levelParams
 
   -- Build .below names for all classes (needed for ihTypeToBelowType)
-  let belowNames : Array Name := (Array.range nClasses).map fun j =>
-    Name.mkStr sortedClasses[j]![0]! "below"
+  let mut belowNames : Array Name := #[]
+  for j in [0:nClasses] do
+    let rep ← arrIdx (← arrIdx sortedClasses j "buildBelowIndc: sortedClasses") 0
+      "buildBelowIndc: class"
+    belowNames := belowNames.push (names.member rep "below")
 
   -- .below type: ∀ {params} {motives} (major : I_i params indices), Prop
   -- Build from the recursor type: take params + motives, skip minors,
@@ -875,7 +882,8 @@ def buildBelowIndc (ci : Nat) (belowName : Name) (recVal : RecursorVal)
   let mut ctors : Array BelowCtor := #[]
   let mut _globalMinorIdx := 0
   for classIdx in [0:nClasses] do
-    let classRep := sortedClasses[classIdx]![0]!
+    let classRep ← arrIdx (← arrIdx sortedClasses classIdx "buildBelowIndc: sortedClasses") 0
+      "buildBelowIndc: class"
     let classInd ←
       match ← lookupConst? classRep with
       | some (.inductInfo v) => pure v
@@ -896,12 +904,13 @@ def buildBelowIndc (ci : Nat) (belowName : Name) (recVal : RecursorVal)
             throw (CompileError.missingConstant ctorName.pretty)
 
         let belowCtor ← buildBelowIndcCtor belowName ctorName ctor recVal
-          ind ci nParams nMotives nClasses belowNames sortedClasses
+          ind ci nParams nMotives nClasses belowNames sortedClasses sourceBelowName
         ctors := ctors.push belowCtor
       _globalMinorIdx := _globalMinorIdx + 1
 
   return {
     name := belowName
+    sourceName := sourceBelowName
     -- .below has same level params as parent (no elim level for Prop)
     levelParams := indLevelParams
     nParams := belowNParams
@@ -934,30 +943,34 @@ def buildBelowIndc (ci : Nat) (belowName : Name) (recVal : RecursorVal)
     Returns the classes' inductives first, then the auxiliaries' in
     `canonicalRecs` order, so position `k` holds motive `k`'s `.below`. -/
 def buildPropBelowFamily (sortedClasses : Array (Array Name))
-    (canonicalRecs : Array (Name × RecursorVal)) :
+    (canonicalRecs : Array (Name × RecursorVal)) (names : AuxNames := {}) :
     KBridgeM (Array BelowIndc) := do
   let nClasses := sortedClasses.size
-  let blockLabel := sortedClasses[0]![0]!.pretty
+  let blockLabel := Ix.AuxGen.blockLabel sortedClasses
   let mut classInds : Array InductiveVal := #[]
   for c in sortedClasses do
-    match ← lookupConst? c[0]! with
+    let rep ← arrIdx c 0 "buildPropBelowFamily: class"
+    match ← lookupConst? rep with
     | some (.inductInfo v) => classInds := classInds.push v
-    | _ => throw (CompileError.missingConstant c[0]!.pretty)
+    | _ => throw (CompileError.missingConstant rep.pretty)
   let some firstInd := classInds[0]? | return #[]
-  let all0 := firstInd.all[0]?.getD sortedClasses[0]![0]!
+  let all0 := firstInd.all[0]?.getD firstInd.cnst.name
   let indLevelParams := firstInd.cnst.levelParams
   let univs : Array Level := indLevelParams.map Level.mkParam
 
   -- `.below` name per motive: classes, then auxiliaries (source-indexed
   -- like `.below_N` in the Type-level path).
   let mut belowNames : Array Name :=
+    classInds.map fun ind => names.member ind.cnst.name "below"
+  let mut sourceBelowNames : Array Name :=
     classInds.map fun ind => Name.mkStr ind.cnst.name "below"
   for (auxRecName, _) in canonicalRecs.extract nClasses canonicalRecs.size do
     let some idx := auxRecSuffixIdx auxRecName
       | throw (CompileError.invalidMutualBlock
           s!"{blockLabel}: Prop below aux recursor '{auxRecName.pretty}' \
 is not source-indexed")
-    belowNames := belowNames.push (Name.mkStr all0 s!"below_{idx}")
+    belowNames := belowNames.push (names.nested all0 "below" idx)
+    sourceBelowNames := sourceBelowNames.push (Name.mkStr all0 s!"below_{idx}")
 
   -- Every recursor of the flat block shares the parameter, motive and
   -- minor telescope; open it once from the first.
@@ -988,6 +1001,11 @@ is not source-indexed")
     throw (CompileError.invalidMutualBlock
       s!"{blockLabel}: Prop below: recursor type has fewer binders than its \
 parameter, motive and minor counts")
+  -- A7 (D8): one `.below` name per motive, so the lookup in `ihToBelow`
+  -- (a motive index of `motiveFvars`) is in range.
+  if belowNames.size < nMotives then
+    throw (CompileError.invalidMutualBlock
+      s!"{blockLabel}: Prop below: {belowNames.size} `.below` names for {nMotives} motives")
 
   -- `ihTypeToBelowType`: `∀ ys, motive_j args` ↦
   -- `∀ ys, below_j params motives args`.
@@ -996,7 +1014,7 @@ parameter, motive and minor counts")
     let nInner := countForalls ty
     let (_, innerDecls, leaf) := forallTelescope ty nInner pfx 0
     let (_, args) := decomposeApps leaf
-    let app := mkAppN (mkAppN (mkAppN (mkConst belowNames[j]! univs)
+    let app := mkAppN (mkAppN (mkAppN (mkConst (← belowNames[j]?) univs)
       paramFvars) motiveFvars) args
     pure (mkForall app innerDecls)
 
@@ -1011,7 +1029,8 @@ parameter, motive and minor counts")
       throw (CompileError.invalidMutualBlock
         s!"{blockLabel}: Prop below: motive {k} has {minorsK.size} minors \
 but '{recK.cnst.name.pretty}' has {recK.rules.size} rules")
-    let belowName := belowNames[k]!
+    let belowName ← arrIdx belowNames k "buildPropBelowFamily: belowNames"
+    let sourceBelowName ← arrIdx sourceBelowNames k "buildPropBelowFamily: sourceBelowNames"
     let mut ctors : Array BelowCtor := #[]
     for ((minor, mi), rule) in minorsK.zip recK.rules do
       let ctorInduct ←
@@ -1043,7 +1062,7 @@ but '{recK.cnst.name.pretty}' has {recK.rules.size} rules")
             s!"{blockLabel}: Prop below: minor {mi} does not return a motive")
 
       -- Keep the binder names of Lean's own constructor where it exists.
-      if let some (.ctorInfo cv) ← lookupConst? ctorName then
+      if let some (.ctorInfo cv) ← lookupConst? (nameAppendComponents sourceBelowName suffix) then
         let mut ty := cv.cnst.type
         for _ in [0:cv.numParams] do
           if let .forallE _ _ body _ _ := ty then
@@ -1067,6 +1086,7 @@ but '{recK.cnst.name.pretty}' has {recK.rules.size} rules")
     let owner := classInds[k]?.getD firstInd
     out := out.push {
       name := belowName
+      sourceName := sourceBelowName
       levelParams := indLevelParams
       nParams := nParams + nMotives
       nIndices := recK.numIndices + 1
@@ -1098,7 +1118,7 @@ but '{recK.cnst.name.pretty}' has {recK.rules.size} rules")
     `IndPredBelow`. -/
 def generateBelowConstants (sortedClasses : Array (Array Name))
     (canonicalRecs : Array (Name × RecursorVal)) (isProp : Bool)
-    (maps : AddrMaps) (allAux : Bool := false) :
+    (maps : AddrMaps) (allAux : Bool := false) (names : AuxNames := {}) :
     KBridgeM (Array BelowConstant) := do
   let nClasses := sortedClasses.size
   if nClasses == 0 || canonicalRecs.isEmpty then
@@ -1108,7 +1128,7 @@ def generateBelowConstants (sortedClasses : Array (Array Name))
   -- one inductive per motive (the classes' and each auxiliary's), built
   -- from the recursor's minor premises.
   if isProp && canonicalRecs.size > nClasses then
-    return (← buildPropBelowFamily sortedClasses canonicalRecs).map .indc
+    return (← buildPropBelowFamily sortedClasses canonicalRecs names).map .indc
 
   let mut results : Array BelowConstant := #[]
 
@@ -1119,7 +1139,8 @@ def generateBelowConstants (sortedClasses : Array (Array Name))
   for (pair, ci) in
       (canonicalRecs.extract 0 (min nClasses canonicalRecs.size)).zipIdx do
     let (_, recVal) := pair
-    let classRep := sortedClasses[ci]![0]!
+    let classRep ← arrIdx (← arrIdx sortedClasses ci "generateBelowConstants: sortedClasses") 0
+      "generateBelowConstants: class"
 
     let ind ←
       match ← lookupConst? classRep with
@@ -1129,16 +1150,17 @@ def generateBelowConstants (sortedClasses : Array (Array Name))
         -- class rep not an inductive" }
         throw (CompileError.missingConstant classRep.pretty)
 
-    let belowName := Name.mkStr ind.cnst.name "below"
+    let sourceBelowName := Name.mkStr ind.cnst.name "below"
+    let belowName := names.member ind.cnst.name "below"
 
     if !isProp then
       -- Type-level: generate definition (BRecOn.lean path)
       let d ← buildBelowDef belowName recVal ind nClasses canonicalRecs maps
-      results := results.push (.defn d)
+      results := results.push (.defn { d with sourceName := sourceBelowName })
     else
       -- Prop-level: generate .below inductive (IndPredBelow.lean path)
       let indc ← buildBelowIndc ci belowName recVal ind nClasses
-        sortedClasses canonicalRecs
+        sortedClasses canonicalRecs names sourceBelowName
       results := results.push (.indc indc)
 
   -- Generate .below_N for nested auxiliary members (Type-level; the
@@ -1151,7 +1173,8 @@ def generateBelowConstants (sortedClasses : Array (Array Name))
   if !isProp then
     let nAux := canonicalRecs.size - nClasses
     if nAux > 0 then
-      let firstClassName := sortedClasses[0]![0]!
+      let firstClassName ← arrIdx (← arrIdx sortedClasses 0 "generateBelowConstants: sortedClasses") 0
+        "generateBelowConstants: class"
       let firstInd ←
         match ← lookupConst? firstClassName with
         | some (.inductInfo v) => pure v
@@ -1161,7 +1184,7 @@ def generateBelowConstants (sortedClasses : Array (Array Name))
           throw (CompileError.missingConstant firstClassName.pretty)
       -- Lean hangs _N suffixed names off all[0] (first in source order),
       -- not the canonical class representative.
-      let all0 := firstInd.all[0]!
+      let all0 ← arrIdx firstInd.all 0 "generateBelowConstants: all"
       -- Rust: `for j in 0..n_aux { &canonical_recs[n_classes + j] }`.
       for (pair, j) in
           (canonicalRecs.extract nClasses canonicalRecs.size).zipIdx do
@@ -1177,7 +1200,8 @@ def generateBelowConstants (sortedClasses : Array (Array Name))
           | throw (CompileError.invalidMutualBlock
               s!"below aux recursor '{auxRecName.pretty}' is not \
 source-indexed; refusing to synthesize below_{j + 1}")
-        let belowName := Name.mkStr all0 s!"below_{idx}"
+        let sourceBelowName := Name.mkStr all0 s!"below_{idx}"
+        let belowName := names.nested all0 "below" idx
 
         -- Only generate if this constant exists in the source
         -- environment. Check lean_env (original Lean env during
@@ -1185,13 +1209,16 @@ source-indexed; refusing to synthesize below_{j + 1}")
         -- constants during decompilation where lean_env is the
         -- incrementally-built work_env and won't contain the constant
         -- we're about to generate).
-        let cenv ← Ix.CompileM.getCompileEnv
         -- `allAux` (the compile path, once the block's `.below` family is
         -- exported; below.rs `generate_below_constants_with`) lifts the
         -- per-name gate: block membership must not depend on which names
-        -- a closure-only environment holds.
-        let existsInEnv := allAux || (← lookupConst? belowName).isSome
-          || cenv.nameToNamed.contains belowName
+        -- a closure-only environment holds. A7 (D13): with `allAux` the
+        -- global `nameToNamed` (other blocks' registrations) is not read;
+        -- the value is the one the former `allAux || …` gave.
+        let existsInEnv ← if allAux then pure true else do
+          let cenv ← Ix.CompileM.getCompileEnv
+          pure ((← lookupConst? sourceBelowName).isSome
+            || cenv.nameToNamed.contains sourceBelowName)
         if existsInEnv then
           -- Extract the actual external inductive from the auxiliary
           -- recursor's major premise. The major is the last binder in
@@ -1205,7 +1232,7 @@ auxiliary recursor major premise")
 
           let d ← buildBelowDef belowName auxRecVal extInd nClasses
             canonicalRecs maps
-          results := results.push (.defn d)
+          results := results.push (.defn { d with sourceName := sourceBelowName })
 
   return results
 

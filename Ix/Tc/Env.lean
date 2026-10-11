@@ -2,6 +2,7 @@ module
 
 public import Ix.Tc.Const
 public import Ix.Tc.Error
+public import Ix.PhaseTimers
 
 /-!
 Mirror: crates/kernel/src/env.rs
@@ -240,8 +241,11 @@ instance : Inhabited (KEnv m) := ⟨{}⟩
 def freshFVarId (env : KEnv m) : FVarId × KEnv m :=
   (⟨env.nextFVarId⟩, { env with nextFVarId := env.nextFVarId + 1 })
 
+/-- Constant lookup. With `IX_PHASE_TIMERS` set, a hit is recorded for the
+    aux-gen tail's ingress count (`Ix.PhaseTimers.noteLookup`, the identity). -/
 @[inline] def get? (env : KEnv m) (id : KId m) : Option (KConst m) :=
-  env.consts[id]?
+  let r := env.consts[id]?
+  if Ix.PhaseTimers.enabled () then Ix.PhaseTimers.noteLookup (hash id) r else r
 
 /-- Insert a constant. The Rust reserved-marker panic guard lives at ingress
     (see module doc). -/

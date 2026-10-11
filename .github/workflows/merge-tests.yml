@@ -131,7 +131,39 @@ jobs:
               rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip
               graph-cross condense-cross rust-serialize ixon-corpus
               rust-decompile validate-aux aux-gen-diff decompile-diff
-              aux-gen-closure canon-closure-aux
+              aux-gen-closure canon-closure-aux aux-cert
+          # These are ignored runners: building IxTests or running the default
+          # tests does not execute them. Keep the expensive validator and
+          # schedule comparisons in their own partitions.
+          - name: Lake ignored tests (compiler passes)
+            kind: lake
+            test_args: >-
+              --ignored
+              canon-pass1 twins clique-transport aux-oracle pass3 pass3-cliques
+              o11a-decline compile-caller-independence
+          - name: Lake ignored tests (compiler validation)
+            kind: lake
+            test_args: --ignored validate-lean validate-lean-nc adversarial-matrix
+          - name: Lake ignored tests (compiler scheduling)
+            kind: lake
+            test_args: --ignored compile-schedule-identity compile-claim-conflict compile-claim-order
+          # Added by M6R slice 6 (Pass 3 the only mode of both compilers): the
+          # output contract's changed-set record, the per-address Lean/Rust
+          # parity (fixtures; its pack step at the gate-safe default of 10 roots
+          # per unit), `ix pack` against its Lean oracle, the clique ownership
+          # regressions, and the Pass 3 plan-table memo check (its own
+          # partition: it compiles the twins and the fixture corpus under every
+          # driver).
+          - name: Lake ignored tests (compiler records, parity and pack)
+            kind: lake
+            test_args: --ignored changed-set pass3-rust-parity pack-units clique-ownership
+          - name: Lake ignored tests (compiler plan cache)
+            kind: lake
+            test_args: --ignored pass3-plan-cache
+          - name: Lake ignored tests (compiler closure and corpus)
+            kind: lake
+            test_args: --ignored compiler-selected-closure-e2e compile-closure-whole
+            compiler_corpus: true
           - name: Lake ignored tests (compile)
             kind: lake
             test_args: --ignored compile
@@ -211,6 +243,13 @@ jobs:
         if: ${{ matrix.kind == 'lake' }}
         run: lake test --wfail -- ${{ matrix.test_args }}
 
+      - name: Run compiler corpus and checker-support controls
+        if: matrix.compiler_corpus
+        run: |
+          lake build --wfail aux-shape-sweep checker-support-regression kernel-check-ixe
+          lake exe aux-shape-sweep self-check
+          lake exe checker-support-regression
+
       - name: Run ZK voting prover
         if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}
         run: lake exe Apps.ZKVoting.Prover
@@ -239,6 +278,11 @@ jobs:
       - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
         if: ${{ matrix.kind == 'kernel' }}
         run: lake run check-kernel --with-model
+      # The compiler-certification lane (Ix/CompileCert): its tracked axiom
+      # audit (frozen roots, standard axioms only) and its fixture checks.
+      - name: Check compiler-certification axiom audit and fixture checks
+        if: ${{ matrix.kind == 'kernel' }}
+        run: lake run check-cert
 
   valgrind:
     name: Valgrind FFI

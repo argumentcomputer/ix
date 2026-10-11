@@ -82,6 +82,25 @@ static IX_PROGRESS_MS: LazyLock<u64> = LazyLock::new(|| {
     .unwrap_or(2000)
 });
 
+/// Withdraw this source block's provisional auxiliary publication after
+/// original-form compilation/promotion failed. Anonymous content is retained;
+/// no failed source name resolves through either public or auxiliary tables.
+fn fail_aux_promotion(stt: &CompileState, all: &NameSet, msg: &str) {
+  for n in all {
+    stt.name_to_addr.remove(n);
+    stt.aux_name_to_addr.remove(n);
+    stt.env.named.remove(n);
+    stt.aux_gen_extra_names.remove(n);
+    stt.blocks.remove(n);
+    stt.def_hints.remove(n);
+    stt.p3.heads.remove(n);
+    stt.p3.canon_recs.remove(n);
+    stt.p3.non_canonical.remove(n);
+    stt.ungrounded.insert(n.clone(), msg.to_owned());
+  }
+  stt.aux_gen_pending.lock().unwrap().retain(|n| !all.contains(n));
+}
+
 /// Recover a short string description from a panic payload.
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
   panic
@@ -162,6 +181,12 @@ pub fn compile_env_with_profile(
   // scheduled (Lean `compileEnvParallelAux` does the same).
   let sharing_limits = crate::compile::compiler_sharing_limits()
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
+  // Pass 3 is the only mode (M6R slice 6 deleted the legacy call-site
+  // surgery): a leftover `IX_PASS3=off` (or any value but `images`) fails
+  // the compile with the Lean side's text; `images` prints a deprecation
+  // note.
+  crate::compile::pass3::names::switch_from_env()
+    .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
   // groups in one decode per constant — the env decodes lazily, so
@@ -217,8 +242,11 @@ pub fn compile_env_with_profile(
     lean_env.pin(by_deg[..k].iter().map(|(n, _)| (*n).clone()));
   }
 
-  let ungrounded_map: DashMap<Name, String> =
-    ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
+  // each with its named refusal (Lean's `GroundError.refusal`, same text)
+  let ungrounded_map: DashMap<Name, String> = ungrounded
+    .iter()
+    .map(|(n, e)| (n.clone(), crate::ground::refusal(e, &ungrounded)))
+    .collect();
   if !ungrounded.is_empty() && *IX_VERBOSE {
     eprintln!(
       "[compile_env] {} ungrounded constants filtered from graph",
@@ -252,7 +280,49 @@ pub fn compile_env_with_profile(
   };
 
   let phase_start = Instant::now();
-  let condensed = compute_sccs(&grounded_out_refs);
+  let mut condensed = compute_sccs(&grounded_out_refs);
+  // Pass 3: the changed-clique table and its scheduling edges
+  // (`Ix.Compile.Pass.scheduleCliques`, before O11a's edges as in the Lean
+  // driver): every member block of a clique waits for everything any member
+  // references, and the clique's other blocks for its first member's block
+  // (which plans the clique first). Block dependencies only.
+  let (p3_cliques, p3_clique_roots) = {
+    let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+    crate::compile::pass3::clique::hook::schedule_cliques(
+      &const_of,
+      &mut condensed,
+    )
+  };
+  // Pass 3: O11a's scheduling edges `all0._sizeOf_N -> T._sizeOf_inst`
+  // (and `-> SizeOf.sizeOf`), references its output adds that the input does
+  // not have (`O11a.addSizeOfEdges`, design document §6.3 obligation 2):
+  // the instance compiles first. Block dependencies only; the components
+  // and representatives do not change.
+  {
+    let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+    // the candidates are the inductive families' first members (the
+    // setup scan's groups), the only names the edges start from
+    crate::compile::pass3::opt::add_size_of_edges(
+      scan.ind_groups.keys(),
+      &const_of,
+      &grounded_out_refs,
+      &mut condensed,
+    );
+  }
+  // the references `cliqueCallers` reads: those of the blocks that
+  // reference an encoding constant of a clique (`p3BlockRefs`)
+  let mut p3_clique_refs: rustc_hash::FxHashMap<Name, Vec<Name>> =
+    rustc_hash::FxHashMap::default();
+  if !p3_clique_roots.is_empty() {
+    for (lo, refs) in &condensed.block_refs {
+      if refs.iter().any(|r| {
+        crate::compile::pass3::clique::hook::encoding_owner(&p3_clique_roots, r)
+          .is_some()
+      }) {
+        p3_clique_refs.insert(lo.clone(), refs.iter().cloned().collect());
+      }
+    }
+  }
   if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
@@ -283,10 +353,25 @@ pub fn compile_env_with_profile(
     );
   }
 
+  // Pass 3 (D14): an input name with a reserved `_ix` component is refused.
+  if let Some(msg) = crate::compile::pass3::driver::reserved_input_in(
+    condensed.blocks.values().flat_map(|b| b.iter()),
+  ) {
+    return Err(CompileError::UnsupportedExpr { desc: msg });
+  }
+
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
+    pass3: true,
+    p3: crate::compile::pass3::Pass3State {
+      cliques: p3_cliques,
+      clique_roots: p3_clique_roots,
+      clique_refs: p3_clique_refs,
+      block_refs: condensed.block_refs.clone(),
+      ..Default::default()
+    },
     ..Default::default()
   };
 
@@ -306,7 +391,7 @@ pub fn compile_env_with_profile(
   // error (race depends on work-stealing order).
   //
   // Seed names (exact Const refs aux_gen emits — grep `mk_const` in
-  // `src/ix/compile/aux_gen/**`):
+  // `crates/compile/src/compile/aux_gen/**`):
   //   - `.below` (Type-level): PUnit, PProd (+ ctors via SCC)
   //   - `.brecOn.eq`: Eq, Eq.refl, Eq.symm, Eq.ndrec, HEq, HEq.refl, True
   //
@@ -473,6 +558,7 @@ pub fn compile_env_with_profile(
   let active_ref = &active;
   let stop_progress_ref = &stop_progress;
   let admission_ref = &admission;
+  let source_names_ref = &condensed.low_links;
 
   thread::scope(|s| {
     // Periodic progress reporter. Wakes every IX_PROGRESS_MS to print
@@ -638,7 +724,7 @@ pub fn compile_env_with_profile(
                 // Only compile — don't promote other names yet (promote_aux
                 // inside compile_const_no_aux needs names to still be in
                 // aux_name_to_addr, not yet in name_to_addr).
-                let mut aux_precompile_incomplete = false;
+                let mut promotion_failure = None;
                 {
                   let mut unresolved_names = Vec::new();
                   for name in &all {
@@ -653,7 +739,6 @@ pub fn compile_env_with_profile(
                   }
                   if !unresolved_names.is_empty() {
                     if any_aux_gen {
-                      aux_precompile_incomplete = true;
                       let missing = unresolved_names
                         .iter()
                         .map(|n| n.pretty())
@@ -670,9 +755,7 @@ pub fn compile_env_with_profile(
                         all.len(),
                         msg,
                       );
-                      for member in &all {
-                        stt_ref.ungrounded.insert(member.clone(), msg.clone());
-                      }
+                      promotion_failure = Some(msg);
                     } else {
                       let unresolved_set: NameSet =
                         unresolved_names.iter().cloned().collect();
@@ -715,7 +798,11 @@ pub fn compile_env_with_profile(
                   }
                 }
 
-                if any_aux_gen && !aux_precompile_incomplete {
+                // Original-form compilation can visit several members before
+                // a later one fails. Defer all original metadata until both
+                // compilation and the remaining address claims succeed.
+                crate::compile::block_txn::start();
+                if any_aux_gen && promotion_failure.is_none() {
                   // Compile the original Lean form (without aux_gen).
                   // compile_mutual with aux=false calls promote_aux for
                   // each constant, setting Named.original with the
@@ -736,16 +823,8 @@ pub fn compile_env_with_profile(
                     },
                   );
                   if let Err(e) = res {
-                    // Record the failure per-member and fall through. The
-                    // scheduler keeps running so other constants can still
-                    // compile; dependents of this block will hit
-                    // MissingConstant and be recorded here too. Callers
-                    // inspect `stt.ungrounded` to report per-constant
-                    // compile-side rejections.
                     let msg = format!("{e}");
-                    for member in &all {
-                      stt_ref.ungrounded.insert(member.clone(), msg.clone());
-                    }
+                    promotion_failure = Some(msg.clone());
                     if *IX_LOG_BLOCKS {
                       eprintln!(
                         "[compile_env] compile_const_no_aux failed for {}: {}",
@@ -756,25 +835,62 @@ pub fn compile_env_with_profile(
                   }
                 }
 
-                if !aux_precompile_incomplete {
-                  // Promote remaining names from aux_name_to_addr.
+                if promotion_failure.is_none() {
+                  // Promote remaining names from aux_name_to_addr. A name
+                  // another block already compiled at a different address
+                  // than aux_gen claimed is a conflict (single ownership),
+                  // recorded instead of silently skipped.
                   for name in &all {
-                    if stt_ref.name_to_addr.contains_key(name) {
+                    let compiled =
+                      stt_ref.name_to_addr.get(name).map(|r| r.value().clone());
+                    if let Some(existing) = compiled {
+                      if let Some(claimed) = stt_ref.aux_name_to_addr.get(name)
+                        && *claimed.value() != existing
+                      {
+                        let msg = crate::compile::name_claim_conflict(
+                          name,
+                          &existing,
+                          claimed.value(),
+                        )
+                        .to_string();
+                        promotion_failure = Some(msg);
+                        break;
+                      }
                       continue;
                     }
-                    if let Some(addr) = stt_ref.resolve_addr(name) {
-                      stt_ref.name_to_addr.insert(name.clone(), addr);
+                    if let Some(addr) = stt_ref.resolve_addr(name)
+                      && let Err(e) = stt_ref.claim_compiled_name(name, &addr)
+                    {
+                      promotion_failure = Some(e.to_string());
+                      break;
                     }
                   }
+                }
+                if promotion_failure.is_none()
+                  && let Err(e) = crate::compile::block_txn::commit(stt_ref)
+                {
+                  promotion_failure = Some(e.to_string());
+                }
+                if let Some(txn) = crate::compile::block_txn::take()
+                  && promotion_failure.is_some()
+                {
+                  crate::compile::block_txn::rollback(stt_ref, &txn);
+                }
+                if let Some(msg) = promotion_failure {
+                  fail_aux_promotion(stt_ref, &all, &msg);
                 }
               } else {
                 // Compile this block
                 let mut cache = BlockCache::default();
-                let res = run_compile_catching_panic(
+                // a failed block publishes nothing (`block_txn`): its
+                // entries are logged and removed on failure, and the names
+                // it releases early wait for its end
+                crate::compile::block_txn::start();
+                let mut res = run_compile_catching_panic(
                   &lo,
                   "compile_const",
                   || {
-                    compile_const(
+                    crate::compile::pass3::driver::compile_block(
                       &lo,
                       &all,
                       lean_env,
@@ -784,6 +900,22 @@ pub fn compile_env_with_profile(
                     )
                   },
                 );
+                // a panic inside the aux tail can leave the Pass 3 journal
+                // open on this thread
+                let _ = crate::compile::pass3::journal_take();
+                if res.is_ok()
+                  && let Err(e) = crate::compile::block_txn::commit(stt_ref)
+                {
+                  res = Err(e);
+                }
+                if let Some(txn) = crate::compile::block_txn::take() {
+                  if res.is_err() {
+                    crate::compile::block_txn::rollback(stt_ref, &txn);
+                  }
+                  if !txn.pending.is_empty() {
+                    stt_ref.aux_gen_pending.lock().unwrap().extend(txn.pending);
+                  }
+                }
                 if let Err(e) = res {
                   // Record the failure per-member and fall through. The
                   // scheduler keeps running so other constants can still
@@ -927,7 +1059,11 @@ pub fn compile_env_with_profile(
                 let extra: Vec<Name> =
                   std::mem::take(&mut *stt_ref.aux_gen_pending.lock().unwrap());
                 for name in &extra {
-                  resolve_name(name, &mut newly_ready);
+                  // A provisional source auxiliary cannot release dependents
+                  // before its own original-form promotion succeeds or fails.
+                  if !source_names_ref.contains_key(name) {
+                    resolve_name(name, &mut newly_ready);
+                  }
                 }
               }
 
@@ -1089,7 +1225,7 @@ pub fn compile_env_with_profile(
 ///
 /// These are the exact `Const` refs that `aux_gen` emits in generated
 /// `.below` / `.brecOn` / `.brecOn.eq` bodies — grep for `mk_const` in
-/// `src/ix/compile/aux_gen/**` to verify. They must all be compiled and
+/// `crates/compile/src/compile/aux_gen/**` to verify. They must all be compiled and
 /// registered in `aux_name_to_addr` before any block's aux_gen runs, or
 /// else `compile_expr` raises `MissingConstant`.
 fn aux_gen_seed_names() -> Vec<Name> {
@@ -1136,7 +1272,11 @@ fn precompile_aux_gen_prereqs(
 ) -> Result<(), CompileError> {
   // Resolve seeds to their SCC reps. Silently skip seeds not in the env
   // (unit-test fixtures, minimal test envs).
-  let seed_reps: Vec<Name> = aux_gen_seed_names()
+  // Pass 3: images pack with `And` at Prop motives (`PProd` and `True` are
+  // seeds already), so `And` is a seed too (Lean `auxGenSeeds`).
+  let mut seeds = aux_gen_seed_names();
+  seeds.push(Name::str(Name::anon(), "And".into()));
+  let seed_reps: Vec<Name> = seeds
     .into_iter()
     .filter_map(|n| condensed.low_links.get(&n).cloned())
     .collect();
@@ -1245,4 +1385,204 @@ fn precompile_aux_gen_prereqs(
   }
 
   Ok(())
+}
+
+#[cfg(test)]
+mod promotion_tests {
+  use super::*;
+  use crate::compile::{block_txn, compile_name};
+  use ix_common::env::ReducibilityHints;
+  use ixon::env::Named;
+  use ixon::metadata::{ConstantMeta, ConstantMetaInfo};
+
+  fn name(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_owned())
+  }
+
+  fn addr(s: &str) -> Address {
+    Address::hash(s.as_bytes())
+  }
+
+  fn seed(stt: &CompileState, n: &Name, canonical: &Address) {
+    stt.claim_aux_name(n, canonical).unwrap();
+    stt.register_named(
+      n.clone(),
+      Named::new(canonical.clone(), ConstantMeta::default()),
+    );
+  }
+
+  fn wrong_meta(stt: &CompileState, other: &Name) -> ConstantMeta {
+    ConstantMeta::new(ConstantMetaInfo::Axio {
+      name: compile_name(other, stt).unwrap(),
+      lvls: vec![],
+      arena: Default::default(),
+      type_root: 0,
+    })
+  }
+
+  fn assert_withdrawn(stt: &CompileState, all: &NameSet) {
+    for n in all {
+      assert!(stt.resolve_addr(n).is_none());
+      assert!(!stt.env.named.contains_key(n));
+      assert!(!stt.aux_gen_extra_names.contains(n));
+      assert!(!stt.def_hints.contains_key(n));
+      assert!(stt.ungrounded.contains_key(n));
+    }
+  }
+
+  #[test]
+  fn late_original_failure_discards_earlier_metadata_and_hints() {
+    let stt = CompileState::default();
+    let (a, b, other) = (name("promoteA"), name("promoteB"), name("neighbor"));
+    let canonical = addr("canonical");
+    for n in [&a, &b, &other] {
+      seed(&stt, n, &canonical);
+    }
+    stt.record_hint(&other, Some(ReducibilityHints::Opaque));
+    block_txn::start();
+    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
+    stt
+      .promote_aux(&other, addr("other-original"), ConstantMeta::default())
+      .unwrap();
+    stt.record_hint(&other, Some(ReducibilityHints::Abbrev));
+    let e = stt
+      .promote_aux(&b, addr("b-original"), wrong_meta(&stt, &other))
+      .unwrap_err();
+    let txn = block_txn::take().unwrap();
+    block_txn::rollback(&stt, &txn);
+    let all = [a, b].into_iter().collect();
+    fail_aux_promotion(&stt, &all, &e.to_string());
+    assert_withdrawn(&stt, &all);
+    assert!(!stt.env.named.get(&other).unwrap().has_original());
+    assert_eq!(stt.recorded_hint(&other), Some(ReducibilityHints::Opaque));
+    assert_eq!(stt.resolve_addr(&other), Some(canonical));
+  }
+
+  #[test]
+  fn conflicting_late_claim_publishes_no_original_metadata() {
+    let stt = CompileState::default();
+    let (a, b) = (name("promoteA"), name("promoteB"));
+    let canonical = addr("canonical");
+    seed(&stt, &a, &canonical);
+    seed(&stt, &b, &canonical);
+    stt.name_to_addr.insert(b.clone(), addr("conflicting-main"));
+    block_txn::start();
+    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
+    stt.promote_aux(&b, addr("b-original"), ConstantMeta::default()).unwrap();
+    let e = block_txn::commit(&stt).unwrap_err();
+    assert!(!stt.env.named.get(&a).unwrap().has_original());
+    assert!(!stt.env.named.get(&b).unwrap().has_original());
+    let txn = block_txn::take().unwrap();
+    block_txn::rollback(&stt, &txn);
+    let all = [a, b].into_iter().collect();
+    fail_aux_promotion(&stt, &all, &e.to_string());
+    assert_withdrawn(&stt, &all);
+  }
+
+  #[test]
+  fn successful_promotion_retains_canonical_bytes_and_own_original() {
+    let stt = CompileState::default();
+    let (a, b) = (name("promoteA"), name("promoteB"));
+    let canonical = addr("canonical");
+    for n in [&a, &b] {
+      seed(&stt, n, &canonical);
+    }
+    block_txn::start();
+    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
+    stt.promote_aux(&b, addr("b-original"), ConstantMeta::default()).unwrap();
+    assert!(!stt.name_to_addr.contains_key(&a));
+    assert!(!stt.env.named.get(&a).unwrap().has_original());
+    block_txn::commit(&stt).unwrap();
+    let _ = block_txn::take().unwrap();
+    for (n, original) in [(&a, addr("a-original")), (&b, addr("b-original"))] {
+      let named = stt.env.named.get(n).unwrap();
+      assert_eq!(named.addr, canonical);
+      assert_eq!(named.original().unwrap().0, original);
+      assert_eq!(stt.name_to_addr.get(n).unwrap().value(), &canonical);
+    }
+    assert!(stt.ungrounded.is_empty());
+  }
+
+  #[test]
+  fn deferred_hints_keep_read_your_writes_and_last_write_order() {
+    let stt = CompileState::default();
+    let n = name("imageHint");
+    stt.record_hint(&n, Some(ReducibilityHints::Opaque));
+    block_txn::start();
+    stt.record_hint(&n, Some(ReducibilityHints::Abbrev));
+    assert_eq!(stt.recorded_hint(&n), Some(ReducibilityHints::Abbrev));
+    assert_eq!(*stt.def_hints.get(&n).unwrap(), ReducibilityHints::Opaque);
+    stt.record_hint(&n, None);
+    assert_eq!(stt.recorded_hint(&n), None);
+    stt.record_hint(&n, Some(ReducibilityHints::Regular(7)));
+    block_txn::commit(&stt).unwrap();
+    let _ = block_txn::take().unwrap();
+    assert_eq!(stt.recorded_hint(&n), Some(ReducibilityHints::Regular(7)));
+  }
+
+  #[test]
+  fn refusal_withdraws_both_maps_but_keeps_unrelated_content() {
+    let stt = CompileState::default();
+    let (a, other) = (name("failedAux"), name("neighbor"));
+    let canonical = addr("canonical");
+    seed(&stt, &a, &canonical);
+    seed(&stt, &other, &canonical);
+    stt.claim_compiled_name(&a, &canonical).unwrap();
+    stt.record_hint(&a, Some(ReducibilityHints::Abbrev));
+    stt.p3.heads.insert(a.clone(), a.clone());
+    stt.aux_gen_pending.lock().unwrap().extend([a.clone(), other.clone()]);
+    let blob = stt.env.store_blob(vec![7, 8, 9]);
+    let all = [a.clone()].into_iter().collect();
+    fail_aux_promotion(&stt, &all, "original compile refused");
+    assert_withdrawn(&stt, &all);
+    assert!(!stt.p3.heads.contains_key(&a));
+    assert_eq!(
+      stt.aux_gen_pending.lock().unwrap().as_slice(),
+      std::slice::from_ref(&other),
+    );
+    assert_eq!(stt.resolve_addr(&other), Some(canonical));
+    assert!(stt.env.named.contains_key(&other));
+    assert_eq!(stt.env.get_blob(&blob), Some(vec![7, 8, 9]));
+  }
+
+  #[test]
+  fn direct_promotion_rejects_conflicting_claim_instead_of_overwriting() {
+    let stt = CompileState::default();
+    let n = name("conflict");
+    let canonical = addr("canonical");
+    let conflicting = addr("conflicting-main");
+    seed(&stt, &n, &canonical);
+    stt.name_to_addr.insert(n.clone(), conflicting.clone());
+    assert!(
+      stt.promote_aux(&n, addr("original"), ConstantMeta::default()).is_err()
+    );
+    assert_eq!(stt.name_to_addr.get(&n).unwrap().value(), &conflicting);
+    assert!(!stt.env.named.get(&n).unwrap().has_original());
+  }
+
+  #[test]
+  fn abort_does_not_restore_stale_metadata_over_another_worker() {
+    let stt = CompileState::default();
+    let n = name("otherFamilyMember");
+    let canonical = addr("canonical");
+    seed(&stt, &n, &canonical);
+    block_txn::start();
+    stt
+      .promote_aux(&n, addr("discarded-original"), ConstantMeta::default())
+      .unwrap();
+    thread::scope(|s| {
+      s.spawn(|| {
+        stt
+          .promote_aux(&n, addr("successful-original"), ConstantMeta::default())
+          .unwrap();
+      })
+      .join()
+      .unwrap();
+    });
+    let txn = block_txn::take().unwrap();
+    block_txn::rollback(&stt, &txn);
+    let named = stt.env.named.get(&n).unwrap();
+    assert_eq!(named.original().unwrap().0, addr("successful-original"));
+    assert_eq!(stt.resolve_addr(&n), Some(canonical));
+  }
 }

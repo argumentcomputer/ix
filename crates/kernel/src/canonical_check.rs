@@ -8,16 +8,18 @@
 //! 1. [`validate_canonical_block_single_pass`] — for the stored primary
 //!    block. Treats the input as the alleged canonical partition (each
 //!    member at its own class index) and checks adjacent pairs are strictly
-//!    strong `Less`. Fails on `Greater` (wrong order) or `Equal`
-//!    (uncollapsed alpha-equivalence). If a pair is only weak `Less`, the
-//!    singleton partition has not proved canonicity, so validation falls back
-//!    to full iterative refinement and requires the result to be the same
-//!    ordered list of singleton classes.
+//!    strong `Less`. Fails on a strong `Greater` (wrong order) or `Equal`
+//!    (uncollapsed alpha-equivalence). If a pair is only weak (`Less` or
+//!    `Greater`), the singleton partition has not decided canonicity, so
+//!    validation falls back to full iterative refinement and requires the
+//!    result to be the same ordered list of singleton classes.
 //!
-//! 2. [`sort_kconsts`] / [`sort_kconsts_with_seed_key`] — for rediscovered
-//!    auxiliary inductives. Runs the iterative partition refinement (sort →
+//! 2. [`sort_kconsts`] / [`sort_kconsts_with_seed_key`] — the full
+//!    iterative partition refinement (sort →
 //!    group → re-sort under updated `KMutCtx`) until fixpoint. Returns
-//!    canonical equivalence classes.
+//!    canonical equivalence classes. (Nested auxiliaries are no longer
+//!    sorted: since A2-order their canonical order is the discovery order,
+//!    which `build_flat_block` produces directly.)
 //!
 //! Both share the same comparator — [`compare_kconst`] / [`compare_kexpr`]
 //! / [`compare_kuniv`] — keyed on a [`KMutCtx`] that maps block-local
@@ -243,12 +245,15 @@ pub fn compare_kexpr<M: KernelMode>(
     (_, ExprData::All(..)) => Ok(SOrd::gt(true)),
 
     (
-      ExprData::Let(_, xt, xv, xb, _, _),
-      ExprData::Let(_, yt, yv, yb, _, _),
-    ) => SOrd::try_zip::<_, TcError<M>, _>(
-      |a, b| compare_kexpr(a, b, ctx),
-      &[xt, xv, xb],
-      &[yt, yv, yb],
+      ExprData::Let(_, xt, xv, xb, xnd, _),
+      ExprData::Let(_, yt, yv, yb, ynd, _),
+    ) => SOrd::try_compare(
+      SOrd::try_zip::<_, TcError<M>, _>(
+        |a, b| compare_kexpr(a, b, ctx),
+        &[xt, xv, xb],
+        &[yt, yv, yb],
+      )?,
+      || Ok(SOrd::cmp(xnd, ynd)),
     ),
     (ExprData::Let(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Let(..)) => Ok(SOrd::gt(true)),
@@ -761,23 +766,34 @@ fn validate_by_full_refinement<M: KernelMode>(
 /// Validate that a stored primary block ships in canonical (sort_consts)
 /// order.
 ///
-/// Walks adjacent pairs under the singleton partition and requires strong
-/// strict `Less`. Two immediate failure modes:
+/// **The definition is the full check** ([`validate_by_full_refinement`]):
+/// re-run the iterative `sort_kconsts` refinement from scratch and accept iff
+/// it returns the stored members, in the stored order, each as a singleton
+/// class. The single pass below is only an optimisation of that check; it
+/// decides on its own only where its verdict cannot differ from it.
 ///
-/// - `Greater` — the stored order disagrees with sort_consts.
-/// - `Equal` — two distinct stored entries are alpha-equivalent. The
-///   compiler should have collapsed them to one canonical Ixon constant;
-///   shipping two separate addresses for the same alpha-equivalence class
-///   is a canonicity violation.
+/// It walks adjacent pairs under the singleton partition (each stored member
+/// its own class, at its stored position):
 ///
-/// A weak `Less` means the singleton partition itself supplied the
-/// distinguishing order for a block-local recursive reference. That is not
-/// proof of canonicity, so validation falls back to the full iterative
-/// `sort_kconsts` refinement and accepts only if refinement returns the same
-/// ordered list of singleton classes.
+/// - strong `Less` — continue. A strong verdict does not read the partition
+///   (no block-local reference was compared before the first difference), so
+///   every refinement round compares the pair the same way.
+/// - strong `Greater` — reject: for the same reason the refinement orders
+///   the pair the other way, so the stored order is not its output.
+/// - `Equal` — reject: two distinct stored entries alpha-equivalent under a
+///   partition finer than the refinement's would be equal in it too; the
+///   compiler should have collapsed them.
+/// - weak `Less` or weak `Greater` — the provisional partition supplied the
+///   verdict through a block-local reference, which proves nothing about the
+///   refinement's history: fall back to the full check. (Before A6f a weak
+///   `Greater` rejected outright; that rejected canonical blocks whose
+///   members differ first in a mutual cross reference, which compares weakly
+///   `Greater` in every stored order — BELOW-ORDER, reproducer
+///   `Tests/Ix/Compile/ValidateLeanSwap.lean`.)
 ///
-/// Returns `Ok(())` only if every adjacent pair is strongly `Less`, or if the
-/// fallback refinement proves the stored singleton order is already canonical.
+/// So the gate rejects every non-canonical block: each acceptance is either
+/// the full check's, or a run of strong `Less` pairs whose order no
+/// refinement round can change.
 ///
 /// `resolve_ctor` is the env lookup the comparator needs to recurse
 /// through Indc ctors. The kernel caller passes a closure over `KEnv::get`.
@@ -794,9 +810,6 @@ pub fn validate_canonical_block_single_pass<M: KernelMode>(
     let so = compare_kconst(w[0].1, w[1].1, &ctx, resolve_ctor)?;
     match so.ordering {
       Ordering::Less if so.strong => {},
-      Ordering::Less => {
-        return validate_by_full_refinement(block_addr, members, resolve_ctor);
-      },
       Ordering::Equal => {
         return Err(TcError::NonCanonicalBlock {
           block: block_addr.clone(),
@@ -804,12 +817,22 @@ pub fn validate_canonical_block_single_pass<M: KernelMode>(
           ordering: Ordering::Equal,
         });
       },
-      Ordering::Greater => {
+      Ordering::Greater if so.strong => {
         return Err(TcError::NonCanonicalBlock {
           block: block_addr.clone(),
           pos: i,
           ordering: Ordering::Greater,
         });
+      },
+      // A weak `Greater` (BELOW-ORDER, A6f) is decided by the provisional
+      // singleton partition (a block-local reference compared by position),
+      // just like a weak `Less`, so it proves nothing either way: in a pair
+      // whose members differ first in a mutual cross reference, the cross
+      // references compare weakly `Greater` in *both* stored orders, while
+      // `sort_consts` ordered the pair by a later strong difference found in
+      // the round where both were one class. Fall back to the full check.
+      Ordering::Less | Ordering::Greater => {
+        return validate_by_full_refinement(block_addr, members, resolve_ctor);
       },
     }
   }
@@ -1205,7 +1228,255 @@ mod tests {
     }
   }
 
+  /// The BELOW-ORDER shape (A6f, `Tests/Ix/Compile/ValidateLeanSwap.lean`):
+  ///
+  ///   SA.mk : SB -> X -> SA
+  ///   SB.mk : SA -> Y -> SB
+  ///
+  /// with `X`, `Y` distinct externals. Under any singleton partition the
+  /// first difference is the cross reference, compared weakly, and it is
+  /// `Greater` in both stored orders; full refinement orders the pair by
+  /// `X` against `Y` (strong), found while both members were one class.
+  /// Returns the members in refinement order and the resolver.
+  #[allow(clippy::type_complexity)]
+  fn swap_pair() -> (
+    (KId<Anon>, KConst<Anon>),
+    (KId<Anon>, KConst<Anon>),
+    Box<dyn Fn(&KId<Anon>) -> Option<KConst<Anon>>>,
+  ) {
+    let id_a = mk_id("SA");
+    let id_b = mk_id("SB");
+    let ctor_a_id = mk_id("SA.mk");
+    let ctor_b_id = mk_id("SB.mk");
+    let x = AE::cnst(mk_id("X"), Box::new([]));
+    let y = AE::cnst(mk_id("Y"), Box::new([]));
+    let ra = AE::cnst(id_a.clone(), Box::new([]));
+    let rb = AE::cnst(id_b.clone(), Box::new([]));
+    let ctor_a = mk_ctor(
+      "SA.mk",
+      2,
+      0,
+      AE::all((), (), rb.clone(), AE::all((), (), x, ra.clone())),
+    );
+    let ctor_b =
+      mk_ctor("SB.mk", 2, 0, AE::all((), (), ra, AE::all((), (), y, rb)));
+    let (_, ind_a) = mk_indc("SA", 0, 0, vec![ctor_a_id.clone()], sort0());
+    let (_, ind_b) = mk_indc("SB", 0, 0, vec![ctor_b_id.clone()], sort0());
+    let resolve: Box<dyn Fn(&KId<Anon>) -> Option<KConst<Anon>>> =
+      Box::new(move |id: &KId<Anon>| -> Option<KConst<Anon>> {
+        if id.addr == ctor_a_id.addr {
+          Some(ctor_a.clone())
+        } else if id.addr == ctor_b_id.addr {
+          Some(ctor_b.clone())
+        } else {
+          None
+        }
+      });
+    let first_is_a = {
+      let members = vec![(id_a.clone(), &ind_a), (id_b.clone(), &ind_b)];
+      let classes =
+        sort_kconsts_with_seed_key::<Anon>(&members, &*resolve, &|id, _| {
+          default_seed_key::<Anon>(id)
+        })
+        .unwrap();
+      assert_eq!(classes.len(), 2, "the swap pair does not collapse");
+      classes[0][0].0.addr == id_a.addr
+    };
+    if first_is_a {
+      ((id_a, ind_a), (id_b, ind_b), resolve)
+    } else {
+      ((id_b, ind_b), (id_a, ind_a), resolve)
+    }
+  }
+
+  #[test]
+  fn validate_single_pass_accepts_weak_greater_canonical_pair() {
+    // BELOW-ORDER: the canonical (refinement) order compares weakly
+    // `Greater` under its own singleton partition, and is accepted.
+    let ((id1, c1), (id2, c2), resolve) = swap_pair();
+    let members = vec![(id1, &c1), (id2, &c2)];
+    let ctx = KMutCtx::from_id_pairs::<Anon>(&members);
+    let so = compare_kconst(&c1, &c2, &ctx, &*resolve).unwrap();
+    assert_eq!(so.ordering, Ordering::Greater);
+    assert!(!so.strong);
+    let res: Result<(), TcError<Anon>> = validate_canonical_block_single_pass(
+      &mk_addr("blk"),
+      &members,
+      &*resolve,
+    );
+    assert!(res.is_ok(), "canonical swap pair rejected: {res:?}");
+  }
+
+  #[test]
+  fn validate_single_pass_rejects_weak_greater_noncanonical_pair() {
+    // Negative: the same pair in the other order is also weakly `Greater`
+    // under its singleton partition, but full refinement orders it the
+    // other way, so the fallback rejects it.
+    let ((id1, c1), (id2, c2), resolve) = swap_pair();
+    let members = vec![(id2, &c2), (id1, &c1)];
+    let ctx = KMutCtx::from_id_pairs::<Anon>(&members);
+    let so = compare_kconst(&c2, &c1, &ctx, &*resolve).unwrap();
+    assert_eq!(so.ordering, Ordering::Greater);
+    assert!(!so.strong);
+    let res: Result<(), TcError<Anon>> = validate_canonical_block_single_pass(
+      &mk_addr("blk"),
+      &members,
+      &*resolve,
+    );
+    match res {
+      Err(TcError::NonCanonicalBlock { ordering, pos, .. }) => {
+        assert_eq!(ordering, Ordering::Greater);
+        assert_eq!(pos, 0);
+      },
+      _ => panic!("expected the mis-ordered swap pair rejected, got {res:?}"),
+    }
+  }
+
+  #[test]
+  fn validate_single_pass_rejects_weak_greater_uncollapsed_pair() {
+    // Cross references compare weakly Greater under the singleton partition,
+    // but with no external distinction refinement collapses the pair.
+    let (id_a, ind_a) = mk_indc("SA", 0, 0, vec![mk_id("SA.mk")], sort0());
+    let (id_b, ind_b) = mk_indc("SB", 0, 0, vec![mk_id("SB.mk")], sort0());
+    let ra = AE::cnst(id_a.clone(), Box::new([]));
+    let rb = AE::cnst(id_b.clone(), Box::new([]));
+    let ctor_a =
+      mk_ctor("SA.mk", 1, 0, AE::all((), (), rb.clone(), ra.clone()));
+    let ctor_b = mk_ctor("SB.mk", 1, 0, AE::all((), (), ra, rb));
+    let resolve = |id: &KId<Anon>| {
+      if id.addr == mk_addr("SA.mk") {
+        Some(ctor_a.clone())
+      } else if id.addr == mk_addr("SB.mk") {
+        Some(ctor_b.clone())
+      } else {
+        None
+      }
+    };
+    let members = vec![(id_a, &ind_a), (id_b, &ind_b)];
+    let ctx = KMutCtx::from_id_pairs::<Anon>(&members);
+    let so = compare_kconst(&ind_a, &ind_b, &ctx, &resolve).unwrap();
+    assert_eq!(so.ordering, Ordering::Greater);
+    assert!(!so.strong);
+    assert!(matches!(
+      validate_canonical_block_single_pass(&mk_addr("blk"), &members, &resolve),
+      Err(TcError::NonCanonicalBlock { ordering: Ordering::Equal, pos: 0, .. })
+    ));
+  }
+
   // ---- KMutCtx ----
+
+  #[test]
+  fn let_non_dep_is_content_and_compares_after_children() {
+    let ctx = KMutCtx::default();
+    let make = |body, nd| {
+      AE::let_((), AE::sort(AU::succ(AU::zero())), sort0(), body, nd)
+    };
+    let a = make(AE::var(0, ()), false);
+    let b = make(AE::var(0, ()), true);
+    let neighbour = make(AE::var(0, ()), false);
+    assert_ne!(a.addr(), b.addr());
+    let order = compare_kexpr(&a, &b, &ctx).unwrap();
+    assert_eq!(order.ordering, Ordering::Less);
+    assert!(order.strong);
+    assert_eq!(
+      compare_kexpr(&b, &a, &ctx).unwrap().ordering,
+      Ordering::Greater
+    );
+    assert_eq!(
+      compare_kexpr(&a, &neighbour, &ctx).unwrap().ordering,
+      Ordering::Equal
+    );
+    // A preceding body decision wins even against the opposite flag order.
+    let earlier = make(AE::var(0, ()), true);
+    let later = make(AE::var(1, ()), false);
+    assert_eq!(
+      compare_kexpr(&earlier, &later, &ctx).unwrap().ordering,
+      Ordering::Less
+    );
+  }
+
+  #[test]
+  fn validate_non_dep_classes_and_collapsing_neighbour() {
+    let (id_a, ind_a) = mk_indc("SA", 0, 0, vec![mk_id("SA.mk")], sort0());
+    let (id_b, ind_b) = mk_indc("SB", 0, 0, vec![mk_id("SB.mk")], sort0());
+    let make_ctor = |owner: &str, other: &str, nd| {
+      let ty = AE::let_(
+        (),
+        AE::sort(AU::succ(AU::zero())),
+        sort0(),
+        AE::var(0, ()),
+        nd,
+      );
+      mk_ctor(
+        owner,
+        2,
+        0,
+        AE::all(
+          (),
+          (),
+          ty,
+          AE::all(
+            (),
+            (),
+            AE::cnst(mk_id(other), Box::new([])),
+            AE::cnst(mk_id(owner), Box::new([])),
+          ),
+        ),
+      )
+    };
+    let ca = make_ctor("SA", "SB", false);
+    for right_flag in [false, true] {
+      let cb = make_ctor("SB", "SA", right_flag);
+      let resolve = |id: &KId<Anon>| {
+        if id.addr == mk_addr("SA.mk") {
+          Some(ca.clone())
+        } else if id.addr == mk_addr("SB.mk") {
+          Some(cb.clone())
+        } else {
+          None
+        }
+      };
+      let members = vec![(id_a.clone(), &ind_a), (id_b.clone(), &ind_b)];
+      let verdict = validate_canonical_block_single_pass(
+        &mk_addr("blk"),
+        &members,
+        &resolve,
+      );
+      if right_flag {
+        assert!(verdict.is_ok(), "distinct flag classes rejected: {verdict:?}");
+        let reversed = vec![(id_b.clone(), &ind_b), (id_a.clone(), &ind_a)];
+        assert!(matches!(
+          validate_canonical_block_single_pass(
+            &mk_addr("blk"),
+            &reversed,
+            &resolve
+          ),
+          Err(TcError::NonCanonicalBlock {
+            ordering: Ordering::Greater,
+            pos: 0,
+            ..
+          })
+        ));
+      } else {
+        assert!(matches!(
+          verdict,
+          Err(TcError::NonCanonicalBlock {
+            ordering: Ordering::Equal,
+            pos: 0,
+            ..
+          })
+        ));
+        assert!(
+          validate_canonical_block_single_pass(
+            &mk_addr("blk"),
+            &members[..1],
+            &resolve
+          )
+          .is_ok()
+        );
+      }
+    }
+  }
 
   #[test]
   fn kmutctx_from_id_pairs_assigns_class_per_member() {

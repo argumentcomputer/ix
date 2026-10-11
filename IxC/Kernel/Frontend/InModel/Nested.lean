@@ -490,14 +490,17 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- motive order among equals.  The kernel's nested→mutual reduction
   -- discovers a nested container's head before the instances its family
   -- adds, so in a lean4export stream a group's first mimic is its head.
-  -- Ix's compiler orders the auxiliary motives canonically
-  -- (`Ix/AuxGen/Nested.lean`), and `Array (PersistentArrayNode InfoTree)`
-  -- can come before `PersistentArrayNode InfoTree`: in motive order it
-  -- formed `Array`'s singleton group and `PersistentArrayNode`'s family
-  -- then claimed it again, so `pack_j` and its companions were emitted
-  -- twice.  A family that contains another is strictly larger, so the
-  -- largest claim their members first; a group that would still share a
-  -- member with an earlier one declines.
+  -- Ix's compiler stored the auxiliary motives in a structural order
+  -- until A2-order, where `Array (PersistentArrayNode InfoTree)` could
+  -- come before `PersistentArrayNode InfoTree`: in motive order it formed
+  -- `Array`'s singleton group and `PersistentArrayNode`'s family then
+  -- claimed it again, so `pack_j` and its companions were emitted twice.
+  -- Since A2-order the motives are in discovery order (design document
+  -- §2.5), but an instance can still precede its container's head when a
+  -- constructor field reaches the instance directly.  A family that
+  -- contains another is strictly larger, so the largest claim their
+  -- members first, whatever the motive order; a group that would still
+  -- share a member with an earlier one declines.
   let familySize : Mem → Nat := fun mem =>
     match ctx.blocks mem.I with
     | some cb =>

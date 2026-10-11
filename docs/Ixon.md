@@ -978,8 +978,12 @@ rung end, so v3's integer codes would write the same bytes for this table.
 ### Sharing in metadata expressions
 
 Metadata expressions are the entries of `ConstantMeta.metaSharing`: the
-compiled call-site arguments that call-site surgery collapsed, and rewritten
-call-site heads. A `Share(i)` inside them is read in an extended index
+source occurrences Pass 3 rewrote, each pointed at by an `_ix.inline` record
+(an `Expr.mdata` whose keys `_ix.inline` and `_ix.inline_meta` carry the
+entry index and its metadata-arena root, wrapping the rewritten occurrence;
+both decompilers replay the entry in its place). Files the call-site surgery
+wrote (until 2026-10-07, the `-a2` references) hold its collapsed call-site
+arguments and rewritten call-site heads there instead. A `Share(i)` inside them is read in an extended index
 space. This is a reader rule; it adds no bytes. Let `p` be the size of the
 primary `sharing` table (for a projection, the table of its `Muts` block)
 and `q` the size of `metaSharing`.
@@ -997,7 +1001,7 @@ and `q` the size of `metaSharing`.
 
   Every metadata-to-metadata step goes to a lower entry, so expansion
   terminates.
-- **Call-site references.** `CallSiteEntry.collapsed sharingIdx` and
+- **Call-site references** (files the surgery wrote). `CallSiteEntry.collapsed sharingIdx` and
   `origHead = some (sharingIdx, _)` index `metaSharing` directly, not offset
   by `p`, and read that entry in its own scope.
 
@@ -1067,8 +1071,12 @@ follow in declaration order:
 | 7 | Ref | name_idx | — |
 | 8 | Prj | struct_name_idx, child? | child |
 | 9 | Mdata | kvmap_count + kvmaps, child? | child |
-| 10 | CallSite | name_idx, entries, canon_meta, orig_head | — |
-| 11 | EtaCallSite | n_synth, name_idx, entries, canon_meta, wrapper_meta | — |
+| 10 | CallSite (legacy) | name_idx, entries, canon_meta, orig_head | — |
+| 11 | EtaCallSite (legacy) | n_synth, name_idx, entries, canon_meta, wrapper_meta | — |
+
+Kinds 10 and 11 are the call-site surgery's (deleted from both compilers on
+2026-10-07, M6R slice 6): readers still decode them in files written before,
+and no compiler writes them.
 
 Child references are never absolute indices:
 
@@ -1114,7 +1122,7 @@ four extension vectors appended after it (the wrapper):
 ```rust
 pub struct ConstantMeta {
     pub info: ConstantMetaInfo,        // variant payload (below)
-    pub meta_sharing: Vec<Arc<Expr>>,  // collapsed call-site args (surgery)
+    pub meta_sharing: Vec<Arc<Expr>>,  // Pass 3 records' source occurrences
     pub meta_refs: Vec<Address>,       // refs-table extension (virtual space)
     pub meta_univs: Vec<Arc<Univ>>,    // univs-table extension (virtual space)
     pub univ_patches: Vec<UnivPatch>,  // original level spellings (§10.6)
@@ -1130,8 +1138,9 @@ pub struct UnivPatch {
 Each wrapper vector serializes as an `N0` count + entries and is
 empty (one zero byte) on most constants. `meta_univs`/`univ_patches`
 restore source level spellings the §10.6 canonicalization displaced
-from content; `meta_sharing` holds call-site surgery's collapsed
-arguments, whose `Share` references use the extended index space of
+from content; `meta_sharing` holds the source occurrences of Pass 3's
+`_ix.inline` records (in files the call-site surgery wrote, its collapsed
+arguments), whose `Share` references use the extended index space of
 [Sharing in metadata expressions](#sharing-in-metadata-expressions). Each `ConstantMetaInfo` variant stores a name, universe
 parameter names, an `ExprMeta` arena, and root indices pointing into
 the arena:
@@ -1179,11 +1188,40 @@ only, never entering any content hash):
 
 The three vectors always serialize together (one unified format), and
 `evaporated` always carries `perm.len()` flags — a flag set means the
-block owns the evaporation of that source position (its alias resolves
-to an external head's generic recursor; call-site surgery keys
-head-rewrite plans off these flags alone). Writers normalize
+block owns the evaporation of that source position. Under Pass 3 the
+source recursor name denotes its image, rather than a direct alias to an
+external recursor with a different telescope (`compiler-passes.md` §2.6).
+The historical call-site surgery keyed its head-rewrite plans off these
+flags alone until 2026-10-07. Writers normalize
 legacy-constructed values with defaulted-empty `evaporated` to
 all-zero flags, so Lean and Rust serializers agree byte-for-byte.
+
+### Pass 3 provenance records
+
+The metadata keys have distinct roles:
+
+| Key or field | Contents and interpretation |
+| --- | --- |
+| `_ix.inline` | Index of the compiled source occurrence in `ConstantMeta.metaSharing`, wrapping the rewritten occurrence. |
+| `_ix.inline_meta` | The metadata-arena root for that source occurrence. Both decompilers replay the source; ordinary kernel ingress sees metadata. |
+| `_ix.clique` | A string on a transported clique's canonical functional: encoding, source order, permutation, order source, classes, aliases and causes. `CliquePlan.record` constructs it. |
+| `Named.original` | Address and metadata of the source form compiled without rewrite, for a stored image or promoted regenerated auxiliary. It is source-specific provenance, not the canonical value under `Named.addr`. |
+
+The inline pair also appears at transported members' and carried lemmas' value
+roots. Replaying the source for decompilation and checking the stored transformed
+value answer different questions. None of these metadata records is a proof of
+the transformation. The certifier checks its association and support rows
+independently; it does not read the diagnostic `<stem>.changed.json` file, which
+is not part of the environment serialization.
+
+See [the output contract](compiler-passes.md#11-the-output-contract), especially
+§11.3–§11.5, and the implementations in
+[SideCar](../Ix/Compile/Pass/SideCar.lean),
+[Cliques](../Ix/Compile/Pass/Cliques.lean) and
+[CompileDriver](../Ix/CompileDriver.lean). Rust's `Named` uses accessors and can
+keep metadata in a serialized/lazy representation; the logical fields described
+here do not require an eagerly materialized metadata tree
+([implementation](../crates/ixon/src/env.rs)).
 
 ### Indexed Serialization
 
@@ -1199,6 +1237,10 @@ pub type NameReverseIndex = Vec<Address>;
 ## Environment
 
 The `Env` structure stores all Ixon data using concurrent `DashMap`s.
+The following is a schematic view of its principal tables and a named entry;
+the current Rust `Named` also carries per-name hints and original-form provenance,
+and its private metadata representation is read through accessors
+([source](../crates/ixon/src/env.rs)).
 
 ```rust
 pub struct Env {
@@ -1488,7 +1530,19 @@ It resolves `<name>` (displayed form) against the env's `named` table,
 runs the prune, re-validates with `validate_closed`, and writes the
 bundle (default `<name>.ixe`). `--assume` entries — names or 64-hex
 constant addresses — declare trust-boundary cut points; the ones
-actually reached become the bundle's `assumptions` (thin bundle).
+actually reached become the bundle's `assumptions` (thin bundle), the
+others are skipped.
+
+The bundle is the root's transitive reference closure, including the
+compiler-introduced constants it references (Pass 3's `_ix` constants,
+`PProd`, …), never its compilation unit: units exist for compilation
+parallelism over the DAG, and a bundle carries only what checking or
+evaluating the root needs (owner, 2026-10-07). From M1-h to M6R slice 6
+`ix pack` completed every reached block's logical unit (`packWholeUnits`;
+`--rust-units`, `--no-units`); slice 6 removed the completion and its
+flags. The closure is computed in Rust by address; Lean's implementation
+of it (`Tests.Ix.Compile.PackParity.packOracle`) is the test oracle, byte
+for byte (`pack-units`, `pass3-rust-parity`).
 
 The source env is memory-mapped and lazily loaded; display metadata is
 carried by **re-streaming §5 per prune fixpoint round**

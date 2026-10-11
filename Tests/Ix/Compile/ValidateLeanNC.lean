@@ -1,0 +1,257 @@
+/-
+  validate-lean-nc: does `ix validate-lean` validate the auxiliaries that are
+  NOT identical to Lean's correctly? The known non-canonical fixtures are the
+  test: every twin family with entries in the non-canonical set
+  (`Twins/{Cliques,Repro,Proto}.lean`, `Oracle/Lib.lean`) and the prototype
+  cases (`Image/C*.lean`), each through `ix validate-lean --local` (Pass 3,
+  the only mode since M6R slice 6, which removed the legacy surgery's runs)
+  and `IX_VALIDATE_AUXTABLE` (one row per regenerated
+  auxiliary and image: block status, whether it differs from Lean's own form
+  by address, the phase that handled it and the verdict).
+
+  For every auxiliary that differs from Lean's by address it prints one
+  table row: family, presentation, switch, the block's status, the phase and
+  verdict, and the match: a design class (image of a changed block, Lean's
+  `IndPredBelow` family of a changed Prop block), a defect id, the non-canonical entries naming it, or UNMATCHED. Then it checks the
+  two properties:
+  1. no expected difference is wrongly rejected: every phase-6 exception is a
+     recorded defect (phase 6 only judges unchanged blocks; a changed block
+     is phase 7's), and every image passes phase 7;
+  2. no unexpected difference is silently passed: every address difference
+     on an unchanged block is a phase-6 exception with a defect id (none
+     UNMATCHED), and every non-canonical entry that concerns an auxiliary
+     appears in the validator's output.
+  UNMATCHED rows and missing entries fail the suite.
+  Phase 4 must also match the validator's exact expected verdict table; in
+  particular the former BELOW-ORDER failures are no longer exempt. The
+  validator still checks collapsed blocks anonymously under its BB-F7 policy.
+
+  Run with: `lake test -- --ignored validate-lean-nc` (after `lake build ix`).
+-/
+import Lean.Data.Json
+import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.NonCanonical
+import Tests.Ix.Compile.NonCanonicalDefault
+import Tests.Ix.Compile.ValidateLean
+
+open Lean
+
+namespace Tests.Ix.Compile.ValidateLeanNC
+
+def files : List String :=
+  (["Cliques", "Repro", "Proto"].map fun s => s!"Tests/Ix/Compile/Twins/{s}.lean")
+  ++ ["Tests/Ix/Compile/Oracle/Lib.lean"]
+  ++ (["C1Perm", "C2Split", "C3PropSplit", "C4Evap", "C5Collapse", "C6NestedCollapse", "C7IndPred",
+       "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean")
+
+/-- The recorded defects a phase-6 exception may carry, by name fragment. -/
+def defects : List (String × String) := [
+  ("RecAlias.PA.below", "WB-B6"),
+  ("UNestNeg", "WB-B9"),
+  ("F8NoSplit", "A3V-IPB"),
+  ("IPB.", "A3V-IPB")]
+
+def defectOf? (n : String) : Option String :=
+  defects.findSome? fun (frag, id) => if (n.splitOn frag).length > 1 then some id else none
+
+/-- A table row of the validator. -/
+structure Row where
+  file : String
+  switch : String
+  name : String
+  status : String
+  differs : Bool
+  phase : String
+  verdict : String
+
+private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
+
+structure RunResult where
+  rows : Array Row
+  verdicts : String
+  metaProblem : Option String
+
+def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := false) :
+    IO RunResult := do
+  let stem := (System.FilePath.mk file).fileStem.getD file
+  let tsv := dir / s!"{stem}-{switch}.tsv"
+  let report := dir / s!"{stem}-{switch}.json"
+  let exe ← IO.FS.realPath ixExe
+  let out ← IO.Process.output {
+    cmd := exe.toString
+    args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
+      ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
+    env := #[("LD_LIBRARY_PATH", none), ("IX_VALIDATE_AUXTABLE", some tsv.toString),
+             ("IX_PASS3", none)] }
+  IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
+  let verdicts := ((out.stdout.splitOn "\n").find? (·.startsWith "[validate-lean] VERDICTS")).getD "no verdicts"
+  let phase4 ← if ← report.pathExists then do
+      let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))
+      let phases ← IO.ofExcept (j.getObjValAs? (Array Json) "phases")
+      pure <| phases.findSome? fun p =>
+        if (p.getObjValAs? String "key").toOption == some "4" then
+          (p.getObjValAs? String "result").toOption.map
+            (·, (p.getObjValAs? String "detail").toOption.getD "")
+        else none
+    else pure none
+  -- Use the same narrow, named defect registry as validate-lean. For these
+  -- fixtures only C4Evap/off retains a phase-4 failure (REFUSED-SIBLING),
+  -- with the counts validate-lean records (`ValidateLean.pins`).
+  let expectedFail := ValidateLean.expected.any fun e =>
+    e.stem == stem && (e.switch == switch || e.switch == "*") && e.phases.contains "4"
+  let want := if expectedFail then "fail" else "pass"
+  let metaProblem := match phase4 with
+    | some (r, d) =>
+      if r != want then some s!"{stem} {switch}: phase 4 expected {want}, got {r}"
+      else if r == "fail" && ValidateLean.pinOf stem switch "4" != some (ValidateLean.failSummary "4" d) then
+        some s!"{stem} {switch}: phase 4 fails with '{ValidateLean.failSummary "4" d}', \
+          recorded {(ValidateLean.pinOf stem switch "4").getD "nothing"}"
+      else none
+    | none => some s!"{stem} {switch}: phase 4 expected {want}, got no report"
+  if !(← tsv.pathExists) then return ⟨#[], verdicts, metaProblem⟩
+  let lines := (← IO.FS.readFile tsv).splitOn "\n" |>.drop 1 |>.filter (!·.isEmpty)
+  let rows := lines.toArray.filterMap fun l =>
+    match l.splitOn "\t" with
+    | [n, st, d, ph, v] => some { file := stem, switch, name := n, status := st,
+                                  differs := d == "true", phase := ph, verdict := v }
+    | _ => none
+  return ⟨rows, verdicts, metaProblem⟩
+
+/-- The family and presentation of a name: a twin presentation's namespace,
+    else the prototype case and its `Src`/`Can` part. -/
+def familyOf (n : String) : String × String := Id.run do
+  let mut best : Option (String × String × Nat) := none
+  for f in Tests.Ix.Compile.Twins.allFamilies do
+    for p in f.pres do
+      let ns := p.ns.toString
+      if n.startsWith (ns ++ ".") then
+        let fam := (f.fixture.toString.splitOn ".").getLast!
+        if best.all (·.2.2 < ns.length) then best := some (fam, p.id, ns.length)
+  match best with
+  | some (f, p, _) => return (f, p)
+  | none =>
+    -- outside every presentation: the shared data of a twin file (e.g.
+    -- `Twins.Cliques.Common`), else a prototype case and its part
+    let rel := ((n.dropPrefix "Tests.Ix.Compile.Twins.").toString)
+    match rel.splitOn "." with
+    | a :: b :: _ => return (if rel != n then s!"{a}.{b}" else a, if rel != n then "(shared)" else b)
+    | _ => return (n, "")
+
+/-- Does a non-canonical entry concern an auxiliary (a regenerated kind, or a
+    constructor of a regenerated `IndPredBelow`)? -/
+def ncAux (e : Tests.Ix.Compile.NonCanonical.NonCanonicalEntry) : Bool :=
+  let n := Ix.Name.fromLeanName e.constant
+  (Ix.AuxGen.classifyAuxGen n).isSome ||
+    (match n with
+     | .str p _ _ => (Ix.AuxGen.classifyAuxGen p).any (·.1 == Ix.AuxGen.AuxKind.below)
+     | _ => false)
+
+/-- The full names of an entry in its two presentations. -/
+def ncNames (e : Tests.Ix.Compile.NonCanonical.NonCanonicalEntry) : List String := Id.run do
+  let some fam := Tests.Ix.Compile.Twins.allFamilies.find? (·.fixture == e.fixture) | return []
+  let mut out := []
+  for p in fam.pres do
+    if p.id == e.presA || p.id == e.presB then out := (p.ns ++ e.constant).toString :: out
+  return out
+
+def run : IO UInt32 := do
+  let dir ← IO.FS.createTempDir
+  let t0 ← IO.monoMsNow
+  let todo := files.map fun f => (f, "on")
+  let noBuild ← Tests.Ix.Compile.ValidateLean.prebuild files []
+  -- a pool of `VALIDATE_LEAN_JOBS` runs at a time (default 12; the longest
+  -- first; results in `todo` order)
+  let jobs := max 1 (((← IO.getEnv "VALIDATE_LEAN_JOBS").bind String.toNat?).getD 12)
+  let todoA := todo.toArray
+  let results : Array RunResult ←
+    Tests.Ix.Compile.ValidateLean.poolRun todoA.size jobs
+      (fun i => Tests.Ix.Compile.ValidateLean.heavyFile todoA[i]!.1) fun i =>
+        let (f, s) := todoA[i]!
+        runOne dir f s (noBuild.contains f)
+  for ((f, s), result) in todo.zip results.toList do
+    IO.println s!"[validate-lean-nc] {(System.FilePath.mk f).fileStem.getD f} {s}: {result.verdicts}"
+  let metaProblems := results.filterMap (·.metaProblem)
+  -- phase 9 (clique values) never fails on these fixtures
+  let p9Problems := (todo.zip results.toList).filterMap fun ((file, s), r) =>
+    let stem := (System.FilePath.mk file).fileStem.getD file
+    if (r.verdicts.splitOn "9=FAIL").length > 1 then some s!"{stem} {s}: phase 9 fails"
+    else if (r.verdicts.splitOn " 9=").length == 1 then some s!"{stem} {s}: no phase 9 verdict"
+    else none
+  let rows := results.foldl (fun acc result => acc ++ result.rows) #[]
+  -- the non-canonical entries naming each constant (the default record; the
+  -- legacy surgery's was deleted with it, M6R slice 6)
+  let entriesOf (_ : String) : List Tests.Ix.Compile.NonCanonical.NonCanonicalEntry :=
+    Tests.Ix.Compile.NonCanonicalDefault.nonCanonical
+  let mut ncBy : Std.HashMap String (Array String) := {}
+  for s in ["on"] do
+    for e in entriesOf s do
+      for n in ncNames e do
+        let k := s!"{s}|{n}"
+        ncBy := ncBy.insert k ((ncBy.getD k #[]).push s!"{e.cause.tag} ({e.presA}/{e.presB})")
+  let mut unmatched : Array String := #[]
+  let mut nDiff := 0
+  let mut nEqual := 0
+  let mut prop1 : Array String := #[]
+  IO.println "| family | presentation | auxiliary | switch | block | phase | verdict | match |"
+  IO.println "|---|---|---|---|---|---|---|---|"
+  for r in rows do
+    if !r.differs then
+      nEqual := nEqual + 1
+      continue
+    nDiff := nDiff + 1
+    let (fam, pres) := familyOf r.name
+    let nc := ", ".intercalate (ncBy.getD s!"{r.switch}|{r.name}" #[]).toList
+    let cls : String :=
+      if r.phase.startsWith "7" then
+        if r.verdict == "pass" then "image of a changed block (Def 3.4/3.5)" else "UNMATCHED (image fails phase 7)"
+      else if r.phase.startsWith "8" then
+        if r.verdict == "pass" then "Lean's IndPredBelow family of a changed Prop block (INDPRED-BELOW, §4.6)"
+        else "UNMATCHED (provenance fails)"
+      else if r.phase.startsWith "6 oracle leg: changed" then "UNMATCHED (changed block without `_ix` names under Pass 3)"
+      else if r.phase.startsWith "6" then
+        match defectOf? r.name with
+        | some id => id
+        | none => "UNMATCHED (phase-6 exception without a defect id)"
+      else "UNMATCHED (no phase handled it)"
+    if r.phase.startsWith "6" && !r.phase.startsWith "6 oracle leg: changed" && (defectOf? r.name).isNone then
+      prop1 := prop1.push r.name
+    if cls.startsWith "UNMATCHED" then unmatched := unmatched.push s!"{r.file} {r.switch} {r.name}: {cls}"
+    let short := (r.name.splitOn ".").drop ((r.name.splitOn ".").length - 3) |> ".".intercalate
+    IO.println s!"| {fam} | {pres} | {short} | {r.switch} | {r.status} | {r.phase} | {r.verdict} | {cls}{if nc.isEmpty then "" else s!"; NC: {nc}"} |"
+  -- every non-canonical entry about an auxiliary appears in the output, but for
+  -- Lean's `IndPredBelow` family of a changed Prop block (`INDPRED-BELOW`): under
+  -- Pass 3 it is Lean's own block (design document §4.6), which the validator
+  -- does not list among the regenerated auxiliaries; until M6R slice 6 its
+  -- entries found their rows in the switch-off runs
+  let rowNames : Std.HashMap String (Array Row) := rows.foldl (fun m r =>
+    m.insert r.name ((m.getD r.name #[]).push r)) {}
+  let auxEntries := ((entriesOf "on").filter ncAux).map (("on", ·))
+  let mut missing : Array String := #[]
+  IO.println ""
+  IO.println "| non-canonical entry (aux) | record | cause | presentations | validator rows (switch: phase verdict) |"
+  IO.println "|---|---|---|---|---|"
+  for (s, e) in auxEntries do
+    let ns := ncNames e
+    let hits := ns.flatMap fun n => ((rowNames.getD n #[]).toList.map fun r =>
+      s!"{r.switch}: {(r.name.splitOn ".").getLast!}@{familyOf r.name |>.2} {r.phase.take 14} {r.verdict}{if r.differs then " (≠Lean)" else ""}")
+    if hits.isEmpty && !(e.cause matches .indPredBelow) then
+      missing := missing.push s!"{s} {e.fixture} {e.presA}/{e.presB} {e.constant}"
+    IO.println s!"| {(e.fixture.toString.splitOn ".").getLast!}.{e.constant} | {s} | {e.cause.tag} | {e.presA}/{e.presB} | {if hits.isEmpty then "MISSING" else "; ".intercalate hits} |"
+  IO.println ""
+  IO.println s!"[validate-lean-nc] {rows.size} rows, {nDiff} differing from Lean's form, {nEqual} equal; \
+{auxEntries.length} non-canonical entries concern an auxiliary"
+  IO.println s!"[validate-lean-nc] property 1 (no expected difference wrongly rejected): \
+{if prop1.isEmpty then "holds" else s!"VIOLATED by {prop1.size}"}"
+  IO.println s!"[validate-lean-nc] property 2 (no unexpected difference silently passed): \
+{unmatched.size} UNMATCHED row(s), {missing.size} non-canonical aux entr(ies) missing from the output"
+  for u in unmatched do IO.println s!"[validate-lean-nc] UNMATCHED {u}"
+  for m in missing do IO.println s!"[validate-lean-nc] MISSING {m}"
+  for p in metaProblems do IO.println s!"[validate-lean-nc] FAIL {p}"
+  IO.println s!"[validate-lean-nc] phase 4: {metaProblems.size} unexpected verdict(s)"
+  for p in p9Problems do IO.println s!"[validate-lean-nc] FAIL {p}"
+  IO.println s!"[validate-lean-nc] phase 9: {p9Problems.length} unexpected verdict(s)"
+  IO.println s!"[validate-lean-nc] {(← IO.monoMsNow) - t0} ms"
+  IO.FS.removeDirAll dir
+  return if unmatched.isEmpty && missing.isEmpty && prop1.isEmpty && metaProblems.isEmpty && p9Problems.isEmpty then 0 else 1
+
+end Tests.Ix.Compile.ValidateLeanNC

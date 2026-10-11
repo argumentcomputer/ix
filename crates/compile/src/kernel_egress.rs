@@ -1,4 +1,4 @@
-//! Egress: convert kernel types (`Meta` mode) to `src/ix/env.rs` Lean types.
+//! Egress: convert kernel types (`Meta` mode) to `crates/common/src/env.rs` Lean types.
 //!
 //! Only works for `Meta` mode since it needs actual names and binder info.
 
@@ -491,6 +491,20 @@ impl EgressCtx {
       self.univs.insert(u.clone());
     }
     self.preseeded = true;
+  }
+
+  /// Install the ORIGINAL constant's refs table, for the same reason as
+  /// [`Self::preseed_univs`]: Pass 3's decompile records (`_ix.inline`)
+  /// store their source occurrences in `ConstantMeta.meta_sharing`, whose
+  /// `Ref`/`Str`/`Nat` indices address the original table (primary
+  /// indices, then `refs.len() + j` into `meta_refs`), and the roundtrip
+  /// pairs the rebuilt constant with that original meta. Traversal interns
+  /// then hit the original positions instead of a first-use order (M6R
+  /// slice 6: the records' replay made the order matter).
+  fn preseed_refs(&mut self, refs: &[Address]) {
+    for r in refs {
+      self.refs.insert(r.clone());
+    }
   }
 
   fn intern_ref(&mut self, addr: Address) -> u64 {
@@ -990,6 +1004,7 @@ fn egress_muts_block(
   // `univ_patches` stay index-valid (canonicity §10.6, see EgressCtx).
   if let Some(orig_const) = original_env.get_const(&muts_named.addr) {
     ctx.preseed_univs(&orig_const.univs);
+    ctx.preseed_refs(&orig_const.refs);
   }
 
   // Determine per-class representative KConst: this is the kernel's
@@ -1180,6 +1195,7 @@ fn egress_standalone(
   // `univ_patches` stay index-valid (canonicity §10.6, see EgressCtx).
   if let Some(orig_const) = original_env.get_const(&original_named.addr) {
     ctx.preseed_univs(&orig_const.univs);
+    ctx.preseed_refs(&orig_const.refs);
   }
   // A sharing failure (resource limit or construction error) names the
   // constant it stopped.

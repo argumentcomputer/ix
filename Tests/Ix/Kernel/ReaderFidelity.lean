@@ -100,6 +100,11 @@ No reader defect is known. Every difference on the fixture closure and on all of
   counts (`weakAgree`); Ix.Tc's meta roundtrip skips the same two classes. A
   block whose recursors are regenerated may also be in the compiler's member
   order (counted, not a problem). Neither occurs in `Init` and `Std`.
+  - *Pass 3 image of a recursor* (the default since M6): the Lean name of a
+    changed block's recursor holds its image, a definition with
+    `Named.original` (decision 3, Def 3.4); the reader derives the recursor's
+    name from the Ix recursor block, so no Lean constant translates to the
+    image's reader name. Counted (`recImages`), not a problem.
 * **Declines** the reader is expected to make (unsafe and partial constants).
 * Anything else is **unexplained** and fails the drivers. -/
 
@@ -486,6 +491,11 @@ structure Report where
   reorderedBlocks : Array Lean.Name := #[]
   /-- reader constants no Lean constant translates to -/
   unmatched : Array CName := #[]
+  /-- Pass 3 images of recursors: a definition stored under the Lean name of a
+  changed block's recursor (decision 3, Def 3.4; `Named.original` set), whose
+  reader name no Lean constant translates to, since the reader derives the
+  recursor's name from the Ix recursor block (counted, not a problem) -/
+  recImages : Nat := 0
   /-- names, shape data and pin-table checks: problems found -/
   problems : Array String := #[]
   /-- unexplained differences, with the Lean name -/
@@ -529,6 +539,7 @@ def Report.summary (r : Report) (shown : Nat := 25) : String := Id.run do
   lines := lines.push s!"reader constants of records outside the Lean environment: {r.foreign}"
   lines := lines.push s!"regenerated auxiliaries named off the Lean convention: {r.renamedAux}"
   lines := lines.push s!"inductive blocks in the compiler's canonical member order: {r.reorderedBlocks.size} {r.reorderedBlocks.extract 0 shown}"
+  lines := lines.push s!"Pass 3 images of recursors (definitions under the Lean name): {r.recImages}"
   lines := lines.push s!"reader constants without a Lean constant: {r.unmatched.size}"
   for n in r.unmatched.extract 0 shown do lines := lines.push s!"  {n}"
   lines := lines.push s!"problems: {r.problems.size}"
@@ -638,6 +649,9 @@ structure Cx where
   /-- record owners whose metadata names constants outside the Lean
   environment (the compiled source's own declarations) -/
   foreign : Std.HashSet Address
+  /-- records stored under the Lean name of a recursor as its Pass 3 image (a
+  definition with `Named.original`) -/
+  recImages : Std.HashSet Address := {}
   keep : Lean.Name → Bool
   /-- the host hint the environment check supplies at a Lean constant's reference -/
   advisory : Lean.Name → Option Ix.Kernel.ReducibilityHint
@@ -715,7 +729,10 @@ def compareRecord (cx : Cx) (st : State) (address : Address) (rd : Read)
         if cx.foreign.contains address then
           report := { report with foreign := report.foreign + 1 }
         else
-          report := { report with unmatched := report.unmatched.push actual.name }
+          if cx.recImages.contains address then
+            report := { report with recImages := report.recImages + 1 }
+          else
+            report := { report with unmatched := report.unmatched.push actual.name }
         continue
       seen := seen.insert actual.name
       for n in leans do
@@ -814,7 +831,11 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     | none => acc) {}
   let advisory (n : Lean.Name) : Option Ix.Kernel.ReducibilityHint := (refs[n]?).bind s.cx.hint
   let aliases (n : Lean.Name) : Nat := ((refs[n]?).map fun r => (byRef.getD r #[]).size).getD 0
-  let cx : Cx := { input, rcx, named, byName, foreign, keep, advisory, aliases }
+  let recImages : Std.HashSet Address := named.fold (init := {}) fun acc n nd =>
+    match input.lean n with
+    | some (.recInfo _) => if nd.original.isSome then acc.insert nd.addr else acc
+    | _ => acc
+  let cx : Cx := { input, rcx, named, byName, foreign, recImages, keep, advisory, aliases }
   -- read in the check order, comparing each record's constants at the
   -- reader's state before it
   let base := match roots with

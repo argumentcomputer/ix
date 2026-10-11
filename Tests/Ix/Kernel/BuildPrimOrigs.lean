@@ -5,7 +5,7 @@
   Run with: `lake test -- --ignored rust-kernel-build-prim-origs`. The test prints a
   `(lean_name, leon_hash_hex)` line for every primitive the Rust kernel
   expects to find in `PrimAddrs::new_orig`. Each hex is
-  `ConstantInfo::get_hash()` (defined in `src/ix/env.rs`) on the
+  `ConstantInfo::get_hash()` (defined in `crates/common/src/env.rs`) on the
   primitive's declaration in the current Lean environment — a Blake3
   digest over the serialized original `ConstantInfo` (name + level
   params + type expression + variant-specific fields: ctors, rules,

@@ -383,7 +383,7 @@ def ctxAddrForLbrUncached (s : TcState m) (lbr : UInt64) : Address :=
       | none =>
         h := h.update "local".toUTF8
         h := h.update s.ctx[i]!.addr.hash
-    return ⟨(h.finalizeWithLength 32).val⟩
+    return (Address.ofHasher h)
 
 /-- Memoized wrapper around `ctxAddrForLbrUncached`, mirroring tc.rs
     `ctx_addr_for_lbr`. The pure helper is a verification seam as well as an
@@ -422,7 +422,7 @@ def pushLocal (ty : KExpr m) : TcM m Unit := do
     h := h.update "ctx.local".toUTF8
     h := h.update ty.addr.hash
     h := h.update s.ctxId.hash
-    return ⟨(h.finalizeWithLength 32).val⟩
+    return (Address.ofHasher h)
   set { s with
     ctxIdStack := s.ctxIdStack.push s.ctxId
     ctxId
@@ -438,7 +438,7 @@ def pushLet (ty val : KExpr m) : TcM m Unit := do
     h := h.update ty.addr.hash
     h := h.update val.addr.hash
     h := h.update s.ctxId.hash
-    return ⟨(h.finalizeWithLength 32).val⟩
+    return (Address.ofHasher h)
   set { s with
     ctxIdStack := s.ctxIdStack.push s.ctxId
     ctxId

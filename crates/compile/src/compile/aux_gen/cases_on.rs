@@ -58,24 +58,33 @@ pub fn generate_cases_on(
   rec_val: &RecursorVal,
   lean_env: &LeanEnv,
 ) -> Option<AuxDef> {
+  let target_ind = match name.as_data() {
+    ix_common::env::NameData::Str(parent, suffix, _) if suffix == "casesOn" => {
+      parent
+    },
+    _ => return None,
+  };
+  generate_cases_on_for(name, target_ind, rec_val, lean_env)
+}
+
+/// Choose the output name independently of the source inductive. A private
+/// helper must not change lookup of source constructors or copied field types.
+pub fn generate_cases_on_for(
+  name: &Name,
+  target_ind: &Name,
+  rec_val: &RecursorVal,
+  lean_env: &LeanEnv,
+) -> Option<AuxDef> {
   let n_params = rec_val.num_params.to_u64()? as usize;
   let n_motives = rec_val.num_motives.to_u64()? as usize;
   let n_minors = rec_val.num_minors.to_u64()? as usize;
   let n_indices = rec_val.num_indices.to_u64()? as usize;
 
-  // Extract target inductive name from "A.casesOn" → "A"
-  let target_ind = match name.as_data() {
-    ix_common::env::NameData::Str(parent, s, _) if s == "casesOn" => {
-      parent.clone()
-    },
-    _ => return None,
-  };
-
   // Find target index in rec_val.all
-  let target_idx = rec_val.all.iter().position(|n| *n == target_ind)?;
+  let target_idx = rec_val.all.iter().position(|n| n == target_ind)?;
 
   // Determine elimination level
-  let ind_n_lparams = match lean_env.get(&target_ind).as_deref() {
+  let ind_n_lparams = match lean_env.get(target_ind).as_deref() {
     Some(ConstantInfo::InductInfo(v)) => v.cnst.level_params.len(),
     _ => return None,
   };
@@ -218,7 +227,7 @@ pub fn generate_cases_on(
       // Get original minor name from rec type for the casesOn binder name
       // (use rec_val's constructor name suffix as binder name)
       let co_minor_binder_name =
-        get_minor_name(mi, &target_minor_range, &target_ind, lean_env);
+        get_minor_name(mi, &target_minor_range, target_ind, lean_env);
       let (co_fv_name, co_fv) = fresh_fvar("coq", mi);
       co_decls.push(LocalDecl {
         fvar_name: co_fv_name,

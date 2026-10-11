@@ -388,11 +388,12 @@
             } ''
               cp -r ${./.} src
               chmod -R u+w src
-              # IxTests depends on the ix target, so its wrapped output already
-              # contains the matching CLI. Recreate Lake's checkout-relative
-              # path for tests that intentionally exercise that CLI.
+              # IxTests depends on both executables, so its wrapped output
+              # contains the matching CLI and certified checker. Recreate
+              # Lake's checkout-relative paths for tests that launch them.
               mkdir -p src/.lake/build/bin
               ln -s ${ixTest}/bin/ix src/.lake/build/bin/ix
+              ln -s ${ixTest}/bin/kernel-check-ixe src/.lake/build/bin/kernel-check-ixe
               cd src
               ${ixTest}/bin/IxTests
               touch $out

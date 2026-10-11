@@ -19,9 +19,11 @@ an annotated production artifact is emitted.
 
 ## Implemented boundary (contract model)
 
-- Definitions, theorems, opaque bodies, and explicitly admitted interfaces are
-  supported. Annotated inductive/constructor/recursor generation and nonidentity
-  compiler surgery reject before emission.
+- At the recorded v3 checkpoint, definitions, theorems, opaque bodies, and
+  explicitly admitted interfaces were supported. Annotated inductive/constructor/
+  recursor generation and nonidentity compiler surgery were rejected before
+  emission. For the current Pass 3 admission boundary, see the
+  [source frontend](source-contracts.md).
 - Native Resource claims bind the complete constant-set root, object format,
   validator, and canonical profile. The profile commits external assumptions,
   representation rules, primitive pins, and analysis limits.

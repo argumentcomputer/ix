@@ -55,6 +55,8 @@ pub enum BelowConstant {
 #[derive(Clone)]
 pub struct BelowDef {
   pub name: Name,
+  /// Logical source-family role, separate from the emitted identity.
+  pub source_name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
   pub value: LeanExpr,
@@ -65,6 +67,8 @@ pub struct BelowDef {
 #[derive(Clone)]
 pub struct BelowIndc {
   pub name: Name,
+  /// Logical source-family role, separate from the emitted identity.
+  pub source_name: Name,
   pub level_params: Vec<Name>,
   pub n_params: usize,
   /// Number of indices: original inductive's indices + 1 (major premise).
@@ -145,6 +149,30 @@ pub fn generate_below_constants_with(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BelowConstant>, CompileError> {
+  generate_below_constants_named(
+    sorted_classes,
+    canonical_recs,
+    lean_env,
+    is_prop,
+    all_aux,
+    stt,
+    kctx,
+    &super::names::AuxNames::default(),
+  )
+}
+
+/// Select generated helper identities without rewriting copied source terms.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_below_constants_named(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  lean_env: &LeanEnv,
+  is_prop: bool,
+  all_aux: bool,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+  names: &super::names::AuxNames,
+) -> Result<Vec<BelowConstant>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() {
     return Ok(vec![]);
@@ -155,7 +183,7 @@ pub fn generate_below_constants_with(
   // recursor's minor premises.
   if is_prop && canonical_recs.len() > n_classes {
     return Ok(
-      build_prop_below_family(sorted_classes, canonical_recs, lean_env)?
+      build_prop_below_family(sorted_classes, canonical_recs, lean_env, names)?
         .into_iter()
         .map(BelowConstant::Indc)
         .collect(),
@@ -179,11 +207,13 @@ pub fn generate_below_constants_with(
       },
     };
 
-    let below_name = Name::str(ind.cnst.name.clone(), "below".to_string());
+    let source_below_name =
+      Name::str(ind.cnst.name.clone(), "below".to_string());
+    let below_name = names.member(&ind.cnst.name, "below");
 
     if !is_prop {
       // Type-level: generate definition (BRecOn.lean path)
-      let def = build_below_def(
+      let mut def = build_below_def(
         &below_name,
         rec_val,
         ind,
@@ -193,6 +223,7 @@ pub fn generate_below_constants_with(
         stt,
         kctx,
       )?;
+      def.source_name = source_below_name;
       results.push(BelowConstant::Def(def));
     } else {
       // Prop-level: generate .below inductive (IndPredBelow.lean path)
@@ -205,6 +236,8 @@ pub fn generate_below_constants_with(
         n_classes,
         sorted_classes,
         canonical_recs,
+        names,
+        &source_below_name,
       )?;
       results.push(BelowConstant::Indc(indc));
     }
@@ -255,7 +288,8 @@ pub fn generate_below_constants_with(
             ),
           }
         })?;
-        let below_name = Name::str(all0.clone(), format!("below_{idx}"));
+        let source_below_name = Name::str(all0.clone(), format!("below_{idx}"));
+        let below_name = names.nested(all0, "below", idx);
 
         // Only generate if this constant exists in the source environment.
         // Check lean_env (original Lean env during compilation) OR
@@ -263,8 +297,8 @@ pub fn generate_below_constants_with(
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
         let exists = all_aux
-          || lean_env.contains_key(&below_name)
-          || stt.env.named.contains_key(&below_name);
+          || lean_env.contains_key(&source_below_name)
+          || stt.env.named.contains_key(&source_below_name);
         if !exists {
           continue;
         }
@@ -283,7 +317,7 @@ pub fn generate_below_constants_with(
             }
           })?;
 
-        let def = build_below_def(
+        let mut def = build_below_def(
           &below_name,
           aux_rec_val,
           &ext_ind,
@@ -293,6 +327,7 @@ pub fn generate_below_constants_with(
           stt,
           kctx,
         )?;
+        def.source_name = source_below_name;
         results.push(BelowConstant::Def(def));
       }
     }
@@ -374,7 +409,7 @@ fn build_below_def(
 
     let ctx_decls: Vec<LocalDecl> = decls[..total - 1].to_vec();
     let mut tc =
-      super::expr_utils::TcScope::new(&ctx_decls, rec_level_params, stt, kctx);
+      super::expr_utils::TcScope::new(&ctx_decls, rec_level_params, stt, kctx)?;
     tc.get_level(major_domain)?
   };
 
@@ -411,6 +446,7 @@ fn build_below_def(
 
   Ok(BelowDef {
     name: below_name.clone(),
+    source_name: below_name.clone(),
     level_params: below_level_params,
     typ: below_type,
     value: below_value,
@@ -593,7 +629,7 @@ fn build_below_value(
   let outer_ctx: Vec<LocalDecl> =
     param_decls.iter().chain(motive_decls.iter()).cloned().collect();
   let mut tc_scope =
-    super::expr_utils::TcScope::new(&outer_ctx, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(&outer_ctx, rec_level_params, stt, kctx)?;
 
   for minor_dom in &minor_doms {
     let minor_arg =
@@ -650,6 +686,8 @@ fn build_below_indc(
   n_classes: usize,
   sorted_classes: &[Vec<Name>],
   _canonical_recs: &[(Name, RecursorVal)],
+  names: &super::names::AuxNames,
+  source_below_name: &Name,
 ) -> Result<BelowIndc, CompileError> {
   let n_params = try_nat_to_usize(&rec_val.num_params)?;
   let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
@@ -662,7 +700,7 @@ fn build_below_indc(
   let below_names: Vec<Name> = (0..n_classes)
     .map(|j| {
       let rep = &sorted_classes[j][0];
-      Name::str(rep.clone(), "below".to_string())
+      names.member(rep, "below")
     })
     .collect();
 
@@ -721,6 +759,7 @@ fn build_below_indc(
           &below_names,
           sorted_classes,
           lean_env,
+          source_below_name,
         );
         ctors.push(below_ctor);
       }
@@ -730,6 +769,7 @@ fn build_below_indc(
 
   Ok(BelowIndc {
     name: below_name.clone(),
+    source_name: source_below_name.clone(),
     level_params: ind_level_params.clone(), // .below has same level params as parent (no elim level for Prop)
     n_params: below_n_params,
     n_indices: n_indices + 1, // original indices + major premise
@@ -838,6 +878,7 @@ fn build_below_indc_ctor(
   below_names: &[Name],
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
+  source_below_name: &Name,
 ) -> BelowCtor {
   let ctor_suffix = ctor_name
     .strip_prefix(&ind.cnst.name)
@@ -850,7 +891,7 @@ fn build_below_indc_ctor(
 
   // Extract original field binder names from the Lean-generated `.below` ctor
   // for faithful roundtrip of hygiene names.
-  let orig_below_ctor_name = below_name.append_components(&ctor_suffix);
+  let orig_below_ctor_name = source_below_name.append_components(&ctor_suffix);
   let orig_field_names: Vec<Name> = lean_env
     .get(&orig_below_ctor_name)
     .and_then(|ci| match &*ci {
@@ -1075,6 +1116,7 @@ fn build_prop_below_family(
   sorted_classes: &[Vec<Name>],
   canonical_recs: &[(Name, RecursorVal)],
   lean_env: &LeanEnv,
+  names: &super::names::AuxNames,
 ) -> Result<Vec<BelowIndc>, CompileError> {
   let n_classes = sorted_classes.len();
   let block_label = sorted_classes[0][0].pretty();
@@ -1108,6 +1150,10 @@ fn build_prop_below_family(
   // like `.below_N` in the Type-level path).
   let mut below_names: Vec<Name> = class_inds
     .iter()
+    .map(|ind| names.member(&ind.cnst.name, "below"))
+    .collect();
+  let mut source_below_names: Vec<Name> = class_inds
+    .iter()
     .map(|ind| Name::str(ind.cnst.name.clone(), "below".to_string()))
     .collect();
   for (aux_rec_name, _) in &canonical_recs[n_classes..] {
@@ -1119,7 +1165,8 @@ fn build_prop_below_family(
         ),
       }
     })?;
-    below_names.push(Name::str(all0.clone(), format!("below_{idx}")));
+    below_names.push(names.nested(&all0, "below", idx));
+    source_below_names.push(Name::str(all0.clone(), format!("below_{idx}")));
   }
 
   // Every recursor of the flat block shares the parameter, motive and minor
@@ -1249,8 +1296,9 @@ fn build_prop_below_family(
       })?;
 
       // Keep the binder names of Lean's own constructor where it exists.
-      if let Some(ConstantInfo::CtorInfo(cv)) =
-        lean_env.get(&ctor_name).as_deref()
+      if let Some(ConstantInfo::CtorInfo(cv)) = lean_env
+        .get(&source_below_names[k].append_components(&suffix))
+        .as_deref()
       {
         let mut ty = cv.cnst.typ.clone();
         for _ in 0..nat_to_usize(&cv.num_params) {
@@ -1289,6 +1337,7 @@ fn build_prop_below_family(
     let n_indices = try_nat_to_usize(&rec_k.num_indices)?;
     out.push(BelowIndc {
       name: below_name.clone(),
+      source_name: source_below_names[k].clone(),
       level_params: ind_level_params.clone(),
       n_params: n_params + n_motives,
       n_indices: n_indices + 1,
@@ -1551,7 +1600,7 @@ fn build_below_minor(
 
   // Push field decls (with replaced IH domains) into TcScope so that
   // get_level can resolve the FVars in PProd operands.
-  tc_scope.push_locals(&lam_decls);
+  tc_scope.push_locals(&lam_decls)?;
 
   // Build PProd entries from IH fields. Infer each PProd operand's
   // level via TC — matches Lean's `mkPProd` (PProdN.lean:37-38), which
@@ -1572,11 +1621,11 @@ fn build_below_minor(
         ih_entries.push(mk_pprod(&lvl1, &lvl2, leaf, &field.fvar));
       } else {
         // Higher-order IH: ∀ (a₁..aₙ), PProd(leaf, ih_fvar a₁..aₙ).
-        tc_scope.push_locals(&field.inner_decls);
+        tc_scope.push_locals(&field.inner_decls)?;
         let ih_applied = mk_app_n(field.fvar.clone(), &field.inner_fvars);
         let lvl1 = tc_scope.get_level(leaf)?;
         let lvl2 = tc_scope.get_level(&ih_applied)?;
-        tc_scope.pop_locals(&field.inner_decls);
+        tc_scope.pop_locals(&field.inner_decls)?;
         let pprod = mk_pprod(&lvl1, &lvl2, leaf, &ih_applied);
         ih_entries.push(mk_forall(pprod, &field.inner_decls));
       }
@@ -1599,7 +1648,7 @@ fn build_below_minor(
   };
 
   // Pop field decls from TcScope.
-  tc_scope.pop_locals(&lam_decls);
+  tc_scope.pop_locals(&lam_decls)?;
 
   Ok(mk_lambda(body, &lam_decls))
 }
@@ -1982,29 +2031,35 @@ fn mk_imax_aux(l1: &Level, l2: &Level) -> Level {
 ///
 /// Uses raw `Level::succ` / `Level::max` to faithfully preserve the kernel's
 /// level structure — no distribution of Succ over Max, no subsumption.
+/// A parameter index outside `param_names` is refused with the Lean
+/// bridge's text (`kunivToLevel`), never given an invented name.
 pub(super) fn kuniv_to_level(
   u: &ix_kernel::level::KUniv<ix_kernel::mode::Meta>,
   param_names: &[Name],
-) -> Level {
+) -> Result<Level, CompileError> {
   use ix_kernel::level::UnivData;
-  match u.data() {
+  Ok(match u.data() {
     UnivData::Zero(_) => Level::zero(),
-    UnivData::Succ(inner, _) => Level::succ(kuniv_to_level(inner, param_names)),
-    UnivData::Max(a, b, _) => {
-      Level::max(kuniv_to_level(a, param_names), kuniv_to_level(b, param_names))
+    UnivData::Succ(inner, _) => {
+      Level::succ(kuniv_to_level(inner, param_names)?)
     },
+    UnivData::Max(a, b, _) => Level::max(
+      kuniv_to_level(a, param_names)?,
+      kuniv_to_level(b, param_names)?,
+    ),
     UnivData::IMax(a, b, _) => Level::imax(
-      kuniv_to_level(a, param_names),
-      kuniv_to_level(b, param_names),
+      kuniv_to_level(a, param_names)?,
+      kuniv_to_level(b, param_names)?,
     ),
     UnivData::Param(idx, _, _) => {
-      let name = param_names
-        .get(*idx as usize)
-        .cloned()
-        .unwrap_or_else(|| Name::str(Name::anon(), format!("u_{idx}")));
+      let name = param_names.get(*idx as usize).cloned().ok_or_else(|| {
+        super::expr_utils::bridge_refusal(&format!(
+          "kuniv_to_level: universe parameter index {idx} out of range"
+        ))
+      })?;
       Level::param(name)
     },
-  }
+  })
 }
 
 /// Build `PProd.{u, v} a b` with separate universe levels for each component.

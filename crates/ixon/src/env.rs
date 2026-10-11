@@ -301,9 +301,9 @@ impl Named {
 /// correctly permute source-order aux motives/minors into canonical
 /// positions. Both arrays have one entry per source-walk-discovered aux.
 ///
-/// This lives in `ixon::env` (not `ix_compile::surgery`, where it originated)
-/// so it can be persisted into the serialized Ixon environment as a
-/// side-table on [`Env::aux_layouts`]. The surgery layer re-exports it.
+/// This lives in `ixon::env` (it originated in `ix_compile::surgery`, deleted
+/// at M6R slice 6) so it can be persisted into the serialized Ixon environment
+/// as a side-table on [`Env::aux_layouts`].
 ///
 /// Keyed by `<source_all[0]>` — the first inductive in the Lean source's
 /// mutual block, which is what Lean hangs `.rec_N` / `.below_N` /
@@ -950,8 +950,29 @@ impl Env {
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
+    self.prune_fixpoint(
+      &mut out,
+      &mut visited,
+      &mut pending,
+      &mut named_done,
+      assumed,
+    )?;
+    Ok(out)
+  }
+
+  /// The value and named passes of [`Self::prune_to_closure`], run until
+  /// the named pass finds no new DAG work.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn prune_fixpoint(
+    &self,
+    out: &mut Env,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut VecDeque<Address>,
+    named_done: &mut FxHashSet<Name>,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<(), String> {
     loop {
-      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+      self.prune_value_pass(out, visited, pending, assumed)?;
 
       // ── Named pass: carry display metadata for every carried
       // constant. Metadata references content the value walk cannot
@@ -964,14 +985,14 @@ impl Env {
         }
         named_done.insert(name.clone());
         Self::carry_named_entry(
-          &mut out,
+          out,
           name,
           named,
           &|na| self.get_name(na),
           &|ba| self.get_blob(ba),
           &|a| self.holds_or_assumed(a, assumed),
-          &mut visited,
-          &mut pending,
+          visited,
+          pending,
           &mut named_refs,
         )?;
       }
@@ -979,17 +1000,16 @@ impl Env {
       Self::enqueue_named_refs(
         named_refs,
         &|nm| self.named.get(nm).map(|e| e.addr.clone()),
-        &mut visited,
-        &mut pending,
+        visited,
+        pending,
       );
 
       // The named pass ran against the final consts of this round; if
       // it produced no new DAG work, the walk is complete.
       if pending.is_empty() {
-        break;
+        return Ok(());
       }
     }
-    Ok(out)
   }
 
   /// Value-only bundle: the 3-edge closure of `main` cut at `assumed` —
@@ -1946,6 +1966,90 @@ mod tests {
 
     let anon = env.prune_to_closure_anon(&odd_c, &none).unwrap();
     assert!(!anon.consts.contains_key(&even_c), "anon: value closure only");
+  }
+
+  /// The bundle is the root's reference closure, never its compilation
+  /// unit (owner, 2026-10-07; M6R slice 6 removed the whole-unit
+  /// completion of slice 5): `f`'s on-demand equation lemma `f.eq_1` and
+  /// Pass 3's canonical constant `f._ix` are members of `f`'s unit that
+  /// `f` does not reference, so `f`'s bundle carries neither; packing
+  /// `f._ix` carries the constant it references (`g`), compiler-introduced
+  /// or not. A declared cut point the walk does not reach is skipped (not
+  /// recorded); one it reaches is recorded and not carried.
+  #[test]
+  fn prune_to_closure_is_the_reference_closure_not_the_unit() {
+    use crate::metadata::{ConstantMetaInfo, ExprMeta};
+    let path = |parts: &[&str]| {
+      parts.iter().fold(Name::anon(), |p, s| Name::str(p, s.to_string()))
+    };
+    let env = Env::new();
+    let g_c = store_canonical(&env, const_with_refs_discriminator(vec![], 1));
+    let f_c = store_canonical(&env, const_with_refs_discriminator(vec![], 2));
+    let eq_c = store_canonical(&env, const_with_refs_discriminator(vec![], 3));
+    let ix_c = store_canonical(
+      &env,
+      const_with_refs_discriminator(vec![g_c.clone()], 4),
+    );
+    let (f, eq1, fix, g) =
+      (path(&["f"]), path(&["f", "eq_1"]), path(&["f", "_ix"]), path(&["g"]));
+    let addr_of = |x: &Name| Address::from_blake3_hash(*x.get_hash());
+    for x in [&f, &eq1, &fix, &g] {
+      env.store_name(addr_of(x), x.clone());
+    }
+    let def_meta = |x: &Name| {
+      ConstantMeta::new(ConstantMetaInfo::Def {
+        name: addr_of(x),
+        lvls: vec![],
+        all: vec![addr_of(x)],
+        ctx: vec![],
+        arena: ExprMeta::default(),
+        type_root: 0,
+        value_root: 0,
+      })
+    };
+    for (x, c) in [(&f, &f_c), (&eq1, &eq_c), (&fix, &ix_c), (&g, &g_c)] {
+      env.register_name(x.clone(), Named::new(c.clone(), def_meta(x)));
+    }
+    let ser = |e: &Env| {
+      let mut v = Vec::new();
+      e.put(&mut v).unwrap();
+      v
+    };
+    let consts = |e: &Env| -> FxHashSet<Address> {
+      e.consts.iter().map(|x| x.key().clone()).collect()
+    };
+    let none = FxHashSet::default();
+
+    let fb = env.prune_to_closure(&f_c, &none).unwrap();
+    assert_eq!(consts(&fb), [f_c.clone()].into_iter().collect());
+    assert!(fb.named.get(&eq1).is_none() && fb.named.get(&fix).is_none());
+    fb.validate_closed().unwrap();
+
+    let ib = env.prune_to_closure(&ix_c, &none).unwrap();
+    assert_eq!(consts(&ib), [ix_c.clone(), g_c.clone()].into_iter().collect());
+    assert!(ib.named.get(&g).is_some(), "the reference's Named entry");
+
+    // streaming and anonymous paths: the same constants
+    let mut bytes = Vec::new();
+    env.put(&mut bytes).unwrap();
+    let (index, names) = Env::parse_lazy_index_with_names(&bytes).unwrap();
+    let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
+    let streamed = lazy
+      .prune_to_closure_streaming(&index, &bytes, &names, &ix_c, &none)
+      .unwrap();
+    assert_eq!(ser(&ib), ser(&streamed), "streaming parity");
+    let anon = env.prune_to_closure_anon(&ix_c, &none).unwrap();
+    assert_eq!(consts(&anon), consts(&ib));
+    assert!(anon.named.is_empty());
+
+    // cut points: an unreached one is skipped, a reached one recorded
+    let cut_eq: FxHashSet<Address> = [eq_c.clone()].into_iter().collect();
+    let skipped = env.prune_to_closure(&f_c, &cut_eq).unwrap();
+    assert!(skipped.assumptions.is_empty());
+    assert_eq!(ser(&skipped), ser(&fb));
+    let cut_g: FxHashSet<Address> = [g_c.clone()].into_iter().collect();
+    let thin = env.prune_to_closure(&ix_c, &cut_g).unwrap();
+    assert!(thin.assumptions.contains(&g_c) && !thin.consts.contains_key(&g_c));
   }
 
   /// A regenerated auxiliary (`.rec`/`.below`/`.brecOn` of a reordered,

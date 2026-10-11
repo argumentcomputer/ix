@@ -27,7 +27,7 @@ namespace Tests.Ix.Kernel.Roundtrip
 /-- FFI: run the kernel roundtrip and collect per-constant diff messages.
     Empty array = roundtrip agrees with the original Lean env.
 
-    Implemented in `src/ffi/kernel.rs::rs_kernel_roundtrip`. -/
+    Implemented in `crates/ffi/src/kernel.rs::rs_kernel_roundtrip`. -/
 @[extern "rs_kernel_roundtrip"]
 opaque rsKernelRoundtripFFI :
     @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)

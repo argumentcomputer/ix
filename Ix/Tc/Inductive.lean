@@ -1298,8 +1298,40 @@ def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
   let occurrenceUs := match head with
     | .const _ us _ => us
     | _ => #[]
-  appendNestedAuxiliary headId occurrenceUs specParams extParams extIndices
-    extCtors extLvls flat auxSeen univOffset
+  if auxSeen.contains (NestedSpecializationKey.ofApplication headId.addr
+      occurrenceUs specParams) then
+    return (flat, auxSeen)
+  -- A new occurrence `I As` opens I's whole mutual group, one auxiliary per
+  -- member `J`, in group order, each `J As` registered as seen (Lean's
+  -- `elim_nested_inductive_fn`; the compilers' expansion). Over a compiled
+  -- environment (`canonical`) the group is I's stored block in its canonical
+  -- order, which is what the compilers open on a canonical expansion
+  -- (design document §2.5): the auxiliaries are then in discovery order,
+  -- the canonical order the stored recursor block follows, with no sort
+  -- (A2-order). In `source` mode the group is the head alone, as before.
+  -- Mirrors Rust `try_detect_nested`.
+  let group : Array (KId m) ←
+    if (← get).env.recursorAuxOrder == .canonical then do
+      match (← TcM.tryGetConst headId) with
+      | some (.indc (block := block) ..) =>
+        let members ← discoverBlockInductives block
+        pure (if members.any (·.addr == headId.addr) then members else #[headId])
+      | _ => pure #[headId]
+    else pure #[headId]
+  let mut pair := (flat, auxSeen)
+  for jId in group do
+    if jId.addr == headId.addr then
+      pair ← appendNestedAuxiliary headId occurrenceUs specParams extParams
+        extIndices extCtors extLvls pair.1 pair.2 univOffset
+    else
+      match (← TcM.tryGetConst jId) with
+      | some (.indc (params := jParams) (indices := jIndices) (ctors := jCtors)
+          (lvls := jLvls) ..) =>
+        if jParams == extParams then
+          pair ← appendNestedAuxiliary jId occurrenceUs specParams jParams
+            jIndices jCtors jLvls pair.1 pair.2 univOffset
+      | _ => pure ()
+  return pair
 
 /-- Detect whether `dom` is a nested inductive occurrence; if so append an
     auxiliary entry (dedup by family, universe, and parameter addresses).
@@ -1444,271 +1476,6 @@ def buildFlatBlock (blockInds : Array (KId m))
     (nRecParams univOffset : UInt64) :
     RecM m (Array (FlatBlockMember m)) := do
   return (← buildFlatBlockWithAuxSeen blockInds nRecParams univOffset).1
-
-/-- Rewrite one nested occurrence `Ext spec idx…` to
-    `aux blockParams idx…` when the head+params match an aux member. -/
-def tryReplaceAuxRefForSort (e : KExpr m)
-    (aux : Array (FlatBlockMember m)) (auxIds : Array (KId m))
-    (blockUs : Array (KUniv m)) (nBlockParams localDepth : UInt64) :
-    RecM m (Option (KExpr m)) := do
-  let (head, args) := e.collectSpine
-  let some headId := (match head with
-      | .const id _ _ => some id
-      | _ => none)
-    | return none
-  for h : idx in [0:aux.size] do
-    let member := aux[idx]
-    if member.id.addr != headId.addr then
-      continue
-    let own := member.ownParams.toNat
-    if args.size < own || member.specParams.size != own then
-      continue
-    let mut matched := true
-    for i in [0:own] do
-      let spLifted ← if localDepth > 0 then
-          TcM.runIntern (lift member.specParams[i]! localDepth 0)
-        else
-          pure member.specParams[i]!
-      let ok ← try isDefEq args[i]! spLifted catch _ => pure false
-      if !ok then
-        matched := false
-        break
-    if !matched then
-      continue
-    let mut result ← TcM.intern (.mkConst auxIds[idx]! blockUs)
-    let paramBase ← checkedMetadataSum "auxiliary parameter index"
-      #[localDepth, nBlockParams]
-    for pi in [0:nBlockParams.toNat] do
-      let p ← TcM.intern (m := m)
-        (.mkVar (paramBase - 1 - pi.toUInt64) anonN)
-      result ← TcM.intern (.mkApp result p)
-    for idxArg in args.extract own args.size do
-      result ← TcM.intern (.mkApp result idxArg)
-    return some result
-  return none
-
-/-- Rewrite ALL nested occurrences in `e` to block-local synthetic aux
-    references (pre-sort normalization; compile-side `replace_all_nested`). -/
-def replaceAuxRefsForSort (e : KExpr m)
-    (aux : Array (FlatBlockMember m)) (auxIds : Array (KId m))
-    (blockUs : Array (KUniv m)) (nBlockParams localDepth : UInt64) :
-    RecM m (KExpr m) := do
-  if let some replaced ← tryReplaceAuxRefForSort e aux auxIds blockUs
-      nBlockParams localDepth then
-    return replaced
-  match e with
-  | .app f a _ =>
-    let f2 ← replaceAuxRefsForSort f aux auxIds blockUs nBlockParams localDepth
-    let a2 ← replaceAuxRefsForSort a aux auxIds blockUs nBlockParams localDepth
-    TcM.intern (.mkApp f2 a2)
-  | .lam n bi ty body _ =>
-    let ty2 ← replaceAuxRefsForSort ty aux auxIds blockUs nBlockParams localDepth
-    let body2 ← replaceAuxRefsForSort body aux auxIds blockUs nBlockParams
-      (localDepth + 1)
-    TcM.intern (.mkLam n bi ty2 body2)
-  | .all n bi ty body _ =>
-    let ty2 ← replaceAuxRefsForSort ty aux auxIds blockUs nBlockParams localDepth
-    let body2 ← replaceAuxRefsForSort body aux auxIds blockUs nBlockParams
-      (localDepth + 1)
-    TcM.intern (.mkAll n bi ty2 body2)
-  | .letE n ty val body nd _ =>
-    let ty2 ← replaceAuxRefsForSort ty aux auxIds blockUs nBlockParams localDepth
-    let val2 ← replaceAuxRefsForSort val aux auxIds blockUs nBlockParams localDepth
-    let body2 ← replaceAuxRefsForSort body aux auxIds blockUs nBlockParams
-      (localDepth + 1)
-    TcM.intern (.mkLet n ty2 val2 body2 nd)
-  | .prj id field val _ =>
-    let val2 ← replaceAuxRefsForSort val aux auxIds blockUs nBlockParams localDepth
-    TcM.intern (.mkPrj id field val2)
-  | _ => return e
-
-/-- First `n` Pi binders of the block's first inductive, outermost-first
-    (domains stay in the recursor-external telescope context). -/
-def extractBlockParamBinders (blockFirstId : KId m)
-    (nBlockParams : UInt64) :
-    RecM m (Array (m.F Name × m.F Lean.BinderInfo × KExpr m)) := do
-  let indTy ← match (← TcM.tryGetConst blockFirstId) with
-    | some (.indc (ty := ty) ..) => pure ty
-    | _ => return #[]
-  let mut out : Array (m.F Name × m.F Lean.BinderInfo × KExpr m) :=
-    Array.mkEmpty nBlockParams.toNat
-  let mut cur := indTy
-  for _ in [0:nBlockParams.toNat] do
-    let w ← whnf cur
-    match w with
-    | .all name bi dom body _ =>
-      out := out.push (name, bi, dom)
-      cur := body
-    | _ => break
-  return out
-
-/-- `∀ T₀ … Tₙ₋₁, body` from outermost-first binders (compile-side
-    `mk_forall`). -/
-def wrapWithBlockParamForalls (body : KExpr m)
-    (binders : Array (m.F Name × m.F Lean.BinderInfo × KExpr m)) :
-    RecM m (KExpr m) := do
-  let mut cur := body
-  for i in [0:binders.size] do
-    let (name, bi, dom) := binders[binders.size - 1 - i]!
-    cur ← TcM.intern (.mkAll name bi dom cur)
-  return cur
-
-/-- Kernel analogue of the compile-side aux partition-refinement sort:
-    synthesize `Indc`/`Ctor` views for each aux (spec-param instantiated,
-    aux-ref rewritten, block-param wrapped), seed by compiler-shaped name
-    rank, run `sortKConstsWithSeedKey`, and return
-    `perm[k] = original index of class k's representative`. -/
-def canonicalAuxOrder (aux : Array (FlatBlockMember m))
-    (nBlockParams : UInt64) (blockUs : Array (KUniv m))
-    (all0Name : Option Name) (blockFirstId : Option (KId m)) :
-    RecM m (Array Nat) := do
-  let nestedPrefix := all0Name.map (Ix.Name.mkStr · "_nested")
-  let blockParamBinders ← match blockFirstId with
-    | some id =>
-      if nBlockParams > 0 then extractBlockParamBinders id nBlockParams
-      else pure #[]
-    | none => pure #[]
-  -- Synthetic aux ids + compiler-shaped seed names.
-  let mut auxIds : Array (KId m) := Array.mkEmpty aux.size
-  let mut auxSeedNames : Array Name := Array.mkEmpty aux.size
-  for h : sourceIdx in [0:aux.size] do
-    let member := aux[sourceIdx]
-    -- `Name.pretty` (bare, un-escaped), NOT `toString`: Rust seeds on
-    -- `name.pretty()`, and the seed string feeds the canonical sort.
-    let extSeed := match Mode.get? member.id.name with
-      | some name => name.pretty.replace "." "_"
-      | none => toString member.id.addr
-    let seedSuffix := s!"{extSeed}_{sourceIdx + 1}"
-    let seedName := match nestedPrefix with
-      | some prefix' => prefix'.mkStr seedSuffix
-      | none => (Ix.Name.mkAnon.mkStr "IxCAux").mkStr seedSuffix
-    let mut h := Blake3.Rust.Hasher.init ()
-    h := h.update "AUX_INDC_VIEW".toUTF8
-    h := h.update sourceIdx.toUInt64.toLEBytes
-    h := h.update member.id.addr.hash
-    for sp in member.specParams do
-      h := h.update sp.addr.hash
-    for u in member.occurrenceUs do
-      h := h.update u.addr.hash
-    let auxAddr := Address.mk (h.finalizeWithLength 32).val
-    auxIds := auxIds.push ⟨auxAddr, Mode.field seedName⟩
-    auxSeedNames := auxSeedNames.push seedName
-  -- Monotone seed ranks in sorted-name order (Name Ord = hash bytes).
-  let mut seedOrder := (Array.range auxSeedNames.size)
-  seedOrder := seedOrder.qsort fun a b =>
-    Address.cmpBytes auxSeedNames[a]!.getHash auxSeedNames[b]!.getHash == .lt
-  let mut seedKeyByAddr : Std.HashMap Address Address := {}
-  for h : rank in [0:seedOrder.size] do
-    let sourceIdx := seedOrder[rank]
-    let rank64 := rank.toUInt64
-    let mut bytes : ByteArray := .empty
-    for i in [0:8] do
-      bytes := bytes.push (rank64 >>> ((7 - i.toUInt64) * 8)).toUInt8
-    for _ in [0:24] do
-      bytes := bytes.push 0
-    seedKeyByAddr := seedKeyByAddr.insert auxIds[sourceIdx]!.addr
-      (Address.mk bytes)
-  -- Synthetic Indc + Ctor views.
-  let mut auxIndcs : Array (KId m × KConst m) := Array.mkEmpty aux.size
-  let mut allCtorLookup : Std.HashMap Address (KConst m) := {}
-  let syntheticBlock : KId m :=
-    ⟨Address.blake3 "synthetic-aux-block".toUTF8, Mode.field .mkAnon⟩
-  for h : sourceIdx in [0:aux.size] do
-    let member := aux[sourceIdx]
-    let auxId := auxIds[sourceIdx]!
-    let seedName := auxSeedNames[sourceIdx]!
-    let (extTy, extCtors, extNParams, extNIndices) ←
-      match (← TcM.getConst member.id) with
-      | .indc (ty := ty) (ctors := ctors) (params := params)
-          (indices := indices) .. => pure (ty, ctors, params, indices)
-      | _ => throw (.other "canonical_aux_order: aux ext is not an inductive")
-    let mut typ ← TcM.instantiateUnivParams extTy member.occurrenceUs
-    for j in [0:extNParams.toNat] do
-      let w ← whnf typ
-      match w with
-      | .all _ _ _ body _ =>
-        if j ≥ member.specParams.size then
-          break
-        typ ← TcM.runIntern (subst body member.specParams[j]! 0)
-      | _ => break
-    typ ← replaceAuxRefsForSort typ aux auxIds blockUs nBlockParams 0
-    typ ← wrapWithBlockParamForalls typ blockParamBinders
-    let mut auxCtorKids : Array (KId m) := Array.mkEmpty extCtors.size
-    for hc : ci in [0:extCtors.size] do
-      let extCtorId := extCtors[ci]
-      let (extCtorTy, extCtorFields) ← match (← TcM.getConst extCtorId) with
-        | .ctor (ty := ty) (fields := fields) .. => pure (ty, fields)
-        | _ => throw (.other "canonical_aux_order: aux ext ctor is not a ctor")
-      let mut ctorTyp ← TcM.instantiateUnivParams extCtorTy member.occurrenceUs
-      for j in [0:extNParams.toNat] do
-        let w ← whnf ctorTyp
-        match w with
-        | .all _ _ _ body _ =>
-          if j ≥ member.specParams.size then
-            break
-          ctorTyp ← TcM.runIntern (subst body member.specParams[j]! 0)
-        | _ => break
-      ctorTyp ← replaceAuxRefsForSort ctorTyp aux auxIds blockUs nBlockParams 0
-      ctorTyp ← wrapWithBlockParamForalls ctorTyp blockParamBinders
-      let mut ch := Blake3.Rust.Hasher.init ()
-      ch := ch.update "AUX_CTOR_VIEW".toUTF8
-      ch := ch.update auxId.addr.hash
-      ch := ch.update extCtorId.addr.hash
-      let auxCtorAddr := Address.mk (ch.finalizeWithLength 32).val
-      let auxCtorKid : KId m := ⟨auxCtorAddr, Mode.field .mkAnon⟩
-      let auxCtor : KConst m := .ctor (Mode.field .mkAnon) Mode.F.mkDefault
-        false blockUs.size.toUInt64 auxId ci.toUInt64 nBlockParams
-        extCtorFields ctorTyp
-      allCtorLookup := allCtorLookup.insert auxCtorAddr auxCtor
-      auxCtorKids := auxCtorKids.push auxCtorKid
-    -- Synthetic trailing "identity marker" ctor carrying the aux's
-    -- nested-occurrence identity (`Ext spec_params`, pre-rewrite: NOT
-    -- passed through `replaceAuxRefsForSort`, or it would become the
-    -- self-reference and lose the distinction). Two nested occurrences
-    -- of one external inductive can instantiate to alpha-identical
-    -- views when the distinguishing spec param is phantom in the
-    -- external's constructors — the marker keeps them in distinct
-    -- classes and orders them by spec-param content, mirroring the
-    -- compile-side marker in `sort_aux_by_partition_refinement` and the
-    -- Rust kernel's `canonical_aux_order`. Omitting it mis-orders (or
-    -- collapses) the aux classes of e.g. `Lean.Json` / `Lean.Doc.Block`
-    -- / `Lean.Elab.InfoTree`, failing block recursor validation.
-    let mut markerTy ← TcM.intern (m := m) (.mkConst member.id member.occurrenceUs)
-    for sp in member.specParams do
-      markerTy ← TcM.intern (KExpr.mkApp markerTy sp)
-    let mut mh := Blake3.Rust.Hasher.init ()
-    mh := mh.update "AUX_MARKER_VIEW".toUTF8
-    mh := mh.update auxId.addr.hash
-    let markerAddr := Address.mk (mh.finalizeWithLength 32).val
-    let markerKid : KId m := ⟨markerAddr, Mode.field .mkAnon⟩
-    let markerCtor : KConst m := .ctor (Mode.field .mkAnon) Mode.F.mkDefault
-      false blockUs.size.toUInt64 auxId auxCtorKids.size.toUInt64 nBlockParams
-      0 markerTy
-    allCtorLookup := allCtorLookup.insert markerAddr markerCtor
-    auxCtorKids := auxCtorKids.push markerKid
-    let auxIndc : KConst m := .indc (Mode.field seedName) Mode.F.mkDefault
-      blockUs.size.toUInt64 nBlockParams extNIndices false syntheticBlock 0
-      typ auxCtorKids Mode.F.mkDefault
-    auxIndcs := auxIndcs.push (auxId, auxIndc)
-  -- Sort with the compiler-shaped seed key.
-  let ctorLookup := allCtorLookup
-  let seedKeys := seedKeyByAddr
-  let classes ← TcM.ofExcept (sortKConstsWithSeedKey
-    (fun cid => ctorLookup[cid.addr]?)
-    (fun id _ => seedKeys[id.addr]?.getD id.addr)
-    auxIndcs)
-  -- Class representative → original index.
-  let mut auxAddrToOrigIdx : Std.HashMap Address Nat := {}
-  for h : i in [0:auxIndcs.size] do
-    auxAddrToOrigIdx := auxAddrToOrigIdx.insert auxIndcs[i].1.addr i
-  let mut perm : Array Nat := Array.mkEmpty classes.size
-  for cls in classes do
-    let some rep := cls[0]?
-      | throw (.other "canonical_aux_order: empty class")
-    let some origIdx := auxAddrToOrigIdx[rep.1.addr]?
-      | throw (.other "canonical_aux_order: synthetic addr not in original index map")
-    perm := perm.push origIdx
-  return perm
 
 /-- Motive type for a flat member:
     `∀ indices (t : I spec/params indices), Sort elim`. Built at depth 0. -/
@@ -2608,21 +2375,9 @@ def prepareGeneratedRecursorBuildInputs (blockId : KId m) :
       TcM.internUniv (m := m) (.mkParam 0 anonN)
     else
       TcM.internUniv (m := m) .mkZero
-  let mut flat ← buildFlatBlock blockInds nParams univOffset
-  let nOriginals := blockInds.size
-  -- Canonicalize the aux portion (compiled envs ship canonical aux order).
-  if (← get).env.recursorAuxOrder == .canonical
-      && flat.size > nOriginals + 1 then
-    let blockUs := flat[0]!.occurrenceUs
-    let all0Name := blockInds[0]? >>= (Mode.get? ·.name)
-    let canonicalOrder ← canonicalAuxOrder (flat.extract nOriginals flat.size)
-      nParams blockUs all0Name blockInds[0]?
-    let auxPart := flat.extract nOriginals flat.size
-    let mut newAux : Array (FlatBlockMember m) :=
-      Array.mkEmpty canonicalOrder.size
-    for origIdx in canonicalOrder do
-      newAux := newAux.push auxPart[origIdx]!
-    flat := flat.extract 0 nOriginals ++ newAux
+  let flat ← buildFlatBlock blockInds nParams univOffset
+  -- The flat block is in discovery order, the canonical order the stored
+  -- recursor block follows (design document §2.5, A2-order): no sort.
   -- Flat ind_infos (aux types from env).
   let mut flatIndInfos :
       Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m) :=
@@ -2695,20 +2450,7 @@ def populateRecursorRulesFromBlockCore (indBlockId recBlockId : KId m)
       | some (.recr (lvls := lvls) ..) => pure (if lvls > indLvls then (1 : UInt64) else 0)
       | _ => pure 0
     | none => pure 0
-  let mut flat ← buildFlatBlock blockInds nParams64 univOffset
-  let nOriginals := blockInds.size
-  if (← get).env.recursorAuxOrder == .canonical
-      && flat.size > nOriginals + 1 then
-    let blockUs := flat[0]!.occurrenceUs
-    let all0Name := blockInds[0]? >>= (Mode.get? ·.name)
-    let canonicalOrder ← canonicalAuxOrder (flat.extract nOriginals flat.size)
-      nParams64 blockUs all0Name blockInds[0]?
-    let auxPart := flat.extract nOriginals flat.size
-    let mut newAux : Array (FlatBlockMember m) :=
-      Array.mkEmpty canonicalOrder.size
-    for origIdx in canonicalOrder do
-      newAux := newAux.push auxPart[origIdx]!
-    flat := flat.extract 0 nOriginals ++ newAux
+  let flat ← buildFlatBlock blockInds nParams64 univOffset
   if flat.size != generatedSnapshot.size then
     throw (.other s!"populate_recursor_rules_from_block: flat/generated length mismatch: flat={flat.size} generated={generatedSnapshot.size}")
   if (generatedSnapshot.zip flat).all

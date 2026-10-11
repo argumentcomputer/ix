@@ -500,7 +500,8 @@ end
 end AuxDedupMixed
 
 -- Cross-SCC ownership of source-indexed auxiliary names
--- (plans/aux-recursor-alias-collision.md, TruthMines handoff repro).
+-- Regression fixtures for the owner/claim checks in `Ix/AuxGen/Patches.lean`
+-- and the registration-conflict check in `Ix/AuxGen/CompileAux.lean`.
 --
 -- Lean hangs every nested-aux name off `InductiveVal.all[0]` of the
 -- ORIGINAL mutual block. When the block splits into SCCs, the spec
@@ -901,8 +902,7 @@ public theorem pa_eq {a b : Nat} (h : Pa a b) : a = b := by
   | nil => rfl
   | cons hpa hpb ihpa ihpb => exact congrArg (· + 1) ihpb
 
--- Call-site shape coverage for the OTHER apply paths (see
--- plans/callsite-adapter-generalization.md §fixture-catalog). All three
+-- Call-site shape coverage for the OTHER apply paths below. All three
 -- are handled by shipped code; they pin the paths a tactic proof never
 -- produces. Telescope order for `@Pb.rec` (all = [Pa, Pb]): motive_1 =
 -- Pa's motive, motive_2 = Pb's; minors refl, zero, nil, cons; indices

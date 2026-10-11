@@ -32,7 +32,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
 | Exact-sharing pricing and tie-break bytes at TagN widths; count threshold θmax (finding 7); telescope-spine guard (finding 9) | done |
 | Canonical construction as the only compiler route in Lean and Rust; heuristic removed | done (§3.2, §8) |
 | Compiler limits as a safety net with a CLI override | done (§8) |
-| Proofs: TagN codec, phase-1 minimality, per-phase specifications, serialized length and wire validity of the output, the compiler's sharing builder over it; fast twins attached by audited `@[csimp]` theorems | done; 111 audit roots in `IxSharingVerify` on Lean 4.34.0 (§4) |
+| Proofs: TagN codec, phase-1 minimality, per-phase specifications, serialized length and wire validity of the output, the compiler's sharing builder over it; fast twins attached by audited `@[csimp]` theorems | done; 113 manifest roots in `IxSharingVerify` at the Lean 4.34.1 source revision (§4) |
 | Version 4, object format 4, `ixon-v4` identifiers; readers reject other versions | done (§6) |
 | Fixtures and pins regenerated through their producers | done, except the FLT benchmark artifact and a new dated aggregate fixture (§6) |
 | `.ixe` caches keyed by the format version | done (§6) |
@@ -200,7 +200,8 @@ table logically.
 Everything below builds in `lake build --wfail IxSharingVerify` (the proofs under
 `IxSharingVerify`), except the TagN and codec theorems, which are in `IxC/Ixon/Verify` and build
 with the certified checker's byte stage (`lake -d IxC build --wfail`). Its trust audit
-(`IxSharingVerify/Audit/Statements.lean`, 111 roots on Lean 4.34.0, among them the TagN roots)
+([`IxSharingVerify/Audit/Statements.lean`](../IxSharingVerify/Audit/Statements.lean),
+113 roots at the Lean 4.34.1 source revision, including the TagN and two host-code roots)
 fixes each root's axioms exactly; `Audit/SorryFrontier.lean` checks that no declaration of an
 `Ix.Sharing` module uses `sorry`; and `Audit/CompiledCode.lean` checks the compiled code (below).
 `lake lint` builds it as well.
@@ -281,22 +282,28 @@ codec, is retired ([kernel](kernel.md), "Removal ledger").
 
 ### 5.1 Index spaces
 
-- **Separate namespaces.** `CallSiteEntry.collapsed sharingIdx` indexes
-  `ConstantMeta.metaSharing`. Both compilers start it at 0 per constant: Lean `buildCallSite`
-  numbers collapsed arguments from the current surgery table, which `takeSurgerySharing` drains
-  into `metaSharing` per constant; Rust `compile.rs` drains its `surgery_sharing` into
-  `meta.meta_sharing` the same way. `callSite.origHead.0` also indexes `metaSharing`.
-- **No offset.** Collapsed and `origHead` indices are never offset by the primary table length.
+- **Separate namespaces.** `ConstantMeta.metaSharing` is its own index space, starting at 0 per
+  constant in both compilers. Pass 3's `_ix.inline` records index it: Lean `pass3CompileRecords`
+  appends each record's compiled source occurrence to the constant's table, which
+  `takeMetaSharing` drains into `metaSharing`; Rust `compile.rs` drains its `meta_sharing`
+  accumulator into `meta.meta_sharing` the same way. In files the call-site surgery wrote (until
+  2026-10-07, when it was deleted from both compilers; its tables were `takeSurgerySharing` and
+  `surgery_sharing`), `CallSiteEntry.collapsed sharingIdx` and `callSite.origHead.0` index it.
+- **No offset.** Record, collapsed and `origHead` indices are never offset by the primary table length.
 - **Kernel ingress ignores it.** `Ix/Tc/IngressMeta.lean` and Rust `crates/kernel/src/ingress.rs`
   do not read `metaSharing`.
 
 ### 5.2 Metadata payloads contain no primary Share references
 
-`metaSharing` entries are raw compiled expressions (Lean `compileExprSurgical`, Rust
-`compile_expr`). Share is produced only by the sharing construction, which runs on the roots
-after metadata is built. Their Ref/univ indices point into the block's primary `refs`/`univs`
-tables, which the construction does not change, so no remapping is needed when the primary table
-changes.
+The current compilers put raw compiled expressions (Lean `compileExprPartial`, Rust
+`compile_expr`) in `metaSharing`. They introduce Share only through the sharing construction
+on primary roots, after metadata is built. Metadata Ref/univ indices may reuse entries in the
+block's primary `refs`/`univs` tables; metadata-only addresses or universes use the constant's
+`metaRefs`/`metaUnivs` extensions, with virtual index `primary table length + extension slot`.
+These Ref/univ index spaces are distinct from the Share index space. The primary sharing
+construction rewrites expression roots and the `sharing` table while retaining the supplied
+`refs`/`univs`, so changing that sharing table does not require a Ref/univ index remap. This
+describes the current writers; the accepted metadata-Share wire format is described in §5.3.
 
 ### 5.3 Metadata `Share`: the extended index space
 
@@ -334,8 +341,8 @@ expanding Shares along the spine (Lean `collectIxonTelescopeExpandingShares`; th
 decompiler and kernel ingress do the same), and eta call sites strip `nSynth` lambdas,
 expanding Shares at each step. Universe patches are keyed by arena index. Root indices
 (`typeRoot`, `valueRoot`, `ruleRoots`) are arena indices. So any change of which subterms are
-shared, or of where a Share cuts a telescope, leaves arena roots, binder data, call-site
-surgery, universe patches and `Named.original` valid, and a metadata-only edit cannot change
+shared, or of where a Share cuts a telescope, leaves arena roots, binder data, Pass 3's
+records (and the surgery's call sites in older files), universe patches and `Named.original` valid, and a metadata-only edit cannot change
 anonymous bytes (metadata is not part of `Constant`).
 
 ## 6. Version, identifiers, fixtures and caches
@@ -518,9 +525,11 @@ encoding (`mss.rs`, test-only) are labelled as test oracles; the compiler path n
 
 Recorded on Lean 4.33.1 at the head of the canonical-sharing change, before it was merged with
 the certified checker. Since then `IxTcVerify` is retired ([kernel](kernel.md), "Removal
-ledger"), and the sharing proofs and their audit are the `IxSharingVerify` library (§4: 111
-roots on Lean 4.34.0, all 19 `@[csimp]` theorems among them, sorry frontier clean for
-`Ix.Sharing`). All passed:
+ledger"), and the sharing proofs and their audit are the `IxSharingVerify` library
+(§4). The subsequent Lean 4.34.0 audit had 111 roots and 19 `@[csimp]` theorems;
+the current manifest has 113 roots, with the two host-code additions described in
+§4. The list below is historical gate evidence, not a fresh run at the current
+compiler revision. All passed at that recorded checkpoint:
 
 - Lean: `lake build --wfail -v`; `lake test --wfail` (primary tier, 3,957 checks); `lake lint --
   --wfail -v`; `lake build IxTcVerify` (audits of 2,034, 1 and 7 roots, sorry frontier clean);

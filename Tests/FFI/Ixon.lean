@@ -586,6 +586,69 @@ def envPackTests : TestSeq :=
   packErrTest "EnvPack: main cannot be assumed"
     (packFixture src "bar" #["bar"])
 
+/-- `ix pack` writes the root's reference closure, never its compilation unit
+    (owner, 2026-10-07; M6R slice 6 removed the whole-unit completion, M1-h's
+    `packWholeUnits` and slice 5's `rsPackEnvUnits`): `f`'s equation lemma
+    `f.eq_1` and Pass 3's canonical constant `f._ix` are members of `f`'s
+    logical unit that `f` does not reference, so `f`'s bundle carries neither;
+    `f._ix`'s bundle carries the constant it references (`g`), never `h`, also
+    anonymously; a declared cut point the walk does not reach is skipped, one
+    it reaches is recorded. (The comparison with Lean's implementation of the
+    closure, `Tests.Ix.Compile.PackParity.packOracle`, is the `pack-units`
+    suite's.) -/
+def envPackClosureTests : TestSeq :=
+  let mk (cs : List String) : Ix.Name := cs.foldl Ix.Name.mkStr Ix.Name.mkAnon
+  let leaf (v : UInt64) (refs : Array Address) : Constant :=
+    { info := .defn { kind := .defn, safety := .safe, lvls := 0,
+                      typ := .var 3, value := if refs.isEmpty then .var v else .ref 0 #[] }
+      sharing := #[], refs := refs, univs := #[] }
+  let gC := leaf 1 #[]
+  let gAddr := Address.blake3 (serConstant gC)
+  let entries : List (List String × Constant) :=
+    [(["f"], leaf 2 #[]), (["f", "eq_1"], leaf 3 #[]), (["f", "_ix"], leaf 4 #[gAddr]),
+     (["g"], gC), (["h"], leaf 5 #[])]
+  let addrOf (cs : List String) : Option Address :=
+    (entries.find? (·.1 == cs)).map fun (_, c) => Address.blake3 (serConstant c)
+  let src : Env := Id.run do
+    let mut env : Env := {}
+    for (cs, c) in entries do
+      let n := mk cs
+      let addr := Address.blake3 (serConstant c)
+      env := env.storeConst addr c
+      let (names, blobs) := RawEnv.addNameComponentsWithBlobs env.names env.blobs n
+      env := { env with names, blobs }
+      let info : ConstantMetaInfo := .defn n.getHash #[] #[n.getHash] #[] {} 0 0
+      env := env.registerName n { addr, constMeta := { info } }
+    return env
+  let carries (b : Env) (cs : List String) : Bool := match addrOf cs with
+    | some a => b.consts.contains a
+    | none => false
+  let closureTest (descr main : String) (anon : Bool) (want : List (List String)) : TestSeq :=
+    .individualIO descr none (do
+      match ← packFixture src main #[] anon with
+      | .error e => pure (false, 0, 0, some e)
+      | .ok b =>
+        let all := [["f"], ["f", "eq_1"], ["f", "_ix"], ["g"], ["h"]]
+        let ok := all.all fun cs => carries b cs == want.contains cs
+        pure (ok, 0, 0, if ok then none else
+          some s!"carried {all.filter (carries b ·)}, expected {want}")) .done
+  closureTest "EnvPack: f's bundle is its reference closure, not its unit" "f" false [["f"]] ++
+  closureTest "EnvPack: a compiler-introduced constant carries its references" "f._ix" false
+    [["f", "_ix"], ["g"]] ++
+  closureTest "EnvPack: the same closure anonymously" "f._ix" true [["f", "_ix"], ["g"]] ++
+  (TestSeq.individualIO "EnvPack: an unreached declared cut point is skipped" none (do
+    match ← packFixture src "f" #["f.eq_1"] with
+    | .error e => pure (false, 0, 0, some e)
+    | .ok b =>
+      let ok := carries b ["f"] && b.assumptions.isEmpty && b.consts.size == 1
+      pure (ok, 0, 0, if ok then none else some "unreached cut point recorded or carried")) .done) ++
+  (TestSeq.individualIO "EnvPack: a reached cut point is recorded" none (do
+    match ← packFixture src "f._ix" #["g"] with
+    | .error e => pure (false, 0, 0, some e)
+    | .ok b =>
+      let ok := !carries b ["g"] && carries b ["f", "_ix"] && b.assumptions.size == 1
+      pure (ok, 0, 0, if ok then none else some "cut point not recorded")) .done)
+
 /-! ## Test Suite -/
 
 def suite : List TestSeq := [
@@ -635,6 +698,7 @@ def suite : List TestSeq := [
     (∀ env : RawEnv, selfDiffEmpty true env),
   ---- Env pack
   envPackTests,
+  envPackClosureTests,
   ---- Universe canonicalization mirror parity (canonicity §10.6, P5).
   -- Exhaustive over all ≤6-node terms (3 params): the property-relevant
   -- shapes — nested imax at depth ≥ 3 — sit outside `genUniv`'s

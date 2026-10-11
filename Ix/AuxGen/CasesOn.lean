@@ -24,6 +24,9 @@
   smart constructors in `Ix.Environment` (`Expr.mkApp`, `Level.mkParam`,
   ...) so the embedded blake3 hashes stay bit-identical with the Rust
   compiler.
+
+  A7 (D8): out-of-range accesses are `internalIndexError`s naming the
+  block (`arrIdx`).
 -/
 module
 public import Ix.Common
@@ -38,7 +41,7 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM)
+open Ix.CompileM (CompileM arrIdx)
 
 /-- Mirrors Rust `mk_pi_unit` (aux_gen/cases_on.rs:29).
 
@@ -126,7 +129,9 @@ def getMinorName (minorIdx : Nat) (targetRangeStart : Nat) (targetInd : Name) :
 
 /-- Mirrors Rust `generate_cases_on` (aux_gen/cases_on.rs:56).
 
-    Generate a `.casesOn` definition from a canonical `.rec`.
+    Generate a `.casesOn` definition from a canonical `.rec`. The output
+    name and target inductive are separate, so a private generated name does
+    not change source lookup or any copied field type.
 
     Returns `none` if the recursor type cannot be decomposed.
 
@@ -136,19 +141,12 @@ def getMinorName (minorIdx : Nat) (targetRangeStart : Nat) (targetInd : Name) :
 
     (Deviation: the Rust `num_*.to_u64()?` big-nat conversions cannot fail
     here — `Ix.RecursorVal` carries native `Nat` counts.) -/
-def generateCasesOn (name : Name) (recVal : RecursorVal) :
+def generateCasesOnPrototype (targetInd : Name) (recVal : RecursorVal) :
     CompileM (Option AuxDef) := do
   let nParams := recVal.numParams
   let nMotives := recVal.numMotives
   let nMinors := recVal.numMinors
   let nIndices := recVal.numIndices
-
-  -- Extract target inductive name from "A.casesOn" → "A"
-  -- (Rust cases_on.rs:67-72).
-  let some targetInd := (match name with
-    | .str parent s _ => if s == "casesOn" then some parent else none
-    | _ => none)
-    | return none
 
   -- Find target index in recVal.all (cases_on.rs:75).
   let some targetIdx := recVal.all.findIdx? (· == targetInd)
@@ -159,10 +157,10 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
     | some (.inductInfo v) => pure v.cnst.levelParams.size
     | _ => return none
   let elimToProp := recVal.cnst.levelParams.size == indNLparams
-  let elimLvl := if elimToProp then
-      Level.mkZero
+  let elimLvl ← if elimToProp then
+      pure Level.mkZero
     else
-      Level.mkParam recVal.cnst.levelParams[0]!
+      Level.mkParam <$> arrIdx recVal.cnst.levelParams 0 "generateCasesOn: levelParams"
 
   -- Count constructors per inductive (cases_on.rs:90-97).
   let mut ctorCounts : Array Nat := #[]
@@ -194,7 +192,7 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
       motiveFvars := motiveFvars.push fv
       afterMotives := instantiate1 body fv
     | _ => pure ()
-  let targetMotiveDecl := allMotiveDecls[targetIdx]!
+  let targetMotiveDecl ← arrIdx allMotiveDecls targetIdx "generateCasesOn: motiveDecls"
 
   -- Open minors (keep FVar-based domains; dummy FVars for instantiation).
   let mut minorDoms : Array Expr := #[]
@@ -352,7 +350,7 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
   -- pushes at most `nMotives` decls.)
   for (motiveDecl, j) in allMotiveDecls.zipIdx do
     if j == targetIdx then
-      val := Expr.mkApp val motiveFvars[targetIdx]!
+      val := Expr.mkApp val (← arrIdx motiveFvars targetIdx "generateCasesOn: motiveFvars")
     else
       -- Build λ (motive_args...), unit_type
       let motiveType := motiveDecl.domain
@@ -378,7 +376,7 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
   let coValue := mkLambda val coDeclsFinal
 
   return some {
-    name
+    name := Name.mkStr targetInd "casesOn"
     levelParams := recVal.cnst.levelParams
     typ := coType
     value := coValue
@@ -387,6 +385,19 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
     -- `mkDefinitionValInferringUnsafe` always infers the same safety as
     -- the inductive.
     isUnsafe := recVal.isUnsafe }
+
+/-- Emission naming is applied after constructing the source-independent
+wrapper body, and cannot rename any source reference inside that body. -/
+def generateCasesOnFor (name targetInd : Name) (recVal : RecursorVal) :
+    CompileM (Option AuxDef) :=
+  (fun result => result.map fun d => { d with name }) <$>
+    generateCasesOnPrototype targetInd recVal
+
+/-- Source-spelling entry retained for decompilation and source recognition. -/
+def generateCasesOn (name : Name) (recVal : RecursorVal) :
+    CompileM (Option AuxDef) := do
+  let .str target "casesOn" _ := name | return none
+  generateCasesOnFor name target recVal
 
 end Ix.AuxGen
 

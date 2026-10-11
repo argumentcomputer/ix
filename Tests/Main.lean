@@ -14,13 +14,54 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.Canon
+import Tests.Ix.Compile.Image
+import Tests.Ix.Compile.AlphaEq
+import Tests.Ix.Compile.MotiveEq
+import Tests.Ix.Compile.SourceIdentity
+import Tests.Ix.Compile.AuxPublication
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
+import Tests.Ix.Compile.AuxCert
+import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.Oracle
+import Tests.Ix.Compile.ScheduleIdentity
+import Tests.Ix.Compile.ClaimConflict
+import Tests.Ix.Compile.ClaimOrder
+import Tests.Ix.Compile.BridgeProvenance
+import Tests.Ix.Compile.BridgeBoundaries
+import Tests.Ix.Compile.BridgeScopes
+import Tests.Ix.Compile.SelectedClosure
+import Tests.Ix.Compile.Transport
+import Tests.Ix.Compile.CliqueOwnership
+import Tests.Ix.Compile.InverseRecursor
+import Tests.Ix.Compile.CliqueDag
+import Tests.Ix.Compile.RewriteRetry
+import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.Pass3RustParity
+import Tests.Ix.Compile.KernelReportTests
+import Tests.Ix.Compile.IndexSafety
+import Tests.Ix.Compile.ValidateLean
+import Tests.Ix.Compile.ValidateLeanNC
+import Tests.Ix.Compile.AdversarialMatrix
+import Tests.Ix.Compile.Pass3Cliques
+import Tests.Ix.Compile.MathlibMeasure
+import Tests.Ix.Compile.O11aDecline
+import Tests.Ix.Compile.PackUnits
+import Tests.Ix.Compile.PlanCache
+import Tests.Ix.Compile.ChangedSet
+import Tests.Ix.Compile.ClosureWhole
+import Tests.Ix.Compile.CallerIndependence
+import Tests.Ix.Compile.DevCensus
+import Tests.Ix.Compile.L2aSyn
+import Tests.Ix.CompileCert.BridgeRoundTrip
+import Tests.Ix.Compile.OptCensus
+import Tests.Ix.CompileCert.PjCensus
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
-import Tests.Ix.AuxGen.SurgeryTests
+import Tests.Ix.AuxGen.AuxSourceTests
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -49,6 +90,7 @@ import Tests.Ix.SourceContract.SyntaxCheck
 import Tests.Ix.SourceContract.Driver
 import Tests.Ix.BenchMeasures
 import Tests.Ix.Tc.Unit
+import Tests.Ix.Tc.CanonicalCheck
 import Tests.Ix.Tc.Substrate
 import Tests.Ix.Tc.IxonFixtures
 import Tests.Ix.Tc.WhnfTests
@@ -77,6 +119,9 @@ import Tests.ShardMap
 import Tests.Ix.EnvBody
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
+import Tests.Ix.CliFlags
+import Tests.Ix.Compile.CanonClique
+import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.CatalogDedup
 import Tests.Ix.CompileDeterminism
 import Tests.Ix.CompileFidelity
@@ -95,6 +140,9 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
+  ("image-alpha-eq", Tests.Ix.Compile.AlphaEq.suite),
+  ("image-motive-eq", Tests.Ix.Compile.MotiveEq.suite),
+  ("aux-source-identity-unit", Tests.Ix.Compile.SourceIdentity.suite),
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),
@@ -107,14 +155,28 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("assumption-tree", Tests.AssumptionTree.suite),
   ("commit", Tests.Commit.suite),
   ("canon", [Tests.CanonM.suite]),
+  -- long flags parse under the names their commands read (`Tests/Ix/CliFlags.lean`)
+  ("cli-flags", Tests.Ix.CliFlags.suite),
+  -- the clique order's pinned choice compares last, Q8 (`Tests/Ix/Compile/CanonClique.lean`)
+  ("canon-clique", Tests.Ix.Compile.CanonClique.suite),
+  -- D14 names the least reserved input name (`Tests/Ix/Compile/ReservedInput.lean`)
+  ("reserved-input", Tests.Ix.Compile.ReservedInput.suite),
+  ("clique-dag", Tests.Ix.Compile.CliqueDag.suite),
+  ("rewrite-retry", Tests.Ix.Compile.RewriteRetry.suite),
   ("keccak", Tests.Keccak.suite),
   ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
   ("exact-sharing-ffi", Tests.SharingExactFFI.suite),
   ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
+  ("compiler-reports", Tests.Ix.Compile.KernelReportTests.suite),
+  ("compiler-index-safety", Tests.Ix.Compile.IndexSafety.suite),
+  ("compiler-provenance", Tests.Ix.Compile.BridgeProvenance.suite),
+  ("compiler-bridge-boundaries", Tests.Ix.Compile.BridgeBoundaries.suite),
+  ("compiler-bridge-scopes", Tests.Ix.Compile.BridgeScopes.suite),
+  ("compiler-selected-closure", Tests.Ix.Compile.SelectedClosure.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
-  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
+  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.AuxSource.suite),
   ("ground-unit", Tests.Ground.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
@@ -130,7 +192,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
     ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
-    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests),
+    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests
+    ++ Tests.Tc.CanonicalCheck.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
@@ -178,6 +241,9 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aux-gen-closure", Tests.Ix.Compile.AuxGenClosure.suite),
   -- aux addresses do not depend on the compile set (closure vs whole env)
   ("canon-closure-aux", Tests.Ix.Compile.AuxGenClosureCanon.suite),
+  -- A0 safety fixtures (collapse refusal, aux existence, single ownership,
+  -- refused fallbacks): both compilers, both kernels, the certified checker
+  ("aux-cert", Tests.Ix.Compile.AuxCert.suite),
 ]
 
 /-- Primary test runners — quick suites run by default alongside
@@ -187,6 +253,9 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
 about 11 s and the rest 2-4 s each (measured 2026-08-05). -/
 def primaryRunners : List (String × IO UInt32) := [
+  -- The pure image generator (Ix.Compile.Image) on the prototype's fifteen sub-cases, with
+  -- Lean's kernel as the oracle (Tests.Ix.Compile.Image).
+  ("image-gen", Tests.Ix.Compile.Image.run),
   ("aiur-rust-syntax", AiurTests.RustSyntax.run),
   -- The circuit TagN codec against the host codec (about 16 s).
   ("ixvm-tagn", Tests.Ix.IxVM.TagN.runSuite),
@@ -322,6 +391,12 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
+  ("aux-source-identity", Tests.Ix.Compile.SourceIdentity.run env),
+  ("aux-publication", Tests.Ix.Compile.AuxPublication.run env),
+  -- Pass 1 (Ix.Compile.Canon) under today's rules against the compiler's
+  -- CondenseM / sortConsts / nested order on the same fixture corpus, and
+  -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
+  ("canon-pass1", Tests.Ix.Compile.Canon.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
@@ -329,6 +404,90 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Accelerated-vs-pure reduction differentials over that same real env
   -- (see Tests.Tc.AccelDiff and TcState.noAccel).
   ("tc-accel-diff", Tests.Tc.AccelDiff.run),
+  -- Phase A gates: twin canonicity against the non-canonical set
+  -- (Tests.Ix.Compile.Twins).
+  ("twins", Tests.Ix.Compile.Twins.run),
+  -- Lean's own auxiliaries on the canonical twin against Ix's regenerated
+  -- ones (Tests.Ix.Compile.Oracle).
+  ("aux-oracle", Tests.Ix.Compile.Oracle.run),
+  -- Byte-identical output under the sequential and wave drivers and the
+  -- compile-lean pipeline at 1, 4, 16 workers (Tests.Ix.Compile.ScheduleIdentity).
+  ("compile-schedule-identity", Tests.Ix.Compile.ScheduleIdentity.run),
+  -- Single ownership of compiled names: the conflicting-claim error in both
+  -- compilers and every Lean schedule (Tests.Ix.Compile.ClaimConflict).
+  ("compile-claim-conflict", Tests.Ix.Compile.ClaimConflict.run),
+  ("compile-claim-order", Tests.Ix.Compile.ClaimOrder.run),
+  ("compiler-selected-closure-e2e", Tests.Ix.Compile.SelectedClosure.run),
+  -- The clique transport `Φ_σ` (Ix.Compile.Clique) against the measured clique twins: the exact
+  -- oracle, the kernel, GuessLex, negative controls (Tests.Ix.Compile.Transport).
+  ("clique-transport", Tests.Ix.Compile.Transport.run),
+  -- Value-sensitive ownership regressions of the clique transport: user values, binders and
+  -- relations shaped like the encoding keep their meaning (Tests.Ix.Compile.CliqueOwnership).
+  ("clique-ownership", Tests.Ix.Compile.CliqueOwnership.run),
+  -- Qualified inverse recursors for phase 9: actual permuted-block neighbour,
+  -- wrong-permutation value/dependent-type controls and collapse exclusion.
+  ("clique-values-inverse", Tests.Ix.Compile.InverseRecursor.run),
+  -- Pass 3, the faithful rewrite (the only mode since M6R slice 6): identity, cones, decompile,
+  -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
+  ("pass3", Tests.Ix.Compile.Pass3.run env),
+  -- M6R: per-address parity of the Rust Pass 3 against the Lean one, every difference a
+  -- defect, and `ix pack` against its Lean oracle (Tests.Ix.Compile.Pass3RustParity).
+  ("pass3-rust-parity", Tests.Ix.Compile.Pass3RustParity.run env),
+  -- `ix validate-lean --local`, the Phase A validator of record, on every fixture
+  -- family, against its verdict table (Tests.Ix.Compile.ValidateLean).
+  ("validate-lean", Tests.Ix.Compile.ValidateLean.run),
+  -- validate-lean on the non-canonical fixtures: every auxiliary that differs from
+  -- Lean's form, the phase that covers it, its match (Tests.Ix.Compile.ValidateLeanNC).
+  ("validate-lean-nc", Tests.Ix.Compile.ValidateLeanNC.run),
+  -- The adversarial matrix (codex plan §9.2): per row a forged artifact refused and a
+  -- valid neighbour accepted by the same checker, or a recorded reason it does not
+  -- apply (Tests.Ix.Compile.AdversarialMatrix).
+  ("adversarial-matrix", Tests.Ix.Compile.AdversarialMatrix.run),
+  -- Changed definition cliques under Pass 3: plans, cones,
+  -- decompile, kernels and the twins against the non-canonical set
+  -- (Tests.Ix.Compile.Pass3Cliques).
+  ("pass3-cliques", Tests.Ix.Compile.Pass3Cliques.run env),
+  -- The Pass 3 library measurement of plan M1 (M1G_PHASE=compile|classify|kernels;
+  -- Tests.Ix.Compile.MathlibMeasure). Measurement only.
+  ("mathlib-measure", Tests.Ix.Compile.MathlibMeasure.run),
+  -- O11a declines with a recorded cause when the size instance is absent from the
+  -- input; the valid neighbour with the instance rewrites (Tests.Ix.Compile.O11aDecline).
+  ("o11a-decline", Tests.Ix.Compile.O11aDecline.run),
+  -- Closure against whole on Init+Std, and whole logical units in every
+  -- selected closure (Tests.Ix.Compile.ClosureWhole).
+  ("compile-closure-whole", Tests.Ix.Compile.ClosureWhole.run),
+  -- A block compiles the same with and without its dependents
+  -- (Tests.Ix.Compile.CallerIndependence).
+  ("compile-caller-independence", Tests.Ix.Compile.CallerIndependence.run),
+  -- `ix pack` carries the root's reference closure, never its unit, byte-identical to the
+  -- Lean oracle; bundle members keep the whole compile's bytes (Tests.Ix.Compile.PackUnits).
+  ("pack-units", Tests.Ix.Compile.PackUnits.run),
+  -- The Pass 3 clique plan table is a memo: the check mode (IX_PASS3_CHECK_PLANS) under
+  -- every driver, coverage, a negative control (Tests.Ix.Compile.PlanCache).
+  ("pass3-plan-cache", Tests.Ix.Compile.PlanCache.run),
+  -- The changed-set record (the output contract): deterministic across worker counts,
+  -- every address in the artifact, coverage of images, transported cliques, `_ix.inline`
+  -- carriers and reserved names, on the pass3 fixtures and Init+Std
+  -- (Tests.Ix.Compile.ChangedSet).
+  ("changed-set", Tests.Ix.Compile.ChangedSet.run env),
+  -- M7 X1: what the development (hereditary substitution) substitutes, on the pass3
+  -- fixtures and Init+Std: depths, levels, value kinds, the core against the executable
+  -- (Tests.Ix.Compile.DevCensus).
+  ("dev-census", Tests.Ix.Compile.DevCensus.run env),
+  -- M7 L2a-syn: `Dom` of the image construction on the pass3 fixtures, the restated
+  -- construction at X1's core against the executable, and the fuel family of D-L2S-1
+  -- (Tests.Ix.Compile.L2aSyn).
+  ("l2a-syn", Tests.Ix.Compile.L2aSyn.run env),
+  -- M7 X2: the bridge round trip: the compiler's terms through the bridge against the lane's
+  -- export and the certified reader's entries on the fixtures, against the lane's source export
+  -- on Init+Std, with a moved name map and shifted levels refused (Tests.Ix.CompileCert.BridgeRoundTrip).
+  ("bridge-roundtrip", Tests.Ix.CompileCert.BridgeRoundTrip.run),
+  -- M7 L3-def: the definitional passes' core rewrite against the executable, the shapes'
+  -- bounds, the Def 3.5 bodies and the passes' coverage on the pass3 fixtures
+  -- (Tests.Ix.Compile.OptCensus).
+  ("opt-census", Tests.Ix.Compile.OptCensus.run env),
+  -- Canonical recursors for every O7–O12 firing fixture, through certified admission.
+  ("pj-census", Tests.Ix.CompileCert.PjCensus.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
@@ -435,3 +594,4 @@ def main (args : List String) : IO UInt32 := do
     return result
   else
     return 0
+

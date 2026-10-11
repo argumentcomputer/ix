@@ -142,13 +142,10 @@ pub(super) fn collect_lean_source_name_hints(
   out: &mut FxHashMap<ix_kernel::env::Addr, LeanExpr>,
 ) {
   if source_name_hint_candidate(source) && !expr_has_bvar(source) {
-    let key = kexpr_content_key(&to_kexpr_static(
-      source,
-      fvar_levels,
-      depth,
-      param_names,
-      stt,
-    ));
+    let key = kexpr_content_key(
+      &to_kexpr_static(source, fvar_levels, depth, param_names, stt)
+        .expect("reference fixtures convert"),
+    );
     out.entry(key).or_insert_with(|| source.clone());
   }
 
@@ -251,13 +248,10 @@ pub(super) fn restore_lean_source_name_hints(
   hints: &FxHashMap<ix_kernel::env::Addr, LeanExpr>,
 ) -> LeanExpr {
   if source_name_hint_candidate(generated) && !expr_has_bvar(generated) {
-    let key = kexpr_content_key(&to_kexpr_static(
-      generated,
-      fvar_levels,
-      depth,
-      param_names,
-      stt,
-    ));
+    let key = kexpr_content_key(
+      &to_kexpr_static(generated, fvar_levels, depth, param_names, stt)
+        .expect("reference fixtures convert"),
+    );
     if let Some(source) = hints.get(&key) {
       return source.clone();
     }
