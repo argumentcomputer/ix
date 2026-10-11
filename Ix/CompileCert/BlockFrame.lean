@@ -11,11 +11,6 @@ namespace Ix.CompileCert.HeadWriterFrame
 
 open Ix Ix.CompileM
 
-theorem Frame.discard {action : CompileM α} (framed : Frame action) : Frame (discard action) := by
-  unfold Functor.discard
-  simpa only [map_const, Function.comp_apply] using
-    Frame.map framed (fun _ => PUnit.unit)
-
 theorem Frame.collectExprTableUnivs (levels : List Level) (univs : Array Ixon.Univ) :
     Frame (collectExprTableUnivs levels univs) := by
   induction levels generalizing univs with

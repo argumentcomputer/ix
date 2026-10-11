@@ -23,6 +23,7 @@ import Ix.CompileCert.ExpressionFrame
 import Ix.CompileCert.ExpressionCache
 import Ix.CompileCert.ExpressionCacheRun
 import Ix.CompileCert.ExpressionRead
+import Ix.CompileCert.Interning
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2353,6 +2354,46 @@ def expressionMeaningRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionMeaningRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Index integrity, old-reader preservation and cache validity for executed
+table operations, with capacity checks supplying the insertion bounds. -/
+def interningRoots : Array Lean.Name :=
+  (#[`Retains.refl, `Retains.push, `Retains.map, `Retains.append_right,
+    `IndexSound.empty, `IndexSound.insert, `univ_beq_iff, `lawfulUnivKeys,
+    `refIndexSound_empty, `internRef_retains, `internRef_lookup, `internRef_sound,
+    `internRef_limit_wraps, `rawRun_modifyGet, `checkedTableIndex_state, `checkedTableIndex_value,
+    `internRef_primary_hit, `internRef_primary_miss, `internRef_primary_correct,
+    `blockReader_growth, `internRef_primary_reading, `internRefMeta_primary_hit,
+    `internRefMeta_extension_hit, `internRefMeta_miss, `internRefMeta_correct,
+    `internRefMeta_reading, `internRef_meta_run, `internRef_reading, `internRef_cache,
+    `internRef_cache_sound, `internUniv_lookup, `internUniv_sound, `internUniv_hit,
+    `internUniv_miss, `internUniv_correct, `add_index_eq, `internMetaUniv_hit,
+    `internMetaUniv_miss, `internMetaUniv_correct, `internUniv_primary_reading,
+    `internMetaUniv_reading, `internUniv_cache, `internMetaUniv_cache,
+    `internUniv_cache_sound, `internMetaUniv_cache_sound].map (`Ix.CompileCert.Interning ++ ·)) ++
+    #[``Ix.CompileCert.HeadWriterFrame.Frame.checkedTableIndex,
+      ``Ix.CompileCert.HeadWriterFrame.Frame.discard]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.interningRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[`checkedTableIndex, `internRef, `internRefMeta, `internUniv,
+      `internMetaUniv, `BlockState.internRef, `BlockState.internUniv,
+      `BlockState.internMetaUniv].map (`Ix.CompileM ++ ·) do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"table interner has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"table interner is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"table interner is not kernel-visible and total: {name}"
+  logInfo "[cert-audit] table interners: checked wire indices and executed definitions"
 
 run_cmd do
   let env ← getEnv

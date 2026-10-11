@@ -463,6 +463,13 @@ def getBlockEnv : CompileM BlockEnv := do
 def getBlockState : CompileM BlockState := do
   get
 
+/-- Refuse an unrepresentable table index before converting to the wire's
+UInt64. In particular, virtual indices are checked after adding their natural
+offsets, before any truncation or machine-word addition. -/
+def checkedTableIndex (table : String) (index : Nat) : CompileM UInt64 :=
+  if index < UInt64.size then pure index.toUInt64
+  else throw (.resourceLimit s!"{table} table index {index} exceeds the Ixon UInt64 range")
+
 /-- A7 (D8): the named error of an out-of-range access in the compiler. It
     names the block (`BlockEnv.current`) and the site; the drivers record it
     for every member of the block, like any other block failure. -/
@@ -599,7 +606,12 @@ def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
 termination_by lvl
 
 /-- Intern a universe into the block's univs table, returning its index. -/
-def internUniv (u : Ixon.Univ) : CompileM UInt64 :=
+def internUniv (u : Ixon.Univ) : CompileM UInt64 := do
+  -- A full table may still serve an existing slot. The usual path only
+  -- checks its size; it does not repeat the map lookup.
+  if (← getBlockState).univs.size ≥ UInt64.size then
+    if !(← getBlockState).univsIndex.contains u then
+      discard <| checkedTableIndex "universe" (← getBlockState).univs.size
   modifyGetBlockState fun state =>
     let (state', idx) := state.internUniv u
     (idx, state')
@@ -627,7 +639,12 @@ def BlockState.internMetaUniv (state : BlockState)
                   metaUnivsIndex := state.metaUnivsIndex.insert raw k },
       state.univs.size.toUInt64 + k)
 
-def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 :=
+def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 := do
+  let state ← getBlockState
+  let offset := match state.metaUnivsIndex.get? raw with
+    | some index => index.toNat
+    | none => state.metaUnivs.size
+  discard <| checkedTableIndex "metadata universe" (state.univs.size + offset)
   modifyGetBlockState fun st =>
     let (st', idx) := st.internMetaUniv raw
     (idx, st')
@@ -685,19 +702,23 @@ def internRefMeta (addr : Address) : CompileM UInt64 := do
     -- The primary table is preseed-final here (preseeding walks the
     -- rewritten terms, which are all that the constant's bytes contain).
     match st.p3MetaRefsIndex.get? addr with
-    | some j => return st.refs.size.toUInt64 + j
+    | some j => checkedTableIndex "metadata reference" (st.refs.size + j.toNat)
     | none =>
+      let index ← checkedTableIndex "metadata reference" (st.refs.size + st.p3MetaRefs.size)
       let j := st.p3MetaRefs.size.toUInt64
       modifyBlockState fun c => { c with
         p3MetaRefs := c.p3MetaRefs.push addr
         p3MetaRefsIndex := c.p3MetaRefsIndex.insert addr j }
-      return st.refs.size.toUInt64 + j
+      return index
 
 /-- Intern an address into the block's refs table, returning its index.
-    (The state is read only for the mode flag, so the update below stays in
-    place: no reference to the old state is alive.) -/
+    Read the mode and capacity before the update without retaining the old
+    state in the update closure. -/
 def internRef (addr : Address) : CompileM UInt64 := do
   if (← getBlockState).p3MetaMode then return ← internRefMeta addr
+  if (← getBlockState).refs.size ≥ UInt64.size then
+    if !(← getBlockState).refsIndex.contains addr then
+      discard <| checkedTableIndex "reference" (← getBlockState).refs.size
   modifyGetBlockState fun state =>
     let (state', idx) := state.internRef addr
     (idx, state')

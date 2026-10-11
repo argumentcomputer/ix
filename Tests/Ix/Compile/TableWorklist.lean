@@ -19,6 +19,11 @@ private def initial : BlockState := { p3Heads := retained }
 private def raw (action : CompileM α) (state : BlockState := initial) :
     Except CompileError α × BlockState := (action context).run state
 
+private def resourceFailure (result : Except CompileError α) : Bool :=
+  match result with
+  | .error (.resourceLimit _) => true
+  | _ => false
+
 def controls : List (String × Bool) := Id.run do
   let key := univParamsKey []
   let mut shared := Expr.mkBVar 0
@@ -61,6 +66,23 @@ def controls : List (String × Bool) := Id.run do
     refs := #[primary], refsIndex := ({} : Std.HashMap Address UInt64).insert primary 0,
     p3MetaMode := true }
   let (metadata, metadataAfter) := raw (preseedExprTables #[(literal, [])]) metadataState
+  let largest := UInt64.size - 1
+  let (zeroIndex, _) := raw (checkedTableIndex "control" 0)
+  let (lastIndex, _) := raw (checkedTableIndex "control" largest)
+  let (tooLarge, tooLargeState) := raw (checkedTableIndex "control" UInt64.size)
+  let (largerStill, _) := raw (checkedTableIndex "control" (UInt64.size + 1))
+  let goodMeta : BlockState := { metadataState with
+    p3MetaRefs := #[literalAddress],
+    p3MetaRefsIndex := ({} : Std.HashMap Address UInt64).insert literalAddress 0,
+    univs := #[.zero], metaUnivs := #[.succ .zero],
+    metaUnivsIndex := ({} : Std.HashMap Ixon.Univ UInt64).insert (.succ .zero) 0 }
+  let badMeta := { goodMeta with
+    p3MetaRefsIndex := goodMeta.p3MetaRefsIndex.insert literalAddress largest.toUInt64,
+    metaUnivsIndex := goodMeta.metaUnivsIndex.insert (.succ .zero) largest.toUInt64 }
+  let (goodRef, goodRefAfter) := raw (internRef literalAddress) goodMeta
+  let (badRef, badRefAfter) := raw (internRef literalAddress) badMeta
+  let (goodUniv, goodUnivAfter) := raw (internMetaUniv (.succ .zero)) goodMeta
+  let (badUniv, badUnivAfter) := raw (internMetaUniv (.succ .zero)) badMeta
   return [
     ("shared DAG collector has no tree-size prepass", match sharedResult with
       | .ok (refs, univs, seen) => refs.isEmpty && univs.isEmpty && seen.size == 65
@@ -85,6 +107,24 @@ def controls : List (String × Bool) := Id.run do
       levelState.univCache.get? Level.mkZero == some .zero),
     ("metadata-mode intern tables stay separate", metadata.isOk && metadataAfter.refs == #[primary] &&
       metadataAfter.p3MetaRefs == #[literalAddress] && metadataAfter.univsFinal),
+    ("checked indices accept zero and the last wire slot",
+      zeroIndex.toOption == some 0 && lastIndex.toOption == some largest.toUInt64),
+    ("checked indices reject overflow without changing claims",
+      resourceFailure tooLarge && resourceFailure largerStill && tooLargeState.p3Heads == retained),
+    ("virtual reference hit retains its intended slot",
+      goodRef.toOption == some 1 && goodRefAfter.refs == #[primary] &&
+        goodRefAfter.p3MetaRefs == #[literalAddress]),
+    ("overflowing virtual reference cannot wrap to the primary slot",
+      resourceFailure badRef && badRefAfter.refs == badMeta.refs &&
+        badRefAfter.p3MetaRefs == badMeta.p3MetaRefs &&
+        badRefAfter.p3MetaRefsIndex.get? literalAddress == some largest.toUInt64),
+    ("virtual universe hit retains its intended slot",
+      goodUniv.toOption == some 1 && goodUnivAfter.univs == #[.zero] &&
+        goodUnivAfter.metaUnivs == #[.succ .zero]),
+    ("overflowing virtual universe cannot wrap to the primary slot",
+      resourceFailure badUniv && badUnivAfter.univs == badMeta.univs &&
+        badUnivAfter.metaUnivs == badMeta.metaUnivs &&
+        badUnivAfter.metaUnivsIndex.get? (.succ .zero) == some largest.toUInt64),
     ("all table paths preserve prior head claims",
       [sharedState, sharedSeedState, deepState, wideState, positionalState, failed, warmState, levelState, metadataAfter].all
         (·.p3Heads == retained))

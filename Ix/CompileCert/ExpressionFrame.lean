@@ -21,6 +21,17 @@ theorem Frame.allocArenaNode (node : Ixon.ExprMetaData) : Frame (allocArenaNode 
 theorem Frame.pushUnivPatch (root : UInt64) (univs : Array UInt64) :
     Frame (pushUnivPatch root univs) := Frame.modify _ (fun _ => rfl)
 
+theorem Frame.checkedTableIndex (table : String) (index : Nat) :
+    Frame (checkedTableIndex table index) := by
+  unfold Ix.CompileM.checkedTableIndex
+  split
+  · exact Frame.pure _
+  · exact Frame.throw _
+
+theorem Frame.discard {action : CompileM α} (framed : Frame action) : Frame (Functor.discard action) := by
+  unfold Functor.discard
+  exact Frame.map framed (fun _ => ())
+
 theorem Frame.compileUniv (level : Level) : Frame (compileUniv level) := by
   induction level <;> rw [Ix.CompileM.compileUniv]
   all_goals
@@ -37,12 +48,28 @@ theorem Frame.compileUniv (level : Level) : Frame (compileUniv level) := by
       | split
 
 theorem Frame.internUniv (univ : Ixon.Univ) : Frame (internUniv univ) := by
-  apply Frame.modifyGet
-  intro state
-  simp only [BlockState.internUniv]
-  split <;> rfl
+  unfold Ix.CompileM.internUniv
+  with_reducible repeat' first
+    | exact Frame.get
+    | exact Frame.pure _
+    | exact Frame.checkedTableIndex _ _
+    | exact Frame.discard (Frame.checkedTableIndex _ _)
+    | refine Frame.bind ?_ (fun _ => ?_)
+    | dsimp only
+    | split
+  all_goals
+    apply Frame.modifyGet
+    intro state
+    simp only [BlockState.internUniv]
+    split <;> rfl
 
 theorem Frame.internMetaUniv (univ : Ixon.Univ) : Frame (internMetaUniv univ) := by
+  unfold Ix.CompileM.internMetaUniv
+  apply Frame.bind Frame.get
+  intro state
+  dsimp only
+  apply Frame.bind (Frame.discard (Frame.checkedTableIndex _ _))
+  intro _
   apply Frame.modifyGet
   intro state
   simp only [BlockState.internMetaUniv]
@@ -75,6 +102,7 @@ theorem Frame.internRefMeta (address : Address) : Frame (internRefMeta address) 
   with_reducible repeat' first
     | exact Frame.pure _
     | exact Frame.get
+    | exact Frame.checkedTableIndex _ _
     | refine Frame.bind ?_ (fun value => ?_)
     | apply Frame.modify; intro _; rfl
     | dsimp only
@@ -86,10 +114,19 @@ theorem Frame.internRef (address : Address) : Frame (internRef address) := by
   intro state
   split
   · exact Frame.internRefMeta _
-  · apply Frame.modifyGet
-    intro state
-    simp only [BlockState.internRef]
-    split <;> rfl
+  · with_reducible repeat' first
+      | exact Frame.get
+      | exact Frame.pure _
+      | exact Frame.checkedTableIndex _ _
+      | exact Frame.discard (Frame.checkedTableIndex _ _)
+      | refine Frame.bind ?_ (fun _ => ?_)
+      | dsimp only
+      | split
+    all_goals
+      apply Frame.modifyGet
+      intro nextState
+      simp only [BlockState.internRef]
+      split <;> rfl
 
 theorem Frame.lookupConstAddr (name : Name) : Frame (lookupConstAddr name) := by
   unfold Ix.CompileM.lookupConstAddr
