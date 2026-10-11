@@ -855,6 +855,13 @@ declarations over the rewritten heads. That is the baseline. Lean's
 `IndPredBelow` family also compiles as its own source block; the canonical family
 has display names. It is not silently identified with a different inductive type.
 
+Prop `below` generation uses the recursor's minor premises for both ordinary
+and nested blocks. Each motive-typed induction hypothesis receives its
+corresponding `below` proof. This preserves recursive fields hidden behind
+reducible aliases, including aliases of function telescopes; classifying only
+the raw constructor field's head missed those hypotheses. The single builder
+also keeps `below` and `brecOn` on the same recursor interface.
+
 The implementation is [Pass/Driver](../Ix/Compile/Pass/Driver.lean). A baseline
 can be faithful while retaining source grouping. A proof-justified pass may add
 a separate canonical form without replacing that baseline under the Lean name.

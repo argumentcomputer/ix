@@ -10,8 +10,8 @@
 
 use crate::compile::nat_conv::{nat_to_usize, try_nat_to_usize};
 use ix_common::env::{
-  BinderInfo, ConstantInfo, ConstructorVal, Env as LeanEnv, Expr as LeanExpr,
-  ExprData, InductiveVal, Level, LevelData, Name, RecursorVal,
+  BinderInfo, ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData,
+  InductiveVal, Level, LevelData, Name, RecursorVal,
 };
 use ixon::CompileError;
 
@@ -178,10 +178,10 @@ pub fn generate_below_constants_named(
     return Ok(vec![]);
   }
 
-  // A Prop-level block with nested auxiliaries: the `.below` family has one
-  // inductive per motive (the classes' and each auxiliary's), built from the
-  // recursor's minor premises.
-  if is_prop && canonical_recs.len() > n_classes {
+  // Every Prop `.below` family follows the recursor's minor premises.
+  // Reclassifying raw constructor fields misses recursion hidden behind
+  // reducible aliases, while brecOn still consumes the recursor's IHs.
+  if is_prop {
     return Ok(
       build_prop_below_family(sorted_classes, canonical_recs, lean_env, names)?
         .into_iter()
@@ -211,36 +211,19 @@ pub fn generate_below_constants_named(
       Name::str(ind.cnst.name.clone(), "below".to_string());
     let below_name = names.member(&ind.cnst.name, "below");
 
-    if !is_prop {
-      // Type-level: generate definition (BRecOn.lean path)
-      let mut def = build_below_def(
-        &below_name,
-        rec_val,
-        ind,
-        lean_env,
-        n_classes,
-        canonical_recs,
-        stt,
-        kctx,
-      )?;
-      def.source_name = source_below_name;
-      results.push(BelowConstant::Def(def));
-    } else {
-      // Prop-level: generate .below inductive (IndPredBelow.lean path)
-      let indc = build_below_indc(
-        ci,
-        &below_name,
-        rec_val,
-        ind,
-        lean_env,
-        n_classes,
-        sorted_classes,
-        canonical_recs,
-        names,
-        &source_below_name,
-      )?;
-      results.push(BelowConstant::Indc(indc));
-    }
+    // Prop families returned above; Type-level below is a definition.
+    let mut def = build_below_def(
+      &below_name,
+      rec_val,
+      ind,
+      lean_env,
+      n_classes,
+      canonical_recs,
+      stt,
+      kctx,
+    )?;
+    def.source_name = source_below_name;
+    results.push(BelowConstant::Def(def));
   }
 
   // Generate .below_N for nested auxiliary members (Type-level; the
@@ -668,139 +651,8 @@ fn count_foralls_expr(expr: &LeanExpr) -> usize {
   }
 }
 
-/// Build a Prop-level `.below` inductive.
-///
-/// For a Prop inductive `I_i` with constructor `C : ∀ params fields, I_i params`,
-/// the `.below` inductive has:
-/// - Type: `∀ {params} {motives} (major : I_i params), Prop`
-/// - One ctor per parent ctor, with IH fields expanded to include `.below` proofs.
-///
-/// Follows `IndPredBelow.lean:83-120`.
-#[allow(clippy::too_many_arguments)]
-fn build_below_indc(
-  ci: usize,
-  below_name: &Name,
-  rec_val: &RecursorVal,
-  ind: &InductiveVal,
-  lean_env: &LeanEnv,
-  n_classes: usize,
-  sorted_classes: &[Vec<Name>],
-  _canonical_recs: &[(Name, RecursorVal)],
-  names: &super::names::AuxNames,
-  source_below_name: &Name,
-) -> Result<BelowIndc, CompileError> {
-  let n_params = try_nat_to_usize(&rec_val.num_params)?;
-  let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
-  let _n_minors = try_nat_to_usize(&rec_val.num_minors)?;
-  let n_indices = try_nat_to_usize(&ind.num_indices)?;
-  let below_n_params = n_params + n_motives;
-  let ind_level_params = &ind.cnst.level_params;
-
-  // Build .below names for all classes (needed for ihTypeToBelowType)
-  let below_names: Vec<Name> = (0..n_classes)
-    .map(|j| {
-      let rep = &sorted_classes[j][0];
-      names.member(rep, "below")
-    })
-    .collect();
-
-  // .below type: ∀ {params} {motives} (major : I_i params indices), Prop
-  // Build from the recursor type: take params + motives, skip minors,
-  // take indices + major, return Prop.
-  let below_type = build_below_indc_type(rec_val, ind);
-
-  // Build constructors: one per parent ctor for class ci
-  let mut ctors = Vec::new();
-
-  // Walk rec type to find the minors for this class.
-  // The minors in the rec type correspond to constructors.
-  // We need to identify which minors belong to class ci.
-  let mut _global_minor_idx = 0usize;
-  for class_idx in 0..n_classes {
-    let class_rep = &sorted_classes[class_idx][0];
-    let class_ind_ref = lean_env.get(class_rep);
-    let class_ind = match class_ind_ref.as_deref() {
-      Some(ConstantInfo::InductInfo(v)) => v,
-      _ => {
-        return Err(CompileError::MissingConstant {
-          name: class_rep.pretty(),
-          caller: format!(
-            "build_below_indc: class {} rep not an inductive",
-            class_idx
-          ),
-        });
-      },
-    };
-
-    for ctor_name in &class_ind.ctors {
-      if class_idx == ci {
-        // This ctor belongs to our class — build a .below ctor for it
-        let ctor_ref = lean_env.get(ctor_name);
-        let ctor = match ctor_ref.as_deref() {
-          Some(ConstantInfo::CtorInfo(c)) => c,
-          _ => {
-            return Err(CompileError::MissingConstant {
-              name: ctor_name.pretty(),
-              caller: "build_below_indc: constructor not found".into(),
-            });
-          },
-        };
-
-        let below_ctor = build_below_indc_ctor(
-          below_name,
-          ctor_name,
-          ctor,
-          rec_val,
-          ind,
-          ci,
-          n_params,
-          n_motives,
-          n_classes,
-          &below_names,
-          sorted_classes,
-          lean_env,
-          source_below_name,
-        );
-        ctors.push(below_ctor);
-      }
-      _global_minor_idx += 1;
-    }
-  }
-
-  Ok(BelowIndc {
-    name: below_name.clone(),
-    source_name: source_below_name.clone(),
-    level_params: ind_level_params.clone(), // .below has same level params as parent (no elim level for Prop)
-    n_params: below_n_params,
-    n_indices: n_indices + 1, // original indices + major premise
-    // `.below` inherits reflexivity from the parent: any higher-order
-    // recursive field in the parent (the defining trait of a reflexive
-    // inductive) produces a higher-order `.below` IH field.
-    is_reflexive: ind.is_reflexive,
-    // Prop-level `.below` is an inductive whose constructors mirror the
-    // parent's. Lean's `IndPredBelow` inherits the parent inductive's
-    // safety (`env.hasUnsafe` fires via the parent's ctor types).
-    is_unsafe: ind.is_unsafe,
-    typ: below_type,
-    ctors,
-  })
-}
-
-/// Build the type of a Prop-level `.below` inductive.
-///
-/// Type: `∀ {params} {motives} (indices) (major : I params indices), Prop`
-///
-/// Uses FVar-based construction: opens all rec type binders, skips minors,
-/// adjusts motive domains to target Prop, re-closes with `mk_forall`.
-fn build_below_indc_type(
-  rec_val: &RecursorVal,
-  ind: &InductiveVal,
-) -> LeanExpr {
-  build_below_indc_type_n(rec_val, nat_to_usize(&ind.num_indices))
-}
-
-/// [`build_below_indc_type`] for a recursor whose major has `n_indices`
-/// indices (a nested auxiliary's recursor targets the external inductive).
+/// Prop `.below` type for a recursor whose major has `n_indices` indices.
+/// A nested auxiliary's recursor targets its external inductive.
 fn build_below_indc_type_n(
   rec_val: &RecursorVal,
   n_indices: usize,
@@ -851,254 +703,8 @@ fn build_below_indc_type_n(
   mk_forall(LeanExpr::sort(Level::zero()), &all_decls)
 }
 
-/// Build a constructor for a Prop-level `.below` inductive.
-///
-/// For parent ctor `C : ∀ params fields, I params`:
-/// The `.below` ctor has: `∀ params motives (expanded_fields), I.below motives (C params orig_fields)`
-///
-/// For each field in the parent ctor:
-/// - Non-recursive field: keep as-is
-/// - Recursive field (head is inductive in block): expand to TWO extra fields:
-///   1. `ih : Target_j.below motives args` (below proof)
-///   2. `f_ih : motive_j args` (motive proof)
-///
-/// Uses FVar-based construction: opens all binders into FVars, builds
-/// domains using FVar references, closes with `mk_forall`.
-#[allow(clippy::too_many_arguments)]
-fn build_below_indc_ctor(
-  below_name: &Name,
-  ctor_name: &Name,
-  ctor: &ConstructorVal,
-  rec_val: &RecursorVal,
-  ind: &InductiveVal,
-  _ci: usize,
-  n_params: usize,
-  n_motives: usize,
-  n_classes: usize,
-  below_names: &[Name],
-  sorted_classes: &[Vec<Name>],
-  lean_env: &LeanEnv,
-  source_below_name: &Name,
-) -> BelowCtor {
-  let ctor_suffix = ctor_name
-    .strip_prefix(&ind.cnst.name)
-    .unwrap_or_else(|| ctor_name.components());
-  let below_ctor_name = below_name.append_components(&ctor_suffix);
-
-  let n_ctor_params = nat_to_usize(&ctor.num_params);
-  let n_ctor_fields = nat_to_usize(&ctor.num_fields);
-  let ind_level_params = &ind.cnst.level_params;
-
-  // Extract original field binder names from the Lean-generated `.below` ctor
-  // for faithful roundtrip of hygiene names.
-  let orig_below_ctor_name = source_below_name.append_components(&ctor_suffix);
-  let orig_field_names: Vec<Name> = lean_env
-    .get(&orig_below_ctor_name)
-    .and_then(|ci| match &*ci {
-      ConstantInfo::CtorInfo(cv) => {
-        let mut names = Vec::new();
-        let mut ty = cv.cnst.typ.clone();
-        let skip = nat_to_usize(&cv.num_params);
-        for _ in 0..skip {
-          if let ExprData::ForallE(_, _, body, _, _) = ty.as_data() {
-            ty = body.clone();
-          }
-        }
-        while let ExprData::ForallE(name, _, body, _, _) = ty.as_data() {
-          names.push(name.clone());
-          ty = body.clone();
-        }
-        Some(names)
-      },
-      _ => None,
-    })
-    .unwrap_or_default();
-  let mut orig_name_iter = orig_field_names.into_iter();
-
-  // --- Phase 1: Open ctor type into FVars ---
-
-  // Open params from ctor type
-  let (param_fvars, param_decls, after_params) =
-    forall_telescope(&ctor.cnst.typ, n_ctor_params, "bicp", 0);
-
-  // Open fields from ctor type (after params). Domains now reference param FVars.
-  // ctor_return is the constructor's return type (e.g., `I params indices`) in FVar form.
-  let (field_fvars, field_decls, ctor_return) =
-    forall_telescope(&after_params, n_ctor_fields, "bicf", 0);
-
-  // --- Phase 2: Create motive FVars from rec type ---
-  // Peel rec type params by substituting with the ctor's param FVars (bicp_*).
-  // This ensures motive domains reference the same FVars as param_decls,
-  // so mk_forall can abstract them correctly.
-  let mut rec_after_params = rec_val.cnst.typ.clone();
-  for pf in &param_fvars {
-    if let ExprData::ForallE(_, _, body, _, _) = rec_after_params.as_data() {
-      rec_after_params = instantiate1(body, pf);
-    }
-  }
-  let mut motive_fvars: Vec<LeanExpr> = Vec::new();
-  let mut motive_decls: Vec<LocalDecl> = Vec::new();
-  {
-    let mut rec_cur = rec_after_params.clone();
-    for mi in 0..n_motives {
-      if let ExprData::ForallE(name, dom, body, _, _) = rec_cur.as_data() {
-        let dom = replace_result_sort_with_prop(dom);
-        let (fv_name, fv) = fresh_fvar("bicm", mi);
-        motive_decls.push(LocalDecl {
-          fvar_name: fv_name,
-          binder_name: name.clone(),
-          domain: dom,
-          info: BinderInfo::Implicit,
-        });
-        motive_fvars.push(fv.clone());
-        rec_cur = instantiate1(body, &fv);
-      }
-    }
-  }
-
-  // --- Phase 3: Detect recursive fields and build expanded binders ---
-
-  // Maps from inductive name → class index for recursive field detection.
-  let all_ind_names: Vec<(Name, usize)> = (0..n_classes)
-    .flat_map(|j| {
-      sorted_classes[j].iter().filter_map(move |name| {
-        lean_env.get(name).map(|ci| match &*ci {
-          ConstantInfo::InductInfo(v) => (v.cnst.name.clone(), j),
-          _ => (name.clone(), j),
-        })
-      })
-    })
-    .collect();
-
-  // Classify fields as recursive or not. Field domains are in FVar form
-  // (param FVars substituted), so detect_rec_target_class works on Const heads.
-  struct FieldEntry {
-    decl: LocalDecl,
-    fvar: LeanExpr,
-    rec_target: Option<usize>,
-  }
-
-  let fields: Vec<FieldEntry> = field_decls
-    .into_iter()
-    .zip(field_fvars.iter().cloned())
-    .map(|(decl, fvar)| {
-      let rec_target = detect_rec_target_class(&decl.domain, &all_ind_names);
-      FieldEntry { decl, fvar, rec_target }
-    })
-    .collect();
-
-  // Build the expanded binder list following Lean's IndPredBelow ordering
-  // (IndPredBelow.lean:99-113).
-  //
-  // Lean processes the recursor MINOR premise, which places ALL constructor
-  // fields first, then ALL IH fields. IndPredBelow iterates the minor args
-  // in order: non-IH args (constructor fields) are pushed as-is, then IH
-  // args (motive-typed) get (below, motive) pairs inserted.
-  //
-  // Since we work from the constructor (not the minor), we replicate this
-  // with two passes:
-  //   Pass 1: push ALL original fields
-  //   Pass 2: for each recursive field, push (ih_below, motive_proof)
-  let mut expanded_decls: Vec<LocalDecl> = Vec::new();
-  let mut orig_field_fvars: Vec<LeanExpr> = Vec::new(); // FVars for original fields
-
-  // Pass 1: Push all original fields
-  for field in &fields {
-    let orig_name =
-      orig_name_iter.next().unwrap_or_else(|| field.decl.binder_name.clone());
-    expanded_decls
-      .push(LocalDecl { binder_name: orig_name, ..field.decl.clone() });
-    orig_field_fvars.push(field.fvar.clone());
-  }
-
-  // Pass 2: For each recursive field, push (ih_below, motive_proof)
-  for field in &fields {
-    if let Some(target_j) = field.rec_target {
-      // ih: Target_j.below params motives field_fvar
-      // The field domain is `I_j args` in FVar form. We need to build
-      // `I_j.below params motives args field_fvar`.
-      let ih_dom = transform_to_below_fvar(
-        &field.decl.domain,
-        target_j,
-        &param_fvars,
-        &motive_fvars,
-        below_names,
-        ind_level_params,
-        &field.fvar,
-      );
-      let ih_name = orig_name_iter
-        .next()
-        .unwrap_or_else(|| Name::str(Name::anon(), "ih".to_string()));
-      let (ih_fv_name, ih_fv) = fresh_fvar("bici", expanded_decls.len());
-      expanded_decls.push(LocalDecl {
-        fvar_name: ih_fv_name,
-        binder_name: ih_name,
-        domain: ih_dom,
-        info: BinderInfo::Default,
-      });
-
-      // f_ih: motive_j indices... field_fvar
-      // Replace inductive head with motive FVar, skip params, apply indices + field_fvar
-      let fih_dom = replace_head_with_fvar(
-        &field.decl.domain,
-        &motive_fvars[target_j],
-        &field.fvar,
-        n_params,
-      );
-      let fih_name =
-        orig_name_iter.next().unwrap_or_else(|| field.decl.binder_name.clone());
-      let (fih_fv_name, _fih_fv) = fresh_fvar("bicih", expanded_decls.len());
-      expanded_decls.push(LocalDecl {
-        fvar_name: fih_fv_name,
-        binder_name: fih_name,
-        domain: fih_dom,
-        info: BinderInfo::Default,
-      });
-
-      let _ = ih_fv; // used only for its FVar name in mk_forall
-    }
-  }
-
-  // --- Phase 4: Build return type using FVars ---
-  // Return type: below_name params motives indices... (ctor params orig_fields)
-  // where indices are extracted from the constructor's return type `I params indices`.
-  let univs: Vec<Level> =
-    ind_level_params.iter().map(|lp| Level::param(lp.clone())).collect();
-  let ctor_app = mk_app_n(
-    mk_const(ctor_name, &univs),
-    &[&param_fvars[..], &orig_field_fvars[..]].concat(),
-  );
-
-  // Extract index arguments from the ctor's return type.
-  // _ctor_return is e.g. `Nat.le n (Nat.succ m)` in FVar form;
-  // args after n_params are the index expressions.
-  let (_ret_head, ret_args) = decompose_apps(&ctor_return);
-  let index_args: Vec<&LeanExpr> = ret_args.iter().skip(n_params).collect();
-
-  let mut ret = mk_const(below_name, &univs);
-  ret = mk_app_n(ret, &param_fvars);
-  ret = mk_app_n(ret, &motive_fvars);
-  for idx_arg in &index_args {
-    ret = LeanExpr::app(ret, (*idx_arg).clone());
-  }
-  ret = LeanExpr::app(ret, ctor_app);
-
-  // --- Phase 5: Close with mk_forall ---
-  let all_decls: Vec<LocalDecl> =
-    param_decls.into_iter().chain(motive_decls).chain(expanded_decls).collect();
-
-  let n_fields_total = all_decls.len() - n_params - n_motives;
-  let typ = mk_forall(ret, &all_decls);
-
-  BelowCtor {
-    name: below_ctor_name,
-    typ,
-    n_params: n_params + n_motives,
-    n_fields: n_fields_total,
-  }
-}
-
-/// Build the Prop-level `.below` family of a block with nested auxiliaries.
+/// Build every Prop-level `.below` family from the recursor's minor premises,
+/// including blocks without nested auxiliaries.
 ///
 /// Lean's `IndPredBelow.mkBelow` (IndPredBelow.lean:83-140, 211-238) declares
 /// one `.below` inductive per motive of the block's recursor, all in one
@@ -1350,144 +956,6 @@ fn build_prop_below_family(
     });
   }
   Ok(out)
-}
-
-/// Transform a recursive field type `∀ ys, I_j args` (FVar-based) to the
-/// corresponding `.below` IH type `∀ ys, I_j.below params motives args (h ys)`.
-///
-/// For a first-order recursive field `h : I_j args`, `inner_fvars` is empty
-/// and the result is `I_j.below params motives args h`.
-///
-/// For a higher-order recursive field `h : ∀ y₁ .. yₙ, I_j args`, the result
-/// is `∀ y₁ .. yₙ, I_j.below params motives args (h y₁ .. yₙ)`. The inner
-/// binders are re-closed with `mk_forall`.
-///
-/// Matches `ihTypeToBelowType` at
-/// `refs/lean4/src/Lean/Meta/IndPredBelow.lean:71-75`: the motive fvar in the
-/// minor-premise IH type is replaced by the `.below` constant applied to
-/// params+motives, while the rest of the application spine (indices plus the
-/// applied field) is preserved.
-fn transform_to_below_fvar(
-  field_dom: &LeanExpr,
-  target_j: usize,
-  param_fvars: &[LeanExpr],
-  motive_fvars: &[LeanExpr],
-  below_names: &[Name],
-  level_params: &[Name],
-  major_fvar: &LeanExpr,
-) -> LeanExpr {
-  // Open any inner foralls (for higher-order recursive fields like `∀ a, I_j (f a)`)
-  let n_inner = count_foralls_expr(field_dom);
-  let (inner_fvars, inner_decls, leaf) =
-    forall_telescope(field_dom, n_inner, "bict", 0);
-
-  // Decompose leaf: should be `I_j args...` (Const or FVar head)
-  let (_head, args) = decompose_apps(&leaf);
-
-  // Build: I_j.below params motives indices (major_fvar inner_fvars)
-  let below_const = mk_const(
-    &below_names[target_j],
-    &level_params.iter().map(|lp| Level::param(lp.clone())).collect::<Vec<_>>(),
-  );
-  let mut result = below_const;
-  result = mk_app_n(result, param_fvars);
-  result = mk_app_n(result, motive_fvars);
-  // Apply original index args (skip the leading params)
-  let n_params = param_fvars.len();
-  for a in args.iter().skip(n_params) {
-    result = LeanExpr::app(result, a.clone());
-  }
-  // The `.below` major premise is the FIELD value, applied to the inner
-  // binders if the field is higher-order. Previously, the inner binders
-  // were spliced directly onto the spine of `.below` (overrunning its
-  // arity) and `major_fvar` was only applied in the first-order case —
-  // which produced `I_j.below params motives indices ys` instead of
-  // `I_j.below params motives indices (h ys)`.
-  let mut major_applied = major_fvar.clone();
-  if !inner_fvars.is_empty() {
-    major_applied = mk_app_n(major_applied, &inner_fvars);
-  }
-  result = LeanExpr::app(result, major_applied);
-
-  // Re-close inner foralls if present
-  if !inner_decls.is_empty() {
-    result = mk_forall(result, &inner_decls);
-  }
-  result
-}
-
-/// Replace the head constant in a recursive field domain with a motive FVar.
-///
-/// For a first-order field `h : I_j params indices`, builds
-/// `motive_fvar indices h`.
-///
-/// For a higher-order field `h : ∀ y₁ .. yₙ, I_j params indices`, builds
-/// `∀ y₁ .. yₙ, motive_fvar indices (h y₁ .. yₙ)`. The major is the FIELD
-/// value applied to the inner binders, not the inner binders spliced onto
-/// the motive's spine.
-///
-/// `num_params` is the parent inductive's parameter count — the leaf's
-/// application spine is `[params..., indices...]`, so we skip the first
-/// `num_params` to retain only the indices.
-fn replace_head_with_fvar(
-  field_dom: &LeanExpr,
-  motive_fvar: &LeanExpr,
-  major_fvar: &LeanExpr,
-  num_params: usize,
-) -> LeanExpr {
-  let n_inner = count_foralls_expr(field_dom);
-  let (inner_fvars, inner_decls, leaf) =
-    forall_telescope(field_dom, n_inner, "bicr", 0);
-
-  let (_head, args) = decompose_apps(&leaf);
-
-  // Build: motive_fvar indices... (major_fvar inner_fvars)
-  let mut result = motive_fvar.clone();
-  for a in args.iter().skip(num_params) {
-    result = LeanExpr::app(result, a.clone());
-  }
-  // The motive's major premise is `h` applied to the inner binders
-  // (or just `h` itself if the field is first-order). Previously the
-  // inner binders were applied directly to the motive spine and the
-  // `major_fvar` application was gated to `n_inner == 0`, which produced
-  // `motive indices ys` instead of `motive indices (h ys)`.
-  let mut major_applied = major_fvar.clone();
-  if !inner_fvars.is_empty() {
-    major_applied = mk_app_n(major_applied, &inner_fvars);
-  }
-  result = LeanExpr::app(result, major_applied);
-
-  if !inner_decls.is_empty() {
-    result = mk_forall(result, &inner_decls);
-  }
-  result
-}
-
-/// Detect if a field domain targets an inductive in the block.
-/// Returns the class index if found.
-///
-/// Works on both BVar-based and FVar-based domains — checks for Const heads.
-fn detect_rec_target_class(
-  dom: &LeanExpr,
-  all_ind_names: &[(Name, usize)],
-) -> Option<usize> {
-  let mut ty = dom.clone();
-  loop {
-    match ty.as_data() {
-      ExprData::ForallE(_, _, body, _, _) => ty = body.clone(),
-      _ => {
-        let (head, _) = decompose_apps(&ty);
-        if let ExprData::Const(name, _, _) = head.as_data() {
-          for (ind_name, class_idx) in all_ind_names {
-            if name == ind_name {
-              return Some(*class_idx);
-            }
-          }
-        }
-        return None;
-      },
-    }
-  }
 }
 
 /// Build a minor premise argument for `.below`.
