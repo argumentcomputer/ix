@@ -43,6 +43,8 @@ pub struct BlockTxn {
   pub compiled: Vec<Name>,
   /// Names newly entered into `aux_name_to_addr`.
   pub aux: Vec<Name>,
+  /// Optional validator captures first published by this transaction.
+  pub aux_captures: Vec<Name>,
   /// Pass 3 records newly entered (image-kind heads, Lean blocks).
   pub p3_heads: Vec<Name>,
   pub p3_blocks: Vec<Name>,
@@ -154,6 +156,10 @@ pub fn log_aux(n: &Name) {
   with(|x| x.aux.push(n.clone()));
 }
 
+pub fn log_aux_capture(n: &Name) {
+  with(|x| x.aux_captures.push(n.clone()));
+}
+
 pub fn log_p3_head(n: &Name) {
   with(|x| x.p3_heads.push(n.clone()));
 }
@@ -176,6 +182,11 @@ pub fn defer_pending(names: Vec<Name>) -> Option<Vec<Name>> {
 
 /// Remove what a failed block entered into the published tables.
 pub fn rollback(stt: &CompileState, txn: &BlockTxn) {
+  if let Some(capture) = &stt.aux_input_capture {
+    for name in &txn.aux_captures {
+      capture.remove(name);
+    }
+  }
   for n in &txn.named {
     stt.env.named.remove(n);
     stt.def_hints.remove(n);

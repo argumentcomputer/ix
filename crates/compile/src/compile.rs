@@ -135,6 +135,9 @@ pub struct CompileState {
   /// checks (e.g., "is this name aux_gen-rewritten?") throughout compilation.
   /// Never drained — callers rely on `.contains()` long after insertion.
   pub aux_gen_extra_names: DashSet<Name>,
+  /// Optional validator observations of the actual auxiliary writer inputs.
+  /// Normal compilation does not retain this second copy of generated support.
+  pub aux_input_capture: Option<aux_capture::AuxInputCapture>,
   /// Pending aux_gen names awaiting scheduler dependency resolution.
   /// Drained after each block completion. Separated from the persistent
   /// `aux_gen_extra_names` to avoid O(N×M) re-iteration of the full set
@@ -283,6 +286,7 @@ impl Default for CompileState {
       blocks: Default::default(),
       ungrounded: Default::default(),
       aux_gen_extra_names: Default::default(),
+      aux_input_capture: None,
       aux_gen_pending: std::sync::Mutex::new(Vec::new()),
       aux_name_to_addr: Default::default(),
       lean_env: None,
@@ -3925,6 +3929,7 @@ fn compile_mutual(
 }
 
 mod admission;
+pub mod aux_capture;
 pub mod aux_gen;
 pub mod aux_source;
 pub mod block_txn;
@@ -3936,7 +3941,8 @@ pub mod pass3;
 mod publication;
 pub(crate) mod validation;
 pub use env::{
-  compile_env, compile_env_with_options, compile_env_with_profile,
+  compile_env, compile_env_with_aux_capture, compile_env_with_options,
+  compile_env_with_profile,
 };
 
 #[cfg(test)]

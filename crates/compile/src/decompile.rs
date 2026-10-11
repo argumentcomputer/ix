@@ -2379,7 +2379,44 @@ fn decompile_projection(
 ) -> Result<(), DecompileError> {
   // Build ctx from metadata's ctx field
   let named_meta = named.meta();
-  let ctx_addrs = get_ctx_from_meta(&named_meta);
+  // Constructors carry their own expression arena but inherit the recursive
+  // block context from their declared owner. This also covers aliases whose
+  // metadata still names the canonical constructor/owner.
+  let owner_meta = if let ConstantInfo::CPrj(proj) = &cnst.info {
+    let ConstantMetaInfo::Ctor { induct, .. } = &named_meta.info else {
+      return Err(DecompileError::BadConstantFormat {
+        msg: format!(
+          "constructor projection '{}' has no constructor metadata",
+          name.pretty()
+        ),
+      });
+    };
+    let owner = decompile_name(induct, stt)?;
+    let owner_named = stt.env.lookup_name(&owner).ok_or_else(|| {
+      DecompileError::BadConstantFormat {
+        msg: format!(
+          "constructor '{}' has no published owner '{}'",
+          name.pretty(),
+          owner.pretty()
+        ),
+      }
+    })?;
+    let owner_const = read_const(&owner_named.addr, stt)?;
+    if !matches!(&owner_const.info, ConstantInfo::IPrj(parent) if parent.block == proj.block && parent.idx == proj.idx)
+    {
+      return Err(DecompileError::BadConstantFormat {
+        msg: format!(
+          "constructor '{}' owner refers to another inductive projection",
+          name.pretty()
+        ),
+      });
+    }
+    Some(owner_named.meta())
+  } else {
+    None
+  };
+  let ctx_addrs =
+    get_ctx_from_meta(owner_meta.as_deref().unwrap_or(&named_meta));
   let ctx_names: Vec<Name> = ctx_addrs
     .iter()
     .map(|a| decompile_name(a, stt))
@@ -2463,6 +2500,36 @@ fn decompile_projection(
           stt,
         ));
       },
+    },
+
+    ConstantInfo::CPrj(proj) => {
+      let Some(MutConst::Indc(ind)) = mutuals.get(proj.idx as usize) else {
+        return Err(projection_mismatch_error(
+          "CPrj",
+          name,
+          proj.idx,
+          mutuals.get(proj.idx as usize),
+          mutuals.len(),
+          stt,
+        ));
+      };
+      let ctor = ind.ctors.get(proj.cidx as usize).ok_or_else(|| {
+        DecompileError::BadConstantFormat {
+          msg: format!(
+            "constructor '{}' index {} exceeds {} constructors",
+            name.pretty(),
+            proj.cidx,
+            ind.ctors.len()
+          ),
+        }
+      })?;
+      let ConstantMetaInfo::Ctor { induct, .. } = &named_meta.info else {
+        unreachable!()
+      };
+      let owner = decompile_name(induct, stt)?;
+      let ctor =
+        decompile_constructor(ctor, &named_meta, owner, &mut cache, stt, dstt)?;
+      dstt.insert_interned(name.clone(), LeanConstantInfo::CtorInfo(ctor));
     },
 
     // Non-projection constants are ignored here; they're handled by
@@ -4193,6 +4260,38 @@ fn decompile_named_const(
   }
 }
 
+/// A shared inductive alias can list its canonical constructor names. Its own
+/// published constructor aliases are then absent from the parent's result.
+/// Recover those projections after the parent pass, without racing or replacing
+/// the per-source constructor metadata it already restored. Original-bearing
+/// constructors belong to the later source regeneration pass.
+fn decompile_missing_ctor_aliases(
+  stt: &CompileState,
+  dstt: &DecompileState,
+) -> Result<(), DecompileError> {
+  stt.env.named.par_iter().try_for_each(|entry| {
+    let (name, named) = (entry.key(), entry.value());
+    if dstt.env.contains_key(name) || named.has_original() {
+      return Ok(());
+    }
+    let Some(cnst) = stt.env.get_const(&named.addr) else { return Ok(()) };
+    let ConstantInfo::CPrj(proj) = &cnst.info else { return Ok(()) };
+    match read_const(&proj.block, stt)?.as_ref() {
+      Constant { info: ConstantInfo::Muts(mutuals), sharing, refs, univs } => {
+        decompile_projection(
+          name, named, &cnst, mutuals, sharing, refs, univs, stt, dstt,
+        )
+      },
+      _ => Err(DecompileError::BadConstantFormat {
+        msg: format!(
+          "constructor alias '{}' does not reference a mutual block",
+          name.pretty()
+        ),
+      }),
+    }
+  })
+}
+
 /// Regenerate aux_gen constants for a single mutual inductive block.
 ///
 /// Runs the dependency-ordered phases (.rec -> .casesOn -> .recOn -> .below ->
@@ -5344,6 +5443,7 @@ pub fn decompile_env(
     let (name, named) = (entry.key(), entry.value());
     decompile_named_const(name, named, stt, &dstt)
   })?;
+  decompile_missing_ctor_aliases(stt, &dstt)?;
   eprintln!(
     "[decompile] Pass 1 done in {:.2}s ({} constants in dstt.env){}",
     t_p1.elapsed().as_secs_f32(),
@@ -5361,11 +5461,13 @@ pub fn decompile_env(
     let lean_env: ix_common::env::Env =
       dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
     let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+    let mut aliases: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
     for entry in dstt.env.iter() {
       if let LeanConstantInfo::InductInfo(v) = entry.value()
         && let Some(first) = v.all.first()
       {
         groups.entry(first.clone()).or_insert_with(|| v.all.clone());
+        aliases.entry(first.clone()).or_default().push(entry.key().clone());
       }
     }
     for (key, all) in &groups {
@@ -5374,7 +5476,9 @@ pub fn decompile_env(
           msg: format!("ind-flags fixup for block '{}': {e}", key.pretty()),
         }
       })?;
-      for member in all {
+      // The alias's copied `all` names the canonical group, so iterating only
+      // `all` leaves the alias with the placeholder flags from Pass 1.
+      for member in &aliases[key] {
         if let Some(mut entry) = dstt.env.get_mut(member)
           && let LeanConstantInfo::InductInfo(v) = entry.value_mut()
         {

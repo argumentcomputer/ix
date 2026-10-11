@@ -175,6 +175,24 @@ pub fn compile_env_with_profile(
   options: CompileOptions,
   profile: Option<&ixon::resource::addressed::Profile>,
 ) -> Result<CompileState, CompileError> {
+  compile_env_observed(lean_env, options, profile, false)
+}
+
+/// Compile for diagnostic validation, retaining generated declarations and
+/// their reference bindings at the auxiliary writer boundary.
+pub fn compile_env_with_aux_capture(
+  lean_env: &Arc<LeanEnv>,
+  options: CompileOptions,
+) -> Result<CompileState, CompileError> {
+  compile_env_observed(lean_env, options, None, true)
+}
+
+fn compile_env_observed(
+  lean_env: &Arc<LeanEnv>,
+  options: CompileOptions,
+  profile: Option<&ixon::resource::addressed::Profile>,
+  capture_aux: bool,
+) -> Result<CompileState, CompileError> {
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
   // The sharing limits of the whole run, read once: an invalid
   // `IX_SHARING_LIMITS` fails the compile here, before any block is
@@ -362,6 +380,7 @@ pub fn compile_env_with_profile(
 
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
+    aux_input_capture: capture_aux.then(Default::default),
     ungrounded: ungrounded_map,
     sharing_limits,
     pass3: true,

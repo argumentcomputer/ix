@@ -321,6 +321,17 @@ pub fn compile_aux_block_with_rename(
 
   let mut_ctx = MutConst::ctx(&sorted_classes);
 
+  let captured_inputs = stt
+    .aux_input_capture
+    .as_ref()
+    .map(|_| {
+      super::aux_capture::prepare_inputs(aux_consts, &mut_ctx, |n| {
+        stt.resolve_addr(n)
+      })
+      .map_err(|reason| CompileError::InvalidMutualBlock { reason })
+    })
+    .transpose()?;
+
   let mut exprs = Vec::new();
   for cnst in aux_consts {
     collect_mut_const_exprs(cnst, &mut exprs);
@@ -419,6 +430,9 @@ pub fn compile_aux_block_with_rename(
       stt.claim_aux_name(&n, &standalone_addr)?;
       pending_names.push(n);
     }
+    if let Some(inputs) = captured_inputs {
+      super::aux_capture::publish_inputs(stt, inputs, resolve_name)?;
+    }
     crate::compile::pass3::release_pending(stt, pending_names);
     // Ingress all registered aux constants into the kernel environment.
     for cnst in aux_consts {
@@ -514,6 +528,10 @@ pub fn compile_aux_block_with_rename(
         }
       }
     }
+  }
+
+  if let Some(inputs) = captured_inputs {
+    super::aux_capture::publish_inputs(stt, inputs, resolve_name)?;
   }
 
   // Register the synthetic Muts named entry for this block. `block_addr`
@@ -623,6 +641,12 @@ fn register_aux_aliases(
         ),
       }
     })?;
+
+    if let Some(capture) = &stt.aux_input_capture {
+      capture
+        .alias(&source, &target)
+        .map_err(|reason| CompileError::InvalidMutualBlock { reason })?;
+    }
 
     if *crate::compile::IX_LOG_AUX_NAMES {
       eprintln!(

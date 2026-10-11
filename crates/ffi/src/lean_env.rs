@@ -17,7 +17,9 @@ use rayon::prelude::*;
 
 use rustc_hash::FxHashMap;
 
-use ix_compile::compile::{CompileOptions, compile_env_with_options};
+#[cfg(feature = "test-ffi")]
+use ix_compile::compile::compile_env_with_options;
+use ix_compile::compile::{CompileOptions, compile_env_with_aux_capture};
 use ix_compile::decompile::{check_decompile, decompile_env};
 use std::sync::Arc;
 
@@ -1969,7 +1971,7 @@ extern "C" fn rs_compile_validate_aux(
   // (kctx, name_to_addr, etc.) before serialize allocates a 3 GB buffer.
   let mut stt =
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      compile_env_with_options(&env, CompileOptions::default())
+      compile_env_with_aux_capture(&env, CompileOptions::default())
     })) {
       Ok(Ok(s)) => s,
       Ok(Err(e)) => {
@@ -3813,7 +3815,15 @@ extern "C" fn rs_compile_validate_aux(
   // ══════════════════════════════════════════════════════════════════════
   let mut p6 = PhaseResult::new("6. Aux congruence (roundtrip)");
 
-  if let (Some(dstt_ref), Some(lean_env)) = (&dstt, &stt.lean_env) {
+  let mut aux_names: ix_compile::graph::NameSet =
+    stt.aux_gen_extra_names.iter().map(|entry| entry.key().clone()).collect();
+  if let Some(capture) = &stt.aux_input_capture {
+    aux_names.extend(capture.names());
+  }
+
+  if let (Some(dstt_ref), Some(lean_env), Some(capture)) =
+    (&dstt, &stt.lean_env, &stt.aux_input_capture)
+  {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -3829,21 +3839,11 @@ extern "C" fn rs_compile_validate_aux(
       }
     };
 
-    // Parallel alpha-equivalence check per aux_gen extra name. Reads are
-    // against DashMap-backed lean_env and dstt_ref.env. For blocks whose
-    // generated auxiliaries are intentionally canonicalized by nested aux
-    // permutation or primary alpha-collapse, compare with the same
-    // permutation-aware context as Phase 2 instead of requiring source
-    // shape.
-    stt.aux_gen_extra_names.par_iter().for_each(|entry| {
-      let name = entry.key();
-      let orig_ci = match lean_env.get(name) {
-        Some(ci) => ci,
-        None => {
-          push_fail(format!("{}: not in original Lean env", name.pretty()));
-          return;
-        },
-      };
+    // Source auxiliaries retain the source-congruence check. Generated support
+    // is checked against the actual writer input and its frozen bindings.
+    // Include moved display names: Pass 3 deliberately removes their original
+    // scheduler claims from aux_gen_extra_names.
+    aux_names.par_iter().for_each(|name| {
       let dec_ci = match dstt_ref.env.get(name) {
         Some(ci) => ci,
         None => {
@@ -3851,12 +3851,20 @@ extern "C" fn rs_compile_validate_aux(
           return;
         },
       };
-      let eq_result = aux_congruence_result(
-        name,
-        dec_ci.value(),
-        &orig_ci,
-        aux_compare_contexts.get(name),
-      );
+      let eq_result = if let Some(orig_ci) = lean_env.get(name) {
+        aux_congruence_result(
+          name,
+          dec_ci.value(),
+          &orig_ci,
+          aux_compare_contexts.get(name),
+        )
+      } else if let Some(named) = stt.env.lookup_name(name) {
+        capture.check(name, &named.addr, dec_ci.value(), |reference| {
+          stt.env.lookup_name(reference).map(|named| named.addr)
+        })
+      } else {
+        Err("generated auxiliary has no published entry".into())
+      };
       match eq_result {
         Ok(()) => {
           passes.fetch_add(1, Ordering::Relaxed);
@@ -3876,6 +3884,9 @@ extern "C" fn rs_compile_validate_aux(
     }
     if stt.lean_env.is_none() {
       p6.record_fail("skipped: lean_env not available".into());
+    }
+    if stt.aux_input_capture.is_none() {
+      p6.record_fail("auxiliary input capture not available".into());
     }
   }
   p6.report();
@@ -3919,6 +3930,9 @@ extern "C" fn rs_compile_validate_aux(
   // chases every Arc.
   let compile_env_only = std::mem::take(&mut stt.env);
   let sharing_limits = stt.sharing_limits.clone();
+  // Preserve independent writer observations through the serialized roundtrip.
+  // The fresh reader below has no source/debug environment or capture state.
+  let aux_input_capture = stt.aux_input_capture.take();
   rayon::join(|| drop(dstt), || drop(stt));
 
   // ══════════════════════════════════════════════════════════════════════
@@ -4044,6 +4058,39 @@ extern "C" fn rs_compile_validate_aux(
               Err(e) => {
                 p7.record_fail(format!("check_decompile FAILED: {e:?}"));
               },
+            }
+            if let Some(capture) = &aux_input_capture {
+              for name in &aux_names {
+                if env.contains_key(name) {
+                  continue; // Every source declaration is checked in Phase 7b.
+                }
+                let check = || -> Result<(), String> {
+                  let recovered = dstt2
+                    .env
+                    .get(name)
+                    .ok_or("generated auxiliary missing after serialization")?;
+                  let named = fresh_stt.env.lookup_name(name).ok_or("generated auxiliary publication missing after serialization")?;
+                  capture.check(
+                    name,
+                    &named.addr,
+                    recovered.value(),
+                    |reference| {
+                      fresh_stt
+                        .env
+                        .lookup_name(reference)
+                        .map(|named| named.addr)
+                    },
+                  )
+                };
+                match check() {
+                  Ok(()) => p7.record_pass(),
+                  Err(error) => {
+                    p7.record_fail(format!("{}: {error}", name.pretty()))
+                  },
+                }
+              }
+            } else {
+              p7.record_fail("auxiliary input capture not available".into());
             }
             Some(dstt2)
           },

@@ -153,6 +153,9 @@ fn move_to_display(
         },
       }
     }
+    if let Some(capture) = &stt.aux_input_capture {
+      capture.move_to_display(n, d).map_err(invalid)?;
+    }
   }
   // the entries that keep their names (synthetic `Muts` entries, names
   // without a display): references to moved names renamed
