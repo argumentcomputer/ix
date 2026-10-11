@@ -627,6 +627,12 @@ fn unit_passes(
 ) -> Vec<ConstantInfo> {
   let const_of = |n: &Name| ctx.lean_env.get(n).map(|e| e.cloned());
   let classes_of = |t: &Name| -> Option<Vec<Vec<Name>>> {
+    if !crate::compile::aux_gen::source_identity::permits_optimization(
+      ctx.lean_env,
+      &mk_str(t, "casesOn"),
+    ) {
+      return None;
+    }
     let key = ctx.stt.p3.heads.get(&mk_str(t, "casesOn")).map(|r| r.clone())?;
     if !initial.contains(&key) {
       return None;
@@ -781,6 +787,11 @@ fn prepare_block_rewrite(
     ix_form: None,
   };
   let opt = |site: Option<&Name>, n: &Name, us: &[Level], args: &[Expr]| {
+    if !crate::compile::aux_gen::source_identity::permits_optimization(
+      env.ienv, n,
+    ) {
+      return None;
+    }
     engine_full(&env, &Occ { head: n, us, args, site })
       .map(|(nm, e, cs)| (e, cs, is_proof_justified(nm)))
   };
@@ -975,6 +986,11 @@ fn clique_rewrite(
     ix_form: Some(&ix_form),
   };
   let opt = |site: Option<&Name>, n: &Name, us: &[Level], args: &[Expr]| {
+    if !crate::compile::aux_gen::source_identity::permits_optimization(
+      env.ienv, n,
+    ) {
+      return None;
+    }
     engine_full(&env, &Occ { head: n, us, args, site })
       .map(|(nm, e, cs)| (e, cs, is_proof_justified(nm)))
   };

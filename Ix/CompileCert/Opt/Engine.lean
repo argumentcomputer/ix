@@ -234,8 +234,10 @@ theorem engineN_site_irrel {env : OptEnv} {fuel : Nat} {h : Name} {us : Array Le
 /-- The hook `Driver.optLookup` builds from its `OptEnv` (`optLookup_eq`). -/
 def hookOf (env : OptEnv) : Option Name → Name → Array Level → Array Expr →
     Option (Expr × Array ConstantInfo × Option String) :=
-  fun site n us args => (engineFull env { head := n, us, args, site }).map fun (nm, e, cs) =>
-    (e, cs, if isProofJustified nm then some nm else none)
+  fun site n us args =>
+    if !Ix.AuxGen.SourceIdentity.permitsOptimization env.ienv n then none
+    else (engineFull env { head := n, us, args, site }).map fun (nm, e, cs) =>
+      (e, cs, if isProofJustified nm then some nm else none)
 
 /-- **`HookFaithful`**: a result of the hook with no site converts to the occurrence and is not
 tagged proof-justified. -/
@@ -283,6 +285,7 @@ theorem engineFull_cases {env : OptEnv} {o : Occ} {nm : String} {e : Expr} {cs :
 theorem hook_faithful {Γ : Env} {env : OptEnv} (hL : EngineLaws Γ env) : HookFaithful Γ (hookOf env) := by
   intro n us args e cs t h
   unfold hookOf at h
+  split at h <;> try contradiction
   obtain ⟨⟨nm, e', cs'⟩, hf, he⟩ := omap_some h
   simp only [Prod.mk.injEq] at he
   obtain ⟨rfl, rfl, rfl⟩ := he
@@ -302,6 +305,9 @@ theorem hook_siteStable (env : OptEnv) : HookSiteStable (hookOf env) := by
   refine ⟨?_, ?_⟩
   · intro c n us args e cs h
     unfold hookOf at h ⊢
+    split at h <;> rename_i allowed
+    · contradiction
+    rw [ite_eq_right allowed]
     obtain ⟨⟨nm, e', cs'⟩, hf, he⟩ := omap_some h
     simp only [Prod.mk.injEq] at he
     obtain ⟨rfl, rfl, htag⟩ := he
@@ -319,6 +325,9 @@ theorem hook_siteStable (env : OptEnv) : HookSiteStable (hookOf env) := by
     all_goals exact absurd hpj (by decide)
   · intro c n us args h
     unfold hookOf at h ⊢
+    split at h <;> rename_i allowed
+    · rw [ite_eq_left allowed]
+    rw [ite_eq_right allowed]
     have hf : engineFull env { head := n, us, args, site := some c } = none := by
       cases hf : engineFull env { head := n, us, args, site := some c } with
       | none => rfl

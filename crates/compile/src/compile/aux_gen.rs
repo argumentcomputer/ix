@@ -88,6 +88,7 @@ pub mod nested;
 mod occurrence_key;
 pub mod rec_on;
 pub mod recursor;
+pub mod source_identity;
 
 use std::sync::Arc;
 

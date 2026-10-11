@@ -60,6 +60,7 @@ public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.SideCar
 public import Ix.Compile.Pass.Opt.Engine
 public import Ix.Compile.Pass.Cliques
+public import Ix.AuxGen.SourceIdentity
 public section
 
 namespace Ix.Compile.Pass
@@ -546,8 +547,12 @@ def optLookup (cenv : CompileEnv) (blocks : Std.HashMap Name Opt.OptBlock) :
       blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
       addrOf := resolveAddr cenv
       ixForm? := ixFormOf cenv }
-  fun site n us args => (Opt.engineFull env { head := n, us, args, site }).map fun (nm, e, cs) =>
-    (e, cs, if Opt.isProofJustified nm then some nm else none)
+  fun site n us args =>
+    -- A source-defined wrapper may have the standard type and another body.
+    -- Declining here leaves its actual expansion as the rewrite baseline.
+    if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env n then none
+    else (Opt.engineFull env { head := n, us, args, site }).map fun (nm, e, cs) =>
+      (e, cs, if Opt.isProofJustified nm then some nm else none)
 
 /-- The unit passes (A6p) over a block's members: O11b gives Lean's
 `noConfusion` pair of a split-off enumeration its enumeration form
@@ -559,6 +564,7 @@ general form; the enumeration form is returned as the canonical constants
 def unitPasses (cenv : CompileEnv) (views : Std.HashMap Name BlockView)
     (members : Array (Name × ConstantInfo)) : Array ConstantInfo := Id.run do
   let classesOf : Name → Option (Array (Array Name)) := fun t => do
+    if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env (Name.mkStr t "casesOn") then none
     let key ← cenv.p3Heads.get? (Name.mkStr t "casesOn")
     let v ← views.get? key
     let c ← v.canon.components.find? (·.members.contains t)

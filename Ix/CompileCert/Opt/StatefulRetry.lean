@@ -73,6 +73,9 @@ theorem hookOf_pj_retry_none {env : OptEnv} {site : Option Name}
     (hit : hookOf env site n us args = some (e, cs, some pass)) :
     hookOf env none n us args = none := by
   unfold hookOf at hit ⊢
+  split at hit <;> rename_i allowed
+  · contradiction
+  rw [ite_eq_right allowed]
   obtain ⟨⟨nm, e', cs'⟩, fullHit, mapped⟩ := omap_some hit
   have tagEq := congrArg
     (fun x : Expr × Array ConstantInfo × Option String => x.2.2) mapped

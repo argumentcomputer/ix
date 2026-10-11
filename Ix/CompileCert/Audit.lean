@@ -14,6 +14,7 @@ import Ix.CompileCert.StrongChanged
 import Ix.CompileCert.Opt
 import Ix.CompileCert.Publication
 import Ix.CompileCert.ReferencePublication
+import Ix.CompileCert.SourceIdentity
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
 import Ix.CompileCert.RuleRows
@@ -2138,4 +2139,17 @@ def referencePublicationRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.referencePublicationRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Source wrapper recognition checks both type and value after positional
+universe renaming. Generator laws and publication remain separate contracts. -/
+def sourceIdentityRoots : Array Lean.Name :=
+  #[`agrees_er, `definitionMatches_source, `checkedWrapper_source,
+    `optLookup_permitted, `optLookup_casesOn_source, `optLookup_recOn_source].map
+      (`Ix.CompileCert.SourceIdentity ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sourceIdentityRoots Ix.CompileCert.Audit.allowedAxioms
 

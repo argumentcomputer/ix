@@ -14,7 +14,7 @@ inductive Q : Prop
 end
 
 theorem P.toQ (h : P) : Q := @P.casesOn (fun _ => Q) h (fun q => q)
-theorem Q.elim (h : Q) : True := @Q.rec (fun _ => True) (fun _ => True) (fun q _ => trivial) (fun t => t) h
+theorem Q.elim (h : Q) : True := @Q.rec (fun _ => True) (fun _ => True) (fun _q _ => trivial) (fun t => t) h
 theorem P.viaRec (h : P) : True :=
   @P.rec (fun _ => True) (fun _ => True) (fun _ ih => ih) (fun t => t) h
 theorem toQ_pin : P.toQ (.p (.q trivial)) = .q trivial := rfl

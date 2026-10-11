@@ -215,6 +215,7 @@ not an automatic re-record.
 | [`rust-decompile`](../Tests/Ix/RustDecompile.lean) | Serialized Rust compile/decompile pipeline; every reconstructed source constant's hash agrees. | None. | Compile pipeline; Landing. |
 | [`validate-aux`](../Tests/Ix/Compile/ValidateAux.lean) | Shared aux-heavy fixture closure: regeneration, emission, no ephemeral leakage, class canonicity, both decompile paths and nested detection. | Fixture assertions. | Compile pipeline; Landing. |
 | [`aux-gen-diff`](../Tests/Ix/Compile/AuxGenDiff.lean) | Per-block drift, nested expansion, selected generated patches and plans; full sequential/parallel driver parity, including metadata and hints. Individual auxiliary/red inventory buckets are diagnostic, not the whole acceptance predicate. | Inline kind filters and assertions. | Compile pipeline; Landing. |
+| [`aux-source-identity`](../Tests/Ix/Compile/SourceIdentity.lean) | Actual source `casesOn`/`recOn` recognition on mutual/Prop controls; custom definitions with different types or the standard type and a different value. Applicable unguarded rewrites must be declined by production dispatch, while standard-body neighbors still optimize. The primary `aux-source-identity-unit` suite checks positional universes, open expressions and cache collisions. | No allowed mismatches. This does not yet gate custom-helper publication. | Compiler passes; Landing. |
 | [`decompile-diff`](../Tests/Ix/Compile/DecompileDiff.lean) | Aux-heavy closure: source reconstruction and bidirectional coverage; all gated plain/aux/replay buckets must be zero. | None. | Compile pipeline; Landing. |
 | [`aux-gen-closure`](../Tests/Ix/Compile/AuxGenClosure.lean) | Selected auxiliary and mutual-definition closures, Rust kernel checks, and packing an unstored-original case. | Inline success/refusal controls. | Compile pipeline; Landing. |
 | [`canon-closure-aux`](../Tests/Ix/Compile/AuxGenClosureCanon.lean) | Completed/raw fixture closures against a reference compile, plus packed roots; raw incomplete-family refusals are explicit. | Inline refusal expectations. | Compile pipeline; Landing. |
@@ -629,7 +630,7 @@ crossing the certified reader/order boundary also require `check-kernel`.
    pass3-cliques validate-lean pass3 pass3-plan-cache twins canon-pass1
    clique-transport clique-ownership aux-oracle aux-cert validate-lean-nc
    adversarial-matrix decompile-diff compile-claim-conflict compile-claim-order
-   compiler-selected-closure-e2e o11a-decline compile-closure-whole
+   compiler-selected-closure-e2e o11a-decline aux-source-identity compile-closure-whole
    compile-caller-independence changed-set pack-units validate-aux aux-gen-diff
    rust-decompile kernel-ixon-roundtrip pass3-rust-parity
    compile compile-schedule-identity

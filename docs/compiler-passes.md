@@ -771,6 +771,22 @@ value equals the source value; the two questions have separate gates and theorem
 
 ### 4.6 Other source auxiliaries and the baseline (Def 3.5–3.6)
 
+Before substituting a canonical `casesOn` or `recOn` at a call site, the
+production driver now reconstructs the wrapper from its **source recursor**
+and checks the actual source definition's kind, safety, universe arity, type
+and value. [SourceIdentity](../Ix/AuxGen/SourceIdentity.lean) compares both
+bodies after positional universe renaming; a familiar name or matching type
+does not suffice. Failure declines the optimization and retains the source
+expansion. O11b's family lookup uses the same `casesOn` guard. The checked
+[source correspondence](../Ix/CompileCert/SourceIdentity.lean) is a syntactic
+boundary, separate from the generator laws and the source semantic model.
+
+This guard does not repair auxiliary publication by itself. An unchanged
+block can still provisionally bind a custom source helper to its regenerated
+counterpart; separating that generated support from the source definition is
+an open compiler defect. Other auxiliary families also still need their own
+source recognition contracts.
+
 For image-kind definitions such as `casesOn`, `recOn`, `below` and `brecOn`, use
 Lean's own value with its head occurrences rewritten. For a recursor use §4.2's
 generated image. The recursive `below`/`brecOn` families are included only where
