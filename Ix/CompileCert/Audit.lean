@@ -19,6 +19,8 @@ import Ix.CompileCert.SourceFamily
 import Ix.CompileCert.SourceFamilyTraversal
 import Ix.CompileCert.HeadPublication
 import Ix.CompileCert.HeadOutcome
+import Ix.CompileCert.ExpressionFrame
+import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.AuxNames
 import Ix.CompileCert.Promotion
 import Ix.CompileCert.Opt.FreshTelescope
@@ -2222,6 +2224,58 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headPublicationRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headWriterFrameRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Production expression recursion and its actual state-effect boundary,
+including source records and errors. No cache validity premise is needed. -/
+def expressionFrameRoots : Array Lean.Name :=
+  #[`Frame.readBlock, `Frame.throw, `Frame.modifyGet, `Frame.map,
+    `frame_mapM_list, `frame_mapM_array, `frame_forIn'_list, `frame_forIn'_array,
+    `Frame.allocArenaNode, `Frame.pushUnivPatch, `Frame.compileUniv,
+    `Frame.internUniv, `Frame.internMetaUniv, `Frame.canonUnivCached,
+    `Frame.compileAndInternUnivCanon, `Frame.internRefMeta, `Frame.internRef,
+    `Frame.lookupConstAddr, `Frame.storeString, `Frame.serializeIxSubstring,
+    `Frame.serializeIxSourceInfo, `Frame.serializeIxSyntaxPreresolved,
+    `Frame.serializeIxSyntax, `Frame.compileDataValue, `Frame.compileKVMap,
+    `Frame.compileConstExprRaw, `Frame.compileExprPartial, `Frame.compileAppSpine,
+    `Frame.compileAppTotal, `Frame.compileExprTotalStep, `Frame.compileExprTotalFuel,
+    `Frame.compileExprTotal, `Frame.pass3CompileRecords, `Frame.compileExpr].map
+      (`Ix.CompileCert.HeadWriterFrame ++ ·)
+
+def expressionSpineRoots : Array Lean.Name :=
+  #[`decomposeApps_eq, `decomposeApps_app_head_lt, `decomposeApps_app_mem_lt].map
+    (`Ix.AuxGen ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionFrameRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionSpineRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual payload construction composes the expression frame with its
+contexts and metadata finalizers, before block preseeding/publication. -/
+def payloadFrameRoots : Array Lean.Name :=
+  #[`Frame.withBlockEnv, `Frame.withUnivCtx, `Frame.withCurrent, `Frame.withMutCtx,
+    `Frame.timedC, `Frame.takeArena, `Frame.takeMetaSharing, `Frame.takeMetaRefs,
+    `Frame.takeUnivPatches, `Frame.resetArena, `Frame.clearExprCache,
+    `Frame.recordDefHints, `Frame.getMutCtxAddrs, `compileNames_heads, `Frame.compileNames,
+    `Frame.finishDefinitionDataCompilation, `Frame.compileDefinition,
+    `Frame.compileTheorem, `Frame.compileOpaque, `Frame.finishAxiomCompilation,
+    `Frame.compileAxiom, `Frame.finishQuotientCompilation, `Frame.compileQuotient,
+    `Frame.compileRecursorRule, `Frame.compileRecursorRules, `Frame.finishRecursorCompilation,
+    `Frame.compileRecursor, `Frame.finishConstructorCompilation, `Frame.compileConstructor,
+    `Frame.takeInductiveTypeCompileMeta, `Frame.compileInductiveConstructors,
+    `Frame.finishInductiveCompilation, `Frame.compileInductive, `Frame.compileDefinitionData,
+    `Frame.finishInductiveDataCompilation, `Frame.compileInductiveData, `Frame.compileRecursorData,
+    `Frame.compileMutConstMember, `Frame.compileEquivalentMutConsts, `Frame.compileMutConstClass,
+    `Frame.compileMutConstClasses, `Frame.compileMutConsts].map
+      (`Ix.CompileCert.HeadWriterFrame ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.payloadFrameRoots Ix.CompileCert.Audit.allowedAxioms
 
 namespace Ix.CompileCert.Audit
 

@@ -26,6 +26,7 @@ public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
 public import Ix.Compile.Canon.Expr
+import all Ix.Compile.Canon.Expr
 public import Ix.Compile.Canon.NameTable
 public import Std.Data.HashMap
 public import Std.Data.HashSet
@@ -163,17 +164,69 @@ def mkConst (name : Name) (univs : Array Level) : Expr :=
   Expr.mkConst name univs
 
 /-- Mirrors Rust `decompose_apps` (aux_gen/expr_utils.rs:1509).
-    Decompose an application spine: `f a1 a2 ... an` → `(f, #[a1, ..., an])`. -/
-def decomposeApps (expr : Expr) : Expr × Array Expr := Id.run do
-  let mut args : Array Expr := #[]
-  let mut cur := expr
-  repeat
-    match cur with
-    | .app f a _ =>
-      args := args.push a
-      cur := f
-    | _ => break
-  return (cur, args.reverse)
+    Decompose an application spine: `f a1 a2 ... an` → `(f, #[a1, ..., an])`.
+    The structural tail recursion retains the push/reverse traversal while
+    exposing its subterm bounds to the production expression compiler. -/
+def decomposeApps.go (expr : Expr) (args : Array Expr) : Expr × Array Expr :=
+  match expr with
+  | .app f a _ => decomposeApps.go f (args.push a)
+  | head => (head, args.reverse)
+
+/-- Application head and arguments, in application order. -/
+def decomposeApps (expr : Expr) : Expr × Array Expr := decomposeApps.go expr #[]
+
+theorem decomposeApps.go_eq (expr : Expr) (args : Array Expr) :
+    decomposeApps.go expr args =
+      ((Compile.Canon.getAppFnArgs expr).1,
+        (Compile.Canon.getAppFnArgs expr).2 ++ args.reverse) := by
+  induction expr generalizing args <;> simp only [decomposeApps.go, Compile.Canon.getAppFnArgs]
+  case app fn arg hash ihfn iharg =>
+    rw [ihfn]
+    rw [Array.reverse_push]
+    simp only [Array.push_eq_append, Array.append_assoc]
+  all_goals simp only [Array.empty_append]
+
+theorem decomposeApps_eq (expr : Expr) :
+    decomposeApps expr = Compile.Canon.getAppFnArgs expr := by
+  simp only [decomposeApps, decomposeApps.go_eq, Array.reverse_empty,
+    Array.append_empty]
+
+theorem decomposeApps.go_head_le (expr : Expr) (args : Array Expr) :
+    sizeOf (decomposeApps.go expr args).1 ≤ sizeOf expr := by
+  induction expr generalizing args <;> simp only [decomposeApps.go]
+  case app fn arg hash ihfn iharg =>
+    have small := ihfn (args.push arg)
+    simp only [Expr.app.sizeOf_spec]
+    omega
+  all_goals exact Nat.le_refl _
+
+theorem decomposeApps.go_mem (expr : Expr) (args : Array Expr) {x : Expr}
+    (mem : x ∈ (decomposeApps.go expr args).2) : sizeOf x < sizeOf expr ∨ x ∈ args := by
+  induction expr generalizing args <;> simp only [decomposeApps.go] at mem
+  case app fn arg hash ihfn iharg =>
+    rcases ihfn (args.push arg) mem with small | prior
+    · left
+      simp only [Expr.app.sizeOf_spec]
+      omega
+    · simp only [Array.mem_push] at prior
+      rcases prior with prior | rfl
+      · exact Or.inr prior
+      · left
+        simp only [Expr.app.sizeOf_spec]
+        omega
+  all_goals exact Or.inr (Array.mem_reverse.mp mem)
+
+theorem decomposeApps_app_head_lt (fn arg : Expr) (hash : Address) :
+    sizeOf (decomposeApps (.app fn arg hash)).1 < sizeOf (Expr.app fn arg hash) := by
+  have small := decomposeApps.go_head_le fn (#[].push arg)
+  simp only [decomposeApps, decomposeApps.go, Expr.app.sizeOf_spec]
+  omega
+
+theorem decomposeApps_app_mem_lt (fn arg : Expr) (hash : Address) {x : Expr}
+    (mem : x ∈ (decomposeApps (.app fn arg hash)).2) :
+    sizeOf x < sizeOf (Expr.app fn arg hash) := by
+  have small := decomposeApps.go_mem (.app fn arg hash) #[] mem
+  simpa only [Array.not_mem_empty, or_false] using small
 
 /-- Mirrors Rust `count_foralls` (aux_gen/expr_utils.rs:1521).
     Count the number of leading forall binders in an expression. -/

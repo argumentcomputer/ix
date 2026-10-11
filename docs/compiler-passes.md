@@ -822,6 +822,23 @@ premise is authentication of each compiled cache's claims; the writer-hook
 results provide the local construction facts for that premise. Temporary
 source overlays do not change the recipe certificate.
 
+The [expression frame proof](../Ix/CompileCert/ExpressionFrame.lean) establishes
+that production expression compilation, including metadata, universe/reference
+interning, Pass 3 source records and error states, preserves the head-claim
+accumulator for every initial cache. The production recursion is now
+well-founded on strict source subterms, with no runtime size walk or fuel check.
+The application collector remains a tail-recursive push/reverse traversal;
+application nodes are allocated between successive arguments and only maximal
+application occurrences enter the expression cache. The historical
+`compileExprPartial` entry-point name remains, but its declaration is total.
+This discharges the ordinary expression compiler's state-effect boundary,
+not its source/target semantic correspondence or the whole block trace. The
+[payload frame](../Ix/CompileCert/PayloadFrame.lean) composes it through
+definition, axiom, quotient, recursor, constructor and inductive payloads,
+including their contexts, metadata finalizers and mutual equivalence-class
+folds. Table preseeding, with its
+native substitutions, and the auxiliary tail still need their own contracts.
+
 General generator laws, the semantic interpretation of recipe correspondence,
 the whole compiler's cache-production trace and view/memo correspondence
 remain separate proof obligations.

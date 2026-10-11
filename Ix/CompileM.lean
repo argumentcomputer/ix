@@ -1145,15 +1145,14 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
     recordPatch root
     pure (.ref refIdx univIndices, root)
 
-mutual
-
 /-- Compile a canonical Ix.Expr to Ixon.Expr with arena-based metadata.
     Returns (compiled expression, arena root index).
     Uses Ix.Expr as cache key for O(1) lookup via embedded hash.
 
-    The production implementation (`partial`, no fuel) of the ordinary
-    compiler; `compileExprTotal` is its fuel-total twin with the same cache
-    and arena semantics (`compileExpr` dispatches between them).
+    The production implementation uses well-founded recursion on strict
+    source subterms, without a runtime size walk or fuel checks. The former
+    `Partial` name is retained for callers. `compileExprTotal` is the
+    fuel-based twin with the same cache and arena semantics.
 
     Mirrors Rust `compile_expr` (compile.rs:650). Rust is stack-based
     (`Frame::Compile`/`Frame::Cache`); this recursion has identical
@@ -1161,7 +1160,7 @@ mutual
     exactly when Rust pushes a `Frame::Compile` for it — App telescopes
     are flattened in `compileAppSpine`, so inner partial-spine nodes are
     neither checked nor cached. -/
-partial def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   -- Check cache (O(1) lookup via embedded hash)
   let state ← getBlockState
   if let some cached := state.exprCache.get? e then
@@ -1183,7 +1182,17 @@ partial def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
 
   | .const name lvls _ => compileConstExprRaw name lvls
 
-  | .app .. => compileAppSpine e
+  | .app fn arg hash => do
+    let parts := Ix.AuxGen.decomposeApps (.app fn arg hash)
+    let (h, hRoot) ← compileExprPartial parts.1
+    let mut acc := h
+    let mut accRoot := hRoot
+    for _mem : arg in parts.2 do
+      let (a, aRoot) ← compileExprPartial arg
+      let root ← allocArenaNode (.app accRoot aRoot)
+      acc := .app acc a
+      accRoot := root
+    pure (acc, accRoot)
 
   | .lam name ty body bi _ => do
     compileName name
@@ -1256,6 +1265,12 @@ partial def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   modifyBlockState fun c => { c with exprCache := c.exprCache.insert e (result, root) }
 
   pure (result, root)
+termination_by sizeOf e
+decreasing_by
+  all_goals first
+    | exact Ix.AuxGen.decomposeApps_app_head_lt _ _ _
+    | exact Ix.AuxGen.decomposeApps_app_mem_lt _ _ _ _mem
+    | simp_wf; omega
 
 /-- Compile an App telescope (Rust compile.rs:751-1407).
 
@@ -1267,7 +1282,7 @@ partial def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     Inner-spine caching would diverge from Rust's arena layout: a later
     occurrence of a partial spine as a maximal subterm would reuse a
     cached arena root instead of re-allocating metadata nodes. -/
-partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   let (headExpr, args) := Ix.AuxGen.collectLeanTelescope e
   -- Head, then one App node per arg (compile.rs:1399-1407). Same result as
   -- one-App-at-a-time recursion, but the inner spine nodes never touch the
@@ -1281,9 +1296,6 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     acc := .app acc a
     accRoot := root
   pure (acc, accRoot)
-
-end
-
 
 /-- Pass 3: the placeholder indices of the rewritten call sites in `e`
     (`[(_ix.inline, n)]` mdata nodes), in first-occurrence order, each once.
@@ -1336,8 +1348,8 @@ def pass3CompileRecords (e : Expr) : CompileM Unit := do
     (`pass3CompileRecords`; the block's terms were rewritten before
     compilation, `Ix.Compile.Pass.Translate`); a hand-built environment with
     `compileExprTotal`. The two are the same ordinary compiler (equal cache
-    and arena semantics); the driver path keeps the `partial` one because
-    `compileExprTotal` sizes its fuel with `exprCompileDepth` first. Until
+    and arena semantics); the driver path uses direct well-founded recursion
+    because `compileExprTotal` sizes its fuel with `exprCompileDepth` first. Until
     M6R slice 6 the driver path was the call-site surgery's implementation
     run with an empty plan map; slice 6 deleted the plan branches, so the
     bytes are unchanged. -/

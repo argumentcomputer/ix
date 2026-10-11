@@ -55,10 +55,61 @@ theorem Frame.bind {action : CompileM α} {next : α → CompileM β}
     | ok value => exact (later value context after).trans prior
 
 theorem Frame.read : Frame getCompileEnv := by intro _ _; rfl
+theorem Frame.readBlock : Frame getBlockEnv := by intro _ _; rfl
 theorem Frame.get : Frame getBlockState := by intro _ _; rfl
+theorem Frame.throw (error : CompileError) : Frame (throw error : CompileM α) := by
+  intro _ _
+  rfl
 theorem Frame.modify (update : BlockState → BlockState)
     (keeps : ∀ state, (update state).p3Heads = state.p3Heads) :
     Frame (modifyBlockState update) := by intro context state; exact keeps state
+
+theorem Frame.modifyGet (update : BlockState → α × BlockState)
+    (keeps : ∀ state, (update state).2.p3Heads = state.p3Heads) :
+    Frame (modifyGetBlockState update) := by intro context state; exact keeps state
+
+theorem Frame.map {action : CompileM α} (framed : Frame action) (f : α → β) :
+    Frame (f <$> action) := Frame.bind framed (fun _ => Frame.pure _)
+
+theorem frame_mapM_list (items : List α) (action : α → CompileM β)
+    (keeps : ∀ item ∈ items, Frame (action item)) : Frame (items.mapM action) := by
+  induction items with
+  | nil => exact Frame.pure []
+  | cons item rest ih =>
+    rw [List.mapM_cons]
+    apply Frame.bind (keeps item (by simp))
+    intro _
+    apply Frame.bind (ih (fun item mem => keeps item (List.mem_cons_of_mem _ mem)))
+    intro _
+    exact Frame.pure _
+
+theorem frame_mapM_array (items : Array α) (action : α → CompileM β)
+    (keeps : ∀ item ∈ items, Frame (action item)) : Frame (items.mapM action) := by
+  rw [Array.mapM_eq_mapM_toList]
+  exact Frame.map (frame_mapM_list _ action (fun item mem => keeps item (by simpa using mem))) _
+
+theorem frame_forIn'_list (items : List α) (initial : β)
+    (body : (item : α) → item ∈ items → β → CompileM (ForInStep β))
+    (keeps : ∀ item mem acc, Frame (body item mem acc)) :
+    Frame (forIn' items initial body) := by
+  induction items generalizing initial with
+  | nil => exact Frame.pure initial
+  | cons item rest ih =>
+    rw [List.forIn'_cons]
+    apply Frame.bind (keeps item (by simp) initial)
+    intro result
+    cases result with
+    | done value => exact Frame.pure value
+    | yield value => exact ih value _ (fun item mem acc => keeps item _ acc)
+
+theorem frame_forIn'_array (items : Array α) (initial : β)
+    (body : (item : α) → item ∈ items → β → CompileM (ForInStep β))
+    (keeps : ∀ item mem acc, Frame (body item mem acc)) :
+    Frame (forIn' items initial body) := by
+  have listFrame := frame_forIn'_list items.toList initial
+    (fun item mem acc => body item (Array.mem_toList_iff.mp mem) acc)
+    (fun item mem acc => keeps item _ acc)
+  simpa only [Array.forIn'_toList] using listFrame
 
 theorem frame_forIn_list (items : List α) (initial : β)
     (body : α → β → CompileM (ForInStep β)) (keeps : ∀ item acc, Frame (body item acc)) :
